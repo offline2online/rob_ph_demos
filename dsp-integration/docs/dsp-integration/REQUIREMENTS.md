@@ -288,24 +288,40 @@ not offered.
 
   **A slot is a playlist position** (ticket "Available Inventory: Max
   campaigns column + slot playlist statement"): assigning an advertiser a
-  slot assigns them that fixed position in the display type's one playlist
-  rotation, of which only one campaign plays at a time — the highest-priority
-  version resolving on available data (the mandatory default layer, or a
-  localised/personalised upsell that resolves ahead of it, per §6). The
-  playlist is retained per slot; this is the already-intended §6 model,
-  stated explicitly here as part of that ticket's spec clarification.
+  slot assigns them that fixed position in a playlist rotation, of which
+  only one campaign plays at a time — the highest-priority version resolving
+  on available data (the mandatory default layer, or a localised/personalised
+  upsell that resolves ahead of it, per §6). The playlist is retained per
+  slot; this is the already-intended §6 model, stated explicitly here as
+  part of that ticket's spec clarification. **Which playlist** (ticket
+  "Available Inventory: playlist-primary table (drop Display type column)
+  with Unassigned indicator", 27 Sep 2026): on a single-zone display type
+  it's always the display type's own default playlist, as before; on a
+  multi-zone one it's whichever zone the slot is tagged to (`Slot.zoneId`,
+  below) — a real Menu Board–shaped screen can run three zone playlists
+  (Zone 1/2/3), each with its own advertiser slots or none at all, not one
+  shared rotation across the whole screen.
 
   The explanation of the three owners is a tooltip on the **Slot
   assignment** label.
 
-  **The slot editor sets the label and the owner, nothing else** (Rob,
-  20 Sep). Who a sellable position is assigned to — DSPs, named advertisers,
-  the whitelist — is managed on *Advertisers / Inventory* (§5), and appears
-  here read-only on the slot card. A Stores slot takes the default scope
-  (*Store staff*); its scope is no longer editable anywhere in this build.
-  Changing a slot's owner away from *Advertiser* drops the assignment and
-  the supported targeting with it, since the position is no longer sellable;
-  changing anything else keeps them.
+  **The slot editor sets the label, the owner, and — on a multi-zone display
+  type — which zone the slot belongs to** (Rob, 20 Sep; zone tagging added
+  27 Sep 2026). Who a sellable position is assigned to — DSPs, named
+  advertisers, the whitelist — is managed on *Advertisers / Inventory* (§5),
+  and appears here read-only on the slot card. A Stores slot takes the
+  default scope (*Store staff*); its scope is no longer editable anywhere in
+  this build. Changing a slot's owner away from *Advertiser* drops the
+  assignment and the supported targeting with it, since the position is no
+  longer sellable; changing anything else keeps them. **A slot's zone is
+  purely attribution** for Available Inventory (§5) — it decides which
+  playlist the position is shown under there, nothing about how the position
+  is identified, booked, priced or delivered: that stays display type + slot
+  exactly as before (`PH-CORE-BOUNDARIES.md` "At most one campaign per
+  display type, slot and play window"). The Zone column on the slot editor
+  only appears once the display type has zones (*Multi-Zone Layout*,
+  enabled); on a single-zone display type there is nothing to tag a slot to,
+  and it is always read as the display type's own default playlist.
 - **Default Playlist offers "Add new playlist"** (ticket, 26 Sep 2026), as an
   option in that field's own dropdown alongside the existing playlists.
   Choosing it creates a playlist scoped to this display type from the
@@ -956,11 +972,37 @@ this document).
 
 The same positions are shown to the retailer on **Advertisers / Inventory →
 Available Inventory**: every advertiser-owned slot across the estate that
-connected DSPs can bid on, one row per slot, with columns **Display type**,
-**Playlist**, **Slot**, **Position**, **Assigned to**, **Targeting
-supported**, **Reserve price**, **Max campaigns**, **Billing unit** and an
-**Open** link to the display type. There is **no advertisers column**.
-Every column carries a filter, as the platform's tables do.
+connected DSPs can bid on, one row per slot. **Playlist-primary** (ticket
+"Available Inventory: playlist-primary table (drop Display type column)
+with Unassigned indicator", 27 Sep 2026 — this replaced an earlier layout
+that led with a separate **Display type** column): columns are **Playlist**,
+**Slot**, **Position**, **Assigned to**, **Targeting supported**, **Reserve
+price**, **Max campaigns**, **Billing unit** and an **Open** link to the
+display type. There is **no advertisers column** and no separate Display
+type column. Every column carries a filter, as the platform's tables do.
+
+**Playlist** is the primary column because a display type is not the right
+unit of sellable inventory: a multi-zone display type (e.g. a Menu Board
+split into Zone 1/2/3) can run several independent zone playlists, each with
+its own advertiser slots or none at all (§1 "A slot is a playlist
+position") — the table shows one row per advertiser slot, under whichever
+playlist it's tagged to, and **a playlist with no advertiser slot tagged to
+it simply produces no row** ("Playlists with no advertiser slots do not
+appear" — for a Menu Board with three zones, only the zones that actually
+have an advertiser slot show up). The Playlist cell also carries the two
+enabled display-type features that used to sit on the removed Display type
+column — **Vision/AI** and **QR Control** — so they aren't lost, plus an
+**Unassigned** indicator (icon + label, tooltip explains it) when the
+position's display type currently has **no physical display using it**
+(Displays & Devices, `DisplaySource.summaryByDisplayType`): its advertiser
+slots exist and can be configured and sold, but nothing is actually playing
+them. This is the same "no displays" signal `GET /v1/inventory`'s
+`windowStatus` already reads to mark a position **Unavailable** on the
+Partner API (*What each position returns*, above) — Unassigned is that same
+underlying fact, surfaced to the retailer instead of the DSP. **Not a
+live/active state** — this build has no such concept, and Unassigned is
+never about whether campaigns are currently playing, only whether any
+display exists to play them at all.
 
 Slots are made available by setting their owner to *Advertiser* on a display
 type (explained in the section's tooltip); that part is not editable here.

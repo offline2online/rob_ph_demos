@@ -1287,6 +1287,27 @@ export interface components {
             displayTypeName: string;
             touchPoint?: string;
             playlistName: string;
+            /**
+             * @description The id of the playlist this row's position sits under: the zone
+             *     playlist its slot is tagged to (`Slot.zoneId`, spec §1) when the
+             *     display type is multi-zone and the slot names one, else the
+             *     display type's own default playlist. Null only when neither
+             *     resolves to a real playlist record. playlistName is what is
+             *     shown; this is for linking/lookup (Available Inventory,
+             *     ticket "Available Inventory: playlist-primary table (drop
+             *     Display type column) with Unassigned indicator", 27 Sep 2026).
+             */
+            playlistId: string | null;
+            /**
+             * @description True when this position's display type currently has no
+             *     physical display using it (Displays & Devices,
+             *     DisplaySource.summaryByDisplayType) — its advertiser slots
+             *     exist and can be configured and sold, but nothing is actually
+             *     playing them. Available Inventory shows this as an "Unassigned"
+             *     indicator next to the playlist (same ticket as playlistId,
+             *     27 Sep 2026).
+             */
+            unassigned: boolean;
             slot: number;
             position: string;
             assignedTo: components["schemas"]["AssignedTo"];
@@ -1668,6 +1689,23 @@ export interface components {
                 label: string;
                 /** @enum {string} */
                 owner: "internal" | "advertiser" | "retail";
+                /**
+                 * @description Which zone of a multi-zone display type this slot's position
+                 *     belongs to (id of an entry in `multiZone.zones`), for
+                 *     attributing it to that zone's own playlist on Available
+                 *     Inventory (ticket "Available Inventory: playlist-primary
+                 *     table…", 27 Sep 2026). Set by the slot editor, like label
+                 *     and owner — never by Advertisers / Inventory. Absent or
+                 *     null means "not zone-specific": the slot is attributed to
+                 *     the display type's own default playlist instead, which is
+                 *     the only case on a non-multi-zone display type. Purely an
+                 *     attribution/display detail — it does not change what
+                 *     identifies a sellable position (still display type + slot,
+                 *     PH-CORE-BOUNDARIES.md "At most one campaign per display
+                 *     type, slot and play window") or anything about booking,
+                 *     pricing or delivery.
+                 */
+                zoneId?: string | null;
                 /**
                  * @description The DSPs that may buy this position; empty or absent means any
                  *     connected DSP. Set on Advertisers / Inventory, not on the

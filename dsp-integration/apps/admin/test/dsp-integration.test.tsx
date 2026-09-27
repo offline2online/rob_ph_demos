@@ -20,11 +20,11 @@ const ADVERTISER_PAGE = {
   '/api/admin/v1/available-inventory': {
     items: [
       {
-        displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', slot: 2, position: 'Supplier slot',
+        displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', playlistId: 'pl_menu', unassigned: false, slot: 2, position: 'Supplier slot',
         assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false }, qrControl: true, visionAi: true, supportedTargeting: ['localised', 'personalised'],
       },
       {
-        displayTypeId: 'portrait', displayTypeName: 'Portrait', touchPoint: 'Digital Signage', playlistName: 'Portrait Playlist', slot: 1, position: 'Slot 1',
+        displayTypeId: 'portrait', displayTypeName: 'Portrait', touchPoint: 'Digital Signage', playlistName: 'Portrait Playlist', playlistId: 'pl_portrait', unassigned: false, slot: 1, position: 'Slot 1',
         assignedTo: { partnerIds: [], partnerNames: [], advertisers: [], whitelistOnly: false }, qrControl: false, visionAi: false, supportedTargeting: ['localised'],
       },
     ],
@@ -511,11 +511,16 @@ describe('Advertisers / Inventory', () => {
     expect(within(advertisers).queryByRole('button', { name: /Bookings/ })).not.toBeInTheDocument()
 
     const inventory = await screen.findByLabelText('Available Inventory')
+    /* Playlist leads the table; Display type was removed as its own column
+       (ticket "Available Inventory: playlist-primary table (drop Display
+       type column) with Unassigned indicator", 27 Sep 2026). */
     expect([...inventory.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent))
-      .toEqual(['Display type', 'Playlist', 'Slot', 'Position', 'Assigned to', 'Targeting supported', 'Reserve price', 'Max campaigns', 'Billing unit', ''])
-    expect(within(inventory).getByLabelText('Display type search')).toBeInTheDocument()
+      .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Targeting supported', 'Reserve price', 'Max campaigns', 'Billing unit', ''])
+    expect(within(inventory).getByLabelText('Playlist search')).toBeInTheDocument()
     expect(within(inventory).getByLabelText('Targeting supported filter')).toBeInTheDocument()
-    /* QR Control is flagged on the display type that has it, and only that
+    /* QR Control and Vision/AI moved onto the Playlist cell along with the
+       rest of the display type's carried-over features (same ticket): QR
+       Control is flagged on the display type that has it, and only that
        display type can support interactive targeting (Rob, 20 Sep). Vision/AI
        is flagged the same way, alongside it (ticket "show a computer vision
        icon when computer vision is enabled on a specific display type", 22
@@ -529,6 +534,25 @@ describe('Advertisers / Inventory', () => {
     expect([...cellOf('assigned to').querySelectorAll('.ant-select-selection-item')].map((t) => t.textContent)).toEqual(['Google DSP'])
     expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled()
 
+  })
+
+  /* "Unassigned": the display type has advertiser slots but no physical
+     display is playing them (ticket "Available Inventory: playlist-primary
+     table (drop Display type column) with Unassigned indicator", 27 Sep
+     2026) — a separate fixture so it doesn't perturb the row/text
+     assertions the other Available Inventory tests make against
+     ADVERTISER_PAGE. */
+  it('flags a playlist as Unassigned when its display type has no physical display', async () => {
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({
+      ...ADVERTISER_PAGE,
+      '/api/admin/v1/available-inventory': {
+        ...ADVERTISER_PAGE['/api/admin/v1/available-inventory'],
+        items: [{ ...ADVERTISER_PAGE['/api/admin/v1/available-inventory'].items[0], unassigned: true }],
+      },
+    })))
+    renderAt('/advertisers')
+    const inventory = await screen.findByLabelText('Available Inventory')
+    expect(within(inventory).getByLabelText('Unassigned')).toBeInTheDocument()
   })
 
   it('holds a position for an advertiser, and only offers interactive where QR Control is on', async () => {

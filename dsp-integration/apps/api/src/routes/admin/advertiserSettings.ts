@@ -4,6 +4,7 @@ import { MAX_MAX_CAMPAIGNS, MIN_MAX_CAMPAIGNS, TARGETING_MODES, advertiserSlug, 
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { cleanList, validateAdvertiserSettings } from '../../domain/advertiserSettings'
+import { zonesOf } from '../../domain/displayTypes'
 import { assignedToSlot, validateAssigned } from '../../domain/slots'
 import type { Guards } from '../../http/app'
 import { validationFailed } from '../../http/errors'
@@ -77,12 +78,34 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
     const buyersLists = ctx.buyersLists.list()
     const items: AvailableInventoryRow[] = []
     for (const t of ctx.displayTypes.list()) {
-      const playlistName = (t.defaultPlaylistId && ctx.playlists.get(t.defaultPlaylistId)?.name) || '—'
+      const zones = zonesOf(t)
+      /* A position's playlist, per slot: the zone playlist it's tagged to
+         (Slot.zoneId) when this is a multi-zone display type and the slot
+         names one, else the display type's own default playlist — same
+         "override always wins" shape as reserve price/billing unit/max
+         campaigns above, just a lookup instead of a number (ticket
+         "Available Inventory: playlist-primary table (drop Display type
+         column) with Unassigned indicator", 27 Sep 2026). This is what
+         makes only the zone playlists that actually have an advertiser slot
+         show up on Available Inventory — a zone nothing is tagged to simply
+         never produces a row. */
+      const playlistIdOf = (s: { zoneId?: string | null }): string | null =>
+        (s.zoneId && zones.find((z) => z.id === s.zoneId)?.playlistId) || t.defaultPlaylistId || null
+      /* Not tied to any physical display (Displays & Devices) — its
+         advertiser slots exist but aren't actually playing anywhere. Same
+         "no displays" read windowStatus (positions.ts) already uses to mark
+         a position unavailable, surfaced here as Available Inventory's
+         "Unassigned" indicator, not a live/sold state (that's out of scope
+         — this build has no such concept). Per display type, since a
+         multi-zone display type's zones all share the one physical screen. */
+      const unassigned = ctx.displays.summaryByDisplayType(t.id).displays === 0
       ;(t.phExtensions?.slots ?? []).forEach((s, i) => {
         if (s.owner !== 'advertiser') return
         const a = assignedOf(s)
+        const playlistId = playlistIdOf(s)
+        const playlistName = (playlistId && ctx.playlists.get(playlistId)?.name) || '—'
         items.push({
-          displayTypeId: t.id, displayTypeName: t.name, touchPoint: t.touchPoint, playlistName, slot: i + 1, position: s.label,
+          displayTypeId: t.id, displayTypeName: t.name, touchPoint: t.touchPoint, playlistName, playlistId, unassigned, slot: i + 1, position: s.label,
           assignedTo: {
             ...a,
             partnerNames: a.partnerIds.map((id) => partners.find((p) => p.id === id)?.name ?? id),

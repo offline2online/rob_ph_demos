@@ -117,7 +117,7 @@ describe('Advertiser settings (spec §4, §6)', () => {
     const res = await buildApp(await testContext()).inject({ method: 'GET', url: '/api/admin/v1/available-inventory' })
     expectMatchesContract('GET', '/admin/v1/available-inventory', 200, res.json())
     expect(res.json().items).toEqual([{
-      displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', slot: 2, position: 'Supplier slot',
+      displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', playlistId: 'pl_menu', unassigned: false, slot: 2, position: 'Supplier slot',
       assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false, buyersListId: null, buyersListName: null }, qrControl: true, visionAi: true, supportedTargeting: ['localised'],
       reservePrice: null, reservePriceOverride: null, displayTypeReservePrice: null,
       billingUnitHours: 24, billingUnitHoursOverride: null, displayTypeBillingUnitHours: null,
@@ -125,6 +125,40 @@ describe('Advertiser settings (spec §4, §6)', () => {
     }])
     /* The picker behind Assigned to: every DSP and the advertisers it brings. */
     expect(res.json().dsps[0]).toMatchObject({ partnerId: 'p_google', name: 'Google DSP', advertisers: [{ advertiserId: 'nestle', name: 'Nestlé' }, { advertiserId: 'swisse', name: 'Swisse' }] })
+  })
+
+  /* Menu Board (seed) is multi-zone with three zone playlists, but its one
+     advertiser slot ("Supplier slot") isn't tagged to any of them, so it
+     still resolves to the display type's own default playlist above — the
+     same reading a non-multi-zone display type gets. This is the other
+     half: tag it to a zone and the row switches to that zone's playlist,
+     which is the whole point of the ticket ("Available Inventory:
+     playlist-primary table (drop Display type column) with Unassigned
+     indicator", 27 Sep 2026) — a playlist only shows up here because a
+     real advertiser slot is tagged to it. */
+  it('attributes an advertiser slot to its tagged zone’s playlist, not the display type’s default', async () => {
+    const ctx = await testContext()
+    const app = buildApp(ctx)
+    const ext = ctx.displayTypes.get('menu_board')!.phExtensions!
+    ctx.displayTypes.saveExtensions('menu_board', { ...ext, slots: ext.slots.map((s, i) => (i === 1 ? { ...s, zoneId: 'z3' } : s)) })
+    const res = await app.inject({ method: 'GET', url: '/api/admin/v1/available-inventory' })
+    expectMatchesContract('GET', '/admin/v1/available-inventory', 200, res.json())
+    expect(res.json().items).toEqual([expect.objectContaining({ slot: 2, playlistId: 'pl_zone_menu_board_3', playlistName: 'Menu Board — Long Format / Zone 3' })])
+  })
+
+  /* "Unassigned": the display type has advertiser slots but no physical
+     display is using it yet, so nothing is actually playing them — same
+     "no displays" signal windowStatus (positions.ts) already uses to mark a
+     position unavailable on the Partner API, surfaced here for the retailer. */
+  it('flags Available Inventory rows as unassigned when their display type has no physical display', async () => {
+    const ctx = await testContext()
+    const app = buildApp(ctx)
+    /* Displays are read-only here (Displays & Devices owns them for real —
+       PH-CORE-BOUNDARIES.md, DisplaySource); removing one for the test is a
+       direct DB write, the same way delete-display-type.test.ts does. */
+    ctx.db.prepare("DELETE FROM displays WHERE display_type_id = 'menu_board'").run()
+    const res = await app.inject({ method: 'GET', url: '/api/admin/v1/available-inventory' })
+    expect(res.json().items.find((i: { slot: number }) => i.slot === 2)).toMatchObject({ unassigned: true })
   })
 
   /* Reserve price: real inheritance (Rob, 22 Sep; spec §1 configuration
