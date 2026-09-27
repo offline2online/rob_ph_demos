@@ -127,6 +127,12 @@ function escapeHTML(s) {
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
+// The host a consent will send its code back to — shown on the consent
+// card so a registered-by-anyone client can't hide behind a friendly name.
+function redirectHostLabel(uri) {
+  try { const u = new URL(String(uri || "")); return u.protocol === "https:" || u.protocol === "http:" ? u.host : `${u.protocol}//`; }
+  catch { return "unknown"; }
+}
 // JSON destined for a <script> block: close out "</script>" and friends so
 // a value can never end the element it lives in.
 function jsonForScript(value) {
@@ -152,6 +158,43 @@ function cors(req, res) {
 
 function oauthError(res, status, error, description) {
   res.status(status).json({ error, error_description: description });
+}
+
+// Per-instance, per-IP fixed-window rate limit for the endpoints anyone on
+// the internet can reach without a credential (client registration above
+// all, which writes a Firestore doc per call). Instance-local by design:
+// with maxInstances capped, "N per window per instance" is still a hard
+// ceiling on what an attacker can make us write, and it costs no reads.
+const RATE_WINDOW_MS = 10 * 60 * 1000;
+const rateBuckets = new Map();
+function clientIp(req) {
+  const fwd = String(req.get("x-forwarded-for") || "").split(",")[0].trim();
+  return fwd || req.ip || "unknown";
+}
+function rateLimited(req, bucket, max) {
+  const key = `${bucket}:${clientIp(req)}`;
+  const now = Date.now();
+  let entry = rateBuckets.get(key);
+  if (!entry || entry.resetAt <= now) { entry = { count: 0, resetAt: now + RATE_WINDOW_MS }; rateBuckets.set(key, entry); }
+  entry.count += 1;
+  if (rateBuckets.size > 5000) {
+    for (const [k, v] of rateBuckets) if (v.resetAt <= now) rateBuckets.delete(k);
+  }
+  return entry.count > max;
+}
+function tooMany(res) {
+  res.status(429).set("Retry-After", "600").json({ error: "rate_limited", error_description: "too many requests from this address — try again in a few minutes" });
+}
+
+// A personal Routine's fire URL receives the fire text — which includes the
+// board's automation credentials — so it may only ever point at Anthropic's
+// Routine API. Anything else would be an editor handing themselves the key.
+const ROUTINE_FIRE_HOSTS = ["api.anthropic.com"];
+function routineFireHostAllowed(fireUrl) {
+  try {
+    const u = new URL(String(fireUrl || ""));
+    return u.protocol === "https:" && ROUTINE_FIRE_HOSTS.includes(u.hostname.toLowerCase());
+  } catch { return false; }
 }
 
 // ── who may connect, and as what ──────────────────────────────────────────
@@ -212,6 +255,16 @@ exports.syncConsoleUserClaims = onDocumentWritten("consoleUsers/{userEmail}", as
     if (role) { claims.consoleRole = role; claims.consoleEditor = atLeast(role, "editor"); }
     else { delete claims.consoleRole; delete claims.consoleEditor; }
     await adminAuth().setCustomUserClaims(user.uid, claims);
+    if (!role) {
+      // Removing the claim alone left the person's existing ID token — and
+      // with it storage.rules access — valid for up to an hour. Revoking
+      // their refresh tokens ends the browser session at the next token
+      // refresh (the SDK refreshes within minutes), and every endpoint here
+      // verifies with checkRevoked so an MCP consent can't ride it either.
+      try { await adminAuth().revokeRefreshTokens(user.uid); } catch (err) {
+        logger.warn("could not revoke refresh tokens for removed member", { email, error: String(err) });
+      }
+    }
     logger.info("console claim synced", { email, role: role || "(removed)" });
   } catch (err) {
     // No Auth account yet is the normal case for someone invited before
@@ -290,6 +343,7 @@ function redirectUriAllowed(uri) {
 
 async function handleRegister(req, res) {
   if (req.method !== "POST") return oauthError(res, 405, "invalid_request", "POST only");
+  if (rateLimited(req, "register", 30)) return tooMany(res);
   const body = req.body || {};
   const uris = Array.isArray(body.redirect_uris) ? body.redirect_uris : [];
   if (!uris.length) return oauthError(res, 400, "invalid_redirect_uri", "redirect_uris is required");
@@ -417,7 +471,7 @@ function authorizePageHTML(params, client) {
   <p class="muted small">Sign in with the same Personalisation Hub account you use for the PH Agent Console. Your agent never sees your password.</p>
 
   <div class="client">
-    <strong>${escapeHTML(client.clientName || "An MCP client")}</strong>
+    <strong>${escapeHTML(client.clientName || "An MCP client")}</strong> <span class="muted">(${escapeHTML(redirectHostLabel(params.redirect_uri))})</span>
     <span class="muted small">wants to use the PH Agent Console as a tool</span>
     <ul class="perms">
       <li>Read your projects, backlog tickets and help-centre articles</li>
@@ -572,6 +626,11 @@ async function handleAuthorize(req, res) {
   res.status(200)
     .set("Content-Type", "text/html; charset=utf-8")
     .set("Cache-Control", "no-store")
+    // The consent page shows "Signed in as … Connect" to anyone with a
+    // console session; framed by an attacker's page, that button could be
+    // overlaid and clicked into a client they registered.
+    .set("X-Frame-Options", "DENY")
+    .set("Content-Security-Policy", "frame-ancestors 'none'")
     .send(authorizePageHTML(p, client));
 }
 
@@ -623,7 +682,7 @@ async function handleAuthorizeComplete(req, res) {
     redirectUri: String(b.redirectUri),
     codeChallenge: String(b.codeChallenge),
     scope: granted.join(" "),
-    resource: b.resource ? String(b.resource) : RESOURCE_URL,
+    resource: RESOURCE_URL,
     email: user.email,
     uid: decoded.uid,
     role: user.role,
@@ -666,6 +725,11 @@ async function issueTokens(grant) {
     role: grant.role,
     scope: grant.scope,
     resource: grant.resource || RESOURCE_URL,
+    // Every token descended from one authorization shares a family id, so
+    // a replayed (already rotated) refresh token can take the whole family
+    // with it — OAuth 2.1 §4.3.1 — instead of just failing quietly.
+    familyId: grant.familyId || newSecret("mcpf"),
+    revoked: false,
     createdAt: FieldValue.serverTimestamp(),
   };
   const batch = db().batch();
@@ -707,6 +771,7 @@ async function handleToken(req, res) {
         if (d.expiresAt < nowSeconds()) throw new Error("invalid_grant:code expired");
         if (d.clientId !== clientId) throw new Error("invalid_grant:code was issued to a different client");
         if (b.redirect_uri && String(b.redirect_uri) !== d.redirectUri) throw new Error("invalid_grant:redirect_uri mismatch");
+            if (verifier.length < 43 || verifier.length > 128) throw new Error("invalid_grant:code_verifier must be 43–128 characters (RFC 7636)");
         if (!constantTimeEqual(sha256b64url(verifier), d.codeChallenge)) throw new Error("invalid_grant:PKCE verification failed");
         tx.update(ref, { used: true, usedAt: FieldValue.serverTimestamp() });
         return d;
@@ -732,28 +797,63 @@ async function handleToken(req, res) {
     const token = String(b.refresh_token || "");
     if (!token) return oauthError(res, 400, "invalid_request", "refresh_token is required");
     const ref = db().collection("mcpTokens").doc(hashToken(token));
-    const snap = await ref.get();
-    if (!snap.exists) return oauthError(res, 400, "invalid_grant", "unknown refresh token");
-    const d = snap.data();
-    if (d.type !== "refresh") return oauthError(res, 400, "invalid_grant", "not a refresh token");
-    if (d.revoked) return oauthError(res, 400, "invalid_grant", "refresh token was revoked");
-    if (d.expiresAt < nowSeconds()) return oauthError(res, 400, "invalid_grant", "refresh token expired");
-    if (b.client_id && String(b.client_id) !== d.clientId) return oauthError(res, 400, "invalid_grant", "refresh token belongs to a different client");
+    let d;
+    try {
+      // Rotation is a single transaction: two concurrent refreshes with the
+      // same token cannot both pass the revoked check, so one token yields
+      // exactly one successor.
+      d = await db().runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        if (!snap.exists) throw new Error("invalid_grant:unknown refresh token");
+        const cur = snap.data();
+        if (cur.type !== "refresh") throw new Error("invalid_grant:not a refresh token");
+        if (cur.revoked) throw new Error(cur.revokedReason === "rotated" ? "reuse:" : "invalid_grant:refresh token was revoked");
+        if (cur.expiresAt < nowSeconds()) throw new Error("invalid_grant:refresh token expired");
+        if (b.client_id && String(b.client_id) !== cur.clientId) throw new Error("invalid_grant:refresh token belongs to a different client");
+        tx.update(ref, { revoked: true, revokedAt: FieldValue.serverTimestamp(), revokedReason: "rotated" });
+        return cur;
+      });
+    } catch (err) {
+      const msg = String(err && err.message ? err.message : err);
+      if (msg.startsWith("reuse:")) {
+        // An already-rotated token came back: either the legitimate client
+        // lost the response, or someone else holds a copy. Both are answered
+        // the same way — the whole family is revoked and everyone re-signs.
+        try {
+          const cur = (await ref.get()).data() || {};
+          if (cur.familyId) await revokeTokenFamily(cur.familyId, "refresh token reuse");
+          logger.warn("refresh token reuse detected — family revoked", { email: cur.email, clientId: cur.clientId });
+        } catch (e) { logger.error("family revoke failed", { error: String(e) }); }
+        return oauthError(res, 400, "invalid_grant", "refresh token was already used and is now revoked, with every token issued from it — sign in again");
+      }
+      if (msg.startsWith("invalid_grant:")) return oauthError(res, 400, "invalid_grant", msg.slice(14));
+      logger.error("refresh failed", { error: msg });
+      return oauthError(res, 500, "server_error", "could not rotate the token");
+    }
     const user = await resolveConsoleUser(d.email);
     if (!user || !user.mcpEnabled) return oauthError(res, 400, "invalid_grant", "that account no longer has agent access");
-    // Rotate: the presented refresh token dies with the response that
-    // replaces it, so a stolen one is usable at most once and its use is
-    // visible as the legitimate holder suddenly being logged out.
-    await ref.update({ revoked: true, revokedAt: FieldValue.serverTimestamp(), revokedReason: "rotated" });
     let scope = d.scope || SCOPES.join(" ");
     if (!atLeast(user.role, "editor")) scope = scope.split(/\s+/).filter((s) => s !== "board.write").join(" ");
     res.set("Cache-Control", "no-store");
     return res.status(200).json(await issueTokens({
-      clientId: d.clientId, email: user.email, uid: d.uid, role: user.role, scope, resource: d.resource,
+      clientId: d.clientId, email: user.email, uid: d.uid, role: user.role, scope, resource: d.resource, familyId: d.familyId,
     }));
   }
 
   return oauthError(res, 400, "unsupported_grant_type", `unsupported grant_type: ${grantType || "(none)"}`);
+}
+
+async function revokeTokenFamily(familyId, reason) {
+  const snap = await db().collection("mcpTokens").where("familyId", "==", familyId).limit(500).get();
+  let batch = db().batch();
+  let pending = 0;
+  for (const doc of snap.docs) {
+    const d = doc.data() || {};
+    if (d.revoked && d.revokedReason !== "rotated") continue;
+    batch.update(doc.ref, { revoked: true, revokedAt: FieldValue.serverTimestamp(), revokedReason: reason });
+    if (++pending >= 400) { await batch.commit(); batch = db().batch(); pending = 0; }
+  }
+  if (pending) await batch.commit();
 }
 
 // ── /revoke (RFC 7009) ────────────────────────────────────────────────────
@@ -1013,6 +1113,10 @@ async function uniqueFaqSlug(base) {
 // clear of the limit — which is also why a replaced version is written to
 // docRevisions rather than kept as a second copy on the project doc.
 const PROJECT_MD_MAX = 200000;
+// A concept's readmeMd/requirementsMd share this same 200000 cap in
+// firestore.rules (see the `concepts/{conceptId}` match block) — reuse the
+// constant rather than duplicating the number.
+const CONCEPT_MD_MAX = PROJECT_MD_MAX;
 // projectDocs and interfaces are capped at what firestore.rules already
 // allows the BROWSER to write (20000). Going higher here would let an agent
 // author a document a person could then never save an edit to from the Docs
@@ -1354,7 +1458,11 @@ const TOOLS = [
       // project token doesn't need to be reminded on every whoami call.
       const selfSnap = await db().collection("consoleUsers").doc(session.email).get();
       const selfData = selfSnap.exists ? selfSnap.data() || {} : {};
-      const hasRoutineBinding = !!(selfData.routineFireUrl && selfData.routineFireToken);
+      const bindingSnap = await db().collection("routineBindings").doc(session.email).get();
+      const binding = bindingSnap.exists ? bindingSnap.data() || {} : {};
+      // Legacy location (consoleUsers.routineFire*) is still honoured until
+      // functions/index.js's lazy migration has moved it.
+      const hasRoutineBinding = !!((binding.fireUrl && binding.token) || (selfData.routineFireUrl && selfData.routineFireToken));
       return textResult({
         email: session.email,
         displayName: session.displayName || null,
@@ -1426,16 +1534,20 @@ const TOOLS = [
       if (!clearing) {
         if (!fireUrl || !token) return toolError("Pass both fireUrl and token, or both as \"\" to clear your binding.");
         if (!/^https:\/\//.test(fireUrl)) return toolError("fireUrl must be an https:// URL.");
+        if (!routineFireHostAllowed(fireUrl)) return toolError("fireUrl must be a Claude Routine API trigger on api.anthropic.com — the console will only ever POST the fire text (which carries board credentials) there.");
+        if (fireUrl.length > 2000 || token.length > 512) return toolError("fireUrl or token is longer than expected.");
         if (token.length < 8) return toolError("That doesn't look like a real token.");
       }
-      // null, not FieldValue.delete() — same convention functions/index.js's
-      // promoteFaqRevisionIfReady already follows: null is what
-      // hasRoutineBinding (whoami) and resolveRoutineCredentials both
-      // already treat as "no binding", and it's simpler to query against.
+      // routineBindings/{email} is readable and writable by nobody but the
+      // server (firestore.rules `allow read, write: if false`). It used to
+      // live on consoleUsers, which every member could read — so every
+      // member could read every other member's Routine bearer token.
+      const bindingRef = db().collection("routineBindings").doc(session.email);
+      if (clearing) await bindingRef.delete();
+      else await bindingRef.set({ email: session.email, fireUrl, token, boundAt: FieldValue.serverTimestamp() });
+      // And make sure no copy lingers in the old, member-readable place.
       await db().collection("consoleUsers").doc(session.email).set({
-        routineFireUrl: clearing ? null : fireUrl,
-        routineFireToken: clearing ? null : token,
-        routineBoundAt: clearing ? null : FieldValue.serverTimestamp(),
+        routineFireUrl: null, routineFireToken: null, routineBoundAt: null,
       }, { merge: true });
       // The token itself is deliberately never written to the audit log —
       // same "never echoed back" care as the response below.
@@ -1689,7 +1801,7 @@ const TOOLS = [
       const a = args || {};
       const projects = await loadProjectsById();
       if (a.projectId && !projects.has(String(a.projectId))) return toolError(`No project with id ${a.projectId}. Call list_projects first.`);
-      let q = db().collection("backlogItems");
+      let q = db().collection("backlogItems").where("status", "==", "ready-for-testing");
       if (a.projectId) q = q.where("projectId", "==", String(a.projectId));
       const snap = await q.limit(MAX_READ_DOCS).get();
       const rows = [];
@@ -1748,7 +1860,7 @@ const TOOLS = [
       const a = args || {};
       const projects = await loadProjectsById();
       if (a.projectId && !projects.has(String(a.projectId))) return toolError(`No project with id ${a.projectId}. Call list_projects first.`);
-      let q = db().collection("backlogItems");
+      let q = db().collection("backlogItems").where("status", "==", "ready-to-publish");
       if (a.projectId) q = q.where("projectId", "==", String(a.projectId));
       const snap = await q.limit(MAX_READ_DOCS).get();
       const rows = [];
@@ -1822,7 +1934,8 @@ const TOOLS = [
   // console's own button would currently be hiding.
   {
     name: "approve_deploy_to_main",
-    description: "Fire this project's Deploy to Main trigger — exactly the same action as clicking the board's own 'Deploy to Main' button. It does not merge anything itself: it only fires the existing Routine, which verifies the train and the existing pipeline then merges it. Only offered when every ticket on this project's deployment train is already Approved for Deployment and Ready for Testing is empty for it — the same condition that shows the console's own button — and refuses otherwise, naming what's blocking it. Logged to mcpAuditLog under your email.",
+    role: "admin",
+    description: "ADMIN ONLY. Fire this project's Deploy to Main trigger — exactly the same action as clicking the board's own 'Deploy to Main' button. It does not merge anything itself: it only fires the existing Routine, which verifies the train and the existing pipeline then merges it. Only offered when every ticket on this project's deployment train is already Approved for Deployment and Ready for Testing is empty for it — the same condition that shows the console's own button — and refuses otherwise, naming what's blocking it. Logged to mcpAuditLog under your email.",
     scope: "board.write",
     inputSchema: {
       type: "object",
@@ -2186,7 +2299,7 @@ const TOOLS = [
   },
   {
     name: "list_doc_revisions",
-    description: "Every previous version of a project's documentation that a write has replaced — newest first, metadata only. Use this to find what a change overwrote, then get_doc_revision to read it back.",
+    description: "Every previous version of a project's or concept's documentation that a write has replaced — newest first, metadata only. Use this to find what a change overwrote, then get_doc_revision to read it back.",
     scope: "board.read",
     inputSchema: {
       type: "object",
@@ -2195,6 +2308,7 @@ const TOOLS = [
         docId: { type: "string", description: "Restrict to one project document." },
         interfaceId: { type: "string", description: "Restrict to one interface contract." },
         skillId: { type: "string", description: "Restrict to one skill." },
+        conceptId: { type: "string", description: "Restrict to one Concept Incubator concept's documentation." },
         limit: { type: "integer", minimum: 1, maximum: 50, description: "Default 20." },
       },
       additionalProperties: false,
@@ -2205,15 +2319,19 @@ const TOOLS = [
       if (a.docId) q = q.where("docId", "==", String(a.docId));
       else if (a.interfaceId) q = q.where("interfaceId", "==", String(a.interfaceId));
       else if (a.skillId) q = q.where("skillId", "==", String(a.skillId));
+      else if (a.conceptId) q = q.where("conceptId", "==", String(a.conceptId));
       else if (a.projectId) q = q.where("projectId", "==", String(a.projectId));
-      const snap = await q.limit(MAX_READ_DOCS).get();
+      // select(): contentMd (up to 200k chars a row) never leaves Firestore
+      // for a listing — with a few hundred revisions the unmasked read was
+      // enough to exhaust a 256 MiB instance. get_doc_revision fetches one.
+      const snap = await q.select("target", "name", "projectId", "docId", "interfaceId", "skillId", "chars", "replacedAt", "replacedByEmail", "replacedVia").limit(MAX_READ_DOCS).get();
       const rows = [];
       snap.forEach((d) => {
         const v = d.data() || {};
         rows.push({
           revisionId: d.id, target: v.target || null, name: v.name || null,
           projectId: v.projectId || null, docId: v.docId || null, interfaceId: v.interfaceId || null,
-          skillId: v.skillId || null,
+          skillId: v.skillId || null, conceptId: v.conceptId || null,
           chars: v.chars || 0, replacedAt: tsToISO(v.replacedAt), replacedByEmail: v.replacedByEmail || null,
         });
       });
@@ -2238,10 +2356,185 @@ const TOOLS = [
       return textResult({
         revisionId: snap.id, target: v.target || null, name: v.name || null,
         projectId: v.projectId || null, docId: v.docId || null, interfaceId: v.interfaceId || null,
-        skillId: v.skillId || null,
+        skillId: v.skillId || null, conceptId: v.conceptId || null,
         replacedAt: tsToISO(v.replacedAt), replacedByEmail: v.replacedByEmail || null,
         contentMd: v.contentMd || "",
       });
+    },
+  },
+  // ── Concept Incubator ─────────────────────────────────────────────────────
+  // A concept (public/js/app.js's openConceptIncubatorPage/
+  // openConceptDetailPage, firestore.rules' `concepts/{conceptId}`) is the
+  // pre-project stage: a name plus README/Requirements/discussion, living in
+  // its own top-level collection precisely so it never appears on the
+  // pipeline board or in `projects` — see backlog-tracker/README.md's
+  // "Concept Incubator" section. Before this section existed, nothing here
+  // ever read or wrote the `concepts` collection at all, so a concept was
+  // invisible to every MCP client — list_projects only ever queries
+  // `projects`, and a concept doesn't become a project (with its own
+  // backlogItems) until someone promotes it. These tools give a concept the
+  // same "full read/write on its documentation" treatment `projects` already
+  // gets, without pretending it has a backlog — there is deliberately no
+  // list_backlog_items-style tool here, because a concept has no pipeline
+  // column to list. There is also deliberately no create_concept or
+  // promote_concept_to_project tool: this server has no create_project tool
+  // either, so a concept's container-level lifecycle (creating one,
+  // promoting it into a real project) stays a human action on the board,
+  // matching how a project itself is created.
+  {
+    name: "list_concepts",
+    description: "Every concept in the Concept Incubator — the pre-project stage, before something becomes a real tracked project. Use this to find the conceptId get_concept and the write tools below need.",
+    scope: "board.read",
+    inputSchema: {
+      type: "object",
+      properties: {
+        status: { type: "string", enum: ["active", "promoted"], description: "Restrict to one status. Omit to see both." },
+      },
+      additionalProperties: false,
+    },
+    async run(args) {
+      const a = args || {};
+      const snap = await db().collection("concepts").get();
+      const out = [];
+      snap.forEach((d) => {
+        const v = d.data() || {};
+        const status = v.status || "active";
+        if (a.status && status !== a.status) return;
+        out.push({
+          id: d.id,
+          name: v.name || "",
+          status,
+          promotedProjectId: v.promotedProjectId || null,
+          hasReadme: !!(v.readmeMd && v.readmeMd.trim()),
+          hasRequirements: !!(v.requirementsMd && v.requirementsMd.trim()),
+          commentCount: Array.isArray(v.comments) ? v.comments.length : 0,
+          createdByEmail: v.createdByEmail || null,
+          updatedAt: tsToISO(v.updatedAt),
+        });
+      });
+      out.sort((x, y) => x.name.localeCompare(y.name));
+      return textResult({ concepts: out });
+    },
+  },
+  {
+    name: "get_concept",
+    description: "One concept in full — README, Requirements, every discussion comment, and, if it's been promoted, the projectId it became (switch to get_project_docs/list_projects for that project from then on).",
+    scope: "board.read",
+    inputSchema: {
+      type: "object",
+      properties: { conceptId: { type: "string", description: "From list_concepts." } },
+      required: ["conceptId"], additionalProperties: false,
+    },
+    async run(args) {
+      const snap = await db().collection("concepts").doc(String(args.conceptId)).get();
+      if (!snap.exists) return toolError(`No concept with id ${args.conceptId}. Call list_concepts first.`);
+      const v = snap.data() || {};
+      return textResult({
+        id: snap.id,
+        name: v.name || "",
+        status: v.status || "active",
+        readmeMd: v.readmeMd || "",
+        requirementsMd: v.requirementsMd || "",
+        comments: (Array.isArray(v.comments) ? v.comments : []).map((c) => ({
+          author: c.author || "", text: c.text || "", at: tsToISO(c.at),
+        })),
+        promotedProjectId: v.promotedProjectId || null,
+        promotedAt: tsToISO(v.promotedAt),
+        createdByEmail: v.createdByEmail || null,
+        createdAt: tsToISO(v.createdAt),
+        updatedAt: tsToISO(v.updatedAt),
+      });
+    },
+  },
+  {
+    name: "add_concept_comment",
+    description: "Add a comment to a concept's discussion thread. It shows on the board's own thread, labelled with your email, exactly like a comment typed there. Works on a promoted concept too — discussion stays open even after the README/Requirements themselves become read-only.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        conceptId: { type: "string" },
+        text: { type: "string", description: "The comment. Up to 4000 characters." },
+      },
+      required: ["conceptId", "text"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const text = String(args.text || "").trim();
+      if (!text) return toolError("text is required.");
+      if (text.length > 4000) return toolError("A comment is limited to 4000 characters.");
+      const ref = db().collection("concepts").doc(String(args.conceptId));
+      const snap = await ref.get();
+      if (!snap.exists) return toolError(`No concept with id ${args.conceptId}. Call list_concepts first.`);
+      // A plain Date, not serverTimestamp() — same reason add_item_comment
+      // above uses one: Firestore rejects the sentinel inside arrayUnion.
+      await ref.update({
+        comments: FieldValue.arrayUnion({ author: session.email, text, at: new Date() }),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      await audit(session, "add_concept_comment", { conceptId: ref.id, chars: text.length });
+      return textResult({ added: true, conceptId: ref.id, author: session.email });
+    },
+  },
+  {
+    name: "set_concept_readme",
+    description: "Replace a concept's README markdown. Send the COMPLETE new document — this overwrites, it does not append. The previous version is kept in the revision history. Refused once the concept has been promoted — its Docs page is the source of truth from then on; use set_project_readme with promotedProjectId instead.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        conceptId: { type: "string", description: "From list_concepts." },
+        contentMd: { type: "string", description: `The whole document, markdown. Up to ${CONCEPT_MD_MAX} characters.` },
+      },
+      required: ["conceptId", "contentMd"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const conceptId = String(args.conceptId);
+      const md = String(args.contentMd == null ? "" : args.contentMd);
+      if (md.length > CONCEPT_MD_MAX) return toolError(`A concept README is limited to ${CONCEPT_MD_MAX} characters; that was ${md.length}.`);
+      const snap = await db().collection("concepts").doc(conceptId).get();
+      if (!snap.exists) return toolError(`No concept with id ${conceptId}. Call list_concepts first.`);
+      const c = snap.data() || {};
+      if ((c.status || "active") === "promoted") {
+        return toolError(`Concept ${conceptId} has already been promoted to project ${c.promotedProjectId || "(unknown)"}; its README is read-only from here on. Use set_project_readme on that project instead.`);
+      }
+      const before = c.readmeMd || "";
+      const revisionId = await recordDocRevision(session, "concept.readmeMd", { conceptId, name: c.name || "" }, before);
+      await db().collection("concepts").doc(conceptId).set(
+        { readmeMd: md, updatedAt: FieldValue.serverTimestamp() }, { merge: true },
+      );
+      await audit(session, "set_concept_readme", { conceptId, chars: md.length, replacedChars: before.length, revisionId });
+      return textResult({ updated: true, conceptId, chars: md.length, replacedChars: before.length, revisionId });
+    },
+  },
+  {
+    name: "set_concept_requirements",
+    description: "Replace a concept's Requirements markdown. Send the COMPLETE new document — this overwrites, it does not append. The previous version is kept in the revision history. Refused once the concept has been promoted — its Docs page is the source of truth from then on; use set_project_requirements with promotedProjectId instead.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        conceptId: { type: "string", description: "From list_concepts." },
+        contentMd: { type: "string", description: `The whole document, markdown. Up to ${CONCEPT_MD_MAX} characters.` },
+      },
+      required: ["conceptId", "contentMd"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const conceptId = String(args.conceptId);
+      const md = String(args.contentMd == null ? "" : args.contentMd);
+      if (md.length > CONCEPT_MD_MAX) return toolError(`Concept requirements are limited to ${CONCEPT_MD_MAX} characters; that was ${md.length}.`);
+      const snap = await db().collection("concepts").doc(conceptId).get();
+      if (!snap.exists) return toolError(`No concept with id ${conceptId}. Call list_concepts first.`);
+      const c = snap.data() || {};
+      if ((c.status || "active") === "promoted") {
+        return toolError(`Concept ${conceptId} has already been promoted to project ${c.promotedProjectId || "(unknown)"}; its Requirements are read-only from here on. Use set_project_requirements on that project instead.`);
+      }
+      const before = c.requirementsMd || "";
+      const revisionId = await recordDocRevision(session, "concept.requirementsMd", { conceptId, name: c.name || "" }, before);
+      await db().collection("concepts").doc(conceptId).set(
+        { requirementsMd: md, updatedAt: FieldValue.serverTimestamp() }, { merge: true },
+      );
+      await audit(session, "set_concept_requirements", { conceptId, chars: md.length, replacedChars: before.length, revisionId });
+      return textResult({ updated: true, conceptId, chars: md.length, replacedChars: before.length, revisionId });
     },
   },
   {
@@ -2997,6 +3290,7 @@ const SERVER_INSTRUCTIONS = [
   "You have full read/write access to project DOCUMENTATION and are expected to keep it current as you work: get_project_docs to read a project's Requirements, README, additional documents and interface contracts, then set_project_requirements / set_project_readme / create_project_document / update_project_document / create_interface / update_interface to update them.",
   "Documentation writes REPLACE the whole document, so read it first and send back the complete revised text — never a fragment. The version you replace is kept, and list_doc_revisions / get_doc_revision can recover it.",
   "Where a project's documentation also exists as a file in the repo (REQUIREMENTS.md, README.md, shared/interface-contract.md), the two are meant to match: update both, and treat a divergence as a bug in whichever is stale.",
+  "The Concept Incubator holds pre-project ideas that haven't been promoted to a tracked project yet — list_concepts / get_concept read them, and add_concept_comment / set_concept_readme / set_concept_requirements write to them, same read/write split as project documentation. A concept has no backlog of its own until it's promoted; once promoted, use list_projects/get_project_docs on the project it became instead.",
   "Use search_faq / get_faq_article to answer Personalisation Hub product questions from the published help centre instead of guessing.",
   "You can also write to the help centre: create_faq_article files a brand-new draft, and update_faq_article proposes a change to an existing one as a pendingRevision — never live. Either way a person still reviews and approves it in FAQ Management before anything publishes; list_pending_faq_revisions and get_faq_revision let you check on a proposal's status.",
   "There is also a shared, organisation-wide skills library — NOT scoped to any one project. list_skills / get_skill read it (any signed-in member, including a viewer); upload_skill / update_skill / delete_skill write to it (editor role). Use this to publish or fetch a reusable piece of packaged instructions any team member's agent can pull in, e.g. this console's own ph-designer front-end skill.",
@@ -3070,6 +3364,12 @@ async function dispatchRpc(msg, session, ctx) {
       if (tool.scope === "board.write" && !session.scopes.includes("board.write")) {
         return rpcResult(msg.id, toolError(
           `${session.email} has read-only access to the PH Agent Console, so ${tool.name} is not available. An admin can change the role to editor in the console's Settings → Team & agent access.`));
+      }
+      // A tool that can ship code (approve_deploy_to_main) is held to the
+      // admin role, over and above board.write: an editor's agent reading a
+      // ticket that says "now deploy" must not be able to.
+      if (tool.role && !atLeast(session.role, tool.role)) {
+        return rpcResult(msg.id, toolError(`${tool.name} requires the ${tool.role} role; ${session.email} is ${session.role}.`));
       }
       try {
         const result = await tool.run(params.arguments || {}, session);
@@ -3146,6 +3446,7 @@ async function requireConsoleUser(req, minRole) {
 // this once after such a sign-in and then force-refreshes its ID token.
 async function handleClaimsSync(req, res) {
   if (req.method !== "POST") return oauthError(res, 405, "invalid_request", "POST only");
+  if (rateLimited(req, "claims", 120)) return tooMany(res);
   const who = await requireConsoleUser(req);
   if (!who.ok) { res.status(who.status).json({ error: who.error }); return; }
   let changed = false;
@@ -3225,6 +3526,7 @@ async function handleMyConnections(req, res) {
 // reset email so they choose their own. Nobody ever emails a password.
 async function handleAdminProvision(req, res) {
   if (req.method !== "POST") { res.status(405).json({ error: "POST only" }); return; }
+  if (rateLimited(req, "provision", 30)) return tooMany(res);
   const who = await requireConsoleUser(req, "admin");
   if (!who.ok) { res.status(who.status).json({ error: who.error }); return; }
   const email = String((req.body || {}).email || "").trim().toLowerCase();
@@ -3274,10 +3576,22 @@ function routePath(req) {
   return p.length > 1 ? p.replace(/\/+$/, "") || "/" : "/";
 }
 
-exports.mcpServer = onRequest({ cors: false, timeoutSeconds: 120, memory: "256MiB", maxInstances: 20 }, async (req, res) => {
+// Runtime shape (27 Sep 2026): one vCPU with request concurrency, so one
+// instance serves many agents' tool calls at once instead of one at a time
+// — with the previous defaults (sub-vCPU, concurrency 1) twenty instances
+// was twenty simultaneous requests for the whole team, and every browser
+// sign-in queued behind them. minInstances stays 0: sign-in no longer waits
+// on this function (see public/js/auth-gate.js), so a cold start only ever
+// delays an agent's first call.
+exports.mcpServer = onRequest({ cors: false, timeoutSeconds: 120, memory: "512MiB", cpu: 1, concurrency: 40, maxInstances: 20 }, async (req, res) => {
   cors(req, res);
-  if (req.method === "OPTIONS") { res.status(204).send(""); return; }
   const path = routePath(req);
+  // The console-only endpoints are called from the console's own origin
+  // with a Firebase ID token; nothing cross-origin has any business here.
+  if (path === "/claims/sync" || path === "/me/connections" || path === "/admin/provision") {
+    res.set("Access-Control-Allow-Origin", PUBLIC_ORIGIN);
+  }
+  if (req.method === "OPTIONS") { res.status(204).send(""); return; }
   try {
     if (path.startsWith("/.well-known/oauth-protected-resource")) {
       res.status(200).set("Cache-Control", "public, max-age=300").json(protectedResourceMetadata());
@@ -3309,9 +3623,9 @@ exports.mcpServer = onRequest({ cors: false, timeoutSeconds: 120, memory: "256Mi
 // Exported for the unit tests in test/mcp-server.test.js — none of these
 // touch Firestore or Auth, so they can be checked without an emulator.
 exports.__test = {
-  routePath, redirectUriAllowed, generateTitle, suggestCategory, atLeast,
+  routePath, redirectUriAllowed, routineFireHostAllowed, redirectHostLabel, generateTitle, suggestCategory, atLeast,
   sha256b64url, authorizationServerMetadata, protectedResourceMetadata,
   TOOLS, CATEGORIES, STATUS_LABELS, SUPPORTED_PROTOCOL_VERSIONS, SERVER_ICONS,
-  PROJECT_WRITABLE_FIELDS, PROJECT_MD_MAX, DOC_MD_MAX, updateProjectFields,
+  PROJECT_WRITABLE_FIELDS, PROJECT_MD_MAX, DOC_MD_MAX, CONCEPT_MD_MAX, updateProjectFields,
   FAQ_TITLE_MAX, FAQ_SUMMARY_MAX, FAQ_BODY_MAX, FAQ_KEYWORDS_MAX, FAQ_REASON_MAX, FAQ_DOC_TYPES,
 };

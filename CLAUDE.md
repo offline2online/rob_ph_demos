@@ -13,6 +13,36 @@ This is a static site repository used to publish HTML and static resources (CSS,
 - `index.html` — Main entry point
 - Static assets (CSS, JS, images) go directly in the repo root or organized subdirectories
 
+## The offline2online.com WordPress site is an MCP server — `.mcp.json`
+
+`.mcp.json` at the repo root registers the Elementor MCP endpoint on
+offline2online.com (`https://offline2online.com/wp-json/elementor/mcp/`)
+as a project-scoped MCP server named `offline2online-elementor`, so a
+Claude Code session opened on this repo can drive that WordPress site.
+The file carries no credential: its `Authorization` header reads the
+`ELEMENTOR_MCP_AUTH` environment variable, which must hold the base64 of
+`<wp-username>:<application-password>` (spaces in the application
+password removed). **Never commit that value — this repo is public.**
+
+- **Cloud sessions**: set `ELEMENTOR_MCP_AUTH=<value>` in the cloud
+  environment's Environment variables (claude.ai/code → the cloud icon
+  above the message box → the settings icon on the environment), and set
+  its Network access to **Custom** with `offline2online.com` in Allowed
+  domains (tick "Also include default list of common package managers").
+  Sessions started afterwards pick both up. The Trusted default denies
+  the host — that is what a `403` on CONNECT from the agent proxy means.
+- **Local Claude Code**: export `ELEMENTOR_MCP_AUTH` in your shell
+  profile and approve the project server when Claude Code asks. A
+  user-scope server of the same name is shadowed by this one, so set
+  the variable rather than adding it again with `claude mcp add`.
+- Without the variable the server is inert: `claude mcp list` shows a
+  "Missing environment variables: ELEMENTOR_MCP_AUTH" warning and the
+  connection fails; nothing else breaks. That is also how to keep it
+  out of an environment (one a Routine runs in, say): don't set the
+  variable there.
+- Rotate or revoke the application password from the WordPress user's
+  profile → Application Passwords; the file needs no change.
+
 ## Cloud Functions need a separate manual deploy
 
 `menu-board-demo/functions/` (Cloud Functions for Firebase — the scheduled offer-expiry sweep, the AI provider calls) is **not** part of the static site. Pushing a change there to `main` does **not** make it live — GitHub Pages only serves the static HTML/JS/CSS, and this sandbox has no `firebase` CLI or deploy credentials, so **Claude cannot deploy a functions change itself**. Whoever owns Firebase deploy access needs to separately run `firebase deploy --only functions` (or `npm run deploy` inside `menu-board-demo/functions`) before a functions fix actually takes effect. Always say this explicitly when committing a functions/ change — don't imply "pushed to main" means "live" the way it does for everything else in this repo.
@@ -493,6 +523,19 @@ the ticket and in `mcpAuditLog`.
   save, so a person can always edit what an agent wrote). Keep the repo
   files (`REQUIREMENTS.md`, `README.md`, `shared/interface-contract.md`) in
   sync with these — a divergence is a bug in whichever is stale.
+- **The Concept Incubator (pre-project ideas, `concepts` collection —
+  separate from `projects` on purpose, see "Prototype Backlog" below) gets
+  the same read/write split, not the ticket split.** A concept has no
+  backlog of its own until someone promotes it to a real project, so there
+  is no `list_backlog_items`-shaped tool here. Read: `list_concepts`,
+  `get_concept`. Write: `add_concept_comment` (works even after promotion),
+  `set_concept_readme`/`set_concept_requirements` (refused once
+  `status` is `"promoted"` — the promoted project's own docs are the source
+  of truth from then on; use `set_project_readme`/`set_project_requirements`
+  on `promotedProjectId` instead). There is deliberately no
+  `create_concept` or `promote_concept_to_project` tool, matching there
+  being no `create_project` tool either — a project or concept's own
+  creation and promotion stay board/human actions.
 - **Nothing there deploys, merges, approves a ticket out of Ready for
   Testing, moves a card, writes a train field, fires Notify Claude, or
   triggers a campaign.** Campaign triggering stays on the triggered Routine
@@ -509,6 +552,17 @@ the ticket and in `mcpAuditLog`.
   that without saying so explicitly —
   `backlog-tracker/test/mcp-server.test.js` asserts the allowlist, the
   guard, and that no doc tool's schema can even express a train field.
+- **`backlog-tracker/SECURITY-PERFORMANCE.md`** (27 Sep 2026) is the
+  security and scalability review of the console for ~100 members: what
+  changed (sign-in resolves from the token claim first and never waits on
+  a Cloud Function; Routine bindings moved to the server-only
+  `routineBindings` collection; `approve_deploy_to_main` is admin-only;
+  human editors can't write a card's pipeline fields or delete a shipped
+  card; refresh-token reuse revokes the family; rate limits on the open
+  endpoints) and what is recommended next (moving `patchFiles` and the
+  project markdown off the documents every tab listens to, a persistent
+  local cache, lazy FAQ listeners). Read it before touching
+  `auth-gate.js`, `firestore.rules` or `mcp-server.js`.
 - **Not the same thing as `boardApi`/`BOARD_API_KEY`**, which is one shared
   secret standing in for the Routine's own automation and stays as it is.
   The MCP server is per-person, per-token and individually revocable.

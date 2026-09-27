@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "offline2online-elementor": {
+      "type": "http",
+      "url": "https://offline2online.com/wp-json/elementor/mcp/",
+      "headers": {
+        "Authorization": "Basic ${ELEMENTOR_MCP_AUTH}"
+      }
+    }
+  }
+}

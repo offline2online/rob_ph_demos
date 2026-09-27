@@ -268,6 +268,11 @@ in three files to add anyone.
 - **A signed-in person may always read their OWN row.** `auth-gate.js` has
   to check membership before it can know whether the caller is a member;
   without that self-read every new member sees "not on the list" forever.
+  Since 27 Sep 2026 the wall resolves in this order: the `consoleRole`
+  claim on the cached ID token (no network), then this self-read over REST,
+  then `POST /mcp/claims/sync` in the background; a listener refused by the
+  rules reloads to the wall with the claim ignored once, never in a loop.
+  Only admins may `list` the collection; any member may `get` a row.
 - Storage rules cannot read Firestore, so membership also rides as a custom
   auth claim (`consoleRole`, `consoleEditor`) kept in step by the
   `syncConsoleUserClaims` trigger and `POST /mcp/claims/sync`.
@@ -1823,7 +1828,9 @@ Three Cloud Functions, all in `backlog-tracker/functions/index.js`:
      (VNE6dxMu3h6jO3g6FNNB): before falling back to those two secrets, the
      shared `resolveRoutineCredentials(db, triggeredByEmail, sharedFireUrl,
      sharedToken)` (used by all three notify functions below) reads
-     `consoleUsers/{email}.routineFireUrl`/`.routineFireToken` for the
+     `routineBindings/{email}.fireUrl`/`.token` (server-only; a legacy
+     `consoleUsers/{email}.routineFireUrl`/`.routineFireToken` pair is
+     honoured once and migrated) for the
      member who clicked — `notifyRequestedByEmail` on this function,
      `deployNotifyRequestedByEmail`/`groomRequestedByEmail` on the other
      two, written by the board's own click handlers
@@ -2165,13 +2172,18 @@ Required properties, each covered by `test/mcp-server.test.js`:
 `get_approved_for_deployment_board`, `get_project_docs`,
 `list_doc_revisions`, `get_doc_revision`, `search_faq`, `get_faq_article`,
 `list_pending_faq_revisions`, `get_faq_revision`, `list_skills`, `get_skill`,
-`list_skill_misses`, `get_routine_setup_instructions`.
+`list_skill_misses`, `get_routine_setup_instructions`, `list_concepts`,
+`get_concept`.
 Write (editor/admin only) — tickets: `create_backlog_item` (always into
 `backlog`), `update_backlog_item` (title, desc, type, category only),
 `add_item_comment`; documentation: `set_project_requirements`,
 `set_project_readme`, `set_project_artifact`, `create_project_document`,
 `update_project_document`, `delete_project_document`, `create_interface`,
-`update_interface`, `delete_interface`; help centre: `create_faq_article`
+`update_interface`, `delete_interface`; Concept Incubator:
+`add_concept_comment`, `set_concept_readme`, `set_concept_requirements`
+(the last two refused once a concept's `status` is `"promoted"` — see
+"Concept Incubator page" and `concepts/{conceptId}` above); help centre:
+`create_faq_article`
 (always `status: "draft"`), `update_faq_article` (always a `pendingRevision`,
 never the live fields), `comment_on_faq_revision` — see "FAQ revision
 review" under "Functional requirements — FAQ / Help Center" below for what
@@ -2179,6 +2191,12 @@ these two collections' write tools do and don't do; skills library:
 `upload_skill`, `update_skill`, `delete_skill`, `report_skill_miss`,
 `mark_skill_reviewed`; your own routine binding: `set_my_routine_binding`;
 deploy (one deliberate exception — see below): `approve_deploy_to_main`.
+A concept has no `list_backlog_items`-shaped tool of its own — it has no
+`backlogItems` until it's promoted to a real project (see "Concept
+Incubator page" above), which is also why there is no `create_concept` or
+`promote_concept_to_project` tool: this server has no `create_project`
+tool either, so a project's or concept's own creation/promotion stays a
+board/human action.
 
 **The two `board.read` "board" tools above are also composable.**
 `get_ready_for_testing_board` and `get_approved_for_deployment_board`
@@ -2284,7 +2302,7 @@ one deliberate, narrowly-scoped exception each for firing and for changing
 what fires.** `set_my_routine_binding` (VNE6dxMu3h6jO3g6FNNB, see above)
 is the second: it changes which credentials a LATER click will use, but
 never fires anything itself. `approve_deploy_to_main`
-(`board.write`, editor/admin only) fires the exact same trigger the
+(`board.write` **and the `admin` role**, since 27 Sep 2026) fires the exact same trigger the
 console's own **Deploy to Main** button writes
 (`projects/{id}.deployNotifyRequestedAt`); it never merges anything
 itself — the existing Routine still verifies the train and the existing

@@ -71,6 +71,10 @@ function query(store, collection, filters = [], limit = null) {
   return {
     where(field, op, value) { return query(store, collection, filters.concat([{ field, op, value }]), limit); },
     limit(n) { return query(store, collection, filters, n); },
+    // Projections/ordering are accepted and ignored: the stub hands back
+    // whole documents, which is a superset of what the real call returns.
+    select() { return query(store, collection, filters, limit); },
+    orderBy() { return query(store, collection, filters, limit); },
     async get() {
       let rows = [...store.col(collection).entries()];
       for (const f of filters) {
@@ -161,6 +165,7 @@ function install() {
           authState.created.push(email);
           return u;
         },
+        async revokeRefreshTokens() {},
         async setCustomUserClaims(uid, claims) {
           for (const u of authState.users.values()) if (u.uid === uid) u.customClaims = claims;
         },

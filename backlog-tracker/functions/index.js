@@ -67,12 +67,45 @@ const CLAUDE_ROUTINE_TOKEN = defineSecret("CLAUDE_ROUTINE_TOKEN");
 // or when the click can't be attributed to anyone (a click made before this
 // existed, or a direct Firestore write bypassing the board UI) — so this is
 // purely additive, never a new way for a click to silently do nothing.
+// Only ever POST the fire text — it carries board credentials — to
+// Anthropic's Routine API. Mirrors mcp-server.js's routineFireHostAllowed;
+// a binding stored before that check existed is refused here too.
+function routineFireHostAllowed(fireUrl) {
+  try { const u = new URL(String(fireUrl || "")); return u.protocol === "https:" && u.hostname.toLowerCase() === "api.anthropic.com"; }
+  catch { return false; }
+}
+
 async function resolveRoutineCredentials(db, triggeredByEmail, sharedFireUrl, sharedToken) {
   if (triggeredByEmail) {
+    const email = String(triggeredByEmail).toLowerCase();
     try {
-      const snap = await db.collection("consoleUsers").doc(String(triggeredByEmail).toLowerCase()).get();
+      // routineBindings/{email} is the server-only home for a member's
+      // Routine trigger (27 Sep 2026); consoleUsers.routineFire* is where
+      // it used to live, readable by every member. A binding still found
+      // there is honoured once, moved, and scrubbed from the old place.
+      const bindingSnap = await db.collection("routineBindings").doc(email).get();
+      const b = bindingSnap.exists ? bindingSnap.data() : null;
+      if (b && b.fireUrl && b.token) {
+        if (!routineFireHostAllowed(b.fireUrl)) {
+          logger.warn("member routine binding refused — fire URL host not allowed; using the shared Routine", { email });
+          return { fireUrl: sharedFireUrl, token: sharedToken, via: "shared" };
+        }
+        return { fireUrl: b.fireUrl, token: b.token, via: "member" };
+      }
+      const snap = await db.collection("consoleUsers").doc(email).get();
       const d = snap.exists ? snap.data() : null;
       if (d && d.routineFireUrl && d.routineFireToken) {
+        try {
+          await db.collection("routineBindings").doc(email).set({ email, fireUrl: d.routineFireUrl, token: d.routineFireToken, boundAt: d.routineBoundAt || null, migratedAt: new Date() });
+          await db.collection("consoleUsers").doc(email).set({ routineFireUrl: null, routineFireToken: null, routineBoundAt: null }, { merge: true });
+          logger.info("member routine binding migrated to routineBindings", { email });
+        } catch (err) {
+          logger.warn("could not migrate legacy routine binding", { email, error: err instanceof Error ? err.message : String(err) });
+        }
+        if (!routineFireHostAllowed(d.routineFireUrl)) {
+          logger.warn("legacy member routine binding refused — fire URL host not allowed; using the shared Routine", { email });
+          return { fireUrl: sharedFireUrl, token: sharedToken, via: "shared" };
+        }
         return { fireUrl: d.routineFireUrl, token: d.routineFireToken, via: "member" };
       }
     } catch (err) {
@@ -904,14 +937,17 @@ exports.onBacklogItemPublishedLive = onDocumentUpdated(
       return;
     }
 
-    const batch = db.batch();
-    toFlag.forEach((articleDoc) => {
-      batch.set(articleDoc.ref, {
-        needsReview: true,
-        updatedAt: new Date(),
-      }, { merge: true });
-    });
-    await batch.commit();
+    // Chunked: a Firestore batch takes at most 500 writes.
+    for (let i = 0; i < toFlag.length; i += 400) {
+      const batch = db.batch();
+      toFlag.slice(i, i + 400).forEach((articleDoc) => {
+        batch.set(articleDoc.ref, {
+          needsReview: true,
+          updatedAt: new Date(),
+        }, { merge: true });
+      });
+      await batch.commit();
+    }
 
     logger.info("Flagged linked FAQ articles for review after merge to main", {
       itemId,
@@ -1467,11 +1503,30 @@ function boardApiPathAllowed(pathname, body) {
   return BOARD_API_COLLECTIONS.includes(first);
 }
 
-exports.boardApi = onRequest({ secrets: [BOARD_API_KEY], cors: false, timeoutSeconds: 60 }, async (req, res) => {
+// Wrong-key attempts per address, per instance: the key is a long random
+// secret, but nothing used to stop someone trying at the function's full
+// throughput. 20 misses in ten minutes and that address waits.
+const boardApiMisses = new Map();
+function boardApiThrottled(req) {
+  const ip = String(req.get("x-forwarded-for") || "").split(",")[0].trim() || req.ip || "unknown";
+  const now = Date.now();
+  const entry = boardApiMisses.get(ip);
+  return !!(entry && entry.count >= 20 && entry.resetAt > now);
+}
+function boardApiNoteMiss(req) {
+  const ip = String(req.get("x-forwarded-for") || "").split(",")[0].trim() || req.ip || "unknown";
+  const now = Date.now();
+  let entry = boardApiMisses.get(ip);
+  if (!entry || entry.resetAt <= now) { entry = { count: 0, resetAt: now + 10 * 60 * 1000 }; boardApiMisses.set(ip, entry); }
+  entry.count += 1;
+}
+
+exports.boardApi = onRequest({ secrets: [BOARD_API_KEY], cors: false, timeoutSeconds: 60, maxInstances: 10 }, async (req, res) => {
   const configured = BOARD_API_KEY.value();
   const presented = req.get("x-board-key") || "";
   if (!configured || configured === "unset") { res.status(503).json({ error: "boardApi is not configured (BOARD_API_KEY unset)" }); return; }
-  if (!presented || !timingSafeEqual(presented, configured)) { res.status(401).json({ error: "missing or invalid X-Board-Key" }); return; }
+  if (boardApiThrottled(req)) { res.status(429).set("Retry-After", "600").json({ error: "too many failed attempts — try again later" }); return; }
+  if (!presented || !timingSafeEqual(presented, configured)) { boardApiNoteMiss(req); res.status(401).json({ error: "missing or invalid X-Board-Key" }); return; }
   if (!["GET", "POST", "PATCH", "DELETE"].includes(req.method)) { res.status(405).json({ error: "method not allowed" }); return; }
   // Depending on which URL form invoked us the function name may or may not
   // still be on the path; normalise so both work.

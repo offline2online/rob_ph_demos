@@ -87,7 +87,8 @@ empty or mis-edited collection can never lock everyone out.
 `get_approved_for_deployment_board`, `get_project_docs`,
 `list_doc_revisions`, `get_doc_revision`, `search_faq`, `get_faq_article`,
 `list_pending_faq_revisions`, `get_faq_revision`, `list_skills`,
-`get_skill`, `list_skill_misses`, `get_routine_setup_instructions`.
+`get_skill`, `list_skill_misses`, `get_routine_setup_instructions`,
+`list_concepts`, `get_concept`.
 
 `get_ready_for_testing_board` and `get_approved_for_deployment_board` are
 **composable** — alongside the usual JSON they return an embedded HTML
@@ -109,6 +110,7 @@ whole train is ready for it.
 | `add_item_comment` | `set_project_artifact` | `comment_on_faq_revision` | `delete_skill` | | |
 | | `create_project_document` / `update_project_document` / `delete_project_document` | | `report_skill_miss` (tags a real gap, never edits the skill's own content) | | |
 | | `create_interface` / `update_interface` / `delete_interface` | | | | |
+| | `add_concept_comment` / `set_concept_readme` / `set_concept_requirements` (Concept Incubator; the last two refused once a concept is promoted) | | | | |
 
 **Setting up your own personal Notify Claude Routine** (so board clicks you
 make fire a session under your own Claude account instead of the one
@@ -127,10 +129,16 @@ Pass both as `""` to clear your binding and go back to the shared token.
 `functions/index.js`'s `resolveRoutineCredentials` checks the clicking
 member's binding first on every Notify Claude / Notify Claude — Deploy /
 Groom Backlog click, falling back to the shared `CLAUDE_ROUTINE_FIRE_URL`/
-`CLAUDE_ROUTINE_TOKEN` secrets when they have none.
+`CLAUDE_ROUTINE_TOKEN` secrets when they have none. The binding lives in
+`routineBindings/{email}` (server-only: `allow read, write: if false`) and
+its fire URL must be on `api.anthropic.com` — until 27 Sep 2026 it lived on
+`consoleUsers`, which every member could read, and any `https://` host was
+accepted (see `SECURITY-PERFORMANCE.md`).
 
 **`approve_deploy_to_main` is a deliberate, narrowly-scoped exception to
-"nothing here deploys" (below), not a loosening of it.** It fires the exact
+"nothing here deploys" (below), not a loosening of it — and since 27 Sep
+2026 it requires the `admin` role, not just `board.write`: an editor's
+agent reading a ticket that says "now deploy" must not be able to.** It fires the exact
 same trigger the console's own **Deploy to Main** button writes
 (`projects/{id}.deployNotifyRequestedAt`) — it never merges anything
 itself; the existing Routine still verifies the train and the existing
@@ -155,6 +163,25 @@ recoverable the same way as a documentation write — `list_doc_revisions`
 takes an optional `skillId` filter alongside `projectId`/`docId`/
 `interfaceId`. Each file is `{path, content}`; a skill holds 1–20 files,
 each up to 100,000 characters (`SKILL_FILE_MAX`).
+
+**The Concept Incubator gets the same "documentation, full read/write" tools
+a project does, but no ticket-shaped tools at all.** A concept
+(`concepts/{conceptId}`) is the pre-project stage — a name plus
+README/Requirements/discussion — and has no `backlogItems` of its own until
+someone promotes it, so there is deliberately no `list_backlog_items`- or
+`create_backlog_item`-shaped tool for it. `list_concepts`/`get_concept` read
+it; `add_concept_comment` posts to its discussion thread (works even after
+promotion); `set_concept_readme`/`set_concept_requirements` replace its
+docs the same way `set_project_readme`/`set_project_requirements` do,
+including the same `list_doc_revisions`/`get_doc_revision` recovery path
+(pass `conceptId` instead of `projectId`) — except both are refused once
+`status` is `"promoted"`, matching the console's own read-only view of a
+promoted concept: from that point `promotedProjectId` is the real project,
+and its own documentation tools are the ones to use. There is also
+deliberately no `create_concept` or `promote_concept_to_project` tool —
+this server has no `create_project` tool either, so a concept's or
+project's own container-level lifecycle stays a board/human action, not
+something an agent can do unattended.
 
 **The help centre tools never publish anything.** `create_faq_article`
 always writes `status: "draft"`; `update_faq_article` always writes a
@@ -323,9 +350,14 @@ accounts. Membership therefore also rides as a custom auth claim
 (`consoleRole`, `consoleEditor`), kept in step by:
 
 - `syncConsoleUserClaims`, a Firestore trigger on `consoleUsers/{email}`, and
-- `POST /mcp/claims/sync`, which `auth-gate.js` calls on every sign-in and
-  which repairs the claim for someone added before they had an Auth account
-  at all — then force-refreshes their ID token so Storage sees it at once.
+- `POST /mcp/claims/sync`, which `auth-gate.js` calls **in the background**
+  after every sign-in (since 27 Sep 2026 — it used to block the board, and
+  a cold start of this function was the "signed in but stuck until I
+  reload" report; see `SECURITY-PERFORMANCE.md`). It repairs the claim for
+  someone added before they had an Auth account at all, then the wall
+  force-refreshes their ID token so Storage sees it at once. The wall
+  itself decides from the cached `consoleRole` claim first, then the
+  person's own `consoleUsers` row over REST.
 
 A claim can be up to an hour stale after a role change. That only ever
 delays *granting* something: removal is enforced by the Firestore membership
@@ -342,7 +374,7 @@ read and by the MCP server's own per-call check, neither of which is cached.
 | `firebase.json` | hosting rewrites putting it at `/mcp` and the two `/.well-known` paths |
 | `firestore.rules` | `consoleUsers` membership model; `mcp*` collections denied to every client |
 | `storage.rules` | the `consoleEditor` claim check |
-| `public/js/auth-gate.js` | the console's own sign-in wall, now membership-based, with password sign-in |
+| `public/js/auth-gate.js` | the console's own sign-in wall — claim-first, own-row fallback, claim sync in the background, password sign-in (`test/auth-gate.test.mjs`) |
 | `public/js/app.js` | Settings → Team & agent access, and Connect your AI agent |
 | `test/mcp-server.test.js` | in-process test of the whole flow, no emulator needed (`npm run test:mcp` in `test/`) |
 | `test/mcp-client.test.mjs` | the real MCP client SDK against the real server over HTTP (`npm run test:client`) |
