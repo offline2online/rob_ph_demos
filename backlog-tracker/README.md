@@ -777,7 +777,7 @@ replaced in `docRevisions`, so a bad write or a delete is recoverable.
 
 **No tool merges, approves a ticket out of Ready for Testing, or moves a
 card's status — with one deliberate, narrowly-scoped exception.**
-`approve_deploy_to_main` (editor/admin only) fires the exact same trigger
+`approve_deploy_to_main` (admin only, since 27 Sep 2026) fires the exact same trigger
 the console's own **Deploy to Main** button writes; it never merges
 anything itself, and only when every ticket on the project's train is
 already Approved for Deployment and Ready for Testing is empty for it —
@@ -1206,10 +1206,12 @@ usage. An engineer can instead register their own Routine, so board clicks
    bootstrap uses), plus where to find that Routine's own API trigger fire
    URL and token once you add one.
 2. Call `set_my_routine_binding` with that `fireUrl`/`token`. This is
-   **write-only** — stored on `consoleUsers/{email}.routineFireUrl` /
-   `.routineFireToken`, and no tool or UI, including `whoami`, ever reads
-   them back; `whoami`'s `hasRoutineBinding` only ever says whether one is
-   set. Pass both as `""` to clear it and go back to the shared secrets.
+   **write-only** — stored in `routineBindings/{email}` (a collection no
+   client can read or write; until 27 Sep 2026 it sat on `consoleUsers`,
+   which every member could read), and no tool or UI, including `whoami`,
+   ever reads it back; `whoami`'s `hasRoutineBinding` only ever says
+   whether one is set. The fire URL must be on `api.anthropic.com`. Pass
+   both as `""` to clear it and go back to the shared secrets.
 
 `functions/index.js`'s `resolveRoutineCredentials` — shared by all three
 fire functions — checks the clicking member's binding
@@ -1806,7 +1808,11 @@ the full behavior.
   hard-coded allowlist.~~ **It is behind a real, managed member list**
   (September 2026): `public/js/auth-gate.js` shows a sign-in wall — Google
   or email + password — and only imports `app.js` once the account resolves
-  to a `consoleUsers` membership doc; `firestore.rules` (`isBoardReader` /
+  to a `consoleUsers` membership doc (from the ID token's `consoleRole`
+  claim first, then the person's own row over REST, with the claim-repair
+  function in the background — so a reload lands on the board's own shell,
+  never the card, and sign-in never waits on a cold start; see
+  `SECURITY-PERFORMANCE.md` §1 and `test/auth-gate.test.mjs`); `firestore.rules` (`isBoardReader` /
   `isEditor` / `isAdmin`) reads that same doc for every read and write of
   the board's collections, and `storage.rules` checks the `consoleEditor`
   custom claim kept in step with it. Admins add and remove people from

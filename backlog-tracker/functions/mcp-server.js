@@ -127,6 +127,12 @@ function escapeHTML(s) {
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
+// The host a consent will send its code back to — shown on the consent
+// card so a registered-by-anyone client can't hide behind a friendly name.
+function redirectHostLabel(uri) {
+  try { const u = new URL(String(uri || "")); return u.protocol === "https:" || u.protocol === "http:" ? u.host : `${u.protocol}//`; }
+  catch { return "unknown"; }
+}
 // JSON destined for a <script> block: close out "</script>" and friends so
 // a value can never end the element it lives in.
 function jsonForScript(value) {
@@ -152,6 +158,43 @@ function cors(req, res) {
 
 function oauthError(res, status, error, description) {
   res.status(status).json({ error, error_description: description });
+}
+
+// Per-instance, per-IP fixed-window rate limit for the endpoints anyone on
+// the internet can reach without a credential (client registration above
+// all, which writes a Firestore doc per call). Instance-local by design:
+// with maxInstances capped, "N per window per instance" is still a hard
+// ceiling on what an attacker can make us write, and it costs no reads.
+const RATE_WINDOW_MS = 10 * 60 * 1000;
+const rateBuckets = new Map();
+function clientIp(req) {
+  const fwd = String(req.get("x-forwarded-for") || "").split(",")[0].trim();
+  return fwd || req.ip || "unknown";
+}
+function rateLimited(req, bucket, max) {
+  const key = `${bucket}:${clientIp(req)}`;
+  const now = Date.now();
+  let entry = rateBuckets.get(key);
+  if (!entry || entry.resetAt <= now) { entry = { count: 0, resetAt: now + RATE_WINDOW_MS }; rateBuckets.set(key, entry); }
+  entry.count += 1;
+  if (rateBuckets.size > 5000) {
+    for (const [k, v] of rateBuckets) if (v.resetAt <= now) rateBuckets.delete(k);
+  }
+  return entry.count > max;
+}
+function tooMany(res) {
+  res.status(429).set("Retry-After", "600").json({ error: "rate_limited", error_description: "too many requests from this address — try again in a few minutes" });
+}
+
+// A personal Routine's fire URL receives the fire text — which includes the
+// board's automation credentials — so it may only ever point at Anthropic's
+// Routine API. Anything else would be an editor handing themselves the key.
+const ROUTINE_FIRE_HOSTS = ["api.anthropic.com"];
+function routineFireHostAllowed(fireUrl) {
+  try {
+    const u = new URL(String(fireUrl || ""));
+    return u.protocol === "https:" && ROUTINE_FIRE_HOSTS.includes(u.hostname.toLowerCase());
+  } catch { return false; }
 }
 
 // ── who may connect, and as what ──────────────────────────────────────────
@@ -212,6 +255,16 @@ exports.syncConsoleUserClaims = onDocumentWritten("consoleUsers/{userEmail}", as
     if (role) { claims.consoleRole = role; claims.consoleEditor = atLeast(role, "editor"); }
     else { delete claims.consoleRole; delete claims.consoleEditor; }
     await adminAuth().setCustomUserClaims(user.uid, claims);
+    if (!role) {
+      // Removing the claim alone left the person's existing ID token — and
+      // with it storage.rules access — valid for up to an hour. Revoking
+      // their refresh tokens ends the browser session at the next token
+      // refresh (the SDK refreshes within minutes), and every endpoint here
+      // verifies with checkRevoked so an MCP consent can't ride it either.
+      try { await adminAuth().revokeRefreshTokens(user.uid); } catch (err) {
+        logger.warn("could not revoke refresh tokens for removed member", { email, error: String(err) });
+      }
+    }
     logger.info("console claim synced", { email, role: role || "(removed)" });
   } catch (err) {
     // No Auth account yet is the normal case for someone invited before
@@ -290,6 +343,7 @@ function redirectUriAllowed(uri) {
 
 async function handleRegister(req, res) {
   if (req.method !== "POST") return oauthError(res, 405, "invalid_request", "POST only");
+  if (rateLimited(req, "register", 30)) return tooMany(res);
   const body = req.body || {};
   const uris = Array.isArray(body.redirect_uris) ? body.redirect_uris : [];
   if (!uris.length) return oauthError(res, 400, "invalid_redirect_uri", "redirect_uris is required");
@@ -417,7 +471,7 @@ function authorizePageHTML(params, client) {
   <p class="muted small">Sign in with the same Personalisation Hub account you use for the PH Agent Console. Your agent never sees your password.</p>
 
   <div class="client">
-    <strong>${escapeHTML(client.clientName || "An MCP client")}</strong>
+    <strong>${escapeHTML(client.clientName || "An MCP client")}</strong> <span class="muted">(${escapeHTML(redirectHostLabel(params.redirect_uri))})</span>
     <span class="muted small">wants to use the PH Agent Console as a tool</span>
     <ul class="perms">
       <li>Read your projects, backlog tickets and help-centre articles</li>
@@ -572,6 +626,11 @@ async function handleAuthorize(req, res) {
   res.status(200)
     .set("Content-Type", "text/html; charset=utf-8")
     .set("Cache-Control", "no-store")
+    // The consent page shows "Signed in as … Connect" to anyone with a
+    // console session; framed by an attacker's page, that button could be
+    // overlaid and clicked into a client they registered.
+    .set("X-Frame-Options", "DENY")
+    .set("Content-Security-Policy", "frame-ancestors 'none'")
     .send(authorizePageHTML(p, client));
 }
 
@@ -623,7 +682,7 @@ async function handleAuthorizeComplete(req, res) {
     redirectUri: String(b.redirectUri),
     codeChallenge: String(b.codeChallenge),
     scope: granted.join(" "),
-    resource: b.resource ? String(b.resource) : RESOURCE_URL,
+    resource: RESOURCE_URL,
     email: user.email,
     uid: decoded.uid,
     role: user.role,
@@ -666,6 +725,11 @@ async function issueTokens(grant) {
     role: grant.role,
     scope: grant.scope,
     resource: grant.resource || RESOURCE_URL,
+    // Every token descended from one authorization shares a family id, so
+    // a replayed (already rotated) refresh token can take the whole family
+    // with it — OAuth 2.1 §4.3.1 — instead of just failing quietly.
+    familyId: grant.familyId || newSecret("mcpf"),
+    revoked: false,
     createdAt: FieldValue.serverTimestamp(),
   };
   const batch = db().batch();
@@ -707,6 +771,7 @@ async function handleToken(req, res) {
         if (d.expiresAt < nowSeconds()) throw new Error("invalid_grant:code expired");
         if (d.clientId !== clientId) throw new Error("invalid_grant:code was issued to a different client");
         if (b.redirect_uri && String(b.redirect_uri) !== d.redirectUri) throw new Error("invalid_grant:redirect_uri mismatch");
+            if (verifier.length < 43 || verifier.length > 128) throw new Error("invalid_grant:code_verifier must be 43–128 characters (RFC 7636)");
         if (!constantTimeEqual(sha256b64url(verifier), d.codeChallenge)) throw new Error("invalid_grant:PKCE verification failed");
         tx.update(ref, { used: true, usedAt: FieldValue.serverTimestamp() });
         return d;
@@ -732,28 +797,63 @@ async function handleToken(req, res) {
     const token = String(b.refresh_token || "");
     if (!token) return oauthError(res, 400, "invalid_request", "refresh_token is required");
     const ref = db().collection("mcpTokens").doc(hashToken(token));
-    const snap = await ref.get();
-    if (!snap.exists) return oauthError(res, 400, "invalid_grant", "unknown refresh token");
-    const d = snap.data();
-    if (d.type !== "refresh") return oauthError(res, 400, "invalid_grant", "not a refresh token");
-    if (d.revoked) return oauthError(res, 400, "invalid_grant", "refresh token was revoked");
-    if (d.expiresAt < nowSeconds()) return oauthError(res, 400, "invalid_grant", "refresh token expired");
-    if (b.client_id && String(b.client_id) !== d.clientId) return oauthError(res, 400, "invalid_grant", "refresh token belongs to a different client");
+    let d;
+    try {
+      // Rotation is a single transaction: two concurrent refreshes with the
+      // same token cannot both pass the revoked check, so one token yields
+      // exactly one successor.
+      d = await db().runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        if (!snap.exists) throw new Error("invalid_grant:unknown refresh token");
+        const cur = snap.data();
+        if (cur.type !== "refresh") throw new Error("invalid_grant:not a refresh token");
+        if (cur.revoked) throw new Error(cur.revokedReason === "rotated" ? "reuse:" : "invalid_grant:refresh token was revoked");
+        if (cur.expiresAt < nowSeconds()) throw new Error("invalid_grant:refresh token expired");
+        if (b.client_id && String(b.client_id) !== cur.clientId) throw new Error("invalid_grant:refresh token belongs to a different client");
+        tx.update(ref, { revoked: true, revokedAt: FieldValue.serverTimestamp(), revokedReason: "rotated" });
+        return cur;
+      });
+    } catch (err) {
+      const msg = String(err && err.message ? err.message : err);
+      if (msg.startsWith("reuse:")) {
+        // An already-rotated token came back: either the legitimate client
+        // lost the response, or someone else holds a copy. Both are answered
+        // the same way — the whole family is revoked and everyone re-signs.
+        try {
+          const cur = (await ref.get()).data() || {};
+          if (cur.familyId) await revokeTokenFamily(cur.familyId, "refresh token reuse");
+          logger.warn("refresh token reuse detected — family revoked", { email: cur.email, clientId: cur.clientId });
+        } catch (e) { logger.error("family revoke failed", { error: String(e) }); }
+        return oauthError(res, 400, "invalid_grant", "refresh token was already used and is now revoked, with every token issued from it — sign in again");
+      }
+      if (msg.startsWith("invalid_grant:")) return oauthError(res, 400, "invalid_grant", msg.slice(14));
+      logger.error("refresh failed", { error: msg });
+      return oauthError(res, 500, "server_error", "could not rotate the token");
+    }
     const user = await resolveConsoleUser(d.email);
     if (!user || !user.mcpEnabled) return oauthError(res, 400, "invalid_grant", "that account no longer has agent access");
-    // Rotate: the presented refresh token dies with the response that
-    // replaces it, so a stolen one is usable at most once and its use is
-    // visible as the legitimate holder suddenly being logged out.
-    await ref.update({ revoked: true, revokedAt: FieldValue.serverTimestamp(), revokedReason: "rotated" });
     let scope = d.scope || SCOPES.join(" ");
     if (!atLeast(user.role, "editor")) scope = scope.split(/\s+/).filter((s) => s !== "board.write").join(" ");
     res.set("Cache-Control", "no-store");
     return res.status(200).json(await issueTokens({
-      clientId: d.clientId, email: user.email, uid: d.uid, role: user.role, scope, resource: d.resource,
+      clientId: d.clientId, email: user.email, uid: d.uid, role: user.role, scope, resource: d.resource, familyId: d.familyId,
     }));
   }
 
   return oauthError(res, 400, "unsupported_grant_type", `unsupported grant_type: ${grantType || "(none)"}`);
+}
+
+async function revokeTokenFamily(familyId, reason) {
+  const snap = await db().collection("mcpTokens").where("familyId", "==", familyId).limit(500).get();
+  let batch = db().batch();
+  let pending = 0;
+  for (const doc of snap.docs) {
+    const d = doc.data() || {};
+    if (d.revoked && d.revokedReason !== "rotated") continue;
+    batch.update(doc.ref, { revoked: true, revokedAt: FieldValue.serverTimestamp(), revokedReason: reason });
+    if (++pending >= 400) { await batch.commit(); batch = db().batch(); pending = 0; }
+  }
+  if (pending) await batch.commit();
 }
 
 // ── /revoke (RFC 7009) ────────────────────────────────────────────────────
@@ -1354,7 +1454,11 @@ const TOOLS = [
       // project token doesn't need to be reminded on every whoami call.
       const selfSnap = await db().collection("consoleUsers").doc(session.email).get();
       const selfData = selfSnap.exists ? selfSnap.data() || {} : {};
-      const hasRoutineBinding = !!(selfData.routineFireUrl && selfData.routineFireToken);
+      const bindingSnap = await db().collection("routineBindings").doc(session.email).get();
+      const binding = bindingSnap.exists ? bindingSnap.data() || {} : {};
+      // Legacy location (consoleUsers.routineFire*) is still honoured until
+      // functions/index.js's lazy migration has moved it.
+      const hasRoutineBinding = !!((binding.fireUrl && binding.token) || (selfData.routineFireUrl && selfData.routineFireToken));
       return textResult({
         email: session.email,
         displayName: session.displayName || null,
@@ -1426,16 +1530,20 @@ const TOOLS = [
       if (!clearing) {
         if (!fireUrl || !token) return toolError("Pass both fireUrl and token, or both as \"\" to clear your binding.");
         if (!/^https:\/\//.test(fireUrl)) return toolError("fireUrl must be an https:// URL.");
+        if (!routineFireHostAllowed(fireUrl)) return toolError("fireUrl must be a Claude Routine API trigger on api.anthropic.com — the console will only ever POST the fire text (which carries board credentials) there.");
+        if (fireUrl.length > 2000 || token.length > 512) return toolError("fireUrl or token is longer than expected.");
         if (token.length < 8) return toolError("That doesn't look like a real token.");
       }
-      // null, not FieldValue.delete() — same convention functions/index.js's
-      // promoteFaqRevisionIfReady already follows: null is what
-      // hasRoutineBinding (whoami) and resolveRoutineCredentials both
-      // already treat as "no binding", and it's simpler to query against.
+      // routineBindings/{email} is readable and writable by nobody but the
+      // server (firestore.rules `allow read, write: if false`). It used to
+      // live on consoleUsers, which every member could read — so every
+      // member could read every other member's Routine bearer token.
+      const bindingRef = db().collection("routineBindings").doc(session.email);
+      if (clearing) await bindingRef.delete();
+      else await bindingRef.set({ email: session.email, fireUrl, token, boundAt: FieldValue.serverTimestamp() });
+      // And make sure no copy lingers in the old, member-readable place.
       await db().collection("consoleUsers").doc(session.email).set({
-        routineFireUrl: clearing ? null : fireUrl,
-        routineFireToken: clearing ? null : token,
-        routineBoundAt: clearing ? null : FieldValue.serverTimestamp(),
+        routineFireUrl: null, routineFireToken: null, routineBoundAt: null,
       }, { merge: true });
       // The token itself is deliberately never written to the audit log —
       // same "never echoed back" care as the response below.
@@ -1689,7 +1797,7 @@ const TOOLS = [
       const a = args || {};
       const projects = await loadProjectsById();
       if (a.projectId && !projects.has(String(a.projectId))) return toolError(`No project with id ${a.projectId}. Call list_projects first.`);
-      let q = db().collection("backlogItems");
+      let q = db().collection("backlogItems").where("status", "==", "ready-for-testing");
       if (a.projectId) q = q.where("projectId", "==", String(a.projectId));
       const snap = await q.limit(MAX_READ_DOCS).get();
       const rows = [];
@@ -1748,7 +1856,7 @@ const TOOLS = [
       const a = args || {};
       const projects = await loadProjectsById();
       if (a.projectId && !projects.has(String(a.projectId))) return toolError(`No project with id ${a.projectId}. Call list_projects first.`);
-      let q = db().collection("backlogItems");
+      let q = db().collection("backlogItems").where("status", "==", "ready-to-publish");
       if (a.projectId) q = q.where("projectId", "==", String(a.projectId));
       const snap = await q.limit(MAX_READ_DOCS).get();
       const rows = [];
@@ -1822,7 +1930,8 @@ const TOOLS = [
   // console's own button would currently be hiding.
   {
     name: "approve_deploy_to_main",
-    description: "Fire this project's Deploy to Main trigger — exactly the same action as clicking the board's own 'Deploy to Main' button. It does not merge anything itself: it only fires the existing Routine, which verifies the train and the existing pipeline then merges it. Only offered when every ticket on this project's deployment train is already Approved for Deployment and Ready for Testing is empty for it — the same condition that shows the console's own button — and refuses otherwise, naming what's blocking it. Logged to mcpAuditLog under your email.",
+    role: "admin",
+    description: "ADMIN ONLY. Fire this project's Deploy to Main trigger — exactly the same action as clicking the board's own 'Deploy to Main' button. It does not merge anything itself: it only fires the existing Routine, which verifies the train and the existing pipeline then merges it. Only offered when every ticket on this project's deployment train is already Approved for Deployment and Ready for Testing is empty for it — the same condition that shows the console's own button — and refuses otherwise, naming what's blocking it. Logged to mcpAuditLog under your email.",
     scope: "board.write",
     inputSchema: {
       type: "object",
@@ -2206,7 +2315,10 @@ const TOOLS = [
       else if (a.interfaceId) q = q.where("interfaceId", "==", String(a.interfaceId));
       else if (a.skillId) q = q.where("skillId", "==", String(a.skillId));
       else if (a.projectId) q = q.where("projectId", "==", String(a.projectId));
-      const snap = await q.limit(MAX_READ_DOCS).get();
+      // select(): contentMd (up to 200k chars a row) never leaves Firestore
+      // for a listing — with a few hundred revisions the unmasked read was
+      // enough to exhaust a 256 MiB instance. get_doc_revision fetches one.
+      const snap = await q.select("target", "name", "projectId", "docId", "interfaceId", "skillId", "chars", "replacedAt", "replacedByEmail", "replacedVia").limit(MAX_READ_DOCS).get();
       const rows = [];
       snap.forEach((d) => {
         const v = d.data() || {};
@@ -3071,6 +3183,12 @@ async function dispatchRpc(msg, session, ctx) {
         return rpcResult(msg.id, toolError(
           `${session.email} has read-only access to the PH Agent Console, so ${tool.name} is not available. An admin can change the role to editor in the console's Settings → Team & agent access.`));
       }
+      // A tool that can ship code (approve_deploy_to_main) is held to the
+      // admin role, over and above board.write: an editor's agent reading a
+      // ticket that says "now deploy" must not be able to.
+      if (tool.role && !atLeast(session.role, tool.role)) {
+        return rpcResult(msg.id, toolError(`${tool.name} requires the ${tool.role} role; ${session.email} is ${session.role}.`));
+      }
       try {
         const result = await tool.run(params.arguments || {}, session);
         return rpcResult(msg.id, result);
@@ -3146,6 +3264,7 @@ async function requireConsoleUser(req, minRole) {
 // this once after such a sign-in and then force-refreshes its ID token.
 async function handleClaimsSync(req, res) {
   if (req.method !== "POST") return oauthError(res, 405, "invalid_request", "POST only");
+  if (rateLimited(req, "claims", 120)) return tooMany(res);
   const who = await requireConsoleUser(req);
   if (!who.ok) { res.status(who.status).json({ error: who.error }); return; }
   let changed = false;
@@ -3225,6 +3344,7 @@ async function handleMyConnections(req, res) {
 // reset email so they choose their own. Nobody ever emails a password.
 async function handleAdminProvision(req, res) {
   if (req.method !== "POST") { res.status(405).json({ error: "POST only" }); return; }
+  if (rateLimited(req, "provision", 30)) return tooMany(res);
   const who = await requireConsoleUser(req, "admin");
   if (!who.ok) { res.status(who.status).json({ error: who.error }); return; }
   const email = String((req.body || {}).email || "").trim().toLowerCase();
@@ -3274,10 +3394,22 @@ function routePath(req) {
   return p.length > 1 ? p.replace(/\/+$/, "") || "/" : "/";
 }
 
-exports.mcpServer = onRequest({ cors: false, timeoutSeconds: 120, memory: "256MiB", maxInstances: 20 }, async (req, res) => {
+// Runtime shape (27 Sep 2026): one vCPU with request concurrency, so one
+// instance serves many agents' tool calls at once instead of one at a time
+// — with the previous defaults (sub-vCPU, concurrency 1) twenty instances
+// was twenty simultaneous requests for the whole team, and every browser
+// sign-in queued behind them. minInstances stays 0: sign-in no longer waits
+// on this function (see public/js/auth-gate.js), so a cold start only ever
+// delays an agent's first call.
+exports.mcpServer = onRequest({ cors: false, timeoutSeconds: 120, memory: "512MiB", cpu: 1, concurrency: 40, maxInstances: 20 }, async (req, res) => {
   cors(req, res);
-  if (req.method === "OPTIONS") { res.status(204).send(""); return; }
   const path = routePath(req);
+  // The console-only endpoints are called from the console's own origin
+  // with a Firebase ID token; nothing cross-origin has any business here.
+  if (path === "/claims/sync" || path === "/me/connections" || path === "/admin/provision") {
+    res.set("Access-Control-Allow-Origin", PUBLIC_ORIGIN);
+  }
+  if (req.method === "OPTIONS") { res.status(204).send(""); return; }
   try {
     if (path.startsWith("/.well-known/oauth-protected-resource")) {
       res.status(200).set("Cache-Control", "public, max-age=300").json(protectedResourceMetadata());
@@ -3309,7 +3441,7 @@ exports.mcpServer = onRequest({ cors: false, timeoutSeconds: 120, memory: "256Mi
 // Exported for the unit tests in test/mcp-server.test.js — none of these
 // touch Firestore or Auth, so they can be checked without an emulator.
 exports.__test = {
-  routePath, redirectUriAllowed, generateTitle, suggestCategory, atLeast,
+  routePath, redirectUriAllowed, routineFireHostAllowed, redirectHostLabel, generateTitle, suggestCategory, atLeast,
   sha256b64url, authorizationServerMetadata, protectedResourceMetadata,
   TOOLS, CATEGORIES, STATUS_LABELS, SUPPORTED_PROTOCOL_VERSIONS, SERVER_ICONS,
   PROJECT_WRITABLE_FIELDS, PROJECT_MD_MAX, DOC_MD_MAX, updateProjectFields,

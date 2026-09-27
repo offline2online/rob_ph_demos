@@ -268,6 +268,11 @@ in three files to add anyone.
 - **A signed-in person may always read their OWN row.** `auth-gate.js` has
   to check membership before it can know whether the caller is a member;
   without that self-read every new member sees "not on the list" forever.
+  Since 27 Sep 2026 the wall resolves in this order: the `consoleRole`
+  claim on the cached ID token (no network), then this self-read over REST,
+  then `POST /mcp/claims/sync` in the background; a listener refused by the
+  rules reloads to the wall with the claim ignored once, never in a loop.
+  Only admins may `list` the collection; any member may `get` a row.
 - Storage rules cannot read Firestore, so membership also rides as a custom
   auth claim (`consoleRole`, `consoleEditor`) kept in step by the
   `syncConsoleUserClaims` trigger and `POST /mcp/claims/sync`.
@@ -1823,7 +1828,9 @@ Three Cloud Functions, all in `backlog-tracker/functions/index.js`:
      (VNE6dxMu3h6jO3g6FNNB): before falling back to those two secrets, the
      shared `resolveRoutineCredentials(db, triggeredByEmail, sharedFireUrl,
      sharedToken)` (used by all three notify functions below) reads
-     `consoleUsers/{email}.routineFireUrl`/`.routineFireToken` for the
+     `routineBindings/{email}.fireUrl`/`.token` (server-only; a legacy
+     `consoleUsers/{email}.routineFireUrl`/`.routineFireToken` pair is
+     honoured once and migrated) for the
      member who clicked — `notifyRequestedByEmail` on this function,
      `deployNotifyRequestedByEmail`/`groomRequestedByEmail` on the other
      two, written by the board's own click handlers
@@ -2284,7 +2291,7 @@ one deliberate, narrowly-scoped exception each for firing and for changing
 what fires.** `set_my_routine_binding` (VNE6dxMu3h6jO3g6FNNB, see above)
 is the second: it changes which credentials a LATER click will use, but
 never fires anything itself. `approve_deploy_to_main`
-(`board.write`, editor/admin only) fires the exact same trigger the
+(`board.write` **and the `admin` role**, since 27 Sep 2026) fires the exact same trigger the
 console's own **Deploy to Main** button writes
 (`projects/{id}.deployNotifyRequestedAt`); it never merges anything
 itself — the existing Routine still verifies the train and the existing

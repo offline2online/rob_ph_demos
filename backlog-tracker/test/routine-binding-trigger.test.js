@@ -12,6 +12,7 @@ const Module = require("module");
 function makeFakeDb(seed) {
   const state = { consoleUsers: {} };
   for (const [col, docs] of Object.entries(seed || {})) {
+    state[col] = state[col] || {};
     for (const [id, data] of Object.entries(docs)) state[col][id] = data;
   }
   function docRef(collection, id) {
@@ -91,9 +92,10 @@ async function test(name, fn) {
     assert.strictEqual(typeof mod.__test.resolveRoutineCredentials, "function");
   });
 
-  await test("uses the member's own binding when both fireUrl and token are set", async () => {
+  await test("uses the member's own binding (routineBindings) when both fireUrl and token are set", async () => {
     const db = makeFakeDb({
-      consoleUsers: { "sam@personalisationhub.com": { role: "editor", routineFireUrl: "https://api.anthropic.com/v1/claude_code/routines/trig_sam/fire", routineFireToken: "sk-ant-sams-token" } },
+      consoleUsers: { "sam@personalisationhub.com": { role: "editor" } },
+      routineBindings: { "sam@personalisationhub.com": { fireUrl: "https://api.anthropic.com/v1/claude_code/routines/trig_sam/fire", token: "sk-ant-sams-token" } },
     });
     const mod = loadIndexFresh(db);
     const out = await mod.__test.resolveRoutineCredentials(db, "sam@personalisationhub.com", "https://shared/fire", "shared-token");
@@ -111,8 +113,29 @@ async function test(name, fn) {
     assert.strictEqual(out.via, "shared");
   });
 
+  await test("still honours a legacy binding left on consoleUsers (and tries to migrate it)", async () => {
+    const db = makeFakeDb({
+      consoleUsers: { "old@personalisationhub.com": { role: "editor", routineFireUrl: "https://api.anthropic.com/v1/claude_code/routines/trig_old/fire", routineFireToken: "sk-ant-old-token" } },
+    });
+    const mod = loadIndexFresh(db);
+    const out = await mod.__test.resolveRoutineCredentials(db, "old@personalisationhub.com", "https://shared/fire", "shared-token");
+    assert.strictEqual(out.via, "member");
+    assert.strictEqual(out.token, "sk-ant-old-token");
+  });
+
+  await test("refuses a binding whose fire URL is not Anthropic's Routine API and uses the shared Routine instead", async () => {
+    const db = makeFakeDb({
+      consoleUsers: { "evil@personalisationhub.com": { role: "editor" } },
+      routineBindings: { "evil@personalisationhub.com": { fireUrl: "https://collector.example.com/fire", token: "sk-ant-whatever-token" } },
+    });
+    const mod = loadIndexFresh(db);
+    const out = await mod.__test.resolveRoutineCredentials(db, "evil@personalisationhub.com", "https://shared/fire", "shared-token");
+    assert.strictEqual(out.via, "shared");
+    assert.strictEqual(out.fireUrl, "https://shared/fire");
+  });
+
   await test("falls back to the shared secret when only one of fireUrl/token is set (a half-written or cleared binding)", async () => {
-    const db = makeFakeDb({ consoleUsers: { "half@personalisationhub.com": { role: "editor", routineFireUrl: "https://api.anthropic.com/fire", routineFireToken: null } } });
+    const db = makeFakeDb({ routineBindings: { "half@personalisationhub.com": { fireUrl: "https://api.anthropic.com/fire", token: null } }, consoleUsers: { "half@personalisationhub.com": { role: "editor" } } });
     const mod = loadIndexFresh(db);
     const out = await mod.__test.resolveRoutineCredentials(db, "half@personalisationhub.com", "https://shared/fire", "shared-token");
     assert.strictEqual(out.via, "shared");
