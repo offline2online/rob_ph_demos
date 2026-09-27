@@ -9,7 +9,7 @@
 import type { DisplayType, Partner } from '@ph-dsp/types'
 import { Field } from '../../shared/Field'
 import { DefaultSelect } from '../display-types/DefaultSelect'
-import { capOf, capValue, DEFAULTS, isCapped, resizeSlots, ROTATION_CAPS, slotsOf } from '../display-types/model'
+import { capOf, capValue, DEFAULTS, isCapped, mz, resizeSlots, ROTATION_CAPS, slotsOf } from '../display-types/model'
 import { SlotAssignment } from '../display-types/panels/SlotAssignment'
 import { TIPS } from '../display-types/tooltips'
 
@@ -46,6 +46,7 @@ export function PlaylistCapSlotsFields({ d, update, slotAssignment, advertiserOp
           advertiserOpen={advertiserOpen}
           onFixConnection={onFixConnection}
           tip={TIPS.slotAssignment}
+          zones={mz(d).enabled ? mz(d).zones : []}
         />
       )}
     </>

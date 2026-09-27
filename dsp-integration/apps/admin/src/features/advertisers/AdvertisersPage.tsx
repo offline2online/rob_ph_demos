@@ -6,7 +6,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { App, Button, InputNumber, Select, Spin, Switch, Tooltip } from 'antd'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
-import { DEFAULT_BILLING_UNIT_HOURS, DEFAULT_MAX_CAMPAIGNS, MAX_MAX_CAMPAIGNS, MIN_MAX_CAMPAIGNS, SLOT_OWNERS, TARGETING_MODES, assignedLabels, supportedTargetingOf, targetingLabel, touchPointIcon, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type Session, type TargetingMode } from '@ph-dsp/types'
+import { DEFAULT_BILLING_UNIT_HOURS, DEFAULT_MAX_CAMPAIGNS, MAX_MAX_CAMPAIGNS, MIN_MAX_CAMPAIGNS, SLOT_OWNERS, TARGETING_MODES, assignedLabels, supportedTargetingOf, targetingLabel, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type Session, type TargetingMode } from '@ph-dsp/types'
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, ApiRequestError } from '../../api/client'
@@ -93,18 +93,21 @@ type InvCtx = { current: {
   openAddBuyersList: (r: AvailableInventoryRow) => void
 } }
 type IP = ICellRendererParams<AvailableInventoryRow, unknown, InvCtx>
-/* QR Control is flagged here because it is what makes interactive targeting
-   possible on this display type (Rob, 20 Sep). Vision/AI is flagged
-   alongside it, before the QR Control icon (ticket "show a computer vision
-   icon when computer vision is enabled on a specific display type", 22
-   Sep) — this display type's own hardware capability (Display Types →
-   Enabled Features → Vision/AI), not any one booking's personalised
-   targeting rules. */
-const TypeCell = ({ data }: ICellRendererParams<AvailableInventoryRow>) =>
+/* Playlist is the primary column (ticket "Available Inventory:
+   playlist-primary table (drop Display type column) with Unassigned
+   indicator", 27 Sep 2026 — this replaced a separate Display type column
+   that used to lead the table). QR Control is flagged here because it is
+   what makes interactive targeting possible on this position (Rob, 20 Sep).
+   Vision/AI is flagged alongside it, before the QR Control icon (ticket
+   "show a computer vision icon when computer vision is enabled on a
+   specific display type", 22 Sep) — both are the display type's own
+   hardware capability (Display Types → Enabled Features), carried over onto
+   the playlist so they aren't lost with the column they used to live on;
+   not any one booking's personalised targeting rules. */
+const PlaylistCell = ({ data }: ICellRendererParams<AvailableInventoryRow>) =>
   data ? (
     <span className="inline-flex min-w-0 items-center gap-[5px]">
-      <Icon name={touchPointIcon(data.touchPoint ?? '')} size={14} style={{ color: T.muted }} />
-      <span className="truncate">{data.displayTypeName}</span>
+      <span className="truncate">{data.playlistName}</span>
       {data.visionAi && (
         <Tooltip title="Vision/AI is enabled on this display type: on-device computer vision for passerby insight and person match.">
           <span className="inline-flex" aria-label="Vision/AI enabled"><Icon name="visibility" size={15} style={{ color: T.primary }} /></span>
@@ -113,6 +116,13 @@ const TypeCell = ({ data }: ICellRendererParams<AvailableInventoryRow>) =>
       {data.qrControl && (
         <Tooltip title="QR Control is enabled on this display type, so its slots can support interactive campaigns.">
           <span className="inline-flex" aria-label="QR Control enabled"><Icon name="qr_code_2" size={15} style={{ color: T.primary }} /></span>
+        </Tooltip>
+      )}
+      {data.unassigned && (
+        <Tooltip title="This playlist's advertiser slots aren't assigned to any physical display, so they aren't actually playing.">
+          <span className="inline-flex items-center gap-0.5" aria-label="Unassigned" style={{ color: T.error }}>
+            <Icon name="link_off" size={14} /><span style={{ fontSize: 11 }}>Unassigned</span>
+          </span>
         </Tooltip>
       )}
     </span>
@@ -448,8 +458,14 @@ export function AdvertisersPage() {
   const [invShown, setInvShown] = useState<number | null>(null)
   const invValues = (of: (r: AvailableInventoryRow) => string[]) => () => invRows.flatMap(of)
   const inventoryColumns = useMemo<ColDef<AvailableInventoryRow>[]>(() => [
-    { headerName: 'Display type', width: 190, minWidth: 160, cellRenderer: TypeCell, valueGetter: (p) => p.data?.displayTypeName ?? '', ...searchColumn<AvailableInventoryRow>('Display type') },
-    { headerName: 'Playlist', width: 150, field: 'playlistName', cellStyle: { color: T.muted }, ...setColumn<AvailableInventoryRow>('Playlist', invValues((r) => [r.playlistName])) },
+    {
+      /* Primary column (ticket "Available Inventory: playlist-primary
+         table (drop Display type column) with Unassigned indicator", 27
+         Sep 2026): leads the table, carries the display type's enabled
+         features and the Unassigned indicator that used to sit on the now-
+         removed Display type column. */
+      headerName: 'Playlist', width: 230, minWidth: 190, cellRenderer: PlaylistCell, valueGetter: (p) => p.data?.playlistName ?? '', ...searchColumn<AvailableInventoryRow>('Playlist'),
+    },
     { headerName: 'Slot', width: 70, field: 'slot', suppressSizeToFit: true, cellStyle: { color: T.muted }, ...setColumn<AvailableInventoryRow>('Slot', invValues((r) => [String(r.slot)])) },
     { headerName: 'Position', width: 130, minWidth: 110, cellRenderer: SlotCell, valueGetter: (p) => p.data?.position ?? '', ...searchColumn<AvailableInventoryRow>('Position') },
     {

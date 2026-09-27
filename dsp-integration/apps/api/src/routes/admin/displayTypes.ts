@@ -77,6 +77,10 @@ export const displayTypeRoutes = (ctx: Context, guards: Guards): FastifyPluginAs
         const kept = was?.owner === 'advertiser' && s.owner === 'advertiser'
         return {
           label: s.label.trim(), owner: s.owner,
+          /* Editor-set, like label and owner — never carried from `was`,
+             unlike the Advertisers / Inventory fields below (Rob's ticket
+             "Available Inventory: playlist-primary table…", 27 Sep 2026). */
+          zoneId: s.zoneId ?? null,
           partnerIds: kept ? was.partnerIds ?? [] : [],
           advertisers: kept ? was.advertisers ?? [] : [],
           listMode: s.owner === 'advertiser' ? (kept ? was.listMode ?? 'rtb' : 'rtb') : null,

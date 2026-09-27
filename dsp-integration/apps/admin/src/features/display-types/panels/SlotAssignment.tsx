@@ -23,10 +23,14 @@ import { ownerAssignment, ownerChange } from '../model'
 
 const ADVERTISER_COLOUR = SLOT_OWNERS.advertiser.colour
 
+interface ZoneOption { id: string; name: string }
+const NO_ZONE = '__no_zone__'
+
 interface Ctx {
   partners: Partner[]
   advertiserOpen: (i: number) => boolean
   setSlot: (i: number, patch: Partial<Slot>) => void
+  zones: ZoneOption[]
 }
 interface Row { i: number; slot: Slot }
 /* Stable grid context; cells read the latest values through it. */
@@ -48,6 +52,30 @@ function LabelCell({ data, context: grid }: ICellRendererParams<Row, unknown, Gr
   if (!data) return null
   const context = grid.current
   return <div className="w-full min-w-0"><Input size="small" aria-label={`Slot ${data.i + 1} label`} value={data.slot.label} onChange={(e) => context.setSlot(data.i, { label: e.target.value })} /></div>
+}
+
+/* Which zone (if any) this slot's position is tagged to — purely an
+   attribution/display detail for Available Inventory (ticket "Available
+   Inventory: playlist-primary table…", 27 Sep 2026): it says which zone
+   playlist the slot's advertiser position shows up under there, not which
+   zone the slot is "sold on" — booking is still keyed by display type +
+   slot regardless (PH-CORE-BOUNDARIES.md). Only rendered when this display
+   type has zones at all. */
+function ZoneCell({ data, context: grid }: ICellRendererParams<Row, unknown, GridCtx>) {
+  if (!data) return null
+  const context = grid.current
+  return (
+    <div className="w-full min-w-0">
+      <Select
+        size="small"
+        className="w-full"
+        aria-label={`Slot ${data.i + 1} zone`}
+        value={data.slot.zoneId ?? NO_ZONE}
+        onChange={(v: string) => context.setSlot(data.i, { zoneId: v === NO_ZONE ? null : v })}
+        options={[{ value: NO_ZONE, label: 'Not zone-specific' }, ...context.zones.map((z) => ({ value: z.id, label: z.name }))]}
+      />
+    </div>
+  )
 }
 
 function OwnerCell({ data, context: grid }: ICellRendererParams<Row, unknown, GridCtx>) {
@@ -76,23 +104,28 @@ function OwnerCell({ data, context: grid }: ICellRendererParams<Row, unknown, Gr
   )
 }
 
-export function SlotAssignment({ slots, setSlots, partners, advertiserOpen, onFixConnection, tip }: {
+export function SlotAssignment({ slots, setSlots, partners, advertiserOpen, onFixConnection, tip, zones = [] }: {
   slots: Slot[]
   setSlots: (s: Slot[]) => void
   partners: Partner[]
   advertiserOpen: (i: number) => boolean
   onFixConnection: (partnerId: string) => void
   tip: string
+  /* This display type's zones (multi-zone layout), so a slot can be tagged
+     to one — empty/omitted on a single-zone display type, which just hides
+     the Zone column below. */
+  zones?: ZoneOption[]
 }) {
-  const ctx: Ctx = { partners, advertiserOpen, setSlot: (i, patch) => setSlots(slots.map((s, k) => (k === i ? { ...s, ...patch } : s))) }
+  const ctx: Ctx = { partners, advertiserOpen, zones, setSlot: (i, patch) => setSlots(slots.map((s, k) => (k === i ? { ...s, ...patch } : s))) }
   const rows = useMemo(() => slots.map((slot, i) => ({ i, slot })), [slots])
   const columns = useMemo<ColDef<Row>[]>(
     () => [
       { headerName: '#', width: 52, suppressSizeToFit: true, valueGetter: (p) => (p.data ? p.data.i + 1 : ''), cellStyle: { color: T.micro, fontSize: 12 } },
       { headerName: 'Label', width: 260, minWidth: 140, cellRenderer: LabelCell },
       { headerName: 'Owner', width: 180, minWidth: 140, cellRenderer: OwnerCell },
+      ...(zones.length ? [{ headerName: 'Zone', width: 180, minWidth: 140, cellRenderer: ZoneCell } as ColDef<Row>] : []),
     ],
-    [],
+    [zones],
   )
   const broken = slots.filter((s) => brokenPartners(ctx, s).length)
   return (

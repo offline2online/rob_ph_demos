@@ -153,6 +153,26 @@ describe('PUT /admin/v1/display-types/{id}/extensions — slot ownership', () =>
     const blank = await put(app, 'menu_board', menuSlots({ label: '  ' }))
     expect(blank.json().error.details.map((d: { field: string }) => d.field)).toEqual(['slots[1].label'])
   })
+
+  /* zoneId (ticket "Available Inventory: playlist-primary table (drop
+     Display type column) with Unassigned indicator", 27 Sep 2026): tags a
+     slot to one of the display type's zones, purely so Available Inventory
+     can attribute its advertiser position to that zone's own playlist. Set
+     by the slot editor, like label and owner, and validated against this
+     display type's real zones. */
+  it('tags a slot to one of the display type’s zones, and rejects an unknown one', async () => {
+    const { app, ctx } = await setup()
+    const res = await put(app, 'menu_board', menuSlots({ zoneId: 'z3' }))
+    expect(res.statusCode).toBe(200)
+    expectMatchesContract('PUT', '/admin/v1/display-types/{displayTypeId}/extensions', 200, res.json())
+    expect(res.json().slots[1]).toMatchObject({ zoneId: 'z3' })
+    expect(ctx.displayTypes.get('menu_board')?.phExtensions?.slots[1].zoneId).toBe('z3')
+
+    const bad = await put(app, 'menu_board', menuSlots({ zoneId: 'not-a-zone' }))
+    expect(bad.statusCode).toBe(400)
+    expectMatchesContract('PUT', '/admin/v1/display-types/{displayTypeId}/extensions', 400, bad.json())
+    expect(bad.json().error.details).toEqual([{ field: 'slots[1].zoneId', reason: 'Unknown zone.' }])
+  })
 })
 
 describe('read side used by the slot picker (flag-gated)', () => {
