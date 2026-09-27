@@ -313,6 +313,21 @@ not offered.
   zone playlist created on demand) and selects it immediately — ready, once
   it is this display type's Default Playlist, to define its own multi-zone
   layout below.
+  - **A newly auto-created playlist starts with Campaign Auto-Rotation and
+    Campaign Auto-Play explicitly off** (ticket, 27 Sep 2026) — not the
+    platform default of On/On (`PLATFORM_DEFAULTS.playlistSettings` /
+    `NEW_PLAYLIST_SETTINGS_DEFAULTS`), which an unconfigured playlist used
+    to silently inherit. Applies to every auto-created playlist (a Default
+    Playlist created this way, a zone playlist created on demand, and a new
+    display type's own auto-created default), set the moment
+    `ensureReferencedPlaylists` creates the record.
+  - **While the Default Playlist is still this local, unsaved draft**, its
+    own settings — what it will actually be created with — show here as a
+    **read-only** preview, in the same five-field layout as Playlist
+    Management's own Playlist Settings (§2), with a link across to Playlist
+    Management rather than a second, competing editor. The block disappears
+    the moment Save actually creates the playlist; from then on Playlist
+    Management is the only place to edit it.
 - **Multi-zone layouts** for signage (`zones`), each zone with its own
   playlist and, where sold, its own slots. **Layout is owned by the Default
   Playlist, not the display type** (same ticket): the same physical screen
@@ -2097,6 +2112,11 @@ playback analytics.**
   it moved to Playlist Management, 26 Sep 2026 — see below.
 - **Multi-zone layout designer** for signage. *(Display Types → Multi-Zone Layout)*
 - **Venue and screen metadata** per store and display. *(spec only)*
+- **Read-only Playlist Settings preview** (ticket, 27 Sep 2026) for a
+  Default Playlist that's still an unsaved "Add new playlist" draft — the
+  same five fields as Playlist Management's own row, disabled, with a link
+  across to Playlist Management; gone once the playlist is actually saved.
+  *(Display Types → Default Playlist)*
 
 ### Playlist management
 
@@ -2110,6 +2130,12 @@ playback analytics.**
   — assigned or not — reveals Asset Position/Fill, Campaign Transition,
   Auto-Rotation and Auto-Play, edited inline with the page's own Save
   changes bar. *(Playlist Management)*
+- **A newly auto-created playlist's Auto-Rotation and Auto-Play start off**
+  (ticket, 27 Sep 2026), not the platform default of On/On that an
+  unconfigured playlist used to silently inherit. Applies wherever a
+  playlist is auto-created: a Default Playlist added from Display Types, a
+  zone playlist created on demand, or a new display type's own default.
+  *(ensureReferencedPlaylists, API)*
 - **Slot ownership editor**: each slot's label and owner — Headquarters,
   Advertiser or Stores — and nothing else. With DSP integration switched
   off, Advertiser is greyed out for a slot that isn't one already. Shown
