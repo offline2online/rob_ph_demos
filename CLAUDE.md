@@ -13,6 +13,36 @@ This is a static site repository used to publish HTML and static resources (CSS,
 - `index.html` — Main entry point
 - Static assets (CSS, JS, images) go directly in the repo root or organized subdirectories
 
+## The offline2online.com WordPress site is an MCP server — `.mcp.json`
+
+`.mcp.json` at the repo root registers the Elementor MCP endpoint on
+offline2online.com (`https://offline2online.com/wp-json/elementor/mcp/`)
+as a project-scoped MCP server named `offline2online-elementor`, so a
+Claude Code session opened on this repo can drive that WordPress site.
+The file carries no credential: its `Authorization` header reads the
+`ELEMENTOR_MCP_AUTH` environment variable, which must hold the base64 of
+`<wp-username>:<application-password>` (spaces in the application
+password removed). **Never commit that value — this repo is public.**
+
+- **Cloud sessions**: set `ELEMENTOR_MCP_AUTH=<value>` in the cloud
+  environment's Environment variables (claude.ai/code → the cloud icon
+  above the message box → the settings icon on the environment), and set
+  its Network access to **Custom** with `offline2online.com` in Allowed
+  domains (tick "Also include default list of common package managers").
+  Sessions started afterwards pick both up. The Trusted default denies
+  the host — that is what a `403` on CONNECT from the agent proxy means.
+- **Local Claude Code**: export `ELEMENTOR_MCP_AUTH` in your shell
+  profile and approve the project server when Claude Code asks. A
+  user-scope server of the same name is shadowed by this one, so set
+  the variable rather than adding it again with `claude mcp add`.
+- Without the variable the server is inert: `claude mcp list` shows a
+  "Missing environment variables: ELEMENTOR_MCP_AUTH" warning and the
+  connection fails; nothing else breaks. That is also how to keep it
+  out of an environment (one a Routine runs in, say): don't set the
+  variable there.
+- Rotate or revoke the application password from the WordPress user's
+  profile → Application Passwords; the file needs no change.
+
 ## Cloud Functions need a separate manual deploy
 
 `menu-board-demo/functions/` (Cloud Functions for Firebase — the scheduled offer-expiry sweep, the AI provider calls) is **not** part of the static site. Pushing a change there to `main` does **not** make it live — GitHub Pages only serves the static HTML/JS/CSS, and this sandbox has no `firebase` CLI or deploy credentials, so **Claude cannot deploy a functions change itself**. Whoever owns Firebase deploy access needs to separately run `firebase deploy --only functions` (or `npm run deploy` inside `menu-board-demo/functions`) before a functions fix actually takes effect. Always say this explicitly when committing a functions/ change — don't imply "pushed to main" means "live" the way it does for everything else in this repo.
