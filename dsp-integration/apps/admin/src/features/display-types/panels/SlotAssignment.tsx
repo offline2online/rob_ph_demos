@@ -106,7 +106,19 @@ function OwnerCell({ data, context: grid }: ICellRendererParams<Row, unknown, Gr
 
 export function SlotAssignment({ slots, setSlots, partners, advertiserOpen, onFixConnection, tip, zones = [] }: {
   slots: Slot[]
-  setSlots: (s: Slot[]) => void
+  /* An updater, not a value (ticket, 27 Sep 2026): a multi-zone display
+     type renders this same table once per playlist it has (the default
+     playlist plus one per zone, PlaylistCapSlotsFields/PlaylistManagementPage),
+     all editing the one shared `slots` array. Computing the next array here
+     from this component's own `slots` prop and handing that whole array up
+     used to lose a slot's change whenever two edits landed before this
+     component re-rendered with the first one's result — e.g. tagging Slot 1
+     to Zone 1 and Slot 3 to Zone 3 in quick succession, where Slot 3's write
+     was still built from the pre-Slot-1-change array and so overwrote it.
+     Passing an updater instead lets the draft state apply each edit against
+     its own latest value, the same way React's setState updater form does,
+     so no edit can undo one made just before it. */
+  setSlots: (fn: (prev: Slot[]) => Slot[]) => void
   partners: Partner[]
   advertiserOpen: (i: number) => boolean
   onFixConnection: (partnerId: string) => void
@@ -116,7 +128,7 @@ export function SlotAssignment({ slots, setSlots, partners, advertiserOpen, onFi
      the Zone column below. */
   zones?: ZoneOption[]
 }) {
-  const ctx: Ctx = { partners, advertiserOpen, zones, setSlot: (i, patch) => setSlots(slots.map((s, k) => (k === i ? { ...s, ...patch } : s))) }
+  const ctx: Ctx = { partners, advertiserOpen, zones, setSlot: (i, patch) => setSlots((prev) => prev.map((s, k) => (k === i ? { ...s, ...patch } : s))) }
   const rows = useMemo(() => slots.map((slot, i) => ({ i, slot })), [slots])
   const columns = useMemo<ColDef<Row>[]>(
     () => [

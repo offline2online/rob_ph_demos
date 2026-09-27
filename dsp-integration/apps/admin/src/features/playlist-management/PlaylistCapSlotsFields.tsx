@@ -41,7 +41,16 @@ export function PlaylistCapSlotsFields({ d, update, slotAssignment, advertiserOp
       {slotAssignment && isCapped(d) && (
         <SlotAssignment
           slots={slotsOf(d)}
-          setSlots={(slots) => update((t) => ({ ...t, phExtensions: { ...(t.phExtensions ?? {}), slots } }))}
+          /* `fn` runs against `t` inside `update`'s own functional draft
+             update (ticket, 27 Sep 2026), not against the `d` this
+             component was rendered with — the same display type's slots are
+             edited from up to four places at once here (its default
+             playlist's row plus one per zone), so `d`/`slotsOf(d)` can be a
+             render behind by the time a click lands. Building the next
+             array from `slotsOf(t)` instead means each edit always starts
+             from the true latest slots, however many other edits to this
+             same display type landed first. */
+          setSlots={(fn) => update((t) => ({ ...t, phExtensions: { ...(t.phExtensions ?? {}), slots: fn(slotsOf(t)) } }))}
           partners={partners}
           advertiserOpen={advertiserOpen}
           onFixConnection={onFixConnection}
