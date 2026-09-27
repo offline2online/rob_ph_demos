@@ -493,6 +493,19 @@ the ticket and in `mcpAuditLog`.
   save, so a person can always edit what an agent wrote). Keep the repo
   files (`REQUIREMENTS.md`, `README.md`, `shared/interface-contract.md`) in
   sync with these — a divergence is a bug in whichever is stale.
+- **The Concept Incubator (pre-project ideas, `concepts` collection —
+  separate from `projects` on purpose, see "Prototype Backlog" below) gets
+  the same read/write split, not the ticket split.** A concept has no
+  backlog of its own until someone promotes it to a real project, so there
+  is no `list_backlog_items`-shaped tool here. Read: `list_concepts`,
+  `get_concept`. Write: `add_concept_comment` (works even after promotion),
+  `set_concept_readme`/`set_concept_requirements` (refused once
+  `status` is `"promoted"` — the promoted project's own docs are the source
+  of truth from then on; use `set_project_readme`/`set_project_requirements`
+  on `promotedProjectId` instead). There is deliberately no
+  `create_concept` or `promote_concept_to_project` tool, matching there
+  being no `create_project` tool either — a project or concept's own
+  creation and promotion stay board/human actions.
 - **Nothing there deploys, merges, approves a ticket out of Ready for
   Testing, moves a card, writes a train field, fires Notify Claude, or
   triggers a campaign.** Campaign triggering stays on the triggered Routine
