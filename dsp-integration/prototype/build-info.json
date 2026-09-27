@@ -1,7 +1,7 @@
 {
-  "sourceStamp": "2270857838c9d7b950d6f88c50741733015214b8",
-  "commit": "3a8d62562ae0de4fba09593bcf742f9d0e3838b5",
+  "sourceStamp": "3de631e633c2b903f57cc93a5d7ea6aa0e1af95b",
+  "commit": "320d02ef685a62ca577689b908901b1232a59a9f",
   "branch": "deploy/dsp-integration",
-  "builtAt": "2026-09-27T22:20:08.238Z",
+  "builtAt": "2026-09-27T22:21:58.595Z",
   "note": "What this hosted prototype was built from. Compare commit with the ticket to know whether the test link shows the change yet."
 }
