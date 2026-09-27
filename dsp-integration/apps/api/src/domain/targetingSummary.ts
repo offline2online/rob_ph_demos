@@ -26,3 +26,40 @@ export function targetingSummary(t: unknown): string {
   }
   return lines.join('\n')
 }
+
+export interface CampaignLayerSummary {
+  campaignCount: number
+  localisedVariables: string[]
+  localisedRuleLines: string[]
+  personalisedVariables: string[]
+  personalisedRuleLines: string[]
+}
+
+const ruleLine = (v: { id: string; priority: number; rules: Condition[][] }) =>
+  `${v.id} (priority ${v.priority}): ${v.rules.map((g) => (g.length > 1 ? `(${g.map(condition).join(' OR ')})` : condition(g[0]))).join(' AND ')}`
+
+/* The Campaign Status table's playlist columns (ticket "Campaign Status:
+   Playlist name column, submitted count, localised/personalised targeting
+   columns, Advertiser first"): how many layers this playlist's one
+   submission carries, and — split by pricing type — the deduped variables
+   its localised/personalised layers target (the column's own high-level
+   summary) plus the exact rule text behind them (the column's hover). */
+export function campaignLayerSummary(t: unknown): CampaignLayerSummary {
+  const s = t as StoredTargeting | null
+  const targeted = s?.targeted ?? []
+  const layersOf = (pricingType: string) => targeted.filter((v) => v.pricingType === pricingType)
+  const summarise = (pricingType: string) => {
+    const layers = layersOf(pricingType)
+    return {
+      variables: [...new Set(layers.flatMap((v) => v.rules.flat().map((c) => c.variable)))].map(label),
+      ruleLines: layers.map(ruleLine),
+    }
+  }
+  const loc = summarise('localised')
+  const per = summarise('personalised')
+  return {
+    campaignCount: (s?.default ? 1 : 0) + targeted.length,
+    localisedVariables: loc.variables, localisedRuleLines: loc.ruleLines,
+    personalisedVariables: per.variables, personalisedRuleLines: per.ruleLines,
+  }
+}

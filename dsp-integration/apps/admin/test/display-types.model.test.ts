@@ -1,27 +1,34 @@
 import { describe, expect, it } from 'vitest'
-import type { AdvertiserSettings, DisplayType, Partner, Slot } from '@ph-dsp/types'
+import type { AdvertiserSettings, DisplayType, Partner, Playlist, Slot } from '@ph-dsp/types'
 import {
-  featuresSummary, newDisplayType, normaliseSlots, ownerAssignment, phantomSummary, playlistSummary, resizeSlots, zonesSummary,
+  capSummary, featuresSummary, newDisplayType, normaliseSlots, ownerAssignment, phantomSummary, resizeSlots, styleSummary, zonesSummary,
 } from '../src/features/display-types/model'
 
-const base = (over: Partial<DisplayType> = {}): DisplayType => ({ ...newDisplayType('t'), playlistSettings: { assetPosition: null, assetFill: null, maximumCampaignsPlayedInRotation: null, campaignTransition: null, campaignAutoRotation: null, campaignAutoPlay: null }, ...over })
+const base = (over: Partial<DisplayType> = {}): DisplayType => ({ ...newDisplayType('t'), playlistSettings: { maximumCampaignsPlayedInRotation: null }, ...over })
+const playlist = (over: Partial<Playlist> = {}): Playlist => ({ id: 'p', name: 'P', autoCreatedFor: null, assignments: [], playlistSettings: {}, ...over })
 const slot = (over: Partial<Slot>): Slot => ({ label: 'S', owner: 'internal', partnerIds: [], advertisers: [], listMode: null, storeScope: null, quota: null, ...over })
 const labels = (chips: { label: string; tone: string }[]) => chips.map((c) => `${c.label}${c.tone === 'default' ? ' (grey)' : ''}`)
 
 describe('collapsed panel summaries (spec §1)', () => {
-  it('Playlist Settings: a single grey "Default settings" when nothing differs', () => {
-    expect(labels(playlistSummary(base(), true))).toEqual(['Default settings (grey)'])
+  it('Maximum Campaigns Played In Rotation: "Unlimited rotation" when not capped', () => {
+    expect(labels(capSummary(base(), true))).toEqual(['Unlimited rotation (grey)'])
   })
 
-  it('Playlist Settings: slot count and one chip per owner when capped; unlimited gets no chip', () => {
+  it('Maximum Campaigns Played In Rotation: slot count and one chip per owner when capped', () => {
     const d = base({
-      playlistSettings: { ...base().playlistSettings, maximumCampaignsPlayedInRotation: 3, campaignTransition: 'Fade' },
+      playlistSettings: { maximumCampaignsPlayedInRotation: 3 },
       phExtensions: { slots: [slot({ owner: 'internal' }), slot({ owner: 'advertiser', listMode: 'rtb' }), slot({ owner: 'retail', storeScope: 'Store staff' })] },
     })
-    expect(labels(playlistSummary(d, true))).toEqual(['3 slots', '1 Headquarters', '1 Advertiser', '1 Stores', '1 setting changed'])
-    expect(labels(playlistSummary(d, false))).toEqual(['3 slots', '1 setting changed'])
-    const unlimited = base({ playlistSettings: { ...base().playlistSettings, maximumCampaignsPlayedInRotation: -1, assetFill: 'Fill', assetPosition: 'Center' } })
-    expect(labels(playlistSummary(unlimited, true))).toEqual(['2 settings changed'])
+    expect(labels(capSummary(d, true))).toEqual(['3 slots', '1 Headquarters', '1 Advertiser', '1 Stores'])
+    expect(labels(capSummary(d, false))).toEqual(['3 slots'])
+    const unlimited = base({ playlistSettings: { maximumCampaignsPlayedInRotation: -1 } })
+    expect(labels(capSummary(unlimited, true))).toEqual(['Unlimited rotation (grey)'])
+  })
+
+  it('Playlist settings: a single grey "Default settings" when nothing differs, else "n settings changed" — regardless of assignment count', () => {
+    expect(labels(styleSummary(playlist()))).toEqual(['Default settings (grey)'])
+    expect(labels(styleSummary(playlist({ playlistSettings: { campaignTransition: 'Fade' } })))).toEqual(['1 setting changed'])
+    expect(labels(styleSummary(playlist({ playlistSettings: { assetFill: 'Fill', assetPosition: 'Center' } })))).toEqual(['2 settings changed'])
   })
 
   it('Phantom Zone: size and position, "Default (Bottom Right)" when inherited, or "Not defined"', () => {

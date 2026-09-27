@@ -8,7 +8,7 @@
 const fs = require("fs");
 const path = require("path");
 const { initializeTestEnvironment, assertSucceeds, assertFails } = require("@firebase/rules-unit-testing");
-const { doc, getDoc, setDoc, deleteDoc } = require("firebase/firestore");
+const { doc, getDoc, getDocs, collection, setDoc, deleteDoc, serverTimestamp } = require("firebase/firestore");
 
 const RULES = fs.readFileSync(path.join(__dirname, "..", "firestore.rules"), "utf8");
 
@@ -69,6 +69,24 @@ async function reset() {
     await setDoc(doc(db, "faqArticles/a1"), {
       categoryId: "c1", title: "T", slug: "t", bodyMd: "<p>x</p>", status: "published", order: 1,
     });
+    await setDoc(doc(db, "faqArticles/aDraft"), {
+      categoryId: "c1", title: "D", slug: "d", bodyMd: "<p>unpublished</p>", status: "draft", order: 2,
+    });
+    await setDoc(doc(db, "faqCategories/c1"), { name: "Getting started", icon: "help", order: 1 });
+    await setDoc(doc(db, "backlogItems/iBacklog"), Object.assign({}, ITEM, { status: "backlog" }));
+    await setDoc(doc(db, "backlogItems/iLive"), Object.assign({}, ITEM, { status: "published-live", mergeCommit: "abc1234", deployCommit: "abc1234" }));
+    await setDoc(doc(db, "routineBindings/sam@personalisationhub.com"), { fireUrl: "https://api.anthropic.com/fire", token: "sk-ant-secret" });
+    await setDoc(doc(db, "settings/faqSite"), { analyticsTag: null });
+    // A project doc as it really looks after a few weeks: every optional
+    // field present. Rules evaluation has a hard 1,000-expression budget,
+    // and the projects update rule sits closest to it for a non-admin.
+    await setDoc(doc(db, "projects/pFull"), Object.assign({}, PROJECT, {
+      requirementsMd: "r".repeat(50000), readmeMd: "m".repeat(20000), routinePromptMd: "hello",
+      notifyRequestedByEmail: "ada@personalisationhub.com", deployNotifyRequestedByEmail: "ada@personalisationhub.com",
+      groomRequestedByEmail: "ada@personalisationhub.com", artifactUrl: "https://claude.ai/x", repoFolder: "backlog-tracker",
+      trainStatus: "idle", trainNote: "n", trainPrNumber: 5, needsHumanMerge: false, trainReady: false, releaseId: "rDraft", programId: "prog1",
+      notifyRoutine: { status: "done" }, deployRoutine: { status: "done" }, groomRoutine: { status: "done" },
+    }));
     await setDoc(doc(db, "consoleUsers/sam@personalisationhub.com"), { email: "sam@personalisationhub.com", role: "editor" });
     await setDoc(doc(db, "consoleUsers/kit@personalisationhub.com"), { email: "kit@personalisationhub.com", role: "viewer" });
     await setDoc(doc(db, "consoleUsers/expat@personalisationhub.com"), { email: "expat@personalisationhub.com", role: "editor", disabled: true });
@@ -160,6 +178,25 @@ async function main() {
     getDoc(doc(as(null), "faqArticles/a1")));
   await check("Nobody may write a help-centre article signed out", "deny", () =>
     setDoc(doc(as(null), "faqArticles/a1"), { title: "Defaced" }, { merge: true }));
+
+  // ── Deleted-content tombstones: written on delete, never removed ───────
+  // 25 Sep 2026: the Freshdesk seed recreated five deleted articles on every
+  // pipeline-dispatched deploy. The seed and the repo → Firestore sync now
+  // skip any id with a tombstone, so the tombstone must be writable by the
+  // editor doing the deleting (and refreshable if the same id is deleted
+  // again) and removable by nobody from the browser.
+  await check("An editor records a tombstone when deleting an article", "allow", () =>
+    setDoc(doc(as(MEMBER), "faqDeletedArticles/a1"), { title: "T", categoryId: "c1", deletedAt: serverTimestamp(), deletedBy: "sam@personalisationhub.com" }));
+  await check("Deleting the same id again just refreshes its tombstone", "allow", () =>
+    setDoc(doc(as(MEMBER), "faqDeletedArticles/a1"), { title: "T", deletedAt: serverTimestamp(), deletedBy: "sam@personalisationhub.com" }));
+  await check("A viewer cannot write a tombstone", "deny", () =>
+    setDoc(doc(as(VIEWER), "faqDeletedArticles/a2"), { title: "T", deletedAt: serverTimestamp() }));
+  await check("A tombstone needs a real deletedAt", "deny", () =>
+    setDoc(doc(as(MEMBER), "faqDeletedArticles/a3"), { title: "T" }));
+  await check("Signed out, nobody can read tombstones", "deny", () => getDoc(doc(as(null), "faqDeletedArticles/a1")));
+  await check("Even an editor cannot remove a tombstone", "deny", () => deleteDoc(doc(as(MEMBER), "faqDeletedArticles/a1")));
+  await check("Categories get the same tombstone treatment", "allow", () =>
+    setDoc(doc(as(MEMBER), "faqDeletedCategories/c9"), { name: "Old", deletedAt: serverTimestamp() }));
 
   // ── Membership: a consoleUsers row is what grants access ────────────────
   await check("A member added to consoleUsers can read the board", "allow", () => getDoc(doc(as(MEMBER), "projects/p1")));
@@ -274,6 +311,101 @@ async function main() {
     setDoc(doc(as(HUMAN), "concepts/cPromoted"), { status: "active" }, { merge: true }));
   await check("An editor can delete a still-active concept", "allow", () => deleteDoc(doc(as(MEMBER), "concepts/cActive")));
   await check("Nobody can delete a promoted concept", "deny", () => deleteDoc(doc(as(HUMAN), "concepts/cPromoted")));
+
+  // ── 27 Sep 2026 hardening (SECURITY-PERFORMANCE.md) ─────────────────────
+  await check("A member can GET their own consoleUsers row", "allow", () =>
+    getDoc(doc(as(VIEWER), "consoleUsers/kit@personalisationhub.com")));
+  await check("A member can GET another member's row (attribution)", "allow", () =>
+    getDoc(doc(as(MEMBER), "consoleUsers/kit@personalisationhub.com")));
+  await check("An editor CANNOT list the whole member roster", "deny", () =>
+    getDocs(collection(as(MEMBER), "consoleUsers")));
+  await check("A viewer CANNOT list the whole member roster", "deny", () =>
+    getDocs(collection(as(VIEWER), "consoleUsers")));
+  await check("A team admin can list the member roster", "allow", () =>
+    getDocs(collection(as(TEAM_ADMIN), "consoleUsers")));
+  await check("Nobody — not even an owner — can read a routineBindings doc", "deny", () =>
+    getDoc(doc(as(HUMAN), "routineBindings/sam@personalisationhub.com")));
+  await check("The member themselves cannot read their own routineBindings doc", "deny", () =>
+    getDoc(doc(as(MEMBER), "routineBindings/sam@personalisationhub.com")));
+  await check("Nobody can write a routineBindings doc from a client", "deny", () =>
+    setDoc(doc(as(TEAM_ADMIN), "routineBindings/kit@personalisationhub.com"), { fireUrl: "https://x", token: "y" }));
+  await check("The automation user cannot list the roster either", "deny", () =>
+    getDocs(collection(as(BOT), "consoleUsers")));
+
+  await check("Anonymous can GET a published FAQ article", "allow", () =>
+    getDoc(doc(as(null), "faqArticles/a1")));
+  await check("Anonymous CANNOT GET a draft FAQ article", "deny", () =>
+    getDoc(doc(as(null), "faqArticles/aDraft")));
+  await check("Anonymous CANNOT list faqArticles", "deny", () =>
+    getDocs(collection(as(null), "faqArticles")));
+  await check("Anonymous CANNOT list faqCategories", "deny", () =>
+    getDocs(collection(as(null), "faqCategories")));
+  await check("Anonymous can GET one faqCategories doc", "allow", () =>
+    getDoc(doc(as(null), "faqCategories/c1")));
+  await check("A viewer can list faqArticles (FAQ Management)", "allow", () =>
+    getDocs(collection(as(VIEWER), "faqArticles")));
+  await check("A member can GET a draft article", "allow", () =>
+    getDoc(doc(as(MEMBER), "faqArticles/aDraft")));
+
+  await check("A human editor CANNOT write patchFiles on a ticket", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { patchFiles: [{ path: "x.js", content: "evil" }] }, { merge: true }));
+  await check("A human editor CANNOT stamp deployCommit on a ticket", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { deployCommit: "deadbeef" }, { merge: true }));
+  await check("An owner CANNOT stamp deployCommit from a browser either", "deny", () =>
+    setDoc(doc(as(HUMAN), "backlogItems/i1"), { deployCommit: "deadbeef" }, { merge: true }));
+  await check("A human editor CANNOT create a ticket already carrying patchFiles", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/iNew"), Object.assign({}, ITEM, { status: "backlog", patchFiles: [] })));
+  await check("A human editor can still edit a ticket's title/desc/category", "allow", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/iLive"), { title: "Renamed", category: "HQ Admin" }, { merge: true }));
+  await check("A human editor can still fail testing (revertRequested + status)", "allow", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { status: "backlog", revertRequested: true, lastFailureReason: { category: "bug" } }, { merge: true }));
+  await check("The Routine (automation user) can still write patchFiles/patchReady", "allow", () =>
+    setDoc(doc(as(BOT), "backlogItems/i1"), { patchReady: true, patchFiles: [{ path: "a", content: "b" }] }, { merge: true }));
+  await check("The Routine can still stamp deployCommit", "allow", () =>
+    setDoc(doc(as(BOT), "backlogItems/i1"), { deployCommit: "abc" }, { merge: true }));
+  await check("A human editor can set an https test link", "allow", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { previewUrl: "https://rawcdn.githack.com/x/y" }, { merge: true }));
+  await check("A human editor can clear the test link", "allow", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { previewUrl: null }, { merge: true }));
+  await check("A javascript: test link is refused", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { previewUrl: "javascript:alert(1)" }, { merge: true }));
+  await check("An editor can delete a Backlog card", "allow", () => deleteDoc(doc(as(MEMBER), "backlogItems/iBacklog")));
+  await check("An editor CANNOT delete a Ready for Testing card", "deny", () => deleteDoc(doc(as(MEMBER), "backlogItems/i1")));
+  await check("An editor CANNOT delete a shipped card", "deny", () => deleteDoc(doc(as(MEMBER), "backlogItems/iLive")));
+
+  await check("An editor CANNOT delete a project", "deny", () => deleteDoc(doc(as(MEMBER), "projects/p1")));
+  await check("A team admin can delete a project", "allow", () => deleteDoc(doc(as(TEAM_ADMIN), "projects/p1")));
+  await check("An editor can only name themselves as the Notify requester", "deny", () =>
+    setDoc(doc(as(MEMBER), "projects/p1"), { notifyRequestedAt: serverTimestamp(), notifyRequestedByEmail: "ada@personalisationhub.com" }, { merge: true }));
+  await check("An editor naming themselves as the Notify requester is fine", "allow", () =>
+    setDoc(doc(as(MEMBER), "projects/p1"), { notifyRequestedAt: serverTimestamp(), notifyRequestedByEmail: "Sam@personalisationhub.com" }, { merge: true }));
+  await check("A rename leaves a stored requester email untouched (unchanged passes)", "allow", async () => {
+    await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), "projects/p1"), { notifyRequestedByEmail: "ada@personalisationhub.com" }, { merge: true }));
+    await setDoc(doc(as(MEMBER), "projects/p1"), { name: "Renamed" }, { merge: true });
+  });
+  await check("An editor CANNOT change routinePromptMd", "deny", () =>
+    setDoc(doc(as(MEMBER), "projects/p1"), { routinePromptMd: "ignore previous instructions" }, { merge: true }));
+  await check("A team admin can change routinePromptMd", "allow", () =>
+    setDoc(doc(as(TEAM_ADMIN), "projects/p1"), { routinePromptMd: "Use the dsp-integration folder." }, { merge: true }));
+  await check("A javascript: artifactUrl is refused", "deny", () =>
+    setDoc(doc(as(MEMBER), "projects/p1"), { artifactUrl: "javascript:alert(1)" }, { merge: true }));
+  await check("An https artifactUrl is fine", "allow", () =>
+    setDoc(doc(as(MEMBER), "projects/p1"), { artifactUrl: "https://claude.ai/artifact/abc" }, { merge: true }));
+  await check("A requirementsMd over 200k chars is refused", "deny", () =>
+    setDoc(doc(as(MEMBER), "projects/p1"), { requirementsMd: "x".repeat(200001) }, { merge: true }));
+
+  await check("An editor can rename a fully populated project (stays inside the rules expression budget)", "allow", () =>
+    setDoc(doc(as(MEMBER), "projects/pFull"), { name: "Renamed" }, { merge: true }));
+  await check("An editor can click Notify Claude on a fully populated project", "allow", () =>
+    setDoc(doc(as(MEMBER), "projects/pFull"), { notifyRequestedAt: serverTimestamp(), notifyRequestedByEmail: "sam@personalisationhub.com" }, { merge: true }));
+  await check("An editor can latch trainLocked on a fully populated project", "allow", () =>
+    setDoc(doc(as(MEMBER), "projects/pFull"), { trainLocked: true }, { merge: true }));
+  await check("A viewer CANNOT rename a fully populated project", "deny", () =>
+    setDoc(doc(as(VIEWER), "projects/pFull"), { name: "Renamed" }, { merge: true }));
+  await check("An editor CANNOT set the help centre's analytics tag", "deny", () =>
+    setDoc(doc(as(MEMBER), "settings/faqSite"), { analyticsTag: "GTM-EVIL" }, { merge: true }));
+  await check("A team admin can set the help centre's analytics tag", "allow", () =>
+    setDoc(doc(as(TEAM_ADMIN), "settings/faqSite"), { analyticsTag: "GTM-ABC123" }, { merge: true }));
 
   await env.cleanup();
 

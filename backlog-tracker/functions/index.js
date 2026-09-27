@@ -14,7 +14,7 @@ const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
-const { isTrainRelevantItem, trainLockShouldClear } = require("./train-lock");
+const { isTrainRelevantItem, trainLockShouldClear, trainHandoverReason } = require("./train-lock");
 
 initializeApp();
 
@@ -67,12 +67,45 @@ const CLAUDE_ROUTINE_TOKEN = defineSecret("CLAUDE_ROUTINE_TOKEN");
 // or when the click can't be attributed to anyone (a click made before this
 // existed, or a direct Firestore write bypassing the board UI) — so this is
 // purely additive, never a new way for a click to silently do nothing.
+// Only ever POST the fire text — it carries board credentials — to
+// Anthropic's Routine API. Mirrors mcp-server.js's routineFireHostAllowed;
+// a binding stored before that check existed is refused here too.
+function routineFireHostAllowed(fireUrl) {
+  try { const u = new URL(String(fireUrl || "")); return u.protocol === "https:" && u.hostname.toLowerCase() === "api.anthropic.com"; }
+  catch { return false; }
+}
+
 async function resolveRoutineCredentials(db, triggeredByEmail, sharedFireUrl, sharedToken) {
   if (triggeredByEmail) {
+    const email = String(triggeredByEmail).toLowerCase();
     try {
-      const snap = await db.collection("consoleUsers").doc(String(triggeredByEmail).toLowerCase()).get();
+      // routineBindings/{email} is the server-only home for a member's
+      // Routine trigger (27 Sep 2026); consoleUsers.routineFire* is where
+      // it used to live, readable by every member. A binding still found
+      // there is honoured once, moved, and scrubbed from the old place.
+      const bindingSnap = await db.collection("routineBindings").doc(email).get();
+      const b = bindingSnap.exists ? bindingSnap.data() : null;
+      if (b && b.fireUrl && b.token) {
+        if (!routineFireHostAllowed(b.fireUrl)) {
+          logger.warn("member routine binding refused — fire URL host not allowed; using the shared Routine", { email });
+          return { fireUrl: sharedFireUrl, token: sharedToken, via: "shared" };
+        }
+        return { fireUrl: b.fireUrl, token: b.token, via: "member" };
+      }
+      const snap = await db.collection("consoleUsers").doc(email).get();
       const d = snap.exists ? snap.data() : null;
       if (d && d.routineFireUrl && d.routineFireToken) {
+        try {
+          await db.collection("routineBindings").doc(email).set({ email, fireUrl: d.routineFireUrl, token: d.routineFireToken, boundAt: d.routineBoundAt || null, migratedAt: new Date() });
+          await db.collection("consoleUsers").doc(email).set({ routineFireUrl: null, routineFireToken: null, routineBoundAt: null }, { merge: true });
+          logger.info("member routine binding migrated to routineBindings", { email });
+        } catch (err) {
+          logger.warn("could not migrate legacy routine binding", { email, error: err instanceof Error ? err.message : String(err) });
+        }
+        if (!routineFireHostAllowed(d.routineFireUrl)) {
+          logger.warn("legacy member routine binding refused — fire URL host not allowed; using the shared Routine", { email });
+          return { fireUrl: sharedFireUrl, token: sharedToken, via: "shared" };
+        }
         return { fireUrl: d.routineFireUrl, token: d.routineFireToken, via: "member" };
       }
     } catch (err) {
@@ -425,7 +458,12 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
       // REQUEST ===` marker ROUTINE_INSTRUCTIONS.md's own Deploy flow section
       // keys off of.
       const itemLines = items
-        .map((i, idx) => `${idx + 1}. [id: ${i.id}] [${i.type === "bug" ? "Bug" : "Feature"}] ${i.title} — ${i.desc}${i.deployCommit ? ` (commit ${i.deployCommit})` : ""}`)
+        // A card riding on a sibling's commit (carriedByCommit — see
+        // run-backlog-automation.js's carryingCommitOnTrain) says so here,
+        // because its deployCommit is that sibling's sha and no commit
+        // carries its own `Backlog item:` trailer — ROUTINE_INSTRUCTIONS.md's
+        // Deploy flow step 1 tells the session what to verify instead.
+        .map((i, idx) => `${idx + 1}. [id: ${i.id}] [${i.type === "bug" ? "Bug" : "Feature"}] ${i.title} — ${i.desc}${i.deployCommit ? ` (commit ${i.deployCommit}${i.carriedByCommit ? `; no commit of its own — rides on ${i.carriedByItem ? `ticket ${i.carriedByItem}'s` : "a sibling's"} commit` : ""})` : ""}`)
         .join("\n");
 
       // Since the deployment train there is no per-item branch or PR to
@@ -899,14 +937,17 @@ exports.onBacklogItemPublishedLive = onDocumentUpdated(
       return;
     }
 
-    const batch = db.batch();
-    toFlag.forEach((articleDoc) => {
-      batch.set(articleDoc.ref, {
-        needsReview: true,
-        updatedAt: new Date(),
-      }, { merge: true });
-    });
-    await batch.commit();
+    // Chunked: a Firestore batch takes at most 500 writes.
+    for (let i = 0; i < toFlag.length; i += 400) {
+      const batch = db.batch();
+      toFlag.slice(i, i + 400).forEach((articleDoc) => {
+        batch.set(articleDoc.ref, {
+          needsReview: true,
+          updatedAt: new Date(),
+        }, { merge: true });
+      });
+      await batch.commit();
+    }
 
     logger.info("Flagged linked FAQ articles for review after merge to main", {
       itemId,
@@ -1225,6 +1266,45 @@ exports.onProjectReadyForAutomation = onDocumentWritten(
   }
 );
 
+// Hands the train to the pipeline when the Deploy Routine can't. The Deploy
+// to Main click fires the Routine, which verifies the train, does the FAQ
+// impact review, and finally PATCHes trainReady. On 25 Sep 2026 it did all
+// of that and then its own session permission layer refused the trainReady
+// PATCH ("Modify Shared Resources"); it reported deployRoutine.status
+// "error" honestly, and the approved ticket sat in Approved for Deployment
+// with nothing left to move it until a person ran dsp-board.yml's
+// train_ready by hand. This reacts the moment the Routine's own report
+// lands (its deployRoutine write is what changes here) and sets trainReady
+// when trainHandoverReason (train-lock.js) says the Routine finished — done
+// or error — without setting it, or could not be fired at all. The
+// automation re-checks every ticket's commit is on the branch and nothing
+// is still in testing before it merges (processDeployTrain), so this never
+// merges anything the Routine would have refused for a real reason. The
+// time-based cases (a Routine that never reports back) are the automation
+// sweep's job — reconcileDeployRequests — since nothing writes the doc
+// while nothing happens.
+exports.onDeployRoutineSettled = onDocumentWritten(
+  { document: "projects/{projectId}" },
+  async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    if (!after) return;
+    const routineBefore = JSON.stringify(before?.deployRoutine ?? null);
+    const routineAfter = JSON.stringify(after.deployRoutine ?? null);
+    if (routineBefore === routineAfter) return; // only the Routine's own reports (and the fire's write) are events here
+    const reason = trainHandoverReason(after, Date.now());
+    if (!reason) return;
+    logger.info("Deploy Routine settled without handing the train over — setting trainReady for the pipeline", {
+      projectId: event.params.projectId, reason,
+    });
+    await getFirestore().collection("projects").doc(event.params.projectId).set({
+      trainReady: true,
+      trainNote: `Deploy to Main is going ahead without the Routine's hand-over: ${reason}. The pipeline re-checks that every ticket's commit is on the branch and nothing is still in testing before it merges.`,
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+  }
+);
+
 // Backfills the skill change-history audit trail (eKFIGtskqbnUTqUTBFBl) for
 // a skill edited directly on the console. update_skill/delete_skill in
 // functions/mcp-server.js already write to docRevisions themselves, inline,
@@ -1423,11 +1503,30 @@ function boardApiPathAllowed(pathname, body) {
   return BOARD_API_COLLECTIONS.includes(first);
 }
 
-exports.boardApi = onRequest({ secrets: [BOARD_API_KEY], cors: false, timeoutSeconds: 60 }, async (req, res) => {
+// Wrong-key attempts per address, per instance: the key is a long random
+// secret, but nothing used to stop someone trying at the function's full
+// throughput. 20 misses in ten minutes and that address waits.
+const boardApiMisses = new Map();
+function boardApiThrottled(req) {
+  const ip = String(req.get("x-forwarded-for") || "").split(",")[0].trim() || req.ip || "unknown";
+  const now = Date.now();
+  const entry = boardApiMisses.get(ip);
+  return !!(entry && entry.count >= 20 && entry.resetAt > now);
+}
+function boardApiNoteMiss(req) {
+  const ip = String(req.get("x-forwarded-for") || "").split(",")[0].trim() || req.ip || "unknown";
+  const now = Date.now();
+  let entry = boardApiMisses.get(ip);
+  if (!entry || entry.resetAt <= now) { entry = { count: 0, resetAt: now + 10 * 60 * 1000 }; boardApiMisses.set(ip, entry); }
+  entry.count += 1;
+}
+
+exports.boardApi = onRequest({ secrets: [BOARD_API_KEY], cors: false, timeoutSeconds: 60, maxInstances: 10 }, async (req, res) => {
   const configured = BOARD_API_KEY.value();
   const presented = req.get("x-board-key") || "";
   if (!configured || configured === "unset") { res.status(503).json({ error: "boardApi is not configured (BOARD_API_KEY unset)" }); return; }
-  if (!presented || !timingSafeEqual(presented, configured)) { res.status(401).json({ error: "missing or invalid X-Board-Key" }); return; }
+  if (boardApiThrottled(req)) { res.status(429).set("Retry-After", "600").json({ error: "too many failed attempts — try again later" }); return; }
+  if (!presented || !timingSafeEqual(presented, configured)) { boardApiNoteMiss(req); res.status(401).json({ error: "missing or invalid X-Board-Key" }); return; }
   if (!["GET", "POST", "PATCH", "DELETE"].includes(req.method)) { res.status(405).json({ error: "method not allowed" }); return; }
   // Depending on which URL form invoked us the function name may or may not
   // still be on the path; normalise so both work.

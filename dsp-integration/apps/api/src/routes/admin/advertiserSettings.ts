@@ -1,9 +1,10 @@
 /* Advertiser settings (spec §4, §5, §6): pricing and the company lists, plus
    the read-only Where these apply and Available Inventory. */
-import { TARGETING_MODES, advertiserSlug, assignedOf, billingUnitHoursOf, reservePriceOf, supportedTargetingOf, type AdvertiserSettings, type AdvertiserSettingsInput, type Assigned, type AvailableInventoryRow, type DisplayType, type DspAdvertisers, type TargetingMode } from '@ph-dsp/types'
+import { MAX_MAX_CAMPAIGNS, MIN_MAX_CAMPAIGNS, TARGETING_MODES, advertiserSlug, assignedOf, billingUnitHoursOf, maxCampaignsOf, reservePriceOf, supportedTargetingOf, type AdvertiserSettings, type AdvertiserSettingsInput, type Assigned, type AvailableInventoryRow, type DisplayType, type DspAdvertisers, type TargetingMode } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { cleanList, validateAdvertiserSettings } from '../../domain/advertiserSettings'
+import { zonesOf } from '../../domain/displayTypes'
 import { assignedToSlot, validateAssigned } from '../../domain/slots'
 import type { Guards } from '../../http/app'
 import { validationFailed } from '../../http/errors'
@@ -35,14 +36,33 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
     const errors = validateAdvertiserSettings(req.body)
     if (errors.length) throw validationFailed(errors, 'An entry can’t be on both lists, and pricing must be positive.')
     const b = req.body as AdvertiserSettingsInput
-    /* Windows already bid on or booked are keyed on the current length (Q13). */
+    /* Windows already bid on or booked are keyed on the current length (Q13)
+       — changing it can't reach back and resize them. It used to be refused
+       outright while any were still active; now the new length is deferred
+       instead (Rob's board ticket, 26 Sep 2026): playWindowHours stays as it
+       is and the request waits in pendingPlayWindowHours until every such
+       window has played, at which point schedulerTick (exchange/scheduler.ts)
+       promotes it on its own. A request that doesn't touch playWindowHours
+       leaves any change already pending exactly as it was. */
     const current = ctx.company.get()
-    if (b.playWindowHours !== current.playWindowHours && ctx.reservations.byStatus(['pending', 'won', 'reserved'], ctx.clock().toISOString()).some((r) => !r.testMode)) {
-      throw validationFailed([{ field: 'playWindowHours', reason: 'Future play windows are already bid on or booked; the length can change once they have played.' }])
+    let playWindowHours = current.playWindowHours
+    let pendingPlayWindowHours = current.pendingPlayWindowHours
+    let pendingPlayWindowEffectiveFrom = current.pendingPlayWindowEffectiveFrom
+    if (b.playWindowHours !== current.playWindowHours) {
+      const active = ctx.reservations.byStatus(['pending', 'won', 'reserved'], ctx.clock().toISOString()).filter((r) => !r.testMode)
+      if (!active.length) {
+        playWindowHours = b.playWindowHours
+        pendingPlayWindowHours = null
+        pendingPlayWindowEffectiveFrom = null
+      } else {
+        pendingPlayWindowHours = b.playWindowHours
+        pendingPlayWindowEffectiveFrom = new Date(Math.max(...active.map((r) => Date.parse(r.windowStart) + current.playWindowHours * 3_600_000))).toISOString()
+      }
     }
     ctx.company.save({
       currency: b.currency, floorCpm: b.floorCpm, personalisedMultiplier: b.personalisedMultiplier, interactiveCpe: b.interactiveCpe,
-      auctionOpensHours: b.auctionOpensHours, playWindowHours: b.playWindowHours, auctionCutoffTime: b.auctionCutoffTime,
+      auctionOpensHours: b.auctionOpensHours, playWindowHours, auctionCutoffTime: b.auctionCutoffTime,
+      pendingPlayWindowHours, pendingPlayWindowEffectiveFrom,
       advertiserWhitelist: cleanList(b.advertiserWhitelist), advertiserBlacklist: cleanList(b.advertiserBlacklist),
       categoryWhitelist: cleanList(b.categoryWhitelist), categoryBlacklist: cleanList(b.categoryBlacklist),
     })
@@ -58,12 +78,34 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
     const buyersLists = ctx.buyersLists.list()
     const items: AvailableInventoryRow[] = []
     for (const t of ctx.displayTypes.list()) {
-      const playlistName = (t.defaultPlaylistId && ctx.playlists.get(t.defaultPlaylistId)?.name) || '—'
+      const zones = zonesOf(t)
+      /* A position's playlist, per slot: the zone playlist it's tagged to
+         (Slot.zoneId) when this is a multi-zone display type and the slot
+         names one, else the display type's own default playlist — same
+         "override always wins" shape as reserve price/billing unit/max
+         campaigns above, just a lookup instead of a number (ticket
+         "Available Inventory: playlist-primary table (drop Display type
+         column) with Unassigned indicator", 27 Sep 2026). This is what
+         makes only the zone playlists that actually have an advertiser slot
+         show up on Available Inventory — a zone nothing is tagged to simply
+         never produces a row. */
+      const playlistIdOf = (s: { zoneId?: string | null }): string | null =>
+        (s.zoneId && zones.find((z) => z.id === s.zoneId)?.playlistId) || t.defaultPlaylistId || null
+      /* Not tied to any physical display (Displays & Devices) — its
+         advertiser slots exist but aren't actually playing anywhere. Same
+         "no displays" read windowStatus (positions.ts) already uses to mark
+         a position unavailable, surfaced here as Available Inventory's
+         "Unassigned" indicator, not a live/sold state (that's out of scope
+         — this build has no such concept). Per display type, since a
+         multi-zone display type's zones all share the one physical screen. */
+      const unassigned = ctx.displays.summaryByDisplayType(t.id).displays === 0
       ;(t.phExtensions?.slots ?? []).forEach((s, i) => {
         if (s.owner !== 'advertiser') return
         const a = assignedOf(s)
+        const playlistId = playlistIdOf(s)
+        const playlistName = (playlistId && ctx.playlists.get(playlistId)?.name) || '—'
         items.push({
-          displayTypeId: t.id, displayTypeName: t.name, touchPoint: t.touchPoint, playlistName, slot: i + 1, position: s.label,
+          displayTypeId: t.id, displayTypeName: t.name, touchPoint: t.touchPoint, playlistName, playlistId, unassigned, slot: i + 1, position: s.label,
           assignedTo: {
             ...a,
             partnerNames: a.partnerIds.map((id) => partners.find((p) => p.id === id)?.name ?? id),
@@ -78,6 +120,9 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
           billingUnitHours: billingUnitHoursOf(t, s),
           billingUnitHoursOverride: s.billingUnitHours ?? null,
           displayTypeBillingUnitHours: t.phExtensions?.billingUnitHours ?? null,
+          maxCampaigns: maxCampaignsOf(t, s),
+          maxCampaignsOverride: s.maxCampaigns ?? null,
+          displayTypeMaxCampaigns: t.phExtensions?.maxCampaigns ?? null,
         })
       })
     }
@@ -115,6 +160,19 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
     return v
   }
 
+  /* An integer 1-10 inclusive, or null to inherit (ticket "Available
+     Inventory: Max campaigns column + slot playlist statement") — the
+     same override/default pair as reservePrice/reservePriceDefault and
+     billingUnitHours/billingUnitHoursDefault above. */
+  const parseMaxCampaigns = (v: unknown, field: string, errors: { field: string; reason: string }[]): number | null => {
+    if (v === null || v === undefined) return null
+    if (typeof v !== 'number' || !Number.isInteger(v) || v < MIN_MAX_CAMPAIGNS || v > MAX_MAX_CAMPAIGNS) {
+      errors.push({ field, reason: `An integer from ${MIN_MAX_CAMPAIGNS} to ${MAX_MAX_CAMPAIGNS}, or null to inherit.` })
+      return null
+    }
+    return v
+  }
+
   /* Who a slot is assigned to, what targeting it supports, and its reserve
      price override (Rob, 22 Sep): the fields of a sellable slot that live
      here. Everything else about it is set on its display type — including
@@ -124,16 +182,17 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
   app.put<{ Body: { items?: unknown } }>('/available-inventory', async (req) => {
     guards.flagged()
     guards.requireScope(req, 'admin')
-    const rows = Array.isArray(req.body?.items) ? (req.body.items as { displayTypeId?: unknown; slot?: unknown; supportedTargeting?: unknown; assignedTo?: unknown; reservePrice?: unknown; reservePriceDefault?: unknown; billingUnitHours?: unknown; billingUnitHoursDefault?: unknown }[]) : null
+    const rows = Array.isArray(req.body?.items) ? (req.body.items as { displayTypeId?: unknown; slot?: unknown; supportedTargeting?: unknown; assignedTo?: unknown; reservePrice?: unknown; reservePriceDefault?: unknown; billingUnitHours?: unknown; billingUnitHoursDefault?: unknown; maxCampaigns?: unknown; maxCampaignsDefault?: unknown }[]) : null
     if (!rows) throw validationFailed([{ field: 'items', reason: 'An array of slots is required.' }])
     const keys = TARGETING_MODES.map((m) => m.key) as string[]
     const partners = ctx.partners.list()
     const company = ctx.company.get()
     const errors: { field: string; reason: string }[] = []
-    type Patch = { supportedTargeting: TargetingMode[]; assigned: Assigned; reservePrice: number | null; billingUnitHours: number | null }
+    type Patch = { supportedTargeting: TargetingMode[]; assigned: Assigned; reservePrice: number | null; billingUnitHours: number | null; maxCampaigns: number | null }
     const wanted = new Map<string, Map<number, Patch>>()
     const defaults = new Map<string, number | null>()
     const billingUnitDefaults = new Map<string, number | null>()
+    const maxCampaignsDefaults = new Map<string, number | null>()
     const names = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string').map((x) => x.trim()).filter(Boolean) : [])
 
     rows.forEach((r, i) => {
@@ -170,10 +229,16 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         if (billingUnitDefaults.has(dt.id) && billingUnitDefaults.get(dt.id) !== billingUnitHoursDefault) errors.push({ field: f('billingUnitHoursDefault'), reason: 'All slots on a display type must submit the same billing unit default.' })
         else billingUnitDefaults.set(dt.id, billingUnitHoursDefault)
       }
+      const maxCampaigns = parseMaxCampaigns(r.maxCampaigns, f('maxCampaigns'), errors)
+      const maxCampaignsDefault = parseMaxCampaigns(r.maxCampaignsDefault, f('maxCampaignsDefault'), errors)
+      if (dt) {
+        if (maxCampaignsDefaults.has(dt.id) && maxCampaignsDefaults.get(dt.id) !== maxCampaignsDefault) errors.push({ field: f('maxCampaignsDefault'), reason: 'All slots on a display type must submit the same max campaigns default.' })
+        else maxCampaignsDefaults.set(dt.id, maxCampaignsDefault)
+      }
 
       if (dt && def && targeting && !bad.length) {
         const byType = wanted.get(dt.id) ?? new Map<number, Patch>()
-        byType.set(slot, { supportedTargeting: targeting, assigned, reservePrice, billingUnitHours })
+        byType.set(slot, { supportedTargeting: targeting, assigned, reservePrice, billingUnitHours, maxCampaigns })
         wanted.set(dt.id, byType)
       }
     })
@@ -184,10 +249,11 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
       const ext = { ...(dt.phExtensions ?? { slots: [] }) }
       ext.slots = (ext.slots ?? []).map((s, i) => {
         const patch = slots.get(i + 1)
-        return patch ? { ...s, supportedTargeting: patch.supportedTargeting, ...assignedToSlot(patch.assigned, partners), reservePrice: patch.reservePrice, billingUnitHours: patch.billingUnitHours } : s
+        return patch ? { ...s, supportedTargeting: patch.supportedTargeting, ...assignedToSlot(patch.assigned, partners), reservePrice: patch.reservePrice, billingUnitHours: patch.billingUnitHours, maxCampaigns: patch.maxCampaigns } : s
       })
       if (defaults.has(displayTypeId)) ext.reservePrice = defaults.get(displayTypeId) ?? null
       if (billingUnitDefaults.has(displayTypeId)) ext.billingUnitHours = billingUnitDefaults.get(displayTypeId) ?? null
+      if (maxCampaignsDefaults.has(displayTypeId)) ext.maxCampaigns = maxCampaignsDefaults.get(displayTypeId) ?? null
       ctx.displayTypes.saveExtensions(displayTypeId, ext)
     }
     return inventory()

@@ -2,6 +2,8 @@
    "Delete is disabled" is enforced here too. */
 import type { DeleteCheck } from '@ph-dsp/types'
 import type { Context } from '../context'
+import { TAKEN } from '../repos/ReservationRepo'
+import { positionIdOf } from './positions'
 import { zonesOf } from './displayTypes'
 
 /* A display type can't be deleted while any display is assigned to it. */
@@ -24,5 +26,15 @@ export function playlistDeleteCheck(ctx: Context, id: string): DeleteCheck {
 export const dependentDetails = (c: DeleteCheck) => c.dependents.map((d) => ({ field: d.kind, reason: d.detail ? `${d.name} · ${d.detail}` : d.name }))
 
 /* Q47 default: don't block the delete; log how many of its advertiser
-   positions are sold or reserved. Reservations arrive with package 15. */
-export const soldOrReservedPositions = (_ctx: Context, _displayTypeId: string) => 0
+   positions are sold or reserved (live wins/reservations, Test-mode
+   excluded — same definition as a "sold" window elsewhere, e.g.
+   windowStatus in positions.ts). Counts positions, not reservation rows: an
+   advertiser position booked across several play windows counts once. */
+export function soldOrReservedPositions(ctx: Context, displayTypeId: string): number {
+  const dt = ctx.displayTypes.get(displayTypeId)
+  if (!dt) return 0
+  const positionIds = new Set((dt.phExtensions?.slots ?? []).flatMap((s, i) => (s.owner === 'advertiser' ? [positionIdOf(displayTypeId, i + 1)] : [])))
+  if (!positionIds.size) return 0
+  const hit = new Set(ctx.reservations.byStatus(TAKEN).filter((r) => !r.testMode && positionIds.has(r.positionId)).map((r) => r.positionId))
+  return hit.size
+}

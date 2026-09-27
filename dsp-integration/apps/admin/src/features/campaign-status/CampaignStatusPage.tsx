@@ -8,10 +8,18 @@
    submitted — never HQ's own campaigns (Rob, 20 Sep), and never a Draft one
    (ticket, 22 Sep, §3: a retailer only ever sees a campaign once it has
    been submitted). The status filter lives in the column, as the design
-   system's tables do, the header stays in view, and the campaign name
-   opens the campaign (CampaignDetail). */
+   system's tables do, the header stays in view, and the playlist name
+   opens the campaign (CampaignDetail).
+
+   One row is one playlist: an advertiser submits exactly one content
+   package per slot — the mandatory default layer plus its optional
+   localised/personalised upsells (spec §6) — stored as the one Campaign
+   record's `targeting`, so "No. of campaigns" and the two variable columns
+   below summarise those layers, not a separate row each (ticket "Campaign
+   Status: Playlist name column, submitted count, localised/personalised
+   targeting columns, Advertiser first"). */
 import { useQuery } from '@tanstack/react-query'
-import { Button, Dropdown, Input, Modal, Spin, Switch } from 'antd'
+import { Button, Dropdown, Input, Modal, Spin, Switch, Tooltip } from 'antd'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
 import { ApprovalActions, ApprovalStatusBadge, STATUS_LABELS, type Approval, type ApprovalStatus } from '@ph-dsp/campaign-approval/ui'
 import type { Campaign } from '@ph-dsp/types'
@@ -42,8 +50,31 @@ const StatusCell = ({ data, context }: P) => {
   const a = data && context.current.approvals[data.campaignId]
   return a ? <ApprovalStatusBadge status={a.status} mode={a.mode} /> : <span style={{ color: T.micro }}>—</span>
 }
-const NameCell = ({ data, context }: P) =>
+/* The submission's own name — this playlist's name (spec §6: an advertiser
+   submits one content package per slot, the mandatory default layer plus
+   its optional localised/personalised upsells). Opens the campaign detail,
+   which — since every layer of this playlist already lives on the one
+   Campaign record — already is "the campaign table filtered to this
+   playlist, showing every campaign submitted for it" (ticket's PH
+   click-through requirement; see REQUIREMENTS.md §6). */
+const PlaylistNameCell = ({ data, context }: P) =>
   data ? <Button type="link" className="px-0" style={{ color: T.text, fontWeight: 700 }} onClick={() => context.current.open(data.campaignId)}>{data.name}</Button> : null
+
+const CampaignCountCell = ({ data }: P) => (data ? <span>{data.campaignCount}</span> : null)
+
+/* A high-level summary in the cell (the variables targeted, deduped), the
+   exact rules behind it on hover — one consolidated view of everything this
+   advertiser targets on this playlist's localised/personalised layer(s). */
+const VariablesCell = ({ variables, ruleLines }: { variables: string[]; ruleLines: string[] }) => {
+  if (!variables.length) return <span style={{ color: T.micro }}>—</span>
+  return (
+    <Tooltip title={ruleLines.join(' · ')}>
+      <span className="block truncate">{variables.join(', ')}</span>
+    </Tooltip>
+  )
+}
+const LocalisedVariablesCell = ({ data }: P) => (data ? <VariablesCell variables={data.localisedVariables} ruleLines={data.localisedRuleLines} /> : null)
+const PersonalisedVariablesCell = ({ data }: P) => (data ? <VariablesCell variables={data.personalisedVariables} ruleLines={data.personalisedRuleLines} /> : null)
 /* When the advertiser's booking starts, so what is up next sorts to the top. */
 const ScheduleCell = ({ data }: P) => {
   if (!data) return null
@@ -145,6 +176,14 @@ export function CampaignStatusPage() {
     setParams(next, { replace: true })
   }
   const columns = useMemo<ColDef<Campaign>[]>(() => [
+    /* Advertiser first (ticket "Campaign Status: Playlist name column..."):
+       every other column here is now about the one playlist an advertiser
+       submitted for a slot, so who submitted it leads the row. */
+    {
+      headerName: 'Advertiser', width: 150, minWidth: 130, valueGetter: (p) => p.data?.advertiserName ?? '—',
+      ...externalSetColumn<Campaign>('Advertiser', advertiserOptions.map((a) => a.label), advertiserOptions.find((a) => a.value === advertiserId)?.label,
+        (name) => setAdvertiserFilter(advertiserOptions.find((a) => a.label === name)?.value)),
+    },
     {
       /* What the advertiser booked, earliest first, so what is up next is at the top. */
       headerName: 'Schedule', width: 150, minWidth: 130, cellRenderer: ScheduleCell, sort: 'asc', comparator: (a, b) => (a || '9999').localeCompare(b || '9999'),
@@ -155,11 +194,19 @@ export function CampaignStatusPage() {
       valueGetter: (p) => (p.data ? STATUS_LABELS[approvals[p.data.campaignId]?.status as ApprovalStatus] ?? '' : ''),
       ...setColumn<Campaign>('Status', values((c) => STATUS_LABELS[approvals[c.campaignId]?.status as ApprovalStatus] ?? '')),
     },
-    { headerName: 'Name', width: 260, minWidth: 180, cellRenderer: NameCell, valueGetter: (p) => p.data?.name ?? '', ...searchColumn<Campaign>('Name') },
+    /* The submission's own name — one playlist per slot, spec §6. */
+    { headerName: 'Playlist name', width: 220, minWidth: 180, cellRenderer: PlaylistNameCell, valueGetter: (p) => p.data?.name ?? '', ...searchColumn<Campaign>('Playlist name') },
     {
-      headerName: 'Advertiser', width: 150, minWidth: 130, valueGetter: (p) => p.data?.advertiserName ?? '—',
-      ...externalSetColumn<Campaign>('Advertiser', advertiserOptions.map((a) => a.label), advertiserOptions.find((a) => a.value === advertiserId)?.label,
-        (name) => setAdvertiserFilter(advertiserOptions.find((a) => a.label === name)?.value)),
+      headerName: 'No. of campaigns', width: 150, minWidth: 130, suppressSizeToFit: true, cellRenderer: CampaignCountCell,
+      valueGetter: (p) => p.data?.campaignCount ?? 0,
+    },
+    {
+      headerName: 'Localised variables', width: 200, minWidth: 160, cellRenderer: LocalisedVariablesCell,
+      valueGetter: (p) => p.data?.localisedVariables.join(', ') ?? '',
+    },
+    {
+      headerName: 'Personalised variables', width: 200, minWidth: 160, cellRenderer: PersonalisedVariablesCell,
+      valueGetter: (p) => p.data?.personalisedVariables.join(', ') ?? '',
     },
     { headerName: 'DSP', width: 150, minWidth: 130, valueGetter: (p) => p.data?.partnerName ?? '—', ...setColumn<Campaign>('DSP', values((c) => c.partnerName ?? '')) },
     { headerName: 'Activation', width: 160, suppressSizeToFit: true, cellRenderer: ActivationCell },

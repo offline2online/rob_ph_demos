@@ -231,6 +231,55 @@ function fakeEvent({ itemId, before, after }) {
     assert.strictEqual(db.__state.projects.p1.trainLocked, true, "finishTrain() itself owns clearing the lock once it's done");
   });
 
+  // ── onDeployRoutineSettled: the pipeline takes the train when the Routine can't ──
+  function projectEvent(before, after) {
+    return {
+      params: { projectId: "p1" },
+      data: {
+        before: before === undefined ? undefined : { data: () => before },
+        after: after === undefined ? undefined : { data: () => after },
+      },
+    };
+  }
+  const clicked = { name: "Display Types & DSP Integration", trainLocked: true, trainStatus: "idle", trainReady: false, deployNotifyRequestedAt: "2026-09-25T23:14:54Z" };
+
+  await test("THE DSP TICKET, through the real trigger: the Routine reports error after its permission layer blocked the trainReady PATCH -> trainReady is set for the pipeline", async () => {
+    const running = { ...clicked, deployRoutine: { status: "in-progress", firedAt: "2026-09-25T23:14:56Z" } };
+    const settled = { ...clicked, deployRoutine: { status: "error", firedAt: "2026-09-25T23:14:56Z", finishedAt: "2026-09-25T23:21:26Z", errorMessage: "Deploy verification complete ... this session's own permission layer blocked the final PATCH that sets trainReady" } };
+    const db = makeFakeDb({ projects: { p1: settled } });
+    const mod = loadIndexFresh(db);
+    assert.strictEqual(typeof mod.onDeployRoutineSettled, "function");
+    await mod.onDeployRoutineSettled(projectEvent(running, settled));
+    const project = db.__state.projects.p1;
+    assert.strictEqual(project.trainReady, true, "the pipeline now owns the merge");
+    assert.match(project.trainNote, /without the Routine's hand-over/);
+    assert.match(project.trainNote, /permission layer blocked/);
+  });
+
+  await test("a report for a request the pipeline already consumed changes nothing", async () => {
+    const handled = { ...clicked, deployRequestHandledAt: "2026-09-25T23:43:00Z", deployRoutine: { status: "error", firedAt: "2026-09-25T23:14:56Z" } };
+    const db = makeFakeDb({ projects: { p1: handled } });
+    const mod = loadIndexFresh(db);
+    await mod.onDeployRoutineSettled(projectEvent({ ...handled, deployRoutine: { status: "in-progress", firedAt: "2026-09-25T23:14:56Z" } }, handled));
+    assert.strictEqual(db.__state.projects.p1.trainReady, false);
+  });
+
+  await test("a project write that does not touch deployRoutine is ignored here, even if the sweep would act", async () => {
+    const stale = { ...clicked, deployRoutine: { status: "error", firedAt: "2026-09-25T23:14:56Z" } };
+    const db = makeFakeDb({ projects: { p1: stale } });
+    const mod = loadIndexFresh(db);
+    await mod.onDeployRoutineSettled(projectEvent({ ...stale, trainNote: "old" }, { ...stale, trainNote: "new" }));
+    assert.strictEqual(db.__state.projects.p1.trainReady, false, "reconcileDeployRequests in the automation is the path for time-based cases");
+  });
+
+  await test("a Routine that is still running is left alone", async () => {
+    const running = { ...clicked, deployRoutine: { status: "in-progress", firedAt: new Date().toISOString() } };
+    const db = makeFakeDb({ projects: { p1: running } });
+    const mod = loadIndexFresh(db);
+    await mod.onDeployRoutineSettled(projectEvent({ ...clicked }, running));
+    assert.strictEqual(db.__state.projects.p1.trainReady, false);
+  });
+
   console.log(`\n${passed} passed, ${failures.length} failed\n`);
   if (failures.length) {
     for (const [name, err] of failures) console.error(`--- ${name}\n${err && err.stack ? err.stack : err}\n`);

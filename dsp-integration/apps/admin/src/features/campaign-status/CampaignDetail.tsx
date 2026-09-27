@@ -12,10 +12,11 @@ import type { BookingSchedule, CampaignBrief } from '@ph-dsp/types'
 import type { ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { api } from '../../api/client'
+import { BOOKING_SCHEDULE_PATH } from '../booking-schedule/path'
 import { Icon } from '../../shared/Icon'
 import { SectionLabel } from '../../shared/SectionLabel'
 import { T } from '../../theme/phTheme'
-import { CAMPAIGN_STATUS_PATH, useCampaign, useCampaignActions } from './useCampaigns'
+import { useCampaign, useCampaignActions } from './useCampaigns'
 
 const Empty = ({ icon, children }: { icon: string; children: ReactNode }) => (
   <div className="flex items-center gap-2 py-6" style={{ fontSize: 12.5, color: T.muted }}>
@@ -110,13 +111,31 @@ export function CampaignDetail() {
 
   return (
     <div>
-      <Button color="primary" variant="text" className="mb-2 px-0" icon={<Icon name="arrow_back" size={16} />} onClick={() => navigate(CAMPAIGN_STATUS_PATH)}>Campaign Status</Button>
+      {/* Campaign Status is the Campaign schedule section's second tab now
+          (ticket, 26 Sep 2026), not its own page — back there, not to the
+          removed standalone route. */}
+      <Button color="primary" variant="text" className="mb-2 px-0" icon={<Icon name="arrow_back" size={16} />} onClick={() => navigate(`${BOOKING_SCHEDULE_PATH}?tab=campaign-status`)}>Campaign Status</Button>
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <h2 className="m-0 flex-1" style={{ fontSize: 20, fontWeight: 700 }}>{c.name}</h2>
         <span style={{ fontSize: 12.5, color: T.muted }}>Status</span>
         {approval ? <ApprovalStatusBadge status={approval.status} mode={approval.mode} /> : <Spin size="small" />}
         {approval && (
-          <ApprovalActions status={approval.status} canApprove={canApprove} busy={busy === id} onApprove={() => approve(approval)} onReject={(r) => reject(approval, r)}>
+          <ApprovalActions
+            status={approval.status}
+            canApprove={canApprove}
+            busy={busy === id}
+            onApprove={() => approve(approval)}
+            onReject={(r) => reject(approval, r)}
+            /* While Awaiting approval, the status bar keeps showing the
+               activation toggle — disabled, since it can't be activated yet
+               — right next to the segmented control (ticket, 26 Sep). */
+            awaitingExtra={
+              <span className="inline-flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}>
+                Activated
+                <Switch aria-label={`${c.name}: activation`} checked={c.activation.enabled} disabled />
+              </span>
+            }
+          >
             <span className="inline-flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}>
               Activated
               <Switch aria-label={`${c.name}: activation`} checked={c.activation.enabled} loading={busy === id} onChange={(v) => activate(c, v)} />

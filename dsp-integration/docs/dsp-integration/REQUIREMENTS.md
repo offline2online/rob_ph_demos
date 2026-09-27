@@ -68,11 +68,13 @@ only), and per-DSP bidder tuning (QPS ceiling and bid timeout use platform
 defaults).
 
 **Navigation.** The HQ Admin navigation items for this project, in order
-(Rob, 24 Sep 2026): **Display Types**, **Playlist Management**, **Campaign
-Status**, **Advertisers / Inventory**, then **DSP Integration** at the
-bottom. The pages used day to day come first; DSP Integration, set up once
-per DSP, comes last. **Campaign Status** and **Advertisers / Inventory**
-show only while the retailer has DSP integration switched on (§7, *The DSP
+(Rob, 24 Sep 2026; **Campaign Status** folded into **Campaign schedule**'s
+own second tab, 26 Sep 2026 — it is no longer a nav item of its own):
+**Display Types**, **Playlist Management**, **Advertisers / Inventory**,
+then **DSP Integration** at the bottom. The pages used day to day come
+first; DSP Integration, set up once per DSP, comes last. **Advertisers /
+Inventory** (and, from there, **Campaign schedule**'s Campaign status tab)
+shows only while the retailer has DSP integration switched on (§7, *The DSP
 integration switch*). Within DSP Integration, the
 company pages are **Exchange settings**, **Advertiser settings** and
 **Shared Targeting Variables**, followed by one page per DSP.
@@ -254,6 +256,18 @@ not offered.
   flag, the QR Control phantom area (a positioned region outside campaign
   rotation) and the enabled features (In-Store Radio, MIST proximity, AI Agent
   Playback, Vision/AI). How these settings drive playback is unchanged.
+  **26 Sep 2026: auto-play/rotation/transition modes and asset fill/
+  positioning moved off the display type onto the playlist it belongs to —
+  edited from Playlist Management (§2), not from this page any more.**
+  `maximumCampaignsPlayedInRotation` and slot ownership stay here: they size
+  and sell this specific display type's positions (a position is sold per
+  display type × slot — see the Display Types & DSP Integration API
+  boundaries doc), so a playlist shared by more than one display type can
+  still be capped, and have its slots owned, differently on each screen it
+  fills. **The multi-zone flag and its zones (below) also moved onto a
+  playlist — the display type's current Default Playlist — but stay edited
+  here, on this page, never on Playlist Management**: see *Multi-zone
+  layouts* below.
 - **Configuration inheritance**: `Company (availability) → Display Type
   (default) → Display/Device (override)`. An override always wins and is
   never reset by a later type-level change. The UI must make clear that a
@@ -272,19 +286,75 @@ not offered.
     tablet; staff activate it but do not author it. Store-level authoring is
     out of scope for this release.
 
+  **A slot is a playlist position** (ticket "Available Inventory: Max
+  campaigns column + slot playlist statement"): assigning an advertiser a
+  slot assigns them that fixed position in a playlist rotation, of which
+  only one campaign plays at a time — the highest-priority version resolving
+  on available data (the mandatory default layer, or a localised/personalised
+  upsell that resolves ahead of it, per §6). The playlist is retained per
+  slot; this is the already-intended §6 model, stated explicitly here as
+  part of that ticket's spec clarification. **Which playlist** (ticket
+  "Available Inventory: playlist-primary table (drop Display type column)
+  with Unassigned indicator", 27 Sep 2026): on a single-zone display type
+  it's always the display type's own default playlist, as before; on a
+  multi-zone one it's whichever zone the slot is tagged to (`Slot.zoneId`,
+  below) — a real Menu Board–shaped screen can run three zone playlists
+  (Zone 1/2/3), each with its own advertiser slots or none at all, not one
+  shared rotation across the whole screen.
+
   The explanation of the three owners is a tooltip on the **Slot
   assignment** label.
 
-  **The slot editor sets the label and the owner, nothing else** (Rob,
-  20 Sep). Who a sellable position is assigned to — DSPs, named advertisers,
-  the whitelist — is managed on *Advertisers / Inventory* (§5), and appears
-  here read-only on the slot card. A Stores slot takes the default scope
-  (*Store staff*); its scope is no longer editable anywhere in this build.
-  Changing a slot's owner away from *Advertiser* drops the assignment and
-  the supported targeting with it, since the position is no longer sellable;
-  changing anything else keeps them.
+  **The slot editor sets the label, the owner, and — on a multi-zone display
+  type — which zone the slot belongs to** (Rob, 20 Sep; zone tagging added
+  27 Sep 2026). Who a sellable position is assigned to — DSPs, named
+  advertisers, the whitelist — is managed on *Advertisers / Inventory* (§5),
+  and appears here read-only on the slot card. A Stores slot takes the
+  default scope (*Store staff*); its scope is no longer editable anywhere in
+  this build. Changing a slot's owner away from *Advertiser* drops the
+  assignment and the supported targeting with it, since the position is no
+  longer sellable; changing anything else keeps them. **A slot's zone is
+  purely attribution** for Available Inventory (§5) — it decides which
+  playlist the position is shown under there, nothing about how the position
+  is identified, booked, priced or delivered: that stays display type + slot
+  exactly as before (`PH-CORE-BOUNDARIES.md` "At most one campaign per
+  display type, slot and play window"). The Zone column on the slot editor
+  only appears once the display type has zones (*Multi-Zone Layout*,
+  enabled); on a single-zone display type there is nothing to tag a slot to,
+  and it is always read as the display type's own default playlist.
+- **Default Playlist offers "Add new playlist"** (ticket, 26 Sep 2026), as an
+  option in that field's own dropdown alongside the existing playlists.
+  Choosing it creates a playlist scoped to this display type from the
+  outset (shown as *auto-created* in Playlist Management, the same as a
+  zone playlist created on demand) and selects it immediately — ready, once
+  it is this display type's Default Playlist, to define its own multi-zone
+  layout below.
+  - **A newly auto-created playlist starts with Campaign Auto-Rotation and
+    Campaign Auto-Play explicitly off** (ticket, 27 Sep 2026) — not the
+    platform default of On/On (`PLATFORM_DEFAULTS.playlistSettings` /
+    `NEW_PLAYLIST_SETTINGS_DEFAULTS`), which an unconfigured playlist used
+    to silently inherit. Applies to every auto-created playlist (a Default
+    Playlist created this way, a zone playlist created on demand, and a new
+    display type's own auto-created default), set the moment
+    `ensureReferencedPlaylists` creates the record.
+  - **While the Default Playlist is still this local, unsaved draft**, its
+    own settings — what it will actually be created with — show here as a
+    **read-only** preview, in the same five-field layout as Playlist
+    Management's own Playlist Settings (§2), with a link across to Playlist
+    Management rather than a second, competing editor. The block disappears
+    the moment Save actually creates the playlist; from then on Playlist
+    Management is the only place to edit it.
 - **Multi-zone layouts** for signage (`zones`), each zone with its own
-  playlist and, where sold, its own slots.
+  playlist and, where sold, its own slots. **Layout is owned by the Default
+  Playlist, not the display type** (same ticket): the same physical screen
+  may be zoned one way under one playlist and run as a single canvas under
+  another, so which playlist is picked as Default decides which zoning (if
+  any) that screen currently shows. Zone geometry stays ratios/percentages
+  of the display type's own canvas size — the display type keeps the
+  physical truth (resolution/aspect); the playlist keeps the zoning
+  decision. **Always edited here, on the Display Types form** — never in
+  Playlist Management (§2), even though the data now lives on the playlist
+  record.
 - **Venue and screen metadata** (new), needed for DOOH bid requests (§7):
   OpenOOH venue type, geo (lat/long) and store identifier per store, plus
   orientation and loop length per display. Resolution and share of voice are
@@ -317,16 +387,16 @@ not offered.
 
 ### Collapsed panels with summaries
 
-The four panels — **Playlist Settings**, **Phantom Zone**, **Enabled
-Features** and **Multi-Zone Layout** — are **collapsed by default**. Each
-collapsed header shows a one-line summary as small chips, so what is enabled
-or changed on a display type is visible without opening anything. Chips for
-something enabled or changed are coloured; chips for defaults or "off" are
-grey.
+The three panels — **Phantom Zone**, **Enabled Features** and **Multi-Zone
+Layout** — are **collapsed by default**. (**Playlist Settings** was a fourth
+panel here; it moved to Playlist Management, §2, on 26 Sep 2026 and is no
+longer part of this page.) Each collapsed header shows a one-line summary as
+small chips, so what is enabled or changed on a display type is visible
+without opening anything. Chips for something enabled or changed are
+coloured; chips for defaults or "off" are grey.
 
 | Panel | Summary shows |
 |---|---|
-| **Playlist Settings** | When the rotation is capped: the slot count (e.g. *3 slots*) and **slot assignment by owner**, one chip each with its icon (e.g. *1 Headquarters*, *1 Advertiser*, *1 Stores*). *n settings changed* when any other playlist setting differs from its default. When nothing differs from the defaults (unlimited rotation, every setting inherited), a single grey *Default settings* chip. Unlimited rotation is the default and gets no chip of its own |
 | **Phantom Zone** | Size (e.g. *250×250*) and position — *Default (Bottom Right)* when inherited — or *Not defined* |
 | **Enabled Features** | One chip per enabled feature with its icon (*In-Store Radio*, *QR Control*, *MIST*, *AI Agent*, *Vision/AI*), or *None enabled*. Features not available to the company are not shown |
 | **Multi-Zone Layout** | Number of zones (e.g. *3 zones*), or *Single zone* |
@@ -334,14 +404,15 @@ grey.
 Opening a panel shows its full settings as before; the summary updates as
 settings change.
 
-## 2. Playlist management — edit and delete only
+## 2. Playlist management — edit and delete, plus each playlist's own settings
 
-This project adds only two playlist capabilities. Everything else about
-playlists, including what plays and when, is handled by the existing platform
-and is unchanged.
+This project adds edit, delete and — as of 26 Sep 2026 — Playlist Settings to
+this page. Everything else about playlists, including what plays and when,
+is handled by the existing platform and is unchanged.
 
 - **Edit a playlist**: its name and its assignment to display types and
-  zones.
+  zones (assignment is still made on the Display Types form, §1; a playlist
+  is only ever listed here with an *Open* action back to it).
 - **Delete a playlist**, through the confirmation dialog described under
   *Deleting*:
   - Selecting the delete (bin) icon opens the dialog; nothing is deleted
@@ -354,6 +425,50 @@ and is unchanged.
   - With no assignments, the dialog confirms the delete is permanent and
     **Delete** removes it.
 
+### Playlist Settings — moved here from Display Types (26 Sep 2026)
+
+The **Playlist Settings** panel that used to sit on the Display Types form
+(§1) moved here: Asset Position, Asset Fill, Campaign Transition, Campaign
+Auto-Rotation and Campaign Auto-Play now belong to the **playlist**, not the
+display type, and are edited by expanding that playlist's own row in this
+table.
+
+- **Every row gets an expand control** — its own leftmost column, a chevron
+  (▸ collapsed, ▾ expanded) that is deliberately bigger and more prominent
+  than a plain in-line icon, so it reads as clickable at a glance. It shows
+  for **every playlist, whether or not it is currently assigned to a display
+  type** — a playlist's own settings can, and often should, be set up before
+  it is ever assigned (fixing a testing round that found the earlier build's
+  arrow too small, positioned mid-row rather than at the row's edge, and
+  missing entirely for an unassigned ("unused") playlist).
+- **Expanding a row shows that playlist's settings**, edited inline, exactly
+  as the display type's old panel behaved — same fields, same
+  inherit-or-override selects (*Default (…)* means inherit).
+- **A "Save changes" bar** at the foot of the page, in the same pattern as
+  Display Types' own: edits are held as a draft and only take effect on Save;
+  Cancel discards them. Switching which playlist's row is expanded does not
+  discard another playlist's pending edits.
+- **Maximum Campaigns Played In Rotation and slot assignment are not part of
+  this move** — they stay on the display type (§1) because they size and
+  sell that specific screen's positions, not the playlist's content. They
+  are still edited from this same expanded row, but **per assignment**: a
+  playlist used by only one display type or zone shows one such block; a
+  playlist shared by more than one shows one per assignment, each labelled
+  by display type and zone, since each can be capped — and have its slots
+  owned — independently. **An unassigned playlist shows none of this
+  section at all** — there is no display type to size a position against —
+  only its own settings above.
+- **Collapsed-row summary**: the same small-chip pattern as §1's old panel,
+  now split between two independent things next to the expand arrow — this
+  playlist's own settings (*n settings changed*, or a single grey *Default
+  settings*), and, only when the playlist has exactly one assignment, that
+  assignment's slot count and slot-assignment-by-owner chips (omitted with
+  more than one assignment, since the count can differ per display type, and
+  omitted entirely for an unassigned playlist).
+- **Available Inventory's "Open" action** (§5), which used to land on the
+  display type's own Playlist Settings panel, now opens Playlist Management
+  with that display type's default playlist expanded instead.
+
 ## 3. Campaign asset approval
 
 Applies to campaigns whose creative comes from outside the retailer: direct
@@ -363,9 +478,11 @@ DSP (tier 1). Campaigns authored by HQ are unchanged.
 ### Advertisers / Inventory
 
 A new **Advertisers / Inventory** item in the HQ Admin navigation, placed
-**below Campaign Status and above DSP Integration** (Rob, 24 Sep 2026). It carries per-advertiser settings and,
-below them, the inventory those advertisers can buy (§5); **campaigns are
-not approved here.**
+**below Playlist Management and above DSP Integration** (Rob, 24 Sep 2026;
+Campaign Status no longer sits between them — it folded into Campaign
+schedule's own second tab, 26 Sep 2026). It carries per-advertiser settings
+and, below them, the inventory those advertisers can buy (§5); **campaigns
+are not approved here.**
 
 **Admin and marketing users both see it** (Rob, 20 Sep): marketing reads it,
 and only an admin changes approval, pricing, what a position is assigned to
@@ -490,14 +607,55 @@ with a minimal change to the campaign table:
   detail view of its own. (The POC's own "Campaign Status" table is an
   explicit stand-in for this section, deleted on integration — see
   `CAMPAIGN-APPROVAL-INTEGRATION.md` — so its campaign name link opens the
-  POC's own placeholder detail page only until then.)
+  POC's own placeholder detail page only until then. In the POC it is no
+  longer its own admin nav item — see *Campaign schedule* under §7 for where
+  it now lives.)
+- **One row is one playlist, not one row per campaign** (ticket "Campaign
+  Status: Playlist name column, submitted count, localised/personalised
+  targeting columns, Advertiser first"): an advertiser submits exactly one
+  content package per slot — the mandatory default layer plus its optional
+  localised/personalised upsells (§6 "Campaigns and content packages") —
+  stored on the one existing campaign record, so the table's row is that
+  record, not one row per layer. **Column order, left to right: Advertiser,
+  Schedule, Playlist name, No. of campaigns, Localised variables,
+  Personalised variables** (Status, DSP and the activation toggle keep
+  their existing places relative to these). **Playlist name** replaces
+  *Name* — the submission's own name — and its click-through is the
+  campaign-name link above, filtered to this playlist: because every layer
+  of the submission already lives on the one record, opening it already
+  shows every campaign the advertiser submitted for this slot, so this is
+  not a second, separate link target. **No. of campaigns** is the layer
+  count for that one submission — the mandatory default plus however many
+  targeted versions — checked against the slot's own Max campaigns cap at
+  submission time (§5, ticket "Available Inventory: Max campaigns column +
+  slot playlist statement"), not recomputed on this table.
+- **Localised variables / Personalised variables columns**: a high-level
+  summary in the cell — the deduped Shared Targeting Variable names (§6
+  "Shared Targeting Variables") targeted across that playlist's localised
+  (respectively personalised) layer(s), or an em dash when that submission
+  has none. **On hover, the exact targeting rules behind it** — the
+  specific variable, operator and values from every layer of that pricing
+  type on this playlist, consolidated into one view, not shown per layer
+  separately.
 - For a campaign **Awaiting approval**, the **activation status toggle is
-  hidden** and an **Approve** icon is shown in its place, with a **Reject**
-  action that requires a reason.
-- **Once approved, Approve is replaced by the activation toggle.** From that
-  point the advertiser can reserve, bid and activate the campaign through the
-  API/DSP interface. The retailer can switch it off at any time with the same
-  toggle.
+  hidden** and a **consolidated segmented Approve/Reject control** is shown
+  in its place (ticket, 26 Sep) — one pill, not two loose actions: left half
+  Accept (tick), right half Reject (cross), with a divider between them and
+  a colour-coded hover/press state (green left, red right; neutral at
+  rest) so intent is clear before committing. Accepting the left half
+  approves directly; the right half still requires a reason — pressing it
+  opens the reject-with-reason popover and the rejection only commits once
+  a reason is entered and confirmed there, exactly as before. Presentation
+  only: no change to who may approve/reject or to the reason requirement.
+  The campaign detail page (linked from the playlist name, above) shows the
+  same control next to its own status bar, whose activation toggle is kept
+  visible but **disabled** while Awaiting approval, so the table and the
+  detail page read identically.
+- **Once approved, the segmented control is replaced by the activation
+  toggle** — in the table and, with the status bar's toggle switching from
+  disabled to live, on the detail page too. From that point the advertiser
+  can reserve, bid and activate the campaign through the API/DSP interface.
+  The retailer can switch it off at any time with the same toggle.
 - Campaigns approved automatically are marked as such under their status.
 - The review view shows the creative rendered on the target display type's
   canvas, the advertiser and partner, a summary of the targeting rules and
@@ -814,11 +972,37 @@ this document).
 
 The same positions are shown to the retailer on **Advertisers / Inventory →
 Available Inventory**: every advertiser-owned slot across the estate that
-connected DSPs can bid on, one row per slot, with columns **Display type**,
-**Playlist**, **Slot**, **Position**, **Assigned to**, **Targeting
-supported**, **Reserve price** and an **Open** link to the display type.
-There is **no advertisers column**. Every column carries a filter, as the
-platform's tables do.
+connected DSPs can bid on, one row per slot. **Playlist-primary** (ticket
+"Available Inventory: playlist-primary table (drop Display type column)
+with Unassigned indicator", 27 Sep 2026 — this replaced an earlier layout
+that led with a separate **Display type** column): columns are **Playlist**,
+**Slot**, **Position**, **Assigned to**, **Targeting supported**, **Reserve
+price**, **Max campaigns**, **Billing unit** and an **Open** link to the
+display type. There is **no advertisers column** and no separate Display
+type column. Every column carries a filter, as the platform's tables do.
+
+**Playlist** is the primary column because a display type is not the right
+unit of sellable inventory: a multi-zone display type (e.g. a Menu Board
+split into Zone 1/2/3) can run several independent zone playlists, each with
+its own advertiser slots or none at all (§1 "A slot is a playlist
+position") — the table shows one row per advertiser slot, under whichever
+playlist it's tagged to, and **a playlist with no advertiser slot tagged to
+it simply produces no row** ("Playlists with no advertiser slots do not
+appear" — for a Menu Board with three zones, only the zones that actually
+have an advertiser slot show up). The Playlist cell also carries the two
+enabled display-type features that used to sit on the removed Display type
+column — **Vision/AI** and **QR Control** — so they aren't lost, plus an
+**Unassigned** indicator (icon + label, tooltip explains it) when the
+position's display type currently has **no physical display using it**
+(Displays & Devices, `DisplaySource.summaryByDisplayType`): its advertiser
+slots exist and can be configured and sold, but nothing is actually playing
+them. This is the same "no displays" signal `GET /v1/inventory`'s
+`windowStatus` already reads to mark a position **Unavailable** on the
+Partner API (*What each position returns*, above) — Unassigned is that same
+underlying fact, surfaced to the retailer instead of the DSP. **Not a
+live/active state** — this build has no such concept, and Unassigned is
+never about whether campaigns are currently playing, only whether any
+display exists to play them at all.
 
 Slots are made available by setting their owner to *Advertiser* on a display
 type (explained in the section's tooltip); that part is not editable here.
@@ -979,6 +1163,22 @@ Auction schedule); it names what that window length is expected to equal
 for a private-auction slot using the two-period model, rather than driving
 a separate billing cadence.
 
+**Max campaigns** (`maxCampaigns` on a slot, with a display-type-level
+default — same override-always-wins inheritance as reserve price and
+billing unit above; platform default 5 when neither is set; 1-10
+inclusive): the retailer-controlled maximum number of campaigns — the
+mandatory default layer plus optional targeted versions — an advertiser
+may submit for this slot (ticket "Available Inventory: Max campaigns
+column + slot playlist statement"). Admin-editable, marketing read-only,
+with a filter like every other column and an info tooltip: "The maximum
+number of campaigns this advertiser can submit for this slot. To submit
+more, purchase additional slots." **Purely a submission cap — it does not
+feed the auction or billing.** It is the single authority on how many
+campaigns an advertiser may submit for a slot, replacing the blanket
+20-targeted-versions cap (§6, security submission bounds) for that slot
+once a submission names it; without a resolvable slot, the platform-wide
+20-cap still applies unchanged.
+
 ## 6. DSP integration — the advertiser & DSP interface
 
 How an advertiser finds inventory (§5), takes it and fills it. This is the API
@@ -1038,6 +1238,14 @@ stores its criteria didn't match unsold to it. That model is retired:
   overlapping localised bids and billing a part-sold position — are
   **superseded, not answered**: there is no longer a part-sold position for
   either to apply to.
+- **How many campaigns a submission may carry** (default + targeted
+  versions) is bounded by the slot's own **Max campaigns** (§5, ticket
+  "Available Inventory: Max campaigns column + slot playlist statement")
+  once `POST /v1/campaigns` names that `displayTypeId` and `slot` — the
+  single authority for that slot, replacing the platform-wide
+  20-targeted-versions cap below. A submission naming no slot (or one that
+  doesn't resolve to a real advertiser slot) still falls back to that
+  platform-wide cap, unscoped to any one slot.
 
 > Named *default*, not *baseline* (decision, Rob, 22 Sep, reversing this
 > section's own earlier same-day note that warned off *default* because
@@ -1336,16 +1544,16 @@ retailer switch DSP integration on and off.
   changes.** Switching it off before saving also drops unsaved edits to the
   fields it hides.
 - **While it is off:**
-  - Campaign Status and Advertisers / Inventory are hidden from the
-    navigation, and a link to either (or to the booking schedule) opens
-    the first page instead. DSP Integration stays, because the switch is
-    there.
+  - Advertisers / Inventory is hidden from the navigation, and a link to it
+    (or to Campaign schedule — see below) opens the first page instead. DSP
+    Integration stays, because the switch is there.
   - No DSP is sent bid requests; the scheduled auction doesn't run.
   - The Partner API and `sellers.json` answer 404, exactly as with the
     build's feature flag off.
   - Windows already sold are still billed when they end: they were
     delivered.
-  - On Display Types → Playlist Settings → Slot assignment, **Advertiser is
+  - On Playlist Management's expanded row → Slot assignment (moved off
+    Display Types → Playlist Settings, 26 Sep 2026), **Advertiser is
     greyed out, not hidden**, in a slot's owner list (Rob, 24 Sep 2026).
     A slot that is already an Advertiser slot keeps it, with its
     assignment; no new Advertiser slot can be set up. Its tooltip says to
@@ -1560,9 +1768,11 @@ fields. The canonical definition is `app/src/model/schema.js` and
   phExtensions: {                  // THIS PROJECT's additions
     reservePrice,                  // the display type's own reserve price default; CPM or null (real inheritance, 22 Sep — §5)
     billingUnitHours,               // the display type's own billing-unit default, in hours; null = platform default of 24 (§5 "Private auctions" — two-period model, 23 Sep)
+    maxCampaigns,                  // the display type's own max-campaigns default; null = platform default of 5, 1-10 inclusive (§5, ticket "Max campaigns column + slot playlist statement")
     slots: [{ label, owner, partnerId, advertiser, listMode, buyersListId, storeScope, quota,
               reservePrice,         // this slot's own override; CPM, or null = inherit the display type's reservePrice above (§5)
-              billingUnitHours }],  // this slot's own override, in hours; null = inherit the display type's billingUnitHours above (§5)
+              billingUnitHours,     // this slot's own override, in hours; null = inherit the display type's billingUnitHours above (§5)
+              maxCampaigns }],      // this slot's own override; null = inherit the display type's maxCampaigns above, 1-10 inclusive when set (§5)
                                     // listMode: rtb | whitelist_only | deal | null; buyersListId set only when listMode is deal (§5 "Private auctions")
     venue: { openOohVenueType, orientation, loopLengthSec }
   }
@@ -1937,17 +2147,18 @@ playback analytics.**
 - **Delete a display type**: a bin icon on each display type in the list
   opens a confirmation dialog; when displays are assigned, the dialog lists
   them and Delete is disabled. *(Display Types)*
-- **Collapsed panels with summaries**: Playlist Settings, Phantom Zone,
-  Enabled Features and Multi-Zone Layout collapsed by default, each header
-  showing chips for what is enabled or changed (slot count and slot
-  assignment by owner, or *Default settings*; phantom size/position; enabled
-  features; zone count). *(Display Types)*
-- **Slot ownership editor**: each slot's label and owner — Headquarters,
-  Advertiser or Stores — and nothing else. With DSP integration switched
-  off, Advertiser is greyed out for a slot that isn't one already.
-  *(Display Types → Playlist Settings → Slot assignment)*
+- **Collapsed panels with summaries**: Phantom Zone, Enabled Features and
+  Multi-Zone Layout collapsed by default, each header showing chips for what
+  is enabled or changed (phantom size/position; enabled features; zone
+  count). *(Display Types)* Playlist Settings was a fourth such panel here;
+  it moved to Playlist Management, 26 Sep 2026 — see below.
 - **Multi-zone layout designer** for signage. *(Display Types → Multi-Zone Layout)*
 - **Venue and screen metadata** per store and display. *(spec only)*
+- **Read-only Playlist Settings preview** (ticket, 27 Sep 2026) for a
+  Default Playlist that's still an unsaved "Add new playlist" draft — the
+  same five fields as Playlist Management's own row, disabled, with a link
+  across to Playlist Management; gone once the playlist is actually saved.
+  *(Display Types → Default Playlist)*
 
 ### Playlist management
 
@@ -1956,6 +2167,24 @@ playback analytics.**
 - **Delete a playlist** through a confirmation dialog with Cancel; when the
   playlist is a default or zone playlist, the dialog lists where it is
   assigned and Delete is disabled. *(Playlist Management)*
+- **Playlist Settings, as an expandable row** (moved off Display Types, 26
+  Sep 2026): a leftmost, deliberately larger expand arrow on every playlist
+  — assigned or not — reveals Asset Position/Fill, Campaign Transition,
+  Auto-Rotation and Auto-Play, edited inline with the page's own Save
+  changes bar. *(Playlist Management)*
+- **A newly auto-created playlist's Auto-Rotation and Auto-Play start off**
+  (ticket, 27 Sep 2026), not the platform default of On/On that an
+  unconfigured playlist used to silently inherit. Applies wherever a
+  playlist is auto-created: a Default Playlist added from Display Types, a
+  zone playlist created on demand, or a new display type's own default.
+  *(ensureReferencedPlaylists, API)*
+- **Slot ownership editor**: each slot's label and owner — Headquarters,
+  Advertiser or Stores — and nothing else. With DSP integration switched
+  off, Advertiser is greyed out for a slot that isn't one already. Shown
+  inside the same expanded row, per assignment, alongside Maximum Campaigns
+  Played In Rotation — both stay tied to the display type, since they size
+  and sell that specific screen's positions; neither shows for an unassigned
+  playlist. *(Playlist Management → Slot assignment)*
 
 ### Saving, deleting, help text and layout
 
@@ -1979,8 +2208,10 @@ playback analytics.**
 
 ### Advertisers / Inventory
 
-- **Advertisers / Inventory screen**, below Campaign Status and above DSP
-  Integration in the navigation, editable by an admin and read-only for marketing: every
+- **Advertisers / Inventory screen**, below Playlist Management and above
+  DSP Integration in the navigation (Campaign Status is no longer a nav item
+  between them — see *Campaign schedule* below), editable by an admin and
+  read-only for marketing: every
   advertiser across all DSPs, with a **Campaign approval** toggle (Required /
   Not required, default Required), a **floor multiplier** (default 1.0) with
   the effective floor shown in the company currency, its **campaigns by
@@ -2007,6 +2238,15 @@ playback analytics.**
 - **Server-side enforcement**: campaigns that are not *Approved* are excluded
   from reservation, bidding and hand-off, and cannot be activated.
   *(spec only)*
+- **Campaign table now groups by playlist, not by layer**: Advertiser first,
+  then Schedule, Playlist name (was Name), No. of campaigns (this
+  submission's layer count), and Localised variables / Personalised
+  variables — a high-level summary per column with the exact rules on
+  hover. The playlist-name click-through is the existing campaign-name link
+  above, not a second one. *(spec — existing Campaigns section; built in
+  the POC's own Campaign Status stand-in,
+  `apps/admin/src/features/campaign-status/CampaignStatusPage.tsx`, with the
+  summary computed server-side by `GET /admin/v1/campaigns`)*
 
 ### Pricing
 
@@ -2028,15 +2268,25 @@ playback analytics.**
   forecast, scoped to what the requester could buy. *(spec only)*
 - **Available Inventory**: every advertiser-owned slot across the estate
   that connected DSPs can bid on (Display type, Playlist, Slot, Position,
-  Assigned to, Targeting supported, Reserve price, and an Open link), with
-  no advertisers column and a filter on every column.
-  *(Advertisers / Inventory → Available Inventory)*
+  Assigned to, Targeting supported, Reserve price, Max campaigns, Billing
+  unit, and an Open link), with no advertisers column and a filter on
+  every column. *(Advertisers / Inventory → Available Inventory)*
 - **Reserve price, inherited from its display type** (decision, 22 Sep; real
   inheritance, 22 Sep): a CPM premium to reserve the position in advance of
   the open auction, or no reserve, set once on the display type and
   automatically reaching every slot on it — override just one slot to give
   it its own value, independent from then on; published on the position,
   resolved — not yet wired to a booking flow (open question 52).
+  *(Advertisers / Inventory → Available Inventory)*
+- **Max campaigns, inherited from its display type** (ticket "Available
+  Inventory: Max campaigns column + slot playlist statement"): the
+  retailer-controlled maximum number of campaigns (default + targeted
+  versions) this advertiser may submit for the slot — same
+  override-always-wins inheritance as reserve price, default 5, 1-10
+  inclusive — replacing the platform-wide 20-targeted-versions cap for
+  that slot once a submission names it. Admin-editable, marketing
+  read-only, filterable, with an info tooltip. Purely a submission cap —
+  it does not feed the auction or billing.
   *(Advertisers / Inventory → Available Inventory)*
 - **Targeting supported needs QR Control for interactive**: flagged on the
   display type, greyed out with the reason where it is off, refused by the
@@ -2060,14 +2310,24 @@ playback analytics.**
   localised, personalised, interactive — localised only by default, set by
   an admin, published on the position and enforced on every bid.
   *(Advertisers / Inventory → Available Inventory)*
-- **Booking schedule**: every advertiser position across its play windows,
-  booked / available / unavailable, **at the top of its own page**, with
-  booking revenue per display type and then what sold by campaign type
-  below it (Rob, 21 Sep: the schedule is what the page is for; the money
-  reads as its summary). **Stands alone in its own tab** (Rob, 21 Sep): no
-  Display Types / DSP Integration nav beside it (`RouteHandle.hideNav`),
-  and no second "Schedule" section header repeating the page's own title
-  immediately above the table. Its DSP and advertiser filters are column
+- **Campaign schedule** (renamed from "Booking schedule", ticket 26 Sep
+  2026): the page opened from Available Inventory or an advertiser now
+  holds **two tabs** — **Booking schedule** (the landing/default tab,
+  everything below in this bullet, unchanged) and **Campaign status**
+  (the full Campaign Status table — see "Campaign table now groups by
+  playlist..." under *Campaign asset approval* above — shown at full
+  width; Campaign Status is no longer its own item in the HQ Admin
+  navigation, this tab is its only home now). The page as a whole **still
+  stands alone in its own browser tab** (Rob, 21 Sep, unchanged by the 26
+  Sep tab restructuring above): no Display Types / DSP Integration nav
+  beside it (`RouteHandle.hideNav`).
+- **Booking schedule tab**: every advertiser position across its play
+  windows, booked / available / unavailable, **at the top of the tab**,
+  with booking revenue per display type and then what sold by campaign
+  type below it (Rob, 21 Sep: the schedule is what the page is for; the
+  money reads as its summary), and no second "Schedule" section header
+  repeating the page's own title immediately above the table. Its DSP and
+  advertiser filters are column
   filters, kept in the URL and applied by the server. **The advertiser
   filter lists only advertisers with something booked in the range on
   screen, and choosing one leaves only the positions it holds** (Rob,
@@ -2087,8 +2347,7 @@ playback analytics.**
   (`booking.partnerName`), not the position's `partnerNames` (who is merely
   *eligible* to buy the slot) — the two can differ whenever a slot takes
   bids from more than one DSP, and only the former is guaranteed to match
-  the advertiser shown beside it. *(Advertisers / Inventory → Booking
-  schedule)*
+  the advertiser shown beside it. *(Campaign schedule → Booking schedule tab)*
 - **Play-window booked/available summary, wherever the page counts
   "windows"** (ticket "anytime you use the word Windows please show a
   representation of how many are booked versus … localised … personalised
@@ -2098,7 +2357,7 @@ playback analytics.**
   — right next to the window count itself, not only inside the grid. The
   Position cell on every row (above) carries the same read for that one
   row, in every view (Daily included, where the earlier per-row rollup only
-  showed in Weekly/Monthly). *(Advertisers / Inventory → Booking schedule)*
+  showed in Weekly/Monthly). *(Campaign schedule → Booking schedule tab)*
 - **Booking revenue table: % sold, Estimated revenue, no Billed revenue**
   (ticket "% of slots sold" and ticket "instead of booked revenue can you
   call it estimated revenue and remove the billed revenue column", both 22
@@ -2113,7 +2372,7 @@ playback analytics.**
   table** — invoicing what actually played is the DSP's own concern, not
   this schedule's (it still appears in a booked tile's own hover, which
   covers one specific booking rather than a display type's whole period).
-  *(Advertisers / Inventory → Booking schedule)*
+  *(Campaign schedule → Booking schedule tab)*
 - **Single-advertiser stacking tile** (ticket "Booking schedule:
   single-advertiser stacking tile", 22 Sep, superseding the earlier
   same-day "layered reach breakdown, as three stacked pills" design):
@@ -2151,8 +2410,7 @@ playback analytics.**
   other for the pointer): the tile's single tooltip now folds in every
   layer's detail — reach counts, lit trigger labels — that used to need a
   separate, nested hover to see; the layer rows and trigger icons
-  themselves are purely visual. *(Advertisers / Inventory → Booking
-  schedule)*
+  themselves are purely visual. *(Campaign schedule → Booking schedule tab)*
 - **Personalised trigger icons** (ticket "Booking schedule: personalised
   trigger icons", 22 Sep): on the personalised row of the tile, icons
   indicate the trigger mechanism the campaign's personalised targeting
@@ -2171,8 +2429,7 @@ playback analytics.**
   identified/checked in). More than one icon may be lit when a campaign's
   rules combine tiers; which icons are lit tells the viewer the expected
   activation frequency and therefore how reliably the personalised
-  revenue will actually be earned. *(Advertisers / Inventory → Booking
-  schedule)*
+  revenue will actually be earned. *(Campaign schedule → Booking schedule tab)*
 
 ### Shared targeting variables
 
@@ -2197,10 +2454,11 @@ playback analytics.**
 ### DSP integration and exchange
 
 - **DSP integration switch** (Rob, 24 Sep 2026): **Enable DSP Integration**
-  at the top of Exchange settings, off at first; while off, Campaign Status
-  and Advertisers / Inventory are hidden, no bid requests are sent, the
-  Partner API and `sellers.json` answer 404, and nothing is deleted.
-  *(DSP Integration → Exchange settings)*
+  at the top of Exchange settings, off at first; while off, Advertisers /
+  Inventory (and, from there, Campaign schedule's Campaign status tab) is
+  hidden, no bid requests are sent, the Partner API and `sellers.json`
+  answer 404, and nothing is deleted. *(DSP Integration → Exchange
+  settings)*
 - **Exchange settings**: four seller-of-record fields and the published
   `sellers.json` status, shown once the switch is on. *(DSP Integration →
   Exchange settings)*
@@ -2252,8 +2510,14 @@ are in `api/PH-CORE-BOUNDARIES.md`.
 - **Partner API limits:** 50 requests/s per partner (bursts of 100), then
   `429 rate_limited` with `Retry-After`; 2 uploads in flight per partner;
   forecasts of at most 200 positions, each once; content packages bounded
-  (name ≤ 200 characters, ≤ 20 targeted versions, ≤ 10 AND groups, ≤ 20
-  conditions per group, values ≤ 200 characters).
+  (name ≤ 200 characters, ≤ 10 AND groups, ≤ 20 conditions per group,
+  values ≤ 200 characters). **How many campaigns** (default + targeted
+  versions) a submission may carry is its slot's own **Max campaigns**
+  (§5, ticket "Available Inventory: Max campaigns column + slot playlist
+  statement") once `displayTypeId` and `slot` resolve to a real advertiser
+  slot — retailer-controlled, default 5, 1-10 inclusive — replacing the
+  platform-wide **≤ 20 targeted versions** cap for that slot; a submission
+  naming no resolvable slot still falls back to that 20-cap.
 - **Bid responses are validated and bounded** before they are trusted:
   the request id echoed, impression 1, a finite price under a ceiling, a
   missing currency read as USD (OpenRTB), at most 10 bids and 64 KB per

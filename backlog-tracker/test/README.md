@@ -12,12 +12,40 @@ CI runs this on every pull request and before every deploy
 
 This directory also holds the MCP server suite (`mcp-server.test.js`,
 `mcp-client.test.mjs` — see `../MCP.md`) and the deployment train's
-lock-recompute suite (`train-lock.test.js`, `train-lock-trigger.test.js`,
-`train-lock-branch-archive.test.js` — `npm run test:train-lock`; see
-`../README.md` → "trainLocked clearing isn't only a successful-merge thing
-any more"). All three run on plain `node`, no emulator, no Java, no
-credentials, no network — only this file's own rules suite below needs the
-emulator.
+suite (`npm run test:train-lock`): the lock-recompute tests
+(`train-lock.test.js`, `train-lock-trigger.test.js`,
+`train-lock-branch-archive.test.js` — see `../README.md` → "trainLocked
+clearing isn't only a successful-merge thing any more") and
+`train-carried.test.js`, which pins the rule that a card whose content a
+sibling's commit delivered rides on that commit and goes live only when
+its train merges — never `noDeploymentRequired`, never live on approval
+(see `../REQUIREMENTS.md` → "A card carried by a sibling's commit follows
+that train"). All of these run on plain `node`, no emulator, no Java, no
+credentials, no network (the two git-backed ones build a disposable local
+repo pair under the OS temp dir) — only this file's own rules suite below
+needs the emulator.
+
+`auth-gate.test.mjs` (`npm run test:auth-gate`, also on every PR touching
+`backlog-tracker/public/**`) is the sign-in wall's decision logic as a
+test: the real `public/js/auth-gate.js` under jsdom with the Firebase Auth
+SDK stubbed and `fetch` scripted — claim-first start, own-row fallback,
+refusals, the background claim sync, popup fallbacks, and the guard that
+stops a denied listener becoming a reload loop. Added 27 Sep 2026 with the
+rewrite that stopped sign-in waiting on a Cloud Function cold start (see
+`../SECURITY-PERFORMANCE.md`). `routine-binding-trigger.test.js`
+(`npm run test:routine-binding`) covers the server-only `routineBindings`
+lookup in `functions/index.js` from the same day.
+
+`app-boots.test.mjs` (`npm run test:app-boots`, also on every PR touching
+`backlog-tracker/public/**`) is the console's start-up as a test: it
+imports the real `public/js/app.js` under jsdom with the Firebase SDK
+stubbed and fails if module evaluation stops early, then opens the
+hamburger drawer and clicks every item in it. Added after 25 Sep 2026,
+when a `createDictationController()` call placed above
+`SpeechRecognitionCtor`'s `const` threw at start-up, every handler
+registered after it never ran, and the menu was dead on every device while
+the board still rendered — nothing in the pipeline had ever executed
+`app.js`. It needs only `node` and the `jsdom` dev dependency.
 
 Also here, opt-in because it needs a Chromium on the machine:
 `npm run test:editor` (`faq-editor-load.test.mjs`) opens every article in

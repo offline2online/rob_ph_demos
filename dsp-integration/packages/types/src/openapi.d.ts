@@ -274,7 +274,7 @@ export interface paths {
         /** Advertiser-owned slots (no advertisers column) */
         get: operations["listAvailableInventory"];
         /**
-         * Save changes — who a slot is assigned to, what targeting it supports, and its reserve price
+         * Save changes — who a slot is assigned to, what targeting it supports, its reserve price and its max campaigns
          * @description The editable fields of a sellable slot. Everything else about it —
          *     its label and owner — is set on its display type. Admin only:
          *     marketing users read this table.
@@ -310,6 +310,13 @@ export interface paths {
          *     granularity a CPM is quoted and charged against (spec "Private
          *     auctions: two-period model", 23 Sep 2026) — default one day (24
          *     hours) when neither is set.
+         *
+         *     maxCampaigns / maxCampaignsDefault: the same override/default
+         *     pattern again, for the maximum number of campaigns (default +
+         *     targeted versions) this advertiser may submit for the slot — 5
+         *     when neither is set, 1-10 inclusive otherwise. Purely a submission
+         *     cap; replaces the former blanket 20-targeted-versions cap for this
+         *     slot. Does not feed the auction or billing.
          */
         put: operations["saveAvailableInventory"];
         post?: never;
@@ -619,6 +626,26 @@ export interface paths {
         post?: never;
         /** Delete; 409 with the assigned displays if any remain */
         delete: operations["deleteDisplayType"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/playlists/{playlistId}/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save this playlist's own settings (Asset Position/Fill, Campaign Transition, Auto-Rotation, Auto-Play)
+         * @description Edited from an expandable row on Playlist Management (26 Sep 2026), whether or not the playlist is currently assigned to a display type. Maximum Campaigns Played In Rotation and slot assignment are edited per assignment, through the display type's own /extensions endpoint.
+         */
+        put: operations["savePlaylistSettings"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -967,12 +994,49 @@ export interface components {
             advertiserId: string;
             name: string;
             displayTypeId?: string;
+            /**
+             * @description Which of displayTypeId's advertiser-owned slots this submission
+             *     is for (the same 1-based index as AvailableInventoryRow.slot).
+             *     Optional, but required alongside displayTypeId to resolve that
+             *     slot's own max-campaigns cap below — omitted, the submission
+             *     falls back to the platform-wide campaignLimits.targetedVersions
+             *     cap, unscoped to any one slot. Also the only way to resolve the
+             *     slot's own Targeting supported setting (ticket "Partner API:
+             *     enforce slot's Targeting supported setting on campaign
+             *     submission") — see default.pricingType and
+             *     targeted[].pricingType below.
+             */
+            slot?: number;
             brief?: components["schemas"]["CampaignBrief"];
-            /** @description The untargeted layer every submission must carry — no targeting variables, priced at the floor rate. */
+            /**
+             * @description The untargeted layer every submission must carry — no targeting
+             *     variables, priced at the floor rate. Once displayTypeId and slot
+             *     resolve to a real advertiser slot, its pricingType is validated
+             *     against that slot's own Targeting supported setting the same
+             *     way targeted[].pricingType is below (a "default" pricingType
+             *     reads as localised, matching the auction's own reading of it) —
+             *     400 validation_failed on `default.pricingType` naming the
+             *     slot's supported set when it doesn't.
+             */
             default: {
                 pricingType: components["schemas"]["PricingType"];
             };
-            /** @description Optional upsells on top of the mandatory default layer — localised and/or personalised targeted versions. */
+            /**
+             * @description Optional upsells on top of the mandatory default layer —
+             *     localised and/or personalised targeted versions. Bounded by
+             *     slot's own max campaigns (default + targeted versions, 1-10)
+             *     when displayTypeId and slot resolve to a real advertiser slot;
+             *     otherwise by the platform-wide campaignLimits.targetedVersions.
+             *     Each version's own pricingType is also validated, once a slot
+             *     resolves, against that slot's Targeting supported setting
+             *     (localised/personalised/interactive, Advertisers / Inventory) —
+             *     ticket "Partner API: enforce slot's Targeting supported setting
+             *     on campaign submission": a submission naming an attribute the
+             *     slot doesn't support is refused 400 validation_failed on
+             *     `targeted[i].pricingType`, naming the offending pricingType and
+             *     the slot's supported set. Server-enforced regardless of what
+             *     the admin UI shows or allows.
+             */
             targeted?: {
                 id: string;
                 priority: number;
@@ -1057,7 +1121,7 @@ export interface components {
              */
             auctionOpensHours: number;
             /**
-             * @description Auction schedule: the minimum period a won slot is held, in hours (shown as days and hours). Cannot change while future windows are bid on or booked.
+             * @description Auction schedule: the minimum period a won slot is held, in hours (shown as days and hours). While any current window is bid on or booked, a change is deferred rather than applied — see pendingPlayWindowHours.
              * @default 24
              */
             playWindowHours: number;
@@ -1088,6 +1152,21 @@ export interface components {
                 name: string;
                 adopting: boolean;
             }[];
+            /**
+             * @description Read-only. Set when a playWindowHours change was requested
+             *     while a non-test window was still bid on or booked: the
+             *     requested length, waiting to take effect at
+             *     pendingPlayWindowEffectiveFrom. Null when nothing is deferred.
+             */
+            pendingPlayWindowHours: number | null;
+            /**
+             * Format: date-time
+             * @description Read-only. When pendingPlayWindowHours takes effect — once
+             *     every window active when it was requested has played (a
+             *     booking made since, running later than that, pushes this
+             *     out). Null when nothing is deferred.
+             */
+            pendingPlayWindowEffectiveFrom: string | null;
         };
         /** @description A DSP and the advertisers it brings, for a picker or a filter. */
         DspAdvertisers: {
@@ -1208,6 +1287,27 @@ export interface components {
             displayTypeName: string;
             touchPoint?: string;
             playlistName: string;
+            /**
+             * @description The id of the playlist this row's position sits under: the zone
+             *     playlist its slot is tagged to (`Slot.zoneId`, spec §1) when the
+             *     display type is multi-zone and the slot names one, else the
+             *     display type's own default playlist. Null only when neither
+             *     resolves to a real playlist record. playlistName is what is
+             *     shown; this is for linking/lookup (Available Inventory,
+             *     ticket "Available Inventory: playlist-primary table (drop
+             *     Display type column) with Unassigned indicator", 27 Sep 2026).
+             */
+            playlistId: string | null;
+            /**
+             * @description True when this position's display type currently has no
+             *     physical display using it (Displays & Devices,
+             *     DisplaySource.summaryByDisplayType) — its advertiser slots
+             *     exist and can be configured and sold, but nothing is actually
+             *     playing them. Available Inventory shows this as an "Unassigned"
+             *     indicator next to the playlist (same ticket as playlistId,
+             *     27 Sep 2026).
+             */
+            unassigned: boolean;
             slot: number;
             position: string;
             assignedTo: components["schemas"]["AssignedTo"];
@@ -1275,6 +1375,32 @@ export interface components {
              *     rows — see `PUT`'s billingUnitHoursDefault.
              */
             displayTypeBillingUnitHours: number | null;
+            /**
+             * @description The resolved maximum number of campaigns (the mandatory default
+             *     layer plus optional targeted versions) this advertiser may
+             *     submit for this slot: maxCampaignsOverride when set, else
+             *     displayTypeMaxCampaigns, else the platform default of 5.
+             *     Purely a submission cap — it does not feed the auction or
+             *     billing. Always a real integer, 1-10 inclusive — unlike reserve
+             *     price, there is no "unlimited" state.
+             */
+            maxCampaigns: number;
+            /**
+             * @description This slot's own maximum campaigns, admin-editable here; null
+             *     means it has none and follows displayTypeMaxCampaigns (spec §1
+             *     configuration inheritance — override always wins). 1-10
+             *     inclusive when set.
+             */
+            maxCampaignsOverride: number | null;
+            /**
+             * @description The maximum-campaigns default set on this slot's display type;
+             *     null means the display type has none either (so an
+             *     un-overridden slot resolves to the platform default of 5). The
+             *     same value on every row sharing a displayTypeId. Editable from
+             *     any of those rows — see `PUT`'s maxCampaignsDefault. 1-10
+             *     inclusive when set.
+             */
+            displayTypeMaxCampaigns: number | null;
         };
         BookingSchedule: {
             /** @description ISO 4217 */
@@ -1564,6 +1690,23 @@ export interface components {
                 /** @enum {string} */
                 owner: "internal" | "advertiser" | "retail";
                 /**
+                 * @description Which zone of a multi-zone display type this slot's position
+                 *     belongs to (id of an entry in `multiZone.zones`), for
+                 *     attributing it to that zone's own playlist on Available
+                 *     Inventory (ticket "Available Inventory: playlist-primary
+                 *     table…", 27 Sep 2026). Set by the slot editor, like label
+                 *     and owner — never by Advertisers / Inventory. Absent or
+                 *     null means "not zone-specific": the slot is attributed to
+                 *     the display type's own default playlist instead, which is
+                 *     the only case on a non-multi-zone display type. Purely an
+                 *     attribution/display detail — it does not change what
+                 *     identifies a sellable position (still display type + slot,
+                 *     PH-CORE-BOUNDARIES.md "At most one campaign per display
+                 *     type, slot and play window") or anything about booking,
+                 *     pricing or delivery.
+                 */
+                zoneId?: string | null;
+                /**
                  * @description The DSPs that may buy this position; empty or absent means any
                  *     connected DSP. Set on Advertisers / Inventory, not on the
                  *     display type: the slot editor only sets the label and owner.
@@ -1615,6 +1758,20 @@ export interface components {
                  *     private-auction slot using the two-period model.
                  */
                 billingUnitHours?: number | null;
+                /**
+                 * @description This slot's own override of the display type's maximum
+                 *     campaigns (spec §1 configuration inheritance — override
+                 *     always wins). Absent or null means it has none and
+                 *     follows the display type's own `maxCampaigns` (below),
+                 *     else the platform default of 5. 1-10 inclusive when set.
+                 *     A purely-submission cap: the single authority on how many
+                 *     campaigns (default + targeted versions) an advertiser may
+                 *     submit for this slot, replacing the former blanket
+                 *     20-targeted-versions cap for it — does not feed the
+                 *     auction or billing. Set from Advertisers / Inventory, not
+                 *     the slot editor.
+                 */
+                maxCampaigns?: number | null;
             }[];
             /**
              * @description The display type's own reserve price default (decision, 22 Sep),
@@ -1634,6 +1791,14 @@ export interface components {
              *     the same value), not the slot editor.
              */
             billingUnitHours?: number | null;
+            /**
+             * @description The display type's own maximum-campaigns default, inherited by
+             *     every slot on it with no override of its own. Absent or null
+             *     means the platform default of 5 applies. 1-10 inclusive when
+             *     set. Set from Advertisers / Inventory (every row for this
+             *     display type edits the same value), not the slot editor.
+             */
+            maxCampaigns?: number | null;
             venue?: {
                 openOohVenueType?: string;
                 /** @enum {string} */
@@ -1663,7 +1828,7 @@ export interface components {
             };
             backgroundColor?: string;
             defaultPlaylistId?: string;
-            /** @description null values mean inherit */
+            /** @description Maximum Campaigns Played In Rotation only, as of 26 Sep 2026 — the slot count and slot assignment (phExtensions) size and sell that specific display type's screen, so they stay here even though the other playlist settings moved to the Playlist record. null means inherit. */
             playlistSettings: {
                 [key: string]: unknown;
             };
@@ -1683,6 +1848,10 @@ export interface components {
             name: string;
             /** @description Display type id if auto-created */
             autoCreatedFor?: string | null;
+            /** @description Asset Position, Asset Fill, Campaign Transition, Auto-Rotation and Auto-Play (26 Sep 2026: moved off the display type so a playlist's own settings can be edited from Playlist Management whether or not it is currently assigned to a display type). null values mean inherit. Maximum Campaigns Played In Rotation and slot assignment stay on the assigned display type(s) — see DisplayType.playlistSettings. */
+            playlistSettings?: {
+                [key: string]: unknown;
+            };
             assignments: {
                 displayTypeId: string;
                 displayTypeName: string;
@@ -1717,6 +1886,16 @@ export interface components {
             activation: {
                 enabled: boolean;
             };
+            /** @description This playlist's layers (spec §6): the mandatory default plus each targeted (localised/personalised) upsell version submitted for this slot. Checked against the slot's own Max campaigns cap at submission time, not recomputed here. */
+            campaignCount: number;
+            /** @description High-level summary for the Campaign Status table's Localised variables column: the deduped, catalog-ordered display names of variables targeted by this playlist's localised layer(s). Empty when none. */
+            localisedVariables: string[];
+            /** @description The exact targeting rules behind localisedVariables — one human-readable line per localised layer (variable, operator and values), for that column's hover tooltip. */
+            localisedRuleLines: string[];
+            /** @description Same as localisedVariables */
+            personalisedVariables: string[];
+            /** @description Same as localisedRuleLines */
+            personalisedRuleLines: string[];
         };
         SellersJson: {
             contact_email?: string;
@@ -2351,6 +2530,10 @@ export interface operations {
                         billingUnitHours?: number | null;
                         /** @description The display type's billing-unit default, in hours; null = none (the platform default of 24 applies). Must be the same value on every row for a given displayTypeId in one request. */
                         billingUnitHoursDefault?: number | null;
+                        /** @description This slot's own maximum-campaigns override; null = inherit maxCampaignsDefault. Omitted = unchanged is not supported — always send the slot's current value. */
+                        maxCampaigns?: number | null;
+                        /** @description The display type's maximum-campaigns default; null = none (the platform default of 5 applies). Must be the same value on every row for a given displayTypeId in one request. */
+                        maxCampaignsDefault?: number | null;
                     }[];
                 };
             };
@@ -3052,6 +3235,37 @@ export interface operations {
             401: components["responses"]["Unauthorised"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["HasDependents"];
+        };
+    };
+    savePlaylistSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                playlistId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Playlist"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorised"];
+            404: components["responses"]["NotFound"];
         };
     };
     checkPlaylistDelete: {

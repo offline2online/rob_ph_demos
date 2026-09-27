@@ -113,6 +113,74 @@ describe('request size limits', () => {
     /* At the limits it is accepted. */
     expect((await create({ ...SWISSE, name: 'x'.repeat(200), targeted: versions.slice(0, 20) })).statusCode).toBe(201)
   })
+
+  /* Max campaigns (ticket "Available Inventory: Max campaigns column + slot
+     playlist statement"): the single authority on how many campaigns
+     (default + targeted versions) an advertiser may submit for a slot,
+     replacing the blanket targetedVersions cap above — but only once a
+     resolvable displayTypeId + slot is given; without one, the platform-wide
+     cap still applies exactly as before (proved by the test above, which
+     sends no slot at all). menu_board slot 2 is Google's seeded advertiser
+     slot (seed.ts), with no maxCampaigns of its own — platform default 5. */
+  it('bounds a content package by its slot’s own max campaigns, once a slot resolves it', async () => {
+    const { create } = await setup()
+    const versionsOf = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `v${i}`, priority: i, pricingType: 'localised', rules: [[COND]] }))
+    const forSlot = { ...SWISSE, displayTypeId: 'menu_board', slot: 2 }
+    /* Default (1) + 4 targeted = 5, exactly the platform default cap. */
+    expect((await create({ ...forSlot, targeted: versionsOf(4) })).statusCode).toBe(201)
+    /* One more tips it over — the slot's cap, not the global 20. */
+    expect((await create({ ...forSlot, targeted: versionsOf(5) })).json().error.details)
+      .toEqual([{ field: 'targeted', reason: 'At most 5 campaigns (default + targeted versions) for this slot.' }])
+    /* Unknown slot, and a non-advertiser slot (Priority 1 is Headquarters'). */
+    expect((await create({ ...forSlot, slot: 99 })).json().error.details).toContainEqual({ field: 'slot', reason: 'Menu Board — Long Format has no slot 99.' })
+    expect((await create({ ...forSlot, slot: 1 })).json().error.details).toContainEqual({ field: 'slot', reason: 'Only an Advertiser slot is sellable inventory.' })
+    /* Without displayTypeId, slot alone makes no sense. */
+    expect((await create({ advertiserId: 'swisse', name: 'Swisse', slot: 2, default: { pricingType: 'localised' } })).json().error.details)
+      .toContainEqual({ field: 'slot', reason: 'displayTypeId is required with slot.' })
+  })
+
+  /* Targeting supported (ticket "Partner API: enforce slot's Targeting
+     supported setting on campaign submission"): a slot's own Targeting
+     supported setting (Advertisers / Inventory) is the server-side
+     authority on which pricing types a submission for it may carry — not
+     just something the admin UI happens to also show. menu_board slot 2 is
+     Google's seeded advertiser slot; supportedTargeting defaults to
+     localised only until the PUT below opens it up. */
+  it('enforces the slot’s own Targeting supported setting on every layer of a submission', async () => {
+    const { app, create } = await setup()
+    const forSlot = { ...SWISSE, displayTypeId: 'menu_board', slot: 2 }
+    const setSupported = (supportedTargeting: string[]) => app.inject({
+      method: 'PUT', url: '/api/admin/v1/available-inventory',
+      payload: { items: [{ displayTypeId: 'menu_board', slot: 2, supportedTargeting, assignedTo: { partnerIds: ['p_google'], advertisers: [], whitelistOnly: false } }] },
+    })
+
+    /* Still localised-only (the seeded default): a personalised targeted
+       version is refused, naming the field and the slot's supported set. */
+    expect((await create({ ...forSlot, targeted: [{ id: 'metro', priority: 1, pricingType: 'personalised', rules: [[COND]] }] })).json().error.details)
+      .toContainEqual({ field: 'targeted[0].pricingType', reason: 'This slot supports localised targeting only; personalised is not enabled for it.' })
+    /* A localised one is fine, same slot, same request shape. */
+    expect((await create({ ...forSlot, targeted: [{ id: 'metro', priority: 1, pricingType: 'localised', rules: [[COND]] }] })).statusCode).toBe(201)
+
+    /* Open the slot to personalised only (localised switched off): now the
+       mandatory default layer itself — localised by default — is what's
+       refused. */
+    expect((await setSupported(['personalised'])).statusCode).toBe(200)
+    expect((await create(forSlot)).json().error.details)
+      .toContainEqual({ field: 'default.pricingType', reason: 'This slot supports personalised targeting only; localised is not enabled for it.' })
+    expect((await create({ ...forSlot, default: { pricingType: 'personalised' } })).statusCode).toBe(201)
+
+    /* Both enabled: either is accepted, on either layer. */
+    expect((await setSupported(['localised', 'personalised'])).statusCode).toBe(200)
+    expect((await create({ ...forSlot, default: { pricingType: 'personalised' }, targeted: [{ id: 'metro', priority: 1, pricingType: 'localised', rules: [[COND]] }] })).statusCode).toBe(201)
+    /* Interactive stays out of the deal even with both of the others on. */
+    expect((await create({ ...forSlot, targeted: [{ id: 'metro', priority: 1, pricingType: 'interactive', rules: [[COND]] }] })).json().error.details)
+      .toContainEqual({ field: 'targeted[0].pricingType', reason: 'This slot supports localised, personalised targeting only; interactive is not enabled for it.' })
+
+    /* Without a resolvable slot, there is nothing to enforce against — the
+       platform-wide submission stays exactly as unscoped as it was before
+       this ticket (same fallback as the max-campaigns cap above). */
+    expect((await create({ advertiserId: 'swisse', name: 'Swisse', default: { pricingType: 'personalised' } })).statusCode).toBe(201)
+  })
 })
 
 describe('errors and headers', () => {

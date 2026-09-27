@@ -27,13 +27,30 @@ describe('ApprovalStatusBadge', () => {
 
 describe('ApprovalActions', () => {
   const toggle = <Switch aria-label="Activation" checked={false} />
-  it('Awaiting approval: Approve and Reject replace the activation toggle', () => {
+  it('Awaiting approval: one segmented control (Approve, Reject) replaces the activation toggle', () => {
     const onApprove = vi.fn()
     render(<ApprovalActions status="awaiting_approval" onApprove={onApprove} onReject={() => {}}>{toggle}</ApprovalActions>)
     expect(screen.queryByLabelText('Activation')).not.toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Approve or reject' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Approve' }))
     expect(onApprove).toHaveBeenCalled()
     expect(screen.getByRole('button', { name: 'Reject' })).toBeInTheDocument()
+  })
+  it('Awaiting approval: hovering either half of the segmented control names the action (ticket feedback, 26 Sep: icon-only, so it needs a label on hover)', async () => {
+    render(<ApprovalActions status="awaiting_approval" onApprove={() => {}} onReject={() => {}}>{toggle}</ApprovalActions>)
+    fireEvent.mouseEnter(screen.getByRole('button', { name: 'Approve' }))
+    expect(await screen.findByRole('tooltip', { name: 'Approve' })).toBeInTheDocument()
+    fireEvent.mouseEnter(screen.getByRole('button', { name: 'Reject' }))
+    expect(await screen.findByRole('tooltip', { name: 'Reject' })).toBeInTheDocument()
+  })
+  it('Awaiting approval: an awaitingExtra (the detail page\'s disabled toggle) renders beside the segmented control', () => {
+    render(
+      <ApprovalActions status="awaiting_approval" onApprove={() => {}} onReject={() => {}} awaitingExtra={<Switch aria-label="Activation" checked={false} disabled />}>
+        {toggle}
+      </ApprovalActions>,
+    )
+    expect(screen.getByLabelText('Activation')).toBeDisabled()
+    expect(screen.getByRole('group', { name: 'Approve or reject' })).toBeInTheDocument()
   })
   it('Approved: renders the host toggle untouched', () => {
     render(<ApprovalActions status="approved" onApprove={() => {}} onReject={() => {}}>{toggle}</ApprovalActions>)
@@ -58,6 +75,7 @@ describe('ApprovalActions', () => {
   it('a non-approver sees the actions disabled', () => {
     render(<ApprovalActions status="awaiting_approval" canApprove={false} onApprove={() => {}} onReject={() => {}}>{toggle}</ApprovalActions>)
     expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeDisabled()
   })
 })
 

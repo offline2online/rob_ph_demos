@@ -128,7 +128,7 @@ deleted by hand).
   attachments?: [{ type: "image" | "video", url: string, path: string, name: string, size: number, uploadedAt: timestamp }], // see "Attachments" below
   previewUrl?: string,          // a Ready for Testing card's own "Test this" link
   testSummary?: string,         // Ready for Testing card's primary text — see below
-  noDeploymentRequired?: boolean, // set from the Edit item modal — see "No manual way to reach published-live exists" below for the one exception it carves out
+  noDeploymentRequired?: boolean, // set from the Edit item modal, or by the no-diff path when the content is already on main — see "No manual way to reach published-live exists" below for the one exception it carves out. The train wins over the flag: a card with a deployCommit is a train card whatever this says (isNoDeployCard() in app.js)
   testPassed?: boolean,         // DEPRECATED — the old per-card "Confirm tested" flag. Approval is the checkbox now (see "Approving out of Ready for Testing"); read-only leftover on old cards, never written
   testVersion?: string,         // backlog-tracker's own APP_VERSION, stamped once on first entry to Ready for Testing and carried unchanged through Approved for Deployment, Deployed/Main Branch (Live), and Archived — see "Test version" below
   effort?: "small" | "medium" | "large" | null,     // cwehxSMZv8noJQv5kB22 — real value from the Edit item modal; null/unset falls back to build-batches.js's estimateEffort() guess. See "Feed in requirements → suggested build batches" below
@@ -164,6 +164,8 @@ deleted by hand).
   revertRequested?: boolean,    // Failed testing wrote it: take this rejected ticket's commits back off the branch
   revertBlockedBy?: [string],   // item ids whose later commits made that revert conflict; a human resolves, nothing is force-pushed
   revertedCommits?: [string],   // the revert commits that took it off
+  carriedByCommit?: string,     // this card has NO commit of its own: a sibling's commit on the branch already carried its change (a shared-file batch). deployCommit is that same sha, so the card is on the train like any other and goes live only when the train merges — see "A card carried by a sibling's commit follows that train" under "The deployment train"
+  carriedByItem?: string | null, // the sibling's id from that commit's `Backlog item:` trailer (null for a commit with no trailer)
 }
 ```
 
@@ -179,7 +181,8 @@ editor may only latch trainLocked true, nothing else.
   repoFolderNotApplicable?: boolean, // explicit "this project has no single folder" (e.g. this project itself, which owns backlog-tracker/ and faq/) — distinct from repoFolder simply being unset
   deployBranch?: string,        // "deploy/<project-slug>", created from main on first use
   trainLocked?: boolean,        // a release is closing: no new ticket may join it, so the build CTAs hide
-  trainReady?: boolean,         // the Deploy flow verified the train; the automation merges it
+  trainReady?: boolean,         // the Deploy flow verified the train; the automation merges it. Set by the Routine — or by the pipeline itself when the Routine reported without setting it, never reported, or was never fired (trainHandoverReason in functions/train-lock.js)
+  deployRequestHandledAt?: timestamp, // stamped by processDeployTrain as it consumes a Deploy to Main click, so that click is never handed over again once merged or refused
   trainPrNumber?: number,       // the train's single PR
   trainStatus?: "idle" | "deploying" | "conflict" | "awaiting-human-merge",
   trainNote?: string,           // why it isn't merged, when it isn't
@@ -228,7 +231,7 @@ Status pipeline and what each transition means:
 | `backlog` | Backlog | Captured, not yet worked |
 | `ready-for-testing` | Ready for Testing | Implemented and committed on the project's integration branch, awaiting human test |
 | `ready-to-publish` | Approved for Deployment | Approved out of Ready for Testing via the project's own "Approved for Deployment" action |
-| `published-live` | Deployed / Main Branch (Live) | Set only by `run-backlog-automation.js` after it actually merges the train's PR — see below, no manual button sets this |
+| `published-live` | Deployed / Main Branch (Live) | Set only by `run-backlog-automation.js` after it actually merges the train's PR — see below, no manual button sets this (the one exception is a card with nothing on any train, flagged `noDeploymentRequired` — see "No manual way to reach `published-live` exists") |
 | `archived` | (hidden from the board) | Set via the Archive action on a Deployed/Main-Branch card; reversible via Restore |
 
 ### `consoleUsers/{lowercasedEmail}`
@@ -265,6 +268,11 @@ in three files to add anyone.
 - **A signed-in person may always read their OWN row.** `auth-gate.js` has
   to check membership before it can know whether the caller is a member;
   without that self-read every new member sees "not on the list" forever.
+  Since 27 Sep 2026 the wall resolves in this order: the `consoleRole`
+  claim on the cached ID token (no network), then this self-read over REST,
+  then `POST /mcp/claims/sync` in the background; a listener refused by the
+  rules reloads to the wall with the claim ignored once, never in a loop.
+  Only admins may `list` the collection; any member may `get` a row.
 - Storage rules cannot read Firestore, so membership also rides as a custom
   auth claim (`consoleRole`, `consoleEditor`) kept in step by the
   `syncConsoleUserClaims` trigger and `POST /mcp/claims/sync`.
@@ -362,6 +370,35 @@ Requirements that follow from it:
   `revertBlockedBy` names the tickets a human must decide about (send them
   back too, or fix the branch by hand). The card shows that state, and
   Deploy to Main stays hidden until it clears.
+- **A card carried by a sibling's commit follows that train.** A
+  shared-file batch delivers two tickets' content in one commit, so the
+  second ticket's `patchFiles` produce no diff against the branch. That
+  card has no commit of its own, but its change IS on the branch — inside
+  the sibling's commit — so `processApplyPatch` stamps it with that commit
+  (`carryingCommitOnTrain()`: `deployCommit` = the carrying sha, plus
+  `carriedByCommit`/`carriedByItem` as the explicit marker, and never
+  `deployCommits`, which is what a revert takes off) and it is on the train
+  like any other ticket — checkbox approval, Failed testing, "Waiting for
+  Deploy to Main", a test link pinned to the carrying commit (never a
+  branch URL, which githack caches), and `finishTrain` flips it to
+  `published-live` when the train merges, not before. Until 25 Sep
+  2026 the no-diff path flagged such a card `noDeploymentRequired` instead,
+  which handed it the board's one-click "Confirm tested — mark Merged to
+  Main": OhKUnoGbpUAeJiXiLIvc and yUISCow4tCg9uxnMJFOy read Deployed / Main
+  Branch (Live) while their code sat unmerged on
+  `deploy/backlog-tracker-faqs` inside 419bb79 (ORUeAQ4b3vmv2EhEni5O's
+  commit, which reached `main` later as PR #211); the Deploy run flagged
+  both. Consequences: Failed testing on a carried card never reverts the
+  sibling's commit — `processRevertFromTrain` detaches the card (it becomes
+  a plain Backlog ticket) and names the ticket to send back if the content
+  itself must go; reverting the carrying commit sends every card riding on
+  it back to Backlog too (`detachCarriedCards`); a card that gets a commit
+  of its own on a re-patch stops being carried; and a no-diff whose
+  carrying commit carries THIS card's own `Backlog item:` trailer (pushed
+  by hand, never stamped) is adopted as its train commit. The no-diff path
+  sets `noDeploymentRequired` only when the branch does not change the
+  patched files at all — the content is already on `main`, so "nothing to
+  deploy" is true. `test/train-carried.test.js` pins all of this.
 - **Deploy merges the whole branch, so it is offered only when the whole
   branch is approved.** See "The single Deploy CTA" below.
 - **`trainReady` is written by the Routine, not by the service account.**
@@ -374,8 +411,19 @@ Requirements that follow from it:
   editor accounts are still held to it.
 - **The only conflict path left is `main` moving under the branch**, which
   takes someone pushing straight to `main` in this project's files. It is
-  never resolved automatically: the merge aborts, `trainStatus` goes
-  `conflict` with a `trainNote`, and nothing is merged or moved.
+  never resolved automatically — the merge aborts, `trainStatus` goes
+  `conflict` with a `trainNote`, and nothing is merged or moved — except
+  for two derived files that are rebuilt rather than merged:
+  `faq/data/index.json`, and a checked-in build output both sides rebuilt
+  (`GENERATED_BUILDS`). For the build output the train's copy is taken
+  from `HEAD:<path>`, never from the index's "ours": when both sides
+  rebuilt under different hashed names git reports rename/rename and
+  writes a two-way merge with conflict markers into both names, which is
+  what `git checkout --ours` kept on 25 Sep 2026 and shipped as a bundle
+  that threw on load (PR #216; the hosted DSP prototype was blank until a
+  forced rebuild twelve hours later). The resolver now refuses if any
+  output still carries a marker and spoils the build stamp so the next
+  scheduled rebuild regenerates the bundle from the merged source.
 - **A train carrying a `.github/workflows/` change is never merged by the
   pipeline** (`needsHumanMerge`): the PR is left open at
   `trainStatus: "awaiting-human-merge"`, and `reconcileMergedTrains` records
@@ -411,9 +459,13 @@ changed is which control approves.
   alongside the free-text explanation (`lastFailureReason`,
   XJoASicLGefL5c9fronl — see "Structured Failed testing / Eject from train
   reason" below).
-- A `noDeploymentRequired` card is untouched by all of this: no checkbox,
-  and it keeps its own separate "Confirm tested — mark Merged to Main"
-  button straight to `published-live`.
+- A **genuine** no-deploy card — `noDeploymentRequired` with nothing on any
+  train (`isNoDeployCard()` in `app.js`) — is untouched by all of this: no
+  checkbox, and it keeps its own separate "Confirm tested — mark Merged to
+  Main" button straight to `published-live`. A card that has a
+  `deployCommit`, its own or a sibling's it rides on (`carriedByCommit`),
+  is a train card whatever the flag says: checkbox, Failed testing, and
+  live only when the train merges.
 - **Pulling a ticket back out after approval** has two paths now. The
   **← back arrow** on an Approved for Deployment card still sends it to
   Ready for Testing exactly as it always has — its commit stays on the
@@ -627,7 +679,19 @@ ordinary card; it fires the Routine, which sets `projects/{id}.trainReady`
 once it has confirmed every ticket really is on the integration branch and
 nothing on that branch is still in testing, and only
 `run-backlog-automation.js` (see "Notify Claude can't push" in README.md)
-flips `status` to `published-live`, after the real merge succeeds.
+flips `status` to `published-live`, after the real merge succeeds. **The
+Routine is not a single point of failure for that flag** (25 Sep 2026: a
+Deploy run passed every check and its own session permission layer then
+refused the `trainReady` PATCH, stranding an approved DSP ticket): when the
+Routine reports done or error without setting it, never reports back, or
+was never fired, the pipeline sets it itself —
+`trainHandoverReason()` in `functions/train-lock.js`, applied by
+`functions/index.js`'s `onDeployRoutineSettled` and by
+`run-backlog-automation.js`'s `reconcileDeployRequests` — and
+`processDeployTrain` re-checks the Routine's own step 1 (every
+`deployCommit` is an ancestor of the branch) and step 2 (nothing still in
+testing) before merging. A consumed click is stamped
+`deployRequestHandledAt` so it can never re-arm the train.
 
 The one deliberate exception is `noDeploymentRequired` (set from the Edit
 item modal — a plain checkbox, self-service, not something only the
@@ -646,6 +710,18 @@ on a card that has already told the board there's no PR to fake being
 merged. Any card without the flag still goes through the full
 Ready for Testing → Approved for Deployment → Main pipeline exactly as
 described above; this does not change behavior for the common case.
+
+**The flag alone is not enough — the train wins over it.** `isNoDeployCard()`
+(`app.js`) is `noDeploymentRequired && !deployCommit`, and it — not the bare
+flag — is what offers the button, excludes a card from the approval pool,
+and guards `confirmTestedNoDeploy()`'s write. A card with a `deployCommit`
+has code on an integration branch that is not on `main` yet, whether that
+commit is its own or a sibling's it rides on (`carriedByCommit`, see "The
+deployment train"), so it keeps the train's controls and reaches
+`published-live` only through `finishTrain`. This is the rule the 25 Sep
+2026 incident was missing: the automation's no-diff path flagged two
+carried cards `noDeploymentRequired`, the button appeared, and both read
+"Merged to Main" a day before their train merged.
 
 `published-live` is treated as the one **irreversible** transition of the
 four for automation purposes (see "FAQ auto-review" below) — the other
@@ -890,6 +966,8 @@ faqArticles/{id}: {
   reviewComments?: { author, text, at }[],   // via comment_on_faq_revision (MCP) — not yet rendered by the console
   lastPromotedAt?,
 }
+faqDeletedArticles/{id}:   { title, categoryId, deletedAt, deletedBy }  // tombstone the console writes BEFORE deleteDoc; seed-faq-data.js and faq-sync.js never recreate a tombstoned id. Permanent: rules let an editor create/refresh one, nobody delete one
+faqDeletedCategories/{id}: { name, deletedAt, deletedBy }              // same, for a category
 ```
 Consumer-facing content for the FAQ / Help Center — see that section below.
 `bodyMd` (the field name predates this and is kept for compatibility) now
@@ -945,18 +1023,33 @@ entry's free text — finding a card's PR meant reading its notes or
 searching GitHub, and a card in Approved for Deployment gave no sign of
 whether its PR was open, green or already merged.
 
-### `noDeploymentRequired` is set by the no-diff path
+### The no-diff path: on its own commits, carried by a sibling, or already on main
 
-The same script sets `noDeploymentRequired: true` when `patchFiles`
-produce no diff against `main` — the expected outcome for the second half
-of a shared-file batch, where a sibling's PR already carried the change.
-Nothing was pushed and nothing will be, so there is no PR for Deploy to
-Main to merge. The card's one-click completion
-(`confirmTestedNoDeploy`) is therefore offered in **both** Ready for
-Testing and Approved for Deployment (`noDeployPending` in `app.js`);
-before that it appeared only in Ready for Testing, so such a card sitting
-in Approved for Deployment could only be finished by moving it backwards
-a column first.
+`processApplyPatch` handles `patchFiles` that produce no diff against the
+train in three different ways (`noDiffPatchFields()`, pure, tested in
+`test/train-carried.test.js`):
+
+- **Already on its own commits** — the card has `deployCommits` there (a
+  re-patch matched what it had already put on the branch), or the newest
+  train commit touching its files carries this card's own `Backlog item:`
+  trailer (pushed by hand and never stamped on the card — adopted as its
+  `deployCommit`). Back to Ready for Testing on those commits.
+- **Carried by a sibling's commit** — the branch does change the patched
+  files, and the newest surviving (non-reverted) commit touching them is
+  someone else's: the expected second half of a shared-file batch. The card
+  gets `deployCommit` = that sha plus `carriedByCommit`/`carriedByItem` and
+  is on the train like any other ticket — see "A card carried by a
+  sibling's commit follows that train". This used to set
+  `noDeploymentRequired`, which is the bug that let a card go
+  `published-live` from the board before its train merged.
+- **Already on `main`** — the branch does not change the patched files at
+  all. Nothing was pushed and nothing will be, so `noDeploymentRequired:
+  true` is honest here, and the card's one-click completion
+  (`confirmTestedNoDeploy`) is offered in **both** Ready for Testing and
+  Approved for Deployment (`noDeployPending` in `app.js`); before that it
+  appeared only in Ready for Testing, so such a card sitting in Approved
+  for Deployment could only be finished by moving it backwards a column
+  first. Its test link is pinned to `main`'s head commit.
 
 ### The FAQ editor's sidebar groups replaced the single Advanced panel
 
@@ -1735,7 +1828,9 @@ Three Cloud Functions, all in `backlog-tracker/functions/index.js`:
      (VNE6dxMu3h6jO3g6FNNB): before falling back to those two secrets, the
      shared `resolveRoutineCredentials(db, triggeredByEmail, sharedFireUrl,
      sharedToken)` (used by all three notify functions below) reads
-     `consoleUsers/{email}.routineFireUrl`/`.routineFireToken` for the
+     `routineBindings/{email}.fireUrl`/`.token` (server-only; a legacy
+     `consoleUsers/{email}.routineFireUrl`/`.routineFireToken` pair is
+     honoured once and migrated) for the
      member who clicked — `notifyRequestedByEmail` on this function,
      `deployNotifyRequestedByEmail`/`groomRequestedByEmail` on the other
      two, written by the board's own click handlers
@@ -2207,7 +2302,7 @@ one deliberate, narrowly-scoped exception each for firing and for changing
 what fires.** `set_my_routine_binding` (VNE6dxMu3h6jO3g6FNNB, see above)
 is the second: it changes which credentials a LATER click will use, but
 never fires anything itself. `approve_deploy_to_main`
-(`board.write`, editor/admin only) fires the exact same trigger the
+(`board.write` **and the `admin` role**, since 27 Sep 2026) fires the exact same trigger the
 console's own **Deploy to Main** button writes
 (`projects/{id}.deployNotifyRequestedAt`); it never merges anything
 itself — the existing Routine still verifies the train and the existing
@@ -2373,12 +2468,22 @@ Two surfaces sharing this same Firestore project:
   against an *edit* — not against a *delete*, see below) — 9 categories,
   108 articles, a verbatim import of the real Personalisation Hub Help
   Center from a Freshdesk Solutions export. Not placeholder content.
-  `deploy-backlog-tracker.yml`'s step only runs on a manual `workflow_dispatch`
-  now, not on every push-triggered deploy (XFeVboxWduEPT2zGcj8y, 25 Sep
-  2026) — `create()`-if-missing can't tell "never existed" from
+  `deploy-backlog-tracker.yml`'s step runs only when a manual dispatch's
+  `seed_faq` input is ticked (XFeVboxWduEPT2zGcj8y, 25 Sep 2026, corrected
+  the same day) — `create()`-if-missing can't tell "never existed" from
   "deliberately deleted in the console," so running it on every deploy
   resurrected any article/category someone had just deleted the moment the
-  next unrelated change shipped.
+  next unrelated change shipped. The first fix gated it on
+  `workflow_dispatch` alone, which is exactly how the pipeline runs this
+  workflow after every train merge, so the seed kept running. Independently
+  of the gate, a deleted id can no longer be recreated by anything: the
+  console writes a tombstone (`faqDeletedArticles/{id}`,
+  `faqDeletedCategories/{id}` — see the data model) before deleting, and
+  both the seed and `faq-sync.js` skip tombstoned ids. A train that
+  changes `faq/data/` also gets its repo → Firestore sync dispatched by
+  `finishTrain` (a GITHUB_TOKEN merge fires no push event), so a content
+  ticket's edit reaches the console before the next hourly export would
+  otherwise overwrite it with Firestore's older copy.
 - **Version display**: both `faq/` and `backlog-tracker/public/` render a
   small hand-maintained `APP_VERSION` in their footer (`js/version.js` in
   each, independent per site since they deploy separately) — bumped by

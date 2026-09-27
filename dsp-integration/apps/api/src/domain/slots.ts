@@ -5,6 +5,7 @@ import { UNLIMITED, type Assigned, type DisplayType, type DisplayTypeExtensions,
 import type { BuyersListRepo } from '../repos/BuyersListRepo'
 import type { CompanySettings } from '../repos/CompanySettingsRepo'
 import type { PartnerRecord } from '../repos/PartnerRepo'
+import { zonesOf } from './displayTypes'
 import { effectiveLists, isBlocked, isOn } from './lists'
 
 /* The rotation cap is the slot count; null = the platform default (Unlimited). */
@@ -21,10 +22,12 @@ type Detail = { field: string; reason: string }
 export function validateExtensions(dt: DisplayType, ext: DisplayTypeExtensions): Detail[] {
   const out: Detail[] = []
   const n = slotCountOf(dt)
+  const zoneIds = new Set(zonesOf(dt).map((z) => z.id))
   if (ext.slots.length !== n) out.push({ field: 'slots', reason: `Expected ${n} slot${n === 1 ? '' : 's'} (Maximum Campaigns Played In Rotation), got ${ext.slots.length}.` })
   ext.slots.forEach((s, i) => {
     if (!s.label?.trim()) out.push({ field: `slots[${i}].label`, reason: 'A label is required.' })
     if (!(['internal', 'advertiser', 'retail'] as string[]).includes(s.owner)) out.push({ field: `slots[${i}].owner`, reason: 'One of: internal, advertiser, retail.' })
+    if (s.zoneId != null && !zoneIds.has(s.zoneId)) out.push({ field: `slots[${i}].zoneId`, reason: 'Unknown zone.' })
   })
   return out
 }

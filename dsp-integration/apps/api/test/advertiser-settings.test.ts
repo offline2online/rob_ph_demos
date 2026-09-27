@@ -3,6 +3,7 @@ import { buildApp } from '../src/http/app'
 import { expectMatchesContract } from './contract'
 import { NOW, testContext } from './helpers'
 import { biddingClosesAt, biddingOpensAt, nextWindow, windowStartOf } from '../src/domain/positions'
+import { promotePendingPlayWindowIfDue } from '../src/exchange/scheduler'
 
 const input = {
   currency: 'NZD', floorCpm: 120, personalisedMultiplier: 1.6, interactiveCpe: 1.25,
@@ -38,15 +39,62 @@ describe('Advertiser settings (spec §4, §6)', () => {
     expect(bad.json().error.details.map((d: { field: string }) => d.field)).toEqual(['auctionOpensHours', 'playWindowHours', 'auctionCutoffTime'])
   })
 
-  it('won’t change the play-window length while future windows are bid on or booked', async () => {
+  /* Rob's board ticket, 26 Sep 2026: a length change while windows are still
+     active no longer errors out — it's accepted and deferred, with the
+     admin told exactly when it takes effect. */
+  it('defers a play-window length change while a window is still bid on or booked, and says when it takes effect', async () => {
     const ctx = await testContext({ clock: () => NOW })
     ctx.reservations.insert({
       id: 'r1', partnerId: 'p_google', advertiserId: 'nestle', campaignId: 'c_dsp_nestle', positionId: 'menu_board.s2', windowStart: '2026-09-22T00:00:00.000Z',
       type: 'bid', channel: 'api', bidCpm: 120, currency: 'AUD', status: 'pending', clearingCpm: null, reason: null, testMode: false, pricingType: 'localised', handedOffAt: null,
     })
     const res = await buildApp(ctx).inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: input })
-    expect(res.statusCode).toBe(400)
-    expect(res.json().error.details).toEqual([{ field: 'playWindowHours', reason: 'Future play windows are already bid on or booked; the length can change once they have played.' }])
+    expect(res.statusCode).toBe(200)
+    expectMatchesContract('PUT', '/admin/v1/advertiser-settings', 200, res.json())
+    /* Untouched — the seeded 24-hour length — until r1's window (starting
+       2026-09-22, so ending 2026-09-23) has played. */
+    expect(res.json()).toMatchObject({ playWindowHours: 24, pendingPlayWindowHours: 168, pendingPlayWindowEffectiveFrom: '2026-09-23T00:00:00.000Z' })
+
+    /* A Test-mode bid never blocks or defers anything (spec §7: no real spend). */
+    ctx.reservations.update('r1', { status: 'lost' })
+    ctx.reservations.insert({
+      id: 'r2', partnerId: 'p_google', advertiserId: 'nestle', campaignId: 'c_dsp_nestle', positionId: 'menu_board.s2', windowStart: '2026-09-24T00:00:00.000Z',
+      type: 'bid', channel: 'api', bidCpm: 120, currency: 'AUD', status: 'won', clearingCpm: 120, reason: null, testMode: true, pricingType: 'localised', handedOffAt: null,
+    })
+    const immediate = await buildApp(ctx).inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: { ...input, playWindowHours: 48 } })
+    expect(immediate.json()).toMatchObject({ playWindowHours: 48, pendingPlayWindowHours: null, pendingPlayWindowEffectiveFrom: null })
+  })
+
+  it('promotes a deferred play-window length change once every active window has played — waiting longer if a booking made since runs later', async () => {
+    let now = NOW
+    const ctx = await testContext({ clock: () => now })
+    ctx.reservations.insert({
+      id: 'r1', partnerId: 'p_google', advertiserId: 'nestle', campaignId: 'c_dsp_nestle', positionId: 'menu_board.s2', windowStart: '2026-09-22T00:00:00.000Z',
+      type: 'bid', channel: 'api', bidCpm: 120, currency: 'AUD', status: 'pending', clearingCpm: null, reason: null, testMode: false, pricingType: 'localised', handedOffAt: null,
+    })
+    const saved = await buildApp(ctx).inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: input })
+    expect(saved.json()).toMatchObject({ playWindowHours: 24, pendingPlayWindowHours: 168, pendingPlayWindowEffectiveFrom: '2026-09-23T00:00:00.000Z' })
+
+    /* Before the effective date: nothing happens. */
+    expect(promotePendingPlayWindowIfDue(ctx)).toBeNull()
+    expect(ctx.company.get().playWindowHours).toBe(24)
+
+    /* r1's window has played by the effective date, but a booking made since
+       (still under the old, unpromoted length) runs later — the change waits
+       for that one too, and the effective date moves out to cover it. */
+    ctx.reservations.insert({
+      id: 'r2', partnerId: 'p_google', advertiserId: 'nestle', campaignId: 'c_dsp_nestle', positionId: 'menu_board.s2', windowStart: '2026-09-25T00:00:00.000Z',
+      type: 'reserve', channel: 'api', bidCpm: 120, currency: 'AUD', status: 'won', clearingCpm: 120, reason: null, testMode: false, pricingType: 'localised', handedOffAt: null,
+    })
+    now = new Date('2026-09-23T00:00:00.000Z')
+    expect(promotePendingPlayWindowIfDue(ctx)).toBeNull()
+    expect(ctx.company.get().playWindowHours).toBe(24)
+    expect(ctx.company.get().pendingPlayWindowEffectiveFrom).toBe('2026-09-26T00:00:00.000Z')
+
+    /* r2 has played too, by its own (pushed-out) effective date: the change lands. */
+    now = new Date('2026-09-26T00:00:00.000Z')
+    expect(promotePendingPlayWindowIfDue(ctx)).toBe(168)
+    expect(ctx.company.get()).toMatchObject({ playWindowHours: 168, pendingPlayWindowHours: null, pendingPlayWindowEffectiveFrom: null })
   })
 
   it('drives the play windows: length, the daily cutoff when the auction runs, and when bidding opens', async () => {
@@ -69,13 +117,48 @@ describe('Advertiser settings (spec §4, §6)', () => {
     const res = await buildApp(await testContext()).inject({ method: 'GET', url: '/api/admin/v1/available-inventory' })
     expectMatchesContract('GET', '/admin/v1/available-inventory', 200, res.json())
     expect(res.json().items).toEqual([{
-      displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', slot: 2, position: 'Supplier slot',
+      displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', playlistId: 'pl_menu', unassigned: false, slot: 2, position: 'Supplier slot',
       assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false, buyersListId: null, buyersListName: null }, qrControl: true, visionAi: true, supportedTargeting: ['localised'],
       reservePrice: null, reservePriceOverride: null, displayTypeReservePrice: null,
       billingUnitHours: 24, billingUnitHoursOverride: null, displayTypeBillingUnitHours: null,
+      maxCampaigns: 5, maxCampaignsOverride: null, displayTypeMaxCampaigns: null,
     }])
     /* The picker behind Assigned to: every DSP and the advertisers it brings. */
     expect(res.json().dsps[0]).toMatchObject({ partnerId: 'p_google', name: 'Google DSP', advertisers: [{ advertiserId: 'nestle', name: 'Nestlé' }, { advertiserId: 'swisse', name: 'Swisse' }] })
+  })
+
+  /* Menu Board (seed) is multi-zone with three zone playlists, but its one
+     advertiser slot ("Supplier slot") isn't tagged to any of them, so it
+     still resolves to the display type's own default playlist above — the
+     same reading a non-multi-zone display type gets. This is the other
+     half: tag it to a zone and the row switches to that zone's playlist,
+     which is the whole point of the ticket ("Available Inventory:
+     playlist-primary table (drop Display type column) with Unassigned
+     indicator", 27 Sep 2026) — a playlist only shows up here because a
+     real advertiser slot is tagged to it. */
+  it('attributes an advertiser slot to its tagged zone’s playlist, not the display type’s default', async () => {
+    const ctx = await testContext()
+    const app = buildApp(ctx)
+    const ext = ctx.displayTypes.get('menu_board')!.phExtensions!
+    ctx.displayTypes.saveExtensions('menu_board', { ...ext, slots: ext.slots.map((s, i) => (i === 1 ? { ...s, zoneId: 'z3' } : s)) })
+    const res = await app.inject({ method: 'GET', url: '/api/admin/v1/available-inventory' })
+    expectMatchesContract('GET', '/admin/v1/available-inventory', 200, res.json())
+    expect(res.json().items).toEqual([expect.objectContaining({ slot: 2, playlistId: 'pl_zone_menu_board_3', playlistName: 'Menu Board — Long Format / Zone 3' })])
+  })
+
+  /* "Unassigned": the display type has advertiser slots but no physical
+     display is using it yet, so nothing is actually playing them — same
+     "no displays" signal windowStatus (positions.ts) already uses to mark a
+     position unavailable on the Partner API, surfaced here for the retailer. */
+  it('flags Available Inventory rows as unassigned when their display type has no physical display', async () => {
+    const ctx = await testContext()
+    const app = buildApp(ctx)
+    /* Displays are read-only here (Displays & Devices owns them for real —
+       PH-CORE-BOUNDARIES.md, DisplaySource); removing one for the test is a
+       direct DB write, the same way delete-display-type.test.ts does. */
+    ctx.db.prepare("DELETE FROM displays WHERE display_type_id = 'menu_board'").run()
+    const res = await app.inject({ method: 'GET', url: '/api/admin/v1/available-inventory' })
+    expect(res.json().items.find((i: { slot: number }) => i.slot === 2)).toMatchObject({ unassigned: true })
   })
 
   /* Reserve price: real inheritance (Rob, 22 Sep; spec §1 configuration
@@ -123,6 +206,42 @@ describe('Advertiser settings (spec §4, §6)', () => {
       { field: 'items[0].reservePrice', reason: 'A CPM of 0 or more, or null for no reserve.' },
       { field: 'items[1].reservePriceDefault', reason: 'All slots on a display type must submit the same reserve price default.' },
     ])
+  })
+
+  /* Max campaigns (ticket "Available Inventory: Max campaigns column + slot
+     playlist statement"): same override-always-wins inheritance as reserve
+     price above, but always resolves to a real integer (the platform
+     default of 5), bounded 1-10. Purely a submission cap — proved directly
+     against POST /v1/campaigns in campaigns.test.ts. */
+  it('inherits a max campaigns cap from its display type, lets a slot override it, and bounds it 1-10', async () => {
+    const ctx = await testContext()
+    const app = buildApp(ctx)
+    const row = (slot: number, maxCampaigns: number | null, maxCampaignsDefault: number | null) =>
+      ({ displayTypeId: 'menu_board', slot, supportedTargeting: ['localised'], assignedTo: KEEP, maxCampaigns, maxCampaignsDefault })
+    const save = (items: ReturnType<typeof row>[]) => app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items } })
+    const at = (json: { items: { slot: number }[] }, slot: number) => json.items.find((i) => i.slot === slot)
+
+    /* Nothing set: the platform default of 5 applies. */
+    const untouched = await app.inject({ method: 'GET', url: '/api/admin/v1/available-inventory' })
+    expect(at(untouched.json(), 2)).toMatchObject({ maxCampaigns: 5, maxCampaignsOverride: null, displayTypeMaxCampaigns: null })
+
+    /* Setting the default on the one Advertiser slot on menu_board reaches it. */
+    const set = await save([row(2, null, 8)])
+    expect(set.statusCode).toBe(200)
+    expectMatchesContract('PUT', '/admin/v1/available-inventory', 200, set.json())
+    expect(at(set.json(), 2)).toMatchObject({ maxCampaigns: 8, maxCampaignsOverride: null, displayTypeMaxCampaigns: 8 })
+    expect(ctx.displayTypes.get('menu_board')!.phExtensions!.maxCampaigns).toBe(8)
+
+    /* Overriding the slot wins over the default. */
+    const overridden = await save([row(2, 3, 8)])
+    expect(at(overridden.json(), 2)).toMatchObject({ maxCampaigns: 3, maxCampaignsOverride: 3, displayTypeMaxCampaigns: 8 })
+
+    /* Rejected: out of the 1-10 range, and a non-integer. */
+    const bad = await save([row(2, 11, 8)])
+    expect(bad.statusCode).toBe(400)
+    expect(bad.json().error.details).toEqual([{ field: 'items[0].maxCampaigns', reason: 'An integer from 1 to 10, or null to inherit.' }])
+    const bad2 = await app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ ...row(2, 0.5, 8) }] } })
+    expect(bad2.json().error.details).toEqual([{ field: 'items[0].maxCampaigns', reason: 'An integer from 1 to 10, or null to inherit.' }])
   })
 
   /* What a slot supports is set here; localised only until someone changes it (Rob, 20 Sep). */

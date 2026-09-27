@@ -6,12 +6,14 @@ import type { Campaign } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import type { Guards } from '../../http/app'
+import { campaignLayerSummary } from '../../domain/targetingSummary'
 import { HttpError, notFound, validationFailed } from '../../http/errors'
 
 export const campaignRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => async (app) => {
   const toCampaign = (c: Awaited<ReturnType<typeof ctx.approvalCampaigns.listCampaigns>>[number], pricingType: Campaign['pricingType'], displayTypeId: string | null): Campaign => ({
     campaignId: c.campaignId, name: c.name, source: c.source, advertiserId: c.advertiserId, advertiserName: c.advertiserName,
     partnerId: c.partnerId, partnerName: c.partnerName, displayTypeId, pricingType, schedule: scheduleOf(c.campaignId), activation: c.activation,
+    ...campaignLayerSummary(raw(c.campaignId)?.targeting),
     ...(raw(c.campaignId)?.brief ? { brief: raw(c.campaignId)!.brief } : {}),
   })
   const raw = (id: string) => ctx.campaigns.getCampaign(id)

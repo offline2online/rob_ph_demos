@@ -3,7 +3,7 @@
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { dependentDetails, playlistDeleteCheck } from '../../domain/deleteChecks'
-import { toApiPlaylist } from '../../domain/displayTypes'
+import { toApiPlaylist, validatePlaylistSettings } from '../../domain/displayTypes'
 import type { Guards } from '../../http/app'
 import { hasDependents, notFound, validationFailed } from '../../http/errors'
 
@@ -27,6 +27,18 @@ export const playlistRoutes = (ctx: Context, _guards: Guards): FastifyPluginAsyn
     const unexpected = Object.keys(req.body ?? {}).filter((k) => k !== 'name')
     if (unexpected.length) throw validationFailed(unexpected.map((k) => ({ field: k, reason: 'Not accepted: a playlist is renamed here, assigned on the display type form.' })))
     return toApiPlaylist(ctx.playlists.rename(req.params.id, name)!, ctx.displayTypes.list())
+  })
+
+  /* This playlist's own settings, edited from an expandable row on Playlist
+     Management whether or not it is currently assigned to a display type
+     (26 Sep 2026). Maximum Campaigns Played In Rotation and slot assignment
+     stay on the display type's own /extensions endpoint — see
+     validatePlaylistSettings. */
+  app.put<{ Params: { id: string }; Body: Record<string, unknown> }>('/playlists/:id/settings', async (req) => {
+    one(req.params.id)
+    const errors = validatePlaylistSettings(req.body)
+    if (errors.length) throw validationFailed(errors)
+    return toApiPlaylist(ctx.playlists.saveSettings(req.params.id, req.body ?? {})!, ctx.displayTypes.list())
   })
 
   app.get<{ Params: { id: string } }>('/playlists/:id/delete-check', async (req) => {

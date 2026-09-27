@@ -1,6 +1,16 @@
 /* MULTI-ZONE LAYOUT panel (spec §1): each zone runs its own playlist. Zone
    playlists ("<Display Type> / Zone N") are created on demand and applied
-   with Save changes. */
+   with Save changes.
+
+   Always edited here, on the display type page — never in Playlist
+   Management (ticket "Add new playlist" from display type, 26 Sep 2026).
+   The layout itself (x/y/width/height, already ratios/percentages of this
+   display type's canvas) is owned by whichever playlist is currently the
+   Default Playlist: the API stores it on that playlist's own record, not
+   the display type's, so the same physical screen zones one way under one
+   playlist and runs single-canvas under another. The client still just
+   reads/writes `d.multiZone` exactly as before — the server resolves it
+   against the default playlist underneath (DisplayTypeSource.ts). */
 import { Button, Input, InputNumber, Select, Switch } from 'antd'
 import type { DisplayType } from '@ph-dsp/types'
 import { CollapsiblePanel } from '../../../shared/CollapsiblePanel'

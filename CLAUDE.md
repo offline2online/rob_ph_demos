@@ -522,6 +522,17 @@ the ticket and in `mcpAuditLog`.
   that without saying so explicitly —
   `backlog-tracker/test/mcp-server.test.js` asserts the allowlist, the
   guard, and that no doc tool's schema can even express a train field.
+- **`backlog-tracker/SECURITY-PERFORMANCE.md`** (27 Sep 2026) is the
+  security and scalability review of the console for ~100 members: what
+  changed (sign-in resolves from the token claim first and never waits on
+  a Cloud Function; Routine bindings moved to the server-only
+  `routineBindings` collection; `approve_deploy_to_main` is admin-only;
+  human editors can't write a card's pipeline fields or delete a shipped
+  card; refresh-token reuse revokes the family; rate limits on the open
+  endpoints) and what is recommended next (moving `patchFiles` and the
+  project markdown off the documents every tab listens to, a persistent
+  local cache, lazy FAQ listeners). Read it before touching
+  `auth-gate.js`, `firestore.rules` or `mcp-server.js`.
 - **Not the same thing as `boardApi`/`BOARD_API_KEY`**, which is one shared
   secret standing in for the Routine's own automation and stays as it is.
   The MCP server is per-person, per-token and individually revocable.

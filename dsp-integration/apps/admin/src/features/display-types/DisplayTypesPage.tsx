@@ -2,17 +2,16 @@
    draft and applied with Save changes. */
 import { useQueryClient } from '@tanstack/react-query'
 import { App, Spin } from 'antd'
-import type { DeleteCheck, DisplayType, Partner } from '@ph-dsp/types'
+import { NEW_PLAYLIST_SETTINGS_DEFAULTS, type DeleteCheck, type DisplayType } from '@ph-dsp/types'
 import { useMemo, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import { ApiRequestError } from '../../api/client'
-import { useFeatures } from '../../api/features'
 import type { Flags } from '../../flags'
 import { ListPageLayout } from '../../shared/ListPageLayout'
 import { SaveBar } from '../../shared/SaveBar'
 import { useReportDirty, useUnsavedGuard } from '../../shared/UnsavedChanges'
 import { useDraft } from '../../shared/useDraft'
-import { deleteCheck, deleteDisplayType, saveDisplayTypes, useDisplayTypes, usePartners, usePlaylists } from './api'
+import { deleteCheck, deleteDisplayType, saveDisplayTypes, useDisplayTypes, usePlaylists } from './api'
 import { DeleteDisplayType } from './DeleteDisplayType'
 import { DisplayTypeForm, type PlaylistOption } from './DisplayTypeForm'
 import { DisplayTypeList } from './DisplayTypeList'
@@ -23,20 +22,14 @@ interface Draft { types: DisplayType[]; newPlaylists: PlaylistOption[] }
 export function DisplayTypesPage({ flags }: { flags: Flags }) {
   const { message } = App.useApp()
   const qc = useQueryClient()
-  const navigate = useNavigate()
   const guard = useUnsavedGuard()
   const [params, setParams] = useSearchParams()
+  /* Still needed to keep phExtensions.slots round-tripping correctly on
+     save — slot assignment itself is edited on Playlist Management now. */
   const slotAssignment = flags.dspIntegration
 
   const types = useDisplayTypes()
   const playlists = usePlaylists()
-  const partners = usePartners(slotAssignment)
-  /* The retailer's DSP integration switch (Exchange settings). While it is
-     off, Advertiser is greyed out for a slot that isn't one already (Rob,
-     24 Sep 2026). Assumed on until known, so it doesn't flicker; the API
-     refuses a new advertiser slot either way. */
-  const features = useFeatures(slotAssignment)
-  const dspOn = features.data?.dspIntegration !== false
 
   /* Slots always match the rotation cap in the editor (flag on). */
   const saved = useMemo<Draft | undefined>(
@@ -56,9 +49,13 @@ export function DisplayTypesPage({ flags }: { flags: Flags }) {
     setDraft((cur) => (cur && d ? { ...cur, types: cur.types.map((t) => (t.id === d.id ? fn(t) : t)) } : cur))
 
   const allPlaylists: PlaylistOption[] = [
-    ...(playlists.data ?? []).map((p) => ({ id: p.id, name: p.name, autoCreatedFor: p.autoCreatedFor ?? null })),
+    ...(playlists.data ?? []).map((p) => ({ id: p.id, name: p.name, autoCreatedFor: p.autoCreatedFor ?? null, playlistSettings: p.playlistSettings ?? {} })),
     ...(draft?.newPlaylists ?? []),
   ]
+  /* A playlist still only in `draft.newPlaylists` has never been saved — no
+     real playlist exists for it yet on Playlist Management. */
+  const isNewPlaylist = (id: string | undefined) => !!id && !(playlists.data ?? []).some((p) => p.id === id) && (draft?.newPlaylists ?? []).some((p) => p.id === id)
+
   /* Zone playlists are created on demand, named "<Display Type> / Zone n". */
   const zonePlaylistId = (n: number) => {
     if (!d) return ''
@@ -66,7 +63,26 @@ export function DisplayTypesPage({ flags }: { flags: Flags }) {
     const found = allPlaylists.find((p) => p.name === name)
     if (found) return found.id
     const id = `pl_zone_${d.id}_${n}`
-    setDraft((cur) => (cur && !cur.newPlaylists.some((p) => p.id === id) ? { ...cur, newPlaylists: [...cur.newPlaylists, { id, name, autoCreatedFor: d.id }] } : cur))
+    setDraft((cur) => (cur && !cur.newPlaylists.some((p) => p.id === id) ? { ...cur, newPlaylists: [...cur.newPlaylists, { id, name, autoCreatedFor: d.id, playlistSettings: { ...NEW_PLAYLIST_SETTINGS_DEFAULTS } }] } : cur))
+    return id
+  }
+
+  /* "Add new playlist" from the Default Playlist dropdown (ticket, 26 Sep
+     2026): scoped to this display type from the outset (autoCreatedFor), so
+     it's ready to define its own multi-zone layout — edited on this same
+     page, never in Playlist Management — the moment it's picked as the
+     default. Named uniquely so two "Add new playlist" clicks on the same
+     display type don't collide. Starts with Auto-Rotation/Auto-Play off
+     (NEW_PLAYLIST_SETTINGS_DEFAULTS, ticket 27 Sep 2026) — the same defaults
+     `ensureReferencedPlaylists` gives it server-side once Save actually
+     creates it — shown as a read-only preview right here in the meantime
+     (see the Playlist Settings block in DisplayTypeForm). */
+  const newPlaylistId = () => {
+    if (!d) return ''
+    let name = `${d.name} Playlist`
+    for (let n = 2; allPlaylists.some((p) => p.name === name); n += 1) name = `${d.name} Playlist ${n}`
+    const id = `pl_new_${d.id}_${Date.now()}`
+    setDraft((cur) => (cur ? { ...cur, newPlaylists: [...cur.newPlaylists, { id, name, autoCreatedFor: d.id, playlistSettings: { ...NEW_PLAYLIST_SETTINGS_DEFAULTS } }] } : cur))
     return id
   }
 
@@ -77,7 +93,7 @@ export function DisplayTypesPage({ flags }: { flags: Flags }) {
       setDraft((cur) => {
         const base = saved ?? cur
         if (!base) return cur
-        return { types: [...base.types, newDisplayType(id)], newPlaylists: [{ id: `pl_${id}`, name: 'New Display Type Playlist', autoCreatedFor: id }] }
+        return { types: [...base.types, newDisplayType(id)], newPlaylists: [{ id: `pl_${id}`, name: 'New Display Type Playlist', autoCreatedFor: id, playlistSettings: { ...NEW_PLAYLIST_SETTINGS_DEFAULTS } }] }
       })
       select(id)
     })
@@ -133,30 +149,27 @@ export function DisplayTypesPage({ flags }: { flags: Flags }) {
       setDraft((cur) => (cur ? { ...cur, types: cur.types.filter((x) => x.id !== id), newPlaylists: cur.newPlaylists.filter((p) => p.autoCreatedFor !== id) } : cur))
       if (d?.id === id) setParams({}, { replace: true })
       setDeleting(null)
-      await Promise.all([qc.invalidateQueries({ queryKey: ['display-types'] }), qc.invalidateQueries({ queryKey: ['playlists'] })])
+      /* Available Inventory lists every advertiser slot by display type
+         (api.ts's `inventory()`); left uncleared, a deleted display type's
+         slots kept showing there until the cache happened to go stale on
+         its own (up to staleTime, App.tsx) — looking like the delete hadn't
+         actually removed them. */
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['display-types'] }),
+        qc.invalidateQueries({ queryKey: ['playlists'] }),
+        qc.invalidateQueries({ queryKey: ['available-inventory'] }),
+      ])
     } catch (e) {
       setDeleting(null)
       message.error(errorText(e, 'Could not delete this display type.'))
     }
   }
 
-  /* The DSP's seats, pulled on connect. */
-
   if (!draft || !d) return <Spin />
   return (
     <ListPageLayout list={<DisplayTypeList types={draft.types} selectedId={d.id} onSelect={onSelect} onNew={onNew} onDelete={onDelete} />}>
-      <DisplayTypeForm
-        key={`${d.id}:${params.get('panel') ?? ''}`}
-        d={d}
-        update={update}
-        playlists={allPlaylists}
-        zonePlaylistId={zonePlaylistId}
-        slotAssignment={slotAssignment}
-        advertiserOpen={(i) => dspOn || types.data?.find((t) => t.id === d.id)?.phExtensions?.slots?.[i]?.owner === 'advertiser'}
-        partners={partners.data ?? []}
-        onFixConnection={(partnerId) => navigate(`/dsp-integration/partners/${partnerId}`)}
-        openPanel={params.get('panel')}
-      />
+      <DisplayTypeForm key={d.id} d={d} update={update} playlists={allPlaylists} zonePlaylistId={zonePlaylistId} onAddPlaylist={newPlaylistId}
+        isNewPlaylist={isNewPlaylist} />
       <SaveBar dirty={dirty} saving={saving} onSave={onSave} onCancel={onCancel} saveOnEnter />
       {deleting && (
         <DeleteDisplayType name={deleting.name} check={deleting.check} deleting={deleting.busy} onDelete={confirmDelete} onClose={() => setDeleting(null)} />
@@ -164,4 +177,3 @@ export function DisplayTypesPage({ flags }: { flags: Flags }) {
     </ListPageLayout>
   )
 }
-

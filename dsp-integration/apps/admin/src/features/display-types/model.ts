@@ -2,8 +2,8 @@
    (prototype-reference/src/DisplayTypesAndPlaylists.jsx, model/schema.js,
    model/sellside.js), reshaped to the API contract. */
 import {
-  PLATFORM_DEFAULTS, SLOT_OWNERS, UNLIMITED, assignedOf,
-  type AdvertiserSettings, type DisplayType, type Partner, type Slot, type SlotOwner,
+  NEW_PLAYLIST_SETTINGS_DEFAULTS, PLATFORM_DEFAULTS, SLOT_OWNERS, UNLIMITED, assignedOf,
+  type AdvertiserSettings, type DisplayType, type Partner, type Playlist, type Slot, type SlotOwner,
 } from '@ph-dsp/types'
 
 /* ------------------------------------------------------------- options */
@@ -29,10 +29,17 @@ export const ZONE_COLOURS = ['#169bc2', '#9747ff', '#52c41a', '#faad14', '#ef60a
 
 /* -------------------------------------------------------- record shape */
 
-export interface PlaylistSettings {
+/* 26 Sep 2026: split off the display type. Maximum Campaigns Played In
+   Rotation and slot assignment stay here — they size and sell that specific
+   screen's positions. The other five (asset position/fill, transition,
+   auto-rotation, auto-play) moved to the playlist itself, below, so they can
+   be set on a playlist that isn't assigned to a display type yet. */
+export interface CapSettings {
+  maximumCampaignsPlayedInRotation: number | null
+}
+export interface PlaylistStyleSettings {
   assetPosition: string | null
   assetFill: string | null
-  maximumCampaignsPlayedInRotation: number | null
   campaignTransition: string | null
   campaignAutoRotation: string | null
   campaignAutoPlay: string | null
@@ -49,7 +56,11 @@ export interface FeatureConfig { enabled: boolean; [k: string]: unknown }
 export interface Zone { id: string; name: string; x: number; y: number; width: number; height: number; playlistId: string; [k: string]: unknown }
 export interface MultiZone { enabled: boolean; zones: Zone[] }
 
-export const ps = (d: DisplayType) => d.playlistSettings as unknown as PlaylistSettings
+export const capOf = (d: DisplayType) => d.playlistSettings as unknown as CapSettings
+/* A playlist's own settings, whether or not it is currently assigned to a
+   display type — an unassigned playlist's `playlistSettings` is `{}`
+   (nothing overridden), same "null/absent means inherit" rule as capOf. */
+export const styleOf = (p: Playlist) => (p.playlistSettings ?? {}) as unknown as PlaylistStyleSettings
 export const qr = (d: DisplayType) => d.qrControl as unknown as QrControl
 export const features = (d: DisplayType) => (d.enabledFeatures ?? {}) as unknown as Record<string, FeatureConfig>
 export const mz = (d: DisplayType) => (d.multiZone ?? { enabled: false, zones: [] }) as unknown as MultiZone
@@ -76,7 +87,7 @@ export function newDisplayType(id: string): DisplayType {
   return {
     id, name: '', touchPoint: 'Digital Signage', description: null,
     displayCanvasSize: { width: 1920, height: 1080 }, backgroundColor: '#333333', defaultPlaylistId: `pl_${id}`,
-    playlistSettings: { assetPosition: null, assetFill: null, maximumCampaignsPlayedInRotation: UNLIMITED, campaignTransition: null, campaignAutoRotation: null, campaignAutoPlay: null },
+    playlistSettings: { maximumCampaignsPlayedInRotation: UNLIMITED },
     qrControl: blankQrControl() as unknown as DisplayType['qrControl'],
     enabledFeatures: blankFeatures() as unknown as DisplayType['enabledFeatures'],
     multiZone: { enabled: false, zones: [] },
@@ -87,12 +98,12 @@ export function newDisplayType(id: string): DisplayType {
 /* --------------------------------------------------------------- slots */
 
 export const DEFAULTS = PLATFORM_DEFAULTS.playlistSettings
-export const rotationCap = (d: DisplayType) => ps(d).maximumCampaignsPlayedInRotation ?? DEFAULTS.maximumCampaignsPlayedInRotation
+export const rotationCap = (d: DisplayType) => capOf(d).maximumCampaignsPlayedInRotation ?? DEFAULTS.maximumCampaignsPlayedInRotation
 export const isCapped = (d: DisplayType) => rotationCap(d) !== UNLIMITED
 export const slotCount = (d: DisplayType) => (isCapped(d) ? Number(rotationCap(d)) : 0)
 /* The rotation cap as the select shows it: null = Default, "Unlimited", or "n". */
 export const capValue = (d: DisplayType): string | null => {
-  const v = ps(d).maximumCampaignsPlayedInRotation
+  const v = capOf(d).maximumCampaignsPlayedInRotation
   return v === null || v === undefined ? null : v === UNLIMITED ? 'Unlimited' : String(v)
 }
 export const newSlot = (i: number): Slot => ({ label: `Slot ${i + 1}`, owner: 'internal', partnerIds: [], advertisers: [], listMode: null, storeScope: null, quota: null })
@@ -172,11 +183,11 @@ export const STRUCTURE_MARKERS: { key: string; icon: string; label: string; test
 
 export interface Chip { key: string; label: string; icon?: string; tone: 'on' | 'default'; colour?: string }
 
-/* Playlist Settings: slot count and slot assignment by owner when capped;
-   "n settings changed"; or a single grey "Default settings" (spec §1). */
-export function playlistSummary(d: DisplayType, showOwners: boolean): Chip[] {
-  const s = ps(d)
-  const overrides = (Object.keys(s) as (keyof PlaylistSettings)[]).filter((k) => k !== 'maximumCampaignsPlayedInRotation' && s[k] !== null && s[k] !== undefined)
+/* Maximum Campaigns Played In Rotation and slot assignment, still on the
+   display type (26 Sep 2026: shown per assignment, inside a playlist's
+   expanded row on Playlist Management, since a shared playlist can be
+   capped differently on each screen it's assigned to). */
+export function capSummary(d: DisplayType, showOwners: boolean): Chip[] {
   const chips: Chip[] = []
   if (isCapped(d)) {
     chips.push({ key: 'slots', icon: 'view_week', label: `${slotCount(d)} slots`, tone: 'on' })
@@ -186,10 +197,23 @@ export function playlistSummary(d: DisplayType, showOwners: boolean): Chip[] {
         if (n) chips.push({ key: o, icon: SLOT_OWNERS[o].icon, label: `${n} ${SLOT_OWNERS[o].label}`, tone: 'on', colour: SLOT_OWNERS[o].colour })
       }
     }
+  } else {
+    chips.push({ key: 'default', label: 'Unlimited rotation', tone: 'default' })
   }
-  if (overrides.length) chips.push({ key: 'changed', icon: 'tune', label: `${overrides.length} setting${overrides.length > 1 ? 's' : ''} changed`, tone: 'on' })
-  if (!isCapped(d) && !overrides.length) chips.push({ key: 'default', label: 'Default settings', tone: 'default' })
   return chips
+}
+
+/* A playlist's own settings (26 Sep 2026, moved off the display type): "n
+   settings changed", or a single grey "Default settings" — one chip set per
+   playlist, shown once regardless of how many display types it's assigned
+   to (or none at all). */
+export function styleSummary(p: Playlist): Chip[] {
+  const s = styleOf(p)
+  const keys: (keyof PlaylistStyleSettings)[] = ['assetPosition', 'assetFill', 'campaignTransition', 'campaignAutoRotation', 'campaignAutoPlay']
+  const overrides = keys.filter((k) => s[k] !== null && s[k] !== undefined)
+  return overrides.length
+    ? [{ key: 'changed', icon: 'tune', label: `${overrides.length} setting${overrides.length > 1 ? 's' : ''} changed`, tone: 'on' }]
+    : [{ key: 'default', label: 'Default settings', tone: 'default' }]
 }
 
 export function phantomSummary(d: DisplayType): Chip[] {

@@ -269,6 +269,22 @@ async function rpc(token, method, params, id = 1) {
     }
   });
 
+  // approve_deploy_to_main is admin-only (27 Sep 2026): the role is
+  // re-resolved from consoleUsers on every call, so a test can promote the
+  // teammate for one call and demote them straight after.
+  async function asAdmin(fn) {
+    const row = env.store.col("consoleUsers").get(TEAMMATE);
+    env.store.col("consoleUsers").set(TEAMMATE, Object.assign({}, row, { role: "admin" }));
+    try { return await fn(); } finally { env.store.col("consoleUsers").set(TEAMMATE, row); }
+  }
+
+  await test("approve_deploy_to_main is refused to an editor, even with board.write", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", { name: "approve_deploy_to_main", arguments: { projectId: "nope" } });
+    assert.strictEqual(res.body.result.isError, true);
+    assert.match(res.body.result.content[0].text, /requires the admin role/);
+    assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === "approve_deploy_to_main").role, "admin");
+  });
+
   await test("whoami reports the signed-in team member, not a shared key", async () => {
     const res = await rpc(tokens.access_token, "tools/call", { name: "whoami", arguments: {} });
     const payload = JSON.parse(res.body.result.content[0].text);
@@ -300,9 +316,11 @@ async function rpc(token, method, params, id = 1) {
     const payload = JSON.parse(res.body.result.content[0].text);
     assert.strictEqual(payload.registered, true);
     assert.ok(!JSON.stringify(payload).includes("sk-ant-another-secret"), "the token must never appear in the tool's own response");
-    const stored = env.store.col("consoleUsers").get(TEAMMATE);
-    assert.strictEqual(stored.routineFireUrl, "https://api.anthropic.com/v1/claude_code/routines/trig_xyz/fire");
-    assert.strictEqual(stored.routineFireToken, "sk-ant-another-secret");
+    const stored = env.store.col("routineBindings").get(TEAMMATE);
+    assert.strictEqual(stored.fireUrl, "https://api.anthropic.com/v1/claude_code/routines/trig_xyz/fire");
+    assert.strictEqual(stored.token, "sk-ant-another-secret");
+    const legacy = env.store.col("consoleUsers").get(TEAMMATE);
+    assert.ok(!legacy.routineFireToken, "the token must never be written to the member-readable consoleUsers row");
   });
 
   await test("set_my_routine_binding refuses a non-https fireUrl or a too-short token", async () => {
@@ -310,12 +328,17 @@ async function rpc(token, method, params, id = 1) {
     assert.strictEqual(bad1.body.result.isError, true);
     const bad2 = await rpc(tokens.access_token, "tools/call", { name: "set_my_routine_binding", arguments: { fireUrl: "https://api.anthropic.com/fire", token: "short" } });
     assert.strictEqual(bad2.body.result.isError, true);
+    // The fire text carries board credentials, so only Anthropic's Routine API may receive it.
+    const bad3 = await rpc(tokens.access_token, "tools/call", { name: "set_my_routine_binding", arguments: { fireUrl: "https://attacker.example.com/collect", token: "sk-ant-looks-real-enough" } });
+    assert.strictEqual(bad3.body.result.isError, true);
+    assert.match(bad3.body.result.content[0].text, /api\.anthropic\.com/);
   });
 
   await test("set_my_routine_binding with two empty strings clears an existing binding", async () => {
     const res = await rpc(tokens.access_token, "tools/call", { name: "set_my_routine_binding", arguments: { fireUrl: "", token: "" } });
     const payload = JSON.parse(res.body.result.content[0].text);
     assert.strictEqual(payload.cleared, true);
+    assert.strictEqual(env.store.col("routineBindings").get(TEAMMATE), undefined);
     const stored = env.store.col("consoleUsers").get(TEAMMATE);
     assert.strictEqual(stored.routineFireUrl, null);
     assert.strictEqual(stored.routineFireToken, null);
@@ -1065,7 +1088,7 @@ async function rpc(token, method, params, id = 1) {
     assert.strictEqual(boardPayload.readyToDeploy, false);
     assert.match(board.body.result.content[0].text, /still in Ready for Testing/);
 
-    const fire = await rpc(tokens.access_token, "tools/call", { name: "approve_deploy_to_main", arguments: { projectId: "depproj" } });
+    const fire = await asAdmin(() => rpc(tokens.access_token, "tools/call", { name: "approve_deploy_to_main", arguments: { projectId: "depproj" } }));
     assert.strictEqual(fire.body.result.isError, true);
     assert.match(fire.body.result.content[0].text, /still in Ready for Testing/);
     assert.ok(!("deployNotifyRequestedAt" in env.store.col("projects").get("depproj")), "a blocked call must never write the trigger field");
@@ -1079,7 +1102,7 @@ async function rpc(token, method, params, id = 1) {
     assert.strictEqual(boardPayload.readyToDeploy, true);
     assert.match(board.body.result.content[1].resource.text, /On train: deploy\/depproj/);
 
-    const fire = await rpc(tokens.access_token, "tools/call", { name: "approve_deploy_to_main", arguments: { projectId: "depproj" } });
+    const fire = await asAdmin(() => rpc(tokens.access_token, "tools/call", { name: "approve_deploy_to_main", arguments: { projectId: "depproj" } }));
     assert.strictEqual(fire.body.result.isError, undefined);
     const payload = JSON.parse(fire.body.result.content[0].text);
     assert.strictEqual(payload.fired, true);
@@ -1104,7 +1127,7 @@ async function rpc(token, method, params, id = 1) {
       projectId: "revertproj", title: "Reverted fix", desc: "x", type: "bug", category: "HQ Admin",
       status: "backlog", deployCommit: "sha-rev1", revertRequested: true,
     });
-    const res = await rpc(tokens.access_token, "tools/call", { name: "approve_deploy_to_main", arguments: { projectId: "revertproj" } });
+    const res = await asAdmin(() => rpc(tokens.access_token, "tools/call", { name: "approve_deploy_to_main", arguments: { projectId: "revertproj" } }));
     assert.strictEqual(res.body.result.isError, true);
     assert.match(res.body.result.content[0].text, /pending revert/);
     assert.ok(!("deployNotifyRequestedAt" in env.store.col("projects").get("revertproj")));
@@ -1263,9 +1286,13 @@ async function rpc(token, method, params, id = 1) {
     const first = await call({ method: "POST", path: "/mcp/token", body: { grant_type: "refresh_token", refresh_token: tokens.refresh_token, client_id: clientId } });
     assert.strictEqual(first.statusCode, 200);
     assert.notStrictEqual(first.body.refresh_token, tokens.refresh_token);
-    const replay = await call({ method: "POST", path: "/mcp/token", body: { grant_type: "refresh_token", refresh_token: tokens.refresh_token, client_id: clientId } });
-    assert.strictEqual(replay.statusCode, 400);
-    assert.match(replay.body.error_description, /revoked/);
+    // The presented token is marked rotated at once. (Replaying it is a
+    // reuse, which now revokes the whole family — exercised as the last
+    // test of this file, since everything after here still needs `tokens`.)
+    const oldDoc = env.store.col("mcpTokens").get(crypto.createHash("sha256").update(tokens.refresh_token).digest("hex"));
+    assert.strictEqual(oldDoc.revoked, true);
+    assert.strictEqual(oldDoc.revokedReason, "rotated");
+    assert.strictEqual(oldDoc.familyId, env.store.col("mcpTokens").get(crypto.createHash("sha256").update(first.body.refresh_token).digest("hex")).familyId);
     tokens = first.body;
   });
 
@@ -1358,6 +1385,53 @@ async function rpc(token, method, params, id = 1) {
   });
 
   env.restore();
+  await test("refresh rotation: a token refreshes once, and replaying it revokes the whole family", async () => {
+    // A fresh authorization of its own: the suite above has revoked the
+    // teammate's earlier connections on purpose.
+    const consent = await call({
+      method: "POST", path: "/mcp/authorize/complete",
+      body: { idToken: teammateIdToken, clientId, redirectUri: REDIRECT, codeChallenge: challenge, codeChallengeMethod: "S256", scope: "board.read board.write" },
+    });
+    assert.strictEqual(consent.statusCode, 200, JSON.stringify(consent.body));
+    const freshCode = new URL(consent.body.redirect).searchParams.get("code");
+    const issued = await call({ method: "POST", path: "/mcp/token", body: { grant_type: "authorization_code", code: freshCode, code_verifier: verifier, client_id: clientId, redirect_uri: REDIRECT } });
+    assert.strictEqual(issued.statusCode, 200, JSON.stringify(issued.body));
+    tokens = issued.body;
+    const first = await call({ method: "POST", path: "/mcp/token", body: { grant_type: "refresh_token", refresh_token: tokens.refresh_token, client_id: clientId } });
+    assert.strictEqual(first.statusCode, 200, JSON.stringify(first.body));
+    assert.ok(first.body.access_token && first.body.refresh_token);
+    const okCall = await rpc(first.body.access_token, "tools/call", { name: "whoami", arguments: {} });
+    assert.ok(okCall.body.result, "the rotated access token works");
+    // Replay the OLD refresh token: refused, and the successor is dead too.
+    const replay = await call({ method: "POST", path: "/mcp/token", body: { grant_type: "refresh_token", refresh_token: tokens.refresh_token } });
+    assert.strictEqual(replay.statusCode, 400);
+    assert.strictEqual(replay.body.error, "invalid_grant");
+    assert.match(replay.body.error_description, /revoked/);
+    const afterReplay = await rpc(first.body.access_token, "tools/call", { name: "whoami", arguments: {} });
+    assert.strictEqual(afterReplay.statusCode, 401, "the family issued from the replayed token must be revoked");
+    const again = await call({ method: "POST", path: "/mcp/token", body: { grant_type: "refresh_token", refresh_token: first.body.refresh_token } });
+    assert.strictEqual(again.statusCode, 400, "the successor refresh token is revoked with its family");
+  });
+
+  await test("/register is rate limited per address", async () => {
+    let last = null;
+    for (let i = 0; i < 31; i += 1) {
+      last = await call({ method: "POST", path: "/mcp/register", headers: { "x-forwarded-for": "203.0.113.9" }, body: { client_name: `spam ${i}`, redirect_uris: [REDIRECT] } });
+    }
+    assert.strictEqual(last.statusCode, 429);
+    assert.strictEqual(last.headers["Retry-After"], "600");
+    const other = await call({ method: "POST", path: "/mcp/register", headers: { "x-forwarded-for": "203.0.113.10" }, body: { client_name: "fine", redirect_uris: [REDIRECT] } });
+    assert.strictEqual(other.statusCode, 201, "another address is unaffected");
+  });
+
+  await test("the consent page can't be framed and names the redirect host", async () => {
+    assert.strictEqual(mcp.__test.redirectHostLabel("https://claude.ai/api/mcp/auth_callback"), "claude.ai");
+    assert.strictEqual(mcp.__test.redirectHostLabel("claude://callback"), "claude://");
+    assert.strictEqual(mcp.__test.routineFireHostAllowed("https://api.anthropic.com/v1/claude_code/routines/trig_1/fire"), true);
+    assert.strictEqual(mcp.__test.routineFireHostAllowed("https://api.anthropic.com.evil.example/fire"), false);
+    assert.strictEqual(mcp.__test.routineFireHostAllowed("http://api.anthropic.com/fire"), false);
+  });
+
   console.log(`\n${passed} passed, ${failures.length} failed\n`);
   if (failures.length) {
     for (const [name, err] of failures) console.error(`--- ${name}\n${err && err.stack ? err.stack : err}\n`);

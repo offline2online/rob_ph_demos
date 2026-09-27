@@ -627,6 +627,22 @@ git protocol, so none of it depends on `api.github.com` (see step 0).
    `git log --grep "Backlog item: <ITEM_ID>" origin/<deployBranch>` finds
    it by exact id, never by title.
 
+   **A card riding on a sibling's commit has no trailer of its own.** Its
+   line in the fire text says so (`no commit of its own — rides on ticket
+   <id>'s commit`), and its doc carries `carriedByCommit`/`carriedByItem`:
+   a shared-file batch delivered its change inside that sibling's commit,
+   and its `deployCommit` is that sibling's sha. For such a card the
+   ancestor check above is the verification; `git log --grep "Backlog
+   item: <its own id>"` finding nothing is expected, not a reason to stop.
+   Do additionally confirm the carrying commit has not been reverted on the
+   branch — `git log --grep "This reverts commit <carriedByCommit>"
+   origin/<deployBranch>` must find nothing — and treat a reverted
+   carrying commit exactly like a missing `deployCommit` below: stop, note
+   it, don't set `trainReady`. Never mark such a card
+   `noDeploymentRequired` or advance it yourself: it goes live with the
+   train, when the automation merges it (`REQUIREMENTS.md` → "A card
+   carried by a sibling's commit follows that train").
+
    **If an item's `deployCommit` is missing, or is not an ancestor of the
    branch, stop and leave that item alone with a note saying so.** Do not
    set `trainReady`. Either it was never built, or it was reverted off the
@@ -710,6 +726,21 @@ git protocol, so none of it depends on `api.github.com` (see step 0).
    `mergeReady`.** You have no way to confirm the merge happened, and the
    same rule as the Backlog flow applies: never set `trainReady: true`
    until steps 1 and 2 are genuinely finished and passed.
+
+   **If your own session's permission layer refuses this PATCH** (it has
+   classified it as a "Modify Shared Resources" write and blocked it — this
+   happened on 25 Sep 2026 after every check had passed), do not retry it
+   and do not treat the deploy as failed. Finish the run normally: report
+   `deployRoutine.status` `"done"` (see the fire text's self-report
+   instruction) and say in the same report that the `trainReady` write was
+   blocked. The pipeline hands the train over itself the moment your
+   report lands — `functions/index.js`'s `onDeployRoutineSettled`, and
+   `run-backlog-automation.js`'s sweep for a run that never reports — and
+   `processDeployTrain` re-checks steps 1 and 2 (every ticket's commit is
+   on the branch, nothing still in testing) before it merges. What you
+   must still never do is set `trainReady` when steps 1 or 2 actually
+   failed; in that case report `"error"` with the reason, and leave the
+   item notes that explain it.
 
    **You do not check CI here.** The automation does it right before
    merging, which is the only moment the answer is meaningful anyway — a

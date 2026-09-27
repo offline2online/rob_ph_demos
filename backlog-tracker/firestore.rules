@@ -129,32 +129,9 @@ service cloud.firestore {
       return request.auth != null
         && request.auth.token.email == "board-automation@backlog-tracker-e4ed2.firebaseapp.com";
     }
-    function trainFieldUnchanged(f) {
-      return (f in incoming()) == (f in resource.data)
-        && (!(f in incoming()) || incoming()[f] == resource.data[f]);
-    }
-    function trainFieldsAreAutomationOnly() {
-      return trainFieldUnchanged("deployBranch")
-        && trainFieldUnchanged("trainReady")
-        && trainFieldUnchanged("trainStatus")
-        && trainFieldUnchanged("trainPrNumber")
-        && trainFieldUnchanged("trainNote")
-        && trainFieldUnchanged("needsHumanMerge");
-    }
-    // trainLocked is the one exception, and only in one direction: the
-    // board latches it true the moment a project's first ticket is approved
-    // (app.js's deployToFeature), which is what stops a new ticket joining a
-    // release that is already closing. CLEARING it is what lets builds start
-    // again, and only a merged train may do that — so the browser can set it
-    // and never unset it.
-    function trainLockOnlyLatches() {
-      return !("trainLocked" in incoming())
-        || incoming().trainLocked == true
-        || trainFieldUnchanged("trainLocked");
-    }
     // A brand-new project has no train yet, so there is nothing for a
     // deployBranch here to hijack — unlike on an existing project (see
-    // trainFieldsAreAutomationOnly above), naming the branch at creation is
+    // humanProjectUpdateOk above), naming the branch at creation is
     // just picking its name once, the same trust level as the project's own
     // `name`. The New Project modal uses this to seed deployBranch from an
     // explicit repoFolder (`deploy/<folder>`) instead of leaving it to
@@ -167,6 +144,45 @@ service cloud.firestore {
       return v is string && v.size() <= 100 && v.matches("^deploy/[a-z0-9][a-z0-9-]*$");
     }
 
+    // Who asked for a Routine to fire (notifyRequestedByEmail and friends)
+    // decides WHOSE personal Routine binding functions/index.js fires under
+    // — so a person may only ever name themselves. The automation user is
+    // exempt as everywhere else. Unchanged values pass so an unrelated
+    // update (a rename) never trips on a field it didn't touch.
+    // One MapDiff for everything a person may not change on an existing
+    // project. Rules evaluation has a hard 1,000-expression budget per
+    // request; the field-by-field form of this (six trainFieldUnchanged
+    // calls plus three requester checks, each re-reading the membership
+    // doc) measured over that budget for a non-admin editor on a fully
+    // populated project, which would have denied a plain rename.
+    //   - the train fields (deployBranch, trainReady, trainStatus,
+    //     trainPrNumber, trainNote, needsHumanMerge) are automation-only;
+    //   - trainLocked may only be set true from a browser (app.js's
+    //     deployToFeature); only a merged train clears it;
+    //   - routinePromptMd is spliced verbatim into a Routine session's
+    //     prompt, so only an admin may change it;
+    //   - the three *RequestedByEmail fields decide WHOSE personal Routine
+    //     binding functions/index.js fires under, so a person may only
+    //     ever name themselves.
+    function humanProjectUpdateOk() {
+      let changed = incoming().diff(resource.data).affectedKeys();
+      return !changed.hasAny(["deployBranch", "trainReady", "trainStatus", "trainPrNumber", "trainNote", "needsHumanMerge"])
+        && (!changed.hasAny(["trainLocked"]) || incoming().trainLocked == true)
+        && (!changed.hasAny(["routinePromptMd"]) || isAdmin())
+        && (!changed.hasAny(["notifyRequestedByEmail"]) || requesterIsCaller(incoming().notifyRequestedByEmail))
+        && (!changed.hasAny(["deployNotifyRequestedByEmail"]) || requesterIsCaller(incoming().deployNotifyRequestedByEmail))
+        && (!changed.hasAny(["groomRequestedByEmail"]) || requesterIsCaller(incoming().groomRequestedByEmail));
+    }
+    function requesterIsCaller(v) {
+      return v == null || (v is string && v.lower() == callerEmail());
+    }
+    function projectDocsBounded() {
+      return (!("requirementsMd" in incoming()) || incoming().requirementsMd == null || (incoming().requirementsMd is string && incoming().requirementsMd.size() <= 200000))
+        && (!("readmeMd" in incoming()) || incoming().readmeMd == null || (incoming().readmeMd is string && incoming().readmeMd.size() <= 200000))
+        && (!("routinePromptMd" in incoming()) || incoming().routinePromptMd == null || (incoming().routinePromptMd is string && incoming().routinePromptMd.size() <= 20000))
+        && (!("artifactUrl" in incoming()) || incoming().artifactUrl == null || (incoming().artifactUrl is string && incoming().artifactUrl.size() <= 2000 && incoming().artifactUrl.matches("^https://.*")));
+    }
+
     match /projects/{projectId} {
       allow read: if isBoardReader();
       allow create: if isEditor() && isNonEmptyBoundedString(incoming().name, 80)
@@ -176,11 +192,22 @@ service cloud.firestore {
           && !("trainStatus" in incoming()) && !("trainPrNumber" in incoming())
           && !("trainNote" in incoming()) && !("needsHumanMerge" in incoming())
           && !("trainLocked" in incoming())))
-        && (!("releaseId" in incoming()) || incoming().releaseId == null || isNonEmptyBoundedString(incoming().releaseId, 100));
+        && (!("releaseId" in incoming()) || incoming().releaseId == null || isNonEmptyBoundedString(incoming().releaseId, 100))
+        && projectDocsBounded()
+        && (isBoardAutomation() || (
+          (!("routinePromptMd" in incoming()) || isAdmin())
+          && (!("notifyRequestedByEmail" in incoming()) || requesterIsCaller(incoming().notifyRequestedByEmail))
+          && (!("deployNotifyRequestedByEmail" in incoming()) || requesterIsCaller(incoming().deployNotifyRequestedByEmail))
+          && (!("groomRequestedByEmail" in incoming()) || requesterIsCaller(incoming().groomRequestedByEmail))));
       allow update: if isEditor() && isNonEmptyBoundedString(incoming().name, 80)
         && (!("releaseId" in incoming()) || incoming().releaseId == null || isNonEmptyBoundedString(incoming().releaseId, 100))
-        && (isBoardAutomation() || (trainFieldsAreAutomationOnly() && trainLockOnlyLatches()));
-      allow delete: if isEditor();
+        && projectDocsBounded()
+        && (isBoardAutomation() || humanProjectUpdateOk());
+      // Real deletion is a runner job (board-admin.yml) that refuses a
+      // project with live tickets and keeps an export; the board only ever
+      // archives. A browser delete would orphan every ticket, doc and
+      // interface pointing at the project, so it is admin-only here.
+      allow delete: if isAdmin();
     }
 
     // Programs/Products — a purely organizational grouping above Projects
@@ -225,17 +252,52 @@ service cloud.firestore {
       allow delete: if isEditor();
     }
 
-    match /backlogItems/{itemId} {
-      allow read: if isBoardReader();
-
-      allow create, update: if isEditor() &&
-        isNonEmptyBoundedString(incoming().projectId, 100) &&
+    // The card-level pipeline record: which commits a ticket put on its
+    // train, the file contents run-backlog-automation.js writes into the
+    // repo (patchFiles), the PR it merged as. The Routine session writes
+    // these as the automation user and the workflows write them as the
+    // service account; a person in a browser never does — so a human
+    // editor's write must leave every one of them exactly as it found it.
+    // Otherwise an editor account (or anything running in its browser)
+    // could put arbitrary file contents on a deploy branch, or make a card
+    // claim any commit sha the Deploy to Main gate then trusts.
+    // Written as one MapDiff rather than fourteen field-by-field checks:
+    // rules evaluation has a 1,000-expression budget per request and the
+    // long form spent most of it before isEditor's membership reads ran.
+    function itemPipelineFields() {
+      return ["patchFiles", "patchBranch", "patchReady", "mergeReady",
+        "deployCommit", "deployCommits", "carriedByCommit", "carriedByItem",
+        "mergeCommit", "mergedAt", "prNumber", "prUrl", "deployBranch", "testVersion"];
+    }
+    function itemPipelineFieldsUnchanged() {
+      return !incoming().diff(resource.data).affectedKeys().hasAny(itemPipelineFields());
+    }
+    function itemPipelineFieldsAbsent() {
+      return !incoming().keys().hasAny(itemPipelineFields());
+    }
+    function isValidItemCommon() {
+      return isNonEmptyBoundedString(incoming().projectId, 100) &&
         isNonEmptyBoundedString(incoming().title, 200) &&
         isNonEmptyBoundedString(incoming().desc, 2000) &&
         incoming().type in ["feature", "bug"] &&
-        incoming().status in ["backlog", "ready-for-testing", "ready-to-publish", "published-live", "archived"];
+        incoming().status in ["backlog", "ready-for-testing", "ready-to-publish", "published-live", "archived"] &&
+        // previewUrl is rendered as a link on every member's board: http(s) only.
+        (!("previewUrl" in incoming()) || incoming().previewUrl == null
+          || (incoming().previewUrl is string && incoming().previewUrl.size() <= 2000 && incoming().previewUrl.matches("^https?://.*")));
+    }
 
-      allow delete: if isEditor();
+    match /backlogItems/{itemId} {
+      allow read: if isBoardReader();
+
+      allow create: if isEditor() && isValidItemCommon()
+        && (isBoardAutomation() || itemPipelineFieldsAbsent());
+      allow update: if isEditor() && isValidItemCommon()
+        && (isBoardAutomation() || itemPipelineFieldsUnchanged());
+
+      // The trash icon exists on Backlog cards only (root CLAUDE.md); a card
+      // that reached a train or shipped is the audit trail and is archived,
+      // never deleted, from a browser.
+      allow delete: if isEditor() && (isBoardAutomation() || resource.data.status == "backlog");
     }
 
     // An interface is a maintained contract document shared between exactly
@@ -366,7 +428,12 @@ service cloud.firestore {
       // to check membership before it can know whether the caller is a
       // member — without this self-read that is a chicken-and-egg and every
       // new member sees the "not on the editor list" screen forever.
-      allow read: if isBoardReader() || (signedIn() && userEmail == callerEmail());
+      // get: any member (the board shows who did what), and always your
+      // own row. list: admins only — the Team page is the only place the
+      // roster is needed, and a viewer had no business dumping every
+      // member's email and role.
+      allow get: if isBoardReader() || (signedIn() && userEmail == callerEmail());
+      allow list: if isAdmin();
       allow create, update: if isAdmin()
         && incoming().email is string
         && userEmail == incoming().email.lower()
@@ -378,6 +445,18 @@ service cloud.firestore {
       // Removing yourself is the one way an admin could strand their own
       // session mid-click; disable the row instead if that is really meant.
       allow delete: if isAdmin() && userEmail != callerEmail();
+    }
+
+    // ── Personal Notify Claude Routine bindings ────────────────────────────
+    // routineBindings/{email} = { fireUrl, token, boundAt } — the API
+    // trigger of a member's OWN Routine, written by the MCP tool
+    // set_my_routine_binding and read by functions/index.js when that
+    // member clicks Notify Claude. A bearer token that fires sessions on
+    // someone's Claude account: server-only, in both directions. (Until
+    // 27 Sep 2026 these two fields lived on consoleUsers, which every
+    // member could read — see backlog-tracker/SECURITY-PERFORMANCE.md.)
+    match /routineBindings/{email} {
+      allow read, write: if false;
     }
 
     // ── Documentation revision history (functions/mcp-server.js) ──────────
@@ -421,7 +500,11 @@ service cloud.firestore {
     function isFaqEditor() { return isEditor(); }
 
     match /faqCategories/{categoryId} {
-      allow read: if true;
+      // The public site renders the committed faq/data snapshot and only
+      // ever GETs a single doc from here; listing the collection is a
+      // member's (or the export's service account's) job.
+      allow get: if true;
+      allow list: if isBoardReader();
       allow create, update: if isFaqEditor()
         && isNonEmptyBoundedString(incoming().name, 80)
         && isNonEmptyBoundedString(incoming().icon, 40)
@@ -478,7 +561,12 @@ service cloud.firestore {
     }
 
     match /faqArticles/{articleId} {
-      allow read: if true;
+      // A draft is not public until it's published. The article page's
+      // freshness check GETs one published doc anonymously; nothing public
+      // lists or queries the collection (the export runs as the service
+      // account). An article with no status is a legacy import, published.
+      allow get: if isBoardReader() || resource.data.get("status", "published") == "published";
+      allow list: if isBoardReader();
       allow create, update: if isFaqEditor()
         && incoming().size() <= 40
         && (!("pendingRevision" in incoming()) || incoming().pendingRevision == null || isValidPendingRevision(incoming().pendingRevision))
@@ -499,6 +587,36 @@ service cloud.firestore {
       allow delete: if isFaqEditor();
     }
 
+    // Tombstones for deleted help-centre content. The console writes
+    // faqDeletedArticles/<id> (and faqDeletedCategories/<id>) the moment an
+    // editor deletes an article or category, before the doc itself goes;
+    // seed-faq-data.js and faq-sync.js — both running as the service
+    // account, so bypassing these rules — refuse to recreate a tombstoned
+    // id. That is the guard against "deleted articles come back on the next
+    // deploy" (25 Sep 2026: the Freshdesk seed ran on every deploy the
+    // pipeline dispatched after a train and resurrected five deleted
+    // articles, five times over). Permanent by design: an editor may write
+    // or refresh one, never remove one — restoring an article means removing
+    // its tombstone with the service account first, deliberately.
+    function isValidTombstone() {
+      return incoming().size() <= 6
+        && incoming().deletedAt is timestamp
+        && (!("title" in incoming()) || incoming().title is string && incoming().title.size() <= 200)
+        && (!("name" in incoming()) || incoming().name is string && incoming().name.size() <= 80)
+        && (!("categoryId" in incoming()) || incoming().categoryId is string && incoming().categoryId.size() <= 100)
+        && (!("deletedBy" in incoming()) || incoming().deletedBy == null || incoming().deletedBy is string && incoming().deletedBy.size() <= 200);
+    }
+    match /faqDeletedArticles/{articleId} {
+      allow read: if isBoardReader();
+      allow create, update: if isFaqEditor() && isValidTombstone();
+      allow delete: if false;
+    }
+    match /faqDeletedCategories/{categoryId} {
+      allow read: if isBoardReader();
+      allow create, update: if isFaqEditor() && isValidTombstone();
+      allow delete: if false;
+    }
+
     // Site-wide settings for the public FAQ / Help Center (kup9Zce13jyaXcIhxVkf)
     // — currently just the analytics tag id appended to every customer-facing
     // FAQ page (see faq/js/page-common.js). Read/write here is editor-only,
@@ -514,14 +632,17 @@ service cloud.firestore {
     // console UI writes this doc yet (edited directly in Firestore, or by a
     // future settings page) — read/write rules still apply the same as any
     // other doc in this collection.
+    // Admin-only to write: analyticsTag loads a Google Tag Manager
+    // container — arbitrary script — on every public help-centre page,
+    // and phaseSkillBindings feeds the Routine's prompt.
     match /settings/{docId} {
       allow read: if isBoardReader();
-      allow create, update: if isEditor()
+      allow create, update: if isAdmin()
         && (!("analyticsTag" in incoming()) || incoming().analyticsTag == null
           || (incoming().analyticsTag is string && incoming().analyticsTag.size() <= 40))
         && (!("build" in incoming()) || (incoming().build is list && incoming().build.size() <= 20))
         && (!("deploy" in incoming()) || (incoming().deploy is list && incoming().deploy.size() <= 20));
-      allow delete: if isEditor();
+      allow delete: if isAdmin();
     }
   }
 }

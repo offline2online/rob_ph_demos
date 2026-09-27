@@ -5,7 +5,7 @@ export const partners = { items: [
 ] }
 export const advertiserSettings = {
   currency: 'AUD', floorCpm: 100, personalisedMultiplier: 1.5, interactiveCpe: 0.5,
-  auctionOpensHours: 168, playWindowHours: 24, auctionCutoffTime: '18:00',
+  auctionOpensHours: 168, playWindowHours: 24, auctionCutoffTime: '18:00', pendingPlayWindowHours: null, pendingPlayWindowEffectiveFrom: null,
   advertiserWhitelist: ['Nestlé', 'Swisse', 'Arnott’s'], advertiserBlacklist: ['Red Bull', 'Monster Energy'], categoryWhitelist: ['Food & Drink', 'Health & Fitness'], categoryBlacklist: ['Finance'],
   whereTheseApply: [{ partnerId: 'p_google', name: 'Google DSP', adopting: true }, { partnerId: 'p_amazon', name: 'Amazon Ads DSP', adopting: false }],
 }

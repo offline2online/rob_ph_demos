@@ -28,6 +28,13 @@ export const PLATFORM_DEFAULTS = {
   phantomAreaPosition: 'Bottom Right',
 } as const
 
+/* A brand-new playlist (auto-created for a display type's Default Playlist
+   or a zone) starts with Auto-Rotation and Auto-Play explicitly off, rather
+   than inheriting PLATFORM_DEFAULTS.playlistSettings' "On" values — a
+   playlist nobody has configured yet shouldn't silently start rotating and
+   playing campaigns (ticket, 27 Sep 2026). */
+export const NEW_PLAYLIST_SETTINGS_DEFAULTS = { campaignAutoRotation: 'Auto-Rotate Off', campaignAutoPlay: 'Auto-Play Off' } as const
+
 export const SLOT_OWNERS: Record<SlotOwner, { label: string; colour: string; bg: string; icon: string }> = {
   internal: { label: 'Headquarters', colour: '#169bc2', bg: 'rgba(22,155,194,0.10)', icon: 'corporate_fare' },
   advertiser: { label: 'Advertiser', colour: '#7c3aed', bg: 'rgba(124,58,237,0.10)', icon: 'sell' },
@@ -91,6 +98,22 @@ export const reservePriceOf = (dt: { phExtensions?: { reservePrice?: number | nu
 export const DEFAULT_BILLING_UNIT_HOURS = 24
 export const billingUnitHoursOf = (dt: { phExtensions?: { billingUnitHours?: number | null } | null }, slot: { billingUnitHours?: number | null }): number =>
   slot.billingUnitHours ?? dt.phExtensions?.billingUnitHours ?? DEFAULT_BILLING_UNIT_HOURS
+
+/* Max campaigns (ticket "Available Inventory: Max campaigns column + slot
+   playlist statement"): the single authority on how many campaigns
+   (the mandatory default layer plus optional targeted versions) an
+   advertiser may submit for a slot — replacing the former blanket
+   20-targeted-versions submission cap for that slot. Purely a submission
+   cap: it does not feed the auction or billing. Same override-always-wins
+   inheritance as reservePriceOf/billingUnitHoursOf, but always resolves to
+   a real integer (the platform default of 5 when neither the slot nor its
+   display type sets one) — like billing unit, there is no "unlimited"
+   state, and it is bounded 1-10 inclusive whenever a real value is set. */
+export const DEFAULT_MAX_CAMPAIGNS = 5
+export const MIN_MAX_CAMPAIGNS = 1
+export const MAX_MAX_CAMPAIGNS = 10
+export const maxCampaignsOf = (dt: { phExtensions?: { maxCampaigns?: number | null } | null }, slot: { maxCampaigns?: number | null }): number =>
+  slot.maxCampaigns ?? dt.phExtensions?.maxCampaigns ?? DEFAULT_MAX_CAMPAIGNS
 
 /* What a campaign may use on a slot (Rob, 20 Sep). A slot supports localised
    targeting only until someone opens it up on Advertisers / Inventory; a bid

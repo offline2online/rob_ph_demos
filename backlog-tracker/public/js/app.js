@@ -146,6 +146,17 @@ function escapeHTML(s) {
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
+// Every URL that lands in an href/src came from Firestore, where any editor
+// (or an agent over MCP, or a Routine session) can write it. escapeHTML
+// stops it breaking out of the attribute; it does nothing about a
+// `javascript:` scheme, which runs in every other member's browser on
+// click. So: http(s) only, anything else renders as no link at all.
+function safeHttpUrl(u) {
+  try {
+    const parsed = new URL(String(u || ""));
+    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.href : "";
+  } catch { return ""; }
+}
 
 // ── Generic in-app dialog — the one thing every window.confirm/window.prompt/
 // window.alert call in this app now goes through. A native dialog blocks
@@ -531,14 +542,17 @@ function cardHTML(item) {
   // rather than staying editable while a revert branch is being pushed.
   const isReverting = item.status === "published-live" && !!item.revertReady;
   const isLocked = isInDevelopment || isDeploying || isSentToClaude || isReverting;
-  // A card flagged noDeploymentRequired has no PR for Deploy to Main to
-  // merge — the automation's own no-diff path creates exactly this shape
-  // (see run-backlog-automation.js) — so it gets the one-click completion
-  // (approveBtn below) at either stage, rather than a hint pointing at a
-  // button that can never finish it. Without this, such a card sitting in
-  // Approved for Deployment had no path forward except being moved back a
-  // column first.
-  const noDeployPending = !!item.noDeploymentRequired && (isTesting || isLiveBranch);
+  // A genuine no-deploy card (isNoDeployCard: flagged noDeploymentRequired
+  // AND nothing on a train) has no PR for Deploy to Main to merge, so it
+  // gets the one-click completion (approveBtn below) at either stage,
+  // rather than a hint pointing at a button that can never finish it.
+  // Without this, such a card sitting in Approved for Deployment had no
+  // path forward except being moved back a column first. The automation's
+  // no-diff path used to create this shape for a card whose content a
+  // sibling's commit had delivered — it now stamps that card with the
+  // carrying commit instead (carriedByCommit), so here it is a train card.
+  const noDeploy = isNoDeployCard(item);
+  const noDeployPending = noDeploy && (isTesting || isLiveBranch);
   const canDelete = isBacklog && !isInDevelopment && !isSentToClaude;
 
   // Backlog cards select for "Ready for Dev"; Ready for Testing cards
@@ -549,7 +563,7 @@ function cardHTML(item) {
   // in the pipeline acts on a hand-picked subset.
   const selectCb = (isBacklog && !isInDevelopment && !isSentToClaude)
     ? `<input type="checkbox" class="card-select-cb" data-id="${item.id}" data-project-id="${escapeHTML(pid)}" title="Select for Ready for Dev" ${getSelectedSet(pid).has(item.id) ? "checked" : ""}>`
-    : (isTesting && !item.noDeploymentRequired
+    : (isTesting && !noDeploy
         ? `<input type="checkbox" class="card-deploy-select-cb" data-id="${item.id}" data-project-id="${escapeHTML(pid)}" title="Select for Approved for Deployment" ${getDeploySelectedSet(pid).has(item.id) ? "checked" : ""}>`
         : "");
 
@@ -582,7 +596,7 @@ function cardHTML(item) {
   // checkbox then narrowed. Two controls for one decision, and the
   // checkbox did nothing at all until the tick was there. The checkbox is
   // the approval now, and testPassed is gone.
-  const approveBtn = (item.noDeploymentRequired && (isTesting || noDeployPending))
+  const approveBtn = (noDeploy && (isTesting || noDeployPending))
     ? `<button type="button" class="approve-btn confirm-no-deploy-btn" data-id="${item.id}">Confirm tested — mark Merged to Main</button>`
     : "";
   // The other outcome of a test pass (xYAk2oIFgbkvHikhufaT), and the only
@@ -593,7 +607,7 @@ function cardHTML(item) {
   // even mean anything. See failTesting() for what it does — records why,
   // sends the card back to Backlog, AND takes its commits back off the
   // project's integration branch.
-  const failBtn = (isTesting && !item.noDeploymentRequired)
+  const failBtn = (isTesting && !noDeploy)
     ? `<button type="button" class="approve-btn fail-testing-btn" data-id="${item.id}">Failed testing</button>`
     : "";
   // Deliberately not a button: there used to be a "Merge to main" button
@@ -639,7 +653,7 @@ function cardHTML(item) {
   // never got a real merge in the first place (see its own "one deliberate
   // exception" in REQUIREMENTS.md), so there's nothing here for a revert PR
   // to be based on either.
-  const revertBtn = isPublished && !item.noDeploymentRequired && item.mergeCommit && !isReverting
+  const revertBtn = isPublished && !noDeploy && item.mergeCommit && !isReverting
     ? `<button type="button" class="icon-btn revert-btn" data-id="${item.id}" title="Revert this deployment — opens a PR to undo it; still needs testing and Deploy to Main like any other fix">&#8630;</button>`
     : "";
   const revertingHint = isReverting
@@ -672,8 +686,19 @@ function cardHTML(item) {
         ? `<span class="in-development-hint" title="Reverting this ticket off ${escapeHTML(item.deployBranch || "the integration branch")} conflicted because ${escapeHTML(item.revertBlockedBy.join(", "))} build on top of it — send those back too, or fix the branch by hand">Still on the branch &mdash; blocked by ${item.revertBlockedBy.length} later ticket${item.revertBlockedBy.length === 1 ? "" : "s"}</span>`
         : `<span class="in-development-hint" title="Its commits are being reverted off the project's integration branch so this rejected ticket can't ship in the next deployment">Coming off the branch&hellip;</span>`)
     : "";
-  const noDeployBadge = item.noDeploymentRequired
+  const noDeployBadge = noDeploy
     ? `<span class="no-deploy-badge" title="Live data/config change only — no code to push or deploy">No deployment required</span>`
+    : "";
+  // A card with no commit of its own, riding on a sibling's train commit
+  // (carriedByCommit/carriedByItem — see carryingCommitOnTrain in
+  // run-backlog-automation.js). Says so on the card, so a tester or a
+  // Deploy run reading it understands why `git log --grep "Backlog item:
+  // <id>"` finds nothing for it — and that it is still a real deployment,
+  // just inside someone else's commit, which is why it has the train's
+  // controls and not the no-deploy button.
+  const carrier = item.carriedByItem ? items.find((i) => i.id === item.carriedByItem) : null;
+  const carriedBadge = item.carriedByCommit
+    ? `<span class="no-deploy-badge carried-badge" title="No commit of its own: this change is on ${escapeHTML(item.deployBranch || "the integration branch")} inside ${carrier ? `“${escapeHTML(carrier.title)}”` : (item.carriedByItem ? `ticket ${escapeHTML(item.carriedByItem)}` : "a sibling ticket")}'s commit ${escapeHTML(String(item.carriedByCommit).slice(0, 7))} — it goes live when that train merges, like every other ticket on it">Rides on a sibling's commit</span>`
     : "";
   // lastFailureReason (XJoASicLGefL5c9fronl) — the structured category from
   // the most recent Failed testing / Eject from train, surfaced on the
@@ -715,7 +740,7 @@ function cardHTML(item) {
   // rather than a template literal purely so this block stays easy to
   // transplant between checkouts.
   const prBadge = item.prUrl
-    ? '<a class="pr-badge' + (item.mergedAt ? ' pr-badge-merged' : '') + '" href="' + escapeHTML(item.prUrl) +
+    ? '<a class="pr-badge' + (item.mergedAt ? ' pr-badge-merged' : '') + '" href="' + escapeHTML(safeHttpUrl(item.prUrl)) +
       '" target="_blank" rel="noopener" title="' +
       (item.mergedAt ? 'Merged to main by the backlog automation' : 'Open on GitHub — not merged yet') +
       '">PR #' + escapeHTML(String(item.prNumber || '?')) + (item.mergedAt ? ' &middot; merged' : ' &middot; open') + '</a>'
@@ -733,7 +758,7 @@ function cardHTML(item) {
     ? '<div class="deploy-badge deploy-badge-' + escapeHTML(item.deployConclusion || "unknown") + '">' +
       (item.mergeCommit ? '<span class="deploy-badge-commit" title="Merge commit">' + escapeHTML(String(item.mergeCommit).slice(0, 7)) + '</span>' : "") +
       (item.deployRunUrl
-        ? '<a href="' + escapeHTML(item.deployRunUrl) + '" target="_blank" rel="noopener">' +
+        ? '<a href="' + escapeHTML(safeHttpUrl(item.deployRunUrl)) + '" target="_blank" rel="noopener">' +
           (item.deployConclusion === "success" ? "Deploy succeeded"
             : item.deployConclusion === "pending" || !item.deployConclusion ? "Deploy running&hellip;"
             : "Deploy " + escapeHTML(item.deployConclusion)) + '</a>'
@@ -766,7 +791,7 @@ function cardHTML(item) {
   // gone.
   const testLinkHTML = isTesting && item.previewUrl
     ? `<div class="test-link-row">
-        <a href="${escapeHTML(item.previewUrl)}" target="_blank" rel="noopener" class="test-link-btn">Test this &rarr;</a>
+        <a href="${escapeHTML(safeHttpUrl(item.previewUrl))}" target="_blank" rel="noopener" class="test-link-btn">Test this &rarr;</a>
         <button type="button" class="icon-btn test-link-edit-btn" data-id="${item.id}" title="Change test link">&#9998;</button>
       </div>`
     : "";
@@ -829,7 +854,7 @@ function cardHTML(item) {
       </div>
       <h3 class="card-title">${escapeHTML(item.title)}</h3>
       ${descHTML}
-      ${noDeployBadge}${priorityBadge}${effortBadge}${lastFailureBadge}${testVersionBadge}${prBadge}${deployBadge}
+      ${noDeployBadge}${carriedBadge}${priorityBadge}${effortBadge}${lastFailureBadge}${testVersionBadge}${prBadge}${deployBadge}
       <div class="card-footer">
         <div class="card-footer-left">
           <span class="card-cat">${escapeHTML(item.category || "Uncategorised")}</span>
@@ -859,11 +884,27 @@ function groomableCountForProject(pid) {
   return items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "backlog" && !i.patchReady).length;
 }
 
+// The one kind of card that legitimately skips the train: flagged
+// noDeploymentRequired AND with no commit on any integration branch. The
+// train wins over the flag. A card that has a deployCommit — its own, or a
+// sibling's it rides on (carriedByCommit, written by
+// run-backlog-automation.js's no-diff path) — is on the train whatever the
+// flag says: its code is not on main until that train merges, so it gets
+// the checkbox, Failed testing and "Waiting for Deploy to Main" like every
+// other train card, never the one-click "Confirm tested — mark Merged to
+// Main". That button is how OhKUnoGbpUAeJiXiLIvc and yUISCow4tCg9uxnMJFOy
+// read "Deployed / Main Branch (Live)" on 25 Sep 2026 while their code sat
+// unmerged on deploy/backlog-tracker-faqs (REQUIREMENTS.md → "A card
+// carried by a sibling's commit follows that train").
+function isNoDeployCard(item) {
+  return !!item && !!item.noDeploymentRequired && !item.deployCommit;
+}
+
 function deployReadyCountForProject(pid) {
-  // noDeploymentRequired cards are excluded: Deploy to Main merges PRs,
-  // and these have none, so counting them promised a deploy that would
-  // find nothing to merge.
-  return items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-to-publish" && !i.noDeploymentRequired).length;
+  // Genuine no-deploy cards are excluded: Deploy to Main merges the train,
+  // and these have nothing on it, so counting them promised a deploy that
+  // would find nothing to merge.
+  return items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-to-publish" && !isNoDeployCard(i)).length;
 }
 
 // Ready for Testing items someone has ticked — the pool "Approved for
@@ -875,7 +916,7 @@ function deploySelectedCountForProject(pid) {
   const sel = getDeploySelectedSet(pid);
   return items.filter((i) =>
     (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-for-testing" &&
-    !i.noDeploymentRequired && sel.has(i.id)
+    !isNoDeployCard(i) && sel.has(i.id)
   ).length;
 }
 
@@ -953,7 +994,7 @@ function optionsMenuHTML(project) {
   // (faqArticleRowHTML below) — no click handler needed since it's just an
   // <a target="_blank">, not an app action.
   html += artifactUrl
-    ? `<a class="options-menu-item" href="${escapeHTML(artifactUrl)}" target="_blank" rel="noopener">
+    ? `<a class="options-menu-item" href="${escapeHTML(safeHttpUrl(artifactUrl))}" target="_blank" rel="noopener">
         View Artifact &#8599;
         ${project.artifactUpdatedAt ? `<span class="options-menu-sub">updated ${escapeHTML(formatNoteAt(project.artifactUpdatedAt))}</span>` : ""}
       </a>`
@@ -1115,7 +1156,7 @@ function notifyClaudeButtonHTML(project) {
     <span class="notify-claude-label">${confirmed ? "Deving&hellip;" : "Working&hellip;"}</span>
     <span class="notify-claude-count-pill">${itemCountLabel}</span>`;
   const mainBtn = confirmed
-    ? `<a href="${escapeHTML(routine.sessionUrl)}" target="_blank" rel="noopener" class="notify-claude-btn notify-claude-btn-working notify-claude-btn-clickable" title="View the Claude Code session working through the ${itemCountLabel} item(s) sent">${mainBtnInner}</a>`
+    ? `<a href="${escapeHTML(safeHttpUrl(routine.sessionUrl))}" target="_blank" rel="noopener" class="notify-claude-btn notify-claude-btn-working notify-claude-btn-clickable" title="View the Claude Code session working through the ${itemCountLabel} item(s) sent">${mainBtnInner}</a>`
     : `<button type="button" class="notify-claude-btn notify-claude-btn-working" disabled title="A Claude Code session is working through the ${itemCountLabel} item(s) sent">${mainBtnInner}</button>`;
 
   const newBtn = newCount
@@ -1194,7 +1235,7 @@ function deployNotifyButtonHTML(project) {
     <span class="notify-claude-label">${confirmed ? "Deploying&hellip;" : "Working&hellip;"}</span>
     <span class="notify-claude-count-pill">${itemCountLabel}</span>`;
   return confirmed
-    ? `<a href="${escapeHTML(routine.sessionUrl)}" target="_blank" rel="noopener" class="notify-claude-btn notify-claude-btn-working notify-claude-btn-clickable" title="View the Claude Code session merging the ${itemCountLabel} item(s) sent">${mainBtnInner}</a>`
+    ? `<a href="${escapeHTML(safeHttpUrl(routine.sessionUrl))}" target="_blank" rel="noopener" class="notify-claude-btn notify-claude-btn-working notify-claude-btn-clickable" title="View the Claude Code session merging the ${itemCountLabel} item(s) sent">${mainBtnInner}</a>`
     : `<button type="button" class="notify-claude-btn notify-claude-btn-working" disabled title="A Claude Code session is merging the ${itemCountLabel} item(s) sent">${mainBtnInner}</button>`;
 }
 
@@ -1256,7 +1297,7 @@ function groomNotifyButtonHTML(project) {
     <span class="notify-claude-label">${confirmed ? "Grooming&hellip;" : "Working&hellip;"}</span>
     <span class="notify-claude-count-pill">${itemCountLabel}</span>`;
   return confirmed
-    ? `<a href="${escapeHTML(routine.sessionUrl)}" target="_blank" rel="noopener" class="notify-claude-btn notify-claude-btn-working notify-claude-btn-clickable" title="View the Claude Code session grooming the ${itemCountLabel} item(s) in Backlog">${mainBtnInner}</a>`
+    ? `<a href="${escapeHTML(safeHttpUrl(routine.sessionUrl))}" target="_blank" rel="noopener" class="notify-claude-btn notify-claude-btn-working notify-claude-btn-clickable" title="View the Claude Code session grooming the ${itemCountLabel} item(s) in Backlog">${mainBtnInner}</a>`
     : `<button type="button" class="notify-claude-btn notify-claude-btn-working" disabled title="A Claude Code session is grooming the ${itemCountLabel} item(s) in Backlog">${mainBtnInner}</button>`;
 }
 
@@ -1315,7 +1356,9 @@ function deployToFeatureButtonHTML(project) {
 // Returns null for a card that shares no deployment with anything:
 //   - a card with neither a PR nor a pre-train patch branch — an ordinary
 //     Backlog card, or one still building,
-//   - a noDeploymentRequired card, which has no deployment to share at all.
+//   - a genuine no-deploy card (isNoDeployCard), which has no deployment to
+//     share at all. A card riding on a sibling's commit does share one, and
+//     brackets with the rest of its train once the train's PR opens.
 //
 // Deliberately NOT keyed on deployBranch, even though every ticket a
 // project builds is on it: that would bracket a project's entire Ready for
@@ -1323,7 +1366,7 @@ function deployToFeatureButtonHTML(project) {
 // itself, which is what the columns already say. The PR is the useful
 // grain — it is the thing that merges.
 function deploymentGroupKey(item) {
-  if (item.noDeploymentRequired) return null;
+  if (isNoDeployCard(item)) return null;
   if (item.prNumber) return "pr:" + item.prNumber;
   // Pre-train cards, which had a branch of their own before they had a PR.
   const branch = (item.patchBranch || "").trim();
@@ -1391,7 +1434,7 @@ function projectSectionHTML(project) {
         <input type="checkbox" class="col-select-all-cb" data-project-id="${escapeHTML(project.id)}" ${allSelected ? "checked" : ""}>
       </label>`;
     } else if (col.key === "ready-for-testing") {
-      const selectable = listItems.filter((i) => !i.noDeploymentRequired);
+      const selectable = listItems.filter((i) => !isNoDeployCard(i));
       if (selectable.length) {
         const sel = getDeploySelectedSet(project.id);
         const allSelected = selectable.every((i) => sel.has(i.id));
@@ -1517,7 +1560,7 @@ function healthRunSegmentHTML(label, run) {
   const atMs = run.at && run.at.toMillis ? run.at.toMillis() : Date.parse(run.at) || 0;
   const inner = `<span class="health-dot ${dotClass}"></span>${escapeHTML(label)}: ${escapeHTML(run.conclusion || "unknown")} · ${describeAgo(atMs)}`;
   return run.runUrl
-    ? `<a class="health-seg health-seg-link" href="${escapeHTML(run.runUrl)}" target="_blank" rel="noopener" title="View the ${escapeHTML(label)} run">${inner}</a>`
+    ? `<a class="health-seg health-seg-link" href="${escapeHTML(safeHttpUrl(run.runUrl))}" target="_blank" rel="noopener" title="View the ${escapeHTML(label)} run">${inner}</a>`
     : `<span class="health-seg">${inner}</span>`;
 }
 
@@ -1579,6 +1622,9 @@ function getRenderedProjects() {
 
 let ensuredGeneralDoc = false;
 function ensureGeneralProjectDoc(renderedProjects) {
+  // A one-off repair, so it runs from an admin's tab only — with 100 tabs
+  // open, every one of them used to fire the same setDoc.
+  if (currentConsoleRole() !== "admin") return;
   const stillSynthetic = renderedProjects.some((p) => p.id === GENERAL_PROJECT_ID) &&
     !projects.some((p) => p.id === GENERAL_PROJECT_ID);
   if (stillSynthetic && !ensuredGeneralDoc) {
@@ -1590,6 +1636,7 @@ function ensureGeneralProjectDoc(renderedProjects) {
 
 const migratedIds = new Set();
 function migrateOrphanItems() {
+  if (currentConsoleRole() !== "admin") return;
   items.forEach((item) => {
     if (!item.projectId && !migratedIds.has(item.id)) {
       migratedIds.add(item.id);
@@ -1857,6 +1904,57 @@ syncStickyTopbarOffset();
 const REST_BASE = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents`;
 const liveCollections = new Set();
 
+// Every onSnapshot below shares this. Firestore stops a listener for good
+// after permission-denied — which is exactly what happens when an admin
+// removes or disables the signed-in member, or the account is revoked —
+// and until 27 Sep 2026 the only sign was a console.error: the board froze
+// on stale data and every click failed one by one. Now a denied listener
+// reloads the page, which lands on auth-gate.js's sign-in wall with the
+// reason; any other error shows once in the health strip's slot and the SDK
+// keeps retrying on its own.
+let listenerDeniedHandled = false;
+function onListenerError(collectionName) {
+  return (err) => {
+    const code = err && err.code ? String(err.code) : "";
+    console.error(`backlog-tracker: ${collectionName} listener error`, err);
+    if ((code === "permission-denied" || code === "unauthenticated") && !listenerDeniedHandled) {
+      listenerDeniedHandled = true;
+      // Tell auth-gate.js why it's being reloaded, and how many times: on
+      // the next load it skips the cached role claim, mints a fresh token
+      // and re-resolves membership over the network. A second refusal in
+      // the same tab is shown, not reloaded — a rules/membership mismatch
+      // must never become a reload loop.
+      let strikes = 0;
+      try { strikes = Number(sessionStorage.getItem("ph-console-denied") || 0); } catch { /* ignore */ }
+      if (strikes >= 1) {
+        const strip = document.getElementById("health-strip");
+        if (strip) {
+          strip.hidden = false;
+          strip.innerHTML = "";
+          const note = document.createElement("div");
+          note.className = "health-seg health-seg-bad";
+          note.textContent = "The board refused this account's reads. Sign out and back in; if it persists, ask an admin to check your row in Settings → Team & agent access.";
+          strip.appendChild(note);
+        }
+        return;
+      }
+      try { sessionStorage.setItem("ph-console-denied", String(strikes + 1)); } catch { /* ignore */ }
+      try { localStorage.removeItem("ph-console-signed-in"); localStorage.removeItem("ph-console-role"); } catch { /* ignore */ }
+      window.location.reload();
+      return;
+    }
+    const strip = document.getElementById("health-strip");
+    if (strip && !strip.querySelector("[data-listener-error]")) {
+      const note = document.createElement("div");
+      note.className = "health-seg health-seg-bad";
+      note.dataset.listenerError = "1";
+      note.textContent = `Live updates for ${collectionName} are interrupted (${code || "error"}) — reconnecting…`;
+      strip.hidden = false;
+      strip.appendChild(note);
+    }
+  };
+}
+
 // REST returns Firestore's wire format; the app expects what the SDK hands
 // back. Timestamps in particular are read through tsMillis()/toDate()
 // elsewhere in this file, so they have to arrive as objects with those
@@ -1912,6 +2010,9 @@ const BACKLOG_ITEM_RENDER_FIELDS = [
   // so without it here the button would flicker on the REST-primed first
   // paint and correct itself a second later when the listener landed.
   "deployBranch", "deployCommit", "deployCommits",
+  // A card riding on a sibling's commit (no commit of its own) — drawn as a
+  // badge, and deployCommit above already puts it on the train.
+  "carriedByCommit", "carriedByItem",
   "revertRequested", "revertBlockedBy", "revertedCommits", "ejectedFromTrain",
   "lastFailureReason",
   "prUrl", "prNumber", "mergedAt",
@@ -2005,7 +2106,7 @@ primeFromRest("faqArticles", (rows) => {
 
 onSnapshot(query(itemsRef, orderBy("createdAt", "desc")), (snap) => {
   liveCollections.add("backlogItems");
-  allItems = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  allItems = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
   items = allItems.filter((i) => i.status !== "archived");
   render();
   if (archiveProjectId) renderArchivePage();
@@ -2018,20 +2119,16 @@ onSnapshot(query(itemsRef, orderBy("createdAt", "desc")), (snap) => {
   // derived from allItems, not from systemStatus itself — refresh it here
   // too, not just from the systemStatus listener below.
   renderHealthStrip();
-}, (err) => {
-  console.error("backlog-tracker: items listener error", err);
-});
+}, onListenerError("items"));
 
 onSnapshot(systemStatusRef, (snap) => {
   systemStatus = snap.exists() ? snap.data() : null;
   renderHealthStrip();
-}, (err) => {
-  console.error("backlog-tracker: systemStatus listener error", err);
-});
+}, onListenerError("systemStatus"));
 
 onSnapshot(query(projectsRef, orderBy("createdAt", "asc")), (snap) => {
   liveCollections.add("projects");
-  projects = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  projects = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
   projectsLoaded = true;
   render();
   if (archiveProjectId) renderArchivePage();
@@ -2039,60 +2136,46 @@ onSnapshot(query(projectsRef, orderBy("createdAt", "asc")), (snap) => {
   if (archivedProjectsPage && !archivedProjectsPage.hidden) renderArchivedProjectsPage();
   // The Releases page counts each release's assigned projects.
   if (releasesPage && !releasesPage.hidden) renderReleasesPage();
-}, (err) => {
-  console.error("backlog-tracker: projects listener error", err);
-});
+}, onListenerError("projects"));
 
 onSnapshot(interfacesRef, (snap) => {
   liveCollections.add("interfaces");
-  interfaces = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  interfaces = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
   render();
   if (docsProjectId) renderDocsPage();
-}, (err) => {
-  console.error("backlog-tracker: interfaces listener error", err);
-});
+}, onListenerError("interfaces"));
 
 onSnapshot(programsRef, (snap) => {
   liveCollections.add("programs");
-  programs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  programs = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
   render();
   if (docsProjectId) renderDocsPage();
-}, (err) => {
-  console.error("backlog-tracker: programs listener error", err);
-});
+}, onListenerError("programs"));
 
 onSnapshot(query(releasesRef, orderBy("order", "asc")), (snap) => {
   liveCollections.add("releases");
-  releases = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  releases = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
   onReleasesChanged();
-}, (err) => {
-  console.error("backlog-tracker: releases listener error", err);
-});
+}, onListenerError("releases"));
 
 onSnapshot(projectDocsRef, (snap) => {
   liveCollections.add("projectDocs");
-  projectDocs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  projectDocs = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
   if (docsProjectId) renderDocsPage();
-}, (err) => {
-  console.error("backlog-tracker: projectDocs listener error", err);
-});
+}, onListenerError("projectDocs"));
 
 onSnapshot(query(skillsRef, orderBy("name", "asc")), (snap) => {
   liveCollections.add("skills");
-  skills = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  skills = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
   if (skillsPage && !skillsPage.hidden) renderSkillsPage();
-}, (err) => {
-  console.error("backlog-tracker: skills listener error", err);
-});
+}, onListenerError("skills"));
 
 onSnapshot(query(conceptsRef, orderBy("updatedAt", "desc")), (snap) => {
   liveCollections.add("concepts");
-  concepts = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  concepts = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
   if (conceptIncubatorPage && !conceptIncubatorPage.hidden) renderConceptIncubatorPage();
   if (conceptDetailId) renderConceptDetailPage();
-}, (err) => {
-  console.error("backlog-tracker: concepts listener error", err);
-});
+}, onListenerError("concepts"));
 
 // Returns the new doc's id — the New Item modal needs it back to upload any
 // pending attachments (see createAttachmentController's "pending" mode)
@@ -2155,7 +2238,12 @@ async function moveItem(id, dir) {
 // nothing left for Notify Claude — Deploy to gate.
 async function confirmTestedNoDeploy(id) {
   const item = items.find((i) => i.id === id);
-  if (!item || !item.noDeploymentRequired) return;
+  // isNoDeployCard, not the bare flag: a card with a commit on a train —
+  // its own, or a sibling's it rides on — goes live when that train merges
+  // (finishTrain in run-backlog-automation.js) and never from here,
+  // whatever the flag says. cardHTML doesn't offer this button for such a
+  // card; this is the same rule enforced at the write.
+  if (!item || !isNoDeployCard(item)) return;
   await updateDoc(doc(db, "backlogItems", id), {
     status: "published-live",
     updatedAt: serverTimestamp(),
@@ -2181,9 +2269,23 @@ async function removeItem(id) {
 // the ← arrow sends an Approved for Deployment card to Ready for Testing
 // (its commit stays on the branch, which is correct), and Failed testing
 // there does the revert and the send-back. No third control, no new copy.
+// Ids with a status write in flight. A second click before the snapshot
+// lands re-found the card in its old status and wrote a second note (and
+// overwrote lastFailureReason); now it's dropped until the first settles.
+// Projects use the same set, keyed by "project:<id>", for Approve.
+const writesInFlight = new Set();
+async function withWriteLock(key, fn) {
+  if (writesInFlight.has(key)) return;
+  writesInFlight.add(key);
+  try { await fn(); } finally { writesInFlight.delete(key); }
+}
+
 async function failTesting(id) {
   const item = items.find((i) => i.id === id);
   if (!item || item.status !== "ready-for-testing") return;
+  return withWriteLock(id, () => failTestingNow(id, item));
+}
+async function failTestingNow(id, item) {
   // Structured reason (XJoASicLGefL5c9fronl): a fixed category alongside the
   // existing free-text explanation, both stored on the item as
   // lastFailureReason (see fields below) as well as folded into the note —
@@ -2230,7 +2332,10 @@ async function failTesting(id) {
 // processRevertFromTrain needs no change to handle it.
 async function ejectFromTrain(id) {
   const item = items.find((i) => i.id === id);
-  if (!item || item.status !== "ready-to-publish" || item.noDeploymentRequired) return;
+  if (!item || item.status !== "ready-to-publish" || isNoDeployCard(item)) return;
+  return withWriteLock(id, () => ejectFromTrainNow(id, item));
+}
+async function ejectFromTrainNow(id, item) {
   // Same structured-reason capture as failTesting (XJoASicLGefL5c9fronl) —
   // see that function's own comment on lastFailureReason.
   const result = await showFieldDialog({
@@ -2272,6 +2377,9 @@ async function ejectFromTrain(id) {
 async function requestRevert(id) {
   const item = items.find((i) => i.id === id);
   if (!item || item.status !== "published-live" || !item.mergeCommit || item.revertReady) return;
+  return withWriteLock(id, () => requestRevertNow(id, item));
+}
+async function requestRevertNow(id, item) {
   const ok = await showConfirmDialog(
     `Revert "${item.title}"? This opens a PR undoing merge commit ${String(item.mergeCommit).slice(0, 7)} and moves this card back to Ready for Testing — it still needs to be tested and approved again before Deploy to Main actually takes the change out of production.`,
     { title: "Revert deployment", okLabel: "Revert", danger: true }
@@ -2301,13 +2409,23 @@ async function restoreItem(id) {
 // Unset option means "go back to build-batches.js's automatic guess" — sent
 // as null, same "explicit clear, not an empty string sitting on the doc"
 // convention setItemPreviewUrl already uses for previewUrl.
-async function updateItemDetails(id, { title, desc, type, category, effort, priority, noDeploymentRequired }) {
-  await updateDoc(doc(db, "backlogItems", id), {
-    title: title.trim(), desc: desc.trim(), type, category,
-    effort: effort || null, priority: priority || null,
-    noDeploymentRequired: !!noDeploymentRequired,
-    updatedAt: serverTimestamp(),
-  });
+// `changed` is the subset of fields the person actually edited (the Edit
+// modal diffs its inputs against what it loaded). Writing all seven
+// unconditionally was a lost-update bug: a Routine groom pass or a second
+// person could change the category or title while the modal sat open, and
+// Save silently put the stale values back.
+async function updateItemDetails(id, changed) {
+  const patch = {};
+  if ("title" in changed) patch.title = changed.title.trim();
+  if ("desc" in changed) patch.desc = changed.desc.trim();
+  if ("type" in changed) patch.type = changed.type;
+  if ("category" in changed) patch.category = changed.category;
+  if ("effort" in changed) patch.effort = changed.effort || null;
+  if ("priority" in changed) patch.priority = changed.priority || null;
+  if ("noDeploymentRequired" in changed) patch.noDeploymentRequired = !!changed.noDeploymentRequired;
+  if (!Object.keys(patch).length) return;
+  patch.updatedAt = serverTimestamp();
+  await updateDoc(doc(db, "backlogItems", id), patch);
 }
 
 // `at` is a plain client Date, not serverTimestamp() — Firestore rejects a
@@ -2318,13 +2436,17 @@ async function addItemComment(id, text) {
   const trimmed = (text || "").trim();
   if (!trimmed) return;
   await updateDoc(doc(db, "backlogItems", id), {
-    notes: arrayUnion({ author: "viewer", text: trimmed, at: new Date() }),
+    notes: arrayUnion({ author: (auth.currentUser && auth.currentUser.email) || "viewer", text: trimmed, at: new Date() }),
     updatedAt: serverTimestamp(),
   });
 }
 
 async function setItemPreviewUrl(id, url) {
   const trimmed = (url || "").trim();
+  if (trimmed && !safeHttpUrl(trimmed)) {
+    await showAlert("A test link has to be an http(s) URL.");
+    return;
+  }
   await updateDoc(doc(db, "backlogItems", id), { previewUrl: trimmed || null, updatedAt: serverTimestamp() });
 }
 
@@ -2549,6 +2671,9 @@ async function requestNotify(pid) {
 // notifyOnItemsDeployedToFeature is now dead code (harmless, just never
 // triggered) until a future cleanup removes it from functions/index.js too.
 async function deployToFeature(pid) {
+  return withWriteLock(`project:${pid}`, () => deployToFeatureNow(pid));
+}
+async function deployToFeatureNow(pid) {
   // Ticked items only. requestNotify's "an empty selection means everything"
   // rule is deliberately NOT shared here: over-firing a build is cheap,
   // over-approving a release is not, and an empty selection is no longer
@@ -2556,7 +2681,7 @@ async function deployToFeature(pid) {
   // button hides when nothing is ticked, so this is a guard, not a path
   // anyone reaches from the UI.
   const eligible = items.filter((i) =>
-    (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-for-testing" && !i.noDeploymentRequired
+    (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-for-testing" && !isNoDeployCard(i)
   );
   const eligibleIds = new Set(eligible.map((i) => i.id));
   const idsToMove = [...getDeploySelectedSet(pid)].filter((id) => eligibleIds.has(id));
@@ -2921,7 +3046,7 @@ projectsRoot.addEventListener("click", async (e) => {
     const pid = deploySelectAllCb.dataset.projectId;
     const sel = getDeploySelectedSet(pid);
     const testingIds = items
-      .filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-for-testing" && !i.noDeploymentRequired)
+      .filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-for-testing" && !isNoDeployCard(i))
       .map((i) => i.id);
     if (deploySelectAllCb.checked) testingIds.forEach((id) => sel.add(id));
     else testingIds.forEach((id) => sel.delete(id));
@@ -3117,13 +3242,13 @@ function renderEiNotes() {
 function eiAttachmentItemHTML(att, idx) {
   const label = escapeHTML(att.name || (att.type === "video" ? "Screen recording" : "Screenshot"));
   const preview = att.type === "video"
-    ? `<video src="${escapeHTML(att.url)}" class="ei-attachment-thumb" controls muted></video>`
-    : `<a href="${escapeHTML(att.url)}" target="_blank" rel="noopener"><img src="${escapeHTML(att.url)}" alt="${label}" class="ei-attachment-thumb"></a>`;
+    ? `<video src="${escapeHTML(safeHttpUrl(att.url))}" class="ei-attachment-thumb" controls muted></video>`
+    : `<a href="${escapeHTML(safeHttpUrl(att.url))}" target="_blank" rel="noopener"><img src="${escapeHTML(att.url)}" alt="${label}" class="ei-attachment-thumb"></a>`;
   return `<div class="ei-attachment-item">
     ${preview}
     <div class="ei-attachment-meta">
       <span class="ei-attachment-name" title="${label}">${label}</span>
-      <a href="${escapeHTML(att.url)}" target="_blank" rel="noopener" class="ei-attachment-open-link">Open</a>
+      <a href="${escapeHTML(safeHttpUrl(att.url))}" target="_blank" rel="noopener" class="ei-attachment-open-link">Open</a>
     </div>
     <button type="button" class="icon-btn ei-attachment-remove-btn" data-idx="${idx}" title="Remove attachment">&times;</button>
   </div>`;
@@ -3147,10 +3272,16 @@ function setEiAttachHint(text) {
 const updateEiTitleCount = wireCharCount(eiTitleInput, document.getElementById("ei-title-count"));
 const updateEiDescCount = wireCharCount(eiDescInput, document.getElementById("ei-desc-count"));
 
+let eiLoadedSnapshot = null;
 function openEditItemModal(id) {
   editingItemId = id;
   const item = allItems.find((i) => i.id === id);
   if (!item) return;
+  eiLoadedSnapshot = {
+    title: item.title || "", desc: item.desc || "", type: item.type === "bug" ? "bug" : "feature",
+    category: item.category || CATEGORIES[0], effort: item.effort || "", priority: item.priority || "",
+    noDeploymentRequired: !!item.noDeploymentRequired,
+  };
   eiTitleInput.value = item.title || "";
   eiDescInput.value = item.desc || "";
   updateEiTitleCount();
@@ -3186,24 +3317,36 @@ document.addEventListener("keydown", (e) => {
 document.querySelectorAll("#ei-backdrop .type-opt").forEach((btn) => {
   btn.addEventListener("click", () => setEiTypeToggle(btn.dataset.type));
 });
+let eiSaving = false;
 document.getElementById("ei-save").addEventListener("click", async () => {
-  if (!editingItemId) return;
+  if (!editingItemId || eiSaving) return;
   if (!eiTitleInput.value.trim()) { await showAlert("Title can't be empty."); return; }
   const type = document.querySelector("#ei-backdrop .type-opt.active")?.dataset.type || "feature";
   const title = eiTitleInput.value.trim();
   const desc = eiDescInput.value.trim();
+  const current = {
+    title, desc, type, category: eiCategorySelect.value,
+    effort: eiEffortSelect.value, priority: eiPrioritySelect.value,
+    noDeploymentRequired: eiNoDeployCheckbox.checked,
+  };
+  const changed = {};
+  for (const [k, v] of Object.entries(current)) {
+    if (!eiLoadedSnapshot || eiLoadedSnapshot[k] !== v) changed[k] = v;
+  }
+  eiSaving = true;
+  const saveBtn = document.getElementById("ei-save");
+  saveBtn.disabled = true;
   try {
-    await updateItemDetails(editingItemId, {
-      title, desc, type, category: eiCategorySelect.value,
-      effort: eiEffortSelect.value, priority: eiPrioritySelect.value,
-      noDeploymentRequired: eiNoDeployCheckbox.checked,
-    });
+    await updateItemDetails(editingItemId, changed);
   } catch (err) {
     await showAlert(describeSaveError(err, [
       { label: "Title", value: title, max: 200 },
       { label: "Description", value: desc, max: 2000 },
     ]));
     return;
+  } finally {
+    eiSaving = false;
+    saveBtn.disabled = false;
   }
   closeEditItemModal();
 });
@@ -3664,7 +3807,22 @@ document.querySelectorAll(".type-opt").forEach((btn) => {
   });
 });
 
+let niSubmitting = false;
 document.getElementById("ni-submit").addEventListener("click", async () => {
+  // A double-click (or Enter then click) used to create two tickets: the
+  // first addDoc hadn't returned before the second click ran.
+  if (niSubmitting) return;
+  niSubmitting = true;
+  const niSubmitBtn = document.getElementById("ni-submit");
+  niSubmitBtn.disabled = true;
+  try {
+    await submitNewItem();
+  } finally {
+    niSubmitting = false;
+    niSubmitBtn.disabled = false;
+  }
+});
+async function submitNewItem() {
   const desc = document.getElementById("ni-desc-input").value.trim();
   const type = document.querySelector(".type-opt.active").dataset.type;
   const category = suggestCategory(desc);
@@ -3733,7 +3891,7 @@ document.getElementById("ni-submit").addEventListener("click", async () => {
       );
     }
   }
-});
+}
 
 // ── Feed in requirements (z1Q6fxo0yTjamxVMWQK5) ──────────────────────────
 // A project's ⋮ menu action to bulk-create several Backlog items from one
@@ -4836,13 +4994,8 @@ document.getElementById("pc-submit").addEventListener("click", async () => {
   }
   closePromoteConceptModal();
 });
-
-createDictationController({
-  textareaEl: document.getElementById("concept-comment-input"),
-  micBtn: document.getElementById("concept-mic-btn"),
-  hintEl: document.getElementById("concept-listening-hint"),
-  errorEl: document.getElementById("concept-mic-error"),
-});
+// The concept comment box's own mic is wired up further down, with the
+// other three dictation controllers — see the note on SpeechRecognitionCtor.
 
 // ── Releases page ─────────────────────────────────────────────────────────
 // Every release, newest (highest order) first, with the one thing you can
@@ -5444,6 +5597,12 @@ document.getElementById("skill-submit").addEventListener("click", async () => {
 // where unsupported. suggestType()/suggestCategory() (used only for the
 // New Item field) are plain keyword heuristics — a starting point, not a
 // final answer, same as manually picking the toggle/dropdown.
+// A `const`, so it is in the temporal dead zone until this line runs: a
+// createDictationController() call placed ABOVE this line throws
+// "Cannot access 'SpeechRecognitionCtor' before initialization" at module
+// evaluation and stops everything after it (25 Sep 2026 — see the note by
+// the controllers below, and test/app-boots.test.mjs). Create controllers
+// below this line only.
 const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
 
 // Android Chrome's SpeechRecognition duplicates/triples text under
@@ -6019,6 +6178,21 @@ createDictationController({
   hintEl: document.getElementById("ei-listening-hint"),
   errorEl: document.getElementById("ei-mic-error"),
 });
+// The Concept Incubator's comment box. It was created next to that page's
+// own code (~1,200 lines above) when the page shipped on 25 Sep 2026 — above
+// SpeechRecognitionCtor's declaration — and the resulting ReferenceError
+// stopped this module at that point: every top-level statement below it,
+// including the drawer's Releases/Skills/FAQ/Settings click handlers, never
+// ran, and the hamburger menu was dead on every device from 08:04 to the
+// next deploy. Every dictation controller is created here, after that
+// const, for that reason; test/app-boots.test.mjs imports this module
+// under a stub DOM and fails if evaluation stops early again.
+createDictationController({
+  textareaEl: document.getElementById("concept-comment-input"),
+  micBtn: document.getElementById("concept-mic-btn"),
+  hintEl: document.getElementById("concept-listening-hint"),
+  errorEl: document.getElementById("concept-mic-error"),
+});
 document.getElementById("ni-desc-input").addEventListener("input", (e) => {
   autoGrow(e.target);
 });
@@ -6195,6 +6369,10 @@ async function deleteFaqCategoryIfEmpty(id) {
     await showAlert("This category still has articles in it — move or delete those first.");
     return;
   }
+  // Same tombstone as an article (see faqTombstone below): the Freshdesk
+  // seed creates categories too, and would otherwise bring a deleted one back.
+  const c = faqCategories.find((x) => x.id === id);
+  await faqTombstone("faqDeletedCategories", id, { name: (c && c.name) || "" });
   await deleteDoc(doc(db, "faqCategories", id));
 }
 
@@ -6212,8 +6390,27 @@ async function saveFaqArticle(id, data) {
   return ref.id;
 }
 
+// Deleting writes a tombstone first (faqDeletedArticles/<id>), then removes
+// the article. seed-faq-data.js and faq-sync.js both refuse to recreate a
+// tombstoned id, which is what finally stops a deleted article coming back
+// on the next deploy or repo → Firestore sync: on 25 Sep 2026 the seed's
+// insert-only create() ran on every deploy the pipeline dispatched after a
+// train (its "manual dispatch only" gate matched those too) and resurrected
+// five deleted Freshdesk articles, five separate times. The tombstone is
+// permanent by design (firestore.rules: an editor may create or refresh
+// one, nobody may delete one); restoring an article deliberately means
+// removing its tombstone with the service account first.
+async function faqTombstone(collectionName, id, extra) {
+  await setDoc(doc(db, collectionName, id), {
+    ...extra,
+    deletedAt: serverTimestamp(),
+    deletedBy: (auth.currentUser && auth.currentUser.email) || null,
+  });
+}
 async function deleteFaqArticle(id) {
   if (!(await requireFaqEditor())) return;
+  const a = faqArticles.find((x) => x.id === id);
+  await faqTombstone("faqDeletedArticles", id, { title: (a && a.title) || "", categoryId: (a && a.categoryId) || "" });
   await deleteDoc(doc(db, "faqArticles", id));
 }
 
@@ -6237,21 +6434,17 @@ async function toggleFaqArticleReview(id) {
 
 onSnapshot(query(faqCategoriesRef, orderBy("order", "asc")), (snap) => {
   liveCollections.add("faqCategories");
-  faqCategories = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  faqCategories = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
   if (!faqArticlesPage.hidden) renderFaqArticlesPage();
-}, (err) => {
-  console.error("backlog-tracker: faqCategories listener error", err);
-});
+}, onListenerError("faqCategories"));
 
 onSnapshot(query(faqArticlesRef, orderBy("order", "asc")), (snap) => {
   liveCollections.add("faqArticles");
-  faqArticles = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  faqArticles = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
   if (!faqArticlesPage.hidden) renderFaqArticlesPage();
   if (!faqRevisionReviewPage.hidden) renderFaqRevisionReviewPage();
   resolvePendingFaqArticleRoute();
-}, (err) => {
-  console.error("backlog-tracker: faqArticles listener error", err);
-});
+}, onListenerError("faqArticles"));
 
 // Split into "Settings" (categories) and "FAQ Management" (articles) — two
 // separate hamburger-menu destinations, each its own page — rather than

@@ -71,6 +71,10 @@ export async function schedulerTick(ctx: Context, log: (msg: string) => void) {
     if (swept) log(`Deleted ${swept} settled bid${swept === 1 ? '' : 's'} older than ${ctx.config.reservationRetentionDays} days.`)
     sweepAuctionRuns(ctx)
   })
+  await job('Play-window length', () => {
+    const changed = promotePendingPlayWindowIfDue(ctx)
+    if (changed) log(`Play-window length changed to ${changed} hours; every window still active started under the previous length.`)
+  })
   /* A bid still pending for a window that has started will never clear:
      its auction never ran (the process was down past the cutoff), or the
      position was removed from the estate after the bid was placed. It is
@@ -108,6 +112,30 @@ export async function schedulerTick(ctx: Context, log: (msg: string) => void) {
     }
   }
   if (errors.length) throw new Error(`Scheduler tick: ${errors.join('; ')}`)
+}
+
+/* A play-window length change deferred past currently active windows
+   (Advertiser settings → Auction schedule; routes/admin/advertiserSettings.ts):
+   once the effective date arrives, promote it — but only if nothing booked
+   since the change still runs past it. A locked-rate deal can book a window
+   directly, further out than anything active when the change was requested;
+   if one does, push the effective date out to cover it and wait, rather than
+   resizing a window that's still live. Returns the new playWindowHours once
+   promoted, else null. */
+export function promotePendingPlayWindowIfDue(ctx: Context): number | null {
+  const company = ctx.company.get()
+  if (company.pendingPlayWindowHours == null || company.pendingPlayWindowEffectiveFrom == null) return null
+  const now = ctx.clock().toISOString()
+  if (now < company.pendingPlayWindowEffectiveFrom) return null
+  const active = ctx.reservations.byStatus(['pending', 'won', 'reserved'], now).filter((r) => !r.testMode)
+  if (active.length) {
+    const extendedTo = new Date(Math.max(...active.map((r) => Date.parse(r.windowStart) + company.playWindowHours * 3_600_000))).toISOString()
+    if (extendedTo !== company.pendingPlayWindowEffectiveFrom) ctx.company.save({ ...company, pendingPlayWindowEffectiveFrom: extendedTo })
+    return null
+  }
+  const hours = company.pendingPlayWindowHours
+  ctx.company.save({ ...company, playWindowHours: hours, pendingPlayWindowHours: null, pendingPlayWindowEffectiveFrom: null })
+  return hours
 }
 
 /* Finished auction claims older than the reservation retention are deleted

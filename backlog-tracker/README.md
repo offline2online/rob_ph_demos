@@ -252,8 +252,20 @@ What the train changes:
   + `trainNote`.
 - **Merging `main` into the branch is the only conflict path left**, and it
   takes someone pushing straight to `main` in this project's files. It is
-  never resolved automatically: the merge is aborted, `trainStatus` goes
-  `conflict`, and nothing is merged or moved.
+  never resolved automatically — the merge is aborted, `trainStatus` goes
+  `conflict`, and nothing is merged or moved — with two derived-file
+  exceptions that are rebuilt rather than merged: `faq/data/index.json`
+  (`tryAutoResolveFaqIndexConflict`, regenerated from the article files)
+  and a checked-in build output both sides rebuilt
+  (`tryAutoResolveGeneratedOutputConflict`, see `GENERATED_BUILDS`). The
+  latter keeps the train's copy from `HEAD:<path>` — never the index's
+  "ours", which for git's rename/rename shape (two rebuilds under different
+  hashed names) is a two-way merge with conflict markers in it; on 25 Sep
+  2026 that shipped a DSP prototype bundle that threw on load and left the
+  hosted page blank for twelve hours — refuses if any output still carries
+  a marker, and spoils the build stamp so the next scheduled rebuild
+  regenerates the bundle from the merged source. `test/generated-builds.test.js`
+  reproduces the rename/rename case against a real repo.
 
 The board expresses one consequence of this in its CTAs: merging the
 branch ships *everything on it*, so **Deploy to Main is shown only when
@@ -324,15 +336,27 @@ functions are gone; `findPrForBranch` remains, now used to reuse an
 already-open *train* PR rather than an item's.
 
 **`patchFiles` producing no diff still never leaves an item stuck
-silently**, but it now means one of two different things and is handled
-differently for each. If the item already has commits on the train, the
-re-patch simply matched what it had put there: the card goes back to Ready
-for Testing against its existing commits, untouched. If it has none, the
-content is genuinely already on the branch (a sibling's shared-file patch
-carried it), so there is nothing for a deploy to ship and the card is
-flagged `noDeploymentRequired` — otherwise it would reach Approved for
-Deployment and hold the train's Deploy gate open on a ticket with no
-commit to merge.
+silently**, and it now means one of three things (`noDiffPatchFields()`,
+tested in `test/train-carried.test.js`). If the item already has commits
+on the train, the re-patch simply matched what it had put there: the card
+goes back to Ready for Testing against its existing commits, untouched. If
+it has none but the branch does change its files, a sibling's shared-file
+patch carried the content: the card is stamped with that commit
+(`deployCommit` = the sibling's sha, plus `carriedByCommit`/`carriedByItem`)
+and rides the train like any other ticket — approved by checkbox, and
+flipped to `published-live` by `finishTrain` when the train merges, not
+before. It used to be flagged `noDeploymentRequired` instead, which gave it
+the board's one-click "Confirm tested — mark Merged to Main": on 25 Sep
+2026 two such cards (OhKUnoGbpUAeJiXiLIvc, yUISCow4tCg9uxnMJFOy) read
+"Deployed / Main Branch (Live)" a day before their code left
+`deploy/backlog-tracker-faqs` in PR #211. Only when the branch does not
+change the patched files at all — the content is already on `main` — is
+the card flagged `noDeploymentRequired`, because then "nothing to deploy"
+is true. Failed testing on a carried card detaches it rather than
+reverting the sibling's commit, and reverting the carrying commit sends
+every card riding on it back to Backlog (`detachCarriedCards`). See
+`REQUIREMENTS.md` → "A card carried by a sibling's commit follows that
+train".
 
 The same script also handles the mirror case for **Notify Claude —
 Deploy**: that Routine fire asks the session to verify the train — every
@@ -344,6 +368,25 @@ same scheduled job merges the whole train and flips every ticket on it to
 `"published-live"`. CI is checked by the job right before merging, not by
 the fired session: a green check at verification time says nothing about
 the branch after `main` has been merged into it.
+
+**The Routine's `trainReady` write is not the only way a train merges any
+more.** On 25 Sep 2026 a Deploy run passed every check, did its FAQ
+review, and then its own session permission layer refused the final PATCH
+("Modify Shared Resources"); it reported `deployRoutine.status: "error"`
+honestly, and the approved DSP ticket sat in Approved for Deployment until
+a person ran `dsp-board.yml`'s `train_ready` by hand. Now the pipeline hands
+the train over itself: `functions/train-lock.js`'s `trainHandoverReason()`
+says so when the Routine reported done or error without setting the flag,
+never reported back (25 minutes), or was never fired (5 minutes) —
+applied by `functions/index.js`'s `onDeployRoutineSettled` the moment a
+report lands and by `run-backlog-automation.js`'s `reconcileDeployRequests`
+on every sweep. `processDeployTrain` stamps `deployRequestHandledAt` as it
+consumes a click (so an old click can never re-arm a train) and now
+re-checks the Routine's step 1 itself — every ticket's `deployCommit` must
+be an ancestor of the branch — on top of its existing nothing-in-testing,
+merge and CI guards. The FAQ impact review still runs first, on the intact
+branch, and never gated the merge. `test/train-lock.test.js` and
+`test/train-lock-trigger.test.js` cover the predicate and the trigger.
 
 **A merge here must explicitly re-trigger the deploy — it doesn't happen
 for free.** GitHub deliberately suppresses `on: push` triggers for pushes
@@ -413,8 +456,11 @@ shape and was removed in PR #98.
 what already makes two cards one deployment: the `prNumber` they share
 (written by the automation when a train's PR opens), or, on a pre-train
 card, the `patchBranch` they were packaged on. It returns `null` — meaning
-"shares no deployment" — for a card with neither, and for a
-`noDeploymentRequired` card, which has no deployment to share at all.
+"shares no deployment" — for a card with neither, and for a genuine
+no-deploy card (`isNoDeployCard()`: flagged `noDeploymentRequired` with
+nothing on any train), which has no deployment to share at all. A card
+riding on a sibling's commit does share one, and brackets with the rest of
+its train once the train's PR opens.
 `columnCardsHTML()` then draws each group at the position of its first
 member, leaving card order, column counts and every per-card control
 untouched; a key held by only one card in a column is not a group.
@@ -532,6 +578,20 @@ ticket text and editor emails are not.** Download it before the 90-day
 retention runs out if the project mattered.
 
 ## Testing the rules and the MCP server
+
+**The console's start-up is tested too** (`test/app-boots.test.mjs`, run
+by the same workflow on every PR touching `public/**`): it imports the real
+`public/js/app.js` under a stub DOM and fails if module evaluation stops
+early, then clicks every hamburger-menu item. On 25 Sep 2026 the Concept
+Incubator page shipped with a `createDictationController()` call above
+`SpeechRecognitionCtor`'s `const` declaration — a temporal-dead-zone
+`ReferenceError` at start-up — so every top-level statement after it,
+including the drawer's Releases / Skills / FAQ Management / Settings
+handlers, never ran. The board still rendered, so the menu was simply dead
+on desktop, tablet and phone from the 08:04 deploy until the next one, and
+nothing in the pipeline had executed `app.js` to notice. Every dictation
+controller is now created after that declaration, and this test is the
+guard.
 
 `test/` holds two suites:
 
@@ -717,7 +777,7 @@ replaced in `docRevisions`, so a bad write or a delete is recoverable.
 
 **No tool merges, approves a ticket out of Ready for Testing, or moves a
 card's status — with one deliberate, narrowly-scoped exception.**
-`approve_deploy_to_main` (editor/admin only) fires the exact same trigger
+`approve_deploy_to_main` (admin only, since 27 Sep 2026) fires the exact same trigger
 the console's own **Deploy to Main** button writes; it never merges
 anything itself, and only when every ticket on the project's train is
 already Approved for Deployment and Ready for Testing is empty for it —
@@ -1146,10 +1206,12 @@ usage. An engineer can instead register their own Routine, so board clicks
    bootstrap uses), plus where to find that Routine's own API trigger fire
    URL and token once you add one.
 2. Call `set_my_routine_binding` with that `fireUrl`/`token`. This is
-   **write-only** — stored on `consoleUsers/{email}.routineFireUrl` /
-   `.routineFireToken`, and no tool or UI, including `whoami`, ever reads
-   them back; `whoami`'s `hasRoutineBinding` only ever says whether one is
-   set. Pass both as `""` to clear it and go back to the shared secrets.
+   **write-only** — stored in `routineBindings/{email}` (a collection no
+   client can read or write; until 27 Sep 2026 it sat on `consoleUsers`,
+   which every member could read), and no tool or UI, including `whoami`,
+   ever reads it back; `whoami`'s `hasRoutineBinding` only ever says
+   whether one is set. The fire URL must be on `api.anthropic.com`. Pass
+   both as `""` to clear it and go back to the shared secrets.
 
 `functions/index.js`'s `resolveRoutineCredentials` — shared by all three
 fire functions — checks the clicking member's binding
@@ -1535,10 +1597,21 @@ default.
   resurrects the original imported content. Every push-triggered deploy
   running this meant any article/category deleted in FAQ Management came
   back the moment anyone next shipped an unrelated backlog-tracker/faq
-  change. `deploy-backlog-tracker.yml`'s step now only runs on a manual
-  "Run workflow" dispatch — the one legitimate remaining use is bootstrapping
-  a brand-new, empty Firestore project, not something every deploy needs to
-  redo. This is a verbatim import from Freshdesk Solutions
+  change. That first fix gated the step on `workflow_dispatch` — which is
+  also how the pipeline runs this workflow after every train merge (a
+  GITHUB_TOKEN merge fires no push event, so `finishTrain` dispatches the
+  deploy explicitly), so the seed kept running after every train and the
+  same five deleted articles came back five times on 25 Sep 2026. The step
+  now runs only when the dispatch's `seed_faq` input is ticked — the one
+  legitimate use is bootstrapping a brand-new, empty Firestore project —
+  and, independently of that gate, the seed and `faq-sync.js` both skip any
+  id with a tombstone in `faqDeletedArticles` / `faqDeletedCategories`,
+  which the console writes the moment an editor deletes an article or
+  category (`deleteFaqArticle` / `deleteFaqCategoryIfEmpty` in
+  `public/js/app.js`). Tombstones are permanent (rules: editors create or
+  refresh, nobody deletes); restoring an article means removing its
+  tombstone with the service account first. This is a verbatim import from
+  Freshdesk Solutions
   (`personalisationhub.freshdesk.com/a/solutions`), pulled from a Google
   Drive folder ("Personalisation Hub" › "Freshdesk FAQs - June 2026") that
   already had the full export saved as one file per category plus a
@@ -1735,7 +1808,11 @@ the full behavior.
   hard-coded allowlist.~~ **It is behind a real, managed member list**
   (September 2026): `public/js/auth-gate.js` shows a sign-in wall — Google
   or email + password — and only imports `app.js` once the account resolves
-  to a `consoleUsers` membership doc; `firestore.rules` (`isBoardReader` /
+  to a `consoleUsers` membership doc (from the ID token's `consoleRole`
+  claim first, then the person's own row over REST, with the claim-repair
+  function in the background — so a reload lands on the board's own shell,
+  never the card, and sign-in never waits on a cold start; see
+  `SECURITY-PERFORMANCE.md` §1 and `test/auth-gate.test.mjs`); `firestore.rules` (`isBoardReader` /
   `isEditor` / `isAdmin`) reads that same doc for every read and write of
   the board's collections, and `storage.rules` checks the `consoleEditor`
   custom claim kept in step with it. Admins add and remove people from

@@ -9,7 +9,7 @@ const menuBoard = {
   name: 'Menu Board — Long Format',
   displayCanvasSize: { width: 5760, height: 1080 },
   defaultPlaylistId: 'pl_menu',
-  playlistSettings: { assetPosition: null, assetFill: null, maximumCampaignsPlayedInRotation: 3, campaignTransition: null, campaignAutoRotation: null, campaignAutoPlay: null },
+  playlistSettings: { maximumCampaignsPlayedInRotation: 3 },
   phExtensions: { slots: [
     { label: 'Priority 1', owner: 'internal' }, { label: 'Supplier slot', owner: 'advertiser', listMode: 'rtb' }, { label: 'Store choice', owner: 'retail', storeScope: 'Store staff' },
   ] },
@@ -19,8 +19,8 @@ const responses: Record<string, unknown> = {
   '/api/admin/v1/session': { userId: 'u', name: 'HQ Admin (POC)', role: 'hq_admin' },
   '/api/admin/v1/display-types': { items: [landscape, menuBoard] },
   '/api/admin/v1/playlists': { items: [
-    { id: 'pl_landscape', name: 'Landscape Playlist', autoCreatedFor: 'landscape', assignments: [] },
-    { id: 'pl_menu', name: 'Menu Board Playlist', autoCreatedFor: 'menu_board', assignments: [] },
+    { id: 'pl_landscape', name: 'Landscape Playlist', autoCreatedFor: 'landscape', playlistSettings: {}, assignments: [] },
+    { id: 'pl_menu', name: 'Menu Board Playlist', autoCreatedFor: 'menu_board', playlistSettings: {}, assignments: [] },
   ] },
   '/api/admin/v1/partners': { items: [] },
   '/api/admin/v1/advertiser-settings': { currency: 'AUD', floorCpm: 100, personalisedMultiplier: 1.5, interactiveCpe: 0.5, advertiserWhitelist: [], advertiserBlacklist: [], categoryWhitelist: [], categoryBlacklist: [], whereTheseApply: [] },
@@ -49,10 +49,12 @@ describe('Display Types page', () => {
     const labels = Array.from(document.querySelectorAll('label')).map((l) => l.textContent)
     expect(labels.slice(0, 5)).toEqual(['Touch Point', '*Display Type Name', '*Display Canvas Size (Resolution)', 'Background Color', 'Default Playlist'])
 
-    const panels = ['Playlist Settings', 'Phantom Zone', 'Enabled Features', 'Multi-Zone Layout'].map((t) => screen.getByRole('region', { name: t }))
+    /* Playlist Settings (and slot assignment) moved to Playlist Management,
+       under each playlist, 26 Sep 2026 — no longer one of this page's panels
+       (see playlist-management.test.tsx for its own coverage). */
+    const panels = ['Phantom Zone', 'Enabled Features', 'Multi-Zone Layout'].map((t) => screen.getByRole('region', { name: t }))
     panels.forEach((p) => expect(within(p).getByRole('button', { expanded: false })).toBeInTheDocument())
-    expect(within(panels[0]).getByText('3 slots')).toBeInTheDocument()
-    expect(within(panels[0]).getByText('1 Advertiser')).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Playlist Settings' })).not.toBeInTheDocument()
 
     expect(screen.getByText('No changes to save.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled()
@@ -66,41 +68,72 @@ describe('Display Types page', () => {
     expect(document.body.textContent).not.toMatch(/Responsive Web|Mobile Store Site|Element Type/)
   })
 
-  /* Rob, 24 Sep 2026: with DSP integration switched off (Exchange settings),
-     Advertiser is greyed out — not hidden — for a slot that isn't one, and
-     an existing Advertiser slot is left as it is. */
-  it('greys out Advertiser for a new slot while DSP integration is switched off, and keeps the existing one', async () => {
-    const off: Record<string, unknown> = { ...responses, '/api/admin/v1/features': { dspIntegration: false } }
-    vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response(JSON.stringify(off[url.split('?')[0]] ?? {}), { status: 200 })))
-    renderAt('/display-types?id=menu_board&panel=playlist', true)
-    const advertiserOption = async (slot: number) => {
-      fireEvent.mouseDown(await screen.findByRole('combobox', { name: `Slot ${slot} owner` }))
-      const opts = await waitFor(() => {
-        const found = Array.from(document.querySelectorAll('.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option'))
-        expect(found.length).toBeGreaterThan(0)
-        return found
-      })
-      const adv = opts.find((o) => o.textContent === 'Advertiser')!
-      fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
-      return adv
-    }
-    /* Slot 1 (Headquarters): Advertiser is there, greyed out, and says why. */
-    const s1 = await advertiserOption(1)
-    await waitFor(() => expect(s1.getAttribute('aria-disabled') ?? String(s1.classList.contains('ant-select-item-option-disabled'))).toBe('true'))
-    expect(s1.getAttribute('title')).toMatch(/Enable DSP Integration/)
-    /* Slot 2 is already an Advertiser slot: left as it is. */
-    expect(within(screen.getByTestId('slot-card-2')).getByText('Advertiser')).toBeInTheDocument()
-    const s2 = await advertiserOption(2)
-    expect(s2.classList.contains('ant-select-item-option-disabled')).toBe(false)
+  /* Ticket, 27 Sep 2026: "Add new playlist" creates a playlist that doesn't
+     exist on Playlist Management yet, so its own settings (what it'll
+     actually be created with) are shown as a read-only preview right here
+     while it's still a local draft — defaulting Auto-Rotation/Auto-Play
+     off, not the "On" platform default a brand new, unconfigured playlist
+     used to silently inherit — with a link to Playlist Management rather
+     than a second, competing editor (Rob's own follow-up on the ticket),
+     and disappearing from this page the moment Save actually creates it. */
+  it('shows a read-only Playlist Settings preview, defaulting Auto-Rotation/Auto-Play off, only while the Default Playlist is still unsaved', async () => {
+    renderAt('/display-types?id=landscape', true)
+    await screen.findByText('Display Preview')
+    expect(screen.queryByText(/Playlist Settings —/)).not.toBeInTheDocument()
+
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Default Playlist' }))
+    fireEvent.click(await screen.findByText('Add new playlist'))
+
+    expect(await screen.findByText('Playlist Settings — Landscape Playlist 2')).toBeInTheDocument()
+    const autoRotation = screen.getByRole('combobox', { name: 'Campaign Auto-Rotation' })
+    const autoPlay = screen.getByRole('combobox', { name: 'Campaign Auto-Play' })
+    expect(autoRotation.closest('.ant-select')).toHaveTextContent('Auto-Rotate Off')
+    expect(autoRotation.closest('.ant-select')).toHaveClass('ant-select-disabled')
+    expect(autoPlay.closest('.ant-select')).toHaveTextContent('Auto-Play Off')
+    expect(autoPlay.closest('.ant-select')).toHaveClass('ant-select-disabled')
+
+    /* A link to Playlist Management, not editable fields here. Leaving with
+       this unsaved (the new playlist only exists as a local draft) goes
+       through the usual discard-changes guard. */
+    fireEvent.click(screen.getByRole('button', { name: /Playlist Management/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'OK' }))
+    expect(await screen.findByRole('button', { name: 'Show settings for Landscape Playlist' })).toBeInTheDocument()
   })
 
-  it('hides slot ownership with the dspIntegration flag off and never asks for DSP data', async () => {
-    renderAt('/display-types?id=menu_board', false)
-    const panel = await screen.findByRole('region', { name: 'Playlist Settings' })
-    expect(within(panel).getByText('3 slots')).toBeInTheDocument()
-    expect(within(panel).queryByText('1 Advertiser')).not.toBeInTheDocument()
-    await waitFor(() => expect(fetch).toHaveBeenCalled())
-    const urls = vi.mocked(fetch).mock.calls.map(([u]) => String(u))
-    expect(urls.some((u) => /partners|advertiser/.test(u))).toBe(false)
+  /* The real backend (ensureReferencedPlaylists) auto-creates the referenced
+     playlist and persists the display type's new defaultPlaylistId, so a
+     refetch after Save genuinely differs from before — this stateful mock
+     reproduces that (a static mock wouldn't: react-query's structural
+     sharing keeps the old, unsaved-draft-shaped reference around when a
+     refetch returns data that looks identical to what's already cached). */
+  it('no longer shows the Playlist Settings preview once the new Default Playlist has been saved', async () => {
+    let savedLandscape = landscape
+    const newPlaylists: { id: string; name: string; autoCreatedFor: string; playlistSettings: Record<string, unknown>; assignments: never[] }[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, opts?: RequestInit) => {
+      const path = url.split('?')[0]
+      if (opts?.method === 'PUT' && path === '/api/admin/v1/display-types/landscape/record') {
+        const body = JSON.parse(String(opts.body))
+        if (body.defaultPlaylistId && !newPlaylists.some((p) => p.id === body.defaultPlaylistId) && body.defaultPlaylistId !== 'pl_landscape') {
+          newPlaylists.push({ id: body.defaultPlaylistId, name: 'Landscape Playlist 2', autoCreatedFor: 'landscape', playlistSettings: body.playlistSettings ?? {}, assignments: [] })
+        }
+        savedLandscape = body
+        return new Response(JSON.stringify(body), { status: 200 })
+      }
+      if (path === '/api/admin/v1/display-types') return new Response(JSON.stringify({ items: [savedLandscape, menuBoard] }), { status: 200 })
+      if (path === '/api/admin/v1/playlists') {
+        const base = (responses['/api/admin/v1/playlists'] as { items: unknown[] }).items
+        return new Response(JSON.stringify({ items: [...base, ...newPlaylists] }), { status: 200 })
+      }
+      return new Response(JSON.stringify(responses[path] ?? {}), { status: 200 })
+    }))
+
+    renderAt('/display-types?id=landscape', true)
+    await screen.findByText('Display Preview')
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Default Playlist' }))
+    fireEvent.click(await screen.findByText('Add new playlist'))
+    expect(await screen.findByText(/Playlist Settings —/)).toBeInTheDocument()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(screen.queryByText(/Playlist Settings —/)).not.toBeInTheDocument())
   })
 })
