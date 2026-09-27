@@ -17,7 +17,16 @@
    record's `targeting`, so "No. of campaigns" and the two variable columns
    below summarise those layers, not a separate row each (ticket "Campaign
    Status: Playlist name column, submitted count, localised/personalised
-   targeting columns, Advertiser first"). */
+   targeting columns, Advertiser first").
+
+   Activation leads the row (ticket, 27 Sep 2026) — approving, rejecting and
+   switching a campaign on is what this table is for — and DSP sits between
+   Playlist name and No. of campaigns.
+
+   The Approved / Awaiting approval / Rejected counts above the table set
+   the Status column's own filter when clicked (ticket, 27 Sep 2026); the
+   table stays filtered until the user clears it from that column's funnel.
+   The choice lives in the URL (`status`), like the Advertiser filter. */
 import { useQuery } from '@tanstack/react-query'
 import { Button, Dropdown, Input, Modal, Spin, Switch, Tooltip } from 'antd'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
@@ -29,7 +38,7 @@ import { api } from '../../api/client'
 import { Q } from '../../api/queries'
 import { Grid } from '../../shared/Grid'
 import { Icon } from '../../shared/Icon'
-import { externalSetColumn, searchColumn, setColumn } from '../../shared/TableFilters'
+import { externalSetColumn, pageSetColumn, searchColumn, setColumn } from '../../shared/TableFilters'
 import { T } from '../../theme/phTheme'
 import { CAMPAIGN_STATUS_PATH, useCampaignActions } from './useCampaigns'
 
@@ -45,6 +54,11 @@ interface Ctx {
   activate: (c: Campaign, enabled: boolean) => Promise<void>
 }
 type P = ICellRendererParams<Campaign, unknown, { current: Ctx }>
+
+/* The statuses a retailer sees here (never Draft), in the order the counts show them. */
+const FILTERABLE_STATUSES = ['approved', 'awaiting_approval', 'rejected'] as const
+type FilterableStatus = (typeof FILTERABLE_STATUSES)[number]
+const isFilterable = (s: string): s is FilterableStatus => (FILTERABLE_STATUSES as readonly string[]).includes(s)
 
 const StatusCell = ({ data, context }: P) => {
   const a = data && context.current.approvals[data.campaignId]
@@ -139,6 +153,7 @@ export function CampaignStatusPage() {
      grid (ticket, 22 Sep) — the same pattern the booking schedule uses for
      a page-owned filter. */
   const advertiserId = params.get('advertiserId')
+  const statusFilter = useMemo(() => (params.get('status') ?? '').split(',').filter(isFilterable), [params])
   const campaigns = useQuery(Q.campaigns)
   /* Only what came in through a DSP or the Partner API. */
   const nonHq = useMemo(() => (campaigns.data ?? []).filter((c) => c.source !== 'hq'), [campaigns.data])
@@ -146,7 +161,11 @@ export function CampaignStatusPage() {
   /* Draft never surfaces in a retailer-facing view (ticket, 22 Sep, §3):
      the retailer only ever sees a campaign once it has been submitted. */
   const all = useMemo(() => nonHq.filter((c) => approvals[c.campaignId]?.status !== 'draft'), [nonHq, approvals])
-  const rows = useMemo(() => (advertiserId ? all.filter((c) => c.advertiserId === advertiserId) : all), [all, advertiserId])
+  const rows = useMemo(() => all.filter((c) => {
+    if (advertiserId && c.advertiserId !== advertiserId) return false
+    const s = approvals[c.campaignId]?.status
+    return !statusFilter.length || (!!s && (statusFilter as string[]).includes(s))
+  }), [all, advertiserId, statusFilter, approvals])
   const counts = useMemo(() => {
     const c = { approved: 0, awaiting_approval: 0, rejected: 0 }
     for (const row of all) {
@@ -175,10 +194,18 @@ export function CampaignStatusPage() {
     else next.delete('advertiserId')
     setParams(next, { replace: true })
   }
+  const setStatusFilter = (keys: FilterableStatus[]) => {
+    const next = new URLSearchParams(params)
+    if (keys.length) next.set('status', keys.join(','))
+    else next.delete('status')
+    setParams(next, { replace: true })
+  }
+  const statusOptions = FILTERABLE_STATUSES.filter((k) => counts[k] > 0 || statusFilter.includes(k))
   const columns = useMemo<ColDef<Campaign>[]>(() => [
-    /* Advertiser first (ticket "Campaign Status: Playlist name column..."):
-       every other column here is now about the one playlist an advertiser
-       submitted for a slot, so who submitted it leads the row. */
+    /* Activation first (ticket, 27 Sep 2026): approve, reject, or switch a campaign on. */
+    { headerName: 'Activation', width: 160, suppressSizeToFit: true, cellRenderer: ActivationCell },
+    /* Then who submitted it: every other column here is about the one
+       playlist an advertiser submitted for a slot. */
     {
       headerName: 'Advertiser', width: 150, minWidth: 130, valueGetter: (p) => p.data?.advertiserName ?? '—',
       ...externalSetColumn<Campaign>('Advertiser', advertiserOptions.map((a) => a.label), advertiserOptions.find((a) => a.value === advertiserId)?.label,
@@ -192,10 +219,12 @@ export function CampaignStatusPage() {
     {
       headerName: 'Status', width: 180, minWidth: 150, cellRenderer: StatusCell,
       valueGetter: (p) => (p.data ? STATUS_LABELS[approvals[p.data.campaignId]?.status as ApprovalStatus] ?? '' : ''),
-      ...setColumn<Campaign>('Status', values((c) => STATUS_LABELS[approvals[c.campaignId]?.status as ApprovalStatus] ?? '')),
+      ...pageSetColumn<Campaign>('Status', statusOptions.map((k) => STATUS_LABELS[k]), statusFilter.map((k) => STATUS_LABELS[k]),
+        (labels) => setStatusFilter(FILTERABLE_STATUSES.filter((k) => labels.includes(STATUS_LABELS[k])))),
     },
     /* The submission's own name — one playlist per slot, spec §6. */
     { headerName: 'Playlist name', width: 220, minWidth: 180, cellRenderer: PlaylistNameCell, valueGetter: (p) => p.data?.name ?? '', ...searchColumn<Campaign>('Playlist name') },
+    { headerName: 'DSP', width: 150, minWidth: 130, valueGetter: (p) => p.data?.partnerName ?? '—', ...setColumn<Campaign>('DSP', values((c) => c.partnerName ?? '')) },
     {
       headerName: 'No. of campaigns', width: 150, minWidth: 130, suppressSizeToFit: true, cellRenderer: CampaignCountCell,
       valueGetter: (p) => p.data?.campaignCount ?? 0,
@@ -208,19 +237,29 @@ export function CampaignStatusPage() {
       headerName: 'Personalised variables', width: 200, minWidth: 160, cellRenderer: PersonalisedVariablesCell,
       valueGetter: (p) => p.data?.personalisedVariables.join(', ') ?? '',
     },
-    { headerName: 'DSP', width: 150, minWidth: 130, valueGetter: (p) => p.data?.partnerName ?? '—', ...setColumn<Campaign>('DSP', values((c) => c.partnerName ?? '')) },
-    { headerName: 'Activation', width: 160, suppressSizeToFit: true, cellRenderer: ActivationCell },
     { headerName: '', width: 56, suppressSizeToFit: true, pinned: 'right', cellRenderer: RowMenu },
-  ], [approvals, all, advertiserOptions, advertiserId])
+  ], [approvals, all, advertiserOptions, advertiserId, statusOptions, statusFilter])
 
   if (!campaigns.data) return <Spin />
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1" style={{ fontSize: 13 }}>
         <span style={{ fontWeight: 700 }}>{all.length} campaign{all.length === 1 ? '' : 's'}</span>
-        <span style={{ color: T.muted }}>Approved <b style={{ color: T.text }}>{counts.approved}</b></span>
-        <span style={{ color: T.muted }}>Awaiting approval <b style={{ color: T.text }}>{counts.awaiting_approval}</b></span>
-        <span style={{ color: T.muted }}>Rejected <b style={{ color: T.text }}>{counts.rejected}</b></span>
+        {FILTERABLE_STATUSES.map((k) => {
+          const active = statusFilter.length === 1 && statusFilter[0] === k
+          return (
+            <button
+              key={k}
+              type="button"
+              aria-pressed={active}
+              onClick={() => setStatusFilter([k])}
+              className="cursor-pointer border-0 bg-transparent p-0 hover:underline"
+              style={{ fontSize: 13, color: active ? T.primary : T.muted }}
+            >
+              {STATUS_LABELS[k]} <b style={{ color: active ? T.primary : T.text }}>{counts[k]}</b>
+            </button>
+          )
+        })}
       </div>
       <Grid<Campaign>
         label="Campaign Status"

@@ -169,6 +169,21 @@ export const externalSetColumn = <Row,>(label: string, values: string[], chosen:
   ),
 })
 
+/* A multi-value set filter the page owns: same funnel and popup as
+   setColumn, but the choice is the page's own state (kept in the URL), so
+   something outside the grid can set it too — Campaign Status's per-status
+   counts above the table do. The page filters its own rows; the grid shows
+   what it is given. Cleared the usual way, from the funnel's Clear Filter. */
+export const pageSetColumn = <Row,>(label: string, values: string[], chosen: string[], onChange: (next: string[]) => void): Partial<ColDef<Row>> => ({
+  filter: 'agTextColumnFilter',
+  filterParams: { textMatcher: () => true },
+  suppressHeaderMenuButton: true,
+  suppressHeaderFilterButton: true,
+  floatingFilter: true,
+  suppressFloatingFilterButton: true,
+  floatingFilterComponent: () => <Funnel label={label} values={values} chosen={chosen} onChange={onChange} />,
+})
+
 /* "3 Displays & Devices", or "Showing 2 of 3 Displays & Devices" when filtered. */
 export const showingCount = (shown: number, total: number, noun: string) =>
   shown === total ? `${total} ${noun}` : `Showing ${shown} of ${total} ${noun}`

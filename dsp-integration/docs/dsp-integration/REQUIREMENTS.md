@@ -69,7 +69,9 @@ defaults).
 
 **Navigation.** The HQ Admin navigation items for this project, in order
 (Rob, 24 Sep 2026; **Campaign Status** folded into **Campaign schedule**'s
-own second tab, 26 Sep 2026 — it is no longer a nav item of its own):
+own second tab, 26 Sep 2026 — it is no longer a nav item of its own; that
+page is titled **Advertiser Bookings** and the tab **Upcoming Campaign
+Approval** since 27 Sep 2026, see §7):
 **Display Types**, **Playlist Management**, **Advertisers / Inventory**,
 then **DSP Integration** at the bottom. The pages used day to day come
 first; DSP Integration, set up once per DSP, comes last. **Advertisers /
@@ -284,7 +286,11 @@ not offered.
     reserved to a named advertiser (§6).
   - **Stores**: delegated. A campaign is flagged as available to the staff
     tablet; staff activate it but do not author it. Store-level authoring is
-    out of scope for this release.
+    out of scope for this release. **Not offered in the first release**
+    (ticket, 27 Sep 2026): the slot editor offers Headquarters and
+    Advertiser only. A slot already saved as Stores still reads as Stores
+    (greyed out in the owner list, with a tooltip saying it isn't supported
+    in this release) until someone changes it; the API is unchanged.
 
   **A slot is a playlist position** (ticket "Available Inventory: Max
   campaigns column + slot playlist statement"): assigning an advertiser a
@@ -302,8 +308,8 @@ not offered.
   (Zone 1/2/3), each with its own advertiser slots or none at all, not one
   shared rotation across the whole screen.
 
-  The explanation of the three owners is a tooltip on the **Slot
-  assignment** label.
+  The explanation of the owners is a tooltip on the **Slot assignment**
+  label.
 
   **The slot editor sets the label, the owner, and — on a multi-zone display
   type — which zone the slot belongs to** (Rob, 20 Sep; zone tagging added
@@ -322,9 +328,22 @@ not offered.
   only appears once the display type has zones (*Multi-Zone Layout*,
   enabled); on a single-zone display type there is nothing to tag a slot to,
   and it is always read as the display type's own default playlist.
-- **Default Playlist offers "Add new playlist"** (ticket, 26 Sep 2026), as an
-  option in that field's own dropdown alongside the existing playlists.
-  Choosing it creates a playlist scoped to this display type from the
+
+  **Under a zone's playlist the slot editor edits with that zone in mind**
+  (ticket, 27 Sep 2026). Every zone's playlist on Playlist Management shows
+  the display type's one set of slots — a position is still sold per
+  display type × slot — so: making a slot *Advertiser* under a zone's
+  playlist tags it to that zone (when it isn't tagged already), and a slot
+  already tagged to a *different* zone is shown there but locked (label,
+  owner and zone greyed out, a tooltip naming its zone). Each slot card
+  names the zone it's tagged to. Before this, setting "Slot 1 → Advertiser"
+  under Zone 1, Zone 2 and Zone 3 in turn re-tagged the one slot each time,
+  and Available Inventory showed a single position instead of three.
+- **Default Playlist offers "Add new playlist"** (ticket, 26 Sep 2026) — as
+  its own outlined call-to-action button at the top right of the field,
+  above the dropdown, not as the dropdown's last option (ticket, 27 Sep
+  2026), so it reads as the way to add a playlist rather than as one of the
+  playlists to pick. Choosing it creates a playlist scoped to this display type from the
   outset (shown as *auto-created* in Playlist Management, the same as a
   zone playlist created on demand) and selects it immediately — ready, once
   it is this display type's Default Playlist, to define its own multi-zone
@@ -363,7 +382,7 @@ not offered.
   form takes the full width beside the display type list, and changes
   (including zone playlists created on demand) are applied with Save
   changes.
-- **Tooltips** (see *Help text*) on: *Slot assignment* (the three owners;
+- **Tooltips** (see *Help text*) on: *Slot assignment* (the owners;
   playback unchanged); *Define phantom zone* (it sits outside rotation and
   enables QR Control); the *Enabled Features* panel header (defaults
   inherited by every display of the type, overridable per display); *Enable
@@ -413,6 +432,13 @@ is handled by the existing platform and is unchanged.
 - **Edit a playlist**: its name and its assignment to display types and
   zones (assignment is still made on the Display Types form, §1; a playlist
   is only ever listed here with an *Open* action back to it).
+- **Each playlist name is led by its touch point's icon** (ticket, 27 Sep
+  2026): the icon of every display type the playlist fills (or, while it
+  fills none, the display type it was auto-created for), with the touch
+  point's name on hover — Digital Signage a TV, Kiosk the Touch Point
+  field's own Kiosk icon; Website and Mobile Store Site have icons ready
+  (a globe and a phone) for when those touch points exist. A playlist on no
+  screen at all shows no icon.
 - **Delete a playlist**, through the confirmation dialog described under
   *Deleting*:
   - Selecting the delete (bin) icon opens the dialog; nothing is deleted
@@ -616,10 +642,11 @@ with a minimal change to the campaign table:
   content package per slot — the mandatory default layer plus its optional
   localised/personalised upsells (§6 "Campaigns and content packages") —
   stored on the one existing campaign record, so the table's row is that
-  record, not one row per layer. **Column order, left to right: Advertiser,
-  Schedule, Playlist name, No. of campaigns, Localised variables,
-  Personalised variables** (Status, DSP and the activation toggle keep
-  their existing places relative to these). **Playlist name** replaces
+  record, not one row per layer. **Column order, left to right
+  (ticket, 27 Sep 2026): Activation (the approve/reject control, or the
+  activation toggle once approved), Advertiser, Schedule, Status, Playlist
+  name, DSP, No. of campaigns, Localised variables, Personalised
+  variables**, then the row menu. **Playlist name** replaces
   *Name* — the submission's own name — and its click-through is the
   campaign-name link above, filtered to this playlist: because every layer
   of the submission already lives on the one record, opening it already
@@ -2158,7 +2185,12 @@ playback analytics.**
   Default Playlist that's still an unsaved "Add new playlist" draft — the
   same five fields as Playlist Management's own row, disabled, with a link
   across to Playlist Management; gone once the playlist is actually saved.
-  *(Display Types → Default Playlist)*
+  As a collapsible **Playlist Settings** panel (last in the list), its
+  collapsed header carries the same summary pill as the other panels
+  (*Default settings*, or *N settings changed*), and the Playlist
+  Management link sits inside the panel beside its "Settings managed within
+  Playlist Management" line, not on the header (failed-testing feedback,
+  27 Sep 2026). *(Display Types → Default Playlist)*
 
 ### Playlist management
 
@@ -2247,6 +2279,12 @@ playback analytics.**
   the POC's own Campaign Status stand-in,
   `apps/admin/src/features/campaign-status/CampaignStatusPage.tsx`, with the
   summary computed server-side by `GET /admin/v1/campaigns`)*
+- **The per-status counts above the table filter it** (ticket, 27 Sep
+  2026): clicking *Approved*, *Awaiting approval* or *Rejected* sets the
+  Status column's own filter to that status (the column funnel shows it as
+  on, and the clicked count is highlighted). The table stays filtered until
+  the user clears it with that funnel's **Clear Filter**; the choice is kept
+  in the URL (`status=`). *(POC Campaign Status stand-in)*
 
 ### Pricing
 
@@ -2311,9 +2349,12 @@ playback analytics.**
   an admin, published on the position and enforced on every bid.
   *(Advertisers / Inventory → Available Inventory)*
 - **Campaign schedule** (renamed from "Booking schedule", ticket 26 Sep
-  2026): the page opened from Available Inventory or an advertiser now
-  holds **two tabs** — **Booking schedule** (the landing/default tab,
-  everything below in this bullet, unchanged) and **Campaign status**
+  2026; **page title "Advertiser Bookings"** and the second tab **"Upcoming
+  Campaign Approval"** since 27 Sep 2026 — its URL key stays
+  `tab=campaign-status`): the page opened from Available Inventory or an
+  advertiser now holds **two tabs** — **Booking schedule** (the
+  landing/default tab, everything below in this bullet, unchanged) and
+  **Upcoming Campaign Approval**
   (the full Campaign Status table — see "Campaign table now groups by
   playlist..." under *Campaign asset approval* above — shown at full
   width; Campaign Status is no longer its own item in the HQ Admin
