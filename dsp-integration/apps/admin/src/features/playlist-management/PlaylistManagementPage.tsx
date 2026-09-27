@@ -11,11 +11,16 @@
    Fill, Campaign Transition, Auto-Rotation, Auto-Play) can be set up before
    it is ever assigned to a display type. Maximum Campaigns Played In
    Rotation and slot assignment stay per assignment (a position is sold per
-   display type × slot), so they only show once the playlist has one. */
+   display type × slot), so they only show once the playlist has one.
+
+   Each playlist name is led by its touch point's icon (ticket, 27 Sep
+   2026) — the icon of every display type it fills (or, unassigned, the one
+   it was auto-created for) — so the kind of screen a playlist plays on
+   reads at a glance. */
 import { useQueryClient } from '@tanstack/react-query'
-import { Alert, App, Button, Input, Popover, Spin } from 'antd'
+import { Alert, App, Button, Input, Popover, Spin, Tooltip } from 'antd'
 import type { ColDef, GridApi, ICellRendererParams, RowHeightParams } from 'ag-grid-community'
-import type { DeleteCheck, DisplayType, Partner, Playlist } from '@ph-dsp/types'
+import { touchPointIcon, type DeleteCheck, type DisplayType, type Partner, type Playlist } from '@ph-dsp/types'
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api, ApiRequestError } from '../../api/client'
@@ -66,6 +71,28 @@ const Pill = ({ children }: { children: React.ReactNode }) => (
   <span className="inline-flex h-[22px] items-center rounded-full px-2 whitespace-nowrap" style={{ fontSize: 12, color: T.muted, background: 'rgba(0,0,0,0.04)' }}>{children}</span>
 )
 
+/* Touch points beyond this build's two (decision 1) have icons ready, so a
+   playlist never shows the wrong one if they arrive. */
+const OTHER_TOUCH_POINT_ICONS: Record<string, string> = { Website: 'language', 'Mobile Store Site': 'smartphone' }
+const iconOf = (touchPoint: string) => OTHER_TOUCH_POINT_ICONS[touchPoint] ?? touchPointIcon(touchPoint)
+const touchPointsOf = (p: Playlist, types: DisplayType[]) => {
+  const ids = p.assignments.length ? p.assignments.map((a) => a.displayTypeId) : p.autoCreatedFor ? [p.autoCreatedFor] : []
+  return [...new Set(ids.map((id) => types.find((t) => t.id === id)?.touchPoint).filter((t): t is DisplayType['touchPoint'] => !!t))]
+}
+function TouchPointIcons({ p, types }: { p: Playlist; types: DisplayType[] }) {
+  const tps = touchPointsOf(p, types)
+  if (!tps.length) return null
+  return (
+    <span className="inline-flex shrink-0 items-center gap-0.5">
+      {tps.map((tp) => (
+        <Tooltip key={tp} title={tp}>
+          <span className="inline-flex" role="img" aria-label={`${tp} touch point`}><Icon name={iconOf(tp)} size={17} style={{ color: T.primary }} /></span>
+        </Tooltip>
+      ))}
+    </span>
+  )
+}
+
 function NameCell({ data, context }: Params) {
   if (!data) return null
   const c = context.current
@@ -83,6 +110,7 @@ function NameCell({ data, context }: Params) {
   return (
     <div className="min-w-0">
       <div className="flex min-w-0 items-center gap-1.5">
+        <TouchPointIcons p={p} types={c.types} />
         <span className="truncate">{p.name}</span>
         <Button type="text" size="small" aria-label={`Rename ${p.name}`} icon={<Icon name="edit" size={14} style={{ color: T.micro }} />} onClick={() => c.startEdit(p)} />
       </div>
@@ -218,6 +246,7 @@ function SettingsRow({ data, context }: Params) {
                   advertiserOpen={c.advertiserOpenFor(a.displayTypeId)}
                   partners={c.partners}
                   onFixConnection={c.onFixConnection}
+                  zoneId={a.zoneId ?? null}
                 />
               ) : (
                 <Spin size="small" />

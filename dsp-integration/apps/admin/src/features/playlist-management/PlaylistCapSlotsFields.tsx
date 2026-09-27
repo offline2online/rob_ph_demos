@@ -5,7 +5,9 @@
    (PH-CORE-BOUNDARIES.md), so a shared playlist can be capped — and have its
    slots owned — differently on each screen it fills. Edited here, inside a
    playlist's expanded row on Playlist Management, now that the display
-   type's own Playlist Settings block is gone. */
+   type's own Playlist Settings block is gone. `zoneId` is the zone this
+   assignment fills, when it is a zone's playlist: the slot table then
+   edits with that zone in mind (SlotAssignment's `scopeZoneId`). */
 import type { DisplayType, Partner } from '@ph-dsp/types'
 import { Field } from '../../shared/Field'
 import { DefaultSelect } from '../display-types/DefaultSelect'
@@ -13,8 +15,9 @@ import { capOf, capValue, DEFAULTS, isCapped, mz, resizeSlots, ROTATION_CAPS, sl
 import { SlotAssignment } from '../display-types/panels/SlotAssignment'
 import { TIPS } from '../display-types/tooltips'
 
-export function PlaylistCapSlotsFields({ d, update, slotAssignment, advertiserOpen, partners, onFixConnection }: {
+export function PlaylistCapSlotsFields({ d, update, slotAssignment, advertiserOpen, partners, onFixConnection, zoneId = null }: {
   d: DisplayType
+  zoneId?: string | null
   update: (fn: (t: DisplayType) => DisplayType) => void
   slotAssignment: boolean
   advertiserOpen: (i: number) => boolean
@@ -41,12 +44,13 @@ export function PlaylistCapSlotsFields({ d, update, slotAssignment, advertiserOp
       {slotAssignment && isCapped(d) && (
         <SlotAssignment
           slots={slotsOf(d)}
-          setSlots={(slots) => update((t) => ({ ...t, phExtensions: { ...(t.phExtensions ?? {}), slots } }))}
+          setSlots={(fn) => update((t) => ({ ...t, phExtensions: { ...(t.phExtensions ?? {}), slots: fn(slotsOf(t)) } }))}
           partners={partners}
           advertiserOpen={advertiserOpen}
           onFixConnection={onFixConnection}
           tip={TIPS.slotAssignment}
           zones={mz(d).enabled ? mz(d).zones : []}
+          scopeZoneId={mz(d).enabled ? zoneId : null}
         />
       )}
     </>

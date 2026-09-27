@@ -3,7 +3,7 @@
    tooltips here (decision 2). */
 export const TIPS = {
   slotAssignment:
-    "Headquarters: filled from eligible HQ campaigns by priority. Advertiser: sold through a DSP, open to RTB bidding by default, or reserved to one of that DSP's advertisers. Stores: store staff activate approved campaigns. Ownership decides who can fill the slot; playback itself is unchanged.",
+    "Headquarters: filled from eligible HQ campaigns by priority. Advertiser: sold through a DSP, open to RTB bidding by default, or reserved to one of that DSP's advertisers. Ownership decides who can fill the slot; playback itself is unchanged. On a multi-zone display type, a slot made Advertiser under a zone's playlist is that zone's position.",
   definePhantomZone:
     'The phantom zone sits outside campaign rotation, so anything placed in it survives every campaign transition. Defining it makes Enable QR Control available.',
   enabledFeatures:
