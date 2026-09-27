@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Providers, appRoutes } from '../src/App'
@@ -66,5 +66,74 @@ describe('Display Types page', () => {
     expect(screen.queryByText('Idle')).not.toBeInTheDocument()
     expect(screen.queryByText('Connected')).not.toBeInTheDocument()
     expect(document.body.textContent).not.toMatch(/Responsive Web|Mobile Store Site|Element Type/)
+  })
+
+  /* Ticket, 27 Sep 2026: "Add new playlist" creates a playlist that doesn't
+     exist on Playlist Management yet, so its own settings (what it'll
+     actually be created with) are shown as a read-only preview right here
+     while it's still a local draft — defaulting Auto-Rotation/Auto-Play
+     off, not the "On" platform default a brand new, unconfigured playlist
+     used to silently inherit — with a link to Playlist Management rather
+     than a second, competing editor (Rob's own follow-up on the ticket),
+     and disappearing from this page the moment Save actually creates it. */
+  it('shows a read-only Playlist Settings preview, defaulting Auto-Rotation/Auto-Play off, only while the Default Playlist is still unsaved', async () => {
+    renderAt('/display-types?id=landscape', true)
+    await screen.findByText('Display Preview')
+    expect(screen.queryByText(/Playlist Settings —/)).not.toBeInTheDocument()
+
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Default Playlist' }))
+    fireEvent.click(await screen.findByText('Add new playlist'))
+
+    expect(await screen.findByText('Playlist Settings — Landscape Playlist 2')).toBeInTheDocument()
+    const autoRotation = screen.getByRole('combobox', { name: 'Campaign Auto-Rotation' })
+    const autoPlay = screen.getByRole('combobox', { name: 'Campaign Auto-Play' })
+    expect(autoRotation.closest('.ant-select')).toHaveTextContent('Auto-Rotate Off')
+    expect(autoRotation.closest('.ant-select')).toHaveClass('ant-select-disabled')
+    expect(autoPlay.closest('.ant-select')).toHaveTextContent('Auto-Play Off')
+    expect(autoPlay.closest('.ant-select')).toHaveClass('ant-select-disabled')
+
+    /* A link to Playlist Management, not editable fields here. Leaving with
+       this unsaved (the new playlist only exists as a local draft) goes
+       through the usual discard-changes guard. */
+    fireEvent.click(screen.getByRole('button', { name: /Playlist Management/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'OK' }))
+    expect(await screen.findByRole('button', { name: 'Show settings for Landscape Playlist' })).toBeInTheDocument()
+  })
+
+  /* The real backend (ensureReferencedPlaylists) auto-creates the referenced
+     playlist and persists the display type's new defaultPlaylistId, so a
+     refetch after Save genuinely differs from before — this stateful mock
+     reproduces that (a static mock wouldn't: react-query's structural
+     sharing keeps the old, unsaved-draft-shaped reference around when a
+     refetch returns data that looks identical to what's already cached). */
+  it('no longer shows the Playlist Settings preview once the new Default Playlist has been saved', async () => {
+    let savedLandscape = landscape
+    const newPlaylists: { id: string; name: string; autoCreatedFor: string; playlistSettings: Record<string, unknown>; assignments: never[] }[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, opts?: RequestInit) => {
+      const path = url.split('?')[0]
+      if (opts?.method === 'PUT' && path === '/api/admin/v1/display-types/landscape/record') {
+        const body = JSON.parse(String(opts.body))
+        if (body.defaultPlaylistId && !newPlaylists.some((p) => p.id === body.defaultPlaylistId) && body.defaultPlaylistId !== 'pl_landscape') {
+          newPlaylists.push({ id: body.defaultPlaylistId, name: 'Landscape Playlist 2', autoCreatedFor: 'landscape', playlistSettings: body.playlistSettings ?? {}, assignments: [] })
+        }
+        savedLandscape = body
+        return new Response(JSON.stringify(body), { status: 200 })
+      }
+      if (path === '/api/admin/v1/display-types') return new Response(JSON.stringify({ items: [savedLandscape, menuBoard] }), { status: 200 })
+      if (path === '/api/admin/v1/playlists') {
+        const base = (responses['/api/admin/v1/playlists'] as { items: unknown[] }).items
+        return new Response(JSON.stringify({ items: [...base, ...newPlaylists] }), { status: 200 })
+      }
+      return new Response(JSON.stringify(responses[path] ?? {}), { status: 200 })
+    }))
+
+    renderAt('/display-types?id=landscape', true)
+    await screen.findByText('Display Preview')
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Default Playlist' }))
+    fireEvent.click(await screen.findByText('Add new playlist'))
+    expect(await screen.findByText(/Playlist Settings —/)).toBeInTheDocument()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(screen.queryByText(/Playlist Settings —/)).not.toBeInTheDocument())
   })
 })

@@ -2,7 +2,7 @@
    draft and applied with Save changes. */
 import { useQueryClient } from '@tanstack/react-query'
 import { App, Spin } from 'antd'
-import type { DeleteCheck, DisplayType } from '@ph-dsp/types'
+import { NEW_PLAYLIST_SETTINGS_DEFAULTS, type DeleteCheck, type DisplayType } from '@ph-dsp/types'
 import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { ApiRequestError } from '../../api/client'
@@ -49,9 +49,13 @@ export function DisplayTypesPage({ flags }: { flags: Flags }) {
     setDraft((cur) => (cur && d ? { ...cur, types: cur.types.map((t) => (t.id === d.id ? fn(t) : t)) } : cur))
 
   const allPlaylists: PlaylistOption[] = [
-    ...(playlists.data ?? []).map((p) => ({ id: p.id, name: p.name, autoCreatedFor: p.autoCreatedFor ?? null })),
+    ...(playlists.data ?? []).map((p) => ({ id: p.id, name: p.name, autoCreatedFor: p.autoCreatedFor ?? null, playlistSettings: p.playlistSettings ?? {} })),
     ...(draft?.newPlaylists ?? []),
   ]
+  /* A playlist still only in `draft.newPlaylists` has never been saved — no
+     real playlist exists for it yet on Playlist Management. */
+  const isNewPlaylist = (id: string | undefined) => !!id && !(playlists.data ?? []).some((p) => p.id === id) && (draft?.newPlaylists ?? []).some((p) => p.id === id)
+
   /* Zone playlists are created on demand, named "<Display Type> / Zone n". */
   const zonePlaylistId = (n: number) => {
     if (!d) return ''
@@ -59,7 +63,7 @@ export function DisplayTypesPage({ flags }: { flags: Flags }) {
     const found = allPlaylists.find((p) => p.name === name)
     if (found) return found.id
     const id = `pl_zone_${d.id}_${n}`
-    setDraft((cur) => (cur && !cur.newPlaylists.some((p) => p.id === id) ? { ...cur, newPlaylists: [...cur.newPlaylists, { id, name, autoCreatedFor: d.id }] } : cur))
+    setDraft((cur) => (cur && !cur.newPlaylists.some((p) => p.id === id) ? { ...cur, newPlaylists: [...cur.newPlaylists, { id, name, autoCreatedFor: d.id, playlistSettings: { ...NEW_PLAYLIST_SETTINGS_DEFAULTS } }] } : cur))
     return id
   }
 
@@ -68,13 +72,17 @@ export function DisplayTypesPage({ flags }: { flags: Flags }) {
      it's ready to define its own multi-zone layout — edited on this same
      page, never in Playlist Management — the moment it's picked as the
      default. Named uniquely so two "Add new playlist" clicks on the same
-     display type don't collide. */
+     display type don't collide. Starts with Auto-Rotation/Auto-Play off
+     (NEW_PLAYLIST_SETTINGS_DEFAULTS, ticket 27 Sep 2026) — the same defaults
+     `ensureReferencedPlaylists` gives it server-side once Save actually
+     creates it — shown as a read-only preview right here in the meantime
+     (see the Playlist Settings block in DisplayTypeForm). */
   const newPlaylistId = () => {
     if (!d) return ''
     let name = `${d.name} Playlist`
     for (let n = 2; allPlaylists.some((p) => p.name === name); n += 1) name = `${d.name} Playlist ${n}`
     const id = `pl_new_${d.id}_${Date.now()}`
-    setDraft((cur) => (cur ? { ...cur, newPlaylists: [...cur.newPlaylists, { id, name, autoCreatedFor: d.id }] } : cur))
+    setDraft((cur) => (cur ? { ...cur, newPlaylists: [...cur.newPlaylists, { id, name, autoCreatedFor: d.id, playlistSettings: { ...NEW_PLAYLIST_SETTINGS_DEFAULTS } }] } : cur))
     return id
   }
 
@@ -85,7 +93,7 @@ export function DisplayTypesPage({ flags }: { flags: Flags }) {
       setDraft((cur) => {
         const base = saved ?? cur
         if (!base) return cur
-        return { types: [...base.types, newDisplayType(id)], newPlaylists: [{ id: `pl_${id}`, name: 'New Display Type Playlist', autoCreatedFor: id }] }
+        return { types: [...base.types, newDisplayType(id)], newPlaylists: [{ id: `pl_${id}`, name: 'New Display Type Playlist', autoCreatedFor: id, playlistSettings: { ...NEW_PLAYLIST_SETTINGS_DEFAULTS } }] }
       })
       select(id)
     })
@@ -160,7 +168,8 @@ export function DisplayTypesPage({ flags }: { flags: Flags }) {
   if (!draft || !d) return <Spin />
   return (
     <ListPageLayout list={<DisplayTypeList types={draft.types} selectedId={d.id} onSelect={onSelect} onNew={onNew} onDelete={onDelete} />}>
-      <DisplayTypeForm key={d.id} d={d} update={update} playlists={allPlaylists} zonePlaylistId={zonePlaylistId} onAddPlaylist={newPlaylistId} />
+      <DisplayTypeForm key={d.id} d={d} update={update} playlists={allPlaylists} zonePlaylistId={zonePlaylistId} onAddPlaylist={newPlaylistId}
+        isNewPlaylist={isNewPlaylist} />
       <SaveBar dirty={dirty} saving={saving} onSave={onSave} onCancel={onCancel} saveOnEnter />
       {deleting && (
         <DeleteDisplayType name={deleting.name} check={deleting.check} deleting={deleting.busy} onDelete={confirmDelete} onClose={() => setDeleting(null)} />

@@ -28,6 +28,10 @@ describe('display types — POC stand-in endpoints', () => {
     expect(res.statusCode).toBe(201)
     expectMatchesContract('POST', '/admin/v1/display-types', 201, res.json())
     expect(ctx.playlists.get('pl_dt_new')).toMatchObject({ name: 'New Display Type Playlist', autoCreatedFor: 'dt_new' })
+    /* Ticket, 27 Sep 2026: a freshly auto-created playlist starts with
+       Auto-Rotation/Auto-Play explicitly off, not the "{}" that used to
+       silently inherit the platform defaults of On/On. */
+    expect(ctx.playlists.get('pl_dt_new')?.playlistSettings).toEqual({ campaignAutoRotation: 'Auto-Rotate Off', campaignAutoPlay: 'Auto-Play Off' })
   })
 
   it('POST rejects web touch points (decision 1) and a missing name', async () => {
@@ -51,6 +55,7 @@ describe('display types — POC stand-in endpoints', () => {
     expect(res.json().name).toBe('Landscape HD')
     expect(res.json().phExtensions).toEqual(landscape.phExtensions)
     expect(ctx.playlists.get('pl_zone_landscape_1')).toMatchObject({ name: 'Landscape HD / Zone 1', autoCreatedFor: 'landscape' })
+    expect(ctx.playlists.get('pl_zone_landscape_1')?.playlistSettings).toEqual({ campaignAutoRotation: 'Auto-Rotate Off', campaignAutoPlay: 'Auto-Play Off' })
   })
 
   it('GET …/record 404s for an unknown id, with the error shape', async () => {
