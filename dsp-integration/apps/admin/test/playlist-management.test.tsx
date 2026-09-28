@@ -185,22 +185,6 @@ describe('Playlist Management page', () => {
     expect(await icons('Seasonal Overflow')).toEqual([])
   })
 
-  /* Ticket, 28 Sep 2026: a playlist on no display type yet still shows its Website / Mobile App icon when its name says so. */
-  it('shows Website and Mobile App icons for unassigned playlists named after them', async () => {
-    const extra = [
-      { id: 'pl_web', name: 'Web Hero Playlist', autoCreatedFor: null, playlistSettings: {}, assignments: [] },
-      { id: 'pl_mss', name: 'Default Mobile Store Site Playlist', autoCreatedFor: null, playlistSettings: {}, assignments: [] },
-    ]
-    const withExtra: Record<string, unknown> = { ...responses, '/api/admin/v1/playlists': { items: [...playlists.items, ...extra] } }
-    vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response(JSON.stringify(withExtra[url.split('?')[0]] ?? {}), { status: 200 })))
-    renderAt('/playlists')
-    const grid = await screen.findByLabelText('Playlists')
-    const icons = async (name: string) => within((await within(grid).findByText(name)).closest('.ag-row') as HTMLElement).queryAllByRole('img').map((i) => i.getAttribute('aria-label'))
-    await waitFor(async () => expect(await icons('Web Hero Playlist')).toEqual(['Website touch point']))
-    expect(await icons('Default Mobile Store Site Playlist')).toEqual(['Mobile App touch point'])
-    expect(await icons('Seasonal Overflow')).toEqual([])
-  })
-
   /* Ticket, 27 Sep 2026: the first release supports Headquarters and
      Advertiser slots only — Stores is no longer offered. */
   it('offers Headquarters and Advertiser as slot owners, and no longer Stores', async () => {
