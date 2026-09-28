@@ -347,9 +347,20 @@ not offered.
   slots a zone is **six positions** on Available Inventory, two under each
   zone's playlist. **A position is still identified by display type + slot
   number** (`PH-CORE-BOUNDARIES.md` "At most one campaign per display type,
-  slot and play window") — the segments just make slot 5 "Zone 3's first
-  slot" — and each position's share of voice, slot duration and billing are
-  of its own zone's rotation, not of every zone's slots together. The API
+  slot and play window") — the flat `slot` field spans every zone (so the
+  segments make it 5 for "Zone 3's first slot"), and every internal
+  reference to a position — `PUT`, the exchange, billing, migrations —
+  keys on that flat number, unchanged by the rest of this paragraph.
+  **What Available Inventory *shows* in its Slot column is different**
+  (`AvailableInventoryRow.zoneSlot`, ticket 28 Sep 2026 — Rob: setting Zone
+  2's first slot showed as "Slot 4" in the table, since each zone runs its
+  own separate playlist and rotation and a flat cross-zone number isn't
+  what that rotation actually uses): a display-only number that restarts
+  at 1 for each zone's own segment, so Zone 3's first slot reads "Slot 1"
+  there, same as Zone 1's and Zone 2's. Equal to `slot` when the display
+  type isn't multi-zone. Each position's share of voice, slot duration and
+  billing are of its own zone's rotation, not of every zone's slots
+  together. The API
   rejects a slot list whose length isn't the sum of the zone caps, or a slot
   in the wrong zone's segment; on a single-zone display type `zoneId` must
   be absent. A multi-zone display type saved before this (one shared slot

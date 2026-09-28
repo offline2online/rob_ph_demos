@@ -235,7 +235,7 @@ function AssignedCell({ data, context }: IP) {
   ]
   return (
     <Pills
-      label={`${data.displayTypeName} slot ${data.slot}: assigned to`}
+      label={`${data.displayTypeName} slot ${data.zoneSlot}: assigned to`}
       placeholder="All DSPs"
       canEdit={c.canEdit}
       value={assignedValues(a)}
@@ -274,7 +274,7 @@ function TargetingCell({ data, context }: IP) {
   const value = edited(c, data).supportedTargeting
   return (
     <Pills
-      label={`${data.displayTypeName} slot ${data.slot}: targeting supported`}
+      label={`${data.displayTypeName} slot ${data.zoneSlot}: targeting supported`}
       canEdit={c.canEdit}
       value={value}
       options={[{
@@ -309,7 +309,7 @@ function ReservePriceCell({ data, context }: IP) {
   return (
     <div className="flex w-full min-w-0 items-center gap-1">
       <InputNumber
-        size="small" aria-label={`${data.displayTypeName} slot ${data.slot}: reserve price${overridden ? ' (override)' : ''}`} min={0} step={1} style={{ width: 92 }}
+        size="small" aria-label={`${data.displayTypeName} slot ${data.zoneSlot}: reserve price${overridden ? ' (override)' : ''}`} min={0} step={1} style={{ width: 92 }}
         placeholder="None" prefix={c.currency} value={value ?? undefined}
         onChange={(v) => {
           const next = v === null || v === undefined ? null : Number(v)
@@ -319,7 +319,7 @@ function ReservePriceCell({ data, context }: IP) {
       />
       {overridden ? (
         <Tooltip title={`Reset to ${data.displayTypeName}'s reserve price default`}>
-          <Button type="text" size="small" className="px-1" aria-label={`${data.displayTypeName} slot ${data.slot}: reset reserve price to the display type's default`}
+          <Button type="text" size="small" className="px-1" aria-label={`${data.displayTypeName} slot ${data.zoneSlot}: reset reserve price to the display type's default`}
             icon={<Icon name="settings_backup_restore" size={13} />} onClick={() => c.set(slotKey(data), { reservePrice: null })} />
         </Tooltip>
       ) : value !== null && (
@@ -328,7 +328,7 @@ function ReservePriceCell({ data, context }: IP) {
            override is always a real premium, never a way to opt one slot
            out while its siblings have one. */
         <Tooltip title={`Override just this slot, independent of ${data.displayTypeName}'s other slots`}>
-          <Button type="text" size="small" className="px-1" aria-label={`${data.displayTypeName} slot ${data.slot}: override the reserve price for just this slot`}
+          <Button type="text" size="small" className="px-1" aria-label={`${data.displayTypeName} slot ${data.zoneSlot}: override the reserve price for just this slot`}
             icon={<Icon name="edit" size={13} />} onClick={() => c.set(slotKey(data), { reservePrice: value })} />
         </Tooltip>
       )}
@@ -363,7 +363,7 @@ function BillingUnitCell({ data, context }: IP) {
   return (
     <div className="flex w-full min-w-0 items-center gap-1">
       <InputNumber
-        size="small" aria-label={`${data.displayTypeName} slot ${data.slot}: billing unit (hours)${overridden ? ' (override)' : ''}`} min={1} step={1} style={{ width: 84 }}
+        size="small" aria-label={`${data.displayTypeName} slot ${data.zoneSlot}: billing unit (hours)${overridden ? ' (override)' : ''}`} min={1} step={1} style={{ width: 84 }}
         suffix="h" value={value}
         onChange={(v) => {
           const next = v === null || v === undefined ? DEFAULT_BILLING_UNIT_HOURS : Number(v)
@@ -373,12 +373,12 @@ function BillingUnitCell({ data, context }: IP) {
       />
       {overridden ? (
         <Tooltip title={`Reset to ${data.displayTypeName}'s billing unit default`}>
-          <Button type="text" size="small" className="px-1" aria-label={`${data.displayTypeName} slot ${data.slot}: reset billing unit to the display type's default`}
+          <Button type="text" size="small" className="px-1" aria-label={`${data.displayTypeName} slot ${data.zoneSlot}: reset billing unit to the display type's default`}
             icon={<Icon name="settings_backup_restore" size={13} />} onClick={() => c.set(slotKey(data), { billingUnitHours: null })} />
         </Tooltip>
       ) : (
         <Tooltip title={`Override just this slot, independent of ${data.displayTypeName}'s other slots`}>
-          <Button type="text" size="small" className="px-1" aria-label={`${data.displayTypeName} slot ${data.slot}: override the billing unit for just this slot`}
+          <Button type="text" size="small" className="px-1" aria-label={`${data.displayTypeName} slot ${data.zoneSlot}: override the billing unit for just this slot`}
             icon={<Icon name="edit" size={13} />} onClick={() => c.set(slotKey(data), { billingUnitHours: value })} />
         </Tooltip>
       )}
@@ -409,7 +409,7 @@ function MaxCampaignsCell({ data, context }: IP) {
   return (
     <div className="flex w-full min-w-0 items-center gap-1">
       <InputNumber
-        size="small" aria-label={`${data.displayTypeName} slot ${data.slot}: max campaigns${overridden ? ' (override)' : ''}`} min={MIN_MAX_CAMPAIGNS} max={MAX_MAX_CAMPAIGNS} step={1} style={{ width: 72 }}
+        size="small" aria-label={`${data.displayTypeName} slot ${data.zoneSlot}: max campaigns${overridden ? ' (override)' : ''}`} min={MIN_MAX_CAMPAIGNS} max={MAX_MAX_CAMPAIGNS} step={1} style={{ width: 72 }}
         value={value}
         onChange={(v) => {
           const next = v === null || v === undefined ? DEFAULT_MAX_CAMPAIGNS : Math.min(MAX_MAX_CAMPAIGNS, Math.max(MIN_MAX_CAMPAIGNS, Math.round(Number(v))))
@@ -419,12 +419,12 @@ function MaxCampaignsCell({ data, context }: IP) {
       />
       {overridden ? (
         <Tooltip title={`Reset to ${data.displayTypeName}'s max campaigns default`}>
-          <Button type="text" size="small" className="px-1" aria-label={`${data.displayTypeName} slot ${data.slot}: reset max campaigns to the display type's default`}
+          <Button type="text" size="small" className="px-1" aria-label={`${data.displayTypeName} slot ${data.zoneSlot}: reset max campaigns to the display type's default`}
             icon={<Icon name="settings_backup_restore" size={13} />} onClick={() => c.set(slotKey(data), { maxCampaigns: null })} />
         </Tooltip>
       ) : (
         <Tooltip title={`Override just this slot, independent of ${data.displayTypeName}'s other slots`}>
-          <Button type="text" size="small" className="px-1" aria-label={`${data.displayTypeName} slot ${data.slot}: override max campaigns for just this slot`}
+          <Button type="text" size="small" className="px-1" aria-label={`${data.displayTypeName} slot ${data.zoneSlot}: override max campaigns for just this slot`}
             icon={<Icon name="edit" size={13} />} onClick={() => c.set(slotKey(data), { maxCampaigns: value })} />
         </Tooltip>
       )}
@@ -466,7 +466,13 @@ export function AdvertisersPage() {
          removed Display type column. */
       headerName: 'Playlist', width: 230, minWidth: 190, cellRenderer: PlaylistCell, valueGetter: (p) => p.data?.playlistName ?? '', ...searchColumn<AvailableInventoryRow>('Playlist'),
     },
-    { headerName: 'Slot', width: 70, field: 'slot', suppressSizeToFit: true, cellStyle: { color: T.muted }, ...setColumn<AvailableInventoryRow>('Slot', invValues((r) => [String(r.slot)])) },
+    /* zoneSlot, not the flat slot field: a multi-zone display type's Slot
+       column shows this position's number within its own zone's rotation
+       (ticket, 28 Sep 2026 — Zone 2's first slot was showing as "Slot 4",
+       the flat position across every zone, when each zone runs its own
+       separate playlist and starts at slot 1). Equal to `slot` on a
+       single-zone display type. */
+    { headerName: 'Slot', width: 70, field: 'zoneSlot', suppressSizeToFit: true, cellStyle: { color: T.muted }, ...setColumn<AvailableInventoryRow>('Slot', invValues((r) => [String(r.zoneSlot)])) },
     { headerName: 'Position', width: 130, minWidth: 110, cellRenderer: SlotCell, valueGetter: (p) => p.data?.position ?? '', ...searchColumn<AvailableInventoryRow>('Position') },
     {
       headerName: 'Assigned to', width: 240, minWidth: 200, cellRenderer: AssignedCell, autoHeight: true,
