@@ -69,13 +69,24 @@ const Pill = ({ children }: { children: React.ReactNode }) => (
   <span className="inline-flex h-[22px] items-center rounded-full px-2 whitespace-nowrap" style={{ fontSize: 12, color: T.muted, background: 'rgba(0,0,0,0.04)' }}>{children}</span>
 )
 
-/* Touch points beyond this build's two (decision 1) have icons ready, so a
-   playlist never shows the wrong one if they arrive. */
-const OTHER_TOUCH_POINT_ICONS: Record<string, string> = { Website: 'language', 'Mobile Store Site': 'smartphone' }
-const iconOf = (touchPoint: string) => OTHER_TOUCH_POINT_ICONS[touchPoint] ?? touchPointIcon(touchPoint)
-const touchPointsOf = (p: Playlist, types: DisplayType[]) => {
+/* A playlist's touch point comes from the display types it fills. One that
+   fills none and wasn't auto-created for one (a Website or Mobile App
+   playlist made ahead of its display type, say) has nothing to read it from,
+   so fall back to a touch point (or the older "Mobile Store Site" name)
+   spelled out in the playlist's own name — never a guessed default, so an
+   unrecognisable name simply shows no icon (ticket, 28 Sep 2026). */
+const NAME_HINTS: [RegExp, string][] = [
+  [/\bmobile\s+app\b|\bmobile\s+store\s+site\b/i, 'Mobile App'],
+  [/\bwebsite\b|\bweb\b/i, 'Website'],
+  [/\bkiosk\b/i, 'Kiosk'],
+  [/\bdigital\s+signage\b/i, 'Digital Signage'],
+]
+const touchPointsOf = (p: Playlist, types: DisplayType[]): string[] => {
   const ids = p.assignments.length ? p.assignments.map((a) => a.displayTypeId) : p.autoCreatedFor ? [p.autoCreatedFor] : []
-  return [...new Set(ids.map((id) => types.find((t) => t.id === id)?.touchPoint).filter((t): t is DisplayType['touchPoint'] => !!t))]
+  const fromTypes = [...new Set(ids.map((id) => types.find((t) => t.id === id)?.touchPoint).filter((t): t is DisplayType['touchPoint'] => !!t))]
+  if (fromTypes.length || ids.length) return fromTypes
+  const hint = NAME_HINTS.find(([re]) => re.test(p.name))
+  return hint ? [hint[1]] : []
 }
 function TouchPointIcons({ p, types }: { p: Playlist; types: DisplayType[] }) {
   const tps = touchPointsOf(p, types)
@@ -84,7 +95,7 @@ function TouchPointIcons({ p, types }: { p: Playlist; types: DisplayType[] }) {
     <span className="inline-flex shrink-0 items-center gap-0.5">
       {tps.map((tp) => (
         <Tooltip key={tp} title={tp}>
-          <span className="inline-flex" role="img" aria-label={`${tp} touch point`}><Icon name={iconOf(tp)} size={17} style={{ color: T.primary }} /></span>
+          <span className="inline-flex" role="img" aria-label={`${tp} touch point`}><Icon name={touchPointIcon(tp)} size={17} style={{ color: T.primary }} /></span>
         </Tooltip>
       ))}
     </span>
