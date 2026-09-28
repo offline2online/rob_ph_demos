@@ -34,7 +34,7 @@ import { SummaryChip } from '../../shared/SummaryChip'
 import { useReportDirty } from '../../shared/UnsavedChanges'
 import { useDraft } from '../../shared/useDraft'
 import { T } from '../../theme/phTheme'
-import { saveDisplayTypes, savePlaylistSettings, useDisplayTypes, usePartners, usePlaylists } from '../display-types/api'
+import { saveDisplayTypes, savePlaylistSettings, useAvailableInventory, useDisplayTypes, usePartners, usePlaylists } from '../display-types/api'
 import { capSummary, isCappedFor, normaliseSlots, styleSummary } from '../display-types/model'
 import { PlaylistCapSlotsFields } from './PlaylistCapSlotsFields'
 import { PlaylistStyleFields } from './PlaylistStyleFields'
@@ -295,6 +295,10 @@ export function PlaylistManagementPage({ flags }: { flags: Flags }) {
   const playlists = usePlaylists()
   const types = useDisplayTypes()
   const partners = usePartners(slotAssignment)
+  /* Same query Advertisers / Inventory itself uses (ticket, 28 Sep 2026) —
+     already prefetched in the background whenever DSP integration is on, so
+     this rarely costs its own round trip. */
+  const availableInventory = useAvailableInventory(slotAssignment)
   /* Same "greyed out, not hidden, while DSP integration is off" logic as
      Display Types used to apply (Rob, 24 Sep 2026), now here with it. */
   const features = useFeatures(slotAssignment)
@@ -414,10 +418,14 @@ export function PlaylistManagementPage({ flags }: { flags: Flags }) {
 
   if (!playlists.data || !draft) return <Spin />
   const unused = items.filter((p) => !p.assignments.length).length
+  const advertiserSlots = availableInventory.data?.items?.length
   const n = deleting?.check.dependents.length ?? 0
   return (
     <div>
-      <div className="mb-3" style={{ fontSize: 14 }}><b>{items.length}</b> Playlists · <b>{unused}</b> unused</div>
+      <div className="mb-3" style={{ fontSize: 14 }}>
+        <b>{items.length}</b> Playlists · <b>{unused}</b> unused
+        {slotAssignment && advertiserSlots !== undefined && <> · <b>{advertiserSlots}</b> advertiser slots</>}
+      </div>
       <Grid<Row>
         label="Playlists"
         rows={rows}
