@@ -401,7 +401,16 @@ never redeployed — the board said live, the site wasn't. Fixed by having
 right after a successful merge that touched `backlog-tracker/` (an
 explicit API dispatch, unlike a push event, isn't subject to that
 suppression) — needs `actions: write` in this workflow's own
-`permissions:` block. If a future edit to this script or workflow ever
+`permissions:` block. **The same goes for every other service deployed by
+its own push-triggered workflow**: `HOSTED_DEPLOYS` in the script lists
+them (today the DSP integration's hosted API, `dsp-api-deploy.yml`, with
+the paths its `on.push.paths` names), and `finishTrain` dispatches each
+one whose source the merged train changed, saying so on the cards. Added
+28 Sep 2026 after eleven API commits merged by the train over two days
+never reached the hosted API while the GitHub Pages client was rebuilt
+from every one of them — saves were rejected by a server two days behind
+the client, and deploying the API by hand then ran a migration against
+live data. If a future edit to this script or workflow ever
 looks like it doesn't need that explicit trigger, it's wrong — this is
 the whole reason it exists.
 
