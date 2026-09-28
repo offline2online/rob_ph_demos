@@ -16,19 +16,36 @@
    ("Default settings", or "N settings changed"), and the Playlist
    Management CTA sits inside the panel rather than on its header, so it
    isn't competing with the rest of the form (failed-testing feedback,
-   27 Sep 2026). */
+   27 Sep 2026).
+
+   While the display type itself is still being created (`capSlots` set,
+   ticket 28 Sep 2026) the tab also carries Maximum Campaigns Played In
+   Rotation and slot assignment — the same block Playlist Management shows
+   per assignment — so a Digital Signage screen's rotation and its
+   Headquarters/Advertiser slots can be set before the first Save, as the
+   display type form did before those moved. */
 import { Button, Tabs } from 'antd'
-import type { Playlist } from '@ph-dsp/types'
+import type { DisplayType, Partner, Playlist } from '@ph-dsp/types'
 import { useNavigate } from 'react-router-dom'
 import { CollapsiblePanel } from '../../../shared/CollapsiblePanel'
 import { Icon } from '../../../shared/Icon'
 import { SummaryChip } from '../../../shared/SummaryChip'
 import { T } from '../../../theme/phTheme'
+import { PlaylistCapSlotsFields } from '../../playlist-management/PlaylistCapSlotsFields'
 import { PlaylistStyleFields } from '../../playlist-management/PlaylistStyleFields'
-import { styleSummary } from '../model'
+import { capSummary, expectedSlotCount, styleSummary } from '../model'
 import type { PlaylistOption } from '../DisplayTypeForm'
 
-export function PlaylistSettingsPanel({ playlist, editable, onUpdate, open, onToggle }: {
+export interface CapSlotsProps {
+  d: DisplayType
+  update: (fn: (d: DisplayType) => DisplayType) => void
+  slotAssignment: boolean
+  partners: Partner[]
+  advertiserOpen: (i: number) => boolean
+  onFixConnection: (partnerId: string) => void
+}
+
+export function PlaylistSettingsPanel({ playlist, editable, onUpdate, open, onToggle, capSlots = null }: {
   playlist: PlaylistOption | undefined
   /* True while `playlist` is still a local draft, with no Playlist
      Management row of its own to edit it from yet. */
@@ -36,6 +53,9 @@ export function PlaylistSettingsPanel({ playlist, editable, onUpdate, open, onTo
   onUpdate: (fn: (p: Playlist) => Playlist) => void
   open: boolean
   onToggle: () => void
+  /* Set while the display type is still new: the rotation cap and slots
+     are edited here too. */
+  capSlots?: CapSlotsProps | null
 }) {
   const navigate = useNavigate()
   if (!playlist) return null
@@ -48,7 +68,10 @@ export function PlaylistSettingsPanel({ playlist, editable, onUpdate, open, onTo
       title="Playlist Settings"
       open={open}
       onToggle={onToggle}
-      summary={styleSummary(asPlaylist).map(({ key, ...c }) => <SummaryChip key={key} {...c} />)}
+      summary={[
+        ...(capSlots && expectedSlotCount(capSlots.d) > 0 ? capSummary(capSlots.d, capSlots.slotAssignment) : []).map(({ key, ...c }) => <SummaryChip key={`cap-${key}`} {...c} />),
+        ...styleSummary(asPlaylist).map(({ key, ...c }) => <SummaryChip key={key} {...c} />),
+      ]}
     >
       <div className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1" style={{ fontSize: 12.5, color: T.muted }}>
         <span>
@@ -64,7 +87,16 @@ export function PlaylistSettingsPanel({ playlist, editable, onUpdate, open, onTo
         items={[{
           key: 'default',
           label: 'Default settings',
-          children: <PlaylistStyleFields p={asPlaylist} update={onUpdate} readOnly={!editable} />,
+          children: (
+            <>
+              <PlaylistStyleFields p={asPlaylist} update={onUpdate} readOnly={!editable} />
+              {capSlots && (
+                <div className="mt-3.5">
+                  <PlaylistCapSlotsFields d={capSlots.d} update={capSlots.update} slotAssignment={capSlots.slotAssignment} advertiserOpen={capSlots.advertiserOpen} partners={capSlots.partners} onFixConnection={capSlots.onFixConnection} />
+                </div>
+              )}
+            </>
+          ),
         }]}
       />
     </CollapsiblePanel>

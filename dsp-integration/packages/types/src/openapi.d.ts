@@ -1289,8 +1289,8 @@ export interface components {
             playlistName: string;
             /**
              * @description The id of the playlist this row's position sits under: the zone
-             *     playlist its slot is tagged to (`Slot.zoneId`, spec §1) when the
-             *     display type is multi-zone and the slot names one, else the
+             *     playlist its slot belongs to (`Slot.zoneId`, spec §1) when the
+             *     display type is multi-zone, else the
              *     display type's own default playlist. Null only when neither
              *     resolves to a real playlist record. playlistName is what is
              *     shown; this is for linking/lookup (Available Inventory,
@@ -1690,20 +1690,23 @@ export interface components {
                 /** @enum {string} */
                 owner: "internal" | "advertiser" | "retail";
                 /**
-                 * @description Which zone of a multi-zone display type this slot's position
-                 *     belongs to (id of an entry in `multiZone.zones`), for
-                 *     attributing it to that zone's own playlist on Available
-                 *     Inventory (ticket "Available Inventory: playlist-primary
-                 *     table…", 27 Sep 2026). Set by the slot editor, like label
-                 *     and owner — never by Advertisers / Inventory. Absent or
-                 *     null means "not zone-specific": the slot is attributed to
-                 *     the display type's own default playlist instead, which is
-                 *     the only case on a non-multi-zone display type. Purely an
-                 *     attribution/display detail — it does not change what
-                 *     identifies a sellable position (still display type + slot,
-                 *     PH-CORE-BOUNDARIES.md "At most one campaign per display
-                 *     type, slot and play window") or anything about booking,
-                 *     pricing or delivery.
+                 * @description Which zone of a multi-zone display type this slot belongs
+                 *     to (id of an entry in `multiZone.zones`). Each zone runs
+                 *     its own playlist and so its own rotation (ticket, 28 Sep
+                 *     2026): the slot list is one segment per zone, in zone
+                 *     order, each segment sized by that zone's own
+                 *     `maximumCampaignsPlayedInRotation` (on the zone entry),
+                 *     and every slot in a segment carries that zone's id — the
+                 *     server rejects a slot in the wrong segment. Absent or
+                 *     null only on a single-zone display type, whose slots
+                 *     follow the display type's own cap. Available Inventory
+                 *     shows a slot under its zone's playlist. This does not
+                 *     change what identifies a sellable position (still display
+                 *     type + slot number, PH-CORE-BOUNDARIES.md "At most one
+                 *     campaign per display type, slot and play window") or
+                 *     anything about booking, pricing or delivery — a
+                 *     three-zone Menu Board with two slots a zone simply has six
+                 *     positions.
                  */
                 zoneId?: string | null;
                 /**

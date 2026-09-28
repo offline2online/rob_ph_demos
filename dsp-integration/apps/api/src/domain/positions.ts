@@ -10,7 +10,7 @@ import { advertiserSlug, assignedOf, reservePriceOf, supportedTargetingOf, type 
 import { invitedPartnerIds, isActiveAt, isInvitedBuyer } from './buyersLists'
 import { effectiveLists, isBlocked, isOn } from './lists'
 import { effectiveFloors } from './pricing'
-import { slotCountOf, slotDurationSec } from './slots'
+import { rotationSizeOf, slotDurationSec } from './slots'
 
 export interface PositionRef {
   positionId: string
@@ -240,7 +240,9 @@ export function positionView(ctx: Context, p: PositionRef, c: Caller) {
   const dt = p.displayType
   /* Counts, never the display rows (review, 24 Sep 2026). */
   const displays = ctx.displays.summaryByDisplayType(dt.id)
-  const n = slotCountOf(dt)
+  /* The rotation this slot plays in — its zone's own on a multi-zone
+     display type (ticket, 28 Sep 2026), not every zone's slots together. */
+  const n = rotationSizeOf(dt, p.slot)
   const loop = loopLengthSec(ctx, dt)
   const company = ctx.company.get()
   const multiplier = c.advertiser ? ctx.company.advertiserSetting(c.advertiser.id).floorMultiplier : 1
@@ -258,7 +260,7 @@ export function positionView(ctx: Context, p: PositionRef, c: Caller) {
       width: dt.displayCanvasSize.width,
       height: dt.displayCanvasSize.height,
       orientation: venue?.orientation ?? (dt.displayCanvasSize.width >= dt.displayCanvasSize.height ? 'landscape' : 'portrait'),
-      slotDurationSec: slotDurationSec(dt) ?? (n ? loop / n : loop),
+      slotDurationSec: slotDurationSec(dt, n) ?? (n ? loop / n : loop),
       loopLengthSec: loop,
       shareOfVoice: n ? Math.round((1 / n) * 1000) / 1000 : 1,
       ...(venue?.openOohVenueType ? { openOohVenueType: venue.openOohVenueType } : {}),

@@ -70,16 +70,19 @@ export const SEED_DISPLAY_TYPES = [
     id: 'menu_board', name: 'Menu Board — Long Format', touchPoint: 'Digital Signage', description: null, displayCanvasSize: { width: 5760, height: 1080 }, backgroundColor: '#111111',
     defaultPlaylistId: 'pl_menu', playlistSettings: playlistSettings(3), qrControl: qrControl(),
     enabledFeatures: { ...blankFeatures(), visionAi: { ...blankFeatures().visionAi, enabled: true } },
+    /* Each zone runs its own playlist, with its own Maximum Campaigns Played
+       In Rotation and slots (28 Sep 2026): Zone 1 carries the three seeded
+       slots; Zones 2 and 3 are left at the default (Unlimited, no slots). */
     multiZone: { enabled: true, zones: [
-      { id: 'z1', name: 'Zone 1', x: 0, y: 0, width: 33.3, height: 100, playlistId: 'pl_zone_menu_board_1' },
-      { id: 'z2', name: 'Zone 2', x: 33.3, y: 0, width: 33.4, height: 100, playlistId: 'pl_zone_menu_board_2' },
-      { id: 'z3', name: 'Zone 3', x: 66.7, y: 0, width: 33.3, height: 100, playlistId: 'pl_zone_menu_board_3' },
+      { id: 'z1', name: 'Zone 1', x: 0, y: 0, width: 33.3, height: 100, playlistId: 'pl_zone_menu_board_1', maximumCampaignsPlayedInRotation: 3 },
+      { id: 'z2', name: 'Zone 2', x: 33.3, y: 0, width: 33.4, height: 100, playlistId: 'pl_zone_menu_board_2', maximumCampaignsPlayedInRotation: null },
+      { id: 'z3', name: 'Zone 3', x: 66.7, y: 0, width: 33.3, height: 100, playlistId: 'pl_zone_menu_board_3', maximumCampaignsPlayedInRotation: null },
     ] },
     phExtensions: {
       slots: [
-        slot('Priority 1', 'internal'),
-        slot('Supplier slot', 'advertiser', { partnerIds: ['p_google'], listMode: 'rtb' }),
-        slot('Store choice', 'retail', { storeScope: 'Store staff' }),
+        slot('Priority 1', 'internal', { zoneId: 'z1' }),
+        slot('Supplier slot', 'advertiser', { partnerIds: ['p_google'], listMode: 'rtb', zoneId: 'z1' }),
+        slot('Store choice', 'retail', { storeScope: 'Store staff', zoneId: 'z1' }),
       ],
       venue: { openOohVenueType: 'retail.grocery', orientation: 'landscape' as const, loopLengthSec: 45 },
     },
