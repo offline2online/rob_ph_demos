@@ -1308,7 +1308,28 @@ export interface components {
              *     27 Sep 2026).
              */
             unassigned: boolean;
+            /**
+             * @description This position's 1-based index in the display type's own flat slot
+             *     list — spans every zone (spec "one segment per zone, in zone
+             *     order"), never resets per zone. This is the position's identity
+             *     (`PH-CORE-BOUNDARIES.md` "At most one campaign per display type,
+             *     slot and play window") and what `PUT` keys edits on — it is not
+             *     what Available Inventory displays as "Slot"; see zoneSlot for that.
+             */
             slot: number;
+            /**
+             * @description This position's 1-based index within its own zone's segment of
+             *     the slot list (ticket, 28 Sep 2026: a multi-zone display's
+             *     Available Inventory row showed the flat `slot` number — e.g. 4
+             *     for Zone 2's first slot on a display with two slots per zone —
+             *     when each zone runs its own separate playlist and rotation, so
+             *     the position that actually matters to the reader is "which slot
+             *     in this zone's own rotation", always starting at 1 per zone).
+             *     Equal to `slot` when the display type isn't multi-zone, or the
+             *     slot has no `zoneId`, since there is then only one segment.
+             *     Display-only — never sent to `PUT`, which still keys on `slot`.
+             */
+            zoneSlot: number;
             position: string;
             assignedTo: components["schemas"]["AssignedTo"];
             /**

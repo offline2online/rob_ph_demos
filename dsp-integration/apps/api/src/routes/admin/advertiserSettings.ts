@@ -99,13 +99,27 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
          — this build has no such concept). Per display type, since a
          multi-zone display type's zones all share the one physical screen. */
       const unassigned = ctx.displays.summaryByDisplayType(t.id).displays === 0
+      /* zoneSlot: this slot's 1-based position within its own zone's segment
+         of the list, rather than `slot`'s flat position across every zone
+         (ticket, 28 Sep 2026 — Rob: setting Zone 2's first slot showed as
+         "Slot 4" on Available Inventory, because each zone runs its own
+         separate playlist/rotation and the flat number across all zones
+         isn't the number that rotation actually uses). Counts every slot in
+         the zone's segment, not just advertiser-owned ones, so it lines up
+         with that zone's own slot table on Playlist Management. A slot with
+         no zoneId (a single-zone display type) has only one segment, so this
+         is the same value as `slot`. */
+      const zoneSlotCounts = new Map<string | null, number>()
       ;(t.phExtensions?.slots ?? []).forEach((s, i) => {
+        const zoneKey = s.zoneId ?? null
+        const zoneSlot = (zoneSlotCounts.get(zoneKey) ?? 0) + 1
+        zoneSlotCounts.set(zoneKey, zoneSlot)
         if (s.owner !== 'advertiser') return
         const a = assignedOf(s)
         const playlistId = playlistIdOf(s)
         const playlistName = (playlistId && ctx.playlists.get(playlistId)?.name) || '—'
         items.push({
-          displayTypeId: t.id, displayTypeName: t.name, touchPoint: t.touchPoint, playlistName, playlistId, unassigned, slot: i + 1, position: s.label,
+          displayTypeId: t.id, displayTypeName: t.name, touchPoint: t.touchPoint, playlistName, playlistId, unassigned, slot: i + 1, zoneSlot, position: s.label,
           assignedTo: {
             ...a,
             partnerNames: a.partnerIds.map((id) => partners.find((p) => p.id === id)?.name ?? id),
