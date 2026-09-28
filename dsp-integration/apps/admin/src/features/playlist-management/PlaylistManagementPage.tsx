@@ -35,7 +35,7 @@ import { useReportDirty } from '../../shared/UnsavedChanges'
 import { useDraft } from '../../shared/useDraft'
 import { T } from '../../theme/phTheme'
 import { saveDisplayTypes, savePlaylistSettings, useDisplayTypes, usePartners, usePlaylists } from '../display-types/api'
-import { capSummary, isCapped, normaliseSlots, styleSummary } from '../display-types/model'
+import { capSummary, isCappedFor, normaliseSlots, styleSummary } from '../display-types/model'
 import { PlaylistCapSlotsFields } from './PlaylistCapSlotsFields'
 import { PlaylistStyleFields } from './PlaylistStyleFields'
 
@@ -44,13 +44,11 @@ export const REASSIGN_TIP = 'Reassign every display type and zone above before t
 type Row = { kind: 'playlist'; p: Playlist } | { kind: 'settings'; p: Playlist }
 interface Ctx {
   editing: string | null
-  draftName: string
   settingsExpanded: string | null
   typeName: (id: string | null | undefined) => string
-  setDraftName: (v: string) => void
   startEdit: (p: Playlist) => void
   cancelEdit: () => void
-  rename: (p: Playlist) => void
+  rename: (p: Playlist, name: string) => void
   toggleSettings: (id: string) => void
   askDelete: (p: Playlist) => void
   open: (displayTypeId: string) => void
@@ -93,20 +91,29 @@ function TouchPointIcons({ p, types }: { p: Playlist; types: DisplayType[] }) {
   )
 }
 
+/* The name being typed lives here, in the input's own component, not in
+   page state (ticket, 28 Sep 2026): as page state, every keystroke
+   re-rendered the whole grid, and this controlled input's value lagged a
+   render behind the keystroke — React reset the field to the old value and
+   then applied the new one, which pushed the caret to the end each time, so
+   a word at the start of a name couldn't be edited. */
+function RenameField({ p, onSave, onCancel }: { p: Playlist; onSave: (name: string) => void; onCancel: () => void }) {
+  const [name, setName] = useState(p.name)
+  return (
+    <div className="flex w-full min-w-0 items-center gap-1.5">
+      <Input size="small" autoFocus aria-label="Playlist name" value={name} onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') onSave(name); if (e.key === 'Escape') onCancel() }} />
+      <Button type="text" size="small" aria-label="Save name" icon={<Icon name="check" size={18} style={{ color: T.success }} />} onClick={() => onSave(name)} />
+      <Button type="text" size="small" aria-label="Cancel rename" icon={<Icon name="close" size={18} style={{ color: T.muted }} />} onClick={onCancel} />
+    </div>
+  )
+}
+
 function NameCell({ data, context }: Params) {
   if (!data) return null
   const c = context.current
   const p = data.p
-  if (c.editing === p.id) {
-    return (
-      <div className="flex w-full min-w-0 items-center gap-1.5">
-        <Input size="small" autoFocus aria-label="Playlist name" value={c.draftName} onChange={(e) => c.setDraftName(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') c.rename(p); if (e.key === 'Escape') c.cancelEdit() }} />
-        <Button type="text" size="small" aria-label="Save name" icon={<Icon name="check" size={18} style={{ color: T.success }} />} onClick={() => c.rename(p)} />
-        <Button type="text" size="small" aria-label="Cancel rename" icon={<Icon name="close" size={18} style={{ color: T.muted }} />} onClick={c.cancelEdit} />
-      </div>
-    )
-  }
+  if (c.editing === p.id) return <RenameField key={p.id} p={p} onSave={(name) => c.rename(p, name)} onCancel={c.cancelEdit} />
   return (
     <div className="min-w-0">
       <div className="flex min-w-0 items-center gap-1.5">
@@ -182,15 +189,17 @@ function SettingsToggleCell({ data, context }: Params) {
 /* Read-only summary next to the toggle: this playlist's own settings
    (always — every playlist has these, assigned or not) plus, when it has
    exactly one assignment, that assignment's slot count (ambiguous with more
-   than one, since each display type can cap the same playlist differently). */
+   than one, since each display type can cap the same playlist differently).
+   For a zone's playlist that is the zone's own slots (28 Sep 2026). */
 function SettingsSummaryCell({ data, context }: Params) {
   if (!data) return null
   const c = context.current
   const playlist = c.playlists.find((x) => x.id === data.p.id)
   const single = data.p.assignments.length === 1 ? c.types.find((t) => t.id === data.p.assignments[0].displayTypeId) : undefined
+  const zoneId = data.p.assignments[0]?.zoneId ?? null
   return (
     <span className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-      {single && isCapped(single) && capSummary(single, c.slotAssignment).map(({ key, ...chip }) => <SummaryChip key={`cap-${key}`} {...chip} />)}
+      {single && isCappedFor(single, zoneId) && capSummary(single, c.slotAssignment, zoneId).map(({ key, ...chip }) => <SummaryChip key={`cap-${key}`} {...chip} />)}
       {playlist && styleSummary(playlist).map(({ key, ...chip }) => <SummaryChip key={`style-${key}`} {...chip} />)}
     </span>
   )
@@ -271,7 +280,7 @@ function estimateSettingsHeight(p: Playlist, types: DisplayType[], slotAssignmen
     const t = types.find((x) => x.id === a.displayTypeId)
     h += 28 + CAP_BLOCK_ESTIMATE
     if (p.assignments.length > 1) h += 22
-    if (t && slotAssignment && isCapped(t)) h += SLOT_ESTIMATE
+    if (t && slotAssignment && isCappedFor(t, a.zoneId ?? null)) h += SLOT_ESTIMATE
   }
   return h
 }
@@ -301,7 +310,6 @@ export function PlaylistManagementPage({ flags }: { flags: Flags }) {
   const [saving, setSaving] = useState(false)
 
   const [editing, setEditing] = useState<string | null>(null)
-  const [draftName, setDraftName] = useState('')
   const [settingsExpanded, setSettingsExpanded] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<{ p: Playlist; check: DeleteCheck; busy: boolean } | null>(null)
 
@@ -354,15 +362,14 @@ export function PlaylistManagementPage({ flags }: { flags: Flags }) {
   const onCancel = () => reset()
 
   const ctx: Ctx = {
-    editing, draftName, settingsExpanded,
+    editing, settingsExpanded,
     typeName: (id) => (id ? typeNames.get(id) ?? id : ''),
-    setDraftName,
-    startEdit: (p) => { setEditing(p.id); setDraftName(p.name) },
+    startEdit: (p) => setEditing(p.id),
     cancelEdit: () => setEditing(null),
-    rename: async (p) => {
-      if (!draftName.trim()) return
+    rename: async (p, name) => {
+      if (!name.trim()) return
       try {
-        await api('PUT', `/admin/v1/playlists/${p.id}/record`, { name: draftName.trim() })
+        await api('PUT', `/admin/v1/playlists/${p.id}/record`, { name: name.trim() })
         setEditing(null)
         await refresh()
       } catch (e) { fail(e, 'Could not rename the playlist.') }
