@@ -3,7 +3,10 @@ import { NEW_PLAYLIST_SETTINGS_DEFAULTS, TOUCH_POINTS, type DisplayType, type Pl
 import type { PlaylistRecord, PlaylistSource } from '../platform/PlaylistSource'
 
 type Detail = { field: string; reason: string }
-interface Zone { id: string; name: string; playlistId?: string }
+/* A zone runs its own playlist, so it has its own Maximum Campaigns Played
+   In Rotation and its own slots (ticket, 28 Sep 2026): null/absent = the
+   platform default (Unlimited — no slots). */
+export interface Zone { id: string; name: string; playlistId?: string; maximumCampaignsPlayedInRotation?: number | null }
 
 export const zonesOf = (dt: DisplayType): Zone[] => {
   const mz = dt.multiZone as { enabled?: boolean; zones?: Zone[] } | undefined
@@ -43,17 +46,20 @@ export function validatePlaylistSettings(body: unknown): Detail[] {
 /* Playlists a display type references but that don't exist yet are created
    with it: its auto-created default playlist, and zone playlists created on
    demand (spec §1 "zone playlists created on demand ... applied with Save
-   changes"). Auto-Rotation and Auto-Play start explicitly off
-   (NEW_PLAYLIST_SETTINGS_DEFAULTS, ticket 27 Sep 2026) rather than left
-   `{}`, which silently inherited PLATFORM_DEFAULTS.playlistSettings' "On"
-   values — a playlist nobody has configured yet shouldn't start rotating
-   and playing campaigns. A client that shows its own editable copy of these
-   fields while the playlist is still being created (Display Types' inline
-   Playlist Settings block) overwrites this via the normal /settings PUT
-   once the playlist exists. */
+   changes"). A brand-new display type's own default playlist starts with
+   every setting at its default — `{}`, nothing overridden (ticket, 28 Sep
+   2026: "ensure the default settings are used when creating a new display
+   type"). A playlist added to an existing display type ("Add new
+   playlist") or created for a zone starts with Auto-Rotation and Auto-Play
+   explicitly off instead (NEW_PLAYLIST_SETTINGS_DEFAULTS, ticket 27 Sep
+   2026) — a playlist nobody has configured yet shouldn't start rotating
+   and playing campaigns. Either way, a client that shows its own editable
+   copy of these fields while the playlist is still being created (Display
+   Types' Playlist Settings panel) sends what it showed via the normal
+   /settings PUT once the playlist exists. */
 export function ensureReferencedPlaylists(dt: DisplayType, playlists: PlaylistSource, isNew: boolean) {
   if (dt.defaultPlaylistId && !playlists.get(dt.defaultPlaylistId)) {
-    playlists.create({ id: dt.defaultPlaylistId, name: isNew ? 'New Display Type Playlist' : `${dt.name} Playlist`, autoCreatedFor: dt.id, playlistSettings: { ...NEW_PLAYLIST_SETTINGS_DEFAULTS } })
+    playlists.create({ id: dt.defaultPlaylistId, name: isNew ? 'New Display Type Playlist' : `${dt.name} Playlist`, autoCreatedFor: dt.id, playlistSettings: isNew ? {} : { ...NEW_PLAYLIST_SETTINGS_DEFAULTS } })
   }
   for (const z of zonesOf(dt)) {
     if (z.playlistId && !playlists.get(z.playlistId)) playlists.create({ id: z.playlistId, name: `${dt.name} / ${z.name}`, autoCreatedFor: dt.id, playlistSettings: { ...NEW_PLAYLIST_SETTINGS_DEFAULTS } })

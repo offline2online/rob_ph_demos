@@ -53,7 +53,10 @@ export interface QrControl {
   [k: string]: unknown
 }
 export interface FeatureConfig { enabled: boolean; [k: string]: unknown }
-export interface Zone { id: string; name: string; x: number; y: number; width: number; height: number; playlistId: string; [k: string]: unknown }
+/* A zone carries its own Maximum Campaigns Played In Rotation (28 Sep 2026):
+   each zone runs its own playlist, so each has its own rotation and its own
+   slots. null/absent = the platform default (Unlimited, no slots). */
+export interface Zone { id: string; name: string; x: number; y: number; width: number; height: number; playlistId: string; maximumCampaignsPlayedInRotation?: number | null; [k: string]: unknown }
 export interface MultiZone { enabled: boolean; zones: Zone[] }
 
 export const capOf = (d: DisplayType) => d.playlistSettings as unknown as CapSettings
@@ -82,12 +85,13 @@ export const blankFeatures = (): Record<string, FeatureConfig> => ({
 })
 
 /* New display type (prototype: "New display type"): Digital Signage, 1920×1080,
-   #333333, rotation explicitly Unlimited, with an auto-created playlist. */
+   #333333, every playlist setting at its default (rotation "Default
+   (Unlimited)", ticket 28 Sep 2026), with an auto-created playlist. */
 export function newDisplayType(id: string): DisplayType {
   return {
     id, name: '', touchPoint: 'Digital Signage', description: null,
     displayCanvasSize: { width: 1920, height: 1080 }, backgroundColor: '#333333', defaultPlaylistId: `pl_${id}`,
-    playlistSettings: { maximumCampaignsPlayedInRotation: UNLIMITED },
+    playlistSettings: { maximumCampaignsPlayedInRotation: null },
     qrControl: blankQrControl() as unknown as DisplayType['qrControl'],
     enabledFeatures: blankFeatures() as unknown as DisplayType['enabledFeatures'],
     multiZone: { enabled: false, zones: [] },
@@ -113,9 +117,78 @@ export const resizeSlots = (slots: Slot[], n: number): Slot[] => {
   while (next.length < n) next.push(newSlot(next.length))
   return next.slice(0, Math.max(0, n))
 }
-/* Slots always match the rotation cap in the editor. */
-export const normaliseSlots = (d: DisplayType): DisplayType =>
-  slotsOf(d).length === slotCount(d) ? d : { ...d, phExtensions: { ...(d.phExtensions ?? {}), slots: resizeSlots(slotsOf(d), slotCount(d)) } }
+
+/* ---------------------------------------------------------------- zones */
+
+/* Per-zone rotation and slots (ticket, 28 Sep 2026). On a multi-zone
+   display type every zone runs its own playlist, so each zone has its own
+   Maximum Campaigns Played In Rotation and its own slots: the display type's
+   one `phExtensions.slots` list is one segment per zone, in zone order, each
+   slot carrying its zone's id — never a "zone" a slot is tagged to by hand.
+   A position is still identified by display type + slot number
+   (PH-CORE-BOUNDARIES.md), so nothing about booking changes: a Menu Board
+   with three zones of two slots simply has six positions. */
+const countOfCap = (v: number | null | undefined) => (v === null || v === undefined || v === UNLIMITED ? 0 : Number(v))
+export const isZoned = (d: DisplayType) => mz(d).enabled && mz(d).zones.length > 0
+export const zoneOf = (d: DisplayType, zoneId: string | null | undefined): Zone | undefined => (zoneId && isZoned(d) ? mz(d).zones.find((z) => z.id === zoneId) : undefined)
+export const zoneSlotCount = (z: Zone) => countOfCap(z.maximumCampaignsPlayedInRotation ?? DEFAULTS.maximumCampaignsPlayedInRotation)
+/* A zone's cap as its select shows it: null = Default, "Unlimited", or "n". */
+export const zoneCapValue = (z: Zone): string | null => {
+  const v = z.maximumCampaignsPlayedInRotation
+  return v === null || v === undefined ? null : v === UNLIMITED ? 'Unlimited' : String(v)
+}
+/* The cap and slot count one assignment edits: the zone's when the playlist
+   fills a zone of a multi-zone display type, else the display type's own. */
+export const capValueFor = (d: DisplayType, zoneId: string | null) => {
+  const z = zoneOf(d, zoneId)
+  return z ? zoneCapValue(z) : capValue(d)
+}
+export const slotCountFor = (d: DisplayType, zoneId: string | null) => {
+  const z = zoneOf(d, zoneId)
+  return z ? zoneSlotCount(z) : slotCount(d)
+}
+export const isCappedFor = (d: DisplayType, zoneId: string | null) => slotCountFor(d, zoneId) > 0
+/* Every slot the display type should carry: one segment per zone when
+   zoned, else its own cap. */
+export const expectedSlotCount = (d: DisplayType) => (isZoned(d) ? mz(d).zones.reduce((n, z) => n + zoneSlotCount(z), 0) : slotCount(d))
+/* Indexes into `slotsOf(d)` of the slots one assignment edits. A zoned
+   display type's default playlist owns the layout, not a rotation, so it
+   edits none. */
+export const slotIndicesFor = (d: DisplayType, zoneId: string | null): number[] => {
+  const slots = slotsOf(d)
+  if (!isZoned(d)) return slots.map((_, i) => i)
+  return zoneOf(d, zoneId) ? slots.flatMap((s, i) => (s.zoneId === zoneId ? [i] : [])) : []
+}
+const sameSlots = (a: Slot[], b: Slot[]) => a.length === b.length && a.every((s, i) => s === b[i])
+/* Slots always match the rotation cap(s) in the editor: resized per zone
+   segment on a zoned display type (a removed zone's slots go with it, a new
+   or bigger zone gets new Headquarters slots), or as one list otherwise.
+   Slots that belong to no current zone — the display type's own slots the
+   moment zones are switched on, or a removed zone's — become the first
+   zone's, and if that zone has no cap of its own yet it takes their count
+   (28 Sep 2026): enabling zones keeps what was set up, it doesn't discard
+   it. Same rule the API applies when it reads a record saved before zones
+   had caps. */
+export const normaliseSlots = (d: DisplayType): DisplayType => {
+  const slots = slotsOf(d)
+  if (!isZoned(d)) {
+    const next = resizeSlots(slots, slotCount(d)).map((s) => (s.zoneId === undefined || s.zoneId === null ? s : { ...s, zoneId: null }))
+    return sameSlots(next, slots) ? d : { ...d, phExtensions: { ...(d.phExtensions ?? {}), slots: next } }
+  }
+  const ids = new Set(mz(d).zones.map((z) => z.id))
+  const stray = slots.filter((s) => !s.zoneId || !ids.has(s.zoneId))
+  const first = mz(d).zones[0]
+  const adopt = stray.length > 0 && (first.maximumCampaignsPlayedInRotation === null || first.maximumCampaignsPlayedInRotation === undefined)
+  const zones = adopt ? mz(d).zones.map((z, i) => (i === 0 ? { ...z, maximumCampaignsPlayedInRotation: stray.length + slots.filter((s) => s.zoneId === z.id).length } : z)) : mz(d).zones
+  const ofZone = (z: Zone, i: number) => [...slots.filter((s) => s.zoneId === z.id), ...(i === 0 ? stray : [])]
+  const next = zones.flatMap((z, i) => resizeSlots(ofZone(z, i), zoneSlotCount(z)).map((s) => (s.zoneId === z.id ? s : { ...s, zoneId: z.id })))
+  if (!adopt && sameSlots(next, slots)) return d
+  return {
+    ...d,
+    ...(adopt ? { multiZone: { ...mz(d), zones } as unknown as DisplayType['multiZone'] } : {}),
+    phExtensions: { ...(d.phExtensions ?? {}), slots: next },
+  }
+}
 
 /* Changing the owner only changes the owner: who a sellable position is
    assigned to is set on Advertisers / Inventory, and the API keeps or drops
@@ -176,7 +249,7 @@ export const enabledFeatures = (d: DisplayType) => FEATURES.filter((f) => COMPAN
 export const STRUCTURE_MARKERS: { key: string; icon: string; label: string; test: (d: DisplayType) => boolean }[] = [
   { key: 'phantom', icon: 'crop_free', label: 'Phantom zone defined', test: (d) => !!qr(d).phantomArea?.enabled },
   { key: 'zones', icon: 'grid_view', label: 'Multi-zone layout', test: (d) => mz(d).enabled },
-  { key: 'slots', icon: 'view_week', label: 'Capped rotation with assigned slots', test: (d) => isCapped(d) },
+  { key: 'slots', icon: 'view_week', label: 'Capped rotation with assigned slots', test: (d) => expectedSlotCount(d) > 0 },
 ]
 
 /* ------------------------------------------------ collapsed summaries */
@@ -186,14 +259,18 @@ export interface Chip { key: string; label: string; icon?: string; tone: 'on' | 
 /* Maximum Campaigns Played In Rotation and slot assignment, still on the
    display type (26 Sep 2026: shown per assignment, inside a playlist's
    expanded row on Playlist Management, since a shared playlist can be
-   capped differently on each screen it's assigned to). */
-export function capSummary(d: DisplayType, showOwners: boolean): Chip[] {
+   capped differently on each screen it's assigned to). With a `zoneId`,
+   that zone's own rotation and slots (28 Sep 2026); without one on a zoned
+   display type, every zone's slots together. */
+export function capSummary(d: DisplayType, showOwners: boolean, zoneId: string | null = null): Chip[] {
   const chips: Chip[] = []
-  if (isCapped(d)) {
-    chips.push({ key: 'slots', icon: 'view_week', label: `${slotCount(d)} slots`, tone: 'on' })
+  const slots = zoneOf(d, zoneId) ? slotIndicesFor(d, zoneId).map((i) => slotsOf(d)[i]) : slotsOf(d)
+  const capped = zoneOf(d, zoneId) ? isCappedFor(d, zoneId) : isZoned(d) ? expectedSlotCount(d) > 0 : isCapped(d)
+  if (capped) {
+    chips.push({ key: 'slots', icon: 'view_week', label: `${slots.length} slots`, tone: 'on' })
     if (showOwners) {
       for (const o of ['internal', 'advertiser', 'retail'] as SlotOwner[]) {
-        const n = slotsOf(d).filter((x) => x.owner === o).length
+        const n = slots.filter((x) => x.owner === o).length
         if (n) chips.push({ key: o, icon: SLOT_OWNERS[o].icon, label: `${n} ${SLOT_OWNERS[o].label}`, tone: 'on', colour: SLOT_OWNERS[o].colour })
       }
     }

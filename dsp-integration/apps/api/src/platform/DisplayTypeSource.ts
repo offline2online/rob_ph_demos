@@ -48,7 +48,32 @@ const toRecord = (r: Row, zoneJsonByPlaylistId: Map<string, string | null>): Dis
   }
   if (r.default_playlist_id !== null) out.defaultPlaylistId = r.default_playlist_id
   if (r.ph_extensions !== null) out.phExtensions = fromJson(r.ph_extensions, { slots: [] })
+  migrateZonedSlots(out)
   return out
+}
+
+/* A multi-zone display type saved before 28 Sep 2026 had one set of slots
+   for the whole screen (sized by its own cap), some tagged to a zone and
+   the rest not, and no cap on its zones. Read it in today's shape — one
+   segment of slots per zone, each zone with its own Maximum Campaigns
+   Played In Rotation: a tagged slot goes to its zone, an untagged one to
+   the first zone, and each zone's cap becomes the number of slots it
+   received (none: the default, Unlimited). Nothing is written until the
+   next save, which then stores this shape; slot numbers (position ids) are
+   kept wherever the segments already came out in zone order. */
+interface ZoneJson { id: string; maximumCampaignsPlayedInRotation?: number | null; [k: string]: unknown }
+function migrateZonedSlots(out: DisplayType) {
+  const mz = out.multiZone as { enabled?: boolean; zones?: ZoneJson[] } | undefined
+  if (!mz?.enabled || !mz.zones?.length) return
+  if (mz.zones.some((z) => z.maximumCampaignsPlayedInRotation !== undefined)) return
+  const slots = out.phExtensions?.slots ?? []
+  const byZone = new Map(mz.zones.map((z) => [z.id, [] as typeof slots]))
+  for (const s of slots) {
+    const id = s.zoneId && byZone.has(s.zoneId) ? s.zoneId : mz.zones[0].id
+    byZone.get(id)!.push(s.zoneId === id ? s : { ...s, zoneId: id })
+  }
+  out.multiZone = { ...mz, zones: mz.zones.map((z) => ({ ...z, maximumCampaignsPlayedInRotation: byZone.get(z.id)!.length || null })) }
+  if (out.phExtensions) out.phExtensions = { ...out.phExtensions, slots: mz.zones.flatMap((z) => byZone.get(z.id)!) }
 }
 
 /* Deep-freeze a cached record: callers share it, so one must never be able

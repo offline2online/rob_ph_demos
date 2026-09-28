@@ -328,8 +328,9 @@ describe('Campaign Status stand-in', () => {
        DSPs" copy and no Draft count (ticket, 22 Sep — Draft never surfaces
        in a retailer-facing view). */
     await waitFor(() => expect(document.body.textContent).toMatch(/1 campaign/), { timeout: 10000 })
+    /* The counts follow each campaign's approval, which loads after the list. */
+    await waitFor(() => expect(document.body.textContent).toMatch(/Awaiting approval.*1/), { timeout: 10000 })
     expect(document.body.textContent).toMatch(/Approved.*0/)
-    expect(document.body.textContent).toMatch(/Awaiting approval.*1/)
     expect(document.body.textContent).toMatch(/Rejected.*0/)
     expect(document.body.textContent).not.toMatch(/submitted by advertisers and DSPs/)
     expect(document.body.textContent).not.toMatch(/Draft/)
@@ -338,16 +339,16 @@ describe('Campaign Status stand-in', () => {
     expect(await within(grid).findByText('Swisse spring', {}, { timeout: 10000 })).toBeInTheDocument()
     /* HQ's own campaigns aren't this build's business. */
     expect(within(grid).queryByText('Zinger Box — hero')).not.toBeInTheDocument()
-    /* The status filter is a column filter, not chips above the table. */
-    expect(screen.queryByRole('button', { name: /Awaiting approval 1/ })).not.toBeInTheDocument()
+    /* The status filter is a column filter; the counts above the table only set it. */
     expect(grid.querySelectorAll('.ag-floating-filter').length).toBeGreaterThan(0)
     /* The filters name themselves and list what is there (Rob, 20 Sep). */
     expect((await within(grid).findAllByLabelText('Advertiser filter', {}, { timeout: 10000 })).length).toBeGreaterThan(0)
     expect(within(grid).getAllByLabelText('DSP filter').length).toBeGreaterThan(0)
-    /* Advertiser first, then Schedule, sorted so what is up next is at the
-       top (ticket "Campaign Status: Playlist name column..."). */
+    /* Activation first, then Advertiser and Schedule, sorted so what is up
+       next is at the top; DSP between Playlist name and No. of campaigns
+       (ticket, 27 Sep 2026). */
     expect([...grid.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent)).toEqual([
-      'Advertiser', 'Schedule', 'Status', 'Playlist name', 'No. of campaigns', 'Localised variables', 'Personalised variables', 'DSP', 'Activation', '',
+      'Activation', 'Advertiser', 'Schedule', 'Status', 'Playlist name', 'DSP', 'No. of campaigns', 'Localised variables', 'Personalised variables', '',
     ])
     expect(await within(grid).findByText('2 windows booked', {}, { timeout: 10000 })).toBeInTheDocument()
     /* One playlist, one submission: the default layer plus a localised
@@ -362,6 +363,48 @@ describe('Campaign Status stand-in', () => {
     /* Awaiting approval, not Rejected, so Undo rejection is offered but disabled. */
     expect(await screen.findByRole('menuitem', { name: /Undo rejection/ }, { timeout: 10000 })).toHaveAttribute('aria-disabled', 'true')
   })
+
+  it('sits on a tab named Upcoming Campaign Approval', async () => {
+    vi.stubGlobal('fetch', vi.fn(fakeFetch(routes)))
+    renderAt('/booking-schedule?tab=campaign-status')
+    expect(await screen.findByRole('tab', { name: 'Upcoming Campaign Approval', selected: true }, { timeout: 10000 })).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Campaign status' })).not.toBeInTheDocument()
+  })
+
+  /* Ticket, 27 Sep 2026: clicking a count sets the Status column's own
+     filter; it stays on until cleared from that column's funnel. */
+  it('filters the Status column to a status when its count is clicked, until the filter is cleared', async () => {
+    const approved = { ...campaign, campaignId: 'c2', name: 'Blackmores autumn' }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({
+      ...routes,
+      '/api/admin/v1/campaigns': { items: [campaign, approved, hq] },
+      '/api/admin/v1/campaigns/c2/approval': { ...approval, campaignId: 'c2', campaignName: 'Blackmores autumn', status: 'approved' },
+    })))
+    renderAt('/booking-schedule?tab=campaign-status')
+    /* Re-query the grid each time: AG Grid redraws its rows as the filter changes. */
+    const grid = () => screen.getByLabelText('Campaign Status')
+    const shown = (name: string) => waitFor(() => expect(within(grid()).getByText(name)).toBeInTheDocument(), { timeout: 10000 })
+    const hidden = (name: string) => waitFor(() => expect(within(grid()).queryByText(name)).not.toBeInTheDocument(), { timeout: 10000 })
+    await shown('Blackmores autumn')
+    await shown('Swisse spring')
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Approved\s*1$/ }, { timeout: 10000 }))
+    await hidden('Swisse spring')
+    await shown('Blackmores autumn')
+    expect(screen.getByRole('button', { name: /^Approved\s*1$/ })).toHaveAttribute('aria-pressed', 'true')
+    /* The column's own funnel shows it as on. */
+    await waitFor(() => expect(within(grid()).getAllByLabelText('Status filter')[0]).toHaveAttribute('aria-pressed', 'true'))
+
+    fireEvent.click(screen.getByRole('button', { name: /^Awaiting approval\s*1$/ }))
+    await hidden('Blackmores autumn')
+    await shown('Swisse spring')
+
+    /* Clearing the column filter is the way back to every campaign. */
+    fireEvent.click(within(grid()).getAllByLabelText('Status filter')[0])
+    fireEvent.click(await screen.findByRole('button', { name: 'Clear Filter' }))
+    await shown('Blackmores autumn')
+    await shown('Swisse spring')
+  }, 45000)
 
   it('never lists a Draft campaign — a retailer only ever sees one that has been submitted', async () => {
     const draftApproval = { ...approval, status: 'draft', mode: null, submittedAt: null }

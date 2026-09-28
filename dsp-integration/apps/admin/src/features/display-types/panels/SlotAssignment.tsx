@@ -10,7 +10,16 @@
    Advertiser stays in the owner list but is greyed out, unless the slot was
    already an Advertiser slot when last saved: existing ones are left as
    they are, and no new one can be set up (Rob, 24 Sep 2026). The API
-   enforces the same. */
+   enforces the same.
+
+   Owners offered: Headquarters and Advertiser only for the first release
+   (ticket, 27 Sep 2026) — Stores is not supported yet. A slot already saved
+   as Stores still reads as Stores (greyed out in the list) until someone
+   changes it.
+
+   On a multi-zone display type this table sits under each zone's own
+   playlist and edits that zone's own slots (ticket, 28 Sep 2026) — there is
+   no zone to pick per slot, and no other zone's slots showing here. */
 import { Alert, Button, Input, Select } from 'antd'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
 import { SLOT_OWNERS, assignedOf, providerDef, type Partner, type Slot, type SlotOwner } from '@ph-dsp/types'
@@ -23,14 +32,13 @@ import { ownerAssignment, ownerChange } from '../model'
 
 const ADVERTISER_COLOUR = SLOT_OWNERS.advertiser.colour
 
-interface ZoneOption { id: string; name: string }
-const NO_ZONE = '__no_zone__'
+/* The owners a slot can be given in this release (ticket, 27 Sep 2026). */
+const OFFERED_OWNERS: SlotOwner[] = ['internal', 'advertiser']
 
 interface Ctx {
   partners: Partner[]
   advertiserOpen: (i: number) => boolean
   setSlot: (i: number, patch: Partial<Slot>) => void
-  zones: ZoneOption[]
 }
 interface Row { i: number; slot: Slot }
 /* Stable grid context; cells read the latest values through it. */
@@ -54,34 +62,12 @@ function LabelCell({ data, context: grid }: ICellRendererParams<Row, unknown, Gr
   return <div className="w-full min-w-0"><Input size="small" aria-label={`Slot ${data.i + 1} label`} value={data.slot.label} onChange={(e) => context.setSlot(data.i, { label: e.target.value })} /></div>
 }
 
-/* Which zone (if any) this slot's position is tagged to — purely an
-   attribution/display detail for Available Inventory (ticket "Available
-   Inventory: playlist-primary table…", 27 Sep 2026): it says which zone
-   playlist the slot's advertiser position shows up under there, not which
-   zone the slot is "sold on" — booking is still keyed by display type +
-   slot regardless (PH-CORE-BOUNDARIES.md). Only rendered when this display
-   type has zones at all. */
-function ZoneCell({ data, context: grid }: ICellRendererParams<Row, unknown, GridCtx>) {
-  if (!data) return null
-  const context = grid.current
-  return (
-    <div className="w-full min-w-0">
-      <Select
-        size="small"
-        className="w-full"
-        aria-label={`Slot ${data.i + 1} zone`}
-        value={data.slot.zoneId ?? NO_ZONE}
-        onChange={(v: string) => context.setSlot(data.i, { zoneId: v === NO_ZONE ? null : v })}
-        options={[{ value: NO_ZONE, label: 'Not zone-specific' }, ...context.zones.map((z) => ({ value: z.id, label: z.name }))]}
-      />
-    </div>
-  )
-}
-
 function OwnerCell({ data, context: grid }: ICellRendererParams<Row, unknown, GridCtx>) {
   if (!data) return null
   const context = grid.current
   const o = SLOT_OWNERS[data.slot.owner]
+  /* A slot saved as Stores before this release dropped it keeps showing it, greyed out. */
+  const owners = OFFERED_OWNERS.includes(data.slot.owner) ? OFFERED_OWNERS : [...OFFERED_OWNERS, data.slot.owner]
   return (
     <div className="w-full min-w-0">
     <Select
@@ -90,11 +76,14 @@ function OwnerCell({ data, context: grid }: ICellRendererParams<Row, unknown, Gr
       aria-label={`Slot ${data.i + 1} owner`}
       value={data.slot.owner}
       onChange={(v: SlotOwner) => context.setSlot(data.i, ownerChange(v))}
-      options={(Object.keys(SLOT_OWNERS) as SlotOwner[]).map((k) => {
-        const disabled = k === 'advertiser' && !context.advertiserOpen(data.i)
+      options={owners.map((k) => {
+        const unsupported = !OFFERED_OWNERS.includes(k)
+        const closed = k === 'advertiser' && !context.advertiserOpen(data.i)
+        const disabled = unsupported || closed
         return {
           value: k, disabled,
-          title: disabled ? 'Enable DSP Integration (DSP Integration → Exchange settings) to add an Advertiser slot.' : undefined,
+          title: unsupported ? `${SLOT_OWNERS[k].label} slots aren’t supported in this release.`
+            : closed ? 'Enable DSP Integration (DSP Integration → Exchange settings) to add an Advertiser slot.' : undefined,
           label: <span style={{ color: disabled ? T.disabled : SLOT_OWNERS[k].colour }}>{SLOT_OWNERS[k].label}</span>,
         }
       })}
@@ -104,28 +93,26 @@ function OwnerCell({ data, context: grid }: ICellRendererParams<Row, unknown, Gr
   )
 }
 
-export function SlotAssignment({ slots, setSlots, partners, advertiserOpen, onFixConnection, tip, zones = [] }: {
+export function SlotAssignment({ slots, setSlots, partners, advertiserOpen, onFixConnection, tip }: {
   slots: Slot[]
-  setSlots: (s: Slot[]) => void
+  /* An updater, run against the latest slots: several tables on one page
+     can edit the same display type, so a value computed from this render's
+     `slots` could undo an edit made elsewhere since. */
+  setSlots: (fn: (prev: Slot[]) => Slot[]) => void
   partners: Partner[]
   advertiserOpen: (i: number) => boolean
   onFixConnection: (partnerId: string) => void
   tip: string
-  /* This display type's zones (multi-zone layout), so a slot can be tagged
-     to one — empty/omitted on a single-zone display type, which just hides
-     the Zone column below. */
-  zones?: ZoneOption[]
 }) {
-  const ctx: Ctx = { partners, advertiserOpen, zones, setSlot: (i, patch) => setSlots(slots.map((s, k) => (k === i ? { ...s, ...patch } : s))) }
+  const ctx: Ctx = { partners, advertiserOpen, setSlot: (i, patch) => setSlots((prev) => prev.map((s, k) => (k === i ? { ...s, ...patch } : s))) }
   const rows = useMemo(() => slots.map((slot, i) => ({ i, slot })), [slots])
   const columns = useMemo<ColDef<Row>[]>(
     () => [
       { headerName: '#', width: 52, suppressSizeToFit: true, valueGetter: (p) => (p.data ? p.data.i + 1 : ''), cellStyle: { color: T.micro, fontSize: 12 } },
       { headerName: 'Label', width: 260, minWidth: 140, cellRenderer: LabelCell },
       { headerName: 'Owner', width: 180, minWidth: 140, cellRenderer: OwnerCell },
-      ...(zones.length ? [{ headerName: 'Zone', width: 180, minWidth: 140, cellRenderer: ZoneCell } as ColDef<Row>] : []),
     ],
-    [zones],
+    [],
   )
   const broken = slots.filter((s) => brokenPartners(ctx, s).length)
   return (

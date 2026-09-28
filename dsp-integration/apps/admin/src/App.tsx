@@ -101,11 +101,14 @@ function featureRoutes(flags: Flags): RouteObject[] {
         },
         /* Its own page, opened in a new tab from Available Inventory or an advertiser
            (Rob, 20 Sep) — just the schedule, so no Display Types / DSP Integration
-           nav beside it (Rob, 21 Sep). Renamed "Campaign schedule" and given a second
-           tab hosting the full Campaign Status table (ticket, 26 Sep 2026): Campaign
-           Status is no longer its own admin nav item or route — this tab is its only
-           home now. Booking schedule (this route's first/default tab) is unchanged. */
-        { path: BOOKING_SCHEDULE_PATH.slice(1), handle: { title: 'Campaign schedule', hideNav: true } satisfies RouteHandle, element: <WhileDspOn><CampaignSchedulePage /></WhileDspOn> },
+           nav beside it (Rob, 21 Sep). Given a second tab hosting the full Campaign
+           Status table (ticket, 26 Sep 2026): Campaign Status is no longer its own
+           admin nav item or route — this tab is its only home now. Booking schedule
+           (this route's first/default tab) is unchanged. Page title renamed
+           "Advertiser Bookings" (ticket, 27 Sep 2026) — "Campaign schedule" read as
+           if it were about scheduling a campaign, not about what advertisers have
+           booked. */
+        { path: BOOKING_SCHEDULE_PATH.slice(1), handle: { title: 'Advertiser Bookings', hideNav: true } satisfies RouteHandle, element: <WhileDspOn><CampaignSchedulePage /></WhileDspOn> },
         /* The campaign detail drill-down still stands alone, opened from a
            playlist row in the Campaign status tab — same STAND-IN for the
            existing Campaigns section (package 11), removed on integration. */

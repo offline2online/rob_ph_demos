@@ -7,6 +7,7 @@
      npm run board:tickets -- --ticket <id> --deploy-commit <sha> --yes
      npm run board:tickets -- --deploy-branch deploy/dsp-integration --yes
      npm run board:tickets -- --relink-prototype <sha> --branch deploy/dsp-integration --yes
+     npm run board:tickets -- --project <id> --ticket <id> --to ready-to-publish --yes
 
    Why this exists: the board's MCP connector deliberately refuses status
    writes ("moving a ticket through testing and deployment stays on the
@@ -43,7 +44,11 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
-const PROJECT_ID = 'mIPdOCAWevhrgD8g2tCZ' // Display Types & DSP Integration
+/* Display Types & DSP Integration by default. --project <id> points one
+   run at another project on the same board (e.g. Backlog Tracker & FAQs,
+   oTcLAbnhUUO2S7NkbsuV), so a ticket there can be moved from a runner too. */
+const cliArgs = process.argv.slice(2)
+const PROJECT_ID = (cliArgs.includes('--project') && cliArgs[cliArgs.indexOf('--project') + 1]) || 'mIPdOCAWevhrgD8g2tCZ'
 const FIREBASE_KEY = 'AIzaSyDzG5MzavLWyKU7NXfTPskuWbFYFlc5W3g'
 const BOARD = 'https://firestore.googleapis.com/v1/projects/backlog-tracker-e4ed2/databases/(default)/documents'
 
@@ -281,6 +286,7 @@ if (one && !from) {
     method: 'PATCH', headers: { ...AUTH, 'Content-Type': 'application/json' }, body: JSON.stringify({ fields }),
   })
   if (!res.ok) throw new Error(`Writing failed (${res.status}): ${await res.text()}`)
+  if (to === 'ready-to-publish') await lockTrain()
   const after = (await tickets()).find((x) => x.id === one)
   const wrong = [
     to && after.status !== to && 'status',
@@ -293,6 +299,17 @@ if (one && !from) {
   }
   console.log('\nWritten — verified.')
   process.exit(0)
+}
+/* Approving closes the train, exactly as the board's own approve click does
+   (app.js deployToFeatureNow): trainLocked holds new builds back until the
+   merge, and the automation's reconcile sweeps read it. An approval from
+   here used to leave it unset — 28 Sep 2026. Idempotent. */
+async function lockTrain() {
+  const res = await fetch(`${BOARD}/projects/${PROJECT_ID}?updateMask.fieldPaths=trainLocked`, {
+    method: 'PATCH', headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields: { trainLocked: { booleanValue: true } } }),
+  })
+  if (!res.ok) throw new Error(`Locking the train failed (${res.status}): ${await res.text()}`)
 }
 if (!STATUSES[from] || !STATUSES[to]) {
   console.error(`\n--from and --to must both be one of: ${Object.keys(STATUSES).join(', ')}`)
@@ -322,6 +339,7 @@ for (const t of moving) {
   }
   done++
 }
+if (to === 'ready-to-publish') await lockTrain()
 
 /* Read them back: a move that reports success without checking is how a
    board ends up claiming work is live when it isn't. */

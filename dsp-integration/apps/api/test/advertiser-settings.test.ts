@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { DisplayType } from '@ph-dsp/types'
 import { buildApp } from '../src/http/app'
 import { expectMatchesContract } from './contract'
 import { NOW, testContext } from './helpers'
@@ -117,7 +118,7 @@ describe('Advertiser settings (spec §4, §6)', () => {
     const res = await buildApp(await testContext()).inject({ method: 'GET', url: '/api/admin/v1/available-inventory' })
     expectMatchesContract('GET', '/admin/v1/available-inventory', 200, res.json())
     expect(res.json().items).toEqual([{
-      displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', playlistId: 'pl_menu', unassigned: false, slot: 2, position: 'Supplier slot',
+      displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board — Long Format / Zone 1', playlistId: 'pl_zone_menu_board_1', unassigned: false, slot: 2, position: 'Supplier slot',
       assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false, buyersListId: null, buyersListName: null }, qrControl: true, visionAi: true, supportedTargeting: ['localised'],
       reservePrice: null, reservePriceOverride: null, displayTypeReservePrice: null,
       billingUnitHours: 24, billingUnitHoursOverride: null, displayTypeBillingUnitHours: null,
@@ -127,23 +128,51 @@ describe('Advertiser settings (spec §4, §6)', () => {
     expect(res.json().dsps[0]).toMatchObject({ partnerId: 'p_google', name: 'Google DSP', advertisers: [{ advertiserId: 'nestle', name: 'Nestlé' }, { advertiserId: 'swisse', name: 'Swisse' }] })
   })
 
-  /* Menu Board (seed) is multi-zone with three zone playlists, but its one
-     advertiser slot ("Supplier slot") isn't tagged to any of them, so it
-     still resolves to the display type's own default playlist above — the
-     same reading a non-multi-zone display type gets. This is the other
-     half: tag it to a zone and the row switches to that zone's playlist,
-     which is the whole point of the ticket ("Available Inventory:
-     playlist-primary table (drop Display type column) with Unassigned
-     indicator", 27 Sep 2026) — a playlist only shows up here because a
-     real advertiser slot is tagged to it. */
-  it('attributes an advertiser slot to its tagged zone’s playlist, not the display type’s default', async () => {
+  /* Ticket, 28 Sep 2026 — Rob's end-to-end check: a Menu Board with three
+     zones and two Advertiser slots a zone is six positions on Available
+     Inventory, each under its zone's own playlist; take a zone away and its
+     positions go with it; put it back and they're back. Each zone runs its
+     own playlist, so each has its own rotation and its own slots (one
+     segment per zone in the display type's slot list) — not one shared
+     rotation the zones were "tagged" onto. */
+  it('lists one position per advertiser slot per zone, and follows a zone being removed and added back', async () => {
     const ctx = await testContext()
     const app = buildApp(ctx)
-    const ext = ctx.displayTypes.get('menu_board')!.phExtensions!
-    ctx.displayTypes.saveExtensions('menu_board', { ...ext, slots: ext.slots.map((s, i) => (i === 1 ? { ...s, zoneId: 'z3' } : s)) })
-    const res = await app.inject({ method: 'GET', url: '/api/admin/v1/available-inventory' })
-    expectMatchesContract('GET', '/admin/v1/available-inventory', 200, res.json())
-    expect(res.json().items).toEqual([expect.objectContaining({ slot: 2, playlistId: 'pl_zone_menu_board_3', playlistName: 'Menu Board — Long Format / Zone 3' })])
+    const record = () => ctx.displayTypes.get('menu_board') as DisplayType
+    const zonesOf = (dt: DisplayType) => (dt.multiZone as { zones: { id: string; name: string; playlistId: string; maximumCampaignsPlayedInRotation?: number | null }[] }).zones
+    const saveZones = (zones: unknown[]) => app.inject({ method: 'PUT', url: '/api/admin/v1/display-types/menu_board/record', payload: { ...record(), multiZone: { enabled: true, zones } } })
+    const saveSlots = (zoneIds: string[]) => app.inject({
+      method: 'PUT', url: '/api/admin/v1/display-types/menu_board/extensions',
+      payload: { slots: zoneIds.flatMap((zoneId) => [{ label: 'Slot 1', owner: 'advertiser', zoneId }, { label: 'Slot 2', owner: 'advertiser', zoneId }]) },
+    })
+    const rows = async () => {
+      const res = await app.inject({ method: 'GET', url: '/api/admin/v1/available-inventory' })
+      expectMatchesContract('GET', '/admin/v1/available-inventory', 200, res.json())
+      return (res.json().items as { slot: number; playlistId: string; position: string }[]).map((r) => [r.slot, r.playlistId, r.position])
+    }
+    const three = zonesOf(record()).map((z) => ({ ...z, maximumCampaignsPlayedInRotation: 2 }))
+
+    expect((await saveZones(three)).statusCode).toBe(200)
+    expect((await saveSlots(['z1', 'z2', 'z3'])).statusCode).toBe(200)
+    expect(await rows()).toEqual([
+      [1, 'pl_zone_menu_board_1', 'Slot 1'], [2, 'pl_zone_menu_board_1', 'Slot 2'],
+      [3, 'pl_zone_menu_board_2', 'Slot 1'], [4, 'pl_zone_menu_board_2', 'Slot 2'],
+      [5, 'pl_zone_menu_board_3', 'Slot 1'], [6, 'pl_zone_menu_board_3', 'Slot 2'],
+    ])
+    /* Each position's share of voice is of its own zone's two-slot rotation, not of all six. */
+    const partner = await buildApp(ctx).inject({ method: 'GET', url: '/api/v1/inventory/menu_board.s5', headers: { authorization: 'Bearer poc-token-google-dv360' } })
+    expect(partner.statusCode).toBe(200)
+    expect(partner.json().screen.shareOfVoice).toBe(0.5)
+
+    /* Zone 3 removed: its two positions go with it. */
+    expect((await saveZones(three.slice(0, 2))).statusCode).toBe(200)
+    expect((await saveSlots(['z1', 'z2'])).statusCode).toBe(200)
+    expect((await rows()).map((r) => r[1])).toEqual(['pl_zone_menu_board_1', 'pl_zone_menu_board_1', 'pl_zone_menu_board_2', 'pl_zone_menu_board_2'])
+
+    /* Added back: six again. */
+    expect((await saveZones(three)).statusCode).toBe(200)
+    expect((await saveSlots(['z1', 'z2', 'z3'])).statusCode).toBe(200)
+    expect((await rows()).map((r) => r[1])).toEqual(['pl_zone_menu_board_1', 'pl_zone_menu_board_1', 'pl_zone_menu_board_2', 'pl_zone_menu_board_2', 'pl_zone_menu_board_3', 'pl_zone_menu_board_3'])
   })
 
   /* "Unassigned": the display type has advertiser slots but no physical

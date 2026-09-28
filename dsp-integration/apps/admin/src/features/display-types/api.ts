@@ -15,13 +15,30 @@ export const deleteDisplayType = (id: string) => api<void>('DELETE', `/admin/v1/
 
 const recordOf = ({ phExtensions: _ext, ...rest }: DisplayType) => rest
 
+/* A playlist that only exists as a local draft on the Display Types page
+   until Save creates it, with the settings the page showed for it. */
+export interface DraftPlaylist { id: string; autoCreatedFor: string | null; playlistSettings?: Record<string, unknown> }
+const referencedPlaylistIds = (d: DisplayType) => new Set([
+  d.defaultPlaylistId,
+  ...((d.multiZone as { enabled?: boolean; zones?: { playlistId?: string }[] } | undefined)?.enabled ? ((d.multiZone as { zones?: { playlistId?: string }[] }).zones ?? []).map((z) => z.playlistId) : []),
+].filter((id): id is string => !!id))
+
 /* Save changes: new types are created, changed records and changed slot
-   ownership are saved; everything else is left alone. */
-export async function saveDisplayTypes(draft: DisplayType[], saved: DisplayType[], opts: { extensions: boolean }) {
+   ownership are saved; everything else is left alone. A draft playlist the
+   save creates (ensureReferencedPlaylists, server side) then gets the
+   settings the page previewed for it (ticket, 28 Sep 2026) — before this,
+   what the Playlist Settings panel showed while a display type was being
+   created was never sent, and the playlist came out with the server's own
+   starting values instead. */
+export async function saveDisplayTypes(draft: DisplayType[], saved: DisplayType[], opts: { extensions: boolean; newPlaylists?: DraftPlaylist[] }) {
   for (const d of draft) {
     const before = saved.find((s) => s.id === d.id)
     if (!before) await api('POST', '/admin/v1/display-types', recordOf(d))
     else if (!deepEqual(recordOf(d), recordOf(before))) await api('PUT', `/admin/v1/display-types/${d.id}/record`, recordOf(d))
+    const referenced = referencedPlaylistIds(d)
+    for (const p of opts.newPlaylists ?? []) {
+      if (p.autoCreatedFor === d.id && referenced.has(p.id)) await api('PUT', `/admin/v1/playlists/${p.id}/settings`, p.playlistSettings ?? {})
+    }
     if (opts.extensions && d.phExtensions && !deepEqual(d.phExtensions, before?.phExtensions ?? { slots: [] })) {
       await api('PUT', `/admin/v1/display-types/${d.id}/extensions`, d.phExtensions)
     }

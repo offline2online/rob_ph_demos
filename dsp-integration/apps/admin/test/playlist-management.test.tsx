@@ -43,6 +43,21 @@ const renderAt = (path: string, dspIntegration = false) => {
   return router
 }
 
+/* The options of the dropdown this Select has just opened — never another,
+   still-closing one's (every Select shares one id under test, so its
+   aria-controls can't tell them apart). Each Select here is opened once. */
+const optionsOf = async (name: string) => {
+  const box = await screen.findByLabelText(name, { selector: 'input' })
+  const before = new Set(document.querySelectorAll('.ant-select-dropdown'))
+  fireEvent.mouseDown(box)
+  return waitFor(() => {
+    const dropdown = [...document.querySelectorAll('.ant-select-dropdown')].find((d) => !before.has(d))
+    const found = Array.from(dropdown?.querySelectorAll('.ant-select-item-option') ?? []) as HTMLElement[]
+    expect(found.length).toBeGreaterThan(0)
+    return found
+  })
+}
+
 describe('Playlist Management page', () => {
   it('shows the count line, a titled page, rename and delete per row, and no New playlist (decision 4)', async () => {
     renderAt('/playlists')
@@ -152,6 +167,138 @@ describe('Playlist Management page', () => {
     await waitFor(() => expect(fetch).toHaveBeenCalled())
     const urls = vi.mocked(fetch).mock.calls.map(([u]) => String(u))
     expect(urls.some((u) => /partners|advertiser/.test(u))).toBe(false)
+  })
+
+  /* Ticket, 27 Sep 2026: each playlist name is led by its touch point's icon. */
+  it('leads each playlist name with the touch point icon of the display types it fills', async () => {
+    const kioskMenu = { ...menuBoard, touchPoint: 'Kiosk' }
+    const withKiosk: Record<string, unknown> = { ...responses, '/api/admin/v1/display-types': { items: [landscape, kioskMenu] } }
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response(JSON.stringify(withKiosk[url.split('?')[0]] ?? {}), { status: 200 })))
+    renderAt('/playlists')
+    const grid = await screen.findByLabelText('Playlists')
+    const row = async (name: string) => (await within(grid).findByText(name)).closest('.ag-row') as HTMLElement
+    const icons = async (name: string) => within(await row(name)).queryAllByRole('img').map((i) => i.getAttribute('aria-label'))
+    await waitFor(async () => expect(await icons('Landscape Playlist')).toEqual(['Digital Signage touch point']))
+    expect(await icons('Menu Board Playlist')).toEqual(['Kiosk touch point'])
+    expect(await icons('Shared Rotation')).toEqual(['Digital Signage touch point', 'Kiosk touch point'])
+    /* Not on any screen yet: nothing to show. */
+    expect(await icons('Seasonal Overflow')).toEqual([])
+  })
+
+  /* Ticket, 27 Sep 2026: the first release supports Headquarters and
+     Advertiser slots only — Stores is no longer offered. */
+  it('offers Headquarters and Advertiser as slot owners, and no longer Stores', async () => {
+    renderAt('/playlists?displayTypeId=menu_board', true)
+    const ownerOptions = async (slot: number) => {
+      const out = (await optionsOf(`Slot ${slot} owner`)).map((o) => ({ label: o.textContent, disabled: o.classList.contains('ant-select-item-option-disabled') }))
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+      return out
+    }
+    expect(await ownerOptions(1)).toEqual([{ label: 'Headquarters', disabled: false }, { label: 'Advertiser', disabled: false }])
+    /* A slot saved as Stores before still reads as Stores, but can't be picked again. */
+    expect(await ownerOptions(3)).toEqual([
+      { label: 'Headquarters', disabled: false }, { label: 'Advertiser', disabled: false }, { label: 'Stores', disabled: true },
+    ])
+  })
+
+  /* Ticket, 28 Sep 2026 ("the three zones are still being seen as a single
+     inventory slot"): each zone's playlist has its own Maximum Campaigns
+     Played In Rotation and its own slots — two Advertiser slots a zone is
+     six positions — with no Zone column to pick per slot (Rob: "there's a
+     separate playlist for every zone"). The display type's default
+     playlist lays out the zones and has no rotation of its own. */
+  it('gives each zone’s playlist its own rotation cap and slots, with no zone picker, and none on the zoned default playlist', async () => {
+    const zone = (n: number, cap: number | null, x: number) => ({ id: `z${n}`, name: `Zone ${n}`, x, y: 0, width: 33.3, height: 100, playlistId: `pl_z${n}`, maximumCampaignsPlayedInRotation: cap })
+    const zoned = {
+      ...menuBoard,
+      multiZone: { enabled: true, zones: [zone(1, 2, 0), zone(2, null, 33.3), zone(3, 2, 66.7)] },
+      phExtensions: { slots: [
+        { label: 'Slot 1', owner: 'internal', zoneId: 'z1' }, { label: 'Slot 2', owner: 'internal', zoneId: 'z1' },
+        { label: 'Slot 1', owner: 'internal', zoneId: 'z3' }, { label: 'Slot 2', owner: 'advertiser', zoneId: 'z3', listMode: 'rtb' },
+      ] },
+    }
+    const zonePlaylist = (n: number) => ({ id: `pl_z${n}`, name: `Menu Board / Zone ${n}`, autoCreatedFor: 'menu_board', playlistSettings: {}, assignments: [{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', zoneId: `z${n}`, zoneName: `Zone ${n}` }] })
+    const zonedResponses: Record<string, unknown> = {
+      ...responses,
+      '/api/admin/v1/display-types': { items: [landscape, zoned] },
+      '/api/admin/v1/playlists': { items: [...playlists.items.filter((p) => p.id !== 'pl_shared'), zonePlaylist(1), zonePlaylist(2), zonePlaylist(3)] },
+    }
+    const puts: { url: string; body: Record<string, unknown> }[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, opts?: RequestInit) => {
+      if (opts?.method === 'PUT') puts.push({ url, body: JSON.parse(String(opts.body)) })
+      return new Response(JSON.stringify(zonedResponses[url.split('?')[0]] ?? {}), { status: 200 })
+    }))
+    renderAt('/playlists', true)
+
+    const grid = await screen.findByLabelText('Playlists')
+    const row = async (name: string) => (await within(grid).findByText(name)).closest('.ag-row') as HTMLElement
+    /* The collapsed summary is each zone's own: Zone 3 has 1 Headquarters + 1 Advertiser, Zone 2 nothing yet. */
+    await waitFor(async () => expect(within(await row('Menu Board / Zone 3')).getByText('2 slots')).toBeInTheDocument())
+    expect(within(await row('Menu Board / Zone 3')).getByText('1 Advertiser')).toBeInTheDocument()
+    expect(within(await row('Menu Board / Zone 2')).queryByText(/slots/)).not.toBeInTheDocument()
+
+    const makeAdvertiser = async (slot: number) => {
+      fireEvent.click((await optionsOf(`Slot ${slot} owner`)).find((o) => o.textContent === 'Advertiser')!)
+      await waitFor(() => expect(within(screen.getByTestId(`slot-card-${slot}`)).getByText('Advertiser')).toBeInTheDocument())
+    }
+    const open = async (name: string) => fireEvent.click(await screen.findByLabelText(`Show settings for ${name}`))
+
+    /* The zoned display type's own default playlist: no rotation cap, no slot table. */
+    await open('Menu Board Playlist')
+    expect(await screen.findByText(/This playlist lays out 3 zones/)).toBeInTheDocument()
+    expect(screen.queryByText('Maximum Campaigns Played In Rotation')).not.toBeInTheDocument()
+
+    /* Zone 1: its own two slots, no Zone column; both made Advertiser. */
+    await open('Menu Board / Zone 1')
+    await screen.findByLabelText('Slot 1 owner', { selector: 'input' })
+    expect(screen.getAllByRole('combobox', { name: /Slot \d owner/ })).toHaveLength(2)
+    expect(screen.queryByRole('combobox', { name: /Slot \d zone/ })).not.toBeInTheDocument()
+    expect(screen.queryByText('Not zone-specific')).not.toBeInTheDocument()
+    await makeAdvertiser(1)
+    await makeAdvertiser(2)
+
+    /* Zone 2 at the default cap has no slots; give it a rotation of 2 and it gets its own two. */
+    await open('Menu Board / Zone 2')
+    await waitFor(() => expect(screen.getAllByText('Maximum Campaigns Played In Rotation')).toHaveLength(1))
+    expect(screen.queryByRole('combobox', { name: /Slot \d owner/ })).not.toBeInTheDocument()
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Maximum Campaigns Played In Rotation' }))
+    fireEvent.click(await screen.findByTitle('2'))
+    await screen.findByLabelText('Slot 2 owner', { selector: 'input' })
+    await makeAdvertiser(1)
+    await makeAdvertiser(2)
+
+    fireEvent.click(screen.getByText('Save changes'))
+    await waitFor(() => expect(puts.some((p) => p.url.endsWith('/display-types/menu_board/extensions'))).toBe(true))
+    /* Zone 2's cap is saved on the zone itself, with the display type record. */
+    const record = puts.find((p) => p.url.endsWith('/display-types/menu_board/record'))!.body as { multiZone: { zones: { id: string; maximumCampaignsPlayedInRotation: number | null }[] } }
+    expect(record.multiZone.zones.map((z) => [z.id, z.maximumCampaignsPlayedInRotation])).toEqual([['z1', 2], ['z2', 2], ['z3', 2]])
+    /* One segment per zone, in zone order: five Advertiser positions on Available Inventory, two a zone but Zone 3's one. */
+    const saved = (puts.find((p) => p.url.endsWith('/display-types/menu_board/extensions'))!.body as { slots: { owner: string; zoneId: string | null }[] }).slots
+    expect(saved.map((s) => [s.owner, s.zoneId])).toEqual([
+      ['advertiser', 'z1'], ['advertiser', 'z1'], ['advertiser', 'z2'], ['advertiser', 'z2'], ['internal', 'z3'], ['advertiser', 'z3'],
+    ])
+  }, 120000)
+
+  /* Ticket, 28 Sep 2026: editing a playlist name pushed the caret to the end
+     of the field on every keystroke, so a word at the start of the name
+     couldn't be changed. The draft name was page state, so each keystroke
+     re-rendered the grid and the rename input with it. */
+  it('keeps the same rename input, and the caret where it was, while a name is being edited', async () => {
+    renderAt('/playlists')
+    fireEvent.click(await screen.findByRole('button', { name: 'Rename Seasonal Overflow' }))
+    const input = await screen.findByLabelText('Playlist name')
+    expect(input).toHaveValue('Seasonal Overflow')
+    input.focus()
+    ;(input as HTMLInputElement).setSelectionRange(0, 0)
+    fireEvent.change(input, { target: { value: 'XSeasonal Overflow', selectionStart: 1, selectionEnd: 1 } })
+    /* Still the very same element — never unmounted and re-created. */
+    expect(screen.getByLabelText('Playlist name')).toBe(input)
+    expect(input).toHaveValue('XSeasonal Overflow')
+    expect(document.activeElement).toBe(input)
+    expect((input as HTMLInputElement).selectionStart).toBe(1)
+
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([u, o]) => String(u).includes('/playlists/pl_seasonal/record') && (o as RequestInit)?.method === 'PUT' && String((o as RequestInit).body).includes('XSeasonal Overflow'))).toBe(true))
   })
 
   /* Available Inventory's "Open" action (Rob, 20 Sep; moved here 26 Sep
