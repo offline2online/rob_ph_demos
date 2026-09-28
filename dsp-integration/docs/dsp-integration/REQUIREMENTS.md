@@ -1454,24 +1454,31 @@ clear into a position and are **enforced at auction time, not reconciled
 afterwards**.
 
 **Defined centrally, adopted by every connected DSP.** A newly connected
-partner adopts the advertiser lists automatically.
+partner adopts the advertiser and category lists automatically.
 
-A partner can **unlink** and keep its own advertiser lists instead, using the
-same inheritance rule as display types (§1): the override wins, and a later
-edit to the company lists never reaches it.
+A partner can **unlink** and keep its own advertiser **and category** lists
+instead, using the same inheritance rule as display types (§1): the override
+wins, and a later edit to the company lists never reaches it. One toggle
+covers both list types together — a DSP cannot unlink its advertiser lists
+without also unlinking its category lists, or vice versa.
 
-- **Unlinking copies the inherited lists down**, so a blacklist never silently
-  empties.
-- **Relinking discards the partner's own lists.** It is destructive and says
-  so.
+- **Unlinking copies the inherited lists down**, for both advertisers and
+  categories, so a blacklist never silently empties.
+- **Relinking discards the partner's own lists**, both advertiser and
+  category. It is destructive and says so.
 
-**On a DSP's page:**
+**On a DSP's page**, under **List management** (ticket, 28 Sep 2026 —
+originally advertiser lists only; category lists were added here to close
+the gap, since a DSP that needed a different category policy from the
+company's had no way to set one):
 
 - **Centrally managed (adopting):** the lists are **not repeated**. The page
   says the DSP uses the company lists, with a **link to view them in
   Advertiser settings** and an **Unlink and edit** action.
-- **Unlinked:** the page shows the DSP's **own** whitelist and blacklist,
-  editable, with a **Relink to company lists** action.
+- **Unlinked:** the page shows the DSP's **own** advertiser whitelist and
+  blacklist, **and** its own category whitelist and blacklist (the same
+  IAB category suggestions Advertiser settings offers), all editable, with
+  a **Relink to company lists** action.
 
 **Where these apply** sits directly below List management in Advertiser
 settings (above Available Inventory). It shows, per DSP, only **whether it
@@ -1688,17 +1695,20 @@ A DSP's page holds only, in this order:
 4. **Bidder integration**: **bidder endpoint** and **seat IDs**, both
    required, and nothing else. QPS ceiling (500) and bid timeout (300 ms) are
    platform defaults and are not shown or editable in this release.
-5. **Advertiser whitelist / blacklist**: a link to the company lists when
-   centrally managed, or the DSP's own lists when unlinked (§6).
+5. **List management**: a link to the company advertiser and category lists
+   when centrally managed, or the DSP's own advertiser **and** category
+   lists, editable, when unlinked (§6).
 6. **Save changes / Cancel**, always visible at the bottom (see *Saving
    changes*).
 
 No advertiser ID is taken on the connection: the retailer sells to many
 advertisers through each DSP, so the connection is not tied to one. The
 DSP's advertisers are listed on the **Advertisers** screen, not on its page.
-Currency, floor CPM, multipliers, category lists and targeting permissions
-are set elsewhere and are neither set nor repeated on the DSP's page. Deal IDs
-are deferred to a later release (open question 45).
+Currency, floor CPM, multipliers and targeting permissions are set elsewhere
+and are neither set nor repeated on the DSP's page; category lists are set
+in Advertiser settings too, but — unlike those — are also editable on the
+DSP's own page once it has unlinked (§6). Deal IDs are deferred to a later
+release (open question 45).
 
 ### Which side each named platform sits on
 
@@ -2569,9 +2579,10 @@ playback analytics.**
 - **Company advertiser and category lists**, with the **Where these apply**
   adoption view (adopting or own lists, no counts) directly below them.
   *(DSP Integration → Advertiser settings → List management, Where these apply)*
-- **Advertiser lists on a DSP's page**: a link to the company lists when
-  centrally managed (with Unlink and edit); the DSP's own editable lists when
-  unlinked (with Relink). *(DSP Integration → partner → Advertiser whitelist / blacklist)*
+- **Advertiser and category lists on a DSP's page**: a link to the company
+  lists when centrally managed (with Unlink and edit); the DSP's own
+  editable advertiser **and** category lists when unlinked (with Relink).
+  *(DSP Integration → partner → List management)*
 - **Campaign and content package submission**: a mandatory default layer
   plus optional prioritised targeted versions, validated and stored in the
   existing campaign structure. *(spec only)*

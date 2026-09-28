@@ -1975,6 +1975,8 @@ components:
         listsLinked: {type: boolean}
         advertiserWhitelist: {type: array, items: {type: string}, description: Own lists, only when listsLinked is false.}
         advertiserBlacklist: {type: array, items: {type: string}}
+        categoryWhitelist: {type: array, items: {type: string}, description: Own IAB category lists, only when listsLinked is false.}
+        categoryBlacklist: {type: array, items: {type: string}}
     PartnerInput:
       type: object
       properties:
@@ -1994,6 +1996,8 @@ components:
         listsLinked: {type: boolean, description: false copies the company lists down; true discards own lists.}
         advertiserWhitelist: {type: array, items: {type: string}}
         advertiserBlacklist: {type: array, items: {type: string}}
+        categoryWhitelist: {type: array, items: {type: string}}
+        categoryBlacklist: {type: array, items: {type: string}}
 
     AdvertiserSetting:
       type: object

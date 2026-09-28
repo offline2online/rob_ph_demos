@@ -1592,6 +1592,9 @@ export interface components {
             /** @description Own lists */
             advertiserWhitelist?: string[];
             advertiserBlacklist?: string[];
+            /** @description Own IAB category lists */
+            categoryWhitelist?: string[];
+            categoryBlacklist?: string[];
         };
         PartnerInput: {
             /**
@@ -1613,6 +1616,8 @@ export interface components {
             listsLinked?: boolean;
             advertiserWhitelist?: string[];
             advertiserBlacklist?: string[];
+            categoryWhitelist?: string[];
+            categoryBlacklist?: string[];
         };
         AdvertiserSetting: {
             /** @default true */

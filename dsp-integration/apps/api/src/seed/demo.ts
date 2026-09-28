@@ -220,7 +220,7 @@ export async function seedDemo(ctx: Context) {
         credsPublic: { supplySourceId: 'ss-phub-2291', ttdPartnerId: 'phub-retail', region: 'APAC' },
         secrets: { apiToken: 'poc-placeholder-token' },
         bidder: { bidderEndpoint: 'https://bid.adsrvr.org/openrtb2/bid', seatIds: ['phub-retail'] },
-        seats: [], listsLinked: true, allowList: [], blockList: [],
+        seats: [], listsLinked: true, allowList: [], blockList: [], categoryAllowList: [], categoryBlockList: [],
       })
     }
     for (const [partnerId, seats] of Object.entries(DEMO_SEATS)) {
