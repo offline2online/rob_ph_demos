@@ -5,7 +5,7 @@
 import { IAB_CATEGORY_CODES } from '@ph-dsp/types'
 import type { Context } from '../context'
 import { type PositionRef, positionView, windowMs } from '../domain/positions'
-import { effectiveLists } from '../domain/lists'
+import { effectiveCategoryLists, effectiveLists } from '../domain/lists'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 
 export interface BidRequest {
@@ -58,6 +58,7 @@ export function buildBidRequest(ctx: Context, p: PositionRef, partner: PartnerRe
   const company = ctx.company.get()
   const exchange = ctx.exchange.get()
   const lists = effectiveLists(partner, company)
+  const categoryLists = effectiveCategoryLists(partner, company)
   const audience = ctx.audience.forSlot(p.displayType.id, p.slot)
   const { width: w, height: h } = view.screen
   return {
@@ -80,7 +81,7 @@ export function buildBidRequest(ctx: Context, p: PositionRef, partner: PartnerRe
     },
     source: { schain: { complete: 1, ver: '1.0', nodes: [{ asi: exchange.domain, sid: exchange.sellerId, hp: 1 }] } },
     cur: [company.currency],
-    bcat: categoryCodes(company.categoryBlacklist),
+    bcat: categoryCodes(categoryLists.blockList),
     badv: blockedDomains(partner, lists.blockList),
     tmax: ctx.config.bidderTimeoutMs,
     at: 1,

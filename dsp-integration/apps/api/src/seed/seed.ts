@@ -146,12 +146,17 @@ export async function seed(ctx: Context, opts: { bookings?: boolean; demo?: bool
       secrets: { privateKeyJson: serviceAccountKeyFile('ph-retail-media@ph-demo.iam.gserviceaccount.com') },
       bidder: { bidderEndpoint: 'https://rtb.doubleclick.net/openrtb2/bid', seatIds: ['884512', '884513'] },
       seats: [{ id: '5130001', name: 'Nestlé', domain: 'nestle.com' }, { id: '5130002', name: 'Swisse', domain: 'swisse.com' }], listsLinked: true, allowList: [], blockList: [],
+      categoryAllowList: [], categoryBlockList: [],
     })
     ctx.partners.insert({
       id: 'p_amazon', provider: 'amazon_dsp', name: 'Amazon Ads DSP', status: 'error', mode: 'test', lastSync: 'Refresh token rejected — 3 days ago',
       credsPublic: { region: 'Europe (EU)', lwaClientId: 'amzn1.application-oa2-client.7f3c', profileId: '3390127745', entityId: 'ENTITY8Q1R5T' },
       secrets: { lwaClientSecret: 'poc-placeholder-secret', refreshToken: 'Atzr|poc-placeholder' },
       bidder: {}, seats: [{ id: '588104411', name: "L'Oréal", domain: 'loreal.com' }], listsLinked: false, allowList: ["L'Oréal"], blockList: ['Red Bull', 'Chemist Warehouse'],
+      /* Unlinked from day one (demo, ticket 28 Sep 2026): its own category
+         lists, distinct from the company's, so the DSP page has a real
+         example to edit rather than starting empty. */
+      categoryAllowList: ['Beauty', 'Retail'], categoryBlockList: ['Automotive'],
     })
 
     ctx.company.save({

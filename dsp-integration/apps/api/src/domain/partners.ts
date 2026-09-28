@@ -25,6 +25,9 @@ export function toApiPartner(p: PartnerRecord): Partner {
   return {
     id: p.id, provider: p.provider as Partner['provider'], name: p.name, status: p.status, lastSync: p.lastSync, mode: p.mode,
     credentials, bidder, issues: partnerIssues(p), seats: p.seats.map(({ id, name }) => ({ id, name })), listsLinked: p.listsLinked,
-    ...(p.listsLinked ? {} : { advertiserWhitelist: p.allowList, advertiserBlacklist: p.blockList }),
+    ...(p.listsLinked ? {} : {
+      advertiserWhitelist: p.allowList, advertiserBlacklist: p.blockList,
+      categoryWhitelist: p.categoryAllowList, categoryBlacklist: p.categoryBlockList,
+    }),
   }
 }

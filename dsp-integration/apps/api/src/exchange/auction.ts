@@ -290,7 +290,7 @@ async function recordDspBid(ctx: Context, p: PositionRef, dsp: PartnerRecord, st
   const seat = dsp.seats.find((s) => s.domain && domains.includes(s.domain.toLowerCase()))
   if (!seat) return reject(`Unknown advertiser${domains.length ? ` (${domains.join(', ')})` : ''}: not one of ${dsp.name}’s advertisers.`)
   const advertiserId = advertiserSlug(seat.name)
-  const refused = checkAdvertiser(ctx, p, dsp, seat.name, domains, seat.id) ?? checkCategories(ctx, p, bid.cat ?? [])
+  const refused = checkAdvertiser(ctx, p, dsp, seat.name, domains, seat.id) ?? checkCategories(ctx, p, dsp, bid.cat ?? [])
   if (refused) return reject(refused.reason, { advertiserId })
   if (!bid.crid) return reject('No creative ID (crid) on the bid.', { advertiserId })
 

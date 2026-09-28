@@ -98,7 +98,7 @@ describe('Display Types page', () => {
     fireEvent.click(within(panel()).getByRole('button', { expanded: true }))
     fireEvent.click(screen.getByRole('button', { name: 'Add new playlist' }))
 
-    fireEvent.click(within(panel()).getByRole('button', { expanded: false }))
+    /* Opens by itself now (ticket ThP7DPGo17FmPJdDKM7S). */
     expect(within(panel()).getByText(/This new playlist will be created with these settings/)).toBeInTheDocument()
     const autoRotation = within(panel()).getByRole('combobox', { name: 'Campaign Auto-Rotation' })
     const autoPlay = within(panel()).getByRole('combobox', { name: 'Campaign Auto-Play' })
@@ -206,10 +206,43 @@ describe('Display Types page', () => {
     await screen.findByText('Display Preview')
     const panel = () => screen.getByRole('region', { name: 'Playlist Settings' })
     fireEvent.click(await screen.findByRole('button', { name: 'Add new playlist' }))
-    fireEvent.click(within(panel()).getByRole('button', { expanded: false }))
     expect(within(panel()).getByText(/This new playlist will be created with these settings/)).toBeInTheDocument()
 
     fireEvent.click(await screen.findByRole('button', { name: 'Save changes' }))
     await waitFor(() => expect(within(panel()).getByText('Settings managed within Playlist Management.')).toBeInTheDocument())
   })
+  /* Ticket ThP7DPGo17FmPJdDKM7S (28 Sep 2026): "Add new playlist" opens
+     every section — Phantom Zone, Enabled Features, Multi-Zone Layout and
+     Playlist Settings — and the new playlist starts with the current
+     default playlist's settings, still editable, rather than blank
+     defaults. */
+  it('Add new playlist opens every section and starts from the current playlist\'s settings', async () => {
+    const settings = { assetPosition: 'Top-Right', assetFill: 'Stretch', campaignTransition: 'Slide', campaignAutoRotation: 'Auto-Rotate On', campaignAutoPlay: 'Auto-Play On' }
+    const withSettings: Record<string, unknown> = {
+      ...responses,
+      '/api/admin/v1/playlists': { items: [
+        { id: 'pl_landscape', name: 'Landscape Playlist', autoCreatedFor: 'landscape', playlistSettings: settings, assignments: [] },
+        { id: 'pl_menu', name: 'Menu Board Playlist', autoCreatedFor: 'menu_board', playlistSettings: {}, assignments: [] },
+      ] },
+    }
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response(JSON.stringify(withSettings[url.split('?')[0]] ?? {}), { status: 200 })))
+    renderAt('/display-types?id=landscape', true)
+    await screen.findByText('Display Preview')
+    for (const name of ['Phantom Zone', 'Enabled Features', 'Multi-Zone Layout', 'Playlist Settings']) {
+      expect(within(screen.getByRole('region', { name })).queryByRole('button', { expanded: true })).not.toBeInTheDocument()
+    }
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add new playlist' }))
+
+    for (const name of ['Phantom Zone', 'Enabled Features', 'Multi-Zone Layout', 'Playlist Settings']) {
+      expect(within(screen.getByRole('region', { name })).getByRole('button', { expanded: true })).toBeInTheDocument()
+    }
+    const panel = screen.getByRole('region', { name: 'Playlist Settings' })
+    expect(within(panel).getByText(/This new playlist will be created with these settings/)).toBeInTheDocument()
+    for (const [label, value] of [['Asset Position', 'Top-Right'], ['Asset Fill', 'Stretch'], ['Campaign Transition', 'Slide'], ['Campaign Auto-Rotation', 'Auto-Rotate On'], ['Campaign Auto-Play', 'Auto-Play On']]) {
+      const select = within(panel).getByRole('combobox', { name: label }).closest('.ant-select')
+      expect(select).toHaveTextContent(value)
+      expect(select).not.toHaveClass('ant-select-disabled')
+    }
+  }, 30000)
 })

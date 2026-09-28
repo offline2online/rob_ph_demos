@@ -37,6 +37,8 @@ export interface PartnerDraft {
   listsLinked: boolean
   advertiserWhitelist: string[]
   advertiserBlacklist: string[]
+  categoryWhitelist: string[]
+  categoryBlacklist: string[]
 }
 export const newPartnerKey = (provider: string) => `new:${provider}`
 
@@ -47,12 +49,14 @@ export function partnerDraft(p: Partner): PartnerDraft {
     credentials: Object.fromEntries(fields.map((f) => [f.key, f.secret ? '' : String((p.credentials ?? {})[f.key] ?? '')])),
     bidderEndpoint: p.bidder?.bidderEndpoint ?? '', seatIds: (p.bidder?.seatIds ?? []).join(', '),
     mode: p.mode, listsLinked: p.listsLinked, advertiserWhitelist: p.advertiserWhitelist ?? [], advertiserBlacklist: p.advertiserBlacklist ?? [],
+    categoryWhitelist: p.categoryWhitelist ?? [], categoryBlacklist: p.categoryBlacklist ?? [],
   }
 }
 export const blankPartnerDraft = (provider: Provider): PartnerDraft => ({
   provider, isNew: true,
   credentials: Object.fromEntries((providerDef(provider)?.fields ?? []).map((f) => [f.key, ''])),
   bidderEndpoint: '', seatIds: '', mode: 'test', listsLinked: true, advertiserWhitelist: [], advertiserBlacklist: [],
+  categoryWhitelist: [], categoryBlacklist: [],
 })
 
 /* The PUT body for a DSP page (API.md: whole-page save; secrets write-only). */
@@ -66,7 +70,10 @@ export function partnerInput(d: PartnerDraft, before: PartnerDraft | undefined) 
     bidder: { bidderEndpoint: d.bidderEndpoint.trim(), seatIds: d.seatIds.split(',').map((x) => x.trim()).filter(Boolean) },
     mode: d.mode,
     listsLinked: d.listsLinked,
-    ...(d.listsLinked ? {} : { advertiserWhitelist: d.advertiserWhitelist, advertiserBlacklist: d.advertiserBlacklist }),
+    ...(d.listsLinked ? {} : {
+      advertiserWhitelist: d.advertiserWhitelist, advertiserBlacklist: d.advertiserBlacklist,
+      categoryWhitelist: d.categoryWhitelist, categoryBlacklist: d.categoryBlacklist,
+    }),
   }
 }
 
