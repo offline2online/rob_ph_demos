@@ -380,7 +380,9 @@ says so when the Routine reported done or error without setting the flag,
 never reported back (25 minutes), or was never fired (5 minutes) —
 applied by `functions/index.js`'s `onDeployRoutineSettled` the moment a
 report lands and by `run-backlog-automation.js`'s `reconcileDeployRequests`
-on every sweep. `processDeployTrain` stamps `deployRequestHandledAt` as it
+on every sweep — over every project, not only `trainLocked` ones (an
+approval made outside the board's own button leaves the lock unset, which
+stranded the Backlog Tracker & FAQs train on 28 Sep 2026). `processDeployTrain` stamps `deployRequestHandledAt` as it
 consumes a click (so an old click can never re-arm a train) and now
 re-checks the Routine's step 1 itself — every ticket's `deployCommit` must
 be an ancestor of the branch — on top of its existing nothing-in-testing,
