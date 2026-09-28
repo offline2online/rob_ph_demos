@@ -16,7 +16,22 @@ const os = require("node:os");
 const path = require("node:path");
 const { execFileSync } = require("node:child_process");
 
-const { isGeneratedOutput, rebuildWorkflowsFor, tryAutoResolveGeneratedOutputConflict, conflictedPaths } = require("../scripts/run-backlog-automation.js");
+const { isGeneratedOutput, rebuildWorkflowsFor, tryAutoResolveGeneratedOutputConflict, conflictedPaths, deployWorkflowsFor } = require("../scripts/run-backlog-automation.js");
+
+// 0. Which paths mean "redeploy a hosted service" (HOSTED_DEPLOYS, 28 Sep
+//    2026: the DSP API's own push trigger never fires for a train merge).
+//    Mirrors dsp-api-deploy.yml's `on.push.paths`; the client bundle alone
+//    does not redeploy the API, and docs never do.
+assert.deepStrictEqual(deployWorkflowsFor(["dsp-integration/apps/api/src/domain/slots.ts"]), ["dsp-api-deploy.yml"]);
+assert.deepStrictEqual(deployWorkflowsFor(["dsp-integration/apps/dsp-mocks/src/index.ts"]), ["dsp-api-deploy.yml"]);
+assert.deepStrictEqual(deployWorkflowsFor(["dsp-integration/packages/types/src/openapi.d.ts"]), ["dsp-api-deploy.yml"]);
+assert.deepStrictEqual(deployWorkflowsFor(["dsp-integration/deploy/firebase/functions/src/host.ts"]), ["dsp-api-deploy.yml"]);
+assert.deepStrictEqual(deployWorkflowsFor(["dsp-integration/package-lock.json"]), ["dsp-api-deploy.yml"]);
+assert.deepStrictEqual(deployWorkflowsFor(["dsp-integration/apps/admin/src/App.tsx", "dsp-integration/prototype/index.html"]), [], "a client-only train leaves the API alone");
+assert.deepStrictEqual(deployWorkflowsFor(["dsp-integration/docs/dsp-integration/REQUIREMENTS.md", "backlog-tracker/public/js/app.js"]), []);
+assert.deepStrictEqual(deployWorkflowsFor(["dsp-integration/apps/api/src/seed/seed.ts", "dsp-integration/apps/admin/src/App.tsx"]), ["dsp-api-deploy.yml"], "one train, one dispatch");
+assert.deepStrictEqual(deployWorkflowsFor([]), []);
+assert.deepStrictEqual(deployWorkflowsFor(undefined), []);
 
 // 1. Which paths mean "rebuild".
 assert.deepStrictEqual(rebuildWorkflowsFor(["dsp-integration/apps/admin/src/features/booking-schedule/BookingSchedulePage.tsx"]), ["dsp-prototype.yml"]);
