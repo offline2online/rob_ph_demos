@@ -687,7 +687,8 @@ Routine reports done or error without setting it, never reports back, or
 was never fired, the pipeline sets it itself —
 `trainHandoverReason()` in `functions/train-lock.js`, applied by
 `functions/index.js`'s `onDeployRoutineSettled` and by
-`run-backlog-automation.js`'s `reconcileDeployRequests` — and
+`run-backlog-automation.js`'s `reconcileDeployRequests` (which reads every
+project, locked or not) — and
 `processDeployTrain` re-checks the Routine's own step 1 (every
 `deployCommit` is an ancestor of the branch) and step 2 (nothing still in
 testing) before merging. A consumed click is stamped

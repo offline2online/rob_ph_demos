@@ -2692,15 +2692,24 @@ async function reconcileHumanMergedPrs() {
 // processDeployTrain in this same run, which re-verifies the train before
 // merging. The trigger covers the moment a report lands; only a sweep can
 // notice time passing with nothing written.
+//
+// Every project is read, not only trainLocked ones. The board's approve
+// click latches trainLocked, but a ticket approved any other way (a runner,
+// a direct write) leaves it unset — and on 28 Sep 2026 that stranded the
+// Backlog Tracker & FAQs train: its Deploy Routine ran, wrote nothing, and
+// this sweep never looked at the project. trainHandoverReason already
+// decides from the Deploy to Main click itself (deployNotifyRequestedAt),
+// so the lock was never the right filter. Projects are few; the select
+// keeps each row to the fields the predicate reads.
 async function reconcileDeployRequests() {
   let projects = [];
   try {
     projects = await runQuery({
       from: [{ collectionId: "projects" }],
-      where: { fieldFilter: { field: { fieldPath: "trainLocked" }, op: "EQUAL", value: { booleanValue: true } } },
+      select: { fields: ["trainReady", "trainStatus", "deployNotifyRequestedAt", "deployRequestHandledAt", "deployRoutine"].map((fieldPath) => ({ fieldPath })) },
     });
   } catch (err) {
-    console.log(`[deploy-train] couldn't list locked projects for the hand-over sweep (${err.message}) — skipping this run`);
+    console.log(`[deploy-train] couldn't list projects for the hand-over sweep (${err.message}) — skipping this run`);
     return;
   }
   const now = Date.now();
