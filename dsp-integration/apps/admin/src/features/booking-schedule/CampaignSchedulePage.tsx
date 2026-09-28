@@ -4,7 +4,9 @@
    that it is no longer its own admin nav item. Underline tabs (ph-designer
    components.md §2 — "list pages, campaign detail"), same style
    CampaignDetail already uses; each tab's own content is untouched, so it
-   renders exactly as it did as a standalone page, full width. */
+   renders exactly as it did as a standalone page, full width. The second
+   tab's label reads "Upcoming Campaign Approval" (ticket, 27 Sep 2026); its
+   URL key stays `campaign-status`, so existing links keep working. */
 import { Tabs } from 'antd'
 import { useSearchParams } from 'react-router-dom'
 import { CampaignStatusPage } from '../campaign-status/CampaignStatusPage'
@@ -29,7 +31,7 @@ export function CampaignSchedulePage() {
       onChange={setTab}
       items={[
         { key: 'booking', label: 'Booking schedule', children: <BookingSchedulePage /> },
-        { key: 'campaign-status', label: 'Campaign status', children: <CampaignStatusPage /> },
+        { key: 'campaign-status', label: 'Upcoming Campaign Approval', children: <CampaignStatusPage /> },
       ]}
     />
   )
