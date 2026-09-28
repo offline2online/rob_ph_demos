@@ -244,7 +244,7 @@ describe('DSP page', () => {
     const issues = screen.getByLabelText('Issues')
     expect(issues.textContent).toContain('Connection error: Refresh token rejected — 3 days ago. Re-enter the credentials below and re-test the connection.')
     const text = document.body.textContent ?? ''
-    const order = ['Mode', 'Connection credentials', 'Bidder integration', 'Advertiser whitelist / blacklist'].map((h) => text.indexOf(h))
+    const order = ['Mode', 'Connection credentials', 'Bidder integration', 'List management'].map((h) => text.indexOf(h))
     expect(order).toEqual([...order].sort((a, b) => a - b))
     expect(screen.getByLabelText(/Refresh token/)).toHaveAttribute('type', 'password')
     expect(screen.getByText(/Unlinked — this DSP has its own lists./)).toBeInTheDocument()
