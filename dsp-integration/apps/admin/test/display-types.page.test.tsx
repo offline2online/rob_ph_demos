@@ -100,6 +100,14 @@ describe('Display Types page', () => {
     expect(screen.queryByRole('region', { name: 'Multi-Zone Layout' })).not.toBeInTheDocument()
     /* Phantom Zone / QR Control stays exactly as it is ("as today"). */
     expect(screen.getByRole('region', { name: 'Phantom Zone' })).toBeInTheDocument()
+    /* Enabled Features is dropped entirely for a mobile app — QR Control,
+       the only feature it kept, doesn't apply (ticket, 28 Sep 2026). */
+    expect(screen.queryByRole('region', { name: 'Enabled Features' })).not.toBeInTheDocument()
+
+    await selectTouchPoint('Website')
+    expect(width().value).toBe('1920')
+    expect(height().value).toBe('1080')
+    /* Website keeps QR Control and nothing else. */
     const features = screen.getByRole('region', { name: 'Enabled Features' })
     fireEvent.click(within(features).getByRole('button', { expanded: false }))
     expect(within(features).getByRole('switch', { name: /Enable QR Control/ })).toBeInTheDocument()
@@ -107,10 +115,6 @@ describe('Display Types page', () => {
     expect(within(features).queryByRole('switch', { name: /MIST/ })).not.toBeInTheDocument()
     expect(within(features).queryByRole('switch', { name: /AI-Agent/ })).not.toBeInTheDocument()
     expect(within(features).queryByRole('switch', { name: /Vision\/AI/ })).not.toBeInTheDocument()
-
-    await selectTouchPoint('Website')
-    expect(width().value).toBe('1920')
-    expect(height().value).toBe('1080')
 
     /* Digital Signage and Kiosk: unaffected — a manual canvas edit survives
        switching touch point, and Multi-Zone Layout is back. */
