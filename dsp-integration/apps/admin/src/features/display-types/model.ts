@@ -169,7 +169,13 @@ export const expectedSlotCount = (d: DisplayType) => (isZoned(d) ? mz(d).zones.r
 export const slotIndicesFor = (d: DisplayType, zoneId: string | null): number[] => {
   const slots = slotsOf(d)
   if (!isZoned(d)) return slots.map((_, i) => i)
-  return zoneOf(d, zoneId) ? slots.flatMap((s, i) => (s.zoneId === zoneId ? [i] : [])) : []
+  const zones = mz(d).zones
+  if (!zoneOf(d, zoneId)) return []
+  /* A slot tagged to no current zone belongs to the first zone, as
+     normaliseSlots adopts it, so every slot shows in exactly one playlist
+     (ticket, 28 Sep 2026: inventory totals didn't match). */
+  const ids = new Set(zones.map((z) => z.id))
+  return slots.flatMap((s, i) => ((s.zoneId && ids.has(s.zoneId) ? s.zoneId : zones[0].id) === zoneId ? [i] : []))
 }
 const sameSlots = (a: Slot[], b: Slot[]) => a.length === b.length && a.every((s, i) => s === b[i])
 /* Slots always match the rotation cap(s) in the editor: resized per zone
