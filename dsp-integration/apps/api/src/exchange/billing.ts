@@ -23,7 +23,7 @@ import { randomUUID } from 'node:crypto'
 import type { Context } from '../context'
 import { prepared } from '../db/db'
 import { findPosition, windowMs } from '../domain/positions'
-import { slotCountOf } from '../domain/slots'
+import { rotationSizeOf } from '../domain/slots'
 
 export interface LineItem {
   id: string
@@ -58,7 +58,7 @@ export function runBilling(ctx: Context): LineItem[] {
     if (!p) continue
     const displays = ctx.displays.summaryByDisplayType(p.displayType.id).displays
     const played = ctx.playback.totals({ campaignId: r.campaignId as string, displayTypeId: p.displayType.id, from: r.windowStart, to: new Date(end).toISOString() })
-    const slots = slotCountOf(p.displayType)
+    const slots = rotationSizeOf(p.displayType, p.slot)
     const share = slots ? 1 / slots : 1
     const expectedSec = displays * (len / 1000) * share
     const assumedViews = ctx.audience.forSlot(p.displayType.id, p.slot).assumedViewsPerWindow
