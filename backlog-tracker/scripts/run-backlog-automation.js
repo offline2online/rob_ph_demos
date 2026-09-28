@@ -688,7 +688,49 @@ const GENERATED_BUILDS = [
   },
 ];
 
+// HOSTED_DEPLOYS: a service deployed by its own workflow whose `on: push`
+// paths never fire for a merge this script makes (GITHUB_TOKEN's
+// no-recursion rule — the same reason deploy-backlog-tracker.yml is
+// dispatched explicitly in finishTrain). Found the hard way on 28 Sep 2026:
+// eleven API commits merged by the train between 26 and 28 Sep never
+// reached the hosted DSP API, so the GitHub Pages client was two days ahead
+// of the server it talks to — saves were rejected, and when the API was
+// finally deployed by hand a migration ran against live data. `sources`
+// mirrors the workflow's own `on.push.paths`.
+const HOSTED_DEPLOYS = [
+  {
+    workflow: "dsp-api-deploy.yml",
+    sources: [
+      "dsp-integration/apps/api/", "dsp-integration/apps/dsp-mocks/", "dsp-integration/packages/", "dsp-integration/deploy/firebase/",
+      "dsp-integration/package-lock.json", ".github/workflows/dsp-api-deploy.yml",
+    ],
+  },
+];
+
 const underAny = (p, prefixes) => prefixes.some((s) => (s.endsWith("/") ? p.startsWith(s) : p === s));
+
+// The hosted services a merge of these paths leaves stale.
+function deployWorkflowsFor(paths) {
+  const changed = (paths || []).filter(Boolean);
+  return HOSTED_DEPLOYS.filter((d) => changed.some((p) => underAny(p, d.sources))).map((d) => d.workflow);
+}
+
+// Dispatches each stale service's deploy workflow on main. Never throws: a
+// failed dispatch is logged, and the note on the card says the service
+// still needs deploying by hand. Returns the workflows dispatched.
+function dispatchHostedDeploys(paths, label) {
+  const dispatched = [];
+  for (const workflow of deployWorkflowsFor(paths)) {
+    try {
+      run("gh", ["workflow", "run", workflow, "--repo", REPO, "--ref", "main"]);
+      console.log(`[${label}] triggered ${workflow} — the merge touched what it deploys`);
+      dispatched.push(workflow);
+    } catch (err) {
+      console.log(`[${label}] failed to trigger ${workflow} (${scrubSecrets(err.message)}) — the merge still succeeded, but that service is stale until the workflow is run by hand (Actions → Run workflow on main)`);
+    }
+  }
+  return dispatched;
+}
 
 function isGeneratedOutput(p) {
   return GENERATED_BUILDS.some((b) => underAny(p, b.outputs));
@@ -1942,6 +1984,10 @@ async function finishTrain(project, deployBranch, prNumber, trainItems, { touche
   // rebuild the train got when its tickets landed.
   const prFiles = prFilePaths(prNumber);
   const rebuilds = dispatchRebuilds("main", prFiles, "deploy-train");
+  // And a hosted service whose source this train changed (HOSTED_DEPLOYS):
+  // its deploy workflow's own push trigger never sees this merge either.
+  const hostedDeploys = dispatchHostedDeploys(prFiles, "deploy-train");
+  const hostedDeploysMissed = deployWorkflowsFor(prFiles).filter((w) => !hostedDeploys.includes(w));
 
   // Help-centre content a train edited under faq/data/ reaches Firestore
   // only through faq-content.yml's sync job, and that job's `push` trigger
@@ -1976,6 +2022,12 @@ async function finishTrain(project, deployBranch, prNumber, trainItems, { touche
         (faqSynced ? ` This train changed help-centre content under faq/data/; the repo → Firestore sync (faq-content.yml) was dispatched so the console shows it before the next hourly export.` : "") +
         (rebuilds.length
           ? ` The hosted prototype on GitHub Pages is a built bundle, being rebuilt from main now (${rebuilds.join(", ")}) — allow a few minutes before checking the live site, and confirm with its build-info.json: "commit" is the source commit the bundle was built from, so it should be this train's own last commit (${trainItems.map((i) => (i.deployCommit ? i.deployCommit.slice(0, 7) : null)).filter(Boolean).join(", ") || "one of this train's commits"}) or later — not the merge commit itself, which comes after.`
+          : "") +
+        (hostedDeploys.length
+          ? ` This train changed a hosted service's source, so its deploy was dispatched too (${hostedDeploys.join(", ")}) — the hosted API the prototype talks to is only live once that run is green (Actions tab); until then the client and the API can disagree.`
+          : "") +
+        (hostedDeploysMissed.length
+          ? ` WARNING: this train changed a hosted service's source but its deploy could NOT be dispatched (${hostedDeploysMissed.join(", ")}) — run that workflow by hand on main (Actions → Run workflow) before testing the live site, or the client will be ahead of the API it talks to.`
           : "")
     );
     await patchItem(item.id, {
@@ -2885,7 +2937,7 @@ module.exports = {
   // delivered follows that train instead of being marked live on approval
   onTrainItems, backlogItemIdFromMessage, carryingCommitOnTrain, noDiffPatchFields, carriedCardsOn, isPipelinePreviewUrl,
   // test/generated-builds.test.js
-  isGeneratedOutput, rebuildWorkflowsFor, tryAutoResolveGeneratedOutputConflict,
+  isGeneratedOutput, rebuildWorkflowsFor, tryAutoResolveGeneratedOutputConflict, deployWorkflowsFor,
   // test/patch-paths.test.js
   normalisePatchPaths, projectFolderOf, patchFilesLookFolderRelative,
   // test/preview-url-pin.test.js
