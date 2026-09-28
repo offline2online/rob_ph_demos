@@ -162,13 +162,32 @@ export const slotIndicesFor = (d: DisplayType, zoneId: string | null): number[] 
 const sameSlots = (a: Slot[], b: Slot[]) => a.length === b.length && a.every((s, i) => s === b[i])
 /* Slots always match the rotation cap(s) in the editor: resized per zone
    segment on a zoned display type (a removed zone's slots go with it, a new
-   or bigger zone gets new Headquarters slots), or as one list otherwise. */
+   or bigger zone gets new Headquarters slots), or as one list otherwise.
+   Slots that belong to no current zone — the display type's own slots the
+   moment zones are switched on, or a removed zone's — become the first
+   zone's, and if that zone has no cap of its own yet it takes their count
+   (28 Sep 2026): enabling zones keeps what was set up, it doesn't discard
+   it. Same rule the API applies when it reads a record saved before zones
+   had caps. */
 export const normaliseSlots = (d: DisplayType): DisplayType => {
   const slots = slotsOf(d)
-  const next = isZoned(d)
-    ? mz(d).zones.flatMap((z) => resizeSlots(slots.filter((s) => s.zoneId === z.id), zoneSlotCount(z)).map((s) => (s.zoneId === z.id ? s : { ...s, zoneId: z.id })))
-    : resizeSlots(slots, slotCount(d)).map((s) => (s.zoneId === undefined || s.zoneId === null ? s : { ...s, zoneId: null }))
-  return sameSlots(next, slots) ? d : { ...d, phExtensions: { ...(d.phExtensions ?? {}), slots: next } }
+  if (!isZoned(d)) {
+    const next = resizeSlots(slots, slotCount(d)).map((s) => (s.zoneId === undefined || s.zoneId === null ? s : { ...s, zoneId: null }))
+    return sameSlots(next, slots) ? d : { ...d, phExtensions: { ...(d.phExtensions ?? {}), slots: next } }
+  }
+  const ids = new Set(mz(d).zones.map((z) => z.id))
+  const stray = slots.filter((s) => !s.zoneId || !ids.has(s.zoneId))
+  const first = mz(d).zones[0]
+  const adopt = stray.length > 0 && (first.maximumCampaignsPlayedInRotation === null || first.maximumCampaignsPlayedInRotation === undefined)
+  const zones = adopt ? mz(d).zones.map((z, i) => (i === 0 ? { ...z, maximumCampaignsPlayedInRotation: stray.length + slots.filter((s) => s.zoneId === z.id).length } : z)) : mz(d).zones
+  const ofZone = (z: Zone, i: number) => [...slots.filter((s) => s.zoneId === z.id), ...(i === 0 ? stray : [])]
+  const next = zones.flatMap((z, i) => resizeSlots(ofZone(z, i), zoneSlotCount(z)).map((s) => (s.zoneId === z.id ? s : { ...s, zoneId: z.id })))
+  if (!adopt && sameSlots(next, slots)) return d
+  return {
+    ...d,
+    ...(adopt ? { multiZone: { ...mz(d), zones } as unknown as DisplayType['multiZone'] } : {}),
+    phExtensions: { ...(d.phExtensions ?? {}), slots: next },
+  }
 }
 
 /* Changing the owner only changes the owner: who a sellable position is

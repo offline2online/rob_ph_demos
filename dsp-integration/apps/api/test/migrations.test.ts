@@ -41,4 +41,22 @@ describe('migrations', () => {
     migrateUp(db)
     expect(migrateUp(db)).toEqual([])
   })
+
+  /* 28 Sep 2026: 0029 (multi-zone layout owned by the default playlist)
+     used to add the playlist column and drop the display type's without
+     copying anything between them. Deployed onto a database that already
+     held a zoned Menu Board, it turned it into a single-zone screen and left
+     its zone playlists unused. The layout now travels with the migration. */
+  it('0029 carries an existing multi-zone layout across to the default playlist', () => {
+    const db = openDb(':memory:')
+    migrateUp(db, '0028')
+    const zones = JSON.stringify({ enabled: true, zones: [{ id: 'z1', name: 'Zone 1', playlistId: 'pl_z1' }, { id: 'z2', name: 'Zone 2', playlistId: 'pl_z2' }] })
+    db.prepare("INSERT INTO playlists (id, name, auto_created_for, items) VALUES ('pl_menu', 'Menu Board Playlist', 'menu_board', '[]'), ('pl_other', 'Other', NULL, '[]')").run()
+    db.prepare(`INSERT INTO display_types (id, touch_point, name, canvas_width, canvas_height, background_color, default_playlist_id, playlist_settings, qr_control, enabled_features, multi_zone)
+                VALUES ('menu_board', 'Digital Signage', 'Menu Board', 5760, 1080, '#111111', 'pl_menu', '{}', '{}', '{}', ?)`).run(zones)
+    expect(migrateUp(db)).toContain('0029_multi_zone_owned_by_playlist')
+    const rows = db.prepare('SELECT id, multi_zone FROM playlists ORDER BY id').all() as { id: string; multi_zone: string | null }[]
+    expect(rows).toEqual([{ id: 'pl_menu', multi_zone: zones }, { id: 'pl_other', multi_zone: null }])
+    expect((db.prepare('PRAGMA table_info(display_types)').all() as { name: string }[]).map((c) => c.name)).not.toContain('multi_zone')
+  })
 })

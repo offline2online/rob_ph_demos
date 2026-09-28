@@ -119,4 +119,23 @@ describe('slot ownership helpers', () => {
     /* Nothing to change: the same object comes back. */
     expect(normaliseSlots(back)).toBe(back)
   })
+
+  /* 28 Sep 2026: switching zones on kept nothing — the display type's slots
+     had no zone, every zone was at the default cap, so all of them dropped
+     off the draft. They are the first zone's now, and it takes their count. */
+  it('keeps a display type’s existing slots as Zone 1’s when zones are switched on', () => {
+    const zone = (n: number) => ({ id: `z${n}`, name: `Zone ${n}`, x: 0, y: 0, width: 33, height: 100, playlistId: `pl_z${n}` })
+    const single = base({
+      playlistSettings: { maximumCampaignsPlayedInRotation: 3 },
+      phExtensions: { slots: [slot({ label: 'Priority 1' }), slot({ label: 'Supplier slot', owner: 'advertiser', partnerIds: ['p_google'], listMode: 'rtb' }), slot({ label: 'Store choice', owner: 'advertiser', listMode: 'rtb' })] },
+    })
+    const zoned = normaliseSlots({ ...single, multiZone: { enabled: true, zones: [zone(1), zone(2), zone(3)] } })
+    expect((zoned.multiZone as { zones: { maximumCampaignsPlayedInRotation?: number | null }[] }).zones.map((z) => z.maximumCampaignsPlayedInRotation)).toEqual([3, undefined, undefined])
+    expect(zoned.phExtensions?.slots.map((x) => [x.label, x.owner, x.zoneId])).toEqual([['Priority 1', 'internal', 'z1'], ['Supplier slot', 'advertiser', 'z1'], ['Store choice', 'advertiser', 'z1']])
+    expect(zoned.phExtensions?.slots[1].partnerIds).toEqual(['p_google'])
+    /* A first zone that already has its own cap keeps it: extras beyond it are cut, never the cap raised. */
+    const capped = normaliseSlots({ ...single, multiZone: { enabled: true, zones: [{ ...zone(1), maximumCampaignsPlayedInRotation: 2 }, zone(2)] } })
+    expect(capped.phExtensions?.slots.map((x) => x.label)).toEqual(['Priority 1', 'Supplier slot'])
+    expect(labels(capSummary(zoned, true, 'z1'))).toEqual(['3 slots', '1 Headquarters', '2 Advertiser'])
+  })
 })
