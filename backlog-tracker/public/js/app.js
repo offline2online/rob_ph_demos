@@ -318,6 +318,15 @@ function getDeploySelectedSet(pid) {
   return selectedDeployToFeatureIds[pid];
 }
 
+// ── And a third, for the Merged to Main (Live) column — which cards the
+// project's "Archive selected" CTA archives. Ticked individually or via the
+// column's select-all; cleared once the archive is written. ─────────────
+const selectedArchiveIds = {};
+function getArchiveSelectedSet(pid) {
+  if (!selectedArchiveIds[pid]) selectedArchiveIds[pid] = new Set();
+  return selectedArchiveIds[pid];
+}
+
 // ── Optimistic "just clicked Notify Claude" state (per project) — the real
 // spinning state lives in projects/{id}.notifyRoutine, but that's written by
 // notifyOnProjectReadyForReview (see ../functions/index.js) reacting to
@@ -565,7 +574,9 @@ function cardHTML(item) {
     ? `<input type="checkbox" class="card-select-cb" data-id="${item.id}" data-project-id="${escapeHTML(pid)}" title="Select for Ready for Dev" ${getSelectedSet(pid).has(item.id) ? "checked" : ""}>`
     : (isTesting && !noDeploy
         ? `<input type="checkbox" class="card-deploy-select-cb" data-id="${item.id}" data-project-id="${escapeHTML(pid)}" title="Select for Approved for Deployment" ${getDeploySelectedSet(pid).has(item.id) ? "checked" : ""}>`
-        : "");
+        : (item.status === "published-live" && !isRevertingItem(item)
+            ? `<input type="checkbox" class="card-archive-select-cb" data-id="${item.id}" data-project-id="${escapeHTML(pid)}" title="Select to archive" ${getArchiveSelectedSet(pid).has(item.id) ? "checked" : ""}>`
+            : ""));
 
   // isLocked (isInDevelopment/isSentToClaude) can never coincide with
   // canLeft anyway (both require isBacklog, where canLeft is already
@@ -918,6 +929,19 @@ function deploySelectedCountForProject(pid) {
     (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-for-testing" &&
     !isNoDeployCard(i) && sel.has(i.id)
   ).length;
+}
+
+// Merged to Main (Live) cards the same archive rule as the per-card button
+// allows (not mid-revert) that someone has ticked — what "Archive selected"
+// acts on. Mirrors archiveBtn's own isReverting guard in cardHTML.
+function isRevertingItem(i) { return i.status === "published-live" && !!i.revertReady; }
+function archivableLiveItems(pid) {
+  return items.filter((i) =>
+    (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "published-live" && !isRevertingItem(i));
+}
+function archiveSelectedCountForProject(pid) {
+  const sel = getArchiveSelectedSet(pid);
+  return archivableLiveItems(pid).filter((i) => sel.has(i.id)).length;
 }
 
 // ── The deployment train, on the board ───────────────────────────────────
@@ -1340,6 +1364,20 @@ function deployToFeatureButtonHTML(project) {
   </button>`;
 }
 
+// The project-header "Archive selected" CTA — only when at least one Merged
+// to Main (Live) card is ticked, same hide-when-nothing-to-do rule as
+// deployToFeatureButtonHTML above.
+function archiveSelectedButtonHTML(project) {
+  const pid = project.id;
+  const count = archiveSelectedCountForProject(pid);
+  if (!count) return "";
+  return `<button type="button" class="notify-claude-btn archive-selected-btn" data-project-id="${escapeHTML(pid)}">
+    <span class="material-symbols-outlined notify-claude-icon">inventory_2</span>
+    <span class="notify-claude-label">Archive selected — ${count}</span>
+    <span class="notify-claude-count-pill">${count}</span>
+  </button>`;
+}
+
 // ── Deployment grouping ─────────────────────────────────────────────────────
 // Cards that will ship in one deployment are drawn bracketed together, in
 // place in the column they're already in. That's the whole feature: a UI
@@ -1442,6 +1480,15 @@ function projectSectionHTML(project) {
           <input type="checkbox" class="col-deploy-select-all-cb" data-project-id="${escapeHTML(project.id)}" ${allSelected ? "checked" : ""}>
         </label>`;
       }
+    } else if (col.key === "published-live") {
+      const selectable = archivableLiveItems(project.id);
+      if (selectable.length) {
+        const sel = getArchiveSelectedSet(project.id);
+        const allSelected = selectable.every((i) => sel.has(i.id));
+        selectAllHTML = `<label class="col-select-all" title="Select all to archive">
+          <input type="checkbox" class="col-archive-select-all-cb" data-project-id="${escapeHTML(project.id)}" ${allSelected ? "checked" : ""}>
+        </label>`;
+      }
     }
     // Mobile-only tap-to-collapse (eQOIaEcF4xMSVmZt1rnA): on a phone the
     // board already stacks all 4 columns vertically (see the 640px media
@@ -1477,6 +1524,7 @@ function projectSectionHTML(project) {
           ${notifyClaudeButtonHTML(project)}
           ${deployToFeatureButtonHTML(project)}
           ${deployNotifyButtonHTML(project)}
+          ${archiveSelectedButtonHTML(project)}
           <button class="btn-primary new-item-btn" data-project-id="${escapeHTML(project.id)}" type="button">+ New backlog item</button>
           <div class="project-options">
             <button type="button" class="icon-btn project-options-btn" data-project-id="${escapeHTML(project.id)}" aria-haspopup="true" aria-label="More options for this project">&#8942;</button>
@@ -1837,7 +1885,7 @@ function syncMobileActionBar() {
 // all. Rather than duplicate that dispatch here — two copies that drift the
 // moment either side changes — forward the tap to the real control in the
 // project's own header and let the existing handler run untouched.
-const MOBILE_BAR_ACTIONS = ["project-notify-btn", "deploy-to-feature-btn", "deploy-notify-btn", "new-item-btn"];
+const MOBILE_BAR_ACTIONS = ["project-notify-btn", "deploy-to-feature-btn", "deploy-notify-btn", "archive-selected-btn", "new-item-btn"];
 mobileActionBar && mobileActionBar.addEventListener("click", (e) => {
   const btn = e.target.closest("button, a");
   if (!btn) return;
@@ -2396,6 +2444,26 @@ async function archiveItem(id) {
     status: "archived",
     archivedAt: serverTimestamp(),
   });
+}
+
+// Archives every ticked Merged to Main (Live) card of a project in one batch.
+async function archiveSelected(pid) {
+  const sel = getArchiveSelectedSet(pid);
+  const ids = archivableLiveItems(pid).map((i) => i.id).filter((id) => sel.has(id));
+  if (!ids.length) return;
+  const ok = await showConfirmDialog(
+    `Archive ${ids.length} selected ticket${ids.length === 1 ? "" : "s"}? They move to this project's Archived tickets, where each can be restored.`,
+    { title: "Archive selected", okLabel: "Archive" }
+  );
+  if (!ok) return;
+  const batch = writeBatch(db);
+  ids.forEach((id) => batch.update(doc(db, "backlogItems", id), {
+    status: "archived",
+    archivedAt: serverTimestamp(),
+  }));
+  await batch.commit();
+  sel.clear();
+  render();
 }
 
 async function restoreItem(id) {
@@ -3034,6 +3102,24 @@ projectsRoot.addEventListener("click", async (e) => {
     render();
     return;
   }
+  const archiveSelectCb = e.target.closest(".card-archive-select-cb");
+  if (archiveSelectCb) {
+    const sel = getArchiveSelectedSet(archiveSelectCb.dataset.projectId);
+    if (archiveSelectCb.checked) sel.add(archiveSelectCb.dataset.id); else sel.delete(archiveSelectCb.dataset.id);
+    render();
+    return;
+  }
+  const archiveSelectAllCb = e.target.closest(".col-archive-select-all-cb");
+  if (archiveSelectAllCb) {
+    const pid = archiveSelectAllCb.dataset.projectId;
+    const sel = getArchiveSelectedSet(pid);
+    const ids = archivableLiveItems(pid).map((i) => i.id);
+    if (archiveSelectAllCb.checked) ids.forEach((id) => sel.add(id)); else ids.forEach((id) => sel.delete(id));
+    render();
+    return;
+  }
+  const archiveSelectedBtn = e.target.closest(".archive-selected-btn");
+  if (archiveSelectedBtn) { archiveSelected(archiveSelectedBtn.dataset.projectId); return; }
   const deploySelectCb = e.target.closest(".card-deploy-select-cb");
   if (deploySelectCb) {
     const sel = getDeploySelectedSet(deploySelectCb.dataset.projectId);
