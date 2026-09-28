@@ -137,7 +137,11 @@ export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, onAddPla
       )}
 
       <PhantomZonePanel d={d} update={update} open={open.phantom} onToggle={() => toggle('phantom')} />
-      <EnabledFeaturesPanel d={d} update={update} open={open.features} onToggle={() => toggle('features')} />
+      {/* QR Control (the only feature Mobile App kept) doesn't apply to a
+          mobile app, so the whole section is dropped for it (ticket, 28 Sep 2026). */}
+      {d.touchPoint !== 'Mobile App' && (
+        <EnabledFeaturesPanel d={d} update={update} open={open.features} onToggle={() => toggle('features')} />
+      )}
       {/* Website and Mobile App have no physical canvas to lay out into
           zones (ticket, 28 Sep 2026) — the panel isn't shown at all for
           them, rather than shown disabled. */}
