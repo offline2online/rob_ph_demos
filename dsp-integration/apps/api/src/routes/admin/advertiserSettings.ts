@@ -89,8 +89,15 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
          makes only the zone playlists that actually have an advertiser slot
          show up on Available Inventory — a zone nothing is tagged to simply
          never produces a row. */
-      const playlistIdOf = (s: { zoneId?: string | null }): string | null =>
-        (s.zoneId && zones.find((z) => z.id === s.zoneId)?.playlistId) || t.defaultPlaylistId || null
+      /* Every slot belongs to exactly one zone on a multi-zone display type:
+         one tagged to no current zone counts as the first zone's (same rule
+         as the editor's normaliseSlots), and a zoned display type never falls
+         back to its default playlist, which only carries the layout. */
+      const zoneOfSlot = (s: { zoneId?: string | null }) => (zones.length ? zones.find((z) => z.id === s.zoneId) ?? zones[0] : null)
+      const playlistIdOf = (s: { zoneId?: string | null }): string | null => {
+        if (!zones.length) return t.defaultPlaylistId || null
+        return zoneOfSlot(s)?.playlistId || null
+      }
       /* Not tied to any physical display (Displays & Devices) — its
          advertiser slots exist but aren't actually playing anywhere. Same
          "no displays" read windowStatus (positions.ts) already uses to mark
@@ -111,7 +118,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
          is the same value as `slot`. */
       const zoneSlotCounts = new Map<string | null, number>()
       ;(t.phExtensions?.slots ?? []).forEach((s, i) => {
-        const zoneKey = s.zoneId ?? null
+        const zoneKey = zoneOfSlot(s)?.id ?? null
         const zoneSlot = (zoneSlotCounts.get(zoneKey) ?? 0) + 1
         zoneSlotCounts.set(zoneKey, zoneSlot)
         if (s.owner !== 'advertiser') return

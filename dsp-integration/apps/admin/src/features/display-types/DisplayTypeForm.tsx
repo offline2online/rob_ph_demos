@@ -15,7 +15,7 @@ import { useState } from 'react'
 import { Field } from '../../shared/Field'
 import { Icon } from '../../shared/Icon'
 import { T } from '../../theme/phTheme'
-import { TOUCH_POINT_CANVAS_DEFAULTS } from './model'
+import { TOUCH_POINT_CANVAS_DEFAULTS, isZoned } from './model'
 import { EnabledFeaturesPanel } from './panels/EnabledFeaturesPanel'
 import { MultiZonePanel } from './panels/MultiZonePanel'
 import { PhantomZonePanel } from './panels/PhantomZonePanel'
@@ -64,6 +64,11 @@ export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, onAddPla
      display type still needs it, to pick a different already-saved
      playlist if the new one wasn't wanted after all. */
   const defaultPlaylistIsNew = isNewPlaylist(d.defaultPlaylistId)
+  /* Once multi-zone is on, playlists are managed per zone (ticket, 28 Sep
+     2026): the default playlist only carries the layout behind the scenes, so
+     it is hidden here and from Playlist Management. Its id is kept on the
+     record, where the layout is saved. */
+  const zoned = isZoned(d) && !isNewDisplayType
 
   return (
     <div>
@@ -106,7 +111,7 @@ export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, onAddPla
           2026): its default playlist is auto-created behind the scenes, so
           there's nothing yet to pick between — the dropdown comes back the
           moment the display type is saved and the playlist is real. */}
-      {!isNewDisplayType && (
+      {!isNewDisplayType && !zoned && (
         <Field
           label="Default Playlist"
           htmlFor="defaultPlaylist"
@@ -157,14 +162,14 @@ export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, onAddPla
           itself is new it also holds Maximum Campaigns Played In Rotation
           and slot assignment (ticket, 28 Sep 2026), since there is no
           Playlist Management row to set them on until Save. */}
-      <PlaylistSettingsPanel
+      {!zoned && <PlaylistSettingsPanel
         playlist={defaultPlaylistOption}
         editable={defaultPlaylistIsNew}
         onUpdate={updateDefaultPlaylistSettings}
         open={open.playlistSettings}
         onToggle={() => toggle('playlistSettings')}
         capSlots={isNewDisplayType ? { d, update, slotAssignment, partners, advertiserOpen, onFixConnection } : null}
-      />
+      />}
     </div>
   )
 }
