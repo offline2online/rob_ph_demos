@@ -2568,7 +2568,10 @@ playback analytics.**
   at the top of Exchange settings, off at first; while off, Advertisers /
   Inventory (and, from there, Campaign schedule's Campaign status tab) is
   hidden, no bid requests are sent, the Partner API and `sellers.json`
-  answer 404, and nothing is deleted. *(DSP Integration → Exchange
+  answer 404, and nothing is deleted. What the switch is for is explained
+  by the tooltip on the **DSP Integration page title**, not beside the
+  switch (ticket pM0Bc2pO8WnxeV9UpI8e, 28 Sep 2026); Display Types Details
+  has a page-title tooltip of its own. *(DSP Integration → Exchange
   settings)*
 - **Exchange settings**: four seller-of-record fields and the published
   `sellers.json` status, shown once the switch is on. *(DSP Integration →

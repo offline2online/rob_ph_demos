@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Providers, appRoutes } from '../src/App'
+import { SWITCH_TIP } from '../src/features/dsp-integration/ExchangeSettings'
 import { advertiserSettings, exchange, fakeFetch } from './fixtures'
 
 beforeEach(() => vi.stubGlobal('fetch', vi.fn(fakeFetch())))
@@ -42,6 +43,23 @@ const renderAt = (path: string, dspIntegration = true) => {
 }
 
 describe('DSP Integration section', () => {
+  /* Ticket pM0Bc2pO8WnxeV9UpI8e (28 Sep 2026): the explanation of DSP
+     integration sits on the page title, like Playlist Management's and
+     Advertisers / Inventory's, and no longer beside the switch; Display
+     Types gets a page-title tooltip of its own. */
+  it('explains DSP integration from the page title, not from the switch', async () => {
+    renderAt('/dsp-integration/exchange')
+    const toggle = await screen.findByRole('switch', { name: 'Enable DSP Integration' })
+    expect(screen.getByRole('button', { name: SWITCH_TIP })).toBeInTheDocument()
+    expect(within(toggle.parentElement as HTMLElement).queryByRole('button', { name: SWITCH_TIP })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: SWITCH_TIP })).toHaveLength(1)
+  })
+
+  it('gives Display Types a page-title tooltip', async () => {
+    renderAt('/display-types')
+    expect(await screen.findByRole('button', { name: /A display type describes a kind of screen/ }, { timeout: 10000 })).toBeInTheDocument()
+  })
+
   it('lists the company pages and the three DSPs in onboarding order, with their state', async () => {
     renderAt('/dsp-integration/exchange')
     const nav = await screen.findByRole('navigation', { name: 'DSP Integration' })

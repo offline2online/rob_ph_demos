@@ -24,7 +24,8 @@ export const EXCHANGE_TIP =
   'Sets up your organisation as the seller of record for its screens. Configurable here: organisation name, domain, seller ID and ad-ops contact email, all required. Once saved and complete, sellers.json is published at https://[domain]/sellers.json and every bid request carries your domain and seller ID in its SupplyChain; until then no DSP is sent bid requests. Not configurable (platform defaults): seller type (Publisher), the DOOH object, the OpenOOH venue taxonomy, QPS and bid timeout. Bid requests use OpenRTB 2.6 as the minimum supported version for programmatic DOOH; the exchange is designed to adopt 2.7, 2.8 and later versions per DSP as the market moves.'
 
 /* Kept high level on purpose (Rob, 24 Sep 2026): what the switch is for,
-   not what it does to each page — REQUIREMENTS §7 has that detail. */
+   not what it does to each page — REQUIREMENTS §7 has that detail. Shown
+   on the DSP Integration page title (App.tsx), not beside the switch. */
 export const SWITCH_TIP =
   'For retailers running their digital signage as a retail media network. Enabling DSP integration lets you sell ad inventory on your in-store screens to advertisers through their DSPs, opening up a new revenue opportunity from the screens you already have.'
 
@@ -46,7 +47,7 @@ export function ExchangeSettings() {
         right={!saved.exchange.enabled ? undefined : published ? <StatusPill colour={T.success} icon="check_circle">Published</StatusPill> : <StatusPill colour={T.warning} icon="warning">Incomplete</StatusPill>}
       />
       <div className="mt-4 flex items-center justify-between border-b py-4" style={{ borderColor: T.divider }}>
-        <WithTip tip={SWITCH_TIP}><label htmlFor="dspEnabled" style={{ fontSize: 14, color: T.text }}>Enable DSP Integration</label></WithTip>
+        <label htmlFor="dspEnabled" style={{ fontSize: 14, color: T.text }}>Enable DSP Integration</label>
         <Switch id="dspEnabled" checked={e.enabled} onChange={setEnabled} />
       </div>
       {e.enabled && (
