@@ -371,6 +371,20 @@ describe('Campaign Status stand-in', () => {
     expect(screen.queryByRole('tab', { name: 'Campaign status' })).not.toBeInTheDocument()
   })
 
+  /* Ticket LH8iavmKqMB8mjHs9M8m: Advertiser Bookings opens on Booking
+     schedule. The tab is no longer kept in the URL, so a reload after
+     looking at Upcoming Campaign Approval lands back on Booking schedule;
+     the back link's ?tab=campaign-status still works, once. */
+  it('opens on Booking schedule and never leaves the tab in the URL', async () => {
+    vi.stubGlobal('fetch', vi.fn(fakeFetch(routes)))
+    const router = renderAt('/booking-schedule?tab=campaign-status')
+    expect(await screen.findByRole('tab', { name: 'Upcoming Campaign Approval', selected: true }, { timeout: 10000 })).toBeInTheDocument()
+    await waitFor(() => expect(router.state.location.search).toBe(''))
+    cleanup()
+    renderAt('/booking-schedule')
+    expect(await screen.findByRole('tab', { name: 'Booking schedule', selected: true }, { timeout: 10000 })).toBeInTheDocument()
+  })
+
   /* Ticket, 27 Sep 2026: clicking a count sets the Status column's own
      filter; it stays on until cleared from that column's funnel. */
   it('filters the Status column to a status when its count is clicked, until the filter is cleared', async () => {

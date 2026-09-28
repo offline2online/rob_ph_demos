@@ -2427,7 +2427,11 @@ playback analytics.**
   navigation, this tab is its only home now). The page as a whole **still
   stands alone in its own browser tab** (Rob, 21 Sep, unchanged by the 26
   Sep tab restructuring above): no Display Types / DSP Integration nav
-  beside it (`RouteHandle.hideNav`).
+  beside it (`RouteHandle.hideNav`). **It always opens on Booking
+  schedule** (ticket LH8iavmKqMB8mjHs9M8m, 28 Sep 2026): the tab is page
+  state, not part of the URL, so reloading after looking at Upcoming
+  Campaign Approval lands back on Booking schedule; `?tab=campaign-status`
+  (Campaign detail's back link) is honoured once on arrival, then dropped.
 - **Booking schedule tab**: every advertiser position across its play
   windows, booked / available / unavailable, **at the top of the tab**,
   with booking revenue per display type and then what sold by campaign
