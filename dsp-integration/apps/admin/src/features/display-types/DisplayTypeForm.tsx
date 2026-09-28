@@ -10,7 +10,7 @@
    Playlist dropdown above it is hidden — there's nothing to pick between
    yet, since no playlist exists until Save creates one. */
 import { Button, ColorPicker, Input, InputNumber, Select } from 'antd'
-import { TOUCH_POINTS, type DisplayType, type Playlist } from '@ph-dsp/types'
+import { TOUCH_POINTS, type DisplayType, type Partner, type Playlist } from '@ph-dsp/types'
 import { useState } from 'react'
 import { Field } from '../../shared/Field'
 import { Icon } from '../../shared/Icon'
@@ -23,10 +23,17 @@ import { Preview } from './Preview'
 
 export interface PlaylistOption { id: string; name: string; autoCreatedFor: string | null; playlistSettings?: Record<string, unknown> }
 
-export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, onAddPlaylist, isNewPlaylist, isNewDisplayType, updateDefaultPlaylistSettings }: {
+export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, onAddPlaylist, isNewPlaylist, isNewDisplayType, updateDefaultPlaylistSettings, slotAssignment, partners, advertiserOpen, onFixConnection }: {
   d: DisplayType
   update: (fn: (d: DisplayType) => DisplayType) => void
   playlists: PlaylistOption[]
+  /* Slot ownership (flag on): Maximum Campaigns Played In Rotation and slot
+     assignment are editable in the Playlist Settings panel while the
+     display type is still being created (ticket, 28 Sep 2026). */
+  slotAssignment: boolean
+  partners: Partner[]
+  advertiserOpen: (i: number) => boolean
+  onFixConnection: (partnerId: string) => void
   zonePlaylistId: (n: number) => string
   /* Creates a new playlist scoped to this display type and returns its id. */
   onAddPlaylist: () => string
@@ -124,13 +131,17 @@ export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, onAddPla
           playlist is still a local draft (`defaultPlaylistIsNew`, whether
           because the whole display type is new or because its default was
           just swapped via "+ Add new playlist"); a read-only preview with a
-          Playlist Management CTA once it's real. */}
+          Playlist Management CTA once it's real. While the display type
+          itself is new it also holds Maximum Campaigns Played In Rotation
+          and slot assignment (ticket, 28 Sep 2026), since there is no
+          Playlist Management row to set them on until Save. */}
       <PlaylistSettingsPanel
         playlist={defaultPlaylistOption}
         editable={defaultPlaylistIsNew}
         onUpdate={updateDefaultPlaylistSettings}
         open={open.playlistSettings}
         onToggle={() => toggle('playlistSettings')}
+        capSlots={isNewDisplayType ? { d, update, slotAssignment, partners, advertiserOpen, onFixConnection } : null}
       />
     </div>
   )

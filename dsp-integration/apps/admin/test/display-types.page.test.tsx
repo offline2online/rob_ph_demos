@@ -115,6 +115,53 @@ describe('Display Types page', () => {
     expect(await screen.findByRole('button', { name: 'Show settings for Landscape Playlist' })).toBeInTheDocument()
   }, 30000)
 
+  /* Ticket, 28 Sep 2026: a new display type starts with every setting at
+     its default — its playlist's panel reads "Default settings", nothing
+     overridden — and, since there's no Playlist Management row until Save,
+     the same panel lets Maximum Campaigns Played In Rotation and the
+     Headquarters/Advertiser slots be set right here. What it shows is what
+     Save sends: the display type, its slots, and the playlist's settings. */
+  it('creates a new display type with default playlist settings, and lets its rotation cap and slots be set before the first save', async () => {
+    const calls: { method: string; url: string; body: Record<string, unknown> }[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, opts?: RequestInit) => {
+      if (opts?.method && opts.method !== 'GET') calls.push({ method: opts.method, url: url.split('?')[0], body: opts.body ? JSON.parse(String(opts.body)) : {} })
+      return new Response(JSON.stringify(responses[url.split('?')[0]] ?? {}), { status: 200 })
+    }))
+    renderAt('/display-types?id=landscape', true)
+    await screen.findByText('Display Preview')
+    fireEvent.click(screen.getByRole('button', { name: /New display type/ }))
+    fireEvent.change(await screen.findByPlaceholderText('Name this display type'), { target: { value: 'Aisle End' } })
+
+    const panel = () => screen.getByRole('region', { name: 'Playlist Settings' })
+    const header = () => within(panel()).getByRole('button', { expanded: false })
+    expect(within(header()).getByText('Default settings')).toHaveAttribute('data-tone', 'default')
+    expect(within(header()).queryByText(/settings changed/)).not.toBeInTheDocument()
+    fireEvent.click(header())
+    expect(within(panel()).getByRole('combobox', { name: 'Campaign Auto-Rotation' }).closest('.ant-select')).toHaveTextContent('Default (Auto-Rotate On)')
+    expect(within(panel()).getByRole('combobox', { name: 'Campaign Auto-Play' }).closest('.ant-select')).toHaveTextContent('Default (Auto-Play On)')
+
+    /* Rotation cap and slots, editable here while the display type is new. */
+    const cap = within(panel()).getByRole('combobox', { name: 'Maximum Campaigns Played In Rotation' })
+    expect(cap.closest('.ant-select')).toHaveTextContent('Default (Unlimited)')
+    expect(within(panel()).queryByRole('combobox', { name: /Slot \d owner/ })).not.toBeInTheDocument()
+    fireEvent.mouseDown(cap)
+    fireEvent.click(await screen.findByTitle('2'))
+    await within(panel()).findByLabelText('Slot 2 owner', { selector: 'input' })
+    fireEvent.mouseDown(within(panel()).getByRole('combobox', { name: 'Slot 2 owner' }))
+    fireEvent.click(await screen.findByText('Advertiser', { selector: '.ant-select-item-option-content span' }))
+    await waitFor(() => expect(within(screen.getByTestId('slot-card-2')).getByText('Advertiser')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT' && /\/extensions$/.test(c.url))).toBe(true))
+    const post = calls.find((c) => c.method === 'POST' && c.url === '/api/admin/v1/display-types')!
+    expect(post.body).toMatchObject({ name: 'Aisle End', playlistSettings: { maximumCampaignsPlayedInRotation: 2 } })
+    const ext = calls.find((c) => c.method === 'PUT' && /\/extensions$/.test(c.url))!
+    expect((ext.body as { slots: { owner: string }[] }).slots.map((s) => s.owner)).toEqual(['internal', 'advertiser'])
+    /* The playlist's settings as shown — all default — are sent for the playlist Save created. */
+    const settings = calls.find((c) => c.method === 'PUT' && /\/playlists\/pl_dt_\d+\/settings$/.test(c.url))!
+    expect(settings.body).toEqual({})
+  }, 30000)
+
   /* Ticket, 27 Sep 2026: "Add new playlist" is a button above the Default
      Playlist dropdown, top right, not the dropdown's last option. */
   it('adds a new playlist from a button above the Default Playlist dropdown, not from inside it', async () => {

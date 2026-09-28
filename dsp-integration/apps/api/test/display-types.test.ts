@@ -28,10 +28,11 @@ describe('display types — POC stand-in endpoints', () => {
     expect(res.statusCode).toBe(201)
     expectMatchesContract('POST', '/admin/v1/display-types', 201, res.json())
     expect(ctx.playlists.get('pl_dt_new')).toMatchObject({ name: 'New Display Type Playlist', autoCreatedFor: 'dt_new' })
-    /* Ticket, 27 Sep 2026: a freshly auto-created playlist starts with
-       Auto-Rotation/Auto-Play explicitly off, not the "{}" that used to
-       silently inherit the platform defaults of On/On. */
-    expect(ctx.playlists.get('pl_dt_new')?.playlistSettings).toEqual({ campaignAutoRotation: 'Auto-Rotate Off', campaignAutoPlay: 'Auto-Play Off' })
+    /* Ticket, 28 Sep 2026: a new display type's own playlist starts with
+       every setting at its default — nothing overridden. (A playlist added
+       to an existing display type, or a zone's, still starts with
+       Auto-Rotation/Auto-Play explicitly off — the PUT …/record test.) */
+    expect(ctx.playlists.get('pl_dt_new')?.playlistSettings).toEqual({})
   })
 
   it('POST rejects web touch points (decision 1) and a missing name', async () => {
@@ -81,11 +82,13 @@ describe('display types — POC stand-in endpoints', () => {
 describe('PUT /admin/v1/display-types/{id}/extensions — slot ownership', () => {
   const put = (app: ReturnType<typeof buildApp>, id: string, payload: unknown) =>
     app.inject({ method: 'PUT', url: `/api/admin/v1/display-types/${id}/extensions`, payload: payload as object })
+  /* Menu Board (seed) is multi-zone: its three slots are Zone 1's own
+     (28 Sep 2026), so each carries that zone's id. */
   const menuSlots = (second: Record<string, unknown> = {}) => ({
     slots: [
-      { label: 'Priority 1', owner: 'internal' },
-      { label: 'Supplier slot', owner: 'advertiser', ...second },
-      { label: 'Store choice', owner: 'retail' },
+      { label: 'Priority 1', owner: 'internal', zoneId: 'z1' },
+      { label: 'Supplier slot', owner: 'advertiser', zoneId: 'z1', ...second },
+      { label: 'Store choice', owner: 'retail', zoneId: 'z1' },
     ],
   })
 
@@ -110,7 +113,7 @@ describe('PUT /admin/v1/display-types/{id}/extensions — slot ownership', () =>
     const kept = await put(app, 'menu_board', menuSlots({ label: 'Brand slot' }))
     expect(kept.json().slots[1]).toMatchObject({ advertisers: ['Nestlé'], partnerIds: ['p_google'], supportedTargeting: ['localised', 'personalised'] })
     /* Owner changed: it is no longer sellable inventory, so the assignment goes. */
-    const dropped = await put(app, 'menu_board', { slots: [{ label: 'Priority 1', owner: 'internal' }, { label: 'Brand slot', owner: 'internal' }, { label: 'Store choice', owner: 'retail' }] })
+    const dropped = await put(app, 'menu_board', { slots: [{ label: 'Priority 1', owner: 'internal', zoneId: 'z1' }, { label: 'Brand slot', owner: 'internal', zoneId: 'z1' }, { label: 'Store choice', owner: 'retail', zoneId: 'z1' }] })
     expect(dropped.json().slots[1]).toMatchObject({ advertisers: [], partnerIds: [], listMode: null })
     expect(ctx.displayTypes.get('menu_board')?.phExtensions?.slots[1].supportedTargeting).toBeUndefined()
   })
@@ -133,45 +136,76 @@ describe('PUT /admin/v1/display-types/{id}/extensions — slot ownership', () =>
     expect(kept.statusCode).toBe(200)
     expect(kept.json().slots[1]).toMatchObject({ owner: 'advertiser', partnerIds: ['p_google'] })
     /* Slot 1 becoming Advertiser is a new one: refused, and nothing saved. */
-    const added = await put(app, 'menu_board', { slots: [{ label: 'Priority 1', owner: 'advertiser' }, { label: 'Brand slot', owner: 'advertiser' }, { label: 'Store choice', owner: 'retail' }] })
+    const added = await put(app, 'menu_board', { slots: [{ label: 'Priority 1', owner: 'advertiser', zoneId: 'z1' }, { label: 'Brand slot', owner: 'advertiser', zoneId: 'z1' }, { label: 'Store choice', owner: 'retail', zoneId: 'z1' }] })
     expect(added.statusCode).toBe(400)
     expectMatchesContract('PUT', '/admin/v1/display-types/{displayTypeId}/extensions', 400, added.json())
     expect(added.json().error.details).toEqual([{ field: 'slots[0].owner', reason: expect.stringContaining('Switch on DSP integration') }])
     expect(ctx.displayTypes.get('menu_board')?.phExtensions?.slots[0].owner).toBe('internal')
     /* Switched back on, it can be. */
     ctx.exchange.save({ ...ctx.exchange.get(), enabled: true })
-    expect((await put(app, 'menu_board', { slots: [{ label: 'Priority 1', owner: 'advertiser' }, { label: 'Brand slot', owner: 'advertiser' }, { label: 'Store choice', owner: 'retail' }] })).statusCode).toBe(200)
+    expect((await put(app, 'menu_board', { slots: [{ label: 'Priority 1', owner: 'advertiser', zoneId: 'z1' }, { label: 'Brand slot', owner: 'advertiser', zoneId: 'z1' }, { label: 'Store choice', owner: 'retail', zoneId: 'z1' }] })).statusCode).toBe(200)
   })
 
   it('requires one slot per rotation position, and a label on each', async () => {
     const { app } = await setup()
-    const res = await put(app, 'menu_board', { slots: [{ label: 'Only one', owner: 'internal' }] })
+    const res = await put(app, 'menu_board', { slots: [{ label: 'Only one', owner: 'internal', zoneId: 'z1' }] })
     expect(res.statusCode).toBe(400)
     expectMatchesContract('PUT', '/admin/v1/display-types/{displayTypeId}/extensions', 400, res.json())
-    expect(res.json().error.details[0]).toMatchObject({ field: 'slots' })
+    expect(res.json().error.details[0]).toMatchObject({ field: 'slots', reason: expect.stringContaining('Expected 3 slots across 3 zones') })
     expect((await put(app, 'landscape', { slots: [] })).statusCode).toBe(200)
     const blank = await put(app, 'menu_board', menuSlots({ label: '  ' }))
     expect(blank.json().error.details.map((d: { field: string }) => d.field)).toEqual(['slots[1].label'])
   })
 
-  /* zoneId (ticket "Available Inventory: playlist-primary table (drop
-     Display type column) with Unassigned indicator", 27 Sep 2026): tags a
-     slot to one of the display type's zones, purely so Available Inventory
-     can attribute its advertiser position to that zone's own playlist. Set
-     by the slot editor, like label and owner, and validated against this
-     display type's real zones. */
-  it('tags a slot to one of the display type’s zones, and rejects an unknown one', async () => {
+  /* Ticket, 28 Sep 2026 ("the three zones are still being seen as a single
+     inventory slot"): each zone runs its own playlist, so each has its own
+     Maximum Campaigns Played In Rotation (on the zone) and its own slots —
+     the display type's slot list is one segment per zone, in zone order. A
+     slot can't be filed under a zone other than the one its position
+     belongs to, and a single-zone display type takes no zone at all. */
+  it('sizes a multi-zone display type’s slots per zone, in zone order, from each zone’s own cap', async () => {
     const { app, ctx } = await setup()
-    const res = await put(app, 'menu_board', menuSlots({ zoneId: 'z3' }))
-    expect(res.statusCode).toBe(200)
-    expectMatchesContract('PUT', '/admin/v1/display-types/{displayTypeId}/extensions', 200, res.json())
-    expect(res.json().slots[1]).toMatchObject({ zoneId: 'z3' })
-    expect(ctx.displayTypes.get('menu_board')?.phExtensions?.slots[1].zoneId).toBe('z3')
+    const dt = ctx.displayTypes.get('menu_board') as DisplayType
+    const zones = (dt.multiZone as { zones: { id: string; maximumCampaignsPlayedInRotation: number | null }[] }).zones
+    /* Zone 2 gets a rotation of two: the display type now carries 3 + 2 slots. */
+    const withZone2 = { ...dt, multiZone: { enabled: true, zones: zones.map((z) => (z.id === 'z2' ? { ...z, maximumCampaignsPlayedInRotation: 2 } : z)) } }
+    expect((await app.inject({ method: 'PUT', url: '/api/admin/v1/display-types/menu_board/record', payload: withZone2 })).statusCode).toBe(200)
 
-    const bad = await put(app, 'menu_board', menuSlots({ zoneId: 'not-a-zone' }))
-    expect(bad.statusCode).toBe(400)
-    expectMatchesContract('PUT', '/admin/v1/display-types/{displayTypeId}/extensions', 400, bad.json())
-    expect(bad.json().error.details).toEqual([{ field: 'slots[1].zoneId', reason: 'Unknown zone.' }])
+    const short = await put(app, 'menu_board', menuSlots())
+    expect(short.statusCode).toBe(400)
+    expect(short.json().error.details[0]).toMatchObject({ field: 'slots', reason: expect.stringContaining('Expected 5 slots across 3 zones') })
+
+    const wrongZone = await put(app, 'menu_board', { slots: [...menuSlots().slots, { label: 'Slot 1', owner: 'internal', zoneId: 'z3' }, { label: 'Slot 2', owner: 'advertiser', zoneId: 'z2' }] })
+    expect(wrongZone.statusCode).toBe(400)
+    expectMatchesContract('PUT', '/admin/v1/display-types/{displayTypeId}/extensions', 400, wrongZone.json())
+    expect(wrongZone.json().error.details).toEqual([{ field: 'slots[3].zoneId', reason: expect.stringContaining("Slot 4 is Zone 2's") }])
+
+    const ok = await put(app, 'menu_board', { slots: [...menuSlots().slots, { label: 'Slot 1', owner: 'internal', zoneId: 'z2' }, { label: 'Slot 2', owner: 'advertiser', zoneId: 'z2' }] })
+    expect(ok.statusCode).toBe(200)
+    expectMatchesContract('PUT', '/admin/v1/display-types/{displayTypeId}/extensions', 200, ok.json())
+    expect(ok.json().slots.map((s: { zoneId: string | null }) => s.zoneId)).toEqual(['z1', 'z1', 'z1', 'z2', 'z2'])
+
+    /* A single-zone display type's slots belong to no zone. */
+    const landscape = ctx.displayTypes.get('landscape') as DisplayType
+    await app.inject({ method: 'PUT', url: '/api/admin/v1/display-types/landscape/record', payload: { ...landscape, playlistSettings: { ...landscape.playlistSettings, maximumCampaignsPlayedInRotation: 1 } } })
+    const stray = await put(app, 'landscape', { slots: [{ label: 'Only', owner: 'internal', zoneId: 'z1' }] })
+    expect(stray.json().error.details).toEqual([{ field: 'slots[0].zoneId', reason: 'Unknown zone.' }])
+    expect((await put(app, 'landscape', { slots: [{ label: 'Only', owner: 'internal' }] })).statusCode).toBe(200)
+  })
+
+  /* A multi-zone display type saved before zones had caps of their own
+     (one shared slot list, some slots tagged to a zone) reads in the new
+     shape without a migration script: tagged slots go to their zone,
+     untagged ones to the first, and each zone's cap becomes what it got. */
+  it('reads a pre-28-Sep multi-zone record as one segment per zone, each zone capped by what it received', async () => {
+    const { ctx } = await setup()
+    const dt = ctx.displayTypes.get('menu_board') as DisplayType
+    const legacyZones = (dt.multiZone as { zones: Record<string, unknown>[] }).zones.map(({ maximumCampaignsPlayedInRotation: _cap, ...z }) => z)
+    ctx.displayTypes.saveRecord('menu_board', { ...dt, multiZone: { enabled: true, zones: legacyZones } })
+    ctx.displayTypes.saveExtensions('menu_board', { ...dt.phExtensions!, slots: dt.phExtensions!.slots.map((s, i) => ({ ...s, zoneId: i === 1 ? 'z3' : null })) })
+    const read = ctx.displayTypes.get('menu_board') as DisplayType
+    expect((read.multiZone as { zones: { id: string; maximumCampaignsPlayedInRotation: number | null }[] }).zones.map((z) => [z.id, z.maximumCampaignsPlayedInRotation])).toEqual([['z1', 2], ['z2', null], ['z3', 1]])
+    expect(read.phExtensions?.slots.map((s) => [s.label, s.zoneId])).toEqual([['Priority 1', 'z1'], ['Store choice', 'z1'], ['Supplier slot', 'z3']])
   })
 })
 
