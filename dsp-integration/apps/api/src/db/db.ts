@@ -21,12 +21,32 @@ export function openDb(file: string): Db {
        - synchronous = NORMAL is the recommended pairing with WAL: durable
          across an application crash, fsyncs only at checkpoints.
        On integration these move to the platform's database (Postgres), whose
-       own pool and MVCC give the same properties. */
-    db.exec('PRAGMA journal_mode = WAL')
+       own pool and MVCC give the same properties.
+       Switching a fresh file to WAL needs a lock SQLite does not wait for
+       through busy_timeout, so a second process opening the same new
+       database at the same moment failed outright with "database is
+       locked" — the intermittent start-up failure in
+       test/multiprocess.test.ts that stopped dsp-api-deploy.yml on 28 Sep
+       2026. WAL is recorded in the file once any process sets it, so the
+       switch is retried briefly instead. */
     db.exec('PRAGMA busy_timeout = 5000')
+    setWalMode(db)
     db.exec('PRAGMA synchronous = NORMAL')
   }
   return db
+}
+
+function setWalMode(db: Db) {
+  const pause = new Int32Array(new SharedArrayBuffer(4))
+  for (let attempt = 0; ; attempt++) {
+    try {
+      db.exec('PRAGMA journal_mode = WAL')
+      return
+    } catch (err) {
+      if (attempt >= 100 || !/database is locked|SQLITE_BUSY/i.test(String((err as Error).message))) throw err
+      Atomics.wait(pause, 0, 0, 50)
+    }
+  }
 }
 
 /* Prepared-statement cache, one per database. `db.prepare()` parses and
