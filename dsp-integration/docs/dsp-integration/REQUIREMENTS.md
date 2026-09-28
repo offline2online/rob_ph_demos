@@ -337,7 +337,13 @@ not offered.
   neither. Removing a zone removes its slots (and their positions); adding
   one back, or raising a zone's cap, adds new Headquarters slots for it;
   switching zones off returns to the display type's own cap with slots
-  belonging to no zone. So a Menu Board with three zones and two Advertiser
+  belonging to no zone. **Switching zones on keeps the display type's
+  existing slots as the first zone's**, and that zone takes their count as
+  its cap unless it already has one (28 Sep 2026 — before this, enabling
+  zones dropped every slot from the draft, since no zone had a cap yet).
+  The API's migration `0029` (layout moved onto the default playlist)
+  copies an existing layout across; its first version didn't, which is
+  what emptied the hosted Menu Board's zones the day it was deployed. So a Menu Board with three zones and two Advertiser
   slots a zone is **six positions** on Available Inventory, two under each
   zone's playlist. **A position is still identified by display type + slot
   number** (`PH-CORE-BOUNDARIES.md` "At most one campaign per display type,
