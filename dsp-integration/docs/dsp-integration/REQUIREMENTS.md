@@ -365,6 +365,12 @@ not offered.
   zone playlist created on demand) and selects it immediately — ready, once
   it is this display type's Default Playlist, to define its own multi-zone
   layout below.
+  - **It starts as a copy of the playlist it replaces, with every section
+    open** (ticket ThP7DPGo17FmPJdDKM7S, 28 Sep 2026): Phantom Zone,
+    Enabled Features, Multi-Zone Layout and Playlist Settings all expand on
+    the click, and the new playlist's five settings are the current default
+    playlist's, editable before Save creates it. Only when that playlist has
+    no settings of its own does it fall back to the defaults below.
   - **A playlist added to an existing display type this way, or a zone
     playlist created on demand, starts with Campaign Auto-Rotation and
     Campaign Auto-Play explicitly off** (ticket, 27 Sep 2026) — not the

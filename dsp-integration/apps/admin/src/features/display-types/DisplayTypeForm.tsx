@@ -108,7 +108,13 @@ export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, onAddPla
              2026) — so it reads as the way to add a playlist, not as one of
              the playlists to pick. */
           action={(
-            <Button color="primary" variant="outlined" size="small" icon={<Icon name="add" size={16} />} onClick={() => set({ defaultPlaylistId: onAddPlaylist() })}>
+            <Button color="primary" variant="outlined" size="small" icon={<Icon name="add" size={16} />} onClick={() => {
+              set({ defaultPlaylistId: onAddPlaylist() })
+              /* Every section below opens, so the new playlist's starting
+                 values — matched to the one it replaces — are all in view
+                 to check or change before Save (ticket ThP7DPGo17FmPJdDKM7S). */
+              setOpen({ phantom: true, features: true, zones: true, playlistSettings: true })
+            }}>
               Add new playlist
             </Button>
           )}
