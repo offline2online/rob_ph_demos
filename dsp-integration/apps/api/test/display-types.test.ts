@@ -35,12 +35,22 @@ describe('display types — POC stand-in endpoints', () => {
     expect(ctx.playlists.get('pl_dt_new')?.playlistSettings).toEqual({})
   })
 
-  it('POST rejects web touch points (decision 1) and a missing name', async () => {
+  it('POST rejects unknown touch points and a missing name', async () => {
     const { app } = await setup()
     const res = await app.inject({ method: 'POST', url: '/api/admin/v1/display-types', payload: newType({ touchPoint: 'Responsive Web', name: ' ' }) })
     expect(res.statusCode).toBe(400)
     expectMatchesContract('POST', '/admin/v1/display-types', 400, res.json())
     expect(res.json().error.details.map((d: { field: string }) => d.field)).toEqual(['name', 'touchPoint'])
+  })
+
+  /* Ticket, 28 Sep 2026: Website and Mobile App added alongside Digital
+     Signage and Kiosk. */
+  it.each(['Website', 'Mobile App'])('POST accepts the %s touch point', async (touchPoint) => {
+    const { app } = await setup()
+    const res = await app.inject({ method: 'POST', url: '/api/admin/v1/display-types', payload: newType({ id: `dt_${touchPoint}`, touchPoint }) })
+    expect(res.statusCode).toBe(201)
+    expectMatchesContract('POST', '/admin/v1/display-types', 201, res.json())
+    expect(res.json().touchPoint).toBe(touchPoint)
   })
 
   it('PUT …/record saves existing fields, never phExtensions, and creates zone playlists on demand', async () => {
@@ -206,6 +216,36 @@ describe('PUT /admin/v1/display-types/{id}/extensions — slot ownership', () =>
     const read = ctx.displayTypes.get('menu_board') as DisplayType
     expect((read.multiZone as { zones: { id: string; maximumCampaignsPlayedInRotation: number | null }[] }).zones.map((z) => [z.id, z.maximumCampaignsPlayedInRotation])).toEqual([['z1', 2], ['z2', null], ['z3', 1]])
     expect(read.phExtensions?.slots.map((s) => [s.label, s.zoneId])).toEqual([['Priority 1', 'z1'], ['Store choice', 'z1'], ['Supplier slot', 'z3']])
+  })
+})
+
+/* Ticket, 28 Sep 2026: Website and Mobile App are HQ-only — no advertising,
+   so the slot editor and the API both refuse anything but a Headquarters
+   slot for them. */
+describe('PUT /admin/v1/display-types/{id}/extensions — Website/Mobile App are HQ-only', () => {
+  const put = (app: ReturnType<typeof buildApp>, id: string, payload: unknown) =>
+    app.inject({ method: 'PUT', url: `/api/admin/v1/display-types/${id}/extensions`, payload: payload as object })
+
+  it.each(['Website', 'Mobile App'])('refuses an Advertiser or Stores slot for %s, accepts Headquarters', async (touchPoint) => {
+    const { app, ctx } = await setup()
+    const created = await app.inject({
+      method: 'POST', url: '/api/admin/v1/display-types',
+      payload: newType({ id: `dt_${touchPoint}`, touchPoint, playlistSettings: { maximumCampaignsPlayedInRotation: 1 } }),
+    })
+    expect(created.statusCode).toBe(201)
+
+    const advertiser = await put(app, `dt_${touchPoint}`, { slots: [{ label: 'Slot 1', owner: 'advertiser' }] })
+    expect(advertiser.statusCode).toBe(400)
+    expectMatchesContract('PUT', '/admin/v1/display-types/{displayTypeId}/extensions', 400, advertiser.json())
+    expect(advertiser.json().error.details).toEqual([{ field: 'slots[0].owner', reason: expect.stringContaining('isn’t available for this touch point') }])
+
+    const retail = await put(app, `dt_${touchPoint}`, { slots: [{ label: 'Slot 1', owner: 'retail' }] })
+    expect(retail.statusCode).toBe(400)
+    expect(retail.json().error.details).toEqual([{ field: 'slots[0].owner', reason: expect.stringContaining('isn’t available for this touch point') }])
+
+    const internal = await put(app, `dt_${touchPoint}`, { slots: [{ label: 'Slot 1', owner: 'internal' }] })
+    expect(internal.statusCode).toBe(200)
+    expect(ctx.displayTypes.get(`dt_${touchPoint}`)?.phExtensions?.slots).toMatchObject([{ owner: 'internal' }])
   })
 })
 

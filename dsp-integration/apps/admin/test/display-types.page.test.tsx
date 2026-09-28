@@ -60,12 +60,64 @@ describe('Display Types page', () => {
     expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled()
   })
 
-  it('offers only Digital Signage and Kiosk, with no pairing toggle (decision 1)', async () => {
+  it('has no pairing toggle or CTAs/Element Type touch points (decision 1)', async () => {
     renderAt('/display-types?id=landscape', true)
     await screen.findByText('Display Preview')
     expect(screen.queryByText('Idle')).not.toBeInTheDocument()
     expect(screen.queryByText('Connected')).not.toBeInTheDocument()
-    expect(document.body.textContent).not.toMatch(/Responsive Web|Mobile Store Site|Element Type/)
+    expect(document.body.textContent).not.toMatch(/Element Type/)
+  })
+
+  /* Ticket, 28 Sep 2026: Website and Mobile App added to Touch Point,
+     HQ-only (Advertiser/Stores greyed out — advertiser-settings.test.ts and
+     playlist-management.test.tsx cover the slot-owner side of that), with
+     their own canvas defaults and Multi-Zone Layout / non-QR features
+     hidden. Digital Signage and Kiosk must behave exactly as before. */
+  it('offers Website and Mobile App with their own canvas defaults, hides Multi-Zone Layout and non-QR features for them, and leaves Digital Signage/Kiosk untouched', async () => {
+    renderAt('/display-types?id=landscape', true)
+    await screen.findByText('Display Preview')
+    fireEvent.click(screen.getByRole('button', { name: /New display type/ }))
+
+    const width = () => screen.getByLabelText('Canvas width') as HTMLInputElement
+    const height = () => screen.getByLabelText('Canvas height') as HTMLInputElement
+    expect(width().value).toBe('1920')
+    expect(height().value).toBe('1080')
+
+    const selectTouchPoint = async (name: string) => {
+      fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Touch Point' }))
+      const option = await waitFor(() => {
+        const found = Array.from(document.querySelectorAll('.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option')).find((o) => o.textContent?.includes(name))
+        expect(found).toBeTruthy()
+        return found as HTMLElement
+      })
+      fireEvent.click(option)
+    }
+
+    await selectTouchPoint('Mobile App')
+    expect(width().value).toBe('330')
+    expect(height().value).toBe('400')
+    /* No physical canvas to zone. */
+    expect(screen.queryByRole('region', { name: 'Multi-Zone Layout' })).not.toBeInTheDocument()
+    /* Phantom Zone / QR Control stays exactly as it is ("as today"). */
+    expect(screen.getByRole('region', { name: 'Phantom Zone' })).toBeInTheDocument()
+    const features = screen.getByRole('region', { name: 'Enabled Features' })
+    fireEvent.click(within(features).getByRole('button', { expanded: false }))
+    expect(within(features).getByRole('switch', { name: /Enable QR Control/ })).toBeInTheDocument()
+    expect(within(features).queryByRole('switch', { name: /In-Store Radio/ })).not.toBeInTheDocument()
+    expect(within(features).queryByRole('switch', { name: /MIST/ })).not.toBeInTheDocument()
+    expect(within(features).queryByRole('switch', { name: /AI-Agent/ })).not.toBeInTheDocument()
+    expect(within(features).queryByRole('switch', { name: /Vision\/AI/ })).not.toBeInTheDocument()
+
+    await selectTouchPoint('Website')
+    expect(width().value).toBe('1920')
+    expect(height().value).toBe('1080')
+
+    /* Digital Signage and Kiosk: unaffected — a manual canvas edit survives
+       switching touch point, and Multi-Zone Layout is back. */
+    fireEvent.change(width(), { target: { value: '800' } })
+    await selectTouchPoint('Kiosk')
+    expect(width().value).toBe('800')
+    expect(screen.getByRole('region', { name: 'Multi-Zone Layout' })).toBeInTheDocument()
   })
 
   /* Ticket, 27 Sep 2026: Playlist Settings is a collapsible panel like

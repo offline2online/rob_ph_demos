@@ -3,12 +3,14 @@
    advertiser sends as much as it has — but what it does send must be the
    right shape and within the contract's limits. Nothing here targets,
    prices or filters anything; it is what the reviewer reads. */
-import { TOUCH_POINTS, type CampaignBrief } from '@ph-dsp/types'
+import { TOUCH_POINTS, allowsAdvertising, type CampaignBrief } from '@ph-dsp/types'
 
 type Detail = { field: string; reason: string }
 const TEXTS = [['details', 2000], ['objective', 200], ['landingPageUrl', 500]] as const
 const LISTS = [['promotedProducts', 50], ['skus', 100], ['targetAudiences', 50]] as const
-const POINTS = TOUCH_POINTS.map((t) => t.name) as string[]
+/* Only touch points that allow advertising at all (28 Sep 2026: Website and
+   Mobile App are HQ-only, so an advertiser's brief can never target them). */
+const POINTS = TOUCH_POINTS.filter((t) => allowsAdvertising(t.name)).map((t) => t.name) as string[]
 
 const strings = (v: unknown) => Array.isArray(v) && v.every((x) => typeof x === 'string' && x.trim())
 

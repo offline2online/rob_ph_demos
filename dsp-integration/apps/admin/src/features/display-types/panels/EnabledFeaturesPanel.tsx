@@ -2,7 +2,7 @@
    the type. Feature explanations are tooltips (decision 2). QR Control needs
    a phantom zone (prototype defect 3, fixed). */
 import { ColorPicker, InputNumber, Select, Switch } from 'antd'
-import type { DisplayType } from '@ph-dsp/types'
+import { hasStructuralFeatures, type DisplayType } from '@ph-dsp/types'
 import type { ReactNode } from 'react'
 import { CollapsiblePanel } from '../../../shared/CollapsiblePanel'
 import { Field } from '../../../shared/Field'
@@ -26,6 +26,11 @@ export function EnabledFeaturesPanel({ d, update, open, onToggle }: { d: Display
   const phantomDefined = !!q.phantomArea?.enabled
   const setOn = (key: FeatureKey, on: boolean) =>
     update((t) => (key === 'qr_control' ? withQr(t, (x) => ({ ...x, enabled: on })) : withFeature(t, key, { enabled: on })))
+  /* Website and Mobile App keep QR Control (Phantom Zone/QR Control "as
+     today") but hide every other feature — they have no physical display
+     for in-store radio, MIST proximity or on-device Vision/AI to run on
+     (ticket, 28 Sep 2026). */
+  const visibleFeatures = hasStructuralFeatures(d.touchPoint) ? FEATURES : FEATURES.filter((f) => f.key === 'qr_control')
 
   return (
     <CollapsiblePanel
@@ -35,7 +40,7 @@ export function EnabledFeaturesPanel({ d, update, open, onToggle }: { d: Display
       summary={featuresSummary(d).map(({ key, ...c }) => <SummaryChip key={key} {...c} />)}
       badge={<InfoTip text={TIPS.enabledFeatures} />}
     >
-      {FEATURES.map((f) => {
+      {visibleFeatures.map((f) => {
         const available = COMPANY_FEATURE_AVAILABILITY[f.key]
         const on = featureOn(d, f.key)
         const blockedByPhantom = f.key === 'qr_control' && !phantomDefined

@@ -78,6 +78,7 @@ export function PlaylistCapSlotsFields({ d, update, slotAssignment, advertiserOp
           advertiserOpen={(k) => advertiserOpen(indices[k])}
           onFixConnection={onFixConnection}
           tip={TIPS.slotAssignment}
+          touchPoint={d.touchPoint}
         />
       )}
     </>
