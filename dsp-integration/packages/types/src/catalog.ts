@@ -7,13 +7,38 @@ import type { IdentifierType, Provider, SlotOwner } from './index'
 
 export const UNLIMITED = -1
 
-/* Decision 1: Digital Signage and Kiosk only. */
+/* Decision 1 (Digital Signage and Kiosk only) widened 28 Sep 2026 (ticket):
+   Website and Mobile App added — HQ-only touch points with no physical
+   venue, see NO_ADVERTISING_TOUCH_POINTS/NO_STRUCTURE_TOUCH_POINTS below. */
 export const TOUCH_POINTS = [
   { name: 'Digital Signage', icon: 'tv' },
   { name: 'Kiosk', icon: 'storefront' },
+  { name: 'Website', icon: 'language' },
+  { name: 'Mobile App', icon: 'smartphone' },
 ] as const
 export type TouchPoint = (typeof TOUCH_POINTS)[number]['name']
 export const touchPointIcon = (name: string) => (TOUCH_POINTS.find((t) => t.name === name) ?? TOUCH_POINTS[0]).icon
+
+/* Website and Mobile App are HQ-only (ticket, 28 Sep 2026): no advertising,
+   so no reserve price, billing unit, max campaigns or venue metadata either
+   (all three only ever apply to an advertiser-owned slot — see
+   reservePriceOf/billingUnitHoursOf/maxCampaignsOf below) — and they never
+   appear in Advertisers / Inventory, Available Inventory, the Inventory API
+   or a bid request, since none of those surface anything but an
+   advertiser-owned slot. Enforced in the slot owner editor (admin) and
+   validateExtensions (api); a campaign brief's own touchPoints (§6) only
+   ever offers the touch points this allows. */
+export const NO_ADVERTISING_TOUCH_POINTS: readonly TouchPoint[] = ['Website', 'Mobile App']
+export const allowsAdvertising = (touchPoint: string): boolean => !(NO_ADVERTISING_TOUCH_POINTS as readonly string[]).includes(touchPoint)
+
+/* Same two touch points also have no physical display to lay out or sense
+   proximity around: Multi-Zone Layout and every Enabled Feature but QR
+   Control (In-Store Radio, MIST, AI Agent, Vision/AI) are hidden for them,
+   "unless confirmed otherwise" (ticket, 28 Sep 2026). Tracked separately
+   from NO_ADVERTISING_TOUCH_POINTS — they happen to be the same two touch
+   points today, but the reasons are different and needn't always coincide. */
+export const NO_STRUCTURE_TOUCH_POINTS: readonly TouchPoint[] = ['Website', 'Mobile App']
+export const hasStructuralFeatures = (touchPoint: string): boolean => !(NO_STRUCTURE_TOUCH_POINTS as readonly string[]).includes(touchPoint)
 
 /* Platform (company-level) defaults an inherited `null` resolves to. */
 export const PLATFORM_DEFAULTS = {

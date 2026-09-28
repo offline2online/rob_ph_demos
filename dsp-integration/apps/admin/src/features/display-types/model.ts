@@ -3,7 +3,7 @@
    model/sellside.js), reshaped to the API contract. */
 import {
   NEW_PLAYLIST_SETTINGS_DEFAULTS, PLATFORM_DEFAULTS, SLOT_OWNERS, UNLIMITED, assignedOf,
-  type AdvertiserSettings, type DisplayType, type Partner, type Playlist, type Slot, type SlotOwner,
+  type AdvertiserSettings, type DisplayType, type Partner, type Playlist, type Slot, type SlotOwner, type TouchPoint,
 } from '@ph-dsp/types'
 
 /* ------------------------------------------------------------- options */
@@ -83,6 +83,18 @@ export const blankFeatures = (): Record<string, FeatureConfig> => ({
   aiAgentPlayback: { enabled: false },
   visionAi: { enabled: false, mode: VISION_MODES[0], preset: 'Balanced', ...DETECTION_PRESETS.Balanced },
 })
+
+/* Canvas defaults applied when a brand-new display type's Touch Point is
+   switched to one of these (ticket, 28 Sep 2026: "Website default
+   1920×1080, Mobile App default 330×400"). Digital Signage and Kiosk are
+   deliberately not keys here — switching between them has never reset the
+   canvas, and this must not start doing so ("must not change existing...
+   flows"). Only applies while the display type is still new: an existing
+   one's canvas is never touched by a Touch Point change. */
+export const TOUCH_POINT_CANVAS_DEFAULTS: Partial<Record<TouchPoint, { width: number; height: number }>> = {
+  Website: { width: 1920, height: 1080 },
+  'Mobile App': { width: 330, height: 400 },
+}
 
 /* New display type (prototype: "New display type"): Digital Signage, 1920×1080,
    #333333, every playlist setting at its default (rotation "Default

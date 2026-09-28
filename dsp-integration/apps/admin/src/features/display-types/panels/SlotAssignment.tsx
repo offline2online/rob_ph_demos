@@ -15,14 +15,17 @@
    Owners offered: Headquarters and Advertiser only for the first release
    (ticket, 27 Sep 2026) — Stores is not supported yet. A slot already saved
    as Stores still reads as Stores (greyed out in the list) until someone
-   changes it.
+   changes it. Website and Mobile App (ticket, 28 Sep 2026) are narrower
+   still — Headquarters only, no advertising — but shown differently:
+   Advertiser and Stores stay on the list, greyed out with their own
+   tooltip, rather than left off it.
 
    On a multi-zone display type this table sits under each zone's own
    playlist and edits that zone's own slots (ticket, 28 Sep 2026) — there is
    no zone to pick per slot, and no other zone's slots showing here. */
 import { Alert, Button, Input, Select } from 'antd'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
-import { SLOT_OWNERS, assignedOf, providerDef, type Partner, type Slot, type SlotOwner } from '@ph-dsp/types'
+import { SLOT_OWNERS, allowsAdvertising, assignedOf, providerDef, type Partner, type Slot, type SlotOwner } from '@ph-dsp/types'
 import { useMemo } from 'react'
 import { Field } from '../../../shared/Field'
 import { Grid } from '../../../shared/Grid'
@@ -33,12 +36,28 @@ import { ownerAssignment, ownerChange } from '../model'
 const ADVERTISER_COLOUR = SLOT_OWNERS.advertiser.colour
 
 /* The owners a slot can be given in this release (ticket, 27 Sep 2026). */
-const OFFERED_OWNERS: SlotOwner[] = ['internal', 'advertiser']
+const RELEASE_OWNERS: SlotOwner[] = ['internal', 'advertiser']
+/* Website and Mobile App are HQ-only (ticket, 28 Sep 2026). Only Headquarters
+   is selectable, but — unlike Stores, which stays off the list release-wide
+   unless a slot already has it — Advertiser and Stores are always shown,
+   greyed out, with their own tooltip ("Advertiser and Stores greyed out
+   with a tooltip saying advertising isn't available for this touch point"). */
+const HQ_ONLY_OWNERS: SlotOwner[] = ['internal']
+const ALL_OWNERS: SlotOwner[] = ['internal', 'advertiser', 'retail']
 
 interface Ctx {
   partners: Partner[]
   advertiserOpen: (i: number) => boolean
   setSlot: (i: number, patch: Partial<Slot>) => void
+  /* The owners this display type's touch point actually allows picking —
+     narrower than `listedOwners` for Website/Mobile App, where Advertiser
+     and Stores are shown but disabled rather than left off the list. */
+  offeredOwners: SlotOwner[]
+  /* The owners shown in the dropdown at all, before a slot already saved
+     with an owner outside that list (e.g. a legacy Stores slot) is added
+     back so it keeps reading correctly. */
+  listedOwners: SlotOwner[]
+  unsupportedTip: (k: SlotOwner) => string
 }
 interface Row { i: number; slot: Slot }
 /* Stable grid context; cells read the latest values through it. */
@@ -67,7 +86,7 @@ function OwnerCell({ data, context: grid }: ICellRendererParams<Row, unknown, Gr
   const context = grid.current
   const o = SLOT_OWNERS[data.slot.owner]
   /* A slot saved as Stores before this release dropped it keeps showing it, greyed out. */
-  const owners = OFFERED_OWNERS.includes(data.slot.owner) ? OFFERED_OWNERS : [...OFFERED_OWNERS, data.slot.owner]
+  const owners = context.listedOwners.includes(data.slot.owner) ? context.listedOwners : [...context.listedOwners, data.slot.owner]
   return (
     <div className="w-full min-w-0">
     <Select
@@ -77,12 +96,12 @@ function OwnerCell({ data, context: grid }: ICellRendererParams<Row, unknown, Gr
       value={data.slot.owner}
       onChange={(v: SlotOwner) => context.setSlot(data.i, ownerChange(v))}
       options={owners.map((k) => {
-        const unsupported = !OFFERED_OWNERS.includes(k)
+        const unsupported = !context.offeredOwners.includes(k)
         const closed = k === 'advertiser' && !context.advertiserOpen(data.i)
         const disabled = unsupported || closed
         return {
           value: k, disabled,
-          title: unsupported ? `${SLOT_OWNERS[k].label} slots aren’t supported in this release.`
+          title: unsupported ? context.unsupportedTip(k)
             : closed ? 'Enable DSP Integration (DSP Integration → Exchange settings) to add an Advertiser slot.' : undefined,
           label: <span style={{ color: disabled ? T.disabled : SLOT_OWNERS[k].colour }}>{SLOT_OWNERS[k].label}</span>,
         }
@@ -93,7 +112,7 @@ function OwnerCell({ data, context: grid }: ICellRendererParams<Row, unknown, Gr
   )
 }
 
-export function SlotAssignment({ slots, setSlots, partners, advertiserOpen, onFixConnection, tip }: {
+export function SlotAssignment({ slots, setSlots, partners, advertiserOpen, onFixConnection, tip, touchPoint }: {
   slots: Slot[]
   /* An updater, run against the latest slots: several tables on one page
      can edit the same display type, so a value computed from this render's
@@ -103,8 +122,15 @@ export function SlotAssignment({ slots, setSlots, partners, advertiserOpen, onFi
   advertiserOpen: (i: number) => boolean
   onFixConnection: (partnerId: string) => void
   tip: string
+  /* Gates which owners are offered at all (ticket, 28 Sep 2026: Website and
+     Mobile App are HQ-only). */
+  touchPoint: string
 }) {
-  const ctx: Ctx = { partners, advertiserOpen, setSlot: (i, patch) => setSlots((prev) => prev.map((s, k) => (k === i ? { ...s, ...patch } : s))) }
+  const hqOnly = !allowsAdvertising(touchPoint)
+  const offeredOwners = hqOnly ? HQ_ONLY_OWNERS : RELEASE_OWNERS
+  const listedOwners = hqOnly ? ALL_OWNERS : RELEASE_OWNERS
+  const unsupportedTip = (k: SlotOwner) => (hqOnly ? 'Advertising isn’t available for this touch point.' : `${SLOT_OWNERS[k].label} slots aren’t supported in this release.`)
+  const ctx: Ctx = { partners, advertiserOpen, setSlot: (i, patch) => setSlots((prev) => prev.map((s, k) => (k === i ? { ...s, ...patch } : s))), offeredOwners, listedOwners, unsupportedTip }
   const rows = useMemo(() => slots.map((slot, i) => ({ i, slot })), [slots])
   const columns = useMemo<ColDef<Row>[]>(
     () => [

@@ -10,11 +10,12 @@
    Playlist dropdown above it is hidden — there's nothing to pick between
    yet, since no playlist exists until Save creates one. */
 import { Button, ColorPicker, Input, InputNumber, Select } from 'antd'
-import { TOUCH_POINTS, type DisplayType, type Partner, type Playlist } from '@ph-dsp/types'
+import { hasStructuralFeatures, TOUCH_POINTS, type DisplayType, type Partner, type Playlist, type TouchPoint } from '@ph-dsp/types'
 import { useState } from 'react'
 import { Field } from '../../shared/Field'
 import { Icon } from '../../shared/Icon'
 import { T } from '../../theme/phTheme'
+import { TOUCH_POINT_CANVAS_DEFAULTS } from './model'
 import { EnabledFeaturesPanel } from './panels/EnabledFeaturesPanel'
 import { MultiZonePanel } from './panels/MultiZonePanel'
 import { PhantomZonePanel } from './panels/PhantomZonePanel'
@@ -72,7 +73,13 @@ export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, onAddPla
           id="touchPoint"
           className="w-full"
           value={d.touchPoint}
-          onChange={(v) => set({ touchPoint: v })}
+          onChange={(v) => set({
+            touchPoint: v,
+            /* Website/Mobile App's own canvas defaults, applied only while
+               the display type is still new — an existing one's canvas is
+               never touched by a Touch Point change (ticket, 28 Sep 2026). */
+            ...(isNewDisplayType && TOUCH_POINT_CANVAS_DEFAULTS[v as TouchPoint] ? { displayCanvasSize: TOUCH_POINT_CANVAS_DEFAULTS[v as TouchPoint] } : {}),
+          })}
           options={TOUCH_POINTS.map((t) => ({
             value: t.name,
             label: <span className="inline-flex items-center gap-2"><Icon name={t.icon} size={17} style={{ color: T.primary }} />{t.name}</span>,
@@ -131,8 +138,13 @@ export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, onAddPla
 
       <PhantomZonePanel d={d} update={update} open={open.phantom} onToggle={() => toggle('phantom')} />
       <EnabledFeaturesPanel d={d} update={update} open={open.features} onToggle={() => toggle('features')} />
-      <MultiZonePanel d={d} update={update} open={open.zones} onToggle={() => toggle('zones')} zonePlaylistId={zonePlaylistId}
-        playlistOptions={playlists.map((p) => ({ value: p.id, label: p.name }))} />
+      {/* Website and Mobile App have no physical canvas to lay out into
+          zones (ticket, 28 Sep 2026) — the panel isn't shown at all for
+          them, rather than shown disabled. */}
+      {hasStructuralFeatures(d.touchPoint) && (
+        <MultiZonePanel d={d} update={update} open={open.zones} onToggle={() => toggle('zones')} zonePlaylistId={zonePlaylistId}
+          playlistOptions={playlists.map((p) => ({ value: p.id, label: p.name }))} />
+      )}
       {/* Always last (ticket, 27 Sep 2026) — editable while the default
           playlist is still a local draft (`defaultPlaylistIsNew`, whether
           because the whole display type is new or because its default was

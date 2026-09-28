@@ -252,6 +252,39 @@ a fixed resolution. The **QR Control** and **CTAs** display types, and the
 *CTAs* and *QR Control* element types, are not part of this release and are
 not offered.
 
+**Website and Mobile App** (ticket, 28 Sep 2026) were added to Touch Point
+alongside Digital Signage and Kiosk — production's Add Display Type offers
+all three (plus Mobile App), and the two were missing here. They reuse the
+existing New/Edit Display Type flow and every field on it unchanged (Touch
+Point, Display Type Name, Canvas Size, Background Color, Default Playlist,
+Phantom Zone/QR Control, Playlist Settings) — nothing new was built, only
+widened. Two differences, both because they have no physical screen or
+advertising:
+
+- **Canvas Size defaults to Website's own (1920×1080) or Mobile App's own
+  (330×400, portrait)** when Touch Point is switched to one of them on a
+  still-unsaved display type, the same way this build's own canvas has
+  always defaulted for a new one — Digital Signage and Kiosk keep their
+  existing behaviour (switching between them has never touched the canvas,
+  and still doesn't).
+- **Enabled Features and Multi-Zone Layout are hidden**, except QR Control
+  (Phantom Zone/QR Control stays exactly as it is otherwise) — In-Store
+  Radio, MIST, AI Agent and Vision/AI all assume a physical display to run
+  on or around, which neither touch point has. Hidden rather than shown
+  disabled, matching how the two display types themselves are additive
+  rather than a variant of an existing one. Revisit if that's wrong
+  ("unless confirmed otherwise").
+- **HQ-only: no advertising.** See *Slot ownership* below — this is the
+  more consequential of the two differences, since it is also what keeps
+  Website and Mobile App out of Advertisers / Inventory, Available
+  Inventory, the Inventory API and bid requests, without any of those four
+  needing a code change of their own (§5 already only ever surfaces an
+  Advertiser-owned slot).
+
+Existing Website/Mobile App display type records (this build has none
+seeded, but the platform does) load and save through the same endpoints,
+unreshaped; Digital Signage/Kiosk playback and analytics are untouched.
+
 - **Existing schema, unchanged**: width/height,
   `maximumCampaignsPlayedInRotation` (slot count, -1 = unlimited),
   auto-play/rotation/transition modes, asset fill/positioning, the multi-zone
@@ -291,6 +324,15 @@ not offered.
     Advertiser only. A slot already saved as Stores still reads as Stores
     (greyed out in the owner list, with a tooltip saying it isn't supported
     in this release) until someone changes it; the API is unchanged.
+  - **Website and Mobile App are Headquarters only** (ticket, 28 Sep 2026):
+    no advertising at all for these two touch points. Advertiser and Stores
+    stay on the owner list — shown, not hidden, so it's clear the option
+    exists but doesn't apply here — greyed out with a tooltip saying
+    advertising isn't available for this touch point; the API refuses
+    anything but Headquarters. No reserve price, billing unit, max
+    campaigns or venue metadata either, since none of those three apply to
+    anything but an Advertiser-owned slot; the display type's `phExtensions`
+    holds Headquarters slots only.
 
   **A slot is a playlist position** (ticket "Available Inventory: Max
   campaigns column + slot playlist statement"): assigning an advertiser a
@@ -465,8 +507,8 @@ coloured; chips for defaults or "off" are grey.
 | Panel | Summary shows |
 |---|---|
 | **Phantom Zone** | Size (e.g. *250×250*) and position — *Default (Bottom Right)* when inherited — or *Not defined* |
-| **Enabled Features** | One chip per enabled feature with its icon (*In-Store Radio*, *QR Control*, *MIST*, *AI Agent*, *Vision/AI*), or *None enabled*. Features not available to the company are not shown |
-| **Multi-Zone Layout** | Number of zones (e.g. *3 zones*), or *Single zone* |
+| **Enabled Features** | One chip per enabled feature with its icon (*In-Store Radio*, *QR Control*, *MIST*, *AI Agent*, *Vision/AI*), or *None enabled*. Features not available to the company are not shown. For Website/Mobile App, only QR Control ever appears here — the panel itself offers nothing else (ticket, 28 Sep 2026) |
+| **Multi-Zone Layout** | Number of zones (e.g. *3 zones*), or *Single zone*. Not shown at all for Website/Mobile App (ticket, 28 Sep 2026) |
 
 Opening a panel shows its full settings as before; the summary updates as
 settings change.
@@ -484,8 +526,8 @@ is handled by the existing platform and is unchanged.
   2026): the icon of every display type the playlist fills (or, while it
   fills none, the display type it was auto-created for), with the touch
   point's name on hover — Digital Signage a TV, Kiosk the Touch Point
-  field's own Kiosk icon; Website and Mobile Store Site have icons ready
-  (a globe and a phone) for when those touch points exist. A playlist on no
+  field's own Kiosk icon, Website a globe, Mobile App a phone (added 28 Sep
+  2026, ticket — the icons were already reserved for them). A playlist on no
   screen at all shows no icon.
 - **Delete a playlist**, through the confirmation dialog described under
   *Deleting*:
@@ -1839,7 +1881,7 @@ fields. The canonical definition is `app/src/model/schema.js` and
 
 ```
 {
-  id, touchPoint,                  // Digital Signage | Kiosk
+  id, touchPoint,                  // Digital Signage | Kiosk | Website | Mobile App (Website/Mobile App added 28 Sep 2026, ticket — HQ-only, see §1)
   name, description, image,
   displayCanvasSize: { width, height },
   backgroundColor,
@@ -2270,6 +2312,13 @@ playback analytics.**
   its auto-created playlist has nothing overridden (*Default settings*),
   and its rotation is *Default (Unlimited)* until a cap is picked.
   *(Display Types → New display type)*
+- **Website and Mobile App touch points** (ticket, 28 Sep 2026): offered
+  alongside Digital Signage and Kiosk, HQ-only (no Advertiser/Stores slot,
+  no reserve price/billing unit/max campaigns/venue metadata, out of
+  Advertisers / Inventory, Available Inventory, the Inventory API and bid
+  requests), their own canvas defaults (1920×1080 / 330×400) on a new
+  display type, and Enabled Features/Multi-Zone Layout hidden except QR
+  Control. *(Display Types → Touch Point)*
 
 ### Playlist management
 
