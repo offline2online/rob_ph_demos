@@ -27,7 +27,7 @@ describe('display types — POC stand-in endpoints', () => {
     const res = await app.inject({ method: 'POST', url: '/api/admin/v1/display-types', payload: newType() })
     expect(res.statusCode).toBe(201)
     expectMatchesContract('POST', '/admin/v1/display-types', 201, res.json())
-    expect(ctx.playlists.get('pl_dt_new')).toMatchObject({ name: 'New Display Type Playlist', autoCreatedFor: 'dt_new' })
+    expect(ctx.playlists.get('pl_dt_new')).toMatchObject({ name: 'Checkout Kiosk Playlist', autoCreatedFor: 'dt_new' })
     /* Ticket, 28 Sep 2026: a new display type's own playlist starts with
        every setting at its default — nothing overridden. (A playlist added
        to an existing display type, or a zone's, still starts with
