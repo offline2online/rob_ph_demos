@@ -2,7 +2,7 @@
    check and delete (spec §2). Items, scenes and scheduling are untouched. */
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
-import { dependentDetails, playlistDeleteCheck } from '../../domain/deleteChecks'
+import { dependentDetails, displayTypesUsingPlaylist, liveCommitments, playlistDeleteCheck } from '../../domain/deleteChecks'
 import { toApiPlaylist, validatePlaylistSettings } from '../../domain/displayTypes'
 import type { Guards } from '../../http/app'
 import { hasDependents, notFound, validationFailed } from '../../http/errors'
@@ -38,6 +38,10 @@ export const playlistRoutes = (ctx: Context, _guards: Guards): FastifyPluginAsyn
     one(req.params.id)
     const errors = validatePlaylistSettings(req.body)
     if (errors.length) throw validationFailed(errors)
+    /* Q47: a playlist carries the play commitments; no change while a display
+       type using it has a current or future window reserved or sold. */
+    const live = displayTypesUsingPlaylist(ctx, req.params.id).flatMap((t) => liveCommitments(ctx, t.id))
+    if (live.length) throw hasDependents("This playlist can't be changed while its display type's positions are reserved or sold for a current or future window.", dependentDetails({ canDelete: false, dependents: live }))
     return toApiPlaylist(ctx.playlists.saveSettings(req.params.id, req.body ?? {})!, ctx.displayTypes.list())
   })
 

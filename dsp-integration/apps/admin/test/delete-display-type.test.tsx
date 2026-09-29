@@ -13,9 +13,22 @@ describe('Delete display type dialog', () => {
     )
     expect(screen.getByText('Delete Landscape?')).toBeInTheDocument()
     expect(screen.getByText(/2 displays are assigned to it/)).toBeInTheDocument()
-    expect(within(screen.getByRole('list', { name: 'Assigned displays' })).getAllByRole('listitem').map((li) => li.textContent)).toEqual(['tvEntrance Screen· Sydney CBD', 'tvCheckout Screen· Sydney CBD'])
+    expect(within(screen.getByRole('list', { name: 'What depends on this display type' })).getAllByRole('listitem').map((li) => li.textContent)).toEqual(['tvEntrance Screen· Sydney CBD', 'tvCheckout Screen· Sydney CBD'])
     expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument()
+  })
+
+  it('blocks while a future window is reserved or sold, listing each window (Q47)', () => {
+    render(
+      <Providers>
+        <DeleteDisplayType name="Portrait" deleting={false} onDelete={() => {}} onClose={() => {}}
+          check={{ canDelete: false, dependents: [{ kind: 'reservation', name: 'portrait.s1', detail: 'window 2026-09-22 · reserved' }] }} />
+      </Providers>,
+    )
+    expect(screen.getByText(/1 play window is reserved or sold on its positions/)).toBeInTheDocument()
+    expect(screen.queryByText(/displays? (is|are) assigned/)).toBeNull()
+    expect(within(screen.getByRole('list', { name: 'What depends on this display type' })).getAllByRole('listitem').map((li) => li.textContent)).toEqual(['event_busyportrait.s1· window 2026-09-22 · reserved'])
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled()
   })
 
   it('confirms a permanent delete when nothing is assigned', () => {
