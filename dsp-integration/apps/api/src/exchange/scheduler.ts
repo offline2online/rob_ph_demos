@@ -6,7 +6,7 @@ import { hostname } from 'node:os'
 import type { Context } from '../context'
 import { prepared } from '../db/db'
 import { sweepRejectedCampaigns } from '../domain/campaignRetention'
-import { biddingClosesAt, windowMs, windowStartOf } from '../domain/positions'
+import { allPositions, biddingClosesAt, companyWindowCommitments, windowMs, windowStartOf } from '../domain/positions'
 import { sweepSettledReservations } from '../domain/reservationRetention'
 import { runAuction } from './auction'
 import { runBilling } from './billing'
@@ -87,8 +87,7 @@ export async function schedulerTick(ctx: Context, log: (msg: string) => void) {
   /* Switched off (Exchange settings): nothing new is sold. */
   if (ctx.exchange.get().enabled) {
     const now = ctx.clock().getTime()
-    const current = windowStartOf(ctx, ctx.clock())
-    for (const w of [current, new Date(current.getTime() + windowMs(ctx))]) {
+    for (const w of dueWindowStarts(ctx)) {
       const cutoff = biddingClosesAt(ctx, w).getTime()
       /* Due once its cutoff has passed, and still worth running late — a
          process down for hours — as long as the window itself hasn't
@@ -114,6 +113,22 @@ export async function schedulerTick(ctx: Context, log: (msg: string) => void) {
   if (errors.length) throw new Error(`Scheduler tick: ${errors.join('; ')}`)
 }
 
+/* The window starts an auction could be due for: the current and next
+   window of every window length in the estate (OQ27 — each slot's billing
+   unit is its window length, all laid from one anchor), once each and in
+   order. A start two lengths share (a Monday, for daily and weekly slots)
+   is one auction: runAuction clears every position whose window starts
+   then. */
+export function dueWindowStarts(ctx: Context): Date[] {
+  const lengths = new Set([windowMs(ctx), ...allPositions(ctx).map((p) => windowMs(ctx, p))])
+  const starts = new Set<number>()
+  for (const len of lengths) {
+    const current = windowStartOf(ctx, ctx.clock(), len).getTime()
+    starts.add(current).add(current + len)
+  }
+  return [...starts].sort((a, b) => a - b).map((t) => new Date(t))
+}
+
 /* A play-window length change deferred past currently active windows
    (Advertiser settings → Auction schedule; routes/admin/advertiserSettings.ts):
    once the effective date arrives, promote it — but only if nothing booked
@@ -121,13 +136,17 @@ export async function schedulerTick(ctx: Context, log: (msg: string) => void) {
    directly, further out than anything active when the change was requested;
    if one does, push the effective date out to cover it and wait, rather than
    resizing a window that's still live. Returns the new playWindowHours once
-   promoted, else null. */
+   promoted, else null.
+   Since OQ27 the company value is only the window a slot inherits when
+   neither it nor its display type sets a billing unit, so only those
+   slots' windows hold the change back (companyWindowCommitments); a slot
+   with its own billing unit isn't resized by it and never delays it. */
 export function promotePendingPlayWindowIfDue(ctx: Context): number | null {
   const company = ctx.company.get()
   if (company.pendingPlayWindowHours == null || company.pendingPlayWindowEffectiveFrom == null) return null
   const now = ctx.clock().toISOString()
   if (now < company.pendingPlayWindowEffectiveFrom) return null
-  const active = ctx.reservations.byStatus(['pending', 'won', 'reserved'], now).filter((r) => !r.testMode)
+  const active = companyWindowCommitments(ctx)
   if (active.length) {
     const extendedTo = new Date(Math.max(...active.map((r) => Date.parse(r.windowStart) + company.playWindowHours * 3_600_000))).toISOString()
     if (extendedTo !== company.pendingPlayWindowEffectiveFrom) ctx.company.save({ ...company, pendingPlayWindowEffectiveFrom: extendedTo })

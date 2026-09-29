@@ -121,7 +121,7 @@ describe('Advertiser settings (spec §4, §6)', () => {
       displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board — Long Format / Zone 1', playlistId: 'pl_zone_menu_board_1', unassigned: false, slot: 2, zoneSlot: 2, position: 'Supplier slot',
       assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false, buyersListId: null, buyersListName: null }, qrControl: true, visionAi: true, supportedTargeting: ['localised'],
       reservePrice: null, reservePriceOverride: null, displayTypeReservePrice: null,
-      billingUnitHours: 24, billingUnitHoursOverride: null, displayTypeBillingUnitHours: null,
+      billingUnitHours: 24, billingUnitHoursOverride: null, displayTypeBillingUnitHours: null, companyPlayWindowHours: 24,
       maxCampaigns: 5, maxCampaignsOverride: null, displayTypeMaxCampaigns: null,
     }])
     /* The picker behind Assigned to: every DSP and the advertisers it brings. */

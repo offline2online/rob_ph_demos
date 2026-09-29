@@ -166,7 +166,7 @@ nothing here can even read it without the key.
 |---|---|
 | `packages/types/` | Shared TypeScript types generated from `openapi.yaml` (`npm run gen:types`), plus shared catalogues: providers, targeting variables, slot owners, and the reserved §9 canonical analytics event schema v1 (`analyticsEvent.ts` — nothing produces events yet) |
 | `apps/api/` | Node + Fastify + SQLite (`node:sqlite`). All paths are served under `/api`. |
-| `apps/api/src/db/migrations/` | Versioned, reversible SQL migrations. `0001` is the stand-in for the existing platform's records; `0002`+ are this build's additive changes. `0020` adds hot-path indexes, `0021` makes "one live winner per position and window" a database guarantee, `0022` reserves the §9.3 instance identity (unused), `0023` adds the retailer's DSP integration switch (`exchange.enabled`, off by default) |
+| `apps/api/src/db/migrations/` | Versioned, reversible SQL migrations. `0001` is the stand-in for the existing platform's records; `0002`+ are this build's additive changes. `0020` adds hot-path indexes, `0021` makes "one live winner per position and window" a database guarantee, `0022` reserves the §9.3 instance identity (unused), `0023` adds the retailer's DSP integration switch (`exchange.enabled`, off by default), `0031` adds asset content hashes, discarded (rejected) edits and the asset version a booking hands off (Q38/Q40) |
 | `apps/api/src/http/rateLimit.ts` | The Partner API's per-partner token bucket (429 `rate_limited`) |
 | `apps/api/bench/load.ts` | `npm run bench` — load benchmark for the Partner API and the auction, at demo scale or a synthetic large estate (see SECURITY-PERFORMANCE.md) |
 | `apps/api/src/platform/` | Stand-ins for the existing platform: `DisplayTypeSource`, `PlaylistSource`, `DisplaySource`, `StoreSource`, `CampaignSource` (including slot bookings for the hand-off), `PlaybackSource`, `AssetStore`, `AudienceSource` |
@@ -286,7 +286,11 @@ npm test
 
   Leave out `--window` for the next window that can be sold. A DSP's first
   bid with a new creative is discarded and the creative queued for
-  approval; it competes from the next window once approved.
+  approval; it competes from the next window once approved. The DSP's own
+  audit of it is recorded for the reviewer as advisory only, and the same
+  crid with byte-identical content is never re-reviewed once a human has
+  approved it (Q40). An edit to an approved campaign waits for approval
+  while the approved version keeps running (Q38).
 - **Rejected-campaign retention** also runs as a scheduled job inside
   `npm run dev:api` (`startCampaignRetentionScheduler`,
   `apps/api/src/exchange/scheduler.ts`, daily by default): a Rejected
@@ -294,6 +298,14 @@ npm test
   `Config.rejectedCampaignRetentionDays` (default 30) — never its audit
   trail. See `apps/api/src/domain/campaignRetention.ts` and REQUIREMENTS.md
   §3 *Enforcement and audit*.
+- **Reserve-price booking** (open questions 45 and 52, 29 Sep 2026): a
+  buyer's `POST /v1/reservations` with `type: reserve` on a position with a
+  reserve price holds that window as Reserved, out of the open auction, at
+  the reserve price. On a two-period private auction it locks the deal's
+  term at that rate instead. Deals are per DSP and never clear below the
+  floor. See `apps/api/src/routes/partner/reservations.ts`,
+  `apps/api/test/reserve-booking.test.ts` and `docs/dsp-integration/api/API.md`
+  → *Reservations and bids*.
 - Winning and reserved windows are handed off to the stand-in campaign
   system (booked into the slot for the window). After a window ends, it is
   billed against the stand-in playback data. To bill any ended windows
