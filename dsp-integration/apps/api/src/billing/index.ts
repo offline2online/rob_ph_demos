@@ -52,6 +52,9 @@ export interface LineItem {
   amount: number
 }
 
+export { bookLockedTermWindow, lockTermOnClear } from './lockedTerm'
+export { auctionOpenAt, isActiveAt, isTermLocked, lockedTermSpan, termStateAt, type TermState } from './term'
+
 const round2 = (n: number) => Math.round(n * 100) / 100
 
 /* The seam: a cleared reservation plus the playback totals for its window
