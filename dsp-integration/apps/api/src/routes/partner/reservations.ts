@@ -2,13 +2,33 @@
      POST /v1/reservations        reserve (a position named to this advertiser) or bid (CPM)
      GET  /v1/reservations/{id}   outcome
    Approved campaigns only; every pre-auction check applies here, and again
-   when the auction clears the window. */
+   when the auction clears the window.
+
+   Reserve-price booking (open questions 45 and 52, decided by Rob on 29 Sep
+   2026, programmatic guaranteed): `type: reserve` on a position with a
+   reserve price (reservePriceOf: the slot's override, else its display
+   type's default) is a buyer's commitment to that window at the reserve
+   price. It may be made ahead of the open auction, up to the cutoff. The
+   window is held as Reserved at once: a `reserved` row, which the auction
+   never clears (the one-live-winner-per-window index, migration 0021, counts
+   it). It is booked and billed at the reserve price itself on the window's
+   realised VAC-d (billing.ts): a floor commitment, not a guaranteed volume,
+   with no make-good. "Premium" names what the reservePrice is (a CPM above
+   what the open auction asks), not an amount added to the floor. The
+   reserve price never undercuts the floor: below the buyer's effective
+   floor, the booking is refused `below_floor`, like any other rate.
+   On a private auction (deal) using the two-period model, the same
+   commitment accepts the deal's terms for its whole delivery term: it
+   locks the term at the reserve price (BuyersListRepo.lockWin, source
+   `reserve`), and every later window of the term is then held and booked
+   by the existing locked-term path (auction.ts bookLockedTermWindow), not a
+   parallel one. */
 import { randomUUID } from 'node:crypto'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
-import { assignedOf } from '@ph-dsp/types'
+import { assignedOf, reservePriceOf } from '@ph-dsp/types'
 import { auctionOpenAt, isActiveAt, isTermLocked } from '../../domain/buyersLists'
-import { assignmentOf, biddingClosesAt, biddingOpensAt, effectivePartnerIds, findPosition, heldFor, windowStartOf } from '../../domain/positions'
+import { assignmentOf, biddingClosesAt, biddingOpensAt, effectivePartnerIds, findPosition, heldFor, windowHoursOf, windowStartOf } from '../../domain/positions'
 import { checkAdvertiser, checkCampaign, checkFloor, checkTargeting } from '../../exchange/enforcement'
 import { handOff } from '../../exchange/handoff'
 import { auctionClaimed } from '../../exchange/scheduler'
@@ -48,31 +68,41 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
     const hidden = !p || (allowed !== null && !allowed.includes(partner.id)) || (assignmentOf(p.def) === 'reserved' && !!seat && !heldFor(p.def, seat.name))
     if (hidden) invalid.push({ field: 'positionId', reason: 'Unknown position.' })
     const start = typeof b.windowStart === 'string' ? new Date(b.windowStart) : null
-    if (!start || Number.isNaN(start.getTime()) || windowStartOf(ctx, start).getTime() !== start.getTime()) invalid.push({ field: 'windowStart', reason: `The start of a ${ctx.company.get().playWindowHours}-hour play window (UTC).` })
+    /* The start of one of this position's own windows: its billing unit
+       long (OQ27), so a weekly slot's windows start on Mondays. */
+    const hours = windowHoursOf(ctx, p)
+    if (!start || Number.isNaN(start.getTime()) || windowStartOf(ctx, start, hours * 3_600_000).getTime() !== start.getTime()) invalid.push({ field: 'windowStart', reason: `The start of one of this position's ${hours}-hour play windows (UTC).` })
     if (invalid.length) throw validationFailed(invalid)
 
     const pos = p!
     const windowStart = start!.toISOString()
+    const reservePrice = reservePriceOf(pos.displayType, pos.def)
+    /* A reserve-price commitment is at least the posted reserve price
+       (OQ52); it is booked at the reserve price itself, below. */
+    if (b.type === 'reserve' && reservePrice !== null && (b.bidCpm as number) < reservePrice) {
+      throw validationFailed([{ field: 'bidCpm', reason: `The reserve price for this position is ${reservePrice} ${ctx.company.get().currency} CPM; commit to at least that.` }])
+    }
     const now = ctx.clock().getTime()
-    if (now < biddingOpensAt(ctx, start!).getTime()) throw conflict(`Bidding for that window opens at ${biddingOpensAt(ctx, start!).toISOString()}.`)
+    /* A reservation is made in advance of the open auction (spec §5
+       "Reserve price"), so only a bid waits for bidding to open. Both stop
+       at the cutoff. */
+    if (b.type === 'bid' && now < biddingOpensAt(ctx, start!).getTime()) throw conflict(`Bidding for that window opens at ${biddingOpensAt(ctx, start!).toISOString()}.`)
     if (now >= biddingClosesAt(ctx, start!).getTime() || auctionClaimed(ctx, windowStart)) throw conflict(`Bidding for that window closed at ${biddingClosesAt(ctx, start!).toISOString()}, when its auction ran.`)
     if (!ctx.displays.summaryByDisplayType(pos.displayType.id).displays) throw conflict('The position has no displays in that window.')
     const assignment = assignmentOf(pos.def)
     /* A deal's bidding is open only until auctionCloses and never once its term
        is locked (auctionOpenAt): a bid then would be left pending on a window
-       the deal no longer sells. */
-    if (assignment === 'deal' && b.type === 'bid') {
-      const listId = assignedOf(pos.def).buyersListId
-      const list = listId ? ctx.buyersLists.get(listId) : null
-      if (list && isActiveAt(list, windowStart) && !auctionOpenAt(list, windowStart)) {
-        throw conflict(isTermLocked(list) ? `This private auction's term is locked to a winning bid (${list.name}); its windows take no further bids.` : `Bidding on this private auction closed at ${list.auctionCloses} (${list.name}).`)
-      }
+       the deal no longer sells. A reserve commitment on a deal is refused on
+       the same terms: the term's rate is already decided. */
+    const deal = assignment === 'deal' ? ctx.buyersLists.get(assignedOf(pos.def).buyersListId ?? '') : null
+    if (deal && isActiveAt(deal, windowStart) && !auctionOpenAt(deal, windowStart)) {
+      throw conflict(isTermLocked(deal) ? `This private auction's term is locked to a winning bid (${deal.name}); its windows take no further bids.` : `Bidding on this private auction closed at ${deal.auctionCloses} (${deal.name}).`)
     }
-    if (b.type === 'reserve' && assignment !== 'reserved') throw conflict('Only a position held for this advertiser can be reserved; bid for it instead.')
+    if (b.type === 'reserve' && assignment !== 'reserved' && reservePrice === null) throw conflict('Only a position held for this advertiser, or one with a reserve price, can be reserved; bid for it instead.')
     if (b.type === 'bid' && assignment === 'reserved') throw conflict('This position is held for this advertiser: reserve it instead of bidding.')
     const live = partner.mode === 'live'
     const taken = ctx.reservations.forWindow(pos.positionId, windowStart).filter((r) => !r.testMode && TAKEN.includes(r.status))
-    if (live && taken.length) throw conflict('That window is already sold.')
+    if (live && taken.length) throw conflict(taken.some((r) => r.status === 'reserved') ? 'That window is reserved: it is held outside the open auction.' : 'That window is already sold.')
     const mine = ctx.reservations.forWindow(pos.positionId, windowStart).filter((r) => r.advertiserId === b.advertiserId && r.channel === 'api' && ['pending', 'reserved'].includes(r.status))
     if (mine.length) throw conflict('This advertiser already has a reservation or bid for that window.')
 
@@ -81,18 +111,24 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
     const refusal = (await checkCampaign(ctx, c.campaignId))
       ?? checkAdvertiser(ctx, pos, partner, seat!.name, seat!.domain ? [seat!.domain] : [], seat!.id, windowStart)
       ?? checkTargeting(pos, c.pricingType)
-      ?? checkFloor(ctx, b.bidCpm as number, c.pricingType, c.advertiserId)
+      /* A reserve-price booking is checked at the rate it is booked at:
+         the reserve price never clears below the floor (OQ45). */
+      ?? checkFloor(ctx, b.type === 'reserve' && reservePrice !== null ? reservePrice : (b.bidCpm as number), c.pricingType, c.advertiserId)
     if (refusal) throw new HttpError(422, refusal.code, refusal.reason)
 
     const company = ctx.company.get()
     const reserved = b.type === 'reserve'
+    /* Booked at the reserve price when the position has one (OQ52), else
+       at the price agreed through the DSP (Q11). */
+    const rate = reserved && reservePrice !== null ? reservePrice : (b.bidCpm as number)
     let r: ReservationRecord
     try {
       r = ctx.reservations.insert({
       id: `res_${randomUUID().slice(0, 12)}`, partnerId: partner.id, advertiserId: c.advertiserId ?? null, campaignId: c.campaignId, positionId: pos.positionId, windowStart,
       type: b.type as 'reserve' | 'bid', channel: 'api', bidCpm: b.bidCpm as number, currency: company.currency,
-      /* A reservation is booked at its agreed price (Q11); a bid waits for the auction. */
-      status: reserved ? 'reserved' : 'pending', clearingCpm: reserved ? (b.bidCpm as number) : null, reason: null,
+      /* A reservation is booked now at its rate; a bid waits for the auction. */
+      status: reserved ? 'reserved' : 'pending', clearingCpm: reserved ? rate : null,
+      reason: reserved && reservePrice !== null ? `Reserved at the reserve price (${rate} ${company.currency} CPM), outside the open auction.` : null,
       testMode: !live, pricingType: c.pricingType ?? null, handedOffAt: null,
       })
     } catch (e) {
@@ -104,6 +140,28 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
       if (!isUniqueViolation(e)) throw e
       const dup = ctx.reservations.forWindow(pos.positionId, windowStart).some((x) => x.advertiserId === b.advertiserId && x.channel === 'api' && ['pending', 'reserved'].includes(x.status))
       throw conflict(dup ? 'This advertiser already has a reservation or bid for that window.' : 'That window is already sold.')
+    }
+    /* On a two-period deal, a live commitment locks the term at that rate
+       (first commitment or clear wins; lockWin is idempotent). If a clear
+       locked it first, while this request awaited its checks, this booking
+       is withdrawn rather than left outside the deal's locked rate. */
+    if (reserved && live && deal?.auctionCloses && reservePrice !== null) {
+      const locked = ctx.buyersLists.lockWin(deal.id, {
+        cpm: rate, partnerId: partner.id, advertiserId: c.advertiserId ?? null, campaignId: c.campaignId,
+        pricingType: c.pricingType ?? null, channel: 'api', lockedAt: ctx.clock().toISOString(), source: 'reserve',
+      })
+      if (!locked) {
+        const why = `This private auction's term is locked to a winning bid (${deal.name}); its windows take no further bids.`
+        ctx.reservations.update(r.id, { status: 'lost', reason: why })
+        throw conflict(why)
+      }
+    }
+    /* The window has left the open auction: any bid still waiting on it is
+       told so now rather than left pending until the auction skips it. */
+    if (reserved && live) {
+      for (const x of ctx.reservations.forWindow(pos.positionId, windowStart)) {
+        if (x.status === 'pending') ctx.reservations.update(x.id, { status: 'lost', reason: 'The window was reserved by another buyer; it is not auctioned.' })
+      }
     }
     /* A reservation is booked now, so it is handed off now. */
     return reply.status(201).send(reservationView(reserved ? await handOff(ctx, r) : r))

@@ -135,13 +135,19 @@ export function DspPage({ draftKey, partner }: { draftKey: string; partner: Part
         )}
       </div>
 
-      <SectionLabel><WithTip tip="Where we send OpenRTB bid requests for this DSP, and the seats its bids come from. QPS and timeout use platform defaults.">Bidder integration</WithTip></SectionLabel>
+      <SectionLabel><WithTip tip="Where we send OpenRTB bid requests for this DSP, and the seats its bids come from. QPS ceiling and bidder timeout use the platform defaults unless set here.">Bidder integration</WithTip></SectionLabel>
       <div className="grid grid-cols-2 gap-3.5">
         <Field label="Bidder endpoint" required tip="Where we send the bid request." htmlFor="bidderEndpoint">
           <Input id="bidderEndpoint" value={d.bidderEndpoint} placeholder="https://…/openrtb2/bid" onChange={(e) => set((x) => ({ ...x, bidderEndpoint: e.target.value }))} />
         </Field>
         <Field label="Seat IDs" required tip="What the advertiser blocklist is matched against on the bid response." htmlFor="seatIds">
           <Input id="seatIds" value={d.seatIds} placeholder="Comma separated" onChange={(e) => set((x) => ({ ...x, seatIds: e.target.value }))} />
+        </Field>
+        <Field label="QPS ceiling" tip="Most bid requests per second sent to this DSP. Leave empty for the platform default (500)." htmlFor="bidderQps">
+          <Input id="bidderQps" inputMode="numeric" value={d.qps} placeholder="500 (platform default)" onChange={(e) => set((x) => ({ ...x, qps: e.target.value.replace(/\D/g, '') }))} />
+        </Field>
+        <Field label="Bidder timeout (ms)" tip="How long we wait for this DSP's bid. Leave empty for the platform default (300 ms)." htmlFor="bidderTimeoutMs">
+          <Input id="bidderTimeoutMs" inputMode="numeric" value={d.timeoutMs} placeholder="300 (platform default)" onChange={(e) => set((x) => ({ ...x, timeoutMs: e.target.value.replace(/\D/g, '') }))} />
         </Field>
       </div>
 

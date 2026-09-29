@@ -135,17 +135,65 @@ export function runApprovalContract(name: string, make: () => { source: Campaign
       expect((await service.view(id)).audit!.map((a) => a.action)).toEqual(['submitted', 'auto_approved'])
     })
 
-    it('a creative change on an approved campaign returns it to Awaiting approval and stops it (Q38 default)', async () => {
+    /* Q38 (Rob, 29 Sep 2026): the approved version keeps running throughout re-review. */
+    it('a creative change on an approved campaign is a pending edit: Awaiting approval, while the approved version stays live and active', async () => {
       const { service, id, fixture, source } = await setup({ requiresApproval: true })
       await service.submit(id, [], 'advertiser')
-      await service.approve(id, (await service.view(id)).assetVersion, 'hq')
+      const v1 = (await service.view(id)).assetVersion
+      await service.approve(id, v1, 'hq')
       await service.setActivation(id, true)
       await fixture.changeCreative(id)
       const after = await service.changed(id, 'advertiser')
-      expect(after.status).toBe('awaiting_approval')
-      expect(await service.isCampaignEligible(id)).toBe(false)
-      expect((await source.getCampaign(id))!.activation.enabled).toBe(false)
+      expect(after).toMatchObject({ status: 'awaiting_approval', liveAssetVersion: v1, pendingEdit: true })
+      expect(after.assetVersion).not.toBe(v1)
+      expect(await service.isCampaignEligible(id)).toBe(true)
+      expect(await service.liveAssetVersion(id)).toBe(v1)
+      expect((await source.getCampaign(id))!.activation.enabled).toBe(true)
       expect((await service.view(id)).audit!.map((a) => a.action)).toEqual(['submitted', 'approved', 'returned_for_review'])
+    })
+
+    it('approving the pending edit swaps the live version to it in one step', async () => {
+      const { service, id, fixture } = await setup({ requiresApproval: true })
+      await service.submit(id, [], 'advertiser')
+      await service.approve(id, (await service.view(id)).assetVersion, 'hq')
+      await fixture.changeCreative(id)
+      await service.changed(id, 'advertiser')
+      const v2 = (await service.view(id)).assetVersion
+      const approved = await service.approve(id, v2, 'hq')
+      expect(approved).toMatchObject({ status: 'approved', assetVersion: v2, liveAssetVersion: v2, pendingEdit: false })
+      expect(await service.liveAssetVersion(id)).toBe(v2)
+      expect(await service.isCampaignEligible(id)).toBe(true)
+    })
+
+    it('rejecting the pending edit discards it; the approved version carries on and the audit trail keeps both', async () => {
+      const { service, id, fixture, source } = await setup({ requiresApproval: true })
+      await service.submit(id, [], 'advertiser')
+      const v1 = (await service.view(id)).assetVersion
+      await service.approve(id, v1, 'hq')
+      await service.setActivation(id, true)
+      await fixture.changeCreative(id)
+      await service.changed(id, 'advertiser')
+      const v2 = (await service.view(id)).assetVersion
+      const after = await service.reject(id, v2, 'hq', 'Price in artwork')
+      expect(after).toMatchObject({ status: 'approved', assetVersion: v1, liveAssetVersion: v1, pendingEdit: false, rejectedEdit: { assetVersion: v2, reason: 'Price in artwork' } })
+      expect((await source.getCampaign(id))!.assetVersion).toBe(v1)
+      expect((await source.getCampaign(id))!.activation.enabled).toBe(true)
+      expect(await service.isCampaignEligible(id)).toBe(true)
+      expect(after.audit!.map((a) => [a.action, a.assetVersion])).toEqual([['submitted', v1], ['approved', v1], ['returned_for_review', v2], ['rejected', v2], ['edit_discarded', v2]])
+      /* The next edit builds on the live version again, under a new version id. */
+      await fixture.changeCreative(id)
+      const next = await service.changed(id, 'advertiser')
+      expect(next).toMatchObject({ status: 'awaiting_approval', liveAssetVersion: v1, pendingEdit: true })
+      expect([v1, v2]).not.toContain(next.assetVersion)
+      expect((await service.view(id)).rejectedEdit).toBeUndefined()
+    })
+
+    it('rejecting a first submission (nothing live yet) is a plain rejection, not a discard', async () => {
+      const { service, id } = await setup({ requiresApproval: true })
+      await service.submit(id, [], 'advertiser')
+      const v = (await service.view(id)).assetVersion
+      expect(await service.reject(id, v, 'hq', 'Price in artwork')).toMatchObject({ status: 'rejected', assetVersion: v, liveAssetVersion: null, pendingEdit: false })
+      expect(await service.isCampaignEligible(id)).toBe(false)
     })
 
     it('approving a version that has since changed is a conflict', async () => {

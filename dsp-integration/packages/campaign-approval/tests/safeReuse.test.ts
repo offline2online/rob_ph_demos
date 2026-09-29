@@ -10,22 +10,26 @@ import { describe, expect, it } from 'vitest'
 import type { CampaignRef, CampaignSource } from '../src/adapter/CampaignSource'
 import { createApprovalService } from '../src/server/service'
 
-function setup(creative: CampaignRef['creative'], requiresApproval = true) {
+function setup(creative: CampaignRef['creative'], requiresApproval = true, assets?: CampaignRef['assets']) {
   const db = new DatabaseSync(':memory:')
   db.exec(readFileSync(fileURLToPath(new URL('../migrations/0100_campaign_approvals.up.sql', import.meta.url)), 'utf8'))
   db.exec(readFileSync(fileURLToPath(new URL('../migrations/0101_asset_level_rejection.up.sql', import.meta.url)), 'utf8'))
   let ref: CampaignRef = {
     campaignId: 'c1', name: 'Swisse spring', source: 'api', advertiserId: 'swisse', advertiserName: 'Swisse',
     partnerId: 'p1', partnerName: 'Google DSP', activation: { enabled: false }, assetVersion: 'v1',
-    targetingSummary: 'Baseline only', creative, canvas: { width: 1920, height: 1080 },
+    targetingSummary: 'Baseline only', creative, canvas: { width: 1920, height: 1080 }, ...(assets ? { assets } : {}),
   }
   const source: CampaignSource = {
     getCampaign: () => ref,
     listCampaigns: () => [ref],
     setActivation: (id, enabled) => { ref = { ...ref, activation: { enabled } }; return ref },
     onCampaignChanged: () => () => {},
+    discardEditsAfter: (_id, assetVersion) => { ref = { ...ref, assetVersion } },
   }
-  return createApprovalService({ db, campaigns: source, requiresApproval: () => requiresApproval })
+  const service = createApprovalService({ db, campaigns: source, requiresApproval: () => requiresApproval })
+  /* A new version of the campaign: its assets and/or targeting replaced. */
+  const edit = (over: Partial<CampaignRef>) => { ref = { ...ref, assetVersion: `v${Number(ref.assetVersion.slice(1)) + 1}`, ...over } }
+  return Object.assign(service, { edit })
 }
 
 const hash1 = { assetUrl: '/a.png', mimeType: 'image/png', width: 1920, height: 1080, contentHash: 'hash-1' }
@@ -61,5 +65,49 @@ describe('safe reuse of previously approved assets (spec §3)', () => {
     await service.approve('c1', 'v1', 'hq-admin')
     /* Nothing to compare against, so nothing is ever reported cleared. */
     expect(service.wasAssetHumanCleared('c1', 'default', 'hash-1')).toBe(false)
+  })
+
+  /* Wired into submit/change (Q40, 29 Sep 2026): a version whose every
+     asset — and targeting — a human already cleared at the same content is
+     approved without re-review; anything else still goes to the reviewer,
+     who is told which assets are unchanged. */
+  const assets = [{ assetId: 'default', contentHash: 'hash-1' }, { assetId: 'metro', contentHash: 'hash-m' }]
+
+  it('an identical resubmission (same hashes, same targeting) skips re-review, recorded as such', async () => {
+    const service = setup(hash1, true, assets)
+    await service.submit('c1', [], 'advertiser')
+    await service.approve('c1', 'v1', 'hq-admin')
+    expect(service.wasAssetHumanCleared('c1', 'metro', 'hash-m')).toBe(true)
+    service.edit({})
+    const again = await service.changed('c1', 'advertiser')
+    expect(again).toMatchObject({ status: 'approved', mode: 'auto', assetVersion: 'v2', liveAssetVersion: 'v2', pendingEdit: false })
+    const audit = (await service.view('c1')).audit!
+    expect(audit.map((a) => [a.action, a.by])).toEqual([['submitted', 'advertiser'], ['approved', 'hq-admin'], ['returned_for_review', 'advertiser'], ['reused_clearance', null]])
+  })
+
+  it('one changed asset still goes to the reviewer, who is told which assets are unchanged', async () => {
+    const service = setup(hash1, true, assets)
+    await service.submit('c1', [], 'advertiser')
+    await service.approve('c1', 'v1', 'hq-admin')
+    service.edit({ assets: [{ assetId: 'default', contentHash: 'hash-2' }, { assetId: 'metro', contentHash: 'hash-m' }] })
+    const edit = await service.changed('c1', 'advertiser')
+    expect(edit).toMatchObject({ status: 'awaiting_approval', pendingEdit: true, liveAssetVersion: 'v1' })
+    expect(edit.checks.filter((c) => c.name === 'previously_cleared')).toEqual([expect.objectContaining({ assetId: 'metro', passed: true, advisory: true })])
+  })
+
+  it('identical files under changed targeting rules still go to the reviewer', async () => {
+    const service = setup(hash1, true, assets)
+    await service.submit('c1', [], 'advertiser')
+    await service.approve('c1', 'v1', 'hq-admin')
+    service.edit({ targetingSummary: 'Metro stores only' })
+    expect((await service.changed('c1', 'advertiser')).status).toBe('awaiting_approval')
+  })
+
+  it('an adapter that lists no assets never gets a reuse', async () => {
+    const service = setup(hash1)
+    await service.submit('c1', [], 'advertiser')
+    await service.approve('c1', 'v1', 'hq-admin')
+    service.edit({})
+    expect((await service.changed('c1', 'advertiser')).status).toBe('awaiting_approval')
   })
 })

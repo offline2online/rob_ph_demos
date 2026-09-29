@@ -21,19 +21,39 @@
    own reservation, still billed on its own realised VAC-d
    (exchange/billing.ts), just always at the same locked clearingCpm. A
    deal with no auctionCloses set keeps clearing fresh every window,
-   exactly as before this model existed. */
+   exactly as before this model existed.
+
+   Reserve-price booking (open questions 45 and 52, decided by Rob on 29 Sep
+   2026) needs nothing new here. A window a buyer reserved at the position's
+   reserve price (POST /v1/reservations) already has its `reserved` row, so
+   this position is skipped for that window. No bid request goes out, and
+   migration 0021's one-live-winner index would refuse a second sale anyway.
+   A reserve commitment on a two-period deal locks the term like a clearing
+   bid (lockedWin.source `reserve`), and bookLockedTermWindow books each
+   later window as a `reserved` reservation at that rate. No locked rate,
+   from either source, books a window below the effective floor (deals
+   never bypass the floor, OQ45).
+
+   Windows are per slot (OQ27, Rob 29 Sep 2026): each position's window is
+   its own billing unit long (positions.ts windowMs(ctx, p)), all laid from
+   the same Monday anchor. An auction is for a window start, and clears
+   every position whose own window starts then — a Monday clears the daily
+   slots and the weekly ones together; a Tuesday only the daily ones. A
+   locked-rate term's windows are therefore its slot's billing unit long,
+   each booked (and billed) as its own reservation. */
 import { randomUUID } from 'node:crypto'
 import type { Context } from '../context'
 import { auctionOpenAt, isActiveAt, isTermLocked } from '../domain/buyersLists'
 import { isLive } from '../domain/exchange'
-import { type PositionRef, allPositions, assignmentOf, effectivePartnerIds, nextWindow, positionView } from '../domain/positions'
+import { type PositionRef, allPositions, assignmentOf, effectivePartnerIds, nextWindow, positionView, windowMs, windowStartOf } from '../domain/positions'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 import { type ReservationRecord, TAKEN } from '../repos/ReservationRepo'
 import { advertiserSlug, assignedOf, type BuyersList } from '@ph-dsp/types'
 import { isUniqueViolation } from '../db/db'
 import { campaignForCrid, queueCreative } from './creatives'
-import { checkAdvertiser, checkCampaign, checkCategories, checkFloor, checkTargeting } from './enforcement'
+import { checkAdvertiser, checkCampaign, checkCategories, checkFloor, checkTargeting, floorFor } from './enforcement'
 import { handOff } from './handoff'
+import { bidderTuning } from '../domain/partnerInput'
 import { type Bid, type BidResponse, buildBidRequest } from './openrtb'
 
 export interface PositionOutcome {
@@ -74,7 +94,8 @@ export async function runAuction(ctx: Context, windowStart: Date = nextWindow(ct
   const start = windowStart.toISOString()
   /* Switched off or incomplete: no DSP is sent a bid request. */
   const exchangeLive = isLive(ctx.exchange.get())
-  const positions = allPositions(ctx)
+  /* The positions whose own window starts here (OQ27). */
+  const positions = allPositions(ctx).filter((p) => windowStartOf(ctx, windowStart, windowMs(ctx, p)).getTime() === windowStart.getTime())
   /* The DSPs that receive bid requests, read once for the whole auction,
      not once per position (review, 24 Sep 2026). */
   const bidders = exchangeLive ? ctx.partners.list().filter(receivesBidRequests) : []
@@ -109,7 +130,8 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, bidder
   if (assignmentOf(p.def) === 'reserved') return { ...out, skipped: 'Held for a named advertiser: booked by reservation.' }
   if (!ctx.displays.summaryByDisplayType(p.displayType.id).displays) return { ...out, skipped: 'No displays.' }
   const existing = ctx.reservations.forWindow(p.positionId, start)
-  if (existing.some((r) => !r.testMode && TAKEN.includes(r.status))) return { ...out, skipped: 'Already sold.' }
+  const taken = existing.find((r) => !r.testMode && TAKEN.includes(r.status))
+  if (taken) return { ...out, skipped: taken.status === 'reserved' ? 'Reserved: held outside the open auction.' : 'Already sold.' }
 
   /* Two-period private auctions (spec "…dynamic VAC-d billing over the
      delivery term"): once this deal's rate is locked, every window in its
@@ -146,7 +168,7 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, bidder
     const url = ctx.config.bidders[dsp.provider as keyof Context['config']['bidders']]?.bidUrl
     if (!url) return []
     const reqId = `req_${randomUUID().slice(0, 12)}`
-    return [{ dsp, reqId, res: ctx.bidder.send(url, buildBidRequest(ctx, p, dsp, reqId, view!)) }]
+    return [{ dsp, reqId, res: ctx.bidder.send(url, buildBidRequest(ctx, p, dsp, reqId, view!), bidderTuning(dsp.bidder, ctx.config)) }]
   })
   out.bidRequests = sent.length
   for (const { dsp, reqId, res: pending } of sent) {
@@ -214,7 +236,7 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, bidder
       if (list?.auctionCloses && !isTermLocked(list)) {
         ctx.buyersLists.lockWin(list.id, {
           cpm: live.bidCpm as number, partnerId: live.partnerId, advertiserId: live.advertiserId, campaignId: live.campaignId as string,
-          pricingType: live.pricingType, channel: live.channel, lockedAt: ctx.clock().toISOString(),
+          pricingType: live.pricingType, channel: live.channel, lockedAt: ctx.clock().toISOString(), source: 'auction',
         })
       }
     }
@@ -239,13 +261,28 @@ async function bookLockedTermWindow(ctx: Context, p: PositionRef, start: string,
   if (!partner || partner.status !== 'connected') {
     return { ...out, skipped: `Private auction: ${partner?.name ?? 'the locked DSP'} is not connected, so the locked window is not booked.` }
   }
+  /* A deal's rate sits on top of the floor, never under it (OQ45, Rob,
+     29 Sep 2026). A locked rate cleared the floor when it locked, but the
+     floor can rise during the term, through the floor CPM, a multiplier or
+     the advertiser's floor multiplier. A window whose locked rate is below
+     the floor in force now is not sold. It falls through to the default
+     campaign, as a deal that clears nothing always has, and is never
+     booked below the floor. */
+  const floor = floorFor(ctx, win.pricingType, win.advertiserId)
+  if (win.cpm < floor) {
+    return { ...out, skipped: `Private auction: the locked rate (${win.cpm}) is below the effective floor of ${floor} ${ctx.company.get().currency} CPM, so this window is not sold under ${list.name}.` }
+  }
+  /* A term locked by a reserve-price commitment (OQ52) is programmatic
+     guaranteed: each window is booked as Reserved, the same as the window
+     the buyer committed to. */
+  const reserve = win.source === 'reserve'
   let r: ReservationRecord
   try {
     r = ctx.reservations.insert({
     id: `res_${randomUUID().slice(0, 12)}`, partnerId: win.partnerId, advertiserId: win.advertiserId, campaignId: win.campaignId,
     positionId: p.positionId, windowStart: start, type: win.channel === 'openrtb' ? 'bid' : 'reserve', channel: win.channel,
-    bidCpm: win.cpm, currency: ctx.company.get().currency, status: 'won', clearingCpm: win.cpm,
-    reason: `Private auction: booked at ${list.name}'s locked rate, no re-auction.`, testMode: false, pricingType: win.pricingType, handedOffAt: null,
+    bidCpm: win.cpm, currency: ctx.company.get().currency, status: reserve ? 'reserved' : 'won', clearingCpm: win.cpm,
+    reason: reserve ? `Reserved: booked at ${list.name}'s reserve-price commitment, no auction.` : `Private auction: booked at ${list.name}'s locked rate, no re-auction.`, testMode: false, pricingType: win.pricingType, handedOffAt: null,
     })
   } catch (e) {
     /* Another clearing booked this window first (migration 0021). */
@@ -315,7 +352,7 @@ async function recordDspBid(ctx: Context, p: PositionRef, dsp: PartnerRecord, st
   const campaignId = campaignForCrid(ctx, dsp.id, bid.crid)
   if (!campaignId) {
     /* The one-retrieval budget is spent inside queueCreative, only once a fetch is really attempted: a refused (off-path) URL must not use it up. */
-    return reject(await queueCreative(ctx, dsp, { crid: bid.crid, iurl: bid.iurl }, { id: advertiserId, name: seat.name }, p, budget), { advertiserId })
+    return reject(await queueCreative(ctx, dsp, { crid: bid.crid, iurl: bid.iurl, ext: bid.ext && typeof bid.ext === 'object' ? bid.ext : undefined }, { id: advertiserId, name: seat.name }, p, budget), { advertiserId })
   }
   const campaign = ctx.campaigns.getCampaign(campaignId)
   if (!campaign) return reject(`Creative ${bid.crid} is still being retrieved for review.`, { advertiserId })

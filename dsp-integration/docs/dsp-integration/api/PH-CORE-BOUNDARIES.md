@@ -58,7 +58,7 @@ slower than that should cache, as the stand-ins now do.
 | `DisplaySource` | read only | Displays & Devices | `list`, `listByDisplayType`, `summaryByDisplayType`, `storeIdsByDisplayType` | **Hot**: `summaryByDisplayType` per position (counts, "no displays" check); `listByDisplayType` for the delete check only | `summaryByDisplayType` ≤ 0.05 ms, a count never the rows; `listByDisplayType` indexed |
 | `StoreSource` | read only | Stores | `list`, `get` | Inventory store/region filters, booking schedule | `get` ≤ 0.05 ms |
 | `CampaignSource` (`platform/CampaignSource.ts`) | read + write | Campaigns service | `getCampaign`, `listCampaigns`, `setActivation`, `onCampaignChanged`, `createCampaign`, `addAsset`, `latestAssets`, `bookSlot`, `bookings` | **Hot**: `getCampaign` per bid in the auction | `getCampaign` ≤ 0.5 ms |
-| Approval adapter (`packages/campaign-approval/src/adapter/CampaignSource.ts`) | read + activation | Campaigns service | `getCampaign`, `listCampaigns`, `setActivation`, `onCampaignChanged` | Approval screens, `isCampaignEligible` before every bid, reservation and hand-off | see the integration guide |
+| Approval adapter (`packages/campaign-approval/src/adapter/CampaignSource.ts`) | read + activation | Campaigns service | `getCampaign`, `listCampaigns`, `setActivation`, `onCampaignChanged`, `discardEditsAfter` | Approval screens, `isCampaignEligible` before every bid, reservation and hand-off | see the integration guide |
 | `PlaybackSource` | read only | Playback logging | `totals({campaignId, displayTypeId, from, to})`, `listPlays` | Billing, once per ended window | aggregated at the source: ≤ 1 s for 2 million plays |
 | `AssetStore` | write + read | Asset hosting / CDN | `put`, `read`, `url` | Creative upload and DSP creative retrieval; hand-off re-validation | — |
 | `AudienceSource` | read only | Audience scoring (MOVE/VAC-d, spec §4) | `forSlot`, `targetedShare` | **Hot**: per position in inventory, forecast, OpenRTB `qty.multiplier` | ≤ 0.1 ms |
@@ -95,6 +95,11 @@ provide one breaks something specific, named here.
     a row. The hand-off treats a uniqueness failure as "already booked" and
     records why (migration 0021 enforces this on the stand-in).
   - Without this guarantee, two exchange processes can double-book a slot.
+  - **Plays the version it was handed** (`SlotBooking.assetVersion`, Q38,
+    29 Sep 2026): the approved version's creative, never an edit still
+    under review. The hand-off resolves it with
+    `latestAssets(campaignId, atVersion)`, which must ignore the assets of a
+    discarded (rejected) edit.
 - **`CampaignSource.getCampaign`**
   - Returns targeting in the existing structure: AND groups of OR
     conditions.

@@ -5,9 +5,10 @@
 import type { DisplayType, Slot } from '@ph-dsp/types'
 import type { Context } from '../context'
 import type { PartnerRecord } from '../repos/PartnerRepo'
-import { TAKEN } from '../repos/ReservationRepo'
-import { advertiserSlug, assignedOf, reservePriceOf, supportedTargetingOf, type Assigned } from '@ph-dsp/types'
-import { invitedPartnerIds, isActiveAt, isInvitedBuyer } from './buyersLists'
+import { prepared } from '../db/db'
+import { type ReservationStatus, TAKEN } from '../repos/ReservationRepo'
+import { advertiserSlug, assignedOf, billingUnitHoursOf, reservePriceOf, supportedTargetingOf, type Assigned } from '@ph-dsp/types'
+import { invitedPartnerIds, isActiveAt, isInvitedBuyer, isTermLocked } from './buyersLists'
 import { effectiveLists, isBlocked, isOn } from './lists'
 import { effectiveFloors } from './pricing'
 import { rotationSizeOf, slotDurationSec } from './slots'
@@ -150,20 +151,78 @@ export const isVisible = (ctx: Context, p: PositionRef, c: Caller) => visibility
 /* ------------------------------------------------------------ play windows */
 
 const DAY = 86_400_000
-/* The play-window length (Advertiser settings → Auction schedule; Q27). */
-export const windowMs = (ctx: Context) => ctx.company.get().playWindowHours * 3_600_000
+const HOUR = 3_600_000
+/* A position's play-window length, in hours — its billing unit (OQ27,
+   decision Rob 29 Sep 2026: the per-slot Billing unit is the source of
+   truth for window length and billing granularity). Override always wins:
+   the slot's own billingUnitHours, else its display type's default, else
+   the company-wide play window (Advertiser settings → Auction schedule;
+   Q27), which is now only the default a slot inherits. The company value
+   is always set (platform default 24), so the platform default is reached
+   through it. Without a position: the company value, for the few callers
+   that genuinely mean "the company default". */
+export const windowHoursOf = (ctx: Context, p?: PositionRef | null): number =>
+  p ? billingUnitHoursOf(p.displayType, p.def, ctx.company.get().playWindowHours) : ctx.company.get().playWindowHours
+export const windowMs = (ctx: Context, p?: PositionRef | null) => windowHoursOf(ctx, p) * HOUR
+/* Does this position follow the company-wide play window (neither the slot
+   nor its display type sets a billing unit)? Only these are resized by a
+   playWindowHours change, so only their windows defer one (scheduler.ts
+   promotePendingPlayWindowIfDue). */
+export const followsCompanyWindow = (p: PositionRef) => p.def.billingUnitHours == null && p.displayType.phExtensions?.billingUnitHours == null
+/* The shortest play window any position (or the company default) has: the
+   finest grid every position's windows can be read against — billing's
+   "has anything ended yet" query and the booking schedule's columns. */
+export const shortestWindowMs = (ctx: Context) => Math.min(windowMs(ctx), ...allPositions(ctx).map((p) => windowMs(ctx, p)))
+/* The longest: how far back a window still running now can have started. */
+export const longestWindowMs = (ctx: Context) => Math.max(windowMs(ctx), ...allPositions(ctx).map((p) => windowMs(ctx, p)))
+/* When a reservation's window ends: its start plus its position's window
+   length (the company default for a position no longer in the estate). */
+export const windowEndOf = (ctx: Context, r: { positionId: string; windowStart: string }) => Date.parse(r.windowStart) + windowMs(ctx, findPosition(ctx, r.positionId))
+
+/* Windows still bid on or booked (live, not Test mode) that a change to
+   the company-wide play window would have to resize: those on positions
+   that follow it (or that have since left the estate, conservatively).
+   Same "active" read the deferral has always used — a window starting now
+   or later (routes/admin/advertiserSettings.ts, scheduler.ts). */
+export function companyWindowCommitments(ctx: Context) {
+  return ctx.reservations.byStatus(['pending', 'won', 'reserved'], ctx.clock().toISOString()).filter((r) => {
+    if (r.testMode) return false
+    const p = findPosition(ctx, r.positionId)
+    return !p || followsCompanyWindow(p)
+  })
+}
+
+/* A slot's own windows still bid on or booked (live, not Test mode) that
+   haven't finished playing, `len` being its current window length — what
+   a change to its billing unit would resize (routes/admin/
+   advertiserSettings.ts refuses the change while there are any). A window
+   that has played but isn't billed yet counts too: billing reads its
+   length when it bills it. */
+export function slotWindowCommitments(ctx: Context, positionId: string, len: number) {
+  const now = ctx.clock().getTime()
+  /* A window already billed is over, whatever length it is read at now. */
+  const billed = (id: string) => !!prepared(ctx.db, 'SELECT 1 FROM billing_line_items WHERE reservation_id = ?').get(id)
+  const live = ctx.reservations.inRange(positionId, new Date(now - len).toISOString(), '9999')
+    .filter((r) => !r.testMode && ['pending', 'won', 'reserved'].includes(r.status) && Date.parse(r.windowStart) + len > now && !billed(r.id))
+  const unbilled = ctx.reservations.billable(new Date(now).toISOString()).filter((r) => r.positionId === positionId && !live.some((x) => x.id === r.id))
+  return [...live, ...unbilled]
+}
 
 /* Windows start at UTC midnight and follow each other back to back from a
-   fixed Monday, so a 24-hour window is a day and a 7-day window a week. */
+   fixed Monday, so a 24-hour window is a day and a 7-day window a week.
+   Every length is laid from the same anchor (OQ27): a weekly slot's window
+   starts on a Monday that is also a daily slot's window start, so one
+   auction (keyed on its start) clears both. `len` is the window length in
+   ms — windowMs(ctx, p) for a position, the company default otherwise. */
 const ANCHOR = Date.UTC(1970, 0, 5)
-export function windowStartOf(ctx: Context, at: Date) {
-  const len = windowMs(ctx)
+export function windowStartOf(ctx: Context, at: Date, len = windowMs(ctx)) {
   return new Date(ANCHOR + Math.floor((at.getTime() - ANCHOR) / len) * len)
 }
 
 /* The auction for a play window (Auction schedule, Q13): bidding closes at
    the last daily cutoff (UTC) at or before the window starts, when the
-   auction runs, and opens `auctionOpensHours` before that. */
+   auction runs, and opens `auctionOpensHours` before that. The same for a
+   window of any length: it depends only on when the window starts. */
 export function biddingClosesAt(ctx: Context, start: Date) {
   const [h, m] = ctx.company.get().auctionCutoffTime.split(':').map(Number)
   const d = new Date(start)
@@ -173,22 +232,34 @@ export function biddingClosesAt(ctx: Context, start: Date) {
 export const biddingOpensAt = (ctx: Context, start: Date) => new Date(biddingClosesAt(ctx, start).getTime() - ctx.company.get().auctionOpensHours * 3_600_000)
 
 /* The first window that can still be sold: its auction hasn't run yet. */
-export function nextWindow(ctx: Context) {
+export function nextWindow(ctx: Context, len = windowMs(ctx)) {
   const now = ctx.clock().getTime()
-  let w = windowStartOf(ctx, ctx.clock())
-  while (now >= biddingClosesAt(ctx, w).getTime()) w = new Date(w.getTime() + windowMs(ctx))
+  let w = windowStartOf(ctx, ctx.clock(), len)
+  while (now >= biddingClosesAt(ctx, w).getTime()) w = new Date(w.getTime() + len)
   return w
 }
 
-/* Every window starting within [from, to] (dates, inclusive). */
-export function windowsBetween(ctx: Context, from: string, to: string): Date[] | null {
+/* Every window starting within [from, to] (dates, inclusive), laid from
+   the same anchor as windowStartOf (before OQ27 this counted from the
+   epoch, which only agreed with it for lengths dividing a day). */
+export function windowsBetween(ctx: Context, from: string, to: string, len = windowMs(ctx)): Date[] | null {
   const a = Date.parse(`${from}T00:00:00Z`)
   const b = Date.parse(`${to}T00:00:00Z`) + DAY
   if (!Number.isFinite(a) || !Number.isFinite(b) || b <= a || b - a > 366 * DAY) return null
-  const len = windowMs(ctx)
   const out: Date[] = []
-  for (let t = Math.ceil(a / len) * len; t < b; t += len) out.push(new Date(t))
+  for (let t = ANCHOR + Math.ceil((a - ANCHOR) / len) * len; t < b; t += len) out.push(new Date(t))
   return out
+}
+
+/* A position's own windows over the dates [from, to] (OQ27): every window
+   `len` long that overlaps them, so a weekly slot asked about a Wednesday
+   answers for the week that Wednesday falls in. For a length that divides
+   a day this is exactly windowsBetween. null for the same bad ranges. */
+export function windowsCovering(ctx: Context, from: string, to: string, len: number): Date[] | null {
+  const starts = windowsBetween(ctx, from, to, len)
+  if (!starts) return null
+  const first = windowStartOf(ctx, new Date(`${from}T00:00:00Z`), len)
+  return starts[0]?.getTime() === first.getTime() ? starts : [first, ...starts]
 }
 
 export type WindowStatus = 'available' | 'reserved' | 'sold' | 'unavailable'
@@ -201,30 +272,62 @@ export type WindowStatus = 'available' | 'reserved' | 'sold' | 'unavailable'
    excluded), read with ONE ranged query instead of one per window — or,
    for a request that asks about every position (the inventory list's
    status filter), taken from `prefetched`: one ranged query for the whole
-   estate instead of one per position (review, 24 Sep 2026). */
-export interface WindowFacts { next: number; hasDisplays: boolean; taken?: Set<string> }
-const NO_WINDOWS: ReadonlySet<string> = new Set()
-export function windowFacts(ctx: Context, p: PositionRef, starts?: Date[], prefetched?: Map<string, Set<string>>): WindowFacts {
-  const facts: WindowFacts = { next: nextWindow(ctx).getTime(), hasDisplays: ctx.displays.summaryByDisplayType(p.displayType.id).displays > 0 }
-  if (prefetched) facts.taken = prefetched.get(p.positionId) ?? (NO_WINDOWS as Set<string>)
+   estate instead of one per position (review, 24 Sep 2026). `taken` maps
+   each such window to the status that took it, and `lockedTerm` is the
+   delivery term of a deal this position is assigned to once its rate is
+   locked, if it has one: both decide which windows read Reserved (OQ52). */
+export interface WindowFacts { next: number; hasDisplays: boolean; taken?: Map<string, ReservationStatus>; lockedTerm?: { activeFrom: string | null; activeTo: string | null } | null }
+const NO_WINDOWS: ReadonlyMap<string, ReservationStatus> = new Map()
+export function windowFacts(ctx: Context, p: PositionRef, starts?: Date[], prefetched?: Map<string, Map<string, ReservationStatus>>): WindowFacts {
+  const facts: WindowFacts = { next: nextWindow(ctx, windowMs(ctx, p)).getTime(), hasDisplays: ctx.displays.summaryByDisplayType(p.displayType.id).displays > 0, lockedTerm: lockedTermOf(ctx, p) }
+  if (prefetched) facts.taken = prefetched.get(p.positionId) ?? (NO_WINDOWS as Map<string, ReservationStatus>)
   else if (starts?.length) {
     const from = starts[0].toISOString()
     const to = new Date(starts[starts.length - 1].getTime() + 1).toISOString()
-    facts.taken = new Set(ctx.reservations.inRange(p.positionId, from, to).filter((r) => !r.testMode && TAKEN.includes(r.status)).map((r) => r.windowStart))
+    facts.taken = new Map(ctx.reservations.inRange(p.positionId, from, to).filter((r) => !r.testMode && TAKEN.includes(r.status)).map((r) => [r.windowStart, r.status]))
   }
   return facts
+}
+
+/* The delivery term of the deal this position is sold under, once that
+   deal's rate is locked. Every window in it is spoken for: the exchange
+   books each directly at the locked rate (auction.ts bookLockedTermWindow)
+   and takes no other bid for it. */
+function lockedTermOf(ctx: Context, p: PositionRef) {
+  if (assignmentOf(p.def) !== 'deal') return null
+  const list = ctx.buyersLists.get(assignedCached(p.def).buyersListId as string)
+  return list && isTermLocked(list) ? { activeFrom: list.activeFrom, activeTo: list.activeTo } : null
 }
 
 export function windowStatus(ctx: Context, p: PositionRef, c: Caller, start: Date, f: WindowFacts = windowFacts(ctx, p)): WindowStatus {
   const iso = start.toISOString()
   /* A Test-mode win never takes the window (spec §7: no real spend). */
-  const sold = f.taken ? f.taken.has(iso) : ctx.reservations.forWindow(p.positionId, iso).some((r) => !r.testMode && TAKEN.includes(r.status))
-  if (sold) return 'sold'
-  if (start.getTime() < f.next) return 'unavailable'
+  const took = f.taken ? f.taken.get(iso) : ctx.reservations.forWindow(p.positionId, iso).find((r) => !r.testMode && TAKEN.includes(r.status))?.status
+  const upcoming = start.getTime() >= f.next
+  /* Held at a reserve price (OQ52, Rob, 29 Sep 2026): a window a buyer
+     committed to ahead of the open auction reads Reserved until it plays.
+     On a position held for a named advertiser, a reservation is how every
+     window is booked, so it reads Sold as it always has. */
+  if (took) return took === 'reserved' && upcoming && assignmentOf(p.def) !== 'reserved' ? 'reserved' : 'sold'
+  if (!upcoming) return 'unavailable'
   if (!f.hasDisplays) return 'unavailable'
+  /* Inside a locked deal term: already spoken for, not open to bids. */
+  if (f.lockedTerm && isActiveAt(f.lockedTerm, iso)) return 'reserved'
   /* Held for a named advertiser: available only to that advertiser. */
   if (assignmentOf(p.def) === 'reserved' && !c.advertiser) return 'reserved'
   return 'available'
+}
+
+/* Assumed views (VAC-d) for one of this position's windows. The audience
+   source scores a slot per company play window (AudienceSource: the figure
+   HQ populates is per window, and every window was the company length
+   before OQ27); a slot with its own billing unit gets that figure scaled
+   to its window's length — a weekly window on a daily-scored slot is seven
+   days' views. A slot that follows the company window is unchanged. */
+export function assumedViewsPerWindow(ctx: Context, p: PositionRef) {
+  const scored = ctx.audience.forSlot(p.displayType.id, p.slot).assumedViewsPerWindow
+  const ratio = windowHoursOf(ctx, p) / ctx.company.get().playWindowHours
+  return ratio === 1 ? scored : Math.round(scored * ratio)
 }
 
 /* -------------------------------------------------------------- the view */
@@ -268,7 +371,10 @@ export function positionView(ctx: Context, p: PositionRef, c: Caller) {
     assignment: assignmentOf(p.def),
     /* What a campaign may use here (Rob, 20 Sep); localised only by default. */
     supportedTargeting: supportedTargetingOf(p.def),
-    assumedViewsPerWindow: ctx.audience.forSlot(dt.id, p.slot).assumedViewsPerWindow,
+    /* This position's own play-window length (OQ27): what one window —
+       one bid, one booking, one billing line — covers. */
+    billingUnitHours: windowHoursOf(ctx, p),
+    assumedViewsPerWindow: assumedViewsPerWindow(ctx, p),
     pricing: { currency: company.currency, floorCpm: company.floorCpm, effectiveFloorCpm: effectiveFloors(company, multiplier), costPerEngagement: company.interactiveCpe },
     reservePrice: reservePriceOf(dt, p.def),
   }

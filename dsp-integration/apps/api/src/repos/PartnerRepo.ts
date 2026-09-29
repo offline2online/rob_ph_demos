@@ -17,7 +17,8 @@ export interface PartnerRecord {
   credsPublic: Record<string, string>
   /* Which secret fields are set (values stay encrypted). */
   secretsSet: string[]
-  bidder: { bidderEndpoint?: string; seatIds?: string[] }
+  /* qps / timeoutMs: per-DSP overrides (Q46); absent means the platform default. */
+  bidder: { bidderEndpoint?: string; seatIds?: string[]; qps?: number; timeoutMs?: number }
   seats: Seat[]
   listsLinked: boolean
   allowList: string[]

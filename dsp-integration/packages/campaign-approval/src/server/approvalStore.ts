@@ -44,9 +44,22 @@ export function approvalStore(db: SqlDb) {
       const r = stmt('SELECT * FROM campaign_approvals WHERE campaign_id = ? AND asset_version = ?').get(campaignId, assetVersion) as Raw | undefined
       return r ? toRow(r) : null
     },
-    /* Any version of the campaign approved at some point (for Q38's "old version keeps running"). */
-    anyApproved(campaignId: string) {
-      return !!stmt("SELECT 1 FROM campaign_approvals WHERE campaign_id = ? AND status = 'approved' LIMIT 1").get(campaignId)
+    /* The live version (Q38, Rob, 29 Sep 2026): the most recently approved
+       one. Versions only ever move forward and only the current one can be
+       approved, so this is the newest approved row — the one that runs
+       while a later edit awaits review, and the one an approval of that
+       edit replaces in the same write. On the eligibility hot path. */
+    liveVersion(campaignId: string): string | null {
+      const r = stmt("SELECT asset_version FROM campaign_approvals WHERE campaign_id = ? AND status = 'approved' ORDER BY created_at DESC, rowid DESC LIMIT 1").get(campaignId) as { asset_version: string } | undefined
+      return r?.asset_version ?? null
+    },
+    /* Every row of the campaign, oldest first (same order as latest()). */
+    rows(campaignId: string): ApprovalRow[] {
+      return (stmt('SELECT * FROM campaign_approvals WHERE campaign_id = ? ORDER BY created_at, rowid').all(campaignId) as Raw[]).map(toRow)
+    },
+    /* A discarded edit's row (Q38). Its decision stays in the audit log. */
+    remove(campaignId: string, assetVersion: string) {
+      stmt('DELETE FROM campaign_approvals WHERE campaign_id = ? AND asset_version = ?').run(campaignId, assetVersion)
     },
     upsert(row: ApprovalRow, now: string) {
       stmt(

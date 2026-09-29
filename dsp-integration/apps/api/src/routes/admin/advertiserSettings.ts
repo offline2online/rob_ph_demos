@@ -4,6 +4,7 @@ import { MAX_MAX_CAMPAIGNS, MIN_MAX_CAMPAIGNS, TARGETING_MODES, advertiserSlug, 
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { cleanList, validateAdvertiserSettings } from '../../domain/advertiserSettings'
+import { companyWindowCommitments, positionIdOf, slotWindowCommitments } from '../../domain/positions'
 import { zonesOf } from '../../domain/displayTypes'
 import { assignedToSlot, validateAssigned } from '../../domain/slots'
 import type { Guards } from '../../http/app'
@@ -43,13 +44,15 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
        is and the request waits in pendingPlayWindowHours until every such
        window has played, at which point schedulerTick (exchange/scheduler.ts)
        promotes it on its own. A request that doesn't touch playWindowHours
-       leaves any change already pending exactly as it was. */
+       leaves any change already pending exactly as it was. Since OQ27 only
+       the windows of slots that inherit it count (companyWindowCommitments):
+       a slot with its own billing unit isn't resized by this change. */
     const current = ctx.company.get()
     let playWindowHours = current.playWindowHours
     let pendingPlayWindowHours = current.pendingPlayWindowHours
     let pendingPlayWindowEffectiveFrom = current.pendingPlayWindowEffectiveFrom
     if (b.playWindowHours !== current.playWindowHours) {
-      const active = ctx.reservations.byStatus(['pending', 'won', 'reserved'], ctx.clock().toISOString()).filter((r) => !r.testMode)
+      const active = companyWindowCommitments(ctx)
       if (!active.length) {
         playWindowHours = b.playWindowHours
         pendingPlayWindowHours = null
@@ -77,6 +80,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
     const partners = ctx.partners.list()
     const buyersLists = ctx.buyersLists.list()
     const items: AvailableInventoryRow[] = []
+    const company = ctx.company.get()
     for (const t of ctx.displayTypes.list()) {
       const zones = zonesOf(t)
       /* A position's playlist, per slot: the zone playlist it's tagged to
@@ -138,9 +142,10 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
           reservePrice: reservePriceOf(t, s),
           reservePriceOverride: s.reservePrice ?? null,
           displayTypeReservePrice: t.phExtensions?.reservePrice ?? null,
-          billingUnitHours: billingUnitHoursOf(t, s),
+          billingUnitHours: billingUnitHoursOf(t, s, company.playWindowHours),
           billingUnitHoursOverride: s.billingUnitHours ?? null,
           displayTypeBillingUnitHours: t.phExtensions?.billingUnitHours ?? null,
+          companyPlayWindowHours: company.playWindowHours,
           maxCampaigns: maxCampaignsOf(t, s),
           maxCampaignsOverride: s.maxCampaigns ?? null,
           displayTypeMaxCampaigns: t.phExtensions?.maxCampaigns ?? null,
@@ -171,11 +176,13 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
 
   /* A billing unit of at least one hour, or null to inherit (spec "Private
      auctions: two-period model", 23 Sep 2026) — the same override/default
-     pair as reservePrice/reservePriceDefault above. */
+     pair as reservePrice/reservePriceDefault above. Whole hours, up to a
+     year, since OQ27 made it the slot's play-window length: the same
+     bounds as the company play window it replaces for the slot. */
   const parseBillingUnitHours = (v: unknown, field: string, errors: { field: string; reason: string }[]): number | null => {
     if (v === null || v === undefined) return null
-    if (typeof v !== 'number' || !Number.isFinite(v) || v < 1) {
-      errors.push({ field, reason: 'A billing unit of at least one hour, or null to inherit.' })
+    if (typeof v !== 'number' || !Number.isInteger(v) || v < 1 || v > 8760) {
+      errors.push({ field, reason: 'A billing unit of whole hours, from one hour to 365 days, or null to inherit.' })
       return null
     }
     return v
@@ -264,6 +271,38 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
       }
     })
     if (errors.length) throw validationFailed(errors, 'A slot supports at least one type of targeting, and is assigned to DSPs or advertisers it can actually sell to.')
+
+    /* A slot's billing unit is its play-window length (OQ27, Rob 29 Sep
+       2026), so changing it — its own override, or the display type
+       default it inherits, or dropping back to the company window — would
+       resize windows already bid on or booked under the old length: a
+       locked-rate term's windows, a sold week half played. Refused for just
+       the slots that have any, naming when the last one ends; every other
+       slot's change goes through as before. (The company-wide value is
+       deferred instead — it spans every inheriting slot, so it waits on
+       its own — but a slot's is one row's edit, and its CPM is quoted
+       against it: the admin tries again once those windows have played.) */
+    const resizing: { field: string; reason: string }[] = []
+    for (const [displayTypeId, slots] of wanted) {
+      const dt = ctx.displayTypes.get(displayTypeId)!
+      const newDefault = billingUnitDefaults.has(displayTypeId) ? billingUnitDefaults.get(displayTypeId) ?? null : dt.phExtensions?.billingUnitHours ?? null
+      ;(dt.phExtensions?.slots ?? []).forEach((s, i) => {
+        if (s.owner !== 'advertiser') return
+        const patch = slots.get(i + 1)
+        const before = billingUnitHoursOf(dt, s, company.playWindowHours)
+        const after = (patch ? patch.billingUnitHours : s.billingUnitHours ?? null) ?? newDefault ?? company.playWindowHours
+        if (after === before) return
+        const active = slotWindowCommitments(ctx, positionIdOf(displayTypeId, i + 1), before * 3_600_000)
+        if (!active.length) return
+        const until = new Date(Math.max(...active.map((r) => Date.parse(r.windowStart) + before * 3_600_000))).toISOString()
+        const row = rows.findIndex((r) => r.displayTypeId === displayTypeId && r.slot === i + 1)
+        resizing.push({
+          field: row >= 0 ? `items[${row}].billingUnitHours` : 'items',
+          reason: `${dt.name} slot ${i + 1} has windows bid on, booked or not yet billed under its ${before}-hour billing unit (the last ends ${until}); its billing unit can change once they have played and been billed.`,
+        })
+      })
+    }
+    if (resizing.length) throw validationFailed(resizing, 'A slot’s billing unit is its play-window length, so it can’t change while windows already bid on or booked under it are still to play.')
 
     for (const [displayTypeId, slots] of wanted) {
       const dt = ctx.displayTypes.get(displayTypeId)!

@@ -40,7 +40,7 @@ export function invitedPartnerIds(list: BuyersList, partners: PartnerRecord[]): 
 
 /* Whether the deal's delivery term (activeFrom/activeTo) covers `at`
    (inclusive; no bound = open-ended). */
-export function isActiveAt(list: BuyersList, at: string): boolean {
+export function isActiveAt(list: Pick<BuyersList, 'activeFrom' | 'activeTo'>, at: string): boolean {
   const t = Date.parse(at)
   if (list.activeFrom && t < Date.parse(list.activeFrom)) return false
   if (list.activeTo && t > Date.parse(list.activeTo)) return false

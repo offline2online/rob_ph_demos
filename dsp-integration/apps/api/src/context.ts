@@ -110,7 +110,6 @@ function approvalParts(db: Db, config: Config) {
     db,
     campaigns: approvalCampaigns,
     requiresApproval: (advertiserId) => (advertiserId ? company.advertiserSetting(advertiserId).approvalRequired : true),
-    oldVersionRunsDuringReview: config.oldVersionRunsDuringReview,
   })
   return { assets, approvalCampaigns, approvals }
 }

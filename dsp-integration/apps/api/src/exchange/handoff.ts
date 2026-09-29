@@ -4,6 +4,7 @@
    existing campaign system, which distributes and plays it as it does today.
    Test-mode wins are never handed off. Playback is not touched. */
 import { randomUUID } from 'node:crypto'
+import { assetVersionNumber } from '@ph-dsp/campaign-approval/poc'
 import type { Context } from '../context'
 import { failed, fileChecks } from '../domain/assetChecks'
 import { readMedia } from '../domain/media'
@@ -23,8 +24,16 @@ export async function handOff(ctx: Context, r: ReservationRecord): Promise<Reser
   /* default is mandatory (decision, 22 Sep), so its creative is what hands
      off by default; which version actually plays is existing targeting
      evaluation, unchanged. assets[0] is a defensive fallback only, for a
-     record predating the requirement. */
-  const assets = ctx.campaigns.latestAssets(r.campaignId)
+     record predating the requirement.
+     The APPROVED version's assets, not the latest upload's (Q38, Rob,
+     29 Sep 2026): while an edit awaits review the live version keeps
+     playing, and the moment the edit is approved it is the live version —
+     read here, at hand-off, so a window handed off before the approval gets
+     the old creative and every window after gets the new one, never both.
+     An HQ campaign has no approved version and hands off its latest. */
+  const live = await ctx.approvals.liveAssetVersion(r.campaignId)
+  const atVersion = live ? assetVersionNumber(live) : undefined
+  const assets = ctx.campaigns.latestAssets(r.campaignId, atVersion)
   const asset = assets.find((a) => a.role === 'default') ?? assets[0]
   const bytes = asset ? ctx.assets.read(asset.file) : null
   if (!asset || !bytes) return notHandedOff('the campaign has no creative.')
@@ -33,7 +42,8 @@ export async function handOff(ctx: Context, r: ReservationRecord): Promise<Reser
   try {
     ctx.campaigns.bookSlot({
       id: `bk_${randomUUID().slice(0, 12)}`, campaignId: r.campaignId, displayTypeId: p.displayType.id, slot: p.slot,
-      windowStart: r.windowStart, windowEnd: new Date(Date.parse(r.windowStart) + windowMs(ctx)).toISOString(),
+      windowStart: r.windowStart, windowEnd: new Date(Date.parse(r.windowStart) + windowMs(ctx, p)).toISOString(),
+      assetVersion: Math.max(...assets.map((a) => a.version)),
     })
   } catch (e) {
     /* One campaign per slot per window (migration 0021): never two. */

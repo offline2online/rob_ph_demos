@@ -7,12 +7,16 @@ import type { Config } from '../config'
 import { type MediaInfo, isVideo } from './media'
 import { slotDurationSec } from './slots'
 
-export type CheckName = 'file_type' | 'file_size' | 'bitrate' | 'dimensions' | 'aspect_ratio' | 'duration' | 'default_present' | 'targeting_permitted'
+export type CheckName = 'file_type' | 'file_size' | 'bitrate' | 'dimensions' | 'aspect_ratio' | 'duration' | 'default_present' | 'targeting_permitted' | 'dsp_audit' | 'previously_cleared'
 /* assetId is the role a check ran against ('default' or a targeted version
    id) — set for every per-file check (ticket, 22 Sep: "make automated
    check results asset-scoped too"). Left unset for a campaign-level check
    (default_present, targeting_permitted) that isn't about one asset. */
-export interface Check { name: CheckName; passed: boolean; detail?: string; assetId?: string }
+/* advisory (Q40, 29 Sep 2026): recorded for the reviewer — a DSP's own
+   creative audit (dsp_audit), an asset unchanged since a human cleared it
+   (previously_cleared) — but never a gate: failed() ignores it, and a
+   passed one approves nothing. */
+export interface Check { name: CheckName; passed: boolean; detail?: string; assetId?: string; advisory?: boolean }
 
 interface Size { width: number; height: number }
 const MB = 1024 * 1024
@@ -76,5 +80,5 @@ export function fileChecks(media: MediaInfo | null, sizeBytes: number, dt: Displ
   return tag(checks, assetId)
 }
 
-export const failed = (checks: Check[]) => checks.filter((c) => !c.passed)
+export const failed = (checks: Check[]) => checks.filter((c) => !c.passed && !c.advisory)
 export const failureDetails = (checks: Check[]) => failed(checks).map((c) => ({ field: c.name, reason: c.detail ?? 'Failed.' }))

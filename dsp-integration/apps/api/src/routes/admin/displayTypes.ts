@@ -4,7 +4,7 @@ import type { DisplayType, DisplayTypeExtensions } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { tx } from '../../db/db'
-import { dependentDetails, displayTypeDeleteCheck, soldOrReservedPositions } from '../../domain/deleteChecks'
+import { dependentDetails, displayTypeDeleteCheck, liveCommitments } from '../../domain/deleteChecks'
 import { NEW_PLAYLIST_SETTINGS_DEFAULTS } from '@ph-dsp/types'
 import { ensureReferencedPlaylists, validateRecord, zonesOf } from '../../domain/displayTypes'
 import { validateExtensions } from '../../domain/slots'
@@ -45,6 +45,14 @@ export const displayTypeRoutes = (ctx: Context, guards: Guards): FastifyPluginAs
     const dt = { ...recordFields(req.body), id: req.params.id }
     const errors = validateRecord(dt)
     if (errors.length) throw validationFailed(errors)
+    /* Q47: reassigning the default or a zone's playlist would break commitments
+       made against the original setup. */
+    const prev = ctx.displayTypes.get(req.params.id)!
+    const assignedTo = (t: DisplayType) => JSON.stringify([t.defaultPlaylistId ?? null, zonesOf(t).map((z) => z.playlistId ?? null)])
+    if (assignedTo(prev) !== assignedTo(dt)) {
+      const live = liveCommitments(ctx, req.params.id)
+      if (live.length) throw hasDependents("The assigned playlist can't be changed while this display type's positions are reserved or sold for a current or future window.", dependentDetails({ canDelete: false, dependents: live }))
+    }
     return tx(ctx.db, () => {
       /* Single zone → multi-zone (ticket, 29 Sep 2026): the layout is stored on
          the default playlist's own row, so rather than tie the display type's
@@ -117,9 +125,13 @@ export const displayTypeRoutes = (ctx: Context, guards: Guards): FastifyPluginAs
   app.delete<{ Params: { id: string } }>('/display-types/:id', async (req, reply) => {
     if (!ctx.displayTypes.get(req.params.id)) throw notFound()
     const check = displayTypeDeleteCheck(ctx, req.params.id)
-    if (!check.canDelete) throw hasDependents("This display type can't be deleted while displays are assigned to it.", dependentDetails(check))
-    const positions = soldOrReservedPositions(ctx, req.params.id)
-    req.log.info({ displayTypeId: req.params.id, soldOrReservedPositions: positions }, 'display type deleted')
+    if (!check.canDelete) {
+      throw hasDependents(check.dependents.some((d) => d.kind === 'display')
+        ? "This display type can't be deleted while displays are assigned to it."
+        /* Q47: hard block while a current or future window is sold or reserved. */
+        : "This display type can't be deleted while its positions are reserved or sold for a current or future window.", dependentDetails(check))
+    }
+    req.log.info({ displayTypeId: req.params.id }, 'display type deleted')
     ctx.displayTypes.delete(req.params.id)
     return reply.status(204).send()
   })

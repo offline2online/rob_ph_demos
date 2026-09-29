@@ -33,6 +33,9 @@ export interface PartnerDraft {
   credentials: Record<string, string>
   bidderEndpoint: string
   seatIds: string
+  /* Per-DSP overrides (Q46): empty means the platform default. */
+  qps: string
+  timeoutMs: string
   mode: 'test' | 'live'
   listsLinked: boolean
   advertiserWhitelist: string[]
@@ -48,6 +51,7 @@ export function partnerDraft(p: Partner): PartnerDraft {
     provider: p.provider, isNew: false,
     credentials: Object.fromEntries(fields.map((f) => [f.key, f.secret ? '' : String((p.credentials ?? {})[f.key] ?? '')])),
     bidderEndpoint: p.bidder?.bidderEndpoint ?? '', seatIds: (p.bidder?.seatIds ?? []).join(', '),
+    qps: p.bidder?.qps != null ? String(p.bidder.qps) : '', timeoutMs: p.bidder?.timeoutMs != null ? String(p.bidder.timeoutMs) : '',
     mode: p.mode, listsLinked: p.listsLinked, advertiserWhitelist: p.advertiserWhitelist ?? [], advertiserBlacklist: p.advertiserBlacklist ?? [],
     categoryWhitelist: p.categoryWhitelist ?? [], categoryBlacklist: p.categoryBlacklist ?? [],
   }
@@ -55,9 +59,12 @@ export function partnerDraft(p: Partner): PartnerDraft {
 export const blankPartnerDraft = (provider: Provider): PartnerDraft => ({
   provider, isNew: true,
   credentials: Object.fromEntries((providerDef(provider)?.fields ?? []).map((f) => [f.key, ''])),
-  bidderEndpoint: '', seatIds: '', mode: 'test', listsLinked: true, advertiserWhitelist: [], advertiserBlacklist: [],
+  bidderEndpoint: '', seatIds: '', qps: '', timeoutMs: '', mode: 'test', listsLinked: true, advertiserWhitelist: [], advertiserBlacklist: [],
   categoryWhitelist: [], categoryBlacklist: [],
 })
+
+/* An override field: empty clears it (the platform default applies). */
+const override = (v: string) => (v.trim() === '' ? null : Number(v.trim()))
 
 /* The PUT body for a DSP page (API.md: whole-page save; secrets write-only). */
 export function partnerInput(d: PartnerDraft, before: PartnerDraft | undefined) {
@@ -67,7 +74,10 @@ export function partnerInput(d: PartnerDraft, before: PartnerDraft | undefined) 
   )
   return {
     credentials,
-    bidder: { bidderEndpoint: d.bidderEndpoint.trim(), seatIds: d.seatIds.split(',').map((x) => x.trim()).filter(Boolean) },
+    bidder: {
+      bidderEndpoint: d.bidderEndpoint.trim(), seatIds: d.seatIds.split(',').map((x) => x.trim()).filter(Boolean),
+      qps: override(d.qps), timeoutMs: override(d.timeoutMs),
+    },
     mode: d.mode,
     listsLinked: d.listsLinked,
     ...(d.listsLinked ? {} : {

@@ -117,12 +117,15 @@ export const reservePriceOf = (dt: { phExtensions?: { reservePrice?: number | nu
 /* Billing-unit inheritance (spec "Private auctions: two-period model", 23
    Sep 2026): the granularity a CPM is quoted and charged against — same
    override-always-wins inheritance as reservePriceOf, but always resolves
-   to a real number (the platform default of 24 hours/one day when neither
-   the slot nor its display type sets one) — unlike a reserve price, there
-   is no "no billing unit" state. */
+   to a real number — unlike a reserve price, there is no "no billing unit"
+   state. Since OQ27 (Rob, 29 Sep 2026) it is also the slot's play-window
+   length — the source of truth for how it is auctioned and billed — and
+   when neither the slot nor its display type sets one it inherits the
+   company-wide play window (`inherited`: Advertiser settings →
+   playWindowHours), whose own platform default is 24 hours (one day). */
 export const DEFAULT_BILLING_UNIT_HOURS = 24
-export const billingUnitHoursOf = (dt: { phExtensions?: { billingUnitHours?: number | null } | null }, slot: { billingUnitHours?: number | null }): number =>
-  slot.billingUnitHours ?? dt.phExtensions?.billingUnitHours ?? DEFAULT_BILLING_UNIT_HOURS
+export const billingUnitHoursOf = (dt: { phExtensions?: { billingUnitHours?: number | null } | null }, slot: { billingUnitHours?: number | null }, inherited: number = DEFAULT_BILLING_UNIT_HOURS): number =>
+  slot.billingUnitHours ?? dt.phExtensions?.billingUnitHours ?? inherited
 
 /* Max campaigns (ticket "Available Inventory: Max campaigns column + slot
    playlist statement"): the single authority on how many campaigns

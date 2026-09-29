@@ -7,7 +7,7 @@
 import { TARGETING_VARIABLES } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
-import { type Caller, type PositionRef, type WindowStatus, allPositions, callerOf, findPosition, nextWindow, positionView, visibilityFor, windowFacts, windowMs, windowStatus, windowsBetween } from '../../domain/positions'
+import { type Caller, type PositionRef, type WindowStatus, allPositions, assumedViewsPerWindow, callerOf, findPosition, longestWindowMs, nextWindow, positionView, visibilityFor, windowFacts, windowMs, windowStatus, windowsBetween, windowsCovering } from '../../domain/positions'
 import { effectiveFloorCpm } from '../../domain/pricing'
 import { type Rules, throwIfRejected, validateRules } from '../../domain/targetingValidation'
 import { notFound, validationFailed } from '../../http/errors'
@@ -33,11 +33,15 @@ export const inventoryRoutes = (ctx: Context): FastifyPluginAsync => async (app)
     if (!p || !visibilityFor(ctx, c)(p)) throw notFound('Position not found.')
     return p
   }
+  /* A position's own windows over a date range: each position's window is
+     its billing unit long (OQ27, Rob 29 Sep 2026), so over the same dates a
+     daily slot lists every day and a weekly one each week they touch. */
+  const startsOf = (p: PositionRef, from: string, to: string) => windowsCovering(ctx, from, to, windowMs(ctx, p))
   const windowsOf = (ctx2: Context, p: PositionRef, c: Caller, starts: Date[]) => {
     /* Per-position facts and audience once, not once per window (up to 366). */
     const facts = windowFacts(ctx2, p, starts)
-    const len = windowMs(ctx2)
-    const assumedViews = ctx2.audience.forSlot(p.displayType.id, p.slot).assumedViewsPerWindow
+    const len = windowMs(ctx2, p)
+    const assumedViews = assumedViewsPerWindow(ctx2, p)
     return starts.map((start) => ({
       start: start.toISOString(),
       end: new Date(start.getTime() + len).toISOString(),
@@ -51,14 +55,19 @@ export const inventoryRoutes = (ctx: Context): FastifyPluginAsync => async (app)
     const c = callerOf(req.partner, q.advertiserId)
     const next = dateOf(nextWindow(ctx))
     /* No dates: the next window that can be sold. */
-    const range = windowsBetween(ctx, q.from ?? q.to ?? next, q.to ?? q.from ?? next) ?? windowsBetween(ctx, next, next)!
+    const [from, to] = [q.from ?? q.to ?? next, q.to ?? q.from ?? next]
+    const asked = windowsBetween(ctx, from, to)
+    const range = asked ?? windowsBetween(ctx, next, next)!
+    /* Each position's own windows over the range (OQ27); no dates: its own
+       next window that can still be sold. */
+    const windowsFor = (p: PositionRef) => ((q.from || q.to) && asked ? startsOf(p, from, to)! : [nextWindow(ctx, windowMs(ctx, p))])
     const stores = list(q.storeIds)
     const byStatus = q.status && STATUSES.includes(q.status as WindowStatus) ? (q.status as WindowStatus) : null
     /* The status filter asks about every position over the whole range:
        what is taken is read once for the estate (one ranged query) and
        handed to each position, instead of one query per position — 2,400
        of them a request on a large estate (review, 24 Sep 2026). */
-    const taken = byStatus ? ctx.reservations.takenInRange(range[0].toISOString(), new Date(range[range.length - 1].getTime() + 1).toISOString()) : undefined
+    const taken = byStatus ? ctx.reservations.takenInRange(new Date(range[0].getTime() - longestWindowMs(ctx)).toISOString(), new Date(Math.max(range[range.length - 1].getTime(), nextWindow(ctx).getTime() + longestWindowMs(ctx)) + 1).toISOString()) : undefined
     const items = visible(c).filter((p) => {
       if (q.displayTypeId && p.displayType.id !== q.displayTypeId) return false
       if (q.touchPoint && p.displayType.touchPoint !== q.touchPoint) return false
@@ -71,8 +80,9 @@ export const inventoryRoutes = (ctx: Context): FastifyPluginAsync => async (app)
         if (q.region && !inStores.some((id) => ctx.stores.get(id)?.region?.toLowerCase() === q.region!.toLowerCase())) return false
       }
       if (byStatus) {
-        const facts = windowFacts(ctx, p, range, taken)
-        return range.some((w) => windowStatus(ctx, p, c, w, facts) === byStatus)
+        const windows = windowsFor(p)
+        const facts = windowFacts(ctx, p, windows, taken)
+        return windows.some((w) => windowStatus(ctx, p, c, w, facts) === byStatus)
       }
       return true
     })
@@ -91,11 +101,11 @@ export const inventoryRoutes = (ctx: Context): FastifyPluginAsync => async (app)
 
   app.get<{ Params: { positionId: string }; Querystring: { from?: string; to?: string; advertiserId?: string } }>('/inventory/:positionId/availability', async (req) => {
     const { from, to } = req.query
-    const starts = from && to ? windowsBetween(ctx, from, to) : null
-    if (!starts) throw validationFailed([{ field: 'from', reason: 'from and to are dates (YYYY-MM-DD), from ≤ to, at most a year apart.' }])
+    const range = from && to ? windowsBetween(ctx, from, to) : null
+    if (!range) throw validationFailed([{ field: 'from', reason: 'from and to are dates (YYYY-MM-DD), from ≤ to, at most a year apart.' }])
     const c = callerOf(req.partner, req.query.advertiserId)
     const p = visibleOne(c, req.params.positionId)
-    return { positionId: p.positionId, windows: windowsOf(ctx, p, c, starts) }
+    return { positionId: p.positionId, windows: windowsOf(ctx, p, c, startsOf(p, from!, to!)!) }
   })
 
   app.post<{ Body: { positionIds?: unknown; from?: unknown; to?: unknown; advertiserId?: unknown; rules?: unknown } }>('/inventory/forecast', async (req) => {
@@ -128,9 +138,11 @@ export const inventoryRoutes = (ctx: Context): FastifyPluginAsync => async (app)
     const rules = b.rules as Rules | undefined
     let views = 0
     for (const p of positions as PositionRef[]) {
-      const perWindow = ctx.audience.forSlot(p.displayType.id, p.slot).assumedViewsPerWindow * ctx.audience.targetedShare(p.displayType.id, rules)
-      const facts = windowFacts(ctx, p, starts as Date[])
-      views += (starts as Date[]).filter((w) => windowStatus(ctx, p, c, w, facts) === 'available').length * perWindow
+      /* Each position over its own windows (OQ27): a weekly slot's week of views, per Monday in the range. */
+      const own = startsOf(p, b.from as string, b.to as string) as Date[]
+      const perWindow = assumedViewsPerWindow(ctx, p) * ctx.audience.targetedShare(p.displayType.id, rules)
+      const facts = windowFacts(ctx, p, own)
+      views += own.filter((w) => windowStatus(ctx, p, c, w, facts) === 'available').length * perWindow
     }
     const assumedViews = Math.round(views)
     /* Targeting on a Personalisation Variable makes it a personalised campaign (spec §4). */
