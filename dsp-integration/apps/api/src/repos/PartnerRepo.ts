@@ -17,16 +17,20 @@ export interface PartnerRecord {
   credsPublic: Record<string, string>
   /* Which secret fields are set (values stay encrypted). */
   secretsSet: string[]
-  bidder: { bidderEndpoint?: string; seatIds?: string[] }
+  /* qps / timeoutMs: per-DSP overrides (Q46); absent means the platform default. */
+  bidder: { bidderEndpoint?: string; seatIds?: string[]; qps?: number; timeoutMs?: number }
   seats: Seat[]
   listsLinked: boolean
   allowList: string[]
   blockList: string[]
+  categoryAllowList: string[]
+  categoryBlockList: string[]
 }
 
 interface Row {
   id: string; provider: string; name: string; status: PartnerRecord['status']; last_sync: string | null; mode: PartnerRecord['mode']
   creds_public: string; creds_secret: string | null; bidder: string; seats: string; lists_linked: number; allow_list: string; block_list: string
+  category_allow_list: string; category_block_list: string
 }
 
 export interface PartnerRepo {
@@ -64,6 +68,7 @@ export function sqlitePartnerRepo(db: Db, secrets: SecretsStore): PartnerRepo {
       credsPublic: fromJson(r.creds_public, {}), secretsSet: secretsSetOf(r),
       bidder: fromJson(r.bidder, {}), seats: fromJson(r.seats, []), listsLinked: !!r.lists_linked,
       allowList: fromJson(r.allow_list, []), blockList: fromJson(r.block_list, []),
+      categoryAllowList: fromJson(r.category_allow_list, []), categoryBlockList: fromJson(r.category_block_list, []),
     }
   }
   const row = (id: string) => prepared(db, 'SELECT * FROM partners WHERE id = ?').get(id) as Row | undefined
@@ -78,10 +83,12 @@ export function sqlitePartnerRepo(db: Db, secrets: SecretsStore): PartnerRepo {
       const secret = p.secrets && Object.keys(p.secrets).length ? secrets.encrypt(JSON.stringify(p.secrets)) : null
       prepared(db,
         `INSERT INTO partners (id, provider, name, status, last_sync, mode, creds_public, creds_secret, bidder, seats,
-           lists_linked, allow_list, block_list, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           lists_linked, allow_list, block_list, category_allow_list, category_block_list, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         p.id, p.provider, p.name, p.status, p.lastSync, p.mode, toJson(p.credsPublic) ?? '{}', secret, toJson(p.bidder) ?? '{}',
-        toJson(p.seats) ?? '[]', p.listsLinked ? 1 : 0, toJson(p.allowList) ?? '[]', toJson(p.blockList) ?? '[]', now, now,
+        toJson(p.seats) ?? '[]', p.listsLinked ? 1 : 0, toJson(p.allowList) ?? '[]', toJson(p.blockList) ?? '[]',
+        toJson(p.categoryAllowList) ?? '[]', toJson(p.categoryBlockList) ?? '[]', now, now,
       )
       return toRecord(row(p.id) as Row)
     },
@@ -97,10 +104,11 @@ export function sqlitePartnerRepo(db: Db, secrets: SecretsStore): PartnerRepo {
       const secret = secretValues === undefined ? r.creds_secret : Object.keys(secretValues).length ? secrets.encrypt(JSON.stringify(secretValues)) : null
       prepared(db,
         `UPDATE partners SET name = ?, status = ?, last_sync = ?, mode = ?, creds_public = ?, creds_secret = ?, bidder = ?, seats = ?,
-           lists_linked = ?, allow_list = ?, block_list = ?, updated_at = ? WHERE id = ?`,
+           lists_linked = ?, allow_list = ?, block_list = ?, category_allow_list = ?, category_block_list = ?, updated_at = ? WHERE id = ?`,
       ).run(
         next.name, next.status, next.lastSync, next.mode, toJson(next.credsPublic) ?? '{}', secret, toJson(next.bidder) ?? '{}', toJson(next.seats) ?? '[]',
-        next.listsLinked ? 1 : 0, toJson(next.allowList) ?? '[]', toJson(next.blockList) ?? '[]', new Date().toISOString(), id,
+        next.listsLinked ? 1 : 0, toJson(next.allowList) ?? '[]', toJson(next.blockList) ?? '[]',
+        toJson(next.categoryAllowList) ?? '[]', toJson(next.categoryBlockList) ?? '[]', new Date().toISOString(), id,
       )
       return toRecord(row(id) as Row)
     },

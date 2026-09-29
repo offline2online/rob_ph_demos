@@ -7,7 +7,7 @@ import type { Context } from '../../context'
 import type { Guards } from '../../http/app'
 import { validationFailed } from '../../http/errors'
 import { effectiveFloorCpm } from '../../domain/pricing'
-import { nextWindow, windowMs } from '../../domain/positions'
+import { findPosition, nextWindow, windowMs } from '../../domain/positions'
 import { TAKEN } from '../../repos/ReservationRepo'
 
 export async function listAdvertisers(ctx: Context): Promise<Advertiser[]> {
@@ -21,12 +21,21 @@ export async function listAdvertisers(ctx: Context): Promise<Advertiser[]> {
     byAdvertiser.set(c.advertiserId, counts)
   }
   /* Live bookings from the current window on: an advertiser with none has
-     nothing to show on the booking schedule (Rob, 20 Sep). */
+     nothing to show on the booking schedule (Rob, 20 Sep). "Current" is
+     per position: each slot's window is its own billing unit (OQ27). */
   const bookings = new Map<string, number>()
-  const from = nextWindow(ctx).getTime() - windowMs(ctx)
+  const fromOf = new Map<string, number>()
+  const currentFrom = (positionId: string) => {
+    let from = fromOf.get(positionId)
+    if (from === undefined) {
+      const len = windowMs(ctx, findPosition(ctx, positionId))
+      fromOf.set(positionId, (from = nextWindow(ctx, len).getTime() - len))
+    }
+    return from
+  }
   for (const r of ctx.reservations.byStatus([...TAKEN], new Date(0).toISOString())) {
     if (r.testMode || r.clearingCpm === null || !r.advertiserId) continue
-    if (Date.parse(r.windowStart) < from) continue
+    if (Date.parse(r.windowStart) < currentFrom(r.positionId)) continue
     bookings.set(r.advertiserId, (bookings.get(r.advertiserId) ?? 0) + 1)
   }
   const byId = new Map<string, { name: string; via: string[] }>()

@@ -37,12 +37,9 @@ export interface Config {
   /* Q46 — per-DSP bidder defaults. */
   bidderQps: number
   bidderTimeoutMs: number
-  /* Q48 — max values (SKUs) per targeting condition. */
+  /* Q48 (resolved 29 Sep 2026) — max values per targeting condition,
+     SKU lists included; overflow is 400 validation_failed. */
   maxValuesPerCondition: number
-  /* Q38 — does a re-reviewed campaign's old version keep running? */
-  oldVersionRunsDuringReview: boolean
-  /* Q47 — block display type delete while positions are sold/reserved? */
-  blockDeleteWithSoldPositions: boolean
   /* Automated asset checks (spec §3). Limits are per asset, spec §3
      "Automated checks on upload": 100 MB images, 200 MB videos. */
   assetLimits: { maxImageBytes: number; maxVideoBytes: number; maxBitrateKbps: number }
@@ -113,8 +110,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     bidderQps: 500,
     bidderTimeoutMs: 300,
     maxValuesPerCondition: 100,
-    oldVersionRunsDuringReview: false,
-    blockDeleteWithSoldPositions: false,
     assetLimits: { maxImageBytes: 100 * 1024 * 1024, maxVideoBytes: 200 * 1024 * 1024, maxBitrateKbps: 20_000 },
     rejectedCampaignRetentionDays: 30,
     dsp: {

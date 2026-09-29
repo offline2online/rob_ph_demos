@@ -2,10 +2,11 @@
    send and accept"; spec §7 "What a DOOH bid request carries"). A request
    describes a venue and a moment, never a person: there is no `user`
    object, and no visitor, Personalisation or Computer Vision data. */
+import { bidderTuning } from '../domain/partnerInput'
 import { IAB_CATEGORY_CODES } from '@ph-dsp/types'
 import type { Context } from '../context'
 import { type PositionRef, positionView, windowMs } from '../domain/positions'
-import { effectiveLists } from '../domain/lists'
+import { effectiveCategoryLists, effectiveLists } from '../domain/lists'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 
 export interface BidRequest {
@@ -29,7 +30,9 @@ export interface BidRequest {
   at: 1
 }
 
-export interface Bid { id?: string; impid?: string; price?: number; crid?: string; adomain?: string[]; cat?: string[]; iurl?: string }
+/* ext.creativeAudit: the DSP's own audit of the creative, in its own shape
+   (domain/dspAudit.ts) — advisory only, Q40. */
+export interface Bid { id?: string; impid?: string; price?: number; crid?: string; adomain?: string[]; cat?: string[]; iurl?: string; ext?: { creativeAudit?: unknown } }
 export interface BidResponse { id?: string; cur?: string; seatbid?: { seat?: string; bid?: Bid[] }[] }
 
 const looksLikeDomain = (s: string) => /^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(s.trim())
@@ -58,6 +61,7 @@ export function buildBidRequest(ctx: Context, p: PositionRef, partner: PartnerRe
   const company = ctx.company.get()
   const exchange = ctx.exchange.get()
   const lists = effectiveLists(partner, company)
+  const categoryLists = effectiveCategoryLists(partner, company)
   const audience = ctx.audience.forSlot(p.displayType.id, p.slot)
   const { width: w, height: h } = view.screen
   return {
@@ -68,8 +72,9 @@ export function buildBidRequest(ctx: Context, p: PositionRef, partner: PartnerRe
       banner: { w, h },
       bidfloor: view.pricing.effectiveFloorCpm.localised,
       bidfloorcur: company.currency,
-      qty: { multiplier: audience.assumedViewsPerWindow, sourcetype: audience.counted ? 2 : 1 },
-      exp: Math.round(windowMs(ctx) / 1000),
+      /* This position's own window (OQ27): its assumed views and its length. */
+      qty: { multiplier: view.assumedViewsPerWindow, sourcetype: audience.counted ? 2 : 1 },
+      exp: Math.round(windowMs(ctx, p) / 1000),
       ext: { ph: { orientation: view.screen.orientation, slotDurationSec: view.screen.slotDurationSec, loopLengthSec: view.screen.loopLengthSec, shareOfVoice: view.screen.shareOfVoice } },
     }],
     dooh: {
@@ -80,9 +85,9 @@ export function buildBidRequest(ctx: Context, p: PositionRef, partner: PartnerRe
     },
     source: { schain: { complete: 1, ver: '1.0', nodes: [{ asi: exchange.domain, sid: exchange.sellerId, hp: 1 }] } },
     cur: [company.currency],
-    bcat: categoryCodes(company.categoryBlacklist),
+    bcat: categoryCodes(categoryLists.blockList),
     badv: blockedDomains(partner, lists.blockList),
-    tmax: ctx.config.bidderTimeoutMs,
+    tmax: bidderTuning(partner.bidder, ctx.config).timeoutMs,
     at: 1,
   }
 }

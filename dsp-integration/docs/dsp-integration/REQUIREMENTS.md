@@ -62,10 +62,8 @@ and are not changed by this project.
 
 **Deferred to a later release:** managing targeting variables (this release
 uses the default platform variables only, read-only), environmental
-attributes such as weather and stock, deal IDs (preferred and
-programmatic-guaranteed deals; this release sells through the open auction
-only), and per-DSP bidder tuning (QPS ceiling and bid timeout use platform
-defaults).
+attributes such as weather and stock. (Deals and reserve-price booking —
+programmatic guaranteed — are built: open questions 45 and 52.)
 
 **Navigation.** The HQ Admin navigation items for this project, in order
 (Rob, 24 Sep 2026; **Campaign Status** folded into **Campaign schedule**'s
@@ -252,6 +250,39 @@ a fixed resolution. The **QR Control** and **CTAs** display types, and the
 *CTAs* and *QR Control* element types, are not part of this release and are
 not offered.
 
+**Website and Mobile App** (ticket, 28 Sep 2026) were added to Touch Point
+alongside Digital Signage and Kiosk — production's Add Display Type offers
+all three (plus Mobile App), and the two were missing here. They reuse the
+existing New/Edit Display Type flow and every field on it unchanged (Touch
+Point, Display Type Name, Canvas Size, Background Color, Default Playlist,
+Phantom Zone/QR Control, Playlist Settings) — nothing new was built, only
+widened. Two differences, both because they have no physical screen or
+advertising:
+
+- **Canvas Size defaults to Website's own (1920×1080) or Mobile App's own
+  (330×400, portrait)** when Touch Point is switched to one of them on a
+  still-unsaved display type, the same way this build's own canvas has
+  always defaulted for a new one — Digital Signage and Kiosk keep their
+  existing behaviour (switching between them has never touched the canvas,
+  and still doesn't).
+- **Enabled Features and Multi-Zone Layout are hidden**, except QR Control
+  (Phantom Zone/QR Control stays exactly as it is otherwise) — In-Store
+  Radio, MIST, AI Agent and Vision/AI all assume a physical display to run
+  on or around, which neither touch point has. Hidden rather than shown
+  disabled, matching how the two display types themselves are additive
+  rather than a variant of an existing one. Revisit if that's wrong
+  ("unless confirmed otherwise").
+- **HQ-only: no advertising.** See *Slot ownership* below — this is the
+  more consequential of the two differences, since it is also what keeps
+  Website and Mobile App out of Advertisers / Inventory, Available
+  Inventory, the Inventory API and bid requests, without any of those four
+  needing a code change of their own (§5 already only ever surfaces an
+  Advertiser-owned slot).
+
+Existing Website/Mobile App display type records (this build has none
+seeded, but the platform does) load and save through the same endpoints,
+unreshaped; Digital Signage/Kiosk playback and analytics are untouched.
+
 - **Existing schema, unchanged**: width/height,
   `maximumCampaignsPlayedInRotation` (slot count, -1 = unlimited),
   auto-play/rotation/transition modes, asset fill/positioning, the multi-zone
@@ -291,6 +322,15 @@ not offered.
     Advertiser only. A slot already saved as Stores still reads as Stores
     (greyed out in the owner list, with a tooltip saying it isn't supported
     in this release) until someone changes it; the API is unchanged.
+  - **Website and Mobile App are Headquarters only** (ticket, 28 Sep 2026):
+    no advertising at all for these two touch points. Advertiser and Stores
+    stay on the owner list — shown, not hidden, so it's clear the option
+    exists but doesn't apply here — greyed out with a tooltip saying
+    advertising isn't available for this touch point; the API refuses
+    anything but Headquarters. No reserve price, billing unit, max
+    campaigns or venue metadata either, since none of those three apply to
+    anything but an Advertiser-owned slot; the display type's `phExtensions`
+    holds Headquarters slots only.
 
   **A slot is a playlist position** (ticket "Available Inventory: Max
   campaigns column + slot playlist statement"): assigning an advertiser a
@@ -347,9 +387,20 @@ not offered.
   slots a zone is **six positions** on Available Inventory, two under each
   zone's playlist. **A position is still identified by display type + slot
   number** (`PH-CORE-BOUNDARIES.md` "At most one campaign per display type,
-  slot and play window") — the segments just make slot 5 "Zone 3's first
-  slot" — and each position's share of voice, slot duration and billing are
-  of its own zone's rotation, not of every zone's slots together. The API
+  slot and play window") — the flat `slot` field spans every zone (so the
+  segments make it 5 for "Zone 3's first slot"), and every internal
+  reference to a position — `PUT`, the exchange, billing, migrations —
+  keys on that flat number, unchanged by the rest of this paragraph.
+  **What Available Inventory *shows* in its Slot column is different**
+  (`AvailableInventoryRow.zoneSlot`, ticket 28 Sep 2026 — Rob: setting Zone
+  2's first slot showed as "Slot 4" in the table, since each zone runs its
+  own separate playlist and rotation and a flat cross-zone number isn't
+  what that rotation actually uses): a display-only number that restarts
+  at 1 for each zone's own segment, so Zone 3's first slot reads "Slot 1"
+  there, same as Zone 1's and Zone 2's. Equal to `slot` when the display
+  type isn't multi-zone. Each position's share of voice, slot duration and
+  billing are of its own zone's rotation, not of every zone's slots
+  together. The API
   rejects a slot list whose length isn't the sum of the zone caps, or a slot
   in the wrong zone's segment; on a single-zone display type `zoneId` must
   be absent. A multi-zone display type saved before this (one shared slot
@@ -365,6 +416,12 @@ not offered.
   zone playlist created on demand) and selects it immediately — ready, once
   it is this display type's Default Playlist, to define its own multi-zone
   layout below.
+  - **It starts as a copy of the playlist it replaces, with every section
+    open** (ticket ThP7DPGo17FmPJdDKM7S, 28 Sep 2026): Phantom Zone,
+    Enabled Features, Multi-Zone Layout and Playlist Settings all expand on
+    the click, and the new playlist's five settings are the current default
+    playlist's, editable before Save creates it. Only when that playlist has
+    no settings of its own does it fall back to the defaults below.
   - **A playlist added to an existing display type this way, or a zone
     playlist created on demand, starts with Campaign Auto-Rotation and
     Campaign Auto-Play explicitly off** (ticket, 27 Sep 2026) — not the
@@ -434,6 +491,17 @@ not offered.
   unused and can be deleted there.
 - Displays and their display-type assignment live in **Displays & Devices**
   (existing); this project only reads them for the check.
+- **Hard block while inventory is committed (open question 47, decision
+  29 Sep 2026).** A display type also cannot be deleted while any of its
+  advertiser positions is **reserved or sold for a current or future (not
+  yet played) window** — deleting it would strand sold inventory owed
+  delivery and reserved slots with promises against them. The delete is
+  refused `409 has_dependents`, each blocking window named
+  (`<position> · window <date> · sold|reserved`). Test mode bookings don't
+  count. Once those windows have played out the delete proceeds. The same
+  block applies to **changing the playlist assigned** to the display type
+  (its default playlist or a zone's) and to **changing that playlist's
+  settings** (§2): the playlist carries the play commitments.
 
 ### Collapsed panels with summaries
 
@@ -448,8 +516,8 @@ coloured; chips for defaults or "off" are grey.
 | Panel | Summary shows |
 |---|---|
 | **Phantom Zone** | Size (e.g. *250×250*) and position — *Default (Bottom Right)* when inherited — or *Not defined* |
-| **Enabled Features** | One chip per enabled feature with its icon (*In-Store Radio*, *QR Control*, *MIST*, *AI Agent*, *Vision/AI*), or *None enabled*. Features not available to the company are not shown |
-| **Multi-Zone Layout** | Number of zones (e.g. *3 zones*), or *Single zone* |
+| **Enabled Features** | One chip per enabled feature with its icon (*In-Store Radio*, *QR Control*, *MIST*, *AI Agent*, *Vision/AI*), or *None enabled*. Features not available to the company are not shown. For Website/Mobile App, only QR Control ever appears here — the panel itself offers nothing else (ticket, 28 Sep 2026) |
+| **Multi-Zone Layout** | Number of zones (e.g. *3 zones*), or *Single zone*. Not shown at all for Website/Mobile App (ticket, 28 Sep 2026) |
 
 Opening a panel shows its full settings as before; the summary updates as
 settings change.
@@ -467,8 +535,8 @@ is handled by the existing platform and is unchanged.
   2026): the icon of every display type the playlist fills (or, while it
   fills none, the display type it was auto-created for), with the touch
   point's name on hover — Digital Signage a TV, Kiosk the Touch Point
-  field's own Kiosk icon; Website and Mobile Store Site have icons ready
-  (a globe and a phone) for when those touch points exist. A playlist on no
+  field's own Kiosk icon, Website a globe, Mobile App a phone (added 28 Sep
+  2026, ticket — the icons were already reserved for them). A playlist on no
   screen at all shows no icon.
 - **Delete a playlist**, through the confirmation dialog described under
   *Deleting*:
@@ -505,6 +573,12 @@ table.
   Display Types' own: edits are held as a draft and only take effect on Save;
   Cancel discards them. Switching which playlist's row is expanded does not
   discard another playlist's pending edits.
+- **No change while its inventory is committed (open question 47).** A
+  playlist assigned to a display type whose positions are reserved or sold
+  for a current or future window can't have its settings changed, and the
+  display type can't be given a different playlist, until those windows have
+  played: the save is refused `409 has_dependents`, naming each blocking
+  window (§1 "Deleting a display type").
 - **Maximum Campaigns Played In Rotation and slot assignment are not part of
   this move** — they stay on the display type (§1) because they size and
   sell that specific screen's positions, not the playlist's content. They
@@ -591,6 +665,18 @@ discarded pre-auction, and the creative is placed in the approval queue (or
 approved automatically, if the advertiser does not require approval) so it
 can compete in later windows.
 
+**DSP creative audits are an advisory input, never a replacement**
+(decision, Rob, 29 Sep 2026; open question 40). A DSP's own audit status —
+DV360's review status (`ApprovalStatus`, `ExchangeReviewStatus`), The Trade
+Desk's `approvedBy`, Amazon Ads DSP's asset-level moderation — is recorded
+as an advisory `dsp_audit` check shown to the reviewer. It never approves a
+creative on its own and never blocks one; PH's approval gate stays the
+source of truth. **Pre-approval is by creative ID and content hash**, riding
+on *safe reuse* (below): once a human has approved a DSP creative, the same
+creative ID with byte-identical content is not re-audited; different
+content under that ID is a new version for review (a pending edit if one is
+already approved).
+
 ### Automated checks on upload
 
 Run before a human sees anything; failures are returned to the advertiser
@@ -634,9 +720,25 @@ Activation (**Active** / **Inactive**) is a separate field, available only
 once a campaign is *Approved*.
 
 - **Any change to an approved campaign's assets or targeting rules** (for an
-  advertiser that requires approval) returns it to *Awaiting approval*.
-  Whether the previously approved version keeps running during re-review is
-  open question 38.
+  advertiser that requires approval) creates a **pending edit**: the new
+  version is *Awaiting approval* while the **previously approved version
+  keeps running** — still activated, still eligible to reserve, bid, win
+  and be handed off, and handed off with its own approved creative
+  (decision, Rob, 29 Sep 2026; open question 38).
+  - **Approving the pending edit atomically replaces the live version**:
+    every hand-off after the approval plays the new creative and none
+    before it does — no dark window, no double run. Each booking records
+    the asset version it handed off.
+  - **Rejecting the pending edit discards it**: the running version
+    continues unaffected (*Approved*); the rejection and the discard stay in
+    the audit trail (`rejected`, `edit_discarded`), and the advertiser sees
+    the reason (`rejectedEdit` on `GET /v1/campaigns/{id}/status`) until its
+    next edit, which builds on the live version under a new version id.
+    Un-reject does not apply to a discarded edit.
+  - A campaign that has never been approved is unchanged: nothing runs until
+    it is, and a rejection is a plain rejection.
+  - The status API exposes `liveAssetVersion` (the approved version that
+    runs) and `pendingEdit`.
 - **Draft is internal only; it never surfaces in a retailer-facing view**
   (ticket, 22 Sep). A campaign remains mechanically Draft between creation
   (`POST /v1/campaigns`) and submission (`POST /v1/campaigns/{id}/submit`)
@@ -775,14 +877,14 @@ of any other asset's history. Represented in the POC as
 `ApprovalService.wasAssetHumanCleared(campaignId, assetId, contentHash)`
 (`packages/campaign-approval/src/server/service.ts`, backed by
 `campaign_approval_asset_clearance` — a row is written only from a genuine
-`approve()`, never from `submit()`'s auto-approve path) — a building block
-a submission flow can call before deciding whether to route a resubmitted
-asset back into the review queue. **Not yet wired into the POC's own
-upload/submit endpoints** (`apps/api/src/routes/partner/campaigns.ts`):
-today every resubmission still re-runs its automated checks and, if the
-advertiser requires approval, re-enters the queue regardless of whether an
-individual asset was unchanged — the service-level primitive above is
-ready for that wiring, which is the natural next step.
+`approve()`, never from an auto-approve), **and wired into submission**
+(open question 40, 29 Sep 2026): `approve()` clears every asset of the
+version and its targeting rules; `submit()` and a change on upload approve
+a version without review only when every asset and the targeting are
+cleared at their current content (audit `reused_clearance`). Otherwise the
+version goes to the reviewer with an advisory `previously_cleared` check on
+each unchanged asset. For DSP creatives the key is the DSP creative ID plus
+the content hash (the crid's campaign is derived from the DSP and crid).
 
 ### Enforcement and audit
 
@@ -920,8 +1022,11 @@ played (Billing, below).
 
 ### Billing
 
-- **Dynamic VAC-d**: bill the CPM against realised VAC-d over the billing
-  window (share of actual loop time), read from existing playback data.
+- **Dynamic VAC-d**: bill the CPM against realised VAC-d over each play
+  window (share of actual loop time), read from existing playback data. A
+  window is its slot's billing unit long (§5 "Billing unit", open question
+  27): one line item per window, with expected play time and assumed views
+  for that length.
 - Because assets must be approved before they play (§3), the pricing and
   allocation model works over extended periods (daily, weekly or monthly)
   rather than purely in real time.
@@ -929,12 +1034,14 @@ played (Billing, below).
   fixed rate** (23 Sep 2026 — see §5 "Private auctions (buyers lists)" for
   the two-period model itself). A CPM is a rate, not a fixed sum: the brand
   wins at a bid CPM that then holds for the whole delivery term (no daily
-  re-auction), and each billing unit (the slot's own granularity — default
-  one day) is billed at that agreed CPM against the realised VAC-d for
+  re-auction), and each billing unit (the slot's own play window — §5 "Billing
+  unit"; the company play window when the slot and its display type set
+  none) is billed at that agreed CPM against the realised VAC-d for
   that unit. The term total is simply the sum of its billing units'
   settlements at the one agreed rate. This sits between the two other
-  risk profiles: **reserved** is a fixed premium with the brand carrying
-  full delivery risk; **open real-time** locks nothing, re-clearing price
+  risk profiles: **reserved** commits the brand to a premium rate (the
+  reserve price) and holds the window, billed on realised VAC-d at that
+  rate with no guaranteed volume and no make-good (§5 "Reserve price"); **open real-time** locks nothing, re-clearing price
   every auction; a **private auction using the two-period model** locks
   the rate but leaves volume variable — the brand pays for actual views,
   not a guaranteed number, but never re-bids for the term. Mechanically
@@ -985,7 +1092,7 @@ region, date range, status.
 | Status | Meaning |
 |---|---|
 | **Available** | Open for this partner/advertiser to reserve or bid on |
-| **Reserved** | Held for a named advertiser (shown as available only to that advertiser) |
+| **Reserved** | Held for a named advertiser (shown as available only to that advertiser); or committed at the reserve price, or inside a locked private-auction term — in those two cases the window is not auctioned and takes no bids until it plays |
 | **Sold** | Won or booked for that window, by the one advertiser holding it |
 | **Unavailable** | Store closed, display offline, or otherwise not playable |
 
@@ -1001,11 +1108,13 @@ this document).
   campaigns (§4), including the requester's own advertiser floor multiplier.
 - **Reserve price** (decision, Rob, 22 Sep; real inheritance, 22 Sep): a CPM
   premium at which this position can be reserved in advance of the open
-  auction — a retailer lets an advertiser pay a premium up front to
-  guarantee the slot for a window, taking it out of the open auction for
-  that window (the advertiser then carries the delivery risk, not billed
-  against realised dynamic VAC-d; see §4 Billing). `null` when no reserve is
-  set. Genuine §1 configuration inheritance, not a copy action: a display
+  auction. A retailer lets an advertiser commit to a premium rate up front
+  to hold the slot for a window, which takes that window out of the open
+  auction. The reserve price is the CPM the booking clears and is billed
+  at — not an amount added to the floor — and it must itself clear the
+  buyer's effective floor (§4). A booking is billed on realised VAC-d at
+  that CPM, as a floor commitment: no guaranteed volume, no make-good (§4
+  Billing). `null` when no reserve is set. Genuine §1 configuration inheritance, not a copy action: a display
   type carries its own reserve price default, and a slot's own reserve
   price overrides it whenever one is set — a slot with none simply follows
   its display type, and setting the default reaches every slot on it
@@ -1016,10 +1125,24 @@ this document).
   `null` already carries everywhere else in this inheritance. An earlier
   design (a plain per-slot value with a "copy to every other slot" action,
   no stored default) failed testing for not actually running the
-  inheritance the ticket asked for. **Published on the position, resolved;
-  not yet wired to a booking flow** (the prototype ships the setting, the
-  inheritance and the publishing only, per the scope note on the ticket
-  that added it — see open question 52).
+  inheritance the ticket asked for.
+
+  **The booking flow** (Rob, 29 Sep 2026; open questions 45 and 52):
+  1. **Commit.** A buyer sends `POST /v1/reservations` with `type: reserve`
+     for a future window, any time before that window's auction cutoff. Its
+     `bidCpm` must be at least the reserve price (`400 validation_failed`
+     otherwise); the booking is made at the reserve price, which must clear
+     the buyer's effective floor (`422 below_floor` otherwise).
+  2. **Held as Reserved.** The window is booked and handed off at once. Its
+     availability reads **Reserved**; the auction never clears it, bids
+     already waiting on it are settled lost, and new bids are refused.
+  3. **Honoured.** When the window plays, the booking stands at the reserve
+     price.
+  4. **Billed** on the window's realised VAC-d at the reserve price.
+
+  On a private auction using the two-period model, the commitment locks the
+  deal's whole delivery term at the reserve price (see "Private auctions
+  (buyers lists)" → locked rate).
 
 ### Visibility rules
 
@@ -1153,6 +1276,16 @@ duplicating it per deal would let one drift from the other:
   own mandatory default campaign rather than sell too cheap — a private
   auction that clears nothing falls through exactly the way an open auction
   with no qualifying bid already does.
+- **A deal is per DSP and priced on top of the floor** (Rob, 29 Sep 2026;
+  open question 45). It is bilateral: its invited buyers resolve to DSP
+  seats, and a locked term binds one DSP's buyer; there is no company-wide
+  deal. Its rate is a commitment on top of the same score-driven floor,
+  never under it: a bid or reserve below the effective floor is refused
+  `below_floor`, and a locked-term window whose rate has fallen below the
+  floor in force when it is booked (the floor or a multiplier rose) is not
+  sold and falls through to the default campaign. Programmatic guaranteed
+  is the reserve-price booking flow (§5 "Reserve price"), delivered with it
+  (open question 52).
 - **Auction resolution rule** (first- vs second-price) is a platform-wide
   setting, defaulting to first-price (this build only implements
   first-price — see §7's clearing rule) — never overridden per list.
@@ -1209,7 +1342,10 @@ that deadline. That clear is the term's one deciding auction: the winning
 identity and CPM are written to `lockedWin` (once, never overwritten —
 first clear wins) and every later play window in the delivery term is
 booked **directly** at that rate, with no bid requests and no fresh
-clearing (`exchange/auction.ts`'s `bookLockedTermWindow`). Each such window
+clearing (`exchange/auction.ts`'s `bookLockedTermWindow`). An invited
+buyer's reserve-price commitment (§5 "Reserve price") locks the term the
+same way, at the reserve price (`lockedWin.source: reserve`); its windows
+are then held and booked as Reserved. Each such window
 is still its own reservation, still billed on its own realised VAC-d for
 that window (§4 "Billing") — dynamic VAC-d is unchanged, only the rate is
 fixed for the term rather than re-cleared per unit. If `auctionCloses`
@@ -1221,13 +1357,22 @@ as a buyers list always has.
 
 **Billing unit** (`billingUnitHours` on a slot, with a display-type-level
 default — same override-always-wins inheritance as reserve price, §5
-"Reserve price" above; platform default 24 hours/one day when neither is
-set): the granularity a CPM is quoted and charged against, surfaced in
-Available Inventory next to Reserve price. Informational in this build —
-dynamic VAC-d billing still runs per play window (Advertiser settings →
-Auction schedule); it names what that window length is expected to equal
-for a private-auction slot using the two-period model, rather than driving
-a separate billing cadence.
+"Reserve price" above; when neither is set the slot inherits the
+company-wide play-window length, Advertiser settings → Auction schedule,
+whose platform default is 24 hours/one day): the granularity a CPM is
+quoted and charged against, surfaced in Available Inventory next to Reserve
+price. **It is the source of truth for the slot's play-window length and
+billing granularity** (open question 27, decision Rob, 29 Sep 2026): every
+slot — not only private auctions using the two-period model — is auctioned,
+booked, handed off and billed in windows one billing unit long, each billed
+on its own realised VAC-d (§4 "Billing"). Windows of every length are laid
+back to back from the same fixed Monday 00:00 UTC, so a 7-day slot's
+windows start on Mondays that are also daily slots' window starts, and one
+auction clears both. Whole hours, 1 hour to 365 days. A slot's billing unit
+can't change while it has live windows bid on, booked or not yet billed
+under the current one; the save is refused `400 validation_failed`, naming
+when the last one ends. (A change to the company-wide play window is
+deferred instead — see §6 "Selling a play window".)
 
 **Max campaigns** (`maxCampaigns` on a slot, with a display-type-level
 default — same override-always-wins inheritance as reserve price and
@@ -1340,7 +1485,9 @@ selected*, *equal*, *greater than*).
 - **Validates** that every condition uses only variables permitted for the
   advertiser's DSP (*Which DSPs may target each variable*, below). A rule
   using a variable that isn't permitted is rejected with the variable named.
-  SKU conditions accept a list of SKUs (open question 48 sets the maximum).
+  SKU conditions accept a list of at most **100 SKUs** — the same cap as
+  the targeting grammar's 100 values per condition, not a separate limit
+  (open question 48). More is refused `400 validation_failed`.
 - **Stores** the validated campaign and its rules in the **existing campaign
   and targeting structure**, so it is stored and displayed exactly like a
   campaign built in HQ Admin.
@@ -1454,24 +1601,31 @@ clear into a position and are **enforced at auction time, not reconciled
 afterwards**.
 
 **Defined centrally, adopted by every connected DSP.** A newly connected
-partner adopts the advertiser lists automatically.
+partner adopts the advertiser and category lists automatically.
 
-A partner can **unlink** and keep its own advertiser lists instead, using the
-same inheritance rule as display types (§1): the override wins, and a later
-edit to the company lists never reaches it.
+A partner can **unlink** and keep its own advertiser **and category** lists
+instead, using the same inheritance rule as display types (§1): the override
+wins, and a later edit to the company lists never reaches it. One toggle
+covers both list types together — a DSP cannot unlink its advertiser lists
+without also unlinking its category lists, or vice versa.
 
-- **Unlinking copies the inherited lists down**, so a blacklist never silently
-  empties.
-- **Relinking discards the partner's own lists.** It is destructive and says
-  so.
+- **Unlinking copies the inherited lists down**, for both advertisers and
+  categories, so a blacklist never silently empties.
+- **Relinking discards the partner's own lists**, both advertiser and
+  category. It is destructive and says so.
 
-**On a DSP's page:**
+**On a DSP's page**, under **List management** (ticket, 28 Sep 2026 —
+originally advertiser lists only; category lists were added here to close
+the gap, since a DSP that needed a different category policy from the
+company's had no way to set one):
 
 - **Centrally managed (adopting):** the lists are **not repeated**. The page
   says the DSP uses the company lists, with a **link to view them in
   Advertiser settings** and an **Unlink and edit** action.
-- **Unlinked:** the page shows the DSP's **own** whitelist and blacklist,
-  editable, with a **Relink to company lists** action.
+- **Unlinked:** the page shows the DSP's **own** advertiser whitelist and
+  blacklist, **and** its own category whitelist and blacklist (the same
+  IAB category suggestions Advertiser settings offers), all editable, with
+  a **Relink to company lists** action.
 
 **Where these apply** sits directly below List management in Advertiser
 settings (above Available Inventory). It shows, per DSP, only **whether it
@@ -1528,7 +1682,13 @@ and neither changes what this paragraph says about today's system.
 
 Per-impression RTB does not suit signage, where creatives are often video and
 must be on the player before they can play. The auction is therefore for a
-**play window** (assume 24 hours), cleared ahead of the window. The winner
+**play window**, cleared ahead of the window. A window's length is its
+slot's billing unit (§5 "Billing unit"; open question 27, 29 Sep 2026) —
+the slot's own, else its display type's default, else the company-wide
+play-window length (Advertiser settings → Auction schedule, default 24
+hours), which is now only that inherited default. A change to the company
+value is deferred until every live window on the slots that inherit it has
+played. The winner
 holds the advertiser slot for that window: its approved campaign is handed to
 the existing campaign system, which **distributes and plays it as it does
 today**. Distribution, caching and playback are unchanged.
@@ -1686,19 +1846,27 @@ A DSP's page holds only, in this order:
    The DSP-specific setup note is the heading's tooltip; each field's hint
    is a tooltip on its label.
 4. **Bidder integration**: **bidder endpoint** and **seat IDs**, both
-   required, and nothing else. QPS ceiling (500) and bid timeout (300 ms) are
-   platform defaults and are not shown or editable in this release.
-5. **Advertiser whitelist / blacklist**: a link to the company lists when
-   centrally managed, or the DSP's own lists when unlinked (§6).
+   required, plus two optional per-DSP overrides (open question 46): **QPS
+   ceiling** and **bidder timeout (ms)**. Left empty, each uses the platform
+   default (500 QPS, 300 ms); set, the DSP's value wins — the same
+   override-always-wins inheritance as reserve price, max campaigns and
+   billing unit. The timeout is also sent as the bid request's `tmax`.
+   Allowed ranges: 1–10,000 QPS, 50–2,000 ms; outside them the save is
+   refused `400 validation_failed`.
+5. **List management**: a link to the company advertiser and category lists
+   when centrally managed, or the DSP's own advertiser **and** category
+   lists, editable, when unlinked (§6).
 6. **Save changes / Cancel**, always visible at the bottom (see *Saving
    changes*).
 
 No advertiser ID is taken on the connection: the retailer sells to many
 advertisers through each DSP, so the connection is not tied to one. The
 DSP's advertisers are listed on the **Advertisers** screen, not on its page.
-Currency, floor CPM, multipliers, category lists and targeting permissions
-are set elsewhere and are neither set nor repeated on the DSP's page. Deal IDs
-are deferred to a later release (open question 45).
+Currency, floor CPM, multipliers and targeting permissions are set elsewhere
+and are neither set nor repeated on the DSP's page; category lists are set
+in Advertiser settings too, but — unlike those — are also editable on the
+DSP's own page once it has unlinked (§6). Deal IDs are deferred to a later
+release (open question 45).
 
 ### Which side each named platform sits on
 
@@ -1712,7 +1880,8 @@ are deferred to a later release (open question 45).
 
 1. **Bid request construction and the bidder integration.** An OpenRTB bid
    request per sellable position (§5), sent to every connected bidder within
-   the platform's default QPS ceiling and timeout, then the auction over the
+   its QPS ceiling and timeout (the DSP's override, else the platform
+   default), then the auction over the
    responses.
 2. **The auction.** The effective floor CPM and currency (§4), sent as the bid
    floor on the request, plus permitted categories, the advertiser blocklist
@@ -1750,8 +1919,8 @@ Common to all three, built once:
 - OpenRTB with DOOH support, the OpenOOH venue taxonomy and the impression
   multiplier field.
 - A test or certification period against live traffic (the **Test** mode
-  above), and a QPS ceiling the exchange must respect (a platform default in
-  this release).
+  above), and a QPS ceiling the exchange must respect (the DSP's own
+  override on its connection settings, else the platform default).
 
 The Trade Desk is the largest buyer of programmatic DOOH by spend and comes
 third. That is defensible on integration effort, but the deepest demand pool
@@ -1812,7 +1981,7 @@ fields. The canonical definition is `app/src/model/schema.js` and
 
 ```
 {
-  id, touchPoint,                  // Digital Signage | Kiosk
+  id, touchPoint,                  // Digital Signage | Kiosk | Website | Mobile App (Website/Mobile App added 28 Sep 2026, ticket — HQ-only, see §1)
   name, description, image,
   displayCanvasSize: { width, height },
   backgroundColor,
@@ -1834,12 +2003,12 @@ fields. The canonical definition is `app/src/model/schema.js` and
                                   maximumCampaignsPlayedInRotation }] },   // per zone (28 Sep 2026): null = Default (Unlimited, no slots); n = that zone's slot count
   phExtensions: {                  // THIS PROJECT's additions
     reservePrice,                  // the display type's own reserve price default; CPM or null (real inheritance, 22 Sep — §5)
-    billingUnitHours,               // the display type's own billing-unit default, in hours; null = platform default of 24 (§5 "Private auctions" — two-period model, 23 Sep)
+    billingUnitHours,               // the display type's own billing-unit default = play-window length, in whole hours; null = the company playWindowHours (§5 "Billing unit"; OQ27, 29 Sep 2026)
     maxCampaigns,                  // the display type's own max-campaigns default; null = platform default of 5, 1-10 inclusive (§5, ticket "Max campaigns column + slot playlist statement")
     slots: [{ label, owner, zoneId,   // zoneId: the zone this slot belongs to on a multi-zone display type (one segment per zone, in zone order); absent on a single-zone one
               partnerId, advertiser, listMode, buyersListId, storeScope, quota,
               reservePrice,         // this slot's own override; CPM, or null = inherit the display type's reservePrice above (§5)
-              billingUnitHours,     // this slot's own override, in hours; null = inherit the display type's billingUnitHours above (§5)
+              billingUnitHours,     // this slot's own override = its play-window length, in whole hours; null = inherit the display type's billingUnitHours above, else the company playWindowHours (§5; OQ27)
               maxCampaigns }],      // this slot's own override; null = inherit the display type's maxCampaigns above, 1-10 inclusive when set (§5)
                                     // listMode: rtb | whitelist_only | deal | null; buyersListId set only when listMode is deal (§5 "Private auctions")
     venue: { openOohVenueType, orientation, loopLengthSec }
@@ -1927,7 +2096,11 @@ One row per (campaign, asset) — written only when a human approves (never
 from an automated pass or an auto-approve), overwritten on every later
 human approval. An asset may skip re-review only when its current content
 hash matches this row's — see *Safe reuse of previously approved assets*,
-§3, for the exact rule.
+§3, for the exact rule. A clearance also covers the targeting rules
+(pseudo-asset `#targeting`, hashed over the rendered rules), so identical
+files under changed targeting still re-review. Assets carry `contentHash`;
+a rejected edit's assets are marked discarded, not deleted, so asset
+versions never repeat.
 
 Targeting rules use the campaign's existing targeting structure (AND groups
 of OR conditions, each *source → variable → operator → values*), evaluated
@@ -1957,7 +2130,7 @@ superseding the earlier same-day "baseline optional" decision — §3, §6):
   lastSync,                               // last connection result, e.g. the DSP's error reason
   mode: test | live,                      // live only when connected and the bidder integration is complete
   creds: { …per DSP, see §7 },            // no advertiser ID
-  bidder: { bidderEndpoint, seatIds },    // QPS and timeout are platform defaults (500 / 300 ms)
+  bidder: { bidderEndpoint, seatIds, qps?, timeoutMs? },  // qps/timeoutMs: per-DSP overrides (Q46); absent = platform default (500 / 300 ms)
   seats: [{ id, name }],                  // advertisers pulled on connect; listed on the Advertisers screen
   listsLinked, allowList, blockList }     // own advertiser lists when unlinked
 ```
@@ -1967,7 +2140,9 @@ Company-level:
 - **Advertiser settings**: `currency` (any ISO 4217 code; default `AUD`),
   `floorCpm`, `personalisedMultiplier`, `interactiveCpe` (defaults
   100 / 1.5 / 0.50), the auction schedule (`auctionOpensHours`,
-  `playWindowHours`, `auctionCutoffTime`; defaults 168 / 24 / 18:00 UTC),
+  `playWindowHours`, `auctionCutoffTime`; defaults 168 / 24 / 18:00 UTC —
+  `playWindowHours` is only the window a slot inherits when neither it nor
+  its display type sets a billing unit, open question 27),
   `audienceScoring` (MOVE/VAC-d inputs), advertiser and IAB-category
   whitelists and blacklists.
 - **Advertisers / Inventory** (an admin writes it; marketing reads it):
@@ -1983,7 +2158,9 @@ Company-level:
   individual DSPs, `[]` means none. Unset keys take the defaults in §6.
 - **Exchange**: `client {name, domain, contactEmail}` (the seller of record)
   and `sellersJson {sellerId}`. Seller type, confidentiality, `supplyChain`,
-  OpenRTB options, QPS ceiling and bid timeout are fixed platform defaults.
+  OpenRTB options are fixed platform defaults. QPS ceiling (500) and bid
+  timeout (300 ms) are platform defaults a DSP's connection settings can
+  override (Q46).
 - **Platform instance identity (§9.3, spec only)**: `platformInstance:
   { instanceId, domain }`, held alongside — never inside — `client` /
   `sellersJson` above. `instanceId` is this project's own cross-instance
@@ -2243,6 +2420,13 @@ playback analytics.**
   its auto-created playlist has nothing overridden (*Default settings*),
   and its rotation is *Default (Unlimited)* until a cap is picked.
   *(Display Types → New display type)*
+- **Website and Mobile App touch points** (ticket, 28 Sep 2026): offered
+  alongside Digital Signage and Kiosk, HQ-only (no Advertiser/Stores slot,
+  no reserve price/billing unit/max campaigns/venue metadata, out of
+  Advertisers / Inventory, Available Inventory, the Inventory API and bid
+  requests), their own canvas defaults (1920×1080 / 330×400) on a new
+  display type, and Enabled Features/Multi-Zone Layout hidden except QR
+  Control. *(Display Types → Touch Point)*
 
 ### Playlist management
 
@@ -2370,8 +2554,18 @@ playback analytics.**
   the open auction, or no reserve, set once on the display type and
   automatically reaching every slot on it — override just one slot to give
   it its own value, independent from then on; published on the position,
-  resolved — not yet wired to a booking flow (open question 52).
+  resolved, and bookable: a buyer's reserve commitment holds the window as
+  Reserved, out of the open auction, billed on realised VAC-d at the
+  reserve price (open questions 45 and 52, resolved 29 Sep 2026).
   *(Advertisers / Inventory → Available Inventory)*
+- **Billing unit = play-window length** (open question 27, decision Rob,
+  29 Sep 2026): the slot's billing unit (slot override, else display type
+  default, else the company play window, else 24 hours) sets the length of
+  every window it is auctioned, booked and billed against, each billed on
+  its own realised VAC-d. Windows of every length are aligned to Monday
+  00:00 UTC. Admin-editable, marketing read-only; can't change while the
+  slot has live or unbilled windows. *(Advertisers / Inventory → Available
+  Inventory)*
 - **Max campaigns, inherited from its display type** (ticket "Available
   Inventory: Max campaigns column + slot playlist statement"): the
   retailer-controlled maximum number of campaigns (default + targeted
@@ -2417,7 +2611,11 @@ playback analytics.**
   navigation, this tab is its only home now). The page as a whole **still
   stands alone in its own browser tab** (Rob, 21 Sep, unchanged by the 26
   Sep tab restructuring above): no Display Types / DSP Integration nav
-  beside it (`RouteHandle.hideNav`).
+  beside it (`RouteHandle.hideNav`). **It always opens on Booking
+  schedule** (ticket LH8iavmKqMB8mjHs9M8m, 28 Sep 2026): the tab is page
+  state, not part of the URL, so reloading after looking at Upcoming
+  Campaign Approval lands back on Booking schedule; `?tab=campaign-status`
+  (Campaign detail's back link) is honoured once on arrival, then dropped.
 - **Booking schedule tab**: every advertiser position across its play
   windows, booked / available / unavailable, **at the top of the tab**,
   with booking revenue per display type and then what sold by campaign
@@ -2554,7 +2752,10 @@ playback analytics.**
   at the top of Exchange settings, off at first; while off, Advertisers /
   Inventory (and, from there, Campaign schedule's Campaign status tab) is
   hidden, no bid requests are sent, the Partner API and `sellers.json`
-  answer 404, and nothing is deleted. *(DSP Integration → Exchange
+  answer 404, and nothing is deleted. What the switch is for is explained
+  by the tooltip on the **DSP Integration page title**, not beside the
+  switch (ticket pM0Bc2pO8WnxeV9UpI8e, 28 Sep 2026); Display Types Details
+  has a page-title tooltip of its own. *(DSP Integration → Exchange
   settings)*
 - **Exchange settings**: four seller-of-record fields and the published
   `sellers.json` status, shown once the switch is on. *(DSP Integration →
@@ -2569,9 +2770,10 @@ playback analytics.**
 - **Company advertiser and category lists**, with the **Where these apply**
   adoption view (adopting or own lists, no counts) directly below them.
   *(DSP Integration → Advertiser settings → List management, Where these apply)*
-- **Advertiser lists on a DSP's page**: a link to the company lists when
-  centrally managed (with Unlink and edit); the DSP's own editable lists when
-  unlinked (with Relink). *(DSP Integration → partner → Advertiser whitelist / blacklist)*
+- **Advertiser and category lists on a DSP's page**: a link to the company
+  lists when centrally managed (with Unlink and edit); the DSP's own
+  editable advertiser **and** category lists when unlinked (with Relink).
+  *(DSP Integration → partner → List management)*
 - **Campaign and content package submission**: a mandatory default layer
   plus optional prioritised targeted versions, validated and stored in the
   existing campaign structure. *(spec only)*
@@ -2731,6 +2933,76 @@ the system now guarantees:
   defined as an agent-consumable (MCP-layer) surface, first-class and
   separate from the tier-2 PH-native API. *(spec only)*
 
+## Decisions of 29 Sep 2026 (Rob) — spec alignment
+
+These record where the decisions below change or confirm what the sections
+above say. Where a section above still reads differently, this section wins
+until that section is edited.
+
+- **Approval rights (Q39; §3 "Campaign asset approval").** Approval is done
+  by any user with access to the campaign approvals section. There is no
+  dedicated approver role and no store-level approval step. Any wording
+  above implying a specific HQ Admin approver role, or optional store-level
+  approval, is superseded.
+- **Sensor-derived audience (Q34; §4 "Pricing", personalised multiplier).**
+  Camera- or sensor-detected audience attributes qualify a campaign as
+  personalised and are priced on that basis. There is no distinct sensor
+  multiplier. See Q49 for the exposure default.
+- **Partial-estate delivery (Q29; §4 "Billing", §5 "Reserved" and
+  "Private auctions").** Partial-estate delivery bills on realised VAC-d,
+  with no make-good or shortfall remedy in this build. Delivery risk sits
+  where each mode already places it: the open auction promises no volume;
+  a reserved slot has a fixed premium rate, billed on realised VAC-d, and
+  the brand carries any shortfall;
+  a two-period private auction locks the rate but volume varies, so the
+  advertiser pays for actual views, never a guaranteed number.
+- **Re-approval and DSP creative audits (Q38, Q40; §3).** An approved
+  campaign keeps running while an edit is re-reviewed; approval swaps the
+  edit in atomically, rejection discards it. A DSP's own audit is advisory
+  only; a creative a human cleared is not re-audited when the same creative
+  ID arrives with byte-identical content. The "safe reuse not wired into
+  upload/submit" gap is closed.
+- **Play-window length (Q27; §4 "Billing", §5 "Billing unit", §6 "Selling
+  a play window").** A slot's billing unit is its play-window length and
+  billing granularity, for every slot. The company play-window length is
+  only the inherited default (24 hours).
+- **Deals and reserve-price booking (Q45, Q52; §4 "Billing", §5 "Reserve
+  price" and "Private auctions").** Deals are per DSP, built on the buyers
+  list, and priced on top of the same floor, never under it. A reserve-price
+  booking holds its window as Reserved, out of the auction, and bills on
+  realised VAC-d at the reserve price. The "reserved slots not wired to a
+  booking flow" gap is closed.
+- **Advertiser notification (Q41; §6 Partner API).** Campaign status is
+  retrieved by polling `GET /v1/campaigns/{id}/status`. Webhook push is out
+  of scope for this build.
+- **Variables (Q43, Q44; §6, §9, Functional requirements).** Variables are
+  platform-defined set values; retailers do not manage them. Environmental
+  attributes (weather, stock levels) are platform-defined variables held as
+  segments in the existing variable store, ingested from external signals
+  and evaluated like any other variable, not new data sources.
+  **FUTURE RELEASE:** retailers will later be able to add their own
+  variables to a customer's live profile. Not in this build.
+- **Shared attributes (Q49; §6).** CV Gender and Estimated Age are covered
+  by the existing shared-attributes control, which the retailer turns on or
+  off. No separate default-exposure decision remains open.
+- **Venue and geo metadata (Q35; §5, §6, §8).** PH Core is the system of
+  record and this project reads venue and geo metadata from it read-only,
+  surfacing it into inventory and targeting. The exchange's store record
+  holds no copy. See `api/PH-CORE-BOUNDARIES.md` ("Boundaries with PH Core").
+- **Analytics (Q53, Q54; §4 "Billing", §9 "Analytics foundation").** The
+  canonical event schema, its partition and its consuming pipeline are
+  external: held by Personalisation Hub in the PWA player and managed
+  outside this project. This project depends on them through an API
+  contract listing the event values billing needs
+  (`api/PH-CORE-BOUNDARIES.md` → "Analytics event values billing consumes").
+- **Closed-loop attribution (Q55; §9).** The identity-bridge layer is a
+  future, separate workstream needing privacy and consent design. Billing
+  does not depend on it.
+- **Federation (Q56; §7 PH as SSP, architecture).** The current model is
+  single-instance, self-hosted per retailer VPC. Federation, cross-instance
+  trust and discovery are a future workstream needing its own design
+  (trust, identity, discovery, settlement).
+
 ## Open questions
 
 Numbering is kept from earlier revisions for traceability; questions about
@@ -2743,91 +3015,97 @@ partner-contributed attributes have been removed with that scope.
     section; HQ-authored campaigns skip approval.
 19–20. RTB slot attribution/auction configuration. **Resolved for digital
     signage** (§6): the auction clears for a play window.
-27. **Play-window length.** 24 hours is the working assumption; the real
-    figure is a commercial decision crossed with how long the existing
-    platform takes to distribute assets across the estate.
-29. **Partial-estate delivery.** If a won campaign only played on part of the
-    estate in its window (per existing playback data), what was sold and how
-    is it billed? Needs a guarantee model.
+27. **Play-window length.** *Resolved (decision, Rob, 29 Sep 2026):* each
+    slot's Billing unit (`billingUnitHours`: slot override, else display
+    type default — the same override-always-wins inheritance as reserve
+    price and max campaigns) is the source of truth for its play-window
+    length and billing granularity. The company-wide play-window length is
+    only the default a slot inherits when neither sets one; the platform
+    default stays 24 hours. See §5 "Billing unit".
+29. **Partial-estate delivery.** *Resolved (decision, Rob, 29 Sep 2026):* no
+    guarantee or make-good model in this build. Every assignment mode bills
+    on realised VAC-d (§4 "Billing"); plays that did not happen are not
+    billed. See "Decisions of 29 Sep 2026" below.
 30. **Minimum-volume floor on partner analytics.** *Moved out of this
     project:* campaign playback analytics, including what advertisers see,
     are the existing system's.
 32. **Supply architecture.** *Resolved:* PH is the SSP; onboarding order
     DV360 → Amazon Ads DSP → The Trade Desk.
 33. **Seller of record.** *Resolved:* the client running the instance.
-34. **Is a sensor-derived audience multiplier tradeable**, or only
-    reportable? *Still open* — §9.2 gives the multiplier a schema home and a
-    `confidence` value so either answer is supportable without a second
-    pipeline, but does not itself answer the question.
-35. **Venue and geo metadata has no home yet** on the store record.
+34. **Sensor-derived audience multiplier.** *Resolved (decision, Rob, 29 Sep
+    2026):* there is no separate sensor multiplier. A camera-detected
+    attribute (e.g. gender, estimated age) makes the campaign *personalised*,
+    which already takes the personalised multiplier (1.5, §4) and is
+    tradeable through the floor. See open question 49 for exposure to DSPs.
+35. **Venue and geo metadata.** *Resolved (decision, Rob, 29 Sep 2026):* PH
+    Core already manages all store data, venue and geo metadata included,
+    and is the system of record. This project reads it from Core and stores
+    no copy on the exchange side. See `api/PH-CORE-BOUNDARIES.md`.
 36. **Transaction association** (linking transactions to campaign plays).
     *Moved out of this project:* it belongs with the existing playback
     analytics.
 37. **Waiving approval for trusted advertisers.** *Resolved* (§3): the
     per-advertiser Campaign approval toggle.
-38. **Re-approval behaviour.** When an approved campaign is changed, does the
-    previously approved version keep running until the new one is approved,
-    or does the campaign stop?
-39. **Who can approve.** Which HQ Admin role holds the approve permission in
-    the Campaigns section, and is store-level approval ever needed?
-40. **DSP creative audits — partially resolved (review, Sept 2026).** DV360,
-    Amazon Ads DSP and The Trade Desk each run their own buy-side creative
-    audit, and each also exposes a hook PH can occupy as the exchange/
-    publisher-side reviewer, so retailer approval running *in addition* to
-    the DSP's own audit is achievable with all three:
-    - **DV360**: the Creative resource carries `ReviewStatusInfo`
-      (`ApprovalStatus`) for DV360's own audit, and separately an
-      `ExchangeReviewStatus` (servable / rejected, per exchange). PH, as the
-      SSP, is an exchange review authority under DV360's model — retailer
-      approval maps onto setting the creative's status for PH's exchange
-      via that hook.
-    - **The Trade Desk**: already models a DOOH supply-side approver.
-      `/v3/creative` carries a flag for whether a creative requires approval
-      by VIOOH (their DOOH supply partner); approval is read from
-      `approvedBy` (`null` = awaiting/not approved, a username = approved).
-      PH occupies the equivalent DOOH-SSP approver role in that same shape.
-    - **Amazon Ads DSP**: creative moderation is asset-level, with
-      per-asset rejection reasons, and publisher policy is enforced at the
-      moment a creative is associated to a line item — the point at which a
-      PH approval decision would need to bite.
-    - **Still open**: these are each DSP's *buy-side* API, not a confirmed
-      supply-side handshake into PH's exchange — how creative and targeting
-      actually get submitted to PH's exchange for the *retailer's* approval
-      (as opposed to the DSP's own audit), and whether a retailer can
-      pre-approve by creative ID ahead of a bid, remain unanswered. A rich
-      "submit targeting for pre-approval" flow is realistically tier-2
-      (Blackmores-style) work; through tier-1 onboarding (§3, DV360 →
-      Amazon Ads DSP → The Trade Desk), lean on the three hooks above plus
-      the pre-auction fallback (§3, *Submission*: a bid carrying an unknown
-      or unapproved creative is discarded pre-auction and queued for
-      review) to catch anything that slips through.
-41. **Advertiser notification.** Status polling only, or a webhook on
-    approve/reject?
+38. **Re-approval behaviour.** *Resolved (decision, Rob, 29 Sep 2026):* the
+    previously approved version keeps running throughout re-review;
+    approving the edit atomically replaces it; rejecting the edit discards
+    it and the running version continues unaffected, with the audit trail
+    retained (§3, *Campaign statuses*).
+39. **Who can approve.** *Resolved (decision, Rob, 29 Sep 2026):* anyone with
+    access to the campaign approvals section can approve. No dedicated
+    approver role and no store-level approval step.
+40. **DSP creative audits.** *Resolved (decision, Rob, 29 Sep 2026):* PH's
+    own approval gate stays the source of truth. A DSP's audit status (DV360
+    `ExchangeReviewStatus` / `ApprovalStatus`, The Trade Desk `approvedBy`
+    for its DOOH supply approver, Amazon Ads DSP asset-level moderation) is
+    an advisory input recorded for the reviewer, never a replacement for
+    the retailer's approval. Pre-approval by creative ID rides on safe
+    reuse, keyed on DSP creative ID + content hash: once a human clears a
+    creative, the byte-identical creative is not re-audited (§3,
+    *Submission*, *Safe reuse*). The pre-auction fallback (an unknown or
+    unapproved creative is discarded and queued for review) remains. A
+    supply-side push of creatives ahead of a bid, and a rich "submit
+    targeting for pre-approval" flow, remain tier-2 work.
+41. **Advertiser notification.** *Resolved (decision, Rob, 29 Sep 2026):*
+    polling only for this build (`GET /v1/campaigns/{id}/status`); webhooks
+    are deferred as a fast-follow, to be revisited if a launch DSP needs push.
 42. **Floor unit.** *Resolved* (§4): the floor is a CPM, a cost per thousand
     assumed views, which is the unit DSPs bid in.
-43. **Variable management** (adding and editing targeting variables) is
-    deferred to a later release; which variables should be manageable first?
-44. **Environmental attributes** (weather, stock) are deferred to a later
-    release; when they return, are they new data sources or variable store
-    segments?
-45. **Deals.** Preferred and programmatic-guaranteed deal IDs are deferred;
-    this release is open auction only. When they return, are deals set per
-    DSP or company-wide, and priced against the same floor?
-46. **Per-DSP bidder tuning.** QPS ceiling and bid timeout are platform
-    defaults (500 / 300 ms) in this release. Do any DSPs' onboarding
-    requirements force per-DSP values, and if so where are they set?
-47. **Deleting a display type with live advertiser positions.** Deleting a
-    display type removes its advertiser slots from the inventory. Should the
-    delete also be blocked while any of those positions is reserved or sold
-    for a future play window?
-48. **SKU list length.** What is the maximum number of SKUs one targeting
-    condition can list (working default 100)? How far back the existing
+43. **Variable management.** *Resolved (decision, Rob, 29 Sep 2026):* none
+    in this build. Variables are platform-defined set values that retailers
+    do not manage. **Future release:** retailers will be able to add their
+    own variables to a customer's live profile.
+44. **Environmental attributes.** *Resolved (decision, Rob, 29 Sep 2026):*
+    platform-defined variables held as segments in the existing variable
+    store, ingested from external signals (weather, stock levels) and
+    evaluated like any other variable. Not new data sources. See open
+    question 43.
+45. **Deals.** *Resolved (decision, Rob, 29 Sep 2026; built with open
+    question 52):* deals are per DSP and bilateral — this buyer, these
+    terms — built on the existing deal object, the buyers list (§5 "Private
+    auctions (buyers lists)"). Company-wide deals are not modelled. A deal
+    is priced against the same score-driven floor; its negotiated rate is a
+    commitment on top of the floor, never under it, and a deal never
+    bypasses the floor. Programmatic guaranteed is the reserve-price booking
+    flow (§5 "Reserve price"; open question 52).
+46. **Per-DSP bidder tuning.** *Resolved (decision, Rob, 29 Sep 2026):*
+    per-DSP QPS ceiling and bidder timeout overrides on the DSP's connection
+    settings (§7 "DSP setup"), override-wins over the platform defaults
+    (500 QPS, 300 ms) — the same inheritance as reserve price, max campaigns
+    and billing unit.
+47. **Deleting a display type with live advertiser positions.** *Resolved
+    (decision, Rob, 29 Sep 2026):* hard block, `409 has_dependents`, on
+    deleting a display type and on changing its assigned playlist while any
+    of its positions is reserved or sold for a current or future window
+    (§1 "Deleting a display type", §2).
+48. **SKU list length.** *Resolved (decision, Rob, 29 Sep 2026):* 100,
+    the same cap as the targeting grammar's 100 values per condition;
+    overflow is `400 validation_failed` (§6). How far back the existing
     platform looks for viewed SKUs and Events is existing behaviour.
-49. **Computer Vision variables and DSPs.** Computer Vision Gender and
-    Estimated Age sit under Localisation Variables, so they default to *All
-    connected DSPs*. Should they instead default to *None*, like
-    Personalisation Variables, given they describe the person in front of
-    the screen?
+49. **Computer Vision variables and DSPs.** *Resolved (decision, Rob, 29 Sep
+    2026):* Gender and Estimated Age are governed by the existing
+    shared-attributes control, which the retailer turns on or off at their
+    discretion. There is no separate default to decide.
 50. **Auction clearing for overlapping localised bids.** *Superseded
     (decision, Rob, 22 Sep, ticket "Make default creative mandatory; retire
     localised-only booking path"), not answered.* This question was about
@@ -2846,33 +3124,26 @@ partner-contributed attributes have been removed with that scope.
     more. Ordinary dynamic VAC-d billing against one advertiser's realised
     share (§4) already covers a booking that stacks default plus upsell
     layers, since it is still one advertiser, one CPM, one position.
-52. **Reserve price booking flow.** §5's reserve price (decision 22 Sep) is
-    published on the position but not wired to a booking flow: a "reserve"
-    reservation (`POST /v1/reservations`, `type: reserve`) still clears
-    against the ordinary floor, not the position's `reservePrice`, and
-    nothing takes the slot out of the open auction for the window it
-    covers. This is a form of programmatic guaranteed (open question 45,
-    "Deals" — deferred), so building the flow means either resolving that
-    deferral or treating a reserve-price booking as its own, narrower
-    mechanism.
-53. **Canonical event schema — the exhaustive reference.** §9.1 reserves the
-    shape and principles (versioning, `source`/`timestamp`, optional/nullable
-    CV fields); a field-by-field reference with types, allowed values and a
-    schema changelog is not yet written, and has no owning document yet
-    (candidate: a new `docs/dsp-integration/EVENT-SCHEMA.md`, alongside
-    `openapi.yaml`/`API.md`).
-54. **Who hosts the canonical event schema's S3 partition and its consuming
-    pipeline** (§9.1) — this project, the existing analytics platform, or a
-    new shared service? Not decided; §9.1 only fixes the event model, not
-    who owns the transport.
-55. **The closed-loop attribution identity bridge** (§9.4) — matching an
-    advertiser exposure on one PH instance to a partner-side transaction on
-    another, without either side exposing raw identity. Flagged as the
-    natural remit of the device graph / digital ID layer, not this project;
-    not yet ticketed anywhere.
-56. **Federation trust and discovery** (§9.3, §9.4) — how two PH instances
-    establish that a `platformInstance.instanceId` is who it claims to be,
-    and how one instance's agent discovers another's, are both undefined.
-    §9.3 only reserves the identifier; §9.4 only fixes the surface's shape
-    (agent-consumable, not REST) — neither answers how instances actually
-    find or trust each other.
+52. **Reserve price booking flow.** *Resolved (decision, Rob, 29 Sep 2026)
+    and built, delivered with open question 45:* a buyer commits to a
+    reserve-priced position for a future window (`POST /v1/reservations`,
+    `type: reserve`). The window is held as **Reserved**, out of the open
+    auction, honoured at the reserve price when it plays and billed on
+    realised VAC-d at that price — a floor commitment, not a flat guaranteed
+    volume, with no make-good. On a two-period private auction the
+    commitment locks the deal's term at the reserve price through the
+    existing locked-rate machinery. See §5 "Reserve price" and "Private
+    auctions (buyers lists)".
+53. **Canonical event schema.** *Resolved (decision, Rob, 29 Sep 2026):*
+    analytics is owned by Personalisation Hub inside the PWA player and
+    managed outside this project. This project defines only the API contract
+    of event values billing consumes (`api/PH-CORE-BOUNDARIES.md` → "Analytics
+    event values billing consumes").
+54. **Who hosts the schema's partition and pipeline.** *Resolved* with
+    question 53: PH, in the PWA player, outside this project.
+55. **The closed-loop attribution identity bridge** (§9.4). *Deferred
+    (decision, Rob, 29 Sep 2026):* to be covered separately later, out of
+    scope for this build. Billing does not depend on it.
+56. **Federation trust and discovery** (§9.3, §9.4). *Deferred (decision,
+    Rob, 29 Sep 2026):* a future direction, out of scope for this build.
+    The platform is single-instance, self-hosted in one retailer's VPC.

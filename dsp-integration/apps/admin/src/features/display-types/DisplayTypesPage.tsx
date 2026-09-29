@@ -106,13 +106,19 @@ export function DisplayTypesPage({ flags }: { flags: Flags }) {
      (NEW_PLAYLIST_SETTINGS_DEFAULTS, ticket 27 Sep 2026) — the same defaults
      `ensureReferencedPlaylists` gives it server-side once Save actually
      creates it — shown as a read-only preview right here in the meantime
-     (see the Playlist Settings block in DisplayTypeForm). */
+     (see the Playlist Settings block in DisplayTypeForm).
+     Since ticket ThP7DPGo17FmPJdDKM7S (28 Sep 2026) it starts as a copy of
+     the playlist it replaces — every setting matched to the display type's
+     current default, editable before Save creates it — and only falls back
+     to those defaults when there is no current default to copy. */
   const newPlaylistId = () => {
     if (!d) return ''
     let name = `${d.name} Playlist`
     for (let n = 2; allPlaylists.some((p) => p.name === name); n += 1) name = `${d.name} Playlist ${n}`
     const id = `pl_new_${d.id}_${Date.now()}`
-    setDraft((cur) => (cur ? { ...cur, newPlaylists: [...cur.newPlaylists, { id, name, autoCreatedFor: d.id, playlistSettings: { ...NEW_PLAYLIST_SETTINGS_DEFAULTS } }] } : cur))
+    const current = allPlaylists.find((p) => p.id === d.defaultPlaylistId)?.playlistSettings
+    const playlistSettings = current && Object.keys(current).length ? { ...current } : { ...NEW_PLAYLIST_SETTINGS_DEFAULTS }
+    setDraft((cur) => (cur ? { ...cur, newPlaylists: [...cur.newPlaylists, { id, name, autoCreatedFor: d.id, playlistSettings }] } : cur))
     return id
   }
 

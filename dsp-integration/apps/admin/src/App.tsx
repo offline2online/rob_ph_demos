@@ -16,7 +16,7 @@ import { AddPartnerRoute, PartnerRoute } from './features/dsp-integration/AddPar
 import { AdvertiserSettings } from './features/dsp-integration/AdvertiserSettings'
 import { CampaignSchedulePage } from './features/booking-schedule/CampaignSchedulePage'
 import { BOOKING_SCHEDULE_PATH } from './features/booking-schedule/path'
-import { ExchangeSettings } from './features/dsp-integration/ExchangeSettings'
+import { ExchangeSettings, SWITCH_TIP } from './features/dsp-integration/ExchangeSettings'
 import { SharedTargetingVariables } from './features/dsp-integration/SharedTargetingVariables'
 import { AppShell, type NavItem } from './shared/AppShell'
 import { Icon } from './shared/Icon'
@@ -69,7 +69,9 @@ function WhileDspOn({ children }: { children: ReactNode }) {
 
 function featureRoutes(flags: Flags): RouteObject[] {
   return [
-    { path: 'display-types', handle: { title: 'Display Types Details' } satisfies RouteHandle, element: <DisplayTypesPage flags={flags} /> },
+    /* Page-title tooltip, same as Playlist Management and Advertisers /
+       Inventory (ticket pM0Bc2pO8WnxeV9UpI8e, 28 Sep 2026). */
+    { path: 'display-types', handle: { title: 'Display Types Details', tip: 'A display type describes a kind of screen in your estate — its features, multi-zone layout and default playlist. Pick one from the list to edit it, or add a new one; nothing is applied until you click Save changes.' } satisfies RouteHandle, element: <DisplayTypesPage flags={flags} /> },
     {
       path: 'playlists',
       /* The prototype's page footer paragraph, as the page-title tooltip
@@ -81,7 +83,9 @@ function featureRoutes(flags: Flags): RouteObject[] {
     ...(flags.dspIntegration
       ? [{
           path: 'dsp-integration',
-          handle: { title: 'DSP Integration' } satisfies RouteHandle,
+          /* The tip that used to sit on the Enable DSP Integration switch now
+             explains the whole section from its page title (same ticket). */
+          handle: { title: 'DSP Integration', tip: SWITCH_TIP } satisfies RouteHandle,
           element: <DspIntegrationLayout />,
           children: [
             /* Exchange settings until the exchange is published, then Advertiser settings (Rob, 20 Sep). */

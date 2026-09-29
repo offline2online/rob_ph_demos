@@ -34,7 +34,7 @@ import { SummaryChip } from '../../shared/SummaryChip'
 import { useReportDirty } from '../../shared/UnsavedChanges'
 import { useDraft } from '../../shared/useDraft'
 import { T } from '../../theme/phTheme'
-import { saveDisplayTypes, savePlaylistSettings, useDisplayTypes, usePartners, usePlaylists } from '../display-types/api'
+import { saveDisplayTypes, savePlaylistSettings, useAvailableInventory, useDisplayTypes, usePartners, usePlaylists } from '../display-types/api'
 import { capSummary, isCappedFor, normaliseSlots, styleSummary } from '../display-types/model'
 import { PlaylistCapSlotsFields } from './PlaylistCapSlotsFields'
 import { PlaylistStyleFields } from './PlaylistStyleFields'
@@ -64,18 +64,32 @@ interface Ctx {
 }
 type Params = ICellRendererParams<Row, unknown, { current: Ctx }>
 
+/* A multi-zone display type's default playlist carries the layout, but it
+   stays listed here (Rob, 29 Sep 2026 — it used to be hidden, which made a
+   playlist such as Eyelite vanish when Multi-Zone was switched on again). */
 const where = (a: Playlist['assignments'][number]) => a.zoneName ?? 'Default playlist'
 const Pill = ({ children }: { children: React.ReactNode }) => (
   <span className="inline-flex h-[22px] items-center rounded-full px-2 whitespace-nowrap" style={{ fontSize: 12, color: T.muted, background: 'rgba(0,0,0,0.04)' }}>{children}</span>
 )
 
-/* Touch points beyond this build's two (decision 1) have icons ready, so a
-   playlist never shows the wrong one if they arrive. */
-const OTHER_TOUCH_POINT_ICONS: Record<string, string> = { Website: 'language', 'Mobile Store Site': 'smartphone' }
-const iconOf = (touchPoint: string) => OTHER_TOUCH_POINT_ICONS[touchPoint] ?? touchPointIcon(touchPoint)
-const touchPointsOf = (p: Playlist, types: DisplayType[]) => {
+/* A playlist's touch point comes from the display types it fills. One that
+   fills none and wasn't auto-created for one (a Website or Mobile App
+   playlist made ahead of its display type, say) has nothing to read it from,
+   so fall back to a touch point (or the older "Mobile Store Site" name)
+   spelled out in the playlist's own name — never a guessed default, so an
+   unrecognisable name simply shows no icon (ticket, 28 Sep 2026). */
+const NAME_HINTS: [RegExp, string][] = [
+  [/\bmobile\s+app\b|\bmobile\s+store\s+site\b/i, 'Mobile App'],
+  [/\bwebsite\b|\bweb\b/i, 'Website'],
+  [/\bkiosk\b/i, 'Kiosk'],
+  [/\bdigital\s+signage\b/i, 'Digital Signage'],
+]
+const touchPointsOf = (p: Playlist, types: DisplayType[]): string[] => {
   const ids = p.assignments.length ? p.assignments.map((a) => a.displayTypeId) : p.autoCreatedFor ? [p.autoCreatedFor] : []
-  return [...new Set(ids.map((id) => types.find((t) => t.id === id)?.touchPoint).filter((t): t is DisplayType['touchPoint'] => !!t))]
+  const fromTypes = [...new Set(ids.map((id) => types.find((t) => t.id === id)?.touchPoint).filter((t): t is DisplayType['touchPoint'] => !!t))]
+  if (fromTypes.length || ids.length) return fromTypes
+  const hint = NAME_HINTS.find(([re]) => re.test(p.name))
+  return hint ? [hint[1]] : []
 }
 function TouchPointIcons({ p, types }: { p: Playlist; types: DisplayType[] }) {
   const tps = touchPointsOf(p, types)
@@ -84,7 +98,7 @@ function TouchPointIcons({ p, types }: { p: Playlist; types: DisplayType[] }) {
     <span className="inline-flex shrink-0 items-center gap-0.5">
       {tps.map((tp) => (
         <Tooltip key={tp} title={tp}>
-          <span className="inline-flex" role="img" aria-label={`${tp} touch point`}><Icon name={iconOf(tp)} size={17} style={{ color: T.primary }} /></span>
+          <span className="inline-flex" role="img" aria-label={`${tp} touch point`}><Icon name={touchPointIcon(tp)} size={17} style={{ color: T.primary }} /></span>
         </Tooltip>
       ))}
     </span>
@@ -295,6 +309,10 @@ export function PlaylistManagementPage({ flags }: { flags: Flags }) {
   const playlists = usePlaylists()
   const types = useDisplayTypes()
   const partners = usePartners(slotAssignment)
+  /* Same query Advertisers / Inventory itself uses (ticket, 28 Sep 2026) —
+     already prefetched in the background whenever DSP integration is on, so
+     this rarely costs its own round trip. */
+  const availableInventory = useAvailableInventory(slotAssignment)
   /* Same "greyed out, not hidden, while DSP integration is off" logic as
      Display Types used to apply (Rob, 24 Sep 2026), now here with it. */
   const features = useFeatures(slotAssignment)
@@ -320,8 +338,9 @@ export function PlaylistManagementPage({ flags }: { flags: Flags }) {
   const appliedDeepLink = useRef(false)
   const wantedDisplayTypeId = searchParams.get('displayTypeId')
   if (!appliedDeepLink.current && wantedDisplayTypeId && playlists.data && settingsExpanded === null) {
-    const match = playlists.data.find((p) => p.assignments.some((a) => a.displayTypeId === wantedDisplayTypeId && !a.zoneId))
-      ?? playlists.data.find((p) => p.assignments.some((a) => a.displayTypeId === wantedDisplayTypeId))
+    const shown = playlists.data
+    const match = shown.find((p) => p.assignments.some((a) => a.displayTypeId === wantedDisplayTypeId && !a.zoneId))
+      ?? shown.find((p) => p.assignments.some((a) => a.displayTypeId === wantedDisplayTypeId))
     if (match) {
       appliedDeepLink.current = true
       setSettingsExpanded(match.id)
@@ -414,10 +433,14 @@ export function PlaylistManagementPage({ flags }: { flags: Flags }) {
 
   if (!playlists.data || !draft) return <Spin />
   const unused = items.filter((p) => !p.assignments.length).length
+  const advertiserSlots = availableInventory.data?.items?.length
   const n = deleting?.check.dependents.length ?? 0
   return (
     <div>
-      <div className="mb-3" style={{ fontSize: 14 }}><b>{items.length}</b> Playlists · <b>{unused}</b> unused</div>
+      <div className="mb-3" style={{ fontSize: 14 }}>
+        <b>{items.length}</b> Playlists · <b>{unused}</b> unused
+        {slotAssignment && advertiserSlots !== undefined && <> · <b>{advertiserSlots}</b> advertiser slots</>}
+      </div>
       <Grid<Row>
         label="Playlists"
         rows={rows}

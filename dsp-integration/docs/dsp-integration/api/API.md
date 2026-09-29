@@ -110,9 +110,15 @@ and effective floors for localised, personalised, interactive, and
 personalised + interactive) for the caller's advertiser, and `reservePrice`
 (a CPM premium to reserve the position in advance of the open auction, or
 null — the resolved value: a slot's own override, else its display type's
-reserve price default, else null; set on Advertisers / Inventory —
-publishing it does not by itself book a guaranteed slot, see open
-question 52).
+reserve price default, else null; set on Advertisers / Inventory). A
+buyer books it with `POST /v1/reservations`, `type: reserve` (see
+*Reservations and bids* below).
+
+**Availability:** `reserved` is a window held for a named advertiser, as
+before. Since 29 Sep 2026 it also means a window a buyer has committed to
+at the reserve price, or a window inside a private-auction term that is
+locked. A window like that is spoken for. It is not auctioned and takes no
+bids. It reads `sold` once it has played.
 
 Hidden from the caller: HQ and Stores slots, positions reserved to another
 advertiser, and positions the caller's advertiser is blacklisted from or not
@@ -129,9 +135,9 @@ whitelisted for.
 | Method | Path | Purpose | Main errors |
 |---|---|---|---|
 | POST | `/v1/campaigns` | Create: `advertiserId`, `name`, `displayTypeId`, a mandatory `default` (pricing type) plus optional `targeted` versions (id, priority, pricing type, rules), and an optional `brief` (the advertiser's own campaign details, landing page, promoted products, SKUs, target audiences, objective and touch points — Digital Signage for now). `default` is required on every submission (decision, 22 Sep, superseding the earlier same-day "baseline optional" decision — ticket "Make default creative mandatory; retire localised-only booking path"): the earlier fallback-free/part-sold submission shape is retired — a slot goes to one advertiser, whose default layer is mandatory and localised/personalised targeted versions are optional upsells on that one purchase. | `validation_failed`, `variable_not_permitted` |
-| POST | `/v1/campaigns/{id}/assets` | Upload creative for `default` or a targeted version; returns check results. | `checks_failed` |
+| POST | `/v1/campaigns/{id}/assets` | Upload creative for `default` or a targeted version; returns check results. On an approved campaign the upload is a **pending edit**, `awaiting_approval`, while the approved version keeps running (Q38) — unless every asset and the targeting are byte-identical to what a reviewer approved, when it is approved without review (safe reuse, Q40). | `checks_failed` |
 | POST | `/v1/campaigns/{id}/submit` | Submit. Becomes `awaiting_approval`, or `approved` with mode `auto` when the advertiser doesn't require approval. | `checks_failed`, `conflict` |
-| GET | `/v1/campaigns/{id}/status` | `draft` / `awaiting_approval` / `approved` / `rejected`, mode, reason, asset version. | `not_found` |
+| GET | `/v1/campaigns/{id}/status` | `draft` / `awaiting_approval` / `approved` / `rejected`, mode, reason, asset version; `liveAssetVersion` (the approved version that runs, or null) and `pendingEdit` (an edit to it awaits approval). A rejected edit is discarded — status is back to the live version's — and `rejectedEdit` (`assetVersion`, `reason`, `at`) says so until the next edit. | `not_found` |
 
 **Targeting rules** use the existing Targeting-tab structure: a list of AND
 groups, each a list of OR conditions `{source, variable, op, values}`.
@@ -149,7 +155,12 @@ evaluated by the existing platform. The API never evaluates targeting.
 
 **Automated checks** (`checks[]`): `file_type`, `file_size`, `bitrate`,
 `dimensions`, `aspect_ratio`, `duration`, `default_present`,
-`targeting_permitted`, each with `passed` and `detail`. `default_present`
+`targeting_permitted`, each with `passed` and `detail`. Two more are
+**advisory** (`advisory: true`, Q40) — shown to the reviewer, never a gate
+and never an approval: `dsp_audit` (the DSP's own creative audit — DV360
+review status, The Trade Desk `approvedBy`, Amazon DSP moderation) and
+`previously_cleared` (this asset is byte-identical to one a reviewer
+already approved). `default_present`
 asks whether the mandatory default layer's creative was uploaded — a
 targeted version's creative can no longer stand in for it, now that
 `default` is required on every submission. **`file_size` is per asset, not
@@ -164,12 +175,47 @@ queue (`apps/api/src/config.ts` → `assetLimits`, enforced in
 
 | Method | Path | Purpose | Main errors |
 |---|---|---|---|
-| POST | `/v1/reservations` | `type: reserve` (named advertiser positions) at its agreed reservation price, or `type: bid`, both with `bidCpm` (the CPM; a reservation is booked at it), for a `positionId` and `windowStart`, with an approved and activated `campaignId` (`not_approved` otherwise). Only while the window's auction is open: from `auctionOpensHours` before the auction cutoff until the cutoff, or until a tick claims the window's auction if that is earlier (`conflict` otherwise). `bidCpm` is at most the exchange ceiling (10,000; `validation_failed`). One open bid or reservation per advertiser and window, enforced by the database (migration 0026). The campaign's type must be one the position supports (`supportedTargeting`; `targeting_not_supported` otherwise). | `not_approved`, `below_floor`, `advertiser_blocked`, `category_blocked`, `not_on_whitelist`, `targeting_not_supported`, `conflict` |
+| POST | `/v1/reservations` | `type: reserve` or `type: bid`, both with `bidCpm`, for a `positionId` and `windowStart`, with an approved and activated `campaignId` (`not_approved` otherwise). A reserve on a position with a `reservePrice` is a reserve-price booking (see below). A reserve on a position held for a named advertiser with no reserve price is booked at its agreed `bidCpm` (Q11). Any other reserve gets `conflict`. A bid is taken only while the window's auction is open: from `auctionOpensHours` before the auction cutoff until the cutoff. A reserve can be made any time before the cutoff. Both are refused once a tick has claimed the window's auction, if that is earlier (`conflict`). `bidCpm` is at most the exchange ceiling (10,000; `validation_failed`). One open bid or reservation per advertiser and window, enforced by the database (migration 0026). The campaign's type must be one the position supports (`supportedTargeting`; `targeting_not_supported` otherwise). | `not_approved`, `below_floor`, `advertiser_blocked`, `category_blocked`, `not_on_whitelist`, `targeting_not_supported`, `conflict` |
 | GET | `/v1/reservations/{id}` | Outcome: `pending`, `won`, `lost`, `reserved`, `rejected`, with clearing CPM and reason. | `not_found` |
 
 A won or reserved campaign is handed to the existing campaign system for
 that slot and window; from there it plays and is reported on like any other
 campaign.
+
+**Reserve-price booking** (programmatic guaranteed; open questions 45 and 52,
+decided by Rob on 29 Sep 2026): a `type: reserve` on a position whose
+`reservePrice` is set commits the buyer to that window at the reserve price.
+
+- `bidCpm` must be at least the `reservePrice` (`validation_failed` on
+  `bidCpm` otherwise). The booking is made at the `reservePrice` itself,
+  and its `clearingCpm` is the reserve price. "Premium" describes what the
+  reserve price is, a CPM above what the open auction asks. Nothing is
+  added to the floor.
+- The reserve price must clear the buyer's effective floor, like any other
+  rate (`below_floor` otherwise). The floor always wins.
+- The window is held as Reserved at once: the reservation is `reserved`,
+  availability reads `reserved`, and it is handed off.
+- The auction skips the window. Other advertisers' bids for it are refused
+  (`conflict`), and any that were already pending are settled `lost`. The
+  one-live-winner index (migration 0021) also counts a `reserved` row.
+- It is billed like every other booking: on the window's realised VAC-d
+  at the reserve price. There is no guaranteed volume and no make-good.
+- On a private auction (deal) that has `auctionCloses` set, the invited
+  buyer must be entitled as for a bid (`not_invited`), and the deal must
+  still be open (`conflict` once it is locked or its bidding has closed).
+  The commitment then locks the deal's term at the reserve price
+  (`lockedWin.source: reserve`). Every later window of the term is held as
+  `reserved` and booked as a `reserved` reservation at that rate, with no
+  auction.
+
+**Deals** are per DSP and bilateral. They are the buyers lists below:
+invited buyers resolved to DSP seats, the terms, and one locked winner
+(`lockedWin.partnerId`). There is no company-wide deal. A deal's rate is
+priced against the same floor as everything else. It sits on top of the
+floor and never under it: a bid or reserve below the floor is refused
+`below_floor`. A locked term window whose rate has fallen below the floor
+in force when it is booked (because the floor or a multiplier rose) is not
+sold, and falls through to the default campaign.
 
 ## Admin API — `/admin/v1`
 
@@ -207,8 +253,8 @@ The Admin API keeps answering, and switching off deletes nothing.
 |---|---|---|
 | GET | `/admin/v1/advertiser-settings` | Currency, floor CPM, multipliers, the auction schedule (`auctionOpensHours`, `playWindowHours`, `auctionCutoffTime`), read-only `pendingPlayWindowHours`/`pendingPlayWindowEffectiveFrom` (a `playWindowHours` change deferred past currently active windows — null when nothing is pending; 26 Sep 2026), advertiser and category whitelists/blacklists, and read-only `whereTheseApply` (per DSP: adopting or own lists). |
 | PUT | `/admin/v1/advertiser-settings` | Save changes (pricing, auction schedule and lists). An entry can't be on both lists (`validation_failed`). Changing the play-window length while a non-test window is still bid on or booked no longer fails the request (26 Sep 2026): `playWindowHours` keeps its current value and the change is deferred — reflected in the response's `pendingPlayWindowHours`/`pendingPlayWindowEffectiveFrom` — until every such window has played, at which point the scheduled job (not this endpoint) applies it. |
-| GET | `/admin/v1/available-inventory` | Rows: display type, playlist, slot, position, `assignedTo` (now also `buyersListId`/`buyersListName`, null unless the slot is a private auction), `supportedTargeting`, `reservePrice` (resolved), `reservePriceOverride` (this slot's own, null = inheriting) and `displayTypeReservePrice` (the display type's default, same on every row of that type), likewise `billingUnitHours` (resolved, always a number)/`billingUnitHoursOverride`/`displayTypeBillingUnitHours` (23 Sep 2026 — platform default 24 hours when neither is set), plus `dsps` (each DSP and its advertisers) for the Assigned to picker. No advertisers column. |
-| PUT | `/admin/v1/available-inventory` | Save changes — per slot, `assignedTo` (`partnerIds`, `advertisers`, `whitelistOnly`, `buyersListId`; nothing chosen = any connected DSP, an advertiser's DSP is added automatically, and `buyersListId` is mutually exclusive with `advertisers`/`whitelistOnly` — `validation_failed` if more than one is set, or if `buyersListId` names no buyers list), `supportedTargeting` (at least one of `localised`, `personalised`, `interactive`), `reservePrice`/`reservePriceDefault` (this slot's own override and the display type's own default — a CPM, or null; real inheritance, 22 Sep — always send the slot's current values, there is no "unchanged" omission) and, the same shape, `billingUnitHours`/`billingUnitHoursDefault` (hours, minimum 1, or null; must be the same `…Default` on every row for a given display type in one request). The editable fields of a slot; its label and owner are set on its display type. Admin only. |
+| GET | `/admin/v1/available-inventory` | Rows: display type, playlist, slot, position, `assignedTo` (now also `buyersListId`/`buyersListName`, null unless the slot is a private auction), `supportedTargeting`, `reservePrice` (resolved), `reservePriceOverride` (this slot's own, null = inheriting) and `displayTypeReservePrice` (the display type's default, same on every row of that type), likewise `billingUnitHours` (resolved, always a number)/`billingUnitHoursOverride`/`displayTypeBillingUnitHours` (23 Sep 2026; when neither is set the slot inherits `companyPlayWindowHours`, the company-wide play window, platform default 24 — OQ27, 29 Sep 2026: this resolved value is the slot's play-window length, see "Play windows are per slot" below), plus `dsps` (each DSP and its advertisers) for the Assigned to picker. No advertisers column. |
+| PUT | `/admin/v1/available-inventory` | Save changes — per slot, `assignedTo` (`partnerIds`, `advertisers`, `whitelistOnly`, `buyersListId`; nothing chosen = any connected DSP, an advertiser's DSP is added automatically, and `buyersListId` is mutually exclusive with `advertisers`/`whitelistOnly` — `validation_failed` if more than one is set, or if `buyersListId` names no buyers list), `supportedTargeting` (at least one of `localised`, `personalised`, `interactive`), `reservePrice`/`reservePriceDefault` (this slot's own override and the display type's own default — a CPM, or null; real inheritance, 22 Sep — always send the slot's current values, there is no "unchanged" omission) and, the same shape, `billingUnitHours`/`billingUnitHoursDefault` (whole hours, 1–8760, or null; must be the same `…Default` on every row for a given display type in one request). A billing-unit change that would alter the resolved window length of a slot that still has live windows bid on, booked or not yet billed is refused (`validation_failed` on that row's `billingUnitHours`, naming when the last one ends; OQ27, 29 Sep 2026). The editable fields of a slot; its label and owner are set on its display type. Admin only. |
 | GET | `/admin/v1/booking-schedule?from=&to=` | Reached from Available Inventory. Every advertiser-owned slot across its play windows: booked (advertiser, DSP, reserve or bid, the CPM it was booked at, booked and billed revenue), available or unavailable; plus booking revenue per display type and in total. Live bookings only (never Test mode). Default: the current window and the next 13; at most 92 days. `campaignId`, `advertiserId` or `partnerId` narrow it, and `advertiserId` leaves only the positions that advertiser holds; with `campaignId` the range covers all of that campaign's bookings. Each booking says which campaign type it is, and the response also totals the bookings by campaign type. `dsps` lists the DSPs and, under each, **only the advertisers with something booked in the range**, because that is what the filter is for. Each position also carries `displayCount` (displays using its display type across the whole retail footprint), and each booking a `layers` object (`default`, `localised`, `personalised` — which of the one advertiser's three layers this purchase actually carries, ticket "Booking schedule: single-advertiser stacking tile"), a `reach` object (`matchedDisplays`, `asOf`) when `layers.localised`, `null` otherwise, and a `personalisedTriggers` object (`computerVision`, `aggregateStore`, `individual`) when `layers.personalised`, `null` otherwise (ticket "Booking schedule: personalised trigger icons") — the client's stacked tile (see REQUIREMENTS §6) is built entirely from these fields plus `pricingType`, with no separate endpoint. |
 
 ### Shared targeting variables
@@ -229,7 +275,7 @@ Defaults: Localisation Variables `"all"`, Personalisation Variables `[]`.
 | GET | `/admin/v1/partners/{id}` | One DSP, including `issues[]` for the top of its page. |
 
 Every DSP response includes `seats` (`[{id, name}]`): the DSP's advertisers, pulled on connect. They're offered in the slot picker and as list suggestions.
-| PUT | `/admin/v1/partners/{id}` | Save changes: credentials, bidder endpoint + seat IDs, mode, lists link / own lists. |
+| PUT | `/admin/v1/partners/{id}` | Save changes: credentials, bidder endpoint + seat IDs, optional per-DSP `bidder.qps` (1–10,000) and `bidder.timeoutMs` (50–2,000; also sent as `tmax`) overriding the platform defaults of 500 QPS / 300 ms — `null` clears an override (Q46) — mode, lists link / own lists. |
 | POST | `/admin/v1/partners/{id}/connect` | Connect or re-test with saved credentials; pulls seats/advertisers. Error text from the DSP goes to `lastSync` and `issues`. |
 | POST | `/admin/v1/partners/{id}/disconnect` | Disconnect; mode returns to `test`. |
 
@@ -266,8 +312,8 @@ to any number of slots via `available-inventory`'s `assignedTo.buyersListId`.
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/admin/v1/buyers-lists` | Every buyers list: `id`, `name`, `description`, `invitedBuyers` (`identifierType`: `brandEntity` \| `dspSeatId` \| `other`, plus `value`), `activeFrom`/`activeTo` (the delivery term; ISO date-time or null = no bound), `auctionCloses` (the auction window's bidding deadline; ISO date-time or null = not using the two-period model), `lockedWin` (null until the term's one-time auction clears; then `{cpm, partnerId, advertiserId, campaignId, pricingType, channel, lockedAt}`, read only). |
-| POST | `/admin/v1/buyers-lists` | Create: `name`, `description`, `invitedBuyers` (at least one), `activeFrom`, `activeTo`, `auctionCloses` (optional; null = not using the two-period model). `422 validation_failed` naming the field (e.g. `name`, `invitedBuyers[0].value`, `activeTo` if before `activeFrom`). `lockedWin` can't be set here — the exchange writes it, once, the first time a bid clears within `auctionCloses`. |
+| GET | `/admin/v1/buyers-lists` | Every buyers list: `id`, `name`, `description`, `invitedBuyers` (`identifierType`: `brandEntity` \| `dspSeatId` \| `other`, plus `value`), `activeFrom`/`activeTo` (the delivery term; ISO date-time or null = no bound), `auctionCloses` (the auction window's bidding deadline; ISO date-time or null = not using the two-period model), `lockedWin` (null until the term's one-time auction clears or an invited buyer commits at the reserve price; then `{cpm, partnerId, advertiserId, campaignId, pricingType, channel, lockedAt, source}`, read only; `source` is `auction` or `reserve`, and a missing `source` reads as `auction`). |
+| POST | `/admin/v1/buyers-lists` | Create: `name`, `description`, `invitedBuyers` (at least one), `activeFrom`, `activeTo`, `auctionCloses` (optional; null = not using the two-period model). `422 validation_failed` naming the field (e.g. `name`, `invitedBuyers[0].value`, `activeTo` if before `activeFrom`). `lockedWin` can't be set here. The exchange writes it once: the first time a bid clears within `auctionCloses`, or when an invited buyer first commits at the reserve price. |
 | PUT | `/admin/v1/buyers-lists/{id}` | Replace the same fields (not `lockedWin`). `404` if unknown, `422 validation_failed` as above. |
 | DELETE | `/admin/v1/buyers-lists/{id}` | Delete. `409 has_dependents` naming every slot still assigned to it (a slot's own `displayTypeName — position`) — a buyers list can't be removed out from under a live position. |
 
@@ -282,12 +328,33 @@ still clears a real auction every play window until a bid clears at or
 before that deadline; that clear locks `lockedWin` (once — first clear
 wins) and every later play window in the delivery term (`activeFrom`/
 `activeTo`) is then booked directly at `lockedWin.cpm`, with no bid
-requests. A deal with `auctionCloses` left `null` is unaffected — it keeps
+requests. A reserve-price commitment by an invited buyer locks it the same
+way, at the reserve price (*Reserve-price booking* above); those windows
+are booked `reserved` rather than `won`. No locked window is booked below
+the floor in force when it is booked. A deal with `auctionCloses` left `null` is unaffected — it keeps
 clearing fresh every window, exactly as before this field existed. Also
 see `available-inventory`'s `billingUnitHours`/`billingUnitHoursOverride`/
 `displayTypeBillingUnitHours` (same override/default shape as
-`reservePrice`) — the granularity a CPM is quoted and charged against for
-a slot using this model, default 24 hours (one day).
+`reservePrice`) — the granularity a CPM is quoted and charged against, and
+(OQ27, 29 Sep 2026) the length of every window the slot is sold in, so each
+window of a locked-rate term is one billing unit long.
+
+**Play windows are per slot** (OQ27, decision Rob, 29 Sep 2026). A slot's
+resolved billing unit — its own override, else its display type's default,
+else the company-wide `playWindowHours`, else 24 — is its play-window
+length. Every length is laid back to back from the same anchor (Monday
+00:00 UTC), so a 168-hour slot's windows start on Mondays, which are also
+daily slots' window starts: one auction (keyed on the window start) clears
+every position whose own window starts then. The Inventory API
+(`billingUnitHours` and `assumedViewsPerWindow` on a position, each
+availability window's `start`/`end`), `POST /v1/reservations`' `windowStart`,
+the bid request's `exp` and `qty.multiplier`, the hand-off booking and
+billing (one line item per window, expected seconds and assumed views for
+that window's length) all follow it. Assumed views are scored per company
+play window (`AudienceSource`) and scaled to a slot's own window length. A
+`playWindowHours` change is deferred only on the windows of slots that
+inherit it; a slot's own billing unit can't change while it has live
+windows (see `PUT /admin/v1/available-inventory`).
 
 ### Campaign approval
 
@@ -295,12 +362,15 @@ a slot using this model, default 24 hours (one day).
 |---|---|---|
 | GET | `/admin/v1/approvals?status=` | Campaigns by approval status, with `counts` for all four statuses (the table filter). |
 | GET | `/admin/v1/campaigns/{id}/approval` | State, checks (each optionally naming the `assetId` it ran against), targeting summary, `creative` (`assetUrl`, `mimeType`, `width`, `height`, optional `contentHash`) and target `canvas` (`width`, `height`) for rendering the creative on its canvas, and audit trail (review panel). |
-| POST | `/admin/v1/campaigns/{id}/approve` | Approve the reviewed `assetVersion` (`conflict` if it changed). Also records human clearance of the default asset's current content hash, for safe reuse (below). |
-| POST | `/admin/v1/campaigns/{id}/reject` | Reject with `assetVersion` and a required `reason`. Optional `assetReasons: [{assetId, reason}]` names specific assets that failed (spec §3, "asset-level rejection"). |
+| POST | `/admin/v1/campaigns/{id}/approve` | Approve the reviewed `assetVersion` (`conflict` if it changed). Approving a pending edit makes it the live version in one step (Q38). Also records human clearance of every asset's current content hash and of the targeting rules, for safe reuse (Q40). |
+| POST | `/admin/v1/campaigns/{id}/reject` | Reject with `assetVersion` and a required `reason`. Optional `assetReasons: [{assetId, reason}]` names specific assets that failed (spec §3, "asset-level rejection"). Rejecting a pending edit discards it; the campaign stays approved at its live version, with `rejectedEdit` set (Q38). |
 | POST | `/admin/v1/campaigns/{id}/unreject` | Undo a mistaken rejection: `Rejected` → `Awaiting approval` (`conflict` if not currently Rejected, or if `assetVersion` changed since). Takes `assetVersion` and an optional `reason`; never auto-approves. Same permission as approve/reject. |
 
 Audit actions: `submitted`, `auto_approved`, `approved`, `rejected`,
-`returned_for_review`, `unrejected`. These back the drop-in approval module
+`returned_for_review`, `unrejected`, `edit_discarded` (a rejected edit was
+thrown away, Q38), `reused_clearance` (approved without review, every asset
+already human-cleared, Q40). Every view also carries `liveAssetVersion`
+and `pendingEdit`. These back the drop-in approval module
 that plugs into the existing campaign table (see
 `CAMPAIGN-APPROVAL-INTEGRATION.md`).
 
@@ -310,11 +380,19 @@ that plugs into the existing campaign table (see
 |---|---|---|
 | PUT | `/admin/v1/display-types/{id}/extensions` | Save slot ownership (`slots[]`: label and owner `internal`/`advertiser`/`retail`) and venue metadata. Who a slot is assigned to and what targeting it supports are carried over from the stored slot — they are edited on `/admin/v1/available-inventory` — and dropped when a slot stops being an Advertiser slot. While DSP integration is switched off, a slot can be `advertiser` only if it already was: a new one is `400 validation_failed` on `slots[i].owner`. Other display type fields keep using the existing API. |
 | GET | `/admin/v1/display-types/{id}/delete-check` | `canDelete` and `dependents[]` (assigned displays with store). |
-| DELETE | `/admin/v1/display-types/{id}` | Delete; `409 has_dependents` listing displays if any remain. |
+| DELETE | `/admin/v1/display-types/{id}` | Delete; `409 has_dependents` listing displays if any remain, or listing each window (`<position> · window <date> · sold\|reserved`) while any of its positions is reserved or sold for a current or future window (Q47). |
 | GET | `/admin/v1/playlists/{id}/delete-check` | `canDelete` and `dependents[]` (display type defaults and zones). |
 | DELETE | `/admin/v1/playlists/{id}` | Delete; `409 has_dependents` if it is a default or zone playlist. |
+| PUT | `/admin/v1/playlists/{id}/settings` | This playlist's own settings. `409 has_dependents`, naming each window, while a display type using it has a position reserved or sold for a current or future window (Q47). |
 
 ## POC stand-ins for the existing platform
+
+> **Venue and geo metadata (decision 29 Sep 2026, Q35).** PH Core owns venue
+> and geo metadata and is the system of record; the exchange reads it
+> read-only into inventory and targeting and keeps no copy. The
+> `/extensions` venue fields below are a POC stand-in for that read.
+> **Campaign status** is retrieved by polling `GET /v1/campaigns/{id}/status`;
+> there are no webhooks in this build (Q41).
 
 This repo is a standalone proof of concept. It can't reach the existing
 Personalisation Hub APIs, so these endpoints stand in for them. They are
@@ -326,7 +404,7 @@ integration, and nothing else in the build may depend on their internals.
 | GET | `/admin/v1/display-types` | Listing display types (existing fields plus `phExtensions`). |
 | POST | `/admin/v1/display-types` | New display type; also creates its auto-created playlist. |
 | GET | `/admin/v1/display-types/{id}/record` | One display type. |
-| PUT | `/admin/v1/display-types/{id}/record` | Save changes to the existing display type fields. Slot ownership and venue are saved through `/extensions` (above). |
+| PUT | `/admin/v1/display-types/{id}/record` | Save changes to the existing display type fields. Slot ownership and venue are saved through `/extensions` (above). Changing the default or a zone's playlist is `409 has_dependents` while any of its positions is reserved or sold for a current or future window (Q47). |
 | GET | `/admin/v1/playlists` | Playlists with their display type and zone assignments. |
 | PUT | `/admin/v1/playlists/{id}/record` | Rename a playlist (`name` only). Assignments are made on the display type form (spec §2). |
 | GET | `/admin/v1/campaigns` | The existing campaign list, for the stand-in POC campaign table (`campaignId`, name, source, advertiser, partner, display type, pricing type, `brief`, `schedule` (next booked window and how many it holds) and `activation`), plus the playlist summary the table's own columns read (ticket "Campaign Status: Playlist name column..."): `campaignCount` (this submission's layers — the mandatory default plus each targeted version), and `localisedVariables`/`personalisedVariables` (deduped variable names, for the column) with `localisedRuleLines`/`personalisedRuleLines` (the exact rule text behind them, for the column's hover), each split by that layer's pricing type. Approval state comes from `/admin/v1/approvals`. |
@@ -347,7 +425,8 @@ integration, and nothing else in the build may depend on their internals.
   (`PH_SCHEDULER=off` and `npm run scheduler:tick` once a minute — a
   Kubernetes CronJob, `deploy/kubernetes/`).
 - **Billing**: billing line items (dynamic VAC-d, reconciled against
-  existing playback data) are stored only. `npm run billing:print` prints
+  existing playback data; one per window, each window its slot's billing
+  unit long — OQ27) are stored only. `npm run billing:print` prints
   them for testing. No UI, report or API. Billing reads only the windows it
   can bill now and counts a window's plays where they are stored
   (`PlaybackSource.totals`), so it costs the same after a year of windows

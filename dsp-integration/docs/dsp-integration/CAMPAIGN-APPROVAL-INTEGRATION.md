@@ -40,7 +40,7 @@ packages/campaign-approval/
 
 ## 1. Write the real `CampaignSource` adapter
 
-Implement the four methods against the existing campaign service:
+Implement the five methods against the existing campaign service:
 
 ```ts
 import type { CampaignSource } from '@ph-dsp/campaign-approval/adapter'
@@ -54,6 +54,8 @@ export function platformCampaignSource(campaigns: CampaignService, assets: Asset
     async listCampaigns(filter) { return (await campaigns.list(filter)).map(toRef) },
     async setActivation(id, enabled) { return toRef(await campaigns.setActive(id, enabled)) },
     onCampaignChanged(listener) { return campaigns.subscribe((e) => listener(e.campaignId)) },
+    // Q38: a rejected edit is thrown away; the version named is current again.
+    async discardEditsAfter(id, assetVersion) { await assets.revertTo(id, assetVersion) },
   }
 }
 ```
@@ -67,8 +69,15 @@ What each `CampaignRef` field must hold:
 | `activation.enabled` | The existing activation flag |
 | `assetVersion` | Any string that **changes whenever the creative changes** (e.g. the latest asset revision id). Approval is per version |
 | `targetingSummary` | A readable rendering of the campaign's targeting rules (the POC's is `apps/api/src/domain/targetingSummary.ts`) |
-| `creative` | The default layer's creative `{assetUrl, mimeType, width, height}`, or `null` |
+| `creative` | The default layer's creative `{assetUrl, mimeType, width, height, contentHash?}`, or `null` |
 | `canvas` | The target display type's `displayCanvasSize`, or `null` |
+| `assets` (optional) | Every asset of the current version, one per role (`default` or a targeted version id), each `{assetId, contentHash}` with `contentHash` the sha256 of the file. What safe reuse compares (Q40). Leave it out and nothing is ever reused |
+
+`assetVersion` must **never repeat**, even after `discardEditsAfter` has
+thrown a later version away: the audit trail names versions, and a reused
+id would make a rejected edit and a new one indistinguishable (the POC
+numbers asset rows monotonically and marks a discarded edit's rows rather
+than deleting them — migration 0031).
 
 Then create the service with it:
 
@@ -79,7 +88,6 @@ const approvals = createApprovalService({
   db,                                                       // anything with exec() and prepare()
   campaigns: platformCampaignSource(/* … */),
   requiresApproval: (advertiserId) => advertiserSettings.get(advertiserId).approvalRequired,  // Advertisers screen
-  oldVersionRunsDuringReview: false,                        // Q38 default
 })
 app.register(approvalRoutes(approvals, {
   guard: (req) => requireFlag(req, 'dspIntegration'),
@@ -90,8 +98,32 @@ app.register(approvalRoutes(approvals, {
 
 When a campaign's **assets or targeting change**, call
 `approvals.changed(campaignId, actor)`. For an advertiser that requires
-approval this returns the campaign to *Awaiting approval*. With the Q38
-default it also switches the campaign off until the new version is approved.
+approval the new version goes to *Awaiting approval* as a **pending edit**,
+and the approved version **keeps running** until it is decided (Q38,
+resolved by Rob, 29 Sep 2026 — final, not a setting):
+
+- **The approved version is the newest approved approval row**
+  (`approvals.liveAssetVersion(campaignId)`); it stays eligible for
+  reservation, bidding and hand-off throughout the review, and stays
+  activated. Nothing is snapshotted: approval rows are already per
+  `assetVersion`, so the host resolves the live version to its assets at
+  hand-off (the POC's `latestAssets(campaignId, atVersion)`), and books
+  exactly that version (`SlotBooking.assetVersion`).
+- **Approving the edit** makes it the newest approved row in one write: the
+  next hand-off books the new creative, every earlier one booked the old,
+  and eligibility never lapses in between — no dark window, no double run.
+- **Rejecting the edit** discards it: `discardEditsAfter` drops its assets,
+  its approval row goes, and the campaign is back at the live version,
+  *Approved*. The `rejected` and `edit_discarded` audit entries stay, and
+  the view's `rejectedEdit` carries the reason until the next edit.
+- A campaign that has never been approved is unchanged: nothing runs until
+  it is, and rejecting it is a plain rejection.
+
+`changed()` (and `submit()`) also apply **safe reuse** (Q40): if every
+asset of the new version (`CampaignRef.assets`) and its targeting rules are
+byte-identical to what a human last approved, the version is approved
+without review (audit `reused_clearance`). Otherwise the reviewer is told,
+by an advisory `previously_cleared` check, which assets are unchanged.
 
 ## 2. Place the components in the existing campaign table
 
@@ -190,7 +222,8 @@ never auto-approves. Same permission as approve/reject.
 ## 3. Where the main repo must call `isCampaignEligible`
 
 `approvals.isCampaignEligible(campaignId)` returns `true` only for an HQ
-campaign or an approved advertiser campaign. It is the one enforcement hook.
+campaign or an advertiser campaign with an approved version — including one
+whose later edit is awaiting approval (Q38). It is the one enforcement hook.
 Call it wherever eligibility is decided:
 
 - **Activation**: before setting a campaign active. An unapproved campaign
@@ -213,15 +246,25 @@ also require the campaign to be **activated**: an advertiser can only bid or
 reserve with an approved, activated campaign, so a winner fits straight into
 the slot (Rob, Q14).
 
-**Safe reuse (ticket, 22 Sep): `approvals.wasAssetHumanCleared(campaignId,
-assetId, contentHash)`** — call it from wherever a resubmission decides
-whether an asset needs to re-enter the review queue. `true` only when a
-human (never an auto-approve) has previously approved that exact asset
-(same content hash) at `assetId`. This POC does not yet call it from its
-own upload/submit endpoints (`apps/api/src/routes/partner/campaigns.ts`) —
-every resubmission there still re-reviews regardless — so wiring it in is
-part of the work of integrating this module, not something already done
-for you.
+**Safe reuse (ticket, 22 Sep; wired in, Q40, 29 Sep 2026).** `submit()`
+and `changed()` call it themselves — there is nothing for the host to wire,
+beyond listing each asset's `contentHash` in `CampaignRef.assets` (and in
+`creative`). `approve()` records a human clearance for every listed asset
+and for the targeting rules; `submit()`/`changed()` approve a version
+without review only when all of them are cleared at their current content.
+An auto-approval never clears anything. `approvals.wasAssetHumanCleared(
+campaignId, assetId, contentHash)` stays available for a host that wants to
+ask about one asset.
+
+**DSP creatives (Q40).** PH's approval is the source of truth. A DSP's own
+creative audit (DV360 review status, The Trade Desk `approvedBy`, Amazon DSP
+moderation) is recorded as an **advisory** `dsp_audit` check — shown to the
+reviewer, never approving or blocking on its own
+(`apps/api/src/domain/dspAudit.ts`). Pre-approval is keyed on the DSP
+creative ID and the content hash: a crid's campaign id is derived from
+(DSP, crid) (`dspCampaignId`), so a human clearance of that campaign's
+creative is a clearance of that crid at those bytes, and the same crid
+retrieved again with identical bytes is not re-audited.
 
 ## 4. Run the approval migration, or move the fields onto the campaign
 
@@ -235,8 +278,9 @@ for you.
   `approval` (JSON: `mode`, `assetVersion`, `submittedAt`, `reviewedBy`,
   `reviewedAt`, `reason`, `checks`) to the campaign table. Then replace
   `src/server/approvalStore.ts` with an implementation that reads and writes
-  them. The store's interface (`get`, `latest`, `upsert`, `audit`,
-  `auditTrail`, `anyApproved`) stays the same, so the service, routes and UI
+  them. The store's interface (`get`, `latest`, `liveVersion`, `rows`,
+  `upsert`, `remove`, `audit`, `auditTrail`, `recordHumanClearance`,
+  `isHumanCleared`) stays the same, so the service, routes and UI
   don't change. Keep `campaign_approval_audit` append-only either way.
 
 ## 5. Delete the stand-in POC table

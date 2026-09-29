@@ -59,13 +59,14 @@ export async function seedBookings(ctx: Context) {
     .flatMap((p) => p.seats.map((s) => ({ partnerId: p.id, name: s.name, advertiserId: advertiserSlug(s.name), live: p.mode === 'live' })))
   if (!positions.length || !brands.length) return 0
 
-  const len = windowMs(ctx)
-  const first = nextWindow(ctx).getTime()
   const currency = ctx.company.get().currency
   let written = 0
 
   for (const [b, brand] of brands.entries()) {
     const position = positions[b % positions.length]
+    /* This position's own window grid (OQ27: its billing unit is its window length). */
+    const len = windowMs(ctx, position)
+    const first = nextWindow(ctx, len).getTime()
     const dt = position.displayType
     /* Booked revenue is CPM × assumed views, so a position nobody has scored
        yet would book for nothing. 412 viewers a window per display is the

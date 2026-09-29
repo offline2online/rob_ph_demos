@@ -23,11 +23,18 @@ export interface NewCampaign {
 }
 /* A campaign booked into a display type's slot for a play window: the
    existing campaign system's side of the hand-off (spec §6). */
-export interface SlotBooking { id: string; campaignId: string; displayTypeId: string; slot: number; windowStart: string; windowEnd: string }
+export interface SlotBooking {
+  id: string; campaignId: string; displayTypeId: string; slot: number; windowStart: string; windowEnd: string
+  /* The campaign_assets version handed off (Q38): the approved version,
+     which the campaign system plays even while a later edit awaits review. */
+  assetVersion?: number | null
+}
 /* One uploaded creative file. `version` increases with every upload to the campaign. */
 export interface CampaignAsset {
   id: string; campaignId: string; version: number; role: string; file: string; mimeType: string
   width: number | null; height: number | null; durationSec: number | null; bitrateKbps: number | null; sizeBytes: number
+  /* sha256 of the file (spec §3 safe reuse, Q40); null on a seeded record. */
+  contentHash: string | null
 }
 
 export interface CampaignSource {
@@ -37,9 +44,11 @@ export interface CampaignSource {
   onCampaignChanged(listener: (id: string) => void): () => void
   /* Campaigns submitted through the Partner API (package 12), stored in the existing structure. */
   createCampaign(c: NewCampaign): CampaignRecord
-  addAsset(a: Omit<CampaignAsset, 'version'>): CampaignAsset
-  /* The latest asset for each version role ("default" or a targeted version id). */
-  latestAssets(campaignId: string): CampaignAsset[]
+  addAsset(a: Omit<CampaignAsset, 'version' | 'contentHash'> & { contentHash?: string | null }): CampaignAsset
+  /* The latest asset for each version role ("default" or a targeted version
+     id) — as of `atVersion` when given (the approved version, Q38). A
+     discarded (rejected) edit's assets are never included. */
+  latestAssets(campaignId: string, atVersion?: number): CampaignAsset[]
   /* Hand-off (package 16): book a campaign into a slot for a window. */
   bookSlot(b: SlotBooking): SlotBooking
   bookings(campaignId?: string): SlotBooking[]
@@ -51,11 +60,11 @@ interface Row {
 }
 interface AssetRow {
   id: string; campaign_id: string; version: number; role: string; file: string; mime_type: string
-  width: number | null; height: number | null; duration_sec: number | null; bitrate_kbps: number | null; size_bytes: number
+  width: number | null; height: number | null; duration_sec: number | null; bitrate_kbps: number | null; size_bytes: number; content_hash: string | null
 }
 const toAsset = (r: AssetRow): CampaignAsset => ({
   id: r.id, campaignId: r.campaign_id, version: r.version, role: r.role, file: r.file, mimeType: r.mime_type,
-  width: r.width, height: r.height, durationSec: r.duration_sec, bitrateKbps: r.bitrate_kbps, sizeBytes: r.size_bytes,
+  width: r.width, height: r.height, durationSec: r.duration_sec, bitrateKbps: r.bitrate_kbps, sizeBytes: r.size_bytes, contentHash: r.content_hash,
 })
 const toRecord = (r: Row): CampaignRecord => ({
   campaignId: r.id, name: r.name, source: r.source, advertiserId: r.advertiser_id, advertiserName: null,
@@ -97,26 +106,26 @@ export function sqliteCampaignSource(db: Db): CampaignSource {
     addAsset(a) {
       const version = ((prepared(db, 'SELECT MAX(version) AS v FROM campaign_assets WHERE campaign_id = ?').get(a.campaignId) as { v: number | null }).v ?? 0) + 1
       prepared(db,
-        `INSERT INTO campaign_assets (id, campaign_id, version, role, file, mime_type, width, height, duration_sec, bitrate_kbps, size_bytes, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).run(a.id, a.campaignId, version, a.role, a.file, a.mimeType, a.width, a.height, a.durationSec, a.bitrateKbps, a.sizeBytes, new Date().toISOString())
+        `INSERT INTO campaign_assets (id, campaign_id, version, role, file, mime_type, width, height, duration_sec, bitrate_kbps, size_bytes, content_hash, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(a.id, a.campaignId, version, a.role, a.file, a.mimeType, a.width, a.height, a.durationSec, a.bitrateKbps, a.sizeBytes, a.contentHash ?? null, new Date().toISOString())
       listeners.forEach((l) => l(a.campaignId))
-      return { ...a, version }
+      return { ...a, version, contentHash: a.contentHash ?? null }
     },
     bookSlot(b) {
-      prepared(db, 'INSERT INTO campaign_slot_bookings (id, campaign_id, display_type_id, slot, window_start, window_end, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-        .run(b.id, b.campaignId, b.displayTypeId, b.slot, b.windowStart, b.windowEnd, new Date().toISOString())
+      prepared(db, 'INSERT INTO campaign_slot_bookings (id, campaign_id, display_type_id, slot, window_start, window_end, asset_version, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(b.id, b.campaignId, b.displayTypeId, b.slot, b.windowStart, b.windowEnd, b.assetVersion ?? null, new Date().toISOString())
       listeners.forEach((l) => l(b.campaignId))
       return b
     },
     bookings(campaignId) {
       const rows = (campaignId
         ? prepared(db, 'SELECT * FROM campaign_slot_bookings WHERE campaign_id = ? ORDER BY window_start').all(campaignId)
-        : prepared(db, 'SELECT * FROM campaign_slot_bookings ORDER BY window_start').all()) as { id: string; campaign_id: string; display_type_id: string; slot: number; window_start: string; window_end: string }[]
-      return rows.map((r) => ({ id: r.id, campaignId: r.campaign_id, displayTypeId: r.display_type_id, slot: r.slot, windowStart: r.window_start, windowEnd: r.window_end }))
+        : prepared(db, 'SELECT * FROM campaign_slot_bookings ORDER BY window_start').all()) as { id: string; campaign_id: string; display_type_id: string; slot: number; window_start: string; window_end: string; asset_version: number | null }[]
+      return rows.map((r) => ({ id: r.id, campaignId: r.campaign_id, displayTypeId: r.display_type_id, slot: r.slot, windowStart: r.window_start, windowEnd: r.window_end, assetVersion: r.asset_version }))
     },
-    latestAssets(campaignId) {
-      const rows = (prepared(db, 'SELECT * FROM campaign_assets WHERE campaign_id = ? ORDER BY version').all(campaignId) as unknown as AssetRow[]).map(toAsset)
+    latestAssets(campaignId, atVersion) {
+      const rows = (prepared(db, 'SELECT * FROM campaign_assets WHERE campaign_id = ? AND discarded_at IS NULL AND version <= ? ORDER BY version').all(campaignId, atVersion ?? Number.MAX_SAFE_INTEGER) as unknown as AssetRow[]).map(toAsset)
       return [...new Map(rows.map((r) => [r.role, r])).values()]
     },
   }

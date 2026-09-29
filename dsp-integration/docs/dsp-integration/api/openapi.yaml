@@ -213,6 +213,13 @@ paths:
       tags: [Partner — Campaigns]
       operationId: uploadAsset
       summary: Upload creative for the default layer or a targeted version; runs automated checks
+      description: |
+        On a submitted campaign a new file is a new version. On an approved
+        campaign it is a pending edit, Awaiting approval, while the approved
+        version keeps running (open question 38) — unless every asset and the
+        targeting rules are byte-identical to what a reviewer already approved,
+        in which case it is approved without another review (safe reuse,
+        open question 40).
       parameters: [{$ref: '#/components/parameters/CampaignId'}]
       requestBody:
         required: true
@@ -258,6 +265,11 @@ paths:
       tags: [Partner — Campaigns]
       operationId: getCampaignStatus
       summary: Approval status and rejection reason
+      description: |
+        `liveAssetVersion` is the approved version that runs; `pendingEdit` is
+        true while an edit to it awaits approval (`status` awaiting_approval,
+        `assetVersion` the edit). A rejected edit is discarded — `status` is
+        back to the live version's — and `rejectedEdit` carries its reason.
       parameters: [{$ref: '#/components/parameters/CampaignId'}]
       responses:
         '200': {description: Status, content: {application/json: {schema: {$ref: '#/components/schemas/CampaignStatus'}}}}
@@ -269,8 +281,23 @@ paths:
     post:
       tags: [Partner — Reservations]
       operationId: createReservation
-      summary: Reserve (named advertiser) or bid (CPM) for a play window
-      description: Approved and activated campaigns only, while the window's auction is open (from auctionOpensHours before the auction cutoff until the cutoff; Advertiser settings → Auction schedule). Pre-auction checks apply (floor, lists, categories, approval, activation).
+      summary: Reserve (at a reserve price, or for a named advertiser) or bid (CPM) for a play window
+      description: |
+        Approved and activated campaigns only. Pre-auction checks apply
+        (floor, lists, categories, approval, activation). A bid is taken
+        while the window's auction is open: from auctionOpensHours before
+        the auction cutoff until the cutoff (Advertiser settings → Auction
+        schedule). A reservation can be made any time before the cutoff.
+
+        Reserve-price booking (programmatic guaranteed; open questions 45 and
+        52, decided by Rob on 29 Sep 2026): `type: reserve` on a position with
+        a reservePrice commits the buyer to the window at that price. The
+        window is held as Reserved (status `reserved`) and is not auctioned.
+        It is booked and billed at the reserve price on the window's
+        realised VAC-d, with no guaranteed volume and no make-good. On a
+        private auction with auctionCloses set, the commitment also locks
+        the deal's term at the reserve price (BuyersList.lockedWin, source
+        `reserve`).
       requestBody:
         required: true
         content:
@@ -398,8 +425,10 @@ paths:
         overridden, in which case it always wins. Clear a slot's override
         back to null to return it to following the display type's default.
         Published — resolved, override-or-default — on the position in
-        `GET /v1/inventory` and `/v1/inventory/{positionId}`; not yet wired
-        to reservation or billing logic (open question 52).
+        `GET /v1/inventory` and `/v1/inventory/{positionId}`. It is the
+        rate of a reserve-price booking (`POST /v1/reservations`,
+        `type: reserve`; open questions 45 and 52, decided by Rob on 29 Sep
+        2026).
 
         reservePriceDefault: the display type's own reserve price default
         that a slot with no override inherits; null means no default is
@@ -411,8 +440,15 @@ paths:
         billingUnitHours / billingUnitHoursDefault: the same override/
         default pattern as reservePrice/reservePriceDefault, for the
         granularity a CPM is quoted and charged against (spec "Private
-        auctions: two-period model", 23 Sep 2026) — default one day (24
-        hours) when neither is set.
+        auctions: two-period model", 23 Sep 2026). Since OQ27 (29 Sep 2026)
+        it is the slot's play-window length — the windows it is auctioned,
+        booked and billed against; when neither is set the slot inherits
+        the company-wide `playWindowHours` (platform default 24). Whole
+        hours, 1-8760. A change that would alter the resolved length of a
+        slot with windows still bid on or booked (live, not yet played) is
+        refused (`validation_failed`, naming the slot and when its last
+        such window ends) — the slot's other changes, and every other
+        slot's, must be resubmitted without it.
 
         maxCampaigns / maxCampaignsDefault: the same override/default
         pattern again, for the maximum number of campaigns (default +
@@ -457,13 +493,15 @@ paths:
                         minimum: 0
                         description: The display type's reserve price default; null = none. Must be the same value on every row for a given displayTypeId in one request.
                       billingUnitHours:
-                        type: [number, 'null']
+                        type: [integer, 'null']
                         minimum: 1
-                        description: This slot's own billing-unit override, in hours; null = inherit billingUnitHoursDefault. Omitted = unchanged is not supported — always send the slot's current value.
+                        maximum: 8760
+                        description: This slot's own billing-unit override (its play-window length), in whole hours; null = inherit billingUnitHoursDefault. Omitted = unchanged is not supported — always send the slot's current value.
                       billingUnitHoursDefault:
-                        type: [number, 'null']
+                        type: [integer, 'null']
                         minimum: 1
-                        description: The display type's billing-unit default, in hours; null = none (the platform default of 24 applies). Must be the same value on every row for a given displayTypeId in one request.
+                        maximum: 8760
+                        description: The display type's billing-unit default, in whole hours; null = none (the company-wide playWindowHours applies). Must be the same value on every row for a given displayTypeId in one request.
                       maxCampaigns:
                         type: [integer, 'null']
                         minimum: 1
@@ -840,6 +878,11 @@ paths:
     post:
       tags: [Admin — Campaign approval]
       operationId: rejectCampaign
+      description: |
+        Rejecting a pending edit to a running campaign (open question 38)
+        discards the edit: the response is the campaign at its live, still
+        approved version, with `rejectedEdit` set. The rejection stays in the
+        audit trail (`rejected`, then `edit_discarded`).
       security: [{adminSession: [approver]}]
       parameters: [{$ref: '#/components/parameters/CampaignId'}]
       requestBody:
@@ -939,6 +982,7 @@ paths:
         '400': {$ref: '#/components/responses/ValidationFailed'}
         '401': {$ref: '#/components/responses/Unauthorised'}
         '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/HasDependents'}
   /admin/v1/playlists/{playlistId}/delete-check:
     get:
       tags: [Admin — Display types and playlists]
@@ -1016,6 +1060,7 @@ paths:
         '400': {$ref: '#/components/responses/ValidationFailed'}
         '401': {$ref: '#/components/responses/Unauthorised'}
         '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/HasDependents'}
   /admin/v1/playlists:
     get:
       tags: [POC stand-in — existing platform]
@@ -1222,7 +1267,14 @@ components:
                   variable: {type: string}
                   reason: {type: string}
 
-    WindowStatus: {type: string, enum: [available, reserved, sold, unavailable]}
+    WindowStatus:
+      type: string
+      enum: [available, reserved, sold, unavailable]
+      description: |
+        reserved: held for a named advertiser (and shown as available to that
+        advertiser), committed at the reserve price, or inside a locked
+        private-auction term. A window in either of the last two cases is not
+        auctioned and takes no bids until it plays.
     PlayWindow:
       type: object
       required: [start, end, status, assumedViews]
@@ -1233,7 +1285,7 @@ components:
         assumedViews: {type: integer}
     Position:
       type: object
-      required: [positionId, displayTypeId, displayTypeName, slot, slotLabel, storeCount, displayCount, screen, assignment, supportedTargeting, pricing]
+      required: [positionId, displayTypeId, displayTypeName, slot, slotLabel, storeCount, displayCount, screen, assignment, supportedTargeting, billingUnitHours, pricing]
       properties:
         positionId: {type: string}
         displayTypeId: {type: string}
@@ -1261,7 +1313,18 @@ components:
             What a campaign may use here. A bid or reservation for a campaign of
             any other type is refused with targeting_not_supported.
           items: {type: string, enum: [localised, personalised, interactive]}
-        assumedViewsPerWindow: {type: integer}
+        billingUnitHours:
+          type: integer
+          description: |
+            This position's play-window length, in hours — its billing unit
+            (OQ27, 29 Sep 2026): the slot's own, else its display type's,
+            else the company-wide play window. Every window this position
+            is sold in (availability, a reservation's windowStart, the bid
+            request's `exp`) is this long, laid back to back from a fixed
+            Monday 00:00 UTC.
+        assumedViewsPerWindow:
+          type: integer
+          description: Assumed views (VAC-d) in one of this position's windows (billingUnitHours long).
         pricing: {$ref: '#/components/schemas/Pricing'}
         reservePrice:
           type: [number, 'null']
@@ -1271,9 +1334,12 @@ components:
             set. The resolved value: the slot's own override when it has
             one, else its display type's reserve price default, else null
             (spec §1 configuration inheritance). Set on Advertisers /
-            Inventory. Publishing this does not by itself book a guaranteed
-            slot — there is no reservation or billing behaviour behind it
-            yet (open question 52).
+            Inventory. A buyer books the position at this price with
+            `POST /v1/reservations`, `type: reserve` (open questions 45 and 52,
+            decided by Rob on 29 Sep 2026). The window is then held as
+            Reserved, out of the open auction, and billed at this CPM on its
+            realised VAC-d. It is the CPM itself, not an amount added to the
+            floor, and it must clear the buyer's effective floor.
     Pricing:
       type: object
       required: [currency, floorCpm, effectiveFloorCpm, costPerEngagement]
@@ -1417,10 +1483,19 @@ components:
       type: object
       required: [name, passed]
       properties:
-        name: {type: string, enum: [file_type, file_size, bitrate, dimensions, aspect_ratio, duration, default_present, targeting_permitted]}
+        name: {type: string, enum: [file_type, file_size, bitrate, dimensions, aspect_ratio, duration, default_present, targeting_permitted, dsp_audit, previously_cleared]}
         passed: {type: boolean}
         detail: {type: string}
         assetId: {type: string, description: '"default" or a targeted version id — the specific asset this check ran against. Unset for a campaign-level check (default_present, targeting_permitted).'}
+        advisory:
+          type: boolean
+          description: |
+            Information for the reviewer, never a gate (open question 40,
+            resolved 29 Sep 2026): a failed advisory check never blocks a
+            submission and a passed one never approves it. `dsp_audit` is the
+            DSP's own creative audit (DV360 review status, The Trade Desk
+            approvedBy, Amazon DSP moderation); `previously_cleared` marks an
+            asset byte-identical to one a reviewer already approved.
     AssetRejection:
       type: object
       required: [assetId, reason]
@@ -1430,13 +1505,34 @@ components:
         reason: {type: string, minLength: 1}
     CampaignStatus:
       type: object
-      required: [campaignId, status]
+      required: [campaignId, status, liveAssetVersion, pendingEdit]
       properties:
         campaignId: {type: string}
         status: {$ref: '#/components/schemas/ApprovalStatus'}
         mode: {type: [string, 'null'], enum: [manual, auto, null]}
         reason: {type: [string, 'null']}
         assetVersion: {type: [string, 'null']}
+        liveAssetVersion:
+          type: [string, 'null']
+          description: |
+            The approved version that is running — eligible for reservation,
+            bidding and hand-off — whatever is under review (open question 38,
+            resolved 29 Sep 2026). null until a version has been approved.
+        pendingEdit:
+          type: boolean
+          description: |
+            True while an edit to a running campaign awaits approval: `status`
+            is awaiting_approval and `assetVersion` is the edit, while
+            `liveAssetVersion` keeps running. Approving the edit makes it the
+            live version in one step; rejecting it discards it.
+        rejectedEdit:
+          type: object
+          required: [assetVersion, reason, at]
+          description: The most recent edit the retailer rejected, which was discarded while the live version carried on. Present until the next edit.
+          properties:
+            assetVersion: {type: string}
+            reason: {type: [string, 'null']}
+            at: {type: string, format: date-time}
 
     ReservationCreate:
       type: object
@@ -1447,7 +1543,7 @@ components:
         campaignId: {type: string}
         advertiserId: {type: string}
         type: {type: string, enum: [reserve, bid]}
-        bidCpm: {type: number, exclusiveMinimum: 0, maximum: 10000, description: 'The CPM, in the company currency: the bid (type bid), or the reservation price agreed through the DSP (type reserve). Must clear the effective floor and is at most 10,000. A reservation is booked at this price.'}
+        bidCpm: {type: number, exclusiveMinimum: 0, maximum: 10000, description: 'The CPM, in the company currency, at most 10,000. For type bid, the bid, which must clear the effective floor. For type reserve on a position with a reservePrice, the buyer''s commitment: it must be at least the reservePrice (validation_failed otherwise), and the booking is made at the reservePrice itself, which must clear the effective floor. For type reserve on a named-advertiser position with no reservePrice, the price agreed through the DSP: it must clear the effective floor, and the booking is made at it.'}
     Reservation:
       type: object
       required: [reservationId, status]
@@ -1491,7 +1587,7 @@ components:
       properties:
         currency: {type: string, description: ISO 4217, default: AUD}
         auctionOpensHours: {type: integer, minimum: 1, default: 168, description: 'Auction schedule: how long before the auction cutoff bidding for a play window opens, in hours (shown as days and hours).'}
-        playWindowHours: {type: integer, minimum: 1, maximum: 8760, default: 24, description: 'Auction schedule: the minimum period a won slot is held, in hours (shown as days and hours). While any current window is bid on or booked, a change is deferred rather than applied — see pendingPlayWindowHours.'}
+        playWindowHours: {type: integer, minimum: 1, maximum: 8760, default: 24, description: 'Auction schedule: the default play-window length, in hours (shown as days and hours) — since OQ27 (29 Sep 2026) only what a slot inherits when neither it nor its display type sets a billing unit; a slot''s billing unit is its window length. While any current window on an inheriting slot is bid on or booked, a change is deferred rather than applied — see pendingPlayWindowHours.'}
         auctionCutoffTime: {type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$', default: '18:00', description: 'Auction schedule: the daily time (HH:MM, UTC) by which bids must be received; the auction for the next play window runs then.'}
         floorCpm: {type: number, exclusiveMinimum: 0, default: 100}
         personalisedMultiplier: {type: number, exclusiveMinimum: 0, default: 1.5}
@@ -1582,9 +1678,11 @@ components:
       description: |
         The winning bid a private auction's rate has locked to, for the
         rest of its delivery term (spec "…dynamic VAC-d billing over the
-        delivery term", 23 Sep 2026). Set once, by the exchange, the first
-        time a bid clears within the deal's auctionCloses deadline — never
-        overwritten, and never set directly by an API caller. Every later
+        delivery term", 23 Sep 2026). Set once, by the exchange: the first
+        time a bid clears within the deal's auctionCloses deadline, or
+        when an invited buyer first commits at the position's reserve price
+        (see `source`). It is never overwritten, and an API caller never
+        sets it directly. Every later
         play window in the term is booked at `cpm` for this winner
         directly, without a fresh auction; each is still billed on its own
         realised VAC-d for that window (dynamic VAC-d is unchanged — only
@@ -1598,6 +1696,21 @@ components:
         pricingType: {type: [string, 'null']}
         channel: {type: string, enum: [api, openrtb], description: How the winning bid arrived — carried forward so later windows book the same way.}
         lockedAt: {type: string, format: date-time}
+        source:
+          type: string
+          enum: [auction, reserve]
+          description: |
+            What locked the term (open questions 45 and 52, decided by Rob on
+            29 Sep 2026). `auction`: a bid cleared within auctionCloses.
+            `reserve`: an invited buyer committed to the position's reserve price
+            (`POST /v1/reservations`, `type: reserve`) before any bid cleared.
+            That is a programmatic-guaranteed commitment, so every later window
+            in the term is held as Reserved and booked as a `reserved`
+            reservation. Absent on a lock written before this field existed,
+            which reads as `auction`. Neither kind books a window below the
+            effective floor in force when the window is booked.
+            In both cases each window is billed on its own realised VAC-d.
+            There is no guaranteed volume and no make-good.
     BuyersList:
       type: object
       description: |
@@ -1609,6 +1722,14 @@ components:
         (first- vs second-price) and the per-brand relationship variable
         are never set here — they come from the slot, the platform, and the
         brand entity respectively.
+
+        This is the deal object (open question 45, decided by Rob on 29 Sep
+        2026). A deal is per DSP and bilateral: its invited buyers resolve to
+        DSP seats, and a locked term binds one DSP's buyer
+        (lockedWin.partnerId). There is no company-wide deal. A deal's rate
+        is priced against the same score-driven floor as everything else. It
+        is a commitment on top of the floor, never under it, and a deal never
+        bypasses the floor.
       required: [id, name, description, invitedBuyers, activeFrom, activeTo, auctionCloses, lockedWin, createdAt, updatedAt]
       properties:
         id: {type: string}
@@ -1640,7 +1761,7 @@ components:
         updatedAt: {type: string, format: date-time}
     AvailableInventoryRow:
       type: object
-      required: [displayTypeId, displayTypeName, playlistName, playlistId, unassigned, slot, position, assignedTo, supportedTargeting, qrControl, visionAi, reservePrice, reservePriceOverride, displayTypeReservePrice, billingUnitHours, billingUnitHoursOverride, displayTypeBillingUnitHours, maxCampaigns, maxCampaignsOverride, displayTypeMaxCampaigns]
+      required: [displayTypeId, displayTypeName, playlistName, playlistId, unassigned, slot, zoneSlot, position, assignedTo, supportedTargeting, qrControl, visionAi, reservePrice, reservePriceOverride, displayTypeReservePrice, billingUnitHours, billingUnitHoursOverride, displayTypeBillingUnitHours, companyPlayWindowHours, maxCampaigns, maxCampaignsOverride, displayTypeMaxCampaigns]
       properties:
         displayTypeId: {type: string}
         displayTypeName: {type: string}
@@ -1667,7 +1788,28 @@ components:
             playing them. Available Inventory shows this as an "Unassigned"
             indicator next to the playlist (same ticket as playlistId,
             27 Sep 2026).
-        slot: {type: integer}
+        slot:
+          type: integer
+          description: |
+            This position's 1-based index in the display type's own flat slot
+            list — spans every zone (spec "one segment per zone, in zone
+            order"), never resets per zone. This is the position's identity
+            (`PH-CORE-BOUNDARIES.md` "At most one campaign per display type,
+            slot and play window") and what `PUT` keys edits on — it is not
+            what Available Inventory displays as "Slot"; see zoneSlot for that.
+        zoneSlot:
+          type: integer
+          description: |
+            This position's 1-based index within its own zone's segment of
+            the slot list (ticket, 28 Sep 2026: a multi-zone display's
+            Available Inventory row showed the flat `slot` number — e.g. 4
+            for Zone 2's first slot on a display with two slots per zone —
+            when each zone runs its own separate playlist and rotation, so
+            the position that actually matters to the reader is "which slot
+            in this zone's own rotation", always starting at 1 per zone).
+            Equal to `slot` when the display type isn't multi-zone, or the
+            slot has no `zoneId`, since there is then only one segment.
+            Display-only — never sent to `PUT`, which still keys on `slot`.
         position: {type: string}
         assignedTo: {$ref: '#/components/schemas/AssignedTo'}
         qrControl:
@@ -1719,9 +1861,11 @@ components:
           description: |
             The resolved billing-unit granularity, in hours (spec "Private
             auctions: two-period model", 23 Sep 2026): billingUnitHoursOverride
-            when set, else displayTypeBillingUnitHours, else the platform
-            default of 24 (one day). Always a real number — unlike reserve
-            price, there is no "no billing unit" state.
+            when set, else displayTypeBillingUnitHours, else
+            companyPlayWindowHours. Always a real number — unlike reserve
+            price, there is no "no billing unit" state. Since OQ27 (29 Sep
+            2026) this is the slot's play-window length: the windows it is
+            auctioned, booked and billed against.
         billingUnitHoursOverride:
           type: [number, 'null']
           description: |
@@ -1733,9 +1877,16 @@ components:
           description: |
             The billing-unit default set on this slot's display type; null
             means the display type has none either (so an un-overridden
-            slot resolves to the platform default of 24). The same value on
+            slot resolves to companyPlayWindowHours). The same value on
             every row sharing a displayTypeId. Editable from any of those
             rows — see `PUT`'s billingUnitHoursDefault.
+        companyPlayWindowHours:
+          type: integer
+          description: |
+            The company-wide play window (Advertiser settings →
+            playWindowHours, platform default 24): what a slot's billing
+            unit resolves to when neither it nor its display type sets one
+            (OQ27, 29 Sep 2026). The same on every row; read-only here.
         maxCampaigns:
           type: integer
           description: |
@@ -1953,6 +2104,8 @@ components:
           properties:
             bidderEndpoint: {type: string, format: uri}
             seatIds: {type: array, items: {type: string}}
+            qps: {type: [integer, 'null'], minimum: 1, maximum: 10000, description: 'Per-DSP QPS ceiling override (Q46). Absent: the platform default, 500. null on save clears it.'}
+            timeoutMs: {type: [integer, 'null'], minimum: 50, maximum: 2000, description: 'Per-DSP bidder timeout override in ms (Q46), also sent as tmax. Absent: the platform default, 300. null on save clears it.'}
         issues:
           type: array
           description: Shown at the top of the DSP page.
@@ -1975,6 +2128,8 @@ components:
         listsLinked: {type: boolean}
         advertiserWhitelist: {type: array, items: {type: string}, description: Own lists, only when listsLinked is false.}
         advertiserBlacklist: {type: array, items: {type: string}}
+        categoryWhitelist: {type: array, items: {type: string}, description: Own IAB category lists, only when listsLinked is false.}
+        categoryBlacklist: {type: array, items: {type: string}}
     PartnerInput:
       type: object
       properties:
@@ -1990,10 +2145,14 @@ components:
           properties:
             bidderEndpoint: {type: string, format: uri}
             seatIds: {type: array, items: {type: string}}
+            qps: {type: [integer, 'null'], minimum: 1, maximum: 10000, description: 'Per-DSP QPS ceiling override (Q46). Absent: the platform default, 500. null on save clears it.'}
+            timeoutMs: {type: [integer, 'null'], minimum: 50, maximum: 2000, description: 'Per-DSP bidder timeout override in ms (Q46), also sent as tmax. Absent: the platform default, 300. null on save clears it.'}
         mode: {type: string, enum: [test, live]}
         listsLinked: {type: boolean, description: false copies the company lists down; true discards own lists.}
         advertiserWhitelist: {type: array, items: {type: string}}
         advertiserBlacklist: {type: array, items: {type: string}}
+        categoryWhitelist: {type: array, items: {type: string}}
+        categoryBlacklist: {type: array, items: {type: string}}
 
     AdvertiserSetting:
       type: object
@@ -2029,7 +2188,7 @@ components:
 
     Approval:
       type: object
-      required: [campaignId, status, assetVersion]
+      required: [campaignId, status, assetVersion, liveAssetVersion, pendingEdit]
       properties:
         campaignId: {type: string}
         campaignName: {type: string}
@@ -2047,6 +2206,27 @@ components:
           description: The current rejection's per-asset breakdown, when the reviewer named specific assets (spec §3, "asset-level rejection").
           items: {$ref: '#/components/schemas/AssetRejection'}
         checks: {type: array, items: {$ref: '#/components/schemas/Check'}}
+        liveAssetVersion:
+          type: [string, 'null']
+          description: |
+            The approved version that is running — eligible for reservation,
+            bidding and hand-off — whatever is under review (open question 38,
+            resolved 29 Sep 2026). null until a version has been approved.
+        pendingEdit:
+          type: boolean
+          description: |
+            True while an edit to a running campaign awaits approval: `status`
+            is awaiting_approval and `assetVersion` is the edit, while
+            `liveAssetVersion` keeps running. Approving the edit makes it the
+            live version in one step; rejecting it discards it.
+        rejectedEdit:
+          type: object
+          required: [assetVersion, reason, at]
+          description: The most recent edit the retailer rejected, which was discarded while the live version carried on. Present until the next edit.
+          properties:
+            assetVersion: {type: string}
+            reason: {type: [string, 'null']}
+            at: {type: string, format: date-time}
         targetingSummary: {type: string}
         creative:
           type: [object, 'null']
@@ -2072,7 +2252,7 @@ components:
             required: [at, action]
             properties:
               at: {type: string, format: date-time}
-              action: {type: string, enum: [submitted, auto_approved, approved, rejected, returned_for_review, unrejected]}
+              action: {type: string, enum: [submitted, auto_approved, approved, rejected, returned_for_review, unrejected, edit_discarded, reused_clearance]}
               by: {type: [string, 'null']}
               reason: {type: [string, 'null']}
               assetVersion: {type: string}
@@ -2158,12 +2338,13 @@ components:
                   2026): the granularity a CPM is quoted and charged
                   against — default one day (24 hours). Same inheritance as
                   reservePrice: absent or null follows the display type's
-                  own `billingUnitHours` (below), else the platform default
-                  of 24. Set from Advertisers / Inventory, not the slot
-                  editor. Informational in this build — dynamic VAC-d
-                  billing still runs per play window (exchange/billing.ts);
-                  this is what the window length is expected to equal for a
-                  private-auction slot using the two-period model.
+                  own `billingUnitHours` (below), else the company-wide
+                  play window (Advertiser settings → playWindowHours,
+                  platform default 24). Set from Advertisers / Inventory,
+                  not the slot editor. The source of truth for this slot's
+                  play-window length (OQ27, 29 Sep 2026): its windows are
+                  this long, each auctioned, booked and billed (dynamic
+                  VAC-d) on its own.
               maxCampaigns:
                 type: [integer, 'null']
                 description: |
@@ -2193,7 +2374,7 @@ components:
             The display type's own billing-unit default (spec "Private
             auctions: two-period model", 23 Sep 2026), inherited by every
             slot on it with no override of its own. Absent or null means
-            the platform default of 24 hours (one day) applies. Set from
+            the company-wide play window (playWindowHours) applies. Set from
             Advertisers / Inventory (every row for this display type edits
             the same value), not the slot editor.
         maxCampaigns:
@@ -2221,7 +2402,7 @@ components:
             type: object
             required: [kind, name]
             properties:
-              kind: {type: string, enum: [display, display_type_default, zone]}
+              kind: {type: string, enum: [display, display_type_default, zone, reservation], description: 'reservation: a position reserved or sold for a current or future window (Q47); name is the position id, detail the window and whether it is sold or reserved.'}
               name: {type: string}
               detail: {type: string, description: e.g. store name or zone name}
 

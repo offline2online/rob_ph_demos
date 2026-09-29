@@ -3,7 +3,7 @@
    model/sellside.js), reshaped to the API contract. */
 import {
   NEW_PLAYLIST_SETTINGS_DEFAULTS, PLATFORM_DEFAULTS, SLOT_OWNERS, UNLIMITED, assignedOf,
-  type AdvertiserSettings, type DisplayType, type Partner, type Playlist, type Slot, type SlotOwner,
+  type AdvertiserSettings, type DisplayType, type Partner, type Playlist, type Slot, type SlotOwner, type TouchPoint,
 } from '@ph-dsp/types'
 
 /* ------------------------------------------------------------- options */
@@ -84,6 +84,18 @@ export const blankFeatures = (): Record<string, FeatureConfig> => ({
   visionAi: { enabled: false, mode: VISION_MODES[0], preset: 'Balanced', ...DETECTION_PRESETS.Balanced },
 })
 
+/* Canvas defaults applied when a brand-new display type's Touch Point is
+   switched to one of these (ticket, 28 Sep 2026: "Website default
+   1920×1080, Mobile App default 330×400"). Digital Signage and Kiosk are
+   deliberately not keys here — switching between them has never reset the
+   canvas, and this must not start doing so ("must not change existing...
+   flows"). Only applies while the display type is still new: an existing
+   one's canvas is never touched by a Touch Point change. */
+export const TOUCH_POINT_CANVAS_DEFAULTS: Partial<Record<TouchPoint, { width: number; height: number }>> = {
+  Website: { width: 1920, height: 1080 },
+  'Mobile App': { width: 330, height: 400 },
+}
+
 /* New display type (prototype: "New display type"): Digital Signage, 1920×1080,
    #333333, every playlist setting at its default (rotation "Default
    (Unlimited)", ticket 28 Sep 2026), with an auto-created playlist. */
@@ -157,7 +169,13 @@ export const expectedSlotCount = (d: DisplayType) => (isZoned(d) ? mz(d).zones.r
 export const slotIndicesFor = (d: DisplayType, zoneId: string | null): number[] => {
   const slots = slotsOf(d)
   if (!isZoned(d)) return slots.map((_, i) => i)
-  return zoneOf(d, zoneId) ? slots.flatMap((s, i) => (s.zoneId === zoneId ? [i] : [])) : []
+  const zones = mz(d).zones
+  if (!zoneOf(d, zoneId)) return []
+  /* A slot tagged to no current zone belongs to the first zone, as
+     normaliseSlots adopts it, so every slot shows in exactly one playlist
+     (ticket, 28 Sep 2026: inventory totals didn't match). */
+  const ids = new Set(zones.map((z) => z.id))
+  return slots.flatMap((s, i) => ((s.zoneId && ids.has(s.zoneId) ? s.zoneId : zones[0].id) === zoneId ? [i] : []))
 }
 const sameSlots = (a: Slot[], b: Slot[]) => a.length === b.length && a.every((s, i) => s === b[i])
 /* Slots always match the rotation cap(s) in the editor: resized per zone

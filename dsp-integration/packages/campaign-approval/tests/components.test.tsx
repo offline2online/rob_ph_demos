@@ -8,7 +8,7 @@ import { ApprovalActions, ApprovalReviewPanel, ApprovalStatusBadge, ApprovalStat
 
 const approval = (over: Partial<Approval> = {}): Approval => ({
   campaignId: 'c1', campaignName: 'Swisse spring', advertiserName: 'Swisse', partnerName: 'Google DSP', status: 'awaiting_approval', mode: 'manual',
-  assetVersion: 'v1', submittedAt: '2026-09-19T00:00:00.000Z', reviewedBy: null, reviewedAt: null, reason: null,
+  assetVersion: 'v1', submittedAt: '2026-09-19T00:00:00.000Z', reviewedBy: null, reviewedAt: null, reason: null, liveAssetVersion: null, pendingEdit: false,
   checks: [{ name: 'dimensions', passed: true, detail: '1920×1080 matches the canvas' }, { name: 'duration', passed: false, detail: '20s is longer than the 15s slot' }],
   targetingSummary: 'Targeted (priority 10): Fixed Store Segments includes selected Metro',
   creative: { assetUrl: '/assets/c1.png', mimeType: 'image/png', width: 1920, height: 1080 }, canvas: { width: 1920, height: 1080 }, ...over,

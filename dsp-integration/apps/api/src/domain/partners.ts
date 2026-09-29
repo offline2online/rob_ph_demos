@@ -22,9 +22,14 @@ export function toApiPartner(p: PartnerRecord): Partner {
   const bidder: NonNullable<Partner['bidder']> = {}
   if (p.bidder.bidderEndpoint) bidder.bidderEndpoint = p.bidder.bidderEndpoint
   if (p.bidder.seatIds?.length) bidder.seatIds = p.bidder.seatIds
+  if (p.bidder.qps !== undefined) bidder.qps = p.bidder.qps
+  if (p.bidder.timeoutMs !== undefined) bidder.timeoutMs = p.bidder.timeoutMs
   return {
     id: p.id, provider: p.provider as Partner['provider'], name: p.name, status: p.status, lastSync: p.lastSync, mode: p.mode,
     credentials, bidder, issues: partnerIssues(p), seats: p.seats.map(({ id, name }) => ({ id, name })), listsLinked: p.listsLinked,
-    ...(p.listsLinked ? {} : { advertiserWhitelist: p.allowList, advertiserBlacklist: p.blockList }),
+    ...(p.listsLinked ? {} : {
+      advertiserWhitelist: p.allowList, advertiserBlacklist: p.blockList,
+      categoryWhitelist: p.categoryAllowList, categoryBlacklist: p.categoryBlockList,
+    }),
   }
 }

@@ -1,6 +1,6 @@
 /* Save changes on a DSP page (spec §7): credentials, bidder integration,
-   mode and advertiser lists. Secrets are write-only: a new value replaces,
-   an omitted one is kept, an empty one clears. */
+   mode, and the advertiser and category lists. Secrets are write-only: a
+   new value replaces, an omitted one is kept, an empty one clears. */
 import { providerDef, type PartnerInput } from '@ph-dsp/types'
 import type { CompanySettings } from '../repos/CompanySettingsRepo'
 import type { PartnerRecord } from '../repos/PartnerRepo'
@@ -60,6 +60,12 @@ export const isPublicHttpsUrl = (s: string) => {
     return false
   }
 }
+const BIDDER_TUNING = [['qps', 1, 10_000, 'QPS ceiling'], ['timeoutMs', 50, 2_000, 'Bidder timeout']] as const
+
+/* A DSP's resolved bidder settings: its override, else the platform default (Q46). */
+export const bidderTuning = (b: PartnerRecord['bidder'], config: { bidderQps: number; bidderTimeoutMs: number }) =>
+  ({ qps: b.qps ?? config.bidderQps, timeoutMs: b.timeoutMs ?? config.bidderTimeoutMs })
+
 export const bidderComplete = (b: PartnerRecord['bidder']) => !!b.bidderEndpoint?.trim() && !!b.seatIds?.length
 
 export function applyPartnerInput(p: PartnerRecord, currentSecrets: Record<string, string>, body: PartnerInput, company: CompanySettings): { change?: PartnerChange; errors: Detail[]; conflict?: string } {
@@ -90,25 +96,42 @@ export function applyPartnerInput(p: PartnerRecord, currentSecrets: Record<strin
       bidder.bidderEndpoint = e
     }
     if (body.bidder.seatIds !== undefined) bidder.seatIds = cleanList(body.bidder.seatIds)
+    /* Per-DSP bidder tuning (Q46, decision 29 Sep 2026): an override wins
+       over the platform default (500 QPS, 300 ms); null clears it. */
+    for (const [k, min, max, label] of BIDDER_TUNING) {
+      const v = (body.bidder as Record<string, unknown>)[k]
+      if (v === undefined) continue
+      if (v === null) delete bidder[k]
+      else if (typeof v !== 'number' || !Number.isInteger(v) || v < min || v > max) errors.push({ field: `bidder.${k}`, reason: `${label}: a whole number from ${min} to ${max}, or empty for the platform default.` })
+      else bidder[k] = v
+    }
   }
 
-  let { listsLinked, allowList, blockList } = p
+  let { listsLinked, allowList, blockList, categoryAllowList, categoryBlockList } = p
   if (body.listsLinked === false && p.listsLinked) {
     /* Unlinking copies the inherited lists down, so a blacklist never silently empties. */
     listsLinked = false
     allowList = [...company.advertiserWhitelist]
     blockList = [...company.advertiserBlacklist]
+    categoryAllowList = [...company.categoryWhitelist]
+    categoryBlockList = [...company.categoryBlacklist]
   } else if (body.listsLinked === true && !p.listsLinked) {
     /* Relinking discards the DSP's own lists. */
     listsLinked = true
     allowList = []
     blockList = []
+    categoryAllowList = []
+    categoryBlockList = []
   }
   if (!listsLinked) {
     if (body.advertiserWhitelist !== undefined) allowList = cleanList(body.advertiserWhitelist)
     if (body.advertiserBlacklist !== undefined) blockList = cleanList(body.advertiserBlacklist)
     const black = new Set(blockList.map((x) => x.toLowerCase()))
     for (const a of allowList) if (black.has(a.toLowerCase())) errors.push({ field: 'advertiserWhitelist', reason: `${a} is on both the whitelist and the blacklist.` })
+    if (body.categoryWhitelist !== undefined) categoryAllowList = cleanList(body.categoryWhitelist)
+    if (body.categoryBlacklist !== undefined) categoryBlockList = cleanList(body.categoryBlacklist)
+    const categoryBlack = new Set(categoryBlockList.map((x) => x.toLowerCase()))
+    for (const c of categoryAllowList) if (categoryBlack.has(c.toLowerCase())) errors.push({ field: 'categoryWhitelist', reason: `${c} is on both the whitelist and the blacklist.` })
   }
 
   const mode = body.mode ?? p.mode
@@ -119,5 +142,5 @@ export function applyPartnerInput(p: PartnerRecord, currentSecrets: Record<strin
     return { errors, conflict: 'Connect and complete the bidder integration first.' }
   }
   if (mode === 'live' && !bidderComplete(bidder)) return { errors, conflict: 'A live DSP needs its bidder endpoint and seat IDs.' }
-  return { errors, change: { patch: { credsPublic, bidder, mode, listsLinked, allowList, blockList }, secrets } }
+  return { errors, change: { patch: { credsPublic, bidder, mode, listsLinked, allowList, blockList, categoryAllowList, categoryBlockList }, secrets } }
 }

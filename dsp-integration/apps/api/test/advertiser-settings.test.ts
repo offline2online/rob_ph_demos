@@ -118,10 +118,10 @@ describe('Advertiser settings (spec §4, §6)', () => {
     const res = await buildApp(await testContext()).inject({ method: 'GET', url: '/api/admin/v1/available-inventory' })
     expectMatchesContract('GET', '/admin/v1/available-inventory', 200, res.json())
     expect(res.json().items).toEqual([{
-      displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board — Long Format / Zone 1', playlistId: 'pl_zone_menu_board_1', unassigned: false, slot: 2, position: 'Supplier slot',
+      displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board — Long Format / Zone 1', playlistId: 'pl_zone_menu_board_1', unassigned: false, slot: 2, zoneSlot: 2, position: 'Supplier slot',
       assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false, buyersListId: null, buyersListName: null }, qrControl: true, visionAi: true, supportedTargeting: ['localised'],
       reservePrice: null, reservePriceOverride: null, displayTypeReservePrice: null,
-      billingUnitHours: 24, billingUnitHoursOverride: null, displayTypeBillingUnitHours: null,
+      billingUnitHours: 24, billingUnitHoursOverride: null, displayTypeBillingUnitHours: null, companyPlayWindowHours: 24,
       maxCampaigns: 5, maxCampaignsOverride: null, displayTypeMaxCampaigns: null,
     }])
     /* The picker behind Assigned to: every DSP and the advertisers it brings. */
@@ -148,16 +148,21 @@ describe('Advertiser settings (spec §4, §6)', () => {
     const rows = async () => {
       const res = await app.inject({ method: 'GET', url: '/api/admin/v1/available-inventory' })
       expectMatchesContract('GET', '/admin/v1/available-inventory', 200, res.json())
-      return (res.json().items as { slot: number; playlistId: string; position: string }[]).map((r) => [r.slot, r.playlistId, r.position])
+      return (res.json().items as { slot: number; zoneSlot: number; playlistId: string; position: string }[]).map((r) => [r.slot, r.zoneSlot, r.playlistId, r.position])
     }
     const three = zonesOf(record()).map((z) => ({ ...z, maximumCampaignsPlayedInRotation: 2 }))
 
     expect((await saveZones(three)).statusCode).toBe(200)
     expect((await saveSlots(['z1', 'z2', 'z3'])).statusCode).toBe(200)
+    /* slot is the flat position across all three zones (1-6); zoneSlot
+       resets to 1 at the start of each zone's own segment — this is what
+       Available Inventory's Slot column actually displays (ticket, 28 Sep
+       2026), since each zone runs its own separate playlist/rotation and a
+       flat "slot 4" means nothing on Zone 2's own two-slot rotation. */
     expect(await rows()).toEqual([
-      [1, 'pl_zone_menu_board_1', 'Slot 1'], [2, 'pl_zone_menu_board_1', 'Slot 2'],
-      [3, 'pl_zone_menu_board_2', 'Slot 1'], [4, 'pl_zone_menu_board_2', 'Slot 2'],
-      [5, 'pl_zone_menu_board_3', 'Slot 1'], [6, 'pl_zone_menu_board_3', 'Slot 2'],
+      [1, 1, 'pl_zone_menu_board_1', 'Slot 1'], [2, 2, 'pl_zone_menu_board_1', 'Slot 2'],
+      [3, 1, 'pl_zone_menu_board_2', 'Slot 1'], [4, 2, 'pl_zone_menu_board_2', 'Slot 2'],
+      [5, 1, 'pl_zone_menu_board_3', 'Slot 1'], [6, 2, 'pl_zone_menu_board_3', 'Slot 2'],
     ])
     /* Each position's share of voice is of its own zone's two-slot rotation, not of all six. */
     const partner = await buildApp(ctx).inject({ method: 'GET', url: '/api/v1/inventory/menu_board.s5', headers: { authorization: 'Bearer poc-token-google-dv360' } })
@@ -167,12 +172,12 @@ describe('Advertiser settings (spec §4, §6)', () => {
     /* Zone 3 removed: its two positions go with it. */
     expect((await saveZones(three.slice(0, 2))).statusCode).toBe(200)
     expect((await saveSlots(['z1', 'z2'])).statusCode).toBe(200)
-    expect((await rows()).map((r) => r[1])).toEqual(['pl_zone_menu_board_1', 'pl_zone_menu_board_1', 'pl_zone_menu_board_2', 'pl_zone_menu_board_2'])
+    expect((await rows()).map((r) => r[2])).toEqual(['pl_zone_menu_board_1', 'pl_zone_menu_board_1', 'pl_zone_menu_board_2', 'pl_zone_menu_board_2'])
 
     /* Added back: six again. */
     expect((await saveZones(three)).statusCode).toBe(200)
     expect((await saveSlots(['z1', 'z2', 'z3'])).statusCode).toBe(200)
-    expect((await rows()).map((r) => r[1])).toEqual(['pl_zone_menu_board_1', 'pl_zone_menu_board_1', 'pl_zone_menu_board_2', 'pl_zone_menu_board_2', 'pl_zone_menu_board_3', 'pl_zone_menu_board_3'])
+    expect((await rows()).map((r) => r[2])).toEqual(['pl_zone_menu_board_1', 'pl_zone_menu_board_1', 'pl_zone_menu_board_2', 'pl_zone_menu_board_2', 'pl_zone_menu_board_3', 'pl_zone_menu_board_3'])
   })
 
   /* "Unassigned": the display type has advertiser slots but no physical

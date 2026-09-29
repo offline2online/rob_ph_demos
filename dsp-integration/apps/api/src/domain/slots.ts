@@ -1,7 +1,7 @@
 /* Slot ownership (spec §1): server-side validation of what the Slot
    assignment editor allows. Ownership decides who may fill a slot; how the
    slot plays is unchanged. */
-import { UNLIMITED, type Assigned, type DisplayType, type DisplayTypeExtensions, type Slot } from '@ph-dsp/types'
+import { UNLIMITED, allowsAdvertising, type Assigned, type DisplayType, type DisplayTypeExtensions, type Slot } from '@ph-dsp/types'
 import type { BuyersListRepo } from '../repos/BuyersListRepo'
 import type { CompanySettings } from '../repos/CompanySettingsRepo'
 import type { PartnerRecord } from '../repos/PartnerRepo'
@@ -52,9 +52,11 @@ export function validateExtensions(dt: DisplayType, ext: DisplayTypeExtensions):
         : `Expected ${n} slot${n === 1 ? '' : 's'} (Maximum Campaigns Played In Rotation), got ${ext.slots.length}.`,
     })
   }
+  const advertisingAllowed = allowsAdvertising(dt.touchPoint)
   ext.slots.forEach((s, i) => {
     if (!s.label?.trim()) out.push({ field: `slots[${i}].label`, reason: 'A label is required.' })
     if (!(['internal', 'advertiser', 'retail'] as string[]).includes(s.owner)) out.push({ field: `slots[${i}].owner`, reason: 'One of: internal, advertiser, retail.' })
+    else if (!advertisingAllowed && s.owner !== 'internal') out.push({ field: `slots[${i}].owner`, reason: 'Advertising isn’t available for this touch point: only Headquarters slots are allowed.' })
     if (!zones.length) {
       if (s.zoneId != null) out.push({ field: `slots[${i}].zoneId`, reason: 'Unknown zone.' })
     } else if (i < n && (s.zoneId ?? null) !== expected[i]) {

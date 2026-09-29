@@ -4,8 +4,8 @@
      POST /v1/campaigns/{id}/submit     submit for retailer approval
      GET  /v1/campaigns/{id}/status     approval status
    A partner only ever sees its own campaigns; anyone else's is not found. */
-import { randomUUID } from 'node:crypto'
-import { ApprovalError } from '@ph-dsp/campaign-approval/server'
+import { createHash, randomUUID } from 'node:crypto'
+import { type Approval, ApprovalError } from '@ph-dsp/campaign-approval/server'
 import { advertiserSlug, maxCampaignsOf, supportedTargetingOf, targetingLabel, type TargetingMode } from '@ph-dsp/types'
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify'
 import { requireConnected } from '../../auth/partnerAuth'
@@ -31,8 +31,14 @@ interface CreateBody {
 /* The partner's advertisers are its seats, keyed by slug (decision 6). */
 export const partnerAdvertiser = (p: PartnerRecord, advertiserId: string) => p.seats.find((s) => advertiserSlug(s.name) === advertiserId) ?? null
 
-const statusView = (a: { campaignId: string; status: string; mode: string | null; reason: string | null; assetVersion: string }) => ({
+/* Q38 (Rob, 29 Sep 2026): an edit to an approved campaign is Awaiting
+   approval (status, assetVersion) while the approved version keeps running
+   (liveAssetVersion); pendingEdit says which case this is. An edit the
+   retailer rejected is discarded — status is back to the live version's —
+   and rejectedEdit says so, with the reason, until the next edit. */
+const statusView = (a: Pick<Approval, 'campaignId' | 'status' | 'mode' | 'reason' | 'assetVersion' | 'liveAssetVersion' | 'pendingEdit' | 'rejectedEdit'>) => ({
   campaignId: a.campaignId, status: a.status, mode: a.mode, reason: a.reason, assetVersion: a.assetVersion,
+  liveAssetVersion: a.liveAssetVersion, pendingEdit: a.pendingEdit, ...(a.rejectedEdit ? { rejectedEdit: a.rejectedEdit } : {}),
 })
 
 const approvalError = (e: unknown) => (e instanceof ApprovalError ? new HttpError(e.status, e.code, e.message) : e)
@@ -200,14 +206,22 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
     let version: string | undefined
     let bytes: Buffer | undefined
     let truncated = false
-    for await (const part of req.parts({ limits: { fileSize: limit + 1, files: 1 } })) {
-      if (part.type === 'file') {
-        bytes = await part.toBuffer().catch(() => {
-          truncated = true
-          return Buffer.alloc(0)
-        })
-        truncated ||= part.file.truncated
-      } else if (part.fieldname === 'version') version = String(part.value)
+    try {
+      for await (const part of req.parts({ limits: { fileSize: limit + 1, files: 1 } })) {
+        if (part.type === 'file') {
+          bytes = await part.toBuffer().catch(() => {
+            truncated = true
+            return Buffer.alloc(0)
+          })
+          truncated ||= part.file.truncated
+        } else if (part.fieldname === 'version') version = String(part.value)
+      }
+    } catch (e) {
+      /* @fastify/multipart throws its own RequestFileTooLargeError out of the
+         parts() iterator once a file passes the limit, before `truncated` is
+         ever seen; it is the file_size check failing (spec §3), not a generic 413. */
+      if ((e as { code?: string }).code !== 'FST_REQ_FILE_TOO_LARGE') throw e
+      truncated = true
     }
     const targeting = targetingOf(c.targeting)
     const roles = [...(targeting.default ? ['default'] : []), ...(targeting.targeted ?? []).map((t) => t.id)]
@@ -230,9 +244,15 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
       width: m.width, height: m.height, durationSec: m.durationSec,
       bitrateKbps: isVideo(m.kind) && m.durationSec ? Math.round(((bytes as Buffer).length * 8) / 1000 / m.durationSec) : null,
       sizeBytes: (bytes as Buffer).length,
+      /* Byte-identical = same hash: the key safe reuse compares (spec §3, Q40). */
+      contentHash: createHash('sha256').update(bytes as Buffer).digest('hex'),
     })
-    /* A new creative on a submitted campaign needs a fresh decision (spec §3). */
-    await ctx.approvals.changed(c.campaignId, req.partner.name).catch((e) => {
+    /* A new creative on a submitted campaign needs a fresh decision (spec §3)
+       — as a pending edit while the approved version keeps running (Q38),
+       or none at all if it is byte-identical to what a human cleared (Q40). */
+    /* The version under review carries this file's checks in place of the one it replaced. */
+    const carried = (await ctx.approvals.view(c.campaignId)).checks.filter((x) => x.assetId !== version)
+    await ctx.approvals.changed(c.campaignId, req.partner.name, [...carried, ...checks]).catch((e) => {
       throw approvalError(e)
     })
     return reply.status(201).send({ assetId: asset.id, checks })

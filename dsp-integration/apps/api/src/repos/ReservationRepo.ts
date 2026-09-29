@@ -48,8 +48,10 @@ export interface ReservationRepo {
   byStatus(status: ReservationStatus[], from?: string, to?: string): ReservationRecord[]
   /* Every window already won or reserved (live, not Test mode) starting in
      [from, to), for every position at once: one ranged query for the whole
-     estate, for callers that ask about every position (review, 24 Sep 2026). */
-  takenInRange(from: string, to: string): Map<string, Set<string>>
+     estate, for callers that ask about every position (review, 24 Sep 2026).
+     Position → window start → which of the two took it (a reserve-price
+     hold reads Reserved, not Sold — OQ52). */
+  takenInRange(from: string, to: string): Map<string, Map<string, ReservationStatus>>
   /* What billing can bill now: won or reserved, live, handed off, with a
      campaign and a clearing price, whose window started at or before
      `endedBy` and that has no billing line item yet. One indexed query
@@ -97,13 +99,13 @@ export function sqliteReservationRepo(db: Db): ReservationRepo {
       return rows.map(toRecord)
     },
     takenInRange(from, to) {
-      const rows = prepared(db, "SELECT position_id, window_start FROM reservations WHERE status IN ('won', 'reserved') AND test_mode = 0 AND window_start >= ? AND window_start < ?")
-        .all(from, to) as unknown as { position_id: string; window_start: string }[]
-      const out = new Map<string, Set<string>>()
+      const rows = prepared(db, "SELECT position_id, window_start, status FROM reservations WHERE status IN ('won', 'reserved') AND test_mode = 0 AND window_start >= ? AND window_start < ?")
+        .all(from, to) as unknown as { position_id: string; window_start: string; status: ReservationStatus }[]
+      const out = new Map<string, Map<string, ReservationStatus>>()
       for (const r of rows) {
         let s = out.get(r.position_id)
-        if (!s) out.set(r.position_id, (s = new Set()))
-        s.add(r.window_start)
+        if (!s) out.set(r.position_id, (s = new Map()))
+        s.set(r.window_start, r.status)
       }
       return out
     },

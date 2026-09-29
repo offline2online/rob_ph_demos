@@ -83,6 +83,36 @@ describe('Playlist Management API (spec §2)', () => {
       ])
     })
 
+    /* Ticket QclCnAKYGdXuyCvCIPcs (28 Sep 2026): "not found" on saving
+       playlist settings — the hosted API was two days behind the client and
+       had no /settings route yet. Every value the admin offers for each of
+       the five settings (display-types/model.ts), saved one at a time on an
+       unassigned and an assigned playlist, and read back from the list. */
+    const EVERY_OPTION: Record<string, string[]> = {
+      assetPosition: ['Top-Left', 'Top-Right', 'Center', 'Bottom-Left', 'Bottom-Right'],
+      assetFill: ['Fit to Display', 'Maintain Asset Property', 'Fill', 'Stretch'],
+      campaignAutoRotation: ['Auto-Rotate On', 'Auto-Rotate Off'],
+      campaignAutoPlay: ['Auto-Play On', 'Auto-Play Off'],
+      campaignTransition: ['None', 'Fade', 'Slide'],
+    }
+    for (const playlistId of ['pl_archive', 'pl_menu']) {
+      it(`saves every option of all five settings on ${playlistId}`, async () => {
+        const app = buildApp(await testContext())
+        for (const [field, values] of Object.entries(EVERY_OPTION)) {
+          for (const value of values) {
+            const res = await app.inject({ method: 'PUT', url: `/api/admin/v1/playlists/${playlistId}/settings`, payload: { [field]: value } })
+            expect(res.statusCode, `${field} = ${value}`).toBe(200)
+            expect(res.json().playlistSettings[field]).toBe(value)
+          }
+        }
+        const all = Object.fromEntries(Object.entries(EVERY_OPTION).map(([f, v]) => [f, v[0]]))
+        expect((await app.inject({ method: 'PUT', url: `/api/admin/v1/playlists/${playlistId}/settings`, payload: all })).statusCode).toBe(200)
+        const list = await app.inject({ method: 'GET', url: '/api/admin/v1/playlists' })
+        const saved = (list.json().items ?? list.json()).find((p: { id: string }) => p.id === playlistId)
+        expect(saved.playlistSettings).toMatchObject(all)
+      })
+    }
+
     it('404s for an unknown playlist', async () => {
       const app = buildApp(await testContext())
       const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/playlists/pl_nope/settings', payload: {} })

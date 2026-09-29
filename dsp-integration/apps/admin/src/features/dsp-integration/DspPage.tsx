@@ -1,9 +1,11 @@
 /* A DSP's page (spec §7), in order: issues at the top, Mode, Connection
-   credentials (connect / re-test / disconnect), Bidder integration, then the
-   advertiser whitelist / blacklist. Nothing pricing- or targeting-related. */
+   credentials (connect / re-test / disconnect), Bidder integration, then
+   List management — the advertiser and category whitelists/blacklists
+   (ticket, 28 Sep 2026: category lists used to be company-only, with no way
+   to give an unlinked DSP its own). Nothing pricing- or targeting-related. */
 import { useQueryClient } from '@tanstack/react-query'
 import { App, Button, Input, Segmented, Select, Tooltip } from 'antd'
-import { providerDef, type Partner } from '@ph-dsp/types'
+import { IAB_CATEGORIES, providerDef, type Partner } from '@ph-dsp/types'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ApiRequestError } from '../../api/client'
@@ -133,7 +135,7 @@ export function DspPage({ draftKey, partner }: { draftKey: string; partner: Part
         )}
       </div>
 
-      <SectionLabel><WithTip tip="Where we send OpenRTB bid requests for this DSP, and the seats its bids come from. QPS and timeout use platform defaults.">Bidder integration</WithTip></SectionLabel>
+      <SectionLabel><WithTip tip="Where we send OpenRTB bid requests for this DSP, and the seats its bids come from. QPS ceiling and bidder timeout use the platform defaults unless set here.">Bidder integration</WithTip></SectionLabel>
       <div className="grid grid-cols-2 gap-3.5">
         <Field label="Bidder endpoint" required tip="Where we send the bid request." htmlFor="bidderEndpoint">
           <Input id="bidderEndpoint" value={d.bidderEndpoint} placeholder="https://…/openrtb2/bid" onChange={(e) => set((x) => ({ ...x, bidderEndpoint: e.target.value }))} />
@@ -141,30 +143,41 @@ export function DspPage({ draftKey, partner }: { draftKey: string; partner: Part
         <Field label="Seat IDs" required tip="What the advertiser blocklist is matched against on the bid response." htmlFor="seatIds">
           <Input id="seatIds" value={d.seatIds} placeholder="Comma separated" onChange={(e) => set((x) => ({ ...x, seatIds: e.target.value }))} />
         </Field>
+        <Field label="QPS ceiling" tip="Most bid requests per second sent to this DSP. Leave empty for the platform default (500)." htmlFor="bidderQps">
+          <Input id="bidderQps" inputMode="numeric" value={d.qps} placeholder="500 (platform default)" onChange={(e) => set((x) => ({ ...x, qps: e.target.value.replace(/\D/g, '') }))} />
+        </Field>
+        <Field label="Bidder timeout (ms)" tip="How long we wait for this DSP's bid. Leave empty for the platform default (300 ms)." htmlFor="bidderTimeoutMs">
+          <Input id="bidderTimeoutMs" inputMode="numeric" value={d.timeoutMs} placeholder="300 (platform default)" onChange={(e) => set((x) => ({ ...x, timeoutMs: e.target.value.replace(/\D/g, '') }))} />
+        </Field>
       </div>
 
-      <SectionLabel><WithTip tip="The blacklist always applies and no position can opt out of it. Unlinking copies the company lists here; relinking discards this DSP's own lists.">Advertiser whitelist / blacklist</WithTip></SectionLabel>
+      <SectionLabel><WithTip tip="Advertiser and category lists together: both blacklists always apply and no position can opt out of them. Unlinking copies the company lists here, for both; relinking discards this DSP's own lists, for both.">List management</WithTip></SectionLabel>
       {d.listsLinked ? (
         <Callout tone="info" icon="link"
           action={<Button color="primary" variant="outlined" size="small" icon={<Icon name="link_off" size={15} />}
-            onClick={() => set((x) => ({ ...x, listsLinked: false, advertiserWhitelist: [...draft.settings.advertiserWhitelist], advertiserBlacklist: [...draft.settings.advertiserBlacklist] }))}>Unlink and edit</Button>}>
+            onClick={() => set((x) => ({
+              ...x, listsLinked: false,
+              advertiserWhitelist: [...draft.settings.advertiserWhitelist], advertiserBlacklist: [...draft.settings.advertiserBlacklist],
+              categoryWhitelist: [...draft.settings.categoryWhitelist], categoryBlacklist: [...draft.settings.categoryBlacklist],
+            }))}>Unlink and edit</Button>}>
           <b>Centrally managed.</b> This DSP uses the company lists.{' '}
           <a onClick={() => navigate(PATHS.advertiserSettings)} style={{ color: T.primary, textDecoration: 'underline', cursor: 'pointer' }}>View lists in Advertiser settings</a>
         </Callout>
       ) : (
         <>
           <Callout tone="warning" icon="link_off" className="mb-3"
-            action={<Button size="small" icon={<Icon name="link" size={15} />} onClick={() => set((x) => ({ ...x, listsLinked: true, advertiserWhitelist: [], advertiserBlacklist: [] }))}>Relink to company lists</Button>}>
+            action={<Button size="small" icon={<Icon name="link" size={15} />}
+              onClick={() => set((x) => ({ ...x, listsLinked: true, advertiserWhitelist: [], advertiserBlacklist: [], categoryWhitelist: [], categoryBlacklist: [] }))}>Relink to company lists</Button>}>
             <b>Unlinked — this DSP has its own lists.</b> Company changes no longer reach it; relinking discards these.
           </Callout>
-          <div className="grid grid-cols-2 gap-3.5">
+          <div className="mb-3.5 grid grid-cols-2 gap-3.5">
             {(['advertiserWhitelist', 'advertiserBlacklist'] as const).map((k) => {
               const other = k === 'advertiserWhitelist' ? 'advertiserBlacklist' : 'advertiserWhitelist'
               const white = k === 'advertiserWhitelist'
               return (
                 <ListEditor
                   key={k}
-                  label={white ? 'Whitelist — only these may win' : 'Blacklist — these may never win'}
+                  label={white ? 'Advertisers — whitelist' : 'Advertisers — blacklist'}
                   tone={white ? T.success : T.error}
                   icon={white ? 'verified' : 'block'}
                   items={d[k]}
@@ -172,6 +185,25 @@ export function DspPage({ draftKey, partner }: { draftKey: string; partner: Part
                   onAdd={(n) => set((x) => { const r = addExclusive({ add: x[k], other: x[other] }, n); return { ...x, [k]: r.add, [other]: r.other } })}
                   onRemove={(n) => set((x) => ({ ...x, [k]: x[k].filter((y) => y !== n) }))}
                   empty={white ? 'Empty — a position set to whitelist-only would never fill.' : 'Empty — nothing is blocked on this DSP.'}
+                />
+              )
+            })}
+            {(['categoryWhitelist', 'categoryBlacklist'] as const).map((k) => {
+              const other = k === 'categoryWhitelist' ? 'categoryBlacklist' : 'categoryWhitelist'
+              const white = k === 'categoryWhitelist'
+              return (
+                <ListEditor
+                  key={k}
+                  label={white ? 'Categories — whitelist' : 'Categories — blacklist'}
+                  tone={white ? T.success : T.error}
+                  icon={white ? 'category' : 'block'}
+                  items={d[k]}
+                  suggestions={[...IAB_CATEGORIES]}
+                  addLabel="Add a category…"
+                  suggestLabel="Categories:"
+                  onAdd={(n) => set((x) => { const r = addExclusive({ add: x[k], other: x[other] }, n); return { ...x, [k]: r.add, [other]: r.other } })}
+                  onRemove={(n) => set((x) => ({ ...x, [k]: x[k].filter((y) => y !== n) }))}
+                  empty={white ? 'Empty — every category is eligible.' : 'Empty — no category is blocked on this DSP.'}
                 />
               )
             })}

@@ -220,7 +220,7 @@ export async function seedDemo(ctx: Context) {
         credsPublic: { supplySourceId: 'ss-phub-2291', ttdPartnerId: 'phub-retail', region: 'APAC' },
         secrets: { apiToken: 'poc-placeholder-token' },
         bidder: { bidderEndpoint: 'https://bid.adsrvr.org/openrtb2/bid', seatIds: ['phub-retail'] },
-        seats: [], listsLinked: true, allowList: [], blockList: [],
+        seats: [], listsLinked: true, allowList: [], blockList: [], categoryAllowList: [], categoryBlockList: [],
       })
     }
     for (const [partnerId, seats] of Object.entries(DEMO_SEATS)) {
@@ -310,8 +310,8 @@ async function seedDemoBookings(ctx: Context) {
     .filter((b, i, all) => all.findIndex((x) => x.advertiserId === b.advertiserId) === i)
   if (!positions.length || !brands.length) return 0
 
-  const len = windowMs(ctx)
-  const first = nextWindow(ctx).getTime()
+  /* Each position's own window grid (OQ27: its billing unit is its window length). */
+  const gridOf = (p: (typeof positions)[number]) => ({ len: windowMs(ctx, p), first: nextWindow(ctx, windowMs(ctx, p)).getTime() })
   const currency = ctx.company.get().currency
   const insVacd = ctx.db.prepare('INSERT INTO audience_vacd (display_type_id, slot, assumed_views_per_window, counted) VALUES (?, ?, ?, 0)')
   for (const p of positions) {
@@ -341,6 +341,7 @@ async function seedDemoBookings(ctx: Context) {
       /* Packed into the next three weeks, so the Daily view is busy rather
          than one booking a fortnight: advertiser and window step at
          different strides, and a clash on a sold window is simply skipped. */
+      const { len, first } = gridOf(position)
       const start = new Date(first + ((b * 2 + n * 5) % 21) * len).toISOString()
       const id = `res_demo_${brand.advertiserId}_${n}`
       if (ctx.reservations.get(id)) continue
@@ -371,6 +372,7 @@ async function seedDemoBookings(ctx: Context) {
       const dt = position.displayType
       const campaignId = (await campaignOf(brand.advertiserId, 'localised')) ??
         (await campaignFor(ctx, { ...brand, displayTypeId: dt.id }, '#37474f', dt.displayCanvasSize.width, dt.displayCanvasSize.height))
+      const { len, first } = gridOf(position)
       for (const [k, day] of [1, 2, 5, 8, 12].entries()) {
         const id = `res_demo_held_${position.positionId}_${k}`
         const start = new Date(first + day * len).toISOString()
@@ -404,7 +406,7 @@ async function seedDemoBookings(ctx: Context) {
         type: 'bid', channel: 'openrtb', bidCpm: 160 + k * 20, currency, status: 'won', clearingCpm: 160 + k * 20, reason: null, testMode: false,
         pricingType: 'localised', handedOffAt: `${day}T00:00:00.000Z`,
       })
-      ctx.campaigns.bookSlot({ id: `bk_demo_past_${key}`, campaignId, displayTypeId: 'landscape', slot: hero.slot, windowStart: start, windowEnd: new Date(Date.parse(start) + len).toISOString() })
+      ctx.campaigns.bookSlot({ id: `bk_demo_past_${key}`, campaignId, displayTypeId: 'landscape', slot: hero.slot, windowStart: start, windowEnd: new Date(Date.parse(start) + gridOf(hero).len).toISOString() })
       const t0 = Date.parse(start)
       tx(ctx.db, () => {
         displays.forEach((d, i) => {

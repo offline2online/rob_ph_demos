@@ -58,7 +58,7 @@ slower than that should cache, as the stand-ins now do.
 | `DisplaySource` | read only | Displays & Devices | `list`, `listByDisplayType`, `summaryByDisplayType`, `storeIdsByDisplayType` | **Hot**: `summaryByDisplayType` per position (counts, "no displays" check); `listByDisplayType` for the delete check only | `summaryByDisplayType` ≤ 0.05 ms, a count never the rows; `listByDisplayType` indexed |
 | `StoreSource` | read only | Stores | `list`, `get` | Inventory store/region filters, booking schedule | `get` ≤ 0.05 ms |
 | `CampaignSource` (`platform/CampaignSource.ts`) | read + write | Campaigns service | `getCampaign`, `listCampaigns`, `setActivation`, `onCampaignChanged`, `createCampaign`, `addAsset`, `latestAssets`, `bookSlot`, `bookings` | **Hot**: `getCampaign` per bid in the auction | `getCampaign` ≤ 0.5 ms |
-| Approval adapter (`packages/campaign-approval/src/adapter/CampaignSource.ts`) | read + activation | Campaigns service | `getCampaign`, `listCampaigns`, `setActivation`, `onCampaignChanged` | Approval screens, `isCampaignEligible` before every bid, reservation and hand-off | see the integration guide |
+| Approval adapter (`packages/campaign-approval/src/adapter/CampaignSource.ts`) | read + activation | Campaigns service | `getCampaign`, `listCampaigns`, `setActivation`, `onCampaignChanged`, `discardEditsAfter` | Approval screens, `isCampaignEligible` before every bid, reservation and hand-off | see the integration guide |
 | `PlaybackSource` | read only | Playback logging | `totals({campaignId, displayTypeId, from, to})`, `listPlays` | Billing, once per ended window | aggregated at the source: ≤ 1 s for 2 million plays |
 | `AssetStore` | write + read | Asset hosting / CDN | `put`, `read`, `url` | Creative upload and DSP creative retrieval; hand-off re-validation | — |
 | `AudienceSource` | read only | Audience scoring (MOVE/VAC-d, spec §4) | `forSlot`, `targetedShare` | **Hot**: per position in inventory, forecast, OpenRTB `qty.multiplier` | ≤ 0.1 ms |
@@ -95,6 +95,11 @@ provide one breaks something specific, named here.
     a row. The hand-off treats a uniqueness failure as "already booked" and
     records why (migration 0021 enforces this on the stand-in).
   - Without this guarantee, two exchange processes can double-book a slot.
+  - **Plays the version it was handed** (`SlotBooking.assetVersion`, Q38,
+    29 Sep 2026): the approved version's creative, never an edit still
+    under review. The hand-off resolves it with
+    `latestAssets(campaignId, atVersion)`, which must ignore the assets of a
+    discarded (rejected) edit.
 - **`CampaignSource.getCampaign`**
   - Returns targeting in the existing structure: AND groups of OR
     conditions.
@@ -312,3 +317,35 @@ These are reserved names and places, with no behaviour yet:
   like `Flags`.
 - **Venue and screen metadata per store and display** (spec §1). It is
   held on the display type for now, and has no PH Core seam yet.
+
+## Venue and geo metadata — owned by PH Core (decision 29 Sep 2026, Q35)
+
+PH Core already manages all store data for a retailer, including venue and
+geo metadata, and is the system of record. The exchange reads it read-only
+and surfaces it on the inventory and targeting responses; it keeps **no
+copy** on its own store record. If Core changes a store's venue or geo
+values, the next read reflects it. Nothing here writes them back.
+
+## Analytics event values billing consumes (decision 29 Sep 2026, Q53/Q54)
+
+Analytics — the event schema, its data partition and the consuming
+pipeline — is held by Personalisation Hub inside the PWA player and is
+managed **outside this project**. This project does not own or host it.
+It depends on the following values from that flow (billing:
+`apps/api/src/exchange/billing.ts`); the external system must supply them,
+per campaign, per position and per play window:
+
+| Value | Used for |
+|---|---|
+| Campaign id and position id | Attributing plays to the win or reservation |
+| Display id (per play) | Counting displays that actually played |
+| Play start time and duration, in seconds | Proof of play: `played` seconds in the window |
+| Window start and end (or timestamps that fall in it) | Bounding plays to the window |
+| Play count | Line item `plays` |
+| Displays in scope, share of voice | Deriving `expected` seconds |
+| Audience measure behind assumed views (VAC-d inputs) | `assumedViews` per window |
+
+Billing computes `realised VAC-d = assumed views × min(1, played / expected)`
+and `amount = realised VAC-d / 1000 × clearing CPM`. Plays that did not
+happen are not billed and there is no make-good (Q29). Closed-loop
+conversion attribution is not an input (Q55).

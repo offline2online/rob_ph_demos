@@ -10,11 +10,12 @@
    Playlist dropdown above it is hidden — there's nothing to pick between
    yet, since no playlist exists until Save creates one. */
 import { Button, ColorPicker, Input, InputNumber, Select } from 'antd'
-import { TOUCH_POINTS, type DisplayType, type Partner, type Playlist } from '@ph-dsp/types'
+import { hasStructuralFeatures, TOUCH_POINTS, type DisplayType, type Partner, type Playlist, type TouchPoint } from '@ph-dsp/types'
 import { useState } from 'react'
 import { Field } from '../../shared/Field'
 import { Icon } from '../../shared/Icon'
 import { T } from '../../theme/phTheme'
+import { TOUCH_POINT_CANVAS_DEFAULTS, isZoned } from './model'
 import { EnabledFeaturesPanel } from './panels/EnabledFeaturesPanel'
 import { MultiZonePanel } from './panels/MultiZonePanel'
 import { PhantomZonePanel } from './panels/PhantomZonePanel'
@@ -63,6 +64,11 @@ export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, onAddPla
      display type still needs it, to pick a different already-saved
      playlist if the new one wasn't wanted after all. */
   const defaultPlaylistIsNew = isNewPlaylist(d.defaultPlaylistId)
+  /* Once multi-zone is on, playlists are managed per zone (ticket, 28 Sep
+     2026): the default playlist only carries the layout behind the scenes, so
+     it is hidden here and from Playlist Management. Its id is kept on the
+     record, where the layout is saved. */
+  const zoned = isZoned(d) && !isNewDisplayType
 
   return (
     <div>
@@ -72,7 +78,13 @@ export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, onAddPla
           id="touchPoint"
           className="w-full"
           value={d.touchPoint}
-          onChange={(v) => set({ touchPoint: v })}
+          onChange={(v) => set({
+            touchPoint: v,
+            /* Website/Mobile App's own canvas defaults, applied only while
+               the display type is still new — an existing one's canvas is
+               never touched by a Touch Point change (ticket, 28 Sep 2026). */
+            ...(isNewDisplayType && TOUCH_POINT_CANVAS_DEFAULTS[v as TouchPoint] ? { displayCanvasSize: TOUCH_POINT_CANVAS_DEFAULTS[v as TouchPoint] } : {}),
+          })}
           options={TOUCH_POINTS.map((t) => ({
             value: t.name,
             label: <span className="inline-flex items-center gap-2"><Icon name={t.icon} size={17} style={{ color: T.primary }} />{t.name}</span>,
@@ -99,7 +111,7 @@ export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, onAddPla
           2026): its default playlist is auto-created behind the scenes, so
           there's nothing yet to pick between — the dropdown comes back the
           moment the display type is saved and the playlist is real. */}
-      {!isNewDisplayType && (
+      {!isNewDisplayType && !zoned && (
         <Field
           label="Default Playlist"
           htmlFor="defaultPlaylist"
@@ -108,7 +120,13 @@ export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, onAddPla
              2026) — so it reads as the way to add a playlist, not as one of
              the playlists to pick. */
           action={(
-            <Button color="primary" variant="outlined" size="small" icon={<Icon name="add" size={16} />} onClick={() => set({ defaultPlaylistId: onAddPlaylist() })}>
+            <Button color="primary" variant="outlined" size="small" icon={<Icon name="add" size={16} />} onClick={() => {
+              set({ defaultPlaylistId: onAddPlaylist() })
+              /* Every section below opens, so the new playlist's starting
+                 values — matched to the one it replaces — are all in view
+                 to check or change before Save (ticket ThP7DPGo17FmPJdDKM7S). */
+              setOpen({ phantom: true, features: true, zones: true, playlistSettings: true })
+            }}>
               Add new playlist
             </Button>
           )}
@@ -124,9 +142,18 @@ export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, onAddPla
       )}
 
       <PhantomZonePanel d={d} update={update} open={open.phantom} onToggle={() => toggle('phantom')} />
-      <EnabledFeaturesPanel d={d} update={update} open={open.features} onToggle={() => toggle('features')} />
-      <MultiZonePanel d={d} update={update} open={open.zones} onToggle={() => toggle('zones')} zonePlaylistId={zonePlaylistId}
-        playlistOptions={playlists.map((p) => ({ value: p.id, label: p.name }))} />
+      {/* QR Control (the only feature Mobile App kept) doesn't apply to a
+          mobile app, so the whole section is dropped for it (ticket, 28 Sep 2026). */}
+      {d.touchPoint !== 'Mobile App' && (
+        <EnabledFeaturesPanel d={d} update={update} open={open.features} onToggle={() => toggle('features')} />
+      )}
+      {/* Website and Mobile App have no physical canvas to lay out into
+          zones (ticket, 28 Sep 2026) — the panel isn't shown at all for
+          them, rather than shown disabled. */}
+      {hasStructuralFeatures(d.touchPoint) && (
+        <MultiZonePanel d={d} update={update} open={open.zones} onToggle={() => toggle('zones')} zonePlaylistId={zonePlaylistId}
+          playlistOptions={playlists.map((p) => ({ value: p.id, label: p.name }))} />
+      )}
       {/* Always last (ticket, 27 Sep 2026) — editable while the default
           playlist is still a local draft (`defaultPlaylistIsNew`, whether
           because the whole display type is new or because its default was
@@ -135,14 +162,14 @@ export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, onAddPla
           itself is new it also holds Maximum Campaigns Played In Rotation
           and slot assignment (ticket, 28 Sep 2026), since there is no
           Playlist Management row to set them on until Save. */}
-      <PlaylistSettingsPanel
+      {!zoned && <PlaylistSettingsPanel
         playlist={defaultPlaylistOption}
         editable={defaultPlaylistIsNew}
         onUpdate={updateDefaultPlaylistSettings}
         open={open.playlistSettings}
         onToggle={() => toggle('playlistSettings')}
         capSlots={isNewDisplayType ? { d, update, slotAssignment, partners, advertiserOpen, onFixConnection } : null}
-      />
+      />}
     </div>
   )
 }

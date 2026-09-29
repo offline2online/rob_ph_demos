@@ -1,7 +1,7 @@
 /* Display Types data: existing records through the POC stand-in endpoints,
    slot ownership through PUT …/extensions (flag-gated). */
 import { useQuery } from '@tanstack/react-query'
-import type { DeleteCheck, DisplayType, Playlist } from '@ph-dsp/types'
+import type { AvailableInventoryRow, DeleteCheck, DisplayType, Playlist } from '@ph-dsp/types'
 import { api } from '../../api/client'
 import { Q } from '../../api/queries'
 import { deepEqual } from '../../shared/deepEqual'
@@ -10,6 +10,11 @@ export const useDisplayTypes = () => useQuery(Q.displayTypes)
 export const usePlaylists = () => useQuery(Q.playlists)
 export const usePartners = (enabled: boolean) => useQuery({ ...Q.partners, enabled })
 export const useAdvertiserSettings = (enabled: boolean) => useQuery({ ...Q.advertiserSettings, enabled })
+/* Every advertiser-owned slot across the estate — the same query and cache
+   entry Advertisers / Inventory itself uses (queryKey ['available-inventory']),
+   just typed and reused here for Playlist Management's own count line. */
+export const useAvailableInventory = (enabled: boolean) =>
+  useQuery({ ...Q.availableInventory, queryFn: () => api<{ items: AvailableInventoryRow[] }>('GET', '/admin/v1/available-inventory'), enabled })
 export const deleteCheck = (id: string) => api<DeleteCheck>('GET', `/admin/v1/display-types/${id}/delete-check`)
 export const deleteDisplayType = (id: string) => api<void>('DELETE', `/admin/v1/display-types/${id}`)
 

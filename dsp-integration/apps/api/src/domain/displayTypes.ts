@@ -59,7 +59,7 @@ export function validatePlaylistSettings(body: unknown): Detail[] {
    /settings PUT once the playlist exists. */
 export function ensureReferencedPlaylists(dt: DisplayType, playlists: PlaylistSource, isNew: boolean) {
   if (dt.defaultPlaylistId && !playlists.get(dt.defaultPlaylistId)) {
-    playlists.create({ id: dt.defaultPlaylistId, name: isNew ? 'New Display Type Playlist' : `${dt.name} Playlist`, autoCreatedFor: dt.id, playlistSettings: isNew ? {} : { ...NEW_PLAYLIST_SETTINGS_DEFAULTS } })
+    playlists.create({ id: dt.defaultPlaylistId, name: `${dt.name} Playlist`, autoCreatedFor: dt.id, playlistSettings: isNew ? {} : { ...NEW_PLAYLIST_SETTINGS_DEFAULTS } })
   }
   for (const z of zonesOf(dt)) {
     if (z.playlistId && !playlists.get(z.playlistId)) playlists.create({ id: z.playlistId, name: `${dt.name} / ${z.name}`, autoCreatedFor: dt.id, playlistSettings: { ...NEW_PLAYLIST_SETTINGS_DEFAULTS } })

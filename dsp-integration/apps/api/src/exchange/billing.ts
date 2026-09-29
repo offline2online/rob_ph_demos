@@ -10,6 +10,12 @@
    Plays that didn't happen (display offline, store closed, loop cut short)
    are not billed (Q29). Line items are stored only: no UI, report or API.
 
+   Per slot (OQ27, Rob 29 Sep 2026): the window length here is the slot's
+   own billing unit (positions.ts windowMs(ctx, p) — slot override, else
+   display type default, else the company play window), so a slot with a
+   168-hour unit bills one line item a week, on that week's realised VAC-d,
+   with a week's expected seconds and a week's assumed views.
+
    Scalability (review, 24 Sep 2026). Billing runs every minute in the API
    process, so it reads only what it can bill now — the database answers
    "won or reserved, live, handed off, window ended, not billed yet" in one
@@ -22,7 +28,7 @@
 import { randomUUID } from 'node:crypto'
 import type { Context } from '../context'
 import { prepared } from '../db/db'
-import { findPosition, windowMs } from '../domain/positions'
+import { assumedViewsPerWindow, findPosition, shortestWindowMs, windowMs } from '../domain/positions'
 import { rotationSizeOf } from '../domain/slots'
 
 export interface LineItem {
@@ -49,19 +55,22 @@ const round2 = (n: number) => Math.round(n * 100) / 100
 /* Bills every live, handed-off window that has ended and isn't billed yet. */
 export function runBilling(ctx: Context): LineItem[] {
   const now = ctx.clock().getTime()
-  const len = windowMs(ctx)
   const out: LineItem[] = []
-  /* A window has ended once its start is a whole window ago. */
-  for (const r of ctx.reservations.billable(new Date(now - len).toISOString())) {
-    const end = Date.parse(r.windowStart) + len
+  /* A window has ended once its start is a whole window ago. Windows differ
+     in length by slot, so the query asks for everything the shortest one
+     could have ended by, and each is checked against its own length. */
+  for (const r of ctx.reservations.billable(new Date(now - shortestWindowMs(ctx)).toISOString())) {
     const p = findPosition(ctx, r.positionId)
     if (!p) continue
+    const len = windowMs(ctx, p)
+    const end = Date.parse(r.windowStart) + len
+    if (end > now) continue
     const displays = ctx.displays.summaryByDisplayType(p.displayType.id).displays
     const played = ctx.playback.totals({ campaignId: r.campaignId as string, displayTypeId: p.displayType.id, from: r.windowStart, to: new Date(end).toISOString() })
     const slots = rotationSizeOf(p.displayType, p.slot)
     const share = slots ? 1 / slots : 1
     const expectedSec = displays * (len / 1000) * share
-    const assumedViews = ctx.audience.forSlot(p.displayType.id, p.slot).assumedViewsPerWindow
+    const assumedViews = assumedViewsPerWindow(ctx, p)
     const realisedViews = Math.round(assumedViews * (expectedSec > 0 ? Math.min(1, played.playedSec / expectedSec) : 0))
     const item: LineItem = {
       id: `bl_${randomUUID().slice(0, 12)}`, reservationId: r.id, partnerId: r.partnerId, advertiserId: r.advertiserId, campaignId: r.campaignId as string,

@@ -37,6 +37,8 @@ export function sweepRejectedCampaigns(db: Db, retentionDays: number, now: () =>
     tx(db, () => {
       for (const id of due) {
         db.prepare('DELETE FROM campaign_assets WHERE campaign_id = ?').run(id)
+        /* A DSP-retrieved creative's claim on its crid goes with the campaign, or a later bid with that crid is discarded as "already being retrieved" and never reviewed again. */
+        db.prepare('DELETE FROM dsp_creatives WHERE campaign_id = ?').run(id)
         db.prepare('DELETE FROM campaign_approvals WHERE campaign_id = ?').run(id)
         db.prepare('DELETE FROM campaigns WHERE id = ?').run(id)
       }

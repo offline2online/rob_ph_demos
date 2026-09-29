@@ -30,7 +30,7 @@ export const partnerRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync 
     if (ctx.partners.list().some((p) => p.provider === def.key)) throw conflict(`${def.label} is already set up.`)
     const created = ctx.partners.insert({
       id: `p_${def.key}`, provider: def.key as Provider, name: def.label, status: 'draft', mode: 'test', lastSync: null,
-      credsPublic: {}, bidder: {}, seats: [], listsLinked: true, allowList: [], blockList: [],
+      credsPublic: {}, bidder: {}, seats: [], listsLinked: true, allowList: [], blockList: [], categoryAllowList: [], categoryBlockList: [],
     })
     return reply.status(201).send(toApiPartner(created))
   })

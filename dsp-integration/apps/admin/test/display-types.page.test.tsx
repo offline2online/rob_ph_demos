@@ -60,12 +60,68 @@ describe('Display Types page', () => {
     expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled()
   })
 
-  it('offers only Digital Signage and Kiosk, with no pairing toggle (decision 1)', async () => {
+  it('has no pairing toggle or CTAs/Element Type touch points (decision 1)', async () => {
     renderAt('/display-types?id=landscape', true)
     await screen.findByText('Display Preview')
     expect(screen.queryByText('Idle')).not.toBeInTheDocument()
     expect(screen.queryByText('Connected')).not.toBeInTheDocument()
-    expect(document.body.textContent).not.toMatch(/Responsive Web|Mobile Store Site|Element Type/)
+    expect(document.body.textContent).not.toMatch(/Element Type/)
+  })
+
+  /* Ticket, 28 Sep 2026: Website and Mobile App added to Touch Point,
+     HQ-only (Advertiser/Stores greyed out — advertiser-settings.test.ts and
+     playlist-management.test.tsx cover the slot-owner side of that), with
+     their own canvas defaults and Multi-Zone Layout / non-QR features
+     hidden. Digital Signage and Kiosk must behave exactly as before. */
+  it('offers Website and Mobile App with their own canvas defaults, hides Multi-Zone Layout and non-QR features for them, and leaves Digital Signage/Kiosk untouched', async () => {
+    renderAt('/display-types?id=landscape', true)
+    await screen.findByText('Display Preview')
+    fireEvent.click(screen.getByRole('button', { name: /New display type/ }))
+
+    const width = () => screen.getByLabelText('Canvas width') as HTMLInputElement
+    const height = () => screen.getByLabelText('Canvas height') as HTMLInputElement
+    expect(width().value).toBe('1920')
+    expect(height().value).toBe('1080')
+
+    const selectTouchPoint = async (name: string) => {
+      fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Touch Point' }))
+      const option = await waitFor(() => {
+        const found = Array.from(document.querySelectorAll('.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option')).find((o) => o.textContent?.includes(name))
+        expect(found).toBeTruthy()
+        return found as HTMLElement
+      })
+      fireEvent.click(option)
+    }
+
+    await selectTouchPoint('Mobile App')
+    expect(width().value).toBe('330')
+    expect(height().value).toBe('400')
+    /* No physical canvas to zone. */
+    expect(screen.queryByRole('region', { name: 'Multi-Zone Layout' })).not.toBeInTheDocument()
+    /* Phantom Zone / QR Control stays exactly as it is ("as today"). */
+    expect(screen.getByRole('region', { name: 'Phantom Zone' })).toBeInTheDocument()
+    /* Enabled Features is dropped entirely for a mobile app — QR Control,
+       the only feature it kept, doesn't apply (ticket, 28 Sep 2026). */
+    expect(screen.queryByRole('region', { name: 'Enabled Features' })).not.toBeInTheDocument()
+
+    await selectTouchPoint('Website')
+    expect(width().value).toBe('1920')
+    expect(height().value).toBe('1080')
+    /* Website keeps QR Control and nothing else. */
+    const features = screen.getByRole('region', { name: 'Enabled Features' })
+    fireEvent.click(within(features).getByRole('button', { expanded: false }))
+    expect(within(features).getByRole('switch', { name: /Enable QR Control/ })).toBeInTheDocument()
+    expect(within(features).queryByRole('switch', { name: /In-Store Radio/ })).not.toBeInTheDocument()
+    expect(within(features).queryByRole('switch', { name: /MIST/ })).not.toBeInTheDocument()
+    expect(within(features).queryByRole('switch', { name: /AI-Agent/ })).not.toBeInTheDocument()
+    expect(within(features).queryByRole('switch', { name: /Vision\/AI/ })).not.toBeInTheDocument()
+
+    /* Digital Signage and Kiosk: unaffected — a manual canvas edit survives
+       switching touch point, and Multi-Zone Layout is back. */
+    fireEvent.change(width(), { target: { value: '800' } })
+    await selectTouchPoint('Kiosk')
+    expect(width().value).toBe('800')
+    expect(screen.getByRole('region', { name: 'Multi-Zone Layout' })).toBeInTheDocument()
   })
 
   /* Ticket, 27 Sep 2026: Playlist Settings is a collapsible panel like
@@ -98,7 +154,7 @@ describe('Display Types page', () => {
     fireEvent.click(within(panel()).getByRole('button', { expanded: true }))
     fireEvent.click(screen.getByRole('button', { name: 'Add new playlist' }))
 
-    fireEvent.click(within(panel()).getByRole('button', { expanded: false }))
+    /* Opens by itself now (ticket ThP7DPGo17FmPJdDKM7S). */
     expect(within(panel()).getByText(/This new playlist will be created with these settings/)).toBeInTheDocument()
     const autoRotation = within(panel()).getByRole('combobox', { name: 'Campaign Auto-Rotation' })
     const autoPlay = within(panel()).getByRole('combobox', { name: 'Campaign Auto-Play' })
@@ -206,10 +262,43 @@ describe('Display Types page', () => {
     await screen.findByText('Display Preview')
     const panel = () => screen.getByRole('region', { name: 'Playlist Settings' })
     fireEvent.click(await screen.findByRole('button', { name: 'Add new playlist' }))
-    fireEvent.click(within(panel()).getByRole('button', { expanded: false }))
     expect(within(panel()).getByText(/This new playlist will be created with these settings/)).toBeInTheDocument()
 
     fireEvent.click(await screen.findByRole('button', { name: 'Save changes' }))
     await waitFor(() => expect(within(panel()).getByText('Settings managed within Playlist Management.')).toBeInTheDocument())
   })
+  /* Ticket ThP7DPGo17FmPJdDKM7S (28 Sep 2026): "Add new playlist" opens
+     every section — Phantom Zone, Enabled Features, Multi-Zone Layout and
+     Playlist Settings — and the new playlist starts with the current
+     default playlist's settings, still editable, rather than blank
+     defaults. */
+  it('Add new playlist opens every section and starts from the current playlist\'s settings', async () => {
+    const settings = { assetPosition: 'Top-Right', assetFill: 'Stretch', campaignTransition: 'Slide', campaignAutoRotation: 'Auto-Rotate On', campaignAutoPlay: 'Auto-Play On' }
+    const withSettings: Record<string, unknown> = {
+      ...responses,
+      '/api/admin/v1/playlists': { items: [
+        { id: 'pl_landscape', name: 'Landscape Playlist', autoCreatedFor: 'landscape', playlistSettings: settings, assignments: [] },
+        { id: 'pl_menu', name: 'Menu Board Playlist', autoCreatedFor: 'menu_board', playlistSettings: {}, assignments: [] },
+      ] },
+    }
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response(JSON.stringify(withSettings[url.split('?')[0]] ?? {}), { status: 200 })))
+    renderAt('/display-types?id=landscape', true)
+    await screen.findByText('Display Preview')
+    for (const name of ['Phantom Zone', 'Enabled Features', 'Multi-Zone Layout', 'Playlist Settings']) {
+      expect(within(screen.getByRole('region', { name })).queryByRole('button', { expanded: true })).not.toBeInTheDocument()
+    }
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add new playlist' }))
+
+    for (const name of ['Phantom Zone', 'Enabled Features', 'Multi-Zone Layout', 'Playlist Settings']) {
+      expect(within(screen.getByRole('region', { name })).getByRole('button', { expanded: true })).toBeInTheDocument()
+    }
+    const panel = screen.getByRole('region', { name: 'Playlist Settings' })
+    expect(within(panel).getByText(/This new playlist will be created with these settings/)).toBeInTheDocument()
+    for (const [label, value] of [['Asset Position', 'Top-Right'], ['Asset Fill', 'Stretch'], ['Campaign Transition', 'Slide'], ['Campaign Auto-Rotation', 'Auto-Rotate On'], ['Campaign Auto-Play', 'Auto-Play On']]) {
+      const select = within(panel).getByRole('combobox', { name: label }).closest('.ant-select')
+      expect(select).toHaveTextContent(value)
+      expect(select).not.toHaveClass('ant-select-disabled')
+    }
+  }, 30000)
 })

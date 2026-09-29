@@ -26,4 +26,9 @@ describe('approval state machine (spec §3)', () => {
     expect(transition('approved', { type: 'change', requiresApproval: false })).toEqual({ status: 'approved', mode: 'auto', audit: ['returned_for_review', 'auto_approved'] })
     expect(transition('draft', { type: 'change', requiresApproval: true })).toEqual({ status: 'draft', mode: null, audit: [] })
   })
+  it('safe reuse (Q40): a version every asset of which a human already cleared is approved without review', () => {
+    expect(transition('draft', { type: 'submit', requiresApproval: true, preCleared: true })).toEqual({ status: 'approved', mode: 'auto', audit: ['submitted', 'reused_clearance'] })
+    expect(transition('approved', { type: 'change', requiresApproval: true, preCleared: true })).toEqual({ status: 'approved', mode: 'auto', audit: ['returned_for_review', 'reused_clearance'] })
+    expect(transition('approved', { type: 'change', requiresApproval: true, preCleared: false }).status).toBe('awaiting_approval')
+  })
 })

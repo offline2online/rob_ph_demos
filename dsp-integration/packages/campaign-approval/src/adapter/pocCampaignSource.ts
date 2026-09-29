@@ -15,7 +15,11 @@ export interface PocLookups {
 }
 
 interface Row { id: string; name: string; source: CampaignRef['source']; advertiser_id: string | null; partner_id: string | null; display_type_id: string | null; activation_enabled: number; targeting: string | null }
-interface AssetRow { version: number; file: string; mime_type: string; width: number; height: number }
+interface AssetRow { version: number; role: string; file: string; mime_type: string; width: number; height: number; content_hash: string | null }
+
+/* This adapter's assetVersion is `v<n>`, n the highest campaign_assets
+   version in it; the host resolves a version to its assets with this. */
+export const assetVersionNumber = (assetVersion: string) => Number(assetVersion.replace(/^v/, '')) || 0
 
 export function pocCampaignSource(db: SqlDb, lookups: PocLookups): CampaignSource {
   const listeners = new Set<(id: string) => void>()
@@ -24,9 +28,13 @@ export function pocCampaignSource(db: SqlDb, lookups: PocLookups): CampaignSourc
        submission (decision, 22 Sep) — or, for an older record predating
        the requirement, whichever targeted version's was uploaded most
        recently, so the panel is never blank just because there was none. */
-    const latest = db.prepare("SELECT version, file, mime_type, width, height FROM campaign_assets WHERE campaign_id = ? ORDER BY (role = 'default') DESC, version DESC LIMIT 1").get(r.id) as AssetRow | undefined
-    const version = (db.prepare('SELECT MAX(version) AS v FROM campaign_assets WHERE campaign_id = ?').get(r.id) as { v: number | null } | undefined)?.v ?? 0
-    const creative: Creative | null = latest ? { assetUrl: lookups.assetUrl(latest.file), mimeType: latest.mime_type, width: latest.width, height: latest.height } : null
+    /* One read of the current version's assets (an edit a reviewer rejected
+       is discarded, so never part of it — Q38): the latest per role. */
+    const rows = db.prepare('SELECT version, role, file, mime_type, width, height, content_hash FROM campaign_assets WHERE campaign_id = ? AND discarded_at IS NULL ORDER BY version').all(r.id) as unknown as AssetRow[]
+    const byRole = [...new Map(rows.map((a) => [a.role, a])).values()]
+    const latest = byRole.find((a) => a.role === 'default') ?? [...byRole].sort((a, b) => b.version - a.version)[0]
+    const version = rows.length ? rows[rows.length - 1].version : 0
+    const creative: Creative | null = latest ? { assetUrl: lookups.assetUrl(latest.file), mimeType: latest.mime_type, width: latest.width, height: latest.height, ...(latest.content_hash ? { contentHash: latest.content_hash } : {}) } : null
     return {
       campaignId: r.id, name: r.name, source: r.source,
       advertiserId: r.advertiser_id, advertiserName: r.advertiser_id ? lookups.advertiserName(r.advertiser_id) : null,
@@ -35,6 +43,7 @@ export function pocCampaignSource(db: SqlDb, lookups: PocLookups): CampaignSourc
       assetVersion: `v${version}`,
       targetingSummary: lookups.targetingSummary(r.targeting ? JSON.parse(r.targeting) : null),
       creative,
+      assets: byRole.map((a) => ({ assetId: a.role, ...(a.content_hash ? { contentHash: a.content_hash } : {}) })),
       canvas: r.display_type_id ? lookups.canvas(r.display_type_id) : null,
     }
   }
@@ -53,6 +62,10 @@ export function pocCampaignSource(db: SqlDb, lookups: PocLookups): CampaignSourc
       db.prepare('UPDATE campaigns SET activation_enabled = ? WHERE id = ?').run(enabled ? 1 : 0, id)
       listeners.forEach((l) => l(id))
       return get(id)
+    },
+    discardEditsAfter(id, assetVersion) {
+      db.prepare('UPDATE campaign_assets SET discarded_at = ? WHERE campaign_id = ? AND version > ? AND discarded_at IS NULL').run(new Date().toISOString(), id, assetVersionNumber(assetVersion))
+      listeners.forEach((l) => l(id))
     },
     onCampaignChanged(listener) {
       listeners.add(listener)
