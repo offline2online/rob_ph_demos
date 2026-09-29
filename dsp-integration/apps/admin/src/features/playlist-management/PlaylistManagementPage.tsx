@@ -35,7 +35,7 @@ import { useReportDirty } from '../../shared/UnsavedChanges'
 import { useDraft } from '../../shared/useDraft'
 import { T } from '../../theme/phTheme'
 import { saveDisplayTypes, savePlaylistSettings, useAvailableInventory, useDisplayTypes, usePartners, usePlaylists } from '../display-types/api'
-import { capSummary, isCappedFor, isZoned, normaliseSlots, styleSummary } from '../display-types/model'
+import { capSummary, isCappedFor, normaliseSlots, styleSummary } from '../display-types/model'
 import { PlaylistCapSlotsFields } from './PlaylistCapSlotsFields'
 import { PlaylistStyleFields } from './PlaylistStyleFields'
 
@@ -64,11 +64,9 @@ interface Ctx {
 }
 type Params = ICellRendererParams<Row, unknown, { current: Ctx }>
 
-/* A multi-zone display type's default playlist only carries the layout;
-   playlists are managed per zone, so it is hidden here (ticket, 28 Sep 2026)
-   unless it is also in use somewhere else (another display type, or a zone). */
-const isLayoutOnly = (p: Playlist, types: DisplayType[] | undefined) =>
-  !!types && p.assignments.length > 0 && p.assignments.every((a) => !a.zoneId && isZoned(types.find((t) => t.id === a.displayTypeId) ?? ({} as DisplayType)))
+/* A multi-zone display type's default playlist carries the layout, but it
+   stays listed here (Rob, 29 Sep 2026 — it used to be hidden, which made a
+   playlist such as Eyelite vanish when Multi-Zone was switched on again). */
 const where = (a: Playlist['assignments'][number]) => a.zoneName ?? 'Default playlist'
 const Pill = ({ children }: { children: React.ReactNode }) => (
   <span className="inline-flex h-[22px] items-center rounded-full px-2 whitespace-nowrap" style={{ fontSize: 12, color: T.muted, background: 'rgba(0,0,0,0.04)' }}>{children}</span>
@@ -340,7 +338,7 @@ export function PlaylistManagementPage({ flags }: { flags: Flags }) {
   const appliedDeepLink = useRef(false)
   const wantedDisplayTypeId = searchParams.get('displayTypeId')
   if (!appliedDeepLink.current && wantedDisplayTypeId && playlists.data && settingsExpanded === null) {
-    const shown = playlists.data.filter((p) => !isLayoutOnly(p, types.data))
+    const shown = playlists.data
     const match = shown.find((p) => p.assignments.some((a) => a.displayTypeId === wantedDisplayTypeId && !a.zoneId))
       ?? shown.find((p) => p.assignments.some((a) => a.displayTypeId === wantedDisplayTypeId))
     if (match) {
@@ -360,7 +358,7 @@ export function PlaylistManagementPage({ flags }: { flags: Flags }) {
 
   const refresh = () => Promise.all([qc.invalidateQueries({ queryKey: ['playlists'] }), qc.invalidateQueries({ queryKey: ['display-types'] })])
   const fail = (e: unknown, fallback: string) => message.error(e instanceof ApiRequestError ? [e.message, ...(e.body?.error.details ?? []).map((d) => d.reason)].join(' ') : fallback)
-  const items = (playlists.data ?? []).filter((p) => !isLayoutOnly(p, types.data))
+  const items = playlists.data ?? []
   /* Display type names, for the auto-created pill (a deleted type falls back to its id). */
   const typeNames = useMemo(() => new Map(items.flatMap((p) => p.assignments.map((a) => [a.displayTypeId, a.displayTypeName] as const))), [items])
 
