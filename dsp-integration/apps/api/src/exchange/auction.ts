@@ -177,6 +177,8 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, bidder
     const seat = partner?.seats.find((s) => advertiserSlug(s.name) === r.advertiserId)
     const refusal = !partner || !seat
       ? { reason: 'The advertiser is no longer on this DSP.' }
+      : partner.status !== 'connected'
+      ? { reason: `${partner.name} is not connected.` }
       : (await checkCampaign(ctx, r.campaignId as string)) ?? checkAdvertiser(ctx, p, partner, seat.name, seat.domain ? [seat.domain] : [], seat.id) ?? checkTargeting(p, r.pricingType) ?? checkFloor(ctx, r.bidCpm as number, r.pricingType, r.advertiserId)
     if (refusal) ctx.reservations.update(r.id, { status: 'rejected', reason: refusal.reason })
     else candidates.push(r)
@@ -296,9 +298,8 @@ async function recordDspBid(ctx: Context, p: PositionRef, dsp: PartnerRecord, st
 
   const campaignId = campaignForCrid(ctx, dsp.id, bid.crid)
   if (!campaignId) {
-    if (budget.creativeFetches <= 0) return reject(`Unknown creative ${bid.crid}; it will be retrieved for review from a later window.`, { advertiserId })
-    budget.creativeFetches--
-    return reject(await queueCreative(ctx, dsp, { crid: bid.crid, iurl: bid.iurl }, { id: advertiserId, name: seat.name }, p), { advertiserId })
+    /* The one-retrieval budget is spent inside queueCreative, only once a fetch is really attempted: a refused (off-path) URL must not use it up. */
+    return reject(await queueCreative(ctx, dsp, { crid: bid.crid, iurl: bid.iurl }, { id: advertiserId, name: seat.name }, p, budget), { advertiserId })
   }
   const campaign = ctx.campaigns.getCampaign(campaignId)
   if (!campaign) return reject(`Creative ${bid.crid} is still being retrieved for review.`, { advertiserId })

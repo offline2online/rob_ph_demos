@@ -29,10 +29,15 @@ export function underBase(url: string, base: string) {
 }
 
 /* Returns why the bid was discarded. */
-export async function queueCreative(ctx: Context, partner: PartnerRecord, bid: { crid: string; iurl?: string }, advertiser: { id: string; name: string }, p: PositionRef): Promise<string> {
+export async function queueCreative(ctx: Context, partner: PartnerRecord, bid: { crid: string; iurl?: string }, advertiser: { id: string; name: string }, p: PositionRef, budget?: { creativeFetches: number }): Promise<string> {
   const base = ctx.config.bidders[partner.provider as keyof Context['config']['bidders']]?.creativeBase
   /* Only fetched from the DSP's own creative host, never an arbitrary URL in a bid. */
   if (!bid.iurl || !base || !underBase(bid.iurl, base)) return `Unknown creative ${bid.crid}, and no creative URL from ${partner.name} to retrieve it from.`
+  /* One retrieval per DSP response: spent only now that a fetch will really be attempted. */
+  if (budget) {
+    if (budget.creativeFetches <= 0) return `Unknown creative ${bid.crid}; it will be retrieved for review from a later window.`
+    budget.creativeFetches--
+  }
 
   /* Claim the crid before fetching: the (partner_id, crid) primary key lets
      exactly one concurrent auction retrieve a given creative. A loser skips
