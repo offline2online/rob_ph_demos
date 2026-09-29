@@ -2926,9 +2926,10 @@ the system now guarantees:
 - **Source-instance identifier** (`platformInstance: { instanceId, domain
   }`), reserved on the canonical event schema and on booking/reservation
   records, anchored to the stable domain and never the `sellers.json`
-  seller ID. *(spec only; reserved as nullable, unused columns —
-  `exchange.platform_instance_id`, `reservations.source_instance_id`,
-  migration 0022 — and `sourceInstanceId` on the v1 event)*
+  seller ID. *(spec only; no columns — migration 0022 reserved
+  `exchange.platform_instance_id` and `reservations.source_instance_id`,
+  and migration 0032 dropped them again on 30 Sep 2026 because nothing
+  used them; `sourceInstanceId` stays on the v1 event shape)*
 - **Agent-to-agent platform interface**: the inter-platform integration
   defined as an agent-consumable (MCP-layer) surface, first-class and
   separate from the tier-2 PH-native API. *(spec only)*

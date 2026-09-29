@@ -152,7 +152,7 @@ provide one breaks something specific, named here.
 |---|---|---|
 | `0001` (display types, playlists, displays, campaigns, plays), `0012` (slot bookings), `0014` (stores) | **PH Core stand-ins** | Dropped. The seams above read and write the real services instead. |
 | `0002`–`0011`, `0013`, `0015`–`0019` | This build | Kept. Plain, Postgres-compatible SQL. |
-| `0020` (indexes), `0021` (one live winner per window), `0022` (reserved instance identity) | This build (review, 23 Sep 2026) | Kept. See "The database must enforce" below for the parts that also apply to PH Core tables. |
+| `0020` (indexes), `0021` (one live winner per window), `0022` (reserved instance identity, dropped again by `0032`) | This build (review, 23 Sep 2026) | Kept. See "The database must enforce" below for the parts that also apply to PH Core tables. |
 | `0023` (the DSP integration switch) | This build (Rob, 24 Sep 2026) | Kept, unless the platform already holds company feature switches (see "Open" below). |
 | `0024` (`auction_runs`: which process clears a window) | This build (24 Sep 2026) | Kept: it lets several instances share the scheduled work. |
 | `0025` (covering index on `plays`) | Stand-in only | Dropped with `plays`; the playback store answers `totals` itself. |
@@ -365,11 +365,20 @@ These are reserved names and places, with no behaviour yet:
   - **Nothing produces, stores or reads these events yet.** The existing
     PH analytics system stays the system of record.
   - The exhaustive field reference is open question 53.
-- **Instance identity** (migration 0022).
-  - `exchange.platform_instance_id` and `reservations.source_instance_id`
-    are nullable and unused, and no API returns them.
-  - This identity is deliberately **not** the `sellers.json` seller ID.
-    It maps to the instance's stable domain instead.
+- **Instance identity** (a seam only: a name and an intent, no columns,
+  no behaviour).
+  - Migration 0022 briefly reserved two nullable columns for it
+    (`exchange.platform_instance_id`, `reservations.source_instance_id`).
+    Nothing produced, read or returned them, so migration 0032 dropped
+    them (Rob, 30 Sep 2026). Federation identity is a separate
+    integration for a later release, when PH instances negotiate with
+    each other, and it gets storage only when that integration exists.
+  - This identity is deliberately **not** the `sellers.json` seller ID
+    (the retailer's identity to the ad ecosystem, held in the
+    seller-of-record fields). It maps to the instance's stable domain
+    instead, so the later integration builds against a clean seam
+    rather than inheriting orphan columns beside the seller-of-record
+    fields.
 - **Agent-to-agent interface** (§9.4).
   - This is a decision, not code: when PH instances negotiate with each
     other, the surface will be agent-consumable (MCP-layer) and first
