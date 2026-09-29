@@ -208,6 +208,48 @@ also holds each DSP's credential form. Adding a DSP is one new module, one
 line in `registry.ts`, its `PROVIDERS` entry and its endpoints in
 `config.ts`.
 
+### Billing — one module, one seam (30 Sep 2026)
+
+Billing and the two-period delivery-term rules live in one module,
+`apps/api/src/billing/`, instead of being spread through the exchange.
+It has no seam with PH Core of its own: it reads plays only through the
+existing `PlaybackSource.totals`, and `context.ts` stays the only file
+that chooses an implementation (nothing under `billing/` constructs a
+database or a platform source; `apps/api/test/billing-boundary.test.ts`
+fails if it does). Two entry points are public: `billing` (`index.ts`) and
+`billing/term` (pure predicates over a deal, safe for the domain and the
+routes to import). Everything else in the folder is internal, and
+`billing-boundary.test.ts` fails if code outside it reaches in.
+
+What the module must guarantee:
+
+- **`billReservation(ctx, reservation, position, totals)`** — a cleared
+  reservation plus the playback totals for its window in, one line item
+  out. The maths (`computeLineItem`) is pure; the write is idempotent on
+  `billing_line_items.reservation_id`, so two API instances or a CronJob
+  beside the API bill a window once. A second call returns null.
+- **Inputs are the reservation and `PlaybackSource.totals` only.** Plays
+  that did not happen (display offline, store closed, loop cut short) are
+  not billed (Q29). `runBilling` is the loop around it: what is billable
+  now (`ReservationRepo.billable`), each window checked against its own
+  billing unit.
+- **A locked term is always billed at the locked rate.**
+  `bookLockedTermWindow` books each later window of a locked deal as its
+  own reservation at `lockedWin.cpm`, never below the effective floor
+  (OQ45), never for a disconnected DSP, and a window already sold answers
+  "Already sold" (migration 0021). `termStateAt(list, at)` answers
+  active / locked / auction-open for a window start; the auction, the
+  partner reservations route and the inventory status all ask it, so the
+  term is judged one way.
+- **Billing unit is the window length.** `billingUnitMs(ctx, position)`
+  is the slot's `billingUnitHours`, else its display type's default, else
+  the company play window (OQ27). It is not informational: a 168-hour
+  slot bills one line item a week.
+- **Engagement-based billing is declared, not built** (BUILD-PLAN
+  section 10). `billingBasis: 'engagement'` throws `NotImplementedError`
+  rather than billing an interactive campaign on plays that say nothing
+  about its engagement.
+
 ## Inbound boundaries — what this build offers
 
 Both inbound surfaces are specified in API.md. The limits below are part
