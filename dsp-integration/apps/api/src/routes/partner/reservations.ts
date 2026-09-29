@@ -6,6 +6,8 @@
 import { randomUUID } from 'node:crypto'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
+import { assignedOf } from '@ph-dsp/types'
+import { auctionOpenAt, isActiveAt, isTermLocked } from '../../domain/buyersLists'
 import { assignmentOf, biddingClosesAt, biddingOpensAt, effectivePartnerIds, findPosition, heldFor, windowStartOf } from '../../domain/positions'
 import { checkAdvertiser, checkCampaign, checkFloor, checkTargeting } from '../../exchange/enforcement'
 import { handOff } from '../../exchange/handoff'
@@ -25,6 +27,10 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
   app.post<{ Body: Body }>('/reservations', async (req, reply) => {
     const b = req.body ?? {}
     const partner = req.partner
+    /* A DSP that isn't connected can't write at all (spec §7), whatever else is
+       wrong with the body — disconnecting clears its seats, so validating the
+       advertiser first would answer 400 instead of 409. */
+    if (partner.status !== 'connected') throw conflict(`${partner.name} is not connected.`)
     const invalid: { field: string; reason: string }[] = []
     const seat = typeof b.advertiserId === 'string' ? partnerAdvertiser(partner, b.advertiserId) : null
     if (!seat) invalid.push({ field: 'advertiserId', reason: `Not an advertiser on ${partner.name}.` })
@@ -50,9 +56,18 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
     const now = ctx.clock().getTime()
     if (now < biddingOpensAt(ctx, start!).getTime()) throw conflict(`Bidding for that window opens at ${biddingOpensAt(ctx, start!).toISOString()}.`)
     if (now >= biddingClosesAt(ctx, start!).getTime() || auctionClaimed(ctx, windowStart)) throw conflict(`Bidding for that window closed at ${biddingClosesAt(ctx, start!).toISOString()}, when its auction ran.`)
-    if (partner.status !== 'connected') throw conflict(`${partner.name} is not connected.`)
     if (!ctx.displays.summaryByDisplayType(pos.displayType.id).displays) throw conflict('The position has no displays in that window.')
     const assignment = assignmentOf(pos.def)
+    /* A deal's bidding is open only until auctionCloses and never once its term
+       is locked (auctionOpenAt): a bid then would be left pending on a window
+       the deal no longer sells. */
+    if (assignment === 'deal' && b.type === 'bid') {
+      const listId = assignedOf(pos.def).buyersListId
+      const list = listId ? ctx.buyersLists.get(listId) : null
+      if (list && isActiveAt(list, windowStart) && !auctionOpenAt(list, windowStart)) {
+        throw conflict(isTermLocked(list) ? `This private auction's term is locked to a winning bid (${list.name}); its windows take no further bids.` : `Bidding on this private auction closed at ${list.auctionCloses} (${list.name}).`)
+      }
+    }
     if (b.type === 'reserve' && assignment !== 'reserved') throw conflict('Only a position held for this advertiser can be reserved; bid for it instead.')
     if (b.type === 'bid' && assignment === 'reserved') throw conflict('This position is held for this advertiser: reserve it instead of bidding.')
     const live = partner.mode === 'live'
@@ -64,7 +79,7 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
     /* Pre-auction enforcement, in the order a bid would fail. */
     const c = campaign!
     const refusal = (await checkCampaign(ctx, c.campaignId))
-      ?? checkAdvertiser(ctx, pos, partner, seat!.name, seat!.domain ? [seat!.domain] : [], seat!.id)
+      ?? checkAdvertiser(ctx, pos, partner, seat!.name, seat!.domain ? [seat!.domain] : [], seat!.id, windowStart)
       ?? checkTargeting(pos, c.pricingType)
       ?? checkFloor(ctx, b.bidCpm as number, c.pricingType, c.advertiserId)
     if (refusal) throw new HttpError(422, refusal.code, refusal.reason)

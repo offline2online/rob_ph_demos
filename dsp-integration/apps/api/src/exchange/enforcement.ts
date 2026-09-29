@@ -17,8 +17,10 @@ export interface Refusal { code: RefusalCode; reason: string }
 /* The blacklist always subtracts; the advertiser whitelist is what a
    whitelist-only position uses (spec §6); a deal (private auction) checks
    the buyers list's invited buyers instead — by seat name (brandEntity) or
-   seatId (dspSeatId) — and that its active window still covers now. */
-export function checkAdvertiser(ctx: Context, p: PositionRef, partner: PartnerRecord, name: string, domains: string[] = [], seatId?: string | null): Refusal | null {
+   seatId (dspSeatId) — and that its delivery term covers the play window
+   being sold (`windowStart`; the deal's term decides which windows it can
+   sell, not when the bid arrives). Without a window it falls back to now. */
+export function checkAdvertiser(ctx: Context, p: PositionRef, partner: PartnerRecord, name: string, domains: string[] = [], seatId?: string | null, windowStart?: string): Refusal | null {
   const eff = effectiveLists(partner, ctx.company.get())
   const blockedDomain = blockedDomains(partner, eff.blockList)
   if (isBlocked(name, eff) || domains.some((d) => blockedDomain.includes(d.trim().toLowerCase()))) return { code: 'advertiser_blocked', reason: `${name} is on the advertiser blacklist.` }
@@ -27,7 +29,7 @@ export function checkAdvertiser(ctx: Context, p: PositionRef, partner: PartnerRe
   if (assignment === 'deal') {
     const listId = assignedOf(p.def).buyersListId
     const list = listId ? ctx.buyersLists.get(listId) : null
-    if (!list || !isActiveAt(list, ctx.clock().toISOString()) || !isInvitedBuyer(list, name, seatId)) {
+    if (!list || !isActiveAt(list, windowStart ?? ctx.clock().toISOString()) || !isInvitedBuyer(list, name, seatId)) {
       return { code: 'not_invited', reason: `${name} is not an invited buyer on this private auction${list ? ` (${list.name})` : ''}.` }
     }
   }
