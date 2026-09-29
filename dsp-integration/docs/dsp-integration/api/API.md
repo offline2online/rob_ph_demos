@@ -316,6 +316,13 @@ that plugs into the existing campaign table (see
 
 ## POC stand-ins for the existing platform
 
+> **Venue and geo metadata (decision 29 Sep 2026, Q35).** PH Core owns venue
+> and geo metadata and is the system of record; the exchange reads it
+> read-only into inventory and targeting and keeps no copy. The
+> `/extensions` venue fields below are a POC stand-in for that read.
+> **Campaign status** is retrieved by polling `GET /v1/campaigns/{id}/status`;
+> there are no webhooks in this build (Q41).
+
 This repo is a standalone proof of concept. It can't reach the existing
 Personalisation Hub APIs, so these endpoints stand in for them. They are
 **POC only**: engineering replaces them with the existing APIs on

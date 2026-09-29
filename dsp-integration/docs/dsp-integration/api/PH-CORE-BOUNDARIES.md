@@ -312,3 +312,35 @@ These are reserved names and places, with no behaviour yet:
   like `Flags`.
 - **Venue and screen metadata per store and display** (spec §1). It is
   held on the display type for now, and has no PH Core seam yet.
+
+## Venue and geo metadata — owned by PH Core (decision 29 Sep 2026, Q35)
+
+PH Core already manages all store data for a retailer, including venue and
+geo metadata, and is the system of record. The exchange reads it read-only
+and surfaces it on the inventory and targeting responses; it keeps **no
+copy** on its own store record. If Core changes a store's venue or geo
+values, the next read reflects it. Nothing here writes them back.
+
+## Analytics event values billing consumes (decision 29 Sep 2026, Q53/Q54)
+
+Analytics — the event schema, its data partition and the consuming
+pipeline — is held by Personalisation Hub inside the PWA player and is
+managed **outside this project**. This project does not own or host it.
+It depends on the following values from that flow (billing:
+`apps/api/src/exchange/billing.ts`); the external system must supply them,
+per campaign, per position and per play window:
+
+| Value | Used for |
+|---|---|
+| Campaign id and position id | Attributing plays to the win or reservation |
+| Display id (per play) | Counting displays that actually played |
+| Play start time and duration, in seconds | Proof of play: `played` seconds in the window |
+| Window start and end (or timestamps that fall in it) | Bounding plays to the window |
+| Play count | Line item `plays` |
+| Displays in scope, share of voice | Deriving `expected` seconds |
+| Audience measure behind assumed views (VAC-d inputs) | `assumedViews` per window |
+
+Billing computes `realised VAC-d = assumed views × min(1, played / expected)`
+and `amount = realised VAC-d / 1000 × clearing CPM`. Plays that did not
+happen are not billed and there is no make-good (Q29). Closed-loop
+conversion attribution is not an input (Q55).
