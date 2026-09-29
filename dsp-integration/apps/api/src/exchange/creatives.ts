@@ -16,12 +16,12 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type { Context } from '../context'
 import { type Check, failed, fileChecks } from '../domain/assetChecks'
-import { dspAuditCheck } from '../domain/dspAudit'
 import { EXTENSION, readMedia } from '../domain/media'
 import type { PositionRef } from '../domain/positions'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 import { prepared } from '../db/db'
 import { readCapped } from '../dsp/bidder'
+import { providerOf } from '../dsp/registry'
 
 /* The campaign a DSP creative ID becomes: the same every time the crid is
    retrieved, so approval (and safe reuse) follows the crid. */
@@ -31,23 +31,15 @@ export const campaignForCrid = (ctx: Context, partnerId: string, crid: string) =
   (prepared(ctx.db, 'SELECT campaign_id FROM dsp_creatives WHERE partner_id = ? AND crid = ?').get(partnerId, crid) as { campaign_id: string } | undefined)?.campaign_id ?? null
 
 /* The creative URL in a bid may only point under the DSP's own creative
-   host and path. Compared after URL normalisation, so `…/creatives/../x`
-   (which a plain string prefix check lets through) is refused. */
-export function underBase(url: string, base: string) {
-  try {
-    const u = new URL(url)
-    const b = new URL(base)
-    return u.origin === b.origin && u.pathname.startsWith(b.pathname) && !u.username && !u.password
-  } catch {
-    return false
-  }
-}
+   host and path: each DSP's own rule (DspProvider.ownsCreativeUrl), built
+   on this normalised comparison. */
+export { underBase } from '../dsp/DspProvider'
 
 /* Returns why the bid was discarded. */
 export async function queueCreative(ctx: Context, partner: PartnerRecord, bid: { crid: string; iurl?: string; ext?: { creativeAudit?: unknown } }, advertiser: { id: string; name: string }, p: PositionRef, budget?: { creativeFetches: number }): Promise<string> {
-  const base = ctx.config.bidders[partner.provider as keyof Context['config']['bidders']]?.creativeBase
+  const dsp = providerOf(ctx.dsp, partner.provider)
   /* Only fetched from the DSP's own creative host, never an arbitrary URL in a bid. */
-  if (!bid.iurl || !base || !underBase(bid.iurl, base)) return `Unknown creative ${bid.crid}, and no creative URL from ${partner.name} to retrieve it from.`
+  if (!bid.iurl || !dsp?.ownsCreativeUrl(bid.iurl)) return `Unknown creative ${bid.crid}, and no creative URL from ${partner.name} to retrieve it from.`
   /* One retrieval per DSP response: spent only now that a fetch will really be attempted. */
   if (budget) {
     if (budget.creativeFetches <= 0) return `Unknown creative ${bid.crid}; it will be retrieved for review from a later window.`
@@ -98,7 +90,7 @@ export async function queueCreative(ctx: Context, partner: PartnerRecord, bid: {
     contentHash: createHash('sha256').update(bytes).digest('hex'),
   })
   /* The DSP's audit rides along as information for the reviewer only. */
-  const audit = dspAuditCheck(partner.provider, bid.ext?.creativeAudit)
+  const audit = dsp.auditCheck(bid.ext?.creativeAudit)
   const all: Check[] = [...checks, { name: 'default_present', passed: true }, { name: 'targeting_permitted', passed: true }, ...(audit ? [audit] : [])]
   const view = before === 'approved' || before === 'awaiting_approval'
     ? await ctx.approvals.changed(campaignId, partner.name, all)

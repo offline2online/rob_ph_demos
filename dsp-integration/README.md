@@ -168,6 +168,7 @@ nothing here can even read it without the key.
 | `apps/api/` | Node + Fastify + SQLite (`node:sqlite`). All paths are served under `/api`. |
 | `apps/api/src/db/migrations/` | Versioned, reversible SQL migrations. `0001` is the stand-in for the existing platform's records; `0002`+ are this build's additive changes. `0020` adds hot-path indexes, `0021` makes "one live winner per position and window" a database guarantee, `0022` reserves the §9.3 instance identity (unused), `0023` adds the retailer's DSP integration switch (`exchange.enabled`, off by default), `0031` adds asset content hashes, discarded (rejected) edits and the asset version a booking hands off (Q38/Q40) |
 | `apps/api/src/http/rateLimit.ts` | The Partner API's per-partner token bucket (429 `rate_limited`) |
+| `apps/api/test/e2e/` | The end-to-end suite for the DSP demand paths, following the board doc *End-to-End Test Spec — DSP Demand Paths (v2)*: Run 1 open auction (`open-auction.test.ts`), Run 2 hardening, Run 3 private auction, Run 4 two-period, Run 5 reserved (`run2`–`run5-*.test.ts`). `harness.ts` stubs every PH Core seam: the DSP bidder (over `apps/dsp-mocks`, plus scripted, slow and abortable responses), DSP auth, playback (can be made to throw), an asset store keyed by content hash, a campaign source that records hand-offs, one token per partner, and a controllable clock. Nothing reaches the network. It runs with the rest of the API suite (`npm test`), or alone with `npx vitest run test/e2e` in `apps/api`. Every case passes; a case whose bug was fixed stays as its regression, naming the backlog id. It is the before/after gate for structural refactors. Results are board docs titled *E2E Test Results — …* |
 | `apps/api/bench/load.ts` | `npm run bench` — load benchmark for the Partner API and the auction, at demo scale or a synthetic large estate (see SECURITY-PERFORMANCE.md) |
 | `apps/api/src/platform/` | Stand-ins for the existing platform: `DisplayTypeSource`, `PlaylistSource`, `DisplaySource`, `StoreSource`, `CampaignSource` (including slot bookings for the hand-off), `PlaybackSource`, `AssetStore`, `AudienceSource` |
 | `apps/api/src/repos/` | This build's own records: partners (credentials encrypted), company advertiser settings, variable access, exchange, buyers lists (private-auction deals) |
@@ -266,8 +267,11 @@ npm test
   limits; `/healthz` and `/readyz` are the probes; SIGTERM shuts down
   cleanly. All of it is in `deploy/kubernetes/README.md`.
 - DSP connections: Google DSP (DV360), Amazon Ads DSP and The Trade Desk
-  each have a real-shaped client (`apps/api/src/dsp/`) pointed at the mock
-  DSP service. Amazon is seeded to reject its refresh token; accept it on the
+  are each one provider module in `apps/api/src/dsp/`, behind one
+  `DspProvider` interface (management client, bid URL, creative-path rule,
+  pre-approval audit hook), pointed at the mock DSP service. Adding a DSP is
+  one new module — see "DSP providers" in
+  `docs/dsp-integration/api/PH-CORE-BOUNDARIES.md`. Amazon is seeded to reject its refresh token; accept it on the
   mock's test page to connect.
 - `npm run dev:mocks` starts the mock DSP service on port 4100, with its test
   page at http://127.0.0.1:4100/. Use it to change each mock DSP's seats,

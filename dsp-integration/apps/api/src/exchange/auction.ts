@@ -54,6 +54,7 @@ import { campaignForCrid, queueCreative } from './creatives'
 import { checkAdvertiser, checkCampaign, checkCategories, checkFloor, checkTargeting, floorFor } from './enforcement'
 import { handOff } from './handoff'
 import { bidderTuning } from '../domain/partnerInput'
+import { providerOf } from '../dsp/registry'
 import { type Bid, type BidResponse, buildBidRequest } from './openrtb'
 
 export interface PositionOutcome {
@@ -165,7 +166,7 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, bidder
   /* Every DSP for this position at once; responses are then processed in
      the DSPs' own order so the outcome doesn't depend on who answered first. */
   const sent = dsps.flatMap((dsp) => {
-    const url = ctx.config.bidders[dsp.provider as keyof Context['config']['bidders']]?.bidUrl
+    const url = providerOf(ctx.dsp, dsp.provider)?.bidUrl
     if (!url) return []
     const reqId = `req_${randomUUID().slice(0, 12)}`
     return [{ dsp, reqId, res: ctx.bidder.send(url, buildBidRequest(ctx, p, dsp, reqId, view!), bidderTuning(dsp.bidder, ctx.config)) }]
