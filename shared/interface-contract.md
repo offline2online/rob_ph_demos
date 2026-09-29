@@ -294,3 +294,13 @@ attributes).
   partner? Per-impression trigger disclosure is safe on its own; thin
   segments queried repeatedly are an inference channel (Display Types open
   question 30).
+
+## Decisions of 29 Sep 2026 touching the PH Core boundary
+
+- **Venue and geo metadata** are owned by PH Core (system of record) and
+  consumed read-only by Display Types & DSP Integration. No duplicate store
+  on the exchange side. (Q35)
+- **Analytics** (event schema, partition, pipeline) is owned by PH in the
+  PWA player, outside Display Types & DSP Integration. That project only
+  consumes the event values billing needs, listed in its
+  `api/PH-CORE-BOUNDARIES.md`. (Q53, Q54)

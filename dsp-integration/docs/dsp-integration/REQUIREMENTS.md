@@ -2815,6 +2815,59 @@ the system now guarantees:
   defined as an agent-consumable (MCP-layer) surface, first-class and
   separate from the tier-2 PH-native API. *(spec only)*
 
+## Decisions of 29 Sep 2026 (Rob) — spec alignment
+
+These record where the decisions below change or confirm what the sections
+above say. Where a section above still reads differently, this section wins
+until that section is edited.
+
+- **Approval rights (Q39; §3 "Campaign asset approval").** Approval is done
+  by any user with access to the campaign approvals section. There is no
+  dedicated approver role and no store-level approval step. Any wording
+  above implying a specific HQ Admin approver role, or optional store-level
+  approval, is superseded.
+- **Sensor-derived audience (Q34; §4 "Pricing", personalised multiplier).**
+  Camera- or sensor-detected audience attributes qualify a campaign as
+  personalised and are priced on that basis. There is no distinct sensor
+  multiplier. See Q49 for the exposure default.
+- **Partial-estate delivery (Q29; §4 "Billing", §5 "Reserved" and
+  "Private auctions").** Partial-estate delivery bills on realised VAC-d,
+  with no make-good or shortfall remedy in this build. Delivery risk sits
+  where each mode already places it: the open auction promises no volume;
+  a reserved slot has a fixed premium and the brand carries any shortfall;
+  a two-period private auction locks the rate but volume varies, so the
+  advertiser pays for actual views, never a guaranteed number.
+- **Advertiser notification (Q41; §6 Partner API).** Campaign status is
+  retrieved by polling `GET /v1/campaigns/{id}/status`. Webhook push is out
+  of scope for this build.
+- **Variables (Q43, Q44; §6, §9, Functional requirements).** Variables are
+  platform-defined set values; retailers do not manage them. Environmental
+  attributes (weather, stock levels) are platform-defined variables held as
+  segments in the existing variable store, ingested from external signals
+  and evaluated like any other variable, not new data sources.
+  **FUTURE RELEASE:** retailers will later be able to add their own
+  variables to a customer's live profile. Not in this build.
+- **Shared attributes (Q49; §6).** CV Gender and Estimated Age are covered
+  by the existing shared-attributes control, which the retailer turns on or
+  off. No separate default-exposure decision remains open.
+- **Venue and geo metadata (Q35; §5, §6, §8).** PH Core is the system of
+  record and this project reads venue and geo metadata from it read-only,
+  surfacing it into inventory and targeting. The exchange's store record
+  holds no copy. See `api/PH-CORE-BOUNDARIES.md` ("Boundaries with PH Core").
+- **Analytics (Q53, Q54; §4 "Billing", §9 "Analytics foundation").** The
+  canonical event schema, its partition and its consuming pipeline are
+  external: held by Personalisation Hub in the PWA player and managed
+  outside this project. This project depends on them through an API
+  contract listing the event values billing needs
+  (`api/PH-CORE-BOUNDARIES.md` → "Analytics event values billing consumes").
+- **Closed-loop attribution (Q55; §9).** The identity-bridge layer is a
+  future, separate workstream needing privacy and consent design. Billing
+  does not depend on it.
+- **Federation (Q56; §7 PH as SSP, architecture).** The current model is
+  single-instance, self-hosted per retailer VPC. Federation, cross-instance
+  trust and discovery are a future workstream needing its own design
+  (trust, identity, discovery, settlement).
+
 ## Open questions
 
 Numbering is kept from earlier revisions for traceability; questions about
@@ -2830,20 +2883,25 @@ partner-contributed attributes have been removed with that scope.
 27. **Play-window length.** 24 hours is the working assumption; the real
     figure is a commercial decision crossed with how long the existing
     platform takes to distribute assets across the estate.
-29. **Partial-estate delivery.** If a won campaign only played on part of the
-    estate in its window (per existing playback data), what was sold and how
-    is it billed? Needs a guarantee model.
+29. **Partial-estate delivery.** *Resolved (decision, Rob, 29 Sep 2026):* no
+    guarantee or make-good model in this build. Every assignment mode bills
+    on realised VAC-d (§4 "Billing"); plays that did not happen are not
+    billed. See "Decisions of 29 Sep 2026" below.
 30. **Minimum-volume floor on partner analytics.** *Moved out of this
     project:* campaign playback analytics, including what advertisers see,
     are the existing system's.
 32. **Supply architecture.** *Resolved:* PH is the SSP; onboarding order
     DV360 → Amazon Ads DSP → The Trade Desk.
 33. **Seller of record.** *Resolved:* the client running the instance.
-34. **Is a sensor-derived audience multiplier tradeable**, or only
-    reportable? *Still open* — §9.2 gives the multiplier a schema home and a
-    `confidence` value so either answer is supportable without a second
-    pipeline, but does not itself answer the question.
-35. **Venue and geo metadata has no home yet** on the store record.
+34. **Sensor-derived audience multiplier.** *Resolved (decision, Rob, 29 Sep
+    2026):* there is no separate sensor multiplier. A camera-detected
+    attribute (e.g. gender, estimated age) makes the campaign *personalised*,
+    which already takes the personalised multiplier (1.5, §4) and is
+    tradeable through the floor. See open question 49 for exposure to DSPs.
+35. **Venue and geo metadata.** *Resolved (decision, Rob, 29 Sep 2026):* PH
+    Core already manages all store data, venue and geo metadata included,
+    and is the system of record. This project reads it from Core and stores
+    no copy on the exchange side. See `api/PH-CORE-BOUNDARIES.md`.
 36. **Transaction association** (linking transactions to campaign plays).
     *Moved out of this project:* it belongs with the existing playback
     analytics.
@@ -2852,8 +2910,9 @@ partner-contributed attributes have been removed with that scope.
 38. **Re-approval behaviour.** When an approved campaign is changed, does the
     previously approved version keep running until the new one is approved,
     or does the campaign stop?
-39. **Who can approve.** Which HQ Admin role holds the approve permission in
-    the Campaigns section, and is store-level approval ever needed?
+39. **Who can approve.** *Resolved (decision, Rob, 29 Sep 2026):* anyone with
+    access to the campaign approvals section can approve. No dedicated
+    approver role and no store-level approval step.
 40. **DSP creative audits — partially resolved (review, Sept 2026).** DV360,
     Amazon Ads DSP and The Trade Desk each run their own buy-side creative
     audit, and each also exposes a hook PH can occupy as the exchange/
@@ -2885,15 +2944,20 @@ partner-contributed attributes have been removed with that scope.
       the pre-auction fallback (§3, *Submission*: a bid carrying an unknown
       or unapproved creative is discarded pre-auction and queued for
       review) to catch anything that slips through.
-41. **Advertiser notification.** Status polling only, or a webhook on
-    approve/reject?
+41. **Advertiser notification.** *Resolved (decision, Rob, 29 Sep 2026):*
+    polling only for this build (`GET /v1/campaigns/{id}/status`); webhooks
+    are deferred as a fast-follow, to be revisited if a launch DSP needs push.
 42. **Floor unit.** *Resolved* (§4): the floor is a CPM, a cost per thousand
     assumed views, which is the unit DSPs bid in.
-43. **Variable management** (adding and editing targeting variables) is
-    deferred to a later release; which variables should be manageable first?
-44. **Environmental attributes** (weather, stock) are deferred to a later
-    release; when they return, are they new data sources or variable store
-    segments?
+43. **Variable management.** *Resolved (decision, Rob, 29 Sep 2026):* none
+    in this build. Variables are platform-defined set values that retailers
+    do not manage. **Future release:** retailers will be able to add their
+    own variables to a customer's live profile.
+44. **Environmental attributes.** *Resolved (decision, Rob, 29 Sep 2026):*
+    platform-defined variables held as segments in the existing variable
+    store, ingested from external signals (weather, stock levels) and
+    evaluated like any other variable. Not new data sources. See open
+    question 43.
 45. **Deals.** Preferred and programmatic-guaranteed deal IDs are deferred;
     this release is open auction only. When they return, are deals set per
     DSP or company-wide, and priced against the same floor?
@@ -2907,11 +2971,10 @@ partner-contributed attributes have been removed with that scope.
 48. **SKU list length.** What is the maximum number of SKUs one targeting
     condition can list (working default 100)? How far back the existing
     platform looks for viewed SKUs and Events is existing behaviour.
-49. **Computer Vision variables and DSPs.** Computer Vision Gender and
-    Estimated Age sit under Localisation Variables, so they default to *All
-    connected DSPs*. Should they instead default to *None*, like
-    Personalisation Variables, given they describe the person in front of
-    the screen?
+49. **Computer Vision variables and DSPs.** *Resolved (decision, Rob, 29 Sep
+    2026):* Gender and Estimated Age are governed by the existing
+    shared-attributes control, which the retailer turns on or off at their
+    discretion. There is no separate default to decide.
 50. **Auction clearing for overlapping localised bids.** *Superseded
     (decision, Rob, 22 Sep, ticket "Make default creative mandatory; retire
     localised-only booking path"), not answered.* This question was about
@@ -2939,24 +3002,16 @@ partner-contributed attributes have been removed with that scope.
     "Deals" — deferred), so building the flow means either resolving that
     deferral or treating a reserve-price booking as its own, narrower
     mechanism.
-53. **Canonical event schema — the exhaustive reference.** §9.1 reserves the
-    shape and principles (versioning, `source`/`timestamp`, optional/nullable
-    CV fields); a field-by-field reference with types, allowed values and a
-    schema changelog is not yet written, and has no owning document yet
-    (candidate: a new `docs/dsp-integration/EVENT-SCHEMA.md`, alongside
-    `openapi.yaml`/`API.md`).
-54. **Who hosts the canonical event schema's S3 partition and its consuming
-    pipeline** (§9.1) — this project, the existing analytics platform, or a
-    new shared service? Not decided; §9.1 only fixes the event model, not
-    who owns the transport.
-55. **The closed-loop attribution identity bridge** (§9.4) — matching an
-    advertiser exposure on one PH instance to a partner-side transaction on
-    another, without either side exposing raw identity. Flagged as the
-    natural remit of the device graph / digital ID layer, not this project;
-    not yet ticketed anywhere.
-56. **Federation trust and discovery** (§9.3, §9.4) — how two PH instances
-    establish that a `platformInstance.instanceId` is who it claims to be,
-    and how one instance's agent discovers another's, are both undefined.
-    §9.3 only reserves the identifier; §9.4 only fixes the surface's shape
-    (agent-consumable, not REST) — neither answers how instances actually
-    find or trust each other.
+53. **Canonical event schema.** *Resolved (decision, Rob, 29 Sep 2026):*
+    analytics is owned by Personalisation Hub inside the PWA player and
+    managed outside this project. This project defines only the API contract
+    of event values billing consumes (`api/PH-CORE-BOUNDARIES.md` → "Analytics
+    event values billing consumes").
+54. **Who hosts the schema's partition and pipeline.** *Resolved* with
+    question 53: PH, in the PWA player, outside this project.
+55. **The closed-loop attribution identity bridge** (§9.4). *Deferred
+    (decision, Rob, 29 Sep 2026):* to be covered separately later, out of
+    scope for this build. Billing does not depend on it.
+56. **Federation trust and discovery** (§9.3, §9.4). *Deferred (decision,
+    Rob, 29 Sep 2026):* a future direction, out of scope for this build.
+    The platform is single-instance, self-hosted in one retailer's VPC.
