@@ -1,11 +1,13 @@
-/* Sends OpenRTB bid requests to a DSP's bidder, within the platform's
-   default timeout and QPS ceiling (Q46: 300 ms, 500 QPS). No bid, a timeout
-   or an unreadable answer all count as no bid. */
+/* Sends OpenRTB bid requests to a DSP's bidder, within its timeout and QPS
+   ceiling: the DSP's own override where set, else the platform default
+   (Q46: 300 ms, 500 QPS). No bid, a timeout or an unreadable answer all
+   count as no bid. */
 import type { BidRequest, BidResponse } from '../exchange/openrtb'
 import type { Fetch } from './DspClient'
 
 export interface Bidder {
-  send(url: string, req: BidRequest): Promise<BidResponse | null>
+  /* tuning: this DSP's resolved settings; omitted, the bidder's defaults. */
+  send(url: string, req: BidRequest, tuning?: { qps: number; timeoutMs: number }): Promise<BidResponse | null>
 }
 
 /* Reads a response body, giving up past maxBytes (null). The timeout alone
@@ -34,9 +36,9 @@ export async function readCapped(res: Response, maxBytes: number): Promise<Buffe
 export function httpBidder(fetchImpl: Fetch, opts: { timeoutMs: number; qps: number; maxResponseBytes?: number }): Bidder {
   /* Requests to one URL are spaced at least 1000 / qps ms apart. */
   const next = new Map<string, number>()
-  const gap = 1000 / opts.qps
   return {
-    async send(url, req) {
+    async send(url, req, tuning) {
+      const gap = 1000 / (tuning?.qps ?? opts.qps)
       const now = Date.now()
       const at = Math.max(now, next.get(url) ?? 0)
       next.set(url, at + gap)
@@ -46,7 +48,7 @@ export function httpBidder(fetchImpl: Fetch, opts: { timeoutMs: number; qps: num
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-openrtb-version': '2.6' },
           body: JSON.stringify(req),
-          signal: AbortSignal.timeout(opts.timeoutMs),
+          signal: AbortSignal.timeout(tuning?.timeoutMs ?? opts.timeoutMs),
         })
         if (res.status !== 200) return null
         const body = await readCapped(res, opts.maxResponseBytes ?? 64 * 1024)

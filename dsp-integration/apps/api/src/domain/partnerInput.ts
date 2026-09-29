@@ -60,6 +60,12 @@ export const isPublicHttpsUrl = (s: string) => {
     return false
   }
 }
+const BIDDER_TUNING = [['qps', 1, 10_000, 'QPS ceiling'], ['timeoutMs', 50, 2_000, 'Bidder timeout']] as const
+
+/* A DSP's resolved bidder settings: its override, else the platform default (Q46). */
+export const bidderTuning = (b: PartnerRecord['bidder'], config: { bidderQps: number; bidderTimeoutMs: number }) =>
+  ({ qps: b.qps ?? config.bidderQps, timeoutMs: b.timeoutMs ?? config.bidderTimeoutMs })
+
 export const bidderComplete = (b: PartnerRecord['bidder']) => !!b.bidderEndpoint?.trim() && !!b.seatIds?.length
 
 export function applyPartnerInput(p: PartnerRecord, currentSecrets: Record<string, string>, body: PartnerInput, company: CompanySettings): { change?: PartnerChange; errors: Detail[]; conflict?: string } {
@@ -90,6 +96,15 @@ export function applyPartnerInput(p: PartnerRecord, currentSecrets: Record<strin
       bidder.bidderEndpoint = e
     }
     if (body.bidder.seatIds !== undefined) bidder.seatIds = cleanList(body.bidder.seatIds)
+    /* Per-DSP bidder tuning (Q46, decision 29 Sep 2026): an override wins
+       over the platform default (500 QPS, 300 ms); null clears it. */
+    for (const [k, min, max, label] of BIDDER_TUNING) {
+      const v = (body.bidder as Record<string, unknown>)[k]
+      if (v === undefined) continue
+      if (v === null) delete bidder[k]
+      else if (typeof v !== 'number' || !Number.isInteger(v) || v < min || v > max) errors.push({ field: `bidder.${k}`, reason: `${label}: a whole number from ${min} to ${max}, or empty for the platform default.` })
+      else bidder[k] = v
+    }
   }
 
   let { listsLinked, allowList, blockList, categoryAllowList, categoryBlockList } = p
