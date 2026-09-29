@@ -232,6 +232,13 @@ async function bookLockedTermWindow(ctx: Context, p: PositionRef, start: string,
   const win = list.lockedWin!
   /* The term is locked to its winner: any other bid for this window is told so, never left pending. */
   settlePending(ctx, p.positionId, start, `The term is locked at ${win.cpm} ${ctx.company.get().currency} CPM to another bid (${list.name}); no other bid takes this window.`)
+  /* Only a connected DSP can write (REQUIREMENTS §7): if the locked winner's
+     DSP has since disconnected or failed its re-test, book nothing and hand
+     nothing off; the window falls through to the default campaign. */
+  const partner = ctx.partners.get(win.partnerId)
+  if (!partner || partner.status !== 'connected') {
+    return { ...out, skipped: `Private auction: ${partner?.name ?? 'the locked DSP'} is not connected, so the locked window is not booked.` }
+  }
   let r: ReservationRecord
   try {
     r = ctx.reservations.insert({
