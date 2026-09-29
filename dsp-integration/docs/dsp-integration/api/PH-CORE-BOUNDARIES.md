@@ -162,13 +162,93 @@ provide one breaks something specific, named here.
 
 | To | How | Bounded by |
 |---|---|---|
-| DSP management APIs (DV360 API v4, Amazon Ads DSP, The Trade Desk v3) | `apps/api/src/dsp/*` clients, called on Connect / Re-test | Admin action only. They never run on a request path. |
-| DSP bidders (OpenRTB 2.6 DOOH) | `dsp/bidder.ts`, from the auction | Per request:<br>- 300 ms timeout<br>- 500 QPS per DSP<br>- 64 KB response cap<br>- responses must echo the request `id`; bids must match `impid` 1<br>- at most 10 bids per response<br>- price ≤ `maxBidCpm`<br>- a missing `cur` means USD |
-| DSP creative hosts | `exchange/creatives.ts`, for a bid carrying an unknown creative | - Only URLs under that DSP's own creative path, checked after normalisation.<br>- One retrieval per response, claimed once across concurrent auctions.<br>- Byte-capped at the asset size limit.<br>- 10 s timeout. |
+| DSP management APIs (DV360 API v4, Amazon Ads DSP, The Trade Desk v3) | Each DSP's own provider module in `apps/api/src/dsp/` (`DspProvider.connect`), called on Connect / Re-test | Admin action only. They never run on a request path. |
+| DSP bidders (OpenRTB 2.6 DOOH) | `dsp/bidder.ts`, from the auction, to the DSP's `DspProvider.bidUrl` | Per request:<br>- 300 ms timeout<br>- 500 QPS per DSP<br>- 64 KB response cap<br>- responses must echo the request `id`; bids must match `impid` 1<br>- at most 10 bids per response<br>- price ≤ `maxBidCpm`<br>- a missing `cur` means USD |
+| DSP creative hosts | `exchange/creatives.ts`, for a bid carrying an unknown creative | - Only URLs under that DSP's own creative path (`DspProvider.ownsCreativeUrl`), checked after normalisation.<br>- One retrieval per response, claimed once across concurrent auctions.<br>- Byte-capped at the asset size limit.<br>- 10 s timeout. |
 
 The POC points every one of these at the mock DSP service
 (`apps/dsp-mocks`). Real endpoints are configuration (`config.ts`,
 `.env`), not code.
+
+### DSP providers — one module per DSP (30 Sep 2026)
+
+Everything that differs between DSPs lives in that DSP's own module
+behind one interface, `DspProvider` (`apps/api/src/dsp/DspProvider.ts`):
+`googleDv360.ts`, `amazonDsp.ts`, `theTradeDesk.ts`. `dsp/registry.ts`
+lists them; `context.ts` wires them in as `ctx.dsp`, and stays the only
+file that chooses them. The auction, the creative path and the routes look
+a partner's DSP up by its provider key (`providerOf`) and call it blind —
+none of them branches on which DSP it is
+(`apps/api/test/dsp-providers.test.ts` fails if a DSP's key appears
+anywhere in `src/` outside `dsp/`, `config.ts` and the seed data).
+
+What each provider must guarantee:
+
+- **`connect(creds)`** — the management API (Connect / Re-test). Resolves
+  to `{ ok: true, seats }` or `{ ok: false, reason }` and never throws: an
+  unreachable DSP is a reason, not an exception. Each seat keeps the
+  advertiser's `domain` where the DSP gives one (bids are matched on
+  `adomain`). Admin action only; 10 s per call.
+- **`bidUrl`** — where OpenRTB 2.6 requests go. Unset, the DSP is sent no
+  requests. The request itself, and every bound on the response (the
+  `dsp/bidder.ts` row above), is shared by every DSP: there is no
+  per-DSP bid request or response adaptation in this build.
+- **`ownsCreativeUrl(url)`** — the creative-path rule. True only for a URL
+  under the DSP's own creative host and path after normalisation
+  (`underBase`), never one carrying credentials. No creative base
+  configured, it is always false and nothing is fetched.
+- **`auditCheck(raw)`** — the pre-approval hook (Q40). Reads the DSP's own
+  audit of a creative, in the DSP's own shape, into an **advisory**
+  `dsp_audit` check, or null when the DSP said nothing usable. It never
+  approves or blocks a creative: PH's approval decides.
+
+A credential the DSP fixes once connected (Amazon's region) is marked
+`fixedOnceConnected` on its field in `@ph-dsp/types` `PROVIDERS`, which
+also holds each DSP's credential form. Adding a DSP is one new module, one
+line in `registry.ts`, its `PROVIDERS` entry and its endpoints in
+`config.ts`.
+
+### Billing — one module, one seam (30 Sep 2026)
+
+Billing and the two-period delivery-term rules live in one module,
+`apps/api/src/billing/`, instead of being spread through the exchange.
+It has no seam with PH Core of its own: it reads plays only through the
+existing `PlaybackSource.totals`, and `context.ts` stays the only file
+that chooses an implementation (nothing under `billing/` constructs a
+database or a platform source; `apps/api/test/billing-boundary.test.ts`
+fails if it does). Two entry points are public: `billing` (`index.ts`) and
+`billing/term` (pure predicates over a deal, safe for the domain and the
+routes to import). Everything else in the folder is internal, and
+`billing-boundary.test.ts` fails if code outside it reaches in.
+
+What the module must guarantee:
+
+- **`billReservation(ctx, reservation, position, totals)`** — a cleared
+  reservation plus the playback totals for its window in, one line item
+  out. The maths (`computeLineItem`) is pure; the write is idempotent on
+  `billing_line_items.reservation_id`, so two API instances or a CronJob
+  beside the API bill a window once. A second call returns null.
+- **Inputs are the reservation and `PlaybackSource.totals` only.** Plays
+  that did not happen (display offline, store closed, loop cut short) are
+  not billed (Q29). `runBilling` is the loop around it: what is billable
+  now (`ReservationRepo.billable`), each window checked against its own
+  billing unit.
+- **A locked term is always billed at the locked rate.**
+  `bookLockedTermWindow` books each later window of a locked deal as its
+  own reservation at `lockedWin.cpm`, never below the effective floor
+  (OQ45), never for a disconnected DSP, and a window already sold answers
+  "Already sold" (migration 0021). `termStateAt(list, at)` answers
+  active / locked / auction-open for a window start; the auction, the
+  partner reservations route and the inventory status all ask it, so the
+  term is judged one way.
+- **Billing unit is the window length.** `billingUnitMs(ctx, position)`
+  is the slot's `billingUnitHours`, else its display type's default, else
+  the company play window (OQ27). It is not informational: a 168-hour
+  slot bills one line item a week.
+- **Engagement-based billing is declared, not built** (BUILD-PLAN
+  section 10). `billingBasis: 'engagement'` throws `NotImplementedError`
+  rather than billing an interactive campaign on plays that say nothing
+  about its engagement.
 
 ## Inbound boundaries — what this build offers
 

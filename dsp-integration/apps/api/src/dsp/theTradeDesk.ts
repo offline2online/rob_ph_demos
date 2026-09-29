@@ -1,7 +1,10 @@
-/* The Trade Desk (API v3). Auth is the TTD-Auth header carrying the API
-   token; the partner's advertisers are paged from /v3/advertiser/query/partner.
-   The supply source ID identifies PH on TTD's side for the bidding path. */
+/* The Trade Desk (API v3) — everything TTD-specific, as one DspProvider
+   (DspProvider.ts). Auth is the TTD-Auth header carrying the API token; the
+   partner's advertisers are paged from /v3/advertiser/query/partner. The
+   supply source ID identifies PH on TTD's side for the bidding path. */
+import { type AuditVerdict, auditCheckFrom } from '../domain/dspAudit'
 import { type DspClient, type Fetch, type Seat, domainOf, unreachable } from './DspClient'
+import { type BidderEndpoints, type DspProvider, bidderSide } from './DspProvider'
 
 export interface TtdConfig { apiBaseUrl: string }
 
@@ -34,5 +37,22 @@ export function theTradeDeskClient(cfg: TtdConfig, fetchImpl: Fetch = fetch): Ds
         return unreachable('The Trade Desk', e)
       }
     },
+  }
+}
+
+/* Pre-approval hook: TTD's audit is approvedBy — null while awaiting (or not
+   approved), a username once approved, as it reads for its DOOH supply
+   approver. */
+export function ttdAuditVerdict(raw: Record<string, unknown>): AuditVerdict | null {
+  if (!('approvedBy' in raw)) return null
+  return typeof raw.approvedBy === 'string' && raw.approvedBy ? { verdict: 'approved', why: `by ${raw.approvedBy}` } : { verdict: 'pending' }
+}
+
+export function theTradeDeskProvider(cfg: TtdConfig, bidder: BidderEndpoints | undefined, fetchImpl?: Fetch): DspProvider {
+  return {
+    key: 'the_trade_desk',
+    ...theTradeDeskClient(cfg, fetchImpl),
+    ...bidderSide(bidder),
+    auditCheck: (raw) => auditCheckFrom('The Trade Desk', raw, ttdAuditVerdict),
   }
 }

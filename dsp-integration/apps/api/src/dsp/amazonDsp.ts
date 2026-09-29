@@ -1,8 +1,12 @@
-/* Amazon Ads DSP (Amazon Ads API + Login with Amazon). Auth is the LWA
+/* Amazon Ads DSP (Amazon Ads API + Login with Amazon) — everything
+   Amazon-specific, as one DspProvider (DspProvider.ts). Auth is the LWA
    refresh-token grant with the client ID and secret; the profile ID scopes
    the account and must belong to the entity. The region picks the hosts
-   (one per region) and is fixed once connected. */
+   (one per region) and is fixed once connected (its credential field is
+   marked fixedOnceConnected in @ph-dsp/types PROVIDERS). */
+import { type AuditVerdict, auditCheckFrom, auditObject } from '../domain/dspAudit'
 import { type ConnectResult, type DspClient, type Fetch, type Seat, domainOf, unreachable } from './DspClient'
+import { type BidderEndpoints, type DspProvider, bidderSide } from './DspProvider'
 
 export type AmazonRegion = 'na' | 'eu' | 'fe'
 export interface AmazonConfig { baseUrls: Record<AmazonRegion, { tokenUrl: string; apiBaseUrl: string }> }
@@ -56,5 +60,27 @@ export function amazonDspClient(cfg: AmazonConfig, fetchImpl: Fetch = fetch): Ds
         return unreachable('Amazon Ads', e) as ConnectResult
       }
     },
+  }
+}
+
+/* Pre-approval hook: Amazon's audit is asset-level moderation —
+   moderationStatus, with per-asset policy violations when rejected. */
+export function amazonAuditVerdict(raw: Record<string, unknown>): AuditVerdict | null {
+  const status = typeof raw.moderationStatus === 'string' ? raw.moderationStatus.toUpperCase() : null
+  if (!status) return null
+  if (status === 'APPROVED') return { verdict: 'approved' }
+  if (status === 'REJECTED') {
+    const reasons = (Array.isArray(raw.policyViolations) ? raw.policyViolations : []).map((v) => auditObject(v)?.reason).filter((r): r is string => typeof r === 'string')
+    return { verdict: 'rejected', ...(reasons.length ? { why: reasons.join('; ') } : {}) }
+  }
+  return { verdict: 'pending' }
+}
+
+export function amazonDspProvider(cfg: AmazonConfig, bidder: BidderEndpoints | undefined, fetchImpl?: Fetch): DspProvider {
+  return {
+    key: 'amazon_dsp',
+    ...amazonDspClient(cfg, fetchImpl),
+    ...bidderSide(bidder),
+    auditCheck: (raw) => auditCheckFrom('Amazon DSP', raw, amazonAuditVerdict),
   }
 }

@@ -1,8 +1,11 @@
-/* Google DSP (Display & Video 360 API v4). Auth is Google's service-account
+/* Google DSP (Display & Video 360 API v4) — everything DV360-specific, as
+   one DspProvider (DspProvider.ts). Auth is Google's service-account
    JWT-bearer grant: sign a JWT with the key file's private key, exchange it
    at the token endpoint, then call the API with the access token. */
 import { createSign } from 'node:crypto'
+import { type AuditVerdict, auditCheckFrom, auditObject } from '../domain/dspAudit'
 import { type ConnectResult, type DspClient, type Fetch, type Seat, domainOf, unreachable } from './DspClient'
+import { type BidderEndpoints, type DspProvider, bidderSide } from './DspProvider'
 
 export interface Dv360Config { tokenUrl: string; apiBaseUrl: string }
 const SCOPE = 'https://www.googleapis.com/auth/display-video'
@@ -63,5 +66,25 @@ export function googleDv360Client(cfg: Dv360Config, fetchImpl: Fetch = fetch): D
         return unreachable('Display & Video 360', e)
       }
     },
+  }
+}
+
+/* Pre-approval hook: DV360's audit is Creative.reviewStatus — approvalStatus
+   (DV360's own) and exchangeReviewStatuses[].status (per exchange). */
+export function dv360AuditVerdict(raw: Record<string, unknown>): AuditVerdict | null {
+  const rs = auditObject(raw.reviewStatus)
+  if (!rs) return null
+  const exchanges = Array.isArray(rs.exchangeReviewStatuses) ? rs.exchangeReviewStatuses.map((x) => auditObject(x)?.status) : []
+  if (rs.approvalStatus === 'APPROVAL_STATUS_REJECTED_NOT_SERVABLE' || exchanges.includes('REVIEW_STATUS_REJECTED')) return { verdict: 'rejected' }
+  if (rs.approvalStatus === 'APPROVAL_STATUS_APPROVED_SERVABLE') return { verdict: 'approved' }
+  return typeof rs.approvalStatus === 'string' || exchanges.length ? { verdict: 'pending' } : null
+}
+
+export function googleDv360Provider(cfg: Dv360Config, bidder: BidderEndpoints | undefined, fetchImpl?: Fetch): DspProvider {
+  return {
+    key: 'google_dv360',
+    ...googleDv360Client(cfg, fetchImpl),
+    ...bidderSide(bidder),
+    auditCheck: (raw) => auditCheckFrom('Display & Video 360', raw, dv360AuditVerdict),
   }
 }

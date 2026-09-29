@@ -16,7 +16,7 @@
    auction same as any other deal until a bid clears within that deadline,
    at which point the winning rate locks (BuyersListRepo.lockWin) and every
    later play window in the delivery term is booked directly at that rate
-   — no re-auction, no fresh bids — by bookLockedTermWindow below. Dynamic
+   — no re-auction, no fresh bids — by bookLockedTermWindow (billing/lockedTerm.ts). Dynamic
    VAC-d billing is otherwise unchanged: each such window still gets its
    own reservation, still billed on its own realised VAC-d
    (exchange/billing.ts), just always at the same locked clearingCpm. A
@@ -43,17 +43,19 @@
    each booked (and billed) as its own reservation. */
 import { randomUUID } from 'node:crypto'
 import type { Context } from '../context'
-import { auctionOpenAt, isActiveAt, isTermLocked } from '../domain/buyersLists'
+import { bookLockedTermWindow, lockTermOnClear, termStateAt } from '../billing'
 import { isLive } from '../domain/exchange'
 import { type PositionRef, allPositions, assignmentOf, effectivePartnerIds, nextWindow, positionView, windowMs, windowStartOf } from '../domain/positions'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 import { type ReservationRecord, TAKEN } from '../repos/ReservationRepo'
-import { advertiserSlug, assignedOf, type BuyersList } from '@ph-dsp/types'
+import { advertiserSlug, assignedOf } from '@ph-dsp/types'
 import { isUniqueViolation } from '../db/db'
 import { campaignForCrid, queueCreative } from './creatives'
-import { checkAdvertiser, checkCampaign, checkCategories, checkFloor, checkTargeting, floorFor } from './enforcement'
+import { checkAdvertiser, checkCampaign, checkCategories, checkFloor, checkTargeting } from './enforcement'
 import { handOff } from './handoff'
+import { settlePending } from './pending'
 import { bidderTuning } from '../domain/partnerInput'
+import { providerOf } from '../dsp/registry'
 import { type Bid, type BidResponse, buildBidRequest } from './openrtb'
 
 export interface PositionOutcome {
@@ -146,9 +148,10 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, bidder
   if (assignmentOf(p.def) === 'deal') {
     const listId = assignedOf(p.def).buyersListId
     const list = listId ? ctx.buyersLists.get(listId) : null
-    if (list && isActiveAt(list, start)) {
-      if (isTermLocked(list)) return bookLockedTermWindow(ctx, p, start, list, out)
-      if (!auctionOpenAt(list, start)) {
+    const term = list ? termStateAt(list, start) : null
+    if (list && term?.active) {
+      if (term.locked) return bookLockedTermWindow(ctx, p, start, list, out)
+      if (!term.auctionOpen) {
         settlePending(ctx, p.positionId, start, `The private auction closed with no clearing bid (${list.name}); this window is no longer sold under the deal.`)
         return { ...out, skipped: `Private auction window closed with no clearing bid (${list.name}).` }
       }
@@ -165,7 +168,7 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, bidder
   /* Every DSP for this position at once; responses are then processed in
      the DSPs' own order so the outcome doesn't depend on who answered first. */
   const sent = dsps.flatMap((dsp) => {
-    const url = ctx.config.bidders[dsp.provider as keyof Context['config']['bidders']]?.bidUrl
+    const url = providerOf(ctx.dsp, dsp.provider)?.bidUrl
     if (!url) return []
     const reqId = `req_${randomUUID().slice(0, 12)}`
     return [{ dsp, reqId, res: ctx.bidder.send(url, buildBidRequest(ctx, p, dsp, reqId, view!), bidderTuning(dsp.bidder, ctx.config)) }]
@@ -224,73 +227,9 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, bidder
   if (live) {
     await handOff(ctx, live)
     out.winner = { reservationId: live.id, partnerId: live.partnerId, advertiserId: live.advertiserId, clearingCpm: live.bidCpm as number }
-    /* This window's clear is the deal's ONE term-deciding auction the
-       moment it has auctionCloses set and isn't locked yet — lock it now
-       so every later window in the delivery term reuses this rate instead
-       of re-auctioning (spec "…dynamic VAC-d billing over the delivery
-       term"). A deal with no auctionCloses never reaches here locked, so
-       it keeps clearing fresh every window as it always has. */
-    if (assignmentOf(p.def) === 'deal') {
-      const listId = assignedOf(p.def).buyersListId
-      const list = listId ? ctx.buyersLists.get(listId) : null
-      if (list?.auctionCloses && !isTermLocked(list)) {
-        ctx.buyersLists.lockWin(list.id, {
-          cpm: live.bidCpm as number, partnerId: live.partnerId, advertiserId: live.advertiserId, campaignId: live.campaignId as string,
-          pricingType: live.pricingType, channel: live.channel, lockedAt: ctx.clock().toISOString(), source: 'auction',
-        })
-      }
-    }
+    lockTermOnClear(ctx, p, live)
   }
   return out
-}
-
-/* Books this window at a private auction's already-locked rate directly —
-   no bidding, no fresh clearing — the same winning identity every window
-   in the delivery term hands off to (spec "…dynamic VAC-d billing over the
-   delivery term"). Still its own reservation, still billed on its own
-   realised VAC-d for this window (billing.ts), always at the same
-   clearingCpm. */
-async function bookLockedTermWindow(ctx: Context, p: PositionRef, start: string, list: BuyersList, out: PositionOutcome): Promise<PositionOutcome> {
-  const win = list.lockedWin!
-  /* The term is locked to its winner: any other bid for this window is told so, never left pending. */
-  settlePending(ctx, p.positionId, start, `The term is locked at ${win.cpm} ${ctx.company.get().currency} CPM to another bid (${list.name}); no other bid takes this window.`)
-  /* Only a connected DSP can write (REQUIREMENTS §7): if the locked winner's
-     DSP has since disconnected or failed its re-test, book nothing and hand
-     nothing off; the window falls through to the default campaign. */
-  const partner = ctx.partners.get(win.partnerId)
-  if (!partner || partner.status !== 'connected') {
-    return { ...out, skipped: `Private auction: ${partner?.name ?? 'the locked DSP'} is not connected, so the locked window is not booked.` }
-  }
-  /* A deal's rate sits on top of the floor, never under it (OQ45, Rob,
-     29 Sep 2026). A locked rate cleared the floor when it locked, but the
-     floor can rise during the term, through the floor CPM, a multiplier or
-     the advertiser's floor multiplier. A window whose locked rate is below
-     the floor in force now is not sold. It falls through to the default
-     campaign, as a deal that clears nothing always has, and is never
-     booked below the floor. */
-  const floor = floorFor(ctx, win.pricingType, win.advertiserId)
-  if (win.cpm < floor) {
-    return { ...out, skipped: `Private auction: the locked rate (${win.cpm}) is below the effective floor of ${floor} ${ctx.company.get().currency} CPM, so this window is not sold under ${list.name}.` }
-  }
-  /* A term locked by a reserve-price commitment (OQ52) is programmatic
-     guaranteed: each window is booked as Reserved, the same as the window
-     the buyer committed to. */
-  const reserve = win.source === 'reserve'
-  let r: ReservationRecord
-  try {
-    r = ctx.reservations.insert({
-    id: `res_${randomUUID().slice(0, 12)}`, partnerId: win.partnerId, advertiserId: win.advertiserId, campaignId: win.campaignId,
-    positionId: p.positionId, windowStart: start, type: win.channel === 'openrtb' ? 'bid' : 'reserve', channel: win.channel,
-    bidCpm: win.cpm, currency: ctx.company.get().currency, status: reserve ? 'reserved' : 'won', clearingCpm: win.cpm,
-    reason: reserve ? `Reserved: booked at ${list.name}'s reserve-price commitment, no auction.` : `Private auction: booked at ${list.name}'s locked rate, no re-auction.`, testMode: false, pricingType: win.pricingType, handedOffAt: null,
-    })
-  } catch (e) {
-    /* Another clearing booked this window first (migration 0021). */
-    if (isUniqueViolation(e)) return { ...out, skipped: 'Already sold.' }
-    throw e
-  }
-  await handOff(ctx, r)
-  return { ...out, skipped: `Private auction: booked at ${list.name}'s locked rate (${win.cpm}), no re-auction.`, winner: { reservationId: r.id, partnerId: r.partnerId, advertiserId: r.advertiserId, clearingCpm: r.clearingCpm as number } }
 }
 
 /* First price: the highest bid wins and pays its bid; ties go to the earlier bid.
@@ -310,11 +249,6 @@ function clear(ctx: Context, candidates: ReservationRecord[]) {
   }
   for (const r of rest) ctx.reservations.update(r.id, { status: 'lost', reason: `Outbid: the window cleared at ${winner.bidCpm} ${winner.currency} CPM.` })
   return ctx.reservations.get(winner.id)
-}
-
-/* Marks every bid for the window still pending as lost, with the reason. */
-function settlePending(ctx: Context, positionId: string, start: string, reason: string) {
-  for (const r of ctx.reservations.forWindow(positionId, start)) if (r.status === 'pending') ctx.reservations.update(r.id, { status: 'lost', reason })
 }
 
 /* Records one bid from a DSP's response: a candidate (pending) if it passes
