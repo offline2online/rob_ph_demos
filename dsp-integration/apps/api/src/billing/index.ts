@@ -55,14 +55,38 @@ export interface LineItem {
 export { bookLockedTermWindow, lockTermOnClear } from './lockedTerm'
 export { auctionOpenAt, isActiveAt, isTermLocked, lockedTermSpan, termStateAt, type TermState } from './term'
 
+/* What a line item is billed on. Only proof of play exists: realised VAC-d
+   from the plays the playback data recorded. Engagement-based billing for
+   interactive campaigns (BUILD-PLAN section 10) is declared here so the gap
+   is one visible method, not an absence: asking for it fails loudly rather
+   than billing a campaign on plays that say nothing about its engagement. */
+export type BillingBasis = 'proof-of-play' | 'engagement'
+export const BILLING_BASIS: BillingBasis = 'proof-of-play'
+
+export class NotImplementedError extends Error {
+  constructor(what: string) { super(`${what} is not implemented`); this.name = 'NotImplementedError' }
+}
+
+export function assertBillingBasis(basis: BillingBasis): void {
+  if (basis !== 'proof-of-play') throw new NotImplementedError('Engagement-based billing (BUILD-PLAN section 10)')
+}
+
+/* The billing unit of a position, in ms: its slot's billingUnitHours, else
+   its display type's default, else the company play window (OQ27, Rob
+   29 Sep 2026). This is not informational: it is the length of every window
+   billed for the position, so a slot with a 168-hour unit bills one line
+   item a week. */
+export const billingUnitMs = (ctx: Context, p: PositionRef): number => windowMs(ctx, p)
+
 const round2 = (n: number) => Math.round(n * 100) / 100
 
 /* The seam: a cleared reservation plus the playback totals for its window
    in, one line item out. The maths is pure (no clock, no database write);
    the caller decides whether the window has ended and where the totals
    come from. */
-export function computeLineItem(ctx: Context, r: ReservationRecord, p: PositionRef, played: PlayTotals): LineItem {
-  const len = windowMs(ctx, p)
+export function computeLineItem(ctx: Context, r: ReservationRecord, p: PositionRef, played: PlayTotals, basis: BillingBasis = BILLING_BASIS): LineItem {
+  assertBillingBasis(basis)
+  const len = billingUnitMs(ctx, p)
   const end = Date.parse(r.windowStart) + len
   const displays = ctx.displays.summaryByDisplayType(p.displayType.id).displays
   const slots = rotationSizeOf(p.displayType, p.slot)
@@ -93,8 +117,8 @@ export function writeLineItem(ctx: Context, item: LineItem, computedAt: string):
 /* Bills one cleared reservation from the totals for its window. Idempotent
    on billing_line_items.reservation_id: null when a line item already
    exists for it. */
-export function billReservation(ctx: Context, r: ReservationRecord, p: PositionRef, played: PlayTotals): LineItem | null {
-  const item = computeLineItem(ctx, r, p, played)
+export function billReservation(ctx: Context, r: ReservationRecord, p: PositionRef, played: PlayTotals, basis: BillingBasis = BILLING_BASIS): LineItem | null {
+  const item = computeLineItem(ctx, r, p, played, basis)
   return writeLineItem(ctx, item, new Date(ctx.clock().getTime()).toISOString()) ? item : null
 }
 
@@ -108,7 +132,7 @@ export function runBilling(ctx: Context): LineItem[] {
   for (const r of ctx.reservations.billable(new Date(now - shortestWindowMs(ctx)).toISOString())) {
     const p = findPosition(ctx, r.positionId)
     if (!p) continue
-    const end = Date.parse(r.windowStart) + windowMs(ctx, p)
+    const end = Date.parse(r.windowStart) + billingUnitMs(ctx, p)
     if (end > now) continue
     const played = ctx.playback.totals({ campaignId: r.campaignId as string, displayTypeId: p.displayType.id, from: r.windowStart, to: new Date(end).toISOString() })
     const item = billReservation(ctx, r, p, played)
