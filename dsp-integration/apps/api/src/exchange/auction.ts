@@ -43,8 +43,7 @@
    each booked (and billed) as its own reservation. */
 import { randomUUID } from 'node:crypto'
 import type { Context } from '../context'
-import { bookLockedTermWindow, lockTermOnClear } from '../billing/lockedTerm'
-import { termStateAt } from '../billing/term'
+import { bookLockedTermWindow, lockTermOnClear, termStateAt } from '../billing'
 import { isLive } from '../domain/exchange'
 import { type PositionRef, allPositions, assignmentOf, effectivePartnerIds, nextWindow, positionView, windowMs, windowStartOf } from '../domain/positions'
 import type { PartnerRecord } from '../repos/PartnerRepo'
