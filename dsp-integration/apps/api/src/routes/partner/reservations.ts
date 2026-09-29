@@ -21,13 +21,13 @@
    commitment accepts the deal's terms for its whole delivery term: it
    locks the term at the reserve price (BuyersListRepo.lockWin, source
    `reserve`), and every later window of the term is then held and booked
-   by the existing locked-term path (auction.ts bookLockedTermWindow), not a
+   by the existing locked-term path (billing/lockedTerm.ts bookLockedTermWindow), not a
    parallel one. */
 import { randomUUID } from 'node:crypto'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { assignedOf, reservePriceOf } from '@ph-dsp/types'
-import { auctionOpenAt, isActiveAt, isTermLocked } from '../../domain/buyersLists'
+import { termStateAt } from '../../billing/term'
 import { assignmentOf, biddingClosesAt, biddingOpensAt, effectivePartnerIds, findPosition, heldFor, windowHoursOf, windowStartOf } from '../../domain/positions'
 import { checkAdvertiser, checkCampaign, checkFloor, checkTargeting } from '../../exchange/enforcement'
 import { handOff } from '../../exchange/handoff'
@@ -95,8 +95,9 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
        the deal no longer sells. A reserve commitment on a deal is refused on
        the same terms: the term's rate is already decided. */
     const deal = assignment === 'deal' ? ctx.buyersLists.get(assignedOf(pos.def).buyersListId ?? '') : null
-    if (deal && isActiveAt(deal, windowStart) && !auctionOpenAt(deal, windowStart)) {
-      throw conflict(isTermLocked(deal) ? `This private auction's term is locked to a winning bid (${deal.name}); its windows take no further bids.` : `Bidding on this private auction closed at ${deal.auctionCloses} (${deal.name}).`)
+    const term = deal ? termStateAt(deal, windowStart) : null
+    if (deal && term?.active && !term.auctionOpen) {
+      throw conflict(term.locked ? `This private auction's term is locked to a winning bid (${deal.name}); its windows take no further bids.` : `Bidding on this private auction closed at ${deal.auctionCloses} (${deal.name}).`)
     }
     if (b.type === 'reserve' && assignment !== 'reserved' && reservePrice === null) throw conflict('Only a position held for this advertiser, or one with a reserve price, can be reserved; bid for it instead.')
     if (b.type === 'bid' && assignment === 'reserved') throw conflict('This position is held for this advertiser: reserve it instead of bidding.')

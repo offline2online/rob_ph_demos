@@ -8,7 +8,8 @@ import type { PartnerRecord } from '../repos/PartnerRepo'
 import { prepared } from '../db/db'
 import { type ReservationStatus, TAKEN } from '../repos/ReservationRepo'
 import { advertiserSlug, assignedOf, billingUnitHoursOf, reservePriceOf, supportedTargetingOf, type Assigned } from '@ph-dsp/types'
-import { invitedPartnerIds, isActiveAt, isInvitedBuyer, isTermLocked } from './buyersLists'
+import { invitedPartnerIds, isInvitedBuyer } from './buyersLists'
+import { isActiveAt, lockedTermSpan } from '../billing/term'
 import { effectiveLists, isBlocked, isOn } from './lists'
 import { effectiveFloors } from './pricing'
 import { rotationSizeOf, slotDurationSec } from './slots'
@@ -291,12 +292,12 @@ export function windowFacts(ctx: Context, p: PositionRef, starts?: Date[], prefe
 
 /* The delivery term of the deal this position is sold under, once that
    deal's rate is locked. Every window in it is spoken for: the exchange
-   books each directly at the locked rate (auction.ts bookLockedTermWindow)
+   books each directly at the locked rate (billing/lockedTerm.ts bookLockedTermWindow)
    and takes no other bid for it. */
 function lockedTermOf(ctx: Context, p: PositionRef) {
   if (assignmentOf(p.def) !== 'deal') return null
   const list = ctx.buyersLists.get(assignedCached(p.def).buyersListId as string)
-  return list && isTermLocked(list) ? { activeFrom: list.activeFrom, activeTo: list.activeTo } : null
+  return list ? lockedTermSpan(list) : null
 }
 
 export function windowStatus(ctx: Context, p: PositionRef, c: Caller, start: Date, f: WindowFacts = windowFacts(ctx, p)): WindowStatus {
