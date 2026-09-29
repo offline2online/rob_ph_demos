@@ -69,6 +69,21 @@ describe('display types — POC stand-in endpoints', () => {
     expect(ctx.playlists.get('pl_zone_landscape_1')?.playlistSettings).toEqual({ campaignAutoRotation: 'Auto-Rotate Off', campaignAutoPlay: 'Auto-Play Off' })
   })
 
+  it('switching a display type to multi-zone keeps its old default playlist, unassigned, and gives the layout its own playlist', async () => {
+    const { app, ctx } = await setup()
+    const landscape = ctx.displayTypes.get('landscape') as DisplayType
+    const oldId = landscape.defaultPlaylistId as string
+    const zone = { id: 'z1', name: 'Zone 1', x: 0, y: 0, width: 100, height: 100, playlistId: 'pl_zone_landscape_1' }
+    const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/display-types/landscape/record', payload: { ...landscape, multiZone: { enabled: true, zones: [zone] } } })
+    expect(res.statusCode).toBe(200)
+    expect(res.json().defaultPlaylistId).toBe('pl_landscape_layout')
+    expect(ctx.playlists.get(oldId)).not.toBeNull()
+    const list = (await app.inject({ method: 'GET', url: '/api/admin/v1/playlists' })).json().items
+    expect(list.find((p: { id: string }) => p.id === oldId).assignments).toEqual([])
+    expect(list.find((p: { id: string }) => p.id === 'pl_zone_landscape_1').assignments).toHaveLength(1)
+    expect((await app.inject({ method: 'GET', url: `/api/admin/v1/playlists/${oldId}/delete-check` })).json().canDelete).toBe(true)
+  })
+
   it('GET …/record 404s for an unknown id, with the error shape', async () => {
     const { app } = await setup()
     const res = await app.inject({ method: 'GET', url: '/api/admin/v1/display-types/nope/record' })

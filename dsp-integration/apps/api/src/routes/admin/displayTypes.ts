@@ -5,7 +5,8 @@ import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { tx } from '../../db/db'
 import { dependentDetails, displayTypeDeleteCheck, soldOrReservedPositions } from '../../domain/deleteChecks'
-import { ensureReferencedPlaylists, validateRecord } from '../../domain/displayTypes'
+import { NEW_PLAYLIST_SETTINGS_DEFAULTS } from '@ph-dsp/types'
+import { ensureReferencedPlaylists, validateRecord, zonesOf } from '../../domain/displayTypes'
 import { validateExtensions } from '../../domain/slots'
 import type { Guards } from '../../http/app'
 import { hasDependents, notFound, validationFailed } from '../../http/errors'
@@ -45,6 +46,17 @@ export const displayTypeRoutes = (ctx: Context, guards: Guards): FastifyPluginAs
     const errors = validateRecord(dt)
     if (errors.length) throw validationFailed(errors)
     return tx(ctx.db, () => {
+      /* Single zone → multi-zone (ticket, 29 Sep 2026): the layout is stored on
+         the default playlist's own row, so rather than tie the display type's
+         old playlist to it (and hide or lose it) the type gets its own
+         layout-only playlist and the old one is simply unassigned — kept,
+         visible and manageable in Playlist Management, assignable again later. */
+      const before = ctx.displayTypes.get(req.params.id)
+      const layoutId = `pl_${req.params.id}_layout`
+      if (before && zonesOf(dt).length && !zonesOf(before).length && dt.defaultPlaylistId !== layoutId) {
+        if (!ctx.playlists.get(layoutId)) ctx.playlists.create({ id: layoutId, name: `${dt.name} Layout`, autoCreatedFor: dt.id, playlistSettings: { ...NEW_PLAYLIST_SETTINGS_DEFAULTS } })
+        dt.defaultPlaylistId = layoutId
+      }
       ensureReferencedPlaylists(dt, ctx.playlists, false)
       return ctx.displayTypes.saveRecord(req.params.id, dt)
     })
