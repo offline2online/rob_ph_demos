@@ -5,6 +5,7 @@ import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { applyPartnerInput } from '../../domain/partnerInput'
 import { partnerIssues, toApiPartner } from '../../domain/partners'
+import { providerOf } from '../../dsp/registry'
 import type { Guards } from '../../http/app'
 import { conflict, notFound, validationFailed } from '../../http/errors'
 
@@ -57,7 +58,7 @@ export const partnerRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync 
     guards.requireScope(req, 'admin')
     const p = one(req.params.id)
     const missing = partnerIssues(p).find((i) => i.kind === 'missing_credentials')
-    const client = ctx.dsp[p.provider as Provider]
+    const client = providerOf(ctx.dsp, p.provider)!
     const result = missing
       ? { ok: false as const, reason: missing.message.replace(/\.$/, '') }
       : await client.connect({ public: p.credsPublic, secrets: ctx.partners.secrets(p.id) })

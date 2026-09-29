@@ -1,9 +1,11 @@
-/* DSP clients by provider, in onboarding order (spec §7). */
+/* The DSPs, one DspProvider each, in onboarding order (spec §7). This is the
+   one list of DSPs the API knows; context.ts wires it in as `ctx.dsp`. */
 import type { Provider } from '@ph-dsp/types'
-import type { DspClient, Fetch } from './DspClient'
-import { amazonDspClient, type AmazonRegion } from './amazonDsp'
-import { googleDv360Client } from './googleDv360'
-import { theTradeDeskClient } from './theTradeDesk'
+import type { Fetch } from './DspClient'
+import type { BidderEndpoints, DspProvider } from './DspProvider'
+import { type AmazonRegion, amazonDspProvider } from './amazonDsp'
+import { googleDv360Provider } from './googleDv360'
+import { theTradeDeskProvider } from './theTradeDesk'
 
 export interface DspEndpoints {
   dv360TokenUrl: string
@@ -12,10 +14,17 @@ export interface DspEndpoints {
   ttdApiBaseUrl: string
 }
 
-export function dspClients(ep: DspEndpoints, fetchImpl?: Fetch): Record<Provider, DspClient> {
+export type DspProviders = Record<Provider, DspProvider>
+
+export function dspProviders(ep: DspEndpoints, bidders: Partial<Record<Provider, BidderEndpoints>>, fetchImpl?: Fetch): DspProviders {
   return {
-    google_dv360: googleDv360Client({ tokenUrl: ep.dv360TokenUrl, apiBaseUrl: ep.dv360ApiBaseUrl }, fetchImpl),
-    amazon_dsp: amazonDspClient({ baseUrls: ep.amazon }, fetchImpl),
-    the_trade_desk: theTradeDeskClient({ apiBaseUrl: ep.ttdApiBaseUrl }, fetchImpl),
+    google_dv360: googleDv360Provider({ tokenUrl: ep.dv360TokenUrl, apiBaseUrl: ep.dv360ApiBaseUrl }, bidders.google_dv360, fetchImpl),
+    amazon_dsp: amazonDspProvider({ baseUrls: ep.amazon }, bidders.amazon_dsp, fetchImpl),
+    the_trade_desk: theTradeDeskProvider({ apiBaseUrl: ep.ttdApiBaseUrl }, bidders.the_trade_desk, fetchImpl),
   }
 }
+
+/* A partner's DSP, by its stored provider key; undefined for a key this
+   build doesn't know. */
+export const providerOf = (dsps: DspProviders, provider: string): DspProvider | undefined =>
+  Object.hasOwn(dsps, provider) ? dsps[provider as Provider] : undefined

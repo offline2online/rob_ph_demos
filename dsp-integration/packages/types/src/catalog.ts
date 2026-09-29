@@ -172,6 +172,9 @@ export interface CredentialField {
   hint?: string
   options?: readonly string[]
   multiline?: boolean
+  /* The DSP fixes this value once connected: a change is refused until it is
+     disconnected (Amazon Ads: region). */
+  fixedOnceConnected?: boolean
 }
 export interface ProviderDef {
   key: Provider
@@ -198,7 +201,7 @@ export const PROVIDERS: ProviderDef[] = [
     key: 'amazon_dsp', label: 'Amazon Ads DSP', sub: 'Amazon Ads API', icon: 'shopping_basket', colour: '#ff9900',
     blurb: 'Login with Amazon supplies the credentials; the profile and entity IDs scope the account. Region is fixed once connected.',
     fields: [
-      { key: 'region', label: 'Region', options: ['North America (NA)', 'Europe (EU)', 'Far East (FE)'], hint: 'Sets the API endpoint. Fixed once connected.' },
+      { key: 'region', label: 'Region', options: ['North America (NA)', 'Europe (EU)', 'Far East (FE)'], hint: 'Sets the API endpoint. Fixed once connected.', fixedOnceConnected: true },
       { key: 'lwaClientId', label: 'LWA client ID', placeholder: 'amzn1.application-oa2-client.…' },
       { key: 'lwaClientSecret', label: 'LWA client secret', secret: true },
       { key: 'refreshToken', label: 'Refresh token', secret: true, placeholder: 'Atzr|…' },

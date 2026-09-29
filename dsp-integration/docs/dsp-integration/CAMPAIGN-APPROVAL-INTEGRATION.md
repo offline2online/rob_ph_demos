@@ -259,8 +259,10 @@ ask about one asset.
 **DSP creatives (Q40).** PH's approval is the source of truth. A DSP's own
 creative audit (DV360 review status, The Trade Desk `approvedBy`, Amazon DSP
 moderation) is recorded as an **advisory** `dsp_audit` check — shown to the
-reviewer, never approving or blocking on its own
-(`apps/api/src/domain/dspAudit.ts`). Pre-approval is keyed on the DSP
+reviewer, never approving or blocking on its own. Each DSP reads its own
+audit shape in its provider module (`DspProvider.auditCheck`, in
+`apps/api/src/dsp/`), and `apps/api/src/domain/dspAudit.ts` turns the
+verdict into the check. Pre-approval is keyed on the DSP
 creative ID and the content hash: a crid's campaign id is derived from
 (DSP, crid) (`dspCampaignId`), so a human clearance of that campaign's
 creative is a clearance of that crid at those bytes, and the same crid

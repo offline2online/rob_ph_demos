@@ -80,8 +80,8 @@ export function applyPartnerInput(p: PartnerRecord, currentSecrets: Record<strin
     if (!f) { errors.push({ field: `credentials.${k}`, reason: `Not a ${def?.label ?? 'DSP'} credential.` }); continue }
     if (typeof v !== 'string') { errors.push({ field: `credentials.${k}`, reason: 'Must be text.' }); continue }
     if (f.options && v && !f.options.includes(v)) { errors.push({ field: `credentials.${k}`, reason: `Must be one of: ${f.options.join(', ')}.` }); continue }
-    /* Amazon Ads: "Region … fixed once connected". */
-    if (k === 'region' && p.provider === 'amazon_dsp' && p.status === 'connected' && v !== credsPublic.region) { errors.push({ field: 'credentials.region', reason: 'Region is fixed once connected.' }); continue }
+    /* A credential the DSP fixes once connected (Amazon Ads: region). */
+    if (f.fixedOnceConnected && p.status === 'connected' && v !== credsPublic[k]) { errors.push({ field: `credentials.${k}`, reason: `${f.label} is fixed once connected.` }); continue }
     if (f.secret) {
       if (v) secrets[k] = v
       else delete secrets[k]

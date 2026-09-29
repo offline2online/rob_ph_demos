@@ -25,7 +25,7 @@ import { type ReachCountSource, pocReachCountSource } from './platform/ReachCoun
 import { type ReservationRepo, sqliteReservationRepo } from './repos/ReservationRepo'
 import { targetingSummary } from './domain/targetingSummary'
 import type { Fetch } from './dsp/DspClient'
-import { dspClients } from './dsp/registry'
+import { type DspProviders, dspProviders } from './dsp/registry'
 import { type Bidder, httpBidder } from './dsp/bidder'
 
 export interface Context {
@@ -44,7 +44,10 @@ export interface Context {
   company: CompanySettingsRepo
   exchange: ExchangeRepo
   buyersLists: BuyersListRepo
-  dsp: ReturnType<typeof dspClients>
+  /* The DSPs, one DspProvider each (dsp/DspProvider.ts): management client,
+     bid URL, creative-path rule and pre-approval hook. Read by provider key
+     through providerOf(); nothing else branches on which DSP it is. */
+  dsp: DspProviders
   assets: AssetStore
   audience: AudienceSource
   reach: ReachCountSource
@@ -81,7 +84,7 @@ export function createContext(opts: { config?: Config; db?: Db; flags?: Flags; s
     company: sqliteCompanySettingsRepo(db),
     exchange: sqliteExchangeRepo(db),
     buyersLists: sqliteBuyersListRepo(db),
-    dsp: dspClients(config.dsp, opts.dspFetch),
+    dsp: dspProviders(config.dsp, config.bidders, opts.dspFetch),
     fetch: opts.dspFetch ?? ((url, init) => fetch(url, init)),
     bidder: httpBidder(opts.dspFetch ?? ((url, init) => fetch(url, init)), { timeoutMs: config.bidderTimeoutMs, qps: config.bidderQps, maxResponseBytes: config.maxBidResponseBytes }),
     audience: sqliteAudienceSource(db),

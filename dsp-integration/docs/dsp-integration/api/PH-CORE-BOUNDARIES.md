@@ -162,13 +162,51 @@ provide one breaks something specific, named here.
 
 | To | How | Bounded by |
 |---|---|---|
-| DSP management APIs (DV360 API v4, Amazon Ads DSP, The Trade Desk v3) | `apps/api/src/dsp/*` clients, called on Connect / Re-test | Admin action only. They never run on a request path. |
-| DSP bidders (OpenRTB 2.6 DOOH) | `dsp/bidder.ts`, from the auction | Per request:<br>- 300 ms timeout<br>- 500 QPS per DSP<br>- 64 KB response cap<br>- responses must echo the request `id`; bids must match `impid` 1<br>- at most 10 bids per response<br>- price ≤ `maxBidCpm`<br>- a missing `cur` means USD |
-| DSP creative hosts | `exchange/creatives.ts`, for a bid carrying an unknown creative | - Only URLs under that DSP's own creative path, checked after normalisation.<br>- One retrieval per response, claimed once across concurrent auctions.<br>- Byte-capped at the asset size limit.<br>- 10 s timeout. |
+| DSP management APIs (DV360 API v4, Amazon Ads DSP, The Trade Desk v3) | Each DSP's own provider module in `apps/api/src/dsp/` (`DspProvider.connect`), called on Connect / Re-test | Admin action only. They never run on a request path. |
+| DSP bidders (OpenRTB 2.6 DOOH) | `dsp/bidder.ts`, from the auction, to the DSP's `DspProvider.bidUrl` | Per request:<br>- 300 ms timeout<br>- 500 QPS per DSP<br>- 64 KB response cap<br>- responses must echo the request `id`; bids must match `impid` 1<br>- at most 10 bids per response<br>- price ≤ `maxBidCpm`<br>- a missing `cur` means USD |
+| DSP creative hosts | `exchange/creatives.ts`, for a bid carrying an unknown creative | - Only URLs under that DSP's own creative path (`DspProvider.ownsCreativeUrl`), checked after normalisation.<br>- One retrieval per response, claimed once across concurrent auctions.<br>- Byte-capped at the asset size limit.<br>- 10 s timeout. |
 
 The POC points every one of these at the mock DSP service
 (`apps/dsp-mocks`). Real endpoints are configuration (`config.ts`,
 `.env`), not code.
+
+### DSP providers — one module per DSP (30 Sep 2026)
+
+Everything that differs between DSPs lives in that DSP's own module
+behind one interface, `DspProvider` (`apps/api/src/dsp/DspProvider.ts`):
+`googleDv360.ts`, `amazonDsp.ts`, `theTradeDesk.ts`. `dsp/registry.ts`
+lists them; `context.ts` wires them in as `ctx.dsp`, and stays the only
+file that chooses them. The auction, the creative path and the routes look
+a partner's DSP up by its provider key (`providerOf`) and call it blind —
+none of them branches on which DSP it is
+(`apps/api/test/dsp-providers.test.ts` fails if a DSP's key appears
+anywhere in `src/` outside `dsp/`, `config.ts` and the seed data).
+
+What each provider must guarantee:
+
+- **`connect(creds)`** — the management API (Connect / Re-test). Resolves
+  to `{ ok: true, seats }` or `{ ok: false, reason }` and never throws: an
+  unreachable DSP is a reason, not an exception. Each seat keeps the
+  advertiser's `domain` where the DSP gives one (bids are matched on
+  `adomain`). Admin action only; 10 s per call.
+- **`bidUrl`** — where OpenRTB 2.6 requests go. Unset, the DSP is sent no
+  requests. The request itself, and every bound on the response (the
+  `dsp/bidder.ts` row above), is shared by every DSP: there is no
+  per-DSP bid request or response adaptation in this build.
+- **`ownsCreativeUrl(url)`** — the creative-path rule. True only for a URL
+  under the DSP's own creative host and path after normalisation
+  (`underBase`), never one carrying credentials. No creative base
+  configured, it is always false and nothing is fetched.
+- **`auditCheck(raw)`** — the pre-approval hook (Q40). Reads the DSP's own
+  audit of a creative, in the DSP's own shape, into an **advisory**
+  `dsp_audit` check, or null when the DSP said nothing usable. It never
+  approves or blocks a creative: PH's approval decides.
+
+A credential the DSP fixes once connected (Amazon's region) is marked
+`fixedOnceConnected` on its field in `@ph-dsp/types` `PROVIDERS`, which
+also holds each DSP's credential form. Adding a DSP is one new module, one
+line in `registry.ts`, its `PROVIDERS` entry and its endpoints in
+`config.ts`.
 
 ## Inbound boundaries — what this build offers
 
