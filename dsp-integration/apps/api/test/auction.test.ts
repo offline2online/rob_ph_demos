@@ -1,6 +1,7 @@
 import Ajv2020 from 'ajv/dist/2020'
 import type { Slot } from '@ph-dsp/types'
 import { describe, expect, it } from 'vitest'
+import { sweepRejectedCampaigns } from '../src/domain/campaignRetention'
 import { runAuction } from '../src/exchange/auction'
 import type { BidRequest } from '../src/exchange/openrtb'
 import { buildApp } from '../src/http/app'
@@ -72,7 +73,7 @@ describe('OpenRTB 2.6 DOOH bid requests', () => {
 
 describe('the auction', () => {
   it('discards a bid with an unknown creative and queues it; once approved it wins a later window, first price', async () => {
-    const { ctx, app, rows, activate } = await setup()
+    const { ctx, app, rows } = await setup()
     const first = await runAuction(ctx, W1)
     expect(first.positions).toEqual([{ positionId: 'menu_board.s2', bidRequests: 1, bids: 1, winner: null }])
     expect(rows()).toMatchObject([{ status: 'rejected', channel: 'openrtb', advertiserId: 'nestle', reason: 'New creative crid-5130001: approved automatically; it can compete from the next window.' }])
@@ -80,10 +81,7 @@ describe('the auction', () => {
     const queued = (await ctx.approvalCampaigns.listCampaigns({ sources: ['dsp'] })).find((c) => c.name === 'Nestlé — crid-5130001')!
     expect(await ctx.approvals.view(queued.campaignId)).toMatchObject({ status: 'approved', mode: 'auto' })
     expect(queued.creative).toMatchObject({ mimeType: 'image/png', width: 5760, height: 1080 })
-    /* Approved but not yet activated: it can't win. */
-    expect((await runAuction(ctx, new Date('2026-09-25T00:00:00.000Z'))).positions[0].winner).toBeNull()
-    expect(rows(new Date('2026-09-25T00:00:00.000Z'))[0].reason).toBe('The campaign is approved but not activated.')
-    await activate(queued.campaignId)
+    /* Approved automatically means active too: it wins the next window it bids in, with no activation step. */
 
     const second = await runAuction(ctx, W2)
     expect(second.positions[0].winner).toMatchObject({ partnerId: 'p_google', advertiserId: 'nestle', clearingCpm: 150 })
@@ -104,6 +102,20 @@ describe('the auction', () => {
     await activate(queued.campaignId)
     const third = await runAuction(ctx, new Date('2026-09-23T00:00:00.000Z'))
     expect(third.positions[0].winner).toMatchObject({ advertiserId: 'swisse', clearingCpm: 150 })
+  })
+
+  it('retrieves and queues a creative again after its rejected campaign is swept', async () => {
+    const { ctx, bidder, rows } = await setup()
+    await bidder({ advertiserId: '5130002' })
+    await runAuction(ctx, W1)
+    const queued = (await ctx.approvalCampaigns.listCampaigns({ sources: ['dsp'] })).find((c) => c.name === 'Swisse — crid-5130002')!
+    await ctx.approvals.reject(queued.campaignId, (await ctx.approvals.view(queued.campaignId)).assetVersion, 'hq', 'Price in artwork')
+    expect(sweepRejectedCampaigns(ctx.db, 30, () => new Date(Date.now() + 31 * 24 * 60 * 60 * 1000)).deletedCampaignIds).toContain(queued.campaignId)
+    expect(ctx.db.prepare('SELECT COUNT(*) AS n FROM dsp_creatives WHERE campaign_id = ?').get(queued.campaignId)).toEqual({ n: 0 })
+    /* The same creative ID arrives again: retrieved and queued as a new first submission, not "already being retrieved". */
+    await runAuction(ctx, W2)
+    expect(rows(W2)[0]).toMatchObject({ status: 'rejected', reason: 'New creative crid-5130002: queued for approval.' })
+    expect(await ctx.approvals.view(queued.campaignId)).toMatchObject({ status: 'awaiting_approval' })
   })
 
   it('enforces the effective floor, the blacklist, whitelist-only and categories before a bid can win', async () => {
