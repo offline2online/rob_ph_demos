@@ -353,6 +353,13 @@ const DEPLOY_OPTIMISTIC_STALE_MS = 45 * 1000;
 const groomOptimisticClicks = {};
 const GROOM_OPTIMISTIC_STALE_MS = 45 * 1000;
 
+// Same optimistic-click bridge again, for the Ready for Testing column's
+// "Review Batch" CTA — the real spinning state lives in
+// projects/{id}.reviewRoutine, written by notifyOnProjectReviewBatch
+// reacting to reviewRequestedAt.
+const reviewOptimisticClicks = {};
+const REVIEW_OPTIMISTIC_STALE_MS = 45 * 1000;
+
 // ── Docs page state (per-project requirements + interfaces with other
 // projects) — an interface is a maintained contract doc shared between
 // exactly two projects, stored once in "interfaces" and shown identically
@@ -739,6 +746,22 @@ function cardHTML(item) {
   // check before testing. Carries through Approved for Deployment and
   // Deployed/Main Branch (Live) unchanged; see the Archive table for the
   // same value once archived.
+  // ph-reviewer's review-status flag: a board-rendered convention (pipeline
+  // status is not writable through the console tools, so there is no review
+  // column). reviewStatus/reviewReason are written by the Review Batch
+  // session; hovering shows its single most important reason, and the full
+  // review log is in the ticket's comments. Shown only while the flag still
+  // describes the commit on the train (reviewedCommit), never a stale one.
+  const REVIEW_FLAGS = {
+    "passed": ["Review passed", "check_circle"],
+    "remediating": ["Review fixes pending", "build"],
+    "kicked-back": ["Review kicked back", "undo"],
+    "blocked": ["Review blocked: red run", "block"],
+  };
+  const reviewFlagDef = item.reviewStatus && REVIEW_FLAGS[item.reviewStatus];
+  const reviewFlag = reviewFlagDef && (!item.deployCommit || item.reviewedCommit === item.deployCommit)
+    ? `<span class="review-flag review-flag-${escapeHTML(item.reviewStatus)}" title="${escapeHTML(item.reviewReason || reviewFlagDef[0])}"><span class="material-symbols-outlined">${reviewFlagDef[1]}</span>${reviewFlagDef[0]}</span>`
+    : "";
   const testVersionBadge = item.testVersion
     ? `<span class="test-version-badge" title="backlog-tracker's own version when this was marked Ready for Testing — check the live footer shows at least this version">Test version: v${escapeHTML(item.testVersion)}</span>`
     : "";
@@ -865,7 +888,7 @@ function cardHTML(item) {
       </div>
       <h3 class="card-title">${escapeHTML(item.title)}</h3>
       ${descHTML}
-      ${noDeployBadge}${carriedBadge}${priorityBadge}${effortBadge}${lastFailureBadge}${testVersionBadge}${prBadge}${deployBadge}
+      ${noDeployBadge}${carriedBadge}${priorityBadge}${effortBadge}${lastFailureBadge}${reviewFlag}${testVersionBadge}${prBadge}${deployBadge}
       <div class="card-footer">
         <div class="card-footer-left">
           <span class="card-cat">${escapeHTML(item.category || "Uncategorised")}</span>
@@ -893,6 +916,21 @@ function backlogCountForProject(pid) {
 // nothing left for "Groom Backlog" to do, the same as an empty column.
 function groomableCountForProject(pid) {
   return items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "backlog" && !i.patchReady).length;
+}
+
+// Cards the ph-reviewer skill has yet to look at: built (on a train, so a
+// deployCommit exists, its own or a sibling's) and sitting in Ready for
+// Testing. reviewedCommit is the deployCommit the review saw, so a ticket
+// that was kicked back, rebuilt and landed again counts as unreviewed once
+// more without anyone having to clear its old flag.
+function isUnreviewedBuild(item) {
+  if (item.status !== "ready-for-testing") return false;
+  if (!item.deployCommit) return false;
+  return !item.reviewStatus || item.reviewedCommit !== item.deployCommit;
+}
+
+function reviewableCountForProject(pid) {
+  return items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && isUnreviewedBuild(i)).length;
 }
 
 // The one kind of card that legitimately skips the train: flagged
@@ -1325,6 +1363,59 @@ function groomNotifyButtonHTML(project) {
     : `<button type="button" class="notify-claude-btn notify-claude-btn-working" disabled title="A Claude Code session is grooming the ${itemCountLabel} item(s) in Backlog">${mainBtnInner}</button>`;
 }
 
+const REVIEW_ROUTINE_STALE_MS = 30 * 60 * 1000;
+
+// "Review Batch" — the post-build code-review gate (ph-reviewer skill).
+// Lives in the Ready for Testing column's header: reviewing runs after
+// build and before the Approved for Deployment gate. Pressing it defines
+// the batch — every built, not-yet-reviewed ticket in this project, taken
+// together. Same spinner/session-link mechanism as groomNotifyButtonHTML
+// (project.reviewRoutine, written by notifyOnProjectReviewBatch reacting
+// to reviewRequestedAt). Hidden when nothing is waiting for review.
+function reviewBatchButtonHTML(project) {
+  const pid = project.id;
+  const routine = project.reviewRoutine;
+  const firedMs = routine ? tsMillis(routine.firedAt) : 0;
+  const isStale = routine?.status === "in-progress" && firedMs && (Date.now() - firedMs) > REVIEW_ROUTINE_STALE_MS;
+  const inProgress = routine?.status === "in-progress" && !isStale;
+
+  const clickedAt = reviewOptimisticClicks[pid];
+  const optimisticPending = !inProgress && clickedAt && (Date.now() - clickedAt) < REVIEW_OPTIMISTIC_STALE_MS;
+  if (clickedAt && !optimisticPending) delete reviewOptimisticClicks[pid];
+
+  if (!inProgress && !optimisticPending) {
+    const reviewableCount = reviewableCountForProject(pid);
+    if (!reviewableCount) return "";
+    return `<button type="button" class="notify-claude-btn review-batch-btn" data-project-id="${escapeHTML(pid)}" title="Review every built, not-yet-reviewed ticket together with the ph-reviewer skill before it goes to deployment">
+      <span class="material-symbols-outlined notify-claude-icon">rule</span>
+      <span class="notify-claude-label">Review Batch</span>
+      <span class="notify-claude-count-pill">${reviewableCount}</span>
+    </button>`;
+  }
+
+  if (optimisticPending) {
+    return `<button type="button" class="notify-claude-btn notify-claude-btn-working" disabled title="Sending to Claude&hellip;">
+      <span class="notify-claude-spinner"></span>
+      <span class="notify-claude-label">Working&hellip;</span>
+    </button>`;
+  }
+
+  const itemCountLabel = routine.itemCount || reviewableCountForProject(pid);
+  const confirmed = !!routine.sessionUrl;
+  const mainBtnInner = `
+    <span class="notify-claude-spinner"></span>
+    <span class="notify-claude-label">${confirmed ? "Reviewing&hellip;" : "Working&hellip;"}</span>
+    <span class="notify-claude-count-pill">${itemCountLabel}</span>`;
+  return confirmed
+    ? `<a href="${escapeHTML(safeHttpUrl(routine.sessionUrl))}" target="_blank" rel="noopener" class="notify-claude-btn notify-claude-btn-working notify-claude-btn-clickable" title="View the Claude Code session reviewing the ${itemCountLabel} ticket(s) in this batch">${mainBtnInner}</a>`
+    : `<button type="button" class="notify-claude-btn notify-claude-btn-working" disabled title="A Claude Code session is reviewing the ${itemCountLabel} ticket(s) in this batch">${mainBtnInner}</button>`;
+}
+
+function reviewBatchInlineHTML(project) {
+  const btn = reviewBatchButtonHTML(project);
+  return btn ? `<span class="col-groom-inline">${btn}</span>` : "";
+}
+
 // Merges the Groom Backlog CTA into the Backlog column's own header row,
 // in place of the plain count (see .col-groom-inline in styles.css) — the
 // mobile-only treatment this started as (JHY0F2AdMSjtL4WU8F2K) is now how
@@ -1499,7 +1590,7 @@ function projectSectionHTML(project) {
     // 640px media query, so desktop is completely unaffected.
     const colCollapsed = isColumnCollapsed(project.id, col.key);
     return `<section class="column${colCollapsed ? " column-collapsed" : ""}" data-col="${col.key}">
-      <div class="col-head col-head-${col.headClass}" data-project-id="${escapeHTML(project.id)}" data-col="${col.key}"><span>${selectAllHTML}${col.label}</span><span class="col-count">${listItems.length}</span>${col.key === "backlog" ? groomBacklogInlineHTML(project) : ""}</div>
+      <div class="col-head col-head-${col.headClass}" data-project-id="${escapeHTML(project.id)}" data-col="${col.key}"><span>${selectAllHTML}${col.label}</span><span class="col-count">${listItems.length}</span>${col.key === "backlog" ? groomBacklogInlineHTML(project) : (col.key === "ready-for-testing" ? reviewBatchInlineHTML(project) : "")}</div>
       <div class="col-list" id="${colListId(project.id, col.key)}" data-col="${col.key}" data-project-id="${escapeHTML(project.id)}">
         ${listItems.length ? columnCardsHTML(listItems) : '<div class="empty-hint">No items yet</div>'}
       </div>
@@ -2842,6 +2933,26 @@ async function requestGroomNotify(pid) {
   }, { merge: true });
 }
 
+// The Ready for Testing column's "Review Batch" CTA. Writes reviewRequestedAt,
+// watched by notifyOnProjectReviewBatch (see ../functions/index.js), which
+// fires the Routine with a REVIEW REQUEST telling the session to load the
+// ph-reviewer skill. The press is the batch boundary: the function sweeps
+// every built, not-yet-reviewed ticket in the project at that moment.
+async function requestReviewBatch(pid) {
+  if (reviewableCountForProject(pid) === 0) {
+    await showAlert("Nothing waiting for review in this project — every built ticket has already been reviewed.");
+    return;
+  }
+
+  reviewOptimisticClicks[pid] = Date.now();
+  render();
+
+  await setDoc(doc(db, "projects", pid), {
+    reviewRequestedAt: serverTimestamp(),
+    reviewRequestedByEmail: (auth.currentUser && auth.currentUser.email) || null,
+  }, { merge: true });
+}
+
 async function setProjectName(id, name) {
   const trimmed = (name || "").trim();
   if (!trimmed) return false;
@@ -3210,6 +3321,8 @@ projectsRoot.addEventListener("click", async (e) => {
   if (deployNotifyBtn) { closeAllOptionMenus(); requestDeployNotify(deployNotifyBtn.dataset.projectId); return; }
   const groomNotifyBtn = e.target.closest(".groom-notify-btn");
   if (groomNotifyBtn) { closeAllOptionMenus(); requestGroomNotify(groomNotifyBtn.dataset.projectId); return; }
+  const reviewBatchBtn = e.target.closest(".review-batch-btn");
+  if (reviewBatchBtn) { closeAllOptionMenus(); requestReviewBatch(reviewBatchBtn.dataset.projectId); return; }
   const archiveNavBtn = e.target.closest(".project-archive-btn");
   if (archiveNavBtn) { closeAllOptionMenus(); openArchivePage(archiveNavBtn.dataset.projectId); return; }
   const docsNavBtn = e.target.closest(".project-docs-btn");
