@@ -200,14 +200,22 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
     let version: string | undefined
     let bytes: Buffer | undefined
     let truncated = false
-    for await (const part of req.parts({ limits: { fileSize: limit + 1, files: 1 } })) {
-      if (part.type === 'file') {
-        bytes = await part.toBuffer().catch(() => {
-          truncated = true
-          return Buffer.alloc(0)
-        })
-        truncated ||= part.file.truncated
-      } else if (part.fieldname === 'version') version = String(part.value)
+    try {
+      for await (const part of req.parts({ limits: { fileSize: limit + 1, files: 1 } })) {
+        if (part.type === 'file') {
+          bytes = await part.toBuffer().catch(() => {
+            truncated = true
+            return Buffer.alloc(0)
+          })
+          truncated ||= part.file.truncated
+        } else if (part.fieldname === 'version') version = String(part.value)
+      }
+    } catch (e) {
+      /* @fastify/multipart throws its own RequestFileTooLargeError out of the
+         parts() iterator once a file passes the limit, before `truncated` is
+         ever seen; it is the file_size check failing (spec §3), not a generic 413. */
+      if ((e as { code?: string }).code !== 'FST_REQ_FILE_TOO_LARGE') throw e
+      truncated = true
     }
     const targeting = targetingOf(c.targeting)
     const roles = [...(targeting.default ? ['default'] : []), ...(targeting.targeted ?? []).map((t) => t.id)]

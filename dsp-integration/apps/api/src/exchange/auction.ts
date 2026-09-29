@@ -126,7 +126,10 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, bidder
     const list = listId ? ctx.buyersLists.get(listId) : null
     if (list && isActiveAt(list, start)) {
       if (isTermLocked(list)) return bookLockedTermWindow(ctx, p, start, list, out)
-      if (!auctionOpenAt(list, start)) return { ...out, skipped: `Private auction window closed with no clearing bid (${list.name}).` }
+      if (!auctionOpenAt(list, start)) {
+        settlePending(ctx, p.positionId, start, `The private auction closed with no clearing bid (${list.name}); this window is no longer sold under the deal.`)
+        return { ...out, skipped: `Private auction window closed with no clearing bid (${list.name}).` }
+      }
     }
   }
 
@@ -175,11 +178,15 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, bidder
   for (const r of apiBids) {
     const partner = ctx.partners.get(r.partnerId)
     const seat = partner?.seats.find((s) => advertiserSlug(s.name) === r.advertiserId)
-    const refusal = !partner || !seat
+    /* Connection first: disconnecting a DSP clears its seats, so the seat
+       check would otherwise always answer before the real reason. */
+    const refusal = !partner
       ? { reason: 'The advertiser is no longer on this DSP.' }
       : partner.status !== 'connected'
       ? { reason: `${partner.name} is not connected.` }
-      : (await checkCampaign(ctx, r.campaignId as string)) ?? checkAdvertiser(ctx, p, partner, seat.name, seat.domain ? [seat.domain] : [], seat.id) ?? checkTargeting(p, r.pricingType) ?? checkFloor(ctx, r.bidCpm as number, r.pricingType, r.advertiserId)
+      : !seat
+      ? { reason: 'The advertiser is no longer on this DSP.' }
+      : (await checkCampaign(ctx, r.campaignId as string)) ?? checkAdvertiser(ctx, p, partner, seat.name, seat.domain ? [seat.domain] : [], seat.id, start) ?? checkTargeting(p, r.pricingType) ?? checkFloor(ctx, r.bidCpm as number, r.pricingType, r.advertiserId)
     if (refusal) ctx.reservations.update(r.id, { status: 'rejected', reason: refusal.reason })
     else candidates.push(r)
   }
@@ -223,6 +230,15 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, bidder
    clearingCpm. */
 async function bookLockedTermWindow(ctx: Context, p: PositionRef, start: string, list: BuyersList, out: PositionOutcome): Promise<PositionOutcome> {
   const win = list.lockedWin!
+  /* The term is locked to its winner: any other bid for this window is told so, never left pending. */
+  settlePending(ctx, p.positionId, start, `The term is locked at ${win.cpm} ${ctx.company.get().currency} CPM to another bid (${list.name}); no other bid takes this window.`)
+  /* Only a connected DSP can write (REQUIREMENTS §7): if the locked winner's
+     DSP has since disconnected or failed its re-test, book nothing and hand
+     nothing off; the window falls through to the default campaign. */
+  const partner = ctx.partners.get(win.partnerId)
+  if (!partner || partner.status !== 'connected') {
+    return { ...out, skipped: `Private auction: ${partner?.name ?? 'the locked DSP'} is not connected, so the locked window is not booked.` }
+  }
   let r: ReservationRecord
   try {
     r = ctx.reservations.insert({
@@ -292,7 +308,7 @@ async function recordDspBid(ctx: Context, p: PositionRef, dsp: PartnerRecord, st
   const seat = dsp.seats.find((s) => s.domain && domains.includes(s.domain.toLowerCase()))
   if (!seat) return reject(`Unknown advertiser${domains.length ? ` (${domains.join(', ')})` : ''}: not one of ${dsp.name}’s advertisers.`)
   const advertiserId = advertiserSlug(seat.name)
-  const refused = checkAdvertiser(ctx, p, dsp, seat.name, domains, seat.id) ?? checkCategories(ctx, p, dsp, bid.cat ?? [])
+  const refused = checkAdvertiser(ctx, p, dsp, seat.name, domains, seat.id, start) ?? checkCategories(ctx, p, dsp, bid.cat ?? [])
   if (refused) return reject(refused.reason, { advertiserId })
   if (!bid.crid) return reject('No creative ID (crid) on the bid.', { advertiserId })
 
