@@ -76,6 +76,8 @@ export async function queueCreative(ctx: Context, partner: PartnerRecord, bid: {
     width: media!.width, height: media!.height, durationSec: media!.durationSec, bitrateKbps: null, sizeBytes: bytes.length,
   })
   const view = await ctx.approvals.submit(campaignId, [...checks, { name: 'default_present', passed: true }, { name: 'targeting_permitted', passed: true }], partner.name)
+  /* Approved automatically means it may compete, as the message below says: no separate activation step. */
+  if (view.status === 'approved') ctx.campaigns.setActivation(campaignId, true)
   return view.status === 'approved'
     ? `New creative ${bid.crid}: approved automatically; it can compete from the next window.`
     : `New creative ${bid.crid}: queued for approval.`
