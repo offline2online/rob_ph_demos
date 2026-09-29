@@ -12,6 +12,7 @@ export function memorySetup() {
   campaigns.set('c_adv', { ...base, campaignId: 'c_adv', name: 'Swisse spring', source: 'api', advertiserId: 'swisse', activation: { enabled: false }, assetVersion: 'v1' })
   campaigns.set('c_hq', { ...base, campaignId: 'c_hq', name: 'HQ hero', source: 'hq', advertiserId: null, advertiserName: null, activation: { enabled: true }, assetVersion: 'v1' })
   const listeners = new Set<(id: string) => void>()
+  const highest = new Map<string, number>()
   const source: CampaignSource = {
     getCampaign: (id) => campaigns.get(id) ?? null,
     listCampaigns: (f = {}) => [...campaigns.values()].filter((c) => (!f.sources || f.sources.includes(c.source)) && (!f.ids || f.ids.includes(c.campaignId))),
@@ -23,13 +24,21 @@ export function memorySetup() {
       return campaigns.get(id)!
     },
     onCampaignChanged: (l) => (listeners.add(l), () => listeners.delete(l)),
+    discardEditsAfter: (id, assetVersion) => {
+      const c = campaigns.get(id)
+      if (c) campaigns.set(id, { ...c, assetVersion })
+      listeners.forEach((l) => l(id))
+    },
   }
   const fixture: Fixture = {
     advertiserCampaignId: 'c_adv',
     hqCampaignId: 'c_hq',
+    /* Versions never repeat, even after an edit is discarded (Q38). */
     changeCreative: (id) => {
       const c = campaigns.get(id)!
-      campaigns.set(id, { ...c, assetVersion: `v${Number(c.assetVersion.slice(1)) + 1}` })
+      const n = (highest.get(id) ?? Number(c.assetVersion.slice(1))) + 1
+      highest.set(id, n)
+      campaigns.set(id, { ...c, assetVersion: `v${n}` })
     },
   }
   const db = new DatabaseSync(':memory:')

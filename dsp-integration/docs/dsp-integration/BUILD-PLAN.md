@@ -616,7 +616,7 @@ since the picker was removed (Rob, 20 Sep) and nothing edits it now.
 
 - Q27: 24-hour window
 - Q29: bill realised plays only
-- Q38: the old version stops during re-review
+- Q38: resolved (Rob, 29 Sep 2026) — the approved version keeps running during re-review; approval swaps to the edit atomically, rejection discards it
 - Q39: HQ Admin approves
 - Q41: polling, with a webhook hook
 - Q46: 500 QPS / 300 ms

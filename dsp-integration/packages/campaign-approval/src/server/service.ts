@@ -1,6 +1,17 @@
 /* Approval service: the state machine applied to campaigns through the
    CampaignSource adapter, with every decision recorded (who, when, reason,
-   asset version) in the append-only audit log. */
+   asset version) in the append-only audit log.
+
+   Re-approval (Q38, Rob, 29 Sep 2026): approval rows are per asset version,
+   so "the approved version" needs no snapshot of its own — it is the newest
+   approved row (store.liveVersion), and the host resolves that version to
+   its assets. An edit to a running campaign is a newer version Awaiting
+   approval (a pending edit) while the live one keeps running. Approving
+   the edit makes it the newest approved row: one write, so eligibility
+   never lapses and the two versions never both run. Rejecting it discards
+   it (the adapter drops its assets, the row goes, the audit stays) and the
+   live version carries on untouched. */
+import { createHash } from 'node:crypto'
 import type { CampaignRef, CampaignSource } from '../adapter/CampaignSource'
 import type { SqlDb } from '../db'
 import { STATUSES, type Approval, type ApprovalStatus, type AssetRejection, type Check, type StatusCounts } from '../types'
@@ -18,10 +29,14 @@ export interface ApprovalServiceOptions {
   campaigns: CampaignSource
   /* The advertiser's Campaign approval setting (Advertisers screen). */
   requiresApproval: (advertiserId: string | null) => boolean
-  /* Q38: does the previously approved version keep running during re-review? Default: no. */
-  oldVersionRunsDuringReview?: boolean
   now?: () => Date
 }
+
+/* Safe reuse clears the targeting rules as well as the files (Q40): a
+   pseudo-asset whose "content" is the rendered rules, so an edit that
+   changes targeting but re-sends identical files is still reviewed. */
+const TARGETING_ASSET = '#targeting'
+const sha256 = (s: string) => createHash('sha256').update(s).digest('hex')
 
 export function createApprovalService(o: ApprovalServiceOptions) {
   const store = approvalStore(o.db)
@@ -36,15 +51,30 @@ export function createApprovalService(o: ApprovalServiceOptions) {
   const currentRow = (c: CampaignRef) => store.get(c.campaignId, c.assetVersion)
   const statusOf = (c: CampaignRef): ApprovalStatus => currentRow(c)?.status ?? 'draft'
 
+  /* The latest rejected-and-discarded edit, until the next edit (Q38). */
+  const rejectedEdit = (trail: ReturnType<typeof store.auditTrail>) => {
+    let out: Approval['rejectedEdit']
+    for (const [i, a] of trail.entries()) {
+      if (a.action === 'edit_discarded') out = { assetVersion: a.assetVersion, reason: trail.slice(0, i).reverse().find((x) => x.action === 'rejected' && x.assetVersion === a.assetVersion)?.reason ?? null, at: a.at }
+      else if (a.action === 'returned_for_review' || a.action === 'submitted') out = undefined
+    }
+    return out
+  }
+
   const toView = (c: CampaignRef, full: boolean): Approval => {
     const r = currentRow(c)
+    const live = store.liveVersion(c.campaignId)
+    const trail = full ? store.auditTrail(c.campaignId) : null
+    const discarded = trail ? rejectedEdit(trail) : undefined
     return {
       campaignId: c.campaignId, campaignName: c.name, ...(c.advertiserName ? { advertiserName: c.advertiserName } : {}), ...(c.partnerName ? { partnerName: c.partnerName } : {}),
       status: r?.status ?? 'draft', mode: r?.mode ?? null, assetVersion: c.assetVersion,
       submittedAt: r?.submittedAt ?? null, reviewedBy: r?.reviewedBy ?? null, reviewedAt: r?.reviewedAt ?? null, reason: r?.reason ?? null,
       ...(r?.assetReasons?.length ? { assetReasons: r.assetReasons } : {}),
       checks: r?.checks ?? [],
-      ...(full ? { targetingSummary: c.targetingSummary, creative: c.creative, canvas: c.canvas, audit: store.auditTrail(c.campaignId) } : {}),
+      liveAssetVersion: live, pendingEdit: !!live && live !== c.assetVersion && r?.status === 'awaiting_approval',
+      ...(discarded ? { rejectedEdit: discarded } : {}),
+      ...(full ? { targetingSummary: c.targetingSummary, creative: c.creative, canvas: c.canvas, audit: trail! } : {}),
     }
   }
 
@@ -70,22 +100,43 @@ export function createApprovalService(o: ApprovalServiceOptions) {
     }, at)
     const auditReason = e.type === 'reject' ? e.reason.trim() : e.type === 'unreject' && e.reason?.trim() ? e.reason.trim() : null
     const auditAssetReasons = e.type === 'reject' ? e.assetReasons : undefined
-    for (const action of t.audit) store.audit(c.campaignId, c.assetVersion, action, action === 'auto_approved' ? null : actor, auditReason, at, auditAssetReasons)
+    for (const action of t.audit) store.audit(c.campaignId, c.assetVersion, action, action === 'auto_approved' || action === 'reused_clearance' ? null : actor, auditReason, at, auditAssetReasons)
     return t
   }
 
+  /* Q38: eligible while ANY version is approved — the live one keeps
+     running through the review of a later edit. */
   const isEligible = async (id: string) => {
     const c = await o.campaigns.getCampaign(id)
     if (!c) return false
     if (c.source === 'hq') return true
-    if (statusOf(c) === 'approved') return true
-    return !!o.oldVersionRunsDuringReview && statusOf(c) === 'awaiting_approval' && store.anyApproved(id)
+    return store.liveVersion(id) !== null
   }
+
+  /* Safe reuse (spec §3, Q40): the assets of this version a human has
+     already cleared at exactly this content, and whether that covers the
+     whole version — every asset, and its targeting rules. An adapter that
+     doesn't list assets or hashes never gets a reuse. */
+  const clearedAssets = (c: CampaignRef) => (c.assets ?? []).filter((a) => a.contentHash && store.isHumanCleared(c.campaignId, a.assetId, a.contentHash))
+  const preCleared = (c: CampaignRef) => !!c.assets?.length && clearedAssets(c).length === c.assets.length && store.isHumanCleared(c.campaignId, TARGETING_ASSET, sha256(c.targetingSummary))
+  /* Tells the reviewer which assets are unchanged since a human cleared them (advisory). */
+  const withClearance = (c: CampaignRef, checks: Check[]): Check[] => [
+    ...checks.filter((x) => x.name !== 'previously_cleared'),
+    ...clearedAssets(c).map((a): Check => ({ name: 'previously_cleared', passed: true, advisory: true, assetId: a.assetId, detail: 'Byte-identical to a version a reviewer already approved.' })),
+  ]
 
   return {
     /* The one enforcement hook: call it wherever eligibility is decided
        (reservation, bidding, hand-off, activation). */
     isCampaignEligible: isEligible,
+
+    /* Which version runs (Q38): the live approved assetVersion, for the host
+       to resolve to assets at hand-off. null when nothing is approved, or
+       for an HQ campaign, which doesn't go through approval. */
+    async liveAssetVersion(id: string): Promise<string | null> {
+      const c = await o.campaigns.getCampaign(id)
+      return c && c.source !== 'hq' ? store.liveVersion(id) : null
+    },
 
     /* One campaign's approval status, for a host screen that only needs the word. */
     async statusOf(id: string): Promise<ApprovalStatus> {
@@ -107,10 +158,11 @@ export function createApprovalService(o: ApprovalServiceOptions) {
       return { counts, items, nextCursor: start + limit < filtered.length ? String(start + limit) : null }
     },
 
-    /* Submission (package 12): Awaiting approval, or Approved automatically. */
+    /* Submission (package 12): Awaiting approval, or Approved automatically —
+       including when every asset was already human-cleared (Q40). */
     async submit(id: string, checks: Check[], actor: string | null) {
       const c = await campaign(id)
-      apply(c, { type: 'submit', requiresApproval: o.requiresApproval(c.advertiserId) }, actor, { checks })
+      apply(c, { type: 'submit', requiresApproval: o.requiresApproval(c.advertiserId), preCleared: preCleared(c) }, actor, { checks: withClearance(c, checks) })
       return toView(c, false)
     },
 
@@ -119,11 +171,13 @@ export function createApprovalService(o: ApprovalServiceOptions) {
       if (assetVersion !== c.assetVersion) throw new ApprovalError(409, 'conflict', 'The creative changed after you opened it. Review the new version.')
       apply(c, { type: 'approve' }, reviewer)
       /* Safe reuse (spec §3): a genuine human decision clears this exact
-         content, so a later, unchanged resubmission can skip re-review.
-         Only the mandatory default layer is modelled as `creative` today
-         (CampaignRef); a targeted version's asset joins this the same way
-         once the adapter exposes it as its own asset id. */
-      if (c.creative?.contentHash) store.recordHumanClearance(c.campaignId, 'default', c.creative.contentHash, reviewer, now())
+         content — every asset of the version (or, from an adapter that
+         lists none, the default creative) and its targeting rules — so a
+         later, unchanged resubmission can skip re-review. */
+      const at = now()
+      const assets = c.assets ?? (c.creative?.contentHash ? [{ assetId: 'default', contentHash: c.creative.contentHash }] : [])
+      for (const a of assets) if (a.contentHash) store.recordHumanClearance(c.campaignId, a.assetId, a.contentHash, reviewer, at)
+      store.recordHumanClearance(c.campaignId, TARGETING_ASSET, sha256(c.targetingSummary), reviewer, at)
       return toView(c, true)
     },
 
@@ -131,8 +185,18 @@ export function createApprovalService(o: ApprovalServiceOptions) {
       if (!reason?.trim()) throw new ApprovalError(400, 'validation_failed', 'A reason is required.')
       const c = await campaign(id)
       if (assetVersion !== c.assetVersion) throw new ApprovalError(409, 'conflict', 'The creative changed after you opened it. Review the new version.')
+      const live = store.liveVersion(id)
       apply(c, { type: 'reject', reason, assetReasons }, reviewer)
-      return toView(c, true)
+      if (!live || live === c.assetVersion) return toView(c, true)
+      /* A rejected edit to a running campaign (Q38): discard it. The live
+         version carries on untouched; the rejection and the discard stay
+         in the audit trail against the edit's version. */
+      store.audit(id, c.assetVersion, 'edit_discarded', reviewer, null, now())
+      await o.campaigns.discardEditsAfter(id, live)
+      const rows = store.rows(id)
+      const keep = rows.map((r) => r.assetVersion).lastIndexOf(live)
+      for (const r of rows.slice(keep + 1)) store.remove(id, r.assetVersion)
+      return toView(await campaign(id), true)
     },
 
     /* Whether `assetId` can skip re-review on resubmission: unchanged
@@ -153,8 +217,10 @@ export function createApprovalService(o: ApprovalServiceOptions) {
     },
 
     /* The host calls this when a campaign's assets or targeting change. For
-       an advertiser that requires approval it returns to Awaiting approval;
-       by default (Q38) the campaign also stops until the new version is approved. */
+       an advertiser that requires approval the new version goes to Awaiting
+       approval as a pending edit; the approved version keeps running until
+       it is decided (Q38). Unless every asset was already human-cleared at
+       this exact content (Q40), in which case it is approved straight away. */
     async changed(id: string, actor: string | null, checks?: Check[]) {
       const c = await campaign(id)
       const latest = store.latest(id)
@@ -165,8 +231,7 @@ export function createApprovalService(o: ApprovalServiceOptions) {
         /* A new asset version: carry the decision trail over to it. */
         store.upsert({ ...latest!, assetVersion: c.assetVersion }, now())
       }
-      const t = apply(c, { type: 'change', requiresApproval: o.requiresApproval(c.advertiserId) }, actor, checks ? { checks } : {})
-      if (t.status !== 'approved' && !o.oldVersionRunsDuringReview && c.activation.enabled) await o.campaigns.setActivation(id, false)
+      apply(c, { type: 'change', requiresApproval: o.requiresApproval(c.advertiserId), preCleared: preCleared(c) }, actor, { checks: withClearance(c, checks ?? latest!.checks) })
       return toView(c, false)
     },
 

@@ -212,7 +212,7 @@ describe('POST /v1/campaigns/{id}/submit and GET …/status', () => {
     const res = await submit(app, id)
     expect(res.statusCode).toBe(200)
     expectMatchesContract('POST', '/v1/campaigns/{campaignId}/submit', 200, res.json())
-    expect(res.json()).toEqual({ campaignId: id, status: 'awaiting_approval', mode: 'manual', reason: null, assetVersion: 'v1' })
+    expect(res.json()).toEqual({ campaignId: id, status: 'awaiting_approval', mode: 'manual', reason: null, assetVersion: 'v1', liveAssetVersion: null, pendingEdit: false })
     const approval = await ctx.approvals.view(id)
     expect(approval.checks.map((c) => c.name)).toEqual(['file_type', 'file_size', 'bitrate', 'aspect_ratio', 'dimensions', 'duration', 'default_present', 'targeting_permitted'])
     expect(approval.audit?.map((a) => [a.action, a.by])).toEqual([['submitted', 'Google DSP']])
@@ -241,7 +241,8 @@ describe('POST /v1/campaigns/{id}/submit and GET …/status', () => {
     expect(res.json().error.details).toEqual([{ field: 'targeting_permitted', reason: 'Not enabled for Google DSP: store.state.' }])
   })
 
-  it('a new creative on an approved campaign returns it to Awaiting approval and stops it (Q38)', async () => {
+  /* Q38 (Rob, 29 Sep 2026): a pending edit — the approved version keeps running. */
+  it('a new creative on an approved campaign is a pending edit: Awaiting approval while the approved version keeps running (Q38)', async () => {
     const { app } = await newApp()
     const id = (await create(app, SWISSE)).json().campaignId
     await upload(app, id, 'default', png(1920, 1080))
@@ -249,9 +250,9 @@ describe('POST /v1/campaigns/{id}/submit and GET …/status', () => {
     await app.inject({ method: 'POST', url: `/api/admin/v1/campaigns/${id}/approve`, payload: { assetVersion: 'v1' } })
     await app.inject({ method: 'PUT', url: `/api/admin/v1/campaigns/${id}/activation`, payload: { enabled: true } })
     await upload(app, id, 'default', png(3840, 2160))
-    expect((await status(app, id)).json()).toMatchObject({ status: 'awaiting_approval', assetVersion: 'v2' })
+    expect((await status(app, id)).json()).toEqual({ campaignId: id, status: 'awaiting_approval', mode: 'manual', reason: null, assetVersion: 'v2', liveAssetVersion: 'v1', pendingEdit: true })
     const list = (await app.inject({ method: 'GET', url: '/api/admin/v1/campaigns' })).json().items
-    expect(list.find((c: { campaignId: string }) => c.campaignId === id).activation).toEqual({ enabled: false })
+    expect(list.find((c: { campaignId: string }) => c.campaignId === id).activation).toEqual({ enabled: true })
   })
 
   it('after a rejection the advertiser must upload a new version before resubmitting', async () => {

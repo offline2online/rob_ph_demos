@@ -11,6 +11,7 @@ import { C } from './tokens'
 const CHECK_LABELS: Record<string, string> = {
   file_type: 'File type', file_size: 'File size', bitrate: 'Bitrate', dimensions: 'Dimensions', aspect_ratio: 'Aspect ratio',
   duration: 'Duration', default_present: 'Creative present', targeting_permitted: 'Targeting permitted',
+  dsp_audit: 'DSP audit', previously_cleared: 'Previously approved',
 }
 const COMPLIANCE_TIP = 'Advertiser artwork must not contain price, offer terms or disclosures. A price baked into supplied artwork is a compliance breach an automated dimension check will not catch.'
 const Label = ({ children }: { children: string }) => (
@@ -56,7 +57,18 @@ export function ApprovalReviewPanel({ approval, canApprove = true, busy, onAppro
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: C.alt, borderBottom: `1px solid ${C.subtle}` }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 14, fontWeight: 600 }}>{approval.campaignName ?? approval.campaignId}</div>
-          <div style={{ fontSize: 12, color: C.muted }}>{[approval.advertiserName, approval.partnerName].filter(Boolean).join(' · ')} · {approval.assetVersion}</div>
+          <div style={{ fontSize: 12, color: C.muted, display: 'flex', alignItems: 'center', gap: 4 }}>
+            {[approval.advertiserName, approval.partnerName].filter(Boolean).join(' · ')} · {approval.assetVersion}
+            {/* Q38: an edit under review while the approved version runs. */}
+            {approval.pendingEdit && approval.liveAssetVersion && (
+              <>
+                <span>· {approval.liveAssetVersion} live</span>
+                <Tooltip title={`This is an edit. ${approval.liveAssetVersion} keeps running until you decide: approving replaces it with ${approval.assetVersion}; rejecting discards the edit.`}>
+                  <span role="button" tabIndex={0} aria-label="About this edit" style={{ color: C.micro, cursor: 'help', display: 'inline-flex' }}><Icon name="info" size={14} /></span>
+                </Tooltip>
+              </>
+            )}
+          </div>
         </div>
         <ApprovalStatusBadge status={approval.status} mode={approval.mode} />
         {onClose && <Button type="text" size="small" aria-label="Close review" icon={<Icon name="close" />} onClick={onClose} />}
@@ -79,7 +91,10 @@ export function ApprovalReviewPanel({ approval, canApprove = true, busy, onAppro
           <ul aria-label="Automated checks" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
             {approval.checks.map((c) => (
               <li key={`${c.assetId ?? ''}-${c.name}`} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, padding: '3px 0' }}>
-                <Icon name={c.passed ? 'check_circle' : 'cancel'} size={16} color={c.passed ? C.success : C.error} />
+                {/* Advisory (Q40): information for the reviewer, never a pass/fail gate. */}
+                {c.advisory
+                  ? <Icon name="info" size={16} color={C.micro} />
+                  : <Icon name={c.passed ? 'check_circle' : 'cancel'} size={16} color={c.passed ? C.success : C.error} />}
                 <span>{CHECK_LABELS[c.name] ?? c.name}</span>
                 {c.assetId && <span style={{ color: C.micro, fontSize: 11 }}>({c.assetId})</span>}
                 {c.detail && <span style={{ color: C.muted }}>· {c.detail}</span>}
