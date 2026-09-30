@@ -91,15 +91,44 @@ empty or mis-edited collection can never lock everyone out.
 `list_concepts`, `get_concept`.
 
 `get_ready_for_testing_board` and `get_approved_for_deployment_board` are
-**composable** — alongside the usual JSON they return an embedded HTML
-resource (an MCP `resource` content block, mimeType `text/html`) that a
-supporting client renders inline as ticket cards, right in the
-conversation, instead of the agent having to describe the column in prose.
-Both are read-only in the fullest sense: the widget itself has no button,
-form or script that could change a ticket's status — reviewing there is
-exactly as inert as reading the JSON. `get_approved_for_deployment_board`
-additionally names `approve_deploy_to_main` (see below) when a project's
-whole train is ready for it.
+**composable — they are MCP Apps** (SEP-1865, the MCP UI extension
+`io.modelcontextprotocol/ui`). Each tool carries `_meta.ui.resourceUri`
+naming a `ui://backlog-tracker/…` resource this server serves through
+`resources/list` / `resources/read` (mimeType `text/html;profile=mcp-app`,
+sandbox settings under `_meta.ui`), and its result carries the column as
+`structuredContent`. A host that supports MCP Apps — claude.ai and Claude
+Desktop today — fetches the view, renders it in a sandboxed iframe inline
+in the conversation, and pushes the tool result into it, so the column
+appears as ticket cards (title, summary, type/area, test link, test
+version, a link back to the ticket; train/PR context and the
+deploy-readiness line for Approved for Deployment) instead of the agent
+describing it in prose. Every host, including one without MCP Apps, also
+gets the same data as plain text/JSON. **Claude Code does not render MCP
+Apps yet**: its CLI validates and forwards the binding, and advertises the
+extension only behind its own host switch, so in a Claude Code session the
+tools answer as text until Anthropic switches that host on
+(anthropics/claude-code#95149). Both are read-only in the fullest sense:
+the view has no form and no write — its only actions are opening a link
+through the host and re-running the same read-only tool to refresh — so
+reviewing there is exactly as inert as reading the JSON.
+`get_approved_for_deployment_board` additionally names
+`approve_deploy_to_main` (see below) when a project's whole train is ready
+for it. The views live in `functions/mcp-app-views.js`; the first cut of
+this (PR #208, 24 Sep 2026) returned an embedded `text/html` block in the
+tool result instead, which no host renders — which is why it never showed.
+The column is also presented **without being asked for**: the moment the
+pipeline lands a build in Ready for Testing, `notifyOnItemsReadyForTesting`
+fires a Routine session that calls `get_ready_for_testing_board` (see
+`ROUTINE_INSTRUCTIONS.md` → "The 'Ready for Testing' flow"). For that
+session to have these tools, the Routine at claude.ai/code/routines needs
+the **PH Agent Console** connector attached; without it the session
+presents the same column as text.
+
+**Try it.** Type into your agent: *"Show me what's ready for testing on
+Backlog Tracker & FAQs."* In claude.ai or Claude Desktop the column renders
+inline as ticket cards — title, summary, type/area, test link, test
+version and a link back to the ticket. In Claude Code the same tool answers
+as text until Anthropic switches on its MCP Apps host.
 
 **Can — write (editor and admin only):**
 
