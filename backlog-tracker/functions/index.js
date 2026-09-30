@@ -208,7 +208,9 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
       .where("projectId", "==", event.params.projectId)
       .where("status", "==", "backlog")
       .get();
-    let items = itemsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    // Blocked tickets (needs Rob's decision / waiting on input) are not
+    // buildable: skip them so they aren't re-picked every run.
+    let items = itemsSnap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((i) => !(i.blocked && i.blocked.reason));
 
     // The board's own Backlog checkboxes (see public/js/app.js
     // requestNotify) can narrow a click to a hand-picked subset instead of
