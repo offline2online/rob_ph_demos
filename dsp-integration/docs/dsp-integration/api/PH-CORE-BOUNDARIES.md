@@ -376,6 +376,22 @@ platform:
      point) but engineering work. Until then the API is one instance on
      one volume (`deploy/kubernetes/`), enough for 15,000 displays.
 
+## Authentication seams — partner identity, advertiser principal (spec only, REQUIREMENTS §9.5)
+
+Today "Partner identity" (`auth/partnerAuth.ts`, `partnerFromRequest(req)`)
+is the only authentication seam, and it is a static bearer token per DSP.
+REQUIREMENTS §9.5 defines three named boundaries that extend it; none is
+built yet, and each touches PH Core at a specific point:
+
+| Boundary | What PH Core must provide | Touches |
+|---|---|---|
+| **AUTH-IDENTITY** | A stable `advertiserId` and the advertiser-to-campaign ownership on the existing advertiser and campaign records, so a principal can be checked against the records it owns or is delegated. A partner may act for several advertisers; the submitting principal is recorded apart from the advertiser the campaign is for. | Partner identity; `CampaignSource` (campaign and advertiser records) |
+| **AUTH-CREDENTIAL** | Platform token issuance (already the owner of partner identity) issuing short-lived scoped tokens by OAuth client-credentials for both partners and advertisers. `partnerFromRequest(req)` becomes a principal resolver returning `{principalType, principalId, scopes}`; scopes are granted per DSP in DSP setup and per advertiser by the retailer. | Partner identity; `SecretsStore` (client secrets, signing keys) |
+| **AUTH-LOGIN** | PH Core's user/identity service returning `{advertiserId, userId, role}` for a signed-in advertiser user, with role mapped to a subset of the advertiser's scopes. This build does not choose the login provider. | `SessionSource` (admin users stay on it; advertiser users are a separate principal type) |
+
+The rule that keeps these one system: a login and a client secret
+resolve to the same advertiser principal and scope set (§9.5).
+
 ## Reserved for later releases (REQUIREMENTS §9, spec only)
 
 These are reserved names and places, with no behaviour yet:
