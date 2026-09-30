@@ -2724,6 +2724,101 @@ before.
 - Retailer admin users remain the `admin` principal type, authenticated by
   the HQ Admin session (`SessionSource`); they are not advertiser users.
 
+##### AUTH-LOGIN boundary — advertiser users, login-to-scope resolution, reserved Gen AI authoring
+
+*Specification only; no behaviour change. Nothing here is built in this
+release.*
+
+**Boundary line.** AUTH-LOGIN owns the **human-to-scope resolution** and the
+**advertiser ↔ users relationship**, and nothing else. It does not redefine
+the principal (AUTH-IDENTITY) or the token mechanism and scope catalogue
+(AUTH-CREDENTIAL); it consumes both.
+
+**Advertiser ↔ users.** An advertiser has **zero or more** users. A user
+belongs to exactly one advertiser in this build (a person working for two
+advertisers holds two user records, so isolation never depends on which one
+they "switch" to).
+
+| Field | Meaning |
+|---|---|
+| `userId` | Stable, opaque, never reused. Owned by PH Core's user/identity service, not minted here. |
+| `advertiserId` | The one advertiser the user acts for (AUTH-IDENTITY's `principalId`). |
+| `role` | A named bundle of scopes within the advertiser (below). |
+| `status` | `active` / `disabled`. Offboarding a user disables it; it never touches the advertiser, its clients or its campaigns. |
+
+The advertiser holds **both** AUTH-CREDENTIAL clients and these users. Zero
+users is the normal state until advertiser login is offered; an advertiser
+with clients only (machine submission) needs nothing from this boundary. The
+record stores no password, no factor and no profile data — only the
+`userId`/`advertiserId`/`role`/`status` link.
+
+**User-session-resolves-to-scope rule.** A login yields
+`{advertiserId, userId, role}` from PH Core's identity service. The token
+endpoint (AUTH-CREDENTIAL) turns that into an access token of the same
+shape as a client token:
+
+1. `sub` = `advertiserId`, `principalType` = `advertiser` — **the same
+   principal** a client secret resolves to, not a new principal type.
+2. `scope` = `role`'s scopes **∩ the advertiser's own granted scopes**. A
+   user can never hold a scope the advertiser was not granted, and never
+   more than the role allows.
+3. `userId` is added as an **actor claim** (`act`), for audit only. The
+   audit trail records `principalId` plus the acting `userId`; handlers
+   never read it to decide access.
+4. Suspended advertiser, disabled user or an `active`-check failure gives
+   the same indistinguishable `401` as a bad client secret.
+
+Authorisation stays **scope-based and caller-agnostic**: routes declare a
+scope, middleware checks the token's scope set and the isolation rule, and
+no handler branches on "machine token vs logged-in user". Revoking a user
+takes effect within the token lifetime (minutes; no refresh token).
+
+**Roles.** Roles are named scope bundles per advertiser, defined by the
+retailer's grant and never wider than it. Indicative set, to be confirmed
+when built:
+
+| Role | Scopes (within the advertiser's grant) |
+|---|---|
+| `viewer` | `campaign:read` |
+| `author` | `campaign:read`, `creative:submit`, `campaign:author` *(reserved)* |
+| `publisher` | `author` + `campaign:publish` *(reserved)* |
+
+**Reserved: Gen AI campaign authoring.** The authoring surface sits **behind
+`campaign:author` and `campaign:publish`** (catalogue status *Reserved*): the
+names are fixed now, no token may carry them and no route checks them until
+the release that builds it. When it arrives it is a front door onto this
+identity — advertiser login, then tokens through the existing endpoint — not
+a second auth system, advertiser record or permission model. Guardrails and
+permissions are **per advertiser**, expressed as the retailer's scope grant
+plus per-advertiser policy, in the same place `advertiser_settings` lives:
+
+- `campaign:author` lets a user create and edit **drafts** (including Gen AI
+  generated ones); a draft is inert — never booked, never played.
+- `campaign:publish` is the separate step that releases a draft into the
+  **existing approval and activation flow**; Gen AI output gets no approval
+  shortcut, and an advertiser may hold `author` without `publish`.
+- Per-advertiser guardrails (brand rules, allowed formats, prohibited
+  categories, generation limits) are retailer-set and enforced server-side
+  at authoring and again at approval; none is decided here.
+
+**Not the POC's stand-in session.** The Admin API's stand-in (`POC_ROLE`;
+every caller is `hq_admin`, service bound to `127.0.0.1`) is the `admin`
+principal's placeholder and **must never be the advertiser login**: an
+advertiser user is never resolved through `SessionSource`, never inherits
+`hq_admin`, and no advertiser-facing route may sit behind the stand-in.
+Retailer admin users stay `admin` principals on the HQ Admin session.
+
+**Non-goals.** How a person proves who they are (SSO, PH-managed accounts,
+MFA, invitation, offboarding workflow — PH Core's identity service), the
+token endpoint and scope catalogue (AUTH-CREDENTIAL), the principal and
+advertiser record (AUTH-IDENTITY), advertiser self-service screens, and
+building any Gen AI authoring.
+
+**Acceptance.** This section documents the advertiser ↔ users relationship,
+the user-session-resolves-to-scope rule and the reserved Gen AI authoring
+scopes; `api/PH-CORE-BOUNDARIES.md` → *AUTH-LOGIN* names what user identity
+asks of PH Core.
+
 #### What this release does and does not do
 
 - **Does:** fixes the vocabulary above (principal types, the three named

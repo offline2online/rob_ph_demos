@@ -469,6 +469,30 @@ The partner path is unchanged by this boundary.
 The rule that keeps these one system: a login and a client secret
 resolve to the same advertiser principal and scope set (§9.5).
 
+### AUTH-LOGIN — advertiser user identity (boundary detail)
+
+*Spec only (REQUIREMENTS §9.5 → "AUTH-LOGIN boundary"). User identity is the
+one place in §9.5 where people, not records, touch PH Core.*
+
+1. **Identity is PH Core's.** PH Core's user/identity service owns user
+   accounts, authentication (SSO or PH-managed, MFA), invitation and
+   offboarding. It must return, for a signed-in advertiser user,
+   `{advertiserId, userId, role}` — a stable, unique, never-reused `userId`
+   and the one `advertiserId` the user acts for.
+2. **Role → scope mapping is applied here.** This build maps `role` to
+   scopes and intersects with the advertiser's own grant; PH Core does not
+   issue scopes. A disabled user or suspended advertiser must stop
+   resolving (lifecycle propagation as for AUTH-IDENTITY).
+3. **Nothing personal crosses.** This build stores only
+   `userId`/`advertiserId`/`role`/`status` and the `userId` as an audit actor
+   claim — no credentials, names, emails or factors.
+4. **Separate from `SessionSource`.** Admin users stay on `SessionSource`;
+   advertiser users are never resolved through it, and the POC stand-in
+   (`POC_ROLE`, everyone `hq_admin`) is never an advertiser login.
+5. **Reserved scopes.** The Gen AI authoring surface sits behind
+   `campaign:author` / `campaign:publish`; per-advertiser guardrails are
+   retailer-set. Nothing is issued or enforced until that release.
+
 ## Reserved for later releases (REQUIREMENTS §9, spec only)
 
 These are reserved names and places, with no behaviour yet:
