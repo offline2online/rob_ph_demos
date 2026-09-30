@@ -437,6 +437,19 @@ paths:
         whitelistOnly for the advertiser whitelist. Nothing chosen means any
         connected DSP. Advertisers and whitelistOnly are mutually exclusive.
 
+        Sold slots can't lose their advertiser (ticket "Lock playlist slot
+        against new sales when slots are sold", 30 Sep 2026). Removing an
+        advertiser from a slot (or replacing it with DSPs, a buyers list or
+        the whitelist) while that slot has a live booking — reserved or
+        sold for a window that has not finished playing, Test mode
+        excluded — is refused with `409 has_dependents`; each detail's
+        `field` is `items[n].assignedTo.advertisers` for the offending row.
+        The slot keeps its advertiser and its bookings run as they are. The
+        admin can then lock the slot against new sales (`PUT
+        /admin/v1/available-inventory/lock`); once the booking schedule has
+        no live booking left on it the lock releases by itself and the
+        advertiser can be removed.
+
         supportedTargeting: interactive is only accepted on a display type
         with QR Control enabled.
 
@@ -549,6 +562,59 @@ paths:
         '400': {$ref: '#/components/responses/ValidationFailed'}
         '401': {$ref: '#/components/responses/Unauthorised'}
         '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/HasDependents'}
+  /admin/v1/available-inventory/lock:
+    put:
+      tags: [Admin — Advertiser settings]
+      operationId: lockInventorySlot
+      summary: Lock a sold slot against new sales
+      description: |
+        Slot-level, per playlist, as in the Available Inventory table (ticket
+        "Lock playlist slot against new sales when slots are sold", 30 Sep
+        2026). A locked slot takes no new bid, reservation or auction win for
+        any window it has not already sold: its status reads `unavailable`
+        for those windows, the exchange skips it, and the Partner API
+        refuses a bid or reservation on it (`409 conflict`). Existing
+        bookings are not deleted, reassigned or cancelled and play out as
+        booked, including the remaining windows of a locked-rate term.
+
+        Only a slot with a live booking (reserved or sold for a window that
+        has not finished playing, Test mode excluded) can be locked; any
+        other slot answers `409 conflict`, since there is nothing to
+        protect. Locking a locked slot is a no-op.
+
+        There is no unlock. The lock releases automatically, on the
+        exchange's schedule tick and whenever Available Inventory is read
+        or saved, as soon as the booking schedule shows no live booking on
+        the slot. The release depends on bookings only — never on campaign
+        playback or delivery analytics. Admin only.
+      security: [{adminSession: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [displayTypeId, slot]
+              properties:
+                displayTypeId: {type: string}
+                slot: {type: integer, minimum: 1, description: The flat 1-based slot number (AvailableInventoryRow.slot), not the per-zone one.}
+      responses:
+        '200':
+          description: Locked (or already locked)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, dsps]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/AvailableInventoryRow'}}
+                  dsps: {type: array, items: {$ref: '#/components/schemas/DspAdvertisers'}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
   /admin/v1/booking-schedule:
     get:
       tags: [Admin — Advertiser settings]
@@ -1808,11 +1874,22 @@ components:
         updatedAt: {type: string, format: date-time}
     AvailableInventoryRow:
       type: object
-      required: [displayTypeId, displayTypeName, playlistName, playlistId, unassigned, slot, zoneSlot, position, assignedTo, supportedTargeting, qrControl, visionAi, reservePrice, reservePriceOverride, displayTypeReservePrice, billingUnitHours, billingUnitHoursOverride, displayTypeBillingUnitHours, companyPlayWindowHours, maxCampaigns, maxCampaignsOverride, displayTypeMaxCampaigns]
+      required: [displayTypeId, displayTypeName, playlistName, playlistId, unassigned, salesLocked, slot, zoneSlot, position, assignedTo, supportedTargeting, qrControl, visionAi, reservePrice, reservePriceOverride, displayTypeReservePrice, billingUnitHours, billingUnitHoursOverride, displayTypeBillingUnitHours, companyPlayWindowHours, maxCampaigns, maxCampaignsOverride, displayTypeMaxCampaigns]
       properties:
         displayTypeId: {type: string}
         displayTypeName: {type: string}
         touchPoint: {type: string}
+        salesLocked:
+          type: boolean
+          description: |
+            True while this slot is locked against new sales (ticket "Lock
+            playlist slot against new sales when slots are sold", 30 Sep
+            2026). Existing bookings are unaffected; the lock releases by
+            itself once the booking schedule has no live booking on the slot.
+        salesLockedUntil:
+          type: [string, 'null']
+          format: date-time
+          description: When the last live booking on a locked slot finishes playing, i.e. the earliest the lock can release; null when not locked.
         playlistName: {type: string}
         playlistId:
           type: [string, 'null']
@@ -2360,6 +2437,13 @@ components:
                   whitelistOnly; listMode is deal whenever this is set.
               storeScope: {type: [string, 'null']}
               quota: {type: [integer, 'null']}
+              salesLocked:
+                type: boolean
+                description: |
+                  Locked against new sales (30 Sep 2026): set from Available
+                  Inventory when the advertiser can't be removed because slots
+                  are sold, cleared by the server itself once the slot has no
+                  live booking. Not writable through the slot editor's PUT.
               supportedTargeting:
                 type: array
                 description: |

@@ -91,6 +91,10 @@ export const displayTypeRoutes = (ctx: Context, guards: Guards): FastifyPluginAs
        are carried over here — and dropped when a slot stops being sellable
        (Rob, 20 Sep). A Stores slot takes the default scope. */
     const previous = dt.phExtensions?.slots ?? []
+    /* A sold slot stays an Advertiser slot: switching its owner would drop
+       the advertiser and strand the booking (30 Sep 2026). */
+    const stranded = body.slots.flatMap((s, i) => (previous[i]?.owner === 'advertiser' && s.owner !== 'advertiser' ? liveCommitments(ctx, dt.id, i + 1) : []))
+    if (stranded.length) throw hasDependents("An Advertiser slot can't be changed to another owner while it is reserved or sold for a current or future window.", dependentDetails({ canDelete: false, dependents: stranded }))
     const ext: DisplayTypeExtensions = {
       slots: body.slots.map((s, i) => {
         const was = previous[i]
@@ -108,6 +112,7 @@ export const displayTypeRoutes = (ctx: Context, guards: Guards): FastifyPluginAs
           storeScope: s.owner === 'retail' ? was?.storeScope ?? 'Store staff' : null,
           quota: was?.quota ?? null,
           ...(kept && was.supportedTargeting ? { supportedTargeting: was.supportedTargeting } : {}),
+          ...(kept && was.salesLocked ? { salesLocked: true } : {}),
         }
       }),
       ...((body.venue ?? dt.phExtensions?.venue) ? { venue: body.venue ?? dt.phExtensions?.venue } : {}),

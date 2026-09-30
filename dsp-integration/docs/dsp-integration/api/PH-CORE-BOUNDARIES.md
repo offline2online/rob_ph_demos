@@ -75,6 +75,10 @@ These are behaviours the build **relies on**. An adapter that doesn't
 provide one breaks something specific, named here.
 
 - **`DisplayTypeSource`**
+  - `phExtensions.slots[].salesLocked` (30 Sep 2026) round-trips too: it is
+    written by this build (the slot lock, REQUIREMENTS §1) and cleared by
+    the scheduler once the slot has no live booking. An adapter that drops
+    it silently re-opens a locked slot to new sales.
   - `phExtensions` (slots, reserve price, venue) round-trips unchanged.
     Nothing but this build reads or writes that field.
   - `list()` returns records the caller must not mutate. The stand-in
