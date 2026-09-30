@@ -2199,18 +2199,48 @@ Incubator page" above), which is also why there is no `create_concept` or
 tool either, so a project's or concept's own creation/promotion stays a
 board/human action.
 
-**The two `board.read` "board" tools above are also composable.**
-`get_ready_for_testing_board` and `get_approved_for_deployment_board`
-return, alongside their usual JSON, an embedded HTML resource (an MCP
-`resource` content block, `mimeType: "text/html"`) rendering the column as
-ticket cards (title, testSummary/desc, test link, testVersion, a link back
-to the ticket, and — for Approved for Deployment — train/PR context), for
-a client that renders embedded resources inline in the conversation. Pure
-static markup: no `<script>`, no external stylesheet/font fetch, no
-`<form>`, nothing that could change a ticket's status from the widget
-itself — every user-authored string is escaped and a linked URL is only
-ever rendered as a clickable `href` when it parses as `https://`.
-`get_approved_for_deployment_board` additionally reports, per project,
+**The two `board.read` "board" tools above are also composable — they are
+MCP Apps** (SEP-1865, extension `io.modelcontextprotocol/ui`, spec
+2026-01-26). `get_ready_for_testing_board` and
+`get_approved_for_deployment_board` each carry `_meta.ui.resourceUri`
+(plus the deprecated flat `_meta["ui/resourceUri"]`) naming a
+`ui://backlog-tracker/ready-for-testing` /
+`ui://backlog-tracker/approved-for-deployment` resource the server lists
+and serves through `resources/list` / `resources/read` — declared under
+`capabilities.resources` in `initialize` — with `mimeType:
+"text/html;profile=mcp-app"` and its sandbox settings under `_meta.ui`
+(`prefersBorder: true`; `csp.resourceDomains` = Google Fonts for Roboto
+only; no `connectDomains`, the view fetches nothing itself). Each tool's
+result carries the column as `structuredContent` (`kind`, `projectId`,
+`projectLabel`, `count`, `items[]` with `id`, `project`, `title`, `type`,
+`category`, `testSummary`, `desc`, `previewUrl`, `testVersion`, `board`,
+and for Approved for Deployment `onTrain`/`deployCommit`/`prNumber`/
+`deployBranch` plus top-level `readyToDeploy`/`readyLine`) and the same
+JSON as a text block for the model. A host that supports MCP Apps
+(claude.ai, Claude Desktop) fetches the view, renders it in a sandboxed
+iframe inline in the conversation, and delivers the result to it over the
+SEP-1865 postMessage protocol (`ui/initialize` →
+`ui/notifications/initialized`, then `ui/notifications/tool-result`); the
+view (`functions/mcp-app-views.js`, one self-contained HTML document,
+inline CSS/JS, PH tokens layered over the host's style variables for
+light/dark) renders the cards (title, testSummary/desc, type/area, test
+link, testVersion, a link back to the ticket, train/PR context and the
+deploy-readiness line for Approved for Deployment), reports its size
+(`ui/notifications/size-changed`), opens links through the host
+(`ui/open-link`), answers `ui/resource-teardown`, and offers Refresh
+(re-running the same read-only tool via `tools/call` through the host)
+only where the host advertises `serverTools`. Read-only in the fullest
+sense: no `<form>`, no write, every user-authored string reaches the DOM
+via `textContent`, and a URL becomes an `href` only when it parses as
+`https://` (the server already nulls anything else in
+`structuredContent`). Claude Code does not render MCP Apps yet — its CLI
+validates and forwards the binding and advertises the extension only
+behind its own host switch (anthropics/claude-code#95149) — so there the
+tools answer as text. The first cut (PR #208, 24 Sep 2026) returned an
+embedded `text/html` content block instead of any of this, which no host
+renders; `test/mcp-server.test.js` covers the wire contract and
+`test/mcp-app-view.test.mjs` drives the view in Chromium under a scripted
+host. `get_approved_for_deployment_board` additionally reports, per project,
 whether that project's whole train is ready for `approve_deploy_to_main`
 below (only meaningful with a `projectId` filter — it is a per-project
 question).
