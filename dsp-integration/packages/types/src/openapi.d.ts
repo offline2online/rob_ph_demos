@@ -1049,6 +1049,14 @@ export interface components {
             billingUnitHours: number;
             /** @description Assumed views (VAC-d) in one of this position's windows (billingUnitHours long). */
             assumedViewsPerWindow?: number;
+            /**
+             * @description Whether the slot has an audience score. Inventory lists only
+             *     scored positions, so this is always true here; an unscored slot
+             *     is a 404 (not sellable) and a bid on it is refused with a 409
+             *     that says why (ticket, 30 Sep 2026). There is no fallback
+             *     estimate: an invented audience number would end up on invoices.
+             */
+            scored?: boolean;
             pricing: components["schemas"]["Pricing"];
             /**
              * @description A CPM premium at which this position can be reserved in advance
@@ -1069,14 +1077,24 @@ export interface components {
             currency: string;
             floorCpm: number;
             /**
-             * @description What a bid must clear per thousand assumed views, for this caller.
-             *     Interactive campaigns pay one of these for the plays and the
-             *     engagement fee on top, so they have no floor of their own.
+             * @description What a bid must clear per thousand assumed views, for this caller:
+             *     the base floor × the advertiser's floor multiplier, whatever the
+             *     campaign's type (Rob, 30 Sep 2026). The personalised multiplier is
+             *     not part of it. Interactive campaigns pay this for the plays and
+             *     the engagement fee on top, so they have no floor of their own.
              */
             effectiveFloorCpm: {
+                /** @description The floor every campaign type clears. */
                 localised: number;
-                personalised: number;
             };
+            /**
+             * @description Charged only when a personalised version plays: that play bills at
+             *     the committed (clearing) CPM × this. Default and localised plays
+             *     bill at the committed CPM. It is not a floor and does not affect
+             *     what a bid must clear. It does not apply to interactive campaigns.
+             *     The value in force when a window clears is kept on the reservation.
+             */
+            personalisedMultiplier: number;
             /**
              * @description Charged once per engagement (a QR Control scan), on top of the CPM,
              *     for an interactive campaign. In the same currency, to the cent. The
@@ -1318,7 +1336,10 @@ export interface components {
             auctionCutoffTime: string;
             /** @default 100 */
             floorCpm: number;
-            /** @default 1.5 */
+            /**
+             * @description Charged per personalised play, on top of the committed price: 100 committed × 1.5 = 150 for that play. Not a bid floor: bids and the auction clear against the base floor.
+             * @default 1.5
+             */
             personalisedMultiplier: number;
             /**
              * @description Interactive cost per engagement: what an advertiser pays each time someone engages with an interactive campaign (a QR Control scan), on top of the CPM. To the cent; 0 means engagements are not charged for.
@@ -1497,6 +1518,15 @@ export interface components {
             displayTypeId: string;
             displayTypeName: string;
             touchPoint?: string;
+            /**
+             * @description Whether the slot has an audience score (an audience_vacd row).
+             *     An unscored slot reports 0 assumed views, so it is never
+             *     exposed to advertisers (GET /v1/inventory), forecast, auctioned
+             *     or bid on (ticket, 30 Sep 2026). Saving it is not blocked.
+             */
+            scored: boolean;
+            /** @description Why the slot can't be sold yet — no audience score, or no slot duration (venue loop length ÷ rotation cap) — or null when it can. Shown as a warning on Available Inventory. */
+            unsellableReason: string | null;
             /**
              * @description True while this slot is locked against new sales (ticket "Lock
              *     playlist slot against new sales when slots are sold", 30 Sep

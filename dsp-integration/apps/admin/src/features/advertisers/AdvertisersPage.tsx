@@ -118,6 +118,14 @@ const PlaylistCell = ({ data }: ICellRendererParams<AvailableInventoryRow>) =>
           <span className="inline-flex" aria-label="QR Control enabled"><Icon name="qr_code_2" size={15} style={{ color: T.primary }} /></span>
         </Tooltip>
       )}
+      {data.unsellableReason && (
+        /* Unscored (or duration-less) slot, ticket 30 Sep 2026: saving is not blocked, but advertisers can't see or bid on it. */
+        <Tooltip title={data.unsellableReason}>
+          <span className="inline-flex items-center gap-0.5" role="status" aria-label={data.unsellableReason} style={{ color: T.error }}>
+            <Icon name="warning" size={14} /><span style={{ fontSize: 11, whiteSpace: 'normal' }}>{data.unsellableReason}</span>
+          </span>
+        </Tooltip>
+      )}
       {data.unassigned && (
         <Tooltip title="This playlist's advertiser slots aren't assigned to any physical display, so they aren't actually playing.">
           <span className="inline-flex items-center gap-0.5" aria-label="Unassigned" style={{ color: T.error }}>

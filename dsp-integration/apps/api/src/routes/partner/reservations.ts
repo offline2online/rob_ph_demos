@@ -28,7 +28,8 @@ import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { assignedOf, reservePriceOf } from '@ph-dsp/types'
 import { termStateAt } from '../../billing/term'
-import { assignmentOf, biddingClosesAt, biddingOpensAt, effectivePartnerIds, findPosition, heldFor, windowHoursOf, windowStartOf } from '../../domain/positions'
+import { assignmentOf, biddingClosesAt, biddingOpensAt, effectivePartnerIds, findPosition, heldFor, unsellableReason, windowHoursOf, windowStartOf } from '../../domain/positions'
+import { multiplierToSnapshot } from '../../domain/pricing'
 import { checkAdvertiser, checkCampaign, checkFloor, checkTargeting } from '../../exchange/enforcement'
 import { handOff } from '../../exchange/handoff'
 import { auctionClaimed } from '../../exchange/scheduler'
@@ -88,6 +89,9 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
        at the cutoff. */
     if (b.type === 'bid' && now < biddingOpensAt(ctx, start!).getTime()) throw conflict(`Bidding for that window opens at ${biddingOpensAt(ctx, start!).toISOString()}.`)
     if (now >= biddingClosesAt(ctx, start!).getTime() || auctionClaimed(ctx, windowStart)) throw conflict(`Bidding for that window closed at ${biddingClosesAt(ctx, start!).toISOString()}, when its auction ran.`)
+    /* Unscored (or duration-less) slot: refused with the reason, never sold at 0 views. */
+    const unsellable = unsellableReason(ctx, pos)
+    if (unsellable) throw conflict(unsellable)
     if (!ctx.displays.summaryByDisplayType(pos.displayType.id).displays) throw conflict('The position has no displays in that window.')
     if (pos.def.salesLocked) throw conflict('This position is locked against new sales: its existing bookings continue, but no further window can be bid on or reserved.')
     const assignment = assignmentOf(pos.def)
@@ -115,7 +119,7 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
       ?? checkTargeting(pos, c.pricingType)
       /* A reserve-price booking is checked at the rate it is booked at:
          the reserve price never clears below the floor (OQ45). */
-      ?? checkFloor(ctx, b.type === 'reserve' && reservePrice !== null ? reservePrice : (b.bidCpm as number), c.pricingType, c.advertiserId)
+      ?? checkFloor(ctx, b.type === 'reserve' && reservePrice !== null ? reservePrice : (b.bidCpm as number), c.advertiserId)
     if (refusal) throw new HttpError(422, refusal.code, refusal.reason)
 
     const company = ctx.company.get()
@@ -132,6 +136,7 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
       status: reserved ? 'reserved' : 'pending', clearingCpm: reserved ? rate : null,
       reason: reserved && reservePrice !== null ? `Reserved at the reserve price (${rate} ${company.currency} CPM), outside the open auction.` : null,
       testMode: !live, pricingType: c.pricingType ?? null, handedOffAt: null,
+      personalisedMultiplier: reserved ? multiplierToSnapshot(company, c.pricingType) : null,
       })
     } catch (e) {
       /* Two writes for one window racing past the checks above — from two

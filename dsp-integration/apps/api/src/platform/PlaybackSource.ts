@@ -2,8 +2,17 @@
    for billing reconciliation and never writes or reports on it. */
 import { type Db, prepared } from '../db/db'
 
-export interface PlayRecord { displayId: string; campaignId: string; playedAt: string; durationSec: number }
-export interface PlayTotals { plays: number; playedSec: number }
+/* Which version of the campaign a play showed (Rob, 30 Sep 2026): the
+   default, a localised one or a personalised one. Only PH Core's playback
+   data can say, so this is a requirement on it (api/PH-CORE-BOUNDARIES.md,
+   "Playback"); the stand-in carries it nullable. null = not known, billed as
+   a default or localised play, exactly as before the field existed. */
+export type PlayTier = 'default' | 'localised' | 'personalised'
+export interface PlayRecord { displayId: string; campaignId: string; playedAt: string; durationSec: number; versionId?: string | null; tier?: PlayTier | null }
+/* plays / playedSec are every play; `personalised` is the part of them whose
+   version was personalised. The rest (default, localised, unknown) bills at
+   the clearing CPM. */
+export interface PlayTotals { plays: number; playedSec: number; personalised?: { plays: number; playedSec: number } }
 
 export interface PlaybackSource {
   listPlays(q: { campaignId?: string; from: string; to: string }): PlayRecord[]
@@ -17,26 +26,28 @@ export interface PlaybackSource {
   totals(q: { campaignId: string; displayTypeId: string; from: string; to: string }): PlayTotals
 }
 
-interface Row { display_id: string; campaign_id: string; played_at: string; duration_sec: number }
+interface Row { display_id: string; campaign_id: string; played_at: string; duration_sec: number; version_id: string | null; tier: PlayTier | null }
 
 export const sqlitePlaybackSource = (db: Db): PlaybackSource => ({
   listPlays({ campaignId, from, to }) {
     const rows = (campaignId
       ? prepared(db, 'SELECT * FROM plays WHERE campaign_id = ? AND played_at >= ? AND played_at < ? ORDER BY played_at').all(campaignId, from, to)
       : prepared(db, 'SELECT * FROM plays WHERE played_at >= ? AND played_at < ? ORDER BY played_at').all(from, to)) as unknown as Row[]
-    return rows.map((r) => ({ displayId: r.display_id, campaignId: r.campaign_id, playedAt: r.played_at, durationSec: r.duration_sec }))
+    return rows.map((r) => ({ displayId: r.display_id, campaignId: r.campaign_id, playedAt: r.played_at, durationSec: r.duration_sec, versionId: r.version_id, tier: r.tier }))
   },
   totals({ campaignId, displayTypeId, from, to }) {
     /* Answered from the covering index plays (campaign_id, played_at,
-       display_id, duration_sec) (migration 0025), keeping only plays on the
+       display_id, duration_sec, tier) (migrations 0025, 0033), keeping only plays on the
        display type's own displays. Measured on 1.9 million plays: 0.5 s
        this way, 0.6 s as a join, 17 s as rows into JavaScript. */
     const r = prepared(db,
-      `SELECT COUNT(*) AS plays, COALESCE(SUM(duration_sec), 0) AS played_sec
+      `SELECT COUNT(*) AS plays, COALESCE(SUM(duration_sec), 0) AS played_sec,
+              COALESCE(SUM(tier = 'personalised'), 0) AS p_plays,
+              COALESCE(SUM(CASE WHEN tier = 'personalised' THEN duration_sec END), 0) AS p_sec
          FROM plays
         WHERE campaign_id = ? AND played_at >= ? AND played_at < ?
           AND display_id IN (SELECT id FROM displays WHERE display_type_id = ?)`,
-    ).get(campaignId, from, to, displayTypeId) as { plays: number; played_sec: number }
-    return { plays: r.plays, playedSec: r.played_sec }
+    ).get(campaignId, from, to, displayTypeId) as { plays: number; played_sec: number; p_plays: number; p_sec: number }
+    return { plays: r.plays, playedSec: r.played_sec, personalised: { plays: r.p_plays, playedSec: r.p_sec } }
   },
 })

@@ -76,20 +76,42 @@ All paths are served from the retailer's own instance
 ## Pricing maths (used by inventory, forecast and the auction)
 
 ```
-effective floor CPM = floorCpm
-                    × personalisedMultiplier   (personalised campaigns only)
-                    × advertiser floorMultiplier
+effective floor CPM = floorCpm × advertiser floorMultiplier   (every campaign type)
 
-per engagement      = interactiveCpe           (interactive campaigns, on top)
+personalised play   = committed (clearing) CPM × personalisedMultiplier
+                                                (billing only, per play)
+
+per engagement      = interactiveCpe            (interactive campaigns, on top)
 ```
 
 Defaults: floor 100, personalised 1.5, advertiser 1.0, cost per engagement
-0.50. Localised and default campaigns use floor × advertiser multiplier
-only. Interactive is **not** a multiplier: such a campaign clears the same
-CPM floor as its targeting type and pays `interactiveCpe` for each
-engagement (a QR Control scan) on top, unscaled by the advertiser
-multiplier. A position reports both — `pricing.effectiveFloorCpm`
-(`localised`, `personalised`) and `pricing.costPerEngagement`.
+0.50. **The personalised multiplier is not a floor** (Rob, 30 Sep 2026).
+Bids and the auction clear against the base floor × the advertiser's floor
+multiplier whatever the campaign's type, and the price a campaign wins at
+covers its default and localised plays. The multiplier is charged **only
+when a personalised version plays**: that play bills at the committed price
+× the multiplier (100 committed × 1.5 = 150 for that play). The advertiser's
+floor multiplier scales the floor only. The multiplier in force when a
+window clears is kept on the reservation, so a later settings change cannot
+reprice it. Interactive is **not** a multiplier either: such a campaign
+clears the same floor, has no personalised multiplier, and pays
+`interactiveCpe` for each engagement (a QR Control scan) on top, unscaled by
+the advertiser multiplier. A position reports `pricing.effectiveFloorCpm.localised`
+(the one floor), `pricing.personalisedMultiplier` and `pricing.costPerEngagement`.
+Billing splits a window's plays by version tier (`default`, `localised`,
+`personalised`); which version played is PH Core's to supply
+(PH-CORE-BOUNDARIES.md, "Playback"), and a play with no tier bills as
+default, at the clearing CPM.
+
+**Unscored slots are not sold** (30 Sep 2026). A slot with no audience
+score reports 0 assumed views, so `GET /v1/inventory` leaves it out, `GET
+/v1/inventory/{positionId}` (and its availability) answers 404, a forecast
+that names it is refused `Unknown position`, and `POST /v1/reservations`
+on it answers 409 `conflict` with the reason ("No audience score yet — this
+slot can't be sold until it is scored."). The auction skips it. A slot also
+needs a slot duration (the venue loop length) before it is exposed. There
+is no fallback estimate: an invented audience number would end up on
+invoices.
 
 ## Partner API — `/v1`
 

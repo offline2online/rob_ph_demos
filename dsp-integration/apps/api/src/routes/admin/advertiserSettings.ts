@@ -4,7 +4,7 @@ import { MAX_MAX_CAMPAIGNS, MIN_MAX_CAMPAIGNS, TARGETING_MODES, advertiserSlug, 
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { cleanList, validateAdvertiserSettings } from '../../domain/advertiserSettings'
-import { companyWindowCommitments, positionIdOf, slotWindowCommitments } from '../../domain/positions'
+import { companyWindowCommitments, positionIdOf, slotWindowCommitments, unsellableReason } from '../../domain/positions'
 import { zonesOf } from '../../domain/displayTypes'
 import { assignedToSlot, validateAssigned } from '../../domain/slots'
 import type { Guards } from '../../http/app'
@@ -133,7 +133,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         const playlistId = playlistIdOf(s)
         const playlistName = (playlistId && ctx.playlists.get(playlistId)?.name) || '—'
         items.push({
-          displayTypeId: t.id, displayTypeName: t.name, touchPoint: t.touchPoint, playlistName, playlistId, unassigned, salesLocked: s.salesLocked === true, salesLockedUntil: s.salesLocked ? slotBookedUntil(ctx, t.id, i + 1) : null, slot: i + 1, zoneSlot, position: s.label,
+          displayTypeId: t.id, displayTypeName: t.name, touchPoint: t.touchPoint, playlistName, playlistId, unassigned, scored: ctx.audience.forSlot(t.id, i + 1).scored, unsellableReason: unsellableReason(ctx, { positionId: positionIdOf(t.id, i + 1), displayType: t, slot: i + 1, def: s }), salesLocked: s.salesLocked === true, salesLockedUntil: s.salesLocked ? slotBookedUntil(ctx, t.id, i + 1) : null, slot: i + 1, zoneSlot, position: s.label,
           assignedTo: {
             ...a,
             partnerNames: a.partnerIds.map((id) => partners.find((p) => p.id === id)?.name ?? id),

@@ -6,6 +6,7 @@ import type { Context } from '../context'
 import { isUniqueViolation } from '../db/db'
 import { type PositionRef, assignmentOf } from '../domain/positions'
 import { isTermLocked } from './term'
+import { multiplierToSnapshot } from '../domain/pricing'
 import { floorFor } from '../exchange/enforcement'
 import { handOff } from '../exchange/handoff'
 import { settlePending } from '../exchange/pending'
@@ -37,7 +38,7 @@ export async function bookLockedTermWindow(ctx: Context, p: PositionRef, start: 
      the floor in force now is not sold. It falls through to the default
      campaign, as a deal that clears nothing always has, and is never
      booked below the floor. */
-  const floor = floorFor(ctx, win.pricingType, win.advertiserId)
+  const floor = floorFor(ctx, win.advertiserId)
   if (win.cpm < floor) {
     return { ...out, skipped: `Private auction: the locked rate (${win.cpm}) is below the effective floor of ${floor} ${ctx.company.get().currency} CPM, so this window is not sold under ${list.name}.` }
   }
@@ -51,7 +52,7 @@ export async function bookLockedTermWindow(ctx: Context, p: PositionRef, start: 
     id: `res_${randomUUID().slice(0, 12)}`, partnerId: win.partnerId, advertiserId: win.advertiserId, campaignId: win.campaignId,
     positionId: p.positionId, windowStart: start, type: win.channel === 'openrtb' ? 'bid' : 'reserve', channel: win.channel,
     bidCpm: win.cpm, currency: ctx.company.get().currency, status: reserve ? 'reserved' : 'won', clearingCpm: win.cpm,
-    reason: reserve ? `Reserved: booked at ${list.name}'s reserve-price commitment, no auction.` : `Private auction: booked at ${list.name}'s locked rate, no re-auction.`, testMode: false, pricingType: win.pricingType, handedOffAt: null,
+    reason: reserve ? `Reserved: booked at ${list.name}'s reserve-price commitment, no auction.` : `Private auction: booked at ${list.name}'s locked rate, no re-auction.`, testMode: false, pricingType: win.pricingType, handedOffAt: null, personalisedMultiplier: multiplierToSnapshot(ctx.company.get(), win.pricingType),
     })
   } catch (e) {
     /* Another clearing booked this window first (migration 0021). */

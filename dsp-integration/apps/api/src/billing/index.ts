@@ -6,6 +6,16 @@
      played   = the campaign's actual play time on those displays in the window
      realised VAC-d = assumed views per window × min(1, played / expected)
      amount   = realised VAC-d / 1000 × the clearing CPM
+                + personalised realised VAC-d / 1000 × clearing CPM × the
+                  personalised multiplier
+
+   The personalised multiplier is a per-play surcharge, not a bid floor
+   (Rob, 30 Sep 2026): the committed price covers default and localised
+   plays, and a play of a personalised version bills at committed price ×
+   multiplier. The realised VAC-d is split by the share of played time that
+   was personalised (PlaybackSource.totals), and the multiplier is the one
+   snapshotted on the reservation when the window cleared. A play with no
+   known version bills as default: null tier changes nothing.
 
    Plays that didn't happen (display offline, store closed, loop cut short)
    are not billed (Q29). Line items are stored only: no UI, report or API.
@@ -49,7 +59,15 @@ export interface LineItem {
   realisedViews: number
   cpm: number
   currency: string
+  /* The whole bill, personalised part included. */
   amount: number
+  /* The personalised plays' share of it (Rob, 30 Sep 2026): how many, the
+     realised VAC-d they carried, the multiplier applied (the reservation's
+     snapshot; null when none applied) and what they billed. */
+  personalisedPlays: number
+  personalisedViews: number
+  personalisedMultiplier: number | null
+  personalisedAmount: number
 }
 
 export { bookLockedTermWindow, lockTermOnClear } from './lockedTerm'
@@ -94,10 +112,18 @@ export function computeLineItem(ctx: Context, r: ReservationRecord, p: PositionR
   const expectedSec = displays * (len / 1000) * share
   const assumedViews = assumedViewsPerWindow(ctx, p)
   const realisedViews = Math.round(assumedViews * (expectedSec > 0 ? Math.min(1, played.playedSec / expectedSec) : 0))
+  /* The personalised plays' share of the realised views, by played time. */
+  const persPlays = played.personalised?.plays ?? 0
+  const personalisedViews = played.playedSec > 0 ? Math.round(realisedViews * Math.min(1, (played.personalised?.playedSec ?? 0) / played.playedSec)) : 0
+  const multiplier = r.personalisedMultiplier ?? null
+  const cpm = r.clearingCpm as number
+  const personalisedAmount = personalisedViews > 0 && multiplier !== null ? round2((personalisedViews / 1000) * cpm * multiplier) : round2((personalisedViews / 1000) * cpm)
+  const baseAmount = round2(((realisedViews - personalisedViews) / 1000) * cpm)
   return {
     id: `bl_${randomUUID().slice(0, 12)}`, reservationId: r.id, partnerId: r.partnerId, advertiserId: r.advertiserId, campaignId: r.campaignId as string,
     positionId: r.positionId, windowStart: r.windowStart, windowEnd: new Date(end).toISOString(), plays: played.plays, playedSec: played.playedSec, expectedSec,
-    assumedViews, realisedViews, cpm: r.clearingCpm as number, currency: r.currency, amount: round2((realisedViews / 1000) * (r.clearingCpm as number)),
+    assumedViews, realisedViews, cpm, currency: r.currency, amount: round2(baseAmount + personalisedAmount),
+    personalisedPlays: persPlays, personalisedViews, personalisedMultiplier: multiplier, personalisedAmount,
   }
 }
 
@@ -108,10 +134,12 @@ export function computeLineItem(ctx: Context, r: ReservationRecord, p: PositionR
 export function writeLineItem(ctx: Context, item: LineItem, computedAt: string): boolean {
   return prepared(ctx.db,
     `INSERT INTO billing_line_items (id, reservation_id, partner_id, advertiser_id, campaign_id, position_id, window_start, window_end, plays,
-       played_sec, expected_sec, assumed_views, realised_views, cpm, currency, amount, computed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       played_sec, expected_sec, assumed_views, realised_views, cpm, currency, amount, computed_at,
+       personalised_plays, personalised_views, personalised_multiplier, personalised_amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT (reservation_id) DO NOTHING`,
   ).run(item.id, item.reservationId, item.partnerId, item.advertiserId, item.campaignId, item.positionId, item.windowStart, item.windowEnd, item.plays,
-    item.playedSec, item.expectedSec, item.assumedViews, item.realisedViews, item.cpm, item.currency, item.amount, computedAt).changes > 0
+    item.playedSec, item.expectedSec, item.assumedViews, item.realisedViews, item.cpm, item.currency, item.amount, computedAt,
+    item.personalisedPlays, item.personalisedViews, item.personalisedMultiplier, item.personalisedAmount).changes > 0
 }
 
 /* Bills one cleared reservation from the totals for its window. Idempotent
@@ -148,5 +176,7 @@ export function lineItems(ctx: Context): LineItem[] {
     campaignId: r.campaign_id as string, positionId: r.position_id as string, windowStart: r.window_start as string, windowEnd: r.window_end as string,
     plays: r.plays as number, playedSec: r.played_sec as number, expectedSec: r.expected_sec as number, assumedViews: r.assumed_views as number,
     realisedViews: r.realised_views as number, cpm: r.cpm as number, currency: r.currency as string, amount: r.amount as number,
+    personalisedPlays: r.personalised_plays as number, personalisedViews: r.personalised_views as number,
+    personalisedMultiplier: r.personalised_multiplier as number | null, personalisedAmount: r.personalised_amount as number,
   }))
 }
