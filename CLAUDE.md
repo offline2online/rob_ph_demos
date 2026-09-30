@@ -518,8 +518,19 @@ the ticket and in `mcpAuditLog`.
   — the CLI already validates and forwards the binding). The first cut
   (PR #208, 24 Sep 2026) put a plain `text/html` resource block in the
   tool result, which no host renders — that is why it "never worked".
-  Tests: `npm run test:mcp` (the wire) and `npm run test:mcp-app` (the
-  view in Chromium under a scripted host) in `backlog-tracker/test`.
+  **The column is presented automatically when a build lands**:
+  `run-backlog-automation.js` stamps `projects/{id}
+  .readyForTestingNotifyRequestedAt` after landing tickets, and
+  `functions/notifyOnItemsReadyForTesting` fires a Routine session that
+  calls `get_ready_for_testing_board` (`ROUTINE_INSTRUCTIONS.md` → "The
+  'Ready for Testing' flow"); the Deploy flow opens with
+  `get_approved_for_deployment_board`. That session only has those tools
+  if the Routine at claude.ai/code/routines has the **PH Agent Console**
+  connector attached (it had Slack and "visualize" only on 30 Sep 2026);
+  without it the session presents the column as text.
+  Tests: `npm run test:mcp` (the wire), `npm run test:mcp-app` (the view
+  in Chromium under a scripted host) and `npm run test:ready-for-testing`
+  (the hand-off) in `backlog-tracker/test`.
 - **Documentation: full read/write, on purpose.** An agent is expected to
   keep a project's docs current as it works. Read: `get_project_docs`,
   `list_doc_revisions`, `get_doc_revision`. Write:

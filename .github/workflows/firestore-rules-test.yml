@@ -126,5 +126,12 @@ jobs:
       - name: Run Routine binding tests
         run: npm run test:routine-binding
 
+      # The Ready for Testing hand-off (30 Sep 2026): the real
+      # notifyOnItemsReadyForTesting Cloud Function under stubbed SDKs, and
+      # the automation's stamp that fires it — what puts the Ready for
+      # Testing column in front of a person the moment a build lands.
+      - name: Run Ready for Testing hand-off tests
+        run: npm run test:ready-for-testing
+
       - name: Run rules tests against the emulator
         run: npm run test:rules
