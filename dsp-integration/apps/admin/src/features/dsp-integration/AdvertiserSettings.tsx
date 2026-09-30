@@ -64,13 +64,13 @@ const FLOOR_TIP = (
 const PERSONALISED_TIP = (
   <div style={{ fontSize: 12 }}>
     Applied when the visitor is checked in or otherwise identified, so the advert is one-to-one for that individual.
-    <div className="mt-2">It multiplies the <b>floor price</b>: at 1.5, a floor of 100 becomes <b>150</b> CPM for a personalised campaign, and the advertiser’s own floor multiplier scales that again.</div>
+    <div className="mt-2">It is <b>not a bid floor</b>. Bids and the auction clear against the floor price, and the price a campaign wins at covers its default and localised plays. This is charged <b>only when a personalised version plays</b>: that play bills at the committed price × this. At 1.5, a campaign committed at 100 pays <b>150</b> CPM for a personalised play. The advertiser’s floor multiplier scales the floor only. Interactive campaigns are not charged it. By submitting a personalised version an advertiser accepts it.</div>
   </div>
 )
 const INTERACTIVE_TIP = (
   <div style={{ fontSize: 12 }}>
     What an advertiser pays each time someone engages with an interactive campaign — scanning its QR Control code to carry on with the brand on their own phone.
-    <div className="mt-2">Charged per engagement, <b>on top of the CPM</b>: an interactive campaign still clears the <b>floor price</b> (or the personalised floor) for its plays, and adds this for each scan. The advertiser’s floor multiplier does not scale it. Set it to 0 to leave engagements unpriced.</div>
+    <div className="mt-2">Charged per engagement, <b>on top of the CPM</b>: an interactive campaign still clears the <b>floor price</b> for its plays, and adds this for each scan. The advertiser’s floor multiplier does not scale it. Set it to 0 to leave engagements unpriced.</div>
   </div>
 )
 
@@ -147,7 +147,7 @@ export function AdvertiserSettings() {
     <>
       <SubPageHeader icon="rule" title="Advertiser settings" tip={ADVERTISER_SETTINGS_TIP} />
 
-      <SectionLabel><WithTip tip="Effective floor = floor CPM × the personalised multiplier (personalised campaigns) × the advertiser's floor multiplier (set on Advertisers / Inventory). Bids below it never win. An interactive campaign clears the same floor and pays the cost per engagement on top.">Pricing</WithTip></SectionLabel>
+      <SectionLabel><WithTip tip="Effective floor = floor CPM × the advertiser's floor multiplier (set on Advertisers / Inventory), the same for every campaign type. Bids below it never win. The personalised multiplier is not part of it: it is charged on top of the committed price only when a personalised version plays. An interactive campaign clears the same floor and pays the cost per engagement on top.">Pricing</WithTip></SectionLabel>
       <div className="flex flex-wrap items-start gap-3.5">
         <Field label={<span className="block" style={{ minHeight: 36 }}>Currency</span>} htmlFor="currency" tip="Used for the floor CPM, every effective floor and billing. Bid requests carry it as the bid floor currency." className="w-56">
           <Select id="currency" className="w-full" showSearch optionFilterProp="label" value={s.currency} onChange={(v) => set('currency', v)} options={CURRENCIES} popupMatchSelectWidth={280} />

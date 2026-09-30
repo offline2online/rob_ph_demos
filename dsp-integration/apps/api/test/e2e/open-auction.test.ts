@@ -209,7 +209,7 @@ describe('B. Auction / floor', () => {
     expect(h.rows(day(3)).find((r) => r.channel === 'openrtb')).toMatchObject({ status: 'lost' })
   })
 
-  it('B5 — personalised campaigns clear the multiplied floor, not the base, where the slot supports them', async () => {
+  it('B5 — a personalised campaign bids and clears against the base floor; the multiplier is a per-play surcharge, not a floor', async () => {
     const h = await harness()
     /* Localised only (default): a personalised campaign can't buy it at all. */
     const { id: pers } = await h.submitApiCampaign('Swisse — B5 personalised', 'personalised')
@@ -219,23 +219,26 @@ describe('B. Auction / floor', () => {
     const unsupported = await bid(200)
     expect(unsupported.statusCode).toBe(422)
     expect(unsupported.json().error.code).toBe('targeting_not_supported')
-    /* Opened up to personalised: 100 × 1.5 × 1.0 = 150. */
+    /* Opened up to personalised: the floor is still the base, 100 × 1.0 (Rob, 30 Sep 2026). */
     expect((await h.admin.supportTargeting(['localised', 'personalised'])).statusCode).toBe(200)
-    const under = await bid(149)
+    const under = await bid(99)
     expect(under.statusCode).toBe(422)
-    expect(under.json().error).toMatchObject({ code: 'below_floor', message: '149 is below the effective floor of 150 AUD CPM.' })
-    const at = await bid(150)
+    expect(under.json().error).toMatchObject({ code: 'below_floor', message: '99 is below the effective floor of 100 AUD CPM.' })
+    /* 120 on a 100 floor is accepted (Run 6): no multiplied floor of 150. */
+    const at = await bid(120)
     expect(at.statusCode).toBe(201)
     const out = await runAuction(h.ctx, day(0))
-    expect(out.positions[0].winner).toMatchObject({ reservationId: at.json().reservationId, clearingCpm: 150 })
-    /* Re-checked at the auction: a pending personalised bid that no longer clears (floor raised) is refused pre-auction. */
-    const pending = await bid(160, day(1))
+    expect(out.positions[0].winner).toMatchObject({ reservationId: at.json().reservationId, clearingCpm: 120 })
+    /* The multiplier in force is kept on the reservation for billing personalised plays. */
+    expect(h.ctx.reservations.get(at.json().reservationId)).toMatchObject({ status: 'won', clearingCpm: 120, personalisedMultiplier: 1.5 })
+    /* Re-checked at the auction: a pending bid that no longer clears (floor raised) is refused pre-auction. */
+    const pending = await bid(105, day(1))
     expect(pending.statusCode).toBe(201)
     h.ctx.company.save({ ...h.ctx.company.get(), floorCpm: 110 })
     await h.bidder.control({ mode: 'no_bid' })
     const later = await runAuction(h.ctx, day(1))
     expect(later.positions[0].winner).toBeNull()
-    expect(h.ctx.reservations.get(pending.json().reservationId)).toMatchObject({ status: 'rejected', reason: '160 is below the effective floor of 165 AUD CPM.' })
+    expect(h.ctx.reservations.get(pending.json().reservationId)).toMatchObject({ status: 'rejected', reason: '105 is below the effective floor of 110 AUD CPM.' })
   })
 })
 

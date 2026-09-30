@@ -5,7 +5,37 @@
    drives the fit. */
 import type { ColDef, GridApi, GridOptions } from 'ag-grid-community'
 import { AgGridReact } from 'ag-grid-react'
-import { useEffect, useRef } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef } from 'react'
+import type { ComponentType } from 'react'
+
+/* Cells read the page's latest values through params.context.current, a ref,
+   and AG Grid only re-renders a cell when its row data changes. So a change
+   to the page's working (unsaved) state never reached the cells: a picker
+   kept showing the saved value until Save refetched the rows. The page's
+   context object is provided to every cell renderer here, and each renderer
+   is wrapped to read it, so a cell re-renders (never remounts, so focus and
+   an open dropdown survive) whenever the page's context changes. */
+const LiveContext = createContext<unknown>(null)
+const liveCache = new WeakMap<object, ComponentType<any>>()
+function live(renderer: unknown): unknown {
+  if (typeof renderer !== 'function') return renderer
+  let wrapped = liveCache.get(renderer)
+  if (!wrapped) {
+    const Inner = renderer as ComponentType<any>
+    wrapped = function LiveCell(props: any) {
+      useContext(LiveContext)
+      return <Inner {...props} />
+    }
+    liveCache.set(renderer, wrapped)
+  }
+  return wrapped
+}
+
+
+/* Module-level on purpose: an inline object is new on every render, which
+   AG Grid reads as changed options and answers by resetting every column to
+   its defined width — undoing a dragged column edge whenever a row expands. */
+const DEFAULT_COL_DEF: ColDef = { sortable: false, suppressKeyboardEvent: () => true }
 
 export function Grid<Row>({ rows, columns, context, getRowId, label, height, stickyHeader, ...options }: {
   rows: Row[]
@@ -20,12 +50,32 @@ export function Grid<Row>({ rows, columns, context, getRowId, label, height, sti
   stickyHeader?: boolean
 } & Omit<GridOptions<Row>, 'rowData' | 'columnDefs' | 'context' | 'getRowId'>) {
   const wrapper = useRef<HTMLDivElement>(null)
+  const liveColumns = useMemo(() => columns.map((c) => (c.cellRenderer ? { ...c, cellRenderer: live(c.cellRenderer) } : c)) as ColDef<Row>[], [columns])
   const api = useRef<GridApi<Row> | null>(null)
   const ctx = useRef(context)
   ctx.current = context
+  /* Once someone has dragged a column edge, sizeColumnsToFit would throw
+     their widths away (it re-derives every width from the column
+     definitions) the next time it runs — including when a row expands and
+     the page gains a scrollbar. So after a drag, keep their widths and only
+     scale the flexible columns proportionally if the total no longer fits. */
+  const dragged = useRef(false)
   const fit = () => {
     const w = wrapper.current?.clientWidth
-    if (w && api.current && !api.current.isDestroyed()) api.current.sizeColumnsToFit(w - 2)
+    const a = api.current
+    if (!w || !a || a.isDestroyed()) return
+    if (!dragged.current) {
+      a.sizeColumnsToFit(w - 2)
+      return
+    }
+    const state = a.getColumnState().filter((c) => !c.hide)
+    const fixed = (id: string) => !!a.getColumn(id)?.getColDef().suppressSizeToFit
+    const fixedTotal = state.filter((c) => fixed(c.colId)).reduce((n, c) => n + (c.width ?? 0), 0)
+    const flexTotal = state.filter((c) => !fixed(c.colId)).reduce((n, c) => n + (c.width ?? 0), 0)
+    const room = w - 2 - fixedTotal
+    if (flexTotal <= 0 || Math.abs(flexTotal - room) < 1) return
+    const k = room / flexTotal
+    a.applyColumnState({ state: state.filter((c) => !fixed(c.colId)).map((c) => ({ colId: c.colId, width: Math.floor((c.width ?? 0) * k) })) })
   }
   useEffect(() => {
     if (!wrapper.current) return
@@ -35,9 +85,10 @@ export function Grid<Row>({ rows, columns, context, getRowId, label, height, sti
   }, [])
   return (
     <div ref={wrapper} className={`ag-theme-alpine w-full${stickyHeader ? ' ag-sticky-header' : ''}`} aria-label={label} style={height ? { height } : undefined}>
+      <LiveContext.Provider value={context}>
       <AgGridReact<Row>
         rowData={rows}
-        columnDefs={columns}
+        columnDefs={liveColumns}
         context={ctx}
         getRowId={(p) => getRowId(p.data)}
         domLayout={height ? 'normal' : 'autoHeight'}
@@ -46,8 +97,12 @@ export function Grid<Row>({ rows, columns, context, getRowId, label, height, sti
         suppressCellFocus
         suppressMovableColumns
         suppressHorizontalScroll
-        defaultColDef={{ sortable: false, suppressKeyboardEvent: () => true }}
+        defaultColDef={DEFAULT_COL_DEF}
         {...options}
+        onColumnResized={(e) => {
+          if (e.finished && e.source === 'uiColumnResized') dragged.current = true
+          options.onColumnResized?.(e)
+        }}
         onGridReady={(e) => {
           api.current = e.api
           fit()
@@ -60,6 +115,7 @@ export function Grid<Row>({ rows, columns, context, getRowId, label, height, sti
           options.onNewColumnsLoaded?.(e)
         }}
       />
+      </LiveContext.Provider>
     </div>
   )
 }

@@ -4,11 +4,12 @@ import { MAX_MAX_CAMPAIGNS, MIN_MAX_CAMPAIGNS, TARGETING_MODES, advertiserSlug, 
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { cleanList, validateAdvertiserSettings } from '../../domain/advertiserSettings'
-import { companyWindowCommitments, positionIdOf, slotWindowCommitments } from '../../domain/positions'
+import { companyWindowCommitments, positionIdOf, slotWindowCommitments, unsellableReason } from '../../domain/positions'
 import { zonesOf } from '../../domain/displayTypes'
 import { assignedToSlot, validateAssigned } from '../../domain/slots'
 import type { Guards } from '../../http/app'
-import { validationFailed } from '../../http/errors'
+import { conflict, hasDependents, notFound, validationFailed } from '../../http/errors'
+import { releaseSettledSlotLocks, slotBookedUntil, slotLiveBookings } from '../../domain/slotLock'
 
 /* Interactive targeting needs the visitor to have something to scan. */
 const hasQrControl = (dt: DisplayType) => !!(dt.qrControl as { enabled?: boolean } | undefined)?.enabled
@@ -77,6 +78,8 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
      position can be assigned to — the options behind the Assigned to
      multi-select (Rob, 20 Sep). */
   const inventory = () => {
+    /* A lock whose bookings have all played is released before it is shown. */
+    releaseSettledSlotLocks(ctx)
     const partners = ctx.partners.list()
     const buyersLists = ctx.buyersLists.list()
     const items: AvailableInventoryRow[] = []
@@ -130,7 +133,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         const playlistId = playlistIdOf(s)
         const playlistName = (playlistId && ctx.playlists.get(playlistId)?.name) || '—'
         items.push({
-          displayTypeId: t.id, displayTypeName: t.name, touchPoint: t.touchPoint, playlistName, playlistId, unassigned, slot: i + 1, zoneSlot, position: s.label,
+          displayTypeId: t.id, displayTypeName: t.name, touchPoint: t.touchPoint, playlistName, playlistId, unassigned, scored: ctx.audience.forSlot(t.id, i + 1).scored, unsellableReason: unsellableReason(ctx, { positionId: positionIdOf(t.id, i + 1), displayType: t, slot: i + 1, def: s }), salesLocked: s.salesLocked === true, salesLockedUntil: s.salesLocked ? slotBookedUntil(ctx, t.id, i + 1) : null, slot: i + 1, zoneSlot, position: s.label,
           assignedTo: {
             ...a,
             partnerNames: a.partnerIds.map((id) => partners.find((p) => p.id === id)?.name ?? id),
@@ -159,6 +162,27 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
   app.get('/available-inventory', async (req) => {
     guards.flagged()
     guards.requireScope(req, 'sections')
+    return inventory()
+  })
+
+  /* Lock a sold slot against new sales (ticket, 30 Sep 2026). Only a slot
+     with a live booking can be locked; there is no unlock — the lock
+     releases itself when the booking schedule has none left. */
+  app.put<{ Body: { displayTypeId?: unknown; slot?: unknown } }>('/available-inventory/lock', async (req) => {
+    guards.flagged()
+    guards.requireScope(req, 'admin')
+    const { displayTypeId, slot } = req.body ?? {}
+    if (typeof displayTypeId !== 'string' || typeof slot !== 'number' || !Number.isInteger(slot) || slot < 1) throw validationFailed([{ field: 'slot', reason: 'A display type and a slot number are required.' }])
+    const dt = ctx.displayTypes.get(displayTypeId)
+    if (!dt) throw notFound('Unknown display type.')
+    const def = dt.phExtensions?.slots?.[slot - 1]
+    if (!def) throw validationFailed([{ field: 'slot', reason: `${dt.name} has no slot ${slot}.` }])
+    if (def.owner !== 'advertiser') throw validationFailed([{ field: 'slot', reason: 'Only an Advertiser slot is sellable inventory.' }])
+    if (!def.salesLocked) {
+      if (!slotLiveBookings(ctx, dt.id, slot).length) throw conflict('Nothing is sold on this slot, so there is nothing to lock: remove the advertiser instead.')
+      const ext = dt.phExtensions!
+      ctx.displayTypes.saveExtensions(dt.id, { ...ext, slots: ext.slots.map((s, i) => (i === slot - 1 ? { ...s, salesLocked: true } : s)) })
+    }
     return inventory()
   })
 
@@ -271,6 +295,32 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
       }
     })
     if (errors.length) throw validationFailed(errors, 'A slot supports at least one type of targeting, and is assigned to DSPs or advertisers it can actually sell to.')
+
+    /* A sold slot keeps its advertiser (ticket, 30 Sep 2026): taking one off
+       a slot that is reserved or sold for a current or future window would
+       silently destroy inventory someone is paying for. Hard block; the
+       admin can lock the slot against new sales instead (PUT
+       /available-inventory/lock), and once its bookings have played the
+       lock releases and the advertiser can go. */
+    releaseSettledSlotLocks(ctx)
+    const sold: { field: string; reason: string }[] = []
+    rows.forEach((r, i) => {
+      const dt = ctx.displayTypes.get(r.displayTypeId as string)!
+      const slot = r.slot as number
+      const patch = wanted.get(dt.id)?.get(slot)
+      const def = dt.phExtensions?.slots?.[slot - 1]
+      if (!patch || !def) return
+      const keep = new Set(patch.assigned.advertisers.map((n) => n.trim().toLowerCase()))
+      const removed = assignedOf(def).advertisers.filter((n) => !keep.has(n.trim().toLowerCase()))
+      if (!removed.length) return
+      const live = slotLiveBookings(ctx, dt.id, slot)
+      if (!live.length) return
+      sold.push({
+        field: `items[${i}].assignedTo.advertisers`,
+        reason: `${removed.join(', ')} can't be removed from ${dt.name} slot ${slot}: slots are sold (${live.slice(0, 3).map((d) => d.detail).join('; ')}${live.length > 3 ? `; and ${live.length - 3} more` : ''}). Lock the slot against new sales; existing bookings keep running, and once they have played the lock releases and the advertiser can be removed.`,
+      })
+    })
+    if (sold.length) throw hasDependents('Slots are sold, so the advertiser can’t be removed. Existing bookings continue.', sold)
 
     /* A slot's billing unit is its play-window length (OQ27, Rob 29 Sep
        2026), so changing it — its own override, or the display type

@@ -21,11 +21,11 @@ const ADVERTISER_PAGE = {
   '/api/admin/v1/available-inventory': {
     items: [
       {
-        displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', playlistId: 'pl_menu', unassigned: false, slot: 2, zoneSlot: 2, position: 'Supplier slot',
+        displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', playlistId: 'pl_menu', unassigned: false, scored: true, unsellableReason: null, slot: 2, zoneSlot: 2, position: 'Supplier slot',
         assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false }, qrControl: true, visionAi: true, supportedTargeting: ['localised', 'personalised'],
       },
       {
-        displayTypeId: 'portrait', displayTypeName: 'Portrait', touchPoint: 'Digital Signage', playlistName: 'Portrait Playlist', playlistId: 'pl_portrait', unassigned: false, slot: 1, zoneSlot: 1, position: 'Slot 1',
+        displayTypeId: 'portrait', displayTypeName: 'Portrait', touchPoint: 'Digital Signage', playlistName: 'Portrait Playlist', playlistId: 'pl_portrait', unassigned: false, scored: true, unsellableReason: null, slot: 1, zoneSlot: 1, position: 'Slot 1',
         assignedTo: { partnerIds: [], partnerNames: [], advertisers: [], whitelistOnly: false }, qrControl: false, visionAi: false, supportedTargeting: ['localised'],
       },
     ],
@@ -389,18 +389,23 @@ describe('Campaign Status stand-in', () => {
     expect(screen.queryByRole('tab', { name: 'Campaign status' })).not.toBeInTheDocument()
   })
 
-  /* Ticket LH8iavmKqMB8mjHs9M8m: Advertiser Bookings opens on Booking
-     schedule. The tab is no longer kept in the URL, so a reload after
-     looking at Upcoming Campaign Approval lands back on Booking schedule;
-     the back link's ?tab=campaign-status still works, once. */
-  it('opens on Booking schedule and never leaves the tab in the URL', async () => {
+  /* Ticket HSTgB0s6l56UWH71JwOv (30 Sep 2026, reversing LH8iavmKqMB8mjHs9M8m):
+     the tab lives in the URL, so a browser refresh on Upcoming Campaign
+     Approval stays there; Booking schedule is the default and leaves no
+     `tab` param. */
+  it('keeps the Upcoming Campaign Approval tab in the URL, so a reload stays on it', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch(routes)))
-    const router = renderAt('/booking-schedule?tab=campaign-status')
-    expect(await screen.findByRole('tab', { name: 'Upcoming Campaign Approval', selected: true }, { timeout: 10000 })).toBeInTheDocument()
-    await waitFor(() => expect(router.state.location.search).toBe(''))
-    cleanup()
-    renderAt('/booking-schedule')
+    const router = renderAt('/booking-schedule')
     expect(await screen.findByRole('tab', { name: 'Booking schedule', selected: true }, { timeout: 10000 })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: 'Upcoming Campaign Approval' }))
+    await waitFor(() => expect(router.state.location.search).toBe('?tab=campaign-status'))
+    cleanup()
+    /* A refresh re-mounts the page at the same URL. */
+    const reloaded = renderAt('/booking-schedule?tab=campaign-status')
+    expect(await screen.findByRole('tab', { name: 'Upcoming Campaign Approval', selected: true }, { timeout: 10000 })).toBeInTheDocument()
+    expect(reloaded.state.location.search).toBe('?tab=campaign-status')
+    fireEvent.click(screen.getByRole('tab', { name: 'Booking schedule' }))
+    await waitFor(() => expect(reloaded.state.location.search).toBe(''))
   })
 
   /* Ticket, 27 Sep 2026: clicking a count sets the Status column's own
@@ -630,6 +635,21 @@ describe('Advertisers / Inventory', () => {
     expect(within(inventory).getByLabelText('Unassigned')).toBeInTheDocument()
   })
 
+  /* Ticket, 30 Sep 2026: a slot with no audience score is flagged in place; it can still be saved. */
+  it('warns on a slot with no audience score', async () => {
+    const reason = 'No audience score yet — this slot can’t be sold until it is scored.'
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({
+      ...ADVERTISER_PAGE,
+      '/api/admin/v1/available-inventory': {
+        ...ADVERTISER_PAGE['/api/admin/v1/available-inventory'],
+        items: [{ ...ADVERTISER_PAGE['/api/admin/v1/available-inventory'].items[0], scored: false, unsellableReason: reason }],
+      },
+    })))
+    renderAt('/advertisers')
+    const inventory = await screen.findByLabelText('Available Inventory')
+    expect(within(inventory).getByRole('status')).toHaveTextContent(reason)
+  })
+
   it('holds a position for an advertiser, and only offers interactive where QR Control is on', async () => {
     const calls: { url: string; body: unknown }[] = []
     const saved = () => calls.find((c) => c.url.includes('available-inventory'))?.body
@@ -789,9 +809,10 @@ describe('Pricing tooltips', () => {
        from the floor's own working appears inside it. */
     const bubble = (text: RegExp) => screen.getByText(text).closest('.ant-tooltip-inner') as HTMLElement
     fireEvent.mouseEnter(tip('Personalised multiplier'))
-    await screen.findByText(/It multiplies the/)
-    expect(bubble(/It multiplies the/).textContent).toMatch(/floor price/)
-    expect(bubble(/It multiplies the/).textContent).not.toMatch(/VAC-d|attention/)
+    await screen.findByText(/not a bid floor/)
+    expect(bubble(/not a bid floor/).textContent).toMatch(/only when a personalised version plays/)
+    expect(bubble(/not a bid floor/).textContent).toMatch(/100 committed|committed at 100 pays 150/)
+    expect(bubble(/not a bid floor/).textContent).not.toMatch(/VAC-d|attention/)
 
     /* Interactive is a fee per engagement now, not a multiplier. */
     fireEvent.mouseEnter(tip('Interactive cost per engagement'))

@@ -7,6 +7,7 @@ import type { Context } from '../context'
 import { prepared } from '../db/db'
 import { sweepRejectedCampaigns } from '../domain/campaignRetention'
 import { allPositions, biddingClosesAt, companyWindowCommitments, windowMs, windowStartOf } from '../domain/positions'
+import { releaseSettledSlotLocks } from '../domain/slotLock'
 import { sweepSettledReservations } from '../domain/reservationRetention'
 import { runAuction } from './auction'
 import { runBilling } from './billing'
@@ -65,6 +66,12 @@ export async function schedulerTick(ctx: Context, log: (msg: string) => void) {
   await job('Billing', () => {
     const billed = runBilling(ctx)
     if (billed.length) log(`Billed ${billed.length} ended window${billed.length === 1 ? '' : 's'}.`)
+  })
+  /* A slot locked against new sales is released once the booking schedule
+     has no live booking left on it (bookings only, never playback). */
+  await job('Slot locks', () => {
+    const released = releaseSettledSlotLocks(ctx)
+    if (released) log(`Released the sales lock on ${released} slot${released === 1 ? '' : 's'}: nothing is booked on ${released === 1 ? 'it' : 'them'} any more.`)
   })
   await job('Retention', () => {
     const swept = sweepSettledReservations(ctx.db, ctx.config.reservationRetentionDays, ctx.clock)

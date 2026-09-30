@@ -32,6 +32,8 @@ async function setup(clock: () => Date = () => NOW) {
   const mocks = mockDsps()
   const ctx = await testContext({ clock, dspFetch: mocks.fetchImpl })
   const app = buildApp(ctx)
+  /* The second Advertiser slot is scored like the seeded one; an unscored slot isn't sold. */
+  ctx.db.prepare('INSERT INTO audience_vacd (display_type_id, slot, assumed_views_per_window, counted) VALUES (?, ?, ?, 1)').run('menu_board', 3, 1236)
   /* Slot 2 (the seeded Supplier slot) gets a weekly billing unit; slot 3
      becomes a second Advertiser slot with no override of its own, so it
      keeps the company default (24 hours). */

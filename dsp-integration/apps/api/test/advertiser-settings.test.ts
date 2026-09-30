@@ -118,7 +118,7 @@ describe('Advertiser settings (spec §4, §6)', () => {
     const res = await buildApp(await testContext()).inject({ method: 'GET', url: '/api/admin/v1/available-inventory' })
     expectMatchesContract('GET', '/admin/v1/available-inventory', 200, res.json())
     expect(res.json().items).toEqual([{
-      displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board — Long Format / Zone 1', playlistId: 'pl_zone_menu_board_1', unassigned: false, slot: 2, zoneSlot: 2, position: 'Supplier slot',
+      displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board — Long Format / Zone 1', playlistId: 'pl_zone_menu_board_1', unassigned: false, scored: true, unsellableReason: null, salesLocked: false, salesLockedUntil: null, slot: 2, zoneSlot: 2, position: 'Supplier slot',
       assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false, buyersListId: null, buyersListName: null }, qrControl: true, visionAi: true, supportedTargeting: ['localised'],
       reservePrice: null, reservePriceOverride: null, displayTypeReservePrice: null,
       billingUnitHours: 24, billingUnitHoursOverride: null, displayTypeBillingUnitHours: null, companyPlayWindowHours: 24,
@@ -154,6 +154,8 @@ describe('Advertiser settings (spec §4, §6)', () => {
 
     expect((await saveZones(three)).statusCode).toBe(200)
     expect((await saveSlots(['z1', 'z2', 'z3'])).statusCode).toBe(200)
+    /* Scored, so the positions are sellable (an unscored slot is not exposed). */
+    for (let s = 1; s <= 6; s++) ctx.db.prepare('INSERT OR IGNORE INTO audience_vacd (display_type_id, slot, assumed_views_per_window, counted) VALUES (?, ?, ?, 0)').run('menu_board', s, 500)
     /* slot is the flat position across all three zones (1-6); zoneSlot
        resets to 1 at the start of each zone's own segment — this is what
        Available Inventory's Slot column actually displays (ticket, 28 Sep

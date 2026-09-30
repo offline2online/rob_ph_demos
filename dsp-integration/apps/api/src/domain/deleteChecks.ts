@@ -47,12 +47,13 @@ export function soldOrReservedPositions(ctx: Context, displayTypeId: string): nu
    playlist assigned to it can't be changed, while any of its advertiser
    positions is reserved or sold for a current or future (not yet played)
    window. Hard block, has_dependents; each blocking window is named so the
-   refusal says what to wait for. Live bookings only (Test mode excluded),
+   refusal says what to wait for. `onlySlot` narrows it to one position
+   (the slot lock, 30 Sep 2026). Live bookings only (Test mode excluded),
    the same definition of "sold" as soldOrReservedPositions. */
-export function liveCommitments(ctx: Context, displayTypeId: string): DeleteCheck['dependents'] {
+export function liveCommitments(ctx: Context, displayTypeId: string, onlySlot?: number): DeleteCheck['dependents'] {
   const dt = ctx.displayTypes.get(displayTypeId)
   if (!dt) return []
-  const positionIds = new Set((dt.phExtensions?.slots ?? []).flatMap((s, i) => (s.owner === 'advertiser' ? [positionIdOf(displayTypeId, i + 1)] : [])))
+  const positionIds = new Set((dt.phExtensions?.slots ?? []).flatMap((s, i) => (s.owner === 'advertiser' && (onlySlot === undefined || onlySlot === i + 1) ? [positionIdOf(displayTypeId, i + 1)] : [])))
   if (!positionIds.size) return []
   /* Not yet played: the window — its slot's own billing unit long (OQ27) — has not ended. */
   const from = new Date(ctx.clock().getTime() - longestWindowMs(ctx)).toISOString()

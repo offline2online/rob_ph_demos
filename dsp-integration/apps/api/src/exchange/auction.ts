@@ -45,12 +45,13 @@ import { randomUUID } from 'node:crypto'
 import type { Context } from '../context'
 import { bookLockedTermWindow, lockTermOnClear, termStateAt } from '../billing'
 import { isLive } from '../domain/exchange'
-import { type PositionRef, allPositions, assignmentOf, effectivePartnerIds, nextWindow, positionView, windowMs, windowStartOf } from '../domain/positions'
+import { type PositionRef, allPositions, assignmentOf, effectivePartnerIds, isSellable, nextWindow, positionView, windowMs, windowStartOf } from '../domain/positions'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 import { type ReservationRecord, TAKEN } from '../repos/ReservationRepo'
 import { advertiserSlug, assignedOf } from '@ph-dsp/types'
 import { isUniqueViolation } from '../db/db'
 import { campaignForCrid, queueCreative } from './creatives'
+import { multiplierToSnapshot } from '../domain/pricing'
 import { checkAdvertiser, checkCampaign, checkCategories, checkFloor, checkTargeting } from './enforcement'
 import { handOff } from './handoff'
 import { settlePending } from './pending'
@@ -97,7 +98,8 @@ export async function runAuction(ctx: Context, windowStart: Date = nextWindow(ct
   /* Switched off or incomplete: no DSP is sent a bid request. */
   const exchangeLive = isLive(ctx.exchange.get())
   /* The positions whose own window starts here (OQ27). */
-  const positions = allPositions(ctx).filter((p) => windowStartOf(ctx, windowStart, windowMs(ctx, p)).getTime() === windowStart.getTime())
+  /* Unscored slots are skipped: no audience score means no assumed views to sell. */
+  const positions = allPositions(ctx).filter((p) => isSellable(ctx, p)).filter((p) => windowStartOf(ctx, windowStart, windowMs(ctx, p)).getTime() === windowStart.getTime())
   /* The DSPs that receive bid requests, read once for the whole auction,
      not once per position (review, 24 Sep 2026). */
   const bidders = exchangeLive ? ctx.partners.list().filter(receivesBidRequests) : []
@@ -158,6 +160,14 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, bidder
     }
   }
 
+  /* Locked against new sales (30 Sep 2026): windows already booked were
+     handled above and a locked term keeps booking at its rate; nothing new
+     is solicited, and a bid placed before the lock is settled as lost. */
+  if (p.def.salesLocked) {
+    settlePending(ctx, p.positionId, start, 'This position is locked against new sales; nothing was sold.')
+    return { ...out, skipped: 'Locked against new sales.' }
+  }
+
   const candidates: ReservationRecord[] = []
   /* Until Exchange settings are complete, no DSP is sent bid requests (spec
      §7): `bidders` is empty then. */
@@ -211,7 +221,7 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, bidder
       ? { reason: `${partner.name} is not connected.` }
       : !seat
       ? { reason: 'The advertiser is no longer on this DSP.' }
-      : (await checkCampaign(ctx, r.campaignId as string)) ?? checkAdvertiser(ctx, p, partner, seat.name, seat.domain ? [seat.domain] : [], seat.id, start) ?? checkTargeting(p, r.pricingType) ?? checkFloor(ctx, r.bidCpm as number, r.pricingType, r.advertiserId)
+      : (await checkCampaign(ctx, r.campaignId as string)) ?? checkAdvertiser(ctx, p, partner, seat.name, seat.domain ? [seat.domain] : [], seat.id, start) ?? checkTargeting(p, r.pricingType) ?? checkFloor(ctx, r.bidCpm as number, r.advertiserId)
     if (refusal) ctx.reservations.update(r.id, { status: 'rejected', reason: refusal.reason })
     else candidates.push(r)
   }
@@ -241,7 +251,7 @@ function clear(ctx: Context, candidates: ReservationRecord[]) {
   if (!candidates.length) return null
   const [winner, ...rest] = [...candidates].sort((a, b) => (b.bidCpm as number) - (a.bidCpm as number) || (a.createdAt ?? '').localeCompare(b.createdAt ?? ''))
   try {
-    ctx.reservations.update(winner.id, { status: 'won', clearingCpm: winner.bidCpm, reason: null })
+    ctx.reservations.update(winner.id, { status: 'won', clearingCpm: winner.bidCpm, reason: null, personalisedMultiplier: multiplierToSnapshot(ctx.company.get(), winner.pricingType) })
   } catch (e) {
     if (!isUniqueViolation(e)) throw e
     for (const r of candidates) ctx.reservations.update(r.id, { status: 'lost', reason: 'The window was sold by another clearing of the same auction.' })
@@ -291,7 +301,7 @@ async function recordDspBid(ctx: Context, p: PositionRef, dsp: PartnerRecord, st
   const campaign = ctx.campaigns.getCampaign(campaignId)
   if (!campaign) return reject(`Creative ${bid.crid} is still being retrieved for review.`, { advertiserId })
   if (campaign.advertiserId !== advertiserId) return reject(`Creative ${bid.crid} belongs to another advertiser.`, { advertiserId })
-  const late = (await checkCampaign(ctx, campaignId)) ?? checkTargeting(p, campaign.pricingType) ?? checkFloor(ctx, bid.price, campaign.pricingType, advertiserId)
+  const late = (await checkCampaign(ctx, campaignId)) ?? checkTargeting(p, campaign.pricingType) ?? checkFloor(ctx, bid.price, advertiserId)
   if (late) return reject(late.reason, { advertiserId, campaignId })
   return ctx.reservations.insert({ ...base, advertiserId, campaignId, pricingType: campaign.pricingType ?? null })
 }

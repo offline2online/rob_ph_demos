@@ -31,15 +31,14 @@ describe('§9.1–9.2 canonical event schema v1 (reserved)', () => {
   })
 })
 
-describe('§9.3 source-instance identity (reserved)', () => {
-  it('has a place on the exchange and on reservations, left empty and never returned by the API', async () => {
+describe('§9.3 source-instance identity (a seam, not storage)', () => {
+  it('carries no instance-identity columns and never returns one', async () => {
     const ctx = await testContext()
     const cols = (t: string) => (ctx.db.prepare(`PRAGMA table_info(${t})`).all() as { name: string }[]).map((c) => c.name)
-    expect(cols('exchange')).toContain('platform_instance_id')
-    expect(cols('reservations')).toContain('source_instance_id')
+    expect(cols('exchange')).not.toContain('platform_instance_id')
+    expect(cols('reservations')).not.toContain('source_instance_id')
     const app = buildApp(ctx)
     const exchange = await app.inject({ url: '/api/admin/v1/exchange' })
     expect(JSON.stringify(exchange.json())).not.toMatch(/instance/i)
-    expect((ctx.db.prepare('SELECT COUNT(*) AS n FROM reservations WHERE source_instance_id IS NOT NULL').get() as { n: number }).n).toBe(0)
   })
 })

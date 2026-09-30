@@ -30,8 +30,8 @@ describe('GET /v1/inventory', () => {
         positionId: 'menu_board.s2', displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', slot: 2, slotLabel: 'Supplier slot', zone: null,
         storeCount: 3, displayCount: 3,
         screen: { width: 5760, height: 1080, orientation: 'landscape', slotDurationSec: 15, loopLengthSec: 45, shareOfVoice: 0.333, openOohVenueType: 'retail.grocery' },
-        assignment: 'rtb', supportedTargeting: ['localised'], billingUnitHours: 24, assumedViewsPerWindow: 1236,
-        pricing: { currency: 'AUD', floorCpm: 100, effectiveFloorCpm: { localised: 100, personalised: 150 }, costPerEngagement: 0.5 },
+        assignment: 'rtb', supportedTargeting: ['localised'], billingUnitHours: 24, assumedViewsPerWindow: 1236, scored: true,
+        pricing: { currency: 'AUD', floorCpm: 100, effectiveFloorCpm: { localised: 100 }, personalisedMultiplier: 1.5, costPerEngagement: 0.5 },
         reservePrice: null,
       }],
       nextCursor: null,
@@ -41,7 +41,7 @@ describe('GET /v1/inventory', () => {
   it('prices for the requesting advertiser (floor multiplier), and the engagement fee it doesn’t scale', async () => {
     const { get } = await setup()
     const item = (await get('/inventory?advertiserId=nestle')).json().items[0]
-    expect(item.pricing.effectiveFloorCpm).toEqual({ localised: 80, personalised: 120 })
+    expect(item.pricing.effectiveFloorCpm).toEqual({ localised: 80 })
     /* Interactive is charged per engagement, the same for every advertiser (Rob, 20 Sep). */
     expect(item.pricing.costPerEngagement).toBe(0.5)
   })

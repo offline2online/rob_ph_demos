@@ -98,8 +98,9 @@ describe('Display Types page', () => {
     expect(height().value).toBe('400')
     /* No physical canvas to zone. */
     expect(screen.queryByRole('region', { name: 'Multi-Zone Layout' })).not.toBeInTheDocument()
-    /* Phantom Zone / QR Control stays exactly as it is ("as today"). */
-    expect(screen.getByRole('region', { name: 'Phantom Zone' })).toBeInTheDocument()
+    /* The phantom zone is a physical-screen concept — hidden for a mobile app
+       (ticket, 30 Sep 2026). */
+    expect(screen.queryByRole('region', { name: 'Phantom Zone' })).not.toBeInTheDocument()
     /* Enabled Features is dropped entirely for a mobile app — QR Control,
        the only feature it kept, doesn't apply (ticket, 28 Sep 2026). */
     expect(screen.queryByRole('region', { name: 'Enabled Features' })).not.toBeInTheDocument()
@@ -107,6 +108,8 @@ describe('Display Types page', () => {
     await selectTouchPoint('Website')
     expect(width().value).toBe('1920')
     expect(height().value).toBe('1080')
+    /* Website still shows the phantom zone. */
+    expect(screen.getByRole('region', { name: 'Phantom Zone' })).toBeInTheDocument()
     /* Website keeps QR Control and nothing else. */
     const features = screen.getByRole('region', { name: 'Enabled Features' })
     fireEvent.click(within(features).getByRole('button', { expanded: false }))

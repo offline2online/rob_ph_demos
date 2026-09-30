@@ -136,6 +136,14 @@ export interface paths {
          *     targeting rules are byte-identical to what a reviewer already approved,
          *     in which case it is approved without another review (safe reuse,
          *     open question 40).
+         *
+         *     **Dimensions are checked by shape, not pixels.** `aspect_ratio` passes
+         *     when the asset's width÷height is within ±5% of the target's;
+         *     `dimensions` passes when the asset is at least 50% of the target in
+         *     each dimension (1920×1080 → floor 960×540). Larger assets of the right
+         *     shape are accepted. On a zoned display type the target is a zone's own
+         *     size, not the full canvas. Images and videos alike; each failure names
+         *     its own reason in `checks_failed`.
          */
         post: operations["uploadAsset"];
         delete?: never;
@@ -155,6 +163,28 @@ export interface paths {
         put?: never;
         /** Submit for retailer approval (or auto-approve if the advertiser doesn't require it) */
         post: operations["submitCampaign"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/campaigns/{campaignId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read back the stored campaign — default and targeted versions, priorities and rules
+         * @description Returns what the exchange stored from the package (the same shape
+         *     `POST /v1/campaigns` accepted, rules and priorities unchanged) plus
+         *     the approval status fields of `GET …/status`.
+         */
+        get: operations["getCampaign"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -312,6 +342,19 @@ export interface paths {
          *     whitelistOnly for the advertiser whitelist. Nothing chosen means any
          *     connected DSP. Advertisers and whitelistOnly are mutually exclusive.
          *
+         *     Sold slots can't lose their advertiser (ticket "Lock playlist slot
+         *     against new sales when slots are sold", 30 Sep 2026). Removing an
+         *     advertiser from a slot (or replacing it with DSPs, a buyers list or
+         *     the whitelist) while that slot has a live booking — reserved or
+         *     sold for a window that has not finished playing, Test mode
+         *     excluded — is refused with `409 has_dependents`; each detail's
+         *     `field` is `items[n].assignedTo.advertisers` for the offending row.
+         *     The slot keeps its advertiser and its bookings run as they are. The
+         *     admin can then lock the slot against new sales (`PUT
+         *     /admin/v1/available-inventory/lock`); once the booking schedule has
+         *     no live booking left on it the lock releases by itself and the
+         *     advertiser can be removed.
+         *
          *     supportedTargeting: interactive is only accepted on a display type
          *     with QR Control enabled.
          *
@@ -356,6 +399,44 @@ export interface paths {
          *     slot. Does not feed the auction or billing.
          */
         put: operations["saveAvailableInventory"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/available-inventory/lock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Lock a sold slot against new sales
+         * @description Slot-level, per playlist, as in the Available Inventory table (ticket
+         *     "Lock playlist slot against new sales when slots are sold", 30 Sep
+         *     2026). A locked slot takes no new bid, reservation or auction win for
+         *     any window it has not already sold: its status reads `unavailable`
+         *     for those windows, the exchange skips it, and the Partner API
+         *     refuses a bid or reservation on it (`409 conflict`). Existing
+         *     bookings are not deleted, reassigned or cancelled and play out as
+         *     booked, including the remaining windows of a locked-rate term.
+         *
+         *     Only a slot with a live booking (reserved or sold for a window that
+         *     has not finished playing, Test mode excluded) can be locked; any
+         *     other slot answers `409 conflict`, since there is nothing to
+         *     protect. Locking a locked slot is a no-op.
+         *
+         *     There is no unlock. The lock releases automatically, on the
+         *     exchange's schedule tick and whenever Available Inventory is read
+         *     or saved, as soon as the booking schedule shows no live booking on
+         *     the slot. The release depends on bookings only — never on campaign
+         *     playback or delivery analytics. Admin only.
+         */
+        put: operations["lockInventorySlot"];
         post?: never;
         delete?: never;
         options?: never;
@@ -968,6 +1049,14 @@ export interface components {
             billingUnitHours: number;
             /** @description Assumed views (VAC-d) in one of this position's windows (billingUnitHours long). */
             assumedViewsPerWindow?: number;
+            /**
+             * @description Whether the slot has an audience score. Inventory lists only
+             *     scored positions, so this is always true here; an unscored slot
+             *     is a 404 (not sellable) and a bid on it is refused with a 409
+             *     that says why (ticket, 30 Sep 2026). There is no fallback
+             *     estimate: an invented audience number would end up on invoices.
+             */
+            scored?: boolean;
             pricing: components["schemas"]["Pricing"];
             /**
              * @description A CPM premium at which this position can be reserved in advance
@@ -988,14 +1077,24 @@ export interface components {
             currency: string;
             floorCpm: number;
             /**
-             * @description What a bid must clear per thousand assumed views, for this caller.
-             *     Interactive campaigns pay one of these for the plays and the
-             *     engagement fee on top, so they have no floor of their own.
+             * @description What a bid must clear per thousand assumed views, for this caller:
+             *     the base floor × the advertiser's floor multiplier, whatever the
+             *     campaign's type (Rob, 30 Sep 2026). The personalised multiplier is
+             *     not part of it. Interactive campaigns pay this for the plays and
+             *     the engagement fee on top, so they have no floor of their own.
              */
             effectiveFloorCpm: {
+                /** @description The floor every campaign type clears. */
                 localised: number;
-                personalised: number;
             };
+            /**
+             * @description Charged only when a personalised version plays: that play bills at
+             *     the committed (clearing) CPM × this. Default and localised plays
+             *     bill at the committed CPM. It is not a floor and does not affect
+             *     what a bid must clear. It does not apply to interactive campaigns.
+             *     The value in force when a window clears is kept on the reservation.
+             */
+            personalisedMultiplier: number;
             /**
              * @description Charged once per engagement (a QR Control scan), on top of the CPM,
              *     for an interactive campaign. In the same currency, to the cent. The
@@ -1100,6 +1199,20 @@ export interface components {
              *     the admin UI shows or allows.
              */
             targeted?: {
+                id: string;
+                priority: number;
+                pricingType: components["schemas"]["PricingType"];
+                rules: components["schemas"]["TargetingRules"];
+            }[];
+        };
+        CampaignDetail: components["schemas"]["CampaignStatus"] & {
+            name: string;
+            advertiserId: string;
+            displayTypeId: string | null;
+            default: {
+                pricingType: components["schemas"]["PricingType"];
+            };
+            targeted: {
                 id: string;
                 priority: number;
                 pricingType: components["schemas"]["PricingType"];
@@ -1223,7 +1336,10 @@ export interface components {
             auctionCutoffTime: string;
             /** @default 100 */
             floorCpm: number;
-            /** @default 1.5 */
+            /**
+             * @description Charged per personalised play, on top of the committed price: 100 committed × 1.5 = 150 for that play. Not a bid floor: bids and the auction clear against the base floor.
+             * @default 1.5
+             */
             personalisedMultiplier: number;
             /**
              * @description Interactive cost per engagement: what an advertiser pays each time someone engages with an interactive campaign (a QR Control scan), on top of the CPM. To the cent; 0 means engagements are not charged for.
@@ -1402,6 +1518,27 @@ export interface components {
             displayTypeId: string;
             displayTypeName: string;
             touchPoint?: string;
+            /**
+             * @description Whether the slot has an audience score (an audience_vacd row).
+             *     An unscored slot reports 0 assumed views, so it is never
+             *     exposed to advertisers (GET /v1/inventory), forecast, auctioned
+             *     or bid on (ticket, 30 Sep 2026). Saving it is not blocked.
+             */
+            scored: boolean;
+            /** @description Why the slot can't be sold yet — no audience score, or no slot duration (venue loop length ÷ rotation cap) — or null when it can. Shown as a warning on Available Inventory. */
+            unsellableReason: string | null;
+            /**
+             * @description True while this slot is locked against new sales (ticket "Lock
+             *     playlist slot against new sales when slots are sold", 30 Sep
+             *     2026). Existing bookings are unaffected; the lock releases by
+             *     itself once the booking schedule has no live booking on the slot.
+             */
+            salesLocked: boolean;
+            /**
+             * Format: date-time
+             * @description When the last live booking on a locked slot finishes playing, i.e. the earliest the lock can release; null when not locked.
+             */
+            salesLockedUntil?: string | null;
             playlistName: string;
             /**
              * @description The id of the playlist this row's position sits under: the zone
@@ -1910,6 +2047,13 @@ export interface components {
                 buyersListId?: string | null;
                 storeScope?: string | null;
                 quota?: number | null;
+                /**
+                 * @description Locked against new sales (30 Sep 2026): set from Available
+                 *     Inventory when the advertiser can't be removed because slots
+                 *     are sold, cleared by the server itself once the slot has no
+                 *     live booking. Not writable through the slot editor's PUT.
+                 */
+                salesLocked?: boolean;
                 /**
                  * @description What a campaign may use on this slot. Absent or empty means
                  *     localised only, which is the default for a new slot. A bid or
@@ -2468,6 +2612,31 @@ export interface operations {
             429: components["responses"]["RateLimited"];
         };
     };
+    getCampaign: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                campaignId: components["parameters"]["CampaignId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Campaign */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CampaignDetail"];
+                };
+            };
+            401: components["responses"]["Unauthorised"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["RateLimited"];
+        };
+    };
     getCampaignStatus: {
         parameters: {
             query?: never;
@@ -2740,6 +2909,43 @@ export interface operations {
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorised"];
             403: components["responses"]["Forbidden"];
+            409: components["responses"]["HasDependents"];
+        };
+    };
+    lockInventorySlot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    displayTypeId: string;
+                    /** @description The flat 1-based slot number (AvailableInventoryRow.slot) */
+                    slot: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Locked (or already locked) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["AvailableInventoryRow"][];
+                        dsps: components["schemas"]["DspAdvertisers"][];
+                    };
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorised"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     getBookingSchedule: {

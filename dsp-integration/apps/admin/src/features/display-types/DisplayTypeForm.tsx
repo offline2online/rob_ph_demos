@@ -141,7 +141,12 @@ export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, onAddPla
         </Field>
       )}
 
-      <PhantomZonePanel d={d} update={update} open={open.phantom} onToggle={() => toggle('phantom')} />
+      {/* The phantom zone is the QR area drawn on a physical screen — it has
+          no meaning for a mobile app, so the section is hidden for it
+          (ticket 1Jr12tLjhFj9KHcLnX0n, 30 Sep 2026). */}
+      {d.touchPoint !== 'Mobile App' && (
+        <PhantomZonePanel d={d} update={update} open={open.phantom} onToggle={() => toggle('phantom')} />
+      )}
       {/* QR Control (the only feature Mobile App kept) doesn't apply to a
           mobile app, so the whole section is dropped for it (ticket, 28 Sep 2026). */}
       {d.touchPoint !== 'Mobile App' && (

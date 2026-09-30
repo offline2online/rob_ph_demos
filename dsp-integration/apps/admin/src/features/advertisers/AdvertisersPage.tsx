@@ -118,6 +118,14 @@ const PlaylistCell = ({ data }: ICellRendererParams<AvailableInventoryRow>) =>
           <span className="inline-flex" aria-label="QR Control enabled"><Icon name="qr_code_2" size={15} style={{ color: T.primary }} /></span>
         </Tooltip>
       )}
+      {data.unsellableReason && (
+        /* Unscored (or duration-less) slot, ticket 30 Sep 2026: saving is not blocked, but advertisers can't see or bid on it. */
+        <Tooltip title={data.unsellableReason}>
+          <span className="inline-flex items-center gap-0.5" role="status" aria-label={data.unsellableReason} style={{ color: T.error }}>
+            <Icon name="warning" size={14} /><span style={{ fontSize: 11, whiteSpace: 'normal' }}>{data.unsellableReason}</span>
+          </span>
+        </Tooltip>
+      )}
       {data.unassigned && (
         <Tooltip title="This playlist's advertiser slots aren't assigned to any physical display, so they aren't actually playing.">
           <span className="inline-flex items-center gap-0.5" aria-label="Unassigned" style={{ color: T.error }}>
@@ -234,6 +242,15 @@ function AssignedCell({ data, context }: IP) {
     { label: 'Or', options: [{ value: WHITELIST, label: 'Whitelist only' }] },
   ]
   return (
+    <>
+    {data.salesLocked && (
+      /* Locked against new sales (ticket, 30 Sep 2026): sold, so the
+         advertiser can't be removed; releases by itself when the booking
+         schedule shows nothing booked. */
+      <Tooltip title={`Slots are sold here, so no new sales are taken and the advertiser can't be removed. Existing bookings keep running. Releases automatically once nothing is booked${data.salesLockedUntil ? ` (last booking ends ${data.salesLockedUntil.slice(0, 10)})` : ''}.`}>
+        <span className="mb-1 inline-flex items-center gap-1" style={{ fontSize: 12, color: T.muted }}><Icon name="lock" size={14} />Locked to new sales</span>
+      </Tooltip>
+    )}
     <Pills
       label={`${data.displayTypeName} slot ${data.zoneSlot}: assigned to`}
       placeholder="All DSPs"
@@ -263,6 +280,7 @@ function AssignedCell({ data, context }: IP) {
         c.set(slotKey(data), { assignedTo: { partnerIds, advertisers, whitelistOnly, buyersListId: null } })
       }}
     />
+    </>
   )
 }
 
@@ -434,7 +452,7 @@ const header = (label: string, tip: string) => () => <WithTip tip={tip}><span cl
 
 export function AdvertisersPage() {
   const navigate = useNavigate()
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const qc = useQueryClient()
   const session = useQuery(Q.session)
   /* Marketing users read this screen; only an admin changes approval or pricing (Rob, 20 Sep). */
@@ -568,8 +586,45 @@ export function AdvertisersPage() {
   if (q.error) return <Callout tone="error" icon="block">{q.error instanceof ApiRequestError ? q.error.message : 'Could not load advertisers.'}</Callout>
   if (!data || !draft) return <Spin />
 
+  /* Removing an advertiser from a sold slot is refused (has_dependents,
+     `items[n].assignedTo.advertisers`); the admin may lock those slots
+     against new sales instead (ticket, 30 Sep 2026). */
+  const offerLock = (e: ApiRequestError, sent: { displayTypeId: string; slot: number }[]) => {
+    const rows = (e.body?.error.details ?? []).flatMap((d) => {
+      const n = /^items\[(\d+)\]\.assignedTo\.advertisers$/.exec(d.field ?? "")?.[1]
+      return n === undefined || !sent[Number(n)] ? [] : [{ row: sent[Number(n)], reason: d.reason }]
+    })
+    if (!rows.length) return false
+    modal.confirm({
+      title: 'Slots are sold: the advertiser can’t be removed',
+      icon: <Icon name="lock" size={22} />,
+      width: 520,
+      content: (
+        <div className="flex flex-col gap-2">
+          {rows.map((r) => <div key={slotKey(r.row as AvailableInventoryRow)}>{r.reason}</div>)}
+          <div>Existing sold slots keep running. Locking stops any new slot being sold on {rows.length === 1 ? 'this slot' : 'these slots'}, and releases by itself once nothing is booked.</div>
+        </div>
+      ),
+      okText: 'Lock against new sales',
+      cancelText: 'Keep as is',
+      onOk: async () => {
+        try {
+          for (const r of rows) await api('PUT', '/admin/v1/available-inventory/lock', { displayTypeId: r.row.displayTypeId, slot: r.row.slot })
+          /* Put the refused removals back: the advertiser stays until the lock releases. */
+          inv.setDraft((cur) => (cur ? { ...cur, ...Object.fromEntries(rows.map((r) => [slotKey(r.row as AvailableInventoryRow), savedEdits![slotKey(r.row as AvailableInventoryRow)]])) } : cur))
+          await qc.invalidateQueries({ queryKey: ['available-inventory'] })
+          message.success('Locked against new sales. Existing bookings continue.')
+        } catch (err) {
+          message.error(err instanceof ApiRequestError ? err.message : 'Could not lock the slot.')
+        }
+      },
+    })
+    return true
+  }
+
   const onSave = async () => {
     setSaving(true)
+    let sent: { displayTypeId: string; slot: number }[] = []
     try {
       if (dirty) await api('PUT', '/admin/v1/advertisers', { settings: draft })
       /* The inventory's own fields, saved by the same Save changes — only
@@ -589,6 +644,7 @@ export function AdvertisersPage() {
             reservePriceDefault: defaults.draft![r.displayTypeId] ?? null, billingUnitHoursDefault: billingUnitDefaults.draft![r.displayTypeId] ?? null,
             maxCampaignsDefault: maxCampaignsDefaults.draft![r.displayTypeId] ?? null,
           }))
+        sent = items
         await api('PUT', '/admin/v1/available-inventory', { items })
         inv.commitNext()
         defaults.commitNext()
@@ -599,6 +655,7 @@ export function AdvertisersPage() {
       commitNext()
       await qc.invalidateQueries({ queryKey: ['advertisers'] })
     } catch (e) {
+      if (e instanceof ApiRequestError && e.status === 409 && offerLock(e, sent)) return
       message.error(e instanceof ApiRequestError ? [e.message, ...(e.body?.error.details ?? []).map((d) => d.reason)].join(' ') : 'Could not save changes.')
     } finally {
       setSaving(false)
@@ -640,7 +697,7 @@ export function AdvertisersPage() {
           <div className="mb-2" style={{ fontSize: 13 }}>{showingCount(shown ?? data.items.length, data.items.length, `advertiser${data.items.length === 1 ? '' : 's'}`)}</div>
           <Grid<Advertiser>
             label="Advertisers" rows={data.items} columns={columns} context={context} getRowId={(a) => a.advertiserId}
-            headerHeight={40} floatingFiltersHeight={40} onFilterChanged={(e) => setShown(e.api.getDisplayedRowCount())}
+            stickyHeader headerHeight={40} floatingFiltersHeight={40} onFilterChanged={(e) => setShown(e.api.getDisplayedRowCount())}
           />
         </>
       )}
@@ -660,6 +717,7 @@ export function AdvertisersPage() {
             context={invContext}
             getRowId={slotKey}
             rowHeight={52}
+            stickyHeader
             headerHeight={40}
             floatingFiltersHeight={40}
             onFilterChanged={(e) => setInvShown(e.api.getDisplayedRowCount())}

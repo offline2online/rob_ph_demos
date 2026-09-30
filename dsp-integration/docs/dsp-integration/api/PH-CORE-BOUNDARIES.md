@@ -75,6 +75,10 @@ These are behaviours the build **relies on**. An adapter that doesn't
 provide one breaks something specific, named here.
 
 - **`DisplayTypeSource`**
+  - `phExtensions.slots[].salesLocked` (30 Sep 2026) round-trips too: it is
+    written by this build (the slot lock, REQUIREMENTS §1) and cleared by
+    the scheduler once the slot has no live booking. An adapter that drops
+    it silently re-opens a locked slot to new sales.
   - `phExtensions` (slots, reserve price, venue) round-trips unchanged.
     Nothing but this build reads or writes that field.
   - `list()` returns records the caller must not mutate. The stand-in
@@ -113,6 +117,16 @@ provide one breaks something specific, named here.
     platform's playback store answers from its own aggregates.
   - Proof of play is the billing record (spec §7). Plays must be final by
     the time a window is billed, or a late play is never billed.
+  - **Each play must say which version of the campaign it showed** (Rob,
+    30 Sep 2026): a version id and a tier, `default`, `localised` or
+    `personalised`. Billing charges a personalised play at the committed
+    price × the personalised multiplier and everything else at the
+    committed price, so it needs this from PH Core's playback data; this
+    build cannot infer it. `totals` therefore also returns the personalised
+    plays and their seconds (`personalised: {plays, playedSec}`). Until PH
+    Core supplies it the field is null and every play bills at the
+    committed price, exactly as before. The stand-in `plays` table carries
+    the two columns nullable (migration 0033).
   - Billing is idempotent per reservation (`billing_line_items.reservation_id`
     is unique).
 - **`AssetStore`**
@@ -121,6 +135,14 @@ provide one breaks something specific, named here.
     directories.
   - Files are served with `nosniff` and a CSP that blocks script. An SVG
     creative can't run code even when it is opened directly.
+- **`AudienceSource.forSlot`**
+  - Must say whether a slot is **scored** (`scored`), not just return a
+    number: an unscored slot has no audience figure, and 0 is "unknown", not
+    "nobody watching". This build leaves an unscored slot out of inventory,
+    forecast and the auction and refuses a bid on it (30 Sep 2026); it never
+    invents an estimate. The stand-in reads `audience_vacd` and reports
+    `scored` when a row exists; a display type created in HQ Admin has none
+    until the retailer's scoring writes one.
 - **`AudienceSource.targetedShare`**
   - Predicates in, a number out. **No attribute value crosses the
     boundary.**
@@ -152,10 +174,11 @@ provide one breaks something specific, named here.
 |---|---|---|
 | `0001` (display types, playlists, displays, campaigns, plays), `0012` (slot bookings), `0014` (stores) | **PH Core stand-ins** | Dropped. The seams above read and write the real services instead. |
 | `0002`–`0011`, `0013`, `0015`–`0019` | This build | Kept. Plain, Postgres-compatible SQL. |
-| `0020` (indexes), `0021` (one live winner per window), `0022` (reserved instance identity) | This build (review, 23 Sep 2026) | Kept. See "The database must enforce" below for the parts that also apply to PH Core tables. |
+| `0020` (indexes), `0021` (one live winner per window), `0022` (reserved instance identity, dropped again by `0032`) | This build (review, 23 Sep 2026) | Kept. See "The database must enforce" below for the parts that also apply to PH Core tables. |
 | `0023` (the DSP integration switch) | This build (Rob, 24 Sep 2026) | Kept, unless the platform already holds company feature switches (see "Open" below). |
 | `0024` (`auction_runs`: which process clears a window) | This build (24 Sep 2026) | Kept: it lets several instances share the scheduled work. |
-| `0025` (covering index on `plays`) | Stand-in only | Dropped with `plays`; the playback store answers `totals` itself. |
+| `0025` (covering index on `plays`), `0033` (`plays.version_id` / `tier`) | Stand-in only | Dropped with `plays`; the playback store answers `totals` itself, and must supply the version tier (see `PlaybackSource`). |
+| `0034` (`reservations.personalised_multiplier`, personalised columns on `billing_line_items`) | This build (Rob, 30 Sep 2026) | Kept: the multiplier is snapshotted on the reservation at clear time. |
 | `0026` (one open API bid per advertiser and window) | This build (24 Sep 2026) | Kept: a partial unique index, as 0021. |
 
 ## Outbound boundaries — what this build calls
@@ -365,11 +388,20 @@ These are reserved names and places, with no behaviour yet:
   - **Nothing produces, stores or reads these events yet.** The existing
     PH analytics system stays the system of record.
   - The exhaustive field reference is open question 53.
-- **Instance identity** (migration 0022).
-  - `exchange.platform_instance_id` and `reservations.source_instance_id`
-    are nullable and unused, and no API returns them.
-  - This identity is deliberately **not** the `sellers.json` seller ID.
-    It maps to the instance's stable domain instead.
+- **Instance identity** (a seam only: a name and an intent, no columns,
+  no behaviour).
+  - Migration 0022 briefly reserved two nullable columns for it
+    (`exchange.platform_instance_id`, `reservations.source_instance_id`).
+    Nothing produced, read or returned them, so migration 0032 dropped
+    them (Rob, 30 Sep 2026). Federation identity is a separate
+    integration for a later release, when PH instances negotiate with
+    each other, and it gets storage only when that integration exists.
+  - This identity is deliberately **not** the `sellers.json` seller ID
+    (the retailer's identity to the ad ecosystem, held in the
+    seller-of-record fields). It maps to the instance's stable domain
+    instead, so the later integration builds against a clean seam
+    rather than inheriting orphan columns beside the seller-of-record
+    fields.
 - **Agent-to-agent interface** (§9.4).
   - This is a decision, not code: when PH instances negotiate with each
     other, the surface will be agent-consumable (MCP-layer) and first
