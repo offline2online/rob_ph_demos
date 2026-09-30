@@ -268,6 +268,21 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
         '422': {$ref: '#/components/responses/ChecksFailed'}
+  /v1/campaigns/{campaignId}:
+    get:
+      tags: [Partner — Campaigns]
+      operationId: getCampaign
+      summary: Read back the stored campaign — default and targeted versions, priorities and rules
+      description: |
+        Returns what the exchange stored from the package (the same shape
+        `POST /v1/campaigns` accepted, rules and priorities unchanged) plus
+        the approval status fields of `GET …/status`.
+      parameters: [{$ref: '#/components/parameters/CampaignId'}]
+      responses:
+        '200': {description: Campaign, content: {application/json: {schema: {$ref: '#/components/schemas/CampaignDetail'}}}}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /v1/campaigns/{campaignId}/status:
     get:
       tags: [Partner — Campaigns]
@@ -1486,6 +1501,30 @@ components:
               priority: {type: integer}
               pricingType: {$ref: '#/components/schemas/PricingType'}
               rules: {$ref: '#/components/schemas/TargetingRules'}
+    CampaignDetail:
+      allOf:
+        - $ref: '#/components/schemas/CampaignStatus'
+        - type: object
+          required: [name, advertiserId, displayTypeId, default, targeted]
+          properties:
+            name: {type: string}
+            advertiserId: {type: string}
+            displayTypeId: {type: [string, 'null']}
+            default:
+              type: object
+              required: [pricingType]
+              properties:
+                pricingType: {$ref: '#/components/schemas/PricingType'}
+            targeted:
+              type: array
+              items:
+                type: object
+                required: [id, priority, pricingType, rules]
+                properties:
+                  id: {type: string}
+                  priority: {type: integer}
+                  pricingType: {$ref: '#/components/schemas/PricingType'}
+                  rules: {$ref: '#/components/schemas/TargetingRules'}
     ApprovalStatus: {type: string, enum: [draft, awaiting_approval, approved, rejected]}
     Check:
       type: object

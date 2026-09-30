@@ -2,6 +2,7 @@
      POST /v1/campaigns                 baseline (required) + targeted versions, rules validated
      POST /v1/campaigns/{id}/assets     creative upload and automated checks
      POST /v1/campaigns/{id}/submit     submit for retailer approval
+     GET  /v1/campaigns/{id}            stored default + targeted versions (priorities, rules) and status
      GET  /v1/campaigns/{id}/status     approval status
    A partner only ever sees its own campaigns; anyone else's is not found. */
 import { createHash, randomUUID } from 'node:crypto'
@@ -287,6 +288,18 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
       return statusView(await ctx.approvals.submit(c.campaignId, checks, req.partner.name))
     } catch (e) {
       throw approvalError(e)
+    }
+  })
+
+  /* Read-back of what the exchange stored from the package (E2E K3, L5), so
+     an advertiser can verify versions, priorities and rules unchanged. */
+  app.get<{ Params: { id: string } }>('/campaigns/:id', async (req) => {
+    const c = own(req.partner, req.params.id)
+    const t = targetingOf(c.targeting)
+    return {
+      ...statusView(await ctx.approvals.view(c.campaignId)),
+      name: c.name, advertiserId: c.advertiserId, displayTypeId: c.displayTypeId ?? null,
+      default: t.default ?? { pricingType: 'default' }, targeted: t.targeted ?? [],
     }
   })
 
