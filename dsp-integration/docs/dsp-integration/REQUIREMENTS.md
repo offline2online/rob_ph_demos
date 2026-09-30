@@ -693,8 +693,16 @@ immediately with reasons and never reach the review queue:
   body, `API.md`'s Campaigns table) so the two do not diverge, and enforced
   in the POC by `assetLimits` in `apps/api/src/config.ts`
   (`apps/api/src/domain/assetChecks.ts`'s `file_size` check);
-- dimensions and aspect ratio against the target display type's canvas or
-  zone;
+- shape, not pixels (decision, Rob, 30 Sep 2026): `aspect_ratio` passes when
+  the asset's ratio is within ±5% of the target's — the display type's
+  canvas, or, on a zoned display type, one of its zones' own dimensions (the
+  player scales to fit; a near miss plays with modest black edges) — and
+  `dimensions` is a floor: no smaller than 50% of that target in each
+  dimension (1920×1080 → 960×540), so a tiny file is not upscaled into
+  mush. Larger assets of the right shape are accepted (downscaling is clean).
+  Images and videos alike; the same `fileChecks` runs on the Partner API
+  upload and on the admin upload, so both agree, and each failure names its
+  own reason (ratio vs floor);
 - duration against the slot's duration;
 - creative is present on the default campaign (decision, 22 Sep,
   superseding the earlier same-day "baseline optional" decision — ticket

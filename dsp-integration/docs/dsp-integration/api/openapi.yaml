@@ -220,6 +220,14 @@ paths:
         targeting rules are byte-identical to what a reviewer already approved,
         in which case it is approved without another review (safe reuse,
         open question 40).
+
+        **Dimensions are checked by shape, not pixels.** `aspect_ratio` passes
+        when the asset's width÷height is within ±5% of the target's;
+        `dimensions` passes when the asset is at least 50% of the target in
+        each dimension (1920×1080 → floor 960×540). Larger assets of the right
+        shape are accepted. On a zoned display type the target is a zone's own
+        size, not the full canvas. Images and videos alike; each failure names
+        its own reason in `checks_failed`.
       parameters: [{$ref: '#/components/parameters/CampaignId'}]
       requestBody:
         required: true
