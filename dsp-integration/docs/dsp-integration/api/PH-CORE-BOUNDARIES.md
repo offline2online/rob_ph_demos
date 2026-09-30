@@ -389,6 +389,42 @@ built yet, and each touches PH Core at a specific point:
 | **AUTH-CREDENTIAL** | Platform token issuance (already the owner of partner identity) issuing short-lived scoped tokens by OAuth client-credentials for both partners and advertisers. `partnerFromRequest(req)` becomes a principal resolver returning `{principalType, principalId, scopes}`; scopes are granted per DSP in DSP setup and per advertiser by the retailer. | Partner identity; `SecretsStore` (client secrets, signing keys) |
 | **AUTH-LOGIN** | PH Core's user/identity service returning `{advertiserId, userId, role}` for a signed-in advertiser user, with role mapped to a subset of the advertiser's scopes. This build does not choose the login provider. | `SessionSource` (admin users stay on it; advertiser users are a separate principal type) |
 
+### AUTH-IDENTITY — advertiser identity (boundary detail)
+
+The caller's identity is one of two peer principal types that can be
+authenticated — `partner` (a DSP) and `advertiser` — plus `admin` (a
+retailer user, on `SessionSource`). Today only `partner` is authenticated;
+an advertiser is just an `advertiserId` on a campaign or reservation.
+
+**Where the advertiser principal's identity comes from.** This build owns a
+first-class advertiser record (`advertisers` table behind `AdvertiserRepo`:
+`advertiserId`, `name`, `status`, optional `externalRef`). The advertiser
+principal's `principalId` is that `advertiserId`. The record holds no
+credentials and no users (AUTH-CREDENTIAL, AUTH-LOGIN).
+
+**What PH Core must guarantee about advertiser identity on integration:**
+
+1. **A stable, unique, never-reused `advertiserId`.** Where PH Core is the
+   system of record for advertisers, this build's record is keyed by it
+   (`externalRef` carries PH Core's id if the two differ) and never
+   re-mints it. An id that was used in a booking, invoice or audit row
+   must never be reassigned to another advertiser.
+2. **Advertiser-to-campaign ownership** on PH Core's campaign record: every
+   campaign names exactly one `advertiserId`, so a principal can be checked
+   against the records it owns. A partner acting for several advertisers
+   does not change the owner; the submitting principal is recorded
+   separately from the advertiser the campaign is for.
+3. **Lifecycle propagation.** Suspension, reactivation or removal of an
+   advertiser in PH Core reaches this build (through `CampaignSource` or
+   an event), so a suspended advertiser's principal stops authenticating
+   without the build deciding that on its own. Removal never deletes
+   bookings or billing history.
+4. **No credentials or user data cross this seam.** PH Core hands over
+   identity and status only; client secrets stay in `SecretsStore` and
+   user identities in PH Core's identity service.
+
+The partner path is unchanged by this boundary.
+
 The rule that keeps these one system: a login and a client secret
 resolve to the same advertiser principal and scope set (§9.5).
 

@@ -2495,6 +2495,66 @@ tokens, AUTH-CREDENTIAL has no knowledge of logins.
 - Every write records the acting principal (`principalType`, `principalId`)
   in the audit trail alongside the existing "Enforcement and audit" fields.
 
+##### AUTH-IDENTITY boundary — what it fixes, where advertiser identity lives, and what crosses to PH Core
+
+*Specification only; no behaviour change. The Partner API path is exactly as
+it is today.*
+
+**Principal model.** Caller identity is a discriminated union, and every
+type is a peer — none is a special case of another:
+
+| `principalType` | `principalId` is | Identity source | Authenticated today? |
+|---|---|---|---|
+| `partner` | the partner (DSP) id | this build's partner record (`PartnerRepo`), PH Core's partner identity on integration | **Yes** (static token) |
+| `advertiser` | the `advertiserId` | this build's **advertiser record** (below) | No — recognised by the model, no credential yet |
+| `admin` | the retailer user id | `SessionSource` (HQ Admin session) | Stand-in only |
+
+The principal is resolved by one auth seam (`partnerFromRequest(req)` today,
+generalised to a principal resolver). The resolver's contract is
+`request → {principalType, principalId, scopes} | 401`; the partner branch
+is the existing lookup, unchanged, and an advertiser branch is added beside
+it later without altering what handlers receive. Handlers branch on
+`principalType` only to apply the isolation rule above, never to re-parse
+credentials.
+
+**Where advertiser identity lives.** Today an advertiser exists only as an
+`advertiserId` string hanging off a campaign or reservation and as the key
+of `advertiser_settings`. The boundary makes it a **first-class advertiser
+record owned by this build's repos** (an `advertisers` table behind an
+`AdvertiserRepo`, read through the same repo layer as partners), not a
+property of PH Core's campaign record:
+
+- `advertiserId` — stable, opaque, unique, never reused; the `principalId`
+  of an advertiser principal and the foreign key every other advertiser
+  reference (campaign, reservation, `advertiser_settings`, audit) points at.
+- `name`, `status` (`active` / `suspended`), `createdAt`, and an optional
+  `externalRef` holding PH Core's own advertiser identifier when PH Core is
+  the system of record (see below).
+- **Credentials and logins are not part of this record.** The record says
+  *who the advertiser is*; how a machine proves it is that advertiser is
+  AUTH-CREDENTIAL, and how a person becomes it is AUTH-LOGIN. This
+  keeps AUTH-IDENTITY free of any token or login knowledge.
+- A `suspended` advertiser's principal authenticates to nothing; its
+  existing campaigns and bookings are untouched (same rule as the DSP
+  integration switch: nothing is lost by turning access off).
+
+**Seam to PH Core.** This build does not become the master of advertisers.
+Where PH Core holds advertiser records, the build's record is keyed by and
+mirrors PH Core's identity, and PH Core must guarantee the points listed in
+`api/PH-CORE-BOUNDARIES.md` → "Authentication seams" → *AUTH-IDENTITY —
+advertiser identity*: a stable, unique, never-reused `advertiserId`; the
+advertiser-to-campaign ownership; and propagation of advertiser
+suspension or removal.
+
+**Non-goals for this boundary.** The credential mechanism (token endpoint,
+client secrets, scopes issuance — AUTH-CREDENTIAL), user login and roles
+(AUTH-LOGIN), advertiser self-service screens, and any change to the
+partner path, the Admin API, playback, or the public API.
+
+**Acceptance.** This section and `api/PH-CORE-BOUNDARIES.md` name the
+principal types, the advertiser principal's identity source and the seam to
+PH Core; the Partner API behaves exactly as before.
+
 #### AUTH-CREDENTIAL — short-lived scoped tokens
 
 - Static per-partner bearer tokens are **replaced** by short-lived access
