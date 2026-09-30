@@ -58,7 +58,7 @@ export function MultiZonePanel({ d, update, open, onToggle, playlistOptions, zon
           <div className="mb-3 flex flex-wrap items-center gap-1.5">
             <span className="mr-1" style={{ fontSize: 12, color: T.muted }}>Quick split:</span>
             {[2, 3, 4, 6].map((n) => (
-              <Button key={n} size="small" onClick={() => setZones(Array.from({ length: n }, (_, i) => zone(i, i + 1, +(i * (100 / n)).toFixed(1), +(100 / n).toFixed(1))))}>{n}</Button>
+              <Button key={n} size="small" type={zones.length === n ? 'primary' : 'default'} aria-pressed={zones.length === n} onClick={() => setZones(Array.from({ length: n }, (_, i) => zone(i, i + 1, +(i * (100 / n)).toFixed(1), +(100 / n).toFixed(1))))}>{n}</Button>
             ))}
           </div>
           {zones.map((z, i) => (
