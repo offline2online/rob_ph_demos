@@ -48,12 +48,12 @@ export function navFor(flags: Flags, session: Session | undefined, dspOn = false
   const admin = session?.role === 'hq_admin'
   const selling = flags.dspIntegration && dspOn
   return [
-    { to: '/display-types', label: 'Display Types', icon: 'dashboard_customize' },
-    { to: '/playlists', label: 'Playlist Management', icon: 'playlist_play' },
+    { to: '/display-types', label: 'Display Types' },
+    { to: '/playlists', label: 'Playlist Management' },
     /* Marketing users read it too (spec §3). */
-    ...(selling ? [{ to: '/advertisers', label: 'Advertisers / Inventory', icon: 'sell' }] : []),
+    ...(selling ? [{ to: '/advertisers', label: 'Advertisers / Inventory' }] : []),
     /* Last in the list. Flag off: hidden (decision 6). Admin users only. */
-    ...(flags.dspIntegration && admin ? [{ to: '/dsp-integration', label: 'DSP Integration', icon: 'handshake' }] : []),
+    ...(flags.dspIntegration && admin ? [{ to: '/dsp-integration', label: 'DSP Integration' }] : []),
   ]
 }
 
