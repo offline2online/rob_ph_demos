@@ -113,7 +113,7 @@ export function BuyersListsTable({ lists, canEdit, onChanged }: { lists: BuyersL
           <span>No buyers lists yet. Create one to run a private auction on a slot.</span>
         </div>
       ) : (
-        <Grid<BuyersList> label="Buyers lists" rows={lists} columns={columns} context={context} getRowId={(l) => l.id} rowHeight={52} headerHeight={40} />
+        <Grid<BuyersList> label="Buyers lists" rows={lists} columns={columns} context={context} getRowId={(l) => l.id} rowHeight={52} headerHeight={40} stickyHeader />
       )}
       <BuyersListModal open={modalOpen} editing={editing} onClose={() => setModalOpen(false)} onSaved={() => onChanged()} />
       {deleting && (
