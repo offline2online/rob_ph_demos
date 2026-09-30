@@ -69,7 +69,8 @@ describe('Playlist Management API (spec §2)', () => {
       const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/playlists/pl_menu/settings', payload: { assetPosition: 'Top-Right' } })
       expect(res.statusCode).toBe(200)
       expect(res.json().playlistSettings).toEqual({ assetPosition: 'Top-Right' })
-      expect(res.json().assignments).toEqual([{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', zoneId: null, zoneName: null }])
+      /* menu_board is multi-zone, so its default playlist is no longer listed as assigned. */
+      expect(res.json().assignments).toEqual([])
     })
 
     it('rejects Maximum Campaigns Played In Rotation and unknown fields', async () => {

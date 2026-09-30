@@ -443,6 +443,7 @@ export function PlaylistManagementPage({ flags }: { flags: Flags }) {
       </div>
       <Grid<Row>
         label="Playlists"
+        stickyHeader
         rows={rows}
         columns={columns}
         context={ctx}

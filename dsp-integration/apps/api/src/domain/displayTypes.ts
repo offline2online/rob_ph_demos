@@ -66,11 +66,14 @@ export function ensureReferencedPlaylists(dt: DisplayType, playlists: PlaylistSo
   }
 }
 
-/* Playlist as the contract returns it, with its display type and zone assignments. */
+/* Playlist as the contract returns it, with its display type and zone assignments.
+   With zones on, each zone's own playlist is what plays, so the default
+   playlist is no longer listed as assigned (it still carries the layout and
+   still can't be deleted: playlistDeleteCheck). */
 export function toApiPlaylist(p: PlaylistRecord, types: DisplayType[]): Playlist {
   const assignments: Playlist['assignments'] = []
   for (const t of types) {
-    if (t.defaultPlaylistId === p.id) assignments.push({ displayTypeId: t.id, displayTypeName: t.name, zoneId: null, zoneName: null })
+    if (t.defaultPlaylistId === p.id && !zonesOf(t).length) assignments.push({ displayTypeId: t.id, displayTypeName: t.name, zoneId: null, zoneName: null })
     for (const z of zonesOf(t)) if (z.playlistId === p.id) assignments.push({ displayTypeId: t.id, displayTypeName: t.name, zoneId: z.id, zoneName: z.name })
   }
   return { id: p.id, name: p.name, autoCreatedFor: p.autoCreatedFor, playlistSettings: p.playlistSettings, assignments }
