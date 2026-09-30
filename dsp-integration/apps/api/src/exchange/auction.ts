@@ -158,6 +158,14 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, bidder
     }
   }
 
+  /* Locked against new sales (30 Sep 2026): windows already booked were
+     handled above and a locked term keeps booking at its rate; nothing new
+     is solicited, and a bid placed before the lock is settled as lost. */
+  if (p.def.salesLocked) {
+    settlePending(ctx, p.positionId, start, 'This position is locked against new sales; nothing was sold.')
+    return { ...out, skipped: 'Locked against new sales.' }
+  }
+
   const candidates: ReservationRecord[] = []
   /* Until Exchange settings are complete, no DSP is sent bid requests (spec
      §7): `bidders` is empty then. */

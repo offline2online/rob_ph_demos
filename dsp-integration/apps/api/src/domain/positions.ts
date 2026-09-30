@@ -314,6 +314,10 @@ export function windowStatus(ctx: Context, p: PositionRef, c: Caller, start: Dat
   if (!f.hasDisplays) return 'unavailable'
   /* Inside a locked deal term: already spoken for, not open to bids. */
   if (f.lockedTerm && isActiveAt(f.lockedTerm, iso)) return 'reserved'
+  /* Locked against new sales (30 Sep 2026): windows already sold read Sold
+     above; every other upcoming one is closed to further sales, even to the
+     advertiser it is held for. */
+  if (p.def.salesLocked) return 'unavailable'
   /* Held for a named advertiser: available only to that advertiser. */
   if (assignmentOf(p.def) === 'reserved' && !c.advertiser) return 'reserved'
   return 'available'

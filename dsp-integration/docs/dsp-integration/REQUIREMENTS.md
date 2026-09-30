@@ -528,6 +528,33 @@ This project adds edit, delete and — as of 26 Sep 2026 — Playlist Settings t
 this page. Everything else about playlists, including what plays and when,
 is handled by the existing platform and is unchanged.
 
+- **Sold slots are locked, not removed (ticket "Lock playlist slot against
+  new sales when slots are sold", 30 Sep 2026).** The rules below operate
+  at the **slot level, per playlist**, exactly as rows appear in
+  Available Inventory — not on a whole playlist or a whole advertiser.
+  1. **Hard block on removal.** Taking an advertiser off a slot (or
+     replacing it with DSPs, a buyers list or the whitelist) while the slot
+     has a live booking — reserved or sold for a window that has not
+     finished playing, Test mode excluded — is refused `409 has_dependents`
+     with the message that slots are sold and the advertiser can't be
+     removed. Switching such a slot's owner away from Advertiser is refused
+     the same way. Existing sold slots keep running as they are: nothing is
+     deleted, reassigned or cancelled.
+  2. **Lock against further sales.** From that refusal the admin can
+     **lock the slot** (`PUT /admin/v1/available-inventory/lock`). A locked
+     slot takes no new bid, reservation or auction win: its unsold upcoming
+     windows read *unavailable*, the auction skips it (pending bids settle
+     as lost) and the Partner API answers `409 conflict`. Windows already
+     booked — including the remaining windows of a locked-rate term — are
+     unaffected. Available Inventory marks the row **Locked to new sales**.
+  3. **Auto-release.** The lock releases by itself as soon as the booking
+     schedule shows no live booking on the slot (checked on the scheduler
+     tick and whenever Available Inventory is read or saved). The release
+     depends on **booking state only** — never on campaign playback or
+     delivery analytics. There is no manual unlock. Once released, and with
+     no live inventory left, the advertiser can be removed from the slot.
+  Only a slot with a live booking can be locked; an unsold slot simply has
+  its advertiser removed.
 - **Edit a playlist**: its name and its assignment to display types and
   zones (assignment is still made on the Display Types form, §1; a playlist
   is only ever listed here with an *Open* action back to it).
@@ -2619,11 +2646,13 @@ playback analytics.**
   navigation, this tab is its only home now). The page as a whole **still
   stands alone in its own browser tab** (Rob, 21 Sep, unchanged by the 26
   Sep tab restructuring above): no Display Types / DSP Integration nav
-  beside it (`RouteHandle.hideNav`). **It always opens on Booking
-  schedule** (ticket LH8iavmKqMB8mjHs9M8m, 28 Sep 2026): the tab is page
-  state, not part of the URL, so reloading after looking at Upcoming
-  Campaign Approval lands back on Booking schedule; `?tab=campaign-status`
-  (Campaign detail's back link) is honoured once on arrival, then dropped.
+  beside it (`RouteHandle.hideNav`). **The tab is kept in the
+  URL** (ticket HSTgB0s6l56UWH71JwOv, 30 Sep 2026, reversing
+  LH8iavmKqMB8mjHs9M8m of 28 Sep): Booking schedule is the default and
+  carries no `tab` param; choosing Upcoming Campaign Approval sets
+  `?tab=campaign-status`, so refreshing the browser stays on the tab you
+  were on instead of dropping back to Booking schedule. Campaign detail's
+  back link opens the same URL.
 - **Booking schedule tab**: every advertiser position across its play
   windows, booked / available / unavailable, **at the top of the tab**,
   with booking revenue per display type and then what sold by campaign

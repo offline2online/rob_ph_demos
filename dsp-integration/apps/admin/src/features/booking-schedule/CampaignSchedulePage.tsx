@@ -8,33 +8,31 @@
    tab's label reads "Upcoming Campaign Approval" (ticket, 27 Sep 2026); its
    URL key stays `campaign-status`, so existing links keep working. */
 import { Tabs } from 'antd'
-import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { CampaignStatusPage } from '../campaign-status/CampaignStatusPage'
 import { BookingSchedulePage } from './BookingSchedulePage'
 
 export type CampaignScheduleTab = 'booking' | 'campaign-status'
 
-/* Advertiser Bookings always opens on Booking schedule (ticket
-   LH8iavmKqMB8mjHs9M8m, 28 Sep 2026). The tab used to live in the URL, so
-   once someone had looked at Upcoming Campaign Approval, reloading the page
-   or coming back to that browser tab reopened it there. Now `?tab=
-   campaign-status` is honoured once, on arrival — Campaign detail's
-   "Campaign Status" back link still returns to that tab — and then dropped
-   from the URL; switching tabs is page state only. */
+/* The tab lives in the URL (ticket HSTgB0s6l56UWH71JwOv, 30 Sep 2026), so
+   reloading the browser on Upcoming Campaign Approval stays there instead of
+   dropping back to Booking schedule. This reverses LH8iavmKqMB8mjHs9M8m
+   (28 Sep), which stripped `?tab=` after arrival. Booking schedule is the
+   default and carries no `tab` param; Campaign detail's "Campaign Status"
+   back link still returns to `?tab=campaign-status`. */
 export function CampaignSchedulePage() {
   const [params, setParams] = useSearchParams()
-  const [tab, setTab] = useState<CampaignScheduleTab>(() => (params.get('tab') === 'campaign-status' ? 'campaign-status' : 'booking'))
-  useEffect(() => {
-    if (!params.has('tab')) return
+  const tab: CampaignScheduleTab = params.get('tab') === 'campaign-status' ? 'campaign-status' : 'booking'
+  const onChange = (key: string) => {
     const next = new URLSearchParams(params)
-    next.delete('tab')
+    if (key === 'campaign-status') next.set('tab', 'campaign-status')
+    else next.delete('tab')
     setParams(next, { replace: true })
-  }, [params, setParams])
+  }
   return (
     <Tabs
       activeKey={tab}
-      onChange={(key) => setTab(key as CampaignScheduleTab)}
+      onChange={onChange}
       items={[
         { key: 'booking', label: 'Booking schedule', children: <BookingSchedulePage /> },
         { key: 'campaign-status', label: 'Upcoming Campaign Approval', children: <CampaignStatusPage /> },

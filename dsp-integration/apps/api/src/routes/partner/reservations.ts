@@ -89,6 +89,7 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
     if (b.type === 'bid' && now < biddingOpensAt(ctx, start!).getTime()) throw conflict(`Bidding for that window opens at ${biddingOpensAt(ctx, start!).toISOString()}.`)
     if (now >= biddingClosesAt(ctx, start!).getTime() || auctionClaimed(ctx, windowStart)) throw conflict(`Bidding for that window closed at ${biddingClosesAt(ctx, start!).toISOString()}, when its auction ran.`)
     if (!ctx.displays.summaryByDisplayType(pos.displayType.id).displays) throw conflict('The position has no displays in that window.')
+    if (pos.def.salesLocked) throw conflict('This position is locked against new sales: its existing bookings continue, but no further window can be bid on or reserved.')
     const assignment = assignmentOf(pos.def)
     /* A deal's bidding is open only until auctionCloses and never once its term
        is locked (auctionOpenAt): a bid then would be left pending on a window
