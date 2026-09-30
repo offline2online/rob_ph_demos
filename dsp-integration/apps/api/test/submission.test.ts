@@ -118,12 +118,38 @@ describe('POST /v1/campaigns/{id}/assets — automated checks', () => {
     expectMatchesContract('POST', '/v1/campaigns/{campaignId}/assets', 422, small.json())
     expect(small.json().error.code).toBe('checks_failed')
     expect(small.json().error.details).toEqual([
-      { field: 'aspect_ratio', reason: '800×600 for 1920×1080.' },
-      { field: 'dimensions', reason: '800×600 is smaller than 1920×1080.' },
+      { field: 'aspect_ratio', reason: '800×600 is not within ±5% of the shape of 1920×1080.' },
+      { field: 'dimensions', reason: '800×600 is below the minimum of 960×540 (half of 1920×1080).' },
     ])
     const svg = await upload(app, id, 'default', Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'))
     expect(svg.json().error.details).toEqual([{ field: 'file_type', reason: 'Not a PNG, JPEG or MP4 file.' }])
     expect((await status(app, id)).json().assetVersion).toBe('v0')
+  })
+
+  it('validates shape, not pixels: ±5% ratio, a 50% floor, larger accepted', async () => {
+    const { app } = await newApp()
+    const id = (await create(app, SWISSE)).json().campaignId
+    const reasons = async (bytes: Buffer) => {
+      const r = await upload(app, id, 'default', bytes)
+      return { status: r.statusCode, details: r.statusCode === 422 ? r.json().error.details : [] }
+    }
+    expect((await reasons(png(1920, 1080))).status).toBe(201)
+    expect((await reasons(png(1280, 720))).status).toBe(201)
+    expect((await reasons(png(960, 540))).status).toBe(201)
+    expect((await reasons(png(3840, 2160))).status).toBe(201)
+    expect((await reasons(png(1280, 700))).status).toBe(201) // 1.829 is within 5% of 1.778
+    expect(await reasons(png(1280, 620))).toEqual({ status: 422, details: [{ field: 'aspect_ratio', reason: '1280×620 is not within ±5% of the shape of 1920×1080.' }] })
+    expect(await reasons(png(1080, 1920))).toEqual({ status: 422, details: [{ field: 'aspect_ratio', reason: '1080×1920 is not within ±5% of the shape of 1920×1080.' }] })
+    expect(await reasons(png(800, 450))).toEqual({ status: 422, details: [{ field: 'dimensions', reason: '800×450 is below the minimum of 960×540 (half of 1920×1080).' }] })
+  })
+
+  it('checks a zoned display type against the target zone, not the full canvas', async () => {
+    const { app } = await newApp()
+    const id = (await create(app, { ...SWISSE, displayTypeId: 'menu_board' })).json().campaignId
+    /* zone 1918×1080: 1010×570 is right for the zone (floor 959×540) but far off the 5760×1080 canvas shape */
+    expect((await upload(app, id, 'default', png(1010, 570))).statusCode).toBe(201)
+    const small = await upload(app, id, 'default', png(900, 500))
+    expect(small.json().error.details).toEqual([{ field: 'dimensions', reason: '900×500 is below the minimum of 959×540 or 962×540 (half of 1918×1080 or 1924×1080).' }])
   })
 
   it('checks a video’s duration against the slot, and accepts a zone-sized creative', async () => {

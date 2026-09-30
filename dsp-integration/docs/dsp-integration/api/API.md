@@ -153,6 +153,16 @@ calling DSP, otherwise `422 variable_not_permitted` naming each variable.
 Valid rules are stored in the existing campaign targeting structure and
 evaluated by the existing platform. The API never evaluates targeting.
 
+**Shape, not pixels.** A creative need not match the display's resolution;
+it must be the right *shape* (30 Sep 2026). `aspect_ratio` passes when the
+asset's width÷height is within **±5%** of the target's, and `dimensions`
+passes when the asset is at least **50% of the target in each dimension**
+(a 1920×1080 canvas accepts 1280×720 and 3840×2160, and rejects 1080×1920,
+1280×620 and 800×450). Larger assets are accepted — the player scales to
+fit, and a near-miss ratio plays with modest letterboxing. On a zoned
+display type the target is a **zone's own size**, not the full canvas.
+Images and videos alike; a failure names which rule broke.
+
 **Automated checks** (`checks[]`): `file_type`, `file_size`, `bitrate`,
 `dimensions`, `aspect_ratio`, `duration`, `default_present`,
 `targeting_permitted`, each with `passed` and `detail`. Two more are
