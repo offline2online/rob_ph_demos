@@ -208,7 +208,9 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
       .where("projectId", "==", event.params.projectId)
       .where("status", "==", "backlog")
       .get();
-    let items = itemsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    // Blocked tickets (needs Rob's decision / waiting on input) are not
+    // buildable: skip them so they aren't re-picked every run.
+    let items = itemsSnap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((i) => !(i.blocked && i.blocked.reason));
 
     // The board's own Backlog checkboxes (see public/js/app.js
     // requestNotify) can narrow a click to a hand-picked subset instead of
@@ -1036,6 +1038,166 @@ exports.notifyOnItemsDeployedToFeature = onDocumentUpdated(
   }
 );
 
+// ── Ready for Testing hand-off (30 Sep 2026) ────────────────────────────────
+// run-backlog-automation.js writes projects/{id}.readyForTestingNotifyRequestedAt
+// (with readyForTestingNotifyItemIds and readyForTestingNotifyRequestedByEmail)
+// once per run per project, the moment it has landed one or more tickets in
+// Ready for Testing. This fires once on that write: a Claude session whose
+// only job is to PRESENT the column to the person — ROUTINE_INSTRUCTIONS.md's
+// "Ready for Testing" flow keys off the `=== READY FOR TESTING` marker. Where
+// the Routine has the PH Agent Console connector attached, that session calls
+// the board's get_ready_for_testing_board MCP App and a host that renders MCP
+// Apps shows the tickets as cards inline; otherwise it presents them as text.
+// Either way the person sees what just landed without asking for it — the
+// "trigger" half of the composable UI tickets (ZXmW4lHMKpQRlarlwK7z /
+// f1yOqE2Sx2q8D7MSvfDu), which shipped a view but nothing that ever showed it.
+//
+// Same shape as the notify functions above — resolveRoutineCredentials, fire,
+// Slack, a *Routine record on the project — and deliberately data-only text:
+// the "how" lives in ROUTINE_INSTRUCTIONS.md.
+function stampMs(v) {
+  if (!v) return 0;
+  if (typeof v.toMillis === "function") return v.toMillis();
+  if (v instanceof Date) return v.getTime();
+  const ms = Date.parse(String(v));
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+async function fireRoutineSession(fireUrl, token, text, logContext) {
+  try {
+    const res = await fetch(fireUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+        "anthropic-beta": "experimental-cc-routine-2026-04-01",
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({ text }),
+    });
+    if (!res.ok) {
+      logger.error("Routine fire endpoint responded with a non-2xx status", {
+        ...logContext, status: res.status, body: await res.text().catch(() => "<unreadable>"),
+      });
+      return { sessionId: null, sessionUrl: null, fireError: `Routine fire endpoint responded with status ${res.status}` };
+    }
+    const body = await res.json().catch(() => null);
+    const sessionId = body?.claude_code_session_id || null;
+    logger.info("Fired Claude Code Routine", { ...logContext, sessionId });
+    return { sessionId, sessionUrl: sessionId ? `https://claude.ai/code/${sessionId}` : null, fireError: null };
+  } catch (err) {
+    const fireError = err instanceof Error ? err.message : String(err);
+    logger.error("Failed to call Routine fire endpoint", { ...logContext, error: fireError });
+    return { sessionId: null, sessionUrl: null, fireError };
+  }
+}
+
+exports.notifyOnItemsReadyForTesting = onDocumentUpdated(
+  { document: "projects/{projectId}", secrets: [NOTIFY_WEBHOOK_URL, CLAUDE_ROUTINE_FIRE_URL, CLAUDE_ROUTINE_TOKEN, BOARD_API_KEY] },
+  async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    if (!after?.readyForTestingNotifyRequestedAt) return;
+    // Only a genuinely new stamp fires — the readyForTestingRoutine write
+    // below re-triggers this handler with the same stamp, and so does every
+    // other edit to the project doc.
+    if (stampMs(after.readyForTestingNotifyRequestedAt) <= stampMs(before?.readyForTestingNotifyRequestedAt)) return;
+
+    const db = getFirestore();
+    const projectId = event.params.projectId;
+    const projectName = after.name || "A project";
+    const origin = `https://${process.env.GCLOUD_PROJECT || "backlog-tracker-e4ed2"}.web.app`;
+
+    // Re-read each card: only what is STILL in Ready for Testing on this
+    // project is presented (a card approved or failed in the meantime is not).
+    const wantedIds = (Array.isArray(after.readyForTestingNotifyItemIds) ? after.readyForTestingNotifyItemIds : [])
+      .filter((id) => typeof id === "string" && id).slice(0, 50);
+    const items = [];
+    for (const id of wantedIds) {
+      const snap = await db.collection("backlogItems").doc(id).get().catch(() => null);
+      if (!snap || !snap.exists) continue;
+      const d = snap.data() || {};
+      if (d.status !== "ready-for-testing" || d.projectId !== projectId) continue;
+      items.push({ id, ...d });
+    }
+    if (!items.length) {
+      logger.info("Ready for Testing presentation requested but none of the named cards is still in Ready for Testing — nothing to present", { projectId, wantedIds });
+      return;
+    }
+
+    const { fireUrl, token, via: routineCredVia } = await resolveRoutineCredentials(
+      db, after.readyForTestingNotifyRequestedByEmail, CLAUDE_ROUTINE_FIRE_URL.value(), CLAUDE_ROUTINE_TOKEN.value()
+    );
+    let sessionId = null;
+    let sessionUrl = null;
+    let fireError = null;
+
+    if (fireUrl && token) {
+      const itemLines = items.map((i, idx) => {
+        const summary = String(i.testSummary || i.desc || "").replace(/\s+/g, " ").trim();
+        return `${idx + 1}. [id: ${i.id}] [${i.type === "bug" ? "Bug" : "Feature"}] ${i.title || "(untitled)"}` +
+          `\n   Test link: ${i.previewUrl || "(none yet)"}` +
+          (i.testVersion ? `\n   Test version: v${i.testVersion}` : "") +
+          `\n   Ticket: ${origin}/#item-${i.id}` +
+          `\n   ${summary.slice(0, 600)}${summary.length > 600 ? "…" : ""}`;
+      }).join("\n");
+      const selfReportHint = `\n\nWhen you have presented the column (or if you had to stop early), PATCH projects/${projectId} with readyForTestingRoutine.status set to "done" (or "error" with an errorMessage) and readyForTestingRoutine.finishedAt set to now.`;
+      const text = `=== READY FOR TESTING for "${projectName}" (projectId: ${projectId}) on the Backlog Tracker & FAQs board ===\n` +
+        `The pipeline just landed ${items.length} ticket${items.length === 1 ? "" : "s"} in this project's Ready for Testing column` +
+        `${after.deployBranch ? ` (integration branch ${after.deployBranch})` : ""}. ` +
+        `Your only job in this run is to PRESENT that column to the person so they can review it — follow ROUTINE_INSTRUCTIONS.md's "Ready for Testing" flow section. ` +
+        `Do NOT investigate, build, re-test, approve, reject or move anything.\n\n` +
+        `Items:\n${itemLines}${selfReportHint}${boardAccessBlock()}`;
+      ({ sessionId, sessionUrl, fireError } = await fireRoutineSession(fireUrl, token, text, {
+        projectId, kind: "ready-for-testing", itemCount: items.length, firedVia: routineCredVia,
+      }));
+    } else {
+      fireError = "Routine fire not configured (no member binding and CLAUDE_ROUTINE_FIRE_URL/CLAUDE_ROUTINE_TOKEN not set)";
+      logger.warn("No Routine fire credentials available — skipping the Ready for Testing presentation session", { projectId });
+    }
+
+    // Same record the other fires keep (notifyRoutine/deployRoutine/...):
+    // which session is presenting, or why none is.
+    await db.collection("projects").doc(projectId).set({
+      readyForTestingRoutine: {
+        status: fireError ? "error" : "in-progress",
+        firedAt: new Date(),
+        sessionId,
+        sessionUrl,
+        itemCount: items.length,
+        sentItemIds: items.map((i) => i.id),
+        errorMessage: fireError,
+        firedVia: routineCredVia,
+      },
+    }, { merge: true });
+
+    const webhookUrl = NOTIFY_WEBHOOK_URL.value();
+    if (webhookUrl) {
+      const lines = items.map((i) => `• ${i.title || i.id}${i.previewUrl ? ` — ${i.previewUrl}` : ""}`).join("\n");
+      try {
+        const res = await fetch(webhookUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: `${items.length} ticket${items.length === 1 ? "" : "s"} landed in Ready for Testing for "${projectName}"` +
+              `${sessionUrl ? ` — review them here: ${sessionUrl}` : ""}\n${lines}`,
+            projectId, projectName, itemCount: items.length, sessionUrl,
+          }),
+        });
+        if (!res.ok) {
+          logger.error("Ready for Testing notify webhook responded with a non-2xx status", {
+            projectId, status: res.status, body: await res.text().catch(() => "<unreadable>"),
+          });
+        }
+      } catch (err) {
+        logger.error("Failed to call notify webhook for Ready for Testing", {
+          projectId, error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  }
+);
+
 // A shipped feature can leave the FAQ articles that document it stale.
 // Opt-in per project (Docs page → "FAQ review automation", projects/{id}
 // .faqAutoFlagOnLive) — when on, the moment one of that project's backlog
@@ -1727,4 +1889,4 @@ exports.syncConsoleUserClaims = mcp.syncConsoleUserClaims;
 // test/routine-binding-trigger.test.js exercise resolveRoutineCredentials
 // directly instead of standing up a full onDocumentUpdated + fetch-mocking
 // harness for something that's pure db-read-then-fallback logic.
-exports.__test = { resolveRoutineCredentials };
+exports.__test = { resolveRoutineCredentials, stampMs };

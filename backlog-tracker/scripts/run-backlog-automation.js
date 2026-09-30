@@ -86,6 +86,10 @@ function tv(value) {
   // Encode a plain JS value back into a Firestore REST "Value" object.
   if (value === null || value === undefined) return { nullValue: null };
   if (typeof value === "boolean") return { booleanValue: value };
+  // A Date is a real Firestore timestamp — what a Cloud Function's
+  // `toMillis()` guard needs (an ISO string would be a stringValue). The
+  // pipeline's own updatedAt fields are ISO strings and stay that way.
+  if (value instanceof Date) return { timestampValue: value.toISOString() };
   if (typeof value === "number") return { doubleValue: value };
   if (Array.isArray(value)) return { arrayValue: { values: value.map(tv) } };
   if (typeof value === "object") return { mapValue: { fields: Object.fromEntries(Object.entries(value).map(([k, v]) => [k, tv(v)])) } };
@@ -200,6 +204,49 @@ async function itemsForProject(projectId) {
     from: [{ collectionId: "backlogItems" }],
     where: { fieldFilter: { field: { fieldPath: "projectId" }, op: "EQUAL", value: { stringValue: projectId } } },
   });
+}
+
+// ── "Ready for Testing" hand-off: tell a person the build landed ────────────
+// Every card this run moves into Ready for Testing is collected per project,
+// and main() writes projects/{id}.readyForTestingNotifyRequestedAt (plus the
+// ids, and the member whose click started the build) once per project at
+// the end of the apply-patch loop. functions/index.js's
+// notifyOnItemsReadyForTesting reacts to that write by firing a Claude
+// session whose only job is to PRESENT the column — the board's
+// get_ready_for_testing_board MCP App where the Routine has the PH Agent
+// Console connector, plain text otherwise — so the person sees what just
+// landed without asking for it. One fire per run per project, not one per
+// ticket: the run is the batch, same as a Notify Claude click is.
+const readyForTestingLanded = new Map(); // projectId -> { ids, project }
+function noteReadyForTesting(project, itemId) {
+  if (!project || !project.id || !itemId) return;
+  const entry = readyForTestingLanded.get(project.id) || { ids: [], project };
+  if (!entry.ids.includes(itemId)) entry.ids.push(itemId);
+  readyForTestingLanded.set(project.id, entry);
+}
+function readyForTestingNotifyFields(project, ids) {
+  return {
+    // A Date, so it lands as a Firestore timestamp (see tv()).
+    readyForTestingNotifyRequestedAt: new Date(),
+    readyForTestingNotifyItemIds: ids.slice(),
+    // The member whose Notify Claude click started this build, so the
+    // presentation session fires under their own Routine binding when they
+    // have one (resolveRoutineCredentials in functions/index.js).
+    readyForTestingNotifyRequestedByEmail: (project && project.notifyRequestedByEmail) || null,
+  };
+}
+async function requestReadyForTestingNotify() {
+  for (const [projectId, { ids, project }] of readyForTestingLanded) {
+    try {
+      await patchProject(projectId, readyForTestingNotifyFields(project, ids));
+      console.log(`[ready-for-testing] ${projectId}: asked for the column to be presented (${ids.length} ticket(s): ${ids.join(", ")})`);
+    } catch (err) {
+      // The cards are already in Ready for Testing; a missed presentation is
+      // a nuisance, not a reason to fail the run.
+      console.error(`[ready-for-testing] ${projectId}: couldn't request the presentation: ${err.message}`);
+    }
+  }
+  readyForTestingLanded.clear();
 }
 
 // Every card on a project's train right now: it has a commit on the
@@ -1449,6 +1496,7 @@ async function processApplyPatch(item) {
       }
       const notes = await appendNote(item, text);
       await patchItem(item.id, { ...outcome.fields, updatedAt: new Date().toISOString(), notes });
+      if (outcome.fields.status === "ready-for-testing") noteReadyForTesting(project, item.id);
       console.log(`[apply-patch] ${item.id}: no diff against ${deployBranch} — ${outcome.kind}` +
         (outcome.kind === "carried" ? ` (rides on ${outcome.sha.slice(0, 7)}${outcome.carriedByItem ? `, ${outcome.carriedByItem}` : ""})` : ""));
       return;
@@ -1523,6 +1571,7 @@ async function processApplyPatch(item) {
     ...(workflowPaths.length ? { requiresHumanMerge: true } : {}),
   });
   console.log(`[apply-patch] ${item.id}: committed ${sha.slice(0, 7)} on ${deployBranch}, moved to ready-for-testing${testVersion ? ` (testVersion ${testVersion})` : ""}`);
+  noteReadyForTesting(project, item.id);
 
   // This item's own card now shows the branch's new head; every OTHER
   // Ready for Testing card already on the same train still shows whatever
@@ -2832,6 +2881,9 @@ async function main() {
       }
     }
   }
+  // Whatever just landed in Ready for Testing gets presented to a person —
+  // one fire per project for this run (see noteReadyForTesting).
+  await requestReadyForTestingNotify();
   for (const item of mergeReadyItems) {
     try {
       await processMergePr(item);
@@ -2942,4 +2994,6 @@ module.exports = {
   normalisePatchPaths, projectFolderOf, patchFilesLookFolderRelative,
   // test/preview-url-pin.test.js
   guessPreviewUrl, isAutoGeneratedPreviewUrl, repointPreviewUrlRef,
+  // test/ready-for-testing-trigger.test.js
+  readyForTestingNotifyFields, tv,
 };

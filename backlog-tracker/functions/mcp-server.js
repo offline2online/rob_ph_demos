@@ -47,6 +47,8 @@ const { onDocumentWritten } = require("firebase-functions/v2/firestore");
 const logger = require("firebase-functions/logger");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getAuth } = require("firebase-admin/auth");
+// The MCP Apps views behind the two "board" tools (see that file's header).
+const { MCP_APP_MIME, UI_META, BOARD_VIEWS, viewByUri, boardViewHTML } = require("./mcp-app-views.js");
 
 // initializeApp() runs in index.js before this module is required; resolve
 // the SDK singletons lazily so require order can never bite.
@@ -1216,6 +1218,9 @@ function itemSummary(id, d, projects) {
     updatedAt: tsToISO(d.updatedAt),
     createdAt: tsToISO(d.createdAt),
     comments: Array.isArray(d.notes) ? d.notes.length : 0,
+    blocked: d.blocked && d.blocked.reason
+      ? { reason: d.blocked.reason, note: d.blocked.note || "", setBy: d.blocked.setBy || null, setAt: tsToISO(d.blocked.setAt) }
+      : null,
   };
 }
 
@@ -1330,80 +1335,48 @@ function releaseSummary(r) {
   return r ? { id: r.id, name: r.name, version: r.version, status: r.status, order: r.order } : null;
 }
 
-// ── Composable UI resources (embedded HTML cards) ───────────────────────────
+// ── Composable UI: MCP Apps bindings for the two "board" tools ─────────────
 // get_ready_for_testing_board and get_approved_for_deployment_board (below)
-// return, alongside the usual JSON, a self-contained HTML "card list" as an
-// MCP embedded resource (content type "resource", mimeType "text/html") —
-// the standard MCP tool-result content block, not a bespoke extension — so a
-// client that renders embedded HTML resources inline can show the column as
-// cards right in the conversation instead of only as text. A client that
-// doesn't render resources still gets the same data as the plain-text/JSON
-// blocks that come with it.
-//
-// No <script>, no external stylesheet/font fetch, no <form> — everything is
-// inline-styled static markup. Every user-authored string (title/desc/
-// testSummary — recall backlogItems.desc is publicly, unauthenticatedly
-// writable, see this file's own header) goes through escapeHTML() before it
-// reaches the markup, and a URL is only ever linked when it parses as
-// https:// (safeHref) — a malicious previewUrl set to a javascript: URI is
-// rendered as plain text, never as a clickable href.
-//
-// Colours/type below are Personalisation Hub's own measured tokens (see the
-// ph-designer skill's tokens.md) — this widget isn't an iframed prototype
-// page (nothing here is iframed into HQ Admin), so the prototyping.md "content
-// frame only" rules don't apply, but the brand palette and Roboto still
-// should, for the same reason any other Claude-built surface for this board
-// would want to look like it belongs to it.
-const PH_TOKENS = {
-  primary: "#169bc2", accent: "#38b0cf", text: "#333333",
-  muted: "rgba(0,0,0,0.45)", border: "#d9d9d9", bg: "#ffffff",
-  success: "#52c41a", warning: "#faad14",
-};
-
+// are MCP Apps (SEP-1865, extension `io.modelcontextprotocol/ui`): each tool
+// carries `_meta.ui.resourceUri` naming a `ui://` resource this server
+// serves through resources/list + resources/read (mimeType
+// "text/html;profile=mcp-app", sandbox settings under `_meta.ui`), and the
+// tool's result carries the column as `structuredContent`, which a host
+// that renders MCP Apps pushes into that view as ui/notifications/tool-result.
+// The same data goes out as a plain-text JSON block too, so a host without
+// MCP Apps (Claude Code today, unless its host switch is on) still gets
+// everything as text. The views themselves live in mcp-app-views.js — read
+// its header for what they are, what they aren't, and why the first cut of
+// this (an embedded text/html resource block, PR #208) never rendered
+// anywhere.
+function boardToolMeta(kind) {
+  const uri = BOARD_VIEWS[kind].uri;
+  // Nested form is the current spec; the flat key is the deprecated one
+  // older hosts still look for. Hosts are told to accept either.
+  return { ui: { resourceUri: uri }, "ui/resourceUri": uri };
+}
+function uiResourceEntry(view) {
+  return { uri: view.uri, name: view.name, title: view.title, description: view.description, mimeType: MCP_APP_MIME, _meta: { ui: UI_META } };
+}
+function uiResourceContents(view) {
+  return { uri: view.uri, mimeType: MCP_APP_MIME, text: boardViewHTML(view.kind), _meta: { ui: UI_META } };
+}
+// Both text blocks are for the model (a summary line, then the JSON); the
+// structuredContent is what the view renders from. Same payload in both.
+function boardToolResult(summary, payload) {
+  return {
+    content: [
+      { type: "text", text: summary },
+      { type: "text", text: JSON.stringify(payload, null, 2) },
+    ],
+    structuredContent: payload,
+  };
+}
+// A URL is only ever handed on as a link when it parses as https:// — a
+// malicious previewUrl set to a javascript: URI goes out as null. The view
+// checks again before it renders an href.
 function safeHref(url) {
   return typeof url === "string" && /^https:\/\//i.test(url) ? url : null;
-}
-
-function pillHTML(label, kind) {
-  const styles = {
-    primary: "background:#169bc21a;color:#169bc2;",
-    accent: "background:#38b0cf1a;color:#0d7691;",
-    neutral: "background:rgba(0,0,0,0.06);color:#333333;",
-  };
-  return `<span style="display:inline-block;font-size:11px;font-weight:600;line-height:1;padding:3px 8px;border-radius:9999px;margin:0 6px 6px 0;${styles[kind] || styles.neutral}">${escapeHTML(label)}</span>`;
-}
-
-function cardShellHTML(headline, subhead, bodyHTML) {
-  return `<div style="font-family:Roboto,'Helvetica Neue',Helvetica,Arial,sans-serif;color:${PH_TOKENS.text};background:${PH_TOKENS.bg};max-width:640px;">
-  <div style="font-size:16px;font-weight:700;margin-bottom:2px;">${escapeHTML(headline)}</div>
-  <div style="font-size:13px;color:${PH_TOKENS.muted};margin-bottom:12px;">${escapeHTML(subhead)}</div>
-  ${bodyHTML}
-</div>`;
-}
-
-// One ticket, as a card. `extraPillsHTML` lets a caller add train/PR context
-// (see get_approved_for_deployment_board) without this function needing to
-// know about the deployment train at all.
-function ticketCardHTML(item, extraPillsHTML) {
-  const bodyText = item.testSummary || item.desc || "";
-  const hasBoth = item.testSummary && item.desc && item.testSummary !== item.desc;
-  const testHref = safeHref(item.previewUrl);
-  const testLink = testHref
-    ? `<a href="${escapeHTML(testHref)}" target="_blank" rel="noopener" style="color:${PH_TOKENS.primary};font-weight:600;text-decoration:none;font-size:13px;">Test this &rarr;</a>`
-    : "";
-  const boardHref = safeHref(item.board);
-  const boardLink = boardHref
-    ? `<a href="${escapeHTML(boardHref)}" target="_blank" rel="noopener" style="color:${PH_TOKENS.muted};text-decoration:none;font-size:12px;">View ticket &#8599;</a>`
-    : "";
-  const versionPill = item.testVersion ? pillHTML(`Test version: v${item.testVersion}`, "accent") : "";
-  return `<div style="border:1px solid ${PH_TOKENS.border};border-radius:8px;padding:12px 14px;margin-bottom:10px;">
-    <div style="font-size:14px;font-weight:700;margin-bottom:4px;">${escapeHTML(item.title || "(untitled)")}</div>
-    <div style="font-size:12px;color:${PH_TOKENS.muted};margin-bottom:8px;">${escapeHTML(item.project || "")}${item.project ? " &middot; " : ""}${escapeHTML(item.id)}</div>
-    <div style="font-size:13px;line-height:1.45;white-space:pre-wrap;margin-bottom:8px;">${escapeHTML(bodyText)}</div>
-    ${hasBoth ? `<details style="margin-bottom:8px;"><summary style="cursor:pointer;font-size:12px;color:${PH_TOKENS.primary};">Show original request</summary><div style="font-size:13px;line-height:1.45;white-space:pre-wrap;margin-top:6px;">${escapeHTML(item.desc)}</div></details>` : ""}
-    <div style="margin-bottom:2px;">${versionPill}${extraPillsHTML || ""}</div>
-    <div style="display:flex;gap:14px;align-items:center;">${testLink}${boardLink}</div>
-  </div>`;
 }
 
 // Mirrors public/js/app.js's deployNotifyButtonHTML gate exactly
@@ -1753,6 +1726,89 @@ const TOOLS = [
     },
   },
   {
+    name: "set_blocked",
+    description: "Flag a Backlog ticket as blocked: it cannot be built until a person decides something (reason \"needs-decision\") or supplies input/a file (\"waiting-on-input\"). Blocked tickets are skipped by Notify Claude and the build routine, and show a flag with your one-line note on the board. Put the full detail in a comment. Does not change pipeline status. Clears when the flag is cleared or someone else comments.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        itemId: { type: "string" },
+        reason: { type: "string", enum: ["needs-decision", "waiting-on-input"] },
+        note: { type: "string", description: "One line, up to 200 characters." },
+      },
+      required: ["itemId", "reason", "note"], additionalProperties: false,
+    },
+    async run(args, session) {
+      if (!["needs-decision", "waiting-on-input"].includes(args.reason)) return toolError("reason must be needs-decision or waiting-on-input.");
+      const note = String(args.note || "").replace(/\s+/g, " ").trim();
+      if (!note) return toolError("note is required.");
+      const ref = db().collection("backlogItems").doc(String(args.itemId));
+      const snap = await ref.get();
+      if (!snap.exists) return toolError(`No ticket with id ${args.itemId}.`);
+      if ((snap.data() || {}).status !== "backlog") return toolError("Only tickets in Backlog can be flagged as blocked.");
+      await ref.update({
+        blocked: { reason: args.reason, note: note.slice(0, 200), setBy: session.email, setAt: new Date() },
+        updatedAt: FieldValue.serverTimestamp(),
+        updatedByEmail: session.email,
+      });
+      await audit(session, "set_blocked", { itemId: ref.id, reason: args.reason });
+      return textResult({ blocked: true, itemId: ref.id, reason: args.reason });
+    },
+  },
+  {
+    name: "set_phase_skill_bindings",
+    description: "Admin only. Add or remove skills (by slug) bound to the \"build\" or \"deploy\" phase in settings/phaseSkillBindings, which every Notify Claude / Deploy run loads. Existing bindings are kept: pass slugs to add and/or remove. The skill's slug must exist in the skills library. This feeds the Routine's prompt, hence admin-only.",
+    scope: "board.write",
+    role: "admin",
+    inputSchema: {
+      type: "object",
+      properties: {
+        phase: { type: "string", enum: ["build", "deploy"] },
+        add: { type: "array", items: { type: "string" } },
+        remove: { type: "array", items: { type: "string" } },
+      },
+      required: ["phase"], additionalProperties: false,
+    },
+    async run(args, session) {
+      if (!["build", "deploy"].includes(args.phase)) return toolError("phase must be build or deploy.");
+      const add = (Array.isArray(args.add) ? args.add : []).map((x) => String(x).trim()).filter(Boolean);
+      const remove = new Set((Array.isArray(args.remove) ? args.remove : []).map((x) => String(x).trim()));
+      if (!add.length && !remove.size) return toolError("Pass at least one slug in add or remove.");
+      for (const slug of add) {
+        if (!/^[a-z0-9][a-z0-9-]{0,80}$/.test(slug)) return toolError(`"${slug}" is not a valid skill slug.`);
+        const found = await db().collection("skills").where("slug", "==", slug).limit(1).get();
+        if (found.empty) return toolError(`No skill with slug ${slug} in the skills library.`);
+      }
+      const ref = db().collection("settings").doc("phaseSkillBindings");
+      const snap = await ref.get();
+      const cur = snap.exists && Array.isArray((snap.data() || {})[args.phase]) ? snap.data()[args.phase].map(String) : [];
+      const next = cur.filter((x) => !remove.has(x));
+      for (const slug of add) if (!next.includes(slug)) next.push(slug);
+      if (next.length > 20) return toolError("At most 20 skills can be bound to a phase.");
+      await ref.set({ [args.phase]: next, updatedAt: FieldValue.serverTimestamp(), updatedByEmail: session.email }, { merge: true });
+      await audit(session, "set_phase_skill_bindings", { phase: args.phase, added: add, removed: [...remove] });
+      return textResult({ phase: args.phase, bound: next });
+    },
+  },
+  {
+    name: "clear_blocked",
+    description: "Clear a ticket's blocked flag, putting it back in the build queue.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: { itemId: { type: "string" } },
+      required: ["itemId"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const ref = db().collection("backlogItems").doc(String(args.itemId));
+      const snap = await ref.get();
+      if (!snap.exists) return toolError(`No ticket with id ${args.itemId}.`);
+      await ref.update({ blocked: null, updatedAt: FieldValue.serverTimestamp(), updatedByEmail: session.email });
+      await audit(session, "clear_blocked", { itemId: ref.id });
+      return textResult({ cleared: true, itemId: ref.id });
+    },
+  },
+  {
     name: "add_item_comment",
     description: "Add a comment to a ticket. It shows on the board's own comment thread, labelled with your email, exactly like a comment typed there.",
     scope: "board.write",
@@ -1773,10 +1829,16 @@ const TOOLS = [
       if (!snap.exists) return toolError(`No ticket with id ${args.itemId}.`);
       // A plain Date, not serverTimestamp(): Firestore rejects the sentinel
       // inside arrayUnion — same reason app.js's addItemComment uses one.
-      await ref.update({
+      const upd = {
         notes: FieldValue.arrayUnion({ author: session.email, text, at: new Date() }),
         updatedAt: FieldValue.serverTimestamp(),
-      });
+      };
+      // A newer comment from anyone other than whoever set the blocked flag
+      // answers it and puts the ticket back in the build queue.
+      const cur = snap.data() || {};
+      const clearedBlocked = !!(cur.blocked && cur.blocked.reason && cur.blocked.setBy !== session.email);
+      if (clearedBlocked) upd.blocked = null;
+      await ref.update(upd);
       await audit(session, "add_item_comment", { itemId: ref.id, chars: text.length });
       return textResult({ added: true, itemId: ref.id, author: session.email });
     },
@@ -1784,12 +1846,13 @@ const TOOLS = [
   // ── Composable UI: review the pipeline's two "waiting on a human" columns
   // in-agent, without leaving the conversation ─────────────────────────────
   // Read-only, same as list_backlog_items/get_backlog_item above — nothing
-  // here can move a ticket. See the "Composable UI resources" comment above
-  // TOOLS for what the embedded HTML resource is and isn't.
+  // here can move a ticket. Each is an MCP App: see the "Composable UI: MCP
+  // Apps bindings" comment above TOOLS and mcp-app-views.js.
   {
     name: "get_ready_for_testing_board",
-    description: "A composable view of the Ready for Testing column: every ticket a build just landed in, shown as a card (title, testSummary/desc, test link, testVersion, and a link back to the ticket). Returns an embedded HTML resource a supporting client renders inline in the conversation, alongside the same data as plain text/JSON for a client that can't. Read-only — reviewing here never changes a ticket's status; approve or reject it on the board itself.",
+    description: "Show the Ready for Testing column: every ticket a build just landed in, as a card (title, testSummary/desc, type/area, test link, testVersion, and a link back to the ticket). This is an MCP App — a host that supports MCP Apps (claude.ai, Claude Desktop) renders the cards inline in the conversation; every host also gets the same data as plain text/JSON. Read-only — reviewing here never changes a ticket's status; approve or reject it on the board itself. Prefer this over list_backlog_items when asked what is ready for testing.",
     scope: "board.read",
+    _meta: boardToolMeta("ready-for-testing"),
     inputSchema: {
       type: "object",
       properties: {
@@ -1819,9 +1882,11 @@ const TOOLS = [
           projectId: d.projectId || null,
           project: project ? project.name : null,
           title: d.title || "",
+          type: d.type || null,
+          category: d.category || null,
           testSummary: d.testSummary || null,
           desc: d.desc || "",
-          previewUrl: d.previewUrl || null,
+          previewUrl: safeHref(d.previewUrl),
           testVersion: d.testVersion || null,
           board: `${PUBLIC_ORIGIN}/#item-${doc.id}`,
         };
@@ -1829,26 +1894,18 @@ const TOOLS = [
 
       const projectLabel = a.projectId ? ((projects.get(String(a.projectId)) || {}).name || a.projectId) : "every project";
       const headline = `Ready for Testing — ${projectLabel}`;
-      const subhead = cards.length
-        ? `${cards.length} ticket${cards.length === 1 ? "" : "s"} waiting on review. Read-only — approve or reject on the board.`
-        : "Nothing in Ready for Testing right now.";
-      const bodyHTML = cards.map((c) => ticketCardHTML(c)).join("\n")
-        || `<div style="font-size:13px;color:${PH_TOKENS.muted};">Nothing to show.</div>`;
-      const html = cardShellHTML(headline, subhead, bodyHTML);
-
-      return {
-        content: [
-          { type: "text", text: `${headline}: ${cards.length} ticket(s). Read-only — this view can't change status.` },
-          { type: "resource", resource: { uri: `ui://backlog-tracker/ready-for-testing/${a.projectId || "all"}`, mimeType: "text/html", text: html } },
-          { type: "text", text: JSON.stringify({ projectId: a.projectId || null, count: cards.length, items: cards }, null, 2) },
-        ],
-      };
+      const payload = { kind: "ready-for-testing", projectId: a.projectId || null, projectLabel, count: cards.length, items: cards };
+      return boardToolResult(
+        `${headline}: ${cards.length} ticket(s) waiting on review. Read-only — this view can't change status.`,
+        payload,
+      );
     },
   },
   {
     name: "get_approved_for_deployment_board",
-    description: "A composable view of the Approved for Deployment column: every ticket already tested and confirmed, just waiting to be merged, shown as a card with its deploy/train context (on the train + which branch, or its own PR). Returns an embedded HTML resource a supporting client renders inline in the conversation, alongside the same data as plain text/JSON. Read-only — this view can't change status; when a project's whole train is approved and Ready for Testing is empty for it, this names approve_deploy_to_main as the tool that actually fires Deploy to Main.",
+    description: "Show the Approved for Deployment column: every ticket already tested and confirmed, just waiting to be merged, as a card with its deploy/train context (on the train + which branch, or its own PR). This is an MCP App — a host that supports MCP Apps (claude.ai, Claude Desktop) renders the cards inline in the conversation; every host also gets the same data as plain text/JSON. Read-only — this view can't change status; when a project's whole train is approved and Ready for Testing is empty for it, this names approve_deploy_to_main as the tool that actually fires Deploy to Main. Prefer this over list_backlog_items when asked what is approved or waiting to deploy.",
     scope: "board.read",
+    _meta: boardToolMeta("approved-for-deployment"),
     inputSchema: {
       type: "object",
       properties: {
@@ -1880,9 +1937,11 @@ const TOOLS = [
           projectId: d.projectId || null,
           project: project ? project.name : null,
           title: d.title || "",
+          type: d.type || null,
+          category: d.category || null,
           testSummary: d.testSummary || null,
           desc: d.desc || "",
-          previewUrl: d.previewUrl || null,
+          previewUrl: safeHref(d.previewUrl),
           testVersion: d.testVersion || null,
           onTrain: !!d.deployCommit,
           deployCommit: d.deployCommit || null,
@@ -1897,25 +1956,14 @@ const TOOLS = [
         ? "This project's whole train is Approved for Deployment — ask your agent to call approve_deploy_to_main to fire Deploy to Main."
         : guard.reason) : null;
       const headline = `Approved for Deployment — ${projectLabel}`;
-      const subhead = cards.length
-        ? `${cards.length} ticket${cards.length === 1 ? "" : "s"} waiting to ship.`
-        : "Nothing Approved for Deployment right now.";
-      const readyBannerHTML = readyLine
-        ? `<div style="font-size:12px;font-weight:600;color:${guard.ok ? PH_TOKENS.success : PH_TOKENS.warning};margin-bottom:10px;">${escapeHTML(readyLine)}</div>`
-        : "";
-      const cardsHTML = cards.map((c) => ticketCardHTML(c, c.onTrain
-        ? pillHTML(`On train: ${c.deployBranch || "?"}`, "primary")
-        : (c.prNumber ? pillHTML(`PR #${c.prNumber}`, "neutral") : ""))).join("\n")
-        || `<div style="font-size:13px;color:${PH_TOKENS.muted};">Nothing to show.</div>`;
-      const html = cardShellHTML(headline, subhead, readyBannerHTML + cardsHTML);
-
-      return {
-        content: [
-          { type: "text", text: `${headline}: ${cards.length} ticket(s).${readyLine ? ` ${readyLine}` : ""}` },
-          { type: "resource", resource: { uri: `ui://backlog-tracker/approved-for-deployment/${a.projectId || "all"}`, mimeType: "text/html", text: html } },
-          { type: "text", text: JSON.stringify({ projectId: a.projectId || null, count: cards.length, readyToDeploy: guard ? guard.ok : null, items: cards }, null, 2) },
-        ],
+      const payload = {
+        kind: "approved-for-deployment", projectId: a.projectId || null, projectLabel, count: cards.length,
+        readyToDeploy: guard ? guard.ok : null, readyLine, items: cards,
       };
+      return boardToolResult(
+        `${headline}: ${cards.length} ticket(s) waiting to ship.${readyLine ? ` ${readyLine}` : ""}`,
+        payload,
+      );
     },
   },
   // ── The one deliberate, logged exception to "nothing here deploys" ──────
@@ -3291,6 +3339,7 @@ const SERVER_INSTRUCTIONS = [
   "Documentation writes REPLACE the whole document, so read it first and send back the complete revised text — never a fragment. The version you replace is kept, and list_doc_revisions / get_doc_revision can recover it.",
   "Where a project's documentation also exists as a file in the repo (REQUIREMENTS.md, README.md, shared/interface-contract.md), the two are meant to match: update both, and treat a divergence as a bug in whichever is stale.",
   "The Concept Incubator holds pre-project ideas that haven't been promoted to a tracked project yet — list_concepts / get_concept read them, and add_concept_comment / set_concept_readme / set_concept_requirements write to them, same read/write split as project documentation. A concept has no backlog of its own until it's promoted; once promoted, use list_projects/get_project_docs on the project it became instead.",
+  "To show what is waiting on a person in the release pipeline, call get_ready_for_testing_board (the Ready for Testing column) or get_approved_for_deployment_board (the Approved for Deployment column) rather than list_backlog_items: both are MCP Apps, so a host that supports them renders the tickets as cards inline in the conversation, and every host gets the same data as text.",
   "Use search_faq / get_faq_article to answer Personalisation Hub product questions from the published help centre instead of guessing.",
   "You can also write to the help centre: create_faq_article files a brand-new draft, and update_faq_article proposes a change to an existing one as a pendingRevision — never live. Either way a person still reviews and approves it in FAQ Management before anything publishes; list_pending_faq_revisions and get_faq_revision let you check on a proposal's status.",
   "There is also a shared, organisation-wide skills library — NOT scoped to any one project. list_skills / get_skill read it (any signed-in member, including a viewer); upload_skill / update_skill / delete_skill write to it (editor role). Use this to publish or fetch a reusable piece of packaged instructions any team member's agent can pull in, e.g. this console's own ph-designer front-end skill.",
@@ -3320,11 +3369,14 @@ async function dispatchRpc(msg, session, ctx) {
       ctx.protocolVersion = version;
       return rpcResult(msg.id, {
         protocolVersion: version,
-        capabilities: { tools: { listChanged: false } },
+        // resources: the two MCP App views (ui://backlog-tracker/…) — a host
+        // that renders MCP Apps fetches them with resources/read. Static, so
+        // neither subscriptions nor list-changed notifications.
+        capabilities: { tools: { listChanged: false }, resources: { subscribe: false, listChanged: false } },
         serverInfo: {
           name: "ph-agent-console",
           title: "PH Agent Console",
-          version: "1.3.0",
+          version: "1.4.0",
           websiteUrl: PUBLIC_ORIGIN,
           description: "The Personalisation Hub prototype backlog board and help centre.",
           icons: SERVER_ICONS,
@@ -3340,23 +3392,29 @@ async function dispatchRpc(msg, session, ctx) {
       return null;
     case "tools/list":
       return rpcResult(msg.id, {
-        tools: TOOLS.map((t) => ({
-          name: t.name,
-          description: t.description + (t.scope === "board.write" && !session.scopes.includes("board.write")
-            ? " (Unavailable: this connection is read-only.)" : ""),
-          inputSchema: t.inputSchema,
-          annotations: {
-            readOnlyHint: t.scope !== "board.write",
-            // Only the two delete_* tools. A client that asks a person before
-            // running a destructive tool should ask before those and not
-            // before a documentation update.
-            destructiveHint: t.destructive === true,
-            // set_* replaces a whole document, so running it twice with the
-            // same input lands in the same place; create_*/add_* do not.
-            idempotentHint: t.name.startsWith("get_") || t.name.startsWith("list_") || t.name.startsWith("set_") || t.name === "whoami",
-            openWorldHint: false,
-          },
-        })),
+        tools: TOOLS.map((t) => {
+          const entry = {
+            name: t.name,
+            description: t.description + (t.scope === "board.write" && !session.scopes.includes("board.write")
+              ? " (Unavailable: this connection is read-only.)" : ""),
+            inputSchema: t.inputSchema,
+            annotations: {
+              readOnlyHint: t.scope !== "board.write",
+              // Only the two delete_* tools. A client that asks a person before
+              // running a destructive tool should ask before those and not
+              // before a documentation update.
+              destructiveHint: t.destructive === true,
+              // set_* replaces a whole document, so running it twice with the
+              // same input lands in the same place; create_*/add_* do not.
+              idempotentHint: t.name.startsWith("get_") || t.name.startsWith("list_") || t.name.startsWith("set_") || t.name === "whoami",
+              openWorldHint: false,
+            },
+          };
+          // MCP Apps binding (the two board tools): the host reads
+          // _meta.ui.resourceUri here to know which ui:// resource to render.
+          if (t._meta) entry._meta = t._meta;
+          return entry;
+        }),
       });
     case "tools/call": {
       const tool = TOOLS_BY_NAME.get(String(params.name || ""));
@@ -3379,10 +3437,21 @@ async function dispatchRpc(msg, session, ctx) {
         return rpcResult(msg.id, toolError(`${tool.name} failed: ${err && err.message ? err.message : err}`));
       }
     }
+    // The only resources are the two MCP App views. A host that supports
+    // MCP Apps reads one when it is about to render the matching tool's
+    // result; a model-facing client lists them like any other resource
+    // (Claude Code leaves ui:// resources out of the model's list on purpose
+    // and reads them by URI only).
+    case "resources/list":
+      return rpcResult(msg.id, { resources: Object.values(BOARD_VIEWS).map(uiResourceEntry) });
+    case "resources/read": {
+      const view = viewByUri(String(params.uri || ""));
+      // -32002 is the spec's "Resource not found" code.
+      if (!view) return rpcError(msg.id, -32002, `Resource not found: ${params.uri}`, { uri: params.uri });
+      return rpcResult(msg.id, { contents: [uiResourceContents(view)] });
+    }
     // Declared-but-empty so a client that probes them gets an answer rather
     // than a "method not found" it has to special-case.
-    case "resources/list":
-      return rpcResult(msg.id, { resources: [] });
     case "resources/templates/list":
       return rpcResult(msg.id, { resourceTemplates: [] });
     case "prompts/list":
@@ -3626,6 +3695,7 @@ exports.__test = {
   routePath, redirectUriAllowed, routineFireHostAllowed, redirectHostLabel, generateTitle, suggestCategory, atLeast,
   sha256b64url, authorizationServerMetadata, protectedResourceMetadata,
   TOOLS, CATEGORIES, STATUS_LABELS, SUPPORTED_PROTOCOL_VERSIONS, SERVER_ICONS,
+  MCP_APP_MIME, UI_META, BOARD_VIEWS, safeHref,
   PROJECT_WRITABLE_FIELDS, PROJECT_MD_MAX, DOC_MD_MAX, CONCEPT_MD_MAX, updateProjectFields,
   FAQ_TITLE_MAX, FAQ_SUMMARY_MAX, FAQ_BODY_MAX, FAQ_KEYWORDS_MAX, FAQ_REASON_MAX, FAQ_DOC_TYPES,
 };

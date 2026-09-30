@@ -1026,11 +1026,77 @@ async function rpc(token, method, params, id = 1) {
   });
 
   // ── Composable UI: Ready for Testing / Approved for Deployment boards ────
-  // (ZXmW4lHMKpQRlarlwK7z, f1yOqE2Sx2q8D7MSvfDu) — deliberately on their own
-  // fixture project ("depproj") so nothing here touches proj1, which "no
-  // documentation write touched a train field on the project" above already
-  // asserts stays pristine.
-  await test("get_ready_for_testing_board returns escaped HTML cards plus the same data as JSON", async () => {
+  // (ZXmW4lHMKpQRlarlwK7z, f1yOqE2Sx2q8D7MSvfDu; reworked 30 Sep 2026 as real
+  // MCP Apps — see functions/mcp-app-views.js's header for why the first cut,
+  // an embedded text/html block in the tool result, never rendered anywhere)
+  // — deliberately on their own fixture project ("depproj") so nothing here
+  // touches proj1, which "no documentation write touched a train field on
+  // the project" above already asserts stays pristine. The views' behaviour
+  // under the host protocol is covered in a real browser by
+  // mcp-app-view.test.mjs; this file covers the wire contract.
+  await test("the two board tools bind their MCP App views in _meta, and no other tool does", async () => {
+    const res = await rpc(tokens.access_token, "tools/list", {});
+    const byName = new Map(res.body.result.tools.map((t) => [t.name, t]));
+    const rft = byName.get("get_ready_for_testing_board");
+    assert.strictEqual(rft._meta.ui.resourceUri, "ui://backlog-tracker/ready-for-testing");
+    assert.strictEqual(rft._meta["ui/resourceUri"], "ui://backlog-tracker/ready-for-testing", "the deprecated flat key is kept for older hosts");
+    const afd = byName.get("get_approved_for_deployment_board");
+    assert.strictEqual(afd._meta.ui.resourceUri, "ui://backlog-tracker/approved-for-deployment");
+    for (const t of res.body.result.tools) {
+      if (t.name === "get_ready_for_testing_board" || t.name === "get_approved_for_deployment_board") continue;
+      assert.strictEqual(t._meta, undefined, `${t.name} must not carry a UI binding`);
+    }
+  });
+
+  await test("initialize declares the resources capability the views are served through", async () => {
+    const res = await rpc(tokens.access_token, "initialize", {
+      protocolVersion: "2025-06-18",
+      capabilities: { extensions: { "io.modelcontextprotocol/ui": { mimeTypes: ["text/html;profile=mcp-app"] } } },
+    });
+    assert.deepStrictEqual(res.body.result.capabilities.resources, { subscribe: false, listChanged: false });
+    assert.match(res.body.result.instructions, /get_ready_for_testing_board/);
+  });
+
+  await test("resources/list names the two views with the MCP Apps mimeType and sandbox settings", async () => {
+    const res = await rpc(tokens.access_token, "resources/list", {});
+    const uris = res.body.result.resources.map((r) => r.uri).sort();
+    assert.deepStrictEqual(uris, ["ui://backlog-tracker/approved-for-deployment", "ui://backlog-tracker/ready-for-testing"]);
+    for (const r of res.body.result.resources) {
+      assert.strictEqual(r.mimeType, "text/html;profile=mcp-app");
+      assert.strictEqual(r._meta.ui.prefersBorder, true);
+      assert.deepStrictEqual(r._meta.ui.csp.resourceDomains, ["https://fonts.googleapis.com", "https://fonts.gstatic.com"]);
+      assert.strictEqual(r._meta.ui.csp.connectDomains, undefined, "the view never fetches anything itself");
+    }
+  });
+
+  await test("resources/read serves a view as a self-contained MCP App that speaks the handshake and never uses innerHTML", async () => {
+    const res = await rpc(tokens.access_token, "resources/read", { uri: "ui://backlog-tracker/ready-for-testing" });
+    assert.strictEqual(res.body.error, undefined);
+    const [c] = res.body.result.contents;
+    assert.strictEqual(c.uri, "ui://backlog-tracker/ready-for-testing");
+    assert.strictEqual(c.mimeType, "text/html;profile=mcp-app");
+    assert.strictEqual(c._meta.ui.prefersBorder, true);
+    assert.match(c.text, /^<!doctype html>/i);
+    for (const method of ["ui/initialize", "ui/notifications/initialized", "ui/notifications/tool-result", "ui/notifications/size-changed", "ui/resource-teardown", "ui/open-link"]) {
+      assert.ok(c.text.includes(`"${method}"`), `view must speak ${method}`);
+    }
+    assert.ok(!/innerHTML|outerHTML|document\.write|insertAdjacentHTML/.test(c.text), "user strings must reach the DOM through textContent only");
+    assert.ok(!/<form[\s>]/i.test(c.text), "the view has no form");
+    // The only external origin is Google Fonts (Roboto), which the sandbox
+    // settings above allow; nothing else is fetched.
+    const origins = [...c.text.matchAll(/https?:\/\/[a-z0-9.-]+/gi)].map((m) => m[0]).filter((o) => !o.startsWith("http://www.w3.org"));
+    assert.deepStrictEqual([...new Set(origins)].sort(), ["https://fonts.googleapis.com", "https://fonts.gstatic.com"]);
+    // The other view differs in its copy, not its protocol.
+    const other = await rpc(tokens.access_token, "resources/read", { uri: "ui://backlog-tracker/approved-for-deployment" });
+    assert.match(other.body.result.contents[0].text, /Approved for Deployment/);
+  });
+
+  await test("resources/read refuses an unknown URI with the spec's not-found code", async () => {
+    const res = await rpc(tokens.access_token, "resources/read", { uri: "ui://backlog-tracker/nope" });
+    assert.strictEqual(res.body.error.code, -32002);
+  });
+
+  await test("get_ready_for_testing_board returns the column as structuredContent for its view, plus the same JSON as text", async () => {
     env.store.col("projects").set("depproj", { name: "Deploy Playground", deployBranch: "deploy/depproj" });
     env.store.col("backlogItems").set("rft1", {
       projectId: "depproj", title: "<script>evil()</script> Fix RRP grid", desc: "The RRP shown is stale.",
@@ -1040,28 +1106,35 @@ async function rpc(token, method, params, id = 1) {
     });
     const res = await rpc(tokens.access_token, "tools/call", { name: "get_ready_for_testing_board", arguments: { projectId: "depproj" } });
     assert.strictEqual(res.body.result.isError, undefined);
-    const [text, resource, json] = res.body.result.content;
-    assert.strictEqual(text.type, "text");
-    assert.strictEqual(resource.type, "resource");
-    assert.strictEqual(resource.resource.mimeType, "text/html");
-    assert.ok(!resource.resource.text.includes("<script>evil()"), "a ticket title must never inject a raw <script> tag into the widget");
-    assert.match(resource.resource.text, /&lt;script&gt;/);
-    assert.match(resource.resource.text, /Fixed the stale RRP/);
-    assert.match(resource.resource.text, /Test this/);
-    const payload = JSON.parse(json.text);
-    assert.strictEqual(payload.count, 1);
-    assert.strictEqual(payload.items[0].id, "rft1");
-    assert.strictEqual(payload.items[0].testVersion, "1.5.70");
+    const { content, structuredContent } = res.body.result;
+    assert.deepStrictEqual(content.map((b) => b.type), ["text", "text"], "no embedded resource block — that was the design that never rendered");
+    assert.match(content[0].text, /Ready for Testing — Deploy Playground: 1 ticket/);
+    assert.strictEqual(structuredContent.kind, "ready-for-testing");
+    assert.strictEqual(structuredContent.projectLabel, "Deploy Playground");
+    assert.strictEqual(structuredContent.count, 1);
+    const [item] = structuredContent.items;
+    assert.strictEqual(item.id, "rft1");
+    // Raw, not HTML-escaped: this is data, and the view renders it with
+    // textContent. Escaping here would show "&lt;script&gt;" to a person.
+    assert.strictEqual(item.title, "<script>evil()</script> Fix RRP grid");
+    assert.strictEqual(item.testSummary, "Fixed the stale RRP — refetches on price change now.");
+    assert.strictEqual(item.testVersion, "1.5.70");
+    assert.strictEqual(item.type, "bug");
+    assert.strictEqual(item.category, "HQ Admin");
+    assert.strictEqual(item.previewUrl, "https://rawcdn.githack.com/offline2online/rob_ph_demos/deploy/depproj/index.html");
+    assert.strictEqual(item.board, `${ORIGIN}/#item-rft1`);
+    assert.deepStrictEqual(JSON.parse(content[1].text), structuredContent, "the text JSON is the same payload the view gets");
   });
 
-  await test("get_ready_for_testing_board never links a javascript: previewUrl", async () => {
+  await test("get_ready_for_testing_board never hands on a javascript: previewUrl", async () => {
     env.store.col("backlogItems").set("rft2", {
       projectId: "depproj", title: "Sketchy link", desc: "x", type: "bug", category: "HQ Admin",
       status: "ready-for-testing", previewUrl: "javascript:alert(1)",
     });
     const res = await rpc(tokens.access_token, "tools/call", { name: "get_ready_for_testing_board", arguments: { projectId: "depproj" } });
-    const [, resource] = res.body.result.content;
-    assert.ok(!resource.resource.text.includes("javascript:"), "a non-https previewUrl must never become a clickable href");
+    const sketchy = res.body.result.structuredContent.items.find((i) => i.id === "rft2");
+    assert.strictEqual(sketchy.previewUrl, null, "a non-https previewUrl must never reach a view as a link");
+    assert.ok(!res.body.result.content[1].text.includes("javascript:"));
     env.store.col("backlogItems").delete("rft2");
   });
 
@@ -1072,8 +1145,10 @@ async function rpc(token, method, params, id = 1) {
 
   await test("get_approved_for_deployment_board says why Deploy to Main isn't offered yet", async () => {
     const res = await rpc(tokens.access_token, "tools/call", { name: "get_approved_for_deployment_board", arguments: { projectId: "depproj" } });
-    const payload = JSON.parse(res.body.result.content[2].text);
+    const payload = res.body.result.structuredContent;
+    assert.strictEqual(payload.kind, "approved-for-deployment");
     assert.strictEqual(payload.readyToDeploy, false);
+    assert.match(payload.readyLine, /Nothing is Approved for Deployment/);
     assert.match(res.body.result.content[0].text, /Nothing is Approved for Deployment/);
   });
 
@@ -1084,7 +1159,7 @@ async function rpc(token, method, params, id = 1) {
       status: "ready-to-publish", deployCommit: "sha-dep1",
     });
     const board = await rpc(tokens.access_token, "tools/call", { name: "get_approved_for_deployment_board", arguments: { projectId: "depproj" } });
-    const boardPayload = JSON.parse(board.body.result.content[2].text);
+    const boardPayload = board.body.result.structuredContent;
     assert.strictEqual(boardPayload.readyToDeploy, false);
     assert.match(board.body.result.content[0].text, /still in Ready for Testing/);
 
@@ -1098,9 +1173,10 @@ async function rpc(token, method, params, id = 1) {
     env.store.col("backlogItems").set("rft1", Object.assign(env.store.col("backlogItems").get("rft1"), { status: "ready-to-publish" }));
 
     const board = await rpc(tokens.access_token, "tools/call", { name: "get_approved_for_deployment_board", arguments: { projectId: "depproj" } });
-    const boardPayload = JSON.parse(board.body.result.content[2].text);
+    const boardPayload = board.body.result.structuredContent;
     assert.strictEqual(boardPayload.readyToDeploy, true);
-    assert.match(board.body.result.content[1].resource.text, /On train: deploy\/depproj/);
+    assert.match(boardPayload.readyLine, /whole train is Approved for Deployment/);
+    assert.ok(boardPayload.items.every((i) => i.onTrain && i.deployBranch === "deploy/depproj"), "every card carries its train context for the view's pill");
 
     const fire = await asAdmin(() => rpc(tokens.access_token, "tools/call", { name: "approve_deploy_to_main", arguments: { projectId: "depproj" } }));
     assert.strictEqual(fire.body.result.isError, undefined);
