@@ -799,7 +799,14 @@ the same condition that shows that button — logging every call to
 `resources/read`) that a host supporting MCP Apps — claude.ai and Claude
 Desktop; not Claude Code yet — renders inline as ticket cards, fed by the
 tool result's `structuredContent`; every host also gets the same data as
-plain text — reviewing there changes nothing either. Beyond
+plain text — reviewing there changes nothing either. **The Ready for
+Testing column is also presented without being asked for**: when the
+pipeline lands a build, `run-backlog-automation.js` stamps the project and
+`functions/notifyOnItemsReadyForTesting` fires a Routine session whose only
+job is to show that column (`ROUTINE_INSTRUCTIONS.md` → "The 'Ready for
+Testing' flow"), via the MCP App where the Routine has the PH Agent Console
+connector attached, as text otherwise; the Deploy flow opens with the
+Approved for Deployment view the same way. Beyond
 that one trigger, everything else stays on the board's own buttons and the
 triggered Routine. The documentation tools write to `projects`, so that is
 enforced by a single `updateProjectFields` allowlist rather than by never

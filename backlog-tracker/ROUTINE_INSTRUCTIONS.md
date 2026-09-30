@@ -94,6 +94,12 @@ investigate-and-fix run, or vice versa:
   skip straight to **"The 'Review Batch' flow (a differently-shaped
   fire)"** further down and follow only that section. Do not run "For each
   Backlog item found" on these items.
+- `text` starts with `=== READY FOR TESTING for "<project>"` → this is the
+  present-only shape: the pipeline just landed a build in that project's
+  Ready for Testing column and the person is to be SHOWN it. Do the board
+  access part of Setup below, then skip straight to **"The 'Ready for
+  Testing' flow (a differently-shaped fire)"** further down and follow only
+  that section. It builds nothing, reviews nothing and moves nothing.
 - Anything else (the plain "Project X has N items in Backlog" shape) → this
   is the default, investigate-and-fix request. Continue reading this file
   top to bottom from Setup below.
@@ -170,13 +176,14 @@ move on, don't block the run waiting for it.
   governing skill should have caught before the code was written), tag it
   as a miss on that skill's own doc — `skills/{id}.misses`, a plain array —
   so its owning team (that skill's `owningTeam`) gets a real, running list
-  to improve it against instead of guessing. You have no MCP session in
-  this Routine (same reason as the GitHub credential above: this is a
-  Firestore write with your existing board-automation credential, not the
-  MCP `report_skill_miss` tool a team member's own agent would use for the
-  same thing), so do it as a direct PATCH, same "fetch the doc first, this
-  overwrites the whole field" append convention as a `notes` entry
-  elsewhere in this file — the REST API has no native array-append:
+  to improve it against instead of guessing. Do it as a direct PATCH with
+  your board-automation credential, not through the board's MCP tools:
+  even when this Routine has the PH Agent Console connector attached (see
+  "Board tools over MCP" below), those tools are for the two presentation
+  calls named there and nothing else in this file — this is the same
+  "fetch the doc first, this overwrites the whole field" append convention
+  as a `notes` entry elsewhere in this file, since the REST API has no
+  native array-append:
   ```bash
   curl -sS -X PATCH -H "$AUTH" "$BOARD/skills/<SKILL_ID>?updateMask.fieldPaths=misses&updateMask.fieldPaths=lastMissAt" \
     -H "Content-Type: application/json" \
@@ -606,6 +613,18 @@ deploying means merging that branch once. The fire `text` names it on a
 project doc as `projects/{projectId}.deployBranch`. Your job is to verify
 the train, then hand it to the automation. All of it works over the plain
 git protocol, so none of it depends on `api.github.com` (see step 0).
+
+**Before step 0, show the person what is about to ship.** If this session
+has the board's MCP tools (see "Board tools over MCP" below), call
+`get_approved_for_deployment_board` with this project's `projectId` as your
+first action: a host that renders MCP Apps shows the Approved for
+Deployment column inline as cards (with each ticket's train context and
+whether the whole train is ready), and every host gets the same as text. If
+the tools aren't available, list the DEPLOY REQUEST's items in your reply
+instead (title, id, commit, and the ticket link
+`https://backlog-tracker-e4ed2.web.app/#item-<id>`). Either way this is
+presentation only — it does not replace steps 1 and 2 below, and the tool's
+own `readyToDeploy` is information, not permission.
 
 0. **Known current limitation, check this first:** this Routine's fired
    sessions have hit `api.github.com`/`github.com` returning "GitHub
@@ -1123,6 +1142,72 @@ no separate "last groomed at" timestamp to check this precisely against, so
 use judgment: if the existing summary still accurately describes the
 current `desc`, leave it as-is).
 
+## Board tools over MCP (when the Routine has the PH Agent Console connector)
+
+Normally this Routine reaches the board only over Firestore's REST API
+with the board-automation credential ("Board access" in Setup). If the
+Routine at claude.ai/code/routines has the **PH Agent Console** connector
+attached, the session ALSO has the board's own MCP tools — names like
+`get_ready_for_testing_board`, `get_approved_for_deployment_board`,
+`list_backlog_items` (`backlog-tracker/MCP.md`). Use them for exactly two
+things in this file, both read-only presentation:
+
+- `get_ready_for_testing_board` (`projectId`) — the Ready for Testing flow
+  below.
+- `get_approved_for_deployment_board` (`projectId`) — the first action of
+  the Deploy flow above.
+
+Both are MCP Apps: a host that renders MCP Apps (claude.ai, Claude Desktop)
+shows the column inline as ticket cards, and every host — Claude Code
+included, until Anthropic switches on its MCP Apps host — gets the same
+data as text in the tool result, which you then summarise for the person.
+Everything else in this file stays on the REST path: the MCP tools can't
+write `patchFiles`, `patchReady`, `trainReady` or any pipeline field, and
+nothing here should try to route a write through them. If the tools aren't
+in the session, that is normal — say so in one line and use the REST
+fallback each flow describes.
+
+## The "Ready for Testing" flow (a differently-shaped fire)
+
+A fire whose `text` starts with `=== READY FOR TESTING for "<project>" ===`
+comes from `notifyOnItemsReadyForTesting` in `functions/index.js`: the
+pipeline (`run-backlog-automation.js`) has just committed one or more
+tickets onto this project's integration branch and moved them into Ready
+for Testing, and stamped the project so a person gets SHOWN the column
+without asking for it. This is the "trigger" half of the composable UI
+work (tickets ZXmW4lHMKpQRlarlwK7z / f1yOqE2Sx2q8D7MSvfDu): the view is
+`get_ready_for_testing_board`'s MCP App; this run is what puts it in front
+of someone the moment a build lands.
+
+This run presents. It does not build, review, approve, reject, re-test or
+move anything, and it writes nothing to any ticket.
+
+1. **Show the column.** If this session has the board's MCP tools (see
+   "Board tools over MCP" above), call `get_ready_for_testing_board` with
+   the `projectId` from the fire text — once, as your first action. A host
+   that renders MCP Apps shows the tickets as cards inline; on any host,
+   summarise the tool's text result in your reply: one short block per
+   ticket with its title, the test summary, the **test link**, the test
+   version, and the ticket link. If the tools aren't available, read the
+   column yourself (query `backlogItems` where `projectId == <id>` and
+   `status == "ready-for-testing"`, via your board access) and present the
+   same block per ticket — title, `testSummary` (or `desc`), `previewUrl`
+   as "Test this", `testVersion`, and
+   `https://backlog-tracker-e4ed2.web.app/#item-<id>` as "View ticket".
+   Re-verify against Firestore either way: the fire text is a snapshot,
+   and a ticket approved or failed in the meantime is not presented.
+2. **Say what the person does next, in one line:** open a test link,
+   then approve (the checkbox and "Approved for Deployment — N selected")
+   or fail ("Failed testing") on the board itself. Nothing in this run can
+   do that for them, and the MCP tools can't either.
+3. **Self-report and stop.** PATCH `projects/<projectId>` with
+   `readyForTestingRoutine.status` = `"done"` (or `"error"` +
+   `errorMessage`) and `readyForTestingRoutine.finishedAt` = now, then
+   finish. Do not fetch skills, do not read the repo, do not open PRs.
+
+Report: which tickets you presented (id and title), whether the MCP App
+tool was available or you used the REST fallback, and nothing else.
+
 ## When done
 
 Post a summary listing each item, its new title, what you found, the fix,
@@ -1152,6 +1237,11 @@ which of the two cases in step 3b's "Establish scope" section it was** —
 "no article changed by this train" (normal) vs. "no article is scoped to
 this program at all" (a gap needing a human) — never just "0 articles
 in scope" with no indication which one happened.
+
+**For a Ready for Testing run (`=== READY FOR TESTING ===`), the report is
+the presentation itself** — the per-ticket blocks from that flow's step 1
+and the one-line "what next" from step 2. Do not mention `patchReady`,
+`trainReady`, PRs or GitHub; this flow touches none of them.
 
 **For a Groom Backlog run (`=== GROOM REQUEST ===`), report differently:**
 list each item groomed, its corrected `category`, and a one-line version of

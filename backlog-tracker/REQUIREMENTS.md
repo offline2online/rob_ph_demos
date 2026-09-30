@@ -97,6 +97,20 @@ Cloud Functions, own Hosting site, own IAM/billing; see
   // groomRoutine has the same shape (including firedVia) again, set by
   // notifyOnProjectReadyForGrooming — omitted here only because it predates
   // this schema block; see that function in functions/index.js directly.
+  readyForTestingNotifyRequestedAt?: timestamp, // stamped by run-backlog-automation.js once per run per project, after it lands ticket(s) in Ready for Testing — see "The Ready for Testing hand-off" below
+  readyForTestingNotifyItemIds?: string[],      // the ids that landed in that run
+  readyForTestingNotifyRequestedByEmail?: string | null, // the member whose Notify Claude click started the build (per-member routine binding lookup, as above)
+  readyForTestingRoutine?: {       // same shape as notifyRoutine (including firedVia), set by notifyOnItemsReadyForTesting
+    status: "in-progress" | "done" | "error",
+    firedAt: timestamp,
+    sessionId?: string,
+    sessionUrl?: string,
+    itemCount: number,
+    sentItemIds: string[],
+    finishedAt?: timestamp,
+    errorMessage?: string,
+    firedVia?: "member" | "shared",
+  },
 }
 ```
 One doc per tracked project. A project with no doc but whose items
@@ -2244,6 +2258,33 @@ host. `get_approved_for_deployment_board` additionally reports, per project,
 whether that project's whole train is ready for `approve_deploy_to_main`
 below (only meaningful with a `projectId` filter — it is a per-project
 question).
+
+**The Ready for Testing hand-off — the column is presented without being
+asked for (30 Sep 2026).** The view alone is not what the composable UI
+tickets asked for; they asked for it to appear when a build lands. So:
+`run-backlog-automation.js` collects every card it moves into Ready for
+Testing in a run (its own commit, or carried by a sibling's) and, once per
+project at the end of its apply-patch loop, stamps
+`projects/{id}.readyForTestingNotifyRequestedAt` (a real timestamp) with
+`readyForTestingNotifyItemIds` and `readyForTestingNotifyRequestedByEmail`
+(the member whose Notify Claude click started the build).
+`notifyOnItemsReadyForTesting` (`functions/index.js`) fires once on a new
+stamp: it re-reads the named cards, keeps only those still in Ready for
+Testing on that project, resolves the Routine credentials exactly like the
+other notify functions (`resolveRoutineCredentials` — the requester's own
+binding first, the shared secrets otherwise), fires the Routine with a
+data-only `=== READY FOR TESTING for "<project>" (projectId: <id>) ===`
+text (per ticket: id, type, title, test link, test version, ticket link,
+summary), records `projects/{id}.readyForTestingRoutine` (same shape as
+`notifyRoutine`), and posts the same to `NOTIFY_WEBHOOK_URL` when set. The
+fired session follows `ROUTINE_INSTRUCTIONS.md` → "The 'Ready for Testing'
+flow": it calls `get_ready_for_testing_board` (when the Routine has the PH
+Agent Console connector attached) so a host that renders MCP Apps shows the
+cards inline, or presents the column as text from Firestore otherwise;
+it writes nothing to any ticket. The Deploy flow does the same with
+`get_approved_for_deployment_board` as its first action. One fire per run
+per project, never one per ticket. Tests:
+`test/ready-for-testing-trigger.test.js`.
 
 **The skills library is organisation-wide, not per-project** — `list_skills`
 (light summaries) and `get_skill` (full file contents, by id or slug) need

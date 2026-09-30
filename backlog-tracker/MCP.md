@@ -116,6 +116,13 @@ reviewing there is exactly as inert as reading the JSON.
 for it. The views live in `functions/mcp-app-views.js`; the first cut of
 this (PR #208, 24 Sep 2026) returned an embedded `text/html` block in the
 tool result instead, which no host renders — which is why it never showed.
+The column is also presented **without being asked for**: the moment the
+pipeline lands a build in Ready for Testing, `notifyOnItemsReadyForTesting`
+fires a Routine session that calls `get_ready_for_testing_board` (see
+`ROUTINE_INSTRUCTIONS.md` → "The 'Ready for Testing' flow"). For that
+session to have these tools, the Routine at claude.ai/code/routines needs
+the **PH Agent Console** connector attached; without it the session
+presents the same column as text.
 
 **Can — write (editor and admin only):**
 
