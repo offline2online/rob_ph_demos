@@ -8,6 +8,7 @@ import { loadConfig } from '../src/config'
 import { buildApp } from '../src/http/app'
 import { tokenBucket } from '../src/http/rateLimit'
 import { aesGcmSecretsStore } from '../src/secrets/SecretsStore'
+import { expectMatchesContract } from './contract'
 import { testContext } from './helpers'
 import { multipart, png } from './media'
 
@@ -216,5 +217,18 @@ describe('secrets', () => {
     expect(before.length).toBeGreaterThan(0)
     ctx.partners.update('p_google', {}, {})
     expect(ctx.partners.get('p_google')!.secretsSet).toEqual([])
+  })
+})
+
+describe('GET /v1/campaigns/{id} reads back what was stored', () => {
+  it('returns the versions, priorities and rules unchanged, and 404s for another partner', async () => {
+    const { app, create } = await setup()
+    const targeted = [1, 2, 3, 4].map((n) => ({ id: `t${n}`, priority: (n * 3) % 5, pricingType: 'localised', rules: [[{ ...COND, values: [`V${n}`] }]] }))
+    const id = (await create({ ...SWISSE, targeted })).json().campaignId
+    const res = await app.inject({ method: 'GET', url: `/api/v1/campaigns/${id}`, headers: GOOGLE })
+    expect(res.statusCode).toBe(200)
+    expectMatchesContract('GET', '/v1/campaigns/{campaignId}', 200, res.json())
+    expect(res.json()).toMatchObject({ campaignId: id, status: 'draft', default: { pricingType: 'localised' }, targeted })
+    expect((await app.inject({ method: 'GET', url: '/api/v1/campaigns/c_nope', headers: GOOGLE })).statusCode).toBe(404)
   })
 })
