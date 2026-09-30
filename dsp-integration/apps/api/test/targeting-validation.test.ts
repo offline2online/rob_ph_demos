@@ -64,11 +64,12 @@ describe('Targeting on the forecast', () => {
     return (rules: unknown) => app.inject({ method: 'POST', url: '/api/v1/inventory/forecast', headers: { authorization: 'Bearer poc-token-google-dv360' }, payload: { positionIds: ['menu_board.s2'], from: '2026-09-21', to: '2026-09-21', rules } })
   }
 
-  it('shrinks the forecast by the targeted share, and prices Personalisation targeting as personalised', async () => {
+  it('shrinks the forecast by the targeted share, and prices Personalisation targeting at the base floor, not a multiplied one', async () => {
     const forecast = await setup()
     expect((await forecast([[cond('store.fixed_segments', 'include', ['Metro'])]])).json()).toEqual({ assumedViews: 618, currency: 'AUD', estimatedCost: 61.8 })
-    /* Purchase Intent is a Personalisation Variable enabled for Google: 618 / 1000 × (100 × 1.5). */
-    expect((await forecast([[cond('visitor.purchase_intent', 'include', ['Replenish'])]])).json()).toEqual({ assumedViews: 618, currency: 'AUD', estimatedCost: 92.7 })
+    /* Purchase Intent is a Personalisation Variable enabled for Google. The multiplier is charged per
+       personalised play at billing (Rob, 30 Sep 2026), so the estimate stays at the base floor: 618 / 1000 × 100. */
+    expect((await forecast([[cond('visitor.purchase_intent', 'include', ['Replenish'])]])).json()).toEqual({ assumedViews: 618, currency: 'AUD', estimatedCost: 61.8 })
   })
 
   it('rejects a variable the DSP may not target (422), and malformed rules (400)', async () => {

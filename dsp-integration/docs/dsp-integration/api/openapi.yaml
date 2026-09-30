@@ -1439,20 +1439,29 @@ components:
             floor, and it must clear the buyer's effective floor.
     Pricing:
       type: object
-      required: [currency, floorCpm, effectiveFloorCpm, costPerEngagement]
+      required: [currency, floorCpm, effectiveFloorCpm, personalisedMultiplier, costPerEngagement]
       properties:
         currency: {type: string}
         floorCpm: {type: number}
         effectiveFloorCpm:
           type: object
           description: |
-            What a bid must clear per thousand assumed views, for this caller.
-            Interactive campaigns pay one of these for the plays and the
-            engagement fee on top, so they have no floor of their own.
-          required: [localised, personalised]
+            What a bid must clear per thousand assumed views, for this caller:
+            the base floor × the advertiser's floor multiplier, whatever the
+            campaign's type (Rob, 30 Sep 2026). The personalised multiplier is
+            not part of it. Interactive campaigns pay this for the plays and
+            the engagement fee on top, so they have no floor of their own.
+          required: [localised]
           properties:
-            localised: {type: number}
-            personalised: {type: number}
+            localised: {type: number, description: The floor every campaign type clears.}
+        personalisedMultiplier:
+          type: number
+          description: |
+            Charged only when a personalised version plays: that play bills at
+            the committed (clearing) CPM × this. Default and localised plays
+            bill at the committed CPM. It is not a floor and does not affect
+            what a bid must clear. It does not apply to interactive campaigns.
+            The value in force when a window clears is kept on the reservation.
         costPerEngagement:
           type: number
           description: |
@@ -1711,7 +1720,7 @@ components:
         playWindowHours: {type: integer, minimum: 1, maximum: 8760, default: 24, description: 'Auction schedule: the default play-window length, in hours (shown as days and hours) — since OQ27 (29 Sep 2026) only what a slot inherits when neither it nor its display type sets a billing unit; a slot''s billing unit is its window length. While any current window on an inheriting slot is bid on or booked, a change is deferred rather than applied — see pendingPlayWindowHours.'}
         auctionCutoffTime: {type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$', default: '18:00', description: 'Auction schedule: the daily time (HH:MM, UTC) by which bids must be received; the auction for the next play window runs then.'}
         floorCpm: {type: number, exclusiveMinimum: 0, default: 100}
-        personalisedMultiplier: {type: number, exclusiveMinimum: 0, default: 1.5}
+        personalisedMultiplier: {type: number, exclusiveMinimum: 0, default: 1.5, description: 'Charged per personalised play, on top of the committed price: 100 committed × 1.5 = 150 for that play. Not a bid floor: bids and the auction clear against the base floor.'}
         interactiveCpe: {type: number, minimum: 0, multipleOf: 0.01, default: 0.5, description: 'Interactive cost per engagement: what an advertiser pays each time someone engages with an interactive campaign (a QR Control scan), on top of the CPM. To the cent; 0 means engagements are not charged for.'}
         advertiserWhitelist: {type: array, items: {type: string}}
         advertiserBlacklist: {type: array, items: {type: string}}

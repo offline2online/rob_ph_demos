@@ -19,6 +19,11 @@ export interface ReservationRecord {
   testMode: boolean
   pricingType: string | null
   handedOffAt: string | null
+  /* The company's personalised multiplier as it stood when the window
+     cleared (Rob, 30 Sep 2026): billing charges a personalised play at
+     clearingCpm × this, so a later settings change cannot reprice a window
+     already sold. null = none (interactive, or cleared before it existed). */
+  personalisedMultiplier?: number | null
   /* When the row was written (read only; insert stamps it). The auction
      breaks a tie on it: the earlier bid wins. */
   createdAt?: string
@@ -28,12 +33,12 @@ interface Row {
   id: string; partner_id: string; advertiser_id: string | null; campaign_id: string | null; position_id: string; window_start: string
   type: 'reserve' | 'bid'; channel: 'api' | 'openrtb'; bid_cpm: number | null; currency: string; status: ReservationStatus
   clearing_cpm: number | null; reason: string | null; test_mode: number; pricing_type: string | null; handed_off_at: string | null
-  created_at: string
+  personalised_multiplier: number | null; created_at: string
 }
 const toRecord = (r: Row): ReservationRecord => ({
   id: r.id, partnerId: r.partner_id, advertiserId: r.advertiser_id, campaignId: r.campaign_id, positionId: r.position_id, windowStart: r.window_start,
   type: r.type, channel: r.channel, bidCpm: r.bid_cpm, currency: r.currency, status: r.status, clearingCpm: r.clearing_cpm, reason: r.reason,
-  testMode: !!r.test_mode, pricingType: r.pricing_type, handedOffAt: r.handed_off_at, createdAt: r.created_at,
+  testMode: !!r.test_mode, pricingType: r.pricing_type, handedOffAt: r.handed_off_at, personalisedMultiplier: r.personalised_multiplier, createdAt: r.created_at,
 })
 
 /* A window is taken once something has won or reserved it. */
@@ -42,7 +47,7 @@ export const TAKEN: ReservationStatus[] = ['won', 'reserved']
 export interface ReservationRepo {
   get(id: string): ReservationRecord | null
   insert(r: ReservationRecord): ReservationRecord
-  update(id: string, patch: Partial<Pick<ReservationRecord, 'status' | 'clearingCpm' | 'reason' | 'handedOffAt'>>): ReservationRecord | null
+  update(id: string, patch: Partial<Pick<ReservationRecord, 'status' | 'clearingCpm' | 'reason' | 'handedOffAt' | 'personalisedMultiplier'>>): ReservationRecord | null
   forWindow(positionId: string, windowStart: string): ReservationRecord[]
   inRange(positionId: string, from: string, to: string): ReservationRecord[]
   byStatus(status: ReservationStatus[], from?: string, to?: string): ReservationRecord[]
@@ -75,18 +80,18 @@ export function sqliteReservationRepo(db: Db): ReservationRepo {
       const now = new Date().toISOString()
       prepared(db,
         `INSERT INTO reservations (id, partner_id, advertiser_id, campaign_id, position_id, window_start, type, channel, bid_cpm, currency,
-           status, clearing_cpm, reason, test_mode, pricing_type, handed_off_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           status, clearing_cpm, reason, test_mode, pricing_type, handed_off_at, personalised_multiplier, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(r.id, r.partnerId, r.advertiserId, r.campaignId, r.positionId, r.windowStart, r.type, r.channel, r.bidCpm, r.currency,
-        r.status, r.clearingCpm, r.reason, r.testMode ? 1 : 0, r.pricingType, r.handedOffAt, now, now)
+        r.status, r.clearingCpm, r.reason, r.testMode ? 1 : 0, r.pricingType, r.handedOffAt, r.personalisedMultiplier ?? null, now, now)
       return get(r.id) as ReservationRecord
     },
     update(id, patch) {
       const cur = get(id)
       if (!cur) return null
       const n = { ...cur, ...patch }
-      prepared(db, 'UPDATE reservations SET status = ?, clearing_cpm = ?, reason = ?, handed_off_at = ?, updated_at = ? WHERE id = ?')
-        .run(n.status, n.clearingCpm, n.reason, n.handedOffAt, new Date().toISOString(), id)
+      prepared(db, 'UPDATE reservations SET status = ?, clearing_cpm = ?, reason = ?, handed_off_at = ?, personalised_multiplier = ?, updated_at = ? WHERE id = ?')
+        .run(n.status, n.clearingCpm, n.reason, n.handedOffAt, n.personalisedMultiplier ?? null, new Date().toISOString(), id)
       return get(id)
     },
     forWindow: (positionId, windowStart) =>

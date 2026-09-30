@@ -117,6 +117,16 @@ provide one breaks something specific, named here.
     platform's playback store answers from its own aggregates.
   - Proof of play is the billing record (spec §7). Plays must be final by
     the time a window is billed, or a late play is never billed.
+  - **Each play must say which version of the campaign it showed** (Rob,
+    30 Sep 2026): a version id and a tier, `default`, `localised` or
+    `personalised`. Billing charges a personalised play at the committed
+    price × the personalised multiplier and everything else at the
+    committed price, so it needs this from PH Core's playback data; this
+    build cannot infer it. `totals` therefore also returns the personalised
+    plays and their seconds (`personalised: {plays, playedSec}`). Until PH
+    Core supplies it the field is null and every play bills at the
+    committed price, exactly as before. The stand-in `plays` table carries
+    the two columns nullable (migration 0033).
   - Billing is idempotent per reservation (`billing_line_items.reservation_id`
     is unique).
 - **`AssetStore`**
@@ -167,7 +177,8 @@ provide one breaks something specific, named here.
 | `0020` (indexes), `0021` (one live winner per window), `0022` (reserved instance identity, dropped again by `0032`) | This build (review, 23 Sep 2026) | Kept. See "The database must enforce" below for the parts that also apply to PH Core tables. |
 | `0023` (the DSP integration switch) | This build (Rob, 24 Sep 2026) | Kept, unless the platform already holds company feature switches (see "Open" below). |
 | `0024` (`auction_runs`: which process clears a window) | This build (24 Sep 2026) | Kept: it lets several instances share the scheduled work. |
-| `0025` (covering index on `plays`) | Stand-in only | Dropped with `plays`; the playback store answers `totals` itself. |
+| `0025` (covering index on `plays`), `0033` (`plays.version_id` / `tier`) | Stand-in only | Dropped with `plays`; the playback store answers `totals` itself, and must supply the version tier (see `PlaybackSource`). |
+| `0034` (`reservations.personalised_multiplier`, personalised columns on `billing_line_items`) | This build (Rob, 30 Sep 2026) | Kept: the multiplier is snapshotted on the reservation at clear time. |
 | `0026` (one open API bid per advertiser and window) | This build (24 Sep 2026) | Kept: a partial unique index, as 0021. |
 
 ## Outbound boundaries — what this build calls

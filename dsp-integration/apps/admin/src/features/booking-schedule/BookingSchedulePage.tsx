@@ -489,7 +489,7 @@ export function BookingSchedulePage() {
             pinnedBottomRowData={[{ displayTypeId: 'total', displayTypeName: 'Total', ...data.totals, total: true }]}
           />
 
-          <SectionLabel><WithTip tip="What is selling: default and localised campaigns pay the floor, personalised and interactive pay their multipliers on top.">By campaign type</WithTip></SectionLabel>
+          <SectionLabel><WithTip tip="What is selling: every campaign clears the floor; a personalised version pays the personalised multiplier on each play, and interactive pays per engagement on top.">By campaign type</WithTip></SectionLabel>
           {data.byPricingType.length === 0 ? (
             <div style={{ fontSize: 12.5, color: T.muted }}>Nothing booked in this period yet.</div>
           ) : (

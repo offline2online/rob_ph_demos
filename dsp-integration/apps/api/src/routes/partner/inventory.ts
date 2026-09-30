@@ -4,7 +4,6 @@
      GET  /v1/inventory/{positionId}
      GET  /v1/inventory/{positionId}/availability?from=&to=
      POST /v1/inventory/forecast */
-import { TARGETING_VARIABLES } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { type Caller, type PositionRef, type WindowStatus, allPositions, assumedViewsPerWindow, callerOf, findPosition, longestWindowMs, nextWindow, positionView, visibilityFor, windowFacts, windowMs, windowStatus, windowsBetween, windowsCovering } from '../../domain/positions'
@@ -145,11 +144,9 @@ export const inventoryRoutes = (ctx: Context): FastifyPluginAsync => async (app)
       views += own.filter((w) => windowStatus(ctx, p, c, w, facts) === 'available').length * perWindow
     }
     const assumedViews = Math.round(views)
-    /* Targeting on a Personalisation Variable makes it a personalised campaign (spec §4). */
-    const personalised = (rules ?? []).some((g) => g.some((cond) => TARGETING_VARIABLES.find((v) => v.key === cond.variable)?.group === 'personalisation'))
     const company = ctx.company.get()
     const multiplier = c.advertiser ? ctx.company.advertiserSetting(c.advertiser.id).floorMultiplier : 1
-    const cpm = effectiveFloorCpm(company, multiplier, { personalised })
+    const cpm = effectiveFloorCpm(company, multiplier)
     return { assumedViews, currency: company.currency, estimatedCost: Math.round((assumedViews / 1000) * cpm * 100) / 100 }
   })
 }

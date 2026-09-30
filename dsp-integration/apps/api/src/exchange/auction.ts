@@ -51,6 +51,7 @@ import { type ReservationRecord, TAKEN } from '../repos/ReservationRepo'
 import { advertiserSlug, assignedOf } from '@ph-dsp/types'
 import { isUniqueViolation } from '../db/db'
 import { campaignForCrid, queueCreative } from './creatives'
+import { multiplierToSnapshot } from '../domain/pricing'
 import { checkAdvertiser, checkCampaign, checkCategories, checkFloor, checkTargeting } from './enforcement'
 import { handOff } from './handoff'
 import { settlePending } from './pending'
@@ -220,7 +221,7 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, bidder
       ? { reason: `${partner.name} is not connected.` }
       : !seat
       ? { reason: 'The advertiser is no longer on this DSP.' }
-      : (await checkCampaign(ctx, r.campaignId as string)) ?? checkAdvertiser(ctx, p, partner, seat.name, seat.domain ? [seat.domain] : [], seat.id, start) ?? checkTargeting(p, r.pricingType) ?? checkFloor(ctx, r.bidCpm as number, r.pricingType, r.advertiserId)
+      : (await checkCampaign(ctx, r.campaignId as string)) ?? checkAdvertiser(ctx, p, partner, seat.name, seat.domain ? [seat.domain] : [], seat.id, start) ?? checkTargeting(p, r.pricingType) ?? checkFloor(ctx, r.bidCpm as number, r.advertiserId)
     if (refusal) ctx.reservations.update(r.id, { status: 'rejected', reason: refusal.reason })
     else candidates.push(r)
   }
@@ -250,7 +251,7 @@ function clear(ctx: Context, candidates: ReservationRecord[]) {
   if (!candidates.length) return null
   const [winner, ...rest] = [...candidates].sort((a, b) => (b.bidCpm as number) - (a.bidCpm as number) || (a.createdAt ?? '').localeCompare(b.createdAt ?? ''))
   try {
-    ctx.reservations.update(winner.id, { status: 'won', clearingCpm: winner.bidCpm, reason: null })
+    ctx.reservations.update(winner.id, { status: 'won', clearingCpm: winner.bidCpm, reason: null, personalisedMultiplier: multiplierToSnapshot(ctx.company.get(), winner.pricingType) })
   } catch (e) {
     if (!isUniqueViolation(e)) throw e
     for (const r of candidates) ctx.reservations.update(r.id, { status: 'lost', reason: 'The window was sold by another clearing of the same auction.' })
@@ -300,7 +301,7 @@ async function recordDspBid(ctx: Context, p: PositionRef, dsp: PartnerRecord, st
   const campaign = ctx.campaigns.getCampaign(campaignId)
   if (!campaign) return reject(`Creative ${bid.crid} is still being retrieved for review.`, { advertiserId })
   if (campaign.advertiserId !== advertiserId) return reject(`Creative ${bid.crid} belongs to another advertiser.`, { advertiserId })
-  const late = (await checkCampaign(ctx, campaignId)) ?? checkTargeting(p, campaign.pricingType) ?? checkFloor(ctx, bid.price, campaign.pricingType, advertiserId)
+  const late = (await checkCampaign(ctx, campaignId)) ?? checkTargeting(p, campaign.pricingType) ?? checkFloor(ctx, bid.price, advertiserId)
   if (late) return reject(late.reason, { advertiserId, campaignId })
   return ctx.reservations.insert({ ...base, advertiserId, campaignId, pricingType: campaign.pricingType ?? null })
 }

@@ -75,16 +75,17 @@ export function checkTargeting(p: PositionRef, pricingType: string | null | unde
   return { code: 'targeting_not_supported', reason: `This position supports ${targetingLabel(supported).toLowerCase()} targeting only; the campaign is ${wanted}.` }
 }
 
-/* The effective floor a bid must clear: floor × the personalised multiplier
-   × the advertiser's floor multiplier (spec §4). An interactive campaign
-   clears the ordinary floor for its plays and pays the engagement fee on
-   top of it (Rob, 20 Sep), so it has no floor of its own. */
-export function floorFor(ctx: Context, pricingType: string | null | undefined, advertiserId: string | null | undefined) {
+/* The effective floor a bid must clear: the base floor × the advertiser's
+   floor multiplier (spec §4), whatever the campaign's type. The personalised
+   multiplier is not a floor (Rob, 30 Sep 2026): it is charged on personalised
+   plays at billing. An interactive campaign clears the ordinary floor for its
+   plays and pays the engagement fee on top of it (Rob, 20 Sep). */
+export function floorFor(ctx: Context, advertiserId: string | null | undefined) {
   const multiplier = advertiserId ? ctx.company.advertiserSetting(advertiserId).floorMultiplier : 1
-  return effectiveFloorCpm(ctx.company.get(), multiplier, { personalised: pricingType === 'personalised' })
+  return effectiveFloorCpm(ctx.company.get(), multiplier)
 }
 
-export function checkFloor(ctx: Context, cpm: number, pricingType: string | null | undefined, advertiserId: string | null | undefined): Refusal | null {
-  const floor = floorFor(ctx, pricingType, advertiserId)
+export function checkFloor(ctx: Context, cpm: number, advertiserId: string | null | undefined): Refusal | null {
+  const floor = floorFor(ctx, advertiserId)
   return cpm >= floor ? null : { code: 'below_floor', reason: `${cpm} is below the effective floor of ${floor} ${ctx.company.get().currency} CPM.` }
 }

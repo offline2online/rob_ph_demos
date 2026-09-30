@@ -11,7 +11,7 @@ import { advertiserSlug, assignedOf, billingUnitHoursOf, reservePriceOf, support
 import { invitedPartnerIds, isInvitedBuyer } from './buyersLists'
 import { isActiveAt, lockedTermSpan } from '../billing/term'
 import { effectiveLists, isBlocked, isOn } from './lists'
-import { effectiveFloors } from './pricing'
+import { effectiveFloorCpm } from './pricing'
 import { rotationSizeOf, slotDurationSec } from './slots'
 
 export interface PositionRef {
@@ -342,8 +342,7 @@ export function assumedViewsPerWindow(ctx: Context, p: PositionRef) {
    forecast of nothing. There is deliberately no fallback estimate: an
    invented audience number would end up on invoices. A slot also needs a
    duration before it is exposed as Advertiser inventory: the venue loop
-   length, which slotDurationSec divides by the rotation cap (slots.ts).
-   Returns why not, or null when sellable. */
+   length, which slotDurationSec divides by the rotation cap (slots.ts). Returns why not, or null when sellable. */
 export function unsellableReason(ctx: Context, p: PositionRef): string | null {
   if (!ctx.audience.forSlot(p.displayType.id, p.slot).scored) return 'No audience score yet — this slot can’t be sold until it is scored.'
   if (!p.displayType.phExtensions?.venue?.loopLengthSec) return 'No slot duration yet — set the venue loop length before this slot can be sold.'
@@ -399,7 +398,11 @@ export function positionView(ctx: Context, p: PositionRef, c: Caller) {
     /* False when the slot has no audience score: only ever seen by a
        caller who is told so, since inventory excludes such positions. */
     scored: ctx.audience.forSlot(dt.id, p.slot).scored,
-    pricing: { currency: company.currency, floorCpm: company.floorCpm, effectiveFloorCpm: effectiveFloors(company, multiplier), costPerEngagement: company.interactiveCpe },
+    /* One floor for every campaign type; the personalised multiplier is
+       published as itself (Rob, 30 Sep 2026): a play of a personalised
+       version bills at committed price × multiplier, which is not knowable
+       before the auction. */
+    pricing: { currency: company.currency, floorCpm: company.floorCpm, effectiveFloorCpm: { localised: effectiveFloorCpm(company, multiplier) }, personalisedMultiplier: company.personalisedMultiplier, costPerEngagement: company.interactiveCpe },
     reservePrice: reservePriceOf(dt, p.def),
   }
 }

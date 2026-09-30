@@ -961,11 +961,11 @@ page. All values are defaults, overridable per retailer.
 
 | Field | Tooltip |
 |---|---|
-| **Pricing** (section) | Effective floor = floor CPM × the personalised multiplier (personalised campaigns) × the advertiser's floor multiplier (set on Advertisers / Inventory). Bids below it never win. An interactive campaign clears the same floor and pays the cost per engagement on top. |
+| **Pricing** (section) | Effective floor = floor CPM × the advertiser's floor multiplier (set on Advertisers / Inventory), the same for every campaign type. Bids below it never win. The personalised multiplier is not part of it: it is charged on top of the committed price only when a personalised version plays. An interactive campaign clears the same floor and pays the cost per engagement on top. |
 | **Currency** | Used for the floor CPM, every effective floor and billing. Bid requests carry it as the bid floor currency. |
 | **Floor price (CPM)** | Cost per thousand assumed views (VAC-d). The minimum any bid must meet; bids below it never win. |
-| **Personalised multiplier** | Applied when the visitor is checked in or otherwise identified, so the advert is one-to-one for that individual. It multiplies the **floor price**: at 1.5, a floor of 100 becomes 150 CPM for a personalised campaign, and the advertiser's own floor multiplier scales that again. |
-| **Interactive cost per engagement** | What an advertiser pays each time someone engages with an interactive campaign — scanning its QR Control code to carry on with the brand on their own phone. Charged per engagement, **on top of the CPM**: an interactive campaign still clears the floor price (or the personalised floor) for its plays, and adds this for each scan. The advertiser's floor multiplier does not scale it. Set it to 0 to leave engagements unpriced. |
+| **Personalised multiplier** | Applied when the visitor is checked in or otherwise identified, so the advert is one-to-one for that individual. It is **not a bid floor**. Bids and the auction clear against the floor price, and the price a campaign wins at covers its default and localised plays. This is charged **only when a personalised version plays**: that play bills at the committed price × this. At 1.5, a campaign committed at 100 pays **150** CPM for a personalised play. The advertiser's floor multiplier scales the floor only. Interactive campaigns are not charged it. By submitting a personalised version an advertiser accepts it. |
+| **Interactive cost per engagement** | What an advertiser pays each time someone engages with an interactive campaign — scanning its QR Control code to carry on with the brand on their own phone. Charged per engagement, **on top of the CPM**: an interactive campaign still clears the floor price for its plays, and adds this for each scan. The advertiser's floor multiplier does not scale it. Set it to 0 to leave engagements unpriced. |
 
 **A tooltip explains its own field and relates it to the others; it does not
 repeat them** (Rob, 20 Sep). The floor price tooltip carries the VAC-d
@@ -1028,7 +1028,7 @@ played (Billing, below).
 | Lever | Default | Where it is set | Applies to |
 |---|---|---|---|
 | Floor CPM | 100 | Advertiser settings → Pricing | Every campaign |
-| Personalised multiplier | **1.5** | Advertiser settings → Pricing | Personalised campaigns |
+| Personalised multiplier | **1.5** | Advertiser settings → Pricing | Each play of a personalised version, on top of the committed price (not a floor) |
 | Interactive cost per engagement | **0.50** | Advertiser settings → Pricing | Each engagement with an interactive campaign |
 | Advertiser floor multiplier | **1.0** | Advertisers / Inventory | The floor, per advertiser |
 
@@ -1036,17 +1036,30 @@ played (Billing, below).
   20 Sep). The point of an interactive campaign is to get someone to scan
   the QR code and carry on with the brand on their own phone, so it is
   charged **per engagement, on top of the CPM**: the campaign clears the
-  ordinary floor (or the personalised floor) for its plays, and adds the fee
+  ordinary floor for its plays, and adds the fee
   for each scan. It is an amount in the company currency, to the cent, and
   **the advertiser's floor multiplier does not scale it**. 0 leaves
   engagements unpriced.
 - **The advertiser floor multiplier** reflects the retailer's relationship
   with that advertiser: for example **0.8** for a preferred supplier, **1.2**
-  for a new one. Example: 100 × 1.5 × 0.8 = 120 CPM for a personalised
-  campaign. Advertisers / Inventory shows each advertiser's effective base
+  for a new one. Example: 100 × 0.8 = 80 CPM is what that advertiser's bids
+  must clear, whatever the campaign type. Advertisers / Inventory shows each advertiser's effective base
   floor (floor × its multiplier).
 - **Personalised is a flat multiplier, decoupled from VAC-d**, because that
-  tier collapses a mass audience to one identified individual.
+  tier collapses a mass audience to one identified individual. **It is billed
+  per personalised play, not applied as a bid floor** (Rob, 30 Sep 2026):
+  the auction clears against the base floor (× the advertiser's floor
+  multiplier), the committed price covers default and localised plays, and
+  a play of a personalised version bills at committed price × the
+  multiplier. The multiplier is snapshotted on the reservation when the
+  window clears, so a later settings change cannot reprice it; floorMultiplier
+  affects the floor only; interactive campaigns carry no multiplier. Which
+  version played is PH Core's to supply: `PlaybackSource` plays carry a
+  nullable `tier` (`default` / `localised` / `personalised`), and a play
+  with none bills as before (see api/PH-CORE-BOUNDARIES.md, "Playback"). A
+  Run 6 bid of 120 on a 100 floor by a personalised campaign is therefore
+  accepted. Billing line items record the split (`personalised_plays`,
+  `personalised_views`, `personalised_multiplier`, `personalised_amount`).
 - **Localised campaigns price at the floor CPM** (times the advertiser
   multiplier) and trigger neither.
 - **Engagements are not billed in this build.** The stand-in playback data
@@ -1119,6 +1132,20 @@ region, date range, status.
 - Screen and loop context: resolution, orientation, slot duration, loop
   length, share of voice (1 / `maximumCampaignsPlayedInRotation`).
 - Assumed views (VAC-d) per play window.
+- **Only scored slots are sellable** (decision, Rob, 30 Sep 2026). A slot
+  with no audience score (no `audience_vacd` row for the display type and
+  slot) reports 0 assumed views, and selling that would bill 0, so it is
+  *unscored*: it is left out of `GET /v1/inventory` and the forecast,
+  `GET /v1/inventory/{positionId}` answers 404, a bid or reservation on it
+  is refused with a 409 that says why, and the auction skips it. There is
+  deliberately no fallback estimate: an invented audience number would end
+  up on invoices. A slot also needs a slot duration (the venue loop length,
+  divided by its rotation cap) before it is exposed. HQ Admin's Available
+  Inventory shows "No audience score yet — this slot can't be sold until it
+  is scored." on the slot; saving is not blocked. Rows are inserted by the
+  seeds and, on integration, by the retailer's audience scoring; creating
+  a display type in HQ Admin does not score it. `positionView.scored` says
+  whether a position has a score.
 - Assignment: open RTB, whitelist-only, reserved to a named advertiser, or a
   private auction (deal) restricted to a buyers list's invited buyers (see
   *Private auctions (buyers lists)* below).
@@ -3073,8 +3100,8 @@ partner-contributed attributes have been removed with that scope.
 34. **Sensor-derived audience multiplier.** *Resolved (decision, Rob, 29 Sep
     2026):* there is no separate sensor multiplier. A camera-detected
     attribute (e.g. gender, estimated age) makes the campaign *personalised*,
-    which already takes the personalised multiplier (1.5, §4) and is
-    tradeable through the floor. See open question 49 for exposure to DSPs.
+    which already takes the personalised multiplier (1.5, §4), charged per
+    personalised play rather than as a floor (decision, Rob, 30 Sep 2026). See open question 49 for exposure to DSPs.
 35. **Venue and geo metadata.** *Resolved (decision, Rob, 29 Sep 2026):* PH
     Core already manages all store data, venue and geo metadata included,
     and is the system of record. This project reads it from Core and stores
