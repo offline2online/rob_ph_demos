@@ -426,3 +426,8 @@ which both suites script by POSTing the signed-in Firebase ID token to
 `/mcp/authorize/complete` exactly as that page's own JavaScript does. **What
 to check on the real deployment:** a real Google popup and a real Firebase
 sign-in on `/mcp/authorize`.
+
+## Blocked flag and phase skill bindings
+
+- `set_blocked` / `clear_blocked` (editor): flag a Backlog ticket as `needs-decision` or `waiting-on-input` with a one-line note. Blocked tickets are skipped by Notify Claude and the build routine, show a flag on the card, and are counted as "need your decision" in the Backlog column header. The flag clears when it is cleared from the card, or when anyone other than whoever set it comments on the ticket. Pipeline status is never touched.
+- `set_phase_skill_bindings` (admin): add/remove skill slugs bound to the `build` or `deploy` phase in `settings/phaseSkillBindings` (the doc's Firestore rules are admin-only because it feeds the Routine's prompt).

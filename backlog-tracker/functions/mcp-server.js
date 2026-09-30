@@ -1216,6 +1216,9 @@ function itemSummary(id, d, projects) {
     updatedAt: tsToISO(d.updatedAt),
     createdAt: tsToISO(d.createdAt),
     comments: Array.isArray(d.notes) ? d.notes.length : 0,
+    blocked: d.blocked && d.blocked.reason
+      ? { reason: d.blocked.reason, note: d.blocked.note || "", setBy: d.blocked.setBy || null, setAt: tsToISO(d.blocked.setAt) }
+      : null,
   };
 }
 
@@ -1753,6 +1756,89 @@ const TOOLS = [
     },
   },
   {
+    name: "set_blocked",
+    description: "Flag a Backlog ticket as blocked: it cannot be built until a person decides something (reason \"needs-decision\") or supplies input/a file (\"waiting-on-input\"). Blocked tickets are skipped by Notify Claude and the build routine, and show a flag with your one-line note on the board. Put the full detail in a comment. Does not change pipeline status. Clears when the flag is cleared or someone else comments.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        itemId: { type: "string" },
+        reason: { type: "string", enum: ["needs-decision", "waiting-on-input"] },
+        note: { type: "string", description: "One line, up to 200 characters." },
+      },
+      required: ["itemId", "reason", "note"], additionalProperties: false,
+    },
+    async run(args, session) {
+      if (!["needs-decision", "waiting-on-input"].includes(args.reason)) return toolError("reason must be needs-decision or waiting-on-input.");
+      const note = String(args.note || "").replace(/\s+/g, " ").trim();
+      if (!note) return toolError("note is required.");
+      const ref = db().collection("backlogItems").doc(String(args.itemId));
+      const snap = await ref.get();
+      if (!snap.exists) return toolError(`No ticket with id ${args.itemId}.`);
+      if ((snap.data() || {}).status !== "backlog") return toolError("Only tickets in Backlog can be flagged as blocked.");
+      await ref.update({
+        blocked: { reason: args.reason, note: note.slice(0, 200), setBy: session.email, setAt: new Date() },
+        updatedAt: FieldValue.serverTimestamp(),
+        updatedByEmail: session.email,
+      });
+      await audit(session, "set_blocked", { itemId: ref.id, reason: args.reason });
+      return textResult({ blocked: true, itemId: ref.id, reason: args.reason });
+    },
+  },
+  {
+    name: "set_phase_skill_bindings",
+    description: "Admin only. Add or remove skills (by slug) bound to the \"build\" or \"deploy\" phase in settings/phaseSkillBindings, which every Notify Claude / Deploy run loads. Existing bindings are kept: pass slugs to add and/or remove. The skill's slug must exist in the skills library. This feeds the Routine's prompt, hence admin-only.",
+    scope: "board.write",
+    role: "admin",
+    inputSchema: {
+      type: "object",
+      properties: {
+        phase: { type: "string", enum: ["build", "deploy"] },
+        add: { type: "array", items: { type: "string" } },
+        remove: { type: "array", items: { type: "string" } },
+      },
+      required: ["phase"], additionalProperties: false,
+    },
+    async run(args, session) {
+      if (!["build", "deploy"].includes(args.phase)) return toolError("phase must be build or deploy.");
+      const add = (Array.isArray(args.add) ? args.add : []).map((x) => String(x).trim()).filter(Boolean);
+      const remove = new Set((Array.isArray(args.remove) ? args.remove : []).map((x) => String(x).trim()));
+      if (!add.length && !remove.size) return toolError("Pass at least one slug in add or remove.");
+      for (const slug of add) {
+        if (!/^[a-z0-9][a-z0-9-]{0,80}$/.test(slug)) return toolError(`"${slug}" is not a valid skill slug.`);
+        const found = await db().collection("skills").where("slug", "==", slug).limit(1).get();
+        if (found.empty) return toolError(`No skill with slug ${slug} in the skills library.`);
+      }
+      const ref = db().collection("settings").doc("phaseSkillBindings");
+      const snap = await ref.get();
+      const cur = snap.exists && Array.isArray((snap.data() || {})[args.phase]) ? snap.data()[args.phase].map(String) : [];
+      const next = cur.filter((x) => !remove.has(x));
+      for (const slug of add) if (!next.includes(slug)) next.push(slug);
+      if (next.length > 20) return toolError("At most 20 skills can be bound to a phase.");
+      await ref.set({ [args.phase]: next, updatedAt: FieldValue.serverTimestamp(), updatedByEmail: session.email }, { merge: true });
+      await audit(session, "set_phase_skill_bindings", { phase: args.phase, added: add, removed: [...remove] });
+      return textResult({ phase: args.phase, bound: next });
+    },
+  },
+  {
+    name: "clear_blocked",
+    description: "Clear a ticket's blocked flag, putting it back in the build queue.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: { itemId: { type: "string" } },
+      required: ["itemId"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const ref = db().collection("backlogItems").doc(String(args.itemId));
+      const snap = await ref.get();
+      if (!snap.exists) return toolError(`No ticket with id ${args.itemId}.`);
+      await ref.update({ blocked: null, updatedAt: FieldValue.serverTimestamp(), updatedByEmail: session.email });
+      await audit(session, "clear_blocked", { itemId: ref.id });
+      return textResult({ cleared: true, itemId: ref.id });
+    },
+  },
+  {
     name: "add_item_comment",
     description: "Add a comment to a ticket. It shows on the board's own comment thread, labelled with your email, exactly like a comment typed there.",
     scope: "board.write",
@@ -1773,10 +1859,16 @@ const TOOLS = [
       if (!snap.exists) return toolError(`No ticket with id ${args.itemId}.`);
       // A plain Date, not serverTimestamp(): Firestore rejects the sentinel
       // inside arrayUnion — same reason app.js's addItemComment uses one.
-      await ref.update({
+      const upd = {
         notes: FieldValue.arrayUnion({ author: session.email, text, at: new Date() }),
         updatedAt: FieldValue.serverTimestamp(),
-      });
+      };
+      // A newer comment from anyone other than whoever set the blocked flag
+      // answers it and puts the ticket back in the build queue.
+      const cur = snap.data() || {};
+      const clearedBlocked = !!(cur.blocked && cur.blocked.reason && cur.blocked.setBy !== session.email);
+      if (clearedBlocked) upd.blocked = null;
+      await ref.update(upd);
       await audit(session, "add_item_comment", { itemId: ref.id, chars: text.length });
       return textResult({ added: true, itemId: ref.id, author: session.email });
     },

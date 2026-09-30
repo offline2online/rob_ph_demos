@@ -762,6 +762,13 @@ function cardHTML(item) {
   const reviewFlag = reviewFlagDef && (!item.deployCommit || item.reviewedCommit === item.deployCommit)
     ? `<span class="review-flag review-flag-${escapeHTML(item.reviewStatus)}" title="${escapeHTML(item.reviewReason || reviewFlagDef[0])}"><span class="material-symbols-outlined">${reviewFlagDef[1]}</span>${reviewFlagDef[0]}</span>`
     : "";
+  // Blocked flag: this ticket can't be built until Rob decides something or
+  // supplies input. Notify Claude / the build routine skip it; the one-line
+  // note is the hover, full detail lives in comments. Cleared by the
+  // button here or by a newer comment from anyone other than whoever set it.
+  const blockedFlag = (isBacklog && item.blocked && item.blocked.reason)
+    ? `<span class="blocked-flag blocked-flag-${escapeHTML(item.blocked.reason)}" title="${escapeHTML(item.blocked.note || "")}"><span class="material-symbols-outlined">${item.blocked.reason === "needs-decision" ? "gavel" : "hourglass_top"}</span>${item.blocked.reason === "needs-decision" ? "Needs your decision" : "Waiting on input"}<button type="button" class="blocked-clear-btn" data-id="${item.id}" title="Clear the flag — puts this ticket back in the build queue">&times;</button></span>`
+    : "";
   const testVersionBadge = item.testVersion
     ? `<span class="test-version-badge" title="backlog-tracker's own version when this was marked Ready for Testing — check the live footer shows at least this version">Test version: v${escapeHTML(item.testVersion)}</span>`
     : "";
@@ -888,7 +895,7 @@ function cardHTML(item) {
       </div>
       <h3 class="card-title">${escapeHTML(item.title)}</h3>
       ${descHTML}
-      ${noDeployBadge}${carriedBadge}${priorityBadge}${effortBadge}${lastFailureBadge}${reviewFlag}${testVersionBadge}${prBadge}${deployBadge}
+      ${noDeployBadge}${carriedBadge}${priorityBadge}${effortBadge}${lastFailureBadge}${blockedFlag}${reviewFlag}${testVersionBadge}${prBadge}${deployBadge}
       <div class="card-footer">
         <div class="card-footer-left">
           <span class="card-cat">${escapeHTML(item.category || "Uncategorised")}</span>
@@ -903,6 +910,24 @@ function cardHTML(item) {
 
 function archivedCountForProject(pid) {
   return allItems.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "archived").length;
+}
+
+function isBlockedItem(i) {
+  return !!(i && i.blocked && i.blocked.reason);
+}
+
+function needsDecisionCountForProject(pid) {
+  return items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "backlog" && isBlockedItem(i) && i.blocked.reason === "needs-decision").length;
+}
+
+// One-place count of the tickets waiting on Rob, in the Backlog column header.
+function needsDecisionChipHTML(pid) {
+  const n = needsDecisionCountForProject(pid);
+  return n ? `<span class="blocked-flag blocked-flag-needs-decision needs-decision-chip" title="Backlog tickets flagged as needing a decision from you"><span class="material-symbols-outlined">gavel</span>${n} need${n === 1 ? "s" : ""} your decision</span>` : "";
+}
+
+async function clearBlocked(id) {
+  await updateDoc(doc(db, "backlogItems", id), { blocked: null, updatedAt: serverTimestamp() });
 }
 
 function backlogCountForProject(pid) {
@@ -1590,7 +1615,7 @@ function projectSectionHTML(project) {
     // 640px media query, so desktop is completely unaffected.
     const colCollapsed = isColumnCollapsed(project.id, col.key);
     return `<section class="column${colCollapsed ? " column-collapsed" : ""}" data-col="${col.key}">
-      <div class="col-head col-head-${col.headClass}" data-project-id="${escapeHTML(project.id)}" data-col="${col.key}"><span>${selectAllHTML}${col.label}</span><span class="col-count">${listItems.length}</span>${col.key === "backlog" ? groomBacklogInlineHTML(project) : (col.key === "ready-for-testing" ? reviewBatchInlineHTML(project) : "")}</div>
+      <div class="col-head col-head-${col.headClass}" data-project-id="${escapeHTML(project.id)}" data-col="${col.key}"><span>${selectAllHTML}${col.label}</span><span class="col-count">${listItems.length}</span>${col.key === "backlog" ? needsDecisionChipHTML(project.id) + groomBacklogInlineHTML(project) : (col.key === "ready-for-testing" ? reviewBatchInlineHTML(project) : "")}</div>
       <div class="col-list" id="${colListId(project.id, col.key)}" data-col="${col.key}" data-project-id="${escapeHTML(project.id)}">
         ${listItems.length ? columnCardsHTML(listItems) : '<div class="empty-hint">No items yet</div>'}
       </div>
@@ -2594,10 +2619,15 @@ async function updateItemDetails(id, changed) {
 async function addItemComment(id, text) {
   const trimmed = (text || "").trim();
   if (!trimmed) return;
-  await updateDoc(doc(db, "backlogItems", id), {
-    notes: arrayUnion({ author: (auth.currentUser && auth.currentUser.email) || "viewer", text: trimmed, at: new Date() }),
+  const me = (auth.currentUser && auth.currentUser.email) || "viewer";
+  const cur = items.find((i) => i.id === id);
+  const patch = {
+    notes: arrayUnion({ author: me, text: trimmed, at: new Date() }),
     updatedAt: serverTimestamp(),
-  });
+  };
+  // A newer comment from anyone but whoever set the flag answers it.
+  if (cur && isBlockedItem(cur) && cur.blocked.setBy !== me) patch.blocked = null;
+  await updateDoc(doc(db, "backlogItems", id), patch);
 }
 
 async function setItemPreviewUrl(id, url) {
@@ -2785,7 +2815,7 @@ async function requestNotify(pid) {
   // (not just left unset) so a stale array from an earlier partial send
   // can never silently narrow a later full sweep.
   const backlogIds = new Set(
-    items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "backlog").map((i) => i.id)
+    items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "backlog" && !isBlockedItem(i)).map((i) => i.id)
   );
   const selected = [...getSelectedSet(pid)].filter((id) => backlogIds.has(id));
 
@@ -3274,6 +3304,8 @@ projectsRoot.addEventListener("click", async (e) => {
   if (failTestingBtn) { failTesting(failTestingBtn.dataset.id); return; }
   const confirmNoDeployBtn = e.target.closest(".confirm-no-deploy-btn");
   if (confirmNoDeployBtn) { confirmTestedNoDeploy(confirmNoDeployBtn.dataset.id); return; }
+  const blockedClearBtn = e.target.closest(".blocked-clear-btn");
+  if (blockedClearBtn) { clearBlocked(blockedClearBtn.dataset.id); return; }
   const delBtn = e.target.closest(".delete-btn");
   if (delBtn) { removeItem(delBtn.dataset.id); return; }
   const archBtn = e.target.closest(".archive-btn");
