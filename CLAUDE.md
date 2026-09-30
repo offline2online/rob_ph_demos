@@ -507,6 +507,19 @@ the ticket and in `mcpAuditLog`.
   `get_faq_article`. Write: `create_backlog_item` (always into Backlog),
   `update_backlog_item` (title, desc, type, category — **no status**),
   `add_item_comment`.
+- **`get_ready_for_testing_board` / `get_approved_for_deployment_board`
+  are MCP Apps (SEP-1865), not embedded HTML.** The tool's
+  `_meta.ui.resourceUri` binds a `ui://backlog-tracker/…` view served via
+  `resources/read` (`text/html;profile=mcp-app`,
+  `backlog-tracker/functions/mcp-app-views.js`) and the result's
+  `structuredContent` feeds it. claude.ai and Claude Desktop render the
+  column as cards inline; **Claude Code shows the text only until
+  Anthropic switches on its MCP Apps host** (anthropics/claude-code#95149
+  — the CLI already validates and forwards the binding). The first cut
+  (PR #208, 24 Sep 2026) put a plain `text/html` resource block in the
+  tool result, which no host renders — that is why it "never worked".
+  Tests: `npm run test:mcp` (the wire) and `npm run test:mcp-app` (the
+  view in Chromium under a scripted host) in `backlog-tracker/test`.
 - **Documentation: full read/write, on purpose.** An agent is expected to
   keep a project's docs current as it works. Read: `get_project_docs`,
   `list_doc_revisions`, `get_doc_revision`. Write:
