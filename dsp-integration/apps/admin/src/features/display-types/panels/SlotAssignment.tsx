@@ -26,7 +26,7 @@
 import { Alert, Button, Input, Select } from 'antd'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
 import { SLOT_OWNERS, allowsAdvertising, assignedOf, providerDef, type Partner, type Slot, type SlotOwner } from '@ph-dsp/types'
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Field } from '../../../shared/Field'
 import { Grid } from '../../../shared/Grid'
 import { Icon } from '../../../shared/Icon'
@@ -75,10 +75,21 @@ const NotConnected = () => (
   </div>
 )
 
+/* Edited in local state and committed on blur/Enter: committing every
+   keystroke re-renders the row, which remounts this cell and drops focus
+   after one character. */
 function LabelCell({ data, context: grid }: ICellRendererParams<Row, unknown, GridCtx>) {
+  const [text, setText] = useState(data?.slot.label ?? '')
+  useEffect(() => { setText(data?.slot.label ?? '') }, [data?.slot.label])
   if (!data) return null
   const context = grid.current
-  return <div className="w-full min-w-0"><Input size="small" aria-label={`Slot ${data.i + 1} label`} value={data.slot.label} onChange={(e) => context.setSlot(data.i, { label: e.target.value })} /></div>
+  const commit = () => { if (text !== data.slot.label) context.setSlot(data.i, { label: text }) }
+  return (
+    <div className="w-full min-w-0">
+      <Input size="small" aria-label={`Slot ${data.i + 1} label`} value={text}
+        onChange={(e) => setText(e.target.value)} onBlur={commit} onPressEnter={commit} />
+    </div>
+  )
 }
 
 function OwnerCell({ data, context: grid }: ICellRendererParams<Row, unknown, GridCtx>) {
