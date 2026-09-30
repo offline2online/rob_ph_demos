@@ -89,6 +89,11 @@ investigate-and-fix run, or vice versa:
   fire)"** further down and follow only that section for each item — do
   not also run "For each Backlog item found" below on these items, and
   never treat a GROOM REQUEST as license to investigate code or write a fix.
+- `text` starts with `=== REVIEW REQUEST for "<project>"` → this is the
+  post-build code-review gate. Do the Setup steps above as normal, then
+  skip straight to **"The 'Review Batch' flow (a differently-shaped
+  fire)"** further down and follow only that section. Do not run "For each
+  Backlog item found" on these items.
 - Anything else (the plain "Project X has N items in Backlog" shape) → this
   is the default, investigate-and-fix request. Continue reading this file
   top to bottom from Setup below.
@@ -999,6 +1004,55 @@ clicking Deploy learns there's something waiting in FAQ Management.
 - Don't let this step stop the merge: if you run out of time or hit an
   error here, say so in the note and the final report and still complete
   step 4 for items that are green.
+
+## The "Review Batch" flow (a differently-shaped fire)
+
+A fire whose `text` starts with `=== REVIEW REQUEST for "<project>" ===` comes
+from a project's **Review Batch** button (Ready for Testing column header;
+`notifyOnProjectReviewBatch` in `functions/index.js`). It is the post-build
+code-review gate: it runs after build and before Approved for Deployment, so
+that gate stays a clean yes/no. The button press is the batch boundary; the
+`text` lists the tickets that were built and unreviewed at that moment
+(re-verify against Firestore: status `ready-for-testing`, a `deployCommit`,
+and no `reviewStatus`, or a `reviewedCommit` that differs from `deployCommit`).
+
+1. **Load the `ph-reviewer` skill** (query `skills` where `slug ==
+   "ph-reviewer"`, read `SKILL.md`) and follow it. If it does not resolve,
+   stop and report; do not improvise a review.
+2. **Read the batch together**, not ticket by ticket: clone the repo, fetch
+   the project's `deployBranch`, and read each ticket's commit
+   (`git log --grep "Backlog item: <id>" origin/<deployBranch>`; a card with
+   `carriedByCommit` is read via that commit). Apply the skill's
+   reviewability criteria and look for cross-ticket seams, duplicated logic
+   and naming drift.
+3. **Run the full regression suite** the project has (for `dsp-integration/`:
+   the E2E regression and the full API suite) against the branch head. A red
+   run **blocks**: record `blocked`, and raise one Backlog bug per distinct
+   failing case (`create` a `backlogItems` doc, `status: "backlog"`, same
+   `projectId`). Never set `patchReady` on a fix in the same run.
+4. **Split findings** per the skill: safe, behaviour-preserving structural
+   fixes (domain naming, single responsibility, why-not-what comments) versus
+   anything needing a behaviour change or judgement call, or a seam that
+   crosses into PH Core directly (kick back). You cannot push. Package a
+   safe fix through the normal `patchFiles`/`patchReady` route on that
+   ticket only if you have run the full suite green against the patched
+   tree locally; otherwise list it as pending. Never change behaviour to make
+   code look reviewable.
+5. **Write the flag on every reviewed ticket** in one PATCH
+   (`updateMask.fieldPaths` for each): `reviewStatus` (`"passed"`,
+   `"remediating"` when safe fixes are packaged and await landing,
+   `"kicked-back"`, or `"blocked"`), `reviewReason` (ONE line, the single
+   most important reason, shown as the hover text), `reviewedAt` (timestamp),
+   `reviewedCommit` (the ticket's current `deployCommit`, so the flag is
+   discarded if it is rebuilt), plus `updatedAt`. Append the **full review
+   log** to `notes` (`author: "claude"`, text starting `[ph-reviewer]`).
+   **Never write `status`**: a kicked-back or blocked ticket stays where it
+   is and a human decides; the flag says why.
+6. Finish by PATCHing `projects/<id>` with `reviewRoutine.status` =
+   `"done"` (or `"error"` + `errorMessage`) and `reviewRoutine.finishedAt`.
+
+Report: each ticket, its flag and one-line reason, regression results, and
+any bugs raised.
 
 ## The "Groom Backlog" flow (a differently-shaped fire)
 

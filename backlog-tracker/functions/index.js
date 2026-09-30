@@ -806,6 +806,167 @@ exports.notifyOnProjectReadyForGrooming = onDocumentUpdated(
   }
 );
 
+// The board's "Review Batch" CTA (Ready for Testing column header — see
+// reviewBatchButtonHTML in public/js/app.js) writes
+// projects/{id}.reviewRequestedAt, and this fires once on that write. It is
+// the post-build code-review gate: build -> Review Batch -> Approved for
+// Deployment. Same Routine-fire shape as notifyOnProjectReadyForGrooming
+// (shared or per-member Routine credentials, the same
+// CLAUDE_ROUTINE_FIRE_URL / CLAUDE_ROUTINE_TOKEN), but the fire text tells
+// the session to load the ph-reviewer skill. The press is the batch
+// boundary: the batch is every ticket in this project that is built (on the
+// train, in Ready for Testing) and not yet reviewed at this moment. See
+// ROUTINE_INSTRUCTIONS.md's "Review Batch" flow (keyed off the
+// `=== REVIEW REQUEST ===` marker below).
+exports.notifyOnProjectReviewBatch = onDocumentUpdated(
+  { document: "projects/{projectId}", secrets: [NOTIFY_WEBHOOK_URL, CLAUDE_ROUTINE_FIRE_URL, CLAUDE_ROUTINE_TOKEN, BOARD_API_KEY] },
+  async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    if (!after?.reviewRequestedAt) {
+      return;
+    }
+    const beforeMs = before?.reviewRequestedAt?.toMillis?.() ?? 0;
+    const afterMs = after.reviewRequestedAt?.toMillis?.() ?? 0;
+    if (afterMs <= beforeMs) {
+      return;
+    }
+
+    const db = getFirestore();
+
+    // Built but not yet reviewed: same rule as isUnreviewedBuild in app.js.
+    // A single equality filter on projectId (no composite index needed);
+    // the rest is filtered here.
+    const itemsSnap = await db.collection("backlogItems")
+      .where("projectId", "==", event.params.projectId)
+      .get();
+    const items = itemsSnap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .filter((i) => i.status === "ready-for-testing" && i.deployCommit
+        && (!i.reviewStatus || i.reviewedCommit !== i.deployCommit));
+
+    if (items.length === 0) {
+      logger.info("Review requested but nothing is built and unreviewed — nothing to fire the Routine for", {
+        projectId: event.params.projectId,
+      });
+      return;
+    }
+
+    const projectName = after.name || "A project";
+
+    const { fireUrl, token, via: routineCredVia } = await resolveRoutineCredentials(
+      db, after.reviewRequestedByEmail, CLAUDE_ROUTINE_FIRE_URL.value(), CLAUDE_ROUTINE_TOKEN.value()
+    );
+    let sessionId = null;
+    let sessionUrl = null;
+    let fireError = null;
+
+    if (fireUrl && token) {
+      const itemLines = items
+        .map((i, idx) => `${idx + 1}. [id: ${i.id}] [${i.type === "bug" ? "Bug" : "Feature"}] ${i.title} — deployCommit ${i.deployCommit}${i.carriedByCommit ? " (rides on a sibling's commit)" : ""}`)
+        .join("\n");
+
+      const projectPromptBlock = (after.routinePromptMd || "").trim()
+        ? `=== PROJECT-SPECIFIC INSTRUCTIONS FOR "${projectName}" (from this project's Docs page) ===\n${after.routinePromptMd.trim()}\n=== END PROJECT-SPECIFIC INSTRUCTIONS ===\n\n`
+        : "";
+
+      const selfReportHint = `\n\nWhen you finish this run (whether you reviewed every ticket or stopped early on a blocker), PATCH projects/${event.params.projectId} with reviewRoutine.status set to "done" (or "error" with an errorMessage, if you stopped early) and reviewRoutine.finishedAt set to now — the board shows a working/spinning state on its Review Batch button until it sees this.`;
+
+      const text = `${projectPromptBlock}=== REVIEW REQUEST for "${projectName}" (projectId: ${event.params.projectId}) on the Backlog Tracker & FAQs board ===\n` +
+        `This is the post-build code-review gate, not an investigate-and-fix request. Load the ph-reviewer skill (skills/{skillId} where slug == "ph-reviewer") and follow ROUTINE_INSTRUCTIONS.md's own "Review Batch" flow section. Review the ${items.length} ticket${items.length === 1 ? "" : "s"} below together as one batch. Do NOT change any ticket's status.\n\n` +
+        `${items.length} built, not-yet-reviewed ticket${items.length === 1 ? "" : "s"} on ${after.deployBranch || "the integration branch"}:\n${itemLines}${selfReportHint}${boardAccessBlock()}`;
+
+      try {
+        const res = await fetch(fireUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`,
+            "anthropic-beta": "experimental-cc-routine-2026-04-01",
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({ text }),
+        });
+        if (!res.ok) {
+          fireError = `Routine fire endpoint responded with status ${res.status}`;
+          logger.error("Routine fire endpoint responded with a non-2xx status for review request", {
+            projectId: event.params.projectId,
+            status: res.status,
+            body: await res.text().catch(() => "<unreadable>"),
+          });
+        } else {
+          const body = await res.json().catch(() => null);
+          sessionId = body?.claude_code_session_id || null;
+          sessionUrl = sessionId ? `https://claude.ai/code/${sessionId}` : null;
+          logger.info("Fired Claude Code Routine for review request", {
+            projectId: event.params.projectId,
+            itemCount: items.length,
+            sessionId,
+            firedVia: routineCredVia,
+          });
+        }
+      } catch (err) {
+        fireError = err instanceof Error ? err.message : String(err);
+        logger.error("Failed to call Routine fire endpoint for review request", {
+          projectId: event.params.projectId,
+          error: fireError,
+        });
+      }
+
+      // Drives the spinner / visible error on the Review Batch button —
+      // read by reviewBatchButtonHTML in public/js/app.js.
+      await db.collection("projects").doc(event.params.projectId).set({
+        reviewRoutine: {
+          status: fireError ? "error" : "in-progress",
+          firedAt: new Date(),
+          sessionId,
+          sessionUrl,
+          itemCount: items.length,
+          errorMessage: fireError,
+          firedVia: routineCredVia,
+        },
+      }, { merge: true });
+    } else {
+      logger.warn(
+        "No Routine fire credentials available (no member binding and CLAUDE_ROUTINE_FIRE_URL/CLAUDE_ROUTINE_TOKEN not set) — skipping Routine fire for review request",
+        { projectId: event.params.projectId }
+      );
+    }
+
+    const webhookUrl = NOTIFY_WEBHOOK_URL.value();
+    if (webhookUrl) {
+      const trackLine = sessionUrl
+        ? `Click here to track their progress: ${sessionUrl}`
+        : (fireUrl && token ? "(session link unavailable)" : "(Routine fire not configured — no Claude session started)");
+      try {
+        const res = await fetch(webhookUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: `Claude was asked to review a batch of ${items.length} built ticket${items.length === 1 ? "" : "s"} for "${projectName}" (ph-reviewer). ${trackLine}`,
+            projectId: event.params.projectId,
+            projectName,
+            itemCount: items.length,
+            sessionUrl,
+          }),
+        });
+        if (!res.ok) {
+          logger.error("Review notify webhook responded with a non-2xx status", {
+            projectId: event.params.projectId,
+            status: res.status,
+            body: await res.text().catch(() => "<unreadable>"),
+          });
+        }
+      } catch (err) {
+        logger.error("Failed to call notify webhook for review request", {
+          projectId: event.params.projectId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  }
+);
+
 // The board's "Approved for Deployment" project action (see deployToFeature() in
 // public/js/app.js) writes projects/{id}.deployToFeatureRequestedAt (plus
 // deployToFeatureItemTitles), and this fires once on that write to post a

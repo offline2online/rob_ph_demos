@@ -171,7 +171,8 @@ service cloud.firestore {
         && (!changed.hasAny(["routinePromptMd"]) || isAdmin())
         && (!changed.hasAny(["notifyRequestedByEmail"]) || requesterIsCaller(incoming().notifyRequestedByEmail))
         && (!changed.hasAny(["deployNotifyRequestedByEmail"]) || requesterIsCaller(incoming().deployNotifyRequestedByEmail))
-        && (!changed.hasAny(["groomRequestedByEmail"]) || requesterIsCaller(incoming().groomRequestedByEmail));
+        && (!changed.hasAny(["groomRequestedByEmail"]) || requesterIsCaller(incoming().groomRequestedByEmail))
+        && (!changed.hasAny(["reviewRequestedByEmail"]) || requesterIsCaller(incoming().reviewRequestedByEmail));
     }
     function requesterIsCaller(v) {
       return v == null || (v is string && v.lower() == callerEmail());
@@ -198,7 +199,8 @@ service cloud.firestore {
           (!("routinePromptMd" in incoming()) || isAdmin())
           && (!("notifyRequestedByEmail" in incoming()) || requesterIsCaller(incoming().notifyRequestedByEmail))
           && (!("deployNotifyRequestedByEmail" in incoming()) || requesterIsCaller(incoming().deployNotifyRequestedByEmail))
-          && (!("groomRequestedByEmail" in incoming()) || requesterIsCaller(incoming().groomRequestedByEmail))));
+          && (!("groomRequestedByEmail" in incoming()) || requesterIsCaller(incoming().groomRequestedByEmail))
+          && (!("reviewRequestedByEmail" in incoming()) || requesterIsCaller(incoming().reviewRequestedByEmail))));
       allow update: if isEditor() && isNonEmptyBoundedString(incoming().name, 80)
         && (!("releaseId" in incoming()) || incoming().releaseId == null || isNonEmptyBoundedString(incoming().releaseId, 100))
         && projectDocsBounded()
@@ -267,7 +269,8 @@ service cloud.firestore {
     function itemPipelineFields() {
       return ["patchFiles", "patchBranch", "patchReady", "mergeReady",
         "deployCommit", "deployCommits", "carriedByCommit", "carriedByItem",
-        "mergeCommit", "mergedAt", "prNumber", "prUrl", "deployBranch", "testVersion"];
+        "mergeCommit", "mergedAt", "prNumber", "prUrl", "deployBranch", "testVersion",
+        "reviewStatus", "reviewReason", "reviewedAt", "reviewedCommit"];
     }
     function itemPipelineFieldsUnchanged() {
       return !incoming().diff(resource.data).affectedKeys().hasAny(itemPipelineFields());
