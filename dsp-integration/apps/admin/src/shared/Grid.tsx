@@ -5,7 +5,32 @@
    drives the fit. */
 import type { ColDef, GridApi, GridOptions } from 'ag-grid-community'
 import { AgGridReact } from 'ag-grid-react'
-import { useEffect, useRef } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef } from 'react'
+import type { ComponentType } from 'react'
+
+/* Cells read the page's latest values through params.context.current, a ref,
+   and AG Grid only re-renders a cell when its row data changes. So a change
+   to the page's working (unsaved) state never reached the cells: a picker
+   kept showing the saved value until Save refetched the rows. The page's
+   context object is provided to every cell renderer here, and each renderer
+   is wrapped to read it, so a cell re-renders (never remounts, so focus and
+   an open dropdown survive) whenever the page's context changes. */
+const LiveContext = createContext<unknown>(null)
+const liveCache = new WeakMap<object, ComponentType<any>>()
+function live(renderer: unknown): unknown {
+  if (typeof renderer !== 'function') return renderer
+  let wrapped = liveCache.get(renderer)
+  if (!wrapped) {
+    const Inner = renderer as ComponentType<any>
+    wrapped = function LiveCell(props: any) {
+      useContext(LiveContext)
+      return <Inner {...props} />
+    }
+    liveCache.set(renderer, wrapped)
+  }
+  return wrapped
+}
+
 
 /* Module-level on purpose: an inline object is new on every render, which
    AG Grid reads as changed options and answers by resetting every column to
@@ -25,6 +50,7 @@ export function Grid<Row>({ rows, columns, context, getRowId, label, height, sti
   stickyHeader?: boolean
 } & Omit<GridOptions<Row>, 'rowData' | 'columnDefs' | 'context' | 'getRowId'>) {
   const wrapper = useRef<HTMLDivElement>(null)
+  const liveColumns = useMemo(() => columns.map((c) => (c.cellRenderer ? { ...c, cellRenderer: live(c.cellRenderer) } : c)) as ColDef<Row>[], [columns])
   const api = useRef<GridApi<Row> | null>(null)
   const ctx = useRef(context)
   ctx.current = context
@@ -59,9 +85,10 @@ export function Grid<Row>({ rows, columns, context, getRowId, label, height, sti
   }, [])
   return (
     <div ref={wrapper} className={`ag-theme-alpine w-full${stickyHeader ? ' ag-sticky-header' : ''}`} aria-label={label} style={height ? { height } : undefined}>
+      <LiveContext.Provider value={context}>
       <AgGridReact<Row>
         rowData={rows}
-        columnDefs={columns}
+        columnDefs={liveColumns}
         context={ctx}
         getRowId={(p) => getRowId(p.data)}
         domLayout={height ? 'normal' : 'autoHeight'}
@@ -88,6 +115,7 @@ export function Grid<Row>({ rows, columns, context, getRowId, label, height, sti
           options.onNewColumnsLoaded?.(e)
         }}
       />
+      </LiveContext.Provider>
     </div>
   )
 }
