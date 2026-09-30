@@ -722,7 +722,8 @@ was behind it:
   - Canonical event schema v1, with a validator, in
     `packages/types/src/analyticsEvent.ts`.
   - Instance-identity columns in migration 0022: nullable, unused, and
-    never returned.
+    never returned. (Dropped again by migration 0032, 30 Sep 2026: the
+    identity is now a documented seam only.)
   - The agent-to-agent interface is recorded as a decision only.
 - **Tests.** API 213 → 239, all passing:
   - `hardening.test.ts`
