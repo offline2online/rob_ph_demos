@@ -389,18 +389,23 @@ describe('Campaign Status stand-in', () => {
     expect(screen.queryByRole('tab', { name: 'Campaign status' })).not.toBeInTheDocument()
   })
 
-  /* Ticket LH8iavmKqMB8mjHs9M8m: Advertiser Bookings opens on Booking
-     schedule. The tab is no longer kept in the URL, so a reload after
-     looking at Upcoming Campaign Approval lands back on Booking schedule;
-     the back link's ?tab=campaign-status still works, once. */
-  it('opens on Booking schedule and never leaves the tab in the URL', async () => {
+  /* Ticket HSTgB0s6l56UWH71JwOv (30 Sep 2026, reversing LH8iavmKqMB8mjHs9M8m):
+     the tab lives in the URL, so a browser refresh on Upcoming Campaign
+     Approval stays there; Booking schedule is the default and leaves no
+     `tab` param. */
+  it('keeps the Upcoming Campaign Approval tab in the URL, so a reload stays on it', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch(routes)))
-    const router = renderAt('/booking-schedule?tab=campaign-status')
-    expect(await screen.findByRole('tab', { name: 'Upcoming Campaign Approval', selected: true }, { timeout: 10000 })).toBeInTheDocument()
-    await waitFor(() => expect(router.state.location.search).toBe(''))
-    cleanup()
-    renderAt('/booking-schedule')
+    const router = renderAt('/booking-schedule')
     expect(await screen.findByRole('tab', { name: 'Booking schedule', selected: true }, { timeout: 10000 })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: 'Upcoming Campaign Approval' }))
+    await waitFor(() => expect(router.state.location.search).toBe('?tab=campaign-status'))
+    cleanup()
+    /* A refresh re-mounts the page at the same URL. */
+    const reloaded = renderAt('/booking-schedule?tab=campaign-status')
+    expect(await screen.findByRole('tab', { name: 'Upcoming Campaign Approval', selected: true }, { timeout: 10000 })).toBeInTheDocument()
+    expect(reloaded.state.location.search).toBe('?tab=campaign-status')
+    fireEvent.click(screen.getByRole('tab', { name: 'Booking schedule' }))
+    await waitFor(() => expect(reloaded.state.location.search).toBe(''))
   })
 
   /* Ticket, 27 Sep 2026: clicking a count sets the Status column's own
