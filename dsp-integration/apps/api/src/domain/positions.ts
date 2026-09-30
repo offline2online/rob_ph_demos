@@ -135,6 +135,7 @@ export function visibilityFor(ctx: Context, c: Caller): (p: PositionRef) => bool
   const me = c.partner.id
   let partners: PartnerRecord[] | undefined
   return (p) => {
+    if (!isSellable(ctx, p)) return false
     const allowed = effectivePartnerIds(ctx, p.def, (partners ??= ctx.partners.list()))
     if (allowed !== null && !allowed.includes(me)) return false
     const a = assignmentOf(p.def)
@@ -335,6 +336,21 @@ export function assumedViewsPerWindow(ctx: Context, p: PositionRef) {
   return ratio === 1 ? scored : Math.round(scored * ratio)
 }
 
+/* Whether a position may be sold (ticket "Flag and exclude unscored slots",
+   30 Sep 2026). Assumed views come from the audience source, which answers 0
+   for a slot nobody has scored; selling that would bill 0 and quote a
+   forecast of nothing. There is deliberately no fallback estimate: an
+   invented audience number would end up on invoices. A slot also needs a
+   duration before it is exposed as Advertiser inventory: the venue loop
+   length, which slotDurationSec divides by the rotation cap (slots.ts).
+   Returns why not, or null when sellable. */
+export function unsellableReason(ctx: Context, p: PositionRef): string | null {
+  if (!ctx.audience.forSlot(p.displayType.id, p.slot).scored) return 'No audience score yet — this slot can’t be sold until it is scored.'
+  if (!p.displayType.phExtensions?.venue?.loopLengthSec) return 'No slot duration yet — set the venue loop length before this slot can be sold.'
+  return null
+}
+export const isSellable = (ctx: Context, p: PositionRef) => unsellableReason(ctx, p) === null
+
 /* -------------------------------------------------------------- the view */
 
 export function loopLengthSec(ctx: Context, dt: DisplayType) {
@@ -380,6 +396,9 @@ export function positionView(ctx: Context, p: PositionRef, c: Caller) {
        one bid, one booking, one billing line — covers. */
     billingUnitHours: windowHoursOf(ctx, p),
     assumedViewsPerWindow: assumedViewsPerWindow(ctx, p),
+    /* False when the slot has no audience score: only ever seen by a
+       caller who is told so, since inventory excludes such positions. */
+    scored: ctx.audience.forSlot(dt.id, p.slot).scored,
     pricing: { currency: company.currency, floorCpm: company.floorCpm, effectiveFloorCpm: effectiveFloors(company, multiplier), costPerEngagement: company.interactiveCpe },
     reservePrice: reservePriceOf(dt, p.def),
   }

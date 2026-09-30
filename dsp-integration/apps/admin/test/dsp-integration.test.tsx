@@ -21,11 +21,11 @@ const ADVERTISER_PAGE = {
   '/api/admin/v1/available-inventory': {
     items: [
       {
-        displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', playlistId: 'pl_menu', unassigned: false, slot: 2, zoneSlot: 2, position: 'Supplier slot',
+        displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', playlistId: 'pl_menu', unassigned: false, scored: true, unsellableReason: null, slot: 2, zoneSlot: 2, position: 'Supplier slot',
         assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false }, qrControl: true, visionAi: true, supportedTargeting: ['localised', 'personalised'],
       },
       {
-        displayTypeId: 'portrait', displayTypeName: 'Portrait', touchPoint: 'Digital Signage', playlistName: 'Portrait Playlist', playlistId: 'pl_portrait', unassigned: false, slot: 1, zoneSlot: 1, position: 'Slot 1',
+        displayTypeId: 'portrait', displayTypeName: 'Portrait', touchPoint: 'Digital Signage', playlistName: 'Portrait Playlist', playlistId: 'pl_portrait', unassigned: false, scored: true, unsellableReason: null, slot: 1, zoneSlot: 1, position: 'Slot 1',
         assignedTo: { partnerIds: [], partnerNames: [], advertisers: [], whitelistOnly: false }, qrControl: false, visionAi: false, supportedTargeting: ['localised'],
       },
     ],
@@ -633,6 +633,21 @@ describe('Advertisers / Inventory', () => {
     renderAt('/advertisers')
     const inventory = await screen.findByLabelText('Available Inventory')
     expect(within(inventory).getByLabelText('Unassigned')).toBeInTheDocument()
+  })
+
+  /* Ticket, 30 Sep 2026: a slot with no audience score is flagged in place; it can still be saved. */
+  it('warns on a slot with no audience score', async () => {
+    const reason = 'No audience score yet — this slot can’t be sold until it is scored.'
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({
+      ...ADVERTISER_PAGE,
+      '/api/admin/v1/available-inventory': {
+        ...ADVERTISER_PAGE['/api/admin/v1/available-inventory'],
+        items: [{ ...ADVERTISER_PAGE['/api/admin/v1/available-inventory'].items[0], scored: false, unsellableReason: reason }],
+      },
+    })))
+    renderAt('/advertisers')
+    const inventory = await screen.findByLabelText('Available Inventory')
+    expect(within(inventory).getByRole('status')).toHaveTextContent(reason)
   })
 
   it('holds a position for an advertiser, and only offers interactive where QR Control is on', async () => {

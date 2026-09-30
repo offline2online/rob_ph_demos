@@ -45,7 +45,7 @@ import { randomUUID } from 'node:crypto'
 import type { Context } from '../context'
 import { bookLockedTermWindow, lockTermOnClear, termStateAt } from '../billing'
 import { isLive } from '../domain/exchange'
-import { type PositionRef, allPositions, assignmentOf, effectivePartnerIds, nextWindow, positionView, windowMs, windowStartOf } from '../domain/positions'
+import { type PositionRef, allPositions, assignmentOf, effectivePartnerIds, isSellable, nextWindow, positionView, windowMs, windowStartOf } from '../domain/positions'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 import { type ReservationRecord, TAKEN } from '../repos/ReservationRepo'
 import { advertiserSlug, assignedOf } from '@ph-dsp/types'
@@ -97,7 +97,8 @@ export async function runAuction(ctx: Context, windowStart: Date = nextWindow(ct
   /* Switched off or incomplete: no DSP is sent a bid request. */
   const exchangeLive = isLive(ctx.exchange.get())
   /* The positions whose own window starts here (OQ27). */
-  const positions = allPositions(ctx).filter((p) => windowStartOf(ctx, windowStart, windowMs(ctx, p)).getTime() === windowStart.getTime())
+  /* Unscored slots are skipped: no audience score means no assumed views to sell. */
+  const positions = allPositions(ctx).filter((p) => isSellable(ctx, p)).filter((p) => windowStartOf(ctx, windowStart, windowMs(ctx, p)).getTime() === windowStart.getTime())
   /* The DSPs that receive bid requests, read once for the whole auction,
      not once per position (review, 24 Sep 2026). */
   const bidders = exchangeLive ? ctx.partners.list().filter(receivesBidRequests) : []

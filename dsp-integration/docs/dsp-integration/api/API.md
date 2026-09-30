@@ -91,6 +91,16 @@ engagement (a QR Control scan) on top, unscaled by the advertiser
 multiplier. A position reports both — `pricing.effectiveFloorCpm`
 (`localised`, `personalised`) and `pricing.costPerEngagement`.
 
+**Unscored slots are not sold** (30 Sep 2026). A slot with no audience
+score reports 0 assumed views, so `GET /v1/inventory` leaves it out, `GET
+/v1/inventory/{positionId}` (and its availability) answers 404, a forecast
+that names it is refused `Unknown position`, and `POST /v1/reservations`
+on it answers 409 `conflict` with the reason ("No audience score yet — this
+slot can't be sold until it is scored."). The auction skips it. A slot also
+needs a slot duration (the venue loop length) before it is exposed. There
+is no fallback estimate: an invented audience number would end up on
+invoices.
+
 ## Partner API — `/v1`
 
 ### Inventory

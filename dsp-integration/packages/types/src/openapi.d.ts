@@ -1049,6 +1049,14 @@ export interface components {
             billingUnitHours: number;
             /** @description Assumed views (VAC-d) in one of this position's windows (billingUnitHours long). */
             assumedViewsPerWindow?: number;
+            /**
+             * @description Whether the slot has an audience score. Inventory lists only
+             *     scored positions, so this is always true here; an unscored slot
+             *     is a 404 (not sellable) and a bid on it is refused with a 409
+             *     that says why (ticket, 30 Sep 2026). There is no fallback
+             *     estimate: an invented audience number would end up on invoices.
+             */
+            scored?: boolean;
             pricing: components["schemas"]["Pricing"];
             /**
              * @description A CPM premium at which this position can be reserved in advance
@@ -1497,6 +1505,15 @@ export interface components {
             displayTypeId: string;
             displayTypeName: string;
             touchPoint?: string;
+            /**
+             * @description Whether the slot has an audience score (an audience_vacd row).
+             *     An unscored slot reports 0 assumed views, so it is never
+             *     exposed to advertisers (GET /v1/inventory), forecast, auctioned
+             *     or bid on (ticket, 30 Sep 2026). Saving it is not blocked.
+             */
+            scored: boolean;
+            /** @description Why the slot can't be sold yet — no audience score, or no slot duration (venue loop length ÷ rotation cap) — or null when it can. Shown as a warning on Available Inventory. */
+            unsellableReason: string | null;
             /**
              * @description True while this slot is locked against new sales (ticket "Lock
              *     playlist slot against new sales when slots are sold", 30 Sep

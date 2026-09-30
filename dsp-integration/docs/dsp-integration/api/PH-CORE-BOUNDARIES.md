@@ -125,6 +125,14 @@ provide one breaks something specific, named here.
     directories.
   - Files are served with `nosniff` and a CSP that blocks script. An SVG
     creative can't run code even when it is opened directly.
+- **`AudienceSource.forSlot`**
+  - Must say whether a slot is **scored** (`scored`), not just return a
+    number: an unscored slot has no audience figure, and 0 is "unknown", not
+    "nobody watching". This build leaves an unscored slot out of inventory,
+    forecast and the auction and refuses a bid on it (30 Sep 2026); it never
+    invents an estimate. The stand-in reads `audience_vacd` and reports
+    `scored` when a row exists; a display type created in HQ Admin has none
+    until the retailer's scoring writes one.
 - **`AudienceSource.targetedShare`**
   - Predicates in, a number out. **No attribute value crosses the
     boundary.**
