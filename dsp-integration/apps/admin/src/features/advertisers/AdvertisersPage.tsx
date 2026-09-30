@@ -640,7 +640,7 @@ export function AdvertisersPage() {
           <div className="mb-2" style={{ fontSize: 13 }}>{showingCount(shown ?? data.items.length, data.items.length, `advertiser${data.items.length === 1 ? '' : 's'}`)}</div>
           <Grid<Advertiser>
             label="Advertisers" rows={data.items} columns={columns} context={context} getRowId={(a) => a.advertiserId}
-            headerHeight={40} floatingFiltersHeight={40} onFilterChanged={(e) => setShown(e.api.getDisplayedRowCount())}
+            stickyHeader headerHeight={40} floatingFiltersHeight={40} onFilterChanged={(e) => setShown(e.api.getDisplayedRowCount())}
           />
         </>
       )}
@@ -660,6 +660,7 @@ export function AdvertisersPage() {
             context={invContext}
             getRowId={slotKey}
             rowHeight={52}
+            stickyHeader
             headerHeight={40}
             floatingFiltersHeight={40}
             onFilterChanged={(e) => setInvShown(e.api.getDisplayedRowCount())}
