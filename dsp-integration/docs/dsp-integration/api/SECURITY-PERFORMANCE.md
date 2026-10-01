@@ -192,3 +192,18 @@ is a client error; SIGTERM on each process leaves the database passing
 Known and left: two API instances see a company-settings save on the
 other within a second (the 1 s snapshot); nothing that decides a sale is
 cached.
+
+## Addendum — what changed since 24 Sep 2026 (reviewed 1 Oct 2026)
+
+Reviewed against the code at the `deploy/dsp-integration` head. Nothing here
+changes the findings above; each row is something added after them.
+
+| Added | Review |
+|---|---|
+| `GET /v1/campaigns/{id}` (RbXpiw2Q, 30 Sep): a partner reads back stored targeting. | Reads only the caller's own campaigns. Another partner's id, an unknown id and an HQ campaign all answer the same `404 Campaign not found.` (no existence oracle), and the body carries the campaign name, the advertiser id the caller itself submitted and its own targeting, never an advertiser or partner name. **Asserted** in `partner-api-hardening.test.ts` (added with this addendum). |
+| `PUT /admin/v1/available-inventory/lock` (ZlxFSBGN). | Admin scope, behind the flag; validates the display type, an Advertiser-owned slot and a live booking (`409` otherwise). It only sets `salesLocked`; there is no unlock, and the scheduler clears it when the last booking has played. No partner can reach it. |
+| `POST /admin/v1/test/plays` and `PH_TEST_CLOCK` (E2E automation). | Both are refused in production: `loadConfig` throws if `PH_TEST_CLOCK` is set with `NODE_ENV=production`, and `testEndpoints` is false there, so the route is not registered and answers 404. Covered by `test-clock.test.ts` and `test-plays.test.ts`. The plays endpoint writes to the PH Core stand-in `plays` table and is deleted with it on integration. Previously stated only in API.md. |
+| Per-DSP QPS and bidder timeout overrides (QCWJGqB4; `bidder.qps` up to 10,000). | The bidder spaces requests per URL **inside one process**, so with N API processes a DSP's effective rate is up to N × its QPS. Fine for one instance (the supported shape today); with several, the limit moves to the gateway or a shared store, as for the Partner API limiter. A DSP's own override can only be set by an admin on that DSP's page. |
+| DSP provider modules (`dsp/`, 29 Sep). | The creative-path rule (`DspProvider.ownsCreativeUrl`: a URL under the DSP's own creative host and path after normalisation, no credentials, nothing fetched when none is configured) now lives in each module; `dsp-providers.test.ts` fails if a DSP's key appears outside `dsp/`, `config.ts` and the seed. The retrieval bounds (one per response, byte cap, 10 s) are unchanged. |
+| The approvals/campaign list N+1 (listed under "Deliberately left"). | Batched on 1 Oct: one read of each side and one reservations scan per list, instead of several reads per campaign. The booking schedule still queries per position. |
+

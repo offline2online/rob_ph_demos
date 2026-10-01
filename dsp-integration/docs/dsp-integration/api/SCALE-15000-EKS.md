@@ -196,3 +196,43 @@ these are the additions. Where each control lives is tabled in
 | Billing in the API process. | Half a second per 1,000-display window on the API's thread while `PH_SCHEDULER=in-process`; the CronJob takes it off the API once the database is shared. |
 | Egress limited by address, not by name. | Only a DNS-aware policy can do that; the client's cluster decides. |
 | `POC_ROLE`, the SQLite stand-ins, the mock DSPs. | POC only; replaced on integration. |
+
+## Addendum — re-measured on 1 Oct 2026, after migrations 0033–0035
+
+`npm run bench -- --assert`, shapes A, B, C and T, on the sandbox (not the
+4 vCPU machine the committed thresholds came from; compare runs on the same
+machine).
+
+**A regression, found and fixed.** Shape A's inventory page had fallen from
+475 to 112 req/s and `?status=available` over a year from 27 to 21 req/s. The
+cause was commit `4093a03` (30 Sep, unscored slots): visibility now reads
+every position's audience score, and the inventory list evaluated visibility
+and the filters for **all 2,408 positions** to return 50. The list now stops
+once it has the page plus one more match (`routes/partner/inventory.ts`), the
+same output in the same order. Shape A afterwards: page of 50 **568 req/s**
+(p50 52 ms, was 113 / 195 ms); `?status=available` (1 yr) **227 req/s** (p50
+139 ms, was 21 / 2,259 ms).
+
+**Per-display VAC-d (0035).** `AudienceSource.forSlot` now sums per display
+(its override, else the default) for a slot with no score of its own. It was
+measured on the commit before 0035 and after it, same machine: shape C page
+531 → 548 req/s and shape A 109 → 113 req/s, so the cost is within noise on
+the bench's estate (its slots carry their own scores, so the sum is not on
+its path). On an estate whose slots are scored only by the default, the cost
+is one aggregate over a type's displays per position per call; if that shows,
+cache a per-type sum in the stand-in with the same one-second snapshot as
+`DisplaySource`. Not done: nothing measured needs it.
+
+**Still above the committed thresholds on this machine.** Shapes B, C and T
+inventory page (518–559 req/s against 782/850) and `?status=available`
+(235–256 against 384/502). The same code at 29 Sep measured 671–708 and
+235–247 here, so about three quarters of the gap is the machine; the rest is
+the extra per-position work added since (the score and sellability reads,
+`maxCampaigns`). Calibrate the local baseline (`--calibrate`) before using
+the gate on a new machine. Shape T has not been confirmed with CP Group.
+
+**Billing, again.** `PlaybackSource.totals`' covering index now includes
+`tier` (0033) and billing splits personalised plays (0034); one window of
+1.9 million plays still bills in about 0.6 s and the idle tick in under
+60 ms.
+
