@@ -12,6 +12,7 @@ import { targetingVariableRoutes } from './targetingVariables'
 import { partnerRoutes } from './partners'
 import { playlistRoutes } from './playlists'
 import { sessionRoutes } from './session'
+import { testRoutes } from './test'
 
 export const adminRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => async (app) => {
   await app.register(sessionRoutes(ctx, guards))
@@ -25,4 +26,5 @@ export const adminRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync =>
   await app.register(exchangeRoutes(ctx, guards))
   await app.register(targetingVariableRoutes(ctx, guards))
   await app.register(campaignRoutes(ctx, guards))
+  if (ctx.config.testEndpoints) await app.register(testRoutes(ctx, guards))
 }

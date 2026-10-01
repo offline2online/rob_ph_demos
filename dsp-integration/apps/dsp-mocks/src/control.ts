@@ -10,6 +10,24 @@ export const controlRoutes = (store: MockStore): FastifyPluginAsync => async (ap
   const dspOf = (d: string) => (DSPS as string[]).includes(d) ? (d as DspKey) : null
 
   app.get('/state', async () => store.state)
+  /* One switch for every mock bidder at once (E2E Testing Strategy §3.3):
+     the journey runner sets `no-bid` for a window it wants nobody to win
+     (L6 fall-through), ticks, then puts `default` back. `scripted` keeps
+     each DSP's own PUT /:dsp/bidder settings and only changes nothing —
+     it is the name for "whatever the per-DSP controls say". Returns the
+     mode now in force per DSP. */
+  app.post<{ Body: Partial<{ mode: 'no-bid' | 'scripted' | 'default'; dsps: string[] }> }>('/bidder', async (req, reply) => {
+    const mode = req.body?.mode
+    if (!mode || !['no-bid', 'scripted', 'default'].includes(mode)) return bad(reply, 'mode is no-bid, scripted or default')
+    const targets = req.body?.dsps?.length ? req.body.dsps : [...DSPS]
+    const unknown = targets.filter((d) => !dspOf(d))
+    if (unknown.length) return bad(reply, `Unknown DSP: ${unknown.join(', ')}`, 404)
+    for (const d of targets as DspKey[]) {
+      if (mode === 'no-bid') store.state[d].bidder = { ...store.state[d].bidder, mode: 'no_bid' }
+      else if (mode === 'default') store.state[d].bidder = { ...store.state[d].bidder, mode: 'bid' }
+    }
+    return Object.fromEntries((targets as DspKey[]).map((d) => [d, store.state[d].bidder.mode]))
+  })
   app.post('/reset', async () => {
     store.reset()
     return store.state

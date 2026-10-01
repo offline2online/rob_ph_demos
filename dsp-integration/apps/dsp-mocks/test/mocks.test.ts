@@ -16,6 +16,21 @@ describe('mock DSP control API', () => {
     expect((await app.inject({ method: 'GET', url: '/_control/google_dv360' })).json().seats).toHaveLength(2)
   })
 
+  it('POST /_control/bidder switches every bidder off and back on', async () => {
+    const { app } = buildMocks()
+    expect((await app.inject({ method: 'POST', url: '/_control/bidder', payload: { mode: 'off' } })).statusCode).toBe(400)
+    expect((await app.inject({ method: 'POST', url: '/_control/bidder', payload: { mode: 'no-bid', dsps: ['nope'] } })).statusCode).toBe(404)
+    const off = await app.inject({ method: 'POST', url: '/_control/bidder', payload: { mode: 'no-bid' } })
+    expect(off.statusCode).toBe(200)
+    expect(Object.values(off.json())).toEqual(['no_bid', 'no_bid', 'no_bid'])
+    expect((await app.inject({ method: 'GET', url: '/_control/google_dv360' })).json().bidder.mode).toBe('no_bid')
+    const scripted = await app.inject({ method: 'POST', url: '/_control/bidder', payload: { mode: 'scripted' } })
+    expect(Object.values(scripted.json())).toEqual(['no_bid', 'no_bid', 'no_bid'])
+    const on = await app.inject({ method: 'POST', url: '/_control/bidder', payload: { mode: 'default', dsps: ['google_dv360'] } })
+    expect(on.json()).toEqual({ google_dv360: 'bid' })
+    expect((await app.inject({ method: 'GET', url: '/_control/amazon_dsp' })).json().bidder.mode).toBe('no_bid')
+  })
+
   it('serves the test page', async () => {
     const res = await buildMocks().app.inject({ method: 'GET', url: '/' })
     expect(res.headers['content-type']).toMatch(/text\/html/)
