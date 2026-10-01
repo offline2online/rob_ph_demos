@@ -25,7 +25,11 @@
     "bench": "npm run bench -w @ph-dsp/api --",
     "board:sync": "node scripts/sync-board-docs.mjs",
     "board:tickets": "node scripts/board-tickets.mjs",
-    "e2e:journey": "npm run e2e:journey -w @ph-dsp/api"
+    "e2e:journey": "npm run e2e:journey -w @ph-dsp/api",
+    "e2e:quick": "npm run e2e:quick -w @ph-dsp/api",
+    "e2e:report": "node scripts/report-e2e.mjs",
+    "e2e:file-bugs": "node scripts/file-e2e-bugs.mjs",
+    "e2e:lint": "node scripts/lint-it-fails.mjs"
   },
   "devDependencies": {
     "typescript": "~5.9.3"
