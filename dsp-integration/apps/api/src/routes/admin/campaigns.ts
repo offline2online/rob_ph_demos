@@ -10,35 +10,36 @@ import { campaignLayerSummary } from '../../domain/targetingSummary'
 import { HttpError, notFound, validationFailed } from '../../http/errors'
 
 export const campaignRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => async (app) => {
-  const toCampaign = (c: Awaited<ReturnType<typeof ctx.approvalCampaigns.listCampaigns>>[number], pricingType: Campaign['pricingType'], displayTypeId: string | null): Campaign => ({
+  const liveReservations = () => ctx.reservations.byStatus(['won', 'reserved']).filter((r) => !r.testMode)
+  type Held = ReturnType<typeof liveReservations>
+  const toCampaign = (c: Awaited<ReturnType<typeof ctx.approvalCampaigns.listCampaigns>>[number], r: ReturnType<typeof ctx.campaigns.getCampaign>, held: Held): Campaign => ({
     campaignId: c.campaignId, name: c.name, source: c.source, advertiserId: c.advertiserId, advertiserName: c.advertiserName,
-    partnerId: c.partnerId, partnerName: c.partnerName, displayTypeId, pricingType, schedule: scheduleOf(c.campaignId), activation: c.activation,
-    ...campaignLayerSummary(raw(c.campaignId)?.targeting),
-    ...(raw(c.campaignId)?.brief ? { brief: raw(c.campaignId)!.brief } : {}),
+    partnerId: c.partnerId, partnerName: c.partnerName, displayTypeId: r?.displayTypeId ?? null, pricingType: r?.pricingType ?? null, schedule: scheduleOf(c.campaignId, held), activation: c.activation,
+    ...campaignLayerSummary(r?.targeting),
+    ...(r?.brief ? { brief: r.brief } : {}),
   })
-  const raw = (id: string) => ctx.campaigns.getCampaign(id)
   /* What the advertiser booked: the next window it holds, and how many (Rob, 20 Sep). */
-  const scheduleOf = (campaignId: string): Campaign['schedule'] => {
+  const scheduleOf = (campaignId: string, all: Held): Campaign['schedule'] => {
     const now = ctx.clock().toISOString()
-    const held = ctx.reservations.byStatus(['won', 'reserved']).filter((r) => r.campaignId === campaignId && !r.testMode)
+    const held = all.filter((r) => r.campaignId === campaignId)
     const ahead = held.map((r) => r.windowStart).filter((w) => w >= now).sort()
     return { nextWindowStart: ahead[0] ?? null, bookedWindows: held.length }
   }
 
-  app.get('/campaigns', async () => ({
-    items: (await ctx.approvalCampaigns.listCampaigns()).map((c) => {
-      const r = raw(c.campaignId)
-      return toCampaign(c, r?.pricingType ?? null, r?.displayTypeId ?? null)
-    }),
-  }))
+  /* One read of each side for the whole list, not one per campaign (the
+     list used to make 3-4 platform reads and a reservations scan per row). */
+  app.get('/campaigns', async () => {
+    const [refs, held] = [await ctx.approvalCampaigns.listCampaigns(), liveReservations()]
+    const platform = new Map(ctx.campaigns.listCampaigns().map((c) => [c.campaignId, c]))
+    return { items: refs.map((c) => toCampaign(c, platform.get(c.campaignId) ?? null, held)) }
+  })
 
   app.put<{ Params: { id: string }; Body: { enabled?: unknown } }>('/campaigns/:id/activation', async (req) => {
     if (typeof req.body?.enabled !== 'boolean') throw validationFailed([{ field: 'enabled', reason: 'Must be true or false.' }])
     try {
       const c = await ctx.approvals.setActivation(req.params.id, req.body.enabled)
       if (!c) throw notFound()
-      const r = raw(c.campaignId)
-      return toCampaign(c, r?.pricingType ?? null, r?.displayTypeId ?? null)
+      return toCampaign(c, ctx.campaigns.getCampaign(c.campaignId), liveReservations())
     } catch (e) {
       if (e instanceof ApprovalError) throw new HttpError(e.status, e.code, e.message)
       throw e

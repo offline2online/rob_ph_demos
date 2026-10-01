@@ -39,7 +39,7 @@ logic do not change.
    │ PH Core seams (interfaces)                                          │
    │  DisplayTypeSource  PlaylistSource  DisplaySource  StoreSource      │
    │  CampaignSource (+ approval adapter)  PlaybackSource  AssetStore    │
-   │  AudienceSource  ReachCountSource  SessionSource  partner identity  │
+   │  AudienceSource  SessionSource  partner identity                     │
    │  SecretsStore  Flags                                                │
    └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -54,17 +54,16 @@ slower than that should cache, as the stand-ins now do.
 | Seam | Direction | PH Core owner | Methods | Called from | Budget |
 |---|---|---|---|---|---|
 | `DisplayTypeSource` (`platform/DisplayTypeSource.ts`) | read + write | Display Types service | `list`, `get`, `create`, `saveRecord`, `saveExtensions`, `delete` | **Hot**: every Partner API request and every auction position starts from `list()` | `list()` ≤ 1 ms (cache it) |
-| `PlaylistSource` | read, rename, delete | Playlist service | `list`, `get`, `create`, `rename`, `delete` | Inventory (loop length), Playlist Management | `get` ≤ 0.1 ms |
+| `PlaylistSource` | read, create, rename, save settings, delete | Playlist service | `list`, `get`, `create`, `rename`, `saveSettings`, `delete` | Inventory (loop length), Playlist Management | `get` ≤ 0.1 ms |
 | `DisplaySource` | read only | Displays & Devices | `list`, `listByDisplayType`, `summaryByDisplayType`, `storeIdsByDisplayType` | **Hot**: `summaryByDisplayType` per position (counts, "no displays" check); `listByDisplayType` for the delete check only | `summaryByDisplayType` ≤ 0.05 ms, a count never the rows; `listByDisplayType` indexed |
-| `StoreSource` | read only | Stores | `list`, `get` | Inventory store/region filters, booking schedule | `get` ≤ 0.05 ms |
-| `CampaignSource` (`platform/CampaignSource.ts`) | read + write | Campaigns service | `getCampaign`, `listCampaigns`, `setActivation`, `onCampaignChanged`, `createCampaign`, `addAsset`, `latestAssets`, `bookSlot`, `bookings` | **Hot**: `getCampaign` per bid in the auction | `getCampaign` ≤ 0.5 ms |
-| Approval adapter (`packages/campaign-approval/src/adapter/CampaignSource.ts`) | read + activation | Campaigns service | `getCampaign`, `listCampaigns`, `setActivation`, `onCampaignChanged`, `discardEditsAfter` | Approval screens, `isCampaignEligible` before every bid, reservation and hand-off | see the integration guide |
+| `StoreSource` | read only, **never written** | Stores | `list`, `get` → `{id, name, region}`. On integration also the store/display **venue and geo** record: OpenOOH venue type, latitude/longitude, store id (see "Venue and geo metadata" below). The POC has no such seam yet; its stand-in is `phExtensions.venue` on the display type. | Inventory store/region filters, booking schedule, OpenRTB `dooh.venuetype`, inventory venue fields | `get` ≤ 0.05 ms |
+| `CampaignSource` (`platform/CampaignSource.ts`) | read + write | Campaigns service | `getCampaign`, `listCampaigns`, `setActivation`, `createCampaign`, `addAsset`, `latestAssets(campaignId, atVersion?: string)`, `bookSlot`, `bookings` | **Hot**: `getCampaign` per bid in the auction | `getCampaign` ≤ 0.5 ms |
+| Approval adapter (`packages/campaign-approval/src/adapter/CampaignSource.ts`): the **second facet of the same real campaign source** (it must not get `bookSlot` or `createCampaign`) | read + activation | Campaigns service | `getCampaign`, `listCampaigns`, `setActivation`, `onCampaignChanged`, `discardEditsAfter` | Approval screens, `isCampaignEligible` before every bid, reservation and hand-off | see the integration guide |
 | `PlaybackSource` | read only | Playback logging | `totals({campaignId, displayTypeId, from, to})`, `listPlays` | Billing, once per ended window | aggregated at the source: ≤ 1 s for 2 million plays |
 | `AssetStore` | write + read | Asset hosting / CDN | `put`, `read`, `url` | Creative upload and DSP creative retrieval; hand-off re-validation | — |
 | `AudienceSource` | read only | Audience scoring (MOVE/VAC-d, spec §4) | `forSlot`, `targetedShare` | **Hot**: per position in inventory, forecast, OpenRTB `qty.multiplier` | ≤ 0.1 ms |
-| `ReachCountSource` | read only | *Unassigned* — see "Open" below | `matchOf(totalDisplays, rules)` | Booking schedule page load | point-in-time, as-of stamped |
 | `SessionSource` (`auth/session.ts`) | read only | HQ Admin session and roles | `current()` → `{userId, name, role}` | Every Admin API request | — |
-| Partner identity (`auth/partnerAuth.ts`) | read only | Platform token issuance | `partnerFromRequest(req)` → one `PartnerRecord` or 401 | Every Partner API request | ≤ 0.1 ms |
+| Partner identity (`auth/partnerAuth.ts`) | read only | Platform token issuance | `partnerFromRequest(ctx, req)` → one `PartnerRecord` or 401. **Not an interface and not constructed in `context.ts`**: it is a function that reads `ctx.config.partnerTokens` directly, so on integration it is the one place besides `context.ts` to change (or it becomes a seam) | Every Partner API request | ≤ 0.1 ms |
 | `SecretsStore` | encrypt / decrypt | Platform secrets handling (KMS) | `encrypt`, `decrypt` | Saving DSP credentials; connecting to a DSP | off the hot path by design |
 | `Flags` | read only | Feature flags | `dspIntegration` | Every new endpoint (404 when off) | — |
 | DSP integration switch (`exchange.enabled`, migration 0023) | read + write | *This build* (the retailer's own setting, on Exchange settings) | `ctx.exchange.get().enabled`; `GET /admin/v1/features` | Every Partner API request, sellers.json, the auction, the nav | — |
@@ -86,6 +85,11 @@ provide one breaks something specific, named here.
     a 1-second TTL. Any cache in the real adapter needs the same property:
     **a save is visible to the process that made it immediately, and to
     every other process within a bounded time.**
+  - Known weakening in the POC: `context.ts` (`approvalParts`) builds a
+    **second** `DisplayTypeSource` snapshot for the approval canvas, with
+    its own 1-second TTL, so the approval screens can lag a save by up to a
+    second even though the first snapshot is current. On integration both
+    must read one adapter.
 - **`DisplaySource`**
   - `summaryByDisplayType` answers with counts (displays, and the stores
     they are in), never the rows: every position, availability check, bid
@@ -103,7 +107,16 @@ provide one breaks something specific, named here.
     29 Sep 2026): the approved version's creative, never an edit still
     under review. The hand-off resolves it with
     `latestAssets(campaignId, atVersion)`, which must ignore the assets of a
-    discarded (rejected) edit.
+    discarded (rejected) edit. `atVersion` is the approval adapter's
+    `assetVersion` **string, exactly as `liveAssetVersion` returned it**: any
+    string that changes with the creative is legal there (not only the POC's
+    `v<n>`), so resolving it to assets is this seam's job. The hand-off
+    passes it straight through and imports nothing POC-only for it.
+- **`CampaignSource.listCampaigns`**
+  - Order is the platform's to define, but both facets must agree. The POC's
+    platform seam orders by `rowid` and the approval adapter by
+    `created_at, id`; an integration builds both from one source (see
+    `CAMPAIGN-APPROVAL-INTEGRATION.md`).
 - **`CampaignSource.getCampaign`**
   - Returns targeting in the existing structure: AND groups of OR
     conditions.
@@ -174,12 +187,19 @@ provide one breaks something specific, named here.
 |---|---|---|
 | `0001` (display types, playlists, displays, campaigns, plays), `0012` (slot bookings), `0014` (stores) | **PH Core stand-ins** | Dropped. The seams above read and write the real services instead. |
 | `0002`–`0011`, `0013`, `0015`–`0019` | This build | Kept. Plain, Postgres-compatible SQL. |
-| `0020` (indexes), `0021` (one live winner per window), `0022` (reserved instance identity, dropped again by `0032`) | This build (review, 23 Sep 2026) | Kept. See "The database must enforce" below for the parts that also apply to PH Core tables. |
+| `0020` (indexes), `0021` (one live winner per window) | This build (review, 23 Sep 2026) | Kept. See "The database must enforce" below for the parts that also apply to PH Core tables. |
+| `0022` (reserved instance identity) and `0032` (drops it again) | This build | Nothing to keep: 0022 was dropped by 0032 (Ql8j8H6F, 30 Sep 2026). |
 | `0023` (the DSP integration switch) | This build (Rob, 24 Sep 2026) | Kept, unless the platform already holds company feature switches (see "Open" below). |
 | `0024` (`auction_runs`: which process clears a window) | This build (24 Sep 2026) | Kept: it lets several instances share the scheduled work. |
 | `0025` (covering index on `plays`), `0033` (`plays.version_id` / `tier`) | Stand-in only | Dropped with `plays`; the playback store answers `totals` itself, and must supply the version tier (see `PlaybackSource`). |
 | `0034` (`reservations.personalised_multiplier`, personalised columns on `billing_line_items`) | This build (Rob, 30 Sep 2026) | Kept: the multiplier is snapshotted on the reservation at clear time. |
 | `0026` (one open API bid per advertiser and window) | This build (24 Sep 2026) | Kept: a partial unique index, as 0021. |
+| `0027` (`company_advertiser_settings`: deferred play-window change) | This build (26 Sep 2026) | Kept. |
+| `0028` (`playlists.playlist_settings`), `0029` (multi-zone layout on the playlist) | **PH Core stand-in** (`playlists`) | Dropped with `playlists`: the playlist service owns its own settings and zoning (`PlaylistSource.saveSettings`). |
+| `0030` (a DSP's own category lists on `partners`) | This build (28 Sep 2026) | Kept. |
+| `0031` (`assets.content_hash`, `discarded_at`; `campaign_slot_bookings.asset_version`) | Mixed | `assets` and the booking's `asset_version` are the campaign system's: the booking must carry the version it plays (see `CampaignSource.bookSlot`). Content-hash reuse and discard are this build's approval records. |
+| `0035` (`displays.vacd_override`; the default itself is `phExtensions.defaultVacd`) | **PH Core stand-in** (`displays`) | Dropped with `displays`. The per-display override is the audience source's own data: `AudienceSource.forSlot` must return the same sum. |
+| `0036` (drops the unused `audience_scoring` column) | This build | Nothing to keep. |
 
 ## Outbound boundaries — what this build calls
 
@@ -283,7 +303,8 @@ of that contract (openapi.yaml carries them):
     rate_limited` with `Retry-After`.
   - At most 2 asset uploads in flight per partner.
   - Forecast: at most 200 positions, each listed once.
-  - Content package: name ≤ 200 characters, ≤ 20 targeted versions, ≤ 10
+  - Content package: name ≤ 200 characters, ≤ 20 targeted versions (package-size guard at submission; the sellable
+    count is the slot's Max campaigns, enforced at bid and reservation), ≤ 10
     AND groups, ≤ 20 conditions per group, ≤ 100 values per condition, each
     value ≤ 200 characters.
   - JSON bodies up to 1 MB. A larger body gets `413`.
@@ -529,9 +550,6 @@ These are reserved names and places, with no behaviour yet:
 
 ## Open at the boundary
 
-- **Who hosts reach counts.** `ReachCountSource` is a POC estimate. The
-  interface contract with Live Visitor Profile hasn't decided whether one
-  endpoint or two answers display counts and localised match counts.
 - **Engagement counts for billing.** Interactive campaigns are priced per
   engagement, but `PlaybackSource` counts plays, not QR scans. Billing the
   fee needs an engagement count from PH Core. BUILD-PLAN §10 records this
@@ -544,16 +562,29 @@ These are reserved names and places, with no behaviour yet:
   exchange record. If HQ Admin already keeps company-level feature switches
   (its *Enabled Features*), the switch belongs there, read through a seam
   like `Flags`.
-- **Venue and screen metadata per store and display** (spec §1). It is
-  held on the display type for now, and has no PH Core seam yet.
+- **Venue and screen metadata per store and display** (spec §1): decided, see "Venue and geo metadata" below. Not open.
 
-## Venue and geo metadata — owned by PH Core (decision 29 Sep 2026, Q35)
+## Venue and geo metadata — owned by PH Core (decision 29 Sep 2026, Q35; stand-in confirmed 1 Oct 2026)
 
-PH Core already manages all store data for a retailer, including venue and
-geo metadata, and is the system of record. The exchange reads it read-only
-and surfaces it on the inventory and targeting responses; it keeps **no
-copy** on its own store record. If Core changes a store's venue or geo
-values, the next read reflects it. Nothing here writes them back.
+**Owner: PH Core.** It already manages all store data for a retailer,
+including venue and geo metadata, and is the system of record. The
+exchange reads it **read-only** and surfaces it on the inventory and
+targeting responses and in the OpenRTB bid request (`dooh.venuetype`); it
+keeps **no copy** on its own store record, and nothing here writes it back.
+If Core changes a store's venue or geo values, the next read reflects it.
+
+**POC stand-in (until PH Core exposes a store/display venue seam):** the
+venue is held on the display type as `phExtensions.venue`
+(`openOohVenueType`, `orientation`, `loopLengthSec`), written through
+`PUT /admin/v1/display-types/{id}/extensions`. That is a stand-in for a
+PH Core value, not a decision that this build owns venue data.
+
+**On integration:** the adapter reads venue and geo from PH Core's
+store/display record through `StoreSource` (OpenOOH venue type,
+latitude/longitude, store id; read-only, never written), and the
+`extensions` PUT stops accepting `venue`. `apps/api/test/auction.test.ts`
+asserts the bid request's `dooh.venuetype` and the inventory venue fields
+come from the seam value, so swapping the adapter is covered.
 
 ## Analytics event values billing consumes (decision 29 Sep 2026, Q53/Q54)
 

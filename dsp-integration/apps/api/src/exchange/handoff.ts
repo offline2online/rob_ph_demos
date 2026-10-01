@@ -4,7 +4,6 @@
    existing campaign system, which distributes and plays it as it does today.
    Test-mode wins are never handed off. Playback is not touched. */
 import { randomUUID } from 'node:crypto'
-import { assetVersionNumber } from '@ph-dsp/campaign-approval/poc'
 import type { Context } from '../context'
 import { failed, fileChecks } from '../domain/assetChecks'
 import { readMedia } from '../domain/media'
@@ -32,8 +31,7 @@ export async function handOff(ctx: Context, r: ReservationRecord): Promise<Reser
      the old creative and every window after gets the new one, never both.
      An HQ campaign has no approved version and hands off its latest. */
   const live = await ctx.approvals.liveAssetVersion(r.campaignId)
-  const atVersion = live ? assetVersionNumber(live) : undefined
-  const assets = ctx.campaigns.latestAssets(r.campaignId, atVersion)
+  const assets = ctx.campaigns.latestAssets(r.campaignId, live ?? undefined)
   const asset = assets.find((a) => a.role === 'default') ?? assets[0]
   const bytes = asset ? ctx.assets.read(asset.file) : null
   if (!asset || !bytes) return notHandedOff('the campaign has no creative.')

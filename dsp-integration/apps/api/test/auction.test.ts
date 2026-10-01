@@ -71,6 +71,25 @@ describe('OpenRTB 2.6 DOOH bid requests', () => {
   })
 })
 
+describe('venue metadata comes from the display-type seam value, not from this build', () => {
+  /* Q35 (29 Sep 2026): PH Core owns venue and geo; today's stand-in is phExtensions.venue on the
+     display type. Changing that value must change what the OpenRTB request and the inventory
+     carry, so an adapter that reads PH Core's store/display record instead is covered. */
+  it('dooh.venuetype and the inventory screen follow the seam value', async () => {
+    const { ctx, app, sent } = await setup()
+    const ext = ctx.displayTypes.get('menu_board')!.phExtensions!
+    ctx.displayTypes.saveExtensions('menu_board', { ...ext, venue: { ...ext.venue!, openOohVenueType: 'retail.pharmacy' } })
+    await runAuction(ctx, W1)
+    expect(sent).toHaveLength(1)
+    expect(sent[0].body.dooh.venuetype).toEqual(['retail.pharmacy'])
+    const inv = await app.inject({ method: 'GET', url: '/api/v1/inventory/menu_board.s2', headers: GOOGLE })
+    expect(inv.json().screen.openOohVenueType).toBe('retail.pharmacy')
+    /* Cleared, the field is omitted from the response and the request carries no venue type. */
+    ctx.displayTypes.saveExtensions('menu_board', { ...ext, venue: { ...ext.venue!, openOohVenueType: undefined } })
+    expect((await app.inject({ method: 'GET', url: '/api/v1/inventory/menu_board.s2', headers: GOOGLE })).json().screen.openOohVenueType).toBeUndefined()
+  })
+})
+
 describe('the auction', () => {
   it('discards a bid with an unknown creative and queues it; once approved it wins a later window, first price', async () => {
     const { ctx, app, rows } = await setup()

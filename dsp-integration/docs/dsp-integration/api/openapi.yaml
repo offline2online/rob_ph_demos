@@ -384,6 +384,71 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorised'}
         '403': {$ref: '#/components/responses/Forbidden'}
 
+  /admin/v1/test/plays:
+    post:
+      tags: [POC stand-in — existing platform]
+      operationId: reportTestPlays
+      summary: Test only — report plays for a cleared reservation's window
+      description: |
+        **Not part of the product.** Served only while the instance runs with
+        test endpoints on (any `NODE_ENV` other than `production`; in
+        production the route is not registered and answers 404). It exists so
+        the Run 6 journey runner can finish billing inside one run: it moves
+        `PH_TEST_CLOCK` past the window end, reports plays here, ticks the
+        scheduler and reads the line item. It writes to the POC stand-in
+        `plays` table, which is PH Core's playback store on integration (the
+        platform reports plays itself), and is deleted with it. Plays are
+        spread round-robin over the display type's displays and evenly
+        through the window; each entry is one tier.
+      security: [{adminSession: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reservationId, plays]
+              properties:
+                reservationId: {type: string, description: A won or reserved reservation that carries a campaign.}
+                plays:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [tier, count]
+                    properties:
+                      tier: {type: [string, 'null'], enum: [default, localised, personalised, null], description: The version tier the play showed; null bills as default.}
+                      count: {type: integer, minimum: 1, maximum: 100000}
+                      durationSec: {type: number, exclusiveMinimum: 0}
+      responses:
+        '201':
+          description: Plays written.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [reservationId, campaignId, positionId, windowStart, windowEnd, displays, written, total]
+                properties:
+                  reservationId: {type: string}
+                  campaignId: {type: string}
+                  positionId: {type: string}
+                  windowStart: {type: string, format: date-time}
+                  windowEnd: {type: string, format: date-time}
+                  displays: {type: integer}
+                  written:
+                    type: array
+                    items:
+                      type: object
+                      required: [tier, count]
+                      properties:
+                        tier: {type: [string, 'null']}
+                        count: {type: integer}
+                  total: {type: integer}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
   /admin/v1/advertiser-settings:
     get:
       tags: [Admin — Advertiser settings]
@@ -1249,6 +1314,12 @@ paths:
 
   # ------------------------------------------------------------------ Public
   /sellers.json:
+    servers: &rootServers
+      - url: https://{instance}
+        description: Served at the root of the instance, not under /api.
+        variables:
+          instance:
+            default: hub.example-retailer.com
     get:
       tags: [Public]
       operationId: getSellersJson
@@ -1262,8 +1333,32 @@ paths:
               schema: {$ref: '#/components/schemas/SellersJson'}
         '404': {description: Not published — DSP integration switched off, or Exchange settings incomplete.}
 
+  /assets/{file}:
+    servers: *rootServers
+    get:
+      tags: [Public]
+      operationId: getAsset
+      summary: A creative file from the asset store (POC stand-in for the platform's asset hosting)
+      description: |
+        Served at the root of the instance. The name is one the store
+        generated (`^[a-z0-9-]+\.[a-z0-9]+$`); anything else is a 404. Every
+        file is sent with `X-Content-Type-Options: nosniff` and a CSP that
+        blocks script, so an SVG creative cannot run code when opened
+        directly. On integration `assetUrl` points at the platform's own
+        hosting and this route goes away.
+      security: []
+      parameters:
+        - {name: file, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: The file, with its own content type.
+          content:
+            '*/*': {schema: {type: string, format: binary}}
+        '404': {description: No such file.}
+
   # -------------------------------------------------------------- Operations
   /healthz:
+    servers: *rootServers
     get:
       tags: [Operations]
       operationId: healthz
@@ -1276,6 +1371,7 @@ paths:
             application/json:
               schema: {type: object, required: [ok], properties: {ok: {type: boolean, enum: [true]}}}
   /readyz:
+    servers: *rootServers
     get:
       tags: [Operations]
       operationId: readyz
@@ -1329,7 +1425,7 @@ components:
     ValidationFailed: {description: 'error.code = validation_failed; details lists each field', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
     VariableNotPermitted: {description: 'error.code = variable_not_permitted; details names each variable', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
     ChecksFailed: {description: 'error.code = checks_failed; details lists each failed check with its reason', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
-    NotEligible: {description: 'error.code = not_approved | below_floor | advertiser_blocked | category_blocked | not_on_whitelist | not_invited | targeting_not_supported', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    NotEligible: {description: 'error.code = not_approved | below_floor | advertiser_blocked | category_blocked | not_on_whitelist | not_invited | targeting_not_supported | too_many_versions', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
     Conflict: {description: 'error.code = conflict (e.g. version changed, already submitted, window sold, bidding not open or closed, live not allowed)', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
     HasDependents: {description: 'error.code = has_dependents; details lists what depends on the item', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
     RateLimited: {description: 'error.code = rate_limited. Per partner token (default 50 requests/s, bursts of 100), or too many asset uploads in flight at once. Retry-After gives the seconds to wait.', headers: {Retry-After: {schema: {type: integer}}}, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
@@ -1345,7 +1441,7 @@ components:
           properties:
             code:
               type: string
-              enum: [validation_failed, variable_not_permitted, checks_failed, not_approved, below_floor, advertiser_blocked, category_blocked, not_on_whitelist, not_invited, targeting_not_supported, conflict, has_dependents, unauthorised, forbidden, not_found, rate_limited, internal_error]
+              enum: [validation_failed, variable_not_permitted, checks_failed, not_approved, below_floor, advertiser_blocked, category_blocked, not_on_whitelist, not_invited, targeting_not_supported, too_many_versions, conflict, has_dependents, unauthorised, forbidden, not_found, rate_limited, internal_error]
             message: {type: string}
             details:
               type: array
@@ -1374,7 +1470,7 @@ components:
         assumedViews: {type: integer}
     Position:
       type: object
-      required: [positionId, displayTypeId, displayTypeName, slot, slotLabel, storeCount, displayCount, screen, assignment, supportedTargeting, billingUnitHours, pricing]
+      required: [positionId, displayTypeId, displayTypeName, slot, slotLabel, storeCount, displayCount, screen, assignment, supportedTargeting, billingUnitHours, scored, pricing]
       properties:
         positionId: {type: string}
         displayTypeId: {type: string}
@@ -1422,6 +1518,17 @@ components:
             is a 404 (not sellable) and a bid on it is refused with a 409
             that says why (ticket, 30 Sep 2026). There is no fallback
             estimate: an invented audience number would end up on invoices.
+        maxCampaigns:
+          type: integer
+          minimum: 1
+          maximum: 10
+          description: |
+            The most campaigns (the default layer plus targeted versions, 1 +
+            targeted.length) a bid or reservation on this position may carry:
+            the slot's own Max campaigns, else its display type's default,
+            else 5. A campaign with more versions is refused with
+            `too_many_versions` (decision, 1 Oct 2026). Submission only guards
+            package size; this is the sellable count.
         pricing: {$ref: '#/components/schemas/Pricing'}
         reservePrice:
           type: [number, 'null']
@@ -1683,6 +1790,13 @@ components:
         clearingCpm: {type: [number, 'null']}
         currency: {type: string}
         reason: {type: [string, 'null']}
+        personalisedMultiplier:
+          type: [number, 'null']
+          description: |
+            The personalised multiplier snapshotted on the reservation when its
+            window cleared (ErN9Q2Q1, 30 Sep 2026): a personalised play bills
+            at the clearing CPM × this, every other play at the clearing CPM.
+            Null until the window has cleared. It is not a bid floor.
 
     Exchange:
       allOf:
@@ -2090,10 +2204,10 @@ components:
                 type: integer
                 description: |
                   Displays using this display type across the whole retail
-                  footprint (interface contract "Booking schedule reach
-                  counts", family 1). This prototype has no narrower
-                  per-slot store scope for an advertiser position, so it is
-                  also what "the slot's store scope" resolves to here.
+                  footprint: plain sizing from the display source. This
+                  prototype has no narrower per-slot store scope for an
+                  advertiser position, so it is also what "the slot's store
+                  scope" resolves to here.
               windows:
                 type: array
                 description: One per schedule window, in the same order.
@@ -2105,26 +2219,12 @@ components:
                     status: {type: string, enum: [booked, available, unavailable]}
                     booking:
                       type: [object, 'null']
-                      required: [reservationId, campaignId, advertiserId, partnerId, pricingType, type, advertiserName, partnerName, cpm, assumedViews, bookedRevenue, billedRevenue, reach, layers, personalisedTriggers]
+                      required: [reservationId, campaignId, advertiserId, partnerId, pricingType, type, advertiserName, partnerName, cpm, assumedViews, bookedRevenue, billedRevenue, layers, personalisedTriggers]
                       properties:
                         reservationId: {type: string}
                         campaignId: {type: string}
                         advertiserId: {type: [string, 'null']}
                         partnerId: {type: string}
-                        reach:
-                          type: [object, 'null']
-                          description: |
-                            The Localised layer's match count: present only
-                            when layers.localised is true, from the
-                            campaign's own targeted-version rules; null when
-                            no localised layer was submitted — personalised
-                            reach can't be predicted (interface contract
-                            "Booking schedule reach counts": "Localised
-                            only").
-                          required: [matchedDisplays, asOf]
-                          properties:
-                            matchedDisplays: {type: integer, description: Of the position's displayCount.}
-                            asOf: {type: string, format: date-time}
                         pricingType: {$ref: '#/components/schemas/PricingType'}
                         layers:
                           type: object
@@ -2556,6 +2656,7 @@ components:
             display type edits the same value), not the slot editor.
         venue:
           type: object
+          description: POC stand-in; PH Core owns venue and geo metadata and the exchange keeps no copy on integration (Q35). On integration this is read from PH Core's store/display record and the extensions PUT stops accepting it.
           properties:
             openOohVenueType: {type: string}
             orientation: {type: string, enum: [landscape, portrait]}

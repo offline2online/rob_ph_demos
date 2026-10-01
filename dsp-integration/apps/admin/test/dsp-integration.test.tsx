@@ -477,7 +477,7 @@ describe('Booking schedule', () => {
       positionId: 'menu_board.s2', displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', slot: 2, slotLabel: 'Supplier slot', partnerNames: ['Google DSP'], assignment: 'rtb', displayCount: 3,
       windows: [
         { start: '2026-09-21T00:00:00.000Z', status: 'available', booking: null },
-        { start: '2026-09-22T00:00:00.000Z', status: 'booked', booking: { reservationId: 'r1', campaignId: 'c1', advertiserId: 'swisse', partnerId: 'p_google', pricingType: 'personalised', type: 'reserve', advertiserName: 'Swisse', partnerName: 'Google DSP', cpm: 175, assumedViews: 1236, bookedRevenue: 216.3, billedRevenue: null, reach: null, layers: { default: true, localised: false, personalised: true }, personalisedTriggers: { computerVision: false, aggregateStore: false, individual: true } } },
+        { start: '2026-09-22T00:00:00.000Z', status: 'booked', booking: { reservationId: 'r1', campaignId: 'c1', advertiserId: 'swisse', partnerId: 'p_google', pricingType: 'personalised', type: 'reserve', advertiserName: 'Swisse', partnerName: 'Google DSP', cpm: 175, assumedViews: 1236, bookedRevenue: 216.3, billedRevenue: null, layers: { default: true, localised: false, personalised: true }, personalisedTriggers: { computerVision: false, aggregateStore: false, individual: true } } },
       ],
     }],
     revenue: [{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', bookedWindows: 1, sellableWindows: 2, bookedRevenue: 216.3, billedRevenue: 0 }],
@@ -535,7 +535,7 @@ describe('Booking schedule', () => {
     expect(within(grid).queryByText(/Amazon Ads DSP/)).not.toBeInTheDocument()
   })
 
-  it('stacks a tile up to three layers, with a reach count on the localised layer', async () => {
+  it('stacks a tile up to three layers, with no count on the localised layer', async () => {
     const allThree = {
       ...schedule,
       positions: [{
@@ -546,7 +546,7 @@ describe('Booking schedule', () => {
           {
             start: '2026-09-22T00:00:00.000Z', status: 'booked',
             booking: {
-              ...schedule.positions[0].windows[1].booking, pricingType: 'localised', reach: { matchedDisplays: 3, asOf: '2026-09-20T00:00:00.000Z' },
+              ...schedule.positions[0].windows[1].booking, pricingType: 'localised',
               layers: { default: true, localised: true, personalised: true },
               personalisedTriggers: { computerVision: true, aggregateStore: false, individual: false },
             },
@@ -557,15 +557,14 @@ describe('Booking schedule', () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/booking-schedule': allThree })))
     renderAt('/booking-schedule')
     const grid = await screen.findByLabelText('Booking schedule', { selector: '.ag-theme-alpine' })
-    /* All three layers on the one tile: DEFAULT, LOC with the reach count
-       against the display count, and PERS with its lit trigger icon
+    /* All three layers on the one tile: DEFAULT, LOC (a pill, no count), and PERS with its lit trigger icon
        (ticket "Booking schedule: personalised trigger icons"). The display
        count itself now sits in brackets on the Position cell rather than
        its own Displays column (ticket "remove the displays column … show
        that number of displays in brackets after the display name", 22
        Sep). */
     expect(within(grid).getByText('(4)')).toBeInTheDocument() // the display count, on the Position cell
-    expect(await within(grid).findByText('3 of 4')).toBeInTheDocument()
+    expect(within(grid).queryByText('3 of 4')).not.toBeInTheDocument()
     expect(within(grid).getByText('DEFAULT')).toBeInTheDocument()
     /* LOC and PERS each appear twice: once on the tile's own layer row, and
        once more in the Position cell's row-level "N of M windows booked"

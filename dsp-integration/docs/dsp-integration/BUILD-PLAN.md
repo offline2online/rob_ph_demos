@@ -1,15 +1,20 @@
 # Build plan — Display Types & DSP Integration
 
-Status: **packages 1–11 built** (19 Sep 2026): the admin experience is
-complete, behind the flag. Stopped for Rob's review before the exchange
-packages (12–17).
+> **Historical — superseded (1 Oct 2026).** This is the build record of the 19–24 Sep
+> POC, kept as written; the lines marked "(superseded …)" below were corrected
+> against the code on 1 Oct 2026. What is true now is in
+> [REQUIREMENTS.md](REQUIREMENTS.md), [api/PH-CORE-BOUNDARIES.md](api/PH-CORE-BOUNDARIES.md)
+> and [README.md](../../README.md). Work rides the `deploy/dsp-integration` train
+> (branch `feature/dsp-integration` merged to `main` on 21 Sep 2026).
+
+Status: **all 17 packages built** (superseded: the 19 Sep note said "packages 1–11 built"); the exchange packages 12–17 followed. The build is merged to `main` and continues on the `deploy/dsp-integration` train.
 
 ## 1. Setup and git
 
 - The POC lives in the folder `dsp-integration/` inside `offline2online/rob_ph_demos`.
   I only change files in that folder, commit as I go, and don't push until
   Rob asks.
-- Branch `feature/dsp-integration` was created from `main` (19 Sep 2026).
+- Branch `feature/dsp-integration` was created from `main` (19 Sep 2026) and merged on 21 Sep 2026 (superseded: work now rides `deploy/dsp-integration`).
   Uncommitted changes outside this folder are left untouched; only
   `dsp-integration/` paths are ever staged.
 - Current contents of the folder:
@@ -38,9 +43,9 @@ the stand-in for each existing-platform dependency.
 | How campaigns and targeting are created | `CampaignSource` stand-in, which stores targeting as AND-groups of OR-conditions |
 | Playback data for billing | `PlaybackSource`, seeded `{displayId, campaignId, playedAt, durationSec}`, read-only |
 | Assets | `AssetStore` → `data/assets/` (git-ignored) |
-| Assumed views (VAC-d) | `AudienceSource`, seeded per display type slot |
+| Assumed views (VAC-d) | `AudienceSource`: a per-slot `audience_vacd` row, or the display type's default VAC-d with a per-display override (0035); `scored` says whether a slot has a figure (superseded: was "seeded per display type slot") |
 | Feature flag | `Flags` interface reading `DSP_INTEGRATION_ENABLED` (flag name `dspIntegration`), off by default |
-| DSPs | `DspClient` per provider with a mock by default (Amazon seeded "refresh token rejected"), plus a mock bidder; no real calls |
+| DSPs | One `DspProvider` module per DSP since 29 Sep 2026 (superseded: was a `DspClient` per provider; `dsp/DspClient.ts` remains as the shared `connect()` shape and helper types), with a mock by default (Amazon seeded "refresh token rejected"), plus a mock bidder; no real calls |
 
 ### Design system (ph-designer)
 
@@ -185,7 +190,7 @@ dsp-integration/
     src/features/playlist-management/
     src/features/dsp-integration/
     src/features/advertisers/
-    src/features/campaigns-poc/    stand-in table (delete-safe)
+    src/features/campaigns-poc/    stand-in table (superseded: now the Campaign status tab; delete-safe then)
     src/api/                       typed client (TanStack Query)
   apps/api/                        Node + Fastify + SQLite
     src/platform/                  stand-in sources + POC stand-in routes
@@ -268,7 +273,7 @@ and ends with a `BUILD-PLAN.md` update.
      bidder fields are complete. Secrets are returned only as `{set:true}`.
 10. **Advertisers.**
     - `features/advertisers/AdvertisersPage`.
-    - API: `admin/advertisers.ts`, which returns 403 for `hq_user`. The nav
+    - API: `admin/advertisers.ts`, which returns 403 for a non-admin session (superseded: the `hq_user` stand-in role). The nav
       item is hidden for non-admin sessions.
 11. **Campaign approval.**
     - `packages/campaign-approval/`:
@@ -457,7 +462,7 @@ All approved by Rob (decision 5). The reason for each change is given.
     a DSP can only return through `banner`. `minduration` is 1 and
     `maxduration` the slot, matching the upload check (no longer than the
     slot).
-  - No `device.geo`: stores have no location yet (spec open question 35).
+  - No `device.geo` (superseded: open question 35 was decided on 29 Sep 2026 — venue and geo are PH Core's, read-only; see api/PH-CORE-BOUNDARIES.md).
   - `badv` needs domains, but the lists hold names. A blacklist entry that
     is a domain goes as is; a name goes as that advertiser's domain when the
     DSP returned one on connect. To match bids, seats now keep the
@@ -550,9 +555,9 @@ since the picker was removed (Rob, 20 Sep) and nothing edits it now.
    platform's asset URL. No contract change. To be revisited later.
 
 8. ~~Asset check limits~~ **Resolved (Rob, 19 Sep):** images up to 10 MB,
-   video up to 100 MB (`assetLimits` in `config.ts`). The rest stays as
+   video up to 100 MB (`assetLimits` in `config.ts`) (superseded: 100 MB / 200 MB per asset). The rest stays as
    built: PNG, JPEG or MP4; 20,000 kbps; at least the canvas (or a zone) in
-   the same shape within 1%; a video no longer than its slot.
+   the same shape within 1% (superseded: ratio within ±5%, each side at least 50% of the canvas); a video no longer than its slot.
 9. ~~How targeting shrinks a forecast~~ **Accepted (Rob, 19 Sep):** the
    `AudienceSource.targetedShare` seam, with the POC halving the audience per
    AND group, stays until the platform's own targeting data answers it.
@@ -614,14 +619,14 @@ since the picker was removed (Rob, 20 Sep) and nothing edits it now.
 
 ## 11. Defaults in use (brief, *Defaults for open questions*)
 
-- Q27: 24-hour window
+- Q27: 24-hour window (superseded: OQ27 — the play-window length is the billing unit, set per slot, else per display type, else the company default; billing is per window, not a fixed 24 h)
 - Q29: bill realised plays only
-- Q38: resolved (Rob, 29 Sep 2026) — the approved version keeps running during re-review; approval swaps to the edit atomically, rejection discards it
+- Q38: resolved (Rob, 29 Sep 2026) — the approved version keeps running during re-review; approval swaps to the edit atomically, rejection discards it (the earlier "old version stops during re-review" is reversed)
 - Q39: HQ Admin approves
 - Q41: polling, with a webhook hook
 - Q46: 500 QPS / 300 ms
 - Q47: don't block the delete; log the sold/reserved count
-- Q48: at most 100 SKUs per condition
+- Q48: at most 100 values per condition — a value cap only (superseded: not "SKU validation"; SKU validation is PH Core's)
 - Q49: Computer Vision variables go to All connected DSPs
 
 Each is configurable in `apps/api/src/config.ts`.
@@ -677,7 +682,7 @@ Each is configurable in `apps/api/src/config.ts`.
 | Campaign Status: renamed, table tidied, only advertiser and DSP campaigns, and a campaign page (Rob, 20 Sep; three tickets) | Built | "Campaigns (POC)" is now **Campaign Status** (`/campaign-status`, folder `features/campaign-status/`; the integration guide's step 5 follows). The table lists **only** campaigns submitted by advertisers and DSPs — HQ's own never appear. The status chips above it are gone: Status, Name, Advertiser and DSP each have a column filter with the design system's floating-filter row, and the header stays in view while the rows scroll (`stickyHeader` on the shared grid). The campaign name opens **CampaignDetail**, laid out like the platform's own campaign page (checked against demo campaign 7722): the name, status and activation in the header, then Campaign Brief (what the advertiser submitted), Targeting (the rules as the module summarises them), Scheduling (the play windows it has won or reserved, from `booking-schedule?campaignId=`), Storyboard & Copy (empty — HQ authors those) and Creative (the review panel: the creative on its canvas, the automated checks, Approve and Reject). Approve and Reject work from the table and from the campaign. The example-creative section at the bottom of the old page is gone. Contract: `campaignId` on a booking, and a `campaignId` filter on the booking schedule. Tests: API +1, admin +2. Browser-checked |
 | Targeting variables: staff languages and an individual Reason for Visit (Rob, 20 Sep) | Built | The **Languages Spoken by Store Staff** tooltip now says these are the staff on shift right now — the ones signed into the staff tablet or Retail Admin through virtual queue management and appointments. New personalisation variable **Reason for Visit** (the one visitor in front of the screen), directly above Device Type, with list operators like the platform's own individual variable; the aggregate one above it keeps the comparison operators. Device Type's tooltip now says it is the visitor in front of the screen. 26 variables |
 | Where DSP Integration opens (Rob, 20 Sep) | Built | The section opens on **Exchange settings** until the four seller-of-record fields are complete and `sellers.json` is published, and on **Advertiser settings** after that (`DspIndex`). Tests: admin +1. Browser-checked |
-| Floor price and multiplier tooltips explain the maths (Rob's board ticket, 19 Sep) | Built | The Floor price (CPM) tooltip now carries Rob's worked example as a table — footfall → visibility (ROTS) → attention (VAC) → share of time → 27 VAC-d, then 100 × 27 ÷ 1,000 = $2.70 for a two-hour daypart. The Personalised tooltip carries the same example at 150 CPM ($4.05) and the Interactive one at 300 CPM ($8.10), stacked at 450 CPM ($12.15), noting that the advertiser's floor multiplier scales that again. `InfoTip`/`Field` take a tooltip width so the table fits. Tests: admin +1. Browser-checked |
+| Floor price and multiplier tooltips explain the maths (Rob's board ticket, 19 Sep) | Built | The Floor price (CPM) tooltip now carries Rob's worked example as a table — footfall → visibility (ROTS) → attention (VAC) → share of time → 27 VAC-d, then 100 × 27 ÷ 1,000 = $2.70 for a two-hour daypart. The Personalised tooltip carries the same example at 150 CPM ($4.05) and the Interactive one at 300 CPM ($8.10), stacked at 450 CPM ($12.15), noting that the advertiser's floor multiplier scales that again. (Superseded: the floor is the base only. Interactive is a cost per engagement since 21 Sep, and the personalised multiplier is a per-play charge at billing since 30 Sep, not a floor. The 450/360 examples no longer apply.) `InfoTip`/`Field` take a tooltip width so the table fits. Tests: admin +1. Browser-checked |
 | Booking schedule with booking revenue (Rob, 19 Sep; filed on the board) | Built | New admin endpoint `GET /admin/v1/booking-schedule?from=&to=` (contract addition) and a read-only page, **DSP Integration → Advertiser settings → Available Inventory → Booking schedule**: a revenue table per display type (booked windows, booked revenue = booked CPM × assumed views ÷ 1000, billed revenue from billing once played, with a total row), then the schedule — one row per advertiser slot, one column per play window: booked (advertiser, bookmark = reserved / gavel = won, the CPM it was booked at, booked revenue; hover for DSP, views and billed), Available, or — (can no longer be sold). Live bookings only; default the current window and the next 13; a date range of up to 92 days; no save bar. Not in the prototype: built from ph-designer patterns (SubPageHeader, SectionLabel, AG Grid with a pinned first column and horizontal scroll inside the grid, AntD RangePicker). Tests: API +3, admin +2. Browser-checked, including booked cells |
 | Bidding play-window length and auction cutoff in Advertiser settings → Pricing | Built | The Auction schedule section (Q13): Auction opens, Play-window length, Auction cutoff time; contract fields added; migration 0015 |
 
@@ -1156,3 +1161,7 @@ back on the partner, which is spec §8's `seats`, "pulled on connect". A
 tester adds an advertiser through the control API, re-tests the connection,
 and the new advertiser appears on the Advertisers screen and in the slot
 picker.
+
+## 13. Progress since 24 Sep 2026
+
+The progress log above stops on 24 Sep 2026. Later work is recorded where it is current: the board tickets on **Display Types & DSP Integration**, the `E2E Test Results` documents, `REQUIREMENTS.md`'s version log, and `api/PH-CORE-BOUNDARIES.md`.

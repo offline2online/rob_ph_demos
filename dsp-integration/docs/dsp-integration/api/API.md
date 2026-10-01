@@ -19,7 +19,13 @@ These are existing Personalisation Hub functionality and are **not** changed
 or exposed by this build: playback and what plays on a device, playlist
 playback behaviour, targeting evaluation, distribution to players, playback
 logging and campaign playback analytics. There is no delivery or analytics
-endpoint.
+endpoint, and **no billing endpoint yet**: billing runs in the Billing module
+(`apps/api/src/billing/index.ts`, one seam: a cleared reservation plus
+`PlaybackSource.totals` in, one idempotent line item out; see
+PH-CORE-BOUNDARIES.md, "Billing — one module, one seam"). The line item,
+including the personalised split (`personalisedPlays`, `personalisedViews`,
+`personalisedMultiplier`, `personalisedAmount`, 0034), is stored and read only
+by the booking schedule's billed total; no read of it is in this contract.
 
 ## Surfaces
 
@@ -46,7 +52,7 @@ All paths are served from the retailer's own instance
   permissions it per DSP and never evaluates it.
   Codes: `validation_failed`, `variable_not_permitted`, `checks_failed`,
   `not_approved`, `below_floor`, `advertiser_blocked`, `category_blocked`,
-  `not_on_whitelist`, `not_invited`, `targeting_not_supported`, `conflict`,
+  `not_on_whitelist`, `not_invited`, `targeting_not_supported`, `too_many_versions`, `conflict`,
   `has_dependents`, `unauthorised`, `forbidden`, `not_found`,
   `rate_limited` (429, with `Retry-After`) and `internal_error` (500, a
   server fault; no internals are returned). A client error Fastify raises
@@ -57,7 +63,9 @@ All paths are served from the retailer's own instance
     partners (`PH_MAX_UPLOADS_IN_FLIGHT`; `429`);
   - forecast: at most 200 `positionIds`, each once;
   - content package: `name` and version ids ≤ 200 characters, ≤ 20
-    targeted versions, ≤ 10 AND groups, ≤ 20 conditions per group, ≤ 100
+    targeted versions (a package-size guard at submission; the sellable
+    count is the slot's Max campaigns, `maxCampaigns` on the position,
+    enforced at bid and reservation), ≤ 10 AND groups, ≤ 20 conditions per group, ≤ 100
     values per condition, each value ≤ 200 characters;
   - writes (create, upload, submit, reserve, bid) need a **connected** DSP —
     `409 conflict` otherwise; reads stay open to the authenticated partner.
@@ -133,8 +141,9 @@ A position returns: id, display type, slot and label, zone, store and
 display counts (unique platform store IDs and displays using the display type), screen (width, height, orientation, slot duration, loop
 length, share of voice, OpenOOH venue type), assignment (`rtb`,
 `whitelist_only`, `reserved`), assumed views per window, pricing (floor
-and effective floors for localised, personalised, interactive, and
-personalised + interactive) for the caller's advertiser, and `reservePrice`
+and the one effective floor for the caller's advertiser,
+`personalisedMultiplier` and `costPerEngagement`; the multiplier is not a floor, see
+*Pricing maths*), and `reservePrice`
 (a CPM premium to reserve the position in advance of the open auction, or
 null — the resolved value: a slot's own override, else its display type's
 reserve price default, else null; set on Advertisers / Inventory). A
@@ -174,7 +183,7 @@ selected), `match_exactly`, `exclude_or` (excludes selected [OR]),
 `exclude_and` (excludes selected [AND]), `equal`, `not_equal`,
 `greater_than`, `less_than`, `greater_than_or_equal`, `less_than_or_equal`.
 Which ones a variable takes is listed by `GET /v1/targeting/attributes`.
-At most 100 values per condition (SKU lists).
+At most 100 values per condition: a cap on list length (SKU lists included). Whether a SKU exists is PH Core's to say; the exchange only counts.
 
 **Validation only.** Every condition's variable must be enabled for the
 calling DSP, otherwise `422 variable_not_permitted` naming each variable.
@@ -213,7 +222,7 @@ queue (`apps/api/src/config.ts` → `assetLimits`, enforced in
 
 | Method | Path | Purpose | Main errors |
 |---|---|---|---|
-| POST | `/v1/reservations` | `type: reserve` or `type: bid`, both with `bidCpm`, for a `positionId` and `windowStart`, with an approved and activated `campaignId` (`not_approved` otherwise). A reserve on a position with a `reservePrice` is a reserve-price booking (see below). A reserve on a position held for a named advertiser with no reserve price is booked at its agreed `bidCpm` (Q11). Any other reserve gets `conflict`. A bid is taken only while the window's auction is open: from `auctionOpensHours` before the auction cutoff until the cutoff. A reserve can be made any time before the cutoff. Both are refused once a tick has claimed the window's auction, if that is earlier (`conflict`). `bidCpm` is at most the exchange ceiling (10,000; `validation_failed`). One open bid or reservation per advertiser and window, enforced by the database (migration 0026). The campaign's type must be one the position supports (`supportedTargeting`; `targeting_not_supported` otherwise). | `not_approved`, `below_floor`, `advertiser_blocked`, `category_blocked`, `not_on_whitelist`, `targeting_not_supported`, `conflict` |
+| POST | `/v1/reservations` | `type: reserve` or `type: bid`, both with `bidCpm`, for a `positionId` and `windowStart`, with an approved and activated `campaignId` (`not_approved` otherwise). A reserve on a position with a `reservePrice` is a reserve-price booking (see below). A reserve on a position held for a named advertiser with no reserve price is booked at its agreed `bidCpm` (Q11). Any other reserve gets `conflict`. A bid is taken only while the window's auction is open: from `auctionOpensHours` before the auction cutoff until the cutoff. A reserve can be made any time before the cutoff. Both are refused once a tick has claimed the window's auction, if that is earlier (`conflict`). `bidCpm` is at most the exchange ceiling (10,000; `validation_failed`). One open bid or reservation per advertiser and window, enforced by the database (migration 0026). The campaign's type must be one the position supports (`supportedTargeting`; `targeting_not_supported` otherwise). The campaign's version count (the default layer plus its targeted versions) must not exceed the position's `maxCampaigns` (`too_many_versions` otherwise). | `not_approved`, `below_floor`, `advertiser_blocked`, `category_blocked`, `not_on_whitelist`, `targeting_not_supported`, `too_many_versions`, `conflict` |
 | GET | `/v1/reservations/{id}` | Outcome: `pending`, `won`, `lost`, `reserved`, `rejected`, with clearing CPM and reason. | `not_found` |
 
 A won or reserved campaign is handed to the existing campaign system for
@@ -294,7 +303,7 @@ The Admin API keeps answering, and switching off deletes nothing.
 | GET | `/admin/v1/available-inventory` | Rows: display type, playlist, slot, position, `assignedTo` (now also `buyersListId`/`buyersListName`, null unless the slot is a private auction), `supportedTargeting`, `reservePrice` (resolved), `reservePriceOverride` (this slot's own, null = inheriting) and `displayTypeReservePrice` (the display type's default, same on every row of that type), likewise `billingUnitHours` (resolved, always a number)/`billingUnitHoursOverride`/`displayTypeBillingUnitHours` (23 Sep 2026; when neither is set the slot inherits `companyPlayWindowHours`, the company-wide play window, platform default 24 — OQ27, 29 Sep 2026: this resolved value is the slot's play-window length, see "Play windows are per slot" below), plus `dsps` (each DSP and its advertisers) for the Assigned to picker. No advertisers column. |
 | PUT | `/admin/v1/available-inventory` | Save changes — per slot, `assignedTo` (`partnerIds`, `advertisers`, `whitelistOnly`, `buyersListId`; nothing chosen = any connected DSP, an advertiser's DSP is added automatically, and `buyersListId` is mutually exclusive with `advertisers`/`whitelistOnly` — `validation_failed` if more than one is set, or if `buyersListId` names no buyers list), `supportedTargeting` (at least one of `localised`, `personalised`, `interactive`), `reservePrice`/`reservePriceDefault` (this slot's own override and the display type's own default — a CPM, or null; real inheritance, 22 Sep — always send the slot's current values, there is no "unchanged" omission) and, the same shape, `billingUnitHours`/`billingUnitHoursDefault` (whole hours, 1–8760, or null; must be the same `…Default` on every row for a given display type in one request). A billing-unit change that would alter the resolved window length of a slot that still has live windows bid on, booked or not yet billed is refused (`validation_failed` on that row's `billingUnitHours`, naming when the last one ends; OQ27, 29 Sep 2026). The editable fields of a slot; its label and owner are set on its display type. Admin only. Removing an advertiser from a slot with a live booking is `409 has_dependents` (slots are sold); lock the slot instead. |
 | PUT | `/admin/v1/available-inventory/lock` | Lock a sold slot against new sales (`displayTypeId`, `slot`). New bids, reservations and auction wins are refused (`409 conflict` on the Partner API; the window reads `unavailable`); existing bookings run on. `409 conflict` if nothing is booked on the slot. No unlock: the lock releases itself once the booking schedule has no live booking on the slot (bookings only, never playback). Rows carry `salesLocked` / `salesLockedUntil`. |
-| GET | `/admin/v1/booking-schedule?from=&to=` | Reached from Available Inventory. Every advertiser-owned slot across its play windows: booked (advertiser, DSP, reserve or bid, the CPM it was booked at, booked and billed revenue), available or unavailable; plus booking revenue per display type and in total. Live bookings only (never Test mode). Default: the current window and the next 13; at most 92 days. `campaignId`, `advertiserId` or `partnerId` narrow it, and `advertiserId` leaves only the positions that advertiser holds; with `campaignId` the range covers all of that campaign's bookings. Each booking says which campaign type it is, and the response also totals the bookings by campaign type. `dsps` lists the DSPs and, under each, **only the advertisers with something booked in the range**, because that is what the filter is for. Each position also carries `displayCount` (displays using its display type across the whole retail footprint), and each booking a `layers` object (`default`, `localised`, `personalised` — which of the one advertiser's three layers this purchase actually carries, ticket "Booking schedule: single-advertiser stacking tile"), a `reach` object (`matchedDisplays`, `asOf`) when `layers.localised`, `null` otherwise, and a `personalisedTriggers` object (`computerVision`, `aggregateStore`, `individual`) when `layers.personalised`, `null` otherwise (ticket "Booking schedule: personalised trigger icons") — the client's stacked tile (see REQUIREMENTS §6) is built entirely from these fields plus `pricingType`, with no separate endpoint. |
+| GET | `/admin/v1/booking-schedule?from=&to=` | Reached from Available Inventory. Every advertiser-owned slot across its play windows: booked (advertiser, DSP, reserve or bid, the CPM it was booked at, booked and billed revenue), available or unavailable; plus booking revenue per display type and in total. Live bookings only (never Test mode). Default: the current window and the next 13; at most 92 days. `campaignId`, `advertiserId` or `partnerId` narrow it, and `advertiserId` leaves only the positions that advertiser holds; with `campaignId` the range covers all of that campaign's bookings. Each booking says which campaign type it is, and the response also totals the bookings by campaign type. `dsps` lists the DSPs and, under each, **only the advertisers with something booked in the range**, because that is what the filter is for. Each position also carries `displayCount` (displays using its display type across the whole retail footprint), and each booking a `layers` object (`default`, `localised`, `personalised` — which of the one advertiser's three layers this purchase actually carries, ticket "Booking schedule: single-advertiser stacking tile"), and a `personalisedTriggers` object (`computerVision`, `aggregateStore`, `individual`) when `layers.personalised`, `null` otherwise (ticket "Booking schedule: personalised trigger icons") — the client's stacked tile (see REQUIREMENTS §6) is built entirely from these fields plus `pricingType`, with no separate endpoint. |
 
 ### Shared targeting variables
 
@@ -497,6 +506,24 @@ integration, and nothing else in the build may depend on their internals.
   reserved windows are kept. Rejected campaigns and their assets are
   deleted after 30 days (spec §3), never their audit trail.
 
+**Not on `/api`.** `/sellers.json`, `/healthz`, `/readyz` and `/assets/{file}`
+are served at the root of the instance; `openapi.yaml` gives each its own
+`servers` entry. `/assets/{file}` serves a creative the asset store generated
+(POC stand-in for the platform's hosting), with `nosniff` and a CSP that
+blocks script on every response.
+
+**Authentication tokens are spec only.** Partner tokens today are one static
+bearer per DSP from config. The scoped, rotating credentials of AUTH-CREDENTIAL
+(token endpoint, scope model) are specified in REQUIREMENTS §9.5 and
+PH-CORE-BOUNDARIES.md and are **not built**: nothing in this API issues or
+scopes a token.
+
+**Display VAC-d.** A display's own VAC-d override (`displays.vacd_override`,
+migration 0035) has no endpoint: it is a PH Core fact, set in the stand-in's
+data only. A window the retailer has locked reads `status: unavailable`
+without a reason; the lock is in the admin inventory
+(`salesLocked`), not in the Partner API.
+
 ## Operations endpoints
 
 For whatever supervises the process — Kubernetes probes, a load balancer's
@@ -539,7 +566,7 @@ DSPs receive requests; nothing they win is billed or handed off.
   "imp": [{
     "id": "1",
     "video": { "w": 1920, "h": 1080, "minduration": 15, "maxduration": 15 },
-    "bidfloor": 150.0,
+    "bidfloor": 100.0,
     "bidfloorcur": "AUD",
     "qty": { "multiplier": 412.0, "sourcetype": 1 },
     "exp": 86400
@@ -563,7 +590,8 @@ DSPs receive requests; nothing they win is billed or handed off.
 }
 ```
 
-- `bidfloor` = effective floor CPM for the position; `bidfloorcur` = company
+- `bidfloor` = effective floor CPM for the position (the base floor × the
+  advertiser's multiplier; 100 in this example, not a personalised floor); `bidfloorcur` = company
   currency.
 - `qty.multiplier` = assumed views for the window (VAC-d); `sourcetype` 1 =
   measurement vendor/estimate, 2 = counted by Vision/AI or MIST where enabled.

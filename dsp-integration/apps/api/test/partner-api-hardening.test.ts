@@ -231,4 +231,23 @@ describe('GET /v1/campaigns/{id} reads back what was stored', () => {
     expect(res.json()).toMatchObject({ campaignId: id, status: 'draft', default: { pricingType: 'localised' }, targeted })
     expect((await app.inject({ method: 'GET', url: '/api/v1/campaigns/c_nope', headers: GOOGLE })).statusCode).toBe(404)
   })
+
+  /* Security review addendum, 1 Oct 2026: the read-back returns stored targeting, so another
+     partner must get exactly what an unknown id gets (no existence oracle), and the body
+     names no advertiser or partner (only the advertiser id the caller itself submitted). */
+  it('answers another partner exactly as it answers an unknown id, and names no advertiser or partner', async () => {
+    const { app, create } = await setup()
+    const id = (await create(SWISSE)).json().campaignId
+    const AMAZON = { authorization: 'Bearer poc-token-amazon-dsp' }
+    const other = await app.inject({ method: 'GET', url: `/api/v1/campaigns/${id}`, headers: AMAZON })
+    const unknown = await app.inject({ method: 'GET', url: '/api/v1/campaigns/c_nope', headers: AMAZON })
+    expect(other.statusCode).toBe(404)
+    expect(other.json()).toEqual(unknown.json())
+    const own = (await app.inject({ method: 'GET', url: `/api/v1/campaigns/${id}`, headers: GOOGLE })).json()
+    expect(Object.keys(own)).not.toContain('advertiserName')
+    expect(Object.keys(own)).not.toContain('partnerName')
+    expect(Object.keys(own)).not.toContain('partnerId')
+    /* An HQ campaign is not any partner's. */
+    expect((await app.inject({ method: 'GET', url: '/api/v1/campaigns/c_breakfast', headers: GOOGLE })).statusCode).toBe(404)
+  })
 })

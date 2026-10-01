@@ -21,8 +21,6 @@ interface ListQuery {
 }
 
 export const inventoryRoutes = (ctx: Context): FastifyPluginAsync => async (app) => {
-  /* One visibility check per request, applied per position (positions.ts). */
-  const visible = (c: Caller) => allPositions(ctx).filter(visibilityFor(ctx, c))
   /* One position: find it, then check the caller may see it — rather than
      working out visibility for every position in the estate to find one.
      A position the caller may not buy is a 404, exactly as if it didn't
@@ -67,7 +65,18 @@ export const inventoryRoutes = (ctx: Context): FastifyPluginAsync => async (app)
        handed to each position, instead of one query per position — 2,400
        of them a request on a large estate (review, 24 Sep 2026). */
     const taken = byStatus ? ctx.reservations.takenInRange(new Date(range[0].getTime() - longestWindowMs(ctx)).toISOString(), new Date(Math.max(range[range.length - 1].getTime(), nextWindow(ctx).getTime() + longestWindowMs(ctx)) + 1).toISOString()) : undefined
-    const items = visible(c).filter((p) => {
+    /* Only as many positions as this page needs, plus one to know whether
+       there is another page — not the whole estate's visibility and filters
+       every request. Visibility reads each position's audience score (an
+       unscored slot is hidden, 30 Sep 2026), and doing that for all 2,408
+       positions of a 15,000-display estate to return 50 took an inventory
+       page from 475 to 112 req/s (bench, 1 Oct 2026). Order is unchanged. */
+    const start = Number(q.cursor) || 0
+    const limit = Math.min(Math.max(Number(q.limit) || 50, 1), 200)
+    const see = visibilityFor(ctx, c)
+    const items: PositionRef[] = []
+    const matches = (p: PositionRef) => {
+      if (!see(p)) return false
       if (q.displayTypeId && p.displayType.id !== q.displayTypeId) return false
       if (q.touchPoint && p.displayType.touchPoint !== q.touchPoint) return false
       /* Store IDs and regions are the platform's (StoreSource, Q10). The
@@ -84,12 +93,15 @@ export const inventoryRoutes = (ctx: Context): FastifyPluginAsync => async (app)
         return windows.some((w) => windowStatus(ctx, p, c, w, facts) === byStatus)
       }
       return true
-    })
-    const start = Number(q.cursor) || 0
-    const limit = Math.min(Math.max(Number(q.limit) || 50, 1), 200)
+    }
+    for (const p of allPositions(ctx)) {
+      if (!matches(p)) continue
+      items.push(p)
+      if (items.length > start + limit) break
+    }
     return {
       items: items.slice(start, start + limit).map((p) => positionView(ctx, p, c)),
-      nextCursor: start + limit < items.length ? String(start + limit) : null,
+      nextCursor: items.length > start + limit ? String(start + limit) : null,
     }
   })
 

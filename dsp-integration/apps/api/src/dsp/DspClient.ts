@@ -1,7 +1,9 @@
-/* One client per DSP, speaking that DSP's real API over HTTP. In the POC
-   every base URL points at the mock DSP service (apps/dsp-mocks); on
-   integration engineering sets the real ones (sandbox first). No real DSP
-   is ever called from the POC. */
+/* The connect() shape every DSP module implements, plus the shared helper
+   types (Seat, Fetch, unreachable, domainOf). Since 29 Sep 2026 each DSP is
+   one DspProvider module (DspProvider.ts); this file is no longer "a client per
+   DSP". In the POC every base URL points at the mock DSP service
+   (apps/dsp-mocks); on integration engineering sets the real ones (sandbox
+   first). No real DSP is ever called from the POC. */
 /* An advertiser pulled from the DSP. `domain` (not returned by the API) is
    how a bid response's adomain is matched to it. */
 export interface Seat { id: string; name: string; domain?: string }

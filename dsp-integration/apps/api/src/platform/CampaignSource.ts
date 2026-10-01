@@ -1,6 +1,13 @@
 /* Stand-in for the existing campaign service (the seam package 11's
    approval module plugs into). Stores targeting in the existing structure:
-   AND groups of OR conditions. Evaluation stays with the existing platform. */
+   AND groups of OR conditions. Evaluation stays with the existing platform.
+
+   There are two CampaignSource interfaces on purpose: this one (the host's
+   read/write view, with bookSlot and createCampaign) and the approval
+   module's (packages/campaign-approval/src/adapter/CampaignSource.ts: five
+   methods, a CampaignRef view, string asset versions) that must NOT be
+   handed bookSlot or createCampaign. On integration both are built from one
+   real campaign source in context.ts: one object, two facets. */
 import type { Campaign, CampaignBrief } from '@ph-dsp/types'
 import { type Db, fromJson, prepared, toJson } from '../db/db'
 
@@ -13,7 +20,8 @@ export interface CampaignRecord extends Omit<Campaign, 'schedule' | 'campaignCou
   targeting: unknown
 }
 
-export interface CampaignFilter { source?: Campaign['source']; advertiserId?: string }
+/* Named apart from the approval module's CampaignFilter (different shape). */
+export interface CampaignListFilter { source?: Campaign['source']; advertiserId?: string }
 
 export interface NewCampaign {
   id: string; name: string; targeting: unknown; source: Campaign['source']; advertiserId: string
@@ -39,16 +47,19 @@ export interface CampaignAsset {
 
 export interface CampaignSource {
   getCampaign(id: string): CampaignRecord | null
-  listCampaigns(filter?: CampaignFilter): CampaignRecord[]
+  /* Ordered by creation, then id — the same order as the approval adapter's list. */
+  listCampaigns(filter?: CampaignListFilter): CampaignRecord[]
   setActivation(id: string, enabled: boolean): CampaignRecord | null
-  onCampaignChanged(listener: (id: string) => void): () => void
   /* Campaigns submitted through the Partner API (package 12), stored in the existing structure. */
   createCampaign(c: NewCampaign): CampaignRecord
   addAsset(a: Omit<CampaignAsset, 'version' | 'contentHash'> & { contentHash?: string | null }): CampaignAsset
   /* The latest asset for each version role ("default" or a targeted version
-     id) — as of `atVersion` when given (the approved version, Q38). A
-     discarded (rejected) edit's assets are never included. */
-  latestAssets(campaignId: string, atVersion?: number): CampaignAsset[]
+     id) — as of `atVersion` when given: the approval adapter's opaque
+     `assetVersion` string, exactly as `liveAssetVersion` returned it (the
+     approved version, Q38). Any string that changes with the creative is
+     legal there, so resolving it to assets is this seam's job, never the
+     caller's. A discarded (rejected) edit's assets are never included. */
+  latestAssets(campaignId: string, atVersion?: string): CampaignAsset[]
   /* Hand-off (package 16): book a campaign into a slot for a window. */
   bookSlot(b: SlotBooking): SlotBooking
   bookings(campaignId?: string): SlotBooking[]
@@ -74,7 +85,6 @@ const toRecord = (r: Row): CampaignRecord => ({
 })
 
 export function sqliteCampaignSource(db: Db): CampaignSource {
-  const listeners = new Set<(id: string) => void>()
   const get = (id: string) => {
     const r = prepared(db, 'SELECT * FROM campaigns WHERE id = ?').get(id) as Row | undefined
     return r ? toRecord(r) : null
@@ -82,18 +92,13 @@ export function sqliteCampaignSource(db: Db): CampaignSource {
   return {
     getCampaign: get,
     listCampaigns(filter = {}) {
-      return (prepared(db, 'SELECT * FROM campaigns ORDER BY rowid').all() as unknown as Row[])
+      return (prepared(db, 'SELECT * FROM campaigns ORDER BY created_at, id').all() as unknown as Row[])
         .map(toRecord)
         .filter((c) => (!filter.source || c.source === filter.source) && (!filter.advertiserId || c.advertiserId === filter.advertiserId))
     },
     setActivation(id, enabled) {
       if (!prepared(db, 'UPDATE campaigns SET activation_enabled = ? WHERE id = ?').run(enabled ? 1 : 0, id).changes) return null
-      listeners.forEach((l) => l(id))
       return get(id)
-    },
-    onCampaignChanged(listener) {
-      listeners.add(listener)
-      return () => listeners.delete(listener)
     },
     createCampaign(c) {
       prepared(db,
@@ -109,13 +114,11 @@ export function sqliteCampaignSource(db: Db): CampaignSource {
         `INSERT INTO campaign_assets (id, campaign_id, version, role, file, mime_type, width, height, duration_sec, bitrate_kbps, size_bytes, content_hash, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(a.id, a.campaignId, version, a.role, a.file, a.mimeType, a.width, a.height, a.durationSec, a.bitrateKbps, a.sizeBytes, a.contentHash ?? null, new Date().toISOString())
-      listeners.forEach((l) => l(a.campaignId))
       return { ...a, version, contentHash: a.contentHash ?? null }
     },
     bookSlot(b) {
       prepared(db, 'INSERT INTO campaign_slot_bookings (id, campaign_id, display_type_id, slot, window_start, window_end, asset_version, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
         .run(b.id, b.campaignId, b.displayTypeId, b.slot, b.windowStart, b.windowEnd, b.assetVersion ?? null, new Date().toISOString())
-      listeners.forEach((l) => l(b.campaignId))
       return b
     },
     bookings(campaignId) {
@@ -125,7 +128,11 @@ export function sqliteCampaignSource(db: Db): CampaignSource {
       return rows.map((r) => ({ id: r.id, campaignId: r.campaign_id, displayTypeId: r.display_type_id, slot: r.slot, windowStart: r.window_start, windowEnd: r.window_end, assetVersion: r.asset_version }))
     },
     latestAssets(campaignId, atVersion) {
-      const rows = (prepared(db, 'SELECT * FROM campaign_assets WHERE campaign_id = ? AND discarded_at IS NULL AND version <= ? ORDER BY version').all(campaignId, atVersion ?? Number.MAX_SAFE_INTEGER) as unknown as AssetRow[]).map(toAsset)
+      /* This stand-in's approval adapter labels a version `v<n>`, n the highest
+         campaign_assets version at that point; a string it can't read resolves
+         to no version at all, never to the newest. */
+      const upTo = atVersion === undefined ? Number.MAX_SAFE_INTEGER : Number(atVersion.replace(/^v/, '')) || 0
+      const rows = (prepared(db, 'SELECT * FROM campaign_assets WHERE campaign_id = ? AND discarded_at IS NULL AND version <= ? ORDER BY version').all(campaignId, upTo) as unknown as AssetRow[]).map(toAsset)
       return [...new Map(rows.map((r) => [r.role, r])).values()]
     },
   }

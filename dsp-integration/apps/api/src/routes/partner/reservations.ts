@@ -30,7 +30,7 @@ import { assignedOf, reservePriceOf } from '@ph-dsp/types'
 import { termStateAt } from '../../billing/term'
 import { assignmentOf, biddingClosesAt, biddingOpensAt, effectivePartnerIds, findPosition, heldFor, unsellableReason, windowHoursOf, windowStartOf } from '../../domain/positions'
 import { multiplierToSnapshot } from '../../domain/pricing'
-import { checkAdvertiser, checkCampaign, checkFloor, checkTargeting } from '../../exchange/enforcement'
+import { checkAdvertiser, checkCampaign, checkFloor, checkTargeting, checkVersionCount } from '../../exchange/enforcement'
 import { handOff } from '../../exchange/handoff'
 import { auctionClaimed } from '../../exchange/scheduler'
 import { HttpError, conflict, notFound, validationFailed } from '../../http/errors'
@@ -42,6 +42,8 @@ interface Body { positionId?: unknown; windowStart?: unknown; campaignId?: unkno
 
 export const reservationView = (r: ReservationRecord) => ({
   reservationId: r.id, status: r.status, clearingCpm: r.clearingCpm, currency: r.currency, reason: r.reason,
+  /* Snapshotted when the window cleared (ErN9Q2Q1, 30 Sep): a personalised play bills at the clearing CPM times this. Null until then. */
+  personalisedMultiplier: r.personalisedMultiplier ?? null,
 })
 
 export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (app) => {
@@ -117,6 +119,7 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
     const refusal = (await checkCampaign(ctx, c.campaignId))
       ?? checkAdvertiser(ctx, pos, partner, seat!.name, seat!.domain ? [seat!.domain] : [], seat!.id, windowStart)
       ?? checkTargeting(pos, c.pricingType)
+      ?? checkVersionCount(ctx, pos, c.campaignId)
       /* A reserve-price booking is checked at the rate it is booked at:
          the reserve price never clears below the floor (OQ45). */
       ?? checkFloor(ctx, b.type === 'reserve' && reservePrice !== null ? reservePrice : (b.bidCpm as number), c.advertiserId)
