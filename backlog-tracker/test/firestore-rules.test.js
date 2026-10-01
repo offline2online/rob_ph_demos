@@ -81,12 +81,13 @@ async function reset() {
     // field present. Rules evaluation has a hard 1,000-expression budget,
     // and the projects update rule sits closest to it for a non-admin.
     await setDoc(doc(db, "projects/pFull"), Object.assign({}, PROJECT, {
-      requirementsMd: "r".repeat(50000), readmeMd: "m".repeat(20000), routinePromptMd: "hello",
+      docs: { requirements: { chars: 50000 }, readme: { chars: 20000 } }, routinePromptMd: "hello",
       notifyRequestedByEmail: "ada@personalisationhub.com", deployNotifyRequestedByEmail: "ada@personalisationhub.com",
       groomRequestedByEmail: "ada@personalisationhub.com", artifactUrl: "https://claude.ai/x", repoFolder: "backlog-tracker",
       trainStatus: "idle", trainNote: "n", trainPrNumber: 5, needsHumanMerge: false, trainReady: false, releaseId: "rDraft", programId: "prog1",
       notifyRoutine: { status: "done" }, deployRoutine: { status: "done" }, groomRoutine: { status: "done" },
     }));
+    await setDoc(doc(db, "projects/pFull/docs/requirements"), { contentMd: "r".repeat(50000), chars: 50000 });
     await setDoc(doc(db, "consoleUsers/sam@personalisationhub.com"), { email: "sam@personalisationhub.com", role: "editor" });
     await setDoc(doc(db, "consoleUsers/kit@personalisationhub.com"), { email: "kit@personalisationhub.com", role: "viewer" });
     await setDoc(doc(db, "consoleUsers/expat@personalisationhub.com"), { email: "expat@personalisationhub.com", role: "editor", disabled: true });
@@ -391,16 +392,33 @@ async function main() {
     setDoc(doc(as(MEMBER), "projects/p1"), { artifactUrl: "javascript:alert(1)" }, { merge: true }));
   await check("An https artifactUrl is fine", "allow", () =>
     setDoc(doc(as(MEMBER), "projects/p1"), { artifactUrl: "https://claude.ai/artifact/abc" }, { merge: true }));
-  await check("A 300k-char requirementsMd is accepted", "allow", () =>
-    setDoc(doc(as(MEMBER), "projects/p1"), { requirementsMd: "x".repeat(300000) }, { merge: true }));
-  await check("An 800k-char requirementsMd is accepted", "allow", () =>
-    setDoc(doc(as(MEMBER), "projects/p1"), { requirementsMd: "x".repeat(800000) }, { merge: true }));
-  await check("A requirementsMd over 800k chars is refused", "deny", () =>
-    setDoc(doc(as(MEMBER), "projects/p1"), { requirementsMd: "x".repeat(800001) }, { merge: true }));
-  await check("A 300k-char readmeMd is accepted", "allow", () =>
-    setDoc(doc(as(MEMBER), "projects/p1"), { readmeMd: "x".repeat(300000) }, { merge: true }));
-  await check("A readmeMd over 800k chars is refused", "deny", () =>
-    setDoc(doc(as(MEMBER), "projects/p1"), { readmeMd: "x".repeat(800001) }, { merge: true }));
+  // Requirements and README live in projects/{id}/docs/{requirements|readme}
+  // (own 1 MiB document each); the project doc keeps only a pointer.
+  const DOC = (md, extra) => Object.assign({ contentMd: md, updatedAt: serverTimestamp(), updatedByEmail: "sam@personalisationhub.com", chars: md.length }, extra || {});
+  await check("An editor can save a 300k-char requirements doc", "allow", () =>
+    setDoc(doc(as(MEMBER), "projects/p1/docs/requirements"), DOC("x".repeat(300000))));
+  await check("An editor can save an 800k-char requirements doc", "allow", () =>
+    setDoc(doc(as(MEMBER), "projects/p1/docs/requirements"), DOC("x".repeat(800000))));
+  await check("A requirements doc over 800k chars is refused", "deny", () =>
+    setDoc(doc(as(MEMBER), "projects/p1/docs/requirements"), DOC("x".repeat(800001))));
+  await check("An editor can save a README doc with its source commit", "allow", () =>
+    setDoc(doc(as(MEMBER), "projects/p1/docs/readme"), DOC("# hi", { sourceCommit: "abc1234", sourcePath: "x/README.md", sha256: "ab".repeat(32) })));
+  await check("A README doc over 800k chars is refused", "deny", () =>
+    setDoc(doc(as(MEMBER), "projects/p1/docs/readme"), DOC("x".repeat(800001))));
+  await check("Any other doc name under a project is refused", "deny", () =>
+    setDoc(doc(as(MEMBER), "projects/p1/docs/notes"), DOC("x")));
+  await check("An unknown field on a project doc entry is refused", "deny", () =>
+    setDoc(doc(as(MEMBER), "projects/p1/docs/readme"), DOC("x", { trainReady: true })));
+  await check("A viewer cannot write a requirements doc", "deny", () =>
+    setDoc(doc(as(VIEWER), "projects/p1/docs/requirements"), DOC("x")));
+  await check("A viewer can read a requirements doc", "allow", () =>
+    getDoc(doc(as(VIEWER), "projects/pFull/docs/requirements")));
+  await check("An anonymous visitor cannot read a requirements doc", "deny", () =>
+    getDoc(doc(as(null), "projects/pFull/docs/requirements")));
+  await check("An editor cannot delete a requirements doc", "deny", () =>
+    deleteDoc(doc(as(MEMBER), "projects/pFull/docs/requirements")));
+  await check("A team admin can delete a requirements doc", "allow", () =>
+    deleteDoc(doc(as(TEAM_ADMIN), "projects/pFull/docs/requirements")));
 
   await check("An editor can rename a fully populated project (stays inside the rules expression budget)", "allow", () =>
     setDoc(doc(as(MEMBER), "projects/pFull"), { name: "Renamed" }, { merge: true }));

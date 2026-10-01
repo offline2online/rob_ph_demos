@@ -201,6 +201,24 @@ async function patchProject(projectId, fields) {
   if (!res.ok) throw new Error(`PATCH projects/${projectId} failed: ${res.status} ${await res.text()}`);
 }
 
+// projects/{id}/docs/{requirements|readme}: the Requirements and README text,
+// one Firestore document each (see docs-sync-lib.js).
+async function getProjectDoc(projectId, kind) {
+  const res = await fetch(`${FIRESTORE_BASE}/projects/${projectId}/docs/${kind}`, { headers: await firestoreHeaders() });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`GET projects/${projectId}/docs/${kind} failed: ${res.status} ${await res.text()}`);
+  return fdoc((await res.json()).fields);
+}
+
+async function putProjectDoc(projectId, kind, fields) {
+  const res = await fetch(`${FIRESTORE_BASE}/projects/${projectId}/docs/${kind}`, {
+    method: "PATCH",
+    headers: await firestoreHeaders(),
+    body: JSON.stringify({ fields: Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, tv(v)])) }),
+  });
+  if (!res.ok) throw new Error(`PATCH projects/${projectId}/docs/${kind} failed: ${res.status} ${await res.text()}`);
+}
+
 async function itemsForProject(projectId) {
   return runQuery({
     from: [{ collectionId: "backlogItems" }],
@@ -2176,6 +2194,8 @@ async function syncDocsAfterMerge(project, mergeCommit) {
       lastCommitFor: (p) => { try { return run("git", ["log", "-1", "--format=%H", ref, "--", p]) || null; } catch { return null; } },
       getProject: () => getProject(project.id),
       patchProject: (fields) => patchProject(project.id, fields),
+      putDoc: (kind, fields) => putProjectDoc(project.id, kind, fields),
+      getDoc: (kind) => getProjectDoc(project.id, kind),
       now: () => new Date(),
     });
     if (result.skipped) console.log(`[docs-sync] ${project.id}: skipped — ${result.skipped}`);

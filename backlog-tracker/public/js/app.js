@@ -1062,7 +1062,7 @@ function interfacesForProject(pid) {
 function optionsMenuHTML(project) {
   const pid = project.id;
   const archivedCount = archivedCountForProject(pid);
-  const hasReq = !!(project.requirementsMd && project.requirementsMd.trim());
+  const hasReq = projectHasDoc(project, "requirements");
   const ifaces = interfacesForProject(pid);
   const artifactUrl = project.artifactUrl && project.artifactUrl.trim();
 
@@ -3108,14 +3108,75 @@ function activeItemCountForProject(pid) {
   return allItems.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status !== "archived").length;
 }
 
+// ── Requirements / README: projects/{id}/docs/{requirements|readme} ────────
+// Each is its own Firestore document (its own 1 MiB), so the spec can't push
+// the project doc over the limit and a small project write (a trainLocked
+// latch, a Routine heartbeat) no longer re-sends it to every open tab. The
+// project doc keeps only a pointer — `docs.{kind}: {chars, sha256,
+// sourceCommit, updatedAt}` — which is what "does this project have
+// Requirements?" reads. The text itself is loaded when the Docs page opens.
+const PROJECT_DOC_LEGACY_FIELD = { requirements: "requirementsMd", readme: "readmeMd" };
+
+// From the pointer; falls back to the legacy field on a project the one-off
+// migration (scripts/migrate-project-docs.js) hasn't reached yet.
+function projectHasDoc(project, kind) {
+  const ptr = project && project.docs && project.docs[kind];
+  if (ptr && typeof ptr === "object") return Number(ptr.chars) > 0;
+  const legacy = project && project[PROJECT_DOC_LEGACY_FIELD[kind]];
+  return !!(typeof legacy === "string" && legacy.trim());
+}
+
+// Text of the open Docs page's two documents, per project; undefined = not
+// loaded yet (the editors stay disabled so a blank box can't be saved over
+// the real text).
+const projectDocText = new Map();
+const projectDocLoadError = new Map();
+
+async function loadProjectDocs(pid) {
+  projectDocLoadError.delete(pid);
+  try {
+    for (const kind of ["requirements", "readme"]) {
+      const snap = await getDoc(doc(db, "projects", pid, "docs", kind));
+      if (snap.exists()) {
+        projectDocText.set(`${pid}/${kind}`, String((snap.data() || {}).contentMd || ""));
+      } else {
+        const project = projects.find((p) => p.id === pid);
+        projectDocText.set(`${pid}/${kind}`, String((project && project[PROJECT_DOC_LEGACY_FIELD[kind]]) || ""));
+      }
+    }
+  } catch (err) {
+    projectDocLoadError.set(pid, (err && err.message) || String(err));
+  }
+  if (docsProjectId === pid) renderDocsPage();
+}
+
+async function sha256Hex(text) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function setProjectDocText(id, kind, md) {
+  const sha256 = await sha256Hex(md);
+  const email = (auth && auth.currentUser && auth.currentUser.email) || null;
+  await setDoc(doc(db, "projects", id, "docs", kind), {
+    contentMd: md, updatedAt: serverTimestamp(), updatedByEmail: email,
+    sourceCommit: null, sourcePath: null, chars: md.length, sha256,
+  });
+  await setDoc(doc(db, "projects", id), {
+    docs: { [kind]: { chars: md.length, sha256, sourceCommit: null, updatedAt: serverTimestamp() } },
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+  projectDocText.set(`${id}/${kind}`, md);
+}
+
 async function setProjectRequirements(id, md) {
-  await setDoc(doc(db, "projects", id), { requirementsMd: md, updatedAt: serverTimestamp() }, { merge: true });
+  await setProjectDocText(id, "requirements", md);
 }
 
 // The project's own primary tracking document — shown first on the Docs
 // page, above Requirements, same live-doc pattern.
 async function setProjectReadme(id, md) {
-  await setDoc(doc(db, "projects", id), { readmeMd: md, updatedAt: serverTimestamp() }, { merge: true });
+  await setProjectDocText(id, "readme", md);
 }
 
 // ── Additional documents — a generic, named-document library per project
@@ -4688,6 +4749,7 @@ function openDocsPage(pid) {
   document.getElementById("board-page-header").hidden = true;
   docsPage.hidden = false;
   renderDocsPage();
+  loadProjectDocs(pid);
 }
 
 function closeDocsPage() {
@@ -4747,11 +4809,20 @@ function renderDocsPage() {
   if (document.activeElement !== docsReleaseSelect) {
     populateReleaseSelect(docsReleaseSelect, project ? project.releaseId || "" : "");
   }
+  // Requirements and README load lazily from projects/{id}/docs/*; until
+  // they have, the boxes stay disabled so a blank one can't be saved over
+  // the real text.
+  const readmeText = projectDocText.get(`${docsProjectId}/readme`);
+  const reqText = projectDocText.get(`${docsProjectId}/requirements`);
+  const docLoadError = projectDocLoadError.get(docsProjectId);
+  const docsLoaded = readmeText !== undefined && reqText !== undefined;
+  for (const el of [docsReadmeInput, docsRequirementsInput]) el.disabled = !docsLoaded;
+  for (const id of ["docs-readme-save", "docs-requirements-save"]) document.getElementById(id).disabled = !docsLoaded;
   if (document.activeElement !== docsReadmeInput) {
-    docsReadmeInput.value = (project && project.readmeMd) || "";
+    docsReadmeInput.value = docsLoaded ? readmeText : (docLoadError ? `Couldn't load the README: ${docLoadError}` : "Loading…");
   }
   if (document.activeElement !== docsRequirementsInput) {
-    docsRequirementsInput.value = (project && project.requirementsMd) || "";
+    docsRequirementsInput.value = docsLoaded ? reqText : (docLoadError ? `Couldn't load the Requirements: ${docLoadError}` : "Loading…");
   }
   if (document.activeElement !== docsRoutinePromptInput) {
     docsRoutinePromptInput.value = (project && project.routinePromptMd) || "";
@@ -5048,8 +5119,6 @@ async function promoteConceptToProject(conceptId, name, programId, releaseId, re
   const data = {
     name: name.trim(),
     createdAt: serverTimestamp(),
-    requirementsMd: concept.requirementsMd || "",
-    readmeMd: concept.readmeMd || "",
   };
   if (programId) data.programId = programId;
   if (releaseId) data.releaseId = releaseId;
@@ -5060,6 +5129,10 @@ async function promoteConceptToProject(conceptId, name, programId, releaseId, re
     data.deployBranch = deployBranchForFolder(repoFolderInfo.folder);
   }
   const ref = await addDoc(projectsRef, data);
+  // The concept's text becomes the new project's Requirements / README in
+  // projects/{id}/docs/* (not fields on the project doc).
+  if (concept.requirementsMd) await setProjectRequirements(ref.id, concept.requirementsMd);
+  if (concept.readmeMd) await setProjectReadme(ref.id, concept.readmeMd);
   await setDoc(doc(db, "concepts", conceptId), {
     status: "promoted",
     promotedProjectId: ref.id,

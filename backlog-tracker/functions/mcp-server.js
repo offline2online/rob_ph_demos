@@ -1138,9 +1138,13 @@ const DOC_NAME_MAX = 120;
 // all, so the guarantee now needs enforcing rather than being a consequence
 // of never touching the collection. updateProjectFields is the only path to
 // a project write, and it refuses anything not on this list.
+//
+// `docs` is the pointer map ({requirements: {chars, sha256, sourceCommit,
+// updatedAt}, readme: {...}}) for the two big documents, whose text lives in
+// projects/{id}/docs/{requirements|readme} (see writeProjectDoc below) and
+// not on this document at all.
 const PROJECT_WRITABLE_FIELDS = new Set([
-  "requirementsMd", "requirementsUpdatedByEmail",
-  "readmeMd", "readmeUpdatedByEmail",
+  "docs",
   "artifactUrl", "artifactUpdatedAt",
 ]);
 
@@ -1154,6 +1158,48 @@ async function updateProjectFields(projectId, fields) {
     Object.assign({}, fields, { updatedAt: FieldValue.serverTimestamp() }),
     { merge: true },
   );
+}
+
+// ── Requirements / README: projects/{id}/docs/{requirements|readme} ──────
+// Each is its own Firestore document (its own 1 MiB), so a spec can never
+// push the project doc over the limit and a small project write (a
+// trainLocked latch, a Routine heartbeat) no longer re-sends the spec to
+// every open tab. The project doc keeps a pointer only.
+const PROJECT_DOC_KINDS = {
+  requirements: { legacyField: "requirementsMd", revisionTarget: "project.requirementsMd" },
+  readme: { legacyField: "readmeMd", revisionTarget: "project.readmeMd" },
+};
+
+// Current text of one of the two documents. Reads the subcollection doc and
+// falls back to the legacy project field, so a project the one-off
+// migration (scripts/migrate-project-docs.js) has not reached yet still
+// reads correctly.
+async function readProjectDoc(projectId, kind, projectData) {
+  const snap = await db().collection("projects").doc(String(projectId)).collection("docs").doc(kind).get();
+  if (snap.exists) {
+    const v = snap.data() || {};
+    return typeof v.contentMd === "string" ? v.contentMd : "";
+  }
+  const legacy = (projectData || {})[PROJECT_DOC_KINDS[kind].legacyField];
+  return typeof legacy === "string" ? legacy : "";
+}
+
+async function writeProjectDoc(projectId, kind, md, session) {
+  const crypto = require("crypto");
+  const sha256 = crypto.createHash("sha256").update(md, "utf8").digest("hex");
+  await db().collection("projects").doc(String(projectId)).collection("docs").doc(kind).set({
+    contentMd: md,
+    updatedAt: FieldValue.serverTimestamp(),
+    updatedByEmail: session.email,
+    sourceCommit: null,
+    sourcePath: null,
+    chars: md.length,
+    sha256,
+  });
+  await updateProjectFields(projectId, {
+    docs: { [kind]: { chars: md.length, sha256, sourceCommit: null, updatedAt: FieldValue.serverTimestamp() } },
+  });
+  return { chars: md.length, sha256 };
 }
 
 // Every documentation write records what it replaced, so an agent that
@@ -2043,8 +2089,8 @@ const TOOLS = [
       if (!snap.exists) return toolError(`No project with id ${projectId}.`);
       const p = snap.data() || {};
       const out = { projectId, name: p.name || "" };
-      if (want.includes("requirements")) out.requirementsMd = p.requirementsMd || "";
-      if (want.includes("readme")) out.readmeMd = p.readmeMd || "";
+      if (want.includes("requirements")) out.requirementsMd = await readProjectDoc(projectId, "requirements", p);
+      if (want.includes("readme")) out.readmeMd = await readProjectDoc(projectId, "readme", p);
       out.artifactUrl = p.artifactUrl || null;
       out.artifactUpdatedAt = tsToISO(p.artifactUpdatedAt);
       // Whether the repo copy of Requirements/README and the board copy agree
@@ -2113,9 +2159,9 @@ const TOOLS = [
       if (md.length > PROJECT_MD_MAX) return toolError(`Requirements are limited to ${PROJECT_MD_MAX} characters; that was ${md.length}.`);
       const snap = await db().collection("projects").doc(projectId).get();
       if (!snap.exists) return toolError(`No project with id ${projectId}. Call list_projects first.`);
-      const before = (snap.data() || {}).requirementsMd || "";
-      const revisionId = await recordDocRevision(session, "project.requirementsMd", { projectId, name: (snap.data() || {}).name || "" }, before);
-      await updateProjectFields(projectId, { requirementsMd: md, requirementsUpdatedByEmail: session.email });
+      const before = await readProjectDoc(projectId, "requirements", snap.data());
+      const revisionId = await recordDocRevision(session, PROJECT_DOC_KINDS.requirements.revisionTarget, { projectId, name: (snap.data() || {}).name || "" }, before);
+      await writeProjectDoc(projectId, "requirements", md, session);
       await audit(session, "set_project_requirements", { projectId, chars: md.length, replacedChars: before.length, revisionId });
       return textResult({ updated: true, projectId, chars: md.length, replacedChars: before.length, revisionId, note: "Keep the repo's REQUIREMENTS.md in sync — a divergence is a bug in whichever is stale." });
     },
@@ -2138,9 +2184,9 @@ const TOOLS = [
       if (md.length > PROJECT_MD_MAX) return toolError(`A README is limited to ${PROJECT_MD_MAX} characters; that was ${md.length}.`);
       const snap = await db().collection("projects").doc(projectId).get();
       if (!snap.exists) return toolError(`No project with id ${projectId}. Call list_projects first.`);
-      const before = (snap.data() || {}).readmeMd || "";
-      const revisionId = await recordDocRevision(session, "project.readmeMd", { projectId, name: (snap.data() || {}).name || "" }, before);
-      await updateProjectFields(projectId, { readmeMd: md, readmeUpdatedByEmail: session.email });
+      const before = await readProjectDoc(projectId, "readme", snap.data());
+      const revisionId = await recordDocRevision(session, PROJECT_DOC_KINDS.readme.revisionTarget, { projectId, name: (snap.data() || {}).name || "" }, before);
+      await writeProjectDoc(projectId, "readme", md, session);
       await audit(session, "set_project_readme", { projectId, chars: md.length, replacedChars: before.length, revisionId });
       return textResult({ updated: true, projectId, chars: md.length, replacedChars: before.length, revisionId, note: "Keep the repo's README.md in sync — a divergence is a bug in whichever is stale." });
     },
