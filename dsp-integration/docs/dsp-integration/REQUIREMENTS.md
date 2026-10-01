@@ -2438,6 +2438,399 @@ enables.*
   agent-consumable surface and as a first-class surface of its own, not a
   REST endpoint or a feature of the tier-2 PH-native API.
 
+### 9.5 Authentication seams — advertiser as a principal, scoped tokens, user login
+
+*Specification only. Nothing here is built in this release; the POC keeps
+its static partner tokens and its stand-in HQ admin. This section defines
+the three seams so later releases (advertiser-direct submission, advertiser
+login, Gen AI campaign authoring) are extensions of the identity and
+credential model below, not rewrites of it. It is adjacent to §9.4, not the
+same thing: §9.4 is PH-instance-to-PH-instance agent exchange; this is how
+any caller — partner, advertiser or a person — proves who it is to this
+build's own APIs.*
+
+**Today's gap.** The Partner API collapses identity, authentication and
+authorisation into one static bearer token per DSP partner, and the Admin
+API has no authentication of its own (every caller is the stand-in HQ admin
+and the service binds to `127.0.0.1`). That closes the door on an
+advertiser submitting directly and, later, an advertiser logging in to
+author campaigns with Gen AI. The three seams below separate the concerns.
+
+#### Named boundaries
+
+| Boundary | Name | Question it answers | Sibling ticket |
+|---|---|---|---|
+| 1 | **AUTH-IDENTITY** | *Who is calling?* | "[2 of 4] Auth boundary 1 — Advertiser as first-class authenticated principal" |
+| 2 | **AUTH-CREDENTIAL** | *What proof do they present, and what may it do?* | "[3 of 4] Auth boundary 2 — Token endpoint + scope model" |
+| 3 | **AUTH-LOGIN** | *How does a human become that caller?* | "[4 of 4] Auth boundary 3 — Advertiser user login resolving to advertiser scope" |
+
+Each sibling ticket builds **only its own boundary** and may depend on the
+boundaries before it, never the reverse: AUTH-IDENTITY has no knowledge of
+tokens, AUTH-CREDENTIAL has no knowledge of logins.
+
+#### AUTH-IDENTITY — principal types
+
+- A **principal** is the authenticated caller of any API in this build. It
+  is a first-class record with a `principalType` and a stable `principalId`;
+  it is **not** a field on a campaign.
+- Principal types from day one: **`partner`** (a connected DSP, today's
+  only type), **`advertiser`** (a brand or agency acting for itself) and
+  **`admin`** (a retailer user, today the stand-in HQ admin). Adding a type
+  later is a new value, not a schema change.
+- Auth middleware resolves every request to exactly one principal and hands
+  handlers `{principalType, principalId, scopes}`. A handler never reads a
+  raw token or header. An unauthenticated request is `401`; an
+  authenticated one lacking the scope is `403`.
+- An **advertiser principal** maps onto the existing advertiser record
+  (§3 Advertisers / Inventory; PH Core's advertiser/campaign records —
+  see `api/PH-CORE-BOUNDARIES.md` → "Authentication seams"). A partner
+  principal may act **for** one or more advertisers; the advertiser a
+  submission is for is named on the campaign, while *who submitted it* is
+  the principal. The two are kept distinct so audit and billing can tell a
+  DSP submitting on an advertiser's behalf from the advertiser itself.
+- **Isolation rule:** a principal sees and changes only records it owns or
+  is delegated. An advertiser principal can never read another
+  advertiser's campaigns, creatives or bookings; a partner principal keeps
+  today's rule (its own DSP's campaigns only).
+- Every write records the acting principal (`principalType`, `principalId`)
+  in the audit trail alongside the existing "Enforcement and audit" fields.
+
+##### AUTH-IDENTITY boundary — what it fixes, where advertiser identity lives, and what crosses to PH Core
+
+*Specification only; no behaviour change. The Partner API path is exactly as
+it is today.*
+
+**Principal model.** Caller identity is a discriminated union, and every
+type is a peer — none is a special case of another:
+
+| `principalType` | `principalId` is | Identity source | Authenticated today? |
+|---|---|---|---|
+| `partner` | the partner (DSP) id | this build's partner record (`PartnerRepo`), PH Core's partner identity on integration | **Yes** (static token) |
+| `advertiser` | the `advertiserId` | this build's **advertiser record** (below) | No — recognised by the model, no credential yet |
+| `admin` | the retailer user id | `SessionSource` (HQ Admin session) | Stand-in only |
+
+The principal is resolved by one auth seam (`partnerFromRequest(req)` today,
+generalised to a principal resolver). The resolver's contract is
+`request → {principalType, principalId, scopes} | 401`; the partner branch
+is the existing lookup, unchanged, and an advertiser branch is added beside
+it later without altering what handlers receive. Handlers branch on
+`principalType` only to apply the isolation rule above, never to re-parse
+credentials.
+
+**Where advertiser identity lives.** Today an advertiser exists only as an
+`advertiserId` string hanging off a campaign or reservation and as the key
+of `advertiser_settings`. The boundary makes it a **first-class advertiser
+record owned by this build's repos** (an `advertisers` table behind an
+`AdvertiserRepo`, read through the same repo layer as partners), not a
+property of PH Core's campaign record:
+
+- `advertiserId` — stable, opaque, unique, never reused; the `principalId`
+  of an advertiser principal and the foreign key every other advertiser
+  reference (campaign, reservation, `advertiser_settings`, audit) points at.
+- `name`, `status` (`active` / `suspended`), `createdAt`, and an optional
+  `externalRef` holding PH Core's own advertiser identifier when PH Core is
+  the system of record (see below).
+- **Credentials and logins are not part of this record.** The record says
+  *who the advertiser is*; how a machine proves it is that advertiser is
+  AUTH-CREDENTIAL, and how a person becomes it is AUTH-LOGIN. This
+  keeps AUTH-IDENTITY free of any token or login knowledge.
+- A `suspended` advertiser's principal authenticates to nothing; its
+  existing campaigns and bookings are untouched (same rule as the DSP
+  integration switch: nothing is lost by turning access off).
+
+**Seam to PH Core.** This build does not become the master of advertisers.
+Where PH Core holds advertiser records, the build's record is keyed by and
+mirrors PH Core's identity, and PH Core must guarantee the points listed in
+`api/PH-CORE-BOUNDARIES.md` → "Authentication seams" → *AUTH-IDENTITY —
+advertiser identity*: a stable, unique, never-reused `advertiserId`; the
+advertiser-to-campaign ownership; and propagation of advertiser
+suspension or removal.
+
+**Non-goals for this boundary.** The credential mechanism (token endpoint,
+client secrets, scopes issuance — AUTH-CREDENTIAL), user login and roles
+(AUTH-LOGIN), advertiser self-service screens, and any change to the
+partner path, the Admin API, playback, or the public API.
+
+**Acceptance.** This section and `api/PH-CORE-BOUNDARIES.md` name the
+principal types, the advertiser principal's identity source and the seam to
+PH Core; the Partner API behaves exactly as before.
+
+#### AUTH-CREDENTIAL — short-lived scoped tokens
+
+- Static per-partner bearer tokens are **replaced** by short-lived access
+  tokens from a single **token endpoint** using the OAuth 2.0
+  **client-credentials** grant. **One issuance path serves both partners and
+  advertisers**; there is no second credential system for either.
+- A **client** (client id + secret, rotatable, revocable) belongs to one
+  principal; a principal may hold several clients (for example one per
+  environment). Secrets are stored hashed, shown once, and never logged.
+- Access tokens are short-lived (minutes, not days), carry
+  `{principalType, principalId, scopes, expiry}`, and are verified at the
+  edge/middleware without a database read on the hot path. Revoking a
+  client or disconnecting a DSP takes effect within the token lifetime.
+- **Capability = scope.** Scopes are named `resource:action`:
+
+  | Scope | Meaning | When |
+  |---|---|---|
+  | `inventory:read` | Forecast and read inventory | now (partners) |
+  | `creative:submit` | Submit and upload creative and content packages | **now** |
+  | `campaign:read` | Read back own campaigns | now (partners) |
+  | `campaign:author` | Create and edit campaign drafts | later (advertiser login + Gen AI) |
+  | `campaign:publish` | Release a campaign into approval/activation | later |
+
+  Partner clients are issued the scopes the retailer granted the DSP in
+  its setup (§7 *DSP setup*); advertiser clients are issued only what the
+  retailer granted that advertiser. A token can never carry a scope its
+  client was not granted, and a request needing a scope the token lacks is
+  `403 insufficient_scope`.
+- The Partner API contract for tier-1 DSPs (§6) is unchanged for what they
+  send: a DSP that cannot do OAuth client-credentials is handled at the
+  adapter seam, not by weakening the token model.
+- Until this is built, the static token is the single implementation of
+  `partnerFromRequest(req)`; the middleware contract in AUTH-IDENTITY is
+  what makes swapping it a local change.
+- Endpoint, claims, scope catalogue (with `campaign:author` and
+  `campaign:publish` reserved), the mapping of rate limiting / encryption /
+  timing-safe comparison, and the migration path are specified in
+  *AUTH-CREDENTIAL boundary* below.
+
+##### AUTH-CREDENTIAL boundary — token endpoint, scope model, migration
+
+*Specification only; no behaviour change. The static partner tokens keep
+working until a later release builds this.*
+
+**Boundary line.** AUTH-CREDENTIAL owns **machine-to-machine credentials and
+scope enforcement** and nothing else. It does not own who a principal is
+(AUTH-IDENTITY) or how a person signs in (AUTH-LOGIN); it only requires that
+whatever AUTH-LOGIN produces resolves to a scope set from the catalogue
+below, so that a login and a client secret end in the same token shape.
+
+**Token endpoint.** `POST /v1/oauth/token`, the OAuth 2.0 client-credentials
+grant (RFC 6749 §4.4), one endpoint for every principal type.
+
+| | |
+|---|---|
+| Request | `application/x-www-form-urlencoded`: `grant_type=client_credentials`, `client_id`, `client_secret` (or HTTP Basic), optional `scope` (space-separated; a **subset** of what the client holds — omitted means all it holds) |
+| Success | `200 {access_token, token_type: "Bearer", expires_in, scope}` |
+| Failure | `400 invalid_scope` (asks for a scope the client does not hold), `401 invalid_client` (unknown client, wrong secret, revoked client, suspended advertiser or disconnected DSP — one indistinguishable answer, so the endpoint cannot be used to probe which ids exist), `429 rate_limited` |
+| Lifetime | Default **10 minutes** (`expires_in: 600`); configurable 5–15 minutes. No refresh token: a client simply asks again. Open: signing-key rotation cadence. |
+| Claims | `sub` = `principalId`, `principalType` (`partner` / `advertiser` / `admin`), `scope`, `client_id`, `iat`, `exp`, `jti`. Nothing secret, nothing personal. |
+| Verification | Signed (asymmetric, `kid` in the header so keys rotate without downtime); checked in the auth middleware with no database read on the hot path, then resolved to `{principalType, principalId, scopes}` — the contract AUTH-IDENTITY already fixes. A handler never sees the token. |
+
+**Clients.** A client is `{clientId, principalType, principalId, scopes,
+status, createdAt, lastUsedAt, secretHash}`. A principal holds one or more
+(for example one per environment). The secret is generated by the platform,
+**shown once**, stored only as a salted hash, never logged, and rotatable
+with an overlap window (old and new both valid until the old one is
+revoked). Revoking a client, disconnecting a DSP or suspending an advertiser
+stops new tokens at once and existing ones within the token lifetime; the
+build's existing "no writes from a disconnected DSP" check stays in force
+regardless of token validity.
+
+**Scope catalogue.** Scopes are `resource:action`, lower-case, and are
+**additive**: a scope never implies another. Adding a capability later adds
+a row here and a check on the route — never a change to the endpoint, the
+token shape or the middleware.
+
+| Scope | Grants | Status | Granted to |
+|---|---|---|---|
+| `inventory:read` | Forecast and read inventory (Partner API `/v1/forecast`, `/v1/inventory`) | Defined, today's partner behaviour | partner |
+| `creative:submit` | Submit and upload creative and content packages | **Release one** | partner, advertiser |
+| `campaign:read` | Read back the principal's own campaigns, bookings and statuses | Defined, today's partner behaviour | partner, advertiser |
+| `campaign:author` | Create and edit campaign drafts, including Gen AI authoring | **Reserved** — later release | advertiser |
+| `campaign:publish` | Release a campaign into approval and activation | **Reserved** — later release | advertiser |
+
+*Reserved* means the name is fixed now and no token may carry it until the
+release that builds the capability; the endpoint refuses to issue a reserved
+scope (`invalid_scope`) and no route checks it yet. Admin-only capabilities
+keep their existing `SessionSource` role scopes (`admin`, `approver`,
+`sections`) and are out of this catalogue.
+
+**Enforcement.** Each route declares the one scope it needs. Missing or
+invalid token → `401 invalid_token` (with `WWW-Authenticate`); valid token
+without the scope → `403 insufficient_scope`, naming the scope. Scope is
+checked **in addition to**, never instead of, the isolation rule (a principal
+sees only records it owns or is delegated) and the DSP-connected check.
+
+**One scope set for machines and people.** A scope set is a plain set of
+catalogue names. An AUTH-LOGIN session resolves `{advertiserId, userId,
+role}` to a **subset** of the advertiser's granted scopes and is issued a
+token of the same shape and claims (with the `userId` added as an actor
+claim for audit). Nothing downstream can tell the two apart, and nothing
+here defines login, roles or sessions.
+
+**Existing protections, mapped onto the new model.**
+
+| Today (static token) | Under AUTH-CREDENTIAL |
+|---|---|
+| Per-partner token bucket, 50 requests/s, burst 100 (`http/rateLimit.ts`) | Keyed by **`principalId`**, not by token or client, so a principal cannot multiply its allowance by holding more clients. The token endpoint has its own, much tighter limit per `client_id` and per IP (credential-guessing defence). Same numbers and `429`/`Retry-After` behaviour for the API. |
+| Secrets encrypted with AES-256-GCM (`SecretsStore`, random IV, 16-byte tag) | Client secrets are **hashed**, not encrypted — the platform never needs the plaintext back. Signing keys and any DSP-side credentials the build must present onward stay in `SecretsStore` under AES-256-GCM. |
+| Timing-safe token comparison | Timing-safe comparison of the secret hash at the token endpoint; signature verification replaces token comparison on the hot path. A uniform error and uniform work for unknown client ids. |
+| Immediate revocation | Bounded by the token lifetime (minutes); client revocation blocks new issuance instantly. Where "immediate" is required, the DSP-connected and advertiser-`active` checks remain per-request. |
+| POC tokens are public, so the API refuses to start with them in production | Unchanged until cut-over; afterwards the static-token path does not exist in a production build. |
+
+**Migration from static tokens.**
+
+1. **Add, don't replace.** The middleware becomes a principal resolver that
+   accepts a signed access token **or**, during migration only, a legacy
+   static token (resolved exactly as `partnerFromRequest` does today, given
+   the full set of partner scopes: `inventory:read`, `creative:submit`,
+   `campaign:read`). The Partner API contract for DSPs does not change.
+2. **Issue a client per partner**, with the scopes already granted in DSP
+   setup, and show the secret once. Partners move at their own pace; the
+   legacy path is logged per partner (`principalId`, no token value) so the
+   retailer can see who has not moved.
+3. **Deprecate with notice**, then **disable the legacy path** per
+   environment by configuration, then remove it. Production builds already
+   refuse the public POC tokens; after removal no static token exists.
+4. **DSPs that cannot do client-credentials** are handled at the adapter
+   seam (§6), never by weakening the token model or keeping a long-lived
+   bearer token alive.
+5. Advertiser clients are **never** issued a static token: they start on the
+   new path.
+
+**Non-goals.** Human login, roles and sessions (AUTH-LOGIN); the advertiser
+record and principal model (AUTH-IDENTITY); authorization-code/PKCE flows;
+token introspection and revocation lists; any change to the Admin API, the
+public API, playback or distribution.
+
+**Acceptance.** This section names the token endpoint, the scope catalogue
+(with `campaign:author` and `campaign:publish` reserved), the mapping of the
+existing protections and the migration path; `api/PH-CORE-BOUNDARIES.md`
+names what issuance asks of PH Core; the Partner API behaves exactly as
+before.
+
+#### AUTH-LOGIN — users resolve to the advertiser scope
+
+- **The credential is separate from the human.** An advertiser entity
+  holds **both** a machine credential set (AUTH-CREDENTIAL clients) **and**
+  user logins. Both resolve to **the same advertiser principal and the same
+  scope set**.
+- **Login-resolves-to-scope rule:** a signed-in advertiser user is issued
+  an access token for their advertiser's principal, limited to the scopes
+  their role within that advertiser allows (a subset of the advertiser's
+  own grant, never more). Downstream code cannot tell, and must not care,
+  whether the token came from a client secret or from a login.
+- The future login + Gen AI campaign-authoring path is therefore a **front
+  door onto the identity built in AUTH-IDENTITY**, issuing tokens through
+  AUTH-CREDENTIAL's endpoint — not a second authentication system, a second
+  advertiser record or a second permission model.
+- Login itself (how a person proves who they are: federated SSO with the
+  advertiser's identity provider, or PH-managed accounts; MFA; invitation
+  and offboarding) is **deliberately not decided here**. It belongs to PH
+  Core's user/identity service where it exists; this build only requires
+  that it returns `{advertiserId, userId, role}` and that role maps to
+  scopes.
+- Retailer admin users remain the `admin` principal type, authenticated by
+  the HQ Admin session (`SessionSource`); they are not advertiser users.
+
+##### AUTH-LOGIN boundary — advertiser users, login-to-scope resolution, reserved Gen AI authoring
+
+*Specification only; no behaviour change. Nothing here is built in this
+release.*
+
+**Boundary line.** AUTH-LOGIN owns the **human-to-scope resolution** and the
+**advertiser ↔ users relationship**, and nothing else. It does not redefine
+the principal (AUTH-IDENTITY) or the token mechanism and scope catalogue
+(AUTH-CREDENTIAL); it consumes both.
+
+**Advertiser ↔ users.** An advertiser has **zero or more** users. A user
+belongs to exactly one advertiser in this build (a person working for two
+advertisers holds two user records, so isolation never depends on which one
+they "switch" to).
+
+| Field | Meaning |
+|---|---|
+| `userId` | Stable, opaque, never reused. Owned by PH Core's user/identity service, not minted here. |
+| `advertiserId` | The one advertiser the user acts for (AUTH-IDENTITY's `principalId`). |
+| `role` | A named bundle of scopes within the advertiser (below). |
+| `status` | `active` / `disabled`. Offboarding a user disables it; it never touches the advertiser, its clients or its campaigns. |
+
+The advertiser holds **both** AUTH-CREDENTIAL clients and these users. Zero
+users is the normal state until advertiser login is offered; an advertiser
+with clients only (machine submission) needs nothing from this boundary. The
+record stores no password, no factor and no profile data — only the
+`userId`/`advertiserId`/`role`/`status` link.
+
+**User-session-resolves-to-scope rule.** A login yields
+`{advertiserId, userId, role}` from PH Core's identity service. The token
+endpoint (AUTH-CREDENTIAL) turns that into an access token of the same
+shape as a client token:
+
+1. `sub` = `advertiserId`, `principalType` = `advertiser` — **the same
+   principal** a client secret resolves to, not a new principal type.
+2. `scope` = `role`'s scopes **∩ the advertiser's own granted scopes**. A
+   user can never hold a scope the advertiser was not granted, and never
+   more than the role allows.
+3. `userId` is added as an **actor claim** (`act`), for audit only. The
+   audit trail records `principalId` plus the acting `userId`; handlers
+   never read it to decide access.
+4. Suspended advertiser, disabled user or an `active`-check failure gives
+   the same indistinguishable `401` as a bad client secret.
+
+Authorisation stays **scope-based and caller-agnostic**: routes declare a
+scope, middleware checks the token's scope set and the isolation rule, and
+no handler branches on "machine token vs logged-in user". Revoking a user
+takes effect within the token lifetime (minutes; no refresh token).
+
+**Roles.** Roles are named scope bundles per advertiser, defined by the
+retailer's grant and never wider than it. Indicative set, to be confirmed
+when built:
+
+| Role | Scopes (within the advertiser's grant) |
+|---|---|
+| `viewer` | `campaign:read` |
+| `author` | `campaign:read`, `creative:submit`, `campaign:author` *(reserved)* |
+| `publisher` | `author` + `campaign:publish` *(reserved)* |
+
+**Reserved: Gen AI campaign authoring.** The authoring surface sits **behind
+`campaign:author` and `campaign:publish`** (catalogue status *Reserved*): the
+names are fixed now, no token may carry them and no route checks them until
+the release that builds it. When it arrives it is a front door onto this
+identity — advertiser login, then tokens through the existing endpoint — not
+a second auth system, advertiser record or permission model. Guardrails and
+permissions are **per advertiser**, expressed as the retailer's scope grant
+plus per-advertiser policy, in the same place `advertiser_settings` lives:
+
+- `campaign:author` lets a user create and edit **drafts** (including Gen AI
+  generated ones); a draft is inert — never booked, never played.
+- `campaign:publish` is the separate step that releases a draft into the
+  **existing approval and activation flow**; Gen AI output gets no approval
+  shortcut, and an advertiser may hold `author` without `publish`.
+- Per-advertiser guardrails (brand rules, allowed formats, prohibited
+  categories, generation limits) are retailer-set and enforced server-side
+  at authoring and again at approval; none is decided here.
+
+**Not the POC's stand-in session.** The Admin API's stand-in (`POC_ROLE`;
+every caller is `hq_admin`, service bound to `127.0.0.1`) is the `admin`
+principal's placeholder and **must never be the advertiser login**: an
+advertiser user is never resolved through `SessionSource`, never inherits
+`hq_admin`, and no advertiser-facing route may sit behind the stand-in.
+Retailer admin users stay `admin` principals on the HQ Admin session.
+
+**Non-goals.** How a person proves who they are (SSO, PH-managed accounts,
+MFA, invitation, offboarding workflow — PH Core's identity service), the
+token endpoint and scope catalogue (AUTH-CREDENTIAL), the principal and
+advertiser record (AUTH-IDENTITY), advertiser self-service screens, and
+building any Gen AI authoring.
+
+**Acceptance.** This section documents the advertiser ↔ users relationship,
+the user-session-resolves-to-scope rule and the reserved Gen AI authoring
+scopes; `api/PH-CORE-BOUNDARIES.md` → *AUTH-LOGIN* names what user identity
+asks of PH Core.
+
+#### What this release does and does not do
+
+- **Does:** fixes the vocabulary above (principal types, the three named
+  boundaries, the scope names, the login-resolves-to-scope rule) so the
+  Partner API, Admin API and data model can be written against it.
+- **Does not:** build a token endpoint, advertiser accounts, advertiser
+  login, Gen AI authoring, or change the static partner tokens. Nothing in
+  the public API changes.
+- **Open, not answered here:** token lifetime and signing-key rotation
+  policy; whether advertiser-direct submission is offered per retailer or
+  per platform; the login provider (see AUTH-LOGIN).
+
 ## Functional requirements
 
 Each item is annotated with where it lives in the prototype, or marked *spec
@@ -2974,6 +3367,23 @@ the system now guarantees:
 - **Two processes starting on one empty database** both come up: one
   migrates and seeds, the other waits and serves.
 - **Ties go to the earlier bid.**
+
+### Authentication seams (§9.5, specification only)
+
+- Every API caller resolves to one **principal** of type `partner`,
+  `advertiser` or `admin`; `advertiser` is first-class from day one, not a
+  field on a campaign. (**AUTH-IDENTITY**)
+- Static partner bearer tokens are to be replaced by short-lived scoped
+  tokens from one OAuth client-credentials token endpoint serving partners
+  and advertisers alike; capability is a scope (`creative:submit` now;
+  `campaign:author`, `campaign:publish` later). (**AUTH-CREDENTIAL**)
+  Tokens last minutes, are issued at `POST /v1/oauth/token`, and are
+  rate-limited per principal; static tokens migrate by running beside the
+  new path, then being switched off.
+- An advertiser's user logins and machine credentials resolve to the same
+  advertiser principal and scope set. (**AUTH-LOGIN**)
+- Nothing is built in this release; see §9.5 and
+  `api/PH-CORE-BOUNDARIES.md` → "Authentication seams".
 
 ### Analytics schema, measurement and federation — foundation (§9)
 

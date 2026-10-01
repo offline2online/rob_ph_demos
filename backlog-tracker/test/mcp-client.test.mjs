@@ -155,16 +155,17 @@ await test("tools/list returns the whole surface", async () => {
   // workflow's push trigger, so nothing ran this test until the next PR.
   // The Concept Incubator tools (add_concept_comment, get_concept,
   // list_concepts, set_concept_readme/_requirements) fell behind the same way
-  // on 25 Sep 2026 and were caught on 28 Sep.
+  // on 25 Sep 2026 and were caught on 28 Sep; set_blocked/clear_blocked and
+  // set_phase_skill_bindings (PR #270, 30 Sep) likewise, caught the same day.
   assert.deepStrictEqual(names, [
-    "add_concept_comment", "add_item_comment", "approve_deploy_to_main", "comment_on_faq_revision", "create_backlog_item",
+    "add_concept_comment", "add_item_comment", "approve_deploy_to_main", "clear_blocked", "comment_on_faq_revision", "create_backlog_item",
     "create_faq_article", "create_interface", "create_project_document", "delete_interface",
     "delete_project_document", "delete_skill", "get_approved_for_deployment_board", "get_backlog_item",
     "get_concept", "get_doc_revision", "get_faq_article", "get_faq_revision", "get_project_docs",
     "get_ready_for_testing_board", "get_routine_setup_instructions", "get_skill", "list_backlog_items",
     "list_concepts", "list_doc_revisions", "list_pending_faq_revisions", "list_projects", "list_skill_misses",
-    "list_skills", "mark_skill_reviewed", "report_skill_miss", "search_faq", "set_concept_readme",
-    "set_concept_requirements", "set_my_routine_binding",
+    "list_skills", "mark_skill_reviewed", "report_skill_miss", "search_faq", "set_blocked", "set_concept_readme",
+    "set_concept_requirements", "set_my_routine_binding", "set_phase_skill_bindings",
     "set_project_artifact", "set_project_readme", "set_project_requirements", "update_backlog_item",
     "update_faq_article", "update_interface", "update_project_document", "update_skill",
     "upload_skill", "whoami",
@@ -249,6 +250,36 @@ await test("the client is told which tools are destructive", async () => {
   const docWrite = tools.find((t) => t.name === "set_project_requirements");
   assert.strictEqual(docWrite.annotations.readOnlyHint, false);
   assert.strictEqual(docWrite.annotations.destructiveHint, false);
+});
+
+// The two column boards are MCP Apps (SEP-1865): the SDK client must see the
+// ui:// binding on the tool, be able to read the view as a resource, and get
+// the column back as structuredContent — the three things a host that
+// renders MCP Apps needs. See functions/mcp-app-views.js.
+await test("the two board tools are MCP Apps: the SDK sees their ui:// binding on tools/list", async () => {
+  const { tools } = await client.listTools();
+  const rft = tools.find((t) => t.name === "get_ready_for_testing_board");
+  assert.strictEqual(rft._meta.ui.resourceUri, "ui://backlog-tracker/ready-for-testing");
+  const afd = tools.find((t) => t.name === "get_approved_for_deployment_board");
+  assert.strictEqual(afd._meta.ui.resourceUri, "ui://backlog-tracker/approved-for-deployment");
+});
+
+await test("the SDK can list and read the views as resources with the MCP Apps mimeType", async () => {
+  const { resources } = await client.listResources();
+  assert.deepStrictEqual(resources.map((r) => r.uri).sort(), ["ui://backlog-tracker/approved-for-deployment", "ui://backlog-tracker/ready-for-testing"]);
+  const { contents } = await client.readResource({ uri: "ui://backlog-tracker/ready-for-testing" });
+  assert.strictEqual(contents[0].mimeType, "text/html;profile=mcp-app");
+  assert.match(contents[0].text, /ui\/initialize/);
+  assert.strictEqual(contents[0]._meta.ui.prefersBorder, true);
+});
+
+await test("get_ready_for_testing_board's result carries the column as structuredContent for the view", async () => {
+  const out = await client.callTool({ name: "get_ready_for_testing_board", arguments: { projectId: "proj-lvp" } });
+  assert.strictEqual(out.isError, undefined);
+  assert.strictEqual(out.structuredContent.count, 1);
+  assert.strictEqual(out.structuredContent.items[0].id, "tick-1");
+  assert.strictEqual(out.structuredContent.items[0].project, "Live Visitor Profile");
+  assert.ok(out.content.every((b) => b.type === "text"), "text for the model; the view gets structuredContent");
 });
 
 await test("a tool error comes back as a tool error, not a transport failure", async () => {

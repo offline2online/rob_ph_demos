@@ -794,9 +794,19 @@ anything itself, and only when every ticket on the project's train is
 already Approved for Deployment and Ready for Testing is empty for it —
 the same condition that shows that button — logging every call to
 `mcpAuditLog`. Two read-only tools, `get_ready_for_testing_board` and
-`get_approved_for_deployment_board`, render those two columns as an
-embedded HTML card resource for a client that supports it, alongside the
-same data as plain text — reviewing there changes nothing either. Beyond
+`get_approved_for_deployment_board`, are MCP Apps: each binds a
+`ui://backlog-tracker/…` view (`functions/mcp-app-views.js`, served via
+`resources/read`) that a host supporting MCP Apps — claude.ai and Claude
+Desktop; not Claude Code yet — renders inline as ticket cards, fed by the
+tool result's `structuredContent`; every host also gets the same data as
+plain text — reviewing there changes nothing either. **The Ready for
+Testing column is also presented without being asked for**: when the
+pipeline lands a build, `run-backlog-automation.js` stamps the project and
+`functions/notifyOnItemsReadyForTesting` fires a Routine session whose only
+job is to show that column (`ROUTINE_INSTRUCTIONS.md` → "The 'Ready for
+Testing' flow"), via the MCP App where the Routine has the PH Agent Console
+connector attached, as text otherwise; the Deploy flow opens with the
+Approved for Deployment view the same way. Beyond
 that one trigger, everything else stays on the board's own buttons and the
 triggered Routine. The documentation tools write to `projects`, so that is
 enforced by a single `updateProjectFields` allowlist rather than by never

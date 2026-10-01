@@ -458,6 +458,11 @@ integration, and nothing else in the build may depend on their internals.
   minute (`PH_SCHEDULER=in-process`, the default) or from outside
   (`PH_SCHEDULER=off` and `npm run scheduler:tick` once a minute — a
   Kubernetes CronJob, `deploy/kubernetes/`).
+  **`PH_TEST_CLOCK`** (test only) sets "now" for the API and `scheduler:tick`: an ISO
+  instant, or the path of a file holding one (re-read on every call, so a
+  runner advances every process by rewriting it). It lets a test pass an
+  auction cutoff or a window end without changing any company setting; the
+  API refuses to start with it set under `NODE_ENV=production`.
 - **Billing**: billing line items (dynamic VAC-d, reconciled against
   existing playback data; one per window, each window its slot's billing
   unit long — OQ27) are stored only. `npm run billing:print` prints
