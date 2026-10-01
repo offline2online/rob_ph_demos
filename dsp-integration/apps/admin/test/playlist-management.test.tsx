@@ -3,6 +3,7 @@ import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Providers, appRoutes } from '../src/App'
 import { newDisplayType } from '../src/features/display-types/model'
+import { slow } from './timeouts'
 
 const menuBoard = {
   ...newDisplayType('menu_board'),
@@ -317,7 +318,7 @@ describe('Playlist Management page', () => {
     expect(saved.map((s) => [s.owner, s.zoneId])).toEqual([
       ['advertiser', 'z1'], ['advertiser', 'z1'], ['advertiser', 'z2'], ['advertiser', 'z2'], ['internal', 'z3'], ['advertiser', 'z3'],
     ])
-  }, 120000)
+  }, slow(120000))
 
   /* Ticket, 28 Sep 2026: editing a playlist name pushed the caret to the end
      of the field on every keystroke, so a word at the start of the name

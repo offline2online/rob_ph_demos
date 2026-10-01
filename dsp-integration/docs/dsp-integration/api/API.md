@@ -463,6 +463,18 @@ integration, and nothing else in the build may depend on their internals.
   runner advances every process by rewriting it). It lets a test pass an
   auction cutoff or a window end without changing any company setting; the
   API refuses to start with it set under `NODE_ENV=production`.
+  **Test-only endpoints** (E2E Testing Strategy §3.3, 1 Oct 2026; off under
+  `NODE_ENV=production`, where they are 404): `POST /admin/v1/test/plays`
+  `{reservationId, plays: [{tier, count, durationSec?}]}` writes plays with a
+  version tier into the stand-in `plays` table for a won window, spread over
+  the display type's displays and through the window, so a run can bill it
+  after moving the clock past the window end. On the mock DSP service,
+  `POST /_control/bidder {mode: "no-bid" | "scripted" | "default", dsps?}`
+  switches every mock bidder at once (`scripted` leaves each DSP's own
+  `PUT /_control/{dsp}/bidder` settings in force). The Run 6 journey runner
+  (`npm run e2e:journey`, `apps/api/test/journey/`) uses all three: fresh
+  database per run, mock bidders set to no-bid for the whole journey so the
+  auto-approved DSP creative can never alter an outcome, L2 as an API bid.
 - **Billing**: billing line items (dynamic VAC-d, reconciled against
   existing playback data; one per window, each window its slot's billing
   unit long — OQ27) are stored only. `npm run billing:print` prints

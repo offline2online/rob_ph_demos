@@ -14,7 +14,7 @@
    - an API bid with no ceiling (reproduced: a 1e12 CPM bid was taken);
    - claims, takeovers and re-runs of the scheduled auction;
    - what a partner can send in a reservation body. */
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -140,6 +140,25 @@ describe('simultaneous bids and reservations for one window', () => {
     expect((await reserve(SWISSE)).statusCode).toBe(201)
     const out = await runAuction(ctx, W1)
     expect(out.positions[0].winner).toMatchObject({ advertiserId: 'nestle', clearingCpm: 200 })
+  })
+
+  it('equal bids in the same millisecond: the auction reads them in the order they arrived', async () => {
+    const { ctx } = await setup()
+    const row = (id: string, advertiserId: string) => ({
+      id, partnerId: 'p_google', advertiserId, campaignId: `c_api_${advertiserId}`, positionId: POS,
+      windowStart: W1.toISOString(), type: 'bid' as const, channel: 'api' as const, bidCpm: 200, currency: 'AUD', status: 'pending' as const,
+      clearingCpm: null, reason: null, testMode: false, pricingType: 'localised', handedOffAt: null,
+    })
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(NOW)
+      /* Ids chosen so that ordering by id would put the later bid first. */
+      ctx.reservations.insert(row('res_zzzz', 'nestle'))
+      ctx.reservations.insert(row('res_aaaa', 'swisse'))
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(ctx.reservations.forWindow(POS, W1.toISOString()).map((r) => r.id)).toEqual(['res_zzzz', 'res_aaaa'])
   })
 
   it('six reservations at once for a position held for one advertiser book it once', async () => {

@@ -27,6 +27,18 @@ shapes of the same 15,000 displays:
 | B | 60 × 250 | 248 |
 | C | 15 × 1,000 | 68 |
 
+## The regression gate (1 Oct 2026)
+
+The numbers below are now thresholds: `npm run bench -- --assert` runs
+shapes A, B, C and T (`bench/thresholds.json`, seeded from the "after"
+column with a 25% tolerance) and exits non-zero naming the shape and the
+endpoint that moved. Because they were measured on one sandbox, a
+different machine first runs `npm run bench -- --calibrate`, which writes
+`bench/baseline.local.json` (not committed); `--assert` then compares
+against that. A deliberate change updates `thresholds.json` in the same
+PR. Shape T is the 7-Eleven Thailand estate as an assumption (shape C's
+mix) until CP Group confirms its display-type formats.
+
 ## How it was measured
 
 `npm run bench` now takes the estate's shape and exercises the write path

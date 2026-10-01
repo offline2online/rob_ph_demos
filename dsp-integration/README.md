@@ -29,6 +29,46 @@ folder's history is on the tag `archive/display-types-dsp-integration`.
 - **UI specification:** `prototype-reference/` (read-only). The look comes from
   the design skill in `.claude/skills/ph-designer/`.
 
+## For agents working this project's tickets
+
+Read this before building, investigating or commenting on any ticket
+(Rob, 30 Sep 2026). Build runs have stalled by concluding a document or
+input "doesn't exist" after searching only this repo, and by re-reviewing
+tickets that were already decided or parked.
+
+1. **Some documents live only on the board, not in this repo.** The
+   **End-to-End Test Spec — DSP Demand Paths (v2)**, the **Run 6 Runbook —
+   agent instructions**, every **E2E Test Results** document, **Boundaries
+   with PH Core**, the data model and the review documents are board
+   project documents.
+   - Read them with the PH Agent Console MCP: `get_project_docs`, projectId
+     `mIPdOCAWevhrgD8g2tCZ`, `include: ["docs"]`.
+   - Change them with `update_project_document`. It overwrites the whole
+     document: copy the current text and change only what the ticket asks.
+     The previous version is kept in the revision history.
+   - A repo search that finds nothing is **not** evidence that a document
+     is missing. Check the board first.
+2. **A ticket that only changes a board document needs no patch.** Edit
+   the document, comment exactly what changed, and say it needs no
+   deployment. Don't set `patchReady`.
+3. **Keep repo and board copies together.** Where a repo doc has a board
+   counterpart (`PH-CORE-BOUNDARIES.md` ↔ **Boundaries with PH Core**),
+   change both in the same ticket.
+4. **Read every comment before starting.** The newest comment from Rob
+   wins over the description and over earlier agent comments.
+   - A description or comment starting **DECIDED** is Rob's decision:
+     build it. Don't write another review.
+   - A comment starting **PARKED** means skip the ticket: don't
+     investigate it and don't comment on it again. Leave it in Backlog
+     until a newer comment from Rob un-parks it.
+5. **Inputs from outside the repo and the board.** If a ticket needs a
+   file that is in neither (for example `run6-package.zip`), say so once
+   in a comment and leave it. Don't re-investigate it on later runs unless
+   a newer comment says the input is now available.
+6. **Needs a product decision.** Comment once with the specific questions
+   and a recommended default for each, then stop. Don't repeat the review
+   on the next run.
+
 ## The hosted prototype
 
 `prototype/` is a built copy of the admin UI, published at
@@ -223,6 +263,17 @@ npm run dev:mocks
 ```bash
 npm test
 ```
+
+- **E2E on demand** (E2E Testing Strategy, 1 Oct 2026): `npm run e2e:quick`
+  runs Runs 1–5 (82 stubbed tests) writing `results/e2e-quick.json`;
+  `npm run e2e:journey` runs Run 6 end to end against a real local instance
+  it starts itself (fresh database, ephemeral ports, `PH_TEST_CLOCK`), no
+  browser and no settings changes; `npm run bench -- --assert` is the
+  performance gate (`--calibrate` first on a new machine). `npm run
+  e2e:report` and `npm run e2e:file-bugs` turn `results/*.json` into the
+  board's results document and tickets (`BOARD_API_KEY`; `--dry-run`
+  without). CI: `.github/workflows/e2e-quick.yml` on every train push and
+  PR, `e2e-nightly.yml` on `main`.
 
 - `DSP_INTEGRATION_ENABLED` is the `dspIntegration` feature flag, and it is
   off by default. When it is off:

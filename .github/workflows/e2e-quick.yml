@@ -1,0 +1,81 @@
+# E2E quick — every push to the DSP train and every PR to main (E2E Testing
+# Strategy §3.6, ticket mY3f2jq9nml5yK3oLOjJ). Typecheck and the full suites,
+# Runs 1–5 included (apps/api/test/e2e). Results JSON is uploaded as an
+# artifact for report-e2e.
+#
+# "e2e-quick" is a required check on main (repository ruleset, PRs only), so
+# it must report on EVERY pull request: a PR that doesn't touch
+# dsp-integration/ or this file gets a passing no-op instead of a check that
+# never starts. A path filter on the trigger would leave such PRs blocked.
+name: e2e-quick
+
+on:
+  push:
+    branches: [deploy/dsp-integration]
+    paths: ['dsp-integration/**', '.github/workflows/e2e-quick.yml']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-quick-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e-quick:
+    name: e2e-quick
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read   # the scope step lists the PR's files
+    defaults:
+      run:
+        working-directory: dsp-integration
+    env:
+      PH_SECRETS_KEY: ${{ secrets.PH_TEST_SECRETS_KEY || 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' }}
+    steps:
+      - name: Does this change touch dsp-integration?
+        id: scope
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          files=$(gh api "repos/${{ github.repository }}/pulls/$PR/files" --paginate -q '.[].filename')
+          if echo "$files" | grep -qE '^(dsp-integration/|\.github/workflows/e2e-quick\.yml$)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No dsp-integration/ changes in this PR, so e2e-quick passes without running."
+          fi
+      - uses: actions/checkout@v4
+        if: steps.scope.outputs.run == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.scope.outputs.run == 'true'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: dsp-integration/package-lock.json
+      - if: steps.scope.outputs.run == 'true'
+        run: npm ci --no-audit --no-fund --loglevel=error
+      - if: steps.scope.outputs.run == 'true'
+        run: npm run typecheck
+      - name: Full suites (api, admin, campaign-approval, dsp-mocks; Runs 1–5 included)
+        if: steps.scope.outputs.run == 'true'
+        run: npm test
+      - name: Runs 1–5 as JSON (results/e2e-quick.json)
+        if: steps.scope.outputs.run == 'true'
+        run: npm run e2e:quick
+      - name: it.fails markers reference a ticket
+        if: steps.scope.outputs.run == 'true'
+        run: npm run e2e:lint
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.scope.outputs.run == 'true'
+        with:
+          name: e2e-quick-results-${{ github.sha }}
+          path: dsp-integration/results/
+          if-no-files-found: ignore

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Providers, appRoutes } from '../src/App'
 import { SWITCH_TIP } from '../src/features/dsp-integration/ExchangeSettings'
 import { advertiserSettings, exchange, fakeFetch } from './fixtures'
+import { slow } from './timeouts'
 
 beforeEach(() => vi.stubGlobal('fetch', vi.fn(fakeFetch())))
 afterEach(() => vi.unstubAllGlobals())
@@ -166,7 +167,7 @@ describe('DSP integration switch', () => {
     expect(calls[1].body).toMatchObject({ enabled: true })
     await waitFor(async () => expect(await navLabels()).toContain('Advertisers / Inventory'))
     expect(await screen.findByText('Published')).toBeInTheDocument()
-  }, 30_000)
+  }, slow(30_000))
 
   it('switched off: Campaign schedule and Advertisers / Inventory are hidden and their links go home', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/exchange': OFF, '/api/admin/v1/features': { dspIntegration: false } })))
@@ -441,7 +442,7 @@ describe('Campaign Status stand-in', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Clear Filter' }))
     await shown('Blackmores autumn')
     await shown('Swisse spring')
-  }, 45000)
+  }, slow(45000))
 
   it('never lists a Draft campaign — a retailer only ever sees one that has been submitted', async () => {
     const draftApproval = { ...approval, status: 'draft', mode: null, submittedAt: null }
@@ -684,7 +685,7 @@ describe('Advertisers / Inventory', () => {
        the file's default 20s budget regardless of this change (Rob, 23
        Sep). A per-test override, not a global one, so a real hang elsewhere
        in the file still fails fast. */
-  }, 45000)
+  }, slow(45000))
 
   /* Round 2 (23 Sep) failed testing twice on this exact picker: once because
      the buyers-lists group sat after Advertisers instead of directly under
@@ -722,7 +723,7 @@ describe('Advertisers / Inventory', () => {
     fireEvent.click(addOption)
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText('New buyers list')).toBeInTheDocument()
-  }, 30000)
+  }, slow(30000))
 
   /* The modal used to show field errors only when the API sent `details`
      and say nothing at all otherwise — so a detail-less error (the hosted
@@ -756,7 +757,7 @@ describe('Advertisers / Inventory', () => {
        silently doing nothing. */
     expect(await screen.findByText(/the data is a snapshot/)).toBeInTheDocument()
     expect(within(dialog).getByText('New buyers list')).toBeInTheDocument()
-  }, 30000)
+  }, slow(30000))
 
   /* The CTA opens a new tab, so it can't go through the router — and a
      bare path 404s wherever the bundle isn't served from the domain root
