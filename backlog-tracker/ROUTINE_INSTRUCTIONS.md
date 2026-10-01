@@ -790,6 +790,26 @@ own `readyToDeploy` is information, not permission.
    `trainReady` and which tickets were on the train in your final report
    (see "When done" below), not what you watched happen.
 
+**Docs sync — check it before you call a project live (1 Oct 2026).** A
+project with a `repoFolder` has its `REQUIREMENTS.md` / `README.md` copied
+onto the board by the automation right after a train merges
+(`syncDocsAfterMerge`, `scripts/docs-sync-lib.js`), and the outcome is
+recorded as `projects/{id}.docsSync` = `{mergeCommit, requirementsCommit,
+readmeCommit, syncedAt, error}` (plus `lastMergeCommit` / `lastMergeAt`,
+stamped in the same write). It is returned by `get_project_docs`, and the
+board shows an amber **Docs behind main** chip when `error` is set or a
+merge is newer than the last sync. Because the merge happens after your
+session ends, you can't see it in the run that sets `trainReady`; but any
+later run that reports a project as live (a follow-up fire, a Ready for
+Testing presentation after a merge) must read `docsSync` first. If `error`
+is set, or `lastMergeCommit` differs from `docsSync.mergeCommit` with an
+older `syncedAt`, say so plainly: the project is merged but its board docs
+are behind, with the error text. Never answer it by retyping a long spec
+through `set_project_requirements`; the fix is the project's sync script
+(`npm run board:sync` in `dsp-integration/`, or `dsp-board.yml docs=sync`).
+A project with no folder (`repoFolderNotApplicable`) has no `docsSync`;
+that is normal, not a failure.
+
 **Outcomes that are not a merge**, all recorded on the project itself as
 `trainStatus` + `trainNote`, visible without re-running anything:
 

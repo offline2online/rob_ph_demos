@@ -1179,6 +1179,30 @@ function trainLockedNoteHTML(project) {
   </div>`;
 }
 
+// "Docs behind main": the post-merge sync (run-backlog-automation.js) records
+// its outcome on projects/{id}.docsSync. Behind = the last sync was refused or
+// failed (docsSync.error), or a train merged after the last successful sync.
+// A project the sync has never touched (no folder, never merged) has no
+// docsSync and shows nothing.
+function docsBehindInfo(project) {
+  const s = project && project.docsSync;
+  if (!s || typeof s !== "object") return null;
+  if (s.error) return { text: String(s.error) };
+  const merge = project.lastMergeCommit;
+  if (merge && s.mergeCommit !== merge && tsMillis(s.syncedAt) < tsMillis(project.lastMergeAt)) {
+    return { text: `main moved to ${String(merge).slice(0, 7)} but Requirements/README were last synced at ${String(s.mergeCommit || "an unknown commit").slice(0, 7)}.` };
+  }
+  return null;
+}
+
+function docsBehindChipHTML(project) {
+  const info = docsBehindInfo(project);
+  if (!info) return "";
+  return `<button type="button" class="docs-behind-chip project-docs-btn" data-project-id="${escapeHTML(project.id)}" title="${escapeHTML(info.text)} Click to open the Docs page.">
+    <span class="material-symbols-outlined docs-behind-icon">sync_problem</span><span>Docs behind main</span>
+  </button>`;
+}
+
 function notifyClaudeButtonHTML(project) {
   const pid = project.id;
   const routine = project.notifyRoutine;
@@ -1711,6 +1735,7 @@ function projectSectionHTML(project) {
         </div>
       </div>
       ${trainLockedNoteHTML(project)}
+      ${docsBehindChipHTML(project)}
       <div class="project-body">${board}</div>
     </section>`;
 }
@@ -4736,6 +4761,22 @@ function renderDocsPage() {
     docsRepoFolderNone.checked = !!(project && project.repoFolderNotApplicable);
     docsRepoFolderInput.value = (project && project.repoFolder) || "";
     docsRepoFolderInput.disabled = docsRepoFolderNone.checked;
+  }
+  // Why the board's Requirements/README may be behind the repo, shown on the
+  // page the chip opens. Created here so it needs no markup of its own.
+  const nameEl = document.getElementById("docs-page-project-name");
+  const headingEl = nameEl && (nameEl.closest("h2") || nameEl);
+  let syncBanner = document.getElementById("docs-sync-banner");
+  if (!syncBanner && headingEl && headingEl.parentNode) {
+    syncBanner = document.createElement("div");
+    syncBanner.id = "docs-sync-banner";
+    syncBanner.className = "docs-sync-banner";
+    headingEl.parentNode.insertBefore(syncBanner, headingEl.nextSibling);
+  }
+  if (syncBanner) {
+    const behind = docsBehindInfo(project);
+    syncBanner.hidden = !behind;
+    syncBanner.textContent = behind ? `Docs behind main — ${behind.text} The repo file is the source of truth; run the project's docs sync (or fix the cause above) to bring this copy up to date.` : "";
   }
   const rows = interfacesForProject(docsProjectId);
   document.getElementById("docs-interfaces-list").innerHTML = rows.length

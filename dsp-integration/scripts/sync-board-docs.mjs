@@ -37,11 +37,6 @@ const DOCS = [
   { field: 'readmeMd', file: 'README.md' },
 ]
 
-/* backlog-tracker/firestore.rules caps requirementsMd and readmeMd at
-   200,000 characters. One field over it gets the whole PATCH refused, so a
-   field that is too big is left out and named, and the rest still syncs. */
-const BOARD_MAX_CHARS = 200000
-
 const args = process.argv.slice(2)
 const flag = (name) => args.includes(name)
 const valueAfter = (name) => args[args.indexOf(name) + 1]
@@ -173,13 +168,29 @@ if (flag('--check')) {
   process.exit(1)
 }
 
-const tooBig = drifted.filter((d) => read(d.file).length > BOARD_MAX_CHARS)
-for (const d of tooBig) {
-  console.error(`\n${d.field}: ${d.file} is ${read(d.file).length} characters, over the board's ${BOARD_MAX_CHARS}-character limit ` +
-    '(backlog-tracker/firestore.rules). Not written; the board keeps its old copy until the file is shortened or the limit raised.')
+/* No size guess here: the board's own rules and Firestore decide, and their
+   answer is what gets reported (a client-side 200000 limit kept refusing the
+   spec for a day after the rules went to 800000). */
+const writable = drifted
+const sha = (args) => { try { return execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' }).trim() || null } catch { return null } }
+const head = process.env.GITHUB_SHA || sha(['rev-parse', 'HEAD'])
+const lastCommit = (file) => sha(['log', '-1', '--format=%H', '--', join(ROOT, file)]) || head
+
+/* Record the outcome on projects/{id}.docsSync so the board can show
+   "Docs behind main" instead of a silent failure. Best effort. */
+async function recordSync(fields) {
+  const mask = ['docsSync', 'lastMergeCommit', 'lastMergeAt'].map((f) => `updateMask.fieldPaths=${f}`).join('&')
+  const now = { timestampValue: new Date().toISOString() }
+  const str = (v) => (v ? { stringValue: v } : { nullValue: null })
+  const docsSync = { mapValue: { fields: { mergeCommit: str(head), syncedAt: now, ...fields } } }
+  try {
+    await fetch(`${BOARD}/projects/${PROJECT_ID}?${mask}`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields: { docsSync, lastMergeCommit: str(head), lastMergeAt: now } }),
+    })
+  } catch { /* the exit code and message below still say what happened */ }
 }
-const writable = drifted.filter((d) => !tooBig.includes(d))
-if (!writable.length) process.exit(1)
 
 const mask = writable.map((d) => `updateMask.fieldPaths=${d.field}`).concat('updateMask.fieldPaths=updatedAt').join('&')
 const res = await fetch(`${BOARD}/projects/${PROJECT_ID}?${mask}`, {
@@ -192,14 +203,23 @@ const res = await fetch(`${BOARD}/projects/${PROJECT_ID}?${mask}`, {
     },
   }),
 })
-if (!res.ok) throw new Error(`Writing failed (${res.status}): ${await res.text()}`)
+if (!res.ok) {
+  const answer = await res.text()
+  await recordSync({ error: { stringValue: `Docs sync failed (${res.status}): ${answer.slice(0, 500)}` } })
+  throw new Error(`Writing failed (${res.status}): ${answer}`)
+}
 
 /* Read it back: a sync that says it worked and didn't is worse than a failure. */
 const after = await board(token)
 const bad = after.filter((p) => writable.some((d) => d.field === p.field) && p.board !== read(p.file))
 if (bad.length) {
+  await recordSync({ error: { stringValue: `Wrote, but the board does not match: ${bad.map((d) => d.field).join(', ')}.` } })
   console.error(`\nWrote, but the board does not match: ${bad.map((d) => d.field).join(', ')}. Restore from the board's revision history.`)
   process.exit(1)
 }
+await recordSync({
+  error: { nullValue: null },
+  requirementsCommit: { stringValue: lastCommit(DOCS[0].file) },
+  readmeCommit: { stringValue: lastCommit(DOCS[1].file) },
+})
 console.log(`\nSynced ${writable.map((d) => d.field).join(' and ')} — verified byte for byte.`)
-if (tooBig.length) process.exit(1)

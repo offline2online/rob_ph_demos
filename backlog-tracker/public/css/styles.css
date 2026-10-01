@@ -502,6 +502,22 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 }
 .train-locked-icon { font-size: 15px; flex-shrink: 0; }
 
+/* "Docs behind main" — see docsBehindChipHTML() in js/app.js. Amber, same
+   warning family as the train-locked hint; a button, since it opens the Docs
+   page where the reason is spelled out. */
+.project.collapsed .docs-behind-chip { display: none; }
+.docs-behind-chip {
+  display: inline-flex; align-items: center; gap: 6px; margin: -2px 0 10px; box-sizing: border-box; cursor: pointer;
+  background: rgba(201, 138, 10, .1); color: var(--warning); border: 1px solid var(--warning); border-radius: 999px;
+  padding: 3px 10px; font: inherit; font-size: 12px; font-weight: 500;
+}
+.docs-behind-icon { font-size: 15px; flex-shrink: 0; }
+.docs-sync-banner {
+  margin: 8px 0 12px; padding: 8px 12px; font-size: 13px; color: var(--warning);
+  background: rgba(201, 138, 10, .1); border: 1px solid var(--warning); border-radius: 6px;
+}
+.docs-sync-banner[hidden] { display: none; }
+
 /* Program/Product grouping — a heading above a set of projects, only
    rendered at all once at least one program exists (see app.js render()).
    No board/columns of its own, just a label; each project inside still

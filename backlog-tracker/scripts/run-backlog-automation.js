@@ -54,6 +54,7 @@ const { buildIndexFromArticleFiles, validateIndexAgainstArticleFiles, serializeI
 // runs main() for real the moment it's required (see the bottom of this
 // file).
 const { trainLockShouldClear, trainHandoverReason } = require("../functions/train-lock");
+const { syncProjectDocs } = require("./docs-sync-lib");
 
 const PROJECT_ID = "backlog-tracker-e4ed2";
 const REPO = "offline2online/rob_ph_demos";
@@ -2158,6 +2159,33 @@ function viewTrainPr(prNumber) {
   return JSON.parse(json);
 }
 
+// A merge made with this workflow's own GITHUB_TOKEN never fires another
+// workflow's `on: push`, so the push-triggered docs sync (dsp-board.yml)
+// only ever ran for human-merged PRs — PR #284 changed the DSP project's
+// REQUIREMENTS.md and README.md and nothing synced. This does it here, from
+// projects/{id}.repoFolder, and records the outcome on projects/{id}.docsSync
+// (see docs-sync-lib.js) so a refusal shows on the board. Never throws: the
+// merge has already happened and must still finish bookkeeping.
+async function syncDocsAfterMerge(project, mergeCommit) {
+  try {
+    let ref = mergeCommit;
+    try { run("git", ["fetch", "origin", "main", "--quiet"]); } catch { /* use what we have */ }
+    if (!ref) ref = run("git", ["rev-parse", "origin/main"]);
+    const result = await syncProjectDocs(project, ref, {
+      readFile: (p) => { try { return execFileSync("git", ["show", `${ref}:${p}`], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] }); } catch { return null; } },
+      lastCommitFor: (p) => { try { return run("git", ["log", "-1", "--format=%H", ref, "--", p]) || null; } catch { return null; } },
+      getProject: () => getProject(project.id),
+      patchProject: (fields) => patchProject(project.id, fields),
+      now: () => new Date(),
+    });
+    if (result.skipped) console.log(`[docs-sync] ${project.id}: skipped — ${result.skipped}`);
+    else if (result.ok) console.log(`[docs-sync] ${project.id}: Requirements/README synced at ${ref.slice(0, 7)}, verified byte for byte`);
+    else console.log(`[docs-sync] ${project.id}: ${scrubSecrets(result.error)} — recorded on the project as docsSync.error`);
+  } catch (err) {
+    console.log(`[docs-sync] ${project.id}: unexpected failure (${scrubSecrets(err.message)})`);
+  }
+}
+
 // Post-merge bookkeeping, shared by processDeployTrain (the pipeline merged
 // it) and reconcileMergedTrains (a person merged it — the workflow-file
 // case). Flips every ticket on the train to live, triggers the Firebase
@@ -2275,6 +2303,8 @@ async function finishTrain(project, deployBranch, prNumber, trainItems, { touche
     console.log(`[deploy-train] couldn't reset ${deployBranch} to main (${scrubSecrets(err.message)}) — the next train will start from the old branch head`);
   }
   run("git", ["checkout", "main", "--quiet"]);
+
+  await syncDocsAfterMerge(project, mergeCommit);
 
   await patchProject(project.id, {
     trainReady: false,
@@ -3165,4 +3195,6 @@ module.exports = {
   // test/train-sync.test.js — the train is brought up to date with main
   // before a ticket lands, and the patch's edits are carried across
   syncTrainWithMain, rebasePatchFilesOnto,
+  // test/docs-sync.test.js
+  syncDocsAfterMerge,
 };
