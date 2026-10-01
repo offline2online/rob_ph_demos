@@ -6,7 +6,10 @@ Source: *Real-Time Personalised Surface Architecture Specification v1.2*
 This project owns **System One — The Attribute Layer** from that spec.
 
 See [`../shared/interface-contract.md`](../shared/interface-contract.md) for
-the maintained boundary with the Display Types project — that file,
+the maintained boundary with the Display Types project (**v3, adopted
+1 Oct 2026**; the exchange never evaluates a rule or resolves an attribute,
+and the deadline contract, trust zones, verification levels and
+partner-supplied attributes are no longer part of it) — that file,
 not this one, is the source of truth for anything both projects depend on.
 It is also mirrored/maintained inside the live backlog tracker as an
 **interface** between the two projects — see that app.
