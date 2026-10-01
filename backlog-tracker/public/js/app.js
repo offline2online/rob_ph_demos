@@ -3969,7 +3969,7 @@ const niAttachments = createAttachmentController({
 // Live "X / max" readout for a bounded field, driven off the element's own
 // maxLength (works for both <input maxlength> and <textarea maxlength>) —
 // see firestore.rules for the actual caps this mirrors (desc 2000, title
-// 200, project/interface/doc name 80-120, interface/doc contentMd 20000).
+// 200, project/interface/doc name 80-120, interface/doc contentMd 60000).
 // Returns an update() the caller can invoke after setting .value
 // programmatically (opening Edit item, opening a Docs modal, ...), since
 // that doesn't fire an "input" event on its own.
@@ -4854,7 +4854,7 @@ document.getElementById("doc-submit").addEventListener("click", async () => {
   } catch (err) {
     await showAlert(describeSaveError(err, [
       { label: "Name", value: name, max: 120 },
-      { label: "Content", value: content, max: 20000 },
+      { label: "Content", value: content, max: 60000 },
     ]));
     return;
   }
@@ -4923,7 +4923,7 @@ document.getElementById("if-submit").addEventListener("click", async () => {
   } catch (err) {
     await showAlert(describeSaveError(err, [
       { label: "Name", value: name, max: 120 },
-      { label: "Contract content", value: content, max: 20000 },
+      { label: "Contract content", value: content, max: 60000 },
     ]));
     return;
   }

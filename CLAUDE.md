@@ -554,7 +554,7 @@ the ticket and in `mcpAuditLog`.
   what it replaced in `docRevisions` (append-only, server-only, member-
   readable), so a bad write or a delete is recoverable via
   `list_doc_revisions` → `get_doc_revision` → write it back. Ceilings:
-  200k chars for Requirements/README, 20k for project documents and
+  800k chars for Requirements/README, 60k for project documents and
   interfaces (matching what `firestore.rules` lets the board's own editor
   save, so a person can always edit what an agent wrote). Keep the repo
   files (`REQUIREMENTS.md`, `README.md`, `shared/interface-contract.md`) in

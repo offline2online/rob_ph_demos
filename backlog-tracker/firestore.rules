@@ -321,7 +321,7 @@ service cloud.firestore {
         isNonEmptyBoundedString(incoming().projectIds[0], 100) &&
         isNonEmptyBoundedString(incoming().projectIds[1], 100) &&
         incoming().contentMd is string &&
-        incoming().contentMd.size() <= 20000;
+        incoming().contentMd.size() <= 60000;
 
       allow delete: if isEditor();
     }
@@ -338,7 +338,7 @@ service cloud.firestore {
         isNonEmptyBoundedString(incoming().projectId, 100) &&
         isNonEmptyBoundedString(incoming().name, 120) &&
         incoming().contentMd is string &&
-        incoming().contentMd.size() <= 20000;
+        incoming().contentMd.size() <= 60000;
 
       allow delete: if isEditor();
     }

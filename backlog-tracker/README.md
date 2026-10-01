@@ -1102,11 +1102,11 @@ never second-guesses prior art that's already shipped or been archived.
 
 `firestore.rules` caps several string fields (`backlogItems.desc` at 2000,
 `title` at 200, project/interface/doc `name` at 80-120, interface/doc
-`contentMd` at 20000) and rejects a write over the cap with a bare 403
+`contentMd` at 60000) and rejects a write over the cap with a bare 403
 permission-denied — nothing in that error names the field or the limit.
 Native `maxlength` on the relevant `<textarea>`/`<input>` already stopped
 most of this at the source (and `if-content-input`/`doc-content-input` now
-carry one too, matching their 20000-character rule, which they didn't
+carry one too, matching their 60000-character rule, which they didn't
 before), but said nothing to someone approaching a limit, and did nothing
 at all against dictation, which sets `.value` straight from script — a path
 that bypasses `maxlength` entirely, called out explicitly as a way to run

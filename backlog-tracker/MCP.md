@@ -244,7 +244,7 @@ Three things worth knowing before pointing an agent at them:
   ask before those and not before an ordinary update.
 - **Size ceilings differ, on purpose.** Requirements and README allow 800k
   characters (they live on the project doc, which shares Firestore's 1 MiB
-  limit). Project documents and interfaces allow 20k — the same ceiling
+  limit). Project documents and interfaces allow 60k — the same ceiling
   `firestore.rules` gives the board's own editor, because a longer document
   would be one a person could never save an edit to from the Docs page.
 

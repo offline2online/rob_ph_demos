@@ -1121,10 +1121,10 @@ const PROJECT_MD_MAX = 800000;
 // constant rather than duplicating the number.
 const CONCEPT_MD_MAX = PROJECT_MD_MAX;
 // projectDocs and interfaces are capped at what firestore.rules already
-// allows the BROWSER to write (20000). Going higher here would let an agent
+// allows the BROWSER to write (60000). Going higher here would let an agent
 // author a document a person could then never save an edit to from the Docs
 // page, because the rules would reject their write. Keep the two in step.
-const DOC_MD_MAX = 20000;
+const DOC_MD_MAX = 60000;
 const DOC_NAME_MAX = 120;
 
 // The ONLY fields on a projects/{id} doc that any tool here may write.

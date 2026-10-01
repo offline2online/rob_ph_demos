@@ -2381,7 +2381,7 @@ not implementation detail:
    tools carrying `destructiveHint`.
 3. **Ceilings differ by where the content lives.** Requirements/README are
    fields on `projects/{id}` and share its 1 MiB document limit → 800k
-   characters. `projectDocs`/`interfaces` content is capped at 20k, matching
+   characters. `projectDocs`/`interfaces` content is capped at 60k, matching
    `firestore.rules`, so an agent can never author a document a person is
    then unable to save an edit to from the Docs page.
 
