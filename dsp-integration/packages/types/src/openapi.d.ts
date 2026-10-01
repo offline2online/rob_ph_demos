@@ -986,7 +986,7 @@ export interface components {
         Error: {
             error: {
                 /** @enum {string} */
-                code: "validation_failed" | "variable_not_permitted" | "checks_failed" | "not_approved" | "below_floor" | "advertiser_blocked" | "category_blocked" | "not_on_whitelist" | "not_invited" | "targeting_not_supported" | "conflict" | "has_dependents" | "unauthorised" | "forbidden" | "not_found" | "rate_limited" | "internal_error";
+                code: "validation_failed" | "variable_not_permitted" | "checks_failed" | "not_approved" | "below_floor" | "advertiser_blocked" | "category_blocked" | "not_on_whitelist" | "not_invited" | "targeting_not_supported" | "too_many_versions" | "conflict" | "has_dependents" | "unauthorised" | "forbidden" | "not_found" | "rate_limited" | "internal_error";
                 message: string;
                 details?: {
                     field?: string;
@@ -1057,6 +1057,15 @@ export interface components {
              *     estimate: an invented audience number would end up on invoices.
              */
             scored?: boolean;
+            /**
+             * @description The most campaigns (the default layer plus targeted versions, 1 +
+             *     targeted.length) a bid or reservation on this position may carry:
+             *     the slot's own Max campaigns, else its display type's default,
+             *     else 5. A campaign with more versions is refused with
+             *     `too_many_versions` (decision, 1 Oct 2026). Submission only guards
+             *     package size; this is the sellable count.
+             */
+            maxCampaigns?: number;
             pricing: components["schemas"]["Pricing"];
             /**
              * @description A CPM premium at which this position can be reserved in advance
@@ -2001,9 +2010,15 @@ export interface components {
             }[];
         };
         DisplayTypeExtensions: {
-            /** @description Default VAC-d audience score: assumed views per play window, per
-             *     display. Displays inherit it unless overridden; a slot with no score of its own is
-             *     scored from it. Absent keeps the saved value; null clears it. */
+            /**
+             * @description Default VAC-d audience score: assumed views per play window, per
+             *     display (ticket, 1 Oct 2026). Every display of this type starts
+             *     with it, and a slot with no score of its own is scored from it
+             *     (the sum over the type's displays, each at its own override
+             *     where it has one), so no slot is unscored. Editing it reaches
+             *     every display that was never overridden. Absent keeps the saved
+             *     value; null clears it.
+             */
             defaultVacd?: number | null;
             slots: {
                 label: string;
@@ -2301,7 +2316,7 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description error.code = not_approved | below_floor | advertiser_blocked | category_blocked | not_on_whitelist | not_invited | targeting_not_supported */
+        /** @description error.code = not_approved | below_floor | advertiser_blocked | category_blocked | not_on_whitelist | not_invited | targeting_not_supported | too_many_versions */
         NotEligible: {
             headers: {
                 [name: string]: unknown;

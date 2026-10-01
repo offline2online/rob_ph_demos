@@ -3323,7 +3323,13 @@ are in `api/PH-CORE-BOUNDARIES.md`.
   statement") once `displayTypeId` and `slot` resolve to a real advertiser
   slot — retailer-controlled, default 5, 1-10 inclusive — replacing the
   platform-wide **≤ 20 targeted versions** cap for that slot; a submission
-  naming no resolvable slot still falls back to that 20-cap.
+  naming no resolvable slot still falls back to that 20-cap as a
+  package-size guard (approval precedes booking, so the slot is often
+  unknown at submission). **The sellable count is enforced where the
+  campaign meets the slot** (Rob, 1 Oct 2026): a bid or a reservation on a
+  position whose Max campaigns is lower than the campaign's 1 + targeted
+  versions is refused `too_many_versions`, and `GET /v1/inventory` exposes
+  `maxCampaigns` on each position so a DSP knows the limit before bidding.
 - **Bid responses are validated and bounded** before they are trusted:
   the request id echoed, impression 1, a finite price under a ceiling, a
   missing currency read as USD (OpenRTB), at most 10 bids and 64 KB per

@@ -46,7 +46,7 @@ All paths are served from the retailer's own instance
   permissions it per DSP and never evaluates it.
   Codes: `validation_failed`, `variable_not_permitted`, `checks_failed`,
   `not_approved`, `below_floor`, `advertiser_blocked`, `category_blocked`,
-  `not_on_whitelist`, `not_invited`, `targeting_not_supported`, `conflict`,
+  `not_on_whitelist`, `not_invited`, `targeting_not_supported`, `too_many_versions`, `conflict`,
   `has_dependents`, `unauthorised`, `forbidden`, `not_found`,
   `rate_limited` (429, with `Retry-After`) and `internal_error` (500, a
   server fault; no internals are returned). A client error Fastify raises
@@ -57,7 +57,9 @@ All paths are served from the retailer's own instance
     partners (`PH_MAX_UPLOADS_IN_FLIGHT`; `429`);
   - forecast: at most 200 `positionIds`, each once;
   - content package: `name` and version ids ≤ 200 characters, ≤ 20
-    targeted versions, ≤ 10 AND groups, ≤ 20 conditions per group, ≤ 100
+    targeted versions (a package-size guard at submission; the sellable
+    count is the slot's Max campaigns, `maxCampaigns` on the position,
+    enforced at bid and reservation), ≤ 10 AND groups, ≤ 20 conditions per group, ≤ 100
     values per condition, each value ≤ 200 characters;
   - writes (create, upload, submit, reserve, bid) need a **connected** DSP —
     `409 conflict` otherwise; reads stay open to the authenticated partner.
@@ -213,7 +215,7 @@ queue (`apps/api/src/config.ts` → `assetLimits`, enforced in
 
 | Method | Path | Purpose | Main errors |
 |---|---|---|---|
-| POST | `/v1/reservations` | `type: reserve` or `type: bid`, both with `bidCpm`, for a `positionId` and `windowStart`, with an approved and activated `campaignId` (`not_approved` otherwise). A reserve on a position with a `reservePrice` is a reserve-price booking (see below). A reserve on a position held for a named advertiser with no reserve price is booked at its agreed `bidCpm` (Q11). Any other reserve gets `conflict`. A bid is taken only while the window's auction is open: from `auctionOpensHours` before the auction cutoff until the cutoff. A reserve can be made any time before the cutoff. Both are refused once a tick has claimed the window's auction, if that is earlier (`conflict`). `bidCpm` is at most the exchange ceiling (10,000; `validation_failed`). One open bid or reservation per advertiser and window, enforced by the database (migration 0026). The campaign's type must be one the position supports (`supportedTargeting`; `targeting_not_supported` otherwise). | `not_approved`, `below_floor`, `advertiser_blocked`, `category_blocked`, `not_on_whitelist`, `targeting_not_supported`, `conflict` |
+| POST | `/v1/reservations` | `type: reserve` or `type: bid`, both with `bidCpm`, for a `positionId` and `windowStart`, with an approved and activated `campaignId` (`not_approved` otherwise). A reserve on a position with a `reservePrice` is a reserve-price booking (see below). A reserve on a position held for a named advertiser with no reserve price is booked at its agreed `bidCpm` (Q11). Any other reserve gets `conflict`. A bid is taken only while the window's auction is open: from `auctionOpensHours` before the auction cutoff until the cutoff. A reserve can be made any time before the cutoff. Both are refused once a tick has claimed the window's auction, if that is earlier (`conflict`). `bidCpm` is at most the exchange ceiling (10,000; `validation_failed`). One open bid or reservation per advertiser and window, enforced by the database (migration 0026). The campaign's type must be one the position supports (`supportedTargeting`; `targeting_not_supported` otherwise). The campaign's version count (the default layer plus its targeted versions) must not exceed the position's `maxCampaigns` (`too_many_versions` otherwise). | `not_approved`, `below_floor`, `advertiser_blocked`, `category_blocked`, `not_on_whitelist`, `targeting_not_supported`, `too_many_versions`, `conflict` |
 | GET | `/v1/reservations/{id}` | Outcome: `pending`, `won`, `lost`, `reserved`, `rejected`, with clearing CPM and reason. | `not_found` |
 
 A won or reserved campaign is handed to the existing campaign system for

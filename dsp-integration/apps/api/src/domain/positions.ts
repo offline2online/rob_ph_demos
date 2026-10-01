@@ -7,7 +7,7 @@ import type { Context } from '../context'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 import { prepared } from '../db/db'
 import { type ReservationStatus, TAKEN } from '../repos/ReservationRepo'
-import { advertiserSlug, assignedOf, billingUnitHoursOf, reservePriceOf, supportedTargetingOf, type Assigned } from '@ph-dsp/types'
+import { advertiserSlug, assignedOf, billingUnitHoursOf, maxCampaignsOf, reservePriceOf, supportedTargetingOf, type Assigned } from '@ph-dsp/types'
 import { invitedPartnerIds, isInvitedBuyer } from './buyersLists'
 import { isActiveAt, lockedTermSpan } from '../billing/term'
 import { effectiveLists, isBlocked, isOn } from './lists'
@@ -403,6 +403,8 @@ export function positionView(ctx: Context, p: PositionRef, c: Caller) {
        version bills at committed price × multiplier, which is not knowable
        before the auction. */
     pricing: { currency: company.currency, floorCpm: company.floorCpm, effectiveFloorCpm: { localised: effectiveFloorCpm(company, multiplier) }, personalisedMultiplier: company.personalisedMultiplier, costPerEngagement: company.interactiveCpe },
+    /* The most campaigns (default + targeted versions) a bid or reservation here may carry. */
+    maxCampaigns: maxCampaignsOf(dt, p.def),
     reservePrice: reservePriceOf(dt, p.def),
   }
 }

@@ -3,7 +3,7 @@
    and category lists, and creative approval, all applied before a bid can
    win. Used by POST /v1/reservations and by the auction for DSP bids. */
 import type { Context } from '../context'
-import { assignedOf, supportedTargetingOf, targetingLabel } from '@ph-dsp/types'
+import { assignedOf, maxCampaignsOf, supportedTargetingOf, targetingLabel } from '@ph-dsp/types'
 import { type PositionRef, assignmentOf } from '../domain/positions'
 import { isInvitedBuyer } from '../domain/buyersLists'
 import { isActiveAt } from '../billing/term'
@@ -12,7 +12,7 @@ import { effectiveFloorCpm } from '../domain/pricing'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 import { blockedDomains, categoryCodes } from './openrtb'
 
-export type RefusalCode = 'not_approved' | 'below_floor' | 'advertiser_blocked' | 'category_blocked' | 'not_on_whitelist' | 'not_invited' | 'targeting_not_supported'
+export type RefusalCode = 'not_approved' | 'below_floor' | 'advertiser_blocked' | 'category_blocked' | 'not_on_whitelist' | 'not_invited' | 'targeting_not_supported' | 'too_many_versions'
 export interface Refusal { code: RefusalCode; reason: string }
 
 /* The blacklist always subtracts; the advertiser whitelist is what a
@@ -73,6 +73,18 @@ export function checkTargeting(p: PositionRef, pricingType: string | null | unde
   const wanted = pricingType === 'personalised' || pricingType === 'interactive' ? pricingType : 'localised'
   if (supported.includes(wanted)) return null
   return { code: 'targeting_not_supported', reason: `This position supports ${targetingLabel(supported).toLowerCase()} targeting only; the campaign is ${wanted}.` }
+}
+
+/* The slot's Max campaigns (slot override, else the display type's default,
+   else 5; counting the default layer plus the targeted versions) is
+   enforced where the campaign meets the slot (Rob, 1 Oct 2026): submission
+   happens before booking, so it only guards package size. A campaign with
+   more versions than the slot sells is refused at bid and reservation. */
+export function checkVersionCount(ctx: Context, p: PositionRef, campaignId: string): Refusal | null {
+  const t = ctx.campaigns.getCampaign(campaignId)?.targeting as { targeted?: unknown[] } | null | undefined
+  const versions = 1 + (Array.isArray(t?.targeted) ? t.targeted.length : 0)
+  const max = maxCampaignsOf(p.displayType, p.def)
+  return versions <= max ? null : { code: 'too_many_versions', reason: `At most ${max} campaigns (default + targeted versions) for this slot.` }
 }
 
 /* The effective floor a bid must clear: the base floor × the advertiser's

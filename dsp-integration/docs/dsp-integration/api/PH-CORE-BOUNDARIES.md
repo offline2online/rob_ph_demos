@@ -283,7 +283,8 @@ of that contract (openapi.yaml carries them):
     rate_limited` with `Retry-After`.
   - At most 2 asset uploads in flight per partner.
   - Forecast: at most 200 positions, each listed once.
-  - Content package: name ≤ 200 characters, ≤ 20 targeted versions, ≤ 10
+  - Content package: name ≤ 200 characters, ≤ 20 targeted versions (package-size guard at submission; the sellable
+    count is the slot's Max campaigns, enforced at bid and reservation), ≤ 10
     AND groups, ≤ 20 conditions per group, ≤ 100 values per condition, each
     value ≤ 200 characters.
   - JSON bodies up to 1 MB. A larger body gets `413`.

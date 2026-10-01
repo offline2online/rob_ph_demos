@@ -1329,7 +1329,7 @@ components:
     ValidationFailed: {description: 'error.code = validation_failed; details lists each field', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
     VariableNotPermitted: {description: 'error.code = variable_not_permitted; details names each variable', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
     ChecksFailed: {description: 'error.code = checks_failed; details lists each failed check with its reason', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
-    NotEligible: {description: 'error.code = not_approved | below_floor | advertiser_blocked | category_blocked | not_on_whitelist | not_invited | targeting_not_supported', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    NotEligible: {description: 'error.code = not_approved | below_floor | advertiser_blocked | category_blocked | not_on_whitelist | not_invited | targeting_not_supported | too_many_versions', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
     Conflict: {description: 'error.code = conflict (e.g. version changed, already submitted, window sold, bidding not open or closed, live not allowed)', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
     HasDependents: {description: 'error.code = has_dependents; details lists what depends on the item', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
     RateLimited: {description: 'error.code = rate_limited. Per partner token (default 50 requests/s, bursts of 100), or too many asset uploads in flight at once. Retry-After gives the seconds to wait.', headers: {Retry-After: {schema: {type: integer}}}, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
@@ -1345,7 +1345,7 @@ components:
           properties:
             code:
               type: string
-              enum: [validation_failed, variable_not_permitted, checks_failed, not_approved, below_floor, advertiser_blocked, category_blocked, not_on_whitelist, not_invited, targeting_not_supported, conflict, has_dependents, unauthorised, forbidden, not_found, rate_limited, internal_error]
+              enum: [validation_failed, variable_not_permitted, checks_failed, not_approved, below_floor, advertiser_blocked, category_blocked, not_on_whitelist, not_invited, targeting_not_supported, too_many_versions, conflict, has_dependents, unauthorised, forbidden, not_found, rate_limited, internal_error]
             message: {type: string}
             details:
               type: array
@@ -1422,6 +1422,17 @@ components:
             is a 404 (not sellable) and a bid on it is refused with a 409
             that says why (ticket, 30 Sep 2026). There is no fallback
             estimate: an invented audience number would end up on invoices.
+        maxCampaigns:
+          type: integer
+          minimum: 1
+          maximum: 10
+          description: |
+            The most campaigns (the default layer plus targeted versions, 1 +
+            targeted.length) a bid or reservation on this position may carry:
+            the slot's own Max campaigns, else its display type's default,
+            else 5. A campaign with more versions is refused with
+            `too_many_versions` (decision, 1 Oct 2026). Submission only guards
+            package size; this is the sellable count.
         pricing: {$ref: '#/components/schemas/Pricing'}
         reservePrice:
           type: [number, 'null']
