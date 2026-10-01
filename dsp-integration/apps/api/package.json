@@ -9,6 +9,7 @@
     "db:seed": "tsx src/seed/cli.ts",
     "db:bookings": "tsx src/seed/bookingsCli.ts",
     "db:demo": "tsx src/seed/demoCli.ts",
+    "db:screens": "tsx src/seed/screensCli.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json",
     "auction:run": "tsx src/exchange/cli.ts",
