@@ -2001,6 +2001,10 @@ export interface components {
             }[];
         };
         DisplayTypeExtensions: {
+            /** @description Default VAC-d audience score: assumed views per play window, per
+             *     display. Displays inherit it unless overridden; a slot with no score of its own is
+             *     scored from it. Absent keeps the saved value; null clears it. */
+            defaultVacd?: number | null;
             slots: {
                 label: string;
                 /** @enum {string} */
