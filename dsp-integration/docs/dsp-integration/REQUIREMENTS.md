@@ -2120,7 +2120,7 @@ fields. The canonical definition is `app/src/model/schema.js` and
                                     // each slot also carries supportedTargeting (what it can target, I5t9MJsN) and
                                     // salesLocked / salesLockedUntil (set by PUT /admin/v1/available-inventory/lock, cleared by the scheduler; not writable through the slot editor)
     defaultVacd,                   // number | null: the display type's default VAC-d (ZSfSP5sr, 1 Oct 2026, migration 0035); a slot with neither this nor an audience_vacd row is unscored
-    venue: { openOohVenueType, orientation, loopLengthSec }
+    venue: { openOohVenueType, orientation, loopLengthSec }   // POC stand-in for a PH Core value (Q35): PH Core owns venue and geo; on integration this is read from its store/display record and the PUT stops accepting `venue`
   }
 }
 ```

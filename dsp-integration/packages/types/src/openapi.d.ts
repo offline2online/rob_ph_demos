@@ -2145,6 +2145,7 @@ export interface components {
              *     display type edits the same value), not the slot editor.
              */
             maxCampaigns?: number | null;
+            /** @description POC stand-in; PH Core owns venue and geo metadata and the exchange keeps no copy on integration (Q35). On integration this is read from PH Core's store/display record and the extensions PUT stops accepting it. */
             venue?: {
                 openOohVenueType?: string;
                 /** @enum {string} */
