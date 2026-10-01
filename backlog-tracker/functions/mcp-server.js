@@ -2023,7 +2023,7 @@ const TOOLS = [
   },
   {
     name: "get_project_docs",
-    description: "A project's Requirements and README markdown, its additional documents, and every interface contract it shares with another project.",
+    description: "A project's Requirements and README markdown, its additional documents, and every interface contract it shares with another project. Also docsSync: whether the board copy of Requirements/README is in step with main after the last deploy (error is why a sync was refused).",
     scope: "board.read",
     inputSchema: {
       type: "object",
@@ -2047,6 +2047,23 @@ const TOOLS = [
       if (want.includes("readme")) out.readmeMd = p.readmeMd || "";
       out.artifactUrl = p.artifactUrl || null;
       out.artifactUpdatedAt = tsToISO(p.artifactUpdatedAt);
+      // Whether the repo copy of Requirements/README and the board copy agree
+      // (written by the post-merge sync in run-backlog-automation.js). A
+      // Deploy run reads this before declaring a project live; error is the
+      // reason a sync was refused, null when it last succeeded.
+      const ds = p.docsSync && typeof p.docsSync === "object" ? p.docsSync : null;
+      out.docsSync = ds
+        ? {
+            mergeCommit: ds.mergeCommit || null,
+            requirementsCommit: ds.requirementsCommit || null,
+            readmeCommit: ds.readmeCommit || null,
+            syncedAt: tsToISO(ds.syncedAt),
+            error: ds.error || null,
+            errorAt: tsToISO(ds.errorAt),
+            lastMergeCommit: p.lastMergeCommit || null,
+            lastMergeAt: tsToISO(p.lastMergeAt),
+          }
+        : null;
       if (want.includes("docs")) {
         out.documents = [];
         (await db().collection("projectDocs").where("projectId", "==", projectId).get())

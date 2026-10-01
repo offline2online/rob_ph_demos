@@ -474,6 +474,26 @@ async function rpc(token, method, params, id = 1) {
     assert.strictEqual(payload.interfaces[0].name, "LVP <-> Templates");
   });
 
+  await test("get_project_docs returns docsSync, with the refusal reason when a sync failed", async () => {
+    const proj = env.store.col("projects").get("proj1");
+    const before = { docsSync: proj.docsSync, lastMergeCommit: proj.lastMergeCommit };
+    try {
+      let out = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "get_project_docs", arguments: { projectId: "proj1", include: ["readme"] } })).body.result.content[0].text);
+      assert.strictEqual(out.docsSync, null, "a project the sync has never touched reports null");
+      proj.docsSync = { mergeCommit: "abc1234", requirementsCommit: "r1", readmeCommit: "m1", syncedAt: new Date("2026-10-01T05:30:00Z"), error: "over the board's limit" };
+      proj.lastMergeCommit = "abc1234";
+      out = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "get_project_docs", arguments: { projectId: "proj1", include: ["readme"] } })).body.result.content[0].text);
+      assert.strictEqual(out.docsSync.error, "over the board's limit");
+      assert.strictEqual(out.docsSync.mergeCommit, "abc1234");
+      assert.strictEqual(out.docsSync.syncedAt, "2026-10-01T05:30:00.000Z");
+      assert.strictEqual(out.docsSync.lastMergeCommit, "abc1234");
+    } finally {
+      proj.docsSync = before.docsSync; proj.lastMergeCommit = before.lastMergeCommit;
+      if (proj.docsSync === undefined) delete proj.docsSync;
+      if (proj.lastMergeCommit === undefined) delete proj.lastMergeCommit;
+    }
+  });
+
   // ── Documentation: full read/write ──────────────────────────────────────
   await test("exposes the documentation tools", async () => {
     const names = mcp.__test.TOOLS.map((t) => t.name);
