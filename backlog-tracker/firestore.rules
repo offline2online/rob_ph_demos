@@ -180,9 +180,12 @@ service cloud.firestore {
       return v == null || (v is string && v.lower() == callerEmail());
     }
     function projectDocsBounded() {
-      return (!("requirementsMd" in incoming()) || incoming().requirementsMd == null || (incoming().requirementsMd is string && incoming().requirementsMd.size() <= 800000))
-        && (!("readmeMd" in incoming()) || incoming().readmeMd == null || (incoming().readmeMd is string && incoming().readmeMd.size() <= 800000))
-        && (!("routinePromptMd" in incoming()) || incoming().routinePromptMd == null || (incoming().routinePromptMd is string && incoming().routinePromptMd.size() <= 20000))
+      // requirementsMd / readmeMd are no longer checked here: the spec and
+      // the README live in projects/{id}/docs/{requirements|readme} (own
+      // 1 MiB document each, capped below). A project doc still carrying the
+      // legacy fields until the one-off migration has run is bounded by
+      // Firestore's own document limit and can only shrink from here.
+      return (!("routinePromptMd" in incoming()) || incoming().routinePromptMd == null || (incoming().routinePromptMd is string && incoming().routinePromptMd.size() <= 20000))
         && (!("artifactUrl" in incoming()) || incoming().artifactUrl == null || (incoming().artifactUrl is string && incoming().artifactUrl.size() <= 2000 && incoming().artifactUrl.matches("^https://.*")));
     }
 
@@ -214,6 +217,26 @@ service cloud.firestore {
       // archives. A browser delete would orphan every ticket, doc and
       // interface pointing at the project, so it is admin-only here.
       allow delete: if isAdmin();
+
+      // The project's Requirements and README, one document each so the
+      // spec can never push the project doc over 1 MiB and a small project
+      // write does not re-send it to every open tab. Same gates as the
+      // project doc: any editor (and the automation user) writes, any member
+      // reads. The project doc keeps only a pointer (`docs`).
+      match /docs/{docName} {
+        allow read: if isBoardReader();
+        allow create, update: if isEditor()
+          && (docName == "requirements" || docName == "readme")
+          && incoming().keys().hasAll(["contentMd"])
+          && incoming().keys().hasOnly(["contentMd", "updatedAt", "updatedByEmail", "sourceCommit", "sourcePath", "chars", "sha256"])
+          && incoming().contentMd is string && incoming().contentMd.size() <= 800000
+          && (!("updatedByEmail" in incoming()) || incoming().updatedByEmail == null || incoming().updatedByEmail is string)
+          && (!("sourceCommit" in incoming()) || incoming().sourceCommit == null || (incoming().sourceCommit is string && incoming().sourceCommit.size() <= 64))
+          && (!("sourcePath" in incoming()) || incoming().sourcePath == null || (incoming().sourcePath is string && incoming().sourcePath.size() <= 300))
+          && (!("chars" in incoming()) || incoming().chars is number)
+          && (!("sha256" in incoming()) || incoming().sha256 == null || (incoming().sha256 is string && incoming().sha256.size() <= 64));
+        allow delete: if isAdmin();
+      }
     }
 
     // Programs/Products — a purely organizational grouping above Projects
