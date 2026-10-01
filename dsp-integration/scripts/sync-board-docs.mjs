@@ -37,6 +37,11 @@ const DOCS = [
   { field: 'readmeMd', file: 'README.md' },
 ]
 
+/* backlog-tracker/firestore.rules caps requirementsMd and readmeMd at
+   200,000 characters. One field over it gets the whole PATCH refused, so a
+   field that is too big is left out and named, and the rest still syncs. */
+const BOARD_MAX_CHARS = 200000
+
 const args = process.argv.slice(2)
 const flag = (name) => args.includes(name)
 const valueAfter = (name) => args[args.indexOf(name) + 1]
@@ -168,13 +173,21 @@ if (flag('--check')) {
   process.exit(1)
 }
 
-const mask = drifted.map((d) => `updateMask.fieldPaths=${d.field}`).concat('updateMask.fieldPaths=updatedAt').join('&')
+const tooBig = drifted.filter((d) => read(d.file).length > BOARD_MAX_CHARS)
+for (const d of tooBig) {
+  console.error(`\n${d.field}: ${d.file} is ${read(d.file).length} characters, over the board's ${BOARD_MAX_CHARS}-character limit ` +
+    '(backlog-tracker/firestore.rules). Not written; the board keeps its old copy until the file is shortened or the limit raised.')
+}
+const writable = drifted.filter((d) => !tooBig.includes(d))
+if (!writable.length) process.exit(1)
+
+const mask = writable.map((d) => `updateMask.fieldPaths=${d.field}`).concat('updateMask.fieldPaths=updatedAt').join('&')
 const res = await fetch(`${BOARD}/projects/${PROJECT_ID}?${mask}`, {
   method: 'PATCH',
   headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
   body: JSON.stringify({
     fields: {
-      ...Object.fromEntries(drifted.map((d) => [d.field, { stringValue: read(d.file) }])),
+      ...Object.fromEntries(writable.map((d) => [d.field, { stringValue: read(d.file) }])),
       updatedAt: { timestampValue: new Date().toISOString() },
     },
   }),
@@ -183,9 +196,10 @@ if (!res.ok) throw new Error(`Writing failed (${res.status}): ${await res.text()
 
 /* Read it back: a sync that says it worked and didn't is worse than a failure. */
 const after = await board(token)
-const bad = after.filter((p) => drifted.some((d) => d.field === p.field) && p.board !== read(p.file))
+const bad = after.filter((p) => writable.some((d) => d.field === p.field) && p.board !== read(p.file))
 if (bad.length) {
   console.error(`\nWrote, but the board does not match: ${bad.map((d) => d.field).join(', ')}. Restore from the board's revision history.`)
   process.exit(1)
 }
-console.log(`\nSynced ${drifted.map((d) => d.field).join(' and ')} — verified byte for byte.`)
+console.log(`\nSynced ${writable.map((d) => d.field).join(' and ')} — verified byte for byte.`)
+if (tooBig.length) process.exit(1)
