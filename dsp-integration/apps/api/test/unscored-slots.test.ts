@@ -64,7 +64,7 @@ describe('unscored slots', () => {
     const bid = () => app.inject({ method: 'POST', url: '/api/v1/reservations', headers: GOOGLE, payload: { positionId: 'dt_ui.s1', windowStart: W1, campaignId: 'c_dsp_nestle', advertiserId: 'nestle', type: 'bid', bidCpm: 200 } })
     const refused = await bid()
     expect(refused.statusCode).toBe(409)
-    expect(refused.json().error.message).toBe('No audience score yet — this slot can’t be sold until it is scored.')
+    expect(refused.json().error.message).toBe('No audience score yet.')
     score()
     expect((await bid()).statusCode).not.toBe(409)
   })
@@ -79,7 +79,7 @@ describe('unscored slots', () => {
   it('are flagged on Available Inventory without blocking the save', async () => {
     const { app, score } = await setup()
     const row = async () => ((await app.inject({ method: 'GET', url: '/api/admin/v1/available-inventory' })).json().items as { displayTypeId: string; scored: boolean; unsellableReason: string | null }[]).find((i) => i.displayTypeId === 'dt_ui')!
-    expect(await row()).toMatchObject({ scored: false, unsellableReason: 'No audience score yet — this slot can’t be sold until it is scored.' })
+    expect(await row()).toMatchObject({ scored: false, unsellableReason: 'No audience score yet.' })
     const save = await app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'dt_ui', slot: 1, supportedTargeting: ['localised', 'personalised'], assignedTo: { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: null }, reservePrice: null, billingUnitHours: null, maxCampaigns: null }] } })
     expect(save.statusCode).toBe(200)
     expect((await row()).scored).toBe(false)
