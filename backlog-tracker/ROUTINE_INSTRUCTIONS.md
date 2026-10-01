@@ -94,6 +94,10 @@ investigate-and-fix run, or vice versa:
   skip straight to **"The 'Review Batch' flow (a differently-shaped
   fire)"** further down and follow only that section. Do not run "For each
   Backlog item found" on these items.
+- `text` starts with `=== E2E REQUEST for "<project>"` → this is the test-run
+  shape (the **Run E2E** button). Do the board access part of Setup, then skip
+  straight to **"The 'Run E2E' flow (a differently-shaped fire)"** below and
+  follow only that section. It builds and reviews nothing.
 - `text` starts with `=== READY FOR TESTING for "<project>"` → this is the
   present-only shape: the pipeline just landed a build in that project's
   Ready for Testing column and the person is to be SHOWN it. Do the board
@@ -1081,6 +1085,37 @@ and no `reviewStatus`, or a `reviewedCommit` that differs from `deployCommit`).
 
 Report: each ticket, its flag and one-line reason, regression results, and
 any bugs raised.
+
+## The "Run E2E" flow (a differently-shaped fire)
+
+A fire whose `text` starts with `=== E2E REQUEST for "<project>" ===` comes from
+the project header's **Run E2E** button (`notifyOnProjectRunE2E` in
+`functions/index.js`); the `text` names the mode (`quick` | `full` | `journey`)
+and the project's repo folder. The project opts in with
+`projects/{id}.e2eEnabled: true` and declares its steps in
+`<folder>/e2e.config.json`. The run is **one script, two triggers**:
+`backlog-tracker/scripts/e2e-run.mjs` is what CI calls too — never re-implement
+its steps by hand.
+
+1. Clone the repo (read-only), `cd <folder>` and install that project's
+   dependencies the way its README says (`npm ci` for `dsp-integration/`).
+2. Run `node backlog-tracker/scripts/e2e-run.mjs --folder <folder> --mode <mode>`.
+   It runs the config's steps for that mode, writes `<folder>/results/<ts>.json`,
+   then runs the project's `report-e2e` (results document) and `file-e2e-bugs`
+   (one ticket per failing case, a comment on an existing open one; known gaps
+   are recorded, never filed) when those npm scripts exist. A step whose script
+   is not there yet is reported as **skipped / not configured** — never as a pass.
+3. Do not edit code, set `patchReady`, or change any ticket's status. If the
+   project's `report-e2e` / `file-e2e-bugs` are not implemented yet, file nothing
+   yourself beyond what the script does; say so in the final report.
+4. PATCH `projects/<id>` once with `e2eStatus` (the one-line JSON summary the
+   script prints: `runAt` as a timestamp, `mode`, `commit`, `pass`, `fail`,
+   `gap`, `skipped`, `resultsUrl`, `ticketsFiled`, `breakdown` array) and
+   `e2eRoutine.status` = `"done"` (or `"error"` + `errorMessage`) with
+   `e2eRoutine.finishedAt`. The header chip is green when `fail` is 0 and
+   `pass` > 0, red when `fail` > 0, grey otherwise.
+
+Report: mode, counts, any failing case ids, tickets filed, and what was skipped.
 
 ## The "Groom Backlog" flow (a differently-shaped fire)
 
