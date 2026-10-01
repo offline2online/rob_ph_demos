@@ -298,6 +298,42 @@ no block is prepended that run, same as today.
      branch**, so a script it calls must be on `main`, not only on your
      branch.
 
+## Work the whole list you were sent — never stop after one item
+
+The fire text lists every item the person sent (the "N items in Backlog"
+list). **Every one of them is this run's job.** On 1 Oct 2026 four build
+runs in a row on the DSP project each handed back one commit and ended —
+one of them wrote "NOT DONE in this run (left for a follow-up)" against
+parts of its own ticket — and the board looked as if it could only handle
+one ticket at a time. Nothing in the pipeline limits a run to one item;
+the runs did.
+
+So, in order:
+
+1. **Do the items in the order listed, and keep going until the list is
+   done.** A large first item is not a reason to stop after it. Package
+   each item as soon as it is correct (set its `patchReady`), then move to
+   the next — the automation lands them one commit each on the train
+   while you carry on.
+2. **An item is either built in full or not built at all.** Never ship
+   part of a ticket and call the rest "a follow-up": the card moves to
+   Ready for Testing as if finished, and the unbuilt part has no ticket.
+   If one numbered part of a ticket genuinely can't be done in this run,
+   leave the whole item in Backlog with a note saying which part and why,
+   or — only when the parts are independent and the ticket says so —
+   file the unbuilt part as its own new Backlog item (same project, title
+   starting "Follow-up:", desc naming the parent id and the exact scope
+   left) and say so on the parent card before you set its `patchReady`.
+3. **If you must stop before the list is finished** (a blocker, a limit
+   you can see coming), then before you stop: post one comment on EACH
+   item you did not build — "Not built in this run: <one-line reason>.
+   Still in Backlog; send it again with Ready for Dev." — and list those
+   ids under "Not built" in your summary. A silent leftover is the
+   failure mode this section exists to prevent: the person has no way to
+   tell "not reached" from "nothing to do".
+4. **Say the count in your summary**: "Sent N, built M, not built K
+   (ids…)". The person reads that line to decide whether to click again.
+
 ## For each Backlog item found
 
 1. Give it a proper subject line: a short, specific, plain-English title
@@ -1254,7 +1290,8 @@ tool was available or you used the REST fallback, and nothing else.
 
 ## When done
 
-Post a summary listing each item, its new title, what you found, the fix,
+Post a summary that opens with the count — "Sent N, built M, not built K"
+— then lists each item, its new title, what you found, the fix,
 and whether you set `patchReady` (its commit lands on the project's
 integration branch within a couple of minutes; you won't see it yourself,
 since your session ends before then) or left it blocked in `backlog` with a
