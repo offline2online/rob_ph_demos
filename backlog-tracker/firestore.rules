@@ -180,8 +180,8 @@ service cloud.firestore {
       return v == null || (v is string && v.lower() == callerEmail());
     }
     function projectDocsBounded() {
-      return (!("requirementsMd" in incoming()) || incoming().requirementsMd == null || (incoming().requirementsMd is string && incoming().requirementsMd.size() <= 200000))
-        && (!("readmeMd" in incoming()) || incoming().readmeMd == null || (incoming().readmeMd is string && incoming().readmeMd.size() <= 200000))
+      return (!("requirementsMd" in incoming()) || incoming().requirementsMd == null || (incoming().requirementsMd is string && incoming().requirementsMd.size() <= 800000))
+        && (!("readmeMd" in incoming()) || incoming().readmeMd == null || (incoming().readmeMd is string && incoming().readmeMd.size() <= 800000))
         && (!("routinePromptMd" in incoming()) || incoming().routinePromptMd == null || (incoming().routinePromptMd is string && incoming().routinePromptMd.size() <= 20000))
         && (!("artifactUrl" in incoming()) || incoming().artifactUrl == null || (incoming().artifactUrl is string && incoming().artifactUrl.size() <= 2000 && incoming().artifactUrl.matches("^https://.*")));
     }
@@ -400,16 +400,16 @@ service cloud.firestore {
       allow create: if isEditor() &&
         isNonEmptyBoundedString(incoming().name, 120) &&
         incoming().status == "active" &&
-        (!("readmeMd" in incoming()) || (incoming().readmeMd is string && incoming().readmeMd.size() <= 200000)) &&
-        (!("requirementsMd" in incoming()) || (incoming().requirementsMd is string && incoming().requirementsMd.size() <= 200000)) &&
+        (!("readmeMd" in incoming()) || (incoming().readmeMd is string && incoming().readmeMd.size() <= 800000)) &&
+        (!("requirementsMd" in incoming()) || (incoming().requirementsMd is string && incoming().requirementsMd.size() <= 800000)) &&
         (!("comments" in incoming()) || incoming().comments is list);
 
       allow update: if isEditor() &&
         isNonEmptyBoundedString(incoming().name, 120) &&
         incoming().status in ["active", "promoted"] &&
         conceptStatusOnlyPromotes() &&
-        (!("readmeMd" in incoming()) || (incoming().readmeMd is string && incoming().readmeMd.size() <= 200000)) &&
-        (!("requirementsMd" in incoming()) || (incoming().requirementsMd is string && incoming().requirementsMd.size() <= 200000)) &&
+        (!("readmeMd" in incoming()) || (incoming().readmeMd is string && incoming().readmeMd.size() <= 800000)) &&
+        (!("requirementsMd" in incoming()) || (incoming().requirementsMd is string && incoming().requirementsMd.size() <= 800000)) &&
         (!("comments" in incoming()) || incoming().comments is list) &&
         (!("promotedProjectId" in incoming()) || incoming().promotedProjectId == null || isNonEmptyBoundedString(incoming().promotedProjectId, 100));
 

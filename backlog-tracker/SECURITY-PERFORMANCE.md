@@ -127,7 +127,7 @@ Google OAuth client's authorised redirect URIs in Google Cloud Console.
 | `notifyRequestedByEmail` & co. decide *whose* Routine binding fires; any editor could name anyone. | Must be the caller's own email (or unchanged). |
 | `settings/faqSite.analyticsTag` loads a Google Tag Manager container — arbitrary script — on every public help-centre page, and any editor could set it. | `settings` writes are admin only; the Analytics block in FAQ Settings is now `data-admin-only`. |
 | `faqArticles`/`faqCategories` were publicly **listable**, drafts included, with `pendingRevision`, `previousRevision` and `reviewComments` (unpublished copy, ticket ids, member emails). | Anonymous: `get` of a published article (and a single category) only — that is all the public site ever does (it renders the committed `faq/data` snapshot and fetches one article for freshness). `list` needs a member. |
-| No caps on `requirementsMd`/`readmeMd`/`routinePromptMd`/`artifactUrl`; `artifactUrl`/`previewUrl` accepted any scheme. | 200k / 200k / 20k / 2k caps; `https://` (`artifactUrl`) and `http(s)://` (`previewUrl`) only. |
+| No caps on `requirementsMd`/`readmeMd`/`routinePromptMd`/`artifactUrl`; `artifactUrl`/`previewUrl` accepted any scheme. | 800k / 800k / 20k / 2k caps (raised from 200k on 1 Oct 2026); `https://` (`artifactUrl`) and `http(s)://` (`previewUrl`) only. |
 
 A note on cost: the first version of these rules pushed a non-admin
 editor's project update over Firestore's **1,000-expression evaluation

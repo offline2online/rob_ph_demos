@@ -391,8 +391,16 @@ async function main() {
     setDoc(doc(as(MEMBER), "projects/p1"), { artifactUrl: "javascript:alert(1)" }, { merge: true }));
   await check("An https artifactUrl is fine", "allow", () =>
     setDoc(doc(as(MEMBER), "projects/p1"), { artifactUrl: "https://claude.ai/artifact/abc" }, { merge: true }));
-  await check("A requirementsMd over 200k chars is refused", "deny", () =>
-    setDoc(doc(as(MEMBER), "projects/p1"), { requirementsMd: "x".repeat(200001) }, { merge: true }));
+  await check("A 300k-char requirementsMd is accepted", "allow", () =>
+    setDoc(doc(as(MEMBER), "projects/p1"), { requirementsMd: "x".repeat(300000) }, { merge: true }));
+  await check("An 800k-char requirementsMd is accepted", "allow", () =>
+    setDoc(doc(as(MEMBER), "projects/p1"), { requirementsMd: "x".repeat(800000) }, { merge: true }));
+  await check("A requirementsMd over 800k chars is refused", "deny", () =>
+    setDoc(doc(as(MEMBER), "projects/p1"), { requirementsMd: "x".repeat(800001) }, { merge: true }));
+  await check("A 300k-char readmeMd is accepted", "allow", () =>
+    setDoc(doc(as(MEMBER), "projects/p1"), { readmeMd: "x".repeat(300000) }, { merge: true }));
+  await check("A readmeMd over 800k chars is refused", "deny", () =>
+    setDoc(doc(as(MEMBER), "projects/p1"), { readmeMd: "x".repeat(800001) }, { merge: true }));
 
   await check("An editor can rename a fully populated project (stays inside the rules expression budget)", "allow", () =>
     setDoc(doc(as(MEMBER), "projects/pFull"), { name: "Renamed" }, { merge: true }));

@@ -1110,12 +1110,13 @@ async function uniqueFaqSlug(base) {
 // ── Documentation limits ─────────────────────────────────────────────────
 // A project's own Requirements and README live as fields on its projects/{id}
 // doc, so every one of them shares that doc's 1 MiB Firestore ceiling. The
-// real files today are ~95 KB (REQUIREMENTS.md) and ~80 KB (README.md), so
-// 200k characters each is generous headroom while keeping the worst case well
-// clear of the limit — which is also why a replaced version is written to
-// docRevisions rather than kept as a second copy on the project doc.
-const PROJECT_MD_MAX = 200000;
-// A concept's readmeMd/requirementsMd share this same 200000 cap in
+// real files today are ~220 KB (dsp-integration's REQUIREMENTS.md) and ~80 KB
+// (README.md), so 800k characters each leaves headroom for the largest spec
+// while the rest of the doc stays clear of the limit — which is also why a
+// replaced version is written to docRevisions rather than kept as a second
+// copy on the project doc. Must equal the size() caps in firestore.rules.
+const PROJECT_MD_MAX = 800000;
+// A concept's readmeMd/requirementsMd share this same 800000 cap in
 // firestore.rules (see the `concepts/{conceptId}` match block) — reuse the
 // constant rather than duplicating the number.
 const CONCEPT_MD_MAX = PROJECT_MD_MAX;

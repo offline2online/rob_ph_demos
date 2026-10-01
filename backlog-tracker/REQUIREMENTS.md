@@ -942,8 +942,8 @@ the UI.
 ```
 {
   name: string,
-  readmeMd: string,                // up to 200,000 chars
-  requirementsMd: string,           // up to 200,000 chars — saved independently of readmeMd
+  readmeMd: string,                // up to 800,000 chars
+  requirementsMd: string,           // up to 800,000 chars — saved independently of readmeMd
   comments: [ { author: "viewer" | "claude" | string, text: string, at: timestamp }, ... ],
   status: "active" | "promoted",    // moves active -> promoted exactly once, never back
   promotedProjectId: string | null,
@@ -2380,7 +2380,7 @@ not implementation detail:
    what makes the two `delete_` tools acceptable, and they are the only
    tools carrying `destructiveHint`.
 3. **Ceilings differ by where the content lives.** Requirements/README are
-   fields on `projects/{id}` and share its 1 MiB document limit → 200k
+   fields on `projects/{id}` and share its 1 MiB document limit → 800k
    characters. `projectDocs`/`interfaces` content is capped at 20k, matching
    `firestore.rules`, so an agent can never author a document a person is
    then unable to save an edit to from the Docs page.
