@@ -1060,6 +1060,9 @@ played (Billing, below).
   Run 6 bid of 120 on a 100 floor by a personalised campaign is therefore
   accepted. Billing line items record the split (`personalised_plays`,
   `personalised_views`, `personalised_multiplier`, `personalised_amount`).
+  Which tier a play is billed at comes from PH Core's per-play tier; the
+  trigger icons and the variable grouping are a display heuristic and never
+  decide billing.
 - **Localised campaigns price at the floor CPM** (times the advertiser
   multiplier) and trigger neither.
 - **Engagements are not billed in this build.** The stand-in playback data
@@ -1604,8 +1607,10 @@ back.**
 
   The two Computer Vision variables only have values on displays with
   Vision/AI enabled; how the existing platform evaluates them is unchanged.
-- **Personalisation Variables** describe the identified visitor and come
-  from the Visitor API. Three of them need a note:
+- **Personalisation Variables** describe the identified visitor. They are
+  PH Core's visitor variables, populated by the Live Visitor Profile project
+  and evaluated by PH Core; this build only grants and validates their use,
+  per DSP, on Shared Targeting Variables. Three of them need a note:
   - **Device Type**: the device the visitor has with them in store (for
     example iPhone, Pixel, Samsung).
   - **Events**: events that occurred in store or in a previous web session
@@ -3187,7 +3192,9 @@ playback analytics.**
   identified/checked in). More than one icon may be lit when a campaign's
   rules combine tiers; which icons are lit tells the viewer the expected
   activation frequency and therefore how reliably the personalised
-  revenue will actually be earned. *(Campaign schedule → Booking schedule tab)*
+  revenue will actually be earned. Which tier a play is billed at comes from
+  PH Core's per-play tier; the icons and the variable grouping are a display
+  heuristic and never decide billing. *(Campaign schedule → Booking schedule tab)*
 
 ### Shared targeting variables
 
@@ -3428,7 +3435,8 @@ until that section is edited.
 - **Sensor-derived audience (Q34; §4 "Pricing", personalised multiplier).**
   Camera- or sensor-detected audience attributes qualify a campaign as
   personalised and are priced on that basis. There is no distinct sensor
-  multiplier. See Q49 for the exposure default.
+  multiplier. The mechanism is the per-play tier PH Core supplies (30 Sep
+  2026), not how the exchange groups variables. See Q49 for the exposure default.
 - **Partial-estate delivery (Q29; §4 "Billing", §5 "Reserved" and
   "Private auctions").** Partial-estate delivery bills on realised VAC-d,
   with no make-good or shortfall remedy in this build. Delivery risk sits

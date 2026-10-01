@@ -42,6 +42,8 @@ All paths are served from the retailer's own instance
                "message": "Targeting uses variables this DSP may not use.",
                "details": [{ "variable": "visitor.age", "reason": "Not enabled for Google DSP" }] } }
   ```
+  The variable (`visitor.age` here) is PH Core's; the exchange only
+  permissions it per DSP and never evaluates it.
   Codes: `validation_failed`, `variable_not_permitted`, `checks_failed`,
   `not_approved`, `below_floor`, `advertiser_blocked`, `category_blocked`,
   `not_on_whitelist`, `not_invited`, `targeting_not_supported`, `conflict`,
