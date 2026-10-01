@@ -215,7 +215,7 @@ function layerLine(k: LayerKey, booking: Booking, displayCount?: number): string
 function BookingTile({ booking, displayCount, money }: { booking: Booking; displayCount?: number; money: (n: number) => string }) {
   const present = LAYERS_TOP_DOWN.filter((k) => booking.layers[k])
   const layersTip = present.map((k) => layerLine(k, booking, displayCount)).join(' · ')
-  const tip = `${booking.advertiserName} via ${booking.partnerName} · ${booking.type === 'reserve' ? 'Reserved' : 'Won at auction'} at ${booking.cpm} CPM · ${booking.assumedViews.toLocaleString('en-GB')} assumed views · booked ${money(booking.bookedRevenue)}${booking.billedRevenue === null ? '' : ` · billed ${money(booking.billedRevenue)}`} · ${layersTip}`
+  const tip = `${booking.advertiserName} via ${booking.partnerName} · ${booking.type === 'reserve' ? 'Reserved' : 'Won at auction'} at ${booking.cpm} CPM · ${booking.assumedViews.toLocaleString('en-GB')} assumed views · booked ${money(booking.bookedRevenue)} · ${layersTip}`
   return (
     <Tooltip title={tip}>
       <div className="flex w-full min-w-0 flex-col gap-0.5 rounded px-1 py-0.5" style={{ background: BOOKED.bg, borderLeft: `3px solid ${BOOKED.colour}` }}>

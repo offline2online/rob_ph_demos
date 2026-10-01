@@ -1469,8 +1469,10 @@ windows start on Mondays that are also daily slots' window starts, and one
 auction clears both. Whole hours, 1 hour to 365 days. A slot's billing unit
 can't change while it has live windows bid on, booked or not yet billed
 under the current one; the save is refused `400 validation_failed`, naming
-when the last one ends. (A change to the company-wide play window is
-deferred instead — see §6 "Selling a play window".)
+when the last one ends. (The two rules differ and both stand: a change to the company-wide
+`playWindowHours` is deferred with an effective date, never refused — see
+§6 "Selling a play window" — while a `billingUnitHours` change is refused
+`400` for as long as the slot has unbilled windows.)
 
 **Max campaigns** (`maxCampaigns` on a slot, with a display-type-level
 default — same override-always-wins inheritance as reserve price and
