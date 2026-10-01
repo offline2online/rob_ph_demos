@@ -18,6 +18,9 @@ export interface Config {
      once several replicas share one database and none of them should
      be the scheduler. PH_SCHEDULER. */
   scheduler: 'in-process' | 'off'
+  /* A test-only clock (PH_TEST_CLOCK; testClock.ts): an ISO instant or a file
+     holding one. Never set in production — loadConfig refuses it. */
+  testClock?: string
   /* Positions the auction clears at once (PH_AUCTION_CONCURRENCY). */
   auctionConcurrency: number
   /* Asset uploads in flight across ALL partners (PH_MAX_UPLOADS_IN_FLIGHT):
@@ -96,11 +99,13 @@ const ROOT = fileURLToPath(new URL('../../../', import.meta.url))
 const fromRoot = (p: string) => (p === ':memory:' || isAbsolute(p) ? p : resolve(ROOT, p))
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
+  if (env.PH_TEST_CLOCK && env.NODE_ENV === 'production') throw new Error('PH_TEST_CLOCK must not be set in production: it moves the exchange clock.')
   const mocks = env.DSP_MOCKS_URL ?? 'http://127.0.0.1:4100'
   return {
     port: Number(env.API_PORT ?? 4000),
     host: env.API_HOST || '127.0.0.1',
     scheduler: env.PH_SCHEDULER === 'off' ? 'off' : 'in-process',
+    testClock: env.PH_TEST_CLOCK || undefined,
     auctionConcurrency: Math.max(1, Number(env.PH_AUCTION_CONCURRENCY ?? 16) || 16),
     maxConcurrentUploads: Math.max(1, Number(env.PH_MAX_UPLOADS_IN_FLIGHT ?? 4) || 4),
     reservationRetentionDays: Math.max(1, Number(env.PH_RESERVATION_RETENTION_DAYS ?? 90) || 90),

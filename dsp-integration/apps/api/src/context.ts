@@ -27,6 +27,7 @@ import { targetingSummary } from './domain/targetingSummary'
 import type { Fetch } from './dsp/DspClient'
 import { type DspProviders, dspProviders } from './dsp/registry'
 import { type Bidder, httpBidder } from './dsp/bidder'
+import { testClockFrom } from './testClock'
 
 export interface Context {
   config: Config
@@ -67,7 +68,7 @@ export function createContext(opts: { config?: Config; db?: Db; flags?: Flags; s
   const db = opts.db ?? openDb(config.dbFile)
   migrateUp(db)
   const secrets = opts.secrets ?? aesGcmSecretsStore(process.env.PH_SECRETS_KEY)
-  const clock = opts.clock ?? (() => new Date())
+  const clock = opts.clock ?? (config.testClock ? testClockFrom(config.testClock) : () => new Date())
   return {
     config,
     db,
