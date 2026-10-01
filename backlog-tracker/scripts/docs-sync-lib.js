@@ -30,10 +30,38 @@ function docCandidates(folder, name) {
   return [`${folder}/${name}`, `${folder}/docs/${folder}/${name}`, `${folder}/docs/${name}`];
 }
 
+// The one rule for "which repo folder is this project's": repoFolder, else the
+// slug of its deploy/<folder> branch. run-backlog-automation.js's
+// projectFolderOf() and the docs sync below both use it, so they cannot
+// disagree (1 Oct 2026: the sync read repoFolder alone and skipped the DSP
+// project, whose folder projectFolderOf() had been finding via the branch).
+// `exists` (optional) filters candidates to folders present in a checkout.
+function resolveRepoFolder(project, exists) {
+  const slug = String(project?.deployBranch || "").replace(/^deploy\//, "");
+  for (const c of [project?.repoFolder, slug]) {
+    const folder = String(c || "").trim().replace(/^\/+|\/+$/g, "");
+    if (folder && !folder.includes("..") && (!exists || exists(folder))) return folder;
+  }
+  return null;
+}
+
 function cleanFolder(project) {
   if (!project || project.repoFolderNotApplicable) return null;
-  const f = typeof project.repoFolder === "string" ? project.repoFolder.trim().replace(/^\/+|\/+$/g, "") : "";
-  return f || null;
+  return resolveRepoFolder(project);
+}
+
+// A skip used to be a log line only, so the board's "Docs behind main" chip
+// could not show it. Record it on the project; the next successful sync
+// replaces docsSync wholesale, which clears it. A project deliberately marked
+// repoFolderNotApplicable is not a problem to surface, so it stays silent.
+async function skip(project, mergeCommit, io, reason) {
+  const result = { skipped: reason };
+  if (project && project.repoFolderNotApplicable) return result;
+  try {
+    const at = io.now();
+    await io.patchProject({ docsSync: { skipped: reason, at, mergeCommit }, lastMergeCommit: mergeCommit, lastMergeAt: at });
+  } catch { /* the caller logs the skip; nothing else to try */ }
+  return result;
 }
 
 // io: { readFile(path) -> string|null, lastCommitFor(path) -> sha|null,
@@ -43,7 +71,7 @@ function cleanFolder(project) {
 // Returns { skipped } | { ok: true, docsSync } | { ok: false, error }. Never throws.
 async function syncProjectDocs(project, mergeCommit, io) {
   const folder = cleanFolder(project);
-  if (!folder) return { skipped: "no repo folder" };
+  if (!folder) return skip(project, mergeCommit, io, "no repo folder");
   const found = [];
   for (const doc of DOCS) {
     for (const p of docCandidates(folder, doc.name)) {
@@ -52,7 +80,7 @@ async function syncProjectDocs(project, mergeCommit, io) {
       if (typeof content === "string") { found.push({ ...doc, path: p, content }); break; }
     }
   }
-  if (!found.length) return { skipped: `no REQUIREMENTS.md or README.md under ${folder}/` };
+  if (!found.length) return skip(project, mergeCommit, io, `no REQUIREMENTS.md or README.md under ${folder}/`);
 
   const now = io.now();
   const prev = project.docsSync && typeof project.docsSync === "object" ? project.docsSync : {};
@@ -101,4 +129,4 @@ async function syncProjectDocs(project, mergeCommit, io) {
   }
 }
 
-module.exports = { syncProjectDocs, docCandidates, cleanFolder, DOCS };
+module.exports = { syncProjectDocs, docCandidates, cleanFolder, resolveRepoFolder, DOCS };
