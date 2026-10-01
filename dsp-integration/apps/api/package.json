@@ -14,7 +14,8 @@
     "auction:run": "tsx src/exchange/cli.ts",
     "billing:print": "tsx src/exchange/billingCli.ts",
     "scheduler:tick": "tsx src/exchange/tickCli.ts",
-    "bench": "tsx bench/load.ts"
+    "bench": "tsx bench/load.ts",
+    "e2e:journey": "tsx test/journey/run6.journey.ts"
   },
   "dependencies": {
     "@fastify/multipart": "^9.4.0",

@@ -1,7 +1,7 @@
 {
   "name": "ph-dsp-integration-poc",
   "private": true,
-  "description": "Display Types & DSP Integration — standalone proof of concept (see docs/dsp-integration/).",
+  "description": "Display Types & DSP Integration \u2014 standalone proof of concept (see docs/dsp-integration/).",
   "type": "module",
   "workspaces": [
     "packages/*",
@@ -24,7 +24,8 @@
     "billing:print": "npm run billing:print -w @ph-dsp/api",
     "bench": "npm run bench -w @ph-dsp/api --",
     "board:sync": "node scripts/sync-board-docs.mjs",
-    "board:tickets": "node scripts/board-tickets.mjs"
+    "board:tickets": "node scripts/board-tickets.mjs",
+    "e2e:journey": "npm run e2e:journey -w @ph-dsp/api"
   },
   "devDependencies": {
     "typescript": "~5.9.3"
