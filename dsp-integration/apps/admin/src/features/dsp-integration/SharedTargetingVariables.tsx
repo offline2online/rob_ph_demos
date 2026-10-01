@@ -16,7 +16,7 @@ export const VARIABLES_TIP =
   "Variables shared through the API with connected DSPs. Once a variable is enabled for a DSP, that DSP's advertisers can use it in targeting conditions for more advanced campaign targeting; the platform evaluates the condition and never returns the value. They are the same variables as a campaign's Targeting tab. Choose which DSPs may use each one below; default platform variables only in this release."
 const GROUPS = [
   { key: 'localisation', label: 'Localisation Variables', icon: 'storefront', tip: 'About the store and the moment; the same for everyone in front of the screen. Available to all connected DSPs by default.' },
-  { key: 'personalisation', label: 'Personalisation Variables', icon: 'person', tip: 'About the identified visitor, from the Visitor API. Not available to any DSP by default.' },
+  { key: 'personalisation', label: 'Personalisation Variables', icon: 'person', tip: 'About the identified visitor — populated by Live Visitor Profile, evaluated by PH Core. Not available to any DSP by default.' },
 ] as const
 const PICKER_TIP = 'All connected DSPs includes any DSP connected later. A DSP submits a condition; the platform answers matched or not matched and never returns the value.'
 

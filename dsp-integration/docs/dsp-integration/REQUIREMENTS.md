@@ -4,6 +4,22 @@ Source: *Real-Time Personalised Surface Architecture Specification v1.2*
 (Personalisation Hub, 3 Sept 2026), plus the `Display Types & Playlist
 Management` prototype (`displaytypesandplaylists.jsx`).
 
+**Version:** 1 Oct 2026 (dated, not numbered). Earlier references to "spec v2.4,
+30 Sep" cannot be located in any copy of this file; this changelog starts the record.
+
+**Changelog**
+
+- **1 Oct 2026** — default VAC-d per display type with per-display override
+  (`phExtensions.defaultVacd`, `displays.vacd_override`, migration 0035);
+  reconciliation edits from the Scope & Seam Reconciliation Review (floor
+  wording, §8 models, API surface, venue/geo and visitor-variable ownership).
+- **30 Sep 2026** — personalised multiplier charged per play, not a floor;
+  per-play version tier supplied by PH Core; unscored slots excluded from
+  inventory, forecast and auction; sales lock (`salesLocked`); auth seams.
+- **29 Sep 2026** — decisions of 29 Sep (Q35 venue/geo is PH Core's, Q43/Q44).
+- **22 Sep 2026** — part-sold model retired.
+- **21 Sep 2026** — project folder renamed to `dsp-integration/`.
+
 ## Scope
 
 This specification covers these areas, and only these:
@@ -55,8 +71,11 @@ reporting of its own.
 **Out of scope, and removed from this specification:** experience templates
 (Responsive Web pages, Mobile Store Site and PWA templates, the web layout
 composer), the pairing overlay and device-pairing flow, trust/locked zones,
-the render-ladder tier preview and per-channel behaviour, and the **QR
-Control** and **CTAs** display types / element types. All other playlist
+the render-ladder tier preview and per-channel behaviour, the **QR
+Control** and **CTAs** display types / element types, the Live Visitor
+Profile attribute layer (a separate, spec-only project), the deadline and
+resolution contract, and deciding or rendering which version plays (that is
+PH Core's). All other playlist
 capabilities (items, scenes, scheduling) are handled by the existing platform
 and are not changed by this project.
 
@@ -81,10 +100,12 @@ company pages are **Exchange settings**, **Advertiser settings** and
 
 **Targeting vocabulary.** DSP targeting uses the platform's **existing
 campaign targeting object**, the same variables as a campaign's Targeting tab
-(§6), not a separate registry.
+(§6), not a separate registry. This build consumes Live Visitor
+Profile-defined variables only through PH Core's targeting object.
 [`../shared/interface-contract.md`](../shared/interface-contract.md) remains
 the maintained boundary with the Live Visitor Profile project for anything
-else both projects depend on. It is also mirrored inside the live backlog
+else both projects depend on; it is being rescoped (a v3 proposal is on the
+board). It is also mirrored inside the live backlog
 tracker as an **interface** between the two projects.
 
 ## Core principles
@@ -335,8 +356,8 @@ unreshaped; Digital Signage/Kiosk playback and analytics are untouched.
   **A slot is a playlist position** (ticket "Available Inventory: Max
   campaigns column + slot playlist statement"): assigning an advertiser a
   slot assigns them that fixed position in a playlist rotation, of which
-  only one campaign plays at a time — the highest-priority version resolving
-  on available data (the mandatory default layer, or a localised/personalised
+  only one campaign plays at a time — PH Core's targeting evaluation decides
+  which version plays (the mandatory default layer, or a localised/personalised
   upsell that resolves ahead of it, per §6). The playlist is retained per
   slot; this is the already-intended §6 model, stated explicitly here as
   part of that ticket's spec clarification. **Which playlist** (ticket
@@ -462,7 +483,9 @@ unreshaped; Digital Signage/Kiosk playback and analytics are untouched.
   decision. **Always edited here, on the Display Types form** — never in
   Playlist Management (§2), even though the data now lives on the playlist
   record.
-- **Venue and screen metadata** (new), needed for DOOH bid requests (§7):
+- **Venue and screen metadata** — a dependency on PH Core, which owns it and is
+  read read-only here (Q35, 29 Sep 2026; see api/PH-CORE-BOUNDARIES.md, "Venue
+  and geo metadata"). Needed for DOOH bid requests (§7):
   OpenOOH venue type, geo (lat/long) and store identifier per store, plus
   orientation and loop length per display. Resolution and share of voice are
   already carried by the display type.
@@ -637,7 +660,8 @@ table.
 
 Applies to campaigns whose creative comes from outside the retailer: direct
 partners submitting through the API (tier 2) and creative arriving through a
-DSP (tier 1). Campaigns authored by HQ are unchanged.
+DSP (tier 1). Campaigns authored by HQ are unchanged. (Here and in §6,
+"tier 1 / tier 2" are the partner API tiers, not the removed render tiers.)
 
 ### Advertisers / Inventory
 
@@ -1060,6 +1084,9 @@ played (Billing, below).
   Run 6 bid of 120 on a 100 floor by a personalised campaign is therefore
   accepted. Billing line items record the split (`personalised_plays`,
   `personalised_views`, `personalised_multiplier`, `personalised_amount`).
+  Which tier a play is billed at comes from PH Core's per-play tier; the
+  trigger icons and the variable grouping are a display heuristic and never
+  decide billing.
 - **Localised campaigns price at the floor CPM** (times the advertiser
   multiplier) and trigger neither.
 - **Engagements are not billed in this build.** The stand-in playback data
@@ -1097,8 +1124,9 @@ played (Billing, below).
   later play window in the term as its own reservation at the locked CPM,
   and each is billed exactly as any other reservation already is.
 - **Pre-auction enforcement uses the effective floor CPM** for the campaign's
-  type and advertiser: a bid for a personalised or interactive campaign must
-  clear the multiplied floor, not the base floor.
+  type and advertiser. The auction clears against the base floor (scaled by
+  the advertiser's `floorMultiplier`); the personalised multiplier is charged
+  per personalised play, not applied as a bid floor (30 Sep 2026).
 
 ## 5. Inventory API
 
@@ -1221,7 +1249,9 @@ this document).
 - Positions reserved to another advertiser are not shown.
 - **Availability is a forecast, and targeting changes it.** The forecast
   endpoint takes targeting rules as input, since a campaign gated on a single
-  store segment delivers a fraction of an untargeted baseline.
+  store segment delivers a fraction of an untargeted baseline: predicates go
+  in and a share comes out (`AudienceSource.targetedShare`). It is not the
+  removed reach-count API and returns no per-display counts.
 
 ### Available Inventory — the retailer's view
 
@@ -1604,8 +1634,10 @@ back.**
 
   The two Computer Vision variables only have values on displays with
   Vision/AI enabled; how the existing platform evaluates them is unchanged.
-- **Personalisation Variables** describe the identified visitor and come
-  from the Visitor API. Three of them need a note:
+- **Personalisation Variables** describe the identified visitor. They are
+  PH Core's visitor variables, populated by the Live Visitor Profile project
+  and evaluated by PH Core; this build only grants and validates their use,
+  per DSP, on Shared Targeting Variables. Three of them need a note:
   - **Device Type**: the device the visitor has with them in store (for
     example iPhone, Pixel, Samsung).
   - **Events**: events that occurred in store or in a previous web session
@@ -1767,13 +1799,16 @@ Tier 1 follows each DSP's own specification. The tier-2 shape:
 
 ```
 GET  /v1/inventory                 sellable positions and status (§5)
-GET  /v1/inventory/{id}/availability   status per play window
+GET  /v1/inventory/{positionId}    one sellable position
+GET  /v1/inventory/{positionId}/availability   status per play window
 POST /v1/inventory/forecast        projected assumed views for a spec + targeting
 POST /v1/reservations              reserve, or bid (CPM) for a play window (Approved campaigns only)
+GET  /v1/reservations/{reservationId}   one reservation and its status
 GET  /v1/targeting/attributes      the shared targeting variables THIS partner may target
 POST /v1/campaigns                 default (required) + targeted versions, rules validated
 POST /v1/campaigns/{id}/assets     creative upload and automated validation
 POST /v1/campaigns/{id}/submit     submit for retailer approval (§3)
+GET  /v1/campaigns/{id}            the campaign as stored (default + targeted versions; RbXpiw2Q, 30 Sep 2026)
 GET  /v1/campaigns/{id}/status     approval status
 ```
 
@@ -1787,7 +1822,7 @@ system.
     { "role": "default", "assetSet": "as_brand_evergreen" },
     { "role": "targeted", "priority": 10, "assetSet": "as_metro_commuter",
       "rules": [
-        [{ "source": "store", "variable": "fixed_store_segments", "op": "includes_selected", "values": ["Metro"] }],
+        [{ "source": "store", "variable": "fixed_store_segments", "op": "include", "values": ["Metro"] }],
         [{ "source": "store", "variable": "store_open_closed", "op": "equal", "values": ["Open"] }]
       ] },
     { "role": "targeted", "priority": 20, "assetSet": "as_replenish",
@@ -1796,7 +1831,7 @@ system.
       ] },
     { "role": "targeted", "priority": 30, "assetSet": "as_viewed_before",
       "rules": [
-        [{ "source": "visitor", "variable": "skus", "op": "includes_selected", "values": ["SKU-10234", "SKU-55871"] }]
+        [{ "source": "visitor", "variable": "skus", "op": "include", "values": ["SKU-10234", "SKU-55871"] }]
       ] }
   ]
 }
@@ -2079,6 +2114,9 @@ fields. The canonical definition is `app/src/model/schema.js` and
               billingUnitHours,     // this slot's own override = its play-window length, in whole hours; null = inherit the display type's billingUnitHours above, else the company playWindowHours (§5; OQ27)
               maxCampaigns }],      // this slot's own override; null = inherit the display type's maxCampaigns above, 1-10 inclusive when set (§5)
                                     // listMode: rtb | whitelist_only | deal | null; buyersListId set only when listMode is deal (§5 "Private auctions")
+                                    // each slot also carries supportedTargeting (what it can target, I5t9MJsN) and
+                                    // salesLocked / salesLockedUntil (set by PUT /admin/v1/available-inventory/lock, cleared by the scheduler; not writable through the slot editor)
+    defaultVacd,                   // number | null: the display type's default VAC-d (ZSfSP5sr, 1 Oct 2026, migration 0035); a slot with neither this nor an audience_vacd row is unscored
     venue: { openOohVenueType, orientation, loopLengthSec }
   }
 }
@@ -2092,8 +2130,8 @@ fields. The canonical definition is `app/src/model/schema.js` and
   records who may fill each slot; it does not affect how the slot plays.
 - The collapsed-panel summaries (§1) are derived from these fields; nothing
   extra is stored.
-- Store-level geo (lat/long, store identifier) belongs on the store record;
-  where it lives is open question 35.
+- Store-level geo (lat/long, store identifier) is PH Core's and read
+  read-only (Q35); see api/PH-CORE-BOUNDARIES.md, "Venue and geo metadata".
 
 ### Display (existing, read only here)
 
@@ -2211,8 +2249,7 @@ Company-level:
   `playWindowHours`, `auctionCutoffTime`; defaults 168 / 24 / 18:00 UTC —
   `playWindowHours` is only the window a slot inherits when neither it nor
   its display type sets a billing unit, open question 27),
-  `audienceScoring` (MOVE/VAC-d inputs), advertiser and IAB-category
-  whitelists and blacklists.
+  advertiser and IAB-category whitelists and blacklists.
 - **Advertisers / Inventory** (an admin writes it; marketing reads it):
   `advertiserSettings: { [advertiser]: { approvalRequired, floorMultiplier } }`
   (defaults `true` / 1.0), and per sellable slot what it is assigned to
@@ -2224,8 +2261,9 @@ Company-level:
   release, plus `variableAccess: { [variableKey]: "all" | [partnerId] }`:
   `"all"` means every connected DSP (including later ones), a list names
   individual DSPs, `[]` means none. Unset keys take the defaults in §6.
-- **Exchange**: `client {name, domain, contactEmail}` (the seller of record)
-  and `sellersJson {sellerId}`. Seller type, confidentiality, `supplyChain`,
+- **Exchange**: `client {name, domain, contactEmail}` (the seller of record),
+  `sellersJson {sellerId}` and `enabled` (the retailer's DSP integration
+  switch, §7, migration 0023). Seller type, confidentiality, `supplyChain`,
   OpenRTB options are fixed platform defaults. QPS ceiling (500) and bid
   timeout (300 ms) are platform defaults a DSP's connection settings can
   override (Q46).
@@ -2861,7 +2899,8 @@ playback analytics.**
   count). *(Display Types)* Playlist Settings was a fourth such panel here;
   it moved to Playlist Management, 26 Sep 2026 — see below.
 - **Multi-zone layout designer** for signage. *(Display Types → Multi-Zone Layout)*
-- **Venue and screen metadata** per store and display. *(spec only)*
+- **Venue and screen metadata** per store and display: PH Core's, a read-only
+  dependency (Q35; api/PH-CORE-BOUNDARIES.md, "Venue and geo metadata").
 - **Playlist Settings panel** (ticket, 27 Sep 2026), last in the list: for
   a Default Playlist that's still an unsaved draft (a new display type's,
   or an "Add new playlist" one), the same five fields as Playlist
@@ -3187,7 +3226,9 @@ playback analytics.**
   identified/checked in). More than one icon may be lit when a campaign's
   rules combine tiers; which icons are lit tells the viewer the expected
   activation frequency and therefore how reliably the personalised
-  revenue will actually be earned. *(Campaign schedule → Booking schedule tab)*
+  revenue will actually be earned. Which tier a play is billed at comes from
+  PH Core's per-play tier; the icons and the variable grouping are a display
+  heuristic and never decide billing. *(Campaign schedule → Booking schedule tab)*
 
 ### Shared targeting variables
 
@@ -3428,7 +3469,8 @@ until that section is edited.
 - **Sensor-derived audience (Q34; §4 "Pricing", personalised multiplier).**
   Camera- or sensor-detected audience attributes qualify a campaign as
   personalised and are priced on that basis. There is no distinct sensor
-  multiplier. See Q49 for the exposure default.
+  multiplier. The mechanism is the per-play tier PH Core supplies (30 Sep
+  2026), not how the exchange groups variables. See Q49 for the exposure default.
 - **Partial-estate delivery (Q29; §4 "Billing", §5 "Reserved" and
   "Private auctions").** Partial-estate delivery bills on realised VAC-d,
   with no make-good or shortfall remedy in this build. Delivery risk sits
