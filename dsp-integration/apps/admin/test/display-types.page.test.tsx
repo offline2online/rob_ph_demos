@@ -3,6 +3,7 @@ import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Providers, appRoutes } from '../src/App'
 import { newDisplayType } from '../src/features/display-types/model'
+import { slow } from './timeouts'
 
 const menuBoard = {
   ...newDisplayType('menu_board'),
@@ -172,7 +173,7 @@ describe('Display Types page', () => {
     fireEvent.click(within(panel()).getByRole('button', { name: 'Playlist Management' }))
     fireEvent.click(await screen.findByRole('button', { name: 'OK' }))
     expect(await screen.findByRole('button', { name: 'Show settings for Landscape Playlist' })).toBeInTheDocument()
-  }, 30000)
+  }, slow(30000))
 
   /* Ticket, 28 Sep 2026: a new display type starts with every setting at
      its default — its playlist's panel reads "Default settings", nothing
@@ -219,7 +220,7 @@ describe('Display Types page', () => {
     /* The playlist's settings as shown — all default — are sent for the playlist Save created. */
     const settings = calls.find((c) => c.method === 'PUT' && /\/playlists\/pl_dt_\d+\/settings$/.test(c.url))!
     expect(settings.body).toEqual({})
-  }, 30000)
+  }, slow(30000))
 
   /* Ticket, 27 Sep 2026: "Add new playlist" is a button above the Default
      Playlist dropdown, top right, not the dropdown's last option. */
@@ -303,5 +304,5 @@ describe('Display Types page', () => {
       expect(select).toHaveTextContent(value)
       expect(select).not.toHaveClass('ant-select-disabled')
     }
-  }, 30000)
+  }, slow(30000))
 })

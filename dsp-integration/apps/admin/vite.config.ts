@@ -17,7 +17,8 @@ export default defineConfig({
     include: ['test/**/*.test.{ts,tsx}'],
     setupFiles: ['test/setup.ts'],
     css: false,
-    /* jsdom + Ant Design page renders are slow when the whole suite runs in parallel. */
-    testTimeout: 20000,
+    /* jsdom + Ant Design page renders are slow when the whole suite runs in
+       parallel, and slower again on a two-core CI runner (test/timeouts.ts). */
+    testTimeout: process.env.CI ? 60000 : 20000,
   },
 })
