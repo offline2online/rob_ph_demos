@@ -1,6 +1,6 @@
 /* Push this project's docs to the Prototype Backlog board, byte for byte.
 
-     npm run board:sync                      # REQUIREMENTS.md → requirementsMd, README.md → readmeMd
+     npm run board:sync                      # REQUIREMENTS.md → projects/{id}/docs/requirements, README.md → …/docs/readme
      npm run board:sync -- --check           # compare only; exit 1 if the board has drifted
      npm run board:sync -- --check-mcp FILE  # same comparison, from a saved MCP read (no key needed)
      npm run board:sync -- --check-mcp FILE --print-diff
@@ -20,6 +20,7 @@
    harness spills it to a file, and passes that file here: the comparison
    then happens locally. It is how an agent that cannot write to the board
    can still say, with an exit code, whether the board has drifted. */
+import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -31,10 +32,12 @@ const PROJECT_ID = 'mIPdOCAWevhrgD8g2tCZ' // Display Types & DSP Integration
 const FIREBASE_KEY = 'AIzaSyDzG5MzavLWyKU7NXfTPskuWbFYFlc5W3g'
 const BOARD = 'https://firestore.googleapis.com/v1/projects/backlog-tracker-e4ed2/databases/(default)/documents'
 
-/* Which file lands in which field on the project's Firestore document. */
+/* Which file lands in which document under projects/{id}/docs/ (the project
+   doc itself keeps only a `docs` pointer). `field` is the name get_project_docs
+   returns the text under, used for reporting and --check-mcp. */
 const DOCS = [
-  { field: 'requirementsMd', file: 'docs/dsp-integration/REQUIREMENTS.md' },
-  { field: 'readmeMd', file: 'README.md' },
+  { field: 'requirementsMd', kind: 'requirements', file: 'docs/dsp-integration/REQUIREMENTS.md', repoPath: 'dsp-integration/docs/dsp-integration/REQUIREMENTS.md' },
+  { field: 'readmeMd', kind: 'readme', file: 'README.md', repoPath: 'dsp-integration/README.md' },
 ]
 
 const args = process.argv.slice(2)
@@ -151,10 +154,23 @@ async function idToken() {
 }
 
 async function board(token) {
-  const res = await fetch(`${BOARD}/projects/${PROJECT_ID}`, { headers: { Authorization: `Bearer ${token}` } })
+  const headers = { Authorization: `Bearer ${token}` }
+  const res = await fetch(`${BOARD}/projects/${PROJECT_ID}`, { headers })
   if (!res.ok) throw new Error(`Reading the project failed (${res.status}): ${await res.text()}`)
-  const fields = (await res.json()).fields ?? {}
-  return DOCS.map((d) => ({ ...d, board: fields[d.field]?.stringValue ?? '' }))
+  const legacy = (await res.json()).fields ?? {}
+  const out = []
+  for (const d of DOCS) {
+    const sub = await fetch(`${BOARD}/projects/${PROJECT_ID}/docs/${d.kind}`, { headers })
+    if (sub.ok) {
+      out.push({ ...d, board: (await sub.json()).fields?.contentMd?.stringValue ?? '' })
+    } else if (sub.status === 404) {
+      /* Not migrated yet: the text is still on the project document. */
+      out.push({ ...d, board: legacy[d.field]?.stringValue ?? '' })
+    } else {
+      throw new Error(`Reading docs/${d.kind} failed (${sub.status}): ${await sub.text()}`)
+    }
+  }
+  return out
 }
 
 const token = await idToken()
@@ -192,21 +208,50 @@ async function recordSync(fields) {
   } catch { /* the exit code and message below still say what happened */ }
 }
 
-const mask = writable.map((d) => `updateMask.fieldPaths=${d.field}`).concat('updateMask.fieldPaths=updatedAt').join('&')
-const res = await fetch(`${BOARD}/projects/${PROJECT_ID}?${mask}`, {
-  method: 'PATCH',
-  headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    fields: {
-      ...Object.fromEntries(writable.map((d) => [d.field, { stringValue: read(d.file) }])),
-      updatedAt: { timestampValue: new Date().toISOString() },
-    },
-  }),
-})
-if (!res.ok) {
+const nowTs = { timestampValue: new Date().toISOString() }
+const failWrite = async (what, res) => {
   const answer = await res.text()
   await recordSync({ error: { stringValue: `Docs sync failed (${res.status}): ${answer.slice(0, 500)}` } })
-  throw new Error(`Writing failed (${res.status}): ${answer}`)
+  throw new Error(`Writing ${what} failed (${res.status}): ${answer}`)
+}
+for (const d of writable) {
+  const text = read(d.file)
+  const sha256 = createHash('sha256').update(text, 'utf8').digest('hex')
+  const sourceCommit = lastCommit(d.file)
+  const strOrNull = (v) => (v ? { stringValue: v } : { nullValue: null })
+  const put = await fetch(`${BOARD}/projects/${PROJECT_ID}/docs/${d.kind}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      fields: {
+        contentMd: { stringValue: text },
+        updatedAt: nowTs,
+        updatedByEmail: { stringValue: 'board:sync' },
+        sourceCommit: strOrNull(sourceCommit),
+        sourcePath: { stringValue: d.repoPath },
+        chars: { integerValue: String(text.length) },
+        sha256: { stringValue: sha256 },
+      },
+    }),
+  })
+  if (!put.ok) await failWrite(`docs/${d.kind}`, put)
+  /* The pointer on the project doc, one map entry per document so the other
+     document's pointer is left alone. */
+  const mask = [`updateMask.fieldPaths=docs.${d.kind}`, 'updateMask.fieldPaths=updatedAt'].join('&')
+  const ptr = await fetch(`${BOARD}/projects/${PROJECT_ID}?${mask}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      fields: {
+        docs: { mapValue: { fields: { [d.kind]: { mapValue: { fields: {
+          chars: { integerValue: String(text.length) }, sha256: { stringValue: sha256 },
+          sourceCommit: strOrNull(sourceCommit), updatedAt: nowTs,
+        } } } } } },
+        updatedAt: nowTs,
+      },
+    }),
+  })
+  if (!ptr.ok) await failWrite(`the docs.${d.kind} pointer`, ptr)
 }
 
 /* Read it back: a sync that says it worked and didn't is worse than a failure. */

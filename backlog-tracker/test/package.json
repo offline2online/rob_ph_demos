@@ -10,7 +10,7 @@
     "test:mcp": "node mcp-server.test.js",
     "test:client": "node mcp-client.test.mjs",
     "test:mcp-app": "node mcp-app-view.test.mjs",
-    "test:train-lock": "node train-lock.test.js && node train-lock-trigger.test.js && node train-lock-branch-archive.test.js && node train-carried.test.js && node train-sync.test.js && node docs-sync.test.js",
+    "test:train-lock": "node train-lock.test.js && node train-lock-trigger.test.js && node train-lock-branch-archive.test.js && node train-carried.test.js && node train-sync.test.js && node docs-sync.test.js && node migrate-project-docs.test.js",
     "test:skill-history": "node skill-history-trigger.test.js",
     "test:ready-for-testing": "node ready-for-testing-trigger.test.js",
     "test:build-batches": "node build-batches.test.mjs",

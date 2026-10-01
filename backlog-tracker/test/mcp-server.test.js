@@ -466,12 +466,23 @@ async function rpc(token, method, params, id = 1) {
   });
 
   await test("returns a project's requirements and interface contracts", async () => {
-    env.store.col("projects").set("proj1", Object.assign(env.store.col("projects").get("proj1"), { requirementsMd: "# Requirements", readmeMd: "# Readme" }));
+    env.store.col("projects/proj1/docs").set("requirements", { contentMd: "# Requirements", chars: 14 });
+    env.store.col("projects/proj1/docs").set("readme", { contentMd: "# Readme", chars: 8 });
     env.store.col("interfaces").set("if1", { name: "LVP <-> Templates", projectIds: ["proj1", "proj2"], contentMd: "attribute envelope" });
     const res = await rpc(tokens.access_token, "tools/call", { name: "get_project_docs", arguments: { projectId: "proj1" } });
     const payload = JSON.parse(res.body.result.content[0].text);
     assert.strictEqual(payload.requirementsMd, "# Requirements");
+    assert.strictEqual(payload.readmeMd, "# Readme");
     assert.strictEqual(payload.interfaces[0].name, "LVP <-> Templates");
+  });
+
+  await test("get_project_docs falls back to the legacy project fields before the migration has run", async () => {
+    env.store.col("projects").set("projLegacy", { name: "Legacy", requirementsMd: "# Old req", readmeMd: "# Old readme" });
+    const res = await rpc(tokens.access_token, "tools/call", { name: "get_project_docs", arguments: { projectId: "projLegacy" } });
+    const payload = JSON.parse(res.body.result.content[0].text);
+    assert.strictEqual(payload.requirementsMd, "# Old req");
+    assert.strictEqual(payload.readmeMd, "# Old readme");
+    env.store.col("projects").delete("projLegacy");
   });
 
   await test("get_project_docs returns docsSync, with the refusal reason when a sync failed", async () => {
@@ -512,8 +523,16 @@ async function rpc(token, method, params, id = 1) {
     });
     const out = JSON.parse(res.body.result.content[0].text);
     assert.strictEqual(out.updated, true);
-    assert.match(env.store.col("projects").get("proj1").requirementsMd, /deadline model is authoritative/);
-    assert.strictEqual(env.store.col("projects").get("proj1").requirementsUpdatedByEmail, TEAMMATE);
+    const sub = env.store.col("projects/proj1/docs").get("requirements");
+    assert.match(sub.contentMd, /deadline model is authoritative/);
+    assert.strictEqual(sub.updatedByEmail, TEAMMATE);
+    assert.strictEqual(sub.chars, sub.contentMd.length);
+    assert.match(sub.sha256, /^[0-9a-f]{64}$/);
+    // The project doc keeps a pointer only — never the text.
+    const proj = env.store.col("projects").get("proj1");
+    assert.strictEqual(proj.docs.requirements.chars, sub.contentMd.length);
+    assert.strictEqual(proj.docs.requirements.sha256, sub.sha256);
+    assert.ok(!("requirementsMd" in proj) || proj.requirementsMd === undefined, "text must not be written to the project doc");
   });
 
   await test("keeps what a Requirements write replaced, and can read it back", async () => {
@@ -543,7 +562,8 @@ async function rpc(token, method, params, id = 1) {
     await rpc(tokens.access_token, "tools/call", {
       name: "set_project_readme", arguments: { projectId: "proj1", contentMd: "# Readme\n\nWhat's in this folder." },
     });
-    assert.match(env.store.col("projects").get("proj1").readmeMd, /What's in this folder/);
+    assert.match(env.store.col("projects/proj1/docs").get("readme").contentMd, /What's in this folder/);
+    assert.ok(env.store.col("projects").get("proj1").docs.requirements, "writing the README must not drop the requirements pointer");
   });
 
   await test("refuses a Requirements document past the size ceiling", async () => {
@@ -1009,7 +1029,7 @@ async function rpc(token, method, params, id = 1) {
   await test("the project write allowlist holds nothing that could ship code", async () => {
     const allowed = [...mcp.__test.PROJECT_WRITABLE_FIELDS];
     for (const field of allowed) {
-      assert.ok(/^(requirements|readme|artifact)/.test(field), `${field} is not a documentation field but is writable`);
+      assert.ok(/^(docs$|artifact)/.test(field), `${field} is not a documentation field but is writable`);
     }
     for (const forbidden of ["deployBranch", "trainReady", "trainStatus", "trainPrNumber", "trainNote", "trainLocked", "needsHumanMerge", "notifyRequestedAt", "deployNotifyRequestedAt", "name", "programId"]) {
       assert.ok(!mcp.__test.PROJECT_WRITABLE_FIELDS.has(forbidden), `${forbidden} must not be writable`);

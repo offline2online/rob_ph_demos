@@ -12,6 +12,7 @@ function nowTs() {
 }
 
 const SERVER_TIMESTAMP = { __sentinel: "serverTimestamp" };
+const DELETE_FIELD = { __sentinel: "delete" };
 function arrayUnion(...items) { return { __sentinel: "arrayUnion", items }; }
 
 function resolve(value) {
@@ -28,9 +29,15 @@ function resolve(value) {
 function applyWrite(existing, data, merge) {
   const base = merge && existing ? Object.assign({}, existing) : {};
   for (const [k, v] of Object.entries(data)) {
-    if (v && v.__sentinel === "arrayUnion") {
+    if (v === DELETE_FIELD) {
+      delete base[k];
+    } else if (v && v.__sentinel === "arrayUnion") {
       const cur = Array.isArray(base[k]) ? base[k].slice() : [];
       base[k] = cur.concat(v.items.map(resolve));
+    } else if (merge && v && typeof v === "object" && !Array.isArray(v) && !v._ts && !(v instanceof Date) && !v.__sentinel
+      && base[k] && typeof base[k] === "object" && !Array.isArray(base[k]) && !base[k]._ts) {
+      // Firestore's set(..., {merge: true}) merges nested maps field by field.
+      base[k] = applyWrite(base[k], v, true);
     } else {
       base[k] = resolve(v);
     }
@@ -64,6 +71,8 @@ function docRef(store, collection, id) {
       store.col(collection).set(id, applyWrite(store.col(collection).get(id), data, true));
     },
     async delete() { store.col(collection).delete(id); },
+    // A subcollection is just another stub collection under a path-shaped name.
+    collection: (sub) => collectionRef(store, `${collection}/${id}/${sub}`),
   };
 }
 
@@ -145,7 +154,7 @@ function install() {
     },
     "firebase-admin/firestore": {
       getFirestore: () => db,
-      FieldValue: { serverTimestamp: () => SERVER_TIMESTAMP, arrayUnion },
+      FieldValue: { serverTimestamp: () => SERVER_TIMESTAMP, arrayUnion, delete: () => DELETE_FIELD },
     },
     "firebase-admin/auth": {
       getAuth: () => ({

@@ -1,7 +1,8 @@
 "use strict";
 // Post-merge docs sync: after a deployment train lands on main, copy the
-// project's REQUIREMENTS.md and README.md at the merge commit onto its board
-// document (requirementsMd / readmeMd), read them back, compare byte for byte,
+// project's REQUIREMENTS.md and README.md at the merge commit onto the
+// board's projects/{id}/docs/{requirements|readme} documents (the project doc
+// itself keeps only a `docs` pointer), read them back, compare byte for byte,
 // and record the outcome on projects/{id}.docsSync so a refused or failed sync
 // is visible on the board instead of silent.
 //
@@ -14,9 +15,12 @@
 // Pure of I/O: every read/write is injected, so test/docs-sync.test.js drives
 // it with fakes. run-backlog-automation.js wires the real git and Firestore.
 
+const crypto = require("crypto");
+
+// `kind` is the document id under projects/{id}/docs/.
 const DOCS = [
-  { field: "requirementsMd", name: "REQUIREMENTS.md", commitKey: "requirementsCommit", updatedAt: "requirementsUpdatedAt", updatedBy: "requirementsUpdatedByEmail" },
-  { field: "readmeMd", name: "README.md", commitKey: "readmeCommit", updatedAt: "readmeUpdatedAt", updatedBy: "readmeUpdatedByEmail" },
+  { kind: "requirements", name: "REQUIREMENTS.md", commitKey: "requirementsCommit" },
+  { kind: "readme", name: "README.md", commitKey: "readmeCommit" },
 ];
 
 // Where a project keeps each file, relative to the repo root. The first that
@@ -33,7 +37,9 @@ function cleanFolder(project) {
 }
 
 // io: { readFile(path) -> string|null, lastCommitFor(path) -> sha|null,
-//       getProject() -> project doc, patchProject(fields) -> Promise, now() -> Date }
+//       getProject() -> project doc, patchProject(fields) -> Promise,
+//       putDoc(kind, fields) -> Promise  (writes projects/{id}/docs/{kind}),
+//       getDoc(kind) -> {contentMd,...}|null, now() -> Date }
 // Returns { skipped } | { ok: true, docsSync } | { ok: false, error }. Never throws.
 async function syncProjectDocs(project, mergeCommit, io) {
   const folder = cleanFolder(project);
@@ -51,22 +57,35 @@ async function syncProjectDocs(project, mergeCommit, io) {
   const now = io.now();
   const prev = project.docsSync && typeof project.docsSync === "object" ? project.docsSync : {};
   try {
-    const fields = { updatedAt: now };
+    const pointers = Object.assign({}, project.docs && typeof project.docs === "object" ? project.docs : {});
     for (const d of found) {
-      fields[d.field] = d.content;
-      fields[d.updatedAt] = now;
-      fields[d.updatedBy] = "backlog-automation";
+      const sourceCommit = io.lastCommitFor(d.path) || mergeCommit;
+      const sha256 = crypto.createHash("sha256").update(d.content, "utf8").digest("hex");
+      await io.putDoc(d.kind, {
+        contentMd: d.content,
+        updatedAt: now,
+        updatedByEmail: "backlog-automation",
+        sourceCommit,
+        sourcePath: d.path,
+        chars: d.content.length,
+        sha256,
+      });
+      d.sourceCommit = sourceCommit;
+      pointers[d.kind] = { chars: d.content.length, sha256, sourceCommit, updatedAt: now };
     }
-    await io.patchProject(fields);
+    await io.patchProject({ docs: pointers, updatedAt: now });
     // Read it back: a sync that reports success without checking is worse
     // than none.
-    const after = await io.getProject();
-    const bad = found.filter((d) => (after[d.field] || "") !== d.content);
-    if (bad.length) throw new Error(`wrote, but the board's ${bad.map((d) => d.field).join(" and ")} does not match ${bad.map((d) => d.path).join(" / ")} byte for byte`);
+    const bad = [];
+    for (const d of found) {
+      const after = await io.getDoc(d.kind);
+      if (!after || (after.contentMd || "") !== d.content) bad.push(d);
+    }
+    if (bad.length) throw new Error(`wrote, but the board's ${bad.map((d) => d.kind).join(" and ")} does not match ${bad.map((d) => d.path).join(" / ")} byte for byte`);
     const docsSync = { mergeCommit, syncedAt: now, error: null };
     for (const d of DOCS) {
-      const hit = found.find((f) => f.field === d.field);
-      docsSync[d.commitKey] = hit ? (io.lastCommitFor(hit.path) || mergeCommit) : (prev[d.commitKey] || null);
+      const hit = found.find((f) => f.kind === d.kind);
+      docsSync[d.commitKey] = hit ? hit.sourceCommit : (prev[d.commitKey] || null);
     }
     await io.patchProject({ docsSync, lastMergeCommit: mergeCommit, lastMergeAt: now });
     return { ok: true, docsSync };

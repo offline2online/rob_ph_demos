@@ -19,16 +19,21 @@ async function test(name, fn) {
 function fakes(files, { refuse, drop } = {}) {
   const doc = {};
   const patches = [];
+  const docs = {};
   return {
-    doc, patches,
+    doc, patches, docs,
     io: {
+      putDoc: async (kind, fields) => {
+        if (refuse && kind === "requirements") throw new Error(refuse);
+        docs[kind] = (drop && kind === drop) ? { ...fields, contentMd: "tampered" } : { ...fields };
+      },
+      getDoc: async (kind) => docs[kind] || null,
       readFile: (p) => (p in files ? files[p] : null),
       lastCommitFor: (p) => `last-${p.split("/").pop()}`,
       getProject: async () => ({ ...doc }),
       patchProject: async (fields) => {
         patches.push(fields);
-        if (refuse && ("requirementsMd" in fields)) throw new Error(refuse);
-        for (const [k, v] of Object.entries(fields)) { if (!(drop && k === drop)) doc[k] = v; }
+        for (const [k, v] of Object.entries(fields)) doc[k] = v;
       },
       now: () => new Date("2026-10-01T08:00:00Z"),
     },
@@ -48,8 +53,13 @@ function fakes(files, { refuse, drop } = {}) {
     const f = fakes({ "dsp-integration/docs/dsp-integration/REQUIREMENTS.md": "R".repeat(220878), "dsp-integration/README.md": "# readme" });
     const r = await syncProjectDocs({ repoFolder: "dsp-integration/" }, "deadbeefcafe", f.io);
     assert.ok(r.ok, JSON.stringify(r));
-    assert.strictEqual(f.doc.requirementsMd.length, 220878, "no client-side size guess — the 220k spec is sent");
-    assert.strictEqual(f.doc.readmeMd, "# readme");
+    assert.strictEqual(f.docs.requirements.contentMd.length, 220878, "no client-side size guess — the 220k spec is sent");
+    assert.strictEqual(f.docs.readme.contentMd, "# readme");
+    assert.strictEqual(f.docs.requirements.sourceCommit, "last-REQUIREMENTS.md");
+    assert.strictEqual(f.docs.requirements.sourcePath, "dsp-integration/docs/dsp-integration/REQUIREMENTS.md");
+    assert.match(f.docs.readme.sha256, /^[0-9a-f]{64}$/);
+    assert.strictEqual(f.doc.docs.requirements.chars, 220878, "the project doc keeps a pointer");
+    assert.ok(!("requirementsMd" in f.doc) && !("readmeMd" in f.doc), "the text never goes on the project doc");
     assert.strictEqual(f.doc.docsSync.error, null);
     assert.strictEqual(f.doc.docsSync.mergeCommit, "deadbeefcafe");
     assert.strictEqual(f.doc.docsSync.requirementsCommit, "last-REQUIREMENTS.md");
@@ -66,7 +76,7 @@ function fakes(files, { refuse, drop } = {}) {
   });
 
   await test("a write that does not read back byte for byte is an error", async () => {
-    const f = fakes({ "p/README.md": "hello" }, { drop: "readmeMd" });
+    const f = fakes({ "p/README.md": "hello" }, { drop: "readme" });
     const r = await syncProjectDocs({ repoFolder: "p" }, "abc9999", f.io);
     assert.strictEqual(r.ok, false);
     assert.match(r.error, /does not match/);
@@ -76,7 +86,8 @@ function fakes(files, { refuse, drop } = {}) {
     const f = fakes({ "p/README.md": "only readme" });
     const r = await syncProjectDocs({ repoFolder: "p", docsSync: { requirementsCommit: "keep1" } }, "abc0001", f.io);
     assert.ok(r.ok);
-    assert.ok(!("requirementsMd" in f.patches[0]));
+    assert.ok(!("requirements" in f.docs));
+    assert.ok(!("requirements" in f.doc.docs), "no pointer for a doc that was not synced");
     assert.strictEqual(f.doc.docsSync.requirementsCommit, "keep1");
   });
 
