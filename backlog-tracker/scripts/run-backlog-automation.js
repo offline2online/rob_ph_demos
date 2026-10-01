@@ -1184,11 +1184,23 @@ async function recordAttemptFailure(item, err, { attemptsField = "patchAttempts"
 // link to the integration branch itself (trainTreeUrl), since there is no
 // single commit to pin a no-page change to and the branch is at least never
 // wrong about which commits it contains, only slow to reflect them.
-function guessPreviewUrl(patchFiles, ref, fallbackUrl) {
+//
+// A ticket with NO front-end change gets no link at all — guessPreviewUrl
+// returns null and the card shows no "Test this" CTA (there is nothing
+// visual to click into). Front-end means a page or its assets (isFrontEndPath):
+// back-end code, scripts, tests, docs, FAQ content data and workflows are not.
+// fallbackUrl is kept only for call-site compatibility and is ignored.
+const FRONT_END_EXT = /\.(html?|css|scss|js|mjs|jsx|ts|tsx|vue|svg|png|jpe?g|gif|webp|ico|woff2?)$/i;
+const NON_FRONT_END_DIR = /(^|\/)(functions|scripts|test|tests|__tests__|docs|\.github|node_modules|data)\//;
+function isFrontEndPath(p) {
+  return FRONT_END_EXT.test(p) && !NON_FRONT_END_DIR.test(p) && !/\.(test|spec)\.[a-z]+$/i.test(p);
+}
+
+function guessPreviewUrl(patchFiles, ref, fallbackUrl) { // eslint-disable-line no-unused-vars
   const changed = (patchFiles || [])
     .filter((f) => f && typeof f.path === "string" && f.content !== null && f.content !== undefined)
     .map((f) => f.path)
-    .filter((p) => !p.includes("/functions/"));
+    .filter(isFrontEndPath);
 
   // A changed page is the best answer: it IS the thing to look at.
   const htmlPaths = changed.filter((p) => p.endsWith(".html"));
@@ -1213,7 +1225,7 @@ function guessPreviewUrl(patchFiles, ref, fallbackUrl) {
     return `https://rawcdn.githack.com/${REPO}/${ref}/${page}`;
   }
 
-  return fallbackUrl;
+  return null;
 }
 
 // Walks up from a changed file looking for the index.html that renders it,

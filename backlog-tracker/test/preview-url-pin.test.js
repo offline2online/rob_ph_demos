@@ -58,12 +58,17 @@ try {
   );
   assert.strictEqual(
     guessPreviewUrl([{ path: "lonely/scripts/tool.mjs", content: "// no page above me" }], SHA_A, "https://fallback.example/"),
-    "https://fallback.example/",
-    "no page anywhere above the change still falls back cleanly, whatever ref was passed",
+    null,
+    "no page anywhere above the change means no link at all",
+  );
+  assert.strictEqual(
+    guessPreviewUrl([{ path: "faq/data/articles/1.json", content: "{}" }, { path: "functions/index.js", content: "" }, { path: "backlog-tracker/README.md", content: "" }], SHA_A, "https://fallback.example/"),
+    null,
+    "FAQ data, functions and docs are not front-end changes",
   );
 } finally {
   process.chdir(cwd);
   fs.rmSync(root, { recursive: true, force: true });
 }
 
-console.log("preview-url-pin: 9 assertions passed");
+console.log("preview-url-pin: 10 assertions passed");
