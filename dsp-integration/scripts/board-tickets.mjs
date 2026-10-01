@@ -8,6 +8,7 @@
      npm run board:tickets -- --deploy-branch deploy/dsp-integration --yes
      npm run board:tickets -- --relink-prototype <sha> --branch deploy/dsp-integration --yes
      npm run board:tickets -- --project <id> --ticket <id> --to ready-to-publish --yes
+     npm run board:tickets -- --project <id> --notify <ticket id|all> --yes   # start a build (Notify Claude)
 
    Why this exists: the board's MCP connector deliberately refuses status
    writes ("moving a ticket through testing and deployment stays on the
@@ -147,6 +148,55 @@ if (branch) {
     if (!res.ok) throw new Error(`Writing deployBranch failed (${res.status}): ${await res.text()}`)
     console.log('  written')
   }
+}
+
+/* --------------------------------------------------------- starting a build */
+
+/* --notify <ticketId|all> fires the project's "Notify Claude" exactly as
+   the board's own Ready for Dev click does (public/js/app.js requestNotify):
+   PATCH the PROJECT's notifyRequestedAt (plus notifyItemIds when one
+   ticket is named) and functions/index.js's notifyOnProjectReadyForReview
+   fires the Routine. From a runner, because an agent session has no button
+   to click and no board credential of its own (1 Oct 2026, while running
+   vd1jBw8mQJMDr7OBCIEQ through the pipeline end to end). The fire goes
+   under the shared project Routine — there is no signed-in member here for
+   a per-member binding to resolve. Like every write here: dry by default,
+   --yes to write, read back to verify. */
+const notify = value('--notify')
+if (notify) {
+  const wanted = notify === 'all' ? null : notify
+  const inBacklog = all.filter((t) => t.status === 'backlog')
+  const targets = wanted ? inBacklog.filter((t) => t.id === wanted) : inBacklog
+  console.log(`\nNotify Claude → ${wanted ? `ticket ${wanted}` : 'everything in Backlog'}: ${targets.length} ticket(s)`)
+  for (const t of targets) console.log(`  ${t.id}  ${(t.title || '').slice(0, 70)}`)
+  if (!targets.length) {
+    console.error(wanted ? `  Refusing: ${wanted} is not in this project's Backlog.` : '  Refusing: nothing in Backlog to build.')
+    process.exit(1)
+  }
+  if (!flag('--yes')) console.log('  (dry run: pass --yes to write)')
+  else {
+    const now = new Date().toISOString()
+    const fields = {
+      notifyRequestedAt: { timestampValue: now },
+      notifyItemIds: wanted ? { arrayValue: { values: [{ stringValue: wanted }] } } : { nullValue: null },
+      notifyRequestedByEmail: { nullValue: null },
+      updatedAt: { timestampValue: now },
+    }
+    const mask = Object.keys(fields).map((k) => `updateMask.fieldPaths=${k}`).join('&')
+    const res = await fetch(`${BOARD}/projects/${PROJECT_ID}?${mask}`, {
+      method: 'PATCH', headers: { ...AUTH, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields }),
+    })
+    if (!res.ok) throw new Error(`Writing notifyRequestedAt failed (${res.status}): ${await res.text()}`)
+    const back = await fetch(`${BOARD}/projects/${PROJECT_ID}`, { headers: AUTH })
+    const doc = await back.json()
+    if (doc.fields?.notifyRequestedAt?.timestampValue !== now) {
+      console.error('  Wrote, but notifyRequestedAt did not land.')
+      process.exit(1)
+    }
+    console.log('  written — verified. notifyOnProjectReadyForReview fires the Routine within seconds; projects/<id>.notifyRoutine carries the session link.')
+  }
+  if (!flag('--train-ready') && !value('--relink-prototype') && !value('--from') && !value('--to') && !value('--ticket')) process.exit(0)
 }
 
 /* ------------------------------------------------------- deploying the train */

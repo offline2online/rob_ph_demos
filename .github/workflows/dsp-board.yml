@@ -54,6 +54,10 @@ on:
         description: "Set the project's trainReady so the automation merges the train — only after the Deploy run's checks (ROUTINE_INSTRUCTIONS.md steps 1–3b) have been done by hand"
         type: boolean
         default: false
+      notify:
+        description: "Fire Notify Claude for the project (start a build): a Backlog ticket id, or 'all' for the whole column. Blank = don't."
+        type: string
+        default: ''
 
 # One at a time: two runs writing the same fields would race, and the later
 # writer would silently win.
@@ -107,6 +111,16 @@ jobs:
         env:
           BOARD_API_KEY: ${{ secrets.BOARD_API_KEY }}
         run: node scripts/board-tickets.mjs ${{ inputs.project != '' && format('--project "{0}"', inputs.project) || '' }} --train-ready --yes
+
+      # The same write the board's Ready for Dev / Notify Claude click makes,
+      # from a runner — so an agent can start a build (and run a ticket
+      # through the whole pipeline) without a person clicking for it.
+      - name: Notify Claude (start a build)
+        if: inputs.notify != ''
+        working-directory: dsp-integration
+        env:
+          BOARD_API_KEY: ${{ secrets.BOARD_API_KEY }}
+        run: node scripts/board-tickets.mjs ${{ inputs.project != '' && format('--project "{0}"', inputs.project) || '' }} --notify "${{ inputs.notify }}" --yes
 
       # Always say where things stand, so the run's log answers "is the
       # board current?" without anyone opening it.

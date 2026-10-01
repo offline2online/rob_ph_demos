@@ -343,6 +343,15 @@ no block is prepended that run, same as today.
    instead of each getting a branch cut from `main` — so a file you read
    from `main` may already be several tickets out of date.
 
+   The branch itself can be behind `main` (a hotfix merged straight to
+   main, another project's train). You don't need to handle that: before
+   it applies your patch, the automation brings the branch up to date with
+   `main` (`syncTrainWithMain`) and carries your edits onto whatever main
+   changed with a three-way merge (`rebasePatchFilesOnto`), so a file you
+   read from the branch is the right base even when it lags main. If your
+   edit collides with a change main made to the same lines, the card gets
+   a note and `patchReady` is cleared — read the file again and re-package.
+
    **Do this re-read immediately before you PATCH `patchFiles` in step 4**,
    not at the start of your investigation. `patchFiles` is a full-file
    overwrite, applied by `run-backlog-automation.js` against whatever the

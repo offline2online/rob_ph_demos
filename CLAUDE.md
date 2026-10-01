@@ -371,6 +371,18 @@ board:
   and Groom Backlog hide until the train merges, so no new ticket joins a
   release that is already closing. Backlog cards stay fully editable; only
   starting a build is held.
+- **The train is brought up to date with main before any ticket lands**
+  (`syncTrainWithMain` in `run-backlog-automation.js`, 1 Oct 2026): an
+  empty train is fast-forwarded to main, a loaded one gets main merged in,
+  and the Routine's full-file patch is then carried onto the synced files
+  by a three-way merge (`rebasePatchFilesOnto`) so main's newer content is
+  never overwritten. Added after ticket Hdt4M6dEGe7uN8dmS8mT (30 Sep 2026)
+  was built on a train four commits behind main and Deploy to Main stopped
+  on a `backlog-tracker/MCP.md` conflict. A direct merge to `main` (a
+  hotfix, a PR like #271/#272) is therefore safe for every train; a
+  conflict the merge genuinely can't resolve is reported on the card and
+  the project at build time, and the item lands by itself once a person
+  merges main into the branch.
 
 New feature/bug requests land in a project's Backlog; once tested and
 approved, click that project's **"Deploy to Main"** button to have Claude
@@ -833,6 +845,8 @@ For this project that is `.github/workflows/dsp-board.yml`:
 gh workflow run dsp-board.yml -f docs=sync
 gh workflow run dsp-board.yml -f ticket=<id> -f to=ready-for-testing -f preview=<url>
 gh workflow run dsp-board.yml -f deploy_branch=deploy/dsp-integration
+# start a build for one Backlog ticket (the Notify Claude click, from a runner) — any project via -f project=<id>
+gh workflow run dsp-board.yml -f project=oTcLAbnhUUO2S7NkbsuV -f notify=<ticket id> -f docs=skip
 gh run watch "$(gh run list --workflow=dsp-board.yml --limit 1 --json databaseId -q '.[0].databaseId')"
 ```
 
