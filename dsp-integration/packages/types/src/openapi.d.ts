@@ -305,6 +305,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/test/plays": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test only — report plays for a cleared reservation's window
+         * @description **Not part of the product.** Served only while the instance runs with
+         *     test endpoints on (any `NODE_ENV` other than `production`; in
+         *     production the route is not registered and answers 404). It exists so
+         *     the Run 6 journey runner can finish billing inside one run: it moves
+         *     `PH_TEST_CLOCK` past the window end, reports plays here, ticks the
+         *     scheduler and reads the line item. It writes to the POC stand-in
+         *     `plays` table, which is PH Core's playback store on integration (the
+         *     platform reports plays itself), and is deleted with it. Plays are
+         *     spread round-robin over the display type's displays and evenly
+         *     through the window; each entry is one tier.
+         */
+        post: operations["reportTestPlays"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/advertiser-settings": {
         parameters: {
             query?: never;
@@ -945,6 +974,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/assets/{file}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A creative file from the asset store (POC stand-in for the platform's asset hosting)
+         * @description Served at the root of the instance. The name is one the store
+         *     generated (`^[a-z0-9-]+\.[a-z0-9]+$`); anything else is a 404. Every
+         *     file is sent with `X-Content-Type-Options: nosniff` and a CSP that
+         *     blocks script, so an SVG creative cannot run code when opened
+         *     directly. On integration `assetUrl` points at the platform's own
+         *     hosting and this route goes away.
+         */
+        get: operations["getAsset"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/healthz": {
         parameters: {
             query?: never;
@@ -1056,7 +1110,7 @@ export interface components {
              *     that says why (ticket, 30 Sep 2026). There is no fallback
              *     estimate: an invented audience number would end up on invoices.
              */
-            scored?: boolean;
+            scored: boolean;
             /**
              * @description The most campaigns (the default layer plus targeted versions, 1 +
              *     targeted.length) a bid or reservation on this position may carry:
@@ -1298,6 +1352,13 @@ export interface components {
             clearingCpm?: number | null;
             currency?: string;
             reason?: string | null;
+            /**
+             * @description The personalised multiplier snapshotted on the reservation when its
+             *     window cleared (ErN9Q2Q1, 30 Sep 2026): a personalised play bills
+             *     at the clearing CPM × this, every other play at the clearing CPM.
+             *     Null until the window has cleared. It is not a bid floor.
+             */
+            personalisedMultiplier?: number | null;
         };
         Exchange: components["schemas"]["ExchangeInput"] & {
             /** @description Switched on and all four fields complete: sellers.json is live and DSPs are sent bid requests. */
@@ -2791,6 +2852,60 @@ export interface operations {
             403: components["responses"]["Forbidden"];
         };
     };
+    reportTestPlays: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description A won or reserved reservation that carries a campaign. */
+                    reservationId: string;
+                    plays: {
+                        /**
+                         * @description The version tier the play showed; null bills as default.
+                         * @enum {string|null}
+                         */
+                        tier: "default" | "localised" | "personalised" | null;
+                        count: number;
+                        durationSec?: number;
+                    }[];
+                };
+            };
+        };
+        responses: {
+            /** @description Plays written. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        reservationId: string;
+                        campaignId: string;
+                        positionId: string;
+                        /** Format: date-time */
+                        windowStart: string;
+                        /** Format: date-time */
+                        windowEnd: string;
+                        displays: number;
+                        written: {
+                            tier: string | null;
+                            count: number;
+                        }[];
+                        total: number;
+                    };
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorised"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     getAdvertiserSettings: {
         parameters: {
             query?: never;
@@ -3970,6 +4085,35 @@ export interface operations {
                 };
             };
             /** @description Not published — DSP integration switched off */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getAsset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                file: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The file, with its own content type. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": string;
+                };
+            };
+            /** @description No such file. */
             404: {
                 headers: {
                     [name: string]: unknown;

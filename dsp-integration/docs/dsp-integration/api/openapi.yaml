@@ -384,6 +384,71 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorised'}
         '403': {$ref: '#/components/responses/Forbidden'}
 
+  /admin/v1/test/plays:
+    post:
+      tags: [POC stand-in — existing platform]
+      operationId: reportTestPlays
+      summary: Test only — report plays for a cleared reservation's window
+      description: |
+        **Not part of the product.** Served only while the instance runs with
+        test endpoints on (any `NODE_ENV` other than `production`; in
+        production the route is not registered and answers 404). It exists so
+        the Run 6 journey runner can finish billing inside one run: it moves
+        `PH_TEST_CLOCK` past the window end, reports plays here, ticks the
+        scheduler and reads the line item. It writes to the POC stand-in
+        `plays` table, which is PH Core's playback store on integration (the
+        platform reports plays itself), and is deleted with it. Plays are
+        spread round-robin over the display type's displays and evenly
+        through the window; each entry is one tier.
+      security: [{adminSession: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reservationId, plays]
+              properties:
+                reservationId: {type: string, description: A won or reserved reservation that carries a campaign.}
+                plays:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [tier, count]
+                    properties:
+                      tier: {type: [string, 'null'], enum: [default, localised, personalised, null], description: The version tier the play showed; null bills as default.}
+                      count: {type: integer, minimum: 1, maximum: 100000}
+                      durationSec: {type: number, exclusiveMinimum: 0}
+      responses:
+        '201':
+          description: Plays written.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [reservationId, campaignId, positionId, windowStart, windowEnd, displays, written, total]
+                properties:
+                  reservationId: {type: string}
+                  campaignId: {type: string}
+                  positionId: {type: string}
+                  windowStart: {type: string, format: date-time}
+                  windowEnd: {type: string, format: date-time}
+                  displays: {type: integer}
+                  written:
+                    type: array
+                    items:
+                      type: object
+                      required: [tier, count]
+                      properties:
+                        tier: {type: [string, 'null']}
+                        count: {type: integer}
+                  total: {type: integer}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
   /admin/v1/advertiser-settings:
     get:
       tags: [Admin — Advertiser settings]
@@ -1249,6 +1314,12 @@ paths:
 
   # ------------------------------------------------------------------ Public
   /sellers.json:
+    servers: &rootServers
+      - url: https://{instance}
+        description: Served at the root of the instance, not under /api.
+        variables:
+          instance:
+            default: hub.example-retailer.com
     get:
       tags: [Public]
       operationId: getSellersJson
@@ -1262,8 +1333,32 @@ paths:
               schema: {$ref: '#/components/schemas/SellersJson'}
         '404': {description: Not published — DSP integration switched off, or Exchange settings incomplete.}
 
+  /assets/{file}:
+    servers: *rootServers
+    get:
+      tags: [Public]
+      operationId: getAsset
+      summary: A creative file from the asset store (POC stand-in for the platform's asset hosting)
+      description: |
+        Served at the root of the instance. The name is one the store
+        generated (`^[a-z0-9-]+\.[a-z0-9]+$`); anything else is a 404. Every
+        file is sent with `X-Content-Type-Options: nosniff` and a CSP that
+        blocks script, so an SVG creative cannot run code when opened
+        directly. On integration `assetUrl` points at the platform's own
+        hosting and this route goes away.
+      security: []
+      parameters:
+        - {name: file, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: The file, with its own content type.
+          content:
+            '*/*': {schema: {type: string, format: binary}}
+        '404': {description: No such file.}
+
   # -------------------------------------------------------------- Operations
   /healthz:
+    servers: *rootServers
     get:
       tags: [Operations]
       operationId: healthz
@@ -1276,6 +1371,7 @@ paths:
             application/json:
               schema: {type: object, required: [ok], properties: {ok: {type: boolean, enum: [true]}}}
   /readyz:
+    servers: *rootServers
     get:
       tags: [Operations]
       operationId: readyz
@@ -1374,7 +1470,7 @@ components:
         assumedViews: {type: integer}
     Position:
       type: object
-      required: [positionId, displayTypeId, displayTypeName, slot, slotLabel, storeCount, displayCount, screen, assignment, supportedTargeting, billingUnitHours, pricing]
+      required: [positionId, displayTypeId, displayTypeName, slot, slotLabel, storeCount, displayCount, screen, assignment, supportedTargeting, billingUnitHours, scored, pricing]
       properties:
         positionId: {type: string}
         displayTypeId: {type: string}
@@ -1694,6 +1790,13 @@ components:
         clearingCpm: {type: [number, 'null']}
         currency: {type: string}
         reason: {type: [string, 'null']}
+        personalisedMultiplier:
+          type: [number, 'null']
+          description: |
+            The personalised multiplier snapshotted on the reservation when its
+            window cleared (ErN9Q2Q1, 30 Sep 2026): a personalised play bills
+            at the clearing CPM × this, every other play at the clearing CPM.
+            Null until the window has cleared. It is not a bid floor.
 
     Exchange:
       allOf:

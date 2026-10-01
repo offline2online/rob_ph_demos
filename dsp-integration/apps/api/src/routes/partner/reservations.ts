@@ -42,6 +42,8 @@ interface Body { positionId?: unknown; windowStart?: unknown; campaignId?: unkno
 
 export const reservationView = (r: ReservationRecord) => ({
   reservationId: r.id, status: r.status, clearingCpm: r.clearingCpm, currency: r.currency, reason: r.reason,
+  /* Snapshotted when the window cleared (ErN9Q2Q1, 30 Sep): a personalised play bills at the clearing CPM times this. Null until then. */
+  personalisedMultiplier: r.personalisedMultiplier ?? null,
 })
 
 export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (app) => {

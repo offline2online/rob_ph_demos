@@ -19,7 +19,13 @@ These are existing Personalisation Hub functionality and are **not** changed
 or exposed by this build: playback and what plays on a device, playlist
 playback behaviour, targeting evaluation, distribution to players, playback
 logging and campaign playback analytics. There is no delivery or analytics
-endpoint.
+endpoint, and **no billing endpoint yet**: billing runs in the Billing module
+(`apps/api/src/billing/index.ts`, one seam: a cleared reservation plus
+`PlaybackSource.totals` in, one idempotent line item out; see
+PH-CORE-BOUNDARIES.md, "Billing — one module, one seam"). The line item,
+including the personalised split (`personalisedPlays`, `personalisedViews`,
+`personalisedMultiplier`, `personalisedAmount`, 0034), is stored and read only
+by the booking schedule's billed total; no read of it is in this contract.
 
 ## Surfaces
 
@@ -135,8 +141,9 @@ A position returns: id, display type, slot and label, zone, store and
 display counts (unique platform store IDs and displays using the display type), screen (width, height, orientation, slot duration, loop
 length, share of voice, OpenOOH venue type), assignment (`rtb`,
 `whitelist_only`, `reserved`), assumed views per window, pricing (floor
-and effective floors for localised, personalised, interactive, and
-personalised + interactive) for the caller's advertiser, and `reservePrice`
+and the one effective floor for the caller's advertiser,
+`personalisedMultiplier` and `costPerEngagement`; the multiplier is not a floor, see
+*Pricing maths*), and `reservePrice`
 (a CPM premium to reserve the position in advance of the open auction, or
 null — the resolved value: a slot's own override, else its display type's
 reserve price default, else null; set on Advertisers / Inventory). A
@@ -176,7 +183,7 @@ selected), `match_exactly`, `exclude_or` (excludes selected [OR]),
 `exclude_and` (excludes selected [AND]), `equal`, `not_equal`,
 `greater_than`, `less_than`, `greater_than_or_equal`, `less_than_or_equal`.
 Which ones a variable takes is listed by `GET /v1/targeting/attributes`.
-At most 100 values per condition (SKU lists).
+At most 100 values per condition: a cap on list length (SKU lists included). Whether a SKU exists is PH Core's to say; the exchange only counts.
 
 **Validation only.** Every condition's variable must be enabled for the
 calling DSP, otherwise `422 variable_not_permitted` naming each variable.
@@ -499,6 +506,24 @@ integration, and nothing else in the build may depend on their internals.
   reserved windows are kept. Rejected campaigns and their assets are
   deleted after 30 days (spec §3), never their audit trail.
 
+**Not on `/api`.** `/sellers.json`, `/healthz`, `/readyz` and `/assets/{file}`
+are served at the root of the instance; `openapi.yaml` gives each its own
+`servers` entry. `/assets/{file}` serves a creative the asset store generated
+(POC stand-in for the platform's hosting), with `nosniff` and a CSP that
+blocks script on every response.
+
+**Authentication tokens are spec only.** Partner tokens today are one static
+bearer per DSP from config. The scoped, rotating credentials of AUTH-CREDENTIAL
+(token endpoint, scope model) are specified in REQUIREMENTS §9.5 and
+PH-CORE-BOUNDARIES.md and are **not built**: nothing in this API issues or
+scopes a token.
+
+**Display VAC-d.** A display's own VAC-d override (`displays.vacd_override`,
+migration 0035) has no endpoint: it is a PH Core fact, set in the stand-in's
+data only. A window the retailer has locked reads `status: unavailable`
+without a reason; the lock is in the admin inventory
+(`salesLocked`), not in the Partner API.
+
 ## Operations endpoints
 
 For whatever supervises the process — Kubernetes probes, a load balancer's
@@ -541,7 +566,7 @@ DSPs receive requests; nothing they win is billed or handed off.
   "imp": [{
     "id": "1",
     "video": { "w": 1920, "h": 1080, "minduration": 15, "maxduration": 15 },
-    "bidfloor": 150.0,
+    "bidfloor": 100.0,
     "bidfloorcur": "AUD",
     "qty": { "multiplier": 412.0, "sourcetype": 1 },
     "exp": 86400
@@ -565,7 +590,8 @@ DSPs receive requests; nothing they win is billed or handed off.
 }
 ```
 
-- `bidfloor` = effective floor CPM for the position; `bidfloorcur` = company
+- `bidfloor` = effective floor CPM for the position (the base floor × the
+  advertiser's multiplier; 100 in this example, not a personalised floor); `bidfloorcur` = company
   currency.
 - `qty.multiplier` = assumed views for the window (VAC-d); `sourcetype` 1 =
   measurement vendor/estimate, 2 = counted by Vision/AI or MIST where enabled.
