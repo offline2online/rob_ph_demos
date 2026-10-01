@@ -223,6 +223,17 @@ npm run dev:mocks
 npm test
 ```
 
+- **E2E on demand** (E2E Testing Strategy, 1 Oct 2026): `npm run e2e:quick`
+  runs Runs 1–5 (82 stubbed tests) writing `results/e2e-quick.json`;
+  `npm run e2e:journey` runs Run 6 end to end against a real local instance
+  it starts itself (fresh database, ephemeral ports, `PH_TEST_CLOCK`), no
+  browser and no settings changes; `npm run bench -- --assert` is the
+  performance gate (`--calibrate` first on a new machine). `npm run
+  e2e:report` and `npm run e2e:file-bugs` turn `results/*.json` into the
+  board's results document and tickets (`BOARD_API_KEY`; `--dry-run`
+  without). CI: `.github/workflows/e2e-quick.yml` on every train push and
+  PR, `e2e-nightly.yml` on `main`.
+
 - `DSP_INTEGRATION_ENABLED` is the `dspIntegration` feature flag, and it is
   off by default. When it is off:
   - DSP Integration, Advertisers and Slot assignment are hidden.
