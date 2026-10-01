@@ -15,10 +15,9 @@
    carries — default always at the base, localised above it when
    provided, personalised at the very top when provided — REQUIREMENTS §6
    "Campaigns and content packages", interface contract "Booking schedule
-   reach counts". Localised shows the booked campaign's reach
-   (`booking.reach`, from the server's ReachCountSource stand-in), of the
-   position's displayCount; personalised shows no count — a match can't be
-   predicted ahead of time — but shows which trigger mechanism(s) its
+   reach counts". Localised shows a pill with no count (the reach-count
+   API left this build's scope on 30 Sep); personalised shows no count
+   either — a match can't be predicted ahead of time — but shows which trigger mechanism(s) its
    targeting rules use (ticket "Booking schedule: personalised trigger
    icons"), from broadest/most-frequent to narrowest/rarest: computer
    vision, aggregate store-level, individual. */
@@ -163,7 +162,7 @@ const LayerTag = ({ layerKey }: { layerKey: LayerKey }) => (
    fighting the others' for the pointer as it moved across the tile. One
    Tooltip on the whole tile (`BookingTile`, below) now covers everything
    this row shows, via `layerLine`; this component is purely visual. */
-function LayerRow({ layerKey, booking, displayCount }: { layerKey: LayerKey; booking: Booking; displayCount?: number }) {
+function LayerRow({ layerKey, booking }: { layerKey: LayerKey; booking: Booking }) {
   if (layerKey === 'personalised') {
     const lit = TRIGGER_ORDER.filter((k) => booking.personalisedTriggers?.[k])
     return (
@@ -176,11 +175,9 @@ function LayerRow({ layerKey, booking, displayCount }: { layerKey: LayerKey; boo
     )
   }
   if (layerKey === 'localised') {
-    const reach = booking.reach
     return (
       <div className="flex items-center gap-1 w-full min-w-0">
         <LayerTag layerKey="localised" />
-        {reach && displayCount && <span className="truncate" style={{ fontSize: 10, color: T.micro }}>{reach.matchedDisplays} of {displayCount}</span>}
       </div>
     )
   }
@@ -195,14 +192,13 @@ function LayerRow({ layerKey, booking, displayCount }: { layerKey: LayerKey; boo
    (see `LayerRow` above) — everything `LAYER_TIP`/`TRIGGER_META` used to
    explain over separate, nested hovers, now folded into the one tip
    `BookingTile` shows. */
-function layerLine(k: LayerKey, booking: Booking, displayCount?: number): string {
+function layerLine(k: LayerKey, booking: Booking): string {
   if (k === 'personalised') {
     const lit = TRIGGER_ORDER.filter((t) => booking.personalisedTriggers?.[t])
     return `PERS: one-to-one for the identified visitor, no predictable reach${lit.length ? ` — via ${lit.map((t) => TRIGGER_META[t].label).join(', ')}` : ''}`
   }
   if (k === 'localised') {
-    const reach = booking.reach
-    return `LOC: store-level targeting${reach && displayCount ? `, ${reach.matchedDisplays} of ${displayCount} displays matched (as of ${new Date(reach.asOf).toLocaleString('en-GB', { timeZone: 'UTC' })})` : ''}`
+    return 'LOC: store-level targeting'
   }
   return 'DEFAULT: the mandatory, untargeted layer, present on every booking'
 }
@@ -212,9 +208,9 @@ function layerLine(k: LayerKey, booking: Booking, displayCount?: number): string
    tile visibly expands and contracts with how successful the upsell has
    been with that advertiser (ticket "Booking schedule: single-advertiser
    stacking tile"). */
-function BookingTile({ booking, displayCount, money }: { booking: Booking; displayCount?: number; money: (n: number) => string }) {
+function BookingTile({ booking, money }: { booking: Booking; money: (n: number) => string }) {
   const present = LAYERS_TOP_DOWN.filter((k) => booking.layers[k])
-  const layersTip = present.map((k) => layerLine(k, booking, displayCount)).join(' · ')
+  const layersTip = present.map((k) => layerLine(k, booking)).join(' · ')
   const tip = `${booking.advertiserName} via ${booking.partnerName} · ${booking.type === 'reserve' ? 'Reserved' : 'Won at auction'} at ${booking.cpm} CPM · ${booking.assumedViews.toLocaleString('en-GB')} assumed views · booked ${money(booking.bookedRevenue)} · ${layersTip}`
   return (
     <Tooltip title={tip}>
@@ -223,7 +219,7 @@ function BookingTile({ booking, displayCount, money }: { booking: Booking; displ
           <Icon name={booking.type === 'reserve' ? 'bookmark' : 'gavel'} size={12} />
           <span className="truncate" style={{ fontSize: 11, fontWeight: 600, color: BOOKED.colour }}>{booking.advertiserName}</span>
         </div>
-        {present.map((k) => <LayerRow key={k} layerKey={k} booking={booking} displayCount={displayCount} />)}
+        {present.map((k) => <LayerRow key={k} layerKey={k} booking={booking} />)}
       </div>
     </Tooltip>
   )
@@ -234,10 +230,10 @@ function BookingTile({ booking, displayCount, money }: { booking: Booking; displ
    (ticket "Booking schedule: single-advertiser stacking tile" retires the
    earlier "Sold — other layer" model along with the fallback-optional,
    part-sold submission it depended on). */
-function DailyCell({ cell, displayCount, money }: { cell: Cell; displayCount?: number; money: (n: number) => string }) {
+function DailyCell({ cell, money }: { cell: Cell; money: (n: number) => string }) {
   if (cell.status === 'unavailable') return <span style={{ fontSize: 11, color: T.micro }}>—</span>
   if (!cell.booking) return <span style={{ fontSize: 11, color: T.success }}>Available</span>
-  return <BookingTile booking={cell.booking} displayCount={displayCount} money={money} />
+  return <BookingTile booking={cell.booking} money={money} />
 }
 
 /* A week or a month: how many windows were booked at all, and — of those —
@@ -275,7 +271,7 @@ function WindowCell({ value, context, data }: ICellRendererParams<Row, Group, Ct
   return (
     <div className="flex w-full min-w-0 flex-col justify-center gap-0.5 py-1">
       {view === 'Daily'
-        ? <DailyCell cell={value.cells[0]} displayCount={data?.position.displayCount} money={money} />
+        ? <DailyCell cell={value.cells[0]} money={money} />
         : <GroupedCell cells={value.cells} money={money} />}
     </div>
   )

@@ -39,7 +39,7 @@ logic do not change.
    │ PH Core seams (interfaces)                                          │
    │  DisplayTypeSource  PlaylistSource  DisplaySource  StoreSource      │
    │  CampaignSource (+ approval adapter)  PlaybackSource  AssetStore    │
-   │  AudienceSource  ReachCountSource  SessionSource  partner identity  │
+   │  AudienceSource  SessionSource  partner identity                     │
    │  SecretsStore  Flags                                                │
    └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -62,7 +62,6 @@ slower than that should cache, as the stand-ins now do.
 | `PlaybackSource` | read only | Playback logging | `totals({campaignId, displayTypeId, from, to})`, `listPlays` | Billing, once per ended window | aggregated at the source: ≤ 1 s for 2 million plays |
 | `AssetStore` | write + read | Asset hosting / CDN | `put`, `read`, `url` | Creative upload and DSP creative retrieval; hand-off re-validation | — |
 | `AudienceSource` | read only | Audience scoring (MOVE/VAC-d, spec §4) | `forSlot`, `targetedShare` | **Hot**: per position in inventory, forecast, OpenRTB `qty.multiplier` | ≤ 0.1 ms |
-| `ReachCountSource` | read only | *Unassigned* — see "Open" below | `matchOf(totalDisplays, rules)` | Booking schedule page load | point-in-time, as-of stamped |
 | `SessionSource` (`auth/session.ts`) | read only | HQ Admin session and roles | `current()` → `{userId, name, role}` | Every Admin API request | — |
 | Partner identity (`auth/partnerAuth.ts`) | read only | Platform token issuance | `partnerFromRequest(ctx, req)` → one `PartnerRecord` or 401. **Not an interface and not constructed in `context.ts`**: it is a function that reads `ctx.config.partnerTokens` directly, so on integration it is the one place besides `context.ts` to change (or it becomes a seam) | Every Partner API request | ≤ 0.1 ms |
 | `SecretsStore` | encrypt / decrypt | Platform secrets handling (KMS) | `encrypt`, `decrypt` | Saving DSP credentials; connecting to a DSP | off the hot path by design |
@@ -547,9 +546,6 @@ These are reserved names and places, with no behaviour yet:
 
 ## Open at the boundary
 
-- **Who hosts reach counts.** `ReachCountSource` is a POC estimate. The
-  interface contract with Live Visitor Profile hasn't decided whether one
-  endpoint or two answers display counts and localised match counts.
 - **Engagement counts for billing.** Interactive campaigns are priced per
   engagement, but `PlaybackSource` counts plays, not QR scans. Billing the
   fee needs an engagement count from PH Core. BUILD-PLAN §10 records this

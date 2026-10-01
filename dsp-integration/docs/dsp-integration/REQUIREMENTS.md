@@ -3190,14 +3190,13 @@ playback analytics.**
   monetisation readable at a glance. This retires the earlier design's
   "Sold — other layer" pill entirely: with one advertiser per slot there is
   no second layer competing for the same window's capacity to mark as
-  sold elsewhere. The localised row shows the booking's reach against this
-  row's `displayCount` — displays using this display type across the whole
-  retail footprint, shown in brackets on the Position cell (above), not its
-  own column any more — how many of those displays its targeting matched,
-  from the server's `ReachCountSource` stand-in for the interface contract's
-  "Booking schedule reach counts"; the personalised row carries no reach
-  count, since a personalised match can't be predicted ahead of time,
-  showing trigger icons instead (below) rather than a count. In the Weekly
+  sold elsewhere. The localised row shows a pill with no count (the
+  reach-count API left this build's scope on 30 Sep and is removed); the
+  position's `displayCount` — displays using this display type across the
+  whole retail footprint — is shown in brackets on the Position cell
+  (above), not its own column. The personalised row carries no count
+  either, since a personalised match can't be predicted ahead of time,
+  showing trigger icons instead (below). In the Weekly
   and Monthly views, where a slot may have gone to a different advertiser on
   different days, each column instead rolls up how many windows in the
   period were booked at all and, of those, how many carried each upsell
@@ -3208,7 +3207,7 @@ playback analytics.**
   row, and each lit personalised trigger icon each carried their own
   tooltip, nested three deep over a few square pixels and fighting each
   other for the pointer): the tile's single tooltip now folds in every
-  layer's detail — reach counts, lit trigger labels — that used to need a
+  layer's detail — lit trigger labels — that used to need a
   separate, nested hover to see; the layer rows and trigger icons
   themselves are purely visual. *(Campaign schedule → Booking schedule tab)*
 - **Personalised trigger icons** (ticket "Booking schedule: personalised

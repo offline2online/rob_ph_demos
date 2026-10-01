@@ -1715,10 +1715,10 @@ export interface components {
                 assignment: "rtb" | "whitelist_only" | "deal" | "reserved";
                 /**
                  * @description Displays using this display type across the whole retail
-                 *     footprint (interface contract "Booking schedule reach
-                 *     counts", family 1). This prototype has no narrower
-                 *     per-slot store scope for an advertiser position, so it is
-                 *     also what "the slot's store scope" resolves to here.
+                 *     footprint: plain sizing from the display source. This
+                 *     prototype has no narrower per-slot store scope for an
+                 *     advertiser position, so it is also what "the slot's store
+                 *     scope" resolves to here.
                  */
                 displayCount: number;
                 /** @description One per schedule window, in the same order. */
@@ -1732,21 +1732,6 @@ export interface components {
                         campaignId: string;
                         advertiserId: string | null;
                         partnerId: string;
-                        /**
-                         * @description The Localised layer's match count: present only
-                         *     when layers.localised is true, from the
-                         *     campaign's own targeted-version rules; null when
-                         *     no localised layer was submitted — personalised
-                         *     reach can't be predicted (interface contract
-                         *     "Booking schedule reach counts": "Localised
-                         *     only").
-                         */
-                        reach: {
-                            /** @description Of the position's displayCount. */
-                            matchedDisplays: number;
-                            /** Format: date-time */
-                            asOf: string;
-                        } | null;
                         pricingType: components["schemas"]["PricingType"];
                         /**
                          * @description Which of the three layers this one advertiser's

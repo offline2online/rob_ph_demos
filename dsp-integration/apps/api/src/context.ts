@@ -21,7 +21,6 @@ import { type ApprovalService, createApprovalService } from '@ph-dsp/campaign-ap
 import { advertiserSlug } from '@ph-dsp/types'
 import { type AssetStore, localAssetStore } from './platform/AssetStore'
 import { type AudienceSource, sqliteAudienceSource } from './platform/AudienceSource'
-import { type ReachCountSource, pocReachCountSource } from './platform/ReachCountSource'
 import { type ReservationRepo, sqliteReservationRepo } from './repos/ReservationRepo'
 import { targetingSummary } from './domain/targetingSummary'
 import type { Fetch } from './dsp/DspClient'
@@ -51,7 +50,6 @@ export interface Context {
   dsp: DspProviders
   assets: AssetStore
   audience: AudienceSource
-  reach: ReachCountSource
   reservations: ReservationRepo
   /* HTTP to the DSPs (the mock DSP service in the POC). */
   fetch: Fetch
@@ -89,7 +87,6 @@ export function createContext(opts: { config?: Config; db?: Db; flags?: Flags; s
     fetch: opts.dspFetch ?? ((url, init) => fetch(url, init)),
     bidder: httpBidder(opts.dspFetch ?? ((url, init) => fetch(url, init)), { timeoutMs: config.bidderTimeoutMs, qps: config.bidderQps, maxResponseBytes: config.maxBidResponseBytes }),
     audience: sqliteAudienceSource(db),
-    reach: pocReachCountSource(clock),
     reservations: sqliteReservationRepo(db),
     clock,
     ...approvalParts(db, config),

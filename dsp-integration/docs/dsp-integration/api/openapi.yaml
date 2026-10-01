@@ -2101,10 +2101,10 @@ components:
                 type: integer
                 description: |
                   Displays using this display type across the whole retail
-                  footprint (interface contract "Booking schedule reach
-                  counts", family 1). This prototype has no narrower
-                  per-slot store scope for an advertiser position, so it is
-                  also what "the slot's store scope" resolves to here.
+                  footprint: plain sizing from the display source. This
+                  prototype has no narrower per-slot store scope for an
+                  advertiser position, so it is also what "the slot's store
+                  scope" resolves to here.
               windows:
                 type: array
                 description: One per schedule window, in the same order.
@@ -2116,26 +2116,12 @@ components:
                     status: {type: string, enum: [booked, available, unavailable]}
                     booking:
                       type: [object, 'null']
-                      required: [reservationId, campaignId, advertiserId, partnerId, pricingType, type, advertiserName, partnerName, cpm, assumedViews, bookedRevenue, billedRevenue, reach, layers, personalisedTriggers]
+                      required: [reservationId, campaignId, advertiserId, partnerId, pricingType, type, advertiserName, partnerName, cpm, assumedViews, bookedRevenue, billedRevenue, layers, personalisedTriggers]
                       properties:
                         reservationId: {type: string}
                         campaignId: {type: string}
                         advertiserId: {type: [string, 'null']}
                         partnerId: {type: string}
-                        reach:
-                          type: [object, 'null']
-                          description: |
-                            The Localised layer's match count: present only
-                            when layers.localised is true, from the
-                            campaign's own targeted-version rules; null when
-                            no localised layer was submitted — personalised
-                            reach can't be predicted (interface contract
-                            "Booking schedule reach counts": "Localised
-                            only").
-                          required: [matchedDisplays, asOf]
-                          properties:
-                            matchedDisplays: {type: integer, description: Of the position's displayCount.}
-                            asOf: {type: string, format: date-time}
                         pricingType: {$ref: '#/components/schemas/PricingType'}
                         layers:
                           type: object

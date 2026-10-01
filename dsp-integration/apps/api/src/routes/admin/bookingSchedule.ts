@@ -11,9 +11,9 @@
    capacity — that model is retired along with the fallback-optional
    submission it depended on): default (mandatory since the same-day
    "Make default creative mandatory" ticket, so always present),
-   localised (reach.matchedDisplays, from the campaign's own
-   targeted-version rules via ctx.reach, the ReachCountSource stand-in —
-   REQUIREMENTS §6, interface contract "Booking schedule reach counts")
+   localised (a pill with no count: the reach-count API left this
+   build's scope on 30 Sep and the part-sold model it served was retired
+   on 22 Sep, so the position's plain displayCount is the only sizing)
    and personalised (no count — matching can't be predicted ahead of
    time — but a breakdown of which trigger mechanism(s) its rules use,
    ticket "Booking schedule: personalised trigger icons"). */
@@ -25,7 +25,7 @@ import { lineItems } from '../../exchange/billing'
 import type { Guards } from '../../http/app'
 import { validationFailed } from '../../http/errors'
 import { allPositions, assignmentOf, assumedViewsPerWindow, effectivePartnerIds, nextWindow, shortestWindowMs, windowMs, windowStartOf, windowsBetween } from '../../domain/positions'
-import type { Condition, StoredTargeting } from '../../domain/targetingSummary'
+import type { StoredTargeting } from '../../domain/targetingSummary'
 import { TAKEN } from '../../repos/ReservationRepo'
 import { advertiserSlug } from '@ph-dsp/types'
 
@@ -51,14 +51,6 @@ const targetedOf = (ctx: Context, campaignId: string | null): TargetedVersion[] 
 function layersOf(targeted: TargetedVersion[], activePricingType: string | null): Layers {
   const has = (t: string) => activePricingType === t || targeted.some((v) => v.pricingType === t)
   return { default: true, localised: has('localised') || has('interactive'), personalised: has('personalised') }
-}
-
-/* The rules driving reach for the localised layer: the campaign's own
-   localised/interactive targeted version — a reservation doesn't record
-   which specific version won, so this is an approximation, same spirit as
-   the POC's other targeting stand-ins (AudienceSource.targetedShare). */
-function reachRulesOf(targeted: TargetedVersion[]): Condition[][] | undefined {
-  return targeted.find((v) => v.pricingType === 'localised' || v.pricingType === 'interactive')?.rules
 }
 
 /* Trigger icons for the personalised layer (ticket "Booking schedule:
@@ -149,16 +141,13 @@ export function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleFilter 
            its trigger icons. */
         const targeted = targetedOf(ctx, r.campaignId)
         const layers = layersOf(targeted, r.pricingType)
-        /* Localised layer reach: null when this booking has no localised
-           layer — personalised reach can't be predicted. */
-        const reach = layers.localised ? ctx.reach.matchOf(displayCount, reachRulesOf(targeted)) : null
         return {
           start: column.toISOString(), status: 'booked' as const,
           booking: {
             reservationId: r.id, campaignId: r.campaignId as string, advertiserId: r.advertiserId, partnerId: r.partnerId,
             pricingType: type, type: r.type, advertiserName: (r.advertiserId && advertiserName.get(r.advertiserId)) || r.advertiserId || '—',
             partnerName: partners.find((x) => x.id === r.partnerId)?.name ?? r.partnerId, cpm: r.clearingCpm as number, assumedViews: views, bookedRevenue, billedRevenue: bill,
-            reach, layers, personalisedTriggers: triggersOf(targeted, layers.personalised),
+            layers, personalisedTriggers: triggersOf(targeted, layers.personalised),
           },
         }
       }
