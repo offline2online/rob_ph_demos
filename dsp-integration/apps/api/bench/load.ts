@@ -34,7 +34,7 @@
       timed too.
 
    Numbers are machine-dependent; compare runs on the same machine. */
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomBytes, randomUUID } from 'node:crypto'
@@ -54,6 +54,13 @@ import { runBilling } from '../src/exchange/billing'
 import { allPositions, biddingOpensAt, nextWindow, windowMs, windowStartOf } from '../src/domain/positions'
 import { mockDsps } from '../test/helpers'
 
+/* --assert / --calibrate: the regression gate (bench/gate.ts) runs this file
+   per shape and compares; nothing below runs in that process. */
+if (process.argv.some((a) => a === '--assert' || a === '--calibrate')) {
+  await import('./gate')
+  process.exit(0)
+}
+
 const arg = (name: string, dflt: number) => Number(process.argv.find((a) => a.startsWith(`--${name}=`))?.split('=')[1] ?? dflt)
 const SCALE = arg('scale', 0)
 const DISPLAYS_PER_TYPE = arg('displays-per-type', 25)
@@ -67,6 +74,9 @@ const CONCURRENCY = arg('concurrency', 32)
 const BIDDER_MS = arg('bidder-ms', 0)
 const PLAYS_PER_DISPLAY = arg('plays-per-display', 0)
 const HISTORY = arg('history', 0)
+/* --json=<file>: write the numbers for the regression gate (bench/gate.ts). */
+const JSON_OUT = process.argv.find((a) => a.startsWith('--json='))?.split('=')[1]
+const metrics: Record<string, number> = {}
 
 const dir = mkdtempSync(join(tmpdir(), 'ph-bench-'))
 const mocks = mockDsps()
@@ -74,7 +84,7 @@ const ctx = createContext({
   /* The per-partner rate limit (50/s by default) is lifted here so the
      numbers measure the server's capacity, not the limiter; the limiter
      itself is covered by test/partner-api-hardening.test.ts. */
-  config: { ...loadConfig({ DSP_MOCKS_URL: 'http://mocks.test' }), dbFile: join(dir, 'bench.sqlite'), assetsDir: join(dir, 'assets'), partnerRateLimit: { perSecond: 1e9, burst: 1e9 } },
+  config: { ...loadConfig({ ...process.env, DSP_MOCKS_URL: 'http://mocks.test' }), dbFile: join(dir, 'bench.sqlite'), assetsDir: join(dir, 'assets'), partnerRateLimit: { perSecond: 1e9, burst: 1e9 } },
   db: openDb(join(dir, 'bench.sqlite')),
   flags: staticFlags(true),
   session: staticSession('hq_admin'),
@@ -169,6 +179,9 @@ async function drive(label: string, req: () => Promise<Response | null>, ok: (st
     }
   }))
   lat.sort((a, b) => a - b)
+  metrics[`${label}|rps`] = Math.round(lat.length / SECONDS)
+  metrics[`${label}|p50`] = Math.round(pct(lat, 50) * 10) / 10
+  metrics[`${label}|errors`] = errors
   console.log(
     `${label.padEnd(46)} ${String(Math.round(lat.length / SECONDS)).padStart(6)} req/s   p50 ${pct(lat, 50).toFixed(1).padStart(6)} ms   p95 ${pct(lat, 95).toFixed(1).padStart(6)} ms   p99 ${pct(lat, 99).toFixed(1).padStart(6)} ms   errors ${errors}`,
   )
@@ -246,6 +259,7 @@ await drive('GET  /v1/inventory (bad token → 401)', () => fetch(`${BASE}/v1/in
   const result = await runAuction(ctx)
   const ms = performance.now() - t0
   const bids = result.positions.reduce((n, p) => n + p.bids, 0)
+  metrics['auction|ms'] = Math.round(ms)
   console.log(`\nAuction (bidder round trip ${BIDDER_MS} ms): ${result.positions.length} positions cleared for ${result.windowStart.slice(0, 10)} in ${ms.toFixed(0)} ms (${(ms / Math.max(1, result.positions.length)).toFixed(2)} ms/position; ${result.positions.reduce((n, p) => n + p.bidRequests, 0)} bid requests, ${bids} bids)`)
 }
 
@@ -253,6 +267,7 @@ await drive('GET  /v1/inventory (bad token → 401)', () => fetch(`${BASE}/v1/in
 if (HISTORY > 0) {
   const t0 = performance.now()
   const items = runBilling(ctx)
+  metrics['billing tick|ms'] = Math.round(performance.now() - t0)
   console.log(`Billing tick with ${HISTORY} windows already billed and nothing new: ${(performance.now() - t0).toFixed(0)} ms (${items.length} line items)`)
 }
 if (PLAYS_PER_DISPLAY > 0) {
@@ -280,9 +295,11 @@ if (PLAYS_PER_DISPLAY > 0) {
   const t2 = performance.now()
   const items = runBilling(ctx)
   const mine = items.find((i) => i.reservationId === 'res_bench_billing')
+  metrics['billing one window|ms'] = Math.round(performance.now() - t2)
   console.log(`Billing one window of ${inserted} plays: ${(performance.now() - t2).toFixed(0)} ms (${mine ? `${mine.plays} plays counted, ${mine.realisedViews} realised views, ${mine.amount} ${mine.currency}` : 'NOT billed'})`)
 }
 console.log()
+if (JSON_OUT) writeFileSync(JSON_OUT, JSON.stringify({ scale: SCALE, displaysPerType: DISPLAYS_PER_TYPE, slots: SLOTS, stores: STORES, bidderMs: BIDDER_MS, seconds: SECONDS, concurrency: CONCURRENCY, metrics }, null, 2))
 
 await app.close()
 ctx.db.close()

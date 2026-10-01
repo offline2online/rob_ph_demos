@@ -1,0 +1,23 @@
+{
+  "_about": "Regression gate for npm run bench -- --assert (E2E Testing Strategy §3.7, ticket YDuDawBIoLKuPRK0uCMO). Seeded from the 'after' column of the 24 Sep 2026 scale review (Scale review — 15,000 displays on a client's EKS; one Node process, 4 vCPU). rps must stay above threshold × (1 − tolerance); ms must stay below threshold × (1 + tolerance). A deliberate change updates this file in the same PR. `--calibrate` writes bench/baseline.local.json (git-ignored) from this machine, which --assert then prefers.",
+  "tolerance": 0.25,
+  "args": "--stores=1000 --bidder-ms=80 --plays-per-display=1900 --history=100000 --seconds=3 --concurrency=32",
+  "shapes": {
+    "A": { "args": "--scale=600 --displays-per-type=25", "note": "600 display types × 25 displays = 15,000 displays, 2,408 positions",
+      "rps": { "GET  /v1/inventory (page of 50)": 582, "GET  /v1/inventory?status=available (1 yr)": 96, "GET  /v1/inventory/{id}": 2377, "GET  /v1/inventory/{id}/availability (7 d)": 2240, "GET  /v1/inventory/{id}/availability (1 yr)": 672, "POST /v1/inventory/forecast (30 d)": 1323, "POST /v1/reservations": 1035 },
+      "p50": { "GET  /v1/inventory (page of 50)": 51, "GET  /v1/inventory?status=available (1 yr)": 320 },
+      "ms": { "auction": 12700, "billing tick": 77, "billing one window": 71 } },
+    "B": { "args": "--scale=60 --displays-per-type=250", "note": "60 × 250 = 15,000 displays, 248 positions",
+      "rps": { "GET  /v1/inventory (page of 50)": 782, "GET  /v1/inventory?status=available (1 yr)": 384, "GET  /v1/inventory/{id}": 2557, "GET  /v1/inventory/{id}/availability (7 d)": 2347, "GET  /v1/inventory/{id}/availability (1 yr)": 704, "POST /v1/inventory/forecast (30 d)": 1355, "POST /v1/reservations": 992 },
+      "p50": { "GET  /v1/inventory (page of 50)": 38, "GET  /v1/inventory?status=available (1 yr)": 83 },
+      "ms": { "auction": 1400, "billing tick": 84, "billing one window": 370 } },
+    "C": { "args": "--scale=15 --displays-per-type=1000", "note": "15 × 1,000 = 15,000 displays, 68 positions",
+      "rps": { "GET  /v1/inventory (page of 50)": 850, "GET  /v1/inventory?status=available (1 yr)": 502, "GET  /v1/inventory/{id}": 2588, "GET  /v1/inventory/{id}/availability (7 d)": 2187, "GET  /v1/inventory/{id}/availability (1 yr)": 704, "POST /v1/inventory/forecast (30 d)": 1387, "POST /v1/reservations": 992 },
+      "p50": { "GET  /v1/inventory (page of 50)": 35, "GET  /v1/inventory?status=available (1 yr)": 62 },
+      "ms": { "auction": 460, "billing tick": 62, "billing one window": 650 } },
+    "T": { "args": "--scale=15 --displays-per-type=1000", "note": "ASSUMPTION (1 Oct 2026): the 7-Eleven Thailand estate as 15 display types × 1,000 displays × 4 slots = 15,000 displays, 60 positions — shape C's mix, pending CP Group confirming formats. Positions are what scale, not displays; replace this entry when the real display-type mix is known.",
+      "rps": { "GET  /v1/inventory (page of 50)": 850, "GET  /v1/inventory?status=available (1 yr)": 502, "GET  /v1/inventory/{id}": 2588, "GET  /v1/inventory/{id}/availability (7 d)": 2187, "GET  /v1/inventory/{id}/availability (1 yr)": 704, "POST /v1/inventory/forecast (30 d)": 1387, "POST /v1/reservations": 992 },
+      "p50": { "GET  /v1/inventory (page of 50)": 35, "GET  /v1/inventory?status=available (1 yr)": 62 },
+      "ms": { "auction": 460, "billing tick": 62, "billing one window": 650 } }
+  }
+}
