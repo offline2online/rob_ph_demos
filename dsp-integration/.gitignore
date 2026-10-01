@@ -8,3 +8,4 @@ dist/
 
 # Vite's local cache
 apps/admin/.vite/
+results/

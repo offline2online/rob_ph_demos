@@ -1516,3 +1516,12 @@ html:not([data-console-role="admin"]) [data-admin-only] { display: none !importa
 .blocked-flag-waiting-on-input { color: #ad6800; background: #fffbe6; border-color: #ffe58f; }
 .needs-decision-chip { margin-right: 6px; padding-right: 8px; }
 .blocked-clear-btn { border: 0; background: none; color: inherit; cursor: pointer; font-size: 14px; line-height: 1; padding: 0 3px; }
+
+/* Run E2E: per-project status chip (green / red / grey) and mode menu. */
+.e2e-chip { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; font-weight: 500; padding: 2px 9px 2px 6px; border-radius: 9999px; border: 1px solid transparent; cursor: help; text-decoration: none; white-space: nowrap; }
+.e2e-chip .material-symbols-outlined { font-size: 15px; }
+.e2e-chip-green { color: #389e0d; background: #f6ffed; border-color: #b7eb8f; }
+.e2e-chip-red { color: #cf1322; background: #fff1f0; border-color: #ffa39e; }
+.e2e-chip-grey { color: #595959; background: #fafafa; border-color: #d9d9d9; }
+.e2e-run-wrap .options-menu-item { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; }
+.e2e-mode-desc { font-size: 11px; color: #8c8c8c; }

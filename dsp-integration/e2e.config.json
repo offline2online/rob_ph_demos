@@ -1,0 +1,10 @@
+{
+  "steps": [
+    { "id": "typecheck", "label": "Typecheck", "cmd": "npm run typecheck", "modes": ["quick", "full"] },
+    { "id": "suites", "label": "Full suites (incl. test/e2e Runs 1-5)", "cmd": "npm test", "modes": ["quick", "full"] },
+    { "id": "journey", "label": "Run 6 journey", "cmd": "npm run e2e:journey", "modes": ["full", "journey"], "cases": "results/journey-cases.json" },
+    { "id": "bench", "label": "Bench with thresholds", "cmd": "npm run bench -- --assert", "modes": ["full"] }
+  ],
+  "report": "npm run report-e2e",
+  "fileBugs": "npm run file-e2e-bugs"
+}
