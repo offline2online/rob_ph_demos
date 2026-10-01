@@ -1100,8 +1100,9 @@ played (Billing, below).
   later play window in the term as its own reservation at the locked CPM,
   and each is billed exactly as any other reservation already is.
 - **Pre-auction enforcement uses the effective floor CPM** for the campaign's
-  type and advertiser: a bid for a personalised or interactive campaign must
-  clear the multiplied floor, not the base floor.
+  type and advertiser. The auction clears against the base floor (scaled by
+  the advertiser's `floorMultiplier`); the personalised multiplier is charged
+  per personalised play, not applied as a bid floor (30 Sep 2026).
 
 ## 5. Inventory API
 
@@ -1224,7 +1225,9 @@ this document).
 - Positions reserved to another advertiser are not shown.
 - **Availability is a forecast, and targeting changes it.** The forecast
   endpoint takes targeting rules as input, since a campaign gated on a single
-  store segment delivers a fraction of an untargeted baseline.
+  store segment delivers a fraction of an untargeted baseline: predicates go
+  in and a share comes out (`AudienceSource.targetedShare`). It is not the
+  removed reach-count API and returns no per-display counts.
 
 ### Available Inventory — the retailer's view
 
@@ -1772,13 +1775,16 @@ Tier 1 follows each DSP's own specification. The tier-2 shape:
 
 ```
 GET  /v1/inventory                 sellable positions and status (§5)
-GET  /v1/inventory/{id}/availability   status per play window
+GET  /v1/inventory/{positionId}    one sellable position
+GET  /v1/inventory/{positionId}/availability   status per play window
 POST /v1/inventory/forecast        projected assumed views for a spec + targeting
 POST /v1/reservations              reserve, or bid (CPM) for a play window (Approved campaigns only)
+GET  /v1/reservations/{reservationId}   one reservation and its status
 GET  /v1/targeting/attributes      the shared targeting variables THIS partner may target
 POST /v1/campaigns                 default (required) + targeted versions, rules validated
 POST /v1/campaigns/{id}/assets     creative upload and automated validation
 POST /v1/campaigns/{id}/submit     submit for retailer approval (§3)
+GET  /v1/campaigns/{id}            the campaign as stored (default + targeted versions; RbXpiw2Q, 30 Sep 2026)
 GET  /v1/campaigns/{id}/status     approval status
 ```
 
@@ -1792,7 +1798,7 @@ system.
     { "role": "default", "assetSet": "as_brand_evergreen" },
     { "role": "targeted", "priority": 10, "assetSet": "as_metro_commuter",
       "rules": [
-        [{ "source": "store", "variable": "fixed_store_segments", "op": "includes_selected", "values": ["Metro"] }],
+        [{ "source": "store", "variable": "fixed_store_segments", "op": "include", "values": ["Metro"] }],
         [{ "source": "store", "variable": "store_open_closed", "op": "equal", "values": ["Open"] }]
       ] },
     { "role": "targeted", "priority": 20, "assetSet": "as_replenish",
@@ -1801,7 +1807,7 @@ system.
       ] },
     { "role": "targeted", "priority": 30, "assetSet": "as_viewed_before",
       "rules": [
-        [{ "source": "visitor", "variable": "skus", "op": "includes_selected", "values": ["SKU-10234", "SKU-55871"] }]
+        [{ "source": "visitor", "variable": "skus", "op": "include", "values": ["SKU-10234", "SKU-55871"] }]
       ] }
   ]
 }
@@ -2084,6 +2090,9 @@ fields. The canonical definition is `app/src/model/schema.js` and
               billingUnitHours,     // this slot's own override = its play-window length, in whole hours; null = inherit the display type's billingUnitHours above, else the company playWindowHours (§5; OQ27)
               maxCampaigns }],      // this slot's own override; null = inherit the display type's maxCampaigns above, 1-10 inclusive when set (§5)
                                     // listMode: rtb | whitelist_only | deal | null; buyersListId set only when listMode is deal (§5 "Private auctions")
+                                    // each slot also carries supportedTargeting (what it can target, I5t9MJsN) and
+                                    // salesLocked / salesLockedUntil (set by PUT /admin/v1/available-inventory/lock, cleared by the scheduler; not writable through the slot editor)
+    defaultVacd,                   // number | null: the display type's default VAC-d (ZSfSP5sr, 1 Oct 2026, migration 0035); a slot with neither this nor an audience_vacd row is unscored
     venue: { openOohVenueType, orientation, loopLengthSec }
   }
 }
@@ -2216,8 +2225,7 @@ Company-level:
   `playWindowHours`, `auctionCutoffTime`; defaults 168 / 24 / 18:00 UTC —
   `playWindowHours` is only the window a slot inherits when neither it nor
   its display type sets a billing unit, open question 27),
-  `audienceScoring` (MOVE/VAC-d inputs), advertiser and IAB-category
-  whitelists and blacklists.
+  advertiser and IAB-category whitelists and blacklists.
 - **Advertisers / Inventory** (an admin writes it; marketing reads it):
   `advertiserSettings: { [advertiser]: { approvalRequired, floorMultiplier } }`
   (defaults `true` / 1.0), and per sellable slot what it is assigned to
@@ -2229,8 +2237,9 @@ Company-level:
   release, plus `variableAccess: { [variableKey]: "all" | [partnerId] }`:
   `"all"` means every connected DSP (including later ones), a list names
   individual DSPs, `[]` means none. Unset keys take the defaults in §6.
-- **Exchange**: `client {name, domain, contactEmail}` (the seller of record)
-  and `sellersJson {sellerId}`. Seller type, confidentiality, `supplyChain`,
+- **Exchange**: `client {name, domain, contactEmail}` (the seller of record),
+  `sellersJson {sellerId}` and `enabled` (the retailer's DSP integration
+  switch, §7, migration 0023). Seller type, confidentiality, `supplyChain`,
   OpenRTB options are fixed platform defaults. QPS ceiling (500) and bid
   timeout (300 ms) are platform defaults a DSP's connection settings can
   override (Q46).
