@@ -1,5 +1,12 @@
 # Build brief — Display Types & DSP Integration
 
+> **Historical — superseded (1 Oct 2026).** This is the build record of the 19–24 Sep
+> POC, kept as written; the lines marked "(superseded …)" below were corrected
+> against the code on 1 Oct 2026. What is true now is in
+> [REQUIREMENTS.md](REQUIREMENTS.md), [api/PH-CORE-BOUNDARIES.md](api/PH-CORE-BOUNDARIES.md)
+> and [README.md](../../README.md). Work rides the `deploy/dsp-integration` train
+> (branch `feature/dsp-integration` merged to `main` on 21 Sep 2026).
+
 For Claude Code, working in this repo. Build the feature end to end, directly
 (not through the backlog board). Once the build is done and working, the rest
 (testing, approval, deploy) is managed on the board.
@@ -26,22 +33,22 @@ merge it into the main repo. These decisions are made; don't reopen them:
 | Data | SQLite through a repository layer with plain, Postgres-compatible SQL and versioned migrations. Seed data = the prototype's sample data (`prototype-reference/src/model/data.js`). |
 | Existing platform stand-ins | Display types, playlists, displays, campaigns, playback data and asset storage live in `apps/api/src/platform/`, each behind an interface (`DisplayTypeSource`, `PlaylistSource`, `DisplaySource`, `CampaignSource`, `PlaybackSource`, `AssetStore`). Their endpoints are the *POC stand-in* group in the API contract. |
 | UI components | **Use the `ph-designer` skill** (`.claude/skills/ph-designer/`). Read its SKILL.md and `references/prototyping.md`, `tokens.md`, `hq-admin.md` and `components.md` before building any screen. Ant Design components themed with the skill's `ConfigProvider` tokens; AG Grid Alpine for every table; Material Symbols (Outlined) icons; Roboto. Don't copy the prototype's hand-made components (`ui.jsx`) and don't use any other library. Where the skill has no documented pattern for something the prototype shows, use the nearest documented pattern and note it in `BUILD-PLAN.md`. |
-| Auth and roles | Stand-in session: `hq_admin` (admin + approver) and `hq_user` (neither), chosen by the `POC_ROLE` env var (default `hq_admin`). **No switcher or any other UI for it.** Partner API: one static bearer token per seeded partner, from config. |
+| Auth and roles | Stand-in session: `hq_admin` (admin + approver) and `hq_user` (neither; superseded: the stand-in is `hq_admin`, `hq_marketing` and `hq_helpdesk`, see api/PH-CORE-BOUNDARIES.md `SessionSource`), chosen by the `POC_ROLE` env var (default `hq_admin`). **No switcher or any other UI for it.** Partner API: one static bearer token per seeded partner, from config. |
 | Secrets | DSP credentials encrypted at rest (AES-256-GCM) with a key from the env var `PH_SECRETS_KEY` in a local `.env` that is never committed; behind a `SecretsStore` interface. |
 | Feature flag | `DSP_INTEGRATION_ENABLED` env var, read through a `Flags` interface. |
-| DSPs | No sandbox accounts yet. Build each DSP client behind a `DspClient` interface, with a mock implementation used by default: connect succeeds or fails per the seed data (Amazon Ads DSP seeded with "refresh token rejected"), and a mock bidder that returns bids. Don't call real DSP APIs. |
+| DSPs | No sandbox accounts yet. Build each DSP behind one interface (superseded: `DspProvider`, one module per DSP, since 29 Sep 2026; was a `DspClient`), with a mock implementation used by default: connect succeeds or fails per the seed data (Amazon Ads DSP seeded with "refresh token rejected"), and a mock bidder that returns bids. Don't call real DSP APIs. |
 | sellers.json | Served by `apps/api` at `/sellers.json`. |
 | Assets | Local folder `data/assets/` (git-ignored) behind `AssetStore`. |
-| Assumed views (VAC-d) | Seeded numbers per display type slot behind an `AudienceSource` interface. No scoring framework UI (spec: spec only). |
+| Assumed views (VAC-d) | Seeded numbers per display type slot behind an `AudienceSource` interface (superseded: scored flag plus a default VAC-d per display type and a per-display override, 0035). No scoring framework UI (spec: spec only). |
 | Reservations | Stored (needed for `GET /v1/reservations/{id}`). |
 | Stand-in playback data | Seeded, read-only play records `{displayId, campaignId, playedAt, durationSec}` behind `PlaybackSource`, used only for billing. |
-| Git | This POC lives as the folder **`dsp-integration/` inside the `rob_ph_demos` repository** (`offline2online/rob_ph_demos`). Don't create a separate git repo in this folder. Work on the `rob_ph_demos` branch `feature/dsp-integration`, and only change files inside `dsp-integration/`; never touch other folders in the repo. Commit as you go; push only when Rob asks. |
+| Git | This POC lives as the folder **`dsp-integration/` inside the `rob_ph_demos` repository** (`offline2online/rob_ph_demos`). Don't create a separate git repo in this folder. Work on the `rob_ph_demos` branch `feature/dsp-integration` (superseded: merged 21 Sep 2026; work rides `deploy/dsp-integration`), and only change files inside `dsp-integration/`; never touch other folders in the repo. Commit as you go; push only when Rob asks. |
 
 Anything not in this table or the spec: ask, don't decide.
 
 > **Since the build (23 Sep 2026):** the full list of stand-ins as they now
 > stand — every seam, including `StoreSource`, `AudienceSource` and
-> partner identity added during the build — and what
+> partner identity added during the build (`ReachCountSource`, once listed here, was removed on 1 Oct 2026) — and what
 > each must guarantee from the real platform is in
 > [api/PH-CORE-BOUNDARIES.md](api/PH-CORE-BOUNDARIES.md). The security and
 > performance limits added afterwards are in
@@ -288,18 +295,17 @@ Use these until Rob decides; make each configurable and list it in the PR.
 |---|---|
 | 27 Auction play-window length | 24 hours |
 | 29 Partial-estate delivery | Bill only plays that happened, per existing playback data |
-| 38 Old version during re-review | Stops until the new version is approved |
+| 38 Old version during re-review | ~~Stops until the new version is approved~~ Reversed 29 Sep 2026: the approved version keeps running |
 | 39 Who can approve | HQ Admin role only |
 | 41 Advertiser notification | Status polling; leave a webhook hook |
 | 46 Per-DSP QPS / timeout | Platform defaults 500 QPS / 300 ms |
 | 47 Delete type with sold positions | Don't block; log sold/reserved count |
-| 48 SKU list length | Max 100 SKUs per condition, checked at validation (look-back is existing platform behaviour) |
+| 48 SKU list length | Max 100 values per condition, checked at validation — a value cap only, not SKU validation (look-back is existing platform behaviour) |
 | 49 Computer Vision variable default | All connected DSPs (as spec) |
 
 ## Testing
 
-- Unit tests for: effective floor maths (floor × personalised × interactive
-  × advertiser multiplier), targeting permission validation (a rule using a
+- Unit tests for: effective floor maths (the base floor × the advertiser's multiplier; superseded: the interactive and personalised multipliers are no longer floors), targeting permission validation (a rule using a
   variable not permitted for the DSP is rejected with the variable named),
   list precedence (blacklist always subtracts), delete checks, approval state
   machine.
@@ -316,7 +322,7 @@ Use these until Rob decides; make each configurable and list it in the PR.
 
 ## Definition of done
 
-- All 17 packages built on `feature/dsp-integration`, flag off by default.
+- All 17 packages built (on `feature/dsp-integration`, merged 21 Sep 2026), flag off by default.
 - Tests pass; `BUILD-PLAN.md` complete, listing deferred items and open
   questions hit.
 - `CAMPAIGN-APPROVAL-INTEGRATION.md` written, and the campaign-approval
