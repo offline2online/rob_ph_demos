@@ -113,8 +113,15 @@ describe('PUT /admin/v1/display-types/{id}/extensions — slot ownership', () =>
     slots: [
       { label: 'Priority 1', owner: 'internal', zoneId: 'z1' },
       { label: 'Supplier slot', owner: 'advertiser', zoneId: 'z1', ...second },
-      { label: 'Store choice', owner: 'retail', zoneId: 'z1' },
+      { label: 'Store choice', owner: 'internal', zoneId: 'z1' },
     ],
+  })
+
+  it('refuses a Stores-owned slot server-side, naming the slot (release 1)', async () => {
+    const { app } = await setup()
+    const res = await put(app, 'menu_board', { slots: [{ label: 'Priority 1', owner: 'internal', zoneId: 'z1' }, { label: 'Supplier slot', owner: 'advertiser', zoneId: 'z1' }, { label: 'Store choice', owner: 'retail', zoneId: 'z1' }] })
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error.details).toEqual([{ field: 'slots[2].owner', reason: expect.stringContaining('Slot 3') }])
   })
 
   it('returns 404 with the flag off', async () => {
@@ -128,7 +135,7 @@ describe('PUT /admin/v1/display-types/{id}/extensions — slot ownership', () =>
     expect(res.statusCode).toBe(200)
     expectMatchesContract('PUT', '/admin/v1/display-types/{displayTypeId}/extensions', 200, res.json())
     expect(res.json().slots.map((s: { label: string; owner: string }) => [s.owner, s.label]))
-      .toEqual([['internal', 'Priority 1'], ['advertiser', 'Brand slot'], ['retail', 'Store choice']])
+      .toEqual([['internal', 'Priority 1'], ['advertiser', 'Brand slot'], ['internal', 'Store choice']])
     expect(ctx.displayTypes.get('menu_board')?.phExtensions?.venue).toMatchObject({ orientation: 'landscape' })
   })
 
@@ -138,7 +145,7 @@ describe('PUT /admin/v1/display-types/{id}/extensions — slot ownership', () =>
     const kept = await put(app, 'menu_board', menuSlots({ label: 'Brand slot' }))
     expect(kept.json().slots[1]).toMatchObject({ advertisers: ['Nestlé'], partnerIds: ['p_google'], supportedTargeting: ['localised', 'personalised'] })
     /* Owner changed: it is no longer sellable inventory, so the assignment goes. */
-    const dropped = await put(app, 'menu_board', { slots: [{ label: 'Priority 1', owner: 'internal', zoneId: 'z1' }, { label: 'Brand slot', owner: 'internal', zoneId: 'z1' }, { label: 'Store choice', owner: 'retail', zoneId: 'z1' }] })
+    const dropped = await put(app, 'menu_board', { slots: [{ label: 'Priority 1', owner: 'internal', zoneId: 'z1' }, { label: 'Brand slot', owner: 'internal', zoneId: 'z1' }, { label: 'Store choice', owner: 'internal', zoneId: 'z1' }] })
     expect(dropped.json().slots[1]).toMatchObject({ advertisers: [], partnerIds: [], listMode: null })
     expect(ctx.displayTypes.get('menu_board')?.phExtensions?.slots[1].supportedTargeting).toBeUndefined()
   })
@@ -148,7 +155,7 @@ describe('PUT /admin/v1/display-types/{id}/extensions — slot ownership', () =>
     const res = await put(app, 'menu_board', menuSlots({ partnerIds: ['p_amazon'], advertisers: ['Swisse'] }))
     expect(res.statusCode).toBe(200)
     expect(res.json().slots[1]).toMatchObject({ partnerIds: ['p_google'], advertisers: [] })
-    expect(res.json().slots[2]).toMatchObject({ storeScope: 'Store staff' })
+    expect(res.json().slots[2]).toMatchObject({ storeScope: null })
   })
 
   /* Rob, 24 Sep 2026: with DSP integration switched off, existing advertiser
@@ -161,14 +168,14 @@ describe('PUT /admin/v1/display-types/{id}/extensions — slot ownership', () =>
     expect(kept.statusCode).toBe(200)
     expect(kept.json().slots[1]).toMatchObject({ owner: 'advertiser', partnerIds: ['p_google'] })
     /* Slot 1 becoming Advertiser is a new one: refused, and nothing saved. */
-    const added = await put(app, 'menu_board', { slots: [{ label: 'Priority 1', owner: 'advertiser', zoneId: 'z1' }, { label: 'Brand slot', owner: 'advertiser', zoneId: 'z1' }, { label: 'Store choice', owner: 'retail', zoneId: 'z1' }] })
+    const added = await put(app, 'menu_board', { slots: [{ label: 'Priority 1', owner: 'advertiser', zoneId: 'z1' }, { label: 'Brand slot', owner: 'advertiser', zoneId: 'z1' }, { label: 'Store choice', owner: 'internal', zoneId: 'z1' }] })
     expect(added.statusCode).toBe(400)
     expectMatchesContract('PUT', '/admin/v1/display-types/{displayTypeId}/extensions', 400, added.json())
     expect(added.json().error.details).toEqual([{ field: 'slots[0].owner', reason: expect.stringContaining('Switch on DSP integration') }])
     expect(ctx.displayTypes.get('menu_board')?.phExtensions?.slots[0].owner).toBe('internal')
     /* Switched back on, it can be. */
     ctx.exchange.save({ ...ctx.exchange.get(), enabled: true })
-    expect((await put(app, 'menu_board', { slots: [{ label: 'Priority 1', owner: 'advertiser', zoneId: 'z1' }, { label: 'Brand slot', owner: 'advertiser', zoneId: 'z1' }, { label: 'Store choice', owner: 'retail', zoneId: 'z1' }] })).statusCode).toBe(200)
+    expect((await put(app, 'menu_board', { slots: [{ label: 'Priority 1', owner: 'advertiser', zoneId: 'z1' }, { label: 'Brand slot', owner: 'advertiser', zoneId: 'z1' }, { label: 'Store choice', owner: 'internal', zoneId: 'z1' }] })).statusCode).toBe(200)
   })
 
   it('requires one slot per rotation position, and a label on each', async () => {
