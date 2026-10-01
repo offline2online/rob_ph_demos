@@ -344,7 +344,7 @@ export function assumedViewsPerWindow(ctx: Context, p: PositionRef) {
    duration before it is exposed as Advertiser inventory: the venue loop
    length, which slotDurationSec divides by the rotation cap (slots.ts). Returns why not, or null when sellable. */
 export function unsellableReason(ctx: Context, p: PositionRef): string | null {
-  if (!ctx.audience.forSlot(p.displayType.id, p.slot).scored) return 'No audience score yet — this slot can’t be sold until it is scored.'
+  if (!ctx.audience.forSlot(p.displayType.id, p.slot).scored) return 'No audience score yet.'
   if (!p.displayType.phExtensions?.venue?.loopLengthSec) return 'No slot duration yet — set the venue loop length before this slot can be sold.'
   return null
 }

@@ -77,6 +77,8 @@ export const displayTypeRoutes = (ctx: Context, guards: Guards): FastifyPluginAs
     const body = req.body ?? ({} as DisplayTypeExtensions)
     if (!Array.isArray(body.slots)) throw validationFailed([{ field: 'slots', reason: 'Required.' }])
     const errors = validateExtensions(dt, body)
+    const dv = body.defaultVacd
+    if (dv != null && !(Number.isInteger(dv) && dv >= 0)) errors.push({ field: 'defaultVacd', reason: 'A whole number of assumed views per play window, 0 or more.' })
     if (errors.length) throw validationFailed(errors)
     /* While the retailer has DSP integration switched off (Exchange settings),
        no NEW advertiser slot: a slot may be Advertiser only if it already was
@@ -115,6 +117,8 @@ export const displayTypeRoutes = (ctx: Context, guards: Guards): FastifyPluginAs
           ...(kept && was.salesLocked ? { salesLocked: true } : {}),
         }
       }),
+      /* Absent keeps what is saved; null clears it (the slot is unscored again). */
+      ...((body.defaultVacd === undefined ? dt.phExtensions?.defaultVacd : body.defaultVacd) != null ? { defaultVacd: (body.defaultVacd === undefined ? dt.phExtensions?.defaultVacd : body.defaultVacd) as number } : {}),
       ...((body.venue ?? dt.phExtensions?.venue) ? { venue: body.venue ?? dt.phExtensions?.venue } : {}),
     }
     return ctx.displayTypes.saveExtensions(req.params.id, ext)

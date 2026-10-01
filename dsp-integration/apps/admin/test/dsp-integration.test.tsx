@@ -638,7 +638,7 @@ describe('Advertisers / Inventory', () => {
 
   /* Ticket, 30 Sep 2026: a slot with no audience score is flagged in place; it can still be saved. */
   it('warns on a slot with no audience score', async () => {
-    const reason = 'No audience score yet — this slot can’t be sold until it is scored.'
+    const reason = 'No audience score yet.'
     vi.stubGlobal('fetch', vi.fn(fakeFetch({
       ...ADVERTISER_PAGE,
       '/api/admin/v1/available-inventory': {

@@ -1141,8 +1141,14 @@ region, date range, status.
   deliberately no fallback estimate: an invented audience number would end
   up on invoices. A slot also needs a slot duration (the venue loop length,
   divided by its rotation cap) before it is exposed. HQ Admin's Available
-  Inventory shows "No audience score yet — this slot can't be sold until it
-  is scored." on the slot; saving is not blocked. Rows are inserted by the
+  Inventory shows "No audience score yet." on the slot; saving is not
+  blocked. A display type may carry a **default VAC-d**
+  (`phExtensions.defaultVacd`, assumed views per play window per display,
+  1 Oct 2026): a slot with no score of its own is scored from it as the sum
+  over the type's displays, each at its own `displays.vacd_override` where
+  one is set, so editing the default reaches every display still inheriting
+  and leaves overridden ones alone. Only a type with no default and no slot
+  score is unscored (e.g. the default was cleared). Rows are inserted by the
   seeds and, on integration, by the retailer's audience scoring; creating
   a display type in HQ Admin does not score it. `positionView.scored` says
   whether a position has a score.

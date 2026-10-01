@@ -2413,6 +2413,17 @@ components:
       type: object
       required: [slots]
       properties:
+        defaultVacd:
+          type: [integer, 'null']
+          minimum: 0
+          description: |
+            Default VAC-d audience score: assumed views per play window, per
+            display (ticket, 1 Oct 2026). Every display of this type starts
+            with it, and a slot with no score of its own is scored from it
+            (the sum over the type's displays, each at its own override
+            where it has one), so no slot is unscored. Editing it reaches
+            every display that was never overridden. Absent keeps the saved
+            value; null clears it.
         slots:
           type: array
           items:
