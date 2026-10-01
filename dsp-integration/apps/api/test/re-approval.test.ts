@@ -98,7 +98,7 @@ describe('re-approval: the approved version keeps running (Q38)', () => {
     }
     /* Never both: one booking per window, each naming exactly one version. */
     expect(ctx.campaigns.bookings(id).map((b) => [b.windowStart, b.assetVersion])).toEqual([[day(2), 1], [day(3), 2], [day(4), 2]])
-    expect(ctx.campaigns.latestAssets(id, 1).map((a) => a.contentHash)).not.toEqual(ctx.campaigns.latestAssets(id, 2).map((a) => a.contentHash))
+    expect(ctx.campaigns.latestAssets(id, 'v1').map((a) => a.contentHash)).not.toEqual(ctx.campaigns.latestAssets(id, 'v2').map((a) => a.contentHash))
   })
 
   it('(c) rejecting the edit discards it; the approved version carries on unaffected, and the audit trail keeps it', async () => {

@@ -107,7 +107,7 @@ resolved by Rob, 29 Sep 2026 — final, not a setting):
   reservation, bidding and hand-off throughout the review, and stays
   activated. Nothing is snapshotted: approval rows are already per
   `assetVersion`, so the host resolves the live version to its assets at
-  hand-off (the POC's `latestAssets(campaignId, atVersion)`), and books
+  hand-off (the platform seam's `latestAssets(campaignId, atVersion)`, which takes this adapter's `assetVersion` string as it is: a real adapter's value is "any string that changes", so the platform seam, not the host, resolves it), and books
   exactly that version (`SlotBooking.assetVersion`).
 - **Approving the edit** makes it the newest approved row in one write: the
   next hand-off books the new creative, every earlier one booked the old,
@@ -327,3 +327,19 @@ check each component's props in and behaviour out.
 In this repo the suites pass against both the in-memory reference adapter
 (`packages/campaign-approval`) and the POC adapter
 (`apps/api/test/approvals.test.ts`).
+
+## One real source, two facets
+
+The POC has two `CampaignSource` interfaces on purpose: this adapter's (five
+methods, a `CampaignRef` view, string versions) and the host's
+(`apps/api/src/platform/CampaignSource.ts`: also `createCampaign`,
+`addAsset`, `latestAssets`, `bookSlot`, `bookings`). Keep them separate: the
+approval module must not be able to book or create. On integration build
+**both from one real campaign source in `context.ts`** (one object, two
+facets) so they agree on identity and order (`listCampaigns` is ordered by
+creation, then id, on both).
+
+`onCampaignChanged` belongs to this adapter only. The host's interface has no
+change feed (nothing in the exchange subscribes). When the real source emits
+changes, fan them out from that one source to this adapter's listeners; there
+is no second listener set to keep in step.

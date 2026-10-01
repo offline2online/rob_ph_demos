@@ -67,20 +67,23 @@ export function createContext(opts: { config?: Config; db?: Db; flags?: Flags; s
   migrateUp(db)
   const secrets = opts.secrets ?? aesGcmSecretsStore(process.env.PH_SECRETS_KEY)
   const clock = opts.clock ?? (config.testClock ? testClockFrom(config.testClock) : () => new Date())
+  const displayTypes = sqliteDisplayTypeSource(db)
+  const company = sqliteCompanySettingsRepo(db)
+  const partners = sqlitePartnerRepo(db, secrets)
   return {
     config,
     db,
     flags: opts.flags ?? envFlags(),
     session: opts.session ?? envSession(),
     secrets,
-    displayTypes: sqliteDisplayTypeSource(db),
+    displayTypes,
     playlists: sqlitePlaylistSource(db),
     displays: sqliteDisplaySource(db),
     stores: sqliteStoreSource(db),
     campaigns: sqliteCampaignSource(db),
     playback: sqlitePlaybackSource(db),
-    partners: sqlitePartnerRepo(db, secrets),
-    company: sqliteCompanySettingsRepo(db),
+    partners,
+    company,
     exchange: sqliteExchangeRepo(db),
     buyersLists: sqliteBuyersListRepo(db),
     dsp: dspProviders(config.dsp, config.bidders, opts.dspFetch),
@@ -89,20 +92,22 @@ export function createContext(opts: { config?: Config; db?: Db; flags?: Flags; s
     audience: sqliteAudienceSource(db),
     reservations: sqliteReservationRepo(db),
     clock,
-    ...approvalParts(db, config),
+    ...approvalParts(db, config, { displayTypes, company, partners }),
   }
 }
 
-/* Wires the campaign-approval module to this repo's stand-in campaign store. */
-function approvalParts(db: Db, config: Config) {
+/* Wires the campaign-approval module to this repo's stand-in campaign store.
+   It reuses the context's own display types, company settings and partners:
+   a second DisplayTypeSource would carry its own 1-second snapshot and weaken
+   "a save is visible to this process immediately". */
+function approvalParts(db: Db, config: Config, own: { displayTypes: DisplayTypeSource; company: CompanySettingsRepo; partners: PartnerRepo }) {
+  const { displayTypes, company, partners } = own
   const assets = localAssetStore(config.assetsDir, config.publicUrl)
   /* Advertiser names come from the DSP seats (seats are not secret). */
-  const seatNames = () => (db.prepare('SELECT seats FROM partners').all() as { seats: string }[]).flatMap((r) => JSON.parse(r.seats) as { name: string }[])
-  const company = sqliteCompanySettingsRepo(db)
-  const displayTypes = sqliteDisplayTypeSource(db)
+  const seatNames = () => partners.list().flatMap((p) => p.seats)
   const approvalCampaigns = pocCampaignSource(db, {
     advertiserName: (id) => seatNames().find((s) => advertiserSlug(s.name) === id)?.name ?? id,
-    partnerName: (id) => db.prepare('SELECT name FROM partners WHERE id = ?').get(id)?.name as string | undefined ?? null,
+    partnerName: (id) => partners.get(id)?.name ?? null,
     canvas: (id) => displayTypes.get(id)?.displayCanvasSize ?? null,
     assetUrl: (file) => assets.url(file),
     targetingSummary,

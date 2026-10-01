@@ -1,7 +1,12 @@
 /* The ONLY seam between the approval module and the real campaigns.
    Engineering writes one implementation of this against the existing
    campaign service; nothing else in the module changes. See
-   docs/dsp-integration/CAMPAIGN-APPROVAL-INTEGRATION.md. */
+   docs/dsp-integration/CAMPAIGN-APPROVAL-INTEGRATION.md.
+
+   The host app has a second, differently shaped CampaignSource
+   (apps/api/src/platform/CampaignSource.ts) with bookSlot and createCampaign,
+   which this module must never get. On integration build both from one real
+   source: one object, two facets. */
 import type { Canvas, Creative } from '../types'
 
 export interface CampaignRef {

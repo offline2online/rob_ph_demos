@@ -1,6 +1,8 @@
 /* Guarantees PH-CORE-BOUNDARIES.md "What each seam must guarantee" makes and
    nothing else asserted (Scope & Seam Reconciliation Review, 1 Oct 2026,
    finding #23). */
+import { readFileSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { isUniqueViolation } from '../src/db/db'
 import { runAuction } from '../src/exchange/auction'
@@ -85,4 +87,30 @@ describe('indexes the seam guarantees lean on', () => {
   /* Not asserted here, and PH Core's to guarantee on integration: the display-type
      list index (PH-CORE-BOUNDARIES.md "listByDisplayType") and partner-token
      revocation, neither of which the POC's stand-ins model. */
+})
+
+describe('the hand-off depends on the platform seam, not on a POC-only bridge', () => {
+  it('no source file but context.ts imports campaign-approval/poc, so a real adapter’s assetVersion string is the platform seam’s to resolve', () => {
+    const dir = new URL('../src/', import.meta.url).pathname
+    const offenders: string[] = []
+    const walk = (d: string) => {
+      for (const e of readdirSync(d, { withFileTypes: true })) {
+        const p = join(d, e.name)
+        if (e.isDirectory()) walk(p)
+        else if (/\.tsx?$/.test(e.name) && e.name !== 'context.ts' && /campaign-approval\/poc/.test(readFileSync(p, 'utf8'))) offenders.push(p.slice(dir.length))
+      }
+    }
+    walk(dir)
+    expect(offenders).toEqual([])
+  })
+
+  it('latestAssets resolves the approval adapter’s version string; one it cannot read yields no assets, never the newest', async () => {
+    const ctx = await testContext({ clock: () => NOW })
+    const id = 'c_dsp_nestle'
+    const all = ctx.campaigns.latestAssets(id)
+    expect(all.length).toBeGreaterThan(0)
+    const v = `v${Math.max(...all.map((a) => a.version))}`
+    expect(ctx.campaigns.latestAssets(id, v)).toEqual(all)
+    expect(ctx.campaigns.latestAssets(id, 'rev-9f2c')).toEqual([])
+  })
 })
