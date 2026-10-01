@@ -1,0 +1,85 @@
+# E2E nightly — 02:00 Sydney on main (E2E Testing Strategy §3.6, ticket
+# mY3f2jq9nml5yK3oLOjJ): quick + the Run 6 journey + the bench gate, then
+# the results document and tickets on the board, and an alert on failure.
+# The cron is UTC: 15:00 UTC is 02:00 AEDT (Oct–Apr); during AEST (Apr–Oct)
+# it is 01:00 Sydney — close enough, and it never lands in working hours.
+name: e2e-nightly
+
+on:
+  schedule:
+    - cron: '0 15 * * *'
+  workflow_dispatch:
+    inputs:
+      file_bugs:
+        description: Create/update tickets on the board from failures (needs BOARD_API_KEY)
+        type: boolean
+        default: true
+
+concurrency:
+  group: e2e-nightly
+  cancel-in-progress: false
+
+jobs:
+  e2e-nightly:
+    name: e2e-nightly
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: dsp-integration
+    env:
+      PH_SECRETS_KEY: ${{ secrets.PH_TEST_SECRETS_KEY || 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' }}
+      BOARD_API_KEY: ${{ secrets.BOARD_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: dsp-integration/package-lock.json
+      - run: npm ci --no-audit --no-fund --loglevel=error
+      - run: npm run typecheck
+      - name: Full suites
+        run: npm test
+      - name: Runs 1–5 as JSON
+        id: quick
+        run: npm run e2e:quick
+        continue-on-error: true
+      - name: Run 6 — full journey
+        id: journey
+        run: npm run e2e:journey
+        continue-on-error: true
+      - name: Bench calibration (once per runner image, cached)
+        id: cal
+        uses: actions/cache@v4
+        with:
+          path: dsp-integration/apps/api/bench/baseline.local.json
+          key: bench-baseline-${{ runner.os }}-${{ hashFiles('dsp-integration/apps/api/bench/thresholds.json') }}
+      - if: steps.cal.outputs.cache-hit != 'true'
+        run: npm run bench -- --calibrate
+      - name: Bench against thresholds
+        id: bench
+        run: npm run bench -- --assert
+        continue-on-error: true
+      - name: Results document on the board
+        if: always()
+        run: |
+          if [ -n "$BOARD_API_KEY" ]; then node scripts/report-e2e.mjs results/*.json; else node scripts/report-e2e.mjs results/*.json --out results/report.md; fi
+      - name: File or update tickets from failures
+        if: always() && (github.event_name == 'schedule' || inputs.file_bugs)
+        run: |
+          if [ -n "$BOARD_API_KEY" ]; then node scripts/file-e2e-bugs.mjs results/*.json; else node scripts/file-e2e-bugs.mjs results/*.json --dry-run; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-nightly-${{ github.run_id }}
+          path: dsp-integration/results/
+          if-no-files-found: ignore
+      - name: Red night
+        if: steps.quick.outcome == 'failure' || steps.journey.outcome == 'failure' || steps.bench.outcome == 'failure'
+        run: |
+          echo "quick=${{ steps.quick.outcome }} journey=${{ steps.journey.outcome }} bench=${{ steps.bench.outcome }}"
+          echo "::error::E2E nightly is red — see the results document on the board and the tickets filed. GitHub emails the workflow's failure to the repository's notification recipients."
+          exit 1

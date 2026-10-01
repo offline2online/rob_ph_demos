@@ -1,0 +1,51 @@
+# E2E quick — every push to the DSP train and every PR to main that touches
+# dsp-integration/ (E2E Testing Strategy §3.6, ticket mY3f2jq9nml5yK3oLOjJ).
+# Typecheck and the full suites, Runs 1–5 included (apps/api/test/e2e).
+# Make "e2e-quick" a required check on the train PR so red blocks Deploy to
+# Main. Results JSON is uploaded as an artifact for report-e2e.
+name: e2e-quick
+
+on:
+  push:
+    branches: [deploy/dsp-integration]
+    paths: ['dsp-integration/**', '.github/workflows/e2e-quick.yml']
+  pull_request:
+    branches: [main]
+    paths: ['dsp-integration/**', '.github/workflows/e2e-quick.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-quick-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e-quick:
+    name: e2e-quick
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: dsp-integration
+    env:
+      PH_SECRETS_KEY: ${{ secrets.PH_TEST_SECRETS_KEY || 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: dsp-integration/package-lock.json
+      - run: npm ci --no-audit --no-fund --loglevel=error
+      - run: npm run typecheck
+      - name: Full suites (api, admin, campaign-approval, dsp-mocks; Runs 1–5 included)
+        run: npm test
+      - name: Runs 1–5 as JSON (results/e2e-quick.json)
+        run: npm run e2e:quick
+      - name: it.fails markers reference a ticket
+        run: npm run e2e:lint
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-quick-results-${{ github.sha }}
+          path: dsp-integration/results/
+          if-no-files-found: ignore
