@@ -44,6 +44,7 @@
 
 const { execFileSync } = require("child_process");
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const { buildIndexFromArticleFiles, validateIndexAgainstArticleFiles, serializeIndex } = require("./faq-index-lib");
 // Shared with functions/index.js's onBacklogItemTrainLockRecompute — see
@@ -440,6 +441,103 @@ function checkoutTrain(branch) {
   try { run("git", ["reset", "--hard", "--quiet"]); } catch { /* nothing staged */ }
   try { run("git", ["clean", "-fdq"]); } catch { /* nothing to clean */ }
   run("git", ["checkout", "-B", branch, `origin/${branch}`, "--quiet"]);
+}
+
+// ── Keep the train on top of main before a ticket lands ───────────────────
+// A ticket is committed onto the branch exactly as it is on origin. When
+// main has moved since the branch was last reset — a hotfix merged straight
+// to main, another project's train, PRs #271/#272 — and this train has no
+// ticket of its own yet, building on the old base is how the 30 Sep 2026
+// conflict happened: the Routine (rightly) wrote backlog-tracker/MCP.md
+// against main, this script committed that whole file onto a branch four
+// commits behind it, and at Deploy time `git merge origin/main` found both
+// sides changing the same hunks and stopped the train with "conflict"
+// (ticket Hdt4M6dEGe7uN8dmS8mT). So, before any patch is applied:
+//   - a train with nothing of its own is fast-forwarded to main — there is
+//     nothing to lose and no merge to get wrong;
+//   - a train carrying tickets gets main merged in first, with the same
+//     derived-file resolvers the Deploy step uses — a real conflict is then
+//     surfaced NOW, on this card and on the project, instead of after
+//     everyone has approved.
+// Idempotent: a train already on top of main is left exactly as it is.
+// `baseTip` is the branch tip BEFORE the sync — what the Routine most
+// likely read its files from; rebasePatchFilesOnto needs it.
+function syncTrainWithMain(deployBranch) {
+  checkoutTrain(deployBranch);
+  const baseTip = run("git", ["rev-parse", `origin/${deployBranch}`]);
+  const behind = Number(run("git", ["rev-list", "--count", `origin/${deployBranch}..origin/main`])) || 0;
+  if (!behind) return { kind: "current", behind: 0, baseTip };
+  const ahead = Number(run("git", ["rev-list", "--count", `origin/main..origin/${deployBranch}`])) || 0;
+  if (!ahead) {
+    run("git", ["reset", "--hard", "origin/main", "--quiet"]);
+    pushTrain(deployBranch);
+    return { kind: "fast-forwarded", behind, baseTip };
+  }
+  try {
+    run("git", ["-c", "user.name=backlog-automation", "-c", "user.email=backlog-automation@users.noreply.github.com",
+      "merge", "origin/main", "--no-edit", "--quiet"]);
+  } catch (err) {
+    const conflicted = conflictedPaths();
+    let resolution = tryAutoResolveFaqIndexConflict(conflicted);
+    if (!resolution.resolved && !conflicted.includes("faq/data/index.json")) {
+      resolution = tryAutoResolveGeneratedOutputConflict(conflicted);
+    }
+    if (!resolution.resolved) {
+      try { run("git", ["merge", "--abort"]); } catch { /* nothing in progress */ }
+      discardWorkingTree();
+      return { kind: "conflict", behind, baseTip, paths: conflicted, detail: resolution.detail, error: scrubSecrets(err.message) };
+    }
+    run("git", ["-c", "user.name=backlog-automation", "-c", "user.email=backlog-automation@users.noreply.github.com",
+      "commit", "--no-edit", "--quiet"]);
+  }
+  pushTrain(deployBranch);
+  return { kind: "merged", behind, baseTip };
+}
+
+// A Routine hands back whole files. If the branch moved under them (see
+// syncTrainWithMain), writing those files as given would silently put back
+// whatever main had changed since the Routine read them. So each patched
+// file is re-based with a three-way merge — base: the file as the branch
+// had it before the sync (what the Routine most likely read); ours: the
+// file on the synced branch; theirs: the Routine's version — which carries
+// the Routine's edits onto the current content and keeps main's changes.
+// Identical hunks on both sides (a Routine that already wrote against main,
+// as the 30 Sep 2026 one did) merge cleanly. A file that is new, that the
+// sync did not change, or that no longer exists is used exactly as given.
+function rebasePatchFilesOnto(patchFiles, baseRef) {
+  const files = [];
+  const rebased = [];
+  const conflicts = [];
+  const show = (ref, p) => {
+    try { return execFileSync("git", ["show", `${ref}:${p}`], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }); }
+    catch { return null; }
+  };
+  for (const f of patchFiles || []) {
+    if (!f || typeof f.path !== "string" || typeof f.content !== "string") { files.push(f); continue; }
+    const abs = path.join(process.cwd(), f.path);
+    const base = show(baseRef, f.path);
+    const current = fs.existsSync(abs) ? fs.readFileSync(abs, "utf8") : null;
+    if (base === null || current === null || base === current || current === f.content) { files.push(f); continue; }
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "train-rebase-"));
+    const [oursPath, basePath, theirsPath] = ["ours", "base", "theirs"].map((n) => path.join(dir, n));
+    fs.writeFileSync(oursPath, current);
+    fs.writeFileSync(basePath, base);
+    fs.writeFileSync(theirsPath, f.content);
+    try {
+      const merged = execFileSync("git", ["merge-file", "-p", "-L", "current branch", "-L", "before sync", "-L", "this patch", oursPath, basePath, theirsPath],
+        { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+      files.push({ ...f, content: merged });
+      rebased.push(f.path);
+    } catch (err) {
+      // git merge-file exits with the number of conflicts (1..127); anything
+      // else is a real error.
+      if (typeof err.status === "number" && err.status > 0 && err.status < 128) { conflicts.push(f.path); files.push(f); }
+      else throw err;
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+  return { files, rebased, conflicts };
 }
 
 // One push helper for every train write. The run's own GITHUB_TOKEN can
@@ -1424,6 +1522,38 @@ async function processApplyPatch(item) {
 
   const deployBranch = await ensureDeployBranch(project);
 
+  // Build on top of current main, never on a stale base (syncTrainWithMain).
+  const sync = syncTrainWithMain(deployBranch);
+  if (sync.kind === "conflict") {
+    console.log(`[apply-patch] ${item.id}: ${deployBranch} is ${sync.behind} commit(s) behind main and merging main ${sync.detail} — leaving the item patch-ready until the train is resolved`);
+    // One note per card, not one per two-minute run: the item stays
+    // patch-ready and lands by itself once a person has resolved the branch.
+    const lastNote = Array.isArray(item.notes) && item.notes.length ? item.notes[item.notes.length - 1] : null;
+    if (!(lastNote && lastNote.author === "backlog-automation" && String(lastNote.text || "").startsWith("Not built yet:"))) {
+      const notes = await appendNote(
+        item,
+        `Not built yet: ${deployBranch} is ${sync.behind} commit(s) behind main and merging main into it ${sync.detail}. ` +
+        `This item stays patch-ready and lands on the next run once the branch is resolved — merge main into ${deployBranch} by hand, ` +
+        `or send back the ticket whose commit conflicts with Failed testing.`
+      );
+      await patchItem(item.id, { notes, updatedAt: new Date().toISOString() });
+    }
+    await patchProject(projectId, {
+      trainStatus: "conflict",
+      trainNote: `${deployBranch} has drifted from main: merging main into it ${sync.detail}, so no new ticket can be built onto it. ` +
+        `Resolve it by merging main into ${deployBranch} by hand (or Failed-testing the ticket whose commit conflicts); patch-ready items then land on the next run.\n\n${sync.error}`,
+      updatedAt: new Date().toISOString(),
+    });
+    return;
+  }
+  if (sync.kind !== "current") {
+    console.log(`[apply-patch] ${item.id}: ${deployBranch} was ${sync.behind} commit(s) behind main — ${sync.kind}`);
+    // A drift conflict this same step recorded earlier is over now.
+    if (project.trainStatus === "conflict" && /has drifted from main/.test(String(project.trainNote || ""))) {
+      await patchProject(projectId, { trainStatus: "idle", trainNote: null, updatedAt: new Date().toISOString() });
+    }
+  }
+
   // Build onto the head of the integration branch, retrying once if someone
   // else pushed the train between our checkout and our push. checkoutTrain()
   // re-fetches and hard-resets, so the retry genuinely re-applies this
@@ -1435,12 +1565,32 @@ async function processApplyPatch(item) {
   let attempt = 0;
   let patchedFiles = item.patchFiles;
   let movedPaths = [];
+  let rebasedPaths = [];
   for (;;) {
     checkoutTrain(deployBranch);
     // Paths written relative to the project's folder go under it (see
     // normalisePatchPaths); decided against the train's actual tree.
     ({ files: patchedFiles, moved: movedPaths } = normalisePatchPaths(item.patchFiles, projectFolderOf(project)));
     if (movedPaths.length) console.log(`[apply-patch] ${item.id}: ${movedPaths.length} patch path(s) were relative to ${projectFolderOf(project)}/ — placed under it (${movedPaths.map((m) => m.from).join(", ")})`);
+    if (sync.kind !== "current") {
+      // The branch moved under this patch: carry its edits onto what main
+      // brought in rather than writing the Routine's copies over it.
+      const rebase = rebasePatchFilesOnto(patchedFiles, sync.baseTip);
+      if (rebase.conflicts.length) {
+        discardWorkingTree();
+        console.log(`[apply-patch] ${item.id}: main changed ${rebase.conflicts.join(", ")} since this patch was written and its edits can't be carried over — clearing patchReady`);
+        const notes = await appendNote(
+          item,
+          `Not built: ${deployBranch} was ${sync.behind} commit(s) behind main, and main has since changed ${rebase.conflicts.join(", ")} in the same places this patch does, ` +
+          `so its edits could not be carried onto the current file automatically. The branch is now up to date with main — click Ready for Dev again so the fix is rebuilt against the current files.`
+        );
+        await patchItem(item.id, { patchReady: false, patchAttempts: 0, updatedAt: new Date().toISOString(), notes });
+        return;
+      }
+      patchedFiles = rebase.files;
+      rebasedPaths = rebase.rebased;
+      if (rebasedPaths.length) console.log(`[apply-patch] ${item.id}: carried this patch's edits onto main's newer ${rebasedPaths.join(", ")}`);
+    }
     applyPatchFiles(patchedFiles);
     // Read while the patched files are still on disk, so testVersion
     // reflects the branch this item will actually be tested on.
@@ -1535,11 +1685,15 @@ async function processApplyPatch(item) {
     ? item.previewUrl
     : guessPreviewUrl(patchedFiles, sha, trainTreeUrl(deployBranch));
 
+  const syncNote = sync.kind === "current" ? "" :
+    ` The branch was first brought up to date with main (${sync.kind === "fast-forwarded" ? "fast-forwarded" : "main merged in"}, ${sync.behind} commit(s))` +
+    (rebasedPaths.length ? `, and this patch's edits were carried onto main's newer ${rebasedPaths.join(", ")}.` : ".");
   const notes = await appendNote(
     item,
     `Committed to the project's integration branch \`${deployBranch}\` as ${sha.slice(0, 7)} (${changedPaths.join(", ")}). ` +
     `It is built on top of every ticket already on that branch, so the test link shows this change in the combination it will ship in. ` +
     `Nothing merges to main until every ticket on the train is approved and someone clicks Deploy to Main.` +
+    syncNote +
     (movedPaths.length
       ? ` Note: ${movedPaths.length} of this patch's paths were relative to the project's folder rather than the repo root (${movedPaths.map((m) => m.from).join(", ")}) and were placed under ${projectFolderOf(project)}/ — patchFiles paths must start at the repo root.`
       : "") +
@@ -2996,4 +3150,7 @@ module.exports = {
   guessPreviewUrl, isAutoGeneratedPreviewUrl, repointPreviewUrlRef,
   // test/ready-for-testing-trigger.test.js
   readyForTestingNotifyFields, tv,
+  // test/train-sync.test.js — the train is brought up to date with main
+  // before a ticket lands, and the patch's edits are carried across
+  syncTrainWithMain, rebasePatchFilesOnto,
 };

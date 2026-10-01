@@ -969,6 +969,84 @@ exports.notifyOnProjectReviewBatch = onDocumentUpdated(
   }
 );
 
+// The board's "Run E2E" button (project header — see e2eButtonHTML in
+// public/js/app.js) writes projects/{id}.e2eRequestedAt plus
+// e2eRequestedMode ("quick" | "full" | "journey"), and this fires once on
+// that write. Same Routine-fire shape as notifyOnProjectReviewBatch; the
+// session runs backlog-tracker/scripts/e2e-run.mjs (the same script CI
+// calls) and the result lands on projects/{id}.e2eStatus, which drives the
+// header chip. See ROUTINE_INSTRUCTIONS.md's "Run E2E" flow.
+exports.notifyOnProjectRunE2E = onDocumentUpdated(
+  { document: "projects/{projectId}", secrets: [CLAUDE_ROUTINE_FIRE_URL, CLAUDE_ROUTINE_TOKEN, BOARD_API_KEY] },
+  async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    if (!after?.e2eRequestedAt) return;
+    const beforeMs = before?.e2eRequestedAt?.toMillis?.() ?? 0;
+    const afterMs = after.e2eRequestedAt?.toMillis?.() ?? 0;
+    if (afterMs <= beforeMs) return;
+
+    const mode = ["quick", "full", "journey"].includes(after.e2eRequestedMode) ? after.e2eRequestedMode : "quick";
+    const folder = after.repoFolder || (after.deployBranch || "").replace(/^deploy\//, "") || null;
+    const db = getFirestore();
+    const projectName = after.name || "A project";
+    const projectId = event.params.projectId;
+
+    const { fireUrl, token, via } = await resolveRoutineCredentials(
+      db, after.e2eRequestedByEmail, CLAUDE_ROUTINE_FIRE_URL.value(), CLAUDE_ROUTINE_TOKEN.value()
+    );
+    if (!(fireUrl && token)) {
+      logger.warn("No Routine fire credentials available — skipping Routine fire for Run E2E", { projectId });
+      await db.collection("projects").doc(projectId).set({
+        e2eRoutine: { status: "error", firedAt: new Date(), errorMessage: "No Routine credentials configured", mode },
+      }, { merge: true });
+      return;
+    }
+
+    const selfReportHint = `\n\nWhen you finish this run (whether the suites passed, failed or you stopped early on a blocker), PATCH projects/${projectId} with e2eRoutine.status set to "done" (or "error" with an errorMessage) and e2eRoutine.finishedAt set to now — the board shows a spinner on its Run E2E button until it sees this. Also PATCH e2eStatus as the instructions describe.`;
+    const text = `=== E2E REQUEST for "${projectName}" (projectId: ${projectId}) on the Backlog Tracker & FAQs board ===\n` +
+      `This is a test run, not an investigate-and-fix request. Follow ROUTINE_INSTRUCTIONS.md's "Run E2E" flow section. Mode: ${mode}. Project folder: ${folder || "(none set — stop and report)"}. Build nothing, change no ticket's status, and set no patchReady.${selfReportHint}${boardAccessBlock()}`;
+
+    let sessionId = null;
+    let fireError = null;
+    try {
+      const res = await fetch(fireUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+          "anthropic-beta": "experimental-cc-routine-2026-04-01",
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({ text }),
+      });
+      if (!res.ok) {
+        fireError = `Routine fire endpoint responded with status ${res.status}`;
+        logger.error("Routine fire endpoint non-2xx for Run E2E", { projectId, status: res.status });
+      } else {
+        const body = await res.json().catch(() => null);
+        sessionId = body?.claude_code_session_id || null;
+        logger.info("Fired Claude Code Routine for Run E2E", { projectId, mode, sessionId, firedVia: via });
+      }
+    } catch (err) {
+      fireError = err instanceof Error ? err.message : String(err);
+      logger.error("Failed to call Routine fire endpoint for Run E2E", { projectId, error: fireError });
+    }
+
+    await db.collection("projects").doc(projectId).set({
+      e2eRoutine: {
+        status: fireError ? "error" : "in-progress",
+        firedAt: new Date(),
+        mode,
+        sessionId,
+        sessionUrl: sessionId ? `https://claude.ai/code/${sessionId}` : null,
+        errorMessage: fireError,
+        firedVia: via,
+      },
+    }, { merge: true });
+  }
+);
+
 // The board's "Approved for Deployment" project action (see deployToFeature() in
 // public/js/app.js) writes projects/{id}.deployToFeatureRequestedAt (plus
 // deployToFeatureItemTitles), and this fires once on that write to post a

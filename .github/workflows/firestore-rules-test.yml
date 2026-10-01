@@ -36,6 +36,7 @@ on:
       - 'backlog-tracker/functions/index.js'
       - 'backlog-tracker/public/**'
       - 'backlog-tracker/test/**'
+      - 'backlog-tracker/scripts/run-backlog-automation.js'
       - '.github/workflows/firestore-rules-test.yml'
   push:
     branches: [main]
@@ -132,6 +133,15 @@ jobs:
       # Testing column in front of a person the moment a build lands.
       - name: Run Ready for Testing hand-off tests
         run: npm run test:ready-for-testing
+
+      # The deployment train's own logic in run-backlog-automation.js and
+      # functions/train-lock.js against disposable local git repos: lock
+      # recompute, branch archive/reset, cards carried by a sibling's
+      # commit, and (1 Oct 2026) the train being brought up to date with
+      # main before a ticket lands plus the three-way carry-over of the
+      # Routine's full-file patch. Never ran in CI before this.
+      - name: Run deployment train tests
+        run: npm run test:train-lock
 
       - name: Run rules tests against the emulator
         run: npm run test:rules

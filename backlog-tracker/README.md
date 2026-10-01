@@ -184,6 +184,24 @@ minted and revoked by GitHub itself, per run.
 
 ### The deployment train — one branch and one PR per project
 
+**The train is brought up to date with main before any ticket lands (1 Oct
+2026).** `processApplyPatch` now calls `syncTrainWithMain` first: a train
+with no ticket of its own is fast-forwarded to main; a train carrying
+tickets gets main merged in (same derived-file resolvers as the Deploy
+step), and a real conflict is surfaced on the card and the project right
+then — the item stays patch-ready and lands by itself once a person
+resolves the branch. Because a Routine hands back whole files it read from
+the branch, `rebasePatchFilesOnto` then carries each file's edits onto
+whatever the sync brought in with a three-way merge (base: the branch tip
+before the sync; ours: the synced file; theirs: the Routine's file), so
+main's newer content is never silently overwritten; an edit that collides
+with main's clears patchReady with a note asking for a rebuild. This is the
+fix for the 30 Sep 2026 incident (ticket Hdt4M6dEGe7uN8dmS8mT): the train
+sat four commits behind main, the ticket's full-file patch landed on the
+stale base, and Deploy to Main stopped on a conflict in
+`backlog-tracker/MCP.md` that a person had to merge by hand. Tests:
+`test/train-sync.test.js`.
+
 **Every ticket a project builds is one commit on that project's single
 long-lived integration branch, `deploy/<project-slug>`** (recorded as
 `projects/{id}.deployBranch`, created from `main` on first use). There is

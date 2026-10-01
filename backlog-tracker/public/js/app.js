@@ -359,6 +359,8 @@ const GROOM_OPTIMISTIC_STALE_MS = 45 * 1000;
 // reacting to reviewRequestedAt.
 const reviewOptimisticClicks = {};
 const REVIEW_OPTIMISTIC_STALE_MS = 45 * 1000;
+const e2eOptimisticClicks = {};
+const E2E_ROUTINE_STALE_MS = 60 * 60 * 1000;
 
 // ── Docs page state (per-project requirements + interfaces with other
 // projects) — an interface is a maintained contract doc shared between
@@ -1436,6 +1438,65 @@ function reviewBatchButtonHTML(project) {
     : `<button type="button" class="notify-claude-btn notify-claude-btn-working" disabled title="A Claude Code session is reviewing the ${itemCountLabel} ticket(s) in this batch">${mainBtnInner}</button>`;
 }
 
+
+// "Run E2E" — the project's one-click end-to-end test run, plus the status
+// chip for its last result. Opt-in per project (projects/{id}.e2eEnabled,
+// with <repoFolder>/e2e.config.json declaring the steps). The press writes
+// e2eRequestedAt + e2eRequestedMode, watched by notifyOnProjectRunE2E (see
+// ../functions/index.js); the Routine runs scripts/e2e-run.mjs — the same
+// script CI calls — and writes projects/{id}.e2eStatus, which the chip reads.
+const E2E_MODES = [
+  ["quick", "Quick", "Runs 1\u20135 + full suites"],
+  ["full", "Full", "Quick + journey + bench with thresholds"],
+  ["journey", "Journey only", "The end-to-end journey run"],
+];
+function e2eStatusChipHTML(project) {
+  const st = project.e2eStatus;
+  if (!st || !st.runAt) return "";
+  const pass = st.pass || 0, fail = st.fail || 0, gap = st.gap || 0;
+  const kind = fail > 0 ? "red" : (pass > 0 ? "green" : "grey");
+  const icon = kind === "red" ? "error" : (kind === "green" ? "check_circle" : "help");
+  const when = (tsMillis(st.runAt) ? new Date(tsMillis(st.runAt)) : new Date(st.runAt)).toLocaleString();
+  const lines = [`${st.mode || "quick"} run ${when}${st.commit ? " @ " + st.commit : ""}`]
+    .concat((st.breakdown || []).map((b) => `${b.label || b.id}: ${b.status === "skipped" ? "not configured" : `${b.pass || 0} pass, ${b.fail || 0} fail, ${b.gap || 0} gap`}`));
+  if (st.ticketsFiled) lines.push(`${st.ticketsFiled} ticket(s) filed`);
+  const label = `${pass} pass \u00b7 ${fail} fail \u00b7 ${gap} gap`;
+  const inner = `<span class="material-symbols-outlined">${icon}</span>E2E ${label}`;
+  const title = escapeHTML(lines.join("\n"));
+  const url = safeHttpUrl(st.resultsUrl || "");
+  return url
+    ? `<a class="e2e-chip e2e-chip-${kind}" href="${escapeHTML(url)}" target="_blank" rel="noopener" title="${title}">${inner}</a>`
+    : `<span class="e2e-chip e2e-chip-${kind}" title="${title}">${inner}</span>`;
+}
+function e2eButtonHTML(project) {
+  if (!project.e2eEnabled && !project.e2eStatus) return "";
+  const pid = project.id;
+  const routine = project.e2eRoutine;
+  const firedMs = routine ? tsMillis(routine.firedAt) : 0;
+  const inProgress = routine?.status === "in-progress" && !(firedMs && (Date.now() - firedMs) > E2E_ROUTINE_STALE_MS);
+  const clickedAt = e2eOptimisticClicks[pid];
+  const optimistic = !inProgress && clickedAt && (Date.now() - clickedAt) < REVIEW_OPTIMISTIC_STALE_MS;
+  if (clickedAt && !optimistic) delete e2eOptimisticClicks[pid];
+  const chip = e2eStatusChipHTML(project);
+  const err = routine?.status === "error" && routine.errorMessage
+    ? `<span class="e2e-chip e2e-chip-red" title="${escapeHTML(routine.errorMessage)}"><span class="material-symbols-outlined">error</span>E2E run failed to start</span>` : "";
+  if (inProgress || optimistic) {
+    const inner = `<span class="notify-claude-spinner"></span><span class="notify-claude-label">${inProgress ? "Testing&hellip;" : "Working&hellip;"}</span>`;
+    const su = inProgress && routine.sessionUrl ? safeHttpUrl(routine.sessionUrl) : "";
+    return chip + (su
+      ? `<a href="${escapeHTML(su)}" target="_blank" rel="noopener" class="notify-claude-btn notify-claude-btn-working notify-claude-btn-clickable" title="View the Claude Code session running the ${escapeHTML(routine.mode || "")} E2E run">${inner}</a>`
+      : `<button type="button" class="notify-claude-btn notify-claude-btn-working" disabled>${inner}</button>`);
+  }
+  const items = E2E_MODES.map(([m, label, desc]) =>
+    `<button type="button" class="options-menu-item e2e-run-btn" data-project-id="${escapeHTML(pid)}" data-mode="${m}"><strong>${label}</strong><span class="e2e-mode-desc">${desc}</span></button>`).join("");
+  return `${chip}${err}<div class="project-options e2e-run-wrap">
+    <button type="button" class="notify-claude-btn project-options-btn e2e-menu-btn" data-project-id="${escapeHTML(pid)}" aria-haspopup="true" title="Run the end-to-end tests with the same scripts CI uses; files a ticket per failing case">
+      <span class="material-symbols-outlined notify-claude-icon">fact_check</span><span class="notify-claude-label">Run E2E</span>
+    </button>
+    <div class="project-options-menu" hidden>${items}</div>
+  </div>`;
+}
+
 function reviewBatchInlineHTML(project) {
   const btn = reviewBatchButtonHTML(project);
   return btn ? `<span class="col-groom-inline">${btn}</span>` : "";
@@ -1640,6 +1701,7 @@ function projectSectionHTML(project) {
           ${notifyClaudeButtonHTML(project)}
           ${deployToFeatureButtonHTML(project)}
           ${deployNotifyButtonHTML(project)}
+          ${e2eButtonHTML(project)}
           ${archiveSelectedButtonHTML(project)}
           <button class="btn-primary new-item-btn" data-project-id="${escapeHTML(project.id)}" type="button">+ New backlog item</button>
           <div class="project-options">
@@ -2983,6 +3045,18 @@ async function requestReviewBatch(pid) {
   }, { merge: true });
 }
 
+// "Run E2E" — see e2eButtonHTML. Writes e2eRequestedAt/Mode, watched by
+// notifyOnProjectRunE2E (../functions/index.js).
+async function requestE2E(pid, mode) {
+  e2eOptimisticClicks[pid] = Date.now();
+  render();
+  await setDoc(doc(db, "projects", pid), {
+    e2eRequestedAt: serverTimestamp(),
+    e2eRequestedMode: mode,
+    e2eRequestedByEmail: (auth.currentUser && auth.currentUser.email) || null,
+  }, { merge: true });
+}
+
 async function setProjectName(id, name) {
   const trimmed = (name || "").trim();
   if (!trimmed) return false;
@@ -3355,6 +3429,8 @@ projectsRoot.addEventListener("click", async (e) => {
   if (groomNotifyBtn) { closeAllOptionMenus(); requestGroomNotify(groomNotifyBtn.dataset.projectId); return; }
   const reviewBatchBtn = e.target.closest(".review-batch-btn");
   if (reviewBatchBtn) { closeAllOptionMenus(); requestReviewBatch(reviewBatchBtn.dataset.projectId); return; }
+  const e2eRunBtn = e.target.closest(".e2e-run-btn");
+  if (e2eRunBtn) { closeAllOptionMenus(); requestE2E(e2eRunBtn.dataset.projectId, e2eRunBtn.dataset.mode); return; }
   const archiveNavBtn = e.target.closest(".project-archive-btn");
   if (archiveNavBtn) { closeAllOptionMenus(); openArchivePage(archiveNavBtn.dataset.projectId); return; }
   const docsNavBtn = e.target.closest(".project-docs-btn");

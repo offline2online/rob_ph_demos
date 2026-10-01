@@ -124,6 +124,12 @@ session to have these tools, the Routine at claude.ai/code/routines needs
 the **PH Agent Console** connector attached; without it the session
 presents the same column as text.
 
+**Try it.** Type into your agent: *"Show me what's ready for testing on
+Backlog Tracker & FAQs."* In claude.ai or Claude Desktop the column renders
+inline as ticket cards — title, summary, type/area, test link, test
+version and a link back to the ticket. In Claude Code the same tool answers
+as text until Anthropic switches on its MCP Apps host.
+
 **Can — write (editor and admin only):**
 
 | Tickets | Documentation | Help centre | Skills library | Deploy (one exception) | Your own routine binding |

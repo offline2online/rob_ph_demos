@@ -193,6 +193,7 @@ npm run board:tickets                                          # what is where; 
 npm run board:tickets -- --from backlog --to published-live    # dry run: names what would move
 npm run board:tickets -- --from backlog --to published-live --yes
 npm run board:tickets -- --deploy-branch deploy/dsp-integration --yes
+npm run board:tickets -- --project <id> --notify <ticket id|all> --yes   # start a build: the Notify Claude click, from a runner
 ```
 
 Writes need `--yes`, and every move is read back afterwards. Statuses are
