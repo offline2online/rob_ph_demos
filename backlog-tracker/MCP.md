@@ -242,7 +242,7 @@ Three things worth knowing before pointing an agent at them:
   tools are safe to offer at all; they are also the only tools flagged
   `destructiveHint`, so a client that asks before destructive actions will
   ask before those and not before an ordinary update.
-- **Size ceilings differ, on purpose.** Requirements and README allow 200k
+- **Size ceilings differ, on purpose.** Requirements and README allow 800k
   characters (they live on the project doc, which shares Firestore's 1 MiB
   limit). Project documents and interfaces allow 20k — the same ceiling
   `firestore.rules` gives the board's own editor, because a longer document
