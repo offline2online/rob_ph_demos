@@ -1187,6 +1187,10 @@ function trainLockedNoteHTML(project) {
 function docsBehindInfo(project) {
   const s = project && project.docsSync;
   if (!s || typeof s !== "object") return null;
+  if (s.skipped) {
+    const noFolder = s.skipped === "no repo folder";
+    return { label: "Docs sync skipped", text: noFolder ? "Docs sync skipped: no repo folder — set it on the Docs page." : `Docs sync skipped: ${String(s.skipped)}.` };
+  }
   if (s.error) return { text: String(s.error) };
   const merge = project.lastMergeCommit;
   if (merge && s.mergeCommit !== merge && tsMillis(s.syncedAt) < tsMillis(project.lastMergeAt)) {
@@ -1199,7 +1203,7 @@ function docsBehindChipHTML(project) {
   const info = docsBehindInfo(project);
   if (!info) return "";
   return `<button type="button" class="docs-behind-chip project-docs-btn" data-project-id="${escapeHTML(project.id)}" title="${escapeHTML(info.text)} Click to open the Docs page.">
-    <span class="material-symbols-outlined docs-behind-icon">sync_problem</span><span>Docs behind main</span>
+    <span class="material-symbols-outlined docs-behind-icon">sync_problem</span><span>${escapeHTML(info.label || "Docs behind main")}</span>
   </button>`;
 }
 
@@ -4847,7 +4851,7 @@ function renderDocsPage() {
   if (syncBanner) {
     const behind = docsBehindInfo(project);
     syncBanner.hidden = !behind;
-    syncBanner.textContent = behind ? `Docs behind main — ${behind.text} The repo file is the source of truth; run the project's docs sync (or fix the cause above) to bring this copy up to date.` : "";
+    syncBanner.textContent = behind ? `${behind.label || "Docs behind main"} — ${behind.text} The repo file is the source of truth; run the project's docs sync (or fix the cause above) to bring this copy up to date.` : "";
   }
   const rows = interfacesForProject(docsProjectId);
   document.getElementById("docs-interfaces-list").innerHTML = rows.length

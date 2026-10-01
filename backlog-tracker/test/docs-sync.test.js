@@ -6,7 +6,7 @@
 // Run with:  node test/docs-sync.test.js
 "use strict";
 const assert = require("assert");
-const { syncProjectDocs, docCandidates } = require("../scripts/docs-sync-lib.js");
+const { syncProjectDocs, docCandidates, resolveRepoFolder } = require("../scripts/docs-sync-lib.js");
 
 let passed = 0;
 const failures = [];
@@ -44,8 +44,9 @@ function fakes(files, { refuse, drop } = {}) {
   await test("a project with no folder is skipped and nothing is written", async () => {
     const f = fakes({});
     assert.deepStrictEqual(await syncProjectDocs({ repoFolderNotApplicable: true, repoFolder: "x" }, "abc1234", f.io), { skipped: "no repo folder" });
+    assert.strictEqual(f.patches.length, 0, "marked not-applicable: silent");
     assert.deepStrictEqual(await syncProjectDocs({}, "abc1234", f.io), { skipped: "no repo folder" });
-    assert.strictEqual(f.patches.length, 0);
+    assert.strictEqual(f.patches.length, 1, "an unset folder is recorded, not just logged");
   });
 
   await test("DSP layout: requirements under docs/<folder>/, README at the folder root", async () => {
@@ -89,6 +90,35 @@ function fakes(files, { refuse, drop } = {}) {
     assert.ok(!("requirements" in f.docs));
     assert.ok(!("requirements" in f.doc.docs), "no pointer for a doc that was not synced");
     assert.strictEqual(f.doc.docsSync.requirementsCommit, "keep1");
+  });
+
+  await test("folder falls back to the deploy-branch slug, and agrees with repoFolder when set", async () => {
+    assert.strictEqual(resolveRepoFolder({ deployBranch: "deploy/dsp-integration" }), "dsp-integration");
+    assert.strictEqual(resolveRepoFolder({ repoFolder: "/a/", deployBranch: "deploy/b" }), "a");
+    assert.strictEqual(resolveRepoFolder({}), null);
+    const f = fakes({ "dsp-integration/README.md": "# r" });
+    const r = await syncProjectDocs({ deployBranch: "deploy/dsp-integration" }, "c0ffee1", f.io);
+    assert.ok(r.ok, JSON.stringify(r));
+    assert.strictEqual(f.docs.readme.contentMd, "# r");
+  });
+
+  await test("a skip is recorded on the project and cleared by the next successful sync", async () => {
+    const f = fakes({});
+    const r = await syncProjectDocs({ repoFolder: "" }, "aaa1111", f.io);
+    assert.deepStrictEqual(r, { skipped: "no repo folder" });
+    assert.deepStrictEqual(f.doc.docsSync, { skipped: "no repo folder", at: new Date("2026-10-01T08:00:00Z"), mergeCommit: "aaa1111" });
+    const g = fakes({ "p/README.md": "ok" });
+    g.doc.docsSync = f.doc.docsSync;
+    const ok = await syncProjectDocs({ repoFolder: "p", docsSync: f.doc.docsSync }, "bbb2222", g.io);
+    assert.ok(ok.ok);
+    assert.ok(!("skipped" in g.doc.docsSync), "success replaces docsSync wholesale");
+    assert.strictEqual(g.doc.docsSync.error, null);
+  });
+
+  await test("a project marked repoFolderNotApplicable skips silently", async () => {
+    const f = fakes({});
+    await syncProjectDocs({ repoFolderNotApplicable: true, deployBranch: "deploy/x" }, "ccc3333", f.io);
+    assert.strictEqual(f.patches.length, 0);
   });
 
   console.log(`\n${passed} passed, ${failures.length} failed`);

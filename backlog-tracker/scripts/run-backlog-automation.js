@@ -54,7 +54,7 @@ const { buildIndexFromArticleFiles, validateIndexAgainstArticleFiles, serializeI
 // runs main() for real the moment it's required (see the bottom of this
 // file).
 const { trainLockShouldClear, trainHandoverReason } = require("../functions/train-lock");
-const { syncProjectDocs } = require("./docs-sync-lib");
+const { syncProjectDocs, resolveRepoFolder } = require("./docs-sync-lib");
 
 const PROJECT_ID = "backlog-tracker-e4ed2";
 const REPO = "offline2online/rob_ph_demos";
@@ -710,12 +710,7 @@ function readAppVersion() {
 // (the backlog tracker's train is deploy/backlog-tracker-faqs and its files
 // are under backlog-tracker/ and faq/ — no single folder, no normalising).
 function projectFolderOf(project, exists = (p) => fs.existsSync(path.join(process.cwd(), p)) && fs.statSync(path.join(process.cwd(), p)).isDirectory()) {
-  const slug = String(project?.deployBranch || "").replace(/^deploy\//, "");
-  for (const c of [project?.repoFolder, slug]) {
-    const folder = String(c || "").replace(/\/+$/, "");
-    if (folder && !folder.includes("..") && exists(folder)) return folder;
-  }
-  return null;
+  return resolveRepoFolder(project, exists);
 }
 
 // A Routine session that worked inside a project's folder can hand over
