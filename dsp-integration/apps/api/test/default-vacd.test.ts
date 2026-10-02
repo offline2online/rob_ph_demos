@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { buildApp } from '../src/http/app'
+import { audienceOf } from '../src/domain/displayTypes'
 import { testContext } from './helpers'
 
 const NOW = new Date('2026-09-20T00:00:00Z')
@@ -15,7 +16,7 @@ async function setup() {
   const put = (defaultVacd?: number | null) => app.inject({ method: 'PUT', url: '/api/admin/v1/display-types/dt_v/extensions', payload: { slots: [slot('Ad 1', 'advertiser')], venue: { openOohVenueType: 'retail.grocery', orientation: 'portrait', loopLengthSec: 40 }, ...(defaultVacd === undefined ? {} : { defaultVacd }) } })
   const ins = ctx.db.prepare("INSERT INTO displays (id, name, store, store_id, display_type_id) VALUES (?, 'Screen', 'Sydney CBD', 'st_sydney_cbd', 'dt_v')")
   ins.run('d_v_1'); ins.run('d_v_2')
-  const views = () => ctx.audience.forSlot('dt_v', 1)
+  const views = async () => audienceOf(ctx.audience, (await ctx.displayTypes.get('dt_v'))!, 1)
   return { ctx, put, views }
 }
 

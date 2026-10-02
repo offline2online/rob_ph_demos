@@ -6,7 +6,7 @@ import type { Context } from '../../context'
 import { cleanList, validateAdvertiserSettings } from '../../domain/advertiserSettings'
 import { tx } from '../../db/db'
 import { companyWindowCommitments, positionIdOf, slotWindowCommitments, unsellableReason } from '../../domain/positions'
-import { zonesOf } from '../../domain/displayTypes'
+import { audienceOf, zonesOf } from '../../domain/displayTypes'
 import { assignedToSlot, validateAssigned } from '../../domain/slots'
 import type { Guards } from '../../http/app'
 import { conflict, hasDependents, notFound, validationFailed } from '../../http/errors'
@@ -138,7 +138,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         const playlistId = playlistIdOf(s)
         const playlistName = (playlistId && (await ctx.playlists.get(playlistId))?.name) || '—'
         items.push({
-          displayTypeId: t.id, displayTypeName: t.name, touchPoint: t.touchPoint, playlistName, playlistId, unassigned, scored: (await ctx.audience.forSlot(t.id, i + 1)).scored, unsellableReason: await unsellableReason(ctx, { positionId: positionIdOf(t.id, i + 1), displayType: t, slot: i + 1, def: s }), salesLocked: s.salesLocked === true, salesLockedUntil: s.salesLocked ? await slotBookedUntil(ctx, t.id, i + 1) : null, slot: i + 1, zoneSlot, position: s.label,
+          displayTypeId: t.id, displayTypeName: t.name, touchPoint: t.touchPoint, playlistName, playlistId, unassigned, scored: (await audienceOf(ctx.audience, t, i + 1)).scored, unsellableReason: await unsellableReason(ctx, { positionId: positionIdOf(t.id, i + 1), displayType: t, slot: i + 1, def: s }), salesLocked: s.salesLocked === true, salesLockedUntil: s.salesLocked ? await slotBookedUntil(ctx, t.id, i + 1) : null, slot: i + 1, zoneSlot, position: s.label,
           assignedTo: {
             ...a,
             partnerNames: a.partnerIds.map((id) => partners.find((p) => p.id === id)?.name ?? id),

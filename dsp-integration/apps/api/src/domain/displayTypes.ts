@@ -1,5 +1,6 @@
 /* Stand-in rules for the existing display type record (POC only). */
 import { TOUCH_POINTS, type DisplayType, type Playlist } from '@ph-dsp/types'
+import type { AudienceSource } from '../platform/AudienceSource'
 import type { PlaylistRecord, PlaylistSource } from '../platform/PlaylistSource'
 
 type Detail = { field: string; reason: string }
@@ -12,6 +13,20 @@ export const zonesOf = (dt: DisplayType): Zone[] => {
   const mz = dt.multiZone as { enabled?: boolean; zones?: Zone[] } | undefined
   return mz?.enabled ? (mz.zones ?? []) : []
 }
+
+/* The display type's default VAC-d (assumed views per play window, per
+   display), or null when it has none. It is the exchange's own setting,
+   saved with the type's DSP fields (phExtensions, migration 0035), so it is
+   read here from the DisplayTypeSource record and handed to the audience
+   source — never read by the audience source from the table (ticket
+   DDOjJoYjraKROu4Ainj5, Rob 2 Oct 2026). A display type with no retailer
+   scoring is scored by this default. */
+export const defaultVacdOf = (dt: DisplayType): number | null => {
+  const v = (dt.phExtensions as { defaultVacd?: unknown } | undefined)?.defaultVacd
+  return typeof v === 'number' ? v : null
+}
+/* A slot's audience: the audience source's score, given the type's default. */
+export const audienceOf = (audience: AudienceSource, dt: DisplayType, slot: number) => audience.forSlot(dt.id, slot, defaultVacdOf(dt))
 
 /* Where a flat slot (1-based, across every zone) sits on a multi-zone
    display type: its zone's name and its 1-based place within that zone —

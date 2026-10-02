@@ -13,6 +13,7 @@ import { isActiveAt, lockedTermSpan } from '../billing/term'
 import { effectiveLists, isBlocked, isOn } from './lists'
 import { effectiveFloorCpm } from './pricing'
 import { rotationSizeOf, slotDurationSec } from './slots'
+import { audienceOf } from './displayTypes'
 
 export interface PositionRef {
   positionId: string
@@ -380,7 +381,7 @@ export async function windowStatusAt(ctx: Context, p: PositionRef, c: Caller, st
    to its window's length — a weekly window on a daily-scored slot is seven
    days' views. A slot that follows the company window is unchanged. */
 export function assumedViewsPerWindow(ctx: Context, p: PositionRef): Awaitable<number> {
-  return andThen(allOf([ctx.audience.forSlot(p.displayType.id, p.slot), ctx.company.get()] as const), ([audience, company]) => assumedViewsFor(audience.assumedViewsPerWindow, company.playWindowHours, p))
+  return andThen(allOf([audienceOf(ctx.audience, p.displayType, p.slot), ctx.company.get()] as const), ([audience, company]) => assumedViewsFor(audience.assumedViewsPerWindow, company.playWindowHours, p))
 }
 /* The same, given the slot's scored figure and the company window already read. */
 export function assumedViewsFor(scored: number, companyHours: number, p: PositionRef) {
@@ -396,7 +397,7 @@ export function assumedViewsFor(scored: number, companyHours: number, p: Positio
    duration before it is exposed as Advertiser inventory: the venue loop
    length, which slotDurationSec divides by the rotation cap (slots.ts). Returns why not, or null when sellable. */
 export function unsellableReason(ctx: Context, p: PositionRef): Awaitable<string | null> {
-  return andThen(ctx.audience.forSlot(p.displayType.id, p.slot), (audience) => {
+  return andThen(audienceOf(ctx.audience, p.displayType, p.slot), (audience) => {
     if (!audience.scored) return 'No audience score yet.'
     if (!p.displayType.phExtensions?.venue?.loopLengthSec) return 'No slot duration yet — set the venue loop length before this slot can be sold.'
     return null
@@ -423,7 +424,7 @@ export function positionView(ctx: Context, p: PositionRef, c: Caller) {
       loopLengthSec(ctx, dt),
       ctx.company.get(),
       c.advertiser ? ctx.company.advertiserSetting(c.advertiser.id) : null,
-      ctx.audience.forSlot(dt.id, p.slot),
+      audienceOf(ctx.audience, dt, p.slot),
     ] as const),
     ([displays, loop, company, setting, audience]) => viewOf(p, displays, loop, company, setting ? setting.floorMultiplier : 1, audience),
   )

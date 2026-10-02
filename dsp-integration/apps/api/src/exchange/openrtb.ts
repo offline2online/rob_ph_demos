@@ -8,6 +8,7 @@ import type { Context } from '../context'
 import { type PositionRef, positionView, windowMsFor } from '../domain/positions'
 import { effectiveCategoryLists, effectiveLists } from '../domain/lists'
 import type { PartnerRecord } from '../repos/PartnerRepo'
+import { audienceOf } from '../domain/displayTypes'
 
 export interface BidRequest {
   id: string
@@ -63,7 +64,7 @@ export async function buildBidRequest(ctx: Context, p: PositionRef, partner: Par
   const exchange = await ctx.exchange.get()
   const lists = effectiveLists(partner, company)
   const categoryLists = effectiveCategoryLists(partner, company)
-  const audience = await ctx.audience.forSlot(p.displayType.id, p.slot)
+  const audience = await audienceOf(ctx.audience, p.displayType, p.slot)
   const { width: w, height: h } = view.screen
   return {
     id,

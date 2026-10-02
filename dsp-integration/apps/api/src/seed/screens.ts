@@ -61,14 +61,20 @@ export async function seedScreens(ctx: Context, scenario: Scenario = 'all-scored
     })
 
     /* A default VAC-d on every display type that has an assigned screen. */
-    const setDefault = db.prepare("UPDATE display_types SET ph_extensions = json_set(COALESCE(ph_extensions, '{\"slots\":[]}'), '$.defaultVacd', ?) WHERE id = ?")
-    const clearDefault = db.prepare("UPDATE display_types SET ph_extensions = json_remove(ph_extensions, '$.defaultVacd') WHERE id = ? AND ph_extensions IS NOT NULL")
+    /* Saved through the display type source (the exchange owns the default,
+       ticket DDOjJoYjraKROu4Ainj5), so its cached records follow. */
+    const setDefault = async (id: string, v: number | null) => {
+      const t = await ctx.displayTypes.get(id)
+      if (!t) return
+      const { defaultVacd: _old, ...rest } = (t.phExtensions ?? { slots: [] }) as NonNullable<typeof t.phExtensions> & { defaultVacd?: number }
+      await ctx.displayTypes.saveExtensions(id, (v === null ? rest : { ...rest, defaultVacd: v }) as NonNullable<typeof t.phExtensions>)
+    }
     const used = [...new Set(assigned.map((a) => a.displayType))]
-    for (const id of used) setDefault.run(defaultFor(types.find((t) => t.id === id)?.name ?? ''), id)
+    for (const id of used) await setDefault(id, defaultFor(types.find((t) => t.id === id)?.name ?? ''))
 
     const unscoredDisplayTypes: string[] = []
     if (scenario === 'some-unscored' && used.length) {
-      clearDefault.run(used[0])
+      await setDefault(used[0], null)
       db.prepare('DELETE FROM audience_vacd WHERE display_type_id = ?').run(used[0])
       unscoredDisplayTypes.push(used[0])
     }

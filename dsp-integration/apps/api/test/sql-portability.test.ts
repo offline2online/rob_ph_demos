@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest'
 import { approvalStore } from '../../../packages/campaign-approval/src/server/approvalStore'
 import { isUniqueViolation, openDb } from '../src/db/db'
 import { appliedVersions, migrateDown, migrateUp } from '../src/db/migrate'
-import { defaultVacd } from '../src/platform/AudienceSource'
+import { sqliteAudienceSource } from '../src/platform/AudienceSource'
 import { sqliteDisplaySource } from '../src/platform/DisplaySource'
 import { sqliteDisplayTypeSource } from '../src/platform/DisplayTypeSource'
 import { sqlitePlaybackSource } from '../src/platform/PlaybackSource'
@@ -119,14 +119,13 @@ describe('arrival order without rowid', () => {
 })
 
 describe('portable statements', () => {
-  it('the default VAC-d is read from the parsed record, and follows an edit', () => {
+  it('the audience stand-in never reads display_types: the default VAC-d is passed in (DDOjJoYjraKROu4Ainj5)', () => {
     const db = fresh()
-    db.prepare(`INSERT INTO display_types (id, touch_point, name, canvas_width, canvas_height, background_color, playlist_settings, qr_control, enabled_features, ph_extensions)
-                VALUES ('dt', 'Digital Signage', 'DT', 1920, 1080, '#000000', '{}', '{}', '{}', ?)`).run(JSON.stringify({ defaultVacd: 12.5 }))
-    expect(defaultVacd(db, 'dt')).toBe(12.5)
-    db.prepare('UPDATE display_types SET ph_extensions = ? WHERE id = ?').run(JSON.stringify({ slots: [] }), 'dt')
-    expect(defaultVacd(db, 'dt')).toBeNull()
-    expect(defaultVacd(db, 'missing')).toBeNull()
+    /* No display_types row at all: the score comes only from what the exchange hands over. */
+    db.prepare("INSERT INTO displays (id, name, store, display_type_id) VALUES ('d1', 'd1', 'S', 'dt'), ('d2', 'd2', 'S', 'dt')").run()
+    const audience = sqliteAudienceSource(db)
+    expect(audience.forSlot('dt', 1, 12)).toEqual({ assumedViewsPerWindow: 24, counted: false, scored: true })
+    expect(audience.forSlot('dt', 1, null)).toEqual({ assumedViewsPerWindow: 0, counted: false, scored: false })
   })
 
   it('personalised plays are counted with CASE, not a boolean SUM', async () => {
