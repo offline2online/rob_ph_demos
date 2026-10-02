@@ -226,7 +226,7 @@ async function listProjectDocsFor(projectId) {
     from: [{ collectionId: "projectDocs" }],
     where: { fieldFilter: { field: { fieldPath: "projectId" }, op: "EQUAL", value: { stringValue: projectId } } },
   });
-  return rows.map((r) => ({ id: r.id, name: r.name, sourcePath: r.sourcePath }));
+  return rows.map((r) => ({ id: r.id, name: r.name, sourcePath: r.sourcePath, sourceSlices: r.sourceSlices, sourcePrefix: r.sourcePrefix }));
 }
 
 async function getProjectDocById(docId) {

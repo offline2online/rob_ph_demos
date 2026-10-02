@@ -137,6 +137,26 @@ function fakes(files, { refuse, drop } = {}) {
     assert.strictEqual(f.docs.readme.contentMd, "# r", "readme still synced");
   });
 
+  await test("a mirrored doc can be a heading-marked slice of its file, with a prefix", async () => {
+    const file = "# T\nintro\n## A\na1\n## B\nb1\n## C\nc1\n## D\nd1\n";
+    const files = { "p/README.md": "# r", "p/api/X.md": file };
+    const f = fakes(files);
+    const store = {
+      one: { name: "X 1/2", sourcePath: "p/api/X.md", sourceSlices: [{ end: "## B" }], sourcePrefix: "> mirror\n\n", contentMd: "" },
+      two: { name: "X 2/2", sourcePath: "p/api/X.md", sourceSlices: [{ start: "## B", end: "## C" }, { start: "## D" }], contentMd: "" },
+      bad: { name: "X bad", sourcePath: "p/api/X.md", sourceSlices: [{ start: "## Gone" }], contentMd: "old" },
+    };
+    f.io.listProjectDocs = async () => Object.entries(store).map(([id, v]) => ({ id, ...v }));
+    f.io.putProjectDocContent = async (id, fields) => { store[id].contentMd = fields.contentMd; };
+    f.io.getProjectDocContent = async (id) => store[id];
+    const r = await syncProjectDocs({ repoFolder: "p" }, "eee5555", f.io);
+    assert.strictEqual(store.one.contentMd, "> mirror\n\n# T\nintro\n## A\na1\n");
+    assert.strictEqual(store.two.contentMd, "## B\nb1\n\n## D\nd1\n");
+    assert.strictEqual(store.bad.contentMd, "old", "missing marker: untouched");
+    assert.strictEqual(r.ok, false);
+    assert.match(f.doc.docsSync.error, /slice marker not found: "## Gone"/);
+  });
+
   console.log(`\n${passed} passed, ${failures.length} failed`);
   process.exit(failures.length ? 1 : 0);
 })();

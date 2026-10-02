@@ -71,6 +71,33 @@ async function skip(project, mergeCommit, io, reason) {
 // (e.g. over the editor cap) is collected, not thrown, so it neither blocks
 // the others nor the Requirements/README result. Needs io.listProjectDocs,
 // io.putProjectDocContent and io.getProjectDocContent; absent = no-op.
+// A board document capped below its repo file mirrors part of it
+// (taUi7jWIwhCvfeDDUURl: "Boundaries with PH Core" is three board docs).
+// d.sourceSlices = [{ start, end }]: `start` is a line of the file, matched
+// exactly after trimming, taken inclusive; `end` is the line the slice stops
+// before (omitted = to the end of the file; start omitted = from the top).
+// Headings, never line numbers, so an edit above a slice doesn't shift it.
+// d.sourcePrefix, if set, is prepended verbatim. Throws when a marker is
+// missing, so a renamed heading is reported instead of mirroring nothing.
+function mirrorText(content, d) {
+  const slices = Array.isArray(d.sourceSlices) ? d.sourceSlices : [];
+  let body = content;
+  if (slices.length) {
+    const lines = content.split("\n");
+    const find = (marker, from) => {
+      const i = lines.findIndex((l, n) => n >= from && l.trim() === String(marker).trim());
+      if (i < 0) throw new Error(`slice marker not found: "${String(marker).slice(0, 80)}"`);
+      return i;
+    };
+    body = slices.map((sl) => {
+      const a = sl && sl.start ? find(sl.start, 0) : 0;
+      const b = sl && sl.end ? find(sl.end, a + 1) : lines.length;
+      return lines.slice(a, b).join("\n").replace(/\n+$/, "");
+    }).join("\n\n") + "\n";
+  }
+  return (d.sourcePrefix ? String(d.sourcePrefix) : "") + body;
+}
+
 async function syncMirroredDocs(project, mergeCommit, io, now) {
   const out = { synced: [], errors: [] };
   if (typeof io.listProjectDocs !== "function") return out;
@@ -84,6 +111,9 @@ async function syncMirroredDocs(project, mergeCommit, io, now) {
     let content = null;
     try { content = io.readFile(sp); } catch { content = null; }
     if (typeof content !== "string") { out.errors.push(`${label}: file not found at ${String(mergeCommit).slice(0, 7)}`); continue; }
+    try {
+      content = mirrorText(content, d);
+    } catch (err) { out.errors.push(`${label}: ${String(err && err.message || err).slice(0, 200)}`); continue; }
     try {
       const sourceCommit = io.lastCommitFor(sp) || mergeCommit;
       await io.putProjectDocContent(d.id, { contentMd: content, updatedAt: now, sourceCommit });
@@ -169,4 +199,4 @@ async function syncProjectDocs(project, mergeCommit, io) {
   }
 }
 
-module.exports = { syncProjectDocs, docCandidates, cleanFolder, resolveRepoFolder, DOCS };
+module.exports = { syncProjectDocs, mirrorText, docCandidates, cleanFolder, resolveRepoFolder, DOCS };
