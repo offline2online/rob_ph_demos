@@ -156,8 +156,13 @@ are ready on this side:
   Every seam and repository method returns `T | Promise<T>` and every
   caller awaits it. The measured scope was not "one file per seam": it was
   63 source files, about 550 awaited calls, and the functions above them
-  that had to become async in turn. A Postgres adapter now slots in at
-  `context.ts` without touching callers.
+  that had to become async in turn. Routes and the exchange no longer
+  change for an adapter, but it is not `context.ts` alone: raw SQL still
+  sits outside the seams in seven files (billing, positions, scheduler,
+  creatives, the two retention sweeps, the test-plays route), the approval
+  module's `SqlDb` is synchronous, and `tx`/`gate` are typed to the SQLite
+  handle — about 25 files plus a Postgres migration set (review, 2 Oct
+  2026; v2iKDJQA0wmisXhp7ebV moves the SQL into repositories).
 - **Transactions on SQLite are serialised by a lock.** Once a transaction
   body awaits, anything else that ran on the one `node:sqlite` connection
   would land inside it. So `tx()` takes a per-database FIFO lock, a
