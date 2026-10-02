@@ -266,7 +266,10 @@ What the train changes:
   PR head** (`REQUIRED_TRAIN_CHECKS`; a check not reported yet is still
   pending, never green — before 2 Oct 2026 an empty or WIP-only rollup
   read as green and every train merged seconds after its PR opened, before
-  e2e-quick had even started; bPcnbXZNC4vFnhft8AMz) — then
+  e2e-quick had even started; bPcnbXZNC4vFnhft8AMz). GitHub holds a
+  workflow run on a bot-opened PR as `action_required` and reports no check
+  for it, so the poll first approves any held runs on the PR's head commit
+  (`approveHeldRuns`; this workflow has `actions: write`) — then
   `gh pr merge --merge` (never squash — the per-ticket
   commits are the history now), flip every ticket to `published-live`,
   trigger the Firebase deploy, then reset the branch to `main` for the

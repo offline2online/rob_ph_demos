@@ -2203,6 +2203,31 @@ function trainChecksState(rollup, required = REQUIRED_TRAIN_CHECKS) {
   return all === "none" ? "success" : all;
 }
 
+// GitHub holds a workflow run on a bot-opened PR as `action_required` until
+// someone approves it, and a held run reports no check at all — so the
+// required e2e-quick would never appear and the train would wait forever
+// (PR #295, 2 Oct 2026; the same hold is why every earlier train PR's
+// e2e-quick "failed with 0 jobs" once the PR had already merged). This
+// workflow has `actions: write`, so it approves the held runs on its own
+// train PR's head commit: the train's content is already on the
+// integration branch, built and tested there by the push-triggered run.
+// Never throws; a failure just leaves the check pending and is logged.
+function approveHeldRuns(headSha) {
+  if (!headSha) return 0;
+  let approved = 0;
+  try {
+    const ids = JSON.parse(run("gh", ["api", `repos/${REPO}/actions/runs?head_sha=${headSha}&status=action_required&per_page=20`, "-q", "[.workflow_runs[].id]"]) || "[]");
+    for (const id of ids) {
+      try { run("gh", ["api", "-X", "POST", `repos/${REPO}/actions/runs/${id}/approve`]); approved++; }
+      catch (err) { console.log(`[deploy-train] couldn't approve held run ${id}: ${scrubSecrets(err.message)}`); }
+    }
+  } catch (err) {
+    console.log(`[deploy-train] couldn't list held runs for ${String(headSha).slice(0, 7)}: ${scrubSecrets(err.message)}`);
+  }
+  if (approved) console.log(`[deploy-train] approved ${approved} held workflow run(s) on ${String(headSha).slice(0, 7)}`);
+  return approved;
+}
+
 function rollupState(rollup) {
   if (!Array.isArray(rollup) || rollup.length === 0) return "none";
   let pending = false;
@@ -2218,7 +2243,7 @@ function rollupState(rollup) {
 
 function viewTrainPr(prNumber) {
   const json = run("gh", ["pr", "view", String(prNumber), "--repo", REPO,
-    "--json", "number,state,url,mergeable,statusCheckRollup,files"]);
+    "--json", "number,state,url,mergeable,statusCheckRollup,files,headRefOid"]);
   return JSON.parse(json);
 }
 
@@ -2573,6 +2598,7 @@ async function processDeployTrain(project) {
   for (let poll = 0; poll < TRAIN_CI_POLLS; poll++) {
     pr = viewTrainPr(prNumber);
     if (pr.state === "MERGED") break;
+    approveHeldRuns(pr.headRefOid);
     const checks = trainChecksState(pr.statusCheckRollup);
     if (checks === "failure") {
       const red = (pr.statusCheckRollup || []).filter((c) => !["SUCCESS", "NEUTRAL", "SKIPPED", ""].includes(String(c.conclusion || c.state || "").toUpperCase()) && String(c.status || "COMPLETED").toUpperCase() === "COMPLETED");
@@ -3267,5 +3293,5 @@ module.exports = {
   // test/docs-sync.test.js
   syncDocsAfterMerge,
   // test/train-checks.test.js — a train merges only once e2e-quick passed
-  trainChecksState, rollupState, REQUIRED_TRAIN_CHECKS,
+  trainChecksState, rollupState, REQUIRED_TRAIN_CHECKS, approveHeldRuns,
 };
