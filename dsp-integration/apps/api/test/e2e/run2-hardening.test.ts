@@ -238,7 +238,7 @@ describe('Run 2 — E. Partner API refusals', () => {
     expect(JSON.stringify(listed)).not.toContain(POS)
   })
 
-  it('E11 — writes from a DSP whose connection re-test failed (create, upload, submit, bid) → 409; reads of its own campaigns still allowed', async () => {
+  it('E11a — writes from a DSP whose connection re-test failed (create, upload, submit, bid) → 409; reads of its own campaigns still allowed', async () => {
     const h = await harness()
     const id = await h.readyApiCampaign('Swisse — E11')
     const draft = (await h.partner.create({ advertiserId: 'swisse', name: 'Swisse — E11 draft', displayTypeId: 'e2e_signage', default: { pricingType: 'localised' } })).json().campaignId
@@ -259,7 +259,7 @@ describe('Run 2 — E. Partner API refusals', () => {
 
   /* Regression for backlog KZcmgdrqJcKq0uKfVgl4 (found by the E2E v2 run, 29 Sep
      2026; fixed on main since). */
-  it('E11 — writes from a DSP the retailer disconnected (create, upload, submit, bid) → 409; reads of its own campaigns still allowed', async () => {
+  it('E11b — writes from a DSP the retailer disconnected (create, upload, submit, bid) → 409; reads of its own campaigns still allowed', async () => {
     const h = await harness()
     const id = await h.readyApiCampaign('Swisse — E11b')
     const draft = (await h.partner.create({ advertiserId: 'swisse', name: 'Swisse — E11b draft', displayTypeId: 'e2e_signage', default: { pricingType: 'localised' } })).json().campaignId
