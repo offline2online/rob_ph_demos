@@ -14,6 +14,11 @@ export interface PocLookups {
   canvas(displayTypeId: string): Awaitable<Canvas | null>
   assetUrl(file: string): Awaitable<string>
   targetingSummary(targeting: unknown): Awaitable<string>
+  /* The host's own change hub, when the same campaign records are also
+     written through another facet (the host's platform CampaignSource):
+     sharing one listener set means a change made there reaches
+     onCampaignChanged here too. Omitted: this adapter keeps its own. */
+  listeners?: Set<(id: string) => void>
 }
 
 interface Row { id: string; name: string; source: CampaignRef['source']; advertiser_id: string | null; partner_id: string | null; display_type_id: string | null; activation_enabled: number; targeting: string | null }
@@ -24,7 +29,7 @@ interface AssetRow { version: number; role: string; file: string; mime_type: str
 export const assetVersionNumber = (assetVersion: string) => Number(assetVersion.replace(/^v/, '')) || 0
 
 export function pocCampaignSource(db: SqlDb, lookups: PocLookups): CampaignSource {
-  const listeners = new Set<(id: string) => void>()
+  const listeners = lookups.listeners ?? new Set<(id: string) => void>()
   /* The campaign's own rows, read in one synchronous step; the host's
      lookups (which may await) are filled in afterwards by toRef. */
   const assetsOf = (id: string) => db.prepare('SELECT version, role, file, mime_type, width, height, content_hash FROM campaign_assets WHERE campaign_id = ? AND discarded_at IS NULL ORDER BY version').all(id) as unknown as AssetRow[]

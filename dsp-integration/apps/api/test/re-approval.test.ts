@@ -62,6 +62,7 @@ async function setup(dspFetch?: Fetch) {
     testMode: false, pricingType: 'localised', handedOffAt: null,
   })
   /* Which campaign_assets version was handed off for a window. */
+  /* The booking carries the approval string it was handed (eeBT1Qp3). */
   const handedOff = async (id: string, windowStart: string) => (await ctx.campaigns.bookings(id)).find((b) => b.windowStart === windowStart)?.assetVersion
   return { ctx, app, mocks, upload, status, approve, reject, activate, running, won, handedOff }
 }
@@ -80,7 +81,7 @@ describe('re-approval: the approved version keeps running (Q38)', () => {
     const result = await runAuction(ctx, W1)
     expect(result.positions.find((p) => p.positionId === 'menu_board.s2')!.winner).toMatchObject({ reservationId: bid.json().reservationId, clearingCpm: 150 })
     /* The approved creative (v1, A) is what the campaign system plays — not the edit under review. */
-    expect(await handedOff(id, W1.toISOString())).toBe(1)
+    expect(await handedOff(id, W1.toISOString())).toBe('v1')
   })
 
   it('(b) approving the edit swaps atomically: the new creative hands off from then on, the old one never again', async () => {
@@ -88,16 +89,16 @@ describe('re-approval: the approved version keeps running (Q38)', () => {
     const id = await running()
     await upload(id, B)
     await handOff(ctx, await won(id, day(2)))
-    expect(await handedOff(id, day(2))).toBe(1)
+    expect(await handedOff(id, day(2))).toBe('v1')
     expect((await approve(id, 'v2')).json()).toMatchObject({ status: 'approved', assetVersion: 'v2', liveAssetVersion: 'v2', pendingEdit: false })
     /* No dark window: eligible straight through the swap, and still switched on. */
     expect(await checkCampaign(ctx, id)).toBeNull()
     for (const n of [3, 4]) {
       await handOff(ctx, await won(id, day(n)))
-      expect(await handedOff(id, day(n))).toBe(2)
+      expect(await handedOff(id, day(n))).toBe('v2')
     }
     /* Never both: one booking per window, each naming exactly one version. */
-    expect((await ctx.campaigns.bookings(id)).map((b) => [b.windowStart, b.assetVersion])).toEqual([[day(2), 1], [day(3), 2], [day(4), 2]])
+    expect((await ctx.campaigns.bookings(id)).map((b) => [b.windowStart, b.assetVersion])).toEqual([[day(2), 'v1'], [day(3), 'v2'], [day(4), 'v2']])
     expect((await ctx.campaigns.latestAssets(id, 'v1')).map((a) => a.contentHash)).not.toEqual((await ctx.campaigns.latestAssets(id, 'v2')).map((a) => a.contentHash))
   })
 
@@ -111,7 +112,7 @@ describe('re-approval: the approved version keeps running (Q38)', () => {
     expect(await status(id)).toMatchObject({ status: 'approved', assetVersion: 'v1', liveAssetVersion: 'v1', pendingEdit: false, reason: null, rejectedEdit: { assetVersion: 'v2', reason: 'Price in the artwork.' } })
     expect((await ctx.campaigns.getCampaign(id))!.activation.enabled).toBe(true)
     await handOff(ctx, await won(id, day(2)))
-    expect(await handedOff(id, day(2))).toBe(1)
+    expect(await handedOff(id, day(2))).toBe('v1')
     const audit = (await app.inject({ method: 'GET', url: `/api/admin/v1/campaigns/${id}/approval` })).json().audit.map((a: { action: string; assetVersion: string; reason: string | null }) => [a.action, a.assetVersion, a.reason])
     expect(audit).toEqual([['submitted', 'v1', null], ['approved', 'v1', null], ['returned_for_review', 'v2', null], ['rejected', 'v2', 'Price in the artwork.'], ['edit_discarded', 'v2', null]])
     /* A rejected Draft is swept after 30 days; a running campaign whose edit was rejected is not Rejected at all. */

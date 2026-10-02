@@ -114,3 +114,35 @@ describe('the hand-off depends on the platform seam, not on a POC-only bridge', 
     expect(await ctx.campaigns.latestAssets(id, 'rev-9f2c')).toEqual([])
   })
 })
+
+/* One set of campaign records, two facets (FWwsCUJP, built by
+   eeBT1Qp33GdsPcxG2As3, 2 Oct 2026): the platform CampaignSource and the
+   approval module's adapter read and write the same records. */
+describe('the two CampaignSource facets', () => {
+  it('list the same campaigns in the same order', async () => {
+    const ctx = await testContext()
+    const platform = (await ctx.campaigns.listCampaigns()).map((c) => c.campaignId)
+    const approval = (await ctx.approvalCampaigns.listCampaigns()).map((c) => c.campaignId)
+    expect(platform.length).toBeGreaterThan(1)
+    expect(approval).toEqual(platform)
+  })
+
+  it('a change made through the platform facet reaches the approval facet’s onCampaignChanged', async () => {
+    const ctx = await testContext()
+    const seen: string[] = []
+    const off = ctx.approvalCampaigns.onCampaignChanged((id) => seen.push(id))
+    await ctx.campaigns.setActivation('c_dsp_nestle', false)
+    await ctx.campaigns.addAsset({ id: 'as_facet', campaignId: 'c_api_swisse', role: 'default', file: 'x.png', mimeType: 'image/png', width: 1080, height: 1920, durationSec: null, bitrateKbps: null, sizeBytes: 10 })
+    off()
+    await ctx.campaigns.setActivation('c_dsp_nestle', true)
+    expect(seen).toEqual(['c_dsp_nestle', 'c_api_swisse'])
+  })
+
+  it('the approval canvas sees a display-type save at once (one DisplayTypeSource)', async () => {
+    const ctx = await testContext()
+    const c = (await ctx.campaigns.listCampaigns()).find((x) => x.displayTypeId)!
+    const dt = (await ctx.displayTypes.get(c.displayTypeId!))!
+    await ctx.displayTypes.saveRecord(dt.id, { ...dt, displayCanvasSize: { width: 1234, height: 567 } })
+    expect((await ctx.approvalCampaigns.getCampaign(c.campaignId))!.canvas).toEqual({ width: 1234, height: 567 })
+  })
+})

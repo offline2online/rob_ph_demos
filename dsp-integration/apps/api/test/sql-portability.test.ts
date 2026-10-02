@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { approvalStore } from '../../../packages/campaign-approval/src/server/approvalStore'
 import { isUniqueViolation, openDb } from '../src/db/db'
-import { migrateDown, migrateUp } from '../src/db/migrate'
+import { appliedVersions, migrateDown, migrateUp } from '../src/db/migrate'
 import { defaultVacd } from '../src/platform/AudienceSource'
 import { sqliteDisplaySource } from '../src/platform/DisplaySource'
 import { sqliteDisplayTypeSource } from '../src/platform/DisplayTypeSource'
@@ -111,8 +111,8 @@ describe('arrival order without rowid', () => {
 
   it('0037 reverts cleanly', () => {
     const db = fresh()
-    migrateDown(db, 3) /* 0102, 0101, 0100 sort after 0037 */
-    migrateDown(db, 1)
+    /* Everything applied after 0037 (later app migrations, then the approval module's 0100–0102) first. */
+    migrateDown(db, appliedVersions(db).filter((v) => v >= '0037').length)
     const cols = (db.prepare('PRAGMA table_info(displays)').all() as { name: string }[]).map((c) => c.name)
     expect(cols).not.toContain('seq')
   })

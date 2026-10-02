@@ -433,7 +433,8 @@ describe('Run 2 — G. Approval lifecycle (non-happy)', () => {
     expect((await runAuction(h.ctx, day(1))).positions[0].winner).toMatchObject({ clearingCpm: 200 })
     const after = h.campaigns.handoffs.filter((b) => b.campaignId === id)
     expect(after).toHaveLength(2)
-    expect(after[1].assetVersion).toBeGreaterThan(before[0].assetVersion as number)
+    /* The booking carries the approved version's own string (eeBT1Qp3). */
+    expect([before[0].assetVersion, after[1].assetVersion]).toEqual(['v1', 'v2'])
   })
 
   it('G3 — undo rejection → Awaiting approval, never auto-approved (even once the advertiser no longer requires approval)', async () => {
