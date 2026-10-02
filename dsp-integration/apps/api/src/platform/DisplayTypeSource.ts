@@ -108,7 +108,7 @@ export function sqliteDisplayTypeSource(db: Db): DisplayTypeSource {
   const snapshot = () => {
     if (!snap || Date.now() - snap.at > SNAPSHOT_TTL_MS) {
       const zones = zoneJsonMap()
-      const list = (prepared(db, 'SELECT * FROM display_types ORDER BY rowid').all() as unknown as Row[]).map((r) => deepFreeze(toRecord(r, zones)))
+      const list = (prepared(db, 'SELECT * FROM display_types ORDER BY seq').all() as unknown as Row[]).map((r) => deepFreeze(toRecord(r, zones)))
       snap = { at: Date.now(), list, byId: new Map(list.map((dt) => [dt.id, dt])) }
     }
     return snap

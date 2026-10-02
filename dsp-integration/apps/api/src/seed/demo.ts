@@ -204,10 +204,10 @@ export async function seedDemo(ctx: Context) {
 
   tx(ctx.db, () => {
     /* Stores and displays. */
-    const insStore = ctx.db.prepare('INSERT OR IGNORE INTO stores (id, name, region) VALUES (?, ?, ?)')
+    const insStore = ctx.db.prepare('INSERT INTO stores (id, name, region) VALUES (?, ?, ?) ON CONFLICT DO NOTHING')
     for (const s of DEMO_STORES) report.stores += Number(insStore.run(s.id, s.name, s.region).changes)
     const storeId = ctx.db.prepare('SELECT id FROM stores WHERE name = ?')
-    const insDisplay = ctx.db.prepare('INSERT OR IGNORE INTO displays (id, name, store, store_id, display_type_id) VALUES (?, ?, ?, ?, ?)')
+    const insDisplay = ctx.db.prepare('INSERT INTO displays (id, name, store, store_id, display_type_id) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING')
     for (const [id, name, store, dt] of DEMO_DISPLAYS) {
       const row = storeId.get(store) as { id: string } | undefined
       if (row) report.displays += Number(insDisplay.run(id, name, store, row.id, dt).changes)

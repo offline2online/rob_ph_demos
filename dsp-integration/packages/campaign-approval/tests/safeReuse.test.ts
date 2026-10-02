@@ -4,16 +4,14 @@
    when it is BOTH unchanged (byte-identical, i.e. same contentHash) AND
    previously cleared by a HUMAN review, never by automated checks alone. */
 import { DatabaseSync } from 'node:sqlite'
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
+import { migrateAll } from './migrateAll'
 import { describe, expect, it } from 'vitest'
 import type { CampaignRef, CampaignSource } from '../src/adapter/CampaignSource'
 import { createApprovalService } from '../src/server/service'
 
 function setup(creative: CampaignRef['creative'], requiresApproval = true, assets?: CampaignRef['assets']) {
   const db = new DatabaseSync(':memory:')
-  db.exec(readFileSync(fileURLToPath(new URL('../migrations/0100_campaign_approvals.up.sql', import.meta.url)), 'utf8'))
-  db.exec(readFileSync(fileURLToPath(new URL('../migrations/0101_asset_level_rejection.up.sql', import.meta.url)), 'utf8'))
+  migrateAll(db)
   let ref: CampaignRef = {
     campaignId: 'c1', name: 'Swisse spring', source: 'api', advertiserId: 'swisse', advertiserName: 'Swisse',
     partnerId: 'p1', partnerName: 'Google DSP', activation: { enabled: false }, assetVersion: 'v1',

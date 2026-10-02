@@ -42,7 +42,7 @@ export const sqlitePlaybackSource = (db: Db): PlaybackSource => ({
        this way, 0.6 s as a join, 17 s as rows into JavaScript. */
     const r = prepared(db,
       `SELECT COUNT(*) AS plays, COALESCE(SUM(duration_sec), 0) AS played_sec,
-              COALESCE(SUM(tier = 'personalised'), 0) AS p_plays,
+              COALESCE(SUM(CASE WHEN tier = 'personalised' THEN 1 ELSE 0 END), 0) AS p_plays,
               COALESCE(SUM(CASE WHEN tier = 'personalised' THEN duration_sec END), 0) AS p_sec
          FROM plays
         WHERE campaign_id = ? AND played_at >= ? AND played_at < ?

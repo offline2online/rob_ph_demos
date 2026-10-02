@@ -560,7 +560,7 @@ describe('Run 2 — H. Scheduling, concurrency & billing faults', () => {
   it('H5 — a claim left unfinished for 15 minutes is taken over; a fresher claim is left alone', async () => {
     const h = await harness()
     h.setNow(cutoffOf(day(0)))
-    const claim = (ageMin: number) => prepared(h.ctx.db, "INSERT OR REPLACE INTO auction_runs (window_start, claimed_at, claimed_by, finished_at) VALUES (?, ?, 'other-host:1', NULL)")
+    const claim = (ageMin: number) => prepared(h.ctx.db, "INSERT INTO auction_runs (window_start, claimed_at, claimed_by, finished_at) VALUES (?, ?, 'other-host:1', NULL) ON CONFLICT (window_start) DO UPDATE SET claimed_at = excluded.claimed_at, claimed_by = excluded.claimed_by, finished_at = excluded.finished_at")
       .run(day(0).toISOString(), new Date(cutoffOf(day(0)).getTime() - ageMin * 60_000).toISOString())
     claim(14)
     expect((await tick(h)).logs.filter((l) => l.startsWith('Auction cleared'))).toHaveLength(0)

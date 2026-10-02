@@ -327,7 +327,7 @@ describe('the scheduled tick', () => {
   it('takes over a claim left unfinished for 15 minutes, and leaves a fresher one alone', async () => {
     let t = AT_CUTOFF
     const { ctx, tick, claims } = await setup(() => t)
-    const claim = (ageMin: number) => prepared(ctx.db, "INSERT OR REPLACE INTO auction_runs (window_start, claimed_at, claimed_by, finished_at) VALUES (?, ?, 'other-host:1', NULL)")
+    const claim = (ageMin: number) => prepared(ctx.db, "INSERT INTO auction_runs (window_start, claimed_at, claimed_by, finished_at) VALUES (?, ?, 'other-host:1', NULL) ON CONFLICT (window_start) DO UPDATE SET claimed_at = excluded.claimed_at, claimed_by = excluded.claimed_by, finished_at = excluded.finished_at")
       .run(W1.toISOString(), new Date(t.getTime() - ageMin * 60_000).toISOString())
     claim(14)
     expect((await tick()).logs.filter((l) => l.startsWith('Auction cleared'))).toHaveLength(0)

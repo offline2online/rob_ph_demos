@@ -70,7 +70,14 @@ export const fromJson = <T>(v: unknown, fallback: T): T => (typeof v === 'string
 /* True when a write failed on a UNIQUE constraint — how a second writer
    learns it lost a race the database settled (e.g. migration 0021's "one
    live winner per position and window"). */
-export const isUniqueViolation = (e: unknown) => e instanceof Error && /UNIQUE constraint failed/.test(e.message)
+export const isUniqueViolation = (e: unknown) => {
+  if (!(e instanceof Error)) return false
+  /* SQLite (node:sqlite) says so in the message; Postgres (node-postgres)
+     sets SQLSTATE 23505 on .code and says "duplicate key value violates
+     unique constraint" (ticket gAi2mkcm43uW6hrchOjh). */
+  if ((e as { code?: unknown }).code === '23505') return true
+  return /UNIQUE constraint failed|duplicate key value violates unique constraint/.test(e.message)
+}
 
 /* Run fn inside a transaction; rolls back on throw. 'IMMEDIATE' takes the
    write lock before fn runs, so two processes doing the same

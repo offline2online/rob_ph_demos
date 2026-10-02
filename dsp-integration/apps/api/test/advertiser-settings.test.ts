@@ -155,7 +155,7 @@ describe('Advertiser settings (spec §4, §6)', () => {
     expect((await saveZones(three)).statusCode).toBe(200)
     expect((await saveSlots(['z1', 'z2', 'z3'])).statusCode).toBe(200)
     /* Scored, so the positions are sellable (an unscored slot is not exposed). */
-    for (let s = 1; s <= 6; s++) ctx.db.prepare('INSERT OR IGNORE INTO audience_vacd (display_type_id, slot, assumed_views_per_window, counted) VALUES (?, ?, ?, 0)').run('menu_board', s, 500)
+    for (let s = 1; s <= 6; s++) ctx.db.prepare('INSERT INTO audience_vacd (display_type_id, slot, assumed_views_per_window, counted) VALUES (?, ?, ?, 0) ON CONFLICT DO NOTHING').run('menu_board', s, 500)
     /* slot is the flat position across all three zones (1-6); zoneSlot
        resets to 1 at the start of each zone's own segment — this is what
        Available Inventory's Slot column actually displays (ticket, 28 Sep

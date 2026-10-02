@@ -95,11 +95,11 @@ export function sqliteReservationRepo(db: Db): ReservationRepo {
       return get(id)
     },
     /* created_at is the wall clock to the millisecond, so two bids can share
-       it; rowid then keeps them in the order they arrived. Ordering by id (a
+       it; seq (migration 0037) then keeps them in the order they arrived. Ordering by id (a
        random token) made "equal bids: the one placed first wins" a coin toss
        whenever both landed in the same millisecond. */
     forWindow: (positionId, windowStart) =>
-      (prepared(db, 'SELECT * FROM reservations WHERE position_id = ? AND window_start = ? ORDER BY created_at, rowid').all(positionId, windowStart) as unknown as Row[]).map(toRecord),
+      (prepared(db, 'SELECT * FROM reservations WHERE position_id = ? AND window_start = ? ORDER BY created_at, seq').all(positionId, windowStart) as unknown as Row[]).map(toRecord),
     inRange: (positionId, from, to) =>
       (prepared(db, 'SELECT * FROM reservations WHERE position_id = ? AND window_start >= ? AND window_start < ? ORDER BY window_start').all(positionId, from, to) as unknown as Row[]).map(toRecord),
     byStatus(status, from = '0000', to = '9999') {

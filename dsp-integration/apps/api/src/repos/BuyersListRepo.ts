@@ -33,7 +33,7 @@ export function sqliteBuyersListRepo(db: Db): BuyersListRepo {
   })
   const row = (id: string) => prepared(db, 'SELECT * FROM buyers_lists WHERE id = ?').get(id) as Row | undefined
   return {
-    list: () => (prepared(db, 'SELECT * FROM buyers_lists ORDER BY rowid').all() as unknown as Row[]).map(toRecord),
+    list: () => (prepared(db, 'SELECT * FROM buyers_lists ORDER BY seq').all() as unknown as Row[]).map(toRecord),
     get: (id) => {
       const r = row(id)
       return r ? toRecord(r) : null

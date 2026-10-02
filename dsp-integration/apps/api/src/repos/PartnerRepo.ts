@@ -73,7 +73,7 @@ export function sqlitePartnerRepo(db: Db, secrets: SecretsStore): PartnerRepo {
   }
   const row = (id: string) => prepared(db, 'SELECT * FROM partners WHERE id = ?').get(id) as Row | undefined
   return {
-    list: () => (prepared(db, 'SELECT * FROM partners ORDER BY rowid').all() as unknown as Row[]).map(toRecord),
+    list: () => (prepared(db, 'SELECT * FROM partners ORDER BY seq').all() as unknown as Row[]).map(toRecord),
     get: (id) => {
       const r = row(id)
       return r ? toRecord(r) : null

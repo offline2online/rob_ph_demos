@@ -37,7 +37,7 @@ export function approvalStore(db: SqlDb) {
   return {
     /* The row for the campaign's most recent version with a decision trail. */
     latest(campaignId: string): ApprovalRow | null {
-      const r = stmt('SELECT * FROM campaign_approvals WHERE campaign_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1').get(campaignId) as Raw | undefined
+      const r = stmt('SELECT * FROM campaign_approvals WHERE campaign_id = ? ORDER BY created_at DESC, seq DESC LIMIT 1').get(campaignId) as Raw | undefined
       return r ? toRow(r) : null
     },
     get(campaignId: string, assetVersion: string): ApprovalRow | null {
@@ -50,12 +50,12 @@ export function approvalStore(db: SqlDb) {
        while a later edit awaits review, and the one an approval of that
        edit replaces in the same write. On the eligibility hot path. */
     liveVersion(campaignId: string): string | null {
-      const r = stmt("SELECT asset_version FROM campaign_approvals WHERE campaign_id = ? AND status = 'approved' ORDER BY created_at DESC, rowid DESC LIMIT 1").get(campaignId) as { asset_version: string } | undefined
+      const r = stmt("SELECT asset_version FROM campaign_approvals WHERE campaign_id = ? AND status = 'approved' ORDER BY created_at DESC, seq DESC LIMIT 1").get(campaignId) as { asset_version: string } | undefined
       return r?.asset_version ?? null
     },
     /* Every row of the campaign, oldest first (same order as latest()). */
     rows(campaignId: string): ApprovalRow[] {
-      return (stmt('SELECT * FROM campaign_approvals WHERE campaign_id = ? ORDER BY created_at, rowid').all(campaignId) as Raw[]).map(toRow)
+      return (stmt('SELECT * FROM campaign_approvals WHERE campaign_id = ? ORDER BY created_at, seq').all(campaignId) as Raw[]).map(toRow)
     },
     /* A discarded edit's row (Q38). Its decision stays in the audit log. */
     remove(campaignId: string, assetVersion: string) {
@@ -74,7 +74,7 @@ export function approvalStore(db: SqlDb) {
         .run(randomUUID(), campaignId, assetVersion, action, actor, reason, assetReasons?.length ? JSON.stringify(assetReasons) : null, at)
     },
     auditTrail(campaignId: string): AuditEntry[] {
-      return (stmt('SELECT * FROM campaign_approval_audit WHERE campaign_id = ? ORDER BY at, rowid').all(campaignId) as { at: string; action: AuditAction; actor: string | null; reason: string | null; asset_version: string; asset_reasons: string | null }[])
+      return (stmt('SELECT * FROM campaign_approval_audit WHERE campaign_id = ? ORDER BY at, seq').all(campaignId) as { at: string; action: AuditAction; actor: string | null; reason: string | null; asset_version: string; asset_reasons: string | null }[])
         .map((a) => ({ at: a.at, action: a.action, by: a.actor, reason: a.reason, assetVersion: a.asset_version, ...(a.asset_reasons ? { assetReasons: JSON.parse(a.asset_reasons) } : {}) }))
     },
     /* Safe reuse (spec §3): record that a human (never auto-approve) has

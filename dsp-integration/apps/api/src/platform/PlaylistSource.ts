@@ -41,7 +41,7 @@ export function sqlitePlaylistSource(db: Db): PlaylistSource {
     return r ? toRecord(r) : null
   }
   return {
-    list: () => (prepared(db, 'SELECT * FROM playlists ORDER BY rowid').all() as unknown as Row[]).map(toRecord),
+    list: () => (prepared(db, 'SELECT * FROM playlists ORDER BY seq').all() as unknown as Row[]).map(toRecord),
     get,
     create(p) {
       prepared(db, 'INSERT INTO playlists (id, name, auto_created_for, schedule, items, playlist_settings) VALUES (?, ?, ?, ?, ?, ?)').run(

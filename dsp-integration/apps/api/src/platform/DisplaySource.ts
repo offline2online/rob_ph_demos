@@ -45,8 +45,8 @@ export const sqliteDisplaySource = (db: Db): DisplaySource => {
     return snap.byType
   }
   return {
-    list: () => (prepared(db, `${SELECT} ORDER BY d.rowid`).all() as unknown as Row[]).map(toRecord),
-    listByDisplayType: (id) => (prepared(db, `${SELECT} WHERE d.display_type_id = ? ORDER BY d.rowid`).all(id) as unknown as Row[]).map(toRecord),
+    list: () => (prepared(db, `${SELECT} ORDER BY d.seq`).all() as unknown as Row[]).map(toRecord),
+    listByDisplayType: (id) => (prepared(db, `${SELECT} WHERE d.display_type_id = ? ORDER BY d.seq`).all(id) as unknown as Row[]).map(toRecord),
     summaryByDisplayType: (id) => summaries().get(id) ?? NONE,
     storeIdsByDisplayType: (id) =>
       (prepared(db, 'SELECT DISTINCT store_id FROM displays WHERE display_type_id = ? AND store_id IS NOT NULL').all(id) as unknown as { store_id: string }[]).map((r) => r.store_id),
