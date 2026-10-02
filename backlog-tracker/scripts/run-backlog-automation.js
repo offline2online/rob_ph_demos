@@ -219,6 +219,32 @@ async function putProjectDoc(projectId, kind, fields) {
   if (!res.ok) throw new Error(`PATCH projects/${projectId}/docs/${kind} failed: ${res.status} ${await res.text()}`);
 }
 
+// projectDocs/{id}: the Docs page's "Additional documents". One with a
+// `sourcePath` mirrors a repo file (see syncMirroredDocs in docs-sync-lib.js).
+async function listProjectDocsFor(projectId) {
+  const rows = await runQuery({
+    from: [{ collectionId: "projectDocs" }],
+    where: { fieldFilter: { field: { fieldPath: "projectId" }, op: "EQUAL", value: { stringValue: projectId } } },
+  });
+  return rows.map((r) => ({ id: r.id, name: r.name, sourcePath: r.sourcePath, sourceSlices: r.sourceSlices, sourcePrefix: r.sourcePrefix }));
+}
+
+async function getProjectDocById(docId) {
+  const res = await fetch(`${FIRESTORE_BASE}/projectDocs/${docId}`, { headers: await firestoreHeaders() });
+  if (!res.ok) throw new Error(`GET projectDocs/${docId} failed: ${res.status} ${await res.text()}`);
+  return fdoc((await res.json()).fields);
+}
+
+async function patchProjectDocFields(docId, fields) {
+  const fieldPaths = Object.keys(fields).map((k) => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
+  const res = await fetch(`${FIRESTORE_BASE}/projectDocs/${docId}?${fieldPaths}&currentDocument.exists=true`, {
+    method: "PATCH",
+    headers: await firestoreHeaders(),
+    body: JSON.stringify({ fields: Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, tv(v)])) }),
+  });
+  if (!res.ok) throw new Error(`PATCH projectDocs/${docId} failed: ${res.status} ${await res.text()}`);
+}
+
 async function itemsForProject(projectId) {
   return runQuery({
     from: [{ collectionId: "backlogItems" }],
@@ -2153,6 +2179,55 @@ const TRAIN_CI_POLL_MS = 15000;
 // (state) — so both are handled; an empty rollup is "none" (this repo runs
 // no pull_request-triggered workflows today, so that is the normal case)
 // and is treated as nothing to wait for, not as a failure.
+// Checks a train PR must have PASSED before it merges (bPcnbXZNC4vFnhft8AMz,
+// Rob 2 Oct 2026: e2e-quick genuinely blocks; no bot bypass). Before this,
+// an empty rollup ("none") read as "not pending" and the train merged ~2 s
+// after the PR opened, before any check had even registered — PR #293's
+// e2e-quick then failed with 0 jobs because its PR was already merged.
+const REQUIRED_TRAIN_CHECKS = ["e2e-quick"];
+
+// rollupState() over everything reported, plus: every required check must be
+// present and successful. A required check not reported yet is "pending"
+// (keep waiting; the caller leaves trainReady set so the next scheduled run
+// resumes) — never "success".
+function trainChecksState(rollup, required = REQUIRED_TRAIN_CHECKS) {
+  const all = rollupState(rollup);
+  if (all === "failure") return "failure";
+  const list = Array.isArray(rollup) ? rollup : [];
+  for (const name of required) {
+    const mine = list.filter((c) => (c.name || c.context) === name);
+    if (!mine.length) return "pending";
+    const verdict = rollupState(mine);
+    if (verdict !== "success") return verdict;
+  }
+  return all === "none" ? "success" : all;
+}
+
+// GitHub holds a workflow run on a bot-opened PR as `action_required` until
+// someone approves it, and a held run reports no check at all — so the
+// required e2e-quick would never appear and the train would wait forever
+// (PR #295, 2 Oct 2026; the same hold is why every earlier train PR's
+// e2e-quick "failed with 0 jobs" once the PR had already merged). This
+// workflow has `actions: write`, so it approves the held runs on its own
+// train PR's head commit: the train's content is already on the
+// integration branch, built and tested there by the push-triggered run.
+// Never throws; a failure just leaves the check pending and is logged.
+function approveHeldRuns(headSha) {
+  if (!headSha) return 0;
+  let approved = 0;
+  try {
+    const ids = JSON.parse(run("gh", ["api", `repos/${REPO}/actions/runs?head_sha=${headSha}&status=action_required&per_page=20`, "-q", "[.workflow_runs[].id]"]) || "[]");
+    for (const id of ids) {
+      try { run("gh", ["api", "-X", "POST", `repos/${REPO}/actions/runs/${id}/approve`]); approved++; }
+      catch (err) { console.log(`[deploy-train] couldn't approve held run ${id}: ${scrubSecrets(err.message)}`); }
+    }
+  } catch (err) {
+    console.log(`[deploy-train] couldn't list held runs for ${String(headSha).slice(0, 7)}: ${scrubSecrets(err.message)}`);
+  }
+  if (approved) console.log(`[deploy-train] approved ${approved} held workflow run(s) on ${String(headSha).slice(0, 7)}`);
+  return approved;
+}
+
 function rollupState(rollup) {
   if (!Array.isArray(rollup) || rollup.length === 0) return "none";
   let pending = false;
@@ -2168,7 +2243,7 @@ function rollupState(rollup) {
 
 function viewTrainPr(prNumber) {
   const json = run("gh", ["pr", "view", String(prNumber), "--repo", REPO,
-    "--json", "number,state,url,mergeable,statusCheckRollup,files"]);
+    "--json", "number,state,url,mergeable,statusCheckRollup,files,headRefOid"]);
   return JSON.parse(json);
 }
 
@@ -2191,6 +2266,9 @@ async function syncDocsAfterMerge(project, mergeCommit) {
       patchProject: (fields) => patchProject(project.id, fields),
       putDoc: (kind, fields) => putProjectDoc(project.id, kind, fields),
       getDoc: (kind) => getProjectDoc(project.id, kind),
+      listProjectDocs: () => listProjectDocsFor(project.id),
+      putProjectDocContent: (docId, fields) => patchProjectDocFields(docId, fields),
+      getProjectDocContent: (docId) => getProjectDocById(docId),
       now: () => new Date(),
     });
     if (result.skipped) console.log(`[docs-sync] ${project.id}: skipped — ${result.skipped}`);
@@ -2520,11 +2598,13 @@ async function processDeployTrain(project) {
   for (let poll = 0; poll < TRAIN_CI_POLLS; poll++) {
     pr = viewTrainPr(prNumber);
     if (pr.state === "MERGED") break;
-    const checks = rollupState(pr.statusCheckRollup);
+    approveHeldRuns(pr.headRefOid);
+    const checks = trainChecksState(pr.statusCheckRollup);
     if (checks === "failure") {
+      const red = (pr.statusCheckRollup || []).filter((c) => !["SUCCESS", "NEUTRAL", "SKIPPED", ""].includes(String(c.conclusion || c.state || "").toUpperCase()) && String(c.status || "COMPLETED").toUpperCase() === "COMPLETED");
       await patchProject(project.id, {
         trainReady: false, trainStatus: "conflict",
-        trainNote: `Not merged: CI is red on the train PR #${prNumber}. Fix it (or send the ticket that broke it back with Failed testing), then click Deploy to Main again.`,
+        trainNote: `Not merged: CI is red on the train PR #${prNumber}${red.length ? ` (${red.map((c) => `${c.name || c.context}${c.detailsUrl || c.targetUrl ? ` ${c.detailsUrl || c.targetUrl}` : ""}`).join(", ")})` : ""}. Fix it (or send the ticket that broke it back with Failed testing), then click Deploy to Main again.`,
         updatedAt: new Date().toISOString(),
       });
       console.log(`[deploy-train] ${project.id}: CI red on PR #${prNumber} — not merging`);
@@ -2545,13 +2625,13 @@ async function processDeployTrain(project) {
   // An already-MERGED PR is never waiting on anything — a check still
   // running on it must not send this back round the loop and leave the
   // train's cards un-flipped.
-  if (pr && pr.state !== "MERGED" && rollupState(pr.statusCheckRollup) === "pending") {
+  if (pr && pr.state !== "MERGED" && trainChecksState(pr.statusCheckRollup) === "pending") {
     // Leave trainReady set: the next scheduled run picks the wait back up
     // rather than needing another click.
     console.log(`[deploy-train] ${project.id}: PR #${prNumber}'s checks are still running — will retry on the next run`);
     await patchProject(project.id, {
       trainStatus: "deploying",
-      trainNote: `Waiting on CI for PR #${prNumber}.`,
+      trainNote: `Waiting on CI for PR #${prNumber} (${REQUIRED_TRAIN_CHECKS.join(", ")} must pass before it merges).`,
       updatedAt: new Date().toISOString(),
     });
     return;
@@ -3212,4 +3292,6 @@ module.exports = {
   syncTrainWithMain, rebasePatchFilesOnto,
   // test/docs-sync.test.js
   syncDocsAfterMerge,
+  // test/train-checks.test.js — a train merges only once e2e-quick passed
+  trainChecksState, rollupState, REQUIRED_TRAIN_CHECKS, approveHeldRuns,
 };

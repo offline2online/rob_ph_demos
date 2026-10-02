@@ -5,6 +5,7 @@
      npm run board:tickets -- --from backlog --to published-live --yes
      npm run board:tickets -- --ticket <id> --preview <url> --to ready-for-testing --yes
      npm run board:tickets -- --ticket <id> --deploy-commit <sha> --yes
+     npm run board:tickets -- --tickets "<id>:ready-for-testing@<sha>, <id>:ready-to-publish" --yes   # several at once
      npm run board:tickets -- --deploy-branch deploy/dsp-integration --yes
      npm run board:tickets -- --relink-prototype <sha> --branch deploy/dsp-integration --yes
      npm run board:tickets -- --project <id> --ticket <id> --to ready-to-publish --yes
@@ -41,6 +42,7 @@
 
    Needs BOARD_API_KEY (the board automation user's password) in .env. */
 import { readFileSync } from 'node:fs'
+import { parseTicketBatch } from './lib/ticket-batch.mjs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -288,6 +290,59 @@ if (relinkSha) {
     console.log(`\nRe-pointed ${changes.length} — verified.`)
   }
   if (!value('--from') && !value('--to') && !value('--ticket')) process.exit(0)
+}
+
+/* ------------------------------------------------- several tickets, one run */
+
+/* --tickets "id[:status][@sha], …" (yiieGT0gynTXo0o8F4O8): applied in order,
+   each read back. Use it whenever more than one card changes: separate
+   dsp-board.yml runs share a concurrency group, and GitHub cancels all but
+   the newest pending run in a group, so a burst of single-ticket dispatches
+   silently loses the ones in the middle (runs 74-76, 2 Oct 2026). */
+const batch = value('--tickets')
+if (batch !== undefined) {
+  const { entries, errors } = parseTicketBatch(batch, STATUSES)
+  for (const e of entries) {
+    if (!all.some((t) => t.id === e.id)) errors.push(`${e.id}: no such ticket on this project`)
+  }
+  if (errors.length) {
+    console.error(`\nNot written — fix these first:\n  ${errors.join('\n  ')}`)
+    process.exit(2)
+  }
+  for (const e of entries) {
+    const t = all.find((x) => x.id === e.id)
+    console.log(`\n${t.title}`)
+    if (e.to) console.log(`  status   ${STATUSES[t.status]} → ${STATUSES[e.to]}`)
+    if (e.deployCommit) console.log(`  commit   ${t.deployCommit ?? '(none)'} → ${e.deployCommit}`)
+  }
+  if (!flag('--yes')) {
+    console.log('\nDry run: nothing written. Add --yes.')
+    process.exit(0)
+  }
+  const failed = []
+  for (const e of entries) {
+    const fields = { updatedAt: { timestampValue: new Date().toISOString() } }
+    const mask = ['updateMask.fieldPaths=updatedAt']
+    if (e.to) { fields.status = { stringValue: e.to }; mask.push('updateMask.fieldPaths=status') }
+    if (e.deployCommit) { fields.deployCommit = { stringValue: e.deployCommit }; mask.push('updateMask.fieldPaths=deployCommit') }
+    const res = await fetch(`${BOARD}/backlogItems/${e.id}?${mask.join('&')}`, {
+      method: 'PATCH', headers: { ...AUTH, 'Content-Type': 'application/json' }, body: JSON.stringify({ fields }),
+    })
+    if (!res.ok) { failed.push(`${e.id}: write refused (${res.status}) ${(await res.text()).slice(0, 200)}`); continue }
+    if (e.to === 'ready-to-publish') await lockTrain()
+  }
+  const after = await tickets()
+  for (const e of entries) {
+    const a = after.find((x) => x.id === e.id)
+    if (e.to && a?.status !== e.to) failed.push(`${e.id}: status did not land`)
+    if (e.deployCommit && a?.deployCommit !== e.deployCommit) failed.push(`${e.id}: deployCommit did not land`)
+  }
+  if (failed.length) {
+    console.error(`\n${failed.length} problem(s):\n  ${[...new Set(failed)].join('\n  ')}`)
+    process.exit(1)
+  }
+  console.log(`\n${entries.length} ticket(s) written — verified.`)
+  process.exit(0)
 }
 
 /* ------------------------------------------------------------ moving tickets */

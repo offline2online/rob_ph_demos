@@ -262,7 +262,15 @@ What the train changes:
 - **Deploy** (`processDeployTrain`, triggered by `projects/{id}.trainReady`)
   — merge `main` in, bump `APP_VERSION` once, open ONE PR
   (`Deploy <project> — N tickets`, body listing every `Backlog item:`
-  line), wait for CI, `gh pr merge --merge` (never squash — the per-ticket
+  line), wait for CI — **`e2e-quick` must have reported and passed on the
+  PR head** (`REQUIRED_TRAIN_CHECKS`; a check not reported yet is still
+  pending, never green — before 2 Oct 2026 an empty or WIP-only rollup
+  read as green and every train merged seconds after its PR opened, before
+  e2e-quick had even started; bPcnbXZNC4vFnhft8AMz). GitHub holds a
+  workflow run on a bot-opened PR as `action_required` and reports no check
+  for it, so the poll first approves any held runs on the PR's head commit
+  (`approveHeldRuns`; this workflow has `actions: write`) — then
+  `gh pr merge --merge` (never squash — the per-ticket
   commits are the history now), flip every ticket to `published-live`,
   trigger the Firebase deploy, then reset the branch to `main` for the
   next train. Progress and every non-merge outcome land on the project as

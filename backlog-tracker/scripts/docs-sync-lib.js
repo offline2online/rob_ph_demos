@@ -64,6 +64,69 @@ async function skip(project, mergeCommit, io, reason) {
   return result;
 }
 
+// projectDocs (the "Additional documents" on a project's Docs page) may carry
+// an optional `sourcePath` (repo-root-relative): the repo file the document
+// mirrors. After a merge each is rewritten from that file at the merge commit
+// and read back byte for byte, like Requirements/README. A refusal on one
+// (e.g. over the editor cap) is collected, not thrown, so it neither blocks
+// the others nor the Requirements/README result. Needs io.listProjectDocs,
+// io.putProjectDocContent and io.getProjectDocContent; absent = no-op.
+// A board document capped below its repo file mirrors part of it
+// (taUi7jWIwhCvfeDDUURl: "Boundaries with PH Core" is three board docs).
+// d.sourceSlices = [{ start, end }]: `start` is a line of the file, matched
+// exactly after trimming, taken inclusive; `end` is the line the slice stops
+// before (omitted = to the end of the file; start omitted = from the top).
+// Headings, never line numbers, so an edit above a slice doesn't shift it.
+// d.sourcePrefix, if set, is prepended verbatim. Throws when a marker is
+// missing, so a renamed heading is reported instead of mirroring nothing.
+function mirrorText(content, d) {
+  const slices = Array.isArray(d.sourceSlices) ? d.sourceSlices : [];
+  let body = content;
+  if (slices.length) {
+    const lines = content.split("\n");
+    const find = (marker, from) => {
+      const i = lines.findIndex((l, n) => n >= from && l.trim() === String(marker).trim());
+      if (i < 0) throw new Error(`slice marker not found: "${String(marker).slice(0, 80)}"`);
+      return i;
+    };
+    body = slices.map((sl) => {
+      const a = sl && sl.start ? find(sl.start, 0) : 0;
+      const b = sl && sl.end ? find(sl.end, a + 1) : lines.length;
+      return lines.slice(a, b).join("\n").replace(/\n+$/, "");
+    }).join("\n\n") + "\n";
+  }
+  return (d.sourcePrefix ? String(d.sourcePrefix) : "") + body;
+}
+
+async function syncMirroredDocs(project, mergeCommit, io, now) {
+  const out = { synced: [], errors: [] };
+  if (typeof io.listProjectDocs !== "function") return out;
+  let docs;
+  try { docs = await io.listProjectDocs(); } catch (err) { out.errors.push(`could not list project documents (${String(err && err.message || err).slice(0, 200)})`); return out; }
+  for (const d of docs || []) {
+    const sp = String(d.sourcePath || "").trim().replace(/^\/+/, "");
+    if (!sp) continue;
+    const label = `"${d.name || d.id}" ← ${sp}`;
+    if (sp.includes("..")) { out.errors.push(`${label}: sourcePath must stay inside the repo`); continue; }
+    let content = null;
+    try { content = io.readFile(sp); } catch { content = null; }
+    if (typeof content !== "string") { out.errors.push(`${label}: file not found at ${String(mergeCommit).slice(0, 7)}`); continue; }
+    try {
+      content = mirrorText(content, d);
+    } catch (err) { out.errors.push(`${label}: ${String(err && err.message || err).slice(0, 200)}`); continue; }
+    try {
+      const sourceCommit = io.lastCommitFor(sp) || mergeCommit;
+      await io.putProjectDocContent(d.id, { contentMd: content, updatedAt: now, sourceCommit });
+      const after = await io.getProjectDocContent(d.id);
+      if (!after || (after.contentMd || "") !== content) throw new Error("wrote, but the board's copy does not match byte for byte");
+      out.synced.push(`${d.id}@${String(sourceCommit).slice(0, 7)}`);
+    } catch (err) {
+      out.errors.push(`${label}: ${String(err && err.message || err).slice(0, 200)}`);
+    }
+  }
+  return out;
+}
+
 // io: { readFile(path) -> string|null, lastCommitFor(path) -> sha|null,
 //       getProject() -> project doc, patchProject(fields) -> Promise,
 //       putDoc(kind, fields) -> Promise  (writes projects/{id}/docs/{kind}),
@@ -115,7 +178,14 @@ async function syncProjectDocs(project, mergeCommit, io) {
       const hit = found.find((f) => f.kind === d.kind);
       docsSync[d.commitKey] = hit ? hit.sourceCommit : (prev[d.commitKey] || null);
     }
+    const mirrors = await syncMirroredDocs(project, mergeCommit, io, now);
+    if (mirrors.errors.length) {
+      const error = `Docs sync at ${String(mergeCommit).slice(0, 7)}: ${mirrors.errors.join("; ")}`.slice(0, 900);
+      Object.assign(docsSync, { error, errorAt: now, attemptedCommit: mergeCommit });
+    }
+    if (mirrors.synced.length) docsSync.mirroredDocs = mirrors.synced;
     await io.patchProject({ docsSync, lastMergeCommit: mergeCommit, lastMergeAt: now });
+    if (mirrors.errors.length) return { ok: false, error: docsSync.error };
     return { ok: true, docsSync };
   } catch (err) {
     const error = `Docs sync at ${String(mergeCommit).slice(0, 7)} failed: ${String(err && err.message || err).slice(0, 600)}`;
@@ -129,4 +199,4 @@ async function syncProjectDocs(project, mergeCommit, io) {
   }
 }
 
-module.exports = { syncProjectDocs, docCandidates, cleanFolder, resolveRepoFolder, DOCS };
+module.exports = { syncProjectDocs, mirrorText, docCandidates, cleanFolder, resolveRepoFolder, DOCS };

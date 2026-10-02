@@ -29,6 +29,10 @@ on:
         description: "Set the project's deployBranch (e.g. deploy/dsp-integration). Blank = leave it."
         type: string
         default: ''
+      tickets:
+        description: "Several tickets in ONE run: 'id[:status][@sha]' separated by commas, e.g. 'abc:ready-for-testing@0f0c6c0, def:ready-to-publish'. Use this, not repeated single-ticket runs, when moving more than one card."
+        required: false
+        default: ''
       ticket:
         description: 'Ticket id to move (blank = move nothing)'
         type: string
@@ -60,7 +64,10 @@ on:
         default: ''
 
 # One at a time: two runs writing the same fields would race, and the later
-# writer would silently win.
+# writer would silently win. Note GitHub keeps only ONE pending run per
+# concurrency group and cancels older pending ones (runs 74-76, 2 Oct 2026:
+# the middle of three quick dispatches was dropped) — so move several cards
+# with the `tickets` input in one run, never with a burst of dispatches.
 concurrency:
   group: dsp-board
   cancel-in-progress: false
@@ -104,6 +111,17 @@ jobs:
             ${{ inputs.preview != '' && format('--preview "{0}"', inputs.preview) || '' }} \
             ${{ inputs.deploy_commit != '' && format('--deploy-commit "{0}"', inputs.deploy_commit) || '' }} \
             --yes
+
+      - name: Move several tickets
+        if: inputs.tickets != ''
+        working-directory: dsp-integration
+        env:
+          BOARD_API_KEY: ${{ secrets.BOARD_API_KEY }}
+          TICKETS: ${{ inputs.tickets }}
+        run: |
+          node scripts/board-tickets.mjs \
+            ${{ inputs.project != '' && format('--project "{0}"', inputs.project) || '' }} \
+            --tickets "$TICKETS" --yes
 
       - name: Mark the train ready to merge
         if: inputs.train_ready == true

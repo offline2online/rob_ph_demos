@@ -845,6 +845,8 @@ For this project that is `.github/workflows/dsp-board.yml`:
 gh workflow run dsp-board.yml -f docs=sync
 gh workflow run dsp-board.yml -f ticket=<id> -f to=ready-for-testing -f preview=<url>
 gh workflow run dsp-board.yml -f deploy_branch=deploy/dsp-integration
+# several cards in ONE run (a burst of single-ticket runs loses all but the newest pending one)
+gh workflow run dsp-board.yml -f project=<id> -f tickets="<id>:ready-for-testing@<sha>, <id>:ready-to-publish" -f docs=skip
 # start a build for one Backlog ticket (the Notify Claude click, from a runner) — any project via -f project=<id>
 gh workflow run dsp-board.yml -f project=oTcLAbnhUUO2S7NkbsuV -f notify=<ticket id> -f docs=skip
 gh run watch "$(gh run list --workflow=dsp-board.yml --limit 1 --json databaseId -q '.[0].databaseId')"
