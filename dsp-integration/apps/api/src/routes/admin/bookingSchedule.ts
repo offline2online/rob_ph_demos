@@ -39,8 +39,8 @@ type Layers = Booking['layers']
 type Triggers = Booking['personalisedTriggers']
 type TargetedVersion = NonNullable<StoredTargeting['targeted']>[number]
 
-const targetedOf = (ctx: Context, campaignId: string | null): TargetedVersion[] =>
-  (ctx.campaigns.getCampaign(campaignId ?? '')?.targeting as StoredTargeting | null)?.targeted ?? []
+const targetedOf = async (ctx: Context, campaignId: string | null): Promise<TargetedVersion[]> =>
+  ((await ctx.campaigns.getCampaign(campaignId ?? ''))?.targeting as StoredTargeting | null)?.targeted ?? []
 
 /* Which of the three layers this booking's campaign actually carries:
    whichever layer is currently won/reserved for this window, plus any
@@ -77,42 +77,46 @@ function triggersOf(targeted: TargetedVersion[], hasPersonalised: boolean): Trig
   return triggers
 }
 
-export function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleFilter = {}): BookingSchedule {
-  const len = shortestWindowMs(ctx)
-  const partners = ctx.partners.list()
+export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleFilter = {}): Promise<BookingSchedule> {
+  const len = await shortestWindowMs(ctx)
+  const partners = await ctx.partners.list()
   /* Advertiser names come from the DSPs' seats, keyed by their slug. */
   const advertiserName = new Map(partners.flatMap((p) => p.seats.map((s) => [advertiserSlug(s.name), s.name] as const)))
-  const billed = new Map(lineItems(ctx).map((l) => [l.reservationId, l.amount]))
+  const billed = new Map((await lineItems(ctx)).map((l) => [l.reservationId, l.amount]))
   const revenue = new Map<string, BookingSchedule['revenue'][number]>()
   const byType = new Map<string, BookingSchedule['byPricingType'][number]>()
 
   /* Only advertisers with something booked in this range are worth filtering
      by (Rob, 20 Sep), so the picker is built before any filter is applied. */
   const booked = new Set<string>()
-  for (const p of allPositions(ctx)) {
-    for (const start of new Set(starts.map((s) => windowStartOf(ctx, s, windowMs(ctx, p)).toISOString()))) {
-      for (const r of ctx.reservations.forWindow(p.positionId, start)) {
+  const estate = await allPositions(ctx)
+  for (const p of estate) {
+    const own = await windowMs(ctx, p)
+    for (const start of new Set(starts.map((s) => windowStartOf(s, own).toISOString()))) {
+      for (const r of await ctx.reservations.forWindow(p.positionId, start)) {
         if (!r.testMode && TAKEN.includes(r.status) && r.clearingCpm !== null && r.advertiserId) booked.add(r.advertiserId)
       }
     }
   }
 
-  const positions = allPositions(ctx).map((p) => {
-    const displayCount = ctx.displays.summaryByDisplayType(p.displayType.id).displays
+  const positions = []
+  for (const p of estate) {
+    const displayCount = (await ctx.displays.summaryByDisplayType(p.displayType.id)).displays
     const hasDisplays = displayCount > 0
-    const views = assumedViewsPerWindow(ctx, p)
+    const views = await assumedViewsPerWindow(ctx, p)
     /* Columns are the finest grid (the shortest window in the estate);
        this position's own window is its billing unit long (OQ27), so a
        column shows the window of its own that the column falls in — a
        weekly slot's booking spans its week's columns — and each of its
        windows counts once towards booked and sellable. */
-    const len = windowMs(ctx, p)
-    const firstSellable = nextWindow(ctx, len).getTime()
+    const len = await windowMs(ctx, p)
+    const firstSellable = (await nextWindow(ctx, len)).getTime()
     const counted = new Set<number>()
     const rev = revenue.get(p.displayType.id) ?? { displayTypeId: p.displayType.id, displayTypeName: p.displayType.name, bookedWindows: 0, sellableWindows: 0, bookedRevenue: 0, billedRevenue: 0 }
     revenue.set(p.displayType.id, rev)
-    const windows = starts.map((column) => {
-      const start = windowStartOf(ctx, column, len)
+    const windows = []
+    for (const column of starts) {
+      const start = windowStartOf(column, len)
       const first = !counted.has(start.getTime())
       counted.add(start.getTime())
       /* Sellable capacity ignores the advertiser/DSP filter (Rob, 22 Sep,
@@ -120,7 +124,7 @@ export function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleFilter 
          not just what one advertiser could have bought, so % sold reads
          the same whichever filter is applied. */
       if (first && hasDisplays && start.getTime() >= firstSellable) rev.sellableWindows++
-      const r = ctx.reservations.forWindow(p.positionId, start.toISOString()).find((x) => !x.testMode && TAKEN.includes(x.status) && x.clearingCpm !== null
+      const r = (await ctx.reservations.forWindow(p.positionId, start.toISOString())).find((x) => !x.testMode && TAKEN.includes(x.status) && x.clearingCpm !== null
         && (!f.campaignId || x.campaignId === f.campaignId) && (!f.advertiserId || x.advertiserId === f.advertiserId) && (!f.partnerId || x.partnerId === f.partnerId))
       if (r) {
         const bookedRevenue = round2((views / 1000) * (r.clearingCpm as number))
@@ -139,9 +143,9 @@ export function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleFilter 
            regardless of which one this particular window's reservation
            actually won — drives the tile's layers and, when personalised,
            its trigger icons. */
-        const targeted = targetedOf(ctx, r.campaignId)
+        const targeted = await targetedOf(ctx, r.campaignId)
         const layers = layersOf(targeted, r.pricingType)
-        return {
+        windows.push({
           start: column.toISOString(), status: 'booked' as const,
           booking: {
             reservationId: r.id, campaignId: r.campaignId as string, advertiserId: r.advertiserId, partnerId: r.partnerId,
@@ -149,21 +153,22 @@ export function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleFilter 
             partnerName: partners.find((x) => x.id === r.partnerId)?.name ?? r.partnerId, cpm: r.clearingCpm as number, assumedViews: views, bookedRevenue, billedRevenue: bill,
             layers, personalisedTriggers: triggersOf(targeted, layers.personalised),
           },
-        }
+        })
+        continue
       }
       const open = hasDisplays && start.getTime() >= firstSellable
-      return { start: column.toISOString(), status: open ? ('available' as const) : ('unavailable' as const), booking: null }
-    })
-    return {
-      positionId: p.positionId, displayTypeId: p.displayType.id, displayTypeName: p.displayType.name, slot: p.slot, slotLabel: p.def.label, displayCount,
-      partnerNames: (effectivePartnerIds(ctx, p.def) ?? []).map((id) => partners.find((x) => x.id === id)?.name ?? id), assignment: assignmentOf(p.def), windows,
+      windows.push({ start: column.toISOString(), status: open ? ('available' as const) : ('unavailable' as const), booking: null })
     }
-  })
+    positions.push({
+      positionId: p.positionId, displayTypeId: p.displayType.id, displayTypeName: p.displayType.name, slot: p.slot, slotLabel: p.def.label, displayCount,
+      partnerNames: ((await effectivePartnerIds(ctx, p.def)) ?? []).map((id) => partners.find((x) => x.id === id)?.name ?? id), assignment: assignmentOf(p.def), windows,
+    })
+  }
   /* One advertiser selected: only the positions it actually holds (Rob, 20 Sep). */
   const shown = f.advertiserId ? positions.filter((p) => p.windows.some((w) => w.booking?.advertiserId === f.advertiserId)) : positions
   const rows = [...revenue.values()]
   return {
-    currency: ctx.company.get().currency,
+    currency: (await ctx.company.get()).currency,
     windows: starts.map((s) => ({ start: s.toISOString(), end: new Date(s.getTime() + len).toISOString() })),
     positions: shown,
     revenue: rows,
@@ -190,20 +195,20 @@ export const bookingScheduleRoutes = (ctx: Context, guards: Guards): FastifyPlug
     /* The columns: the shortest window in the estate (OQ27 — every slot's
        window is its own billing unit), so no slot's window is finer than a
        column; bookingSchedule maps each column to each slot's own window. */
-    const len = shortestWindowMs(ctx)
+    const len = await shortestWindowMs(ctx)
     if (!from && !to) {
       /* For one campaign: every window it is booked in, however far out. */
-      const booked = campaignId ? ctx.reservations.byStatus(['won', 'reserved']).filter((r) => r.campaignId === campaignId && !r.testMode).map((r) => Date.parse(r.windowStart)) : []
-      const first = Math.min(windowStartOf(ctx, ctx.clock(), len).getTime(), ...booked)
-      const last = Math.max(windowStartOf(ctx, ctx.clock(), len).getTime() + 13 * len, ...booked)
+      const booked = campaignId ? (await ctx.reservations.byStatus(['won', 'reserved'])).filter((r) => r.campaignId === campaignId && !r.testMode).map((r) => Date.parse(r.windowStart)) : []
+      const first = Math.min(windowStartOf(ctx.clock(), len).getTime(), ...booked)
+      const last = Math.max(windowStartOf(ctx.clock(), len).getTime() + 13 * len, ...booked)
       starts = Array.from({ length: Math.floor((last - first) / len) + 1 }, (_, i) => new Date(first + i * len))
     } else {
       const a = Date.parse(`${from}T00:00:00Z`)
       const b = Date.parse(`${to}T00:00:00Z`)
-      starts = from && to && b - a <= 92 * DAY ? windowsBetween(ctx, from, to, len) : null
+      starts = from && to && b - a <= 92 * DAY ? windowsBetween(from, to, len) : null
       /* A window that started before `from` but is still running is included. */
       if (starts) {
-        const running = windowStartOf(ctx, new Date(a), len)
+        const running = windowStartOf(new Date(a), len)
         if (running.getTime() < a) starts = [running, ...starts]
       }
     }

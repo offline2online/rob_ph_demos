@@ -64,12 +64,12 @@ async function setup(clock: () => Date = () => NOW) {
     await app.inject({ method: 'POST', url: '/api/admin/v1/campaigns/c_api_swisse/approve', payload: { assetVersion: 'v1' } })
     await app.inject({ method: 'PUT', url: '/api/admin/v1/campaigns/c_api_swisse/activation', payload: { enabled: true } })
   }
-  const setSlot = (patch: Partial<Slot>) => {
-    const ext = ctx.displayTypes.get('menu_board')!.phExtensions!
-    ctx.displayTypes.saveExtensions('menu_board', { ...ext, slots: ext.slots.map((s, i) => (i === 1 ? { ...s, ...patch } : s)) })
+  const setSlot = async (patch: Partial<Slot>) => {
+    const ext = (await ctx.displayTypes.get('menu_board'))!.phExtensions!
+    await ctx.displayTypes.saveExtensions('menu_board', { ...ext, slots: ext.slots.map((s, i) => (i === 1 ? { ...s, ...patch } : s)) })
   }
-  const rows = (start = W1) => ctx.reservations.forWindow(POS, start.toISOString())
-  const status = (rs: ReturnType<typeof rows>) => rs.map((r) => `${r.channel}:${r.advertiserId}:${r.status}`).sort()
+  const rows = async (start = W1) => ctx.reservations.forWindow(POS, start.toISOString())
+  const status = (rs: Awaited<ReturnType<typeof rows>>) => rs.map((r) => `${r.channel}:${r.advertiserId}:${r.status}`).sort()
   const tick = async (c = ctx) => {
     const logs: string[] = []
     let error: string | null = null
@@ -88,7 +88,7 @@ describe('simultaneous bids and reservations for one window', () => {
     const codes = res.map((r) => r.statusCode).sort()
     expect(codes).toEqual([201, 409, 409, 409, 409, 409, 409, 409])
     for (const r of res.filter((x) => x.statusCode === 409)) expect(r.json().error.message).toBe('This advertiser already has a reservation or bid for that window.')
-    expect(rows().filter((r) => r.status === 'pending')).toHaveLength(1)
+    expect((await rows()).filter((r) => r.status === 'pending')).toHaveLength(1)
   })
 
   it('the database refuses a second open API bid for an advertiser and window even when the route’s check is bypassed', async () => {
@@ -98,12 +98,12 @@ describe('simultaneous bids and reservations for one window', () => {
       windowStart: W2.toISOString(), type: 'bid' as const, channel: 'api' as const, bidCpm: 150, currency: 'AUD', status: 'pending' as const,
       clearingCpm: null, reason: null, testMode: false, pricingType: 'localised', handedOffAt: null, ...over,
     })
-    ctx.reservations.insert(row({}))
-    expect(() => ctx.reservations.insert(row({}))).toThrow(/UNIQUE constraint failed/)
+    await ctx.reservations.insert(row({}))
+    await expect((async () => ctx.reservations.insert(row({})))()).rejects.toThrow(/UNIQUE constraint failed/)
     /* Settled rows, another advertiser, and a DSP's bids are not in the way. */
-    expect(() => ctx.reservations.insert(row({ status: 'lost' }))).not.toThrow()
-    expect(() => ctx.reservations.insert(row({ advertiserId: 'nestle', campaignId: 'c_dsp_nestle' }))).not.toThrow()
-    expect(() => ctx.reservations.insert(row({ channel: 'openrtb' }))).not.toThrow()
+    await expect((async () => ctx.reservations.insert(row({ status: 'lost' })))()).resolves.not.toThrow()
+    await expect((async () => ctx.reservations.insert(row({ advertiserId: 'nestle', campaignId: 'c_dsp_nestle' })))()).resolves.not.toThrow()
+    await expect((async () => ctx.reservations.insert(row({ channel: 'openrtb' })))()).resolves.not.toThrow()
   })
 
   it('migration 0026 keeps the earliest of an advertiser’s duplicate bids and marks the rest lost', () => {
@@ -127,8 +127,8 @@ describe('simultaneous bids and reservations for one window', () => {
     expect(codes).toEqual([201, 201, 409, 409])
     const out = await runAuction(ctx, W1)
     expect(out.positions[0].winner).toMatchObject({ advertiserId: 'swisse', clearingCpm: 200 })
-    expect(rows().find((r) => r.advertiserId === 'nestle' && r.channel === 'api')).toMatchObject({ status: 'lost', reason: 'Outbid: the window cleared at 200 AUD CPM.' })
-    expect(rows().filter((r) => r.status === 'pending')).toHaveLength(0)
+    expect((await rows()).find((r) => r.advertiserId === 'nestle' && r.channel === 'api')).toMatchObject({ status: 'lost', reason: 'Outbid: the window cleared at 200 AUD CPM.' })
+    expect((await rows()).filter((r) => r.status === 'pending')).toHaveLength(0)
   })
 
   it('equal bids: the one placed first wins, whichever order the auction read them in', async () => {
@@ -153,22 +153,22 @@ describe('simultaneous bids and reservations for one window', () => {
     try {
       vi.setSystemTime(NOW)
       /* Ids chosen so that ordering by id would put the later bid first. */
-      ctx.reservations.insert(row('res_zzzz', 'nestle'))
-      ctx.reservations.insert(row('res_aaaa', 'swisse'))
+      await ctx.reservations.insert(row('res_zzzz', 'nestle'))
+      await ctx.reservations.insert(row('res_aaaa', 'swisse'))
     } finally {
       vi.useRealTimers()
     }
-    expect(ctx.reservations.forWindow(POS, W1.toISOString()).map((r) => r.id)).toEqual(['res_zzzz', 'res_aaaa'])
+    expect((await ctx.reservations.forWindow(POS, W1.toISOString())).map((r) => r.id)).toEqual(['res_zzzz', 'res_aaaa'])
   })
 
   it('six reservations at once for a position held for one advertiser book it once', async () => {
     const { ctx, reserve, ready, setSlot, rows } = await setup()
     await ready()
-    setSlot({ listMode: null, advertisers: ['Swisse'] })
+    await setSlot({ listMode: null, advertisers: ['Swisse'] })
     const res = await Promise.all(Array.from({ length: 6 }, () => reserve({ ...SWISSE, type: 'reserve' })))
     expect(res.map((r) => r.statusCode).sort()).toEqual([201, 409, 409, 409, 409, 409])
-    expect(rows().filter((r) => r.status === 'reserved')).toHaveLength(1)
-    expect(ctx.campaigns.bookings('c_api_swisse').filter((b) => b.windowStart === W1.toISOString()).length).toBeLessThanOrEqual(1)
+    expect((await rows()).filter((r) => r.status === 'reserved')).toHaveLength(1)
+    expect((await ctx.campaigns.bookings('c_api_swisse')).filter((b) => b.windowStart === W1.toISOString()).length).toBeLessThanOrEqual(1)
   })
 })
 
@@ -182,13 +182,13 @@ describe('a bid arriving while the auction is running', () => {
     expect((await reserve(SWISSE)).statusCode).toBe(201)
     const out = await auction
     expect(out.positions[0].winner).toMatchObject({ advertiserId: 'swisse', clearingCpm: 200 })
-    expect(rows().filter((r) => r.status === 'pending')).toHaveLength(0)
+    expect((await rows()).filter((r) => r.status === 'pending')).toHaveLength(0)
   })
 
   it('once a tick has claimed the window’s auction, a bid is refused even if this process’s clock is still before the cutoff', async () => {
     const { ctx, reserve, ready } = await setup()
     await ready()
-    expect(claimAuction(ctx, W1.toISOString())).toBe(true)
+    expect(await claimAuction(ctx, W1.toISOString())).toBe(true)
     const res = await reserve(SWISSE)
     expect(res.statusCode).toBe(409)
     expect(res.json().error.message).toMatch(/^Bidding for that window closed at/)
@@ -214,9 +214,9 @@ describe('a bid arriving while the auction is running', () => {
     expect((await reserve(SWISSE)).statusCode).toBe(201)
     slipped = false
     await runAuction(ctx, W1)
-    const pending = rows().filter((r) => r.status === 'pending')
+    const pending = (await rows()).filter((r) => r.status === 'pending')
     expect(pending).toHaveLength(0)
-    expect(rows().find((r) => r.advertiserId === 'nestle' && r.channel === 'api')!.status).toMatch(/lost/)
+    expect((await rows()).find((r) => r.advertiserId === 'nestle' && r.channel === 'api')!.status).toMatch(/lost/)
   })
 })
 
@@ -240,7 +240,7 @@ describe('a DSP whose answer is not a bid response', () => {
       const out = await runAuction(ctx, W1)
       expect(out.positions[0].skipped).toBeUndefined()
       expect(out.positions[0].winner).toMatchObject({ advertiserId: 'swisse' })
-      expect(rows().filter((r) => r.status === 'pending')).toHaveLength(0)
+      expect((await rows()).filter((r) => r.status === 'pending')).toHaveLength(0)
     })
   }
 
@@ -258,14 +258,14 @@ describe('a DSP whose answer is not a bid response', () => {
     const { logs, error } = await tick()
     expect(error).toBeNull()
     expect(logs).toContain('Auction cleared 2026-09-21T00:00:00.000Z: 0 of 1 positions won, 1 failed.')
-    expect(rows().filter((r) => r.status === 'pending')).toHaveLength(0)
-    expect(rows().find((r) => r.channel === 'api')).toMatchObject({ status: 'lost', reason: 'The auction for this position failed: reservations store refused the write' })
+    expect((await rows()).filter((r) => r.status === 'pending')).toHaveLength(0)
+    expect((await rows()).find((r) => r.channel === 'api')).toMatchObject({ status: 'lost', reason: 'The auction for this position failed: reservations store refused the write' })
     expect(claims()).toMatchObject([{ window_start: W1.toISOString(), finished_at: expect.any(String) }])
   })
 })
 
 describe('the scheduled tick', () => {
-  const billableRow = (ctx: Awaited<ReturnType<typeof setup>>['ctx']) =>
+  const billableRow = async (ctx: Awaited<ReturnType<typeof setup>>['ctx']) =>
     ctx.reservations.insert({
       id: 'res_ended', partnerId: 'p_google', advertiserId: 'swisse', campaignId: 'c_api_swisse', positionId: POS, windowStart: '2026-09-18T00:00:00.000Z',
       type: 'bid', channel: 'api', bidCpm: 200, currency: 'AUD', status: 'won', clearingCpm: 200, reason: null, testMode: false, pricingType: 'localised', handedOffAt: '2026-09-17T18:00:00.000Z',
@@ -276,15 +276,15 @@ describe('the scheduled tick', () => {
     const { ctx, reserve, ready, rows, tick } = await setup(() => t)
     await ready()
     expect((await reserve(SWISSE)).statusCode).toBe(201)
-    billableRow(ctx)
+    await billableRow(ctx)
     ctx.playback.totals = () => { throw new Error('playback store down') }
     t = AT_CUTOFF
     const { logs, error } = await tick()
     expect(logs).toContain('Billing failed: playback store down')
     expect(logs.some((l) => l.startsWith('Auction cleared 2026-09-21'))).toBe(true)
     expect(error).toBe('Scheduler tick: Billing: playback store down')
-    expect(rows().find((r) => r.channel === 'api')!.status).toBe('won')
-    expect(lineItems(ctx)).toHaveLength(0)
+    expect((await rows()).find((r) => r.channel === 'api')!.status).toBe('won')
+    expect(await lineItems(ctx)).toHaveLength(0)
   })
 
   it('a cutoff missed by hours is still auctioned while the window hasn’t started', async () => {
@@ -295,7 +295,7 @@ describe('the scheduled tick', () => {
     t = new Date('2026-09-20T23:30:00.000Z')
     const { logs } = await tick()
     expect(logs.some((l) => l.startsWith('Auction cleared 2026-09-21'))).toBe(true)
-    expect(rows().find((r) => r.channel === 'api')!.status).toBe('won')
+    expect((await rows()).find((r) => r.channel === 'api')!.status).toBe('won')
   })
 
   it('a window that started with no auction settles its bids as lost instead of leaving them pending', async () => {
@@ -307,8 +307,8 @@ describe('the scheduled tick', () => {
     const { logs } = await tick()
     expect(logs).toContain('Settled 1 bid for windows that started without an auction.')
     expect(logs.some((l) => l.startsWith('Auction cleared 2026-09-21'))).toBe(false)
-    expect(rows().find((r) => r.channel === 'api')).toMatchObject({ status: 'lost', reason: 'The window started with no auction clearing this bid; nothing was sold.' })
-    expect(ctx.reservations.stalePending(t.toISOString())).toHaveLength(0)
+    expect((await rows()).find((r) => r.channel === 'api')).toMatchObject({ status: 'lost', reason: 'The window started with no auction clearing this bid; nothing was sold.' })
+    expect(await ctx.reservations.stalePending(t.toISOString())).toHaveLength(0)
   })
 
   it('two ticks at once in one process clear the window once', async () => {
@@ -365,8 +365,8 @@ describe('the scheduled tick', () => {
     const { ctx, reserve, ready, tick, claims } = await setup(() => t)
     await ready()
     expect((await reserve(SWISSE)).statusCode).toBe(201)
-    billableRow(ctx)
-    ctx.exchange.save({ ...ctx.exchange.get(), enabled: false })
+    await billableRow(ctx)
+    await ctx.exchange.save({ ...(await ctx.exchange.get()), enabled: false })
     t = AT_CUTOFF
     const { logs, error } = await tick()
     expect(error).toBeNull()
@@ -386,20 +386,20 @@ describe('billing when two processes tick at once', () => {
     const a = make()
     await seed(a, { bookings: false, demo: false })
     const b = make()
-    a.reservations.insert({
+    await a.reservations.insert({
       id: 'res_ended', partnerId: 'p_google', advertiserId: 'swisse', campaignId: 'c_api_swisse', positionId: POS, windowStart: '2026-09-18T00:00:00.000Z',
       type: 'bid', channel: 'api', bidCpm: 200, currency: 'AUD', status: 'won', clearingCpm: 200, reason: null, testMode: false, pricingType: 'localised', handedOffAt: '2026-09-17T18:00:00.000Z',
     })
     /* Both read the same billable rows (this one and the seed's past
        window), both compute, one insert per window lands. */
-    const due = a.reservations.billable('2026-09-19T10:00:00.000Z').length
+    const due = (await a.reservations.billable('2026-09-19T10:00:00.000Z')).length
     expect(due).toBeGreaterThanOrEqual(1)
-    const [x, y] = [runBilling(a), runBilling(b)]
+    const [x, y] = await Promise.all([runBilling(a), runBilling(b)])
     expect(x.length + y.length).toBe(due)
-    const items = lineItems(a)
+    const items = await lineItems(a)
     expect(items).toHaveLength(due)
     expect(new Set(items.map((i) => i.reservationId)).size).toBe(due)
-    expect(runBilling(b)).toHaveLength(0)
+    expect(await runBilling(b)).toHaveLength(0)
     a.db.close()
     b.db.close()
   })
@@ -448,12 +448,12 @@ describe('what a partner can send to POST /v1/reservations', () => {
     const { reserve, ready, setSlot, rows, tick } = await setup(() => t)
     await ready()
     expect((await reserve(SWISSE)).statusCode).toBe(201)
-    setSlot({ owner: 'internal' } as Partial<Slot>)
+    await setSlot({ owner: 'internal' } as Partial<Slot>)
     t = AT_CUTOFF
     await tick()
-    expect(rows().filter((r) => r.status === 'pending')).toHaveLength(1)
+    expect((await rows()).filter((r) => r.status === 'pending')).toHaveLength(1)
     t = new Date('2026-09-21T00:01:00.000Z')
     await tick()
-    expect(rows().filter((r) => r.status === 'pending')).toHaveLength(0)
+    expect((await rows()).filter((r) => r.status === 'pending')).toHaveLength(0)
   })
 })

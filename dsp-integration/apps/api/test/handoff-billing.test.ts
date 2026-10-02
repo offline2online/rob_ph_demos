@@ -30,18 +30,18 @@ describe('hand-off to the existing campaign system', () => {
     await runAuction(ctx, W1)
     await activate((await ctx.approvalCampaigns.listCampaigns({ sources: ['dsp'] })).find((c) => c.name === 'Nestlé — crid-5130001')!.campaignId)
     const res = await runAuction(ctx, W2)
-    const r = ctx.reservations.get(res.positions[0].winner!.reservationId)!
+    const r = (await ctx.reservations.get(res.positions[0].winner!.reservationId))!
     expect(r.handedOffAt).toBe(NOW.toISOString())
     const campaignId = r.campaignId as string
-    expect(ctx.campaigns.bookings(campaignId)).toMatchObject([{ displayTypeId: 'menu_board', slot: 2, windowStart: '2026-09-22T00:00:00.000Z', windowEnd: '2026-09-23T00:00:00.000Z' }])
+    expect(await ctx.campaigns.bookings(campaignId)).toMatchObject([{ displayTypeId: 'menu_board', slot: 2, windowStart: '2026-09-22T00:00:00.000Z', windowEnd: '2026-09-23T00:00:00.000Z' }])
   })
 
   it('never hands off a Test-mode win', async () => {
     const { ctx } = await setup()
     await runAuction(ctx, W1)
-    ctx.partners.update('p_google', { mode: 'test' })
+    await ctx.partners.update('p_google', { mode: 'test' })
     await runAuction(ctx, W2)
-    expect(ctx.campaigns.bookings().filter((b) => b.windowStart === W2.toISOString())).toEqual([])
+    expect((await ctx.campaigns.bookings()).filter((b) => b.windowStart === W2.toISOString())).toEqual([])
   })
 
   it('hands a reservation off as soon as it is booked', async () => {
@@ -53,12 +53,12 @@ describe('hand-off to the existing campaign system', () => {
     await app.inject({ method: 'POST', url: `/api/v1/campaigns/${id}/submit`, headers: G })
     await app.inject({ method: 'POST', url: `/api/admin/v1/campaigns/${id}/approve`, payload: { assetVersion: 'v1' } })
     await activate(id)
-    const ext = ctx.displayTypes.get('menu_board')!.phExtensions!
-    ctx.displayTypes.saveExtensions('menu_board', { ...ext, slots: ext.slots.map((s, i) => (i === 1 ? { ...s, listMode: null, advertisers: ['Swisse'] } : s)) })
+    const ext = (await ctx.displayTypes.get('menu_board'))!.phExtensions!
+    await ctx.displayTypes.saveExtensions('menu_board', { ...ext, slots: ext.slots.map((s, i) => (i === 1 ? { ...s, listMode: null, advertisers: ['Swisse'] } : s)) })
     const res = await app.inject({ method: 'POST', url: '/api/v1/reservations', headers: G, payload: { positionId: 'menu_board.s2', windowStart: W1.toISOString(), campaignId: id, advertiserId: 'swisse', type: 'reserve', bidCpm: 100 } })
     expect(res.json()).toMatchObject({ status: 'reserved', clearingCpm: 100 })
-    expect(ctx.reservations.get(res.json().reservationId)!.handedOffAt).toBe(NOW.toISOString())
-    expect(ctx.campaigns.bookings(id)).toMatchObject([{ displayTypeId: 'menu_board', slot: 2, windowStart: W1.toISOString() }])
+    expect((await ctx.reservations.get(res.json().reservationId))!.handedOffAt).toBe(NOW.toISOString())
+    expect(await ctx.campaigns.bookings(id)).toMatchObject([{ displayTypeId: 'menu_board', slot: 2, windowStart: W1.toISOString() }])
   })
 
   /* default is mandatory (decision, 22 Sep): hand-off uses its creative even
@@ -72,7 +72,7 @@ describe('hand-off to the existing campaign system', () => {
       method: 'POST', url: '/api/v1/campaigns', headers: G,
       payload: { advertiserId: 'swisse', name: 'Swisse — Metro upsell', displayTypeId: 'menu_board', default: { pricingType: 'localised' }, targeted: [{ id: 'metro', priority: 10, pricingType: 'localised', rules: [[{ source: 'store', variable: 'store.fixed_segments', op: 'include', values: ['Metro'] }]] }] },
     })).json().campaignId
-    expect(ctx.campaigns.getCampaign(id)?.targeting).toEqual({ default: { pricingType: 'localised' }, targeted: [{ id: 'metro', priority: 10, pricingType: 'localised', rules: [[{ source: 'store', variable: 'store.fixed_segments', op: 'include', values: ['Metro'] }]] }] })
+    expect((await ctx.campaigns.getCampaign(id))?.targeting).toEqual({ default: { pricingType: 'localised' }, targeted: [{ id: 'metro', priority: 10, pricingType: 'localised', rules: [[{ source: 'store', variable: 'store.fixed_segments', op: 'include', values: ['Metro'] }]] }] })
     const metro = multipart({ version: 'metro' }, { name: 'menu.png', bytes: png(5760, 1080) })
     await app.inject({ method: 'POST', url: `/api/v1/campaigns/${id}/assets`, headers: { ...G, ...metro.headers }, payload: metro.payload })
     /* Uploading only the upsell's creative is not enough — the default
@@ -84,12 +84,12 @@ describe('hand-off to the existing campaign system', () => {
     expect(submitted.json()).toMatchObject({ status: 'awaiting_approval' })
     await app.inject({ method: 'POST', url: `/api/admin/v1/campaigns/${id}/approve`, payload: { assetVersion: 'v2' } })
     await activate(id)
-    const ext = ctx.displayTypes.get('menu_board')!.phExtensions!
-    ctx.displayTypes.saveExtensions('menu_board', { ...ext, slots: ext.slots.map((s, i) => (i === 1 ? { ...s, listMode: null, advertisers: ['Swisse'] } : s)) })
+    const ext = (await ctx.displayTypes.get('menu_board'))!.phExtensions!
+    await ctx.displayTypes.saveExtensions('menu_board', { ...ext, slots: ext.slots.map((s, i) => (i === 1 ? { ...s, listMode: null, advertisers: ['Swisse'] } : s)) })
     const res = await app.inject({ method: 'POST', url: '/api/v1/reservations', headers: G, payload: { positionId: 'menu_board.s2', windowStart: W1.toISOString(), campaignId: id, advertiserId: 'swisse', type: 'reserve', bidCpm: 100 } })
     expect(res.json()).toMatchObject({ status: 'reserved', clearingCpm: 100 })
-    expect(ctx.reservations.get(res.json().reservationId)!.handedOffAt).toBe(NOW.toISOString())
-    expect(ctx.campaigns.bookings(id)).toMatchObject([{ displayTypeId: 'menu_board', slot: 2, windowStart: W1.toISOString() }])
+    expect((await ctx.reservations.get(res.json().reservationId))!.handedOffAt).toBe(NOW.toISOString())
+    expect(await ctx.campaigns.bookings(id)).toMatchObject([{ displayTypeId: 'menu_board', slot: 2, windowStart: W1.toISOString() }])
   })
 
   it('refuses a campaign that is no longer approved, or whose creative doesn’t fit the display type', async () => {
@@ -97,17 +97,17 @@ describe('hand-off to the existing campaign system', () => {
     /* One live winner per position and window (migration 0021): each case
        gets its own window rather than stacking three winners on one. */
     const day = (n: number) => new Date(W1.getTime() + n * 86_400_000).toISOString()
-    const draft = await handOff(ctx, ctx.reservations.insert(won({ campaignId: 'c_api_swisse_kids', windowStart: day(2) })))
+    const draft = await handOff(ctx, await ctx.reservations.insert(won({ campaignId: 'c_api_swisse_kids', windowStart: day(2) })))
     expect(draft).toMatchObject({ handedOffAt: null, reason: 'Not handed off: the campaign is not approved.' })
     await app.inject({ method: 'POST', url: '/api/admin/v1/campaigns/c_api_swisse/approve', payload: { assetVersion: 'v1' } })
-    const inactive = await handOff(ctx, ctx.reservations.insert(won({ windowStart: day(3) })))
+    const inactive = await handOff(ctx, await ctx.reservations.insert(won({ windowStart: day(3) })))
     expect(inactive.reason).toBe('Not handed off: the campaign is approved but not activated.')
     await activate('c_api_swisse')
     /* Swisse's approved creative is 1080×1920 portrait; the Menu Board is 5760×1080. */
-    const portrait = await handOff(ctx, ctx.reservations.insert(won({ windowStart: day(4) })))
+    const portrait = await handOff(ctx, await ctx.reservations.insert(won({ windowStart: day(4) })))
     expect(portrait.handedOffAt).toBeNull()
     expect(portrait.reason).toMatch(/^Not handed off: the creative doesn’t fit Menu Board — Long Format: /)
-    expect(ctx.campaigns.bookings('c_api_swisse')).toEqual([])
+    expect(await ctx.campaigns.bookings('c_api_swisse')).toEqual([])
   })
 })
 
@@ -118,13 +118,13 @@ describe('billing — dynamic VAC-d from existing playback data', () => {
     const before = plays()
     /* Seeded 15 Sep window: 1,920 + 960 plays of 15s on three Menu Boards
        (one offline) = half the slot's expected time, so half its VAC-d. */
-    expect(runBilling(ctx)).toMatchObject([{
+    expect(await runBilling(ctx)).toMatchObject([{
       reservationId: 'res_seed_nestle_0915', advertiserId: 'nestle', campaignId: 'c_dsp_nestle', positionId: 'menu_board.s2',
       windowStart: '2026-09-15T00:00:00.000Z', windowEnd: '2026-09-16T00:00:00.000Z',
       plays: 2880, playedSec: 43200, expectedSec: 86400, assumedViews: 1236, realisedViews: 618, cpm: 120, currency: 'AUD', amount: 74.16,
     }])
-    expect(runBilling(ctx)).toEqual([])
-    expect(lineItems(ctx)).toHaveLength(1)
+    expect(await runBilling(ctx)).toEqual([])
+    expect(await lineItems(ctx)).toHaveLength(1)
     /* Read only: billing never writes playback data. */
     expect(plays()).toBe(before)
   })
@@ -132,19 +132,19 @@ describe('billing — dynamic VAC-d from existing playback data', () => {
   it('bills nothing for a Test-mode win, a window not handed off, or a window not over yet', async () => {
     const { ctx } = await setup()
     const past = '2026-09-16T00:00:00.000Z'
-    ctx.reservations.insert(won({ windowStart: past, testMode: true, handedOffAt: past }))
-    ctx.reservations.insert(won({ windowStart: past, handedOffAt: null }))
-    ctx.reservations.insert(won({ windowStart: '2026-09-20T00:00:00.000Z', handedOffAt: past }))
-    expect(runBilling(ctx).map((i) => i.reservationId)).toEqual(['res_seed_nestle_0915'])
+    await ctx.reservations.insert(won({ windowStart: past, testMode: true, handedOffAt: past }))
+    await ctx.reservations.insert(won({ windowStart: past, handedOffAt: null }))
+    await ctx.reservations.insert(won({ windowStart: '2026-09-20T00:00:00.000Z', handedOffAt: past }))
+    expect((await runBilling(ctx)).map((i) => i.reservationId)).toEqual(['res_seed_nestle_0915'])
   })
 
   it('caps a window at the assumed views it was sold on', async () => {
     const { ctx } = await setup()
     const start = Date.parse('2026-09-17T00:00:00.000Z')
-    ctx.reservations.insert(won({ id: 'res_full', windowStart: '2026-09-17T00:00:00.000Z', campaignId: 'c_dsp_nestle', advertiserId: 'nestle', clearingCpm: 100, handedOffAt: '2026-09-16T18:00:00.000Z' }))
+    await ctx.reservations.insert(won({ id: 'res_full', windowStart: '2026-09-17T00:00:00.000Z', campaignId: 'c_dsp_nestle', advertiserId: 'nestle', clearingCpm: 100, handedOffAt: '2026-09-16T18:00:00.000Z' }))
     const play = ctx.db.prepare("INSERT INTO plays (id, display_id, campaign_id, played_at, duration_sec) VALUES (?, ?, 'c_dsp_nestle', ?, 15)")
     for (const d of ['d_1004', 'd_1005', 'd_1006']) for (let i = 0; i < 2000; i++) play.run(`x_${d}_${i}`, d, new Date(start + i * 43_000).toISOString())
-    const item = runBilling(ctx).find((i) => i.reservationId === 'res_full')!
+    const item = (await runBilling(ctx)).find((i) => i.reservationId === 'res_full')!
     expect(item).toMatchObject({ realisedViews: 1236, amount: 123.6 })
   })
 
@@ -162,14 +162,14 @@ describe('billing — dynamic VAC-d from existing playback data', () => {
     const day1 = '2026-09-16T00:00:00.000Z'
     const day2 = '2026-09-17T00:00:00.000Z'
     const LOCKED_CPM = 150
-    ctx.reservations.insert(won({ id: 'res_term_1', windowStart: day1, campaignId: 'c_dsp_nestle', advertiserId: 'nestle', clearingCpm: LOCKED_CPM, handedOffAt: day1 }))
-    ctx.reservations.insert(won({ id: 'res_term_2', windowStart: day2, campaignId: 'c_dsp_nestle', advertiserId: 'nestle', clearingCpm: LOCKED_CPM, handedOffAt: day2 }))
+    await ctx.reservations.insert(won({ id: 'res_term_1', windowStart: day1, campaignId: 'c_dsp_nestle', advertiserId: 'nestle', clearingCpm: LOCKED_CPM, handedOffAt: day1 }))
+    await ctx.reservations.insert(won({ id: 'res_term_2', windowStart: day2, campaignId: 'c_dsp_nestle', advertiserId: 'nestle', clearingCpm: LOCKED_CPM, handedOffAt: day2 }))
     const play = ctx.db.prepare("INSERT INTO plays (id, display_id, campaign_id, played_at, duration_sec) VALUES (?, ?, 'c_dsp_nestle', ?, 15)")
     for (const day of [day1, day2]) {
       const start = Date.parse(day)
       for (const d of ['d_1004', 'd_1005', 'd_1006']) for (let i = 0; i < 2000; i++) play.run(`x_${day}_${d}_${i}`, d, new Date(start + i * 43_000).toISOString())
     }
-    const items = runBilling(ctx).filter((i) => i.reservationId.startsWith('res_term_')).sort((a, b) => a.windowStart.localeCompare(b.windowStart))
+    const items = (await runBilling(ctx)).filter((i) => i.reservationId.startsWith('res_term_')).sort((a, b) => a.windowStart.localeCompare(b.windowStart))
     /* Same agreed rate both days (no re-auction), each fully saturated so
        both cap at the same assumed views — the "caps a window" case above,
        replayed for two windows of the same term. */

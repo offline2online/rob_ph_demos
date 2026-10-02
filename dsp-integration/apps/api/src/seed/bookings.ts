@@ -11,6 +11,7 @@
 import { randomUUID } from 'node:crypto'
 import { advertiserSlug } from '@ph-dsp/types'
 import type { Context } from '../context'
+import { onFree } from '../db/db'
 import { allPositions, nextWindow, windowMs } from '../domain/positions'
 
 const money = [120, 135, 150, 165, 180, 195]
@@ -33,18 +34,20 @@ const COLOURS = ['#1b5e20', '#b3261e', '#0b4f6c', '#4a148c', '#8d6e00', '#37474f
    switched on. Returns the id, or null if the advertiser already has one. */
 export async function campaignFor(ctx: Context, brand: { advertiserId: string; name: string; partnerId: string; displayTypeId: string }, colour: string, width: number, height: number) {
   const id = `c_seed_${brand.advertiserId}`
-  if (ctx.campaigns.getCampaign(id)) return id
-  ctx.db.prepare(
-    `INSERT INTO campaigns (id, name, targeting, created_at, source, advertiser_id, partner_id, display_type_id, pricing_type, activation_enabled, brief)
-     VALUES (?, ?, ?, ?, 'api', ?, ?, ?, 'localised', 0, ?)`,
-  ).run(
-    id, `${brand.name} — always on`, JSON.stringify({ default: { pricingType: 'localised' } }), new Date().toISOString(),
-    brand.advertiserId, brand.partnerId, brand.displayTypeId,
-    JSON.stringify({ details: `${brand.name}'s standing booking across the estate.`, objective: 'Increase Revenue / Sales', touchPoints: ['Digital Signage'] }),
-  )
-  const file = ctx.assets.put(svg(width, height, colour, brand.name), '.svg')
-  ctx.db.prepare("INSERT INTO campaign_assets (id, campaign_id, version, role, file, mime_type, width, height, size_bytes, created_at) VALUES (?, ?, 1, 'default', ?, 'image/svg+xml', ?, ?, 1024, ?)")
-    .run(randomUUID(), id, file, width, height, new Date().toISOString())
+  if (await ctx.campaigns.getCampaign(id)) return id
+  const file = await ctx.assets.put(svg(width, height, colour, brand.name), '.svg')
+  await onFree(ctx.db, () => {
+    ctx.db.prepare(
+      `INSERT INTO campaigns (id, name, targeting, created_at, source, advertiser_id, partner_id, display_type_id, pricing_type, activation_enabled, brief)
+       VALUES (?, ?, ?, ?, 'api', ?, ?, ?, 'localised', 0, ?)`,
+    ).run(
+      id, `${brand.name} — always on`, JSON.stringify({ default: { pricingType: 'localised' } }), new Date().toISOString(),
+      brand.advertiserId, brand.partnerId, brand.displayTypeId,
+      JSON.stringify({ details: `${brand.name}'s standing booking across the estate.`, objective: 'Increase Revenue / Sales', touchPoints: ['Digital Signage'] }),
+    )
+    ctx.db.prepare("INSERT INTO campaign_assets (id, campaign_id, version, role, file, mime_type, width, height, size_bytes, created_at) VALUES (?, ?, 1, 'default', ?, 'image/svg+xml', ?, ?, 1024, ?)")
+      .run(randomUUID(), id, file, width, height, new Date().toISOString())
+  })
   await ctx.approvals.submit(id, CHECKS(width, height), brand.name)
   /* Auto-approved already when the advertiser doesn't need approval. */
   if ((await ctx.approvals.statusOf(id)) === 'awaiting_approval') await ctx.approvals.approve(id, 'v1', 'HQ Admin (POC)')
@@ -53,28 +56,28 @@ export async function campaignFor(ctx: Context, brand: { advertiserId: string; n
 }
 
 export async function seedBookings(ctx: Context) {
-  const positions = allPositions(ctx)
-  const brands = ctx.partners.list()
+  const positions = await allPositions(ctx)
+  const brands = (await ctx.partners.list())
     .filter((p) => p.status === 'connected')
     .flatMap((p) => p.seats.map((s) => ({ partnerId: p.id, name: s.name, advertiserId: advertiserSlug(s.name), live: p.mode === 'live' })))
   if (!positions.length || !brands.length) return 0
 
-  const currency = ctx.company.get().currency
+  const currency = (await ctx.company.get()).currency
   let written = 0
 
   for (const [b, brand] of brands.entries()) {
     const position = positions[b % positions.length]
     /* This position's own window grid (OQ27: its billing unit is its window length). */
-    const len = windowMs(ctx, position)
-    const first = nextWindow(ctx, len).getTime()
+    const len = await windowMs(ctx, position)
+    const first = (await nextWindow(ctx, len)).getTime()
     const dt = position.displayType
     /* Booked revenue is CPM × assumed views, so a position nobody has scored
        yet would book for nothing. 412 viewers a window per display is the
        figure the Menu Board is seeded with (API.md's example bid request). */
-    if (!ctx.audience.forSlot(dt.id, position.slot).assumedViewsPerWindow) {
-      const displays = Math.max(1, ctx.displays.listByDisplayType(dt.id).length)
-      ctx.db.prepare('INSERT INTO audience_vacd (display_type_id, slot, assumed_views_per_window, counted) VALUES (?, ?, ?, 0)')
-        .run(dt.id, position.slot, displays * 412)
+    if (!(await ctx.audience.forSlot(dt.id, position.slot)).assumedViewsPerWindow) {
+      const displays = Math.max(1, (await ctx.displays.listByDisplayType(dt.id)).length)
+      await onFree(ctx.db, () => ctx.db.prepare('INSERT INTO audience_vacd (display_type_id, slot, assumed_views_per_window, counted) VALUES (?, ?, ?, 0)')
+        .run(dt.id, position.slot, displays * 412))
     }
     const campaignId = await campaignFor(
       ctx, { ...brand, displayTypeId: dt.id },
@@ -87,18 +90,18 @@ export async function seedBookings(ctx: Context) {
       const offset = b + n * brands.length
       const start = new Date(first + offset * len).toISOString()
       const id = `res_seed_${brand.advertiserId}_${n}`
-      if (ctx.reservations.get(id)) continue
+      if (await ctx.reservations.get(id)) continue
       /* Never step on a window that is already sold. */
-      if (ctx.reservations.forWindow(position.positionId, start).some((r) => !r.testMode && ['won', 'reserved'].includes(r.status))) continue
+      if ((await ctx.reservations.forWindow(position.positionId, start)).some((r) => !r.testMode && ['won', 'reserved'].includes(r.status))) continue
       const cpm = money[(b + n) % money.length]
-      ctx.reservations.insert({
+      await ctx.reservations.insert({
         id, partnerId: brand.partnerId, advertiserId: brand.advertiserId, campaignId, positionId: position.positionId, windowStart: start,
         /* A mix of both ways in: reserved at an agreed price, or won at auction. */
         type: n === 0 ? 'reserve' : 'bid', channel: n === 0 ? 'api' : 'openrtb',
         bidCpm: cpm, currency, status: n === 0 ? 'reserved' : 'won', clearingCpm: cpm, reason: null,
         testMode: false, pricingType: 'localised', handedOffAt: new Date().toISOString(),
       })
-      ctx.campaigns.bookSlot({
+      await ctx.campaigns.bookSlot({
         id: `bk_seed_${brand.advertiserId}_${n}`, campaignId, displayTypeId: dt.id, slot: position.slot,
         windowStart: start, windowEnd: new Date(Date.parse(start) + len).toISOString(),
       })

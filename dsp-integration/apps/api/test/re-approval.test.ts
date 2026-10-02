@@ -56,13 +56,13 @@ async function setup(dspFetch?: Fetch) {
     expect((await activate(id)).statusCode).toBe(200)
     return id
   }
-  const won = (campaignId: string, windowStart: string): ReservationRecord => ctx.reservations.insert({
+  const won = async (campaignId: string, windowStart: string): Promise<ReservationRecord> => ctx.reservations.insert({
     id: `res_t_${Math.random().toString(16).slice(2, 8)}`, partnerId: 'p_google', advertiserId: 'swisse', campaignId, positionId: 'menu_board.s2',
     windowStart, type: 'bid', channel: 'api', bidCpm: 150, currency: 'AUD', status: 'won', clearingCpm: 150, reason: null,
     testMode: false, pricingType: 'localised', handedOffAt: null,
   })
   /* Which campaign_assets version was handed off for a window. */
-  const handedOff = (id: string, windowStart: string) => ctx.campaigns.bookings(id).find((b) => b.windowStart === windowStart)?.assetVersion
+  const handedOff = async (id: string, windowStart: string) => (await ctx.campaigns.bookings(id)).find((b) => b.windowStart === windowStart)?.assetVersion
   return { ctx, app, mocks, upload, status, approve, reject, activate, running, won, handedOff }
 }
 
@@ -73,32 +73,32 @@ describe('re-approval: the approved version keeps running (Q38)', () => {
     expect((await upload(id, B)).statusCode).toBe(201)
     expect(await status(id)).toMatchObject({ status: 'awaiting_approval', assetVersion: 'v2', liveAssetVersion: 'v1', pendingEdit: true })
     /* Still switched on, still eligible: nothing stops it. */
-    expect(ctx.campaigns.getCampaign(id)!.activation.enabled).toBe(true)
+    expect((await ctx.campaigns.getCampaign(id))!.activation.enabled).toBe(true)
     expect(await checkCampaign(ctx, id)).toBeNull()
     const bid = await app.inject({ method: 'POST', url: '/api/v1/reservations', headers: G, payload: { positionId: 'menu_board.s2', windowStart: W1.toISOString(), campaignId: id, advertiserId: 'swisse', type: 'bid', bidCpm: 150 } })
     expect(bid.statusCode).toBe(201)
     const result = await runAuction(ctx, W1)
     expect(result.positions.find((p) => p.positionId === 'menu_board.s2')!.winner).toMatchObject({ reservationId: bid.json().reservationId, clearingCpm: 150 })
     /* The approved creative (v1, A) is what the campaign system plays — not the edit under review. */
-    expect(handedOff(id, W1.toISOString())).toBe(1)
+    expect(await handedOff(id, W1.toISOString())).toBe(1)
   })
 
   it('(b) approving the edit swaps atomically: the new creative hands off from then on, the old one never again', async () => {
     const { ctx, upload, approve, running, won, handedOff } = await setup()
     const id = await running()
     await upload(id, B)
-    await handOff(ctx, won(id, day(2)))
-    expect(handedOff(id, day(2))).toBe(1)
+    await handOff(ctx, await won(id, day(2)))
+    expect(await handedOff(id, day(2))).toBe(1)
     expect((await approve(id, 'v2')).json()).toMatchObject({ status: 'approved', assetVersion: 'v2', liveAssetVersion: 'v2', pendingEdit: false })
     /* No dark window: eligible straight through the swap, and still switched on. */
     expect(await checkCampaign(ctx, id)).toBeNull()
     for (const n of [3, 4]) {
-      await handOff(ctx, won(id, day(n)))
-      expect(handedOff(id, day(n))).toBe(2)
+      await handOff(ctx, await won(id, day(n)))
+      expect(await handedOff(id, day(n))).toBe(2)
     }
     /* Never both: one booking per window, each naming exactly one version. */
-    expect(ctx.campaigns.bookings(id).map((b) => [b.windowStart, b.assetVersion])).toEqual([[day(2), 1], [day(3), 2], [day(4), 2]])
-    expect(ctx.campaigns.latestAssets(id, 'v1').map((a) => a.contentHash)).not.toEqual(ctx.campaigns.latestAssets(id, 'v2').map((a) => a.contentHash))
+    expect((await ctx.campaigns.bookings(id)).map((b) => [b.windowStart, b.assetVersion])).toEqual([[day(2), 1], [day(3), 2], [day(4), 2]])
+    expect((await ctx.campaigns.latestAssets(id, 'v1')).map((a) => a.contentHash)).not.toEqual((await ctx.campaigns.latestAssets(id, 'v2')).map((a) => a.contentHash))
   })
 
   it('(c) rejecting the edit discards it; the approved version carries on unaffected, and the audit trail keeps it', async () => {
@@ -109,9 +109,9 @@ describe('re-approval: the approved version keeps running (Q38)', () => {
     expect(res.statusCode).toBe(200)
     expectMatchesContract('POST', '/admin/v1/campaigns/{campaignId}/reject', 200, res.json())
     expect(await status(id)).toMatchObject({ status: 'approved', assetVersion: 'v1', liveAssetVersion: 'v1', pendingEdit: false, reason: null, rejectedEdit: { assetVersion: 'v2', reason: 'Price in the artwork.' } })
-    expect(ctx.campaigns.getCampaign(id)!.activation.enabled).toBe(true)
-    await handOff(ctx, won(id, day(2)))
-    expect(handedOff(id, day(2))).toBe(1)
+    expect((await ctx.campaigns.getCampaign(id))!.activation.enabled).toBe(true)
+    await handOff(ctx, await won(id, day(2)))
+    expect(await handedOff(id, day(2))).toBe(1)
     const audit = (await app.inject({ method: 'GET', url: `/api/admin/v1/campaigns/${id}/approval` })).json().audit.map((a: { action: string; assetVersion: string; reason: string | null }) => [a.action, a.assetVersion, a.reason])
     expect(audit).toEqual([['submitted', 'v1', null], ['approved', 'v1', null], ['returned_for_review', 'v2', null], ['rejected', 'v2', 'Price in the artwork.'], ['edit_discarded', 'v2', null]])
     /* A rejected Draft is swept after 30 days; a running campaign whose edit was rejected is not Rejected at all. */
@@ -158,7 +158,7 @@ describe('safe reuse wired into upload/submit (Q40)', () => {
     const id = (await app.inject({ method: 'POST', url: '/api/v1/campaigns', headers: G, payload: { advertiserId: 'nestle', name: 'Nestlé — Menu', displayTypeId: 'menu_board', default: { pricingType: 'localised' } } })).json().campaignId
     await upload(id, A)
     await app.inject({ method: 'POST', url: `/api/v1/campaigns/${id}/submit`, headers: G })
-    expect(ctx.approvals.wasAssetHumanCleared(id, 'default', ctx.campaigns.latestAssets(id)[0].contentHash!)).toBe(false)
+    expect(await ctx.approvals.wasAssetHumanCleared(id, 'default', (await ctx.campaigns.latestAssets(id))[0].contentHash!)).toBe(false)
   })
 })
 
@@ -175,10 +175,10 @@ describe('DSP creative audits: advisory input, pre-approval by creative ID + con
   it('(a) a creative the DSP itself approved still waits for the retailer, its audit recorded as advisory', async () => {
     const { ctx } = await setup(dspFetch)
     served.set('crid-a', A)
-    const p = findPosition(ctx, 'menu_board.s2')!
-    const why = await queueCreative(ctx, ctx.partners.get('p_google')!, { crid: 'crid-a', iurl: iurl('crid-a'), ext: { creativeAudit: DV360_APPROVED } }, { id: 'swisse', name: 'Swisse' }, p)
+    const p = (await findPosition(ctx, 'menu_board.s2'))!
+    const why = await queueCreative(ctx, (await ctx.partners.get('p_google'))!, { crid: 'crid-a', iurl: iurl('crid-a'), ext: { creativeAudit: DV360_APPROVED } }, { id: 'swisse', name: 'Swisse' }, p)
     expect(why).toBe('New creative crid-a: queued for approval.')
-    const id = campaignForCrid(ctx, 'p_google', 'crid-a')!
+    const id = (await campaignForCrid(ctx, 'p_google', 'crid-a'))!
     expect(id).toBe(dspCampaignId('p_google', 'crid-a'))
     const view = await ctx.approvals.view(id)
     expect(view.status).toBe('awaiting_approval')
@@ -189,10 +189,10 @@ describe('DSP creative audits: advisory input, pre-approval by creative ID + con
   it('a DSP rejection neither blocks nor decides: the retailer’s setting and review still do', async () => {
     const { ctx } = await setup(dspFetch)
     served.set('crid-r', A)
-    const p = findPosition(ctx, 'menu_board.s2')!
+    const p = (await findPosition(ctx, 'menu_board.s2'))!
     /* Amazon's asset-level moderation said no; Swisse requires approval, so it goes to the reviewer with that note. */
-    await queueCreative(ctx, ctx.partners.get('p_amazon')!, { crid: 'crid-r', iurl: 'http://mocks.test/amazon/creatives/crid-r', ext: { creativeAudit: { moderationStatus: 'REJECTED', policyViolations: [{ reason: 'Alcohol' }] } } }, { id: 'swisse', name: 'Swisse' }, p)
-    const view = await ctx.approvals.view(campaignForCrid(ctx, 'p_amazon', 'crid-r')!)
+    await queueCreative(ctx, (await ctx.partners.get('p_amazon'))!, { crid: 'crid-r', iurl: 'http://mocks.test/amazon/creatives/crid-r', ext: { creativeAudit: { moderationStatus: 'REJECTED', policyViolations: [{ reason: 'Alcohol' }] } } }, { id: 'swisse', name: 'Swisse' }, p)
+    const view = await ctx.approvals.view((await campaignForCrid(ctx, 'p_amazon', 'crid-r'))!)
     expect(view.status).toBe('awaiting_approval')
     expect(view.checks.find((c) => c.name === 'dsp_audit')).toMatchObject({ passed: false, advisory: true, detail: expect.stringContaining('rejected (Alcohol)') })
   })
@@ -200,8 +200,8 @@ describe('DSP creative audits: advisory input, pre-approval by creative ID + con
   it('(b) the same creative ID with byte-identical content, once a human cleared it, is not re-audited; different bytes are', async () => {
     const { ctx, approve } = await setup(dspFetch)
     served.set('crid-b', A)
-    const p = findPosition(ctx, 'menu_board.s2')!
-    const google = ctx.partners.get('p_google')!
+    const p = (await findPosition(ctx, 'menu_board.s2'))!
+    const google = (await ctx.partners.get('p_google'))!
     const retrieve = () => queueCreative(ctx, google, { crid: 'crid-b', iurl: iurl('crid-b') }, { id: 'swisse', name: 'Swisse' }, p)
     const release = () => ctx.db.prepare("DELETE FROM dsp_creatives WHERE partner_id = 'p_google' AND crid = 'crid-b'").run()
     await retrieve()

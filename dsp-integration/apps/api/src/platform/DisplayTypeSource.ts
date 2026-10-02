@@ -2,16 +2,16 @@
    everything this build adds read display types only through this
    interface, so engineering can swap in the real service. */
 import type { DisplayType, DisplayTypeExtensions } from '@ph-dsp/types'
-import { type Db, fromJson, prepared, toJson } from '../db/db'
+import { type Db, fromJson, onRollback, prepared, toJson, type Awaitable } from '../db/db'
 
 export interface DisplayTypeSource {
-  list(): DisplayType[]
-  get(id: string): DisplayType | null
-  create(dt: DisplayType): DisplayType
+  list(): Awaitable<DisplayType[]>
+  get(id: string): Awaitable<DisplayType | null>
+  create(dt: DisplayType): Awaitable<DisplayType>
   /* Existing fields only; phExtensions is left as it is. */
-  saveRecord(id: string, dt: DisplayType): DisplayType | null
-  saveExtensions(id: string, ext: DisplayTypeExtensions): DisplayTypeExtensions | null
-  delete(id: string): boolean
+  saveRecord(id: string, dt: DisplayType): Awaitable<DisplayType | null>
+  saveExtensions(id: string, ext: DisplayTypeExtensions): Awaitable<DisplayTypeExtensions | null>
+  delete(id: string): Awaitable<boolean>
 }
 
 interface Row {
@@ -114,6 +114,7 @@ export function sqliteDisplayTypeSource(db: Db): DisplayTypeSource {
     return snap
   }
   const invalidate = () => { snap = null }
+  onRollback(db, invalidate)
   const get = (id: string) => snapshot().byId.get(id) ?? null
   const now = () => new Date().toISOString()
   /* The default playlist always exists by the time this runs: routes create

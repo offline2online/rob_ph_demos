@@ -2,13 +2,13 @@
    primary Personalisation Hub platform; this build only reads them: unique
    store IDs, names and regions. Engineering swaps in the platform's store
    service. */
-import { type Db, prepared } from '../db/db'
+import { type Db, prepared, type Awaitable } from '../db/db'
 
 export interface StoreRecord { id: string; name: string; region: string | null }
 
 export interface StoreSource {
-  list(): StoreRecord[]
-  get(id: string): StoreRecord | null
+  list(): Awaitable<StoreRecord[]>
+  get(id: string): Awaitable<StoreRecord | null>
 }
 
 export const sqliteStoreSource = (db: Db): StoreSource => ({

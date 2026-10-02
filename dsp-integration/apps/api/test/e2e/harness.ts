@@ -24,7 +24,7 @@ import { vi } from 'vitest'
 import { staticSession } from '../../src/auth/session'
 import { loadConfig } from '../../src/config'
 import { type Context, createContext } from '../../src/context'
-import { openDb } from '../../src/db/db'
+import { onFree, openDb } from '../../src/db/db'
 import type { Fetch } from '../../src/dsp/DspClient'
 import type { BidRequest } from '../../src/exchange/openrtb'
 import { staticFlags } from '../../src/flags/Flags'
@@ -145,7 +145,8 @@ export function stubPlayback() {
   let down: string | null = null
   const source: PlaybackSource = {
     listPlays: () => [],
-    totals(q) {
+    /* Async, as the real playback store is (the seam is awaitable). */
+    async totals(q) {
       calls.push(q)
       if (down) throw new Error(down)
       return scripted.get(`${q.campaignId}|${q.from}`) ?? { plays: 0, playedSec: 0 }
@@ -185,15 +186,22 @@ export function stubCampaignSource(inner: CampaignSource) {
   const held = new Set<string>()
   const source: CampaignSource = {
     ...inner,
-    bookSlot(b) {
+    /* Async, as a real PH Core call would be (the seam is awaitable). */
+    async bookSlot(b) {
       const key = `${b.displayTypeId}|${b.slot}|${b.windowStart}`
       /* The contract: at most one booking per slot and window. Same error shape as the database's. */
       if (held.has(key)) {
         refusedBookings.push(b)
         throw new Error('UNIQUE constraint failed: PH Core stub — one booking per slot and window')
       }
-      const out = inner.bookSlot(b)
       held.add(key)
+      let out: SlotBooking
+      try {
+        out = await inner.bookSlot(b)
+      } catch (e) {
+        held.delete(key)
+        throw e
+      }
       handoffs.push(b)
       return out
     },
@@ -227,11 +235,11 @@ export async function harness(opts: { dbFile?: string } = {}) {
   const campaigns = stubCampaignSource(ctx.campaigns)
   ctx.campaigns = campaigns.source
   await seed(ctx, { bookings: false, demo: false })
-  fixture(ctx)
+  await fixture(ctx)
   /* Swisse (approval required, floor multiplier 1.0) is the bidder. */
   await bidder.control({ mode: 'bid', priceCpm: 150, advertiserId: '5130002' })
   const app = buildApp(ctx)
-  const h0 = { exchange: () => { const { enabled: _e, ...rest } = ctx.exchange.get(); return rest } }
+  const h0 = { exchange: async () => { const { enabled: _e, ...rest } = await ctx.exchange.get(); return rest } }
 
   const admin = {
     approve: (id: string, assetVersion = 'v1') => app.inject({ method: 'POST', url: `/api/admin/v1/campaigns/${id}/approve`, payload: { assetVersion } }),
@@ -243,10 +251,10 @@ export async function harness(opts: { dbFile?: string } = {}) {
     reject: (id: string, reason: string, assetReasons?: { assetId: string; reason: string }[], assetVersion = 'v1') =>
       app.inject({ method: 'POST', url: `/api/admin/v1/campaigns/${id}/reject`, payload: { assetVersion, reason, ...(assetReasons ? { assetReasons } : {}) } }),
     unreject: (id: string, assetVersion = 'v1') => app.inject({ method: 'POST', url: `/api/admin/v1/campaigns/${id}/unreject`, payload: { assetVersion } }),
-    exchange: (enabled: boolean) => app.inject({ method: 'PUT', url: '/api/admin/v1/exchange', payload: { ...h0.exchange(), enabled } }),
-    slot: (patch: Record<string, unknown>, displayTypeId = DT) => {
-      const ext = ctx.displayTypes.get(displayTypeId)!.phExtensions!
-      ctx.displayTypes.saveExtensions(displayTypeId, { ...ext, slots: ext.slots.map((s, i) => (i === 0 ? { ...s, ...patch } : s)) } as never)
+    exchange: async (enabled: boolean) => app.inject({ method: 'PUT', url: '/api/admin/v1/exchange', payload: { ...(await h0.exchange()), enabled } }),
+    slot: async (patch: Record<string, unknown>, displayTypeId = DT) => {
+      const ext = (await ctx.displayTypes.get(displayTypeId))!.phExtensions!
+      await ctx.displayTypes.saveExtensions(displayTypeId, { ...ext, slots: ext.slots.map((s, i) => (i === 0 ? { ...s, ...patch } : s)) } as never)
     },
   }
   const partner = {
@@ -279,9 +287,9 @@ export async function harness(opts: { dbFile?: string } = {}) {
   }
   /* The second DSP: The Trade Desk, connected and Live, Arnott's on its
      seat, allowed to bid on the fixture's slot(s). */
-  const addSecondDsp = () => {
-    if (!ctx.partners.get('p_ttd')) {
-      ctx.partners.insert({
+  const addSecondDsp = async () => {
+    if (!(await ctx.partners.get('p_ttd'))) {
+      await ctx.partners.insert({
         id: 'p_ttd', provider: 'the_trade_desk', name: 'The Trade Desk', status: 'connected', mode: 'live', lastSync: null,
         credsPublic: { supplySourceId: 'ss-e2e', ttdPartnerId: 'phub-retail', region: 'APAC' }, secrets: { apiToken: 'e2e-placeholder' },
         bidder: { bidderEndpoint: 'https://bid.adsrvr.org/openrtb2/bid', seatIds: [TTD_SEAT] },
@@ -289,8 +297,8 @@ export async function harness(opts: { dbFile?: string } = {}) {
       } as never)
     }
     for (const dt of [DT, DT_B]) {
-      const t = ctx.displayTypes.get(dt)
-      if (t) ctx.displayTypes.saveExtensions(dt, { ...t.phExtensions!, slots: t.phExtensions!.slots.map((s) => ({ ...s, partnerIds: [...new Set([...(s.partnerIds ?? []), 'p_ttd'])] })) } as never)
+      const t = await ctx.displayTypes.get(dt)
+      if (t) await ctx.displayTypes.saveExtensions(dt, { ...t.phExtensions!, slots: t.phExtensions!.slots.map((s) => ({ ...s, partnerIds: [...new Set([...(s.partnerIds ?? []), 'p_ttd'])] })) } as never)
     }
   }
   /* Anchor sequence, DSP side: the creative arrives on a bid, is queued, then approved and activated. */
@@ -299,15 +307,15 @@ export async function harness(opts: { dbFile?: string } = {}) {
     if (partnerId === 'p_google') await bidder.control({ mode: 'bid', priceCpm: 150, advertiserId: '5130002', crid })
     else await bidder.control({ mode: 'bid', priceCpm: 150, crid }, 'the_trade_desk')
     await runAuction(ctx, queueWindow)
-    const id = queuedCampaign(crid, partnerId)
+    const id = await queuedCampaign(crid, partnerId)
     if (!id) throw new Error(`E2E harness: creative ${crid} was not queued.`)
     await admin.approve(id)
     await admin.activate(id)
     return id
   }
-  const queuedCampaign = (crid: string, partnerId = 'p_google') =>
-    (ctx.db.prepare('SELECT campaign_id FROM dsp_creatives WHERE partner_id = ? AND crid = ?').get(partnerId, crid) as { campaign_id: string } | undefined)?.campaign_id ?? null
-  const rows = (w: Date, positionId = POS) => ctx.reservations.forWindow(positionId, w.toISOString())
+  const queuedCampaign = async (crid: string, partnerId = 'p_google') =>
+    onFree(ctx.db, () => (ctx.db.prepare('SELECT campaign_id FROM dsp_creatives WHERE partner_id = ? AND crid = ?').get(partnerId, crid) as { campaign_id: string } | undefined)?.campaign_id ?? null)
+  const rows = async (w: Date, positionId = POS) => ctx.reservations.forWindow(positionId, w.toISOString())
 
   return {
     ctx, app, bidder, playback, assets, campaigns, admin, partner, submitApiCampaign, readyApiCampaign, approvedCrid, queuedCampaign, rows, addSecondDsp,
@@ -322,11 +330,11 @@ export type Harness = Awaited<ReturnType<typeof harness>>
    slot's targeting left at its default (localised). The seeded Menu Board's
    Advertiser slot is taken out so the fixture's position is the estate's
    only one. */
-export function fixture(ctx: Context, opts: { second?: boolean } = {}) {
-  const addSignage = (id: string, name: string) => {
-    ctx.playlists.create({ id: `pl_${id}`, name: `${name} Playlist`, autoCreatedFor: id, items: [{ id: `pi_${id}`, campaignId: 'c_notice', priority: 1, playbackDuration: 30, campaignType: ['LOCALISED', 'ON_ROTATION'], enabled: true }] })
+export async function fixture(ctx: Context, opts: { second?: boolean } = {}) {
+  const addSignage = async (id: string, name: string) => {
+    await ctx.playlists.create({ id: `pl_${id}`, name: `${name} Playlist`, autoCreatedFor: id, items: [{ id: `pi_${id}`, campaignId: 'c_notice', priority: 1, playbackDuration: 30, campaignType: ['LOCALISED', 'ON_ROTATION'], enabled: true }] })
     const base = SEED_DISPLAY_TYPES[0]
-    ctx.displayTypes.create({
+    await ctx.displayTypes.create({
       ...base, id, name, touchPoint: 'Digital Signage', displayCanvasSize: { width: 1920, height: 1080 }, defaultPlaylistId: `pl_${id}`,
       playlistSettings: { ...base.playlistSettings, maximumCampaignsPlayedInRotation: 1 },
       multiZone: { enabled: false, zones: [] },
@@ -340,10 +348,10 @@ export function fixture(ctx: Context, opts: { second?: boolean } = {}) {
     ins.run(`d_${id}_2`, `${name} 2`, 'Chatswood', 'st_chatswood', id)
     ctx.db.prepare('INSERT INTO audience_vacd (display_type_id, slot, assumed_views_per_window, counted) VALUES (?, ?, ?, ?)').run(id, 1, ASSUMED_VIEWS, 1)
   }
-  if (!ctx.displayTypes.get(DT)) {
-    const mb = ctx.displayTypes.get('menu_board')!.phExtensions!
-    ctx.displayTypes.saveExtensions('menu_board', { ...mb, slots: mb.slots.map((s) => (s.owner === 'advertiser' ? { ...s, owner: 'internal', partnerIds: [], listMode: null } : s)) })
-    addSignage(DT, 'E2E Signage')
+  if (!(await ctx.displayTypes.get(DT))) {
+    const mb = (await ctx.displayTypes.get('menu_board'))!.phExtensions!
+    await ctx.displayTypes.saveExtensions('menu_board', { ...mb, slots: mb.slots.map((s) => (s.owner === 'advertiser' ? { ...s, owner: 'internal', partnerIds: [], listMode: null } : s)) })
+    await addSignage(DT, 'E2E Signage')
   }
-  if (opts.second && !ctx.displayTypes.get(DT_B)) addSignage(DT_B, 'E2E Signage B')
+  if (opts.second && !(await ctx.displayTypes.get(DT_B))) await addSignage(DT_B, 'E2E Signage B')
 }

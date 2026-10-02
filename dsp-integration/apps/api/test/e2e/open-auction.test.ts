@@ -27,20 +27,20 @@ const bookingsFor = (h: Awaited<ReturnType<typeof harness>>, w: Date) => h.campa
 describe('preconditions / fixtures', () => {
   it('exchange complete and on, one Live DSP with endpoint and seat, one single-zone Advertiser slot at floor 100 AUD, localised targeting', async () => {
     const h = await harness()
-    const ex = h.ctx.exchange.get()
+    const ex = await h.ctx.exchange.get()
     expect(isLive(ex)).toBe(true)
     const sellers = await h.app.inject({ method: 'GET', url: '/sellers.json' })
     expect(sellers.statusCode).toBe(200)
     expect(sellers.json().sellers[0]).toMatchObject({ seller_id: ex.sellerId, domain: ex.domain })
-    const google = h.ctx.partners.get('p_google')!
+    const google = (await h.ctx.partners.get('p_google'))!
     expect(google).toMatchObject({ status: 'connected', mode: 'live' })
     expect(receivesBidRequests(google)).toBe(true)
-    const p = findPosition(h.ctx, POS)!
+    const p = (await findPosition(h.ctx, POS))!
     expect(p.displayType).toMatchObject({ touchPoint: 'Digital Signage', multiZone: { enabled: false } })
-    expect(h.ctx.displays.summaryByDisplayType(DT).displays).toBeGreaterThan(0)
+    expect((await h.ctx.displays.summaryByDisplayType(DT)).displays).toBeGreaterThan(0)
     expect(supportedTargetingOf(p.def)).toEqual(['localised'])
-    expect(h.ctx.company.get()).toMatchObject({ floorCpm: 100, currency: 'AUD' })
-    expect(h.ctx.company.advertiserSetting('swisse')).toMatchObject({ approvalRequired: true, floorMultiplier: 1 })
+    expect(await h.ctx.company.get()).toMatchObject({ floorCpm: 100, currency: 'AUD' })
+    expect(await h.ctx.company.advertiserSetting('swisse')).toMatchObject({ approvalRequired: true, floorMultiplier: 1 })
   })
 })
 
@@ -55,7 +55,7 @@ describe('A. Approval gate (hard precondition)', () => {
     expect((await h.admin.approve(id)).statusCode).toBe(200)
     expect((await h.partner.status(id)).json()).toMatchObject({ status: 'approved', mode: 'manual' })
     /* The creative is in the asset store under its content hash. */
-    const asset = h.ctx.campaigns.latestAssets(id).find((a) => a.role === 'default')!
+    const asset = (await h.ctx.campaigns.latestAssets(id)).find((a) => a.role === 'default')!
     expect(h.assets.files.has(asset.file)).toBe(true)
     expect(h.assets.hashOf(asset.file)).toMatch(/^[0-9a-f]{32}$/)
   })
@@ -64,7 +64,7 @@ describe('A. Approval gate (hard precondition)', () => {
     const h = await harness()
     const campaignId = await h.approvedCrid('crid-a2', day(0))
     const out = await runAuction(h.ctx, day(1))
-    const r = h.rows(day(1))
+    const r = await h.rows(day(1))
     expect(r).toHaveLength(1)
     expect(r[0]).toMatchObject({ campaignId, channel: 'openrtb', status: 'won' })
     expect(out.positions[0].winner).toMatchObject({ advertiserId: 'swisse', clearingCpm: 150 })
@@ -75,12 +75,12 @@ describe('A. Approval gate (hard precondition)', () => {
     await h.bidder.control({ crid: 'crid-a3' })
     const out = await runAuction(h.ctx, day(0))
     expect(out.positions[0].winner).toBeNull()
-    expect(h.rows(day(0))[0]).toMatchObject({ status: 'rejected', reason: 'New creative crid-a3: queued for approval.' })
-    const id = h.queuedCampaign('crid-a3')!
+    expect((await h.rows(day(0)))[0]).toMatchObject({ status: 'rejected', reason: 'New creative crid-a3: queued for approval.' })
+    const id = (await h.queuedCampaign('crid-a3'))!
     expect(await h.ctx.approvals.view(id)).toMatchObject({ status: 'awaiting_approval' })
     /* Still unapproved in the next window: discarded again, never retrieved twice. */
     await runAuction(h.ctx, day(1))
-    expect(h.rows(day(1))[0]).toMatchObject({ status: 'rejected', reason: 'The campaign is not approved.' })
+    expect((await h.rows(day(1)))[0]).toMatchObject({ status: 'rejected', reason: 'The campaign is not approved.' })
     expect(h.bidder.log.creativeFetches).toHaveLength(1)
     /* Once approved (and activated) it competes in a later window. */
     await h.admin.approve(id)
@@ -96,7 +96,7 @@ describe('A. Approval gate (hard precondition)', () => {
     /* Cannot be activated. */
     const act = await h.admin.activate(id)
     expect(act.statusCode).toBeGreaterThanOrEqual(400)
-    expect(h.ctx.campaigns.getCampaign(id)!.activation.enabled).toBe(false)
+    expect((await h.ctx.campaigns.getCampaign(id))!.activation.enabled).toBe(false)
     /* Reservation / API bid. */
     const res = await h.partner.reserve({ positionId: POS, windowStart: day(0).toISOString(), campaignId: id, advertiserId: 'swisse', type: 'bid', bidCpm: 200 })
     expect(res.statusCode).toBe(422)
@@ -105,9 +105,9 @@ describe('A. Approval gate (hard precondition)', () => {
     await h.bidder.control({ crid: 'crid-a4' })
     await runAuction(h.ctx, day(1))
     await runAuction(h.ctx, day(2))
-    expect(h.rows(day(2))[0]).toMatchObject({ status: 'rejected', reason: 'The campaign is not approved.' })
+    expect((await h.rows(day(2)))[0]).toMatchObject({ status: 'rejected', reason: 'The campaign is not approved.' })
     /* Hand-off: even a won window for an unapproved campaign is never booked into PH Core. */
-    const forced = h.ctx.reservations.insert({
+    const forced = await h.ctx.reservations.insert({
       id: 'res_a4_forced', partnerId: 'p_google', advertiserId: 'swisse', campaignId: id, positionId: POS, windowStart: day(3).toISOString(),
       type: 'bid', channel: 'api', bidCpm: 150, currency: 'AUD', status: 'won', clearingCpm: 150, reason: null, testMode: false, pricingType: 'localised', handedOffAt: null,
     })
@@ -153,7 +153,7 @@ describe('B. Auction / floor', () => {
     /* The floor on the request is the effective base floor. */
     expect(h.bidder.log.bidRequests.at(-1)!.body.imp[0]).toMatchObject({ bidfloor: 100, bidfloorcur: 'AUD' })
     expect(bookingsFor(h, day(1))).toEqual([expect.objectContaining({ campaignId, displayTypeId: DT, slot: 1, windowStart: day(1).toISOString(), windowEnd: day(2).toISOString() })])
-    expect(h.ctx.reservations.get(out.positions[0].winner!.reservationId)!.handedOffAt).not.toBeNull()
+    expect((await h.ctx.reservations.get(out.positions[0].winner!.reservationId))!.handedOffAt).not.toBeNull()
   })
 
   it('B2 — a single bid below the floor does not win; the window falls through to the mandatory default campaign', async () => {
@@ -162,15 +162,15 @@ describe('B. Auction / floor', () => {
     await h.bidder.control({ mode: 'below_floor' })
     const out = await runAuction(h.ctx, day(1))
     expect(out.positions[0].winner).toBeNull()
-    expect(h.rows(day(1))[0]).toMatchObject({ status: 'rejected', reason: '50 is below the effective floor of 100 AUD CPM.' })
+    expect((await h.rows(day(1)))[0]).toMatchObject({ status: 'rejected', reason: '50 is below the effective floor of 100 AUD CPM.' })
     /* Just under the floor is still under it. */
     h.bidder.setScript((req) => ({ body: response(req, [swisseBid(req, { price: 99.99, crid: 'crid-b2' })]) }))
     expect((await runAuction(h.ctx, day(2))).positions[0].winner).toBeNull()
-    expect(h.rows(day(2))[0].reason).toBe('99.99 is below the effective floor of 100 AUD CPM.')
+    expect((await h.rows(day(2)))[0].reason).toBe('99.99 is below the effective floor of 100 AUD CPM.')
     /* Nothing booked into PH Core: the slot's own playlist (its default campaign) plays. */
     expect(bookingsFor(h, day(1))).toEqual([])
     expect(bookingsFor(h, day(2))).toEqual([])
-    expect(h.ctx.playlists.get(`pl_${DT}`)!.items.map((i) => i.campaignId)).toEqual(['c_notice'])
+    expect((await h.ctx.playlists.get(`pl_${DT}`))!.items.map((i) => i.campaignId)).toEqual(['c_notice'])
   })
 
   it('B3 — no bid in the window falls through to the default campaign', async () => {
@@ -179,7 +179,7 @@ describe('B. Auction / floor', () => {
     await h.bidder.control({ mode: 'no_bid' })
     const out = await runAuction(h.ctx, day(1))
     expect(out.positions[0]).toMatchObject({ bidRequests: 1, bids: 0, winner: null })
-    expect(h.rows(day(1))).toEqual([])
+    expect(await h.rows(day(1))).toEqual([])
     expect(bookingsFor(h, day(1))).toEqual([])
     const avail = await h.app.inject({ method: 'GET', url: `/api/v1/inventory/${POS}/availability?from=2026-09-22&to=2026-09-22`, headers: { authorization: 'Bearer e2e-token-google' } })
     expect(avail.json().windows[0].status).toBe('available')
@@ -192,7 +192,7 @@ describe('B. Auction / floor', () => {
     h.bidder.setScript((req) => ({ body: response(req, [swisseBid(req, { price: 160, crid: 'crid-b4-low' }), swisseBid(req, { price: 180, crid: 'crid-b4-high' })]) }))
     const out = await runAuction(h.ctx, day(2))
     expect(out.positions[0].winner).toMatchObject({ clearingCpm: 180 })
-    const rows = h.rows(day(2))
+    const rows = await h.rows(day(2))
     expect(rows.find((r) => r.status === 'won')).toMatchObject({ campaignId: high, bidCpm: 180, clearingCpm: 180 })
     expect(rows.find((r) => r.status === 'lost')).toMatchObject({ bidCpm: 160, reason: 'Outbid: the window cleared at 180 AUD CPM.' })
 
@@ -206,7 +206,7 @@ describe('B. Auction / floor', () => {
     h.bidder.setScript((req) => ({ body: response(req, [swisseBid(req, { price: 170, crid: 'crid-b4-high' })]) }))
     const tie = await runAuction(h.ctx, day(3))
     expect(tie.positions[0].winner).toMatchObject({ reservationId: placed.json().reservationId, clearingCpm: 170 })
-    expect(h.rows(day(3)).find((r) => r.channel === 'openrtb')).toMatchObject({ status: 'lost' })
+    expect((await h.rows(day(3))).find((r) => r.channel === 'openrtb')).toMatchObject({ status: 'lost' })
   })
 
   it('B5 — a personalised campaign bids and clears against the base floor; the multiplier is a per-play surcharge, not a floor', async () => {
@@ -230,15 +230,15 @@ describe('B. Auction / floor', () => {
     const out = await runAuction(h.ctx, day(0))
     expect(out.positions[0].winner).toMatchObject({ reservationId: at.json().reservationId, clearingCpm: 120 })
     /* The multiplier in force is kept on the reservation for billing personalised plays. */
-    expect(h.ctx.reservations.get(at.json().reservationId)).toMatchObject({ status: 'won', clearingCpm: 120, personalisedMultiplier: 1.5 })
+    expect(await h.ctx.reservations.get(at.json().reservationId)).toMatchObject({ status: 'won', clearingCpm: 120, personalisedMultiplier: 1.5 })
     /* Re-checked at the auction: a pending bid that no longer clears (floor raised) is refused pre-auction. */
     const pending = await bid(105, day(1))
     expect(pending.statusCode).toBe(201)
-    h.ctx.company.save({ ...h.ctx.company.get(), floorCpm: 110 })
+    await h.ctx.company.save({ ...(await h.ctx.company.get()), floorCpm: 110 })
     await h.bidder.control({ mode: 'no_bid' })
     const later = await runAuction(h.ctx, day(1))
     expect(later.positions[0].winner).toBeNull()
-    expect(h.ctx.reservations.get(pending.json().reservationId)).toMatchObject({ status: 'rejected', reason: '105 is below the effective floor of 110 AUD CPM.' })
+    expect(await h.ctx.reservations.get(pending.json().reservationId)).toMatchObject({ status: 'rejected', reason: '105 is below the effective floor of 110 AUD CPM.' })
   })
 })
 
@@ -246,7 +246,7 @@ describe('C. Hand-off & billing', () => {
   it('C1 — the winning creative is fetched, confirmed approved, validated against the canvas, then handed off', async () => {
     const h = await harness()
     const campaignId = await h.approvedCrid('crid-c1', day(0))
-    const asset = h.ctx.campaigns.latestAssets(campaignId).find((a) => a.role === 'default')!
+    const asset = (await h.ctx.campaigns.latestAssets(campaignId)).find((a) => a.role === 'default')!
     h.assets.reads.length = 0
     const out = await runAuction(h.ctx, day(1))
     expect(out.positions[0].winner).not.toBeNull()
@@ -256,7 +256,7 @@ describe('C. Hand-off & billing', () => {
 
     /* Confirmed approved: approval withdrawn after the clear → not handed off. */
     const w = day(2)
-    const stale = h.ctx.reservations.insert({
+    const stale = await h.ctx.reservations.insert({
       id: 'res_c1_stale', partnerId: 'p_google', advertiserId: 'swisse', campaignId, positionId: POS, windowStart: w.toISOString(),
       type: 'bid', channel: 'openrtb', bidCpm: 150, currency: 'AUD', status: 'won', clearingCpm: 150, reason: null, testMode: false, pricingType: 'localised', handedOffAt: null,
     })
@@ -267,7 +267,7 @@ describe('C. Hand-off & billing', () => {
     /* Validated against the canvas: an approved creative for another shape (seeded Swisse, 1080×1920) is refused here. */
     await h.admin.approve('c_api_swisse')
     await h.admin.activate('c_api_swisse')
-    const wrong = h.ctx.reservations.insert({ ...stale, id: 'res_c1_portrait', campaignId: 'c_api_swisse', windowStart: day(3).toISOString() } as ReservationRecord)
+    const wrong = await h.ctx.reservations.insert({ ...stale, id: 'res_c1_portrait', campaignId: 'c_api_swisse', windowStart: day(3).toISOString() } as ReservationRecord)
     const refused = await handOff(h.ctx, wrong)
     expect(refused.handedOffAt).toBeNull()
     expect(refused.reason).toMatch(/^Not handed off: the creative doesn’t fit E2E Signage: /)
@@ -285,9 +285,9 @@ describe('C. Hand-off & billing', () => {
     h.playback.script(campaignId, day(2), { plays: 0, playedSec: 0 })
     /* Not over yet: nothing billed. */
     h.setNow(new Date('2026-09-22T12:00:00.000Z'))
-    expect(runBilling(h.ctx)).toEqual([])
+    expect(await runBilling(h.ctx)).toEqual([])
     h.setNow(new Date('2026-09-24T00:01:00.000Z'))
-    const items = runBilling(h.ctx)
+    const items = await runBilling(h.ctx)
     expect(items).toMatchObject([
       { campaignId, positionId: POS, windowStart: day(1).toISOString(), plays: 2880, playedSec: expectedSec / 2, expectedSec, assumedViews: ASSUMED_VIEWS, realisedViews: ASSUMED_VIEWS / 2, cpm: 150, currency: 'AUD', amount: 60 },
       { campaignId, windowStart: day(2).toISOString(), plays: 0, realisedViews: 0, amount: 0 },
@@ -295,8 +295,8 @@ describe('C. Hand-off & billing', () => {
     /* The playback stub was asked for exactly the sold window on the display type's displays. */
     expect(h.playback.calls).toContainEqual({ campaignId, displayTypeId: DT, from: day(1).toISOString(), to: day(2).toISOString() })
     /* Billed once. */
-    expect(runBilling(h.ctx)).toEqual([])
-    expect(lineItems(h.ctx)).toHaveLength(2)
+    expect(await runBilling(h.ctx)).toEqual([])
+    expect(await lineItems(h.ctx)).toHaveLength(2)
   })
 
   it('C3 — one live sale per position and play window: two clearings can’t both sell it, and the loser is told why', async () => {
@@ -306,13 +306,14 @@ describe('C. Hand-off & billing', () => {
     const [a, b] = await Promise.all([runAuction(h.ctx, day(1)), runAuction(h.ctx, day(1))])
     const winners = [a, b].map((o) => o.positions[0].winner).filter(Boolean)
     expect(winners).toHaveLength(1)
-    const rows = h.rows(day(1))
+    const rows = await h.rows(day(1))
     expect(rows.filter((r) => r.status === 'won' && !r.testMode)).toHaveLength(1)
     for (const r of rows.filter((x) => x.status !== 'won')) expect(r.reason).toBeTruthy()
     expect(bookingsFor(h, day(1))).toHaveLength(1)
     /* The database refuses a second live sale outright. */
     const won = rows.find((r) => r.status === 'won')!
-    expect(() => h.ctx.reservations.insert({ ...won, id: 'res_c3_second', createdAt: undefined })).toThrow(/UNIQUE/)
+    /* The seam may throw synchronously (no transaction open) or reject: catch either. */
+    await expect((async () => h.ctx.reservations.insert({ ...won, id: 'res_c3_second', createdAt: undefined }))()).rejects.toThrow(/UNIQUE/)
     /* A later reservation for a sold window is told so. */
     const { id: api } = await h.submitApiCampaign('Swisse — C3')
     await h.admin.approve(api)
@@ -321,16 +322,16 @@ describe('C. Hand-off & billing', () => {
     expect(late.statusCode).toBe(409)
     expect(late.json().error.message).toMatch(/already sold|closed/)
     /* PH Core's side: at most one booking per slot and window. */
-    expect(() => h.ctx.campaigns.bookSlot({ ...bookingsFor(h, day(1))[0], id: 'bk_c3_second' })).toThrow(/one booking per slot and window/)
+    await expect(h.ctx.campaigns.bookSlot({ ...bookingsFor(h, day(1))[0], id: 'bk_c3_second' })).rejects.toThrow(/one booking per slot and window/)
   })
 })
 
 describe('D. Robustness / edge', () => {
   it('D1 — a malformed bid response (not a bid, null bid, oversized body) is that position’s outcome only; every other position still clears', async () => {
     const h = await harness()
-    fixture(h.ctx, { second: true })
+    await fixture(h.ctx, { second: true })
     await h.approvedCrid('crid-d1', day(0))
-    expect(h.rows(day(0), POS_B)).toHaveLength(1)
+    expect(await h.rows(day(0), POS_B)).toHaveLength(1)
     const bad: Record<string, (req: Parameters<typeof response>[0]) => { status?: number; body?: unknown; raw?: string }> = {
       'not JSON': () => ({ raw: '<html>502 Bad Gateway</html>' }),
       'not a bid response': () => ({ body: 'not a bid' }),
@@ -352,7 +353,7 @@ describe('D. Robustness / edge', () => {
       expect(byId[POS].skipped, label).toBeUndefined()
       expect(byId[POS_B].winner, label).toMatchObject({ clearingCpm: 150 })
       expect(bookingsFor(h, w).map((b) => b.displayTypeId), label).toEqual([DT_B])
-      expect(h.rows(w, POS).filter((r) => r.status === 'won' || r.status === 'pending'), label).toEqual([])
+      expect((await h.rows(w, POS)).filter((r) => r.status === 'won' || r.status === 'pending'), label).toEqual([])
     }
   })
 
@@ -374,7 +375,7 @@ describe('D. Robustness / edge', () => {
     const outA = await runAuction(h.ctx, day(1))
     expect(h.bidder.log.bidRequests.length, 'no bid request goes to a DSP that is not connected').toBe(reqsBefore)
     expect(outA.positions[0].winner, 'a DSP whose connection is in error must not win').toBeNull()
-    expect(h.ctx.reservations.get(pendingA.json().reservationId)!.status).toBe('rejected')
+    expect((await h.ctx.reservations.get(pendingA.json().reservationId))!.status).toBe('rejected')
     expect(bookingsFor(h, day(1))).toEqual([])
     /* …and it can't place a new one. */
     const refusedA = await bid(day(2))
@@ -394,12 +395,12 @@ describe('D. Robustness / edge', () => {
     const out = await runAuction(h.ctx, day(1))
     expect(h.bidder.log.bidRequests.length).toBe(before)
     expect(out.positions[0].winner).toBeNull()
-    expect(h.ctx.reservations.get(pending.json().reservationId)).toMatchObject({ status: 'rejected' })
+    expect(await h.ctx.reservations.get(pending.json().reservationId)).toMatchObject({ status: 'rejected' })
     /* Refused (disconnecting clears its seats, so the advertiser is no longer one of its own). */
     const fresh = await bid(day(2))
     expect(fresh.statusCode).toBeGreaterThanOrEqual(400)
     expect(fresh.statusCode).toBeLessThan(500)
-    expect(h.ctx.reservations.forWindow(POS, day(2).toISOString())).toEqual([])
+    expect(await h.ctx.reservations.forWindow(POS, day(2).toISOString())).toEqual([])
   })
 
   it('D3 — a bid carrying an unknown creative: one retrieval only, from the DSP’s own creative path; queued for review', async () => {
@@ -409,18 +410,18 @@ describe('D. Robustness / edge', () => {
     expect(out.positions[0].winner).toBeNull()
     /* One retrieval per response, from the DSP's own creative path. */
     expect(h.bidder.log.creativeFetches).toEqual(['http://mocks.test/dv360/creatives/crid-d3-one.png?w=1920&h=1080'])
-    expect(h.rows(day(0)).map((r) => r.reason).sort()).toEqual([
+    expect((await h.rows(day(0))).map((r) => r.reason).sort()).toEqual([
       'New creative crid-d3-one: queued for approval.',
       'Unknown creative crid-d3-two; it will be retrieved for review from a later window.',
     ])
-    expect(await h.ctx.approvals.view(h.queuedCampaign('crid-d3-one')!)).toMatchObject({ status: 'awaiting_approval' })
+    expect(await h.ctx.approvals.view((await h.queuedCampaign('crid-d3-one'))!)).toMatchObject({ status: 'awaiting_approval' })
     /* The same creative on a later bid is not retrieved again; the deferred one is retrieved then. */
     await runAuction(h.ctx, day(1))
     expect(h.bidder.log.creativeFetches).toEqual([
       'http://mocks.test/dv360/creatives/crid-d3-one.png?w=1920&h=1080',
       'http://mocks.test/dv360/creatives/crid-d3-two.png?w=1920&h=1080',
     ])
-    expect(h.rows(day(1))[0].reason).toBe('The campaign is not approved.')
+    expect((await h.rows(day(1)))[0].reason).toBe('The campaign is not approved.')
   })
 
   it('D3 — a creative URL outside the DSP’s own path is never fetched, and doesn’t use up the response’s one retrieval', async () => {
@@ -438,10 +439,10 @@ describe('D. Robustness / edge', () => {
     /* Never outside the stubs, never off the DSP's creative path. */
     expect(h.bidder.log.refused).toEqual([])
     expect(h.bidder.log.creativeFetches.every((u) => u.startsWith('http://mocks.test/dv360/creatives/') && !u.includes('..'))).toBe(true)
-    const reasons = h.rows(day(0)).map((r) => r.reason)
+    const reasons = (await h.rows(day(0))).map((r) => r.reason)
     expect(reasons).toContain('Unknown creative crid-d3-evil, and no creative URL from Google DSP to retrieve it from.')
     /* Nothing was retrieved for the two refused URLs, so the one retrieval is still the valid creative's. */
     expect(h.bidder.log.creativeFetches, 'the valid unknown creative was never retrieved').toEqual(['http://mocks.test/dv360/creatives/crid-d3-good.png?w=1920&h=1080'])
-    expect(h.queuedCampaign('crid-d3-good'), 'the valid unknown creative was never queued for review').not.toBeNull()
+    expect(await h.queuedCampaign('crid-d3-good'), 'the valid unknown creative was never queued for review').not.toBeNull()
   })
 })

@@ -15,11 +15,11 @@ const won = (over: Partial<ReservationRecord> = {}): ReservationRecord => ({
 describe('POST /admin/v1/test/plays', () => {
   it('writes plays with their tier, spread over the display type’s displays and inside the window', async () => {
     const ctx = await testContext({ clock: () => NOW })
-    ctx.reservations.insert(won())
+    await ctx.reservations.insert(won())
     const res = await buildApp(ctx).inject({ method: 'POST', url: '/api/admin/v1/test/plays', payload: { reservationId: 'res_tp_1', plays: [{ tier: 'default', count: 4 }, { tier: 'personalised', count: 2, durationSec: 8 }] } })
     expect(res.statusCode).toBe(201)
     expect(res.json()).toMatchObject({ reservationId: 'res_tp_1', campaignId: 'c_dsp_nestle', positionId: 'menu_board.s2', windowStart: W, total: 6, written: [{ tier: 'default', count: 4 }, { tier: 'personalised', count: 2 }] })
-    const t = ctx.playback.totals({ campaignId: 'c_dsp_nestle', displayTypeId: 'menu_board', from: W, to: res.json().windowEnd })
+    const t = await ctx.playback.totals({ campaignId: 'c_dsp_nestle', displayTypeId: 'menu_board', from: W, to: res.json().windowEnd })
     expect(t.plays).toBe(6)
     expect(t.personalised).toEqual({ plays: 2, playedSec: 16 })
     const rows = ctx.db.prepare('SELECT display_id, played_at FROM plays WHERE id LIKE ?').all('tp_%') as { display_id: string; played_at: string }[]
@@ -38,7 +38,7 @@ describe('POST /admin/v1/test/plays', () => {
     expect(loadConfig({ NODE_ENV: 'production', PARTNER_TOKENS: '{"t":"p"}' }).testEndpoints).toBe(false)
     const ctx = await testContext({ clock: () => NOW })
     ctx.config.testEndpoints = false
-    ctx.reservations.insert(won())
+    await ctx.reservations.insert(won())
     const res = await buildApp(ctx).inject({ method: 'POST', url: '/api/admin/v1/test/plays', payload: { reservationId: 'res_tp_1', plays: [{ tier: 'default', count: 1 }] } })
     expect(res.statusCode).toBe(404)
   })

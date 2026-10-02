@@ -2,7 +2,7 @@
    window for each display type slot. The retailer populates the real
    framework from its own insights, automated where cameras are connected;
    the POC reads seeded numbers. Engineering swaps in the real source. */
-import { type Db, prepared } from '../db/db'
+import { type Db, prepared, type Awaitable } from '../db/db'
 import type { Rules } from '../domain/targetingValidation'
 
 export interface Audience {
@@ -17,11 +17,11 @@ export interface Audience {
 }
 
 export interface AudienceSource {
-  forSlot(displayTypeId: string, slot: number): Audience
+  forSlot(displayTypeId: string, slot: number): Awaitable<Audience>
   /* The share of a slot's assumed views a targeted campaign can reach
      (spec §5: "targeting changes it"). Only the platform that holds the
      store and visitor data can answer this; see BUILD-PLAN Q9. */
-  targetedShare(displayTypeId: string, rules: Rules | undefined): number
+  targetedShare(displayTypeId: string, rules: Rules | undefined): Awaitable<number>
 }
 
 /* POC stand-in share: each AND group halves the audience (Q9). */

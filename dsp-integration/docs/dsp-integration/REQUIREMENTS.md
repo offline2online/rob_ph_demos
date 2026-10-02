@@ -3390,9 +3390,11 @@ deployment is `deploy/kubernetes/`.
   shapes; the auction 12.7 s for 2,408 positions at an 80 ms DSP round
   trip (bounded by the round trip, not the estate).
 - **One replica until the database is shared**: the SQLite file is one
-  writer; N replicas need Postgres, and with it an asynchronous
-  repository layer (engineering's integration work), after which the HPA,
-  PDB and CronJob in `deploy/kubernetes/optional/` apply.
+  writer; N replicas need a Postgres adapter (engineering's integration
+  work), after which the HPA, PDB and CronJob in
+  `deploy/kubernetes/optional/` apply. The SQL is already portable and the
+  repository layer already awaitable (1–2 Oct 2026; SCALE-15000-EKS.md),
+  so the adapter is wired in `context.ts` alone.
 
 ### Stability under concurrency (review, 24 Sep 2026)
 

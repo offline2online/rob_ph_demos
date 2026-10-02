@@ -390,13 +390,23 @@ platform:
 4. **SQLite → Postgres.**
    - The POC runs SQLite in WAL mode with a busy timeout, so the auction
      CLI and the API can share a file.
-   - On the platform's Postgres the same SQL runs unchanged, and MVCC plus
-     a connection pool replace WAL and the busy timeout.
-   - What does change (24 Sep 2026): the driver. `node:sqlite` is
-     synchronous; a Postgres adapter means an asynchronous repository
-     layer — contained (one file per seam, `context.ts` the only wiring
-     point) but engineering work. Until then the API is one instance on
-     one volume (`deploy/kubernetes/`), enough for 15,000 displays.
+   - On the platform's Postgres the same SQL runs unchanged (1 Oct 2026,
+     gAi2mkcm43uW6hrchOjh: no `rowid`, `json_extract`, boolean `SUM` or
+     `INSERT OR …`; arrival order is an explicit `seq`, an identity column
+     on Postgres), and MVCC plus a connection pool replace WAL and the
+     busy timeout. Migrations themselves are the SQLite adapter's files.
+   - The repository layer is awaitable (2 Oct 2026, cUdX4dmTMB2mvxJczHvT):
+     every seam and repository method returns `T | Promise<T>`, and every
+     caller awaits it — 63 source files and about 550 calls, not "one file
+     per seam" as this section used to say. A Postgres adapter is wired in
+     `context.ts` alone.
+   - On SQLite, transactions take a per-database FIFO lock, a nested one
+     joins the open one, and a seam call from outside waits for it to end
+     (`db/db.ts`: `tx`, `gate`, `onFree`); in-process caches are dropped on
+     rollback. That lock is SQLite-only: a Postgres adapter runs each
+     transaction on its own pooled connection and does without it.
+   - Until a Postgres adapter exists the API is one instance on one volume
+     (`deploy/kubernetes/`), enough for 15,000 displays.
 
 ## Authentication seams — partner identity, advertiser principal (spec only, REQUIREMENTS §9.5)
 

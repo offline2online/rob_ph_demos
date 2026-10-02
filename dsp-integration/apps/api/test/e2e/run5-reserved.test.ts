@@ -18,12 +18,12 @@ afterEach(() => {
 
 async function reservedHarness() {
   const h = await harness()
-  fixture(h.ctx, { second: true })
+  await fixture(h.ctx, { second: true })
   for (const dt of [DT, DT_B]) {
-    const t = h.ctx.displayTypes.get(dt)!
-    h.ctx.displayTypes.saveExtensions(dt, { ...t.phExtensions!, reservePrice: 150 } as never)
+    const t = (await h.ctx.displayTypes.get(dt))!
+    await h.ctx.displayTypes.saveExtensions(dt, { ...t.phExtensions!, reservePrice: 150 } as never)
   }
-  h.admin.slot({ reservePrice: 220 })
+  await h.admin.slot({ reservePrice: 220 })
   return h
 }
 const hold = (h: Awaited<ReturnType<typeof harness>>) => h.admin.slot({ listMode: null, advertisers: ['Swisse'], partnerIds: ['p_google'] })
@@ -38,10 +38,10 @@ describe('Run 5 — reserved', () => {
     expect(rows.find((r) => r.displayTypeId === DT)).toMatchObject({ reservePrice: 220, reservePriceOverride: 220, displayTypeReservePrice: 150 })
     expect(rows.find((r) => r.displayTypeId === DT_B)).toMatchObject({ reservePrice: 150, reservePriceOverride: null, displayTypeReservePrice: 150 })
     /* A new display-type default reaches the slot that follows it, never the overridden one. */
-    const t = h.ctx.displayTypes.get(DT_B)!
-    h.ctx.displayTypes.saveExtensions(DT_B, { ...t.phExtensions!, reservePrice: 175 } as never)
-    const t2 = h.ctx.displayTypes.get(DT)!
-    h.ctx.displayTypes.saveExtensions(DT, { ...t2.phExtensions!, reservePrice: 90 } as never)
+    const t = (await h.ctx.displayTypes.get(DT_B))!
+    await h.ctx.displayTypes.saveExtensions(DT_B, { ...t.phExtensions!, reservePrice: 175 } as never)
+    const t2 = (await h.ctx.displayTypes.get(DT))!
+    await h.ctx.displayTypes.saveExtensions(DT, { ...t2.phExtensions!, reservePrice: 90 } as never)
     expect((await pos(POS_B)).json().reservePrice).toBe(175)
     expect((await pos(POS)).json().reservePrice).toBe(220)
   })
@@ -49,7 +49,7 @@ describe('Run 5 — reserved', () => {
   it('R2 — a reserved slot (held for a named advertiser) is excluded from the open auction', async () => {
     const h = await reservedHarness()
     await h.approvedCrid('crid-r2', day(0))
-    hold(h)
+    await hold(h)
     const before = h.bidder.log.bidRequests.filter((r) => (r.body as { dooh?: { id?: string } }).dooh?.id === DT).length
     const out = await runAuction(h.ctx, day(1))
     const p = out.positions.find((x) => x.positionId === POS)!
@@ -75,7 +75,7 @@ describe('Run 5 — reserved', () => {
     expect(over.statusCode).toBe(201)
     expect(over.json()).toMatchObject({ status: 'reserved', clearingCpm: 220 })
     /* A reserve price under the buyer's effective floor can't be booked. */
-    h.admin.slot({ reservePrice: 90 })
+    await h.admin.slot({ reservePrice: 90 })
     const underFloor = await reserve(day(1), 90)
     expect(underFloor.statusCode).toBe(422)
     expect(underFloor.json().error).toMatchObject({ code: 'below_floor' })

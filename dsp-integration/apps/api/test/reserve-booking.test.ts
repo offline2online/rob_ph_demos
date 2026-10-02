@@ -28,8 +28,8 @@ async function setup(slot: Partial<Slot> = {}) {
   const ctx = await testContext({ clock: () => now })
   const app = buildApp(ctx)
   /* Portrait: one advertiser slot, reserve price 150 CPM (floor 100). */
-  const ext = ctx.displayTypes.get('portrait')!.phExtensions!
-  ctx.displayTypes.saveExtensions('portrait', {
+  const ext = (await ctx.displayTypes.get('portrait'))!.phExtensions!
+  await ctx.displayTypes.saveExtensions('portrait', {
     ...ext,
     slots: [{ label: 'Ad', owner: 'advertiser', partnerIds: [], advertisers: [], listMode: 'rtb', buyersListId: null, storeScope: null, quota: null, zoneId: null, supportedTargeting: ['localised'], reservePrice: 150, ...slot } as Slot],
   })
@@ -48,7 +48,7 @@ async function setup(slot: Partial<Slot> = {}) {
   const NESTLE_BID = { positionId: 'portrait.s1', windowStart: W1, campaignId: 'c_dsp_nestle', advertiserId: 'nestle', type: 'bid', bidCpm: 400 }
   const status = async (from: string, to: string, headers = GOOGLE) =>
     (await app.inject({ url: `/api/v1/inventory/portrait.s1/availability?from=${from}&to=${to}`, headers })).json().windows.map((w: { status: string }) => w.status)
-  const rows = (w = W1) => ctx.reservations.forWindow('portrait.s1', w)
+  const rows = async (w = W1) => await ctx.reservations.forWindow('portrait.s1', w)
   return { ctx, app, cid, post, RESERVE, NESTLE_BID, status, rows, setNow: (d: Date) => { now = d } }
 }
 
@@ -60,8 +60,8 @@ describe('reserve-price booking (OQ52): commit, hold as Reserved, honour at the 
     expect(res.statusCode).toBe(201)
     expectMatchesContract('POST', '/v1/reservations', 201, res.json())
     expect(res.json()).toMatchObject({ status: 'reserved', clearingCpm: 150, currency: 'AUD' })
-    expect(rows()[0]).toMatchObject({ type: 'reserve', status: 'reserved', clearingCpm: 150, testMode: false })
-    expect(rows()[0].handedOffAt).not.toBeNull()
+    expect((await rows())[0]).toMatchObject({ type: 'reserve', status: 'reserved', clearingCpm: 150, testMode: false })
+    expect((await rows())[0].handedOffAt).not.toBeNull()
     /* Reserved to every caller, the holder included: it is spoken for. */
     expect(await status('2026-09-21', '2026-09-22')).toEqual(['reserved', 'available'])
   })
@@ -93,7 +93,7 @@ describe('reserve-price booking (OQ52): commit, hold as Reserved, honour at the 
     const waiting = await post(NESTLE_BID)
     expect(waiting.json().status).toBe('pending')
     expect((await post(RESERVE)).statusCode).toBe(201)
-    expect(rows().find((r) => r.advertiserId === 'nestle')).toMatchObject({ status: 'lost', reason: 'The window was reserved by another buyer; it is not auctioned.' })
+    expect((await rows()).find((r) => r.advertiserId === 'nestle')).toMatchObject({ status: 'lost', reason: 'The window was reserved by another buyer; it is not auctioned.' })
     /* A new, higher bid is refused outright. */
     ctx.db.prepare("DELETE FROM reservations WHERE advertiser_id = 'nestle'").run()
     const higher = await post({ ...NESTLE_BID, bidCpm: 900 })
@@ -102,7 +102,7 @@ describe('reserve-price booking (OQ52): commit, hold as Reserved, honour at the 
     expect(higher.json().error.message).toBe('That window is reserved: it is held outside the open auction.')
     const out = await runAuction(ctx, new Date(W1))
     expect(out.positions.find((p) => p.positionId === 'portrait.s1')).toMatchObject({ bidRequests: 0, bids: 0, winner: null, skipped: 'Reserved: held outside the open auction.' })
-    expect(rows().filter((r) => ['won', 'reserved'].includes(r.status))).toEqual([expect.objectContaining({ advertiserId: 'swisse', clearingCpm: 150 })])
+    expect((await rows()).filter((r) => ['won', 'reserved'].includes(r.status))).toEqual([expect.objectContaining({ advertiserId: 'swisse', clearingCpm: 150 })])
   })
 
   it('is refused where there is no reserve price, and below the buyer’s effective floor', async () => {
@@ -124,22 +124,22 @@ describe('reserve-price booking (OQ52): commit, hold as Reserved, honour at the 
     const play = ctx.db.prepare("INSERT INTO plays (id, display_id, campaign_id, played_at, duration_sec) VALUES (?, 'd_1003', ?, ?, 15)")
     for (let i = 0; i < 1440; i++) play.run(`p_${i}`, cid, new Date(Date.parse(W1) + i * 60_000).toISOString())
     setNow(new Date('2026-09-22T06:00:00.000Z'))
-    const item = runBilling(ctx).find((i) => i.positionId === 'portrait.s1')
+    const item = (await runBilling(ctx)).find((i) => i.positionId === 'portrait.s1')
     expect(item).toMatchObject({ reservationId: r.json().reservationId, cpm: 150, assumedViews: 800, playedSec: 21600, expectedSec: 86400, realisedViews: 200, amount: 30 })
     /* Nothing more is owed for the undelivered three quarters: no make-good. */
-    expect(runBilling(ctx)).toEqual([])
+    expect(await runBilling(ctx)).toEqual([])
   })
 })
 
 describe('deals (OQ45): per DSP, on the existing buyers list, never under the floor', () => {
-  const termDeal = (ctx: Awaited<ReturnType<typeof setup>>['ctx'], invited: InvitedBuyer[] = [{ identifierType: 'brandEntity', value: 'Swisse' }]) =>
-    ctx.buyersLists.insert({ id: 'bl_pg', name: 'Swisse PG', description: '', invitedBuyers: invited, activeFrom: null, activeTo: '2026-09-23T23:59:59.000Z', auctionCloses: '2026-09-21T18:00:00.000Z' })
+  const termDeal = async (ctx: Awaited<ReturnType<typeof setup>>['ctx'], invited: InvitedBuyer[] = [{ identifierType: 'brandEntity', value: 'Swisse' }]) =>
+    await ctx.buyersLists.insert({ id: 'bl_pg', name: 'Swisse PG', description: '', invitedBuyers: invited, activeFrom: null, activeTo: '2026-09-23T23:59:59.000Z', auctionCloses: '2026-09-21T18:00:00.000Z' })
 
   it('a reserve commitment on a two-period deal locks the term at the reserve price; every later window is held and booked as Reserved', async () => {
     const { ctx, cid, post, RESERVE, NESTLE_BID, status, rows } = await setup({ listMode: 'deal', buyersListId: 'bl_pg' })
-    termDeal(ctx)
+    await termDeal(ctx)
     expect((await post(RESERVE)).json()).toMatchObject({ status: 'reserved', clearingCpm: 150 })
-    expect(ctx.buyersLists.get('bl_pg')!.lockedWin).toMatchObject({ cpm: 150, partnerId: 'p_google', advertiserId: 'swisse', channel: 'api', source: 'reserve' })
+    expect((await ctx.buyersLists.get('bl_pg'))!.lockedWin).toMatchObject({ cpm: 150, partnerId: 'p_google', advertiserId: 'swisse', channel: 'api', source: 'reserve' })
     /* The whole term reads Reserved before any of it is booked. The day after the term is outside the lock. */
     expect(await status('2026-09-21', '2026-09-24')).toEqual(['reserved', 'reserved', 'reserved', 'available'])
     /* A bid for a later window of the term is refused: its rate is decided. */
@@ -148,54 +148,54 @@ describe('deals (OQ45): per DSP, on the existing buyers list, never under the fl
     expect(late.json().error.message).toBe("This private auction's term is locked to a winning bid (Swisse PG); its windows take no further bids.")
     const out = await runAuction(ctx, new Date(W2))
     expect(out.positions.find((p) => p.positionId === 'portrait.s1')).toMatchObject({ bidRequests: 0, winner: { partnerId: 'p_google', advertiserId: 'swisse', clearingCpm: 150 } })
-    expect(rows(W2)).toMatchObject([{ type: 'reserve', status: 'reserved', clearingCpm: 150, campaignId: cid }])
-    expect(rows(W2)[0].handedOffAt).not.toBeNull()
+    expect(await rows(W2)).toMatchObject([{ type: 'reserve', status: 'reserved', clearingCpm: 150, campaignId: cid }])
+    expect((await rows(W2))[0].handedOffAt).not.toBeNull()
   })
 
   it('never books a locked rate below the floor in force when the window is booked', async () => {
     const { ctx, post, RESERVE, rows } = await setup({ listMode: 'deal', buyersListId: 'bl_pg' })
-    termDeal(ctx)
+    await termDeal(ctx)
     await post(RESERVE)
     /* The floor rises to 200 during the term: the 150 commitment no longer clears it. */
-    ctx.company.save({ ...ctx.company.get(), floorCpm: 200 })
+    await ctx.company.save({ ...(await ctx.company.get()), floorCpm: 200 })
     const out = await runAuction(ctx, new Date(W2))
     expect(out.positions.find((p) => p.positionId === 'portrait.s1')).toMatchObject({
       winner: null, skipped: 'Private auction: the locked rate (150) is below the effective floor of 200 AUD CPM, so this window is not sold under Swisse PG.',
     })
-    expect(rows(W2)).toEqual([])
+    expect(await rows(W2)).toEqual([])
   })
 
   it('refuses a deal rate below the effective floor at intake, bid or reserve', async () => {
     const { ctx, post, RESERVE } = await setup({ listMode: 'deal', buyersListId: 'bl_pg', reservePrice: 120 })
-    termDeal(ctx)
-    ctx.company.saveAdvertiserSettings({ swisse: { approvalRequired: true, floorMultiplier: 1.5 } })
+    await termDeal(ctx)
+    await ctx.company.saveAdvertiserSettings({ swisse: { approvalRequired: true, floorMultiplier: 1.5 } })
     const bid = await post({ ...RESERVE, type: 'bid', bidCpm: 140 })
     expect(bid.json().error).toMatchObject({ code: 'below_floor', message: '140 is below the effective floor of 150 AUD CPM.' })
     const reserve = await post({ ...RESERVE, bidCpm: 140 })
     expect(reserve.statusCode).toBe(422)
     expect(reserve.json().error).toMatchObject({ code: 'below_floor', message: '120 is below the effective floor of 150 AUD CPM.' })
-    expect(ctx.buyersLists.get('bl_pg')!.lockedWin).toBeNull()
+    expect((await ctx.buyersLists.get('bl_pg'))!.lockedWin).toBeNull()
   })
 
   it('is per DSP: a seat-ID deal reaches only that DSP, and a locked term binds one DSP’s buyer', async () => {
     const { ctx, app, post, RESERVE, status } = await setup({ listMode: 'deal', buyersListId: 'bl_pg' })
     /* Swisse also buys through Amazon, connected and live for this test. */
-    ctx.partners.update('p_amazon', { status: 'connected', mode: 'live', bidder: { bidderEndpoint: 'https://amazon.example/bid', seatIds: ['a1'] }, seats: [{ id: '588104411', name: "L'Oréal", domain: 'loreal.com' }, { id: 'amz-swisse', name: 'Swisse', domain: 'swisse.com' }] })
-    const p = findPosition(ctx, 'portrait.s1')!
+    await ctx.partners.update('p_amazon', { status: 'connected', mode: 'live', bidder: { bidderEndpoint: 'https://amazon.example/bid', seatIds: ['a1'] }, seats: [{ id: '588104411', name: "L'Oréal", domain: 'loreal.com' }, { id: 'amz-swisse', name: 'Swisse', domain: 'swisse.com' }] })
+    const p = (await findPosition(ctx, 'portrait.s1'))!
 
     /* Invited by Google's Swisse seat ID: Amazon isn't party to the deal at all. */
-    termDeal(ctx, [{ identifierType: 'dspSeatId', value: '5130002' }])
-    expect(effectivePartnerIds(ctx, p.def)).toEqual(['p_google'])
+    await termDeal(ctx, [{ identifierType: 'dspSeatId', value: '5130002' }])
+    expect(await effectivePartnerIds(ctx, p.def)).toEqual(['p_google'])
     expect((await app.inject({ url: '/api/v1/inventory/portrait.s1', headers: AMAZON })).statusCode).toBe(404)
     expect((await app.inject({ url: '/api/v1/inventory/portrait.s1', headers: GOOGLE })).statusCode).toBe(200)
 
     /* Invited by brand: both DSPs' Swisse seats may take it, but the
        commitment is bilateral: the first DSP to commit holds the term. */
-    ctx.buyersLists.delete('bl_pg')
-    termDeal(ctx)
-    expect(effectivePartnerIds(ctx, p.def)!.sort()).toEqual(['p_amazon', 'p_google'])
+    await ctx.buyersLists.delete('bl_pg')
+    await termDeal(ctx)
+    expect((await effectivePartnerIds(ctx, p.def))!.sort()).toEqual(['p_amazon', 'p_google'])
     expect((await post(RESERVE)).statusCode).toBe(201)
-    expect(ctx.buyersLists.get('bl_pg')!.lockedWin).toMatchObject({ partnerId: 'p_google' })
+    expect((await ctx.buyersLists.get('bl_pg'))!.lockedWin).toMatchObject({ partnerId: 'p_google' })
     expect(await status('2026-09-23', '2026-09-23', AMAZON)).toEqual(['reserved'])
     const out = await runAuction(ctx, new Date(W3))
     expect(out.positions.find((x) => x.positionId === 'portrait.s1')!.winner).toMatchObject({ partnerId: 'p_google' })
@@ -211,9 +211,9 @@ describe('reserve-price booking on a slot with its own billing unit (OQ27)', () 
     expect(tuesday.statusCode).toBe(400)
     expect(tuesday.json().error.details).toContainEqual({ field: 'windowStart', reason: "The start of one of this position's 168-hour play windows (UTC)." })
     expect((await post(RESERVE)).statusCode).toBe(201)
-    expect(rows()[0]).toMatchObject({ status: 'reserved', clearingCpm: 150 })
+    expect((await rows())[0]).toMatchObject({ status: 'reserved', clearingCpm: 150 })
     expect(await status('2026-09-21', '2026-09-27')).toEqual(['reserved'])
-    expect(ctx.campaigns.bookings(cid).map((b) => [b.windowStart, b.windowEnd])).toEqual([[W1, '2026-09-28T00:00:00.000Z']])
+    expect((await ctx.campaigns.bookings(cid)).map((b) => [b.windowStart, b.windowEnd])).toEqual([[W1, '2026-09-28T00:00:00.000Z']])
     /* Tuesday's auction doesn't touch the weekly slot at all. */
     expect((await runAuction(ctx, new Date(W2))).positions.find((x) => x.positionId === 'portrait.s1')).toBeUndefined()
   })

@@ -144,12 +144,45 @@ API process (`PH_SCHEDULER=in-process`) or in none of them
 CronJob), and the API is stateless apart from its database.
 
 The database is still the one SQLite file — one writer, one volume, one
-replica. N replicas need Postgres, and the honest statement is that the
-SQL is portable and the driver is not: `node:sqlite` is synchronous, and a
-Postgres adapter means an asynchronous repository layer. It is contained
-(one file per seam, `context.ts` the only wiring point), and it is
-engineering's integration work. The measurements above are what one
-replica gives a client's 15,000-display estate meanwhile.
+replica. N replicas need Postgres. Since 1–2 Oct 2026 both halves of that
+are ready on this side:
+
+- **The SQL is portable** (ticket gAi2mkcm43uW6hrchOjh): no `rowid`
+  ordering (an explicit `seq` column, migrations 0037 and the approval
+  module's 0102), no `json_extract`, no boolean `SUM`, no `INSERT OR
+  IGNORE / REPLACE`, and the duplicate-key check also knows Postgres's
+  SQLSTATE 23505. A test fails if any of these comes back.
+- **The repository layer is awaitable** (ticket cUdX4dmTMB2mvxJczHvT).
+  Every seam and repository method returns `T | Promise<T>` and every
+  caller awaits it. The measured scope was not "one file per seam": it was
+  63 source files, about 550 awaited calls, and the functions above them
+  that had to become async in turn. A Postgres adapter now slots in at
+  `context.ts` without touching callers.
+- **Transactions on SQLite are serialised by a lock.** Once a transaction
+  body awaits, anything else that ran on the one `node:sqlite` connection
+  would land inside it. So `tx()` takes a per-database FIFO lock, a
+  transaction inside another joins it, and every seam call from outside
+  waits for the open one to end (`gate()` / `onFree()` in `db/db.ts`).
+  This is the SQLite adapter's: a Postgres adapter gives each transaction
+  its own pooled connection and drops the lock. Read-check-write paths
+  that used to be atomic only because they were synchronous now run in a
+  transaction (32 sites, listed in the build note on the ticket).
+- **What it cost, measured** (`npm run bench`, four shapes, two
+  interleaved rounds each side, 2 Oct 2026). The first cut lost 15–25% on
+  every Partner API read. Three causes were fixed: Node 22's
+  AsyncLocalStorage turns on async_hooks, which tax every promise, so the
+  lock enables it only while a transaction is open or waiting; `gate()`
+  was a Proxy (~70 ns a call), now plain accessors (~15 ns); and the
+  per-position paths (visibility, `positionView`, `windowFacts`) compose
+  seam answers sync-first (`andThen` / `allOf` in `db/db.ts`) instead of
+  awaiting each one. After: reads 0–29% faster than before the change
+  (`GET /v1/inventory/{id}` +12–29%, a page of 50 +9–10%), auction and
+  billing within ±8%, and bidding (`POST /v1/reservations`, one
+  transaction per bid) 3–10% slower — the price of the lock on the write
+  path.
+
+The measurements above are what one replica gives a client's
+15,000-display estate meanwhile.
 
 ## Security for a client's VPC on EKS
 
@@ -191,7 +224,7 @@ these are the additions. Where each control lives is tabled in
 
 | Item | Why it is left |
 |---|---|
-| N replicas. | Needs Postgres and an asynchronous repository layer (above). One replica serves the estate; the manifests say so and `optional/` is ready for the day. |
+| N replicas. | Needs a Postgres adapter; the SQL is portable and the repository layer awaitable already (above). One replica serves the estate; the manifests say so and `optional/` is ready for the day. |
 | Creatives on a volume, uploads buffered in memory. | `AssetStore` is the seam to S3; the buffering is bounded now. Streaming means parsing MP4 from a stream; worth doing with the real store. |
 | Billing in the API process. | Half a second per 1,000-display window on the API's thread while `PH_SCHEDULER=in-process`; the CronJob takes it off the API once the database is shared. |
 | Egress limited by address, not by name. | Only a DNS-aware policy can do that; the client's cluster decides. |

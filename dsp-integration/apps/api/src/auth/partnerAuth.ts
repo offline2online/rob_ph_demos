@@ -31,10 +31,10 @@ export function partnerIdForToken(tokens: Record<string, string>, token: string)
   return found
 }
 
-export function partnerFromRequest(ctx: Context, req: FastifyRequest): PartnerRecord {
+export async function partnerFromRequest(ctx: Context, req: FastifyRequest): Promise<PartnerRecord> {
   const m = /^Bearer\s+(.+)$/i.exec(req.headers.authorization ?? '')
   const id = m ? partnerIdForToken(ctx.config.partnerTokens, m[1].trim()) : null
-  const partner = id ? ctx.partners.get(id) : null
+  const partner = id ? await ctx.partners.get(id) : null
   if (!partner) throw new HttpError(401, 'unauthorised', 'A valid partner bearer token is required.')
   return partner
 }

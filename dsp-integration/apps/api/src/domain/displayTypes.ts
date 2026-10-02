@@ -57,12 +57,12 @@ export function validatePlaylistSettings(body: unknown): Detail[] {
    copy of these fields while the playlist is still being created (Display
    Types' Playlist Settings panel) sends what it showed via the normal
    /settings PUT once the playlist exists. */
-export function ensureReferencedPlaylists(dt: DisplayType, playlists: PlaylistSource, isNew: boolean) {
-  if (dt.defaultPlaylistId && !playlists.get(dt.defaultPlaylistId)) {
-    playlists.create({ id: dt.defaultPlaylistId, name: `${dt.name} Playlist`, autoCreatedFor: dt.id, playlistSettings: isNew ? {} : { ...NEW_PLAYLIST_SETTINGS_DEFAULTS } })
+export async function ensureReferencedPlaylists(dt: DisplayType, playlists: PlaylistSource, isNew: boolean) {
+  if (dt.defaultPlaylistId && !(await playlists.get(dt.defaultPlaylistId))) {
+    await playlists.create({ id: dt.defaultPlaylistId, name: `${dt.name} Playlist`, autoCreatedFor: dt.id, playlistSettings: isNew ? {} : { ...NEW_PLAYLIST_SETTINGS_DEFAULTS } })
   }
   for (const z of zonesOf(dt)) {
-    if (z.playlistId && !playlists.get(z.playlistId)) playlists.create({ id: z.playlistId, name: `${dt.name} / ${z.name}`, autoCreatedFor: dt.id, playlistSettings: { ...NEW_PLAYLIST_SETTINGS_DEFAULTS } })
+    if (z.playlistId && !(await playlists.get(z.playlistId))) await playlists.create({ id: z.playlistId, name: `${dt.name} / ${z.name}`, autoCreatedFor: dt.id, playlistSettings: { ...NEW_PLAYLIST_SETTINGS_DEFAULTS } })
   }
 }
 

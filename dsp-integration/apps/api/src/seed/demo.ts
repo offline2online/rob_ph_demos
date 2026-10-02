@@ -15,7 +15,7 @@
 import { randomUUID } from 'node:crypto'
 import { advertiserSlug, supportedTargetingOf, type DisplayTypeExtensions, type Slot } from '@ph-dsp/types'
 import type { Context } from '../context'
-import { tx } from '../db/db'
+import { onFree, tx } from '../db/db'
 import { allPositions, nextWindow, windowMs } from '../domain/positions'
 import type { StoredTargeting } from '../domain/targetingSummary'
 import { CHECKS, campaignFor } from './bookings'
@@ -202,7 +202,7 @@ const svg = (w: number, h: number, bg: string, brand: string, line: string) =>
 export async function seedDemo(ctx: Context) {
   const report = { stores: 0, displays: 0, slots: 0, seats: 0, campaigns: 0, bookings: 0 }
 
-  tx(ctx.db, () => {
+  await tx(ctx.db, async () => {
     /* Stores and displays. */
     const insStore = ctx.db.prepare('INSERT INTO stores (id, name, region) VALUES (?, ?, ?) ON CONFLICT DO NOTHING')
     for (const s of DEMO_STORES) report.stores += Number(insStore.run(s.id, s.name, s.region).changes)
@@ -214,8 +214,8 @@ export async function seedDemo(ctx: Context) {
     }
 
     /* DSPs and their seats. */
-    if (!ctx.partners.get('p_ttd')) {
-      ctx.partners.insert({
+    if (!(await ctx.partners.get('p_ttd'))) {
+      await ctx.partners.insert({
         id: 'p_ttd', provider: 'the_trade_desk', name: 'The Trade Desk', status: 'connected', mode: 'test', lastSync: 'Today, 06:40',
         credsPublic: { supplySourceId: 'ss-phub-2291', ttdPartnerId: 'phub-retail', region: 'APAC' },
         secrets: { apiToken: 'poc-placeholder-token' },
@@ -224,35 +224,35 @@ export async function seedDemo(ctx: Context) {
       })
     }
     for (const [partnerId, seats] of Object.entries(DEMO_SEATS)) {
-      const p = ctx.partners.get(partnerId)
+      const p = await ctx.partners.get(partnerId)
       if (!p) continue
       const missing = seats.filter((s) => !p.seats.some((x) => x.name === s.name))
       if (!missing.length) continue
-      ctx.partners.update(partnerId, { seats: [...p.seats, ...missing] })
+      await ctx.partners.update(partnerId, { seats: [...p.seats, ...missing] })
       report.seats += missing.length
     }
 
     /* Advertiser settings (only where none is saved yet) and the lists. */
-    const saved = ctx.company.advertiserSettings()
+    const saved = await ctx.company.advertiserSettings()
     const fresh = Object.fromEntries(Object.entries(DEMO_ADVERTISER_SETTINGS).filter(([id]) => !(id in saved)))
-    if (Object.keys(fresh).length) ctx.company.saveAdvertiserSettings(fresh)
-    const company = ctx.company.get()
+    if (Object.keys(fresh).length) await ctx.company.saveAdvertiserSettings(fresh)
+    const company = await ctx.company.get()
     const whitelist = [...new Set([...company.advertiserWhitelist, 'Coca-Cola', 'Unilever', 'Procter & Gamble'])]
-    if (whitelist.length !== company.advertiserWhitelist.length) ctx.company.save({ ...company, advertiserWhitelist: whitelist })
+    if (whitelist.length !== company.advertiserWhitelist.length) await ctx.company.save({ ...company, advertiserWhitelist: whitelist })
 
     /* Slots: only on a display type that has no sellable position yet, so a
        hand-edited estate is never overwritten. */
     for (const [id, spec] of Object.entries(DEMO_SLOTS)) {
-      const dt = ctx.displayTypes.get(id)
+      const dt = await ctx.displayTypes.get(id)
       if (!dt || (dt.phExtensions?.slots ?? []).some((s) => s.owner === 'advertiser')) continue
-      ctx.displayTypes.saveRecord(id, { ...dt, playlistSettings: { ...(dt.playlistSettings as object), maximumCampaignsPlayedInRotation: spec.cap } })
+      await ctx.displayTypes.saveRecord(id, { ...dt, playlistSettings: { ...(dt.playlistSettings as object), maximumCampaignsPlayedInRotation: spec.cap } })
       const ext: DisplayTypeExtensions = {
         ...(dt.phExtensions ?? { slots: [] }),
         slots: spec.slots,
         reservePrice: spec.reservePrice,
         venue: { ...(dt.phExtensions?.venue ?? {}), loopLengthSec: spec.loopLengthSec },
       }
-      ctx.displayTypes.saveExtensions(id, ext)
+      await ctx.displayTypes.saveExtensions(id, ext)
       report.slots += spec.slots.length
     }
   })
@@ -264,16 +264,19 @@ export async function seedDemo(ctx: Context) {
   )
   const insertAsset = ctx.db.prepare("INSERT INTO campaign_assets (id, campaign_id, version, role, file, mime_type, width, height, size_bytes, created_at) VALUES (?, ?, 1, 'default', ?, 'image/svg+xml', ?, ?, 1024, ?)")
   for (const c of DEMO_CAMPAIGNS) {
-    if (ctx.campaigns.getCampaign(c.id)) continue
-    const dt = ctx.displayTypes.get(c.displayTypeId)
+    if (await ctx.campaigns.getCampaign(c.id)) continue
+    const dt = await ctx.displayTypes.get(c.displayTypeId)
     if (!dt) continue
     const { width, height } = dt.displayCanvasSize
-    const partner = ctx.partners.get(c.partnerId)
+    const partner = await ctx.partners.get(c.partnerId)
     const source = partner?.provider === 'the_trade_desk' || c.state === 'draft' ? 'api' : 'dsp'
-    insertCampaign.run(c.id, c.name, JSON.stringify(c.targeting), c.createdAt, source, advertiserSlug(c.advertiser), c.partnerId, c.displayTypeId, c.pricingType, JSON.stringify(c.brief))
     /* A rejected-for-size creative really is the wrong size. */
     const [w, h] = c.rejectReason?.includes('1280×720') ? [1280, 720] : [width, height]
-    insertAsset.run(randomUUID(), c.id, ctx.assets.put(svg(w, h, c.colour, c.advertiser, c.line), '.svg'), w, h, c.createdAt)
+    const file = await ctx.assets.put(svg(w, h, c.colour, c.advertiser, c.line), '.svg')
+    await onFree(ctx.db, () => {
+      insertCampaign.run(c.id, c.name, JSON.stringify(c.targeting), c.createdAt, source, advertiserSlug(c.advertiser), c.partnerId, c.displayTypeId, c.pricingType, JSON.stringify(c.brief))
+      insertAsset.run(randomUUID(), c.id, file, w, h, c.createdAt)
+    })
     report.campaigns++
     if (c.state === 'draft') continue
     const checks = CHECKS(width, height).map((k) => (k.name === 'dimensions' && (w !== width || h !== height) ? { ...k, passed: false, detail: `${w}×${h} does not match the ${width}×${height} canvas` } : k))
@@ -302,8 +305,8 @@ const PRICING: ('localised' | 'personalised' | 'interactive')[] = ['localised', 
    as bookings.ts. Past windows for two advertisers, with plays, so billing
    has more than one line. */
 async function seedDemoBookings(ctx: Context) {
-  const positions = allPositions(ctx)
-  const brands = ctx.partners.list()
+  const positions = await allPositions(ctx)
+  const brands = (await ctx.partners.list())
     .filter((p) => p.status === 'connected')
     .flatMap((p) => p.seats.map((s) => ({ partnerId: p.id, name: s.name, advertiserId: advertiserSlug(s.name) })))
     /* One booking identity per advertiser: the first DSP that brings it. */
@@ -311,12 +314,16 @@ async function seedDemoBookings(ctx: Context) {
   if (!positions.length || !brands.length) return 0
 
   /* Each position's own window grid (OQ27: its billing unit is its window length). */
-  const gridOf = (p: (typeof positions)[number]) => ({ len: windowMs(ctx, p), first: nextWindow(ctx, windowMs(ctx, p)).getTime() })
-  const currency = ctx.company.get().currency
+  const gridOf = async (p: (typeof positions)[number]) => {
+    const len = await windowMs(ctx, p)
+    return { len, first: (await nextWindow(ctx, len)).getTime() }
+  }
+  const currency = (await ctx.company.get()).currency
   const insVacd = ctx.db.prepare('INSERT INTO audience_vacd (display_type_id, slot, assumed_views_per_window, counted) VALUES (?, ?, ?, 0)')
   for (const p of positions) {
-    if (ctx.audience.forSlot(p.displayType.id, p.slot).assumedViewsPerWindow) continue
-    insVacd.run(p.displayType.id, p.slot, Math.max(1, ctx.displays.listByDisplayType(p.displayType.id).length) * 412)
+    if ((await ctx.audience.forSlot(p.displayType.id, p.slot)).assumedViewsPerWindow) continue
+    const n = Math.max(1, (await ctx.displays.listByDisplayType(p.displayType.id)).length) * 412
+    await onFree(ctx.db, () => insVacd.run(p.displayType.id, p.slot, n))
   }
   /* A campaign of the right pricing type for a booking, if the advertiser has one that is approved. */
   const campaignOf = async (advertiserId: string, pricingType: string) => {
@@ -341,20 +348,20 @@ async function seedDemoBookings(ctx: Context) {
       /* Packed into the next three weeks, so the Daily view is busy rather
          than one booking a fortnight: advertiser and window step at
          different strides, and a clash on a sold window is simply skipped. */
-      const { len, first } = gridOf(position)
+      const { len, first } = await gridOf(position)
       const start = new Date(first + ((b * 2 + n * 5) % 21) * len).toISOString()
       const id = `res_demo_${brand.advertiserId}_${n}`
-      if (ctx.reservations.get(id)) continue
-      if (ctx.reservations.forWindow(position.positionId, start).some((r) => !r.testMode && ['won', 'reserved'].includes(r.status))) continue
+      if (await ctx.reservations.get(id)) continue
+      if ((await ctx.reservations.forWindow(position.positionId, start)).some((r) => !r.testMode && ['won', 'reserved'].includes(r.status))) continue
       const cpm = Math.round(MONEY[(b + n) % MONEY.length] * (pricingType === 'localised' ? 1 : pricingType === 'personalised' ? 1.5 : 1.25))
       const reserve = n % 3 === 0
-      ctx.reservations.insert({
+      await ctx.reservations.insert({
         id, partnerId: brand.partnerId, advertiserId: brand.advertiserId, campaignId, positionId: position.positionId, windowStart: start,
         type: reserve ? 'reserve' : 'bid', channel: reserve ? 'api' : 'openrtb',
         bidCpm: cpm, currency, status: reserve ? 'reserved' : 'won', clearingCpm: cpm, reason: null,
         testMode: false, pricingType, handedOffAt: new Date().toISOString(),
       })
-      ctx.campaigns.bookSlot({
+      await ctx.campaigns.bookSlot({
         id: `bk_demo_${brand.advertiserId}_${n}`, campaignId, displayTypeId: dt.id, slot: position.slot,
         windowStart: start, windowEnd: new Date(Date.parse(start) + len).toISOString(),
       })
@@ -372,19 +379,19 @@ async function seedDemoBookings(ctx: Context) {
       const dt = position.displayType
       const campaignId = (await campaignOf(brand.advertiserId, 'localised')) ??
         (await campaignFor(ctx, { ...brand, displayTypeId: dt.id }, '#37474f', dt.displayCanvasSize.width, dt.displayCanvasSize.height))
-      const { len, first } = gridOf(position)
+      const { len, first } = await gridOf(position)
       for (const [k, day] of [1, 2, 5, 8, 12].entries()) {
         const id = `res_demo_held_${position.positionId}_${k}`
         const start = new Date(first + day * len).toISOString()
-        if (ctx.reservations.get(id)) continue
-        if (ctx.reservations.forWindow(position.positionId, start).some((r) => !r.testMode && ['won', 'reserved'].includes(r.status))) continue
+        if (await ctx.reservations.get(id)) continue
+        if ((await ctx.reservations.forWindow(position.positionId, start)).some((r) => !r.testMode && ['won', 'reserved'].includes(r.status))) continue
         const cpm = MONEY[(k + 3) % MONEY.length]
-        ctx.reservations.insert({
+        await ctx.reservations.insert({
           id, partnerId: brand.partnerId, advertiserId: brand.advertiserId, campaignId, positionId: position.positionId, windowStart: start,
           type: 'reserve', channel: 'api', bidCpm: cpm, currency, status: 'reserved', clearingCpm: cpm, reason: null,
           testMode: false, pricingType: 'localised', handedOffAt: new Date().toISOString(),
         })
-        ctx.campaigns.bookSlot({ id: `bk_demo_held_${position.positionId}_${k}`, campaignId, displayTypeId: dt.id, slot: position.slot, windowStart: start, windowEnd: new Date(Date.parse(start) + len).toISOString() })
+        await ctx.campaigns.bookSlot({ id: `bk_demo_held_${position.positionId}_${k}`, campaignId, displayTypeId: dt.id, slot: position.slot, windowStart: start, windowEnd: new Date(Date.parse(start) + len).toISOString() })
         written++
       }
     }
@@ -392,23 +399,23 @@ async function seedDemoBookings(ctx: Context) {
 
   /* Two windows that have already played, on the Landscape hero slot. */
   const hero = positions.find((p) => p.positionId === 'landscape.s1')
-  if (hero && !ctx.reservations.get('res_demo_past_cocacola')) {
+  if (hero && !(await ctx.reservations.get('res_demo_past_cocacola'))) {
     const play = ctx.db.prepare('INSERT INTO plays (id, display_id, campaign_id, played_at, duration_sec) VALUES (?, ?, ?, ?, 12)')
-    const displays = ctx.displays.listByDisplayType('landscape').slice(0, 4)
+    const displays = (await ctx.displays.listByDisplayType('landscape')).slice(0, 4)
     for (const [k, past] of [['cocacola', 'c_demo_cocacola_zero', '2026-09-16'], ['arnotts', 'c_demo_arnotts_timtam', '2026-09-17']].entries()) {
       const [key, campaignId, day] = past
-      if (!ctx.campaigns.getCampaign(campaignId)) continue
+      if (!(await ctx.campaigns.getCampaign(campaignId))) continue
       const start = `${day}T00:00:00.000Z`
       const brand = brands.find((x) => x.advertiserId === advertiserSlug(key === 'cocacola' ? 'Coca-Cola' : 'Arnott’s'))
       if (!brand) continue
-      ctx.reservations.insert({
+      await ctx.reservations.insert({
         id: `res_demo_past_${key}`, partnerId: brand.partnerId, advertiserId: brand.advertiserId, campaignId, positionId: hero.positionId, windowStart: start,
         type: 'bid', channel: 'openrtb', bidCpm: 160 + k * 20, currency, status: 'won', clearingCpm: 160 + k * 20, reason: null, testMode: false,
         pricingType: 'localised', handedOffAt: `${day}T00:00:00.000Z`,
       })
-      ctx.campaigns.bookSlot({ id: `bk_demo_past_${key}`, campaignId, displayTypeId: 'landscape', slot: hero.slot, windowStart: start, windowEnd: new Date(Date.parse(start) + gridOf(hero).len).toISOString() })
+      await ctx.campaigns.bookSlot({ id: `bk_demo_past_${key}`, campaignId, displayTypeId: 'landscape', slot: hero.slot, windowStart: start, windowEnd: new Date(Date.parse(start) + (await gridOf(hero)).len).toISOString() })
       const t0 = Date.parse(start)
-      tx(ctx.db, () => {
+      await tx(ctx.db, () => {
         displays.forEach((d, i) => {
           /* A 48s loop: 1,800 plays a day on a display that is on all day; the last one was on for half the day. */
           const plays = i === displays.length - 1 ? 900 : 1800

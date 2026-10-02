@@ -7,6 +7,7 @@ import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import type { Guards } from '../../http/app'
 import { hasDependents, notFound, validationFailed } from '../../http/errors'
+import { tx } from '../../db/db'
 
 const IDENTIFIER_KEYS = IDENTIFIER_TYPES.map((t) => t.key) as string[]
 
@@ -14,8 +15,8 @@ type Body = { name?: unknown; description?: unknown; invitedBuyers?: unknown; ac
 
 /* Every slot currently assigned to this buyers list, across every display
    type — what stops a delete (spec "Deleting"). */
-const dependentSlots = (ctx: Context, buyersListId: string) =>
-  ctx.displayTypes.list().flatMap((t) =>
+const dependentSlots = async (ctx: Context, buyersListId: string) =>
+  (await ctx.displayTypes.list()).flatMap((t) =>
     (t.phExtensions?.slots ?? []).flatMap((s, i) => (assignedOf(s).buyersListId === buyersListId ? [`${t.name} — ${s.label || `slot ${i + 1}`}`] : [])),
   )
 
@@ -57,7 +58,7 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
   app.get('/buyers-lists', async (req) => {
     guards.flagged()
     guards.requireScope(req, 'sections')
-    return { items: ctx.buyersLists.list() }
+    return { items: await ctx.buyersLists.list() }
   })
 
   app.post<{ Body: Body }>('/buyers-lists', async (req, reply) => {
@@ -66,14 +67,14 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     const errors: { field: string; reason: string }[] = []
     const parsed = parse(req.body ?? {}, errors)
     if (errors.length) throw validationFailed(errors)
-    const created: BuyersList = ctx.buyersLists.insert({ id: `bl_${randomUUID().slice(0, 12)}`, ...parsed })
+    const created: BuyersList = await ctx.buyersLists.insert({ id: `bl_${randomUUID().slice(0, 12)}`, ...parsed })
     return reply.status(201).send(created)
   })
 
   app.put<{ Params: { buyersListId: string }; Body: Body }>('/buyers-lists/:buyersListId', async (req) => {
     guards.flagged()
     guards.requireScope(req, 'admin')
-    if (!ctx.buyersLists.get(req.params.buyersListId)) throw notFound()
+    if (!(await ctx.buyersLists.get(req.params.buyersListId))) throw notFound()
     const errors: { field: string; reason: string }[] = []
     const parsed = parse(req.body ?? {}, errors)
     if (errors.length) throw validationFailed(errors)
@@ -83,10 +84,13 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
   app.delete<{ Params: { buyersListId: string } }>('/buyers-lists/:buyersListId', async (req, reply) => {
     guards.flagged()
     guards.requireScope(req, 'admin')
-    if (!ctx.buyersLists.get(req.params.buyersListId)) throw notFound()
-    const dependents = dependentSlots(ctx, req.params.buyersListId)
-    if (dependents.length) throw hasDependents("This buyers list can't be deleted while a slot is assigned to it.", dependents.map((reason) => ({ field: 'slots', reason })))
-    ctx.buyersLists.delete(req.params.buyersListId)
+    /* The check and the delete are one transaction: no slot can be assigned to it in between. */
+    await tx(ctx.db, async () => {
+      if (!(await ctx.buyersLists.get(req.params.buyersListId))) throw notFound()
+      const dependents = await dependentSlots(ctx, req.params.buyersListId)
+      if (dependents.length) throw hasDependents("This buyers list can't be deleted while a slot is assigned to it.", dependents.map((reason) => ({ field: 'slots', reason })))
+      await ctx.buyersLists.delete(req.params.buyersListId)
+    })
     return reply.status(204).send()
   })
 }

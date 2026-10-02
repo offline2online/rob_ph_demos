@@ -37,11 +37,11 @@ async function setup(clock: () => Date = () => NOW) {
   /* Slot 2 (the seeded Supplier slot) gets a weekly billing unit; slot 3
      becomes a second Advertiser slot with no override of its own, so it
      keeps the company default (24 hours). */
-  const setSlots = (patch: Record<number, Partial<Slot>>) => {
-    const ext = ctx.displayTypes.get('menu_board')!.phExtensions!
-    ctx.displayTypes.saveExtensions('menu_board', { ...ext, slots: ext.slots.map((s, i) => (patch[i + 1] ? { ...s, ...patch[i + 1] } : s)) })
+  const setSlots = async (patch: Record<number, Partial<Slot>>) => {
+    const ext = (await ctx.displayTypes.get('menu_board'))!.phExtensions!
+    await ctx.displayTypes.saveExtensions('menu_board', { ...ext, slots: ext.slots.map((s, i) => (patch[i + 1] ? { ...s, ...patch[i + 1] } : s)) })
   }
-  const weekly = () => setSlots({ 2: { billingUnitHours: 168 }, 3: { owner: 'advertiser', partnerIds: ['p_google'], listMode: 'rtb', storeScope: null } })
+  const weekly = async () => await setSlots({ 2: { billingUnitHours: 168 }, 3: { owner: 'advertiser', partnerIds: ['p_google'], listMode: 'rtb', storeScope: null } })
   const activate = (id: string) => app.inject({ method: 'PUT', url: `/api/admin/v1/campaigns/${id}/activation`, payload: { enabled: true } })
   const queued = async (name: string) => (await ctx.approvalCampaigns.listCampaigns({ sources: ['dsp'] })).find((c) => c.name === name)!.campaignId
   const get = (url: string) => app.inject({ method: 'GET', url: `/api${url}`, headers: GOOGLE })
@@ -52,10 +52,10 @@ describe('a slot’s billing unit sets its play-window length (OQ27)', () => {
   it('gives a 168-hour slot weekly windows — availability, inventory and bid request — while a slot without an override keeps the company default', async () => {
     const { ctx, weekly, get } = await setup()
     /* The seeded Supplier slot's audience is scored per company (24h) window. */
-    const scored = ctx.audience.forSlot('menu_board', 2).assumedViewsPerWindow
-    weekly()
-    expect(windowMs(ctx, findPosition(ctx, 'menu_board.s2'))).toBe(168 * HOUR)
-    expect(windowMs(ctx, findPosition(ctx, 'menu_board.s3'))).toBe(24 * HOUR)
+    const scored = (await ctx.audience.forSlot('menu_board', 2)).assumedViewsPerWindow
+    await weekly()
+    expect(await windowMs(ctx, await findPosition(ctx, 'menu_board.s2'))).toBe(168 * HOUR)
+    expect(await windowMs(ctx, await findPosition(ctx, 'menu_board.s3'))).toBe(24 * HOUR)
 
     const weeklyView = await get('/v1/inventory/menu_board.s2')
     expectMatchesContract('GET', '/v1/inventory/{positionId}', 200, weeklyView.json())
@@ -74,17 +74,17 @@ describe('a slot’s billing unit sets its play-window length (OQ27)', () => {
       .toEqual(['2026-09-21T00:00:00.000Z'])
 
     /* The bid request says how long the window is and what it's worth. */
-    const partner = ctx.partners.get('p_google')!
-    const req = buildBidRequest(ctx, findPosition(ctx, 'menu_board.s2')!, partner, 'x')
+    const partner = (await ctx.partners.get('p_google'))!
+    const req = await buildBidRequest(ctx, (await findPosition(ctx, 'menu_board.s2'))!, partner, 'x')
     expect(req.imp[0]).toMatchObject({ exp: 168 * 3600, qty: { multiplier: scored * 7 } })
-    expect(buildBidRequest(ctx, findPosition(ctx, 'menu_board.s3')!, partner, 'y').imp[0].exp).toBe(24 * 3600)
+    expect((await buildBidRequest(ctx, (await findPosition(ctx, 'menu_board.s3'))!, partner, 'y')).imp[0].exp).toBe(24 * 3600)
   })
 
   it('auctions a weekly slot only on its own window starts, which one auction shares with the daily slots', async () => {
     const { ctx, app, weekly } = await setup()
-    weekly()
+    await weekly()
     /* The scheduler looks at both grids' current and next windows, once each. */
-    expect(dueWindowStarts(ctx).map((d) => d.toISOString())).toEqual([
+    expect((await dueWindowStarts(ctx)).map((d) => d.toISOString())).toEqual([
       '2026-09-14T00:00:00.000Z', '2026-09-20T00:00:00.000Z', '2026-09-21T00:00:00.000Z',
     ])
     /* Monday: both slots clear together. Tuesday: only the daily one. */
@@ -104,15 +104,15 @@ describe('a slot’s billing unit sets its play-window length (OQ27)', () => {
     let now = NOW
     const { ctx, weekly } = await setup(() => now)
     /* The seeded 15 Sep window was sold daily; bill it before the slot changes. */
-    expect(runBilling(ctx).map((i) => i.reservationId)).toEqual(['res_seed_nestle_0915'])
-    const scored = ctx.audience.forSlot('menu_board', 2).assumedViewsPerWindow
-    weekly()
-    const p = findPosition(ctx, 'menu_board.s2')!
-    expect(allPositions(ctx)).toHaveLength(2)
+    expect((await runBilling(ctx)).map((i) => i.reservationId)).toEqual(['res_seed_nestle_0915'])
+    const scored = (await ctx.audience.forSlot('menu_board', 2)).assumedViewsPerWindow
+    await weekly()
+    const p = (await findPosition(ctx, 'menu_board.s2'))!
+    expect(await allPositions(ctx)).toHaveLength(2)
     const W7 = '2026-09-07T00:00:00.000Z'
     const W14 = '2026-09-14T00:00:00.000Z'
-    ctx.reservations.insert(won({ id: 'res_week_1', windowStart: W7, handedOffAt: W7 }))
-    ctx.reservations.insert(won({ id: 'res_week_2', windowStart: W14, handedOffAt: W14 }))
+    await ctx.reservations.insert(won({ id: 'res_week_1', windowStart: W7, handedOffAt: W7 }))
+    await ctx.reservations.insert(won({ id: 'res_week_2', windowStart: W14, handedOffAt: W14 }))
     /* Half the week's expected time played in week one, across its three displays. */
     const play = ctx.db.prepare("INSERT INTO plays (id, display_id, campaign_id, played_at, duration_sec) VALUES (?, ?, 'c_dsp_nestle', ?, 15)")
     const displays = ['d_1004', 'd_1005', 'd_1006']
@@ -121,7 +121,7 @@ describe('a slot’s billing unit sets its play-window length (OQ27)', () => {
     for (const d of displays) for (let i = 0; i < plays; i++) play.run(`w_${d}_${i}`, d, new Date(Date.parse(W7) + i * ((168 * HOUR) / plays)).toISOString())
 
     /* Sunday 20 Sep: week one has ended; week two runs until Monday 21 Sep. */
-    expect(runBilling(ctx)).toMatchObject([{
+    expect(await runBilling(ctx)).toMatchObject([{
       reservationId: 'res_week_1', positionId: p.positionId, windowStart: W7, windowEnd: W14,
       plays: plays * displays.length, playedSec: expectedSec / 2, expectedSec, assumedViews: scored * 7, realisedViews: Math.round(scored * 7 / 2), cpm: 100,
       amount: Math.round((Math.round(scored * 7 / 2) / 1000) * 100 * 100) / 100,
@@ -130,31 +130,31 @@ describe('a slot’s billing unit sets its play-window length (OQ27)', () => {
        seeded 15 Sep plays (43,200 s of the week's 604,800). */
     now = new Date('2026-09-21T00:30:00.000Z')
     const realised = Math.round(scored * 7 * (43_200 / expectedSec))
-    expect(runBilling(ctx)).toMatchObject([{ reservationId: 'res_week_2', windowStart: W14, windowEnd: '2026-09-21T00:00:00.000Z', playedSec: 43_200, expectedSec, assumedViews: scored * 7, realisedViews: realised, amount: Math.round((realised / 1000) * 100 * 100) / 100 }])
-    expect(runBilling(ctx)).toEqual([])
+    expect(await runBilling(ctx)).toMatchObject([{ reservationId: 'res_week_2', windowStart: W14, windowEnd: '2026-09-21T00:00:00.000Z', playedSec: 43_200, expectedSec, assumedViews: scored * 7, realisedViews: realised, amount: Math.round((realised / 1000) * 100 * 100) / 100 }])
+    expect(await runBilling(ctx)).toEqual([])
   })
 
   it('books a locked-rate term on a 168-hour slot one week at a time, each week its own reservation', async () => {
     const { ctx, setSlots, activate, queued } = await setup()
-    const list = ctx.buyersLists.insert({
+    const list = await ctx.buyersLists.insert({
       id: 'bl_weekly', name: 'Weekly term deal', description: '', invitedBuyers: [{ identifierType: 'brandEntity', value: 'Nestlé' }],
       activeFrom: null, activeTo: null, auctionCloses: '2026-09-29T00:00:00.000Z',
     })
-    setSlots({ 2: { billingUnitHours: 168, listMode: 'deal', buyersListId: list.id } })
+    await setSlots({ 2: { billingUnitHours: 168, listMode: 'deal', buyersListId: list.id } })
     await runAuction(ctx, MON_21)
     await activate(await queued('Nestlé — crid-5130001'))
     /* The term's one real auction: the week of 28 Sep clears and locks the rate. */
     const locking = await runAuction(ctx, MON_28)
     expect(locking.positions[0].winner).toMatchObject({ partnerId: 'p_google', advertiserId: 'nestle' })
-    const cpm = ctx.buyersLists.get(list.id)!.lockedWin!.cpm
+    const cpm = (await ctx.buyersLists.get(list.id))!.lockedWin!.cpm
     /* A Tuesday is not a window of this slot: nothing is booked. */
     expect((await runAuction(ctx, new Date('2026-09-29T00:00:00.000Z'))).positions).toEqual([])
     /* The next week books directly at the locked rate, as a week. */
     const booked = await runAuction(ctx, MON_05)
     expect(booked.positions[0]).toMatchObject({ positionId: 'menu_board.s2', bidRequests: 0, winner: { clearingCpm: cpm } })
     expect(booked.positions[0].skipped).toMatch(/locked rate/)
-    const campaignId = ctx.reservations.get(booked.positions[0].winner!.reservationId)!.campaignId as string
-    expect(ctx.campaigns.bookings(campaignId).map((b) => [b.windowStart, b.windowEnd])).toEqual([
+    const campaignId = (await ctx.reservations.get(booked.positions[0].winner!.reservationId))!.campaignId as string
+    expect((await ctx.campaigns.bookings(campaignId)).map((b) => [b.windowStart, b.windowEnd])).toEqual([
       ['2026-09-28T00:00:00.000Z', '2026-10-05T00:00:00.000Z'],
       ['2026-10-05T00:00:00.000Z', '2026-10-12T00:00:00.000Z'],
     ])
@@ -162,9 +162,9 @@ describe('a slot’s billing unit sets its play-window length (OQ27)', () => {
 
   it('shows a weekly booking across its week on the booking schedule, counted once', async () => {
     const { ctx, app, weekly } = await setup()
-    runBilling(ctx)
-    weekly()
-    ctx.reservations.insert(won({ id: 'res_sched', windowStart: MON_28.toISOString() }))
+    await runBilling(ctx)
+    await weekly()
+    await ctx.reservations.insert(won({ id: 'res_sched', windowStart: MON_28.toISOString() }))
     const res = await app.inject({ method: 'GET', url: '/api/admin/v1/booking-schedule?from=2026-09-28&to=2026-10-04' })
     expect(res.statusCode).toBe(200)
     const row = res.json().positions.find((p: { positionId: string }) => p.positionId === 'menu_board.s2')
@@ -183,27 +183,27 @@ describe('a slot’s billing unit sets its play-window length (OQ27)', () => {
     const held = await save(row(168))
     expect(held.statusCode).toBe(400)
     expect(held.json().error.details[0]).toMatchObject({ field: 'items[0].billingUnitHours' })
-    runBilling(ctx)
-    ctx.reservations.insert(won({ id: 'res_tue', windowStart: '2026-09-22T00:00:00.000Z', status: 'pending', clearingCpm: null }))
+    await runBilling(ctx)
+    await ctx.reservations.insert(won({ id: 'res_tue', windowStart: '2026-09-22T00:00:00.000Z', status: 'pending', clearingCpm: null }))
     /* Via the display type default, too. */
     const viaDefault = await save(row(null, 168))
     expect(viaDefault.statusCode).toBe(400)
     expect(viaDefault.json().error.details[0].reason).toMatch(/24-hour billing unit \(the last ends 2026-09-23T00:00:00.000Z\)/)
     /* Test mode never holds anything; once nothing live is left, it saves. */
-    ctx.reservations.update('res_tue', { status: 'lost' })
+    await ctx.reservations.update('res_tue', { status: 'lost' })
     const ok = await save(row(168))
     expect(ok.statusCode).toBe(200)
     expect(ok.json().items[0]).toMatchObject({ billingUnitHours: 168, billingUnitHoursOverride: 168, companyPlayWindowHours: 24 })
 
     /* A company play-window change isn't held back by a slot with its own unit. */
-    ctx.reservations.insert(won({ id: 'res_week', windowStart: MON_28.toISOString(), status: 'pending', clearingCpm: null }))
-    const company = { ...ctx.company.get() }
+    await ctx.reservations.insert(won({ id: 'res_week', windowStart: MON_28.toISOString(), status: 'pending', clearingCpm: null }))
+    const company = { ...(await ctx.company.get()) }
     const settings = await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: { ...company, playWindowHours: 48 } })
     expect(settings.json()).toMatchObject({ playWindowHours: 48, pendingPlayWindowHours: null })
     /* …and a slot with no unit of its own now inherits it. */
     const inherited = await save(row(null))
     expect(inherited.statusCode).toBe(400)
-    ctx.reservations.update('res_week', { status: 'lost' })
+    await ctx.reservations.update('res_week', { status: 'lost' })
     expect((await save(row(null))).json().items[0]).toMatchObject({ billingUnitHours: 48, billingUnitHoursOverride: null })
   })
 })

@@ -12,6 +12,16 @@ import { effectiveFloorCpm } from '../domain/pricing'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 import { blockedDomains, categoryCodes } from './openrtb'
 
+/* The first refusal among checks run in order; later checks don't run once
+   one refuses (the `a ?? b ?? c` the synchronous checks used to be). */
+export async function firstRefusal(...checks: (() => Refusal | null | Promise<Refusal | null>)[]): Promise<Refusal | null> {
+  for (const check of checks) {
+    const r = await check()
+    if (r) return r
+  }
+  return null
+}
+
 export type RefusalCode = 'not_approved' | 'below_floor' | 'advertiser_blocked' | 'category_blocked' | 'not_on_whitelist' | 'not_invited' | 'targeting_not_supported' | 'too_many_versions'
 export interface Refusal { code: RefusalCode; reason: string }
 
@@ -21,15 +31,15 @@ export interface Refusal { code: RefusalCode; reason: string }
    seatId (dspSeatId) — and that its delivery term covers the play window
    being sold (`windowStart`; the deal's term decides which windows it can
    sell, not when the bid arrives). Without a window it falls back to now. */
-export function checkAdvertiser(ctx: Context, p: PositionRef, partner: PartnerRecord, name: string, domains: string[] = [], seatId?: string | null, windowStart?: string): Refusal | null {
-  const eff = effectiveLists(partner, ctx.company.get())
+export async function checkAdvertiser(ctx: Context, p: PositionRef, partner: PartnerRecord, name: string, domains: string[] = [], seatId?: string | null, windowStart?: string): Promise<Refusal | null> {
+  const eff = effectiveLists(partner, await ctx.company.get())
   const blockedDomain = blockedDomains(partner, eff.blockList)
   if (isBlocked(name, eff) || domains.some((d) => blockedDomain.includes(d.trim().toLowerCase()))) return { code: 'advertiser_blocked', reason: `${name} is on the advertiser blacklist.` }
   const assignment = assignmentOf(p.def)
   if (assignment === 'whitelist_only' && !isOn(name, eff.allowList)) return { code: 'not_on_whitelist', reason: `${name} is not on the advertiser whitelist for this whitelist-only position.` }
   if (assignment === 'deal') {
     const listId = assignedOf(p.def).buyersListId
-    const list = listId ? ctx.buyersLists.get(listId) : null
+    const list = listId ? await ctx.buyersLists.get(listId) : null
     if (!list || !isActiveAt(list, windowStart ?? ctx.clock().toISOString()) || !isInvitedBuyer(list, name, seatId)) {
       return { code: 'not_invited', reason: `${name} is not an invited buyer on this private auction${list ? ` (${list.name})` : ''}.` }
     }
@@ -42,8 +52,8 @@ export function checkAdvertiser(ctx: Context, p: PositionRef, partner: PartnerRe
    advertiser lists checkAdvertiser uses above). A blacklisted category
    never wins; on a whitelist-only position every category must be
    whitelisted (Q12). */
-export function checkCategories(ctx: Context, p: PositionRef, partner: PartnerRecord, cats: string[]): Refusal | null {
-  const eff = effectiveCategoryLists(partner, ctx.company.get())
+export async function checkCategories(ctx: Context, p: PositionRef, partner: PartnerRecord, cats: string[]): Promise<Refusal | null> {
+  const eff = effectiveCategoryLists(partner, await ctx.company.get())
   const black = categoryCodes(eff.blockList)
   const hit = cats.find((c) => black.includes(c))
   if (hit) return { code: 'category_blocked', reason: `Category ${hit} is on the category blacklist.` }
@@ -60,7 +70,7 @@ export function checkCategories(ctx: Context, p: PositionRef, partner: PartnerRe
    is `not_approved` with its own message. */
 export async function checkCampaign(ctx: Context, campaignId: string): Promise<Refusal | null> {
   if (!(await ctx.approvals.isCampaignEligible(campaignId))) return { code: 'not_approved', reason: 'The campaign is not approved.' }
-  if (!ctx.campaigns.getCampaign(campaignId)?.activation.enabled) return { code: 'not_approved', reason: 'The campaign is approved but not activated.' }
+  if (!(await ctx.campaigns.getCampaign(campaignId))?.activation.enabled) return { code: 'not_approved', reason: 'The campaign is approved but not activated.' }
   return null
 }
 
@@ -80,8 +90,8 @@ export function checkTargeting(p: PositionRef, pricingType: string | null | unde
    enforced where the campaign meets the slot (Rob, 1 Oct 2026): submission
    happens before booking, so it only guards package size. A campaign with
    more versions than the slot sells is refused at bid and reservation. */
-export function checkVersionCount(ctx: Context, p: PositionRef, campaignId: string): Refusal | null {
-  const t = ctx.campaigns.getCampaign(campaignId)?.targeting as { targeted?: unknown[] } | null | undefined
+export async function checkVersionCount(ctx: Context, p: PositionRef, campaignId: string): Promise<Refusal | null> {
+  const t = (await ctx.campaigns.getCampaign(campaignId))?.targeting as { targeted?: unknown[] } | null | undefined
   const versions = 1 + (Array.isArray(t?.targeted) ? t.targeted.length : 0)
   const max = maxCampaignsOf(p.displayType, p.def)
   return versions <= max ? null : { code: 'too_many_versions', reason: `At most ${max} campaigns (default + targeted versions) for this slot.` }
@@ -92,12 +102,12 @@ export function checkVersionCount(ctx: Context, p: PositionRef, campaignId: stri
    multiplier is not a floor (Rob, 30 Sep 2026): it is charged on personalised
    plays at billing. An interactive campaign clears the ordinary floor for its
    plays and pays the engagement fee on top of it (Rob, 20 Sep). */
-export function floorFor(ctx: Context, advertiserId: string | null | undefined) {
-  const multiplier = advertiserId ? ctx.company.advertiserSetting(advertiserId).floorMultiplier : 1
-  return effectiveFloorCpm(ctx.company.get(), multiplier)
+export async function floorFor(ctx: Context, advertiserId: string | null | undefined): Promise<number> {
+  const multiplier = advertiserId ? (await ctx.company.advertiserSetting(advertiserId)).floorMultiplier : 1
+  return effectiveFloorCpm(await ctx.company.get(), multiplier)
 }
 
-export function checkFloor(ctx: Context, cpm: number, advertiserId: string | null | undefined): Refusal | null {
-  const floor = floorFor(ctx, advertiserId)
-  return cpm >= floor ? null : { code: 'below_floor', reason: `${cpm} is below the effective floor of ${floor} ${ctx.company.get().currency} CPM.` }
+export async function checkFloor(ctx: Context, cpm: number, advertiserId: string | null | undefined): Promise<Refusal | null> {
+  const floor = await floorFor(ctx, advertiserId)
+  return cpm >= floor ? null : { code: 'below_floor', reason: `${cpm} is below the effective floor of ${floor} ${(await ctx.company.get()).currency} CPM.` }
 }

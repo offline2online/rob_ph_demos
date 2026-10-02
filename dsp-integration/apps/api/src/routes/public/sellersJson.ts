@@ -7,7 +7,7 @@ import { isLive, sellersJson } from '../../domain/exchange'
 
 export const sellersJsonRoutes = (ctx: Context): FastifyPluginAsync => async (app) => {
   app.get('/sellers.json', async (_req, reply) => {
-    const e = ctx.exchange.get()
+    const e = await ctx.exchange.get()
     if (!ctx.flags.dspIntegration || !isLive(e)) return reply.status(404).send()
     return sellersJson(e)
   })

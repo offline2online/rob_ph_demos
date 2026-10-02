@@ -1,11 +1,11 @@
 /* Exchange settings: the client running this instance as seller of record,
    and its DSP integration switch (migration 0023: off until switched on). */
 import type { ExchangeInput } from '@ph-dsp/types'
-import { type Db, prepared } from '../db/db'
+import { type Db, prepared, type Awaitable } from '../db/db'
 
 export interface ExchangeRepo {
-  get(): ExchangeInput
-  save(e: ExchangeInput): ExchangeInput
+  get(): Awaitable<ExchangeInput>
+  save(e: ExchangeInput): Awaitable<ExchangeInput>
 }
 
 const ID = 'exchange'

@@ -3,7 +3,7 @@ import type { DisplayType } from '@ph-dsp/types'
 import { buildApp } from '../src/http/app'
 import { expectMatchesContract } from './contract'
 import { NOW, testContext } from './helpers'
-import { biddingClosesAt, biddingOpensAt, nextWindow, windowStartOf } from '../src/domain/positions'
+import { biddingClosesAt, biddingOpensAt, nextWindow, windowMs, windowStartOf } from '../src/domain/positions'
 import { promotePendingPlayWindowIfDue } from '../src/exchange/scheduler'
 
 const input = {
@@ -45,7 +45,7 @@ describe('Advertiser settings (spec §4, §6)', () => {
      admin told exactly when it takes effect. */
   it('defers a play-window length change while a window is still bid on or booked, and says when it takes effect', async () => {
     const ctx = await testContext({ clock: () => NOW })
-    ctx.reservations.insert({
+    await ctx.reservations.insert({
       id: 'r1', partnerId: 'p_google', advertiserId: 'nestle', campaignId: 'c_dsp_nestle', positionId: 'menu_board.s2', windowStart: '2026-09-22T00:00:00.000Z',
       type: 'bid', channel: 'api', bidCpm: 120, currency: 'AUD', status: 'pending', clearingCpm: null, reason: null, testMode: false, pricingType: 'localised', handedOffAt: null,
     })
@@ -57,8 +57,8 @@ describe('Advertiser settings (spec §4, §6)', () => {
     expect(res.json()).toMatchObject({ playWindowHours: 24, pendingPlayWindowHours: 168, pendingPlayWindowEffectiveFrom: '2026-09-23T00:00:00.000Z' })
 
     /* A Test-mode bid never blocks or defers anything (spec §7: no real spend). */
-    ctx.reservations.update('r1', { status: 'lost' })
-    ctx.reservations.insert({
+    await ctx.reservations.update('r1', { status: 'lost' })
+    await ctx.reservations.insert({
       id: 'r2', partnerId: 'p_google', advertiserId: 'nestle', campaignId: 'c_dsp_nestle', positionId: 'menu_board.s2', windowStart: '2026-09-24T00:00:00.000Z',
       type: 'bid', channel: 'api', bidCpm: 120, currency: 'AUD', status: 'won', clearingCpm: 120, reason: null, testMode: true, pricingType: 'localised', handedOffAt: null,
     })
@@ -69,7 +69,7 @@ describe('Advertiser settings (spec §4, §6)', () => {
   it('promotes a deferred play-window length change once every active window has played — waiting longer if a booking made since runs later', async () => {
     let now = NOW
     const ctx = await testContext({ clock: () => now })
-    ctx.reservations.insert({
+    await ctx.reservations.insert({
       id: 'r1', partnerId: 'p_google', advertiserId: 'nestle', campaignId: 'c_dsp_nestle', positionId: 'menu_board.s2', windowStart: '2026-09-22T00:00:00.000Z',
       type: 'bid', channel: 'api', bidCpm: 120, currency: 'AUD', status: 'pending', clearingCpm: null, reason: null, testMode: false, pricingType: 'localised', handedOffAt: null,
     })
@@ -77,41 +77,41 @@ describe('Advertiser settings (spec §4, §6)', () => {
     expect(saved.json()).toMatchObject({ playWindowHours: 24, pendingPlayWindowHours: 168, pendingPlayWindowEffectiveFrom: '2026-09-23T00:00:00.000Z' })
 
     /* Before the effective date: nothing happens. */
-    expect(promotePendingPlayWindowIfDue(ctx)).toBeNull()
-    expect(ctx.company.get().playWindowHours).toBe(24)
+    expect(await promotePendingPlayWindowIfDue(ctx)).toBeNull()
+    expect((await ctx.company.get()).playWindowHours).toBe(24)
 
     /* r1's window has played by the effective date, but a booking made since
        (still under the old, unpromoted length) runs later — the change waits
        for that one too, and the effective date moves out to cover it. */
-    ctx.reservations.insert({
+    await ctx.reservations.insert({
       id: 'r2', partnerId: 'p_google', advertiserId: 'nestle', campaignId: 'c_dsp_nestle', positionId: 'menu_board.s2', windowStart: '2026-09-25T00:00:00.000Z',
       type: 'reserve', channel: 'api', bidCpm: 120, currency: 'AUD', status: 'won', clearingCpm: 120, reason: null, testMode: false, pricingType: 'localised', handedOffAt: null,
     })
     now = new Date('2026-09-23T00:00:00.000Z')
-    expect(promotePendingPlayWindowIfDue(ctx)).toBeNull()
-    expect(ctx.company.get().playWindowHours).toBe(24)
-    expect(ctx.company.get().pendingPlayWindowEffectiveFrom).toBe('2026-09-26T00:00:00.000Z')
+    expect(await promotePendingPlayWindowIfDue(ctx)).toBeNull()
+    expect((await ctx.company.get()).playWindowHours).toBe(24)
+    expect((await ctx.company.get()).pendingPlayWindowEffectiveFrom).toBe('2026-09-26T00:00:00.000Z')
 
     /* r2 has played too, by its own (pushed-out) effective date: the change lands. */
     now = new Date('2026-09-26T00:00:00.000Z')
-    expect(promotePendingPlayWindowIfDue(ctx)).toBe(168)
-    expect(ctx.company.get()).toMatchObject({ playWindowHours: 168, pendingPlayWindowHours: null, pendingPlayWindowEffectiveFrom: null })
+    expect(await promotePendingPlayWindowIfDue(ctx)).toBe(168)
+    expect(await ctx.company.get()).toMatchObject({ playWindowHours: 168, pendingPlayWindowHours: null, pendingPlayWindowEffectiveFrom: null })
   })
 
   it('drives the play windows: length, the daily cutoff when the auction runs, and when bidding opens', async () => {
     const ctx = await testContext({ clock: () => NOW })
     /* Defaults: 24-hour windows, cutoff 18:00 UTC, bidding opens 7 days before the cutoff. */
     const w = new Date('2026-09-22T00:00:00.000Z')
-    expect(biddingClosesAt(ctx, w).toISOString()).toBe('2026-09-21T18:00:00.000Z')
-    expect(biddingOpensAt(ctx, w).toISOString()).toBe('2026-09-14T18:00:00.000Z')
-    expect(nextWindow(ctx).toISOString()).toBe('2026-09-21T00:00:00.000Z')
+    expect((await biddingClosesAt(ctx, w)).toISOString()).toBe('2026-09-21T18:00:00.000Z')
+    expect((await biddingOpensAt(ctx, w)).toISOString()).toBe('2026-09-14T18:00:00.000Z')
+    expect((await nextWindow(ctx)).toISOString()).toBe('2026-09-21T00:00:00.000Z')
     /* A midnight cutoff: the auction runs as the window starts. */
-    ctx.company.save({ ...ctx.company.get(), auctionCutoffTime: '00:00' })
-    expect(biddingClosesAt(ctx, w).toISOString()).toBe('2026-09-22T00:00:00.000Z')
+    await ctx.company.save({ ...(await ctx.company.get()), auctionCutoffTime: '00:00' })
+    expect((await biddingClosesAt(ctx, w)).toISOString()).toBe('2026-09-22T00:00:00.000Z')
     /* 7-day windows run Monday to Monday. */
-    ctx.company.save({ ...ctx.company.get(), playWindowHours: 168, auctionCutoffTime: '18:00' })
-    expect(windowStartOf(ctx, NOW).toISOString()).toBe('2026-09-14T00:00:00.000Z')
-    expect(nextWindow(ctx).toISOString()).toBe('2026-09-21T00:00:00.000Z')
+    await ctx.company.save({ ...(await ctx.company.get()), playWindowHours: 168, auctionCutoffTime: '18:00' })
+    expect(windowStartOf(NOW, await windowMs(ctx)).toISOString()).toBe('2026-09-14T00:00:00.000Z')
+    expect((await nextWindow(ctx)).toISOString()).toBe('2026-09-21T00:00:00.000Z')
   })
 
   it('Available Inventory lists every advertiser-owned slot, with no advertisers column', async () => {
@@ -138,9 +138,9 @@ describe('Advertiser settings (spec §4, §6)', () => {
   it('lists one position per advertiser slot per zone, and follows a zone being removed and added back', async () => {
     const ctx = await testContext()
     const app = buildApp(ctx)
-    const record = () => ctx.displayTypes.get('menu_board') as DisplayType
+    const record = async () => (await ctx.displayTypes.get('menu_board')) as DisplayType
     const zonesOf = (dt: DisplayType) => (dt.multiZone as { zones: { id: string; name: string; playlistId: string; maximumCampaignsPlayedInRotation?: number | null }[] }).zones
-    const saveZones = (zones: unknown[]) => app.inject({ method: 'PUT', url: '/api/admin/v1/display-types/menu_board/record', payload: { ...record(), multiZone: { enabled: true, zones } } })
+    const saveZones = async (zones: unknown[]) => app.inject({ method: 'PUT', url: '/api/admin/v1/display-types/menu_board/record', payload: { ...(await record()), multiZone: { enabled: true, zones } } })
     const saveSlots = (zoneIds: string[]) => app.inject({
       method: 'PUT', url: '/api/admin/v1/display-types/menu_board/extensions',
       payload: { slots: zoneIds.flatMap((zoneId) => [{ label: 'Slot 1', owner: 'advertiser', zoneId }, { label: 'Slot 2', owner: 'advertiser', zoneId }]) },
@@ -150,7 +150,7 @@ describe('Advertiser settings (spec §4, §6)', () => {
       expectMatchesContract('GET', '/admin/v1/available-inventory', 200, res.json())
       return (res.json().items as { slot: number; zoneSlot: number; playlistId: string; position: string }[]).map((r) => [r.slot, r.zoneSlot, r.playlistId, r.position])
     }
-    const three = zonesOf(record()).map((z) => ({ ...z, maximumCampaignsPlayedInRotation: 2 }))
+    const three = zonesOf(await record()).map((z) => ({ ...z, maximumCampaignsPlayedInRotation: 2 }))
 
     expect((await saveZones(three)).statusCode).toBe(200)
     expect((await saveSlots(['z1', 'z2', 'z3'])).statusCode).toBe(200)
@@ -207,8 +207,8 @@ describe('Advertiser settings (spec §4, §6)', () => {
     const app = buildApp(ctx)
     /* A second Advertiser slot on the same display type, so the default
        has more than one slot to reach. */
-    const ext = ctx.displayTypes.get('menu_board')!.phExtensions!
-    ctx.displayTypes.saveExtensions('menu_board', { ...ext, slots: [...ext.slots, { label: 'Supplier slot 2', owner: 'advertiser' as const, partnerIds: ['p_google'], advertisers: [], listMode: 'rtb' as const }] })
+    const ext = (await ctx.displayTypes.get('menu_board'))!.phExtensions!
+    await ctx.displayTypes.saveExtensions('menu_board', { ...ext, slots: [...ext.slots, { label: 'Supplier slot 2', owner: 'advertiser' as const, partnerIds: ['p_google'], advertisers: [], listMode: 'rtb' as const }] })
     const row = (slot: number, reservePrice: number | null, reservePriceDefault: number | null) =>
       ({ displayTypeId: 'menu_board', slot, supportedTargeting: ['localised'], assignedTo: KEEP, reservePrice, reservePriceDefault })
     const save = (items: ReturnType<typeof row>[]) => app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items } })
@@ -220,7 +220,7 @@ describe('Advertiser settings (spec §4, §6)', () => {
     expectMatchesContract('PUT', '/admin/v1/available-inventory', 200, set.json())
     expect(at(set.json(), 2)).toMatchObject({ reservePrice: 5, reservePriceOverride: null, displayTypeReservePrice: 5 })
     expect(at(set.json(), 4)).toMatchObject({ reservePrice: 5, reservePriceOverride: null, displayTypeReservePrice: 5 })
-    expect(ctx.displayTypes.get('menu_board')!.phExtensions!.reservePrice).toBe(5)
+    expect((await ctx.displayTypes.get('menu_board'))!.phExtensions!.reservePrice).toBe(5)
 
     /* Override slot 2 only: it wins there; slot 4 keeps following the default. */
     const overridden = await save([row(2, 8, 5), row(4, null, 5)])
@@ -266,7 +266,7 @@ describe('Advertiser settings (spec §4, §6)', () => {
     expect(set.statusCode).toBe(200)
     expectMatchesContract('PUT', '/admin/v1/available-inventory', 200, set.json())
     expect(at(set.json(), 2)).toMatchObject({ maxCampaigns: 8, maxCampaignsOverride: null, displayTypeMaxCampaigns: 8 })
-    expect(ctx.displayTypes.get('menu_board')!.phExtensions!.maxCampaigns).toBe(8)
+    expect((await ctx.displayTypes.get('menu_board'))!.phExtensions!.maxCampaigns).toBe(8)
 
     /* Overriding the slot wins over the default. */
     const overridden = await save([row(2, 3, 8)])
@@ -289,7 +289,7 @@ describe('Advertiser settings (spec §4, §6)', () => {
     expectMatchesContract('PUT', '/admin/v1/available-inventory', 200, res.json())
     /* Kept in the catalogue's order, and on the slot itself. */
     expect(res.json().items[0].supportedTargeting).toEqual(['localised', 'interactive'])
-    expect(ctx.displayTypes.get('menu_board')!.phExtensions!.slots[1].supportedTargeting).toEqual(['localised', 'interactive'])
+    expect((await ctx.displayTypes.get('menu_board'))!.phExtensions!.slots[1].supportedTargeting).toEqual(['localised', 'interactive'])
 
     const bad = await app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [
       { displayTypeId: 'menu_board', slot: 2, supportedTargeting: [], assignedTo: KEEP },
@@ -317,7 +317,7 @@ describe('Advertiser settings (spec §4, §6)', () => {
     /* Nothing chosen: any connected DSP, RTB. */
     expect(assigned(await save({ partnerIds: [], advertisers: [], whitelistOnly: false })))
       .toEqual({ partnerIds: [], partnerNames: [], advertisers: [], whitelistOnly: false, buyersListId: null, buyersListName: null })
-    expect(ctx.displayTypes.get('menu_board')!.phExtensions!.slots[1].listMode).toBe('rtb')
+    expect((await ctx.displayTypes.get('menu_board'))!.phExtensions!.slots[1].listMode).toBe('rtb')
 
     /* Several DSPs at once. */
     expect(assigned(await save({ partnerIds: ['p_google', 'p_amazon'], advertisers: [], whitelistOnly: false })))
@@ -326,11 +326,11 @@ describe('Advertiser settings (spec §4, §6)', () => {
     /* Named advertisers: held for them, and their DSP comes along. */
     const named = await save({ partnerIds: [], advertisers: ['Nestlé', 'Swisse'], whitelistOnly: false })
     expect(assigned(named)).toMatchObject({ advertisers: ['Nestlé', 'Swisse'], partnerIds: ['p_google'], whitelistOnly: false })
-    expect(ctx.displayTypes.get('menu_board')!.phExtensions!.slots[1].listMode).toBe(null)
+    expect((await ctx.displayTypes.get('menu_board'))!.phExtensions!.slots[1].listMode).toBe(null)
     expect((await buildApp(ctx).inject({ method: 'GET', url: '/api/v1/inventory/menu_board.s2', headers: { authorization: 'Bearer poc-token-google-dv360' } })).statusCode).toBe(200)
 
     /* The whitelist instead. */
-    ctx.company.save({ ...ctx.company.get(), advertiserWhitelist: ['Nestlé'] })
+    await ctx.company.save({ ...(await ctx.company.get()), advertiserWhitelist: ['Nestlé'] })
     expect(assigned(await save({ partnerIds: ['p_google'], advertisers: [], whitelistOnly: true }))).toMatchObject({ whitelistOnly: true })
   })
 
@@ -349,12 +349,12 @@ describe('Advertiser settings (spec §4, §6)', () => {
     /* L'Oréal is an Amazon advertiser, not a Google one. */
     expect(await fields({ partnerIds: ['p_google'], advertisers: ["L'Oréal"], whitelistOnly: false })).toEqual(['items[0].assignedTo.advertisers'])
     expect(await fields({ partnerIds: [], advertisers: ['Nestlé'], whitelistOnly: true })).toEqual(['items[0].assignedTo.whitelistOnly'])
-    ctx.company.save({ ...ctx.company.get(), advertiserWhitelist: [] })
+    await ctx.company.save({ ...(await ctx.company.get()), advertiserWhitelist: [] })
     expect(await fields({ partnerIds: [], advertisers: [], whitelistOnly: true })).toEqual(['items[0].assignedTo.whitelistOnly'])
 
     /* A blocked advertiser can't be added, but one already held stays. */
     expect((await save({ partnerIds: [], advertisers: ['Nestlé'], whitelistOnly: false })).statusCode).toBe(200)
-    ctx.company.save({ ...ctx.company.get(), advertiserBlacklist: ['Nestlé'] })
+    await ctx.company.save({ ...(await ctx.company.get()), advertiserBlacklist: ['Nestlé'] })
     expect((await save({ partnerIds: [], advertisers: ['Nestlé'], whitelistOnly: false })).statusCode).toBe(200)
     /* Once the position is held for someone else, Nestlé can't come back. */
     expect((await save({ partnerIds: [], advertisers: ['Swisse'], whitelistOnly: false })).statusCode).toBe(200)
@@ -368,8 +368,8 @@ describe('Advertiser settings (spec §4, §6)', () => {
     const save = () => app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, supportedTargeting: ['localised', 'interactive'], assignedTo: KEEP }] } })
     expect((await save()).statusCode).toBe(200)
 
-    const dt = ctx.displayTypes.get('menu_board')!
-    ctx.displayTypes.saveRecord('menu_board', { ...dt, qrControl: { ...(dt.qrControl as object), enabled: false } })
+    const dt = (await ctx.displayTypes.get('menu_board'))!
+    await ctx.displayTypes.saveRecord('menu_board', { ...dt, qrControl: { ...(dt.qrControl as object), enabled: false } })
     const res = await save()
     expect(res.statusCode).toBe(400)
     expect(res.json().error.details).toEqual([{ field: 'items[0].supportedTargeting', reason: 'QR Control is required to support an interactive engagement.' }])

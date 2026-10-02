@@ -40,10 +40,10 @@ export interface ScreensSummary {
   unscoredDisplayTypes: string[]
 }
 
-export function seedScreens(ctx: Context, scenario: Scenario = 'all-scored'): ScreensSummary {
+export async function seedScreens(ctx: Context, scenario: Scenario = 'all-scored'): Promise<ScreensSummary> {
   const { db } = ctx
-  return tx(db, () => {
-    const types = ctx.displayTypes.list()
+  return tx(db, async () => {
+    const types = await ctx.displayTypes.list()
     const typeIds = new Set(types.map((t) => t.id))
     for (const s of MOCK_STORES) db.prepare('INSERT INTO stores (id, name, region) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, region = excluded.region').run(s.id, s.name, s.region)
 

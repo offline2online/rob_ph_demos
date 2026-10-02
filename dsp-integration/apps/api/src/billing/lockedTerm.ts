@@ -23,11 +23,12 @@ import { assignedOf, type BuyersList } from '@ph-dsp/types'
 export async function bookLockedTermWindow(ctx: Context, p: PositionRef, start: string, list: BuyersList, out: PositionOutcome): Promise<PositionOutcome> {
   const win = list.lockedWin!
   /* The term is locked to its winner: any other bid for this window is told so, never left pending. */
-  settlePending(ctx, p.positionId, start, `The term is locked at ${win.cpm} ${ctx.company.get().currency} CPM to another bid (${list.name}); no other bid takes this window.`)
+  const company = await ctx.company.get()
+  await settlePending(ctx, p.positionId, start, `The term is locked at ${win.cpm} ${company.currency} CPM to another bid (${list.name}); no other bid takes this window.`)
   /* Only a connected DSP can write (REQUIREMENTS §7): if the locked winner's
      DSP has since disconnected or failed its re-test, book nothing and hand
      nothing off; the window falls through to the default campaign. */
-  const partner = ctx.partners.get(win.partnerId)
+  const partner = await ctx.partners.get(win.partnerId)
   if (!partner || partner.status !== 'connected') {
     return { ...out, skipped: `Private auction: ${partner?.name ?? 'the locked DSP'} is not connected, so the locked window is not booked.` }
   }
@@ -38,9 +39,9 @@ export async function bookLockedTermWindow(ctx: Context, p: PositionRef, start: 
      the floor in force now is not sold. It falls through to the default
      campaign, as a deal that clears nothing always has, and is never
      booked below the floor. */
-  const floor = floorFor(ctx, win.advertiserId)
+  const floor = await floorFor(ctx, win.advertiserId)
   if (win.cpm < floor) {
-    return { ...out, skipped: `Private auction: the locked rate (${win.cpm}) is below the effective floor of ${floor} ${ctx.company.get().currency} CPM, so this window is not sold under ${list.name}.` }
+    return { ...out, skipped: `Private auction: the locked rate (${win.cpm}) is below the effective floor of ${floor} ${company.currency} CPM, so this window is not sold under ${list.name}.` }
   }
   /* A term locked by a reserve-price commitment (OQ52) is programmatic
      guaranteed: each window is booked as Reserved, the same as the window
@@ -48,11 +49,11 @@ export async function bookLockedTermWindow(ctx: Context, p: PositionRef, start: 
   const reserve = win.source === 'reserve'
   let r: ReservationRecord
   try {
-    r = ctx.reservations.insert({
+    r = await ctx.reservations.insert({
     id: `res_${randomUUID().slice(0, 12)}`, partnerId: win.partnerId, advertiserId: win.advertiserId, campaignId: win.campaignId,
     positionId: p.positionId, windowStart: start, type: win.channel === 'openrtb' ? 'bid' : 'reserve', channel: win.channel,
-    bidCpm: win.cpm, currency: ctx.company.get().currency, status: reserve ? 'reserved' : 'won', clearingCpm: win.cpm,
-    reason: reserve ? `Reserved: booked at ${list.name}'s reserve-price commitment, no auction.` : `Private auction: booked at ${list.name}'s locked rate, no re-auction.`, testMode: false, pricingType: win.pricingType, handedOffAt: null, personalisedMultiplier: multiplierToSnapshot(ctx.company.get(), win.pricingType),
+    bidCpm: win.cpm, currency: company.currency, status: reserve ? 'reserved' : 'won', clearingCpm: win.cpm,
+    reason: reserve ? `Reserved: booked at ${list.name}'s reserve-price commitment, no auction.` : `Private auction: booked at ${list.name}'s locked rate, no re-auction.`, testMode: false, pricingType: win.pricingType, handedOffAt: null, personalisedMultiplier: multiplierToSnapshot(company, win.pricingType),
     })
   } catch (e) {
     /* Another clearing booked this window first (migration 0021). */
@@ -69,12 +70,13 @@ export async function bookLockedTermWindow(ctx: Context, p: PositionRef, start: 
    (spec "…dynamic VAC-d billing over the delivery term"). A deal with no
    auctionCloses never reaches here locked, so it keeps clearing fresh every
    window as it always has. */
-export function lockTermOnClear(ctx: Context, p: PositionRef, live: ReservationRecord): void {
+export async function lockTermOnClear(ctx: Context, p: PositionRef, live: ReservationRecord): Promise<void> {
   if (assignmentOf(p.def) !== 'deal') return
   const listId = assignedOf(p.def).buyersListId
-  const list = listId ? ctx.buyersLists.get(listId) : null
+  const list = listId ? await ctx.buyersLists.get(listId) : null
   if (list?.auctionCloses && !isTermLocked(list)) {
-    ctx.buyersLists.lockWin(list.id, {
+    /* lockWin is first-wins on its own: a term already locked is left as is. */
+    await ctx.buyersLists.lockWin(list.id, {
       cpm: live.bidCpm as number, partnerId: live.partnerId, advertiserId: live.advertiserId, campaignId: live.campaignId as string,
       pricingType: live.pricingType, channel: live.channel, lockedAt: ctx.clock().toISOString(), source: 'auction',
     })

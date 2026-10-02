@@ -12,9 +12,9 @@ const setup = async () => {
   const app = buildApp(ctx)
   const get = (url: string, headers = GOOGLE) => app.inject({ method: 'GET', url: `/api/v1${url}`, headers })
   /* Change the Menu Board's advertiser slot (slot 2). */
-  const setSlot = (patch: Partial<Slot>) => {
-    const ext = ctx.displayTypes.get('menu_board')!.phExtensions!
-    ctx.displayTypes.saveExtensions('menu_board', { ...ext, slots: ext.slots.map((s, i) => (i === 1 ? { ...s, ...patch } : s)) })
+  const setSlot = async (patch: Partial<Slot>) => {
+    const ext = (await ctx.displayTypes.get('menu_board'))!.phExtensions!
+    await ctx.displayTypes.saveExtensions('menu_board', { ...ext, slots: ext.slots.map((s, i) => (i === 1 ? { ...s, ...patch } : s)) })
   }
   return { ctx, app, get, setSlot }
 }
@@ -58,22 +58,22 @@ describe('GET /v1/inventory', () => {
     const ids = async (q = '') => (await get(`/inventory${q}`)).json().items.map((i: { positionId: string }) => i.positionId)
     expect(await ids('?advertiserId=loreal')).toEqual([])
 
-    ctx.company.save({ ...ctx.company.get(), advertiserBlacklist: ['Nestlé'], advertiserWhitelist: ['Swisse'] })
+    await ctx.company.save({ ...(await ctx.company.get()), advertiserBlacklist: ['Nestlé'], advertiserWhitelist: ['Swisse'] })
     expect(await ids('?advertiserId=nestle')).toEqual([])
     expect(await ids('?advertiserId=swisse')).toEqual(['menu_board.s2'])
     expect(await ids()).toEqual(['menu_board.s2'])
 
-    setSlot({ listMode: 'whitelist_only' })
-    ctx.company.save({ ...ctx.company.get(), advertiserBlacklist: [], advertiserWhitelist: ['Nestlé'] })
+    await setSlot({ listMode: 'whitelist_only' })
+    await ctx.company.save({ ...(await ctx.company.get()), advertiserBlacklist: [], advertiserWhitelist: ['Nestlé'] })
     expect(await ids('?advertiserId=swisse')).toEqual([])
     expect(await ids('?advertiserId=nestle')).toEqual(['menu_board.s2'])
 
-    setSlot({ listMode: null, advertisers: ['Swisse'] })
+    await setSlot({ listMode: null, advertisers: ['Swisse'] })
     expect(await ids('?advertiserId=nestle')).toEqual([])
     const reserved = (await get('/inventory?advertiserId=swisse')).json().items[0]
     expect(reserved.assignment).toBe('reserved')
 
-    setSlot({ advertisers: [], listMode: 'rtb', partnerIds: ['p_amazon'] })
+    await setSlot({ advertisers: [], listMode: 'rtb', partnerIds: ['p_amazon'] })
     expect(await ids()).toEqual([])
   })
 
@@ -91,7 +91,7 @@ describe('GET /v1/inventory', () => {
     expect(await n('region=Western%20Sydney')).toBe(0)
     expect(await n('status=available&from=2026-09-21&to=2026-09-22')).toBe(1)
     expect(await n('status=sold&from=2026-09-21&to=2026-09-22')).toBe(0)
-    ctx.reservations.insert({
+    await ctx.reservations.insert({
       id: 'r1', partnerId: 'p_google', advertiserId: 'nestle', campaignId: 'c_dsp_nestle', positionId: 'menu_board.s2', windowStart: '2026-09-22T00:00:00.000Z',
       type: 'bid', channel: 'api', bidCpm: 120, currency: 'AUD', status: 'won', clearingCpm: 120, reason: null, testMode: false, pricingType: 'localised', handedOffAt: null,
     })
@@ -115,7 +115,7 @@ describe('GET /v1/inventory/{positionId} and …/availability', () => {
 
   it('gives a status per play window: past and current windows are unavailable, won ones sold', async () => {
     const { ctx, get, setSlot } = await setup()
-    ctx.reservations.insert({
+    await ctx.reservations.insert({
       id: 'r1', partnerId: 'p_google', advertiserId: 'nestle', campaignId: 'c_dsp_nestle', positionId: 'menu_board.s2', windowStart: '2026-09-22T00:00:00.000Z',
       type: 'bid', channel: 'api', bidCpm: 120, currency: 'AUD', status: 'won', clearingCpm: 120, reason: null, testMode: false, pricingType: 'localised', handedOffAt: null,
     })
@@ -131,7 +131,7 @@ describe('GET /v1/inventory/{positionId} and …/availability', () => {
       ],
     })
     /* Reserved to a named advertiser: "reserved" to its DSP, "available" to that advertiser. */
-    setSlot({ listMode: null, advertisers: ['Swisse'] })
+    await setSlot({ listMode: null, advertisers: ['Swisse'] })
     const statuses = async (q: string) => (await get(`/inventory/menu_board.s2/availability?from=2026-09-21&to=2026-09-21${q}`)).json().windows.map((w: { status: string }) => w.status)
     expect(await statuses('')).toEqual(['reserved'])
     expect(await statuses('&advertiserId=swisse')).toEqual(['available'])

@@ -28,7 +28,7 @@ describe('only a connected DSP can create anything', () => {
   it('refuses campaign writes from a partner that is not connected, but still lets it read its own', async () => {
     const { ctx, app, create } = await setup()
     const id = (await create(SWISSE)).json().campaignId
-    ctx.partners.update('p_google', { status: 'error' })
+    await ctx.partners.update('p_google', { status: 'error' })
     const res = await create(SWISSE)
     expect(res.statusCode).toBe(409)
     expect(res.json().error).toMatchObject({ code: 'conflict', message: 'Google DSP is not connected.' })
@@ -213,10 +213,10 @@ describe('secrets', () => {
 
   it('reports which secret fields are set, and follows a change to them', async () => {
     const { ctx } = await setup()
-    const before = ctx.partners.get('p_google')!.secretsSet
+    const before = (await ctx.partners.get('p_google'))!.secretsSet
     expect(before.length).toBeGreaterThan(0)
-    ctx.partners.update('p_google', {}, {})
-    expect(ctx.partners.get('p_google')!.secretsSet).toEqual([])
+    await ctx.partners.update('p_google', {}, {})
+    expect((await ctx.partners.get('p_google'))!.secretsSet).toEqual([])
   })
 })
 

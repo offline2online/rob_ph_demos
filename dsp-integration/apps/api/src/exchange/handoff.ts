@@ -14,8 +14,8 @@ import type { ReservationRecord } from '../repos/ReservationRepo'
 
 export async function handOff(ctx: Context, r: ReservationRecord): Promise<ReservationRecord> {
   if (r.testMode || r.handedOffAt || !['won', 'reserved'].includes(r.status) || !r.campaignId) return r
-  const notHandedOff = (why: string) => ctx.reservations.update(r.id, { reason: `Not handed off: ${why}` }) as ReservationRecord
-  const p = findPosition(ctx, r.positionId)
+  const notHandedOff = async (why: string) => (await ctx.reservations.update(r.id, { reason: `Not handed off: ${why}` })) as ReservationRecord
+  const p = await findPosition(ctx, r.positionId)
   if (!p) return notHandedOff('the position no longer exists.')
   /* The enforcement hook, at the last point before the campaign system (brief, package 11). */
   const refused = await checkCampaign(ctx, r.campaignId)
@@ -31,16 +31,17 @@ export async function handOff(ctx: Context, r: ReservationRecord): Promise<Reser
      the old creative and every window after gets the new one, never both.
      An HQ campaign has no approved version and hands off its latest. */
   const live = await ctx.approvals.liveAssetVersion(r.campaignId)
-  const assets = ctx.campaigns.latestAssets(r.campaignId, live ?? undefined)
+  const assets = await ctx.campaigns.latestAssets(r.campaignId, live ?? undefined)
   const asset = assets.find((a) => a.role === 'default') ?? assets[0]
-  const bytes = asset ? ctx.assets.read(asset.file) : null
+  const bytes = asset ? await ctx.assets.read(asset.file) : null
   if (!asset || !bytes) return notHandedOff('the campaign has no creative.')
   const checks = fileChecks(readMedia(bytes), bytes.length, p.displayType, ctx.config.assetLimits)
   if (failed(checks).length) return notHandedOff(`the creative doesn’t fit ${p.displayType.name}: ${failed(checks).map((c) => c.detail ?? c.name).join(' ')}`)
+  const windowEnd = new Date(Date.parse(r.windowStart) + (await windowMs(ctx, p))).toISOString()
   try {
-    ctx.campaigns.bookSlot({
+    await ctx.campaigns.bookSlot({
       id: `bk_${randomUUID().slice(0, 12)}`, campaignId: r.campaignId, displayTypeId: p.displayType.id, slot: p.slot,
-      windowStart: r.windowStart, windowEnd: new Date(Date.parse(r.windowStart) + windowMs(ctx, p)).toISOString(),
+      windowStart: r.windowStart, windowEnd,
       assetVersion: Math.max(...assets.map((a) => a.version)),
     })
   } catch (e) {
@@ -48,5 +49,5 @@ export async function handOff(ctx: Context, r: ReservationRecord): Promise<Reser
     if (isUniqueViolation(e)) return notHandedOff('the slot is already booked for that window.')
     throw e
   }
-  return ctx.reservations.update(r.id, { handedOffAt: ctx.clock().toISOString() }) as ReservationRecord
+  return (await ctx.reservations.update(r.id, { handedOffAt: ctx.clock().toISOString() })) as ReservationRecord
 }

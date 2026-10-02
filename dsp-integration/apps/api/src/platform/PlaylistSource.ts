@@ -1,6 +1,6 @@
 /* Stand-in for the existing playlist service. Items, scenes and scheduling
    are existing platform data: stored and passed through, never changed. */
-import { type Db, fromJson, prepared, toJson } from '../db/db'
+import { type Db, fromJson, prepared, toJson, type Awaitable } from '../db/db'
 
 export interface PlaylistRecord {
   id: string
@@ -17,12 +17,12 @@ export interface PlaylistRecord {
 }
 
 export interface PlaylistSource {
-  list(): PlaylistRecord[]
-  get(id: string): PlaylistRecord | null
-  create(p: Pick<PlaylistRecord, 'id' | 'name' | 'autoCreatedFor'> & Partial<PlaylistRecord>): PlaylistRecord
-  rename(id: string, name: string): PlaylistRecord | null
-  saveSettings(id: string, settings: Record<string, unknown>): PlaylistRecord | null
-  delete(id: string): boolean
+  list(): Awaitable<PlaylistRecord[]>
+  get(id: string): Awaitable<PlaylistRecord | null>
+  create(p: Pick<PlaylistRecord, 'id' | 'name' | 'autoCreatedFor'> & Partial<PlaylistRecord>): Awaitable<PlaylistRecord>
+  rename(id: string, name: string): Awaitable<PlaylistRecord | null>
+  saveSettings(id: string, settings: Record<string, unknown>): Awaitable<PlaylistRecord | null>
+  delete(id: string): Awaitable<boolean>
 }
 
 interface Row { id: string; name: string; auto_created_for: string | null; schedule: string | null; items: string; playlist_settings: string | null }

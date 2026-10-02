@@ -34,7 +34,7 @@ async function setup() {
   }
   const ctx = await testContext({ clock: () => NOW, dspFetch: fetchImpl })
   const app = buildApp(ctx)
-  const rows = (start = W1) => ctx.reservations.forWindow(POS, start.toISOString())
+  const rows = async (start = W1) => ctx.reservations.forWindow(POS, start.toISOString())
   /* Nestlé's first bid queues its creative (approved automatically); activate
      it so it can win from the next window. */
   const readyToWin = async () => {
@@ -54,10 +54,10 @@ describe('one live sale per position and window', () => {
     const [a, b] = await Promise.all([runAuction(ctx, W2), runAuction(ctx, W2)])
     const winners = [a, b].map((r) => r.positions.find((p) => p.positionId === POS)!.winner).filter(Boolean)
     expect(winners).toHaveLength(1)
-    expect(rows(W2).filter((r) => r.status === 'won' && !r.testMode)).toHaveLength(1)
+    expect((await rows(W2)).filter((r) => r.status === 'won' && !r.testMode)).toHaveLength(1)
     /* The loser's candidate is told why, not left pending. */
-    expect(rows(W2).filter((r) => r.status === 'pending')).toHaveLength(0)
-    expect(ctx.campaigns.bookings(campaignId).filter((bk) => bk.windowStart === W2.toISOString())).toHaveLength(1)
+    expect((await rows(W2)).filter((r) => r.status === 'pending')).toHaveLength(0)
+    expect((await ctx.campaigns.bookings(campaignId)).filter((bk) => bk.windowStart === W2.toISOString())).toHaveLength(1)
   })
 
   it('the database refuses a second live winner, but not a Test-mode one', async () => {
@@ -67,10 +67,10 @@ describe('one live sale per position and window', () => {
       windowStart: W2.toISOString(), type: 'bid' as const, channel: 'openrtb' as const, bidCpm: 150, currency: 'AUD', status: 'won' as const,
       clearingCpm: 150, reason: null, testMode: false, pricingType: 'localised', handedOffAt: null, ...over,
     })
-    ctx.reservations.insert(row({}))
-    expect(() => ctx.reservations.insert(row({ status: 'reserved' }))).toThrow(/UNIQUE constraint failed/)
-    expect(() => ctx.reservations.insert(row({ testMode: true }))).not.toThrow()
-    expect(() => ctx.reservations.insert(row({ status: 'lost' }))).not.toThrow()
+    await ctx.reservations.insert(row({}))
+    await expect((async () => ctx.reservations.insert(row({ status: 'reserved' })))()).rejects.toThrow(/UNIQUE constraint failed/)
+    await expect((async () => ctx.reservations.insert(row({ testMode: true })))()).resolves.not.toThrow()
+    await expect((async () => ctx.reservations.insert(row({ status: 'lost' })))()).resolves.not.toThrow()
   })
 })
 
@@ -103,7 +103,7 @@ describe('bid responses are validated before they are trusted', () => {
     hooks.rewrite = (res) => ({ ...res, cur: undefined })
     const out = await runAuction(ctx, W2)
     expect(out.positions[0].winner).toBeNull()
-    expect(rows(W2)[0]).toMatchObject({ status: 'rejected', reason: 'Bid in USD; the exchange trades in AUD.' })
+    expect((await rows(W2))[0]).toMatchObject({ status: 'rejected', reason: 'Bid in USD; the exchange trades in AUD.' })
   })
 
   it('rejects a price above the ceiling and a bid for an impression it was not offered', async () => {
@@ -111,11 +111,11 @@ describe('bid responses are validated before they are trusted', () => {
     await readyToWin()
     hooks.rewrite = (res) => ({ ...res, seatbid: res.seatbid!.map((sb) => ({ ...sb, bid: sb.bid!.map((b) => ({ ...b, price: 1e9 })) })) })
     await runAuction(ctx, W2)
-    expect(rows(W2)[0].reason).toBe('Bid of 1000000000 AUD CPM is above the exchange\'s ceiling of 10000.')
+    expect((await rows(W2))[0].reason).toBe('Bid of 1000000000 AUD CPM is above the exchange\'s ceiling of 10000.')
     const W3 = new Date('2026-09-23T00:00:00.000Z')
     hooks.rewrite = (res) => ({ ...res, seatbid: res.seatbid!.map((sb) => ({ ...sb, bid: sb.bid!.map((b) => ({ ...b, impid: '7' })) })) })
     await runAuction(ctx, W3)
-    expect(rows(W3)[0].reason).toBe('Bid for impression 7; the request offered impression 1.')
+    expect((await rows(W3))[0].reason).toBe('Bid for impression 7; the request offered impression 1.')
   })
 
   it('ignores a response to some other request id', async () => {
@@ -124,7 +124,7 @@ describe('bid responses are validated before they are trusted', () => {
     hooks.rewrite = (res) => ({ ...res, id: 'someone-elses-request' })
     const out = await runAuction(ctx, W2)
     expect(out.positions[0]).toMatchObject({ bidRequests: 1, bids: 0, winner: null })
-    expect(rows(W2)).toEqual([])
+    expect(await rows(W2)).toEqual([])
   })
 
   /* 150 bids stays under the 64 KB response cap, so this isolates the count cap. */
@@ -134,7 +134,7 @@ describe('bid responses are validated before they are trusted', () => {
     hooks.rewrite = (res) => ({ ...res, seatbid: res.seatbid!.map((sb) => ({ ...sb, bid: Array.from({ length: 150 }, (_, i) => ({ ...sb.bid![0], id: `b${i}` })) })) })
     const out = await runAuction(ctx, W2)
     expect(out.positions[0].bids).toBe(10)
-    expect(rows(W2)).toHaveLength(10)
+    expect(await rows(W2)).toHaveLength(10)
     expect(out.positions[0].winner).not.toBeNull()
   })
 
@@ -142,7 +142,7 @@ describe('bid responses are validated before they are trusted', () => {
     const { ctx, hooks, rows } = await setup()
     hooks.rewrite = (res) => ({ ...res, seatbid: res.seatbid!.map((sb) => ({ ...sb, bid: [0, 1, 2].map((i) => ({ ...sb.bid![0], id: `b${i}`, crid: `${sb.bid![0].crid}-${i}` })) })) })
     await runAuction(ctx, W1)
-    const reasons = rows().map((r) => r.reason)
+    const reasons = (await rows()).map((r) => r.reason)
     expect(reasons.filter((r) => /approved automatically|queued for approval/.test(r ?? ''))).toHaveLength(1)
     expect(reasons.filter((r) => /retrieved for review from a later window/.test(r ?? ''))).toHaveLength(2)
   })

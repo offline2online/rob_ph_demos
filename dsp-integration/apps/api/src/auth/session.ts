@@ -9,12 +9,13 @@
                   Inventory (read-only on the per-advertiser settings) and
                   Campaign Status
      hq_helpdesk  none of it */
+import type { Awaitable } from '../db/db'
 import type { Role, Session } from '@ph-dsp/types'
 
 export type Scope = 'admin' | 'approver' | 'sections'
 
 export interface SessionSource {
-  current(): Session
+  current(): Awaitable<Session>
 }
 
 const USERS: Record<Role, Session> = {

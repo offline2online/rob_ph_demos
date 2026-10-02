@@ -14,21 +14,21 @@ describe('demo estate', () => {
   it('adds the slots, the estate and the roster on top of the base seed', async () => {
     const ctx = await testContext({ bookings: true, demo: true, clock: () => NOW })
 
-    const positions = allPositions(ctx)
+    const positions = await allPositions(ctx)
     expect(positions.filter((p) => p.displayType.id === 'landscape').map((p) => p.def.label)).toEqual(['Hero slot', 'Supplier slot', 'Whitelist slot', 'Held for Nestlé'])
     expect(positions.filter((p) => p.displayType.id === 'portrait')).toHaveLength(3)
     expect(positions.filter((p) => p.displayType.id === 'menu_board')).toHaveLength(1)
     /* The rotation cap is the slot count, and the loop divides cleanly. */
-    expect(ctx.displayTypes.get('landscape')!.playlistSettings).toMatchObject({ maximumCampaignsPlayedInRotation: 4 })
-    expect(ctx.displayTypes.get('portrait')!.phExtensions?.venue?.loopLengthSec).toBe(24)
+    expect((await ctx.displayTypes.get('landscape'))!.playlistSettings).toMatchObject({ maximumCampaignsPlayedInRotation: 4 })
+    expect((await ctx.displayTypes.get('portrait'))!.phExtensions?.venue?.loopLengthSec).toBe(24)
     /* Reserve price: the hero slot overrides, the others inherit. */
-    const landscape = ctx.displayTypes.get('landscape')!.phExtensions!
+    const landscape = (await ctx.displayTypes.get('landscape'))!.phExtensions!
     expect(landscape.reservePrice).toBe(150)
     expect(landscape.slots[0].reservePrice).toBe(220)
     expect(landscape.slots[1].reservePrice).toBeNull()
 
-    expect(ctx.displays.list().length).toBeGreaterThanOrEqual(30)
-    expect(ctx.displays.listByDisplayType('landscape').length).toBeGreaterThan(ctx.displays.listByDisplayType('portrait').length)
+    expect((await ctx.displays.list()).length).toBeGreaterThanOrEqual(30)
+    expect((await ctx.displays.listByDisplayType('landscape')).length).toBeGreaterThan((await ctx.displays.listByDisplayType('portrait')).length)
 
     const advertisers = await listAdvertisers(ctx)
     expect(advertisers.length).toBeGreaterThanOrEqual(12)
@@ -52,9 +52,9 @@ describe('demo estate', () => {
     /* The whitelist slot is open to whitelisted advertisers only, and Google has some. */
     expect(ids).toContain('landscape.s3')
 
-    const booked = ctx.reservations.byStatus(['won', 'reserved'], new Date(0).toISOString()).filter((r) => !r.testMode)
+    const booked = (await ctx.reservations.byStatus(['won', 'reserved'], new Date(0).toISOString())).filter((r) => !r.testMode)
     const byPosition = new Set(booked.map((r) => r.positionId))
-    for (const p of allPositions(ctx)) expect(byPosition.has(p.positionId), `${p.positionId} has a booking`).toBe(true)
+    for (const p of await allPositions(ctx)) expect(byPosition.has(p.positionId), `${p.positionId} has a booking`).toBe(true)
     expect(new Set(booked.map((r) => r.pricingType))).toEqual(new Set(['localised', 'personalised', 'interactive']))
     expect(booked.filter((r) => r.type === 'reserve').length).toBeGreaterThan(3)
 
@@ -67,15 +67,15 @@ describe('demo estate', () => {
 
   it('is idempotent', async () => {
     const ctx = await testContext({ bookings: true, demo: true, clock: () => NOW })
-    const before = { displays: ctx.displays.list().length, campaigns: ctx.campaigns.listCampaigns().length, reservations: ctx.reservations.byStatus(['won', 'reserved'], new Date(0).toISOString()).length }
+    const before = { displays: (await ctx.displays.list()).length, campaigns: (await ctx.campaigns.listCampaigns()).length, reservations: (await ctx.reservations.byStatus(['won', 'reserved'], new Date(0).toISOString())).length }
     const again = await seedDemo(ctx)
     expect(again).toEqual({ stores: 0, displays: 0, slots: 0, seats: 0, campaigns: 0, bookings: 0 })
-    expect({ displays: ctx.displays.list().length, campaigns: ctx.campaigns.listCampaigns().length, reservations: ctx.reservations.byStatus(['won', 'reserved'], new Date(0).toISOString()).length }).toEqual(before)
+    expect({ displays: (await ctx.displays.list()).length, campaigns: (await ctx.campaigns.listCampaigns()).length, reservations: (await ctx.reservations.byStatus(['won', 'reserved'], new Date(0).toISOString())).length }).toEqual(before)
   })
 
   it('leaves the base seed alone when not asked for', async () => {
     const ctx = await testContext()
-    expect(allPositions(ctx).map((p) => p.positionId)).toEqual(['menu_board.s2'])
-    expect(ctx.partners.get('p_ttd')).toBeNull()
+    expect((await allPositions(ctx)).map((p) => p.positionId)).toEqual(['menu_board.s2'])
+    expect(await ctx.partners.get('p_ttd')).toBeNull()
   })
 })

@@ -72,20 +72,20 @@ export function validateExtensions(dt: DisplayType, ext: DisplayTypeExtensions):
    who may bid; advertisers hold it for them, and their DSPs are added
    automatically; a buyers list restricts it to a private auction among its
    invited buyers; none of these means any connected DSP. */
-export function validateAssigned(
+export async function validateAssigned(
   a: Assigned,
   field: (k: string) => string,
   partners: PartnerRecord[],
   company: CompanySettings,
   previous: Assigned,
   buyersLists: BuyersListRepo,
-): Detail[] {
+): Promise<Detail[]> {
   const out: Detail[] = []
   const unknown = a.partnerIds.filter((id) => !partners.some((p) => p.id === id))
   if (unknown.length) out.push({ field: field('partnerIds'), reason: `Unknown DSP: ${unknown.join(', ')}.` })
   if (a.advertisers.length && a.whitelistOnly) out.push({ field: field('whitelistOnly'), reason: 'A position is either held for named advertisers or open to the whitelist, not both.' })
   if (a.buyersListId && (a.advertisers.length || a.whitelistOnly)) out.push({ field: field('buyersListId'), reason: 'A private auction (buyers list) is mutually exclusive with named advertisers and the whitelist.' })
-  if (a.buyersListId && !buyersLists.get(a.buyersListId)) out.push({ field: field('buyersListId'), reason: 'Unknown buyers list.' })
+  if (a.buyersListId && !(await buyersLists.get(a.buyersListId))) out.push({ field: field('buyersListId'), reason: 'Unknown buyers list.' })
   /* The advertiser has to be a seat on a DSP this position can sell through. */
   const scope = a.partnerIds.length ? partners.filter((p) => a.partnerIds.includes(p.id)) : partners
   for (const name of a.advertisers) {

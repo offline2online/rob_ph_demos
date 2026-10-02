@@ -41,22 +41,22 @@ export const testRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => 
     })
     if (errors.length) throw validationFailed(errors)
 
-    const r = ctx.reservations.get(b.reservationId)
+    const r = await ctx.reservations.get(b.reservationId)
     if (!r || !r.campaignId) throw notFound('No such reservation, or it carries no campaign.')
-    const p = findPosition(ctx, r.positionId)
+    const p = await findPosition(ctx, r.positionId)
     if (!p) throw notFound('The reservation’s position is no longer in the estate.')
-    const displays = ctx.displays.listByDisplayType(p.displayType.id)
+    const displays = await ctx.displays.listByDisplayType(p.displayType.id)
     if (displays.length === 0) throw validationFailed([{ field: 'reservationId', reason: 'The display type has no displays to play on.' }])
 
     const start = Date.parse(r.windowStart)
-    const end = windowEndOf(ctx, r)
+    const end = await windowEndOf(ctx, r)
     const total = b.plays.reduce((n, x) => n + x.count, 0)
     const step = Math.max(1, Math.floor((end - start) / (total + 1)))
     const insert = ctx.db.prepare('INSERT INTO plays (id, display_id, campaign_id, played_at, duration_sec, version_id, tier) VALUES (?, ?, ?, ?, ?, NULL, ?)')
     let i = 0
     const written: { tier: PlayTier | null; count: number }[] = []
     const fallbackDur = slotDurationSec(p.displayType) ?? 10
-    tx(ctx.db, () => {
+    await tx(ctx.db, () => {
       for (const spec of b.plays) {
         const dur = spec.durationSec ?? fallbackDur
         for (let k = 0; k < spec.count; k++, i++) {

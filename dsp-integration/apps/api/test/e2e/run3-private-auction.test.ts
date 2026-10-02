@@ -15,11 +15,11 @@ type Invite = { identifierType: 'brandEntity' | 'dspSeatId'; value: string }
 async function dealHarness(opts: { invited?: Invite[]; activeFrom?: string | null; activeTo?: string | null; auctionCloses?: string | null; before?: (h: Awaited<ReturnType<typeof harness>>) => Promise<unknown> } = {}) {
   const h = await harness()
   await opts.before?.(h)
-  const list = h.ctx.buyersLists.insert({
+  const list = await h.ctx.buyersLists.insert({
     id: 'bl_e2e', name: 'E2E deal', description: 'Run 3 fixture', invitedBuyers: opts.invited ?? [{ identifierType: 'brandEntity', value: 'Swisse' }],
     activeFrom: opts.activeFrom ?? null, activeTo: opts.activeTo ?? null, auctionCloses: opts.auctionCloses ?? null,
   })
-  h.admin.slot({ listMode: 'deal', buyersListId: list.id, partnerIds: [] })
+  await h.admin.slot({ listMode: 'deal', buyersListId: list.id, partnerIds: [] })
   return { ...h, list }
 }
 const booked = (h: Awaited<ReturnType<typeof harness>>, w: Date) => h.campaigns.handoffs.filter((b) => b.windowStart === w.toISOString())
@@ -37,15 +37,15 @@ describe('Run 3 — private auction: approval gate for invited buyers (A1–A5)'
     const h = await dealHarness()
     const campaignId = await h.approvedCrid('crid-r3-a2', day(0))
     await runAuction(h.ctx, day(1))
-    expect(h.rows(day(1))).toMatchObject([{ campaignId, status: 'won' }])
+    expect(await h.rows(day(1))).toMatchObject([{ campaignId, status: 'won' }])
   })
 
   it('A3 — an invited buyer’s unknown creative is discarded pre-auction and queued', async () => {
     const h = await dealHarness()
     await h.bidder.control({ crid: 'crid-r3-a3' })
     expect((await runAuction(h.ctx, day(0))).positions[0].winner).toBeNull()
-    expect(h.rows(day(0))[0]).toMatchObject({ status: 'rejected', reason: 'New creative crid-r3-a3: queued for approval.' })
-    expect(await h.ctx.approvals.view(h.queuedCampaign('crid-r3-a3')!)).toMatchObject({ status: 'awaiting_approval' })
+    expect((await h.rows(day(0)))[0]).toMatchObject({ status: 'rejected', reason: 'New creative crid-r3-a3: queued for approval.' })
+    expect(await h.ctx.approvals.view((await h.queuedCampaign('crid-r3-a3'))!)).toMatchObject({ status: 'awaiting_approval' })
   })
 
   it('A4 — an invited buyer’s campaign that is not Approved can’t reserve, bid or be activated', async () => {
@@ -79,7 +79,7 @@ describe('Run 3 — private auction: happy', () => {
     /* Nestlé 160 through the API vs Swisse 150 from the DSP. */
     expect((await h.partner.bid(nestle, day(1), 160, { advertiserId: 'nestle' })).statusCode).toBe(201)
     expect((await runAuction(h.ctx, day(1))).positions[0].winner).toMatchObject({ advertiserId: 'nestle', clearingCpm: 160 })
-    expect(h.rows(day(1)).find((r) => r.advertiserId === 'swisse')).toMatchObject({ status: 'lost', reason: 'Outbid: the window cleared at 160 AUD CPM.' })
+    expect((await h.rows(day(1))).find((r) => r.advertiserId === 'swisse')).toMatchObject({ status: 'lost', reason: 'Outbid: the window cleared at 160 AUD CPM.' })
     /* Tie at 150: Nestlé's bid was placed before the auction ran; Swisse's arrives in it. */
     const early = await h.partner.bid(nestle, day(2), 150, { advertiserId: 'nestle' })
     await new Promise((r) => setTimeout(r, 5))
@@ -93,7 +93,7 @@ describe('Run 3 — private auction: non-happy', () => {
     /* Nestlé needs no approval, so its creative is approved on arrival; activate it so only the invitation stands in the way. */
     await h.bidder.control({ mode: 'bid', priceCpm: 400, advertiserId: '5130001', crid: 'crid-p3' })
     await runAuction(h.ctx, day(0))
-    expect(h.rows(day(0))[0]).toMatchObject({ status: 'rejected', advertiserId: 'nestle', reason: 'Nestlé is not an invited buyer on this private auction (E2E deal).' })
+    expect((await h.rows(day(0)))[0]).toMatchObject({ status: 'rejected', advertiserId: 'nestle', reason: 'Nestlé is not an invited buyer on this private auction (E2E deal).' })
     const nestle = await h.readyApiCampaign('Nestlé — P3', 'localised', 'nestle')
     const api = await h.partner.bid(nestle, day(1), 400, { advertiserId: 'nestle' })
     expect(api.statusCode).toBe(422)
@@ -109,7 +109,7 @@ describe('Run 3 — private auction: non-happy', () => {
     expect(out.positions[0]).toMatchObject({ bidRequests: 0, bids: 0, winner: null })
     expect((await h.partner.bid(campaignId, day(1), 500)).statusCode).toBeGreaterThanOrEqual(400)
     /* The list deleted outright: the same. */
-    h.ctx.buyersLists.delete(h.list.id)
+    await h.ctx.buyersLists.delete(h.list.id)
     expect((await runAuction(h.ctx, day(2))).positions[0]).toMatchObject({ bidRequests: 0, winner: null })
     expect(h.campaigns.handoffs.filter((b) => b.displayTypeId === DT)).toEqual([])
   })
@@ -141,7 +141,7 @@ describe('Run 3 — private auction: non-happy', () => {
     expect(late.statusCode, 'an API bid placed after auctionCloses was accepted').toBeGreaterThanOrEqual(400)
     const out = await runAuction(h.ctx, day(2))
     expect(out.positions[0]).toMatchObject({ bidRequests: 0, winner: null })
-    expect(h.rows(day(2)).filter((r) => r.status === 'pending'), 'a bid was left pending after the position was skipped').toEqual([])
+    expect((await h.rows(day(2))).filter((r) => r.status === 'pending'), 'a bid was left pending after the position was skipped').toEqual([])
   })
 
   it('P6 — an invited buyer below the slot floor doesn’t win (the deal doesn’t lower the floor)', async () => {
@@ -149,7 +149,7 @@ describe('Run 3 — private auction: non-happy', () => {
     await h.approvedCrid('crid-p6', day(0))
     h.bidder.setScript((req) => ({ body: response(req, [swisseBid(req, { price: 99, crid: 'crid-p6' })]) }))
     expect((await runAuction(h.ctx, day(1))).positions[0].winner).toBeNull()
-    expect(h.rows(day(1))[0]).toMatchObject({ status: 'rejected', reason: '99 is below the effective floor of 100 AUD CPM.' })
+    expect((await h.rows(day(1)))[0]).toMatchObject({ status: 'rejected', reason: '99 is below the effective floor of 100 AUD CPM.' })
     const id = await h.readyApiCampaign('Swisse — P6')
     expect((await h.partner.bid(id, day(2), 99)).json().error.code).toBe('below_floor')
     expect(booked(h, day(1))).toEqual([])
@@ -158,16 +158,16 @@ describe('Run 3 — private auction: non-happy', () => {
   it('P7 — an invited buyer that is blocked (advertiser blacklist) is refused with the reason', async () => {
     const h = await dealHarness()
     await h.approvedCrid('crid-p7', day(0))
-    h.ctx.company.save({ ...h.ctx.company.get(), advertiserBlacklist: [...h.ctx.company.get().advertiserBlacklist, 'Swisse'] })
+    await h.ctx.company.save({ ...(await h.ctx.company.get()), advertiserBlacklist: [...(await h.ctx.company.get()).advertiserBlacklist, 'Swisse'] })
     expect((await runAuction(h.ctx, day(1))).positions[0].winner).toBeNull()
-    expect(h.rows(day(1))[0]).toMatchObject({ status: 'rejected', reason: 'Swisse is on the advertiser blacklist.' })
-    const id = h.queuedCampaign('crid-p7')!
+    expect((await h.rows(day(1)))[0]).toMatchObject({ status: 'rejected', reason: 'Swisse is on the advertiser blacklist.' })
+    const id = (await h.queuedCampaign('crid-p7'))!
     void id
     /* Also on the DSP's own (unlinked) blocklist. */
-    h.ctx.company.save({ ...h.ctx.company.get(), advertiserBlacklist: h.ctx.company.get().advertiserBlacklist.filter((a) => a !== 'Swisse') })
-    h.ctx.partners.update('p_google', { listsLinked: false, blockList: ['Swisse'], allowList: [] })
+    await h.ctx.company.save({ ...(await h.ctx.company.get()), advertiserBlacklist: (await h.ctx.company.get()).advertiserBlacklist.filter((a) => a !== 'Swisse') })
+    await h.ctx.partners.update('p_google', { listsLinked: false, blockList: ['Swisse'], allowList: [] })
     expect((await runAuction(h.ctx, day(2))).positions[0].winner).toBeNull()
-    expect(h.rows(day(2))[0]).toMatchObject({ status: 'rejected', reason: 'Swisse is on the advertiser blacklist.' })
+    expect((await h.rows(day(2)))[0]).toMatchObject({ status: 'rejected', reason: 'Swisse is on the advertiser blacklist.' })
   })
 
   it('P8 — the approval gate still applies: an invited buyer with an unapproved creative is discarded pre-auction', async () => {
@@ -175,7 +175,7 @@ describe('Run 3 — private auction: non-happy', () => {
     await h.bidder.control({ crid: 'crid-p8' })
     await runAuction(h.ctx, day(0))
     await runAuction(h.ctx, day(1))
-    expect(h.rows(day(1))[0]).toMatchObject({ status: 'rejected', reason: 'The campaign is not approved.' })
+    expect((await h.rows(day(1)))[0]).toMatchObject({ status: 'rejected', reason: 'The campaign is not approved.' })
     const { id } = await h.submitApiCampaign('Swisse — P8')
     await h.partner.upload(id, 'default', png(1920, 1080, 1))
     expect((await h.partner.bid(id, day(2), 300)).json().error.code).toBe('not_approved')

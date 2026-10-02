@@ -1,7 +1,7 @@
 /* DSP partner records. Secret credential fields are encrypted through
    SecretsStore before they reach the database and are never returned. */
 import { secretFields } from '@ph-dsp/types'
-import { type Db, fromJson, prepared, toJson } from '../db/db'
+import { type Db, fromJson, prepared, toJson, type Awaitable } from '../db/db'
 import type { SecretsStore } from '../secrets/SecretsStore'
 
 export type { Seat } from '../dsp/DspClient'
@@ -34,12 +34,12 @@ interface Row {
 }
 
 export interface PartnerRepo {
-  list(): PartnerRecord[]
-  get(id: string): PartnerRecord | null
-  insert(p: Omit<PartnerRecord, 'secretsSet'> & { secrets?: Record<string, string> }): PartnerRecord
+  list(): Awaitable<PartnerRecord[]>
+  get(id: string): Awaitable<PartnerRecord | null>
+  insert(p: Omit<PartnerRecord, 'secretsSet'> & { secrets?: Record<string, string> }): Awaitable<PartnerRecord>
   /* Decrypted secret values — for the DSP client only, never for a response. */
-  secrets(id: string): Record<string, string>
-  update(id: string, patch: Partial<Omit<PartnerRecord, 'id' | 'provider' | 'secretsSet'>>, secrets?: Record<string, string>): PartnerRecord | null
+  secrets(id: string): Awaitable<Record<string, string>>
+  update(id: string, patch: Partial<Omit<PartnerRecord, 'id' | 'provider' | 'secretsSet'>>, secrets?: Record<string, string>): Awaitable<PartnerRecord | null>
 }
 
 export function sqlitePartnerRepo(db: Db, secrets: SecretsStore): PartnerRepo {

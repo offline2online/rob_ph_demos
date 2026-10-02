@@ -8,7 +8,8 @@
    campaign playback or delivery analytics. */
 import type { Context } from '../context'
 import { liveCommitments } from './deleteChecks'
-import { positionIdOf, windowEndOf } from './positions'
+import { positionIdOf, windowEnds } from './positions'
+import { tx } from '../db/db'
 import { TAKEN } from '../repos/ReservationRepo'
 
 /* The live bookings on one slot (1-based, flat across zones), as delete-check
@@ -16,31 +17,43 @@ import { TAKEN } from '../repos/ReservationRepo'
 export const slotLiveBookings = (ctx: Context, displayTypeId: string, slot: number) => liveCommitments(ctx, displayTypeId, slot)
 
 /* When the last live booking on the slot finishes playing; null if none. */
-export function slotBookedUntil(ctx: Context, displayTypeId: string, slot: number): string | null {
+export async function slotBookedUntil(ctx: Context, displayTypeId: string, slot: number): Promise<string | null> {
   const positionId = positionIdOf(displayTypeId, slot)
   const now = ctx.clock().getTime()
-  const ends = ctx.reservations.byStatus(TAKEN, new Date(now - 366 * 24 * 3_600_000).toISOString())
+  const endOf = await windowEnds(ctx)
+  const ends = (await ctx.reservations.byStatus(TAKEN, new Date(now - 366 * 24 * 3_600_000).toISOString()))
     .filter((r) => !r.testMode && r.positionId === positionId)
-    .map((r) => windowEndOf(ctx, r))
+    .map(endOf)
     .filter((end) => end > now)
   return ends.length ? new Date(Math.max(...ends)).toISOString() : null
 }
 
 /* Clears the lock on every slot with no live booking left. Returns how many
    were released. Cheap when nothing is locked: it only walks the display
-   types' slot lists. */
-export function releaseSettledSlotLocks(ctx: Context): number {
+   types' slot lists. Each display type's read-check-write is one
+   transaction, so an admin save in between can't be overwritten. */
+export async function releaseSettledSlotLocks(ctx: Context): Promise<number> {
   let released = 0
-  for (const dt of ctx.displayTypes.list()) {
-    const slots = dt.phExtensions?.slots
-    if (!slots?.some((s) => s.salesLocked)) continue
-    const next = slots.map((s, i) => {
-      if (!s.salesLocked || slotLiveBookings(ctx, dt.id, i + 1).length) return s
-      released++
-      const { salesLocked: _released, ...rest } = s
-      return rest
+  for (const listed of await ctx.displayTypes.list()) {
+    if (!listed.phExtensions?.slots?.some((s) => s.salesLocked)) continue
+    released += await tx(ctx.db, async () => {
+      const dt = await ctx.displayTypes.get(listed.id)
+      const slots = dt?.phExtensions?.slots
+      if (!dt || !slots?.some((s) => s.salesLocked)) return 0
+      let n = 0
+      const next = []
+      for (const [i, s] of slots.entries()) {
+        if (!s.salesLocked || (await slotLiveBookings(ctx, dt.id, i + 1)).length) {
+          next.push(s)
+          continue
+        }
+        n++
+        const { salesLocked: _released, ...rest } = s
+        next.push(rest)
+      }
+      if (n) await ctx.displayTypes.saveExtensions(dt.id, { ...dt.phExtensions!, slots: next })
+      return n
     })
-    if (next.some((s, i) => s !== slots[i])) ctx.displayTypes.saveExtensions(dt.id, { ...dt.phExtensions!, slots: next })
   }
   return released
 }

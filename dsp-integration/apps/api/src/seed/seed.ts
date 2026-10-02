@@ -128,10 +128,10 @@ export async function seed(ctx: Context, opts: { bookings?: boolean; demo?: bool
      crashed on the first one's rows (reproduced, stability review, 24 Sep
      2026). Now the second waits for the first's base rows to commit, sees
      them, and serves. */
-  const seeded = tx(ctx.db, () => {
+  const seeded = await tx(ctx.db, async () => {
     if ((ctx.db.prepare('SELECT COUNT(*) AS n FROM display_types').get() as { n: number }).n) return false
-    SEED_PLAYLISTS.forEach((p) => ctx.playlists.create(p))
-    SEED_DISPLAY_TYPES.forEach((d) => ctx.displayTypes.create(d))
+    for (const p of SEED_PLAYLISTS) await ctx.playlists.create(p)
+    for (const d of SEED_DISPLAY_TYPES) await ctx.displayTypes.create(d)
     const insStore = ctx.db.prepare('INSERT INTO stores (id, name, region) VALUES (?, ?, ?)')
     SEED_STORES.forEach((s) => insStore.run(s.id, s.name, s.region))
     const insDisplay = ctx.db.prepare('INSERT INTO displays (id, name, store, store_id, display_type_id) VALUES (?, ?, ?, ?, ?)')
@@ -139,7 +139,7 @@ export async function seed(ctx: Context, opts: { bookings?: boolean; demo?: bool
     const insCampaign = ctx.db.prepare("INSERT INTO campaigns (id, name, targeting, created_at, source, activation_enabled) VALUES (?, ?, NULL, ?, 'hq', 1)")
     SEED_CAMPAIGNS.forEach(([id, name]) => insCampaign.run(id, name, '2026-09-01T00:00:00.000Z'))
 
-    ctx.partners.insert({
+    await ctx.partners.insert({
       id: 'p_google', provider: 'google_dv360', name: 'Google DSP', status: 'connected', mode: 'live', lastSync: 'Today, 07:12',
       credsPublic: { partnerId: '884512', serviceAccountEmail: 'ph-retail-media@ph-demo.iam.gserviceaccount.com' },
       /* A freshly generated key in the real key-file format, so Connect works against the mock DV360. */
@@ -148,7 +148,7 @@ export async function seed(ctx: Context, opts: { bookings?: boolean; demo?: bool
       seats: [{ id: '5130001', name: 'Nestlé', domain: 'nestle.com' }, { id: '5130002', name: 'Swisse', domain: 'swisse.com' }], listsLinked: true, allowList: [], blockList: [],
       categoryAllowList: [], categoryBlockList: [],
     })
-    ctx.partners.insert({
+    await ctx.partners.insert({
       id: 'p_amazon', provider: 'amazon_dsp', name: 'Amazon Ads DSP', status: 'error', mode: 'test', lastSync: 'Refresh token rejected — 3 days ago',
       credsPublic: { region: 'Europe (EU)', lwaClientId: 'amzn1.application-oa2-client.7f3c', profileId: '3390127745', entityId: 'ENTITY8Q1R5T' },
       secrets: { lwaClientSecret: 'poc-placeholder-secret', refreshToken: 'Atzr|poc-placeholder' },
@@ -159,18 +159,18 @@ export async function seed(ctx: Context, opts: { bookings?: boolean; demo?: bool
       categoryAllowList: ['Beauty', 'Retail'], categoryBlockList: ['Automotive'],
     })
 
-    ctx.company.save({
+    await ctx.company.save({
       currency: 'AUD', floorCpm: 100, personalisedMultiplier: 1.5, interactiveCpe: 0.5,
       auctionOpensHours: 168, playWindowHours: 24, auctionCutoffTime: '18:00', pendingPlayWindowHours: null, pendingPlayWindowEffectiveFrom: null,
       advertiserWhitelist: ['Nestlé', 'Swisse', 'Arnott’s'], advertiserBlacklist: ['Red Bull', 'Monster Energy'],
       categoryWhitelist: ['Food & Drink', 'Health & Fitness'], categoryBlacklist: ['Finance'],
     })
-    ctx.company.saveAdvertiserSettings({
+    await ctx.company.saveAdvertiserSettings({
       [advertiserSlug('Nestlé')]: { approvalRequired: false, floorMultiplier: 0.8 },
       [advertiserSlug('Swisse')]: { approvalRequired: true, floorMultiplier: 1 },
       [advertiserSlug("L'Oréal")]: { approvalRequired: true, floorMultiplier: 1.2 },
     })
-    ctx.company.saveVariableAccess({
+    await ctx.company.saveVariableAccess({
       'store.suburb': [], 'store.postcode': [], 'store.country': [],
       'store.reason_for_visit': ['p_google'], 'visitor.purchase_intent': ['p_google'],
     })
@@ -180,7 +180,7 @@ export async function seed(ctx: Context, opts: { bookings?: boolean; demo?: bool
     ctx.db.prepare('INSERT INTO audience_vacd (display_type_id, slot, assumed_views_per_window, counted) VALUES (?, ?, ?, ?)').run('menu_board', 2, 1236, 1)
     /* The demo estate is a retailer that has already switched DSP
        integration on. A real instance starts with it off (migration 0023). */
-    ctx.exchange.save({ enabled: true, organisation: 'Demo Retail Group', domain: 'demoretail.example', sellerId: 'drg-4471', contactEmail: 'adops@demoretail.example' })
+    await ctx.exchange.save({ enabled: true, organisation: 'Demo Retail Group', domain: 'demoretail.example', sellerId: 'drg-4471', contactEmail: 'adops@demoretail.example' })
     return true
   }, 'IMMEDIATE')
   if (!seeded) return false

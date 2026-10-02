@@ -5,7 +5,7 @@
 import type { DisplayType, Slot } from '@ph-dsp/types'
 import type { Context } from '../context'
 import type { PartnerRecord } from '../repos/PartnerRepo'
-import { prepared } from '../db/db'
+import { type Awaitable, allOf, andThen, onFree, prepared } from '../db/db'
 import { type ReservationStatus, TAKEN } from '../repos/ReservationRepo'
 import { advertiserSlug, assignedOf, billingUnitHoursOf, maxCampaignsOf, reservePriceOf, supportedTargetingOf, type Assigned } from '@ph-dsp/types'
 import { invitedPartnerIds, isInvitedBuyer } from './buyersLists'
@@ -35,8 +35,8 @@ export const positionIdOf = (displayTypeId: string, slot: number) => `${displayT
    never hits it — the same cost as before, never a stale answer. */
 interface PositionIndex { count: number; all: readonly PositionRef[]; byId: Map<string, PositionRef> }
 const indexes = new WeakMap<DisplayType, PositionIndex>()
-function positionIndex(ctx: Context): PositionIndex {
-  const list = ctx.displayTypes.list()
+async function positionIndex(ctx: Context): Promise<PositionIndex> {
+  const list = await ctx.displayTypes.list()
   const key = list[0]
   const cached = key ? indexes.get(key) : undefined
   if (cached && cached.count === list.length) return cached
@@ -48,8 +48,8 @@ function positionIndex(ctx: Context): PositionIndex {
   return index
 }
 /* A copy: callers filter and sort it. */
-export const allPositions = (ctx: Context): PositionRef[] => [...positionIndex(ctx).all]
-export const findPosition = (ctx: Context, id: string) => positionIndex(ctx).byId.get(id) ?? null
+export const allPositions = async (ctx: Context): Promise<PositionRef[]> => [...(await positionIndex(ctx)).all]
+export const findPosition = async (ctx: Context, id: string): Promise<PositionRef | null> => (await positionIndex(ctx)).byId.get(id) ?? null
 
 /* assignedOf builds a fresh object each call; a frozen slot (every slot on a
    cached display type) gets its answer once. */
@@ -96,25 +96,25 @@ export function callerOf(partner: PartnerRecord, advertiserId: string | undefine
    resolves to an empty (not null) array, correctly admitting nobody rather
    than accidentally opening the position to every DSP.
    `partners` lets a caller that asks for many positions read the partner
-   list once instead of once per deal. */
-export function effectivePartnerIds(ctx: Context, def: Slot, partners?: PartnerRecord[]): string[] | null {
+   list once instead of once per deal. Sync-first (db.ts andThen): it runs
+   once per position on every inventory read. */
+export function effectivePartnerIds(ctx: Context, def: Slot, partners?: Awaitable<PartnerRecord[]>): Awaitable<string[] | null> {
   const a = assignedCached(def)
   if (a.buyersListId) {
-    const list = ctx.buyersLists.get(a.buyersListId)
-    return list ? invitedPartnerIds(list, partners ?? ctx.partners.list()) : []
+    return andThen(ctx.buyersLists.get(a.buyersListId), (list) => (list ? andThen(partners ?? ctx.partners.list(), (all) => invitedPartnerIds(list, all)) : []))
   }
   return a.partnerIds.length ? a.partnerIds : null
 }
 
 /* May this advertiser (by name, and — for a deal — its DSP seat ID) buy this
    position through this partner? */
-export function advertiserMayBuy(ctx: Context, p: PositionRef, partner: PartnerRecord, name: string, seatId?: string | null) {
-  const eff = effectiveLists(partner, ctx.company.get())
+export async function advertiserMayBuy(ctx: Context, p: PositionRef, partner: PartnerRecord, name: string, seatId?: string | null) {
+  const eff = effectiveLists(partner, await ctx.company.get())
   if (isBlocked(name, eff)) return false
   const a = assignmentOf(p.def)
   if (a === 'reserved') return heldFor(p.def, name)
   if (a === 'deal') {
-    const list = ctx.buyersLists.get(assignedCached(p.def).buyersListId as string)
+    const list = await ctx.buyersLists.get(assignedCached(p.def).buyersListId as string)
     return !!list && isActiveAt(list, ctx.clock().toISOString()) && isInvitedBuyer(list, name, seatId)
   }
   if (a === 'whitelist_only') return isOn(name, eff.allowList)
@@ -127,28 +127,39 @@ export function advertiserMayBuy(ctx: Context, p: PositionRef, partner: PartnerR
    once per request rather than once per position (scalability review,
    24 Sep 2026: the inventory list did it 2,400 times a request on a large
    estate). Same answer as advertiserMayBuy, seat by seat. */
-export function visibilityFor(ctx: Context, c: Caller): (p: PositionRef) => boolean {
+export async function visibilityFor(ctx: Context, c: Caller): Promise<(p: PositionRef) => Awaitable<boolean>> {
   if (c.partner.status !== 'connected' || c.unknownAdvertiser) return () => false
-  const eff = effectiveLists(c.partner, ctx.company.get())
+  const eff = effectiveLists(c.partner, await ctx.company.get())
   const seats = (c.advertiser ? c.partner.seats.filter((s) => s.name === c.advertiser!.name) : c.partner.seats).filter((s) => !isBlocked(s.name, eff))
   const whitelisted = seats.some((s) => isOn(s.name, eff.allowList))
   const me = c.partner.id
-  let partners: PartnerRecord[] | undefined
-  return (p) => {
-    if (!isSellable(ctx, p)) return false
-    const allowed = effectivePartnerIds(ctx, p.def, (partners ??= ctx.partners.list()))
+  /* Read once, and only if a deal asks for it. */
+  let partners: Awaitable<PartnerRecord[]> | undefined
+  const allows = (p: PositionRef, allowed: string[] | null): Awaitable<boolean> => {
     if (allowed !== null && !allowed.includes(me)) return false
     const a = assignmentOf(p.def)
     if (a === 'rtb') return seats.length > 0
     if (a === 'whitelist_only') return whitelisted
     if (a === 'reserved') return seats.some((s) => heldFor(p.def, s.name))
-    const list = ctx.buyersLists.get(assignedCached(p.def).buyersListId as string)
-    if (!list || !isActiveAt(list, ctx.clock().toISOString())) return false
-    return seats.some((s) => isInvitedBuyer(list, s.name, s.id))
+    return andThen(ctx.buyersLists.get(assignedCached(p.def).buyersListId as string), (list) =>
+      !!list && isActiveAt(list, ctx.clock().toISOString()) && seats.some((s) => isInvitedBuyer(list, s.name, s.id)))
   }
+  /* Sync-first (db.ts andThen): once per position on every inventory read. */
+  return (p) =>
+    andThen(isSellable(ctx, p), (sellable) =>
+      sellable && andThen(effectivePartnerIds(ctx, p.def, assignedCached(p.def).buyersListId ? (partners ??= ctx.partners.list()) : undefined), (allowed) => allows(p, allowed)))
 }
 
-export const isVisible = (ctx: Context, p: PositionRef, c: Caller) => visibilityFor(ctx, c)(p)
+export const isVisible = async (ctx: Context, p: PositionRef, c: Caller) => (await visibilityFor(ctx, c))(p)
+
+/* Keeps the items the (possibly async) predicate accepts, in order. One at a
+   time on purpose: a list of thousands of positions must not become
+   thousands of concurrent reads. */
+export async function filterAsync<T>(items: readonly T[], keep: (item: T) => Awaitable<boolean>): Promise<T[]> {
+  const out: T[] = []
+  for (const item of items) if (await keep(item)) out.push(item)
+  return out
+}
 
 /* ------------------------------------------------------------ play windows */
 
@@ -163,9 +174,13 @@ const HOUR = 3_600_000
    is always set (platform default 24), so the platform default is reached
    through it. Without a position: the company value, for the few callers
    that genuinely mean "the company default". */
-export const windowHoursOf = (ctx: Context, p?: PositionRef | null): number =>
-  p ? billingUnitHoursOf(p.displayType, p.def, ctx.company.get().playWindowHours) : ctx.company.get().playWindowHours
-export const windowMs = (ctx: Context, p?: PositionRef | null) => windowHoursOf(ctx, p) * HOUR
+export const windowHoursOf = (ctx: Context, p?: PositionRef | null): Awaitable<number> => andThen(ctx.company.get(), (company) => windowHoursFor(company.playWindowHours, p))
+export const windowMs = (ctx: Context, p?: PositionRef | null): Awaitable<number> => andThen(windowHoursOf(ctx, p), (hours) => hours * HOUR)
+/* The same, given the company play window already read — for loops over
+   many positions, which read company settings once. */
+export const windowHoursFor = (companyHours: number, p?: PositionRef | null): number =>
+  p ? billingUnitHoursOf(p.displayType, p.def, companyHours) : companyHours
+export const windowMsFor = (companyHours: number, p?: PositionRef | null) => windowHoursFor(companyHours, p) * HOUR
 /* Does this position follow the company-wide play window (neither the slot
    nor its display type sets a billing unit)? Only these are resized by a
    playWindowHours change, so only their windows defer one (scheduler.ts
@@ -174,22 +189,37 @@ export const followsCompanyWindow = (p: PositionRef) => p.def.billingUnitHours =
 /* The shortest play window any position (or the company default) has: the
    finest grid every position's windows can be read against — billing's
    "has anything ended yet" query and the booking schedule's columns. */
-export const shortestWindowMs = (ctx: Context) => Math.min(windowMs(ctx), ...allPositions(ctx).map((p) => windowMs(ctx, p)))
+export const shortestWindowMs = async (ctx: Context) => {
+  const hours = (await ctx.company.get()).playWindowHours
+  return Math.min(windowMsFor(hours), ...(await allPositions(ctx)).map((p) => windowMsFor(hours, p)))
+}
 /* The longest: how far back a window still running now can have started. */
-export const longestWindowMs = (ctx: Context) => Math.max(windowMs(ctx), ...allPositions(ctx).map((p) => windowMs(ctx, p)))
+export const longestWindowMs = async (ctx: Context) => {
+  const hours = (await ctx.company.get()).playWindowHours
+  return Math.max(windowMsFor(hours), ...(await allPositions(ctx)).map((p) => windowMsFor(hours, p)))
+}
 /* When a reservation's window ends: its start plus its position's window
    length (the company default for a position no longer in the estate). */
-export const windowEndOf = (ctx: Context, r: { positionId: string; windowStart: string }) => Date.parse(r.windowStart) + windowMs(ctx, findPosition(ctx, r.positionId))
+export const windowEndOf = async (ctx: Context, r: { positionId: string; windowStart: string }) => (await windowEnds(ctx))(r)
+/* windowEndOf for many reservations: reads the company window and the
+   position index once, then answers each one synchronously. */
+export async function windowEnds(ctx: Context): Promise<(r: { positionId: string; windowStart: string }) => number> {
+  const hours = (await ctx.company.get()).playWindowHours
+  const index = await positionIndex(ctx)
+  return (r) => Date.parse(r.windowStart) + windowMsFor(hours, index.byId.get(r.positionId) ?? null)
+}
 
 /* Windows still bid on or booked (live, not Test mode) that a change to
    the company-wide play window would have to resize: those on positions
    that follow it (or that have since left the estate, conservatively).
    Same "active" read the deferral has always used — a window starting now
    or later (routes/admin/advertiserSettings.ts, scheduler.ts). */
-export function companyWindowCommitments(ctx: Context) {
-  return ctx.reservations.byStatus(['pending', 'won', 'reserved'], ctx.clock().toISOString()).filter((r) => {
+export async function companyWindowCommitments(ctx: Context) {
+  const active = await ctx.reservations.byStatus(['pending', 'won', 'reserved'], ctx.clock().toISOString())
+  const index = await positionIndex(ctx)
+  return active.filter((r) => {
     if (r.testMode) return false
-    const p = findPosition(ctx, r.positionId)
+    const p = index.byId.get(r.positionId) ?? null
     return !p || followsCompanyWindow(p)
   })
 }
@@ -200,13 +230,13 @@ export function companyWindowCommitments(ctx: Context) {
    advertiserSettings.ts refuses the change while there are any). A window
    that has played but isn't billed yet counts too: billing reads its
    length when it bills it. */
-export function slotWindowCommitments(ctx: Context, positionId: string, len: number) {
+export async function slotWindowCommitments(ctx: Context, positionId: string, len: number) {
   const now = ctx.clock().getTime()
+  const inRange = await ctx.reservations.inRange(positionId, new Date(now - len).toISOString(), '9999')
   /* A window already billed is over, whatever length it is read at now. */
-  const billed = (id: string) => !!prepared(ctx.db, 'SELECT 1 FROM billing_line_items WHERE reservation_id = ?').get(id)
-  const live = ctx.reservations.inRange(positionId, new Date(now - len).toISOString(), '9999')
-    .filter((r) => !r.testMode && ['pending', 'won', 'reserved'].includes(r.status) && Date.parse(r.windowStart) + len > now && !billed(r.id))
-  const unbilled = ctx.reservations.billable(new Date(now).toISOString()).filter((r) => r.positionId === positionId && !live.some((x) => x.id === r.id))
+  const billedIds = await onFree(ctx.db, () => new Set(inRange.filter((r) => !!prepared(ctx.db, 'SELECT 1 FROM billing_line_items WHERE reservation_id = ?').get(r.id)).map((r) => r.id)))
+  const live = inRange.filter((r) => !r.testMode && ['pending', 'won', 'reserved'].includes(r.status) && Date.parse(r.windowStart) + len > now && !billedIds.has(r.id))
+  const unbilled = (await ctx.reservations.billable(new Date(now).toISOString())).filter((r) => r.positionId === positionId && !live.some((x) => x.id === r.id))
   return [...live, ...unbilled]
 }
 
@@ -217,7 +247,7 @@ export function slotWindowCommitments(ctx: Context, positionId: string, len: num
    auction (keyed on its start) clears both. `len` is the window length in
    ms — windowMs(ctx, p) for a position, the company default otherwise. */
 const ANCHOR = Date.UTC(1970, 0, 5)
-export function windowStartOf(ctx: Context, at: Date, len = windowMs(ctx)) {
+export function windowStartOf(at: Date, len: number) {
   return new Date(ANCHOR + Math.floor((at.getTime() - ANCHOR) / len) * len)
 }
 
@@ -225,26 +255,32 @@ export function windowStartOf(ctx: Context, at: Date, len = windowMs(ctx)) {
    the last daily cutoff (UTC) at or before the window starts, when the
    auction runs, and opens `auctionOpensHours` before that. The same for a
    window of any length: it depends only on when the window starts. */
-export function biddingClosesAt(ctx: Context, start: Date) {
-  const [h, m] = ctx.company.get().auctionCutoffTime.split(':').map(Number)
+type AuctionSchedule = { auctionCutoffTime: string; auctionOpensHours: number }
+export function closesAtFor(company: AuctionSchedule, start: Date) {
+  const [h, m] = company.auctionCutoffTime.split(':').map(Number)
   const d = new Date(start)
   const cutoff = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), h, m)
   return new Date(cutoff > start.getTime() ? cutoff - 86_400_000 : cutoff)
 }
-export const biddingOpensAt = (ctx: Context, start: Date) => new Date(biddingClosesAt(ctx, start).getTime() - ctx.company.get().auctionOpensHours * 3_600_000)
+export const opensAtFor = (company: AuctionSchedule, start: Date) => new Date(closesAtFor(company, start).getTime() - company.auctionOpensHours * 3_600_000)
+export const biddingClosesAt = async (ctx: Context, start: Date) => closesAtFor(await ctx.company.get(), start)
+export const biddingOpensAt = async (ctx: Context, start: Date) => opensAtFor(await ctx.company.get(), start)
 
 /* The first window that can still be sold: its auction hasn't run yet. */
-export function nextWindow(ctx: Context, len = windowMs(ctx)) {
-  const now = ctx.clock().getTime()
-  let w = windowStartOf(ctx, ctx.clock(), len)
-  while (now >= biddingClosesAt(ctx, w).getTime()) w = new Date(w.getTime() + len)
+export function nextWindow(ctx: Context, len?: number): Awaitable<Date> {
+  return andThen(ctx.company.get(), (company) => nextWindowFor(company, ctx.clock(), len ?? windowMsFor(company.playWindowHours)))
+}
+export function nextWindowFor(company: AuctionSchedule, at: Date, len: number) {
+  const now = at.getTime()
+  let w = windowStartOf(at, len)
+  while (now >= closesAtFor(company, w).getTime()) w = new Date(w.getTime() + len)
   return w
 }
 
 /* Every window starting within [from, to] (dates, inclusive), laid from
    the same anchor as windowStartOf (before OQ27 this counted from the
    epoch, which only agreed with it for lengths dividing a day). */
-export function windowsBetween(ctx: Context, from: string, to: string, len = windowMs(ctx)): Date[] | null {
+export function windowsBetween(from: string, to: string, len: number): Date[] | null {
   const a = Date.parse(`${from}T00:00:00Z`)
   const b = Date.parse(`${to}T00:00:00Z`) + DAY
   if (!Number.isFinite(a) || !Number.isFinite(b) || b <= a || b - a > 366 * DAY) return null
@@ -257,10 +293,10 @@ export function windowsBetween(ctx: Context, from: string, to: string, len = win
    `len` long that overlaps them, so a weekly slot asked about a Wednesday
    answers for the week that Wednesday falls in. For a length that divides
    a day this is exactly windowsBetween. null for the same bad ranges. */
-export function windowsCovering(ctx: Context, from: string, to: string, len: number): Date[] | null {
-  const starts = windowsBetween(ctx, from, to, len)
+export function windowsCovering(from: string, to: string, len: number): Date[] | null {
+  const starts = windowsBetween(from, to, len)
   if (!starts) return null
-  const first = windowStartOf(ctx, new Date(`${from}T00:00:00Z`), len)
+  const first = windowStartOf(new Date(`${from}T00:00:00Z`), len)
   return starts[0]?.getTime() === first.getTime() ? starts : [first, ...starts]
 }
 
@@ -278,33 +314,41 @@ export type WindowStatus = 'available' | 'reserved' | 'sold' | 'unavailable'
    each such window to the status that took it, and `lockedTerm` is the
    delivery term of a deal this position is assigned to once its rate is
    locked, if it has one: both decide which windows read Reserved (OQ52). */
-export interface WindowFacts { next: number; hasDisplays: boolean; taken?: Map<string, ReservationStatus>; lockedTerm?: { activeFrom: string | null; activeTo: string | null } | null }
+export interface WindowFacts { next: number; hasDisplays: boolean; taken: Map<string, ReservationStatus>; lockedTerm?: { activeFrom: string | null; activeTo: string | null } | null }
 const NO_WINDOWS: ReadonlyMap<string, ReservationStatus> = new Map()
-export function windowFacts(ctx: Context, p: PositionRef, starts?: Date[], prefetched?: Map<string, Map<string, ReservationStatus>>): WindowFacts {
-  const facts: WindowFacts = { next: nextWindow(ctx, windowMs(ctx, p)).getTime(), hasDisplays: ctx.displays.summaryByDisplayType(p.displayType.id).displays > 0, lockedTerm: lockedTermOf(ctx, p) }
-  if (prefetched) facts.taken = prefetched.get(p.positionId) ?? (NO_WINDOWS as Map<string, ReservationStatus>)
-  else if (starts?.length) {
-    const from = starts[0].toISOString()
-    const to = new Date(starts[starts.length - 1].getTime() + 1).toISOString()
-    facts.taken = new Map(ctx.reservations.inRange(p.positionId, from, to).filter((r) => !r.testMode && TAKEN.includes(r.status)).map((r) => [r.windowStart, r.status]))
-  }
-  return facts
+/* Sync-first (db.ts andThen): the status filter asks it for every position. */
+export function windowFacts(ctx: Context, p: PositionRef, starts?: Date[], prefetched?: Map<string, Map<string, ReservationStatus>>): Awaitable<WindowFacts> {
+  const none = NO_WINDOWS as Map<string, ReservationStatus>
+  const taken: Awaitable<Map<string, ReservationStatus>> = prefetched
+    ? (prefetched.get(p.positionId) ?? none)
+    : starts?.length
+      ? andThen(ctx.reservations.inRange(p.positionId, starts[0].toISOString(), new Date(starts[starts.length - 1].getTime() + 1).toISOString()), (rows) =>
+          new Map(rows.filter((r) => !r.testMode && TAKEN.includes(r.status)).map((r) => [r.windowStart, r.status])))
+      : none
+  return andThen(allOf([ctx.company.get(), ctx.displays.summaryByDisplayType(p.displayType.id), lockedTermOf(ctx, p), taken] as const), ([company, displays, lockedTerm, t]) => ({
+    next: nextWindowFor(company, ctx.clock(), windowMsFor(company.playWindowHours, p)).getTime(),
+    hasDisplays: displays.displays > 0,
+    lockedTerm,
+    taken: t,
+  }))
 }
 
 /* The delivery term of the deal this position is sold under, once that
    deal's rate is locked. Every window in it is spoken for: the exchange
    books each directly at the locked rate (billing/lockedTerm.ts bookLockedTermWindow)
    and takes no other bid for it. */
-function lockedTermOf(ctx: Context, p: PositionRef) {
+function lockedTermOf(ctx: Context, p: PositionRef): Awaitable<ReturnType<typeof lockedTermSpan> | null> {
   if (assignmentOf(p.def) !== 'deal') return null
-  const list = ctx.buyersLists.get(assignedCached(p.def).buyersListId as string)
-  return list ? lockedTermSpan(list) : null
+  return andThen(ctx.buyersLists.get(assignedCached(p.def).buyersListId as string), (list) => (list ? lockedTermSpan(list) : null))
 }
 
-export function windowStatus(ctx: Context, p: PositionRef, c: Caller, start: Date, f: WindowFacts = windowFacts(ctx, p)): WindowStatus {
+/* Synchronous on purpose: availability over a year asks it 366 times per
+   position. Everything it needs is in the facts, read beforehand
+   (windowFacts with the window starts, or windowStatusAt for one window). */
+export function windowStatus(p: PositionRef, c: Caller, start: Date, f: WindowFacts): WindowStatus {
   const iso = start.toISOString()
   /* A Test-mode win never takes the window (spec §7: no real spend). */
-  const took = f.taken ? f.taken.get(iso) : ctx.reservations.forWindow(p.positionId, iso).find((r) => !r.testMode && TAKEN.includes(r.status))?.status
+  const took = f.taken.get(iso)
   const upcoming = start.getTime() >= f.next
   /* Held at a reserve price (OQ52, Rob, 29 Sep 2026): a window a buyer
      committed to ahead of the open auction reads Reserved until it plays.
@@ -323,6 +367,11 @@ export function windowStatus(ctx: Context, p: PositionRef, c: Caller, start: Dat
   if (assignmentOf(p.def) === 'reserved' && !c.advertiser) return 'reserved'
   return 'available'
 }
+/* One window's status, reading what it needs. */
+export async function windowStatusAt(ctx: Context, p: PositionRef, c: Caller, start: Date): Promise<WindowStatus> {
+  const f = await windowFacts(ctx, p, [start])
+  return windowStatus(p, c, start, f)
+}
 
 /* Assumed views (VAC-d) for one of this position's windows. The audience
    source scores a slot per company play window (AudienceSource: the figure
@@ -330,9 +379,12 @@ export function windowStatus(ctx: Context, p: PositionRef, c: Caller, start: Dat
    before OQ27); a slot with its own billing unit gets that figure scaled
    to its window's length — a weekly window on a daily-scored slot is seven
    days' views. A slot that follows the company window is unchanged. */
-export function assumedViewsPerWindow(ctx: Context, p: PositionRef) {
-  const scored = ctx.audience.forSlot(p.displayType.id, p.slot).assumedViewsPerWindow
-  const ratio = windowHoursOf(ctx, p) / ctx.company.get().playWindowHours
+export function assumedViewsPerWindow(ctx: Context, p: PositionRef): Awaitable<number> {
+  return andThen(allOf([ctx.audience.forSlot(p.displayType.id, p.slot), ctx.company.get()] as const), ([audience, company]) => assumedViewsFor(audience.assumedViewsPerWindow, company.playWindowHours, p))
+}
+/* The same, given the slot's scored figure and the company window already read. */
+export function assumedViewsFor(scored: number, companyHours: number, p: PositionRef) {
+  const ratio = windowHoursFor(companyHours, p) / companyHours
   return ratio === 1 ? scored : Math.round(scored * ratio)
 }
 
@@ -343,32 +395,51 @@ export function assumedViewsPerWindow(ctx: Context, p: PositionRef) {
    invented audience number would end up on invoices. A slot also needs a
    duration before it is exposed as Advertiser inventory: the venue loop
    length, which slotDurationSec divides by the rotation cap (slots.ts). Returns why not, or null when sellable. */
-export function unsellableReason(ctx: Context, p: PositionRef): string | null {
-  if (!ctx.audience.forSlot(p.displayType.id, p.slot).scored) return 'No audience score yet.'
-  if (!p.displayType.phExtensions?.venue?.loopLengthSec) return 'No slot duration yet — set the venue loop length before this slot can be sold.'
-  return null
+export function unsellableReason(ctx: Context, p: PositionRef): Awaitable<string | null> {
+  return andThen(ctx.audience.forSlot(p.displayType.id, p.slot), (audience) => {
+    if (!audience.scored) return 'No audience score yet.'
+    if (!p.displayType.phExtensions?.venue?.loopLengthSec) return 'No slot duration yet — set the venue loop length before this slot can be sold.'
+    return null
+  })
 }
-export const isSellable = (ctx: Context, p: PositionRef) => unsellableReason(ctx, p) === null
+export const isSellable = (ctx: Context, p: PositionRef): Awaitable<boolean> => andThen(unsellableReason(ctx, p), (reason) => reason === null)
 
 /* -------------------------------------------------------------- the view */
 
-export function loopLengthSec(ctx: Context, dt: DisplayType) {
+export function loopLengthSec(ctx: Context, dt: DisplayType): Awaitable<number> {
   const venue = dt.phExtensions?.venue?.loopLengthSec
   if (venue) return venue
-  const pl = dt.defaultPlaylistId ? ctx.playlists.get(dt.defaultPlaylistId) : null
-  return ((pl?.items ?? []) as { enabled?: boolean; playbackDuration?: number }[]).filter((i) => i.enabled !== false).reduce((n, i) => n + (i.playbackDuration ?? 0), 0)
+  return andThen(dt.defaultPlaylistId ? ctx.playlists.get(dt.defaultPlaylistId) : null, (pl) =>
+    ((pl?.items ?? []) as { enabled?: boolean; playbackDuration?: number }[]).filter((i) => i.enabled !== false).reduce((n, i) => n + (i.playbackDuration ?? 0), 0))
 }
 
+/* Sync-first (db.ts andThen): a page of inventory builds up to 200. */
 export function positionView(ctx: Context, p: PositionRef, c: Caller) {
   const dt = p.displayType
-  /* Counts, never the display rows (review, 24 Sep 2026). */
-  const displays = ctx.displays.summaryByDisplayType(dt.id)
+  return andThen(
+    allOf([
+      /* Counts, never the display rows (review, 24 Sep 2026). */
+      ctx.displays.summaryByDisplayType(dt.id),
+      loopLengthSec(ctx, dt),
+      ctx.company.get(),
+      c.advertiser ? ctx.company.advertiserSetting(c.advertiser.id) : null,
+      ctx.audience.forSlot(dt.id, p.slot),
+    ] as const),
+    ([displays, loop, company, setting, audience]) => viewOf(p, displays, loop, company, setting ? setting.floorMultiplier : 1, audience),
+  )
+}
+function viewOf(
+  p: PositionRef,
+  displays: { stores: number; displays: number },
+  loop: number,
+  company: Awaited<ReturnType<Context['company']['get']>>,
+  multiplier: number,
+  audience: Awaited<ReturnType<Context['audience']['forSlot']>>,
+) {
+  const dt = p.displayType
   /* The rotation this slot plays in — its zone's own on a multi-zone
      display type (ticket, 28 Sep 2026), not every zone's slots together. */
   const n = rotationSizeOf(dt, p.slot)
-  const loop = loopLengthSec(ctx, dt)
-  const company = ctx.company.get()
-  const multiplier = c.advertiser ? ctx.company.advertiserSetting(c.advertiser.id).floorMultiplier : 1
   const venue = dt.phExtensions?.venue
   return {
     positionId: p.positionId,
@@ -393,11 +464,11 @@ export function positionView(ctx: Context, p: PositionRef, c: Caller) {
     supportedTargeting: supportedTargetingOf(p.def),
     /* This position's own play-window length (OQ27): what one window —
        one bid, one booking, one billing line — covers. */
-    billingUnitHours: windowHoursOf(ctx, p),
-    assumedViewsPerWindow: assumedViewsPerWindow(ctx, p),
+    billingUnitHours: windowHoursFor(company.playWindowHours, p),
+    assumedViewsPerWindow: assumedViewsFor(audience.assumedViewsPerWindow, company.playWindowHours, p),
     /* False when the slot has no audience score: only ever seen by a
        caller who is told so, since inventory excludes such positions. */
-    scored: ctx.audience.forSlot(dt.id, p.slot).scored,
+    scored: audience.scored,
     /* One floor for every campaign type; the personalised multiplier is
        published as itself (Rob, 30 Sep 2026): a play of a personalised
        version bills at committed price × multiplier, which is not knowable

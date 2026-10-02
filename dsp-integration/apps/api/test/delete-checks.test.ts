@@ -8,13 +8,13 @@ describe('soldOrReservedPositions (Q47 default: never blocks, only logged)', () 
     /* The seeded bookings put every advertiser (both of Google DSP's seats)
        on the Menu Board's one advertiser position (menu_board.s2), across
        several play windows each — one position, however many windows. */
-    expect(soldOrReservedPositions(ctx, 'menu_board')).toBe(1)
+    expect(await soldOrReservedPositions(ctx, 'menu_board')).toBe(1)
   })
 
   it('is 0 for a display type with no advertiser slots at all', async () => {
     const ctx = await testContext({ clock: () => NOW, bookings: true })
-    expect(soldOrReservedPositions(ctx, 'landscape')).toBe(0)
-    expect(soldOrReservedPositions(ctx, 'portrait')).toBe(0)
+    expect(await soldOrReservedPositions(ctx, 'landscape')).toBe(0)
+    expect(await soldOrReservedPositions(ctx, 'portrait')).toBe(0)
   })
 
   it('is 0 once nothing is actually booked', async () => {
@@ -23,11 +23,11 @@ describe('soldOrReservedPositions (Q47 default: never blocks, only logged)', () 
        the true "nothing booked" case. */
     const ctx = await testContext({ clock: () => NOW, bookings: false })
     ctx.db.prepare("DELETE FROM reservations WHERE position_id = 'menu_board.s2'").run()
-    expect(soldOrReservedPositions(ctx, 'menu_board')).toBe(0)
+    expect(await soldOrReservedPositions(ctx, 'menu_board')).toBe(0)
   })
 
   it('is 0 for an unknown display type id, rather than throwing', async () => {
     const ctx = await testContext({ clock: () => NOW })
-    expect(soldOrReservedPositions(ctx, 'nope')).toBe(0)
+    expect(await soldOrReservedPositions(ctx, 'nope')).toBe(0)
   })
 })

@@ -52,8 +52,8 @@ const wantedTargeting = (pricingType: string): TargetingMode => (pricingType ===
 
 export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) => {
   /* The calling partner's campaign, or 404. */
-  const own = (partner: PartnerRecord, id: string) => {
-    const c = ctx.campaigns.getCampaign(id)
+  const own = async (partner: PartnerRecord, id: string) => {
+    const c = await ctx.campaigns.getCampaign(id)
     if (!c || c.partnerId !== partner.id || c.source === 'hq') throw notFound('Campaign not found.')
     return c
   }
@@ -67,7 +67,7 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
     if (typeof b.advertiserId !== 'string' || !partnerAdvertiser(req.partner, b.advertiserId)) invalid.push({ field: 'advertiserId', reason: `Not an advertiser on ${req.partner.name}.` })
     if (typeof b.name !== 'string' || !b.name.trim()) invalid.push({ field: 'name', reason: 'Required.' })
     else if (b.name.trim().length > lim.nameLength) invalid.push({ field: 'name', reason: `At most ${lim.nameLength} characters.` })
-    const dt = typeof b.displayTypeId === 'string' ? ctx.displayTypes.get(b.displayTypeId) : null
+    const dt = typeof b.displayTypeId === 'string' ? await ctx.displayTypes.get(b.displayTypeId) : null
     if (b.displayTypeId !== undefined && (typeof b.displayTypeId !== 'string' || !dt)) invalid.push({ field: 'displayTypeId', reason: 'Unknown display type.' })
     /* slot (optional): which of the display type's advertiser slots this
        submission is for, so its own max-campaigns cap can be looked up
@@ -130,7 +130,7 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
     const ids = new Set<string>()
     const notPermitted = new Map<string, { variable?: string; reason: string }>()
     const ruleErrors: Detail[] = []
-    const access = ctx.company.variableAccess()
+    const access = await ctx.company.variableAccess()
     if (Array.isArray(targeted)) {
       targeted.forEach((t, i) => {
         const f = (k: string) => `targeted[${i}].${k}`
@@ -160,7 +160,7 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
     /* Enforcement (checkFloor/checkTargeting) reads one pricingType for the
        whole campaign, taken from the mandatory default layer. */
     const pricingType = b.default!.pricingType as PricingType
-    const c = ctx.campaigns.createCampaign({
+    const c = await ctx.campaigns.createCampaign({
       id: `c_${randomUUID().slice(0, 12)}`, name: (b.name as string).trim(), targeting, source: 'api',
       advertiserId: b.advertiserId as string, partnerId: req.partner.id, displayTypeId: (b.displayTypeId as string | undefined) ?? null,
       pricingType,
@@ -179,7 +179,7 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
   let uploadsInFlight = 0
   app.post<{ Params: { id: string } }>('/campaigns/:id/assets', async (req, reply) => {
     /* Ownership first: another partner's campaign is 404 whatever state the caller is in. */
-    const c = own(req.partner, req.params.id)
+    const c = await own(req.partner, req.params.id)
     requireConnected(req.partner)
     const inFlight = uploading.get(req.partner.id) ?? 0
     if (inFlight >= ctx.config.maxConcurrentUploadsPerPartner) {
@@ -201,7 +201,7 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
       else uploading.delete(req.partner.id)
     }
   })
-  const upload = async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply, c: ReturnType<typeof own>) => {
+  const upload = async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply, c: Awaited<ReturnType<typeof own>>) => {
     if (!req.isMultipart()) throw validationFailed([{ field: 'file', reason: 'Send multipart/form-data with version and file.' }])
     const limit = Math.max(ctx.config.assetLimits.maxImageBytes, ctx.config.assetLimits.maxVideoBytes)
     let version: string | undefined
@@ -231,7 +231,7 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
     if (!bytes && !truncated) invalid.push({ field: 'file', reason: 'Required.' })
     if (invalid.length) throw validationFailed(invalid)
 
-    const dt = c.displayTypeId ? ctx.displayTypes.get(c.displayTypeId) : null
+    const dt = c.displayTypeId ? await ctx.displayTypes.get(c.displayTypeId) : null
     const media = truncated ? null : readMedia(bytes as Buffer)
     const checks: Check[] = truncated
       ? [{ name: 'file_size', passed: false, detail: `The file is over the ${Math.round(limit / 1024 / 1024)} MB limit.` }]
@@ -239,8 +239,8 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
     if (failed(checks).length) throw new HttpError(422, 'checks_failed', 'The file failed the automated checks.', failureDetails(checks))
 
     const m = media!
-    const file = ctx.assets.put(bytes as Buffer, EXTENSION[m.kind])
-    const asset = ctx.campaigns.addAsset({
+    const file = await ctx.assets.put(bytes as Buffer, EXTENSION[m.kind])
+    const asset = await ctx.campaigns.addAsset({
       id: `as_${randomUUID().slice(0, 12)}`, campaignId: c.campaignId, role: version as string, file, mimeType: m.mimeType,
       width: m.width, height: m.height, durationSec: m.durationSec,
       bitrateKbps: isVideo(m.kind) && m.durationSec ? Math.round(((bytes as Buffer).length * 8) / 1000 / m.durationSec) : null,
@@ -260,23 +260,23 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
   }
 
   app.post<{ Params: { id: string } }>('/campaigns/:id/submit', async (req) => {
-    const c = own(req.partner, req.params.id)
+    const c = await own(req.partner, req.params.id)
     requireConnected(req.partner)
     const current = await ctx.approvals.view(c.campaignId)
     if (current.status === 'awaiting_approval' || current.status === 'approved') throw conflict(`The campaign is already ${current.status === 'approved' ? 'approved' : 'awaiting approval'}.`)
     if (current.status === 'rejected') throw conflict('The campaign was rejected. Upload a new version before submitting again.')
 
     const targeting = targetingOf(c.targeting)
-    const assets = ctx.campaigns.latestAssets(c.campaignId)
+    const assets = await ctx.campaigns.latestAssets(c.campaignId)
     /* default is mandatory (decision, 22 Sep — see the /campaigns validation
        above), so submitting always needs its own creative: there is no
        fallback-free path any more where a targeted version's creative could
        stand in for it. */
     const def = assets.find((a) => a.role === 'default')
-    const dt = c.displayTypeId ? ctx.displayTypes.get(c.displayTypeId) : null
+    const dt = c.displayTypeId ? await ctx.displayTypes.get(c.displayTypeId) : null
     /* The file checks of the default layer's current file, recorded for the reviewer. */
-    const file = def ? fileChecks(readMedia(ctx.assets.read(def.file) ?? Buffer.alloc(0)), def.sizeBytes, dt ?? null, ctx.config.assetLimits, 'default') : []
-    const access = ctx.company.variableAccess()
+    const file = def ? fileChecks(readMedia((await ctx.assets.read(def.file)) ?? Buffer.alloc(0)), def.sizeBytes, dt ?? null, ctx.config.assetLimits, 'default') : []
+    const access = await ctx.company.variableAccess()
     const refused = (targeting.targeted ?? []).flatMap((t, i) => validateRules(t.rules, `targeted[${i}].rules`, req.partner, access, ctx.config.maxValuesPerCondition).notPermitted)
     const checks: Check[] = [
       ...file,
@@ -294,7 +294,7 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
   /* Read-back of what the exchange stored from the package (E2E K3, L5), so
      an advertiser can verify versions, priorities and rules unchanged. */
   app.get<{ Params: { id: string } }>('/campaigns/:id', async (req) => {
-    const c = own(req.partner, req.params.id)
+    const c = await own(req.partner, req.params.id)
     const t = targetingOf(c.targeting)
     return {
       ...statusView(await ctx.approvals.view(c.campaignId)),
@@ -304,7 +304,7 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
   })
 
   app.get<{ Params: { id: string } }>('/campaigns/:id/status', async (req) => {
-    const c = own(req.partner, req.params.id)
+    const c = await own(req.partner, req.params.id)
     return statusView(await ctx.approvals.view(c.campaignId))
   })
 }

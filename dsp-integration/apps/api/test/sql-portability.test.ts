@@ -32,56 +32,56 @@ const ARRIVAL = ['z_first', 'm_second', 'a_third']
 const SAME_MS = '2026-10-01T00:00:00.000Z'
 
 describe('arrival order without rowid', () => {
-  it('displays and displays by type', () => {
+  it('displays and displays by type', async () => {
     const db = fresh()
     for (const id of ARRIVAL) db.prepare("INSERT INTO displays (id, name, store, display_type_id) VALUES (?, ?, 'S', 'dt')").run(id, id)
     const src = sqliteDisplaySource(db)
-    expect(src.list().map((d) => d.id)).toEqual(ARRIVAL)
-    expect(src.listByDisplayType('dt').map((d) => d.id)).toEqual(ARRIVAL)
+    expect((await src.list()).map((d) => d.id)).toEqual(ARRIVAL)
+    expect((await src.listByDisplayType('dt')).map((d) => d.id)).toEqual(ARRIVAL)
   })
 
-  it('playlists', () => {
+  it('playlists', async () => {
     const db = fresh()
     const src = sqlitePlaylistSource(db)
-    for (const id of ARRIVAL) src.create({ id, name: id, autoCreatedFor: null })
-    expect(src.list().map((p) => p.id)).toEqual(ARRIVAL)
+    for (const id of ARRIVAL) await src.create({ id, name: id, autoCreatedFor: null })
+    expect((await src.list()).map((p) => p.id)).toEqual(ARRIVAL)
   })
 
-  it('display types', () => {
+  it('display types', async () => {
     const db = fresh()
     for (const id of ARRIVAL) {
       db.prepare(`INSERT INTO display_types (id, touch_point, name, canvas_width, canvas_height, background_color, playlist_settings, qr_control, enabled_features)
                   VALUES (?, 'Digital Signage', ?, 1920, 1080, '#000000', '{}', '{}', '{}')`).run(id, id)
     }
-    expect(sqliteDisplayTypeSource(db).list().map((d) => d.id)).toEqual(ARRIVAL)
+    expect((await sqliteDisplayTypeSource(db).list()).map((d) => d.id)).toEqual(ARRIVAL)
   })
 
-  it('partners', () => {
+  it('partners', async () => {
     const db = fresh()
     const repo = sqlitePartnerRepo(db, aesGcmSecretsStore(TEST_KEY))
     for (const id of ARRIVAL) {
-      repo.insert({ id, provider: `prov_${id}`, name: id, status: 'draft', lastSync: null, mode: 'test', credsPublic: {}, bidder: {}, seats: [], listsLinked: true,
+      await repo.insert({ id, provider: `prov_${id}`, name: id, status: 'draft', lastSync: null, mode: 'test', credsPublic: {}, bidder: {}, seats: [], listsLinked: true,
         allowList: [], blockList: [], categoryAllowList: [], categoryBlockList: [] })
     }
-    expect(repo.list().map((p) => p.id)).toEqual(ARRIVAL)
+    expect((await repo.list()).map((p) => p.id)).toEqual(ARRIVAL)
   })
 
-  it('buyers lists', () => {
+  it('buyers lists', async () => {
     const db = fresh()
     const repo = sqliteBuyersListRepo(db)
-    for (const id of ARRIVAL) repo.insert({ id, name: id, description: '', invitedBuyers: [], activeFrom: null, activeTo: null, auctionCloses: null })
-    expect(repo.list().map((l) => l.id)).toEqual(ARRIVAL)
+    for (const id of ARRIVAL) await repo.insert({ id, name: id, description: '', invitedBuyers: [], activeFrom: null, activeTo: null, auctionCloses: null })
+    expect((await repo.list()).map((l) => l.id)).toEqual(ARRIVAL)
   })
 
-  it('reservations written in the same millisecond keep the order they arrived in (the earlier bid wins a tie)', () => {
+  it('reservations written in the same millisecond keep the order they arrived in (the earlier bid wins a tie)', async () => {
     const db = fresh()
     const repo = sqliteReservationRepo(db)
     for (const id of ARRIVAL) {
-      repo.insert({ id, partnerId: 'p', advertiserId: null, campaignId: null, positionId: 'pos', windowStart: SAME_MS, type: 'bid', channel: 'api', bidCpm: 10,
+      await repo.insert({ id, partnerId: 'p', advertiserId: null, campaignId: null, positionId: 'pos', windowStart: SAME_MS, type: 'bid', channel: 'api', bidCpm: 10,
         currency: 'AUD', status: 'pending', clearingCpm: null, reason: null, testMode: false, pricingType: null, handedOffAt: null })
     }
     db.prepare('UPDATE reservations SET created_at = ?').run(SAME_MS)
-    expect(repo.forWindow('pos', SAME_MS).map((r) => r.id)).toEqual(ARRIVAL)
+    expect((await repo.forWindow('pos', SAME_MS)).map((r) => r.id)).toEqual(ARRIVAL)
   })
 
   it('approval rows and the audit trail, with every timestamp equal', () => {
@@ -100,13 +100,13 @@ describe('arrival order without rowid', () => {
     expect(store.rows('c1').map((r) => r.assetVersion)).toEqual(ARRIVAL)
   })
 
-  it('rows written before migration 0037 keep their order, and new rows follow them', () => {
+  it('rows written before migration 0037 keep their order, and new rows follow them', async () => {
     const db = openDb(':memory:')
     migrateUp(db, '0036')
     for (const id of ARRIVAL) db.prepare("INSERT INTO displays (id, name, store, display_type_id) VALUES (?, ?, 'S', 'dt')").run(id, id)
     migrateUp(db)
     db.prepare("INSERT INTO displays (id, name, store, display_type_id) VALUES ('b_fourth', 'b_fourth', 'S', 'dt')").run()
-    expect(sqliteDisplaySource(db).list().map((d) => d.id)).toEqual([...ARRIVAL, 'b_fourth'])
+    expect((await sqliteDisplaySource(db).list()).map((d) => d.id)).toEqual([...ARRIVAL, 'b_fourth'])
   })
 
   it('0037 reverts cleanly', () => {
@@ -129,14 +129,14 @@ describe('portable statements', () => {
     expect(defaultVacd(db, 'missing')).toBeNull()
   })
 
-  it('personalised plays are counted with CASE, not a boolean SUM', () => {
+  it('personalised plays are counted with CASE, not a boolean SUM', async () => {
     const db = fresh()
     db.prepare("INSERT INTO displays (id, name, store, display_type_id) VALUES ('d1', 'd1', 'S', 'dt')").run()
     const play = db.prepare('INSERT INTO plays (id, display_id, campaign_id, played_at, duration_sec, tier) VALUES (?, ?, ?, ?, ?, ?)')
     play.run('p1', 'd1', 'c1', '2026-10-01T01:00:00.000Z', 10, 'personalised')
     play.run('p2', 'd1', 'c1', '2026-10-01T02:00:00.000Z', 10, null)
     play.run('p3', 'd1', 'c1', '2026-10-01T03:00:00.000Z', 5, 'personalised')
-    const t = sqlitePlaybackSource(db).totals({ campaignId: 'c1', displayTypeId: 'dt', from: '2026-10-01T00:00:00.000Z', to: '2026-10-02T00:00:00.000Z' })
+    const t = await sqlitePlaybackSource(db).totals({ campaignId: 'c1', displayTypeId: 'dt', from: '2026-10-01T00:00:00.000Z', to: '2026-10-02T00:00:00.000Z' })
     expect(t).toEqual({ plays: 3, playedSec: 25, personalised: { plays: 2, playedSec: 15 } })
   })
 

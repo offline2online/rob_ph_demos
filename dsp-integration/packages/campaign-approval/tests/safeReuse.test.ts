@@ -35,18 +35,18 @@ const hash1 = { assetUrl: '/a.png', mimeType: 'image/png', width: 1920, height: 
 describe('safe reuse of previously approved assets (spec §3)', () => {
   it('a human approval clears the asset at its content hash', async () => {
     const service = setup(hash1)
-    expect(service.wasAssetHumanCleared('c1', 'default', 'hash-1')).toBe(false)
+    expect(await service.wasAssetHumanCleared('c1', 'default', 'hash-1')).toBe(false)
     await service.submit('c1', [], 'advertiser')
     await service.approve('c1', 'v1', 'hq-admin')
-    expect(service.wasAssetHumanCleared('c1', 'default', 'hash-1')).toBe(true)
+    expect(await service.wasAssetHumanCleared('c1', 'default', 'hash-1')).toBe(true)
   })
 
   it('a changed asset (a different content hash) never qualifies, even after a human cleared the old one', async () => {
     const service = setup(hash1)
     await service.submit('c1', [], 'advertiser')
     await service.approve('c1', 'v1', 'hq-admin')
-    expect(service.wasAssetHumanCleared('c1', 'default', 'hash-1')).toBe(true)
-    expect(service.wasAssetHumanCleared('c1', 'default', 'hash-2')).toBe(false)
+    expect(await service.wasAssetHumanCleared('c1', 'default', 'hash-1')).toBe(true)
+    expect(await service.wasAssetHumanCleared('c1', 'default', 'hash-2')).toBe(false)
   })
 
   it('automated-pass alone never clears an asset — only a genuine human approve does', async () => {
@@ -54,7 +54,7 @@ describe('safe reuse of previously approved assets (spec §3)', () => {
     const service = setup(hash1, false)
     const submitted = await service.submit('c1', [], 'advertiser')
     expect(submitted).toMatchObject({ status: 'approved', mode: 'auto' })
-    expect(service.wasAssetHumanCleared('c1', 'default', 'hash-1')).toBe(false)
+    expect(await service.wasAssetHumanCleared('c1', 'default', 'hash-1')).toBe(false)
   })
 
   it('no contentHash on the creative (the adapter cannot supply one) never clears — safe by default', async () => {
@@ -62,7 +62,7 @@ describe('safe reuse of previously approved assets (spec §3)', () => {
     await service.submit('c1', [], 'advertiser')
     await service.approve('c1', 'v1', 'hq-admin')
     /* Nothing to compare against, so nothing is ever reported cleared. */
-    expect(service.wasAssetHumanCleared('c1', 'default', 'hash-1')).toBe(false)
+    expect(await service.wasAssetHumanCleared('c1', 'default', 'hash-1')).toBe(false)
   })
 
   /* Wired into submit/change (Q40, 29 Sep 2026): a version whose every
@@ -75,7 +75,7 @@ describe('safe reuse of previously approved assets (spec §3)', () => {
     const service = setup(hash1, true, assets)
     await service.submit('c1', [], 'advertiser')
     await service.approve('c1', 'v1', 'hq-admin')
-    expect(service.wasAssetHumanCleared('c1', 'metro', 'hash-m')).toBe(true)
+    expect(await service.wasAssetHumanCleared('c1', 'metro', 'hash-m')).toBe(true)
     service.edit({})
     const again = await service.changed('c1', 'advertiser')
     expect(again).toMatchObject({ status: 'approved', mode: 'auto', assetVersion: 'v2', liveAssetVersion: 'v2', pendingEdit: false })

@@ -40,7 +40,7 @@ describe('Amazon Ads DSP against the mock Amazon Ads API (LWA + Ads API)', () =>
     for (let i = 0; i < 120; i++) await control('POST', '/amazon_dsp/advertisers', { id: `adv-${i}`, name: `Brand ${i}`, seatId: 'amzn-seat-1', domain: `brand${i}.example` })
     const res = await call('POST', '/partners/p_amazon/connect')
     expect(res.json().seats).toHaveLength(121)
-    expect(ctx.partners.get('p_amazon')!.seats[1]).toEqual({ id: 'adv-0', name: 'Brand 0', domain: 'brand0.example' })
+    expect((await ctx.partners.get('p_amazon'))!.seats[1]).toEqual({ id: 'adv-0', name: 'Brand 0', domain: 'brand0.example' })
     /* The API returns only id and name. */
     expect(res.json().seats[1]).toEqual({ id: 'adv-0', name: 'Brand 0' })
   })
@@ -60,7 +60,7 @@ describe('The Trade Desk against the mock TTD API v3', () => {
     expectMatchesContract('POST', '/admin/v1/partners/{partnerId}/connect', 200, res.json())
     expect(res.json()).toMatchObject({ status: 'connected', seats: [{ id: 'ttd-adv-1', name: 'Arnott’s' }] })
     expect(res.body).not.toContain('ttd-secret-token')
-    expect(ctx.partners.get('p_the_trade_desk')!.seats[0].domain).toBe('arnotts.com')
+    expect((await ctx.partners.get('p_the_trade_desk'))!.seats[0].domain).toBe('arnotts.com')
   })
 
   it('reports a rejected token or the wrong partner', async () => {
@@ -79,10 +79,10 @@ describe('The Trade Desk against the mock TTD API v3', () => {
     await call('POST', '/partners/p_the_trade_desk/connect')
     await call('PUT', '/partners/p_the_trade_desk', { bidder: { bidderEndpoint: 'https://bid.thetradedesk.example/openrtb2', seatIds: ['ttd-seat-1'] } })
     /* Tie the Menu Board's advertiser slot to TTD, so only TTD bids for it. */
-    const ext = ctx.displayTypes.get('menu_board')!.phExtensions!
-    ctx.displayTypes.saveExtensions('menu_board', { ...ext, slots: ext.slots.map((s, i) => (i === 1 ? { ...s, partnerIds: ['p_the_trade_desk'] } : s)) })
+    const ext = (await ctx.displayTypes.get('menu_board'))!.phExtensions!
+    await ctx.displayTypes.saveExtensions('menu_board', { ...ext, slots: ext.slots.map((s, i) => (i === 1 ? { ...s, partnerIds: ['p_the_trade_desk'] } : s)) })
     await runAuction(ctx, new Date('2026-09-21T00:00:00.000Z'))
-    const [first] = ctx.reservations.forWindow('menu_board.s2', '2026-09-21T00:00:00.000Z')
+    const [first] = await ctx.reservations.forWindow('menu_board.s2', '2026-09-21T00:00:00.000Z')
     expect(first).toMatchObject({ partnerId: 'p_the_trade_desk', advertiserId: 'arnotts', status: 'rejected', reason: 'New creative crid-ttd-adv-1: queued for approval.' })
   })
 })

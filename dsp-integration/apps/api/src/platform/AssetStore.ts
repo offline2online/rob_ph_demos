@@ -1,14 +1,15 @@
 /* Stand-in for the existing platform's asset storage: a local folder
    (data/assets/, git-ignored). Files are served at /assets/{file} by the
    POC API so the review panel can render them. */
+import type { Awaitable } from '../db/db'
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { extname, join } from 'node:path'
 
 export interface AssetStore {
-  put(bytes: Buffer, ext: string): string
-  read(file: string): Buffer | null
-  url(file: string): string
+  put(bytes: Buffer, ext: string): Awaitable<string>
+  read(file: string): Awaitable<Buffer | null>
+  url(file: string): Awaitable<string>
 }
 
 /* publicBase: the API's own origin, when the admin UI is served from a

@@ -29,17 +29,17 @@ const tick = async (h: H) => {
   return { logs, error }
 }
 const claims = (h: H) => prepared(h.ctx.db, 'SELECT * FROM auction_runs ORDER BY window_start').all() as { window_start: string; claimed_by: string; finished_at: string | null }[]
-const sold = (h: H, w: Date) => h.rows(w).filter((r) => (r.status === 'won' || r.status === 'reserved') && !r.testMode)
+const sold = async (h: H, w: Date) => (await h.rows(w)).filter((r) => (r.status === 'won' || r.status === 'reserved') && !r.testMode)
 
 describe('Run 2 — E. Partner API refusals', () => {
   it('E1 — DSP integration switched off: Partner API and sellers.json 404 before the token; no bid requests; no auction; sold windows still billed; nothing deleted; back on restores service', async () => {
     const h = await harness()
     const campaignId = await h.approvedCrid('crid-e1', day(0))
     await runAuction(h.ctx, day(1))
-    expect(sold(h, day(1))).toHaveLength(1)
+    expect(await sold(h, day(1))).toHaveLength(1)
     h.playback.script(campaignId, day(1), { plays: 100, playedSec: 86_400 })
-    const partners = h.ctx.partners.list().length
-    const campaigns = h.ctx.campaigns.listCampaigns().length
+    const partners = (await h.ctx.partners.list()).length
+    const campaigns = (await h.ctx.campaigns.listCampaigns()).length
 
     expect((await h.admin.exchange(false)).statusCode).toBe(200)
     const endpoints: [string, string, unknown?][] = [
@@ -65,9 +65,9 @@ describe('Run 2 — E. Partner API refusals', () => {
     const t = await tick(h)
     expect(t.error).toBeNull()
     expect(claims(h)).toEqual([])
-    expect(lineItems(h.ctx).map((i) => i.windowStart)).toEqual([day(1).toISOString()])
-    expect(h.ctx.partners.list().length).toBe(partners)
-    expect(h.ctx.campaigns.listCampaigns().length).toBe(campaigns)
+    expect((await lineItems(h.ctx)).map((i) => i.windowStart)).toEqual([day(1).toISOString()])
+    expect((await h.ctx.partners.list()).length).toBe(partners)
+    expect((await h.ctx.campaigns.listCampaigns()).length).toBe(campaigns)
 
     expect((await h.admin.exchange(true)).statusCode).toBe(200)
     expect((await h.app.inject({ method: 'GET', url: '/api/v1/inventory', headers: GOOGLE })).statusCode).toBe(200)
@@ -76,7 +76,7 @@ describe('Run 2 — E. Partner API refusals', () => {
 
   it('E2 — more than 50 req/s (burst 100) from one partner → 429 rate_limited with Retry-After; a second partner is unaffected', async () => {
     const h = await harness()
-    h.addSecondDsp()
+    await h.addSecondDsp()
     expect(h.ctx.config.partnerRateLimit).toEqual({ perSecond: 50, burst: 100 })
     const codes: number[] = []
     let limited: Awaited<ReturnType<typeof h.app.inject>> | null = null
@@ -95,8 +95,8 @@ describe('Run 2 — E. Partner API refusals', () => {
   it('E3 — a third concurrent upload from one partner → 429; the fifth across all partners → 429 (PH_MAX_UPLOADS_IN_FLIGHT = 4)', async () => {
     const h = await harness()
     h.ctx.config.partnerRateLimit = { perSecond: 100_000, burst: 100_000 }
-    h.addSecondDsp()
-    h.ctx.partners.update('p_amazon', { status: 'connected' })
+    await h.addSecondDsp()
+    await h.ctx.partners.update('p_amazon', { status: 'connected' })
     expect(h.ctx.config.maxConcurrentUploadsPerPartner).toBe(2)
     expect(h.ctx.config.maxConcurrentUploads).toBe(4)
     const campaign = async (advertiserId: string, headers: typeof GOOGLE) =>
@@ -213,9 +213,9 @@ describe('Run 2 — E. Partner API refusals', () => {
 
   it('E10 — another partner’s campaign, reservation or position → 404 (no IDOR)', async () => {
     const h = await harness()
-    h.addSecondDsp()
+    await h.addSecondDsp()
     /* The position is Google's only. */
-    h.admin.slot({ partnerIds: ['p_google'] })
+    await h.admin.slot({ partnerIds: ['p_google'] })
     const id = await h.readyApiCampaign('Swisse — E10')
     const r = await h.partner.bid(id, day(0), 200)
     expect(r.statusCode).toBe(201)
@@ -290,7 +290,7 @@ describe('Run 2 — F. Bid-response hardening', () => {
     h.bidder.setScript((req) => ({ body: { ...response(req, [swisseBid(req, { price: 500, crid: 'crid-f' })]), id: 'someone-elses-request' } }))
     const out = await runAuction(h.ctx, day(1))
     expect(out.positions[0]).toMatchObject({ bidRequests: 1, bids: 0, winner: null })
-    expect(h.rows(day(1))).toEqual([])
+    expect(await h.rows(day(1))).toEqual([])
   })
 
   it('F2 — a bid for impid ≠ 1 is rejected', async () => {
@@ -298,7 +298,7 @@ describe('Run 2 — F. Bid-response hardening', () => {
     h.bidder.setScript((req) => ({ body: response(req, [{ ...swisseBid(req, { price: 500, crid: 'crid-f' }), impid: '2' }]) }))
     const out = await runAuction(h.ctx, day(1))
     expect(out.positions[0].winner).toBeNull()
-    expect(h.rows(day(1))[0]).toMatchObject({ status: 'rejected', reason: 'Bid for impression 2; the request offered impression 1.' })
+    expect((await h.rows(day(1)))[0]).toMatchObject({ status: 'rejected', reason: 'Bid for impression 2; the request offered impression 1.' })
   })
 
   it('F3 — a missing cur is read as USD and rejected on an AUD exchange', async () => {
@@ -308,7 +308,7 @@ describe('Run 2 — F. Bid-response hardening', () => {
       return { body }
     })
     expect((await runAuction(h.ctx, day(1))).positions[0].winner).toBeNull()
-    expect(h.rows(day(1))[0]).toMatchObject({ status: 'rejected', reason: 'Bid in USD; the exchange trades in AUD.' })
+    expect((await h.rows(day(1)))[0]).toMatchObject({ status: 'rejected', reason: 'Bid in USD; the exchange trades in AUD.' })
   })
 
   it('F4 — a non-finite price, or one above 10,000 CPM, is rejected', async () => {
@@ -323,7 +323,7 @@ describe('Run 2 — F. Bid-response hardening', () => {
       const w = day(n++)
       h.bidder.setScript((req) => ({ raw: JSON.stringify(response(req, [swisseBid(req, { price: '__P__', crid: 'crid-f' })])).replace('"__P__"', raw) }))
       expect((await runAuction(h.ctx, w)).positions[0].winner, raw).toBeNull()
-      expect(h.rows(w)[0], raw).toMatchObject({ status: 'rejected', reason })
+      expect((await h.rows(w))[0], raw).toMatchObject({ status: 'rejected', reason })
     }
   })
 
@@ -332,7 +332,7 @@ describe('Run 2 — F. Bid-response hardening', () => {
     h.bidder.setScript((req) => ({ body: response(req, Array.from({ length: 14 }, (_, i) => swisseBid(req, { price: 100 + i, crid: 'crid-f', id: `b${i}` }))) }))
     const out = await runAuction(h.ctx, day(1))
     expect(out.positions[0].bids).toBe(10)
-    expect(h.rows(day(1))).toHaveLength(10)
+    expect(await h.rows(day(1))).toHaveLength(10)
     /* The 11th–14th (higher prices) were never read: the best read bid, 109, cleared. */
     expect(out.positions[0].winner).toMatchObject({ clearingCpm: 109 })
   })
@@ -342,12 +342,12 @@ describe('Run 2 — F. Bid-response hardening', () => {
     h.bidder.setScript((req) => ({ body: { ...response(req, [swisseBid(req, { price: 500, crid: 'crid-f' })]), ext: { pad: 'x'.repeat(65 * 1024) } } }))
     const out = await runAuction(h.ctx, day(1))
     expect(out.positions[0]).toMatchObject({ bidRequests: 1, bids: 0, winner: null })
-    expect(h.rows(day(1))).toEqual([])
+    expect(await h.rows(day(1))).toEqual([])
   })
 
   it('F7 — a bidder slower than 300 ms (headers or body) is aborted; the position falls through; other DSPs’ bids still count', async () => {
     const h = await harness()
-    h.addSecondDsp()
+    await h.addSecondDsp()
     await h.approvedCrid('crid-f7-g', day(0))
     const arnotts = await h.approvedCrid('crid-f7-t', day(1), 'p_ttd')
     const fast = (req: Parameters<typeof response>[0]) => ({ body: response(req, [arnottsBid(req, { price: 140, crid: 'crid-f7-t' })], 'ttd-seat-1') })
@@ -361,7 +361,7 @@ describe('Run 2 — F. Bid-response hardening', () => {
       const out = await runAuction(h.ctx, w)
       expect(Date.now() - started, JSON.stringify(slow)).toBeLessThan(440)
       expect(out.positions[0].winner, JSON.stringify(slow)).toMatchObject({ partnerId: 'p_ttd', clearingCpm: 140 })
-      expect(h.rows(w).find((r) => r.partnerId === 'p_google'), JSON.stringify(slow)).toBeUndefined()
+      expect((await h.rows(w)).find((r) => r.partnerId === 'p_google'), JSON.stringify(slow)).toBeUndefined()
       expect(bookingsCampaign(h, w)).toEqual([arnotts])
     }
     /* Google alone and slow: the position falls through. */
@@ -373,7 +373,7 @@ describe('Run 2 — F. Bid-response hardening', () => {
 
   it('F8 — two DSPs answering in different orders give an identical outcome (processed in DSP order)', async () => {
     const h = await harness()
-    h.addSecondDsp()
+    await h.addSecondDsp()
     await h.approvedCrid('crid-f8-g', day(0))
     await h.approvedCrid('crid-f8-t', day(1), 'p_ttd')
     const outcome = async (w: Date, googleFirst: boolean) => {
@@ -381,7 +381,7 @@ describe('Run 2 — F. Bid-response hardening', () => {
         ? { body: response(req, [swisseBid(req, { price: 160, crid: 'crid-f8-g' })]), delayMs: googleFirst ? 0 : 120 }
         : { body: response(req, [arnottsBid(req, { price: 160, crid: 'crid-f8-t' })], 'ttd-seat-1'), delayMs: googleFirst ? 120 : 0 })
       const out = await runAuction(h.ctx, w)
-      return { winner: out.positions[0].winner?.partnerId, rows: h.rows(w).map((r) => `${r.partnerId}:${r.status}:${r.bidCpm}`).sort() }
+      return { winner: out.positions[0].winner?.partnerId, rows: (await h.rows(w)).map((r) => `${r.partnerId}:${r.status}:${r.bidCpm}`).sort() }
     }
     const a = await outcome(day(2), true)
     const b = await outcome(day(3), false)
@@ -397,15 +397,15 @@ describe('Run 2 — G. Approval lifecycle (non-happy)', () => {
     const h = await harness()
     await h.bidder.control({ crid: 'crid-g1' })
     await runAuction(h.ctx, day(0))
-    const id = h.queuedCampaign('crid-g1')!
-    const asset = h.ctx.campaigns.latestAssets(id)[0]
+    const id = (await h.queuedCampaign('crid-g1'))!
+    const asset = (await h.ctx.campaigns.latestAssets(id))[0]
     const rej = await h.admin.reject(id, 'Creative breaches brand guidelines.', [{ assetId: asset.id, reason: 'Logo is cropped.' }])
     expect(rej.statusCode).toBe(200)
     expect(await h.ctx.approvals.view(id)).toMatchObject({ status: 'rejected', reason: 'Creative breaches brand guidelines.' })
     const review = (await h.app.inject({ method: 'GET', url: `/api/admin/v1/campaigns/${id}/approval` })).json()
     expect(JSON.stringify(review)).toContain('Logo is cropped.')
     await runAuction(h.ctx, day(1))
-    expect(h.rows(day(1))[0]).toMatchObject({ status: 'rejected', reason: 'The campaign is not approved.' })
+    expect((await h.rows(day(1)))[0]).toMatchObject({ status: 'rejected', reason: 'The campaign is not approved.' })
     expect(bookingsCampaign(h, day(1))).toEqual([])
   })
 
@@ -441,8 +441,10 @@ describe('Run 2 — G. Approval lifecycle (non-happy)', () => {
     const { id } = await h.submitApiCampaign('Swisse — G3')
     expect((await h.admin.reject(id, 'Wrong pack shot.')).statusCode).toBe(200)
     /* The advertiser is switched to "approval not required" after the rejection. */
-    h.ctx.company.saveAdvertiserSettings({ ...Object.fromEntries(['nestle', "l-oreal"].map((k) => [k, h.ctx.company.advertiserSetting(k)])), swisse: { approvalRequired: false, floorMultiplier: 1 } })
-    expect(h.ctx.company.advertiserSetting('swisse').approvalRequired).toBe(false)
+    const kept: [string, Awaited<ReturnType<typeof h.ctx.company.advertiserSetting>>][] = []
+    for (const k of ['nestle', "l-oreal"]) kept.push([k, await h.ctx.company.advertiserSetting(k)])
+    await h.ctx.company.saveAdvertiserSettings({ ...Object.fromEntries(kept), swisse: { approvalRequired: false, floorMultiplier: 1 } })
+    expect((await h.ctx.company.advertiserSetting('swisse')).approvalRequired).toBe(false)
     expect((await h.admin.unreject(id)).statusCode).toBe(200)
     expect(await h.ctx.approvals.view(id)).toMatchObject({ status: 'awaiting_approval' })
     expect((await h.partner.bid(id, day(0), 200)).json().error.code).toBe('not_approved')
@@ -454,11 +456,11 @@ describe('Run 2 — G. Approval lifecycle (non-happy)', () => {
     const { id } = await h.submitApiCampaign('Swisse — G4')
     await h.admin.reject(id, 'Not suitable.')
     const now = Date.now()
-    sweepRejectedCampaigns(h.ctx.db, 30, () => new Date(now + 29 * 86_400_000))
-    expect(h.ctx.campaigns.getCampaign(id)).not.toBeNull()
-    sweepRejectedCampaigns(h.ctx.db, 30, () => new Date(now + 31 * 86_400_000))
-    expect(h.ctx.campaigns.getCampaign(id)).toBeNull()
-    expect(h.ctx.campaigns.latestAssets(id)).toEqual([])
+    await sweepRejectedCampaigns(h.ctx.db, 30, () => new Date(now + 29 * 86_400_000))
+    expect(await h.ctx.campaigns.getCampaign(id)).not.toBeNull()
+    await sweepRejectedCampaigns(h.ctx.db, 30, () => new Date(now + 31 * 86_400_000))
+    expect(await h.ctx.campaigns.getCampaign(id)).toBeNull()
+    expect(await h.ctx.campaigns.latestAssets(id)).toEqual([])
     const audit = h.ctx.db.prepare('SELECT action FROM campaign_approval_audit WHERE campaign_id = ?').all(id) as { action: string }[]
     expect(audit.map((a) => a.action)).toEqual(expect.arrayContaining(['submitted', 'rejected']))
   })
@@ -467,16 +469,16 @@ describe('Run 2 — G. Approval lifecycle (non-happy)', () => {
      2026; fixed on main since). */
   it('G5 — approval not required: an unknown creative is auto-approved and competes in a later window, not the current one', async () => {
     const h = await harness()
-    expect(h.ctx.company.advertiserSetting('nestle')).toMatchObject({ approvalRequired: false })
+    expect(await h.ctx.company.advertiserSetting('nestle')).toMatchObject({ approvalRequired: false })
     /* Nestlé (5130001) bids with a new creative. */
     await h.bidder.control({ mode: 'bid', priceCpm: 150, advertiserId: '5130001', crid: 'crid-g5' })
     const now = await runAuction(h.ctx, day(0))
     expect(now.positions[0].winner).toBeNull()
-    expect(h.rows(day(0))[0]).toMatchObject({ status: 'rejected', reason: 'New creative crid-g5: approved automatically; it can compete from the next window.' })
-    expect(await h.ctx.approvals.view(h.queuedCampaign('crid-g5')!)).toMatchObject({ status: 'approved', mode: 'auto' })
+    expect((await h.rows(day(0)))[0]).toMatchObject({ status: 'rejected', reason: 'New creative crid-g5: approved automatically; it can compete from the next window.' })
+    expect(await h.ctx.approvals.view((await h.queuedCampaign('crid-g5'))!)).toMatchObject({ status: 'approved', mode: 'auto' })
     /* The next window, with nothing else done: it competes (and, alone above the floor, wins). */
     const next = await runAuction(h.ctx, day(1))
-    expect(h.rows(day(1))[0].reason, 'the auto-approved creative did not compete in the next window').not.toBe('The campaign is approved but not activated.')
+    expect((await h.rows(day(1)))[0].reason, 'the auto-approved creative did not compete in the next window').not.toBe('The campaign is approved but not activated.')
     expect(next.positions[0].winner).toMatchObject({ advertiserId: 'nestle', clearingCpm: 150 })
   })
 
@@ -510,13 +512,13 @@ describe('Run 2 — H. Scheduling, concurrency & billing faults', () => {
     expect((await h.partner.bid(id, day(0), 200)).statusCode).toBe(201)
     const out = await auction
     expect(out.positions[0].winner).toMatchObject({ clearingCpm: 200 })
-    expect(h.rows(day(0)).filter((r) => r.status === 'pending')).toEqual([])
+    expect((await h.rows(day(0))).filter((r) => r.status === 'pending')).toEqual([])
   })
 
   it('H2 — a bid for a window already claimed in auction_runs → 409 "closed"', async () => {
     const h = await harness()
     const id = await h.readyApiCampaign('Swisse — H2')
-    expect(claimAuction(h.ctx, day(0).toISOString())).toBe(true)
+    expect(await claimAuction(h.ctx, day(0).toISOString())).toBe(true)
     const res = await h.partner.bid(id, day(0), 200)
     expect(res.statusCode).toBe(409)
     expect(res.json().error.message).toMatch(/^Bidding for that window closed at .*, when its auction ran\.$/)
@@ -532,7 +534,7 @@ describe('Run 2 — H. Scheduling, concurrency & billing faults', () => {
     const results = await Promise.all([a.partner.bid(id, day(0), 200), b.partner.bid(id, day(0), 210), a.partner.bid(id, day(0), 220), b.partner.bid(id, day(0), 230)])
     const codes = results.map((r) => r.statusCode).sort()
     expect(codes).toEqual([201, 409, 409, 409])
-    expect(a.rows(day(0)).filter((r) => r.channel === 'api' && r.status === 'pending')).toHaveLength(1)
+    expect((await a.rows(day(0))).filter((r) => r.channel === 'api' && r.status === 'pending')).toHaveLength(1)
     a.ctx.db.close()
     b.ctx.db.close()
   })
@@ -552,7 +554,7 @@ describe('Run 2 — H. Scheduling, concurrency & billing faults', () => {
     expect(cleared).toHaveLength(1)
     /* One position, one DSP: one round of bid requests is one request. */
     expect(a.bidder.log.bidRequests.length + b.bidder.log.bidRequests.length - before).toBe(1)
-    expect(sold(a, day(1))).toHaveLength(1)
+    expect(await sold(a, day(1))).toHaveLength(1)
     a.ctx.db.close()
     b.ctx.db.close()
   })
@@ -579,12 +581,12 @@ describe('Run 2 — H. Scheduling, concurrency & billing faults', () => {
     /* 5½ hours past day(0)'s cutoff, before it starts. */
     h.setNow(new Date('2026-09-20T23:30:00.000Z'))
     expect((await tick(h)).logs.some((l) => l.startsWith(`Auction cleared ${day(0).toISOString()}`))).toBe(true)
-    expect(sold(h, day(0))).toHaveLength(1)
+    expect(await sold(h, day(0))).toHaveLength(1)
     /* day(1)'s cutoff and start both missed (process down). */
     h.setNow(new Date('2026-09-22T03:00:00.000Z'))
     const t = await tick(h)
     expect(t.logs.some((l) => l.startsWith(`Auction cleared ${day(1).toISOString()}`))).toBe(false)
-    expect(h.rows(day(1)).find((r) => r.channel === 'api')).toMatchObject({ status: 'lost', reason: 'The window started with no auction clearing this bid; nothing was sold.' })
+    expect((await h.rows(day(1))).find((r) => r.channel === 'api')).toMatchObject({ status: 'lost', reason: 'The window started with no auction clearing this bid; nothing was sold.' })
   })
 
   it('H7 — the playback source throws during billing: the auction due that minute still runs; billing retried next tick; no double line item', async () => {
@@ -597,26 +599,26 @@ describe('Run 2 — H. Scheduling, concurrency & billing faults', () => {
     const first = await tick(h)
     expect(first.logs).toContain('Billing failed: playback store down')
     expect(first.logs.some((l) => l.startsWith(`Auction cleared ${day(3).toISOString()}`))).toBe(true)
-    expect(lineItems(h.ctx)).toEqual([])
+    expect(await lineItems(h.ctx)).toEqual([])
     h.playback.fail(null)
     h.setNow(new Date(cutoffOf(day(3)).getTime() + 60_000))
     const second = await tick(h)
     expect(second.error).toBeNull()
-    expect(lineItems(h.ctx).map((i) => i.windowStart)).toEqual([day(1).toISOString()])
+    expect((await lineItems(h.ctx)).map((i) => i.windowStart)).toEqual([day(1).toISOString()])
     await tick(h)
-    expect(lineItems(h.ctx)).toHaveLength(1)
+    expect(await lineItems(h.ctx)).toHaveLength(1)
   })
 
   it('H8 — a position removed from the estate after a bid: the bid is settled lost with a reason', async () => {
     const h = await harness()
     const id = await h.readyApiCampaign('Swisse — H8')
     expect((await h.partner.bid(id, day(0), 200)).statusCode).toBe(201)
-    h.admin.slot({ owner: 'internal', partnerIds: [], listMode: null })
+    await h.admin.slot({ owner: 'internal', partnerIds: [], listMode: null })
     h.setNow(cutoffOf(day(0)))
     await tick(h)
     h.setNow(new Date(day(0).getTime() + 60_000))
     await tick(h)
-    const r = h.rows(day(0))[0]
+    const r = (await h.rows(day(0)))[0]
     expect(r.status).toBe('lost')
     expect(r.reason).toBeTruthy()
     expect(h.campaigns.handoffs.filter((b) => b.windowStart === day(0).toISOString())).toEqual([])
@@ -629,7 +631,7 @@ describe('Run 2 — H. Scheduling, concurrency & billing faults', () => {
     await h.bidder.auth({ accept: false })
     expect((await h.admin.connect()).json().status).toBe('error')
     expect((await runAuction(h.ctx, day(0))).positions[0].winner).toBeNull()
-    expect(h.ctx.reservations.get(bid.json().reservationId)).toMatchObject({ status: 'rejected', reason: 'Google DSP is not connected.' })
+    expect(await h.ctx.reservations.get(bid.json().reservationId)).toMatchObject({ status: 'rejected', reason: 'Google DSP is not connected.' })
   })
 
   /* Regression for backlog 7XWcEXzPCl88KOh78sAa (found by the E2E v2 run, 29 Sep
@@ -640,6 +642,6 @@ describe('Run 2 — H. Scheduling, concurrency & billing faults', () => {
     const bid = await h.partner.bid(id, day(0), 200)
     expect((await h.admin.disconnect()).statusCode).toBe(200)
     expect((await runAuction(h.ctx, day(0))).positions[0].winner).toBeNull()
-    expect(h.ctx.reservations.get(bid.json().reservationId)).toMatchObject({ status: 'rejected', reason: 'Google DSP is not connected.' })
+    expect(await h.ctx.reservations.get(bid.json().reservationId)).toMatchObject({ status: 'rejected', reason: 'Google DSP is not connected.' })
   })
 })
