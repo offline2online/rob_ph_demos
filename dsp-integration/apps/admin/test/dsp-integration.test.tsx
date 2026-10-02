@@ -335,7 +335,7 @@ describe('Campaign Status stand-in', () => {
   const routes = {
     '/api/admin/v1/campaigns': { items: [campaign, hq] },
     '/api/admin/v1/campaigns/c1/approval': approval,
-    '/api/admin/v1/booking-schedule': { currency: 'AUD', windows: [], positions: [], revenue: [], totals: { bookedWindows: 0, bookedRevenue: 0, billedRevenue: 0 } },
+    '/api/admin/v1/booking-schedule': { currency: 'AUD', windows: [], positions: [], revenue: [], dsps: [], byPricingType: [], totals: { bookedWindows: 0, bookedRevenue: 0, billedRevenue: 0 } },
   }
 
   it('lists only advertiser and DSP campaigns, with the status filter in the column', async () => {

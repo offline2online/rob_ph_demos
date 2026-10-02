@@ -59,4 +59,22 @@ describe('migrations', () => {
     expect(rows).toEqual([{ id: 'pl_menu', multi_zone: zones }, { id: 'pl_other', multi_zone: null }])
     expect((db.prepare('PRAGMA table_info(display_types)').all() as { name: string }[]).map((c) => c.name)).not.toContain('multi_zone')
   })
+
+  /* 2 Oct 2026 (pwGKh6gfIKq8O7A1ymP6): 0029's down dropped the playlist
+     column without copying it back, so a rollback lost every display
+     type's zoning. Up → down → up must keep it. */
+  it('0029 down carries the layout back to the display type, and up again restores it', () => {
+    const db = openDb(':memory:')
+    migrateUp(db, '0028')
+    const zones = JSON.stringify({ enabled: true, zones: [{ id: 'z1', name: 'Zone 1', playlistId: 'pl_z1' }] })
+    db.prepare("INSERT INTO playlists (id, name, auto_created_for, items) VALUES ('pl_menu', 'Menu Board Playlist', 'menu_board', '[]')").run()
+    db.prepare(`INSERT INTO display_types (id, touch_point, name, canvas_width, canvas_height, background_color, default_playlist_id, playlist_settings, qr_control, enabled_features, multi_zone)
+                VALUES ('menu_board', 'Digital Signage', 'Menu Board', 5760, 1080, '#111111', 'pl_menu', '{}', '{}', '{}', ?)`).run(zones)
+    migrateUp(db)
+    migrateDown(db, appliedVersions(db).filter((v) => v >= '0029').length)
+    expect(appliedVersions(db).at(-1)).toMatch(/^0028/)
+    expect(db.prepare("SELECT multi_zone FROM display_types WHERE id = 'menu_board'").get()).toEqual({ multi_zone: zones })
+    migrateUp(db)
+    expect(db.prepare("SELECT multi_zone FROM playlists WHERE id = 'pl_menu'").get()).toEqual({ multi_zone: zones })
+  })
 })
