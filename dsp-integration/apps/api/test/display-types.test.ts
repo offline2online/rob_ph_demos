@@ -66,7 +66,8 @@ describe('display types — POC stand-in endpoints', () => {
     expect(res.json().name).toBe('Landscape HD')
     expect(res.json().phExtensions).toEqual(landscape.phExtensions)
     expect(await ctx.playlists.get('pl_zone_landscape_1')).toMatchObject({ name: 'Landscape HD / Zone 1', autoCreatedFor: 'landscape' })
-    expect((await ctx.playlists.get('pl_zone_landscape_1'))?.playlistSettings).toEqual({ campaignAutoRotation: 'Auto-Rotate Off', campaignAutoPlay: 'Auto-Play Off' })
+    /* One set of new-playlist defaults (A0GyTNsA, 1 Oct 2026): nothing overridden. */
+    expect((await ctx.playlists.get('pl_zone_landscape_1'))?.playlistSettings).toEqual({})
   })
 
   it('switching a display type to multi-zone keeps its old default playlist, unassigned, and gives the layout its own playlist', async () => {

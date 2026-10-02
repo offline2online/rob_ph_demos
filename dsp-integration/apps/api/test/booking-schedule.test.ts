@@ -32,6 +32,21 @@ describe('GET /admin/v1/booking-schedule', () => {
     expect(body.totals).toEqual({ bookedWindows: 0, sellableWindows: 13, bookedRevenue: 0, billedRevenue: 0 })
   })
 
+  /* A0GyTNsA (1 Oct 2026): a multi-zone display type's slot is numbered
+     within its zone, as Available Inventory numbers it; positionId keeps
+     the flat index. */
+  it('numbers a multi-zone slot within its zone', async () => {
+    const { ctx, get } = await setup()
+    const first = (await get()).json().positions[0]
+    expect(first).toMatchObject({ positionId: 'menu_board.s2', slot: 2, zoneName: 'Zone 1', zoneSlot: 2 })
+    /* Move the advertiser slot into Zone 2: it is Zone 2's first slot, still position s2. */
+    const ext = (await ctx.displayTypes.get('menu_board'))!.phExtensions!
+    await ctx.displayTypes.saveExtensions('menu_board', { ...ext, slots: ext.slots!.map((s, i) => (i === 1 ? { ...s, zoneId: 'z2' } : s)) })
+    const moved = await get()
+    expectMatchesContract('GET', '/admin/v1/booking-schedule', 200, moved.json())
+    expect(moved.json().positions[0]).toMatchObject({ positionId: 'menu_board.s2', slot: 2, zoneName: 'Zone 2', zoneSlot: 1 })
+  })
+
   it('shows each booking at the price it was booked at, with booked and billed revenue per display type', async () => {
     const { ctx, get } = await setup()
     await ctx.reservations.insert(booking({}))

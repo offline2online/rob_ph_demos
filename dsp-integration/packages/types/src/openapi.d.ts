@@ -1770,6 +1770,10 @@ export interface components {
                 displayTypeName: string;
                 slot: number;
                 slotLabel: string;
+                /** @description The zone this slot plays in on a multi-zone display type (null on a single-zone one). Shown as "Zone n / Slot m" with zoneSlot. */
+                zoneName: string | null;
+                /** @description The slot's 1-based place within its own zone (equals `slot` on a single-zone display type) — the number Available Inventory shows. positionId keeps the flat index. */
+                zoneSlot: number;
                 /** @description The DSPs the slot is tied to; empty = any connected DSP. */
                 partnerNames: string[];
                 /** @enum {string} */

@@ -27,6 +27,7 @@ import { validationFailed } from '../../http/errors'
 import { allPositions, assignmentOf, assumedViewsPerWindow, effectivePartnerIds, nextWindow, shortestWindowMs, windowMs, windowStartOf, windowsBetween } from '../../domain/positions'
 import type { StoredTargeting } from '../../domain/targetingSummary'
 import { TAKEN } from '../../repos/ReservationRepo'
+import { zonePlaceOf } from '../../domain/displayTypes'
 import { advertiserSlug } from '@ph-dsp/types'
 
 const DAY = 86_400_000
@@ -161,6 +162,9 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
     }
     positions.push({
       positionId: p.positionId, displayTypeId: p.displayType.id, displayTypeName: p.displayType.name, slot: p.slot, slotLabel: p.def.label, displayCount,
+      /* Multi-zone: "Zone n / Slot m", as Available Inventory numbers it
+         (A0GyTNsA, 1 Oct 2026); positionId stays the flat index. */
+      zoneName: zonePlaceOf(p.displayType, p.slot)?.zoneName ?? null, zoneSlot: zonePlaceOf(p.displayType, p.slot)?.zoneSlot ?? p.slot,
       partnerNames: ((await effectivePartnerIds(ctx, p.def)) ?? []).map((id) => partners.find((x) => x.id === id)?.name ?? id), assignment: assignmentOf(p.def), windows,
     })
   }

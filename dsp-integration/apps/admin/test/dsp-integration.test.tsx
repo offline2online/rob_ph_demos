@@ -474,7 +474,7 @@ describe('Booking schedule', () => {
       { start: '2026-09-22T00:00:00.000Z', end: '2026-09-23T00:00:00.000Z' },
     ],
     positions: [{
-      positionId: 'menu_board.s2', displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', slot: 2, slotLabel: 'Supplier slot', partnerNames: ['Google DSP'], assignment: 'rtb', displayCount: 3,
+      positionId: 'menu_board.s2', displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', slot: 2, slotLabel: 'Supplier slot', zoneName: 'Zone 2', zoneSlot: 1, partnerNames: ['Google DSP'], assignment: 'rtb', displayCount: 3,
       windows: [
         { start: '2026-09-21T00:00:00.000Z', status: 'available', booking: null },
         { start: '2026-09-22T00:00:00.000Z', status: 'booked', booking: { reservationId: 'r1', campaignId: 'c1', advertiserId: 'swisse', partnerId: 'p_google', pricingType: 'personalised', type: 'reserve', advertiserName: 'Swisse', partnerName: 'Google DSP', cpm: 175, assumedViews: 1236, bookedRevenue: 216.3, billedRevenue: null, layers: { default: true, localised: false, personalised: true }, personalisedTriggers: { computerVision: false, aggregateStore: false, individual: true } } },
@@ -514,6 +514,8 @@ describe('Booking schedule', () => {
     expect([...grid.querySelectorAll('.ag-header-cell-text')].slice(0, 3).map((h) => h.textContent)).toEqual(['Advertiser', 'DSP', 'Position'])
     expect(within(grid).getByLabelText('DSP filter')).toBeInTheDocument()
     expect(within(grid).getByLabelText('Advertiser filter')).toBeInTheDocument()
+    /* Multi-zone: numbered within the zone, as Available Inventory does (A0GyTNsA, 1 Oct 2026). */
+    expect(within(grid).getByText('Zone 2 / Slot 1 · Supplier slot')).toBeInTheDocument()
   })
 
   it('stands alone — no Display Types / DSP Integration nav — and shows the DSP that actually booked it, not every DSP merely eligible to', async () => {

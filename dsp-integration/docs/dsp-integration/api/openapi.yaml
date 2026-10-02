@@ -2191,13 +2191,20 @@ components:
           type: array
           items:
             type: object
-            required: [positionId, displayTypeId, displayTypeName, slot, slotLabel, partnerNames, assignment, displayCount, windows]
+            required: [positionId, displayTypeId, displayTypeName, slot, slotLabel, zoneName, zoneSlot, partnerNames, assignment, displayCount, windows]
             properties:
               positionId: {type: string}
               displayTypeId: {type: string}
               displayTypeName: {type: string}
               slot: {type: integer, minimum: 1}
               slotLabel: {type: string}
+              zoneName:
+                type: [string, 'null']
+                description: The zone this slot plays in on a multi-zone display type (null on a single-zone one). Shown as "Zone n / Slot m" with zoneSlot.
+              zoneSlot:
+                type: integer
+                minimum: 1
+                description: The slot's 1-based place within its own zone (equals `slot` on a single-zone display type) — the number Available Inventory shows. positionId keeps the flat index.
               partnerNames: {type: array, items: {type: string}, description: 'The DSPs the slot is tied to; empty = any connected DSP.'}
               assignment: {type: string, enum: [rtb, whitelist_only, deal, reserved]}
               displayCount:

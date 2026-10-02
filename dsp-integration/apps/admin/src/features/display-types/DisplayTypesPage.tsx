@@ -2,7 +2,7 @@
    draft and applied with Save changes. */
 import { useQueryClient } from '@tanstack/react-query'
 import { App, Spin } from 'antd'
-import { NEW_PLAYLIST_SETTINGS_DEFAULTS, type DeleteCheck, type DisplayType, type Playlist } from '@ph-dsp/types'
+import { type DeleteCheck, type DisplayType, type Playlist } from '@ph-dsp/types'
 import { useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ApiRequestError } from '../../api/client'
@@ -93,7 +93,7 @@ export function DisplayTypesPage({ flags }: { flags: Flags }) {
     const found = allPlaylists.find((p) => p.name === name)
     if (found) return found.id
     const id = `pl_zone_${d.id}_${n}`
-    setDraft((cur) => (cur && !cur.newPlaylists.some((p) => p.id === id) ? { ...cur, newPlaylists: [...cur.newPlaylists, { id, name, autoCreatedFor: d.id, playlistSettings: { ...NEW_PLAYLIST_SETTINGS_DEFAULTS } }] } : cur))
+    setDraft((cur) => (cur && !cur.newPlaylists.some((p) => p.id === id) ? { ...cur, newPlaylists: [...cur.newPlaylists, { id, name, autoCreatedFor: d.id, playlistSettings: {} }] } : cur))
     return id
   }
 
@@ -102,22 +102,19 @@ export function DisplayTypesPage({ flags }: { flags: Flags }) {
      it's ready to define its own multi-zone layout — edited on this same
      page, never in Playlist Management — the moment it's picked as the
      default. Named uniquely so two "Add new playlist" clicks on the same
-     display type don't collide. Starts with Auto-Rotation/Auto-Play off
-     (NEW_PLAYLIST_SETTINGS_DEFAULTS, ticket 27 Sep 2026) — the same defaults
-     `ensureReferencedPlaylists` gives it server-side once Save actually
-     creates it — shown as a read-only preview right here in the meantime
-     (see the Playlist Settings block in DisplayTypeForm).
-     Since ticket ThP7DPGo17FmPJdDKM7S (28 Sep 2026) it starts as a copy of
-     the playlist it replaces — every setting matched to the display type's
-     current default, editable before Save creates it — and only falls back
-     to those defaults when there is no current default to copy. */
+     display type don't collide. Starts with every setting at its default
+     (`{}`, "Default settings") — the same as a new display type's playlist
+     and what `ensureReferencedPlaylists` gives it server-side once Save
+     creates it — editable here before Save (DisplayTypeForm's Playlist
+     Settings block). One set of new-playlist defaults (Rob, 1 Oct 2026,
+     A0GyTNsA): this replaced both the 27 Sep Auto-Rotate/Auto-Play Off set
+     and ThP7DPGo's 28 Sep copy of the current default playlist. */
   const newPlaylistId = () => {
     if (!d) return ''
     let name = `${d.name} Playlist`
     for (let n = 2; allPlaylists.some((p) => p.name === name); n += 1) name = `${d.name} Playlist ${n}`
     const id = `pl_new_${d.id}_${Date.now()}`
-    const current = allPlaylists.find((p) => p.id === d.defaultPlaylistId)?.playlistSettings
-    const playlistSettings = current && Object.keys(current).length ? { ...current } : { ...NEW_PLAYLIST_SETTINGS_DEFAULTS }
+    const playlistSettings = {}
     setDraft((cur) => (cur ? { ...cur, newPlaylists: [...cur.newPlaylists, { id, name, autoCreatedFor: d.id, playlistSettings }] } : cur))
     return id
   }

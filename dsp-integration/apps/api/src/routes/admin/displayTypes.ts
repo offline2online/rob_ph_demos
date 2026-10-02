@@ -5,7 +5,6 @@ import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { tx } from '../../db/db'
 import { dependentDetails, displayTypeDeleteCheck, liveCommitments } from '../../domain/deleteChecks'
-import { NEW_PLAYLIST_SETTINGS_DEFAULTS } from '@ph-dsp/types'
 import { ensureReferencedPlaylists, validateRecord, zonesOf } from '../../domain/displayTypes'
 import { validateExtensions } from '../../domain/slots'
 import type { Guards } from '../../http/app'
@@ -64,7 +63,7 @@ export const displayTypeRoutes = (ctx: Context, guards: Guards): FastifyPluginAs
       const before = prev
       const layoutId = `pl_${req.params.id}_layout`
       if (before && zonesOf(dt).length && !zonesOf(before).length && dt.defaultPlaylistId !== layoutId) {
-        if (!(await ctx.playlists.get(layoutId))) await ctx.playlists.create({ id: layoutId, name: `${dt.name} Layout`, autoCreatedFor: dt.id, playlistSettings: { ...NEW_PLAYLIST_SETTINGS_DEFAULTS } })
+        if (!(await ctx.playlists.get(layoutId))) await ctx.playlists.create({ id: layoutId, name: `${dt.name} Layout`, autoCreatedFor: dt.id, playlistSettings: {} })
         dt.defaultPlaylistId = layoutId
       }
       await ensureReferencedPlaylists(dt, ctx.playlists, false)
