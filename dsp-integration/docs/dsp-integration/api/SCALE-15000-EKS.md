@@ -158,22 +158,14 @@ are ready on this side:
   63 source files, about 550 awaited calls, and the functions above them
   that had to become async in turn. Routes and the exchange no longer
   change for an adapter.
-- **The cheap parts of the rest are done** (ticket v2iKDJQA0wmisXhp7ebV,
-  2 Oct 2026, behaviour unchanged): `SecretsStore` and the approval
-  module's `SqlDb` are awaitable too, and there is no raw SQL left outside
-  `src/platform/`, `src/repos/` and `src/db/` — the seven files that had
-  it (billing, positions, scheduler, creatives, the two retention sweeps,
-  the test-plays route) go through new repositories (`AuctionRunRepo`,
-  `BillingRepo`, `DspCreativeRepo`, `CampaignRetentionRepo`, `PlayRepo`,
-  `ReservationRepo.deleteSettledBefore`), gated like every other. A test
-  in `test/sql-portability.test.ts` fails if raw SQL reappears; only the
-  stand-in sample-data seeders (`src/seed/`) are allowlisted.
-- **Deferred until a client commissions a second replica**: the Postgres
-  adapter and its migration set; `tx`/`gate`/`onFree`, still typed to the
-  SQLite handle; the `?` placeholders and `.changes` the repositories use
-  (Postgres: `$n`, `rowCount`); Postgres equivalents for 0037's
-  `seq`-filling triggers and 0029's `ORDER BY rowid`. Bench before and after
-  the move was the same within run-to-run noise.
+- **Done since** (v2iKDJQA0wmisXhp7ebV, 2 Oct 2026): `SecretsStore` and
+  the approval `SqlDb` are awaitable, and no raw SQL remains outside
+  `platform/`, `repos/` and `db/` (new `AuctionRunRepo`, `BillingRepo`,
+  `DspCreativeRepo`, `CampaignRetentionRepo`, `PlayRepo`), guarded by
+  `test/sql-portability.test.ts` (seeders allowlisted). Bench unchanged.
+- **Deferred to a second replica**: the Postgres adapter and migrations;
+  `tx`/`gate`/`onFree` typed to SQLite; `?` and `.changes`; 0037's
+  triggers and 0029's `ORDER BY rowid`.
 - **Transactions on SQLite are serialised by a lock.** Once a transaction
   body awaits, anything else that ran on the one `node:sqlite` connection
   would land inside it. So `tx()` takes a per-database FIFO lock, a
