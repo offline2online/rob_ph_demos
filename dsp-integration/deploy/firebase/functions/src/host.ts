@@ -148,7 +148,7 @@ export function createHost(opts: { store: BlobStore; dataDir: string; migrations
   const runTick = async (ctx: Context) => {
     const before = await changes(ctx)
     await schedulerTick(ctx, log)
-    await sweepRejectedCampaigns(ctx.db, ctx.config.rejectedCampaignRetentionDays, ctx.clock)
+    await sweepRejectedCampaigns(ctx, ctx.config.rejectedCampaignRetentionDays, ctx.clock)
     /* Most ticks bill nothing and clear no auction: only upload the database
        (a few MB, gzipped and chunked into Firestore) when something changed
        (page-load review, 24 Sep 2026). */

@@ -213,7 +213,7 @@ export function startAuctionScheduler(ctx: Context, log: (msg: string) => void, 
    this fires, so there is no benefit to running it more often. */
 export function startCampaignRetentionScheduler(ctx: Context, log: (msg: string) => void, everyMs = 24 * 60 * 60 * 1000) {
   const tick = async () => {
-    const { deletedCampaignIds } = await sweepRejectedCampaigns(ctx.db, ctx.config.rejectedCampaignRetentionDays, ctx.clock)
+    const { deletedCampaignIds } = await sweepRejectedCampaigns(ctx, ctx.config.rejectedCampaignRetentionDays, ctx.clock)
     if (deletedCampaignIds.length) log(`Deleted ${deletedCampaignIds.length} campaign${deletedCampaignIds.length === 1 ? '' : 's'} rejected over ${ctx.config.rejectedCampaignRetentionDays} days ago.`)
   }
   const timer = setInterval(() => {

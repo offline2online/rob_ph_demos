@@ -63,6 +63,11 @@ export interface CampaignSource {
   /* Hand-off (package 16): book a campaign into a slot for a window. */
   bookSlot(b: SlotBooking): Awaitable<SlotBooking>
   bookings(campaignId?: string): Awaitable<SlotBooking[]>
+  /* The retention sweep's request to remove a rejected campaign and its
+     assets (Rob, 2 Oct 2026). What that means is the campaign system's
+     call — hard delete, archive or refuse; false when it kept the
+     campaign. The stand-in deletes the record and its assets. */
+  deleteCampaign(id: string): Awaitable<boolean>
 }
 
 interface Row {
@@ -120,6 +125,10 @@ export function sqliteCampaignSource(db: Db): CampaignSource {
       prepared(db, 'INSERT INTO campaign_slot_bookings (id, campaign_id, display_type_id, slot, window_start, window_end, asset_version, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
         .run(b.id, b.campaignId, b.displayTypeId, b.slot, b.windowStart, b.windowEnd, b.assetVersion ?? null, new Date().toISOString())
       return b
+    },
+    deleteCampaign(id) {
+      prepared(db, 'DELETE FROM campaign_assets WHERE campaign_id = ?').run(id)
+      return Number(prepared(db, 'DELETE FROM campaigns WHERE id = ?').run(id).changes) > 0
     },
     bookings(campaignId) {
       const rows = (campaignId

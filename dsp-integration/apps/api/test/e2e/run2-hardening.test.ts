@@ -456,9 +456,9 @@ describe('Run 2 — G. Approval lifecycle (non-happy)', () => {
     const { id } = await h.submitApiCampaign('Swisse — G4')
     await h.admin.reject(id, 'Not suitable.')
     const now = Date.now()
-    await sweepRejectedCampaigns(h.ctx.db, 30, () => new Date(now + 29 * 86_400_000))
+    await sweepRejectedCampaigns(h.ctx, 30, () => new Date(now + 29 * 86_400_000))
     expect(await h.ctx.campaigns.getCampaign(id)).not.toBeNull()
-    await sweepRejectedCampaigns(h.ctx.db, 30, () => new Date(now + 31 * 86_400_000))
+    await sweepRejectedCampaigns(h.ctx, 30, () => new Date(now + 31 * 86_400_000))
     expect(await h.ctx.campaigns.getCampaign(id)).toBeNull()
     expect(await h.ctx.campaigns.latestAssets(id)).toEqual([])
     const audit = h.ctx.db.prepare('SELECT action FROM campaign_approval_audit WHERE campaign_id = ?').all(id) as { action: string }[]

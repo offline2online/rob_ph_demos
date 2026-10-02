@@ -59,7 +59,7 @@ slower than that should cache, as the stand-ins now do.
 | `PlaylistSource` | read, create, rename, save settings, delete | Playlist service | `list`, `get`, `create`, `rename`, `saveSettings`, `delete` | Inventory (loop length), Playlist Management | `get` ≤ 0.1 ms |
 | `DisplaySource` | read only | Displays & Devices | `list`, `listByDisplayType`, `summaryByDisplayType`, `storeIdsByDisplayType` | **Hot**: `summaryByDisplayType` per position (counts, "no displays" check); `listByDisplayType` for the delete check only | `summaryByDisplayType` ≤ 0.05 ms, a count never the rows; `listByDisplayType` indexed |
 | `StoreSource` | read only, **never written** | Stores | `list`, `get` → `{id, name, region}`. On integration also the store/display **venue and geo** record: OpenOOH venue type, latitude/longitude, store id (see "Venue and geo metadata" below). The POC has no such seam yet; its stand-in is `phExtensions.venue` on the display type. | Inventory store/region filters, booking schedule, OpenRTB `dooh.venuetype`, inventory venue fields | `get` ≤ 0.05 ms |
-| `CampaignSource` (`platform/CampaignSource.ts`) | read + write | Campaigns service | `getCampaign`, `listCampaigns`, `setActivation`, `createCampaign`, `addAsset`, `latestAssets(campaignId, atVersion?: string)`, `bookSlot`, `bookings` | **Hot**: `getCampaign` per bid in the auction | `getCampaign` ≤ 0.5 ms |
+| `CampaignSource` (`platform/CampaignSource.ts`) | read + write | Campaigns service | `getCampaign`, `listCampaigns`, `setActivation`, `createCampaign`, `addAsset`, `latestAssets(campaignId, atVersion?: string)`, `bookSlot`, `bookings`, `deleteCampaign` | **Hot**: `getCampaign` per bid in the auction | `getCampaign` ≤ 0.5 ms |
 | Approval adapter (`packages/campaign-approval/src/adapter/CampaignSource.ts`): the **second facet of the same real campaign source** (it must not get `bookSlot` or `createCampaign`) | read + activation | Campaigns service | `getCampaign`, `listCampaigns`, `setActivation`, `onCampaignChanged`, `discardEditsAfter` | Approval screens, `isCampaignEligible` before every bid, reservation and hand-off | see the integration guide |
 | `PlaybackSource` | read only | Playback logging | `totals({campaignId, displayTypeId, from, to})`, `listPlays` | Billing, once per ended window | aggregated at the source: ≤ 1 s for 2 million plays |
 | `AssetStore` | write + read | Asset hosting / CDN | `put`, `read`, `url` | Creative upload and DSP creative retrieval; hand-off re-validation | — |
@@ -99,6 +99,13 @@ provide one breaks something specific, named here.
     snapshot of one GROUP BY.
   - `listByDisplayType` must be an indexed lookup (migration 0020 on the
     stand-in); only the delete check reads the rows now.
+- **`CampaignSource.deleteCampaign`** (2 Oct 2026, VzKX05Ulo9wGMuLMvISi)
+  - Called by the rejected-campaign retention sweep (30 days by default) to
+    remove a campaign and its assets. What deleting means is PH Core's call
+    — hard delete, archive or refuse — and it answers false when it keeps
+    the campaign; the sweep still removes this build's own records (its
+    approval rows and DSP-creative claims) and never treats a refusal as a
+    failure. The stand-in deletes the record and its assets.
 - **`CampaignSource.bookSlot`**
   - **At most one campaign per display type, slot and play window.** A
     second booking for the same slot and window must fail, not silently add
