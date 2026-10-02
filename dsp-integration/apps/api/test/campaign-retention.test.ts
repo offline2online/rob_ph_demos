@@ -84,7 +84,7 @@ describe('sweepRejectedCampaigns — current row and the PH Core seam', () => {
     await ctx.approvals.reject('c_api_swisse', v, 'hq', 'Price in artwork')
     const asked: string[] = []
     const campaigns = Object.assign(Object.create(ctx.campaigns), { deleteCampaign: (id: string) => (asked.push(id), false) })
-    const result = await sweepRejectedCampaigns({ db: ctx.db, campaigns }, 30, () => new Date(Date.now() + 31 * DAY))
+    const result = await sweepRejectedCampaigns({ ...ctx, campaigns }, 30, () => new Date(Date.now() + 31 * DAY))
     expect(asked).toContain('c_api_swisse')
     expect(result.deletedCampaignIds).toContain('c_api_swisse')
     expect(result.keptByPhCore).toContain('c_api_swisse')

@@ -52,7 +52,6 @@ export const testRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => 
     const end = await windowEndOf(ctx, r)
     const total = b.plays.reduce((n, x) => n + x.count, 0)
     const step = Math.max(1, Math.floor((end - start) / (total + 1)))
-    const insert = ctx.db.prepare('INSERT INTO plays (id, display_id, campaign_id, played_at, duration_sec, version_id, tier) VALUES (?, ?, ?, ?, ?, NULL, ?)')
     let i = 0
     const written: { tier: PlayTier | null; count: number }[] = []
     const fallbackDur = slotDurationSec(p.displayType) ?? 10
@@ -60,7 +59,7 @@ export const testRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => 
       for (const spec of b.plays) {
         const dur = spec.durationSec ?? fallbackDur
         for (let k = 0; k < spec.count; k++, i++) {
-          insert.run(`tp_${randomUUID().slice(0, 12)}`, displays[i % displays.length].id, r.campaignId!, new Date(start + (i + 1) * step).toISOString(), dur, spec.tier)
+          ctx.plays.insertTestPlay({ id: `tp_${randomUUID().slice(0, 12)}`, displayId: displays[i % displays.length].id, campaignId: r.campaignId!, playedAt: new Date(start + (i + 1) * step).toISOString(), durationSec: dur, tier: spec.tier })
         }
         written.push({ tier: spec.tier, count: spec.count })
       }

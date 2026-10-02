@@ -1,11 +1,16 @@
 /* DSP credentials are encrypted at rest (AES-256-GCM) behind this
    interface; engineering swaps in the platform's secrets handling. Values
-   are never logged and never returned in full. */
+   are never logged and never returned in full.
+
+   Awaitable like every seam (ticket v2iKDJQA0wmisXhp7ebV): the platform's
+   secrets handling (a KMS, Secret Manager) answers over the network, so
+   callers await. This AES-GCM stand-in answers at once. */
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
+import type { Awaitable } from '../db/db'
 
 export interface SecretsStore {
-  encrypt(plaintext: string): string
-  decrypt(ciphertext: string): string
+  encrypt(plaintext: string): Awaitable<string>
+  decrypt(ciphertext: string): Awaitable<string>
 }
 
 const VERSION = 'v1'

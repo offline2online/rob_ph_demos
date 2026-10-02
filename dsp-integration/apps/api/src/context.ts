@@ -22,6 +22,11 @@ import { advertiserSlug } from '@ph-dsp/types'
 import { type AssetStore, localAssetStore } from './platform/AssetStore'
 import { type AudienceSource, sqliteAudienceSource } from './platform/AudienceSource'
 import { type ReservationRepo, sqliteReservationRepo } from './repos/ReservationRepo'
+import { type AuctionRunRepo, sqliteAuctionRunRepo } from './repos/AuctionRunRepo'
+import { type BillingRepo, sqliteBillingRepo } from './repos/BillingRepo'
+import { type CampaignRetentionRepo, sqliteCampaignRetentionRepo } from './repos/CampaignRetentionRepo'
+import { type DspCreativeRepo, sqliteDspCreativeRepo } from './repos/DspCreativeRepo'
+import { type PlayRepo, sqlitePlayRepo } from './repos/PlayRepo'
 import { targetingSummary } from './domain/targetingSummary'
 import type { Fetch } from './dsp/DspClient'
 import { type DspProviders, dspProviders } from './dsp/registry'
@@ -51,6 +56,16 @@ export interface Context {
   assets: AssetStore
   audience: AudienceSource
   reservations: ReservationRepo
+  /* Auction claims per play window (exchange/scheduler.ts). */
+  auctionRuns: AuctionRunRepo
+  /* Billing line items (billing/index.ts). */
+  billing: BillingRepo
+  /* DSP creative-ID claims (exchange/creatives.ts). */
+  dspCreatives: DspCreativeRepo
+  /* The rejected-campaign sweep's reads and deletes (domain/campaignRetention.ts). */
+  campaignRetention: CampaignRetentionRepo
+  /* The test-only endpoint's synthetic plays (routes/admin/test.ts). */
+  plays: PlayRepo
   /* HTTP to the DSPs (the mock DSP service in the POC). */
   fetch: Fetch
   bidder: Bidder
@@ -100,6 +115,11 @@ export function createContext(opts: { config?: Config; db?: Db; flags?: Flags; s
     bidder: httpBidder(opts.dspFetch ?? ((url, init) => fetch(url, init)), { timeoutMs: config.bidderTimeoutMs, qps: config.bidderQps, maxResponseBytes: config.maxBidResponseBytes }),
     audience: g(sqliteAudienceSource(db)),
     reservations: g(sqliteReservationRepo(db)),
+    auctionRuns: g(sqliteAuctionRunRepo(db)),
+    billing: g(sqliteBillingRepo(db)),
+    dspCreatives: g(sqliteDspCreativeRepo(db)),
+    campaignRetention: g(sqliteCampaignRetentionRepo(db)),
+    plays: g(sqlitePlayRepo(db)),
     clock,
     ...approvalParts(db, config, { displayTypes, company, partners, campaignChanges }),
   }

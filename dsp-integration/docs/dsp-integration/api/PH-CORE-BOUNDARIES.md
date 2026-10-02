@@ -66,7 +66,7 @@ slower than that should cache, as the stand-ins now do.
 | `AudienceSource` | read only | Audience scoring (MOVE/VAC-d, spec §4) | `forSlot`, `targetedShare` | **Hot**: per position in inventory, forecast, OpenRTB `qty.multiplier` | ≤ 0.1 ms |
 | `SessionSource` (`auth/session.ts`) | read only | HQ Admin session and roles | `current()` → `{userId, name, role}` | Every Admin API request | — |
 | Partner identity (`auth/partnerAuth.ts`) | read only | Platform token issuance | `partnerFromRequest(ctx, req)` → one `PartnerRecord` or 401. **Not an interface and not constructed in `context.ts`**: it is a function that reads `ctx.config.partnerTokens` directly, so on integration it is the one place besides `context.ts` to change (or it becomes a seam) | Every Partner API request | ≤ 0.1 ms |
-| `SecretsStore` | encrypt / decrypt | Platform secrets handling (KMS) | `encrypt`, `decrypt` | Saving DSP credentials; connecting to a DSP | off the hot path by design |
+| `SecretsStore` | encrypt / decrypt (awaitable) | Platform secrets handling (KMS) | `encrypt`, `decrypt` | Saving DSP credentials; connecting to a DSP | off the hot path by design |
 | `Flags` | read only | Feature flags | `dspIntegration` | Every new endpoint (404 when off) | — |
 | DSP integration switch (`exchange.enabled`, migration 0023) | read + write | *This build* (the retailer's own setting, on Exchange settings) | `ctx.exchange.get().enabled`; `GET /admin/v1/features` | Every Partner API request, sellers.json, the auction, the nav | — |
 
@@ -206,6 +206,9 @@ provide one breaks something specific, named here.
   - AES-256-GCM with a random IV and a full 16-byte tag.
   - Decrypted values are never logged or returned. Screens only see which
     fields are set.
+  - `encrypt` / `decrypt` may answer with a promise (a KMS call): the
+    partner repository awaits them, and writes the row once the connection
+    is free (2 Oct 2026, v2iKDJQA0wmisXhp7ebV).
 
 ### Tables: whose they are
 
@@ -428,16 +431,35 @@ platform:
      every seam and repository method returns `T | Promise<T>`, and every
      caller awaits it — 63 source files and about 550 calls, not "one file
      per seam" as this section used to say. Exceptions, still synchronous:
-     `SecretsStore.encrypt/decrypt`, `Flags.dspIntegration` (a property),
-     the approval adapter's `onCampaignChanged`, and the approval module's
-     own `SqlDb`. A Postgres adapter is **not** wired in `context.ts`
-     alone: raw SQL on the `node:sqlite` handle still sits outside the
-     seams in `billing/index.ts`, `domain/positions.ts`,
-     `exchange/scheduler.ts`, `exchange/creatives.ts`,
-     `domain/campaignRetention.ts`, `domain/reservationRetention.ts` and
-     `routes/admin/test.ts`, and `tx`/`gate` are typed to the SQLite
-     handle — about 25 files plus a Postgres migration set (review,
-     2 Oct 2026; v2iKDJQA0wmisXhp7ebV moves the SQL into repositories).
+     `Flags.dspIntegration` (a property) and the approval adapter's
+     `onCampaignChanged` (a listener registration).
+   - **Done since** (2 Oct 2026, v2iKDJQA0wmisXhp7ebV, "the cheap parts"):
+     - `SecretsStore.encrypt/decrypt` are awaitable, and the partner
+       repository awaits them.
+     - The approval module's `SqlDb` is async-capable: each statement may
+       answer with a promise, and `approvalStore` and `pocCampaignSource`
+       await (sync-first, so node:sqlite pays nothing for it). A test runs
+       the store over an `SqlDb` whose every statement answers a promise.
+     - No raw SQL outside `src/platform/`, `src/repos/` and `src/db/`. The
+       statements that sat in billing, positions, the scheduler, DSP
+       creatives, the two retention sweeps and the test-plays route moved
+       into repositories on the `Context`, behind `gate()` like every
+       other: `AuctionRunRepo`, `BillingRepo`, `DspCreativeRepo`,
+       `CampaignRetentionRepo`, `PlayRepo` and
+       `ReservationRepo.deleteSettledBefore`. `test/sql-portability.test.ts`
+       fails if `db.prepare`, `prepared(` or `db.exec(` appears anywhere
+       else in `apps/api/src`; the one allowlisted directory is
+       `src/seed/` (sample data for the stand-in tables, deleted with them).
+   - **Still deferred, until a client commissions a second replica**: the
+     Postgres adapter itself (repository and seam implementations over a
+     pool) and its migration set; `tx` / `gate` / `onFree` are typed to the
+     SQLite `Db` handle; the repositories' SQL uses `?` placeholders and
+     reads `.changes` off node:sqlite's result (Postgres: `$n` and
+     `rowCount`); migration 0037's `seq`-filling insert triggers and the
+     `ORDER BY rowid` in 0029 need Postgres equivalents (an identity
+     column; no rowid). The deploy host's snapshot persistence
+     (`deploy/firebase/functions/src/host.ts`: `VACUUM INTO`,
+     `total_changes()`) is SQLite-only by nature and goes with it.
    - On SQLite, transactions take a per-database FIFO lock, a nested one
      joins the open one, and a seam call from outside waits for it to end
      (`db/db.ts`: `tx`, `gate`, `onFree`); in-process caches are dropped on

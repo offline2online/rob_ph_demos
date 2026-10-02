@@ -18,6 +18,8 @@
    (its approval rows and DSP-creative claims) are removed here either way. */
 import { type Db, tx } from '../db/db'
 import type { CampaignSource } from '../platform/CampaignSource'
+import type { CampaignRetentionRepo } from '../repos/CampaignRetentionRepo'
+import type { DspCreativeRepo } from '../repos/DspCreativeRepo'
 
 export interface RetentionSweepResult {
   deletedCampaignIds: string[]
@@ -25,35 +27,23 @@ export interface RetentionSweepResult {
   keptByPhCore: string[]
 }
 
-/* Each campaign's most recently created approval row (one per asset
-   version) — its current status — with approvalStore.latest()'s tie-break:
-   created_at, then seq (0102). Matching on MAX(created_at) alone let two
-   rows written in the same millisecond both count as current, so a
-   campaign whose newest row was not rejected could be swept. */
-const CURRENT_REJECTED_SQL = `
-  SELECT ca.campaign_id AS id, ca.reviewed_at AS reviewedAt
-  FROM campaign_approvals ca
-  WHERE ca.status = 'rejected' AND ca.reviewed_at IS NOT NULL
-    AND NOT EXISTS (
-      SELECT 1 FROM campaign_approvals n
-      WHERE n.campaign_id = ca.campaign_id
-        AND (n.created_at > ca.created_at OR (n.created_at = ca.created_at AND n.seq > ca.seq))
-    )
-`
+/* Which campaigns are currently Rejected — each one's newest approval row,
+   tie-broken on created_at then seq (0102) — is CampaignRetentionRepo
+   .currentRejected. */
 
 /* The read and the deletes are one transaction, so an un-reject or a new
    version saved in between can't be swept on a stale "Rejected". */
-export async function sweepRejectedCampaigns(ctx: { db: Db; campaigns: CampaignSource }, retentionDays: number, now: () => Date = () => new Date()): Promise<RetentionSweepResult> {
+export async function sweepRejectedCampaigns(ctx: { db: Db; campaigns: CampaignSource; campaignRetention: CampaignRetentionRepo; dspCreatives: DspCreativeRepo }, retentionDays: number, now: () => Date = () => new Date()): Promise<RetentionSweepResult> {
   const { db } = ctx
   const cutoff = new Date(now().getTime() - retentionDays * 24 * 60 * 60 * 1000).toISOString()
   return tx(db, async () => {
-    const rejected = db.prepare(CURRENT_REJECTED_SQL).all() as { id: string; reviewedAt: string }[]
+    const rejected = await ctx.campaignRetention.currentRejected()
     const due = rejected.filter((r) => r.reviewedAt < cutoff).map((r) => r.id)
     const keptByPhCore: string[] = []
     for (const id of due) {
       /* A DSP-retrieved creative's claim on its crid goes with the campaign, or a later bid with that crid is discarded as "already being retrieved" and never reviewed again. */
-      db.prepare('DELETE FROM dsp_creatives WHERE campaign_id = ?').run(id)
-      db.prepare('DELETE FROM campaign_approvals WHERE campaign_id = ?').run(id)
+      await ctx.dspCreatives.deleteForCampaign(id)
+      await ctx.campaignRetention.deleteApprovalRows(id)
       if (!(await ctx.campaigns.deleteCampaign(id))) keptByPhCore.push(id)
     }
     return { deletedCampaignIds: due, keptByPhCore }

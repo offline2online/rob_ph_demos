@@ -5,7 +5,7 @@
 import type { DisplayType, Slot } from '@ph-dsp/types'
 import type { Context } from '../context'
 import type { PartnerRecord } from '../repos/PartnerRepo'
-import { type Awaitable, allOf, andThen, onFree, prepared } from '../db/db'
+import { type Awaitable, allOf, andThen } from '../db/db'
 import { type ReservationStatus, TAKEN } from '../repos/ReservationRepo'
 import { advertiserSlug, assignedOf, billingUnitHoursOf, maxCampaignsOf, reservePriceOf, supportedTargetingOf, type Assigned } from '@ph-dsp/types'
 import { invitedPartnerIds, isInvitedBuyer } from './buyersLists'
@@ -235,7 +235,7 @@ export async function slotWindowCommitments(ctx: Context, positionId: string, le
   const now = ctx.clock().getTime()
   const inRange = await ctx.reservations.inRange(positionId, new Date(now - len).toISOString(), '9999')
   /* A window already billed is over, whatever length it is read at now. */
-  const billedIds = await onFree(ctx.db, () => new Set(inRange.filter((r) => !!prepared(ctx.db, 'SELECT 1 FROM billing_line_items WHERE reservation_id = ?').get(r.id)).map((r) => r.id)))
+  const billedIds = await ctx.billing.billedAmong(inRange.map((r) => r.id))
   const live = inRange.filter((r) => !r.testMode && ['pending', 'won', 'reserved'].includes(r.status) && Date.parse(r.windowStart) + len > now && !billedIds.has(r.id))
   const unbilled = (await ctx.reservations.billable(new Date(now).toISOString())).filter((r) => r.positionId === positionId && !live.some((x) => x.id === r.id))
   return [...live, ...unbilled]

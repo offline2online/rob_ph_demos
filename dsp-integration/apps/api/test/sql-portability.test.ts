@@ -84,20 +84,48 @@ describe('arrival order without rowid', () => {
     expect((await repo.forWindow('pos', SAME_MS)).map((r) => r.id)).toEqual(ARRIVAL)
   })
 
-  it('approval rows and the audit trail, with every timestamp equal', () => {
+  it('approval rows and the audit trail, with every timestamp equal', async () => {
     const db = fresh()
     const store = approvalStore(db)
     for (const v of ARRIVAL) {
-      store.upsert({ campaignId: 'c1', assetVersion: v, status: 'approved', mode: null, submittedAt: null, reviewedBy: null, reviewedAt: null, reason: null, assetReasons: [], checks: [] }, SAME_MS)
-      store.audit('c1', v, 'submitted', null, null, SAME_MS)
+      await store.upsert({ campaignId: 'c1', assetVersion: v, status: 'approved', mode: null, submittedAt: null, reviewedBy: null, reviewedAt: null, reason: null, assetReasons: [], checks: [] }, SAME_MS)
+      await store.audit('c1', v, 'submitted', null, null, SAME_MS)
     }
-    expect(store.rows('c1').map((r) => r.assetVersion)).toEqual(ARRIVAL)
-    expect(store.latest('c1')?.assetVersion).toBe('a_third')
-    expect(store.liveVersion('c1')).toBe('a_third')
-    expect(store.auditTrail('c1').map((a) => a.assetVersion)).toEqual(ARRIVAL)
+    expect((await store.rows('c1')).map((r) => r.assetVersion)).toEqual(ARRIVAL)
+    expect((await store.latest('c1'))?.assetVersion).toBe('a_third')
+    expect(await store.liveVersion('c1')).toBe('a_third')
+    expect((await store.auditTrail('c1')).map((a) => a.assetVersion)).toEqual(ARRIVAL)
     /* Re-saving a row (an upsert that updates) keeps its place. */
-    store.upsert({ campaignId: 'c1', assetVersion: 'z_first', status: 'approved', mode: null, submittedAt: null, reviewedBy: null, reviewedAt: null, reason: 'again', assetReasons: [], checks: [] }, SAME_MS)
-    expect(store.rows('c1').map((r) => r.assetVersion)).toEqual(ARRIVAL)
+    await store.upsert({ campaignId: 'c1', assetVersion: 'z_first', status: 'approved', mode: null, submittedAt: null, reviewedBy: null, reviewedAt: null, reason: 'again', assetReasons: [], checks: [] }, SAME_MS)
+    expect((await store.rows('c1')).map((r) => r.assetVersion)).toEqual(ARRIVAL)
+  })
+
+  it('the approval store works over an SqlDb whose statements answer with promises', async () => {
+    const db = fresh()
+    /* A stand-in for an async (Postgres) adapter: every statement answers a promise. */
+    const later = <T>(v: T) => new Promise<T>((r) => setTimeout(() => r(v), 1))
+    const asyncDb = {
+      exec: (sql: string) => later(db.exec(sql)),
+      prepare: (sql: string) => {
+        const st = db.prepare(sql)
+        return { run: (...a: unknown[]) => later(st.run(...(a as []))), get: (...a: unknown[]) => later(st.get(...(a as []))), all: (...a: unknown[]) => later(st.all(...(a as []))) }
+      },
+    }
+    const store = approvalStore(asyncDb)
+    for (const v of ARRIVAL) {
+      await store.upsert({ campaignId: 'c1', assetVersion: v, status: 'approved', mode: null, submittedAt: null, reviewedBy: null, reviewedAt: null, reason: null, assetReasons: [], checks: [] }, SAME_MS)
+      await store.audit('c1', v, 'submitted', null, null, SAME_MS)
+    }
+    expect((await store.rows('c1')).map((r) => r.assetVersion)).toEqual(ARRIVAL)
+    expect((await store.latest('c1'))?.assetVersion).toBe('a_third')
+    expect(await store.liveVersion('c1')).toBe('a_third')
+    expect((await store.get('c1', 'm_second'))?.status).toBe('approved')
+    expect((await store.auditTrail('c1')).map((a) => a.assetVersion)).toEqual(ARRIVAL)
+    await store.recordHumanClearance('c1', 'default', 'h1', 'hq', SAME_MS)
+    expect(await store.isHumanCleared('c1', 'default', 'h1')).toBe(true)
+    expect(await store.isHumanCleared('c1', 'default', 'h2')).toBe(false)
+    await store.remove('c1', 'm_second')
+    expect((await store.rows('c1')).map((r) => r.assetVersion)).toEqual(['z_first', 'a_third'])
   })
 
   it('rows written before migration 0037 keep their order, and new rows follow them', async () => {
@@ -175,5 +203,63 @@ describe('no SQLite-only SQL in the exchange source', () => {
       .filter(({ line }) => re.test(line) && !/^\s*(\/\/|\/\*|\*)/.test(line) && !/SQLite's json_extract/.test(line))
       .map(({ f, i, line }) => `${f}:${i + 1}: ${line.trim()}`)
     expect(hits).toEqual([])
+  })
+})
+
+/* A guard, so raw SQL stays where a Postgres adapter would replace it
+   (ticket v2iKDJQA0wmisXhp7ebV): statements on the database — db.prepare,
+   the prepared() cache, db.exec — appear only in src/platform/ (PH Core's
+   stand-ins), src/repos/ (this build's own tables) and src/db/ (the
+   connection, the transaction lock and the migrations). Everything else
+   goes through a seam or a repository on the Context, which context.ts
+   puts behind gate(), so a call made while another call chain's
+   transaction is open still waits for it (db.ts). */
+describe('no raw SQL outside platform/, repos/ and db/', () => {
+  const SRC = fileURLToPath(new URL('../src', import.meta.url))
+  const ALLOWED_DIRS = ['platform', 'repos', 'db'].map((d) => join(SRC, d))
+  /* Explicit exceptions, each with its reason. Keep this list short. */
+  const ALLOWLIST: Record<string, string> = {
+    /* Sample-data loaders for the SQLite stand-ins (npm run db:seed /
+       db:demo / db:bookings / db:screens, and the empty-database seed at
+       start-up): they fill PH Core's stand-in tables (stores, displays,
+       campaigns, plays, audience VAC-d) that a real deployment reads from
+       PH Core, so they are deleted with the stand-ins rather than ported. */
+    [join(SRC, 'seed')]: 'stand-in sample data, deleted on integration',
+  }
+  const RAW: [string, RegExp][] = [
+    ['db.prepare(', /\.prepare\s*\(/],
+    ['prepared(', /\bprepared\s*\(/],
+    /* .exec( on the database — not RegExp.prototype.exec (`/…/.exec(s)`, `re.exec(s)`). */
+    ['db.exec(', /\b\w*[dD]b\s*\.\s*exec\s*\(/],
+  ]
+  const files = (dir: string): string[] => readdirSync(dir).flatMap((n) => {
+    const p = join(dir, n)
+    if (statSync(p).isDirectory()) return ALLOWED_DIRS.includes(p) || p in ALLOWLIST ? [] : files(p)
+    return /\.tsx?$/.test(n) ? [p] : []
+  })
+  const scanned = files(SRC)
+
+  it('scans the source (sanity: the scan is not empty, and every allowlisted path exists)', () => {
+    expect(scanned.length).toBeGreaterThan(20)
+    for (const p of [...ALLOWED_DIRS, ...Object.keys(ALLOWLIST)]) expect(statSync(p).isDirectory()).toBe(true)
+  })
+
+  it.each(RAW)('%s', (_name, re) => {
+    const hits = scanned.flatMap((f) => readFileSync(f, 'utf8').split('\n').map((line, i) => ({ f, i, line })))
+      .filter(({ line }) => re.test(line) && !/^\s*(\/\/|\/\*|\*)/.test(line))
+      .map(({ f, i, line }) => `${f}:${i + 1}: ${line.trim()}`)
+    expect(hits).toEqual([])
+  })
+
+  it('the patterns catch what they are meant to, and not a RegExp exec', () => {
+    const [, prepare] = RAW[0]
+    const [, cache] = RAW[1]
+    const [, exec] = RAW[2]
+    expect(prepare.test("ctx.db.prepare('SELECT 1')")).toBe(true)
+    expect(cache.test("prepared(ctx.db, 'SELECT 1')")).toBe(true)
+    expect(exec.test("ctx.db.exec('BEGIN')")).toBe(true)
+    expect(exec.test('db.exec(sql)')).toBe(true)
+    expect(exec.test("/^Bearer\\s+(.+)$/i.exec(h)")).toBe(false)
+    expect(exec.test('re.exec(s)')).toBe(false)
   })
 })
