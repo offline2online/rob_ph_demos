@@ -1,13 +1,27 @@
 # Display Types & DSP Integration — Requirements
 
 Source: *Real-Time Personalised Surface Architecture Specification v1.2*
-(Personalisation Hub, 3 Sept 2026), plus the `Display Types & Playlist
+(Personalisation Hub, 3 Sept 2026), as rescoped 29–30 Sep 2026, plus the `Display Types & Playlist
 Management` prototype (`displaytypesandplaylists.jsx`).
 
-**Version:** 1 Oct 2026 (dated, not numbered). Earlier references to "spec v2.4,
-30 Sep" cannot be located in any copy of this file; this changelog starts the record.
+**Version:** 2 Oct 2026 (dated, not numbered). Scope follows the 29–30 Sep
+2026 rescope to "the exchange", recorded as E2E Test Spec v2.4 (30 Sep); this
+file never carried a version number of its own, and this changelog starts the
+record.
 
 **Changelog**
+
+- **2 Oct 2026** — seams and repositories awaitable, with a per-database
+  transaction lock on SQLite, and the SQL made portable to Postgres
+  (cUdX4dmT / gAi2mkcm; 9f51d91, 944fd91). Booking schedule numbers a
+  multi-zone slot within its zone (`zoneName` / `zoneSlot`); every
+  auto-created playlist starts with default settings (A0GyTNsA items 2–3,
+  3gGKowhK).
+- **1 Oct 2026 (later)** — interface contract v3 adopted (5kIApxS1; 5eb205c);
+  a slot's Max campaigns enforced at bid and reservation, `maxCampaigns` on
+  the Partner API position (sa1tXvaw; fcb25bc); venue stays on the display
+  type as the POC stand-in for PH Core's value (fnaXoT6S; c3e3d4f);
+  booking-schedule reach counts removed (GyBfGm4k; b94aa77).
 
 - **1 Oct 2026** — default VAC-d per display type with per-display override
   (`phExtensions.defaultVacd`, `displays.vacd_override`, migration 0035);
@@ -420,7 +434,9 @@ unreshaped; Digital Signage/Kiosk playback and analytics are untouched.
   what that rotation actually uses): a display-only number that restarts
   at 1 for each zone's own segment, so Zone 3's first slot reads "Slot 1"
   there, same as Zone 1's and Zone 2's. Equal to `slot` when the display
-  type isn't multi-zone. Each position's share of voice, slot duration and
+  type isn't multi-zone. The booking schedule numbers it the same way —
+  "Zone n / Slot m" (`BookingSchedule.positions[].zoneName` / `zoneSlot`,
+  A0GyTNsA, 1 Oct 2026). Each position's share of voice, slot duration and
   billing are of its own zone's rotation, not of every zone's slots
   together. The API
   rejects a slot list whose length isn't the sum of the zone caps, or a slot
@@ -438,24 +454,20 @@ unreshaped; Digital Signage/Kiosk playback and analytics are untouched.
   zone playlist created on demand) and selects it immediately — ready, once
   it is this display type's Default Playlist, to define its own multi-zone
   layout below.
-  - **It starts as a copy of the playlist it replaces, with every section
-    open** (ticket ThP7DPGo17FmPJdDKM7S, 28 Sep 2026): Phantom Zone,
-    Enabled Features, Multi-Zone Layout and Playlist Settings all expand on
-    the click, and the new playlist's five settings are the current default
-    playlist's, editable before Save creates it. Only when that playlist has
-    no settings of its own does it fall back to the defaults below.
-  - **A playlist added to an existing display type this way, or a zone
-    playlist created on demand, starts with Campaign Auto-Rotation and
-    Campaign Auto-Play explicitly off** (ticket, 27 Sep 2026) — not the
-    platform default of On/On (`PLATFORM_DEFAULTS.playlistSettings` /
-    `NEW_PLAYLIST_SETTINGS_DEFAULTS`), which an unconfigured playlist used
-    to silently inherit — set the moment `ensureReferencedPlaylists`
-    creates the record. **A new display type's own auto-created default
-    playlist is the exception: it starts with every setting at its
-    default** (ticket, 28 Sep 2026 — "ensure that the default settings are
-    used when creating a new display type"), nothing overridden, so its
-    panel reads *Default settings* rather than *2 settings changed*; the
-    display type's own rotation likewise starts at *Default (Unlimited)*.
+  - **It opens with every section open** (ticket ThP7DPGo17FmPJdDKM7S,
+    28 Sep 2026): Phantom Zone, Enabled Features, Multi-Zone Layout and
+    Playlist Settings all expand on the click, and its five settings are
+    editable before Save creates it.
+  - **One set of new-playlist defaults** (Rob, 1 Oct 2026, A0GyTNsA;
+    built 2 Oct, 3gGKowhK): every auto-created playlist — a new display
+    type's own, one added this way, a zone playlist created on demand, a
+    layout playlist — starts with every setting at its default, nothing
+    overridden (`{}`), so its panel reads *Default settings* and it
+    inherits `PLATFORM_DEFAULTS.playlistSettings`. This replaced the 27 Sep
+    rule (added and zone playlists started with Auto-Rotation and
+    Auto-Play Off) and ThP7DPGo's copy of the current default playlist's
+    settings. The display type's own rotation likewise starts at
+    *Default (Unlimited)*.
   - **While the Default Playlist is still this local, unsaved draft**, its
     own settings show here, **editable**, in the same five-field layout as
     Playlist Management's own Playlist Settings (§2), with a link across to
@@ -709,6 +721,7 @@ POST /v1/campaigns                  create a campaign: default (mandatory) + tar
 POST /v1/campaigns/{id}/assets      upload creative against the campaign
 POST /v1/campaigns/{id}/submit      submit for retailer approval
 GET  /v1/campaigns/{id}/status      approval status and rejection reason
+GET  /v1/campaigns/{id}             read back the stored versions, targeting and assets
 ```
 
 For DSP demand, the creative referenced in a bid response must match an

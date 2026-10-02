@@ -2,8 +2,10 @@
    run6-package.zip was never checked in, so the package is built here from
    the Run 6 Runbook's version table with the same synthetic media the asset
    checks' unit tests use (test/media.ts). Files are written to
-   test/journey/fixtures/ on demand and git-ignored; manifest.json is
-   committed so the body and the expected results are reviewable. */
+   test/journey/fixtures/ on demand and git-ignored, manifest.json
+   included: it is generated with the rest, so read it after writePackage
+   (or `npm run e2e:journey`). The body and expected results it holds are
+   defined in this file. */
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { mp4, png } from '../media'

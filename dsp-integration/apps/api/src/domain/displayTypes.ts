@@ -1,5 +1,5 @@
 /* Stand-in rules for the existing display type record (POC only). */
-import { NEW_PLAYLIST_SETTINGS_DEFAULTS, TOUCH_POINTS, type DisplayType, type Playlist } from '@ph-dsp/types'
+import { TOUCH_POINTS, type DisplayType, type Playlist } from '@ph-dsp/types'
 import type { PlaylistRecord, PlaylistSource } from '../platform/PlaylistSource'
 
 type Detail = { field: string; reason: string }
@@ -11,6 +11,23 @@ export interface Zone { id: string; name: string; playlistId?: string; maximumCa
 export const zonesOf = (dt: DisplayType): Zone[] => {
   const mz = dt.multiZone as { enabled?: boolean; zones?: Zone[] } | undefined
   return mz?.enabled ? (mz.zones ?? []) : []
+}
+
+/* Where a flat slot (1-based, across every zone) sits on a multi-zone
+   display type: its zone's name and its 1-based place within that zone —
+   the numbering each zone's own rotation uses and Available Inventory shows
+   (ticket, 28 Sep 2026). A slot tagged to no current zone counts as the
+   first zone's, as everywhere else. null on a single-zone display type. */
+export const zonePlaceOf = (dt: DisplayType, slot: number): { zoneName: string; zoneSlot: number } | null => {
+  const zones = zonesOf(dt)
+  if (!zones.length) return null
+  const slots = dt.phExtensions?.slots ?? []
+  const zoneOf = (s: { zoneId?: string | null }) => zones.find((z) => z.id === s.zoneId) ?? zones[0]
+  const target = slots[slot - 1]
+  if (!target) return null
+  const zone = zoneOf(target)
+  const zoneSlot = slots.slice(0, slot).filter((s) => zoneOf(s).id === zone.id).length
+  return { zoneName: zone.name, zoneSlot }
 }
 
 export function validateRecord(dt: DisplayType): Detail[] {
@@ -46,23 +63,20 @@ export function validatePlaylistSettings(body: unknown): Detail[] {
 /* Playlists a display type references but that don't exist yet are created
    with it: its auto-created default playlist, and zone playlists created on
    demand (spec §1 "zone playlists created on demand ... applied with Save
-   changes"). A brand-new display type's own default playlist starts with
-   every setting at its default — `{}`, nothing overridden (ticket, 28 Sep
-   2026: "ensure the default settings are used when creating a new display
-   type"). A playlist added to an existing display type ("Add new
-   playlist") or created for a zone starts with Auto-Rotation and Auto-Play
-   explicitly off instead (NEW_PLAYLIST_SETTINGS_DEFAULTS, ticket 27 Sep
-   2026) — a playlist nobody has configured yet shouldn't start rotating
-   and playing campaigns. Either way, a client that shows its own editable
+   changes"). Every one starts with every setting at its default — `{}`,
+   nothing overridden — whether it belongs to a brand-new display type, was
+   added to an existing one ("Add new playlist") or was created for a zone:
+   one set of new-playlist defaults (Rob, 1 Oct 2026, A0GyTNsA; replaced
+   the 27 Sep Auto-Rotate/Auto-Play Off set). Either way, a client that shows its own editable
    copy of these fields while the playlist is still being created (Display
    Types' Playlist Settings panel) sends what it showed via the normal
    /settings PUT once the playlist exists. */
 export async function ensureReferencedPlaylists(dt: DisplayType, playlists: PlaylistSource, isNew: boolean) {
   if (dt.defaultPlaylistId && !(await playlists.get(dt.defaultPlaylistId))) {
-    await playlists.create({ id: dt.defaultPlaylistId, name: `${dt.name} Playlist`, autoCreatedFor: dt.id, playlistSettings: isNew ? {} : { ...NEW_PLAYLIST_SETTINGS_DEFAULTS } })
+    await playlists.create({ id: dt.defaultPlaylistId, name: `${dt.name} Playlist`, autoCreatedFor: dt.id, playlistSettings: {} })
   }
   for (const z of zonesOf(dt)) {
-    if (z.playlistId && !(await playlists.get(z.playlistId))) await playlists.create({ id: z.playlistId, name: `${dt.name} / ${z.name}`, autoCreatedFor: dt.id, playlistSettings: { ...NEW_PLAYLIST_SETTINGS_DEFAULTS } })
+    if (z.playlistId && !(await playlists.get(z.playlistId))) await playlists.create({ id: z.playlistId, name: `${dt.name} / ${z.name}`, autoCreatedFor: dt.id, playlistSettings: {} })
   }
 }
 
