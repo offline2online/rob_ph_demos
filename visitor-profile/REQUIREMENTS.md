@@ -67,7 +67,8 @@ This project owns:
      the attribute belongs to the contributing partner, is namespaced to it,
      and is private to it unless deliberately shared. Promotion to a PH
      default is expected once PH runs the feed itself. See
-     `../shared/interface-contract.md` → "Partner-supplied attributes".
+     The exchange does not carry partner-supplied attributes (removed in
+     contract v3); see `../shared/interface-contract.md`.
 5. **The agent-controlled on-device profile** (spec §3.5) — a source
    maintained entirely on the customer's own device by their personal AI
    agent, never held by the retailer, entering the resolver as an ordinary
@@ -91,14 +92,18 @@ This project owns:
    relevant SKUs over the paired connection; PH validates every published
    SKU against the live eligible set server-side and silently (but audited)
    rejects anything not currently eligible. The agent can only *select from*
-   what PH has published — never invent a product, offer, or price.
+   what PH has published — never invent a product, offer, or price. This is
+   internal to Live Visitor Profile and PH Core; the exchange does not
+   validate agent-selected SKUs (contract v3).
 8. **Resolution timing** — attribute resolution runs **per slot-decision**,
    against a deadline set by the moment an element becomes visible, not
    once per interaction. A source that hasn't answered by its slot's
    deadline is treated as silent and falls through — this is not a race to
    answer first; precedence still decides among sources that *did* arrive
    in time (spec §3.9, §4.1). The same attribute can therefore resolve
-   differently across slots within a single interaction.
+   differently across slots within a single interaction. The deadline is
+   internal to Live Visitor Profile and the platform's slot decision; the
+   exchange supplies none (contract v3).
 9. **Digital identity / device graph** (spec §3.7) — phase 1: an identity
    vendor connector supplying device ID / cross-touchpoint identity,
    occupying a special position (other connectors are queried against the
@@ -108,9 +113,12 @@ This project owns:
 
 This project does **not** own display types, layouts, zones, playlists,
 templates, or how a resolved attribute value actually gets rendered — that's
-Display Types. It publishes resolved attributes; Display Types consumes
-them via the token contract (see the interface
-contract).
+Display Types. Live Visitor Profile populates the Personalisation Variables
+that PH Core evaluates when it decides which campaign version plays; the
+exchange only grants a DSP the use of those variables (per retailer/DSP, on
+its Shared Targeting Variables) and bills on the per-play version tier PH
+Core reports. It does not read, resolve or render attributes, and this
+project owes it no display or match counts (see the interface contract).
 
 ## Functional requirements
 
