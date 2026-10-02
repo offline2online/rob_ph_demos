@@ -38,9 +38,14 @@ tickets that were already decided or parked.
 
 1. **Some documents live only on the board, not in this repo.** The
    **End-to-End Test Spec — DSP Demand Paths (v2)**, the **Run 6 Runbook —
-   agent instructions**, every **E2E Test Results** document, **Boundaries
-   with PH Core**, the data model and the review documents are board
-   project documents.
+   agent instructions**, every **E2E Test Results** document, the data
+   model and the review documents are board project documents.
+   **Boundaries with PH Core (1/3, 2/3, 3/3)**, the **Scale review** and the
+   **Security review** are different: they are mirrored from
+   `docs/dsp-integration/api/*.md`, and the repo wins. Edit the file, never
+   the board copy; every merge to main rewrites them (and
+   `npm run board:sync` does it on demand, with the slice map in
+   `scripts/sync-board-docs.mjs` → `MIRRORS`).
    - Read them with the PH Agent Console MCP: `get_project_docs`, projectId
      `mIPdOCAWevhrgD8g2tCZ`, `include: ["docs"]`.
    - Change them with `update_project_document`. It overwrites the whole
@@ -233,7 +238,7 @@ nothing here can even read it without the key.
 | `apps/api/test/stability.test.ts`, `test/multiprocess.test.ts` | The race and edge-case suite (24 Sep 2026): simultaneous bids, bids during the auction, malformed DSP answers, faults in one job, missed cutoffs; and two real API processes plus three tick runs on one database file |
 | `apps/api/bench/load.ts` | `npm run bench` — the load test: the Partner API's reads and bids, the auction and billing, on an estate of any shape (`--scale`, `--displays-per-type`, `--stores`, `--plays-per-display`, `--history`). Numbers in `docs/dsp-integration/api/SCALE-15000-EKS.md` |
 | `apps/admin/public/demo/` | That snapshot and the creatives it points at, committed so the demo can be rebuilt without a running API |
-| `scripts/sync-board-docs.mjs` | `npm run board:sync` — pushes `REQUIREMENTS.md` and `README.md` to the board's Docs page and verifies them (see above) |
+| `scripts/sync-board-docs.mjs` | `npm run board:sync` — pushes `REQUIREMENTS.md` and `README.md` to the board's Docs page, and `api/PH-CORE-BOUNDARIES.md` to its three board parts (`MIRRORS`), and verifies them (see above) |
 | `scripts/board-tickets.mjs` | `npm run board:tickets` — reports where this project's tickets are, and moves them between statuses when work reached `main` outside the board's own Deploy to Main (see above) |
 
 ## Running it

@@ -5,6 +5,9 @@
      npm run board:sync -- --check-mcp FILE  # same comparison, from a saved MCP read (no key needed)
      npm run board:sync -- --check-mcp FILE --print-diff
 
+   A sync (and --check) also covers the project documents in MIRRORS below:
+   the three board parts of api/PH-CORE-BOUNDARIES.md.
+
    The board is the second home of these documents (root CLAUDE.md: "treat a
    divergence as a bug in whichever is stale"), and the repo file is the
    source of truth. This reads the files off disk and sends them unchanged,
@@ -21,6 +24,7 @@
    then happens locally. It is how an agent that cannot write to the board
    can still say, with an exit code, whether the board has drifted. */
 import { createHash } from 'node:crypto'
+import { createRequire } from 'node:module'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -39,6 +43,28 @@ const DOCS = [
   { field: 'requirementsMd', kind: 'requirements', file: 'docs/dsp-integration/REQUIREMENTS.md', repoPath: 'dsp-integration/docs/dsp-integration/REQUIREMENTS.md' },
   { field: 'readmeMd', kind: 'readme', file: 'README.md', repoPath: 'dsp-integration/README.md' },
 ]
+
+/* Board documents that mirror part of a repo file (ticket
+   taUi7jWIwhCvfeDDUURl, Rob 2 Oct 2026): PH-CORE-BOUNDARIES.md is over the
+   20k cap on project documents, so the board carries it as three. The table
+   is the source of truth for which slice goes where; each sync writes it
+   onto the document (sourcePath / sourceSlices / sourcePrefix) together with
+   the text, so backlog-tracker's post-merge mirror (syncMirroredDocs in
+   backlog-tracker/scripts/docs-sync-lib.js) cuts the same slices on every
+   deploy. Slice markers are whole heading lines: renaming one of these
+   headings fails the sync loudly instead of mirroring nothing. */
+const BOUNDARIES = 'docs/dsp-integration/api/PH-CORE-BOUNDARIES.md'
+const H_OUTBOUND = '## Outbound boundaries — what this build calls'
+const H_AUTH = '## Authentication seams — partner identity, advertiser principal (spec only, REQUIREMENTS §9.5)'
+const H_RESERVED = '## Reserved for later releases (REQUIREMENTS §9, spec only)'
+const mirrorPrefix = (n) => `> Mirror of \`dsp-integration/${BOUNDARIES}\` (part ${n} of 3) — the repo wins. Rewritten from the repo file on every merge to main; edit the file, not this copy.\n\n`
+const MIRRORS = [
+  { id: 'mDJ50oQKTbgaKPvxeCUs', file: BOUNDARIES, sourceSlices: [{ end: H_OUTBOUND }], sourcePrefix: mirrorPrefix(1) },
+  { id: 'W140rfmV19EdPYQnBeTJ', file: BOUNDARIES, sourceSlices: [{ start: H_OUTBOUND, end: H_AUTH }, { start: H_RESERVED }], sourcePrefix: mirrorPrefix(2) },
+  { id: 'PnWgzNqVScsyfEehXKbl', file: BOUNDARIES, sourceSlices: [{ start: H_AUTH, end: H_RESERVED }], sourcePrefix: mirrorPrefix(3) },
+]
+/* The same slicing the post-merge mirror uses — one implementation. */
+const { mirrorText } = createRequire(import.meta.url)('../../backlog-tracker/scripts/docs-sync-lib.js')
 
 const args = process.argv.slice(2)
 const flag = (name) => args.includes(name)
@@ -173,14 +199,52 @@ async function board(token) {
   return out
 }
 
+/* Mirrored project documents (MIRRORS above): compare, and unless --check,
+   write the slice config and the text, then read back. Returns how many
+   were behind (in --check) or failed (when writing). */
+async function syncMirrors(token, { write }) {
+  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+  let behind = 0
+  for (const m of MIRRORS) {
+    let text
+    try { text = mirrorText(read(m.file), m) } catch (e) { console.error(`✗ projectDocs/${m.id}: ${e.message}`); behind++; continue }
+    const url = `${BOARD}/projectDocs/${m.id}`
+    const cur = await fetch(url, { headers })
+    if (!cur.ok) { console.error(`✗ projectDocs/${m.id}: read failed (${cur.status})`); behind++; continue }
+    const f = (await cur.json()).fields ?? {}
+    const sameConfig = f.sourcePath?.stringValue === `dsp-integration/${m.file}` && f.sourcePrefix?.stringValue === m.sourcePrefix
+      && JSON.stringify(fromFs(f.sourceSlices)) === JSON.stringify(m.sourceSlices)
+    if (f.contentMd?.stringValue === text && sameConfig) { console.log(`✓ projectDocs/${m.id} in step (${text.length} chars)`); continue }
+    if (!write) { console.log(`✗ projectDocs/${m.id} behind the repo${sameConfig ? '' : ' (slice config too)'}`); behind++; continue }
+    const fields = {
+      contentMd: { stringValue: text },
+      sourcePath: { stringValue: `dsp-integration/${m.file}` },
+      sourceSlices: { arrayValue: { values: m.sourceSlices.map((sl) => ({ mapValue: { fields: Object.fromEntries(Object.entries(sl).map(([k, v]) => [k, { stringValue: v }])) } })) } },
+      sourcePrefix: { stringValue: m.sourcePrefix },
+      updatedAt: { timestampValue: new Date().toISOString() },
+      updatedByEmail: { stringValue: 'board:sync' },
+    }
+    const mask = Object.keys(fields).map((k) => `updateMask.fieldPaths=${k}`).join('&')
+    const put = await fetch(`${url}?${mask}`, { method: 'PATCH', headers, body: JSON.stringify({ fields }) })
+    if (!put.ok) { console.error(`✗ projectDocs/${m.id}: write refused (${put.status}): ${(await put.text()).slice(0, 300)}`); behind++; continue }
+    const back = await fetch(url, { headers })
+    if (!back.ok || ((await back.json()).fields?.contentMd?.stringValue ?? '') !== text) { console.error(`✗ projectDocs/${m.id}: wrote, but the board does not match`); behind++; continue }
+    console.log(`✓ projectDocs/${m.id} written and verified (${text.length} chars)`)
+  }
+  return behind
+}
+/* A Firestore array of string maps, as plain objects. */
+const fromFs = (v) => (v?.arrayValue?.values ?? []).map((x) => Object.fromEntries(Object.entries(x.mapValue?.fields ?? {}).map(([k, y]) => [k, y.stringValue])))
+
 const token = await idToken()
 const pairs = await board(token)
 const drifted = pairs.filter((p) => p.board !== read(p.file))
 report(pairs, { print: flag('--print-diff') })
+const mirrorsBehind = await syncMirrors(token, { write: !flag('--check') })
 
-if (!drifted.length) process.exit(0)
+if (!drifted.length) process.exit(mirrorsBehind ? 1 : 0)
 if (flag('--check')) {
-  console.log(`\n${drifted.length} document${drifted.length === 1 ? '' : 's'} behind. Run without --check to sync.`)
+  console.log(`\n${drifted.length + mirrorsBehind} document${drifted.length === 1 ? '' : 's'} behind. Run without --check to sync.`)
   process.exit(1)
 }
 
@@ -268,3 +332,4 @@ await recordSync({
   readmeCommit: { stringValue: lastCommit(DOCS[1].file) },
 })
 console.log(`\nSynced ${writable.map((d) => d.field).join(' and ')} — verified byte for byte.`)
+if (mirrorsBehind) process.exit(1)
