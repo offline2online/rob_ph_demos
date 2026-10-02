@@ -16,7 +16,7 @@ this project is still spec-only (no implementation files yet). See
 [`../shared/interface-contract.md`](../shared/interface-contract.md) for the
 maintained boundary with `dsp-integration/`.
 
-Tracked on the Prototype Backlog board as **"Live Visitor Profile"** (see
+Tracked on the Prototype Backlog board as **"Live Visitor Profile & Personas"** (see
 root `CLAUDE.md` → "Prototype Backlog") — that project's own Docs page
 carries a live, board-native copy of `REQUIREMENTS.md`'s content
 (`requirementsMd` field) and the interface contract (as an `interfaces`

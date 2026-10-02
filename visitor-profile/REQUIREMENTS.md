@@ -113,7 +113,8 @@ This project owns:
 
 This project does **not** own display types, layouts, zones, playlists,
 templates, or how a resolved attribute value actually gets rendered — that's
-Display Types. Live Visitor Profile populates the Personalisation Variables
+PH Core's (interface contract v3); Display Types & DSP Integration owns
+neither. Live Visitor Profile populates the Personalisation Variables
 that PH Core evaluates when it decides which campaign version plays; the
 exchange only grants a DSP the use of those variables (per retailer/DSP, on
 its Shared Targeting Variables) and bills on the per-play version tier PH
