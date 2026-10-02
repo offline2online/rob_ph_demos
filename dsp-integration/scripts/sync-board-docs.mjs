@@ -51,17 +51,20 @@ const DOCS = [
    onto the document (sourcePath / sourceSlices / sourcePrefix) together with
    the text, so backlog-tracker's post-merge mirror (syncMirroredDocs in
    backlog-tracker/scripts/docs-sync-lib.js) cuts the same slices on every
-   deploy. Slice markers are whole heading lines: renaming one of these
+   deploy. The cut keeps each part well under the cap as the file grows:
+   (1) the rule and the seams, (2) the tables and the outbound, inbound,
+   edge and multi-instance sections, (3) the AUTH seams and the reserved,
+   open, venue and analytics sections. Slice markers are whole heading lines: renaming one of these
    headings fails the sync loudly instead of mirroring nothing. */
 const BOUNDARIES = 'docs/dsp-integration/api/PH-CORE-BOUNDARIES.md'
+const H_TABLES = '### Tables: whose they are'
 const H_OUTBOUND = '## Outbound boundaries — what this build calls'
 const H_AUTH = '## Authentication seams — partner identity, advertiser principal (spec only, REQUIREMENTS §9.5)'
-const H_RESERVED = '## Reserved for later releases (REQUIREMENTS §9, spec only)'
 const mirrorPrefix = (n) => `> Mirror of \`dsp-integration/${BOUNDARIES}\` (part ${n} of 3) — the repo wins. Rewritten from the repo file on every merge to main; edit the file, not this copy.\n\n`
 const MIRRORS = [
-  { id: 'mDJ50oQKTbgaKPvxeCUs', file: BOUNDARIES, sourceSlices: [{ end: H_OUTBOUND }], sourcePrefix: mirrorPrefix(1) },
-  { id: 'W140rfmV19EdPYQnBeTJ', file: BOUNDARIES, sourceSlices: [{ start: H_OUTBOUND, end: H_AUTH }, { start: H_RESERVED }], sourcePrefix: mirrorPrefix(2) },
-  { id: 'PnWgzNqVScsyfEehXKbl', file: BOUNDARIES, sourceSlices: [{ start: H_AUTH, end: H_RESERVED }], sourcePrefix: mirrorPrefix(3) },
+  { id: 'mDJ50oQKTbgaKPvxeCUs', file: BOUNDARIES, sourceSlices: [{ end: H_TABLES }], sourcePrefix: mirrorPrefix(1) },
+  { id: 'W140rfmV19EdPYQnBeTJ', file: BOUNDARIES, sourceSlices: [{ start: H_TABLES, end: H_AUTH }], sourcePrefix: mirrorPrefix(2) },
+  { id: 'PnWgzNqVScsyfEehXKbl', file: BOUNDARIES, sourceSlices: [{ start: H_AUTH }], sourcePrefix: mirrorPrefix(3) },
 ]
 /* The same slicing the post-merge mirror uses — one implementation. */
 const { mirrorText } = createRequire(import.meta.url)('../../backlog-tracker/scripts/docs-sync-lib.js')
