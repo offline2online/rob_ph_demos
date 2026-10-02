@@ -1,5 +1,5 @@
 /* Reservations, bids and their outcomes, per position and play window. */
-import { type Db, prepared } from '../db/db'
+import { type Db, prepared, type Awaitable } from '../db/db'
 
 export type ReservationStatus = 'pending' | 'won' | 'lost' | 'reserved' | 'rejected'
 export interface ReservationRecord {
@@ -45,28 +45,28 @@ const toRecord = (r: Row): ReservationRecord => ({
 export const TAKEN: ReservationStatus[] = ['won', 'reserved']
 
 export interface ReservationRepo {
-  get(id: string): ReservationRecord | null
-  insert(r: ReservationRecord): ReservationRecord
-  update(id: string, patch: Partial<Pick<ReservationRecord, 'status' | 'clearingCpm' | 'reason' | 'handedOffAt' | 'personalisedMultiplier'>>): ReservationRecord | null
-  forWindow(positionId: string, windowStart: string): ReservationRecord[]
-  inRange(positionId: string, from: string, to: string): ReservationRecord[]
-  byStatus(status: ReservationStatus[], from?: string, to?: string): ReservationRecord[]
+  get(id: string): Awaitable<ReservationRecord | null>
+  insert(r: ReservationRecord): Awaitable<ReservationRecord>
+  update(id: string, patch: Partial<Pick<ReservationRecord, 'status' | 'clearingCpm' | 'reason' | 'handedOffAt' | 'personalisedMultiplier'>>): Awaitable<ReservationRecord | null>
+  forWindow(positionId: string, windowStart: string): Awaitable<ReservationRecord[]>
+  inRange(positionId: string, from: string, to: string): Awaitable<ReservationRecord[]>
+  byStatus(status: ReservationStatus[], from?: string, to?: string): Awaitable<ReservationRecord[]>
   /* Every window already won or reserved (live, not Test mode) starting in
      [from, to), for every position at once: one ranged query for the whole
      estate, for callers that ask about every position (review, 24 Sep 2026).
      Position → window start → which of the two took it (a reserve-price
      hold reads Reserved, not Sold — OQ52). */
-  takenInRange(from: string, to: string): Map<string, Map<string, ReservationStatus>>
+  takenInRange(from: string, to: string): Awaitable<Map<string, Map<string, ReservationStatus>>>
   /* What billing can bill now: won or reserved, live, handed off, with a
      campaign and a clearing price, whose window started at or before
      `endedBy` and that has no billing line item yet. One indexed query
      (reservations (status, window_start); billing_line_items.reservation_id
      is unique) however many windows have ever been sold or billed. */
-  billable(endedBy: string): ReservationRecord[]
+  billable(endedBy: string): Awaitable<ReservationRecord[]>
   /* Live API bids still pending for a window that has already started:
      nothing will clear them now (the auction never ran, or ran before they
      were placed). The tick settles them as lost (scheduler.ts). */
-  stalePending(startedBy: string): ReservationRecord[]
+  stalePending(startedBy: string): Awaitable<ReservationRecord[]>
 }
 
 export function sqliteReservationRepo(db: Db): ReservationRepo {
@@ -95,11 +95,11 @@ export function sqliteReservationRepo(db: Db): ReservationRepo {
       return get(id)
     },
     /* created_at is the wall clock to the millisecond, so two bids can share
-       it; rowid then keeps them in the order they arrived. Ordering by id (a
+       it; seq (migration 0037) then keeps them in the order they arrived. Ordering by id (a
        random token) made "equal bids: the one placed first wins" a coin toss
        whenever both landed in the same millisecond. */
     forWindow: (positionId, windowStart) =>
-      (prepared(db, 'SELECT * FROM reservations WHERE position_id = ? AND window_start = ? ORDER BY created_at, rowid').all(positionId, windowStart) as unknown as Row[]).map(toRecord),
+      (prepared(db, 'SELECT * FROM reservations WHERE position_id = ? AND window_start = ? ORDER BY created_at, seq').all(positionId, windowStart) as unknown as Row[]).map(toRecord),
     inRange: (positionId, from, to) =>
       (prepared(db, 'SELECT * FROM reservations WHERE position_id = ? AND window_start >= ? AND window_start < ? ORDER BY window_start').all(positionId, from, to) as unknown as Row[]).map(toRecord),
     byStatus(status, from = '0000', to = '9999') {

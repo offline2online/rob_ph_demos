@@ -11,10 +11,10 @@ import { findPosition, nextWindow, windowMs } from '../../domain/positions'
 import { TAKEN } from '../../repos/ReservationRepo'
 
 export async function listAdvertisers(ctx: Context): Promise<Advertiser[]> {
-  const company = ctx.company.get()
+  const company = await ctx.company.get()
   /* Each advertiser's campaigns by approval status (Rob, 20 Sep). */
   const byAdvertiser = new Map<string, Advertiser['campaigns']>()
-  for (const c of ctx.campaigns.listCampaigns()) {
+  for (const c of await ctx.campaigns.listCampaigns()) {
     if (c.source === 'hq' || !c.advertiserId) continue
     const counts = byAdvertiser.get(c.advertiserId) ?? { draft: 0, awaiting_approval: 0, approved: 0, rejected: 0 }
     counts[await ctx.approvals.statusOf(c.campaignId)]++
@@ -25,21 +25,21 @@ export async function listAdvertisers(ctx: Context): Promise<Advertiser[]> {
      per position: each slot's window is its own billing unit (OQ27). */
   const bookings = new Map<string, number>()
   const fromOf = new Map<string, number>()
-  const currentFrom = (positionId: string) => {
+  const currentFrom = async (positionId: string) => {
     let from = fromOf.get(positionId)
     if (from === undefined) {
-      const len = windowMs(ctx, findPosition(ctx, positionId))
-      fromOf.set(positionId, (from = nextWindow(ctx, len).getTime() - len))
+      const len = await windowMs(ctx, await findPosition(ctx, positionId))
+      fromOf.set(positionId, (from = (await nextWindow(ctx, len)).getTime() - len))
     }
     return from
   }
-  for (const r of ctx.reservations.byStatus([...TAKEN], new Date(0).toISOString())) {
+  for (const r of await ctx.reservations.byStatus([...TAKEN], new Date(0).toISOString())) {
     if (r.testMode || r.clearingCpm === null || !r.advertiserId) continue
-    if (Date.parse(r.windowStart) < currentFrom(r.positionId)) continue
+    if (Date.parse(r.windowStart) < (await currentFrom(r.positionId))) continue
     bookings.set(r.advertiserId, (bookings.get(r.advertiserId) ?? 0) + 1)
   }
   const byId = new Map<string, { name: string; via: string[] }>()
-  for (const p of ctx.partners.list()) {
+  for (const p of await ctx.partners.list()) {
     for (const s of p.seats) {
       const id = advertiserSlug(s.name)
       const a = byId.get(id) ?? { name: s.name, via: [] }
@@ -47,23 +47,23 @@ export async function listAdvertisers(ctx: Context): Promise<Advertiser[]> {
       byId.set(id, a)
     }
   }
-  return [...byId.entries()]
-    .sort((a, b) => a[1].name.localeCompare(b[1].name))
-    .map(([advertiserId, a]) => {
-      const s = ctx.company.advertiserSetting(advertiserId)
-      return {
-        advertiserId, name: a.name, via: a.via, ...s, effectiveFloorCpm: effectiveFloorCpm(company, s.floorMultiplier),
-        bookings: bookings.get(advertiserId) ?? 0,
-        campaigns: byAdvertiser.get(advertiserId) ?? { draft: 0, awaiting_approval: 0, approved: 0, rejected: 0 },
-      }
+  const out: Advertiser[] = []
+  for (const [advertiserId, a] of [...byId.entries()].sort((x, y) => x[1].name.localeCompare(y[1].name))) {
+    const s = await ctx.company.advertiserSetting(advertiserId)
+    out.push({
+      advertiserId, name: a.name, via: a.via, ...s, effectiveFloorCpm: effectiveFloorCpm(company, s.floorMultiplier),
+      bookings: bookings.get(advertiserId) ?? 0,
+      campaigns: byAdvertiser.get(advertiserId) ?? { draft: 0, awaiting_approval: 0, approved: 0, rejected: 0 },
     })
+  }
+  return out
 }
 
 export const advertiserRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => async (app) => {
   app.get('/advertisers', async (req) => {
     guards.flagged()
     guards.requireScope(req, 'sections')
-    const { currency, floorCpm } = ctx.company.get()
+    const { currency, floorCpm } = await ctx.company.get()
     return { currency, floorCpm, items: await listAdvertisers(ctx) }
   })
 
@@ -82,7 +82,7 @@ export const advertiserRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
       if (typeof s?.floorMultiplier !== 'number' || !(s.floorMultiplier > 0)) errors.push({ field: `settings.${id}.floorMultiplier`, reason: 'Must be greater than 0.' })
     }
     if (errors.length) throw validationFailed(errors)
-    ctx.company.saveAdvertiserSettings(settings as Record<string, { approvalRequired: boolean; floorMultiplier: number }>)
+    await ctx.company.saveAdvertiserSettings(settings as Record<string, { approvalRequired: boolean; floorMultiplier: number }>)
     return reply.status(200).send()
   })
 }

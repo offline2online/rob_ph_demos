@@ -5,7 +5,7 @@
 import { bidderTuning } from '../domain/partnerInput'
 import { IAB_CATEGORY_CODES } from '@ph-dsp/types'
 import type { Context } from '../context'
-import { type PositionRef, positionView, windowMs } from '../domain/positions'
+import { type PositionRef, positionView, windowMsFor } from '../domain/positions'
 import { effectiveCategoryLists, effectiveLists } from '../domain/lists'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 
@@ -57,12 +57,13 @@ export const categoryCodes = (names: string[]) => names.map((n) => IAB_CATEGORY_
    for its own campaign type and advertiser before it can win (spec §4).
    The position's view is the same for every DSP (no advertiser, so no
    floor multiplier); the auction works it out once and passes it in. */
-export function buildBidRequest(ctx: Context, p: PositionRef, partner: PartnerRecord, id: string, view = positionView(ctx, p, { partner, advertiser: null, unknownAdvertiser: false })): BidRequest {
-  const company = ctx.company.get()
-  const exchange = ctx.exchange.get()
+export async function buildBidRequest(ctx: Context, p: PositionRef, partner: PartnerRecord, id: string, given?: Awaited<ReturnType<typeof positionView>>): Promise<BidRequest> {
+  const view = given ?? (await positionView(ctx, p, { partner, advertiser: null, unknownAdvertiser: false }))
+  const company = await ctx.company.get()
+  const exchange = await ctx.exchange.get()
   const lists = effectiveLists(partner, company)
   const categoryLists = effectiveCategoryLists(partner, company)
-  const audience = ctx.audience.forSlot(p.displayType.id, p.slot)
+  const audience = await ctx.audience.forSlot(p.displayType.id, p.slot)
   const { width: w, height: h } = view.screen
   return {
     id,
@@ -74,7 +75,7 @@ export function buildBidRequest(ctx: Context, p: PositionRef, partner: PartnerRe
       bidfloorcur: company.currency,
       /* This position's own window (OQ27): its assumed views and its length. */
       qty: { multiplier: view.assumedViewsPerWindow, sourcetype: audience.counted ? 2 : 1 },
-      exp: Math.round(windowMs(ctx, p) / 1000),
+      exp: Math.round(windowMsFor(company.playWindowHours, p) / 1000),
       ext: { ph: { orientation: view.screen.orientation, slotDurationSec: view.screen.slotDurationSec, loopLengthSec: view.screen.loopLengthSec, shareOfVoice: view.screen.shareOfVoice } },
     }],
     dooh: {

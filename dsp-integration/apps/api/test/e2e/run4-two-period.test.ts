@@ -17,11 +17,11 @@ const LOCKED = 150
 async function termHarness(before?: (h: Awaited<ReturnType<typeof harness>>) => Promise<unknown>) {
   const h = await harness()
   await before?.(h)
-  const list = h.ctx.buyersLists.insert({
+  const list = await h.ctx.buyersLists.insert({
     id: 'bl_term', name: 'E2E term deal', description: 'Run 4 fixture', invitedBuyers: [{ identifierType: 'brandEntity', value: 'Swisse' }],
     activeFrom: null, activeTo: '2026-09-27T23:59:59.000Z', auctionCloses: day(1).toISOString(),
   })
-  h.admin.slot({ listMode: 'deal', buyersListId: list.id, partnerIds: [], billingUnitHours: 24 })
+  await h.admin.slot({ listMode: 'deal', buyersListId: list.id, partnerIds: [], billingUnitHours: 24 })
   /* No DSP demand: the term is decided by the API bid alone. */
   await h.bidder.control({ mode: 'no_bid' })
   const campaignId = await h.readyApiCampaign('Swisse — term')
@@ -31,17 +31,17 @@ async function termHarness(before?: (h: Awaited<ReturnType<typeof harness>>) => 
   return { ...h, list, campaignId }
 }
 const booked = (h: Awaited<ReturnType<typeof harness>>, w: Date) => h.campaigns.handoffs.filter((b) => b.windowStart === w.toISOString())
-const soldTo = (h: Awaited<ReturnType<typeof harness>>, w: Date) => h.rows(w).filter((r) => r.status === 'won' && !r.testMode)
+const soldTo = async (h: Awaited<ReturnType<typeof harness>>, w: Date) => (await h.rows(w)).filter((r) => r.status === 'won' && !r.testMode)
 
 describe('Run 4 — two-period: happy', () => {
   it('T1 — the first clear locks the CPM; each later window is booked at the locked rate with no re-auction', async () => {
     const h = await termHarness()
-    expect(h.ctx.buyersLists.get(h.list.id)!.lockedWin).toMatchObject({ cpm: LOCKED, partnerId: 'p_google', advertiserId: 'swisse', campaignId: h.campaignId, channel: 'api' })
+    expect((await h.ctx.buyersLists.get(h.list.id))!.lockedWin).toMatchObject({ cpm: LOCKED, partnerId: 'p_google', advertiserId: 'swisse', campaignId: h.campaignId, channel: 'api' })
     const before = h.bidder.log.bidRequests.length
     for (const w of [day(2), day(3), day(4)]) {
       const out = await runAuction(h.ctx, w)
       expect(out.positions[0]).toMatchObject({ bidRequests: 0, bids: 0, winner: { clearingCpm: LOCKED, advertiserId: 'swisse' } })
-      expect(soldTo(h, w)).toMatchObject([{ campaignId: h.campaignId, clearingCpm: LOCKED }])
+      expect(await soldTo(h, w)).toMatchObject([{ campaignId: h.campaignId, clearingCpm: LOCKED }])
       expect(booked(h, w)).toMatchObject([{ campaignId: h.campaignId, displayTypeId: DT, slot: 1 }])
     }
     expect(h.bidder.log.bidRequests.length).toBe(before)
@@ -56,7 +56,7 @@ describe('Run 4 — two-period: happy', () => {
     h.playback.script(h.campaignId, day(2), { plays: 2880, playedSec: expected / 2 })
     h.playback.script(h.campaignId, day(3), { plays: 1440, playedSec: expected / 4 })
     h.setNow(new Date('2026-09-25T00:01:00.000Z'))
-    const items = runBilling(h.ctx).sort((a, b) => a.windowStart.localeCompare(b.windowStart))
+    const items = (await runBilling(h.ctx)).sort((a, b) => a.windowStart.localeCompare(b.windowStart))
     expect(items.map((i) => [i.windowStart, i.cpm, i.realisedViews, i.amount])).toEqual([
       [day(1).toISOString(), LOCKED, ASSUMED_VIEWS, 120],
       [day(2).toISOString(), LOCKED, ASSUMED_VIEWS / 2, 60],
@@ -76,9 +76,9 @@ describe('Run 4 — two-period: non-happy', () => {
     const placed = await h.partner.bid(rival, day(2), 500)
     const out = await runAuction(h.ctx, day(2))
     expect(out.positions[0].winner).toMatchObject({ clearingCpm: LOCKED })
-    expect(soldTo(h, day(2))).toMatchObject([{ campaignId: h.campaignId, clearingCpm: LOCKED }])
+    expect(await soldTo(h, day(2))).toMatchObject([{ campaignId: h.campaignId, clearingCpm: LOCKED }])
     if (placed.statusCode === 201) {
-      const r = h.ctx.reservations.get(placed.json().reservationId)!
+      const r = (await h.ctx.reservations.get(placed.json().reservationId))!
       expect(r.status, 'the higher bid was left pending on a window the locked term booked').not.toBe('pending')
       expect(r.reason).toBeTruthy()
     }
@@ -98,8 +98,8 @@ describe('Run 4 — two-period: non-happy', () => {
     expect(booked(h, day(3))[0].assetVersion).toBe(booked(h, day(2))[0].assetVersion)
     h.playback.script(h.campaignId, day(3), { plays: 5760, playedSec: 172_800 })
     h.setNow(new Date('2026-09-25T00:01:00.000Z'))
-    runBilling(h.ctx)
-    expect(lineItems(h.ctx).map((i) => i.windowStart).sort()).toEqual([day(1), day(2), day(3)].map((d) => d.toISOString()))
+    await runBilling(h.ctx)
+    expect((await lineItems(h.ctx)).map((i) => i.windowStart).sort()).toEqual([day(1), day(2), day(3)].map((d) => d.toISOString()))
   })
 
   it('T4 — the locked winner’s campaign deactivated mid-term: that window is not handed off, the default plays, nothing billed', async () => {
@@ -110,10 +110,10 @@ describe('Run 4 — two-period: non-happy', () => {
     expect(booked(h, day(3))).toEqual([])
     h.playback.script(h.campaignId, day(3), { plays: 5760, playedSec: 172_800 })
     h.setNow(new Date('2026-09-25T00:01:00.000Z'))
-    runBilling(h.ctx)
-    expect(lineItems(h.ctx).find((i) => i.windowStart === day(3).toISOString())).toBeUndefined()
+    await runBilling(h.ctx)
+    expect((await lineItems(h.ctx)).find((i) => i.windowStart === day(3).toISOString())).toBeUndefined()
     /* Earlier windows of the term are unaffected. */
-    expect(lineItems(h.ctx).map((i) => i.windowStart).sort()).toEqual([day(1).toISOString(), day(2).toISOString()])
+    expect((await lineItems(h.ctx)).map((i) => i.windowStart).sort()).toEqual([day(1).toISOString(), day(2).toISOString()])
   })
 
   it('T5 — a window with zero plays is not billed; the term continues', async () => {
@@ -121,7 +121,7 @@ describe('Run 4 — two-period: non-happy', () => {
     await runAuction(h.ctx, day(2))
     h.playback.script(h.campaignId, day(1), { plays: 0, playedSec: 0 })
     h.setNow(new Date('2026-09-23T00:01:00.000Z'))
-    const items = runBilling(h.ctx)
+    const items = await runBilling(h.ctx)
     expect(items.find((i) => i.windowStart === day(1).toISOString())).toMatchObject({ plays: 0, realisedViews: 0, amount: 0 })
     /* The next window of the term still books at the locked rate. */
     expect((await runAuction(h.ctx, day(3))).positions[0].winner).toMatchObject({ clearingCpm: LOCKED })
@@ -168,7 +168,7 @@ describe('Run 4 — two-period: non-happy', () => {
     h.playback.script(h.campaignId, day(1), { plays: 2880, playedSec: 86_400 })
     h.playback.script(h.campaignId, day(2), { plays: 2880, playedSec: 86_400 })
     h.setNow(new Date('2026-09-24T00:01:00.000Z'))
-    const items = runBilling(h.ctx)
+    const items = await runBilling(h.ctx)
     expect(items.map((i) => i.windowStart).sort()).toEqual([day(1), day(2)].map((d) => d.toISOString()))
     for (const i of items) expect(Date.parse(i.windowEnd) - Date.parse(i.windowStart)).toBe(24 * 3_600_000)
   })

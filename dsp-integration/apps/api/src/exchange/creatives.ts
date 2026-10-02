@@ -19,7 +19,7 @@ import { type Check, failed, fileChecks } from '../domain/assetChecks'
 import { EXTENSION, readMedia } from '../domain/media'
 import type { PositionRef } from '../domain/positions'
 import type { PartnerRecord } from '../repos/PartnerRepo'
-import { prepared } from '../db/db'
+import { onFree, prepared } from '../db/db'
 import { readCapped } from '../dsp/bidder'
 import { providerOf } from '../dsp/registry'
 
@@ -27,8 +27,8 @@ import { providerOf } from '../dsp/registry'
    retrieved, so approval (and safe reuse) follows the crid. */
 export const dspCampaignId = (partnerId: string, crid: string) => `c_dsp_${createHash('sha256').update(`${partnerId}\n${crid}`).digest('hex').slice(0, 12)}`
 
-export const campaignForCrid = (ctx: Context, partnerId: string, crid: string) =>
-  (prepared(ctx.db, 'SELECT campaign_id FROM dsp_creatives WHERE partner_id = ? AND crid = ?').get(partnerId, crid) as { campaign_id: string } | undefined)?.campaign_id ?? null
+export const campaignForCrid = async (ctx: Context, partnerId: string, crid: string): Promise<string | null> =>
+  onFree(ctx.db, () => (prepared(ctx.db, 'SELECT campaign_id FROM dsp_creatives WHERE partner_id = ? AND crid = ?').get(partnerId, crid) as { campaign_id: string } | undefined)?.campaign_id ?? null)
 
 /* The creative URL in a bid may only point under the DSP's own creative
    host and path: each DSP's own rule (DspProvider.ownsCreativeUrl), built
@@ -51,11 +51,11 @@ export async function queueCreative(ctx: Context, partner: PartnerRecord, bid: {
      the fetch; the claim is released if retrieval or the checks fail, so a
      later window can try again. */
   const campaignId = dspCampaignId(partner.id, bid.crid)
-  const claimed = prepared(ctx.db, 'INSERT INTO dsp_creatives (partner_id, crid, campaign_id, created_at) VALUES (?, ?, ?, ?) ON CONFLICT (partner_id, crid) DO NOTHING')
-    .run(partner.id, bid.crid, campaignId, new Date().toISOString()).changes > 0
+  const claimed = await onFree(ctx.db, () => prepared(ctx.db, 'INSERT INTO dsp_creatives (partner_id, crid, campaign_id, created_at) VALUES (?, ?, ?, ?) ON CONFLICT (partner_id, crid) DO NOTHING')
+    .run(partner.id, bid.crid, campaignId, new Date().toISOString()).changes > 0)
   if (!claimed) return `Unknown creative ${bid.crid}: already being retrieved for review.`
-  const release = (why: string) => {
-    prepared(ctx.db, 'DELETE FROM dsp_creatives WHERE partner_id = ? AND crid = ? AND campaign_id = ?').run(partner.id, bid.crid, campaignId)
+  const release = async (why: string) => {
+    await onFree(ctx.db, () => prepared(ctx.db, 'DELETE FROM dsp_creatives WHERE partner_id = ? AND crid = ? AND campaign_id = ?').run(partner.id, bid.crid, campaignId))
     return why
   }
 
@@ -76,16 +76,17 @@ export async function queueCreative(ctx: Context, partner: PartnerRecord, bid: {
 
   /* The crid seen before (its claim was released since, but its campaign
      remains): this retrieval is a new version of that campaign, not a new one. */
-  const existing = ctx.campaigns.getCampaign(campaignId)
+  const existing = await ctx.campaigns.getCampaign(campaignId)
   const before = existing ? (await ctx.approvals.view(campaignId)).status : 'draft'
   if (!existing) {
-    ctx.campaigns.createCampaign({
+    await ctx.campaigns.createCampaign({
       id: campaignId, name: `${advertiser.name} — ${bid.crid}`, source: 'dsp', advertiserId: advertiser.id, partnerId: partner.id,
       displayTypeId: p.displayType.id, pricingType: 'localised', targeting: { default: { pricingType: 'localised' } },
     })
   }
-  ctx.campaigns.addAsset({
-    id: `as_${randomUUID().slice(0, 12)}`, campaignId, role: 'default', file: ctx.assets.put(bytes, EXTENSION[media!.kind]), mimeType: media!.mimeType,
+  const file = await ctx.assets.put(bytes, EXTENSION[media!.kind])
+  await ctx.campaigns.addAsset({
+    id: `as_${randomUUID().slice(0, 12)}`, campaignId, role: 'default', file, mimeType: media!.mimeType,
     width: media!.width, height: media!.height, durationSec: media!.durationSec, bitrateKbps: null, sizeBytes: bytes.length,
     contentHash: createHash('sha256').update(bytes).digest('hex'),
   })
@@ -96,7 +97,7 @@ export async function queueCreative(ctx: Context, partner: PartnerRecord, bid: {
     ? await ctx.approvals.changed(campaignId, partner.name, all)
     : await ctx.approvals.submit(campaignId, all, partner.name)
   /* Approved automatically means it may compete, as the message below says: no separate activation step. */
-  if (view.status === 'approved' && !existing) ctx.campaigns.setActivation(campaignId, true)
+  if (view.status === 'approved' && !existing) await ctx.campaigns.setActivation(campaignId, true)
   const reused = view.checks.some((c) => c.name === 'previously_cleared')
   return view.status === 'approved'
     ? `New creative ${bid.crid}: ${reused ? 'identical to a creative a reviewer already approved' : 'approved automatically'}; it can compete from the next window.`

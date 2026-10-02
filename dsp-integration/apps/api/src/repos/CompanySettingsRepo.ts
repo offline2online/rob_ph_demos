@@ -1,7 +1,7 @@
 /* Company-wide advertiser settings (pricing and lists), per-advertiser
    settings, and which DSPs may target each shared variable. */
 import { TARGETING_VARIABLES, defaultVariableAccess } from '@ph-dsp/types'
-import { type Db, fromJson, prepared, toJson } from '../db/db'
+import { type Db, fromJson, onRollback, prepared, toJson, type Awaitable } from '../db/db'
 
 export interface CompanySettings {
   currency: string
@@ -31,13 +31,13 @@ export type Access = 'all' | string[]
 export const DEFAULT_ADVERTISER_SETTING: AdvertiserSettingRecord = { approvalRequired: true, floorMultiplier: 1 }
 
 export interface CompanySettingsRepo {
-  get(): CompanySettings
-  save(s: CompanySettings): CompanySettings
-  advertiserSetting(advertiserId: string): AdvertiserSettingRecord
-  advertiserSettings(): Record<string, AdvertiserSettingRecord>
-  saveAdvertiserSettings(settings: Record<string, AdvertiserSettingRecord>): void
-  variableAccess(): Record<string, Access>
-  saveVariableAccess(access: Record<string, Access>): void
+  get(): Awaitable<CompanySettings>
+  save(s: CompanySettings): Awaitable<CompanySettings>
+  advertiserSetting(advertiserId: string): Awaitable<AdvertiserSettingRecord>
+  advertiserSettings(): Awaitable<Record<string, AdvertiserSettingRecord>>
+  saveAdvertiserSettings(settings: Record<string, AdvertiserSettingRecord>): Awaitable<void>
+  variableAccess(): Awaitable<Record<string, Access>>
+  saveVariableAccess(access: Record<string, Access>): Awaitable<void>
 }
 
 const ID = 'company'
@@ -86,6 +86,7 @@ export function sqliteCompanySettingsRepo(db: Db): CompanySettingsRepo {
     return cache
   }
   const invalidate = () => { cache = { at: 0 } }
+  onRollback(db, invalidate)
 
   const get = (): CompanySettings => {
     const c = fresh()

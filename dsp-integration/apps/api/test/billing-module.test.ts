@@ -18,33 +18,33 @@ const won: ReservationRecord = {
 describe('billing seam', () => {
   it('bills a reservation once: a second call for the same reservation writes nothing', async () => {
     const ctx = await testContext({ clock: () => NOW })
-    const p = findPosition(ctx, won.positionId)!
-    ctx.reservations.insert(won)
-    const first = billReservation(ctx, won, p, { plays: 3, playedSec: 30 })
+    const p = (await findPosition(ctx, won.positionId))!
+    await ctx.reservations.insert(won)
+    const first = await billReservation(ctx, won, p, { plays: 3, playedSec: 30 })
     expect(first).toMatchObject({ reservationId: 'res_seam_1', plays: 3, cpm: 100 })
-    expect(billReservation(ctx, won, p, { plays: 9, playedSec: 90 })).toBeNull()
-    expect(lineItems(ctx).filter((i) => i.reservationId === 'res_seam_1')).toHaveLength(1)
+    expect(await billReservation(ctx, won, p, { plays: 9, playedSec: 90 })).toBeNull()
+    expect((await lineItems(ctx)).filter((i) => i.reservationId === 'res_seam_1')).toHaveLength(1)
   })
 
   it('computes the line item without writing it', async () => {
     const ctx = await testContext({ clock: () => NOW })
-    const p = findPosition(ctx, won.positionId)!
-    const before = lineItems(ctx).length
-    const item = computeLineItem(ctx, won, p, { plays: 0, playedSec: 0 })
+    const p = (await findPosition(ctx, won.positionId))!
+    const before = (await lineItems(ctx)).length
+    const item = await computeLineItem(ctx, won, p, { plays: 0, playedSec: 0 })
     expect(item.amount).toBe(0)
-    expect(lineItems(ctx)).toHaveLength(before)
+    expect(await lineItems(ctx)).toHaveLength(before)
   })
 
   it('declares engagement billing and refuses it rather than billing on plays', async () => {
     const ctx = await testContext({ clock: () => NOW })
-    const p = findPosition(ctx, won.positionId)!
-    expect(() => computeLineItem(ctx, won, p, { plays: 1, playedSec: 1 }, 'engagement')).toThrow(NotImplementedError)
+    const p = (await findPosition(ctx, won.positionId))!
+    await expect(computeLineItem(ctx, won, p, { plays: 1, playedSec: 1 }, 'engagement')).rejects.toThrow(NotImplementedError)
   })
 
   it('uses the slot’s billing unit as the window length', async () => {
     const ctx = await testContext({ clock: () => NOW })
-    const p = findPosition(ctx, won.positionId)!
-    expect(billingUnitMs(ctx, p)).toBe(windowMs(ctx, p))
+    const p = (await findPosition(ctx, won.positionId))!
+    expect(await billingUnitMs(ctx, p)).toBe(await windowMs(ctx, p))
   })
 
   it('answers the term questions for one window at once', () => {

@@ -9,7 +9,7 @@
    handed bookSlot or createCampaign. On integration both are built from one
    real campaign source in context.ts: one object, two facets. */
 import type { Campaign, CampaignBrief } from '@ph-dsp/types'
-import { type Db, fromJson, prepared, toJson } from '../db/db'
+import { type Db, fromJson, prepared, toJson, type Awaitable } from '../db/db'
 
 /* The stored campaign. `schedule` isn't stored: the admin list derives it
    from the windows the campaign holds. Same for the playlist summary
@@ -46,23 +46,23 @@ export interface CampaignAsset {
 }
 
 export interface CampaignSource {
-  getCampaign(id: string): CampaignRecord | null
+  getCampaign(id: string): Awaitable<CampaignRecord | null>
   /* Ordered by creation, then id — the same order as the approval adapter's list. */
-  listCampaigns(filter?: CampaignListFilter): CampaignRecord[]
-  setActivation(id: string, enabled: boolean): CampaignRecord | null
+  listCampaigns(filter?: CampaignListFilter): Awaitable<CampaignRecord[]>
+  setActivation(id: string, enabled: boolean): Awaitable<CampaignRecord | null>
   /* Campaigns submitted through the Partner API (package 12), stored in the existing structure. */
-  createCampaign(c: NewCampaign): CampaignRecord
-  addAsset(a: Omit<CampaignAsset, 'version' | 'contentHash'> & { contentHash?: string | null }): CampaignAsset
+  createCampaign(c: NewCampaign): Awaitable<CampaignRecord>
+  addAsset(a: Omit<CampaignAsset, 'version' | 'contentHash'> & { contentHash?: string | null }): Awaitable<CampaignAsset>
   /* The latest asset for each version role ("default" or a targeted version
      id) — as of `atVersion` when given: the approval adapter's opaque
      `assetVersion` string, exactly as `liveAssetVersion` returned it (the
      approved version, Q38). Any string that changes with the creative is
      legal there, so resolving it to assets is this seam's job, never the
      caller's. A discarded (rejected) edit's assets are never included. */
-  latestAssets(campaignId: string, atVersion?: string): CampaignAsset[]
+  latestAssets(campaignId: string, atVersion?: string): Awaitable<CampaignAsset[]>
   /* Hand-off (package 16): book a campaign into a slot for a window. */
-  bookSlot(b: SlotBooking): SlotBooking
-  bookings(campaignId?: string): SlotBooking[]
+  bookSlot(b: SlotBooking): Awaitable<SlotBooking>
+  bookings(campaignId?: string): Awaitable<SlotBooking[]>
 }
 
 interface Row {

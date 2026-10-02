@@ -10,17 +10,17 @@ export const targetingVariableRoutes = (ctx: Context, guards: Guards): FastifyPl
   app.get('/targeting-variables', async (req) => {
     guards.flagged()
     guards.requireScope(req, 'admin')
-    return { items: sharedVariables(ctx.company.variableAccess()) }
+    return { items: sharedVariables(await ctx.company.variableAccess()) }
   })
 
   app.put<{ Body: { access?: unknown } }>('/targeting-variables', async (req) => {
     guards.flagged()
     guards.requireScope(req, 'admin')
-    const errors = validateAccess(req.body?.access, ctx.partners.list().map((p) => p.id))
+    const errors = validateAccess(req.body?.access, (await ctx.partners.list()).map((p) => p.id))
     if (errors.length) throw validationFailed(errors)
     /* De-duplicate ids; an unset key keeps its default. */
     const access = Object.fromEntries(Object.entries(req.body!.access as Record<string, Access>).map(([k, a]) => [k, a === 'all' ? a : [...new Set(a)]]))
-    ctx.company.saveVariableAccess(access)
-    return { items: sharedVariables(ctx.company.variableAccess()) }
+    await ctx.company.saveVariableAccess(access)
+    return { items: sharedVariables(await ctx.company.variableAccess()) }
   })
 }

@@ -7,6 +7,6 @@ import { permittedFor } from '../../domain/variables'
 
 export const targetingRoutes = (ctx: Context): FastifyPluginAsync => async (app) => {
   app.get('/targeting/attributes', async (req): Promise<{ items: TargetingAttribute[] }> => ({
-    items: permittedFor(req.partner, ctx.company.variableAccess()).map((v) => ({ key: v.key, source: v.source, label: v.label, group: v.group, operators: v.operators })),
+    items: permittedFor(req.partner, await ctx.company.variableAccess()).map((v) => ({ key: v.key, source: v.source, label: v.label, group: v.group, operators: v.operators })),
   }))
 }

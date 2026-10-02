@@ -1,8 +1,7 @@
 /* A reference in-memory adapter, used to prove the contract suites
    themselves. Not shipped. */
 import { DatabaseSync } from 'node:sqlite'
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
+import { migrateAll } from './migrateAll'
 import type { CampaignRef, CampaignSource } from '../src/adapter/CampaignSource'
 import type { Fixture } from './contract'
 
@@ -42,7 +41,6 @@ export function memorySetup() {
     },
   }
   const db = new DatabaseSync(':memory:')
-  db.exec(readFileSync(fileURLToPath(new URL('../migrations/0100_campaign_approvals.up.sql', import.meta.url)), 'utf8'))
-  db.exec(readFileSync(fileURLToPath(new URL('../migrations/0101_asset_level_rejection.up.sql', import.meta.url)), 'utf8'))
+  migrateAll(db)
   return { source, fixture, db, requiresApproval: () => true }
 }

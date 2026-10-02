@@ -16,19 +16,19 @@ describe('per-DSP bidder tuning (Q46)', () => {
   it('saves, returns and clears the overrides; defaults apply when unset', async () => {
     const ctx = await testContext()
     const app = buildApp(ctx)
-    expect(bidderTuning(ctx.partners.get('p_google')!.bidder, ctx.config)).toEqual({ qps: 500, timeoutMs: 300 })
+    expect(bidderTuning((await ctx.partners.get('p_google'))!.bidder, ctx.config)).toEqual({ qps: 500, timeoutMs: 300 })
 
     const saved = await put(app, { qps: 50, timeoutMs: 800 })
     expect(saved.statusCode).toBe(200)
     expectMatchesContract('PUT', '/admin/v1/partners/{partnerId}', 200, saved.json())
     expect(saved.json().bidder).toMatchObject({ qps: 50, timeoutMs: 800 })
-    expect(bidderTuning(ctx.partners.get('p_google')!.bidder, ctx.config)).toEqual({ qps: 50, timeoutMs: 800 })
+    expect(bidderTuning((await ctx.partners.get('p_google'))!.bidder, ctx.config)).toEqual({ qps: 50, timeoutMs: 800 })
     /* Only the DSP that set it: others keep the platform default. */
-    expect(bidderTuning(ctx.partners.get('p_amazon')?.bidder ?? {}, ctx.config)).toEqual({ qps: 500, timeoutMs: 300 })
+    expect(bidderTuning((await ctx.partners.get('p_amazon'))?.bidder ?? {}, ctx.config)).toEqual({ qps: 500, timeoutMs: 300 })
 
     const cleared = await put(app, { timeoutMs: null })
     expect(cleared.json().bidder.timeoutMs).toBeUndefined()
-    expect(bidderTuning(ctx.partners.get('p_google')!.bidder, ctx.config)).toEqual({ qps: 50, timeoutMs: 300 })
+    expect(bidderTuning((await ctx.partners.get('p_google'))!.bidder, ctx.config)).toEqual({ qps: 50, timeoutMs: 300 })
   })
 
   it('refuses values outside the allowed range with validation_failed', async () => {
@@ -42,10 +42,10 @@ describe('per-DSP bidder tuning (Q46)', () => {
 
   it('sends the DSP’s own timeout as tmax', async () => {
     const ctx = await testContext()
-    const p = allPositions(ctx)[0]
-    expect(buildBidRequest(ctx, p, ctx.partners.get('p_google')!, 'r1').tmax).toBe(300)
+    const p = (await allPositions(ctx))[0]
+    expect((await buildBidRequest(ctx, p, (await ctx.partners.get('p_google'))!, 'r1')).tmax).toBe(300)
     await put(buildApp(ctx), { timeoutMs: 900 })
-    expect(buildBidRequest(ctx, p, ctx.partners.get('p_google')!, 'r1').tmax).toBe(900)
+    expect((await buildBidRequest(ctx, p, (await ctx.partners.get('p_google'))!, 'r1')).tmax).toBe(900)
   })
 
   it('the bidder aborts at the per-call timeout, not the default', async () => {

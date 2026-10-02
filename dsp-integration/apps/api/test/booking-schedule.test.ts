@@ -34,9 +34,9 @@ describe('GET /admin/v1/booking-schedule', () => {
 
   it('shows each booking at the price it was booked at, with booked and billed revenue per display type', async () => {
     const { ctx, get } = await setup()
-    ctx.reservations.insert(booking({}))
-    ctx.reservations.insert(booking({ id: 'r_test', windowStart: '2026-09-23T00:00:00.000Z', testMode: true, status: 'won', type: 'bid' }))
-    runBilling(ctx)
+    await ctx.reservations.insert(booking({}))
+    await ctx.reservations.insert(booking({ id: 'r_test', windowStart: '2026-09-23T00:00:00.000Z', testMode: true, status: 'won', type: 'bid' }))
+    await runBilling(ctx)
     const res = await get('?from=2026-09-15&to=2026-09-23')
     expectMatchesContract('GET', '/admin/v1/booking-schedule', 200, res.json())
     const [pos] = res.json().positions
@@ -60,8 +60,8 @@ describe('GET /admin/v1/booking-schedule', () => {
      reach, and a position's displayCount is plain sizing. */
   it('carries no reach on any booking, and displayCount on every position', async () => {
     const { ctx, get } = await setup()
-    ctx.reservations.insert(booking({ id: 'r_local', campaignId: 'c_api_swisse', pricingType: 'localised' }))
-    ctx.reservations.insert(booking({ id: 'r_personal', positionId: 'menu_board.s2', windowStart: '2026-09-23T00:00:00.000Z', campaignId: 'c_api_swisse_kids', pricingType: 'personalised' }))
+    await ctx.reservations.insert(booking({ id: 'r_local', campaignId: 'c_api_swisse', pricingType: 'localised' }))
+    await ctx.reservations.insert(booking({ id: 'r_personal', positionId: 'menu_board.s2', windowStart: '2026-09-23T00:00:00.000Z', campaignId: 'c_api_swisse_kids', pricingType: 'personalised' }))
     const res = await get('?from=2026-09-15&to=2026-09-23')
     expectMatchesContract('GET', '/admin/v1/booking-schedule', 200, res.json())
     const [pos] = res.json().positions
@@ -74,7 +74,7 @@ describe('GET /admin/v1/booking-schedule', () => {
 
   it('narrows to one campaign, over whatever range its bookings fall in', async () => {
     const { ctx, get } = await setup()
-    ctx.reservations.insert(booking({ windowStart: '2026-11-02T00:00:00.000Z' }))
+    await ctx.reservations.insert(booking({ windowStart: '2026-11-02T00:00:00.000Z' }))
     const res = await get('?campaignId=c_api_swisse')
     expectMatchesContract('GET', '/admin/v1/booking-schedule', 200, res.json())
     const booked = res.json().positions[0].windows.filter((w: { status: string }) => w.status === 'booked')
@@ -86,7 +86,7 @@ describe('GET /admin/v1/booking-schedule', () => {
 
   it('narrows to one advertiser or one DSP', async () => {
     const { ctx, get } = await setup()
-    ctx.reservations.insert(booking({}))
+    await ctx.reservations.insert(booking({}))
     const swisse = await get('?advertiserId=swisse&from=2026-09-15&to=2026-09-23')
     expect(swisse.json().totals.bookedWindows).toBe(1)
     expect(swisse.json().positions[0].windows.find((w: { start: string }) => w.start.startsWith('2026-09-15')).status).toBe('unavailable')
@@ -98,7 +98,7 @@ describe('GET /admin/v1/booking-schedule', () => {
      that have one, and shows only the positions they hold (Rob, 20 Sep). */
   it('offers only advertisers with something booked in the range, and their positions alone', async () => {
     const { ctx, get } = await setup()
-    ctx.reservations.insert(booking({}))
+    await ctx.reservations.insert(booking({}))
     const all = await get('?from=2026-09-15&to=2026-09-23')
     expect(all.json().dsps.find((d: { partnerId: string }) => d.partnerId === 'p_google').advertisers.map((a: { advertiserId: string }) => a.advertiserId))
       .toEqual(['nestle', 'swisse'])

@@ -11,4 +11,4 @@ if (!SCENARIOS.includes(scenario)) {
   console.error(`Unknown scenario "${scenario}". One of: ${SCENARIOS.join(', ')}.`)
   process.exit(1)
 }
-printSummary(seedScreens(createContext(), scenario))
+printSummary(await seedScreens(createContext(), scenario))

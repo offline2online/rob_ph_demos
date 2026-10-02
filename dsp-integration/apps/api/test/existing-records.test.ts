@@ -36,24 +36,24 @@ const expectedLegacy = {
 }
 
 describe('existing records after this project migrations', () => {
-  it('a display type written before phExtensions existed loads unchanged, with no phExtensions', () => {
+  it('a display type written before phExtensions existed loads unchanged, with no phExtensions', async () => {
     const db = legacyDb()
     migrateUp(db)
-    expect(sqliteDisplayTypeSource(db).get('legacy')).toEqual(expectedLegacy)
+    expect(await sqliteDisplayTypeSource(db).get('legacy')).toEqual(expectedLegacy)
   })
 
-  it('an existing campaign loads with the additions defaulted (HQ-authored, not activated by this build)', () => {
+  it('an existing campaign loads with the additions defaulted (HQ-authored, not activated by this build)', async () => {
     const db = legacyDb()
     migrateUp(db)
-    const c = sqliteCampaignSource(db).getCampaign('c_old')
+    const c = await sqliteCampaignSource(db).getCampaign('c_old')
     expect(c).toMatchObject({ campaignId: 'c_old', name: 'Old campaign', source: 'hq', advertiserId: null, partnerId: null, pricingType: null })
     expect(c?.targeting).toEqual([[{ source: 'store', variable: 'store.state', op: 'equal', values: ['NSW'] }]])
   })
 
-  it("reverting this project's migrations keeps the existing records intact", () => {
+  it("reverting this project's migrations keeps the existing records intact", async () => {
     const db = legacyDb()
     migrateUp(db)
-    sqliteDisplayTypeSource(db).saveExtensions('legacy', { slots: [{ label: 'Slot 1', owner: 'internal' }] })
+    await sqliteDisplayTypeSource(db).saveExtensions('legacy', { slots: [{ label: 'Slot 1', owner: 'internal' }] })
     migrateDown(db, loadMigrations().length - 1)
     const row = db.prepare("SELECT * FROM display_types WHERE id = 'legacy'").get() as Record<string, unknown>
     expect(row).not.toHaveProperty('ph_extensions')

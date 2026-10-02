@@ -15,7 +15,7 @@ import { describe, expect, it } from 'vitest'
 import { loadConfig } from '../src/config'
 import { migrateDown, migrateUp } from '../src/db/migrate'
 import { isPrivateHost, isPublicHttpsUrl } from '../src/domain/partnerInput'
-import { allPositions, callerOf, findPosition, visibilityFor, windowFacts, windowStatus, windowsBetween } from '../src/domain/positions'
+import { allPositions, callerOf, findPosition, visibilityFor, windowFacts, windowMs, windowStatus, windowsBetween } from '../src/domain/positions'
 import { sweepSettledReservations } from '../src/domain/reservationRetention'
 import { runBilling } from '../src/exchange/billing'
 import { claimAuction, schedulerTick } from '../src/exchange/scheduler'
@@ -29,12 +29,12 @@ const GOOGLE = { authorization: 'Bearer poc-token-google-dv360' }
 describe('display counts without the display rows', () => {
   it('summaryByDisplayType and storeIdsByDisplayType agree with the rows, and a type with none counts 0', async () => {
     const ctx = await testContext({ demo: true })
-    for (const dt of ctx.displayTypes.list()) {
-      const rows = ctx.displays.listByDisplayType(dt.id)
-      expect(ctx.displays.summaryByDisplayType(dt.id)).toEqual({ displays: rows.length, stores: new Set(rows.map((d) => d.storeId)).size })
-      expect([...ctx.displays.storeIdsByDisplayType(dt.id)].sort()).toEqual([...new Set(rows.map((d) => d.storeId))].sort())
+    for (const dt of await ctx.displayTypes.list()) {
+      const rows = await ctx.displays.listByDisplayType(dt.id)
+      expect(await ctx.displays.summaryByDisplayType(dt.id)).toEqual({ displays: rows.length, stores: new Set(rows.map((d) => d.storeId)).size })
+      expect([...(await ctx.displays.storeIdsByDisplayType(dt.id))].sort()).toEqual([...new Set(rows.map((d) => d.storeId))].sort())
     }
-    expect(ctx.displays.summaryByDisplayType('no_such_type')).toEqual({ displays: 0, stores: 0 })
+    expect(await ctx.displays.summaryByDisplayType('no_such_type')).toEqual({ displays: 0, stores: 0 })
   })
 
   it('is what the inventory reports for every position', async () => {
@@ -43,7 +43,7 @@ describe('display counts without the display rows', () => {
     const items = (await app.inject({ url: '/api/v1/inventory?limit=200', headers: GOOGLE })).json().items as { displayTypeId: string; displayCount: number; storeCount: number }[]
     expect(items.length).toBeGreaterThan(5)
     for (const i of items) {
-      const s = ctx.displays.summaryByDisplayType(i.displayTypeId)
+      const s = await ctx.displays.summaryByDisplayType(i.displayTypeId)
       expect([i.displayCount, i.storeCount]).toEqual([s.displays, s.stores])
     }
   })
@@ -52,14 +52,14 @@ describe('display counts without the display rows', () => {
 describe('the position index', () => {
   it('finds a position directly, and follows a change to a display type', async () => {
     const ctx = await testContext()
-    expect(findPosition(ctx, 'menu_board.s2')?.slot).toBe(2)
-    expect(findPosition(ctx, 'menu_board.s9')).toBeNull()
-    const before = allPositions(ctx).map((p) => p.positionId)
+    expect((await findPosition(ctx, 'menu_board.s2'))?.slot).toBe(2)
+    expect(await findPosition(ctx, 'menu_board.s9')).toBeNull()
+    const before = (await allPositions(ctx)).map((p) => p.positionId)
     expect(before).toContain('menu_board.s2')
-    const ext = ctx.displayTypes.get('menu_board')!.phExtensions!
-    ctx.displayTypes.saveExtensions('menu_board', { ...ext, slots: ext.slots.map((s, i) => (i === 1 ? { ...s, owner: 'internal' as const } : s)) })
-    expect(findPosition(ctx, 'menu_board.s2')).toBeNull()
-    expect(allPositions(ctx).map((p) => p.positionId)).toEqual(before.filter((id) => id !== 'menu_board.s2'))
+    const ext = (await ctx.displayTypes.get('menu_board'))!.phExtensions!
+    await ctx.displayTypes.saveExtensions('menu_board', { ...ext, slots: ext.slots.map((s, i) => (i === 1 ? { ...s, owner: 'internal' as const } : s)) })
+    expect(await findPosition(ctx, 'menu_board.s2')).toBeNull()
+    expect((await allPositions(ctx)).map((p) => p.positionId)).toEqual(before.filter((id) => id !== 'menu_board.s2'))
   })
 })
 
@@ -68,15 +68,18 @@ describe('the inventory status filter', () => {
     const ctx = await testContext({ clock: () => NOW, bookings: true, demo: true })
     const app = buildApp(ctx)
     const [from, to] = ['2026-09-21', '2026-10-20']
-    const starts = windowsBetween(ctx, from, to)!
-    const c = callerOf(ctx.partners.get('p_google')!, undefined)
+    const starts = windowsBetween(from, to, await windowMs(ctx))!
+    const c = callerOf((await ctx.partners.get('p_google'))!, undefined)
     const counts: Record<string, number> = {}
     for (const status of ['sold', 'available', 'reserved'] as const) {
       /* The per-position path (one ranged query each), as the availability endpoint still does. */
-      const expected = allPositions(ctx).filter(visibilityFor(ctx, c)).filter((p) => {
-        const f = windowFacts(ctx, p, starts)
-        return starts.some((w) => windowStatus(ctx, p, c, w, f) === status)
-      }).map((p) => p.positionId)
+      const visible = await visibilityFor(ctx, c)
+      const expected: string[] = []
+      for (const p of await allPositions(ctx)) {
+        if (!(await visible(p))) continue
+        const f = await windowFacts(ctx, p, starts)
+        if (starts.some((w) => windowStatus(p, c, w, f) === status)) expected.push(p.positionId)
+      }
       const got = (await app.inject({ url: `/api/v1/inventory?status=${status}&from=${from}&to=${to}&limit=200`, headers: GOOGLE })).json().items as { positionId: string }[]
       expect(got.map((i) => i.positionId)).toEqual(expected)
       counts[status] = expected.length
@@ -93,13 +96,13 @@ describe('billing at scale', () => {
     const ctx = await testContext({ clock: () => NOW, dspFetch: mocks.fetchImpl })
     const windowStart = '2026-09-17T00:00:00.000Z'
     const start = Date.parse(windowStart)
-    ctx.reservations.insert({
+    await ctx.reservations.insert({
       id: 'res_big', partnerId: 'p_google', advertiserId: 'nestle', campaignId: 'c_dsp_nestle', positionId: 'menu_board.s2', windowStart, type: 'bid', channel: 'openrtb',
       bidCpm: 100, currency: 'AUD', status: 'won', clearingCpm: 100, reason: null, testMode: false, pricingType: 'localised', handedOffAt: '2026-09-16T18:00:00.000Z',
     })
     /* 1,000 more Menu Boards with 200 plays each in the window, and plays on
        a Landscape display that must not count. */
-    const other = ctx.displays.listByDisplayType('landscape')[0].id
+    const other = (await ctx.displays.listByDisplayType('landscape'))[0].id
     const insDisplay = ctx.db.prepare("INSERT INTO displays (id, name, store, store_id, display_type_id) VALUES (?, ?, 'Big store', 'st_big', 'menu_board')")
     const play = ctx.db.prepare("INSERT INTO plays (id, display_id, campaign_id, played_at, duration_sec) VALUES (?, ?, 'c_dsp_nestle', ?, 15)")
     ctx.db.exec('BEGIN')
@@ -110,17 +113,17 @@ describe('billing at scale', () => {
     for (let i = 0; i < 100; i++) play.run(`other_${i}`, other, new Date(start + i * 1000).toISOString())
     ctx.db.exec('COMMIT')
 
-    const items = runBilling(ctx)
+    const items = await runBilling(ctx)
     const big = items.find((i) => i.reservationId === 'res_big')!
-    const displays = ctx.displays.summaryByDisplayType('menu_board').displays
+    const displays = (await ctx.displays.summaryByDisplayType('menu_board')).displays
     expect(displays).toBe(1003)
     const expectedSec = displays * 86_400 * (1 / 3)
     expect(big).toMatchObject({ plays: 200_000, playedSec: 3_000_000, expectedSec, assumedViews: 1236 })
     expect(big.realisedViews).toBe(Math.round(1236 * Math.min(1, 3_000_000 / expectedSec)))
     /* The seeded 15 Sep window is billed in the same pass, and nothing twice. */
     expect(items.map((i) => i.reservationId).sort()).toEqual(['res_big', 'res_seed_nestle_0915'])
-    expect(ctx.reservations.billable(new Date(NOW.getTime() - 86_400_000).toISOString())).toEqual([])
-    expect(runBilling(ctx)).toEqual([])
+    expect(await ctx.reservations.billable(new Date(NOW.getTime() - 86_400_000).toISOString())).toEqual([])
+    expect(await runBilling(ctx)).toEqual([])
   })
 })
 
@@ -167,8 +170,8 @@ describe('one auction per window across processes', () => {
 
   it('claimAuction hands a window to exactly one claimant', async () => {
     const ctx = await testContext({ clock: at })
-    expect(claimAuction(ctx, W)).toBe(true)
-    expect(claimAuction(ctx, W)).toBe(false)
+    expect(await claimAuction(ctx, W)).toBe(true)
+    expect(await claimAuction(ctx, W)).toBe(false)
   })
 })
 
@@ -182,13 +185,13 @@ describe('settled bids are deleted after their retention', () => {
     for (const r of [
       rec('old_rejected', 'rejected', '2026-05-01T00:00:00.000Z'), rec('old_lost', 'lost', '2026-05-02T00:00:00.000Z'), rec('old_pending', 'pending', '2026-05-03T00:00:00.000Z'),
       rec('old_won', 'won', '2026-05-04T00:00:00.000Z'), rec('recent_rejected', 'rejected', '2026-09-01T00:00:00.000Z'),
-    ]) ctx.reservations.insert(r)
-    expect(sweepSettledReservations(ctx.db, 90, () => NOW)).toBe(3)
-    expect(['old_rejected', 'old_lost', 'old_pending'].map((id) => ctx.reservations.get(id))).toEqual([null, null, null])
-    expect(ctx.reservations.get('old_won')?.status).toBe('won')
-    expect(ctx.reservations.get('recent_rejected')?.status).toBe('rejected')
+    ]) await ctx.reservations.insert(r)
+    expect(await sweepSettledReservations(ctx.db, 90, () => NOW)).toBe(3)
+    expect(await Promise.all(['old_rejected', 'old_lost', 'old_pending'].map((id) => ctx.reservations.get(id)))).toEqual([null, null, null])
+    expect((await ctx.reservations.get('old_won'))?.status).toBe('won')
+    expect((await ctx.reservations.get('recent_rejected'))?.status).toBe('rejected')
     /* Nothing more to delete: a sweep with nothing due changes nothing. */
-    expect(sweepSettledReservations(ctx.db, 90, () => NOW)).toBe(0)
+    expect(await sweepSettledReservations(ctx.db, 90, () => NOW)).toBe(0)
   })
 })
 

@@ -4,7 +4,7 @@
    locked_win (JSON, see LockedWin) is null until that auction clears, and
    set once, never overwritten — see lockWin. */
 import type { BuyersList, InvitedBuyer, LockedWin } from '@ph-dsp/types'
-import { type Db, fromJson, prepared, toJson } from '../db/db'
+import { type Db, fromJson, prepared, toJson, type Awaitable } from '../db/db'
 
 interface Row {
   id: string; name: string; description: string; invited_buyers: string; active_from: string | null; active_to: string | null
@@ -12,17 +12,17 @@ interface Row {
 }
 
 export interface BuyersListRepo {
-  list(): BuyersList[]
-  get(id: string): BuyersList | null
-  insert(l: { id: string; name: string; description: string; invitedBuyers: InvitedBuyer[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null }): BuyersList
-  update(id: string, patch: { name: string; description: string; invitedBuyers: InvitedBuyer[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null }): BuyersList | null
-  delete(id: string): void
+  list(): Awaitable<BuyersList[]>
+  get(id: string): Awaitable<BuyersList | null>
+  insert(l: { id: string; name: string; description: string; invitedBuyers: InvitedBuyer[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null }): Awaitable<BuyersList>
+  update(id: string, patch: { name: string; description: string; invitedBuyers: InvitedBuyer[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null }): Awaitable<BuyersList | null>
+  delete(id: string): Awaitable<void>
   /* Locks this deal's rate for the rest of its delivery term, at the first
      clearing bid within its auction window — idempotent: a term already
      locked is left untouched (first clear wins, spec "…dynamic VAC-d
      billing over the delivery term"). Returns null if the deal doesn't
      exist or is already locked. */
-  lockWin(id: string, win: LockedWin): BuyersList | null
+  lockWin(id: string, win: LockedWin): Awaitable<BuyersList | null>
 }
 
 export function sqliteBuyersListRepo(db: Db): BuyersListRepo {
@@ -33,7 +33,7 @@ export function sqliteBuyersListRepo(db: Db): BuyersListRepo {
   })
   const row = (id: string) => prepared(db, 'SELECT * FROM buyers_lists WHERE id = ?').get(id) as Row | undefined
   return {
-    list: () => (prepared(db, 'SELECT * FROM buyers_lists ORDER BY rowid').all() as unknown as Row[]).map(toRecord),
+    list: () => (prepared(db, 'SELECT * FROM buyers_lists ORDER BY seq').all() as unknown as Row[]).map(toRecord),
     get: (id) => {
       const r = row(id)
       return r ? toRecord(r) : null

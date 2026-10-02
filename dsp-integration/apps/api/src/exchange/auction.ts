@@ -45,14 +45,14 @@ import { randomUUID } from 'node:crypto'
 import type { Context } from '../context'
 import { bookLockedTermWindow, lockTermOnClear, termStateAt } from '../billing'
 import { isLive } from '../domain/exchange'
-import { type PositionRef, allPositions, assignmentOf, effectivePartnerIds, isSellable, nextWindow, positionView, windowMs, windowStartOf } from '../domain/positions'
+import { type PositionRef, allPositions, assignmentOf, effectivePartnerIds, filterAsync, isSellable, nextWindow, positionView, windowMsFor, windowStartOf } from '../domain/positions'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 import { type ReservationRecord, TAKEN } from '../repos/ReservationRepo'
 import { advertiserSlug, assignedOf } from '@ph-dsp/types'
-import { isUniqueViolation } from '../db/db'
+import { isUniqueViolation, tx } from '../db/db'
 import { campaignForCrid, queueCreative } from './creatives'
 import { multiplierToSnapshot } from '../domain/pricing'
-import { checkAdvertiser, checkCampaign, checkCategories, checkFloor, checkTargeting, checkVersionCount } from './enforcement'
+import { checkAdvertiser, checkCampaign, checkCategories, checkFloor, checkTargeting, checkVersionCount, firstRefusal } from './enforcement'
 import { handOff } from './handoff'
 import { settlePending } from './pending'
 import { bidderTuning } from '../domain/partnerInput'
@@ -93,16 +93,19 @@ export const receivesBidRequests = (p: PartnerRecord) => p.status === 'connected
 export const POSITION_CONCURRENCY = 16
 export const MAX_BIDS_PER_RESPONSE = 10
 
-export async function runAuction(ctx: Context, windowStart: Date = nextWindow(ctx)): Promise<AuctionResult> {
+export async function runAuction(ctx: Context, at?: Date): Promise<AuctionResult> {
+  const windowStart = at ?? (await nextWindow(ctx))
   const start = windowStart.toISOString()
   /* Switched off or incomplete: no DSP is sent a bid request. */
-  const exchangeLive = isLive(ctx.exchange.get())
+  const exchangeLive = isLive(await ctx.exchange.get())
   /* The positions whose own window starts here (OQ27). */
+  const hours = (await ctx.company.get()).playWindowHours
+  const startingHere = (await allPositions(ctx)).filter((p) => windowStartOf(windowStart, windowMsFor(hours, p)).getTime() === windowStart.getTime())
   /* Unscored slots are skipped: no audience score means no assumed views to sell. */
-  const positions = allPositions(ctx).filter((p) => isSellable(ctx, p)).filter((p) => windowStartOf(ctx, windowStart, windowMs(ctx, p)).getTime() === windowStart.getTime())
+  const positions = await filterAsync(startingHere, (p) => isSellable(ctx, p))
   /* The DSPs that receive bid requests, read once for the whole auction,
      not once per position (review, 24 Sep 2026). */
-  const bidders = exchangeLive ? ctx.partners.list().filter(receivesBidRequests) : []
+  const bidders = exchangeLive ? (await ctx.partners.list()).filter(receivesBidRequests) : []
   /* Results keep the estate's order, whatever order batches finish in. */
   const outcomes: PositionOutcome[] = new Array(positions.length)
   let next = 0
@@ -119,7 +122,7 @@ export async function runAuction(ctx: Context, windowStart: Date = nextWindow(ct
            (stability review, 24 Sep 2026). What was pending for it is
            settled so no bid is left hanging on a window that has closed. */
         const message = e instanceof Error ? e.message : String(e)
-        settlePending(ctx, p.positionId, start, `The auction for this position failed: ${message}`)
+        await settlePending(ctx, p.positionId, start, `The auction for this position failed: ${message}`)
         outcomes[i] = { positionId: p.positionId, bidRequests: 0, bids: 0, winner: null, skipped: `Failed: ${message}` }
       }
     }
@@ -132,8 +135,8 @@ export async function runAuction(ctx: Context, windowStart: Date = nextWindow(ct
 async function clearPosition(ctx: Context, p: PositionRef, start: string, bidders: PartnerRecord[]): Promise<PositionOutcome> {
   const out: PositionOutcome = { positionId: p.positionId, bidRequests: 0, bids: 0, winner: null }
   if (assignmentOf(p.def) === 'reserved') return { ...out, skipped: 'Held for a named advertiser: booked by reservation.' }
-  if (!ctx.displays.summaryByDisplayType(p.displayType.id).displays) return { ...out, skipped: 'No displays.' }
-  const existing = ctx.reservations.forWindow(p.positionId, start)
+  if (!(await ctx.displays.summaryByDisplayType(p.displayType.id)).displays) return { ...out, skipped: 'No displays.' }
+  const existing = await ctx.reservations.forWindow(p.positionId, start)
   const taken = existing.find((r) => !r.testMode && TAKEN.includes(r.status))
   if (taken) return { ...out, skipped: taken.status === 'reserved' ? 'Reserved: held outside the open auction.' : 'Already sold.' }
 
@@ -149,12 +152,12 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, bidder
      existed. */
   if (assignmentOf(p.def) === 'deal') {
     const listId = assignedOf(p.def).buyersListId
-    const list = listId ? ctx.buyersLists.get(listId) : null
+    const list = listId ? await ctx.buyersLists.get(listId) : null
     const term = list ? termStateAt(list, start) : null
     if (list && term?.active) {
       if (term.locked) return bookLockedTermWindow(ctx, p, start, list, out)
       if (!term.auctionOpen) {
-        settlePending(ctx, p.positionId, start, `The private auction closed with no clearing bid (${list.name}); this window is no longer sold under the deal.`)
+        await settlePending(ctx, p.positionId, start, `The private auction closed with no clearing bid (${list.name}); this window is no longer sold under the deal.`)
         return { ...out, skipped: `Private auction window closed with no clearing bid (${list.name}).` }
       }
     }
@@ -164,25 +167,26 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, bidder
      handled above and a locked term keeps booking at its rate; nothing new
      is solicited, and a bid placed before the lock is settled as lost. */
   if (p.def.salesLocked) {
-    settlePending(ctx, p.positionId, start, 'This position is locked against new sales; nothing was sold.')
+    await settlePending(ctx, p.positionId, start, 'This position is locked against new sales; nothing was sold.')
     return { ...out, skipped: 'Locked against new sales.' }
   }
 
   const candidates: ReservationRecord[] = []
   /* Until Exchange settings are complete, no DSP is sent bid requests (spec
      §7): `bidders` is empty then. */
-  const allowed = effectivePartnerIds(ctx, p.def, bidders)
+  const allowed = await effectivePartnerIds(ctx, p.def, bidders)
   const dsps = bidders.filter((d) => allowed === null || allowed.includes(d.id))
   /* The position as every DSP sees it, once (no advertiser, so no floor multiplier). */
-  const view = dsps.length ? positionView(ctx, p, { partner: dsps[0], advertiser: null, unknownAdvertiser: false }) : null
+  const view = dsps.length ? await positionView(ctx, p, { partner: dsps[0], advertiser: null, unknownAdvertiser: false }) : null
   /* Every DSP for this position at once; responses are then processed in
      the DSPs' own order so the outcome doesn't depend on who answered first. */
-  const sent = dsps.flatMap((dsp) => {
+  const sent: { dsp: PartnerRecord; reqId: string; res: ReturnType<Context['bidder']['send']> }[] = []
+  for (const dsp of dsps) {
     const url = providerOf(ctx.dsp, dsp.provider)?.bidUrl
-    if (!url) return []
+    if (!url) continue
     const reqId = `req_${randomUUID().slice(0, 12)}`
-    return [{ dsp, reqId, res: ctx.bidder.send(url, buildBidRequest(ctx, p, dsp, reqId, view!), bidderTuning(dsp.bidder, ctx.config)) }]
-  })
+    sent.push({ dsp, reqId, res: ctx.bidder.send(url, await buildBidRequest(ctx, p, dsp, reqId, view!), bidderTuning(dsp.bidder, ctx.config)) })
+  }
   out.bidRequests = sent.length
   for (const { dsp, reqId, res: pending } of sent) {
     const res = await pending
@@ -209,9 +213,9 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, bidder
      changed. Read now, not with `existing` before the bidders answered: a
      bid placed while they were answering (bidding is open until the
      cutoff) is in this auction, not stranded pending after it. */
-  const apiBids = ctx.reservations.forWindow(p.positionId, start).filter((x) => x.channel === 'api' && x.type === 'bid' && x.status === 'pending')
+  const apiBids = (await ctx.reservations.forWindow(p.positionId, start)).filter((x) => x.channel === 'api' && x.type === 'bid' && x.status === 'pending')
   for (const r of apiBids) {
-    const partner = ctx.partners.get(r.partnerId)
+    const partner = await ctx.partners.get(r.partnerId)
     const seat = partner?.seats.find((s) => advertiserSlug(s.name) === r.advertiserId)
     /* Connection first: disconnecting a DSP clears its seats, so the seat
        check would otherwise always answer before the real reason. */
@@ -221,23 +225,29 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, bidder
       ? { reason: `${partner.name} is not connected.` }
       : !seat
       ? { reason: 'The advertiser is no longer on this DSP.' }
-      : (await checkCampaign(ctx, r.campaignId as string)) ?? checkAdvertiser(ctx, p, partner, seat.name, seat.domain ? [seat.domain] : [], seat.id, start) ?? checkTargeting(p, r.pricingType) ?? checkVersionCount(ctx, p, r.campaignId as string) ?? checkFloor(ctx, r.bidCpm as number, r.advertiserId)
-    if (refusal) ctx.reservations.update(r.id, { status: 'rejected', reason: refusal.reason })
+      : await firstRefusal(
+        () => checkCampaign(ctx, r.campaignId as string),
+        () => checkAdvertiser(ctx, p, partner, seat.name, seat.domain ? [seat.domain] : [], seat.id, start),
+        () => checkTargeting(p, r.pricingType),
+        () => checkVersionCount(ctx, p, r.campaignId as string),
+        () => checkFloor(ctx, r.bidCpm as number, r.advertiserId),
+      )
+    if (refusal) await ctx.reservations.update(r.id, { status: 'rejected', reason: refusal.reason })
     else candidates.push(r)
   }
 
-  const live = clear(ctx, candidates.filter((c) => !c.testMode))
-  clear(ctx, candidates.filter((c) => c.testMode))
+  const live = await clear(ctx, candidates.filter((c) => !c.testMode))
+  await clear(ctx, candidates.filter((c) => c.testMode))
   /* Anything still pending for this window now arrived between the read
      above and the clear (the checks above await), or was never a
      candidate: it is settled here, never left pending on a closed window.
      POST /v1/reservations also refuses a bid once the window's auction is
      claimed (auction_runs), so on the scheduled path this finds nothing. */
-  settlePending(ctx, p.positionId, start, 'Placed after this window’s auction had cleared.')
+  await settlePending(ctx, p.positionId, start, 'Placed after this window’s auction had cleared.')
   if (live) {
     await handOff(ctx, live)
     out.winner = { reservationId: live.id, partnerId: live.partnerId, advertiserId: live.advertiserId, clearingCpm: live.bidCpm as number }
-    lockTermOnClear(ctx, p, live)
+    await lockTermOnClear(ctx, p, live)
   }
   return out
 }
@@ -246,19 +256,23 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, bidder
    Marking the winner can fail on migration 0021's unique index when another
    clearing of the same window (the CLI next to the scheduler, or a second
    instance) already sold it; then nobody here wins, and every candidate is
-   told why rather than being left pending. */
-function clear(ctx: Context, candidates: ReservationRecord[]) {
+   told why rather than being left pending. One transaction: the winner and
+   every loser are marked together. */
+async function clear(ctx: Context, candidates: ReservationRecord[]): Promise<ReservationRecord | null> {
   if (!candidates.length) return null
   const [winner, ...rest] = [...candidates].sort((a, b) => (b.bidCpm as number) - (a.bidCpm as number) || (a.createdAt ?? '').localeCompare(b.createdAt ?? ''))
-  try {
-    ctx.reservations.update(winner.id, { status: 'won', clearingCpm: winner.bidCpm, reason: null, personalisedMultiplier: multiplierToSnapshot(ctx.company.get(), winner.pricingType) })
-  } catch (e) {
-    if (!isUniqueViolation(e)) throw e
-    for (const r of candidates) ctx.reservations.update(r.id, { status: 'lost', reason: 'The window was sold by another clearing of the same auction.' })
-    return null
-  }
-  for (const r of rest) ctx.reservations.update(r.id, { status: 'lost', reason: `Outbid: the window cleared at ${winner.bidCpm} ${winner.currency} CPM.` })
-  return ctx.reservations.get(winner.id)
+  const company = await ctx.company.get()
+  return tx(ctx.db, async () => {
+    try {
+      await ctx.reservations.update(winner.id, { status: 'won', clearingCpm: winner.bidCpm, reason: null, personalisedMultiplier: multiplierToSnapshot(company, winner.pricingType) })
+    } catch (e) {
+      if (!isUniqueViolation(e)) throw e
+      for (const r of candidates) await ctx.reservations.update(r.id, { status: 'lost', reason: 'The window was sold by another clearing of the same auction.' })
+      return null
+    }
+    for (const r of rest) await ctx.reservations.update(r.id, { status: 'lost', reason: `Outbid: the window cleared at ${winner.bidCpm} ${winner.currency} CPM.` })
+    return ctx.reservations.get(winner.id)
+  })
 }
 
 /* Records one bid from a DSP's response: a candidate (pending) if it passes
@@ -266,13 +280,13 @@ function clear(ctx: Context, candidates: ReservationRecord[]) {
    advertiser blocklist is enforced here, on the bid, using the seat and
    advertiser identity in the response (spec §7). */
 async function recordDspBid(ctx: Context, p: PositionRef, dsp: PartnerRecord, start: string, res: BidResponse, seatId: string | undefined, bid: Bid, budget: { creativeFetches: number }): Promise<ReservationRecord> {
-  const currency = ctx.company.get().currency
+  const currency = (await ctx.company.get()).currency
   const base: ReservationRecord = {
     id: `res_${randomUUID().slice(0, 12)}`, partnerId: dsp.id, advertiserId: null, campaignId: null, positionId: p.positionId, windowStart: start,
     type: 'bid', channel: 'openrtb', bidCpm: typeof bid.price === 'number' ? bid.price : null, currency, status: 'pending', clearingCpm: null, reason: null,
     testMode: dsp.mode !== 'live', pricingType: null, handedOffAt: null,
   }
-  const reject = (reason: string, extra: Partial<ReservationRecord> = {}) => ctx.reservations.insert({ ...base, ...extra, status: 'rejected', reason })
+  const reject = async (reason: string, extra: Partial<ReservationRecord> = {}) => ctx.reservations.insert({ ...base, ...extra, status: 'rejected', reason })
 
   /* OpenRTB 2.6: a response with no `cur` is in USD. Treating it as the
      exchange's own currency would accept, say, a USD 5 bid as AUD 5. */
@@ -289,19 +303,25 @@ async function recordDspBid(ctx: Context, p: PositionRef, dsp: PartnerRecord, st
   const seat = dsp.seats.find((s) => s.domain && domains.includes(s.domain.toLowerCase()))
   if (!seat) return reject(`Unknown advertiser${domains.length ? ` (${domains.join(', ')})` : ''}: not one of ${dsp.name}’s advertisers.`)
   const advertiserId = advertiserSlug(seat.name)
-  const refused = checkAdvertiser(ctx, p, dsp, seat.name, domains, seat.id, start) ?? checkCategories(ctx, p, dsp, bid.cat ?? [])
+  const refused = await firstRefusal(() => checkAdvertiser(ctx, p, dsp, seat.name, domains, seat.id, start), () => checkCategories(ctx, p, dsp, bid.cat ?? []))
   if (refused) return reject(refused.reason, { advertiserId })
   if (!bid.crid) return reject('No creative ID (crid) on the bid.', { advertiserId })
 
-  const campaignId = campaignForCrid(ctx, dsp.id, bid.crid)
+  const campaignId = await campaignForCrid(ctx, dsp.id, bid.crid)
   if (!campaignId) {
     /* The one-retrieval budget is spent inside queueCreative, only once a fetch is really attempted: a refused (off-path) URL must not use it up. */
     return reject(await queueCreative(ctx, dsp, { crid: bid.crid, iurl: bid.iurl, ext: bid.ext && typeof bid.ext === 'object' ? bid.ext : undefined }, { id: advertiserId, name: seat.name }, p, budget), { advertiserId })
   }
-  const campaign = ctx.campaigns.getCampaign(campaignId)
+  const campaign = await ctx.campaigns.getCampaign(campaignId)
   if (!campaign) return reject(`Creative ${bid.crid} is still being retrieved for review.`, { advertiserId })
   if (campaign.advertiserId !== advertiserId) return reject(`Creative ${bid.crid} belongs to another advertiser.`, { advertiserId })
-  const late = (await checkCampaign(ctx, campaignId)) ?? checkTargeting(p, campaign.pricingType) ?? checkVersionCount(ctx, p, campaignId) ?? checkFloor(ctx, bid.price, advertiserId)
+  const price = bid.price
+  const late = await firstRefusal(
+    () => checkCampaign(ctx, campaignId),
+    () => checkTargeting(p, campaign.pricingType),
+    () => checkVersionCount(ctx, p, campaignId),
+    () => checkFloor(ctx, price, advertiserId),
+  )
   if (late) return reject(late.reason, { advertiserId, campaignId })
   return ctx.reservations.insert({ ...base, advertiserId, campaignId, pricingType: campaign.pricingType ?? null })
 }

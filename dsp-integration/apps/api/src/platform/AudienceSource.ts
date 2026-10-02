@@ -2,7 +2,7 @@
    window for each display type slot. The retailer populates the real
    framework from its own insights, automated where cameras are connected;
    the POC reads seeded numbers. Engineering swaps in the real source. */
-import { type Db, prepared } from '../db/db'
+import { type Db, prepared, type Awaitable } from '../db/db'
 import type { Rules } from '../domain/targetingValidation'
 
 export interface Audience {
@@ -17,11 +17,11 @@ export interface Audience {
 }
 
 export interface AudienceSource {
-  forSlot(displayTypeId: string, slot: number): Audience
+  forSlot(displayTypeId: string, slot: number): Awaitable<Audience>
   /* The share of a slot's assumed views a targeted campaign can reach
      (spec §5: "targeting changes it"). Only the platform that holds the
      store and visitor data can answer this; see BUILD-PLAN Q9. */
-  targetedShare(displayTypeId: string, rules: Rules | undefined): number
+  targetedShare(displayTypeId: string, rules: Rules | undefined): Awaitable<number>
 }
 
 /* POC stand-in share: each AND group halves the audience (Q9). */
@@ -29,10 +29,26 @@ export const POC_SHARE_PER_AND_GROUP = 0.5
 
 /* The display type's default VAC-d (assumed views per play window, per
    display), or null when it has none. Stored in phExtensions so it saves
-   with the rest of the DSP fields. */
+   with the rest of the DSP fields. Read from the parsed record, not with
+   SQLite's json_extract, so the SQL runs unchanged on Postgres (ticket
+   gAi2mkcm43uW6hrchOjh). forSlot is on the inventory hot path, so the parse
+   is remembered per display type until its stored text changes. */
+const parsedDefaults = new WeakMap<Db, Map<string, { text: string | null; v: number | null }>>()
 export function defaultVacd(db: Db, displayTypeId: string): number | null {
-  const r = prepared(db, "SELECT json_extract(ph_extensions, '$.defaultVacd') AS v FROM display_types WHERE id = ?").get(displayTypeId) as { v: number | null } | undefined
-  return typeof r?.v === 'number' ? r.v : null
+  const r = prepared(db, 'SELECT ph_extensions FROM display_types WHERE id = ?').get(displayTypeId) as { ph_extensions: string | null } | undefined
+  const text = r?.ph_extensions ?? null
+  let byType = parsedDefaults.get(db)
+  if (!byType) parsedDefaults.set(db, (byType = new Map()))
+  const hit = byType.get(displayTypeId)
+  if (hit && hit.text === text) return hit.v
+  let v: number | null = null
+  try {
+    const ext = text ? (JSON.parse(text) as { defaultVacd?: unknown }) : null
+    v = typeof ext?.defaultVacd === 'number' ? ext.defaultVacd : null
+  } catch { v = null }
+  if (byType.size > 10_000) byType.clear()
+  byType.set(displayTypeId, { text, v })
+  return v
 }
 
 export const sqliteAudienceSource = (db: Db): AudienceSource => ({

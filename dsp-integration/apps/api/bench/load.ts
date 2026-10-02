@@ -98,17 +98,17 @@ await seed(ctx, { bookings: true, demo: true })
 
 /* ---- synthetic estate: N more display types, SLOTS advertiser slots each ---- */
 if (SCALE > 0) {
-  const base = ctx.displayTypes.get('landscape')!
+  const base = (await ctx.displayTypes.get('landscape'))!
   const insStore = ctx.db.prepare('INSERT INTO stores (id, name, region) VALUES (?, ?, ?)')
   const insDisplay = ctx.db.prepare('INSERT INTO displays (id, name, store, store_id, display_type_id) VALUES (?, ?, ?, ?, ?)')
   const insVacd = ctx.db.prepare('INSERT INTO audience_vacd (display_type_id, slot, assumed_views_per_window, counted) VALUES (?, ?, ?, 0)')
   const advSlot = (label: string) => ({ label, owner: 'advertiser', partnerIds: [], advertisers: [], listMode: null, storeScope: null, quota: null })
   ctx.db.exec('BEGIN')
   for (let s = 0; s < STORES; s++) insStore.run(`bench_st_${s}`, `Bench store ${s}`, `Region ${s % 8}`)
-  const stores = ctx.stores.list()
+  const stores = await ctx.stores.list()
   for (let i = 0; i < SCALE; i++) {
     const id = `bench_dt_${i}`
-    ctx.displayTypes.create({
+    await ctx.displayTypes.create({
       ...base, id, name: `Bench ${i}`, defaultPlaylistId: base.defaultPlaylistId,
       phExtensions: { ...base.phExtensions, slots: Array.from({ length: SLOTS }, (_, s) => advSlot(`A${s + 1}`)) },
     } as typeof base)
@@ -123,8 +123,8 @@ if (SCALE > 0) {
 
 /* ---- history: windows billed long ago, as a database has after months ---- */
 if (HISTORY > 0) {
-  const first = allPositions(ctx)[0]
-  const len = windowMs(ctx)
+  const first = (await allPositions(ctx))[0]
+  const len = await windowMs(ctx)
   const insRes = ctx.db.prepare(
     `INSERT INTO reservations (id, partner_id, advertiser_id, campaign_id, position_id, window_start, type, channel, bid_cpm, currency, status, clearing_cpm, reason, test_mode, pricing_type, handed_off_at, created_at, updated_at)
      VALUES (?, 'p_google', 'nestle', 'c_seed_nestle', ?, ?, 'bid', 'openrtb', 150, 'AUD', 'won', 150, NULL, 0, 'localised', ?, ?, ?)`,
@@ -134,8 +134,8 @@ if (HISTORY > 0) {
      VALUES (?, ?, 'p_google', 'nestle', 'c_seed_nestle', ?, ?, ?, 100, 1000, 1000, 400, 400, 150, 'AUD', 60, ?)`,
   )
   const t = new Date().toISOString()
-  const positions = allPositions(ctx)
-  const current = windowStartOf(ctx, new Date()).getTime()
+  const positions = await allPositions(ctx)
+  const current = windowStartOf(new Date(), len).getTime()
   ctx.db.exec('BEGIN')
   for (let i = 0; i < HISTORY; i++) {
     /* Spread over the positions and back over past windows, starting years
@@ -203,11 +203,11 @@ async function visiblePositions() {
 const visible = await visiblePositions()
 const pos = visible[0]
 if (!pos) throw new Error('No visible position for the benchmark partner — the seed changed.')
-const w = nextWindow(ctx).toISOString().slice(0, 10)
+const w = (await nextWindow(ctx)).toISOString().slice(0, 10)
 const yearOut = new Date(Date.parse(w) + 364 * 86_400_000).toISOString().slice(0, 10)
-const types = ctx.displayTypes.list().length
-const displays = ctx.displays.list().length
-console.log(`\nEstate: ${types} display types, ${allPositions(ctx).length} advertiser positions (${visible.length} visible to the partner), ${displays} displays, ${ctx.stores.list().length} stores · concurrency ${CONCURRENCY} · ${SECONDS}s per endpoint\n`)
+const types = (await ctx.displayTypes.list()).length
+const displays = (await ctx.displays.list()).length
+console.log(`\nEstate: ${types} display types, ${(await allPositions(ctx)).length} advertiser positions (${visible.length} visible to the partner), ${displays} displays, ${(await ctx.stores.list()).length} stores · concurrency ${CONCURRENCY} · ${SECONDS}s per endpoint\n`)
 
 await drive('GET  /v1/inventory (page of 50)', () => fetch(`${BASE}/v1/inventory`, { headers: AUTH }))
 await drive('GET  /v1/inventory?status=available (1 yr)', () => fetch(`${BASE}/v1/inventory?status=available&from=${w}&to=${yearOut}`, { headers: AUTH }))
@@ -224,10 +224,12 @@ await drive('GET  /v1/inventory (bad token → 401)', () => fetch(`${BASE}/v1/in
 
 /* ---- advertisers bidding: one distinct (advertiser, position, window) per request ---- */
 {
-  const google = ctx.partners.get('p_google')!
-  const seats = google.seats.map((s) => advertiserSlug(s.name)).filter((id) => ctx.campaigns.getCampaign(`c_seed_${id}`))
+  const google = (await ctx.partners.get('p_google'))!
+  const seats: string[] = []
+  for (const s of google.seats) if (await ctx.campaigns.getCampaign(`c_seed_${advertiserSlug(s.name)}`)) seats.push(advertiserSlug(s.name))
   const windows: string[] = []
-  for (let win = nextWindow(ctx); Date.now() >= biddingOpensAt(ctx, win).getTime(); win = new Date(win.getTime() + windowMs(ctx))) windows.push(win.toISOString())
+  const companyLen = await windowMs(ctx)
+  for (let win = await nextWindow(ctx); Date.now() >= (await biddingOpensAt(ctx, win)).getTime(); win = new Date(win.getTime() + companyLen)) windows.push(win.toISOString())
   const total = seats.length * visible.length * windows.length
   let next = 0
   let placed = 0
@@ -266,24 +268,29 @@ await drive('GET  /v1/inventory (bad token → 401)', () => fetch(`${BASE}/v1/in
 /* ---------------------------------------------------------------- billing */
 if (HISTORY > 0) {
   const t0 = performance.now()
-  const items = runBilling(ctx)
+  const items = await runBilling(ctx)
   metrics['billing tick|ms'] = Math.round(performance.now() - t0)
   console.log(`Billing tick with ${HISTORY} windows already billed and nothing new: ${(performance.now() - t0).toFixed(0)} ms (${items.length} line items)`)
 }
 if (PLAYS_PER_DISPLAY > 0) {
   /* One ended window, won by Nestlé's campaign, on the most populous display type. */
-  const p = allPositions(ctx).reduce((best, x) => (ctx.displays.listByDisplayType(x.displayType.id).length > ctx.displays.listByDisplayType(best.displayType.id).length ? x : best))
+  let p = (await allPositions(ctx))[0]
+  let most = -1
+  for (const x of await allPositions(ctx)) {
+    const n = (await ctx.displays.listByDisplayType(x.displayType.id)).length
+    if (n > most) [p, most] = [x, n]
+  }
   const dt = p.displayType
   const campaignId = await campaignFor(ctx, { advertiserId: 'nestle', name: 'Nestlé', partnerId: 'p_google', displayTypeId: dt.id }, '#1b5e20', dt.displayCanvasSize.width, dt.displayCanvasSize.height)
-  const len = windowMs(ctx)
-  const start = new Date(windowStartOf(ctx, new Date()).getTime() - len)
+  const len = await windowMs(ctx)
+  const start = new Date(windowStartOf(new Date(), len).getTime() - len)
   const t = new Date().toISOString()
-  ctx.reservations.insert({
+  await ctx.reservations.insert({
     id: `res_bench_billing`, partnerId: 'p_google', advertiserId: 'nestle', campaignId, positionId: p.positionId, windowStart: start.toISOString(),
     type: 'bid', channel: 'openrtb', bidCpm: 150, currency: 'AUD', status: 'won', clearingCpm: 150, reason: null, testMode: false, pricingType: 'localised', handedOffAt: t,
   })
   const insPlay = ctx.db.prepare('INSERT INTO plays (id, display_id, campaign_id, played_at, duration_sec) VALUES (?, ?, ?, ?, ?)')
-  const ids = ctx.displays.listByDisplayType(dt.id).map((d) => d.id)
+  const ids = (await ctx.displays.listByDisplayType(dt.id)).map((d) => d.id)
   const t1 = performance.now()
   ctx.db.exec('BEGIN')
   for (const d of ids) {
@@ -293,7 +300,7 @@ if (PLAYS_PER_DISPLAY > 0) {
   const inserted = ids.length * PLAYS_PER_DISPLAY
   console.log(`Inserted ${inserted} plays (${ids.length} displays × ${PLAYS_PER_DISPLAY}) in ${(performance.now() - t1).toFixed(0)} ms`)
   const t2 = performance.now()
-  const items = runBilling(ctx)
+  const items = await runBilling(ctx)
   const mine = items.find((i) => i.reservationId === 'res_bench_billing')
   metrics['billing one window|ms'] = Math.round(performance.now() - t2)
   console.log(`Billing one window of ${inserted} plays: ${(performance.now() - t2).toFixed(0)} ms (${mine ? `${mine.plays} plays counted, ${mine.realisedViews} realised views, ${mine.amount} ${mine.currency}` : 'NOT billed'})`)

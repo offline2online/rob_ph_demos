@@ -27,12 +27,12 @@ describe('display types — POC stand-in endpoints', () => {
     const res = await app.inject({ method: 'POST', url: '/api/admin/v1/display-types', payload: newType() })
     expect(res.statusCode).toBe(201)
     expectMatchesContract('POST', '/admin/v1/display-types', 201, res.json())
-    expect(ctx.playlists.get('pl_dt_new')).toMatchObject({ name: 'Checkout Kiosk Playlist', autoCreatedFor: 'dt_new' })
+    expect(await ctx.playlists.get('pl_dt_new')).toMatchObject({ name: 'Checkout Kiosk Playlist', autoCreatedFor: 'dt_new' })
     /* Ticket, 28 Sep 2026: a new display type's own playlist starts with
        every setting at its default — nothing overridden. (A playlist added
        to an existing display type, or a zone's, still starts with
        Auto-Rotation/Auto-Play explicitly off — the PUT …/record test.) */
-    expect(ctx.playlists.get('pl_dt_new')?.playlistSettings).toEqual({})
+    expect((await ctx.playlists.get('pl_dt_new'))?.playlistSettings).toEqual({})
   })
 
   it('POST rejects unknown touch points and a missing name', async () => {
@@ -55,7 +55,7 @@ describe('display types — POC stand-in endpoints', () => {
 
   it('PUT …/record saves existing fields, never phExtensions, and creates zone playlists on demand', async () => {
     const { app, ctx } = await setup()
-    const landscape = ctx.displayTypes.get('landscape') as DisplayType
+    const landscape = (await ctx.displayTypes.get('landscape')) as DisplayType
     const payload = {
       ...landscape, name: 'Landscape HD', phExtensions: { slots: [{ label: 'x', owner: 'internal' as const }] },
       multiZone: { enabled: true, zones: [{ id: 'z1', name: 'Zone 1', x: 0, y: 0, width: 50, height: 100, playlistId: 'pl_zone_landscape_1' }] },
@@ -65,19 +65,19 @@ describe('display types — POC stand-in endpoints', () => {
     expectMatchesContract('PUT', '/admin/v1/display-types/{displayTypeId}/record', 200, res.json())
     expect(res.json().name).toBe('Landscape HD')
     expect(res.json().phExtensions).toEqual(landscape.phExtensions)
-    expect(ctx.playlists.get('pl_zone_landscape_1')).toMatchObject({ name: 'Landscape HD / Zone 1', autoCreatedFor: 'landscape' })
-    expect(ctx.playlists.get('pl_zone_landscape_1')?.playlistSettings).toEqual({ campaignAutoRotation: 'Auto-Rotate Off', campaignAutoPlay: 'Auto-Play Off' })
+    expect(await ctx.playlists.get('pl_zone_landscape_1')).toMatchObject({ name: 'Landscape HD / Zone 1', autoCreatedFor: 'landscape' })
+    expect((await ctx.playlists.get('pl_zone_landscape_1'))?.playlistSettings).toEqual({ campaignAutoRotation: 'Auto-Rotate Off', campaignAutoPlay: 'Auto-Play Off' })
   })
 
   it('switching a display type to multi-zone keeps its old default playlist, unassigned, and gives the layout its own playlist', async () => {
     const { app, ctx } = await setup()
-    const landscape = ctx.displayTypes.get('landscape') as DisplayType
+    const landscape = (await ctx.displayTypes.get('landscape')) as DisplayType
     const oldId = landscape.defaultPlaylistId as string
     const zone = { id: 'z1', name: 'Zone 1', x: 0, y: 0, width: 100, height: 100, playlistId: 'pl_zone_landscape_1' }
     const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/display-types/landscape/record', payload: { ...landscape, multiZone: { enabled: true, zones: [zone] } } })
     expect(res.statusCode).toBe(200)
     expect(res.json().defaultPlaylistId).toBe('pl_landscape_layout')
-    expect(ctx.playlists.get(oldId)).not.toBeNull()
+    expect(await ctx.playlists.get(oldId)).not.toBeNull()
     const list = (await app.inject({ method: 'GET', url: '/api/admin/v1/playlists' })).json().items
     expect(list.find((p: { id: string }) => p.id === oldId).assignments).toEqual([])
     expect(list.find((p: { id: string }) => p.id === 'pl_zone_landscape_1').assignments).toHaveLength(1)
@@ -136,7 +136,7 @@ describe('PUT /admin/v1/display-types/{id}/extensions — slot ownership', () =>
     expectMatchesContract('PUT', '/admin/v1/display-types/{displayTypeId}/extensions', 200, res.json())
     expect(res.json().slots.map((s: { label: string; owner: string }) => [s.owner, s.label]))
       .toEqual([['internal', 'Priority 1'], ['advertiser', 'Brand slot'], ['internal', 'Store choice']])
-    expect(ctx.displayTypes.get('menu_board')?.phExtensions?.venue).toMatchObject({ orientation: 'landscape' })
+    expect((await ctx.displayTypes.get('menu_board'))?.phExtensions?.venue).toMatchObject({ orientation: 'landscape' })
   })
 
   it('keeps what Advertisers / Inventory set while the slot stays sellable, and drops it when it doesn’t', async () => {
@@ -147,7 +147,7 @@ describe('PUT /admin/v1/display-types/{id}/extensions — slot ownership', () =>
     /* Owner changed: it is no longer sellable inventory, so the assignment goes. */
     const dropped = await put(app, 'menu_board', { slots: [{ label: 'Priority 1', owner: 'internal', zoneId: 'z1' }, { label: 'Brand slot', owner: 'internal', zoneId: 'z1' }, { label: 'Store choice', owner: 'internal', zoneId: 'z1' }] })
     expect(dropped.json().slots[1]).toMatchObject({ advertisers: [], partnerIds: [], listMode: null })
-    expect(ctx.displayTypes.get('menu_board')?.phExtensions?.slots[1].supportedTargeting).toBeUndefined()
+    expect((await ctx.displayTypes.get('menu_board'))?.phExtensions?.slots[1].supportedTargeting).toBeUndefined()
   })
 
   it('ignores an assignment sent with the slots, and gives a Stores slot the default scope', async () => {
@@ -162,7 +162,7 @@ describe('PUT /admin/v1/display-types/{id}/extensions — slot ownership', () =>
      slots stay as they are, but no new one can be set up. */
   it('with DSP integration switched off, keeps existing advertiser slots but refuses a new one', async () => {
     const { app, ctx } = await setup()
-    ctx.exchange.save({ ...ctx.exchange.get(), enabled: false })
+    await ctx.exchange.save({ ...(await ctx.exchange.get()), enabled: false })
     /* Slot 2 already was Advertiser: saving it unchanged (or relabelled) is fine. */
     const kept = await put(app, 'menu_board', menuSlots({ label: 'Brand slot' }))
     expect(kept.statusCode).toBe(200)
@@ -172,9 +172,9 @@ describe('PUT /admin/v1/display-types/{id}/extensions — slot ownership', () =>
     expect(added.statusCode).toBe(400)
     expectMatchesContract('PUT', '/admin/v1/display-types/{displayTypeId}/extensions', 400, added.json())
     expect(added.json().error.details).toEqual([{ field: 'slots[0].owner', reason: expect.stringContaining('Switch on DSP integration') }])
-    expect(ctx.displayTypes.get('menu_board')?.phExtensions?.slots[0].owner).toBe('internal')
+    expect((await ctx.displayTypes.get('menu_board'))?.phExtensions?.slots[0].owner).toBe('internal')
     /* Switched back on, it can be. */
-    ctx.exchange.save({ ...ctx.exchange.get(), enabled: true })
+    await ctx.exchange.save({ ...(await ctx.exchange.get()), enabled: true })
     expect((await put(app, 'menu_board', { slots: [{ label: 'Priority 1', owner: 'advertiser', zoneId: 'z1' }, { label: 'Brand slot', owner: 'advertiser', zoneId: 'z1' }, { label: 'Store choice', owner: 'internal', zoneId: 'z1' }] })).statusCode).toBe(200)
   })
 
@@ -197,7 +197,7 @@ describe('PUT /admin/v1/display-types/{id}/extensions — slot ownership', () =>
      belongs to, and a single-zone display type takes no zone at all. */
   it('sizes a multi-zone display type’s slots per zone, in zone order, from each zone’s own cap', async () => {
     const { app, ctx } = await setup()
-    const dt = ctx.displayTypes.get('menu_board') as DisplayType
+    const dt = (await ctx.displayTypes.get('menu_board')) as DisplayType
     const zones = (dt.multiZone as { zones: { id: string; maximumCampaignsPlayedInRotation: number | null }[] }).zones
     /* Zone 2 gets a rotation of two: the display type now carries 3 + 2 slots. */
     const withZone2 = { ...dt, multiZone: { enabled: true, zones: zones.map((z) => (z.id === 'z2' ? { ...z, maximumCampaignsPlayedInRotation: 2 } : z)) } }
@@ -218,7 +218,7 @@ describe('PUT /admin/v1/display-types/{id}/extensions — slot ownership', () =>
     expect(ok.json().slots.map((s: { zoneId: string | null }) => s.zoneId)).toEqual(['z1', 'z1', 'z1', 'z2', 'z2'])
 
     /* A single-zone display type's slots belong to no zone. */
-    const landscape = ctx.displayTypes.get('landscape') as DisplayType
+    const landscape = (await ctx.displayTypes.get('landscape')) as DisplayType
     await app.inject({ method: 'PUT', url: '/api/admin/v1/display-types/landscape/record', payload: { ...landscape, playlistSettings: { ...landscape.playlistSettings, maximumCampaignsPlayedInRotation: 1 } } })
     const stray = await put(app, 'landscape', { slots: [{ label: 'Only', owner: 'internal', zoneId: 'z1' }] })
     expect(stray.json().error.details).toEqual([{ field: 'slots[0].zoneId', reason: 'Unknown zone.' }])
@@ -231,11 +231,11 @@ describe('PUT /admin/v1/display-types/{id}/extensions — slot ownership', () =>
      untagged ones to the first, and each zone's cap becomes what it got. */
   it('reads a pre-28-Sep multi-zone record as one segment per zone, each zone capped by what it received', async () => {
     const { ctx } = await setup()
-    const dt = ctx.displayTypes.get('menu_board') as DisplayType
+    const dt = (await ctx.displayTypes.get('menu_board')) as DisplayType
     const legacyZones = (dt.multiZone as { zones: Record<string, unknown>[] }).zones.map(({ maximumCampaignsPlayedInRotation: _cap, ...z }) => z)
-    ctx.displayTypes.saveRecord('menu_board', { ...dt, multiZone: { enabled: true, zones: legacyZones } })
-    ctx.displayTypes.saveExtensions('menu_board', { ...dt.phExtensions!, slots: dt.phExtensions!.slots.map((s, i) => ({ ...s, zoneId: i === 1 ? 'z3' : null })) })
-    const read = ctx.displayTypes.get('menu_board') as DisplayType
+    await ctx.displayTypes.saveRecord('menu_board', { ...dt, multiZone: { enabled: true, zones: legacyZones } })
+    await ctx.displayTypes.saveExtensions('menu_board', { ...dt.phExtensions!, slots: dt.phExtensions!.slots.map((s, i) => ({ ...s, zoneId: i === 1 ? 'z3' : null })) })
+    const read = (await ctx.displayTypes.get('menu_board')) as DisplayType
     expect((read.multiZone as { zones: { id: string; maximumCampaignsPlayedInRotation: number | null }[] }).zones.map((z) => [z.id, z.maximumCampaignsPlayedInRotation])).toEqual([['z1', 2], ['z2', null], ['z3', 1]])
     expect(read.phExtensions?.slots.map((s) => [s.label, s.zoneId])).toEqual([['Priority 1', 'z1'], ['Store choice', 'z1'], ['Supplier slot', 'z3']])
   })
@@ -267,7 +267,7 @@ describe('PUT /admin/v1/display-types/{id}/extensions — Website/Mobile App are
 
     const internal = await put(app, `dt_${touchPoint}`, { slots: [{ label: 'Slot 1', owner: 'internal' }] })
     expect(internal.statusCode).toBe(200)
-    expect(ctx.displayTypes.get(`dt_${touchPoint}`)?.phExtensions?.slots).toMatchObject([{ owner: 'internal' }])
+    expect((await ctx.displayTypes.get(`dt_${touchPoint}`))?.phExtensions?.slots).toMatchObject([{ owner: 'internal' }])
   })
 })
 

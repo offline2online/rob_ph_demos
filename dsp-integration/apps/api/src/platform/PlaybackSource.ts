@@ -1,6 +1,6 @@
 /* Stand-in for the existing playback data. Read only: this build reads it
    for billing reconciliation and never writes or reports on it. */
-import { type Db, prepared } from '../db/db'
+import { type Db, prepared, type Awaitable } from '../db/db'
 
 /* Which version of the campaign a play showed (Rob, 30 Sep 2026): the
    default, a localised one or a personalised one. Only PH Core's playback
@@ -15,7 +15,7 @@ export interface PlayRecord { displayId: string; campaignId: string; playedAt: s
 export interface PlayTotals { plays: number; playedSec: number; personalised?: { plays: number; playedSec: number } }
 
 export interface PlaybackSource {
-  listPlays(q: { campaignId?: string; from: string; to: string }): PlayRecord[]
+  listPlays(q: { campaignId?: string; from: string; to: string }): Awaitable<PlayRecord[]>
   /* A campaign's plays on the displays of one display type in a window,
      as a count and a total duration — aggregated where the plays are
      stored, never read row by row. Billing asks this once per sold window
@@ -23,7 +23,7 @@ export interface PlaybackSource {
      million plays, which listPlays turned into 1.9 million objects and
      23 seconds of the API's one thread. On integration the platform's
      playback store answers this from its own aggregates. */
-  totals(q: { campaignId: string; displayTypeId: string; from: string; to: string }): PlayTotals
+  totals(q: { campaignId: string; displayTypeId: string; from: string; to: string }): Awaitable<PlayTotals>
 }
 
 interface Row { display_id: string; campaign_id: string; played_at: string; duration_sec: number; version_id: string | null; tier: PlayTier | null }
@@ -42,7 +42,7 @@ export const sqlitePlaybackSource = (db: Db): PlaybackSource => ({
        this way, 0.6 s as a join, 17 s as rows into JavaScript. */
     const r = prepared(db,
       `SELECT COUNT(*) AS plays, COALESCE(SUM(duration_sec), 0) AS played_sec,
-              COALESCE(SUM(tier = 'personalised'), 0) AS p_plays,
+              COALESCE(SUM(CASE WHEN tier = 'personalised' THEN 1 ELSE 0 END), 0) AS p_plays,
               COALESCE(SUM(CASE WHEN tier = 'personalised' THEN duration_sec END), 0) AS p_sec
          FROM plays
         WHERE campaign_id = ? AND played_at >= ? AND played_at < ?

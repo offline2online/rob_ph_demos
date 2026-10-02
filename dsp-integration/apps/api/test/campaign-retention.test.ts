@@ -11,12 +11,12 @@ describe('sweepRejectedCampaigns (spec §3 "Enforcement and audit")', () => {
     await ctx.approvals.reject('c_api_swisse', v, 'hq', 'Price in artwork')
 
     /* Still within the window: nothing deleted. */
-    const early = sweepRejectedCampaigns(ctx.db, 30, () => new Date(Date.now() + 29 * DAY))
+    const early = await sweepRejectedCampaigns(ctx.db, 30, () => new Date(Date.now() + 29 * DAY))
     expect(early.deletedCampaignIds).not.toContain('c_api_swisse')
     expect(ctx.db.prepare('SELECT 1 FROM campaigns WHERE id = ?').get('c_api_swisse')).toBeTruthy()
 
     /* Past the window: the campaign and its assets are gone, the audit trail survives. */
-    const late = sweepRejectedCampaigns(ctx.db, 30, () => new Date(Date.now() + 31 * DAY))
+    const late = await sweepRejectedCampaigns(ctx.db, 30, () => new Date(Date.now() + 31 * DAY))
     expect(late.deletedCampaignIds).toContain('c_api_swisse')
     expect(ctx.db.prepare('SELECT 1 FROM campaigns WHERE id = ?').get('c_api_swisse')).toBeUndefined()
     expect(ctx.db.prepare('SELECT COUNT(*) AS n FROM campaign_assets WHERE campaign_id = ?').get('c_api_swisse')).toEqual({ n: 0 })
@@ -28,7 +28,7 @@ describe('sweepRejectedCampaigns (spec §3 "Enforcement and audit")', () => {
   it('is scoped to Rejected only — Draft, Awaiting approval and Approved are never swept, however old', async () => {
     const ctx = await testContext()
     /* c_api_swisse starts Awaiting approval; c_dsp_nestle starts auto-approved. Neither is ever Rejected. */
-    const result = sweepRejectedCampaigns(ctx.db, 30, () => new Date(Date.now() + 365 * DAY))
+    const result = await sweepRejectedCampaigns(ctx.db, 30, () => new Date(Date.now() + 365 * DAY))
     expect(result.deletedCampaignIds).not.toContain('c_api_swisse')
     expect(result.deletedCampaignIds).not.toContain('c_dsp_nestle')
     expect(ctx.db.prepare('SELECT 1 FROM campaigns WHERE id = ?').get('c_api_swisse')).toBeTruthy()
@@ -42,13 +42,13 @@ describe('sweepRejectedCampaigns (spec §3 "Enforcement and audit")', () => {
     await ctx.approvals.unreject('c_api_swisse', v, 'hq-admin')
 
     /* No longer Rejected: never swept, however old the (undone) rejection was. */
-    expect(sweepRejectedCampaigns(ctx.db, 30, () => new Date(Date.now() + 365 * DAY)).deletedCampaignIds).not.toContain('c_api_swisse')
+    expect((await sweepRejectedCampaigns(ctx.db, 30, () => new Date(Date.now() + 365 * DAY))).deletedCampaignIds).not.toContain('c_api_swisse')
     expect(ctx.db.prepare('SELECT 1 FROM campaigns WHERE id = ?').get('c_api_swisse')).toBeTruthy()
 
     /* Rejected again: the clock restarts from the new rejection. */
     await ctx.approvals.reject('c_api_swisse', v, 'hq', 'Still has a price in it')
-    expect(sweepRejectedCampaigns(ctx.db, 30, () => new Date(Date.now() + 29 * DAY)).deletedCampaignIds).not.toContain('c_api_swisse')
-    expect(sweepRejectedCampaigns(ctx.db, 30, () => new Date(Date.now() + 31 * DAY)).deletedCampaignIds).toContain('c_api_swisse')
+    expect((await sweepRejectedCampaigns(ctx.db, 30, () => new Date(Date.now() + 29 * DAY))).deletedCampaignIds).not.toContain('c_api_swisse')
+    expect((await sweepRejectedCampaigns(ctx.db, 30, () => new Date(Date.now() + 31 * DAY))).deletedCampaignIds).toContain('c_api_swisse')
   })
 
   it('the retention window is configurable, not hard-coded', async () => {
@@ -56,6 +56,6 @@ describe('sweepRejectedCampaigns (spec §3 "Enforcement and audit")', () => {
     const v = (await ctx.approvals.view('c_api_swisse')).assetVersion
     await ctx.approvals.reject('c_api_swisse', v, 'hq', 'Price in artwork')
     /* A 7-day window catches what a 30-day window would still be holding. */
-    expect(sweepRejectedCampaigns(ctx.db, 7, () => new Date(Date.now() + 8 * DAY)).deletedCampaignIds).toContain('c_api_swisse')
+    expect((await sweepRejectedCampaigns(ctx.db, 7, () => new Date(Date.now() + 8 * DAY))).deletedCampaignIds).toContain('c_api_swisse')
   })
 })

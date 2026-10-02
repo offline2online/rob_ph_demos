@@ -4,6 +4,7 @@ import { MAX_MAX_CAMPAIGNS, MIN_MAX_CAMPAIGNS, TARGETING_MODES, advertiserSlug, 
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { cleanList, validateAdvertiserSettings } from '../../domain/advertiserSettings'
+import { tx } from '../../db/db'
 import { companyWindowCommitments, positionIdOf, slotWindowCommitments, unsellableReason } from '../../domain/positions'
 import { zonesOf } from '../../domain/displayTypes'
 import { assignedToSlot, validateAssigned } from '../../domain/slots'
@@ -21,9 +22,9 @@ const hasQrControl = (dt: DisplayType) => !!(dt.qrControl as { enabled?: boolean
 const hasVisionAi = (dt: DisplayType) => !!(dt.enabledFeatures as { visionAi?: { enabled?: boolean } } | undefined)?.visionAi?.enabled
 
 export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => async (app) => {
-  const view = (): AdvertiserSettings => ({
-    ...ctx.company.get(),
-    whereTheseApply: ctx.partners.list().map((p) => ({ partnerId: p.id, name: p.name, adopting: p.listsLinked })),
+  const view = async (): Promise<AdvertiserSettings> => ({
+    ...(await ctx.company.get()),
+    whereTheseApply: (await ctx.partners.list()).map((p) => ({ partnerId: p.id, name: p.name, adopting: p.listsLinked })),
   })
 
   app.get('/advertiser-settings', async (req) => {
@@ -47,28 +48,32 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
        promotes it on its own. A request that doesn't touch playWindowHours
        leaves any change already pending exactly as it was. Since OQ27 only
        the windows of slots that inherit it count (companyWindowCommitments):
-       a slot with its own billing unit isn't resized by this change. */
-    const current = ctx.company.get()
-    let playWindowHours = current.playWindowHours
-    let pendingPlayWindowHours = current.pendingPlayWindowHours
-    let pendingPlayWindowEffectiveFrom = current.pendingPlayWindowEffectiveFrom
-    if (b.playWindowHours !== current.playWindowHours) {
-      const active = companyWindowCommitments(ctx)
-      if (!active.length) {
-        playWindowHours = b.playWindowHours
-        pendingPlayWindowHours = null
-        pendingPlayWindowEffectiveFrom = null
-      } else {
-        pendingPlayWindowHours = b.playWindowHours
-        pendingPlayWindowEffectiveFrom = new Date(Math.max(...active.map((r) => Date.parse(r.windowStart) + current.playWindowHours * 3_600_000))).toISOString()
+       a slot with its own billing unit isn't resized by this change.
+       One transaction from the read to the save: a scheduler tick promoting
+       a deferred length can't land in between and be overwritten. */
+    await tx(ctx.db, async () => {
+      const current = await ctx.company.get()
+      let playWindowHours = current.playWindowHours
+      let pendingPlayWindowHours = current.pendingPlayWindowHours
+      let pendingPlayWindowEffectiveFrom = current.pendingPlayWindowEffectiveFrom
+      if (b.playWindowHours !== current.playWindowHours) {
+        const active = await companyWindowCommitments(ctx)
+        if (!active.length) {
+          playWindowHours = b.playWindowHours
+          pendingPlayWindowHours = null
+          pendingPlayWindowEffectiveFrom = null
+        } else {
+          pendingPlayWindowHours = b.playWindowHours
+          pendingPlayWindowEffectiveFrom = new Date(Math.max(...active.map((r) => Date.parse(r.windowStart) + current.playWindowHours * 3_600_000))).toISOString()
+        }
       }
-    }
-    ctx.company.save({
-      currency: b.currency, floorCpm: b.floorCpm, personalisedMultiplier: b.personalisedMultiplier, interactiveCpe: b.interactiveCpe,
-      auctionOpensHours: b.auctionOpensHours, playWindowHours, auctionCutoffTime: b.auctionCutoffTime,
-      pendingPlayWindowHours, pendingPlayWindowEffectiveFrom,
-      advertiserWhitelist: cleanList(b.advertiserWhitelist), advertiserBlacklist: cleanList(b.advertiserBlacklist),
-      categoryWhitelist: cleanList(b.categoryWhitelist), categoryBlacklist: cleanList(b.categoryBlacklist),
+      await ctx.company.save({
+        currency: b.currency, floorCpm: b.floorCpm, personalisedMultiplier: b.personalisedMultiplier, interactiveCpe: b.interactiveCpe,
+        auctionOpensHours: b.auctionOpensHours, playWindowHours, auctionCutoffTime: b.auctionCutoffTime,
+        pendingPlayWindowHours, pendingPlayWindowEffectiveFrom,
+        advertiserWhitelist: cleanList(b.advertiserWhitelist), advertiserBlacklist: cleanList(b.advertiserBlacklist),
+        categoryWhitelist: cleanList(b.categoryWhitelist), categoryBlacklist: cleanList(b.categoryBlacklist),
+      })
     })
     return view()
   })
@@ -77,14 +82,14 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
   /* Every advertiser-owned slot, and the DSPs (with their advertisers) a
      position can be assigned to — the options behind the Assigned to
      multi-select (Rob, 20 Sep). */
-  const inventory = () => {
+  const inventory = async () => {
     /* A lock whose bookings have all played is released before it is shown. */
-    releaseSettledSlotLocks(ctx)
-    const partners = ctx.partners.list()
-    const buyersLists = ctx.buyersLists.list()
+    await releaseSettledSlotLocks(ctx)
+    const partners = await ctx.partners.list()
+    const buyersLists = await ctx.buyersLists.list()
     const items: AvailableInventoryRow[] = []
-    const company = ctx.company.get()
-    for (const t of ctx.displayTypes.list()) {
+    const company = await ctx.company.get()
+    for (const t of await ctx.displayTypes.list()) {
       const zones = zonesOf(t)
       /* A position's playlist, per slot: the zone playlist it's tagged to
          (Slot.zoneId) when this is a multi-zone display type and the slot
@@ -112,7 +117,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
          "Unassigned" indicator, not a live/sold state (that's out of scope
          — this build has no such concept). Per display type, since a
          multi-zone display type's zones all share the one physical screen. */
-      const unassigned = ctx.displays.summaryByDisplayType(t.id).displays === 0
+      const unassigned = (await ctx.displays.summaryByDisplayType(t.id)).displays === 0
       /* zoneSlot: this slot's 1-based position within its own zone's segment
          of the list, rather than `slot`'s flat position across every zone
          (ticket, 28 Sep 2026 — Rob: setting Zone 2's first slot showed as
@@ -124,16 +129,16 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
          no zoneId (a single-zone display type) has only one segment, so this
          is the same value as `slot`. */
       const zoneSlotCounts = new Map<string | null, number>()
-      ;(t.phExtensions?.slots ?? []).forEach((s, i) => {
+      for (const [i, s] of (t.phExtensions?.slots ?? []).entries()) {
         const zoneKey = zoneOfSlot(s)?.id ?? null
         const zoneSlot = (zoneSlotCounts.get(zoneKey) ?? 0) + 1
         zoneSlotCounts.set(zoneKey, zoneSlot)
-        if (s.owner !== 'advertiser') return
+        if (s.owner !== 'advertiser') continue
         const a = assignedOf(s)
         const playlistId = playlistIdOf(s)
-        const playlistName = (playlistId && ctx.playlists.get(playlistId)?.name) || '—'
+        const playlistName = (playlistId && (await ctx.playlists.get(playlistId))?.name) || '—'
         items.push({
-          displayTypeId: t.id, displayTypeName: t.name, touchPoint: t.touchPoint, playlistName, playlistId, unassigned, scored: ctx.audience.forSlot(t.id, i + 1).scored, unsellableReason: unsellableReason(ctx, { positionId: positionIdOf(t.id, i + 1), displayType: t, slot: i + 1, def: s }), salesLocked: s.salesLocked === true, salesLockedUntil: s.salesLocked ? slotBookedUntil(ctx, t.id, i + 1) : null, slot: i + 1, zoneSlot, position: s.label,
+          displayTypeId: t.id, displayTypeName: t.name, touchPoint: t.touchPoint, playlistName, playlistId, unassigned, scored: (await ctx.audience.forSlot(t.id, i + 1)).scored, unsellableReason: await unsellableReason(ctx, { positionId: positionIdOf(t.id, i + 1), displayType: t, slot: i + 1, def: s }), salesLocked: s.salesLocked === true, salesLockedUntil: s.salesLocked ? await slotBookedUntil(ctx, t.id, i + 1) : null, slot: i + 1, zoneSlot, position: s.label,
           assignedTo: {
             ...a,
             partnerNames: a.partnerIds.map((id) => partners.find((p) => p.id === id)?.name ?? id),
@@ -153,7 +158,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
           maxCampaignsOverride: s.maxCampaigns ?? null,
           displayTypeMaxCampaigns: t.phExtensions?.maxCampaigns ?? null,
         })
-      })
+      }
     }
     const dsps: DspAdvertisers[] = partners.map((p) => ({ partnerId: p.id, name: p.name, advertisers: p.seats.map((s) => ({ advertiserId: advertiserSlug(s.name), name: s.name })) }))
     return { items, dsps }
@@ -173,16 +178,19 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
     guards.requireScope(req, 'admin')
     const { displayTypeId, slot } = req.body ?? {}
     if (typeof displayTypeId !== 'string' || typeof slot !== 'number' || !Number.isInteger(slot) || slot < 1) throw validationFailed([{ field: 'slot', reason: 'A display type and a slot number are required.' }])
-    const dt = ctx.displayTypes.get(displayTypeId)
-    if (!dt) throw notFound('Unknown display type.')
-    const def = dt.phExtensions?.slots?.[slot - 1]
-    if (!def) throw validationFailed([{ field: 'slot', reason: `${dt.name} has no slot ${slot}.` }])
-    if (def.owner !== 'advertiser') throw validationFailed([{ field: 'slot', reason: 'Only an Advertiser slot is sellable inventory.' }])
-    if (!def.salesLocked) {
-      if (!slotLiveBookings(ctx, dt.id, slot).length) throw conflict('Nothing is sold on this slot, so there is nothing to lock: remove the advertiser instead.')
-      const ext = dt.phExtensions!
-      ctx.displayTypes.saveExtensions(dt.id, { ...ext, slots: ext.slots.map((s, i) => (i === slot - 1 ? { ...s, salesLocked: true } : s)) })
-    }
+    /* Read, check and save as one transaction. */
+    await tx(ctx.db, async () => {
+      const dt = await ctx.displayTypes.get(displayTypeId)
+      if (!dt) throw notFound('Unknown display type.')
+      const def = dt.phExtensions?.slots?.[slot - 1]
+      if (!def) throw validationFailed([{ field: 'slot', reason: `${dt.name} has no slot ${slot}.` }])
+      if (def.owner !== 'advertiser') throw validationFailed([{ field: 'slot', reason: 'Only an Advertiser slot is sellable inventory.' }])
+      if (!def.salesLocked) {
+        if (!(await slotLiveBookings(ctx, dt.id, slot)).length) throw conflict('Nothing is sold on this slot, so there is nothing to lock: remove the advertiser instead.')
+        const ext = dt.phExtensions!
+        await ctx.displayTypes.saveExtensions(dt.id, { ...ext, slots: ext.slots.map((s, i) => (i === slot - 1 ? { ...s, salesLocked: true } : s)) })
+      }
+    })
     return inventory()
   })
 
@@ -237,135 +245,139 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
     const rows = Array.isArray(req.body?.items) ? (req.body.items as { displayTypeId?: unknown; slot?: unknown; supportedTargeting?: unknown; assignedTo?: unknown; reservePrice?: unknown; reservePriceDefault?: unknown; billingUnitHours?: unknown; billingUnitHoursDefault?: unknown; maxCampaigns?: unknown; maxCampaignsDefault?: unknown }[]) : null
     if (!rows) throw validationFailed([{ field: 'items', reason: 'An array of slots is required.' }])
     const keys = TARGETING_MODES.map((m) => m.key) as string[]
-    const partners = ctx.partners.list()
-    const company = ctx.company.get()
-    const errors: { field: string; reason: string }[] = []
-    type Patch = { supportedTargeting: TargetingMode[]; assigned: Assigned; reservePrice: number | null; billingUnitHours: number | null; maxCampaigns: number | null }
-    const wanted = new Map<string, Map<number, Patch>>()
-    const defaults = new Map<string, number | null>()
-    const billingUnitDefaults = new Map<string, number | null>()
-    const maxCampaignsDefaults = new Map<string, number | null>()
-    const names = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string').map((x) => x.trim()).filter(Boolean) : [])
+    /* Validation, the sold and resize checks and the save are one
+       transaction: nothing can be sold, or the slot edited, in between. */
+    await tx(ctx.db, async () => {
+      const partners = await ctx.partners.list()
+      const company = await ctx.company.get()
+      const errors: { field: string; reason: string }[] = []
+      type Patch = { supportedTargeting: TargetingMode[]; assigned: Assigned; reservePrice: number | null; billingUnitHours: number | null; maxCampaigns: number | null }
+      const wanted = new Map<string, Map<number, Patch>>()
+      const defaults = new Map<string, number | null>()
+      const billingUnitDefaults = new Map<string, number | null>()
+      const maxCampaignsDefaults = new Map<string, number | null>()
+      const names = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string').map((x) => x.trim()).filter(Boolean) : [])
 
-    rows.forEach((r, i) => {
-      const f = (k: string) => `items[${i}].${k}`
-      const dt = typeof r.displayTypeId === 'string' ? ctx.displayTypes.get(r.displayTypeId) : null
-      const slot = typeof r.slot === 'number' ? r.slot : 0
-      const def = dt?.phExtensions?.slots?.[slot - 1]
-      if (!dt) errors.push({ field: f('displayTypeId'), reason: 'Unknown display type.' })
-      else if (!def) errors.push({ field: f('slot'), reason: `${dt.name} has no slot ${slot}.` })
-      else if (def.owner !== 'advertiser') errors.push({ field: f('slot'), reason: 'Only an Advertiser slot is sellable inventory.' })
+      for (const [i, r] of rows.entries()) {
+        const f = (k: string) => `items[${i}].${k}`
+        const dt = typeof r.displayTypeId === 'string' ? await ctx.displayTypes.get(r.displayTypeId) : null
+        const slot = typeof r.slot === 'number' ? r.slot : 0
+        const def = dt?.phExtensions?.slots?.[slot - 1]
+        if (!dt) errors.push({ field: f('displayTypeId'), reason: 'Unknown display type.' })
+        else if (!def) errors.push({ field: f('slot'), reason: `${dt.name} has no slot ${slot}.` })
+        else if (def.owner !== 'advertiser') errors.push({ field: f('slot'), reason: 'Only an Advertiser slot is sellable inventory.' })
 
-      const modes = Array.isArray(r.supportedTargeting) ? (r.supportedTargeting as unknown[]) : null
-      let targeting: TargetingMode[] | null = null
-      if (!modes?.length) errors.push({ field: f('supportedTargeting'), reason: 'Choose at least one type of targeting.' })
-      else if (modes.some((m) => typeof m !== 'string' || !keys.includes(m))) errors.push({ field: f('supportedTargeting'), reason: `One of: ${keys.join(', ')}.` })
-      /* Nothing to engage with without the QR code (Rob, 20 Sep). */
-      else if (modes.includes('interactive') && dt && !hasQrControl(dt)) errors.push({ field: f('supportedTargeting'), reason: 'QR Control is required to support an interactive engagement.' })
-      else targeting = keys.filter((k) => modes.includes(k)) as TargetingMode[]
+        const modes = Array.isArray(r.supportedTargeting) ? (r.supportedTargeting as unknown[]) : null
+        let targeting: TargetingMode[] | null = null
+        if (!modes?.length) errors.push({ field: f('supportedTargeting'), reason: 'Choose at least one type of targeting.' })
+        else if (modes.some((m) => typeof m !== 'string' || !keys.includes(m))) errors.push({ field: f('supportedTargeting'), reason: `One of: ${keys.join(', ')}.` })
+        /* Nothing to engage with without the QR code (Rob, 20 Sep). */
+        else if (modes.includes('interactive') && dt && !hasQrControl(dt)) errors.push({ field: f('supportedTargeting'), reason: 'QR Control is required to support an interactive engagement.' })
+        else targeting = keys.filter((k) => modes.includes(k)) as TargetingMode[]
 
-      const raw = (r.assignedTo ?? {}) as { partnerIds?: unknown; advertisers?: unknown; whitelistOnly?: unknown; buyersListId?: unknown }
-      const assigned: Assigned = { partnerIds: names(raw.partnerIds), advertisers: names(raw.advertisers), whitelistOnly: raw.whitelistOnly === true, buyersListId: typeof raw.buyersListId === 'string' ? raw.buyersListId : null }
-      const bad = validateAssigned(assigned, (k) => f(`assignedTo.${k}`), partners, company, def ? assignedOf(def) : { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: null }, ctx.buyersLists)
-      errors.push(...bad)
+        const raw = (r.assignedTo ?? {}) as { partnerIds?: unknown; advertisers?: unknown; whitelistOnly?: unknown; buyersListId?: unknown }
+        const assigned: Assigned = { partnerIds: names(raw.partnerIds), advertisers: names(raw.advertisers), whitelistOnly: raw.whitelistOnly === true, buyersListId: typeof raw.buyersListId === 'string' ? raw.buyersListId : null }
+        const bad = await validateAssigned(assigned, (k) => f(`assignedTo.${k}`), partners, company, def ? assignedOf(def) : { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: null }, ctx.buyersLists)
+        errors.push(...bad)
 
-      const reservePrice = parseReservePrice(r.reservePrice, f('reservePrice'), errors)
-      const reservePriceDefault = parseReservePrice(r.reservePriceDefault, f('reservePriceDefault'), errors)
-      if (dt) {
-        if (defaults.has(dt.id) && defaults.get(dt.id) !== reservePriceDefault) errors.push({ field: f('reservePriceDefault'), reason: 'All slots on a display type must submit the same reserve price default.' })
-        else defaults.set(dt.id, reservePriceDefault)
+        const reservePrice = parseReservePrice(r.reservePrice, f('reservePrice'), errors)
+        const reservePriceDefault = parseReservePrice(r.reservePriceDefault, f('reservePriceDefault'), errors)
+        if (dt) {
+          if (defaults.has(dt.id) && defaults.get(dt.id) !== reservePriceDefault) errors.push({ field: f('reservePriceDefault'), reason: 'All slots on a display type must submit the same reserve price default.' })
+          else defaults.set(dt.id, reservePriceDefault)
+        }
+        const billingUnitHours = parseBillingUnitHours(r.billingUnitHours, f('billingUnitHours'), errors)
+        const billingUnitHoursDefault = parseBillingUnitHours(r.billingUnitHoursDefault, f('billingUnitHoursDefault'), errors)
+        if (dt) {
+          if (billingUnitDefaults.has(dt.id) && billingUnitDefaults.get(dt.id) !== billingUnitHoursDefault) errors.push({ field: f('billingUnitHoursDefault'), reason: 'All slots on a display type must submit the same billing unit default.' })
+          else billingUnitDefaults.set(dt.id, billingUnitHoursDefault)
+        }
+        const maxCampaigns = parseMaxCampaigns(r.maxCampaigns, f('maxCampaigns'), errors)
+        const maxCampaignsDefault = parseMaxCampaigns(r.maxCampaignsDefault, f('maxCampaignsDefault'), errors)
+        if (dt) {
+          if (maxCampaignsDefaults.has(dt.id) && maxCampaignsDefaults.get(dt.id) !== maxCampaignsDefault) errors.push({ field: f('maxCampaignsDefault'), reason: 'All slots on a display type must submit the same max campaigns default.' })
+          else maxCampaignsDefaults.set(dt.id, maxCampaignsDefault)
+        }
+
+        if (dt && def && targeting && !bad.length) {
+          const byType = wanted.get(dt.id) ?? new Map<number, Patch>()
+          byType.set(slot, { supportedTargeting: targeting, assigned, reservePrice, billingUnitHours, maxCampaigns })
+          wanted.set(dt.id, byType)
+        }
       }
-      const billingUnitHours = parseBillingUnitHours(r.billingUnitHours, f('billingUnitHours'), errors)
-      const billingUnitHoursDefault = parseBillingUnitHours(r.billingUnitHoursDefault, f('billingUnitHoursDefault'), errors)
-      if (dt) {
-        if (billingUnitDefaults.has(dt.id) && billingUnitDefaults.get(dt.id) !== billingUnitHoursDefault) errors.push({ field: f('billingUnitHoursDefault'), reason: 'All slots on a display type must submit the same billing unit default.' })
-        else billingUnitDefaults.set(dt.id, billingUnitHoursDefault)
-      }
-      const maxCampaigns = parseMaxCampaigns(r.maxCampaigns, f('maxCampaigns'), errors)
-      const maxCampaignsDefault = parseMaxCampaigns(r.maxCampaignsDefault, f('maxCampaignsDefault'), errors)
-      if (dt) {
-        if (maxCampaignsDefaults.has(dt.id) && maxCampaignsDefaults.get(dt.id) !== maxCampaignsDefault) errors.push({ field: f('maxCampaignsDefault'), reason: 'All slots on a display type must submit the same max campaigns default.' })
-        else maxCampaignsDefaults.set(dt.id, maxCampaignsDefault)
-      }
+      if (errors.length) throw validationFailed(errors, 'A slot supports at least one type of targeting, and is assigned to DSPs or advertisers it can actually sell to.')
 
-      if (dt && def && targeting && !bad.length) {
-        const byType = wanted.get(dt.id) ?? new Map<number, Patch>()
-        byType.set(slot, { supportedTargeting: targeting, assigned, reservePrice, billingUnitHours, maxCampaigns })
-        wanted.set(dt.id, byType)
-      }
-    })
-    if (errors.length) throw validationFailed(errors, 'A slot supports at least one type of targeting, and is assigned to DSPs or advertisers it can actually sell to.')
-
-    /* A sold slot keeps its advertiser (ticket, 30 Sep 2026): taking one off
-       a slot that is reserved or sold for a current or future window would
-       silently destroy inventory someone is paying for. Hard block; the
-       admin can lock the slot against new sales instead (PUT
-       /available-inventory/lock), and once its bookings have played the
-       lock releases and the advertiser can go. */
-    releaseSettledSlotLocks(ctx)
-    const sold: { field: string; reason: string }[] = []
-    rows.forEach((r, i) => {
-      const dt = ctx.displayTypes.get(r.displayTypeId as string)!
-      const slot = r.slot as number
-      const patch = wanted.get(dt.id)?.get(slot)
-      const def = dt.phExtensions?.slots?.[slot - 1]
-      if (!patch || !def) return
-      const keep = new Set(patch.assigned.advertisers.map((n) => n.trim().toLowerCase()))
-      const removed = assignedOf(def).advertisers.filter((n) => !keep.has(n.trim().toLowerCase()))
-      if (!removed.length) return
-      const live = slotLiveBookings(ctx, dt.id, slot)
-      if (!live.length) return
-      sold.push({
-        field: `items[${i}].assignedTo.advertisers`,
-        reason: `${removed.join(', ')} can't be removed from ${dt.name} slot ${slot}: slots are sold (${live.slice(0, 3).map((d) => d.detail).join('; ')}${live.length > 3 ? `; and ${live.length - 3} more` : ''}). Lock the slot against new sales; existing bookings keep running, and once they have played the lock releases and the advertiser can be removed.`,
-      })
-    })
-    if (sold.length) throw hasDependents('Slots are sold, so the advertiser can’t be removed. Existing bookings continue.', sold)
-
-    /* A slot's billing unit is its play-window length (OQ27, Rob 29 Sep
-       2026), so changing it — its own override, or the display type
-       default it inherits, or dropping back to the company window — would
-       resize windows already bid on or booked under the old length: a
-       locked-rate term's windows, a sold week half played. Refused for just
-       the slots that have any, naming when the last one ends; every other
-       slot's change goes through as before. (The company-wide value is
-       deferred instead — it spans every inheriting slot, so it waits on
-       its own — but a slot's is one row's edit, and its CPM is quoted
-       against it: the admin tries again once those windows have played.) */
-    const resizing: { field: string; reason: string }[] = []
-    for (const [displayTypeId, slots] of wanted) {
-      const dt = ctx.displayTypes.get(displayTypeId)!
-      const newDefault = billingUnitDefaults.has(displayTypeId) ? billingUnitDefaults.get(displayTypeId) ?? null : dt.phExtensions?.billingUnitHours ?? null
-      ;(dt.phExtensions?.slots ?? []).forEach((s, i) => {
-        if (s.owner !== 'advertiser') return
-        const patch = slots.get(i + 1)
-        const before = billingUnitHoursOf(dt, s, company.playWindowHours)
-        const after = (patch ? patch.billingUnitHours : s.billingUnitHours ?? null) ?? newDefault ?? company.playWindowHours
-        if (after === before) return
-        const active = slotWindowCommitments(ctx, positionIdOf(displayTypeId, i + 1), before * 3_600_000)
-        if (!active.length) return
-        const until = new Date(Math.max(...active.map((r) => Date.parse(r.windowStart) + before * 3_600_000))).toISOString()
-        const row = rows.findIndex((r) => r.displayTypeId === displayTypeId && r.slot === i + 1)
-        resizing.push({
-          field: row >= 0 ? `items[${row}].billingUnitHours` : 'items',
-          reason: `${dt.name} slot ${i + 1} has windows bid on, booked or not yet billed under its ${before}-hour billing unit (the last ends ${until}); its billing unit can change once they have played and been billed.`,
+      /* A sold slot keeps its advertiser (ticket, 30 Sep 2026): taking one off
+         a slot that is reserved or sold for a current or future window would
+         silently destroy inventory someone is paying for. Hard block; the
+         admin can lock the slot against new sales instead (PUT
+         /available-inventory/lock), and once its bookings have played the
+         lock releases and the advertiser can go. */
+      await releaseSettledSlotLocks(ctx)
+      const sold: { field: string; reason: string }[] = []
+      for (const [i, r] of rows.entries()) {
+        const dt = (await ctx.displayTypes.get(r.displayTypeId as string))!
+        const slot = r.slot as number
+        const patch = wanted.get(dt.id)?.get(slot)
+        const def = dt.phExtensions?.slots?.[slot - 1]
+        if (!patch || !def) continue
+        const keep = new Set(patch.assigned.advertisers.map((n) => n.trim().toLowerCase()))
+        const removed = assignedOf(def).advertisers.filter((n) => !keep.has(n.trim().toLowerCase()))
+        if (!removed.length) continue
+        const live = await slotLiveBookings(ctx, dt.id, slot)
+        if (!live.length) continue
+        sold.push({
+          field: `items[${i}].assignedTo.advertisers`,
+          reason: `${removed.join(', ')} can't be removed from ${dt.name} slot ${slot}: slots are sold (${live.slice(0, 3).map((d) => d.detail).join('; ')}${live.length > 3 ? `; and ${live.length - 3} more` : ''}). Lock the slot against new sales; existing bookings keep running, and once they have played the lock releases and the advertiser can be removed.`,
         })
-      })
-    }
-    if (resizing.length) throw validationFailed(resizing, 'A slot’s billing unit is its play-window length, so it can’t change while windows already bid on or booked under it are still to play.')
+      }
+      if (sold.length) throw hasDependents('Slots are sold, so the advertiser can’t be removed. Existing bookings continue.', sold)
 
-    for (const [displayTypeId, slots] of wanted) {
-      const dt = ctx.displayTypes.get(displayTypeId)!
-      const ext = { ...(dt.phExtensions ?? { slots: [] }) }
-      ext.slots = (ext.slots ?? []).map((s, i) => {
-        const patch = slots.get(i + 1)
-        return patch ? { ...s, supportedTargeting: patch.supportedTargeting, ...assignedToSlot(patch.assigned, partners), reservePrice: patch.reservePrice, billingUnitHours: patch.billingUnitHours, maxCampaigns: patch.maxCampaigns } : s
-      })
-      if (defaults.has(displayTypeId)) ext.reservePrice = defaults.get(displayTypeId) ?? null
-      if (billingUnitDefaults.has(displayTypeId)) ext.billingUnitHours = billingUnitDefaults.get(displayTypeId) ?? null
-      if (maxCampaignsDefaults.has(displayTypeId)) ext.maxCampaigns = maxCampaignsDefaults.get(displayTypeId) ?? null
-      ctx.displayTypes.saveExtensions(displayTypeId, ext)
-    }
+      /* A slot's billing unit is its play-window length (OQ27, Rob 29 Sep
+         2026), so changing it — its own override, or the display type
+         default it inherits, or dropping back to the company window — would
+         resize windows already bid on or booked under the old length: a
+         locked-rate term's windows, a sold week half played. Refused for just
+         the slots that have any, naming when the last one ends; every other
+         slot's change goes through as before. (The company-wide value is
+         deferred instead — it spans every inheriting slot, so it waits on
+         its own — but a slot's is one row's edit, and its CPM is quoted
+         against it: the admin tries again once those windows have played.) */
+      const resizing: { field: string; reason: string }[] = []
+      for (const [displayTypeId, slots] of wanted) {
+        const dt = (await ctx.displayTypes.get(displayTypeId))!
+        const newDefault = billingUnitDefaults.has(displayTypeId) ? billingUnitDefaults.get(displayTypeId) ?? null : dt.phExtensions?.billingUnitHours ?? null
+        for (const [i, s] of (dt.phExtensions?.slots ?? []).entries()) {
+          if (s.owner !== 'advertiser') continue
+          const patch = slots.get(i + 1)
+          const before = billingUnitHoursOf(dt, s, company.playWindowHours)
+          const after = (patch ? patch.billingUnitHours : s.billingUnitHours ?? null) ?? newDefault ?? company.playWindowHours
+          if (after === before) continue
+          const active = await slotWindowCommitments(ctx, positionIdOf(displayTypeId, i + 1), before * 3_600_000)
+          if (!active.length) continue
+          const until = new Date(Math.max(...active.map((r) => Date.parse(r.windowStart) + before * 3_600_000))).toISOString()
+          const row = rows.findIndex((r) => r.displayTypeId === displayTypeId && r.slot === i + 1)
+          resizing.push({
+            field: row >= 0 ? `items[${row}].billingUnitHours` : 'items',
+            reason: `${dt.name} slot ${i + 1} has windows bid on, booked or not yet billed under its ${before}-hour billing unit (the last ends ${until}); its billing unit can change once they have played and been billed.`,
+          })
+        }
+      }
+      if (resizing.length) throw validationFailed(resizing, 'A slot’s billing unit is its play-window length, so it can’t change while windows already bid on or booked under it are still to play.')
+
+      for (const [displayTypeId, slots] of wanted) {
+        const dt = (await ctx.displayTypes.get(displayTypeId))!
+        const ext = { ...(dt.phExtensions ?? { slots: [] }) }
+        ext.slots = (ext.slots ?? []).map((s, i) => {
+          const patch = slots.get(i + 1)
+          return patch ? { ...s, supportedTargeting: patch.supportedTargeting, ...assignedToSlot(patch.assigned, partners), reservePrice: patch.reservePrice, billingUnitHours: patch.billingUnitHours, maxCampaigns: patch.maxCampaigns } : s
+        })
+        if (defaults.has(displayTypeId)) ext.reservePrice = defaults.get(displayTypeId) ?? null
+        if (billingUnitDefaults.has(displayTypeId)) ext.billingUnitHours = billingUnitDefaults.get(displayTypeId) ?? null
+        if (maxCampaignsDefaults.has(displayTypeId)) ext.maxCampaigns = maxCampaignsDefaults.get(displayTypeId) ?? null
+        await ctx.displayTypes.saveExtensions(displayTypeId, ext)
+      }
+    })
     return inventory()
   })
 }

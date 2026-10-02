@@ -17,7 +17,7 @@ if (ctx.config.scheduler === 'in-process') {
   app.log.info('Scheduler off (PH_SCHEDULER=off): billing, the auction and retention run from `npm run scheduler:tick`.')
 }
 await app.listen({ port: ctx.config.port, host: ctx.config.host })
-console.log(`dspIntegration flag: ${ctx.flags.dspIntegration ? 'ON' : 'off'} · role: ${ctx.session.current().role} · scheduler: ${ctx.config.scheduler}`)
+console.log(`dspIntegration flag: ${ctx.flags.dspIntegration ? 'ON' : 'off'} · role: ${(await ctx.session.current()).role} · scheduler: ${ctx.config.scheduler}`)
 
 /* A supervisor stops the process with SIGTERM (Kubernetes gives it
    terminationGracePeriodSeconds to comply): stop accepting connections,

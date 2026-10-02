@@ -9,6 +9,7 @@ import { adminRoutes } from '../routes/admin'
 import { partnerRoutes } from '../routes/partner'
 import { sellersJsonRoutes } from '../routes/public/sellersJson'
 import { mimeOf } from '../platform/AssetStore'
+import { onFree } from '../db/db'
 import { appliedVersions, loadMigrations } from '../db/migrate'
 
 declare module 'fastify' {
@@ -33,7 +34,7 @@ export function buildApp(ctx: Context, opts: { logger?: boolean } = {}): Fastify
     /* Stand-in HQ Admin session for every admin request (POC_ROLE). Help
        desk users see none of this build (spec, "Who sees each section"). */
     if (req.url.startsWith('/api/admin/')) {
-      req.session = ctx.session.current()
+      req.session = await ctx.session.current()
       /* Everything but the session itself, which tells the UI who is asking. */
       if (!req.url.startsWith('/api/admin/v1/session') && !hasScope(req.session, 'sections')) throw forbidden()
     }
@@ -104,7 +105,7 @@ export function buildApp(ctx: Context, opts: { logger?: boolean } = {}): Fastify
   app.get('/healthz', async () => ({ ok: true }))
   app.get('/readyz', async (_req, reply) => {
     try {
-      const applied = new Set(appliedVersions(ctx.db))
+      const applied = new Set(await onFree(ctx.db, () => appliedVersions(ctx.db)))
       const missing = migrations.filter((v) => !applied.has(v)).length
       if (missing) return reply.status(503).send({ ok: false, reason: `${missing} migration${missing === 1 ? '' : 's'} not applied.` })
       return { ok: true }
@@ -118,7 +119,7 @@ export function buildApp(ctx: Context, opts: { logger?: boolean } = {}): Fastify
   app.register(sellersJsonRoutes(ctx))
   /* AssetStore files (stand-in for the platform's asset hosting). */
   app.get<{ Params: { file: string } }>('/assets/:file', async (req, reply) => {
-    const bytes = ctx.assets.read(req.params.file)
+    const bytes = await ctx.assets.read(req.params.file)
     if (!bytes) return reply.status(404).send(notFound().body())
     return reply.type(mimeOf(req.params.file)).send(bytes)
   })

@@ -11,7 +11,7 @@ export const exchangeRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync
   app.get('/exchange', async (req) => {
     guards.flagged()
     guards.requireScope(req, 'admin')
-    return toApiExchange(ctx.exchange.get())
+    return toApiExchange(await ctx.exchange.get())
   })
 
   /* Read by every user who sees these sections — marketing too, who can't
@@ -20,7 +20,7 @@ export const exchangeRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync
      checked for every admin route in app.ts. */
   app.get('/features', async () => {
     if (!ctx.flags.dspIntegration) return { dspIntegration: false }
-    return { dspIntegration: ctx.exchange.get().enabled }
+    return { dspIntegration: (await ctx.exchange.get()).enabled }
   })
 
   /* Save changes. Republishes sellers.json as soon as it is switched on and
@@ -31,6 +31,6 @@ export const exchangeRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync
     const errors = validateExchange(req.body)
     if (errors.length) throw validationFailed(errors)
     const b = req.body as ExchangeInput
-    return toApiExchange(ctx.exchange.save({ enabled: b.enabled, organisation: b.organisation.trim(), domain: b.domain.trim().toLowerCase(), sellerId: b.sellerId.trim(), contactEmail: b.contactEmail.trim() }))
+    return toApiExchange(await ctx.exchange.save({ enabled: b.enabled, organisation: b.organisation.trim(), domain: b.domain.trim().toLowerCase(), sellerId: b.sellerId.trim(), contactEmail: b.contactEmail.trim() }))
   })
 }

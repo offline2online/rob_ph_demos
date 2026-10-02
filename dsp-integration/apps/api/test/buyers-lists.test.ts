@@ -70,7 +70,7 @@ describe('Buyers lists (spec "Support private auctions")', () => {
     const assigned = await save(id)
     expect(assigned.statusCode).toBe(200)
     expect(assigned.json().items[0].assignedTo).toMatchObject({ buyersListId: id, buyersListName: 'Q4 private auction' })
-    expect(ctx.displayTypes.get('menu_board')!.phExtensions!.slots[1]).toMatchObject({ listMode: 'deal', buyersListId: id })
+    expect((await ctx.displayTypes.get('menu_board'))!.phExtensions!.slots[1]).toMatchObject({ listMode: 'deal', buyersListId: id })
 
     const blocked = await app.inject({ method: 'DELETE', url: `/api/admin/v1/buyers-lists/${id}` })
     expect(blocked.statusCode).toBe(409)

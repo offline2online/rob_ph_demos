@@ -29,20 +29,20 @@ const CURRENT_REJECTED_SQL = `
   WHERE ca.status = 'rejected' AND ca.reviewed_at IS NOT NULL
 `
 
-export function sweepRejectedCampaigns(db: Db, retentionDays: number, now: () => Date = () => new Date()): RetentionSweepResult {
+/* The read and the deletes are one transaction, so an un-reject or a new
+   version saved in between can't be swept on a stale "Rejected". */
+export async function sweepRejectedCampaigns(db: Db, retentionDays: number, now: () => Date = () => new Date()): Promise<RetentionSweepResult> {
   const cutoff = new Date(now().getTime() - retentionDays * 24 * 60 * 60 * 1000).toISOString()
-  const rejected = db.prepare(CURRENT_REJECTED_SQL).all() as { id: string; reviewedAt: string }[]
-  const due = rejected.filter((r) => r.reviewedAt < cutoff).map((r) => r.id)
-  if (due.length) {
-    tx(db, () => {
-      for (const id of due) {
-        db.prepare('DELETE FROM campaign_assets WHERE campaign_id = ?').run(id)
-        /* A DSP-retrieved creative's claim on its crid goes with the campaign, or a later bid with that crid is discarded as "already being retrieved" and never reviewed again. */
-        db.prepare('DELETE FROM dsp_creatives WHERE campaign_id = ?').run(id)
-        db.prepare('DELETE FROM campaign_approvals WHERE campaign_id = ?').run(id)
-        db.prepare('DELETE FROM campaigns WHERE id = ?').run(id)
-      }
-    })
-  }
-  return { deletedCampaignIds: due }
+  return tx(db, () => {
+    const rejected = db.prepare(CURRENT_REJECTED_SQL).all() as { id: string; reviewedAt: string }[]
+    const due = rejected.filter((r) => r.reviewedAt < cutoff).map((r) => r.id)
+    for (const id of due) {
+      db.prepare('DELETE FROM campaign_assets WHERE campaign_id = ?').run(id)
+      /* A DSP-retrieved creative's claim on its crid goes with the campaign, or a later bid with that crid is discarded as "already being retrieved" and never reviewed again. */
+      db.prepare('DELETE FROM dsp_creatives WHERE campaign_id = ?').run(id)
+      db.prepare('DELETE FROM campaign_approvals WHERE campaign_id = ?').run(id)
+      db.prepare('DELETE FROM campaigns WHERE id = ?').run(id)
+    }
+    return { deletedCampaignIds: due }
+  })
 }

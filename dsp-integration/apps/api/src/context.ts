@@ -1,6 +1,6 @@
 /* Composition root: every stand-in and repository, wired to one database. */
 import { loadConfig, type Config } from './config'
-import { type Db, openDb } from './db/db'
+import { type Db, gate, onFree, openDb, tx } from './db/db'
 import { migrateUp } from './db/migrate'
 import { type Flags, envFlags } from './flags/Flags'
 import { type SessionSource, envSession } from './auth/session'
@@ -67,9 +67,13 @@ export function createContext(opts: { config?: Config; db?: Db; flags?: Flags; s
   migrateUp(db)
   const secrets = opts.secrets ?? aesGcmSecretsStore(process.env.PH_SECRETS_KEY)
   const clock = opts.clock ?? (config.testClock ? testClockFrom(config.testClock) : () => new Date())
-  const displayTypes = sqliteDisplayTypeSource(db)
-  const company = sqliteCompanySettingsRepo(db)
-  const partners = sqlitePartnerRepo(db, secrets)
+  /* Every seam and repository goes through gate(): a call made while another
+     call chain's transaction is open waits for it to end instead of running
+     inside it (db.ts, "Transactions on one SQLite connection"). */
+  const g = <T extends object>(t: T) => gate(db, t)
+  const displayTypes = g(sqliteDisplayTypeSource(db))
+  const company = g(sqliteCompanySettingsRepo(db))
+  const partners = g(sqlitePartnerRepo(db, secrets))
   return {
     config,
     db,
@@ -77,20 +81,20 @@ export function createContext(opts: { config?: Config; db?: Db; flags?: Flags; s
     session: opts.session ?? envSession(),
     secrets,
     displayTypes,
-    playlists: sqlitePlaylistSource(db),
-    displays: sqliteDisplaySource(db),
-    stores: sqliteStoreSource(db),
-    campaigns: sqliteCampaignSource(db),
-    playback: sqlitePlaybackSource(db),
+    playlists: g(sqlitePlaylistSource(db)),
+    displays: g(sqliteDisplaySource(db)),
+    stores: g(sqliteStoreSource(db)),
+    campaigns: g(sqliteCampaignSource(db)),
+    playback: g(sqlitePlaybackSource(db)),
     partners,
     company,
-    exchange: sqliteExchangeRepo(db),
-    buyersLists: sqliteBuyersListRepo(db),
+    exchange: g(sqliteExchangeRepo(db)),
+    buyersLists: g(sqliteBuyersListRepo(db)),
     dsp: dspProviders(config.dsp, config.bidders, opts.dspFetch),
     fetch: opts.dspFetch ?? ((url, init) => fetch(url, init)),
     bidder: httpBidder(opts.dspFetch ?? ((url, init) => fetch(url, init)), { timeoutMs: config.bidderTimeoutMs, qps: config.bidderQps, maxResponseBytes: config.maxBidResponseBytes }),
-    audience: sqliteAudienceSource(db),
-    reservations: sqliteReservationRepo(db),
+    audience: g(sqliteAudienceSource(db)),
+    reservations: g(sqliteReservationRepo(db)),
     clock,
     ...approvalParts(db, config, { displayTypes, company, partners }),
   }
@@ -102,20 +106,25 @@ export function createContext(opts: { config?: Config; db?: Db; flags?: Flags; s
    "a save is visible to this process immediately". */
 function approvalParts(db: Db, config: Config, own: { displayTypes: DisplayTypeSource; company: CompanySettingsRepo; partners: PartnerRepo }) {
   const { displayTypes, company, partners } = own
+  /* Files, not the database: no gate needed. */
   const assets = localAssetStore(config.assetsDir, config.publicUrl)
   /* Advertiser names come from the DSP seats (seats are not secret). */
-  const seatNames = () => partners.list().flatMap((p) => p.seats)
-  const approvalCampaigns = pocCampaignSource(db, {
-    advertiserName: (id) => seatNames().find((s) => advertiserSlug(s.name) === id)?.name ?? id,
-    partnerName: (id) => partners.get(id)?.name ?? null,
-    canvas: (id) => displayTypes.get(id)?.displayCanvasSize ?? null,
+  const seatNames = async () => (await partners.list()).flatMap((p) => p.seats)
+  const approvalCampaigns = gate(db, pocCampaignSource(db, {
+    advertiserName: async (id) => (await seatNames()).find((s) => advertiserSlug(s.name) === id)?.name ?? id,
+    partnerName: async (id) => (await partners.get(id))?.name ?? null,
+    canvas: async (id) => (await displayTypes.get(id))?.displayCanvasSize ?? null,
     assetUrl: (file) => assets.url(file),
     targetingSummary,
-  })
+  }))
   const approvals = createApprovalService({
     db,
     campaigns: approvalCampaigns,
-    requiresApproval: (advertiserId) => (advertiserId ? company.advertiserSetting(advertiserId).approvalRequired : true),
+    requiresApproval: async (advertiserId) => (advertiserId ? (await company.advertiserSetting(advertiserId)).approvalRequired : true),
+    /* The module's own statements wait for the connection like every seam's,
+       and each decision is one transaction (db.ts). */
+    run: (fn) => onFree(db, fn),
+    transaction: (fn) => tx(db, fn),
   })
   return { assets, approvalCampaigns, approvals }
 }

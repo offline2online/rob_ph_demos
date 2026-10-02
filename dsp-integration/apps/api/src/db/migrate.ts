@@ -3,7 +3,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { APPROVAL_MIGRATIONS_DIR } from '@ph-dsp/campaign-approval/server'
-import { type Db, tx } from './db'
+import { type Db, txSync } from './db'
 
 const DIR = fileURLToPath(new URL('./migrations/', import.meta.url))
 /* This app's migrations plus the campaign-approval module's (numbered 0100+).
@@ -59,7 +59,7 @@ export function migrateUp(db: Db, target?: string, migrations = loadMigrations()
        pending. The write lock is taken first and the check repeated under
        it, so the second one finds it applied instead of failing on
        "table already exists" and refusing to start. */
-    const applied = tx(db, () => {
+    const applied = txSync(db, () => {
       if (db.prepare('SELECT 1 FROM schema_migrations WHERE version = ?').get(m.version)) return false
       db.exec(m.up)
       db.prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)').run(m.version, m.name, new Date().toISOString())
@@ -77,7 +77,7 @@ export function migrateDown(db: Db, steps = 1, migrations = loadMigrations()): s
   for (const v of applied) {
     const m = migrations.find((x) => x.version === v)
     if (!m) throw new Error(`No migration file for applied version ${v}`)
-    tx(db, () => {
+    txSync(db, () => {
       db.exec(m.down)
       db.prepare('DELETE FROM schema_migrations WHERE version = ?').run(v)
     })

@@ -83,7 +83,7 @@ describe('DSP integration switch (Exchange settings)', () => {
   it('switched off: unpublished, Partner API and sellers.json 404, no bid requests — and nothing deleted', async () => {
     const ctx = await testContext()
     const app = buildApp(ctx)
-    const partnersBefore = ctx.partners.list().length
+    const partnersBefore = (await ctx.partners.list()).length
     const campaignsBefore = (await app.inject({ method: 'GET', url: '/api/admin/v1/campaigns' })).json().items.length
     expect((await app.inject({ method: 'GET', url: '/api/v1/inventory', headers: TOKEN })).statusCode).toBe(200)
 
@@ -103,7 +103,7 @@ describe('DSP integration switch (Exchange settings)', () => {
     expect(auction.positions.reduce((n, p) => n + p.bidRequests, 0)).toBe(0)
 
     /* Kept: the seller of record, the DSPs and the campaigns. */
-    expect(ctx.partners.list().length).toBe(partnersBefore)
+    expect((await ctx.partners.list()).length).toBe(partnersBefore)
     expect((await app.inject({ method: 'GET', url: '/api/admin/v1/campaigns' })).json().items.length).toBe(campaignsBefore)
 
     /* Back on: everything is as it was. */

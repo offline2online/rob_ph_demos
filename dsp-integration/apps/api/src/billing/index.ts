@@ -37,7 +37,7 @@
    23 s and held every request on the API's one thread. */
 import { randomUUID } from 'node:crypto'
 import type { Context } from '../context'
-import { prepared } from '../db/db'
+import { onFree, prepared } from '../db/db'
 import type { PlayTotals } from '../platform/PlaybackSource'
 import { assumedViewsPerWindow, findPosition, shortestWindowMs, windowMs, type PositionRef } from '../domain/positions'
 import type { ReservationRecord } from '../repos/ReservationRepo'
@@ -94,23 +94,24 @@ export function assertBillingBasis(basis: BillingBasis): void {
    29 Sep 2026). This is not informational: it is the length of every window
    billed for the position, so a slot with a 168-hour unit bills one line
    item a week. */
-export const billingUnitMs = (ctx: Context, p: PositionRef): number => windowMs(ctx, p)
+export const billingUnitMs = async (ctx: Context, p: PositionRef): Promise<number> => windowMs(ctx, p)
 
 const round2 = (n: number) => Math.round(n * 100) / 100
 
 /* The seam: a cleared reservation plus the playback totals for its window
    in, one line item out. The maths is pure (no clock, no database write);
    the caller decides whether the window has ended and where the totals
-   come from. */
-export function computeLineItem(ctx: Context, r: ReservationRecord, p: PositionRef, played: PlayTotals, basis: BillingBasis = BILLING_BASIS): LineItem {
+   come from. It reads (the display count, the assumed views) but never
+   writes. */
+export async function computeLineItem(ctx: Context, r: ReservationRecord, p: PositionRef, played: PlayTotals, basis: BillingBasis = BILLING_BASIS): Promise<LineItem> {
   assertBillingBasis(basis)
-  const len = billingUnitMs(ctx, p)
+  const len = await billingUnitMs(ctx, p)
   const end = Date.parse(r.windowStart) + len
-  const displays = ctx.displays.summaryByDisplayType(p.displayType.id).displays
+  const displays = (await ctx.displays.summaryByDisplayType(p.displayType.id)).displays
   const slots = rotationSizeOf(p.displayType, p.slot)
   const share = slots ? 1 / slots : 1
   const expectedSec = displays * (len / 1000) * share
-  const assumedViews = assumedViewsPerWindow(ctx, p)
+  const assumedViews = await assumedViewsPerWindow(ctx, p)
   const realisedViews = Math.round(assumedViews * (expectedSec > 0 ? Math.min(1, played.playedSec / expectedSec) : 0))
   /* The personalised plays' share of the realised views, by played time. */
   const persPlays = played.personalised?.plays ?? 0
@@ -131,46 +132,46 @@ export function computeLineItem(ctx: Context, r: ReservationRecord, p: PositionR
    same window at the same moment (two API instances, a CronJob beside the
    API) writes nothing, and neither throws. The first line item stands.
    Returns whether this call wrote it. */
-export function writeLineItem(ctx: Context, item: LineItem, computedAt: string): boolean {
-  return prepared(ctx.db,
+export function writeLineItem(ctx: Context, item: LineItem, computedAt: string): Promise<boolean> {
+  return Promise.resolve(onFree(ctx.db, () => prepared(ctx.db,
     `INSERT INTO billing_line_items (id, reservation_id, partner_id, advertiser_id, campaign_id, position_id, window_start, window_end, plays,
        played_sec, expected_sec, assumed_views, realised_views, cpm, currency, amount, computed_at,
        personalised_plays, personalised_views, personalised_multiplier, personalised_amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT (reservation_id) DO NOTHING`,
   ).run(item.id, item.reservationId, item.partnerId, item.advertiserId, item.campaignId, item.positionId, item.windowStart, item.windowEnd, item.plays,
     item.playedSec, item.expectedSec, item.assumedViews, item.realisedViews, item.cpm, item.currency, item.amount, computedAt,
-    item.personalisedPlays, item.personalisedViews, item.personalisedMultiplier, item.personalisedAmount).changes > 0
+    item.personalisedPlays, item.personalisedViews, item.personalisedMultiplier, item.personalisedAmount).changes > 0))
 }
 
 /* Bills one cleared reservation from the totals for its window. Idempotent
    on billing_line_items.reservation_id: null when a line item already
    exists for it. */
-export function billReservation(ctx: Context, r: ReservationRecord, p: PositionRef, played: PlayTotals, basis: BillingBasis = BILLING_BASIS): LineItem | null {
-  const item = computeLineItem(ctx, r, p, played, basis)
-  return writeLineItem(ctx, item, new Date(ctx.clock().getTime()).toISOString()) ? item : null
+export async function billReservation(ctx: Context, r: ReservationRecord, p: PositionRef, played: PlayTotals, basis: BillingBasis = BILLING_BASIS): Promise<LineItem | null> {
+  const item = await computeLineItem(ctx, r, p, played, basis)
+  return (await writeLineItem(ctx, item, new Date(ctx.clock().getTime()).toISOString())) ? item : null
 }
 
 /* Bills every live, handed-off window that has ended and isn't billed yet. */
-export function runBilling(ctx: Context): LineItem[] {
+export async function runBilling(ctx: Context): Promise<LineItem[]> {
   const now = ctx.clock().getTime()
   const out: LineItem[] = []
   /* A window has ended once its start is a whole window ago. Windows differ
      in length by slot, so the query asks for everything the shortest one
      could have ended by, and each is checked against its own length. */
-  for (const r of ctx.reservations.billable(new Date(now - shortestWindowMs(ctx)).toISOString())) {
-    const p = findPosition(ctx, r.positionId)
+  for (const r of await ctx.reservations.billable(new Date(now - (await shortestWindowMs(ctx))).toISOString())) {
+    const p = await findPosition(ctx, r.positionId)
     if (!p) continue
-    const end = Date.parse(r.windowStart) + billingUnitMs(ctx, p)
+    const end = Date.parse(r.windowStart) + (await billingUnitMs(ctx, p))
     if (end > now) continue
-    const played = ctx.playback.totals({ campaignId: r.campaignId as string, displayTypeId: p.displayType.id, from: r.windowStart, to: new Date(end).toISOString() })
-    const item = billReservation(ctx, r, p, played)
+    const played = await ctx.playback.totals({ campaignId: r.campaignId as string, displayTypeId: p.displayType.id, from: r.windowStart, to: new Date(end).toISOString() })
+    const item = await billReservation(ctx, r, p, played)
     if (item) out.push(item)
   }
   return out
 }
 
-export function lineItems(ctx: Context): LineItem[] {
-  const rows = ctx.db.prepare('SELECT * FROM billing_line_items ORDER BY window_start, id').all() as Record<string, unknown>[]
+export async function lineItems(ctx: Context): Promise<LineItem[]> {
+  const rows = await onFree(ctx.db, () => prepared(ctx.db, 'SELECT * FROM billing_line_items ORDER BY window_start, id').all() as Record<string, unknown>[])
   return rows.map((r) => ({
     id: r.id as string, reservationId: r.reservation_id as string, partnerId: r.partner_id as string, advertiserId: r.advertiser_id as string | null,
     campaignId: r.campaign_id as string, positionId: r.position_id as string, windowStart: r.window_start as string, windowEnd: r.window_end as string,

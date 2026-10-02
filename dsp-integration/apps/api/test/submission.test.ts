@@ -44,7 +44,7 @@ describe('POST /v1/campaigns', () => {
     expectMatchesContract('POST', '/v1/campaigns', 201, res.json())
     expect(res.json()).toMatchObject({ status: 'draft', mode: null, reason: null, assetVersion: 'v0' })
     /* Stored in the existing targeting structure: AND groups of OR conditions. */
-    const stored = ctx.campaigns.getCampaign(res.json().campaignId)
+    const stored = await ctx.campaigns.getCampaign(res.json().campaignId)
     expect(stored).toMatchObject({ source: 'api', advertiserId: 'swisse', partnerId: 'p_google', displayTypeId: 'landscape', pricingType: 'localised' })
     expect(stored?.targeting).toEqual({ default: { pricingType: 'localised' }, targeted: [{ id: 'metro', priority: 10, pricingType: 'localised', rules: [[{ source: 'store', variable: 'store.fixed_segments', op: 'include', values: ['Metro'] }]] }] })
   })
@@ -72,7 +72,7 @@ describe('POST /v1/campaigns', () => {
     const res = await create(app, SWISSE)
     expect(res.statusCode).toBe(201)
     expectMatchesContract('POST', '/v1/campaigns', 201, res.json())
-    const stored = ctx.campaigns.getCampaign(res.json().campaignId)
+    const stored = await ctx.campaigns.getCampaign(res.json().campaignId)
     expect(stored).toMatchObject({ pricingType: 'localised' })
     expect(stored?.targeting).toEqual({ default: { pricingType: 'localised' } })
   })
@@ -313,7 +313,7 @@ describe('the campaign brief an advertiser books with (Rob, 20 Sep)', () => {
   it('is stored with the campaign and shown to the retailer', async () => {
     const { app, ctx } = await newApp()
     const id = (await create(app, { ...SWISSE, brief: { ...BRIEF, details: '  Spring range across metro stores.  ' } })).json().campaignId
-    expect(ctx.campaigns.getCampaign(id)?.brief).toEqual(BRIEF)
+    expect((await ctx.campaigns.getCampaign(id))?.brief).toEqual(BRIEF)
     const listed = (await app.inject({ method: 'GET', url: '/api/admin/v1/campaigns' })).json().items.find((c: { campaignId: string }) => c.campaignId === id)
     expect(listed.brief).toEqual(BRIEF)
     expectMatchesContract('GET', '/admin/v1/campaigns', 200, (await app.inject({ method: 'GET', url: '/api/admin/v1/campaigns' })).json())
@@ -322,7 +322,7 @@ describe('the campaign brief an advertiser books with (Rob, 20 Sep)', () => {
   it('is optional, and what is sent has to be the right shape', async () => {
     const { app, ctx } = await newApp()
     const none = (await create(app, SWISSE)).json().campaignId
-    expect(ctx.campaigns.getCampaign(none)?.brief).toBeUndefined()
+    expect((await ctx.campaigns.getCampaign(none))?.brief).toBeUndefined()
     const bad = await create(app, { ...SWISSE, brief: { details: 42, skus: ['ok', ''], touchPoints: ['Website'], budget: 1000 } })
     expect(bad.statusCode).toBe(400)
     expect(bad.json().error.details.map((d: { field: string }) => d.field)).toEqual(['brief.budget', 'brief.details', 'brief.skus', 'brief.touchPoints'])

@@ -3,25 +3,25 @@
 import type { DeleteCheck } from '@ph-dsp/types'
 import type { Context } from '../context'
 import { TAKEN } from '../repos/ReservationRepo'
-import { longestWindowMs, positionIdOf, windowEndOf } from './positions'
+import { longestWindowMs, positionIdOf, windowEnds } from './positions'
 import { zonesOf } from './displayTypes'
 
 /* A display type can't be deleted while any display is assigned to it, or
    while any of its positions is reserved or sold for a window that hasn't
    played yet (Q47). */
-export function displayTypeDeleteCheck(ctx: Context, id: string): DeleteCheck {
+export async function displayTypeDeleteCheck(ctx: Context, id: string): Promise<DeleteCheck> {
   const dependents = [
-    ...ctx.displays.listByDisplayType(id).map((d) => ({ kind: 'display' as const, name: d.name, detail: d.store })),
-    ...liveCommitments(ctx, id),
+    ...(await ctx.displays.listByDisplayType(id)).map((d) => ({ kind: 'display' as const, name: d.name, detail: d.store })),
+    ...(await liveCommitments(ctx, id)),
   ]
   return { canDelete: dependents.length === 0, dependents }
 }
 
 /* A playlist can't be deleted while it is a display type's default playlist
    or assigned to a zone: a display type or zone is never left without one. */
-export function playlistDeleteCheck(ctx: Context, id: string): DeleteCheck {
+export async function playlistDeleteCheck(ctx: Context, id: string): Promise<DeleteCheck> {
   const dependents: DeleteCheck['dependents'] = []
-  for (const t of ctx.displayTypes.list()) {
+  for (const t of await ctx.displayTypes.list()) {
     if (t.defaultPlaylistId === id) dependents.push({ kind: 'display_type_default', name: t.name, detail: 'Default playlist' })
     for (const z of zonesOf(t)) if (z.playlistId === id) dependents.push({ kind: 'zone', name: t.name, detail: z.name })
   }
@@ -34,12 +34,12 @@ export const dependentDetails = (c: DeleteCheck) => c.dependents.map((d) => ({ f
    wins/reservations, Test-mode excluded — same definition as a "sold" window elsewhere, e.g.
    windowStatus in positions.ts). Counts positions, not reservation rows: an
    advertiser position booked across several play windows counts once. */
-export function soldOrReservedPositions(ctx: Context, displayTypeId: string): number {
-  const dt = ctx.displayTypes.get(displayTypeId)
+export async function soldOrReservedPositions(ctx: Context, displayTypeId: string): Promise<number> {
+  const dt = await ctx.displayTypes.get(displayTypeId)
   if (!dt) return 0
   const positionIds = new Set((dt.phExtensions?.slots ?? []).flatMap((s, i) => (s.owner === 'advertiser' ? [positionIdOf(displayTypeId, i + 1)] : [])))
   if (!positionIds.size) return 0
-  const hit = new Set(ctx.reservations.byStatus(TAKEN).filter((r) => !r.testMode && positionIds.has(r.positionId)).map((r) => r.positionId))
+  const hit = new Set((await ctx.reservations.byStatus(TAKEN)).filter((r) => !r.testMode && positionIds.has(r.positionId)).map((r) => r.positionId))
   return hit.size
 }
 
@@ -50,18 +50,19 @@ export function soldOrReservedPositions(ctx: Context, displayTypeId: string): nu
    refusal says what to wait for. `onlySlot` narrows it to one position
    (the slot lock, 30 Sep 2026). Live bookings only (Test mode excluded),
    the same definition of "sold" as soldOrReservedPositions. */
-export function liveCommitments(ctx: Context, displayTypeId: string, onlySlot?: number): DeleteCheck['dependents'] {
-  const dt = ctx.displayTypes.get(displayTypeId)
+export async function liveCommitments(ctx: Context, displayTypeId: string, onlySlot?: number): Promise<DeleteCheck['dependents']> {
+  const dt = await ctx.displayTypes.get(displayTypeId)
   if (!dt) return []
   const positionIds = new Set((dt.phExtensions?.slots ?? []).flatMap((s, i) => (s.owner === 'advertiser' && (onlySlot === undefined || onlySlot === i + 1) ? [positionIdOf(displayTypeId, i + 1)] : [])))
   if (!positionIds.size) return []
   /* Not yet played: the window — its slot's own billing unit long (OQ27) — has not ended. */
-  const from = new Date(ctx.clock().getTime() - longestWindowMs(ctx)).toISOString()
-  return ctx.reservations.byStatus(TAKEN, from)
-    .filter((r) => !r.testMode && positionIds.has(r.positionId) && windowEndOf(ctx, r) > ctx.clock().getTime())
+  const from = new Date(ctx.clock().getTime() - (await longestWindowMs(ctx))).toISOString()
+  const endOf = await windowEnds(ctx)
+  return (await ctx.reservations.byStatus(TAKEN, from))
+    .filter((r) => !r.testMode && positionIds.has(r.positionId) && endOf(r) > ctx.clock().getTime())
     .map((r) => ({ kind: 'reservation' as const, name: r.positionId, detail: `window ${r.windowStart.slice(0, 10)} · ${r.status === 'won' ? 'sold' : 'reserved'}` }))
 }
 
 /* The display types a playlist is assigned to, as their default or a zone's. */
-export const displayTypesUsingPlaylist = (ctx: Context, playlistId: string) =>
-  ctx.displayTypes.list().filter((t) => t.defaultPlaylistId === playlistId || zonesOf(t).some((z) => z.playlistId === playlistId))
+export const displayTypesUsingPlaylist = async (ctx: Context, playlistId: string) =>
+  (await ctx.displayTypes.list()).filter((t) => t.defaultPlaylistId === playlistId || zonesOf(t).some((z) => z.playlistId === playlistId))

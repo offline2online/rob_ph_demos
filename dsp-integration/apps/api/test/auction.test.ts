@@ -23,9 +23,9 @@ async function setup() {
   const ctx = await testContext({ clock: () => NOW, dspFetch: fetchImpl })
   const app = buildApp(ctx)
   const bidder = (b: Record<string, unknown>) => mocks.app.inject({ method: 'PUT', url: '/_control/google_dv360/bidder', payload: b })
-  const setSlot = (patch: Partial<Slot>) => {
-    const ext = ctx.displayTypes.get('menu_board')!.phExtensions!
-    ctx.displayTypes.saveExtensions('menu_board', { ...ext, slots: ext.slots.map((s, i) => (i === 1 ? { ...s, ...patch } : s)) })
+  const setSlot = async (patch: Partial<Slot>) => {
+    const ext = (await ctx.displayTypes.get('menu_board'))!.phExtensions!
+    await ctx.displayTypes.saveExtensions('menu_board', { ...ext, slots: ext.slots.map((s, i) => (i === 1 ? { ...s, ...patch } : s)) })
   }
   const reserve = (body: Record<string, unknown>) => app.inject({ method: 'POST', url: '/api/v1/reservations', headers: GOOGLE, payload: body })
   const approve = (id: string, assetVersion = 'v1') => app.inject({ method: 'POST', url: `/api/admin/v1/campaigns/${id}/approve`, payload: { assetVersion } })
@@ -62,10 +62,10 @@ describe('OpenRTB 2.6 DOOH bid requests', () => {
 
   it('sends the advertiser blacklist as domains (badv), and nothing until Exchange settings are complete', async () => {
     const { ctx, sent } = await setup()
-    ctx.company.save({ ...ctx.company.get(), advertiserBlacklist: ['Swisse', 'redbull.com'], advertiserWhitelist: ['Nestlé'] })
+    await ctx.company.save({ ...(await ctx.company.get()), advertiserBlacklist: ['Swisse', 'redbull.com'], advertiserWhitelist: ['Nestlé'] })
     await runAuction(ctx, W1)
     expect(sent[0].body.badv).toEqual(['swisse.com', 'redbull.com'])
-    ctx.exchange.save({ ...ctx.exchange.get(), sellerId: '' })
+    await ctx.exchange.save({ ...(await ctx.exchange.get()), sellerId: '' })
     await runAuction(ctx, W2)
     expect(sent).toHaveLength(1)
   })
@@ -77,15 +77,15 @@ describe('venue metadata comes from the display-type seam value, not from this b
      carry, so an adapter that reads PH Core's store/display record instead is covered. */
   it('dooh.venuetype and the inventory screen follow the seam value', async () => {
     const { ctx, app, sent } = await setup()
-    const ext = ctx.displayTypes.get('menu_board')!.phExtensions!
-    ctx.displayTypes.saveExtensions('menu_board', { ...ext, venue: { ...ext.venue!, openOohVenueType: 'retail.pharmacy' } })
+    const ext = (await ctx.displayTypes.get('menu_board'))!.phExtensions!
+    await ctx.displayTypes.saveExtensions('menu_board', { ...ext, venue: { ...ext.venue!, openOohVenueType: 'retail.pharmacy' } })
     await runAuction(ctx, W1)
     expect(sent).toHaveLength(1)
     expect(sent[0].body.dooh.venuetype).toEqual(['retail.pharmacy'])
     const inv = await app.inject({ method: 'GET', url: '/api/v1/inventory/menu_board.s2', headers: GOOGLE })
     expect(inv.json().screen.openOohVenueType).toBe('retail.pharmacy')
     /* Cleared, the field is omitted from the response and the request carries no venue type. */
-    ctx.displayTypes.saveExtensions('menu_board', { ...ext, venue: { ...ext.venue!, openOohVenueType: undefined } })
+    await ctx.displayTypes.saveExtensions('menu_board', { ...ext, venue: { ...ext.venue!, openOohVenueType: undefined } })
     expect((await app.inject({ method: 'GET', url: '/api/v1/inventory/menu_board.s2', headers: GOOGLE })).json().screen.openOohVenueType).toBeUndefined()
   })
 })
@@ -95,7 +95,7 @@ describe('the auction', () => {
     const { ctx, app, rows } = await setup()
     const first = await runAuction(ctx, W1)
     expect(first.positions).toEqual([{ positionId: 'menu_board.s2', bidRequests: 1, bids: 1, winner: null }])
-    expect(rows()).toMatchObject([{ status: 'rejected', channel: 'openrtb', advertiserId: 'nestle', reason: 'New creative crid-5130001: approved automatically; it can compete from the next window.' }])
+    expect(await rows()).toMatchObject([{ status: 'rejected', channel: 'openrtb', advertiserId: 'nestle', reason: 'New creative crid-5130001: approved automatically; it can compete from the next window.' }])
     /* Nestlé doesn't require approval, so the creative was approved automatically. */
     const queued = (await ctx.approvalCampaigns.listCampaigns({ sources: ['dsp'] })).find((c) => c.name === 'Nestlé — crid-5130001')!
     expect(await ctx.approvals.view(queued.campaignId)).toMatchObject({ status: 'approved', mode: 'auto' })
@@ -113,10 +113,10 @@ describe('the auction', () => {
     const { ctx, bidder, approve, activate, rows } = await setup()
     await bidder({ advertiserId: '5130002' })
     await runAuction(ctx, W1)
-    expect(rows()[0]).toMatchObject({ status: 'rejected', advertiserId: 'swisse', reason: 'New creative crid-5130002: queued for approval.' })
+    expect((await rows())[0]).toMatchObject({ status: 'rejected', advertiserId: 'swisse', reason: 'New creative crid-5130002: queued for approval.' })
     const queued = (await ctx.approvalCampaigns.listCampaigns({ sources: ['dsp'] })).find((c) => c.name === 'Swisse — crid-5130002')!
     await runAuction(ctx, W2)
-    expect(rows(W2)[0]).toMatchObject({ status: 'rejected', reason: 'The campaign is not approved.' })
+    expect((await rows(W2))[0]).toMatchObject({ status: 'rejected', reason: 'The campaign is not approved.' })
     expect((await approve(queued.campaignId)).statusCode).toBe(200)
     await activate(queued.campaignId)
     const third = await runAuction(ctx, new Date('2026-09-23T00:00:00.000Z'))
@@ -129,11 +129,11 @@ describe('the auction', () => {
     await runAuction(ctx, W1)
     const queued = (await ctx.approvalCampaigns.listCampaigns({ sources: ['dsp'] })).find((c) => c.name === 'Swisse — crid-5130002')!
     await ctx.approvals.reject(queued.campaignId, (await ctx.approvals.view(queued.campaignId)).assetVersion, 'hq', 'Price in artwork')
-    expect(sweepRejectedCampaigns(ctx.db, 30, () => new Date(Date.now() + 31 * 24 * 60 * 60 * 1000)).deletedCampaignIds).toContain(queued.campaignId)
+    expect((await sweepRejectedCampaigns(ctx.db, 30, () => new Date(Date.now() + 31 * 24 * 60 * 60 * 1000))).deletedCampaignIds).toContain(queued.campaignId)
     expect(ctx.db.prepare('SELECT COUNT(*) AS n FROM dsp_creatives WHERE campaign_id = ?').get(queued.campaignId)).toEqual({ n: 0 })
     /* The same creative ID arrives again: retrieved and queued as a new first submission, not "already being retrieved". */
     await runAuction(ctx, W2)
-    expect(rows(W2)[0]).toMatchObject({ status: 'rejected', reason: 'New creative crid-5130002: queued for approval.' })
+    expect((await rows(W2))[0]).toMatchObject({ status: 'rejected', reason: 'New creative crid-5130002: queued for approval.' })
     expect(await ctx.approvals.view(queued.campaignId)).toMatchObject({ status: 'awaiting_approval' })
   })
 
@@ -143,21 +143,21 @@ describe('the auction', () => {
     await activate(await queued('Nestlé — crid-5130001'))
     const reason = async (start: Date) => {
       await runAuction(ctx, start)
-      return rows(start)[0].reason
+      return (await rows(start))[0].reason
     }
     await bidder({ mode: 'below_floor' })
     /* Half the sent floor of 100 is 50; Nestlé's own floor is 100 × 0.8. */
     expect(await reason(W2)).toBe('50 is below the effective floor of 80 AUD CPM.')
     await bidder({ mode: 'bid', priceCpm: 150 })
-    ctx.company.save({ ...ctx.company.get(), advertiserBlacklist: ['Nestlé'], advertiserWhitelist: ['Swisse'] })
+    await ctx.company.save({ ...(await ctx.company.get()), advertiserBlacklist: ['Nestlé'], advertiserWhitelist: ['Swisse'] })
     expect(await reason(new Date('2026-09-23T00:00:00.000Z'))).toBe('Nestlé is on the advertiser blacklist.')
-    ctx.company.save({ ...ctx.company.get(), advertiserBlacklist: [], advertiserWhitelist: ['Swisse'] })
-    setSlot({ listMode: 'whitelist_only' })
+    await ctx.company.save({ ...(await ctx.company.get()), advertiserBlacklist: [], advertiserWhitelist: ['Swisse'] })
+    await setSlot({ listMode: 'whitelist_only' })
     expect(await reason(new Date('2026-09-24T00:00:00.000Z'))).toBe('Nestlé is not on the advertiser whitelist for this whitelist-only position.')
-    setSlot({ listMode: 'rtb' })
-    ctx.company.save({ ...ctx.company.get(), categoryBlacklist: ['Food & Drink'] })
+    await setSlot({ listMode: 'rtb' })
+    await ctx.company.save({ ...(await ctx.company.get()), categoryBlacklist: ['Food & Drink'] })
     expect(await reason(new Date('2026-09-25T00:00:00.000Z'))).toBe('Category IAB8 is on the category blacklist.')
-    ctx.company.save({ ...ctx.company.get(), categoryBlacklist: [] })
+    await ctx.company.save({ ...(await ctx.company.get()), categoryBlacklist: [] })
     await bidder({ adomain: 'unknown.example' })
     expect(await reason(new Date('2026-09-26T00:00:00.000Z'))).toBe('Unknown advertiser (unknown.example): not one of Google DSP’s advertisers.')
   })
@@ -166,10 +166,10 @@ describe('the auction', () => {
     const { ctx, rows, activate, queued } = await setup()
     await runAuction(ctx, W1)
     await activate(await queued('Nestlé — crid-5130001'))
-    ctx.partners.update('p_google', { mode: 'test' })
+    await ctx.partners.update('p_google', { mode: 'test' })
     const res = await runAuction(ctx, W2)
     expect(res.positions[0].winner).toBeNull()
-    expect(rows(W2)[0]).toMatchObject({ status: 'won', testMode: true })
+    expect((await rows(W2))[0]).toMatchObject({ status: 'won', testMode: true })
     const view = await buildApp(ctx).inject({ method: 'GET', url: '/api/v1/inventory/menu_board.s2/availability?from=2026-09-22&to=2026-09-22', headers: GOOGLE })
     expect(view.json().windows[0].status).toBe('available')
   })
@@ -178,8 +178,8 @@ describe('the auction', () => {
 describe('private auctions (deal mode; spec "Support private auctions")', () => {
   it('lets an invited buyer (by brand entity) win, at the ordinary floor, first price', async () => {
     const { ctx, setSlot, activate, queued } = await setup()
-    const list = ctx.buyersLists.insert({ id: 'bl_nestle', name: 'Nestlé-only deal', description: '', invitedBuyers: [{ identifierType: 'brandEntity', value: 'Nestlé' }], activeFrom: null, activeTo: null, auctionCloses: null })
-    setSlot({ listMode: 'deal', buyersListId: list.id })
+    const list = await ctx.buyersLists.insert({ id: 'bl_nestle', name: 'Nestlé-only deal', description: '', invitedBuyers: [{ identifierType: 'brandEntity', value: 'Nestlé' }], activeFrom: null, activeTo: null, auctionCloses: null })
+    await setSlot({ listMode: 'deal', buyersListId: list.id })
     const first = await runAuction(ctx, W1)
     /* Runs as a real auction, not a reservation: the deal is visible in the outcome the same as rtb. */
     expect(first.positions[0]).toMatchObject({ bidRequests: 1, bids: 1 })
@@ -190,24 +190,24 @@ describe('private auctions (deal mode; spec "Support private auctions")', () => 
 
   it('rejects a bid from an advertiser not on the invited-buyer list, naming the deal', async () => {
     const { ctx, bidder, setSlot, rows } = await setup()
-    const list = ctx.buyersLists.insert({ id: 'bl_nestle', name: 'Nestlé-only deal', description: '', invitedBuyers: [{ identifierType: 'brandEntity', value: 'Nestlé' }], activeFrom: null, activeTo: null, auctionCloses: null })
-    setSlot({ listMode: 'deal', buyersListId: list.id })
+    const list = await ctx.buyersLists.insert({ id: 'bl_nestle', name: 'Nestlé-only deal', description: '', invitedBuyers: [{ identifierType: 'brandEntity', value: 'Nestlé' }], activeFrom: null, activeTo: null, auctionCloses: null })
+    await setSlot({ listMode: 'deal', buyersListId: list.id })
     await bidder({ advertiserId: '5130002' })
     await runAuction(ctx, W1)
-    expect(rows()[0]).toMatchObject({ status: 'rejected', advertiserId: 'swisse', reason: 'Swisse is not an invited buyer on this private auction (Nestlé-only deal).' })
+    expect((await rows())[0]).toMatchObject({ status: 'rejected', advertiserId: 'swisse', reason: 'Swisse is not an invited buyer on this private auction (Nestlé-only deal).' })
   })
 
   it('matches an invited buyer by DSP seat ID, not just brand entity', async () => {
     const { ctx, bidder, setSlot, approve, activate, queued, rows } = await setup()
     /* Invited by Swisse's own seat ID; the default bidder (Nestlé, seat 5130001) is not. */
-    const list = ctx.buyersLists.insert({ id: 'bl_seat', name: 'Seat-based deal', description: '', invitedBuyers: [{ identifierType: 'dspSeatId', value: '5130002' }], activeFrom: null, activeTo: null, auctionCloses: null })
-    setSlot({ listMode: 'deal', buyersListId: list.id })
+    const list = await ctx.buyersLists.insert({ id: 'bl_seat', name: 'Seat-based deal', description: '', invitedBuyers: [{ identifierType: 'dspSeatId', value: '5130002' }], activeFrom: null, activeTo: null, auctionCloses: null })
+    await setSlot({ listMode: 'deal', buyersListId: list.id })
     await runAuction(ctx, W1)
-    expect(rows()[0]).toMatchObject({ status: 'rejected', advertiserId: 'nestle', reason: 'Nestlé is not an invited buyer on this private auction (Seat-based deal).' })
+    expect((await rows())[0]).toMatchObject({ status: 'rejected', advertiserId: 'nestle', reason: 'Nestlé is not an invited buyer on this private auction (Seat-based deal).' })
 
     await bidder({ advertiserId: '5130002' })
     await runAuction(ctx, W2)
-    expect(rows(W2)[0]).toMatchObject({ status: 'rejected', advertiserId: 'swisse', reason: 'New creative crid-5130002: queued for approval.' })
+    expect((await rows(W2))[0]).toMatchObject({ status: 'rejected', advertiserId: 'swisse', reason: 'New creative crid-5130002: queued for approval.' })
     /* Unlike Nestlé, Swisse requires campaign approval before it can win (seed.ts). */
     const campaignId = await queued('Swisse — crid-5130002')
     await approve(campaignId)
@@ -218,17 +218,17 @@ describe('private auctions (deal mode; spec "Support private auctions")', () => 
 
   it("falls through to nobody winning once the deal's active window has passed — no reserve floor is ever crossed", async () => {
     const { ctx, setSlot, rows } = await setup()
-    const list = ctx.buyersLists.insert({ id: 'bl_expired', name: 'Expired deal', description: '', invitedBuyers: [{ identifierType: 'brandEntity', value: 'Nestlé' }], activeFrom: '2026-01-01T00:00:00Z', activeTo: '2026-02-01T00:00:00Z', auctionCloses: null })
-    setSlot({ listMode: 'deal', buyersListId: list.id })
+    const list = await ctx.buyersLists.insert({ id: 'bl_expired', name: 'Expired deal', description: '', invitedBuyers: [{ identifierType: 'brandEntity', value: 'Nestlé' }], activeFrom: '2026-01-01T00:00:00Z', activeTo: '2026-02-01T00:00:00Z', auctionCloses: null })
+    await setSlot({ listMode: 'deal', buyersListId: list.id })
     await runAuction(ctx, W1)
-    expect(rows()[0]).toMatchObject({ status: 'rejected', reason: 'Nestlé is not an invited buyer on this private auction (Expired deal).' })
+    expect((await rows())[0]).toMatchObject({ status: 'rejected', reason: 'Nestlé is not an invited buyer on this private auction (Expired deal).' })
   })
 
   it('admits nobody once the buyers list itself is deleted (falls through to the default campaign)', async () => {
     const { ctx, setSlot } = await setup()
-    const list = ctx.buyersLists.insert({ id: 'bl_gone', name: 'Soon-deleted', description: '', invitedBuyers: [{ identifierType: 'brandEntity', value: 'Nestlé' }], activeFrom: null, activeTo: null, auctionCloses: null })
-    setSlot({ listMode: 'deal', buyersListId: list.id })
-    ctx.buyersLists.delete(list.id)
+    const list = await ctx.buyersLists.insert({ id: 'bl_gone', name: 'Soon-deleted', description: '', invitedBuyers: [{ identifierType: 'brandEntity', value: 'Nestlé' }], activeFrom: null, activeTo: null, auctionCloses: null })
+    await setSlot({ listMode: 'deal', buyersListId: list.id })
+    await ctx.buyersLists.delete(list.id)
     const first = await runAuction(ctx, W1)
     expect(first.positions[0]).toMatchObject({ bidRequests: 0, winner: null })
   })
@@ -239,18 +239,18 @@ describe('private auctions: two-period model (locked rate over the delivery term
 
   it("locks the term's rate on its first clearing bid, then books every later window directly at that rate — no re-auction", async () => {
     const { ctx, setSlot, activate, queued, rows } = await setup()
-    const list = ctx.buyersLists.insert({
+    const list = await ctx.buyersLists.insert({
       id: 'bl_term', name: 'Q4 term deal', description: '', invitedBuyers: [{ identifierType: 'brandEntity', value: 'Nestlé' }],
       activeFrom: null, activeTo: null, auctionCloses: '2026-09-22T00:00:00.000Z',
     })
-    setSlot({ listMode: 'deal', buyersListId: list.id })
+    await setSlot({ listMode: 'deal', buyersListId: list.id })
     /* W1 and W2 clear exactly like an ordinary deal (auctionCloses hasn't
        passed yet): a real auction, bid requests go out. */
     await runAuction(ctx, W1)
     await activate(await queued('Nestlé — crid-5130001'))
     const second = await runAuction(ctx, W2)
     expect(second.positions[0].winner).toMatchObject({ partnerId: 'p_google', advertiserId: 'nestle', clearingCpm: 150 })
-    expect(ctx.buyersLists.get(list.id)?.lockedWin).toMatchObject({ cpm: 150, partnerId: 'p_google', advertiserId: 'nestle', channel: 'openrtb' })
+    expect((await ctx.buyersLists.get(list.id))?.lockedWin).toMatchObject({ cpm: 150, partnerId: 'p_google', advertiserId: 'nestle', channel: 'openrtb' })
 
     /* W3: auctionCloses has now passed, but that no longer matters — the
        term is locked, so this window is booked directly at the same rate,
@@ -258,26 +258,26 @@ describe('private auctions: two-period model (locked rate over the delivery term
     const third = await runAuction(ctx, W3)
     expect(third.positions[0]).toMatchObject({ bidRequests: 0, bids: 0, winner: { partnerId: 'p_google', advertiserId: 'nestle', clearingCpm: 150 } })
     expect(third.positions[0].skipped).toMatch(/locked rate/)
-    expect(rows(W3)[0]).toMatchObject({ status: 'won', channel: 'openrtb', clearingCpm: 150, campaignId: rows(W2)[0].campaignId })
-    expect(rows(W3)[0].handedOffAt).not.toBeNull()
+    expect((await rows(W3))[0]).toMatchObject({ status: 'won', channel: 'openrtb', clearingCpm: 150, campaignId: (await rows(W2))[0].campaignId })
+    expect((await rows(W3))[0].handedOffAt).not.toBeNull()
 
     /* Re-running the same window a second time doesn't double-book it —
        the generic "already sold" guard catches it before the locked-term
        branch runs again. */
     const again = await runAuction(ctx, W3)
     expect(again.positions[0]).toMatchObject({ skipped: 'Already sold.', winner: null })
-    expect(rows(W3)).toHaveLength(1)
+    expect(await rows(W3)).toHaveLength(1)
   })
 
   it('keeps clearing fresh every window when auctionCloses is not set — unchanged from before this model existed', async () => {
     const { ctx, setSlot, activate, queued } = await setup()
-    const list = ctx.buyersLists.insert({ id: 'bl_legacy', name: 'Legacy deal', description: '', invitedBuyers: [{ identifierType: 'brandEntity', value: 'Nestlé' }], activeFrom: null, activeTo: null, auctionCloses: null })
-    setSlot({ listMode: 'deal', buyersListId: list.id })
+    const list = await ctx.buyersLists.insert({ id: 'bl_legacy', name: 'Legacy deal', description: '', invitedBuyers: [{ identifierType: 'brandEntity', value: 'Nestlé' }], activeFrom: null, activeTo: null, auctionCloses: null })
+    await setSlot({ listMode: 'deal', buyersListId: list.id })
     await runAuction(ctx, W1)
     await activate(await queued('Nestlé — crid-5130001'))
     const second = await runAuction(ctx, W2)
     expect(second.positions[0].bidRequests).toBe(1)
-    expect(ctx.buyersLists.get(list.id)?.lockedWin).toBeNull()
+    expect((await ctx.buyersLists.get(list.id))?.lockedWin).toBeNull()
     /* W3 still runs a real auction too — nothing ever locks without auctionCloses. */
     const third = await runAuction(ctx, W3)
     expect(third.positions[0].bidRequests).toBe(1)
@@ -285,14 +285,14 @@ describe('private auctions: two-period model (locked rate over the delivery term
 
   it('falls through once the auction window closes with nothing cleared — the term never got a rate to hold', async () => {
     const { ctx, setSlot, rows } = await setup()
-    const list = ctx.buyersLists.insert({ id: 'bl_missed', name: 'Missed deadline', description: '', invitedBuyers: [{ identifierType: 'brandEntity', value: 'Nestlé' }], activeFrom: null, activeTo: null, auctionCloses: '2026-09-20T12:00:00.000Z' })
-    setSlot({ listMode: 'deal', buyersListId: list.id })
+    const list = await ctx.buyersLists.insert({ id: 'bl_missed', name: 'Missed deadline', description: '', invitedBuyers: [{ identifierType: 'brandEntity', value: 'Nestlé' }], activeFrom: null, activeTo: null, auctionCloses: '2026-09-20T12:00:00.000Z' })
+    await setSlot({ listMode: 'deal', buyersListId: list.id })
     /* W1 starts 21 Sep — already past the 20 Sep auctionCloses deadline. */
     const out = await runAuction(ctx, W1)
     expect(out.positions[0]).toMatchObject({ bidRequests: 0, bids: 0, winner: null })
     expect(out.positions[0].skipped).toMatch(/window closed with no clearing bid/)
-    expect(rows()).toEqual([])
-    expect(ctx.buyersLists.get(list.id)?.lockedWin).toBeNull()
+    expect(await rows()).toEqual([])
+    expect((await ctx.buyersLists.get(list.id))?.lockedWin).toBeNull()
   })
 })
 
@@ -314,7 +314,7 @@ describe('POST /v1/reservations and GET …/{id}', () => {
     const got = await app.inject({ method: 'GET', url: `/api/v1/reservations/${res.json().reservationId}`, headers: GOOGLE })
     expectMatchesContract('GET', '/v1/reservations/{reservationId}', 200, got.json())
     expect(got.json()).toMatchObject({ status: 'won', clearingCpm: 200 })
-    expect(ctx.reservations.forWindow('menu_board.s2', BID.windowStart).find((r) => r.channel === 'openrtb')).toMatchObject({ status: 'lost', reason: 'Outbid: the window cleared at 200 AUD CPM.' })
+    expect((await ctx.reservations.forWindow('menu_board.s2', BID.windowStart)).find((r) => r.channel === 'openrtb')).toMatchObject({ status: 'lost', reason: 'Outbid: the window cleared at 200 AUD CPM.' })
     expect((await reserve(BID)).statusCode).toBe(409)
   })
 
@@ -331,7 +331,7 @@ describe('POST /v1/reservations and GET …/{id}', () => {
     expect(await refused({})).toEqual(['not_approved', 'The campaign is approved but not activated.'])
     await activate('c_api_swisse')
     expect(await refused({ bidCpm: 99 })).toEqual(['below_floor', '99 is below the effective floor of 100 AUD CPM.'])
-    ctx.company.save({ ...ctx.company.get(), advertiserBlacklist: ['Swisse'], advertiserWhitelist: [] })
+    await ctx.company.save({ ...(await ctx.company.get()), advertiserBlacklist: ['Swisse'], advertiserWhitelist: [] })
     expect(await refused({})).toEqual(['advertiser_blocked', 'Swisse is on the advertiser blacklist.'])
   })
 
@@ -358,7 +358,7 @@ describe('POST /v1/reservations and GET …/{id}', () => {
     const { ctx, approve, activate, reserve, setSlot } = await setup()
     await approve('c_api_swisse')
     await activate('c_api_swisse')
-    setSlot({ listMode: null, advertisers: ['Swisse'] })
+    await setSlot({ listMode: null, advertisers: ['Swisse'] })
     expect((await reserve(BID)).statusCode).toBe(409)
     const noPrice = await reserve({ ...BID, type: 'reserve', bidCpm: undefined })
     expect(noPrice.json().error.details).toEqual([{ field: 'bidCpm', reason: 'The agreed reservation price (CPM) is required.' }])

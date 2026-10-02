@@ -15,8 +15,8 @@ const VERSION = (id: string) => ({ id, priority: 1, pricingType: 'localised', ru
 async function setup(maxCampaigns: number | null, targetedCount: number) {
   const ctx = await testContext({ clock: () => NOW })
   const app = buildApp(ctx)
-  const ext = ctx.displayTypes.get('portrait')!.phExtensions!
-  ctx.displayTypes.saveExtensions('portrait', {
+  const ext = (await ctx.displayTypes.get('portrait'))!.phExtensions!
+  await ctx.displayTypes.saveExtensions('portrait', {
     ...ext,
     slots: [{ label: 'Ad', owner: 'advertiser', partnerIds: [], advertisers: [], listMode: 'rtb', buyersListId: null, storeScope: null, quota: null, zoneId: null, supportedTargeting: ['localised'], maxCampaigns, reservePrice: 150 } as Slot],
   })
@@ -43,7 +43,7 @@ describe('Max campaigns at bid and reservation time', () => {
       expect(res.statusCode).toBe(422)
       expect(res.json().error).toMatchObject({ code: 'too_many_versions', message: 'At most 5 campaigns (default + targeted versions) for this slot.' })
     }
-    expect(ctx.reservations.forWindow('portrait.s1', W1)).toEqual([])
+    expect(await ctx.reservations.forWindow('portrait.s1', W1)).toEqual([])
   })
 
   it('accepts the same 6-version campaign on a Max-10 slot', async () => {
@@ -59,11 +59,11 @@ describe('Max campaigns at bid and reservation time', () => {
   it('settles a pending bid rejected with the same reason when the slot is lowered before the auction', async () => {
     const { ctx, post, app } = await setup(10, 5)
     expect((await post('bid')).statusCode).toBe(201)
-    const ext = ctx.displayTypes.get('portrait')!.phExtensions!
-    ctx.displayTypes.saveExtensions('portrait', { ...ext, slots: ext.slots!.map((s) => ({ ...s, maxCampaigns: 3 })) })
+    const ext = (await ctx.displayTypes.get('portrait'))!.phExtensions!
+    await ctx.displayTypes.saveExtensions('portrait', { ...ext, slots: ext.slots!.map((s) => ({ ...s, maxCampaigns: 3 })) })
     const { runAuction } = await import('../src/exchange/auction')
     await runAuction(ctx, new Date(W1))
-    const rows = ctx.reservations.forWindow('portrait.s1', W1)
+    const rows = await ctx.reservations.forWindow('portrait.s1', W1)
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({ status: 'rejected', reason: 'At most 3 campaigns (default + targeted versions) for this slot.' })
     void app

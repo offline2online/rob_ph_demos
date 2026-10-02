@@ -40,6 +40,7 @@ import { tokenBucket } from '../../../../apps/api/src/http/rateLimit'
 import { seed } from '../../../../apps/api/src/seed/seed'
 import { schedulerTick } from '../../../../apps/api/src/exchange/scheduler'
 import { sweepRejectedCampaigns } from '../../../../apps/api/src/domain/campaignRetention'
+import { onFree } from '../../../../apps/api/src/db/db'
 import type { Fetch } from '../../../../apps/api/src/dsp/DspClient'
 import { buildMocks } from '../../../../apps/dsp-mocks/src/app'
 
@@ -143,15 +144,15 @@ export function createHost(opts: { store: BlobStore; dataDir: string; migrations
      once a project owner enables one (README). */
   let lastTick = 0
   /* SQLite's running count of rows changed on this connection. */
-  const changes = (ctx: Context) => Number((ctx.db.prepare('SELECT total_changes() AS n').get() as { n: number }).n)
+  const changes = async (ctx: Context) => Number(await onFree(ctx.db, () => (ctx.db.prepare('SELECT total_changes() AS n').get() as { n: number }).n))
   const runTick = async (ctx: Context) => {
-    const before = changes(ctx)
+    const before = await changes(ctx)
     await schedulerTick(ctx, log)
-    sweepRejectedCampaigns(ctx.db, ctx.config.rejectedCampaignRetentionDays, ctx.clock)
+    await sweepRejectedCampaigns(ctx.db, ctx.config.rejectedCampaignRetentionDays, ctx.clock)
     /* Most ticks bill nothing and clear no auction: only upload the database
        (a few MB, gzipped and chunked into Firestore) when something changed
        (page-load review, 24 Sep 2026). */
-    if (changes(ctx) !== before) await persist(ctx)
+    if ((await changes(ctx)) !== before) await persist(ctx)
   }
 
   const boot = () =>
@@ -205,7 +206,8 @@ export function createHost(opts: { store: BlobStore; dataDir: string; migrations
     (chain = chain.then(async () => {
       const snap = `${dbFile}.snapshot`
       rmSync(snap, { force: true })
-      ctx.db.exec(`VACUUM INTO '${snap.replace(/'/g, "''")}'`)
+      /* SQLite refuses VACUUM inside an open transaction: wait until none is. */
+      await onFree(ctx.db, () => ctx.db.exec(`VACUUM INTO '${snap.replace(/'/g, "''")}'`))
       await opts.store.put('poc.sqlite', readFileSync(snap))
       rmSync(snap, { force: true })
       for (const file of readdirSync(assetsDir)) {

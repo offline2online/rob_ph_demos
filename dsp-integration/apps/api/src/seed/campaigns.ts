@@ -21,61 +21,63 @@ const PASSED = (w: number, h: number) => [
 ]
 
 export async function seedCampaigns(ctx: Context) {
-  const insert = ctx.db.prepare(
-    `INSERT INTO campaigns (id, name, targeting, created_at, source, advertiser_id, partner_id, display_type_id, pricing_type, activation_enabled, brief)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
-  )
-  /* The brief each advertiser sent with its booking (Rob, 20 Sep). */
-  const brief = (details: string, over: Record<string, unknown> = {}) =>
-    JSON.stringify({ details, objective: 'Increase Revenue / Sales', touchPoints: ['Digital Signage'], ...over })
-  const asset = (campaignId: string, w: number, h: number, bg: string, brand: string, line: string) => {
-    const file = ctx.assets.put(svg(w, h, bg, brand, line), '.svg')
-    ctx.db.prepare("INSERT INTO campaign_assets (id, campaign_id, version, role, file, mime_type, width, height, size_bytes, created_at) VALUES (?, ?, 1, 'default', ?, 'image/svg+xml', ?, ?, 1024, ?)")
-      .run(randomUUID(), campaignId, file, w, h, '2026-09-15T09:00:00.000Z')
-  }
-  const targeting: StoredTargeting = {
-    default: { pricingType: 'localised' },
-    targeted: [{ id: 'metro-open', priority: 10, pricingType: 'localised', rules: [[{ source: 'store', variable: 'store.fixed_segments', op: 'include', values: ['Metro'] }], [{ source: 'store', variable: 'store.hours', op: 'equal', values: ['Open'] }]] }],
-  }
-  const justDefault: StoredTargeting = { default: { pricingType: 'localised' } }
+  /* One transaction: the sample campaigns are written whole or not at all. */
+  await tx(ctx.db, async () => {
+    const insert = ctx.db.prepare(
+      `INSERT INTO campaigns (id, name, targeting, created_at, source, advertiser_id, partner_id, display_type_id, pricing_type, activation_enabled, brief)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+    )
+    /* The brief each advertiser sent with its booking (Rob, 20 Sep). */
+    const brief = (details: string, over: Record<string, unknown> = {}) =>
+      JSON.stringify({ details, objective: 'Increase Revenue / Sales', touchPoints: ['Digital Signage'], ...over })
+    const asset = async (campaignId: string, w: number, h: number, bg: string, brand: string, line: string) => {
+      const file = await ctx.assets.put(svg(w, h, bg, brand, line), '.svg')
+      ctx.db.prepare("INSERT INTO campaign_assets (id, campaign_id, version, role, file, mime_type, width, height, size_bytes, created_at) VALUES (?, ?, 1, 'default', ?, 'image/svg+xml', ?, ?, 1024, ?)")
+        .run(randomUUID(), campaignId, file, w, h, '2026-09-15T09:00:00.000Z')
+    }
+    const targeting: StoredTargeting = {
+      default: { pricingType: 'localised' },
+      targeted: [{ id: 'metro-open', priority: 10, pricingType: 'localised', rules: [[{ source: 'store', variable: 'store.fixed_segments', op: 'include', values: ['Metro'] }], [{ source: 'store', variable: 'store.hours', op: 'equal', values: ['Open'] }]] }],
+    }
+    const justDefault: StoredTargeting = { default: { pricingType: 'localised' } }
 
-  insert.run('c_dsp_nestle', 'Nestlé — Winter warmers', JSON.stringify(targeting), '2026-09-15T09:00:00.000Z', 'dsp', 'nestle', 'p_google', 'landscape', 'localised',
-    brief('Drive winter hot-drink sales in metro stores while the weather is cold, with the hero pack shot on the entrance screens.', { promotedProducts: ['Nescafé Gold', 'Milo'], skus: ['SKU-10234', 'SKU-10235'], targetAudiences: ['Metro commuters'], landingPageUrl: 'https://nestle.com/au/winter' }))
-  asset('c_dsp_nestle', 1920, 1080, '#b3261e', 'Nestlé', 'Winter warmers')
-  insert.run('c_api_swisse', 'Swisse — Spring immunity', JSON.stringify(justDefault), '2026-09-16T09:00:00.000Z', 'api', 'swisse', 'p_google', 'portrait', 'localised',
-    brief('Spring immunity range, aimed at shoppers already in the health aisle.', { promotedProducts: ['Ultiboost Immune'], targetAudiences: ['Health & fitness'], objective: 'Brand Awareness' }))
-  asset('c_api_swisse', 1080, 1920, '#1b5e20', 'Swisse', 'Spring immunity')
-  insert.run('c_dsp_loreal', 'L’Oréal — Revitalift', JSON.stringify(justDefault), '2026-09-17T09:00:00.000Z', 'dsp', 'loreal', 'p_amazon', 'landscape', 'localised',
-    brief('Revitalift launch across metro stores.', { promotedProducts: ['Revitalift Serum'] }))
-  asset('c_dsp_loreal', 1920, 1080, '#212121', 'L’Oréal', 'Revitalift — A$29.95')
-  insert.run('c_api_swisse_kids', 'Swisse — Kids multivitamin', JSON.stringify(justDefault), '2026-09-18T09:00:00.000Z', 'api', 'swisse', 'p_google', 'landscape', 'localised', null)
+    insert.run('c_dsp_nestle', 'Nestlé — Winter warmers', JSON.stringify(targeting), '2026-09-15T09:00:00.000Z', 'dsp', 'nestle', 'p_google', 'landscape', 'localised',
+      brief('Drive winter hot-drink sales in metro stores while the weather is cold, with the hero pack shot on the entrance screens.', { promotedProducts: ['Nescafé Gold', 'Milo'], skus: ['SKU-10234', 'SKU-10235'], targetAudiences: ['Metro commuters'], landingPageUrl: 'https://nestle.com/au/winter' }))
+    await asset('c_dsp_nestle', 1920, 1080, '#b3261e', 'Nestlé', 'Winter warmers')
+    insert.run('c_api_swisse', 'Swisse — Spring immunity', JSON.stringify(justDefault), '2026-09-16T09:00:00.000Z', 'api', 'swisse', 'p_google', 'portrait', 'localised',
+      brief('Spring immunity range, aimed at shoppers already in the health aisle.', { promotedProducts: ['Ultiboost Immune'], targetAudiences: ['Health & fitness'], objective: 'Brand Awareness' }))
+    await asset('c_api_swisse', 1080, 1920, '#1b5e20', 'Swisse', 'Spring immunity')
+    insert.run('c_dsp_loreal', 'L’Oréal — Revitalift', JSON.stringify(justDefault), '2026-09-17T09:00:00.000Z', 'dsp', 'loreal', 'p_amazon', 'landscape', 'localised',
+      brief('Revitalift launch across metro stores.', { promotedProducts: ['Revitalift Serum'] }))
+    await asset('c_dsp_loreal', 1920, 1080, '#212121', 'L’Oréal', 'Revitalift — A$29.95')
+    insert.run('c_api_swisse_kids', 'Swisse — Kids multivitamin', JSON.stringify(justDefault), '2026-09-18T09:00:00.000Z', 'api', 'swisse', 'p_google', 'landscape', 'localised', null)
 
-  /* Nestlé doesn't require approval: approved automatically. */
-  await ctx.approvals.submit('c_dsp_nestle', PASSED(1920, 1080), 'Google DSP')
-  await ctx.approvalCampaigns.setActivation('c_dsp_nestle', true)
-  await ctx.approvals.submit('c_api_swisse', PASSED(1080, 1920), 'Swisse')
-  await ctx.approvals.submit('c_dsp_loreal', PASSED(1920, 1080), 'Amazon Ads DSP')
-  await ctx.approvals.reject('c_dsp_loreal', 'v1', 'HQ Admin (POC)', 'Price shown in the artwork (A$29.95). Prices come from Personalisation Hub, not the creative.')
-
-  seedPastWindow(ctx)
+    /* Nestlé doesn't require approval: approved automatically. */
+    await ctx.approvals.submit('c_dsp_nestle', PASSED(1920, 1080), 'Google DSP')
+    await ctx.approvalCampaigns.setActivation('c_dsp_nestle', true)
+    await ctx.approvals.submit('c_api_swisse', PASSED(1080, 1920), 'Swisse')
+    await ctx.approvals.submit('c_dsp_loreal', PASSED(1920, 1080), 'Amazon Ads DSP')
+    await ctx.approvals.reject('c_dsp_loreal', 'v1', 'HQ Admin (POC)', 'Price shown in the artwork (A$29.95). Prices come from Personalisation Hub, not the creative.')
+  await seedPastWindow(ctx)
+  })
 }
 
 /* A window that has already played, for billing: Nestlé won the Menu Board's
    advertiser slot on 15 Sep at 120 CPM and it was handed off. The stand-in
    playback data (read only) has one Menu Board playing the full day, one
    half the day, and one offline. */
-function seedPastWindow(ctx: Context) {
+async function seedPastWindow(ctx: Context) {
   const start = '2026-09-15T00:00:00.000Z'
-  ctx.reservations.insert({
+  await ctx.reservations.insert({
     id: 'res_seed_nestle_0915', partnerId: 'p_google', advertiserId: 'nestle', campaignId: 'c_dsp_nestle', positionId: 'menu_board.s2', windowStart: start,
     type: 'bid', channel: 'openrtb', bidCpm: 120, currency: 'AUD', status: 'won', clearingCpm: 120, reason: null, testMode: false,
     pricingType: 'localised', handedOffAt: '2026-09-14T18:00:00.000Z',
   })
-  ctx.campaigns.bookSlot({ id: 'bk_seed_nestle_0915', campaignId: 'c_dsp_nestle', displayTypeId: 'menu_board', slot: 2, windowStart: start, windowEnd: '2026-09-16T00:00:00.000Z' })
+  await ctx.campaigns.bookSlot({ id: 'bk_seed_nestle_0915', campaignId: 'c_dsp_nestle', displayTypeId: 'menu_board', slot: 2, windowStart: start, windowEnd: '2026-09-16T00:00:00.000Z' })
   /* A 45s loop with a 15s slot: 1,920 plays a day on a display that is on all day. */
   const play = ctx.db.prepare('INSERT INTO plays (id, display_id, campaign_id, played_at, duration_sec) VALUES (?, ?, ?, ?, 15)')
   const t0 = Date.parse(start)
-  tx(ctx.db, () => {
+  await tx(ctx.db, () => {
     for (let i = 0; i < 1920; i++) play.run(`pl_1004_${i}`, 'd_1004', 'c_dsp_nestle', new Date(t0 + i * 45_000).toISOString())
     for (let i = 0; i < 960; i++) play.run(`pl_1005_${i}`, 'd_1005', 'c_dsp_nestle', new Date(t0 + i * 45_000).toISOString())
   })

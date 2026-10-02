@@ -11,6 +11,6 @@ if (!ctx.flags.dspIntegration) {
   console.error('The dspIntegration flag is off (DSP_INTEGRATION_ENABLED): no billing runs.')
   process.exit(1)
 }
-const added = runBilling(ctx)
+const added = await runBilling(ctx)
 console.log(`${added.length} new line item${added.length === 1 ? '' : 's'}.`)
-console.log(JSON.stringify(lineItems(ctx), null, 2))
+console.log(JSON.stringify(await lineItems(ctx), null, 2))

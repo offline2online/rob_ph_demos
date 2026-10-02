@@ -4,9 +4,9 @@
    retention are deleted. No UI and no endpoint. */
 import { hostname } from 'node:os'
 import type { Context } from '../context'
-import { prepared } from '../db/db'
+import { onFree, prepared, tx } from '../db/db'
 import { sweepRejectedCampaigns } from '../domain/campaignRetention'
-import { allPositions, biddingClosesAt, companyWindowCommitments, windowMs, windowStartOf } from '../domain/positions'
+import { allPositions, closesAtFor, companyWindowCommitments, windowMsFor, windowStartOf } from '../domain/positions'
 import { releaseSettledSlotLocks } from '../domain/slotLock'
 import { sweepSettledReservations } from '../domain/reservationRetention'
 import { runAuction } from './auction'
@@ -25,20 +25,20 @@ const STALE_CLAIM_MS = 15 * 60_000
    would stop two clearings selling a window twice anyway, but DSPs would
    still be sent two rounds of bid requests.) Returns false when another
    process has it. */
-export function claimAuction(ctx: Context, windowStart: string): boolean {
+export async function claimAuction(ctx: Context, windowStart: string): Promise<boolean> {
   const now = ctx.clock().toISOString()
   const stale = new Date(ctx.clock().getTime() - STALE_CLAIM_MS).toISOString()
-  return prepared(ctx.db,
+  return onFree(ctx.db, () => prepared(ctx.db,
     `INSERT INTO auction_runs (window_start, claimed_at, claimed_by, finished_at) VALUES (?, ?, ?, NULL)
        ON CONFLICT (window_start) DO UPDATE SET claimed_at = excluded.claimed_at, claimed_by = excluded.claimed_by
        WHERE auction_runs.finished_at IS NULL AND auction_runs.claimed_at < ?`,
-  ).run(windowStart, now, INSTANCE, stale).changes > 0
+  ).run(windowStart, now, INSTANCE, stale).changes > 0)
 }
 const finishAuction = (ctx: Context, windowStart: string) =>
-  prepared(ctx.db, 'UPDATE auction_runs SET finished_at = ? WHERE window_start = ? AND claimed_by = ?').run(ctx.clock().toISOString(), windowStart, INSTANCE)
+  onFree(ctx.db, () => prepared(ctx.db, 'UPDATE auction_runs SET finished_at = ? WHERE window_start = ? AND claimed_by = ?').run(ctx.clock().toISOString(), windowStart, INSTANCE))
 /* An auction that threw releases its claim so the next tick retries at once. */
 const releaseAuction = (ctx: Context, windowStart: string) =>
-  prepared(ctx.db, 'DELETE FROM auction_runs WHERE window_start = ? AND claimed_by = ? AND finished_at IS NULL').run(windowStart, INSTANCE)
+  onFree(ctx.db, () => prepared(ctx.db, 'DELETE FROM auction_runs WHERE window_start = ? AND claimed_by = ? AND finished_at IS NULL').run(windowStart, INSTANCE))
 
 /* One pass of the scheduled work: bill the windows that have ended, sweep
    settled bids, then clear any window whose auction cutoff passed within
@@ -63,39 +63,43 @@ export async function schedulerTick(ctx: Context, log: (msg: string) => void) {
   }
   /* Windows already sold are still billed when they end, switch or not:
      they were delivered. */
-  await job('Billing', () => {
-    const billed = runBilling(ctx)
+  await job('Billing', async () => {
+    const billed = await runBilling(ctx)
     if (billed.length) log(`Billed ${billed.length} ended window${billed.length === 1 ? '' : 's'}.`)
   })
   /* A slot locked against new sales is released once the booking schedule
      has no live booking left on it (bookings only, never playback). */
-  await job('Slot locks', () => {
-    const released = releaseSettledSlotLocks(ctx)
+  await job('Slot locks', async () => {
+    const released = await releaseSettledSlotLocks(ctx)
     if (released) log(`Released the sales lock on ${released} slot${released === 1 ? '' : 's'}: nothing is booked on ${released === 1 ? 'it' : 'them'} any more.`)
   })
-  await job('Retention', () => {
-    const swept = sweepSettledReservations(ctx.db, ctx.config.reservationRetentionDays, ctx.clock)
+  await job('Retention', async () => {
+    const swept = await sweepSettledReservations(ctx.db, ctx.config.reservationRetentionDays, ctx.clock)
     if (swept) log(`Deleted ${swept} settled bid${swept === 1 ? '' : 's'} older than ${ctx.config.reservationRetentionDays} days.`)
-    sweepAuctionRuns(ctx)
+    await sweepAuctionRuns(ctx)
   })
-  await job('Play-window length', () => {
-    const changed = promotePendingPlayWindowIfDue(ctx)
+  await job('Play-window length', async () => {
+    const changed = await promotePendingPlayWindowIfDue(ctx)
     if (changed) log(`Play-window length changed to ${changed} hours; every window still active started under the previous length.`)
   })
   /* A bid still pending for a window that has started will never clear:
      its auction never ran (the process was down past the cutoff), or the
      position was removed from the estate after the bid was placed. It is
      settled as lost rather than left pending for ever. */
-  await job('Settling', () => {
-    const stale = ctx.reservations.stalePending(ctx.clock().toISOString())
-    for (const r of stale) ctx.reservations.update(r.id, { status: 'lost', reason: 'The window started with no auction clearing this bid; nothing was sold.' })
-    if (stale.length) log(`Settled ${stale.length} bid${stale.length === 1 ? '' : 's'} for windows that started without an auction.`)
+  await job('Settling', async () => {
+    const settled = await tx(ctx.db, async () => {
+      const stale = await ctx.reservations.stalePending(ctx.clock().toISOString())
+      for (const r of stale) await ctx.reservations.update(r.id, { status: 'lost', reason: 'The window started with no auction clearing this bid; nothing was sold.' })
+      return stale.length
+    })
+    if (settled) log(`Settled ${settled} bid${settled === 1 ? '' : 's'} for windows that started without an auction.`)
   })
   /* Switched off (Exchange settings): nothing new is sold. */
-  if (ctx.exchange.get().enabled) {
+  if ((await ctx.exchange.get()).enabled) {
     const now = ctx.clock().getTime()
-    for (const w of dueWindowStarts(ctx)) {
-      const cutoff = biddingClosesAt(ctx, w).getTime()
+    const company = await ctx.company.get()
+    for (const w of await dueWindowStarts(ctx)) {
+      const cutoff = closesAtFor(company, w).getTime()
       /* Due once its cutoff has passed, and still worth running late — a
          process down for hours — as long as the window itself hasn't
          started; after that the window is skipped, and Settling above tells
@@ -103,15 +107,15 @@ export async function schedulerTick(ctx: Context, log: (msg: string) => void) {
          even with the window still to come.) */
       if (now < cutoff || now >= w.getTime()) continue
       const start = w.toISOString()
-      if (!claimAuction(ctx, start)) continue
+      if (!(await claimAuction(ctx, start))) continue
       await job('Auction', async () => {
         try {
           const res = await runAuction(ctx, w)
-          finishAuction(ctx, start)
+          await finishAuction(ctx, start)
           const failed = res.positions.filter((p) => p.skipped?.startsWith('Failed:')).length
           log(`Auction cleared ${res.windowStart}: ${res.positions.filter((p) => p.winner).length} of ${res.positions.length} positions won${failed ? `, ${failed} failed` : ''}.`)
         } catch (e) {
-          releaseAuction(ctx, start)
+          await releaseAuction(ctx, start)
           throw e
         }
       })
@@ -126,11 +130,12 @@ export async function schedulerTick(ctx: Context, log: (msg: string) => void) {
    order. A start two lengths share (a Monday, for daily and weekly slots)
    is one auction: runAuction clears every position whose window starts
    then. */
-export function dueWindowStarts(ctx: Context): Date[] {
-  const lengths = new Set([windowMs(ctx), ...allPositions(ctx).map((p) => windowMs(ctx, p))])
+export async function dueWindowStarts(ctx: Context): Promise<Date[]> {
+  const hours = (await ctx.company.get()).playWindowHours
+  const lengths = new Set([windowMsFor(hours), ...(await allPositions(ctx)).map((p) => windowMsFor(hours, p))])
   const starts = new Set<number>()
   for (const len of lengths) {
-    const current = windowStartOf(ctx, ctx.clock(), len).getTime()
+    const current = windowStartOf(ctx.clock(), len).getTime()
     starts.add(current).add(current + len)
   }
   return [...starts].sort((a, b) => a - b).map((t) => new Date(t))
@@ -147,36 +152,40 @@ export function dueWindowStarts(ctx: Context): Date[] {
    Since OQ27 the company value is only the window a slot inherits when
    neither it nor its display type sets a billing unit, so only those
    slots' windows hold the change back (companyWindowCommitments); a slot
-   with its own billing unit isn't resized by it and never delays it. */
-export function promotePendingPlayWindowIfDue(ctx: Context): number | null {
-  const company = ctx.company.get()
-  if (company.pendingPlayWindowHours == null || company.pendingPlayWindowEffectiveFrom == null) return null
-  const now = ctx.clock().toISOString()
-  if (now < company.pendingPlayWindowEffectiveFrom) return null
-  const active = companyWindowCommitments(ctx)
-  if (active.length) {
-    const extendedTo = new Date(Math.max(...active.map((r) => Date.parse(r.windowStart) + company.playWindowHours * 3_600_000))).toISOString()
-    if (extendedTo !== company.pendingPlayWindowEffectiveFrom) ctx.company.save({ ...company, pendingPlayWindowEffectiveFrom: extendedTo })
-    return null
-  }
-  const hours = company.pendingPlayWindowHours
-  ctx.company.save({ ...company, playWindowHours: hours, pendingPlayWindowHours: null, pendingPlayWindowEffectiveFrom: null })
-  return hours
+   with its own billing unit isn't resized by it and never delays it.
+   One transaction: an Advertiser settings save can't land between the read
+   and the write and be overwritten. */
+export async function promotePendingPlayWindowIfDue(ctx: Context): Promise<number | null> {
+  return tx(ctx.db, async () => {
+    const company = await ctx.company.get()
+    if (company.pendingPlayWindowHours == null || company.pendingPlayWindowEffectiveFrom == null) return null
+    const now = ctx.clock().toISOString()
+    if (now < company.pendingPlayWindowEffectiveFrom) return null
+    const active = await companyWindowCommitments(ctx)
+    if (active.length) {
+      const extendedTo = new Date(Math.max(...active.map((r) => Date.parse(r.windowStart) + company.playWindowHours * 3_600_000))).toISOString()
+      if (extendedTo !== company.pendingPlayWindowEffectiveFrom) await ctx.company.save({ ...company, pendingPlayWindowEffectiveFrom: extendedTo })
+      return null
+    }
+    const hours = company.pendingPlayWindowHours
+    await ctx.company.save({ ...company, playWindowHours: hours, pendingPlayWindowHours: null, pendingPlayWindowEffectiveFrom: null })
+    return hours
+  })
 }
 
 /* Finished auction claims older than the reservation retention are deleted
    with the bids they cleared: one row per window, nothing reads an old one. */
 function sweepAuctionRuns(ctx: Context) {
   const cutoff = new Date(ctx.clock().getTime() - ctx.config.reservationRetentionDays * 86_400_000).toISOString()
-  prepared(ctx.db, 'DELETE FROM auction_runs WHERE finished_at IS NOT NULL AND window_start < ?').run(cutoff)
+  return onFree(ctx.db, () => prepared(ctx.db, 'DELETE FROM auction_runs WHERE finished_at IS NOT NULL AND window_start < ?').run(cutoff))
 }
 
 /* True while a process holds this window's auction (claimed, not finished):
    bidding for it is over even if the cutoff hasn't quite passed by this
    process's clock. POST /v1/reservations refuses a bid then, so no bid can
    slip in between the auction reading its candidates and clearing. */
-export function auctionClaimed(ctx: Context, windowStart: string): boolean {
-  return !!prepared(ctx.db, 'SELECT 1 FROM auction_runs WHERE window_start = ?').get(windowStart)
+export async function auctionClaimed(ctx: Context, windowStart: string): Promise<boolean> {
+  return onFree(ctx.db, () => !!prepared(ctx.db, 'SELECT 1 FROM auction_runs WHERE window_start = ?').get(windowStart))
 }
 
 export function startAuctionScheduler(ctx: Context, log: (msg: string) => void, everyMs = 60_000) {
@@ -203,12 +212,12 @@ export function startAuctionScheduler(ctx: Context, log: (msg: string) => void, 
    default — a rejection is only ever a few hours old the first few times
    this fires, so there is no benefit to running it more often. */
 export function startCampaignRetentionScheduler(ctx: Context, log: (msg: string) => void, everyMs = 24 * 60 * 60 * 1000) {
-  const tick = () => {
-    const { deletedCampaignIds } = sweepRejectedCampaigns(ctx.db, ctx.config.rejectedCampaignRetentionDays, ctx.clock)
+  const tick = async () => {
+    const { deletedCampaignIds } = await sweepRejectedCampaigns(ctx.db, ctx.config.rejectedCampaignRetentionDays, ctx.clock)
     if (deletedCampaignIds.length) log(`Deleted ${deletedCampaignIds.length} campaign${deletedCampaignIds.length === 1 ? '' : 's'} rejected over ${ctx.config.rejectedCampaignRetentionDays} days ago.`)
   }
   const timer = setInterval(() => {
-    try { tick() } catch (e) { log(`Rejected-campaign retention sweep failed: ${e instanceof Error ? e.message : String(e)}`) }
+    tick().catch((e) => log(`Rejected-campaign retention sweep failed: ${e instanceof Error ? e.message : String(e)}`))
   }, everyMs)
   return () => clearInterval(timer)
 }

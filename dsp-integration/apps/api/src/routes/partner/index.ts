@@ -28,8 +28,8 @@ export const partnerRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync 
   const limiter = tokenBucket(ctx.config.partnerRateLimit)
   app.addHook('onRequest', async (req, reply) => {
     guards.flagged()
-    if (!ctx.exchange.get().enabled) throw notFound('DSP integration is switched off.')
-    req.partner = partnerFromRequest(ctx, req)
+    if (!(await ctx.exchange.get()).enabled) throw notFound('DSP integration is switched off.')
+    req.partner = await partnerFromRequest(ctx, req)
     const wait = limiter.take(req.partner.id)
     if (wait) {
       reply.header('Retry-After', String(wait))

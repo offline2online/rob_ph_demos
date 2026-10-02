@@ -19,15 +19,15 @@ describe('one campaign per display type, slot and play window', () => {
 
   it('the stand-in campaign source refuses a second booking for the same slot and window', async () => {
     const ctx = await testContext({ clock: () => NOW })
-    ctx.campaigns.bookSlot(booking('bk_first'))
+    await ctx.campaigns.bookSlot(booking('bk_first'))
     let error: unknown
-    try { ctx.campaigns.bookSlot(booking('bk_second')) } catch (e) { error = e }
+    try { await ctx.campaigns.bookSlot(booking('bk_second')) } catch (e) { error = e }
     expect(error).toBeDefined()
     expect(isUniqueViolation(error)).toBe(true)
-    expect(ctx.campaigns.bookings('c_dsp_nestle').filter((b) => b.windowStart === W)).toHaveLength(1)
+    expect((await ctx.campaigns.bookings('c_dsp_nestle')).filter((b) => b.windowStart === W)).toHaveLength(1)
     /* A different slot or window is not in the way. */
-    expect(() => ctx.campaigns.bookSlot({ ...booking('bk_other_slot'), slot: 3 })).not.toThrow()
-    expect(() => ctx.campaigns.bookSlot({ ...booking('bk_other_day'), windowStart: '2026-09-26T00:00:00.000Z', windowEnd: '2026-09-27T00:00:00.000Z' })).not.toThrow()
+    await expect((async () => ctx.campaigns.bookSlot({ ...booking('bk_other_slot'), slot: 3 }))()).resolves.not.toThrow()
+    await expect((async () => ctx.campaigns.bookSlot({ ...booking('bk_other_day'), windowStart: '2026-09-26T00:00:00.000Z', windowEnd: '2026-09-27T00:00:00.000Z' }))()).resolves.not.toThrow()
   })
 
   it('the hand-off treats that uniqueness failure as already booked, not as an error', async () => {
@@ -38,12 +38,12 @@ describe('one campaign per display type, slot and play window', () => {
     const campaignId = (await ctx.approvalCampaigns.listCampaigns({ sources: ['dsp'] })).find((c) => c.name === 'Nestlé — crid-5130001')!.campaignId
     await buildApp(ctx).inject({ method: 'PUT', url: `/api/admin/v1/campaigns/${campaignId}/activation`, payload: { enabled: true } })
     /* The campaign system already holds a booking for the window the auction is about to hand off. */
-    ctx.campaigns.bookSlot({ id: 'bk_already', campaignId, displayTypeId: 'menu_board', slot: 2, windowStart: W2.toISOString(), windowEnd: '2026-09-23T00:00:00.000Z' })
+    await ctx.campaigns.bookSlot({ id: 'bk_already', campaignId, displayTypeId: 'menu_board', slot: 2, windowStart: W2.toISOString(), windowEnd: '2026-09-23T00:00:00.000Z' })
     const out = await runAuction(ctx, W2)
-    const r = ctx.reservations.get(out.positions[0].winner!.reservationId)!
+    const r = (await ctx.reservations.get(out.positions[0].winner!.reservationId))!
     expect(r.handedOffAt).toBeNull()
     expect(r.reason).toBe('Not handed off: the slot is already booked for that window.')
-    expect(ctx.campaigns.bookings(campaignId).filter((b) => b.windowStart === W2.toISOString())).toHaveLength(1)
+    expect((await ctx.campaigns.bookings(campaignId)).filter((b) => b.windowStart === W2.toISOString())).toHaveLength(1)
   })
 })
 
@@ -65,11 +65,11 @@ describe('AudienceSource.targetedShare', () => {
   it('halves per AND group: a two-group forecast is a quarter of the untargeted one', async () => {
     const ctx = await testContext({ clock: () => NOW })
     expect(POC_SHARE_PER_AND_GROUP).toBe(0.5)
-    expect(ctx.audience.targetedShare('menu_board', undefined)).toBe(1)
-    expect(ctx.audience.targetedShare('menu_board', [])).toBe(1)
-    expect(ctx.audience.targetedShare('menu_board', [[cond('store.fixed_segments', 'include', ['Metro'])]])).toBe(0.5)
+    expect(await ctx.audience.targetedShare('menu_board', undefined)).toBe(1)
+    expect(await ctx.audience.targetedShare('menu_board', [])).toBe(1)
+    expect(await ctx.audience.targetedShare('menu_board', [[cond('store.fixed_segments', 'include', ['Metro'])]])).toBe(0.5)
     const two = [[cond('store.fixed_segments', 'include', ['Metro'])], [cond('store.state', 'include', ['VIC'])]]
-    expect(ctx.audience.targetedShare('menu_board', two as never)).toBe(0.25)
+    expect(await ctx.audience.targetedShare('menu_board', two as never)).toBe(0.25)
     const forecast = (rules?: unknown) => buildApp(ctx).inject({ method: 'POST', url: '/api/v1/inventory/forecast', headers: GOOGLE, payload: { positionIds: ['menu_board.s2'], from: '2026-09-21', to: '2026-09-21', ...(rules ? { rules } : {}) } })
     const all = (await forecast()).json().assumedViews as number
     const quarter = (await forecast(two)).json().assumedViews as number
@@ -107,10 +107,10 @@ describe('the hand-off depends on the platform seam, not on a POC-only bridge', 
   it('latestAssets resolves the approval adapter’s version string; one it cannot read yields no assets, never the newest', async () => {
     const ctx = await testContext({ clock: () => NOW })
     const id = 'c_dsp_nestle'
-    const all = ctx.campaigns.latestAssets(id)
+    const all = await ctx.campaigns.latestAssets(id)
     expect(all.length).toBeGreaterThan(0)
     const v = `v${Math.max(...all.map((a) => a.version))}`
-    expect(ctx.campaigns.latestAssets(id, v)).toEqual(all)
-    expect(ctx.campaigns.latestAssets(id, 'rev-9f2c')).toEqual([])
+    expect(await ctx.campaigns.latestAssets(id, v)).toEqual(all)
+    expect(await ctx.campaigns.latestAssets(id, 'rev-9f2c')).toEqual([])
   })
 })

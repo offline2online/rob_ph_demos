@@ -23,7 +23,7 @@ async function setup(loopLengthSec: number | null = 40) {
   }
   expect((await app.inject({ method: 'POST', url: '/api/admin/v1/display-types', payload: dt })).statusCode).toBe(201)
   const slot = (label: string, owner: string) => ({ label, owner, partnerIds: [], advertisers: [], listMode: 'rtb', buyersListId: null, storeScope: null, quota: null, zoneId: null, supportedTargeting: ['localised'] }) as unknown as Slot
-  ctx.displayTypes.saveExtensions('dt_ui', { slots: [slot('Ad 1', 'advertiser'), slot('Ad 2', 'internal')], ...(loopLengthSec ? { venue: { openOohVenueType: 'retail.grocery', orientation: 'portrait', loopLengthSec } } : {}) } as never)
+  await ctx.displayTypes.saveExtensions('dt_ui', { slots: [slot('Ad 1', 'advertiser'), slot('Ad 2', 'internal')], ...(loopLengthSec ? { venue: { openOohVenueType: 'retail.grocery', orientation: 'portrait', loopLengthSec } } : {}) } as never)
   const ins = ctx.db.prepare("INSERT INTO displays (id, name, store, store_id, display_type_id) VALUES (?, 'Kiosk', 'Sydney CBD', 'st_sydney_cbd', 'dt_ui')")
   ins.run('d_ui_1'); ins.run('d_ui_2')
   const get = (url: string) => app.inject({ method: 'GET', url: `/api${url}`, headers: GOOGLE })
@@ -93,8 +93,8 @@ describe('slots with no duration', () => {
     const { get, ctx, score } = await setup(null)
     score()
     expect((await get('/v1/inventory/dt_ui.s1')).statusCode).toBe(404)
-    const dt = ctx.displayTypes.get('dt_ui')!
-    ctx.displayTypes.saveExtensions('dt_ui', { ...dt.phExtensions!, venue: { openOohVenueType: 'retail.grocery', orientation: 'portrait', loopLengthSec: 40 } } as never)
+    const dt = (await ctx.displayTypes.get('dt_ui'))!
+    await ctx.displayTypes.saveExtensions('dt_ui', { ...dt.phExtensions!, venue: { openOohVenueType: 'retail.grocery', orientation: 'portrait', loopLengthSec: 40 } } as never)
     expect((await get('/v1/inventory/dt_ui.s1')).statusCode).toBe(200)
   })
 })
@@ -103,9 +103,9 @@ describe('the seeded estates', () => {
   it('keep every advertiser slot scored and sellable, sample bookings and demo estate included', async () => {
     for (const opts of [{}, { bookings: true }, { demo: true }]) {
       const ctx = await testContext(opts)
-      const { allPositions, unsellableReason } = await import('../src/domain/positions')
-      expect(allPositions(ctx).length).toBeGreaterThan(0)
-      expect(allPositions(ctx).filter((p) => unsellableReason(ctx, p))).toEqual([])
+      const { allPositions, unsellableReason, filterAsync } = await import('../src/domain/positions')
+      expect((await allPositions(ctx)).length).toBeGreaterThan(0)
+      expect(await filterAsync(await allPositions(ctx), async (p) => Boolean(await unsellableReason(ctx, p)))).toEqual([])
     }
   })
 })

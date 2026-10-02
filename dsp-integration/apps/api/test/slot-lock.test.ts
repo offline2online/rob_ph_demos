@@ -9,8 +9,8 @@ import { NOW, testContext } from './helpers'
 
 const INV = '/api/admin/v1/available-inventory'
 
-const book = (ctx: Awaited<ReturnType<typeof testContext>>, windowStart: string, extra: Record<string, unknown> = {}) =>
-  ctx.reservations.insert({
+const book = async (ctx: Awaited<ReturnType<typeof testContext>>, windowStart: string, extra: Record<string, unknown> = {}) =>
+  await ctx.reservations.insert({
     id: `r_${windowStart}`, partnerId: 'p_google', advertiserId: 'nestle', campaignId: 'c_dsp_nestle', positionId: 'portrait.s1', windowStart,
     type: 'reserve', channel: 'api', bidCpm: null, currency: 'AUD', status: 'reserved', clearingCpm: 120, reason: null, testMode: false, pricingType: 'localised', handedOffAt: null,
     ...extra,
@@ -18,7 +18,7 @@ const book = (ctx: Awaited<ReturnType<typeof testContext>>, windowStart: string,
 
 async function setup() {
   const ctx = await testContext({ clock: () => NOW })
-  ctx.displayTypes.saveExtensions('portrait', { slots: [{ label: 'Ad', owner: 'advertiser', partnerIds: [], advertisers: [], listMode: 'rtb', buyersListId: null, storeScope: null, quota: null, zoneId: null }] } as never)
+  await ctx.displayTypes.saveExtensions('portrait', { slots: [{ label: 'Ad', owner: 'advertiser', partnerIds: [], advertisers: [], listMode: 'rtb', buyersListId: null, storeScope: null, quota: null, zoneId: null }] } as never)
   return { ctx, app: buildApp(ctx) }
 }
 
@@ -35,9 +35,9 @@ const rowWith = async (app: ReturnType<typeof buildApp>, advertisers: string[]) 
 describe('slot lock', () => {
   it('refuses removing an advertiser from a slot with a live booking, then locks and releases', async () => {
     const { ctx, app } = await setup()
-    const seat = ctx.partners.list().flatMap((p) => p.seats.map((s) => s.name))[0]
+    const seat = (await ctx.partners.list()).flatMap((p) => p.seats.map((s) => s.name))[0]
     expect((await app.inject({ method: 'PUT', url: INV, payload: { items: [await rowWith(app, [seat])] } })).statusCode).toBe(200)
-    book(ctx, '2026-09-22T00:00:00.000Z')
+    await book(ctx, '2026-09-22T00:00:00.000Z')
 
     /* Hard block: the advertiser stays, the booking stays. */
     const blocked = await app.inject({ method: 'PUT', url: INV, payload: { items: [await rowWith(app, [])] } })
@@ -46,8 +46,8 @@ describe('slot lock', () => {
     expect(blocked.json().error.details[0].field).toBe('items[0].assignedTo.advertisers')
     expect(blocked.json().error.details[0].reason).toContain('slots are sold')
     expectMatchesContract('PUT', '/admin/v1/available-inventory', 409, blocked.json())
-    expect(ctx.displayTypes.get('portrait')!.phExtensions!.slots[0].advertisers).toEqual([seat])
-    expect(ctx.reservations.forWindow('portrait.s1', '2026-09-22T00:00:00.000Z')).toHaveLength(1)
+    expect((await ctx.displayTypes.get('portrait'))!.phExtensions!.slots[0].advertisers).toEqual([seat])
+    expect(await ctx.reservations.forWindow('portrait.s1', '2026-09-22T00:00:00.000Z')).toHaveLength(1)
 
     /* Lock: no new sale on any other window, the sold one is untouched. */
     const locked = await app.inject({ method: 'PUT', url: `${INV}/lock`, payload: { displayTypeId: 'portrait', slot: 1 } })
@@ -64,20 +64,20 @@ describe('slot lock', () => {
     /* Bookings end -> the scheduler releases the lock -> removal goes through. */
     ctx.db.prepare("UPDATE reservations SET window_start = '2026-09-10T00:00:00.000Z'").run()
     await schedulerTick(ctx, () => {})
-    expect(ctx.displayTypes.get('portrait')!.phExtensions!.slots[0].salesLocked).toBeFalsy()
+    expect((await ctx.displayTypes.get('portrait'))!.phExtensions!.slots[0].salesLocked).toBeFalsy()
     expect((await app.inject({ method: 'PUT', url: INV, payload: { items: [await rowWith(app, [])] } })).statusCode).toBe(200)
   })
 
   it('has nothing to lock on an unsold slot, and a Test-mode booking does not count', async () => {
     const { ctx, app } = await setup()
     expect((await app.inject({ method: 'PUT', url: `${INV}/lock`, payload: { displayTypeId: 'portrait', slot: 1 } })).statusCode).toBe(409)
-    book(ctx, '2026-09-22T00:00:00.000Z', { testMode: true })
+    await book(ctx, '2026-09-22T00:00:00.000Z', { testMode: true })
     expect((await app.inject({ method: 'PUT', url: `${INV}/lock`, payload: { displayTypeId: 'portrait', slot: 1 } })).statusCode).toBe(409)
   })
 
   it('releases on read when nothing is booked, and never on playback: the booking alone decides', async () => {
     const { ctx, app } = await setup()
-    book(ctx, '2026-09-22T00:00:00.000Z')
+    await book(ctx, '2026-09-22T00:00:00.000Z')
     await app.inject({ method: 'PUT', url: `${INV}/lock`, payload: { displayTypeId: 'portrait', slot: 1 } })
     ctx.db.prepare('DELETE FROM reservations').run()
     const row = (await app.inject({ method: 'GET', url: INV })).json().items.find((r: { displayTypeId: string }) => r.displayTypeId === 'portrait')
@@ -86,10 +86,10 @@ describe('slot lock', () => {
 
   it('refuses switching a sold Advertiser slot to another owner', async () => {
     const { ctx, app } = await setup()
-    const dt = ctx.displayTypes.get('portrait')!
-    ctx.displayTypes.saveRecord('portrait', { ...dt, playlistSettings: { ...dt.playlistSettings, maximumCampaignsPlayedInRotation: 1 } } as never)
-    book(ctx, '2026-09-22T00:00:00.000Z')
-    const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/display-types/portrait/extensions', payload: { slots: ctx.displayTypes.get('portrait')!.phExtensions!.slots.map((x) => ({ ...x, owner: 'internal' })) } })
+    const dt = (await ctx.displayTypes.get('portrait'))!
+    await ctx.displayTypes.saveRecord('portrait', { ...dt, playlistSettings: { ...dt.playlistSettings, maximumCampaignsPlayedInRotation: 1 } } as never)
+    await book(ctx, '2026-09-22T00:00:00.000Z')
+    const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/display-types/portrait/extensions', payload: { slots: (await ctx.displayTypes.get('portrait'))!.phExtensions!.slots.map((x) => ({ ...x, owner: 'internal' })) } })
     expect(res.statusCode).toBe(409)
     expect(res.json().error.code).toBe('has_dependents')
   })
