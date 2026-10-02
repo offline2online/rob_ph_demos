@@ -2179,6 +2179,30 @@ const TRAIN_CI_POLL_MS = 15000;
 // (state) — so both are handled; an empty rollup is "none" (this repo runs
 // no pull_request-triggered workflows today, so that is the normal case)
 // and is treated as nothing to wait for, not as a failure.
+// Checks a train PR must have PASSED before it merges (bPcnbXZNC4vFnhft8AMz,
+// Rob 2 Oct 2026: e2e-quick genuinely blocks; no bot bypass). Before this,
+// an empty rollup ("none") read as "not pending" and the train merged ~2 s
+// after the PR opened, before any check had even registered — PR #293's
+// e2e-quick then failed with 0 jobs because its PR was already merged.
+const REQUIRED_TRAIN_CHECKS = ["e2e-quick"];
+
+// rollupState() over everything reported, plus: every required check must be
+// present and successful. A required check not reported yet is "pending"
+// (keep waiting; the caller leaves trainReady set so the next scheduled run
+// resumes) — never "success".
+function trainChecksState(rollup, required = REQUIRED_TRAIN_CHECKS) {
+  const all = rollupState(rollup);
+  if (all === "failure") return "failure";
+  const list = Array.isArray(rollup) ? rollup : [];
+  for (const name of required) {
+    const mine = list.filter((c) => (c.name || c.context) === name);
+    if (!mine.length) return "pending";
+    const verdict = rollupState(mine);
+    if (verdict !== "success") return verdict;
+  }
+  return all === "none" ? "success" : all;
+}
+
 function rollupState(rollup) {
   if (!Array.isArray(rollup) || rollup.length === 0) return "none";
   let pending = false;
@@ -2549,11 +2573,12 @@ async function processDeployTrain(project) {
   for (let poll = 0; poll < TRAIN_CI_POLLS; poll++) {
     pr = viewTrainPr(prNumber);
     if (pr.state === "MERGED") break;
-    const checks = rollupState(pr.statusCheckRollup);
+    const checks = trainChecksState(pr.statusCheckRollup);
     if (checks === "failure") {
+      const red = (pr.statusCheckRollup || []).filter((c) => !["SUCCESS", "NEUTRAL", "SKIPPED", ""].includes(String(c.conclusion || c.state || "").toUpperCase()) && String(c.status || "COMPLETED").toUpperCase() === "COMPLETED");
       await patchProject(project.id, {
         trainReady: false, trainStatus: "conflict",
-        trainNote: `Not merged: CI is red on the train PR #${prNumber}. Fix it (or send the ticket that broke it back with Failed testing), then click Deploy to Main again.`,
+        trainNote: `Not merged: CI is red on the train PR #${prNumber}${red.length ? ` (${red.map((c) => `${c.name || c.context}${c.detailsUrl || c.targetUrl ? ` ${c.detailsUrl || c.targetUrl}` : ""}`).join(", ")})` : ""}. Fix it (or send the ticket that broke it back with Failed testing), then click Deploy to Main again.`,
         updatedAt: new Date().toISOString(),
       });
       console.log(`[deploy-train] ${project.id}: CI red on PR #${prNumber} — not merging`);
@@ -2574,13 +2599,13 @@ async function processDeployTrain(project) {
   // An already-MERGED PR is never waiting on anything — a check still
   // running on it must not send this back round the loop and leave the
   // train's cards un-flipped.
-  if (pr && pr.state !== "MERGED" && rollupState(pr.statusCheckRollup) === "pending") {
+  if (pr && pr.state !== "MERGED" && trainChecksState(pr.statusCheckRollup) === "pending") {
     // Leave trainReady set: the next scheduled run picks the wait back up
     // rather than needing another click.
     console.log(`[deploy-train] ${project.id}: PR #${prNumber}'s checks are still running — will retry on the next run`);
     await patchProject(project.id, {
       trainStatus: "deploying",
-      trainNote: `Waiting on CI for PR #${prNumber}.`,
+      trainNote: `Waiting on CI for PR #${prNumber} (${REQUIRED_TRAIN_CHECKS.join(", ")} must pass before it merges).`,
       updatedAt: new Date().toISOString(),
     });
     return;
@@ -3241,4 +3266,6 @@ module.exports = {
   syncTrainWithMain, rebasePatchFilesOnto,
   // test/docs-sync.test.js
   syncDocsAfterMerge,
+  // test/train-checks.test.js — a train merges only once e2e-quick passed
+  trainChecksState, rollupState, REQUIRED_TRAIN_CHECKS,
 };
