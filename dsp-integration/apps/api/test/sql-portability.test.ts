@@ -164,7 +164,7 @@ describe('portable statements', () => {
     play.run('p2', 'd1', 'c1', '2026-10-01T02:00:00.000Z', 10, null)
     play.run('p3', 'd1', 'c1', '2026-10-01T03:00:00.000Z', 5, 'personalised')
     const t = await sqlitePlaybackSource(db).totals({ campaignId: 'c1', displayTypeId: 'dt', from: '2026-10-01T00:00:00.000Z', to: '2026-10-02T00:00:00.000Z' })
-    expect(t).toEqual({ plays: 3, playedSec: 25, personalised: { plays: 2, playedSec: 15 } })
+    expect(t).toEqual({ plays: 3, playedSec: 25, personalised: { plays: 2, playedSec: 15 }, byVersion: [{ versionId: null, plays: 3 }] })
   })
 
   it('isUniqueViolation recognises SQLite and Postgres, and nothing else', () => {

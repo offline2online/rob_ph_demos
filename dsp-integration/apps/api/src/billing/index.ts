@@ -67,6 +67,9 @@ export interface LineItem {
   personalisedViews: number
   personalisedMultiplier: number | null
   personalisedAmount: number
+  /* Plays per campaign version shown (contract v3.1 row 3): the audit
+     trail that the version handed off is what played. Not priced. */
+  playsByVersion: { versionId: string | null; plays: number }[]
 }
 
 export { bookLockedTermWindow, lockTermOnClear } from './lockedTerm'
@@ -124,6 +127,7 @@ export async function computeLineItem(ctx: Context, r: ReservationRecord, p: Pos
     positionId: r.positionId, windowStart: r.windowStart, windowEnd: new Date(end).toISOString(), plays: played.plays, playedSec: played.playedSec, expectedSec,
     assumedViews, realisedViews, cpm, currency: r.currency, amount: round2(baseAmount + personalisedAmount),
     personalisedPlays: persPlays, personalisedViews, personalisedMultiplier: multiplier, personalisedAmount,
+    playsByVersion: played.byVersion ?? [],
   }
 }
 

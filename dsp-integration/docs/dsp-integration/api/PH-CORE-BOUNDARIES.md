@@ -152,6 +152,12 @@ provide one breaks something specific, named here.
     Core supplies it the field is null and every play bills at the
     committed price, exactly as before. The stand-in `plays` table carries
     the two columns nullable (migration 0033).
+  - **The version id is kept, and reported** (Rob, 2 Oct 2026,
+    DDOjJoYjraKROu4Ainj5; contract v3.1 row 3): it must be the asset
+    version handed off on the booking (`SlotBooking.assetVersion`), so a
+    play shows it played the version it was handed. `totals` returns plays
+    per version (`byVersion`) and each line item carries them
+    (`playsByVersion`, migration 0039). Billing does not price on it.
   - Billing is idempotent per reservation (`billing_line_items.reservation_id`
     is unique).
 - **`AssetStore`**
@@ -222,7 +228,7 @@ provide one breaks something specific, named here.
 | `0022` (reserved instance identity) and `0032` (drops it again) | This build | Nothing to keep: 0022 was dropped by 0032 (Ql8j8H6F, 30 Sep 2026). |
 | `0023` (the DSP integration switch) | This build (Rob, 24 Sep 2026) | Kept, unless the platform already holds company feature switches (see "Open" below). |
 | `0024` (`auction_runs`: which process clears a window) | This build (24 Sep 2026) | Kept: it lets several instances share the scheduled work. |
-| `0025` (covering index on `plays`), `0033` (`plays.version_id` / `tier`) | Stand-in only | Dropped with `plays`; the playback store answers `totals` itself, and must supply the version tier (see `PlaybackSource`). |
+| `0025` (covering index on `plays`), `0033` (`plays.version_id` / `tier`), `0039` (`version_id` in that index) | Stand-in only | Dropped with `plays`; the playback store answers `totals` itself, and must supply the version id and tier (see `PlaybackSource`). `0039`'s `billing_line_items.plays_by_version` is **Kept**. |
 | `0034` (`reservations.personalised_multiplier`, personalised columns on `billing_line_items`) | This build (Rob, 30 Sep 2026) | Kept: the multiplier is snapshotted on the reservation at clear time. |
 | `0026` (one open API bid per advertiser and window) | This build (24 Sep 2026) | Kept: a partial unique index, as 0021. |
 | `0027` (`company_advertiser_settings`: deferred play-window change) | This build (26 Sep 2026) | Kept. |
