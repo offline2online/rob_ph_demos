@@ -2,7 +2,7 @@
    (prototype-reference/src/DisplayTypesAndPlaylists.jsx, model/schema.js,
    model/sellside.js), reshaped to the API contract. */
 import {
-  NEW_PLAYLIST_SETTINGS_DEFAULTS, PLATFORM_DEFAULTS, SLOT_OWNERS, UNLIMITED, assignedOf,
+  PLATFORM_DEFAULTS, SLOT_OWNERS, UNLIMITED, assignedOf,
   type AdvertiserSettings, type DisplayType, type Partner, type Playlist, type Slot, type SlotOwner, type TouchPoint,
 } from '@ph-dsp/types'
 

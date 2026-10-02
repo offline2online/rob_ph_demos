@@ -162,9 +162,10 @@ describe('Display Types page', () => {
     expect(within(panel()).getByText(/This new playlist will be created with these settings/)).toBeInTheDocument()
     const autoRotation = within(panel()).getByRole('combobox', { name: 'Campaign Auto-Rotation' })
     const autoPlay = within(panel()).getByRole('combobox', { name: 'Campaign Auto-Play' })
-    expect(autoRotation.closest('.ant-select')).toHaveTextContent('Auto-Rotate Off')
+    /* One set of new-playlist defaults (A0GyTNsA, 1 Oct 2026): nothing overridden, so the platform defaults show. */
+    expect(autoRotation.closest('.ant-select')).toHaveTextContent('Default (Auto-Rotate On)')
     expect(autoRotation.closest('.ant-select')).not.toHaveClass('ant-select-disabled')
-    expect(autoPlay.closest('.ant-select')).toHaveTextContent('Auto-Play Off')
+    expect(autoPlay.closest('.ant-select')).toHaveTextContent('Default (Auto-Play On)')
     expect(autoPlay.closest('.ant-select')).not.toHaveClass('ant-select-disabled')
 
     /* The Playlist Management CTA stays available throughout. Leaving with
@@ -273,10 +274,11 @@ describe('Display Types page', () => {
   })
   /* Ticket ThP7DPGo17FmPJdDKM7S (28 Sep 2026): "Add new playlist" opens
      every section — Phantom Zone, Enabled Features, Multi-Zone Layout and
-     Playlist Settings — and the new playlist starts with the current
-     default playlist's settings, still editable, rather than blank
-     defaults. */
-  it('Add new playlist opens every section and starts from the current playlist\'s settings', async () => {
+     Playlist Settings. Its settings no longer copy the current default
+     playlist: one set of new-playlist defaults (Rob, 1 Oct 2026, A0GyTNsA)
+     — every setting at its default, still editable, even when the playlist
+     it replaces has overrides. */
+  it('Add new playlist opens every section and starts from the default settings, not the current playlist\'s', async () => {
     const settings = { assetPosition: 'Top-Right', assetFill: 'Stretch', campaignTransition: 'Slide', campaignAutoRotation: 'Auto-Rotate On', campaignAutoPlay: 'Auto-Play On' }
     const withSettings: Record<string, unknown> = {
       ...responses,
@@ -299,7 +301,7 @@ describe('Display Types page', () => {
     }
     const panel = screen.getByRole('region', { name: 'Playlist Settings' })
     expect(within(panel).getByText(/This new playlist will be created with these settings/)).toBeInTheDocument()
-    for (const [label, value] of [['Asset Position', 'Top-Right'], ['Asset Fill', 'Stretch'], ['Campaign Transition', 'Slide'], ['Campaign Auto-Rotation', 'Auto-Rotate On'], ['Campaign Auto-Play', 'Auto-Play On']]) {
+    for (const [label, value] of [['Asset Position', 'Default (Top-Left)'], ['Asset Fill', 'Default (Fit to Display)'], ['Campaign Transition', 'Default (None)'], ['Campaign Auto-Rotation', 'Default (Auto-Rotate On)'], ['Campaign Auto-Play', 'Default (Auto-Play On)']]) {
       const select = within(panel).getByRole('combobox', { name: label }).closest('.ant-select')
       expect(select).toHaveTextContent(value)
       expect(select).not.toHaveClass('ant-select-disabled')

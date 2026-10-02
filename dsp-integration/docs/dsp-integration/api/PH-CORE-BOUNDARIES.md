@@ -19,7 +19,9 @@ Companion documents:
 This build never reaches into PH Core directly. Every dependency goes
 through one TypeScript interface in `apps/api/src/platform/` (or `auth/`,
 `secrets/`, `flags/`), and **`apps/api/src/context.ts` is the only file
-that chooses an implementation**. The POC wires in SQLite stand-ins; on
+that chooses an implementation** (one exception: partner identity, which
+`partnerFromRequest(ctx, req)` resolves from configuration — see the seam
+table). The POC wires in SQLite stand-ins; on
 integration engineering writes one adapter per interface against the real
 service and changes that one file. Routes, the exchange and the domain
 logic do not change.
@@ -78,18 +80,18 @@ provide one breaks something specific, named here.
     written by this build (the slot lock, REQUIREMENTS §1) and cleared by
     the scheduler once the slot has no live booking. An adapter that drops
     it silently re-opens a locked slot to new sales.
-  - `phExtensions` (slots, reserve price, venue) round-trips unchanged.
-    Nothing but this build reads or writes that field.
+  - `phExtensions` (slots, reserve price, default VAC-d, venue) round-trips
+    unchanged. Nothing but this build reads or writes that field — except
+    that `venue` there is only the POC stand-in for a PH Core value (Q35:
+    PH Core owns venue and geo; see "Venue and geo metadata" below).
   - `list()` returns records the caller must not mutate. The stand-in
     deep-freezes them and serves a snapshot that each write replaces, with
     a 1-second TTL. Any cache in the real adapter needs the same property:
     **a save is visible to the process that made it immediately, and to
     every other process within a bounded time.**
-  - Known weakening in the POC: `context.ts` (`approvalParts`) builds a
-    **second** `DisplayTypeSource` snapshot for the approval canvas, with
-    its own 1-second TTL, so the approval screens can lag a save by up to a
-    second even though the first snapshot is current. On integration both
-    must read one adapter.
+  - The approval canvas reads the same `DisplayTypeSource` as everything
+    else (`context.ts` passes `ctx.displayTypes` to `approvalParts`), so it
+    sees a save as soon as the rest of the process does.
 - **`DisplaySource`**
   - `summaryByDisplayType` answers with counts (displays, and the stores
     they are in), never the rows: every position, availability check, bid
@@ -154,8 +156,13 @@ provide one breaks something specific, named here.
     "nobody watching". This build leaves an unscored slot out of inventory,
     forecast and the auction and refuses a bid on it (30 Sep 2026); it never
     invents an estimate. The stand-in reads `audience_vacd` and reports
-    `scored` when a row exists; a display type created in HQ Admin has none
-    until the retailer's scoring writes one.
+    `scored` when a row exists or the display type has a default VAC-d
+    (0035); a display type created in HQ Admin has neither until one is
+    set.
+  - Also returns `counted`: whether the figure is measured (Vision/AI,
+    MIST proximity) or modelled. It becomes OpenRTB `qty.sourcetype`
+    (`exchange/openrtb.ts`), so an adapter that cannot tell must say
+    modelled, never counted.
 - **`AudienceSource.targetedShare`**
   - Predicates in, a number out. **No attribute value crosses the
     boundary.**
@@ -186,7 +193,9 @@ provide one breaks something specific, named here.
 | Migrations | Owner | On integration |
 |---|---|---|
 | `0001` (display types, playlists, displays, campaigns, plays), `0012` (slot bookings), `0014` (stores) | **PH Core stand-ins** | Dropped. The seams above read and write the real services instead. |
-| `0002`–`0011`, `0013`, `0015`–`0019` | This build | Kept. Plain, Postgres-compatible SQL. |
+| `0004`–`0007`, `0010`, `0011`, `0013`, `0015`, `0017`–`0019` (partners, settings, variable access, exchange, reservations, DSP creatives, billing line items, buyers lists) | This build | Kept. |
+| `0002` (`display_types.ph_extensions`), `0003` and `0016` (columns on `campaigns`), `0008` (`campaign_assets`), `0009` (`audience_vacd`) | **On PH Core stand-ins** (columns this build added to them, or the campaign system's and audience source's own tables) | Dropped with the stand-in tables. Each is a field the matching seam must carry: `phExtensions` (`DisplayTypeSource`), source / advertiser / partner / display type / brief (`CampaignSource`), assets (`CampaignSource.latestAssets`), VAC-d (`AudienceSource`). |
+| The approval module's `0100` (`campaign_approvals`, audit), `0101` (asset-level rejection) | This build (`packages/campaign-approval`) | Kept: the approval records are this build's. |
 | `0020` (indexes), `0021` (one live winner per window) | This build (review, 23 Sep 2026) | Kept. See "The database must enforce" below for the parts that also apply to PH Core tables. |
 | `0022` (reserved instance identity) and `0032` (drops it again) | This build | Nothing to keep: 0022 was dropped by 0032 (Ql8j8H6F, 30 Sep 2026). |
 | `0023` (the DSP integration switch) | This build (Rob, 24 Sep 2026) | Kept, unless the platform already holds company feature switches (see "Open" below). |
@@ -398,19 +407,32 @@ platform:
    - The repository layer is awaitable (2 Oct 2026, cUdX4dmTMB2mvxJczHvT):
      every seam and repository method returns `T | Promise<T>`, and every
      caller awaits it — 63 source files and about 550 calls, not "one file
-     per seam" as this section used to say. A Postgres adapter is wired in
-     `context.ts` alone.
+     per seam" as this section used to say. Exceptions, still synchronous:
+     `SecretsStore.encrypt/decrypt`, `Flags.dspIntegration` (a property),
+     the approval adapter's `onCampaignChanged`, and the approval module's
+     own `SqlDb`. A Postgres adapter is **not** wired in `context.ts`
+     alone: raw SQL on the `node:sqlite` handle still sits outside the
+     seams in `billing/index.ts`, `domain/positions.ts`,
+     `exchange/scheduler.ts`, `exchange/creatives.ts`,
+     `domain/campaignRetention.ts`, `domain/reservationRetention.ts` and
+     `routes/admin/test.ts`, and `tx`/`gate` are typed to the SQLite
+     handle — about 25 files plus a Postgres migration set (review,
+     2 Oct 2026; v2iKDJQA0wmisXhp7ebV moves the SQL into repositories).
    - On SQLite, transactions take a per-database FIFO lock, a nested one
      joins the open one, and a seam call from outside waits for it to end
      (`db/db.ts`: `tx`, `gate`, `onFree`); in-process caches are dropped on
-     rollback. That lock is SQLite-only: a Postgres adapter runs each
-     transaction on its own pooled connection and does without it.
+     rollback. Transactions are IMMEDIATE (the write lock is taken at
+     BEGIN, retried without blocking the event loop for up to 5 s), so two
+     processes doing the same check-then-write queue instead of one failing
+     with "database is locked" (9x7eZw6BOgI7HSrVaffa, 2 Oct 2026). That
+     lock is SQLite-only: a Postgres adapter runs each transaction on its
+     own pooled connection and does without it.
    - Until a Postgres adapter exists the API is one instance on one volume
      (`deploy/kubernetes/`), enough for 15,000 displays.
 
 ## Authentication seams — partner identity, advertiser principal (spec only, REQUIREMENTS §9.5)
 
-Today "Partner identity" (`auth/partnerAuth.ts`, `partnerFromRequest(req)`)
+Today "Partner identity" (`auth/partnerAuth.ts`, `partnerFromRequest(ctx, req)`)
 is the only authentication seam, and it is a static bearer token per DSP.
 REQUIREMENTS §9.5 defines three named boundaries that extend it; none is
 built yet, and each touches PH Core at a specific point:
@@ -418,7 +440,7 @@ built yet, and each touches PH Core at a specific point:
 | Boundary | What PH Core must provide | Touches |
 |---|---|---|
 | **AUTH-IDENTITY** | A stable `advertiserId` and the advertiser-to-campaign ownership on the existing advertiser and campaign records, so a principal can be checked against the records it owns or is delegated. A partner may act for several advertisers; the submitting principal is recorded apart from the advertiser the campaign is for. | Partner identity; `CampaignSource` (campaign and advertiser records) |
-| **AUTH-CREDENTIAL** | Platform token issuance (already the owner of partner identity) issuing short-lived scoped tokens by OAuth client-credentials for both partners and advertisers. `partnerFromRequest(req)` becomes a principal resolver returning `{principalType, principalId, scopes}`; scopes are granted per DSP in DSP setup and per advertiser by the retailer. | Partner identity; `SecretsStore` (client secrets, signing keys) |
+| **AUTH-CREDENTIAL** | Platform token issuance (already the owner of partner identity) issuing short-lived scoped tokens by OAuth client-credentials for both partners and advertisers. `partnerFromRequest(ctx, req)` becomes a principal resolver returning `{principalType, principalId, scopes}`; scopes are granted per DSP in DSP setup and per advertiser by the retailer. | Partner identity; `SecretsStore` (client secrets, signing keys) |
 | **AUTH-LOGIN** | PH Core's user/identity service returning `{advertiserId, userId, role}` for a signed-in advertiser user, with role mapped to a subset of the advertiser's scopes. This build does not choose the login provider. | `SessionSource` (admin users stay on it; advertiser users are a separate principal type) |
 
 ### AUTH-CREDENTIAL — token issuance (boundary detail)
@@ -603,7 +625,7 @@ Analytics — the event schema, its data partition and the consuming
 pipeline — is held by Personalisation Hub inside the PWA player and is
 managed **outside this project**. This project does not own or host it.
 It depends on the following values from that flow (billing:
-`apps/api/src/exchange/billing.ts`); the external system must supply them,
+`apps/api/src/billing/`); the external system must supply them,
 per campaign, per position and per play window:
 
 | Value | Used for |

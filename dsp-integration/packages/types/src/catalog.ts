@@ -53,12 +53,13 @@ export const PLATFORM_DEFAULTS = {
   phantomAreaPosition: 'Bottom Right',
 } as const
 
-/* A brand-new playlist (auto-created for a display type's Default Playlist
-   or a zone) starts with Auto-Rotation and Auto-Play explicitly off, rather
-   than inheriting PLATFORM_DEFAULTS.playlistSettings' "On" values — a
-   playlist nobody has configured yet shouldn't silently start rotating and
-   playing campaigns (ticket, 27 Sep 2026). */
-export const NEW_PLAYLIST_SETTINGS_DEFAULTS = { campaignAutoRotation: 'Auto-Rotate Off', campaignAutoPlay: 'Auto-Play Off' } as const
+/* Every auto-created playlist — a new display type's, one added with "Add
+   new playlist", a zone's, a layout's — starts with no setting overridden
+   (`{}`), so it reads "Default settings" and inherits
+   PLATFORM_DEFAULTS.playlistSettings. One set of new-playlist defaults
+   (Rob, 1 Oct 2026, A0GyTNsA; built 3gGKowhK): this replaced the 27 Sep
+   "Auto-Rotate Off / Auto-Play Off" set for added playlists and the 28 Sep
+   copy-the-current-playlist behaviour. */
 
 export const SLOT_OWNERS: Record<SlotOwner, { label: string; colour: string; bg: string; icon: string }> = {
   internal: { label: 'Headquarters', colour: '#169bc2', bg: 'rgba(22,155,194,0.10)', icon: 'corporate_fare' },

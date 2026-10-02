@@ -924,7 +924,9 @@ is `deploy/kubernetes/`.
 - **Tests**: 14 new (`test/scale.test.ts`); API 266, approval module 44,
   all passing.
 - **Left for integration**: N replicas need Postgres and an asynchronous
-  repository layer; creatives to S3 through `AssetStore`; DNS-aware egress
+  repository layer (superseded 2 Oct 2026: the layer is awaitable —
+  cUdX4dmTMB2mvxJczHvT — and only the adapter remains; see
+  SCALE-15000-EKS.md); creatives to S3 through `AssetStore`; DNS-aware egress
   is the cluster's choice.
 
 ### Stability under concurrency and at the edges (Rob, 24 Sep 2026)

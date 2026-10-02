@@ -120,7 +120,10 @@ function PositionCell({ data }: ICellRendererParams<Row>) {
       <div className="truncate">
         {data.position.displayTypeName} <span style={{ color: T.micro }}>({data.position.displayCount})</span>
       </div>
-      <div className="truncate" style={{ fontSize: 11, color: T.micro }}>Slot {data.position.slot} · {data.position.slotLabel}</div>
+      {/* Multi-zone: numbered within the zone, as Available Inventory does (A0GyTNsA, 1 Oct 2026). */}
+      <div className="truncate" style={{ fontSize: 11, color: T.micro }}>
+        {data.position.zoneName ? `${data.position.zoneName} / Slot ${data.position.zoneSlot}` : `Slot ${data.position.slot}`} · {data.position.slotLabel}
+      </div>
       <div className="flex flex-wrap items-center gap-x-1.5" style={{ fontSize: 10.5, color: T.muted }}>
         <span>{booked} of {total} windows booked</span>
         {upsells.map(({ k, n }) => (

@@ -30,7 +30,7 @@ export function openDb(file: string): Db {
        test/multiprocess.test.ts that stopped dsp-api-deploy.yml on 28 Sep
        2026. WAL is recorded in the file once any process sets it, so the
        switch is retried briefly instead. */
-    db.exec('PRAGMA busy_timeout = 5000')
+    db.exec(`PRAGMA busy_timeout = ${BUSY_WAIT_MS}`)
     setWalMode(db)
     db.exec('PRAGMA synchronous = NORMAL')
   }
@@ -215,14 +215,20 @@ export function gate<T extends object>(db: Db, target: T): T {
   return out
 }
 
-/* Run fn inside a transaction; rolls back on throw. 'IMMEDIATE' takes the
-   write lock before fn runs, so two processes doing the same
-   check-then-write (migrate, seed) serialise on it and the second one's
-   check sees the first one's writes; with a DEFERRED transaction both
-   checks pass and the second write fails (stability review, 24 Sep 2026).
+/* Run fn inside a transaction; rolls back on throw. 'IMMEDIATE' (the
+   default) takes the write lock before fn runs, so two processes doing the
+   same check-then-write serialise on it, busy_timeout makes the second one
+   wait, and its check sees the first one's writes. A DEFERRED transaction
+   reads first and upgrades to the write lock later; if another process
+   committed in between, SQLite refuses the upgrade at once with "database
+   is locked" — busy_timeout is never consulted (stability review, 24 Sep
+   2026; and the intermittent multiprocess.test.ts crash after 9f51d91,
+   when every tx() site was DEFERRED: 9x7eZw6BOgI7HSrVaffa, 2 Oct 2026).
+   Every transaction in this build writes, so pass 'DEFERRED' only for a
+   read-only one.
    Waits its turn behind any other transaction on this database (see above);
    inside one it joins it, and the mode of the outer transaction holds. */
-export async function tx<T>(db: Db, fn: () => Awaitable<T>, mode: 'DEFERRED' | 'IMMEDIATE' = 'DEFERRED'): Promise<T> {
+export async function tx<T>(db: Db, fn: () => Awaitable<T>, mode: 'DEFERRED' | 'IMMEDIATE' = 'IMMEDIATE'): Promise<T> {
   const l = lockOf(db)
   if (ownsOpenTx(db, l)) return await fn()
   txActive++
@@ -234,7 +240,8 @@ export async function tx<T>(db: Db, fn: () => Awaitable<T>, mode: 'DEFERRED' | '
   const token = Symbol('tx')
   l.open = { token, done }
   try {
-    db.exec(mode === 'IMMEDIATE' ? 'BEGIN IMMEDIATE' : 'BEGIN')
+    if (mode === 'IMMEDIATE') await beginImmediate(db)
+    else db.exec('BEGIN')
     let out: T
     try {
       const chain = new Map(inside.getStore() ?? [])
@@ -250,6 +257,33 @@ export async function tx<T>(db: Db, fn: () => Awaitable<T>, mode: 'DEFERRED' | '
     l.open = null
     if (--txActive === 0) inside.disable()
     release()
+  }
+}
+
+/* BEGIN IMMEDIATE without blocking the event loop. busy_timeout waits for
+   another connection's write lock inside SQLite, synchronously: with the
+   lock held by a transaction that is itself awaiting (in another process,
+   or another connection in this one, as the e2e harness's "second
+   process" is), the whole process stalls, and in one process it can never
+   be released — a deadlock until the timeout. So the attempt is made with
+   busy_timeout at 0 (set and restored in the same synchronous turn, so no
+   other statement on this connection runs with it), and a busy database is
+   retried after yielding, for the same 5 s busy_timeout would have
+   waited. */
+const BUSY_WAIT_MS = 5000
+async function beginImmediate(db: Db) {
+  const deadline = Date.now() + BUSY_WAIT_MS
+  for (let pause = 2; ; pause = Math.min(pause * 2, 50)) {
+    db.exec('PRAGMA busy_timeout = 0')
+    try {
+      db.exec('BEGIN IMMEDIATE')
+      return
+    } catch (err) {
+      if (!/database is locked|SQLITE_BUSY/i.test(String((err as Error).message)) || Date.now() >= deadline) throw err
+    } finally {
+      db.exec(`PRAGMA busy_timeout = ${BUSY_WAIT_MS}`)
+    }
+    await new Promise((r) => setTimeout(r, pause))
   }
 }
 
