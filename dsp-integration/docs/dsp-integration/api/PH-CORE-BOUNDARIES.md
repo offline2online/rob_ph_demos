@@ -421,8 +421,12 @@ platform:
    - On SQLite, transactions take a per-database FIFO lock, a nested one
      joins the open one, and a seam call from outside waits for it to end
      (`db/db.ts`: `tx`, `gate`, `onFree`); in-process caches are dropped on
-     rollback. That lock is SQLite-only: a Postgres adapter runs each
-     transaction on its own pooled connection and does without it.
+     rollback. Transactions are IMMEDIATE (the write lock is taken at
+     BEGIN, retried without blocking the event loop for up to 5 s), so two
+     processes doing the same check-then-write queue instead of one failing
+     with "database is locked" (9x7eZw6BOgI7HSrVaffa, 2 Oct 2026). That
+     lock is SQLite-only: a Postgres adapter runs each transaction on its
+     own pooled connection and does without it.
    - Until a Postgres adapter exists the API is one instance on one volume
      (`deploy/kubernetes/`), enough for 15,000 displays.
 

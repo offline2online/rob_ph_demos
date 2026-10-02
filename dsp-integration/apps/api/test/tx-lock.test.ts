@@ -4,6 +4,9 @@
    transaction at a time per database (FIFO), a transaction inside another
    in the same call chain joins it, and every statement from outside waits
    (gate / onFree). */
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { busy, gate, onFree, openDb, tx, txSync } from '../src/db/db'
 import { testContext } from './helpers'
@@ -159,3 +162,42 @@ describe('the transaction lock', () => {
     expect((await read).floorCpm).toBe(before)
   })
 })
+
+/* 9x7eZw6BOgI7HSrVaffa (2 Oct 2026): two connections to one file — two
+   processes, or the e2e harness's second "process" in this one. tx() is
+   IMMEDIATE by default, so the check-then-write of each runs under the
+   write lock instead of failing the lock upgrade with "database is locked";
+   and taking that lock never blocks the event loop, or the connection
+   holding it could never finish its awaiting transaction. */
+describe('transactions on two connections to one database file', () => {
+  const pair = () => {
+    const file = join(mkdtempSync(join(tmpdir(), 'ph-txlock-')), 'poc.sqlite')
+    const a = openDb(file)
+    a.exec('CREATE TABLE log (seq INTEGER PRIMARY KEY AUTOINCREMENT, who TEXT NOT NULL)')
+    return [a, openDb(file)] as const
+  }
+  const count = (db: ReturnType<typeof fresh>) => (db.prepare('SELECT COUNT(*) AS n FROM log').get() as { n: number }).n
+
+  it('both read-check-write transactions complete, one after the other, with no deadlock and no "database is locked"', async () => {
+    const [a, b] = pair()
+    const body = (db: ReturnType<typeof fresh>, who: string) => async () => {
+      const before = count(db)
+      await new Promise((r) => setTimeout(r, 20))
+      write(db, `${who}${before}`)
+    }
+    await Promise.all([tx(a, body(a, 'a')), tx(b, body(b, 'b'))])
+    /* Each saw the other's row (or none): never both writing on the same count. */
+    expect([['a0', 'b1'], ['a1', 'b0']]).toContainEqual(log(a).sort())
+  })
+
+  it('a transaction still waiting for the other connection gives up after the busy wait with the SQLite error', async () => {
+    const [a, b] = pair()
+    a.exec('BEGIN IMMEDIATE')
+    const started = Date.now()
+    await expect(tx(b, () => write(b, 'never'))).rejects.toThrow(/database is locked/)
+    expect(Date.now() - started).toBeGreaterThanOrEqual(4900)
+    a.exec('ROLLBACK')
+    expect(count(a)).toBe(0)
+  }, 10_000)
+})
+
