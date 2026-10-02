@@ -219,6 +219,32 @@ async function putProjectDoc(projectId, kind, fields) {
   if (!res.ok) throw new Error(`PATCH projects/${projectId}/docs/${kind} failed: ${res.status} ${await res.text()}`);
 }
 
+// projectDocs/{id}: the Docs page's "Additional documents". One with a
+// `sourcePath` mirrors a repo file (see syncMirroredDocs in docs-sync-lib.js).
+async function listProjectDocsFor(projectId) {
+  const rows = await runQuery({
+    from: [{ collectionId: "projectDocs" }],
+    where: { fieldFilter: { field: { fieldPath: "projectId" }, op: "EQUAL", value: { stringValue: projectId } } },
+  });
+  return rows.map((r) => ({ id: r.id, name: r.name, sourcePath: r.sourcePath }));
+}
+
+async function getProjectDocById(docId) {
+  const res = await fetch(`${FIRESTORE_BASE}/projectDocs/${docId}`, { headers: await firestoreHeaders() });
+  if (!res.ok) throw new Error(`GET projectDocs/${docId} failed: ${res.status} ${await res.text()}`);
+  return fdoc((await res.json()).fields);
+}
+
+async function patchProjectDocFields(docId, fields) {
+  const fieldPaths = Object.keys(fields).map((k) => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
+  const res = await fetch(`${FIRESTORE_BASE}/projectDocs/${docId}?${fieldPaths}&currentDocument.exists=true`, {
+    method: "PATCH",
+    headers: await firestoreHeaders(),
+    body: JSON.stringify({ fields: Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, tv(v)])) }),
+  });
+  if (!res.ok) throw new Error(`PATCH projectDocs/${docId} failed: ${res.status} ${await res.text()}`);
+}
+
 async function itemsForProject(projectId) {
   return runQuery({
     from: [{ collectionId: "backlogItems" }],
@@ -2191,6 +2217,9 @@ async function syncDocsAfterMerge(project, mergeCommit) {
       patchProject: (fields) => patchProject(project.id, fields),
       putDoc: (kind, fields) => putProjectDoc(project.id, kind, fields),
       getDoc: (kind) => getProjectDoc(project.id, kind),
+      listProjectDocs: () => listProjectDocsFor(project.id),
+      putProjectDocContent: (docId, fields) => patchProjectDocFields(docId, fields),
+      getProjectDocContent: (docId) => getProjectDocById(docId),
       now: () => new Date(),
     });
     if (result.skipped) console.log(`[docs-sync] ${project.id}: skipped — ${result.skipped}`);

@@ -121,6 +121,22 @@ function fakes(files, { refuse, drop } = {}) {
     assert.strictEqual(f.patches.length, 0);
   });
 
+  await test("projectDocs with a sourcePath are mirrored and verified; a refusal is reported", async () => {
+    const files = { "p/README.md": "# r", "p/api/A.md": "AAA", "p/api/B.md": "B".repeat(30000) };
+    const f = fakes(files);
+    const store = { a: { name: "A", sourcePath: "p/api/A.md", contentMd: "old" }, b: { name: "B", sourcePath: "p/api/B.md", contentMd: "old" }, c: { name: "C", contentMd: "keep" } };
+    f.io.listProjectDocs = async () => Object.entries(store).map(([id, v]) => ({ id, name: v.name, sourcePath: v.sourcePath }));
+    f.io.putProjectDocContent = async (id, fields) => { if (fields.contentMd.length > 20000) throw new Error("PERMISSION_DENIED over cap"); store[id].contentMd = fields.contentMd; };
+    f.io.getProjectDocContent = async (id) => store[id];
+    const r = await syncProjectDocs({ repoFolder: "p" }, "ddd4444", f.io);
+    assert.strictEqual(store.a.contentMd, "AAA");
+    assert.strictEqual(store.b.contentMd, "old");
+    assert.strictEqual(store.c.contentMd, "keep", "no sourcePath: untouched");
+    assert.strictEqual(r.ok, false);
+    assert.match(f.doc.docsSync.error, /"B" ← p\/api\/B\.md.*over cap/);
+    assert.strictEqual(f.docs.readme.contentMd, "# r", "readme still synced");
+  });
+
   console.log(`\n${passed} passed, ${failures.length} failed`);
   process.exit(failures.length ? 1 : 0);
 })();
