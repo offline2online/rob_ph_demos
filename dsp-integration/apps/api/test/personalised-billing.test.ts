@@ -32,7 +32,7 @@ describe('billing a personalised play', () => {
     const { ctx, p, put, totals } = await setup()
     /* Half the day's expected time played: two default, one localised, one personalised. */
     put(['default', 'default', 'localised', 'personalised'])
-    expect(await totals()).toEqual({ plays: 4, playedSec: 43_200, personalised: { plays: 1, playedSec: 10_800 } })
+    expect(await totals()).toEqual({ plays: 4, playedSec: 43_200, personalised: { plays: 1, playedSec: 10_800 }, byVersion: [{ versionId: null, plays: 4 }] })
     const item = await computeLineItem(ctx, won(), p, await totals())
     /* 1,236 × 0.5 = 618 realised; a quarter of the played time was personalised: 155 views, 463 base. */
     expect(item).toMatchObject({ realisedViews: 618, personalisedPlays: 1, personalisedViews: 155, personalisedMultiplier: 1.5 })

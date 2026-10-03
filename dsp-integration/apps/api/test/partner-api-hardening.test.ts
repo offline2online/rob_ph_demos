@@ -203,12 +203,12 @@ describe('errors and headers', () => {
 })
 
 describe('secrets', () => {
-  it('rejects a truncated GCM tag', () => {
+  it('rejects a truncated GCM tag', async () => {
     const s = aesGcmSecretsStore(randomBytes(32).toString('base64'))
-    const [v, iv, tag, body] = s.encrypt('secret').split(':')
-    expect(s.decrypt([v, iv, tag, body].join(':'))).toBe('secret')
+    const [v, iv, tag, body] = (await s.encrypt('secret')).split(':')
+    expect(await s.decrypt([v, iv, tag, body].join(':'))).toBe('secret')
     const short = Buffer.from(tag, 'base64').subarray(0, 4).toString('base64')
-    expect(() => s.decrypt([v, iv, short, body].join(':'))).toThrow()
+    await expect(async () => s.decrypt([v, iv, short, body].join(':'))).rejects.toThrow()
   })
 
   it('reports which secret fields are set, and follows a change to them', async () => {

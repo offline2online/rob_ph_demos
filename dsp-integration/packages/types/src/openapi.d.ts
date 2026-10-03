@@ -325,7 +325,10 @@ export interface paths {
          *     `plays` table, which is PH Core's playback store on integration (the
          *     platform reports plays itself), and is deleted with it. Plays are
          *     spread round-robin over the display type's displays and evenly
-         *     through the window; each entry is one tier.
+         *     through the window; each entry is one tier. Every play carries the
+         *     campaign version it showed (`versionId`, interface contract v3.1 row
+         *     3): by default the version handed off on the booking for this window,
+         *     so a play's versionId equals the booking's asset version.
          */
         post: operations["reportTestPlays"];
         delete?: never;
@@ -2876,6 +2879,8 @@ export interface operations {
                         tier: "default" | "localised" | "personalised" | null;
                         count: number;
                         durationSec?: number;
+                        /** @description The campaign version the play showed. Omitted: the asset version on the window's booking (null when there is no booking). */
+                        versionId?: string | null;
                     }[];
                 };
             };
@@ -2899,6 +2904,7 @@ export interface operations {
                         written: {
                             tier: string | null;
                             count: number;
+                            versionId: string | null;
                         }[];
                         total: number;
                     };

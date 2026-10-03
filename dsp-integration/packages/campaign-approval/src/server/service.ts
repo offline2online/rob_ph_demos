@@ -13,7 +13,7 @@
    live version carries on untouched. */
 import { createHash } from 'node:crypto'
 import type { CampaignRef, CampaignSource } from '../adapter/CampaignSource'
-import type { SqlDb } from '../db'
+import type { Awaitable, SqlDb } from '../db'
 import { STATUSES, type Approval, type ApprovalStatus, type AssetRejection, type Check, type StatusCounts } from '../types'
 import { type ApprovalRow, approvalStore } from './approvalStore'
 import { type ApprovalEvent, TransitionError, transition } from './stateMachine'
@@ -24,7 +24,6 @@ export class ApprovalError extends Error {
   }
 }
 
-type Awaitable<T> = T | Promise<T>
 
 export interface ApprovalServiceOptions {
   db: SqlDb
@@ -42,10 +41,11 @@ export interface ApprovalServiceOptions {
   transaction?: <T>(fn: () => Promise<T>) => Promise<T>
 }
 
-/* The store with every method answering through `run` (approvalStore stays
-   synchronous; this is what makes it awaitable). */
+/* The store with every method answering through `run` (each store method is
+   one statement; on node:sqlite it answers at once, which is what lets
+   `run` serialise it against the host's open transaction). */
 type Store = ReturnType<typeof approvalStore>
-type AsyncStore = { [K in keyof Store]: Store[K] extends (...a: infer A) => infer R ? (...a: A) => Awaitable<R> : Store[K] }
+type AsyncStore = { [K in keyof Store]: Store[K] extends (...a: infer A) => infer R ? (...a: A) => Awaitable<Awaited<R>> : Store[K] }
 function runThrough(store: Store, run: <T>(fn: () => T) => Awaitable<T>): AsyncStore {
   return Object.fromEntries(Object.entries(store).map(([k, fn]) => [k, (...a: unknown[]) => run(() => (fn as (...x: unknown[]) => unknown)(...a))])) as unknown as AsyncStore
 }
@@ -71,7 +71,7 @@ export function createApprovalService(o: ApprovalServiceOptions) {
   const statusOf = async (c: CampaignRef): Promise<ApprovalStatus> => (await currentRow(c))?.status ?? 'draft'
 
   /* The latest rejected-and-discarded edit, until the next edit (Q38). */
-  const rejectedEdit = (trail: ReturnType<Store['auditTrail']>) => {
+  const rejectedEdit = (trail: Awaited<ReturnType<Store['auditTrail']>>) => {
     let out: Approval['rejectedEdit']
     for (const [i, a] of trail.entries()) {
       if (a.action === 'edit_discarded') out = { assetVersion: a.assetVersion, reason: trail.slice(0, i).reverse().find((x) => x.action === 'rejected' && x.assetVersion === a.assetVersion)?.reason ?? null, at: a.at }

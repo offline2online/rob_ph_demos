@@ -8,10 +8,11 @@
    older than Config.reservationRetentionDays (default 90). Won and
    reserved windows are kept: billing and the booking schedule are built
    on them. reservations (status, window_start) is indexed (migration
-   0020), so a sweep with nothing to delete costs nothing. */
-import { type Db, onFree, prepared } from '../db/db'
+   0020), so a sweep with nothing to delete costs nothing. The delete
+   itself is ReservationRepo.deleteSettledBefore. */
+import type { ReservationRepo } from '../repos/ReservationRepo'
 
-export async function sweepSettledReservations(db: Db, retentionDays: number, now: () => Date = () => new Date()): Promise<number> {
+export async function sweepSettledReservations(ctx: { reservations: ReservationRepo }, retentionDays: number, now: () => Date = () => new Date()): Promise<number> {
   const cutoff = new Date(now().getTime() - retentionDays * 24 * 60 * 60 * 1000).toISOString()
-  return onFree(db, () => Number(prepared(db, "DELETE FROM reservations WHERE status IN ('rejected', 'lost', 'pending') AND window_start < ?").run(cutoff).changes))
+  return ctx.reservations.deleteSettledBefore(cutoff)
 }

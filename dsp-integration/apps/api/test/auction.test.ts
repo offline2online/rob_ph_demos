@@ -129,7 +129,7 @@ describe('the auction', () => {
     await runAuction(ctx, W1)
     const queued = (await ctx.approvalCampaigns.listCampaigns({ sources: ['dsp'] })).find((c) => c.name === 'Swisse — crid-5130002')!
     await ctx.approvals.reject(queued.campaignId, (await ctx.approvals.view(queued.campaignId)).assetVersion, 'hq', 'Price in artwork')
-    expect((await sweepRejectedCampaigns(ctx.db, 30, () => new Date(Date.now() + 31 * 24 * 60 * 60 * 1000))).deletedCampaignIds).toContain(queued.campaignId)
+    expect((await sweepRejectedCampaigns(ctx, 30, () => new Date(Date.now() + 31 * 24 * 60 * 60 * 1000))).deletedCampaignIds).toContain(queued.campaignId)
     expect(ctx.db.prepare('SELECT COUNT(*) AS n FROM dsp_creatives WHERE campaign_id = ?').get(queued.campaignId)).toEqual({ n: 0 })
     /* The same creative ID arrives again: retrieved and queued as a new first submission, not "already being retrieved". */
     await runAuction(ctx, W2)

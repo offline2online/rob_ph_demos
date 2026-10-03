@@ -19,7 +19,6 @@ import { type Check, failed, fileChecks } from '../domain/assetChecks'
 import { EXTENSION, readMedia } from '../domain/media'
 import type { PositionRef } from '../domain/positions'
 import type { PartnerRecord } from '../repos/PartnerRepo'
-import { onFree, prepared } from '../db/db'
 import { readCapped } from '../dsp/bidder'
 import { providerOf } from '../dsp/registry'
 
@@ -28,7 +27,7 @@ import { providerOf } from '../dsp/registry'
 export const dspCampaignId = (partnerId: string, crid: string) => `c_dsp_${createHash('sha256').update(`${partnerId}\n${crid}`).digest('hex').slice(0, 12)}`
 
 export const campaignForCrid = async (ctx: Context, partnerId: string, crid: string): Promise<string | null> =>
-  onFree(ctx.db, () => (prepared(ctx.db, 'SELECT campaign_id FROM dsp_creatives WHERE partner_id = ? AND crid = ?').get(partnerId, crid) as { campaign_id: string } | undefined)?.campaign_id ?? null)
+  ctx.dspCreatives.campaignFor(partnerId, crid)
 
 /* The creative URL in a bid may only point under the DSP's own creative
    host and path: each DSP's own rule (DspProvider.ownsCreativeUrl), built
@@ -51,11 +50,10 @@ export async function queueCreative(ctx: Context, partner: PartnerRecord, bid: {
      the fetch; the claim is released if retrieval or the checks fail, so a
      later window can try again. */
   const campaignId = dspCampaignId(partner.id, bid.crid)
-  const claimed = await onFree(ctx.db, () => prepared(ctx.db, 'INSERT INTO dsp_creatives (partner_id, crid, campaign_id, created_at) VALUES (?, ?, ?, ?) ON CONFLICT (partner_id, crid) DO NOTHING')
-    .run(partner.id, bid.crid, campaignId, new Date().toISOString()).changes > 0)
+  const claimed = await ctx.dspCreatives.claim(partner.id, bid.crid, campaignId, new Date().toISOString())
   if (!claimed) return `Unknown creative ${bid.crid}: already being retrieved for review.`
   const release = async (why: string) => {
-    await onFree(ctx.db, () => prepared(ctx.db, 'DELETE FROM dsp_creatives WHERE partner_id = ? AND crid = ? AND campaign_id = ?').run(partner.id, bid.crid, campaignId))
+    await ctx.dspCreatives.release(partner.id, bid.crid, campaignId)
     return why
   }
 

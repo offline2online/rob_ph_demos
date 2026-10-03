@@ -59,14 +59,14 @@ slower than that should cache, as the stand-ins now do.
 | `PlaylistSource` | read, create, rename, save settings, delete | Playlist service | `list`, `get`, `create`, `rename`, `saveSettings`, `delete` | Inventory (loop length), Playlist Management | `get` ≤ 0.1 ms |
 | `DisplaySource` | read only | Displays & Devices | `list`, `listByDisplayType`, `summaryByDisplayType`, `storeIdsByDisplayType` | **Hot**: `summaryByDisplayType` per position (counts, "no displays" check); `listByDisplayType` for the delete check only | `summaryByDisplayType` ≤ 0.05 ms, a count never the rows; `listByDisplayType` indexed |
 | `StoreSource` | read only, **never written** | Stores | `list`, `get` → `{id, name, region}`. On integration also the store/display **venue and geo** record: OpenOOH venue type, latitude/longitude, store id (see "Venue and geo metadata" below). The POC has no such seam yet; its stand-in is `phExtensions.venue` on the display type. | Inventory store/region filters, booking schedule, OpenRTB `dooh.venuetype`, inventory venue fields | `get` ≤ 0.05 ms |
-| `CampaignSource` (`platform/CampaignSource.ts`) | read + write | Campaigns service | `getCampaign`, `listCampaigns`, `setActivation`, `createCampaign`, `addAsset`, `latestAssets(campaignId, atVersion?: string)`, `bookSlot`, `bookings` | **Hot**: `getCampaign` per bid in the auction | `getCampaign` ≤ 0.5 ms |
+| `CampaignSource` (`platform/CampaignSource.ts`) | read + write | Campaigns service | `getCampaign`, `listCampaigns`, `setActivation`, `createCampaign`, `addAsset`, `latestAssets(campaignId, atVersion?: string)`, `bookSlot`, `bookings`, `deleteCampaign` | **Hot**: `getCampaign` per bid in the auction | `getCampaign` ≤ 0.5 ms |
 | Approval adapter (`packages/campaign-approval/src/adapter/CampaignSource.ts`): the **second facet of the same real campaign source** (it must not get `bookSlot` or `createCampaign`) | read + activation | Campaigns service | `getCampaign`, `listCampaigns`, `setActivation`, `onCampaignChanged`, `discardEditsAfter` | Approval screens, `isCampaignEligible` before every bid, reservation and hand-off | see the integration guide |
 | `PlaybackSource` | read only | Playback logging | `totals({campaignId, displayTypeId, from, to})`, `listPlays` | Billing, once per ended window | aggregated at the source: ≤ 1 s for 2 million plays |
 | `AssetStore` | write + read | Asset hosting / CDN | `put`, `read`, `url` | Creative upload and DSP creative retrieval; hand-off re-validation | — |
 | `AudienceSource` | read only | Audience scoring (MOVE/VAC-d, spec §4) | `forSlot`, `targetedShare` | **Hot**: per position in inventory, forecast, OpenRTB `qty.multiplier` | ≤ 0.1 ms |
 | `SessionSource` (`auth/session.ts`) | read only | HQ Admin session and roles | `current()` → `{userId, name, role}` | Every Admin API request | — |
 | Partner identity (`auth/partnerAuth.ts`) | read only | Platform token issuance | `partnerFromRequest(ctx, req)` → one `PartnerRecord` or 401. **Not an interface and not constructed in `context.ts`**: it is a function that reads `ctx.config.partnerTokens` directly, so on integration it is the one place besides `context.ts` to change (or it becomes a seam) | Every Partner API request | ≤ 0.1 ms |
-| `SecretsStore` | encrypt / decrypt | Platform secrets handling (KMS) | `encrypt`, `decrypt` | Saving DSP credentials; connecting to a DSP | off the hot path by design |
+| `SecretsStore` | encrypt / decrypt (awaitable) | Platform secrets handling (KMS) | `encrypt`, `decrypt` | Saving DSP credentials; connecting to a DSP | off the hot path by design |
 | `Flags` | read only | Feature flags | `dspIntegration` | Every new endpoint (404 when off) | — |
 | DSP integration switch (`exchange.enabled`, migration 0023) | read + write | *This build* (the retailer's own setting, on Exchange settings) | `ctx.exchange.get().enabled`; `GET /admin/v1/features` | Every Partner API request, sellers.json, the auction, the nav | — |
 
@@ -99,6 +99,13 @@ provide one breaks something specific, named here.
     snapshot of one GROUP BY.
   - `listByDisplayType` must be an indexed lookup (migration 0020 on the
     stand-in); only the delete check reads the rows now.
+- **`CampaignSource.deleteCampaign`** (2 Oct 2026, VzKX05Ulo9wGMuLMvISi)
+  - Called by the rejected-campaign retention sweep (30 days by default) to
+    remove a campaign and its assets. What deleting means is PH Core's call
+    — hard delete, archive or refuse — and it answers false when it keeps
+    the campaign; the sweep still removes this build's own records (its
+    approval rows and DSP-creative claims) and never treats a refusal as a
+    failure. The stand-in deletes the record and its assets.
 - **`CampaignSource.bookSlot`**
   - **At most one campaign per display type, slot and play window.** A
     second booking for the same slot and window must fail, not silently add
@@ -113,7 +120,10 @@ provide one breaks something specific, named here.
     `assetVersion` **string, exactly as `liveAssetVersion` returned it**: any
     string that changes with the creative is legal there (not only the POC's
     `v<n>`), so resolving it to assets is this seam's job. The hand-off
-    passes it straight through and imports nothing POC-only for it.
+    passes it straight through and imports nothing POC-only for it, and
+    the booking records that same string (`SlotBooking.assetVersion` is a
+    string since 0038, eeBT1Qp33GdsPcxG2As3, 2 Oct 2026; an HQ campaign,
+    which has no approval, carries the stand-in's `v<n>`).
 - **`CampaignSource.listCampaigns`**
   - Order is the platform's to define, but both facets must agree. The POC's
     platform seam and the approval adapter both order by `created_at, id`;
@@ -142,6 +152,12 @@ provide one breaks something specific, named here.
     Core supplies it the field is null and every play bills at the
     committed price, exactly as before. The stand-in `plays` table carries
     the two columns nullable (migration 0033).
+  - **The version id is kept, and reported** (Rob, 2 Oct 2026,
+    DDOjJoYjraKROu4Ainj5; contract v3.1 row 3): it must be the asset
+    version handed off on the booking (`SlotBooking.assetVersion`), so a
+    play shows it played the version it was handed. `totals` returns plays
+    per version (`byVersion`) and each line item carries them
+    (`playsByVersion`, migration 0039). Billing does not price on it.
   - Billing is idempotent per reservation (`billing_line_items.reservation_id`
     is unique).
 - **`AssetStore`**
@@ -159,6 +175,15 @@ provide one breaks something specific, named here.
     `scored` when a row exists or the display type has a default VAC-d
     (0035); a display type created in HQ Admin has neither until one is
     set.
+  - **The display type's default VAC-d is this build's setting, passed in**
+    (Rob, 2 Oct 2026, ticket DDOjJoYjraKROu4Ainj5; interface contract
+    v3.1 row 4): `forSlot(displayTypeId, slot, defaultVacd)`. The exchange
+    resolves it from the display type through `DisplayTypeSource`
+    (`audienceOf` in `domain/displayTypes.ts`); the audience source never
+    reads `display_types`. PH Core / the retailer's scoring framework owns
+    only each display's counted or modelled VAC-d and its per-display
+    override. A display type with no retailer scoring is scored by its
+    default VAC-d; unset means unscored and unsellable.
   - Also returns `counted`: whether the figure is measured (Vision/AI,
     MIST proximity) or modelled. It becomes OpenRTB `qty.sourcetype`
     (`exchange/openrtb.ts`), so an adapter that cannot tell must say
@@ -187,6 +212,9 @@ provide one breaks something specific, named here.
   - AES-256-GCM with a random IV and a full 16-byte tag.
   - Decrypted values are never logged or returned. Screens only see which
     fields are set.
+  - `encrypt` / `decrypt` may answer with a promise (a KMS call): the
+    partner repository awaits them, and writes the row once the connection
+    is free (2 Oct 2026, v2iKDJQA0wmisXhp7ebV).
 
 ### Tables: whose they are
 
@@ -200,14 +228,15 @@ provide one breaks something specific, named here.
 | `0022` (reserved instance identity) and `0032` (drops it again) | This build | Nothing to keep: 0022 was dropped by 0032 (Ql8j8H6F, 30 Sep 2026). |
 | `0023` (the DSP integration switch) | This build (Rob, 24 Sep 2026) | Kept, unless the platform already holds company feature switches (see "Open" below). |
 | `0024` (`auction_runs`: which process clears a window) | This build (24 Sep 2026) | Kept: it lets several instances share the scheduled work. |
-| `0025` (covering index on `plays`), `0033` (`plays.version_id` / `tier`) | Stand-in only | Dropped with `plays`; the playback store answers `totals` itself, and must supply the version tier (see `PlaybackSource`). |
+| `0025` (covering index on `plays`), `0033` (`plays.version_id` / `tier`), `0039` (`version_id` in that index) | Stand-in only | Dropped with `plays`; the playback store answers `totals` itself, and must supply the version id and tier (see `PlaybackSource`). `0039`'s `billing_line_items.plays_by_version` is **Kept**. |
 | `0034` (`reservations.personalised_multiplier`, personalised columns on `billing_line_items`) | This build (Rob, 30 Sep 2026) | Kept: the multiplier is snapshotted on the reservation at clear time. |
 | `0026` (one open API bid per advertiser and window) | This build (24 Sep 2026) | Kept: a partial unique index, as 0021. |
 | `0027` (`company_advertiser_settings`: deferred play-window change) | This build (26 Sep 2026) | Kept. |
 | `0028` (`playlists.playlist_settings`), `0029` (multi-zone layout on the playlist) | **PH Core stand-in** (`playlists`) | Dropped with `playlists`: the playlist service owns its own settings and zoning (`PlaylistSource.saveSettings`). |
 | `0030` (a DSP's own category lists on `partners`) | This build (28 Sep 2026) | Kept. |
 | `0031` (`assets.content_hash`, `discarded_at`; `campaign_slot_bookings.asset_version`) | Mixed | `assets` and the booking's `asset_version` are the campaign system's: the booking must carry the version it plays (see `CampaignSource.bookSlot`). Content-hash reuse and discard are this build's approval records. |
-| `0035` (`displays.vacd_override`; the default itself is `phExtensions.defaultVacd`) | **PH Core stand-in** (`displays`) | Dropped with `displays`. The per-display override is the audience source's own data: `AudienceSource.forSlot` must return the same sum. |
+| `0038` (`campaign_slot_bookings.asset_version` becomes TEXT: the approval's version string) | **PH Core stand-in** (`campaign_slot_bookings`) | Dropped with the stand-in: the campaign system's own booking must carry the version string it was handed. |
+| `0035` (`displays.vacd_override`; the default itself is `phExtensions.defaultVacd`) | **PH Core stand-in** (`displays`); the default is **Kept** (this build's display-type setting) | Dropped with `displays`. The per-display override is the audience source's own data: `AudienceSource.forSlot` must return the same sum, given the default this build passes in (DDOjJoYjraKROu4Ainj5). |
 | `0036` (drops the unused `audience_scoring` column) | This build | Nothing to keep. |
 | `0037` (`seq` on `display_types`, `playlists`, `displays`, `partners`, `buyers_lists`, `reservations`) and the approval module's `0102` (`seq` on `campaign_approvals`, `campaign_approval_audit`) | Mixed (1 Oct 2026, gAi2mkcm43uW6hrchOjh) | Lists that must come back in the order rows were written order by `seq`, not SQLite's `rowid`. On Postgres `seq` is `BIGINT GENERATED BY DEFAULT AS IDENTITY`; the SQLite insert triggers that fill it do not travel. Kept on this build's tables; dropped with the stand-in tables. |
 
@@ -408,16 +437,35 @@ platform:
      every seam and repository method returns `T | Promise<T>`, and every
      caller awaits it — 63 source files and about 550 calls, not "one file
      per seam" as this section used to say. Exceptions, still synchronous:
-     `SecretsStore.encrypt/decrypt`, `Flags.dspIntegration` (a property),
-     the approval adapter's `onCampaignChanged`, and the approval module's
-     own `SqlDb`. A Postgres adapter is **not** wired in `context.ts`
-     alone: raw SQL on the `node:sqlite` handle still sits outside the
-     seams in `billing/index.ts`, `domain/positions.ts`,
-     `exchange/scheduler.ts`, `exchange/creatives.ts`,
-     `domain/campaignRetention.ts`, `domain/reservationRetention.ts` and
-     `routes/admin/test.ts`, and `tx`/`gate` are typed to the SQLite
-     handle — about 25 files plus a Postgres migration set (review,
-     2 Oct 2026; v2iKDJQA0wmisXhp7ebV moves the SQL into repositories).
+     `Flags.dspIntegration` (a property) and the approval adapter's
+     `onCampaignChanged` (a listener registration).
+   - **Done since** (2 Oct 2026, v2iKDJQA0wmisXhp7ebV, "the cheap parts"):
+     - `SecretsStore.encrypt/decrypt` are awaitable, and the partner
+       repository awaits them.
+     - The approval module's `SqlDb` is async-capable: each statement may
+       answer with a promise, and `approvalStore` and `pocCampaignSource`
+       await (sync-first, so node:sqlite pays nothing for it). A test runs
+       the store over an `SqlDb` whose every statement answers a promise.
+     - No raw SQL outside `src/platform/`, `src/repos/` and `src/db/`. The
+       statements that sat in billing, positions, the scheduler, DSP
+       creatives, the two retention sweeps and the test-plays route moved
+       into repositories on the `Context`, behind `gate()` like every
+       other: `AuctionRunRepo`, `BillingRepo`, `DspCreativeRepo`,
+       `CampaignRetentionRepo`, `PlayRepo` and
+       `ReservationRepo.deleteSettledBefore`. `test/sql-portability.test.ts`
+       fails if `db.prepare`, `prepared(` or `db.exec(` appears anywhere
+       else in `apps/api/src`; the one allowlisted directory is
+       `src/seed/` (sample data for the stand-in tables, deleted with them).
+   - **Still deferred, until a client commissions a second replica**: the
+     Postgres adapter itself (repository and seam implementations over a
+     pool) and its migration set; `tx` / `gate` / `onFree` are typed to the
+     SQLite `Db` handle; the repositories' SQL uses `?` placeholders and
+     reads `.changes` off node:sqlite's result (Postgres: `$n` and
+     `rowCount`); migration 0037's `seq`-filling insert triggers and the
+     `ORDER BY rowid` in 0029 need Postgres equivalents (an identity
+     column; no rowid). The deploy host's snapshot persistence
+     (`deploy/firebase/functions/src/host.ts`: `VACUUM INTO`,
+     `total_changes()`) is SQLite-only by nature and goes with it.
    - On SQLite, transactions take a per-database FIFO lock, a nested one
      joins the open one, and a seam call from outside waits for it to end
      (`db/db.ts`: `tx`, `gate`, `onFree`); in-process caches are dropped on
@@ -642,3 +690,13 @@ Billing computes `realised VAC-d = assumed views × min(1, played / expected)`
 and `amount = realised VAC-d / 1000 × clearing CPM`. Plays that did not
 happen are not billed and there is no make-good (Q29). Closed-loop
 conversion attribution is not an input (Q55).
+
+**A PH Core requirement on partner-facing analytics** (Rob, 2 Oct 2026,
+ticket DDOjJoYjraKROu4Ainj5; closes interface contract v3's open question):
+any playback analytics PH Core reports to a partner must apply PH Core's
+own minimum-volume (k-anonymity) rule before a thin segment is reported,
+so a small count cannot reveal who saw a targeted version. That floor is
+PH Core's call, as analytics is PH Core's (Q53/Q54). This build passes no
+per-play attribute data to a partner: a DSP sees which of its campaigns
+played and the billed figures, never an attribute value or a per-play
+audience.

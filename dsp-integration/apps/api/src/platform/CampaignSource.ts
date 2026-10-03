@@ -33,9 +33,11 @@ export interface NewCampaign {
    existing campaign system's side of the hand-off (spec §6). */
 export interface SlotBooking {
   id: string; campaignId: string; displayTypeId: string; slot: number; windowStart: string; windowEnd: string
-  /* The campaign_assets version handed off (Q38): the approved version,
-     which the campaign system plays even while a later edit awaits review. */
-  assetVersion?: number | null
+  /* The version handed off (Q38): the approved version, which the campaign
+     system plays even while a later edit awaits review — the approval
+     module's own opaque string, the value latestAssets resolves
+     (eeBT1Qp33GdsPcxG2As3, 2 Oct 2026). */
+  assetVersion?: string | null
 }
 /* One uploaded creative file. `version` increases with every upload to the campaign. */
 export interface CampaignAsset {
@@ -63,6 +65,11 @@ export interface CampaignSource {
   /* Hand-off (package 16): book a campaign into a slot for a window. */
   bookSlot(b: SlotBooking): Awaitable<SlotBooking>
   bookings(campaignId?: string): Awaitable<SlotBooking[]>
+  /* The retention sweep's request to remove a rejected campaign and its
+     assets (Rob, 2 Oct 2026). What that means is the campaign system's
+     call — hard delete, archive or refuse; false when it kept the
+     campaign. The stand-in deletes the record and its assets. */
+  deleteCampaign(id: string): Awaitable<boolean>
 }
 
 interface Row {
@@ -84,7 +91,11 @@ const toRecord = (r: Row): CampaignRecord => ({
   ...(r.brief ? { brief: fromJson<CampaignBrief>(r.brief, {}) } : {}),
 })
 
-export function sqliteCampaignSource(db: Db): CampaignSource {
+/* opts.onChange: called with a campaign's id after this facet changes it
+   (activation, a new asset, deletion), so the approval facet over the same
+   records hears it (context.ts wires both to one listener set). */
+export function sqliteCampaignSource(db: Db, opts: { onChange?: (id: string) => void } = {}): CampaignSource {
+  const changed = (id: string) => opts.onChange?.(id)
   const get = (id: string) => {
     const r = prepared(db, 'SELECT * FROM campaigns WHERE id = ?').get(id) as Row | undefined
     return r ? toRecord(r) : null
@@ -98,6 +109,7 @@ export function sqliteCampaignSource(db: Db): CampaignSource {
     },
     setActivation(id, enabled) {
       if (!prepared(db, 'UPDATE campaigns SET activation_enabled = ? WHERE id = ?').run(enabled ? 1 : 0, id).changes) return null
+      changed(id)
       return get(id)
     },
     createCampaign(c) {
@@ -114,6 +126,7 @@ export function sqliteCampaignSource(db: Db): CampaignSource {
         `INSERT INTO campaign_assets (id, campaign_id, version, role, file, mime_type, width, height, duration_sec, bitrate_kbps, size_bytes, content_hash, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(a.id, a.campaignId, version, a.role, a.file, a.mimeType, a.width, a.height, a.durationSec, a.bitrateKbps, a.sizeBytes, a.contentHash ?? null, new Date().toISOString())
+      changed(a.campaignId)
       return { ...a, version, contentHash: a.contentHash ?? null }
     },
     bookSlot(b) {
@@ -121,10 +134,16 @@ export function sqliteCampaignSource(db: Db): CampaignSource {
         .run(b.id, b.campaignId, b.displayTypeId, b.slot, b.windowStart, b.windowEnd, b.assetVersion ?? null, new Date().toISOString())
       return b
     },
+    deleteCampaign(id) {
+      prepared(db, 'DELETE FROM campaign_assets WHERE campaign_id = ?').run(id)
+      const gone = Number(prepared(db, 'DELETE FROM campaigns WHERE id = ?').run(id).changes) > 0
+      if (gone) changed(id)
+      return gone
+    },
     bookings(campaignId) {
       const rows = (campaignId
         ? prepared(db, 'SELECT * FROM campaign_slot_bookings WHERE campaign_id = ? ORDER BY window_start').all(campaignId)
-        : prepared(db, 'SELECT * FROM campaign_slot_bookings ORDER BY window_start').all()) as { id: string; campaign_id: string; display_type_id: string; slot: number; window_start: string; window_end: string; asset_version: number | null }[]
+        : prepared(db, 'SELECT * FROM campaign_slot_bookings ORDER BY window_start').all()) as { id: string; campaign_id: string; display_type_id: string; slot: number; window_start: string; window_end: string; asset_version: string | null }[]
       return rows.map((r) => ({ id: r.id, campaignId: r.campaign_id, displayTypeId: r.display_type_id, slot: r.slot, windowStart: r.window_start, windowEnd: r.window_end, assetVersion: r.asset_version }))
     },
     latestAssets(campaignId, atVersion) {

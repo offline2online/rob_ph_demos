@@ -37,7 +37,6 @@
    23 s and held every request on the API's one thread. */
 import { randomUUID } from 'node:crypto'
 import type { Context } from '../context'
-import { onFree, prepared } from '../db/db'
 import type { PlayTotals } from '../platform/PlaybackSource'
 import { assumedViewsPerWindow, findPosition, shortestWindowMs, windowMs, type PositionRef } from '../domain/positions'
 import type { ReservationRecord } from '../repos/ReservationRepo'
@@ -68,6 +67,9 @@ export interface LineItem {
   personalisedViews: number
   personalisedMultiplier: number | null
   personalisedAmount: number
+  /* Plays per campaign version shown (contract v3.1 row 3): the audit
+     trail that the version handed off is what played. Not priced. */
+  playsByVersion: { versionId: string | null; plays: number }[]
 }
 
 export { bookLockedTermWindow, lockTermOnClear } from './lockedTerm'
@@ -125,6 +127,7 @@ export async function computeLineItem(ctx: Context, r: ReservationRecord, p: Pos
     positionId: r.positionId, windowStart: r.windowStart, windowEnd: new Date(end).toISOString(), plays: played.plays, playedSec: played.playedSec, expectedSec,
     assumedViews, realisedViews, cpm, currency: r.currency, amount: round2(baseAmount + personalisedAmount),
     personalisedPlays: persPlays, personalisedViews, personalisedMultiplier: multiplier, personalisedAmount,
+    playsByVersion: played.byVersion ?? [],
   }
 }
 
@@ -133,14 +136,7 @@ export async function computeLineItem(ctx: Context, r: ReservationRecord, p: Pos
    API) writes nothing, and neither throws. The first line item stands.
    Returns whether this call wrote it. */
 export function writeLineItem(ctx: Context, item: LineItem, computedAt: string): Promise<boolean> {
-  return Promise.resolve(onFree(ctx.db, () => prepared(ctx.db,
-    `INSERT INTO billing_line_items (id, reservation_id, partner_id, advertiser_id, campaign_id, position_id, window_start, window_end, plays,
-       played_sec, expected_sec, assumed_views, realised_views, cpm, currency, amount, computed_at,
-       personalised_plays, personalised_views, personalised_multiplier, personalised_amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT (reservation_id) DO NOTHING`,
-  ).run(item.id, item.reservationId, item.partnerId, item.advertiserId, item.campaignId, item.positionId, item.windowStart, item.windowEnd, item.plays,
-    item.playedSec, item.expectedSec, item.assumedViews, item.realisedViews, item.cpm, item.currency, item.amount, computedAt,
-    item.personalisedPlays, item.personalisedViews, item.personalisedMultiplier, item.personalisedAmount).changes > 0))
+  return Promise.resolve(ctx.billing.insert(item, computedAt))
 }
 
 /* Bills one cleared reservation from the totals for its window. Idempotent
@@ -171,13 +167,5 @@ export async function runBilling(ctx: Context): Promise<LineItem[]> {
 }
 
 export async function lineItems(ctx: Context): Promise<LineItem[]> {
-  const rows = await onFree(ctx.db, () => prepared(ctx.db, 'SELECT * FROM billing_line_items ORDER BY window_start, id').all() as Record<string, unknown>[])
-  return rows.map((r) => ({
-    id: r.id as string, reservationId: r.reservation_id as string, partnerId: r.partner_id as string, advertiserId: r.advertiser_id as string | null,
-    campaignId: r.campaign_id as string, positionId: r.position_id as string, windowStart: r.window_start as string, windowEnd: r.window_end as string,
-    plays: r.plays as number, playedSec: r.played_sec as number, expectedSec: r.expected_sec as number, assumedViews: r.assumed_views as number,
-    realisedViews: r.realised_views as number, cpm: r.cpm as number, currency: r.currency as string, amount: r.amount as number,
-    personalisedPlays: r.personalised_plays as number, personalisedViews: r.personalised_views as number,
-    personalisedMultiplier: r.personalised_multiplier as number | null, personalisedAmount: r.personalised_amount as number,
-  }))
+  return ctx.billing.list()
 }

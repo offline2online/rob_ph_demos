@@ -186,12 +186,12 @@ describe('settled bids are deleted after their retention', () => {
       rec('old_rejected', 'rejected', '2026-05-01T00:00:00.000Z'), rec('old_lost', 'lost', '2026-05-02T00:00:00.000Z'), rec('old_pending', 'pending', '2026-05-03T00:00:00.000Z'),
       rec('old_won', 'won', '2026-05-04T00:00:00.000Z'), rec('recent_rejected', 'rejected', '2026-09-01T00:00:00.000Z'),
     ]) await ctx.reservations.insert(r)
-    expect(await sweepSettledReservations(ctx.db, 90, () => NOW)).toBe(3)
+    expect(await sweepSettledReservations(ctx, 90, () => NOW)).toBe(3)
     expect(await Promise.all(['old_rejected', 'old_lost', 'old_pending'].map((id) => ctx.reservations.get(id)))).toEqual([null, null, null])
     expect((await ctx.reservations.get('old_won'))?.status).toBe('won')
     expect((await ctx.reservations.get('recent_rejected'))?.status).toBe('rejected')
     /* Nothing more to delete: a sweep with nothing due changes nothing. */
-    expect(await sweepSettledReservations(ctx.db, 90, () => NOW)).toBe(0)
+    expect(await sweepSettledReservations(ctx, 90, () => NOW)).toBe(0)
   })
 })
 

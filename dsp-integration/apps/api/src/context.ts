@@ -22,6 +22,11 @@ import { advertiserSlug } from '@ph-dsp/types'
 import { type AssetStore, localAssetStore } from './platform/AssetStore'
 import { type AudienceSource, sqliteAudienceSource } from './platform/AudienceSource'
 import { type ReservationRepo, sqliteReservationRepo } from './repos/ReservationRepo'
+import { type AuctionRunRepo, sqliteAuctionRunRepo } from './repos/AuctionRunRepo'
+import { type BillingRepo, sqliteBillingRepo } from './repos/BillingRepo'
+import { type CampaignRetentionRepo, sqliteCampaignRetentionRepo } from './repos/CampaignRetentionRepo'
+import { type DspCreativeRepo, sqliteDspCreativeRepo } from './repos/DspCreativeRepo'
+import { type PlayRepo, sqlitePlayRepo } from './repos/PlayRepo'
 import { targetingSummary } from './domain/targetingSummary'
 import type { Fetch } from './dsp/DspClient'
 import { type DspProviders, dspProviders } from './dsp/registry'
@@ -51,6 +56,16 @@ export interface Context {
   assets: AssetStore
   audience: AudienceSource
   reservations: ReservationRepo
+  /* Auction claims per play window (exchange/scheduler.ts). */
+  auctionRuns: AuctionRunRepo
+  /* Billing line items (billing/index.ts). */
+  billing: BillingRepo
+  /* DSP creative-ID claims (exchange/creatives.ts). */
+  dspCreatives: DspCreativeRepo
+  /* The rejected-campaign sweep's reads and deletes (domain/campaignRetention.ts). */
+  campaignRetention: CampaignRetentionRepo
+  /* The test-only endpoint's synthetic plays (routes/admin/test.ts). */
+  plays: PlayRepo
   /* HTTP to the DSPs (the mock DSP service in the POC). */
   fetch: Fetch
   bidder: Bidder
@@ -71,6 +86,7 @@ export function createContext(opts: { config?: Config; db?: Db; flags?: Flags; s
      call chain's transaction is open waits for it to end instead of running
      inside it (db.ts, "Transactions on one SQLite connection"). */
   const g = <T extends object>(t: T) => gate(db, t)
+  const campaignChanges = new Set<(id: string) => void>()
   const displayTypes = g(sqliteDisplayTypeSource(db))
   const company = g(sqliteCompanySettingsRepo(db))
   const partners = g(sqlitePartnerRepo(db, secrets))
@@ -84,7 +100,11 @@ export function createContext(opts: { config?: Config; db?: Db; flags?: Flags; s
     playlists: g(sqlitePlaylistSource(db)),
     displays: g(sqliteDisplaySource(db)),
     stores: g(sqliteStoreSource(db)),
-    campaigns: g(sqliteCampaignSource(db)),
+    /* One set of campaign records, two facets (FWwsCUJP, built by
+       eeBT1Qp33GdsPcxG2As3): this platform facet and the approval module's
+       (approvalParts) share one change hub, so a write through either one
+       reaches onCampaignChanged. */
+    campaigns: g(sqliteCampaignSource(db, { onChange: (id) => campaignChanges.forEach((l) => l(id)) })),
     playback: g(sqlitePlaybackSource(db)),
     partners,
     company,
@@ -95,8 +115,13 @@ export function createContext(opts: { config?: Config; db?: Db; flags?: Flags; s
     bidder: httpBidder(opts.dspFetch ?? ((url, init) => fetch(url, init)), { timeoutMs: config.bidderTimeoutMs, qps: config.bidderQps, maxResponseBytes: config.maxBidResponseBytes }),
     audience: g(sqliteAudienceSource(db)),
     reservations: g(sqliteReservationRepo(db)),
+    auctionRuns: g(sqliteAuctionRunRepo(db)),
+    billing: g(sqliteBillingRepo(db)),
+    dspCreatives: g(sqliteDspCreativeRepo(db)),
+    campaignRetention: g(sqliteCampaignRetentionRepo(db)),
+    plays: g(sqlitePlayRepo(db)),
     clock,
-    ...approvalParts(db, config, { displayTypes, company, partners }),
+    ...approvalParts(db, config, { displayTypes, company, partners, campaignChanges }),
   }
 }
 
@@ -104,13 +129,14 @@ export function createContext(opts: { config?: Config; db?: Db; flags?: Flags; s
    It reuses the context's own display types, company settings and partners:
    a second DisplayTypeSource would carry its own 1-second snapshot and weaken
    "a save is visible to this process immediately". */
-function approvalParts(db: Db, config: Config, own: { displayTypes: DisplayTypeSource; company: CompanySettingsRepo; partners: PartnerRepo }) {
-  const { displayTypes, company, partners } = own
+function approvalParts(db: Db, config: Config, own: { displayTypes: DisplayTypeSource; company: CompanySettingsRepo; partners: PartnerRepo; campaignChanges: Set<(id: string) => void> }) {
+  const { displayTypes, company, partners, campaignChanges } = own
   /* Files, not the database: no gate needed. */
   const assets = localAssetStore(config.assetsDir, config.publicUrl)
   /* Advertiser names come from the DSP seats (seats are not secret). */
   const seatNames = async () => (await partners.list()).flatMap((p) => p.seats)
   const approvalCampaigns = gate(db, pocCampaignSource(db, {
+    listeners: campaignChanges,
     advertiserName: async (id) => (await seatNames()).find((s) => advertiserSlug(s.name) === id)?.name ?? id,
     partnerName: async (id) => (await partners.get(id))?.name ?? null,
     canvas: async (id) => (await displayTypes.get(id))?.displayCanvasSize ?? null,

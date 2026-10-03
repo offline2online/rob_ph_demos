@@ -42,7 +42,11 @@ export async function handOff(ctx: Context, r: ReservationRecord): Promise<Reser
     await ctx.campaigns.bookSlot({
       id: `bk_${randomUUID().slice(0, 12)}`, campaignId: r.campaignId, displayTypeId: p.displayType.id, slot: p.slot,
       windowStart: r.windowStart, windowEnd,
-      assetVersion: Math.max(...assets.map((a) => a.version)),
+      /* The approved version's own string, as the approval module gave it
+         (eeBT1Qp33GdsPcxG2As3): the booking plays exactly the version it
+         was handed. An HQ campaign has no approval, so it carries the
+         stand-in's label for its latest assets. */
+      assetVersion: live ?? `v${Math.max(...assets.map((a) => a.version))}`,
     })
   } catch (e) {
     /* One campaign per slot per window (migration 0021): never two. */

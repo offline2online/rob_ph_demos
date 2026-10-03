@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { audienceOf } from '../src/domain/displayTypes'
 import { seedScreens } from '../src/seed/screens'
 import { testContext } from './helpers'
 
@@ -20,6 +21,6 @@ describe('seedScreens', () => {
     expect(ctx.db.prepare('SELECT COUNT(*) AS n FROM displays WHERE vacd_override IS NOT NULL').get()).toEqual({ n: 0 })
     const u = await seedScreens(ctx, 'some-unscored')
     expect(u.unscoredDisplayTypes).toHaveLength(1)
-    expect((await ctx.audience.forSlot(u.unscoredDisplayTypes[0], 1)).scored).toBe(false)
+    expect((await audienceOf(ctx.audience, (await ctx.displayTypes.get(u.unscoredDisplayTypes[0]))!, 1)).scored).toBe(false)
   })
 })

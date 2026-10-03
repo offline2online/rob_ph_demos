@@ -38,9 +38,14 @@ tickets that were already decided or parked.
 
 1. **Some documents live only on the board, not in this repo.** The
    **End-to-End Test Spec — DSP Demand Paths (v2)**, the **Run 6 Runbook —
-   agent instructions**, every **E2E Test Results** document, **Boundaries
-   with PH Core**, the data model and the review documents are board
-   project documents.
+   agent instructions**, every **E2E Test Results** document, the data
+   model and the review documents are board project documents.
+   **Boundaries with PH Core (1/3, 2/3, 3/3)**, the **Scale review** and the
+   **Security review** are different: they are mirrored from
+   `docs/dsp-integration/api/*.md`, and the repo wins. Edit the file, never
+   the board copy; every merge to main rewrites them (and
+   `npm run board:sync` does it on demand, with the slice map in
+   `scripts/sync-board-docs.mjs` → `MIRRORS`).
    - Read them with the PH Agent Console MCP: `get_project_docs`, projectId
      `mIPdOCAWevhrgD8g2tCZ`, `include: ["docs"]`.
    - Change them with `update_project_document`. It overwrites the whole
@@ -212,7 +217,7 @@ nothing here can even read it without the key.
 | `apps/api/test/e2e/` | The end-to-end suite for the DSP demand paths, following the board doc *End-to-End Test Spec — DSP Demand Paths (v2)*: Run 1 open auction (`open-auction.test.ts`), Run 2 hardening, Run 3 private auction, Run 4 two-period, Run 5 reserved (`run2`–`run5-*.test.ts`). `harness.ts` stubs every PH Core seam: the DSP bidder (over `apps/dsp-mocks`, plus scripted, slow and abortable responses), DSP auth, playback (can be made to throw), an asset store keyed by content hash, a campaign source that records hand-offs, one token per partner, and a controllable clock. Nothing reaches the network. It runs with the rest of the API suite (`npm test`), or alone with `npx vitest run test/e2e` in `apps/api`. Every case passes; a case whose bug was fixed stays as its regression, naming the backlog id. It is the before/after gate for structural refactors. Results are board docs titled *E2E Test Results — …* |
 | `apps/api/bench/load.ts` | `npm run bench` — load benchmark for the Partner API and the auction, at demo scale or a synthetic large estate (see SECURITY-PERFORMANCE.md) |
 | `apps/api/src/platform/` | Stand-ins for the existing platform: `DisplayTypeSource`, `PlaylistSource`, `DisplaySource`, `StoreSource`, `CampaignSource` (including slot bookings for the hand-off), `PlaybackSource`, `AssetStore`, `AudienceSource` |
-| `apps/api/src/repos/` | This build's own records: partners (credentials encrypted), company advertiser settings, variable access, exchange, buyers lists (private-auction deals) |
+| `apps/api/src/repos/` | This build's own records: partners (credentials encrypted), company advertiser settings, variable access, exchange, buyers lists (private-auction deals), reservations, auction claims (`AuctionRunRepo`), billing line items (`BillingRepo`), DSP creative claims (`DspCreativeRepo`), the rejected-campaign sweep's reads and deletes (`CampaignRetentionRepo`) and the test endpoint's synthetic plays (`PlayRepo`). With `src/platform/` and `src/db/`, the only places raw SQL may appear (`test/sql-portability.test.ts` checks) |
 | `apps/api/src/seed/` | Seed data, taken from the prototype's `model/data.js` (the minimal base the tests count), plus the sample bookings (`bookings.ts`, also `npm run db:bookings`) and the **demo estate** (`demo.ts`, also `npm run db:demo`): four advertiser slots on Landscape and three on Portrait, twelve stores, three DSPs with a dozen advertisers, campaigns in every approval state and bookings in every layer on every position. A fresh database gets it by default; `rm data/poc.sqlite` (or `npm run db:demo`) to see it on an existing one. `screens.ts` (`npm run db:screens -- [all-scored\|some-unscored\|some-overridden]`) is a re-runnable test-data seed: it assigns unassigned screens to mock stores and gives display types a default VAC-d (`phExtensions.defaultVacd`; per-display overrides in `displays.vacd_override`, migration 0035) |
 | `apps/dsp-mocks/` | Mock Google DV360, Amazon Ads and The Trade Desk APIs and OpenRTB bidders for testing, with a control API and a test page at `/`. The POC's DSP clients and the auction call these instead of real DSPs. |
 | `apps/api/src/exchange/` | The exchange: OpenRTB 2.6 DOOH bid requests, pre-auction enforcement, the auction job, DSP creative queueing, hand-off to the campaign system, and their CLIs |
@@ -233,7 +238,7 @@ nothing here can even read it without the key.
 | `apps/api/test/stability.test.ts`, `test/multiprocess.test.ts` | The race and edge-case suite (24 Sep 2026): simultaneous bids, bids during the auction, malformed DSP answers, faults in one job, missed cutoffs; and two real API processes plus three tick runs on one database file |
 | `apps/api/bench/load.ts` | `npm run bench` — the load test: the Partner API's reads and bids, the auction and billing, on an estate of any shape (`--scale`, `--displays-per-type`, `--stores`, `--plays-per-display`, `--history`). Numbers in `docs/dsp-integration/api/SCALE-15000-EKS.md` |
 | `apps/admin/public/demo/` | That snapshot and the creatives it points at, committed so the demo can be rebuilt without a running API |
-| `scripts/sync-board-docs.mjs` | `npm run board:sync` — pushes `REQUIREMENTS.md` and `README.md` to the board's Docs page and verifies them (see above) |
+| `scripts/sync-board-docs.mjs` | `npm run board:sync` — pushes `REQUIREMENTS.md` and `README.md` to the board's Docs page, and `api/PH-CORE-BOUNDARIES.md` to its three board parts (`MIRRORS`), and verifies them (see above) |
 | `scripts/board-tickets.mjs` | `npm run board:tickets` — reports where this project's tickets are, and moves them between statuses when work reached `main` outside the board's own Deploy to Main (see above) |
 
 ## Running it

@@ -12,7 +12,13 @@ export interface PlayRecord { displayId: string; campaignId: string; playedAt: s
 /* plays / playedSec are every play; `personalised` is the part of them whose
    version was personalised. The rest (default, localised, unknown) bills at
    the clearing CPM. */
-export interface PlayTotals { plays: number; playedSec: number; personalised?: { plays: number; playedSec: number } }
+export interface PlayTotals {
+  plays: number; playedSec: number; personalised?: { plays: number; playedSec: number }
+  /* Plays per campaign version shown (versionId; null = not reported),
+     ordered by versionId. The audit trail for "plays the version it was
+     handed" (contract v3.1 row 3): reported on the line item, never priced. */
+  byVersion?: { versionId: string | null; plays: number }[]
+}
 
 export interface PlaybackSource {
   listPlays(q: { campaignId?: string; from: string; to: string }): Awaitable<PlayRecord[]>
@@ -48,6 +54,13 @@ export const sqlitePlaybackSource = (db: Db): PlaybackSource => ({
         WHERE campaign_id = ? AND played_at >= ? AND played_at < ?
           AND display_id IN (SELECT id FROM displays WHERE display_type_id = ?)`,
     ).get(campaignId, from, to, displayTypeId) as { plays: number; played_sec: number; p_plays: number; p_sec: number }
-    return { plays: r.plays, playedSec: r.played_sec, personalised: { plays: r.p_plays, playedSec: r.p_sec } }
+    const byVersion = prepared(db,
+      `SELECT version_id, COUNT(*) AS plays
+         FROM plays
+        WHERE campaign_id = ? AND played_at >= ? AND played_at < ?
+          AND display_id IN (SELECT id FROM displays WHERE display_type_id = ?)
+        GROUP BY version_id ORDER BY version_id`,
+    ).all(campaignId, from, to, displayTypeId) as { version_id: string | null; plays: number }[]
+    return { plays: r.plays, playedSec: r.played_sec, personalised: { plays: r.p_plays, playedSec: r.p_sec }, byVersion: byVersion.map((v) => ({ versionId: v.version_id, plays: v.plays })) }
   },
 })
