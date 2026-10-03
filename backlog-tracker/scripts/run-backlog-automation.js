@@ -1004,6 +1004,86 @@ function dispatchRebuilds(branch, paths, label) {
   return dispatched;
 }
 
+// ── Console tests on every train push, not only at Deploy to Main ───────────
+// The train PR's "rules" check (firestore-rules-test.yml: app boot, sign-in,
+// MCP and rules suites) used to run for the first time when Deploy to Main
+// opened the PR — after every ticket on the train had been tested and
+// approved. On 3 Oct 2026 (PR #301) a ticket gave auth-gate.js an import
+// the sign-in test harness didn't expect; all 15 scenarios failed, and it
+// surfaced only as a refused deploy.
+//
+// A workflow-file change can't fix that: a push made with this run's
+// GITHUB_TOKEN never triggers another workflow's `push` event (GitHub's own
+// loop guard), and a train carrying a workflow change is left for a person
+// to merge. workflow_dispatch IS allowed from GITHUB_TOKEN and the test
+// workflow already accepts it — so this script starts the run itself
+// against the train branch whenever a ticket lands there, and
+// reportTrainTestResults() notes a failure on the train's cards while they
+// are still in Ready for Testing.
+const CONSOLE_TEST_WORKFLOW = "firestore-rules-test.yml";
+
+function touchesConsoleTests(paths) {
+  return (paths || []).some((p) => typeof p === "string" && p.startsWith("backlog-tracker/"));
+}
+
+function dispatchConsoleTests(branch, paths, label) {
+  if (!touchesConsoleTests(paths)) return false;
+  try {
+    run("gh", ["workflow", "run", CONSOLE_TEST_WORKFLOW, "--repo", REPO, "--ref", branch]);
+    console.log(`[${label}] started ${CONSOLE_TEST_WORKFLOW} on ${branch}`);
+    return true;
+  } catch (err) {
+    console.log(`[${label}] couldn't start ${CONSOLE_TEST_WORKFLOW} on ${branch} (${scrubSecrets(err.message)}) — the train PR still runs it at Deploy to Main`);
+    return false;
+  }
+}
+
+// Which of a train's Ready for Testing cards to tell about a failed run.
+// Pure, for test/train-tests.test.js.
+//   testRun: newest run on the branch, { headSha, status, conclusion, url } or null
+//   head:    the branch's current head sha
+//   cards:   the train's Ready for Testing cards ({ id, testsFailedSha })
+// Only a completed, failed run on the CURRENT head counts (an older head's
+// failure may already be fixed), and each card is told once per head.
+function trainTestFailureTargets(testRun, head, cards) {
+  if (!testRun || !head || testRun.headSha !== head) return [];
+  if (String(testRun.status).toLowerCase() !== "completed") return [];
+  if (!["failure", "timed_out", "startup_failure"].includes(String(testRun.conclusion).toLowerCase())) return [];
+  return (cards || []).filter((c) => c.testsFailedSha !== head);
+}
+
+async function reportTrainTestResults() {
+  const cards = await runQuery({
+    from: [{ collectionId: "backlogItems" }],
+    select: { fields: ["deployBranch", "deployCommit", "testsFailedSha", "notes"].map((fieldPath) => ({ fieldPath })) },
+    where: { fieldFilter: { field: { fieldPath: "status" }, op: "EQUAL", value: { stringValue: "ready-for-testing" } } },
+  });
+  const byBranch = new Map();
+  for (const c of cards) {
+    if (!c.deployBranch || !c.deployCommit) continue;
+    if (!byBranch.has(c.deployBranch)) byBranch.set(c.deployBranch, []);
+    byBranch.get(c.deployBranch).push(c);
+  }
+  for (const [branch, trainCards] of byBranch) {
+    try {
+      const head = run("gh", ["api", `repos/${REPO}/branches/${encodeURIComponent(branch)}`, "-q", ".commit.sha"]);
+      const runs = JSON.parse(run("gh", ["run", "list", "--repo", REPO, "--workflow", CONSOLE_TEST_WORKFLOW, "--branch", branch,
+        "--limit", "1", "--json", "headSha,status,conclusion,url"]) || "[]");
+      const targets = trainTestFailureTargets(runs[0] || null, head, trainCards);
+      for (const card of targets) {
+        const notes = await appendNote(card,
+          `The console tests (${CONSOLE_TEST_WORKFLOW}) FAILED on this train's current head ${head.slice(0, 7)}: ${runs[0].url} — ` +
+          `the same check Deploy to Main waits on, so the train will not merge until it is green. ` +
+          `If this ticket caused it, use Failed testing; otherwise look at the other tickets on ${branch}.`);
+        await patchItem(card.id, { notes, testsFailedSha: head, updatedAt: new Date().toISOString() });
+      }
+      if (targets.length) console.log(`[train-tests] ${branch}: tests red on ${head.slice(0, 7)} — noted on ${targets.length} card(s)`);
+    } catch (err) {
+      console.log(`[train-tests] ${branch}: couldn't read the test result (${scrubSecrets(err.message)})`);
+    }
+  }
+}
+
 // What a rebuild means for whoever reads the card next: the link exists,
 // but for a few minutes it still shows the build from before this commit.
 // When the rebuild lands, dsp-prototype.yml re-points the card's test link
@@ -1777,6 +1857,8 @@ async function processApplyPatch(item) {
   // The source is on the train; the bundle a tester opens is not, until its
   // workflow rebuilds it (see GENERATED_BUILDS).
   const rebuilds = dispatchRebuilds(deployBranch, changedPaths, "apply-patch");
+  // Run the console tests on the train now, not first at Deploy to Main.
+  const testsStarted = dispatchConsoleTests(deployBranch, changedPaths, "apply-patch");
 
   // A train carrying a workflow-file change can't be merged by the pipeline
   // (see processDeployTrain): flag the project so the Deploy step leaves the
@@ -1808,6 +1890,7 @@ async function processApplyPatch(item) {
       ? ` Note: ${movedPaths.length} of this patch's paths were relative to the project's folder rather than the repo root (${movedPaths.map((m) => m.from).join(", ")}) and were placed under ${projectFolderOf(project)}/ — patchFiles paths must start at the repo root.`
       : "") +
     rebuildNote(rebuilds, sha) +
+    (testsStarted ? ` The console tests (${CONSOLE_TEST_WORKFLOW}) were started on the train; a failure will be noted here.` : "") +
     (workflowPaths.length
       ? ` This ticket changes ${workflowPaths.join(", ")}, so it was pushed with the workflow-push App token and the train's deploy PR will NOT be merged by the pipeline — a person has to review and merge it on GitHub.`
       : "")
@@ -3313,6 +3396,12 @@ async function main() {
   // distinction is exactly what the health strip's "automation" segment is
   // for. See the top-level catch below for the "run itself died" case.
   await sweepShippedPatchFiles();
+  try {
+    await reportTrainTestResults();
+  } catch (err) {
+    // Reporting only — never fail the run over it.
+    console.log(`[train-tests] failed: ${err.message}`);
+  }
   await recordPipelineHealth("success");
 }
 
@@ -3355,4 +3444,6 @@ module.exports = {
   syncDocsAfterMerge,
   // test/train-checks.test.js — a train merges only once e2e-quick passed
   trainChecksState, rollupState, REQUIRED_TRAIN_CHECKS, approveHeldRuns,
+  // test/train-tests.test.js — console tests run on each train push
+  trainTestFailureTargets, touchesConsoleTests,
 };

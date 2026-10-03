@@ -407,6 +407,15 @@ no block is prepended that run, same as today.
      accepted and ignored; don't bother setting it.
    - `patchCommitMessage`, `patchPrTitle`, `patchPrBody`: plain text for
      the eventual commit and PR.
+   - **Before setting `patchReady`, run the console's offline tests** if
+     the patch touches `backlog-tracker/` (no credentials or network
+     needed): `cd backlog-tracker/test && npm ci && npm run test:app-boots
+     && npm run test:auth-gate && npm run test:mcp && npm run test:client
+     && npm run test:train-lock`. They are the train PR's required `rules`
+     check, and a red one stops Deploy to Main for every ticket on the
+     train (PR #301, 3 Oct 2026). The automation also starts that check on
+     the train when your ticket lands and notes a failure on the card, but
+     catching it here costs nobody a testing round.
    - `patchReady: true` (boolean) — this is the signal the automated job
      watches for. Do NOT set `status` to `ready-for-testing` yourself —
      you have no way to confirm a PR actually got opened; leave `status`
