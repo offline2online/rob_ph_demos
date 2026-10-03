@@ -12,7 +12,7 @@
 
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
 import {
-  getFirestore, initializeFirestore, collection, addDoc, updateDoc, deleteDoc, setDoc, doc, getDoc, getDocs,
+  getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, updateDoc, deleteDoc, setDoc, doc, getDoc, getDocs,
   onSnapshot, query, orderBy, where, serverTimestamp, writeBatch, arrayUnion, deleteField,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 import {
@@ -23,6 +23,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
 import { firebaseConfig } from "./firebase-config.js";
 import { APP_VERSION } from "./version.js";
+import { clearFirestoreLocalCache } from "./local-cache.js";
 import { clusterBacklogItems, estimateEffort, estimatePriority, splitRequirementsText } from "./build-batches.js";
 
 // auth-gate.js has already initialised the app (and signed the user in)
@@ -48,7 +49,16 @@ const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 // need is "a card moved column", that is a trade worth making many times
 // over. initializeFirestore must be called before anything touches the
 // instance, which is why it is here rather than beside the listeners.
-const db = initializeFirestore(app, { experimentalForceLongPolling: true });
+//
+// Persistent local cache (IndexedDB, shared across tabs): a reload paints
+// every listener from disk at once and the server only sends what changed,
+// instead of re-downloading the whole board each time. The SDK falls back to
+// its memory cache by itself where IndexedDB is unavailable (private windows,
+// blocked storage). Cleared on sign-out — see local-cache.js.
+const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true,
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+});
 // Backs the Edit item modal's Attachments block (screenshots/screen
 // recordings — see uploadItemAttachment) — needs storage.rules deployed
 // (part of the deploy workflow's --only list) and Firebase Storage enabled
@@ -277,6 +287,19 @@ function showFieldDialog({ title, message, fields, okLabel, cancelLabel }) {
 }
 
 let allItems = [];
+// The live listener covers non-archived cards only (~20 of ~450). Archived
+// cards are loaded on demand (ensureArchivedItems) when a page that needs
+// them opens; until then the per-project counts / last activity / newest
+// testVersion come from one small field-masked read (archivedStats).
+let liveItems = [];
+let archivedItems = [];
+let archivedLoaded = false;
+let archivedStats = { count: {}, lastActivity: {}, newestVersion: "" };
+function rebuildAllItems() {
+  const liveIds = new Set(liveItems.map((i) => i.id));
+  allItems = liveItems.concat(archivedItems.filter((i) => !liveIds.has(i.id)));
+  items = liveItems.filter((i) => i.status !== "archived");
+}
 let items = [];
 let projects = [];
 let projectsLoaded = false;
@@ -911,7 +934,8 @@ function cardHTML(item) {
 }
 
 function archivedCountForProject(pid) {
-  return allItems.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "archived").length;
+  if (archivedLoaded) return allItems.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "archived").length;
+  return archivedStats.count[pid] || 0;
 }
 
 function isBlockedItem(i) {
@@ -1787,7 +1811,7 @@ function compareVersions(a, b) {
 function newestTestVersion() {
   return allItems.reduce((newest, i) => {
     return i.testVersion && compareVersions(i.testVersion, newest) > 0 ? i.testVersion : newest;
-  }, "");
+  }, archivedStats.newestVersion || "");
 }
 
 function describeAgo(ms) {
@@ -1852,7 +1876,8 @@ function projectLastActivityMs(project) {
   const latest = projectItems.reduce((max, i) => {
     return Math.max(max, tsMillis(i.updatedAt), tsMillis(i.createdAt), tsMillis(i.archivedAt));
   }, 0);
-  return latest || tsMillis(project.createdAt);
+  const best = Math.max(latest, archivedStats.lastActivity[project.id] || 0);
+  return best || tsMillis(project.createdAt);
 }
 
 function getRenderedProjects() {
@@ -2285,8 +2310,22 @@ const BACKLOG_ITEM_RENDER_FIELDS = [
   "notes", "attachments",
 ];
 
+// With the persistent local cache a reload's listeners paint from IndexedDB
+// within a few hundred ms and only fetch changes, so the REST prime waits this
+// long for a listener to claim its collection first and only runs on a cold
+// first visit (or a cache that is slow to open).
+const PRIME_HEAD_START_MS = 700;
+// A listener that answers from an empty cache has not seen the server yet, so
+// it must not claim the collection from the REST prime.
+function markLive(collectionName, snap) {
+  if (snap && snap.metadata && snap.metadata.fromCache && snap.empty) return;
+  liveCollections.add(collectionName);
+}
+
 async function primeFromRest(collectionName, apply, sort, fields) {
   try {
+    await new Promise((resolve) => setTimeout(resolve, PRIME_HEAD_START_MS));
+    if (liveCollections.has(collectionName)) return;
     let documents = [];
     let pageToken = null;
     let guard = 0;
@@ -2318,6 +2357,98 @@ async function primeFromRest(collectionName, apply, sort, fields) {
   }
 }
 
+// Non-archived cards only — the ~420 archived ones are not part of the first
+// paint. A structured query (rather than the list endpoint) is what lets the
+// server filter them out; the field mask keeps patch blobs off the wire.
+async function restRunQuery(structuredQuery) {
+  const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+  const res = await fetch(`${REST_BASE}:runQuery`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}) },
+    body: JSON.stringify({ structuredQuery }),
+  });
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return (await res.json()).filter((r) => r.document).map((r) => r.document);
+}
+async function primeItemsFromRest() {
+  try {
+    await new Promise((resolve) => setTimeout(resolve, PRIME_HEAD_START_MS));
+    if (liveCollections.has("backlogItems")) return;
+    const docs = await restRunQuery({
+      from: [{ collectionId: "backlogItems" }],
+      where: { fieldFilter: { field: { fieldPath: "status" }, op: "NOT_EQUAL", value: { stringValue: "archived" } } },
+      select: { fields: BACKLOG_ITEM_RENDER_FIELDS.map((f) => ({ fieldPath: f })) },
+    });
+    if (liveCollections.has("backlogItems")) return;
+    liveItems = docs.map((d) => ({ id: d.name.split("/").pop(), ...restFields(d.fields) })).sort(byMillis("createdAt", "desc"));
+    rebuildAllItems();
+    render();
+  } catch (err) {
+    console.warn("backlog-tracker: couldn't prime backlogItems over REST", err);
+  }
+}
+
+// Per-project archived counts, last activity and the newest testVersion — all
+// the board needs of archived cards before an archive page is opened — from
+// one field-masked read instead of listening to every archived document.
+async function refreshArchivedStats() {
+  try {
+    const docs = await restRunQuery({
+      from: [{ collectionId: "backlogItems" }],
+      where: { fieldFilter: { field: { fieldPath: "status" }, op: "EQUAL", value: { stringValue: "archived" } } },
+      select: { fields: ["projectId", "updatedAt", "createdAt", "archivedAt", "testVersion"].map((f) => ({ fieldPath: f })) },
+    });
+    const stats = { count: {}, lastActivity: {}, newestVersion: "" };
+    for (const d of docs) {
+      const f = restFields(d.fields);
+      const pid = f.projectId || GENERAL_PROJECT_ID;
+      stats.count[pid] = (stats.count[pid] || 0) + 1;
+      stats.lastActivity[pid] = Math.max(stats.lastActivity[pid] || 0, tsMillis(f.updatedAt), tsMillis(f.createdAt), tsMillis(f.archivedAt));
+      if (f.testVersion && compareVersions(f.testVersion, stats.newestVersion) > 0) stats.newestVersion = f.testVersion;
+    }
+    archivedStats = stats;
+    render();
+    renderHealthStrip();
+  } catch (err) {
+    console.warn("backlog-tracker: couldn't read archived ticket stats", err);
+  }
+}
+let archivedRefreshTimer = null;
+function scheduleArchivedRefresh() {
+  clearTimeout(archivedRefreshTimer);
+  archivedRefreshTimer = setTimeout(() => {
+    refreshArchivedStats();
+    if (archivedLoaded) loadArchivedItems();
+  }, 1500);
+}
+
+// Archived cards themselves, fetched once when something needs them: the
+// Archived tickets page, the Archived projects page, the revision review's
+// source tickets, or opening a card by id. Kept fresh afterwards by
+// scheduleArchivedRefresh() whenever a card enters or leaves the live set.
+let archivedLoading = null;
+function loadArchivedItems() {
+  const run = getDocs(query(itemsRef, where("status", "==", "archived"))).then((snap) => {
+    archivedItems = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
+    archivedLoaded = true;
+    rebuildAllItems();
+    render();
+    if (archiveProjectId) renderArchivePage();
+    if (archivedProjectsPage && !archivedProjectsPage.hidden) renderArchivedProjectsPage();
+    if (typeof faqRevisionReviewPage !== "undefined" && faqRevisionReviewPage && !faqRevisionReviewPage.hidden) renderFaqRevisionReviewPage();
+    renderHealthStrip();
+  }).catch((err) => {
+    console.warn("backlog-tracker: couldn't load archived tickets", err);
+  });
+  archivedLoading = run;
+  return run;
+}
+function ensureArchivedItems() {
+  if (archivedLoaded) return Promise.resolve();
+  return archivedLoading || loadArchivedItems();
+}
+refreshArchivedStats();
+
 const byMillis = (field, dir) => (a, b) => {
   const av = a[field] && a[field].toMillis ? a[field].toMillis() : 0;
   const bv = b[field] && b[field].toMillis ? b[field].toMillis() : 0;
@@ -2331,38 +2462,53 @@ const byName = (a, b) => String(a.name || "").localeCompare(String(b.name || "")
 // even when the realtime channel is slow to deliver. Each is a no-op if its
 // listener gets there first.
 primeFromRest("projects", (rows) => { projects = rows; render(); }, byMillis("createdAt", "asc"));
-primeFromRest("backlogItems", (rows) => {
-  allItems = rows;
-  items = allItems.filter((i) => i.status !== "archived");
-  render();
-}, byMillis("createdAt", "desc"), BACKLOG_ITEM_RENDER_FIELDS);
+primeItemsFromRest();
 primeFromRest("programs", (rows) => { programs = rows; render(); });
 primeFromRest("releases", (rows) => { releases = rows; onReleasesChanged(); }, byNumber("order"));
 primeFromRest("interfaces", (rows) => { interfaces = rows; render(); });
-primeFromRest("projectDocs", (rows) => { projectDocs = rows; });
-primeFromRest("skills", (rows) => {
+// projectDocs, skills, concepts and the FAQ collections are not part of the
+// board page: each starts (REST prime + live listener, kept for the rest of
+// the session) the first time a page that uses it opens — see ensureLazy().
+const lazyStarters = {};
+const lazyStarted = new Set();
+function ensureLazy(...names) {
+  for (const n of names) {
+    if (lazyStarted.has(n) || !lazyStarters[n]) continue;
+    lazyStarted.add(n);
+    lazyStarters[n]();
+  }
+}
+lazyStarters.projectDocs = () => primeFromRest("projectDocs", (rows) => { projectDocs = rows; if (docsProjectId) renderDocsPage(); });
+lazyStarters.skills = () => primeFromRest("skills", (rows) => {
   skills = rows;
   if (skillsPage && !skillsPage.hidden) renderSkillsPage();
 }, byName);
-primeFromRest("concepts", (rows) => {
+lazyStarters.concepts = () => primeFromRest("concepts", (rows) => {
   concepts = rows;
   if (conceptIncubatorPage && !conceptIncubatorPage.hidden) renderConceptIncubatorPage();
   if (conceptDetailId) renderConceptDetailPage();
 }, byMillis("updatedAt", "desc"));
-primeFromRest("faqCategories", (rows) => {
+lazyStarters.faqCategories = () => primeFromRest("faqCategories", (rows) => {
   faqCategories = rows;
   if (faqArticlesPage && !faqArticlesPage.hidden) renderFaqArticlesPage();
 }, byNumber("order"));
-primeFromRest("faqArticles", (rows) => {
+lazyStarters.faqArticles = () => primeFromRest("faqArticles", (rows) => {
   faqArticles = rows;
   if (faqArticlesPage && !faqArticlesPage.hidden) renderFaqArticlesPage();
   resolvePendingFaqArticleRoute();
 }, byNumber("order"));
 
-onSnapshot(query(itemsRef, orderBy("createdAt", "desc")), (snap) => {
-  liveCollections.add("backlogItems");
-  allItems = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
-  items = allItems.filter((i) => i.status !== "archived");
+// Live cards only (everything not archived): ~20 documents instead of ~450.
+// `!=` on a single field needs no composite index; ordering is done below.
+let itemsFirstSnapshot = true;
+onSnapshot(query(itemsRef, where("status", "!=", "archived")), (snap) => {
+  markLive("backlogItems", snap);
+  liveItems = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) })).sort(byMillis("createdAt", "desc"));
+  rebuildAllItems();
+  // A card archived, restored or created moves the archived counts; the first
+  // snapshot is just the initial load, which the stats read already covers.
+  if (!itemsFirstSnapshot && !snap.metadata.fromCache && snap.docChanges().some((c) => c.type !== "modified")) scheduleArchivedRefresh();
+  if (!snap.metadata.fromCache || !snap.empty) itemsFirstSnapshot = false;
   render();
   if (archiveProjectId) renderArchivePage();
   if (archivedProjectsPage && !archivedProjectsPage.hidden) renderArchivedProjectsPage();
@@ -2382,7 +2528,7 @@ onSnapshot(systemStatusRef, (snap) => {
 }, onListenerError("systemStatus"));
 
 onSnapshot(query(projectsRef, orderBy("createdAt", "asc")), (snap) => {
-  liveCollections.add("projects");
+  markLive("projects", snap);
   projects = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
   projectsLoaded = true;
   render();
@@ -2394,43 +2540,47 @@ onSnapshot(query(projectsRef, orderBy("createdAt", "asc")), (snap) => {
 }, onListenerError("projects"));
 
 onSnapshot(interfacesRef, (snap) => {
-  liveCollections.add("interfaces");
+  markLive("interfaces", snap);
   interfaces = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
   render();
   if (docsProjectId) renderDocsPage();
 }, onListenerError("interfaces"));
 
 onSnapshot(programsRef, (snap) => {
-  liveCollections.add("programs");
+  markLive("programs", snap);
   programs = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
   render();
   if (docsProjectId) renderDocsPage();
 }, onListenerError("programs"));
 
 onSnapshot(query(releasesRef, orderBy("order", "asc")), (snap) => {
-  liveCollections.add("releases");
+  markLive("releases", snap);
   releases = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
   onReleasesChanged();
 }, onListenerError("releases"));
 
-onSnapshot(projectDocsRef, (snap) => {
-  liveCollections.add("projectDocs");
+const startProjectDocsListener = () => onSnapshot(projectDocsRef, (snap) => {
+  markLive("projectDocs", snap);
   projectDocs = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
   if (docsProjectId) renderDocsPage();
 }, onListenerError("projectDocs"));
 
-onSnapshot(query(skillsRef, orderBy("name", "asc")), (snap) => {
-  liveCollections.add("skills");
+const startSkillsListener = () => onSnapshot(query(skillsRef, orderBy("name", "asc")), (snap) => {
+  markLive("skills", snap);
   skills = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
   if (skillsPage && !skillsPage.hidden) renderSkillsPage();
 }, onListenerError("skills"));
 
-onSnapshot(query(conceptsRef, orderBy("updatedAt", "desc")), (snap) => {
-  liveCollections.add("concepts");
+const startConceptsListener = () => onSnapshot(query(conceptsRef, orderBy("updatedAt", "desc")), (snap) => {
+  markLive("concepts", snap);
   concepts = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
   if (conceptIncubatorPage && !conceptIncubatorPage.hidden) renderConceptIncubatorPage();
   if (conceptDetailId) renderConceptDetailPage();
 }, onListenerError("concepts"));
+const _primeProjectDocs = lazyStarters.projectDocs, _primeSkills = lazyStarters.skills, _primeConcepts = lazyStarters.concepts;
+lazyStarters.projectDocs = () => { _primeProjectDocs(); startProjectDocsListener(); };
+lazyStarters.skills = () => { _primeSkills(); startSkillsListener(); };
+lazyStarters.concepts = () => { _primeConcepts(); startConceptsListener(); };
 
 // Returns the new doc's id — the New Item modal needs it back to upload any
 // pending attachments (see createAttachmentController's "pending" mode)
@@ -4551,6 +4701,8 @@ function projectName(pid) {
 
 function openArchivePage(pid) {
   closeAllSubPages();
+  
+  ensureArchivedItems();
   archiveProjectId = pid;
   archiveFilters = { type: "", category: "", search: "" };
   archiveFilterType.value = "";
@@ -4666,6 +4818,8 @@ const archivedProjectsPage = document.getElementById("archived-projects-page");
 
 function openArchivedProjectsPage() {
   closeAllSubPages();
+  
+  ensureArchivedItems();
   document.getElementById("projects-root").hidden = true;
   document.getElementById("board-page-header").hidden = true;
   archivedProjectsPage.hidden = false;
@@ -4748,6 +4902,7 @@ document.getElementById("docs-open-releases-btn").addEventListener("click", () =
 
 function openDocsPage(pid) {
   closeAllSubPages();
+  ensureLazy("projectDocs");
   docsProjectId = pid;
   document.getElementById("projects-root").hidden = true;
   document.getElementById("board-page-header").hidden = true;
@@ -5148,6 +5303,7 @@ async function promoteConceptToProject(conceptId, name, programId, releaseId, re
 
 function openConceptIncubatorPage() {
   closeAllSubPages();
+  ensureLazy("concepts");
   document.getElementById("projects-root").hidden = true;
   document.getElementById("board-page-header").hidden = true;
   conceptIncubatorPage.hidden = false;
@@ -5166,6 +5322,7 @@ function closeConceptIncubatorPage() {
 // link/reload.
 function openConceptDetailPage(id) {
   closeAllSubPages();
+  ensureLazy("concepts");
   conceptDetailId = id;
   document.getElementById("projects-root").hidden = true;
   document.getElementById("board-page-header").hidden = true;
@@ -5557,6 +5714,7 @@ const skillsPage = document.getElementById("skills-page");
 
 function openSkillsPage() {
   closeAllSubPages();
+  ensureLazy("skills");
   document.getElementById("projects-root").hidden = true;
   document.getElementById("board-page-header").hidden = true;
   skillsPage.hidden = false;
@@ -6748,7 +6906,7 @@ async function faqSignIn() {
     await showAlert(`Sign-in failed: ${err && err.code ? err.code : err}. If the code is auth/operation-not-allowed, enable the Google sign-in provider for backlog-tracker-e4ed2 in the Firebase console.`);
   }
 }
-async function faqSignOut() { await signOut(auth); }
+async function faqSignOut() { await signOut(auth); await clearFirestoreLocalCache(); }
 // Every FAQ write goes through this. Returns true when a signed-in editor is
 // present; otherwise offers the sign-in and returns false so the caller
 // aborts instead of hitting a permission-denied error from Firestore.
@@ -6857,19 +7015,22 @@ async function toggleFaqArticleReview(id) {
   await setDoc(doc(db, "faqArticles", id), { needsReview: !a.needsReview, updatedAt: serverTimestamp() }, { merge: true });
 }
 
-onSnapshot(query(faqCategoriesRef, orderBy("order", "asc")), (snap) => {
-  liveCollections.add("faqCategories");
+const startFaqCategoriesListener = () => onSnapshot(query(faqCategoriesRef, orderBy("order", "asc")), (snap) => {
+  markLive("faqCategories", snap);
   faqCategories = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
   if (!faqArticlesPage.hidden) renderFaqArticlesPage();
 }, onListenerError("faqCategories"));
 
-onSnapshot(query(faqArticlesRef, orderBy("order", "asc")), (snap) => {
-  liveCollections.add("faqArticles");
+const startFaqArticlesListener = () => onSnapshot(query(faqArticlesRef, orderBy("order", "asc")), (snap) => {
+  markLive("faqArticles", snap);
   faqArticles = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
   if (!faqArticlesPage.hidden) renderFaqArticlesPage();
   if (!faqRevisionReviewPage.hidden) renderFaqRevisionReviewPage();
   resolvePendingFaqArticleRoute();
 }, onListenerError("faqArticles"));
+const _primeFaqCategories = lazyStarters.faqCategories, _primeFaqArticles = lazyStarters.faqArticles;
+lazyStarters.faqCategories = () => { _primeFaqCategories(); startFaqCategoriesListener(); };
+lazyStarters.faqArticles = () => { _primeFaqArticles(); startFaqArticlesListener(); };
 
 // Split into "Settings" (categories) and "FAQ Management" (articles) — two
 // separate hamburger-menu destinations, each its own page — rather than
@@ -6904,6 +7065,7 @@ const faRemovedReleaseSelect = document.getElementById("fa-removed-release-selec
 
 function openFaqSettingsPage() {
   closeAllSubPages();
+  ensureLazy("faqCategories", "faqArticles");
   document.getElementById("projects-root").hidden = true;
   document.getElementById("board-page-header").hidden = true;
   faqSettingsPage.hidden = false;
@@ -7221,6 +7383,7 @@ document.getElementById("mcp-copy-btn")?.addEventListener("click", async () => {
 // whatever filter was already active rather than resetting it.
 function openFaqArticlesPage(filter) {
   closeAllSubPages();
+  ensureLazy("faqCategories", "faqArticles");
   document.getElementById("projects-root").hidden = true;
   document.getElementById("board-page-header").hidden = true;
   faqArticlesPage.hidden = false;
@@ -7855,6 +8018,7 @@ function resolvePendingFaqArticleRoute() {
   openFaqArticleEditorPage(id, { pendingRevision });
 }
 function openFaqArticleRouteFromHash(hash) {
+  ensureLazy("faqCategories", "faqArticles");
   const rest = hash.slice("#faq-article/".length);
   if (rest === "new") { openFaqArticleEditorPage(null); return; }
   const pendingRevision = rest.endsWith("/revision");
@@ -8538,6 +8702,7 @@ function updateFaDirtyState() {
 let faEditingPendingRevision = false;
 function openFaqArticleEditorPage(articleId, { pendingRevision = false } = {}) {
   closeAllSubPages();
+  ensureLazy("faqCategories", "faqArticles");
   editingFaqArticleId = articleId || null;
   faqSlugManuallyEdited = !!articleId;
   const article = articleId ? faqArticles.find((a) => a.id === articleId) : null;
@@ -9006,6 +9171,8 @@ function renderFaqRevisionReviewPage() {
 
 function openFaqRevisionReviewPage(articleId) {
   closeAllSubPages();
+  ensureLazy("faqCategories", "faqArticles");
+  ensureArchivedItems();
   reviewingFaqArticleId = articleId;
   setFrMode("changes");
   renderFaqRevisionReviewPage();
