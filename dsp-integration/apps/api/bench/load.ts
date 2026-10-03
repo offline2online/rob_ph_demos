@@ -33,6 +33,11 @@
       they would be after months of operation, and an idle billing tick is
       timed too.
 
+   6. With --admin, drives the admin endpoints the HQ Admin screens load on
+      every visit — the booking schedule (two weeks and 92 days), Available
+      Inventory, Advertiser settings, campaigns, approvals, display types —
+      against the same estate.
+
    Numbers are machine-dependent; compare runs on the same machine. */
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -74,6 +79,11 @@ const CONCURRENCY = arg('concurrency', 32)
 const BIDDER_MS = arg('bidder-ms', 0)
 const PLAYS_PER_DISPLAY = arg('plays-per-display', 0)
 const HISTORY = arg('history', 0)
+/* --admin: also drive the admin API the HQ Admin screens load (booking
+   schedule, Available Inventory, Advertiser settings, campaigns,
+   approvals, display types). Off by default, so the gate's numbers are the
+   Partner API's alone unless a shape asks for these. */
+const ADMIN = process.argv.includes('--admin')
 /* --json=<file>: write the numbers for the regression gate (bench/gate.ts). */
 const JSON_OUT = process.argv.find((a) => a.startsWith('--json='))?.split('=')[1]
 const metrics: Record<string, number> = {}
@@ -220,6 +230,18 @@ await drive('POST /v1/inventory/forecast (30 d)', () =>
     body: JSON.stringify({ positionIds: [pos], from: w, to: new Date(Date.parse(w) + 29 * 86_400_000).toISOString().slice(0, 10) }),
   }))
 await drive('GET  /v1/targeting/attributes', () => fetch(`${BASE}/v1/targeting/attributes`, { headers: AUTH }))
+if (ADMIN) {
+  const ADMIN_BASE = `${BASE}/admin/v1`
+  const in92 = new Date(Date.parse(w) + 91 * 86_400_000).toISOString().slice(0, 10)
+  await drive('GET  /admin/v1/booking-schedule (default)', () => fetch(`${ADMIN_BASE}/booking-schedule`))
+  await drive('GET  /admin/v1/booking-schedule (92 d)', () => fetch(`${ADMIN_BASE}/booking-schedule?from=${w}&to=${in92}`))
+  await drive('GET  /admin/v1/available-inventory', () => fetch(`${ADMIN_BASE}/available-inventory`))
+  await drive('GET  /admin/v1/advertiser-settings', () => fetch(`${ADMIN_BASE}/advertiser-settings`))
+  await drive('GET  /admin/v1/campaigns', () => fetch(`${ADMIN_BASE}/campaigns`))
+  await drive('GET  /admin/v1/approvals', () => fetch(`${ADMIN_BASE}/approvals`))
+  await drive('GET  /admin/v1/display-types', () => fetch(`${ADMIN_BASE}/display-types`))
+  await drive('GET  /admin/v1/advertisers', () => fetch(`${ADMIN_BASE}/advertisers`))
+}
 await drive('GET  /v1/inventory (bad token → 401)', () => fetch(`${BASE}/v1/inventory`, { headers: { authorization: 'Bearer nope' } }).then((r) => new Response(null, { status: r.status === 401 ? 200 : 500 })))
 
 /* ---- advertisers bidding: one distinct (advertiser, position, window) per request ---- */

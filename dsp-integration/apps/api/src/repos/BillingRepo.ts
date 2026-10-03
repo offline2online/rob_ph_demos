@@ -12,9 +12,31 @@ export interface BillingRepo {
   /* Which of these reservations already have a line item. One call, so the
      answer is read in one step. */
   billedAmong(reservationIds: string[]): Awaitable<Set<string>>
+  /* The billed amount of each of these reservations that has a line item —
+     what a screen showing a few hundred bookings needs, read without
+     loading every line item ever written. */
+  amountsFor(reservationIds: string[]): Awaitable<Map<string, number>>
 }
 
+/* SQLite's default limit on bound parameters is 32,766; a chunk of 500
+   keeps every IN list far below it and the statement cache small. */
+const CHUNK = 500
+/* Each chunk is padded (with its own first id) to one of these lengths, so
+   the prepared-statement cache holds four IN statements, not one per list
+   length. */
+const SIZES = [8, 32, 128, CHUNK]
+
 export function sqliteBillingRepo(db: Db): BillingRepo {
+  const amounts = (ids: string[]) => {
+    const out = new Map<string, number>()
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const chunk = ids.slice(i, i + CHUNK)
+      const size = SIZES.find((n) => n >= chunk.length) as number
+      while (chunk.length < size) chunk.push(chunk[0])
+      for (const r of prepared(db, `SELECT reservation_id, amount FROM billing_line_items WHERE reservation_id IN (${chunk.map(() => '?').join(', ')})`).all(...chunk) as { reservation_id: string; amount: number }[]) out.set(r.reservation_id, r.amount)
+    }
+    return out
+  }
   return {
     insert: (item, computedAt) => prepared(db,
       `INSERT INTO billing_line_items (id, reservation_id, partner_id, advertiser_id, campaign_id, position_id, window_start, window_end, plays,
@@ -33,6 +55,7 @@ export function sqliteBillingRepo(db: Db): BillingRepo {
       personalisedMultiplier: r.personalised_multiplier as number | null, personalisedAmount: r.personalised_amount as number,
       playsByVersion: JSON.parse((r.plays_by_version as string | null) ?? '[]') as LineItem['playsByVersion'],
     })),
-    billedAmong: (reservationIds) => new Set(reservationIds.filter((id) => !!prepared(db, 'SELECT 1 FROM billing_line_items WHERE reservation_id = ?').get(id))),
+    billedAmong: (reservationIds) => new Set(amounts(reservationIds).keys()),
+    amountsFor: (reservationIds) => amounts(reservationIds),
   }
 }

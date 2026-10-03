@@ -137,8 +137,11 @@ shapes; and what a second replica needs (Postgres) before it is safe;
 `SECURITY-PERFORMANCE.md` → "Stability under concurrency and at the
 edges" is the 24 Sep 2026 race and edge-case pass before going live
 (`apps/api/test/stability.test.ts` and `test/multiprocess.test.ts`, which
-races two real API processes on one database — keep both green). Read
-all three before changing the exchange, the Partner API or a `platform/`
+races two real API processes on one database — keep both green). `api/ADMIN-API-PERFORMANCE.md` is the 3 Oct 2026 review of the admin API
+(the HQ Admin screens' endpoints, now in the bench as `--admin`): the
+booking schedule, campaigns and Advertisers had been reading all of history
+per request. Read
+all four before changing the exchange, the Partner API or a `platform/`
 interface. **`dsp-integration/deploy/kubernetes/`** (24 Sep 2026) is the
 same API for a client's own VPC on EKS — a container image, Kustomize
 manifests and the sizing from that review. Nothing there deploys from this
