@@ -98,8 +98,14 @@ async function boot({ remembered = false, rememberedRole = null, initialUser = n
   fs.writeFileSync(path.join(dir, "app.mjs"), APP_STUB);
   let src = gateSrc;
   src = src.replace(/"https:\/\/www\.gstatic\.com\/firebasejs\/[^"]+"/g, JSON.stringify(pathToFileURL(path.join(dir, "sdk.mjs")).href));
-  src = src.replace('"./firebase-config.js"', JSON.stringify(pathToFileURL(path.join(publicDir, "js", "firebase-config.js")).href));
   src = src.replace('import("./app.js")', `import(${JSON.stringify(pathToFileURL(path.join(dir, "app.mjs")).href)})`);
+  // Every other relative import ("./firebase-config.js", "./local-cache.js",
+  // whatever auth-gate.js imports next) resolves to the real file in
+  // public/js. The gate is evaluated from this temp dir, so a hard-coded
+  // list here broke all 15 scenarios the day auth-gate.js gained an import
+  // (local-cache.js, train PR #301, 3 Oct 2026) and blocked Deploy to Main.
+  src = src.replace(/(from\s+|import\s+)"\.\/([\w.-]+\.js)"/g, (m, kw, file) =>
+    `${kw}${JSON.stringify(pathToFileURL(path.join(publicDir, "js", file)).href)}`);
   fs.writeFileSync(path.join(dir, "gate.mjs"), src);
 
   // What the page shows BEFORE any auth answer arrives — the "logo flash".

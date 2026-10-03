@@ -12,6 +12,14 @@
   <link rel="preload" href="data/index.json" as="fetch" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap">
   <link rel="stylesheet" href="css/faq.css">
+  <!-- Preload the whole module graph so it downloads in parallel with index.json instead of one import level at a time -->
+  <link rel="modulepreload" href="js/page-search.js">
+  <link rel="modulepreload" href="js/faq-data.js">
+  <link rel="modulepreload" href="js/firebase-config.js">
+  <link rel="modulepreload" href="js/icons.js">
+  <link rel="modulepreload" href="js/page-common.js">
+  <link rel="modulepreload" href="js/version.js">
+  <link rel="modulepreload" href="js/search-box.js">
 </head>
 <body>
   <header class="ph-header">

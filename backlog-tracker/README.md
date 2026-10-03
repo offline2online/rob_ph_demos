@@ -743,6 +743,16 @@ rules not deployed yet) is logged to the console but doesn't block removing
 it from the item — an orphaned file left behind is harmless clutter, not a
 user-visible error.
 
+## Load performance (3 Oct 2026 audit)
+
+What the board downloads, and when — see `SECURITY-PERFORMANCE.md` for the measurements behind it:
+
+- **Live cards only.** `app.js` listens to `backlogItems` where `status != archived` (~20 cards, not ~450). The Archived tickets page, the Archived projects page, the revision review page and anything needing an archived card call `ensureArchivedItems()`, which loads them once. Until then, per-project archived counts, last activity and the newest `testVersion` come from `refreshArchivedStats()`, one field-masked `runQuery` read, re-run when a card enters or leaves the live set.
+- **Persistent local cache.** Firestore runs with `persistentLocalCache` + `persistentMultipleTabManager` (IndexedDB, shared across tabs), so reloads paint from disk and the server sends only changes. The REST prime waits `PRIME_HEAD_START_MS` for a listener to claim its collection first and so only runs on a cold first visit. `js/local-cache.js` deletes the cache on sign-out. The SDK falls back to memory where IndexedDB is unavailable.
+- **Lazy listeners.** `faqArticles`, `faqCategories`, `skills`, `concepts` and `projectDocs` start (REST prime + listener, kept afterwards) the first time a page using them opens — `ensureLazy()` at the top of each page opener.
+- **`patchFiles` is dropped once shipped.** `run-backlog-automation.js` deletes a card's `patchFiles` when it reaches Merged to Main (`finishTrain`, `processMergePr`), and `sweepShippedPatchFiles()` prunes any shipped or archived card still carrying them (hourly, 25 cards a run, clock kept in `systemStatus/pipeline.patchFilesSweptAt`).
+- **Public help centre (`faq/`).** Each page `modulepreload`s its whole module graph in `<head>`; `article.html` loads DOMPurify with `defer`.
+
 ## Architecture
 
 ```

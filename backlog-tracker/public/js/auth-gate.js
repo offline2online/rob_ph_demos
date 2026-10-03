@@ -43,6 +43,7 @@ import {
   signInWithEmailAndPassword, sendPasswordResetEmail, sendEmailVerification, setPersistence, browserLocalPersistence,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
 import { firebaseConfig } from "./firebase-config.js";
+import { clearFirestoreLocalCache } from "./local-cache.js";
 
 // The two owner accounts, mirrored from firestore.rules' own bootstrap
 // list. Only used as a fallback when neither membership source can be
@@ -387,6 +388,7 @@ function syncMembershipInBackground(user) {
       if (OWNER_ACCOUNTS.includes((user.email || "").toLowerCase())) return;
       writeLocal(REMEMBER_KEY, null); writeLocal(ROLE_KEY, null);
       try { await signOut(auth); } catch { /* ignore */ }
+      await clearFirestoreLocalCache();
       showRejected(`${user.email} is no longer on the PH Agent Console user list. Ask an admin to add you in Settings → Team & agent access.`);
       return;
     }
@@ -512,6 +514,8 @@ async function doSignOut() {
   writeLocal(REMEMBER_KEY, null);
   writeLocal(ROLE_KEY, null);
   try { await signOut(auth); } catch { /* the reload lands on the card either way */ }
+  // Nothing of the board stays in IndexedDB on a shared machine.
+  await clearFirestoreLocalCache();
   window.location.reload();
 }
 signOutBtn.addEventListener("click", doSignOut);

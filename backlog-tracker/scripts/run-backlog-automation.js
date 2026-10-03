@@ -153,6 +153,64 @@ async function patchItem(itemId, fields) {
   if (!res.ok) throw new Error(`PATCH ${itemId} failed: ${res.status} ${await res.text()}`);
 }
 
+// Removes a card's patchFiles — the full contents of every file its ticket
+// changed (up to ~180 KB). Nothing reads them once the change is merged, but
+// the board's backlogItems listener cannot mask fields, so every blob left on
+// a card is downloaded by every open tab on every load and re-sent on every
+// small write. A PATCH whose updateMask names a field the body omits deletes
+// that field. Best-effort: a failure here must never undo a merge that has
+// already happened, and the hourly sweep below catches whatever it misses.
+async function dropPatchFiles(itemId) {
+  try {
+    const res = await fetch(`${FIRESTORE_BASE}/backlogItems/${itemId}?updateMask.fieldPaths=patchFiles`, {
+      method: "PATCH",
+      headers: await firestoreHeaders(),
+      body: JSON.stringify({ fields: {} }),
+    });
+    if (!res.ok) console.log(`[patch-files] couldn't drop patchFiles from ${itemId}: ${res.status} ${await res.text()}`);
+  } catch (err) {
+    console.log(`[patch-files] couldn't drop patchFiles from ${itemId}: ${err.message}`);
+  }
+}
+
+const PATCH_FILES_SWEEP_EVERY_MS = 60 * 60 * 1000;
+const PATCH_FILES_SWEEP_BATCH = 25;
+// Hourly, bounded: prunes any already-shipped or archived card still carrying
+// patchFiles (everything merged before this existed, plus anything a merge
+// path missed). The query is server-side filtered and field-masked down to
+// `status`, so finding the cards does not itself download the blobs.
+async function sweepShippedPatchFiles() {
+  try {
+    const statusRes = await fetch(`${FIRESTORE_BASE}/systemStatus/pipeline`, { headers: await firestoreHeaders() });
+    if (statusRes.ok) {
+      const doc = fdoc((await statusRes.json()).fields || {});
+      const last = Date.parse(doc.patchFilesSweptAt || "");
+      if (Number.isFinite(last) && Date.now() - last < PATCH_FILES_SWEEP_EVERY_MS) return;
+    }
+    const rows = await runQuery({
+      from: [{ collectionId: "backlogItems" }],
+      where: { fieldFilter: { field: { fieldPath: "patchFiles" }, op: "NOT_EQUAL", value: { nullValue: "NULL_VALUE" } } },
+      select: { fields: [{ fieldPath: "status" }] },
+      limit: 150,
+    });
+    const shipped = rows.filter((r) => r.status === "published-live" || r.status === "archived").slice(0, PATCH_FILES_SWEEP_BATCH);
+    for (const r of shipped) await dropPatchFiles(r.id);
+    console.log(`[patch-files] sweep: ${rows.length} card(s) carry patchFiles, pruned ${shipped.length} shipped/archived`);
+    // A full batch means there is more to do: leave the clock alone so the
+    // next run continues instead of waiting an hour.
+    if (shipped.length < PATCH_FILES_SWEEP_BATCH) {
+      const fields = { patchFilesSweptAt: new Date().toISOString() };
+      await fetch(`${FIRESTORE_BASE}/systemStatus/pipeline?updateMask.fieldPaths=patchFilesSweptAt`, {
+        method: "PATCH",
+        headers: await firestoreHeaders(),
+        body: JSON.stringify({ fields: { patchFilesSweptAt: tv(fields.patchFilesSweptAt) } }),
+      });
+    }
+  } catch (err) {
+    console.log(`[patch-files] sweep failed: ${err.message}`);
+  }
+}
+
 async function appendNote(item, text) {
   const notes = Array.isArray(item.notes) ? item.notes : [];
   notes.push({ author: "backlog-automation", text, at: new Date().toISOString() });
@@ -2163,6 +2221,7 @@ async function processMergePr(item) {
     ...(deployRunUrl ? { deployRunUrl } : {}),
     deployConclusion,
   });
+  await dropPatchFiles(item.id);
   console.log(`[merge-pr] ${item.id}: merged PR #${prNumber}, moved to published-live${mergeCommit ? ` (${mergeCommit.slice(0, 7)})` : ""}`);
 }
 
@@ -2377,6 +2436,7 @@ async function finishTrain(project, deployBranch, prNumber, trainItems, { touche
       ...(deployRunUrl ? { deployRunUrl } : {}),
       deployConclusion,
     });
+    await dropPatchFiles(item.id);
   }
 
   // Reset the train. The branch's own commits are now on main, so resetting
@@ -3252,6 +3312,7 @@ async function main() {
   // dying outright (a Firestore auth failure, a bad query, etc.) — that
   // distinction is exactly what the health strip's "automation" segment is
   // for. See the top-level catch below for the "run itself died" case.
+  await sweepShippedPatchFiles();
   await recordPipelineHealth("success");
 }
 
