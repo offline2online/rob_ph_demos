@@ -744,6 +744,14 @@ own `readyToDeploy` is information, not permission.
    `updatedAt -> now`. That is the single signal that replaces the old
    per-item `mergeReady`/`mergePrNumber` pair.
 
+   **Send your `deployRoutine` self-report first, as its own request —
+   never in the same command as this `trainReady` PATCH.** If your
+   permission layer refuses the `trainReady` write (below), the report
+   must still land: it is what hands the train over within seconds
+   (`onDeployRoutineSettled`). On 2 Oct 2026 a run put both PATCHes in one
+   shell command, the refusal took the report with it, and the train would
+   have waited for the 25-minute sweep (ticket FjBUmEuYLHE2wV1naQgV).
+
    ```
    curl -sS -X PATCH "$BOARD/projects/<PROJECT_ID>?updateMask.fieldPaths=trainReady&updateMask.fieldPaths=updatedAt" \
      -H "Content-Type: application/json" \
