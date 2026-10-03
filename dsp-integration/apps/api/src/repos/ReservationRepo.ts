@@ -57,6 +57,10 @@ export interface ReservationRepo {
      Position → window start → which of the two took it (a reserve-price
      hold reads Reserved, not Sold — OQ52). */
   takenInRange(from: string, to: string): Awaitable<Map<string, Map<string, ReservationStatus>>>
+  /* Per campaign, its live (non-test) won/reserved windows: how many in all,
+     and the first that starts at or after `now`. Counted in the database —
+     the campaigns list used to load every sale ever made to count them. */
+  liveByCampaign(now: string): Awaitable<Map<string, { bookedWindows: number; nextWindowStart: string | null }>>
   /* What billing can bill now: won or reserved, live, handed off, with a
      campaign and a clearing price, whose window started at or before
      `endedBy` and that has no billing line item yet. One indexed query
@@ -121,6 +125,12 @@ export function sqliteReservationRepo(db: Db): ReservationRepo {
         s.set(r.window_start, r.status)
       }
       return out
+    },
+    liveByCampaign(now) {
+      const rows = prepared(db, `SELECT campaign_id, COUNT(*) AS n, MIN(CASE WHEN window_start >= ? THEN window_start END) AS next
+         FROM reservations WHERE status IN ('won', 'reserved') AND test_mode = 0 AND campaign_id IS NOT NULL GROUP BY campaign_id`)
+        .all(now) as unknown as { campaign_id: string; n: number; next: string | null }[]
+      return new Map(rows.map((r) => [r.campaign_id, { bookedWindows: r.n, nextWindowStart: r.next }]))
     },
     deleteSettledBefore: (cutoff) =>
       Number(prepared(db, "DELETE FROM reservations WHERE status IN ('rejected', 'lost', 'pending') AND window_start < ?").run(cutoff).changes),

@@ -396,8 +396,11 @@ export function assumedViewsFor(scored: number, companyHours: number, p: Positio
    invented audience number would end up on invoices. A slot also needs a
    duration before it is exposed as Advertiser inventory: the venue loop
    length, which slotDurationSec divides by the rotation cap (slots.ts). Returns why not, or null when sellable. */
-export function unsellableReason(ctx: Context, p: PositionRef): Awaitable<string | null> {
-  return andThen(audienceOf(ctx.audience, p.displayType, p.slot), (audience) => {
+export function unsellableReason(ctx: Context, p: PositionRef, known?: { scored: boolean }): Awaitable<string | null> {
+  /* A caller that already has the slot's audience (Available Inventory
+     reads it for `scored`) passes it, saving a second audience read per
+     slot. */
+  return andThen(known ?? audienceOf(ctx.audience, p.displayType, p.slot), (audience) => {
     if (!audience.scored) return 'No audience score yet.'
     if (!p.displayType.phExtensions?.venue?.loopLengthSec) return 'No slot duration yet — set the venue loop length before this slot can be sold.'
     return null

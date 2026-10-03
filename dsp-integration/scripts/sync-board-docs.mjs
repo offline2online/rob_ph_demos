@@ -6,7 +6,8 @@
      npm run board:sync -- --check-mcp FILE --print-diff
 
    A sync (and --check) also covers the project documents in MIRRORS below:
-   the three board parts of api/PH-CORE-BOUNDARIES.md.
+   the three board parts of api/PH-CORE-BOUNDARIES.md and the admin API
+   performance review.
 
    The board is the second home of these documents (root CLAUDE.md: "treat a
    divergence as a bug in whichever is stale"), and the repo file is the
@@ -65,6 +66,8 @@ const MIRRORS = [
   { id: 'mDJ50oQKTbgaKPvxeCUs', file: BOUNDARIES, sourceSlices: [{ end: H_TABLES }], sourcePrefix: mirrorPrefix(1) },
   { id: 'W140rfmV19EdPYQnBeTJ', file: BOUNDARIES, sourceSlices: [{ start: H_TABLES, end: H_AUTH }], sourcePrefix: mirrorPrefix(2) },
   { id: 'PnWgzNqVScsyfEehXKbl', file: BOUNDARIES, sourceSlices: [{ start: H_AUTH }], sourcePrefix: mirrorPrefix(3) },
+  /* Whole files: no slices, no prefix — the board copy is the file. */
+  { id: 'Vd6akDtwNOrUSKoiuZCg', file: 'docs/dsp-integration/api/ADMIN-API-PERFORMANCE.md', sourceSlices: [], sourcePrefix: '' },
 ]
 /* The same slicing the post-merge mirror uses — one implementation. */
 const { mirrorText } = createRequire(import.meta.url)('../../backlog-tracker/scripts/docs-sync-lib.js')

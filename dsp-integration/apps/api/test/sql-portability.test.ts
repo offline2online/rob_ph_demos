@@ -156,6 +156,21 @@ describe('portable statements', () => {
     expect(audience.forSlot('dt', 1, null)).toEqual({ assumedViewsPerWindow: 0, counted: false, scored: false })
   })
 
+  it('plays per version: one scan when a window played one version, the same answer as GROUP BY', async () => {
+    const db = fresh()
+    db.prepare("INSERT INTO displays (id, name, store, display_type_id) VALUES ('d1', 'd1', 'S', 'dt')").run()
+    const play = db.prepare('INSERT INTO plays (id, display_id, campaign_id, played_at, duration_sec, version_id, tier) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    const q = { campaignId: 'c1', displayTypeId: 'dt', from: '2026-10-01T00:00:00.000Z', to: '2026-10-02T00:00:00.000Z' }
+    play.run('p1', 'd1', 'c1', '2026-10-01T01:00:00.000Z', 10, 'v7', 'default')
+    play.run('p2', 'd1', 'c1', '2026-10-01T02:00:00.000Z', 10, 'v7', 'personalised')
+    expect((await sqlitePlaybackSource(db).totals(q)).byVersion).toEqual([{ versionId: 'v7', plays: 2 }])
+    play.run('p3', 'd1', 'c1', '2026-10-01T03:00:00.000Z', 10, null, 'default')
+    expect((await sqlitePlaybackSource(db).totals(q)).byVersion).toEqual([{ versionId: null, plays: 1 }, { versionId: 'v7', plays: 2 }])
+    play.run('p4', 'd1', 'c1', '2026-10-01T04:00:00.000Z', 10, 'v8', 'default')
+    expect((await sqlitePlaybackSource(db).totals(q)).byVersion).toEqual([{ versionId: null, plays: 1 }, { versionId: 'v7', plays: 2 }, { versionId: 'v8', plays: 1 }])
+    expect((await sqlitePlaybackSource(db).totals({ ...q, campaignId: 'none' })).byVersion).toEqual([])
+  })
+
   it('personalised plays are counted with CASE, not a boolean SUM', async () => {
     const db = fresh()
     db.prepare("INSERT INTO displays (id, name, store, display_type_id) VALUES ('d1', 'd1', 'S', 'dt')").run()

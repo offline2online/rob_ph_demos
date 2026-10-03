@@ -21,12 +21,11 @@ import type { BookingSchedule } from '@ph-dsp/types'
 import { TARGETING_VARIABLES } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
-import { lineItems } from '../../exchange/billing'
 import type { Guards } from '../../http/app'
 import { validationFailed } from '../../http/errors'
 import { allPositions, assignmentOf, assumedViewsPerWindow, effectivePartnerIds, nextWindow, shortestWindowMs, windowMs, windowStartOf, windowsBetween } from '../../domain/positions'
 import type { StoredTargeting } from '../../domain/targetingSummary'
-import { TAKEN } from '../../repos/ReservationRepo'
+import { TAKEN, type ReservationRecord } from '../../repos/ReservationRepo'
 import { zonePlaceOf } from '../../domain/displayTypes'
 import { advertiserSlug } from '@ph-dsp/types'
 
@@ -83,20 +82,45 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
   const partners = await ctx.partners.list()
   /* Advertiser names come from the DSPs' seats, keyed by their slug. */
   const advertiserName = new Map(partners.flatMap((p) => p.seats.map((s) => [advertiserSlug(s.name), s.name] as const)))
-  const billed = new Map((await lineItems(ctx)).map((l) => [l.reservationId, l.amount]))
   const revenue = new Map<string, BookingSchedule['revenue'][number]>()
   const byType = new Map<string, BookingSchedule['byPricingType'][number]>()
+
+  /* Every live sale shown, read in ONE ranged query and indexed by position
+     and window (review, 3 Oct 2026): the schedule used to ask for each
+     position's every column twice — 2,408 positions × 14 columns was
+     67,000 queries a page — and read every line item ever written to find
+     the few it shows. There is at most one live (non-test) won/reserved
+     row per position and window (migration 0021), so the index holds
+     exactly the row each cell needs. */
+  const estate = await allPositions(ctx)
+  const lenOf = new Map<string, number>()
+  for (const p of estate) lenOf.set(p.positionId, await windowMs(ctx, p))
+  const lens = new Set(lenOf.values())
+  const from = Math.min(...[...lens].map((l) => windowStartOf(starts[0], l).getTime()))
+  const to = starts[starts.length - 1].getTime() + 1
+  const live = new Map<string, ReservationRecord>()
+  for (const r of await ctx.reservations.byStatus(TAKEN, new Date(from).toISOString(), new Date(to).toISOString())) {
+    if (!r.testMode && r.clearingCpm !== null) live.set(`${r.positionId}|${r.windowStart}`, r)
+  }
+  const billed = await ctx.billing.amountsFor([...live.values()].map((r) => r.id))
+  /* Per request, not per cell: a campaign's targeting and a window length's
+     first sellable window are the same for every cell that asks. */
+  const targetedMemo = new Map<string, Promise<TargetedVersion[]>>()
+  const targetedFor = (campaignId: string | null) => {
+    let t = targetedMemo.get(campaignId ?? '')
+    if (!t) targetedMemo.set(campaignId ?? '', (t = targetedOf(ctx, campaignId)))
+    return t
+  }
+  const firstSellableMemo = new Map<number, number>()
 
   /* Only advertisers with something booked in this range are worth filtering
      by (Rob, 20 Sep), so the picker is built before any filter is applied. */
   const booked = new Set<string>()
-  const estate = await allPositions(ctx)
   for (const p of estate) {
-    const own = await windowMs(ctx, p)
+    const own = lenOf.get(p.positionId) as number
     for (const start of new Set(starts.map((s) => windowStartOf(s, own).toISOString()))) {
-      for (const r of await ctx.reservations.forWindow(p.positionId, start)) {
-        if (!r.testMode && TAKEN.includes(r.status) && r.clearingCpm !== null && r.advertiserId) booked.add(r.advertiserId)
-      }
+      const r = live.get(`${p.positionId}|${start}`)
+      if (r?.advertiserId) booked.add(r.advertiserId)
     }
   }
 
@@ -110,8 +134,9 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
        column shows the window of its own that the column falls in — a
        weekly slot's booking spans its week's columns — and each of its
        windows counts once towards booked and sellable. */
-    const len = await windowMs(ctx, p)
-    const firstSellable = (await nextWindow(ctx, len)).getTime()
+    const len = lenOf.get(p.positionId) as number
+    let firstSellable = firstSellableMemo.get(len)
+    if (firstSellable === undefined) firstSellableMemo.set(len, (firstSellable = (await nextWindow(ctx, len)).getTime()))
     const counted = new Set<number>()
     const rev = revenue.get(p.displayType.id) ?? { displayTypeId: p.displayType.id, displayTypeName: p.displayType.name, bookedWindows: 0, sellableWindows: 0, bookedRevenue: 0, billedRevenue: 0 }
     revenue.set(p.displayType.id, rev)
@@ -125,8 +150,8 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
          not just what one advertiser could have bought, so % sold reads
          the same whichever filter is applied. */
       if (first && hasDisplays && start.getTime() >= firstSellable) rev.sellableWindows++
-      const r = (await ctx.reservations.forWindow(p.positionId, start.toISOString())).find((x) => !x.testMode && TAKEN.includes(x.status) && x.clearingCpm !== null
-        && (!f.campaignId || x.campaignId === f.campaignId) && (!f.advertiserId || x.advertiserId === f.advertiserId) && (!f.partnerId || x.partnerId === f.partnerId))
+      const x = live.get(`${p.positionId}|${start.toISOString()}`)
+      const r = x && (!f.campaignId || x.campaignId === f.campaignId) && (!f.advertiserId || x.advertiserId === f.advertiserId) && (!f.partnerId || x.partnerId === f.partnerId) ? x : undefined
       if (r) {
         const bookedRevenue = round2((views / 1000) * (r.clearingCpm as number))
         const bill = billed.get(r.id) ?? null
@@ -144,7 +169,7 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
            regardless of which one this particular window's reservation
            actually won — drives the tile's layers and, when personalised,
            its trigger icons. */
-        const targeted = await targetedOf(ctx, r.campaignId)
+        const targeted = await targetedFor(r.campaignId)
         const layers = layersOf(targeted, r.pricingType)
         windows.push({
           start: column.toISOString(), status: 'booked' as const,

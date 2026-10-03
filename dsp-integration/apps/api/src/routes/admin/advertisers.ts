@@ -7,7 +7,7 @@ import type { Context } from '../../context'
 import type { Guards } from '../../http/app'
 import { validationFailed } from '../../http/errors'
 import { effectiveFloorCpm } from '../../domain/pricing'
-import { findPosition, nextWindow, windowMs } from '../../domain/positions'
+import { allPositions, findPosition, nextWindow, windowMs } from '../../domain/positions'
 import { TAKEN } from '../../repos/ReservationRepo'
 
 export async function listAdvertisers(ctx: Context): Promise<Advertiser[]> {
@@ -33,7 +33,14 @@ export async function listAdvertisers(ctx: Context): Promise<Advertiser[]> {
     }
     return from
   }
-  for (const r of await ctx.reservations.byStatus([...TAKEN], new Date(0).toISOString())) {
+  /* Read from the earliest current window any position can have, not from
+     1970 (review, 3 Oct 2026): every past sale was loaded and dropped — the
+     whole history on every visit to Advertisers. Each row is still checked
+     against its own position's current window below. */
+  const lens = new Set([await windowMs(ctx), ...(await Promise.all((await allPositions(ctx)).map((p) => windowMs(ctx, p))))])
+  let earliest = Infinity
+  for (const len of lens) earliest = Math.min(earliest, (await nextWindow(ctx, len)).getTime() - len)
+  for (const r of await ctx.reservations.byStatus([...TAKEN], new Date(earliest).toISOString())) {
     if (r.testMode || r.clearingCpm === null || !r.advertiserId) continue
     if (Date.parse(r.windowStart) < (await currentFrom(r.positionId))) continue
     bookings.set(r.advertiserId, (bookings.get(r.advertiserId) ?? 0) + 1)
