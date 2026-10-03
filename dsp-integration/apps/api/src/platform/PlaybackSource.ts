@@ -43,24 +43,36 @@ export const sqlitePlaybackSource = (db: Db): PlaybackSource => ({
   },
   totals({ campaignId, displayTypeId, from, to }) {
     /* Answered from the covering index plays (campaign_id, played_at,
-       display_id, duration_sec, tier) (migrations 0025, 0033), keeping only plays on the
-       display type's own displays. Measured on 1.9 million plays: 0.5 s
-       this way, 0.6 s as a join, 17 s as rows into JavaScript. */
+       display_id, duration_sec, tier, version_id) (migrations 0025, 0033,
+       0039), keeping only plays on the display type's own displays.
+       Measured on 1.9 million plays: 0.5 s this way, 0.6 s as a join, 17 s
+       as rows into JavaScript.
+       Plays per version come out of the SAME scan (review, 3 Oct 2026): a
+       window almost always played the one version it was handed, so the
+       scan reports the version range and how many plays carry one; only a
+       window that really played several versions pays for the per-version
+       GROUP BY. A second scan for every window cost 1.7 s on 1.9 million
+       plays where this costs 0.8. */
+    const where = `WHERE campaign_id = ? AND played_at >= ? AND played_at < ?
+          AND display_id IN (SELECT id FROM displays WHERE display_type_id = ?)`
+    const args = [campaignId, from, to, displayTypeId]
     const r = prepared(db,
       `SELECT COUNT(*) AS plays, COALESCE(SUM(duration_sec), 0) AS played_sec,
               COALESCE(SUM(CASE WHEN tier = 'personalised' THEN 1 ELSE 0 END), 0) AS p_plays,
-              COALESCE(SUM(CASE WHEN tier = 'personalised' THEN duration_sec END), 0) AS p_sec
-         FROM plays
-        WHERE campaign_id = ? AND played_at >= ? AND played_at < ?
-          AND display_id IN (SELECT id FROM displays WHERE display_type_id = ?)`,
-    ).get(campaignId, from, to, displayTypeId) as { plays: number; played_sec: number; p_plays: number; p_sec: number }
-    const byVersion = prepared(db,
-      `SELECT version_id, COUNT(*) AS plays
-         FROM plays
-        WHERE campaign_id = ? AND played_at >= ? AND played_at < ?
-          AND display_id IN (SELECT id FROM displays WHERE display_type_id = ?)
-        GROUP BY version_id ORDER BY version_id`,
-    ).all(campaignId, from, to, displayTypeId) as { version_id: string | null; plays: number }[]
-    return { plays: r.plays, playedSec: r.played_sec, personalised: { plays: r.p_plays, playedSec: r.p_sec }, byVersion: byVersion.map((v) => ({ versionId: v.version_id, plays: v.plays })) }
+              COALESCE(SUM(CASE WHEN tier = 'personalised' THEN duration_sec END), 0) AS p_sec,
+              COUNT(version_id) AS with_version, MIN(version_id) AS v_min, MAX(version_id) AS v_max
+         FROM plays ${where}`,
+    ).get(...args) as { plays: number; played_sec: number; p_plays: number; p_sec: number; with_version: number; v_min: string | null; v_max: string | null }
+    let byVersion: { versionId: string | null; plays: number }[]
+    if (r.v_min === r.v_max) {
+      byVersion = [
+        ...(r.plays > r.with_version ? [{ versionId: null, plays: r.plays - r.with_version }] : []),
+        ...(r.with_version ? [{ versionId: r.v_min, plays: r.with_version }] : []),
+      ]
+    } else {
+      byVersion = (prepared(db, `SELECT version_id, COUNT(*) AS plays FROM plays ${where} GROUP BY version_id ORDER BY version_id`).all(...args) as { version_id: string | null; plays: number }[])
+        .map((v) => ({ versionId: v.version_id, plays: v.plays }))
+    }
+    return { plays: r.plays, playedSec: r.played_sec, personalised: { plays: r.p_plays, playedSec: r.p_sec }, byVersion }
   },
 })
