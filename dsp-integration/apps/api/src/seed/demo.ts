@@ -19,6 +19,7 @@ import { onFree, tx } from '../db/db'
 import { allPositions, nextWindow, windowMs } from '../domain/positions'
 import type { StoredTargeting } from '../domain/targetingSummary'
 import { CHECKS, campaignFor } from './bookings'
+import { audienceOf } from '../domain/displayTypes'
 
 /* ------------------------------------------------------------- the estate */
 
@@ -321,7 +322,7 @@ async function seedDemoBookings(ctx: Context) {
   const currency = (await ctx.company.get()).currency
   const insVacd = ctx.db.prepare('INSERT INTO audience_vacd (display_type_id, slot, assumed_views_per_window, counted) VALUES (?, ?, ?, 0)')
   for (const p of positions) {
-    if ((await ctx.audience.forSlot(p.displayType.id, p.slot)).assumedViewsPerWindow) continue
+    if ((await audienceOf(ctx.audience, p.displayType, p.slot)).assumedViewsPerWindow) continue
     const n = Math.max(1, (await ctx.displays.listByDisplayType(p.displayType.id)).length) * 412
     await onFree(ctx.db, () => insVacd.run(p.displayType.id, p.slot, n))
   }

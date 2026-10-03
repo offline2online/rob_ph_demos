@@ -157,12 +157,15 @@ are ready on this side:
   caller awaits it. The measured scope was not "one file per seam": it was
   63 source files, about 550 awaited calls, and the functions above them
   that had to become async in turn. Routes and the exchange no longer
-  change for an adapter, but it is not `context.ts` alone: raw SQL still
-  sits outside the seams in seven files (billing, positions, scheduler,
-  creatives, the two retention sweeps, the test-plays route), the approval
-  module's `SqlDb` is synchronous, and `tx`/`gate` are typed to the SQLite
-  handle — about 25 files plus a Postgres migration set (review, 2 Oct
-  2026; v2iKDJQA0wmisXhp7ebV moves the SQL into repositories).
+  change for an adapter.
+- **Done since** (v2iKDJQA0wmisXhp7ebV, 2 Oct 2026): `SecretsStore` and
+  the approval `SqlDb` are awaitable, and no raw SQL remains outside
+  `platform/`, `repos/` and `db/` (new `AuctionRunRepo`, `BillingRepo`,
+  `DspCreativeRepo`, `CampaignRetentionRepo`, `PlayRepo`), guarded by
+  `test/sql-portability.test.ts` (seeders allowlisted). Bench unchanged.
+- **Deferred to a second replica**: the Postgres adapter and migrations;
+  `tx`/`gate`/`onFree` typed to SQLite; `?` and `.changes`; 0037's
+  triggers and 0029's `ORDER BY rowid`.
 - **Transactions on SQLite are serialised by a lock.** Once a transaction
   body awaits, anything else that ran on the one `node:sqlite` connection
   would land inside it. So `tx()` takes a per-database FIFO lock, a

@@ -433,7 +433,8 @@ describe('Run 2 — G. Approval lifecycle (non-happy)', () => {
     expect((await runAuction(h.ctx, day(1))).positions[0].winner).toMatchObject({ clearingCpm: 200 })
     const after = h.campaigns.handoffs.filter((b) => b.campaignId === id)
     expect(after).toHaveLength(2)
-    expect(after[1].assetVersion).toBeGreaterThan(before[0].assetVersion as number)
+    /* The booking carries the approved version's own string (eeBT1Qp3). */
+    expect([before[0].assetVersion, after[1].assetVersion]).toEqual(['v1', 'v2'])
   })
 
   it('G3 — undo rejection → Awaiting approval, never auto-approved (even once the advertiser no longer requires approval)', async () => {
@@ -456,9 +457,9 @@ describe('Run 2 — G. Approval lifecycle (non-happy)', () => {
     const { id } = await h.submitApiCampaign('Swisse — G4')
     await h.admin.reject(id, 'Not suitable.')
     const now = Date.now()
-    await sweepRejectedCampaigns(h.ctx.db, 30, () => new Date(now + 29 * 86_400_000))
+    await sweepRejectedCampaigns(h.ctx, 30, () => new Date(now + 29 * 86_400_000))
     expect(await h.ctx.campaigns.getCampaign(id)).not.toBeNull()
-    await sweepRejectedCampaigns(h.ctx.db, 30, () => new Date(now + 31 * 86_400_000))
+    await sweepRejectedCampaigns(h.ctx, 30, () => new Date(now + 31 * 86_400_000))
     expect(await h.ctx.campaigns.getCampaign(id)).toBeNull()
     expect(await h.ctx.campaigns.latestAssets(id)).toEqual([])
     const audit = h.ctx.db.prepare('SELECT action FROM campaign_approval_audit WHERE campaign_id = ?').all(id) as { action: string }[]

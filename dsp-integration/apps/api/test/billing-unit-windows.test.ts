@@ -5,6 +5,7 @@
    unit changed nothing (E2E T7). */
 import type { Slot } from '@ph-dsp/types'
 import { describe, expect, it } from 'vitest'
+import { audienceOf } from '../src/domain/displayTypes'
 import { allPositions, findPosition, windowMs } from '../src/domain/positions'
 import { runAuction } from '../src/exchange/auction'
 import { runBilling } from '../src/exchange/billing'
@@ -52,7 +53,7 @@ describe('a slot’s billing unit sets its play-window length (OQ27)', () => {
   it('gives a 168-hour slot weekly windows — availability, inventory and bid request — while a slot without an override keeps the company default', async () => {
     const { ctx, weekly, get } = await setup()
     /* The seeded Supplier slot's audience is scored per company (24h) window. */
-    const scored = (await ctx.audience.forSlot('menu_board', 2)).assumedViewsPerWindow
+    const scored = (await audienceOf(ctx.audience, (await ctx.displayTypes.get('menu_board'))!, 2)).assumedViewsPerWindow
     await weekly()
     expect(await windowMs(ctx, await findPosition(ctx, 'menu_board.s2'))).toBe(168 * HOUR)
     expect(await windowMs(ctx, await findPosition(ctx, 'menu_board.s3'))).toBe(24 * HOUR)
@@ -105,7 +106,7 @@ describe('a slot’s billing unit sets its play-window length (OQ27)', () => {
     const { ctx, weekly } = await setup(() => now)
     /* The seeded 15 Sep window was sold daily; bill it before the slot changes. */
     expect((await runBilling(ctx)).map((i) => i.reservationId)).toEqual(['res_seed_nestle_0915'])
-    const scored = (await ctx.audience.forSlot('menu_board', 2)).assumedViewsPerWindow
+    const scored = (await audienceOf(ctx.audience, (await ctx.displayTypes.get('menu_board'))!, 2)).assumedViewsPerWindow
     await weekly()
     const p = (await findPosition(ctx, 'menu_board.s2'))!
     expect(await allPositions(ctx)).toHaveLength(2)

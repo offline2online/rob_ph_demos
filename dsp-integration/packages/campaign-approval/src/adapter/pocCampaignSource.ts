@@ -1,12 +1,11 @@
 /* The POC's CampaignSource, backed by this repo's stand-in campaign store
    (the `campaigns` and `campaign_assets` tables). On integration it is
    replaced by an adapter over the real campaign service. */
-import type { SqlDb } from '../db'
+import { type Awaitable, type SqlDb, allOf, andThen } from '../db'
 import type { Canvas, Creative } from '../types'
 import type { CampaignRef, CampaignSource } from './CampaignSource'
 
 /* Lookups the host supplies (names, canvas, asset URLs, targeting summary). */
-type Awaitable<T> = T | Promise<T>
 /* Each may answer with a promise: the host's own reads may be awaitable. */
 export interface PocLookups {
   advertiserName(advertiserId: string): Awaitable<string | null>
@@ -14,6 +13,11 @@ export interface PocLookups {
   canvas(displayTypeId: string): Awaitable<Canvas | null>
   assetUrl(file: string): Awaitable<string>
   targetingSummary(targeting: unknown): Awaitable<string>
+  /* The host's own change hub, when the same campaign records are also
+     written through another facet (the host's platform CampaignSource):
+     sharing one listener set means a change made there reaches
+     onCampaignChanged here too. Omitted: this adapter keeps its own. */
+  listeners?: Set<(id: string) => void>
 }
 
 interface Row { id: string; name: string; source: CampaignRef['source']; advertiser_id: string | null; partner_id: string | null; display_type_id: string | null; activation_enabled: number; targeting: string | null }
@@ -24,10 +28,12 @@ interface AssetRow { version: number; role: string; file: string; mime_type: str
 export const assetVersionNumber = (assetVersion: string) => Number(assetVersion.replace(/^v/, '')) || 0
 
 export function pocCampaignSource(db: SqlDb, lookups: PocLookups): CampaignSource {
-  const listeners = new Set<(id: string) => void>()
-  /* The campaign's own rows, read in one synchronous step; the host's
+  const listeners = lookups.listeners ?? new Set<(id: string) => void>()
+  /* The campaign's own rows, read in one synchronous step on node:sqlite
+     (andThen, never an await, between the statements: the host's gate only
+     checks the connection is free when the call starts); the host's
      lookups (which may await) are filled in afterwards by toRef. */
-  const assetsOf = (id: string) => db.prepare('SELECT version, role, file, mime_type, width, height, content_hash FROM campaign_assets WHERE campaign_id = ? AND discarded_at IS NULL ORDER BY version').all(id) as unknown as AssetRow[]
+  const assetsOf = (id: string) => andThen(db.prepare('SELECT version, role, file, mime_type, width, height, content_hash FROM campaign_assets WHERE campaign_id = ? AND discarded_at IS NULL ORDER BY version').all(id), (rs) => rs as unknown as AssetRow[])
   const toRef = async (r: Row, rows: AssetRow[]): Promise<CampaignRef> => {
     /* The default layer's creative for the reviewer — mandatory on every
        submission (decision, 22 Sep) — or, for an older record predating
@@ -51,28 +57,34 @@ export function pocCampaignSource(db: SqlDb, lookups: PocLookups): CampaignSourc
       canvas: r.display_type_id ? await lookups.canvas(r.display_type_id) : null,
     }
   }
-  const get = (id: string) => {
-    const r = db.prepare('SELECT * FROM campaigns WHERE id = ?').get(id) as Row | undefined
-    return r ? toRef(r, assetsOf(r.id)) : null
-  }
+  const get = (id: string): Awaitable<CampaignRef | null> =>
+    andThen(db.prepare('SELECT * FROM campaigns WHERE id = ?').get(id), (found) => {
+      const r = found as Row | undefined
+      return r ? andThen(assetsOf(r.id), (assets) => toRef(r, assets)) : null
+    })
   return {
     getCampaign: get,
-    async listCampaigns(filter = {}) {
-      const rows = (db.prepare('SELECT * FROM campaigns ORDER BY created_at, id').all() as Row[])
-        .filter((r) => (!filter.sources || filter.sources.includes(r.source)) && (!filter.ids || filter.ids.includes(r.id)))
-        .map((r) => [r, assetsOf(r.id)] as const)
-      const out: CampaignRef[] = []
-      for (const [r, assets] of rows) out.push(await toRef(r, assets))
-      return out
+    listCampaigns(filter = {}) {
+      const rows = andThen(db.prepare('SELECT * FROM campaigns ORDER BY created_at, id').all(), (all) =>
+        allOf((all as Row[])
+          .filter((r) => (!filter.sources || filter.sources.includes(r.source)) && (!filter.ids || filter.ids.includes(r.id)))
+          .map((r) => andThen(assetsOf(r.id), (assets) => [r, assets] as const))))
+      return Promise.resolve(rows).then(async (pairs) => {
+        const out: CampaignRef[] = []
+        for (const [r, assets] of pairs) out.push(await toRef(r, assets))
+        return out
+      })
     },
     setActivation(id, enabled) {
-      db.prepare('UPDATE campaigns SET activation_enabled = ? WHERE id = ?').run(enabled ? 1 : 0, id)
-      listeners.forEach((l) => l(id))
-      return get(id)
+      return andThen(db.prepare('UPDATE campaigns SET activation_enabled = ? WHERE id = ?').run(enabled ? 1 : 0, id), () => {
+        listeners.forEach((l) => l(id))
+        return get(id)
+      })
     },
     discardEditsAfter(id, assetVersion) {
-      db.prepare('UPDATE campaign_assets SET discarded_at = ? WHERE campaign_id = ? AND version > ? AND discarded_at IS NULL').run(new Date().toISOString(), id, assetVersionNumber(assetVersion))
-      listeners.forEach((l) => l(id))
+      return andThen(db.prepare('UPDATE campaign_assets SET discarded_at = ? WHERE campaign_id = ? AND version > ? AND discarded_at IS NULL').run(new Date().toISOString(), id, assetVersionNumber(assetVersion)), () => {
+        listeners.forEach((l) => l(id))
+      })
     },
     onCampaignChanged(listener) {
       listeners.add(listener)

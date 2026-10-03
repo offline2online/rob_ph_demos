@@ -23,7 +23,7 @@ export interface TestPlaysBody {
   reservationId: string
   /* Plays to write, spread round-robin over the display type's displays and
      evenly through the window. Each entry is one tier. */
-  plays: { tier: PlayTier | null; count: number; durationSec?: number }[]
+  plays: { tier: PlayTier | null; count: number; durationSec?: number; versionId?: string | null }[]
 }
 
 export const testRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => async (app) => {
@@ -38,6 +38,7 @@ export const testRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => 
       if (p.tier !== null && !TIERS.includes(p.tier)) errors.push({ field: `plays[${i}].tier`, reason: 'tier is default, localised, personalised or null.' })
       if (!(Number.isInteger(p.count) && p.count > 0 && p.count <= 100_000)) errors.push({ field: `plays[${i}].count`, reason: 'count is an integer from 1 to 100,000.' })
       if (p.durationSec !== undefined && !(typeof p.durationSec === 'number' && p.durationSec > 0)) errors.push({ field: `plays[${i}].durationSec`, reason: 'durationSec is a positive number.' })
+      if (p.versionId !== undefined && p.versionId !== null && !(typeof p.versionId === 'string' && p.versionId.length > 0 && p.versionId.length <= 200)) errors.push({ field: `plays[${i}].versionId`, reason: 'versionId is a string of up to 200 characters, or null.' })
     })
     if (errors.length) throw validationFailed(errors)
 
@@ -52,17 +53,21 @@ export const testRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => 
     const end = await windowEndOf(ctx, r)
     const total = b.plays.reduce((n, x) => n + x.count, 0)
     const step = Math.max(1, Math.floor((end - start) / (total + 1)))
-    const insert = ctx.db.prepare('INSERT INTO plays (id, display_id, campaign_id, played_at, duration_sec, version_id, tier) VALUES (?, ?, ?, ?, ?, NULL, ?)')
     let i = 0
-    const written: { tier: PlayTier | null; count: number }[] = []
+    /* The version handed off for this window (the booking's asset version,
+       eeBT1Qp33GdsPcxG2As3): what every play shows unless a test says otherwise. */
+    const booking = (await ctx.campaigns.bookings(r.campaignId)).find((bk) => bk.displayTypeId === p.displayType.id && bk.slot === p.slot && bk.windowStart === r.windowStart)
+    const handedOff = booking?.assetVersion ?? null
+    const written: { tier: PlayTier | null; count: number; versionId: string | null }[] = []
     const fallbackDur = slotDurationSec(p.displayType) ?? 10
     await tx(ctx.db, () => {
       for (const spec of b.plays) {
         const dur = spec.durationSec ?? fallbackDur
+        const versionId = spec.versionId === undefined ? handedOff : spec.versionId
         for (let k = 0; k < spec.count; k++, i++) {
-          insert.run(`tp_${randomUUID().slice(0, 12)}`, displays[i % displays.length].id, r.campaignId!, new Date(start + (i + 1) * step).toISOString(), dur, spec.tier)
+          ctx.plays.insertTestPlay({ id: `tp_${randomUUID().slice(0, 12)}`, displayId: displays[i % displays.length].id, campaignId: r.campaignId!, playedAt: new Date(start + (i + 1) * step).toISOString(), durationSec: dur, versionId, tier: spec.tier })
         }
-        written.push({ tier: spec.tier, count: spec.count })
+        written.push({ tier: spec.tier, count: spec.count, versionId })
       }
     }, 'IMMEDIATE')
     return reply.status(201).send({ reservationId: r.id, campaignId: r.campaignId, positionId: r.positionId, windowStart: r.windowStart, windowEnd: new Date(end).toISOString(), displays: displays.length, written, total })

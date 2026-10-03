@@ -5,7 +5,7 @@
 import type { DisplayType, Slot } from '@ph-dsp/types'
 import type { Context } from '../context'
 import type { PartnerRecord } from '../repos/PartnerRepo'
-import { type Awaitable, allOf, andThen, onFree, prepared } from '../db/db'
+import { type Awaitable, allOf, andThen } from '../db/db'
 import { type ReservationStatus, TAKEN } from '../repos/ReservationRepo'
 import { advertiserSlug, assignedOf, billingUnitHoursOf, maxCampaignsOf, reservePriceOf, supportedTargetingOf, type Assigned } from '@ph-dsp/types'
 import { invitedPartnerIds, isInvitedBuyer } from './buyersLists'
@@ -13,6 +13,7 @@ import { isActiveAt, lockedTermSpan } from '../billing/term'
 import { effectiveLists, isBlocked, isOn } from './lists'
 import { effectiveFloorCpm } from './pricing'
 import { rotationSizeOf, slotDurationSec } from './slots'
+import { audienceOf } from './displayTypes'
 
 export interface PositionRef {
   positionId: string
@@ -234,7 +235,7 @@ export async function slotWindowCommitments(ctx: Context, positionId: string, le
   const now = ctx.clock().getTime()
   const inRange = await ctx.reservations.inRange(positionId, new Date(now - len).toISOString(), '9999')
   /* A window already billed is over, whatever length it is read at now. */
-  const billedIds = await onFree(ctx.db, () => new Set(inRange.filter((r) => !!prepared(ctx.db, 'SELECT 1 FROM billing_line_items WHERE reservation_id = ?').get(r.id)).map((r) => r.id)))
+  const billedIds = await ctx.billing.billedAmong(inRange.map((r) => r.id))
   const live = inRange.filter((r) => !r.testMode && ['pending', 'won', 'reserved'].includes(r.status) && Date.parse(r.windowStart) + len > now && !billedIds.has(r.id))
   const unbilled = (await ctx.reservations.billable(new Date(now).toISOString())).filter((r) => r.positionId === positionId && !live.some((x) => x.id === r.id))
   return [...live, ...unbilled]
@@ -380,7 +381,7 @@ export async function windowStatusAt(ctx: Context, p: PositionRef, c: Caller, st
    to its window's length — a weekly window on a daily-scored slot is seven
    days' views. A slot that follows the company window is unchanged. */
 export function assumedViewsPerWindow(ctx: Context, p: PositionRef): Awaitable<number> {
-  return andThen(allOf([ctx.audience.forSlot(p.displayType.id, p.slot), ctx.company.get()] as const), ([audience, company]) => assumedViewsFor(audience.assumedViewsPerWindow, company.playWindowHours, p))
+  return andThen(allOf([audienceOf(ctx.audience, p.displayType, p.slot), ctx.company.get()] as const), ([audience, company]) => assumedViewsFor(audience.assumedViewsPerWindow, company.playWindowHours, p))
 }
 /* The same, given the slot's scored figure and the company window already read. */
 export function assumedViewsFor(scored: number, companyHours: number, p: PositionRef) {
@@ -396,7 +397,7 @@ export function assumedViewsFor(scored: number, companyHours: number, p: Positio
    duration before it is exposed as Advertiser inventory: the venue loop
    length, which slotDurationSec divides by the rotation cap (slots.ts). Returns why not, or null when sellable. */
 export function unsellableReason(ctx: Context, p: PositionRef): Awaitable<string | null> {
-  return andThen(ctx.audience.forSlot(p.displayType.id, p.slot), (audience) => {
+  return andThen(audienceOf(ctx.audience, p.displayType, p.slot), (audience) => {
     if (!audience.scored) return 'No audience score yet.'
     if (!p.displayType.phExtensions?.venue?.loopLengthSec) return 'No slot duration yet — set the venue loop length before this slot can be sold.'
     return null
@@ -423,7 +424,7 @@ export function positionView(ctx: Context, p: PositionRef, c: Caller) {
       loopLengthSec(ctx, dt),
       ctx.company.get(),
       c.advertiser ? ctx.company.advertiserSetting(c.advertiser.id) : null,
-      ctx.audience.forSlot(dt.id, p.slot),
+      audienceOf(ctx.audience, dt, p.slot),
     ] as const),
     ([displays, loop, company, setting, audience]) => viewOf(p, displays, loop, company, setting ? setting.floorMultiplier : 1, audience),
   )

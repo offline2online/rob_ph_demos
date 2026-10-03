@@ -399,7 +399,10 @@ paths:
         `plays` table, which is PH Core's playback store on integration (the
         platform reports plays itself), and is deleted with it. Plays are
         spread round-robin over the display type's displays and evenly
-        through the window; each entry is one tier.
+        through the window; each entry is one tier. Every play carries the
+        campaign version it showed (`versionId`, interface contract v3.1 row
+        3): by default the version handed off on the booking for this window,
+        so a play's versionId equals the booking's asset version.
       security: [{adminSession: []}]
       requestBody:
         required: true
@@ -420,6 +423,7 @@ paths:
                       tier: {type: [string, 'null'], enum: [default, localised, personalised, null], description: The version tier the play showed; null bills as default.}
                       count: {type: integer, minimum: 1, maximum: 100000}
                       durationSec: {type: number, exclusiveMinimum: 0}
+                      versionId: {type: [string, 'null'], maxLength: 200, description: "The campaign version the play showed. Omitted: the asset version on the window's booking (null when there is no booking)."}
       responses:
         '201':
           description: Plays written.
@@ -439,10 +443,11 @@ paths:
                     type: array
                     items:
                       type: object
-                      required: [tier, count]
+                      required: [tier, count, versionId]
                       properties:
                         tier: {type: [string, 'null']}
                         count: {type: integer}
+                        versionId: {type: [string, 'null']}
                   total: {type: integer}
         '400': {$ref: '#/components/responses/ValidationFailed'}
         '401': {$ref: '#/components/responses/Unauthorised'}

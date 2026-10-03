@@ -13,6 +13,7 @@ import { advertiserSlug } from '@ph-dsp/types'
 import type { Context } from '../context'
 import { onFree } from '../db/db'
 import { allPositions, nextWindow, windowMs } from '../domain/positions'
+import { audienceOf } from '../domain/displayTypes'
 
 const money = [120, 135, 150, 165, 180, 195]
 
@@ -74,7 +75,7 @@ export async function seedBookings(ctx: Context) {
     /* Booked revenue is CPM × assumed views, so a position nobody has scored
        yet would book for nothing. 412 viewers a window per display is the
        figure the Menu Board is seeded with (API.md's example bid request). */
-    if (!(await ctx.audience.forSlot(dt.id, position.slot)).assumedViewsPerWindow) {
+    if (!(await audienceOf(ctx.audience, dt, position.slot)).assumedViewsPerWindow) {
       const displays = Math.max(1, (await ctx.displays.listByDisplayType(dt.id)).length)
       await onFree(ctx.db, () => ctx.db.prepare('INSERT INTO audience_vacd (display_type_id, slot, assumed_views_per_window, counted) VALUES (?, ?, ?, 0)')
         .run(dt.id, position.slot, displays * 412))

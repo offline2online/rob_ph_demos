@@ -17,7 +17,13 @@ export interface Audience {
 }
 
 export interface AudienceSource {
-  forSlot(displayTypeId: string, slot: number): Awaitable<Audience>
+  /* defaultVacd is the display type's default VAC-d per display — an
+     exchange setting (Display Types → defaultVacd), resolved by the
+     exchange through DisplayTypeSource and passed in (ticket
+     DDOjJoYjraKROu4Ainj5, Rob 2 Oct 2026). The audience source owns only
+     the per-slot score and each display's own counted/modelled override;
+     it never reads display_types. null: the type has no default. */
+  forSlot(displayTypeId: string, slot: number, defaultVacd: number | null): Awaitable<Audience>
   /* The share of a slot's assumed views a targeted campaign can reach
      (spec §5: "targeting changes it"). Only the platform that holds the
      store and visitor data can answer this; see BUILD-PLAN Q9. */
@@ -27,32 +33,8 @@ export interface AudienceSource {
 /* POC stand-in share: each AND group halves the audience (Q9). */
 export const POC_SHARE_PER_AND_GROUP = 0.5
 
-/* The display type's default VAC-d (assumed views per play window, per
-   display), or null when it has none. Stored in phExtensions so it saves
-   with the rest of the DSP fields. Read from the parsed record, not with
-   SQLite's json_extract, so the SQL runs unchanged on Postgres (ticket
-   gAi2mkcm43uW6hrchOjh). forSlot is on the inventory hot path, so the parse
-   is remembered per display type until its stored text changes. */
-const parsedDefaults = new WeakMap<Db, Map<string, { text: string | null; v: number | null }>>()
-export function defaultVacd(db: Db, displayTypeId: string): number | null {
-  const r = prepared(db, 'SELECT ph_extensions FROM display_types WHERE id = ?').get(displayTypeId) as { ph_extensions: string | null } | undefined
-  const text = r?.ph_extensions ?? null
-  let byType = parsedDefaults.get(db)
-  if (!byType) parsedDefaults.set(db, (byType = new Map()))
-  const hit = byType.get(displayTypeId)
-  if (hit && hit.text === text) return hit.v
-  let v: number | null = null
-  try {
-    const ext = text ? (JSON.parse(text) as { defaultVacd?: unknown }) : null
-    v = typeof ext?.defaultVacd === 'number' ? ext.defaultVacd : null
-  } catch { v = null }
-  if (byType.size > 10_000) byType.clear()
-  byType.set(displayTypeId, { text, v })
-  return v
-}
-
 export const sqliteAudienceSource = (db: Db): AudienceSource => ({
-  forSlot(displayTypeId, slot) {
+  forSlot(displayTypeId, slot, dflt) {
     const r = prepared(db, 'SELECT assumed_views_per_window AS v, counted FROM audience_vacd WHERE display_type_id = ? AND slot = ?').get(displayTypeId, slot) as { v: number; counted: number } | undefined
     if (r) return { assumedViewsPerWindow: r.v, counted: !!r.counted, scored: true }
     /* No slot score of its own: the slot inherits from its display type
@@ -60,7 +42,6 @@ export const sqliteAudienceSource = (db: Db): AudienceSource => ({
        default is per display, so the slot's assumed views are the sum of
        its displays' scores — each display's own override where it has one,
        otherwise the default. A type with no displays yet counts as one. */
-    const dflt = defaultVacd(db, displayTypeId)
     if (dflt === null) return { assumedViewsPerWindow: 0, counted: false, scored: false }
     const d = prepared(db, 'SELECT COUNT(*) AS n, COALESCE(SUM(COALESCE(vacd_override, ?)), 0) AS total FROM displays WHERE display_type_id = ?').get(dflt, displayTypeId) as { n: number; total: number }
     return { assumedViewsPerWindow: d.n ? d.total : dflt, counted: false, scored: true }

@@ -4,7 +4,7 @@
    retention are deleted. No UI and no endpoint. */
 import { hostname } from 'node:os'
 import type { Context } from '../context'
-import { onFree, prepared, tx } from '../db/db'
+import { tx } from '../db/db'
 import { sweepRejectedCampaigns } from '../domain/campaignRetention'
 import { allPositions, closesAtFor, companyWindowCommitments, windowMsFor, windowStartOf } from '../domain/positions'
 import { releaseSettledSlotLocks } from '../domain/slotLock'
@@ -28,17 +28,11 @@ const STALE_CLAIM_MS = 15 * 60_000
 export async function claimAuction(ctx: Context, windowStart: string): Promise<boolean> {
   const now = ctx.clock().toISOString()
   const stale = new Date(ctx.clock().getTime() - STALE_CLAIM_MS).toISOString()
-  return onFree(ctx.db, () => prepared(ctx.db,
-    `INSERT INTO auction_runs (window_start, claimed_at, claimed_by, finished_at) VALUES (?, ?, ?, NULL)
-       ON CONFLICT (window_start) DO UPDATE SET claimed_at = excluded.claimed_at, claimed_by = excluded.claimed_by
-       WHERE auction_runs.finished_at IS NULL AND auction_runs.claimed_at < ?`,
-  ).run(windowStart, now, INSTANCE, stale).changes > 0)
+  return ctx.auctionRuns.claim(windowStart, INSTANCE, now, stale)
 }
-const finishAuction = (ctx: Context, windowStart: string) =>
-  onFree(ctx.db, () => prepared(ctx.db, 'UPDATE auction_runs SET finished_at = ? WHERE window_start = ? AND claimed_by = ?').run(ctx.clock().toISOString(), windowStart, INSTANCE))
+const finishAuction = (ctx: Context, windowStart: string) => ctx.auctionRuns.finish(windowStart, INSTANCE, ctx.clock().toISOString())
 /* An auction that threw releases its claim so the next tick retries at once. */
-const releaseAuction = (ctx: Context, windowStart: string) =>
-  onFree(ctx.db, () => prepared(ctx.db, 'DELETE FROM auction_runs WHERE window_start = ? AND claimed_by = ? AND finished_at IS NULL').run(windowStart, INSTANCE))
+const releaseAuction = (ctx: Context, windowStart: string) => ctx.auctionRuns.release(windowStart, INSTANCE)
 
 /* One pass of the scheduled work: bill the windows that have ended, sweep
    settled bids, then clear any window whose auction cutoff passed within
@@ -74,7 +68,7 @@ export async function schedulerTick(ctx: Context, log: (msg: string) => void) {
     if (released) log(`Released the sales lock on ${released} slot${released === 1 ? '' : 's'}: nothing is booked on ${released === 1 ? 'it' : 'them'} any more.`)
   })
   await job('Retention', async () => {
-    const swept = await sweepSettledReservations(ctx.db, ctx.config.reservationRetentionDays, ctx.clock)
+    const swept = await sweepSettledReservations(ctx, ctx.config.reservationRetentionDays, ctx.clock)
     if (swept) log(`Deleted ${swept} settled bid${swept === 1 ? '' : 's'} older than ${ctx.config.reservationRetentionDays} days.`)
     await sweepAuctionRuns(ctx)
   })
@@ -177,7 +171,7 @@ export async function promotePendingPlayWindowIfDue(ctx: Context): Promise<numbe
    with the bids they cleared: one row per window, nothing reads an old one. */
 function sweepAuctionRuns(ctx: Context) {
   const cutoff = new Date(ctx.clock().getTime() - ctx.config.reservationRetentionDays * 86_400_000).toISOString()
-  return onFree(ctx.db, () => prepared(ctx.db, 'DELETE FROM auction_runs WHERE finished_at IS NOT NULL AND window_start < ?').run(cutoff))
+  return ctx.auctionRuns.deleteFinishedBefore(cutoff)
 }
 
 /* True while a process holds this window's auction (claimed, not finished):
@@ -185,7 +179,7 @@ function sweepAuctionRuns(ctx: Context) {
    process's clock. POST /v1/reservations refuses a bid then, so no bid can
    slip in between the auction reading its candidates and clearing. */
 export async function auctionClaimed(ctx: Context, windowStart: string): Promise<boolean> {
-  return onFree(ctx.db, () => !!prepared(ctx.db, 'SELECT 1 FROM auction_runs WHERE window_start = ?').get(windowStart))
+  return ctx.auctionRuns.isClaimed(windowStart)
 }
 
 export function startAuctionScheduler(ctx: Context, log: (msg: string) => void, everyMs = 60_000) {
@@ -213,7 +207,7 @@ export function startAuctionScheduler(ctx: Context, log: (msg: string) => void, 
    this fires, so there is no benefit to running it more often. */
 export function startCampaignRetentionScheduler(ctx: Context, log: (msg: string) => void, everyMs = 24 * 60 * 60 * 1000) {
   const tick = async () => {
-    const { deletedCampaignIds } = await sweepRejectedCampaigns(ctx.db, ctx.config.rejectedCampaignRetentionDays, ctx.clock)
+    const { deletedCampaignIds } = await sweepRejectedCampaigns(ctx, ctx.config.rejectedCampaignRetentionDays, ctx.clock)
     if (deletedCampaignIds.length) log(`Deleted ${deletedCampaignIds.length} campaign${deletedCampaignIds.length === 1 ? '' : 's'} rejected over ${ctx.config.rejectedCampaignRetentionDays} days ago.`)
   }
   const timer = setInterval(() => {

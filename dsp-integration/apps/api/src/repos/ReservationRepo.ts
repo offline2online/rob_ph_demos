@@ -67,6 +67,10 @@ export interface ReservationRepo {
      nothing will clear them now (the auction never ran, or ran before they
      were placed). The tick settles them as lost (scheduler.ts). */
   stalePending(startedBy: string): Awaitable<ReservationRecord[]>
+  /* Deletes settled bids nothing reads any more — rejected, lost and
+     never-cleared pending — whose window started before `cutoff`; how many
+     went (domain/reservationRetention.ts). Won and reserved are kept. */
+  deleteSettledBefore(cutoff: string): Awaitable<number>
 }
 
 export function sqliteReservationRepo(db: Db): ReservationRepo {
@@ -118,6 +122,8 @@ export function sqliteReservationRepo(db: Db): ReservationRepo {
       }
       return out
     },
+    deleteSettledBefore: (cutoff) =>
+      Number(prepared(db, "DELETE FROM reservations WHERE status IN ('rejected', 'lost', 'pending') AND window_start < ?").run(cutoff).changes),
     stalePending: (startedBy) =>
       (prepared(db, "SELECT * FROM reservations WHERE status = 'pending' AND window_start <= ? ORDER BY window_start, id").all(startedBy) as unknown as Row[]).map(toRecord),
     billable: (endedBy) =>

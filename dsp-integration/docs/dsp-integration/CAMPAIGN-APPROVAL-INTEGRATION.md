@@ -339,7 +339,14 @@ approval module must not be able to book or create. On integration build
 facets) so they agree on identity and order (`listCampaigns` is ordered by
 creation, then id, on both).
 
-`onCampaignChanged` belongs to this adapter only. The host's interface has no
-change feed (nothing in the exchange subscribes). When the real source emits
-changes, fan them out from that one source to this adapter's listeners; there
-is no second listener set to keep in step.
+`onCampaignChanged` belongs to this adapter only; the host's interface has no
+change feed. The POC already builds both facets over one change hub
+(2 Oct 2026, eeBT1Qp33GdsPcxG2As3): `context.ts` passes one listener set to
+this adapter (`PocLookups.listeners`) and to the host's stand-in
+(`sqliteCampaignSource(db, { onChange })`), so an activation, a new asset or
+a deletion made through the host's facet reaches this adapter's listeners
+too (asserted in `apps/api/test/seam-guarantees.test.ts`). On integration,
+fan the real source's changes out to that same set.
+
+A booking (`SlotBooking.assetVersion`) carries this adapter's `assetVersion`
+string as the approval returned it, not a number of the host's.
