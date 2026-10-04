@@ -23,7 +23,7 @@ export interface TestPlaysBody {
   reservationId: string
   /* Plays to write, spread round-robin over the display type's displays and
      evenly through the window. Each entry is one tier. */
-  plays: { tier: PlayTier | null; count: number; durationSec?: number; versionId?: string | null }[]
+  plays: { tier: PlayTier | null; count: number; durationSec?: number; versionId?: string | null; receivedAt?: string | null }[]
 }
 
 export const testRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => async (app) => {
@@ -38,6 +38,7 @@ export const testRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => 
       if (p.tier !== null && !TIERS.includes(p.tier)) errors.push({ field: `plays[${i}].tier`, reason: 'tier is default, localised, personalised or null.' })
       if (!(Number.isInteger(p.count) && p.count > 0 && p.count <= 100_000)) errors.push({ field: `plays[${i}].count`, reason: 'count is an integer from 1 to 100,000.' })
       if (p.durationSec !== undefined && !(typeof p.durationSec === 'number' && p.durationSec > 0)) errors.push({ field: `plays[${i}].durationSec`, reason: 'durationSec is a positive number.' })
+      if (p.receivedAt !== undefined && p.receivedAt !== null && !(typeof p.receivedAt === 'string' && Number.isFinite(Date.parse(p.receivedAt)))) errors.push({ field: `plays[${i}].receivedAt`, reason: 'receivedAt is an ISO timestamp, or null.' })
       if (p.versionId !== undefined && p.versionId !== null && !(typeof p.versionId === 'string' && p.versionId.length > 0 && p.versionId.length <= 200)) errors.push({ field: `plays[${i}].versionId`, reason: 'versionId is a string of up to 200 characters, or null.' })
     })
     if (errors.length) throw validationFailed(errors)
@@ -65,7 +66,7 @@ export const testRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => 
         const dur = spec.durationSec ?? fallbackDur
         const versionId = spec.versionId === undefined ? handedOff : spec.versionId
         for (let k = 0; k < spec.count; k++, i++) {
-          ctx.plays.insertTestPlay({ id: `tp_${randomUUID().slice(0, 12)}`, displayId: displays[i % displays.length].id, campaignId: r.campaignId!, playedAt: new Date(start + (i + 1) * step).toISOString(), durationSec: dur, versionId, tier: spec.tier })
+          ctx.plays.insertTestPlay({ id: `tp_${randomUUID().slice(0, 12)}`, displayId: displays[i % displays.length].id, campaignId: r.campaignId!, playedAt: new Date(start + (i + 1) * step).toISOString(), durationSec: dur, versionId, tier: spec.tier, receivedAt: spec.receivedAt ? new Date(spec.receivedAt).toISOString() : null })
         }
         written.push({ tier: spec.tier, count: spec.count, versionId })
       }

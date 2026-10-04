@@ -1204,14 +1204,21 @@ played (Billing, below).
      recorded as would-have-been value. The figure is an operational report
      for the retailer; it is never shown on, or charged to, an advertiser's
      invoice.
-  *Build status (4 Oct 2026):* rule 1 already holds, because a window is
+  *Build status (4 Oct 2026):* built. Rule 1 holds because a window is
   billed once (`billing_line_items.reservation_id` is unique) and is never
-  recomputed. Rules 2 and 3 are **specification only**: the stand-in playback
-  data carries no received-at time, so the cut-off cannot be applied yet. It
-  needs `receivedAt` on the playback data (PH Core requirement, §9 and
-  `api/PH-CORE-BOUNDARIES.md` → "Analytics event values billing consumes"),
-  a late-play ledger, and a lost-revenue report; filed as a follow-up
-  ticket.
+  recomputed. Rule 2: the stand-in playback data carries `received_at`
+  (migration 0043); billing counts the plays received by the moment it
+  settles (`PlaybackSource.totals` `receivedBy`) and the line item records
+  that moment, so a play received after it is late. A play with no
+  received-at time is known at settlement, billed as before. Rule 3: the
+  late-play ledger (`billing/late.ts`, table `late_plays`) records each late
+  play once, at the line item's cleared CPM and snapshotted personalised
+  multiplier, never valuing a window above its own assumed views; it runs
+  after billing on every scheduler tick and reads only what arrived since its
+  last scan. The report is `GET /admin/v1/reports/lost-revenue?from&to&by=store|display|day`
+  (per currency, by when the play played). Not built: an HQ Admin screen for
+  it (the endpoint is the contract), and an advertiser-facing view, which
+  rule 3 forbids.
 - **Pre-auction enforcement uses the effective floor CPM** for the campaign's
   type and advertiser. The auction clears against the base floor (scaled by
   the advertiser's `floorMultiplier`); the personalised multiplier is charged
@@ -2181,8 +2188,8 @@ closed, loop cut short) are not billed. **Settlement is final**
 (§4 "Billing"): playback received after a window's invoice is written is
 disregarded for billing and instead reported as lost revenue from display
 downtime, at the cleared rate. This project **reads** that data for
-billing only; it does not change how it is written or add any reporting on
-it. As the exchange, disputes resolve against this data.
+billing and for the lost-revenue ledger only; it does not change how it is
+written or add any other reporting on it. As the exchange, disputes resolve against this data.
 
 ### Brand safety, structurally
 

@@ -293,7 +293,7 @@ describe('C. Hand-off & billing', () => {
       { campaignId, windowStart: day(2).toISOString(), plays: 0, realisedViews: 0, amount: 0 },
     ])
     /* The playback stub was asked for exactly the sold window on the display type's displays. */
-    expect(h.playback.calls).toContainEqual({ campaignId, displayTypeId: DT, from: day(1).toISOString(), to: day(2).toISOString() })
+    expect(h.playback.calls).toContainEqual(expect.objectContaining({ campaignId, displayTypeId: DT, from: day(1).toISOString(), to: day(2).toISOString() }))
     /* Billed once. */
     expect(await runBilling(h.ctx)).toEqual([])
     expect(await lineItems(h.ctx)).toHaveLength(2)

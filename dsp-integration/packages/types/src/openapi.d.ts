@@ -476,6 +476,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/reports/lost-revenue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Lost revenue from display downtime, by store, display or day
+         * @description Settlement is final (spec §4 "Billing"): a play the platform received
+         *     after its window's line item was written is never billed, and is
+         *     recorded at what it would have been worth at the window's cleared CPM
+         *     (personalised multiplier included). This reports those plays, placed
+         *     by when they played. An operational report for the retailer; never
+         *     shown on or charged to an advertiser's invoice.
+         */
+        get: operations["getLostRevenueReport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/booking-schedule": {
         parameters: {
             query?: never;
@@ -3103,6 +3128,59 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    getLostRevenueReport: {
+        parameters: {
+            query: {
+                from: string;
+                /** @description Inclusive; at most 366 days after from. */
+                to: string;
+                by?: "store" | "display" | "day";
+                storeId?: string;
+                displayId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Lost revenue, per currency (never summed across currencies) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: date */
+                        from: string;
+                        /** Format: date */
+                        to: string;
+                        /** @enum {string} */
+                        by: "store" | "display" | "day";
+                        totals: {
+                            currency: string;
+                            plays: number;
+                            lostSec: number;
+                            lostViews: number;
+                            lostAmount: number;
+                        }[];
+                        rows: {
+                            key: string;
+                            label: string;
+                            storeId: string | null;
+                            currency: string;
+                            plays: number;
+                            lostSec: number;
+                            lostViews: number;
+                            lostAmount: number;
+                        }[];
+                    };
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorised"];
         };
     };
     getBookingSchedule: {

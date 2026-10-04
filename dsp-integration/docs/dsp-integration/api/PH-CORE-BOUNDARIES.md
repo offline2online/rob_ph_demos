@@ -741,8 +741,11 @@ is recorded at what it would have been worth at the window's cleared CPM and
 reported as **lost revenue from display downtime**, by store, display and
 over time, so the retailer's operational teams own it. Data received between
 window end and settlement still counts. PH Core must therefore supply
-received-at per play (table above); until it does, the cut-off cannot be
-applied and the late-data report cannot be built. Closed-loop
+received-at per play (table above). The stand-in plays table carries it
+(`plays.received_at`, migration 0043; null = known at settlement) and the
+cut-off, late-play ledger and lost-revenue report are built on it
+(`apps/api/src/billing/late.ts`); on integration PH Core's playback store
+answers `PlaybackSource.totals(receivedBy)` and `receivedBetween` itself. Closed-loop
 conversion attribution is not an input (Q55).
 
 **A PH Core requirement on partner-facing analytics** (Rob, 2 Oct 2026,

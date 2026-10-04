@@ -16,6 +16,10 @@ export interface BillingRepo {
      what a screen showing a few hundred bookings needs, read without
      loading every line item ever written. */
   amountsFor(reservationIds: string[]): Awaitable<Map<string, number>>
+  /* The line items of a campaign whose window holds this moment, with when
+     each was written (its settlement time): what the late-play ledger
+     matches a late play against. */
+  coveringPlay(campaignId: string, playedAt: string): Awaitable<{ item: LineItem; computedAt: string }[]>
 }
 
 /* SQLite's default limit on bound parameters is 32,766; a chunk of 500
@@ -25,6 +29,16 @@ const CHUNK = 500
    the prepared-statement cache holds four IN statements, not one per list
    length. */
 const SIZES = [8, 32, 128, CHUNK]
+
+const toItem = (r: Record<string, unknown>): LineItem => ({
+  id: r.id as string, reservationId: r.reservation_id as string, partnerId: r.partner_id as string, advertiserId: r.advertiser_id as string | null,
+  campaignId: r.campaign_id as string, positionId: r.position_id as string, windowStart: r.window_start as string, windowEnd: r.window_end as string,
+  plays: r.plays as number, playedSec: r.played_sec as number, expectedSec: r.expected_sec as number, assumedViews: r.assumed_views as number,
+  realisedViews: r.realised_views as number, cpm: r.cpm as number, currency: r.currency as string, amount: r.amount as number,
+  personalisedPlays: r.personalised_plays as number, personalisedViews: r.personalised_views as number,
+  personalisedMultiplier: r.personalised_multiplier as number | null, personalisedAmount: r.personalised_amount as number,
+  playsByVersion: JSON.parse((r.plays_by_version as string | null) ?? '[]') as LineItem['playsByVersion'],
+})
 
 export function sqliteBillingRepo(db: Db): BillingRepo {
   const amounts = (ids: string[]) => {
@@ -46,15 +60,9 @@ export function sqliteBillingRepo(db: Db): BillingRepo {
     ).run(item.id, item.reservationId, item.partnerId, item.advertiserId, item.campaignId, item.positionId, item.windowStart, item.windowEnd, item.plays,
       item.playedSec, item.expectedSec, item.assumedViews, item.realisedViews, item.cpm, item.currency, item.amount, computedAt,
       item.personalisedPlays, item.personalisedViews, item.personalisedMultiplier, item.personalisedAmount, JSON.stringify(item.playsByVersion ?? [])).changes > 0,
-    list: () => (prepared(db, 'SELECT * FROM billing_line_items ORDER BY window_start, id').all() as Record<string, unknown>[]).map((r) => ({
-      id: r.id as string, reservationId: r.reservation_id as string, partnerId: r.partner_id as string, advertiserId: r.advertiser_id as string | null,
-      campaignId: r.campaign_id as string, positionId: r.position_id as string, windowStart: r.window_start as string, windowEnd: r.window_end as string,
-      plays: r.plays as number, playedSec: r.played_sec as number, expectedSec: r.expected_sec as number, assumedViews: r.assumed_views as number,
-      realisedViews: r.realised_views as number, cpm: r.cpm as number, currency: r.currency as string, amount: r.amount as number,
-      personalisedPlays: r.personalised_plays as number, personalisedViews: r.personalised_views as number,
-      personalisedMultiplier: r.personalised_multiplier as number | null, personalisedAmount: r.personalised_amount as number,
-      playsByVersion: JSON.parse((r.plays_by_version as string | null) ?? '[]') as LineItem['playsByVersion'],
-    })),
+    list: () => (prepared(db, 'SELECT * FROM billing_line_items ORDER BY window_start, id').all() as Record<string, unknown>[]).map(toItem),
+    coveringPlay: (campaignId, playedAt) => (prepared(db, 'SELECT * FROM billing_line_items WHERE campaign_id = ? AND window_start <= ? AND window_end > ? ORDER BY window_start, id')
+      .all(campaignId, playedAt, playedAt) as Record<string, unknown>[]).map((r) => ({ item: toItem(r), computedAt: r.computed_at as string })),
     billedAmong: (reservationIds) => new Set(amounts(reservationIds).keys()),
     amountsFor: (reservationIds) => amounts(reservationIds),
   }
