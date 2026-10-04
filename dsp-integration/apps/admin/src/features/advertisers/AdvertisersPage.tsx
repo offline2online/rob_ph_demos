@@ -108,7 +108,11 @@ type IP = ICellRendererParams<AvailableInventoryRow, unknown, InvCtx>
 const PlaylistCell = ({ data }: ICellRendererParams<AvailableInventoryRow>) =>
   data ? (
     <span className="inline-flex min-w-0 items-center gap-[5px]">
-      <span className="truncate">{data.playlistName}</span>
+      {/* The name can be long and the column is hard to widen on a touch screen, so
+          hovering or tapping it shows the full playlist name (ticket E2iOwJHM, 4 Oct 2026). */}
+      <Tip title={data.playlistName}>
+        <span className="truncate cursor-pointer" tabIndex={0} aria-label={`Playlist: ${data.playlistName}`}>{data.playlistName}</span>
+      </Tip>
       {data.visionAi && (
         <Tip title="Vision/AI is enabled on this display type: on-device computer vision for passerby insight and person match.">
           <span className="inline-flex" aria-label="Vision/AI enabled"><Icon name="visibility" size={15} style={{ color: T.primary }} /></span>
