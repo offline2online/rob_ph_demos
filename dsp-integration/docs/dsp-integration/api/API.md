@@ -126,6 +126,18 @@ assumed views per play window per display; the slot's figure is the sum
 over the type's displays, each at its own `displays.vacd_override` where
 set). A type with no default and no slot score is the only unscored case.
 
+**Computer-vision default (PH Core).** `PUT /admin/v1/display-types/{id}/default-vacd`
+with `{"defaultVacd": <integer ≥ 0>}` lets PH Core write the default from the
+score computer vision measured at the edge. **The automated score wins**
+(decided 4 Oct 2026): it replaces a manually set default and is recorded as
+`phExtensions.defaultVacdSource: "computer_vision"`, so slots scored from it
+are **counted** (OpenRTB `sourcetype` 1). A manual edit through
+`PUT …/extensions` still saves, is `"manual"` (modelled), and stands until
+the next CV write; re-saving the form with the unchanged value keeps the
+source. It targets the display-type default only — a display's counted VAC-d
+and `vacd_override` stay with PH Core's scoring framework. Needs DSP
+integration switched on.
+
 ## Partner API — `/v1`
 
 ### Inventory

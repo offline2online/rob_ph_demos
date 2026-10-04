@@ -184,6 +184,20 @@ provide one breaks something specific, named here.
     only each display's counted or modelled VAC-d and its per-display
     override. A display type with no retailer scoring is scored by its
     default VAC-d; unset means unscored and unsellable.
+  - **PH Core may write the default from computer vision** (ticket
+    MuZ4KUSLJI2BIGbEV2pq, Rob, 4 Oct 2026): `PUT /admin/v1/display-types/{id}/default-vacd`
+    `{defaultVacd}`. This **revises v3.1 row 4**, which said the default is
+    only the exchange's own setting (the contract text is updated
+    alongside this ticket). Precedence: **the automated score wins** — it
+    replaces a manually set value and is stored with
+    `phExtensions.defaultVacdSource = computer_vision`, so slots scored from
+    it are `counted` (`qty.sourcetype` 1); a manual edit (Display Type
+    form, `PUT …/extensions`) stays valid, is `manual` / modelled, and
+    stands until the next CV write. Re-saving the form with the same value
+    keeps the source. The write targets the display-type default only,
+    never a display's counted VAC-d or `vacd_override`. On integration, PH
+    Core calls this endpoint with the CV figure; the adapter's `forSlot`
+    still receives `(default, defaultCounted)` from the exchange.
   - Also returns `counted`: whether the figure is measured (Vision/AI,
     MIST proximity) or modelled. It becomes OpenRTB `qty.sourcetype`
     (`exchange/openrtb.ts`), so an adapter that cannot tell must say

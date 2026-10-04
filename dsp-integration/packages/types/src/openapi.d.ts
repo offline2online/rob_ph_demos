@@ -753,6 +753,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/display-types/{displayTypeId}/default-vacd": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * PH Core writes the display type's default VAC-d (computer vision score)
+         * @description The automated score wins over a manual value and is marked counted.
+         */
+        put: operations["setDisplayTypeDefaultVacd"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/display-types/{displayTypeId}/delete-check": {
         parameters: {
             query?: never;
@@ -2073,6 +2093,14 @@ export interface components {
              *     value; null clears it.
              */
             defaultVacd?: number | null;
+            /**
+             * @description Who set the default. `computer_vision` (written by PH Core
+             *     through `PUT …/default-vacd`) is counted and overrides a manual
+             *     value; `manual` (this editor) is modelled. Set by the server —
+             *     ignored on write here.
+             * @enum {string}
+             */
+            defaultVacdSource?: "manual" | "computer_vision";
             slots: {
                 label: string;
                 /** @enum {string} */
@@ -3681,6 +3709,38 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    setDisplayTypeDefaultVacd: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                displayTypeId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Assumed views per play window, per display. */
+                    defaultVacd: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DisplayTypeExtensions"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorised"];
+            404: components["responses"]["NotFound"];
         };
     };
     saveDisplayTypeExtensions: {

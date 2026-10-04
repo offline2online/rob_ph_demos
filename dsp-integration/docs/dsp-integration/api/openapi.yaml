@@ -1102,6 +1102,42 @@ paths:
         '400': {$ref: '#/components/responses/ValidationFailed'}
         '401': {$ref: '#/components/responses/Unauthorised'}
         '404': {$ref: '#/components/responses/NotFound'}
+  /admin/v1/display-types/{displayTypeId}/default-vacd:
+    put:
+      tags: [Admin — Display types and playlists]
+      operationId: setDisplayTypeDefaultVacd
+      summary: PH Core writes the display type's default VAC-d (computer vision score)
+      description: |
+        The write path for computer-vision dynamic scoring (ticket
+        MuZ4KUSLJI2BIGbEV2pq, 4 Oct 2026). PH Core writes the score CV
+        measured at the edge as the display type's default VAC-d
+        (`phExtensions.defaultVacd`); it appears on the Display Type form
+        and scores that type's slots.
+
+        **Precedence (decided by Rob, 4 Oct 2026): the automated score
+        wins.** A write here replaces any manually set value and is marked
+        `defaultVacdSource: computer_vision`, which makes slots scored from
+        it **counted** (OpenRTB `qty.sourcetype` 1). A manual edit through
+        `PUT …/extensions` still saves, is marked `manual` (modelled), and
+        stays until the next write here. It targets the display-type
+        default only — never a display's counted VAC-d or its
+        `vacd_override`, which stay with PH Core's scoring framework.
+      security: [{adminSession: []}]
+      parameters: [{name: displayTypeId, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [defaultVacd]
+              properties:
+                defaultVacd: {type: integer, minimum: 0, description: Assumed views per play window, per display.}
+      responses:
+        '200': {description: Saved, content: {application/json: {schema: {$ref: '#/components/schemas/DisplayTypeExtensions'}}}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /admin/v1/display-types/{displayTypeId}/delete-check:
     get:
       tags: [Admin — Display types and playlists]
@@ -2536,6 +2572,15 @@ components:
             where it has one), so no slot is unscored. Editing it reaches
             every display that was never overridden. Absent keeps the saved
             value; null clears it.
+        defaultVacdSource:
+          type: string
+          enum: [manual, computer_vision]
+          readOnly: true
+          description: |
+            Who set the default. `computer_vision` (written by PH Core
+            through `PUT …/default-vacd`) is counted and overrides a manual
+            value; `manual` (this editor) is modelled. Set by the server —
+            ignored on write here.
         slots:
           type: array
           items:

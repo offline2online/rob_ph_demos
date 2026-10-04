@@ -17,7 +17,7 @@ async function setup() {
   const ins = ctx.db.prepare("INSERT INTO displays (id, name, store, store_id, display_type_id) VALUES (?, 'Screen', 'Sydney CBD', 'st_sydney_cbd', 'dt_v')")
   ins.run('d_v_1'); ins.run('d_v_2')
   const views = async () => audienceOf(ctx.audience, (await ctx.displayTypes.get('dt_v'))!, 1)
-  return { ctx, put, views }
+  return { ctx, app, put, views }
 }
 
 describe('default VAC-d per display type', () => {
@@ -58,5 +58,24 @@ describe('default VAC-d per display type', () => {
     await put(300)
     ctx.db.prepare('INSERT INTO audience_vacd (display_type_id, slot, assumed_views_per_window, counted) VALUES (?, ?, ?, 1)').run('dt_v', 1, 77)
     expect(await views()).toMatchObject({ assumedViewsPerWindow: 77, counted: true })
+  })
+
+  it('PH Core (computer vision) sets the default: it is counted and overrides a manual value', async () => {
+    const { app, put, views } = await setup()
+    const cv = (body: unknown) => app.inject({ method: 'PUT', url: '/api/admin/v1/display-types/dt_v/default-vacd', payload: body as never })
+    await put(300)
+    expect(await views()).toMatchObject({ assumedViewsPerWindow: 600, counted: false })
+    expect((await cv({ defaultVacd: 450 })).statusCode).toBe(200)
+    expect(await views()).toMatchObject({ assumedViewsPerWindow: 900, counted: true })
+    /* Saving the form unchanged keeps the computer-vision source. */
+    await put(450)
+    expect((await views()).counted).toBe(true)
+    /* A manual edit still saves, as modelled, until the next CV write. */
+    await put(200)
+    expect(await views()).toMatchObject({ assumedViewsPerWindow: 400, counted: false })
+    await cv({ defaultVacd: 500 })
+    expect(await views()).toMatchObject({ assumedViewsPerWindow: 1000, counted: true })
+    expect((await cv({ defaultVacd: -1 })).statusCode).toBe(400)
+    expect((await cv({})).statusCode).toBe(400)
   })
 })
