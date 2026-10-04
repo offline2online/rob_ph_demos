@@ -263,6 +263,26 @@ jobs:
       # plain `storage`; and because Firebase Storage may not be set up on
       # the project yet, a failure here must not take hosting/functions/
       # firestore rules down with it.
+      # Secret Manager bills every enabled secret version (~$0.06/month each
+      # beyond six free). Until 4 Oct 2026 every deploy added a version of all
+      # five secrets (NOTIFY_WEBHOOK_URL reached 297), so roughly 1,500 old
+      # versions were still being billed. `functions:secrets:prune` destroys
+      # every version no deployed function is pinned to — it reads the live
+      # functions, both codebases, so a pinned version is never touched.
+      # Only after a deploy that fully succeeded: a failed one can leave a
+      # function update still running on Google's side, pinned to a version
+      # the live listing doesn't show yet, and prune would destroy it.
+      # Non-fatal like the other housekeeping steps, but loud when it fails.
+      - name: Destroy secret versions no function uses
+        if: steps.dedupe.outputs.skip != 'true' && steps.deploy.outcome == 'success'
+        continue-on-error: true
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
+        run: |
+          if ! npx firebase-tools@13 functions:secrets:prune --project backlog-tracker-e4ed2 --non-interactive --force; then
+            echo "::warning title=Old secret versions not cleaned up::functions:secrets:prune failed (the deploy service account may need Secret Manager Admin). Unused secret versions keep being billed. See backlog-tracker/README.md → 'Old secret versions'."
+          fi
+
       - name: Deploy Storage rules (non-fatal until Storage is set up)
         if: steps.dedupe.outputs.skip != 'true'
         continue-on-error: true
