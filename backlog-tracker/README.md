@@ -1209,6 +1209,26 @@ project still has it, the old Container Registry
 URL the CLI warning names). The `dsp-api` codebase deploys into the same
 repo, so one policy covers both.
 
+### Old secret versions
+
+Secret Manager charges for every enabled version of a secret (about $0.06
+a month each, after six free). Until 4 Oct 2026 the deploy ran
+`functions:secrets:set --force` for all five function secrets on every run,
+adding a new version each time whether or not anything had changed.
+`NOTIFY_WEBHOOK_URL` reached version 297, so roughly 1,500 versions were
+being billed. `scripts/sync-function-secret.sh` stopped new ones piling up.
+The deploy's **Destroy secret versions no function uses** step
+(`firebase functions:secrets:prune`) removes the old ones. It reads which
+version each deployed function is pinned to, in both codebases, and leaves
+those alone.
+
+It runs only when a deploy actually runs. To clean up without a code
+change, run the workflow with **force** ticked. If it fails, the run summary
+shows a warning: the deploy service account then needs *Secret Manager
+Admin*, or someone with that role can run
+`firebase functions:secrets:prune --project backlog-tracker-e4ed2` once by
+hand.
+
 ### A deploy of content that is already live is skipped
 
 Before doing anything else, `deploy-backlog-tracker.yml` fingerprints what it
