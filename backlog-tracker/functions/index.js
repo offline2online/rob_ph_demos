@@ -183,8 +183,93 @@ async function phaseSkillsBlock(db, phase, phaseLabel) {
 const AUTOMATION_REPO = "offline2online/rob_ph_demos";
 const AUTOMATION_DISPATCH_EVENT = "backlog-automation";
 
+// ── One Routine session per ticket ─────────────────────────────────────────
+// See notifyOnProjectReadyForReview. Kept as plain functions, exported on
+// __test, so test/notify-fanout.test.js can drive them with a stubbed fetch.
+
+// A ticket's own comment thread, newest last, so a decision recorded on the
+// card reaches the session. The old prompt carried title and description
+// only: on 4 Oct 2026 a session left ticket MuZ4KUSLJI2BIGbEV2pq unbuilt
+// "pending a precedence decision" that Rob had written on the card 45
+// minutes earlier.
+function itemNotesBlock(item, { max = 12, maxChars = 1500 } = {}) {
+  const notes = Array.isArray(item.notes) ? item.notes : [];
+  const human = notes.filter((n) => n && typeof n.text === "string" && n.text.trim());
+  if (!human.length) return "";
+  const lines = human.slice(-max).map((n) => {
+    const at = n.at && typeof n.at.toDate === "function" ? n.at.toDate().toISOString() : (n.at || "");
+    const text = n.text.length > maxChars ? `${n.text.slice(0, maxChars)}…` : n.text;
+    return `- ${n.author || "unknown"}${at ? ` (${at})` : ""}: ${text}`;
+  });
+  return `\n\nComments on this ticket (oldest first; a decision recorded here is binding):\n${lines.join("\n")}`;
+}
+
+function perItemSelfReportHint(projectId, itemId) {
+  return `\n\nWhen you finish this run (whether you set patchReady or stopped on a blocker), PATCH backlogItems/${itemId} with buildSession.status set to "done" (or "error" with buildSession.errorMessage, if you stopped early) and buildSession.finishedAt set to now. Do NOT write projects/${projectId}.notifyRoutine — other tickets from the same click are still being built by their own sessions, and the board waits for every one of them.`;
+}
+
+function perItemFireText({ item, siblings, projectId, projectName, prefix = "", suffix = "" }) {
+  const others = siblings.filter((s) => s.id !== item.id);
+  const siblingBlock = others.length
+    ? `\n\nThis ticket is ONE of ${siblings.length} sent together; each of the others is being built right now by its own parallel session, so do not build, edit or re-title them here:\n${others.map((s) => `- ${s.id}: ${s.title}`).join("\n")}\nIf this ticket genuinely cannot be built until one of them has landed (it needs code that ticket adds), do not leave it in Backlog with only a note: set dependsOnItemIds to those ids and blocked to {reason: "waiting-on-input", note: "Waits for <id> to land"} — the automation clears the flag and starts this ticket again by itself the moment they reach Ready for Testing. Read ROUTINE_INSTRUCTIONS.md → "Parallel builds" before packaging.`
+    : "";
+  return `${prefix}Project: "${projectName}" (projectId: ${projectId}) on the Backlog Tracker & FAQs board has 1 item in Backlog for this session (ticket ${item.id}):\n\n1. [${item.type === "bug" ? "Bug" : "Feature"}] ${item.title} — ${item.desc}${itemNotesBlock(item)}${siblingBlock}${perItemSelfReportHint(projectId, item.id)}${suffix}`;
+}
+
+async function fireRoutine(fireUrl, token, text, fetchImpl = fetch) {
+  const res = await fetchImpl(fireUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`,
+      // Research-preview API trigger feature — these header names/values
+      // may change; if firing starts failing with an auth/version error,
+      // check Anthropic's current docs for the routine-fire headers.
+      "anthropic-beta": "experimental-cc-routine-2026-04-01",
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({ text }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "<unreadable>");
+    return { error: `Routine fire endpoint responded with status ${res.status}`, body };
+  }
+  // `claude_code_session_id` is the field name confirmed by a live curl
+  // test against the real fire endpoint (see README.md).
+  const json = await res.json().catch(() => null);
+  const sessionId = json?.claude_code_session_id || null;
+  return { sessionId, sessionUrl: sessionId ? `https://claude.ai/code/${sessionId}` : null };
+}
+
+// A few at a time rather than all at once: a click can carry a whole
+// column, and the fire endpoint is a research preview with its own limits.
+const FANOUT_CONCURRENCY = 4;
+async function fireBuildSessionsPerItem({ items, fireUrl, token, projectId, projectName, prefix, suffix, fetchImpl = fetch, concurrency = FANOUT_CONCURRENCY }) {
+  const results = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const idx = next++;
+      const item = items[idx];
+      const text = perItemFireText({ item, siblings: items, projectId, projectName, prefix, suffix });
+      try {
+        const r = await fireRoutine(fireUrl, token, text, fetchImpl);
+        if (r.error) logger.error("Routine fire failed for one ticket", { projectId, itemId: item.id, error: r.error, body: r.body });
+        results[idx] = { itemId: item.id, sessionId: r.sessionId || null, sessionUrl: r.sessionUrl || null, error: r.error || null };
+      } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        logger.error("Routine fire threw for one ticket", { projectId, itemId: item.id, error });
+        results[idx] = { itemId: item.id, sessionId: null, sessionUrl: null, error };
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker));
+  return results;
+}
+
 exports.notifyOnProjectReadyForReview = onDocumentUpdated(
-  { document: "projects/{projectId}", secrets: [NOTIFY_WEBHOOK_URL, CLAUDE_ROUTINE_FIRE_URL, CLAUDE_ROUTINE_TOKEN, BOARD_API_KEY] },
+  // 300s: a click can start a session per ticket for a whole column.
+  { document: "projects/{projectId}", timeoutSeconds: 300, secrets: [NOTIFY_WEBHOOK_URL, CLAUDE_ROUTINE_FIRE_URL, CLAUDE_ROUTINE_TOKEN, BOARD_API_KEY] },
   async (event) => {
     const before = event.data?.before?.data();
     const after = event.data?.after?.data();
@@ -249,10 +334,6 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
     let fireError = null;
 
     if (fireUrl && token) {
-      const itemLines = items
-        .map((i, idx) => `${idx + 1}. [${i.type === "bug" ? "Bug" : "Feature"}] ${i.title} — ${i.desc}`)
-        .join("\n");
-
       // Per-project override/addendum to the Routine's own fixed prompt (see
       // the Docs page's "Routine instructions" block, projects/{id}
       // .routinePromptMd) — lets one project hand the Routine extra
@@ -265,71 +346,48 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
         : "";
       const skillsBlock = await phaseSkillsBlock(db, "build", "BUILD");
 
-      const selfReportHint = `\n\nWhen you finish this run (whether you completed everything or stopped early on a blocker), PATCH projects/${event.params.projectId} with notifyRoutine.status set to "done" (or "error" with an errorMessage, if you stopped early) and notifyRoutine.finishedAt set to now — the board shows a working/spinning state on its Notify Claude button until it sees this.`;
-
-      const text = `${projectPromptBlock}${skillsBlock}Project: "${projectName}" (projectId: ${event.params.projectId}) on the Backlog Tracker & FAQs board has ${items.length} item${items.length === 1 ? "" : "s"} in Backlog:\n\n${itemLines}${selfReportHint}${boardAccessBlock()}`;
-
-      try {
-        const res = await fetch(fireUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`,
-            // Research-preview API trigger feature — these header names/values
-            // may change; if firing starts failing with an auth/version error,
-            // check Anthropic's current docs for the routine-fire headers.
-            "anthropic-beta": "experimental-cc-routine-2026-04-01",
-            "anthropic-version": "2023-06-01",
-          },
-          body: JSON.stringify({ text }),
-        });
-        if (!res.ok) {
-          fireError = `Routine fire endpoint responded with status ${res.status}`;
-          logger.error("Routine fire endpoint responded with a non-2xx status", {
-            projectId: event.params.projectId,
-            status: res.status,
-            body: await res.text().catch(() => "<unreadable>"),
-          });
-        } else {
-          // `claude_code_session_id` is the field name confirmed by a live
-          // curl test against the real fire endpoint (see README.md) —
-          // this is a research-preview API, so if session links stop
-          // showing up, re-confirm the response shape with curl before
-          // assuming the board's code is wrong.
-          const body = await res.json().catch(() => null);
-          sessionId = body?.claude_code_session_id || null;
-          sessionUrl = sessionId ? `https://claude.ai/code/${sessionId}` : null;
-          logger.info("Fired Claude Code Routine for manual project notify request", {
-            projectId: event.params.projectId,
-            itemCount: items.length,
-            sessionId,
-            firedVia: routineCredVia,
-          });
-        }
-      } catch (err) {
-        fireError = err instanceof Error ? err.message : String(err);
-        logger.error("Failed to call Routine fire endpoint for manual notify", {
-          projectId: event.params.projectId,
-          error: fireError,
-        });
-      }
+      // One session PER TICKET, started in parallel (4 Oct 2026). A click
+      // used to start one session holding every selected ticket: it worked
+      // through them one after another inside one context, built the
+      // smallest, and left the rest in Backlog as "too large to package
+      // safely" or "sequenced with a sibling" — eight Display Types tickets
+      // sent, one built. Each ticket now gets a whole session to itself,
+      // and the automation's three-way merge against each patch's
+      // patchBaseSha (run-backlog-automation.js) keeps parallel builds that
+      // touch the same file from overwriting each other.
+      const fired = await fireBuildSessionsPerItem({
+        items, fireUrl, token, projectId: event.params.projectId, projectName,
+        prefix: `${projectPromptBlock}${skillsBlock}`, suffix: boardAccessBlock(),
+      });
+      const sessions = fired.map((f) => ({ itemId: f.itemId, sessionId: f.sessionId, sessionUrl: f.sessionUrl, error: f.error }));
+      const firstOk = fired.find((f) => f.sessionId);
+      sessionId = firstOk ? firstOk.sessionId : null;
+      sessionUrl = firstOk ? firstOk.sessionUrl : null;
+      const failed = fired.filter((f) => f.error);
+      fireError = failed.length === fired.length && failed.length
+        ? failed[0].error
+        : null;
+      logger.info("Fired one Claude Code Routine session per ticket for a project notify request", {
+        projectId: event.params.projectId, itemCount: items.length,
+        started: fired.length - failed.length, failed: failed.length, firedVia: routineCredVia,
+      });
 
       // Lets the board show a spinner (or a visible error) instead of the
-      // button just looking idle after a click. A fired session is asked
-      // (see selfReportHint above) to flip this to "done"/"error" itself;
-      // the frontend also treats a stale "in-progress" — older than the
-      // typical run length — as done on its own, so a session running an
-      // older prompt without that instruction, or one that crashes, can't
-      // wedge the button permanently.
+      // button just looking idle after a click. Each per-ticket session
+      // reports on its own card (backlogItems/{id}.buildSession — see
+      // perItemSelfReportHint); the board treats the click as finished when
+      // every sent card has reported, or the run is stale.
       await db.collection("projects").doc(event.params.projectId).set({
         notifyRoutine: {
           status: fireError ? "error" : "in-progress",
+          mode: "per-item",
           firedAt: new Date(),
           sessionId,
           sessionUrl,
+          sessions,
           itemCount: items.length,
           sentItemIds,
-          errorMessage: fireError,
+          errorMessage: fireError || (failed.length ? `${failed.length} of ${fired.length} sessions failed to start: ${failed[0].error}` : null),
           firedVia: routineCredVia,
         },
       }, { merge: true });
@@ -1967,4 +2025,4 @@ exports.syncConsoleUserClaims = mcp.syncConsoleUserClaims;
 // test/routine-binding-trigger.test.js exercise resolveRoutineCredentials
 // directly instead of standing up a full onDocumentUpdated + fetch-mocking
 // harness for something that's pure db-read-then-fallback logic.
-exports.__test = { resolveRoutineCredentials, stampMs };
+exports.__test = { resolveRoutineCredentials, stampMs, itemNotesBlock, perItemFireText, fireBuildSessionsPerItem };

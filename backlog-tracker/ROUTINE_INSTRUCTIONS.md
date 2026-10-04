@@ -298,6 +298,55 @@ no block is prepended that run, same as today.
      branch**, so a script it calls must be on `main`, not only on your
      branch.
 
+## Parallel builds — one ticket per session (4 Oct 2026)
+
+A Ready for Dev click now starts **one session per ticket**, in parallel
+(`fireBuildSessionsPerItem` in `functions/index.js`). It used to start one
+session holding every selected ticket, which worked through them one after
+another in one context: on 4 Oct 2026 eight Display Types tickets were sent
+and one was built — the rest were parked as "too large to package safely",
+"sequenced with a sibling", or "pending a decision" that was already written
+on the card. So, in a default build fire:
+
+- **You own exactly one ticket** — the one the fire names. The others listed
+  as "sent together" are being built right now by their own sessions: don't
+  build, re-title or comment on them.
+- **The ticket's comments are in the fire text and are binding.** A
+  `DECIDED` note from a person settles the question — build to it.
+- **"Too large" is not a reason to park a ticket.** You have a whole session
+  for it. The one real ceiling is Firestore's 1 MiB document limit on
+  `patchFiles` (whole files, so roughly 900 KB of content). If a ticket truly
+  needs more than that, build the first coherent slice now and file the
+  rest as new Backlog tickets (same project, linked by id in each `desc`),
+  saying so on this card — never leave it unbuilt with only a note.
+- **Record what you built on: `patchBaseSha`.** Before reading any file,
+  resolve the train's head commit once —
+  `git ls-remote https://github.com/offline2online/rob_ph_demos refs/heads/<deployBranch>`
+  (or `main` if the branch doesn't exist yet) — read every file from
+  `https://raw.githubusercontent.com/offline2online/rob_ph_demos/<that sha>/<path>`
+  (or a checkout of that sha), and set `patchBaseSha` to that 40-character
+  sha in the same PATCH as `patchFiles`. Other sessions may land tickets on
+  the same branch while you work; the automation three-way merges each of
+  your files from `patchBaseSha` onto the branch as it is when your patch
+  lands, so their changes are kept and yours are applied. Without it, your
+  whole-file copy would silently undo whatever landed after you read it.
+  If both of you changed the same lines, the card is noted and rebuilt once
+  automatically.
+- **A genuine dependency is a flag, not a parked card.** If this ticket
+  cannot be built until another open ticket has landed (it needs code or a
+  data model that ticket adds — not merely "related"), PATCH it with
+  `dependsOnItemIds` (array of those ticket ids) and
+  `blocked: {reason: "waiting-on-input", note: "Waits for <id> to land"}`,
+  plus a comment saying exactly what it needs. When every id it waits for
+  reaches Ready for Testing, the automation clears the flag and starts a
+  build of it by itself (`releaseDependents`). Only use this for a real
+  code dependency; a ticket that merely touches the same area builds now.
+- **Report on the card, not the project.** When you finish, PATCH
+  `backlogItems/<id>` with `buildSession: {status: "done" | "error",
+  finishedAt, errorMessage?}`. Do not write `projects/<id>.notifyRoutine` —
+  the board waits for every session in the click, and the first one to
+  finish would otherwise unlock cards still being built.
+
 ## For each Backlog item found
 
 1. Give it a proper subject line: a short, specific, plain-English title
@@ -461,9 +510,9 @@ no block is prepended that run, same as today.
    Example PATCH shape (add more `updateMask.fieldPaths` entries and
    fields as needed):
    ```
-   curl -sS -X PATCH "$BOARD/backlogItems/<ITEM_ID>?updateMask.fieldPaths=title&updateMask.fieldPaths=category&updateMask.fieldPaths=updatedAt&updateMask.fieldPaths=notes&updateMask.fieldPaths=patchFiles&updateMask.fieldPaths=patchCommitMessage&updateMask.fieldPaths=patchPrTitle&updateMask.fieldPaths=patchPrBody&updateMask.fieldPaths=patchReady" \
+   curl -sS -X PATCH "$BOARD/backlogItems/<ITEM_ID>?updateMask.fieldPaths=title&updateMask.fieldPaths=category&updateMask.fieldPaths=updatedAt&updateMask.fieldPaths=notes&updateMask.fieldPaths=patchFiles&updateMask.fieldPaths=patchCommitMessage&updateMask.fieldPaths=patchPrTitle&updateMask.fieldPaths=patchPrBody&updateMask.fieldPaths=patchBaseSha&updateMask.fieldPaths=patchReady" \
      -H "Content-Type: application/json" \
-     -d '{"fields":{"title":{"stringValue":"<short clear subject>"},"category":{"stringValue":"<corrected category>"},"updatedAt":{"timestampValue":"<ISO8601 now>"},"notes":{"arrayValue":{"values":[<existing notes, unchanged>, {"mapValue":{"fields":{"author":{"stringValue":"claude"},"text":{"stringValue":"<your summary>"},"at":{"timestampValue":"<ISO8601 now>"}}}}]}},"patchFiles":{"arrayValue":{"values":[{"mapValue":{"fields":{"path":{"stringValue":"<relative/path>"},"content":{"stringValue":"<full new file content>"}}}}]}},"patchCommitMessage":{"stringValue":"<message>"},"patchPrTitle":{"stringValue":"<title>"},"patchPrBody":{"stringValue":"<body>"},"patchReady":{"booleanValue":true}}}'
+     -d '{"fields":{"title":{"stringValue":"<short clear subject>"},"category":{"stringValue":"<corrected category>"},"updatedAt":{"timestampValue":"<ISO8601 now>"},"notes":{"arrayValue":{"values":[<existing notes, unchanged>, {"mapValue":{"fields":{"author":{"stringValue":"claude"},"text":{"stringValue":"<your summary>"},"at":{"timestampValue":"<ISO8601 now>"}}}}]}},"patchFiles":{"arrayValue":{"values":[{"mapValue":{"fields":{"path":{"stringValue":"<relative/path>"},"content":{"stringValue":"<full new file content>"}}}}]}},"patchCommitMessage":{"stringValue":"<message>"},"patchPrTitle":{"stringValue":"<title>"},"patchPrBody":{"stringValue":"<body>"},"patchBaseSha":{"stringValue":"<40-char sha you read the files from>"},"patchReady":{"booleanValue":true}}}'
    ```
 
 **Fixes that edit a file under `.github/workflows/`** can be packaged like
