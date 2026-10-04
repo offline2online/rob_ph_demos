@@ -5,7 +5,7 @@ import { testContext } from './helpers'
 
 const list = {
   name: 'Q4 private auction', description: 'Invited FMCG brands only',
-  invitedBuyers: [{ identifierType: 'brandEntity', value: 'Nestlé' }],
+  invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }],
   activeFrom: null, activeTo: null,
 }
 
@@ -24,7 +24,7 @@ describe('Buyers lists (spec "Support private auctions")', () => {
 
     const updated = await app.inject({
       method: 'PUT', url: `/api/admin/v1/buyers-lists/${id}`,
-      payload: { ...list, name: 'Q4 private auction (renamed)', invitedBuyers: [...list.invitedBuyers, { identifierType: 'dspSeatId', value: '5130002' }] },
+      payload: { ...list, name: 'Q4 private auction (renamed)', invitedBuyers: [...list.invitedBuyers, { partnerId: 'p_google', seatId: '5130002' }] },
     })
     expect(updated.statusCode).toBe(200)
     expectMatchesContract('PUT', '/admin/v1/buyers-lists/{buyersListId}', 200, updated.json())
@@ -36,7 +36,7 @@ describe('Buyers lists (spec "Support private auctions")', () => {
     expect((await app.inject({ method: 'GET', url: '/api/admin/v1/buyers-lists' })).json().items).toHaveLength(0)
   })
 
-  it('rejects an empty name, no invited buyers, a bad identifierType, and an active window the wrong way round', async () => {
+  it('rejects an empty name, no invited buyers, an unknown DSP, a seat the DSP never synced, a DSP that is not connected, and an active window the wrong way round', async () => {
     const app = buildApp(await testContext())
     const fields = async (payload: Record<string, unknown>) => {
       const res = await app.inject({ method: 'POST', url: '/api/admin/v1/buyers-lists', payload })
@@ -46,8 +46,10 @@ describe('Buyers lists (spec "Support private auctions")', () => {
     }
     expect(await fields({ ...list, name: '  ' })).toEqual(['name'])
     expect(await fields({ ...list, invitedBuyers: [] })).toEqual(['invitedBuyers'])
-    expect(await fields({ ...list, invitedBuyers: [{ identifierType: 'carrier_pigeon', value: 'x' }] })).toEqual(['invitedBuyers[0].identifierType'])
-    expect(await fields({ ...list, invitedBuyers: [{ identifierType: 'brandEntity', value: ' ' }] })).toEqual(['invitedBuyers[0].value'])
+    expect(await fields({ ...list, invitedBuyers: [{ partnerId: 'p_nope', seatId: '5130001' }] })).toEqual(['invitedBuyers[0].partnerId'])
+    expect(await fields({ ...list, invitedBuyers: [{ partnerId: 'p_google', seatId: 'Nestlé' }] })).toEqual(['invitedBuyers[0].seatId'])
+    expect(await fields({ ...list, invitedBuyers: [{ partnerId: 'p_amazon', seatId: '588104411' }] })).toEqual(['invitedBuyers[0].partnerId'])
+    expect(await fields({ ...list, invitedBuyers: [{ identifierType: 'brandEntity', value: 'Nestlé' }] })).toEqual(['invitedBuyers[0].partnerId'])
     expect(await fields({ ...list, activeFrom: '2026-10-01T00:00:00Z', activeTo: '2026-09-01T00:00:00Z' })).toEqual(['activeTo'])
   })
 

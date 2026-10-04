@@ -25,22 +25,22 @@ export async function firstRefusal(...checks: (() => Refusal | null | Promise<Re
 export type RefusalCode = 'not_approved' | 'below_floor' | 'advertiser_blocked' | 'category_blocked' | 'not_on_whitelist' | 'not_invited' | 'targeting_not_supported' | 'too_many_versions'
 export interface Refusal { code: RefusalCode; reason: string }
 
-/* The blacklist always subtracts; the advertiser whitelist is what a
-   whitelist-only position uses (spec §6); a deal (private auction) checks
-   the buyers list's invited buyers instead — by seat name (brandEntity) or
-   seatId (dspSeatId) — and that its delivery term covers the play window
+/* The DSP's own blacklist (seat IDs it synced) always subtracts; its
+   whitelist is what a whitelist-only position uses (spec §6); a deal (private auction) checks
+   the buyers list's invited buyers instead — this DSP's seat by its seatId — and that its delivery term covers the play window
    being sold (`windowStart`; the deal's term decides which windows it can
    sell, not when the bid arrives). Without a window it falls back to now. */
 export async function checkAdvertiser(ctx: Context, p: PositionRef, partner: PartnerRecord, name: string, domains: string[] = [], seatId?: string | null, windowStart?: string): Promise<Refusal | null> {
-  const eff = effectiveLists(partner, await ctx.company.get())
+  const eff = effectiveLists(partner)
   const blockedDomain = blockedDomains(partner, eff.blockList)
-  if (isBlocked(name, eff) || domains.some((d) => blockedDomain.includes(d.trim().toLowerCase()))) return { code: 'advertiser_blocked', reason: `${name} is on the advertiser blacklist.` }
+  const id = seatId ?? ''
+  if ((id && isBlocked(id, eff)) || domains.some((d) => blockedDomain.includes(d.trim().toLowerCase()))) return { code: 'advertiser_blocked', reason: `${name} is on the advertiser blacklist.` }
   const assignment = assignmentOf(p.def)
-  if (assignment === 'whitelist_only' && !isOn(name, eff.allowList)) return { code: 'not_on_whitelist', reason: `${name} is not on the advertiser whitelist for this whitelist-only position.` }
+  if (assignment === 'whitelist_only' && !(id && isOn(id, eff.allowList))) return { code: 'not_on_whitelist', reason: `${name} is not on the advertiser whitelist for this whitelist-only position.` }
   if (assignment === 'deal') {
     const listId = assignedOf(p.def).buyersListId
     const list = listId ? await ctx.buyersLists.get(listId) : null
-    if (!list || !isActiveAt(list, windowStart ?? ctx.clock().toISOString()) || !isInvitedBuyer(list, name, seatId)) {
+    if (!list || !isActiveAt(list, windowStart ?? ctx.clock().toISOString()) || !isInvitedBuyer(list, partner.id, seatId)) {
       return { code: 'not_invited', reason: `${name} is not an invited buyer on this private auction${list ? ` (${list.name})` : ''}.` }
     }
   }
@@ -53,7 +53,7 @@ export async function checkAdvertiser(ctx: Context, p: PositionRef, partner: Par
    never wins; on a whitelist-only position every category must be
    whitelisted (Q12). */
 export async function checkCategories(ctx: Context, p: PositionRef, partner: PartnerRecord, cats: string[]): Promise<Refusal | null> {
-  const eff = effectiveCategoryLists(partner, await ctx.company.get())
+  const eff = effectiveCategoryLists(await ctx.company.get())
   const black = categoryCodes(eff.blockList)
   const hit = cats.find((c) => black.includes(c))
   if (hit) return { code: 'category_blocked', reason: `Category ${hit} is on the category blacklist.` }

@@ -145,14 +145,16 @@ export async function seed(ctx: Context, opts: { bookings?: boolean; demo?: bool
       /* A freshly generated key in the real key-file format, so Connect works against the mock DV360. */
       secrets: { privateKeyJson: serviceAccountKeyFile('ph-retail-media@ph-demo.iam.gserviceaccount.com') },
       bidder: { bidderEndpoint: 'https://rtb.doubleclick.net/openrtb2/bid', seatIds: ['884512', '884513'] },
-      seats: [{ id: '5130001', name: 'Nestlé', domain: 'nestle.com' }, { id: '5130002', name: 'Swisse', domain: 'swisse.com' }], listsLinked: true, allowList: [], blockList: [],
+      seats: [{ id: '5130001', name: 'Nestlé', domain: 'nestle.com' }, { id: '5130002', name: 'Swisse', domain: 'swisse.com' }], listsLinked: true,
+      /* Its own advertiser lists, drawn from the seats it synced. */
+      allowList: ['5130001', '5130002'], blockList: [],
       categoryAllowList: [], categoryBlockList: [],
     })
     await ctx.partners.insert({
       id: 'p_amazon', provider: 'amazon_dsp', name: 'Amazon Ads DSP', status: 'error', mode: 'test', lastSync: 'Refresh token rejected — 3 days ago',
       credsPublic: { region: 'Europe (EU)', lwaClientId: 'amzn1.application-oa2-client.7f3c', profileId: '3390127745', entityId: 'ENTITY8Q1R5T' },
       secrets: { lwaClientSecret: 'poc-placeholder-secret', refreshToken: 'Atzr|poc-placeholder' },
-      bidder: {}, seats: [{ id: '588104411', name: "L'Oréal", domain: 'loreal.com' }], listsLinked: false, allowList: ["L'Oréal"], blockList: ['Red Bull', 'Chemist Warehouse'],
+      bidder: {}, seats: [{ id: '588104411', name: "L'Oréal", domain: 'loreal.com' }], listsLinked: false, allowList: ['588104411'], blockList: [],
       /* Unlinked from day one (demo, ticket 28 Sep 2026): its own category
          lists, distinct from the company's, so the DSP page has a real
          example to edit rather than starting empty. */
@@ -162,7 +164,6 @@ export async function seed(ctx: Context, opts: { bookings?: boolean; demo?: bool
     await ctx.company.save({
       currency: 'AUD', floorCpm: 100, personalisedMultiplier: 1.5, interactiveCpe: 0.5,
       auctionOpensHours: 168, playWindowHours: 24, auctionCutoffTime: '18:00', pendingPlayWindowHours: null, pendingPlayWindowEffectiveFrom: null,
-      advertiserWhitelist: ['Nestlé', 'Swisse', 'Arnott’s'], advertiserBlacklist: ['Red Bull', 'Monster Energy'],
       categoryWhitelist: ['Food & Drink', 'Health & Fitness'], categoryBlacklist: ['Finance'],
     })
     await ctx.company.saveAdvertiserSettings({

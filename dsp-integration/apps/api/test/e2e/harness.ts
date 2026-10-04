@@ -145,6 +145,7 @@ export function stubPlayback() {
   let down: string | null = null
   const source: PlaybackSource = {
     listPlays: () => [],
+    receivedBetween: () => [],
     /* Async, as the real playback store is (the seam is awaitable). */
     async totals(q) {
       calls.push(q)

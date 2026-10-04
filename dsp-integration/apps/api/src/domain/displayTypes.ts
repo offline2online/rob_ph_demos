@@ -26,7 +26,12 @@ export const defaultVacdOf = (dt: DisplayType): number | null => {
   return typeof v === 'number' ? v : null
 }
 /* A slot's audience: the audience source's score, given the type's default. */
-export const audienceOf = (audience: AudienceSource, dt: DisplayType, slot: number) => audience.forSlot(dt.id, slot, defaultVacdOf(dt))
+/* Whether the default was written by computer vision (PH Core, ticket
+   MuZ4KUSLJI2BIGbEV2pq): a measured figure, so slots scored from it are
+   `counted`. A manually set default is modelled. */
+export const defaultVacdCountedOf = (dt: DisplayType): boolean =>
+  defaultVacdOf(dt) !== null && (dt.phExtensions as { defaultVacdSource?: unknown } | undefined)?.defaultVacdSource === 'computer_vision'
+export const audienceOf = (audience: AudienceSource, dt: DisplayType, slot: number) => audience.forSlot(dt.id, slot, defaultVacdOf(dt), defaultVacdCountedOf(dt))
 
 /* Where a flat slot (1-based, across every zone) sits on a multi-zone
    display type: its zone's name and its 1-based place within that zone —

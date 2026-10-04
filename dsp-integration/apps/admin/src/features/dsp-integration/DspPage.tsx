@@ -1,6 +1,6 @@
 /* A DSP's page (spec §7), in order: issues at the top, Mode, Connection
    credentials (connect / re-test / disconnect), Bidder integration, then
-   List management — the advertiser and category whitelists/blacklists
+   List management — the DSP's own advertiser lists (synced seats) and its category lists
    (ticket, 28 Sep 2026: category lists used to be company-only, with no way
    to give an unlinked DSP its own). Nothing pricing- or targeting-related. */
 import { useQueryClient } from '@tanstack/react-query'
@@ -151,65 +151,38 @@ export function DspPage({ draftKey, partner }: { draftKey: string; partner: Part
         </Field>
       </div>
 
-      <SectionLabel><WithTip tip="Advertiser and category lists together: both blacklists always apply and no position can opt out of them. Unlinking copies the company lists here, for both; relinking discards this DSP's own lists, for both.">List management</WithTip></SectionLabel>
-      {d.listsLinked ? (
-        <Callout tone="info" icon="link"
-          action={<Button color="primary" variant="outlined" size="small" icon={<Icon name="link_off" size={15} />}
-            onClick={() => set((x) => ({
-              ...x, listsLinked: false,
-              advertiserWhitelist: [...draft.settings.advertiserWhitelist], advertiserBlacklist: [...draft.settings.advertiserBlacklist],
-              categoryWhitelist: [...draft.settings.categoryWhitelist], categoryBlacklist: [...draft.settings.categoryBlacklist],
-            }))}>Unlink and edit</Button>}>
-          <b>Centrally managed.</b> This DSP uses the company lists.{' '}
-          <a onClick={() => navigate(PATHS.advertiserSettings)} style={{ color: T.primary, textDecoration: 'underline', cursor: 'pointer' }}>View lists in Advertiser settings</a>
+      <SectionLabel><WithTip tip="This DSP's own advertiser whitelist and blacklist, chosen from the seats and advertisers it has synced. An ID only means something to the DSP that issued it, so there is no company-wide advertiser list and nothing can be typed in. The blacklist always applies and no position can opt out of it; the whitelist is only used by positions set to whitelist-only.">Advertiser lists</WithTip></SectionLabel>
+      {(partner?.seats ?? []).length === 0 && (
+        <Callout tone="info" icon="sync" className="mb-3">
+          <b>No advertisers synced yet.</b> Connect this DSP and its seats and advertisers are pulled in; connect again to refresh them. Its lists are chosen from that set.
         </Callout>
-      ) : (
-        <>
-          <Callout tone="warning" icon="link_off" className="mb-3"
-            action={<Button size="small" icon={<Icon name="link" size={15} />}
-              onClick={() => set((x) => ({ ...x, listsLinked: true, advertiserWhitelist: [], advertiserBlacklist: [], categoryWhitelist: [], categoryBlacklist: [] }))}>Relink to company lists</Button>}>
-            <b>Unlinked — this DSP has its own lists.</b> Company changes no longer reach it; relinking discards these.
-          </Callout>
-          <div className="mb-3.5 grid grid-cols-2 gap-3.5">
-            {(['advertiserWhitelist', 'advertiserBlacklist'] as const).map((k) => {
-              const other = k === 'advertiserWhitelist' ? 'advertiserBlacklist' : 'advertiserWhitelist'
-              const white = k === 'advertiserWhitelist'
-              return (
-                <ListEditor
-                  key={k}
-                  label={white ? 'Advertisers — whitelist' : 'Advertisers — blacklist'}
-                  tone={white ? T.success : T.error}
-                  icon={white ? 'verified' : 'block'}
-                  items={d[k]}
-                  suggestions={(partner?.seats ?? []).map((s) => s.name)}
-                  onAdd={(n) => set((x) => { const r = addExclusive({ add: x[k], other: x[other] }, n); return { ...x, [k]: r.add, [other]: r.other } })}
-                  onRemove={(n) => set((x) => ({ ...x, [k]: x[k].filter((y) => y !== n) }))}
-                  empty={white ? 'Empty — a position set to whitelist-only would never fill.' : 'Empty — nothing is blocked on this DSP.'}
-                />
-              )
-            })}
-            {(['categoryWhitelist', 'categoryBlacklist'] as const).map((k) => {
-              const other = k === 'categoryWhitelist' ? 'categoryBlacklist' : 'categoryWhitelist'
-              const white = k === 'categoryWhitelist'
-              return (
-                <ListEditor
-                  key={k}
-                  label={white ? 'Categories — whitelist' : 'Categories — blacklist'}
-                  tone={white ? T.success : T.error}
-                  icon={white ? 'category' : 'block'}
-                  items={d[k]}
-                  suggestions={[...IAB_CATEGORIES]}
-                  addLabel="Add a category…"
-                  suggestLabel="Categories:"
-                  onAdd={(n) => set((x) => { const r = addExclusive({ add: x[k], other: x[other] }, n); return { ...x, [k]: r.add, [other]: r.other } })}
-                  onRemove={(n) => set((x) => ({ ...x, [k]: x[k].filter((y) => y !== n) }))}
-                  empty={white ? 'Empty — every category is eligible.' : 'Empty — no category is blocked on this DSP.'}
-                />
-              )
-            })}
-          </div>
-        </>
       )}
+      <div className="mb-3.5 grid grid-cols-2 gap-3.5">
+        {(['advertiserWhitelist', 'advertiserBlacklist'] as const).map((k) => {
+          const other = k === 'advertiserWhitelist' ? 'advertiserBlacklist' : 'advertiserWhitelist'
+          const white = k === 'advertiserWhitelist'
+          return (
+            <ListEditor
+              key={k}
+              label={white ? 'Advertisers — whitelist' : 'Advertisers — blacklist'}
+              tone={white ? T.success : T.error}
+              icon={white ? 'verified' : 'block'}
+              items={d[k]}
+              options={(partner?.seats ?? []).map((s) => ({ value: s.id, label: `${s.name} (${s.id})` }))}
+              addLabel="Choose a synced advertiser…"
+              onAdd={(n) => set((x) => { const r = addExclusive({ add: x[k], other: x[other] }, n); return { ...x, [k]: r.add, [other]: r.other } })}
+              onRemove={(n) => set((x) => ({ ...x, [k]: x[k].filter((y) => y !== n) }))}
+              empty={white ? 'Empty — a position set to whitelist-only would never fill on this DSP.' : 'Empty — nothing is blocked on this DSP.'}
+            />
+          )
+        })}
+      </div>
+
+      <SectionLabel><WithTip tip="IAB categories are one taxonomy every DSP speaks, so the category whitelist and blacklist are managed once, for the whole company, and apply to every DSP. The blacklist always applies and no position can opt out of it.">Category lists</WithTip></SectionLabel>
+      <Callout tone="info" icon="category">
+        <b>Centrally managed.</b> Every DSP, this one included, uses the company IAB category lists.{' '}
+        <a onClick={() => navigate(PATHS.advertiserSettings)} style={{ color: T.primary, textDecoration: 'underline', cursor: 'pointer' }}>View lists in Advertiser settings</a>
+      </Callout>
     </>
   )
 }

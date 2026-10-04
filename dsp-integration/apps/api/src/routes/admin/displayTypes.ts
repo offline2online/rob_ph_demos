@@ -101,6 +101,12 @@ export const displayTypeRoutes = (ctx: Context, guards: Guards): FastifyPluginAs
       const stranded = []
       for (const [i, s] of body.slots.entries()) if (previous[i]?.owner === 'advertiser' && s.owner !== 'advertiser') stranded.push(...(await liveCommitments(ctx, dt.id, i + 1)))
       if (stranded.length) throw hasDependents("An Advertiser slot can't be changed to another owner while it is reserved or sold for a current or future window.", dependentDetails({ canDelete: false, dependents: stranded }))
+      /* Who set the default: a changed value from this editor is manual. An
+         unchanged one (the form round-trips it on every save) keeps its
+         source, so saving slots never turns a computer-vision figure into a
+         manual one; clearing it clears the source. */
+      const nextVacd = body.defaultVacd === undefined ? dt.phExtensions?.defaultVacd : body.defaultVacd
+      const vacdSource = nextVacd == null ? null : nextVacd === dt.phExtensions?.defaultVacd ? dt.phExtensions?.defaultVacdSource ?? 'manual' : 'manual'
       const ext: DisplayTypeExtensions = {
         slots: body.slots.map((s, i) => {
           const was = previous[i]
@@ -123,8 +129,29 @@ export const displayTypeRoutes = (ctx: Context, guards: Guards): FastifyPluginAs
         }),
         /* Absent keeps what is saved; null clears it (the slot is unscored again). */
         ...((body.defaultVacd === undefined ? dt.phExtensions?.defaultVacd : body.defaultVacd) != null ? { defaultVacd: (body.defaultVacd === undefined ? dt.phExtensions?.defaultVacd : body.defaultVacd) as number } : {}),
+        ...(vacdSource ? { defaultVacdSource: vacdSource } : {}),
         ...((body.venue ?? dt.phExtensions?.venue) ? { venue: body.venue ?? dt.phExtensions?.venue } : {}),
       }
+      return ctx.displayTypes.saveExtensions(req.params.id, ext)
+    })
+  })
+
+  /* PH Core's write path for the display type's default VAC-d (ticket
+     MuZ4KUSLJI2BIGbEV2pq; Rob, 4 Oct 2026): computer vision at the edge scores
+     the audience and PH Core writes it back here. PRECEDENCE: the automated
+     score always wins — it replaces a manually set value and is marked counted
+     (`defaultVacdSource: computer_vision`, so slots scored from it report
+     sourcetype counted). A later manual edit through /extensions still saves
+     and is marked manual (modelled) until the next computer-vision write. */
+  app.put<{ Params: { id: string }; Body: { defaultVacd?: number } }>('/display-types/:id/default-vacd', async (req) => {
+    guards.flagged()
+    return tx(ctx.db, async () => {
+      const dt = await ctx.displayTypes.get(req.params.id)
+      if (!dt) throw notFound()
+      const v = req.body?.defaultVacd
+      if (!(typeof v === 'number' && Number.isInteger(v) && v >= 0)) throw validationFailed([{ field: 'defaultVacd', reason: 'Required: a whole number of assumed views per play window, 0 or more.' }])
+      const prev = dt.phExtensions
+      const ext: DisplayTypeExtensions = { ...(prev ?? { slots: [] }), slots: prev?.slots ?? [], defaultVacd: v, defaultVacdSource: 'computer_vision' }
       return ctx.displayTypes.saveExtensions(req.params.id, ext)
     })
   })

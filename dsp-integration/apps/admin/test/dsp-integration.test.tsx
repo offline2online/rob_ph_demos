@@ -69,8 +69,7 @@ describe('DSP Integration section', () => {
       'Google DSP — Live', 'Amazon Ads DSP — Connection error', 'The Trade Desk — Not set up yet',
     ])
     expect(within(nav).getByText('3 advertisers · floor AUD 100 CPM')).toBeInTheDocument()
-    expect(within(nav).getByText('Adopts company lists')).toBeInTheDocument()
-    expect(within(nav).getByText('Own advertiser lists')).toBeInTheDocument()
+    expect(within(nav).queryByText(/category lists/)).not.toBeInTheDocument()
   })
 
   it('Exchange settings: four required fields, Published, and where sellers.json is', async () => {
@@ -192,12 +191,12 @@ describe('DSP integration switch', () => {
 })
 
 describe('Advertiser settings page', () => {
-  it('shows Pricing, the Auction schedule, the four lists and Where these apply, in that order', async () => {
+  it('shows Pricing, the Auction schedule, and the category lists, in that order', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/available-inventory': { items: [{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', slot: 2, position: 'Supplier slot', partnerName: 'Google DSP' }] } })))
     renderAt('/dsp-integration')
     expect(await screen.findByRole('heading', { name: /Advertiser settings/ })).toBeInTheDocument()
     const text = document.body.textContent ?? ''
-    const order = ['Pricing', 'Auction schedule', 'Auction opens', 'Play-window length', 'Auction cutoff time', 'List management', 'Where these apply'].map((h) => text.indexOf(h))
+    const order = ['Pricing', 'Auction schedule', 'Auction opens', 'Play-window length', 'Auction cutoff time', 'Category lists'].map((h) => text.indexOf(h))
     /* Available Inventory moved to Advertisers / Inventory (Rob, 20 Sep). */
     expect(text).not.toContain('Available Inventory')
     expect(order).toEqual([...order].sort((a, b) => a - b))
@@ -206,9 +205,14 @@ describe('Advertiser settings page', () => {
     expect((document.getElementById('auctionOpensHours') as HTMLInputElement).value).toBe('7')
     expect((document.getElementById('playWindowHours') as HTMLInputElement).value).toBe('1')
     expect(screen.getByText('18:00 UTC')).toBeInTheDocument()
-    for (const l of ['Advertisers — whitelist', 'Advertisers — blacklist', 'Categories — whitelist', 'Categories — blacklist']) expect(screen.getByRole('region', { name: l })).toBeInTheDocument()
-    const where = screen.getByRole('list', { name: 'Where these apply' })
-    expect(within(where).getAllByRole('listitem').map((li) => li.textContent)).toEqual([expect.stringContaining('Adopting'), expect.stringContaining('Own lists')])
+    for (const l of ['Categories — whitelist', 'Categories — blacklist']) expect(screen.getByRole('region', { name: l })).toBeInTheDocument()
+    /* Advertiser lists are each DSP's own: none at company level. */
+    for (const l of ['Advertisers — whitelist', 'Advertisers — blacklist']) expect(screen.queryByRole('region', { name: l })).not.toBeInTheDocument()
+    /* Categories are central only: chosen from the IAB list, never typed, and no per-DSP "where these apply". */
+    expect(screen.queryByText('Where these apply')).not.toBeInTheDocument()
+    const cats = screen.getByRole('region', { name: 'Categories — whitelist' })
+    expect(within(cats).queryByRole('textbox')).not.toBeInTheDocument()
+    expect(within(cats).getByRole('combobox', { name: /Choose an IAB category/ })).toBeInTheDocument()
     expect(screen.queryByText('Advertisers', { selector: '.ag-header-cell-text' })).not.toBeInTheDocument()
   })
 
@@ -263,10 +267,11 @@ describe('DSP page', () => {
     const issues = screen.getByLabelText('Issues')
     expect(issues.textContent).toContain('Connection error: Refresh token rejected — 3 days ago. Re-enter the credentials below and re-test the connection.')
     const text = document.body.textContent ?? ''
-    const order = ['Mode', 'Connection credentials', 'Bidder integration', 'List management'].map((h) => text.indexOf(h))
+    const order = ['Mode', 'Connection credentials', 'Bidder integration', 'Advertiser lists'].map((h) => text.indexOf(h))
     expect(order).toEqual([...order].sort((a, b) => a - b))
     expect(screen.getByLabelText(/Refresh token/)).toHaveAttribute('type', 'password')
-    expect(screen.getByText(/Unlinked — this DSP has its own lists./)).toBeInTheDocument()
+    expect(screen.getByText(/Every DSP, this one included, uses the company IAB category lists/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Unlink|Relink/ })).not.toBeInTheDocument()
     expect(screen.queryByText(/floor|CPM|currency/i, { selector: 'label' })).not.toBeInTheDocument()
   })
 
@@ -699,7 +704,7 @@ describe('Advertisers / Inventory', () => {
   it('offers "+ Add new buyers list…" in the Assigned to picker, and opens the modal', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch({
       ...ADVERTISER_PAGE,
-      '/api/admin/v1/buyers-lists': { items: [{ id: 'bl_1', name: 'Q4 FMCG Private Auction', description: '', invitedBuyers: [{ identifierType: 'brandEntity', value: 'brand_x' }], activeFrom: null, activeTo: null }] },
+      '/api/admin/v1/buyers-lists': { items: [{ id: 'bl_1', name: 'Q4 FMCG Private Auction', description: '', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }], activeFrom: null, activeTo: null }] },
     })))
     renderAt('/advertisers')
     const inventory = await screen.findByLabelText('Available Inventory')
@@ -724,6 +729,10 @@ describe('Advertisers / Inventory', () => {
     fireEvent.click(addOption)
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText('New buyers list')).toBeInTheDocument()
+    /* Invited buyers is one dropdown of synced advertisers: nothing to type, no identifier type to pick. */
+    expect(within(dialog).getByRole('combobox', { name: 'Invited buyers' })).toBeInTheDocument()
+    expect(within(dialog).queryByText(/PH brand entity|identifier type/i)).toBeNull()
+    expect(within(dialog).queryByRole('button', { name: /Add buyer/ })).toBeNull()
   }, slow(30000))
 
   /* The modal used to show field errors only when the API sent `details`
@@ -751,7 +760,6 @@ describe('Advertisers / Inventory', () => {
     expect(within(dialog).getByText('New buyers list')).toBeInTheDocument()
 
     fireEvent.change(within(dialog).getByPlaceholderText('e.g. Q4 FMCG private auction'), { target: { value: 'Test deal' } })
-    fireEvent.change(within(dialog).getByLabelText('Invited buyer 1: value'), { target: { value: 'brand_x' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Create buyers list' }))
 
     /* The modal stays open (the save failed) but says so, rather than

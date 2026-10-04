@@ -14,6 +14,8 @@ export interface TestPlay {
   /* The campaign version the play showed (contract v3.1 row 3). */
   versionId: string | null
   tier: PlayTier | null
+  /* When the platform received the play (spec §4 "Billing"); null = known at settlement. */
+  receivedAt?: string | null
 }
 
 export interface PlayRepo {
@@ -23,8 +25,8 @@ export interface PlayRepo {
 export function sqlitePlayRepo(db: Db): PlayRepo {
   return {
     insertTestPlay(p) {
-      prepared(db, 'INSERT INTO plays (id, display_id, campaign_id, played_at, duration_sec, version_id, tier) VALUES (?, ?, ?, ?, ?, ?, ?)')
-        .run(p.id, p.displayId, p.campaignId, p.playedAt, p.durationSec, p.versionId, p.tier)
+      prepared(db, 'INSERT INTO plays (id, display_id, campaign_id, played_at, duration_sec, version_id, tier, received_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(p.id, p.displayId, p.campaignId, p.playedAt, p.durationSec, p.versionId, p.tier, p.receivedAt ?? null)
     },
   }
 }

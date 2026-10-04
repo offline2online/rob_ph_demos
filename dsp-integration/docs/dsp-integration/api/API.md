@@ -126,6 +126,18 @@ assumed views per play window per display; the slot's figure is the sum
 over the type's displays, each at its own `displays.vacd_override` where
 set). A type with no default and no slot score is the only unscored case.
 
+**Computer-vision default (PH Core).** `PUT /admin/v1/display-types/{id}/default-vacd`
+with `{"defaultVacd": <integer ≥ 0>}` lets PH Core write the default from the
+score computer vision measured at the edge. **The automated score wins**
+(decided 4 Oct 2026): it replaces a manually set default and is recorded as
+`phExtensions.defaultVacdSource: "computer_vision"`, so slots scored from it
+are **counted** (OpenRTB `sourcetype` 1). A manual edit through
+`PUT …/extensions` still saves, is `"manual"` (modelled), and stands until
+the next CV write; re-saving the form with the unchanged value keeps the
+source. It targets the display-type default only — a display's counted VAC-d
+and `vacd_override` stay with PH Core's scoring framework. Needs DSP
+integration switched on.
+
 ## Partner API — `/v1`
 
 ### Inventory
@@ -298,7 +310,7 @@ The Admin API keeps answering, and switching off deletes nothing.
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/admin/v1/advertiser-settings` | Currency, floor CPM, multipliers, the auction schedule (`auctionOpensHours`, `playWindowHours`, `auctionCutoffTime`), read-only `pendingPlayWindowHours`/`pendingPlayWindowEffectiveFrom` (a `playWindowHours` change deferred past currently active windows — null when nothing is pending; 26 Sep 2026), advertiser and category whitelists/blacklists, and read-only `whereTheseApply` (per DSP: adopting or own lists). |
+| GET | `/admin/v1/advertiser-settings` | Currency, floor CPM, multipliers, the auction schedule (`auctionOpensHours`, `playWindowHours`, `auctionCutoffTime`), read-only `pendingPlayWindowHours`/`pendingPlayWindowEffectiveFrom` (a `playWindowHours` change deferred past currently active windows — null when nothing is pending; 26 Sep 2026), and the IAB `categoryWhitelist`/`categoryBlacklist` (one pair for every DSP; entries must be IAB taxonomy names, else `400`; there is no per-DSP override, and no company advertiser list). |
 | PUT | `/admin/v1/advertiser-settings` | Save changes (pricing, auction schedule and lists). An entry can't be on both lists (`validation_failed`). Changing the play-window length while a non-test window is still bid on or booked no longer fails the request (26 Sep 2026): `playWindowHours` keeps its current value and the change is deferred — reflected in the response's `pendingPlayWindowHours`/`pendingPlayWindowEffectiveFrom` — until every such window has played, at which point the scheduled job (not this endpoint) applies it. |
 | GET | `/admin/v1/available-inventory` | Rows: display type, playlist, slot, position, `assignedTo` (now also `buyersListId`/`buyersListName`, null unless the slot is a private auction), `supportedTargeting`, `reservePrice` (resolved), `reservePriceOverride` (this slot's own, null = inheriting) and `displayTypeReservePrice` (the display type's default, same on every row of that type), likewise `billingUnitHours` (resolved, always a number)/`billingUnitHoursOverride`/`displayTypeBillingUnitHours` (23 Sep 2026; when neither is set the slot inherits `companyPlayWindowHours`, the company-wide play window, platform default 24 — OQ27, 29 Sep 2026: this resolved value is the slot's play-window length, see "Play windows are per slot" below), plus `dsps` (each DSP and its advertisers) for the Assigned to picker. No advertisers column. |
 | PUT | `/admin/v1/available-inventory` | Save changes — per slot, `assignedTo` (`partnerIds`, `advertisers`, `whitelistOnly`, `buyersListId`; nothing chosen = any connected DSP, an advertiser's DSP is added automatically, and `buyersListId` is mutually exclusive with `advertisers`/`whitelistOnly` — `validation_failed` if more than one is set, or if `buyersListId` names no buyers list), `supportedTargeting` (at least one of `localised`, `personalised`, `interactive`), `reservePrice`/`reservePriceDefault` (this slot's own override and the display type's own default — a CPM, or null; real inheritance, 22 Sep — always send the slot's current values, there is no "unchanged" omission) and, the same shape, `billingUnitHours`/`billingUnitHoursDefault` (whole hours, 1–8760, or null; must be the same `…Default` on every row for a given display type in one request). A billing-unit change that would alter the resolved window length of a slot that still has live windows bid on, booked or not yet billed is refused (`validation_failed` on that row's `billingUnitHours`, naming when the last one ends; OQ27, 29 Sep 2026). The editable fields of a slot; its label and owner are set on its display type. Admin only. Removing an advertiser from a slot with a live booking is `409 has_dependents` (slots are sold); lock the slot instead. |
@@ -319,7 +331,7 @@ Defaults: Localisation Variables `"all"`, Personalisation Variables `[]`.
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/admin/v1/partners` | Configured DSPs. |
-| POST | `/admin/v1/partners` | Add a DSP by `provider` (`google_dv360`, `amazon_dsp`, `the_trade_desk`). Starts in `test`, adopts company lists. |
+| POST | `/admin/v1/partners` | Add a DSP by `provider` (`google_dv360`, `amazon_dsp`, `the_trade_desk`). Starts in `test`. |
 | GET | `/admin/v1/partners/{id}` | One DSP, including `issues[]` for the top of its page. |
 
 Every DSP response includes `seats` (`[{id, name}]`): the DSP's advertisers, pulled on connect. They're offered in the slot picker and as list suggestions.
@@ -337,8 +349,9 @@ Credentials per provider (secrets are write-only; responses show only
 | `the_trade_desk` | supplySourceId, ttdPartnerId, **apiToken**, region |
 
 `mode: "live"` is rejected (`conflict`) unless the DSP is connected and the
-bidder integration is complete. `listsLinked: false` copies the company lists
-down; `listsLinked: true` discards the DSP's own lists.
+bidder integration is complete. A DSP has only its own advertiser lists
+(`advertiserWhitelist`/`advertiserBlacklist`); category lists are company-wide
+(`/admin/v1/advertiser-settings`) and cannot be set per DSP.
 
 `issues[].kind`: `connection_error`, `missing_credentials`,
 `missing_bidder_fields`.
@@ -360,7 +373,7 @@ to any number of slots via `available-inventory`'s `assignedTo.buyersListId`.
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/admin/v1/buyers-lists` | Every buyers list: `id`, `name`, `description`, `invitedBuyers` (`identifierType`: `brandEntity` \| `dspSeatId` \| `other`, plus `value`), `activeFrom`/`activeTo` (the delivery term; ISO date-time or null = no bound), `auctionCloses` (the auction window's bidding deadline; ISO date-time or null = not using the two-period model), `lockedWin` (null until the term's one-time auction clears or an invited buyer commits at the reserve price; then `{cpm, partnerId, advertiserId, campaignId, pricingType, channel, lockedAt, source}`, read only; `source` is `auction` or `reserve`, and a missing `source` reads as `auction`). |
+| GET | `/admin/v1/buyers-lists` | Every buyers list: `id`, `name`, `description`, `invitedBuyers` (`partnerId` and `seatId`: a seat a connected DSP synced; POST/PUT refuse a DSP that isn't connected or a seat it never synced), `activeFrom`/`activeTo` (the delivery term; ISO date-time or null = no bound), `auctionCloses` (the auction window's bidding deadline; ISO date-time or null = not using the two-period model), `lockedWin` (null until the term's one-time auction clears or an invited buyer commits at the reserve price; then `{cpm, partnerId, advertiserId, campaignId, pricingType, channel, lockedAt, source}`, read only; `source` is `auction` or `reserve`, and a missing `source` reads as `auction`). |
 | POST | `/admin/v1/buyers-lists` | Create: `name`, `description`, `invitedBuyers` (at least one), `activeFrom`, `activeTo`, `auctionCloses` (optional; null = not using the two-period model). `422 validation_failed` naming the field (e.g. `name`, `invitedBuyers[0].value`, `activeTo` if before `activeFrom`). `lockedWin` can't be set here. The exchange writes it once: the first time a bid clears within `auctionCloses`, or when an invited buyer first commits at the reserve price. |
 | PUT | `/admin/v1/buyers-lists/{id}` | Replace the same fields (not `lockedWin`). `404` if unknown, `422 validation_failed` as above. |
 | DELETE | `/admin/v1/buyers-lists/{id}` | Delete. `409 has_dependents` naming every slot still assigned to it (a slot's own `displayTypeName — position`) — a buyers list can't be removed out from under a live position. |
@@ -604,7 +617,7 @@ DSPs receive requests; nothing they win is billed or handed off.
   `{ "orientation": "landscape", "slotDurationSec": 15, "loopLengthSec": 45, "shareOfVoice": 0.333 }`.
 
 **Bid response — what we require:** `seatbid[].seat`, `bid.price` (CPM,
-≥ `bidfloor`), `bid.crid` (must be an approved creative), `bid.adomain`
+≥ `bidfloor`), `bid.crid` (a reference label; the creative it points at must be an approved creative, identified by content hash), `bid.adomain`
 (checked against the advertiser lists) and `bid.cat` (checked against the
 category lists). A bid failing any of these is dropped before the auction
 clears. Also (review, 23 Sep 2026):
@@ -615,7 +628,9 @@ clears. Also (review, 23 Sep 2026):
 - `bid.impid`, when present, is `"1"`; `bid.price` is finite and at most
   10,000 (`maxBidCpm`);
 - at most 10 bids per response are read, and a body over 64 KB is no bid;
-- a bid with an unknown `crid` has its creative retrieved from its `iurl` —
+- a bid whose `crid` has not been fetched and hashed recently (or whose
+  `iurl` changed) has its creative retrieved from its `iurl` and hashed;
+  identical bytes under any crid or DSP are one PH creative —
   only under that DSP's own creative path (compared after URL
   normalisation), at most one per response, capped at the asset size
   limit; the others are retried from a later window.

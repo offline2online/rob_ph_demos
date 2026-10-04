@@ -8,6 +8,7 @@ import { buyersListRoutes } from './buyersLists'
 import { campaignRoutes } from './campaigns'
 import { displayTypeRoutes } from './displayTypes'
 import { exchangeRoutes } from './exchange'
+import { lostRevenueRoutes } from './lostRevenue'
 import { targetingVariableRoutes } from './targetingVariables'
 import { partnerRoutes } from './partners'
 import { playlistRoutes } from './playlists'
@@ -24,6 +25,7 @@ export const adminRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync =>
   await app.register(advertiserRoutes(ctx, guards))
   await app.register(bookingScheduleRoutes(ctx, guards))
   await app.register(exchangeRoutes(ctx, guards))
+  await app.register(lostRevenueRoutes(ctx, guards))
   await app.register(targetingVariableRoutes(ctx, guards))
   await app.register(campaignRoutes(ctx, guards))
   if (ctx.config.testEndpoints) await app.register(testRoutes(ctx, guards))

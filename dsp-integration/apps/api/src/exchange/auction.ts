@@ -50,7 +50,7 @@ import type { PartnerRecord } from '../repos/PartnerRepo'
 import { type ReservationRecord, TAKEN } from '../repos/ReservationRepo'
 import { advertiserSlug, assignedOf } from '@ph-dsp/types'
 import { isUniqueViolation, tx } from '../db/db'
-import { campaignForCrid, queueCreative } from './creatives'
+import { queueCreative, verifiedCampaign } from './creatives'
 import { multiplierToSnapshot } from '../domain/pricing'
 import { checkAdvertiser, checkCampaign, checkCategories, checkFloor, checkTargeting, checkVersionCount, firstRefusal } from './enforcement'
 import { handOff } from './handoff'
@@ -288,10 +288,13 @@ async function recordDspBid(ctx: Context, p: PositionRef, dsp: PartnerRecord, st
   }
   const reject = async (reason: string, extra: Partial<ReservationRecord> = {}) => ctx.reservations.insert({ ...base, ...extra, status: 'rejected', reason })
 
-  /* OpenRTB 2.6: a response with no `cur` is in USD. Treating it as the
-     exchange's own currency would accept, say, a USD 5 bid as AUD 5. */
-  const cur = res.cur ?? 'USD'
-  if (cur !== currency) return reject(`Bid in ${cur}; the exchange trades in ${currency}.`)
+  /* Phase 1: one instance, one currency, no conversion. `cur` is a
+     validation check, never a conversion input: a bid in any other currency
+     is rejected, and so is one that names none (OpenRTB would read that as
+     USD; we do not guess, so a USD default can never clear an AUD floor, or
+     be taken for the instance currency). */
+  if (!res.cur) return reject(`Bid names no currency; the exchange trades in ${currency} and does not convert.`)
+  if (res.cur !== currency) return reject(`Bid in ${res.cur}; the exchange trades in ${currency} and does not convert.`)
   if (!(typeof bid.price === 'number' && Number.isFinite(bid.price) && bid.price > 0)) return reject('No price on the bid.')
   /* A price no real campaign pays is a DSP bug or a malformed response; it
      must not win a window and be billed. */
@@ -307,7 +310,8 @@ async function recordDspBid(ctx: Context, p: PositionRef, dsp: PartnerRecord, st
   if (refused) return reject(refused.reason, { advertiserId })
   if (!bid.crid) return reject('No creative ID (crid) on the bid.', { advertiserId })
 
-  const campaignId = await campaignForCrid(ctx, dsp.id, bid.crid)
+  /* The crid is only a label: it resolves to a creative only while its fetch-and-hash is fresh and the creative URL unchanged. */
+  const campaignId = await verifiedCampaign(ctx, dsp.id, bid.crid, bid.iurl)
   if (!campaignId) {
     /* The one-retrieval budget is spent inside queueCreative, only once a fetch is really attempted: a refused (off-path) URL must not use it up. */
     return reject(await queueCreative(ctx, dsp, { crid: bid.crid, iurl: bid.iurl, ext: bid.ext && typeof bid.ext === 'object' ? bid.ext : undefined }, { id: advertiserId, name: seat.name }, p, budget), { advertiserId })

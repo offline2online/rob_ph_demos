@@ -10,7 +10,7 @@ import { allPositions, closesAtFor, companyWindowCommitments, windowMsFor, windo
 import { releaseSettledSlotLocks } from '../domain/slotLock'
 import { sweepSettledReservations } from '../domain/reservationRetention'
 import { runAuction } from './auction'
-import { runBilling } from './billing'
+import { recordLatePlays, runBilling } from './billing'
 
 /* Who this process is, on the claims it makes. */
 const INSTANCE = `${hostname()}:${process.pid}`
@@ -60,6 +60,12 @@ export async function schedulerTick(ctx: Context, log: (msg: string) => void) {
   await job('Billing', async () => {
     const billed = await runBilling(ctx)
     if (billed.length) log(`Billed ${billed.length} ended window${billed.length === 1 ? '' : 's'}.`)
+  })
+  /* Playback that arrived after its window was invoiced is never billed; it is
+     recorded as lost revenue from downtime (settlement is final, billing/late.ts). */
+  await job('Late playback', async () => {
+    const late = await recordLatePlays(ctx)
+    if (late) log(`Recorded ${late} late play${late === 1 ? '' : 's'} received after settlement as lost revenue from downtime.`)
   })
   /* A slot locked against new sales is released once the booking schedule
      has no live booking left on it (bookings only, never playback). */

@@ -1,7 +1,7 @@
 /* Shared, fixed catalogues used by both the API and the admin UI.
    Shapes follow the prototype's model (prototype-reference/src/model/
    schema.js and sellside.js); keys follow the API contract. */
-import type { IdentifierType, Provider, SlotOwner } from './index'
+import type { Provider, SlotOwner } from './index'
 
 /* ------------------------------------------------------ display types */
 
@@ -97,16 +97,6 @@ export const assignedOf = (slot: SlotLike): Assigned => {
 /* "Any connected DSP", or the pills in order: advertisers, buyers list, then DSPs. */
 export const assignedLabels = (a: { advertisers: readonly string[]; partnerNames?: readonly string[]; whitelistOnly?: boolean; buyersListName?: string | null }): string[] =>
   [...a.advertisers, ...(a.whitelistOnly ? ['Whitelist only'] : []), ...(a.buyersListName ? [`Buyers list: ${a.buyersListName}`] : []), ...(a.partnerNames ?? [])]
-
-/* How a buyers list's invited buyers are identified — configurable per
-   retailer (spec "Support private auctions"). brandEntity and dspSeatId are
-   matched automatically at auction time; other is recorded only. */
-export const IDENTIFIER_TYPES: { key: IdentifierType; label: string; placeholder: string }[] = [
-  { key: 'brandEntity', label: 'PH brand entity', placeholder: 'Advertiser name, e.g. Nestlé' },
-  { key: 'dspSeatId', label: 'DSP seat ID', placeholder: 'Seat ID, e.g. seat_amz_1042' },
-  { key: 'other', label: 'Other', placeholder: 'Identifier used elsewhere' },
-]
-export const identifierTypeLabel = (key: string) => IDENTIFIER_TYPES.find((t) => t.key === key)?.label ?? key
 
 /* Reserve price inheritance (Rob, 22 Sep; spec §1 configuration
    inheritance): a display type carries its own reserve price default, and

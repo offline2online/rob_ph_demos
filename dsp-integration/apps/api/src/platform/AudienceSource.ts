@@ -23,7 +23,7 @@ export interface AudienceSource {
      DDOjJoYjraKROu4Ainj5, Rob 2 Oct 2026). The audience source owns only
      the per-slot score and each display's own counted/modelled override;
      it never reads display_types. null: the type has no default. */
-  forSlot(displayTypeId: string, slot: number, defaultVacd: number | null): Awaitable<Audience>
+  forSlot(displayTypeId: string, slot: number, defaultVacd: number | null, defaultCounted?: boolean): Awaitable<Audience>
   /* The share of a slot's assumed views a targeted campaign can reach
      (spec §5: "targeting changes it"). Only the platform that holds the
      store and visitor data can answer this; see BUILD-PLAN Q9. */
@@ -34,7 +34,7 @@ export interface AudienceSource {
 export const POC_SHARE_PER_AND_GROUP = 0.5
 
 export const sqliteAudienceSource = (db: Db): AudienceSource => ({
-  forSlot(displayTypeId, slot, dflt) {
+  forSlot(displayTypeId, slot, dflt, dfltCounted = false) {
     const r = prepared(db, 'SELECT assumed_views_per_window AS v, counted FROM audience_vacd WHERE display_type_id = ? AND slot = ?').get(displayTypeId, slot) as { v: number; counted: number } | undefined
     if (r) return { assumedViewsPerWindow: r.v, counted: !!r.counted, scored: true }
     /* No slot score of its own: the slot inherits from its display type
@@ -44,7 +44,7 @@ export const sqliteAudienceSource = (db: Db): AudienceSource => ({
        otherwise the default. A type with no displays yet counts as one. */
     if (dflt === null) return { assumedViewsPerWindow: 0, counted: false, scored: false }
     const d = prepared(db, 'SELECT COUNT(*) AS n, COALESCE(SUM(COALESCE(vacd_override, ?)), 0) AS total FROM displays WHERE display_type_id = ?').get(dflt, displayTypeId) as { n: number; total: number }
-    return { assumedViewsPerWindow: d.n ? d.total : dflt, counted: false, scored: true }
+    return { assumedViewsPerWindow: d.n ? d.total : dflt, counted: dfltCounted, scored: true }
   },
   targetedShare: (_displayTypeId, rules) => POC_SHARE_PER_AND_GROUP ** (rules?.length ?? 0),
 })

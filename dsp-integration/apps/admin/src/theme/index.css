@@ -66,3 +66,27 @@
 .ag-theme-alpine .ag-layout-auto-height .ag-center-cols-viewport,
 .ag-theme-alpine .ag-layout-auto-height .ag-center-cols-container,
 .ag-theme-alpine .ag-layout-auto-height .ag-center-cols-clipper { min-height: unset !important; }
+
+/* ── Sticky panes and touch screens (ticket Q9BzCJRB4UhAIvlQPu1T, 4 Oct 2026) ──
+   The left nav (AppShell) and the list column (ListPageLayout) are sticky AND
+   scroll on their own. With a mouse that is fine: the wheel scrolls whatever
+   is under the pointer and passes on to the page at the end. On an iPad it
+   trapped the page: Safari hands a swipe that starts on a nested scroller to
+   that scroller, which rubber-bands at its end instead of passing the
+   gesture to the page — and between them the two panes cover about half the
+   screen in landscape, so the page could not be swiped back to its header
+   and tabs (Booking schedule on Advertisers / Inventory). They were also
+   sized with 100vh, which on iPad is the height with the toolbars HIDDEN, so
+   with the tab and address bar showing they ran past the bottom of the
+   screen. So: the visible viewport's height (dvh) everywhere, and on touch
+   screens no nested sticky scrollers at all — one page that scrolls. */
+.ph-full-height { height: 100vh; height: 100dvh; }
+.ph-list-pane { max-height: calc(100vh - 40px); max-height: calc(100dvh - 40px); }
+@media (hover: none) and (pointer: coarse) {
+  .ph-sticky-pane {
+    position: static;
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+}
