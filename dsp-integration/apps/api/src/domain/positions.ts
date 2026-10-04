@@ -107,18 +107,18 @@ export function effectivePartnerIds(ctx: Context, def: Slot, partners?: Awaitabl
   return a.partnerIds.length ? a.partnerIds : null
 }
 
-/* May this advertiser (by name, and — for a deal — its DSP seat ID) buy this
+/* May this advertiser (by its DSP seat ID against the DSP's lists; by name for a held position or a deal) buy this
    position through this partner? */
 export async function advertiserMayBuy(ctx: Context, p: PositionRef, partner: PartnerRecord, name: string, seatId?: string | null) {
-  const eff = effectiveLists(partner, await ctx.company.get())
-  if (isBlocked(name, eff)) return false
+  const eff = effectiveLists(partner)
+  if (seatId && isBlocked(seatId, eff)) return false
   const a = assignmentOf(p.def)
   if (a === 'reserved') return heldFor(p.def, name)
   if (a === 'deal') {
     const list = await ctx.buyersLists.get(assignedCached(p.def).buyersListId as string)
-    return !!list && isActiveAt(list, ctx.clock().toISOString()) && isInvitedBuyer(list, name, seatId)
+    return !!list && isActiveAt(list, ctx.clock().toISOString()) && isInvitedBuyer(list, partner.id, seatId)
   }
-  if (a === 'whitelist_only') return isOn(name, eff.allowList)
+  if (a === 'whitelist_only') return !!seatId && isOn(seatId, eff.allowList)
   return true
 }
 
@@ -130,9 +130,9 @@ export async function advertiserMayBuy(ctx: Context, p: PositionRef, partner: Pa
    estate). Same answer as advertiserMayBuy, seat by seat. */
 export async function visibilityFor(ctx: Context, c: Caller): Promise<(p: PositionRef) => Awaitable<boolean>> {
   if (c.partner.status !== 'connected' || c.unknownAdvertiser) return () => false
-  const eff = effectiveLists(c.partner, await ctx.company.get())
-  const seats = (c.advertiser ? c.partner.seats.filter((s) => s.name === c.advertiser!.name) : c.partner.seats).filter((s) => !isBlocked(s.name, eff))
-  const whitelisted = seats.some((s) => isOn(s.name, eff.allowList))
+  const eff = effectiveLists(c.partner)
+  const seats = (c.advertiser ? c.partner.seats.filter((s) => s.name === c.advertiser!.name) : c.partner.seats).filter((s) => !isBlocked(s.id, eff))
+  const whitelisted = seats.some((s) => isOn(s.id, eff.allowList))
   const me = c.partner.id
   /* Read once, and only if a deal asks for it. */
   let partners: Awaitable<PartnerRecord[]> | undefined
@@ -143,7 +143,7 @@ export async function visibilityFor(ctx: Context, c: Caller): Promise<(p: Positi
     if (a === 'whitelist_only') return whitelisted
     if (a === 'reserved') return seats.some((s) => heldFor(p.def, s.name))
     return andThen(ctx.buyersLists.get(assignedCached(p.def).buyersListId as string), (list) =>
-      !!list && isActiveAt(list, ctx.clock().toISOString()) && seats.some((s) => isInvitedBuyer(list, s.name, s.id)))
+      !!list && isActiveAt(list, ctx.clock().toISOString()) && seats.some((s) => isInvitedBuyer(list, me, s.id)))
   }
   /* Sync-first (db.ts andThen): once per position on every inventory read. */
   return (p) =>

@@ -36,16 +36,12 @@ export interface BidRequest {
 export interface Bid { id?: string; impid?: string; price?: number; crid?: string; adomain?: string[]; cat?: string[]; iurl?: string; ext?: { creativeAudit?: unknown } }
 export interface BidResponse { id?: string; cur?: string; seatbid?: { seat?: string; bid?: Bid[] }[] }
 
-const looksLikeDomain = (s: string) => /^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(s.trim())
-
-/* badv carries domains. A blacklist entry that is a domain goes as is; one
-   that names an advertiser goes as that advertiser's domain, where the DSP
-   has told us it (seats pulled on connect). */
+/* badv carries domains: each blacklisted seat goes as the domain the DSP
+   told us for it (seats pulled on connect). */
 export function blockedDomains(partner: PartnerRecord, blockList: string[]) {
   const out = new Set<string>()
   for (const entry of blockList) {
-    if (looksLikeDomain(entry)) out.add(entry.trim().toLowerCase())
-    const seat = partner.seats.find((s) => s.name.trim().toLowerCase() === entry.trim().toLowerCase())
+    const seat = partner.seats.find((s) => s.id.trim().toLowerCase() === entry.trim().toLowerCase())
     if (seat?.domain) out.add(seat.domain.toLowerCase())
   }
   return [...out]
@@ -62,8 +58,8 @@ export async function buildBidRequest(ctx: Context, p: PositionRef, partner: Par
   const view = given ?? (await positionView(ctx, p, { partner, advertiser: null, unknownAdvertiser: false }))
   const company = await ctx.company.get()
   const exchange = await ctx.exchange.get()
-  const lists = effectiveLists(partner, company)
-  const categoryLists = effectiveCategoryLists(partner, company)
+  const lists = effectiveLists(partner)
+  const categoryLists = effectiveCategoryLists(company)
   const audience = await audienceOf(ctx.audience, p.displayType, p.slot)
   const { width: w, height: h } = view.screen
   return {

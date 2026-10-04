@@ -97,6 +97,12 @@ const DEMO_SEATS: Record<string, { id: string; name: string; domain: string }[]>
   ],
 }
 
+/* Advertisers whitelisted on each demo DSP, by seat name. */
+const DEMO_WHITELIST: Record<string, string[]> = {
+  p_google: ['Coca-Cola', 'Unilever'],
+  p_ttd: ['Unilever', 'Procter & Gamble'],
+}
+
 const DEMO_ADVERTISER_SETTINGS: Record<string, { approvalRequired: boolean; floorMultiplier: number }> = {
   [advertiserSlug('Arnott’s')]: { approvalRequired: false, floorMultiplier: 0.9 },
   [advertiserSlug('Coca-Cola')]: { approvalRequired: false, floorMultiplier: 1.1 },
@@ -237,9 +243,14 @@ export async function seedDemo(ctx: Context) {
     const saved = await ctx.company.advertiserSettings()
     const fresh = Object.fromEntries(Object.entries(DEMO_ADVERTISER_SETTINGS).filter(([id]) => !(id in saved)))
     if (Object.keys(fresh).length) await ctx.company.saveAdvertiserSettings(fresh)
-    const company = await ctx.company.get()
-    const whitelist = [...new Set([...company.advertiserWhitelist, 'Coca-Cola', 'Unilever', 'Procter & Gamble'])]
-    if (whitelist.length !== company.advertiserWhitelist.length) await ctx.company.save({ ...company, advertiserWhitelist: whitelist })
+    /* Each DSP's own whitelist, from the seats it synced. */
+    for (const [partnerId, names] of Object.entries(DEMO_WHITELIST)) {
+      const p = await ctx.partners.get(partnerId)
+      if (!p) continue
+      const ids = p.seats.filter((s) => names.includes(s.name)).map((s) => s.id)
+      const allowList = [...new Set([...p.allowList, ...ids])]
+      if (allowList.length !== p.allowList.length) await ctx.partners.update(partnerId, { allowList })
+    }
 
     /* Slots: only on a display type that has no sellable position yet, so a
        hand-edited estate is never overwritten. */

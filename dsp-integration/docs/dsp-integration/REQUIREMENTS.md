@@ -178,7 +178,7 @@ Targeting Variables**, each **DSP page**, and the **Advertisers** screen. All
 of them behave identically.
 
 - Edits on the page (fields, toggles, list additions and removals, pickers,
-  slot assignment, zones, connect / disconnect, unlink / relink,
+  slot assignment, zones, connect / disconnect,
   Test / Live) are held as unsaved changes and take no effect until saved.
 - A **Save changes** (primary) and **Cancel** bar is always visible at the
   bottom of the page, fixed to the bottom of the content area as the page
@@ -236,7 +236,7 @@ Page-title tooltips for the DSP Integration company pages:
 | Page | Tooltip |
 |---|---|
 | **Exchange settings** | Sets up your organisation as the seller of record for its screens. Configurable here: organisation name, domain, seller ID and ad-ops contact email, all required. Once saved and complete, sellers.json is published at https://[domain]/sellers.json and every bid request carries your domain and seller ID in its SupplyChain; until then no DSP is sent bid requests. Not configurable (platform defaults): seller type (Publisher), the DOOH object, the OpenOOH venue taxonomy, QPS and bid timeout. Bid requests use OpenRTB 2.6 as the minimum supported version for programmatic DOOH; the exchange is designed to adopt 2.7, 2.8 and later versions per DSP as the market moves. |
-| **Advertiser settings** | Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (currency, floor CPM, the personalised multiplier and the interactive cost per engagement), the Auction schedule (when bidding opens, play-window length, auction cutoff) and List management (advertiser and IAB category whitelists and blacklists). Read-only here: Where these apply (which DSPs use these lists or keep their own; unlink or relink on the DSP's page). Per-advertiser campaign approval and floor multipliers, and the inventory advertisers can buy, are on Advertisers / Inventory. |
+| **Advertiser settings** | Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (currency, floor CPM, the personalised multiplier and the interactive cost per engagement), the Auction schedule (when bidding opens, play-window length, auction cutoff) and Category lists (the IAB category whitelist and blacklist, chosen from the IAB taxonomy and applied to every DSP; each DSP's advertiser lists are on its own page). Per-advertiser campaign approval and floor multipliers, and the inventory advertisers can buy, are on Advertisers / Inventory. |
 | **Shared Targeting Variables** | Variables shared through the API with connected DSPs. Once a variable is enabled for a DSP, that DSP's advertisers can use it in targeting conditions for more advanced campaign targeting; the platform evaluates the condition and never returns the value. They are the same variables as a campaign's Targeting tab. Choose which DSPs may use each one below; default platform variables only in this release. |
 
 The **Enable DSP Integration** switch at the top of Exchange settings has
@@ -501,7 +501,12 @@ unreshaped; Digital Signage/Kiosk playback and analytics are untouched.
   and geo metadata"). Needed for DOOH bid requests (§7):
   OpenOOH venue type, geo (lat/long) and store identifier per store, plus
   orientation and loop length per display. Resolution and share of voice are
-  already carried by the display type.
+  already carried by the display type. **PH Core owns the completeness
+  guarantee and the missing-data signal** (what it guarantees is present and
+  valid before a display is sellable, and what it exposes when it is not),
+  still to be defined by PH Core. The exchange excludes any position whose
+  required venue/geo is absent, deterministically, and never builds a
+  malformed bid request (ticket HxMMn84BcCP6y9S2jk3l, 4 Oct 2026).
 - **Layout and saving** follow *Page layout* and *Saving changes* above: the
   form takes the full width beside the display type list, and changes
   (including zone playlists created on demand) are applied with Save
@@ -724,11 +729,29 @@ GET  /v1/campaigns/{id}/status      approval status and rejection reason
 GET  /v1/campaigns/{id}             read back the stored versions, targeting and assets
 ```
 
-For DSP demand, the creative referenced in a bid response must match an
-approved creative ID. A bid carrying an unknown or unapproved creative is
+For DSP demand, the creative referenced in a bid response must resolve to
+an approved PH creative. A bid carrying an unknown or unapproved creative is
 discarded pre-auction, and the creative is placed in the approval queue (or
 approved automatically, if the advertiser does not require approval) so it
 can compete in later windows.
+
+**Creative identity is PH's own, derived from the content** (decision, Rob,
+4 Oct 2026; open question 40). PH fetches the creative and hashes the bytes;
+that content hash (with the advertiser) is the creative's identity, and the
+DSP's creative ID (crid) is only a reference label recorded against it,
+never the key approval or safe reuse trusts.
+- Identical bytes are one creative whatever crid any DSP attaches: the same
+  creative arriving through DV360 and The Trade Desk under two different
+  crids is **one** PH creative, de-duplicated by content and approved
+  **once**, consistently across DSPs. Each DSP's crid is recorded against it.
+- A crid rotated onto identical bytes resolves to the creative a reviewer
+  already approved — no re-review. A crid reused for **different** bytes
+  resolves to a different creative, which is reviewed on its own; the
+  earlier creative keeps running as it was.
+- The crid is never trusted alone: a crid's resolution is trusted only
+  while its last fetch-and-hash is recent (`creativeReverifyMs`, default one
+  hour) and its creative URL unchanged; otherwise the creative is fetched and
+  hashed again before the bid can compete (one retrieval per DSP response).
 
 **DSP creative audits are an advisory input, never a replacement**
 (decision, Rob, 29 Sep 2026; open question 40). A DSP's own audit status —
@@ -736,11 +759,11 @@ DV360's review status (`ApprovalStatus`, `ExchangeReviewStatus`), The Trade
 Desk's `approvedBy`, Amazon Ads DSP's asset-level moderation — is recorded
 as an advisory `dsp_audit` check shown to the reviewer. It never approves a
 creative on its own and never blocks one; PH's approval gate stays the
-source of truth. **Pre-approval is by creative ID and content hash**, riding
-on *safe reuse* (below): once a human has approved a DSP creative, the same
-creative ID with byte-identical content is not re-audited; different
-content under that ID is a new version for review (a pending edit if one is
-already approved).
+source of truth. **Pre-approval is by content hash**, riding
+on *safe reuse* (below): once a human has approved a DSP creative, byte-
+identical content is not re-audited, under any crid and through any DSP;
+different content under the same crid is a different creative, reviewed on
+its own.
 
 ### Automated checks on upload
 
@@ -956,8 +979,10 @@ version and its targeting rules; `submit()` and a change on upload approve
 a version without review only when every asset and the targeting are
 cleared at their current content (audit `reused_clearance`). Otherwise the
 version goes to the reviewer with an advisory `previously_cleared` check on
-each unchanged asset. For DSP creatives the key is the DSP creative ID plus
-the content hash (the crid's campaign is derived from the DSP and crid).
+each unchanged asset. For DSP creatives the key is PH's content-derived creative identity: the
+creative's campaign id is derived from the advertiser and the content hash,
+not from the DSP's crid, so a human clearance covers those exact bytes
+across every DSP and crid they arrive under.
 
 ### Enforcement and audit
 
@@ -1017,6 +1042,20 @@ rather than restating how it is arrived at.
   example *AUD — Australian Dollar*). Default AUD.
 - Applies to the floor CPM, every effective floor and billing. Bid requests
   carry it as the bid floor currency.
+- **Phase 1: one instance, one currency, no conversion** (Rob, 4 Oct 2026).
+  An instance runs inside one retailer's VPC and that retail media network
+  trades in its own local currency. The floor, every effective floor and all
+  pricing are in that currency, and advertisers bid into the instance in the
+  same currency. There is no cross-currency auction, no FX rates and no
+  conversion engine.
+- **A bid's currency is a validation check, not a conversion input.** A bid in
+  the instance currency clears normally. A bid in any other currency is
+  **rejected** with a clear reason (*"Bid in USD; the exchange trades in AUD
+  and does not convert."*), never converted or compared against the floor.
+  A bid naming no currency is rejected too: the OpenRTB "missing means USD"
+  default is not applied.
+- Multi-currency bidding and FX conversion are out of scope until a later
+  phase.
 
 ### Campaign types for pricing
 
@@ -1137,6 +1176,49 @@ played (Billing, below).
   this needs no separate billing pipeline: the exchange (§7) books every
   later play window in the term as its own reservation at the locked CPM,
   and each is billed exactly as any other reservation already is.
+- **Settlement is final; late playback data is disregarded for billing but
+  reported as lost revenue from downtime** (decision Rob, 4 Oct 2026). Two
+  linked rules:
+  1. **An invoiced window never changes.** Billing settles a window on the
+     playback data available at settlement, and the line item it writes is
+     the invoice: playback that arrives *after* it is disregarded for billing
+     — no re-bill, credit or true-up. Proof of play as known at settlement is
+     final. Keeping displays online is the retailer's (the retail media
+     network's) operational responsibility, not the advertiser's: an offline
+     screen played nothing, so nothing is billed, and the retailer bears its
+     own downtime as lost revenue. (Example: 1,000 screens playing, 100
+     offline for 24 hours; the window is settled on what the 900 played, and
+     the 100 backfill afterwards.)
+  2. **The cut-off is the invoice, not the window end.** Playback that
+     arrives between the window's end and settlement still counts. Only
+     playback that arrives after the line item is written is late. "Arrives"
+     means when the platform *received* the play, not when it was played
+     (a received-at time per play, see `api/PH-CORE-BOUNDARIES.md`).
+  3. **Late data is recorded, never silently dropped.** For each play that
+     arrives after its window's line item exists, record what it *would*
+     have been worth — its share of realised VAC-d at the window's cleared
+     CPM (the reservation's snapshot, personalised multiplier included) — as
+     **lost revenue from display downtime**, attributable by store, display
+     and over time so a recurring offline problem is visible and quantified.
+     The same input has two outcomes: it never re-bills, and it is always
+     recorded as would-have-been value. The figure is an operational report
+     for the retailer; it is never shown on, or charged to, an advertiser's
+     invoice.
+  *Build status (4 Oct 2026):* built. Rule 1 holds because a window is
+  billed once (`billing_line_items.reservation_id` is unique) and is never
+  recomputed. Rule 2: the stand-in playback data carries `received_at`
+  (migration 0043); billing counts the plays received by the moment it
+  settles (`PlaybackSource.totals` `receivedBy`) and the line item records
+  that moment, so a play received after it is late. A play with no
+  received-at time is known at settlement, billed as before. Rule 3: the
+  late-play ledger (`billing/late.ts`, table `late_plays`) records each late
+  play once, at the line item's cleared CPM and snapshotted personalised
+  multiplier, never valuing a window above its own assumed views; it runs
+  after billing on every scheduler tick and reads only what arrived since its
+  last scan. The report is `GET /admin/v1/reports/lost-revenue?from&to&by=store|display|day`
+  (per currency, by when the play played). Not built: an HQ Admin screen for
+  it (the endpoint is the contract), and an advertiser-facing view, which
+  rule 3 forbids.
 - **Pre-auction enforcement uses the effective floor CPM** for the campaign's
   type and advertiser. The auction clears against the base floor (scaled by
   the advertiser's `floorMultiplier`); the personalised multiplier is charged
@@ -1352,14 +1434,18 @@ any number of positions — one deal, many slots, not one deal per slot.
 It carries:
 
 - **Name and description**, so it is distinguishable in its own table (below).
-- **Invited buyers**: a list of entries, each an identifier type plus a
-  value. The identifier type is **flexible per retailer**, not hard-wired to
-  one scheme — a PH brand entity (the advertiser's name, matched
-  case-insensitively, same as the existing advertiser lists), a DSP's own
-  seat ID (matched exactly against the seat record pulled on connect), or
-  another identifier a retailer uses elsewhere. `other` is recorded on the
-  list for reference but has no automated match in this build — the DSP
-  side of that identifier scheme isn't something this POC's stand-ins model.
+- **Invited buyers**: a **multi-select dropdown of the advertisers (seats)
+  that connected DSPs have synced** — each option reads as the advertiser's
+  name plus which DSP it comes from, grouped by DSP. Nobody types anything,
+  and there is no identifier-type picker, no "PH brand entity" name match
+  and no "other" (Rob, 4 Oct 2026; ticket W8wjh2wtFTnHZUO0Exuu — it
+  replaced the earlier brandEntity / dspSeatId / other scheme, which gated a
+  real auction on a loose name match). Each selected buyer is stored as the
+  DSP and the seat ID that DSP issued (`{ partnerId, seatId }`), so it
+  always carries a real identifier the DSP bids under. The API refuses an
+  entry whose DSP is not connected or whose seat that DSP never synced.
+  An entry whose seat later disappears from a re-sync stays on the list
+  (shown "no longer synced" so it can be removed) and matches nobody.
 - **Delivery term**: inclusive `activeFrom`/`activeTo` — the span this deal
   is awarded for (a week, a month, a quarter); either or both may be
   open-ended. Outside it, the deal admits nobody — it does not fall back
@@ -1432,7 +1518,7 @@ kind of error (23 Sep).
 **Entitlement is enforced the same way blacklist/whitelist already are**
 (§6 "Advertiser lists"), at both bid intake (OpenRTB response and the API's
 `POST /v1/reservations`) and again when the auction clears: a bid from a
-seat that is not one of the deal's invited buyers, or that arrives outside
+seat that is not one of the deal's invited buyers (matched exactly on its DSP and seat ID), or that arrives outside
 the deal's delivery term, is refused `not_invited`, naming the deal. Unlike
 `reserved`, a deal position is **not** taken out of the open auction and
 booked directly — until its rate locks (below), it runs as a real auction
@@ -1707,59 +1793,82 @@ are added.
 ### Advertiser whitelists and blacklists
 
 The **client** maintains whitelists and blacklists of **advertisers** and of
-**IAB categories**, in Advertiser settings → List management:
+**IAB categories**:
 
 - **Whitelist**: only these may win a position.
 - **Blacklist**: these may never win one.
 
 These are the client's lists, not the DSP's. They filter what the exchange may
 clear into a position and are **enforced at auction time, not reconciled
-afterwards**.
+afterwards**. The two kinds are managed in different places, for a reason:
 
-**Defined centrally, adopted by every connected DSP.** A newly connected
-partner adopts the advertiser and category lists automatically.
+- **Categories are central** (ticket vjykcgGWkfUjPB2xulel, 4 Oct 2026).
+  IAB is one standard taxonomy every DSP speaks — the same codes across
+  DV360, Amazon Ads and The Trade Desk — so there is **one category whitelist
+  and one blacklist for the whole company**, in **Advertiser settings →
+  Category lists**, and it applies to **every** DSP, including one connected
+  later. There is **no per-DSP category override** and no link/unlink switch:
+  no DSP has needed a different category policy, and a company-wide taxonomy
+  is easier to reason about when it has a single source. (If one ever does,
+  that is a new decision, not a hidden toggle.)
+- **Advertisers are per DSP.** A seat or advertiser ID only means something
+  to the DSP that issued it, so each DSP holds its own advertiser whitelist
+  and blacklist, chosen from the seats and advertisers it has synced, on its
+  own page. There is no company-wide advertiser list.
 
-A partner can **unlink** and keep its own advertiser **and category** lists
-instead, using the same inheritance rule as display types (§1): the override
-wins, and a later edit to the company lists never reaches it. One toggle
-covers both list types together — a DSP cannot unlink its advertiser lists
-without also unlinking its category lists, or vice versa.
+**Category entries are real IAB categories.** They are chosen from the IAB
+taxonomy the platform carries a code for (Food & Drink IAB8, Health &
+Fitness IAB7, Beauty IAB18-1, Retail IAB22, Family & Parenting IAB6,
+Automotive IAB2, Finance IAB13, Travel IAB20), never typed. The bid request
+carries the matching code (`bcat`), so an entry that is not a real category
+could not be enforced against a bid. The API refuses anything else with
+`400 validation_failed` naming the entry, and stores the canonical spelling
+(a name matched without regard to case).
 
-- **Unlinking copies the inherited lists down**, for both advertisers and
-  categories, so a blacklist never silently empties.
-- **Relinking discards the partner's own lists**, both advertiser and
-  category. It is destructive and says so.
-
-**On a DSP's page**, under **List management** (ticket, 28 Sep 2026 —
-originally advertiser lists only; category lists were added here to close
-the gap, since a DSP that needed a different category policy from the
-company's had no way to set one):
-
-- **Centrally managed (adopting):** the lists are **not repeated**. The page
-  says the DSP uses the company lists, with a **link to view them in
-  Advertiser settings** and an **Unlink and edit** action.
-- **Unlinked:** the page shows the DSP's **own** advertiser whitelist and
-  blacklist, **and** its own category whitelist and blacklist (the same
-  IAB category suggestions Advertiser settings offers), all editable, with
-  a **Relink to company lists** action.
-
-**Where these apply** sits directly below List management in Advertiser
-settings (above Available Inventory). It shows, per DSP, only **whether it
-is adopting the company lists or has its own**, with a link to open that
-DSP. It does not summarise list contents (no allowed/blocked counts); the
-full lists are visible directly above, or on the DSP's page when unlinked. A
-DSP with its own lists has a tooltip saying edits to the company lists don't
-reach it until it is relinked.
+**On a DSP's page**, under **List management**, the DSP's own advertiser
+whitelist and blacklist are editable, and **Category lists** is a read-only
+note that the company IAB category lists apply to this DSP, with a link to
+view and edit them in Advertiser settings.
 
 An advertiser or category cannot sit on both lists; adding it to one removes
-it from the other. The advertiser lists take **free text as well as known
-seats**, since a DSP's full advertiser universe is not enumerable from our
-side. Seats pulled on connect are offered as shortcuts, not as the limit.
+it from the other. Advertiser entries are chosen from the DSP's synced seats
+only (no free text); category entries from the IAB taxonomy only.
+
+**Advertiser and seat lists are managed per DSP, never centrally** (Rob,
+4 Oct 2026). A seat ID or advertiser ID only means something inside the DSP
+that issued it: the same advertiser is a different identifier on DV360, The
+Trade Desk and Amazon, and a DSP's full advertiser universe is not
+enumerable from our side, so free-text names cannot reliably be resolved to
+the identifier the DSP actually bids under. A single holistic advertiser
+list is therefore not feasible, and there is none.
+
+Each DSP has its own advertiser lists:
+
+- **Whitelist**: only these may win a whitelist-only position on this DSP.
+- **Blacklist**: these may never win a position on this DSP.
+
+Both are **built from that DSP's own synced seats and advertisers** (below),
+so every entry is a real, authoritative identifier for that DSP. **No free
+text:** the DSP page offers only the synced advertisers, and the API refuses
+(`400 validation_failed`) an entry that is not one of the DSP's synced seat
+IDs. They are **enforced at auction time, not reconciled afterwards**.
+
+**Syncing.** A DSP's seats and advertisers are pulled when it is connected
+and again on every re-connect (refresh). A refresh drops any list entry
+whose seat the DSP no longer has; disconnecting clears the seats and, with
+them, both advertiser lists. A DSP that has not been connected has nothing to choose
+from, and its page says so.
+
+**Existing data (migration 0040).** A DSP that adopted the company
+advertiser lists took them as its own; every entry that was a seat name
+became that seat's ID; an entry matching no synced seat was dropped (it
+could not be resolved to an identifier the DSP bids under). The company's
+advertiser list columns were removed.
 
 **The blacklist is not a mode — it always subtracts.** It applies to every
 outcome on that partner and no position can opt out of it. The whitelist is
-the part a position chooses to use. (Both points are in the *List
-management* tooltip.)
+the part a position chooses to use. (Both points are in the *Advertiser
+lists* tooltip.)
 
 A position's **Assigned to** control is one multi-select on *Advertisers /
 Inventory* (Rob, 20 Sep), adding a pill per choice:
@@ -1769,13 +1878,13 @@ Inventory* (Rob, 20 Sep), adding a pill per choice:
 | Nothing chosen — *All DSPs* | Every connected DSP may bid, minus the blacklist |
 | One or more **DSPs** | Only those DSPs may bid, minus the blacklist |
 | One or more **advertisers** | Reserved to those seats; each one's DSP is added automatically |
-| **Whitelist only** | Only advertisers on the whitelist (which cannot contain a blocked one) |
+| **Whitelist only** | Only advertisers on the whitelist of the DSP they bid through (which cannot contain a blocked one) |
 
 Advertisers and *Whitelist only* are mutually exclusive — a position is
 either held for named advertisers or open to the whitelist — and the newer
 choice wins in the picker.
 
-- **A blocked advertiser is withdrawn from the picker.**
+- **A blocked advertiser is withdrawn from the picker** (blocked on the DSP the seat belongs to).
 - **Blocking an advertiser reaches positions already sold.** A position
   reserved to a name that is then blacklisted keeps it, so the position does
   not change under whoever set it; adding it again is rejected.
@@ -1972,9 +2081,10 @@ A DSP's page holds only, in this order:
    billing unit. The timeout is also sent as the bid request's `tmax`.
    Allowed ranges: 1–10,000 QPS, 50–2,000 ms; outside them the save is
    refused `400 validation_failed`.
-5. **List management**: a link to the company advertiser and category lists
-   when centrally managed, or the DSP's own advertiser **and** category
-   lists, editable, when unlinked (§6).
+5. **List management**: the DSP's own advertiser whitelist and blacklist,
+   picked from the advertisers it synced (no free text); and a note that the
+   company IAB category lists apply to it, with a link to Advertiser settings
+   (§6).
 6. **Save changes / Cancel**, always visible at the bottom (see *Saving
    changes*).
 
@@ -1983,8 +2093,9 @@ advertisers through each DSP, so the connection is not tied to one. The
 DSP's advertisers are listed on the **Advertisers** screen, not on its page.
 Currency, floor CPM, multipliers and targeting permissions are set elsewhere
 and are neither set nor repeated on the DSP's page; category lists are set
-in Advertiser settings too, but — unlike those — are also editable on the
-DSP's own page once it has unlinked (§6). Deal IDs are deferred to a later
+in Advertiser settings too and apply to every DSP — there is no per-DSP
+category override; the advertiser lists live only on the DSP's own page (§6).
+Deal IDs are deferred to a later
 release (open question 45).
 
 ### Which side each named platform sits on
@@ -2006,7 +2117,8 @@ release (open question 45).
    floor on the request, plus permitted categories, the advertiser blocklist
    and creative approval (§3), all applied **before** a bid can win. Open
    auction only in this release.
-3. **Creative retrieval and hand-off.** The winning creative is fetched,
+3. **Creative retrieval and hand-off.** The creative is identified by its
+   content hash, not the DSP's crid (§3 *Submission*). The winning creative is fetched,
    confirmed approved and validated against the display type's canvas, then
    handed to the **existing campaign system** for that slot and window.
    Distribution to players, caching, playback and playback analytics are the
@@ -2050,7 +2162,12 @@ arrives last and open-auction fill will look thin until it does.
 - **No user identity.** A bid request describes a *venue and a moment*, not a
   person. Personalisation Variables and Computer Vision variables (§6) never
   cross into the exchange.
-- **Venue taxonomy and geo** (§1).
+- **Venue taxonomy and geo** (§1). Read from PH Core, which owns the
+  completeness guarantee and the missing-data signal (api/PH-CORE-BOUNDARIES.md,
+  "Venue and geo metadata"). A position whose required venue/geo (OpenOOH venue
+  type, lat/long, store id) is absent is *not sellable*: the exchange leaves it
+  out of inventory and the auction, like an unscored slot, rather than send a
+  bid request a DSP may reject with no clear reason.
 - **Screen and loop context**: resolution, aspect, orientation, slot duration,
   loop length and share of voice. `maximumCampaignsPlayedInRotation` *is* the
   share-of-voice denominator.
@@ -2067,9 +2184,12 @@ DOOH bills on **proof of play**, not on the win notice. The platform's
 **existing playback data** shows what actually played; PH reconciles wins
 against it and bills the CPM against the assumed views that genuinely
 played, priced per §4. Plays that did not happen (screen offline, store
-closed, loop cut short) are not billed. This project **reads** that data for
-billing only; it does not change how it is written or add any reporting on
-it. As the exchange, disputes resolve against this data.
+closed, loop cut short) are not billed. **Settlement is final**
+(§4 "Billing"): playback received after a window's invoice is written is
+disregarded for billing and instead reported as lost revenue from display
+downtime, at the cleared rate. This project **reads** that data for
+billing and for the lost-revenue ledger only; it does not change how it is
+written or add any other reporting on it. As the exchange, disputes resolve against this data.
 
 ### Brand safety, structurally
 
@@ -2163,7 +2283,7 @@ Used only for the delete check in §1: a display type with any display whose
 ```
 buyersList: {
   id, name, description,
-  invitedBuyers: [{ identifierType, value }],  // identifierType: brandEntity | dspSeatId | other
+  invitedBuyers: [{ partnerId, seatId }],      // a seat a connected DSP synced (partners.seats); matched exactly
   activeFrom, activeTo,                        // the delivery term; ISO date-time or null = no bound (inclusive)
   auctionCloses,                               // the auction window's bidding deadline; ISO date-time or null = not using
                                                 //   the two-period model — clears a fresh auction every play window (23 Sep 2026)
@@ -2204,8 +2324,15 @@ campaign: { …existing fields,
             activation: { enabled } }         // only settable once status = approved
 
 asset: { …existing fields, id, campaignId, role,      // "default" or a targeted version id
-         contentHash }                                // sha256 — the basis for safe reuse, below
+         contentHash }                                // sha256 — the creative's identity and the basis for safe reuse, below
+
+dspCreative (label): { partnerId, crid, campaignId,   // the crid is a reference label; campaignId (derived from
+                       contentHash, iurl, verifiedAt } // advertiser + contentHash) is the PH creative it resolved to
 ```
+
+A DSP-sourced creative's `campaign.id` is derived from (advertiser, asset
+`contentHash`) — never from a crid. Several `dspCreative` labels (one per
+DSP and crid) may point at one creative.
 
 **Safe reuse tracking (ticket, 22 Sep)**, kept beside approval, not inside
 the campaign record — it is a history of decisions, not campaign state:
@@ -2217,7 +2344,8 @@ campaignApprovalAssetClearance: { campaignId, assetId, contentHash, clearedBy, c
 One row per (campaign, asset) — written only when a human approves (never
 from an automated pass or an auto-approve), overwritten on every later
 human approval. An asset may skip re-review only when its current content
-hash matches this row's — see *Safe reuse of previously approved assets*,
+hash matches this row's (content hash primary; a DSP crid is only a
+reference label) — see *Safe reuse of previously approved assets*,
 §3, for the exact rule. A clearance also covers the targeting rules
 (pseudo-asset `#targeting`, hashed over the rendered rules), so identical
 files under changed targeting still re-review. Assets carry `contentHash`;
@@ -2253,8 +2381,8 @@ superseding the earlier same-day "baseline optional" decision — §3, §6):
   mode: test | live,                      // live only when connected and the bidder integration is complete
   creds: { …per DSP, see §7 },            // no advertiser ID
   bidder: { bidderEndpoint, seatIds, qps?, timeoutMs? },  // qps/timeoutMs: per-DSP overrides (Q46); absent = platform default (500 / 300 ms)
-  seats: [{ id, name }],                  // advertisers pulled on connect; listed on the Advertisers screen
-  listsLinked, allowList, blockList }     // own advertiser lists when unlinked
+  seats: [{ id, name }],                  // advertisers synced on connect and re-connect; listed on the Advertisers screen and the source of the lists below
+  allowList, blockList }                  // this DSP's own advertiser whitelist/blacklist: seat IDs from `seats`, no free text (§6); category lists are company-wide
 ```
 
 Company-level:
@@ -2265,7 +2393,9 @@ Company-level:
   `playWindowHours`, `auctionCutoffTime`; defaults 168 / 24 / 18:00 UTC —
   `playWindowHours` is only the window a slot inherits when neither it nor
   its display type sets a billing unit, open question 27),
-  advertiser and IAB-category whitelists and blacklists.
+  IAB-category whitelists and blacklists (`categoryWhitelist`,
+  `categoryBlacklist`). There are no company-level advertiser lists: they
+  are per DSP (partner `allowList` / `blockList`, §6).
 - **Advertisers / Inventory** (an admin writes it; marketing reads it):
   `advertiserSettings: { [advertiser]: { approvalRequired, floorMultiplier } }`
   (defaults `true` / 1.0), and per sellable slot what it is assigned to
@@ -3286,12 +3416,10 @@ playback analytics.**
   disconnect. *(DSP Integration → partner)*
 - **Bidder integration**: endpoint and seat IDs only. *(DSP Integration → partner)*
 - **Test / Live mode** per DSP. *(DSP Integration → partner → Mode)*
-- **Company advertiser and category lists**, with the **Where these apply**
-  adoption view (adopting or own lists, no counts) directly below them.
-  *(DSP Integration → Advertiser settings → List management, Where these apply)*
-- **Advertiser and category lists on a DSP's page**: a link to the company
-  lists when centrally managed (with Unlink and edit); the DSP's own
-  editable advertiser **and** category lists when unlinked (with Relink).
+- **Company IAB category lists**: one whitelist and blacklist for every DSP,
+  chosen from the IAB taxonomy. *(DSP Integration → Advertiser settings → Category lists)*
+- **Advertiser lists on a DSP's page**: the DSP's own, from its synced
+  advertisers, plus a link to the central category lists.
   *(DSP Integration → partner → List management)*
 - **Campaign and content package submission**: a mandatory default layer
   plus optional prioritised targeted versions, validated and stored in the
@@ -3343,8 +3471,7 @@ are in `api/PH-CORE-BOUNDARIES.md`.
   versions is refused `too_many_versions`, and `GET /v1/inventory` exposes
   `maxCampaigns` on each position so a DSP knows the limit before bidding.
 - **Bid responses are validated and bounded** before they are trusted:
-  the request id echoed, impression 1, a finite price under a ceiling, a
-  missing currency read as USD (OpenRTB), at most 10 bids and 64 KB per
+  the request id echoed, impression 1, a finite price under a ceiling, a currency equal to the instance currency (§4: another currency, or none, is rejected, never converted and never read as USD), at most 10 bids and 64 KB per
   response, and one unknown creative retrieved per response, only from the
   DSP's own creative path.
 - **An auction clears in about one bidder timeout per 16 positions**,
@@ -3505,8 +3632,8 @@ until that section is edited.
 - **Re-approval and DSP creative audits (Q38, Q40; §3).** An approved
   campaign keeps running while an edit is re-reviewed; approval swaps the
   edit in atomically, rejection discards it. A DSP's own audit is advisory
-  only; a creative a human cleared is not re-audited when the same creative
-  ID arrives with byte-identical content. The "safe reuse not wired into
+  only; a creative a human cleared is not re-audited when byte-identical
+  content arrives, whatever its crid or DSP (identity is the content hash). The "safe reuse not wired into
   upload/submit" gap is closed.
 - **Play-window length (Q27; §4 "Billing", §5 "Billing unit", §6 "Selling
   a play window").** A slot's billing unit is its play-window length and
@@ -3605,10 +3732,13 @@ partner-contributed attributes have been removed with that scope.
     `ExchangeReviewStatus` / `ApprovalStatus`, The Trade Desk `approvedBy`
     for its DOOH supply approver, Amazon Ads DSP asset-level moderation) is
     an advisory input recorded for the reviewer, never a replacement for
-    the retailer's approval. Pre-approval by creative ID rides on safe
-    reuse, keyed on DSP creative ID + content hash: once a human clears a
-    creative, the byte-identical creative is not re-audited (§3,
-    *Submission*, *Safe reuse*). The pre-auction fallback (an unknown or
+    the retailer's approval. Pre-approval rides on safe reuse, keyed on
+    PH's own content-derived creative identity (decision, Rob, 4 Oct 2026):
+    once a human clears a creative, the byte-identical creative is not
+    re-audited, under any crid and through any DSP, and one approval covers
+    every DSP it arrives through; the DSP crid is a reference label, not the
+    key. A reused crid on changed content is a new creative and re-reviews
+    (§3, *Submission*, *Safe reuse*). The pre-auction fallback (an unknown or
     unapproved creative is discarded and queued for review) remains. A
     supply-side push of creatives ahead of a bid, and a rich "submit
     targeting for pre-approval" flow, remain tier-2 work.

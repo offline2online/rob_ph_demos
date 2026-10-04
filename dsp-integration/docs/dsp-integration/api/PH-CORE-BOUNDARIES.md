@@ -184,6 +184,20 @@ provide one breaks something specific, named here.
     only each display's counted or modelled VAC-d and its per-display
     override. A display type with no retailer scoring is scored by its
     default VAC-d; unset means unscored and unsellable.
+  - **PH Core may write the default from computer vision** (ticket
+    MuZ4KUSLJI2BIGbEV2pq, Rob, 4 Oct 2026): `PUT /admin/v1/display-types/{id}/default-vacd`
+    `{defaultVacd}`. This **revises v3.1 row 4**, which said the default is
+    only the exchange's own setting (the contract text is updated
+    alongside this ticket). Precedence: **the automated score wins** — it
+    replaces a manually set value and is stored with
+    `phExtensions.defaultVacdSource = computer_vision`, so slots scored from
+    it are `counted` (`qty.sourcetype` 1); a manual edit (Display Type
+    form, `PUT …/extensions`) stays valid, is `manual` / modelled, and
+    stands until the next CV write. Re-saving the form with the same value
+    keeps the source. The write targets the display-type default only,
+    never a display's counted VAC-d or `vacd_override`. On integration, PH
+    Core calls this endpoint with the CV figure; the adapter's `forSlot`
+    still receives `(default, defaultCounted)` from the exchange.
   - Also returns `counted`: whether the figure is measured (Vision/AI,
     MIST proximity) or modelled. It becomes OpenRTB `qty.sourcetype`
     (`exchange/openrtb.ts`), so an adapter that cannot tell must say
@@ -667,6 +681,34 @@ latitude/longitude, store id; read-only, never written), and the
 asserts the bid request's `dooh.venuetype` and the inventory venue fields
 come from the seam value, so swapping the adapter is covered.
 
+### Dependency on PH Core: completeness guarantee and missing-data behaviour (4 Oct 2026, ticket HxMMn84BcCP6y9S2jk3l)
+
+**Status: open, owned by PH Core.** Nothing defines today what happens when a
+store or display has no venue or geo metadata. Unlike an unscored slot, which
+drops out of inventory cleanly, a store with no venue record would make the
+exchange build a bid request a DSP may reject, with no signal why: a silent
+fill-killer at onboarding. The decision (Rob) is that the exchange does not
+define this; PH Core, as system of record, does. PH Core to provide:
+
+1. **Completeness guarantee.** Which venue/geo fields are guaranteed present
+   and valid per store/display before that display is sellable: OpenOOH venue
+   type, latitude/longitude, store identifier (spec §1, §7, Q35), and
+   orientation and loop length per display.
+2. **Missing-data signal.** What `StoreSource` returns when a store/display
+   lacks any required field (an explicit "venue incomplete" state or a
+   per-field null, not a silent default), so the exchange can react
+   deterministically.
+
+**Exchange side (consumes the contract).** A position whose required
+venue/geo is absent is treated as not sellable, analogous to the unscored-slot
+rule: left out of `GET /v1/inventory` and the forecast, skipped by the
+auction, and a bid or reservation on it refused with a 409 saying why. The
+exchange never emits a bid request with invented or empty venue/geo fields.
+The exact signal shape follows PH Core's definition; the POC (venue as
+`phExtensions.venue`) is not changed by this ticket.
+
+**Hand-off:** PH Core to define the guarantee and the missing-data contract.
+
 ## Analytics event values billing consumes (decision 29 Sep 2026, Q53/Q54)
 
 Analytics — the event schema, its data partition and the consuming
@@ -685,10 +727,25 @@ per campaign, per position and per play window:
 | Play count | Line item `plays` |
 | Displays in scope, share of voice | Deriving `expected` seconds |
 | Audience measure behind assumed views (VAC-d inputs) | `assumedViews` per window |
+| **Received-at time (when the platform got the play)**, per play | The settlement cut-off: a play received before the window's line item is written counts; one received after is disregarded for billing and reported as lost revenue from downtime (Rob, 4 Oct 2026). Distinct from play start time, which says when it played. |
 
 Billing computes `realised VAC-d = assumed views × min(1, played / expected)`
 and `amount = realised VAC-d / 1000 × clearing CPM`. Plays that did not
-happen are not billed and there is no make-good (Q29). Closed-loop
+happen are not billed and there is no make-good (Q29).
+
+**Settlement is final (Rob, 4 Oct 2026).** A window is invoiced once, on the
+playback available when its line item is written; the line item never
+changes afterwards. Playback the platform receives after that (a display
+that was offline and backfills) is not re-billed, credited or trued up. It
+is recorded at what it would have been worth at the window's cleared CPM and
+reported as **lost revenue from display downtime**, by store, display and
+over time, so the retailer's operational teams own it. Data received between
+window end and settlement still counts. PH Core must therefore supply
+received-at per play (table above). The stand-in plays table carries it
+(`plays.received_at`, migration 0043; null = known at settlement) and the
+cut-off, late-play ledger and lost-revenue report are built on it
+(`apps/api/src/billing/late.ts`); on integration PH Core's playback store
+answers `PlaybackSource.totals(receivedBy)` and `receivedBetween` itself. Closed-loop
 conversion attribution is not an input (Q55).
 
 **A PH Core requirement on partner-facing analytics** (Rob, 2 Oct 2026,

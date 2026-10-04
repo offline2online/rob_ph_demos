@@ -9,27 +9,43 @@ import { promotePendingPlayWindowIfDue } from '../src/exchange/scheduler'
 const input = {
   currency: 'NZD', floorCpm: 120, personalisedMultiplier: 1.6, interactiveCpe: 1.25,
   auctionOpensHours: 72, playWindowHours: 168, auctionCutoffTime: '20:30',
-  advertiserWhitelist: ['Nestlé', ' Swisse '], advertiserBlacklist: ['Red Bull', 'red bull'], categoryWhitelist: ['Food & Drink'], categoryBlacklist: ['Finance'],
+  categoryWhitelist: ['Food & Drink'], categoryBlacklist: ['Finance'],
 }
 
 /* The seeded slot's own assignment, when a test is only changing targeting. */
 const KEEP = { partnerIds: ['p_google'], advertisers: [], whitelistOnly: false }
 
 describe('Advertiser settings (spec §4, §6)', () => {
-  it('saves pricing and lists, trimming and de-duplicating entries', async () => {
+  it('saves pricing and category lists, trimming and de-duplicating entries', async () => {
     const app = buildApp(await testContext())
     const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: input })
     expect(res.statusCode).toBe(200)
     expectMatchesContract('PUT', '/admin/v1/advertiser-settings', 200, res.json())
-    expect(res.json()).toMatchObject({ currency: 'NZD', floorCpm: 120, advertiserWhitelist: ['Nestlé', 'Swisse'], advertiserBlacklist: ['Red Bull'] })
+    expect(res.json()).toMatchObject({ currency: 'NZD', floorCpm: 120, categoryWhitelist: ['Food & Drink'], categoryBlacklist: ['Finance'] })
+    /* No advertiser lists at company level: they belong to each DSP. */
+    expect(res.json()).not.toHaveProperty('advertiserWhitelist')
+    expect(res.json()).not.toHaveProperty('advertiserBlacklist')
   })
 
-  it('rejects an entry on both lists (case-insensitive), a non-ISO currency and a non-positive floor', async () => {
+  it('refuses a category that is not in the IAB taxonomy, and stores the canonical spelling', async () => {
     const app = buildApp(await testContext())
-    const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: { ...input, currency: 'XYZ1', floorCpm: 0, advertiserBlacklist: ['NESTLÉ'], categoryBlacklist: ['food & drink'] } })
+    const bad = await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: { ...input, categoryWhitelist: ['Food & Drink', 'Gadgets'], categoryBlacklist: ['finance', 'Red Bull'] } })
+    expect(bad.statusCode).toBe(400)
+    expect(bad.json().error.details).toEqual([
+      { field: 'categoryWhitelist', reason: expect.stringContaining('Gadgets is not an IAB category') },
+      { field: 'categoryBlacklist', reason: expect.stringContaining('Red Bull is not an IAB category') },
+    ])
+    const ok = await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: { ...input, categoryWhitelist: ['food & drink'], categoryBlacklist: ['FINANCE'] } })
+    expect(ok.statusCode).toBe(200)
+    expect(ok.json()).toMatchObject({ categoryWhitelist: ['Food & Drink'], categoryBlacklist: ['Finance'] })
+  })
+
+  it('rejects an entry on both category lists (case-insensitive), a non-ISO currency and a non-positive floor', async () => {
+    const app = buildApp(await testContext())
+    const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: { ...input, currency: 'XYZ1', floorCpm: 0, categoryBlacklist: ['food & drink'] } })
     expect(res.statusCode).toBe(400)
     expectMatchesContract('PUT', '/admin/v1/advertiser-settings', 400, res.json())
-    expect(res.json().error.details.map((d: { field: string }) => d.field)).toEqual(['currency', 'floorCpm', 'advertiserWhitelist', 'categoryWhitelist'])
+    expect(res.json().error.details.map((d: { field: string }) => d.field)).toEqual(['currency', 'floorCpm', 'categoryWhitelist'])
   })
 
   it('saves the auction schedule, and validates it', async () => {
@@ -330,7 +346,7 @@ describe('Advertiser settings (spec §4, §6)', () => {
     expect((await buildApp(ctx).inject({ method: 'GET', url: '/api/v1/inventory/menu_board.s2', headers: { authorization: 'Bearer poc-token-google-dv360' } })).statusCode).toBe(200)
 
     /* The whitelist instead. */
-    await ctx.company.save({ ...(await ctx.company.get()), advertiserWhitelist: ['Nestlé'] })
+    await ctx.partners.update('p_google', { allowList: ['5130001'] })
     expect(assigned(await save({ partnerIds: ['p_google'], advertisers: [], whitelistOnly: true }))).toMatchObject({ whitelistOnly: true })
   })
 
@@ -349,12 +365,13 @@ describe('Advertiser settings (spec §4, §6)', () => {
     /* L'Oréal is an Amazon advertiser, not a Google one. */
     expect(await fields({ partnerIds: ['p_google'], advertisers: ["L'Oréal"], whitelistOnly: false })).toEqual(['items[0].assignedTo.advertisers'])
     expect(await fields({ partnerIds: [], advertisers: ['Nestlé'], whitelistOnly: true })).toEqual(['items[0].assignedTo.whitelistOnly'])
-    await ctx.company.save({ ...(await ctx.company.get()), advertiserWhitelist: [] })
+    await ctx.partners.update('p_google', { allowList: [] })
+    await ctx.partners.update('p_amazon', { allowList: [] })
     expect(await fields({ partnerIds: [], advertisers: [], whitelistOnly: true })).toEqual(['items[0].assignedTo.whitelistOnly'])
 
     /* A blocked advertiser can't be added, but one already held stays. */
     expect((await save({ partnerIds: [], advertisers: ['Nestlé'], whitelistOnly: false })).statusCode).toBe(200)
-    await ctx.company.save({ ...(await ctx.company.get()), advertiserBlacklist: ['Nestlé'] })
+    await ctx.partners.update('p_google', { blockList: ['5130001'] })
     expect((await save({ partnerIds: [], advertisers: ['Nestlé'], whitelistOnly: false })).statusCode).toBe(200)
     /* Once the position is held for someone else, Nestlé can't come back. */
     expect((await save({ partnerIds: [], advertisers: ['Swisse'], whitelistOnly: false })).statusCode).toBe(200)

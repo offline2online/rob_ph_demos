@@ -19,6 +19,8 @@ export interface DisplaySource {
   /* The distinct stores a display type is in, for the inventory's store and
      region filters — at most one row per store, never one per display. */
   storeIdsByDisplayType(displayTypeId: string): Awaitable<string[]>
+  /* One display, for attributing a late play to its store and display type. */
+  get(id: string): Awaitable<DisplayRecord | null>
 }
 
 interface Row { id: string; name: string; store_id: string; store: string; display_type_id: string }
@@ -48,6 +50,7 @@ export const sqliteDisplaySource = (db: Db): DisplaySource => {
   return {
     list: () => (prepared(db, `${SELECT} ORDER BY d.seq`).all() as unknown as Row[]).map(toRecord),
     listByDisplayType: (id) => (prepared(db, `${SELECT} WHERE d.display_type_id = ? ORDER BY d.seq`).all(id) as unknown as Row[]).map(toRecord),
+    get: (id) => { const r = prepared(db, `${SELECT} WHERE d.id = ?`).get(id) as unknown as Row | undefined; return r ? toRecord(r) : null },
     summaryByDisplayType: (id) => summaries().get(id) ?? NONE,
     storeIdsByDisplayType: (id) =>
       (prepared(db, 'SELECT DISTINCT store_id FROM displays WHERE display_type_id = ? AND store_id IS NOT NULL').all(id) as unknown as { store_id: string }[]).map((r) => r.store_id),

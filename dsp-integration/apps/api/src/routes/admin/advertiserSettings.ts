@@ -3,7 +3,7 @@
 import { MAX_MAX_CAMPAIGNS, MIN_MAX_CAMPAIGNS, TARGETING_MODES, advertiserSlug, assignedOf, billingUnitHoursOf, maxCampaignsOf, reservePriceOf, supportedTargetingOf, type AdvertiserSettings, type AdvertiserSettingsInput, type Assigned, type AvailableInventoryRow, type DisplayType, type DspAdvertisers, type TargetingMode } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
-import { cleanList, validateAdvertiserSettings } from '../../domain/advertiserSettings'
+import { cleanCategoryList, validateAdvertiserSettings } from '../../domain/advertiserSettings'
 import { tx } from '../../db/db'
 import { companyWindowCommitments, positionIdOf, slotWindowCommitments, unsellableReason } from '../../domain/positions'
 import { audienceOf, zonesOf } from '../../domain/displayTypes'
@@ -22,10 +22,7 @@ const hasQrControl = (dt: DisplayType) => !!(dt.qrControl as { enabled?: boolean
 const hasVisionAi = (dt: DisplayType) => !!(dt.enabledFeatures as { visionAi?: { enabled?: boolean } } | undefined)?.visionAi?.enabled
 
 export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => async (app) => {
-  const view = async (): Promise<AdvertiserSettings> => ({
-    ...(await ctx.company.get()),
-    whereTheseApply: (await ctx.partners.list()).map((p) => ({ partnerId: p.id, name: p.name, adopting: p.listsLinked })),
-  })
+  const view = async (): Promise<AdvertiserSettings> => ({ ...(await ctx.company.get()) })
 
   app.get('/advertiser-settings', async (req) => {
     guards.flagged()
@@ -37,7 +34,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
     guards.flagged()
     guards.requireScope(req, 'admin')
     const errors = validateAdvertiserSettings(req.body)
-    if (errors.length) throw validationFailed(errors, 'An entry can’t be on both lists, and pricing must be positive.')
+    if (errors.length) throw validationFailed(errors, 'An entry can’t be on both category lists, and pricing must be positive.')
     const b = req.body as AdvertiserSettingsInput
     /* Windows already bid on or booked are keyed on the current length (Q13)
        — changing it can't reach back and resize them. It used to be refused
@@ -71,8 +68,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         currency: b.currency, floorCpm: b.floorCpm, personalisedMultiplier: b.personalisedMultiplier, interactiveCpe: b.interactiveCpe,
         auctionOpensHours: b.auctionOpensHours, playWindowHours, auctionCutoffTime: b.auctionCutoffTime,
         pendingPlayWindowHours, pendingPlayWindowEffectiveFrom,
-        advertiserWhitelist: cleanList(b.advertiserWhitelist), advertiserBlacklist: cleanList(b.advertiserBlacklist),
-        categoryWhitelist: cleanList(b.categoryWhitelist), categoryBlacklist: cleanList(b.categoryBlacklist),
+        categoryWhitelist: cleanCategoryList(b.categoryWhitelist), categoryBlacklist: cleanCategoryList(b.categoryBlacklist),
       })
     })
     return view()
@@ -278,7 +274,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
 
         const raw = (r.assignedTo ?? {}) as { partnerIds?: unknown; advertisers?: unknown; whitelistOnly?: unknown; buyersListId?: unknown }
         const assigned: Assigned = { partnerIds: names(raw.partnerIds), advertisers: names(raw.advertisers), whitelistOnly: raw.whitelistOnly === true, buyersListId: typeof raw.buyersListId === 'string' ? raw.buyersListId : null }
-        const bad = await validateAssigned(assigned, (k) => f(`assignedTo.${k}`), partners, company, def ? assignedOf(def) : { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: null }, ctx.buyersLists)
+        const bad = await validateAssigned(assigned, (k) => f(`assignedTo.${k}`), partners, def ? assignedOf(def) : { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: null }, ctx.buyersLists)
         errors.push(...bad)
 
         const reservePrice = parseReservePrice(r.reservePrice, f('reservePrice'), errors)

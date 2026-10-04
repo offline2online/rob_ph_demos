@@ -301,14 +301,14 @@ describe('Run 2 — F. Bid-response hardening', () => {
     expect((await h.rows(day(1)))[0]).toMatchObject({ status: 'rejected', reason: 'Bid for impression 2; the request offered impression 1.' })
   })
 
-  it('F3 — a missing cur is read as USD and rejected on an AUD exchange', async () => {
+  it('F3 — a missing cur is rejected on an AUD exchange', async () => {
     const h = await setup()
     h.bidder.setScript((req) => {
       const { cur: _cur, ...body } = response(req, [swisseBid(req, { price: 500, crid: 'crid-f' })])
       return { body }
     })
     expect((await runAuction(h.ctx, day(1))).positions[0].winner).toBeNull()
-    expect((await h.rows(day(1)))[0]).toMatchObject({ status: 'rejected', reason: 'Bid in USD; the exchange trades in AUD.' })
+    expect((await h.rows(day(1)))[0]).toMatchObject({ status: 'rejected', reason: 'Bid names no currency; the exchange trades in AUD and does not convert.' })
   })
 
   it('F4 — a non-finite price, or one above 10,000 CPM, is rejected', async () => {

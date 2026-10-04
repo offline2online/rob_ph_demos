@@ -20,6 +20,13 @@
    Plays that didn't happen (display offline, store closed, loop cut short)
    are not billed (Q29). Line items are stored only: no UI, report or API.
 
+   Settlement is final (Rob, 4 Oct 2026): the line item is the invoice and
+   never changes. Billing counts the plays the platform had RECEIVED by the
+   moment it settles (PlaybackSource.totals receivedBy), so playback that
+   arrives between a window's end and settlement still counts; playback
+   that arrives after is never billed and is recorded as lost revenue from
+   downtime instead (billing/late.ts).
+
    Per slot (OQ27, Rob 29 Sep 2026): the window length here is the slot's
    own billing unit (positions.ts windowMs(ctx, p) — slot override, else
    display type default, else the company play window), so a slot with a
@@ -72,6 +79,7 @@ export interface LineItem {
   playsByVersion: { versionId: string | null; plays: number }[]
 }
 
+export { recordLatePlays, valueLatePlay } from './late'
 export { bookLockedTermWindow, lockTermOnClear } from './lockedTerm'
 export { auctionOpenAt, isActiveAt, isTermLocked, lockedTermSpan, termStateAt, type TermState } from './term'
 
@@ -142,9 +150,9 @@ export function writeLineItem(ctx: Context, item: LineItem, computedAt: string):
 /* Bills one cleared reservation from the totals for its window. Idempotent
    on billing_line_items.reservation_id: null when a line item already
    exists for it. */
-export async function billReservation(ctx: Context, r: ReservationRecord, p: PositionRef, played: PlayTotals, basis: BillingBasis = BILLING_BASIS): Promise<LineItem | null> {
+export async function billReservation(ctx: Context, r: ReservationRecord, p: PositionRef, played: PlayTotals, basis: BillingBasis = BILLING_BASIS, settledAt: string = new Date(ctx.clock().getTime()).toISOString()): Promise<LineItem | null> {
   const item = await computeLineItem(ctx, r, p, played, basis)
-  return (await writeLineItem(ctx, item, new Date(ctx.clock().getTime()).toISOString())) ? item : null
+  return (await writeLineItem(ctx, item, settledAt)) ? item : null
 }
 
 /* Bills every live, handed-off window that has ended and isn't billed yet. */
@@ -159,8 +167,12 @@ export async function runBilling(ctx: Context): Promise<LineItem[]> {
     if (!p) continue
     const end = Date.parse(r.windowStart) + (await billingUnitMs(ctx, p))
     if (end > now) continue
-    const played = await ctx.playback.totals({ campaignId: r.campaignId as string, displayTypeId: p.displayType.id, from: r.windowStart, to: new Date(end).toISOString() })
-    const item = await billReservation(ctx, r, p, played)
+    /* The settlement time is the cut-off: the totals count what was received
+       up to it, and the line item records it as written then, so a play
+       received after it is late (billing/late.ts) however it raced this call. */
+    const settledAt = new Date(ctx.clock().getTime()).toISOString()
+    const played = await ctx.playback.totals({ campaignId: r.campaignId as string, displayTypeId: p.displayType.id, from: r.windowStart, to: new Date(end).toISOString(), receivedBy: settledAt })
+    const item = await billReservation(ctx, r, p, played, BILLING_BASIS, settledAt)
     if (item) out.push(item)
   }
   return out

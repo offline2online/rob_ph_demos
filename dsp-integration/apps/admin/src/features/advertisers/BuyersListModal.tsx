@@ -4,19 +4,22 @@
    auction resolution rule (platform-wide) and the per-brand relationship
    variable (global on the brand entity) are deliberately not fields here. */
 import { App, Button, DatePicker, Input, Modal, Select } from 'antd'
-import { IDENTIFIER_TYPES, type BuyersList, type IdentifierType, type InvitedBuyer } from '@ph-dsp/types'
+import { useQuery } from '@tanstack/react-query'
+import type { BuyersList, InvitedBuyer } from '@ph-dsp/types'
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
 import { api, ApiRequestError } from '../../api/client'
+import { Q } from '../../api/queries'
 import { Icon } from '../../shared/Icon'
 import { T } from '../../theme/phTheme'
 
 type Draft = { name: string; description: string; invitedBuyers: InvitedBuyer[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null }
-const blankBuyer = (): InvitedBuyer => ({ identifierType: 'brandEntity', value: '' })
-const blankDraft = (): Draft => ({ name: '', description: '', invitedBuyers: [blankBuyer()], activeFrom: null, activeTo: null, auctionCloses: null })
+/* An invited buyer is one synced seat of one connected DSP — the Select's value is both halves. */
+const buyerKey = (b: InvitedBuyer) => JSON.stringify([b.partnerId, b.seatId])
+const blankDraft = (): Draft => ({ name: '', description: '', invitedBuyers: [], activeFrom: null, activeTo: null, auctionCloses: null })
 const draftOf = (l: BuyersList): Draft => ({
   name: l.name, description: l.description,
-  invitedBuyers: l.invitedBuyers.length ? l.invitedBuyers.map((b) => ({ ...b })) : [blankBuyer()],
+  invitedBuyers: l.invitedBuyers.map((b) => ({ ...b })),
   activeFrom: l.activeFrom, activeTo: l.activeTo, auctionCloses: l.auctionCloses,
 })
 
@@ -37,14 +40,22 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
     setErrors({})
   }, [open, editing])
 
-  const setBuyer = (i: number, patch: Partial<InvitedBuyer>) => setDraft((d) => ({ ...d, invitedBuyers: d.invitedBuyers.map((b, j) => (j === i ? { ...b, ...patch } : b)) }))
-  const addBuyer = () => setDraft((d) => ({ ...d, invitedBuyers: [...d.invitedBuyers, blankBuyer()] }))
-  const removeBuyer = (i: number) => setDraft((d) => ({ ...d, invitedBuyers: d.invitedBuyers.filter((_, j) => j !== i) }))
+  /* The dropdown offers every advertiser (seat) a connected DSP has synced, grouped by DSP — no typing, no identifier type. */
+  const partners = useQuery(Q.partners)
+  const connected = (partners.data ?? []).filter((p) => p.status === 'connected' && p.seats?.length)
+  const labelOf = new Map(connected.flatMap((p) => (p.seats ?? []).map((s) => [buyerKey({ partnerId: p.id, seatId: s.id }), `${s.name} (${p.name})`] as const)))
+  const options = connected.map((p) => ({
+    label: p.name,
+    options: (p.seats ?? []).map((s) => ({ value: buyerKey({ partnerId: p.id, seatId: s.id }), label: `${s.name} (${p.name})` })),
+  }))
+  /* A saved buyer whose seat is no longer synced stays visible (by its seat ID) so it can be removed. */
+  const staleOptions = draft.invitedBuyers.filter((b) => !labelOf.has(buyerKey(b))).map((b) => ({ value: buyerKey(b), label: `${b.seatId} (no longer synced)` }))
+  const setBuyers = (keys: string[]) => setDraft((d) => ({ ...d, invitedBuyers: keys.map((k) => { const [partnerId, seatId] = JSON.parse(k) as [string, string]; return { partnerId, seatId } }) }))
 
   const save = async () => {
     setSaving(true)
     setErrors({})
-    const payload = { ...draft, invitedBuyers: draft.invitedBuyers.filter((b) => b.value.trim()) }
+    const payload = draft
     try {
       const saved = editing
         ? await api<BuyersList>('PUT', `/admin/v1/buyers-lists/${editing.id}`, payload)
@@ -92,28 +103,16 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
         <Input.TextArea rows={2} value={draft.description} placeholder="So this list is distinguishable in the table below" onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))} />
       </div>
       <div className="mb-3.5">
-        <div className="mb-1.5 flex items-center justify-between">
-          <label style={{ fontSize: 13, color: T.muted }}><span style={{ color: T.error }}>*</span> Invited buyers</label>
-          <Button type="text" size="small" icon={<Icon name="add" size={14} />} onClick={addBuyer}>Add buyer</Button>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          {draft.invitedBuyers.map((b, i) => (
-            <div key={i} className="flex items-center gap-1.5">
-              <Select<IdentifierType>
-                size="small" style={{ width: 168 }} aria-label={`Invited buyer ${i + 1}: identifier type`}
-                value={b.identifierType} options={IDENTIFIER_TYPES.map((t) => ({ value: t.key, label: t.label }))}
-                onChange={(v) => setBuyer(i, { identifierType: v })}
-              />
-              <Input
-                size="small" aria-label={`Invited buyer ${i + 1}: value`} value={b.value}
-                placeholder={IDENTIFIER_TYPES.find((t) => t.key === b.identifierType)?.placeholder}
-                onChange={(e) => setBuyer(i, { value: e.target.value })}
-              />
-              <Button type="text" size="small" danger aria-label={`Remove invited buyer ${i + 1}`} disabled={draft.invitedBuyers.length === 1}
-                icon={<Icon name="close" size={14} />} onClick={() => removeBuyer(i)} />
-            </div>
-          ))}
-        </div>
+        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}><span style={{ color: T.error }}>*</span> Invited buyers</label>
+        <Select
+          mode="multiple" className="w-full" aria-label="Invited buyers" showSearch optionFilterProp="label"
+          status={errors.invitedBuyers ? 'error' : undefined} loading={partners.isLoading}
+          placeholder="Choose advertisers synced from your connected DSPs"
+          notFoundContent="No advertisers synced yet — connect a DSP first."
+          value={draft.invitedBuyers.map(buyerKey)} options={[...(staleOptions.length ? [{ label: 'Not synced', options: staleOptions }] : []), ...options]}
+          onChange={setBuyers}
+        />
+        <div className="mt-1" style={{ fontSize: 11, color: T.micro }}>Only advertisers a connected DSP has synced can be invited; each is matched on the seat ID that DSP bids under.</div>
         {errors.invitedBuyers && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.invitedBuyers}</div>}
       </div>
       <div className="mb-3.5">

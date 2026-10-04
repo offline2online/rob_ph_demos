@@ -24,7 +24,7 @@ const responses: Record<string, unknown> = {
     { id: 'pl_menu', name: 'Menu Board Playlist', autoCreatedFor: 'menu_board', playlistSettings: {}, assignments: [] },
   ] },
   '/api/admin/v1/partners': { items: [] },
-  '/api/admin/v1/advertiser-settings': { currency: 'AUD', floorCpm: 100, personalisedMultiplier: 1.5, interactiveCpe: 0.5, advertiserWhitelist: [], advertiserBlacklist: [], categoryWhitelist: [], categoryBlacklist: [], whereTheseApply: [] },
+  '/api/admin/v1/advertiser-settings': { currency: 'AUD', floorCpm: 100, personalisedMultiplier: 1.5, interactiveCpe: 0.5, categoryWhitelist: [], categoryBlacklist: [] },
   '/api/admin/v1/advertisers': { currency: 'AUD', floorCpm: 100, items: [] },
 }
 
@@ -48,7 +48,9 @@ describe('Display Types page', () => {
     expect(within(list).getAllByRole('option').map((o) => o.textContent)).toEqual([expect.stringContaining('Landscape'), expect.stringContaining('Menu Board — Long Format')])
 
     const labels = Array.from(document.querySelectorAll('label')).map((l) => l.textContent)
-    expect(labels.slice(0, 5)).toEqual(['Touch Point', '*Display Type Name', '*Display Canvas Size (Resolution)', 'Background Color', 'Default Playlist'])
+    /* Default VAC-d sits under the canvas size (ticket jhVpFHHsCp2L48vn4lRe,
+       4 Oct 2026); its label carries the info-tooltip icon's ligature text. */
+    expect(labels.slice(0, 6)).toEqual(['Touch Point', '*Display Type Name', '*Display Canvas Size (Resolution)', 'Default VAC-d (assumed views per play window)info', 'Background Color', 'Default Playlist'])
 
     /* Playlist Settings editing (and slot assignment) moved to Playlist
        Management, under each playlist, 26 Sep 2026 (see

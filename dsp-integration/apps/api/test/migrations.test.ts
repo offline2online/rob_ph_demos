@@ -77,4 +77,43 @@ describe('migrations', () => {
     migrateUp(db)
     expect(db.prepare("SELECT multi_zone FROM playlists WHERE id = 'pl_menu'").get()).toEqual({ multi_zone: zones })
   })
+
+  /* 0041: advertiser lists move from the company to each DSP, names → seat IDs.
+     (Built as 0040 in parallel with 0040_dsp_creative_content_identity; renumbered.) */
+  it('0041 carries company and DSP advertiser lists over as the DSP’s own seat IDs', () => {
+    const db = openDb(':memory:')
+    migrateUp(db, '0040')
+    db.prepare("INSERT INTO company_advertiser_settings (id, advertiser_whitelist, advertiser_blacklist, updated_at) VALUES ('company', ?, ?, 'x')")
+      .run(JSON.stringify(['Nestlé', ' swisse ', 'Gone Co']), JSON.stringify(['Red Bull', 'Swisse']))
+    const seats = JSON.stringify([{ id: '1', name: 'Nestlé' }, { id: '2', name: 'Swisse' }])
+    const ins = db.prepare("INSERT INTO partners (id, provider, name, status, mode, seats, lists_linked, allow_list, block_list, created_at, updated_at) VALUES (?, ?, ?, 'draft', 'test', ?, ?, ?, ?, 'x', 'x')")
+    ins.run('linked', 'google_dv360', 'Linked', seats, 1, '[]', '[]')
+    ins.run('own', 'amazon_dsp', 'Own', seats, 0, JSON.stringify(['2', 'Nestlé', 'Unknown']), JSON.stringify(['nestlé']))
+    migrateUp(db)
+    const row = (id: string) => db.prepare('SELECT allow_list, block_list FROM partners WHERE id = ?').get(id) as { allow_list: string; block_list: string }
+    expect(JSON.parse(row('linked').allow_list).sort()).toEqual(['1', '2'])
+    expect(JSON.parse(row('linked').block_list)).toEqual(['2'])
+    expect(JSON.parse(row('own').allow_list).sort()).toEqual(['1', '2'])
+    expect(JSON.parse(row('own').block_list)).toEqual(['1'])
+    const cols = (db.prepare('PRAGMA table_info(company_advertiser_settings)').all() as { name: string }[]).map((c) => c.name)
+    expect(cols).not.toContain('advertiser_whitelist')
+    expect(cols).toContain('category_whitelist')
+  })
+
+  /* 0042: invited buyers become seats the DSPs synced. */
+  it('0042 turns name- and seat-ID-typed invited buyers into synced seats and drops the rest', () => {
+    const db = openDb(':memory:')
+    migrateUp(db, '0041')
+    const ins = db.prepare("INSERT INTO partners (id, provider, name, status, mode, seats, created_at, updated_at) VALUES (?, ?, ?, 'draft', 'test', ?, 'x', 'x')")
+    ins.run('g', 'google_dv360', 'G', JSON.stringify([{ id: '1', name: 'Nestlé' }, { id: '2', name: 'Swisse' }]))
+    ins.run('a', 'amazon_dsp', 'A', JSON.stringify([{ id: 'x9', name: ' nestlé ' }]))
+    const invited = [
+      { identifierType: 'brandEntity', value: 'Nestlé' }, { identifierType: 'dspSeatId', value: '2' },
+      { identifierType: 'brandEntity', value: 'Unknown Co' }, { identifierType: 'other', value: 'Nestlé' },
+    ]
+    db.prepare("INSERT INTO buyers_lists (id, name, description, invited_buyers, created_at, updated_at) VALUES ('bl', 'L', '', ?, 'x', 'x')").run(JSON.stringify(invited))
+    migrateUp(db)
+    const got = JSON.parse((db.prepare("SELECT invited_buyers FROM buyers_lists WHERE id = 'bl'").get() as { invited_buyers: string }).invited_buyers) as { partnerId: string; seatId: string }[]
+    expect(got.map((b) => `${b.partnerId}:${b.seatId}`).sort()).toEqual(['a:x9', 'g:1', 'g:2'])
+  })
 })

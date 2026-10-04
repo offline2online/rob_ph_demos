@@ -476,6 +476,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/reports/lost-revenue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Lost revenue from display downtime, by store, display or day
+         * @description Settlement is final (spec §4 "Billing"): a play the platform received
+         *     after its window's line item was written is never billed, and is
+         *     recorded at what it would have been worth at the window's cleared CPM
+         *     (personalised multiplier included). This reports those plays, placed
+         *     by when they played. An operational report for the retailer; never
+         *     shown on or charged to an advertiser's invoice.
+         */
+        get: operations["getLostRevenueReport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/booking-schedule": {
         parameters: {
             query?: never;
@@ -746,6 +771,39 @@ export interface paths {
          * @description Existing display type fields keep using the existing display type API.
          */
         put: operations["saveDisplayTypeExtensions"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/display-types/{displayTypeId}/default-vacd": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * PH Core writes the display type's default VAC-d (computer vision score)
+         * @description The write path for computer-vision dynamic scoring (ticket
+         *     MuZ4KUSLJI2BIGbEV2pq, 4 Oct 2026). PH Core writes the score CV
+         *     measured at the edge as the display type's default VAC-d
+         *     (`phExtensions.defaultVacd`); it appears on the Display Type form
+         *     and scores that type's slots.
+         *
+         *     **Precedence (decided by Rob, 4 Oct 2026): the automated score
+         *     wins.** A write here replaces any manually set value and is marked
+         *     `defaultVacdSource: computer_vision`, which makes slots scored from
+         *     it **counted** (OpenRTB `qty.sourcetype` 1). A manual edit through
+         *     `PUT …/extensions` still saves, is marked `manual` (modelled), and
+         *     stays until the next write here. It targets the display-type
+         *     default only — never a display's counted VAC-d or its
+         *     `vacd_override`, which stay with PH Core's scoring framework.
+         */
+        put: operations["setDisplayTypeDefaultVacd"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1419,19 +1477,11 @@ export interface components {
              * @default 0.5
              */
             interactiveCpe: number;
-            advertiserWhitelist: string[];
-            advertiserBlacklist: string[];
-            /** @description IAB categories */
+            /** @description IAB categories, chosen from the IAB taxonomy (free text is refused, 422). One list for every DSP. */
             categoryWhitelist: string[];
             categoryBlacklist: string[];
         };
         AdvertiserSettings: components["schemas"]["AdvertiserSettingsInput"] & {
-            /** @description Read-only. Per DSP, adopting the company lists or own lists. */
-            whereTheseApply: {
-                partnerId: string;
-                name: string;
-                adopting: boolean;
-            }[];
             /**
              * @description Read-only. Set when a playWindowHours change was requested
              *     while a non-test window was still bid on or booked: the
@@ -1476,19 +1526,18 @@ export interface components {
             /** @description The same buyers list by name */
             buyersListName: string | null;
         };
-        /** @description One invited buyer on a buyers list (deal). */
+        /**
+         * @description One invited buyer on a buyers list (deal): a seat (advertiser) that a
+         *     connected DSP synced, picked from that DSP's own seats. There is no
+         *     free text and no identifier type — the entry always carries the
+         *     identifier the DSP bids under, and entitlement (bid intake and
+         *     auction clear, `not_invited`) matches it exactly.
+         */
         InvitedBuyer: {
-            /**
-             * @description How this buyer is identified — configurable per retailer:
-             *     brandEntity (the advertiser's PH brand entity, matched by name),
-             *     dspSeatId (a DSP's own seat ID, matched exactly), or other (a
-             *     freeform identifier this retailer uses elsewhere — recorded but
-             *     not automatically matched at auction time; entitlement for that
-             *     entry is enforced outside this POC).
-             * @enum {string}
-             */
-            identifierType: "brandEntity" | "dspSeatId" | "other";
-            value: string;
+            /** @description The DSP (partner) whose synced seat this is. */
+            partnerId: string;
+            /** @description The seat / advertiser ID as synced from that DSP (a seat in `Partner.seats`). */
+            seatId: string;
         };
         /**
          * @description The winning bid a private auction's rate has locked to, for the
@@ -1937,13 +1986,10 @@ export interface components {
                 id: string;
                 name: string;
             }[];
-            listsLinked: boolean;
-            /** @description Own lists */
+            /** @description This DSP's own advertiser whitelist: seat IDs from its synced seats (the ids in seats). Always present; there is no company-wide advertiser list. */
             advertiserWhitelist?: string[];
+            /** @description This DSP's own advertiser blacklist: seat IDs from its synced seats. Always subtracts. */
             advertiserBlacklist?: string[];
-            /** @description Own IAB category lists */
-            categoryWhitelist?: string[];
-            categoryBlacklist?: string[];
         };
         PartnerInput: {
             /**
@@ -1965,12 +2011,10 @@ export interface components {
             };
             /** @enum {string} */
             mode?: "test" | "live";
-            /** @description false copies the company lists down; true discards own lists. */
-            listsLinked?: boolean;
+            /** @description Seat IDs from this DSP's synced seats. An ID that is not one of them is refused (422); free text is not accepted. */
             advertiserWhitelist?: string[];
+            /** @description Seat IDs from this DSP's synced seats. */
             advertiserBlacklist?: string[];
-            categoryWhitelist?: string[];
-            categoryBlacklist?: string[];
         };
         AdvertiserSetting: {
             /** @default true */
@@ -2073,6 +2117,14 @@ export interface components {
              *     value; null clears it.
              */
             defaultVacd?: number | null;
+            /**
+             * @description Who set the default. `computer_vision` (written by PH Core
+             *     through `PUT …/default-vacd`) is counted and overrides a manual
+             *     value; `manual` (this editor) is modelled. Set by the server —
+             *     ignored on write here.
+             * @enum {string}
+             */
+            readonly defaultVacdSource?: "manual" | "computer_vision";
             slots: {
                 label: string;
                 /** @enum {string} */
@@ -3078,6 +3130,59 @@ export interface operations {
             409: components["responses"]["Conflict"];
         };
     };
+    getLostRevenueReport: {
+        parameters: {
+            query: {
+                from: string;
+                /** @description Inclusive; at most 366 days after from. */
+                to: string;
+                by?: "store" | "display" | "day";
+                storeId?: string;
+                displayId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Lost revenue, per currency (never summed across currencies) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: date */
+                        from: string;
+                        /** Format: date */
+                        to: string;
+                        /** @enum {string} */
+                        by: "store" | "display" | "day";
+                        totals: {
+                            currency: string;
+                            plays: number;
+                            lostSec: number;
+                            lostViews: number;
+                            lostAmount: number;
+                        }[];
+                        rows: {
+                            key: string;
+                            label: string;
+                            storeId: string | null;
+                            currency: string;
+                            plays: number;
+                            lostSec: number;
+                            lostViews: number;
+                            lostAmount: number;
+                        }[];
+                    };
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorised"];
+        };
+    };
     getBookingSchedule: {
         parameters: {
             query?: {
@@ -3695,6 +3800,38 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["DisplayTypeExtensions"];
+            };
+        };
+        responses: {
+            /** @description Saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DisplayTypeExtensions"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorised"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    setDisplayTypeDefaultVacd: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                displayTypeId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Assumed views per play window */
+                    defaultVacd: number;
+                };
             };
         };
         responses: {

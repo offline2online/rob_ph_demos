@@ -97,13 +97,13 @@ describe('migration 0021 on a database that already sold a window twice', () => 
 })
 
 describe('bid responses are validated before they are trusted', () => {
-  it('treats a response with no currency as USD (OpenRTB default), not the exchange currency', async () => {
+  it('rejects a response with no currency (no USD default, no conversion)', async () => {
     const { ctx, hooks, rows, readyToWin } = await setup()
     await readyToWin()
     hooks.rewrite = (res) => ({ ...res, cur: undefined })
     const out = await runAuction(ctx, W2)
     expect(out.positions[0].winner).toBeNull()
-    expect((await rows(W2))[0]).toMatchObject({ status: 'rejected', reason: 'Bid in USD; the exchange trades in AUD.' })
+    expect((await rows(W2))[0]).toMatchObject({ status: 'rejected', reason: 'Bid names no currency; the exchange trades in AUD and does not convert.' })
   })
 
   it('rejects a price above the ceiling and a bid for an impression it was not offered', async () => {

@@ -58,13 +58,13 @@ describe('GET /v1/inventory', () => {
     const ids = async (q = '') => (await get(`/inventory${q}`)).json().items.map((i: { positionId: string }) => i.positionId)
     expect(await ids('?advertiserId=loreal')).toEqual([])
 
-    await ctx.company.save({ ...(await ctx.company.get()), advertiserBlacklist: ['Nestlé'], advertiserWhitelist: ['Swisse'] })
+    await ctx.partners.update('p_google', { blockList: ['5130001'], allowList: ['5130002'] })
     expect(await ids('?advertiserId=nestle')).toEqual([])
     expect(await ids('?advertiserId=swisse')).toEqual(['menu_board.s2'])
     expect(await ids()).toEqual(['menu_board.s2'])
 
     await setSlot({ listMode: 'whitelist_only' })
-    await ctx.company.save({ ...(await ctx.company.get()), advertiserBlacklist: [], advertiserWhitelist: ['Nestlé'] })
+    await ctx.partners.update('p_google', { blockList: [], allowList: ['5130001'] })
     expect(await ids('?advertiserId=swisse')).toEqual([])
     expect(await ids('?advertiserId=nestle')).toEqual(['menu_board.s2'])
 

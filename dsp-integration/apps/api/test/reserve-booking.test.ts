@@ -132,7 +132,7 @@ describe('reserve-price booking (OQ52): commit, hold as Reserved, honour at the 
 })
 
 describe('deals (OQ45): per DSP, on the existing buyers list, never under the floor', () => {
-  const termDeal = async (ctx: Awaited<ReturnType<typeof setup>>['ctx'], invited: InvitedBuyer[] = [{ identifierType: 'brandEntity', value: 'Swisse' }]) =>
+  const termDeal = async (ctx: Awaited<ReturnType<typeof setup>>['ctx'], invited: InvitedBuyer[] = [{ partnerId: 'p_google', seatId: '5130002' }]) =>
     await ctx.buyersLists.insert({ id: 'bl_pg', name: 'Swisse PG', description: '', invitedBuyers: invited, activeFrom: null, activeTo: '2026-09-23T23:59:59.000Z', auctionCloses: '2026-09-21T18:00:00.000Z' })
 
   it('a reserve commitment on a two-period deal locks the term at the reserve price; every later window is held and booked as Reserved', async () => {
@@ -184,15 +184,15 @@ describe('deals (OQ45): per DSP, on the existing buyers list, never under the fl
     const p = (await findPosition(ctx, 'portrait.s1'))!
 
     /* Invited by Google's Swisse seat ID: Amazon isn't party to the deal at all. */
-    await termDeal(ctx, [{ identifierType: 'dspSeatId', value: '5130002' }])
+    await termDeal(ctx, [{ partnerId: 'p_google', seatId: '5130002' }])
     expect(await effectivePartnerIds(ctx, p.def)).toEqual(['p_google'])
     expect((await app.inject({ url: '/api/v1/inventory/portrait.s1', headers: AMAZON })).statusCode).toBe(404)
     expect((await app.inject({ url: '/api/v1/inventory/portrait.s1', headers: GOOGLE })).statusCode).toBe(200)
 
-    /* Invited by brand: both DSPs' Swisse seats may take it, but the
+    /* Invited on both DSPs' Swisse seats: either may take it, but the
        commitment is bilateral: the first DSP to commit holds the term. */
     await ctx.buyersLists.delete('bl_pg')
-    await termDeal(ctx)
+    await termDeal(ctx, [{ partnerId: 'p_google', seatId: '5130002' }, { partnerId: 'p_amazon', seatId: 'amz-swisse' }])
     expect((await effectivePartnerIds(ctx, p.def))!.sort()).toEqual(['p_amazon', 'p_google'])
     expect((await post(RESERVE)).statusCode).toBe(201)
     expect((await ctx.buyersLists.get('bl_pg'))!.lockedWin).toMatchObject({ partnerId: 'p_google' })

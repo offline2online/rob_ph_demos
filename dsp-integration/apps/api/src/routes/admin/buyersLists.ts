@@ -2,14 +2,13 @@
    deal objects, managed from Available Inventory's own table underneath the
    Assigned to picker (Rob, 23 Sep). */
 import { randomUUID } from 'node:crypto'
-import { IDENTIFIER_TYPES, assignedOf, type BuyersList, type InvitedBuyer } from '@ph-dsp/types'
+import { assignedOf, type BuyersList, type InvitedBuyer } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import type { Guards } from '../../http/app'
 import { hasDependents, notFound, validationFailed } from '../../http/errors'
 import { tx } from '../../db/db'
-
-const IDENTIFIER_KEYS = IDENTIFIER_TYPES.map((t) => t.key) as string[]
+import type { PartnerRecord } from '../../repos/PartnerRepo'
 
 type Body = { name?: unknown; description?: unknown; invitedBuyers?: unknown; activeFrom?: unknown; activeTo?: unknown; auctionCloses?: unknown }
 
@@ -21,7 +20,9 @@ const dependentSlots = async (ctx: Context, buyersListId: string) =>
   )
 
 export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => async (app) => {
-  const parse = (b: Body, errors: { field: string; reason: string }[]): { name: string; description: string; invitedBuyers: InvitedBuyer[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null } => {
+  /* An invited buyer must be a seat a connected DSP actually synced. */
+  const partnersById = async () => new Map((await ctx.partners.list()).filter((p) => p.status === 'connected').map((p) => [p.id, p]))
+  const parse = (b: Body, partnerById: Map<string, PartnerRecord>, errors: { field: string; reason: string }[]): { name: string; description: string; invitedBuyers: InvitedBuyer[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null } => {
     const name = typeof b.name === 'string' ? b.name.trim() : ''
     if (!name) errors.push({ field: 'name', reason: 'A name is required.' })
     const description = typeof b.description === 'string' ? b.description.trim() : ''
@@ -29,12 +30,13 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     const invitedBuyers: InvitedBuyer[] = []
     if (!rawBuyers?.length) errors.push({ field: 'invitedBuyers', reason: 'At least one invited buyer is required.' })
     else rawBuyers.forEach((raw, i) => {
-      const r = (raw ?? {}) as { identifierType?: unknown; value?: unknown }
-      const identifierType = typeof r.identifierType === 'string' ? r.identifierType : ''
-      const value = typeof r.value === 'string' ? r.value.trim() : ''
-      if (!IDENTIFIER_KEYS.includes(identifierType)) errors.push({ field: `invitedBuyers[${i}].identifierType`, reason: `One of: ${IDENTIFIER_KEYS.join(', ')}.` })
-      else if (!value) errors.push({ field: `invitedBuyers[${i}].value`, reason: 'Required.' })
-      else invitedBuyers.push({ identifierType: identifierType as InvitedBuyer['identifierType'], value })
+      const r = (raw ?? {}) as { partnerId?: unknown; seatId?: unknown }
+      const partnerId = typeof r.partnerId === 'string' ? r.partnerId.trim() : ''
+      const seatId = typeof r.seatId === 'string' ? r.seatId.trim() : ''
+      const partner = partnerId ? partnerById.get(partnerId) : undefined
+      if (!partner) errors.push({ field: `invitedBuyers[${i}].partnerId`, reason: 'Pick a connected DSP.' })
+      else if (!partner.seats.some((x) => x.id === seatId)) errors.push({ field: `invitedBuyers[${i}].seatId`, reason: `Not a seat synced from ${partner.name}.` })
+      else if (!invitedBuyers.some((x) => x.partnerId === partnerId && x.seatId === seatId)) invitedBuyers.push({ partnerId, seatId })
     })
     const parseDate = (v: unknown, field: string): string | null => {
       if (v === null || v === undefined) return null
@@ -65,7 +67,7 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     guards.flagged()
     guards.requireScope(req, 'admin')
     const errors: { field: string; reason: string }[] = []
-    const parsed = parse(req.body ?? {}, errors)
+    const parsed = parse(req.body ?? {}, await partnersById(), errors)
     if (errors.length) throw validationFailed(errors)
     const created: BuyersList = await ctx.buyersLists.insert({ id: `bl_${randomUUID().slice(0, 12)}`, ...parsed })
     return reply.status(201).send(created)
@@ -76,7 +78,7 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     guards.requireScope(req, 'admin')
     if (!(await ctx.buyersLists.get(req.params.buyersListId))) throw notFound()
     const errors: { field: string; reason: string }[] = []
-    const parsed = parse(req.body ?? {}, errors)
+    const parsed = parse(req.body ?? {}, await partnersById(), errors)
     if (errors.length) throw validationFailed(errors)
     return ctx.buyersLists.update(req.params.buyersListId, parsed)
   })

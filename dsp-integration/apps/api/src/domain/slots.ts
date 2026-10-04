@@ -76,7 +76,6 @@ export async function validateAssigned(
   a: Assigned,
   field: (k: string) => string,
   partners: PartnerRecord[],
-  company: CompanySettings,
   previous: Assigned,
   buyersLists: BuyersListRepo,
 ): Promise<Detail[]> {
@@ -90,17 +89,17 @@ export async function validateAssigned(
   const scope = a.partnerIds.length ? partners.filter((p) => a.partnerIds.includes(p.id)) : partners
   for (const name of a.advertisers) {
     const p = scope.find((x) => x.seats.some((s) => s.name === name))
-    if (!p) {
+    const seat = p?.seats.find((s) => s.name === name)
+    if (!p || !seat) {
       out.push({ field: field('advertisers'), reason: `${name} is not an advertiser on ${a.partnerIds.length ? 'the chosen DSPs' : 'any connected DSP'}.` })
       continue
     }
     /* A blocked advertiser is withdrawn from the picker; one already held
        stays, so the position doesn't change under whoever set it (spec §6). */
-    const eff = effectiveLists(p, company)
-    if (isBlocked(name, eff) && !previous.advertisers.includes(name)) out.push({ field: field('advertisers'), reason: `${name} is on the blacklist.` })
+    if (isBlocked(seat.id, effectiveLists(p)) && !previous.advertisers.includes(name)) out.push({ field: field('advertisers'), reason: `${name} is on the blacklist.` })
   }
   if (a.whitelistOnly) {
-    const lists = (a.partnerIds.length ? partners.filter((p) => a.partnerIds.includes(p.id)) : [null]).map((p) => effectiveLists(p, company))
+    const lists = scope.map((p) => effectiveLists(p))
     if (lists.every((l) => !l.allowList.length)) out.push({ field: field('whitelistOnly'), reason: 'The whitelist is empty.' })
     if (lists.some((l) => l.allowList.some((x) => isOn(x, l.blockList)))) out.push({ field: field('whitelistOnly'), reason: 'The whitelist contains a blocked advertiser.' })
   }

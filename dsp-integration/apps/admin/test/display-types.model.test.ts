@@ -54,9 +54,8 @@ describe('collapsed panel summaries (spec §1)', () => {
 })
 
 describe('slot ownership helpers', () => {
-  const company = { advertiserWhitelist: ['Nestlé', 'Swisse', 'Arnott’s'], advertiserBlacklist: ['Red Bull', 'Monster Energy'] } as AdvertiserSettings
-  const google = { id: 'p_google', name: 'Google DSP', listsLinked: true, status: 'connected' } as Partner
-  const amazon = { id: 'p_amazon', name: 'Amazon Ads DSP', listsLinked: false, advertiserWhitelist: ["L'Oréal"], advertiserBlacklist: ['Red Bull', 'Chemist Warehouse', 'Nestlé'], status: 'error' } as Partner
+  const google = { id: 'p_google', name: 'Google DSP', status: 'connected' } as Partner
+  const amazon = { id: 'p_amazon', name: 'Amazon Ads DSP', advertiserWhitelist: ['a1'], advertiserBlacklist: ['a2'], status: 'error' } as Partner
   const partners = [google, amazon]
   const seats: Record<string, string[]> = { p_google: ['Nestlé', 'Swisse'], p_amazon: ["L'Oréal", 'Nestlé'] }
   const seatsOf = (p: Partner) => seats[p.id]
