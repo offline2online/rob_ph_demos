@@ -136,16 +136,26 @@ test("items belonging to other projects are irrelevant to this project's decisio
 const T0 = Date.parse("2026-09-25T23:14:54Z"); // the Deploy to Main click
 const requested = { deployNotifyRequestedAt: "2026-09-25T23:14:54Z", trainLocked: true, trainStatus: "idle", trainReady: false };
 
-test("THE TICKET: the Routine finished its checks but reported error because its own permission layer blocked the trainReady PATCH -> hand over", () => {
-  const project = { ...requested, deployRoutine: { status: "error", firedAt: "2026-09-25T23:14:56Z", finishedAt: "2026-09-25T23:21:26Z", errorMessage: "Deploy verification complete ... this session's own permission layer blocked the final PATCH that sets trainReady" } };
-  const reason = trainHandoverReason(project, T0 + 7 * 60 * 1000);
-  assert.match(reason, /reported "error" without setting trainReady/);
-  assert.match(reason, /permission layer blocked/);
+test("an error report is the Routine refusing the deploy, so it is NOT handed over (4 Oct 2026: done is the hand-over, error blocks)", () => {
+  const project = { ...requested, deployRoutine: { status: "error", firedAt: "2026-09-25T23:14:56Z", finishedAt: "2026-09-25T23:21:26Z", errorMessage: "commit for ticket X is not on the branch" } };
+  assert.strictEqual(trainHandoverReason(project, T0 + 7 * 60 * 1000), null);
+  assert.strictEqual(trainHandoverReason(project, T0 + 60 * 60 * 1000), null, "not even after the sweep's abandonment window");
 });
 
 test("a Routine that reported done without the flag (it may simply have been refused the write) is handed over too", () => {
   const project = { ...requested, deployRoutine: { status: "done", firedAt: "2026-09-25T23:14:56Z", finishedAt: "2026-09-25T23:21:26Z" } };
   assert.match(trainHandoverReason(project, T0 + 7 * 60 * 1000), /reported "done"/);
+});
+
+test("4 Oct 2026: a done report that overwrote deployRoutine (no firedAt left) still hands over AT ONCE, not after the grace period", () => {
+  // What the Routine actually writes: a PATCH of the whole map, {status, finishedAt}.
+  const project = { ...requested, deployRoutine: { status: "done", finishedAt: "2026-09-25T23:16:40Z" } };
+  assert.match(trainHandoverReason(project, T0 + 2 * 60 * 1000), /reported "done"/);
+});
+
+test("...but a finished report from BEFORE this click still doesn't count for it", () => {
+  const project = { ...requested, deployRoutine: { status: "done", finishedAt: "2026-09-25T22:00:00Z" } };
+  assert.strictEqual(trainHandoverReason(project, T0 + 60 * 1000), null);
 });
 
 test("nothing to do while the Routine is still running and fresh", () => {
@@ -186,12 +196,10 @@ test("never hands over a train that is already ready, mid-deploy or awaiting a h
   assert.strictEqual(trainHandoverReason(null, T0), null);
 });
 
-test("a Routine's free text is trimmed and never carries a URL or a token onto the board", () => {
-  const project = { ...requested, deployRoutine: { status: "error", firedAt: "2026-09-25T23:14:56Z", errorMessage: "PATCH https://firestore.googleapis.com/v1/x?key=abc failed with token AbCdEfGhIjKlMnOpQrStUvWxYz0123456789 " + "x".repeat(400) } };
+test("a Routine's free text never reaches the board through the hand-over reason", () => {
+  const project = { ...requested, deployRoutine: { status: "done", firedAt: "2026-09-25T23:14:56Z", errorMessage: "PATCH https://firestore.googleapis.com/v1/x?key=abc token AbCdEfGhIjKlMnOpQrStUvWxYz0123456789" } };
   const reason = trainHandoverReason(project, T0 + 60000);
-  assert.ok(!reason.includes("googleapis"), "URL stripped");
-  assert.ok(!reason.includes("AbCdEfGhIjKlMnOpQrStUvWxYz"), "token stripped");
-  assert.ok(reason.length < 320, "kept short");
+  assert.ok(reason && !reason.includes("googleapis") && !reason.includes("AbCdEfGhIjKlMnOpQrStUvWxYz"));
 });
 
 console.log(`\n${passed} passed, ${failures.length} failed\n`);

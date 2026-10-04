@@ -1371,12 +1371,43 @@ const DEPLOY_ROUTINE_STALE_MS = 20 * 60 * 1000;
 // (a one-time alert dialog, then the button looked exactly like it hadn't been
 // clicked), so an in-flight deploy was indistinguishable from an unclicked
 // one. See cardHTML's own isDeploying for the matching per-item card lock.
+// The Routine's "done" report is the hand-over (4 Oct 2026): the pipeline
+// sets trainReady, opens the train PR, waits for CI and merges. All of that
+// happens after the Routine has finished, and the button used to reappear as
+// a fresh "Deploy to Main" the moment the Routine said "done" — so the train
+// looked stopped, and a second click started the whole thing over. Until the
+// pipeline has consumed this click (deployRequestHandledAt) or 30 minutes
+// pass, a handed-over train shows as deploying.
+const DEPLOY_HANDOVER_STALE_MS = 30 * 60 * 1000;
+function deployHandedOver(project) {
+  if (project.trainReady === true) return true;
+  if (project.trainStatus === "deploying" || project.trainStatus === "awaiting-human-merge") return true;
+  const requested = anyMillis(project.deployNotifyRequestedAt);
+  const routine = project.deployRoutine;
+  if (!requested || !routine || routine.status !== "done") return false;
+  if (anyMillis(project.deployRequestHandledAt) >= requested) return false;
+  if (anyMillis(routine.finishedAt) < requested && anyMillis(routine.firedAt) < requested) return false;
+  return Date.now() - requested < DEPLOY_HANDOVER_STALE_MS;
+}
+
 function deployNotifyButtonHTML(project) {
   const pid = project.id;
   const routine = project.deployRoutine;
   const firedMs = routine ? tsMillis(routine.firedAt) : 0;
   const isStale = routine?.status === "in-progress" && firedMs && (Date.now() - firedMs) > DEPLOY_ROUTINE_STALE_MS;
   const inProgress = routine?.status === "in-progress" && !isStale;
+
+  if (!inProgress && deployHandedOver(project)) {
+    const awaitingHuman = project.trainStatus === "awaiting-human-merge";
+    const label = awaitingHuman ? "Waiting for merge&hellip;" : "Deploying&hellip;";
+    const title = awaitingHuman
+      ? "The train PR changes workflow files, so a person has to merge it on GitHub."
+      : "Verified — the pipeline is opening the train PR, waiting for its checks and merging it. No need to click again.";
+    return `<button type="button" class="notify-claude-btn notify-claude-btn-working" disabled title="${title}">
+      <span class="notify-claude-spinner"></span>
+      <span class="notify-claude-label">${label}</span>
+    </button>`;
+  }
 
   // Same click-to-doc-write bridge as notifyClaudeButtonHTML's
   // notifyOptimisticClicks — covers the gap before deployRoutine lands.
