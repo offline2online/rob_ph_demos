@@ -1823,10 +1823,41 @@ An advertiser or category cannot sit on both lists; adding it to one removes
 it from the other. Advertiser entries are chosen from the DSP's synced seats
 only (no free text); category entries from the IAB taxonomy only.
 
+**Advertiser and seat lists are managed per DSP, never centrally** (Rob,
+4 Oct 2026). A seat ID or advertiser ID only means something inside the DSP
+that issued it: the same advertiser is a different identifier on DV360, The
+Trade Desk and Amazon, and a DSP's full advertiser universe is not
+enumerable from our side, so free-text names cannot reliably be resolved to
+the identifier the DSP actually bids under. A single holistic advertiser
+list is therefore not feasible, and there is none.
+
+Each DSP has its own advertiser lists:
+
+- **Whitelist**: only these may win a whitelist-only position on this DSP.
+- **Blacklist**: these may never win a position on this DSP.
+
+Both are **built from that DSP's own synced seats and advertisers** (below),
+so every entry is a real, authoritative identifier for that DSP. **No free
+text:** the DSP page offers only the synced advertisers, and the API refuses
+(`400 validation_failed`) an entry that is not one of the DSP's synced seat
+IDs. They are **enforced at auction time, not reconciled afterwards**.
+
+**Syncing.** A DSP's seats and advertisers are pulled when it is connected
+and again on every re-connect (refresh). A refresh drops any list entry
+whose seat the DSP no longer has; disconnecting clears the seats and, with
+them, both advertiser lists. A DSP that has not been connected has nothing to choose
+from, and its page says so.
+
+**Existing data (migration 0040).** A DSP that adopted the company
+advertiser lists took them as its own; every entry that was a seat name
+became that seat's ID; an entry matching no synced seat was dropped (it
+could not be resolved to an identifier the DSP bids under). The company's
+advertiser list columns were removed.
+
 **The blacklist is not a mode — it always subtracts.** It applies to every
 outcome on that partner and no position can opt out of it. The whitelist is
-the part a position chooses to use. (Both points are in the *List
-management* tooltip.)
+the part a position chooses to use. (Both points are in the *Advertiser
+lists* tooltip.)
 
 A position's **Assigned to** control is one multi-select on *Advertisers /
 Inventory* (Rob, 20 Sep), adding a pill per choice:
@@ -1836,13 +1867,13 @@ Inventory* (Rob, 20 Sep), adding a pill per choice:
 | Nothing chosen — *All DSPs* | Every connected DSP may bid, minus the blacklist |
 | One or more **DSPs** | Only those DSPs may bid, minus the blacklist |
 | One or more **advertisers** | Reserved to those seats; each one's DSP is added automatically |
-| **Whitelist only** | Only advertisers on the whitelist (which cannot contain a blocked one) |
+| **Whitelist only** | Only advertisers on the whitelist of the DSP they bid through (which cannot contain a blocked one) |
 
 Advertisers and *Whitelist only* are mutually exclusive — a position is
 either held for named advertisers or open to the whitelist — and the newer
 choice wins in the picker.
 
-- **A blocked advertiser is withdrawn from the picker.**
+- **A blocked advertiser is withdrawn from the picker** (blocked on the DSP the seat belongs to).
 - **Blocking an advertiser reaches positions already sold.** A position
   reserved to a name that is then blacklisted keeps it, so the position does
   not change under whoever set it; adding it again is rejected.
@@ -2040,8 +2071,9 @@ A DSP's page holds only, in this order:
    Allowed ranges: 1–10,000 QPS, 50–2,000 ms; outside them the save is
    refused `400 validation_failed`.
 5. **List management**: the DSP's own advertiser whitelist and blacklist,
-   editable, chosen from its synced seats; and a note that the company IAB
-   category lists apply to it, with a link to Advertiser settings (§6).
+   picked from the advertisers it synced (no free text); and a note that the
+   company IAB category lists apply to it, with a link to Advertiser settings
+   (§6).
 6. **Save changes / Cancel**, always visible at the bottom (see *Saving
    changes*).
 
@@ -2051,7 +2083,8 @@ DSP's advertisers are listed on the **Advertisers** screen, not on its page.
 Currency, floor CPM, multipliers and targeting permissions are set elsewhere
 and are neither set nor repeated on the DSP's page; category lists are set
 in Advertiser settings too and apply to every DSP — there is no per-DSP
-category override (§6). Deal IDs are deferred to a later
+category override; the advertiser lists live only on the DSP's own page (§6).
+Deal IDs are deferred to a later
 release (open question 45).
 
 ### Which side each named platform sits on
@@ -2337,8 +2370,8 @@ superseding the earlier same-day "baseline optional" decision — §3, §6):
   mode: test | live,                      // live only when connected and the bidder integration is complete
   creds: { …per DSP, see §7 },            // no advertiser ID
   bidder: { bidderEndpoint, seatIds, qps?, timeoutMs? },  // qps/timeoutMs: per-DSP overrides (Q46); absent = platform default (500 / 300 ms)
-  seats: [{ id, name }],                  // advertisers pulled on connect; listed on the Advertisers screen
-  allowList, blockList }                  // this DSP's own advertiser lists (seat IDs); category lists are company-wide
+  seats: [{ id, name }],                  // advertisers synced on connect and re-connect; listed on the Advertisers screen and the source of the lists below
+  allowList, blockList }                  // this DSP's own advertiser whitelist/blacklist: seat IDs from `seats`, no free text (§6); category lists are company-wide
 ```
 
 Company-level:
@@ -2349,7 +2382,9 @@ Company-level:
   `playWindowHours`, `auctionCutoffTime`; defaults 168 / 24 / 18:00 UTC —
   `playWindowHours` is only the window a slot inherits when neither it nor
   its display type sets a billing unit, open question 27),
-  advertiser and IAB-category whitelists and blacklists.
+  IAB-category whitelists and blacklists (`categoryWhitelist`,
+  `categoryBlacklist`). There are no company-level advertiser lists: they
+  are per DSP (partner `allowList` / `blockList`, §6).
 - **Advertisers / Inventory** (an admin writes it; marketing reads it):
   `advertiserSettings: { [advertiser]: { approvalRequired, floorMultiplier } }`
   (defaults `true` / 1.0), and per sellable slot what it is assigned to
