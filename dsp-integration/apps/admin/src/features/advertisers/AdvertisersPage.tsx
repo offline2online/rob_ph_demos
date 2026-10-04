@@ -287,10 +287,15 @@ function AssignedCell({ data, context }: IP) {
 
 /* What a campaign may use on this slot (Rob, 20 Sep): localised only until
    someone opens it up, and a bid of an unsupported type is refused. */
+/* Interactive (QR Control) is out of the first release, so it is not offered
+   here and is dropped from any slot that still carries it as a default —
+   otherwise saving that slot is refused for want of QR Control. */
+const FIRST_RELEASE_TARGETING = TARGETING_MODES.filter((m) => m.key !== 'interactive')
 function TargetingCell({ data, context }: IP) {
   if (!data) return null
   const c = context.current
-  const value = edited(c, data).supportedTargeting
+  const shown = edited(c, data).supportedTargeting.filter((k) => k !== 'interactive')
+  const value = shown.length ? shown : ['localised']
   return (
     <Pills
       label={`${data.displayTypeName} slot ${data.zoneSlot}: targeting supported`}
@@ -298,13 +303,10 @@ function TargetingCell({ data, context }: IP) {
       value={value}
       options={[{
         label: 'Targeting',
-        /* Interactive needs a QR code for the visitor to scan. */
-        options: TARGETING_MODES.map((m) => (m.key === 'interactive' && !data.qrControl
-          ? { value: m.key, label: m.label, disabled: true, note: 'QR Control required to support an interactive engagement' }
-          : { value: m.key, label: m.label })),
+        options: FIRST_RELEASE_TARGETING.map((m) => ({ value: m.key, label: m.label })),
       }]}
       /* A slot always supports something: the last one can't be removed. */
-      onChange={(next) => next.length && c.set(slotKey(data), { supportedTargeting: TARGETING_MODES.filter((m) => next.includes(m.key)).map((m) => m.key) })}
+      onChange={(next) => next.length && c.set(slotKey(data), { supportedTargeting: FIRST_RELEASE_TARGETING.filter((m) => next.includes(m.key)).map((m) => m.key) })}
     />
   )
 }
@@ -511,9 +513,9 @@ export function AdvertisersPage() {
     },
     {
       headerName: 'Targeting supported', width: 230, minWidth: 190, cellRenderer: TargetingCell, autoHeight: true,
-      headerComponent: header('Targeting supported', 'What a campaign may use on this slot. Localised only unless you open it up; a bid for a campaign of any other type is refused. Personalised and interactive carry their own multipliers on the floor price.'),
+      headerComponent: header('Targeting supported', 'What a campaign may use on this slot. Localised only unless you open it up; a bid for a campaign of any other type is refused. Personalised carries its own multiplier on the floor price.'),
       valueGetter: (p) => (p.data ? targetingLabel(edited((p.context as InvCtx).current, p.data).supportedTargeting) : ''),
-      ...setColumn<AvailableInventoryRow>('Targeting supported', () => TARGETING_MODES.map((m) => m.label)),
+      ...setColumn<AvailableInventoryRow>('Targeting supported', () => FIRST_RELEASE_TARGETING.map((m) => m.label)),
     },
     {
       /* Narrowed to fit the input + reset/override control (ticket, 26 Sep

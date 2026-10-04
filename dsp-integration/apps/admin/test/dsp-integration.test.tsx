@@ -657,7 +657,7 @@ describe('Advertisers / Inventory', () => {
     expect(within(inventory).getByRole('status')).toHaveTextContent(reason)
   })
 
-  it('holds a position for an advertiser, and only offers interactive where QR Control is on', async () => {
+  it('holds a position for an advertiser, and never offers interactive targeting', async () => {
     const calls: { url: string; body: unknown }[] = []
     const saved = () => calls.find((c) => c.url.includes('available-inventory'))?.body
     vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
@@ -669,9 +669,10 @@ describe('Advertisers / Inventory', () => {
     const combo = (row: string, label: string) =>
       within(within(inventory).getAllByLabelText(`${row}: ${label}`)[0].closest('.ag-cell') as HTMLElement).getByRole('combobox')
 
-    /* Interactive needs a QR code to scan, so it is refused on Portrait. */
+    /* Interactive (QR Control) is out of the first release: never offered. */
     fireEvent.mouseDown(combo('Portrait slot 1', 'targeting supported'))
-    expect(await screen.findByText('QR Control required to support an interactive engagement')).toBeInTheDocument()
+    expect(await screen.findByText('Personalised', { selector: '.ant-select-item-option-content div' })).toBeInTheDocument()
+    expect(screen.queryByText('Interactive', { selector: '.ant-select-item-option-content div' })).not.toBeInTheDocument()
     fireEvent.keyDown(combo('Portrait slot 1', 'targeting supported'), { key: 'Escape' })
 
     /* Hold the Menu Board position for an advertiser: a pill, and the DSP the API adds. */
