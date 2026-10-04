@@ -370,6 +370,37 @@ async function requestReadyForTestingNotify() {
 //    — the same project write a Ready for Dev click makes.
 const SHA_RE = /^[0-9a-f]{40}$/;
 
+// Numbered migration files are the one clash a three-way merge cannot see:
+// two tickets built in parallel each add "the next" migration — different
+// new files with the SAME number (4 Oct 2026: 0040_dsp_creative_content_
+// identity and 0040_partner_advertiser_lists_per_dsp on deploy/dsp-integration;
+// the runner keys on the number, so one of them never ran). Given the files
+// this patch ADDS and a directory listing, returns the added migrations whose
+// number another, pre-existing file in the same directory already uses.
+const MIGRATION_FILE_RE = /(^|\/)migrations\/(\d{3,5})_[^/]+$/;
+function migrationNumberClashes(addedPaths, listDir) {
+  const added = new Set(addedPaths);
+  const clashes = [];
+  for (const p of addedPaths) {
+    const m = MIGRATION_FILE_RE.exec(p);
+    if (!m) continue;
+    const dir = p.slice(0, p.lastIndexOf("/"));
+    const taken = (listDir(dir) || [])
+      .map((name) => `${dir}/${name}`)
+      .filter((other) => !added.has(other) && (MIGRATION_FILE_RE.exec(other) || [])[2] === m[2]);
+    if (taken.length) clashes.push({ path: p, number: m[2], takenBy: taken });
+  }
+  return clashes;
+}
+function stagedAddedPaths() {
+  try {
+    const out = run("git", ["diff", "--cached", "--name-only", "--diff-filter=A"]);
+    return out ? out.split("\n").filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
 // The commit to three-way merge a patch from, or null to write it as given.
 function patchBaseFor(item, sync, { resolvable = commitResolvable } = {}) {
   const sha = typeof item.patchBaseSha === "string" ? item.patchBaseSha.trim().toLowerCase() : "";
@@ -1909,6 +1940,28 @@ async function processApplyPatch(item) {
     testVersion = readAppVersion();
     run("git", ["add", "-A"]);
     changedPaths = stagedChangedPaths();
+
+    // A migration number another ticket already took (see migrationNumberClashes).
+    const clashes = migrationNumberClashes(stagedAddedPaths(),
+      (dir) => { try { return fs.readdirSync(path.join(process.cwd(), dir)); } catch { return []; } });
+    if (clashes.length) {
+      discardWorkingTree();
+      const autoRebuild = (Number(item.autoRebuilds) || 0) < 1 && !project.trainLocked;
+      const what = clashes.map((c) => `${c.path} (number ${c.number} is already ${c.takenBy.map((t) => t.split("/").pop()).join(", ")})`).join("; ");
+      console.log(`[apply-patch] ${item.id}: migration number clash — ${what}`);
+      const notes = await appendNote(item,
+        `Not built: this patch adds a migration whose number another ticket on ${deployBranch} already uses — ${what}. ` +
+        `Built in parallel, both picked the same "next" number, and the migration runner keys on it, so one of the two would never run. ` +
+        (autoRebuild
+          ? `A rebuild against the current branch (which will pick the next free number) was started automatically.`
+          : `Click Ready for Dev again so it is rebuilt with the next free number.`));
+      await patchItem(item.id, {
+        patchReady: false, patchAttempts: 0, updatedAt: new Date().toISOString(), notes,
+        ...(autoRebuild ? { autoRebuilds: (Number(item.autoRebuilds) || 0) + 1 } : {}),
+      });
+      if (autoRebuild) queueBuildRequest(project, item.id);
+      return;
+    }
 
     if (!changedPaths.length) {
       // Same "stuck forever with no record of why" class of bug the old
@@ -3576,5 +3629,5 @@ module.exports = {
   // test/train-tests.test.js — console tests run on each train push
   trainTestFailureTargets, touchesConsoleTests,
   // test/parallel-builds.test.js — patches built in parallel
-  patchBaseFor, dependenciesLanded, buildRequestFields,
+  patchBaseFor, dependenciesLanded, buildRequestFields, migrationNumberClashes,
 };
