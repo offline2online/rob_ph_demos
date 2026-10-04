@@ -1692,7 +1692,7 @@ const TOOLS = [
   },
   {
     name: "create_backlog_item",
-    description: "File a new ticket into a project's Backlog column, attributed to you. The description is structured into the four intake sections (Outcome, Test steps, Dependencies, Spec reference); a ticket missing or thin on any is held BLOCKED with the gap named. A title, type and area are derived when you don't give them. Tickets always start in Backlog — nothing here can put work straight into testing or deployment.",
+    description: "File a new ticket into a project's Backlog column, attributed to you. The description is structured into the four intake sections (Outcome, Test steps, Dependencies, Spec reference). Only a missing or thin Outcome holds the ticket BLOCKED; any other missing section is left as a placeholder the build session fills in from the code and spec before it builds. A title, type and area are derived when you don't give them. Tickets always start in Backlog — nothing here can put work straight into testing or deployment.",
     scope: "board.write",
     inputSchema: {
       type: "object",
@@ -1737,7 +1737,7 @@ const TOOLS = [
         title, type, category, status: "backlog",
         intake: intake.blocked
           ? { passed: false, blocked: intake.blocked, gaps: intake.gaps.map((g) => `${g.heading} (${g.why})`) }
-          : { passed: true },
+          : { passed: true, completedAtBuild: intake.pending.map((g) => g.heading) },
         board: `${PUBLIC_ORIGIN}/#item-${ref.id}`,
       });
     },
