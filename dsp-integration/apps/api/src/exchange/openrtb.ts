@@ -14,7 +14,7 @@ export interface BidRequest {
   id: string
   imp: {
     id: string
-    video: { w: number; h: number; minduration: number; maxduration: number }
+    video: { w: number; h: number; minduration: number; maxduration?: number }
     banner: { w: number; h: number }
     bidfloor: number
     bidfloorcur: string
