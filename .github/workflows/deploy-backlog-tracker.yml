@@ -18,13 +18,18 @@ on:
 # tend to land a batch of small fixes back to back) used to fire one deploy
 # run per push, all racing to update the same Cloud Functions at once and
 # failing with GCP's "409 unable to queue the operation". Grouping runs by
-# workflow+branch and cancelling a still-running/queued one when a newer
-# push arrives means a burst of N merges now completes exactly one deploy —
+# workflow+branch, so a newer push replaces a still-queued one, means a burst of N merges now completes exactly one deploy —
 # for the last commit, which already contains every change in the burst —
 # instead of N racing runs where only one (not necessarily the last) wins.
+#
+# cancel-in-progress is false (4 Oct 2026): cancelling a run in the middle of
+# `firebase deploy` leaves its function updates running on Google's side,
+# and the newer run then collides with them (409). Runs now queue instead;
+# GitHub keeps only the newest pending run, so a burst still ends in one
+# deploy of the last commit.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   deploy:
@@ -46,118 +51,42 @@ jobs:
       - name: Write Firebase service account key
         run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_BACKLOG_TRACKER }}' > "$RUNNER_TEMP/firebase-sa.json"
 
-      # `functions:secrets:set` updates the secret version and both
-      # functions successfully (visible in the run's own log output —
-      # "Updated function ...") but then makes an internal trailing call
-      # to list functions to verify propagation, and that specific call
-      # has failed with GCP's generic "Failed to list functions for
-      # backlog-tracker-e4ed2" twice in a row in production, always right
-      # after the LAST secrets:set invocation in the job (i.e. after 2-3
-      # rapid update+list cycles against the Cloud Functions API within a
-      # few minutes) — consistent with a transient rate/propagation issue
-      # on GCP's side rather than anything wrong with the secret or
-      # function update itself, which had already succeeded by the time
-      # the error surfaces. `bash -e` turns that one failing call into an
-      # aborted job before the real "Deploy to Firebase" step below ever
-      # runs, so retrying just this command (not the whole job) is enough
-      # to ride out the flake.
-      - name: Sync NOTIFY_WEBHOOK_URL into Firebase Secret Manager
+      # Secrets go into Secret Manager WITHOUT redeploying any function
+      # (scripts/sync-function-secret.sh): an unchanged value is a no-op and a
+      # changed one only adds a version, which the "Deploy to Firebase" step
+      # below pins every function to. This replaced five
+      # `functions:secrets:set --force` calls (4 Oct 2026) that re-uploaded
+      # every unchanged secret on every deploy and redeployed six functions
+      # each time; one transient 503 left five of those updates running on
+      # Google's side, every retry hit "409, unable to queue the operation",
+      # and the job died before hosting deployed (run 37189515221).
+      #
+      # GH_DISPATCH_TOKEN and BOARD_API_KEY are written even when the repo
+      # secret is empty, as the "unset" placeholder: functions/index.js
+      # declares them with defineSecret(), and `firebase deploy` fails
+      # outright if a declared secret does not exist. Their functions treat
+      # "unset" as missing (boardApi answers 503, dispatch falls back to
+      # backlog-automation.yml's own schedule). NOTIFY_WEBHOOK_URL and the
+      # Routine pair are skipped when unset, as before.
+      - name: Sync secrets into Firebase Secret Manager
         env:
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
           NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
-        run: |
-          if [ -z "$NOTIFY_WEBHOOK_URL" ]; then
-            echo "NOTIFY_WEBHOOK_URL repo secret not set, skipping"
-            exit 0
-          fi
-          for attempt in 1 2 3; do
-            if printf '%s' "$NOTIFY_WEBHOOK_URL" | npx firebase-tools@13 functions:secrets:set NOTIFY_WEBHOOK_URL --project backlog-tracker-e4ed2 --data-file - --force; then
-              break
-            fi
-            [ "$attempt" = "3" ] && { echo "functions:secrets:set NOTIFY_WEBHOOK_URL failed after 3 attempts"; exit 1; }
-            echo "functions:secrets:set NOTIFY_WEBHOOK_URL failed (attempt $attempt/3), retrying in 20s..."
-            sleep 20
-          done
-
-      - name: Sync CLAUDE_ROUTINE_FIRE_URL / CLAUDE_ROUTINE_TOKEN into Firebase Secret Manager
-        env:
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
           CLAUDE_ROUTINE_FIRE_URL: ${{ secrets.CLAUDE_ROUTINE_FIRE_URL }}
           CLAUDE_ROUTINE_TOKEN: ${{ secrets.CLAUDE_ROUTINE_TOKEN }}
-        run: |
-          if [ -z "$CLAUDE_ROUTINE_FIRE_URL" ] || [ -z "$CLAUDE_ROUTINE_TOKEN" ]; then
-            echo "CLAUDE_ROUTINE_FIRE_URL/CLAUDE_ROUTINE_TOKEN repo secrets not set, skipping"
-            exit 0
-          fi
-          for attempt in 1 2 3; do
-            if printf '%s' "$CLAUDE_ROUTINE_FIRE_URL" | npx firebase-tools@13 functions:secrets:set CLAUDE_ROUTINE_FIRE_URL --project backlog-tracker-e4ed2 --data-file - --force; then
-              break
-            fi
-            [ "$attempt" = "3" ] && { echo "functions:secrets:set CLAUDE_ROUTINE_FIRE_URL failed after 3 attempts"; exit 1; }
-            echo "functions:secrets:set CLAUDE_ROUTINE_FIRE_URL failed (attempt $attempt/3), retrying in 20s..."
-            sleep 20
-          done
-          for attempt in 1 2 3; do
-            if printf '%s' "$CLAUDE_ROUTINE_TOKEN" | npx firebase-tools@13 functions:secrets:set CLAUDE_ROUTINE_TOKEN --project backlog-tracker-e4ed2 --data-file - --force; then
-              break
-            fi
-            [ "$attempt" = "3" ] && { echo "functions:secrets:set CLAUDE_ROUTINE_TOKEN failed after 3 attempts"; exit 1; }
-            echo "functions:secrets:set CLAUDE_ROUTINE_TOKEN failed (attempt $attempt/3), retrying in 20s..."
-            sleep 20
-          done
-
-      # Written on every deploy whether or not a repo secret supplies a
-      # value, which is the opposite of the two steps above — because
-      # functions/index.js declares GH_DISPATCH_TOKEN with defineSecret(),
-      # and `firebase deploy --only functions` fails outright if a declared
-      # secret does not exist in Secret Manager at all. That failure would
-      # take hosting and the Firestore rules down with it, so an
-      # unconfigured optional feature must not be able to cause it. The
-      # placeholder keeps the secret present and the function correctly
-      # inert: it treats "unset" exactly like a missing value, logs a
-      # warning, and leaves backlog-automation.yml to its own schedule.
-      - name: Sync GH_DISPATCH_TOKEN into Firebase Secret Manager
-        env:
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
           GH_DISPATCH_TOKEN: ${{ secrets.GH_DISPATCH_TOKEN }}
-        run: |
-          VALUE="$GH_DISPATCH_TOKEN"
-          if [ -z "$VALUE" ]; then
-            echo "GH_DISPATCH_TOKEN repo secret not set — writing the 'unset' placeholder so the functions deploy still has a secret to bind to"
-            VALUE=unset
-          fi
-          for attempt in 1 2 3; do
-            if printf '%s' "$VALUE" | npx firebase-tools@13 functions:secrets:set GH_DISPATCH_TOKEN --project backlog-tracker-e4ed2 --data-file - --force; then
-              break
-            fi
-            [ "$attempt" = "3" ] && { echo "functions:secrets:set GH_DISPATCH_TOKEN failed after 3 attempts"; exit 1; }
-            echo "functions:secrets:set GH_DISPATCH_TOKEN failed (attempt $attempt/3), retrying in 20s..."
-            sleep 20
-          done
-
-      # BOARD_API_KEY authenticates the boardApi Cloud Function — the
-      # Firestore REST proxy the Notify Claude Routine sessions use now that
-      # the board's rules require sign-in (see functions/index.js boardApi).
-      # Same placeholder pattern as GH_DISPATCH_TOKEN: "unset" keeps the
-      # deploy green and the endpoint disabled until the repo secret exists.
-      - name: Sync BOARD_API_KEY into Firebase Secret Manager
-        env:
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
           BOARD_API_KEY: ${{ secrets.BOARD_API_KEY }}
         run: |
-          VALUE="$BOARD_API_KEY"
-          if [ -z "$VALUE" ]; then
-            echo "BOARD_API_KEY repo secret not set — writing the 'unset' placeholder; boardApi answers 503 until it is set"
-            VALUE=unset
+          gcloud auth activate-service-account --key-file="$RUNNER_TEMP/firebase-sa.json" --quiet
+          sync() { printf '%s' "$2" | bash scripts/sync-function-secret.sh "$1"; }
+          if [ -n "$NOTIFY_WEBHOOK_URL" ]; then sync NOTIFY_WEBHOOK_URL "$NOTIFY_WEBHOOK_URL"; else echo "NOTIFY_WEBHOOK_URL repo secret not set, skipping"; fi
+          if [ -n "$CLAUDE_ROUTINE_FIRE_URL" ] && [ -n "$CLAUDE_ROUTINE_TOKEN" ]; then
+            sync CLAUDE_ROUTINE_FIRE_URL "$CLAUDE_ROUTINE_FIRE_URL"
+            sync CLAUDE_ROUTINE_TOKEN "$CLAUDE_ROUTINE_TOKEN"
+          else
+            echo "CLAUDE_ROUTINE_FIRE_URL/CLAUDE_ROUTINE_TOKEN repo secrets not set, skipping"
           fi
-          for attempt in 1 2 3; do
-            if printf '%s' "$VALUE" | npx firebase-tools@13 functions:secrets:set BOARD_API_KEY --project backlog-tracker-e4ed2 --data-file - --force; then
-              break
-            fi
-            [ "$attempt" = "3" ] && { echo "functions:secrets:set BOARD_API_KEY failed after 3 attempts"; exit 1; }
-            echo "functions:secrets:set BOARD_API_KEY failed (attempt $attempt/3), retrying in 20s..."
-            sleep 20
-          done
+          sync GH_DISPATCH_TOKEN "${GH_DISPATCH_TOKEN:-unset}"
+          sync BOARD_API_KEY "${BOARD_API_KEY:-unset}"
 
       - name: Install migration script dependencies
         working-directory: backlog-tracker/scripts
@@ -245,7 +174,42 @@ jobs:
         id: deploy
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
-        run: npx firebase-tools@13 deploy --only hosting,functions,firestore:rules --project backlog-tracker-e4ed2 --non-interactive --force
+        # Retried on Google's transient errors only. A failed function update
+        # can leave sibling updates still running on Google's side, and an
+        # immediate retry just collides with them ("409, unable to queue the
+        # operation"), so each retry first waits for the project's in-flight
+        # Cloud Functions operations to drain (up to 10 minutes). Deploying
+        # again is idempotent: unchanged functions are skipped.
+        run: |
+          gcloud auth activate-service-account --key-file="$RUNNER_TEMP/firebase-sa.json" --quiet
+          set -o pipefail
+          # In-flight operations, from the Cloud Functions v2 API itself
+          # (gcloud has no list command for them). Always waits at least a
+          # minute, so a failure to read the list can't turn into an
+          # immediate, colliding retry.
+          drain() {
+            sleep 60
+            for i in $(seq 1 36); do
+              n=$( { curl -sf -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+                "https://cloudfunctions.googleapis.com/v2/projects/backlog-tracker-e4ed2/locations/us-central1/operations?filter=done%3Dfalse&pageSize=100" || true; } \
+                | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{try{console.log((JSON.parse(d||"{}").operations||[]).length)}catch{console.log(0)}})')
+              [ "${n:-0}" = 0 ] && return 0
+              echo "  $n Cloud Functions operation(s) still running, waiting…"
+              sleep 15
+            done
+          }
+          for attempt in 1 2 3; do
+            if npx firebase-tools@13 deploy --only hosting,functions,firestore:rules --project backlog-tracker-e4ed2 --non-interactive --force 2>&1 | tee "$RUNNER_TEMP/deploy.log"; then
+              exit 0
+            fi
+            if ! grep -qE "HTTP Error: (409|429|500|502|503|504)|unable to queue the operation|Deadline Exceeded|Failed to list functions" "$RUNNER_TEMP/deploy.log"; then
+              echo "Deploy failed and the failure is not a transient Google error — not retrying."
+              exit 1
+            fi
+            [ "$attempt" = 3 ] && { echo "Deploy still failing on transient Google errors after 3 attempts."; exit 1; }
+            echo "Deploy hit a transient Google error (attempt $attempt/3); waiting for in-flight operations before retrying."
+            drain
+          done
 
       # Storage rules go in their own, non-fatal step. `storage:rules` (PR
       # #136) is not a valid --only target — the CLI read "rules" as a
