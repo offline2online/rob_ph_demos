@@ -14,8 +14,9 @@ const db = admin.firestore();
 // A "Schedule offer until" date only ever controlled whether isLive()
 // treated the offer as live for display — the stale offerPrice/offerFrom/
 // offerUntil fields sat on the record forever after expiry, with no record
-// that anything had happened. This runs server-side on a schedule so it
-// fires the moment an offer expires, independent of anyone having HQ Admin
+// that anything had happened. This runs server-side on a schedule (every
+// 15 minutes — see below) so it fires soon after an offer expires,
+// independent of anyone having HQ Admin
 // open (the client-side version this replaced only ran while that tab was
 // open — see menu-board-demo/hq-admin.html git history).
 function fmtDate(v) {
@@ -139,7 +140,14 @@ async function sweepExpiredOffers() {
   return revertedCount;
 }
 
-exports.sweepExpiredOffers = onSchedule('every 1 minutes', async () => {
+// Every 15 minutes, not every minute (4 Oct 2026, Firebase cost review):
+// each run reads the whole `items` and `storePricing` collections, so a
+// once-a-minute schedule was 1,440 full-catalogue reads a day. Nothing a
+// customer sees waits on this — menu-board.html, order.html and the admin
+// pages already treat an offer past offerUntil as not live when they render
+// (_isOfferWindowLiveNow) — so the only effect is that the record is
+// tidied and the reversion logged up to 15 minutes after expiry.
+exports.sweepExpiredOffers = onSchedule('every 15 minutes', async () => {
   await sweepExpiredOffers();
 });
 

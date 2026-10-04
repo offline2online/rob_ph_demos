@@ -14,6 +14,11 @@
 //
 //   GOOGLE_APPLICATION_CREDENTIALS=<path to the deploy service account key> \
 //     node write-system-status.js '<JSON object of fields to merge>'
+//
+//   node write-system-status.js --get <field>
+//     prints that top-level string field (empty if unset) — the deploy
+//     workflow reads deployedTree back this way to skip a redeploy of
+//     content that is already live.
 const fs = require("fs");
 
 const PROJECT_ID = "backlog-tracker-e4ed2";
@@ -57,7 +62,22 @@ async function getAccessToken() {
   return (await res.json()).access_token;
 }
 
+async function getField(name) {
+  const token = await getAccessToken();
+  const res = await fetch(`${FIRESTORE_BASE}/systemStatus/pipeline?mask.fieldPaths=${encodeURIComponent(name)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (res.status === 404) return "";
+  if (!res.ok) throw new Error(`write-system-status GET failed: ${res.status} ${await res.text()}`);
+  const value = ((await res.json()).fields || {})[name];
+  return (value && value.stringValue) || "";
+}
+
 async function main() {
+  if (process.argv[2] === "--get") {
+    console.log(await getField(process.argv[3]));
+    return;
+  }
   const fields = JSON.parse(process.argv[2] || "{}");
   fields.updatedAt = new Date().toISOString();
   const fieldPaths = Object.keys(fields).map((k) => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");

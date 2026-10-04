@@ -1176,16 +1176,55 @@ element itself isn't the same node, so `renderNow()` now captures each
 restores it immediately after — fixing every render path at once rather
 than special-casing the one button that happened to surface it.
 
-### Cleaning up old Cloud Build/Artifact Registry images
+### Old Cloud Functions build images
 
 Every functions deploy leaves a build image behind in the `gcf-artifacts`
-repo. The workflow's last step, "Set Artifact Registry cleanup policy for
-gcf-artifacts", configures that repo to auto-delete untagged images older
-than 3 days — a one-time-effective setting that gets (harmlessly)
-reapplied on every deploy. It's marked `continue-on-error: true` since
-this is pure housekeeping: if it fails (e.g. the Artifact Registry
-Repository Administrator role above isn't granted yet), the deploy itself
-still succeeds, only the automatic cleanup doesn't happen that run.
+repo. The workflow's "Set Artifact Registry cleanup policy for
+gcf-artifacts" step tries to set that repo to auto-delete untagged images
+older than 3 days.
+
+**It has never worked** (found in the Firebase cost review, 4 Oct 2026): the
+deploy service account (`firebase-adminsdk-fbsvc@…`) lacks
+`artifactregistry.repositories.update`, so the step failed on every run,
+hidden by `continue-on-error`, and the Firebase CLI's own "Unhandled error
+cleaning up build images" warning went unnoticed too. Old images have been
+accumulating storage charges ever since. The step now raises a visible
+warning on the run summary when it fails. It stays non-fatal.
+
+One-time fix, by someone with Owner access to `backlog-tracker-e4ed2`
+(either option):
+
+- **Set the policy once by hand**: Cloud console → Artifact Registry →
+  `gcf-artifacts` (us-central1) → Edit → Cleanup policies → Delete,
+  "untagged", older than 3 days. Or, from Cloud Shell:
+  `gcloud artifacts repositories set-cleanup-policies gcf-artifacts --project=backlog-tracker-e4ed2 --location=us-central1 --policy=policy.json`
+  with the JSON from the workflow step. The policy persists; the workflow
+  step then reapplies it harmlessly.
+- **Or let the workflow do it**: grant the deploy service account
+  *Artifact Registry Repository Administrator* on `gcf-artifacts`.
+
+Then delete what has already piled up, from Artifact Registry and, if the
+project still has it, the old Container Registry
+(`console.cloud.google.com/gcr/images/backlog-tracker-e4ed2/us/gcf`, the
+URL the CLI warning names). The `dsp-api` codebase deploys into the same
+repo, so one policy covers both.
+
+### A deploy of content that is already live is skipped
+
+Before doing anything else, `deploy-backlog-tracker.yml` fingerprints what it
+deploys: the `backlog-tracker/` and `faq/` git trees plus the workflow file.
+It then compares that with `systemStatus/pipeline.deployedTree`, which every
+successful deploy records. When they match, the run stops with a "Already
+deployed" notice and still reports success, so the health strip and the
+pipeline's own deploy tracking see an ordinary green run. Before this, the
+workflow ran 100 times in ten days, often twice for one commit: a push and
+the pipeline's dispatch, or two dispatches minutes apart. Each run repeated
+the secret sync, the docs sync and a full `firebase deploy`.
+
+A skipped run does **not** re-sync repo secrets into Secret Manager. After
+rotating a secret, run the workflow by hand with **force** ticked
+(`gh workflow run deploy-backlog-tracker.yml -f force=true`). `seed_faq`
+always deploys.
 
 ### The `NOTIFY_WEBHOOK_URL` secret
 

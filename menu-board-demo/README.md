@@ -12,8 +12,8 @@ and offers those boards display.
   platform" for what that means when debugging a screenshot).
 - `retail-admin.html` — the store-level admin screens, also iframed into
   the real platform.
-- `functions/` — Cloud Functions for Firebase (the scheduled offer-expiry
-  sweep, AI provider calls for product asset generation). **Needs a
+- `functions/` — Cloud Functions for Firebase (the offer-expiry sweep,
+  every 15 minutes, AI provider calls for product asset generation). **Needs a
   separate manual `firebase deploy --only functions`** — pushing to `main`
   does not make a functions change live. See root `CLAUDE.md` → "Cloud
   Functions need a separate manual deploy".
