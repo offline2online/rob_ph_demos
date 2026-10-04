@@ -1211,23 +1211,32 @@ repo, so one policy covers both.
 
 ### Old secret versions
 
-Secret Manager charges for every enabled version of a secret (about $0.06
-a month each, after six free). Until 4 Oct 2026 the deploy ran
+Secret Manager charges for every version of a secret that hasn't been
+destroyed, disabled versions included. It appears on the bill as "Secret
+version replica storage", about US$0.06 a month per version. It was A$39.55
+of September's bill and rising every day. Until 4 Oct 2026 the deploy ran
 `functions:secrets:set --force` for all five function secrets on every run,
-adding a new version each time whether or not anything had changed.
-`NOTIFY_WEBHOOK_URL` reached version 297, so roughly 1,500 versions were
-being billed. `scripts/sync-function-secret.sh` stopped new ones piling up.
-The deploy's **Destroy secret versions no function uses** step
-(`firebase functions:secrets:prune`) removes the old ones. It reads which
-version each deployed function is pinned to, in both codebases, and leaves
-those alone.
+adding a new version each time (`NOTIFY_WEBHOOK_URL` reached version 297).
+`scripts/sync-function-secret.sh` stopped new versions piling up.
 
-It runs only when a deploy actually runs. To clean up without a code
-change, run the workflow with **force** ticked. If it fails, the run summary
-shows a warning: the deploy service account then needs *Secret Manager
-Admin*, or someone with that role can run
-`firebase functions:secrets:prune --project backlog-tracker-e4ed2` once by
-hand.
+`firebase functions:secrets:prune` reported "All secrets are in use" (it
+only considers secrets Firebase labelled), so
+`scripts/prune-secret-versions.sh` does the clean-up from the live
+functions instead. It keeps:
+
+- every version a deployed function, in either codebase, is pinned to;
+- the newest version of every secret;
+- every version of a secret no function references.
+
+It refuses to run if the functions listing can't be read or shows nothing
+pinned. It runs:
+
+- **by hand** — Actions → **Secret versions (report / destroy unused)**.
+  `report` (the default) lists versions, pins and the monthly cost and
+  changes nothing. `destroy` needs `confirm` = `DESTROY`.
+- **after every successful deploy** — the deploy's "Destroy secret versions
+  no function uses" step. It is non-fatal and warns on the run summary if
+  it fails.
 
 ### A deploy of content that is already live is skipped
 
