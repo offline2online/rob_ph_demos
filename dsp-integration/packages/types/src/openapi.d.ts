@@ -1196,6 +1196,8 @@ export interface components {
              *     floor, and it must clear the buyer's effective floor.
              */
             reservePrice?: number | null;
+            /** @description The reserve price for a reservation whose campaign is interactive: the slot's own interactive reserve price when set, else `reservePrice`. */
+            interactiveReservePrice?: number | null;
         };
         Pricing: {
             currency: string;
@@ -1781,6 +1783,18 @@ export interface components {
              */
             companyPlayWindowHours: number;
             /**
+             * @description The resolved reserve price (CPM) for an interactive campaign on
+             *     this slot: interactiveReservePriceOverride when set, else
+             *     `reservePrice`. Null when neither exists.
+             */
+            interactiveReservePrice: number | null;
+            /**
+             * @description This slot's own interactive reserve price, admin-editable here
+             *     while the slot supports interactive targeting; null means
+             *     interactive campaigns follow `reservePrice`.
+             */
+            interactiveReservePriceOverride: number | null;
+            /**
              * @description The resolved maximum number of campaigns (the mandatory default
              *     layer plus optional targeted versions) this advertiser may
              *     submit for this slot: maxCampaignsOverride when set, else
@@ -2209,6 +2223,12 @@ export interface components {
                  *     VAC-d) on its own.
                  */
                 billingUnitHours?: number | null;
+                /**
+                 * @description This slot's own reserve price (CPM) for interactive campaigns;
+                 *     null means interactive campaigns follow the ordinary reserve price.
+                 *     Only used while the slot supports interactive targeting.
+                 */
+                interactiveReservePrice?: number | null;
                 /**
                  * @description This slot's own override of the display type's maximum
                  *     campaigns (spec §1 configuration inheritance — override
@@ -3067,6 +3087,8 @@ export interface operations {
                         billingUnitHours?: number | null;
                         /** @description The display type's billing-unit default, in whole hours; null = none (the company-wide playWindowHours applies). Must be the same value on every row for a given displayTypeId in one request. */
                         billingUnitHoursDefault?: number | null;
+                        /** @description This slot's own reserve price (CPM) for interactive campaigns only; null = interactive campaigns follow the slot's ordinary reserve price. Only meaningful while `supportedTargeting` includes interactive. Omitted = unchanged is not supported — always send the slot's current value. */
+                        interactiveReservePrice?: number | null;
                         /** @description This slot's own maximum-campaigns override; null = inherit maxCampaignsDefault. Omitted = unchanged is not supported — always send the slot's current value. */
                         maxCampaigns?: number | null;
                         /** @description The display type's maximum-campaigns default; null = none (the platform default of 5 applies). Must be the same value on every row for a given displayTypeId in one request. */

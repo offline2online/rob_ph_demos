@@ -608,6 +608,10 @@ paths:
                         minimum: 1
                         maximum: 8760
                         description: The display type's billing-unit default, in whole hours; null = none (the company-wide playWindowHours applies). Must be the same value on every row for a given displayTypeId in one request.
+                      interactiveReservePrice:
+                        type: [number, 'null']
+                        minimum: 0
+                        description: This slot's own reserve price (CPM) for interactive campaigns only; null = interactive campaigns follow the slot's ordinary reserve price. Only meaningful while `supportedTargeting` includes interactive. Omitted = unchanged is not supported — always send the slot's current value.
                       maxCampaigns:
                         type: [integer, 'null']
                         minimum: 1
@@ -1624,6 +1628,14 @@ components:
             Reserved, out of the open auction, and billed at this CPM on its
             realised VAC-d. It is the CPM itself, not an amount added to the
             floor, and it must clear the buyer's effective floor.
+        interactiveReservePrice:
+          type: [number, 'null']
+          description: |
+            The reserve price for a reservation whose campaign is
+            interactive (ticket 5eLDRBqEGhNyJSHSIFFG, 4 Oct 2026): the
+            slot's own interactive reserve price when set, else
+            `reservePrice`. Only offered while the slot supports
+            interactive targeting. Same booking rules as `reservePrice`.
     Pricing:
       type: object
       required: [currency, floorCpm, effectiveFloorCpm, personalisedMultiplier, costPerEngagement]
@@ -2069,7 +2081,7 @@ components:
         updatedAt: {type: string, format: date-time}
     AvailableInventoryRow:
       type: object
-      required: [displayTypeId, displayTypeName, playlistName, playlistId, unassigned, scored, unsellableReason, salesLocked, slot, zoneSlot, position, assignedTo, supportedTargeting, qrControl, visionAi, reservePrice, reservePriceOverride, displayTypeReservePrice, billingUnitHours, billingUnitHoursOverride, displayTypeBillingUnitHours, companyPlayWindowHours, maxCampaigns, maxCampaignsOverride, displayTypeMaxCampaigns]
+      required: [displayTypeId, displayTypeName, playlistName, playlistId, unassigned, scored, unsellableReason, salesLocked, slot, zoneSlot, position, assignedTo, supportedTargeting, qrControl, visionAi, reservePrice, reservePriceOverride, displayTypeReservePrice, interactiveReservePrice, interactiveReservePriceOverride, billingUnitHours, billingUnitHoursOverride, displayTypeBillingUnitHours, companyPlayWindowHours, maxCampaigns, maxCampaignsOverride, displayTypeMaxCampaigns]
       properties:
         displayTypeId: {type: string}
         displayTypeName: {type: string}
@@ -2216,6 +2228,18 @@ components:
             playWindowHours, platform default 24): what a slot's billing
             unit resolves to when neither it nor its display type sets one
             (OQ27, 29 Sep 2026). The same on every row; read-only here.
+        interactiveReservePrice:
+          type: [number, 'null']
+          description: |
+            The resolved reserve price (CPM) for an interactive campaign on
+            this slot: interactiveReservePriceOverride when set, else
+            `reservePrice`. Null when neither exists.
+        interactiveReservePriceOverride:
+          type: [number, 'null']
+          description: |
+            This slot's own interactive reserve price, admin-editable here
+            while the slot supports interactive targeting; null means
+            interactive campaigns follow `reservePrice`.
         maxCampaigns:
           type: integer
           description: |
@@ -2688,6 +2712,18 @@ components:
                   play-window length (OQ27, 29 Sep 2026): its windows are
                   this long, each auctioned, booked and billed (dynamic
                   VAC-d) on its own.
+              interactiveReservePrice:
+                type: [number, 'null']
+                description: |
+                  This slot's own reserve price (CPM) for interactive
+                  campaigns (ticket 5eLDRBqEGhNyJSHSIFFG, 4 Oct 2026):
+                  what a buyer commits to for a window when the campaign's
+                  type is interactive. Absent or null means interactive
+                  campaigns follow the slot's ordinary reserve price
+                  (override, else the display type's default). Only used
+                  while the slot supports interactive targeting. There is no
+                  display-type default for it. Set from Advertisers /
+                  Inventory, not the slot editor.
               maxCampaigns:
                 type: [integer, 'null']
                 description: |

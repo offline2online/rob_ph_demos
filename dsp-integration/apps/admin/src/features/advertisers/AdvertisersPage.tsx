@@ -68,7 +68,7 @@ export const slotKey = (r: AvailableInventoryRow) => `${r.displayTypeId}:${r.slo
    reservePrice is this slot's own override; null means it follows its
    display type's shared default (below), not "no reserve" (Rob, 22 Sep;
    spec §1 configuration inheritance — override always wins). */
-export interface SlotEdit { supportedTargeting: TargetingMode[]; assignedTo: Omit<AssignedTo, 'partnerNames' | 'buyersListName'>; reservePrice: number | null; billingUnitHours: number | null; maxCampaigns: number | null }
+export interface SlotEdit { supportedTargeting: TargetingMode[]; assignedTo: Omit<AssignedTo, 'partnerNames' | 'buyersListName'>; reservePrice: number | null; interactiveReservePrice: number | null; billingUnitHours: number | null; maxCampaigns: number | null }
 type Edits = Record<string, SlotEdit>
 /* A display type's reserve price default, edited from any of its slot
    rows — every row for the same displayTypeId shares one value. Also used
@@ -175,7 +175,7 @@ function Pills({ label, value, options, canEdit, placeholder, onChange }: {
 }
 
 const edited = (c: InvCtx['current'], r: AvailableInventoryRow): SlotEdit =>
-  c.edits[slotKey(r)] ?? { supportedTargeting: supportedTargetingOf(r), assignedTo: r.assignedTo, reservePrice: r.reservePriceOverride, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride }
+  c.edits[slotKey(r)] ?? { supportedTargeting: supportedTargetingOf(r), assignedTo: r.assignedTo, reservePrice: r.reservePriceOverride, interactiveReservePrice: r.interactiveReservePriceOverride ?? null, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride }
 /* The value this slot actually resolves to right now, following the draft
    default when it has no override of its own — the same "override wins"
    read as reservePriceOf, but against unsaved edits. */
@@ -357,6 +357,31 @@ function ReservePriceCell({ data, context }: IP) {
   )
 }
 
+/* The reserve price for the interactive experience on this slot (ticket
+   5eLDRBqEGhNyJSHSIFFG): only offered while Interactive is ticked in
+   Targeting supported, since only then can an interactive campaign be sold
+   here. Empty = interactive campaigns follow the slot's ordinary reserve
+   price, shown as the placeholder so the fallback is visible. Per slot —
+   there is no display-type default for it. */
+function InteractiveReservePriceCell({ data, context }: IP) {
+  if (!data) return null
+  const c = context.current
+  const e = edited(c, data)
+  if (!e.supportedTargeting.includes('interactive')) return <span style={{ color: T.muted }}>—</span>
+  const fallback = effectiveReservePrice(c, data)
+  if (!c.canEdit) {
+    const resolved = e.interactiveReservePrice ?? fallback
+    return <span style={{ color: resolved === null ? T.muted : T.text }}>{resolved === null ? 'No reserve' : `${c.currency} ${resolved}`}</span>
+  }
+  return (
+    <InputNumber
+      size="small" aria-label={`${data.displayTypeName} slot ${data.zoneSlot}: interactive reserve price`} min={0} step={1} style={{ width: 112 }}
+      placeholder={fallback === null ? 'None' : String(fallback)} prefix={c.currency} value={e.interactiveReservePrice ?? undefined}
+      onChange={(v) => c.set(slotKey(data), { interactiveReservePrice: v === null || v === undefined ? null : Number(v) })}
+    />
+  )
+}
+
 /* Hours → a short human label, the same shape a person would read a
    duration in (spec "Private auctions: two-period model", 23 Sep 2026):
    "1 day" at the default, "6h" / "3 days" otherwise. */
@@ -526,6 +551,16 @@ export function AdvertisersPage() {
       valueGetter: (p) => (p.data ? effectiveReservePrice((p.context as InvCtx).current, p.data) ?? -1 : -1),
     },
     {
+      headerName: 'Interactive reserve price', width: 170, minWidth: 150, cellRenderer: InteractiveReservePriceCell,
+      headerComponent: header('Interactive reserve price', "The reserve price (CPM) for the interactive experience on this slot, so it can be priced apart from the slot's ordinary reserve price. Only available while Interactive is selected in Targeting supported. Empty = interactive campaigns use the slot's reserve price."),
+      valueGetter: (p) => {
+        if (!p.data) return -1
+        const c = (p.context as InvCtx).current
+        const e = edited(c, p.data)
+        return e.supportedTargeting.includes('interactive') ? e.interactiveReservePrice ?? effectiveReservePrice(c, p.data) ?? -1 : -1
+      },
+    },
+    {
       headerName: 'Max campaigns', width: 140, minWidth: 125, cellRenderer: MaxCampaignsCell,
       /* Written for the retail media manager setting this, not the
          advertiser submitting against it (ticket "Max campaigns: … revise
@@ -546,7 +581,7 @@ export function AdvertisersPage() {
   const { draft, setDraft, dirty, reset, commitNext } = useDraft(saved)
   const savedEdits = useMemo<Edits | undefined>(() => inventory.data && Object.fromEntries(invRows.map((r) => {
     const { partnerNames: _names, ...assignedTo } = r.assignedTo
-    return [slotKey(r), { supportedTargeting: supportedTargetingOf(r), assignedTo, reservePrice: r.reservePriceOverride, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride }]
+    return [slotKey(r), { supportedTargeting: supportedTargetingOf(r), assignedTo, reservePrice: r.reservePriceOverride, interactiveReservePrice: r.interactiveReservePriceOverride ?? null, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride }]
   })), [invRows, inventory.data])
   const inv = useDraft(savedEdits)
   /* One reserve price default per display type, shared by every one of its

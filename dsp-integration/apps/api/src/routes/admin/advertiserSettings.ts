@@ -1,6 +1,6 @@
 /* Advertiser settings (spec §4, §5, §6): pricing and the company lists, plus
    the read-only Where these apply and Available Inventory. */
-import { MAX_MAX_CAMPAIGNS, MIN_MAX_CAMPAIGNS, TARGETING_MODES, advertiserSlug, assignedOf, billingUnitHoursOf, maxCampaignsOf, reservePriceOf, supportedTargetingOf, type AdvertiserSettings, type AdvertiserSettingsInput, type Assigned, type AvailableInventoryRow, type DisplayType, type DspAdvertisers, type TargetingMode } from '@ph-dsp/types'
+import { MAX_MAX_CAMPAIGNS, MIN_MAX_CAMPAIGNS, TARGETING_MODES, advertiserSlug, assignedOf, billingUnitHoursOf, maxCampaignsOf, interactiveReservePriceOf, reservePriceOf, supportedTargetingOf, type AdvertiserSettings, type AdvertiserSettingsInput, type Assigned, type AvailableInventoryRow, type DisplayType, type DspAdvertisers, type TargetingMode } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { cleanCategoryList, validateAdvertiserSettings } from '../../domain/advertiserSettings'
@@ -146,6 +146,8 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
           supportedTargeting: supportedTargetingOf(s),
           reservePrice: reservePriceOf(t, s),
           reservePriceOverride: s.reservePrice ?? null,
+          interactiveReservePrice: interactiveReservePriceOf(t, s),
+          interactiveReservePriceOverride: s.interactiveReservePrice ?? null,
           displayTypeReservePrice: t.phExtensions?.reservePrice ?? null,
           billingUnitHours: billingUnitHoursOf(t, s, company.playWindowHours),
           billingUnitHoursOverride: s.billingUnitHours ?? null,
@@ -239,7 +241,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
   app.put<{ Body: { items?: unknown } }>('/available-inventory', async (req) => {
     guards.flagged()
     guards.requireScope(req, 'admin')
-    const rows = Array.isArray(req.body?.items) ? (req.body.items as { displayTypeId?: unknown; slot?: unknown; supportedTargeting?: unknown; assignedTo?: unknown; reservePrice?: unknown; reservePriceDefault?: unknown; billingUnitHours?: unknown; billingUnitHoursDefault?: unknown; maxCampaigns?: unknown; maxCampaignsDefault?: unknown }[]) : null
+    const rows = Array.isArray(req.body?.items) ? (req.body.items as { displayTypeId?: unknown; slot?: unknown; supportedTargeting?: unknown; assignedTo?: unknown; reservePrice?: unknown; reservePriceDefault?: unknown; interactiveReservePrice?: unknown; billingUnitHours?: unknown; billingUnitHoursDefault?: unknown; maxCampaigns?: unknown; maxCampaignsDefault?: unknown }[]) : null
     if (!rows) throw validationFailed([{ field: 'items', reason: 'An array of slots is required.' }])
     const keys = TARGETING_MODES.map((m) => m.key) as string[]
     /* Validation, the sold and resize checks and the save are one
@@ -248,7 +250,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
       const partners = await ctx.partners.list()
       const company = await ctx.company.get()
       const errors: { field: string; reason: string }[] = []
-      type Patch = { supportedTargeting: TargetingMode[]; assigned: Assigned; reservePrice: number | null; billingUnitHours: number | null; maxCampaigns: number | null }
+      type Patch = { supportedTargeting: TargetingMode[]; assigned: Assigned; reservePrice: number | null; interactiveReservePrice: number | null; billingUnitHours: number | null; maxCampaigns: number | null }
       const wanted = new Map<string, Map<number, Patch>>()
       const defaults = new Map<string, number | null>()
       const billingUnitDefaults = new Map<string, number | null>()
@@ -278,6 +280,10 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         errors.push(...bad)
 
         const reservePrice = parseReservePrice(r.reservePrice, f('reservePrice'), errors)
+        /* Omitted keeps what the slot has (older clients never send it); it
+           only means anything while the slot supports interactive, so a slot
+           that stops supporting it drops the price too. */
+        const interactiveReservePrice = r.interactiveReservePrice === undefined ? (def?.interactiveReservePrice ?? null) : parseReservePrice(r.interactiveReservePrice, f('interactiveReservePrice'), errors)
         const reservePriceDefault = parseReservePrice(r.reservePriceDefault, f('reservePriceDefault'), errors)
         if (dt) {
           if (defaults.has(dt.id) && defaults.get(dt.id) !== reservePriceDefault) errors.push({ field: f('reservePriceDefault'), reason: 'All slots on a display type must submit the same reserve price default.' })
@@ -298,7 +304,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
 
         if (dt && def && targeting && !bad.length) {
           const byType = wanted.get(dt.id) ?? new Map<number, Patch>()
-          byType.set(slot, { supportedTargeting: targeting, assigned, reservePrice, billingUnitHours, maxCampaigns })
+          byType.set(slot, { supportedTargeting: targeting, assigned, reservePrice, interactiveReservePrice: targeting.includes('interactive') ? interactiveReservePrice : null, billingUnitHours, maxCampaigns })
           wanted.set(dt.id, byType)
         }
       }
@@ -367,7 +373,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         const ext = { ...(dt.phExtensions ?? { slots: [] }) }
         ext.slots = (ext.slots ?? []).map((s, i) => {
           const patch = slots.get(i + 1)
-          return patch ? { ...s, supportedTargeting: patch.supportedTargeting, ...assignedToSlot(patch.assigned, partners), reservePrice: patch.reservePrice, billingUnitHours: patch.billingUnitHours, maxCampaigns: patch.maxCampaigns } : s
+          return patch ? { ...s, supportedTargeting: patch.supportedTargeting, ...assignedToSlot(patch.assigned, partners), reservePrice: patch.reservePrice, interactiveReservePrice: patch.interactiveReservePrice, billingUnitHours: patch.billingUnitHours, maxCampaigns: patch.maxCampaigns } : s
         })
         if (defaults.has(displayTypeId)) ext.reservePrice = defaults.get(displayTypeId) ?? null
         if (billingUnitDefaults.has(displayTypeId)) ext.billingUnitHours = billingUnitDefaults.get(displayTypeId) ?? null
