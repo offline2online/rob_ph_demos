@@ -1932,20 +1932,16 @@ components:
         buyersListName: {type: [string, 'null'], description: The same buyers list by name, for display.}
     InvitedBuyer:
       type: object
-      description: One invited buyer on a buyers list (deal).
-      required: [identifierType, value]
+      description: |
+        One invited buyer on a buyers list (deal): a seat (advertiser) that a
+        connected DSP synced, picked from that DSP's own seats. There is no
+        free text and no identifier type — the entry always carries the
+        identifier the DSP bids under, and entitlement (bid intake and
+        auction clear, `not_invited`) matches it exactly.
+      required: [partnerId, seatId]
       properties:
-        identifierType:
-          type: string
-          enum: [brandEntity, dspSeatId, other]
-          description: |
-            How this buyer is identified — configurable per retailer:
-            brandEntity (the advertiser's PH brand entity, matched by name),
-            dspSeatId (a DSP's own seat ID, matched exactly), or other (a
-            freeform identifier this retailer uses elsewhere — recorded but
-            not automatically matched at auction time; entitlement for that
-            entry is enforced outside this POC).
-        value: {type: string}
+        partnerId: {type: string, description: The DSP (partner) whose synced seat this is.}
+        seatId: {type: string, description: 'The seat / advertiser ID as synced from that DSP (a seat in `Partner.seats`).'}
     LockedWin:
       type: object
       description: |

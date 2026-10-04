@@ -11,12 +11,12 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-type Invite = { identifierType: 'brandEntity' | 'dspSeatId'; value: string }
+type Invite = { partnerId: string; seatId: string }
 async function dealHarness(opts: { invited?: Invite[]; activeFrom?: string | null; activeTo?: string | null; auctionCloses?: string | null; before?: (h: Awaited<ReturnType<typeof harness>>) => Promise<unknown> } = {}) {
   const h = await harness()
   await opts.before?.(h)
   const list = await h.ctx.buyersLists.insert({
-    id: 'bl_e2e', name: 'E2E deal', description: 'Run 3 fixture', invitedBuyers: opts.invited ?? [{ identifierType: 'brandEntity', value: 'Swisse' }],
+    id: 'bl_e2e', name: 'E2E deal', description: 'Run 3 fixture', invitedBuyers: opts.invited ?? [{ partnerId: 'p_google', seatId: '5130002' }],
     activeFrom: opts.activeFrom ?? null, activeTo: opts.activeTo ?? null, auctionCloses: opts.auctionCloses ?? null,
   })
   await h.admin.slot({ listMode: 'deal', buyersListId: list.id, partnerIds: [] })
@@ -73,7 +73,7 @@ describe('Run 3 — private auction: happy', () => {
   })
 
   it('P2 — two invited buyers: the higher clears; a tie goes to the earlier bid', async () => {
-    const h = await dealHarness({ invited: [{ identifierType: 'brandEntity', value: 'Swisse' }, { identifierType: 'brandEntity', value: 'Nestlé' }] })
+    const h = await dealHarness({ invited: [{ partnerId: 'p_google', seatId: '5130002' }, { partnerId: 'p_google', seatId: '5130001' }] })
     await h.approvedCrid('crid-p2', day(0))
     const nestle = await h.readyApiCampaign('Nestlé — P2', 'localised', 'nestle')
     /* Nestlé 160 through the API vs Swisse 150 from the DSP. */
@@ -103,7 +103,7 @@ describe('Run 3 — private auction: non-happy', () => {
   })
 
   it('P4 — an empty resolved buyers list admits nobody; the window falls through to the default campaign', async () => {
-    const h = await dealHarness({ invited: [{ identifierType: 'brandEntity', value: 'A Brand On No DSP' }] })
+    const h = await dealHarness({ invited: [{ partnerId: 'p_google', seatId: 'no-such-seat' }] })
     const campaignId = await h.readyApiCampaign('Swisse — P4')
     const out = await runAuction(h.ctx, day(0))
     expect(out.positions[0]).toMatchObject({ bidRequests: 0, bids: 0, winner: null })

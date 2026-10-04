@@ -138,7 +138,7 @@ describe('a slot’s billing unit sets its play-window length (OQ27)', () => {
   it('books a locked-rate term on a 168-hour slot one week at a time, each week its own reservation', async () => {
     const { ctx, setSlots, activate, queued } = await setup()
     const list = await ctx.buyersLists.insert({
-      id: 'bl_weekly', name: 'Weekly term deal', description: '', invitedBuyers: [{ identifierType: 'brandEntity', value: 'Nestlé' }],
+      id: 'bl_weekly', name: 'Weekly term deal', description: '', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }],
       activeFrom: null, activeTo: null, auctionCloses: '2026-09-29T00:00:00.000Z',
     })
     await setSlots({ 2: { billingUnitHours: 168, listMode: 'deal', buyersListId: list.id } })

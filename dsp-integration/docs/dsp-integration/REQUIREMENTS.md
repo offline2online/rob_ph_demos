@@ -1427,14 +1427,18 @@ any number of positions — one deal, many slots, not one deal per slot.
 It carries:
 
 - **Name and description**, so it is distinguishable in its own table (below).
-- **Invited buyers**: a list of entries, each an identifier type plus a
-  value. The identifier type is **flexible per retailer**, not hard-wired to
-  one scheme — a PH brand entity (the advertiser's name, matched
-  case-insensitively, same as the existing advertiser lists), a DSP's own
-  seat ID (matched exactly against the seat record pulled on connect), or
-  another identifier a retailer uses elsewhere. `other` is recorded on the
-  list for reference but has no automated match in this build — the DSP
-  side of that identifier scheme isn't something this POC's stand-ins model.
+- **Invited buyers**: a **multi-select dropdown of the advertisers (seats)
+  that connected DSPs have synced** — each option reads as the advertiser's
+  name plus which DSP it comes from, grouped by DSP. Nobody types anything,
+  and there is no identifier-type picker, no "PH brand entity" name match
+  and no "other" (Rob, 4 Oct 2026; ticket W8wjh2wtFTnHZUO0Exuu — it
+  replaced the earlier brandEntity / dspSeatId / other scheme, which gated a
+  real auction on a loose name match). Each selected buyer is stored as the
+  DSP and the seat ID that DSP issued (`{ partnerId, seatId }`), so it
+  always carries a real identifier the DSP bids under. The API refuses an
+  entry whose DSP is not connected or whose seat that DSP never synced.
+  An entry whose seat later disappears from a re-sync stays on the list
+  (shown "no longer synced" so it can be removed) and matches nobody.
 - **Delivery term**: inclusive `activeFrom`/`activeTo` — the span this deal
   is awarded for (a week, a month, a quarter); either or both may be
   open-ended. Outside it, the deal admits nobody — it does not fall back
@@ -1507,7 +1511,7 @@ kind of error (23 Sep).
 **Entitlement is enforced the same way blacklist/whitelist already are**
 (§6 "Advertiser lists"), at both bid intake (OpenRTB response and the API's
 `POST /v1/reservations`) and again when the auction clears: a bid from a
-seat that is not one of the deal's invited buyers, or that arrives outside
+seat that is not one of the deal's invited buyers (matched exactly on its DSP and seat ID), or that arrives outside
 the deal's delivery term, is refused `not_invited`, naming the deal. Unlike
 `reserved`, a deal position is **not** taken out of the open auction and
 booked directly — until its rate locks (below), it runs as a real auction
@@ -2272,7 +2276,7 @@ Used only for the delete check in §1: a display type with any display whose
 ```
 buyersList: {
   id, name, description,
-  invitedBuyers: [{ identifierType, value }],  // identifierType: brandEntity | dspSeatId | other
+  invitedBuyers: [{ partnerId, seatId }],      // a seat a connected DSP synced (partners.seats); matched exactly
   activeFrom, activeTo,                        // the delivery term; ISO date-time or null = no bound (inclusive)
   auctionCloses,                               // the auction window's bidding deadline; ISO date-time or null = not using
                                                 //   the two-period model — clears a fresh auction every play window (23 Sep 2026)

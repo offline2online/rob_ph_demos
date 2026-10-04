@@ -176,9 +176,9 @@ describe('the auction', () => {
 })
 
 describe('private auctions (deal mode; spec "Support private auctions")', () => {
-  it('lets an invited buyer (by brand entity) win, at the ordinary floor, first price', async () => {
+  it('lets an invited buyer (a synced seat) win, at the ordinary floor, first price', async () => {
     const { ctx, setSlot, activate, queued } = await setup()
-    const list = await ctx.buyersLists.insert({ id: 'bl_nestle', name: 'Nestlé-only deal', description: '', invitedBuyers: [{ identifierType: 'brandEntity', value: 'Nestlé' }], activeFrom: null, activeTo: null, auctionCloses: null })
+    const list = await ctx.buyersLists.insert({ id: 'bl_nestle', name: 'Nestlé-only deal', description: '', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }], activeFrom: null, activeTo: null, auctionCloses: null })
     await setSlot({ listMode: 'deal', buyersListId: list.id })
     const first = await runAuction(ctx, W1)
     /* Runs as a real auction, not a reservation: the deal is visible in the outcome the same as rtb. */
@@ -190,17 +190,17 @@ describe('private auctions (deal mode; spec "Support private auctions")', () => 
 
   it('rejects a bid from an advertiser not on the invited-buyer list, naming the deal', async () => {
     const { ctx, bidder, setSlot, rows } = await setup()
-    const list = await ctx.buyersLists.insert({ id: 'bl_nestle', name: 'Nestlé-only deal', description: '', invitedBuyers: [{ identifierType: 'brandEntity', value: 'Nestlé' }], activeFrom: null, activeTo: null, auctionCloses: null })
+    const list = await ctx.buyersLists.insert({ id: 'bl_nestle', name: 'Nestlé-only deal', description: '', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }], activeFrom: null, activeTo: null, auctionCloses: null })
     await setSlot({ listMode: 'deal', buyersListId: list.id })
     await bidder({ advertiserId: '5130002' })
     await runAuction(ctx, W1)
     expect((await rows())[0]).toMatchObject({ status: 'rejected', advertiserId: 'swisse', reason: 'Swisse is not an invited buyer on this private auction (Nestlé-only deal).' })
   })
 
-  it('matches an invited buyer by DSP seat ID, not just brand entity', async () => {
+  it('matches an invited buyer on its own DSP seat ID', async () => {
     const { ctx, bidder, setSlot, approve, activate, queued, rows } = await setup()
     /* Invited by Swisse's own seat ID; the default bidder (Nestlé, seat 5130001) is not. */
-    const list = await ctx.buyersLists.insert({ id: 'bl_seat', name: 'Seat-based deal', description: '', invitedBuyers: [{ identifierType: 'dspSeatId', value: '5130002' }], activeFrom: null, activeTo: null, auctionCloses: null })
+    const list = await ctx.buyersLists.insert({ id: 'bl_seat', name: 'Seat-based deal', description: '', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130002' }], activeFrom: null, activeTo: null, auctionCloses: null })
     await setSlot({ listMode: 'deal', buyersListId: list.id })
     await runAuction(ctx, W1)
     expect((await rows())[0]).toMatchObject({ status: 'rejected', advertiserId: 'nestle', reason: 'Nestlé is not an invited buyer on this private auction (Seat-based deal).' })
@@ -218,7 +218,7 @@ describe('private auctions (deal mode; spec "Support private auctions")', () => 
 
   it("falls through to nobody winning once the deal's active window has passed — no reserve floor is ever crossed", async () => {
     const { ctx, setSlot, rows } = await setup()
-    const list = await ctx.buyersLists.insert({ id: 'bl_expired', name: 'Expired deal', description: '', invitedBuyers: [{ identifierType: 'brandEntity', value: 'Nestlé' }], activeFrom: '2026-01-01T00:00:00Z', activeTo: '2026-02-01T00:00:00Z', auctionCloses: null })
+    const list = await ctx.buyersLists.insert({ id: 'bl_expired', name: 'Expired deal', description: '', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }], activeFrom: '2026-01-01T00:00:00Z', activeTo: '2026-02-01T00:00:00Z', auctionCloses: null })
     await setSlot({ listMode: 'deal', buyersListId: list.id })
     await runAuction(ctx, W1)
     expect((await rows())[0]).toMatchObject({ status: 'rejected', reason: 'Nestlé is not an invited buyer on this private auction (Expired deal).' })
@@ -226,7 +226,7 @@ describe('private auctions (deal mode; spec "Support private auctions")', () => 
 
   it('admits nobody once the buyers list itself is deleted (falls through to the default campaign)', async () => {
     const { ctx, setSlot } = await setup()
-    const list = await ctx.buyersLists.insert({ id: 'bl_gone', name: 'Soon-deleted', description: '', invitedBuyers: [{ identifierType: 'brandEntity', value: 'Nestlé' }], activeFrom: null, activeTo: null, auctionCloses: null })
+    const list = await ctx.buyersLists.insert({ id: 'bl_gone', name: 'Soon-deleted', description: '', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }], activeFrom: null, activeTo: null, auctionCloses: null })
     await setSlot({ listMode: 'deal', buyersListId: list.id })
     await ctx.buyersLists.delete(list.id)
     const first = await runAuction(ctx, W1)
@@ -240,7 +240,7 @@ describe('private auctions: two-period model (locked rate over the delivery term
   it("locks the term's rate on its first clearing bid, then books every later window directly at that rate — no re-auction", async () => {
     const { ctx, setSlot, activate, queued, rows } = await setup()
     const list = await ctx.buyersLists.insert({
-      id: 'bl_term', name: 'Q4 term deal', description: '', invitedBuyers: [{ identifierType: 'brandEntity', value: 'Nestlé' }],
+      id: 'bl_term', name: 'Q4 term deal', description: '', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }],
       activeFrom: null, activeTo: null, auctionCloses: '2026-09-22T00:00:00.000Z',
     })
     await setSlot({ listMode: 'deal', buyersListId: list.id })
@@ -271,7 +271,7 @@ describe('private auctions: two-period model (locked rate over the delivery term
 
   it('keeps clearing fresh every window when auctionCloses is not set — unchanged from before this model existed', async () => {
     const { ctx, setSlot, activate, queued } = await setup()
-    const list = await ctx.buyersLists.insert({ id: 'bl_legacy', name: 'Legacy deal', description: '', invitedBuyers: [{ identifierType: 'brandEntity', value: 'Nestlé' }], activeFrom: null, activeTo: null, auctionCloses: null })
+    const list = await ctx.buyersLists.insert({ id: 'bl_legacy', name: 'Legacy deal', description: '', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }], activeFrom: null, activeTo: null, auctionCloses: null })
     await setSlot({ listMode: 'deal', buyersListId: list.id })
     await runAuction(ctx, W1)
     await activate(await queued('Nestlé — crid-5130001'))
@@ -285,7 +285,7 @@ describe('private auctions: two-period model (locked rate over the delivery term
 
   it('falls through once the auction window closes with nothing cleared — the term never got a rate to hold', async () => {
     const { ctx, setSlot, rows } = await setup()
-    const list = await ctx.buyersLists.insert({ id: 'bl_missed', name: 'Missed deadline', description: '', invitedBuyers: [{ identifierType: 'brandEntity', value: 'Nestlé' }], activeFrom: null, activeTo: null, auctionCloses: '2026-09-20T12:00:00.000Z' })
+    const list = await ctx.buyersLists.insert({ id: 'bl_missed', name: 'Missed deadline', description: '', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }], activeFrom: null, activeTo: null, auctionCloses: '2026-09-20T12:00:00.000Z' })
     await setSlot({ listMode: 'deal', buyersListId: list.id })
     /* W1 starts 21 Sep — already past the 20 Sep auctionCloses deadline. */
     const out = await runAuction(ctx, W1)

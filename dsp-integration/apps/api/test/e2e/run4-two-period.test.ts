@@ -18,7 +18,7 @@ async function termHarness(before?: (h: Awaited<ReturnType<typeof harness>>) => 
   const h = await harness()
   await before?.(h)
   const list = await h.ctx.buyersLists.insert({
-    id: 'bl_term', name: 'E2E term deal', description: 'Run 4 fixture', invitedBuyers: [{ identifierType: 'brandEntity', value: 'Swisse' }],
+    id: 'bl_term', name: 'E2E term deal', description: 'Run 4 fixture', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130002' }],
     activeFrom: null, activeTo: '2026-09-27T23:59:59.000Z', auctionCloses: day(1).toISOString(),
   })
   await h.admin.slot({ listMode: 'deal', buyersListId: list.id, partnerIds: [], billingUnitHours: 24 })

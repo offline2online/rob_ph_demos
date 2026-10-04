@@ -704,7 +704,7 @@ describe('Advertisers / Inventory', () => {
   it('offers "+ Add new buyers list…" in the Assigned to picker, and opens the modal', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch({
       ...ADVERTISER_PAGE,
-      '/api/admin/v1/buyers-lists': { items: [{ id: 'bl_1', name: 'Q4 FMCG Private Auction', description: '', invitedBuyers: [{ identifierType: 'brandEntity', value: 'brand_x' }], activeFrom: null, activeTo: null }] },
+      '/api/admin/v1/buyers-lists': { items: [{ id: 'bl_1', name: 'Q4 FMCG Private Auction', description: '', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }], activeFrom: null, activeTo: null }] },
     })))
     renderAt('/advertisers')
     const inventory = await screen.findByLabelText('Available Inventory')
@@ -729,6 +729,10 @@ describe('Advertisers / Inventory', () => {
     fireEvent.click(addOption)
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText('New buyers list')).toBeInTheDocument()
+    /* Invited buyers is one dropdown of synced advertisers: nothing to type, no identifier type to pick. */
+    expect(within(dialog).getByRole('combobox', { name: 'Invited buyers' })).toBeInTheDocument()
+    expect(within(dialog).queryByText(/PH brand entity|identifier type/i)).toBeNull()
+    expect(within(dialog).queryByRole('button', { name: /Add buyer/ })).toBeNull()
   }, slow(30000))
 
   /* The modal used to show field errors only when the API sent `details`
@@ -756,7 +760,6 @@ describe('Advertisers / Inventory', () => {
     expect(within(dialog).getByText('New buyers list')).toBeInTheDocument()
 
     fireEvent.change(within(dialog).getByPlaceholderText('e.g. Q4 FMCG private auction'), { target: { value: 'Test deal' } })
-    fireEvent.change(within(dialog).getByLabelText('Invited buyer 1: value'), { target: { value: 'brand_x' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Create buyers list' }))
 
     /* The modal stays open (the save failed) but says so, rather than

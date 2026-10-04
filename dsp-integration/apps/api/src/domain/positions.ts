@@ -116,7 +116,7 @@ export async function advertiserMayBuy(ctx: Context, p: PositionRef, partner: Pa
   if (a === 'reserved') return heldFor(p.def, name)
   if (a === 'deal') {
     const list = await ctx.buyersLists.get(assignedCached(p.def).buyersListId as string)
-    return !!list && isActiveAt(list, ctx.clock().toISOString()) && isInvitedBuyer(list, name, seatId)
+    return !!list && isActiveAt(list, ctx.clock().toISOString()) && isInvitedBuyer(list, partner.id, seatId)
   }
   if (a === 'whitelist_only') return !!seatId && isOn(seatId, eff.allowList)
   return true
@@ -143,7 +143,7 @@ export async function visibilityFor(ctx: Context, c: Caller): Promise<(p: Positi
     if (a === 'whitelist_only') return whitelisted
     if (a === 'reserved') return seats.some((s) => heldFor(p.def, s.name))
     return andThen(ctx.buyersLists.get(assignedCached(p.def).buyersListId as string), (list) =>
-      !!list && isActiveAt(list, ctx.clock().toISOString()) && seats.some((s) => isInvitedBuyer(list, s.name, s.id)))
+      !!list && isActiveAt(list, ctx.clock().toISOString()) && seats.some((s) => isInvitedBuyer(list, me, s.id)))
   }
   /* Sync-first (db.ts andThen): once per position on every inventory read. */
   return (p) =>

@@ -763,7 +763,20 @@ export interface paths {
         get?: never;
         /**
          * PH Core writes the display type's default VAC-d (computer vision score)
-         * @description The automated score wins over a manual value and is marked counted.
+         * @description The write path for computer-vision dynamic scoring (ticket
+         *     MuZ4KUSLJI2BIGbEV2pq, 4 Oct 2026). PH Core writes the score CV
+         *     measured at the edge as the display type's default VAC-d
+         *     (`phExtensions.defaultVacd`); it appears on the Display Type form
+         *     and scores that type's slots.
+         *
+         *     **Precedence (decided by Rob, 4 Oct 2026): the automated score
+         *     wins.** A write here replaces any manually set value and is marked
+         *     `defaultVacdSource: computer_vision`, which makes slots scored from
+         *     it **counted** (OpenRTB `qty.sourcetype` 1). A manual edit through
+         *     `PUT …/extensions` still saves, is marked `manual` (modelled), and
+         *     stays until the next write here. It targets the display-type
+         *     default only — never a display's counted VAC-d or its
+         *     `vacd_override`, which stay with PH Core's scoring framework.
          */
         put: operations["setDisplayTypeDefaultVacd"];
         post?: never;
@@ -1488,19 +1501,18 @@ export interface components {
             /** @description The same buyers list by name */
             buyersListName: string | null;
         };
-        /** @description One invited buyer on a buyers list (deal). */
+        /**
+         * @description One invited buyer on a buyers list (deal): a seat (advertiser) that a
+         *     connected DSP synced, picked from that DSP's own seats. There is no
+         *     free text and no identifier type — the entry always carries the
+         *     identifier the DSP bids under, and entitlement (bid intake and
+         *     auction clear, `not_invited`) matches it exactly.
+         */
         InvitedBuyer: {
-            /**
-             * @description How this buyer is identified — configurable per retailer:
-             *     brandEntity (the advertiser's PH brand entity, matched by name),
-             *     dspSeatId (a DSP's own seat ID, matched exactly), or other (a
-             *     freeform identifier this retailer uses elsewhere — recorded but
-             *     not automatically matched at auction time; entitlement for that
-             *     entry is enforced outside this POC).
-             * @enum {string}
-             */
-            identifierType: "brandEntity" | "dspSeatId" | "other";
-            value: string;
+            /** @description The DSP (partner) whose synced seat this is. */
+            partnerId: string;
+            /** @description The seat / advertiser ID as synced from that DSP (a seat in `Partner.seats`). */
+            seatId: string;
         };
         /**
          * @description The winning bid a private auction's rate has locked to, for the
@@ -2087,7 +2099,7 @@ export interface components {
              *     ignored on write here.
              * @enum {string}
              */
-            defaultVacdSource?: "manual" | "computer_vision";
+            readonly defaultVacdSource?: "manual" | "computer_vision";
             slots: {
                 label: string;
                 /** @enum {string} */
@@ -3698,7 +3710,7 @@ export interface operations {
             409: components["responses"]["Conflict"];
         };
     };
-    setDisplayTypeDefaultVacd: {
+    saveDisplayTypeExtensions: {
         parameters: {
             query?: never;
             header?: never;
@@ -3709,10 +3721,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": {
-                    /** @description Assumed views per play window, per display. */
-                    defaultVacd: number;
-                };
+                "application/json": components["schemas"]["DisplayTypeExtensions"];
             };
         };
         responses: {
@@ -3730,7 +3739,7 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
-    saveDisplayTypeExtensions: {
+    setDisplayTypeDefaultVacd: {
         parameters: {
             query?: never;
             header?: never;
@@ -3741,7 +3750,10 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["DisplayTypeExtensions"];
+                "application/json": {
+                    /** @description Assumed views per play window */
+                    defaultVacd: number;
+                };
             };
         };
         responses: {
