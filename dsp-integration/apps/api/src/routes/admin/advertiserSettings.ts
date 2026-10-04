@@ -3,7 +3,7 @@
 import { MAX_MAX_CAMPAIGNS, MIN_MAX_CAMPAIGNS, TARGETING_MODES, advertiserSlug, assignedOf, billingUnitHoursOf, maxCampaignsOf, reservePriceOf, supportedTargetingOf, type AdvertiserSettings, type AdvertiserSettingsInput, type Assigned, type AvailableInventoryRow, type DisplayType, type DspAdvertisers, type TargetingMode } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
-import { cleanList, validateAdvertiserSettings } from '../../domain/advertiserSettings'
+import { cleanCategoryList, validateAdvertiserSettings } from '../../domain/advertiserSettings'
 import { tx } from '../../db/db'
 import { companyWindowCommitments, positionIdOf, slotWindowCommitments, unsellableReason } from '../../domain/positions'
 import { audienceOf, zonesOf } from '../../domain/displayTypes'
@@ -22,10 +22,7 @@ const hasQrControl = (dt: DisplayType) => !!(dt.qrControl as { enabled?: boolean
 const hasVisionAi = (dt: DisplayType) => !!(dt.enabledFeatures as { visionAi?: { enabled?: boolean } } | undefined)?.visionAi?.enabled
 
 export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => async (app) => {
-  const view = async (): Promise<AdvertiserSettings> => ({
-    ...(await ctx.company.get()),
-    whereTheseApply: (await ctx.partners.list()).map((p) => ({ partnerId: p.id, name: p.name, adopting: p.listsLinked })),
-  })
+  const view = async (): Promise<AdvertiserSettings> => ({ ...(await ctx.company.get()) })
 
   app.get('/advertiser-settings', async (req) => {
     guards.flagged()
@@ -71,7 +68,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         currency: b.currency, floorCpm: b.floorCpm, personalisedMultiplier: b.personalisedMultiplier, interactiveCpe: b.interactiveCpe,
         auctionOpensHours: b.auctionOpensHours, playWindowHours, auctionCutoffTime: b.auctionCutoffTime,
         pendingPlayWindowHours, pendingPlayWindowEffectiveFrom,
-        categoryWhitelist: cleanList(b.categoryWhitelist), categoryBlacklist: cleanList(b.categoryBlacklist),
+        categoryWhitelist: cleanCategoryList(b.categoryWhitelist), categoryBlacklist: cleanCategoryList(b.categoryBlacklist),
       })
     })
     return view()

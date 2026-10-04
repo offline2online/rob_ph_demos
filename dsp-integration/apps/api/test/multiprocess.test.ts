@@ -64,7 +64,6 @@ describe.skipIf(nearMidnight)('two API processes and three ticks on one database
   const ports = [41000 + Math.floor(Math.random() * 10_000), 51000 + Math.floor(Math.random() * 10_000)]
   const settings = async (port: number, patch: Record<string, unknown>) => {
     const current = await (await api(port, 'GET', '/api/admin/v1/advertiser-settings', undefined, {})).json() as Record<string, unknown>
-    delete current.whereTheseApply
     const res = await api(port, 'PUT', '/api/admin/v1/advertiser-settings', { ...current, ...patch }, { 'content-type': 'application/json' })
     expect(res.status, await res.text()).toBe(200)
     /* The other process reads company settings from a 1 s snapshot. */

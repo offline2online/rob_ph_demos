@@ -104,12 +104,6 @@ export function DspList() {
                   </div>
                   <Icon name={state.icon} size={state.icon === 'add_circle' ? 17 : 15} style={{ color: state.colour }} />
                 </div>
-                {x && state.setUp && (
-                  <div className="mt-1 flex items-center gap-1" style={{ fontSize: 10.5, color: x.listsLinked ? T.primary : T.warning }}>
-                    <Icon name={x.listsLinked ? 'link' : 'link_off'} size={12} />
-                    {x.listsLinked ? 'Adopts company category lists' : 'Own category lists'}
-                  </div>
-                )}
               </>
             )}
           </Row>

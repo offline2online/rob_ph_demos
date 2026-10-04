@@ -1,13 +1,12 @@
 /* API responses shaped like the seeded POC, for page tests. */
 export const partners = { items: [
-  { id: 'p_google', provider: 'google_dv360', name: 'Google DSP', status: 'connected', lastSync: 'Today, 07:12', mode: 'live', credentials: { partnerId: '884512', serviceAccountEmail: 'sa@x', privateKeyJson: { set: true } }, bidder: { bidderEndpoint: 'https://rtb.example/bid', seatIds: ['884512'] }, issues: [], seats: [{ id: 'g1', name: 'Nestlé' }, { id: 'g2', name: 'Swisse' }], listsLinked: true, advertiserWhitelist: ['g1'], advertiserBlacklist: [] },
-  { id: 'p_amazon', provider: 'amazon_dsp', name: 'Amazon Ads DSP', status: 'error', lastSync: 'Refresh token rejected — 3 days ago', mode: 'test', credentials: { region: 'Europe (EU)' }, bidder: {}, issues: [{ kind: 'connection_error', message: 'Refresh token rejected — 3 days ago' }], seats: [{ id: 'a1', name: "L'Oréal" }], listsLinked: false, advertiserWhitelist: ['a1'], advertiserBlacklist: [] },
+  { id: 'p_google', provider: 'google_dv360', name: 'Google DSP', status: 'connected', lastSync: 'Today, 07:12', mode: 'live', credentials: { partnerId: '884512', serviceAccountEmail: 'sa@x', privateKeyJson: { set: true } }, bidder: { bidderEndpoint: 'https://rtb.example/bid', seatIds: ['884512'] }, issues: [], seats: [{ id: 'g1', name: 'Nestlé' }, { id: 'g2', name: 'Swisse' }], advertiserWhitelist: ['g1'], advertiserBlacklist: [] },
+  { id: 'p_amazon', provider: 'amazon_dsp', name: 'Amazon Ads DSP', status: 'error', lastSync: 'Refresh token rejected — 3 days ago', mode: 'test', credentials: { region: 'Europe (EU)' }, bidder: {}, issues: [{ kind: 'connection_error', message: 'Refresh token rejected — 3 days ago' }], seats: [{ id: 'a1', name: "L'Oréal" }], advertiserWhitelist: ['a1'], advertiserBlacklist: [] },
 ] }
 export const advertiserSettings = {
   currency: 'AUD', floorCpm: 100, personalisedMultiplier: 1.5, interactiveCpe: 0.5,
   auctionOpensHours: 168, playWindowHours: 24, auctionCutoffTime: '18:00', pendingPlayWindowHours: null, pendingPlayWindowEffectiveFrom: null,
   categoryWhitelist: ['Food & Drink', 'Health & Fitness'], categoryBlacklist: ['Finance'],
-  whereTheseApply: [{ partnerId: 'p_google', name: 'Google DSP', adopting: true }, { partnerId: 'p_amazon', name: 'Amazon Ads DSP', adopting: false }],
 }
 export const exchange = { enabled: true, organisation: 'Demo Retail Group', domain: 'demoretail.example', sellerId: 'drg-4471', contactEmail: 'adops@demoretail.example', published: true, sellersJsonUrl: 'https://demoretail.example/sellers.json' }
 export const variables = { items: [

@@ -10,12 +10,11 @@ export interface EffectiveLists { allowList: string[]; blockList: string[] }
 
 export const effectiveLists = (p: PartnerRecord): EffectiveLists => ({ allowList: p.allowList, blockList: p.blockList })
 
-/* Category lists still follow the link/unlink switch (IAB categories stay
-   a separate ticket); the advertiser lists above no longer do. */
-export const effectiveCategoryLists = (p: PartnerRecord | null, company: CompanySettings): EffectiveLists =>
-  !p || p.listsLinked
-    ? { allowList: company.categoryWhitelist, blockList: company.categoryBlacklist }
-    : { allowList: p.categoryAllowList, blockList: p.categoryBlockList }
+/* IAB categories are one taxonomy every DSP speaks, so the category lists are
+   the company's alone (spec §6, ticket vjykcgGWkfUjPB2xulel, 4 Oct 2026):
+   one whitelist and blacklist, applied to every DSP, no per-DSP override. */
+export const effectiveCategoryLists = (company: CompanySettings): EffectiveLists =>
+  ({ allowList: company.categoryWhitelist, blockList: company.categoryBlacklist })
 
 const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase()
 export const isOn = (name: string, list: string[]) => list.some((x) => same(x, name))

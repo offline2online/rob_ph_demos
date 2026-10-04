@@ -59,7 +59,7 @@ export async function buildBidRequest(ctx: Context, p: PositionRef, partner: Par
   const company = await ctx.company.get()
   const exchange = await ctx.exchange.get()
   const lists = effectiveLists(partner)
-  const categoryLists = effectiveCategoryLists(partner, company)
+  const categoryLists = effectiveCategoryLists(company)
   const audience = await audienceOf(ctx.audience, p.displayType, p.slot)
   const { width: w, height: h } = view.screen
   return {

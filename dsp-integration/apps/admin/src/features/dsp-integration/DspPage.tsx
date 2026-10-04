@@ -178,47 +178,11 @@ export function DspPage({ draftKey, partner }: { draftKey: string; partner: Part
         })}
       </div>
 
-      <SectionLabel><WithTip tip="Category lists (IAB) are separate from the advertiser lists: the blacklist always applies and no position can opt out of it. Unlinking copies the company category lists here; relinking discards this DSP's own.">Category lists</WithTip></SectionLabel>
-      {d.listsLinked ? (
-        <Callout tone="info" icon="link"
-          action={<Button color="primary" variant="outlined" size="small" icon={<Icon name="link_off" size={15} />}
-            onClick={() => set((x) => ({
-              ...x, listsLinked: false,
-              categoryWhitelist: [...draft.settings.categoryWhitelist], categoryBlacklist: [...draft.settings.categoryBlacklist],
-            }))}>Unlink and edit</Button>}>
-          <b>Centrally managed.</b> This DSP uses the company category lists.{' '}
-          <a onClick={() => navigate(PATHS.advertiserSettings)} style={{ color: T.primary, textDecoration: 'underline', cursor: 'pointer' }}>View lists in Advertiser settings</a>
-        </Callout>
-      ) : (
-        <>
-          <Callout tone="warning" icon="link_off" className="mb-3"
-            action={<Button size="small" icon={<Icon name="link" size={15} />}
-              onClick={() => set((x) => ({ ...x, listsLinked: true, categoryWhitelist: [], categoryBlacklist: [] }))}>Relink to company lists</Button>}>
-            <b>Unlinked — this DSP has its own category lists.</b> Company changes no longer reach it; relinking discards these.
-          </Callout>
-          <div className="mb-3.5 grid grid-cols-2 gap-3.5">
-            {(['categoryWhitelist', 'categoryBlacklist'] as const).map((k) => {
-              const other = k === 'categoryWhitelist' ? 'categoryBlacklist' : 'categoryWhitelist'
-              const white = k === 'categoryWhitelist'
-              return (
-                <ListEditor
-                  key={k}
-                  label={white ? 'Categories — whitelist' : 'Categories — blacklist'}
-                  tone={white ? T.success : T.error}
-                  icon={white ? 'category' : 'block'}
-                  items={d[k]}
-                  suggestions={[...IAB_CATEGORIES]}
-                  addLabel="Add a category…"
-                  suggestLabel="Categories:"
-                  onAdd={(n) => set((x) => { const r = addExclusive({ add: x[k], other: x[other] }, n); return { ...x, [k]: r.add, [other]: r.other } })}
-                  onRemove={(n) => set((x) => ({ ...x, [k]: x[k].filter((y) => y !== n) }))}
-                  empty={white ? 'Empty — every category is eligible.' : 'Empty — no category is blocked on this DSP.'}
-                />
-              )
-            })}
-          </div>
-        </>
-      )}
+      <SectionLabel><WithTip tip="IAB categories are one taxonomy every DSP speaks, so the category whitelist and blacklist are managed once, for the whole company, and apply to every DSP. The blacklist always applies and no position can opt out of it.">Category lists</WithTip></SectionLabel>
+      <Callout tone="info" icon="category">
+        <b>Centrally managed.</b> Every DSP, this one included, uses the company IAB category lists.{' '}
+        <a onClick={() => navigate(PATHS.advertiserSettings)} style={{ color: T.primary, textDecoration: 'underline', cursor: 'pointer' }}>View lists in Advertiser settings</a>
+      </Callout>
     </>
   )
 }

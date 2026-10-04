@@ -27,6 +27,19 @@ describe('Advertiser settings (spec §4, §6)', () => {
     expect(res.json()).not.toHaveProperty('advertiserBlacklist')
   })
 
+  it('refuses a category that is not in the IAB taxonomy, and stores the canonical spelling', async () => {
+    const app = buildApp(await testContext())
+    const bad = await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: { ...input, categoryWhitelist: ['Food & Drink', 'Gadgets'], categoryBlacklist: ['finance', 'Red Bull'] } })
+    expect(bad.statusCode).toBe(400)
+    expect(bad.json().error.details).toEqual([
+      { field: 'categoryWhitelist', reason: expect.stringContaining('Gadgets is not an IAB category') },
+      { field: 'categoryBlacklist', reason: expect.stringContaining('Red Bull is not an IAB category') },
+    ])
+    const ok = await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: { ...input, categoryWhitelist: ['food & drink'], categoryBlacklist: ['FINANCE'] } })
+    expect(ok.statusCode).toBe(200)
+    expect(ok.json()).toMatchObject({ categoryWhitelist: ['Food & Drink'], categoryBlacklist: ['Finance'] })
+  })
+
   it('rejects an entry on both category lists (case-insensitive), a non-ISO currency and a non-positive floor', async () => {
     const app = buildApp(await testContext())
     const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: { ...input, currency: 'XYZ1', floorCpm: 0, categoryBlacklist: ['food & drink'] } })

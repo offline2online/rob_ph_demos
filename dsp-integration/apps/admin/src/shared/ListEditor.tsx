@@ -10,7 +10,7 @@ import { Icon } from './Icon'
 
 const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase()
 
-export function ListEditor({ label, tone, icon, items, suggestions = [], options, onAdd, onRemove, empty, addLabel = 'Add an advertiser…', suggestLabel = 'Seats:' }: {
+export function ListEditor({ label, tone, icon, items, suggestions = [], options, onAdd, onRemove, empty, addLabel = 'Add an advertiser…', suggestLabel = 'Seats:', noneLeft = 'No synced advertisers left to add' }: {
   label: string
   tone: string
   icon: string
@@ -22,6 +22,7 @@ export function ListEditor({ label, tone, icon, items, suggestions = [], options
   empty: string
   addLabel?: string
   suggestLabel?: string
+  noneLeft?: string
 }) {
   const [draft, setDraft] = useState('')
   const has = (n: string) => items.some((x) => same(x, n))
@@ -50,7 +51,7 @@ export function ListEditor({ label, tone, icon, items, suggestions = [], options
       </div>
       {options ? (
         <Select size="small" className="w-full" showSearch optionFilterProp="label" value={null} placeholder={addLabel} aria-label={`${label}: ${addLabel}`}
-          disabled={!pickable.length} options={pickable} notFoundContent="No synced advertisers left to add" onChange={(v: string | null) => v && add(v)} />
+          disabled={!pickable.length} options={pickable} notFoundContent={noneLeft} onChange={(v: string | null) => v && add(v)} />
       ) : (
         <div className="flex gap-1.5">
           <Input size="small" aria-label={`${label}: ${addLabel}`} placeholder={addLabel} value={draft} onChange={(e) => setDraft(e.target.value)} onPressEnter={(e) => { e.preventDefault(); add(draft) }} />

@@ -95,16 +95,14 @@ describe('DSP page save (PUT /admin/v1/partners/{id})', () => {
     expect(both.json().error.details).toEqual([{ field: 'advertiserWhitelist', reason: 'Nestlé is on both the whitelist and the blacklist.' }])
   })
 
-  it('unlinking copies the company category lists down; relinking discards the DSP’s own; advertiser lists are untouched', async () => {
+  it('category lists are central only: no per-DSP override, nothing about them on a DSP', async () => {
     const { app } = await setup()
-    const unlinked = await call(app, 'PUT', '/partners/p_google', { listsLinked: false })
-    expect(unlinked.json()).toMatchObject({ listsLinked: false, advertiserWhitelist: ['5130001', '5130002'], categoryWhitelist: ['Food & Drink', 'Health & Fitness'], categoryBlacklist: ['Finance'] })
-    const edited = await call(app, 'PUT', '/partners/p_google', { categoryBlacklist: ['Finance', 'Food & Drink'] })
-    expect(edited.statusCode).toBe(400)
-    const relinked = await call(app, 'PUT', '/partners/p_google', { listsLinked: true })
-    expect(relinked.json().listsLinked).toBe(true)
-    expect(relinked.json()).not.toHaveProperty('categoryBlacklist')
-    expect(relinked.json().advertiserWhitelist).toEqual(['5130001', '5130002'])
+    const res = await call(app, 'PUT', '/partners/p_google', { listsLinked: false, categoryBlacklist: ['Finance', 'Food & Drink'] })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).not.toHaveProperty('listsLinked')
+    expect(res.json()).not.toHaveProperty('categoryWhitelist')
+    expect(res.json()).not.toHaveProperty('categoryBlacklist')
+    expect(res.json().advertiserWhitelist).toEqual(['5130001', '5130002'])
   })
 
   it('validates credentials, bidder endpoint and the fixed Amazon region', async () => {
@@ -115,12 +113,12 @@ describe('DSP page save (PUT /admin/v1/partners/{id})', () => {
 })
 
 describe('Add a DSP (POST /admin/v1/partners)', () => {
-  it('starts in Test, adopting the company lists; one per provider', async () => {
+  it('starts in Test; one per provider', async () => {
     const { app } = await setup()
     const res = await call(app, 'POST', '/partners', { provider: 'the_trade_desk' })
     expect(res.statusCode).toBe(201)
     expectMatchesContract('POST', '/admin/v1/partners', 201, res.json())
-    expect(res.json()).toMatchObject({ id: 'p_the_trade_desk', name: 'The Trade Desk', status: 'draft', mode: 'test', listsLinked: true, seats: [] })
+    expect(res.json()).toMatchObject({ id: 'p_the_trade_desk', name: 'The Trade Desk', status: 'draft', mode: 'test', seats: [] })
     expect(res.json().issues.map((i: { kind: string }) => i.kind)).toEqual(['missing_credentials', 'missing_bidder_fields'])
     expect((await call(app, 'POST', '/partners', { provider: 'the_trade_desk' })).statusCode).toBe(409)
     expect((await call(app, 'POST', '/partners', { provider: 'nope' })).statusCode).toBe(400)

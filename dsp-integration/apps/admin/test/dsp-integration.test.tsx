@@ -69,8 +69,7 @@ describe('DSP Integration section', () => {
       'Google DSP — Live', 'Amazon Ads DSP — Connection error', 'The Trade Desk — Not set up yet',
     ])
     expect(within(nav).getByText('3 advertisers · floor AUD 100 CPM')).toBeInTheDocument()
-    expect(within(nav).getByText('Adopts company category lists')).toBeInTheDocument()
-    expect(within(nav).getByText('Own category lists')).toBeInTheDocument()
+    expect(within(nav).queryByText(/category lists/)).not.toBeInTheDocument()
   })
 
   it('Exchange settings: four required fields, Published, and where sellers.json is', async () => {
@@ -192,12 +191,12 @@ describe('DSP integration switch', () => {
 })
 
 describe('Advertiser settings page', () => {
-  it('shows Pricing, the Auction schedule, the four lists and Where these apply, in that order', async () => {
+  it('shows Pricing, the Auction schedule, and the category lists, in that order', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/available-inventory': { items: [{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', slot: 2, position: 'Supplier slot', partnerName: 'Google DSP' }] } })))
     renderAt('/dsp-integration')
     expect(await screen.findByRole('heading', { name: /Advertiser settings/ })).toBeInTheDocument()
     const text = document.body.textContent ?? ''
-    const order = ['Pricing', 'Auction schedule', 'Auction opens', 'Play-window length', 'Auction cutoff time', 'Category lists', 'Where these apply'].map((h) => text.indexOf(h))
+    const order = ['Pricing', 'Auction schedule', 'Auction opens', 'Play-window length', 'Auction cutoff time', 'Category lists'].map((h) => text.indexOf(h))
     /* Available Inventory moved to Advertisers / Inventory (Rob, 20 Sep). */
     expect(text).not.toContain('Available Inventory')
     expect(order).toEqual([...order].sort((a, b) => a - b))
@@ -209,8 +208,11 @@ describe('Advertiser settings page', () => {
     for (const l of ['Categories — whitelist', 'Categories — blacklist']) expect(screen.getByRole('region', { name: l })).toBeInTheDocument()
     /* Advertiser lists are each DSP's own: none at company level. */
     for (const l of ['Advertisers — whitelist', 'Advertisers — blacklist']) expect(screen.queryByRole('region', { name: l })).not.toBeInTheDocument()
-    const where = screen.getByRole('list', { name: 'Where these apply' })
-    expect(within(where).getAllByRole('listitem').map((li) => li.textContent)).toEqual([expect.stringContaining('Adopting'), expect.stringContaining('Own lists')])
+    /* Categories are central only: chosen from the IAB list, never typed, and no per-DSP "where these apply". */
+    expect(screen.queryByText('Where these apply')).not.toBeInTheDocument()
+    const cats = screen.getByRole('region', { name: 'Categories — whitelist' })
+    expect(within(cats).queryByRole('textbox')).not.toBeInTheDocument()
+    expect(within(cats).getByRole('combobox', { name: /Choose an IAB category/ })).toBeInTheDocument()
     expect(screen.queryByText('Advertisers', { selector: '.ag-header-cell-text' })).not.toBeInTheDocument()
   })
 
@@ -268,7 +270,8 @@ describe('DSP page', () => {
     const order = ['Mode', 'Connection credentials', 'Bidder integration', 'Advertiser lists'].map((h) => text.indexOf(h))
     expect(order).toEqual([...order].sort((a, b) => a - b))
     expect(screen.getByLabelText(/Refresh token/)).toHaveAttribute('type', 'password')
-    expect(screen.getByText(/Unlinked — this DSP has its own category lists./)).toBeInTheDocument()
+    expect(screen.getByText(/Every DSP, this one included, uses the company IAB category lists/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Unlink|Relink/ })).not.toBeInTheDocument()
     expect(screen.queryByText(/floor|CPM|currency/i, { selector: 'label' })).not.toBeInTheDocument()
   })
 

@@ -54,7 +54,7 @@ export async function checkAdvertiser(ctx: Context, p: PositionRef, partner: Par
    never wins; on a whitelist-only position every category must be
    whitelisted (Q12). */
 export async function checkCategories(ctx: Context, p: PositionRef, partner: PartnerRecord, cats: string[]): Promise<Refusal | null> {
-  const eff = effectiveCategoryLists(partner, await ctx.company.get())
+  const eff = effectiveCategoryLists(await ctx.company.get())
   const black = categoryCodes(eff.blockList)
   const hit = cats.find((c) => black.includes(c))
   if (hit) return { code: 'category_blocked', reason: `Category ${hit} is on the category blacklist.` }

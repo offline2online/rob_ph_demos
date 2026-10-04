@@ -178,7 +178,7 @@ Targeting Variables**, each **DSP page**, and the **Advertisers** screen. All
 of them behave identically.
 
 - Edits on the page (fields, toggles, list additions and removals, pickers,
-  slot assignment, zones, connect / disconnect, unlink / relink,
+  slot assignment, zones, connect / disconnect,
   Test / Live) are held as unsaved changes and take no effect until saved.
 - A **Save changes** (primary) and **Cancel** bar is always visible at the
   bottom of the page, fixed to the bottom of the content area as the page
@@ -236,7 +236,7 @@ Page-title tooltips for the DSP Integration company pages:
 | Page | Tooltip |
 |---|---|
 | **Exchange settings** | Sets up your organisation as the seller of record for its screens. Configurable here: organisation name, domain, seller ID and ad-ops contact email, all required. Once saved and complete, sellers.json is published at https://[domain]/sellers.json and every bid request carries your domain and seller ID in its SupplyChain; until then no DSP is sent bid requests. Not configurable (platform defaults): seller type (Publisher), the DOOH object, the OpenOOH venue taxonomy, QPS and bid timeout. Bid requests use OpenRTB 2.6 as the minimum supported version for programmatic DOOH; the exchange is designed to adopt 2.7, 2.8 and later versions per DSP as the market moves. |
-| **Advertiser settings** | Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (currency, floor CPM, the personalised multiplier and the interactive cost per engagement), the Auction schedule (when bidding opens, play-window length, auction cutoff) and List management (advertiser and IAB category whitelists and blacklists). Read-only here: Where these apply (which DSPs use these lists or keep their own; unlink or relink on the DSP's page). Per-advertiser campaign approval and floor multipliers, and the inventory advertisers can buy, are on Advertisers / Inventory. |
+| **Advertiser settings** | Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (currency, floor CPM, the personalised multiplier and the interactive cost per engagement), the Auction schedule (when bidding opens, play-window length, auction cutoff) and Category lists (the IAB category whitelist and blacklist, chosen from the IAB taxonomy and applied to every DSP; each DSP's advertiser lists are on its own page). Per-advertiser campaign approval and floor multipliers, and the inventory advertisers can buy, are on Advertisers / Inventory. |
 | **Shared Targeting Variables** | Variables shared through the API with connected DSPs. Once a variable is enabled for a DSP, that DSP's advertisers can use it in targeting conditions for more advanced campaign targeting; the platform evaluates the condition and never returns the value. They are the same variables as a campaign's Targeting tab. Choose which DSPs may use each one below; default platform variables only in this release. |
 
 The **Enable DSP Integration** switch at the top of Exchange settings has
@@ -1782,54 +1782,46 @@ are added.
 ### Advertiser whitelists and blacklists
 
 The **client** maintains whitelists and blacklists of **advertisers** and of
-**IAB categories**, in Advertiser settings → List management:
+**IAB categories**:
 
 - **Whitelist**: only these may win a position.
 - **Blacklist**: these may never win one.
 
 These are the client's lists, not the DSP's. They filter what the exchange may
 clear into a position and are **enforced at auction time, not reconciled
-afterwards**.
+afterwards**. The two kinds are managed in different places, for a reason:
 
-**Defined centrally, adopted by every connected DSP.** A newly connected
-partner adopts the advertiser and category lists automatically.
+- **Categories are central** (ticket vjykcgGWkfUjPB2xulel, 4 Oct 2026).
+  IAB is one standard taxonomy every DSP speaks — the same codes across
+  DV360, Amazon Ads and The Trade Desk — so there is **one category whitelist
+  and one blacklist for the whole company**, in **Advertiser settings →
+  Category lists**, and it applies to **every** DSP, including one connected
+  later. There is **no per-DSP category override** and no link/unlink switch:
+  no DSP has needed a different category policy, and a company-wide taxonomy
+  is easier to reason about when it has a single source. (If one ever does,
+  that is a new decision, not a hidden toggle.)
+- **Advertisers are per DSP.** A seat or advertiser ID only means something
+  to the DSP that issued it, so each DSP holds its own advertiser whitelist
+  and blacklist, chosen from the seats and advertisers it has synced, on its
+  own page. There is no company-wide advertiser list.
 
-A partner can **unlink** and keep its own advertiser **and category** lists
-instead, using the same inheritance rule as display types (§1): the override
-wins, and a later edit to the company lists never reaches it. One toggle
-covers both list types together — a DSP cannot unlink its advertiser lists
-without also unlinking its category lists, or vice versa.
+**Category entries are real IAB categories.** They are chosen from the IAB
+taxonomy the platform carries a code for (Food & Drink IAB8, Health &
+Fitness IAB7, Beauty IAB18-1, Retail IAB22, Family & Parenting IAB6,
+Automotive IAB2, Finance IAB13, Travel IAB20), never typed. The bid request
+carries the matching code (`bcat`), so an entry that is not a real category
+could not be enforced against a bid. The API refuses anything else with
+`400 validation_failed` naming the entry, and stores the canonical spelling
+(a name matched without regard to case).
 
-- **Unlinking copies the inherited lists down**, for both advertisers and
-  categories, so a blacklist never silently empties.
-- **Relinking discards the partner's own lists**, both advertiser and
-  category. It is destructive and says so.
-
-**On a DSP's page**, under **List management** (ticket, 28 Sep 2026 —
-originally advertiser lists only; category lists were added here to close
-the gap, since a DSP that needed a different category policy from the
-company's had no way to set one):
-
-- **Centrally managed (adopting):** the lists are **not repeated**. The page
-  says the DSP uses the company lists, with a **link to view them in
-  Advertiser settings** and an **Unlink and edit** action.
-- **Unlinked:** the page shows the DSP's **own** advertiser whitelist and
-  blacklist, **and** its own category whitelist and blacklist (the same
-  IAB category suggestions Advertiser settings offers), all editable, with
-  a **Relink to company lists** action.
-
-**Where these apply** sits directly below List management in Advertiser
-settings (above Available Inventory). It shows, per DSP, only **whether it
-is adopting the company lists or has its own**, with a link to open that
-DSP. It does not summarise list contents (no allowed/blocked counts); the
-full lists are visible directly above, or on the DSP's page when unlinked. A
-DSP with its own lists has a tooltip saying edits to the company lists don't
-reach it until it is relinked.
+**On a DSP's page**, under **List management**, the DSP's own advertiser
+whitelist and blacklist are editable, and **Category lists** is a read-only
+note that the company IAB category lists apply to this DSP, with a link to
+view and edit them in Advertiser settings.
 
 An advertiser or category cannot sit on both lists; adding it to one removes
-it from the other. The advertiser lists take **free text as well as known
-seats**, since a DSP's full advertiser universe is not enumerable from our
-side. Seats pulled on connect are offered as shortcuts, not as the limit.
+it from the other. Advertiser entries are chosen from the DSP's synced seats
+only (no free text); category entries from the IAB taxonomy only.
 
 **The blacklist is not a mode — it always subtracts.** It applies to every
 outcome on that partner and no position can opt out of it. The whitelist is
@@ -2047,9 +2039,9 @@ A DSP's page holds only, in this order:
    billing unit. The timeout is also sent as the bid request's `tmax`.
    Allowed ranges: 1–10,000 QPS, 50–2,000 ms; outside them the save is
    refused `400 validation_failed`.
-5. **List management**: a link to the company advertiser and category lists
-   when centrally managed, or the DSP's own advertiser **and** category
-   lists, editable, when unlinked (§6).
+5. **List management**: the DSP's own advertiser whitelist and blacklist,
+   editable, chosen from its synced seats; and a note that the company IAB
+   category lists apply to it, with a link to Advertiser settings (§6).
 6. **Save changes / Cancel**, always visible at the bottom (see *Saving
    changes*).
 
@@ -2058,8 +2050,8 @@ advertisers through each DSP, so the connection is not tied to one. The
 DSP's advertisers are listed on the **Advertisers** screen, not on its page.
 Currency, floor CPM, multipliers and targeting permissions are set elsewhere
 and are neither set nor repeated on the DSP's page; category lists are set
-in Advertiser settings too, but — unlike those — are also editable on the
-DSP's own page once it has unlinked (§6). Deal IDs are deferred to a later
+in Advertiser settings too and apply to every DSP — there is no per-DSP
+category override (§6). Deal IDs are deferred to a later
 release (open question 45).
 
 ### Which side each named platform sits on
@@ -2346,7 +2338,7 @@ superseding the earlier same-day "baseline optional" decision — §3, §6):
   creds: { …per DSP, see §7 },            // no advertiser ID
   bidder: { bidderEndpoint, seatIds, qps?, timeoutMs? },  // qps/timeoutMs: per-DSP overrides (Q46); absent = platform default (500 / 300 ms)
   seats: [{ id, name }],                  // advertisers pulled on connect; listed on the Advertisers screen
-  listsLinked, allowList, blockList }     // own advertiser lists when unlinked
+  allowList, blockList }                  // this DSP's own advertiser lists (seat IDs); category lists are company-wide
 ```
 
 Company-level:
@@ -3378,12 +3370,10 @@ playback analytics.**
   disconnect. *(DSP Integration → partner)*
 - **Bidder integration**: endpoint and seat IDs only. *(DSP Integration → partner)*
 - **Test / Live mode** per DSP. *(DSP Integration → partner → Mode)*
-- **Company advertiser and category lists**, with the **Where these apply**
-  adoption view (adopting or own lists, no counts) directly below them.
-  *(DSP Integration → Advertiser settings → List management, Where these apply)*
-- **Advertiser and category lists on a DSP's page**: a link to the company
-  lists when centrally managed (with Unlink and edit); the DSP's own
-  editable advertiser **and** category lists when unlinked (with Relink).
+- **Company IAB category lists**: one whitelist and blacklist for every DSP,
+  chosen from the IAB taxonomy. *(DSP Integration → Advertiser settings → Category lists)*
+- **Advertiser lists on a DSP's page**: the DSP's own, from its synced
+  advertisers, plus a link to the central category lists.
   *(DSP Integration → partner → List management)*
 - **Campaign and content package submission**: a mandatory default layer
   plus optional prioritised targeted versions, validated and stored in the

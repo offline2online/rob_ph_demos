@@ -1,19 +1,16 @@
 /* Advertiser settings (spec §4, §5, §6): Pricing and the IAB category lists are
    edited here (advertiser lists are per DSP, on its own page); Where these apply is read-only. The inventory table moved to
    Advertisers / Inventory (Rob, 20 Sep). */
-import { Button, InputNumber, Select } from 'antd'
-import { IAB_CATEGORIES, PROVIDERS, type AdvertiserSettingsInput } from '@ph-dsp/types'
+import { InputNumber, Select } from 'antd'
+import { IAB_CATEGORIES, IAB_CATEGORY_CODES, type AdvertiserSettingsInput } from '@ph-dsp/types'
 import { type ReactNode, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { Callout } from '../../shared/Callout'
 import { Field } from '../../shared/Field'
-import { Icon } from '../../shared/Icon'
-import { InfoTip, WithTip } from '../../shared/InfoTip'
+import { WithTip } from '../../shared/InfoTip'
 import { ListEditor, addExclusive } from '../../shared/ListEditor'
 import { SectionLabel } from '../../shared/SectionLabel'
 import { T } from '../../theme/phTheme'
 import { useSection } from './DspIntegrationLayout'
-import { PATHS } from './DspList'
 import { SubPageHeader } from './SubPageHeader'
 
 export const ADVERTISER_SETTINGS_TIP =
@@ -116,14 +113,14 @@ function DaysHours({ id, hours, onChange }: { id: string; hours: number; onChang
   )
 }
 
+const IAB_OPTIONS = IAB_CATEGORIES.map((c) => ({ value: c, label: `${c} (${IAB_CATEGORY_CODES[c]})` }))
 type ListKey = 'categoryWhitelist' | 'categoryBlacklist'
 const OTHER: Record<ListKey, ListKey> = {
   categoryWhitelist: 'categoryBlacklist', categoryBlacklist: 'categoryWhitelist',
 }
 
 export function AdvertiserSettings() {
-  const navigate = useNavigate()
-  const { draft, update, settings: savedView, partners } = useSection()
+  const { draft, update, settings: savedView } = useSection()
   const s = draft.settings
   const set = <K extends keyof AdvertiserSettingsInput>(k: K, v: AdvertiserSettingsInput[K]) => update('settings', (x) => ({ ...x, [k]: v }))
   const add = (k: ListKey) => (name: string) => update('settings', (x) => {
@@ -140,8 +137,6 @@ export function AdvertiserSettings() {
       value={s[k]} onChange={(v) => set(k, (v === null ? null : Number(v)) as number)}
     />
   )
-  const where = savedView.whereTheseApply
-
   return (
     <>
       <SubPageHeader icon="rule" title="Advertiser settings" tip={ADVERTISER_SETTINGS_TIP} />
@@ -175,35 +170,11 @@ export function AdvertiserSettings() {
         </Callout>
       )}
 
-      <SectionLabel><WithTip tip="IAB category lists, shared by every DSP that adopts them. Nothing can sit on both lists. The blacklist always applies and no position can opt out of it. Advertiser whitelists and blacklists are not here: each DSP manages its own, from the advertisers it syncs, on its own page.">Category lists</WithTip></SectionLabel>
+      <SectionLabel><WithTip tip="IAB category lists, managed once for the whole company and applied to every connected DSP: IAB is one taxonomy all of them speak. Entries are chosen from the IAB categories, never typed. Nothing can sit on both lists. The blacklist always applies and no position can opt out of it. Advertiser whitelists and blacklists are not here: each DSP manages its own, from the advertisers it syncs, on its own page.">Category lists</WithTip></SectionLabel>
       <div className="grid grid-cols-2 gap-3.5">
-        <ListEditor label="Categories — whitelist" tone={T.success} icon="category" items={s.categoryWhitelist} suggestions={[...IAB_CATEGORIES]} onAdd={add('categoryWhitelist')} onRemove={remove('categoryWhitelist')} empty="Empty — every category is eligible." addLabel="Add a category…" suggestLabel="Categories:" />
-        <ListEditor label="Categories — blacklist" tone={T.error} icon="block" items={s.categoryBlacklist} suggestions={[...IAB_CATEGORIES]} onAdd={add('categoryBlacklist')} onRemove={remove('categoryBlacklist')} empty="Empty — no category is blocked by default." addLabel="Add a category…" suggestLabel="Categories:" />
+        <ListEditor label="Categories — whitelist" tone={T.success} icon="category" items={s.categoryWhitelist} options={IAB_OPTIONS} onAdd={add('categoryWhitelist')} onRemove={remove('categoryWhitelist')} empty="Empty — every category is eligible." addLabel="Choose an IAB category…" noneLeft="No IAB categories left to add" />
+        <ListEditor label="Categories — blacklist" tone={T.error} icon="block" items={s.categoryBlacklist} options={IAB_OPTIONS} onAdd={add('categoryBlacklist')} onRemove={remove('categoryBlacklist')} empty="Empty — no category is blocked by default." addLabel="Choose an IAB category…" noneLeft="No IAB categories left to add" />
       </div>
-
-      <SectionLabel><WithTip tip="Whether each DSP uses the company category lists above or has unlinked to keep its own. Advertiser lists are always each DSP's own.">Where these apply</WithTip></SectionLabel>
-      {where.length === 0 ? (
-        <div style={{ fontSize: 12.5, color: T.muted }}>No DSP connected yet. A partner added later adopts these category lists automatically.</div>
-      ) : (
-        <ul aria-label="Where these apply" className="m-0 list-none overflow-hidden rounded-md border p-0" style={{ borderColor: T.borderSubtle }}>
-          {where.map((x, i) => {
-            const partner = partners.find((p) => p.id === x.partnerId)
-            const def = PROVIDERS.find((p) => p.key === partner?.provider)
-            return (
-              <li key={x.partnerId} className="flex items-center gap-2.5 px-3 py-2.5" style={{ fontSize: 12.5, borderBottom: i < where.length - 1 ? `1px solid ${T.borderSubtle}` : 'none' }}>
-                <Icon name={def?.icon ?? 'handshake'} size={17} style={{ color: def?.colour }} />
-                <span className="min-w-0 flex-1">{x.name}</span>
-                <span className="inline-flex items-center gap-[5px]" style={{ color: x.adopting ? T.primary : T.warning }}>
-                  <Icon name={x.adopting ? 'link' : 'link_off'} size={14} />
-                  {x.adopting ? 'Adopting' : 'Own lists'}
-                  {!x.adopting && <InfoTip text={`Edits to the company lists don't reach ${x.name} until it is relinked.`} />}
-                </span>
-                <Button color="primary" variant="text" size="small" className="px-0" onClick={() => navigate(PATHS.partner(x.partnerId))}>Open</Button>
-              </li>
-            )
-          })}
-        </ul>
-      )}
 
     </>
   )

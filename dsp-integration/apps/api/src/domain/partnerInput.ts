@@ -126,26 +126,6 @@ export function applyPartnerInput(p: PartnerRecord, currentSecrets: Record<strin
   const black = new Set(blockList.map((x) => x.toLowerCase()))
   for (const a of allowList) if (black.has(a.toLowerCase())) errors.push({ field: 'advertiserWhitelist', reason: `${p.seats.find((s) => s.id === a)?.name ?? a} is on both the whitelist and the blacklist.` })
 
-  /* Category lists still follow the link/unlink switch (a separate ticket). */
-  let { listsLinked, categoryAllowList, categoryBlockList } = p
-  if (body.listsLinked === false && p.listsLinked) {
-    /* Unlinking copies the inherited lists down, so a blacklist never silently empties. */
-    listsLinked = false
-    categoryAllowList = [...company.categoryWhitelist]
-    categoryBlockList = [...company.categoryBlacklist]
-  } else if (body.listsLinked === true && !p.listsLinked) {
-    /* Relinking discards the DSP's own category lists. */
-    listsLinked = true
-    categoryAllowList = []
-    categoryBlockList = []
-  }
-  if (!listsLinked) {
-    if (body.categoryWhitelist !== undefined) categoryAllowList = cleanList(body.categoryWhitelist)
-    if (body.categoryBlacklist !== undefined) categoryBlockList = cleanList(body.categoryBlacklist)
-    const categoryBlack = new Set(categoryBlockList.map((x) => x.toLowerCase()))
-    for (const c of categoryAllowList) if (categoryBlack.has(c.toLowerCase())) errors.push({ field: 'categoryWhitelist', reason: `${c} is on both the whitelist and the blacklist.` })
-  }
-
   const mode = body.mode ?? p.mode
   if (body.mode !== undefined && body.mode !== 'test' && body.mode !== 'live') errors.push({ field: 'mode', reason: 'Must be test or live.' })
   if (errors.length) return { errors }
@@ -154,5 +134,5 @@ export function applyPartnerInput(p: PartnerRecord, currentSecrets: Record<strin
     return { errors, conflict: 'Connect and complete the bidder integration first.' }
   }
   if (mode === 'live' && !bidderComplete(bidder)) return { errors, conflict: 'A live DSP needs its bidder endpoint and seat IDs.' }
-  return { errors, change: { patch: { credsPublic, bidder, mode, listsLinked, allowList, blockList, categoryAllowList, categoryBlockList }, secrets } }
+  return { errors, change: { patch: { credsPublic, bidder, mode, allowList, blockList }, secrets } }
 }
