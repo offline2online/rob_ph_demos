@@ -581,6 +581,7 @@ function cardHTML(item) {
   const cardRoutineFiredMs = cardRoutine ? tsMillis(cardRoutine.firedAt) : 0;
   const cardRoutineStale = cardRoutine?.status === "in-progress" && cardRoutineFiredMs && (Date.now() - cardRoutineFiredMs) > NOTIFY_ROUTINE_STALE_MS;
   const isSentToClaude = isBacklog && !isInDevelopment
+    && !projectInDeployPhase(routineForCard)
     && cardRoutine?.status === "in-progress" && !cardRoutineStale
     && (cardRoutine.sentItemIds || []).includes(item.id)
     // Per-item: this card's own session has reported, whatever the others do.
@@ -1190,10 +1191,45 @@ function perItemBuildFinished(item, routine) {
 }
 // A per-item click is over once every card it sent has finished — not when
 // the first session does, which would unlock the cards still being built.
+// Any other record (an older single-session click) is over once none of the
+// cards it sent is still waiting in Backlog: a card that has reached Ready
+// for Testing, been approved or been deleted is not being "deved" any more,
+// whatever the session did or didn't report (5 Oct 2026 — a record like that
+// kept "Deving…" spinning beside Deploy to Main).
 function perItemRoutineFinished(routine) {
-  if (!routine || routine.mode !== "per-item") return false;
-  return (routine.sentItemIds || []).every((id) => perItemBuildFinished(allItems.find((i) => i.id === id), routine));
+  if (!routine) return false;
+  const sent = routine.sentItemIds || [];
+  if (routine.mode !== "per-item") {
+    return sent.length > 0 && sent.every((id) => {
+      const it = allItems.find((i) => i.id === id);
+      return !it || it.status !== "backlog" || !!it.patchReady;
+    });
+  }
+  return sent.every((id) => perItemBuildFinished(allItems.find((i) => i.id === id), routine));
 }
+
+// Which phase the project's pipeline is in, for its header CTAs. "Deving…"
+// belongs to Backlog → Ready for Testing only; once the train is closing
+// (first approval locks it), handed over, or a Deploy Routine is running,
+// the project is deploying and only the Deploy to Main button speaks.
+function projectInDeployPhase(project) {
+  if (!project) return false;
+  if (isTrainLocked(project)) return true;
+  if (deployHandedOver(project)) return true;
+  const dr = project.deployRoutine;
+  if (dr?.status === "in-progress" && tsMillis(dr.firedAt) && Date.now() - tsMillis(dr.firedAt) <= DEPLOY_ROUTINE_STALE_MS) return true;
+  const clickedAt = deployOptimisticClicks[project.id];
+  return !!clickedAt && Date.now() - clickedAt < DEPLOY_OPTIMISTIC_STALE_MS;
+}
+
+// Every spinner on a project header ends on a clock (the *_STALE_MS values)
+// as well as on a Firestore write — but the board only re-rendered on a
+// write, so a run that never reported back kept spinning on screen long after
+// its timeout. A light tick re-renders while any timed spinner is showing.
+let timedSpinnerShown = false;
+setInterval(() => {
+  if (timedSpinnerShown && !document.hidden) render();
+}, 30 * 1000);
 
 // ── Closing the train (§2.8) ─────────────────────────────────────────────
 // Without a lock the train never closes. An agent finishes ticket 11 while
@@ -1278,6 +1314,10 @@ function notifyClaudeButtonHTML(project) {
   const routine = project.notifyRoutine;
   const firedMs = routine ? tsMillis(routine.firedAt) : 0;
   const isStale = routine?.status === "in-progress" && firedMs && (Date.now() - firedMs) > NOTIFY_ROUTINE_STALE_MS;
+  // A build in flight is a Backlog-phase state. Once the project is
+  // deploying, this button is gone whatever an old notifyRoutine record says
+  // — the Deploy to Main button carries the state from here.
+  if (projectInDeployPhase(project)) return "";
   const inProgress = routine?.status === "in-progress" && !isStale && !perItemRoutineFinished(routine);
 
   // The real notifyRoutine doc always wins the moment it arrives; this only
@@ -1307,6 +1347,7 @@ function notifyClaudeButtonHTML(project) {
     </button>`;
   }
 
+  timedSpinnerShown = true;
   if (optimisticPending) {
     // Pressed, but notifyRoutine hasn't landed yet — no item count, no
     // session to link to. Same spinner treatment as the real "Working…"
@@ -1398,6 +1439,7 @@ function deployNotifyButtonHTML(project) {
   const inProgress = routine?.status === "in-progress" && !isStale;
 
   if (!inProgress && deployHandedOver(project)) {
+    timedSpinnerShown = true;
     const awaitingHuman = project.trainStatus === "awaiting-human-merge";
     const label = awaitingHuman ? "Waiting for merge&hellip;" : "Deploying&hellip;";
     const title = awaitingHuman
@@ -1414,6 +1456,7 @@ function deployNotifyButtonHTML(project) {
   const clickedAt = deployOptimisticClicks[pid];
   const optimisticPending = !inProgress && clickedAt && (Date.now() - clickedAt) < DEPLOY_OPTIMISTIC_STALE_MS;
   if (clickedAt && !optimisticPending) delete deployOptimisticClicks[pid];
+  if (inProgress || optimisticPending) timedSpinnerShown = true;
 
   if (!inProgress && !optimisticPending) {
     // Same hidden-when-nothing-to-do rule as always; what changed is what
@@ -2077,6 +2120,7 @@ function render() {
 }
 
 function renderNow() {
+  timedSpinnerShown = false;
   migrateOrphanItems();
   const renderedProjects = getRenderedProjects();
 
