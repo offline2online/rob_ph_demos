@@ -565,7 +565,9 @@ function cardHTML(item) {
   const cardRoutineStale = cardRoutine?.status === "in-progress" && cardRoutineFiredMs && (Date.now() - cardRoutineFiredMs) > NOTIFY_ROUTINE_STALE_MS;
   const isSentToClaude = isBacklog && !isInDevelopment
     && cardRoutine?.status === "in-progress" && !cardRoutineStale
-    && (cardRoutine.sentItemIds || []).includes(item.id);
+    && (cardRoutine.sentItemIds || []).includes(item.id)
+    // Per-item: this card's own session has reported, whatever the others do.
+    && !(cardRoutine.mode === "per-item" && perItemBuildFinished(item, cardRoutine));
   // Mirrors isInDevelopment above but for the opposite end of the pipeline:
   // once the Routine has confirmed a ready-to-publish item's PR is green
   // and mergeable and written mergeReady (see ROUTINE_INSTRUCTIONS.md's
@@ -1153,6 +1155,29 @@ function optionsMenuHTML(project) {
 // mid-run, can never wedge the button in a permanent spinning state.
 const NOTIFY_ROUTINE_STALE_MS = 20 * 60 * 1000;
 
+// Parallel builds (4 Oct 2026): a click now starts one Routine session per
+// ticket (notifyRoutine.mode "per-item"), and each session reports on its
+// own card (buildSession) instead of on the project. Accepts a Firestore
+// timestamp or the ISO string a REST write from a session usually is.
+function anyMillis(v) {
+  if (!v) return 0;
+  if (typeof v.toMillis === "function") return v.toMillis();
+  const ms = Date.parse(v);
+  return Number.isFinite(ms) ? ms : 0;
+}
+// Has this one card's session finished (or the card moved on) since the click?
+function perItemBuildFinished(item, routine) {
+  if (!item || item.status !== "backlog" || item.patchReady) return true;
+  const bs = item.buildSession;
+  return !!(bs && (bs.status === "done" || bs.status === "error") && anyMillis(bs.finishedAt) >= tsMillis(routine.firedAt));
+}
+// A per-item click is over once every card it sent has finished — not when
+// the first session does, which would unlock the cards still being built.
+function perItemRoutineFinished(routine) {
+  if (!routine || routine.mode !== "per-item") return false;
+  return (routine.sentItemIds || []).every((id) => perItemBuildFinished(allItems.find((i) => i.id === id), routine));
+}
+
 // ── Closing the train (§2.8) ─────────────────────────────────────────────
 // Without a lock the train never closes. An agent finishes ticket 11 while
 // the first 10 are being tested, its commit lands on the branch, the card
@@ -1236,7 +1261,7 @@ function notifyClaudeButtonHTML(project) {
   const routine = project.notifyRoutine;
   const firedMs = routine ? tsMillis(routine.firedAt) : 0;
   const isStale = routine?.status === "in-progress" && firedMs && (Date.now() - firedMs) > NOTIFY_ROUTINE_STALE_MS;
-  const inProgress = routine?.status === "in-progress" && !isStale;
+  const inProgress = routine?.status === "in-progress" && !isStale && !perItemRoutineFinished(routine);
 
   // The real notifyRoutine doc always wins the moment it arrives; this only
   // covers the gap between the click and that Cloud Function write landing.
@@ -1290,14 +1315,18 @@ function notifyClaudeButtonHTML(project) {
   // stays a disabled "Working…". Once a session exists, the button itself
   // becomes the "View session" link (copy flips to "Deving…") instead of a
   // separate link sitting next to a disabled button.
-  const itemCountLabel = routine.itemCount || sentIds.size;
+  const perItem = routine.mode === "per-item";
+  const itemCountLabel = perItem
+    // One session per ticket: show how many of them have reported so far.
+    ? `${[...sentIds].filter((id) => perItemBuildFinished(allItems.find((i) => i.id === id), routine)).length}/${sentIds.size}`
+    : (routine.itemCount || sentIds.size);
   const confirmed = !!routine.sessionUrl;
   const mainBtnInner = `
     <span class="notify-claude-spinner"></span>
     <span class="notify-claude-label">${confirmed ? "Deving&hellip;" : "Working&hellip;"}</span>
     <span class="notify-claude-count-pill">${itemCountLabel}</span>`;
   const mainBtn = confirmed
-    ? `<a href="${escapeHTML(safeHttpUrl(routine.sessionUrl))}" target="_blank" rel="noopener" class="notify-claude-btn notify-claude-btn-working notify-claude-btn-clickable" title="View the Claude Code session working through the ${itemCountLabel} item(s) sent">${mainBtnInner}</a>`
+    ? `<a href="${escapeHTML(safeHttpUrl(routine.sessionUrl))}" target="_blank" rel="noopener" class="notify-claude-btn notify-claude-btn-working notify-claude-btn-clickable" title="${perItem ? `One Claude Code session per ticket, ${itemCountLabel} finished — this opens the first` : `View the Claude Code session working through the ${itemCountLabel} item(s) sent`}">${mainBtnInner}</a>`
     : `<button type="button" class="notify-claude-btn notify-claude-btn-working" disabled title="A Claude Code session is working through the ${itemCountLabel} item(s) sent">${mainBtnInner}</button>`;
 
   const newBtn = newCount
@@ -2308,6 +2337,10 @@ const BACKLOG_ITEM_RENDER_FIELDS = [
   // It's a short branch name, unlike the patch* fields below it.
   "patchBranch",
   "notes", "attachments",
+  // Parallel builds (4 Oct 2026): the blocked flag, what a blocked ticket
+  // waits for, and each ticket's own build-session report — the Ready for
+  // Dev spinner reads the last one (perItemRoutineFinished).
+  "blocked", "dependsOnItemIds", "buildSession",
 ];
 
 // With the persistent local cache a reload's listeners paint from IndexedDB

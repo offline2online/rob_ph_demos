@@ -182,6 +182,29 @@ link. No AI is involved in this step at all, and no long-lived GitHub
 secret exists anywhere in this pipeline — the runner's `GITHUB_TOKEN` is
 minted and revoked by GitHub itself, per run.
 
+### Ready for Dev starts one session per ticket (4 Oct 2026)
+
+A Ready for Dev click (or `--notify` from a runner) starts **one Routine
+session per selected ticket**, four at a time, each with the ticket's own
+comments in its prompt (`fireBuildSessionsPerItem` in `functions/index.js`).
+It used to start one session for the whole selection, which built one of
+eight Display Types tickets and parked the rest. What keeps parallel builds
+safe and moving:
+
+- **`patchBaseSha`** — each session records the train commit it read its
+  files from; `run-backlog-automation.js` three-way merges every patched
+  file from it onto the train as it is when the patch lands, so a ticket
+  that landed in between is never overwritten. A same-lines clash notes the
+  card and rebuilds it once automatically (`autoRebuilds`).
+- **`dependsOnItemIds` + `blocked`** — a ticket that needs another's code
+  waits flagged, and `releaseDependents` clears the flag and starts its
+  build when everything it waits for reaches Ready for Testing.
+- **`buildSession`** — each session reports on its own card; the button
+  shows "Deving… N/M" and each card unlocks when its own session reports.
+
+Tests: `test/notify-fanout.test.js`, `test/parallel-builds.test.js`.
+`ROUTINE_INSTRUCTIONS.md` → "Parallel builds" is the session side.
+
 ### The deployment train — one branch and one PR per project
 
 **The train is brought up to date with main before any ticket lands (1 Oct

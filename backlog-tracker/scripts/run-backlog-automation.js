@@ -353,6 +353,115 @@ async function requestReadyForTestingNotify() {
   readyForTestingLanded.clear();
 }
 
+// ── Parallel builds (4 Oct 2026) ────────────────────────────────────────────
+// A Notify Claude click now starts one Routine session per ticket
+// (functions/index.js fireBuildSessionsPerItem), so several patches for the
+// same train arrive at once, each written against the branch as its session
+// read it. Two things make that safe and keep it moving without a person:
+//
+//  - patchBaseSha: the train commit a session read its files from. Every
+//    patched file is three-way merged from that commit onto the train as it
+//    is now (patchBaseFor / rebasePatchFilesOnto), so a ticket that landed
+//    in between keeps its change instead of being overwritten by a whole-
+//    file copy taken before it existed.
+//  - dependsOnItemIds: a ticket that needs another ticket's code first is
+//    flagged blocked with the ids it waits for; when they reach Ready for
+//    Testing, releaseDependents() clears the flag and asks for a build of it
+//    — the same project write a Ready for Dev click makes.
+const SHA_RE = /^[0-9a-f]{40}$/;
+
+// The commit to three-way merge a patch from, or null to write it as given.
+function patchBaseFor(item, sync, { resolvable = commitResolvable } = {}) {
+  const sha = typeof item.patchBaseSha === "string" ? item.patchBaseSha.trim().toLowerCase() : "";
+  if (SHA_RE.test(sha) && resolvable(sha)) return sha;
+  return sync && sync.kind !== "current" ? sync.baseTip : null;
+}
+
+function commitResolvable(sha) {
+  try { run("git", ["cat-file", "-e", `${sha}^{commit}`]); return true; } catch { /* not fetched yet */ }
+  try { run("git", ["fetch", "origin", sha, "--quiet"]); run("git", ["cat-file", "-e", `${sha}^{commit}`]); return true; } catch { return false; }
+}
+
+// projectId -> { project, ids:Set } — builds to request at the end of the run,
+// one project write each (a second write in the same second could be folded
+// into the first by the trigger).
+const pendingBuildRequests = new Map();
+function queueBuildRequest(project, itemId) {
+  if (!project || !project.id || !itemId) return;
+  const entry = pendingBuildRequests.get(project.id) || { project, ids: new Set() };
+  entry.ids.add(itemId);
+  pendingBuildRequests.set(project.id, entry);
+}
+function buildRequestFields(project, ids) {
+  return {
+    notifyRequestedAt: new Date(),
+    notifyItemIds: ids.slice(),
+    notifyRequestedByEmail: (project && project.notifyRequestedByEmail) || null,
+  };
+}
+async function flushBuildRequests() {
+  for (const [projectId, { project, ids }] of pendingBuildRequests) {
+    try {
+      await patchProject(projectId, buildRequestFields(project, [...ids]));
+      console.log(`[parallel] ${projectId}: requested builds for ${[...ids].join(", ")}`);
+    } catch (err) {
+      console.error(`[parallel] ${projectId}: couldn't request builds: ${err.message}`);
+    }
+  }
+  pendingBuildRequests.clear();
+}
+
+async function getItem(itemId) {
+  const res = await fetch(`${FIRESTORE_BASE}/backlogItems/${itemId}`, { headers: await firestoreHeaders() });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`GET backlogItems/${itemId} failed: ${res.status} ${await res.text()}`);
+  return { id: itemId, ...fdoc((await res.json()).fields) };
+}
+
+// Pure: is every dependency off the Backlog (landed, shipped, or gone)?
+function dependenciesLanded(depIds, statusById) {
+  return (depIds || []).every((id) => {
+    const st = statusById[id];
+    return st === undefined || st === null || st !== "backlog";
+  });
+}
+
+async function releaseDependents(landed) {
+  for (const [projectId, { ids, project }] of landed) {
+    for (const landedId of ids) {
+      let waiting = [];
+      try {
+        waiting = await runQuery({
+          from: [{ collectionId: "backlogItems" }],
+          where: { fieldFilter: { field: { fieldPath: "dependsOnItemIds" }, op: "ARRAY_CONTAINS", value: { stringValue: landedId } } },
+        });
+      } catch (err) {
+        console.log(`[parallel] couldn't look up tickets waiting on ${landedId}: ${err.message}`);
+        continue;
+      }
+      for (const w of waiting.filter((x) => x.status === "backlog")) {
+        const deps = Array.isArray(w.dependsOnItemIds) ? w.dependsOnItemIds : [];
+        const statusById = {};
+        for (const d of deps) {
+          if (d === landedId) { statusById[d] = "ready-for-testing"; continue; }
+          const dep = await getItem(d).catch(() => undefined);
+          statusById[d] = dep === undefined ? "backlog" : dep && dep.status;
+        }
+        if (!dependenciesLanded(deps, statusById)) continue;
+        const locked = !!project.trainLocked;
+        const notes = await appendNote(w,
+          `Released: ${deps.join(", ")} ${deps.length === 1 ? "has" : "have"} reached Ready for Testing, so this ticket is no longer blocked. ` +
+          (locked
+            ? `This project's train is closing (an approval locked it), so the build was NOT started — click Ready for Dev once the train has merged.`
+            : `A build was started for it automatically.`));
+        await patchItem(w.id, { blocked: null, notes, updatedAt: new Date().toISOString() });
+        if (!locked) queueBuildRequest(project, w.id);
+        console.log(`[parallel] ${w.id}: released (waited on ${deps.join(", ")})${locked ? " — train locked, not rebuilt" : ""}`);
+      }
+    }
+  }
+}
+
 // Every card on a project's train right now: it has a commit on the
 // integration branch and hasn't shipped yet. This is the set §2.4's Deploy
 // gate reasons about on the board, and the set one merge carries — merging
@@ -1756,30 +1865,43 @@ async function processApplyPatch(item) {
   let patchedFiles = item.patchFiles;
   let movedPaths = [];
   let rebasedPaths = [];
+  // The commit this patch's files were read from (see "Parallel builds").
+  const patchBase = patchBaseFor(item, sync);
   for (;;) {
     checkoutTrain(deployBranch);
     // Paths written relative to the project's folder go under it (see
     // normalisePatchPaths); decided against the train's actual tree.
     ({ files: patchedFiles, moved: movedPaths } = normalisePatchPaths(item.patchFiles, projectFolderOf(project)));
     if (movedPaths.length) console.log(`[apply-patch] ${item.id}: ${movedPaths.length} patch path(s) were relative to ${projectFolderOf(project)}/ — placed under it (${movedPaths.map((m) => m.from).join(", ")})`);
-    if (sync.kind !== "current") {
-      // The branch moved under this patch: carry its edits onto what main
-      // brought in rather than writing the Routine's copies over it.
-      const rebase = rebasePatchFilesOnto(patchedFiles, sync.baseTip);
+    if (patchBase && patchBase !== headSha()) {
+      // The branch moved under this patch — main was merged in, or another
+      // ticket (built in parallel) landed first: carry this patch's edits
+      // onto the branch as it is now rather than writing its copies over it.
+      const rebase = rebasePatchFilesOnto(patchedFiles, patchBase);
       if (rebase.conflicts.length) {
         discardWorkingTree();
-        console.log(`[apply-patch] ${item.id}: main changed ${rebase.conflicts.join(", ")} since this patch was written and its edits can't be carried over — clearing patchReady`);
+        console.log(`[apply-patch] ${item.id}: ${rebase.conflicts.join(", ")} changed on ${deployBranch} since this patch was written and its edits can't be carried over — clearing patchReady`);
+        // One automatic rebuild against the current files; a second clash
+        // goes to a person rather than looping.
+        const autoRebuild = (Number(item.autoRebuilds) || 0) < 1 && !project.trainLocked;
         const notes = await appendNote(
           item,
-          `Not built: ${deployBranch} was ${sync.behind} commit(s) behind main, and main has since changed ${rebase.conflicts.join(", ")} in the same places this patch does, ` +
-          `so its edits could not be carried onto the current file automatically. The branch is now up to date with main — click Ready for Dev again so the fix is rebuilt against the current files.`
+          `Not built: since this patch was written, ${deployBranch} changed ${rebase.conflicts.join(", ")} in the same places it does ` +
+          `(another ticket landed first, or main was merged in), so its edits could not be carried onto the current file automatically. ` +
+          (autoRebuild
+            ? `A rebuild against the current files was started automatically.`
+            : `Click Ready for Dev again so the fix is rebuilt against the current files.`)
         );
-        await patchItem(item.id, { patchReady: false, patchAttempts: 0, updatedAt: new Date().toISOString(), notes });
+        await patchItem(item.id, {
+          patchReady: false, patchAttempts: 0, updatedAt: new Date().toISOString(), notes,
+          ...(autoRebuild ? { autoRebuilds: (Number(item.autoRebuilds) || 0) + 1 } : {}),
+        });
+        if (autoRebuild) queueBuildRequest(project, item.id);
         return;
       }
       patchedFiles = rebase.files;
       rebasedPaths = rebase.rebased;
-      if (rebasedPaths.length) console.log(`[apply-patch] ${item.id}: carried this patch's edits onto main's newer ${rebasedPaths.join(", ")}`);
+      if (rebasedPaths.length) console.log(`[apply-patch] ${item.id}: carried this patch's edits onto the branch's newer ${rebasedPaths.join(", ")}`);
     }
     applyPatchFiles(patchedFiles);
     // Read while the patched files are still on disk, so testVersion
@@ -1877,9 +1999,9 @@ async function processApplyPatch(item) {
     ? item.previewUrl
     : guessPreviewUrl(patchedFiles, sha, trainTreeUrl(deployBranch));
 
-  const syncNote = sync.kind === "current" ? "" :
-    ` The branch was first brought up to date with main (${sync.kind === "fast-forwarded" ? "fast-forwarded" : "main merged in"}, ${sync.behind} commit(s))` +
-    (rebasedPaths.length ? `, and this patch's edits were carried onto main's newer ${rebasedPaths.join(", ")}.` : ".");
+  const syncNote = (sync.kind === "current" ? "" :
+    ` The branch was first brought up to date with main (${sync.kind === "fast-forwarded" ? "fast-forwarded" : "main merged in"}, ${sync.behind} commit(s)).`) +
+    (rebasedPaths.length ? ` This patch's edits were merged onto the branch's newer ${rebasedPaths.join(", ")} (changed since the patch was written), so nothing that landed meanwhile was overwritten.` : "");
   const notes = await appendNote(
     item,
     `Committed to the project's integration branch \`${deployBranch}\` as ${sha.slice(0, 7)} (${changedPaths.join(", ")}). ` +
@@ -3317,6 +3439,13 @@ async function main() {
   }
   // Whatever just landed in Ready for Testing gets presented to a person —
   // one fire per project for this run (see noteReadyForTesting).
+  // Tickets waiting on what just landed start now (see "Parallel builds").
+  try {
+    await releaseDependents(readyForTestingLanded);
+  } catch (err) {
+    console.error(`[parallel] releasing dependants failed: ${err.message}`);
+  }
+  await flushBuildRequests();
   await requestReadyForTestingNotify();
   for (const item of mergeReadyItems) {
     try {
@@ -3446,4 +3575,6 @@ module.exports = {
   trainChecksState, rollupState, REQUIRED_TRAIN_CHECKS, approveHeldRuns,
   // test/train-tests.test.js — console tests run on each train push
   trainTestFailureTargets, touchesConsoleTests,
+  // test/parallel-builds.test.js — patches built in parallel
+  patchBaseFor, dependenciesLanded, buildRequestFields,
 };
