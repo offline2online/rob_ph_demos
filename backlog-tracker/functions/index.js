@@ -545,7 +545,7 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
       // — until this existed, the "Deploy to Main" button had nothing to read
       // an in-progress state from at all, so it looked identical whether a
       // deploy was actually running or hadn't been requested yet.
-      const selfReportHint = `\n\nWhen you finish this run (whether you completed everything or stopped early on a blocker), PATCH projects/${event.params.projectId} with deployRoutine.status set to "done" (or "error" with an errorMessage, if you stopped early) and deployRoutine.finishedAt set to now — the board shows a working/spinning state on its Deploy to Main button until it sees this.`;
+      const selfReportHint = `\n\nWhen you finish this run (whether you completed everything or stopped early on a blocker), PATCH projects/${event.params.projectId} with deployRoutine.status set to "done" (or "error" with an errorMessage, if you stopped early) and deployRoutine.finishedAt set to now — the board shows a working/spinning state on its Deploy to Main button until it sees this. Name the sub-fields in the update mask (updateMask.fieldPaths=deployRoutine.status&updateMask.fieldPaths=deployRoutine.finishedAt, plus deployRoutine.errorMessage if set) so the record's firedAt and sessionUrl are kept; do not PATCH the whole deployRoutine map. A "done" report IS the hand-over: the pipeline sets trainReady itself the moment it lands (onDeployRoutineSettled), so do not attempt the trainReady write.`;
 
       // Which product/program this project belongs to — the Deploy flow's
       // FAQ impact review (ROUTINE_INSTRUCTIONS.md step 3b) scopes the help
