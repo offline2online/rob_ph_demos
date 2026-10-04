@@ -14,8 +14,9 @@ const db = admin.firestore();
 // A "Schedule offer until" date only ever controlled whether isLive()
 // treated the offer as live for display — the stale offerPrice/offerFrom/
 // offerUntil fields sat on the record forever after expiry, with no record
-// that anything had happened. This runs server-side on a schedule so it
-// fires the moment an offer expires, independent of anyone having HQ Admin
+// that anything had happened. This runs server-side on a schedule (every
+// 15 minutes — see below) so it fires soon after an offer expires,
+// independent of anyone having HQ Admin
 // open (the client-side version this replaced only ran while that tab was
 // open — see menu-board-demo/hq-admin.html git history).
 function fmtDate(v) {
@@ -48,7 +49,13 @@ async function sweepExpiredOffers() {
   const { map: currencyByBrand, fallback: fallbackCurrency } = await currencyByBrandId();
   const currencyFor = (item) => currencyByBrand[item.brand] || fallbackCurrency;
 
-  const itemsSnap = await db.collection('items').get();
+  // Only items that carry an offer end date at all — not the whole catalogue
+  // (4 Oct 2026, cost review: the target is under 50k Firestore reads a day,
+  // the free tier). offerUntil is always a string, '' once there's no
+  // offer, so `> ''` is exactly "has one"; the expiry test itself stays in
+  // JS below, unchanged. An item needed only for a store-level override is
+  // fetched by sku further down.
+  const itemsSnap = await db.collection('items').where('offerUntil', '>', '').get();
   const itemsBySku = {};
   itemsSnap.forEach((d) => { itemsBySku[d.data().sku] = { id: d.id, ref: d.ref, ...d.data() }; });
 
@@ -90,6 +97,19 @@ async function sweepExpiredOffers() {
   // history as everything else.
   const storeOps = [];
   const storePricingSnap = await db.collection('storePricing').get();
+
+  // Items behind an expired store override that the query above didn't
+  // return (HQ has no offer of its own on them), `in` takes 30 values a query.
+  const isExpired = (o) => parseFloat(o && o.offerPrice) > 0 && o.offerUntil && new Date(o.offerUntil) < now;
+  const missingSkus = new Set();
+  storePricingSnap.forEach((d) => {
+    for (const [sku, o] of Object.entries(d.data() || {})) if (isExpired(o) && !itemsBySku[sku]) missingSkus.add(sku);
+  });
+  const skus = [...missingSkus];
+  for (let i = 0; i < skus.length; i += 30) {
+    const snap = await db.collection('items').where('sku', 'in', skus.slice(i, i + 30)).get();
+    snap.forEach((d) => { itemsBySku[d.data().sku] = { id: d.id, ref: d.ref, ...d.data() }; });
+  }
   for (const storeDoc of storePricingSnap.docs) {
     const storeCode = storeDoc.id;
     const overrides = storeDoc.data() || {};
@@ -139,7 +159,16 @@ async function sweepExpiredOffers() {
   return revertedCount;
 }
 
-exports.sweepExpiredOffers = onSchedule('every 1 minutes', async () => {
+// Every 15 minutes, not every minute (4 Oct 2026, Firebase cost review):
+// a once-a-minute schedule read the whole catalogue 1,440 times a day. Each
+// run now reads 1 (brands) + items with an offer end date + every
+// storePricing doc (one per store), 96 runs a day — under the 50k/day free
+// tier while stores + scheduled offers stay under ~500. Nothing a
+// customer sees waits on this — menu-board.html, order.html and the admin
+// pages already treat an offer past offerUntil as not live when they render
+// (_isOfferWindowLiveNow) — so the only effect is that the record is
+// tidied and the reversion logged up to 15 minutes after expiry.
+exports.sweepExpiredOffers = onSchedule('every 15 minutes', async () => {
   await sweepExpiredOffers();
 });
 

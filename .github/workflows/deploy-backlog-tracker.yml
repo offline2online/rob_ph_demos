@@ -12,6 +12,10 @@ on:
         description: 'Also run the one-off Freshdesk FAQ seed. ONLY for bootstrapping an empty Firestore: it recreates any article or category deleted in the console that has no tombstone.'
         type: boolean
         default: false
+      force:
+        description: 'Deploy even if this exact backlog-tracker/ + faq/ content is already live — e.g. to push a rotated repo secret into Secret Manager.'
+        type: boolean
+        default: false
 
 # Several PRs merging within seconds of each other (a common shape for this
 # repo — the Notify Claude Routine and its human reimplementations both
@@ -51,6 +55,38 @@ jobs:
       - name: Write Firebase service account key
         run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_BACKLOG_TRACKER }}' > "$RUNNER_TEMP/firebase-sa.json"
 
+      # Firebase cost review (4 Oct 2026): this workflow ran 100 times in ten
+      # days, often for content that was already live — a push and the
+      # pipeline's own dispatch for the same merge, or two dispatches of one
+      # commit three minutes apart (runs 37194492882 / 37194636723). Every run
+      # repeats the secret sync, the docs sync, the seeds and a full
+      # `firebase deploy`. So a run first fingerprints everything it deploys
+      # (the backlog-tracker/ and faq/ trees plus this file) and stops here
+      # if the last successful deploy recorded the same fingerprint
+      # (systemStatus/pipeline.deployedTree). `force` or `seed_faq` always
+      # deploys; so does any read failure, since skipping is only an
+      # optimisation.
+      - name: Skip if this exact content is already deployed
+        id: dedupe
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
+        run: |
+          TREE=$(git rev-parse HEAD:backlog-tracker HEAD:faq HEAD:.github/workflows/deploy-backlog-tracker.yml | sha1sum | cut -c1-40)
+          echo "tree=$TREE" >> "$GITHUB_OUTPUT"
+          if [ "${{ inputs.force }}" = "true" ] || [ "${{ inputs.seed_faq }}" = "true" ]; then
+            echo "Forced deploy requested."
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          LAST=$(node scripts/write-system-status.js --get deployedTree 2>/dev/null || true)
+          if [ -n "$LAST" ] && [ "$LAST" = "$TREE" ]; then
+            echo "::notice title=Already deployed::backlog-tracker/ and faq/ are unchanged since the last successful deploy ($TREE) — skipping. Re-run with force to deploy anyway."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Content changed since the last successful deploy (${LAST:-none recorded}) — deploying $TREE."
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       # Secrets go into Secret Manager WITHOUT redeploying any function
       # (scripts/sync-function-secret.sh): an unchanged value is a no-op and a
       # changed one only adds a version, which the "Deploy to Firebase" step
@@ -69,6 +105,7 @@ jobs:
       # backlog-automation.yml's own schedule). NOTIFY_WEBHOOK_URL and the
       # Routine pair are skipped when unset, as before.
       - name: Sync secrets into Firebase Secret Manager
+        if: steps.dedupe.outputs.skip != 'true'
         env:
           NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
           CLAUDE_ROUTINE_FIRE_URL: ${{ secrets.CLAUDE_ROUTINE_FIRE_URL }}
@@ -89,12 +126,14 @@ jobs:
           sync BOARD_API_KEY "${BOARD_API_KEY:-unset}"
 
       - name: Install migration script dependencies
+        if: steps.dedupe.outputs.skip != 'true'
         working-directory: backlog-tracker/scripts
         run: npm install
 
       # The Firebase Auth user Routine-fired Claude sessions sign in as
       # (password = BOARD_API_KEY). See scripts/ensure-automation-user.js.
       - name: Ensure the board automation user exists
+        if: steps.dedupe.outputs.skip != 'true'
         working-directory: backlog-tracker/scripts
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
@@ -108,12 +147,14 @@ jobs:
       # README is ~80 KB, so the only honest way to do that is to send the
       # file rather than have anyone retype it — see scripts/sync-board-docs.js.
       - name: Sync this project's docs onto the board
+        if: steps.dedupe.outputs.skip != 'true'
         working-directory: backlog-tracker/scripts
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
         run: node sync-board-docs.js
 
       - name: Seed historical backlog data from artifact export
+        if: steps.dedupe.outputs.skip != 'true'
         working-directory: backlog-tracker/scripts
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
@@ -141,7 +182,7 @@ jobs:
       # tombstone in faqDeletedArticles / faqDeletedCategories, which the
       # console writes the moment an editor deletes something.
       - name: Seed starting FAQ / Help Center content
-        if: github.event_name == 'workflow_dispatch' && inputs.seed_faq == true
+        if: steps.dedupe.outputs.skip != 'true' && github.event_name == 'workflow_dispatch' && inputs.seed_faq == true
         working-directory: backlog-tracker/scripts
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
@@ -160,6 +201,7 @@ jobs:
       # root, custom domain help.personalisationhub.com). Creating the site
       # is idempotent: it already existing is the normal case.
       - name: Ensure the help-centre Hosting site exists
+        if: steps.dedupe.outputs.skip != 'true'
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
         run: npx firebase-tools@13 hosting:sites:create ph-help-centre --project backlog-tracker-e4ed2 --non-interactive 2>&1 | tee /dev/stderr | grep -qiE "already exists|Site .* has been created" || true
@@ -168,9 +210,11 @@ jobs:
       # so the help centre (repo-root faq/) is staged into backlog-tracker/
       # help-site/ (git-ignored) right before deploying.
       - name: Stage the help centre for Hosting
+        if: steps.dedupe.outputs.skip != 'true'
         run: rsync -a --delete --exclude README.md ../faq/ help-site/
 
       - name: Deploy to Firebase (hosting, functions, firestore rules)
+        if: steps.dedupe.outputs.skip != 'true'
         id: deploy
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
@@ -220,12 +264,14 @@ jobs:
       # the project yet, a failure here must not take hosting/functions/
       # firestore rules down with it.
       - name: Deploy Storage rules (non-fatal until Storage is set up)
+        if: steps.dedupe.outputs.skip != 'true'
         continue-on-error: true
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
         run: npx firebase-tools@13 deploy --only storage --project backlog-tracker-e4ed2 --non-interactive --force
 
       - name: Set Artifact Registry cleanup policy for gcf-artifacts
+        if: steps.dedupe.outputs.skip != 'true'
         continue-on-error: true
         run: |
           gcloud auth activate-service-account --key-file="$RUNNER_TEMP/firebase-sa.json"
@@ -241,11 +287,19 @@ jobs:
             }
           ]
           POLICY
-          gcloud artifacts repositories set-cleanup-policies gcf-artifacts \
+          # The deploy service account lacks artifactregistry.repositories.update,
+          # so this has failed on every run (seen 4 Oct 2026, run 37194636723)
+          # and old function images have never been deleted. It stays
+          # non-fatal, but now says so on the run summary instead of
+          # silently. One-time fix: backlog-tracker/README.md → "Old Cloud
+          # Functions build images".
+          if ! gcloud artifacts repositories set-cleanup-policies gcf-artifacts \
             --project=backlog-tracker-e4ed2 \
             --location=us-central1 \
             --policy="$RUNNER_TEMP/cleanup-policy.json" \
-            --quiet
+            --quiet; then
+            echo "::warning title=Old function images are not being cleaned up::Couldn't set the gcf-artifacts cleanup policy (the deploy service account needs Artifact Registry Repository Administrator on it, or set the policy once by hand). Old Cloud Functions images keep accumulating storage charges. See backlog-tracker/README.md → 'Old Cloud Functions build images'."
+          fi
 
       # Pipeline health strip (YeCj7sNpHXFUZQhmAmEb — see public/js/app.js's
       # renderHealthStrip). `if: always()` so a failed deploy is recorded
@@ -260,10 +314,14 @@ jobs:
         run: |
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           CONCLUSION="${{ steps.deploy.outcome }}"
+          TREE="${{ steps.dedupe.outputs.tree }}"
+          # A skipped run (content already live) reports as a successful
+          # deploy of the same version — which it is.
+          [ "${{ steps.dedupe.outputs.skip }}" = "true" ] && CONCLUSION=success
           AT="$(date -u +%FT%TZ)"
           if [ "$CONCLUSION" = "success" ]; then
             VERSION=$(node -e "console.log(require('fs').readFileSync('public/js/version.js','utf8').match(/APP_VERSION\s*=\s*\"([^\"]+)\"/)[1])")
-            node scripts/write-system-status.js "$(node -e "console.log(JSON.stringify({deployBacklogTracker:{at:process.argv[1],conclusion:process.argv[2],runUrl:process.argv[3]},deployedAppVersion:process.argv[4]}))" "$AT" "$CONCLUSION" "$RUN_URL" "$VERSION")"
+            node scripts/write-system-status.js "$(node -e "console.log(JSON.stringify({deployBacklogTracker:{at:process.argv[1],conclusion:process.argv[2],runUrl:process.argv[3]},deployedAppVersion:process.argv[4],deployedTree:process.argv[5]}))" "$AT" "$CONCLUSION" "$RUN_URL" "$VERSION" "$TREE")"
           else
             node scripts/write-system-status.js "$(node -e "console.log(JSON.stringify({deployBacklogTracker:{at:process.argv[1],conclusion:process.argv[2],runUrl:process.argv[3]}}))" "$AT" "$CONCLUSION" "$RUN_URL")"
           fi
