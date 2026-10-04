@@ -501,7 +501,12 @@ unreshaped; Digital Signage/Kiosk playback and analytics are untouched.
   and geo metadata"). Needed for DOOH bid requests (§7):
   OpenOOH venue type, geo (lat/long) and store identifier per store, plus
   orientation and loop length per display. Resolution and share of voice are
-  already carried by the display type.
+  already carried by the display type. **PH Core owns the completeness
+  guarantee and the missing-data signal** (what it guarantees is present and
+  valid before a display is sellable, and what it exposes when it is not),
+  still to be defined by PH Core. The exchange excludes any position whose
+  required venue/geo is absent, deterministically, and never builds a
+  malformed bid request (ticket HxMMn84BcCP6y9S2jk3l, 4 Oct 2026).
 - **Layout and saving** follow *Page layout* and *Saving changes* above: the
   form takes the full width beside the display type list, and changes
   (including zone playlists created on demand) are applied with Save
@@ -2050,7 +2055,12 @@ arrives last and open-auction fill will look thin until it does.
 - **No user identity.** A bid request describes a *venue and a moment*, not a
   person. Personalisation Variables and Computer Vision variables (§6) never
   cross into the exchange.
-- **Venue taxonomy and geo** (§1).
+- **Venue taxonomy and geo** (§1). Read from PH Core, which owns the
+  completeness guarantee and the missing-data signal (api/PH-CORE-BOUNDARIES.md,
+  "Venue and geo metadata"). A position whose required venue/geo (OpenOOH venue
+  type, lat/long, store id) is absent is *not sellable*: the exchange leaves it
+  out of inventory and the auction, like an unscored slot, rather than send a
+  bid request a DSP may reject with no clear reason.
 - **Screen and loop context**: resolution, aspect, orientation, slot duration,
   loop length and share of voice. `maximumCampaignsPlayedInRotation` *is* the
   share-of-voice denominator.

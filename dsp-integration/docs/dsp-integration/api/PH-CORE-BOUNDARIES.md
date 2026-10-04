@@ -667,6 +667,34 @@ latitude/longitude, store id; read-only, never written), and the
 asserts the bid request's `dooh.venuetype` and the inventory venue fields
 come from the seam value, so swapping the adapter is covered.
 
+### Dependency on PH Core: completeness guarantee and missing-data behaviour (4 Oct 2026, ticket HxMMn84BcCP6y9S2jk3l)
+
+**Status: open, owned by PH Core.** Nothing defines today what happens when a
+store or display has no venue or geo metadata. Unlike an unscored slot, which
+drops out of inventory cleanly, a store with no venue record would make the
+exchange build a bid request a DSP may reject, with no signal why: a silent
+fill-killer at onboarding. The decision (Rob) is that the exchange does not
+define this; PH Core, as system of record, does. PH Core to provide:
+
+1. **Completeness guarantee.** Which venue/geo fields are guaranteed present
+   and valid per store/display before that display is sellable: OpenOOH venue
+   type, latitude/longitude, store identifier (spec §1, §7, Q35), and
+   orientation and loop length per display.
+2. **Missing-data signal.** What `StoreSource` returns when a store/display
+   lacks any required field (an explicit "venue incomplete" state or a
+   per-field null, not a silent default), so the exchange can react
+   deterministically.
+
+**Exchange side (consumes the contract).** A position whose required
+venue/geo is absent is treated as not sellable, analogous to the unscored-slot
+rule: left out of `GET /v1/inventory` and the forecast, skipped by the
+auction, and a bid or reservation on it refused with a 409 saying why. The
+exchange never emits a bid request with invented or empty venue/geo fields.
+The exact signal shape follows PH Core's definition; the POC (venue as
+`phExtensions.venue`) is not changed by this ticket.
+
+**Hand-off:** PH Core to define the guarantee and the missing-data contract.
+
 ## Analytics event values billing consumes (decision 29 Sep 2026, Q53/Q54)
 
 Analytics — the event schema, its data partition and the consuming
