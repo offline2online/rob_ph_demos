@@ -350,9 +350,10 @@ npm test
   Leave out `--window` for the next window that can be sold. A DSP's first
   bid with a new creative is discarded and the creative queued for
   approval; it competes from the next window once approved. The DSP's own
-  audit of it is recorded for the reviewer as advisory only, and the same
-  crid with byte-identical content is never re-reviewed once a human has
-  approved it (Q40). An edit to an approved campaign waits for approval
+  audit of it is recorded for the reviewer as advisory only, and a creative
+  is identified by its content hash, not the DSP's crid: byte-identical
+  content is never re-reviewed once a human has approved it, under any
+  crid and through any DSP (Q40); the crid is a reference label. An edit to an approved campaign waits for approval
   while the approved version keeps running (Q38).
 - **Rejected-campaign retention** also runs as a scheduled job inside
   `npm run dev:api` (`startCampaignRetentionScheduler`,

@@ -729,11 +729,29 @@ GET  /v1/campaigns/{id}/status      approval status and rejection reason
 GET  /v1/campaigns/{id}             read back the stored versions, targeting and assets
 ```
 
-For DSP demand, the creative referenced in a bid response must match an
-approved creative ID. A bid carrying an unknown or unapproved creative is
+For DSP demand, the creative referenced in a bid response must resolve to
+an approved PH creative. A bid carrying an unknown or unapproved creative is
 discarded pre-auction, and the creative is placed in the approval queue (or
 approved automatically, if the advertiser does not require approval) so it
 can compete in later windows.
+
+**Creative identity is PH's own, derived from the content** (decision, Rob,
+4 Oct 2026; open question 40). PH fetches the creative and hashes the bytes;
+that content hash (with the advertiser) is the creative's identity, and the
+DSP's creative ID (crid) is only a reference label recorded against it,
+never the key approval or safe reuse trusts.
+- Identical bytes are one creative whatever crid any DSP attaches: the same
+  creative arriving through DV360 and The Trade Desk under two different
+  crids is **one** PH creative, de-duplicated by content and approved
+  **once**, consistently across DSPs. Each DSP's crid is recorded against it.
+- A crid rotated onto identical bytes resolves to the creative a reviewer
+  already approved — no re-review. A crid reused for **different** bytes
+  resolves to a different creative, which is reviewed on its own; the
+  earlier creative keeps running as it was.
+- The crid is never trusted alone: a crid's resolution is trusted only
+  while its last fetch-and-hash is recent (`creativeReverifyMs`, default one
+  hour) and its creative URL unchanged; otherwise the creative is fetched and
+  hashed again before the bid can compete (one retrieval per DSP response).
 
 **DSP creative audits are an advisory input, never a replacement**
 (decision, Rob, 29 Sep 2026; open question 40). A DSP's own audit status —
@@ -741,11 +759,11 @@ DV360's review status (`ApprovalStatus`, `ExchangeReviewStatus`), The Trade
 Desk's `approvedBy`, Amazon Ads DSP's asset-level moderation — is recorded
 as an advisory `dsp_audit` check shown to the reviewer. It never approves a
 creative on its own and never blocks one; PH's approval gate stays the
-source of truth. **Pre-approval is by creative ID and content hash**, riding
-on *safe reuse* (below): once a human has approved a DSP creative, the same
-creative ID with byte-identical content is not re-audited; different
-content under that ID is a new version for review (a pending edit if one is
-already approved).
+source of truth. **Pre-approval is by content hash**, riding
+on *safe reuse* (below): once a human has approved a DSP creative, byte-
+identical content is not re-audited, under any crid and through any DSP;
+different content under the same crid is a different creative, reviewed on
+its own.
 
 ### Automated checks on upload
 
@@ -961,8 +979,10 @@ version and its targeting rules; `submit()` and a change on upload approve
 a version without review only when every asset and the targeting are
 cleared at their current content (audit `reused_clearance`). Otherwise the
 version goes to the reviewer with an advisory `previously_cleared` check on
-each unchanged asset. For DSP creatives the key is the DSP creative ID plus
-the content hash (the crid's campaign is derived from the DSP and crid).
+each unchanged asset. For DSP creatives the key is PH's content-derived creative identity: the
+creative's campaign id is derived from the advertiser and the content hash,
+not from the DSP's crid, so a human clearance covers those exact bytes
+across every DSP and crid they arrive under.
 
 ### Enforcement and audit
 
@@ -2061,7 +2081,8 @@ release (open question 45).
    floor on the request, plus permitted categories, the advertiser blocklist
    and creative approval (§3), all applied **before** a bid can win. Open
    auction only in this release.
-3. **Creative retrieval and hand-off.** The winning creative is fetched,
+3. **Creative retrieval and hand-off.** The creative is identified by its
+   content hash, not the DSP's crid (§3 *Submission*). The winning creative is fetched,
    confirmed approved and validated against the display type's canvas, then
    handed to the **existing campaign system** for that slot and window.
    Distribution to players, caching, playback and playback analytics are the
@@ -2267,8 +2288,15 @@ campaign: { …existing fields,
             activation: { enabled } }         // only settable once status = approved
 
 asset: { …existing fields, id, campaignId, role,      // "default" or a targeted version id
-         contentHash }                                // sha256 — the basis for safe reuse, below
+         contentHash }                                // sha256 — the creative's identity and the basis for safe reuse, below
+
+dspCreative (label): { partnerId, crid, campaignId,   // the crid is a reference label; campaignId (derived from
+                       contentHash, iurl, verifiedAt } // advertiser + contentHash) is the PH creative it resolved to
 ```
+
+A DSP-sourced creative's `campaign.id` is derived from (advertiser, asset
+`contentHash`) — never from a crid. Several `dspCreative` labels (one per
+DSP and crid) may point at one creative.
 
 **Safe reuse tracking (ticket, 22 Sep)**, kept beside approval, not inside
 the campaign record — it is a history of decisions, not campaign state:
@@ -2280,7 +2308,8 @@ campaignApprovalAssetClearance: { campaignId, assetId, contentHash, clearedBy, c
 One row per (campaign, asset) — written only when a human approves (never
 from an automated pass or an auto-approve), overwritten on every later
 human approval. An asset may skip re-review only when its current content
-hash matches this row's — see *Safe reuse of previously approved assets*,
+hash matches this row's (content hash primary; a DSP crid is only a
+reference label) — see *Safe reuse of previously approved assets*,
 §3, for the exact rule. A clearance also covers the targeting rules
 (pseudo-asset `#targeting`, hashed over the rendered rules), so identical
 files under changed targeting still re-review. Assets carry `contentHash`;
@@ -3567,8 +3596,8 @@ until that section is edited.
 - **Re-approval and DSP creative audits (Q38, Q40; §3).** An approved
   campaign keeps running while an edit is re-reviewed; approval swaps the
   edit in atomically, rejection discards it. A DSP's own audit is advisory
-  only; a creative a human cleared is not re-audited when the same creative
-  ID arrives with byte-identical content. The "safe reuse not wired into
+  only; a creative a human cleared is not re-audited when byte-identical
+  content arrives, whatever its crid or DSP (identity is the content hash). The "safe reuse not wired into
   upload/submit" gap is closed.
 - **Play-window length (Q27; §4 "Billing", §5 "Billing unit", §6 "Selling
   a play window").** A slot's billing unit is its play-window length and
@@ -3667,10 +3696,13 @@ partner-contributed attributes have been removed with that scope.
     `ExchangeReviewStatus` / `ApprovalStatus`, The Trade Desk `approvedBy`
     for its DOOH supply approver, Amazon Ads DSP asset-level moderation) is
     an advisory input recorded for the reviewer, never a replacement for
-    the retailer's approval. Pre-approval by creative ID rides on safe
-    reuse, keyed on DSP creative ID + content hash: once a human clears a
-    creative, the byte-identical creative is not re-audited (§3,
-    *Submission*, *Safe reuse*). The pre-auction fallback (an unknown or
+    the retailer's approval. Pre-approval rides on safe reuse, keyed on
+    PH's own content-derived creative identity (decision, Rob, 4 Oct 2026):
+    once a human clears a creative, the byte-identical creative is not
+    re-audited, under any crid and through any DSP, and one approval covers
+    every DSP it arrives through; the DSP crid is a reference label, not the
+    key. A reused crid on changed content is a new creative and re-reviews
+    (§3, *Submission*, *Safe reuse*). The pre-auction fallback (an unknown or
     unapproved creative is discarded and queued for review) remains. A
     supply-side push of creatives ahead of a bid, and a rich "submit
     targeting for pre-approval" flow, remain tier-2 work.

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 /* Q38 and Q40 (decisions, Rob, 29 Sep 2026).
 
    Q38: the previously approved version keeps running throughout re-review.
@@ -13,7 +14,7 @@
    re-audited. */
 import { describe, expect, it } from 'vitest'
 import { runAuction } from '../src/exchange/auction'
-import { campaignForCrid, dspCampaignId, queueCreative } from '../src/exchange/creatives'
+import { campaignForCrid, creativeCampaignId, queueCreative, verifiedCampaign } from '../src/exchange/creatives'
 import { checkCampaign } from '../src/exchange/enforcement'
 import { handOff } from '../src/exchange/handoff'
 import { findPosition } from '../src/domain/positions'
@@ -135,7 +136,7 @@ describe('re-approval: the approved version keeps running (Q38)', () => {
   })
 })
 
-describe('safe reuse wired into upload/submit (Q40)', () => {
+describe('safe reuse wired into upload/submit (Q40, content-hash identity)', () => {
   it('re-uploading byte-identical files a reviewer approved is not re-reviewed', async () => {
     const { app, upload, status, running } = await setup()
     const id = await running()
@@ -163,7 +164,7 @@ describe('safe reuse wired into upload/submit (Q40)', () => {
   })
 })
 
-describe('DSP creative audits: advisory input, pre-approval by creative ID + content hash (Q40)', () => {
+describe('DSP creative audits: advisory input, pre-approval by creative ID + content hash (Q40, content-hash identity)', () => {
   /* The DSP's creative host serves whatever bytes the test says, per crid. */
   const served = new Map<string, Buffer>()
   const dspFetch = async (url: string) => {
@@ -180,7 +181,7 @@ describe('DSP creative audits: advisory input, pre-approval by creative ID + con
     const why = await queueCreative(ctx, (await ctx.partners.get('p_google'))!, { crid: 'crid-a', iurl: iurl('crid-a'), ext: { creativeAudit: DV360_APPROVED } }, { id: 'swisse', name: 'Swisse' }, p)
     expect(why).toBe('New creative crid-a: queued for approval.')
     const id = (await campaignForCrid(ctx, 'p_google', 'crid-a'))!
-    expect(id).toBe(dspCampaignId('p_google', 'crid-a'))
+    expect(id).toBe(creativeCampaignId('swisse', createHash('sha256').update(A).digest('hex')))
     const view = await ctx.approvals.view(id)
     expect(view.status).toBe('awaiting_approval')
     expect(view.checks.find((c) => c.name === 'dsp_audit')).toMatchObject({ passed: true, advisory: true, detail: expect.stringMatching(/^Display & Video 360’s own creative audit: approved\. Advisory/) })
@@ -198,26 +199,52 @@ describe('DSP creative audits: advisory input, pre-approval by creative ID + con
     expect(view.checks.find((c) => c.name === 'dsp_audit')).toMatchObject({ passed: false, advisory: true, detail: expect.stringContaining('rejected (Alcohol)') })
   })
 
-  it('(b) the same creative ID with byte-identical content, once a human cleared it, is not re-audited; different bytes are', async () => {
+  it('(b) identity is the content hash: a rotated crid on identical bytes is not re-audited; a reused crid on different bytes is', async () => {
     const { ctx, approve } = await setup(dspFetch)
     served.set('crid-b', A)
     const p = (await findPosition(ctx, 'menu_board.s2'))!
     const google = (await ctx.partners.get('p_google'))!
-    const retrieve = () => queueCreative(ctx, google, { crid: 'crid-b', iurl: iurl('crid-b') }, { id: 'swisse', name: 'Swisse' }, p)
-    const release = () => ctx.db.prepare("DELETE FROM dsp_creatives WHERE partner_id = 'p_google' AND crid = 'crid-b'").run()
-    await retrieve()
-    const id = dspCampaignId('p_google', 'crid-b')
+    const retrieve = (crid: string) => queueCreative(ctx, google, { crid, iurl: iurl(crid) }, { id: 'swisse', name: 'Swisse' }, p)
+    await retrieve('crid-b')
+    const id = (await campaignForCrid(ctx, 'p_google', 'crid-b'))!
     expect((await approve(id, 'v1')).json()).toMatchObject({ status: 'approved', mode: 'manual' })
-    /* The crid is retrieved again (its claim released): identical bytes skip the queue. */
-    release()
-    expect(await retrieve()).toBe('New creative crid-b: identical to a creative a reviewer already approved; it can compete from the next window.')
-    expect(await ctx.approvals.view(id)).toMatchObject({ status: 'approved', mode: 'auto', liveAssetVersion: 'v2', pendingEdit: false })
-    expect((await ctx.approvals.view(id)).audit!.map((a) => a.action)).toEqual(['submitted', 'approved', 'returned_for_review', 'reused_clearance'])
-    /* Different bytes under the same crid are a new version for review — a pending edit, so the approved one keeps running (Q38). */
+    /* The DSP rotates the crid onto the same bytes: one creative, already approved, nothing new to review. */
+    served.set('crid-b2', A)
+    expect(await retrieve('crid-b2')).toBe(`Creative crid-b2 is identical to creative ${id}, already approved; it can compete from the next window.`)
+    expect(await campaignForCrid(ctx, 'p_google', 'crid-b2')).toBe(id)
+    expect(await ctx.approvals.view(id)).toMatchObject({ status: 'approved', liveAssetVersion: 'v1', pendingEdit: false })
+    /* The old crid is reused for different bytes: a different creative, queued for its own review. */
     served.set('crid-b', B)
-    release()
-    expect(await retrieve()).toBe('New creative crid-b: queued for approval.')
-    expect(await ctx.approvals.view(id)).toMatchObject({ status: 'awaiting_approval', liveAssetVersion: 'v2', pendingEdit: true })
-    expect(await ctx.approvals.isCampaignEligible(id)).toBe(true)
+    expect(await retrieve('crid-b')).toBe('New creative crid-b: queued for approval.')
+    const other = (await campaignForCrid(ctx, 'p_google', 'crid-b'))!
+    expect(other).not.toBe(id)
+    expect(await ctx.approvals.view(other)).toMatchObject({ status: 'awaiting_approval' })
+    expect(await ctx.approvals.view(id)).toMatchObject({ status: 'approved' })
+  })
+
+  it('the same bytes through two DSPs resolve to one creative, approved once', async () => {
+    const { ctx, approve } = await setup(dspFetch)
+    served.set('dv-1', A)
+    served.set('ttd-9', A)
+    const p = (await findPosition(ctx, 'menu_board.s2'))!
+    const adv = { id: 'swisse', name: 'Swisse' }
+    await queueCreative(ctx, (await ctx.partners.get('p_google'))!, { crid: 'dv-1', iurl: iurl('dv-1') }, adv, p)
+    const id = (await campaignForCrid(ctx, 'p_google', 'dv-1'))!
+    expect((await approve(id, 'v1')).json()).toMatchObject({ status: 'approved' })
+    const ttd = (await ctx.partners.get('p_amazon'))!
+    await queueCreative(ctx, ttd, { crid: 'ttd-9', iurl: 'http://mocks.test/amazon/creatives/ttd-9' }, adv, p)
+    expect(await campaignForCrid(ctx, 'p_amazon', 'ttd-9')).toBe(id)
+  })
+
+  it('a crid is trusted only while its fetch-and-hash is fresh and its URL unchanged', async () => {
+    const { ctx } = await setup(dspFetch)
+    served.set('crid-f', A)
+    const p = (await findPosition(ctx, 'menu_board.s2'))!
+    await queueCreative(ctx, (await ctx.partners.get('p_google'))!, { crid: 'crid-f', iurl: iurl('crid-f') }, { id: 'swisse', name: 'Swisse' }, p)
+    const id = (await campaignForCrid(ctx, 'p_google', 'crid-f'))!
+    expect(await verifiedCampaign(ctx, 'p_google', 'crid-f', iurl('crid-f'))).toBe(id)
+    expect(await verifiedCampaign(ctx, 'p_google', 'crid-f', 'http://mocks.test/dv360/creatives/crid-f-v2')).toBeNull()
+    ctx.db.prepare("UPDATE dsp_creatives SET verified_at = '2020-01-01T00:00:00.000Z' WHERE crid = 'crid-f'").run()
+    expect(await verifiedCampaign(ctx, 'p_google', 'crid-f', iurl('crid-f'))).toBeNull()
   })
 })

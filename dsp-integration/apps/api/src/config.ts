@@ -66,6 +66,8 @@ export interface Config {
   maxBidCpm: number
   /* Bytes read from a DSP's bid response before it counts as no bid. */
   maxBidResponseBytes: number
+  /* How long a DSP crid's fetch-and-hash stays trusted before the next bid with it re-fetches the creative (a changed creative URL re-fetches at once). */
+  creativeReverifyMs: number
   /* Partner API rate limit, per partner token: a token bucket refilled at
      `perSecond` and holding up to `burst`. Past it: 429 rate_limited. */
   partnerRateLimit: { perSecond: number; burst: number }
@@ -141,6 +143,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     partnerTokens: partnerTokensFrom(env),
     maxBidCpm: 10_000,
     maxBidResponseBytes: 64 * 1024,
+    creativeReverifyMs: 60 * 60 * 1000,
     partnerRateLimit: { perSecond: Number(env.PARTNER_RATE_PER_SECOND ?? 50), burst: Number(env.PARTNER_RATE_BURST ?? 100) },
     maxConcurrentUploadsPerPartner: 2,
     maxForecastPositions: 200,

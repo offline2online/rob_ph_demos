@@ -616,7 +616,7 @@ DSPs receive requests; nothing they win is billed or handed off.
   `{ "orientation": "landscape", "slotDurationSec": 15, "loopLengthSec": 45, "shareOfVoice": 0.333 }`.
 
 **Bid response — what we require:** `seatbid[].seat`, `bid.price` (CPM,
-≥ `bidfloor`), `bid.crid` (must be an approved creative), `bid.adomain`
+≥ `bidfloor`), `bid.crid` (a reference label; the creative it points at must be an approved creative, identified by content hash), `bid.adomain`
 (checked against the advertiser lists) and `bid.cat` (checked against the
 category lists). A bid failing any of these is dropped before the auction
 clears. Also (review, 23 Sep 2026):
@@ -627,7 +627,9 @@ clears. Also (review, 23 Sep 2026):
 - `bid.impid`, when present, is `"1"`; `bid.price` is finite and at most
   10,000 (`maxBidCpm`);
 - at most 10 bids per response are read, and a body over 64 KB is no bid;
-- a bid with an unknown `crid` has its creative retrieved from its `iurl` —
+- a bid whose `crid` has not been fetched and hashed recently (or whose
+  `iurl` changed) has its creative retrieved from its `iurl` and hashed;
+  identical bytes under any crid or DSP are one PH creative —
   only under that DSP's own creative path (compared after URL
   normalisation), at most one per response, capped at the asset size
   limit; the others are retried from a later window.
