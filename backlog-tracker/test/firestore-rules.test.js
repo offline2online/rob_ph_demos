@@ -354,6 +354,8 @@ async function main() {
     setDoc(doc(as(MEMBER), "backlogItems/i1"), { deployCommit: "deadbeef" }, { merge: true }));
   await check("An owner CANNOT stamp deployCommit from a browser either", "deny", () =>
     setDoc(doc(as(HUMAN), "backlogItems/i1"), { deployCommit: "deadbeef" }, { merge: true }));
+  await check("A human editor CANNOT write patchBaseSha (the base the automation merges from)", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { patchBaseSha: "a".repeat(40) }, { merge: true }));
   await check("A human editor CANNOT create a ticket already carrying patchFiles", "deny", () =>
     setDoc(doc(as(MEMBER), "backlogItems/iNew"), Object.assign({}, ITEM, { status: "backlog", patchFiles: [] })));
   await check("A human editor can still edit a ticket's title/desc/category", "allow", () =>
