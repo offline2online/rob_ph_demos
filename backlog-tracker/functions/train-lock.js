@@ -103,11 +103,6 @@ function toMillis(v) {
   return 0;
 }
 
-// Never lets a Routine's free text carry a token or a URL onto the board.
-function briefError(message) {
-  return String(message || "").replace(/https?:\/\/\S+/g, "<url>").replace(/[A-Za-z0-9_-]{28,}/g, "…").slice(0, 200);
-}
-
 function trainHandoverReason(project, nowMs) {
   if (!project) return null;
   if (project.trainReady === true) return null;
@@ -117,17 +112,33 @@ function trainHandoverReason(project, nowMs) {
   if (toMillis(project.deployRequestHandledAt) >= requestedAt) return null;
   const now = typeof nowMs === "number" ? nowMs : Date.now();
   const routine = project.deployRoutine || null;
-  if (!routine || toMillis(routine.firedAt) < requestedAt) {
+  // A finished report whose finishedAt is after this click belongs to this
+  // click even when firedAt is missing: the Routine reports with a PATCH on
+  // the whole deployRoutine map ({status, finishedAt}), which drops the
+  // firedAt the fire wrote. That made every report read as "nothing fired
+  // yet" — no hand-over at the report, then a five-minute grace, then a wait
+  // for the next scheduled sweep — while the board, seeing "done", offered
+  // Deploy to Main again; a second click restarted the clock (4 Oct 2026,
+  // Display Types, twice in one night).
+  const finished = routine && (routine.status === "done" || routine.status === "error");
+  const routineForThisClick = routine && (toMillis(routine.firedAt) >= requestedAt ||
+    (finished && toMillis(routine.finishedAt) >= requestedAt));
+  if (!routineForThisClick) {
     // Nothing was fired for this click yet (no credentials, or the fire is
     // still being set up): give it a few minutes, then deploy anyway.
     return now - requestedAt >= DEPLOY_FIRE_GRACE_MS
       ? "no Deploy Routine run was recorded for this Deploy to Main click"
       : null;
   }
-  if (routine.status === "done" || routine.status === "error") {
-    return `the Deploy Routine reported "${routine.status}" without setting trainReady` +
-      (routine.errorMessage ? ` — ${briefError(routine.errorMessage)}` : "");
+  // "done" is the hand-over (the Routine no longer attempts the trainReady
+  // write itself — see ROUTINE_INSTRUCTIONS.md step 4). "error" is the
+  // Routine refusing the deploy for a reason (a commit missing, a ticket
+  // still in testing, a blocking review finding), so it is NOT handed over:
+  // the board shows the error and a person decides.
+  if (routine.status === "done") {
+    return `the Deploy Routine reported "done" (its checks passed)`;
   }
+  if (routine.status === "error") return null;
   if (routine.status === "in-progress" && now - toMillis(routine.firedAt) >= DEPLOY_ROUTINE_ABANDONED_MS) {
     return "the Deploy Routine never reported back";
   }

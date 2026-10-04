@@ -802,23 +802,24 @@ own `readyToDeploy` is information, not permission.
      `reason` a reviewer can verify against the diff.
    - Then continue with step 4 as normal — a proposed revision never
      blocks the merge, and a blocked merge never cancels the proposal.
-4. **If steps 1 and 2 both held, PATCH the PROJECT — not the items:**
-   `projects/{projectId}` with `trainReady -> true` (boolean) and
-   `updatedAt -> now`. That is the single signal that replaces the old
-   per-item `mergeReady`/`mergePrNumber` pair.
+4. **If steps 1 and 2 both held, report `deployRoutine.status: "done"` —
+   that report IS the hand-over.** Do not PATCH `trainReady` yourself.
+   Every Deploy run on 25 Sep, 2 Oct and twice on 4 Oct 2026 had that write
+   refused by its own permission layer ("Modify Shared Resources"), so the
+   pipeline now sets `trainReady` itself the moment a "done" report lands
+   (`onDeployRoutineSettled` in `functions/index.js`, with
+   `run-backlog-automation.js`'s sweep as the safety net), and
+   `processDeployTrain` re-checks steps 1 and 2 before it merges.
 
-   **Send your `deployRoutine` self-report first, as its own request —
-   never in the same command as this `trainReady` PATCH.** If your
-   permission layer refuses the `trainReady` write (below), the report
-   must still land: it is what hands the train over within seconds
-   (`onDeployRoutineSettled`). On 2 Oct 2026 a run put both PATCHes in one
-   shell command, the refusal took the report with it, and the train would
-   have waited for the 25-minute sweep (ticket FjBUmEuYLHE2wV1naQgV).
+   Update only the sub-fields, so the record's `firedAt` and `sessionUrl`
+   survive — a PATCH of the whole `deployRoutine` map drops them, and
+   without `firedAt` the hand-over used to wait for the sweep while the
+   board offered Deploy to Main again (4 Oct 2026):
 
    ```
-   curl -sS -X PATCH "$BOARD/projects/<PROJECT_ID>?updateMask.fieldPaths=trainReady&updateMask.fieldPaths=updatedAt" \
+   curl -sS -X PATCH "$BOARD/projects/<PROJECT_ID>?updateMask.fieldPaths=deployRoutine.status&updateMask.fieldPaths=deployRoutine.finishedAt" \
      -H "Content-Type: application/json" \
-     -d '{"fields":{"trainReady":{"booleanValue":true},"updatedAt":{"timestampValue":"<ISO8601 now>"}}}'
+     -d '{"fields":{"deployRoutine":{"mapValue":{"fields":{"status":{"stringValue":"done"},"finishedAt":{"timestampValue":"<ISO8601 now>"}}}}}}'
    ```
 
    `backlog-automation.yml` picks it up (within seconds — a Cloud Function
@@ -832,23 +833,15 @@ own `readyToDeploy` is information, not permission.
 
    **Do not set `status` to `"published-live"` yourself, and do not set
    `mergeReady`.** You have no way to confirm the merge happened, and the
-   same rule as the Backlog flow applies: never set `trainReady: true`
-   until steps 1 and 2 are genuinely finished and passed.
+   same rule as the Backlog flow applies: report `"done"` only once steps
+   1 and 2 are genuinely finished and passed.
 
-   **If your own session's permission layer refuses this PATCH** (it has
-   classified it as a "Modify Shared Resources" write and blocked it — this
-   happened on 25 Sep 2026 after every check had passed), do not retry it
-   and do not treat the deploy as failed. Finish the run normally: report
-   `deployRoutine.status` `"done"` (see the fire text's self-report
-   instruction) and say in the same report that the `trainReady` write was
-   blocked. The pipeline hands the train over itself the moment your
-   report lands — `functions/index.js`'s `onDeployRoutineSettled`, and
-   `run-backlog-automation.js`'s sweep for a run that never reports — and
-   `processDeployTrain` re-checks steps 1 and 2 (every ticket's commit is
-   on the branch, nothing still in testing) before it merges. What you
-   must still never do is set `trainReady` when steps 1 or 2 actually
-   failed; in that case report `"error"` with the reason, and leave the
-   item notes that explain it.
+   **If step 1 or 2 actually failed**, report `"error"` with the reason in
+   `deployRoutine.errorMessage` and leave item notes that explain it. An
+   `"error"` report is never handed over — it is how you refuse a deploy.
+   Wherever this file says "don't set `trainReady`" (a missing commit, a
+   ticket still in testing, a blocking review finding), that now means:
+   report `"error"`, not `"done"`.
 
    **You do not check CI here.** The automation does it right before
    merging, which is the only moment the answer is meaningful anyway — a

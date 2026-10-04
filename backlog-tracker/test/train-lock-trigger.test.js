@@ -243,9 +243,10 @@ function fakeEvent({ itemId, before, after }) {
   }
   const clicked = { name: "Display Types & DSP Integration", trainLocked: true, trainStatus: "idle", trainReady: false, deployNotifyRequestedAt: "2026-09-25T23:14:54Z" };
 
-  await test("THE DSP TICKET, through the real trigger: the Routine reports error after its permission layer blocked the trainReady PATCH -> trainReady is set for the pipeline", async () => {
-    const running = { ...clicked, deployRoutine: { status: "in-progress", firedAt: "2026-09-25T23:14:56Z" } };
-    const settled = { ...clicked, deployRoutine: { status: "error", firedAt: "2026-09-25T23:14:56Z", finishedAt: "2026-09-25T23:21:26Z", errorMessage: "Deploy verification complete ... this session's own permission layer blocked the final PATCH that sets trainReady" } };
+  await test("4 Oct 2026, through the real trigger: a done report that overwrote deployRoutine (no firedAt) -> trainReady is set at once", async () => {
+    const running = { ...clicked, deployRoutine: { status: "in-progress", firedAt: "2026-09-25T23:14:56Z", sessionUrl: "https://claude.ai/code/x" } };
+    // What the Routine actually writes: the whole map, {status, finishedAt} — firedAt gone.
+    const settled = { ...clicked, deployRoutine: { status: "done", finishedAt: "2026-09-25T23:16:40Z" } };
     const db = makeFakeDb({ projects: { p1: settled } });
     const mod = loadIndexFresh(db);
     assert.strictEqual(typeof mod.onDeployRoutineSettled, "function");
@@ -253,7 +254,16 @@ function fakeEvent({ itemId, before, after }) {
     const project = db.__state.projects.p1;
     assert.strictEqual(project.trainReady, true, "the pipeline now owns the merge");
     assert.match(project.trainNote, /without the Routine's hand-over/);
-    assert.match(project.trainNote, /permission layer blocked/);
+    assert.match(project.trainNote, /reported "done"/);
+  });
+
+  await test("an error report is the Routine refusing the deploy: trainReady is NOT set", async () => {
+    const running = { ...clicked, deployRoutine: { status: "in-progress", firedAt: "2026-09-25T23:14:56Z" } };
+    const settled = { ...clicked, deployRoutine: { status: "error", firedAt: "2026-09-25T23:14:56Z", finishedAt: "2026-09-25T23:21:26Z", errorMessage: "commit for ticket X is not on the branch" } };
+    const db = makeFakeDb({ projects: { p1: settled } });
+    const mod = loadIndexFresh(db);
+    await mod.onDeployRoutineSettled(projectEvent(running, settled));
+    assert.notStrictEqual(db.__state.projects.p1.trainReady, true);
   });
 
   await test("a report for a request the pipeline already consumed changes nothing", async () => {
