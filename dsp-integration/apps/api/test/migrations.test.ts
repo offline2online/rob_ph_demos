@@ -78,10 +78,11 @@ describe('migrations', () => {
     expect(db.prepare("SELECT multi_zone FROM playlists WHERE id = 'pl_menu'").get()).toEqual({ multi_zone: zones })
   })
 
-  /* 0040: advertiser lists move from the company to each DSP, names → seat IDs. */
-  it('0040 carries company and DSP advertiser lists over as the DSP’s own seat IDs', () => {
+  /* 0041: advertiser lists move from the company to each DSP, names → seat IDs.
+     (Built as 0040 in parallel with 0040_dsp_creative_content_identity; renumbered.) */
+  it('0041 carries company and DSP advertiser lists over as the DSP’s own seat IDs', () => {
     const db = openDb(':memory:')
-    migrateUp(db, '0039')
+    migrateUp(db, '0040')
     db.prepare("INSERT INTO company_advertiser_settings (id, advertiser_whitelist, advertiser_blacklist, updated_at) VALUES ('company', ?, ?, 'x')")
       .run(JSON.stringify(['Nestlé', ' swisse ', 'Gone Co']), JSON.stringify(['Red Bull', 'Swisse']))
     const seats = JSON.stringify([{ id: '1', name: 'Nestlé' }, { id: '2', name: 'Swisse' }])
