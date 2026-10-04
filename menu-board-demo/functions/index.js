@@ -3,13 +3,15 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
 const { setGlobalOptions } = require('firebase-functions/v2');
 const logger = require('firebase-functions/logger');
-const admin = require('firebase-admin');
+const { initializeApp } = require('firebase-admin/app');
+const { getFirestore } = require('firebase-admin/firestore');
+const { getStorage } = require('firebase-admin/storage');
 const crypto = require('crypto');
 
-admin.initializeApp();
+initializeApp();
 setGlobalOptions({ maxInstances: 1 });
 
-const db = admin.firestore();
+const db = getFirestore();
 
 // A "Schedule offer until" date only ever controlled whether isLive()
 // treated the offer as live for display — the stale offerPrice/offerFrom/
@@ -480,7 +482,7 @@ exports.generateProductVideo = onCall({ secrets: [AI_TOKEN_ENC_KEY], maxInstance
     if (!videoResp.ok) throw new Error(`HTTP ${videoResp.status}`);
     const videoBuffer = Buffer.from(await videoResp.arrayBuffer());
     const contentType = videoResp.headers.get('content-type') || 'video/mp4';
-    const bucket = admin.storage().bucket();
+    const bucket = getStorage().bucket();
     const filePath = `generated-videos/${Date.now()}-${crypto.randomBytes(6).toString('hex')}.mp4`;
     const file = bucket.file(filePath);
     await file.save(videoBuffer, { contentType, metadata: { cacheControl: 'public, max-age=31536000' } });
