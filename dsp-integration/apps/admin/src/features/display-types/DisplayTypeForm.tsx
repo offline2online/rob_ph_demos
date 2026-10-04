@@ -20,6 +20,7 @@ import { EnabledFeaturesPanel } from './panels/EnabledFeaturesPanel'
 import { MultiZonePanel } from './panels/MultiZonePanel'
 import { PhantomZonePanel } from './panels/PhantomZonePanel'
 import { PlaylistSettingsPanel } from './panels/PlaylistSettingsPanel'
+import { TIPS } from './tooltips'
 import { Preview } from './Preview'
 
 export interface PlaylistOption { id: string; name: string; autoCreatedFor: string | null; playlistSettings?: Record<string, unknown> }
@@ -104,6 +105,19 @@ export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, onAddPla
             onChange={(v) => set({ displayCanvasSize: { ...d.displayCanvasSize, height: Number(v ?? 0) } })} />
         </div>
       </Field>
+      {/* Edited here at any stage — new or existing — and saved to
+          phExtensions.defaultVacd; shown only where extensions are saved
+          (slot ownership on). Empty clears it (ticket jhVpFHHsCp2L48vn4lRe). */}
+      {slotAssignment && (
+        <Field label="Default VAC-d (assumed views per play window)" htmlFor="defaultVacd" tip={TIPS.defaultVacd} className="mb-4">
+          <InputNumber
+            id="defaultVacd" min={0} precision={0} style={{ width: 160 }} placeholder="None (unscored)"
+            value={d.phExtensions?.defaultVacd ?? null}
+            /* null, not absent: the API keeps an absent value and clears on null. */
+            onChange={(v) => update((t) => ({ ...t, phExtensions: { ...(t.phExtensions ?? { slots: [] }), defaultVacd: v == null ? null : Number(v) } }))}
+          />
+        </Field>
+      )}
       <Field label="Background Color" className="mb-4">
         <ColorPicker aria-label="Background Color" value={d.backgroundColor} onChange={(c) => set({ backgroundColor: c.toHexString() })} />
       </Field>

@@ -8,5 +8,7 @@ export const TIPS = {
     'The phantom zone sits outside campaign rotation, so anything placed in it survives every campaign transition. Defining it makes Enable QR Control available.',
   enabledFeatures:
     "Defaults inherited by every display of this type, including each feature's own settings. A display can override any of them on its Enabled Features tab.",
+  defaultVacd:
+    "Assumed views per play window, per display, for every slot on this display type. A slot uses its own measured audience, or a display's own override, when it has one; otherwise it uses this figure. Leave empty and the type's slots are unscored — excluded from inventory, forecast and the auction.",
   enableZones: 'Each zone runs its own playlist, so each has its own rotation.',
 } as const

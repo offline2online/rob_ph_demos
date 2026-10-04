@@ -96,6 +96,12 @@ export const TOUCH_POINT_CANVAS_DEFAULTS: Partial<Record<TouchPoint, { width: nu
   'Mobile App': { width: 330, height: 400 },
 }
 
+/* The default VAC-d a hand-created display type starts with — the same
+   baseline the seed script (api/src/seed/screens.ts FALLBACK_DEFAULT) gives a
+   type it has no kind-specific figure for, so a new type is scored out of the
+   box rather than unscored (ticket jhVpFHHsCp2L48vn4lRe). */
+export const DEFAULT_VACD_BASELINE = 300
+
 /* New display type (prototype: "New display type"): Digital Signage, 1920×1080,
    #333333, every playlist setting at its default (rotation "Default
    (Unlimited)", ticket 28 Sep 2026), with an auto-created playlist. */
@@ -107,7 +113,7 @@ export function newDisplayType(id: string): DisplayType {
     qrControl: blankQrControl() as unknown as DisplayType['qrControl'],
     enabledFeatures: blankFeatures() as unknown as DisplayType['enabledFeatures'],
     multiZone: { enabled: false, zones: [] },
-    phExtensions: { slots: [] },
+    phExtensions: { slots: [], defaultVacd: DEFAULT_VACD_BASELINE },
   }
 }
 
