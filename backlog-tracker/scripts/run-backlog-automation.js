@@ -2513,6 +2513,36 @@ async function processMergePr(item) {
 const TRAIN_CI_POLLS = 10;
 const TRAIN_CI_POLL_MS = 15000;
 
+// ── A train waiting on CI starts its own next run (4 Oct 2026) ──────────────
+// A deploy run polls the train PR's checks for TRAIN_CI_POLLS x
+// TRAIN_CI_POLL_MS (2.5 min); e2e-quick takes ~8, so almost every deploy ends
+// "checks still running — will retry on the next run". That next run was the
+// */2 schedule, which GitHub throttled to one run every 75-90 minutes that
+// night (02:29, 03:44, 05:15): PR #311 sat green and mergeable for 20+
+// minutes, #308 likewise. Now the run that leaves a train waiting dispatches
+// the following run itself (workflow_dispatch is allowed from GITHUB_TOKEN;
+// the concurrency group queues it behind this one), so a train merges within
+// a couple of minutes of going green. Bounded: after FOLLOW_UP_MAX_WAIT_MS of
+// waiting it stops re-dispatching and the schedule remains the safety net.
+const FOLLOW_UP_MAX_WAIT_MS = 45 * 60 * 1000;
+const followUpReasons = [];
+function followUpDue(waitingSinceMs, nowMs = Date.now()) {
+  return !waitingSinceMs || nowMs - waitingSinceMs < FOLLOW_UP_MAX_WAIT_MS;
+}
+function dispatchFollowUpRun() {
+  if (!followUpReasons.length) return false;
+  try {
+    run("gh", ["workflow", "run", "backlog-automation.yml", "--repo", REPO, "--ref", "main"]);
+    console.log(`[follow-up] dispatched the next automation run now (${followUpReasons.join("; ")}) rather than waiting for the schedule`);
+    return true;
+  } catch (err) {
+    console.log(`[follow-up] couldn't dispatch the next run (${scrubSecrets(err.message)}) — the schedule will pick it up`);
+    return false;
+  } finally {
+    followUpReasons.length = 0;
+  }
+}
+
 // Collapses `gh pr view --json statusCheckRollup` into one word. The rollup
 // mixes two shapes — CheckRun (status + conclusion) and StatusContext
 // (state) — so both are handled; an empty rollup is "none" (this repo runs
@@ -2969,9 +2999,15 @@ async function processDeployTrain(project) {
     // Leave trainReady set: the next scheduled run picks the wait back up
     // rather than needing another click.
     console.log(`[deploy-train] ${project.id}: PR #${prNumber}'s checks are still running — will retry on the next run`);
+    // The wait is per PR, so a new train's PR starts its own clock.
+    const samePr = Number(project.trainCiWaitingPr) === Number(prNumber);
+    const waitingSince = (samePr && Date.parse(project.trainCiWaitingSince || "")) || Date.now();
+    if (followUpDue(waitingSince)) followUpReasons.push(`${project.id}: PR #${prNumber} waiting on CI`);
     await patchProject(project.id, {
       trainStatus: "deploying",
-      trainNote: `Waiting on CI for PR #${prNumber} (${REQUIRED_TRAIN_CHECKS.join(", ")} must pass before it merges).`,
+      trainNote: `Waiting on CI for PR #${prNumber} (${REQUIRED_TRAIN_CHECKS.join(", ")} must pass before it merges). It merges by itself within a few minutes of going green.`,
+      trainCiWaitingPr: Number(prNumber),
+      trainCiWaitingSince: new Date(waitingSince).toISOString(),
       updatedAt: new Date().toISOString(),
     });
     return;
@@ -3606,6 +3642,9 @@ async function main() {
     // Reporting only — never fail the run over it.
     console.log(`[train-tests] failed: ${err.message}`);
   }
+  // A train left waiting on CI starts the next run itself (see followUpDue).
+  dispatchFollowUpRun();
+
   await recordPipelineHealth("success");
 }
 
@@ -3652,4 +3691,6 @@ module.exports = {
   trainTestFailureTargets, touchesConsoleTests,
   // test/parallel-builds.test.js — patches built in parallel
   patchBaseFor, dependenciesLanded, buildRequestFields, migrationNumberClashes,
+  // test/train-follow-up.test.js — a train waiting on CI starts its own next run
+  followUpDue, FOLLOW_UP_MAX_WAIT_MS,
 };
