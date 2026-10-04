@@ -117,8 +117,8 @@ default, at the clearing CPM.
 score reports 0 assumed views, so `GET /v1/inventory` leaves it out, `GET
 /v1/inventory/{positionId}` (and its availability) answers 404, a forecast
 that names it is refused `Unknown position`, and `POST /v1/reservations`
-on it answers 409 `conflict` with the reason ("No audience score yet."). The auction skips it. A slot also
-needs a slot duration (the venue loop length) before it is exposed. There
+on it answers 409 `conflict` with the reason ("No audience score yet."). The auction skips it. A slot needs no
+duration to be sold — duration belongs to the campaign asset. There
 is no invented fallback estimate: an audience number would end up on
 invoices. What a slot is scored from is explicit: its own `audience_vacd`
 row, else its display type's **default VAC-d** (`phExtensions.defaultVacd`,
