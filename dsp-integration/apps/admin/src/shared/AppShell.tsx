@@ -26,6 +26,8 @@ const Static = ({ children }: { children: ReactNode }) => <div className="trunca
 /* Like Platform Admin: the menu runs the full height down the left and stays
    put (sticky, its own scroll if taller than the frame) while the right-hand
    pane scrolls, and the page title sits at the top of the right-hand pane with the page under it.
+   On a touch screen (iPad) it is NOT sticky and has no scroll of its own —
+   see .ph-sticky-pane in theme/index.css for why.
    An empty `nav` (a route that stands alone in its own tab) has no menu. */
 export function AppShell({ title, nav, children }: { title: ReactNode; nav: NavItem[]; children: ReactNode }) {
   const collapsed = useViewportWidth() < NAV_COLLAPSE_BELOW
@@ -42,7 +44,7 @@ export function AppShell({ title, nav, children }: { title: ReactNode; nav: NavI
     <div className="flex min-h-screen w-full items-stretch bg-white" style={{ color: T.text, fontSize: 14 }}>
       <nav
         aria-label="Display Types and DSP Integration"
-        className="sticky top-0 h-screen shrink-0 self-start overflow-y-auto overflow-x-hidden border-r"
+        className="ph-sticky-pane ph-full-height sticky top-0 shrink-0 self-start overflow-y-auto overflow-x-hidden border-r"
         style={{ width: collapsed ? 56 : NAV_WIDTH, borderColor: T.borderSubtle, transition: 'width .15s' }}
       >
         {!collapsed && (
