@@ -4,7 +4,8 @@
    the estate, which moved here from Advertiser settings (Rob, 20 Sep).
    Campaigns are not approved here. Changes are applied with Save changes. */
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { App, Button, InputNumber, Select, Spin, Switch, Tooltip } from 'antd'
+import { App, Button, InputNumber, Select, Spin, Switch } from 'antd'
+import { Tip } from '../../shared/Tip'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
 import { DEFAULT_BILLING_UNIT_HOURS, DEFAULT_MAX_CAMPAIGNS, MAX_MAX_CAMPAIGNS, MIN_MAX_CAMPAIGNS, SLOT_OWNERS, TARGETING_MODES, assignedLabels, supportedTargetingOf, targetingLabel, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type Session, type TargetingMode } from '@ph-dsp/types'
 import { useMemo, useState } from 'react'
@@ -109,29 +110,29 @@ const PlaylistCell = ({ data }: ICellRendererParams<AvailableInventoryRow>) =>
     <span className="inline-flex min-w-0 items-center gap-[5px]">
       <span className="truncate">{data.playlistName}</span>
       {data.visionAi && (
-        <Tooltip title="Vision/AI is enabled on this display type: on-device computer vision for passerby insight and person match.">
+        <Tip title="Vision/AI is enabled on this display type: on-device computer vision for passerby insight and person match.">
           <span className="inline-flex" aria-label="Vision/AI enabled"><Icon name="visibility" size={15} style={{ color: T.primary }} /></span>
-        </Tooltip>
+        </Tip>
       )}
       {data.qrControl && (
-        <Tooltip title="QR Control is enabled on this display type, so its slots can support interactive campaigns.">
+        <Tip title="QR Control is enabled on this display type, so its slots can support interactive campaigns.">
           <span className="inline-flex" aria-label="QR Control enabled"><Icon name="qr_code_2" size={15} style={{ color: T.primary }} /></span>
-        </Tooltip>
+        </Tip>
       )}
       {data.unsellableReason && (
         /* Unscored (or duration-less) slot, ticket 30 Sep 2026: saving is not blocked, but advertisers can't see or bid on it. */
-        <Tooltip title={data.unsellableReason}>
+        <Tip title={data.unsellableReason}>
           <span className="inline-flex items-center gap-0.5" role="status" aria-label={data.unsellableReason} style={{ color: T.error }}>
             <Icon name="warning" size={14} /><span style={{ fontSize: 11, whiteSpace: 'normal' }}>{data.unsellableReason}</span>
           </span>
-        </Tooltip>
+        </Tip>
       )}
       {data.unassigned && (
-        <Tooltip title="This playlist's advertiser slots aren't assigned to any physical display, so they aren't actually playing.">
+        <Tip title="This playlist's advertiser slots aren't assigned to any physical display, so they aren't actually playing.">
           <span className="inline-flex items-center gap-0.5" aria-label="Unassigned" style={{ color: T.error }}>
             <Icon name="link_off" size={14} /><span style={{ fontSize: 11 }}>Unassigned</span>
           </span>
-        </Tooltip>
+        </Tip>
       )}
     </span>
   ) : null
@@ -247,9 +248,9 @@ function AssignedCell({ data, context }: IP) {
       /* Locked against new sales (ticket, 30 Sep 2026): sold, so the
          advertiser can't be removed; releases by itself when the booking
          schedule shows nothing booked. */
-      <Tooltip title={`Slots are sold here, so no new sales are taken and the advertiser can't be removed. Existing bookings keep running. Releases automatically once nothing is booked${data.salesLockedUntil ? ` (last booking ends ${data.salesLockedUntil.slice(0, 10)})` : ''}.`}>
+      <Tip title={`Slots are sold here, so no new sales are taken and the advertiser can't be removed. Existing bookings keep running. Releases automatically once nothing is booked${data.salesLockedUntil ? ` (last booking ends ${data.salesLockedUntil.slice(0, 10)})` : ''}.`}>
         <span className="mb-1 inline-flex items-center gap-1" style={{ fontSize: 12, color: T.muted }}><Icon name="lock" size={14} />Locked to new sales</span>
-      </Tooltip>
+      </Tip>
     )}
     <Pills
       label={`${data.displayTypeName} slot ${data.zoneSlot}: assigned to`}
@@ -336,19 +337,19 @@ function ReservePriceCell({ data, context }: IP) {
         }}
       />
       {overridden ? (
-        <Tooltip title={`Reset to ${data.displayTypeName}'s reserve price default`}>
+        <Tip title={`Reset to ${data.displayTypeName}'s reserve price default`}>
           <Button type="text" size="small" className="px-1" aria-label={`${data.displayTypeName} slot ${data.zoneSlot}: reset reserve price to the display type's default`}
             icon={<Icon name="settings_backup_restore" size={13} />} onClick={() => c.set(slotKey(data), { reservePrice: null })} />
-        </Tooltip>
+        </Tip>
       ) : value !== null && (
         /* Nothing to diverge from until the display type has a default: a
            slot can't explicitly override to "no reserve" (Rob, 22 Sep) — an
            override is always a real premium, never a way to opt one slot
            out while its siblings have one. */
-        <Tooltip title={`Override just this slot, independent of ${data.displayTypeName}'s other slots`}>
+        <Tip title={`Override just this slot, independent of ${data.displayTypeName}'s other slots`}>
           <Button type="text" size="small" className="px-1" aria-label={`${data.displayTypeName} slot ${data.zoneSlot}: override the reserve price for just this slot`}
             icon={<Icon name="edit" size={13} />} onClick={() => c.set(slotKey(data), { reservePrice: value })} />
-        </Tooltip>
+        </Tip>
       )}
     </div>
   )
@@ -388,15 +389,15 @@ function BillingUnitCell({ data, context }: IP) {
         }}
       />
       {overridden ? (
-        <Tooltip title={`Reset to ${data.displayTypeName}'s billing unit default`}>
+        <Tip title={`Reset to ${data.displayTypeName}'s billing unit default`}>
           <Button type="text" size="small" className="px-1" aria-label={`${data.displayTypeName} slot ${data.zoneSlot}: reset billing unit to the display type's default`}
             icon={<Icon name="settings_backup_restore" size={13} />} onClick={() => c.set(slotKey(data), { billingUnitHours: null })} />
-        </Tooltip>
+        </Tip>
       ) : (
-        <Tooltip title={`Override just this slot, independent of ${data.displayTypeName}'s other slots`}>
+        <Tip title={`Override just this slot, independent of ${data.displayTypeName}'s other slots`}>
           <Button type="text" size="small" className="px-1" aria-label={`${data.displayTypeName} slot ${data.zoneSlot}: override the billing unit for just this slot`}
             icon={<Icon name="edit" size={13} />} onClick={() => c.set(slotKey(data), { billingUnitHours: value })} />
-        </Tooltip>
+        </Tip>
       )}
     </div>
   )
@@ -434,15 +435,15 @@ function MaxCampaignsCell({ data, context }: IP) {
         }}
       />
       {overridden ? (
-        <Tooltip title={`Reset to ${data.displayTypeName}'s max campaigns default`}>
+        <Tip title={`Reset to ${data.displayTypeName}'s max campaigns default`}>
           <Button type="text" size="small" className="px-1" aria-label={`${data.displayTypeName} slot ${data.zoneSlot}: reset max campaigns to the display type's default`}
             icon={<Icon name="settings_backup_restore" size={13} />} onClick={() => c.set(slotKey(data), { maxCampaigns: null })} />
-        </Tooltip>
+        </Tip>
       ) : (
-        <Tooltip title={`Override just this slot, independent of ${data.displayTypeName}'s other slots`}>
+        <Tip title={`Override just this slot, independent of ${data.displayTypeName}'s other slots`}>
           <Button type="text" size="small" className="px-1" aria-label={`${data.displayTypeName} slot ${data.zoneSlot}: override max campaigns for just this slot`}
             icon={<Icon name="edit" size={13} />} onClick={() => c.set(slotKey(data), { maxCampaigns: value })} />
-        </Tooltip>
+        </Tip>
       )}
     </div>
   )

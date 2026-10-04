@@ -3,14 +3,15 @@
 import { Button } from 'antd'
 import { touchPointIcon, type DisplayType } from '@ph-dsp/types'
 import { Icon } from '../../shared/Icon'
+import { Tip } from '../../shared/Tip'
 import { T } from '../../theme/phTheme'
 import { STRUCTURE_MARKERS, enabledFeatures } from './model'
 
 const Badge = ({ icon, title, tone }: { icon: string; title: string; tone: 'structure' | 'feature' }) => (
-  <span title={title} aria-label={title} className="inline-flex h-5 w-5 items-center justify-center rounded"
+  <Tip title={title}><span role="img" tabIndex={0} aria-label={title} className="inline-flex h-5 w-5 items-center justify-center rounded"
     style={{ background: tone === 'structure' ? T.primaryTint : 'rgba(82,196,26,0.12)' }}>
     <Icon name={icon} size={13} style={{ color: tone === 'structure' ? T.primary : T.success }} />
-  </span>
+  </span></Tip>
 )
 
 export function DisplayTypeList({ types, selectedId, onSelect, onNew, onDelete }: { types: DisplayType[]; selectedId: string | undefined; onSelect: (id: string) => void; onNew: () => void; onDelete: (id: string) => void }) {

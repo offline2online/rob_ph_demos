@@ -28,7 +28,8 @@
    table stays filtered until the user clears it from that column's funnel.
    The choice lives in the URL (`status`), like the Advertiser filter. */
 import { useQuery } from '@tanstack/react-query'
-import { Button, Dropdown, Input, Modal, Spin, Switch, Tooltip } from 'antd'
+import { Button, Dropdown, Input, Modal, Spin, Switch } from 'antd'
+import { Tip } from '../../shared/Tip'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
 import { ApprovalActions, ApprovalStatusBadge, STATUS_LABELS, type Approval, type ApprovalStatus } from '@ph-dsp/campaign-approval/ui'
 import type { Campaign } from '@ph-dsp/types'
@@ -82,9 +83,9 @@ const CampaignCountCell = ({ data }: P) => (data ? <span>{data.campaignCount}</s
 const VariablesCell = ({ variables, ruleLines }: { variables: string[]; ruleLines: string[] }) => {
   if (!variables.length) return <span style={{ color: T.micro }}>—</span>
   return (
-    <Tooltip title={ruleLines.join(' · ')}>
+    <Tip title={ruleLines.join(' · ')}>
       <span className="block truncate">{variables.join(', ')}</span>
-    </Tooltip>
+    </Tip>
   )
 }
 const LocalisedVariablesCell = ({ data }: P) => (data ? <VariablesCell variables={data.localisedVariables} ruleLines={data.localisedRuleLines} /> : null)

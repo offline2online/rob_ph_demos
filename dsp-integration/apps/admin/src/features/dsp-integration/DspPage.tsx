@@ -4,7 +4,8 @@
    (ticket, 28 Sep 2026: category lists used to be company-only, with no way
    to give an unlinked DSP its own). Nothing pricing- or targeting-related. */
 import { useQueryClient } from '@tanstack/react-query'
-import { App, Button, Input, Segmented, Select, Tooltip } from 'antd'
+import { App, Button, Input, Segmented, Select } from 'antd'
+import { Tip } from '../../shared/Tip'
 import { IAB_CATEGORIES, providerDef, type Partner } from '@ph-dsp/types'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -104,7 +105,7 @@ export function DspPage({ draftKey, partner }: { draftKey: string; partner: Part
         onChange={(v) => set((x) => ({ ...x, mode: v as 'test' | 'live' }))}
         options={[
           { value: 'test', label: <span className="inline-flex items-center gap-1.5"><Icon name="science" size={16} />Test</span> },
-          { value: 'live', disabled: !canGoLive && d.mode !== 'live', label: <Tooltip title={canGoLive ? undefined : 'Connect and complete the bidder integration first'}><span className="inline-flex items-center gap-1.5"><Icon name="bolt" size={16} />Live</span></Tooltip> },
+          { value: 'live', disabled: !canGoLive && d.mode !== 'live', label: <Tip title={canGoLive ? undefined : 'Connect and complete the bidder integration first'}><span className="inline-flex items-center gap-1.5"><Icon name="bolt" size={16} />Live</span></Tip> },
         ]}
       />
 
@@ -125,11 +126,11 @@ export function DspPage({ draftKey, partner }: { draftKey: string; partner: Part
         ))}
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <Tooltip title={connectDisabledReason}>
+        <Tip title={connectDisabledReason}>
           <Button type="primary" icon={<Icon name="link" size={16} />} disabled={!partner || !!connectDisabledReason} loading={busy === 'connect'} onClick={() => run('connect')}>
             {status === 'connected' ? 'Re-test connection' : 'Connect'}
           </Button>
-        </Tooltip>
+        </Tip>
         {partner && status !== 'draft' && (
           <Button icon={<Icon name="link_off" size={16} />} loading={busy === 'disconnect'} onClick={() => run('disconnect')}>Disconnect</Button>
         )}
