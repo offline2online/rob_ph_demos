@@ -1022,6 +1022,20 @@ rather than restating how it is arrived at.
   example *AUD — Australian Dollar*). Default AUD.
 - Applies to the floor CPM, every effective floor and billing. Bid requests
   carry it as the bid floor currency.
+- **Phase 1: one instance, one currency, no conversion** (Rob, 4 Oct 2026).
+  An instance runs inside one retailer's VPC and that retail media network
+  trades in its own local currency. The floor, every effective floor and all
+  pricing are in that currency, and advertisers bid into the instance in the
+  same currency. There is no cross-currency auction, no FX rates and no
+  conversion engine.
+- **A bid's currency is a validation check, not a conversion input.** A bid in
+  the instance currency clears normally. A bid in any other currency is
+  **rejected** with a clear reason (*"Bid in USD; the exchange trades in AUD
+  and does not convert."*), never converted or compared against the floor.
+  A bid naming no currency is rejected too: the OpenRTB "missing means USD"
+  default is not applied.
+- Multi-currency bidding and FX conversion are out of scope until a later
+  phase.
 
 ### Campaign types for pricing
 
@@ -3353,8 +3367,7 @@ are in `api/PH-CORE-BOUNDARIES.md`.
   versions is refused `too_many_versions`, and `GET /v1/inventory` exposes
   `maxCampaigns` on each position so a DSP knows the limit before bidding.
 - **Bid responses are validated and bounded** before they are trusted:
-  the request id echoed, impression 1, a finite price under a ceiling, a
-  missing currency read as USD (OpenRTB), at most 10 bids and 64 KB per
+  the request id echoed, impression 1, a finite price under a ceiling, a currency equal to the instance currency (§4: another currency, or none, is rejected, never converted and never read as USD), at most 10 bids and 64 KB per
   response, and one unknown creative retrieved per response, only from the
   DSP's own creative path.
 - **An auction clears in about one bidder timeout per 16 positions**,

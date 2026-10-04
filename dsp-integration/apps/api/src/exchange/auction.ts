@@ -288,10 +288,13 @@ async function recordDspBid(ctx: Context, p: PositionRef, dsp: PartnerRecord, st
   }
   const reject = async (reason: string, extra: Partial<ReservationRecord> = {}) => ctx.reservations.insert({ ...base, ...extra, status: 'rejected', reason })
 
-  /* OpenRTB 2.6: a response with no `cur` is in USD. Treating it as the
-     exchange's own currency would accept, say, a USD 5 bid as AUD 5. */
-  const cur = res.cur ?? 'USD'
-  if (cur !== currency) return reject(`Bid in ${cur}; the exchange trades in ${currency}.`)
+  /* Phase 1: one instance, one currency, no conversion. `cur` is a
+     validation check, never a conversion input: a bid in any other currency
+     is rejected, and so is one that names none (OpenRTB would read that as
+     USD; we do not guess, so a USD default can never clear an AUD floor, or
+     be taken for the instance currency). */
+  if (!res.cur) return reject(`Bid names no currency; the exchange trades in ${currency} and does not convert.`)
+  if (res.cur !== currency) return reject(`Bid in ${res.cur}; the exchange trades in ${currency} and does not convert.`)
   if (!(typeof bid.price === 'number' && Number.isFinite(bid.price) && bid.price > 0)) return reject('No price on the bid.')
   /* A price no real campaign pays is a DSP bug or a malformed response; it
      must not win a window and be billed. */

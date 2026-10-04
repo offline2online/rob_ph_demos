@@ -78,7 +78,7 @@ in `apps/api/test/hardening.test.ts`,
 | Finding | Fix |
 |---|---|
 | **Fan-out was serial**: positions × DSPs × round trip. That is 170 s for 1,008 positions at 80 ms. | Every DSP for a position is asked at once, and positions clear 16 at a time (`POSITION_CONCURRENCY`). Responses are processed in DSP order, so the outcome doesn't depend on who answered first. |
-| A response with no `cur` was accepted as the exchange's currency. OpenRTB says it means USD. | A missing `cur` is treated as USD, and rejected unless the exchange trades in USD. |
+| A response with no `cur` was accepted as the exchange's currency. OpenRTB says it means USD. | A bid whose `cur` is missing or not the instance currency is rejected (phase 1, 4 Oct 2026: single local currency, no conversion, no USD default). |
 | No check on the response `id`, the `impid`, a non-finite price, or an absurd price. | A response to another request is ignored. The bid must be for impression 1, the price must be finite, and it can't exceed `maxBidCpm` (10,000). |
 | Unbounded bids per response, each written as a row. | At most 10 are read (`MAX_BIDS_PER_RESPONSE`). |
 | Unbounded bid response body. | Capped at 64 KB; over that is no bid (`readCapped`). |
