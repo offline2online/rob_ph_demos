@@ -1,5 +1,6 @@
 /* Advertiser settings validation (spec §4, §6): any ISO 4217 currency,
-   positive floor and multipliers, and nothing on both lists. */
+   positive floor and multipliers, and nothing on both category lists. (The
+   advertiser lists are per DSP: domain/partnerInput.ts.) */
 import type { AdvertiserSettingsInput } from '@ph-dsp/types'
 
 type Detail = { field: string; reason: string }
@@ -27,14 +28,13 @@ export function validateAdvertiserSettings(b: Partial<AdvertiserSettingsInput> |
   if (!Number.isInteger(b?.auctionOpensHours) || (b?.auctionOpensHours as number) < 1) out.push({ field: 'auctionOpensHours', reason: 'Auction opens must be at least 1 hour before the cutoff.' })
   if (!Number.isInteger(b?.playWindowHours) || (b?.playWindowHours as number) < 1 || (b?.playWindowHours as number) > 8760) out.push({ field: 'playWindowHours', reason: 'The play window is between 1 hour and 365 days.' })
   if (typeof b?.auctionCutoffTime !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(b.auctionCutoffTime)) out.push({ field: 'auctionCutoffTime', reason: 'A time of day, HH:MM.' })
-  for (const k of ['advertiserWhitelist', 'advertiserBlacklist', 'categoryWhitelist', 'categoryBlacklist'] as const) {
+  for (const k of ['categoryWhitelist', 'categoryBlacklist'] as const) {
     if (!Array.isArray(b?.[k])) out.push({ field: k, reason: 'Required.' })
   }
   const both = (a: unknown, c: unknown, field: string) => {
     const black = new Set(cleanList(c).map(key))
     for (const x of cleanList(a)) if (black.has(key(x))) out.push({ field, reason: `${x} is on both the whitelist and the blacklist.` })
   }
-  both(b?.advertiserWhitelist, b?.advertiserBlacklist, 'advertiserWhitelist')
   both(b?.categoryWhitelist, b?.categoryBlacklist, 'categoryWhitelist')
   return out
 }

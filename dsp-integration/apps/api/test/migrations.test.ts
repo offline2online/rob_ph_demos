@@ -77,4 +77,25 @@ describe('migrations', () => {
     migrateUp(db)
     expect(db.prepare("SELECT multi_zone FROM playlists WHERE id = 'pl_menu'").get()).toEqual({ multi_zone: zones })
   })
+
+  /* 0040: advertiser lists move from the company to each DSP, names → seat IDs. */
+  it('0040 carries company and DSP advertiser lists over as the DSP’s own seat IDs', () => {
+    const db = openDb(':memory:')
+    migrateUp(db, '0039')
+    db.prepare("INSERT INTO company_advertiser_settings (id, advertiser_whitelist, advertiser_blacklist, updated_at) VALUES ('company', ?, ?, 'x')")
+      .run(JSON.stringify(['Nestlé', ' swisse ', 'Gone Co']), JSON.stringify(['Red Bull', 'Swisse']))
+    const seats = JSON.stringify([{ id: '1', name: 'Nestlé' }, { id: '2', name: 'Swisse' }])
+    const ins = db.prepare("INSERT INTO partners (id, provider, name, status, mode, seats, lists_linked, allow_list, block_list, created_at, updated_at) VALUES (?, ?, ?, 'draft', 'test', ?, ?, ?, ?, 'x', 'x')")
+    ins.run('linked', 'google_dv360', 'Linked', seats, 1, '[]', '[]')
+    ins.run('own', 'amazon_dsp', 'Own', seats, 0, JSON.stringify(['2', 'Nestlé', 'Unknown']), JSON.stringify(['nestlé']))
+    migrateUp(db)
+    const row = (id: string) => db.prepare('SELECT allow_list, block_list FROM partners WHERE id = ?').get(id) as { allow_list: string; block_list: string }
+    expect(JSON.parse(row('linked').allow_list).sort()).toEqual(['1', '2'])
+    expect(JSON.parse(row('linked').block_list)).toEqual(['2'])
+    expect(JSON.parse(row('own').allow_list).sort()).toEqual(['1', '2'])
+    expect(JSON.parse(row('own').block_list)).toEqual(['1'])
+    const cols = (db.prepare('PRAGMA table_info(company_advertiser_settings)').all() as { name: string }[]).map((c) => c.name)
+    expect(cols).not.toContain('advertiser_whitelist')
+    expect(cols).toContain('category_whitelist')
+  })
 })

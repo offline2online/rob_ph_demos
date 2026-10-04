@@ -37,7 +37,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
     guards.flagged()
     guards.requireScope(req, 'admin')
     const errors = validateAdvertiserSettings(req.body)
-    if (errors.length) throw validationFailed(errors, 'An entry can’t be on both lists, and pricing must be positive.')
+    if (errors.length) throw validationFailed(errors, 'An entry can’t be on both category lists, and pricing must be positive.')
     const b = req.body as AdvertiserSettingsInput
     /* Windows already bid on or booked are keyed on the current length (Q13)
        — changing it can't reach back and resize them. It used to be refused
@@ -71,7 +71,6 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         currency: b.currency, floorCpm: b.floorCpm, personalisedMultiplier: b.personalisedMultiplier, interactiveCpe: b.interactiveCpe,
         auctionOpensHours: b.auctionOpensHours, playWindowHours, auctionCutoffTime: b.auctionCutoffTime,
         pendingPlayWindowHours, pendingPlayWindowEffectiveFrom,
-        advertiserWhitelist: cleanList(b.advertiserWhitelist), advertiserBlacklist: cleanList(b.advertiserBlacklist),
         categoryWhitelist: cleanList(b.categoryWhitelist), categoryBlacklist: cleanList(b.categoryBlacklist),
       })
     })
@@ -278,7 +277,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
 
         const raw = (r.assignedTo ?? {}) as { partnerIds?: unknown; advertisers?: unknown; whitelistOnly?: unknown; buyersListId?: unknown }
         const assigned: Assigned = { partnerIds: names(raw.partnerIds), advertisers: names(raw.advertisers), whitelistOnly: raw.whitelistOnly === true, buyersListId: typeof raw.buyersListId === 'string' ? raw.buyersListId : null }
-        const bad = await validateAssigned(assigned, (k) => f(`assignedTo.${k}`), partners, company, def ? assignedOf(def) : { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: null }, ctx.buyersLists)
+        const bad = await validateAssigned(assigned, (k) => f(`assignedTo.${k}`), partners, def ? assignedOf(def) : { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: null }, ctx.buyersLists)
         errors.push(...bad)
 
         const reservePrice = parseReservePrice(r.reservePrice, f('reservePrice'), errors)

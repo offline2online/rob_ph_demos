@@ -60,11 +60,11 @@ describe('OpenRTB 2.6 DOOH bid requests', () => {
     expect(JSON.stringify(body)).not.toMatch(/visitor|personalis|gender|age"|segment|sku|cv_/i)
   })
 
-  it('sends the advertiser blacklist as domains (badv), and nothing until Exchange settings are complete', async () => {
+  it('sends the DSP’s advertiser blacklist as domains (badv), and nothing until Exchange settings are complete', async () => {
     const { ctx, sent } = await setup()
-    await ctx.company.save({ ...(await ctx.company.get()), advertiserBlacklist: ['Swisse', 'redbull.com'], advertiserWhitelist: ['Nestlé'] })
+    await ctx.partners.update('p_google', { blockList: ['5130002'], allowList: ['5130001'] })
     await runAuction(ctx, W1)
-    expect(sent[0].body.badv).toEqual(['swisse.com', 'redbull.com'])
+    expect(sent[0].body.badv).toEqual(['swisse.com'])
     await ctx.exchange.save({ ...(await ctx.exchange.get()), sellerId: '' })
     await runAuction(ctx, W2)
     expect(sent).toHaveLength(1)
@@ -149,9 +149,9 @@ describe('the auction', () => {
     /* Half the sent floor of 100 is 50; Nestlé's own floor is 100 × 0.8. */
     expect(await reason(W2)).toBe('50 is below the effective floor of 80 AUD CPM.')
     await bidder({ mode: 'bid', priceCpm: 150 })
-    await ctx.company.save({ ...(await ctx.company.get()), advertiserBlacklist: ['Nestlé'], advertiserWhitelist: ['Swisse'] })
+    await ctx.partners.update('p_google', { blockList: ['5130001'], allowList: ['5130002'] })
     expect(await reason(new Date('2026-09-23T00:00:00.000Z'))).toBe('Nestlé is on the advertiser blacklist.')
-    await ctx.company.save({ ...(await ctx.company.get()), advertiserBlacklist: [], advertiserWhitelist: ['Swisse'] })
+    await ctx.partners.update('p_google', { blockList: [], allowList: ['5130002'] })
     await setSlot({ listMode: 'whitelist_only' })
     expect(await reason(new Date('2026-09-24T00:00:00.000Z'))).toBe('Nestlé is not on the advertiser whitelist for this whitelist-only position.')
     await setSlot({ listMode: 'rtb' })
@@ -331,7 +331,7 @@ describe('POST /v1/reservations and GET …/{id}', () => {
     expect(await refused({})).toEqual(['not_approved', 'The campaign is approved but not activated.'])
     await activate('c_api_swisse')
     expect(await refused({ bidCpm: 99 })).toEqual(['below_floor', '99 is below the effective floor of 100 AUD CPM.'])
-    await ctx.company.save({ ...(await ctx.company.get()), advertiserBlacklist: ['Swisse'], advertiserWhitelist: [] })
+    await ctx.partners.update('p_google', { blockList: ['5130002'], allowList: [] })
     expect(await refused({})).toEqual(['advertiser_blocked', 'Swisse is on the advertiser blacklist.'])
   })
 

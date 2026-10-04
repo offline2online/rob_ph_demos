@@ -78,15 +78,33 @@ describe('DSP page save (PUT /admin/v1/partners/{id})', () => {
     expect((await call(app, 'PUT', '/partners/p_google', { mode: 'live' })).json().mode).toBe('live')
   })
 
-  it('unlinking copies the company lists down; relinking discards the DSP’s own lists', async () => {
+  it('keeps a DSP’s advertiser lists to its own synced seat IDs', async () => {
+    const { app } = await setup()
+    /* Google's seats are Nestlé 5130001 and Swisse 5130002; the seed whitelists both. */
+    const saved = await call(app, 'PUT', '/partners/p_google', { advertiserWhitelist: [' 5130001 '], advertiserBlacklist: ['5130002'] })
+    expect(saved.statusCode).toBe(200)
+    expect(saved.json()).toMatchObject({ advertiserWhitelist: ['5130001'], advertiserBlacklist: ['5130002'] })
+    /* Free text, a name, or another DSP's seat is not an identifier this DSP issued. */
+    for (const entry of ['Red Bull', 'Nestlé', '588104411']) {
+      const bad = await call(app, 'PUT', '/partners/p_google', { advertiserBlacklist: [entry] })
+      expect(bad.statusCode).toBe(400)
+      expect(bad.json().error.details).toEqual([{ field: 'advertiserBlacklist', reason: expect.stringContaining('not a seat or advertiser synced from Google DSP') }])
+    }
+    const both = await call(app, 'PUT', '/partners/p_google', { advertiserBlacklist: ['5130001'] })
+    expect(both.statusCode).toBe(400)
+    expect(both.json().error.details).toEqual([{ field: 'advertiserWhitelist', reason: 'Nestlé is on both the whitelist and the blacklist.' }])
+  })
+
+  it('unlinking copies the company category lists down; relinking discards the DSP’s own; advertiser lists are untouched', async () => {
     const { app } = await setup()
     const unlinked = await call(app, 'PUT', '/partners/p_google', { listsLinked: false })
-    expect(unlinked.json()).toMatchObject({ listsLinked: false, advertiserWhitelist: ['Nestlé', 'Swisse', 'Arnott’s'], advertiserBlacklist: ['Red Bull', 'Monster Energy'] })
-    const edited = await call(app, 'PUT', '/partners/p_google', { advertiserBlacklist: ['Red Bull', 'Monster Energy', 'Nestlé'] })
+    expect(unlinked.json()).toMatchObject({ listsLinked: false, advertiserWhitelist: ['5130001', '5130002'], categoryWhitelist: ['Food & Drink', 'Health & Fitness'], categoryBlacklist: ['Finance'] })
+    const edited = await call(app, 'PUT', '/partners/p_google', { categoryBlacklist: ['Finance', 'Food & Drink'] })
     expect(edited.statusCode).toBe(400)
     const relinked = await call(app, 'PUT', '/partners/p_google', { listsLinked: true })
     expect(relinked.json().listsLinked).toBe(true)
-    expect(relinked.json()).not.toHaveProperty('advertiserBlacklist')
+    expect(relinked.json()).not.toHaveProperty('categoryBlacklist')
+    expect(relinked.json().advertiserWhitelist).toEqual(['5130001', '5130002'])
   })
 
   it('validates credentials, bidder endpoint and the fixed Amazon region', async () => {

@@ -223,11 +223,9 @@ export const ownerChange = (owner: SlotOwner): Partial<Slot> => ({ owner })
 
 export interface Lists { allowList: string[]; blockList: string[] }
 const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase()
-export const effectiveLists = (p: Partner | null | undefined, company: AdvertiserSettings | undefined): Lists =>
-  p && p.listsLinked === false
-    ? { allowList: p.advertiserWhitelist ?? [], blockList: p.advertiserBlacklist ?? [] }
-    : { allowList: company?.advertiserWhitelist ?? [], blockList: company?.advertiserBlacklist ?? [] }
-export const isBlocked = (name: string, lists: Lists) => lists.blockList.some((x) => same(x, name))
+/* A DSP's advertiser lists are its own, seat IDs from its synced seats. */
+export const effectiveLists = (p: Partner | null | undefined): Lists => ({ allowList: p?.advertiserWhitelist ?? [], blockList: p?.advertiserBlacklist ?? [] })
+export const isBlocked = (seatId: string, lists: Lists) => lists.blockList.some((x) => same(x, seatId))
 
 /* One line describing what a slot is assigned to (sellside.js
    ownerAssignment). Read-only here: it is set on Advertisers / Inventory. */

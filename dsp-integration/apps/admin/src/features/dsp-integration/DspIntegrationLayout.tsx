@@ -80,10 +80,8 @@ export function partnerInput(d: PartnerDraft, before: PartnerDraft | undefined) 
     },
     mode: d.mode,
     listsLinked: d.listsLinked,
-    ...(d.listsLinked ? {} : {
-      advertiserWhitelist: d.advertiserWhitelist, advertiserBlacklist: d.advertiserBlacklist,
-      categoryWhitelist: d.categoryWhitelist, categoryBlacklist: d.categoryBlacklist,
-    }),
+    advertiserWhitelist: d.advertiserWhitelist, advertiserBlacklist: d.advertiserBlacklist,
+    ...(d.listsLinked ? {} : { categoryWhitelist: d.categoryWhitelist, categoryBlacklist: d.categoryBlacklist }),
   }
 }
 

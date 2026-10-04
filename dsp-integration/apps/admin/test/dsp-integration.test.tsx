@@ -69,8 +69,8 @@ describe('DSP Integration section', () => {
       'Google DSP — Live', 'Amazon Ads DSP — Connection error', 'The Trade Desk — Not set up yet',
     ])
     expect(within(nav).getByText('3 advertisers · floor AUD 100 CPM')).toBeInTheDocument()
-    expect(within(nav).getByText('Adopts company lists')).toBeInTheDocument()
-    expect(within(nav).getByText('Own advertiser lists')).toBeInTheDocument()
+    expect(within(nav).getByText('Adopts company category lists')).toBeInTheDocument()
+    expect(within(nav).getByText('Own category lists')).toBeInTheDocument()
   })
 
   it('Exchange settings: four required fields, Published, and where sellers.json is', async () => {
@@ -197,7 +197,7 @@ describe('Advertiser settings page', () => {
     renderAt('/dsp-integration')
     expect(await screen.findByRole('heading', { name: /Advertiser settings/ })).toBeInTheDocument()
     const text = document.body.textContent ?? ''
-    const order = ['Pricing', 'Auction schedule', 'Auction opens', 'Play-window length', 'Auction cutoff time', 'List management', 'Where these apply'].map((h) => text.indexOf(h))
+    const order = ['Pricing', 'Auction schedule', 'Auction opens', 'Play-window length', 'Auction cutoff time', 'Category lists', 'Where these apply'].map((h) => text.indexOf(h))
     /* Available Inventory moved to Advertisers / Inventory (Rob, 20 Sep). */
     expect(text).not.toContain('Available Inventory')
     expect(order).toEqual([...order].sort((a, b) => a - b))
@@ -206,7 +206,9 @@ describe('Advertiser settings page', () => {
     expect((document.getElementById('auctionOpensHours') as HTMLInputElement).value).toBe('7')
     expect((document.getElementById('playWindowHours') as HTMLInputElement).value).toBe('1')
     expect(screen.getByText('18:00 UTC')).toBeInTheDocument()
-    for (const l of ['Advertisers — whitelist', 'Advertisers — blacklist', 'Categories — whitelist', 'Categories — blacklist']) expect(screen.getByRole('region', { name: l })).toBeInTheDocument()
+    for (const l of ['Categories — whitelist', 'Categories — blacklist']) expect(screen.getByRole('region', { name: l })).toBeInTheDocument()
+    /* Advertiser lists are each DSP's own: none at company level. */
+    for (const l of ['Advertisers — whitelist', 'Advertisers — blacklist']) expect(screen.queryByRole('region', { name: l })).not.toBeInTheDocument()
     const where = screen.getByRole('list', { name: 'Where these apply' })
     expect(within(where).getAllByRole('listitem').map((li) => li.textContent)).toEqual([expect.stringContaining('Adopting'), expect.stringContaining('Own lists')])
     expect(screen.queryByText('Advertisers', { selector: '.ag-header-cell-text' })).not.toBeInTheDocument()
@@ -263,10 +265,10 @@ describe('DSP page', () => {
     const issues = screen.getByLabelText('Issues')
     expect(issues.textContent).toContain('Connection error: Refresh token rejected — 3 days ago. Re-enter the credentials below and re-test the connection.')
     const text = document.body.textContent ?? ''
-    const order = ['Mode', 'Connection credentials', 'Bidder integration', 'List management'].map((h) => text.indexOf(h))
+    const order = ['Mode', 'Connection credentials', 'Bidder integration', 'Advertiser lists'].map((h) => text.indexOf(h))
     expect(order).toEqual([...order].sort((a, b) => a - b))
     expect(screen.getByLabelText(/Refresh token/)).toHaveAttribute('type', 'password')
-    expect(screen.getByText(/Unlinked — this DSP has its own lists./)).toBeInTheDocument()
+    expect(screen.getByText(/Unlinked — this DSP has its own category lists./)).toBeInTheDocument()
     expect(screen.queryByText(/floor|CPM|currency/i, { selector: 'label' })).not.toBeInTheDocument()
   })
 

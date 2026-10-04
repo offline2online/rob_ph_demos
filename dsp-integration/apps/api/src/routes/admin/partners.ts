@@ -10,6 +10,12 @@ import type { Guards } from '../../http/app'
 import { conflict, notFound, validationFailed } from '../../http/errors'
 import { tx } from '../../db/db'
 
+/* A refresh can drop a seat the DSP no longer has; the lists keep only seats that still exist. */
+const prunedLists = (p: { allowList: string[]; blockList: string[] }, seats: { id: string }[]) => {
+  const ids = new Set(seats.map((s) => s.id))
+  return { allowList: p.allowList.filter((x) => ids.has(x)), blockList: p.blockList.filter((x) => ids.has(x)) }
+}
+
 export const partnerRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => async (app) => {
   const one = async (id: string) => {
     const p = await ctx.partners.get(id)
@@ -23,7 +29,7 @@ export const partnerRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync 
     return { items: (await ctx.partners.list()).map(toApiPartner) }
   })
 
-  /* Starts in Test mode and adopts the company lists. One per provider. */
+  /* Starts in Test mode with empty advertiser lists (filled from its synced seats) and adopting the company category lists. One per provider. */
   app.post<{ Body: { provider?: string } }>('/partners', async (req, reply) => {
     guards.flagged()
     guards.requireScope(req, 'admin')
@@ -56,7 +62,7 @@ export const partnerRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync 
     }))
   })
 
-  /* Connect or re-test with the saved credentials; pulls the DSP's advertisers. */
+  /* Connect or re-test with the saved credentials; syncs the DSP's seats and advertisers (the source of its advertiser lists). */
   app.post<{ Params: { id: string } }>('/partners/:id/connect', async (req) => {
     guards.flagged()
     guards.requireScope(req, 'admin')
@@ -68,16 +74,16 @@ export const partnerRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync 
       : await client.connect({ public: p.credsPublic, secrets: await ctx.partners.secrets(p.id) })
     req.log.info({ partnerId: p.id, ok: result.ok }, 'dsp connect')
     const updated = result.ok
-      ? await ctx.partners.update(p.id, { status: 'connected', lastSync: new Date().toISOString(), seats: result.seats })
+      ? await ctx.partners.update(p.id, { status: 'connected', lastSync: new Date().toISOString(), seats: result.seats, ...prunedLists(p, result.seats) })
       : await ctx.partners.update(p.id, { status: 'error', lastSync: result.reason })
     return toApiPartner(updated!)
   })
 
-  /* Disconnect: back to Test, seats cleared. */
+  /* Disconnect: back to Test, seats cleared (and with them the lists drawn from them). */
   app.post<{ Params: { id: string } }>('/partners/:id/disconnect', async (req) => {
     guards.flagged()
     guards.requireScope(req, 'admin')
     const p = await one(req.params.id)
-    return toApiPartner((await ctx.partners.update(p.id, { status: 'draft', mode: 'test', lastSync: null, seats: [] }))!)
+    return toApiPartner((await ctx.partners.update(p.id, { status: 'draft', mode: 'test', lastSync: null, seats: [], allowList: [], blockList: [] }))!)
   })
 }

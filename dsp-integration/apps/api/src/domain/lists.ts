@@ -1,25 +1,22 @@
-/* Advertiser lists: a DSP adopts the company lists unless it has unlinked
-   (spec §6). The blacklist always subtracts; matching ignores case. */
+/* Advertiser lists belong to one DSP (spec §6, ticket 7ZrBqNdkV9UXbRa8o2fo,
+   4 Oct 2026): a seat or advertiser ID only means something to the DSP that
+   issued it, so each list holds that DSP's own synced seat IDs, never names
+   and never a company-wide list. The blacklist always subtracts; matching
+   ignores case. */
 import type { CompanySettings } from '../repos/CompanySettingsRepo'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 
-export interface EffectiveLists { linked: boolean; allowList: string[]; blockList: string[] }
+export interface EffectiveLists { allowList: string[]; blockList: string[] }
 
-export const effectiveLists = (p: PartnerRecord | null, company: CompanySettings): EffectiveLists =>
-  !p || p.listsLinked
-    ? { linked: true, allowList: company.advertiserWhitelist, blockList: company.advertiserBlacklist }
-    : { linked: false, allowList: p.allowList, blockList: p.blockList }
+export const effectiveLists = (p: PartnerRecord): EffectiveLists => ({ allowList: p.allowList, blockList: p.blockList })
 
-/* Category lists follow the same link/unlink switch as the advertiser
-   lists above — one "list management" toggle per DSP covers both (ticket,
-   28 Sep 2026: unlinking a DSP used to reveal its own advertiser lists but
-   never its own category lists, so a DSP that genuinely needed a different
-   category policy from the company's had nowhere to set it). */
+/* Category lists still follow the link/unlink switch (IAB categories stay
+   a separate ticket); the advertiser lists above no longer do. */
 export const effectiveCategoryLists = (p: PartnerRecord | null, company: CompanySettings): EffectiveLists =>
   !p || p.listsLinked
-    ? { linked: true, allowList: company.categoryWhitelist, blockList: company.categoryBlacklist }
-    : { linked: false, allowList: p.categoryAllowList, blockList: p.categoryBlockList }
+    ? { allowList: company.categoryWhitelist, blockList: company.categoryBlacklist }
+    : { allowList: p.categoryAllowList, blockList: p.categoryBlockList }
 
 const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase()
 export const isOn = (name: string, list: string[]) => list.some((x) => same(x, name))
-export const isBlocked = (name: string, eff: EffectiveLists) => isOn(name, eff.blockList)
+export const isBlocked = (seatId: string, eff: EffectiveLists) => isOn(seatId, eff.blockList)

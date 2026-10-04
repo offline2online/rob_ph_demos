@@ -1,5 +1,5 @@
 /* Save changes on a DSP page (spec §7): credentials, bidder integration,
-   mode, and the advertiser and category lists. Secrets are write-only: a
+   mode, the DSP's own advertiser lists and its category lists. Secrets are write-only: a
    new value replaces, an omitted one is kept, an empty one clears. */
 import { providerDef, type PartnerInput } from '@ph-dsp/types'
 import type { CompanySettings } from '../repos/CompanySettingsRepo'
@@ -107,27 +107,39 @@ export function applyPartnerInput(p: PartnerRecord, currentSecrets: Record<strin
     }
   }
 
-  let { listsLinked, allowList, blockList, categoryAllowList, categoryBlockList } = p
+  /* The advertiser lists are this DSP's own and hold only seat IDs it has
+     synced (ticket 7ZrBqNdkV9UXbRa8o2fo): an ID means nothing outside the
+     DSP that issued it, and free text can't be resolved to one. */
+  let { allowList, blockList } = p
+  const seatIds = new Map(p.seats.map((s) => [s.id.trim().toLowerCase(), s.id]))
+  const seatList = (xs: unknown, field: string) => {
+    const out: string[] = []
+    for (const x of cleanList(xs)) {
+      const id = seatIds.get(x.toLowerCase())
+      if (id) out.push(id)
+      else errors.push({ field, reason: `${x} is not a seat or advertiser synced from ${p.name}. Connect or refresh the DSP, then choose from its list.` })
+    }
+    return out
+  }
+  if (body.advertiserWhitelist !== undefined) allowList = seatList(body.advertiserWhitelist, 'advertiserWhitelist')
+  if (body.advertiserBlacklist !== undefined) blockList = seatList(body.advertiserBlacklist, 'advertiserBlacklist')
+  const black = new Set(blockList.map((x) => x.toLowerCase()))
+  for (const a of allowList) if (black.has(a.toLowerCase())) errors.push({ field: 'advertiserWhitelist', reason: `${p.seats.find((s) => s.id === a)?.name ?? a} is on both the whitelist and the blacklist.` })
+
+  /* Category lists still follow the link/unlink switch (a separate ticket). */
+  let { listsLinked, categoryAllowList, categoryBlockList } = p
   if (body.listsLinked === false && p.listsLinked) {
     /* Unlinking copies the inherited lists down, so a blacklist never silently empties. */
     listsLinked = false
-    allowList = [...company.advertiserWhitelist]
-    blockList = [...company.advertiserBlacklist]
     categoryAllowList = [...company.categoryWhitelist]
     categoryBlockList = [...company.categoryBlacklist]
   } else if (body.listsLinked === true && !p.listsLinked) {
-    /* Relinking discards the DSP's own lists. */
+    /* Relinking discards the DSP's own category lists. */
     listsLinked = true
-    allowList = []
-    blockList = []
     categoryAllowList = []
     categoryBlockList = []
   }
   if (!listsLinked) {
-    if (body.advertiserWhitelist !== undefined) allowList = cleanList(body.advertiserWhitelist)
-    if (body.advertiserBlacklist !== undefined) blockList = cleanList(body.advertiserBlacklist)
-    const black = new Set(blockList.map((x) => x.toLowerCase()))
-    for (const a of allowList) if (black.has(a.toLowerCase())) errors.push({ field: 'advertiserWhitelist', reason: `${a} is on both the whitelist and the blacklist.` })
     if (body.categoryWhitelist !== undefined) categoryAllowList = cleanList(body.categoryWhitelist)
     if (body.categoryBlacklist !== undefined) categoryBlockList = cleanList(body.categoryBlacklist)
     const categoryBlack = new Set(categoryBlockList.map((x) => x.toLowerCase()))

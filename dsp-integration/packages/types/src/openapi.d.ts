@@ -1439,14 +1439,12 @@ export interface components {
              * @default 0.5
              */
             interactiveCpe: number;
-            advertiserWhitelist: string[];
-            advertiserBlacklist: string[];
             /** @description IAB categories */
             categoryWhitelist: string[];
             categoryBlacklist: string[];
         };
         AdvertiserSettings: components["schemas"]["AdvertiserSettingsInput"] & {
-            /** @description Read-only. Per DSP, adopting the company lists or own lists. */
+            /** @description Read-only. Per DSP, adopting the company category lists or own category lists. */
             whereTheseApply: {
                 partnerId: string;
                 name: string;
@@ -1957,9 +1955,11 @@ export interface components {
                 id: string;
                 name: string;
             }[];
+            /** @description Category lists only; advertiser lists are always the DSP's own. */
             listsLinked: boolean;
-            /** @description Own lists */
+            /** @description This DSP's own advertiser whitelist: seat IDs from its synced seats (the ids in seats). Always present; there is no company-wide advertiser list. */
             advertiserWhitelist?: string[];
+            /** @description This DSP's own advertiser blacklist: seat IDs from its synced seats. Always subtracts. */
             advertiserBlacklist?: string[];
             /** @description Own IAB category lists */
             categoryWhitelist?: string[];
@@ -1985,9 +1985,11 @@ export interface components {
             };
             /** @enum {string} */
             mode?: "test" | "live";
-            /** @description false copies the company lists down; true discards own lists. */
+            /** @description Category lists only: false copies the company category lists down; true discards own category lists. Advertiser lists are always the DSP's own. */
             listsLinked?: boolean;
+            /** @description Seat IDs from this DSP's synced seats. An ID that is not one of them is refused (422); free text is not accepted. */
             advertiserWhitelist?: string[];
+            /** @description Seat IDs from this DSP's synced seats. */
             advertiserBlacklist?: string[];
             categoryWhitelist?: string[];
             categoryBlacklist?: string[];

@@ -158,14 +158,14 @@ describe('Run 3 — private auction: non-happy', () => {
   it('P7 — an invited buyer that is blocked (advertiser blacklist) is refused with the reason', async () => {
     const h = await dealHarness()
     await h.approvedCrid('crid-p7', day(0))
-    await h.ctx.company.save({ ...(await h.ctx.company.get()), advertiserBlacklist: [...(await h.ctx.company.get()).advertiserBlacklist, 'Swisse'] })
+    await h.ctx.partners.update('p_google', { blockList: ['5130002'] })
     expect((await runAuction(h.ctx, day(1))).positions[0].winner).toBeNull()
     expect((await h.rows(day(1)))[0]).toMatchObject({ status: 'rejected', reason: 'Swisse is on the advertiser blacklist.' })
     const id = (await h.queuedCampaign('crid-p7'))!
     void id
-    /* Also on the DSP's own (unlinked) blocklist. */
-    await h.ctx.company.save({ ...(await h.ctx.company.get()), advertiserBlacklist: (await h.ctx.company.get()).advertiserBlacklist.filter((a) => a !== 'Swisse') })
-    await h.ctx.partners.update('p_google', { listsLinked: false, blockList: ['Swisse'], allowList: [] })
+    /* Cleared, then blocked again: the DSP's own blocklist is the only one. */
+    await h.ctx.partners.update('p_google', { blockList: [] })
+    await h.ctx.partners.update('p_google', { blockList: ['5130002'], allowList: [] })
     expect((await runAuction(h.ctx, day(2))).positions[0].winner).toBeNull()
     expect((await h.rows(day(2)))[0]).toMatchObject({ status: 'rejected', reason: 'Swisse is on the advertiser blacklist.' })
   })

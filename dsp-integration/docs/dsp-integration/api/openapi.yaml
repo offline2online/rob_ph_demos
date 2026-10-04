@@ -1868,7 +1868,7 @@ components:
 
     AdvertiserSettingsInput:
       type: object
-      required: [currency, floorCpm, personalisedMultiplier, interactiveCpe, auctionOpensHours, playWindowHours, auctionCutoffTime, advertiserWhitelist, advertiserBlacklist, categoryWhitelist, categoryBlacklist]
+      required: [currency, floorCpm, personalisedMultiplier, interactiveCpe, auctionOpensHours, playWindowHours, auctionCutoffTime, categoryWhitelist, categoryBlacklist]
       properties:
         currency: {type: string, description: ISO 4217, default: AUD}
         auctionOpensHours: {type: integer, minimum: 1, default: 168, description: 'Auction schedule: how long before the auction cutoff bidding for a play window opens, in hours (shown as days and hours).'}
@@ -1877,8 +1877,6 @@ components:
         floorCpm: {type: number, exclusiveMinimum: 0, default: 100}
         personalisedMultiplier: {type: number, exclusiveMinimum: 0, default: 1.5, description: 'Charged per personalised play, on top of the committed price: 100 committed × 1.5 = 150 for that play. Not a bid floor: bids and the auction clear against the base floor.'}
         interactiveCpe: {type: number, minimum: 0, multipleOf: 0.01, default: 0.5, description: 'Interactive cost per engagement: what an advertiser pays each time someone engages with an interactive campaign (a QR Control scan), on top of the CPM. To the cent; 0 means engagements are not charged for.'}
-        advertiserWhitelist: {type: array, items: {type: string}}
-        advertiserBlacklist: {type: array, items: {type: string}}
         categoryWhitelist: {type: array, items: {type: string}, description: IAB categories}
         categoryBlacklist: {type: array, items: {type: string}}
     AdvertiserSettings:
@@ -1889,7 +1887,7 @@ components:
           properties:
             whereTheseApply:
               type: array
-              description: Read-only. Per DSP, adopting the company lists or own lists.
+              description: Read-only. Per DSP, adopting the company category lists or own category lists.
               items:
                 type: object
                 required: [partnerId, name, adopting]
@@ -2424,9 +2422,9 @@ components:
             properties:
               id: {type: string}
               name: {type: string}
-        listsLinked: {type: boolean}
-        advertiserWhitelist: {type: array, items: {type: string}, description: Own lists, only when listsLinked is false.}
-        advertiserBlacklist: {type: array, items: {type: string}}
+        listsLinked: {type: boolean, description: Category lists only; advertiser lists are always the DSP's own.}
+        advertiserWhitelist: {type: array, items: {type: string}, description: 'This DSP''s own advertiser whitelist: seat IDs from its synced seats (the ids in seats). Always present; there is no company-wide advertiser list.'}
+        advertiserBlacklist: {type: array, items: {type: string}, description: 'This DSP''s own advertiser blacklist: seat IDs from its synced seats. Always subtracts.'}
         categoryWhitelist: {type: array, items: {type: string}, description: Own IAB category lists, only when listsLinked is false.}
         categoryBlacklist: {type: array, items: {type: string}}
     PartnerInput:
@@ -2447,9 +2445,9 @@ components:
             qps: {type: [integer, 'null'], minimum: 1, maximum: 10000, description: 'Per-DSP QPS ceiling override (Q46). Absent: the platform default, 500. null on save clears it.'}
             timeoutMs: {type: [integer, 'null'], minimum: 50, maximum: 2000, description: 'Per-DSP bidder timeout override in ms (Q46), also sent as tmax. Absent: the platform default, 300. null on save clears it.'}
         mode: {type: string, enum: [test, live]}
-        listsLinked: {type: boolean, description: false copies the company lists down; true discards own lists.}
-        advertiserWhitelist: {type: array, items: {type: string}}
-        advertiserBlacklist: {type: array, items: {type: string}}
+        listsLinked: {type: boolean, description: 'Category lists only: false copies the company category lists down; true discards own category lists. Advertiser lists are always the DSP''s own.'}
+        advertiserWhitelist: {type: array, items: {type: string}, description: 'Seat IDs from this DSP''s synced seats. An ID that is not one of them is refused (422); free text is not accepted.'}
+        advertiserBlacklist: {type: array, items: {type: string}, description: Seat IDs from this DSP's synced seats.}
         categoryWhitelist: {type: array, items: {type: string}}
         categoryBlacklist: {type: array, items: {type: string}}
 

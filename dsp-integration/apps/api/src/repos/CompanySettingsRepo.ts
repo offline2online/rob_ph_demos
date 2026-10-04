@@ -1,4 +1,4 @@
-/* Company-wide advertiser settings (pricing and lists), per-advertiser
+/* Company-wide advertiser settings (pricing and category lists), per-advertiser
    settings, and which DSPs may target each shared variable. */
 import { TARGETING_VARIABLES, defaultVariableAccess } from '@ph-dsp/types'
 import { type Db, fromJson, onRollback, prepared, toJson, type Awaitable } from '../db/db'
@@ -20,8 +20,6 @@ export interface CompanySettings {
      then — see exchange/scheduler.ts). Both null when nothing is deferred. */
   pendingPlayWindowHours: number | null
   pendingPlayWindowEffectiveFrom: string | null
-  advertiserWhitelist: string[]
-  advertiserBlacklist: string[]
   categoryWhitelist: string[]
   categoryBlacklist: string[]
 }
@@ -45,7 +43,7 @@ interface Row {
   currency: string; floor_cpm: number; personalised_multiplier: number; interactive_cpe: number
   auction_opens_hours: number; play_window_hours: number; auction_cutoff_time: string
   pending_play_window_hours: number | null; pending_play_window_effective_from: string | null
-  advertiser_whitelist: string; advertiser_blacklist: string; category_whitelist: string; category_blacklist: string
+  category_whitelist: string; category_blacklist: string
 }
 
 /* Freeze a snapshot (and the arrays inside it) so a caller can't mutate the
@@ -96,7 +94,6 @@ export function sqliteCompanySettingsRepo(db: Db): CompanySettingsRepo {
         currency: r.currency, floorCpm: r.floor_cpm, personalisedMultiplier: r.personalised_multiplier, interactiveCpe: r.interactive_cpe,
         auctionOpensHours: r.auction_opens_hours, playWindowHours: r.play_window_hours, auctionCutoffTime: r.auction_cutoff_time,
         pendingPlayWindowHours: r.pending_play_window_hours, pendingPlayWindowEffectiveFrom: r.pending_play_window_effective_from,
-        advertiserWhitelist: fromJson(r.advertiser_whitelist, []), advertiserBlacklist: fromJson(r.advertiser_blacklist, []),
         categoryWhitelist: fromJson(r.category_whitelist, []), categoryBlacklist: fromJson(r.category_blacklist, []),
       })
     }
@@ -119,11 +116,11 @@ export function sqliteCompanySettingsRepo(db: Db): CompanySettingsRepo {
       prepared(db,
         `UPDATE company_advertiser_settings SET currency = ?, floor_cpm = ?, personalised_multiplier = ?, interactive_cpe = ?,
            auction_opens_hours = ?, play_window_hours = ?, auction_cutoff_time = ?, pending_play_window_hours = ?, pending_play_window_effective_from = ?,
-           advertiser_whitelist = ?, advertiser_blacklist = ?, category_whitelist = ?, category_blacklist = ?, updated_at = ? WHERE id = ?`,
+           category_whitelist = ?, category_blacklist = ?, updated_at = ? WHERE id = ?`,
       ).run(
         s.currency, s.floorCpm, s.personalisedMultiplier, s.interactiveCpe, s.auctionOpensHours, s.playWindowHours, s.auctionCutoffTime,
-        s.pendingPlayWindowHours, s.pendingPlayWindowEffectiveFrom, toJson(s.advertiserWhitelist) ?? '[]',
-        toJson(s.advertiserBlacklist) ?? '[]', toJson(s.categoryWhitelist) ?? '[]', toJson(s.categoryBlacklist) ?? '[]', now(), ID,
+        s.pendingPlayWindowHours, s.pendingPlayWindowEffectiveFrom,
+        toJson(s.categoryWhitelist) ?? '[]', toJson(s.categoryBlacklist) ?? '[]', now(), ID,
       )
       invalidate()
       return get()

@@ -1,5 +1,5 @@
-/* Advertiser settings (spec §4, §5, §6): Pricing and List management are
-   edited here; Where these apply is read-only. The inventory table moved to
+/* Advertiser settings (spec §4, §5, §6): Pricing and the IAB category lists are
+   edited here (advertiser lists are per DSP, on its own page); Where these apply is read-only. The inventory table moved to
    Advertisers / Inventory (Rob, 20 Sep). */
 import { Button, InputNumber, Select } from 'antd'
 import { IAB_CATEGORIES, PROVIDERS, type AdvertiserSettingsInput } from '@ph-dsp/types'
@@ -17,7 +17,7 @@ import { PATHS } from './DspList'
 import { SubPageHeader } from './SubPageHeader'
 
 export const ADVERTISER_SETTINGS_TIP =
-  "Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (currency, floor CPM, the personalised multiplier and the interactive cost per engagement), the Auction schedule (when bidding opens, play-window length, auction cutoff) and List management (advertiser and IAB category whitelists and blacklists). Read-only here: Where these apply (which DSPs use these lists or keep their own; unlink or relink on the DSP's page). Per-advertiser campaign approval and floor multipliers, and the inventory advertisers can buy, are on Advertisers / Inventory."
+  "Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (currency, floor CPM, the personalised multiplier and the interactive cost per engagement), the Auction schedule (when bidding opens, play-window length, auction cutoff) and the Category lists (IAB whitelists and blacklists; each DSP's advertiser lists are managed on its own page, from the advertisers it syncs). Read-only here: Where these apply (which DSPs use these lists or keep their own; unlink or relink on the DSP's page). Per-advertiser campaign approval and floor multipliers, and the inventory advertisers can buy, are on Advertisers / Inventory."
 
 /* Every ISO 4217 currency, listed by code and name (spec §4). */
 const CURRENCIES = (() => {
@@ -116,9 +116,8 @@ function DaysHours({ id, hours, onChange }: { id: string; hours: number; onChang
   )
 }
 
-type ListKey = 'advertiserWhitelist' | 'advertiserBlacklist' | 'categoryWhitelist' | 'categoryBlacklist'
+type ListKey = 'categoryWhitelist' | 'categoryBlacklist'
 const OTHER: Record<ListKey, ListKey> = {
-  advertiserWhitelist: 'advertiserBlacklist', advertiserBlacklist: 'advertiserWhitelist',
   categoryWhitelist: 'categoryBlacklist', categoryBlacklist: 'categoryWhitelist',
 }
 
@@ -176,17 +175,15 @@ export function AdvertiserSettings() {
         </Callout>
       )}
 
-      <SectionLabel><WithTip tip="Nothing can sit on both lists. The blacklist always applies and no position can opt out of it. The whitelist is only used by positions set to whitelist-only.">List management</WithTip></SectionLabel>
+      <SectionLabel><WithTip tip="IAB category lists, shared by every DSP that adopts them. Nothing can sit on both lists. The blacklist always applies and no position can opt out of it. Advertiser whitelists and blacklists are not here: each DSP manages its own, from the advertisers it syncs, on its own page.">Category lists</WithTip></SectionLabel>
       <div className="grid grid-cols-2 gap-3.5">
-        <ListEditor label="Advertisers — whitelist" tone={T.success} icon="verified" items={s.advertiserWhitelist} onAdd={add('advertiserWhitelist')} onRemove={remove('advertiserWhitelist')} empty="Empty — a position set to whitelist-only would never fill." />
-        <ListEditor label="Advertisers — blacklist" tone={T.error} icon="block" items={s.advertiserBlacklist} onAdd={add('advertiserBlacklist')} onRemove={remove('advertiserBlacklist')} empty="Empty — nothing is blocked by default." />
         <ListEditor label="Categories — whitelist" tone={T.success} icon="category" items={s.categoryWhitelist} suggestions={[...IAB_CATEGORIES]} onAdd={add('categoryWhitelist')} onRemove={remove('categoryWhitelist')} empty="Empty — every category is eligible." addLabel="Add a category…" suggestLabel="Categories:" />
         <ListEditor label="Categories — blacklist" tone={T.error} icon="block" items={s.categoryBlacklist} suggestions={[...IAB_CATEGORIES]} onAdd={add('categoryBlacklist')} onRemove={remove('categoryBlacklist')} empty="Empty — no category is blocked by default." addLabel="Add a category…" suggestLabel="Categories:" />
       </div>
 
-      <SectionLabel><WithTip tip="Whether each DSP uses the company lists above or has unlinked to keep its own.">Where these apply</WithTip></SectionLabel>
+      <SectionLabel><WithTip tip="Whether each DSP uses the company category lists above or has unlinked to keep its own. Advertiser lists are always each DSP's own.">Where these apply</WithTip></SectionLabel>
       {where.length === 0 ? (
-        <div style={{ fontSize: 12.5, color: T.muted }}>No DSP connected yet. A partner added later adopts these lists automatically.</div>
+        <div style={{ fontSize: 12.5, color: T.muted }}>No DSP connected yet. A partner added later adopts these category lists automatically.</div>
       ) : (
         <ul aria-label="Where these apply" className="m-0 list-none overflow-hidden rounded-md border p-0" style={{ borderColor: T.borderSubtle }}>
           {where.map((x, i) => {

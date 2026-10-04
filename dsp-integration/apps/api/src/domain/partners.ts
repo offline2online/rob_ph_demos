@@ -1,6 +1,6 @@
 /* Partner as the admin API returns it (contract `Partner`): secrets only as
-   {set:true}, own lists only when unlinked, and the issues shown at the top
-   of the DSP page. */
+   {set:true}, the DSP's own advertiser lists (synced seat IDs), category
+   lists only when unlinked, and the issues shown at the top of the DSP page. */
 import { providerDef, type Partner } from '@ph-dsp/types'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 
@@ -27,9 +27,7 @@ export function toApiPartner(p: PartnerRecord): Partner {
   return {
     id: p.id, provider: p.provider as Partner['provider'], name: p.name, status: p.status, lastSync: p.lastSync, mode: p.mode,
     credentials, bidder, issues: partnerIssues(p), seats: p.seats.map(({ id, name }) => ({ id, name })), listsLinked: p.listsLinked,
-    ...(p.listsLinked ? {} : {
-      advertiserWhitelist: p.allowList, advertiserBlacklist: p.blockList,
-      categoryWhitelist: p.categoryAllowList, categoryBlacklist: p.categoryBlockList,
-    }),
+    advertiserWhitelist: p.allowList, advertiserBlacklist: p.blockList,
+    ...(p.listsLinked ? {} : { categoryWhitelist: p.categoryAllowList, categoryBlacklist: p.categoryBlockList }),
   }
 }
