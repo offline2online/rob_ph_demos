@@ -24,6 +24,7 @@ import {
 import { firebaseConfig } from "./firebase-config.js";
 import { APP_VERSION } from "./version.js";
 import { clearFirestoreLocalCache } from "./local-cache.js";
+import { INTAKE_SECTIONS, missingSections, applyAnswers } from "./ticket-intake.js";
 import { clusterBacklogItems, estimateEffort, estimatePriority, splitRequirementsText } from "./build-batches.js";
 
 // auth-gate.js has already initialised the app (and signed the user in)
@@ -810,7 +811,7 @@ function cardHTML(item) {
   // note is the hover, full detail lives in comments. Cleared by the
   // button here or by a newer comment from anyone other than whoever set it.
   const blockedFlag = (isBacklog && item.blocked && item.blocked.reason)
-    ? `<span class="blocked-flag blocked-flag-${escapeHTML(item.blocked.reason)}" title="${escapeHTML(item.blocked.note || "")}"><span class="material-symbols-outlined">${item.blocked.reason === "needs-decision" ? "gavel" : "hourglass_top"}</span>${item.blocked.reason === "needs-decision" ? "Needs your decision" : "Waiting on input"}<button type="button" class="blocked-clear-btn" data-id="${item.id}" title="Clear the flag — puts this ticket back in the build queue">&times;</button></span>`
+    ? `<span class="blocked-flag blocked-flag-${escapeHTML(item.blocked.reason)}" title="${escapeHTML(item.blocked.note || "")}"><span class="material-symbols-outlined">${item.blocked.reason === "needs-decision" ? "gavel" : "hourglass_top"}</span>${item.blocked.reason === "needs-decision" ? "Needs your decision" : "Waiting on input"}${missingSections(item.desc).length ? `<button type="button" class="blocked-resolve-btn" data-id="${item.id}" title="Answer a few questions to fill in what this ticket is missing"><span class="material-symbols-outlined">forum</span>Resolve</button>` : ""}<button type="button" class="blocked-clear-btn" data-id="${item.id}" title="Clear the flag — puts this ticket back in the build queue">&times;</button></span>`
     : "";
   const testVersionBadge = item.testVersion
     ? `<span class="test-version-badge" title="backlog-tracker's own version when this was marked Ready for Testing — check the live footer shows at least this version">Test version: v${escapeHTML(item.testVersion)}</span>`
@@ -3673,6 +3674,8 @@ projectsRoot.addEventListener("click", async (e) => {
   if (failTestingBtn) { failTesting(failTestingBtn.dataset.id); return; }
   const confirmNoDeployBtn = e.target.closest(".confirm-no-deploy-btn");
   if (confirmNoDeployBtn) { confirmTestedNoDeploy(confirmNoDeployBtn.dataset.id); return; }
+  const blockedResolveBtn = e.target.closest(".blocked-resolve-btn");
+  if (blockedResolveBtn) { openResolveModal(blockedResolveBtn.dataset.id); return; }
   const blockedClearBtn = e.target.closest(".blocked-clear-btn");
   if (blockedClearBtn) { clearBlocked(blockedClearBtn.dataset.id); return; }
   const delBtn = e.target.closest(".delete-btn");
@@ -4188,6 +4191,103 @@ qcSubmitBtn.addEventListener("click", () => {
   qcCommentInput.value = "";
   qcCommentInput.dispatchEvent(new Event("input"));
   qcCommentInput.focus();
+});
+
+
+// ── Resolve with agent — guided chat for a blocked (incomplete) ticket ──
+// Asks only about the ph-ticket-intake sections still missing from the
+// description, one at a time (typed or dictated), writes each answer into
+// its own section, and clears the blocked flag once all four are present.
+// No comment thread is read or written; the description is the record.
+let resolveItemId = null;
+let resolveQueue = [];
+let resolveBusy = false;
+const rsBackdrop = document.getElementById("rs-backdrop");
+const rsChat = document.getElementById("rs-chat");
+const rsInput = document.getElementById("rs-input");
+const rsSend = document.getElementById("rs-send");
+const rsComposer = document.getElementById("rs-composer");
+
+function rsSay(who, text) {
+  const d = document.createElement("div");
+  d.className = `rs-msg rs-msg-${who}`;
+  d.textContent = text;
+  rsChat.appendChild(d);
+  rsChat.scrollTop = rsChat.scrollHeight;
+}
+function rsAsk() {
+  const s = resolveQueue[0];
+  rsSay("agent", s.question);
+  rsInput.focus();
+}
+function openResolveModal(id) {
+  const item = allItems.find((i) => i.id === id);
+  if (!item) return;
+  resolveItemId = id;
+  rsChat.innerHTML = "";
+  rsInput.value = "";
+  resolveQueue = missingSections(item.desc);
+  document.getElementById("rs-title").textContent = `Resolve: ${item.title || "ticket"}`;
+  rsBackdrop.hidden = false;
+  if (!resolveQueue.length) {
+    rsComposer.hidden = true; rsSend.hidden = true;
+    rsSay("agent", "This ticket already has all four sections. Nothing to resolve.");
+    return;
+  }
+  rsComposer.hidden = false; rsSend.hidden = false;
+  rsSay("agent", `This ticket is missing: ${resolveQueue.map((s) => s.heading).join(", ")}. I'll ask about each, one at a time.`);
+  rsAsk();
+}
+function closeResolveModal() {
+  rsBackdrop.hidden = true;
+  resolveItemId = null;
+  resolveQueue = [];
+}
+async function submitResolveAnswer() {
+  if (!resolveItemId || resolveBusy || !resolveQueue.length) return;
+  const text = rsInput.value.trim();
+  if (!text) return;
+  const item = allItems.find((i) => i.id === resolveItemId);
+  if (!item) return;
+  resolveBusy = true;
+  const section = resolveQueue[0];
+  try {
+    const desc = applyAnswers(item.desc, { [section.key]: text });
+    const stillMissing = missingSections(desc);
+    if (stillMissing.some((s) => s.key === section.key)) {
+      rsSay("user", text);
+      rsSay("agent", "That's a bit thin to build from — can you give me a little more detail?");
+      rsInput.value = "";
+      return;
+    }
+    const patch = { desc, updatedAt: serverTimestamp() };
+    if (!stillMissing.length) patch.blocked = null;
+    await updateDoc(doc(db, "backlogItems", resolveItemId), patch);
+    item.desc = desc;
+    rsSay("user", text);
+    rsInput.value = "";
+    rsInput.dispatchEvent(new Event("input"));
+    resolveQueue = stillMissing;
+    if (stillMissing.length) {
+      rsSay("agent", `Got it — saved under "${section.heading}".`);
+      rsAsk();
+    } else {
+      rsComposer.hidden = true; rsSend.hidden = true;
+      rsSay("agent", `Saved under "${section.heading}". All four sections are now filled in and the blocked flag is cleared — this ticket is ready to be marked DECIDED.`);
+    }
+  } catch (err) {
+    rsSay("agent", `Couldn't save that: ${err && err.message ? err.message : err}. Try again.`);
+  } finally {
+    resolveBusy = false;
+  }
+}
+document.getElementById("rs-close").addEventListener("click", closeResolveModal);
+document.getElementById("rs-cancel").addEventListener("click", closeResolveModal);
+rsBackdrop.addEventListener("click", (e) => { if (e.target === rsBackdrop) closeResolveModal(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !rsBackdrop.hidden) closeResolveModal(); });
+rsSend.addEventListener("click", submitResolveAnswer);
+rsInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitResolveAnswer(); }
 });
 
 // ── New Item modal ─────────────────────────────────────────────────────
@@ -6827,6 +6927,12 @@ createDictationController({
   micBtn: document.getElementById("qc-mic-btn"),
   hintEl: document.getElementById("qc-listening-hint"),
   errorEl: document.getElementById("qc-mic-error"),
+});
+createDictationController({
+  textareaEl: document.getElementById("rs-input"),
+  micBtn: document.getElementById("rs-mic-btn"),
+  hintEl: document.getElementById("rs-listening-hint"),
+  errorEl: document.getElementById("rs-mic-error"),
 });
 createDictationController({
   textareaEl: eiCommentInput,

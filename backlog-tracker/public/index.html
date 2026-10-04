@@ -47,6 +47,7 @@
   <link rel="modulepreload" href="js/auth-gate.js">
   <link rel="modulepreload" href="js/app.js">
   <link rel="modulepreload" href="js/build-batches.js">
+  <link rel="modulepreload" href="js/ticket-intake.js">
   <link rel="modulepreload" href="js/firebase-config.js">
   <link rel="modulepreload" href="js/version.js">
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js">
@@ -569,6 +570,33 @@
           <div class="form-actions">
             <button type="button" class="btn-ghost" id="qc-cancel">Close</button>
             <button type="button" class="btn-primary" id="qc-submit">Add comment</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Resolve with agent: a guided chat for a blocked ticket. Asks only about
+         the ph-ticket-intake sections still missing, one question at a time,
+         and writes each answer into the description (js/ticket-intake.js). -->
+    <div class="modal-backdrop" id="rs-backdrop" hidden>
+      <div class="modal-panel rs-panel" role="dialog" aria-modal="true" aria-labelledby="rs-title">
+        <div class="modal-header">
+          <h2 id="rs-title">Resolve ticket</h2>
+          <button type="button" class="modal-close" id="rs-close" aria-label="Close">&times;</button>
+        </div>
+        <div id="rs-chat" class="rs-chat" aria-live="polite"></div>
+        <div id="rs-composer">
+          <div class="desc-wrap">
+            <textarea id="rs-input" rows="3" maxlength="1000" placeholder="Type your answer, or tap the mic and just talk..."></textarea>
+            <button type="button" class="mic-btn" id="rs-mic-btn" hidden title="Dictate" aria-label="Dictate">&#127908;</button>
+          </div>
+          <p class="listening-hint" id="rs-listening-hint">&#127908; Listening — tap the mic again when you're done.</p>
+          <p class="mic-error" id="rs-mic-error"></p>
+        </div>
+        <div class="form-row" style="justify-content:flex-end;">
+          <div class="form-actions">
+            <button type="button" class="btn-ghost" id="rs-cancel">Close</button>
+            <button type="button" class="btn-primary" id="rs-send">Send</button>
           </div>
         </div>
       </div>
