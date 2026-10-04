@@ -166,7 +166,7 @@ await test("tools/list returns the whole surface", async () => {
     "list_concepts", "list_doc_revisions", "list_pending_faq_revisions", "list_projects", "list_skill_misses",
     "list_skills", "mark_skill_reviewed", "report_skill_miss", "search_faq", "set_blocked", "set_concept_readme",
     "set_concept_requirements", "set_my_routine_binding", "set_phase_skill_bindings",
-    "set_project_artifact", "set_project_readme", "set_project_requirements", "update_backlog_item",
+    "set_project_artifact", "set_project_description", "set_project_readme", "set_project_requirements", "update_backlog_item",
     "update_faq_article", "update_interface", "update_project_document", "update_skill",
     "upload_skill", "whoami",
   ]);

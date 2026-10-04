@@ -595,6 +595,15 @@
       </div>
 
       <div class="docs-block">
+        <h3>Description</h3>
+        <p class="field-hint">One or two sentences on what this project covers. Shown to AI agents in <code>list_projects</code> so a loose reference ("the FAQ backlog") maps to the right project.</p>
+        <textarea id="docs-description-input" rows="2" maxlength="300" placeholder="e.g. The backlog console itself and the public FAQ / Help Centre."></textarea>
+        <div class="form-row" style="justify-content:flex-end;">
+          <button type="button" class="btn-primary" id="docs-description-save">Save description</button>
+        </div>
+      </div>
+
+      <div class="docs-block">
         <h3>Repo folder</h3>
         <p class="field-hint">The join between this project and its folder in <code>rob_ph_demos</code> — read by <code>projectFolderOf()</code> to place a Routine session's folder-relative <code>patchFiles</code> correctly. Repo-root-relative, no trailing slash.</p>
         <input type="text" id="docs-repo-folder-input" maxlength="80" placeholder="e.g. dsp-integration">

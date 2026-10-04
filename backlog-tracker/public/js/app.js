@@ -4924,6 +4924,7 @@ const docsRequirementsInput = document.getElementById("docs-requirements-input")
 const docsRoutinePromptInput = document.getElementById("docs-routine-prompt-input");
 const docsFaqAutoFlagInput = document.getElementById("docs-faq-auto-flag");
 const docsProgramSelect = document.getElementById("docs-program-select");
+const docsDescriptionInput = document.getElementById("docs-description-input");
 const docsRepoFolderInput = document.getElementById("docs-repo-folder-input");
 const docsRepoFolderNone = document.getElementById("docs-repo-folder-none");
 docsRepoFolderNone.addEventListener("change", () => {
@@ -5044,6 +5045,9 @@ function renderDocsPage() {
     docsRoutinePromptInput.value = (project && project.routinePromptMd) || "";
   }
   docsFaqAutoFlagInput.checked = !!(project && project.faqAutoFlagOnLive);
+  if (document.activeElement !== docsDescriptionInput) {
+    docsDescriptionInput.value = (project && project.description) || "";
+  }
   if (document.activeElement !== docsRepoFolderInput) {
     docsRepoFolderNone.checked = !!(project && project.repoFolderNotApplicable);
     docsRepoFolderInput.value = (project && project.repoFolder) || "";
@@ -5074,6 +5078,18 @@ function renderDocsPage() {
     ? docRows.map(projectDocRowHTML).join("")
     : '<p class="interface-row-empty">No additional documents yet.</p>';
 }
+
+document.getElementById("docs-description-save").addEventListener("click", async () => {
+  if (!docsProjectId) return;
+  const text = docsDescriptionInput.value.trim();
+  try {
+    await setDoc(doc(db, "projects", docsProjectId), {
+      description: text || deleteField(), updatedAt: serverTimestamp(),
+    }, { merge: true });
+  } catch (err) {
+    await showAlert(describeSaveError(err, [{ label: "Description", value: text, max: 300 }]));
+  }
+});
 
 document.getElementById("docs-repo-folder-save").addEventListener("click", async () => {
   if (!docsProjectId) return;

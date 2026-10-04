@@ -1146,7 +1146,13 @@ const DOC_NAME_MAX = 120;
 const PROJECT_WRITABLE_FIELDS = new Set([
   "docs",
   "artifactUrl", "artifactUpdatedAt",
+  "description",
 ]);
+
+// A project's one-or-two-sentence "what this covers" blurb, surfaced in
+// list_projects so an agent can map a loose reference to the right project.
+// Kept in step with the 300-char bound in firestore.rules.
+const PROJECT_DESCRIPTION_MAX = 300;
 
 async function updateProjectFields(projectId, fields) {
   for (const key of Object.keys(fields)) {
@@ -1579,7 +1585,7 @@ const TOOLS = [
   },
   {
     name: "list_projects",
-    description: "Every project/program on the board, with how many tickets sit in each pipeline column. Use this to find the projectId other tools need.",
+    description: "Every project/program on the board, with a short description of what it covers and how many tickets sit in each pipeline column. Use this to find the projectId other tools need, and to map a loose reference (\"the FAQ backlog\", \"the DSP project\") to the right project.",
     scope: "board.read",
     inputSchema: {
       type: "object",
@@ -1604,6 +1610,7 @@ const TOOLS = [
         out.push({
           id: p.id,
           name: p.name || "",
+          description: p.description || null,
           program: p.programId ? (programs.get(p.programId) || null) : null,
           archived: p.archived === true,
           deployBranch: p.deployBranch || null,
@@ -2217,6 +2224,29 @@ const TOOLS = [
       await updateProjectFields(projectId, { artifactUrl: raw, artifactUpdatedAt: raw ? FieldValue.serverTimestamp() : null });
       await audit(session, "set_project_artifact", { projectId, artifactUrl: raw });
       return textResult({ updated: true, projectId, artifactUrl: raw });
+    },
+  },
+  {
+    name: "set_project_description",
+    description: `Set (or clear) a project's short description — one or two sentences on what the project covers, shown in list_projects. Pass description: null to remove it. Up to ${PROJECT_DESCRIPTION_MAX} characters.`,
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string" },
+        description: { type: ["string", "null"], description: `Plain text, up to ${PROJECT_DESCRIPTION_MAX} characters, or null to clear.` },
+      },
+      required: ["projectId", "description"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const projectId = String(args.projectId);
+      const snap = await db().collection("projects").doc(projectId).get();
+      if (!snap.exists) return toolError(`No project with id ${projectId}. Call list_projects first.`);
+      const text = args.description == null ? "" : String(args.description).trim();
+      if (text.length > PROJECT_DESCRIPTION_MAX) return toolError(`A project description is limited to ${PROJECT_DESCRIPTION_MAX} characters; that was ${text.length}.`);
+      await updateProjectFields(projectId, { description: text || null });
+      await audit(session, "set_project_description", { projectId, chars: text.length });
+      return textResult({ updated: true, projectId, description: text || null });
     },
   },
   {

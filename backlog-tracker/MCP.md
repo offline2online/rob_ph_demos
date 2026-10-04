@@ -136,7 +136,7 @@ as text until Anthropic switches on its MCP Apps host.
 | --- | --- | --- | --- | --- | --- |
 | `create_backlog_item` (always into the Backlog column) | `set_project_requirements` | `create_faq_article` (always a draft) | `upload_skill` (slug must be unique) | `approve_deploy_to_main` | `set_my_routine_binding` |
 | `update_backlog_item` (title, description, type, area) | `set_project_readme` | `update_faq_article` (always a pending revision) | `update_skill` (rename/re-version/replace files) | | |
-| `add_item_comment` | `set_project_artifact` | `comment_on_faq_revision` | `delete_skill` | | |
+| `add_item_comment` | `set_project_artifact`, `set_project_description` | `comment_on_faq_revision` | `delete_skill` | | |
 | | `create_project_document` / `update_project_document` / `delete_project_document` | | `report_skill_miss` (tags a real gap, never edits the skill's own content) | | |
 | | `create_interface` / `update_interface` / `delete_interface` | | | | |
 | | `add_concept_comment` / `set_concept_readme` / `set_concept_requirements` (Concept Incubator; the last two refused once a concept is promoted) | | | | |

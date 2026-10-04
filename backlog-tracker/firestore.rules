@@ -185,7 +185,8 @@ service cloud.firestore {
       // 1 MiB document each, capped below). A project doc still carrying the
       // legacy fields until the one-off migration has run is bounded by
       // Firestore's own document limit and can only shrink from here.
-      return (!("routinePromptMd" in incoming()) || incoming().routinePromptMd == null || (incoming().routinePromptMd is string && incoming().routinePromptMd.size() <= 20000))
+      return (!("description" in incoming()) || incoming().description == null || (incoming().description is string && incoming().description.size() <= 300))
+        && (!("routinePromptMd" in incoming()) || incoming().routinePromptMd == null || (incoming().routinePromptMd is string && incoming().routinePromptMd.size() <= 20000))
         && (!("artifactUrl" in incoming()) || incoming().artifactUrl == null || (incoming().artifactUrl is string && incoming().artifactUrl.size() <= 2000 && incoming().artifactUrl.matches("^https://.*")));
     }
 
