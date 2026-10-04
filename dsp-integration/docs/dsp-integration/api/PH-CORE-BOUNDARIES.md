@@ -713,10 +713,22 @@ per campaign, per position and per play window:
 | Play count | Line item `plays` |
 | Displays in scope, share of voice | Deriving `expected` seconds |
 | Audience measure behind assumed views (VAC-d inputs) | `assumedViews` per window |
+| **Received-at time (when the platform got the play)**, per play | The settlement cut-off: a play received before the window's line item is written counts; one received after is disregarded for billing and reported as lost revenue from downtime (Rob, 4 Oct 2026). Distinct from play start time, which says when it played. |
 
 Billing computes `realised VAC-d = assumed views × min(1, played / expected)`
 and `amount = realised VAC-d / 1000 × clearing CPM`. Plays that did not
-happen are not billed and there is no make-good (Q29). Closed-loop
+happen are not billed and there is no make-good (Q29).
+
+**Settlement is final (Rob, 4 Oct 2026).** A window is invoiced once, on the
+playback available when its line item is written; the line item never
+changes afterwards. Playback the platform receives after that (a display
+that was offline and backfills) is not re-billed, credited or trued up. It
+is recorded at what it would have been worth at the window's cleared CPM and
+reported as **lost revenue from display downtime**, by store, display and
+over time, so the retailer's operational teams own it. Data received between
+window end and settlement still counts. PH Core must therefore supply
+received-at per play (table above); until it does, the cut-off cannot be
+applied and the late-data report cannot be built. Closed-loop
 conversion attribution is not an input (Q55).
 
 **A PH Core requirement on partner-facing analytics** (Rob, 2 Oct 2026,

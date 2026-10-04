@@ -1156,6 +1156,42 @@ played (Billing, below).
   this needs no separate billing pipeline: the exchange (§7) books every
   later play window in the term as its own reservation at the locked CPM,
   and each is billed exactly as any other reservation already is.
+- **Settlement is final; late playback data is disregarded for billing but
+  reported as lost revenue from downtime** (decision Rob, 4 Oct 2026). Two
+  linked rules:
+  1. **An invoiced window never changes.** Billing settles a window on the
+     playback data available at settlement, and the line item it writes is
+     the invoice: playback that arrives *after* it is disregarded for billing
+     — no re-bill, credit or true-up. Proof of play as known at settlement is
+     final. Keeping displays online is the retailer's (the retail media
+     network's) operational responsibility, not the advertiser's: an offline
+     screen played nothing, so nothing is billed, and the retailer bears its
+     own downtime as lost revenue. (Example: 1,000 screens playing, 100
+     offline for 24 hours; the window is settled on what the 900 played, and
+     the 100 backfill afterwards.)
+  2. **The cut-off is the invoice, not the window end.** Playback that
+     arrives between the window's end and settlement still counts. Only
+     playback that arrives after the line item is written is late. "Arrives"
+     means when the platform *received* the play, not when it was played
+     (a received-at time per play, see `api/PH-CORE-BOUNDARIES.md`).
+  3. **Late data is recorded, never silently dropped.** For each play that
+     arrives after its window's line item exists, record what it *would*
+     have been worth — its share of realised VAC-d at the window's cleared
+     CPM (the reservation's snapshot, personalised multiplier included) — as
+     **lost revenue from display downtime**, attributable by store, display
+     and over time so a recurring offline problem is visible and quantified.
+     The same input has two outcomes: it never re-bills, and it is always
+     recorded as would-have-been value. The figure is an operational report
+     for the retailer; it is never shown on, or charged to, an advertiser's
+     invoice.
+  *Build status (4 Oct 2026):* rule 1 already holds, because a window is
+  billed once (`billing_line_items.reservation_id` is unique) and is never
+  recomputed. Rules 2 and 3 are **specification only**: the stand-in playback
+  data carries no received-at time, so the cut-off cannot be applied yet. It
+  needs `receivedAt` on the playback data (PH Core requirement, §9 and
+  `api/PH-CORE-BOUNDARIES.md` → "Analytics event values billing consumes"),
+  a late-play ledger, and a lost-revenue report; filed as a follow-up
+  ticket.
 - **Pre-auction enforcement uses the effective floor CPM** for the campaign's
   type and advertiser. The auction clears against the base floor (scaled by
   the advertiser's `floorMultiplier`); the personalised multiplier is charged
@@ -2091,7 +2127,10 @@ DOOH bills on **proof of play**, not on the win notice. The platform's
 **existing playback data** shows what actually played; PH reconciles wins
 against it and bills the CPM against the assumed views that genuinely
 played, priced per §4. Plays that did not happen (screen offline, store
-closed, loop cut short) are not billed. This project **reads** that data for
+closed, loop cut short) are not billed. **Settlement is final**
+(§4 "Billing"): playback received after a window's invoice is written is
+disregarded for billing and instead reported as lost revenue from display
+downtime, at the cleared rate. This project **reads** that data for
 billing only; it does not change how it is written or add any reporting on
 it. As the exchange, disputes resolve against this data.
 
