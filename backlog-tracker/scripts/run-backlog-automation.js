@@ -55,6 +55,7 @@ const { buildIndexFromArticleFiles, validateIndexAgainstArticleFiles, serializeI
 // file).
 const { trainLockShouldClear, trainHandoverReason } = require("../functions/train-lock");
 const { syncProjectDocs, resolveRepoFolder } = require("./docs-sync-lib");
+const { hasIntakePlaceholder } = require("../functions/intake");
 
 const PROJECT_ID = "backlog-tracker-e4ed2";
 const REPO = "offline2online/rob_ph_demos";
@@ -1764,6 +1765,27 @@ async function processApplyPatch(item) {
   console.log(`[apply-patch] ${item.id}: ${item.title || item.desc}`);
   if (!Array.isArray(item.patchFiles) || item.patchFiles.length === 0) {
     console.log(`[apply-patch] ${item.id}: no patchFiles present, leaving patchReady set for a human to check`);
+    return;
+  }
+
+  // ph-ticket-intake, enforced before the train: a board ticket may enter
+  // Ready for Dev with only its Outcome written, but its build session must
+  // fill in Test steps, Dependencies and Spec reference before it hands the
+  // patch over (ROUTINE_INSTRUCTIONS.md → "Complete the intake sections
+  // first"). A patch whose ticket still carries a placeholder doesn't land.
+  if (hasIntakePlaceholder(item.desc)) {
+    console.log(`[apply-patch] ${item.id}: refusing — the description still has an intake section to complete`);
+    const project = await getProject(item.projectId).catch(() => null);
+    const autoRebuild = !!project && (Number(item.autoRebuilds) || 0) < 1 && !project.trainLocked;
+    const notes = await appendNote(item,
+      `Not built: this ticket's description still has an unfilled intake section (Test steps, Dependencies or Spec reference). ` +
+      `The build session has to complete them from the code and the spec in the same PATCH as its patch (ROUTINE_INSTRUCTIONS.md → "Complete the intake sections first"). ` +
+      (autoRebuild ? `A rebuild was started automatically.` : `Fill them in (or click Ready for Dev again) to rebuild.`));
+    await patchItem(item.id, {
+      patchReady: false, patchAttempts: 0, updatedAt: new Date().toISOString(), notes,
+      ...(autoRebuild ? { autoRebuilds: (Number(item.autoRebuilds) || 0) + 1 } : {}),
+    });
+    if (autoRebuild) queueBuildRequest(project, item.id);
     return;
   }
 

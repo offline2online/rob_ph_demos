@@ -3,15 +3,24 @@
 // Run with:  node test/intake.test.js
 "use strict";
 const assert = require("assert");
-const { applyIntake, isIntakeFlag, INTAKE_SETTER, PLACEHOLDER } = require("../functions/intake");
+const { applyIntake, isIntakeFlag, hasIntakePlaceholder, INTAKE_SETTER, PLACEHOLDER, TO_COMPLETE } = require("../functions/intake");
 
-// 1. Thin one-liner → structured, Outcome kept, held BLOCKED naming the gaps.
+// 1. A dictated ticket with a clear outcome is NOT blocked (4 Oct 2026): the
+//    other sections are left for the build session to complete.
 let r = applyIntake("Add a dark mode toggle to the settings page");
 assert.ok(/^## Outcome\nAdd a dark mode toggle/.test(r.desc));
 for (const h of ["Outcome", "Test steps", "Dependencies", "Spec reference"]) assert.ok(r.desc.includes(`## ${h}`), h);
-assert.ok(r.desc.includes(PLACEHOLDER));
-assert.strictEqual(r.blocked.reason, "waiting-on-input");
-assert.ok(/Test steps \(missing\)/.test(r.blocked.note) && /Spec reference/.test(r.blocked.note));
+assert.ok(r.desc.includes(TO_COMPLETE));
+assert.strictEqual(r.blocked, null, "a clear outcome is enough to enter Ready for Dev");
+assert.deepStrictEqual(r.pending.map((g) => g.heading), ["Test steps", "Dependencies", "Spec reference"]);
+assert.ok(hasIntakePlaceholder(r.desc), "the automation can still see it isn't complete");
+
+// 1b. The real ticket that was stuck (gqLSUsEMht98QWME0Ixi), already rewritten
+//     with the old placeholder: still parsed as empty, still not blocked.
+const stuck = "## Outcome\nOn the available inventory table it's not allowing me to remove an interactive targeting support item from the menu board slot\n\n## Test steps\n" + PLACEHOLDER + "\n\n## Dependencies\n" + PLACEHOLDER + "\n\n## Spec reference\n" + PLACEHOLDER;
+r = applyIntake(stuck);
+assert.strictEqual(r.blocked, null);
+assert.ok(hasIntakePlaceholder(r.desc));
 
 // 2. No usable outcome at all → needs-decision (a human call).
 r = applyIntake("");
@@ -30,6 +39,7 @@ const full = [
 r = applyIntake(full);
 assert.strictEqual(r.blocked, null);
 assert.deepStrictEqual(r.gaps, []);
+assert.ok(!hasIntakePlaceholder(r.desc));
 
 // 4. Idempotent: intake on its own output changes nothing.
 const once = applyIntake("Add a dark mode toggle to the settings page");

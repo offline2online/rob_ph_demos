@@ -352,6 +352,29 @@ on the card. So, in a default build fire:
   the board waits for every session in the click, and the first one to
   finish would otherwise unlock cards still being built.
 
+## Complete the intake sections first (4 Oct 2026)
+
+Every ticket's description is structured into four sections by
+`ph-ticket-intake` (`functions/intake.js`): **Outcome**, **Test steps**,
+**Dependencies**, **Spec reference**. A person filing from the board usually
+writes only the Outcome; the other three then read
+`_To be completed by the build session from the code and spec, before it builds._`
+(older tickets: `_Not provided — needed before this can be built._`).
+Only a missing Outcome holds a ticket blocked; filling in the rest is your
+job, because you are the one reading the code:
+
+- **Test steps** — numbered steps a tester can follow on the test link, with
+  the expected result.
+- **Dependencies** — other tickets, services or data this needs, or `None`.
+- **Spec reference** — the REQUIREMENTS.md section(s), interface contract or
+  doc this implements (`path → section`), or `None yet — new behaviour`.
+
+Rewrite the description with all four sections filled (keep the person's
+Outcome text exactly as written) and send it **in the same PATCH as
+`patchFiles` / `patchReady`**. `run-backlog-automation.js` refuses to land a
+patch while a placeholder is still in the description, and rebuilds the
+ticket once automatically.
+
 ## For each Backlog item found
 
 1. Give it a proper subject line: a short, specific, plain-English title

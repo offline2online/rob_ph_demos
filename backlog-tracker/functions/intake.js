@@ -4,15 +4,27 @@
 //
 // A ticket description must carry four sections, in order: Outcome, Test
 // steps, Dependencies, Spec reference. Whatever the creator typed is
-// structured into them; a missing or too-thin section is named in a
-// `blocked` flag (set by INTAKE_SETTER) that holds the ticket in Backlog —
-// the build fan-out already skips blocked tickets. Nothing is invented: a
-// section the source doesn't contain stays a visible placeholder.
+// structured into them. Nothing is invented: a section the source doesn't
+// contain stays a visible placeholder.
+//
+// Only the OUTCOME blocks (4 Oct 2026). It is the one thing only a person can
+// supply; Test steps, Dependencies and Spec reference are what the build
+// session works out from the code and the spec, so a gap there is listed in
+// `pending` and filled in by that session before it builds (ROUTINE_
+// INSTRUCTIONS.md → "Complete the intake sections first"), and
+// run-backlog-automation.js refuses to land a patch while a placeholder is
+// still in the description. The first version blocked on all four, which
+// held every dictated board ticket out of Ready for Dev — four Display Types
+// tickets in twenty minutes, none buildable.
 "use strict";
 
 const INTAKE_SETTER = "ph-ticket-intake";
 const DESC_MAX = 2000; // the board's own description limit
 const PLACEHOLDER = "_Not provided — needed before this can be built._";
+// What a gap the build session fills in reads as; PLACEHOLDER is still
+// recognised on tickets written before the split.
+const TO_COMPLETE = "_To be completed by the build session from the code and spec, before it builds._";
+const PLACEHOLDERS = [PLACEHOLDER, TO_COMPLETE];
 
 const SECTIONS = [
   { key: "outcome", heading: "Outcome", minWords: 8 },
@@ -44,7 +56,7 @@ function parseSections(desc) {
   const out = {};
   for (const k of Object.keys(found)) {
     const body = found[k].join("\n").trim();
-    out[k] = body === PLACEHOLDER ? "" : body;
+    out[k] = PLACEHOLDERS.includes(body) ? "" : body;
   }
   const pre = preamble.join("\n").trim();
   // Free text with no Outcome heading is the creator's statement of the
@@ -58,7 +70,8 @@ function inferType(text) {
   return /\b(bug|broken|crash(?:es|ed)?|error|fails?|failing|fix(?:es)?|regression|not working|doesn'?t work|incorrect|wrong)\b/i.test(text) ? "bug" : "feature";
 }
 
-// → { desc, sections, gaps: [{key, heading, why}], blocked: null | {reason, note}, type }
+// → { desc, sections, gaps: [{key, heading, why}], pending: [same, minus the
+//     outcome], blocked: null | {reason, note}, type }
 function applyIntake(rawDesc) {
   const sections = parseSections(rawDesc);
   const gaps = [];
@@ -68,23 +81,23 @@ function applyIntake(rawDesc) {
     else if (words(body) < s.minWords) gaps.push({ key: s.key, heading: s.heading, why: "too thin" });
   }
   const structured = SECTIONS
-    .map((s) => `## ${s.heading}\n${(sections[s.key] || "").trim() || PLACEHOLDER}`)
+    .map((s) => `## ${s.heading}\n${(sections[s.key] || "").trim() || (s.key === "outcome" ? PLACEHOLDER : TO_COMPLETE)}`)
     .join("\n\n");
   const desc = structured.length <= DESC_MAX ? structured : String(rawDesc || "").trim();
   let blocked = null;
-  if (gaps.length) {
-    const named = gaps.map((g) => `${g.heading} (${g.why})`).join(", ");
-    const outcomeGap = gaps.some((g) => g.key === "outcome");
-    blocked = {
-      // An outcome/scope call is the one thing only a person can supply.
-      reason: outcomeGap ? "needs-decision" : "waiting-on-input",
-      note: `Intake: ${named}`.slice(0, 200),
-    };
+  const outcomeGap = gaps.find((g) => g.key === "outcome");
+  if (outcomeGap) {
+    // An outcome/scope call is the one thing only a person can supply.
+    blocked = { reason: "needs-decision", note: `Intake: Outcome (${outcomeGap.why}) — say what should be different when this is done`.slice(0, 200) };
   }
-  return { desc, sections, gaps, blocked, type: inferType(String(rawDesc || "")) };
+  const pending = gaps.filter((g) => g.key !== "outcome");
+  return { desc, sections, gaps, pending, blocked, type: inferType(String(rawDesc || "")) };
 }
 
 // Is this blocked flag one intake itself raised (and so intake's to clear)?
 const isIntakeFlag = (blocked) => !!(blocked && blocked.reason && blocked.setBy === INTAKE_SETTER);
 
-module.exports = { applyIntake, parseSections, inferType, isIntakeFlag, INTAKE_SETTER, DESC_MAX, PLACEHOLDER, SECTIONS };
+// Does a description still carry a section nobody has filled in yet?
+const hasIntakePlaceholder = (desc) => PLACEHOLDERS.some((p) => String(desc || "").includes(p));
+
+module.exports = { applyIntake, parseSections, inferType, isIntakeFlag, hasIntakePlaceholder, INTAKE_SETTER, DESC_MAX, PLACEHOLDER, TO_COMPLETE, SECTIONS };
