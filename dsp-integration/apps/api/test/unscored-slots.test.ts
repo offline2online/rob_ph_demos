@@ -89,12 +89,10 @@ describe('unscored slots', () => {
 })
 
 describe('slots with no duration', () => {
-  it('are not exposed as inventory until the venue loop length is set, even when scored', async () => {
-    const { get, ctx, score } = await setup(null)
-    score()
+  it('are still sellable when scored — duration belongs to the campaign asset, not the slot', async () => {
+    const { get, score } = await setup(null)
     expect((await get('/v1/inventory/dt_ui.s1')).statusCode).toBe(404)
-    const dt = (await ctx.displayTypes.get('dt_ui'))!
-    await ctx.displayTypes.saveExtensions('dt_ui', { ...dt.phExtensions!, venue: { openOohVenueType: 'retail.grocery', orientation: 'portrait', loopLengthSec: 40 } } as never)
+    score()
     expect((await get('/v1/inventory/dt_ui.s1')).statusCode).toBe(200)
   })
 })

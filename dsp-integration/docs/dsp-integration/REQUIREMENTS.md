@@ -1263,8 +1263,9 @@ region, date range, status.
   `GET /v1/inventory/{positionId}` answers 404, a bid or reservation on it
   is refused with a 409 that says why, and the auction skips it. There is
   deliberately no fallback estimate: an invented audience number would end
-  up on invoices. A slot also needs a slot duration (the venue loop length,
-  divided by its rotation cap) before it is exposed. HQ Admin's Available
+  up on invoices. A slot does **not** need a duration to be sold: duration
+  belongs to the campaign asset (set when the advertiser uploads the creative,
+  and what billing keys off), not the slot. HQ Admin's Available
   Inventory shows "No audience score yet." on the slot; saving is not
   blocked. A display type may carry a **default VAC-d**
   (`phExtensions.defaultVacd`, assumed views per play window per display,

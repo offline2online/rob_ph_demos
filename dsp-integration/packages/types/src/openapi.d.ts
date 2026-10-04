@@ -1647,7 +1647,7 @@ export interface components {
              *     or bid on (ticket, 30 Sep 2026). Saving it is not blocked.
              */
             scored: boolean;
-            /** @description Why the slot can't be sold yet — no audience score, or no slot duration (venue loop length ÷ rotation cap) — or null when it can. Shown as a warning on Available Inventory. */
+            /** @description Why the slot can't be sold yet — no audience score — or null when it can. Shown as a warning on Available Inventory. */
             unsellableReason: string | null;
             /**
              * @description True while this slot is locked against new sales (ticket "Lock

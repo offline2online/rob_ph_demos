@@ -66,7 +66,7 @@ export async function buildBidRequest(ctx: Context, p: PositionRef, partner: Par
     id,
     imp: [{
       id: '1',
-      video: { w, h, minduration: 1, maxduration: view.screen.slotDurationSec },
+      video: { w, h, minduration: 1, ...(view.screen.slotDurationSec > 0 ? { maxduration: view.screen.slotDurationSec } : {}) },
       banner: { w, h },
       bidfloor: view.pricing.effectiveFloorCpm.localised,
       bidfloorcur: company.currency,
