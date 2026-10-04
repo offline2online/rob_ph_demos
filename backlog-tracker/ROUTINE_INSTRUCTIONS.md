@@ -332,6 +332,11 @@ on the card. So, in a default build fire:
   whole-file copy would silently undo whatever landed after you read it.
   If both of you changed the same lines, the card is noted and rebuilt once
   automatically.
+- **A new migration takes the next number on the train as you read it**,
+  and if a parallel ticket lands one with the same number first, the
+  automation refuses yours (`migrationNumberClashes`) and rebuilds it once
+  automatically against the newer branch. Re-read the migrations directory
+  at your `patchBaseSha` and don't reuse a number.
 - **A genuine dependency is a flag, not a parked card.** If this ticket
   cannot be built until another open ticket has landed (it needs code or a
   data model that ticket adds — not merely "related"), PATCH it with

@@ -13,7 +13,7 @@ const os = require("os");
 const path = require("path");
 const { execFileSync } = require("child_process");
 const {
-  rebasePatchFilesOnto, patchBaseFor, dependenciesLanded, buildRequestFields,
+  rebasePatchFilesOnto, patchBaseFor, dependenciesLanded, buildRequestFields, migrationNumberClashes,
 } = require("../scripts/run-backlog-automation.js");
 
 let passed = 0; const failures = [];
@@ -85,6 +85,21 @@ test("buildRequestFields: the same project write a Ready for Dev click makes", (
   assert.ok(f.notifyRequestedAt instanceof Date, "a timestamp, so the trigger's toMillis() guard sees a new value");
   assert.deepStrictEqual(f.notifyItemIds, ["x", "y"]);
   assert.strictEqual(f.notifyRequestedByEmail, "rob@offline2online.com");
+});
+
+test("a migration number another ticket already took is a clash (the 4 Oct 0040/0040 case)", () => {
+  const dir = "dsp-integration/apps/api/src/db/migrations";
+  const listing = ["0039_x.up.sql", "0039_x.down.sql", "0040_dsp_creative_content_identity.up.sql", "0040_dsp_creative_content_identity.down.sql",
+    "0040_partner_advertiser_lists_per_dsp.up.sql", "0040_partner_advertiser_lists_per_dsp.down.sql"];
+  const added = [`${dir}/0040_partner_advertiser_lists_per_dsp.up.sql`, `${dir}/0040_partner_advertiser_lists_per_dsp.down.sql`];
+  const c = migrationNumberClashes(added, () => listing);
+  assert.strictEqual(c.length, 2);
+  assert.strictEqual(c[0].number, "0040");
+  assert.ok(c[0].takenBy.some((t) => t.endsWith("0040_dsp_creative_content_identity.up.sql")));
+  // its own up/down pair never clash with each other, and a fresh number is fine
+  assert.deepStrictEqual(migrationNumberClashes([`${dir}/0041_new.up.sql`, `${dir}/0041_new.down.sql`], () => [...listing, "0041_new.up.sql", "0041_new.down.sql"]), []);
+  // numbered files outside a migrations/ directory are none of its business
+  assert.deepStrictEqual(migrationNumberClashes(["docs/0040_notes.md"], () => ["0040_other.md"]), []);
 });
 
 console.log(`\n${passed} passed, ${failures.length} failed`);
