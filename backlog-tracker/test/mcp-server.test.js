@@ -509,7 +509,7 @@ async function rpc(token, method, params, id = 1) {
   await test("exposes the documentation tools", async () => {
     const names = mcp.__test.TOOLS.map((t) => t.name);
     for (const expected of [
-      "set_project_requirements", "set_project_readme", "set_project_artifact",
+      "set_project_requirements", "set_project_readme", "set_project_artifact", "set_project_description",
       "create_project_document", "update_project_document", "delete_project_document",
       "create_interface", "update_interface", "delete_interface",
       "list_doc_revisions", "get_doc_revision",
@@ -629,6 +629,20 @@ async function rpc(token, method, params, id = 1) {
     assert.strictEqual(bad.body.result.isError, true);
     await rpc(tokens.access_token, "tools/call", { name: "set_project_artifact", arguments: { projectId: "proj1", artifactUrl: null } });
     assert.strictEqual(env.store.col("projects").get("proj1").artifactUrl, null);
+  });
+
+  await test("sets a project's description and list_projects surfaces it", async () => {
+    const call = (args) => rpc(tokens.access_token, "tools/call", { name: "set_project_description", arguments: Object.assign({ projectId: "proj1" }, args) });
+    await call({ description: "  Visitor attributes and their sources.  " });
+    assert.strictEqual(env.store.col("projects").get("proj1").description, "Visitor attributes and their sources.");
+    const list = await rpc(tokens.access_token, "tools/call", { name: "list_projects", arguments: {} });
+    const payload = JSON.parse(list.body.result.content[0].text);
+    assert.strictEqual(payload.projects.find((p) => p.id === "proj1").description, "Visitor attributes and their sources.");
+    assert.strictEqual(payload.projects.find((p) => p.id === "proj2").description, null);
+    const tooLong = await call({ description: "x".repeat(301) });
+    assert.strictEqual(tooLong.body.result.isError, true);
+    await call({ description: null });
+    assert.strictEqual(env.store.col("projects").get("proj1").description, null);
   });
 
   // ── Concept Incubator ─────────────────────────────────────────────────────
@@ -1029,7 +1043,7 @@ async function rpc(token, method, params, id = 1) {
   await test("the project write allowlist holds nothing that could ship code", async () => {
     const allowed = [...mcp.__test.PROJECT_WRITABLE_FIELDS];
     for (const field of allowed) {
-      assert.ok(/^(docs$|artifact)/.test(field), `${field} is not a documentation field but is writable`);
+      assert.ok(/^(docs$|artifact|description$)/.test(field), `${field} is not a documentation field but is writable`);
     }
     for (const forbidden of ["deployBranch", "trainReady", "trainStatus", "trainPrNumber", "trainNote", "trainLocked", "needsHumanMerge", "notifyRequestedAt", "deployNotifyRequestedAt", "name", "programId"]) {
       assert.ok(!mcp.__test.PROJECT_WRITABLE_FIELDS.has(forbidden), `${forbidden} must not be writable`);
@@ -1049,7 +1063,7 @@ async function rpc(token, method, params, id = 1) {
   await test("every documentation write is gated on board.write, so a viewer can't", async () => {
     // Structural rather than per-tool: it catches a new doc tool added later
     // with the scope left off, which a per-tool test would not.
-    const writeNames = ["set_project_requirements", "set_project_readme", "set_project_artifact",
+    const writeNames = ["set_project_requirements", "set_project_readme", "set_project_artifact", "set_project_description",
       "create_project_document", "update_project_document", "delete_project_document",
       "create_interface", "update_interface", "delete_interface"];
     for (const name of writeNames) {

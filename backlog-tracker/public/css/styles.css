@@ -1544,3 +1544,11 @@ html:not([data-console-role="admin"]) [data-admin-only] { display: none !importa
 .e2e-chip-grey { color: #595959; background: #fafafa; border-color: #d9d9d9; }
 .e2e-run-wrap .options-menu-item { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; }
 .e2e-mode-desc { font-size: 11px; color: #8c8c8c; }
+
+/* Resolve with agent (blocked tickets) */
+.blocked-resolve-btn { display: inline-flex; align-items: center; gap: 2px; border: 1px solid currentColor; background: #fff; color: #169bc2; cursor: pointer; font: inherit; font-size: 11px; font-weight: 500; padding: 0 6px; border-radius: 9999px; margin-left: 3px; }
+.blocked-resolve-btn .material-symbols-outlined { font-size: 14px; }
+.rs-chat { display: flex; flex-direction: column; gap: 8px; max-height: 45vh; overflow-y: auto; margin-bottom: 12px; }
+.rs-msg { max-width: 85%; padding: 8px 12px; border-radius: 8px; font-size: 14px; line-height: 1.4; white-space: pre-wrap; }
+.rs-msg-agent { align-self: flex-start; background: rgba(22,155,194,0.10); color: #333; }
+.rs-msg-user { align-self: flex-end; background: #169bc2; color: #fff; }

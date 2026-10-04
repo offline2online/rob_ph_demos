@@ -912,6 +912,8 @@ function unauthorized(res, detail) {
 // The board, as tools
 // ══════════════════════════════════════════════════════════════════════════
 
+const { applyIntake, isIntakeFlag, INTAKE_SETTER } = require("./intake");
+
 const CATEGORIES = [
   "Pricing & Offers", "Product Assets", "HQ Admin", "Retail Admin",
   "Menu Board", "Backend / Infrastructure", "Uncategorised",
@@ -1146,7 +1148,13 @@ const DOC_NAME_MAX = 120;
 const PROJECT_WRITABLE_FIELDS = new Set([
   "docs",
   "artifactUrl", "artifactUpdatedAt",
+  "description",
 ]);
+
+// A project's one-or-two-sentence "what this covers" blurb, surfaced in
+// list_projects so an agent can map a loose reference to the right project.
+// Kept in step with the 300-char bound in firestore.rules.
+const PROJECT_DESCRIPTION_MAX = 300;
 
 async function updateProjectFields(projectId, fields) {
   for (const key of Object.keys(fields)) {
@@ -1579,7 +1587,7 @@ const TOOLS = [
   },
   {
     name: "list_projects",
-    description: "Every project/program on the board, with how many tickets sit in each pipeline column. Use this to find the projectId other tools need.",
+    description: "Every project/program on the board, with a short description of what it covers and how many tickets sit in each pipeline column. Use this to find the projectId other tools need, and to map a loose reference (\"the FAQ backlog\", \"the DSP project\") to the right project.",
     scope: "board.read",
     inputSchema: {
       type: "object",
@@ -1604,6 +1612,7 @@ const TOOLS = [
         out.push({
           id: p.id,
           name: p.name || "",
+          description: p.description || null,
           program: p.programId ? (programs.get(p.programId) || null) : null,
           archived: p.archived === true,
           deployBranch: p.deployBranch || null,
@@ -1683,7 +1692,7 @@ const TOOLS = [
   },
   {
     name: "create_backlog_item",
-    description: "File a new ticket into a project's Backlog column, attributed to you. A title and area are derived from the description when you don't give them. Tickets always start in Backlog — nothing here can put work straight into testing or deployment.",
+    description: "File a new ticket into a project's Backlog column, attributed to you. The description is structured into the four intake sections (Outcome, Test steps, Dependencies, Spec reference); a ticket missing or thin on any is held BLOCKED with the gap named. A title, type and area are derived when you don't give them. Tickets always start in Backlog — nothing here can put work straight into testing or deployment.",
     scope: "board.write",
     inputSchema: {
       type: "object",
@@ -1702,12 +1711,17 @@ const TOOLS = [
       if (desc.length > 2000) return toolError("desc is limited to 2000 characters (the board's own limit).");
       const projectSnap = await db().collection("projects").doc(String(args.projectId)).get();
       if (!projectSnap.exists) return toolError(`No project with id ${args.projectId}. Call list_projects first.`);
-      const title = String(args.title || "").trim().slice(0, 200) || generateTitle(desc);
-      const type = args.type === "bug" ? "bug" : "feature";
+      // ph-ticket-intake: structure into the four sections, infer type and
+      // area, and hold the ticket BLOCKED (gap named) if it isn't buildable.
+      const intake = applyIntake(desc);
+      const title = String(args.title || "").trim().slice(0, 200) || generateTitle(intake.sections.outcome || desc);
+      const type = args.type === "bug" || args.type === "feature" ? args.type : intake.type;
       const category = CATEGORIES.includes(args.category) ? args.category : suggestCategory(desc);
+      const blocked = intake.blocked ? { ...intake.blocked, setBy: INTAKE_SETTER, setAt: new Date() } : null;
       const ref = await db().collection("backlogItems").add({
         projectId: String(args.projectId),
-        title, desc, type, category,
+        title, desc: intake.desc, type, category,
+        ...(blocked ? { blocked } : {}),
         status: "backlog",
         // Provenance the board can show and an admin can audit: filed by a
         // person's agent, on their behalf, not by the board automation.
@@ -1721,6 +1735,9 @@ const TOOLS = [
       return textResult({
         created: true, itemId: ref.id, projectId: String(args.projectId),
         title, type, category, status: "backlog",
+        intake: intake.blocked
+          ? { passed: false, blocked: intake.blocked, gaps: intake.gaps.map((g) => `${g.heading} (${g.why})`) }
+          : { passed: true },
         board: `${PUBLIC_ORIGIN}/#item-${ref.id}`,
       });
     },
@@ -1883,7 +1900,7 @@ const TOOLS = [
       // A newer comment from anyone other than whoever set the blocked flag
       // answers it and puts the ticket back in the build queue.
       const cur = snap.data() || {};
-      const clearedBlocked = !!(cur.blocked && cur.blocked.reason && cur.blocked.setBy !== session.email);
+      const clearedBlocked = !!(cur.blocked && cur.blocked.reason && cur.blocked.setBy !== session.email && !isIntakeFlag(cur.blocked));
       if (clearedBlocked) upd.blocked = null;
       await ref.update(upd);
       await audit(session, "add_item_comment", { itemId: ref.id, chars: text.length });
@@ -2220,6 +2237,29 @@ const TOOLS = [
     },
   },
   {
+    name: "set_project_description",
+    description: `Set (or clear) a project's short description — one or two sentences on what the project covers, shown in list_projects. Pass description: null to remove it. Up to ${PROJECT_DESCRIPTION_MAX} characters.`,
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string" },
+        description: { type: ["string", "null"], description: `Plain text, up to ${PROJECT_DESCRIPTION_MAX} characters, or null to clear.` },
+      },
+      required: ["projectId", "description"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const projectId = String(args.projectId);
+      const snap = await db().collection("projects").doc(projectId).get();
+      if (!snap.exists) return toolError(`No project with id ${projectId}. Call list_projects first.`);
+      const text = args.description == null ? "" : String(args.description).trim();
+      if (text.length > PROJECT_DESCRIPTION_MAX) return toolError(`A project description is limited to ${PROJECT_DESCRIPTION_MAX} characters; that was ${text.length}.`);
+      await updateProjectFields(projectId, { description: text || null });
+      await audit(session, "set_project_description", { projectId, chars: text.length });
+      return textResult({ updated: true, projectId, description: text || null });
+    },
+  },
+  {
     name: "create_project_document",
     description: "Add a named document to a project — an architecture note, an API spec, a decision record, anything that isn't its Requirements or README. Appears under 'Additional documents' on that project's Docs page.",
     scope: "board.write",
@@ -2519,6 +2559,7 @@ const TOOLS = [
           promotedProjectId: v.promotedProjectId || null,
           hasReadme: !!(v.readmeMd && v.readmeMd.trim()),
           hasRequirements: !!(v.requirementsMd && v.requirementsMd.trim()),
+          artifactUrl: v.artifactUrl || null,
           commentCount: Array.isArray(v.comments) ? v.comments.length : 0,
           createdByEmail: v.createdByEmail || null,
           updatedAt: tsToISO(v.updatedAt),
@@ -2547,6 +2588,8 @@ const TOOLS = [
         status: v.status || "active",
         readmeMd: v.readmeMd || "",
         requirementsMd: v.requirementsMd || "",
+        artifactUrl: v.artifactUrl || null,
+        artifactUpdatedAt: tsToISO(v.artifactUpdatedAt),
         comments: (Array.isArray(v.comments) ? v.comments : []).map((c) => ({
           author: c.author || "", text: c.text || "", at: tsToISO(c.at),
         })),
@@ -2647,6 +2690,39 @@ const TOOLS = [
       );
       await audit(session, "set_concept_requirements", { conceptId, chars: md.length, replacedChars: before.length, revisionId });
       return textResult({ updated: true, conceptId, chars: md.length, replacedChars: before.length, revisionId });
+    },
+  },
+  {
+    name: "set_concept_artifact",
+    description: "Set (or clear) a concept's Artifact link — a non-live mockup or clickable prototype (not a live site or wired-up code) that lets the idea be judged visually before it is promoted. It shows as 'View Artifact' on the concept's card and page. Pass artifactUrl: null to remove it. Refused once the concept has been promoted — use set_project_artifact with promotedProjectId instead.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        conceptId: { type: "string", description: "From list_concepts." },
+        artifactUrl: { type: ["string", "null"], description: "An https URL to the published Artifact, or null to clear." },
+      },
+      required: ["conceptId"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const conceptId = String(args.conceptId);
+      const ref = db().collection("concepts").doc(conceptId);
+      const snap = await ref.get();
+      if (!snap.exists) return toolError(`No concept with id ${conceptId}. Call list_concepts first.`);
+      const c = snap.data() || {};
+      if ((c.status || "active") === "promoted") {
+        return toolError(`Concept ${conceptId} has already been promoted to project ${c.promotedProjectId || "(unknown)"}; its Artifact link is read-only from here on. Use set_project_artifact on that project instead.`);
+      }
+      const raw = args.artifactUrl == null ? null : String(args.artifactUrl).trim() || null;
+      if (raw) {
+        let u;
+        try { u = new URL(raw); } catch { return toolError("artifactUrl must be a full URL, or null to clear it."); }
+        if (u.protocol !== "https:") return toolError("artifactUrl must be https.");
+        if (raw.length > 2000) return toolError("artifactUrl is too long.");
+      }
+      await ref.set({ artifactUrl: raw, artifactUpdatedAt: raw ? FieldValue.serverTimestamp() : null, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      await audit(session, "set_concept_artifact", { conceptId, artifactUrl: raw });
+      return textResult({ updated: true, conceptId, artifactUrl: raw });
     },
   },
   {
@@ -3402,7 +3478,7 @@ const SERVER_INSTRUCTIONS = [
   "You have full read/write access to project DOCUMENTATION and are expected to keep it current as you work: get_project_docs to read a project's Requirements, README, additional documents and interface contracts, then set_project_requirements / set_project_readme / create_project_document / update_project_document / create_interface / update_interface to update them.",
   "Documentation writes REPLACE the whole document, so read it first and send back the complete revised text — never a fragment. The version you replace is kept, and list_doc_revisions / get_doc_revision can recover it.",
   "Where a project's documentation also exists as a file in the repo (REQUIREMENTS.md, README.md, shared/interface-contract.md), the two are meant to match: update both, and treat a divergence as a bug in whichever is stale.",
-  "The Concept Incubator holds pre-project ideas that haven't been promoted to a tracked project yet — list_concepts / get_concept read them, and add_concept_comment / set_concept_readme / set_concept_requirements write to them, same read/write split as project documentation. A concept has no backlog of its own until it's promoted; once promoted, use list_projects/get_project_docs on the project it became instead.",
+  "The Concept Incubator holds pre-project ideas that haven't been promoted to a tracked project yet — list_concepts / get_concept read them, and add_concept_comment / set_concept_readme / set_concept_requirements / set_concept_artifact write to them, same read/write split as project documentation. A concept has no backlog of its own until it's promoted; once promoted, use list_projects/get_project_docs on the project it became instead.",
   "To show what is waiting on a person in the release pipeline, call get_ready_for_testing_board (the Ready for Testing column) or get_approved_for_deployment_board (the Approved for Deployment column) rather than list_backlog_items: both are MCP Apps, so a host that supports them renders the tickets as cards inline in the conversation, and every host gets the same data as text.",
   "Use search_faq / get_faq_article to answer Personalisation Hub product questions from the published help centre instead of guessing.",
   "You can also write to the help centre: create_faq_article files a brand-new draft, and update_faq_article proposes a change to an existing one as a pendingRevision — never live. Either way a person still reviews and approves it in FAQ Management before anything publishes; list_pending_faq_revisions and get_faq_revision let you check on a proposal's status.",

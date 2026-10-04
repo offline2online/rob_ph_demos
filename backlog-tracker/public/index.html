@@ -47,6 +47,7 @@
   <link rel="modulepreload" href="js/auth-gate.js">
   <link rel="modulepreload" href="js/app.js">
   <link rel="modulepreload" href="js/build-batches.js">
+  <link rel="modulepreload" href="js/ticket-intake.js">
   <link rel="modulepreload" href="js/firebase-config.js">
   <link rel="modulepreload" href="js/version.js">
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js">
@@ -574,6 +575,33 @@
       </div>
     </div>
 
+    <!-- Resolve with agent: a guided chat for a blocked ticket. Asks only about
+         the ph-ticket-intake sections still missing, one question at a time,
+         and writes each answer into the description (js/ticket-intake.js). -->
+    <div class="modal-backdrop" id="rs-backdrop" hidden>
+      <div class="modal-panel rs-panel" role="dialog" aria-modal="true" aria-labelledby="rs-title">
+        <div class="modal-header">
+          <h2 id="rs-title">Resolve ticket</h2>
+          <button type="button" class="modal-close" id="rs-close" aria-label="Close">&times;</button>
+        </div>
+        <div id="rs-chat" class="rs-chat" aria-live="polite"></div>
+        <div id="rs-composer">
+          <div class="desc-wrap">
+            <textarea id="rs-input" rows="3" maxlength="1000" placeholder="Type your answer, or tap the mic and just talk..."></textarea>
+            <button type="button" class="mic-btn" id="rs-mic-btn" hidden title="Dictate" aria-label="Dictate">&#127908;</button>
+          </div>
+          <p class="listening-hint" id="rs-listening-hint">&#127908; Listening — tap the mic again when you're done.</p>
+          <p class="mic-error" id="rs-mic-error"></p>
+        </div>
+        <div class="form-row" style="justify-content:flex-end;">
+          <div class="form-actions">
+            <button type="button" class="btn-ghost" id="rs-cancel">Close</button>
+            <button type="button" class="btn-primary" id="rs-send">Send</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <section class="docs-page" id="docs-page" hidden>
       <div class="page-header">
         <h2>Project Settings — <span id="docs-page-project-name"></span></h2>
@@ -592,6 +620,15 @@
         </div>
         <p class="field-hint">The release this project ships in. When set, approved FAQ updates from this project's tickets wait for the release to be marked live, then go live together. Create a release on the Releases page first.</p>
         <select id="docs-release-select"></select>
+      </div>
+
+      <div class="docs-block">
+        <h3>Description</h3>
+        <p class="field-hint">One or two sentences on what this project covers. Shown to AI agents in <code>list_projects</code> so a loose reference ("the FAQ backlog") maps to the right project.</p>
+        <textarea id="docs-description-input" rows="2" maxlength="300" placeholder="e.g. The backlog console itself and the public FAQ / Help Centre."></textarea>
+        <div class="form-row" style="justify-content:flex-end;">
+          <button type="button" class="btn-primary" id="docs-description-save">Save description</button>
+        </div>
       </div>
 
       <div class="docs-block">
@@ -1137,6 +1174,16 @@
         <textarea id="concept-readme-input" rows="12" placeholder="No README written yet — paste or write it here."></textarea>
         <div class="form-row" style="justify-content:flex-end;">
           <button type="button" class="btn-primary" id="concept-readme-save" data-editor-only>Save README</button>
+        </div>
+      </div>
+
+      <div class="docs-block">
+        <h3>Artifact</h3>
+        <p class="field-hint">A link to a non-live mockup or clickable prototype of this idea (https only) — not a live site or wired-up code.</p>
+        <input type="url" id="concept-artifact-input" placeholder="https://claude.ai/…" maxlength="2000">
+        <div class="form-row" style="justify-content:space-between;align-items:center;">
+          <a id="concept-artifact-link" href="#" target="_blank" rel="noopener" hidden>View Artifact ↗</a>
+          <button type="button" class="btn-primary" id="concept-artifact-save" data-editor-only>Save artifact link</button>
         </div>
       </div>
 

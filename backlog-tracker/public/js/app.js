@@ -24,6 +24,7 @@ import {
 import { firebaseConfig } from "./firebase-config.js";
 import { APP_VERSION } from "./version.js";
 import { clearFirestoreLocalCache } from "./local-cache.js";
+import { INTAKE_SECTIONS, missingSections, applyAnswers } from "./ticket-intake.js";
 import { clusterBacklogItems, estimateEffort, estimatePriority, splitRequirementsText } from "./build-batches.js";
 
 // auth-gate.js has already initialised the app (and signed the user in)
@@ -810,7 +811,7 @@ function cardHTML(item) {
   // note is the hover, full detail lives in comments. Cleared by the
   // button here or by a newer comment from anyone other than whoever set it.
   const blockedFlag = (isBacklog && item.blocked && item.blocked.reason)
-    ? `<span class="blocked-flag blocked-flag-${escapeHTML(item.blocked.reason)}" title="${escapeHTML(item.blocked.note || "")}"><span class="material-symbols-outlined">${item.blocked.reason === "needs-decision" ? "gavel" : "hourglass_top"}</span>${item.blocked.reason === "needs-decision" ? "Needs your decision" : "Waiting on input"}<button type="button" class="blocked-clear-btn" data-id="${item.id}" title="Clear the flag — puts this ticket back in the build queue">&times;</button></span>`
+    ? `<span class="blocked-flag blocked-flag-${escapeHTML(item.blocked.reason)}" title="${escapeHTML(item.blocked.note || "")}"><span class="material-symbols-outlined">${item.blocked.reason === "needs-decision" ? "gavel" : "hourglass_top"}</span>${item.blocked.reason === "needs-decision" ? "Needs your decision" : "Waiting on input"}${missingSections(item.desc).length ? `<button type="button" class="blocked-resolve-btn" data-id="${item.id}" title="Answer a few questions to fill in what this ticket is missing"><span class="material-symbols-outlined">forum</span>Resolve</button>` : ""}<button type="button" class="blocked-clear-btn" data-id="${item.id}" title="Clear the flag — puts this ticket back in the build queue">&times;</button></span>`
     : "";
   const testVersionBadge = item.testVersion
     ? `<span class="test-version-badge" title="backlog-tracker's own version when this was marked Ready for Testing — check the live footer shows at least this version">Test version: v${escapeHTML(item.testVersion)}</span>`
@@ -2922,7 +2923,8 @@ async function addItemComment(id, text) {
     updatedAt: serverTimestamp(),
   };
   // A newer comment from anyone but whoever set the flag answers it.
-  if (cur && isBlockedItem(cur) && cur.blocked.setBy !== me) patch.blocked = null;
+  // ph-ticket-intake's own flag is the exception: only fixing the description (or a person clearing it) lifts it.
+  if (cur && isBlockedItem(cur) && cur.blocked.setBy !== me && cur.blocked.setBy !== "ph-ticket-intake") patch.blocked = null;
   await updateDoc(doc(db, "backlogItems", id), patch);
 }
 
@@ -3673,6 +3675,8 @@ projectsRoot.addEventListener("click", async (e) => {
   if (failTestingBtn) { failTesting(failTestingBtn.dataset.id); return; }
   const confirmNoDeployBtn = e.target.closest(".confirm-no-deploy-btn");
   if (confirmNoDeployBtn) { confirmTestedNoDeploy(confirmNoDeployBtn.dataset.id); return; }
+  const blockedResolveBtn = e.target.closest(".blocked-resolve-btn");
+  if (blockedResolveBtn) { openResolveModal(blockedResolveBtn.dataset.id); return; }
   const blockedClearBtn = e.target.closest(".blocked-clear-btn");
   if (blockedClearBtn) { clearBlocked(blockedClearBtn.dataset.id); return; }
   const delBtn = e.target.closest(".delete-btn");
@@ -4188,6 +4192,103 @@ qcSubmitBtn.addEventListener("click", () => {
   qcCommentInput.value = "";
   qcCommentInput.dispatchEvent(new Event("input"));
   qcCommentInput.focus();
+});
+
+
+// ── Resolve with agent — guided chat for a blocked (incomplete) ticket ──
+// Asks only about the ph-ticket-intake sections still missing from the
+// description, one at a time (typed or dictated), writes each answer into
+// its own section, and clears the blocked flag once all four are present.
+// No comment thread is read or written; the description is the record.
+let resolveItemId = null;
+let resolveQueue = [];
+let resolveBusy = false;
+const rsBackdrop = document.getElementById("rs-backdrop");
+const rsChat = document.getElementById("rs-chat");
+const rsInput = document.getElementById("rs-input");
+const rsSend = document.getElementById("rs-send");
+const rsComposer = document.getElementById("rs-composer");
+
+function rsSay(who, text) {
+  const d = document.createElement("div");
+  d.className = `rs-msg rs-msg-${who}`;
+  d.textContent = text;
+  rsChat.appendChild(d);
+  rsChat.scrollTop = rsChat.scrollHeight;
+}
+function rsAsk() {
+  const s = resolveQueue[0];
+  rsSay("agent", s.question);
+  rsInput.focus();
+}
+function openResolveModal(id) {
+  const item = allItems.find((i) => i.id === id);
+  if (!item) return;
+  resolveItemId = id;
+  rsChat.innerHTML = "";
+  rsInput.value = "";
+  resolveQueue = missingSections(item.desc);
+  document.getElementById("rs-title").textContent = `Resolve: ${item.title || "ticket"}`;
+  rsBackdrop.hidden = false;
+  if (!resolveQueue.length) {
+    rsComposer.hidden = true; rsSend.hidden = true;
+    rsSay("agent", "This ticket already has all four sections. Nothing to resolve.");
+    return;
+  }
+  rsComposer.hidden = false; rsSend.hidden = false;
+  rsSay("agent", `This ticket is missing: ${resolveQueue.map((s) => s.heading).join(", ")}. I'll ask about each, one at a time.`);
+  rsAsk();
+}
+function closeResolveModal() {
+  rsBackdrop.hidden = true;
+  resolveItemId = null;
+  resolveQueue = [];
+}
+async function submitResolveAnswer() {
+  if (!resolveItemId || resolveBusy || !resolveQueue.length) return;
+  const text = rsInput.value.trim();
+  if (!text) return;
+  const item = allItems.find((i) => i.id === resolveItemId);
+  if (!item) return;
+  resolveBusy = true;
+  const section = resolveQueue[0];
+  try {
+    const desc = applyAnswers(item.desc, { [section.key]: text });
+    const stillMissing = missingSections(desc);
+    if (stillMissing.some((s) => s.key === section.key)) {
+      rsSay("user", text);
+      rsSay("agent", "That's a bit thin to build from — can you give me a little more detail?");
+      rsInput.value = "";
+      return;
+    }
+    const patch = { desc, updatedAt: serverTimestamp() };
+    if (!stillMissing.length) patch.blocked = null;
+    await updateDoc(doc(db, "backlogItems", resolveItemId), patch);
+    item.desc = desc;
+    rsSay("user", text);
+    rsInput.value = "";
+    rsInput.dispatchEvent(new Event("input"));
+    resolveQueue = stillMissing;
+    if (stillMissing.length) {
+      rsSay("agent", `Got it — saved under "${section.heading}".`);
+      rsAsk();
+    } else {
+      rsComposer.hidden = true; rsSend.hidden = true;
+      rsSay("agent", `Saved under "${section.heading}". All four sections are now filled in and the blocked flag is cleared — this ticket is ready to be marked DECIDED.`);
+    }
+  } catch (err) {
+    rsSay("agent", `Couldn't save that: ${err && err.message ? err.message : err}. Try again.`);
+  } finally {
+    resolveBusy = false;
+  }
+}
+document.getElementById("rs-close").addEventListener("click", closeResolveModal);
+document.getElementById("rs-cancel").addEventListener("click", closeResolveModal);
+rsBackdrop.addEventListener("click", (e) => { if (e.target === rsBackdrop) closeResolveModal(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !rsBackdrop.hidden) closeResolveModal(); });
+rsSend.addEventListener("click", submitResolveAnswer);
+rsInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitResolveAnswer(); }
 });
 
 // ── New Item modal ─────────────────────────────────────────────────────
@@ -4924,6 +5025,7 @@ const docsRequirementsInput = document.getElementById("docs-requirements-input")
 const docsRoutinePromptInput = document.getElementById("docs-routine-prompt-input");
 const docsFaqAutoFlagInput = document.getElementById("docs-faq-auto-flag");
 const docsProgramSelect = document.getElementById("docs-program-select");
+const docsDescriptionInput = document.getElementById("docs-description-input");
 const docsRepoFolderInput = document.getElementById("docs-repo-folder-input");
 const docsRepoFolderNone = document.getElementById("docs-repo-folder-none");
 docsRepoFolderNone.addEventListener("change", () => {
@@ -5044,6 +5146,9 @@ function renderDocsPage() {
     docsRoutinePromptInput.value = (project && project.routinePromptMd) || "";
   }
   docsFaqAutoFlagInput.checked = !!(project && project.faqAutoFlagOnLive);
+  if (document.activeElement !== docsDescriptionInput) {
+    docsDescriptionInput.value = (project && project.description) || "";
+  }
   if (document.activeElement !== docsRepoFolderInput) {
     docsRepoFolderNone.checked = !!(project && project.repoFolderNotApplicable);
     docsRepoFolderInput.value = (project && project.repoFolder) || "";
@@ -5074,6 +5179,18 @@ function renderDocsPage() {
     ? docRows.map(projectDocRowHTML).join("")
     : '<p class="interface-row-empty">No additional documents yet.</p>';
 }
+
+document.getElementById("docs-description-save").addEventListener("click", async () => {
+  if (!docsProjectId) return;
+  const text = docsDescriptionInput.value.trim();
+  try {
+    await setDoc(doc(db, "projects", docsProjectId), {
+      description: text || deleteField(), updatedAt: serverTimestamp(),
+    }, { merge: true });
+  } catch (err) {
+    await showAlert(describeSaveError(err, [{ label: "Description", value: text, max: 300 }]));
+  }
+});
 
 document.getElementById("docs-repo-folder-save").addEventListener("click", async () => {
   if (!docsProjectId) return;
@@ -5308,6 +5425,16 @@ async function setConceptRequirements(id, md) {
 // `at` is a plain client Date, not serverTimestamp() — same reason
 // addItemComment above uses one: Firestore rejects a serverTimestamp()
 // sentinel inside an arrayUnion element.
+// Empty input clears the link. https only, matching firestore.rules.
+async function setConceptArtifact(id, url) {
+  const raw = (url || "").trim();
+  if (raw && !/^https:\/\//i.test(raw)) { await showAlert("The artifact link must start with https://"); return; }
+  await setDoc(doc(db, "concepts", id), {
+    artifactUrl: raw || null,
+    artifactUpdatedAt: raw ? serverTimestamp() : null,
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+}
 async function addConceptComment(id, text) {
   const trimmed = (text || "").trim();
   if (!trimmed) return;
@@ -5397,12 +5524,17 @@ function conceptCardHTML(c) {
   const updated = formatSkillUpdatedAt(c.updatedAt);
   const meta = [conceptStatusLabel(c)];
   if (updated) meta.push(`updated ${updated}`);
+  const artifactHref = c.artifactUrl ? safeHttpUrl(c.artifactUrl) : "";
+  const artifactLink = artifactHref
+    ? `<a class="concept-artifact-card-link" href="${escapeHTML(artifactHref)}" target="_blank" rel="noopener">View Artifact ↗</a>`
+    : "";
   return `
     <div class="skill-card concept-card" data-id="${c.id}" style="cursor:pointer;">
       <div class="skill-card-top">
         <div>
           <div class="skill-card-name">${escapeHTML(c.name || "")}</div>
           <div class="skill-card-meta">${escapeHTML(meta.join(" · "))}</div>
+          ${artifactLink}
         </div>
         <div class="skill-card-actions" data-editor-only>
           <button type="button" class="icon-btn concept-delete-icon-btn" data-id="${c.id}" title="Delete"${c.status === "promoted" ? " disabled" : ""}><span class="material-symbols-outlined">delete</span></button>
@@ -5446,6 +5578,14 @@ function renderConceptDetailPage() {
   const reqInput = document.getElementById("concept-requirements-input");
   if (document.activeElement !== reqInput) reqInput.value = c.requirementsMd || "";
   reqInput.disabled = readonly;
+  const artifactInput = document.getElementById("concept-artifact-input");
+  if (document.activeElement !== artifactInput) artifactInput.value = c.artifactUrl || "";
+  artifactInput.disabled = readonly;
+  const artifactHref = c.artifactUrl ? safeHttpUrl(c.artifactUrl) : "";
+  const artifactLink = document.getElementById("concept-artifact-link");
+  artifactLink.hidden = !artifactHref;
+  if (artifactHref) artifactLink.href = artifactHref;
+  document.getElementById("concept-artifact-save").hidden = readonly;
   document.getElementById("concept-readme-save").hidden = readonly;
   document.getElementById("concept-requirements-save").hidden = readonly;
   document.getElementById("concept-promote-block").hidden = readonly;
@@ -5479,6 +5619,11 @@ document.getElementById("concept-readme-save").addEventListener("click", async (
   if (!conceptDetailId) return;
   if (!(await requireConceptEditor())) return;
   setConceptReadme(conceptDetailId, document.getElementById("concept-readme-input").value);
+});
+document.getElementById("concept-artifact-save").addEventListener("click", async () => {
+  if (!conceptDetailId) return;
+  if (!(await requireConceptEditor())) return;
+  setConceptArtifact(conceptDetailId, document.getElementById("concept-artifact-input").value);
 });
 document.getElementById("concept-requirements-save").addEventListener("click", async () => {
   if (!conceptDetailId) return;
@@ -6811,6 +6956,12 @@ createDictationController({
   micBtn: document.getElementById("qc-mic-btn"),
   hintEl: document.getElementById("qc-listening-hint"),
   errorEl: document.getElementById("qc-mic-error"),
+});
+createDictationController({
+  textareaEl: document.getElementById("rs-input"),
+  micBtn: document.getElementById("rs-mic-btn"),
+  hintEl: document.getElementById("rs-listening-hint"),
+  errorEl: document.getElementById("rs-mic-error"),
 });
 createDictationController({
   textareaEl: eiCommentInput,
