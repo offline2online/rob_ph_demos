@@ -479,6 +479,9 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 }
 .project-rename-btn { border: none; background: transparent; cursor: pointer; font-size: 13px; color: var(--text-muted); padding: 2px 6px; }
 .project-rename-btn:hover { color: var(--text); }
+.project-star-btn { border: none; background: transparent; cursor: pointer; font-size: 20px; line-height: 1; color: var(--text-muted); padding: 2px 6px 2px 0; }
+.project-star-btn:hover { color: #f5a623; }
+.project-star-btn.starred { color: #f5a623; }
 .project-name-input {
   font-family: inherit; font-size: 18px; font-weight: 700; color: var(--text); background: var(--surface);
   border: 1px solid var(--primary); border-radius: 6px; padding: 2px 8px; min-width: 180px;

@@ -415,6 +415,22 @@ function toggleProjectCollapsed(pid) {
   render();
 }
 
+// Starred projects — pinned to the top of the dashboard. Per-viewer, kept in
+// this browser's localStorage like the collapse state above (a star is "my
+// dashboard", so one person's pin never reorders anyone else's board and
+// nothing needs writing to Firestore).
+const STAR_KEY = "bt-starred-projects";
+function loadStarredMap() {
+  try { return JSON.parse(localStorage.getItem(STAR_KEY) || "{}") || {}; } catch (err) { return {}; }
+}
+function isProjectStarred(pid) { return !!loadStarredMap()[pid]; }
+function toggleProjectStarred(pid) {
+  const m = loadStarredMap();
+  if (m[pid]) delete m[pid]; else m[pid] = true;
+  try { localStorage.setItem(STAR_KEY, JSON.stringify(m)); } catch (err) {}
+  render();
+}
+
 // Per-column collapse (eQOIaEcF4xMSVmZt1rnA) — mobile-only, see
 // projectSectionHTML's own comment. Deliberately in-memory only, not
 // localStorage: this is a "get it out of my way while I scroll" toggle for
@@ -1766,7 +1782,7 @@ function projectSectionHTML(project) {
 
   const nameRow = editingProjectId === project.id
     ? `<div class="project-name-row"><input type="text" class="project-name-input" id="pname-input-${escapeHTML(project.id)}" data-project-id="${escapeHTML(project.id)}" value="${escapeHTML(project.name)}" maxlength="80"></div>`
-    : `<div class="project-name-row"><h2 class="project-name">${escapeHTML(project.name)} <span class="project-item-count">(${total})</span></h2>
+    : `<div class="project-name-row"><button type="button" class="project-star-btn${isProjectStarred(project.id) ? " starred" : ""}" data-project-id="${escapeHTML(project.id)}" aria-pressed="${isProjectStarred(project.id)}" title="${isProjectStarred(project.id) ? "Unstar project (unpin from top)" : "Star project (pin to top)"}">${isProjectStarred(project.id) ? "&#9733;" : "&#9734;"}</button><h2 class="project-name">${escapeHTML(project.name)} <span class="project-item-count">(${total})</span></h2>
          <button type="button" class="project-rename-btn" data-project-id="${escapeHTML(project.id)}" title="Rename project">&#9998;</button>
          <span class="project-version-badge" title="backlog-tracker release currently running">v${escapeHTML(APP_VERSION)}</span>
        </div>`;
@@ -1926,7 +1942,9 @@ function getRenderedProjects() {
   if (hasOrphans && !knownIds.has(GENERAL_PROJECT_ID)) {
     known.push({ id: GENERAL_PROJECT_ID, name: "General" });
   }
-  return known.sort((a, b) => projectLastActivityMs(b) - projectLastActivityMs(a));
+  // Starred projects first, then most-recently-active within each half.
+  return known.sort((a, b) =>
+    (isProjectStarred(b.id) - isProjectStarred(a.id)) || (projectLastActivityMs(b) - projectLastActivityMs(a)));
 }
 
 let ensuredGeneralDoc = false;
@@ -1988,7 +2006,11 @@ function groupProjectsByProgram(renderedProjects) {
   // whichever board was actually touched most recently surfaces at the top
   // of the page (otRMV4CDkzIIFoYWeynY) rather than only its projects being
   // ordered correctly within a fixed group position.
-  groups.sort((a, b) => projectLastActivityMs(b.projects[0]) - projectLastActivityMs(a.projects[0]));
+  // A group holding a starred project floats to the top too; the group's
+  // projects are already starred-first, so projects[0] is starred if any is.
+  groups.sort((a, b) =>
+    (isProjectStarred(b.projects[0].id) - isProjectStarred(a.projects[0].id)) ||
+    (projectLastActivityMs(b.projects[0]) - projectLastActivityMs(a.projects[0])));
   return groups;
 }
 
@@ -3688,6 +3710,8 @@ projectsRoot.addEventListener("click", async (e) => {
   }
   const collapseBtn = e.target.closest(".project-collapse-btn");
   if (collapseBtn) { toggleProjectCollapsed(collapseBtn.dataset.projectId); return; }
+  const starBtn = e.target.closest(".project-star-btn");
+  if (starBtn) { toggleProjectStarred(starBtn.dataset.projectId); return; }
   const renameBtn = e.target.closest(".project-rename-btn");
   if (renameBtn) { startEditingProjectName(renameBtn.dataset.projectId); return; }
   const newItemBtn = e.target.closest(".new-item-btn");
