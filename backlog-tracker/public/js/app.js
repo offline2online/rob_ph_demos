@@ -5424,6 +5424,16 @@ async function setConceptRequirements(id, md) {
 // `at` is a plain client Date, not serverTimestamp() — same reason
 // addItemComment above uses one: Firestore rejects a serverTimestamp()
 // sentinel inside an arrayUnion element.
+// Empty input clears the link. https only, matching firestore.rules.
+async function setConceptArtifact(id, url) {
+  const raw = (url || "").trim();
+  if (raw && !/^https:\/\//i.test(raw)) { await showAlert("The artifact link must start with https://"); return; }
+  await setDoc(doc(db, "concepts", id), {
+    artifactUrl: raw || null,
+    artifactUpdatedAt: raw ? serverTimestamp() : null,
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+}
 async function addConceptComment(id, text) {
   const trimmed = (text || "").trim();
   if (!trimmed) return;
@@ -5513,12 +5523,17 @@ function conceptCardHTML(c) {
   const updated = formatSkillUpdatedAt(c.updatedAt);
   const meta = [conceptStatusLabel(c)];
   if (updated) meta.push(`updated ${updated}`);
+  const artifactHref = c.artifactUrl ? safeHttpUrl(c.artifactUrl) : "";
+  const artifactLink = artifactHref
+    ? `<a class="concept-artifact-card-link" href="${escapeHTML(artifactHref)}" target="_blank" rel="noopener">View Artifact ↗</a>`
+    : "";
   return `
     <div class="skill-card concept-card" data-id="${c.id}" style="cursor:pointer;">
       <div class="skill-card-top">
         <div>
           <div class="skill-card-name">${escapeHTML(c.name || "")}</div>
           <div class="skill-card-meta">${escapeHTML(meta.join(" · "))}</div>
+          ${artifactLink}
         </div>
         <div class="skill-card-actions" data-editor-only>
           <button type="button" class="icon-btn concept-delete-icon-btn" data-id="${c.id}" title="Delete"${c.status === "promoted" ? " disabled" : ""}><span class="material-symbols-outlined">delete</span></button>
@@ -5562,6 +5577,14 @@ function renderConceptDetailPage() {
   const reqInput = document.getElementById("concept-requirements-input");
   if (document.activeElement !== reqInput) reqInput.value = c.requirementsMd || "";
   reqInput.disabled = readonly;
+  const artifactInput = document.getElementById("concept-artifact-input");
+  if (document.activeElement !== artifactInput) artifactInput.value = c.artifactUrl || "";
+  artifactInput.disabled = readonly;
+  const artifactHref = c.artifactUrl ? safeHttpUrl(c.artifactUrl) : "";
+  const artifactLink = document.getElementById("concept-artifact-link");
+  artifactLink.hidden = !artifactHref;
+  if (artifactHref) artifactLink.href = artifactHref;
+  document.getElementById("concept-artifact-save").hidden = readonly;
   document.getElementById("concept-readme-save").hidden = readonly;
   document.getElementById("concept-requirements-save").hidden = readonly;
   document.getElementById("concept-promote-block").hidden = readonly;
@@ -5595,6 +5618,11 @@ document.getElementById("concept-readme-save").addEventListener("click", async (
   if (!conceptDetailId) return;
   if (!(await requireConceptEditor())) return;
   setConceptReadme(conceptDetailId, document.getElementById("concept-readme-input").value);
+});
+document.getElementById("concept-artifact-save").addEventListener("click", async () => {
+  if (!conceptDetailId) return;
+  if (!(await requireConceptEditor())) return;
+  setConceptArtifact(conceptDetailId, document.getElementById("concept-artifact-input").value);
 });
 document.getElementById("concept-requirements-save").addEventListener("click", async () => {
   if (!conceptDetailId) return;

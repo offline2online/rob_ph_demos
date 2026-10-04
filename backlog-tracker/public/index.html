@@ -1178,6 +1178,16 @@
       </div>
 
       <div class="docs-block">
+        <h3>Artifact</h3>
+        <p class="field-hint">A link to a non-live mockup or clickable prototype of this idea (https only) — not a live site or wired-up code.</p>
+        <input type="url" id="concept-artifact-input" placeholder="https://claude.ai/…" maxlength="2000">
+        <div class="form-row" style="justify-content:space-between;align-items:center;">
+          <a id="concept-artifact-link" href="#" target="_blank" rel="noopener" hidden>View Artifact ↗</a>
+          <button type="button" class="btn-primary" id="concept-artifact-save" data-editor-only>Save artifact link</button>
+        </div>
+      </div>
+
+      <div class="docs-block">
         <h3>Requirements</h3>
         <p class="field-hint">Update these incrementally as the idea develops — saving here never touches the README above.</p>
         <textarea id="concept-requirements-input" rows="16" placeholder="No requirements written yet — paste or write them here."></textarea>

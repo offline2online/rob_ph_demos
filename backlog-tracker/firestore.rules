@@ -429,6 +429,7 @@ service cloud.firestore {
         incoming().status == "active" &&
         (!("readmeMd" in incoming()) || (incoming().readmeMd is string && incoming().readmeMd.size() <= 800000)) &&
         (!("requirementsMd" in incoming()) || (incoming().requirementsMd is string && incoming().requirementsMd.size() <= 800000)) &&
+        (!("artifactUrl" in incoming()) || incoming().artifactUrl == null || (incoming().artifactUrl is string && incoming().artifactUrl.size() <= 2000 && incoming().artifactUrl.matches("^https://.*"))) &&
         (!("comments" in incoming()) || incoming().comments is list);
 
       allow update: if isEditor() &&
@@ -437,6 +438,7 @@ service cloud.firestore {
         conceptStatusOnlyPromotes() &&
         (!("readmeMd" in incoming()) || (incoming().readmeMd is string && incoming().readmeMd.size() <= 800000)) &&
         (!("requirementsMd" in incoming()) || (incoming().requirementsMd is string && incoming().requirementsMd.size() <= 800000)) &&
+        (!("artifactUrl" in incoming()) || incoming().artifactUrl == null || (incoming().artifactUrl is string && incoming().artifactUrl.size() <= 2000 && incoming().artifactUrl.matches("^https://.*"))) &&
         (!("comments" in incoming()) || incoming().comments is list) &&
         (!("promotedProjectId" in incoming()) || incoming().promotedProjectId == null || isNonEmptyBoundedString(incoming().promotedProjectId, 100));
 

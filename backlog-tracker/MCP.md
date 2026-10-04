@@ -139,7 +139,7 @@ as text until Anthropic switches on its MCP Apps host.
 | `add_item_comment` | `set_project_artifact`, `set_project_description` | `comment_on_faq_revision` | `delete_skill` | | |
 | | `create_project_document` / `update_project_document` / `delete_project_document` | | `report_skill_miss` (tags a real gap, never edits the skill's own content) | | |
 | | `create_interface` / `update_interface` / `delete_interface` | | | | |
-| | `add_concept_comment` / `set_concept_readme` / `set_concept_requirements` (Concept Incubator; the last two refused once a concept is promoted) | | | | |
+| | `add_concept_comment` / `set_concept_readme` / `set_concept_requirements` / `set_concept_artifact` (Concept Incubator; the last three refused once a concept is promoted, except comments) | | | | |
 
 **Setting up your own personal Notify Claude Routine** (so board clicks you
 make fire a session under your own Claude account instead of the one
@@ -200,7 +200,7 @@ README/Requirements/discussion — and has no `backlogItems` of its own until
 someone promotes it, so there is deliberately no `list_backlog_items`- or
 `create_backlog_item`-shaped tool for it. `list_concepts`/`get_concept` read
 it; `add_concept_comment` posts to its discussion thread (works even after
-promotion); `set_concept_readme`/`set_concept_requirements` replace its
+promotion); `set_concept_artifact` sets (or clears with `null`) one https mockup/prototype link, shown as **View Artifact** on the concept's card and page; `set_concept_readme`/`set_concept_requirements` replace its
 docs the same way `set_project_readme`/`set_project_requirements` do,
 including the same `list_doc_revisions`/`get_doc_revision` recovery path
 (pass `conceptId` instead of `projectId`) — except both are refused once

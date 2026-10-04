@@ -2549,6 +2549,7 @@ const TOOLS = [
           promotedProjectId: v.promotedProjectId || null,
           hasReadme: !!(v.readmeMd && v.readmeMd.trim()),
           hasRequirements: !!(v.requirementsMd && v.requirementsMd.trim()),
+          artifactUrl: v.artifactUrl || null,
           commentCount: Array.isArray(v.comments) ? v.comments.length : 0,
           createdByEmail: v.createdByEmail || null,
           updatedAt: tsToISO(v.updatedAt),
@@ -2577,6 +2578,8 @@ const TOOLS = [
         status: v.status || "active",
         readmeMd: v.readmeMd || "",
         requirementsMd: v.requirementsMd || "",
+        artifactUrl: v.artifactUrl || null,
+        artifactUpdatedAt: tsToISO(v.artifactUpdatedAt),
         comments: (Array.isArray(v.comments) ? v.comments : []).map((c) => ({
           author: c.author || "", text: c.text || "", at: tsToISO(c.at),
         })),
@@ -2677,6 +2680,39 @@ const TOOLS = [
       );
       await audit(session, "set_concept_requirements", { conceptId, chars: md.length, replacedChars: before.length, revisionId });
       return textResult({ updated: true, conceptId, chars: md.length, replacedChars: before.length, revisionId });
+    },
+  },
+  {
+    name: "set_concept_artifact",
+    description: "Set (or clear) a concept's Artifact link — a non-live mockup or clickable prototype (not a live site or wired-up code) that lets the idea be judged visually before it is promoted. It shows as 'View Artifact' on the concept's card and page. Pass artifactUrl: null to remove it. Refused once the concept has been promoted — use set_project_artifact with promotedProjectId instead.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        conceptId: { type: "string", description: "From list_concepts." },
+        artifactUrl: { type: ["string", "null"], description: "An https URL to the published Artifact, or null to clear." },
+      },
+      required: ["conceptId"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const conceptId = String(args.conceptId);
+      const ref = db().collection("concepts").doc(conceptId);
+      const snap = await ref.get();
+      if (!snap.exists) return toolError(`No concept with id ${conceptId}. Call list_concepts first.`);
+      const c = snap.data() || {};
+      if ((c.status || "active") === "promoted") {
+        return toolError(`Concept ${conceptId} has already been promoted to project ${c.promotedProjectId || "(unknown)"}; its Artifact link is read-only from here on. Use set_project_artifact on that project instead.`);
+      }
+      const raw = args.artifactUrl == null ? null : String(args.artifactUrl).trim() || null;
+      if (raw) {
+        let u;
+        try { u = new URL(raw); } catch { return toolError("artifactUrl must be a full URL, or null to clear it."); }
+        if (u.protocol !== "https:") return toolError("artifactUrl must be https.");
+        if (raw.length > 2000) return toolError("artifactUrl is too long.");
+      }
+      await ref.set({ artifactUrl: raw, artifactUpdatedAt: raw ? FieldValue.serverTimestamp() : null, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      await audit(session, "set_concept_artifact", { conceptId, artifactUrl: raw });
+      return textResult({ updated: true, conceptId, artifactUrl: raw });
     },
   },
   {
@@ -3432,7 +3468,7 @@ const SERVER_INSTRUCTIONS = [
   "You have full read/write access to project DOCUMENTATION and are expected to keep it current as you work: get_project_docs to read a project's Requirements, README, additional documents and interface contracts, then set_project_requirements / set_project_readme / create_project_document / update_project_document / create_interface / update_interface to update them.",
   "Documentation writes REPLACE the whole document, so read it first and send back the complete revised text — never a fragment. The version you replace is kept, and list_doc_revisions / get_doc_revision can recover it.",
   "Where a project's documentation also exists as a file in the repo (REQUIREMENTS.md, README.md, shared/interface-contract.md), the two are meant to match: update both, and treat a divergence as a bug in whichever is stale.",
-  "The Concept Incubator holds pre-project ideas that haven't been promoted to a tracked project yet — list_concepts / get_concept read them, and add_concept_comment / set_concept_readme / set_concept_requirements write to them, same read/write split as project documentation. A concept has no backlog of its own until it's promoted; once promoted, use list_projects/get_project_docs on the project it became instead.",
+  "The Concept Incubator holds pre-project ideas that haven't been promoted to a tracked project yet — list_concepts / get_concept read them, and add_concept_comment / set_concept_readme / set_concept_requirements / set_concept_artifact write to them, same read/write split as project documentation. A concept has no backlog of its own until it's promoted; once promoted, use list_projects/get_project_docs on the project it became instead.",
   "To show what is waiting on a person in the release pipeline, call get_ready_for_testing_board (the Ready for Testing column) or get_approved_for_deployment_board (the Approved for Deployment column) rather than list_backlog_items: both are MCP Apps, so a host that supports them renders the tickets as cards inline in the conversation, and every host gets the same data as text.",
   "Use search_faq / get_faq_article to answer Personalisation Hub product questions from the published help centre instead of guessing.",
   "You can also write to the help centre: create_faq_article files a brand-new draft, and update_faq_article proposes a change to an existing one as a pendingRevision — never live. Either way a person still reviews and approves it in FAQ Management before anything publishes; list_pending_faq_revisions and get_faq_revision let you check on a proposal's status.",
