@@ -2923,7 +2923,8 @@ async function addItemComment(id, text) {
     updatedAt: serverTimestamp(),
   };
   // A newer comment from anyone but whoever set the flag answers it.
-  if (cur && isBlockedItem(cur) && cur.blocked.setBy !== me) patch.blocked = null;
+  // ph-ticket-intake's own flag is the exception: only fixing the description (or a person clearing it) lifts it.
+  if (cur && isBlockedItem(cur) && cur.blocked.setBy !== me && cur.blocked.setBy !== "ph-ticket-intake") patch.blocked = null;
   await updateDoc(doc(db, "backlogItems", id), patch);
 }
 

@@ -912,6 +912,8 @@ function unauthorized(res, detail) {
 // The board, as tools
 // ══════════════════════════════════════════════════════════════════════════
 
+const { applyIntake, isIntakeFlag, INTAKE_SETTER } = require("./intake");
+
 const CATEGORIES = [
   "Pricing & Offers", "Product Assets", "HQ Admin", "Retail Admin",
   "Menu Board", "Backend / Infrastructure", "Uncategorised",
@@ -1690,7 +1692,7 @@ const TOOLS = [
   },
   {
     name: "create_backlog_item",
-    description: "File a new ticket into a project's Backlog column, attributed to you. A title and area are derived from the description when you don't give them. Tickets always start in Backlog — nothing here can put work straight into testing or deployment.",
+    description: "File a new ticket into a project's Backlog column, attributed to you. The description is structured into the four intake sections (Outcome, Test steps, Dependencies, Spec reference); a ticket missing or thin on any is held BLOCKED with the gap named. A title, type and area are derived when you don't give them. Tickets always start in Backlog — nothing here can put work straight into testing or deployment.",
     scope: "board.write",
     inputSchema: {
       type: "object",
@@ -1709,12 +1711,17 @@ const TOOLS = [
       if (desc.length > 2000) return toolError("desc is limited to 2000 characters (the board's own limit).");
       const projectSnap = await db().collection("projects").doc(String(args.projectId)).get();
       if (!projectSnap.exists) return toolError(`No project with id ${args.projectId}. Call list_projects first.`);
-      const title = String(args.title || "").trim().slice(0, 200) || generateTitle(desc);
-      const type = args.type === "bug" ? "bug" : "feature";
+      // ph-ticket-intake: structure into the four sections, infer type and
+      // area, and hold the ticket BLOCKED (gap named) if it isn't buildable.
+      const intake = applyIntake(desc);
+      const title = String(args.title || "").trim().slice(0, 200) || generateTitle(intake.sections.outcome || desc);
+      const type = args.type === "bug" || args.type === "feature" ? args.type : intake.type;
       const category = CATEGORIES.includes(args.category) ? args.category : suggestCategory(desc);
+      const blocked = intake.blocked ? { ...intake.blocked, setBy: INTAKE_SETTER, setAt: new Date() } : null;
       const ref = await db().collection("backlogItems").add({
         projectId: String(args.projectId),
-        title, desc, type, category,
+        title, desc: intake.desc, type, category,
+        ...(blocked ? { blocked } : {}),
         status: "backlog",
         // Provenance the board can show and an admin can audit: filed by a
         // person's agent, on their behalf, not by the board automation.
@@ -1728,6 +1735,9 @@ const TOOLS = [
       return textResult({
         created: true, itemId: ref.id, projectId: String(args.projectId),
         title, type, category, status: "backlog",
+        intake: intake.blocked
+          ? { passed: false, blocked: intake.blocked, gaps: intake.gaps.map((g) => `${g.heading} (${g.why})`) }
+          : { passed: true },
         board: `${PUBLIC_ORIGIN}/#item-${ref.id}`,
       });
     },
@@ -1890,7 +1900,7 @@ const TOOLS = [
       // A newer comment from anyone other than whoever set the blocked flag
       // answers it and puts the ticket back in the build queue.
       const cur = snap.data() || {};
-      const clearedBlocked = !!(cur.blocked && cur.blocked.reason && cur.blocked.setBy !== session.email);
+      const clearedBlocked = !!(cur.blocked && cur.blocked.reason && cur.blocked.setBy !== session.email && !isIntakeFlag(cur.blocked));
       if (clearedBlocked) upd.blocked = null;
       await ref.update(upd);
       await audit(session, "add_item_comment", { itemId: ref.id, chars: text.length });

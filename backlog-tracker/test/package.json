@@ -7,7 +7,7 @@
     "test:app-boots": "node app-boots.test.mjs",
     "test:e2e-run": "node e2e-run.test.mjs",
     "test:generated-builds": "node generated-builds.test.js && node patch-paths.test.js",
-    "test:mcp": "node mcp-server.test.js",
+    "test:mcp": "node mcp-server.test.js && node intake.test.js",
     "test:client": "node mcp-client.test.mjs",
     "test:mcp-app": "node mcp-app-view.test.mjs",
     "test:train-lock": "node train-lock.test.js && node train-lock-trigger.test.js && node train-lock-branch-archive.test.js && node train-carried.test.js && node train-sync.test.js && node docs-sync.test.js && node migrate-project-docs.test.js && node train-checks.test.js && node train-tests.test.js && node parallel-builds.test.js",

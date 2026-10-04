@@ -14,6 +14,7 @@ const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
+const { applyIntake, isIntakeFlag, INTAKE_SETTER } = require("./intake");
 const { isTrainRelevantItem, trainLockShouldClear, trainHandoverReason } = require("./train-lock");
 
 initializeApp();
@@ -1641,6 +1642,37 @@ exports.onBacklogItemReadyForAutomation = onDocumentWritten(
   }
 );
 
+// ph-ticket-intake gate for every route a Backlog ticket can arrive by — the
+// manual board form, MCP (which also applies it inline so the agent sees the
+// verdict at once) and later edits to the description. Structures the
+// description into the four required sections, and holds the ticket BLOCKED
+// (gap named) until it is buildable; fixing the description lifts the flag.
+// Only a flag intake itself raised is ever touched, so a person's own
+// needs-decision/waiting flag is left alone. Idempotent: re-running on its
+// own output writes nothing, which is what stops this looping.
+async function runTicketIntake(event) {
+  const after = event.data?.after?.data();
+  if (!after || after.status !== "backlog") return;
+  const before = event.data?.before?.data();
+  if (before && before.desc === after.desc) return; // create, or a description edit — not a card sent back to Backlog
+  if (after.blocked && after.blocked.reason && !isIntakeFlag(after.blocked)) return;
+  const intake = applyIntake(after.desc);
+  const upd = {};
+  if (intake.desc !== after.desc) upd.desc = intake.desc;
+  const had = isIntakeFlag(after.blocked) ? after.blocked : null;
+  if (intake.blocked) {
+    if (!had || had.reason !== intake.blocked.reason || had.note !== intake.blocked.note) {
+      upd.blocked = { ...intake.blocked, setBy: INTAKE_SETTER, setAt: new Date() };
+    }
+  } else if (had) {
+    upd.blocked = null;
+  }
+  if (Object.keys(upd).length === 0) return;
+  upd.updatedAt = FieldValue.serverTimestamp();
+  await event.data.after.ref.update(upd);
+}
+exports.onBacklogItemIntake = onDocumentWritten("backlogItems/{itemId}", runTicketIntake);
+
 // Fixes "Ready for Dev CTA stays hidden after all train tickets are
 // deleted (stuck trainLocked)". projects/{id}.trainLocked only ever
 // LATCHES true from app.js's deployToFeature() — firestore.rules lets the
@@ -2025,4 +2057,4 @@ exports.syncConsoleUserClaims = mcp.syncConsoleUserClaims;
 // test/routine-binding-trigger.test.js exercise resolveRoutineCredentials
 // directly instead of standing up a full onDocumentUpdated + fetch-mocking
 // harness for something that's pure db-read-then-fallback logic.
-exports.__test = { resolveRoutineCredentials, stampMs, itemNotesBlock, perItemFireText, fireBuildSessionsPerItem };
+exports.__test = { runTicketIntake, resolveRoutineCredentials, stampMs, itemNotesBlock, perItemFireText, fireBuildSessionsPerItem };
