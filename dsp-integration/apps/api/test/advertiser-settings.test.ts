@@ -136,7 +136,7 @@ describe('Advertiser settings (spec §4, §6)', () => {
     expect(res.json().items).toEqual([{
       displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board — Long Format / Zone 1', playlistId: 'pl_zone_menu_board_1', unassigned: false, scored: true, unsellableReason: null, salesLocked: false, salesLockedUntil: null, slot: 2, zoneSlot: 2, position: 'Supplier slot',
       assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false, buyersListId: null, buyersListName: null }, qrControl: true, visionAi: true, supportedTargeting: ['localised'],
-      reservePrice: null, reservePriceOverride: null, displayTypeReservePrice: null,
+      reservePrice: null, reservePriceOverride: null, displayTypeReservePrice: null, interactiveReservePrice: null, interactiveReservePriceOverride: null,
       billingUnitHours: 24, billingUnitHoursOverride: null, displayTypeBillingUnitHours: null, companyPlayWindowHours: 24,
       maxCampaigns: 5, maxCampaignsOverride: null, displayTypeMaxCampaigns: null,
     }])
@@ -258,6 +258,30 @@ describe('Advertiser settings (spec §4, §6)', () => {
       { field: 'items[0].reservePrice', reason: 'A CPM of 0 or more, or null for no reserve.' },
       { field: 'items[1].reservePriceDefault', reason: 'All slots on a display type must submit the same reserve price default.' },
     ])
+  })
+
+  /* Interactive reserve price (ticket 5eLDRBqEGhNyJSHSIFFG): a slot-only
+     price for interactive campaigns, falling back to the ordinary reserve
+     price, and only kept while the slot supports interactive targeting. */
+  it('saves an interactive reserve price per slot, falling back to the reserve price and dropping it with interactive', async () => {
+    const ctx = await testContext()
+    const app = buildApp(ctx)
+    const row = (supportedTargeting: string[], interactiveReservePrice?: number | null) =>
+      ({ displayTypeId: 'menu_board', slot: 2, supportedTargeting, assignedTo: KEEP, reservePrice: 5, reservePriceDefault: null, ...(interactiveReservePrice === undefined ? {} : { interactiveReservePrice }) })
+    const save = (item: ReturnType<typeof row>) => app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [item] } })
+    const at = (json: { items: { slot: number }[] }) => json.items.find((i) => i.slot === 2)
+    const modes = ['localised', 'interactive']
+    const set = await save(row(modes, 9))
+    expect(set.statusCode).toBe(200)
+    expectMatchesContract('PUT', '/admin/v1/available-inventory', 200, set.json())
+    expect(at(set.json())).toMatchObject({ reservePrice: 5, interactiveReservePrice: 9, interactiveReservePriceOverride: 9 })
+    /* Omitted keeps it; null falls back to the ordinary reserve price. */
+    expect(at((await save(row(modes))).json())).toMatchObject({ interactiveReservePriceOverride: 9 })
+    expect(at((await save(row(modes, null))).json())).toMatchObject({ interactiveReservePrice: 5, interactiveReservePriceOverride: null })
+    /* Dropped when the slot stops supporting interactive. */
+    await save(row(modes, 9))
+    expect(at((await save(row(['localised'], 9))).json())).toMatchObject({ interactiveReservePriceOverride: null })
+    expect((await save(row(modes, -1))).statusCode).toBe(400)
   })
 
   /* Max campaigns (ticket "Available Inventory: Max campaigns column + slot

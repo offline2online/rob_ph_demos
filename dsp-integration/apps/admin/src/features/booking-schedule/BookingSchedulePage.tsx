@@ -22,7 +22,8 @@
    icons"), from broadest/most-frequent to narrowest/rarest: computer
    vision, aggregate store-level, individual. */
 import { useQuery } from '@tanstack/react-query'
-import { Alert, DatePicker, Segmented, Spin, Tooltip } from 'antd'
+import { Alert, DatePicker, Segmented, Spin } from 'antd'
+import { Tip } from '../../shared/Tip'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
 import { SLOT_OWNERS, type BookingSchedule as Schedule } from '@ph-dsp/types'
 import dayjs, { type Dayjs } from 'dayjs'
@@ -216,7 +217,7 @@ function BookingTile({ booking, money }: { booking: Booking; money: (n: number) 
   const layersTip = present.map((k) => layerLine(k, booking)).join(' · ')
   const tip = `${booking.advertiserName} via ${booking.partnerName} · ${booking.type === 'reserve' ? 'Reserved' : 'Won at auction'} at ${booking.cpm} CPM · ${booking.assumedViews.toLocaleString('en-GB')} assumed views · booked ${money(booking.bookedRevenue)} · ${layersTip}`
   return (
-    <Tooltip title={tip}>
+    <Tip title={tip}>
       <div className="flex w-full min-w-0 flex-col gap-0.5 rounded px-1 py-0.5" style={{ background: BOOKED.bg, borderLeft: `3px solid ${BOOKED.colour}` }}>
         <div className="flex items-center gap-1 w-full min-w-0">
           <Icon name={booking.type === 'reserve' ? 'bookmark' : 'gavel'} size={12} />
@@ -224,7 +225,7 @@ function BookingTile({ booking, money }: { booking: Booking; money: (n: number) 
         </div>
         {present.map((k) => <LayerRow key={k} layerKey={k} booking={booking} />)}
       </div>
-    </Tooltip>
+    </Tip>
   )
 }
 
@@ -252,7 +253,7 @@ function GroupedCell({ cells, money }: { cells: Cell[]; money: (n: number) => st
   const tip = booked.length ? `${names.join(', ')} · ${money(revenue)}` : 'Nothing booked in this period.'
   const upsells = (['localised', 'personalised'] as const).map((k) => ({ k, n: booked.filter((c) => c.booking!.layers[k]).length })).filter((u) => u.n > 0)
   return (
-    <Tooltip title={tip}>
+    <Tip title={tip}>
       <div className="flex w-full min-w-0 flex-col gap-0.5">
         <span className="truncate" style={{ fontSize: 11, fontWeight: booked.length ? 500 : 400, color: booked.length ? BOOKED.colour : T.muted }}>
           {booked.length ? `${booked.length} of ${cells.length} booked` : `${sellable} open`}
@@ -264,7 +265,7 @@ function GroupedCell({ cells, money }: { cells: Cell[]; money: (n: number) => st
           </div>
         ))}
       </div>
-    </Tooltip>
+    </Tip>
   )
 }
 
@@ -438,10 +439,10 @@ export function BookingSchedulePage() {
         <Segmented<View> value={view} onChange={(v) => { setView(v); setRange(null) }} options={['Daily', 'Weekly', 'Monthly']} />
         {/* The hosted demo holds a snapshot per view, not per arbitrary range,
             so it fixes the dates rather than showing a range it doesn't have. */}
-        <Tooltip title={isSnapshotDemo() ? 'Fixed in the hosted demo: its data is a snapshot. Run the POC locally to pick a range.' : ''}>
+        <Tip title={isSnapshotDemo() ? 'Fixed in the hosted demo: its data is a snapshot. Run the POC locally to pick a range.' : ''}>
           <DatePicker.RangePicker aria-label="Dates" value={[dayjs(from), dayjs(to)]} allowClear={false} disabled={isSnapshotDemo()}
             onChange={(v) => setRange(v && v[0] && v[1] ? [v[0], v[1]] : null)} />
-        </Tooltip>
+        </Tip>
       </div>
 
       {schedule.isError && <Alert className="mb-4" type="error" showIcon message="The booking schedule couldn’t be loaded." />}

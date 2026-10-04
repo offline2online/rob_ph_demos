@@ -26,7 +26,7 @@
 import { randomUUID } from 'node:crypto'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
-import { assignedOf, reservePriceOf } from '@ph-dsp/types'
+import { assignedOf, interactiveReservePriceOf, reservePriceOf } from '@ph-dsp/types'
 import { termStateAt } from '../../billing/term'
 import { assignmentOf, closesAtFor, effectivePartnerIds, findPosition, heldFor, opensAtFor, unsellableReason, windowHoursFor, windowStartOf } from '../../domain/positions'
 import { multiplierToSnapshot } from '../../domain/pricing'
@@ -80,7 +80,7 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
 
     const pos = p!
     const windowStart = start!.toISOString()
-    const reservePrice = reservePriceOf(pos.displayType, pos.def)
+    const reservePrice = (campaign!.pricingType === 'interactive' ? interactiveReservePriceOf : reservePriceOf)(pos.displayType, pos.def)
     /* A reserve-price commitment is at least the posted reserve price
        (OQ52); it is booked at the reserve price itself, below. */
     if (b.type === 'reserve' && reservePrice !== null && (b.bidCpm as number) < reservePrice) {

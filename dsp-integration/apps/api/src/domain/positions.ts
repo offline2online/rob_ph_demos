@@ -7,7 +7,7 @@ import type { Context } from '../context'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 import { type Awaitable, allOf, andThen } from '../db/db'
 import { type ReservationStatus, TAKEN } from '../repos/ReservationRepo'
-import { advertiserSlug, assignedOf, billingUnitHoursOf, maxCampaignsOf, reservePriceOf, supportedTargetingOf, type Assigned } from '@ph-dsp/types'
+import { advertiserSlug, assignedOf, billingUnitHoursOf, interactiveReservePriceOf, maxCampaignsOf, reservePriceOf, supportedTargetingOf, type Assigned } from '@ph-dsp/types'
 import { invitedPartnerIds, isInvitedBuyer } from './buyersLists'
 import { isActiveAt, lockedTermSpan } from '../billing/term'
 import { effectiveLists, isBlocked, isOn } from './lists'
@@ -482,5 +482,6 @@ function viewOf(
     /* The most campaigns (default + targeted versions) a bid or reservation here may carry. */
     maxCampaigns: maxCampaignsOf(dt, p.def),
     reservePrice: reservePriceOf(dt, p.def),
+    ...(supportedTargetingOf(p.def).includes('interactive') ? { interactiveReservePrice: interactiveReservePriceOf(dt, p.def) } : {}),
   }
 }

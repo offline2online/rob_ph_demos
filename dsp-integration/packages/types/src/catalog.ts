@@ -105,6 +105,14 @@ export const assignedLabels = (a: { advertisers: readonly string[]; partnerNames
 export const reservePriceOf = (dt: { phExtensions?: { reservePrice?: number | null } | null }, slot: { reservePrice?: number | null }): number | null =>
   slot.reservePrice ?? dt.phExtensions?.reservePrice ?? null
 
+/* Interactive reserve price (ticket 5eLDRBqEGhNyJSHSIFFG, 4 Oct 2026): a
+   slot may carry its own reserve price for interactive campaigns, so an
+   interactive experience can be priced apart from the ordinary slot. null
+   means interactive campaigns follow reservePriceOf. Slot-level only — a
+   display type has no interactive default. */
+export const interactiveReservePriceOf = (dt: { phExtensions?: { reservePrice?: number | null } | null }, slot: { reservePrice?: number | null; interactiveReservePrice?: number | null }): number | null =>
+  slot.interactiveReservePrice ?? reservePriceOf(dt, slot)
+
 /* Billing-unit inheritance (spec "Private auctions: two-period model", 23
    Sep 2026): the granularity a CPM is quoted and charged against — same
    override-always-wins inheritance as reservePriceOf, but always resolves

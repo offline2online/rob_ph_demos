@@ -37,7 +37,7 @@ export function SaveBar({ dirty, saving, onSave, onCancel, saveOnEnter }: { dirt
     <div
       role="region"
       aria-label="Save changes"
-      className="sticky bottom-0 z-[5] mt-6 flex items-center gap-2 border-t bg-white py-3"
+      className="ph-save-bar sticky bottom-0 z-[5] mt-6 flex items-center gap-2 border-t bg-white py-3"
       style={{ borderColor: T.borderSubtle }}
     >
       <span className="inline-flex flex-1 items-center gap-1.5" style={{ fontSize: 12.5, color: dirty ? T.warning : T.micro }}>

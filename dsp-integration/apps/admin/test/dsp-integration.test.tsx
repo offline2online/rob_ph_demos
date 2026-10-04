@@ -602,7 +602,7 @@ describe('Advertisers / Inventory', () => {
        (ticket "Available Inventory: playlist-primary table (drop Display
        type column) with Unassigned indicator", 27 Sep 2026). */
     expect([...inventory.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent))
-      .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Targeting supported', 'Reserve price', 'Max campaigns', 'Billing unit', ''])
+      .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Targeting supported', 'Reserve price', 'Interactive reserve price', 'Max campaigns', 'Billing unit', ''])
     expect(within(inventory).getByLabelText('Playlist search')).toBeInTheDocument()
     expect(within(inventory).getByLabelText('Targeting supported filter')).toBeInTheDocument()
     /* QR Control and Vision/AI moved onto the Playlist cell along with the
@@ -657,7 +657,7 @@ describe('Advertisers / Inventory', () => {
     expect(within(inventory).getByRole('status')).toHaveTextContent(reason)
   })
 
-  it('holds a position for an advertiser, and only offers interactive where QR Control is on', async () => {
+  it('holds a position for an advertiser, and never offers interactive targeting', async () => {
     const calls: { url: string; body: unknown }[] = []
     const saved = () => calls.find((c) => c.url.includes('available-inventory'))?.body
     vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
@@ -669,9 +669,10 @@ describe('Advertisers / Inventory', () => {
     const combo = (row: string, label: string) =>
       within(within(inventory).getAllByLabelText(`${row}: ${label}`)[0].closest('.ag-cell') as HTMLElement).getByRole('combobox')
 
-    /* Interactive needs a QR code to scan, so it is refused on Portrait. */
+    /* Interactive (QR Control) is out of the first release: never offered. */
     fireEvent.mouseDown(combo('Portrait slot 1', 'targeting supported'))
-    expect(await screen.findByText('QR Control required to support an interactive engagement')).toBeInTheDocument()
+    expect(await screen.findByText('Personalised', { selector: '.ant-select-item-option-content div' })).toBeInTheDocument()
+    expect(screen.queryByText('Interactive', { selector: '.ant-select-item-option-content div' })).not.toBeInTheDocument()
     fireEvent.keyDown(combo('Portrait slot 1', 'targeting supported'), { key: 'Escape' })
 
     /* Hold the Menu Board position for an advertiser: a pill, and the DSP the API adds. */
@@ -683,7 +684,7 @@ describe('Advertisers / Inventory', () => {
     await waitFor(() => expect(saved()).toEqual({ items: [{
       displayTypeId: 'menu_board', slot: 2, supportedTargeting: ['localised', 'personalised'],
       assignedTo: { partnerIds: ['p_google'], advertisers: ['Nestlé'], whitelistOnly: false, buyersListId: null },
-      reservePriceDefault: null, billingUnitHoursDefault: null, maxCampaignsDefault: null,
+      interactiveReservePrice: null, reservePriceDefault: null, billingUnitHoursDefault: null, maxCampaignsDefault: null,
     }] }))
     /* This test opens two AntD Selects, drives a save round-trip and waits
        on it with real timers — already the file's slowest, and, measured in

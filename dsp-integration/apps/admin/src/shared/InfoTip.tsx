@@ -1,14 +1,14 @@
 /* Info icon whose tooltip explains the field, column or section it sits
    next to (spec "Help text"). Opens above, or below when there isn't room
    (AntD autoAdjustOverflow). Shows on hover and keyboard focus. */
-import { Tooltip } from 'antd'
 import type { ReactNode } from 'react'
 import { T } from '../theme/phTheme'
 import { Icon } from './Icon'
+import { Tip } from './Tip'
 
 export function InfoTip({ text, size = 14, width = 280 }: { text: ReactNode; size?: number; width?: number }) {
   return (
-    <Tooltip title={text} placement="top" autoAdjustOverflow styles={{ root: { maxWidth: width } }} trigger={['hover', 'focus']}>
+    <Tip title={text} placement="top" autoAdjustOverflow styles={{ root: { maxWidth: width } }}>
       <span
         role="button"
         tabIndex={0}
@@ -19,7 +19,7 @@ export function InfoTip({ text, size = 14, width = 280 }: { text: ReactNode; siz
       >
         <Icon name="info" size={size} />
       </span>
-    </Tooltip>
+    </Tip>
   )
 }
 

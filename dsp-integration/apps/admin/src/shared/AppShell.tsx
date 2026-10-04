@@ -38,10 +38,10 @@ export function AppShell({ title, nav, children }: { title: ReactNode; nav: NavI
     </>
   )
   if (nav.length === 0) {
-    return <div className="min-h-screen w-full bg-white p-5" style={{ color: T.text, fontSize: 14 }}>{header}{children}</div>
+    return <div className="ph-min-full-height w-full bg-white p-5" style={{ color: T.text, fontSize: 14 }}>{header}{children}</div>
   }
   return (
-    <div className="flex min-h-screen w-full items-stretch bg-white" style={{ color: T.text, fontSize: 14 }}>
+    <div className="ph-min-full-height flex w-full items-stretch bg-white" style={{ color: T.text, fontSize: 14 }}>
       <nav
         aria-label="Display Types and DSP Integration"
         className="ph-sticky-pane ph-full-height sticky top-0 shrink-0 self-start overflow-y-auto overflow-x-hidden border-r"

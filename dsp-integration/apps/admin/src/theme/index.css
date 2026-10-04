@@ -81,6 +81,12 @@
    screen. So: the visible viewport's height (dvh) everywhere, and on touch
    screens no nested sticky scrollers at all — one page that scrolls. */
 .ph-full-height { height: 100vh; height: 100dvh; }
+.ph-min-full-height { min-height: 100vh; min-height: 100dvh; }
+/* Save changes bar (ticket v5RFnJ7o4zY7ab1vXvKd): on iPad Safari a sticky-bottom
+   element is repainted late as the toolbars show and hide while scrolling, so
+   it was left floating part-way up the screen. Its own compositing layer keeps
+   it pinned to the bottom edge of the visible viewport. */
+.ph-save-bar { -webkit-transform: translateZ(0); transform: translateZ(0); }
 .ph-list-pane { max-height: calc(100vh - 40px); max-height: calc(100dvh - 40px); }
 @media (hover: none) and (pointer: coarse) {
   .ph-sticky-pane {

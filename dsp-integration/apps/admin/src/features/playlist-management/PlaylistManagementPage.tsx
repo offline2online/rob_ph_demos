@@ -18,7 +18,8 @@
    it was auto-created for) — so the kind of screen a playlist plays on
    reads at a glance. */
 import { useQueryClient } from '@tanstack/react-query'
-import { Alert, App, Button, Input, Popover, Spin, Tooltip } from 'antd'
+import { Alert, App, Button, Input, Spin } from 'antd'
+import { Tip, PopTip } from '../../shared/Tip'
 import type { ColDef, GridApi, ICellRendererParams, RowHeightParams } from 'ag-grid-community'
 import { touchPointIcon, type DeleteCheck, type DisplayType, type Partner, type Playlist } from '@ph-dsp/types'
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -97,9 +98,9 @@ function TouchPointIcons({ p, types }: { p: Playlist; types: DisplayType[] }) {
   return (
     <span className="inline-flex shrink-0 items-center gap-0.5">
       {tps.map((tp) => (
-        <Tooltip key={tp} title={tp}>
+        <Tip key={tp} title={tp}>
           <span className="inline-flex" role="img" aria-label={`${tp} touch point`}><Icon name={touchPointIcon(tp)} size={17} style={{ color: T.primary }} /></span>
-        </Tooltip>
+        </Tip>
       ))}
     </span>
   )
@@ -169,11 +170,11 @@ function AssignedCell({ data, context }: Params) {
     </div>
   )
   return (
-    <Popover trigger="hover" placement="rightTop" title={`Assigned to (${n})`} content={content}>
+    <PopTip trigger="hover" placement="rightTop" title={`Assigned to (${n})`} content={content}>
       <span className="inline-flex cursor-default items-center gap-1" tabIndex={0} aria-label={`${data.p.name} is assigned to ${n} display type${n > 1 ? 's' : ''} or zones`}>
         {n} assignment{n > 1 ? 's' : ''}<Icon name="info" size={14} style={{ color: T.micro }} />
       </span>
-    </Popover>
+    </PopTip>
   )
 }
 
