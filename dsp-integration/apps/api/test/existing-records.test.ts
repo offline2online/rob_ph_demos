@@ -36,10 +36,18 @@ const expectedLegacy = {
 }
 
 describe('existing records after this project migrations', () => {
-  it('a display type written before phExtensions existed loads unchanged, with no phExtensions', async () => {
+  /* Every existing field loads unchanged. The one addition is this project's
+     own phExtensions, which migration 0044 back-fills with the default VAC-d
+     (300) so an older Kiosk/Digital Signage type is scored rather than left
+     out of inventory (ticket qfpWmGnALUCzHgIpdUwl, 4 Oct 2026); reverting
+     removes it again (last test). */
+  it('a display type written before phExtensions existed keeps every field, gaining only the back-filled default VAC-d', async () => {
     const db = legacyDb()
     migrateUp(db)
-    expect(await sqliteDisplayTypeSource(db).get('legacy')).toEqual(expectedLegacy)
+    expect(await sqliteDisplayTypeSource(db).get('legacy')).toEqual({
+      ...expectedLegacy,
+      phExtensions: { slots: [], defaultVacd: 300, defaultVacdSource: 'manual' },
+    })
   })
 
   it('an existing campaign loads with the additions defaulted (HQ-authored, not activated by this build)', async () => {
