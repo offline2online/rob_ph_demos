@@ -1200,6 +1200,20 @@ deploying the function. If that GitHub secret isn't set, this step is
 skipped and the manual `firebase functions:secrets:set NOTIFY_WEBHOOK_URL`
 command still works as a one-off alternative.
 
+The same step syncs `CLAUDE_ROUTINE_FIRE_URL`, `CLAUDE_ROUTINE_TOKEN`,
+`GH_DISPATCH_TOKEN` and `BOARD_API_KEY`, all through
+`scripts/sync-function-secret.sh`. That script leaves an unchanged value
+alone and never redeploys a function. A changed value only adds a secret
+version, which the deploy step's `firebase deploy` then pins every function
+to. Up to 4 Oct 2026 this used `functions:secrets:set --force`, which
+re-uploaded every secret and redeployed six functions on every deploy. One
+transient Google error left those updates running, and every retry failed
+with "409, unable to queue the operation", so the console never deployed. The
+deploy step itself now retries only on Google's transient errors (409/429/5xx),
+after waiting for in-flight Cloud Functions operations to finish. Runs queue
+rather than cancel each other, since cancelling mid-deploy leaves the same
+in-flight updates behind.
+
 If the secret isn't set yet, or you need to deploy from a machine
 directly, the manual commands still work exactly as before, run from
 inside `backlog-tracker/`:
