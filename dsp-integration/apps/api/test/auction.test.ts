@@ -342,7 +342,7 @@ describe('POST /v1/reservations and GET …/{id}', () => {
     await approve('c_api_swisse')
     await activate('c_api_swisse')
     const support = (supportedTargeting: string[]) =>
-      app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, supportedTargeting }] } })
+      app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, supportedTargeting, reservePrice: 150 }] } })
 
     await support(['personalised', 'interactive'])
     const res = await reserve(BID)

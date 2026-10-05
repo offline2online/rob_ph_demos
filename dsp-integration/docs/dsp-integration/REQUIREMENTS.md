@@ -11,6 +11,12 @@ record.
 
 **Changelog**
 
+- **5 Oct 2026** — personalised versions are sold only through reserved
+  slots (Rob; ticket Ba5QdLIzCbJGMHfawjAP): Personalised is selectable in
+  Targeting supported only on a slot with a reserve price, a personalised
+  campaign is refused (`targeting_not_supported`) outside a `type: reserve`
+  booking, and only a reserve-held window plays personalised versions
+  (migration 0045). Reserve price tooltip updated.
 - **2 Oct 2026** — seams and repositories awaitable, with a per-database
   transaction lock on SQLite, and the SQL made portable to Postgres
   (cUdX4dmT / gAi2mkcm; 9f51d91, 944fd91). Booking schedule numbers a
@@ -1307,7 +1313,15 @@ this document).
   at — not an amount added to the floor — and it must itself clear the
   buyer's effective floor (§4). A booking is billed on realised VAC-d at
   that CPM, as a floor commitment: no guaranteed volume, no make-good (§4
-  Billing). `null` when no reserve is set. Genuine §1 configuration inheritance, not a copy action: a display
+  Billing). `null` when no reserve is set. **Reserved slots are the only slots
+  that play personalised versions** (decision, Rob, 5 Oct 2026): once
+  committed, the advertiser submits the personalised variations their
+  creative needs alongside the mandatory default. Tooltip on the Reserve
+  price column and the display type's reserve price field: *"The premium CPM
+  an advertiser commits to up front to hold this slot for a window, out of the
+  open auction. Reserved slots are the only slots that play personalised
+  versions: once committed, the advertiser submits the personalised
+  variations their creative needs alongside the default."* Genuine §1 configuration inheritance, not a copy action: a display
   type carries its own reserve price default, and a slot's own reserve
   price overrides it whenever one is set — a slot with none simply follows
   its display type, and setting the default reaches every slot on it
@@ -1412,7 +1426,13 @@ DSPs: it is on the position in `GET /v1/inventory`, and a bid or reservation
 for a campaign of any other type is refused with `targeting_not_supported`,
 alongside the floor and list checks. Personalised and interactive campaigns
 carry their own multipliers on the floor price (§4), so this is also the
-control over what a slot can be sold for. **Admin only**: a marketing user
+control over what a slot can be sold for. **Personalised is selectable only
+on a slot that has a reserve price** (its own or inherited; Rob, 5 Oct 2026):
+the option is disabled with a note otherwise, and the save is refused. A
+personalised campaign is accepted only in a reserve booking (`POST
+/v1/reservations`, `type: reserve`); a bid for one, in an open or private
+auction, is refused `targeting_not_supported`. The Targeting supported
+tooltip says so. **Admin only**: a marketing user
 sees them but can't change them.
 
 **Interactive needs QR Control** (Rob, 20 Sep). There is nothing for a
@@ -1641,6 +1661,12 @@ stores its criteria didn't match unsold to it. That model is retired:
   throughout (§5, §7 Billing), so retiring the part-sold submission shape
   is retiring a plan, not a running behaviour. The **Part-sold** position
   status (§5) is removed along with it.
+- **Personalised versions play only in a reserve-held window** (Rob, 5 Oct
+  2026): open and private auctions clear default and localised only, so
+  personalisation cannot be used to game the auction. The reserve booking is
+  pre-committed by one advertiser, who submits the personalised variations
+  alongside the mandatory default; it bills on realised VAC-d at the reserve
+  price, as today, with no special billing.
 - **localised and personalised are upsells on the one purchase**, not
   alternatives to it: a booking's tile stacks whichever of the two the
   advertiser's submission also carries, on top of the mandatory default
@@ -2123,7 +2149,10 @@ release (open question 45).
    confirmed approved and validated against the display type's canvas, then
    handed to the **existing campaign system** for that slot and window.
    Distribution to players, caching, playback and playback analytics are the
-   existing platform's and are unchanged.
+   existing platform's and are unchanged. The booking carries
+   `personalisedEligible`, true only for a window held by a reserve booking
+   (5 Oct 2026): personalised versions are eligible to play there and
+   nowhere else; an auction-won window plays default and localised only.
 4. **Supply-chain transparency.** A published `sellers.json` and a
    `SupplyChain` object on every bid request.
 5. **Reconciliation and billing** from existing playback data.
@@ -3244,6 +3273,8 @@ playback analytics.**
 - **Targeting supported per slot**: which kinds of campaign a slot takes —
   localised, personalised, interactive — localised only by default, set by
   an admin, published on the position and enforced on every bid.
+  Personalised needs a reserve price on the slot (own or inherited) and is
+  sold only through reserve bookings (5 Oct 2026).
   *(Advertisers / Inventory → Available Inventory)*
 - **Campaign schedule** (renamed from "Booking schedule", ticket 26 Sep
   2026; **page title "Advertiser Bookings"** and the second tab **"Upcoming

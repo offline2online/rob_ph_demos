@@ -302,6 +302,12 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
           else maxCampaignsDefaults.set(dt.id, maxCampaignsDefault)
         }
 
+        /* Personalised versions play only on reserved slots (Rob, 5 Oct 2026),
+           so a slot can support them only if it has a reserve price, its own or the display type's default. */
+        if (targeting?.includes('personalised') && reservePrice === null && reservePriceDefault === null) {
+          errors.push({ field: f('supportedTargeting'), reason: 'Personalised needs a reserve price: personalised versions play only on reserved slots.' })
+        }
+
         if (dt && def && targeting && !bad.length) {
           const byType = wanted.get(dt.id) ?? new Map<number, Patch>()
           byType.set(slot, { supportedTargeting: targeting, assigned, reservePrice, interactiveReservePrice: targeting.includes('interactive') ? interactiveReservePrice : null, billingUnitHours, maxCampaigns })

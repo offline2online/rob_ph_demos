@@ -152,7 +152,7 @@ describe('request size limits', () => {
     const forSlot = { ...SWISSE, displayTypeId: 'menu_board', slot: 2 }
     const setSupported = (supportedTargeting: string[]) => app.inject({
       method: 'PUT', url: '/api/admin/v1/available-inventory',
-      payload: { items: [{ displayTypeId: 'menu_board', slot: 2, supportedTargeting, assignedTo: { partnerIds: ['p_google'], advertisers: [], whitelistOnly: false } }] },
+      payload: { items: [{ displayTypeId: 'menu_board', slot: 2, supportedTargeting, reservePrice: 150, assignedTo: { partnerIds: ['p_google'], advertisers: [], whitelistOnly: false } }] },
     })
 
     /* Still localised-only (the seeded default): a personalised targeted

@@ -121,7 +121,7 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
     const refusal = await firstRefusal(
       () => checkCampaign(ctx, c.campaignId),
       () => checkAdvertiser(ctx, pos, partner, seat!.name, seat!.domain ? [seat!.domain] : [], seat!.id, windowStart),
-      () => checkTargeting(pos, c.pricingType),
+      () => checkTargeting(pos, c.pricingType, b.type === 'reserve'),
       () => checkVersionCount(ctx, pos, c.campaignId),
       /* A reserve-price booking is checked at the rate it is booked at:
          the reserve price never clears below the floor (OQ45). */

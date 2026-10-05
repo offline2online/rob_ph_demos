@@ -47,6 +47,9 @@ export async function handOff(ctx: Context, r: ReservationRecord): Promise<Reser
          was handed. An HQ campaign has no approval, so it carries the
          stand-in's label for its latest assets. */
       assetVersion: live ?? `v${Math.max(...assets.map((a) => a.version))}`,
+      /* Personalised versions are eligible only in a reserve-held window
+         (Rob, 5 Oct 2026); a won (auction) window plays default/localised. */
+      personalisedEligible: r.status === 'reserved',
     })
   } catch (e) {
     /* One campaign per slot per window (migration 0021): never two. */
