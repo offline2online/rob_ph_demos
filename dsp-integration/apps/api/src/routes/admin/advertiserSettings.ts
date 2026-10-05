@@ -1,6 +1,6 @@
 /* Advertiser settings (spec §4, §5, §6): pricing and the company lists, plus
    the read-only Where these apply and Available Inventory. */
-import { MAX_MAX_CAMPAIGNS, MIN_MAX_CAMPAIGNS, TARGETING_MODES, advertiserSlug, assignedOf, billingUnitHoursOf, maxCampaignsOf, interactiveReservePriceOf, reservePriceOf, supportedTargetingOf, type AdvertiserSettings, type AdvertiserSettingsInput, type Assigned, type AvailableInventoryRow, type DisplayType, type DspAdvertisers, type TargetingMode } from '@ph-dsp/types'
+import { INTERACTIVE_ENABLED, MAX_MAX_CAMPAIGNS, MIN_MAX_CAMPAIGNS, TARGETING_MODES, advertiserSlug, assignedOf, billingUnitHoursOf, maxCampaignsOf, interactiveReservePriceOf, reservePriceOf, supportedTargetingOf, type AdvertiserSettings, type AdvertiserSettingsInput, type Assigned, type AvailableInventoryRow, type DisplayType, type DspAdvertisers, type TargetingMode } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { cleanCategoryList, validateAdvertiserSettings } from '../../domain/advertiserSettings'
@@ -65,7 +65,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         }
       }
       await ctx.company.save({
-        currency: b.currency, floorCpm: b.floorCpm, personalisedMultiplier: b.personalisedMultiplier, interactiveCpe: b.interactiveCpe,
+        currency: b.currency, floorCpm: b.floorCpm, interactiveCpe: INTERACTIVE_ENABLED ? b.interactiveCpe : current.interactiveCpe,
         auctionOpensHours: b.auctionOpensHours, playWindowHours, auctionCutoffTime: b.auctionCutoffTime,
         pendingPlayWindowHours, pendingPlayWindowEffectiveFrom,
         categoryWhitelist: cleanCategoryList(b.categoryWhitelist), categoryBlacklist: cleanCategoryList(b.categoryBlacklist),
@@ -266,7 +266,10 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         else if (!def) errors.push({ field: f('slot'), reason: `${dt.name} has no slot ${slot}.` })
         else if (def.owner !== 'advertiser') errors.push({ field: f('slot'), reason: 'Only an Advertiser slot is sellable inventory.' })
 
-        const modes = Array.isArray(r.supportedTargeting) ? (r.supportedTargeting as unknown[]) : null
+        /* Interactive is deferred (Rob, 5 Oct 2026): a slot that still carries it is saved without it
+           rather than refused, and always keeps at least one type (localised by default). */
+        const sent = Array.isArray(r.supportedTargeting) ? (r.supportedTargeting as unknown[]) : null
+        const modes = INTERACTIVE_ENABLED || !sent?.length ? sent : (sent.filter((m) => m !== 'interactive').length ? sent.filter((m) => m !== 'interactive') : ['localised'])
         let targeting: TargetingMode[] | null = null
         if (!modes?.length) errors.push({ field: f('supportedTargeting'), reason: 'Choose at least one type of targeting.' })
         else if (modes.some((m) => typeof m !== 'string' || !keys.includes(m))) errors.push({ field: f('supportedTargeting'), reason: `One of: ${keys.join(', ')}.` })
@@ -302,9 +305,15 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
           else maxCampaignsDefaults.set(dt.id, maxCampaignsDefault)
         }
 
+        /* Personalised versions play only on reserved slots (Rob, 5 Oct 2026),
+           so a slot can support them only if it has a reserve price, its own or the display type's default. */
+        if (targeting?.includes('personalised') && reservePrice === null && reservePriceDefault === null) {
+          errors.push({ field: f('supportedTargeting'), reason: 'Personalised needs a reserve price: personalised versions play only on reserved slots.' })
+        }
+
         if (dt && def && targeting && !bad.length) {
           const byType = wanted.get(dt.id) ?? new Map<number, Patch>()
-          byType.set(slot, { supportedTargeting: targeting, assigned, reservePrice, interactiveReservePrice: targeting.includes('interactive') ? interactiveReservePrice : null, billingUnitHours, maxCampaigns })
+          byType.set(slot, { supportedTargeting: targeting, assigned, reservePrice, interactiveReservePrice: INTERACTIVE_ENABLED && targeting.includes('interactive') ? interactiveReservePrice : null, billingUnitHours, maxCampaigns })
           wanted.set(dt.id, byType)
         }
       }

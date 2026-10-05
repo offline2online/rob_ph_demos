@@ -13,11 +13,10 @@ export interface PlayRecord { displayId: string; campaignId: string; playedAt: s
    receivedAt is when the platform got it, distinct from playedAt. null = not
    reported, treated as known at settlement (billed, never late). */
 export interface ReceivedPlay extends PlayRecord { id: string; receivedAt: string | null }
-/* plays / playedSec are every play; `personalised` is the part of them whose
-   version was personalised. The rest (default, localised, unknown) bills at
-   the clearing CPM. */
+/* plays / playedSec are every play, whatever tier played: all of them bill at
+   the clearing CPM (Rob, 5 Oct 2026). The tier is kept on the play for reporting only. */
 export interface PlayTotals {
-  plays: number; playedSec: number; personalised?: { plays: number; playedSec: number }
+  plays: number; playedSec: number
   /* Plays per campaign version shown (versionId; null = not reported),
      ordered by versionId. The audit trail for "plays the version it was
      handed" (contract v3.1 row 3): reported on the line item, never priced. */
@@ -78,11 +77,9 @@ export const sqlitePlaybackSource = (db: Db): PlaybackSource => ({
     const args = receivedBy ? [campaignId, from, to, displayTypeId, receivedBy] : [campaignId, from, to, displayTypeId]
     const r = prepared(db,
       `SELECT COUNT(*) AS plays, COALESCE(SUM(duration_sec), 0) AS played_sec,
-              COALESCE(SUM(CASE WHEN tier = 'personalised' THEN 1 ELSE 0 END), 0) AS p_plays,
-              COALESCE(SUM(CASE WHEN tier = 'personalised' THEN duration_sec END), 0) AS p_sec,
               COUNT(version_id) AS with_version, MIN(version_id) AS v_min, MAX(version_id) AS v_max
          FROM plays ${where}`,
-    ).get(...args) as { plays: number; played_sec: number; p_plays: number; p_sec: number; with_version: number; v_min: string | null; v_max: string | null }
+    ).get(...args) as { plays: number; played_sec: number; with_version: number; v_min: string | null; v_max: string | null }
     let byVersion: { versionId: string | null; plays: number }[]
     if (r.v_min === r.v_max) {
       byVersion = [
@@ -93,6 +90,6 @@ export const sqlitePlaybackSource = (db: Db): PlaybackSource => ({
       byVersion = (prepared(db, `SELECT version_id, COUNT(*) AS plays FROM plays ${where} GROUP BY version_id ORDER BY version_id`).all(...args) as { version_id: string | null; plays: number }[])
         .map((v) => ({ versionId: v.version_id, plays: v.plays }))
     }
-    return { plays: r.plays, playedSec: r.played_sec, personalised: { plays: r.p_plays, playedSec: r.p_sec }, byVersion }
+    return { plays: r.plays, playedSec: r.played_sec, byVersion }
   },
 })

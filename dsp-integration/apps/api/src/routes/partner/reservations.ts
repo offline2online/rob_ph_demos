@@ -29,7 +29,6 @@ import type { Context } from '../../context'
 import { assignedOf, interactiveReservePriceOf, reservePriceOf } from '@ph-dsp/types'
 import { termStateAt } from '../../billing/term'
 import { assignmentOf, closesAtFor, effectivePartnerIds, findPosition, heldFor, opensAtFor, unsellableReason, windowHoursFor, windowStartOf } from '../../domain/positions'
-import { multiplierToSnapshot } from '../../domain/pricing'
 import { checkAdvertiser, checkCampaign, checkFloor, checkTargeting, checkVersionCount, firstRefusal } from '../../exchange/enforcement'
 import { handOff } from '../../exchange/handoff'
 import { auctionClaimed } from '../../exchange/scheduler'
@@ -43,7 +42,6 @@ interface Body { positionId?: unknown; windowStart?: unknown; campaignId?: unkno
 export const reservationView = (r: ReservationRecord) => ({
   reservationId: r.id, status: r.status, clearingCpm: r.clearingCpm, currency: r.currency, reason: r.reason,
   /* Snapshotted when the window cleared (ErN9Q2Q1, 30 Sep): a personalised play bills at the clearing CPM times this. Null until then. */
-  personalisedMultiplier: r.personalisedMultiplier ?? null,
 })
 
 export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (app) => {
@@ -121,7 +119,7 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
     const refusal = await firstRefusal(
       () => checkCampaign(ctx, c.campaignId),
       () => checkAdvertiser(ctx, pos, partner, seat!.name, seat!.domain ? [seat!.domain] : [], seat!.id, windowStart),
-      () => checkTargeting(pos, c.pricingType),
+      () => checkTargeting(pos, c.pricingType, b.type === 'reserve'),
       () => checkVersionCount(ctx, pos, c.campaignId),
       /* A reserve-price booking is checked at the rate it is booked at:
          the reserve price never clears below the floor (OQ45). */
@@ -145,7 +143,6 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
         status: reserved ? 'reserved' : 'pending', clearingCpm: reserved ? rate : null,
         reason: reserved && reservePrice !== null ? `Reserved at the reserve price (${rate} ${company.currency} CPM), outside the open auction.` : null,
         testMode: !live, pricingType: c.pricingType ?? null, handedOffAt: null,
-        personalisedMultiplier: reserved ? multiplierToSnapshot(company, c.pricingType) : null,
         })
       } catch (e) {
         /* Two writes for one window racing past the checks above — from two

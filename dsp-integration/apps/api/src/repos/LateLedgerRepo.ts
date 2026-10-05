@@ -19,7 +19,6 @@ export interface LatePlay {
   tier: string | null
   cpm: number
   currency: string
-  personalisedMultiplier: number | null
   /* The realised VAC-d the play would have carried, and what it would have billed. */
   lostViews: number
   lostAmount: number
@@ -45,10 +44,10 @@ export function sqliteLateLedgerRepo(db: Db): LateLedgerRepo {
   return {
     insert: (p, recordedAt) => prepared(db,
       `INSERT INTO late_plays (play_id, line_item_id, reservation_id, campaign_id, position_id, display_id, store_id, played_at, received_at, duration_sec,
-         tier, cpm, currency, personalised_multiplier, lost_views, lost_amount, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         tier, cpm, currency, lost_views, lost_amount, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (play_id) DO NOTHING`,
     ).run(p.playId, p.lineItemId, p.reservationId, p.campaignId, p.positionId, p.displayId, p.storeId, p.playedAt, p.receivedAt, p.durationSec,
-      p.tier, p.cpm, p.currency, p.personalisedMultiplier, p.lostViews, p.lostAmount, recordedAt).changes > 0,
+      p.tier, p.cpm, p.currency, p.lostViews, p.lostAmount, recordedAt).changes > 0,
     lateSecFor: (lineItemId) => (prepared(db, 'SELECT COALESCE(SUM(duration_sec), 0) AS s FROM late_plays WHERE line_item_id = ?').get(lineItemId) as { s: number }).s,
     scannedThrough: () => (prepared(db, 'SELECT scanned_through FROM late_play_scan WHERE id = 1').get() as { scanned_through: string } | undefined)?.scanned_through ?? null,
     setScannedThrough: (at) => { prepared(db, 'INSERT INTO late_play_scan (id, scanned_through) VALUES (1, ?) ON CONFLICT (id) DO UPDATE SET scanned_through = excluded.scanned_through').run(at) },

@@ -80,7 +80,7 @@ describe('unscored slots', () => {
     const { app, score } = await setup()
     const row = async () => ((await app.inject({ method: 'GET', url: '/api/admin/v1/available-inventory' })).json().items as { displayTypeId: string; scored: boolean; unsellableReason: string | null }[]).find((i) => i.displayTypeId === 'dt_ui')!
     expect(await row()).toMatchObject({ scored: false, unsellableReason: 'No audience score yet.' })
-    const save = await app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'dt_ui', slot: 1, supportedTargeting: ['localised', 'personalised'], assignedTo: { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: null }, reservePrice: null, billingUnitHours: null, maxCampaigns: null }] } })
+    const save = await app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'dt_ui', slot: 1, supportedTargeting: ['localised', 'personalised'], assignedTo: { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: null }, reservePrice: 150, billingUnitHours: null, maxCampaigns: null }] } })
     expect(save.statusCode).toBe(200)
     expect((await row()).scored).toBe(false)
     score()

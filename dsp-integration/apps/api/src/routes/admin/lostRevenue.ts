@@ -1,7 +1,7 @@
 /* Lost revenue from display downtime (Rob, 4 Oct 2026, settlement is final;
    spec §4 "Billing"): what the plays received AFTER their window was
-   invoiced would have been worth at the window's cleared CPM
-   (personalised multiplier included), by store, by display or over time.
+   invoiced would have been worth at the window's cleared CPM (no personalised uplift),
+   by store, by display or over time.
    An operational report for the retailer: it is never shown on, or charged
    to, an advertiser's invoice, and no line item ever changes because of it.
    Plays are placed by when they played, so a night of downtime shows on the

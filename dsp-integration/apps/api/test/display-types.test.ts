@@ -142,7 +142,7 @@ describe('PUT /admin/v1/display-types/{id}/extensions — slot ownership', () =>
 
   it('keeps what Advertisers / Inventory set while the slot stays sellable, and drops it when it doesn’t', async () => {
     const { app, ctx } = await setup()
-    await app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, supportedTargeting: ['localised', 'personalised'], assignedTo: { partnerIds: [], advertisers: ['Nestlé'], whitelistOnly: false } }] } })
+    await app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, supportedTargeting: ['localised', 'personalised'], reservePrice: 150, assignedTo: { partnerIds: [], advertisers: ['Nestlé'], whitelistOnly: false } }] } })
     const kept = await put(app, 'menu_board', menuSlots({ label: 'Brand slot' }))
     expect(kept.json().slots[1]).toMatchObject({ advertisers: ['Nestlé'], partnerIds: ['p_google'], supportedTargeting: ['localised', 'personalised'] })
     /* Owner changed: it is no longer sellable inventory, so the assignment goes. */

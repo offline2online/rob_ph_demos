@@ -209,36 +209,29 @@ describe('B. Auction / floor', () => {
     expect((await h.rows(day(3))).find((r) => r.channel === 'openrtb')).toMatchObject({ status: 'lost' })
   })
 
-  it('B5 — a personalised campaign bids and clears against the base floor; the multiplier is a per-play surcharge, not a floor', async () => {
+  it('B5 — personalised is sold only through a reserve booking: never bid in an open auction', async () => {
     const h = await harness()
     /* Localised only (default): a personalised campaign can't buy it at all. */
     const { id: pers } = await h.submitApiCampaign('Swisse — B5 personalised', 'personalised')
     await h.admin.approve(pers)
     await h.admin.activate(pers)
-    const bid = (bidCpm: number, w = day(0)) => h.partner.reserve({ positionId: POS, windowStart: w.toISOString(), campaignId: pers, advertiserId: 'swisse', type: 'bid', bidCpm })
-    const unsupported = await bid(200)
+    const place = (type: 'bid' | 'reserve', bidCpm: number, w = day(0)) => h.partner.reserve({ positionId: POS, windowStart: w.toISOString(), campaignId: pers, advertiserId: 'swisse', type, bidCpm })
+    const unsupported = await place('bid', 200)
     expect(unsupported.statusCode).toBe(422)
     expect(unsupported.json().error.code).toBe('targeting_not_supported')
-    /* Opened up to personalised: the floor is still the base, 100 × 1.0 (Rob, 30 Sep 2026). */
-    expect((await h.admin.supportTargeting(['localised', 'personalised'])).statusCode).toBe(200)
-    const under = await bid(99)
-    expect(under.statusCode).toBe(422)
-    expect(under.json().error).toMatchObject({ code: 'below_floor', message: '99 is below the effective floor of 100 AUD CPM.' })
-    /* 120 on a 100 floor is accepted (Run 6): no multiplied floor of 150. */
-    const at = await bid(120)
-    expect(at.statusCode).toBe(201)
-    const out = await runAuction(h.ctx, day(0))
-    expect(out.positions[0].winner).toMatchObject({ reservationId: at.json().reservationId, clearingCpm: 120 })
-    /* The multiplier in force is kept on the reservation for billing personalised plays. */
-    expect(await h.ctx.reservations.get(at.json().reservationId)).toMatchObject({ status: 'won', clearingCpm: 120, personalisedMultiplier: 1.5 })
-    /* Re-checked at the auction: a pending bid that no longer clears (floor raised) is refused pre-auction. */
-    const pending = await bid(105, day(1))
-    expect(pending.statusCode).toBe(201)
-    await h.ctx.company.save({ ...(await h.ctx.company.get()), floorCpm: 110 })
-    await h.bidder.control({ mode: 'no_bid' })
-    const later = await runAuction(h.ctx, day(1))
-    expect(later.positions[0].winner).toBeNull()
-    expect(await h.ctx.reservations.get(pending.json().reservationId)).toMatchObject({ status: 'rejected', reason: '105 is below the effective floor of 110 AUD CPM.' })
+    /* Personalised can't be ticked on a slot with no reserve price (Rob, 5 Oct 2026). */
+    const noReserve = await h.admin.supportTargeting(['localised', 'personalised'])
+    expect(noReserve.statusCode).toBe(400)
+    /* With a reserve price it can, but a bid is still refused: personalised plays only in a reserved window. */
+    expect((await h.admin.supportTargeting(['localised', 'personalised'], undefined, 150)).statusCode).toBe(200)
+    const bid = await place('bid', 200)
+    expect(bid.statusCode).toBe(422)
+    expect(bid.json().error).toMatchObject({ code: 'targeting_not_supported' })
+    /* A reserve booking is taken at the reserve price, no uplift, and its window is eligible for personalised plays. */
+    const held = await place('reserve', 150)
+    expect(held.statusCode).toBe(201)
+    expect(held.json()).toMatchObject({ status: 'reserved', clearingCpm: 150 })
+    expect(bookingsFor(h, day(0))[0]).toMatchObject({ campaignId: pers, personalisedEligible: true })
   })
 })
 

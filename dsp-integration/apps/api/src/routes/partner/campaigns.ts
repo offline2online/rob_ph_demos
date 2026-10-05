@@ -7,7 +7,7 @@
    A partner only ever sees its own campaigns; anyone else's is not found. */
 import { createHash, randomUUID } from 'node:crypto'
 import { type Approval, ApprovalError } from '@ph-dsp/campaign-approval/server'
-import { advertiserSlug, maxCampaignsOf, supportedTargetingOf, targetingLabel, type TargetingMode } from '@ph-dsp/types'
+import { INTERACTIVE_ENABLED, advertiserSlug, maxCampaignsOf, supportedTargetingOf, targetingLabel, type TargetingMode } from '@ph-dsp/types'
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify'
 import { requireConnected } from '../../auth/partnerAuth'
 import type { Context } from '../../context'
@@ -64,6 +64,12 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
     const b = req.body ?? {}
     const invalid: Detail[] = []
     const lim = ctx.config.campaignLimits
+    /* Interactive campaigns are out of scope for this release (Rob, 5 Oct
+       2026): a submission with an interactive layer is refused, the same
+       code a bid on an unsupported type gets. */
+    if (!INTERACTIVE_ENABLED && [b.default, ...(Array.isArray(b.targeted) ? b.targeted : [])].some((l) => l?.pricingType === 'interactive')) {
+      throw new HttpError(422, 'targeting_not_supported', 'Interactive campaigns are not available yet; submit a localised or personalised campaign.')
+    }
     if (typeof b.advertiserId !== 'string' || !partnerAdvertiser(req.partner, b.advertiserId)) invalid.push({ field: 'advertiserId', reason: `Not an advertiser on ${req.partner.name}.` })
     if (typeof b.name !== 'string' || !b.name.trim()) invalid.push({ field: 'name', reason: 'Required.' })
     else if (b.name.trim().length > lim.nameLength) invalid.push({ field: 'name', reason: `At most ${lim.nameLength} characters.` })

@@ -12,7 +12,7 @@ import { NOW, mockDsps, testContext } from './helpers'
 const W = '2026-09-14T00:00:00.000Z'
 const won = (over: Partial<ReservationRecord> = {}): ReservationRecord => ({
   id: 'res_tp_1', partnerId: 'p_google', advertiserId: 'nestle', campaignId: 'c_dsp_nestle', positionId: 'menu_board.s2', windowStart: W, type: 'bid', channel: 'api',
-  bidCpm: 100, currency: 'AUD', status: 'won', clearingCpm: 100, reason: null, testMode: false, pricingType: 'localised', handedOffAt: W, personalisedMultiplier: 1.5, ...over,
+  bidCpm: 100, currency: 'AUD', status: 'won', clearingCpm: 100, reason: null, testMode: false, pricingType: 'localised', handedOffAt: W, ...over,
 })
 
 describe('POST /admin/v1/test/plays', () => {
@@ -24,7 +24,6 @@ describe('POST /admin/v1/test/plays', () => {
     expect(res.json()).toMatchObject({ reservationId: 'res_tp_1', campaignId: 'c_dsp_nestle', positionId: 'menu_board.s2', windowStart: W, total: 6, written: [{ tier: 'default', count: 4 }, { tier: 'personalised', count: 2 }] })
     const t = await ctx.playback.totals({ campaignId: 'c_dsp_nestle', displayTypeId: 'menu_board', from: W, to: res.json().windowEnd })
     expect(t.plays).toBe(6)
-    expect(t.personalised).toEqual({ plays: 2, playedSec: 16 })
     const rows = ctx.db.prepare('SELECT display_id, played_at FROM plays WHERE id LIKE ?').all('tp_%') as { display_id: string; played_at: string }[]
     expect(new Set(rows.map((r) => r.display_id)).size).toBeGreaterThan(1)
     expect(rows.every((r) => r.played_at > W && r.played_at < res.json().windowEnd)).toBe(true)

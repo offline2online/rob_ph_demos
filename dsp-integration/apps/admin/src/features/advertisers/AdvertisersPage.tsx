@@ -7,7 +7,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { App, Button, InputNumber, Select, Spin, Switch } from 'antd'
 import { Tip } from '../../shared/Tip'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
-import { DEFAULT_BILLING_UNIT_HOURS, DEFAULT_MAX_CAMPAIGNS, MAX_MAX_CAMPAIGNS, MIN_MAX_CAMPAIGNS, SLOT_OWNERS, TARGETING_MODES, assignedLabels, supportedTargetingOf, targetingLabel, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type Session, type TargetingMode } from '@ph-dsp/types'
+import { INTERACTIVE_ENABLED, RESERVE_PRICE_TIP, DEFAULT_BILLING_UNIT_HOURS, DEFAULT_MAX_CAMPAIGNS, MAX_MAX_CAMPAIGNS, MIN_MAX_CAMPAIGNS, SLOT_OWNERS, TARGETING_MODES, assignedLabels, supportedTargetingOf, targetingLabel, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type Session, type TargetingMode } from '@ph-dsp/types'
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, ApiRequestError } from '../../api/client'
@@ -119,7 +119,7 @@ const PlaylistCell = ({ data }: ICellRendererParams<AvailableInventoryRow>) =>
         </Tip>
       )}
       {data.qrControl && (
-        <Tip title="QR Control is enabled on this display type, so its slots can support interactive campaigns.">
+        <Tip title={INTERACTIVE_ENABLED ? 'QR Control is enabled on this display type, so its slots can support interactive campaigns.' : 'QR Control is enabled on this display type.'}>
           <span className="inline-flex" aria-label="QR Control enabled"><Icon name="qr_code_2" size={15} style={{ color: T.primary }} /></span>
         </Tip>
       )}
@@ -307,7 +307,10 @@ function TargetingCell({ data, context }: IP) {
       value={value}
       options={[{
         label: 'Targeting',
-        options: FIRST_RELEASE_TARGETING.map((m) => ({ value: m.key, label: m.label })),
+        /* Personalised only on a slot with a reserve price, own or inherited (Rob, 5 Oct 2026). */
+        options: FIRST_RELEASE_TARGETING.map((m) => (m.key === 'personalised' && effectiveReservePrice(c, data) === null && !value.includes('personalised')
+          ? { value: m.key, label: m.label, disabled: true, note: 'Set a reserve price first: personalised versions play only on reserved slots.' }
+          : { value: m.key, label: m.label })),
       }]}
       /* A slot always supports something: the last one can't be removed. */
       onChange={(next) => next.length && c.set(slotKey(data), { supportedTargeting: FIRST_RELEASE_TARGETING.filter((m) => next.includes(m.key)).map((m) => m.key) })}
@@ -332,7 +335,7 @@ function ReservePriceCell({ data, context }: IP) {
     return <span style={{ color: resolved === null ? T.muted : T.text }}>{resolved === null ? 'No reserve' : `${c.currency} ${resolved}`}</span>
   }
   return (
-    <div className="flex w-full min-w-0 items-center gap-1">
+    <div className="flex w-full min-w-0 items-center gap-1" title={RESERVE_PRICE_TIP}>
       <InputNumber
         size="small" aria-label={`${data.displayTypeName} slot ${data.zoneSlot}: reserve price${overridden ? ' (override)' : ''}`} min={0} step={1} style={{ width: 92 }}
         placeholder="None" prefix={c.currency} value={value ?? undefined}
@@ -550,7 +553,7 @@ export function AdvertisersPage() {
     },
     {
       headerName: 'Targeting supported', width: 230, minWidth: 190, cellRenderer: TargetingCell, autoHeight: true,
-      headerComponent: header('Targeting supported', 'What a campaign may use on this slot. Localised only unless you open it up; a bid for a campaign of any other type is refused. Personalised carries its own multiplier on the floor price.'),
+      headerComponent: header('Targeting supported', 'What a campaign may use on this slot. Localised only unless you open it up; a bid for a campaign of any other type is refused. Personalised is available only on a slot with a reserve price: personalised versions play only in a window held by a reserve booking, never in an open or private auction.'),
       valueGetter: (p) => (p.data ? targetingLabel(edited((p.context as InvCtx).current, p.data).supportedTargeting) : ''),
       ...setColumn<AvailableInventoryRow>('Targeting supported', () => FIRST_RELEASE_TARGETING.map((m) => m.label)),
     },
@@ -559,7 +562,7 @@ export function AdvertisersPage() {
          2026: these three columns were wider than the fields inside them
          needed, crowding the table). */
       headerName: 'Reserve price', width: 150, minWidth: 135, cellRenderer: ReservePriceCell,
-      headerComponent: header('Reserve price', "A CPM premium to reserve this slot in advance of the open auction. Set once for the display type and inherited by every slot on it — override just one slot to give it its own value, independent of the others. Empty = no reserve."),
+      headerComponent: header('Reserve price', `${RESERVE_PRICE_TIP} Set once for the display type and inherited by every slot on it — override just one slot to give it its own value, independent of the others. Empty = no reserve.`),
       valueGetter: (p) => (p.data ? effectiveReservePrice((p.context as InvCtx).current, p.data) ?? -1 : -1),
     },
     {
@@ -597,7 +600,7 @@ export function AdvertisersPage() {
   })), [invRows, inventory.data])
   const inv = useDraft(savedEdits)
   const savedEditsNow = (r: AvailableInventoryRow): SlotEdit => (inv.draft ?? {})[slotKey(r)] ?? { supportedTargeting: supportedTargetingOf(r), assignedTo: r.assignedTo, reservePrice: r.reservePriceOverride, interactiveReservePrice: r.interactiveReservePriceOverride ?? null, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride }
-  const anyInteractiveReserve = invRows.some((r) => showsInteractiveReserve(r.qrControl, savedEditsNow(r)))
+  const anyInteractiveReserve = INTERACTIVE_ENABLED && invRows.some((r) => showsInteractiveReserve(r.qrControl, savedEditsNow(r)))
   const visibleInventoryColumns = useMemo(
     () => (anyInteractiveReserve ? inventoryColumns : inventoryColumns.filter((col) => col.headerName !== INTERACTIVE_RESERVE_HEADER)),
     [inventoryColumns, anyInteractiveReserve],

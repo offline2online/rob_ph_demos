@@ -55,14 +55,14 @@ describe('demo estate', () => {
     const booked = (await ctx.reservations.byStatus(['won', 'reserved'], new Date(0).toISOString())).filter((r) => !r.testMode)
     const byPosition = new Set(booked.map((r) => r.positionId))
     for (const p of await allPositions(ctx)) expect(byPosition.has(p.positionId), `${p.positionId} has a booking`).toBe(true)
-    expect(new Set(booked.map((r) => r.pricingType))).toEqual(new Set(['localised', 'personalised', 'interactive']))
+    expect(new Set(booked.map((r) => r.pricingType))).toEqual(new Set(['localised', 'personalised']))
     expect(booked.filter((r) => r.type === 'reserve').length).toBeGreaterThan(3)
 
     const schedule = await app.inject({ method: 'GET', url: '/api/admin/v1/booking-schedule?from=2026-09-21&to=2026-10-31' })
     expect(schedule.statusCode).toBe(200)
     expect(schedule.json().positions.map((p: { positionId: string }) => p.positionId)).toHaveLength(8)
     const layers = new Set(schedule.json().positions.flatMap((p: { windows: { booking: { pricingType: string } | null }[] }) => p.windows.map((w) => w.booking?.pricingType)).filter(Boolean))
-    expect(layers).toEqual(new Set(['localised', 'personalised', 'interactive']))
+    expect(layers).toEqual(new Set(['localised', 'personalised']))
   })
 
   it('is idempotent', async () => {

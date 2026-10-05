@@ -1,0 +1,1 @@
+ALTER TABLE campaign_slot_bookings DROP COLUMN personalised_eligible;

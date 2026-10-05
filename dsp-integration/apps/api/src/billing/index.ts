@@ -65,15 +65,8 @@ export interface LineItem {
   realisedViews: number
   cpm: number
   currency: string
-  /* The whole bill, personalised part included. */
+  /* realisedViews at the committed CPM, whatever tier played (Rob, 5 Oct 2026). */
   amount: number
-  /* The personalised plays' share of it (Rob, 30 Sep 2026): how many, the
-     realised VAC-d they carried, the multiplier applied (the reservation's
-     snapshot; null when none applied) and what they billed. */
-  personalisedPlays: number
-  personalisedViews: number
-  personalisedMultiplier: number | null
-  personalisedAmount: number
   /* Plays per campaign version shown (contract v3.1 row 3): the audit
      trail that the version handed off is what played. Not priced. */
   playsByVersion: { versionId: string | null; plays: number }[]
@@ -123,18 +116,11 @@ export async function computeLineItem(ctx: Context, r: ReservationRecord, p: Pos
   const expectedSec = displays * (len / 1000) * share
   const assumedViews = await assumedViewsPerWindow(ctx, p)
   const realisedViews = Math.round(assumedViews * (expectedSec > 0 ? Math.min(1, played.playedSec / expectedSec) : 0))
-  /* The personalised plays' share of the realised views, by played time. */
-  const persPlays = played.personalised?.plays ?? 0
-  const personalisedViews = played.playedSec > 0 ? Math.round(realisedViews * Math.min(1, (played.personalised?.playedSec ?? 0) / played.playedSec)) : 0
-  const multiplier = r.personalisedMultiplier ?? null
   const cpm = r.clearingCpm as number
-  const personalisedAmount = personalisedViews > 0 && multiplier !== null ? round2((personalisedViews / 1000) * cpm * multiplier) : round2((personalisedViews / 1000) * cpm)
-  const baseAmount = round2(((realisedViews - personalisedViews) / 1000) * cpm)
   return {
     id: `bl_${randomUUID().slice(0, 12)}`, reservationId: r.id, partnerId: r.partnerId, advertiserId: r.advertiserId, campaignId: r.campaignId as string,
     positionId: r.positionId, windowStart: r.windowStart, windowEnd: new Date(end).toISOString(), plays: played.plays, playedSec: played.playedSec, expectedSec,
-    assumedViews, realisedViews, cpm, currency: r.currency, amount: round2(baseAmount + personalisedAmount),
-    personalisedPlays: persPlays, personalisedViews, personalisedMultiplier: multiplier, personalisedAmount,
+    assumedViews, realisedViews, cpm, currency: r.currency, amount: round2((realisedViews / 1000) * cpm),
     playsByVersion: played.byVersion ?? [],
   }
 }

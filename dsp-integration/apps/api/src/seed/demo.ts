@@ -4,7 +4,7 @@
    stores and thirty-odd displays so display counts and reach differ per
    position, three DSPs with a dozen advertisers between them, settings for
    each, campaigns in every approval state with briefs and creatives,
-   localised / personalised / interactive bookings on every position so the
+   localised / personalised bookings on every position so the
    booking schedule's layer pills all have something to show, reserve prices
    both inherited and overridden, and whitelist-only and held-for positions.
 
@@ -62,7 +62,7 @@ const DEMO_SLOTS: Record<string, { cap: number; loopLengthSec: number; reservePr
   landscape: {
     cap: 4, loopLengthSec: 48, reservePrice: 150,
     slots: [
-      slot('Hero slot', { supportedTargeting: ['localised', 'personalised', 'interactive'], reservePrice: 220 }),
+      slot('Hero slot', { supportedTargeting: ['localised', 'personalised'], reservePrice: 220 }),
       slot('Supplier slot', { partnerIds: ['p_google'], supportedTargeting: ['localised', 'personalised'] }),
       slot('Whitelist slot', { listMode: 'whitelist_only' }),
       slot('Held for Nestlé', { partnerIds: ['p_google'], advertisers: ['Nestlé'], listMode: null, supportedTargeting: ['localised', 'personalised'] }),
@@ -71,7 +71,7 @@ const DEMO_SLOTS: Record<string, { cap: number; loopLengthSec: number; reservePr
   portrait: {
     cap: 3, loopLengthSec: 24, reservePrice: 90,
     slots: [
-      slot('Aisle hero', { supportedTargeting: ['localised', 'personalised', 'interactive'], reservePrice: 120 }),
+      slot('Aisle hero', { supportedTargeting: ['localised', 'personalised'], reservePrice: 120 }),
       slot('Health & beauty', { partnerIds: ['p_google', 'p_ttd'], supportedTargeting: ['localised', 'personalised'] }),
       slot('Held for Swisse', { partnerIds: ['p_google'], advertisers: ['Swisse'], listMode: null }),
     ],
@@ -120,7 +120,7 @@ const DEMO_ADVERTISER_SETTINGS: Record<string, { approvalRequired: boolean; floo
 type State = 'draft' | 'awaiting' | 'approved' | 'approved_off' | 'rejected'
 interface DemoCampaign {
   id: string; name: string; advertiser: string; partnerId: string; displayTypeId: string
-  pricingType: 'localised' | 'personalised' | 'interactive'; state: State; colour: string; line: string
+  pricingType: 'localised' | 'personalised'; state: State; colour: string; line: string
   targeting: StoredTargeting; brief: Record<string, unknown>; createdAt: string; rejectReason?: string
 }
 
@@ -155,9 +155,9 @@ const personalised = (segment: string[], extraGroups: ReturnType<typeof rule>[][
   default: { pricingType: 'localised' },
   targeted: [{ id: 'segment', priority: 20, pricingType: 'personalised', rules: [[rule('visitor.visitor_segments', 'include', segment, 'visitor')], [rule('store.hours', 'equal', ['Open'])], ...extraGroups] }],
 })
-const interactive = (intent: string[]): StoredTargeting => ({
+const intentTargeted = (intent: string[]): StoredTargeting => ({
   default: { pricingType: 'localised' },
-  targeted: [{ id: 'intent', priority: 20, pricingType: 'interactive', rules: [[rule('visitor.purchase_intent', 'include', intent, 'visitor')]] }],
+  targeted: [{ id: 'intent', priority: 20, pricingType: 'localised', rules: [[rule('visitor.purchase_intent', 'include', intent, 'visitor')]] }],
 })
 const brief = (details: string, over: Record<string, unknown> = {}) => ({ details, objective: 'Increase Revenue / Sales', touchPoints: ['Digital Signage'], ...over })
 
@@ -171,8 +171,8 @@ const DEMO_CAMPAIGNS: DemoCampaign[] = [
     targeting: LOCALISED, brief: brief('Pet aisle portrait screens, pending creative sign-off.', { promotedProducts: ['Purina ONE Adult'] }) },
   { id: 'c_demo_swisse_mens', name: 'Swisse — Men’s Ultivite', advertiser: 'Swisse', partnerId: 'p_google', displayTypeId: 'landscape', pricingType: 'localised', state: 'awaiting', colour: '#004d40', line: 'Men’s Ultivite', createdAt: '2026-09-19T09:30:00.000Z',
     targeting: states('NSW', 'VIC'), brief: brief('East-coast launch of the reformulated Men’s Ultivite.', { promotedProducts: ['Men’s Ultivite'], targetAudiences: ['Men 30–55'], objective: 'Brand Awareness' }) },
-  { id: 'c_demo_swisse_beauty', name: 'Swisse — Beauty collagen', advertiser: 'Swisse', partnerId: 'p_google', displayTypeId: 'portrait', pricingType: 'interactive', state: 'approved', colour: '#ad1457', line: 'Scan for a sample', createdAt: '2026-09-12T09:00:00.000Z',
-    targeting: interactive(['Browse', 'Gift']), brief: brief('Interactive sample offer in the beauty aisle: scan the QR code for a sachet.', { promotedProducts: ['Beauty Collagen Glow'], targetAudiences: ['Beauty browsers'], landingPageUrl: 'https://swisse.com/collagen' }) },
+  { id: 'c_demo_swisse_beauty', name: 'Swisse — Beauty collagen', advertiser: 'Swisse', partnerId: 'p_google', displayTypeId: 'portrait', pricingType: 'localised', state: 'approved', colour: '#ad1457', line: 'Scan for a sample', createdAt: '2026-09-12T09:00:00.000Z',
+    targeting: intentTargeted(['Browse', 'Gift']), brief: brief('Sample offer in the beauty aisle for browsers and gift shoppers.', { promotedProducts: ['Beauty Collagen Glow'], targetAudiences: ['Beauty browsers'], landingPageUrl: 'https://swisse.com/collagen' }) },
   { id: 'c_demo_arnotts_timtam', name: 'Arnott’s — Tim Tam Double Coat', advertiser: 'Arnott’s', partnerId: 'p_google', displayTypeId: 'landscape', pricingType: 'localised', state: 'approved', colour: '#3e2723', line: 'Double Coat is back', createdAt: '2026-09-11T09:00:00.000Z',
     targeting: metro('localised'), brief: brief('Metro stores only, while stocks last.', { promotedProducts: ['Tim Tam Double Coat'], skus: ['SKU-30101'] }) },
   { id: 'c_demo_arnotts_shapes', name: 'Arnott’s — Shapes Pizza', advertiser: 'Arnott’s', partnerId: 'p_google', displayTypeId: 'menu_board', pricingType: 'localised', state: 'approved_off', colour: '#e65100', line: 'Shapes Pizza', createdAt: '2026-09-08T09:00:00.000Z',
@@ -310,7 +310,7 @@ export async function seedDemo(ctx: Context) {
 /* ---------------------------------------------------------------- bookings */
 
 const MONEY = [110, 125, 140, 160, 175, 190, 210, 240]
-const PRICING: ('localised' | 'personalised' | 'interactive')[] = ['localised', 'localised', 'personalised', 'localised', 'interactive', 'personalised']
+const PRICING: ('localised' | 'personalised')[] = ['localised', 'localised', 'personalised', 'localised', 'localised', 'personalised']
 
 /* Six windows per advertiser spread across every position, in the mix of
    layers the position supports; the same never-step-on-a-sold-window rule

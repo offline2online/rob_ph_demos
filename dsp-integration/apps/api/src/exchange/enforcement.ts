@@ -78,11 +78,15 @@ export async function checkCampaign(ctx: Context, campaignId: string): Promise<R
    localised targeting until someone says otherwise on Advertisers /
    Inventory, so a personalised or interactive campaign can't buy it by
    default. A campaign with no type of its own counts as localised. */
-export function checkTargeting(p: PositionRef, pricingType: string | null | undefined): Refusal | null {
+export function checkTargeting(p: PositionRef, pricingType: string | null | undefined, reserve = false): Refusal | null {
   const supported = supportedTargetingOf(p.def)
   const wanted = pricingType === 'personalised' || pricingType === 'interactive' ? pricingType : 'localised'
-  if (supported.includes(wanted)) return null
-  return { code: 'targeting_not_supported', reason: `This position supports ${targetingLabel(supported).toLowerCase()} targeting only; the campaign is ${wanted}.` }
+  if (!supported.includes(wanted)) return { code: 'targeting_not_supported', reason: `This position supports ${targetingLabel(supported).toLowerCase()} targeting only; the campaign is ${wanted}.` }
+  /* Personalised versions are sold only through a reserve booking (Rob,
+     5 Oct 2026): an open or private auction clears default and localised
+     only, so a personalised campaign cannot bid for a window. */
+  if (wanted === 'personalised' && !reserve) return { code: 'targeting_not_supported', reason: 'Personalised campaigns are sold only through a reserve booking (type reserve) on a slot with a reserve price; open and private auctions clear default and localised only.' }
+  return null
 }
 
 /* The slot's Max campaigns (slot override, else the display type's default,

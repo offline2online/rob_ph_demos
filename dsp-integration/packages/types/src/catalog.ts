@@ -145,14 +145,28 @@ export const maxCampaignsOf = (dt: { phExtensions?: { maxCampaigns?: number | nu
 /* What a campaign may use on a slot (Rob, 20 Sep). A slot supports localised
    targeting only until someone opens it up on Advertisers / Inventory; a bid
    for a campaign of an unsupported type is refused. Same order and words as
-   the pricing multipliers in Advertiser settings. */
+   the pricing fields in Advertiser settings. */
 export type TargetingMode = 'localised' | 'personalised' | 'interactive'
-export const TARGETING_MODES: { key: TargetingMode; label: string; tip: string }[] = [
+/* Interactive campaigns are out of scope for this release (Rob, 5 Oct 2026):
+   one flag hides them everywhere — the Targeting supported picker, the
+   interactive prices on GET /v1/inventory, the interactive pricingType on
+   campaigns — and the code stays so they can return behind it. */
+export const INTERACTIVE_ENABLED = false
+const ALL_TARGETING_MODES: { key: TargetingMode; label: string; tip: string }[] = [
   { key: 'localised', label: 'Localised', tip: 'Store-level targeting only: the campaign varies by store, not by who is in front of the screen.' },
-  { key: 'personalised', label: 'Personalised', tip: 'The campaign may use Personalisation Variables about the visitor. Priced with the personalised multiplier.' },
-  { key: 'interactive', label: 'Interactive', tip: 'The campaign may respond to the visitor on screen. Priced with the interactive multiplier.' },
+  { key: 'personalised', label: 'Personalised', tip: 'The campaign may use Personalisation Variables about the visitor. Only available on a slot with a reserve price: personalised versions play only in a window held by a reserve booking, never in an open or private auction.' },
+  { key: 'interactive', label: 'Interactive', tip: 'The campaign may respond to the visitor on screen. Pays the interactive cost per engagement on top of the CPM.' },
 ]
+export const TARGETING_MODES = ALL_TARGETING_MODES.filter((m) => INTERACTIVE_ENABLED || m.key !== 'interactive')
 export const DEFAULT_TARGETING: TargetingMode[] = ['localised']
+/* The reserve price tooltip (Rob, 5 Oct 2026), shared by the Available
+   Inventory column and the display type's reserve price field. */
+export const RESERVE_PRICE_TIP = 'The premium CPM an advertiser commits to up front to hold this slot for a window, out of the open auction. Reserved slots are the only slots that play personalised versions: once committed, the advertiser submits the personalised variations their creative needs alongside the default.'
+/* Personalised versions are sold only through reserved slots (Rob, 5 Oct
+   2026), so Personalised can be ticked in Targeting supported only on a slot
+   that has a reserve price, its own or inherited. */
+export const personalisedAllowedOn = (dt: { phExtensions?: { reservePrice?: number | null } | null }, slot: { reservePrice?: number | null }): boolean =>
+  reservePriceOf(dt, slot) !== null
 /* Absent or empty on a slot means the default, so an existing slot keeps working. */
 export const supportedTargetingOf = (slot: { supportedTargeting?: readonly string[] | null }): TargetingMode[] => {
   const chosen = TARGETING_MODES.filter((m) => slot.supportedTargeting?.includes(m.key)).map((m) => m.key)

@@ -63,7 +63,7 @@ const LAYER_ABBR: Record<LayerKey, string> = { default: 'DEFAULT', localised: 'L
 /* Trigger-icon ladder, broadest/most-frequent to narrowest/rarest (ticket
    "Booking schedule: personalised trigger icons", 22 Sep): which icons are
    lit tells the viewer the expected activation frequency, and therefore how
-   reliably the personalised multiplier will actually be earned. */
+   often a personalised version will actually play. */
 const TRIGGER_ORDER: (keyof Triggers)[] = ['computerVision', 'aggregateStore', 'individual']
 const TRIGGER_META: Record<keyof Triggers, { icon: string; label: string; tip: string }> = {
   computerVision: { icon: 'visibility', label: 'Computer vision', tip: 'Highest-frequency trigger: fires on almost anyone in front of the screen, no identification needed. Likely to drive the majority of personalised presentations.' },
@@ -489,7 +489,7 @@ export function BookingSchedulePage() {
             pinnedBottomRowData={[{ displayTypeId: 'total', displayTypeName: 'Total', ...data.totals, total: true }]}
           />
 
-          <SectionLabel><WithTip tip="What is selling: every campaign clears the floor; a personalised version pays the personalised multiplier on each play, and interactive pays per engagement on top.">By campaign type</WithTip></SectionLabel>
+          <SectionLabel><WithTip tip="What is selling: every campaign clears the floor and bills at its committed CPM whatever version plays.">By campaign type</WithTip></SectionLabel>
           {data.byPricingType.length === 0 ? (
             <div style={{ fontSize: 12.5, color: T.muted }}>Nothing booked in this period yet.</div>
           ) : (

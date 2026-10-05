@@ -38,6 +38,10 @@ export interface SlotBooking {
      module's own opaque string, the value latestAssets resolves
      (eeBT1Qp33GdsPcxG2As3, 2 Oct 2026). */
   assetVersion?: string | null
+  /* True only for a window held by a reserve booking (Rob, 5 Oct 2026):
+     personalised versions are eligible to play there and nowhere else. An
+     open or private auction window plays default and localised only. */
+  personalisedEligible?: boolean
 }
 /* One uploaded creative file. `version` increases with every upload to the campaign. */
 export interface CampaignAsset {
@@ -130,8 +134,8 @@ export function sqliteCampaignSource(db: Db, opts: { onChange?: (id: string) => 
       return { ...a, version, contentHash: a.contentHash ?? null }
     },
     bookSlot(b) {
-      prepared(db, 'INSERT INTO campaign_slot_bookings (id, campaign_id, display_type_id, slot, window_start, window_end, asset_version, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-        .run(b.id, b.campaignId, b.displayTypeId, b.slot, b.windowStart, b.windowEnd, b.assetVersion ?? null, new Date().toISOString())
+      prepared(db, 'INSERT INTO campaign_slot_bookings (id, campaign_id, display_type_id, slot, window_start, window_end, asset_version, personalised_eligible, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(b.id, b.campaignId, b.displayTypeId, b.slot, b.windowStart, b.windowEnd, b.assetVersion ?? null, b.personalisedEligible ? 1 : 0, new Date().toISOString())
       return b
     },
     deleteCampaign(id) {
@@ -143,8 +147,8 @@ export function sqliteCampaignSource(db: Db, opts: { onChange?: (id: string) => 
     bookings(campaignId) {
       const rows = (campaignId
         ? prepared(db, 'SELECT * FROM campaign_slot_bookings WHERE campaign_id = ? ORDER BY window_start').all(campaignId)
-        : prepared(db, 'SELECT * FROM campaign_slot_bookings ORDER BY window_start').all()) as { id: string; campaign_id: string; display_type_id: string; slot: number; window_start: string; window_end: string; asset_version: string | null }[]
-      return rows.map((r) => ({ id: r.id, campaignId: r.campaign_id, displayTypeId: r.display_type_id, slot: r.slot, windowStart: r.window_start, windowEnd: r.window_end, assetVersion: r.asset_version }))
+        : prepared(db, 'SELECT * FROM campaign_slot_bookings ORDER BY window_start').all()) as { id: string; campaign_id: string; display_type_id: string; slot: number; window_start: string; window_end: string; asset_version: string | null; personalised_eligible: number }[]
+      return rows.map((r) => ({ id: r.id, campaignId: r.campaign_id, displayTypeId: r.display_type_id, slot: r.slot, windowStart: r.window_start, windowEnd: r.window_end, assetVersion: r.asset_version, personalisedEligible: !!r.personalised_eligible }))
     },
     latestAssets(campaignId, atVersion) {
       /* This stand-in's approval adapter labels a version `v<n>`, n the highest

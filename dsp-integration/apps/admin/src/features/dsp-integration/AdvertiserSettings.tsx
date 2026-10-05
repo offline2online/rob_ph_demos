@@ -2,7 +2,7 @@
    edited here (advertiser lists are per DSP, on its own page); Where these apply is read-only. The inventory table moved to
    Advertisers / Inventory (Rob, 20 Sep). */
 import { InputNumber, Select } from 'antd'
-import { IAB_CATEGORIES, IAB_CATEGORY_CODES, type AdvertiserSettingsInput } from '@ph-dsp/types'
+import { IAB_CATEGORIES, IAB_CATEGORY_CODES, INTERACTIVE_ENABLED, type AdvertiserSettingsInput } from '@ph-dsp/types'
 import { type ReactNode, useMemo } from 'react'
 import { Callout } from '../../shared/Callout'
 import { Field } from '../../shared/Field'
@@ -14,7 +14,7 @@ import { useSection } from './DspIntegrationLayout'
 import { SubPageHeader } from './SubPageHeader'
 
 export const ADVERTISER_SETTINGS_TIP =
-  "Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (currency, floor CPM, the personalised multiplier and the interactive cost per engagement), the Auction schedule (when bidding opens, play-window length, auction cutoff) and the Category lists (IAB whitelists and blacklists; each DSP's advertiser lists are managed on its own page, from the advertisers it syncs). Read-only here: Where these apply (which DSPs use these lists or keep their own; unlink or relink on the DSP's page). Per-advertiser campaign approval and floor multipliers, and the inventory advertisers can buy, are on Advertisers / Inventory."
+  "Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (currency, and floor CPM), the Auction schedule (when bidding opens, play-window length, auction cutoff) and the Category lists (IAB whitelists and blacklists; each DSP's advertiser lists are managed on its own page, from the advertisers it syncs). Read-only here: Where these apply (which DSPs use these lists or keep their own; unlink or relink on the DSP's page). Per-advertiser campaign approval and floor multipliers, and the inventory advertisers can buy, are on Advertisers / Inventory."
 
 /* Every ISO 4217 currency, listed by code and name (spec §4). */
 const CURRENCIES = (() => {
@@ -23,7 +23,7 @@ const CURRENCIES = (() => {
 })()
 
 /* How a floor CPM turns into what an advertiser pays, in the floor and
-   multiplier tooltips (Rob's board ticket, 19 Sep). One screen over a
+   fee tooltips (Rob's board ticket, 19 Sep). One screen over a
    two-hour daypart, at a floor of 100 per thousand VAC-d. */
 const VACD_STEPS: [string, string, string][] = [
   ['Footfall past the screen (entrance counter, 2 h)', '—', '1,200'],
@@ -56,14 +56,7 @@ const FLOOR_TIP = (
     Cost per thousand assumed views (VAC-d). The minimum any bid must meet; bids below it never win.
   </FloorExample>
 )
-/* The multiplier and the fee relate themselves to the floor price tooltip
-   rather than repeating its working (Rob, 20 Sep). */
-const PERSONALISED_TIP = (
-  <div style={{ fontSize: 12 }}>
-    Applied when the visitor is checked in or otherwise identified, so the advert is one-to-one for that individual.
-    <div className="mt-2">It is <b>not a bid floor</b>. Bids and the auction clear against the floor price, and the price a campaign wins at covers its default and localised plays. This is charged <b>only when a personalised version plays</b>: that play bills at the committed price × this. At 1.5, a campaign committed at 100 pays <b>150</b> CPM for a personalised play. The advertiser’s floor multiplier scales the floor only. Interactive campaigns are not charged it. By submitting a personalised version an advertiser accepts it.</div>
-  </div>
-)
+/* The fee relates itself to the floor price tooltip rather than repeating its working (Rob, 20 Sep). */
 const INTERACTIVE_TIP = (
   <div style={{ fontSize: 12 }}>
     What an advertiser pays each time someone engages with an interactive campaign — scanning its QR Control code to carry on with the brand on their own phone.
@@ -128,7 +121,7 @@ export function AdvertiserSettings() {
     return { ...x, [k]: r.add, [OTHER[k]]: r.other }
   })
   const remove = (k: ListKey) => (name: string) => update('settings', (x) => ({ ...x, [k]: x[k].filter((y) => y !== name) }))
-  const num = (k: 'floorCpm' | 'personalisedMultiplier' | 'interactiveCpe', step: number, ph: string, extra: { precision?: number; prefix?: string } = {}) => (
+  const num = (k: 'floorCpm' | 'interactiveCpe', step: number, ph: string, extra: { precision?: number; prefix?: string } = {}) => (
     <InputNumber
       id={k} className="w-full" step={step} min={0} placeholder={ph} {...extra}
       /* An amount to the cent keeps AntD's own formatting (0.50); the others
@@ -141,14 +134,13 @@ export function AdvertiserSettings() {
     <>
       <SubPageHeader icon="rule" title="Advertiser settings" tip={ADVERTISER_SETTINGS_TIP} />
 
-      <SectionLabel><WithTip tip="Effective floor = floor CPM × the advertiser's floor multiplier (set on Advertisers / Inventory), the same for every campaign type. Bids below it never win. The personalised multiplier is not part of it: it is charged on top of the committed price only when a personalised version plays. An interactive campaign clears the same floor and pays the cost per engagement on top.">Pricing</WithTip></SectionLabel>
+      <SectionLabel><WithTip tip="Effective floor = floor CPM × the advertiser's floor multiplier (set on Advertisers / Inventory), the same for every campaign type. Bids below it never win. Every play bills at the committed price, whatever version plays.">Pricing</WithTip></SectionLabel>
       <div className="flex flex-wrap items-start gap-3.5">
         <Field label={<span className="block" style={{ minHeight: 36 }}>Currency</span>} htmlFor="currency" tip="Used for the floor CPM, every effective floor and billing. Bid requests carry it as the bid floor currency." className="w-56">
           <Select id="currency" className="w-full" showSearch optionFilterProp="label" value={s.currency} onChange={(v) => set('currency', v)} options={CURRENCIES} popupMatchSelectWidth={280} />
         </Field>
         <Field label={<span className="block" style={{ minHeight: 36 }}>Floor price (CPM)</span>} htmlFor="floorCpm" tip={FLOOR_TIP} tipWidth={400} className="w-32">{num('floorCpm', 1, '100')}</Field>
-        <Field label={<span className="block" style={{ minHeight: 36 }}>Personalised multiplier</span>} htmlFor="personalisedMultiplier" tip={PERSONALISED_TIP} tipWidth={400} className="w-32">{num('personalisedMultiplier', 0.05, '1.5')}</Field>
-        <Field label={<span className="block" style={{ minHeight: 36 }}>Interactive cost per engagement</span>} htmlFor="interactiveCpe" tip={INTERACTIVE_TIP} tipWidth={400} className="w-44">{num('interactiveCpe', 0.05, '0.50', { precision: 2, prefix: s.currency })}</Field>
+        {INTERACTIVE_ENABLED && <Field label={<span className="block" style={{ minHeight: 36 }}>Interactive cost per engagement</span>} htmlFor="interactiveCpe" tip={INTERACTIVE_TIP} tipWidth={400} className="w-44">{num('interactiveCpe', 0.05, '0.50', { precision: 2, prefix: s.currency })}</Field>}
       </div>
 
       <SectionLabel><WithTip tip="In-store screens can't take a bid per play, so advertisers bid for a play window that clears ahead of time. Bidding for a window opens, closes at the auction cutoff (when the auction runs) and the winner holds the slot for the whole window. Times are UTC.">Auction schedule</WithTip></SectionLabel>

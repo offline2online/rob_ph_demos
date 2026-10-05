@@ -36,12 +36,11 @@ const round6 = (n: number) => Math.round(n * 1e6) / 1e6
 
 /* The value of one late play against its line item, given how many seconds of
    the window earlier late plays already used. Pure. */
-export function valueLatePlay(item: LineItem, play: { durationSec: number; tier?: string | null }, lateSecSoFar: number): { lostViews: number; lostAmount: number } {
+export function valueLatePlay(item: LineItem, play: { durationSec: number }, lateSecSoFar: number): { lostViews: number; lostAmount: number } {
   const headroom = Math.max(0, item.expectedSec - item.playedSec - lateSecSoFar)
   const sec = Math.min(play.durationSec, headroom)
   const lostViews = item.expectedSec > 0 ? (item.assumedViews * sec) / item.expectedSec : 0
-  const rate = play.tier === 'personalised' && item.personalisedMultiplier !== null ? item.cpm * item.personalisedMultiplier : item.cpm
-  return { lostViews: round6(lostViews), lostAmount: round6((lostViews / 1000) * rate) }
+  return { lostViews: round6(lostViews), lostAmount: round6((lostViews / 1000) * item.cpm) }
 }
 
 /* Records every play received since the last scan, up to now, that arrived
@@ -81,7 +80,7 @@ export async function recordLatePlays(ctx: Context): Promise<number> {
         const row: LatePlay = {
           playId: play.id, lineItemId: hit.item.id, reservationId: hit.item.reservationId, campaignId: hit.item.campaignId, positionId: hit.item.positionId,
           displayId: play.displayId, storeId: d.storeId, playedAt: play.playedAt, receivedAt: play.receivedAt, durationSec: play.durationSec, tier: play.tier ?? null,
-          cpm: hit.item.cpm, currency: hit.item.currency, personalisedMultiplier: hit.item.personalisedMultiplier, lostViews: v.lostViews, lostAmount: v.lostAmount,
+          cpm: hit.item.cpm, currency: hit.item.currency, lostViews: v.lostViews, lostAmount: v.lostAmount,
         }
         if (await ctx.lateLedger.insert(row, upTo)) {
           recorded++

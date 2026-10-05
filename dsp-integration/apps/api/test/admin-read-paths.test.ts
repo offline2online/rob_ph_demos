@@ -35,7 +35,7 @@ describe('admin read paths', () => {
     for (const id of ids.filter((_, i) => i % 3 === 0)) {
       await ctx.billing.insert({
         id: `bl_${id}`, reservationId: id, partnerId: 'p_google', advertiserId: 'nestle', campaignId: 'c_x', positionId: 'menu_board.s2', windowStart: '2026-09-01T00:00:00.000Z', windowEnd: '2026-09-02T00:00:00.000Z',
-        plays: 1, playedSec: 1, expectedSec: 1, assumedViews: 1, realisedViews: 1, cpm: 1, currency: 'AUD', amount: Number(id.slice(1)), personalisedPlays: 0, personalisedViews: 0, personalisedMultiplier: null, personalisedAmount: 0, playsByVersion: [],
+        plays: 1, playedSec: 1, expectedSec: 1, assumedViews: 1, realisedViews: 1, cpm: 1, currency: 'AUD', amount: Number(id.slice(1)), playsByVersion: [],
       }, NOW.toISOString())
     }
     const all = await ctx.billing.amountsFor(ids)
