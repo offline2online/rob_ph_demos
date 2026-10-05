@@ -139,7 +139,7 @@ as text until Anthropic switches on its MCP Apps host.
 | `add_item_comment` | `set_project_artifact`, `set_project_description` | `comment_on_faq_revision` | `delete_skill` | | |
 | | `create_project_document` / `update_project_document` / `delete_project_document` | | `report_skill_miss` (tags a real gap, never edits the skill's own content) | | |
 | | `create_interface` / `update_interface` / `delete_interface` | | | | |
-| | `add_concept_comment` / `set_concept_readme` / `set_concept_requirements` / `set_concept_artifact` (Concept Incubator; the last three refused once a concept is promoted, except comments) | | | | |
+| | `create_concept` / `add_concept_comment` / `set_concept_readme` / `set_concept_requirements` / `set_concept_artifact` (Concept Incubator; the last three refused once a concept is promoted, except comments) | | | | |
 
 **Setting up your own personal Notify Claude Routine** (so board clicks you
 make fire a session under your own Claude account instead of the one
@@ -206,11 +206,12 @@ including the same `list_doc_revisions`/`get_doc_revision` recovery path
 (pass `conceptId` instead of `projectId`) — except both are refused once
 `status` is `"promoted"`, matching the console's own read-only view of a
 promoted concept: from that point `promotedProjectId` is the real project,
-and its own documentation tools are the ones to use. There is also
-deliberately no `create_concept` or `promote_concept_to_project` tool —
-this server has no `create_project` tool either, so a concept's or
-project's own container-level lifecycle stays a board/human action, not
-something an agent can do unattended.
+and its own documentation tools are the ones to use. `create_concept` makes a new
+one (a name, plus optional `readmeMd`, `requirementsMd` and a `description`
+posted as its first comment), always `active`, and returns its `conceptId`
+so the write tools can seed it. There is deliberately no
+`promote_concept_to_project` tool — this server has no `create_project` tool
+either, so promoting a concept into a project stays a board/human action.
 
 **The help centre tools never publish anything.** `create_faq_article`
 always writes `status: "draft"`; `update_faq_article` always writes a
