@@ -602,7 +602,10 @@ describe('Advertisers / Inventory', () => {
        (ticket "Available Inventory: playlist-primary table (drop Display
        type column) with Unassigned indicator", 27 Sep 2026). */
     expect([...inventory.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent))
-      .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Targeting supported', 'Reserve price', 'Interactive reserve price', 'Max campaigns', 'Billing unit', ''])
+      .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Targeting supported', 'Reserve price', 'Max campaigns', 'Billing unit', ''])
+    /* Interactive reserve price needs QR Control AND Interactive ticked in
+       Targeting supported (or a price already assigned); no row here has
+       either, so the column is hidden (ticket L32gi3rXFAmwMCUqP1Dj). */
     expect(within(inventory).getByLabelText('Playlist search')).toBeInTheDocument()
     expect(within(inventory).getByLabelText('Targeting supported filter')).toBeInTheDocument()
     /* QR Control and Vision/AI moved onto the Playlist cell along with the

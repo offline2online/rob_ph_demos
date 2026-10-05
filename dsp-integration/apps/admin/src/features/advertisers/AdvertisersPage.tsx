@@ -367,13 +367,21 @@ function ReservePriceCell({ data, context }: IP) {
    here. Empty = interactive campaigns follow the slot's ordinary reserve
    price, shown as the placeholder so the fallback is visible. Per slot —
    there is no display-type default for it. */
+/* Gate (ticket L32gi3rXFAmwMCUqP1Dj): interaction happens through QR
+   Control, so the display type must have it AND Interactive must be ticked
+   in Targeting supported. A price already assigned keeps showing even when
+   the gate closes later — prices are never silently hidden. */
+const interactiveGateOpen = (qrControl: boolean, e: SlotEdit) => qrControl && e.supportedTargeting.includes('interactive')
+const showsInteractiveReserve = (qrControl: boolean, e: SlotEdit) => interactiveGateOpen(qrControl, e) || e.interactiveReservePrice !== null
+const INTERACTIVE_RESERVE_HEADER = 'Interactive reserve price'
+
 function InteractiveReservePriceCell({ data, context }: IP) {
   if (!data) return null
   const c = context.current
   const e = edited(c, data)
-  if (!e.supportedTargeting.includes('interactive')) return <span style={{ color: T.muted }}>—</span>
+  if (!showsInteractiveReserve(data.qrControl, e)) return <span style={{ color: T.muted }}>—</span>
   const fallback = effectiveReservePrice(c, data)
-  if (!c.canEdit) {
+  if (!c.canEdit || !interactiveGateOpen(data.qrControl, e)) {
     const resolved = e.interactiveReservePrice ?? fallback
     return <span style={{ color: resolved === null ? T.muted : T.text }}>{resolved === null ? 'No reserve' : `${c.currency} ${resolved}`}</span>
   }
@@ -555,13 +563,13 @@ export function AdvertisersPage() {
       valueGetter: (p) => (p.data ? effectiveReservePrice((p.context as InvCtx).current, p.data) ?? -1 : -1),
     },
     {
-      headerName: 'Interactive reserve price', width: 170, minWidth: 150, cellRenderer: InteractiveReservePriceCell,
+      headerName: INTERACTIVE_RESERVE_HEADER, width: 170, minWidth: 150, cellRenderer: InteractiveReservePriceCell,
       headerComponent: header('Interactive reserve price', "The reserve price (CPM) for the interactive experience on this slot, so it can be priced apart from the slot's ordinary reserve price. Only available while Interactive is selected in Targeting supported. Empty = interactive campaigns use the slot's reserve price."),
       valueGetter: (p) => {
         if (!p.data) return -1
         const c = (p.context as InvCtx).current
         const e = edited(c, p.data)
-        return e.supportedTargeting.includes('interactive') ? e.interactiveReservePrice ?? effectiveReservePrice(c, p.data) ?? -1 : -1
+        return showsInteractiveReserve(p.data.qrControl, e) ? e.interactiveReservePrice ?? effectiveReservePrice(c, p.data) ?? -1 : -1
       },
     },
     {
@@ -588,6 +596,12 @@ export function AdvertisersPage() {
     return [slotKey(r), { supportedTargeting: supportedTargetingOf(r), assignedTo, reservePrice: r.reservePriceOverride, interactiveReservePrice: r.interactiveReservePriceOverride ?? null, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride }]
   })), [invRows, inventory.data])
   const inv = useDraft(savedEdits)
+  const savedEditsNow = (r: AvailableInventoryRow): SlotEdit => (inv.draft ?? {})[slotKey(r)] ?? { supportedTargeting: supportedTargetingOf(r), assignedTo: r.assignedTo, reservePrice: r.reservePriceOverride, interactiveReservePrice: r.interactiveReservePriceOverride ?? null, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride }
+  const anyInteractiveReserve = invRows.some((r) => showsInteractiveReserve(r.qrControl, savedEditsNow(r)))
+  const visibleInventoryColumns = useMemo(
+    () => (anyInteractiveReserve ? inventoryColumns : inventoryColumns.filter((col) => col.headerName !== INTERACTIVE_RESERVE_HEADER)),
+    [inventoryColumns, anyInteractiveReserve],
+  )
   /* One reserve price default per display type, shared by every one of its
      rows (Rob, 22 Sep) — a separate draft from the per-slot one above. */
   const savedDefaults = useMemo<Defaults | undefined>(() => inventory.data && Object.fromEntries(invRows.map((r) => [r.displayTypeId, r.displayTypeReservePrice])), [invRows, inventory.data])
@@ -755,7 +769,7 @@ export function AdvertisersPage() {
           <Grid<AvailableInventoryRow>
             label="Available Inventory"
             rows={invRows}
-            columns={inventoryColumns}
+            columns={visibleInventoryColumns}
             context={invContext}
             getRowId={slotKey}
             rowHeight={52}
