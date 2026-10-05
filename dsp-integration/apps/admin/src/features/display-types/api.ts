@@ -41,6 +41,16 @@ export async function saveDisplayTypes(draft: DisplayType[], saved: DisplayType[
     if (!before) await api('POST', '/admin/v1/display-types', recordOf(d))
     else if (!deepEqual(recordOf(d), recordOf(before))) await api('PUT', `/admin/v1/display-types/${d.id}/record`, recordOf(d))
     const referenced = referencedPlaylistIds(d)
+    const zones = (d.multiZone as { enabled?: boolean; zones?: { playlistId?: string }[] } | undefined)?.enabled ? ((d.multiZone as { zones?: { playlistId?: string }[] }).zones ?? []) : []
+    if (!before && zones.length) {
+      /* A new multi-zone type has no default playlist of its own: the settings
+         defined once while creating it (the Playlist Settings panel edits the
+         draft default playlist) apply to every zone playlist. */
+      const created = (opts.newPlaylists ?? []).find((p) => p.autoCreatedFor === d.id && p.id === `pl_${d.id}`)
+      if (created) for (const z of zones) if (z.playlistId) await api('PUT', `/admin/v1/playlists/${z.playlistId}/settings`, created.playlistSettings ?? {})
+      referenced.delete(`pl_${d.id}`)
+      for (const z of zones) if (z.playlistId) referenced.delete(z.playlistId)
+    }
     for (const p of opts.newPlaylists ?? []) {
       if (p.autoCreatedFor === d.id && referenced.has(p.id)) await api('PUT', `/admin/v1/playlists/${p.id}/settings`, p.playlistSettings ?? {})
     }
