@@ -462,7 +462,11 @@ ticket once automatically.
    existing `notes` array) a new entry to `notes` with `author: "claude"`
    and a detailed `text` describing what you investigated and fixed, and —
    this is the part that replaces "push + open a PR" — set:
-   - `patchFiles`: an array of `{path, content}` objects, one per
+   - `patchFiles`: an array of `{path, content}` objects (write it on the
+     card as shown; within seconds a Cloud Function moves it to
+     `backlogItems/<ITEM_ID>/pipeline/patch` to keep it out of every open
+     board tab, so a later read of the card won't show it — that is
+     expected, the automation reads it from there), one per
      changed/created file, `content` being that file's complete new text
      (use `content: null` instead of a string to mean "delete this
      path"). Paths are relative to the repo root (e.g.
