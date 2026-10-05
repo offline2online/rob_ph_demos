@@ -5604,11 +5604,14 @@ function conceptCardHTML(c) {
   const meta = [conceptStatusLabel(c)];
   if (updated) meta.push(`updated ${updated}`);
   const artifactHref = c.artifactUrl ? safeHttpUrl(c.artifactUrl) : "";
+  // The landing page (artifact) is the primary view; the README
+  // documentation is the secondary CTA, hidden when there is no artifact
+  // because the card click already opens it then.
   const artifactLink = artifactHref
-    ? `<a class="concept-artifact-card-link" href="${escapeHTML(artifactHref)}" target="_blank" rel="noopener">View Artifact ↗</a>`
+    ? `<a class="concept-artifact-card-link concept-readme-card-link" href="#" role="button">View README documentation</a>`
     : "";
   return `
-    <div class="skill-card concept-card" data-id="${c.id}" style="cursor:pointer;">
+    <div class="skill-card concept-card" data-id="${c.id}" data-artifact-href="${escapeHTML(artifactHref)}" style="cursor:pointer;">
       <div class="skill-card-top">
         <div>
           <div class="skill-card-name">${escapeHTML(c.name || "")}</div>
@@ -5690,8 +5693,16 @@ document.getElementById("concept-incubator-list").addEventListener("click", asyn
     await deleteConcept(delBtn.dataset.id);
     return;
   }
+  const readmeLink = e.target.closest(".concept-readme-card-link");
+  if (readmeLink) {
+    e.preventDefault();
+    openConceptDetailPage(readmeLink.closest(".concept-card").dataset.id);
+    return;
+  }
   const card = e.target.closest(".concept-card");
-  if (card) openConceptDetailPage(card.dataset.id);
+  if (!card) return;
+  if (card.dataset.artifactHref) window.open(card.dataset.artifactHref, "_blank", "noopener");
+  else openConceptDetailPage(card.dataset.id);
 });
 
 document.getElementById("concept-readme-save").addEventListener("click", async () => {
