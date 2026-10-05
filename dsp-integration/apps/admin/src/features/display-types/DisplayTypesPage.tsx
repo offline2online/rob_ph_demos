@@ -13,6 +13,7 @@ import { SaveBar } from '../../shared/SaveBar'
 import { useReportDirty, useUnsavedGuard } from '../../shared/UnsavedChanges'
 import { useDraft } from '../../shared/useDraft'
 import { deleteCheck, deleteDisplayType, saveDisplayTypes, useDisplayTypes, usePartners, usePlaylists } from './api'
+import { BlockedChange, type BlockedChangeItem } from './BlockedChange'
 import { DeleteDisplayType } from './DeleteDisplayType'
 import { DisplayTypeForm, type PlaylistOption } from './DisplayTypeForm'
 import { DisplayTypeList } from './DisplayTypeList'
@@ -49,6 +50,7 @@ export function DisplayTypesPage({ flags }: { flags: Flags }) {
   useReportDirty(dirty)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState<{ id: string; name: string; check: DeleteCheck; busy: boolean } | null>(null)
+  const [blocked, setBlocked] = useState<{ message: string; items: BlockedChangeItem[] } | null>(null)
 
   const selectedId = params.get('id') ?? draft?.types[0]?.id
   const d = draft?.types.find((t) => t.id === selectedId) ?? draft?.types[0]
@@ -152,7 +154,17 @@ export function DisplayTypesPage({ flags }: { flags: Flags }) {
       commitNext()
       await Promise.all([qc.invalidateQueries({ queryKey: ['display-types'] }), qc.invalidateQueries({ queryKey: ['playlists'] })])
     } catch (e) {
-      message.error(errorText(e, 'Could not save changes.'))
+      /* The change would break a reserved or sold position: explain and list it (same
+         pattern as the delete dialog) rather than a red banner. Nothing was saved, so
+         the draft — and e.g. the multi-zone layout — stays as it was. */
+      if (e instanceof ApiRequestError && e.code === 'has_dependents') {
+        setBlocked({
+          message: e.message,
+          items: (e.body?.error.details ?? []).map((x): BlockedChangeItem => ({ kind: x.field ?? '', text: x.reason ?? '' })),
+        })
+      } else {
+        message.error(errorText(e, 'Could not save changes.'))
+      }
     } finally {
       setSaving(false)
     }
@@ -212,6 +224,7 @@ export function DisplayTypesPage({ flags }: { flags: Flags }) {
         advertiserOpen={(i) => dspOn || types.data?.find((t) => t.id === d.id)?.phExtensions?.slots?.[i]?.owner === 'advertiser'}
         onFixConnection={(partnerId) => navigate(`/dsp-integration/partners/${partnerId}`)} />
       <SaveBar dirty={dirty} saving={saving} onSave={onSave} onCancel={onCancel} saveOnEnter />
+      {blocked && <BlockedChange name={d.name} message={blocked.message} items={blocked.items} onClose={() => setBlocked(null)} />}
       {deleting && (
         <DeleteDisplayType name={deleting.name} check={deleting.check} deleting={deleting.busy} onDelete={confirmDelete} onClose={() => setDeleting(null)} />
       )}
