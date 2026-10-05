@@ -1196,7 +1196,13 @@ export interface components {
              *     floor, and it must clear the buyer's effective floor.
              */
             reservePrice?: number | null;
-            /** @description The reserve price for a reservation whose campaign is interactive: the slot's own interactive reserve price when set, else `reservePrice`. */
+            /**
+             * @description The reserve price for a reservation whose campaign is
+             *     interactive (ticket 5eLDRBqEGhNyJSHSIFFG, 4 Oct 2026): the
+             *     slot's own interactive reserve price when set, else
+             *     `reservePrice`. Only offered while the slot supports
+             *     interactive targeting. Same booking rules as `reservePrice`.
+             */
             interactiveReservePrice?: number | null;
         };
         Pricing: {
@@ -1206,19 +1212,11 @@ export interface components {
              * @description What a bid must clear per thousand assumed views, for this caller:
              *     the base floor × the advertiser's floor multiplier, whatever the
              *     campaign's type. There is no personalised price (Rob, 5 Oct 2026).
-             *     Interactive campaigns pay this for the plays and
-             *     the engagement fee on top, so they have no floor of their own.
              */
             effectiveFloorCpm: {
                 /** @description The floor every campaign type clears. */
                 localised: number;
             };
-            /**
-             * @description Charged once per engagement (a QR Control scan), on top of the CPM,
-             *     for an interactive campaign. In the same currency, to the cent. The
-             *     advertiser's floor multiplier does not scale it.
-             */
-            costPerEngagement: number;
         };
         TargetingAttribute: {
             /** @example store.fixed_segments */
@@ -2204,9 +2202,15 @@ export interface components {
                  */
                 billingUnitHours?: number | null;
                 /**
-                 * @description This slot's own reserve price (CPM) for interactive campaigns;
-                 *     null means interactive campaigns follow the ordinary reserve price.
-                 *     Only used while the slot supports interactive targeting.
+                 * @description This slot's own reserve price (CPM) for interactive
+                 *     campaigns (ticket 5eLDRBqEGhNyJSHSIFFG, 4 Oct 2026):
+                 *     what a buyer commits to for a window when the campaign's
+                 *     type is interactive. Absent or null means interactive
+                 *     campaigns follow the slot's ordinary reserve price
+                 *     (override, else the display type's default). Only used
+                 *     while the slot supports interactive targeting. There is no
+                 *     display-type default for it. Set from Advertisers /
+                 *     Inventory, not the slot editor.
                  */
                 interactiveReservePrice?: number | null;
                 /**
