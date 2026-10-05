@@ -44,12 +44,17 @@ record.
   type as the POC stand-in for PH Core's value (fnaXoT6S; c3e3d4f);
   booking-schedule reach counts removed (GyBfGm4k; b94aa77).
 
+- **5 Oct 2026** — personalised multiplier removed (supersedes the 30 Sep
+  entry below): every play bills at the committed CPM, whichever version
+  played; there is no personalised price anywhere. The bid floor and the
+  advertiser floor multiplier are unchanged.
+
 - **1 Oct 2026** — default VAC-d per display type with per-display override
   (`phExtensions.defaultVacd`, `displays.vacd_override`, migration 0035);
   reconciliation edits from the Scope & Seam Reconciliation Review (floor
   wording, §8 models, API surface, venue/geo and visitor-variable ownership).
-- **30 Sep 2026** — personalised multiplier charged per play, not a floor;
-  per-play version tier supplied by PH Core; unscored slots excluded from
+- **30 Sep 2026** — personalised multiplier charged per play, not a floor
+  (removed 5 Oct 2026); per-play version tier supplied by PH Core; unscored slots excluded from
   inventory, forecast and auction; sales lock (`salesLocked`); auth seams.
 - **29 Sep 2026** — decisions of 29 Sep (Q35 venue/geo is PH Core's, Q43/Q44).
 - **22 Sep 2026** — part-sold model retired.
@@ -65,8 +70,7 @@ This specification covers these areas, and only these:
    retailer approves them in the **existing Campaigns section** where the
    advertiser requires approval. Whether an advertiser requires approval, and
    its floor multiplier, are set on a new admin-only **Advertisers** screen (§3).
-4. **Pricing**: the currency, the CPM bid floor, audience scoring, a
-   personalised multiplier, and a floor multiplier
+4. **Pricing**: the currency, the CPM bid floor, audience scoring and a floor multiplier
    per advertiser (§4).
 5. **Inventory API**: what inventory exists and what is available, derived
    from the slots assigned on each display type (§5).
@@ -257,7 +261,7 @@ Page-title tooltips for the DSP Integration company pages:
 | Page | Tooltip |
 |---|---|
 | **Exchange settings** | Sets up your organisation as the seller of record for its screens. Configurable here: organisation name, domain, seller ID and ad-ops contact email, all required. Once saved and complete, sellers.json is published at https://[domain]/sellers.json and every bid request carries your domain and seller ID in its SupplyChain; until then no DSP is sent bid requests. Not configurable (platform defaults): seller type (Publisher), the DOOH object, the OpenOOH venue taxonomy, QPS and bid timeout. Bid requests use OpenRTB 2.6 as the minimum supported version for programmatic DOOH; the exchange is designed to adopt 2.7, 2.8 and later versions per DSP as the market moves. |
-| **Advertiser settings** | Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (currency, floor CPM, and the personalised multiplier), the Auction schedule (when bidding opens, play-window length, auction cutoff) and Category lists (the IAB category whitelist and blacklist, chosen from the IAB taxonomy and applied to every DSP; each DSP's advertiser lists are on its own page). Per-advertiser campaign approval and floor multipliers, and the inventory advertisers can buy, are on Advertisers / Inventory. |
+| **Advertiser settings** | Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (currency and floor CPM), the Auction schedule (when bidding opens, play-window length, auction cutoff) and Category lists (the IAB category whitelist and blacklist, chosen from the IAB taxonomy and applied to every DSP; each DSP's advertiser lists are on its own page). Per-advertiser campaign approval and floor multipliers, and the inventory advertisers can buy, are on Advertisers / Inventory. |
 | **Shared Targeting Variables** | Variables shared through the API with connected DSPs. Once a variable is enabled for a DSP, that DSP's advertisers can use it in targeting conditions for more advanced campaign targeting; the platform evaluates the condition and never returns the value. They are the same variables as a campaign's Targeting tab. Choose which DSPs may use each one below; default platform variables only in this release. |
 
 The **Enable DSP Integration** switch at the top of Exchange settings has
@@ -1033,9 +1037,9 @@ across every DSP and crid they arrive under.
   `startCampaignRetentionScheduler`) the same way the auction and billing
   jobs already run — no separate cron infrastructure needed.
 
-## 4. Pricing — CPM bid floor and multipliers
+## 4. Pricing — CPM bid floor and floor multiplier
 
-The currency, the floor and the two campaign-type multipliers are configured
+The currency and the floor are configured
 once, company-wide, in **DSP Integration → Advertiser settings → Pricing**;
 the floor multiplier is set per advertiser on the **Advertisers** screen.
 Every DSP inherits these; nothing pricing-related is set or shown on a DSP's
@@ -1045,15 +1049,13 @@ page. All values are defaults, overridable per retailer.
 
 | Field | Tooltip |
 |---|---|
-| **Pricing** (section) | Effective floor = floor CPM × the advertiser's floor multiplier (set on Advertisers / Inventory), the same for every campaign type. Bids below it never win. The personalised multiplier is not part of it: it is charged on top of the committed price only when a personalised version plays. |
+| **Pricing** (section) | Effective floor = floor CPM × the advertiser's floor multiplier (set on Advertisers / Inventory), the same for every campaign type. Bids below it never win. Every play bills at the committed CPM. |
 | **Currency** | Used for the floor CPM, every effective floor and billing. Bid requests carry it as the bid floor currency. |
 | **Floor price (CPM)** | Cost per thousand assumed views (VAC-d). The minimum any bid must meet; bids below it never win. |
-| **Personalised multiplier** | Applied when the visitor is checked in or otherwise identified, so the advert is one-to-one for that individual. It is **not a bid floor**. Bids and the auction clear against the floor price, and the price a campaign wins at covers its default and localised plays. This is charged **only when a personalised version plays**: that play bills at the committed price × this. At 1.5, a campaign committed at 100 pays **150** CPM for a personalised play. The advertiser's floor multiplier scales the floor only. By submitting a personalised version an advertiser accepts it. |
 
 **A tooltip explains its own field and relates it to the others; it does not
 repeat them** (Rob, 20 Sep). The floor price tooltip carries the VAC-d
-worked example; the personalised tooltip refers to the floor
-rather than restating how it is arrived at.
+worked example.
 
 ### Currency
 
@@ -1126,7 +1128,6 @@ played (Billing, below).
 | Lever | Default | Where it is set | Applies to |
 |---|---|---|---|
 | Floor CPM | 100 | Advertiser settings → Pricing | Every campaign |
-| Personalised multiplier | **1.5** | Advertiser settings → Pricing | Each play of a personalised version, on top of the committed price (not a floor) |
 | Advertiser floor multiplier | **1.0** | Advertisers / Inventory | The floor, per advertiser |
 
 - **Interactive is deferred** (5 Oct 2026): there is no engagement fee
@@ -1137,26 +1138,15 @@ played (Billing, below).
   for a new one. Example: 100 × 0.8 = 80 CPM is what that advertiser's bids
   must clear, whatever the campaign type. Advertisers / Inventory shows each advertiser's effective base
   floor (floor × its multiplier).
-- **Personalised is a flat multiplier, decoupled from VAC-d**, because that
-  tier collapses a mass audience to one identified individual. **It is billed
-  per personalised play, not applied as a bid floor** (Rob, 30 Sep 2026):
-  the auction clears against the base floor (× the advertiser's floor
-  multiplier), the committed price covers default and localised plays, and
-  a play of a personalised version bills at committed price × the
-  multiplier. The multiplier is snapshotted on the reservation when the
-  window clears, so a later settings change cannot reprice it; floorMultiplier
-  affects the floor only. Which
-  version played is PH Core's to supply: `PlaybackSource` plays carry a
-  nullable `tier` (`default` / `localised` / `personalised`), and a play
-  with none bills as before (see api/PH-CORE-BOUNDARIES.md, "Playback"). A
-  Run 6 bid of 120 on a 100 floor by a personalised campaign is therefore
-  accepted. Billing line items record the split (`personalised_plays`,
-  `personalised_views`, `personalised_multiplier`, `personalised_amount`).
-  Which tier a play is billed at comes from PH Core's per-play tier; the
-  trigger icons and the variable grouping are a display heuristic and never
-  decide billing.
+- **Every play bills at the committed CPM** (Rob, 5 Oct 2026). The
+  personalised multiplier added on 30 Sep 2026 is removed: the auction
+  clears against the base floor (× the advertiser's floor multiplier) and a
+  window bills at the clearing CPM whichever version played, so there is no
+  personalised price anywhere. `PlaybackSource` plays still carry a nullable
+  `tier` (`default` / `localised` / `personalised`) as reporting data; billing
+  does not price on it (see api/PH-CORE-BOUNDARIES.md, "Playback").
 - **Localised campaigns price at the floor CPM** (times the advertiser
-  multiplier) and trigger neither.
+  multiplier).
 - **Engagements are not billed**: interactive campaigns are deferred (5 Oct 2026).
 
 ### Billing
@@ -1208,7 +1198,7 @@ played (Billing, below).
   3. **Late data is recorded, never silently dropped.** For each play that
      arrives after its window's line item exists, record what it *would*
      have been worth — its share of realised VAC-d at the window's cleared
-     CPM (the reservation's snapshot, personalised multiplier included) — as
+     CPM (the reservation's snapshot) — as
      **lost revenue from display downtime**, attributable by store, display
      and over time so a recurring offline problem is visible and quantified.
      The same input has two outcomes: it never re-bills, and it is always
@@ -1223,8 +1213,7 @@ played (Billing, below).
   that moment, so a play received after it is late. A play with no
   received-at time is known at settlement, billed as before. Rule 3: the
   late-play ledger (`billing/late.ts`, table `late_plays`) records each late
-  play once, at the line item's cleared CPM and snapshotted personalised
-  multiplier, never valuing a window above its own assumed views; it runs
+  play once, at the line item's cleared CPM, never valuing a window above its own assumed views; it runs
   after billing on every scheduler tick and reads only what arrived since its
   last scan. The report is `GET /admin/v1/reports/lost-revenue?from&to&by=store|display|day`
   (per currency, by when the play played). Not built: an HQ Admin screen for
@@ -1232,8 +1221,7 @@ played (Billing, below).
   rule 3 forbids.
 - **Pre-auction enforcement uses the effective floor CPM** for the campaign's
   type and advertiser. The auction clears against the base floor (scaled by
-  the advertiser's `floorMultiplier`); the personalised multiplier is charged
-  per personalised play, not applied as a bid floor (30 Sep 2026).
+  the advertiser's `floorMultiplier`); there is no personalised price (5 Oct 2026).
 
 ## 5. Inventory API
 
@@ -2424,8 +2412,8 @@ superseding the earlier same-day "baseline optional" decision — §3, §6):
 Company-level:
 
 - **Advertiser settings**: `currency` (any ISO 4217 code; default `AUD`),
-  `floorCpm`, `personalisedMultiplier`, `interactiveCpe` (kept, not
-  editable while interactive is deferred; defaults 100 / 1.5 / 0.50), the auction schedule (`auctionOpensHours`,
+  `floorCpm`, `interactiveCpe` (kept, not
+  editable while interactive is deferred; defaults 100 / 0.50), the auction schedule (`auctionOpensHours`,
   `playWindowHours`, `auctionCutoffTime`; defaults 168 / 24 / 18:00 UTC —
   `playWindowHours` is only the window a slot inherits when neither it nor
   its display type sets a billing unit, open question 27),
@@ -3211,7 +3199,7 @@ playback analytics.**
 ### Pricing
 
 - **Company-wide pricing**: currency (any ISO 4217 currency, listed by code
-  and name), floor CPM, personalised multiplier,
+  and name), floor CPM,
   inherited by every DSP, each with the tooltip given in §4.
   *(DSP Integration → Advertiser settings → Pricing)*
 - **Advertiser floor multiplier** per advertiser. *(Advertisers)*
@@ -3649,11 +3637,12 @@ until that section is edited.
   dedicated approver role and no store-level approval step. Any wording
   above implying a specific HQ Admin approver role, or optional store-level
   approval, is superseded.
-- **Sensor-derived audience (Q34; §4 "Pricing", personalised multiplier).**
+- **Sensor-derived audience (Q34; §4 "Pricing").**
   Camera- or sensor-detected audience attributes qualify a campaign as
-  personalised and are priced on that basis. There is no distinct sensor
-  multiplier. The mechanism is the per-play tier PH Core supplies (30 Sep
-  2026), not how the exchange groups variables. See Q49 for the exposure default.
+  personalised but carry no price of their own: there is no sensor
+  multiplier and, since 5 Oct 2026, no personalised multiplier. The tier
+  PH Core supplies per play (30 Sep 2026) is reporting data, not how the
+  exchange groups variables. See Q49 for the exposure default.
 - **Partial-estate delivery (Q29; §4 "Billing", §5 "Reserved" and
   "Private auctions").** Partial-estate delivery bills on realised VAC-d,
   with no make-good or shortfall remedy in this build. Delivery risk sits
@@ -3741,8 +3730,10 @@ partner-contributed attributes have been removed with that scope.
 34. **Sensor-derived audience multiplier.** *Resolved (decision, Rob, 29 Sep
     2026):* there is no separate sensor multiplier. A camera-detected
     attribute (e.g. gender, estimated age) makes the campaign *personalised*,
-    which already takes the personalised multiplier (1.5, §4), charged per
-    personalised play rather than as a floor (decision, Rob, 30 Sep 2026). See open question 49 for exposure to DSPs.
+    which at that time took the personalised multiplier (1.5), charged per
+    personalised play rather than as a floor (decision, Rob, 30 Sep 2026);
+    that multiplier was removed on 5 Oct 2026, so it now bills at the
+    committed CPM like every play. See open question 49 for exposure to DSPs.
 35. **Venue and geo metadata.** *Resolved (decision, Rob, 29 Sep 2026):* PH
     Core already manages all store data, venue and geo metadata included,
     and is the system of record. This project reads it from Core and stores

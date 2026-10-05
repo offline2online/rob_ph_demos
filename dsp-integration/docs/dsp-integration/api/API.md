@@ -23,8 +23,7 @@ endpoint, and **no billing endpoint yet**: billing runs in the Billing module
 (`apps/api/src/billing/index.ts`, one seam: a cleared reservation plus
 `PlaybackSource.totals` in, one idempotent line item out; see
 PH-CORE-BOUNDARIES.md, "Billing — one module, one seam"). The line item,
-including the personalised split (`personalisedPlays`, `personalisedViews`,
-`personalisedMultiplier`, `personalisedAmount`, 0034), is stored and read only
+including the 0034 columns (retained, no longer written, 5 Oct 2026), is stored and read only
 by the booking schedule's billed total; no read of it is in this contract.
 
 ## Surfaces
@@ -88,26 +87,22 @@ All paths are served from the retailer's own instance
 ```
 effective floor CPM = floorCpm × advertiser floorMultiplier   (every campaign type)
 
-personalised play   = committed (clearing) CPM × personalisedMultiplier
-                                                (billing only, per play)
+billing: every play = committed (clearing) CPM, whichever version played
 ```
 
-Defaults: floor 100, personalised 1.5, advertiser 1.0. **The personalised multiplier is not a floor** (Rob, 30 Sep 2026).
+Defaults: floor 100, advertiser 1.0. **There is no personalised multiplier**
+(removed 5 Oct 2026; it was charged per personalised play from 30 Sep 2026).
 Bids and the auction clear against the base floor × the advertiser's floor
-multiplier whatever the campaign's type, and the price a campaign wins at
-covers its default and localised plays. The multiplier is charged **only
-when a personalised version plays**: that play bills at the committed price
-× the multiplier (100 committed × 1.5 = 150 for that play). The advertiser's
-floor multiplier scales the floor only. The multiplier in force when a
-window clears is kept on the reservation, so a later settings change cannot
-reprice it. Interactive campaigns are deferred for this release (5 Oct 2026): a
+multiplier whatever the campaign's type, and a window bills at the CPM it
+clears at for every play. The advertiser's floor multiplier scales the floor
+only. Interactive campaigns are deferred for this release (5 Oct 2026): a
 campaign submission with an interactive layer is refused `422
 targeting_not_supported`, and positions publish no interactive price. A position reports `pricing.effectiveFloorCpm.localised`
-(the one floor) and `pricing.personalisedMultiplier`.
-Billing splits a window's plays by version tier (`default`, `localised`,
+(the one floor).
+Billing does not price on a play's version tier (`default`, `localised`,
 `personalised`); which version played is PH Core's to supply
-(PH-CORE-BOUNDARIES.md, "Playback"), and a play with no tier bills as
-default, at the clearing CPM.
+(PH-CORE-BOUNDARIES.md, "Playback") as reporting data, and every play bills at the
+clearing CPM.
 
 **Unscored slots are not sold** (30 Sep 2026). A slot with no audience
 score reports 0 assumed views, so `GET /v1/inventory` leaves it out, `GET
@@ -149,9 +144,8 @@ A position returns: id, display type, slot and label, zone, store and
 display counts (unique platform store IDs and displays using the display type), screen (width, height, orientation, slot duration, loop
 length, share of voice, OpenOOH venue type), assignment (`rtb`,
 `whitelist_only`, `reserved`), assumed views per window, pricing (floor
-and the one effective floor for the caller's advertiser,
-and `personalisedMultiplier`; the multiplier is not a floor, see
-*Pricing maths*), and `reservePrice`
+and the one effective floor for the caller's advertiser),
+and `reservePrice`
 (a CPM premium to reserve the position in advance of the open auction, or
 null — the resolved value: a slot's own override, else its display type's
 reserve price default, else null; set on Advertisers / Inventory). A
