@@ -651,7 +651,7 @@ async function rpc(token, method, params, id = 1) {
   // list_projects (which only ever queries `projects`).
   await test("exposes the concept tools", async () => {
     const names = mcp.__test.TOOLS.map((t) => t.name);
-    for (const expected of ["list_concepts", "get_concept", "add_concept_comment", "set_concept_readme", "set_concept_requirements"]) {
+    for (const expected of ["create_concept", "list_concepts", "get_concept", "add_concept_comment", "set_concept_readme", "set_concept_requirements"]) {
       assert.ok(names.includes(expected), `missing tool ${expected}`);
     }
     // No ticket-shaped tool for concepts — they have no backlogItems until promoted.
@@ -682,6 +682,24 @@ async function rpc(token, method, params, id = 1) {
     assert.match(out.readmeMd, /Early idea/);
     assert.strictEqual(out.status, "active");
     assert.deepStrictEqual(out.comments, []);
+  });
+
+  await test("creates a concept, active, then seeds it with the write tools", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", { name: "create_concept", arguments: { name: "  Experience Templates  ", description: "Split out of Display Types." } });
+    const out = JSON.parse(res.body.result.content[0].text);
+    assert.ok(out.conceptId);
+    const doc = env.store.col("concepts").get(out.conceptId);
+    assert.strictEqual(doc.name, "Experience Templates");
+    assert.strictEqual(doc.status, "active");
+    assert.strictEqual(doc.comments.length, 1);
+    const act = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "list_concepts", arguments: { status: "active" } })).body.result.content[0].text);
+    assert.ok(act.concepts.some((c) => c.id === out.conceptId));
+    const w = await rpc(tokens.access_token, "tools/call", { name: "set_concept_readme", arguments: { conceptId: out.conceptId, contentMd: "# ET" } });
+    assert.ok(!w.body.result.isError);
+    const r = await rpc(tokens.access_token, "tools/call", { name: "set_concept_requirements", arguments: { conceptId: out.conceptId, contentMd: "# Req" } });
+    assert.ok(!r.body.result.isError);
+    const bad = await rpc(tokens.access_token, "tools/call", { name: "create_concept", arguments: { name: "   " } });
+    assert.strictEqual(bad.body.result.isError, true);
   });
 
   await test("refuses get_concept on an unknown id", async () => {

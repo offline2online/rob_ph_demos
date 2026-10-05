@@ -2528,11 +2528,54 @@ const TOOLS = [
   // same "full read/write on its documentation" treatment `projects` already
   // gets, without pretending it has a backlog — there is deliberately no
   // list_backlog_items-style tool here, because a concept has no pipeline
-  // column to list. There is also deliberately no create_concept or
-  // promote_concept_to_project tool: this server has no create_project tool
-  // either, so a concept's container-level lifecycle (creating one,
-  // promoting it into a real project) stays a human action on the board,
-  // matching how a project itself is created.
+  // column to list. create_concept (5 Oct 2026, ticket Hk2JjzgaVNr6k1ffqIRj)
+  // creates the shell so an agent can seed one end to end — always `active`,
+  // exactly what the board's own "New concept" does. There is still
+  // deliberately no promote_concept_to_project tool: this server has no
+  // create_project tool either, so promoting a concept into a real project
+  // stays a human action on the board.
+  {
+    name: "create_concept",
+    description: "Create a brand-new concept in the Concept Incubator, attributed to you. It starts in the active (pre-project) state, so set_concept_readme / set_concept_requirements / set_concept_artifact / add_concept_comment can then seed it. Returns its conceptId. Promoting a concept into a project stays a human action on the board.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "The concept's name. Up to 120 characters." },
+        readmeMd: { type: "string", description: "Optional initial README markdown." },
+        requirementsMd: { type: "string", description: "Optional initial Requirements markdown." },
+        description: { type: "string", description: "Optional short description; posted as the first comment on the concept's thread. Up to 4000 characters." },
+      },
+      required: ["name"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const name = String(args.name || "").trim();
+      if (!name) return toolError("name is required.");
+      if (name.length > 120) return toolError("A concept name is limited to 120 characters.");
+      const readmeMd = args.readmeMd == null ? "" : String(args.readmeMd);
+      const requirementsMd = args.requirementsMd == null ? "" : String(args.requirementsMd);
+      if (readmeMd.length > CONCEPT_MD_MAX) return toolError(`A concept README is limited to ${CONCEPT_MD_MAX} characters; that was ${readmeMd.length}.`);
+      if (requirementsMd.length > CONCEPT_MD_MAX) return toolError(`Concept Requirements are limited to ${CONCEPT_MD_MAX} characters; that was ${requirementsMd.length}.`);
+      const description = args.description == null ? "" : String(args.description).trim();
+      if (description.length > 4000) return toolError("description is limited to 4000 characters.");
+      const ref = await db().collection("concepts").add({
+        name,
+        readmeMd,
+        requirementsMd,
+        // A plain Date, not serverTimestamp(): the sentinel is rejected
+        // inside an array element (see add_concept_comment).
+        comments: description ? [{ author: session.email, text: description, at: new Date() }] : [],
+        status: "active",
+        promotedProjectId: null,
+        promotedAt: null,
+        createdByEmail: session.email,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      await audit(session, "create_concept", { conceptId: ref.id, name, readmeChars: readmeMd.length, requirementsChars: requirementsMd.length });
+      return textResult({ created: true, conceptId: ref.id, name, status: "active", createdByEmail: session.email });
+    },
+  },
   {
     name: "list_concepts",
     description: "Every concept in the Concept Incubator — the pre-project stage, before something becomes a real tracked project. Use this to find the conceptId get_concept and the write tools below need.",
@@ -3478,7 +3521,7 @@ const SERVER_INSTRUCTIONS = [
   "You have full read/write access to project DOCUMENTATION and are expected to keep it current as you work: get_project_docs to read a project's Requirements, README, additional documents and interface contracts, then set_project_requirements / set_project_readme / create_project_document / update_project_document / create_interface / update_interface to update them.",
   "Documentation writes REPLACE the whole document, so read it first and send back the complete revised text — never a fragment. The version you replace is kept, and list_doc_revisions / get_doc_revision can recover it.",
   "Where a project's documentation also exists as a file in the repo (REQUIREMENTS.md, README.md, shared/interface-contract.md), the two are meant to match: update both, and treat a divergence as a bug in whichever is stale.",
-  "The Concept Incubator holds pre-project ideas that haven't been promoted to a tracked project yet — list_concepts / get_concept read them, and add_concept_comment / set_concept_readme / set_concept_requirements / set_concept_artifact write to them, same read/write split as project documentation. A concept has no backlog of its own until it's promoted; once promoted, use list_projects/get_project_docs on the project it became instead.",
+  "The Concept Incubator holds pre-project ideas that haven't been promoted to a tracked project yet — create_concept makes a new one, list_concepts / get_concept read them, and add_concept_comment / set_concept_readme / set_concept_requirements / set_concept_artifact write to them, same read/write split as project documentation. A concept has no backlog of its own until it's promoted; once promoted, use list_projects/get_project_docs on the project it became instead.",
   "To show what is waiting on a person in the release pipeline, call get_ready_for_testing_board (the Ready for Testing column) or get_approved_for_deployment_board (the Approved for Deployment column) rather than list_backlog_items: both are MCP Apps, so a host that supports them renders the tickets as cards inline in the conversation, and every host gets the same data as text.",
   "Use search_faq / get_faq_article to answer Personalisation Hub product questions from the published help centre instead of guessing.",
   "You can also write to the help centre: create_faq_article files a brand-new draft, and update_faq_article proposes a change to an existing one as a pendingRevision — never live. Either way a person still reviews and approves it in FAQ Management before anything publishes; list_pending_faq_revisions and get_faq_revision let you check on a proposal's status.",
