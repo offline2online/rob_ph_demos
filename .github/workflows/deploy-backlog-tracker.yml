@@ -267,6 +267,25 @@ jobs:
       # plain `storage`; and because Firebase Storage may not be set up on
       # the project yet, a failure here must not take hosting/functions/
       # firestore rules down with it.
+      # Secret Manager bills every version not yet destroyed, disabled ones
+      # included ("Secret version replica storage" — A$39.55 of September's
+      # bill). Until 4 Oct every deploy added a version of all five secrets.
+      # `firebase functions:secrets:prune` reported nothing to do (it only
+      # sees what Firebase labelled), so this uses
+      # scripts/prune-secret-versions.sh, which works from the live
+      # functions: it keeps every pinned version, every secret's newest, and
+      # any secret no function uses. Only after a deploy that fully
+      # succeeded — a failed one can leave an update still running, pinned
+      # to a version the listing doesn't show yet. Non-fatal, but loud.
+      - name: Destroy secret versions no function uses
+        if: steps.dedupe.outputs.skip != 'true' && steps.deploy.outcome == 'success'
+        continue-on-error: true
+        run: |
+          gcloud auth activate-service-account --key-file="$RUNNER_TEMP/firebase-sa.json" --quiet
+          if ! bash scripts/prune-secret-versions.sh destroy; then
+            echo "::warning title=Old secret versions not cleaned up::scripts/prune-secret-versions.sh failed — unused secret versions keep being billed. Run the 'Secret versions' workflow in report mode to see why."
+          fi
+
       - name: Deploy Storage rules (non-fatal until Storage is set up)
         if: steps.dedupe.outputs.skip != 'true'
         continue-on-error: true

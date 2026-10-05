@@ -304,12 +304,27 @@ async function patchProjectDocFields(docId, fields) {
   if (!res.ok) throw new Error(`PATCH projectDocs/${docId} failed: ${res.status} ${await res.text()}`);
 }
 
-async function itemsForProject(projectId) {
+async function itemsForProject(projectId, fields) {
   return runQuery({
     from: [{ collectionId: "backlogItems" }],
+    ...(fields ? { select: selectFields(fields) } : {}),
     where: { fieldFilter: { field: { fieldPath: "projectId" }, op: "EQUAL", value: { stringValue: projectId } } },
   });
 }
+
+// Firebase cost review (4 Oct 2026): Firestore's bill was almost all
+// internet egress (~99 GB in a month, ~80 KB per document read), and this
+// job runs every 2 minutes from a GitHub runner. The sweeps that run on
+// every pass ask only for the fields they read, so a ticket's patchFiles
+// (~180 KB) and a project's markdown (up to 200k chars) are never
+// downloaded just to check a status; anything that then acts on a document
+// re-reads it in full first.
+function selectFields(fields) {
+  return { fields: fields.map((fieldPath) => ({ fieldPath })) };
+}
+// What trainLockShouldClear / isTrainRelevantItem (functions/train-lock.js)
+// read on an item.
+const TRAIN_LOCK_ITEM_FIELDS = ["status", "deployCommit", "revertRequested"];
 
 // ── "Ready for Testing" hand-off: tell a person the build landed ────────────
 // Every card this run moves into Ready for Testing is collected per project,
@@ -3049,9 +3064,11 @@ async function processDeployTrain(project) {
 async function reconcileMergedTrains() {
   const waiting = await runQuery({
     from: [{ collectionId: "projects" }],
+    select: selectFields(["trainPrNumber"]),
     where: { fieldFilter: { field: { fieldPath: "trainStatus" }, op: "EQUAL", value: { stringValue: "awaiting-human-merge" } } },
   });
-  for (const project of waiting) {
+  for (const waitingProject of waiting) {
+    let project = waitingProject;
     const prNumber = Number(project.trainPrNumber) || null;
     if (!prNumber) continue;
     let pr = null;
@@ -3062,6 +3079,7 @@ async function reconcileMergedTrains() {
       continue;
     }
     if (pr.state !== "MERGED") continue;
+    project = await getProject(project.id);
     const deployBranch = project.deployBranch || deployBranchForName(project.name);
     const onTrain = onTrainItems(await itemsForProject(project.id));
     if (!onTrain.length) {
@@ -3165,6 +3183,7 @@ function archiveAndResetOrphanedBranch(deployBranch) {
 async function reconcileLockedTrains() {
   const locked = await runQuery({
     from: [{ collectionId: "projects" }],
+    select: selectFields(["trainLocked", "trainStatus", "deployBranch", "name"]),
     where: { fieldFilter: { field: { fieldPath: "trainLocked" }, op: "EQUAL", value: { booleanValue: true } } },
   });
   for (const project of locked) {
@@ -3173,7 +3192,7 @@ async function reconcileLockedTrains() {
     // those by unlocking underneath them.
     if (project.trainStatus === "deploying" || project.trainStatus === "awaiting-human-merge") continue;
 
-    const items = await itemsForProject(project.id);
+    const items = await itemsForProject(project.id, TRAIN_LOCK_ITEM_FIELDS);
     if (!trainLockShouldClear(project, items)) continue;
 
     const deployBranch = project.deployBranch || deployBranchForName(project.name);
@@ -3352,6 +3371,7 @@ async function processRevertPr(item) {
 async function reconcileDeployStatuses() {
   const pending = await runQuery({
     from: [{ collectionId: "backlogItems" }],
+    select: selectFields(["deployRunUrl", "mergedAt", "updatedAt"]),
     where: { fieldFilter: { field: { fieldPath: "deployConclusion" }, op: "EQUAL", value: { stringValue: "pending" } } },
   });
   if (!pending.length) return;
@@ -3432,6 +3452,7 @@ async function recordPipelineHealth(conclusion) {
 async function reconcileHumanMergedPrs() {
   const waiting = await runQuery({
     from: [{ collectionId: "backlogItems" }],
+    select: selectFields(["mergeReady", "mergePrNumber", "prNumber", "prUrl"]),
     where: { fieldFilter: { field: { fieldPath: "status" }, op: "EQUAL", value: { stringValue: "ready-to-publish" } } },
   });
   const picked = [];
@@ -3448,7 +3469,10 @@ async function reconcileHumanMergedPrs() {
     }
     console.log(`[human-merge] ${item.id}: PR #${prNumber} was merged outside the pipeline — recording it as live`);
     await patchItem(item.id, { mergeReady: true, mergePrNumber: Number(prNumber), updatedAt: new Date().toISOString() });
-    picked.push({ ...item, mergeReady: true, mergePrNumber: Number(prNumber) });
+    // The query above carried only the fields it checks; processMergePr
+    // needs the whole card.
+    const full = (await getItem(item.id)) || item;
+    picked.push({ ...full, mergeReady: true, mergePrNumber: Number(prNumber) });
   }
   return picked;
 }
