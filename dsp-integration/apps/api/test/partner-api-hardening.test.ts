@@ -173,9 +173,10 @@ describe('request size limits', () => {
     /* Both enabled: either is accepted, on either layer. */
     expect((await setSupported(['localised', 'personalised'])).statusCode).toBe(200)
     expect((await create({ ...forSlot, default: { pricingType: 'personalised' }, targeted: [{ id: 'metro', priority: 1, pricingType: 'localised', rules: [[COND]] }] })).statusCode).toBe(201)
-    /* Interactive stays out of the deal even with both of the others on. */
-    expect((await create({ ...forSlot, targeted: [{ id: 'metro', priority: 1, pricingType: 'interactive', rules: [[COND]] }] })).json().error.details)
-      .toContainEqual({ field: 'targeted[0].pricingType', reason: 'This slot supports localised, personalised targeting only; interactive is not enabled for it.' })
+    /* Interactive is deferred (5 Oct 2026): any submission with an interactive layer is refused outright. */
+    const refused = await create({ ...forSlot, targeted: [{ id: 'metro', priority: 1, pricingType: 'interactive', rules: [[COND]] }] })
+    expect([refused.statusCode, refused.json().error.code]).toEqual([422, 'targeting_not_supported'])
+    expect((await create({ ...forSlot, default: { pricingType: 'interactive' } })).json().error.code).toBe('targeting_not_supported')
 
     /* Without a resolvable slot, there is nothing to enforce against — the
        platform-wide submission stays exactly as unscoped as it was before

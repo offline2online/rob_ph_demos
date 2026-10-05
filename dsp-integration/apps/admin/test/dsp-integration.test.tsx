@@ -603,9 +603,7 @@ describe('Advertisers / Inventory', () => {
        type column) with Unassigned indicator", 27 Sep 2026). */
     expect([...inventory.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent))
       .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Targeting supported', 'Reserve price', 'Max campaigns', 'Billing unit', ''])
-    /* Interactive reserve price needs QR Control AND Interactive ticked in
-       Targeting supported (or a price already assigned); no row here has
-       either, so the column is hidden (ticket L32gi3rXFAmwMCUqP1Dj). */
+    /* No interactive-only column: interactive is deferred (5 Oct 2026). */
     expect(within(inventory).getByLabelText('Playlist search')).toBeInTheDocument()
     expect(within(inventory).getByLabelText('Targeting supported filter')).toBeInTheDocument()
     /* QR Control and Vision/AI moved onto the Playlist cell along with the
@@ -819,15 +817,9 @@ describe('Pricing tooltips', () => {
     expect(await screen.findByText(/× attention \(VAC: the share who actually look\)/)).toBeInTheDocument()
     expect(screen.getByText(/100 × 27 ÷ 1,000/)).toBeInTheDocument()
 
-    /* The interactive fee says how it relates to the floor, and nothing
-       from the floor's own working appears inside it. */
-    const bubble = (text: RegExp) => screen.getByText(text).closest('.ant-tooltip-inner') as HTMLElement
     expect(screen.queryByText('Personalised multiplier')).not.toBeInTheDocument()
 
-    /* Interactive is a fee per engagement now, not a multiplier. */
-    fireEvent.mouseEnter(tip('Interactive cost per engagement'))
-    await screen.findByText(/Charged per engagement/)
-    expect(bubble(/Charged per engagement/).textContent).toMatch(/on top of the CPM/)
-    expect(bubble(/Charged per engagement/).textContent).not.toMatch(/VAC-d|attention/)
+    /* Interactive campaigns are deferred (5 Oct 2026): no engagement field in Pricing. */
+    expect(screen.queryByText('Interactive cost per engagement')).not.toBeInTheDocument()
   })
 })

@@ -1638,7 +1638,7 @@ components:
             interactive targeting. Same booking rules as `reservePrice`.
     Pricing:
       type: object
-      required: [currency, floorCpm, effectiveFloorCpm, costPerEngagement]
+      required: [currency, floorCpm, effectiveFloorCpm]
       properties:
         currency: {type: string}
         floorCpm: {type: number}
@@ -1648,17 +1648,9 @@ components:
             What a bid must clear per thousand assumed views, for this caller:
             the base floor × the advertiser's floor multiplier, whatever the
             campaign's type. There is no personalised price (Rob, 5 Oct 2026).
-            Interactive campaigns pay this for the plays and
-            the engagement fee on top, so they have no floor of their own.
           required: [localised]
           properties:
             localised: {type: number, description: The floor every campaign type clears.}
-        costPerEngagement:
-          type: number
-          description: |
-            Charged once per engagement (a QR Control scan), on top of the CPM,
-            for an interactive campaign. In the same currency, to the cent. The
-            advertiser's floor multiplier does not scale it.
 
     TargetingAttribute:
       type: object

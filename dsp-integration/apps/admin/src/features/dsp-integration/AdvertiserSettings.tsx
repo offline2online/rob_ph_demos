@@ -2,7 +2,7 @@
    edited here (advertiser lists are per DSP, on its own page); Where these apply is read-only. The inventory table moved to
    Advertisers / Inventory (Rob, 20 Sep). */
 import { InputNumber, Select } from 'antd'
-import { IAB_CATEGORIES, IAB_CATEGORY_CODES, type AdvertiserSettingsInput } from '@ph-dsp/types'
+import { IAB_CATEGORIES, IAB_CATEGORY_CODES, INTERACTIVE_ENABLED, type AdvertiserSettingsInput } from '@ph-dsp/types'
 import { type ReactNode, useMemo } from 'react'
 import { Callout } from '../../shared/Callout'
 import { Field } from '../../shared/Field'
@@ -14,7 +14,7 @@ import { useSection } from './DspIntegrationLayout'
 import { SubPageHeader } from './SubPageHeader'
 
 export const ADVERTISER_SETTINGS_TIP =
-  "Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (currency, floor CPM and the interactive cost per engagement), the Auction schedule (when bidding opens, play-window length, auction cutoff) and the Category lists (IAB whitelists and blacklists; each DSP's advertiser lists are managed on its own page, from the advertisers it syncs). Read-only here: Where these apply (which DSPs use these lists or keep their own; unlink or relink on the DSP's page). Per-advertiser campaign approval and floor multipliers, and the inventory advertisers can buy, are on Advertisers / Inventory."
+  "Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (currency, and floor CPM), the Auction schedule (when bidding opens, play-window length, auction cutoff) and the Category lists (IAB whitelists and blacklists; each DSP's advertiser lists are managed on its own page, from the advertisers it syncs). Read-only here: Where these apply (which DSPs use these lists or keep their own; unlink or relink on the DSP's page). Per-advertiser campaign approval and floor multipliers, and the inventory advertisers can buy, are on Advertisers / Inventory."
 
 /* Every ISO 4217 currency, listed by code and name (spec §4). */
 const CURRENCIES = (() => {
@@ -134,13 +134,13 @@ export function AdvertiserSettings() {
     <>
       <SubPageHeader icon="rule" title="Advertiser settings" tip={ADVERTISER_SETTINGS_TIP} />
 
-      <SectionLabel><WithTip tip="Effective floor = floor CPM × the advertiser's floor multiplier (set on Advertisers / Inventory), the same for every campaign type. Bids below it never win. Every play bills at the committed price, whatever version plays. An interactive campaign clears the same floor and pays the cost per engagement on top.">Pricing</WithTip></SectionLabel>
+      <SectionLabel><WithTip tip="Effective floor = floor CPM × the advertiser's floor multiplier (set on Advertisers / Inventory), the same for every campaign type. Bids below it never win. Every play bills at the committed price, whatever version plays.">Pricing</WithTip></SectionLabel>
       <div className="flex flex-wrap items-start gap-3.5">
         <Field label={<span className="block" style={{ minHeight: 36 }}>Currency</span>} htmlFor="currency" tip="Used for the floor CPM, every effective floor and billing. Bid requests carry it as the bid floor currency." className="w-56">
           <Select id="currency" className="w-full" showSearch optionFilterProp="label" value={s.currency} onChange={(v) => set('currency', v)} options={CURRENCIES} popupMatchSelectWidth={280} />
         </Field>
         <Field label={<span className="block" style={{ minHeight: 36 }}>Floor price (CPM)</span>} htmlFor="floorCpm" tip={FLOOR_TIP} tipWidth={400} className="w-32">{num('floorCpm', 1, '100')}</Field>
-        <Field label={<span className="block" style={{ minHeight: 36 }}>Interactive cost per engagement</span>} htmlFor="interactiveCpe" tip={INTERACTIVE_TIP} tipWidth={400} className="w-44">{num('interactiveCpe', 0.05, '0.50', { precision: 2, prefix: s.currency })}</Field>
+        {INTERACTIVE_ENABLED && <Field label={<span className="block" style={{ minHeight: 36 }}>Interactive cost per engagement</span>} htmlFor="interactiveCpe" tip={INTERACTIVE_TIP} tipWidth={400} className="w-44">{num('interactiveCpe', 0.05, '0.50', { precision: 2, prefix: s.currency })}</Field>}
       </div>
 
       <SectionLabel><WithTip tip="In-store screens can't take a bid per play, so advertisers bid for a play window that clears ahead of time. Bidding for a window opens, closes at the auction cutoff (when the auction runs) and the winner holds the slot for the whole window. Times are UTC.">Auction schedule</WithTip></SectionLabel>

@@ -147,11 +147,17 @@ export const maxCampaignsOf = (dt: { phExtensions?: { maxCampaigns?: number | nu
    for a campaign of an unsupported type is refused. Same order and words as
    the pricing fields in Advertiser settings. */
 export type TargetingMode = 'localised' | 'personalised' | 'interactive'
-export const TARGETING_MODES: { key: TargetingMode; label: string; tip: string }[] = [
+/* Interactive campaigns are out of scope for this release (Rob, 5 Oct 2026):
+   one flag hides them everywhere — the Targeting supported picker, the
+   interactive prices on GET /v1/inventory, the interactive pricingType on
+   campaigns — and the code stays so they can return behind it. */
+export const INTERACTIVE_ENABLED = false
+const ALL_TARGETING_MODES: { key: TargetingMode; label: string; tip: string }[] = [
   { key: 'localised', label: 'Localised', tip: 'Store-level targeting only: the campaign varies by store, not by who is in front of the screen.' },
   { key: 'personalised', label: 'Personalised', tip: 'The campaign may use Personalisation Variables about the visitor. Only available on a slot with a reserve price: personalised versions play only in a window held by a reserve booking, never in an open or private auction.' },
   { key: 'interactive', label: 'Interactive', tip: 'The campaign may respond to the visitor on screen. Pays the interactive cost per engagement on top of the CPM.' },
 ]
+export const TARGETING_MODES = ALL_TARGETING_MODES.filter((m) => INTERACTIVE_ENABLED || m.key !== 'interactive')
 export const DEFAULT_TARGETING: TargetingMode[] = ['localised']
 /* The reserve price tooltip (Rob, 5 Oct 2026), shared by the Available
    Inventory column and the display type's reserve price field. */

@@ -7,7 +7,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { App, Button, InputNumber, Select, Spin, Switch } from 'antd'
 import { Tip } from '../../shared/Tip'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
-import { RESERVE_PRICE_TIP, DEFAULT_BILLING_UNIT_HOURS, DEFAULT_MAX_CAMPAIGNS, MAX_MAX_CAMPAIGNS, MIN_MAX_CAMPAIGNS, SLOT_OWNERS, TARGETING_MODES, assignedLabels, supportedTargetingOf, targetingLabel, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type Session, type TargetingMode } from '@ph-dsp/types'
+import { INTERACTIVE_ENABLED, RESERVE_PRICE_TIP, DEFAULT_BILLING_UNIT_HOURS, DEFAULT_MAX_CAMPAIGNS, MAX_MAX_CAMPAIGNS, MIN_MAX_CAMPAIGNS, SLOT_OWNERS, TARGETING_MODES, assignedLabels, supportedTargetingOf, targetingLabel, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type Session, type TargetingMode } from '@ph-dsp/types'
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, ApiRequestError } from '../../api/client'
@@ -119,7 +119,7 @@ const PlaylistCell = ({ data }: ICellRendererParams<AvailableInventoryRow>) =>
         </Tip>
       )}
       {data.qrControl && (
-        <Tip title="QR Control is enabled on this display type, so its slots can support interactive campaigns.">
+        <Tip title={INTERACTIVE_ENABLED ? 'QR Control is enabled on this display type, so its slots can support interactive campaigns.' : 'QR Control is enabled on this display type.'}>
           <span className="inline-flex" aria-label="QR Control enabled"><Icon name="qr_code_2" size={15} style={{ color: T.primary }} /></span>
         </Tip>
       )}
@@ -600,7 +600,7 @@ export function AdvertisersPage() {
   })), [invRows, inventory.data])
   const inv = useDraft(savedEdits)
   const savedEditsNow = (r: AvailableInventoryRow): SlotEdit => (inv.draft ?? {})[slotKey(r)] ?? { supportedTargeting: supportedTargetingOf(r), assignedTo: r.assignedTo, reservePrice: r.reservePriceOverride, interactiveReservePrice: r.interactiveReservePriceOverride ?? null, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride }
-  const anyInteractiveReserve = invRows.some((r) => showsInteractiveReserve(r.qrControl, savedEditsNow(r)))
+  const anyInteractiveReserve = INTERACTIVE_ENABLED && invRows.some((r) => showsInteractiveReserve(r.qrControl, savedEditsNow(r)))
   const visibleInventoryColumns = useMemo(
     () => (anyInteractiveReserve ? inventoryColumns : inventoryColumns.filter((col) => col.headerName !== INTERACTIVE_RESERVE_HEADER)),
     [inventoryColumns, anyInteractiveReserve],

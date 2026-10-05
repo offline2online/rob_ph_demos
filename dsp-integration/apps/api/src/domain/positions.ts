@@ -7,7 +7,7 @@ import type { Context } from '../context'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 import { type Awaitable, allOf, andThen } from '../db/db'
 import { type ReservationStatus, TAKEN } from '../repos/ReservationRepo'
-import { advertiserSlug, assignedOf, billingUnitHoursOf, interactiveReservePriceOf, maxCampaignsOf, reservePriceOf, supportedTargetingOf, type Assigned } from '@ph-dsp/types'
+import { INTERACTIVE_ENABLED, advertiserSlug, assignedOf, billingUnitHoursOf, interactiveReservePriceOf, maxCampaignsOf, reservePriceOf, supportedTargetingOf, type Assigned } from '@ph-dsp/types'
 import { invitedPartnerIds, isInvitedBuyer } from './buyersLists'
 import { isActiveAt, lockedTermSpan } from '../billing/term'
 import { effectiveLists, isBlocked, isOn } from './lists'
@@ -475,10 +475,10 @@ function viewOf(
        caller who is told so, since inventory excludes such positions. */
     scored: audience.scored,
     /* One floor for every campaign type; no personalised price (Rob, 5 Oct 2026). */
-    pricing: { currency: company.currency, floorCpm: company.floorCpm, effectiveFloorCpm: { localised: effectiveFloorCpm(company, multiplier) }, costPerEngagement: company.interactiveCpe },
+    pricing: { currency: company.currency, floorCpm: company.floorCpm, effectiveFloorCpm: { localised: effectiveFloorCpm(company, multiplier) } },
     /* The most campaigns (default + targeted versions) a bid or reservation here may carry. */
     maxCampaigns: maxCampaignsOf(dt, p.def),
     reservePrice: reservePriceOf(dt, p.def),
-    ...(supportedTargetingOf(p.def).includes('interactive') ? { interactiveReservePrice: interactiveReservePriceOf(dt, p.def) } : {}),
+    ...(INTERACTIVE_ENABLED && supportedTargetingOf(p.def).includes('interactive') ? { interactiveReservePrice: interactiveReservePriceOf(dt, p.def) } : {}),
   }
 }

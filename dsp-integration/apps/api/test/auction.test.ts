@@ -344,11 +344,11 @@ describe('POST /v1/reservations and GET …/{id}', () => {
     const support = (supportedTargeting: string[]) =>
       app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, supportedTargeting, reservePrice: 150 }] } })
 
-    await support(['personalised', 'interactive'])
+    await support(['personalised'])
     const res = await reserve(BID)
     expect(res.statusCode).toBe(422)
     expectMatchesContract('POST', '/v1/reservations', 422, res.json())
-    expect([res.json().error.code, res.json().error.message]).toEqual(['targeting_not_supported', 'This position supports personalised, interactive targeting only; the campaign is localised.'])
+    expect([res.json().error.code, res.json().error.message]).toEqual(['targeting_not_supported', 'This position supports personalised targeting only; the campaign is localised.'])
     /* Opened back up to localised: the same bid is taken. */
     await support(['localised', 'personalised'])
     expect((await reserve(BID)).statusCode).toBe(201)

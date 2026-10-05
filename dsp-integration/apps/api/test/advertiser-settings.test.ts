@@ -260,28 +260,21 @@ describe('Advertiser settings (spec §4, §6)', () => {
     ])
   })
 
-  /* Interactive reserve price (ticket 5eLDRBqEGhNyJSHSIFFG): a slot-only
-     price for interactive campaigns, falling back to the ordinary reserve
-     price, and only kept while the slot supports interactive targeting. */
-  it('saves an interactive reserve price per slot, falling back to the reserve price and dropping it with interactive', async () => {
+  /* Interactive is deferred (Rob, 5 Oct 2026): a save that still names it drops it, clears the interactive reserve price and keeps the slot supporting something. */
+  it('drops interactive from a save and clears its reserve price instead of refusing', async () => {
     const ctx = await testContext()
     const app = buildApp(ctx)
-    const row = (supportedTargeting: string[], interactiveReservePrice?: number | null) =>
-      ({ displayTypeId: 'menu_board', slot: 2, supportedTargeting, assignedTo: KEEP, reservePrice: 5, reservePriceDefault: null, ...(interactiveReservePrice === undefined ? {} : { interactiveReservePrice }) })
-    const save = (item: ReturnType<typeof row>) => app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [item] } })
+    const save = (supportedTargeting: string[], interactiveReservePrice?: number | null) => app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [
+      { displayTypeId: 'menu_board', slot: 2, supportedTargeting, assignedTo: KEEP, reservePrice: 5, reservePriceDefault: null, ...(interactiveReservePrice === undefined ? {} : { interactiveReservePrice }) },
+    ] } })
     const at = (json: { items: { slot: number }[] }) => json.items.find((i) => i.slot === 2)
-    const modes = ['localised', 'interactive']
-    const set = await save(row(modes, 9))
-    expect(set.statusCode).toBe(200)
-    expectMatchesContract('PUT', '/admin/v1/available-inventory', 200, set.json())
-    expect(at(set.json())).toMatchObject({ reservePrice: 5, interactiveReservePrice: 9, interactiveReservePriceOverride: 9 })
-    /* Omitted keeps it; null falls back to the ordinary reserve price. */
-    expect(at((await save(row(modes))).json())).toMatchObject({ interactiveReservePriceOverride: 9 })
-    expect(at((await save(row(modes, null))).json())).toMatchObject({ interactiveReservePrice: 5, interactiveReservePriceOverride: null })
-    /* Dropped when the slot stops supporting interactive. */
-    await save(row(modes, 9))
-    expect(at((await save(row(['localised'], 9))).json())).toMatchObject({ interactiveReservePriceOverride: null })
-    expect((await save(row(modes, -1))).statusCode).toBe(400)
+    const res = await save(['localised', 'interactive'], 9)
+    expect(res.statusCode).toBe(200)
+    expectMatchesContract('PUT', '/admin/v1/available-inventory', 200, res.json())
+    expect(at(res.json())).toMatchObject({ reservePrice: 5, supportedTargeting: ['localised'], interactiveReservePriceOverride: null })
+    /* Only interactive sent: the slot falls back to localised. */
+    expect(at((await save(['interactive'])).json())).toMatchObject({ supportedTargeting: ['localised'] })
+    expect((await save(['localised'], -1)).statusCode).toBe(400)
   })
 
   /* Max campaigns (ticket "Available Inventory: Max campaigns column + slot
@@ -327,9 +320,9 @@ describe('Advertiser settings (spec §4, §6)', () => {
     const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, supportedTargeting: ['interactive', 'localised'], assignedTo: KEEP }] } })
     expect(res.statusCode).toBe(200)
     expectMatchesContract('PUT', '/admin/v1/available-inventory', 200, res.json())
-    /* Kept in the catalogue's order, and on the slot itself. */
-    expect(res.json().items[0].supportedTargeting).toEqual(['localised', 'interactive'])
-    expect((await ctx.displayTypes.get('menu_board'))!.phExtensions!.slots[1].supportedTargeting).toEqual(['localised', 'interactive'])
+    /* Interactive is dropped (deferred, 5 Oct 2026); what remains is stored on the slot itself. */
+    expect(res.json().items[0].supportedTargeting).toEqual(['localised'])
+    expect((await ctx.displayTypes.get('menu_board'))!.phExtensions!.slots[1].supportedTargeting).toEqual(['localised'])
 
     const bad = await app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [
       { displayTypeId: 'menu_board', slot: 2, supportedTargeting: [], assignedTo: KEEP },
@@ -341,7 +334,7 @@ describe('Advertiser settings (spec §4, §6)', () => {
       { field: 'items[0].supportedTargeting', reason: 'Choose at least one type of targeting.' },
       { field: 'items[1].slot', reason: 'Only an Advertiser slot is sellable inventory.' },
       { field: 'items[2].displayTypeId', reason: 'Unknown display type.' },
-      { field: 'items[2].supportedTargeting', reason: 'One of: localised, personalised, interactive.' },
+      { field: 'items[2].supportedTargeting', reason: 'One of: localised, personalised.' },
     ])
   })
 
@@ -402,19 +395,14 @@ describe('Advertiser settings (spec §4, §6)', () => {
     expect(await fields({ partnerIds: [], advertisers: ['Nestlé', 'Swisse'], whitelistOnly: false })).toEqual(['items[0].assignedTo.advertisers'])
   })
 
-  /* Interactive needs something for the visitor to scan (Rob, 20 Sep). */
-  it('only supports interactive targeting where QR Control is enabled', async () => {
+  /* QR Control stays a display-type feature in its own right (5 Oct 2026): the table still reports it, but it no longer gates any targeting. */
+  it('reports QR Control per display type without it gating targeting', async () => {
     const ctx = await testContext()
     const app = buildApp(ctx)
-    const save = () => app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, supportedTargeting: ['localised', 'interactive'], assignedTo: KEEP }] } })
-    expect((await save()).statusCode).toBe(200)
-
     const dt = (await ctx.displayTypes.get('menu_board'))!
     await ctx.displayTypes.saveRecord('menu_board', { ...dt, qrControl: { ...(dt.qrControl as object), enabled: false } })
-    const res = await save()
-    expect(res.statusCode).toBe(400)
-    expect(res.json().error.details).toEqual([{ field: 'items[0].supportedTargeting', reason: 'QR Control is required to support an interactive engagement.' }])
-    /* And the table says which display types have it, so the UI can grey the option. */
+    const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, supportedTargeting: ['localised'], assignedTo: KEEP }] } })
+    expect(res.statusCode).toBe(200)
     const rows = (await app.inject({ method: 'GET', url: '/api/admin/v1/available-inventory' })).json()
     expect(rows.items.find((r: { displayTypeId: string }) => r.displayTypeId === 'menu_board').qrControl).toBe(false)
   })

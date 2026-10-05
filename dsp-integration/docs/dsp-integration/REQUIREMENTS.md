@@ -11,6 +11,21 @@ record.
 
 **Changelog**
 
+- **5 Oct 2026** — interactive campaigns deferred for this release (Rob;
+  ticket B2FBG5Ro9yqrcH3xICFz): the focus is the basic framework. They are
+  hidden everywhere behind one flag, `INTERACTIVE_ENABLED` (false, in
+  `packages/types` catalog), rather than deleted, so they can return. No
+  Interactive cost per engagement field, tooltip or lever; no Interactive
+  option in Targeting supported (slots offer localised and personalised; a
+  slot that had it ticked reads as the rest, localised by default); no
+  interactive reserve price column or QR Control greying on Available
+  Inventory; no interactive effective floor, `costPerEngagement` or
+  interactive reserve price on `GET /v1/inventory`; a campaign submission
+  with an interactive layer, and any bid or reservation for one, is refused
+  `targeting_not_supported`. QR Control stays a display-type feature in its
+  own right. The stored `interactiveCpe` is kept untouched. Sections 4, 5,
+  8 and the functional requirements below describe the deferred behaviour
+  only as "deferred"; the earlier interactive wording is superseded.
 - **5 Oct 2026** — personalised versions are sold only through reserved
   slots (Rob; ticket Ba5QdLIzCbJGMHfawjAP): Personalised is selectable in
   Targeting supported only on a slot with a reserve price, a personalised
@@ -51,7 +66,7 @@ This specification covers these areas, and only these:
    advertiser requires approval. Whether an advertiser requires approval, and
    its floor multiplier, are set on a new admin-only **Advertisers** screen (§3).
 4. **Pricing**: the currency, the CPM bid floor, audience scoring, a
-   personalised multiplier, a cost per engagement, and a floor multiplier
+   personalised multiplier, and a floor multiplier
    per advertiser (§4).
 5. **Inventory API**: what inventory exists and what is available, derived
    from the slots assigned on each display type (§5).
@@ -242,7 +257,7 @@ Page-title tooltips for the DSP Integration company pages:
 | Page | Tooltip |
 |---|---|
 | **Exchange settings** | Sets up your organisation as the seller of record for its screens. Configurable here: organisation name, domain, seller ID and ad-ops contact email, all required. Once saved and complete, sellers.json is published at https://[domain]/sellers.json and every bid request carries your domain and seller ID in its SupplyChain; until then no DSP is sent bid requests. Not configurable (platform defaults): seller type (Publisher), the DOOH object, the OpenOOH venue taxonomy, QPS and bid timeout. Bid requests use OpenRTB 2.6 as the minimum supported version for programmatic DOOH; the exchange is designed to adopt 2.7, 2.8 and later versions per DSP as the market moves. |
-| **Advertiser settings** | Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (currency, floor CPM, the personalised multiplier and the interactive cost per engagement), the Auction schedule (when bidding opens, play-window length, auction cutoff) and Category lists (the IAB category whitelist and blacklist, chosen from the IAB taxonomy and applied to every DSP; each DSP's advertiser lists are on its own page). Per-advertiser campaign approval and floor multipliers, and the inventory advertisers can buy, are on Advertisers / Inventory. |
+| **Advertiser settings** | Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (currency, floor CPM, and the personalised multiplier), the Auction schedule (when bidding opens, play-window length, auction cutoff) and Category lists (the IAB category whitelist and blacklist, chosen from the IAB taxonomy and applied to every DSP; each DSP's advertiser lists are on its own page). Per-advertiser campaign approval and floor multipliers, and the inventory advertisers can buy, are on Advertisers / Inventory. |
 | **Shared Targeting Variables** | Variables shared through the API with connected DSPs. Once a variable is enabled for a DSP, that DSP's advertisers can use it in targeting conditions for more advanced campaign targeting; the platform evaluates the condition and never returns the value. They are the same variables as a campaign's Targeting tab. Choose which DSPs may use each one below; default platform variables only in this release. |
 
 The **Enable DSP Integration** switch at the top of Exchange settings has
@@ -1030,15 +1045,14 @@ page. All values are defaults, overridable per retailer.
 
 | Field | Tooltip |
 |---|---|
-| **Pricing** (section) | Effective floor = floor CPM × the advertiser's floor multiplier (set on Advertisers / Inventory), the same for every campaign type. Bids below it never win. The personalised multiplier is not part of it: it is charged on top of the committed price only when a personalised version plays. An interactive campaign clears the same floor and pays the cost per engagement on top. |
+| **Pricing** (section) | Effective floor = floor CPM × the advertiser's floor multiplier (set on Advertisers / Inventory), the same for every campaign type. Bids below it never win. The personalised multiplier is not part of it: it is charged on top of the committed price only when a personalised version plays. |
 | **Currency** | Used for the floor CPM, every effective floor and billing. Bid requests carry it as the bid floor currency. |
 | **Floor price (CPM)** | Cost per thousand assumed views (VAC-d). The minimum any bid must meet; bids below it never win. |
-| **Personalised multiplier** | Applied when the visitor is checked in or otherwise identified, so the advert is one-to-one for that individual. It is **not a bid floor**. Bids and the auction clear against the floor price, and the price a campaign wins at covers its default and localised plays. This is charged **only when a personalised version plays**: that play bills at the committed price × this. At 1.5, a campaign committed at 100 pays **150** CPM for a personalised play. The advertiser's floor multiplier scales the floor only. Interactive campaigns are not charged it. By submitting a personalised version an advertiser accepts it. |
-| **Interactive cost per engagement** | What an advertiser pays each time someone engages with an interactive campaign — scanning its QR Control code to carry on with the brand on their own phone. Charged per engagement, **on top of the CPM**: an interactive campaign still clears the floor price for its plays, and adds this for each scan. The advertiser's floor multiplier does not scale it. Set it to 0 to leave engagements unpriced. |
+| **Personalised multiplier** | Applied when the visitor is checked in or otherwise identified, so the advert is one-to-one for that individual. It is **not a bid floor**. Bids and the auction clear against the floor price, and the price a campaign wins at covers its default and localised plays. This is charged **only when a personalised version plays**: that play bills at the committed price × this. At 1.5, a campaign committed at 100 pays **150** CPM for a personalised play. The advertiser's floor multiplier scales the floor only. By submitting a personalised version an advertiser accepts it. |
 
 **A tooltip explains its own field and relates it to the others; it does not
 repeat them** (Rob, 20 Sep). The floor price tooltip carries the VAC-d
-worked example; the personalised and interactive tooltips refer to the floor
+worked example; the personalised tooltip refers to the floor
 rather than restating how it is arrived at.
 
 ### Currency
@@ -1072,11 +1086,12 @@ rather than restating how it is arrived at.
 - **Personalised**: the visitor is **checked in or otherwise identified**,
   so the advert is **one-to-one for that individual**; targeted on
   **Personalisation Variables** (§6).
-- **Interactive**: the visitor **interacts with the campaign and engages
-  with the advertiser on that display**, for example through an interactive
-  QR Control campaign, giving a direct connection to the shopper's phone and
-  clean in-store attribution. (The pairing mechanics themselves are out of
-  scope for this specification.)
+- **Interactive** — *deferred for this release (5 Oct 2026)*: the visitor
+  would interact with the campaign on that display, for example through a
+  QR Control campaign. It is hidden everywhere behind `INTERACTIVE_ENABLED`
+  and a submission, bid or reservation for one is refused
+  `targeting_not_supported`. QR Control remains a display-type feature in
+  its own right.
 
 Which version plays, and when, is decided by the existing platform's
 targeting evaluation, unchanged; pricing is applied from what actually
@@ -1112,17 +1127,11 @@ played (Billing, below).
 |---|---|---|---|
 | Floor CPM | 100 | Advertiser settings → Pricing | Every campaign |
 | Personalised multiplier | **1.5** | Advertiser settings → Pricing | Each play of a personalised version, on top of the committed price (not a floor) |
-| Interactive cost per engagement | **0.50** | Advertiser settings → Pricing | Each engagement with an interactive campaign |
 | Advertiser floor multiplier | **1.0** | Advertisers / Inventory | The floor, per advertiser |
 
-- **Interactive is a price per engagement, not a multiplier** (Rob,
-  20 Sep). The point of an interactive campaign is to get someone to scan
-  the QR code and carry on with the brand on their own phone, so it is
-  charged **per engagement, on top of the CPM**: the campaign clears the
-  ordinary floor for its plays, and adds the fee
-  for each scan. It is an amount in the company currency, to the cent, and
-  **the advertiser's floor multiplier does not scale it**. 0 leaves
-  engagements unpriced.
+- **Interactive is deferred** (5 Oct 2026): there is no engagement fee
+  lever. The stored `interactiveCpe` setting is kept but neither shown nor
+  edited, and no price for it is published.
 - **The advertiser floor multiplier** reflects the retailer's relationship
   with that advertiser: for example **0.8** for a preferred supplier, **1.2**
   for a new one. Example: 100 × 0.8 = 80 CPM is what that advertiser's bids
@@ -1136,7 +1145,7 @@ played (Billing, below).
   a play of a personalised version bills at committed price × the
   multiplier. The multiplier is snapshotted on the reservation when the
   window clears, so a later settings change cannot reprice it; floorMultiplier
-  affects the floor only; interactive campaigns carry no multiplier. Which
+  affects the floor only. Which
   version played is PH Core's to supply: `PlaybackSource` plays carry a
   nullable `tier` (`default` / `localised` / `personalised`), and a play
   with none bills as before (see api/PH-CORE-BOUNDARIES.md, "Playback"). A
@@ -1148,11 +1157,7 @@ played (Billing, below).
   decide billing.
 - **Localised campaigns price at the floor CPM** (times the advertiser
   multiplier) and trigger neither.
-- **Engagements are not billed in this build.** The stand-in playback data
-  has plays, not scans, so the fee is published to DSPs on the position
-  (`costPerEngagement`) and priced here, but billing still bills the CPM
-  against realised VAC-d. Wiring it up needs an engagement count from the
-  platform.
+- **Engagements are not billed**: interactive campaigns are deferred (5 Oct 2026).
 
 ### Billing
 
@@ -1303,8 +1308,7 @@ packages" has the retired part-sold model and why it never shipped past
 this document).
 
 - **Pricing** for the requester, in the company currency: the base floor CPM
-  and the effective floor CPM for localised, personalised and interactive
-  campaigns (§4), including the requester's own advertiser floor multiplier.
+  and the effective floor CPM (§4, one floor for every campaign type), including the requester's own advertiser floor multiplier.
 - **Reserve price** (decision, Rob, 22 Sep; real inheritance, 22 Sep): a CPM
   premium at which this position can be reserved in advance of the open
   auction. A retailer lets an advertiser commit to a premium rate up front
@@ -1418,14 +1422,14 @@ always wins, no explicit opt-out" simplification, and what's not built yet).
 **Admin only**, same as the other two; a marketing user reads it as plain
 text — the resolved value, not which of the two levels it came from.
 **Targeting supported** is (Rob, 20 Sep): each slot says which kinds of
-campaign it will take — **localised**, **personalised**, **interactive** —
+campaign it will take — **localised** and **personalised** (interactive is deferred, 5 Oct 2026) —
 ticked independently, with **localised only** as the default for a slot that
 has never been changed. A slot always supports at least one, so the last one
 ticked can't be unticked. What a slot supports is part of the contract with
 DSPs: it is on the position in `GET /v1/inventory`, and a bid or reservation
 for a campaign of any other type is refused with `targeting_not_supported`,
-alongside the floor and list checks. Personalised and interactive campaigns
-carry their own multipliers on the floor price (§4), so this is also the
+alongside the floor and list checks. Personalised campaigns
+carry their own multiplier (§4), so this is also the
 control over what a slot can be sold for. **Personalised is selectable only
 on a slot that has a reserve price** (its own or inherited; Rob, 5 Oct 2026):
 the option is disabled with a note otherwise, and the save is refused. A
@@ -1435,11 +1439,13 @@ auction, is refused `targeting_not_supported`. The Targeting supported
 tooltip says so. **Admin only**: a marketing user
 sees them but can't change them.
 
-**Interactive needs QR Control** (Rob, 20 Sep). There is nothing for a
-visitor to engage with otherwise, so the **Display type** column flags the
-display types that have QR Control enabled, and on a slot whose display type
-does not, *Interactive* is greyed out in the picker and reads **"QR Control
-required to support an interactive engagement"**. The API refuses it too.
+**Interactive is deferred** (5 Oct 2026). It is not offered in the picker;
+a slot that had it ticked reads as the remaining types (localised by
+default), the API drops it from a save instead of refusing it, and a
+submission, bid or reservation for an interactive campaign is refused
+`targeting_not_supported`. The earlier "Interactive needs QR Control"
+greying and the interactive reserve price column are hidden with it; the
+Playlist cell still flags a display type that has QR Control.
 
 ### Private auctions (buyers lists) (23 Sep 2026)
 
@@ -2344,7 +2350,7 @@ VAC-d billing only.
 campaign: { …existing fields,
             source: hq | api | dsp,
             advertiserId, partnerId,
-            pricingType: default | localised | personalised | interactive,
+            pricingType: default | localised | personalised,  // interactive deferred (5 Oct 2026): refused targeting_not_supported
             status: draft | awaiting_approval | approved | rejected,   // shown as Draft / Awaiting approval / Approved / Rejected
             approval: { mode: manual | auto,
                         assetVersion, submittedAt,
@@ -2418,8 +2424,8 @@ superseding the earlier same-day "baseline optional" decision — §3, §6):
 Company-level:
 
 - **Advertiser settings**: `currency` (any ISO 4217 code; default `AUD`),
-  `floorCpm`, `personalisedMultiplier`, `interactiveCpe` (defaults
-  100 / 1.5 / 0.50), the auction schedule (`auctionOpensHours`,
+  `floorCpm`, `personalisedMultiplier`, `interactiveCpe` (kept, not
+  editable while interactive is deferred; defaults 100 / 1.5 / 0.50), the auction schedule (`auctionOpensHours`,
   `playWindowHours`, `auctionCutoffTime`; defaults 168 / 24 / 18:00 UTC —
   `playWindowHours` is only the window a slot inherits when neither it nor
   its display type sets a billing unit, open question 27),
@@ -3205,8 +3211,7 @@ playback analytics.**
 ### Pricing
 
 - **Company-wide pricing**: currency (any ISO 4217 currency, listed by code
-  and name), floor CPM, personalised multiplier, interactive cost per
-  engagement,
+  and name), floor CPM, personalised multiplier,
   inherited by every DSP, each with the tooltip given in §4.
   *(DSP Integration → Advertiser settings → Pricing)*
 - **Advertiser floor multiplier** per advertiser. *(Advertisers)*
@@ -3252,9 +3257,6 @@ playback analytics.**
   read-only, filterable, with an info tooltip. Purely a submission cap —
   it does not feed the auction or billing.
   *(Advertisers / Inventory → Available Inventory)*
-- **Targeting supported needs QR Control for interactive**: flagged on the
-  display type, greyed out with the reason where it is off, refused by the
-  API. *(Advertisers / Inventory → Available Inventory)*
 - **Display type column capability icons**: the Display type column carries
   an icon per capability the display type has enabled, alongside its name —
   Vision/AI (on-device computer vision, `visibility` icon), then QR Control
@@ -3271,7 +3273,7 @@ playback analytics.**
   as a multi-select of pills, set by an admin and enforced on every bid.
   *(Advertisers / Inventory → Available Inventory)*
 - **Targeting supported per slot**: which kinds of campaign a slot takes —
-  localised, personalised, interactive — localised only by default, set by
+  localised, personalised (interactive deferred) — localised only by default, set by
   an admin, published on the position and enforced on every bid.
   Personalised needs a reserve price on the slot (own or inherited) and is
   sold only through reserve bookings (5 Oct 2026).
@@ -3356,8 +3358,7 @@ playback analytics.**
   name sits at the top of the tile as the unit. Below it, the tile stacks
   whichever of the three layers that one purchase actually carries — the
   mandatory **default** layer always at the base, **localised** above it
-  when the campaign also submitted a localised (or interactive — they
-  share this layer, since both vary by store rather than by visitor)
+  when the campaign also submitted a localised
   targeted version, and **personalised** at the very top when it submitted
   a personalised one. Only the layers actually provided are shown, so the
   tile has one of three possible heights and visibly expands and
