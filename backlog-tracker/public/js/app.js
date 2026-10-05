@@ -2617,6 +2617,7 @@ lazyStarters.skills = () => primeFromRest("skills", (rows) => {
 lazyStarters.concepts = () => primeFromRest("concepts", (rows) => {
   concepts = rows;
   if (conceptIncubatorPage && !conceptIncubatorPage.hidden) renderConceptIncubatorPage();
+  resolvePendingConceptRoute();
   if (conceptDetailId) renderConceptDetailPage();
 }, byMillis("updatedAt", "desc"));
 lazyStarters.faqCategories = () => primeFromRest("faqCategories", (rows) => {
@@ -2706,6 +2707,7 @@ const startConceptsListener = () => onSnapshot(query(conceptsRef, orderBy("updat
   markLive("concepts", snap);
   concepts = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
   if (conceptIncubatorPage && !conceptIncubatorPage.hidden) renderConceptIncubatorPage();
+  resolvePendingConceptRoute();
   if (conceptDetailId) renderConceptDetailPage();
 }, onListenerError("concepts"));
 const _primeProjectDocs = lazyStarters.projectDocs, _primeSkills = lazyStarters.skills, _primeConcepts = lazyStarters.concepts;
@@ -5576,16 +5578,18 @@ function closeConceptIncubatorPage() {
   document.getElementById("board-page-header").hidden = false;
 }
 
-// Not URL-routed, same as the per-project Docs page it mirrors — reached
-// only by clicking a concept card or creating a new one, never a direct
-// link/reload.
+// URL-routed as #concept-<conceptId> (see openConceptRouteFromHash), so a
+// concept's docs page can be linked to and reloaded.
 function openConceptDetailPage(id) {
+  const target = `#concept-${encodeURIComponent(id)}`;
+  const arrivedByLink = window.location.hash === target;
   closeAllSubPages();
   ensureLazy("concepts");
   conceptDetailId = id;
   document.getElementById("projects-root").hidden = true;
   document.getElementById("board-page-header").hidden = true;
   conceptDetailPage.hidden = false;
+  setRouteHash(target, { replace: arrivedByLink });
   renderConceptDetailPage();
 }
 function closeConceptDetailPage() {
@@ -5600,11 +5604,14 @@ function conceptCardHTML(c) {
   const meta = [conceptStatusLabel(c)];
   if (updated) meta.push(`updated ${updated}`);
   const artifactHref = c.artifactUrl ? safeHttpUrl(c.artifactUrl) : "";
+  // The landing page (artifact) is the primary view; the README
+  // documentation is the secondary CTA, hidden when there is no artifact
+  // because the card click already opens it then.
   const artifactLink = artifactHref
-    ? `<a class="concept-artifact-card-link" href="${escapeHTML(artifactHref)}" target="_blank" rel="noopener">View Artifact ↗</a>`
+    ? `<a class="concept-artifact-card-link concept-readme-card-link" href="#" role="button">View README documentation</a>`
     : "";
   return `
-    <div class="skill-card concept-card" data-id="${c.id}" style="cursor:pointer;">
+    <div class="skill-card concept-card" data-id="${c.id}" data-artifact-href="${escapeHTML(artifactHref)}" style="cursor:pointer;">
       <div class="skill-card-top">
         <div>
           <div class="skill-card-name">${escapeHTML(c.name || "")}</div>
@@ -5686,8 +5693,16 @@ document.getElementById("concept-incubator-list").addEventListener("click", asyn
     await deleteConcept(delBtn.dataset.id);
     return;
   }
+  const readmeLink = e.target.closest(".concept-readme-card-link");
+  if (readmeLink) {
+    e.preventDefault();
+    openConceptDetailPage(readmeLink.closest(".concept-card").dataset.id);
+    return;
+  }
   const card = e.target.closest(".concept-card");
-  if (card) openConceptDetailPage(card.dataset.id);
+  if (!card) return;
+  if (card.dataset.artifactHref) window.open(card.dataset.artifactHref, "_blank", "noopener");
+  else openConceptDetailPage(card.dataset.id);
 });
 
 document.getElementById("concept-readme-save").addEventListener("click", async () => {
@@ -8310,6 +8325,25 @@ function openFaqArticleRouteFromHash(hash) {
   if (faqArticles.some((a) => a.id === id)) openFaqArticleEditorPage(id, { pendingRevision });
   else pendingFaqArticleRoute = { id, pendingRevision };
 }
+// "#concept-<conceptId>" is a concept's stable, shareable docs page. A cold
+// load arrives before the concepts listener has delivered anything, so the
+// id is held (like pendingFaqArticleRoute) and opened once it exists.
+let pendingConceptRoute = null;
+function resolvePendingConceptRoute() {
+  if (!pendingConceptRoute) return;
+  if (!concepts.some((c) => c.id === pendingConceptRoute)) return;
+  const id = pendingConceptRoute;
+  pendingConceptRoute = null;
+  openConceptDetailPage(id);
+}
+function openConceptRouteFromHash(hash) {
+  const id = decodeURIComponent(hash.slice("#concept-".length));
+  if (!id) return;
+  ensureLazy("concepts");
+  if (conceptDetailId === id) return;
+  if (concepts.some((c) => c.id === id)) openConceptDetailPage(id);
+  else pendingConceptRoute = id;
+}
 function setRouteHash(hash, { replace } = {}) {
   const current = window.location.hash;
   if (current === hash) return;
@@ -8385,7 +8419,9 @@ function applyRouteFromHash() {
   else if (hash === "#skills") openSkillsPage();
   else if (hash === "#releases") openReleasesPage();
   else if (hash === "#concept-incubator") openConceptIncubatorPage();
+  else if (hash.startsWith("#concept-")) openConceptRouteFromHash(hash);
   else if (hash.startsWith("#faq-article/")) openFaqArticleRouteFromHash(hash);
+  else if (conceptDetailId) closeConceptDetailPage();
   else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden) closeAllSubPages();
 }
 // popstate (back/forward) and hashchange (a typed-in or pasted #hash) both

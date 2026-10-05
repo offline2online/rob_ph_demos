@@ -2614,7 +2614,7 @@ const TOOLS = [
   },
   {
     name: "get_concept",
-    description: "One concept in full — README, Requirements, every discussion comment, and, if it's been promoted, the projectId it became (switch to get_project_docs/list_projects for that project from then on).",
+    description: "One concept in full — README, Requirements, every discussion comment, its docsUrl (the deep link to the same README/Requirements/discussion page on the board), and, if it's been promoted, the projectId it became (switch to get_project_docs/list_projects for that project from then on).",
     scope: "board.read",
     inputSchema: {
       type: "object",
@@ -2631,6 +2631,7 @@ const TOOLS = [
         status: v.status || "active",
         readmeMd: v.readmeMd || "",
         requirementsMd: v.requirementsMd || "",
+        docsUrl: `${PUBLIC_ORIGIN}/#concept-${snap.id}`,
         artifactUrl: v.artifactUrl || null,
         artifactUpdatedAt: tsToISO(v.artifactUpdatedAt),
         comments: (Array.isArray(v.comments) ? v.comments : []).map((c) => ({
