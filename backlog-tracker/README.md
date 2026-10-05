@@ -299,6 +299,18 @@ What the train changes:
   next train. Progress and every non-merge outcome land on the project as
   `trainStatus` (`idle` | `deploying` | `conflict` | `awaiting-human-merge`)
   + `trainNote`.
+- **An approved train is not parked by GitHub's own failures, and a parked
+  one resumes when it goes green** (5 Oct 2026). A check GitHub cancelled,
+  timed out or never gave a runner to (PR #327: "The job was not acquired by
+  Runner of type hosted") reads as `infra`, not red. `processDeployTrain`
+  re-runs it, up to `TRAIN_CI_INFRA_RERUNS` (2) per PR head, and keeps
+  waiting. A train that is genuinely red is parked with `trainCiRedPr`.
+  `resumeRedTrains` then re-arms `trainReady` on every run once that PR's
+  checks are no longer red: after a re-run, or after a fix is pushed to the
+  train (PR #323). Approve once and the ticket reaches Deployed / Main Branch
+  without anyone clicking Deploy to Main a second time.
+  `processDeployTrain` still re-verifies the train before it merges. Tests:
+  `test/train-resume.test.js`.
 - **Merging `main` into the branch is the only conflict path left**, and it
   takes someone pushing straight to `main` in this project's files. It is
   never resolved automatically — the merge is aborted, `trainStatus` goes
