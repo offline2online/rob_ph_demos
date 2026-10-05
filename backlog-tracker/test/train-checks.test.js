@@ -15,7 +15,8 @@ const cases = [
   ["e2e-quick failed", [ok("WIP"), { name: "e2e-quick", status: "COMPLETED", conclusion: "FAILURE" }], "failure"],
   ["e2e-quick passed but another check failed", [ok("e2e-quick"), { name: "lint", status: "COMPLETED", conclusion: "FAILURE" }], "failure"],
   ["a commit-status context counts too", [{ context: "e2e-quick", state: "SUCCESS" }], "success"],
-  ["e2e-quick cancelled", [{ name: "e2e-quick", status: "COMPLETED", conclusion: "CANCELLED" }], "failure"],
+  ["e2e-quick cancelled by GitHub (no runner) — re-run, not red", [{ name: "e2e-quick", status: "COMPLETED", conclusion: "CANCELLED" }], "infra"],
+  ["a real failure beats a cancellation", [{ name: "e2e-quick", status: "COMPLETED", conclusion: "FAILURE" }, { name: "rules", status: "COMPLETED", conclusion: "CANCELLED" }], "failure"],
 ];
 let failed = 0;
 assert.deepStrictEqual(REQUIRED_TRAIN_CHECKS, ["e2e-quick"]);

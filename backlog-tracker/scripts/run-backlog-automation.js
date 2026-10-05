@@ -2596,10 +2596,25 @@ const REQUIRED_TRAIN_CHECKS = ["e2e-quick"];
 // present and successful. A required check not reported yet is "pending"
 // (keep waiting; the caller leaves trainReady set so the next scheduled run
 // resumes) — never "success".
+// A check GitHub itself never ran to completion — cancelled, timed out, or
+// never given a runner ("The job was not acquired by Runner of type hosted
+// even after multiple attempts", PR #327, 5 Oct 2026) — says nothing about
+// the train's code. It used to read as "failure", so an approved train was
+// parked as red and waited for someone to click Deploy to Main again. It now
+// reads as "infra": processDeployTrain re-runs the check and keeps waiting.
+// A real failure anywhere still wins.
+const INFRA_CONCLUSIONS = new Set(["CANCELLED", "TIMED_OUT", "STARTUP_FAILURE", "STALE"]);
+function isInfraCheck(c) {
+  if (c.status && String(c.status).toUpperCase() !== "COMPLETED") return false;
+  return INFRA_CONCLUSIONS.has(String(c.conclusion || c.state || "").toUpperCase());
+}
 function trainChecksState(rollup, required = REQUIRED_TRAIN_CHECKS) {
-  const all = rollupState(rollup);
+  const listAll = Array.isArray(rollup) ? rollup : [];
+  const infra = listAll.filter(isInfraCheck);
+  const list = listAll.filter((c) => !isInfraCheck(c));
+  const all = rollupState(list);
   if (all === "failure") return "failure";
-  const list = Array.isArray(rollup) ? rollup : [];
+  if (infra.length) return "infra";
   for (const name of required) {
     const mine = list.filter((c) => (c.name || c.context) === name);
     if (!mine.length) return "pending";
@@ -2632,6 +2647,26 @@ function approveHeldRuns(headSha) {
   }
   if (approved) console.log(`[deploy-train] approved ${approved} held workflow run(s) on ${String(headSha).slice(0, 7)}`);
   return approved;
+}
+
+// How many times one train PR head may have its GitHub-side check failures
+// re-run before the train is parked as red after all.
+const TRAIN_CI_INFRA_RERUNS = 2;
+
+// Re-runs the workflow runs behind the "infra" checks in a rollup. A check
+// run's detailsUrl is .../actions/runs/<runId>/job/<jobId>. Never throws.
+function rerunInfraChecks(rollup) {
+  const ids = new Set();
+  for (const c of (Array.isArray(rollup) ? rollup : []).filter(isInfraCheck)) {
+    const m = String(c.detailsUrl || c.targetUrl || "").match(/\/actions\/runs\/(\d+)/);
+    if (m) ids.add(m[1]);
+  }
+  let rerun = 0;
+  for (const id of ids) {
+    try { run("gh", ["api", "-X", "POST", `repos/${REPO}/actions/runs/${id}/rerun`]); rerun++; }
+    catch (err) { console.log(`[deploy-train] couldn't re-run workflow run ${id}: ${scrubSecrets(err.message)}`); }
+  }
+  return rerun;
 }
 
 function rollupState(rollup) {
@@ -3006,12 +3041,37 @@ async function processDeployTrain(project) {
     pr = viewTrainPr(prNumber);
     if (pr.state === "MERGED") break;
     approveHeldRuns(pr.headRefOid);
-    const checks = trainChecksState(pr.statusCheckRollup);
+    let checks = trainChecksState(pr.statusCheckRollup);
+    if (checks === "infra") {
+      const sha = pr.headRefOid || "";
+      const reruns = project.trainCiRerunSha === sha ? (Number(project.trainCiReruns) || 0) : 0;
+      if (reruns < TRAIN_CI_INFRA_RERUNS) {
+        const n = rerunInfraChecks(pr.statusCheckRollup);
+        console.log(`[deploy-train] ${project.id}: PR #${prNumber} has check(s) GitHub never finished running — re-ran ${n} workflow run(s) (attempt ${reruns + 1}/${TRAIN_CI_INFRA_RERUNS}); trainReady stays set`);
+        followUpReasons.push(`${project.id}: PR #${prNumber} checks re-run after a GitHub-side cancellation`);
+        await patchProject(project.id, {
+          trainStatus: "deploying",
+          trainNote: `GitHub cancelled or never started a check on PR #${prNumber} (not a test failure) — re-running it (attempt ${reruns + 1} of ${TRAIN_CI_INFRA_RERUNS}). It merges by itself once the checks pass.`,
+          trainCiRerunSha: sha,
+          trainCiReruns: reruns + 1,
+          trainCiWaitingPr: Number(prNumber),
+          trainCiWaitingSince: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+        return;
+      }
+      checks = "failure";
+    }
     if (checks === "failure") {
       const red = (pr.statusCheckRollup || []).filter((c) => !["SUCCESS", "NEUTRAL", "SKIPPED", ""].includes(String(c.conclusion || c.state || "").toUpperCase()) && String(c.status || "COMPLETED").toUpperCase() === "COMPLETED");
       await patchProject(project.id, {
         trainReady: false, trainStatus: "conflict",
-        trainNote: `Not merged: CI is red on the train PR #${prNumber}${red.length ? ` (${red.map((c) => `${c.name || c.context}${c.detailsUrl || c.targetUrl ? ` ${c.detailsUrl || c.targetUrl}` : ""}`).join(", ")})` : ""}. Fix it (or send the ticket that broke it back with Failed testing), then click Deploy to Main again.`,
+        // resumeRedTrains() picks the deploy back up by itself once this PR
+        // is green again (a re-run, or a fix pushed to the train) — the
+        // approval already given stands; nobody has to click again.
+        trainCiRedPr: Number(prNumber),
+        trainCiRedSha: pr.headRefOid || "",
+        trainNote: `Not merged: CI is red on the train PR #${prNumber}${red.length ? ` (${red.map((c) => `${c.name || c.context}${c.detailsUrl || c.targetUrl ? ` ${c.detailsUrl || c.targetUrl}` : ""}`).join(", ")})` : ""}. Fix it (or send the ticket that broke it back with Failed testing) — the deploy resumes by itself once the PR is green.`,
         updatedAt: new Date().toISOString(),
       });
       console.log(`[deploy-train] ${project.id}: CI red on PR #${prNumber} — not merging`);
@@ -3020,6 +3080,7 @@ async function processDeployTrain(project) {
     if (String(pr.mergeable).toUpperCase() === "CONFLICTING") {
       await patchProject(project.id, {
         trainReady: false, trainStatus: "conflict",
+        trainCiRedPr: null, trainCiRedSha: null, // a merge conflict needs a person, not a green check
         trainNote: `Not merged: GitHub reports PR #${prNumber} as conflicting with main. Merge main into ${deployBranch} by hand, resolve it, then click Deploy to Main again.`,
         updatedAt: new Date().toISOString(),
       });
@@ -3539,8 +3600,47 @@ async function reconcileDeployRequests() {
   }
 }
 
+// ── A train parked on red CI resumes by itself once it's green (5 Oct 2026) ─
+// A train stopped for red CI used to stay stopped until someone clicked
+// Deploy to Main a second time, even after the cause was gone: a test fixed
+// on the train (PR #323, 5 Oct), or a check GitHub cancelled and a re-run
+// passed (PR #327, the same day). The person already approved this train;
+// the PR going green is the only thing that was missing. So each run
+// re-arms trainReady for such a project, and processDeployTrain re-verifies
+// everything (nothing left in testing, every commit still on the branch)
+// before it merges — exactly as for a click.
+async function resumeRedTrains() {
+  const parked = await runQuery({
+    from: [{ collectionId: "projects" }],
+    where: { fieldFilter: { field: { fieldPath: "trainStatus" }, op: "EQUAL", value: { stringValue: "conflict" } } },
+  });
+  for (const project of parked) {
+    const prNumber = Number(project.trainCiRedPr) || null;
+    if (!prNumber || project.trainReady === true) continue;
+    let pr;
+    try { pr = viewTrainPr(prNumber); }
+    catch (err) { console.log(`[resume-train] ${project.id}: couldn't read PR #${prNumber} (${scrubSecrets(err.message)}) — trying again next run`); continue; }
+    if (pr.state === "CLOSED") {
+      await patchProject(project.id, { trainCiRedPr: null, trainCiRedSha: null, updatedAt: new Date().toISOString() });
+      continue;
+    }
+    const checks = pr.state === "MERGED" ? "success" : trainChecksState(pr.statusCheckRollup);
+    if (checks === "failure") continue; // still red on the same evidence
+    console.log(`[resume-train] ${project.id}: PR #${prNumber} is no longer red (${checks}) — resuming the approved deploy`);
+    await patchProject(project.id, {
+      trainReady: true,
+      trainStatus: "deploying",
+      trainCiRedPr: null,
+      trainCiRedSha: null,
+      trainNote: `PR #${prNumber} is no longer red — resuming the deploy that was already approved. It merges by itself once every required check passes.`,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+}
+
 async function main() {
   await reconcileDeployStatuses();
+  await resumeRedTrains();
   await reconcileMergedTrains();
   await reconcileLockedTrains();
   await reconcileDeployRequests();
@@ -3735,6 +3835,8 @@ module.exports = {
   syncDocsAfterMerge,
   // test/train-checks.test.js — a train merges only once e2e-quick passed
   trainChecksState, rollupState, REQUIRED_TRAIN_CHECKS, approveHeldRuns,
+  // test/train-resume.test.js — GitHub-side cancellations re-run; red trains resume when green
+  isInfraCheck, rerunInfraChecks, resumeRedTrains, TRAIN_CI_INFRA_RERUNS,
   // test/train-tests.test.js — console tests run on each train push
   trainTestFailureTargets, touchesConsoleTests,
   // test/parallel-builds.test.js — patches built in parallel
