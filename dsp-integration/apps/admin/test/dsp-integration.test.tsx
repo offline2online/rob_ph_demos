@@ -819,14 +819,10 @@ describe('Pricing tooltips', () => {
     expect(await screen.findByText(/× attention \(VAC: the share who actually look\)/)).toBeInTheDocument()
     expect(screen.getByText(/100 × 27 ÷ 1,000/)).toBeInTheDocument()
 
-    /* Each of the other two says how it relates to the floor, and nothing
+    /* The interactive fee says how it relates to the floor, and nothing
        from the floor's own working appears inside it. */
     const bubble = (text: RegExp) => screen.getByText(text).closest('.ant-tooltip-inner') as HTMLElement
-    fireEvent.mouseEnter(tip('Personalised multiplier'))
-    await screen.findByText(/not a bid floor/)
-    expect(bubble(/not a bid floor/).textContent).toMatch(/only when a personalised version plays/)
-    expect(bubble(/not a bid floor/).textContent).toMatch(/100 committed|committed at 100 pays 150/)
-    expect(bubble(/not a bid floor/).textContent).not.toMatch(/VAC-d|attention/)
+    expect(screen.queryByText('Personalised multiplier')).not.toBeInTheDocument()
 
     /* Interactive is a fee per engagement now, not a multiplier. */
     fireEvent.mouseEnter(tip('Interactive cost per engagement'))

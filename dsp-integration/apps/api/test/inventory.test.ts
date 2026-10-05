@@ -31,7 +31,7 @@ describe('GET /v1/inventory', () => {
         storeCount: 3, displayCount: 3,
         screen: { width: 5760, height: 1080, orientation: 'landscape', slotDurationSec: 15, loopLengthSec: 45, shareOfVoice: 0.333, openOohVenueType: 'retail.grocery' },
         assignment: 'rtb', supportedTargeting: ['localised'], billingUnitHours: 24, assumedViewsPerWindow: 1236, scored: true, maxCampaigns: 5,
-        pricing: { currency: 'AUD', floorCpm: 100, effectiveFloorCpm: { localised: 100 }, personalisedMultiplier: 1.5, costPerEngagement: 0.5 },
+        pricing: { currency: 'AUD', floorCpm: 100, effectiveFloorCpm: { localised: 100 }, costPerEngagement: 0.5 },
         reservePrice: null,
       }],
       nextCursor: null,

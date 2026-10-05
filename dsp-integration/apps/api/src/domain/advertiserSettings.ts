@@ -1,5 +1,5 @@
 /* Advertiser settings validation (spec §4, §6): any ISO 4217 currency,
-   positive floor and multipliers, category entries that are real IAB
+   positive floor, category entries that are real IAB
    categories, and nothing on both category lists. (The advertiser lists are
    per DSP: domain/partnerInput.ts.) */
 import { IAB_CATEGORIES, type AdvertiserSettingsInput } from '@ph-dsp/types'
@@ -26,10 +26,8 @@ export const cleanCategoryList = (xs: unknown) => {
 export function validateAdvertiserSettings(b: Partial<AdvertiserSettingsInput> | undefined): Detail[] {
   const out: Detail[] = []
   if (typeof b?.currency !== 'string' || !CURRENCIES.has(b.currency)) out.push({ field: 'currency', reason: 'Choose an ISO 4217 currency.' })
-  for (const [k, label] of [['floorCpm', 'Floor price (CPM)'], ['personalisedMultiplier', 'Personalised multiplier']] as const) {
-    const v = b?.[k]
-    if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) out.push({ field: k, reason: `${label} must be greater than 0.` })
-  }
+  const floor = b?.floorCpm
+  if (typeof floor !== 'number' || !Number.isFinite(floor) || floor <= 0) out.push({ field: 'floorCpm', reason: 'Floor price (CPM) must be greater than 0.' })
   /* A fee per engagement, to the cent; 0 means engagements aren't charged for. */
   const cpe = b?.interactiveCpe
   if (typeof cpe !== 'number' || !Number.isFinite(cpe) || cpe < 0 || Math.round(cpe * 100) !== cpe * 100) {

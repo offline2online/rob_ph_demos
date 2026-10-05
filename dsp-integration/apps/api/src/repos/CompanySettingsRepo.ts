@@ -6,7 +6,6 @@ import { type Db, fromJson, onRollback, prepared, toJson, type Awaitable } from 
 export interface CompanySettings {
   currency: string
   floorCpm: number
-  personalisedMultiplier: number
   /* Charged per engagement (a QR Control scan) on an interactive campaign, on top of the CPM. */
   interactiveCpe: number
   /* Auction schedule: bidding opens this long before the cutoff; window length; daily cutoff (HH:MM, UTC). */
@@ -40,7 +39,7 @@ export interface CompanySettingsRepo {
 
 const ID = 'company'
 interface Row {
-  currency: string; floor_cpm: number; personalised_multiplier: number; interactive_cpe: number
+  currency: string; floor_cpm: number; interactive_cpe: number
   auction_opens_hours: number; play_window_hours: number; auction_cutoff_time: string
   pending_play_window_hours: number | null; pending_play_window_effective_from: string | null
   category_whitelist: string; category_blacklist: string
@@ -91,7 +90,7 @@ export function sqliteCompanySettingsRepo(db: Db): CompanySettingsRepo {
     if (!c.company) {
       const r = read()
       c.company = frozen({
-        currency: r.currency, floorCpm: r.floor_cpm, personalisedMultiplier: r.personalised_multiplier, interactiveCpe: r.interactive_cpe,
+        currency: r.currency, floorCpm: r.floor_cpm, interactiveCpe: r.interactive_cpe,
         auctionOpensHours: r.auction_opens_hours, playWindowHours: r.play_window_hours, auctionCutoffTime: r.auction_cutoff_time,
         pendingPlayWindowHours: r.pending_play_window_hours, pendingPlayWindowEffectiveFrom: r.pending_play_window_effective_from,
         categoryWhitelist: fromJson(r.category_whitelist, []), categoryBlacklist: fromJson(r.category_blacklist, []),
@@ -114,11 +113,11 @@ export function sqliteCompanySettingsRepo(db: Db): CompanySettingsRepo {
     save(s) {
       ensure()
       prepared(db,
-        `UPDATE company_advertiser_settings SET currency = ?, floor_cpm = ?, personalised_multiplier = ?, interactive_cpe = ?,
+        `UPDATE company_advertiser_settings SET currency = ?, floor_cpm = ?, interactive_cpe = ?,
            auction_opens_hours = ?, play_window_hours = ?, auction_cutoff_time = ?, pending_play_window_hours = ?, pending_play_window_effective_from = ?,
            category_whitelist = ?, category_blacklist = ?, updated_at = ? WHERE id = ?`,
       ).run(
-        s.currency, s.floorCpm, s.personalisedMultiplier, s.interactiveCpe, s.auctionOpensHours, s.playWindowHours, s.auctionCutoffTime,
+        s.currency, s.floorCpm, s.interactiveCpe, s.auctionOpensHours, s.playWindowHours, s.auctionCutoffTime,
         s.pendingPlayWindowHours, s.pendingPlayWindowEffectiveFrom,
         toJson(s.categoryWhitelist) ?? '[]', toJson(s.categoryBlacklist) ?? '[]', now(), ID,
       )

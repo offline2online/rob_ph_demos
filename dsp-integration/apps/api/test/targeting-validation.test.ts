@@ -67,7 +67,7 @@ describe('Targeting on the forecast', () => {
   it('shrinks the forecast by the targeted share, and prices Personalisation targeting at the base floor, not a multiplied one', async () => {
     const forecast = await setup()
     expect((await forecast([[cond('store.fixed_segments', 'include', ['Metro'])]])).json()).toEqual({ assumedViews: 618, currency: 'AUD', estimatedCost: 61.8 })
-    /* Purchase Intent is a Personalisation Variable enabled for Google. The multiplier is charged per
+    /* Purchase Intent is a Personalisation Variable enabled for Google. There is no multiplier (Rob, 5 Oct 2026); it was charged per
        personalised play at billing (Rob, 30 Sep 2026), so the estimate stays at the base floor: 618 / 1000 × 100. */
     expect((await forecast([[cond('visitor.purchase_intent', 'include', ['Replenish'])]])).json()).toEqual({ assumedViews: 618, currency: 'AUD', estimatedCost: 61.8 })
   })

@@ -6,7 +6,6 @@ import type { Context } from '../context'
 import { isUniqueViolation } from '../db/db'
 import { type PositionRef, assignmentOf } from '../domain/positions'
 import { isTermLocked } from './term'
-import { multiplierToSnapshot } from '../domain/pricing'
 import { floorFor } from '../exchange/enforcement'
 import { handOff } from '../exchange/handoff'
 import { settlePending } from '../exchange/pending'
@@ -53,7 +52,7 @@ export async function bookLockedTermWindow(ctx: Context, p: PositionRef, start: 
     id: `res_${randomUUID().slice(0, 12)}`, partnerId: win.partnerId, advertiserId: win.advertiserId, campaignId: win.campaignId,
     positionId: p.positionId, windowStart: start, type: win.channel === 'openrtb' ? 'bid' : 'reserve', channel: win.channel,
     bidCpm: win.cpm, currency: company.currency, status: reserve ? 'reserved' : 'won', clearingCpm: win.cpm,
-    reason: reserve ? `Reserved: booked at ${list.name}'s reserve-price commitment, no auction.` : `Private auction: booked at ${list.name}'s locked rate, no re-auction.`, testMode: false, pricingType: win.pricingType, handedOffAt: null, personalisedMultiplier: multiplierToSnapshot(company, win.pricingType),
+    reason: reserve ? `Reserved: booked at ${list.name}'s reserve-price commitment, no auction.` : `Private auction: booked at ${list.name}'s locked rate, no re-auction.`, testMode: false, pricingType: win.pricingType, handedOffAt: null,
     })
   } catch (e) {
     /* Another clearing booked this window first (migration 0021). */

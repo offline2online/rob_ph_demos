@@ -171,7 +171,7 @@ describe('portable statements', () => {
     expect((await sqlitePlaybackSource(db).totals({ ...q, campaignId: 'none' })).byVersion).toEqual([])
   })
 
-  it('personalised plays are counted with CASE, not a boolean SUM', async () => {
+  it('totals count every play whatever its tier', async () => {
     const db = fresh()
     db.prepare("INSERT INTO displays (id, name, store, display_type_id) VALUES ('d1', 'd1', 'S', 'dt')").run()
     const play = db.prepare('INSERT INTO plays (id, display_id, campaign_id, played_at, duration_sec, tier) VALUES (?, ?, ?, ?, ?, ?)')
@@ -179,7 +179,7 @@ describe('portable statements', () => {
     play.run('p2', 'd1', 'c1', '2026-10-01T02:00:00.000Z', 10, null)
     play.run('p3', 'd1', 'c1', '2026-10-01T03:00:00.000Z', 5, 'personalised')
     const t = await sqlitePlaybackSource(db).totals({ campaignId: 'c1', displayTypeId: 'dt', from: '2026-10-01T00:00:00.000Z', to: '2026-10-02T00:00:00.000Z' })
-    expect(t).toEqual({ plays: 3, playedSec: 25, personalised: { plays: 2, playedSec: 15 }, byVersion: [{ versionId: null, plays: 3 }] })
+    expect(t).toEqual({ plays: 3, playedSec: 25, byVersion: [{ versionId: null, plays: 3 }] })
   })
 
   it('isUniqueViolation recognises SQLite and Postgres, and nothing else', () => {

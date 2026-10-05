@@ -51,7 +51,6 @@ import { type ReservationRecord, TAKEN } from '../repos/ReservationRepo'
 import { advertiserSlug, assignedOf } from '@ph-dsp/types'
 import { isUniqueViolation, tx } from '../db/db'
 import { queueCreative, verifiedCampaign } from './creatives'
-import { multiplierToSnapshot } from '../domain/pricing'
 import { checkAdvertiser, checkCampaign, checkCategories, checkFloor, checkTargeting, checkVersionCount, firstRefusal } from './enforcement'
 import { handOff } from './handoff'
 import { settlePending } from './pending'
@@ -264,7 +263,7 @@ async function clear(ctx: Context, candidates: ReservationRecord[]): Promise<Res
   const company = await ctx.company.get()
   return tx(ctx.db, async () => {
     try {
-      await ctx.reservations.update(winner.id, { status: 'won', clearingCpm: winner.bidCpm, reason: null, personalisedMultiplier: multiplierToSnapshot(company, winner.pricingType) })
+      await ctx.reservations.update(winner.id, { status: 'won', clearingCpm: winner.bidCpm, reason: null })
     } catch (e) {
       if (!isUniqueViolation(e)) throw e
       for (const r of candidates) await ctx.reservations.update(r.id, { status: 'lost', reason: 'The window was sold by another clearing of the same auction.' })

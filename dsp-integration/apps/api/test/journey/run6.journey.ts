@@ -98,7 +98,7 @@ const http = (base: string, headers: Record<string, string> = {}) => async (meth
 interface Handover {
   apiUrl: string; adminUrl: string; mocksUrl: string
   displayTypeId: string; canvas: string; slot: number; positionId: string
-  floorCpm: number; currency: string; personalisedMultiplier: number
+  floorCpm: number; currency: string
   targetingSupported: string[]; reservePrice: number | null; maxCampaigns: number | null; billingUnitHours: number | null
   dsp: string; dspConnected: boolean; cvGenderEnabled: boolean
   displays: string[]; stores: string[]; audienceScore: number | null; slotDurationSec: number | null
@@ -110,7 +110,6 @@ Display type id (new): ${h.displayTypeId}
 Canvas: ${h.canvas}
 Slot label / id: Slot ${h.slot} / ${h.positionId}
 Base floor CPM + currency (company-wide): ${h.floorCpm} ${h.currency}
-Personalised multiplier: ${h.personalisedMultiplier}
 Targeting supported: ${h.targetingSupported.join(' + ')}
 Effective reserve price: ${h.reservePrice ?? 'none'}
 Effective max campaigns: ${h.maxCampaigns ?? 'default'}
@@ -195,8 +194,8 @@ async function main() {
   const invRow = inv.json?.items?.find((i: any) => i.displayTypeId === dtId && i.slot === 1)
   must('J4b', 'assigned to Google DSP (open, not held); targeting supported = localised + personalised', inv.status === 200 && invRow?.assignedTo?.partnerIds?.includes(PARTNER) && !invRow?.assignedTo?.advertisers?.length && JSON.stringify([...(invRow?.supportedTargeting ?? [])].sort()) === JSON.stringify(['localised', 'personalised']), 'partnerIds [p_google], no held advertiser, localised + personalised', `${inv.status} ${JSON.stringify({ assignedTo: invRow?.assignedTo, supportedTargeting: invRow?.supportedTargeting })} ${inv.status !== 200 ? inv.text.slice(0, 300) : ''}`)
   const settings = await admin('GET', '/advertiser-settings')
-  const floorCpm = settings.json?.floorCpm, currency = settings.json?.currency, multiplier = settings.json?.personalisedMultiplier
-  must('J4c', 'base floor and personalised multiplier read from Advertiser settings (never changed)', settings.status === 200 && typeof floorCpm === 'number' && typeof multiplier === 'number', 'numbers', `${settings.status} floor=${floorCpm} multiplier=${multiplier}`)
+  const floorCpm = settings.json?.floorCpm, currency = settings.json?.currency
+  must('J4c', 'base floor read from Advertiser settings (never changed); no personalised multiplier', settings.status === 200 && typeof floorCpm === 'number' && settings.json?.personalisedMultiplier === undefined, 'a number, no multiplier', `${settings.status} floor=${floorCpm}`)
   const settingsBefore = settings.text
   const inv5 = await admin('GET', '/available-inventory')
   const row5 = inv5.json?.items?.find((i: any) => i.displayTypeId === dtId && i.slot === 1)
@@ -204,7 +203,7 @@ async function main() {
 
   const handover: Handover = {
     apiUrl: apiUrl + '/v1', adminUrl: apiUrl + '/admin/v1', mocksUrl, displayTypeId: dtId, canvas: `${CANVAS.width}x${CANVAS.height}`, slot: 1, positionId: `${dtId}.s1`,
-    floorCpm, currency, personalisedMultiplier: multiplier, targetingSupported: ['localised', 'personalised'],
+    floorCpm, currency, targetingSupported: ['localised', 'personalised'],
     reservePrice: row5?.reservePrice ?? null, maxCampaigns: row5?.maxCampaigns ?? null, billingUnitHours: row5?.billingUnitHours ?? null,
     dsp: PARTNER, dspConnected: google?.status === 'connected', cvGenderEnabled: true, displays: [], stores: [], audienceScore: null, slotDurationSec: null,
   }
@@ -241,9 +240,9 @@ async function main() {
   mkdirSync(pkgDir, { recursive: true })
   writePackage(pkgDir)
   const pricing = pos0?.pricing ?? {}
-  must('K0', 'inventory shows the slot with the same base floor, multiplier and targeting as the handover',
-    pricing?.effectiveFloorCpm?.localised === floorCpm && pricing?.personalisedMultiplier === multiplier && pos0?.supportedTargeting?.includes('personalised'),
-    `floor ${floorCpm}, multiplier ${multiplier}, personalised supported`, JSON.stringify({ pricing, supportedTargeting: pos0?.supportedTargeting }))
+  must('K0', 'inventory shows the slot with the same base floor and targeting as the handover',
+    pricing?.effectiveFloorCpm?.localised === floorCpm && pricing?.personalisedMultiplier === undefined && pos0?.supportedTargeting?.includes('personalised'),
+    `floor ${floorCpm}, no personalised price, personalised supported`, JSON.stringify({ pricing, supportedTargeting: pos0?.supportedTargeting }))
   const body = campaignBody(dtId, ADVERTISER)
   const createdC = await partner('POST', '/campaigns', body)
   must('K1', 'POST /v1/campaigns with the package body → 201', createdC.status === 201 && !!createdC.json?.campaignId, '201 + campaignId', `${createdC.status} ${createdC.text.slice(0, 300)}`)
@@ -303,9 +302,9 @@ async function main() {
   const windowStart: string = nextOpen.windowStart ?? nextOpen.start
   const below = await partner('POST', '/reservations', { positionId: handover.positionId, windowStart, campaignId, advertiserId: ADVERTISER, type: 'bid', bidCpm: Math.max(1, floorCpm - 10) })
   record('L2b', 'a bid below the base floor is refused below_floor', below.status === 422 || (below.status === 400 && /floor/.test(below.text)), '422 below_floor', `${below.status} ${below.text.slice(0, 160)}`)
-  const bidCpm = floorCpm + 20 // 120 on a base of 100: between the base and base × multiplier, accepted (v2.5)
+  const bidCpm = floorCpm + 20 // 120 on a base of 100, accepted
   const bid = await partner('POST', '/reservations', { positionId: handover.positionId, windowStart, campaignId, advertiserId: ADVERTISER, type: 'bid', bidCpm })
-  must('L2', `a bid of ${bidCpm} (base ${floorCpm}, multiplier ${multiplier}) is accepted for a campaign with personalised versions`, bid.status === 201 && bid.json?.status === 'pending', '201 pending', `${bid.status} ${bid.text.slice(0, 200)}`)
+  must('L2', `a bid of ${bidCpm} (base ${floorCpm}) is accepted for a campaign with personalised versions`, bid.status === 201 && bid.json?.status === 'pending', '201 pending', `${bid.status} ${bid.text.slice(0, 200)}`)
   const reservationId: string = bid.json.reservationId
   /* Clear the window: move the clock past its cutoff and tick. No settings change. */
   const cutoff = new Date(Date.parse(windowStart) - 6 * 3_600_000) // seed cutoff 18:00 UTC the day before
@@ -315,8 +314,6 @@ async function main() {
   must('L2c', 'the auction clears the window; the campaign wins at its own price', res1.json?.status === 'won' && res1.json?.clearingCpm === bidCpm, `won at ${bidCpm}`, `${JSON.stringify(res1.json)} · tick: ${tick1.trim().split('\n').slice(-2).join(' | ')}`)
   {
     const d = db()
-    const r = d.prepare('SELECT personalised_multiplier FROM reservations WHERE id = ?').get(reservationId) as { personalised_multiplier: number | null } | undefined
-    record('L2d', 'the cleared reservation snapshots the personalised multiplier in force', r?.personalised_multiplier === multiplier, String(multiplier), String(r?.personalised_multiplier))
     const bk = d.prepare('SELECT * FROM campaign_slot_bookings WHERE display_type_id = ? AND slot = 1 AND window_start = ?').get(dtId, windowStart) as any
     record('L3', 'hand-off: a booking exists for the slot and window carrying this campaign', !!bk && bk.campaign_id === campaignId, `booking for ${campaignId}`, JSON.stringify(bk ?? null))
     const ho = d.prepare('SELECT handed_off_at, reason FROM reservations WHERE id = ?').get(reservationId) as any
@@ -336,13 +333,9 @@ async function main() {
     const d = db()
     const li = d.prepare('SELECT * FROM billing_line_items WHERE reservation_id = ?').get(reservationId) as any
     const basePlays = 8, pPlays = 4
-    const ok = !!li && li.plays === 12 && li.personalised_plays === pPlays && li.personalised_multiplier === multiplier && li.cpm === bidCpm
-    record('L4', 'billing: realised VAC-d at the cleared CPM; personalised plays at cleared CPM × multiplier; split recorded', ok,
-      `plays 12 (${basePlays} base + ${pPlays} personalised), cpm ${bidCpm}, multiplier ${multiplier}`, li ? JSON.stringify({ plays: li.plays, personalisedPlays: li.personalised_plays, personalisedViews: li.personalised_views, personalisedMultiplier: li.personalised_multiplier, personalisedAmount: li.personalised_amount, cpm: li.cpm, amount: li.amount, realisedViews: li.realised_views }) : `no line item · tick: ${tick2.trim().split('\n').slice(-2).join(' | ')}`)
-    if (li) {
-      const expectedP = Math.round((li.personalised_views / 1000) * li.cpm * multiplier * 100) / 100
-      record('L4b', 'personalisedAmount = personalisedViews / 1000 × cpm × multiplier', Math.abs(li.personalised_amount - expectedP) < 0.011, String(expectedP), String(li.personalised_amount))
-    }
+    const ok = !!li && li.plays === 12 && li.cpm === bidCpm && Math.abs(li.amount - Math.round((li.realised_views / 1000) * bidCpm * 100) / 100) < 0.011
+    record('L4', 'billing: every play, whatever tier, at the cleared CPM against realised VAC-d; no split', ok,
+      `plays 12 (${basePlays} base + ${pPlays} personalised), cpm ${bidCpm}, amount = realised views × cpm`, li ? JSON.stringify({ plays: li.plays, cpm: li.cpm, amount: li.amount, realisedViews: li.realised_views }) : `no line item · tick: ${tick2.trim().split('\n').slice(-2).join(' | ')}`)
     d.close()
   }
   /* L5 — continuity. */

@@ -488,7 +488,7 @@ export interface paths {
          * @description Settlement is final (spec §4 "Billing"): a play the platform received
          *     after its window's line item was written is never billed, and is
          *     recorded at what it would have been worth at the window's cleared CPM
-         *     (personalised multiplier included). This reports those plays, placed
+         *     (no personalised uplift: every play is valued at the cleared CPM). This reports those plays, placed
          *     by when they played. An operational report for the retailer; never
          *     shown on or charged to an advertiser's invoice.
          */
@@ -1205,22 +1205,14 @@ export interface components {
             /**
              * @description What a bid must clear per thousand assumed views, for this caller:
              *     the base floor × the advertiser's floor multiplier, whatever the
-             *     campaign's type (Rob, 30 Sep 2026). The personalised multiplier is
-             *     not part of it. Interactive campaigns pay this for the plays and
+             *     campaign's type. There is no personalised price (Rob, 5 Oct 2026).
+             *     Interactive campaigns pay this for the plays and
              *     the engagement fee on top, so they have no floor of their own.
              */
             effectiveFloorCpm: {
                 /** @description The floor every campaign type clears. */
                 localised: number;
             };
-            /**
-             * @description Charged only when a personalised version plays: that play bills at
-             *     the committed (clearing) CPM × this. Default and localised plays
-             *     bill at the committed CPM. It is not a floor and does not affect
-             *     what a bid must clear. It does not apply to interactive campaigns.
-             *     The value in force when a window clears is kept on the reservation.
-             */
-            personalisedMultiplier: number;
             /**
              * @description Charged once per engagement (a QR Control scan), on top of the CPM,
              *     for an interactive campaign. In the same currency, to the cent. The
@@ -1415,13 +1407,6 @@ export interface components {
             clearingCpm?: number | null;
             currency?: string;
             reason?: string | null;
-            /**
-             * @description The personalised multiplier snapshotted on the reservation when its
-             *     window cleared (ErN9Q2Q1, 30 Sep 2026): a personalised play bills
-             *     at the clearing CPM × this, every other play at the clearing CPM.
-             *     Null until the window has cleared. It is not a bid floor.
-             */
-            personalisedMultiplier?: number | null;
         };
         Exchange: components["schemas"]["ExchangeInput"] & {
             /** @description Switched on and all four fields complete: sellers.json is live and DSPs are sent bid requests. */
@@ -1469,11 +1454,6 @@ export interface components {
             auctionCutoffTime: string;
             /** @default 100 */
             floorCpm: number;
-            /**
-             * @description Charged per personalised play, on top of the committed price: 100 committed × 1.5 = 150 for that play. Not a bid floor: bids and the auction clear against the base floor.
-             * @default 1.5
-             */
-            personalisedMultiplier: number;
             /**
              * @description Interactive cost per engagement: what an advertiser pays each time someone engages with an interactive campaign (a QR Control scan), on top of the CPM. To the cent; 0 means engagements are not charged for.
              * @default 0.5

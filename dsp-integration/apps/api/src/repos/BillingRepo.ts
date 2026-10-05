@@ -35,8 +35,6 @@ const toItem = (r: Record<string, unknown>): LineItem => ({
   campaignId: r.campaign_id as string, positionId: r.position_id as string, windowStart: r.window_start as string, windowEnd: r.window_end as string,
   plays: r.plays as number, playedSec: r.played_sec as number, expectedSec: r.expected_sec as number, assumedViews: r.assumed_views as number,
   realisedViews: r.realised_views as number, cpm: r.cpm as number, currency: r.currency as string, amount: r.amount as number,
-  personalisedPlays: r.personalised_plays as number, personalisedViews: r.personalised_views as number,
-  personalisedMultiplier: r.personalised_multiplier as number | null, personalisedAmount: r.personalised_amount as number,
   playsByVersion: JSON.parse((r.plays_by_version as string | null) ?? '[]') as LineItem['playsByVersion'],
 })
 
@@ -55,11 +53,11 @@ export function sqliteBillingRepo(db: Db): BillingRepo {
     insert: (item, computedAt) => prepared(db,
       `INSERT INTO billing_line_items (id, reservation_id, partner_id, advertiser_id, campaign_id, position_id, window_start, window_end, plays,
          played_sec, expected_sec, assumed_views, realised_views, cpm, currency, amount, computed_at,
-         personalised_plays, personalised_views, personalised_multiplier, personalised_amount, plays_by_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         plays_by_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (reservation_id) DO NOTHING`,
     ).run(item.id, item.reservationId, item.partnerId, item.advertiserId, item.campaignId, item.positionId, item.windowStart, item.windowEnd, item.plays,
       item.playedSec, item.expectedSec, item.assumedViews, item.realisedViews, item.cpm, item.currency, item.amount, computedAt,
-      item.personalisedPlays, item.personalisedViews, item.personalisedMultiplier, item.personalisedAmount, JSON.stringify(item.playsByVersion ?? [])).changes > 0,
+      JSON.stringify(item.playsByVersion ?? [])).changes > 0,
     list: () => (prepared(db, 'SELECT * FROM billing_line_items ORDER BY window_start, id').all() as Record<string, unknown>[]).map(toItem),
     coveringPlay: (campaignId, playedAt) => (prepared(db, 'SELECT * FROM billing_line_items WHERE campaign_id = ? AND window_start <= ? AND window_end > ? ORDER BY window_start, id')
       .all(campaignId, playedAt, playedAt) as Record<string, unknown>[]).map((r) => ({ item: toItem(r), computedAt: r.computed_at as string })),

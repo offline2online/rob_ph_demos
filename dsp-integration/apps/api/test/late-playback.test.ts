@@ -1,7 +1,7 @@
 /* Settlement is final; late playback is lost revenue (Rob, 4 Oct 2026; spec
    §4 "Billing"). A window is invoiced on the plays received by the moment it
    settles; plays received after are never billed, and are recorded at the
-   cleared CPM (personalised multiplier included) as lost revenue by store,
+   cleared CPM alone (no personalised uplift) as lost revenue by store,
    display and over time. */
 import { describe, expect, it } from 'vitest'
 import { lineItems, recordLatePlays, runBilling, valueLatePlay } from '../src/billing'
@@ -15,7 +15,7 @@ const W = '2026-09-14T00:00:00.000Z'
 const iso = (s: string) => new Date(s).toISOString()
 const won = (over: Partial<ReservationRecord> = {}): ReservationRecord => ({
   id: 'res_late_1', partnerId: 'p_google', advertiserId: 'nestle', campaignId: 'c_dsp_nestle', positionId: 'menu_board.s2', windowStart: W, type: 'bid', channel: 'api',
-  bidCpm: 100, currency: 'AUD', status: 'won', clearingCpm: 100, reason: null, testMode: false, pricingType: 'localised', handedOffAt: W, personalisedMultiplier: 1.5, ...over,
+  bidCpm: 100, currency: 'AUD', status: 'won', clearingCpm: 100, reason: null, testMode: false, pricingType: 'localised', handedOffAt: W, ...over,
 })
 
 /* Menu Board slot 2: 3 displays, 1/3 share of voice → 86,400 expected seconds a day, 1,236 assumed views, so a 10,800 s play is 154.5 views. */
@@ -49,7 +49,7 @@ describe('settlement is final', () => {
     expect(await lineItems(ctx)).toEqual([item])
   })
 
-  it('records a late play at the cleared CPM, with the personalised multiplier for a personalised play', async () => {
+  it('records a late play at the cleared CPM whatever tier played', async () => {
     const { ctx, play, advance } = await setup()
     play({ received: '2026-09-14T03:00:10Z' })
     await runBilling(ctx)
@@ -57,10 +57,10 @@ describe('settlement is final', () => {
     play({ received: '2026-09-15T07:00:01Z', tier: 'personalised' })
     advance('2026-09-15T08:00:00.000Z')
     expect(await recordLatePlays(ctx)).toBe(2)
-    const rows = ctx.db.prepare('SELECT tier, lost_views, lost_amount, cpm, personalised_multiplier FROM late_plays ORDER BY received_at').all() as Record<string, number | string | null>[]
+    const rows = ctx.db.prepare('SELECT tier, lost_views, lost_amount, cpm FROM late_plays ORDER BY received_at').all() as Record<string, number | string | null>[]
     expect(rows).toEqual([
-      { tier: 'default', lost_views: 154.5, lost_amount: 15.45, cpm: 100, personalised_multiplier: 1.5 },
-      { tier: 'personalised', lost_views: 154.5, lost_amount: 23.175, cpm: 100, personalised_multiplier: 1.5 },
+      { tier: 'default', lost_views: 154.5, lost_amount: 15.45, cpm: 100 },
+      { tier: 'personalised', lost_views: 154.5, lost_amount: 15.45, cpm: 100 },
     ])
   })
 
@@ -102,7 +102,7 @@ describe('settlement is final', () => {
   })
 
   it('valueLatePlay: a window with no expected time values nothing', () => {
-    expect(valueLatePlay({ expectedSec: 0, playedSec: 0, assumedViews: 100, cpm: 10, personalisedMultiplier: null } as never, { durationSec: 10 }, 0)).toEqual({ lostViews: 0, lostAmount: 0 })
+    expect(valueLatePlay({ expectedSec: 0, playedSec: 0, assumedViews: 100, cpm: 10 } as never, { durationSec: 10 }, 0)).toEqual({ lostViews: 0, lostAmount: 0 })
   })
 })
 

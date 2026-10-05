@@ -65,7 +65,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         }
       }
       await ctx.company.save({
-        currency: b.currency, floorCpm: b.floorCpm, personalisedMultiplier: b.personalisedMultiplier, interactiveCpe: b.interactiveCpe,
+        currency: b.currency, floorCpm: b.floorCpm, interactiveCpe: b.interactiveCpe,
         auctionOpensHours: b.auctionOpensHours, playWindowHours, auctionCutoffTime: b.auctionCutoffTime,
         pendingPlayWindowHours, pendingPlayWindowEffectiveFrom,
         categoryWhitelist: cleanCategoryList(b.categoryWhitelist), categoryBlacklist: cleanCategoryList(b.categoryBlacklist),

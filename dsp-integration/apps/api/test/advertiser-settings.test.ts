@@ -7,7 +7,7 @@ import { biddingClosesAt, biddingOpensAt, nextWindow, windowMs, windowStartOf } 
 import { promotePendingPlayWindowIfDue } from '../src/exchange/scheduler'
 
 const input = {
-  currency: 'NZD', floorCpm: 120, personalisedMultiplier: 1.6, interactiveCpe: 1.25,
+  currency: 'NZD', floorCpm: 120, interactiveCpe: 1.25,
   auctionOpensHours: 72, playWindowHours: 168, auctionCutoffTime: '20:30',
   categoryWhitelist: ['Food & Drink'], categoryBlacklist: ['Finance'],
 }

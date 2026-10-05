@@ -474,11 +474,8 @@ function viewOf(
     /* False when the slot has no audience score: only ever seen by a
        caller who is told so, since inventory excludes such positions. */
     scored: audience.scored,
-    /* One floor for every campaign type; the personalised multiplier is
-       published as itself (Rob, 30 Sep 2026): a play of a personalised
-       version bills at committed price × multiplier, which is not knowable
-       before the auction. */
-    pricing: { currency: company.currency, floorCpm: company.floorCpm, effectiveFloorCpm: { localised: effectiveFloorCpm(company, multiplier) }, personalisedMultiplier: company.personalisedMultiplier, costPerEngagement: company.interactiveCpe },
+    /* One floor for every campaign type; no personalised price (Rob, 5 Oct 2026). */
+    pricing: { currency: company.currency, floorCpm: company.floorCpm, effectiveFloorCpm: { localised: effectiveFloorCpm(company, multiplier) }, costPerEngagement: company.interactiveCpe },
     /* The most campaigns (default + targeted versions) a bid or reservation here may carry. */
     maxCampaigns: maxCampaignsOf(dt, p.def),
     reservePrice: reservePriceOf(dt, p.def),
