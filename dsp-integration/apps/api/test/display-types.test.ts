@@ -35,6 +35,16 @@ describe('display types — POC stand-in endpoints', () => {
     expect((await ctx.playlists.get('pl_dt_new'))?.playlistSettings).toEqual({})
   })
 
+  it('POST of a multi-zone type creates its zone playlists and no default playlist', async () => {
+    const { app, ctx } = await setup()
+    const zones = [1, 2, 3].map((n) => ({ id: `z${n}`, name: `Zone ${n}`, x: 0, y: 0, width: 33, height: 100, playlistId: `pl_zone_dt_new_${n}` }))
+    const res = await app.inject({ method: 'POST', url: '/api/admin/v1/display-types', payload: newType({ multiZone: { enabled: true, zones } }) })
+    expect(res.statusCode).toBe(201)
+    expect(await ctx.playlists.get('pl_dt_new')).toBeFalsy()
+    for (const z of zones) expect(await ctx.playlists.get(z.playlistId)).toMatchObject({ autoCreatedFor: 'dt_new' })
+    expect(res.json().defaultPlaylistId).toBe('pl_dt_new_layout')
+  })
+
   it('POST rejects unknown touch points and a missing name', async () => {
     const { app } = await setup()
     const res = await app.inject({ method: 'POST', url: '/api/admin/v1/display-types', payload: newType({ touchPoint: 'Responsive Web', name: ' ' }) })

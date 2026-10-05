@@ -27,7 +27,18 @@ export const displayTypeRoutes = (ctx: Context, guards: Guards): FastifyPluginAs
       if (!dt.id?.trim()) errors.push({ field: 'id', reason: 'An id is required.' })
       else if (await ctx.displayTypes.get(dt.id)) errors.push({ field: 'id', reason: 'A display type with this id already exists.' })
       if (errors.length) throw validationFailed(errors)
-      const withPlaylist = { ...dt, defaultPlaylistId: dt.defaultPlaylistId ?? `pl_${dt.id}` }
+      /* A new multi-zone type gets no default playlist (ticket hFarz4mO, 5 Oct
+         2026): each zone has its own, so only a layout-only row — which holds the
+         zone layout, as the single → multi-zone switch below does — is created in
+         place of the auto-created default. A playlist the caller chose explicitly
+         is kept. */
+      const autoId = `pl_${dt.id}`
+      const layoutId = `pl_${dt.id}_layout`
+      const withPlaylist = { ...dt, defaultPlaylistId: dt.defaultPlaylistId ?? autoId }
+      if (zonesOf(dt).length && withPlaylist.defaultPlaylistId === autoId) {
+        withPlaylist.defaultPlaylistId = layoutId
+        if (!(await ctx.playlists.get(layoutId))) await ctx.playlists.create({ id: layoutId, name: `${dt.name} Layout`, autoCreatedFor: dt.id, playlistSettings: {} })
+      }
       await ensureReferencedPlaylists(withPlaylist, ctx.playlists, true)
       return ctx.displayTypes.create(withPlaylist)
     })
