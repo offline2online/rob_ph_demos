@@ -180,6 +180,11 @@ Recommended, in priority order, with why it was not done blind:
    (or the existing `projectDocs`), with the automation, the MCP server and
    the Docs page updated together. It touches `run-backlog-automation.js`
    and every tool that reads them, so it is a ticket of its own.
+   **Status, 5 Oct 2026:** done for `patchFiles` — it now lives in
+   `backlogItems/{id}/pipeline/patch` (`functions/patch-offload.js`), and
+   `requirementsMd`/`readmeMd` had already moved to `projects/{id}/docs/`.
+   `routinePromptMd` is still on the project document. See README → "Load
+   performance". Items 2 and 3 below are also done (same section).
 2. **A persistent local cache** (`persistentLocalCache({ tabManager:
    persistentMultipleTabManager() })`) so listeners paint from cache and
    fetch only deltas; the REST prime (which today means every collection is

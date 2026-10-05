@@ -16,6 +16,7 @@ const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { applyIntake, isIntakeFlag, INTAKE_SETTER } = require("./intake");
 const { isTrainRelevantItem, trainLockShouldClear, trainHandoverReason } = require("./train-lock");
+const { offloadPatchFiles, hasPatchFiles } = require("./patch-offload");
 
 initializeApp();
 
@@ -1672,6 +1673,24 @@ async function runTicketIntake(event) {
   await event.data.after.ref.update(upd);
 }
 exports.onBacklogItemIntake = onDocumentWritten("backlogItems/{itemId}", runTicketIntake);
+
+// patchFiles (up to ~180 KB of file contents) moves off the card into
+// backlogItems/{id}/pipeline/patch the moment it is written, so the board's
+// live listener stops downloading it into every open tab — see
+// patch-offload.js. Most writes carry no patchFiles and return here without
+// touching Firestore.
+exports.onBacklogItemPatchFilesOffload = onDocumentWritten("backlogItems/{itemId}", async (event) => {
+  const after = event.data && event.data.after && event.data.after.data();
+  if (!hasPatchFiles(after)) return;
+  try {
+    const moved = await offloadPatchFiles(getFirestore(), FieldValue, event.params.itemId);
+    if (moved) logger.info(`[patch-offload] ${event.params.itemId}: moved ${after.patchFiles.length} file(s) to pipeline/patch`);
+  } catch (err) {
+    // Not fatal: the automation still reads patchFiles off the card, it is
+    // only the egress saving that waits for the next write.
+    logger.error(`[patch-offload] ${event.params.itemId}: ${err.message}`);
+  }
+});
 
 // Fixes "Ready for Dev CTA stays hidden after all train tickets are
 // deleted (stuck trainLocked)". projects/{id}.trainLocked only ever
