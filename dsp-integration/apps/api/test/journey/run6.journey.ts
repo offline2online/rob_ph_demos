@@ -190,7 +190,7 @@ async function main() {
     venue: { openOohVenueType: 'retail.convenience', orientation: 'landscape', loopLengthSec: 30 },
   })
   must('J4a', 'slot 1 owner = Advertiser; loop length set (assignment is Available Inventory\'s, below)', ext.status === 200 && ext.json?.slots?.[0]?.owner === 'advertiser' && ext.json?.venue?.loopLengthSec === 30, 'owner advertiser, loopLengthSec 30', `${ext.status} ${ext.text.slice(0, 300)}`)
-  const inv = await admin('PUT', '/available-inventory', { items: [{ displayTypeId: dtId, slot: 1, supportedTargeting: ['localised', 'personalised'], assignedTo: { partnerIds: [PARTNER], advertisers: [], whitelistOnly: false } }] })
+  const inv = await admin('PUT', '/available-inventory', { items: [{ displayTypeId: dtId, slot: 1, supportedTargeting: ['localised', 'personalised'], reservePrice: 50, assignedTo: { partnerIds: [PARTNER], advertisers: [], whitelistOnly: false } }] })
   const invRow = inv.json?.items?.find((i: any) => i.displayTypeId === dtId && i.slot === 1)
   must('J4b', 'assigned to Google DSP (open, not held); targeting supported = localised + personalised', inv.status === 200 && invRow?.assignedTo?.partnerIds?.includes(PARTNER) && !invRow?.assignedTo?.advertisers?.length && JSON.stringify([...(invRow?.supportedTargeting ?? [])].sort()) === JSON.stringify(['localised', 'personalised']), 'partnerIds [p_google], no held advertiser, localised + personalised', `${inv.status} ${JSON.stringify({ assignedTo: invRow?.assignedTo, supportedTargeting: invRow?.supportedTargeting })} ${inv.status !== 200 ? inv.text.slice(0, 300) : ''}`)
   const settings = await admin('GET', '/advertiser-settings')
