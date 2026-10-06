@@ -3,7 +3,7 @@ import type { Slot } from '@ph-dsp/types'
 import { describe, expect, it } from 'vitest'
 import { sweepRejectedCampaigns } from '../src/domain/campaignRetention'
 import { runAuction } from '../src/exchange/auction'
-import type { BidRequest } from '../src/exchange/openrtb'
+import { type BidRequest, buildBidRequest } from '../src/exchange/openrtb'
 import { buildApp } from '../src/http/app'
 import { expectMatchesContract } from './contract'
 import { NOW, mockDsps, testContext } from './helpers'
@@ -405,5 +405,28 @@ describe('POST /v1/reservations and GET …/{id}', () => {
     const other = await app.inject({ method: 'GET', url: '/api/v1/reservations/res_nope', headers: GOOGLE })
     expect(other.statusCode).toBe(404)
     expectMatchesContract('GET', '/v1/reservations/{reservationId}', 404, other.json())
+  })
+})
+
+const pos = (dt: unknown) => { const d = dt as { id: string; phExtensions: { slots: unknown[] } }; return { positionId: 'menu_board.s2', displayType: d, slot: 2, def: d.phExtensions.slots[1] } as never }
+
+describe('The Trade Desk reads ext permissions, not wseat/badv (ticket zhHpMXphZs0r0CK3mn8X)', () => {
+  it('maps the per-DSP lists into ext.seatperms/advperms/domainperms and leaves DV360 on badv', async () => {
+    const { ctx } = await setup()
+    const ttd = { ...(await ctx.partners.get('p_google'))!, provider: 'the_trade_desk', blockList: ['5130002'], allowList: ['5130001'] }
+    const req = await buildBidRequest(ctx, pos(await ctx.displayTypes.get('menu_board')), ttd as never, 'r1')
+    expect(req).not.toHaveProperty('badv')
+    expect(req).not.toHaveProperty('wseat')
+    expect(req.ext).toEqual({
+      seatperms: { allow: ['5130001'], block: ['5130002'] },
+      advperms: { allow: ['5130001'], block: ['5130002'] },
+      domainperms: { allow: expect.any(Array), block: ['swisse.com'] },
+    })
+    const dv = await ctx.partners.get('p_google')
+    await ctx.partners.update('p_google', { blockList: ['5130002'] })
+    const std = await buildBidRequest(ctx, pos(await ctx.displayTypes.get('menu_board')), (await ctx.partners.get('p_google'))!, 'r2')
+    expect(dv).toBeTruthy()
+    expect(std.badv).toEqual(['swisse.com'])
+    expect(std).not.toHaveProperty('ext')
   })
 })

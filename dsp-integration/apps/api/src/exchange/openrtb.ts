@@ -25,7 +25,10 @@ export interface BidRequest {
   source: { schain: { complete: 1; ver: '1.0'; nodes: { asi: string; sid: string; hp: 1 }[] } }
   cur: string[]
   bcat: string[]
-  badv: string[]
+  /* Standard OpenRTB advertiser block (domains). Not sent to The Trade Desk,
+     which reads `ext` permissions instead (ttdPermissions). */
+  badv?: string[]
+  ext?: { seatperms: Perm; advperms: Perm; domainperms: Perm }
   tmax: number
   at: 1
 }
@@ -45,6 +48,24 @@ export function blockedDomains(partner: PartnerRecord, blockList: string[]) {
   }
   return [...out]
 }
+
+export interface Perm { allow: string[]; block: string[] }
+
+/* The Trade Desk does not read wseat/badv: it takes the retailer's per-DSP
+   lists in ext.seatperms / ext.advperms (its own seat and advertiser IDs —
+   for TTD a synced seat is an advertiser, so the same list feeds both) and
+   ext.domainperms (the domains of those seats, as for badv). Assumed
+   encoding: {allow, block} arrays, an empty allow meaning "no allow-list".
+   Confirm the exact TTD semantics at integration (ticket zhHpMXphZs0r0CK3mn8X). */
+export function ttdPermissions(partner: PartnerRecord, lists: { allowList: string[]; blockList: string[] }) {
+  const domains = (ids: string[]) => blockedDomains(partner, ids)
+  return {
+    seatperms: { allow: [...lists.allowList], block: [...lists.blockList] },
+    advperms: { allow: [...lists.allowList], block: [...lists.blockList] },
+    domainperms: { allow: domains(lists.allowList), block: domains(lists.blockList) },
+  }
+}
+export const isTradeDesk = (partner: PartnerRecord) => partner.provider === 'the_trade_desk'
 
 export const categoryCodes = (names: string[]) => names.map((n) => IAB_CATEGORY_CODES[n as keyof typeof IAB_CATEGORY_CODES]).filter(Boolean)
 
@@ -85,7 +106,7 @@ export async function buildBidRequest(ctx: Context, p: PositionRef, partner: Par
     source: { schain: { complete: 1, ver: '1.0', nodes: [{ asi: exchange.domain, sid: exchange.sellerId, hp: 1 }] } },
     cur: [company.currency],
     bcat: categoryCodes(categoryLists.blockList),
-    badv: blockedDomains(partner, lists.blockList),
+    ...(isTradeDesk(partner) ? { ext: ttdPermissions(partner, lists) } : { badv: blockedDomains(partner, lists.blockList) }),
     tmax: bidderTuning(partner.bidder, ctx.config).timeoutMs,
     at: 1,
   }

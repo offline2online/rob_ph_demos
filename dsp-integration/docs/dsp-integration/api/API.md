@@ -602,6 +602,12 @@ DSPs receive requests; nothing they win is billed or handed off.
   measurement partner, with that vendor's domain.
 - `bcat` / `badv` = the effective category and advertiser blacklists for
   this DSP.
+- **The Trade Desk is the exception**: it does not read `wseat`/`badv`, so a
+  TTD request carries no `badv` and instead sends the retailer's per-DSP lists
+  as `ext.seatperms`, `ext.advperms` and `ext.domainperms`, each
+  `{ "allow": [...], "block": [...] }` (IDs for seats/advertisers, domains for
+  `domainperms`). DV360 and Amazon keep `badv`. The allow/block encoding is an
+  assumption to confirm with TTD at integration.
 - **Never included:** any visitor data, Personalisation Variables or
   Computer Vision values; no `user` object.
 - Screen and loop context (orientation, slot duration, loop length, share of
