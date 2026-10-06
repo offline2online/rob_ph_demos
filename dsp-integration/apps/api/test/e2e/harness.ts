@@ -124,11 +124,11 @@ export function stubDspBidder() {
 
 /* A well-formed OpenRTB 2.6 bid from Swisse's seat, for a scripted response. */
 export function swisseBid(req: BidRequest, b: { price: unknown; crid: string; iurl?: string; id?: string }) {
-  const imp = req.imp?.[0] as { banner?: { w?: number; h?: number } } | undefined
+  const imp = req.imp?.[0] as { banner?: { w?: number; h?: number }; pmp?: { deals?: { id: string }[] } } | undefined
   const w = imp?.banner?.w ?? 1920
   const h = imp?.banner?.h ?? 1080
   return {
-    id: b.id ?? `${req.id}-${b.crid}`, impid: '1', price: b.price, crid: b.crid, adomain: ['swisse.com'], cat: ['IAB7'],
+    id: b.id ?? `${req.id}-${b.crid}`, impid: '1', price: b.price, crid: b.crid, ...(imp?.pmp?.deals?.[0] ? { dealid: imp.pmp.deals[0].id } : {}), adomain: ['swisse.com'], cat: ['IAB7'],
     iurl: b.iurl ?? `${MOCKS}/dv360/creatives/${encodeURIComponent(b.crid)}.png?w=${w}&h=${h}`, w, h,
   }
 }

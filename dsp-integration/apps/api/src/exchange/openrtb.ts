@@ -5,7 +5,9 @@
 import { bidderTuning } from '../domain/partnerInput'
 import { IAB_CATEGORY_CODES } from '@ph-dsp/types'
 import type { Context } from '../context'
-import { type PositionRef, positionView, windowMsFor } from '../domain/positions'
+import { type PositionRef, assignmentOf, positionView, windowMsFor } from '../domain/positions'
+import { assignedOf } from '@ph-dsp/types'
+import { isInvitedBuyer } from '../domain/buyersLists'
 import { effectiveCategoryLists, effectiveLists } from '../domain/lists'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 
@@ -19,6 +21,8 @@ export interface BidRequest {
     bidfloorcur: string
     qty: { multiplier: number; sourcetype: 2 }
     exp: number
+    /* A deal position carries its SSP-issued deal ID, restricted to the invited seats. */
+    pmp?: { private_auction: 1; deals: { id: string; at: 1; wseat: string[] }[] }
     ext: { ph: { orientation: string; slotDurationSec: number; loopLengthSec: number; shareOfVoice: number; playsPerWindow: number } }
   }[]
   dooh: { id: string; venuetype: string[]; venuetypetax: 1; publisher: { id: string; name: string; domain: string } }
@@ -35,7 +39,7 @@ export interface BidRequest {
 
 /* ext.creativeAudit: the DSP's own audit of the creative, in its own shape
    (domain/dspAudit.ts) — advisory only, Q40. */
-export interface Bid { id?: string; impid?: string; price?: number; crid?: string; adomain?: string[]; cat?: string[]; iurl?: string; ext?: { creativeAudit?: unknown } }
+export interface Bid { id?: string; impid?: string; dealid?: string; price?: number; crid?: string; adomain?: string[]; cat?: string[]; iurl?: string; ext?: { creativeAudit?: unknown } }
 export interface BidResponse { id?: string; cur?: string; seatbid?: { seat?: string; bid?: Bid[] }[] }
 
 /* badv carries domains: each blacklisted seat goes as the domain the DSP
@@ -69,6 +73,10 @@ export const isTradeDesk = (partner: PartnerRecord) => partner.provider === 'the
 
 export const categoryCodes = (names: string[]) => names.map((n) => IAB_CATEGORY_CODES[n as keyof typeof IAB_CATEGORY_CODES]).filter(Boolean)
 
+/* The deal ID for a buyers list: derived (no stored column), stable for the
+   list's life, and the only ID a bid on that deal's position may quote. */
+export const dealIdOf = (listId: string) => `PH-${listId}`
+
 /* One request per sellable position, play window and DSP. The bid floor is
    the position's base effective floor; each bid is then held to the floor
    for its own campaign type and advertiser before it can win (spec §4).
@@ -81,6 +89,9 @@ export async function buildBidRequest(ctx: Context, p: PositionRef, partner: Par
   const lists = effectiveLists(partner)
   const categoryLists = effectiveCategoryLists(company)
   const { width: w, height: h } = view.screen
+  const listId = assignmentOf(p.def) === 'deal' ? assignedOf(p.def).buyersListId : undefined
+  const list = listId ? await ctx.buyersLists.get(listId) : null
+  const pmp = list ? { private_auction: 1 as const, deals: [{ id: dealIdOf(list.id), at: 1 as const, wseat: partner.seats.map((x) => x.id).filter((id) => isInvitedBuyer(list, partner.id, id)) }] } : undefined
   return {
     id,
     imp: [{
@@ -95,6 +106,7 @@ export async function buildBidRequest(ctx: Context, p: PositionRef, partner: Par
          If an independent measurement partner is adopted, switch to 1 and send that vendor's domain. */
       qty: { multiplier: view.assumedViewsPerWindow, sourcetype: 2 },
       exp: Math.round(windowMsFor(company.playWindowHours, p) / 1000),
+      ...(pmp ? { pmp } : {}),
       ext: { ph: { orientation: view.screen.orientation, slotDurationSec: view.screen.slotDurationSec, loopLengthSec: view.screen.loopLengthSec, shareOfVoice: view.screen.shareOfVoice, playsPerWindow: view.playsPerWindow } },
     }],
     dooh: {

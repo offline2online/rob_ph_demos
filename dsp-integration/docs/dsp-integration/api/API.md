@@ -566,6 +566,12 @@ OpenRTB 2.6 with the DOOH object, sent to each connected DSP's bidder
 endpoint within 300 ms timeout and 500 QPS (platform defaults). Test-mode
 DSPs receive requests; nothing they win is billed or handed off.
 
+**Deals (private auctions).** A position assigned a buyers list sends
+`imp[0].pmp = { private_auction: 1, deals: [{ id: "PH-<buyers list id>", at: 1, wseat: [<the DSP's invited seats>] }] }`.
+The deal ID is derived from the list (no stored column). A bid on that position
+must quote it as `bid.dealid`; a bid with no `dealid` or another one is rejected.
+Per-DSP deal-ID format requirements are still to be confirmed.
+
 **Bid request (per sellable position and play window):**
 
 ```json

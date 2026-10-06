@@ -2116,8 +2116,6 @@ Currency, floor CPM, multipliers and targeting permissions are set elsewhere
 and are neither set nor repeated on the DSP's page; category lists are set
 in Advertiser settings too and apply to every DSP — there is no per-DSP
 category override; the advertiser lists live only on the DSP's own page (§6).
-Deal IDs are deferred to a later
-release (open question 45).
 
 ### Which side each named platform sits on
 

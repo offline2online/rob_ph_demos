@@ -56,7 +56,7 @@ import { handOff } from './handoff'
 import { settlePending } from './pending'
 import { bidderTuning } from '../domain/partnerInput'
 import { providerOf } from '../dsp/registry'
-import { type Bid, type BidResponse, buildBidRequest } from './openrtb'
+import { type Bid, type BidResponse, buildBidRequest, dealIdOf } from './openrtb'
 
 export interface PositionOutcome {
   positionId: string
@@ -305,6 +305,11 @@ async function recordDspBid(ctx: Context, p: PositionRef, dsp: PartnerRecord, st
   /* The request carries one impression, id "1" (openrtb.ts). */
   if (bid.impid !== undefined && bid.impid !== '1') return reject(`Bid for impression ${bid.impid}; the request offered impression 1.`)
   if (!seatId || !dsp.bidder.seatIds?.includes(seatId)) return reject(`Seat ${seatId ?? '(none)'} is not one of ${dsp.name}’s seat IDs.`)
+  /* A deal position clears only bids quoting its deal ID (pmp.deals). */
+  if (assignmentOf(p.def) === 'deal') {
+    const listId = assignedOf(p.def).buyersListId
+    if (!listId || bid.dealid !== dealIdOf(listId)) return reject(`Bid ${bid.dealid ? `quotes deal ${bid.dealid}` : 'has no dealid'}; this private auction requires ${listId ? dealIdOf(listId) : 'its deal ID'}.`)
+  }
   const domains = (bid.adomain ?? []).map((d) => d.trim().toLowerCase())
   const seat = dsp.seats.find((s) => s.domain && domains.includes(s.domain.toLowerCase()))
   if (!seat) return reject(`Unknown advertiser${domains.length ? ` (${domains.join(', ')})` : ''}: not one of ${dsp.name}’s advertisers.`)
