@@ -19,7 +19,7 @@ export interface BidRequest {
     bidfloorcur: string
     qty: { multiplier: number; sourcetype: 2 }
     exp: number
-    ext: { ph: { orientation: string; slotDurationSec: number; loopLengthSec: number; shareOfVoice: number } }
+    ext: { ph: { orientation: string; slotDurationSec: number; loopLengthSec: number; shareOfVoice: number; playsPerWindow: number } }
   }[]
   dooh: { id: string; venuetype: string[]; venuetypetax: 1; publisher: { id: string; name: string; domain: string } }
   source: { schain: { complete: 1; ver: '1.0'; nodes: { asi: string; sid: string; hp: 1 }[] } }
@@ -95,7 +95,7 @@ export async function buildBidRequest(ctx: Context, p: PositionRef, partner: Par
          If an independent measurement partner is adopted, switch to 1 and send that vendor's domain. */
       qty: { multiplier: view.assumedViewsPerWindow, sourcetype: 2 },
       exp: Math.round(windowMsFor(company.playWindowHours, p) / 1000),
-      ext: { ph: { orientation: view.screen.orientation, slotDurationSec: view.screen.slotDurationSec, loopLengthSec: view.screen.loopLengthSec, shareOfVoice: view.screen.shareOfVoice } },
+      ext: { ph: { orientation: view.screen.orientation, slotDurationSec: view.screen.slotDurationSec, loopLengthSec: view.screen.loopLengthSec, shareOfVoice: view.screen.shareOfVoice, playsPerWindow: view.playsPerWindow } },
     }],
     dooh: {
       id: p.displayType.id,

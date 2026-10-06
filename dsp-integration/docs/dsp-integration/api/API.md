@@ -397,11 +397,16 @@ length. Every length is laid back to back from the same anchor (Monday
 00:00 UTC), so a 168-hour slot's windows start on Mondays, which are also
 daily slots' window starts: one auction (keyed on the window start) clears
 every position whose own window starts then. The Inventory API
-(`billingUnitHours` and `assumedViewsPerWindow` on a position, each
+(`billingUnitHours`, `playsPerWindow` and `assumedViewsPerWindow` on a position, each
 availability window's `start`/`end`), `POST /v1/reservations`' `windowStart`,
 the bid request's `exp` and `qty.multiplier`, the hand-off booking and
 billing (one line item per window, expected seconds and assumed views for
-that window's length) all follow it. Assumed views are scored per company
+that window's length) all follow it. **The play is the transacting unit**
+(6 Oct 2026): a window's time length is shown alongside the play count it
+holds — `playsPerWindow` = floor(window / loop length), plays on one display,
+also sent as `imp.ext.ph.playsPerWindow` — and the impression multiplier
+(VAC-d, `qty.multiplier`) only converts plays to estimated impressions for
+pricing and billing. Billing is unchanged: plays × multiplier. Assumed views are scored per company
 play window (`AudienceSource`) and scaled to a slot's own window length. A
 `playWindowHours` change is deferred only on the windows of slots that
 inherit it; a slot's own billing unit can't change while it has live

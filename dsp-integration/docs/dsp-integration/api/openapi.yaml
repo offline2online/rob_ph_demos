@@ -1591,6 +1591,9 @@ components:
             is sold in (availability, a reservation's windowStart, the bid
             request's `exp`) is this long, laid back to back from a fixed
             Monday 00:00 UTC.
+        playsPerWindow:
+          type: integer
+          description: The transacting unit. Plays this slot gets on one display in one of its windows (billingUnitHours long) — floor(window / loopLengthSec). Assumed views (VAC-d) convert plays to impressions for billing only.
         assumedViewsPerWindow:
           type: integer
           description: Assumed views (VAC-d) in one of this position's windows (billingUnitHours long).

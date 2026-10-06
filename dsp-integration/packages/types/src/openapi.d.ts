@@ -1162,6 +1162,8 @@ export interface components {
              *     Monday 00:00 UTC.
              */
             billingUnitHours: number;
+            /** @description The transacting unit. Plays this slot gets on one display in one of its windows (billingUnitHours long) — floor(window / loopLengthSec). Assumed views (VAC-d) convert plays to impressions for billing only. */
+            playsPerWindow?: number;
             /** @description Assumed views (VAC-d) in one of this position's windows (billingUnitHours long). */
             assumedViewsPerWindow?: number;
             /**
