@@ -19,3 +19,14 @@ export const effectiveCategoryLists = (company: CompanySettings): EffectiveLists
 const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase()
 export const isOn = (name: string, list: string[]) => list.some((x) => same(x, name))
 export const isBlocked = (seatId: string, eff: EffectiveLists) => isOn(seatId, eff.blockList)
+
+/* The domains a DSP told us for these seats (seats pulled on connect): what
+   badv, and TTD's ext.domainperms, carry for a seat-ID list. */
+export function seatDomains(partner: PartnerRecord, ids: string[]) {
+  const out = new Set<string>()
+  for (const entry of ids) {
+    const seat = partner.seats.find((s) => same(s.id, entry))
+    if (seat?.domain) out.add(seat.domain.toLowerCase())
+  }
+  return [...out]
+}

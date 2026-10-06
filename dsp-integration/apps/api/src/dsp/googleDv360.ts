@@ -5,7 +5,7 @@
 import { createSign } from 'node:crypto'
 import { type AuditVerdict, auditCheckFrom, auditObject } from '../domain/dspAudit'
 import { type ConnectResult, type DspClient, type Fetch, type Seat, domainOf, unreachable } from './DspClient'
-import { type BidderEndpoints, type DspProvider, bidderSide } from './DspProvider'
+import { type BidderEndpoints, type DspProvider, bidderSide, standardBuyerBlocking } from './DspProvider'
 
 export interface Dv360Config { tokenUrl: string; apiBaseUrl: string }
 const SCOPE = 'https://www.googleapis.com/auth/display-video'
@@ -86,5 +86,6 @@ export function googleDv360Provider(cfg: Dv360Config, bidder: BidderEndpoints | 
     ...googleDv360Client(cfg, fetchImpl),
     ...bidderSide(bidder),
     auditCheck: (raw) => auditCheckFrom('Display & Video 360', raw, dv360AuditVerdict),
+    buyerBlocking: standardBuyerBlocking,
   }
 }

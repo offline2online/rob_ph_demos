@@ -11,6 +11,8 @@
    config.ts. */
 import type { Provider } from '@ph-dsp/types'
 import type { Check } from '../domain/assetChecks'
+import { type EffectiveLists, seatDomains } from '../domain/lists'
+import type { PartnerRecord } from '../repos/PartnerRepo'
 import type { DspClient } from './DspClient'
 
 export interface DspProvider extends DspClient {
@@ -25,7 +27,18 @@ export interface DspProvider extends DspClient {
      shape, as an ADVISORY check for the reviewer (Q40) — or null when the
      DSP said nothing usable. It never approves or blocks a creative. */
   auditCheck(raw: unknown): Check | null
+  /* How this DSP's bid requests carry the retailer's per-DSP seat lists:
+     the standard OpenRTB `badv` (standardBuyerBlocking) or the DSP's own
+     fields (TTD's `ext` permissions). openrtb.ts spreads the result in. */
+  buyerBlocking(partner: PartnerRecord, lists: EffectiveLists): BuyerBlocking
 }
+
+export interface Perm { allow: string[]; block: string[] }
+export type BuyerBlocking = { badv: string[] } | { ext: { seatperms: Perm; advperms: Perm; domainperms: Perm } }
+
+/* Standard OpenRTB: the blacklisted seats go as their domains in badv. */
+export const standardBuyerBlocking = (partner: PartnerRecord, lists: EffectiveLists): BuyerBlocking =>
+  ({ badv: seatDomains(partner, lists.blockList) })
 
 /* Per provider, from config.ts `bidders`: the bid URL and the only base URL
    a creative may be fetched from. */

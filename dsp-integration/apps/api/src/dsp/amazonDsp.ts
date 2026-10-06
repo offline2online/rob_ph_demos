@@ -6,7 +6,7 @@
    marked fixedOnceConnected in @ph-dsp/types PROVIDERS). */
 import { type AuditVerdict, auditCheckFrom, auditObject } from '../domain/dspAudit'
 import { type ConnectResult, type DspClient, type Fetch, type Seat, domainOf, unreachable } from './DspClient'
-import { type BidderEndpoints, type DspProvider, bidderSide } from './DspProvider'
+import { type BidderEndpoints, type DspProvider, bidderSide, standardBuyerBlocking } from './DspProvider'
 
 export type AmazonRegion = 'na' | 'eu' | 'fe'
 export interface AmazonConfig { baseUrls: Record<AmazonRegion, { tokenUrl: string; apiBaseUrl: string }> }
@@ -82,5 +82,6 @@ export function amazonDspProvider(cfg: AmazonConfig, bidder: BidderEndpoints | u
     ...amazonDspClient(cfg, fetchImpl),
     ...bidderSide(bidder),
     auditCheck: (raw) => auditCheckFrom('Amazon DSP', raw, amazonAuditVerdict),
+    buyerBlocking: standardBuyerBlocking,
   }
 }

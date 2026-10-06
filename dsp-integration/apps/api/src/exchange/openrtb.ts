@@ -9,7 +9,9 @@ import type { Context } from '../context'
 import { type PositionRef, assignmentOf, positionView, windowMsFor } from '../domain/positions'
 import { assignedOf } from '@ph-dsp/types'
 import { isInvitedBuyer } from '../domain/buyersLists'
-import { effectiveCategoryLists, effectiveLists } from '../domain/lists'
+import { effectiveCategoryLists, effectiveLists, seatDomains } from '../domain/lists'
+import { type Perm, standardBuyerBlocking } from '../dsp/DspProvider'
+import { providerOf } from '../dsp/registry'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 
 export interface BidRequest {
@@ -30,8 +32,9 @@ export interface BidRequest {
   source: { schain: { complete: 1; ver: '1.0'; nodes: { asi: string; sid: string; hp: 1 }[] } }
   cur: string[]
   bcat: string[]
-  /* Standard OpenRTB advertiser block (domains). Not sent to The Trade Desk,
-     which reads `ext` permissions instead (ttdPermissions). */
+  /* The per-DSP seat lists, in the shape that DSP reads (its provider's
+     buyerBlocking hook): standard OpenRTB badv (domains), or a DSP's own
+     ext permissions instead. */
   badv?: string[]
   ext?: { seatperms: Perm; advperms: Perm; domainperms: Perm }
   tmax: number
@@ -45,32 +48,7 @@ export interface BidResponse { id?: string; cur?: string; seatbid?: { seat?: str
 
 /* badv carries domains: each blacklisted seat goes as the domain the DSP
    told us for it (seats pulled on connect). */
-export function blockedDomains(partner: PartnerRecord, blockList: string[]) {
-  const out = new Set<string>()
-  for (const entry of blockList) {
-    const seat = partner.seats.find((s) => s.id.trim().toLowerCase() === entry.trim().toLowerCase())
-    if (seat?.domain) out.add(seat.domain.toLowerCase())
-  }
-  return [...out]
-}
-
-export interface Perm { allow: string[]; block: string[] }
-
-/* The Trade Desk does not read wseat/badv: it takes the retailer's per-DSP
-   lists in ext.seatperms / ext.advperms (its own seat and advertiser IDs —
-   for TTD a synced seat is an advertiser, so the same list feeds both) and
-   ext.domainperms (the domains of those seats, as for badv). Assumed
-   encoding: {allow, block} arrays, an empty allow meaning "no allow-list".
-   Confirm the exact TTD semantics at integration (ticket zhHpMXphZs0r0CK3mn8X). */
-export function ttdPermissions(partner: PartnerRecord, lists: { allowList: string[]; blockList: string[] }) {
-  const domains = (ids: string[]) => blockedDomains(partner, ids)
-  return {
-    seatperms: { allow: [...lists.allowList], block: [...lists.blockList] },
-    advperms: { allow: [...lists.allowList], block: [...lists.blockList] },
-    domainperms: { allow: domains(lists.allowList), block: domains(lists.blockList) },
-  }
-}
-export const isTradeDesk = (partner: PartnerRecord) => partner.provider === 'the_trade_desk'
+export const blockedDomains = (partner: PartnerRecord, blockList: string[]) => seatDomains(partner, blockList)
 
 export const categoryCodes = (names: string[]) => names.map((n) => IAB_CATEGORY_CODES[n as keyof typeof IAB_CATEGORY_CODES]).filter(Boolean)
 
@@ -119,7 +97,7 @@ export async function buildBidRequest(ctx: Context, p: PositionRef, partner: Par
     source: { schain: { complete: 1, ver: '1.0', nodes: [{ asi: exchange.domain, sid: exchange.sellerId, hp: 1 }] } },
     cur: [TRANSACTING_CURRENCY],
     bcat: categoryCodes(categoryLists.blockList),
-    ...(isTradeDesk(partner) ? { ext: ttdPermissions(partner, lists) } : { badv: blockedDomains(partner, lists.blockList) }),
+    ...(providerOf(ctx.dsp, partner.provider)?.buyerBlocking ?? standardBuyerBlocking)(partner, lists),
     tmax: bidderTuning(partner.bidder, ctx.config).timeoutMs,
     at: 1,
   }
