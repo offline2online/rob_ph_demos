@@ -63,6 +63,17 @@ describe('The Trade Desk against the mock TTD API v3', () => {
     expect((await ctx.partners.get('p_the_trade_desk'))!.seats[0].domain).toBe('arnotts.com')
   })
 
+  it('stores the optional seller auth token like a secret and does not report it missing', async () => {
+    const { call } = await setup()
+    const saved = await addTtd(call)
+    expect(saved.json().issues ?? []).not.toContainEqual(expect.objectContaining({ kind: 'missing_credentials' }))
+    const withToken = await call('PUT', '/partners/p_the_trade_desk', { credentials: { sellerAuthToken: 'seller-secret-token' } })
+    expect(withToken.json().credentials.sellerAuthToken).toEqual({ set: true })
+    expect(withToken.body).not.toContain('seller-secret-token')
+    const cleared = await call('PUT', '/partners/p_the_trade_desk', { credentials: { sellerAuthToken: '' } })
+    expect(cleared.json().credentials.sellerAuthToken).toBeUndefined()
+  })
+
   it('reports a rejected token or the wrong partner', async () => {
     const { call, control } = await setup()
     await addTtd(call)

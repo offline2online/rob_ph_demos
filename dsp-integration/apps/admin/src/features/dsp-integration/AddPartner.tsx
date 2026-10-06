@@ -45,7 +45,7 @@ export function AddPartnerRoute() {
         {/* The provider's setup note is this section's tooltip (decision 2). */}
         <SectionLabel style={{ marginTop: 0 }}><WithTip tip={def.blurb}>You will need</WithTip></SectionLabel>
         <ul className="m-0 pl-[18px]" style={{ fontSize: 13, lineHeight: 1.9 }}>
-          {def.fields.map((f) => <li key={f.key}>{f.label}</li>)}
+          {def.fields.filter((f) => !f.optional).map((f) => <li key={f.key}>{f.label}</li>)}
           <li>Bidder endpoint and seat IDs</li>
         </ul>
         <div className="mt-[18px] flex gap-2">

@@ -55,7 +55,7 @@ export function DspPage({ draftKey, partner }: { draftKey: string; partner: Part
 
   const status = partner?.status ?? 'draft'
   const secretSet = (k: string) => !!(partner?.credentials as Record<string, unknown> | undefined)?.[k]
-  const missing = def.fields.filter((f) => (f.secret ? !d.credentials[f.key] && !secretSet(f.key) : !d.credentials[f.key]?.trim())).map((f) => f.label)
+  const missing = def.fields.filter((f) => !f.optional && (f.secret ? !d.credentials[f.key] && !secretSet(f.key) : !d.credentials[f.key]?.trim())).map((f) => f.label)
   const bidderMissing = [!d.bidderEndpoint.trim() && 'Bidder endpoint', !d.seatIds.trim() && 'Seat IDs'].filter(Boolean) as string[]
   const credsUnsaved = d.isNew || !deepEqual(d.credentials, before?.credentials)
   const canGoLive = status === 'connected' && bidderMissing.length === 0
@@ -112,7 +112,7 @@ export function DspPage({ draftKey, partner }: { draftKey: string; partner: Part
       <SectionLabel><WithTip tip={def.blurb}>Connection credentials</WithTip></SectionLabel>
       <div className="mb-3 grid grid-cols-2 gap-3.5">
         {def.fields.map((f) => (
-          <Field key={f.key} label={f.label} required tip={f.hint} htmlFor={`cred-${f.key}`}>
+          <Field key={f.key} label={f.label} required={!f.optional} tip={f.hint} htmlFor={`cred-${f.key}`}>
             {f.options ? (
               /* Amazon's region is fixed once connected (it sets the API hosts); the API refuses a change too. */
               <Select id={`cred-${f.key}`} className="w-full" value={d.credentials[f.key] || undefined} disabled={f.key === 'region' && d.provider === 'amazon_dsp' && partner?.status === 'connected'} onChange={(v) => setCred(f.key, v)} options={f.options.map((o) => ({ value: o, label: o }))} />
