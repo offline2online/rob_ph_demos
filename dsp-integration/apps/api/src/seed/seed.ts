@@ -144,7 +144,7 @@ export async function seed(ctx: Context, opts: { bookings?: boolean; demo?: bool
       credsPublic: { partnerId: '884512', serviceAccountEmail: 'ph-retail-media@ph-demo.iam.gserviceaccount.com' },
       /* A freshly generated key in the real key-file format, so Connect works against the mock DV360. */
       secrets: { privateKeyJson: serviceAccountKeyFile('ph-retail-media@ph-demo.iam.gserviceaccount.com') },
-      bidder: { bidderEndpoint: 'https://rtb.doubleclick.net/openrtb2/bid', seatIds: ['884512', '884513'] },
+      bidder: { bidderEndpoint: ctx.config.bidders.google_dv360.bidUrl, seatIds: ['884512', '884513'] },
       seats: [{ id: '5130001', name: 'Nestlé', domain: 'nestle.com' }, { id: '5130002', name: 'Swisse', domain: 'swisse.com' }], listsLinked: true,
       /* Its own advertiser lists, drawn from the seats it synced. */
       allowList: ['5130001', '5130002'], blockList: [],

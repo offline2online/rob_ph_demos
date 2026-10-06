@@ -74,6 +74,7 @@ Everything the API reads is an environment variable
 | `PH_MAX_UPLOADS_IN_FLIGHT` | Asset uploads held in memory at once across all partners (default 4). Memory sizing below depends on it. |
 | `PH_AUCTION_CONCURRENCY` | Positions the auction clears at once (default 16). |
 | `PH_RESERVATION_RETENTION_DAYS` | Rejected, lost and never-cleared bids are deleted this long after their window (default 90). Won and reserved windows are kept. |
+| `BID_ENDPOINT_SOURCE` | `mock` (default): bid requests go to the `*_BIDDER_URL` below. `partner`: they go to the endpoint saved on each DSP's page, which is what a live exchange uses. Seeded sample endpoints are the sandbox (`*_BIDDER_URL`) values, so the round trip works in both modes. |
 | `DV360_BIDDER_URL`, `AMAZON_BIDDER_URL`, `TTD_BIDDER_URL`, the DSP API base URLs | The real DSP endpoints. They default to the mock DSP service, which is **not** deployed by these manifests; for a test cluster, deploy `apps/dsp-mocks` as a Service and point these at it. |
 | `POC_ROLE` | `hq_admin`. POC stand-in for the HQ Admin session: every Admin API caller is this role until `SessionSource` is the platform's. This is why the Admin API only ever has an internal ingress. |
 

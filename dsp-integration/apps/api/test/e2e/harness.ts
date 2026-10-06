@@ -293,7 +293,7 @@ export async function harness(opts: { dbFile?: string } = {}) {
       await ctx.partners.insert({
         id: 'p_ttd', provider: 'the_trade_desk', name: 'The Trade Desk', status: 'connected', mode: 'live', lastSync: null,
         credsPublic: { supplySourceId: 'ss-e2e', ttdPartnerId: 'phub-retail', region: 'APAC' }, secrets: { apiToken: 'e2e-placeholder' },
-        bidder: { bidderEndpoint: 'https://bid.adsrvr.org/openrtb2/bid', seatIds: [TTD_SEAT] },
+        bidder: { bidderEndpoint: `${MOCKS}/ttd/openrtb2/bid`, seatIds: [TTD_SEAT] },
         seats: [{ id: 'ttd-adv-1', name: 'Arnott’s', domain: 'arnotts.com' }], listsLinked: true, allowList: [], blockList: [], categoryAllowList: [], categoryBlockList: [],
       } as never)
     }

@@ -226,7 +226,7 @@ export async function seedDemo(ctx: Context) {
         id: 'p_ttd', provider: 'the_trade_desk', name: 'The Trade Desk', status: 'connected', mode: 'test', lastSync: 'Today, 06:40',
         credsPublic: { supplySourceId: 'ss-phub-2291', ttdPartnerId: 'phub-retail', region: 'APAC' },
         secrets: { apiToken: 'poc-placeholder-token' },
-        bidder: { bidderEndpoint: 'https://bid.adsrvr.org/openrtb2/bid', seatIds: ['phub-retail'] },
+        bidder: { bidderEndpoint: ctx.config.bidders.the_trade_desk.bidUrl, seatIds: ['phub-retail'] },
         seats: [], listsLinked: true, allowList: [], blockList: [], categoryAllowList: [], categoryBlockList: [],
       })
     }

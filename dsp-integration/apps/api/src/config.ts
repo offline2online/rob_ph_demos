@@ -85,6 +85,12 @@ export interface Config {
      mock DSP service and never at the partner's configured bidder endpoint;
      on integration, requests go to that endpoint instead. */
   bidders: Record<'google_dv360' | 'amazon_dsp' | 'the_trade_desk', { bidUrl: string; creativeBase: string }>
+  /* Where the auction POSTs a DSP's bid request. 'mock' (the default): the
+     provider's URL in `bidders`, whatever the partner has saved. 'partner':
+     the endpoint saved on the DSP's own page (partner.bidder.bidderEndpoint),
+     which is what integration uses; the seeded sample endpoints are the
+     sandbox (mock) URLs, so the same round trip runs in both modes. */
+  bidEndpointSource: 'mock' | 'partner'
 }
 
 const DEFAULT_PARTNER_TOKENS = { 'poc-token-google-dv360': 'p_google', 'poc-token-amazon-dsp': 'p_amazon' }
@@ -140,6 +146,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       amazon_dsp: { bidUrl: env.AMAZON_BIDDER_URL ?? `${mocks}/amazon/openrtb2/bid`, creativeBase: `${mocks}/amazon/creatives/` },
       the_trade_desk: { bidUrl: env.TTD_BIDDER_URL ?? `${mocks}/ttd/openrtb2/bid`, creativeBase: `${mocks}/ttd/creatives/` },
     },
+    bidEndpointSource: env.BID_ENDPOINT_SOURCE === 'partner' ? 'partner' : 'mock',
     partnerTokens: partnerTokensFrom(env),
     maxBidCpm: 10_000,
     maxBidResponseBytes: 64 * 1024,

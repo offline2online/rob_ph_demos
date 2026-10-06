@@ -55,7 +55,7 @@ export const partnerRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync 
     /* Read, apply and save as one transaction. */
     return toApiPartner(await tx(ctx.db, async () => {
       const p = await one(req.params.id)
-      const r = applyPartnerInput(p, await ctx.partners.secrets(p.id), req.body ?? {}, await ctx.company.get())
+      const r = applyPartnerInput(p, await ctx.partners.secrets(p.id), req.body ?? {}, await ctx.company.get(), providerOf(ctx.dsp, p.provider)?.bidUrl)
       if (r.errors.length) throw validationFailed(r.errors)
       if (r.conflict) throw conflict(r.conflict)
       return (await ctx.partners.update(p.id, r.change!.patch, r.change!.secrets))!

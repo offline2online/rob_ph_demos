@@ -69,6 +69,10 @@ export interface AuctionResult { windowStart: string; positions: PositionOutcome
 
 /* A DSP is sent bid requests once it is connected and its bidder
    integration (endpoint and seat IDs) is complete. */
+/* Where this DSP's bid request goes (config.bidEndpointSource): its saved
+   bidder endpoint, or the provider's sandbox URL. */
+export const bidUrlFor = (ctx: Context, dsp: PartnerRecord) =>
+  ctx.config.bidEndpointSource === 'partner' ? dsp.bidder.bidderEndpoint?.trim() || undefined : providerOf(ctx.dsp, dsp.provider)?.bidUrl
 export const receivesBidRequests = (p: PartnerRecord) => p.status === 'connected' && !!p.bidder.bidderEndpoint && !!p.bidder.seatIds?.length
 
 /* Scalability bounds (review, 23 Sep 2026):
@@ -181,7 +185,7 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, bidder
      the DSPs' own order so the outcome doesn't depend on who answered first. */
   const sent: { dsp: PartnerRecord; reqId: string; res: ReturnType<Context['bidder']['send']> }[] = []
   for (const dsp of dsps) {
-    const url = providerOf(ctx.dsp, dsp.provider)?.bidUrl
+    const url = bidUrlFor(ctx, dsp)
     if (!url) continue
     const reqId = `req_${randomUUID().slice(0, 12)}`
     sent.push({ dsp, reqId, res: ctx.bidder.send(url, await buildBidRequest(ctx, p, dsp, reqId, view!), bidderTuning(dsp.bidder, ctx.config)) })
