@@ -3847,3 +3847,13 @@ partner-contributed attributes have been removed with that scope.
 56. **Federation trust and discovery** (§9.3, §9.4). *Deferred (decision,
     Rob, 29 Sep 2026):* a future direction, out of scope for this build.
     The platform is single-instance, self-hosted in one retailer's VPC.
+
+## Guaranteed deal path (Rob, 7 Oct 2026)
+
+A reserve is either a **preferred deal** (the premium window held at the reserve price, no volume promised — the existing reserve-price path, unchanged) or a **guaranteed deal** that also commits a delivery volume. Both wrap the same slot inventory. `POST /v1/reservations` takes `dealType: preferred | guaranteed` (default preferred; guaranteed only with `type: reserve`).
+
+- **Forecast** for the window = plays × audience = the slot's VAC-d assumed views per window (`assumedViewsPerWindow`, the same figure billing realises against).
+- **Committed volume** = `floor(forecast × (1 − buffer%))`. Expected delivery therefore sits above the guarantee and make-goods are rare. Returned as `forecastImpressions` / `guaranteedImpressions` and stored on the reservation (migration 0046).
+- **Buffer**: `guaranteeBufferPct` on Advertiser settings (a "Guaranteed deals" section beside the category lists), default 10, 0–50, instance-wide. Omitted on save keeps the stored value.
+- **To the DSP**: the reservation response carries `dspDeal` — DV360 Programmatic Guaranteed / Amazon guaranteed deal with `unitCount` = the committed impressions; a preferred deal maps to a preferred deal with no volume (`dsp/dealTerms.ts`).
+- **Open (dependencies)**: the exact per-DSP guaranteed-deal field names are to be confirmed against each DSP's sandbox; make-good / under-delivery behaviour when delivery falls below the guarantee is not built — billing is unchanged (realised VAC-d at the reserve price).

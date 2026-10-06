@@ -27,8 +27,10 @@ import { randomUUID } from 'node:crypto'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { assignedOf, interactiveReservePriceOf, reservePriceOf } from '@ph-dsp/types'
+import { guaranteedImpressions } from '../../domain/guarantee'
+import { dspDealTerms } from '../../dsp/dealTerms'
 import { termStateAt } from '../../billing/term'
-import { assignmentOf, closesAtFor, effectivePartnerIds, findPosition, heldFor, opensAtFor, unsellableReason, windowHoursFor, windowStartOf } from '../../domain/positions'
+import { assignmentOf, assumedViewsPerWindow, closesAtFor, effectivePartnerIds, findPosition, heldFor, opensAtFor, unsellableReason, windowHoursFor, windowStartOf } from '../../domain/positions'
 import { checkAdvertiser, checkCampaign, checkFloor, checkTargeting, checkVersionCount, firstRefusal } from '../../exchange/enforcement'
 import { handOff } from '../../exchange/handoff'
 import { auctionClaimed } from '../../exchange/scheduler'
@@ -37,10 +39,13 @@ import { type ReservationRecord, TAKEN } from '../../repos/ReservationRepo'
 import { partnerAdvertiser } from './campaigns'
 import { isUniqueViolation, tx } from '../../db/db'
 
-interface Body { positionId?: unknown; windowStart?: unknown; campaignId?: unknown; advertiserId?: unknown; type?: unknown; bidCpm?: unknown }
+interface Body { positionId?: unknown; windowStart?: unknown; campaignId?: unknown; advertiserId?: unknown; type?: unknown; bidCpm?: unknown; dealType?: unknown }
 
-export const reservationView = (r: ReservationRecord) => ({
+export const reservationView = (r: ReservationRecord, provider?: string) => ({
   reservationId: r.id, status: r.status, clearingCpm: r.clearingCpm, currency: r.currency, reason: r.reason,
+  /* Guaranteed deal path: preferred holds the price with no volume; guaranteed commits guaranteedImpressions, which the DSP is sent as its guaranteed unit count. */
+  dealType: r.dealType ?? 'preferred', forecastImpressions: r.forecastImpressions ?? null, guaranteedImpressions: r.guaranteedImpressions ?? null,
+  dspDeal: r.type === 'reserve' && provider ? dspDealTerms(provider, r.dealType ?? 'preferred', r.guaranteedImpressions ?? null) : null,
   /* Snapshotted when the window cleared (ErN9Q2Q1, 30 Sep): a personalised play bills at the clearing CPM times this. Null until then. */
 })
 
@@ -56,6 +61,9 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
     const seat = typeof b.advertiserId === 'string' ? partnerAdvertiser(partner, b.advertiserId) : null
     if (!seat) invalid.push({ field: 'advertiserId', reason: `Not an advertiser on ${partner.name}.` })
     if (b.type !== 'reserve' && b.type !== 'bid') invalid.push({ field: 'type', reason: 'reserve or bid.' })
+    /* preferred (the default) is the existing no-volume reserve; guaranteed commits a volume and only makes sense on a reserve. */
+    if (b.dealType !== undefined && b.dealType !== 'preferred' && b.dealType !== 'guaranteed') invalid.push({ field: 'dealType', reason: 'preferred or guaranteed.' })
+    else if (b.dealType === 'guaranteed' && b.type !== 'reserve') invalid.push({ field: 'dealType', reason: 'Only a reserve can be guaranteed; a bid is not a commitment to a window.' })
     /* The bid, or the reservation price agreed through the DSP (Q11). */
     if (!(typeof b.bidCpm === 'number' && Number.isFinite(b.bidCpm) && b.bidCpm > 0)) invalid.push({ field: 'bidCpm', reason: b.type === 'reserve' ? 'The agreed reservation price (CPM) is required.' : 'A CPM greater than 0 is required to bid.' })
     /* The same ceiling a DSP's bid gets (auction.ts): a price no real
@@ -128,6 +136,10 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
     if (refusal) throw new HttpError(422, refusal.code, refusal.reason)
 
     const reserved = b.type === 'reserve'
+    /* Guaranteed: the forecast for this window (plays x VAC-d, as billing realises it), less the retailer's contingency buffer. */
+    const dealType = reserved && b.dealType === 'guaranteed' ? 'guaranteed' : 'preferred'
+    const forecast = dealType === 'guaranteed' ? await assumedViewsPerWindow(ctx, pos) : null
+    const committed = forecast === null ? null : guaranteedImpressions(forecast, company.guaranteeBufferPct)
     /* Booked at the reserve price when the position has one (OQ52), else
        at the price agreed through the DSP (Q11). */
     const rate = reserved && reservePrice !== null ? reservePrice : (b.bidCpm as number)
@@ -143,6 +155,7 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
         status: reserved ? 'reserved' : 'pending', clearingCpm: reserved ? rate : null,
         reason: reserved && reservePrice !== null ? `Reserved at the reserve price (${rate} ${company.currency} CPM), outside the open auction.` : null,
         testMode: !live, pricingType: c.pricingType ?? null, handedOffAt: null,
+        dealType, forecastImpressions: forecast, guaranteedImpressions: committed,
         })
       } catch (e) {
         /* Two writes for one window racing past the checks above — from two
@@ -181,12 +194,12 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
     if (booked.withdrawn) throw conflict(booked.withdrawn)
     const r = booked.r
     /* A reservation is booked now, so it is handed off now. */
-    return reply.status(201).send(reservationView(reserved ? await handOff(ctx, r) : r))
+    return reply.status(201).send(reservationView(reserved ? await handOff(ctx, r) : r, partner.provider))
   })
 
   app.get<{ Params: { id: string } }>('/reservations/:id', async (req) => {
     const r = await ctx.reservations.get(req.params.id)
     if (!r || r.partnerId !== req.partner.id) throw notFound('Reservation not found.')
-    return reservationView(r)
+    return reservationView(r, req.partner.provider)
   })
 }

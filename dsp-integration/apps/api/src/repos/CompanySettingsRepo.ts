@@ -21,6 +21,9 @@ export interface CompanySettings {
   pendingPlayWindowEffectiveFrom: string | null
   categoryWhitelist: string[]
   categoryBlacklist: string[]
+  /* Guaranteed deals: the contingency haircut (percent, 0–50) taken off a window's forecast impressions
+     before the rest is committed as the guaranteed volume. Instance-wide; default 10. */
+  guaranteeBufferPct: number
 }
 export interface AdvertiserSettingRecord { approvalRequired: boolean; floorMultiplier: number }
 export type Access = 'all' | string[]
@@ -42,7 +45,7 @@ interface Row {
   currency: string; floor_cpm: number; interactive_cpe: number
   auction_opens_hours: number; play_window_hours: number; auction_cutoff_time: string
   pending_play_window_hours: number | null; pending_play_window_effective_from: string | null
-  category_whitelist: string; category_blacklist: string
+  category_whitelist: string; category_blacklist: string; guarantee_buffer_pct: number
 }
 
 /* Freeze a snapshot (and the arrays inside it) so a caller can't mutate the
@@ -93,7 +96,7 @@ export function sqliteCompanySettingsRepo(db: Db): CompanySettingsRepo {
         currency: r.currency, floorCpm: r.floor_cpm, interactiveCpe: r.interactive_cpe,
         auctionOpensHours: r.auction_opens_hours, playWindowHours: r.play_window_hours, auctionCutoffTime: r.auction_cutoff_time,
         pendingPlayWindowHours: r.pending_play_window_hours, pendingPlayWindowEffectiveFrom: r.pending_play_window_effective_from,
-        categoryWhitelist: fromJson(r.category_whitelist, []), categoryBlacklist: fromJson(r.category_blacklist, []),
+        categoryWhitelist: fromJson(r.category_whitelist, []), categoryBlacklist: fromJson(r.category_blacklist, []), guaranteeBufferPct: r.guarantee_buffer_pct,
       })
     }
     return c.company as CompanySettings
@@ -115,11 +118,11 @@ export function sqliteCompanySettingsRepo(db: Db): CompanySettingsRepo {
       prepared(db,
         `UPDATE company_advertiser_settings SET currency = ?, floor_cpm = ?, interactive_cpe = ?,
            auction_opens_hours = ?, play_window_hours = ?, auction_cutoff_time = ?, pending_play_window_hours = ?, pending_play_window_effective_from = ?,
-           category_whitelist = ?, category_blacklist = ?, updated_at = ? WHERE id = ?`,
+           category_whitelist = ?, category_blacklist = ?, guarantee_buffer_pct = ?, updated_at = ? WHERE id = ?`,
       ).run(
         s.currency, s.floorCpm, s.interactiveCpe, s.auctionOpensHours, s.playWindowHours, s.auctionCutoffTime,
         s.pendingPlayWindowHours, s.pendingPlayWindowEffectiveFrom,
-        toJson(s.categoryWhitelist) ?? '[]', toJson(s.categoryBlacklist) ?? '[]', now(), ID,
+        toJson(s.categoryWhitelist) ?? '[]', toJson(s.categoryBlacklist) ?? '[]', s.guaranteeBufferPct, now(), ID,
       )
       invalidate()
       return get()

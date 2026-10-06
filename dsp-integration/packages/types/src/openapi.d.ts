@@ -1397,6 +1397,12 @@ export interface components {
             advertiserId: string;
             /** @enum {string} */
             type: "reserve" | "bid";
+            /**
+             * @description Only for type reserve. preferred (default) holds the window at the reserve price with no volume; guaranteed also commits the forecast (plays x VAC-d) less the contingency buffer.
+             * @default preferred
+             * @enum {string}
+             */
+            dealType?: "preferred" | "guaranteed";
             /** @description The CPM, in the company currency, at most 10,000. For type bid, the bid, which must clear the effective floor. For type reserve on a position with a reservePrice, the buyer's commitment: it must be at least the reservePrice (validation_failed otherwise), and the booking is made at the reservePrice itself, which must clear the effective floor. For type reserve on a named-advertiser position with no reservePrice, the price agreed through the DSP: it must clear the effective floor, and the booking is made at it. */
             bidCpm: number;
         };
@@ -1407,6 +1413,18 @@ export interface components {
             clearingCpm?: number | null;
             currency?: string;
             reason?: string | null;
+            /** @enum {string} */
+            dealType?: "preferred" | "guaranteed";
+            forecastImpressions?: number | null;
+            guaranteedImpressions?: number | null;
+            dspDeal?: {
+                /** @enum {string} */
+                dealType?: "preferred" | "guaranteed";
+                dspDealKind?: string;
+                unitCount?: number | null;
+                /** @enum {string|null} */
+                unit?: "impressions" | null;
+            } | null;
         };
         Exchange: components["schemas"]["ExchangeInput"] & {
             /** @description Switched on and all four fields complete: sellers.json is live and DSPs are sent bid requests. */
@@ -1462,6 +1480,11 @@ export interface components {
             /** @description IAB categories, chosen from the IAB taxonomy (free text is refused, 422). One list for every DSP. */
             categoryWhitelist: string[];
             categoryBlacklist: string[];
+            /**
+             * @description Guaranteed deals: contingency percent taken off a window's forecast impressions before the rest is committed. Optional on save.
+             * @default 10
+             */
+            guaranteeBufferPct?: number;
         };
         AdvertiserSettings: components["schemas"]["AdvertiserSettingsInput"] & {
             /**

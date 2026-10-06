@@ -1859,6 +1859,7 @@ components:
         campaignId: {type: string}
         advertiserId: {type: string}
         type: {type: string, enum: [reserve, bid]}
+        dealType: {type: string, enum: [preferred, guaranteed], default: preferred, description: 'Only for type reserve. preferred (the default, unchanged) holds the premium window at the reserve price with no volume promised. guaranteed also commits a delivery volume: the window''s forecast impressions (plays x VAC-d) less the retailer''s contingency buffer, returned as guaranteedImpressions and sent to the DSP as the guaranteed unit count in dspDeal. Refused (validation_failed) with type bid.'}
         bidCpm: {type: number, exclusiveMinimum: 0, maximum: 10000, description: 'The CPM, in the company currency, at most 10,000. For type bid, the bid, which must clear the effective floor. For type reserve on a position with a reservePrice, the buyer''s commitment: it must be at least the reservePrice (validation_failed otherwise), and the booking is made at the reservePrice itself, which must clear the effective floor. For type reserve on a named-advertiser position with no reservePrice, the price agreed through the DSP: it must clear the effective floor, and the booking is made at it.'}
     Reservation:
       type: object
@@ -1869,6 +1870,17 @@ components:
         clearingCpm: {type: [number, 'null']}
         currency: {type: string}
         reason: {type: [string, 'null']}
+        dealType: {type: string, enum: [preferred, guaranteed], description: 'preferred: price held, no volume. guaranteed: guaranteedImpressions is committed.'}
+        forecastImpressions: {type: [integer, 'null'], description: 'Guaranteed only: the window''s forecast (plays x VAC-d audience).'}
+        guaranteedImpressions: {type: [integer, 'null'], description: 'Guaranteed only: the forecast less the contingency buffer; the committed volume.'}
+        dspDeal:
+          type: [object, 'null']
+          description: 'How the deal is expressed to the buying DSP: DV360 Programmatic Guaranteed or Amazon guaranteed deal (unitCount = guaranteedImpressions), or a preferred deal with no volume.'
+          properties:
+            dealType: {type: string, enum: [preferred, guaranteed]}
+            dspDealKind: {type: string}
+            unitCount: {type: [integer, 'null']}
+            unit: {type: [string, 'null'], enum: [impressions, null]}
 
     Exchange:
       allOf:
@@ -1909,6 +1921,7 @@ components:
         interactiveCpe: {type: number, minimum: 0, multipleOf: 0.01, default: 0.5, description: 'Interactive cost per engagement: what an advertiser pays each time someone engages with an interactive campaign (a QR Control scan), on top of the CPM. To the cent; 0 means engagements are not charged for.'}
         categoryWhitelist: {type: array, items: {type: string}, description: 'IAB categories, chosen from the IAB taxonomy (free text is refused, 422). One list for every DSP.'}
         categoryBlacklist: {type: array, items: {type: string}}
+        guaranteeBufferPct: {type: number, minimum: 0, maximum: 50, default: 10, description: 'Guaranteed deals: the contingency (percent, for screen downtime) taken off a window''s forecast impressions (plays x VAC-d audience) before the remainder is committed as the guaranteed volume. Instance-wide. Optional on save: omitted keeps the stored value.'}
     AdvertiserSettings:
       allOf:
         - $ref: '#/components/schemas/AdvertiserSettingsInput'
