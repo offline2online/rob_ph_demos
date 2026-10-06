@@ -1181,58 +1181,89 @@ function dispatchRebuilds(branch, paths, label) {
   return dispatched;
 }
 
-// ── Console tests on every train push, not only at Deploy to Main ───────────
-// The train PR's "rules" check (firestore-rules-test.yml: app boot, sign-in,
-// MCP and rules suites) used to run for the first time when Deploy to Main
-// opened the PR — after every ticket on the train had been tested and
+// ── Train tests on every train push, not only at Deploy to Main ─────────────
+// A train PR's required check used to run for the first time when Deploy to
+// Main opened the PR — after every ticket on the train had been tested and
 // approved. On 3 Oct 2026 (PR #301) a ticket gave auth-gate.js an import
 // the sign-in test harness didn't expect; all 15 scenarios failed, and it
-// surfaced only as a refused deploy.
+// surfaced only as a refused deploy. On 6 Oct 2026 (PR #330) the same thing
+// happened to the DSP train: ticket zhHpMXphZs0r0CK3mn8X named a DSP outside
+// dsp/, e2e-quick's architecture test failed, and nine approved tickets sat
+// behind a "conflict" train for a failure nobody had been shown — the fix
+// below had only ever been wired for backlog-tracker/.
 //
 // A workflow-file change can't fix that: a push made with this run's
 // GITHUB_TOKEN never triggers another workflow's `push` event (GitHub's own
 // loop guard), and a train carrying a workflow change is left for a person
-// to merge. workflow_dispatch IS allowed from GITHUB_TOKEN and the test
-// workflow already accepts it — so this script starts the run itself
-// against the train branch whenever a ticket lands there, and
-// reportTrainTestResults() notes a failure on the train's cards while they
-// are still in Ready for Testing.
-const CONSOLE_TEST_WORKFLOW = "firestore-rules-test.yml";
+// to merge. workflow_dispatch IS allowed from GITHUB_TOKEN and each test
+// workflow accepts it — so this script starts the run itself against the
+// train branch whenever a ticket lands there, and reportTrainTestResults()
+// notes a failure on the train's cards while they are still in Ready for
+// Testing. One entry per project folder whose train has a required check.
+const TRAIN_TEST_WORKFLOWS = [
+  { workflow: "firestore-rules-test.yml", prefix: "backlog-tracker/", label: "console tests" },
+  { workflow: "e2e-quick.yml", prefix: "dsp-integration/", label: "DSP tests (e2e-quick)" },
+];
+const CONSOLE_TEST_WORKFLOW = TRAIN_TEST_WORKFLOWS[0].workflow;
 
-function touchesConsoleTests(paths) {
-  return (paths || []).some((p) => typeof p === "string" && p.startsWith("backlog-tracker/"));
+// The test workflows a change to these paths needs run. Generated build
+// output alone (a prototype rebuild) starts nothing: its source already did.
+function trainTestsFor(paths) {
+  const changed = (paths || []).filter((p) => typeof p === "string" && !isGeneratedOutput(p));
+  return TRAIN_TEST_WORKFLOWS.filter((t) => changed.some((p) => p.startsWith(t.prefix)));
 }
+const touchesConsoleTests = (paths) => trainTestsFor(paths).some((t) => t.workflow === CONSOLE_TEST_WORKFLOW);
 
-function dispatchConsoleTests(branch, paths, label) {
-  if (!touchesConsoleTests(paths)) return false;
-  try {
-    run("gh", ["workflow", "run", CONSOLE_TEST_WORKFLOW, "--repo", REPO, "--ref", branch]);
-    console.log(`[${label}] started ${CONSOLE_TEST_WORKFLOW} on ${branch}`);
-    return true;
-  } catch (err) {
-    console.log(`[${label}] couldn't start ${CONSOLE_TEST_WORKFLOW} on ${branch} (${scrubSecrets(err.message)}) — the train PR still runs it at Deploy to Main`);
-    return false;
+// Starts each needed test workflow on `branch`. Never throws. Returns the
+// entries started, so the caller's note can say so.
+function dispatchTrainTests(branch, paths, label) {
+  const started = [];
+  for (const t of trainTestsFor(paths)) {
+    try {
+      run("gh", ["workflow", "run", t.workflow, "--repo", REPO, "--ref", branch]);
+      console.log(`[${label}] started ${t.workflow} on ${branch}`);
+      started.push(t);
+    } catch (err) {
+      console.log(`[${label}] couldn't start ${t.workflow} on ${branch} (${scrubSecrets(err.message)}) — the train PR still runs it at Deploy to Main`);
+    }
   }
+  return started;
 }
 
 // Which of a train's Ready for Testing cards to tell about a failed run.
 // Pure, for test/train-tests.test.js.
 //   testRun: newest run on the branch, { headSha, status, conclusion, url } or null
-//   head:    the branch's current head sha
-//   cards:   the train's Ready for Testing cards ({ id, testsFailedSha })
-// Only a completed, failed run on the CURRENT head counts (an older head's
-// failure may already be fixed), and each card is told once per head.
-function trainTestFailureTargets(testRun, head, cards) {
+//   head:    the commit that run has to have tested to still count — the
+//            branch's head, or (see testedHeadOf) the last commit before a
+//            prototype rebuild that changed only generated output
+//   cards:   the train's Ready for Testing cards ({ id, testsFailedShas })
+// Only a completed, failed run on that commit counts (an older head's
+// failure may already be fixed), and each card is told once per head and
+// workflow.
+function trainTestFailureTargets(testRun, head, cards, workflow = CONSOLE_TEST_WORKFLOW) {
   if (!testRun || !head || testRun.headSha !== head) return [];
   if (String(testRun.status).toLowerCase() !== "completed") return [];
   if (!["failure", "timed_out", "startup_failure"].includes(String(testRun.conclusion).toLowerCase())) return [];
-  return (cards || []).filter((c) => c.testsFailedSha !== head);
+  const key = `${workflow}@${head}`;
+  return (cards || []).filter((c) => !(c.testsFailedShas || []).includes(key) && !(workflow === CONSOLE_TEST_WORKFLOW && c.testsFailedSha === head));
+}
+
+// The DSP train's head is usually a "Rebuild the hosted prototype" commit
+// that dsp-prototype.yml pushed on top of the ticket (with GITHUB_TOKEN, so
+// it starts no tests of its own). A run on the ticket's commit still speaks
+// for that head when everything since it is generated build output. Pure:
+// `changedSince` is the file list between the run's commit and the head
+// (null when GitHub says the run's commit isn't behind the head at all).
+function testedHeadOf(runSha, head, changedSince) {
+  if (!runSha || runSha === head) return head;
+  if (!Array.isArray(changedSince) || !changedSince.length) return head;
+  return changedSince.every((p) => isGeneratedOutput(p)) ? runSha : head;
 }
 
 async function reportTrainTestResults() {
   const cards = await runQuery({
     from: [{ collectionId: "backlogItems" }],
-    select: { fields: ["deployBranch", "deployCommit", "testsFailedSha", "notes"].map((fieldPath) => ({ fieldPath })) },
+    select: { fields: ["deployBranch", "deployCommit", "testsFailedSha", "testsFailedShas", "notes"].map((fieldPath) => ({ fieldPath })) },
     where: { fieldFilter: { field: { fieldPath: "status" }, op: "EQUAL", value: { stringValue: "ready-for-testing" } } },
   });
   const byBranch = new Map();
@@ -1242,21 +1273,41 @@ async function reportTrainTestResults() {
     byBranch.get(c.deployBranch).push(c);
   }
   for (const [branch, trainCards] of byBranch) {
+    let head;
     try {
-      const head = run("gh", ["api", `repos/${REPO}/branches/${encodeURIComponent(branch)}`, "-q", ".commit.sha"]);
-      const runs = JSON.parse(run("gh", ["run", "list", "--repo", REPO, "--workflow", CONSOLE_TEST_WORKFLOW, "--branch", branch,
-        "--limit", "1", "--json", "headSha,status,conclusion,url"]) || "[]");
-      const targets = trainTestFailureTargets(runs[0] || null, head, trainCards);
-      for (const card of targets) {
-        const notes = await appendNote(card,
-          `The console tests (${CONSOLE_TEST_WORKFLOW}) FAILED on this train's current head ${head.slice(0, 7)}: ${runs[0].url} — ` +
-          `the same check Deploy to Main waits on, so the train will not merge until it is green. ` +
-          `If this ticket caused it, use Failed testing; otherwise look at the other tickets on ${branch}.`);
-        await patchItem(card.id, { notes, testsFailedSha: head, updatedAt: new Date().toISOString() });
-      }
-      if (targets.length) console.log(`[train-tests] ${branch}: tests red on ${head.slice(0, 7)} — noted on ${targets.length} card(s)`);
+      head = run("gh", ["api", `repos/${REPO}/branches/${encodeURIComponent(branch)}`, "-q", ".commit.sha"]);
     } catch (err) {
-      console.log(`[train-tests] ${branch}: couldn't read the test result (${scrubSecrets(err.message)})`);
+      console.log(`[train-tests] ${branch}: couldn't read the branch head (${scrubSecrets(err.message)})`);
+      continue;
+    }
+    for (const t of TRAIN_TEST_WORKFLOWS) {
+      try {
+        const runs = JSON.parse(run("gh", ["run", "list", "--repo", REPO, "--workflow", t.workflow, "--branch", branch,
+          "--limit", "1", "--json", "headSha,status,conclusion,url"]) || "[]");
+        const testRun = runs[0] || null;
+        if (!testRun) continue;
+        let changedSince = null;
+        if (testRun.headSha && testRun.headSha !== head) {
+          const cmp = JSON.parse(run("gh", ["api", `repos/${REPO}/compare/${testRun.headSha}...${head}`,
+            "-q", "{status: .status, files: [.files[].filename]}"]) || "{}");
+          if (cmp.status === "ahead") changedSince = cmp.files || [];
+        }
+        const tested = testedHeadOf(testRun.headSha, head, changedSince);
+        const targets = trainTestFailureTargets(testRun, tested, trainCards, t.workflow);
+        for (const card of targets) {
+          const notes = await appendNote(card,
+            `The ${t.label} (${t.workflow}) FAILED on this train at ${tested.slice(0, 7)}: ${testRun.url} — ` +
+            `the same check Deploy to Main waits on, so the train will not merge until it is green. ` +
+            `If this ticket caused it, use Failed testing; otherwise look at the other tickets on ${branch}.`);
+          card.notes = notes;
+          const testsFailedShas = (card.testsFailedShas || []).concat([`${t.workflow}@${tested}`]).slice(-20);
+          card.testsFailedShas = testsFailedShas;
+          await patchItem(card.id, { notes, testsFailedShas, updatedAt: new Date().toISOString() });
+        }
+        if (targets.length) console.log(`[train-tests] ${branch}: ${t.workflow} red on ${tested.slice(0, 7)} — noted on ${targets.length} card(s)`);
+      } catch (err) {
+        console.log(`[train-tests] ${branch}: couldn't read the ${t.workflow} result (${scrubSecrets(err.message)})`);
+      }
     }
   }
 }
@@ -2092,7 +2143,7 @@ async function processApplyPatch(item) {
   // workflow rebuilds it (see GENERATED_BUILDS).
   const rebuilds = dispatchRebuilds(deployBranch, changedPaths, "apply-patch");
   // Run the console tests on the train now, not first at Deploy to Main.
-  const testsStarted = dispatchConsoleTests(deployBranch, changedPaths, "apply-patch");
+  const testsStarted = dispatchTrainTests(deployBranch, changedPaths, "apply-patch");
 
   // A train carrying a workflow-file change can't be merged by the pipeline
   // (see processDeployTrain): flag the project so the Deploy step leaves the
@@ -2124,7 +2175,7 @@ async function processApplyPatch(item) {
       ? ` Note: ${movedPaths.length} of this patch's paths were relative to the project's folder rather than the repo root (${movedPaths.map((m) => m.from).join(", ")}) and were placed under ${projectFolderOf(project)}/ — patchFiles paths must start at the repo root.`
       : "") +
     rebuildNote(rebuilds, sha) +
-    (testsStarted ? ` The console tests (${CONSOLE_TEST_WORKFLOW}) were started on the train; a failure will be noted here.` : "") +
+    (testsStarted.length ? ` The ${testsStarted.map((t) => `${t.label} (${t.workflow})`).join(" and ")} ${testsStarted.length === 1 ? "was" : "were"} started on the train; a failure will be noted here.` : "") +
     (workflowPaths.length
       ? ` This ticket changes ${workflowPaths.join(", ")}, so it was pushed with the workflow-push App token and the train's deploy PR will NOT be merged by the pipeline — a person has to review and merge it on GitHub.`
       : "")
@@ -3838,7 +3889,7 @@ module.exports = {
   // test/train-resume.test.js — GitHub-side cancellations re-run; red trains resume when green
   isInfraCheck, rerunInfraChecks, resumeRedTrains, TRAIN_CI_INFRA_RERUNS,
   // test/train-tests.test.js — console tests run on each train push
-  trainTestFailureTargets, touchesConsoleTests,
+  trainTestFailureTargets, touchesConsoleTests, trainTestsFor, testedHeadOf,
   // test/parallel-builds.test.js — patches built in parallel
   patchBaseFor, dependenciesLanded, buildRequestFields, migrationNumberClashes,
   // test/train-follow-up.test.js — a train waiting on CI starts its own next run

@@ -1,8 +1,9 @@
-// Console tests run on every train push, and a failure reaches the cards
+// Train tests run on every train push, and a failure reaches the cards
 // while they are still in Ready for Testing — not first as a refused Deploy
-// to Main (PR #301, 3 Oct 2026). Drives the pure decision function.
+// to Main (PR #301, 3 Oct 2026; for the DSP train's e2e-quick, PR #330,
+// 6 Oct 2026). Drives the pure decision functions.
 const assert = require("assert");
-const { trainTestFailureTargets, touchesConsoleTests } = require("../scripts/run-backlog-automation.js");
+const { trainTestFailureTargets, touchesConsoleTests, trainTestsFor, testedHeadOf } = require("../scripts/run-backlog-automation.js");
 
 const HEAD = "aaaaaaa1111111";
 const cards = [{ id: "c1" }, { id: "c2", testsFailedSha: HEAD }, { id: "c3", testsFailedSha: "old" }];
@@ -16,6 +17,14 @@ const cases = [
   ["timed out counts as a failure", trainTestFailureTargets({ ...failed, conclusion: "timed_out" }, HEAD, [{ id: "c1" }]).map((c) => c.id), ["c1"]],
   ["a backlog-tracker path starts the tests", touchesConsoleTests(["backlog-tracker/public/js/app.js"]), true],
   ["a faq-only or other project's change doesn't", touchesConsoleTests(["faq/index.html", "dsp-integration/x.ts"]), false],
+  ["a dsp-integration source change starts e2e-quick", trainTestsFor(["dsp-integration/apps/api/src/exchange/openrtb.ts"]).map((t) => t.workflow), ["e2e-quick.yml"]],
+  ["a prototype rebuild alone starts nothing", trainTestsFor(["dsp-integration/prototype/assets/index.js", "dsp-integration/prototype/build-info.json"]), []],
+  ["a change to both projects starts both", trainTestsFor(["backlog-tracker/x.js", "dsp-integration/y.ts"]).map((t) => t.workflow), ["firestore-rules-test.yml", "e2e-quick.yml"]],
+  ["e2e-quick red: told once per workflow and head", trainTestFailureTargets(failed, HEAD, [{ id: "d1" }, { id: "d2", testsFailedShas: [`e2e-quick.yml@${HEAD}`] }, { id: "d3", testsFailedSha: HEAD }], "e2e-quick.yml").map((c) => c.id), ["d1", "d3"]],
+  ["run on the head itself: the head", testedHeadOf(HEAD, HEAD, null), HEAD],
+  ["only a prototype rebuild since the run: the run still speaks for the head", testedHeadOf("tick", HEAD, ["dsp-integration/prototype/index.html", "dsp-integration/apps/admin/public/demo/api-snapshot.json"]), "tick"],
+  ["a source change since the run: stale, the head", testedHeadOf("tick", HEAD, ["dsp-integration/prototype/index.html", "dsp-integration/apps/api/src/x.ts"]), HEAD],
+  ["run not behind the head (diverged): the head", testedHeadOf("tick", HEAD, null), HEAD],
 ];
 let failedCount = 0;
 for (const [label, got, want] of cases) {

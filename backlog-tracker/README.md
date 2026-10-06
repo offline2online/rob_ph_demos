@@ -251,6 +251,16 @@ What the train changes:
   just another commit — `deployCommits[]` grows, history is never
   rewritten. If the push is rejected because another ticket landed in
   between, the patch is re-applied on the new head and retried once.
+  **The train's required check runs as soon as a ticket lands, not first
+  at Deploy to Main** (`TRAIN_TEST_WORKFLOWS`): the automation's pushes use
+  `GITHUB_TOKEN`, which never fires another workflow's `push` trigger, so
+  it dispatches `firestore-rules-test.yml` for a `backlog-tracker/` change
+  and `e2e-quick.yml` for a `dsp-integration/` change itself, and
+  `reportTrainTestResults` notes a red run on every Ready for Testing card
+  on that train. A DSP prototype rebuild on top of the ticket doesn't hide
+  it (`testedHeadOf`). The DSP half was added 6 Oct 2026 after PR #330 —
+  nine approved tickets blocked at deploy by an e2e-quick failure no card
+  had shown. Tests: `test/train-tests.test.js`.
 - **Reject** (`processRevertFromTrain`) — Failed testing on a card writes
   `revertRequested`, and the automation reverts that card's commits back
   off the branch. **A card in Backlog must never have live commits on a
