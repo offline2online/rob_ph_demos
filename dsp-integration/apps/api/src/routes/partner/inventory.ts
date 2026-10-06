@@ -6,6 +6,7 @@
      POST /v1/inventory/forecast */
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
+import { TRANSACTING_CURRENCY } from '../../domain/currency'
 import { type Caller, type PositionRef, type WindowStatus, allPositions, assumedViewsPerWindow, callerOf, findPosition, longestWindowMs, nextWindow, positionView, visibilityFor, windowFacts, windowMs, windowStatus, windowsBetween, windowsCovering } from '../../domain/positions'
 import { effectiveFloorCpm } from '../../domain/pricing'
 import { andThen } from '../../db/db'
@@ -173,6 +174,6 @@ export const inventoryRoutes = (ctx: Context): FastifyPluginAsync => async (app)
     const company = await ctx.company.get()
     const multiplier = c.advertiser ? (await ctx.company.advertiserSetting(c.advertiser.id)).floorMultiplier : 1
     const cpm = effectiveFloorCpm(company, multiplier)
-    return { assumedViews, currency: company.currency, estimatedCost: Math.round((assumedViews / 1000) * cpm * 100) / 100 }
+    return { assumedViews, currency: TRANSACTING_CURRENCY, estimatedCost: Math.round((assumedViews / 1000) * cpm * 100) / 100 }
   })
 }

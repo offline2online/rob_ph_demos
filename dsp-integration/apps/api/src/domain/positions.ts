@@ -4,6 +4,7 @@
    permissioning is a smaller list, never a rejected request. */
 import type { DisplayType, Slot } from '@ph-dsp/types'
 import type { Context } from '../context'
+import { TRANSACTING_CURRENCY } from './currency'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 import { type Awaitable, allOf, andThen } from '../db/db'
 import { type ReservationStatus, TAKEN } from '../repos/ReservationRepo'
@@ -478,7 +479,7 @@ function viewOf(
        caller who is told so, since inventory excludes such positions. */
     scored: audience.scored,
     /* One floor for every campaign type; no personalised price (Rob, 5 Oct 2026). */
-    pricing: { currency: company.currency, floorCpm: company.floorCpm, effectiveFloorCpm: { localised: effectiveFloorCpm(company, multiplier) } },
+    pricing: { currency: TRANSACTING_CURRENCY, floorCpm: company.floorCpm, effectiveFloorCpm: { localised: effectiveFloorCpm(company, multiplier) } },
     /* The most campaigns (default + targeted versions) a bid or reservation here may carry. */
     maxCampaigns: maxCampaignsOf(dt, p.def),
     reservePrice: reservePriceOf(dt, p.def),

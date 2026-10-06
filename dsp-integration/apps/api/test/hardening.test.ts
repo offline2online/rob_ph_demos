@@ -64,7 +64,7 @@ describe('one live sale per position and window', () => {
     const { ctx } = await setup()
     const row = (over: Record<string, unknown>) => ({
       id: `res_${Math.random().toString(16).slice(2, 10)}`, partnerId: 'p_google', advertiserId: 'nestle', campaignId: null, positionId: POS,
-      windowStart: W2.toISOString(), type: 'bid' as const, channel: 'openrtb' as const, bidCpm: 150, currency: 'AUD', status: 'won' as const,
+      windowStart: W2.toISOString(), type: 'bid' as const, channel: 'openrtb' as const, bidCpm: 150, currency: 'USD', status: 'won' as const,
       clearingCpm: 150, reason: null, testMode: false, pricingType: 'localised', handedOffAt: null, ...over,
     })
     await ctx.reservations.insert(row({}))
@@ -79,7 +79,7 @@ describe('migration 0021 on a database that already sold a window twice', () => 
     const db = openDb(':memory:')
     migrateUp(db, '0020')
     const res = db.prepare(`INSERT INTO reservations (id, partner_id, position_id, window_start, type, channel, currency, status, test_mode, created_at, updated_at)
-      VALUES (?, 'p_google', 'menu_board.s2', '2026-09-22T00:00:00.000Z', 'bid', 'openrtb', 'AUD', ?, ?, ?, ?)`)
+      VALUES (?, 'p_google', 'menu_board.s2', '2026-09-22T00:00:00.000Z', 'bid', 'openrtb', 'USD', ?, ?, ?, ?)`)
     res.run('r1', 'won', 0, '2026-09-20T18:00:00.000Z', '2026-09-20T18:00:00.000Z')
     res.run('r2', 'won', 0, '2026-09-20T18:00:01.000Z', '2026-09-20T18:00:01.000Z')
     res.run('r3', 'won', 1, '2026-09-20T18:00:02.000Z', '2026-09-20T18:00:02.000Z')
@@ -103,7 +103,7 @@ describe('bid responses are validated before they are trusted', () => {
     hooks.rewrite = (res) => ({ ...res, cur: undefined })
     const out = await runAuction(ctx, W2)
     expect(out.positions[0].winner).toBeNull()
-    expect((await rows(W2))[0]).toMatchObject({ status: 'rejected', reason: 'Bid names no currency; the exchange trades in AUD and does not convert.' })
+    expect((await rows(W2))[0]).toMatchObject({ status: 'rejected', reason: 'Bid names no currency; the exchange trades in USD and does not convert.' })
   })
 
   it('rejects a price above the ceiling and a bid for an impression it was not offered', async () => {
@@ -111,7 +111,7 @@ describe('bid responses are validated before they are trusted', () => {
     await readyToWin()
     hooks.rewrite = (res) => ({ ...res, seatbid: res.seatbid!.map((sb) => ({ ...sb, bid: sb.bid!.map((b) => ({ ...b, price: 1e9 })) })) })
     await runAuction(ctx, W2)
-    expect((await rows(W2))[0].reason).toBe('Bid of 1000000000 AUD CPM is above the exchange\'s ceiling of 10000.')
+    expect((await rows(W2))[0].reason).toBe('Bid of 1000000000 USD CPM is above the exchange\'s ceiling of 10000.')
     const W3 = new Date('2026-09-23T00:00:00.000Z')
     hooks.rewrite = (res) => ({ ...res, seatbid: res.seatbid!.map((sb) => ({ ...sb, bid: sb.bid!.map((b) => ({ ...b, impid: '7' })) })) })
     await runAuction(ctx, W3)

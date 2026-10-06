@@ -3,6 +3,7 @@
    and category lists, and creative approval, all applied before a bid can
    win. Used by POST /v1/reservations and by the auction for DSP bids. */
 import type { Context } from '../context'
+import { TRANSACTING_CURRENCY } from '../domain/currency'
 import { assignedOf, maxCampaignsOf, supportedTargetingOf, targetingLabel } from '@ph-dsp/types'
 import { type PositionRef, assignmentOf } from '../domain/positions'
 import { isInvitedBuyer } from '../domain/buyersLists'
@@ -113,5 +114,5 @@ export async function floorFor(ctx: Context, advertiserId: string | null | undef
 
 export async function checkFloor(ctx: Context, cpm: number, advertiserId: string | null | undefined): Promise<Refusal | null> {
   const floor = await floorFor(ctx, advertiserId)
-  return cpm >= floor ? null : { code: 'below_floor', reason: `${cpm} is below the effective floor of ${floor} ${(await ctx.company.get()).currency} CPM.` }
+  return cpm >= floor ? null : { code: 'below_floor', reason: `${cpm} is below the effective floor of ${floor} ${TRANSACTING_CURRENCY} CPM.` }
 }

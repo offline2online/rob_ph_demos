@@ -124,7 +124,7 @@ describe.skipIf(nearMidnight)('two API processes and three ticks on one database
     expect(lines.filter((l) => /failed/i.test(l))).toEqual([])
     for (const port of ports) {
       expect((await (await api(port, 'GET', `/api/v1/reservations/${swisseId}`)).json())).toMatchObject({ status: 'won', clearingCpm: 200 })
-      expect((await (await api(port, 'GET', `/api/v1/reservations/${nestleId}`)).json())).toMatchObject({ status: 'lost', reason: 'Outbid: the window cleared at 200 AUD CPM.' })
+      expect((await (await api(port, 'GET', `/api/v1/reservations/${nestleId}`)).json())).toMatchObject({ status: 'lost', reason: 'Outbid: the window cleared at 200 USD CPM.' })
     }
     const db = new DatabaseSync(env.PH_DB_FILE, { readOnly: true })
     expect(db.prepare('SELECT window_start, finished_at FROM auction_runs').all()).toMatchObject([{ window_start: window, finished_at: expect.any(String) }])

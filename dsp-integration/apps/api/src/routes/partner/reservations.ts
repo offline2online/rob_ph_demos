@@ -26,6 +26,7 @@
 import { randomUUID } from 'node:crypto'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
+import { TRANSACTING_CURRENCY } from '../../domain/currency'
 import { assignedOf, interactiveReservePriceOf, reservePriceOf } from '@ph-dsp/types'
 import { guaranteedImpressions } from '../../domain/guarantee'
 import { dspDealTerms } from '../../dsp/dealTerms'
@@ -90,7 +91,7 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
     /* A reserve-price commitment is at least the posted reserve price
        (OQ52); it is booked at the reserve price itself, below. */
     if (b.type === 'reserve' && reservePrice !== null && (b.bidCpm as number) < reservePrice) {
-      throw validationFailed([{ field: 'bidCpm', reason: `The reserve price for this position is ${reservePrice} ${company.currency} CPM; commit to at least that.` }])
+      throw validationFailed([{ field: 'bidCpm', reason: `The reserve price for this position is ${reservePrice} ${TRANSACTING_CURRENCY} CPM; commit to at least that.` }])
     }
     const now = ctx.clock().getTime()
     /* A reservation is made in advance of the open auction (spec §5
@@ -150,10 +151,10 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
       try {
         r = await ctx.reservations.insert({
         id: `res_${randomUUID().slice(0, 12)}`, partnerId: partner.id, advertiserId: c.advertiserId ?? null, campaignId: c.campaignId, positionId: pos.positionId, windowStart,
-        type: b.type as 'reserve' | 'bid', channel: 'api', bidCpm: b.bidCpm as number, currency: company.currency,
+        type: b.type as 'reserve' | 'bid', channel: 'api', bidCpm: b.bidCpm as number, currency: TRANSACTING_CURRENCY,
         /* A reservation is booked now at its rate; a bid waits for the auction. */
         status: reserved ? 'reserved' : 'pending', clearingCpm: reserved ? rate : null,
-        reason: reserved && reservePrice !== null ? `Reserved at the reserve price (${rate} ${company.currency} CPM), outside the open auction.` : null,
+        reason: reserved && reservePrice !== null ? `Reserved at the reserve price (${rate} ${TRANSACTING_CURRENCY} CPM), outside the open auction.` : null,
         testMode: !live, pricingType: c.pricingType ?? null, handedOffAt: null,
         dealType, forecastImpressions: forecast, guaranteedImpressions: committed,
         })

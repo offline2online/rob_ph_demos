@@ -8,6 +8,7 @@
    and never touches a window someone else has taken. `seed()` runs it on a
    fresh database; `npm run db:bookings` adds them to one that is already
    running. */
+import { TRANSACTING_CURRENCY } from '../domain/currency'
 import { randomUUID } from 'node:crypto'
 import { advertiserSlug } from '@ph-dsp/types'
 import type { Context } from '../context'
@@ -63,7 +64,7 @@ export async function seedBookings(ctx: Context) {
     .flatMap((p) => p.seats.map((s) => ({ partnerId: p.id, name: s.name, advertiserId: advertiserSlug(s.name), live: p.mode === 'live' })))
   if (!positions.length || !brands.length) return 0
 
-  const currency = (await ctx.company.get()).currency
+  const currency = TRANSACTING_CURRENCY
   let written = 0
 
   for (const [b, brand] of brands.entries()) {

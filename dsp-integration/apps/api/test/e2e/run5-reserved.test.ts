@@ -69,7 +69,7 @@ describe('Run 5 — reserved', () => {
     /* Below the 220 reserve price (though above the floor): refused. */
     const underReserve = await reserve(day(0), 150)
     expect(underReserve.statusCode).toBe(400)
-    expect(underReserve.json().error).toMatchObject({ code: 'validation_failed', details: [{ field: 'bidCpm', reason: 'The reserve price for this position is 220 AUD CPM; commit to at least that.' }] })
+    expect(underReserve.json().error).toMatchObject({ code: 'validation_failed', details: [{ field: 'bidCpm', reason: 'The reserve price for this position is 220 USD CPM; commit to at least that.' }] })
     /* Above it: booked at the reserve price, not at the bid. */
     const over = await reserve(day(0), 250)
     expect(over.statusCode).toBe(201)

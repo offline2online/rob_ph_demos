@@ -12,6 +12,7 @@
    keep the minimal base seed they can count (test/helpers.ts). Additive and
    idempotent, like bookings.ts: `npm run db:demo` adds it to a database that
    is already running, and a second run changes nothing. */
+import { TRANSACTING_CURRENCY } from '../domain/currency'
 import { randomUUID } from 'node:crypto'
 import { advertiserSlug, supportedTargetingOf, type DisplayTypeExtensions, type Slot } from '@ph-dsp/types'
 import type { Context } from '../context'
@@ -330,7 +331,7 @@ async function seedDemoBookings(ctx: Context) {
     const len = await windowMs(ctx, p)
     return { len, first: (await nextWindow(ctx, len)).getTime() }
   }
-  const currency = (await ctx.company.get()).currency
+  const currency = TRANSACTING_CURRENCY
   const insVacd = ctx.db.prepare('INSERT INTO audience_vacd (display_type_id, slot, assumed_views_per_window, counted) VALUES (?, ?, ?, 0)')
   for (const p of positions) {
     if ((await audienceOf(ctx.audience, p.displayType, p.slot)).assumedViewsPerWindow) continue

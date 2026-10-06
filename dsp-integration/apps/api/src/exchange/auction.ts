@@ -43,6 +43,7 @@
    each booked (and billed) as its own reservation. */
 import { randomUUID } from 'node:crypto'
 import type { Context } from '../context'
+import { TRANSACTING_CURRENCY } from '../domain/currency'
 import { bookLockedTermWindow, lockTermOnClear, termStateAt } from '../billing'
 import { isLive } from '../domain/exchange'
 import { type PositionRef, allPositions, assignmentOf, effectivePartnerIds, filterAsync, isSellable, nextWindow, positionView, windowMsFor, windowStartOf } from '../domain/positions'
@@ -283,7 +284,7 @@ async function clear(ctx: Context, candidates: ReservationRecord[]): Promise<Res
    advertiser blocklist is enforced here, on the bid, using the seat and
    advertiser identity in the response (spec §7). */
 async function recordDspBid(ctx: Context, p: PositionRef, dsp: PartnerRecord, start: string, res: BidResponse, seatId: string | undefined, bid: Bid, budget: { creativeFetches: number }): Promise<ReservationRecord> {
-  const currency = (await ctx.company.get()).currency
+  const currency = TRANSACTING_CURRENCY
   const base: ReservationRecord = {
     id: `res_${randomUUID().slice(0, 12)}`, partnerId: dsp.id, advertiserId: null, campaignId: null, positionId: p.positionId, windowStart: start,
     type: 'bid', channel: 'openrtb', bidCpm: typeof bid.price === 'number' ? bid.price : null, currency, status: 'pending', clearingCpm: null, reason: null,
@@ -291,11 +292,11 @@ async function recordDspBid(ctx: Context, p: PositionRef, dsp: PartnerRecord, st
   }
   const reject = async (reason: string, extra: Partial<ReservationRecord> = {}) => ctx.reservations.insert({ ...base, ...extra, status: 'rejected', reason })
 
-  /* Phase 1: one instance, one currency, no conversion. `cur` is a
-     validation check, never a conversion input: a bid in any other currency
-     is rejected, and so is one that names none (OpenRTB would read that as
-     USD; we do not guess, so a USD default can never clear an AUD floor, or
-     be taken for the instance currency). */
+  /* The exchange transacts in USD on every instance (domain/currency.ts):
+     DV360 and The Trade Desk bid USD only, so there is no conversion. `cur`
+     is a validation check, never a conversion input: a bid in any other
+     currency is rejected, and so is one that names none (OpenRTB would read
+     that as USD; we do not guess). */
   if (!res.cur) return reject(`Bid names no currency; the exchange trades in ${currency} and does not convert.`)
   if (res.cur !== currency) return reject(`Bid in ${res.cur}; the exchange trades in ${currency} and does not convert.`)
   if (!(typeof bid.price === 'number' && Number.isFinite(bid.price) && bid.price > 0)) return reject('No price on the bid.')

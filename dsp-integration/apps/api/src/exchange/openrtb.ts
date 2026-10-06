@@ -4,6 +4,7 @@
    object, and no visitor, Personalisation or Computer Vision data. */
 import { bidderTuning } from '../domain/partnerInput'
 import { IAB_CATEGORY_CODES } from '@ph-dsp/types'
+import { TRANSACTING_CURRENCY } from '../domain/currency'
 import type { Context } from '../context'
 import { type PositionRef, assignmentOf, positionView, windowMsFor } from '../domain/positions'
 import { assignedOf } from '@ph-dsp/types'
@@ -99,7 +100,7 @@ export async function buildBidRequest(ctx: Context, p: PositionRef, partner: Par
       video: { w, h, minduration: 1, ...(view.screen.slotDurationSec > 0 ? { maxduration: view.screen.slotDurationSec } : {}) },
       banner: { w, h },
       bidfloor: view.pricing.effectiveFloorCpm.localised,
-      bidfloorcur: company.currency,
+      bidfloorcur: TRANSACTING_CURRENCY,
       /* This position's own window (OQ27): its assumed views and its length. sourcetype is always 2
          (publisher-provided): the audience counts come from our own cameras. 1 (measurement vendor)
          would misrepresent the source and, on The Trade Desk, needs a vendor domain we don't have.
@@ -116,7 +117,7 @@ export async function buildBidRequest(ctx: Context, p: PositionRef, partner: Par
       publisher: { id: exchange.sellerId, name: exchange.organisation, domain: exchange.domain },
     },
     source: { schain: { complete: 1, ver: '1.0', nodes: [{ asi: exchange.domain, sid: exchange.sellerId, hp: 1 }] } },
-    cur: [company.currency],
+    cur: [TRANSACTING_CURRENCY],
     bcat: categoryCodes(categoryLists.blockList),
     ...(isTradeDesk(partner) ? { ext: ttdPermissions(partner, lists) } : { badv: blockedDomains(partner, lists.blockList) }),
     tmax: bidderTuning(partner.bidder, ctx.config).timeoutMs,

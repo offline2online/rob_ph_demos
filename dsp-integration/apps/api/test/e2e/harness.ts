@@ -132,7 +132,7 @@ export function swisseBid(req: BidRequest, b: { price: unknown; crid: string; iu
     iurl: b.iurl ?? `${MOCKS}/dv360/creatives/${encodeURIComponent(b.crid)}.png?w=${w}&h=${h}`, w, h,
   }
 }
-export const response = (req: BidRequest, bids: unknown[], seat = SWISSE_SEAT) => ({ id: req.id, cur: 'AUD', seatbid: [{ seat, bid: bids }] })
+export const response = (req: BidRequest, bids: unknown[], seat = SWISSE_SEAT) => ({ id: req.id, cur: 'USD', seatbid: [{ seat, bid: bids }] })
 /* A well-formed bid from Arnott's on The Trade Desk's seat. */
 export function arnottsBid(req: BidRequest, b: { price: unknown; crid: string }) {
   return { ...swisseBid(req, b), adomain: ['arnotts.com'], cat: ['IAB8'], iurl: `${MOCKS}/ttd/creatives/${encodeURIComponent(b.crid)}.png?w=1920&h=1080` }
@@ -327,7 +327,7 @@ export type Harness = Awaited<ReturnType<typeof harness>>
 
 /* Preconditions / fixtures (spec): exchange complete and on, one Live DSP
    with endpoint and seat, one single-zone Digital Signage display type with
-   one Advertiser slot on physical displays, floor CPM 100 AUD, and the
+   one Advertiser slot on physical displays, floor CPM 100 USD, and the
    slot's targeting left at its default (localised). The seeded Menu Board's
    Advertiser slot is taken out so the fixture's position is the estate's
    only one. */

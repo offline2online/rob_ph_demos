@@ -48,12 +48,12 @@ describe('OpenRTB 2.6 DOOH bid requests', () => {
     expect(body).toMatchObject({
       imp: [{
         id: '1', video: { w: 5760, h: 1080, minduration: 1, maxduration: 15 }, banner: { w: 5760, h: 1080 },
-        bidfloor: 100, bidfloorcur: 'AUD', qty: { multiplier: 1236, sourcetype: 2 }, exp: 86400,
+        bidfloor: 100, bidfloorcur: 'USD', qty: { multiplier: 1236, sourcetype: 2 }, exp: 86400,
         ext: { ph: { orientation: 'landscape', slotDurationSec: 15, loopLengthSec: 45, shareOfVoice: 0.333, playsPerWindow: 1920 } },
       }],
       dooh: { id: 'menu_board', venuetype: ['retail.grocery'], venuetypetax: 1, publisher: { id: 'drg-4471', name: 'Demo Retail Group', domain: 'demoretail.example' } },
       source: { schain: { complete: 1, ver: '1.0', nodes: [{ asi: 'demoretail.example', sid: 'drg-4471', hp: 1 }] } },
-      cur: ['AUD'], bcat: ['IAB13'], badv: [], tmax: 300, at: 1,
+      cur: ['USD'], bcat: ['IAB13'], badv: [], tmax: 300, at: 1,
     })
     expect((body as { imp: { qty: object }[] }).imp[0].qty).toEqual({ multiplier: 1236, sourcetype: 2 }) // publisher-provided, no vendor domain
     expect(body).not.toHaveProperty('user')
@@ -148,7 +148,7 @@ describe('the auction', () => {
     }
     await bidder({ mode: 'below_floor' })
     /* Half the sent floor of 100 is 50; Nestlé's own floor is 100 × 0.8. */
-    expect(await reason(W2)).toBe('50 is below the effective floor of 80 AUD CPM.')
+    expect(await reason(W2)).toBe('50 is below the effective floor of 80 USD CPM.')
     await bidder({ mode: 'bid', priceCpm: 150 })
     await ctx.partners.update('p_google', { blockList: ['5130001'], allowList: ['5130002'] })
     expect(await reason(new Date('2026-09-23T00:00:00.000Z'))).toBe('Nestlé is on the advertiser blacklist.')
@@ -309,13 +309,13 @@ describe('POST /v1/reservations and GET …/{id}', () => {
     const res = await reserve(BID)
     expect(res.statusCode).toBe(201)
     expectMatchesContract('POST', '/v1/reservations', 201, res.json())
-    expect(res.json()).toMatchObject({ status: 'pending', clearingCpm: null, currency: 'AUD', reason: null })
+    expect(res.json()).toMatchObject({ status: 'pending', clearingCpm: null, currency: 'USD', reason: null })
     const out = await runAuction(ctx, W1)
     expect(out.positions[0].winner).toMatchObject({ advertiserId: 'swisse', clearingCpm: 200 })
     const got = await app.inject({ method: 'GET', url: `/api/v1/reservations/${res.json().reservationId}`, headers: GOOGLE })
     expectMatchesContract('GET', '/v1/reservations/{reservationId}', 200, got.json())
     expect(got.json()).toMatchObject({ status: 'won', clearingCpm: 200 })
-    expect((await ctx.reservations.forWindow('menu_board.s2', BID.windowStart)).find((r) => r.channel === 'openrtb')).toMatchObject({ status: 'lost', reason: 'Outbid: the window cleared at 200 AUD CPM.' })
+    expect((await ctx.reservations.forWindow('menu_board.s2', BID.windowStart)).find((r) => r.channel === 'openrtb')).toMatchObject({ status: 'lost', reason: 'Outbid: the window cleared at 200 USD CPM.' })
     expect((await reserve(BID)).statusCode).toBe(409)
   })
 
@@ -331,7 +331,7 @@ describe('POST /v1/reservations and GET …/{id}', () => {
     await approve('c_api_swisse')
     expect(await refused({})).toEqual(['not_approved', 'The campaign is approved but not activated.'])
     await activate('c_api_swisse')
-    expect(await refused({ bidCpm: 99 })).toEqual(['below_floor', '99 is below the effective floor of 100 AUD CPM.'])
+    expect(await refused({ bidCpm: 99 })).toEqual(['below_floor', '99 is below the effective floor of 100 USD CPM.'])
     await ctx.partners.update('p_google', { blockList: ['5130002'], allowList: [] })
     expect(await refused({})).toEqual(['advertiser_blocked', 'Swisse is on the advertiser blacklist.'])
   })
@@ -364,10 +364,10 @@ describe('POST /v1/reservations and GET …/{id}', () => {
     const noPrice = await reserve({ ...BID, type: 'reserve', bidCpm: undefined })
     expect(noPrice.json().error.details).toEqual([{ field: 'bidCpm', reason: 'The agreed reservation price (CPM) is required.' }])
     const cheap = await reserve({ ...BID, type: 'reserve', bidCpm: 90 })
-    expect(cheap.json().error).toMatchObject({ code: 'below_floor', message: '90 is below the effective floor of 100 AUD CPM.' })
+    expect(cheap.json().error).toMatchObject({ code: 'below_floor', message: '90 is below the effective floor of 100 USD CPM.' })
     const res = await reserve({ ...BID, type: 'reserve', bidCpm: 175 })
     expect(res.statusCode).toBe(201)
-    expect(res.json()).toMatchObject({ status: 'reserved', clearingCpm: 175, currency: 'AUD' })
+    expect(res.json()).toMatchObject({ status: 'reserved', clearingCpm: 175, currency: 'USD' })
     expect((await runAuction(ctx, W1)).positions[0].skipped).toBe('Held for a named advertiser: booked by reservation.')
     expect((await reserve({ ...BID, type: 'reserve' })).statusCode).toBe(409)
   })

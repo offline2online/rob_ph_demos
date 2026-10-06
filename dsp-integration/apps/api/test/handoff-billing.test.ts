@@ -12,7 +12,7 @@ const W2 = new Date('2026-09-22T00:00:00.000Z')
 
 const won = (over: Partial<ReservationRecord>): ReservationRecord => ({
   id: `res_t_${Math.random().toString(16).slice(2, 8)}`, partnerId: 'p_google', advertiserId: 'swisse', campaignId: 'c_api_swisse', positionId: 'menu_board.s2',
-  windowStart: W1.toISOString(), type: 'bid', channel: 'api', bidCpm: 150, currency: 'AUD', status: 'won', clearingCpm: 150, reason: null,
+  windowStart: W1.toISOString(), type: 'bid', channel: 'api', bidCpm: 150, currency: 'USD', status: 'won', clearingCpm: 150, reason: null,
   testMode: false, pricingType: 'localised', handedOffAt: null, ...over,
 })
 
@@ -121,7 +121,7 @@ describe('billing — dynamic VAC-d from existing playback data', () => {
     expect(await runBilling(ctx)).toMatchObject([{
       reservationId: 'res_seed_nestle_0915', advertiserId: 'nestle', campaignId: 'c_dsp_nestle', positionId: 'menu_board.s2',
       windowStart: '2026-09-15T00:00:00.000Z', windowEnd: '2026-09-16T00:00:00.000Z',
-      plays: 2880, playedSec: 43200, expectedSec: 86400, assumedViews: 1236, realisedViews: 618, cpm: 120, currency: 'AUD', amount: 74.16,
+      plays: 2880, playedSec: 43200, expectedSec: 86400, assumedViews: 1236, realisedViews: 618, cpm: 120, currency: 'USD', amount: 74.16,
     }])
     expect(await runBilling(ctx)).toEqual([])
     expect(await lineItems(ctx)).toHaveLength(1)
