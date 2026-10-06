@@ -571,7 +571,7 @@ DSPs receive requests; nothing they win is billed or handed off.
     "video": { "w": 1920, "h": 1080, "minduration": 15, "maxduration": 15 },
     "bidfloor": 100.0,
     "bidfloorcur": "AUD",
-    "qty": { "multiplier": 412.0, "sourcetype": 1 },
+    "qty": { "multiplier": 412.0, "sourcetype": 2 },
     "exp": 86400
   }],
   "dooh": {
@@ -596,8 +596,10 @@ DSPs receive requests; nothing they win is billed or handed off.
 - `bidfloor` = effective floor CPM for the position (the base floor × the
   advertiser's multiplier; 100 in this example, not a personalised floor); `bidfloorcur` = company
   currency.
-- `qty.multiplier` = assumed views for the window (VAC-d); `sourcetype` 1 =
-  measurement vendor/estimate, 2 = counted by Vision/AI or MIST where enabled.
+- `qty.multiplier` = assumed views for the window (VAC-d); `sourcetype` is always 2
+  (publisher-provided: the audience counts come from our own cameras) on every DSP, and no
+  measurement `vendor` domain is sent. 1 (measurement vendor) is only for an independent
+  measurement partner, with that vendor's domain.
 - `bcat` / `badv` = the effective category and advertiser blacklists for
   this DSP.
 - **Never included:** any visitor data, Personalisation Variables or

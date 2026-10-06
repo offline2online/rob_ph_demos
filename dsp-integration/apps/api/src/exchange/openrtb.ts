@@ -8,7 +8,6 @@ import type { Context } from '../context'
 import { type PositionRef, positionView, windowMsFor } from '../domain/positions'
 import { effectiveCategoryLists, effectiveLists } from '../domain/lists'
 import type { PartnerRecord } from '../repos/PartnerRepo'
-import { audienceOf } from '../domain/displayTypes'
 
 export interface BidRequest {
   id: string
@@ -18,7 +17,7 @@ export interface BidRequest {
     banner: { w: number; h: number }
     bidfloor: number
     bidfloorcur: string
-    qty: { multiplier: number; sourcetype: 1 | 2 }
+    qty: { multiplier: number; sourcetype: 2 }
     exp: number
     ext: { ph: { orientation: string; slotDurationSec: number; loopLengthSec: number; shareOfVoice: number } }
   }[]
@@ -60,7 +59,6 @@ export async function buildBidRequest(ctx: Context, p: PositionRef, partner: Par
   const exchange = await ctx.exchange.get()
   const lists = effectiveLists(partner)
   const categoryLists = effectiveCategoryLists(company)
-  const audience = await audienceOf(ctx.audience, p.displayType, p.slot)
   const { width: w, height: h } = view.screen
   return {
     id,
@@ -70,8 +68,11 @@ export async function buildBidRequest(ctx: Context, p: PositionRef, partner: Par
       banner: { w, h },
       bidfloor: view.pricing.effectiveFloorCpm.localised,
       bidfloorcur: company.currency,
-      /* This position's own window (OQ27): its assumed views and its length. */
-      qty: { multiplier: view.assumedViewsPerWindow, sourcetype: audience.counted ? 2 : 1 },
+      /* This position's own window (OQ27): its assumed views and its length. sourcetype is always 2
+         (publisher-provided): the audience counts come from our own cameras. 1 (measurement vendor)
+         would misrepresent the source and, on The Trade Desk, needs a vendor domain we don't have.
+         If an independent measurement partner is adopted, switch to 1 and send that vendor's domain. */
+      qty: { multiplier: view.assumedViewsPerWindow, sourcetype: 2 },
       exp: Math.round(windowMsFor(company.playWindowHours, p) / 1000),
       ext: { ph: { orientation: view.screen.orientation, slotDurationSec: view.screen.slotDurationSec, loopLengthSec: view.screen.loopLengthSec, shareOfVoice: view.screen.shareOfVoice } },
     }],

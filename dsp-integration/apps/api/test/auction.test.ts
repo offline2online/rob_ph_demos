@@ -55,6 +55,7 @@ describe('OpenRTB 2.6 DOOH bid requests', () => {
       source: { schain: { complete: 1, ver: '1.0', nodes: [{ asi: 'demoretail.example', sid: 'drg-4471', hp: 1 }] } },
       cur: ['AUD'], bcat: ['IAB13'], badv: [], tmax: 300, at: 1,
     })
+    expect((body as { imp: { qty: object }[] }).imp[0].qty).toEqual({ multiplier: 1236, sourcetype: 2 }) // publisher-provided, no vendor domain
     expect(body).not.toHaveProperty('user')
     expect(body).not.toHaveProperty('device')
     expect(JSON.stringify(body)).not.toMatch(/visitor|personalis|gender|age"|segment|sku|cv_/i)
