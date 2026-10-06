@@ -323,14 +323,13 @@ function CompanyListsPanel({ lists, setLists, mut, partners, types, playlists, o
     <>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
         <Icon name="rule" size={26} style={{ color: T.primary, marginTop: 2 }} />
-        <div style={{ flex: 1, minWidth: 200 }}><div style={{ fontSize: 16, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>Advertiser settings<InfoTip text="Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (currency, floor CPM, personalised and interactive multipliers) and List management (advertiser and IAB category whitelists and blacklists). Read-only here: Where these apply (which DSPs use these lists or keep their own; unlink or relink on the DSP's page) and Available Inventory (advertiser-owned slots, set on Display Types). Per-advertiser campaign approval and floor multipliers are on the Advertisers screen." /></div></div>
+        <div style={{ flex: 1, minWidth: 200 }}><div style={{ fontSize: 16, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>Advertiser settings<InfoTip text="Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (currency, floor CPM, interactive multiplier) and List management (advertiser and IAB category whitelists and blacklists). Read-only here: Where these apply (which DSPs use these lists or keep their own; unlink or relink on the DSP's page) and Available Inventory (advertiser-owned slots, set on Display Types). Per-advertiser campaign approval and floor multipliers are on the Advertisers screen." /></div></div>
       </div>
 
-      <SectionLabel tip="Multipliers stack: effective floor = floor CPM × personalised × interactive × the advertiser's floor multiplier (set on the Advertisers screen). Bids below the effective floor never win.">Pricing</SectionLabel>
-      <Grid cols={4}>
+      <SectionLabel tip="Multipliers stack (personalised versions have no multiplier — they are sold only through reserved slots): effective floor = floor CPM × interactive × the advertiser's floor multiplier (set on the Advertisers screen). Bids below the effective floor never win.">Pricing</SectionLabel>
+      <Grid cols={3}>
         <Fld label="Currency" hint="Used for the floor CPM, every effective floor and billing. Bid requests carry it as the bid floor currency."><select value={lists.currency || "AUD"} onChange={(e) => setPricing("currency", e.target.value)} style={ctl}>{ALL_CURRENCIES.map((c) => <option key={c.code} value={c.code}>{c.code} — {c.name}</option>)}</select></Fld>
         <Fld label="Floor price (CPM)" hint="Cost per thousand assumed views (VAC-d). The minimum any bid must meet; bids below it never win.">{numIn("floorCpm", "1", "100")}</Fld>
-        <Fld label="Personalised multiplier" hint="Applied when the visitor is checked in or otherwise identified, so the advert is one-to-one for that individual. Multiplies the floor CPM.">{numIn("personalisedMultiplier", "0.05", "1.5")}</Fld>
         <Fld label="Interactive multiplier" hint="Applied when the visitor interacts with the campaign and engages with the advertiser on that display, for example by scanning an interactive QR Control campaign. Multiplies the floor CPM.">{numIn("interactiveMultiplier", "0.05", "3")}</Fld>
       </Grid>
 

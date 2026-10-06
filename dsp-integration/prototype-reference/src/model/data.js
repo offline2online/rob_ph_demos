@@ -128,7 +128,6 @@ export const INITIAL_TYPES = [
 export const INITIAL_COMPANY_LISTS = {
   currency: "AUD",
   floorCpm: 100,                 // cost per thousand assumed views
-  personalisedMultiplier: 1.5,
   interactiveMultiplier: 3,
   allowList: [{ id: "cal1", name: "Nestlé" }, { id: "cal2", name: "Swisse" }, { id: "cal3", name: "Arnott’s" }],
   blockList: [{ id: "cbl1", name: "Red Bull" }, { id: "cbl2", name: "Monster Energy" }],
