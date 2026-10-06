@@ -30,8 +30,8 @@ describe('GET /v1/inventory', () => {
         positionId: 'menu_board.s2', displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', slot: 2, slotLabel: 'Supplier slot', zone: null,
         storeCount: 3, displayCount: 3,
         screen: { width: 5760, height: 1080, orientation: 'landscape', slotDurationSec: 15, loopLengthSec: 45, shareOfVoice: 0.333, openOohVenueType: 'retail.grocery' },
-        assignment: 'rtb', supportedTargeting: ['localised'], billingUnitHours: 24, assumedViewsPerWindow: 1236, scored: true, maxCampaigns: 5,
-        pricing: { currency: 'AUD', floorCpm: 100, effectiveFloorCpm: { localised: 100 } },
+        assignment: 'rtb', supportedTargeting: ['localised'], billingUnitHours: 24, playsPerWindow: 1920, assumedViewsPerWindow: 1236, scored: true, maxCampaigns: 5,
+        pricing: { currency: 'USD', floorCpm: 100, effectiveFloorCpm: { localised: 100 } },
         reservePrice: null,
       }],
       nextCursor: null,
@@ -94,7 +94,7 @@ describe('GET /v1/inventory', () => {
     expect(await n('status=sold&from=2026-09-21&to=2026-09-22')).toBe(0)
     await ctx.reservations.insert({
       id: 'r1', partnerId: 'p_google', advertiserId: 'nestle', campaignId: 'c_dsp_nestle', positionId: 'menu_board.s2', windowStart: '2026-09-22T00:00:00.000Z',
-      type: 'bid', channel: 'api', bidCpm: 120, currency: 'AUD', status: 'won', clearingCpm: 120, reason: null, testMode: false, pricingType: 'localised', handedOffAt: null,
+      type: 'bid', channel: 'api', bidCpm: 120, currency: 'USD', status: 'won', clearingCpm: 120, reason: null, testMode: false, pricingType: 'localised', handedOffAt: null,
     })
     expect(await n('status=sold&from=2026-09-21&to=2026-09-22')).toBe(1)
   })
@@ -118,7 +118,7 @@ describe('GET /v1/inventory/{positionId} and …/availability', () => {
     const { ctx, get, setSlot } = await setup()
     await ctx.reservations.insert({
       id: 'r1', partnerId: 'p_google', advertiserId: 'nestle', campaignId: 'c_dsp_nestle', positionId: 'menu_board.s2', windowStart: '2026-09-22T00:00:00.000Z',
-      type: 'bid', channel: 'api', bidCpm: 120, currency: 'AUD', status: 'won', clearingCpm: 120, reason: null, testMode: false, pricingType: 'localised', handedOffAt: null,
+      type: 'bid', channel: 'api', bidCpm: 120, currency: 'USD', status: 'won', clearingCpm: 120, reason: null, testMode: false, pricingType: 'localised', handedOffAt: null,
     })
     const res = await get('/inventory/menu_board.s2/availability?from=2026-09-20&to=2026-09-22')
     expect(res.statusCode).toBe(200)
@@ -159,7 +159,7 @@ describe('POST /v1/inventory/forecast', () => {
     const res = await forecast(TWO_DAYS)
     expect(res.statusCode).toBe(200)
     expectMatchesContract('POST', '/v1/inventory/forecast', 200, res.json())
-    expect(res.json()).toEqual({ assumedViews: 2472, currency: 'AUD', estimatedCost: 247.2 })
+    expect(res.json()).toEqual({ assumedViews: 2472, currency: 'USD', estimatedCost: 247.2 })
     expect((await forecast({ ...TWO_DAYS, advertiserId: 'nestle' })).json().estimatedCost).toBe(197.76)
     /* Only windows the caller could still buy count. */
     expect((await forecast({ ...TWO_DAYS, from: '2026-09-19' })).json().assumedViews).toBe(2472)

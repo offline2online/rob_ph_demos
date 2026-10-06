@@ -188,6 +188,9 @@ export interface CredentialField {
   /* The DSP fixes this value once connected: a change is refused until it is
      disconnected (Amazon Ads: region). */
   fixedOnceConnected?: boolean
+  /* Not needed to connect: left empty it is not reported as a missing
+     credential (the seller-side token, ticket lWSdh3qqsg1rOsfSFE5d). */
+  optional?: boolean
 }
 export interface ProviderDef {
   key: Provider
@@ -199,6 +202,17 @@ export interface ProviderDef {
   fields: CredentialField[]
 }
 
+/* The seller-side credential every DSP gets (ticket lWSdh3qqsg1rOsfSFE5d, Rob
+   4 Oct 2026). The fields above authenticate PH as a buyer-side API user;
+   none of them authenticates PH as a seller/exchange, which is what lets a
+   DSP's seats and advertisers sync into the per-DSP whitelist/blacklist
+   pickers. Stored write-only like the other secrets. Bid-time allow/block
+   does not use it: it matches the seat on the bid response itself. */
+const SELLER_TOKEN: CredentialField = {
+  key: 'sellerAuthToken', label: 'Seller auth token', secret: true, optional: true,
+  hint: 'Authenticates PH to this DSP as a seller / exchange, for syncing its seats and advertisers into the whitelist and blacklist.',
+}
+
 /* Onboarding order: DV360, then Amazon Ads DSP, then The Trade Desk (spec §7). */
 export const PROVIDERS: ProviderDef[] = [
   {
@@ -208,6 +222,7 @@ export const PROVIDERS: ProviderDef[] = [
       { key: 'partnerId', label: 'Partner ID', placeholder: '123456', hint: 'DV360 partner the inventory is sold under.' },
       { key: 'serviceAccountEmail', label: 'Service account email', placeholder: 'ph-retail-media@project.iam.gserviceaccount.com' },
       { key: 'privateKeyJson', label: 'Private key (JSON)', secret: true, placeholder: 'Paste the key file contents', multiline: true },
+      SELLER_TOKEN,
     ],
   },
   {
@@ -220,6 +235,7 @@ export const PROVIDERS: ProviderDef[] = [
       { key: 'refreshToken', label: 'Refresh token', secret: true, placeholder: 'Atzr|…' },
       { key: 'profileId', label: 'Profile ID', placeholder: '1234567890' },
       { key: 'entityId', label: 'Entity ID', placeholder: 'ENTITY9Z8Y7X' },
+      SELLER_TOKEN,
     ],
   },
   {
@@ -230,6 +246,7 @@ export const PROVIDERS: ProviderDef[] = [
       { key: 'ttdPartnerId', label: 'TTD partner ID', placeholder: 'e.g. phub-retail' },
       { key: 'apiToken', label: 'API token', secret: true, hint: 'For deal setup and reporting reconciliation.' },
       { key: 'region', label: 'Region', options: ['EMEA', 'APAC', 'North America'] },
+      SELLER_TOKEN,
     ],
   },
 ]

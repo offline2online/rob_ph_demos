@@ -4,6 +4,8 @@
    per DSP: domain/partnerInput.ts.) */
 import { IAB_CATEGORIES, INTERACTIVE_ENABLED, type AdvertiserSettingsInput } from '@ph-dsp/types'
 
+import { MAX_GUARANTEE_BUFFER_PCT } from './guarantee'
+
 type Detail = { field: string; reason: string }
 const CURRENCIES = new Set(Intl.supportedValuesOf('currency'))
 const key = (s: string) => s.trim().toLowerCase()
@@ -37,6 +39,9 @@ export function validateAdvertiserSettings(b: Partial<AdvertiserSettingsInput> |
   if (!Number.isInteger(b?.auctionOpensHours) || (b?.auctionOpensHours as number) < 1) out.push({ field: 'auctionOpensHours', reason: 'Auction opens must be at least 1 hour before the cutoff.' })
   if (!Number.isInteger(b?.playWindowHours) || (b?.playWindowHours as number) < 1 || (b?.playWindowHours as number) > 8760) out.push({ field: 'playWindowHours', reason: 'The play window is between 1 hour and 365 days.' })
   if (typeof b?.auctionCutoffTime !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(b.auctionCutoffTime)) out.push({ field: 'auctionCutoffTime', reason: 'A time of day, HH:MM.' })
+  /* Optional on save (omitted keeps the stored value); when sent, a percentage from 0 to 50. */
+  const buf = b?.guaranteeBufferPct
+  if (buf !== undefined && (typeof buf !== 'number' || !Number.isFinite(buf) || buf < 0 || buf > MAX_GUARANTEE_BUFFER_PCT)) out.push({ field: 'guaranteeBufferPct', reason: `The guarantee buffer is a percentage from 0 to ${MAX_GUARANTEE_BUFFER_PCT}.` })
   for (const k of ['categoryWhitelist', 'categoryBlacklist'] as const) {
     if (!Array.isArray(b?.[k])) { out.push({ field: k, reason: 'Required.' }); continue }
     for (const x of cleanList(b?.[k])) if (!IAB_BY_KEY.has(key(x))) out.push({ field: k, reason: `${x} is not an IAB category. Choose from the IAB taxonomy: ${IAB_CATEGORIES.join(', ')}.` })

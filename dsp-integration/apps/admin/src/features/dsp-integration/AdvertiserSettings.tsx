@@ -143,6 +143,13 @@ export function AdvertiserSettings() {
         {INTERACTIVE_ENABLED && <Field label={<span className="block" style={{ minHeight: 36 }}>Interactive cost per engagement</span>} htmlFor="interactiveCpe" tip={INTERACTIVE_TIP} tipWidth={400} className="w-44">{num('interactiveCpe', 0.05, '0.50', { precision: 2, prefix: s.currency })}</Field>}
       </div>
 
+      <SectionLabel><WithTip tip="A guaranteed deal commits a delivery volume: the window's forecast impressions (scheduled plays × audience score) less this contingency for screen downtime, so expected delivery sits above the guarantee and make-goods are rare. The committed figure is sent to the DSP as the guaranteed unit count. A preferred deal (the reserve price alone) promises no volume. Applies to every guaranteed deal.">Guaranteed deals</WithTip></SectionLabel>
+      <div className="flex flex-wrap items-start gap-3.5">
+        <Field label={<span className="block" style={{ minHeight: 36 }}>Contingency buffer (%)</span>} htmlFor="guaranteeBufferPct" tip="Percentage taken off the forecast to cover screen downtime. Default 10." className="w-40">
+          <InputNumber id="guaranteeBufferPct" className="w-full" step={1} min={0} max={50} placeholder="10" value={s.guaranteeBufferPct ?? 10} onChange={(v) => set('guaranteeBufferPct', (v === null ? null : Number(v)) as number)} />
+        </Field>
+      </div>
+
       <SectionLabel><WithTip tip="In-store screens can't take a bid per play, so advertisers bid for a play window that clears ahead of time. Bidding for a window opens, closes at the auction cutoff (when the auction runs) and the winner holds the slot for the whole window. Times are UTC.">Auction schedule</WithTip></SectionLabel>
       <div className="flex flex-wrap items-start gap-3.5">
         <Field label={<span className="block" style={{ minHeight: 36 }}>Auction opens</span>} htmlFor="auctionOpensHours" tip="How long before the auction cutoff bidding for a play window opens, for example 7 days." className="w-64">

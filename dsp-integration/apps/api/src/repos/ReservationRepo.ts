@@ -19,6 +19,11 @@ export interface ReservationRecord {
   testMode: boolean
   pricingType: string | null
   handedOffAt: string | null
+  /* Guaranteed deal path: 'preferred' is the no-volume reserve; 'guaranteed' commits guaranteedImpressions
+     (the forecast less the buffer, domain/guarantee.ts). Both null on a preferred deal and on a bid. */
+  dealType?: 'preferred' | 'guaranteed'
+  forecastImpressions?: number | null
+  guaranteedImpressions?: number | null
   /* When the row was written (read only; insert stamps it). The auction
      breaks a tie on it: the earlier bid wins. */
   createdAt?: string
@@ -28,12 +33,13 @@ interface Row {
   id: string; partner_id: string; advertiser_id: string | null; campaign_id: string | null; position_id: string; window_start: string
   type: 'reserve' | 'bid'; channel: 'api' | 'openrtb'; bid_cpm: number | null; currency: string; status: ReservationStatus
   clearing_cpm: number | null; reason: string | null; test_mode: number; pricing_type: string | null; handed_off_at: string | null
-  created_at: string
+  created_at: string; deal_type: 'preferred' | 'guaranteed'; forecast_impressions: number | null; guaranteed_impressions: number | null
 }
 const toRecord = (r: Row): ReservationRecord => ({
   id: r.id, partnerId: r.partner_id, advertiserId: r.advertiser_id, campaignId: r.campaign_id, positionId: r.position_id, windowStart: r.window_start,
   type: r.type, channel: r.channel, bidCpm: r.bid_cpm, currency: r.currency, status: r.status, clearingCpm: r.clearing_cpm, reason: r.reason,
   testMode: !!r.test_mode, pricingType: r.pricing_type, handedOffAt: r.handed_off_at, createdAt: r.created_at,
+  dealType: r.deal_type ?? 'preferred', forecastImpressions: r.forecast_impressions ?? null, guaranteedImpressions: r.guaranteed_impressions ?? null,
 })
 
 /* A window is taken once something has won or reserved it. */
@@ -83,10 +89,10 @@ export function sqliteReservationRepo(db: Db): ReservationRepo {
       const now = new Date().toISOString()
       prepared(db,
         `INSERT INTO reservations (id, partner_id, advertiser_id, campaign_id, position_id, window_start, type, channel, bid_cpm, currency,
-           status, clearing_cpm, reason, test_mode, pricing_type, handed_off_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           status, clearing_cpm, reason, test_mode, pricing_type, handed_off_at, created_at, updated_at, deal_type, forecast_impressions, guaranteed_impressions)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(r.id, r.partnerId, r.advertiserId, r.campaignId, r.positionId, r.windowStart, r.type, r.channel, r.bidCpm, r.currency,
-        r.status, r.clearingCpm, r.reason, r.testMode ? 1 : 0, r.pricingType, r.handedOffAt, now, now)
+        r.status, r.clearingCpm, r.reason, r.testMode ? 1 : 0, r.pricingType, r.handedOffAt, now, now, r.dealType ?? 'preferred', r.forecastImpressions ?? null, r.guaranteedImpressions ?? null)
       return get(r.id) as ReservationRecord
     },
     update(id, patch) {

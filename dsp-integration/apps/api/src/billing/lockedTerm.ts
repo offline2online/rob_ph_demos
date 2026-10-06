@@ -3,6 +3,7 @@
    exchange's auction calls this for a locked deal in place of bidding. */
 import { randomUUID } from 'node:crypto'
 import type { Context } from '../context'
+import { TRANSACTING_CURRENCY } from '../domain/currency'
 import { isUniqueViolation } from '../db/db'
 import { type PositionRef, assignmentOf } from '../domain/positions'
 import { isTermLocked } from './term'
@@ -23,7 +24,7 @@ export async function bookLockedTermWindow(ctx: Context, p: PositionRef, start: 
   const win = list.lockedWin!
   /* The term is locked to its winner: any other bid for this window is told so, never left pending. */
   const company = await ctx.company.get()
-  await settlePending(ctx, p.positionId, start, `The term is locked at ${win.cpm} ${company.currency} CPM to another bid (${list.name}); no other bid takes this window.`)
+  await settlePending(ctx, p.positionId, start, `The term is locked at ${win.cpm} ${TRANSACTING_CURRENCY} CPM to another bid (${list.name}); no other bid takes this window.`)
   /* Only a connected DSP can write (REQUIREMENTS §7): if the locked winner's
      DSP has since disconnected or failed its re-test, book nothing and hand
      nothing off; the window falls through to the default campaign. */
@@ -40,7 +41,7 @@ export async function bookLockedTermWindow(ctx: Context, p: PositionRef, start: 
      booked below the floor. */
   const floor = await floorFor(ctx, win.advertiserId)
   if (win.cpm < floor) {
-    return { ...out, skipped: `Private auction: the locked rate (${win.cpm}) is below the effective floor of ${floor} ${company.currency} CPM, so this window is not sold under ${list.name}.` }
+    return { ...out, skipped: `Private auction: the locked rate (${win.cpm}) is below the effective floor of ${floor} ${TRANSACTING_CURRENCY} CPM, so this window is not sold under ${list.name}.` }
   }
   /* A term locked by a reserve-price commitment (OQ52) is programmatic
      guaranteed: each window is booked as Reserved, the same as the window
@@ -51,7 +52,7 @@ export async function bookLockedTermWindow(ctx: Context, p: PositionRef, start: 
     r = await ctx.reservations.insert({
     id: `res_${randomUUID().slice(0, 12)}`, partnerId: win.partnerId, advertiserId: win.advertiserId, campaignId: win.campaignId,
     positionId: p.positionId, windowStart: start, type: win.channel === 'openrtb' ? 'bid' : 'reserve', channel: win.channel,
-    bidCpm: win.cpm, currency: company.currency, status: reserve ? 'reserved' : 'won', clearingCpm: win.cpm,
+    bidCpm: win.cpm, currency: TRANSACTING_CURRENCY, status: reserve ? 'reserved' : 'won', clearingCpm: win.cpm,
     reason: reserve ? `Reserved: booked at ${list.name}'s reserve-price commitment, no auction.` : `Private auction: booked at ${list.name}'s locked rate, no re-auction.`, testMode: false, pricingType: win.pricingType, handedOffAt: null,
     })
   } catch (e) {

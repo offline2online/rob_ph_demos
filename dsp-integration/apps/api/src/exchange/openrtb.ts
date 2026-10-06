@@ -4,11 +4,15 @@
    object, and no visitor, Personalisation or Computer Vision data. */
 import { bidderTuning } from '../domain/partnerInput'
 import { IAB_CATEGORY_CODES } from '@ph-dsp/types'
+import { TRANSACTING_CURRENCY } from '../domain/currency'
 import type { Context } from '../context'
-import { type PositionRef, positionView, windowMsFor } from '../domain/positions'
-import { effectiveCategoryLists, effectiveLists } from '../domain/lists'
+import { type PositionRef, assignmentOf, positionView, windowMsFor } from '../domain/positions'
+import { assignedOf } from '@ph-dsp/types'
+import { isInvitedBuyer } from '../domain/buyersLists'
+import { effectiveCategoryLists, effectiveLists, seatDomains } from '../domain/lists'
+import { type Perm, standardBuyerBlocking } from '../dsp/DspProvider'
+import { providerOf } from '../dsp/registry'
 import type { PartnerRecord } from '../repos/PartnerRepo'
-import { audienceOf } from '../domain/displayTypes'
 
 export interface BidRequest {
   id: string
@@ -18,36 +22,39 @@ export interface BidRequest {
     banner: { w: number; h: number }
     bidfloor: number
     bidfloorcur: string
-    qty: { multiplier: number; sourcetype: 1 | 2 }
+    qty: { multiplier: number; sourcetype: 2 }
     exp: number
-    ext: { ph: { orientation: string; slotDurationSec: number; loopLengthSec: number; shareOfVoice: number } }
+    /* A deal position carries its SSP-issued deal ID, restricted to the invited seats. */
+    pmp?: { private_auction: 1; deals: { id: string; at: 1; wseat: string[] }[] }
+    ext: { ph: { orientation: string; slotDurationSec: number; loopLengthSec: number; shareOfVoice: number; playsPerWindow: number } }
   }[]
   dooh: { id: string; venuetype: string[]; venuetypetax: 1; publisher: { id: string; name: string; domain: string } }
   source: { schain: { complete: 1; ver: '1.0'; nodes: { asi: string; sid: string; hp: 1 }[] } }
   cur: string[]
   bcat: string[]
-  badv: string[]
+  /* The per-DSP seat lists, in the shape that DSP reads (its provider's
+     buyerBlocking hook): standard OpenRTB badv (domains), or a DSP's own
+     ext permissions instead. */
+  badv?: string[]
+  ext?: { seatperms: Perm; advperms: Perm; domainperms: Perm }
   tmax: number
   at: 1
 }
 
 /* ext.creativeAudit: the DSP's own audit of the creative, in its own shape
    (domain/dspAudit.ts) — advisory only, Q40. */
-export interface Bid { id?: string; impid?: string; price?: number; crid?: string; adomain?: string[]; cat?: string[]; iurl?: string; ext?: { creativeAudit?: unknown } }
+export interface Bid { id?: string; impid?: string; dealid?: string; price?: number; crid?: string; adomain?: string[]; cat?: string[]; iurl?: string; ext?: { creativeAudit?: unknown } }
 export interface BidResponse { id?: string; cur?: string; seatbid?: { seat?: string; bid?: Bid[] }[] }
 
 /* badv carries domains: each blacklisted seat goes as the domain the DSP
    told us for it (seats pulled on connect). */
-export function blockedDomains(partner: PartnerRecord, blockList: string[]) {
-  const out = new Set<string>()
-  for (const entry of blockList) {
-    const seat = partner.seats.find((s) => s.id.trim().toLowerCase() === entry.trim().toLowerCase())
-    if (seat?.domain) out.add(seat.domain.toLowerCase())
-  }
-  return [...out]
-}
+export const blockedDomains = (partner: PartnerRecord, blockList: string[]) => seatDomains(partner, blockList)
 
 export const categoryCodes = (names: string[]) => names.map((n) => IAB_CATEGORY_CODES[n as keyof typeof IAB_CATEGORY_CODES]).filter(Boolean)
+
+/* The deal ID for a buyers list: derived (no stored column), stable for the
+   list's life, and the only ID a bid on that deal's position may quote. */
+export const dealIdOf = (listId: string) => `PH-${listId}`
 
 /* One request per sellable position, play window and DSP. The bid floor is
    the position's base effective floor; each bid is then held to the floor
@@ -60,8 +67,10 @@ export async function buildBidRequest(ctx: Context, p: PositionRef, partner: Par
   const exchange = await ctx.exchange.get()
   const lists = effectiveLists(partner)
   const categoryLists = effectiveCategoryLists(company)
-  const audience = await audienceOf(ctx.audience, p.displayType, p.slot)
   const { width: w, height: h } = view.screen
+  const listId = assignmentOf(p.def) === 'deal' ? assignedOf(p.def).buyersListId : undefined
+  const list = listId ? await ctx.buyersLists.get(listId) : null
+  const pmp = list ? { private_auction: 1 as const, deals: [{ id: dealIdOf(list.id), at: 1 as const, wseat: partner.seats.map((x) => x.id).filter((id) => isInvitedBuyer(list, partner.id, id)) }] } : undefined
   return {
     id,
     imp: [{
@@ -69,11 +78,15 @@ export async function buildBidRequest(ctx: Context, p: PositionRef, partner: Par
       video: { w, h, minduration: 1, ...(view.screen.slotDurationSec > 0 ? { maxduration: view.screen.slotDurationSec } : {}) },
       banner: { w, h },
       bidfloor: view.pricing.effectiveFloorCpm.localised,
-      bidfloorcur: company.currency,
-      /* This position's own window (OQ27): its assumed views and its length. */
-      qty: { multiplier: view.assumedViewsPerWindow, sourcetype: audience.counted ? 2 : 1 },
+      bidfloorcur: TRANSACTING_CURRENCY,
+      /* This position's own window (OQ27): its assumed views and its length. sourcetype is always 2
+         (publisher-provided): the audience counts come from our own cameras. 1 (measurement vendor)
+         would misrepresent the source and, on The Trade Desk, needs a vendor domain we don't have.
+         If an independent measurement partner is adopted, switch to 1 and send that vendor's domain. */
+      qty: { multiplier: view.assumedViewsPerWindow, sourcetype: 2 },
       exp: Math.round(windowMsFor(company.playWindowHours, p) / 1000),
-      ext: { ph: { orientation: view.screen.orientation, slotDurationSec: view.screen.slotDurationSec, loopLengthSec: view.screen.loopLengthSec, shareOfVoice: view.screen.shareOfVoice } },
+      ...(pmp ? { pmp } : {}),
+      ext: { ph: { orientation: view.screen.orientation, slotDurationSec: view.screen.slotDurationSec, loopLengthSec: view.screen.loopLengthSec, shareOfVoice: view.screen.shareOfVoice, playsPerWindow: view.playsPerWindow } },
     }],
     dooh: {
       id: p.displayType.id,
@@ -82,9 +95,9 @@ export async function buildBidRequest(ctx: Context, p: PositionRef, partner: Par
       publisher: { id: exchange.sellerId, name: exchange.organisation, domain: exchange.domain },
     },
     source: { schain: { complete: 1, ver: '1.0', nodes: [{ asi: exchange.domain, sid: exchange.sellerId, hp: 1 }] } },
-    cur: [company.currency],
+    cur: [TRANSACTING_CURRENCY],
     bcat: categoryCodes(categoryLists.blockList),
-    badv: blockedDomains(partner, lists.blockList),
+    ...(providerOf(ctx.dsp, partner.provider)?.buyerBlocking ?? standardBuyerBlocking)(partner, lists),
     tmax: bidderTuning(partner.bidder, ctx.config).timeoutMs,
     at: 1,
   }

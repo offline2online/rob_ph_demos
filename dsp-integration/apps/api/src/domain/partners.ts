@@ -8,7 +8,7 @@ export function partnerIssues(p: PartnerRecord): NonNullable<Partner['issues']> 
   const issues: NonNullable<Partner['issues']> = []
   if (p.status === 'error') issues.push({ kind: 'connection_error', message: p.lastSync || 'The last connection test failed.' })
   const missing = (providerDef(p.provider)?.fields ?? [])
-    .filter((f) => (f.secret ? !p.secretsSet.includes(f.key) : !String(p.credsPublic[f.key] ?? '').trim()))
+    .filter((f) => !f.optional && (f.secret ? !p.secretsSet.includes(f.key) : !String(p.credsPublic[f.key] ?? '').trim()))
     .map((f) => f.label)
   if (missing.length) issues.push({ kind: 'missing_credentials', message: `Missing credentials: ${missing.join(', ')}.`, fields: missing })
   const bidderMissing = [!p.bidder.bidderEndpoint && 'Bidder endpoint', !(p.bidder.seatIds ?? []).length && 'Seat IDs'].filter(Boolean) as string[]

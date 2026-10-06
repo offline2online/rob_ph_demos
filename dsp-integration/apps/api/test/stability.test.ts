@@ -95,7 +95,7 @@ describe('simultaneous bids and reservations for one window', () => {
     const { ctx } = await setup()
     const row = (over: Record<string, unknown>) => ({
       id: `res_${Math.random().toString(16).slice(2, 10)}`, partnerId: 'p_google', advertiserId: 'swisse', campaignId: 'c_api_swisse', positionId: POS,
-      windowStart: W2.toISOString(), type: 'bid' as const, channel: 'api' as const, bidCpm: 150, currency: 'AUD', status: 'pending' as const,
+      windowStart: W2.toISOString(), type: 'bid' as const, channel: 'api' as const, bidCpm: 150, currency: 'USD', status: 'pending' as const,
       clearingCpm: null, reason: null, testMode: false, pricingType: 'localised', handedOffAt: null, ...over,
     })
     await ctx.reservations.insert(row({}))
@@ -109,7 +109,7 @@ describe('simultaneous bids and reservations for one window', () => {
   it('migration 0026 keeps the earliest of an advertiser’s duplicate bids and marks the rest lost', () => {
     const db = openDb(':memory:')
     migrateUp(db, '0025')
-    const ins = db.prepare("INSERT INTO reservations (id, partner_id, advertiser_id, position_id, window_start, type, channel, bid_cpm, currency, status, created_at, updated_at) VALUES (?, 'p_google', 'swisse', ?, ?, 'bid', 'api', 100, 'AUD', 'pending', ?, ?)")
+    const ins = db.prepare("INSERT INTO reservations (id, partner_id, advertiser_id, position_id, window_start, type, channel, bid_cpm, currency, status, created_at, updated_at) VALUES (?, 'p_google', 'swisse', ?, ?, 'bid', 'api', 100, 'USD', 'pending', ?, ?)")
     ins.run('r1', POS, W1.toISOString(), '2026-09-20T09:00:00Z', '2026-09-20T09:00:00Z')
     ins.run('r2', POS, W1.toISOString(), '2026-09-20T09:00:01Z', '2026-09-20T09:00:01Z')
     ins.run('r3', POS, W2.toISOString(), '2026-09-20T09:00:02Z', '2026-09-20T09:00:02Z')
@@ -127,7 +127,7 @@ describe('simultaneous bids and reservations for one window', () => {
     expect(codes).toEqual([201, 201, 409, 409])
     const out = await runAuction(ctx, W1)
     expect(out.positions[0].winner).toMatchObject({ advertiserId: 'swisse', clearingCpm: 200 })
-    expect((await rows()).find((r) => r.advertiserId === 'nestle' && r.channel === 'api')).toMatchObject({ status: 'lost', reason: 'Outbid: the window cleared at 200 AUD CPM.' })
+    expect((await rows()).find((r) => r.advertiserId === 'nestle' && r.channel === 'api')).toMatchObject({ status: 'lost', reason: 'Outbid: the window cleared at 200 USD CPM.' })
     expect((await rows()).filter((r) => r.status === 'pending')).toHaveLength(0)
   })
 
@@ -146,7 +146,7 @@ describe('simultaneous bids and reservations for one window', () => {
     const { ctx } = await setup()
     const row = (id: string, advertiserId: string) => ({
       id, partnerId: 'p_google', advertiserId, campaignId: `c_api_${advertiserId}`, positionId: POS,
-      windowStart: W1.toISOString(), type: 'bid' as const, channel: 'api' as const, bidCpm: 200, currency: 'AUD', status: 'pending' as const,
+      windowStart: W1.toISOString(), type: 'bid' as const, channel: 'api' as const, bidCpm: 200, currency: 'USD', status: 'pending' as const,
       clearingCpm: null, reason: null, testMode: false, pricingType: 'localised', handedOffAt: null,
     })
     vi.useFakeTimers({ toFake: ['Date'] })
@@ -268,7 +268,7 @@ describe('the scheduled tick', () => {
   const billableRow = async (ctx: Awaited<ReturnType<typeof setup>>['ctx']) =>
     ctx.reservations.insert({
       id: 'res_ended', partnerId: 'p_google', advertiserId: 'swisse', campaignId: 'c_api_swisse', positionId: POS, windowStart: '2026-09-18T00:00:00.000Z',
-      type: 'bid', channel: 'api', bidCpm: 200, currency: 'AUD', status: 'won', clearingCpm: 200, reason: null, testMode: false, pricingType: 'localised', handedOffAt: '2026-09-17T18:00:00.000Z',
+      type: 'bid', channel: 'api', bidCpm: 200, currency: 'USD', status: 'won', clearingCpm: 200, reason: null, testMode: false, pricingType: 'localised', handedOffAt: '2026-09-17T18:00:00.000Z',
     })
 
   it('a billing fault is logged and reported, and the auction due in the same minute still runs', async () => {
@@ -388,7 +388,7 @@ describe('billing when two processes tick at once', () => {
     const b = make()
     await a.reservations.insert({
       id: 'res_ended', partnerId: 'p_google', advertiserId: 'swisse', campaignId: 'c_api_swisse', positionId: POS, windowStart: '2026-09-18T00:00:00.000Z',
-      type: 'bid', channel: 'api', bidCpm: 200, currency: 'AUD', status: 'won', clearingCpm: 200, reason: null, testMode: false, pricingType: 'localised', handedOffAt: '2026-09-17T18:00:00.000Z',
+      type: 'bid', channel: 'api', bidCpm: 200, currency: 'USD', status: 'won', clearingCpm: 200, reason: null, testMode: false, pricingType: 'localised', handedOffAt: '2026-09-17T18:00:00.000Z',
     })
     /* Both read the same billable rows (this one and the seed's past
        window), both compute, one insert per window lands. */

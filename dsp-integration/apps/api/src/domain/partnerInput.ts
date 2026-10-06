@@ -68,7 +68,7 @@ export const bidderTuning = (b: PartnerRecord['bidder'], config: { bidderQps: nu
 
 export const bidderComplete = (b: PartnerRecord['bidder']) => !!b.bidderEndpoint?.trim() && !!b.seatIds?.length
 
-export function applyPartnerInput(p: PartnerRecord, currentSecrets: Record<string, string>, body: PartnerInput, company: CompanySettings): { change?: PartnerChange; errors: Detail[]; conflict?: string } {
+export function applyPartnerInput(p: PartnerRecord, currentSecrets: Record<string, string>, body: PartnerInput, company: CompanySettings, sandboxEndpoint?: string): { change?: PartnerChange; errors: Detail[]; conflict?: string } {
   const errors: Detail[] = []
   const def = providerDef(p.provider)
   const fields = new Map((def?.fields ?? []).map((f) => [f.key, f]))
@@ -92,7 +92,8 @@ export function applyPartnerInput(p: PartnerRecord, currentSecrets: Record<strin
   if (body.bidder) {
     if (body.bidder.bidderEndpoint !== undefined) {
       const e = body.bidder.bidderEndpoint.trim()
-      if (e && !isPublicHttpsUrl(e)) errors.push({ field: 'bidder.bidderEndpoint', reason: 'Enter a public https:// URL (no private, local or internal addresses).' })
+      /* The provider's own sandbox URL (config.bidders) is the seeded sample, so it saves back unchanged. */
+      if (e && e !== sandboxEndpoint && !isPublicHttpsUrl(e)) errors.push({ field: 'bidder.bidderEndpoint', reason: 'Enter a public https:// URL (no private, local or internal addresses).' })
       bidder.bidderEndpoint = e
     }
     if (body.bidder.seatIds !== undefined) bidder.seatIds = cleanList(body.bidder.seatIds)

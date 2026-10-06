@@ -72,6 +72,19 @@ describe('Run 3 — private auction: happy', () => {
     expect(booked(h, day(1))).toMatchObject([{ campaignId, displayTypeId: DT, slot: 1 }])
   })
 
+  it('P1b — the request carries the deal ID on pmp.deals; a bid quoting it wins, one without or with another is refused', async () => {
+    const h = await dealHarness()
+    await h.approvedCrid('crid-p1b', day(0))
+    expect((await runAuction(h.ctx, day(1))).positions[0].winner).toMatchObject({ advertiserId: 'swisse' })
+    const imp = h.bidder.log.bidRequests.at(-1)!.body.imp[0]
+    expect(imp.pmp).toMatchObject({ private_auction: 1, deals: [{ id: `PH-${h.list.id}`, at: 1, wseat: ['5130002'] }] })
+    for (const [i, dealid] of [undefined, 'PH-other'].entries()) {
+      h.bidder.setScript((req) => ({ body: response(req, [{ ...swisseBid(req, { price: 150, crid: 'crid-p1b' }), dealid }]) }))
+      await runAuction(h.ctx, day(2 + i))
+      expect((await h.rows(day(2 + i)))[0]).toMatchObject({ status: 'rejected', reason: expect.stringContaining(`requires PH-${h.list.id}`) })
+    }
+  })
+
   it('P2 — two invited buyers: the higher clears; a tie goes to the earlier bid', async () => {
     const h = await dealHarness({ invited: [{ partnerId: 'p_google', seatId: '5130002' }, { partnerId: 'p_google', seatId: '5130001' }] })
     await h.approvedCrid('crid-p2', day(0))
@@ -79,7 +92,7 @@ describe('Run 3 — private auction: happy', () => {
     /* Nestlé 160 through the API vs Swisse 150 from the DSP. */
     expect((await h.partner.bid(nestle, day(1), 160, { advertiserId: 'nestle' })).statusCode).toBe(201)
     expect((await runAuction(h.ctx, day(1))).positions[0].winner).toMatchObject({ advertiserId: 'nestle', clearingCpm: 160 })
-    expect((await h.rows(day(1))).find((r) => r.advertiserId === 'swisse')).toMatchObject({ status: 'lost', reason: 'Outbid: the window cleared at 160 AUD CPM.' })
+    expect((await h.rows(day(1))).find((r) => r.advertiserId === 'swisse')).toMatchObject({ status: 'lost', reason: 'Outbid: the window cleared at 160 USD CPM.' })
     /* Tie at 150: Nestlé's bid was placed before the auction ran; Swisse's arrives in it. */
     const early = await h.partner.bid(nestle, day(2), 150, { advertiserId: 'nestle' })
     await new Promise((r) => setTimeout(r, 5))
@@ -149,7 +162,7 @@ describe('Run 3 — private auction: non-happy', () => {
     await h.approvedCrid('crid-p6', day(0))
     h.bidder.setScript((req) => ({ body: response(req, [swisseBid(req, { price: 99, crid: 'crid-p6' })]) }))
     expect((await runAuction(h.ctx, day(1))).positions[0].winner).toBeNull()
-    expect((await h.rows(day(1)))[0]).toMatchObject({ status: 'rejected', reason: '99 is below the effective floor of 100 AUD CPM.' })
+    expect((await h.rows(day(1)))[0]).toMatchObject({ status: 'rejected', reason: '99 is below the effective floor of 100 USD CPM.' })
     const id = await h.readyApiCampaign('Swisse — P6')
     expect((await h.partner.bid(id, day(2), 99)).json().error.code).toBe('below_floor')
     expect(booked(h, day(1))).toEqual([])

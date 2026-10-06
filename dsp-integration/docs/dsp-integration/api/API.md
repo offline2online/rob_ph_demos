@@ -397,11 +397,16 @@ length. Every length is laid back to back from the same anchor (Monday
 00:00 UTC), so a 168-hour slot's windows start on Mondays, which are also
 daily slots' window starts: one auction (keyed on the window start) clears
 every position whose own window starts then. The Inventory API
-(`billingUnitHours` and `assumedViewsPerWindow` on a position, each
+(`billingUnitHours`, `playsPerWindow` and `assumedViewsPerWindow` on a position, each
 availability window's `start`/`end`), `POST /v1/reservations`' `windowStart`,
 the bid request's `exp` and `qty.multiplier`, the hand-off booking and
 billing (one line item per window, expected seconds and assumed views for
-that window's length) all follow it. Assumed views are scored per company
+that window's length) all follow it. **The play is the transacting unit**
+(6 Oct 2026): a window's time length is shown alongside the play count it
+holds — `playsPerWindow` = floor(window / loop length), plays on one display,
+also sent as `imp.ext.ph.playsPerWindow` — and the impression multiplier
+(VAC-d, `qty.multiplier`) only converts plays to estimated impressions for
+pricing and billing. Billing is unchanged: plays × multiplier. Assumed views are scored per company
 play window (`AudienceSource`) and scaled to a slot's own window length. A
 `playWindowHours` change is deferred only on the windows of slots that
 inherit it; a slot's own billing unit can't change while it has live
@@ -561,6 +566,12 @@ OpenRTB 2.6 with the DOOH object, sent to each connected DSP's bidder
 endpoint within 300 ms timeout and 500 QPS (platform defaults). Test-mode
 DSPs receive requests; nothing they win is billed or handed off.
 
+**Deals (private auctions).** A position assigned a buyers list sends
+`imp[0].pmp = { private_auction: 1, deals: [{ id: "PH-<buyers list id>", at: 1, wseat: [<the DSP's invited seats>] }] }`.
+The deal ID is derived from the list (no stored column). A bid on that position
+must quote it as `bid.dealid`; a bid with no `dealid` or another one is rejected.
+Per-DSP deal-ID format requirements are still to be confirmed.
+
 **Bid request (per sellable position and play window):**
 
 ```json
@@ -571,7 +582,7 @@ DSPs receive requests; nothing they win is billed or handed off.
     "video": { "w": 1920, "h": 1080, "minduration": 15, "maxduration": 15 },
     "bidfloor": 100.0,
     "bidfloorcur": "AUD",
-    "qty": { "multiplier": 412.0, "sourcetype": 1 },
+    "qty": { "multiplier": 412.0, "sourcetype": 2 },
     "exp": 86400
   }],
   "dooh": {
@@ -596,10 +607,18 @@ DSPs receive requests; nothing they win is billed or handed off.
 - `bidfloor` = effective floor CPM for the position (the base floor × the
   advertiser's multiplier; 100 in this example, not a personalised floor); `bidfloorcur` = company
   currency.
-- `qty.multiplier` = assumed views for the window (VAC-d); `sourcetype` 1 =
-  measurement vendor/estimate, 2 = counted by Vision/AI or MIST where enabled.
+- `qty.multiplier` = assumed views for the window (VAC-d); `sourcetype` is always 2
+  (publisher-provided: the audience counts come from our own cameras) on every DSP, and no
+  measurement `vendor` domain is sent. 1 (measurement vendor) is only for an independent
+  measurement partner, with that vendor's domain.
 - `bcat` / `badv` = the effective category and advertiser blacklists for
   this DSP.
+- **The Trade Desk is the exception**: it does not read `wseat`/`badv`, so a
+  TTD request carries no `badv` and instead sends the retailer's per-DSP lists
+  as `ext.seatperms`, `ext.advperms` and `ext.domainperms`, each
+  `{ "allow": [...], "block": [...] }` (IDs for seats/advertisers, domains for
+  `domainperms`). DV360 and Amazon keep `badv`. The allow/block encoding is an
+  assumption to confirm with TTD at integration.
 - **Never included:** any visitor data, Personalisation Variables or
   Computer Vision values; no `user` object.
 - Screen and loop context (orientation, slot duration, loop length, share of

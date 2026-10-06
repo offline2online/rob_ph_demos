@@ -69,6 +69,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         auctionOpensHours: b.auctionOpensHours, playWindowHours, auctionCutoffTime: b.auctionCutoffTime,
         pendingPlayWindowHours, pendingPlayWindowEffectiveFrom,
         categoryWhitelist: cleanCategoryList(b.categoryWhitelist), categoryBlacklist: cleanCategoryList(b.categoryBlacklist),
+        guaranteeBufferPct: b.guaranteeBufferPct ?? current.guaranteeBufferPct,
       })
     })
     return view()

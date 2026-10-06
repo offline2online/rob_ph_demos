@@ -4,6 +4,7 @@
    permissioning is a smaller list, never a rejected request. */
 import type { DisplayType, Slot } from '@ph-dsp/types'
 import type { Context } from '../context'
+import { TRANSACTING_CURRENCY } from './currency'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 import { type Awaitable, allOf, andThen } from '../db/db'
 import { type ReservationStatus, TAKEN } from '../repos/ReservationRepo'
@@ -14,6 +15,7 @@ import { effectiveLists, isBlocked, isOn } from './lists'
 import { effectiveFloorCpm } from './pricing'
 import { rotationSizeOf, slotDurationSec } from './slots'
 import { audienceOf } from './displayTypes'
+import { playsPerWindowOf } from './plays'
 
 export interface PositionRef {
   positionId: string
@@ -470,12 +472,14 @@ function viewOf(
     /* This position's own play-window length (OQ27): what one window —
        one bid, one booking, one billing line — covers. */
     billingUnitHours: windowHoursFor(company.playWindowHours, p),
+    /* The same window as a play count — the transacting unit (plays on ONE display; VAC-d converts plays to views for billing only). */
+    playsPerWindow: playsPerWindowOf(windowMsFor(company.playWindowHours, p), loop),
     assumedViewsPerWindow: assumedViewsFor(audience.assumedViewsPerWindow, company.playWindowHours, p),
     /* False when the slot has no audience score: only ever seen by a
        caller who is told so, since inventory excludes such positions. */
     scored: audience.scored,
     /* One floor for every campaign type; no personalised price (Rob, 5 Oct 2026). */
-    pricing: { currency: company.currency, floorCpm: company.floorCpm, effectiveFloorCpm: { localised: effectiveFloorCpm(company, multiplier) } },
+    pricing: { currency: TRANSACTING_CURRENCY, floorCpm: company.floorCpm, effectiveFloorCpm: { localised: effectiveFloorCpm(company, multiplier) } },
     /* The most campaigns (default + targeted versions) a bid or reservation here may carry. */
     maxCampaigns: maxCampaignsOf(dt, p.def),
     reservePrice: reservePriceOf(dt, p.def),

@@ -109,7 +109,7 @@ describe('A. Approval gate (hard precondition)', () => {
     /* Hand-off: even a won window for an unapproved campaign is never booked into PH Core. */
     const forced = await h.ctx.reservations.insert({
       id: 'res_a4_forced', partnerId: 'p_google', advertiserId: 'swisse', campaignId: id, positionId: POS, windowStart: day(3).toISOString(),
-      type: 'bid', channel: 'api', bidCpm: 150, currency: 'AUD', status: 'won', clearingCpm: 150, reason: null, testMode: false, pricingType: 'localised', handedOffAt: null,
+      type: 'bid', channel: 'api', bidCpm: 150, currency: 'USD', status: 'won', clearingCpm: 150, reason: null, testMode: false, pricingType: 'localised', handedOffAt: null,
     })
     const after = await handOff(h.ctx, forced)
     expect(after).toMatchObject({ handedOffAt: null, reason: 'Not handed off: the campaign is not approved.' })
@@ -151,7 +151,7 @@ describe('B. Auction / floor', () => {
     const out = await runAuction(h.ctx, day(1))
     expect(out.positions[0]).toMatchObject({ bidRequests: 1, bids: 1, winner: { partnerId: 'p_google', advertiserId: 'swisse', clearingCpm: 120 } })
     /* The floor on the request is the effective base floor. */
-    expect(h.bidder.log.bidRequests.at(-1)!.body.imp[0]).toMatchObject({ bidfloor: 100, bidfloorcur: 'AUD' })
+    expect(h.bidder.log.bidRequests.at(-1)!.body.imp[0]).toMatchObject({ bidfloor: 100, bidfloorcur: 'USD' })
     expect(bookingsFor(h, day(1))).toEqual([expect.objectContaining({ campaignId, displayTypeId: DT, slot: 1, windowStart: day(1).toISOString(), windowEnd: day(2).toISOString() })])
     expect((await h.ctx.reservations.get(out.positions[0].winner!.reservationId))!.handedOffAt).not.toBeNull()
   })
@@ -162,11 +162,11 @@ describe('B. Auction / floor', () => {
     await h.bidder.control({ mode: 'below_floor' })
     const out = await runAuction(h.ctx, day(1))
     expect(out.positions[0].winner).toBeNull()
-    expect((await h.rows(day(1)))[0]).toMatchObject({ status: 'rejected', reason: '50 is below the effective floor of 100 AUD CPM.' })
+    expect((await h.rows(day(1)))[0]).toMatchObject({ status: 'rejected', reason: '50 is below the effective floor of 100 USD CPM.' })
     /* Just under the floor is still under it. */
     h.bidder.setScript((req) => ({ body: response(req, [swisseBid(req, { price: 99.99, crid: 'crid-b2' })]) }))
     expect((await runAuction(h.ctx, day(2))).positions[0].winner).toBeNull()
-    expect((await h.rows(day(2)))[0].reason).toBe('99.99 is below the effective floor of 100 AUD CPM.')
+    expect((await h.rows(day(2)))[0].reason).toBe('99.99 is below the effective floor of 100 USD CPM.')
     /* Nothing booked into PH Core: the slot's own playlist (its default campaign) plays. */
     expect(bookingsFor(h, day(1))).toEqual([])
     expect(bookingsFor(h, day(2))).toEqual([])
@@ -194,7 +194,7 @@ describe('B. Auction / floor', () => {
     expect(out.positions[0].winner).toMatchObject({ clearingCpm: 180 })
     const rows = await h.rows(day(2))
     expect(rows.find((r) => r.status === 'won')).toMatchObject({ campaignId: high, bidCpm: 180, clearingCpm: 180 })
-    expect(rows.find((r) => r.status === 'lost')).toMatchObject({ bidCpm: 160, reason: 'Outbid: the window cleared at 180 AUD CPM.' })
+    expect(rows.find((r) => r.status === 'lost')).toMatchObject({ bidCpm: 160, reason: 'Outbid: the window cleared at 180 USD CPM.' })
 
     /* Tie at 170: an API bid placed before the auction vs a DSP bid in it — the earlier one wins. */
     const { id: api } = await h.submitApiCampaign('Swisse — B4 tie')
@@ -251,7 +251,7 @@ describe('C. Hand-off & billing', () => {
     const w = day(2)
     const stale = await h.ctx.reservations.insert({
       id: 'res_c1_stale', partnerId: 'p_google', advertiserId: 'swisse', campaignId, positionId: POS, windowStart: w.toISOString(),
-      type: 'bid', channel: 'openrtb', bidCpm: 150, currency: 'AUD', status: 'won', clearingCpm: 150, reason: null, testMode: false, pricingType: 'localised', handedOffAt: null,
+      type: 'bid', channel: 'openrtb', bidCpm: 150, currency: 'USD', status: 'won', clearingCpm: 150, reason: null, testMode: false, pricingType: 'localised', handedOffAt: null,
     })
     await h.admin.activate(campaignId, false)
     expect(await handOff(h.ctx, stale)).toMatchObject({ handedOffAt: null, reason: 'Not handed off: the campaign is approved but not activated.' })
@@ -282,7 +282,7 @@ describe('C. Hand-off & billing', () => {
     h.setNow(new Date('2026-09-24T00:01:00.000Z'))
     const items = await runBilling(h.ctx)
     expect(items).toMatchObject([
-      { campaignId, positionId: POS, windowStart: day(1).toISOString(), plays: 2880, playedSec: expectedSec / 2, expectedSec, assumedViews: ASSUMED_VIEWS, realisedViews: ASSUMED_VIEWS / 2, cpm: 150, currency: 'AUD', amount: 60 },
+      { campaignId, positionId: POS, windowStart: day(1).toISOString(), plays: 2880, playedSec: expectedSec / 2, expectedSec, assumedViews: ASSUMED_VIEWS, realisedViews: ASSUMED_VIEWS / 2, cpm: 150, currency: 'USD', amount: 60 },
       { campaignId, windowStart: day(2).toISOString(), plays: 0, realisedViews: 0, amount: 0 },
     ])
     /* The playback stub was asked for exactly the sold window on the display type's displays. */
@@ -329,8 +329,8 @@ describe('D. Robustness / edge', () => {
       'not JSON': () => ({ raw: '<html>502 Bad Gateway</html>' }),
       'not a bid response': () => ({ body: 'not a bid' }),
       'a JSON array': () => ({ body: [1, 2, 3] }),
-      'a null bid': (req) => ({ body: { id: req.id, cur: 'AUD', seatbid: [{ seat: '884513', bid: [null] }] } }),
-      'null seatbid': (req) => ({ body: { id: req.id, cur: 'AUD', seatbid: null } }),
+      'a null bid': (req) => ({ body: { id: req.id, cur: 'USD', seatbid: [{ seat: '884513', bid: [null] }] } }),
+      'null seatbid': (req) => ({ body: { id: req.id, cur: 'USD', seatbid: null } }),
       'a bid with no price': (req) => ({ body: response(req, [swisseBid(req, { price: null, crid: 'crid-d1' })]) }),
       'a string price': (req) => ({ body: response(req, [swisseBid(req, { price: '999', crid: 'crid-d1' })]) }),
       'an oversized body (> 64 KB)': (req) => ({ body: { ...response(req, [swisseBid(req, { price: 150, crid: 'crid-d1' })]), ext: { pad: 'x'.repeat(70 * 1024) } } }),

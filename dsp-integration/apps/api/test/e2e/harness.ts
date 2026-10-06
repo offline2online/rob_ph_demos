@@ -124,15 +124,15 @@ export function stubDspBidder() {
 
 /* A well-formed OpenRTB 2.6 bid from Swisse's seat, for a scripted response. */
 export function swisseBid(req: BidRequest, b: { price: unknown; crid: string; iurl?: string; id?: string }) {
-  const imp = req.imp?.[0] as { banner?: { w?: number; h?: number } } | undefined
+  const imp = req.imp?.[0] as { banner?: { w?: number; h?: number }; pmp?: { deals?: { id: string }[] } } | undefined
   const w = imp?.banner?.w ?? 1920
   const h = imp?.banner?.h ?? 1080
   return {
-    id: b.id ?? `${req.id}-${b.crid}`, impid: '1', price: b.price, crid: b.crid, adomain: ['swisse.com'], cat: ['IAB7'],
+    id: b.id ?? `${req.id}-${b.crid}`, impid: '1', price: b.price, crid: b.crid, ...(imp?.pmp?.deals?.[0] ? { dealid: imp.pmp.deals[0].id } : {}), adomain: ['swisse.com'], cat: ['IAB7'],
     iurl: b.iurl ?? `${MOCKS}/dv360/creatives/${encodeURIComponent(b.crid)}.png?w=${w}&h=${h}`, w, h,
   }
 }
-export const response = (req: BidRequest, bids: unknown[], seat = SWISSE_SEAT) => ({ id: req.id, cur: 'AUD', seatbid: [{ seat, bid: bids }] })
+export const response = (req: BidRequest, bids: unknown[], seat = SWISSE_SEAT) => ({ id: req.id, cur: 'USD', seatbid: [{ seat, bid: bids }] })
 /* A well-formed bid from Arnott's on The Trade Desk's seat. */
 export function arnottsBid(req: BidRequest, b: { price: unknown; crid: string }) {
   return { ...swisseBid(req, b), adomain: ['arnotts.com'], cat: ['IAB8'], iurl: `${MOCKS}/ttd/creatives/${encodeURIComponent(b.crid)}.png?w=1920&h=1080` }
@@ -293,7 +293,7 @@ export async function harness(opts: { dbFile?: string } = {}) {
       await ctx.partners.insert({
         id: 'p_ttd', provider: 'the_trade_desk', name: 'The Trade Desk', status: 'connected', mode: 'live', lastSync: null,
         credsPublic: { supplySourceId: 'ss-e2e', ttdPartnerId: 'phub-retail', region: 'APAC' }, secrets: { apiToken: 'e2e-placeholder' },
-        bidder: { bidderEndpoint: 'https://bid.adsrvr.org/openrtb2/bid', seatIds: [TTD_SEAT] },
+        bidder: { bidderEndpoint: `${MOCKS}/ttd/openrtb2/bid`, seatIds: [TTD_SEAT] },
         seats: [{ id: 'ttd-adv-1', name: 'Arnott’s', domain: 'arnotts.com' }], listsLinked: true, allowList: [], blockList: [], categoryAllowList: [], categoryBlockList: [],
       } as never)
     }
@@ -327,7 +327,7 @@ export type Harness = Awaited<ReturnType<typeof harness>>
 
 /* Preconditions / fixtures (spec): exchange complete and on, one Live DSP
    with endpoint and seat, one single-zone Digital Signage display type with
-   one Advertiser slot on physical displays, floor CPM 100 AUD, and the
+   one Advertiser slot on physical displays, floor CPM 100 USD, and the
    slot's targeting left at its default (localised). The seeded Menu Board's
    Advertiser slot is taken out so the fixture's position is the estate's
    only one. */

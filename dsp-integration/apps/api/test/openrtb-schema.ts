@@ -39,6 +39,7 @@ export const OPENRTB_26_DOOH_REQUEST = closed({
   cur: strs,
   bcat: strs,
   badv: strs,
+  ext: { type: 'object' },
   tmax: int,
   at: { enum: [1, 2] },
 }, ['id', 'imp', 'dooh', 'source', 'cur', 'tmax', 'at'])

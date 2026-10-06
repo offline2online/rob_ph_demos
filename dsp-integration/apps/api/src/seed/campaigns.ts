@@ -70,7 +70,7 @@ async function seedPastWindow(ctx: Context) {
   const start = '2026-09-15T00:00:00.000Z'
   await ctx.reservations.insert({
     id: 'res_seed_nestle_0915', partnerId: 'p_google', advertiserId: 'nestle', campaignId: 'c_dsp_nestle', positionId: 'menu_board.s2', windowStart: start,
-    type: 'bid', channel: 'openrtb', bidCpm: 120, currency: 'AUD', status: 'won', clearingCpm: 120, reason: null, testMode: false,
+    type: 'bid', channel: 'openrtb', bidCpm: 120, currency: 'USD', status: 'won', clearingCpm: 120, reason: null, testMode: false,
     pricingType: 'localised', handedOffAt: '2026-09-14T18:00:00.000Z',
   })
   await ctx.campaigns.bookSlot({ id: 'bk_seed_nestle_0915', campaignId: 'c_dsp_nestle', displayTypeId: 'menu_board', slot: 2, windowStart: start, windowEnd: '2026-09-16T00:00:00.000Z' })

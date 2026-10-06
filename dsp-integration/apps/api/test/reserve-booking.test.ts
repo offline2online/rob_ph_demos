@@ -59,7 +59,7 @@ describe('reserve-price booking (OQ52): commit, hold as Reserved, honour at the 
     const res = await post(RESERVE)
     expect(res.statusCode).toBe(201)
     expectMatchesContract('POST', '/v1/reservations', 201, res.json())
-    expect(res.json()).toMatchObject({ status: 'reserved', clearingCpm: 150, currency: 'AUD' })
+    expect(res.json()).toMatchObject({ status: 'reserved', clearingCpm: 150, currency: 'USD' })
     expect((await rows())[0]).toMatchObject({ type: 'reserve', status: 'reserved', clearingCpm: 150, testMode: false })
     expect((await rows())[0].handedOffAt).not.toBeNull()
     /* Reserved to every caller, the holder included: it is spoken for. */
@@ -71,7 +71,7 @@ describe('reserve-price booking (OQ52): commit, hold as Reserved, honour at the 
     const low = await post({ ...RESERVE, bidCpm: 149 })
     expect(low.statusCode).toBe(400)
     expectMatchesContract('POST', '/v1/reservations', 400, low.json())
-    expect(low.json().error).toMatchObject({ code: 'validation_failed', details: [{ field: 'bidCpm', reason: 'The reserve price for this position is 150 AUD CPM; commit to at least that.' }] })
+    expect(low.json().error).toMatchObject({ code: 'validation_failed', details: [{ field: 'bidCpm', reason: 'The reserve price for this position is 150 USD CPM; commit to at least that.' }] })
     const res = await post({ ...RESERVE, bidCpm: 200 })
     expect(res.json()).toMatchObject({ status: 'reserved', clearingCpm: 150 })
   })
@@ -114,7 +114,7 @@ describe('reserve-price booking (OQ52): commit, hold as Reserved, honour at the 
     const cheap = await setup({ reservePrice: 90 })
     const res = await cheap.post({ ...cheap.RESERVE, bidCpm: 90 })
     expect(res.statusCode).toBe(422)
-    expect(res.json().error).toMatchObject({ code: 'below_floor', message: '90 is below the effective floor of 100 AUD CPM.' })
+    expect(res.json().error).toMatchObject({ code: 'below_floor', message: '90 is below the effective floor of 100 USD CPM.' })
   })
 
   it('bills on realised VAC-d at the reserve price: a floor commitment, not a guaranteed volume', async () => {
@@ -160,7 +160,7 @@ describe('deals (OQ45): per DSP, on the existing buyers list, never under the fl
     await ctx.company.save({ ...(await ctx.company.get()), floorCpm: 200 })
     const out = await runAuction(ctx, new Date(W2))
     expect(out.positions.find((p) => p.positionId === 'portrait.s1')).toMatchObject({
-      winner: null, skipped: 'Private auction: the locked rate (150) is below the effective floor of 200 AUD CPM, so this window is not sold under Swisse PG.',
+      winner: null, skipped: 'Private auction: the locked rate (150) is below the effective floor of 200 USD CPM, so this window is not sold under Swisse PG.',
     })
     expect(await rows(W2)).toEqual([])
   })
@@ -170,10 +170,10 @@ describe('deals (OQ45): per DSP, on the existing buyers list, never under the fl
     await termDeal(ctx)
     await ctx.company.saveAdvertiserSettings({ swisse: { approvalRequired: true, floorMultiplier: 1.5 } })
     const bid = await post({ ...RESERVE, type: 'bid', bidCpm: 140 })
-    expect(bid.json().error).toMatchObject({ code: 'below_floor', message: '140 is below the effective floor of 150 AUD CPM.' })
+    expect(bid.json().error).toMatchObject({ code: 'below_floor', message: '140 is below the effective floor of 150 USD CPM.' })
     const reserve = await post({ ...RESERVE, bidCpm: 140 })
     expect(reserve.statusCode).toBe(422)
-    expect(reserve.json().error).toMatchObject({ code: 'below_floor', message: '120 is below the effective floor of 150 AUD CPM.' })
+    expect(reserve.json().error).toMatchObject({ code: 'below_floor', message: '120 is below the effective floor of 150 USD CPM.' })
     expect((await ctx.buyersLists.get('bl_pg'))!.lockedWin).toBeNull()
   })
 

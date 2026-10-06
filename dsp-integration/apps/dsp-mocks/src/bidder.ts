@@ -15,7 +15,7 @@ export const IAB_CODES: Record<string, string> = {
 
 interface BidRequest {
   id: string
-  imp?: { id: string; bidfloor?: number; video?: { w?: number; h?: number }; banner?: { w?: number; h?: number } }[]
+  imp?: { id: string; bidfloor?: number; video?: { w?: number; h?: number }; banner?: { w?: number; h?: number }; pmp?: { deals?: { id?: string }[] } }[]
   cur?: string[]
 }
 
@@ -66,6 +66,7 @@ export const bidderRoutes = (store: MockStore, dsp: DspKey): FastifyPluginAsync 
         seat: adv.seatId,
         bid: [{
           id: `${req.body.id}-1`, impid: imp.id, price, crid,
+          ...(imp.pmp?.deals?.[0]?.id ? { dealid: imp.pmp.deals[0].id } : {}),
           adomain: [b.adomain || adv.domain].filter(Boolean),
           cat: adv.categories.map((c) => IAB_CODES[c]).filter(Boolean),
           iurl: `${req.protocol}://${req.host}${req.url.replace(/openrtb2\/bid$/, '')}creatives/${encodeURIComponent(crid)}.png?w=${size.w ?? 1920}&h=${size.h ?? 1080}`,

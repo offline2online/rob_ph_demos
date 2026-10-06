@@ -301,14 +301,26 @@ describe('Run 2 — F. Bid-response hardening', () => {
     expect((await h.rows(day(1)))[0]).toMatchObject({ status: 'rejected', reason: 'Bid for impression 2; the request offered impression 1.' })
   })
 
-  it('F3 — a missing cur is rejected on an AUD exchange', async () => {
+  it('F3 — a missing cur is rejected', async () => {
     const h = await setup()
     h.bidder.setScript((req) => {
       const { cur: _cur, ...body } = response(req, [swisseBid(req, { price: 500, crid: 'crid-f' })])
       return { body }
     })
     expect((await runAuction(h.ctx, day(1))).positions[0].winner).toBeNull()
-    expect((await h.rows(day(1)))[0]).toMatchObject({ status: 'rejected', reason: 'Bid names no currency; the exchange trades in AUD and does not convert.' })
+    expect((await h.rows(day(1)))[0]).toMatchObject({ status: 'rejected', reason: 'Bid names no currency; the exchange trades in USD and does not convert.' })
+  })
+
+  it('F3b — a THB instance still transacts in USD: the request says USD and a USD bid wins; a non-USD bid is refused', async () => {
+    const h = await setup()
+    await h.ctx.company.save({ ...(await h.ctx.company.get()), currency: 'THB' })
+    let seen: { cur?: string[]; bidfloorcur?: string } = {}
+    h.bidder.setScript((req) => { seen = { cur: req.cur, bidfloorcur: req.imp[0].bidfloorcur }; return { body: response(req, [swisseBid(req, { price: 500, crid: 'crid-f' })]) } })
+    expect((await runAuction(h.ctx, day(1))).positions[0].winner).toMatchObject({ clearingCpm: 500 })
+    expect(seen).toEqual({ cur: ['USD'], bidfloorcur: 'USD' })
+    h.bidder.setScript((req) => ({ body: { ...response(req, [swisseBid(req, { price: 500, crid: 'crid-f' })]), cur: 'THB' } }))
+    expect((await runAuction(h.ctx, day(2))).positions[0].winner).toBeNull()
+    expect((await h.rows(day(2)))[0]).toMatchObject({ status: 'rejected', reason: 'Bid in THB; the exchange trades in USD and does not convert.' })
   })
 
   it('F4 — a non-finite price, or one above 10,000 CPM, is rejected', async () => {
@@ -316,7 +328,7 @@ describe('Run 2 — F. Bid-response hardening', () => {
     let n = 1
     for (const [raw, reason] of [
       ['1e999', 'No price on the bid.'],
-      ['10000.01', 'Bid of 10000.01 AUD CPM is above the exchange\'s ceiling of 10000.'],
+      ['10000.01', 'Bid of 10000.01 USD CPM is above the exchange\'s ceiling of 10000.'],
       ['-5', 'No price on the bid.'],
       ['"150"', 'No price on the bid.'],
     ] as const) {

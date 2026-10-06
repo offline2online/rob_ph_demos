@@ -4,7 +4,9 @@
    supply source ID identifies PH on TTD's side for the bidding path. */
 import { type AuditVerdict, auditCheckFrom } from '../domain/dspAudit'
 import { type DspClient, type Fetch, type Seat, domainOf, unreachable } from './DspClient'
-import { type BidderEndpoints, type DspProvider, bidderSide } from './DspProvider'
+import { type EffectiveLists, seatDomains } from '../domain/lists'
+import type { PartnerRecord } from '../repos/PartnerRepo'
+import { type BidderEndpoints, type BuyerBlocking, type DspProvider, bidderSide } from './DspProvider'
 
 export interface TtdConfig { apiBaseUrl: string }
 
@@ -48,11 +50,28 @@ export function ttdAuditVerdict(raw: Record<string, unknown>): AuditVerdict | nu
   return typeof raw.approvedBy === 'string' && raw.approvedBy ? { verdict: 'approved', why: `by ${raw.approvedBy}` } : { verdict: 'pending' }
 }
 
+/* The Trade Desk does not read wseat/badv: it takes the retailer's per-DSP
+   lists in ext.seatperms / ext.advperms (its own seat and advertiser IDs —
+   for TTD a synced seat is an advertiser, so the same list feeds both) and
+   ext.domainperms (the domains of those seats, as for badv). Assumed
+   encoding: {allow, block} arrays, an empty allow meaning "no allow-list".
+   Confirm the exact TTD semantics at integration (ticket zhHpMXphZs0r0CK3mn8X). */
+export function ttdPermissions(partner: PartnerRecord, lists: EffectiveLists): BuyerBlocking {
+  return {
+    ext: {
+      seatperms: { allow: [...lists.allowList], block: [...lists.blockList] },
+      advperms: { allow: [...lists.allowList], block: [...lists.blockList] },
+      domainperms: { allow: seatDomains(partner, lists.allowList), block: seatDomains(partner, lists.blockList) },
+    },
+  }
+}
+
 export function theTradeDeskProvider(cfg: TtdConfig, bidder: BidderEndpoints | undefined, fetchImpl?: Fetch): DspProvider {
   return {
     key: 'the_trade_desk',
     ...theTradeDeskClient(cfg, fetchImpl),
     ...bidderSide(bidder),
     auditCheck: (raw) => auditCheckFrom('The Trade Desk', raw, ttdAuditVerdict),
+    buyerBlocking: ttdPermissions,
   }
 }
