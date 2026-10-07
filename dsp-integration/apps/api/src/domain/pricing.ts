@@ -26,6 +26,21 @@ export function resolveBaseFloor(platformCpm: number, dspCpm?: number | null, li
   return Math.max(platformCpm, level)
 }
 
+/* A deal term resolved per invited DSP through platform default -> DSP -> buyers list (Rob, 7 Oct 2026), so
+   nothing the retailer has set at any level shows blank. When the list's invited DSPs resolve differently the
+   range is returned (min..max) with source 'mixed'. */
+export type TermSource = 'buyer' | 'dsp' | 'platform' | 'mixed' | 'none'
+export interface EffectiveTerm { min: number | null; max: number | null; source: TermSource }
+export function effectiveTerm(levels: { platform: number | null; dsp: (number | null | undefined)[]; buyer: number | null | undefined }, clamp: (n: number) => number = (n) => n): EffectiveTerm {
+  const resolved = (levels.dsp.length ? levels.dsp : [undefined]).map((d): { v: number | null; source: TermSource } =>
+    typeof levels.buyer === 'number' ? { v: levels.buyer, source: 'buyer' }
+    : typeof d === 'number' ? { v: d, source: 'dsp' }
+    : levels.platform !== null ? { v: levels.platform, source: 'platform' } : { v: null, source: 'none' })
+  const values = resolved.map((r) => r.v).filter((v): v is number => v !== null).map(clamp)
+  const sources = new Set(resolved.map((r) => r.source))
+  return { min: values.length ? Math.min(...values) : null, max: values.length ? Math.max(...values) : null, source: sources.size === 1 ? [...sources][0] : 'mixed' }
+}
+
 export function effectiveFloorCpm(p: PricingInputs, advertiserFloorMultiplier: number, base: number = p.floorCpm) {
   return cents(base * advertiserFloorMultiplier)
 }

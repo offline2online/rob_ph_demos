@@ -30,6 +30,9 @@ export function sqliteBuyersListRepo(db: Db): BuyersListRepo {
     id: r.id, name: r.name, description: r.description, invitedBuyers: fromJson(r.invited_buyers, []), targeting: fromJson(r.targeting, []),
     activeFrom: r.active_from, activeTo: r.active_to, auctionCloses: r.auction_closes, lockedWin: fromJson(r.locked_win, null),
     committedPlays: r.committed_plays, floorCpm: r.floor_cpm, deliveredPlays: 0,
+    /* Resolved against the platform and DSP levels by the admin route (withDelivery); the row alone can't know them. */
+    effectiveCommittedPlays: { min: r.committed_plays, max: r.committed_plays, source: r.committed_plays == null ? 'none' : 'buyer' },
+    effectiveRateCpm: { min: r.floor_cpm, max: r.floor_cpm, source: r.floor_cpm == null ? 'none' : 'buyer' },
     createdAt: r.created_at, updatedAt: r.updated_at,
   })
   const row = (id: string) => prepared(db, 'SELECT * FROM buyers_lists WHERE id = ?').get(id) as Row | undefined

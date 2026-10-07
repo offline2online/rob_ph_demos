@@ -1,6 +1,6 @@
 /* Advertiser settings (spec §4, §5, §6): pricing and the company lists, plus
    the read-only Where these apply and Available Inventory. */
-import { INTERACTIVE_ENABLED, MAX_MAX_CAMPAIGNS, MIN_MAX_CAMPAIGNS, advertiserSlug, assignedOf, billingUnitHoursOf, isRtbOnly, maxCampaignsOf, interactiveReservePriceOf, reservePriceOf, type AdvertiserSettings, type AdvertiserSettingsInput, type Assigned, type AvailableInventoryRow, type DisplayType, type DspAdvertisers } from '@ph-dsp/types'
+import { INTERACTIVE_ENABLED, MAX_MAX_CAMPAIGNS, MIN_MAX_CAMPAIGNS, advertiserSlug, assignedOf, billingUnitHoursOf, maxCampaignsOf, interactiveReservePriceOf, reservePriceOf, type AdvertiserSettings, type AdvertiserSettingsInput, type Assigned, type AvailableInventoryRow, type DisplayType, type DspAdvertisers } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { cleanCategoryList, validateAdvertiserSettings } from '../../domain/advertiserSettings'
@@ -298,12 +298,6 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         }
         const maxCampaigns = parseMaxCampaigns(r.maxCampaigns, f('maxCampaigns'), errors)
         const maxCampaignsDefault = parseMaxCampaigns(r.maxCampaignsDefault, f('maxCampaignsDefault'), errors)
-        /* A website or mobile app slot is sold by real-time bidding only: no reserve, billing window or campaign cap to set (ticket HAmTUHQVj63NDiY4hLk8). */
-        if (dt && isRtbOnly(dt.touchPoint)) {
-          const windowFields: [string, unknown][] = [['reservePrice', reservePrice], ['interactiveReservePrice', interactiveReservePrice], ['reservePriceDefault', reservePriceDefault], ['billingUnitHours', billingUnitHours], ['billingUnitHoursDefault', billingUnitHoursDefault], ['maxCampaigns', maxCampaigns], ['maxCampaignsDefault', maxCampaignsDefault]]
-          for (const [k, v] of windowFields) if (v !== null && v !== undefined) errors.push({ field: f(k), reason: `${dt.name} is a ${dt.touchPoint.toLowerCase()} display type: its slots are sold by real-time bidding only, so there is no reserve price, billing unit or campaign cap to set.` })
-          if (assigned.advertisers.length || assigned.buyersListIds.length) errors.push({ field: f('assignedTo'), reason: 'A website or mobile app slot is sold by real-time bidding only: it can’t be held for named advertisers or assigned to a private auction.' })
-        }
         if (dt) {
           if (maxCampaignsDefaults.has(dt.id) && maxCampaignsDefaults.get(dt.id) !== maxCampaignsDefault) errors.push({ field: f('maxCampaignsDefault'), reason: 'All slots on a display type must submit the same max campaigns default.' })
           else maxCampaignsDefaults.set(dt.id, maxCampaignsDefault)

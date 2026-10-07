@@ -26,20 +26,16 @@ async function setup(touchPoint: 'Website' | 'Mobile App') {
   return { ctx, app, sent, id, put, signal }
 }
 
-describe.each([['Website', 'site', OPENRTB_26_SITE_REQUEST], ['Mobile App', 'app', OPENRTB_26_APP_REQUEST]] as const)('%s slots are sold by real-time bidding only', (touchPoint, object, schema) => {
+describe.each([['Website', 'site', OPENRTB_26_SITE_REQUEST], ['Mobile App', 'app', OPENRTB_26_APP_REQUEST]] as const)('%s slots follow digital signage, with a site/app bid request', (touchPoint, object, schema) => {
   const slots = [{ label: 'Header', owner: 'internal' }, { label: 'Sidebar', owner: 'advertiser', bidMode: 'realtime' }]
 
-  it('lets a slot be marked available for RTB, and refuses every other way to sell it', async () => {
+  it('accepts advance and real-time Advertiser slots like digital signage, and refuses Stores', async () => {
     const { put, ctx, id } = await setup(touchPoint)
     const ok = await put(slots)
     expect(ok.statusCode).toBe(200)
-    expect(ok.json().slots.map((s: { bidMode?: string }) => s.bidMode)).toEqual([undefined, 'realtime'])
     expect((await ctx.displayTypes.get(id))?.phExtensions?.slots[1]).toMatchObject({ owner: 'advertiser', bidMode: 'realtime' })
-    /* An Advertiser slot not marked for RTB would be an advance (window) slot. */
-    const advance = await put([slots[0], { label: 'Sidebar', owner: 'advertiser' }])
-    expect(advance.statusCode).toBe(400)
-    expect(advance.json().error.details).toEqual([{ field: 'slots[1].bidMode', reason: expect.stringContaining('real-time bidding only') }])
-    expect((await put([slots[0], { label: 'Sidebar', owner: 'advertiser', bidMode: 'advance' }])).statusCode).toBe(400)
+    expect((await put([slots[0], { label: 'Sidebar', owner: 'advertiser' }])).statusCode).toBe(200)
+    expect((await put([slots[0], { label: 'Sidebar', owner: 'advertiser', bidMode: 'advance' }])).statusCode).toBe(200)
     expect((await put([slots[0], { label: 'Sidebar', owner: 'retail' }])).statusCode).toBe(400)
   })
 
@@ -63,17 +59,17 @@ describe.each([['Website', 'site', OPENRTB_26_SITE_REQUEST], ['Mobile App', 'app
     expect(sent).toHaveLength(0)
   })
 
-  it('offers no reserve, billing unit, campaign cap, named advertiser or deal for the slot', async () => {
+  it('takes a reserve, billing unit, campaign cap and named advertiser for the slot, as digital signage does', async () => {
     const { put, app, id } = await setup(touchPoint)
     await put(slots)
     const item = (over: Record<string, unknown>) => ({ displayTypeId: id, slot: 2, assignedTo: { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: null }, reservePrice: null, billingUnitHours: null, maxCampaigns: null, ...over })
     const save = (over: Record<string, unknown>) => app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [item(over)] } })
-    const inv = await app.inject({ method: 'GET', url: '/api/admin/v1/available-inventory' })
-    expect(inv.json().items.find((r: { displayTypeId: string }) => r.displayTypeId === id)).toMatchObject({ touchPoint, unsellableReason: null })
     expect((await save({})).statusCode).toBe(200)
-    for (const over of [{ reservePrice: 5 }, { billingUnitHours: 24 }, { maxCampaigns: 3 }, { assignedTo: { partnerIds: [], advertisers: ['Nestlé'], whitelistOnly: false, buyersListId: null } }]) {
+    /* An advance slot (the default) can also be held for a named advertiser. */
+    await put([slots[0], { label: 'Sidebar', owner: 'advertiser' }])
+    for (const over of [{ maxCampaigns: 3 }, { reservePrice: 5 }, { billingUnitHours: 24 }, { assignedTo: { partnerIds: [], advertisers: ['Nestlé'], whitelistOnly: false, buyersListId: null } }]) {
       const res = await save(over)
-      expect(res.statusCode, JSON.stringify(over)).toBe(400)
+      expect(res.statusCode, JSON.stringify(over) + res.body).toBe(200)
     }
   })
 })

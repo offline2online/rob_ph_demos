@@ -116,6 +116,13 @@ export function applyPartnerInput(p: PartnerRecord, currentSecrets: Record<strin
       else if (floor < company.floorCpm) errors.push({ field: 'bidder.floorCpm', reason: `Floor price (CPM) can't be below the platform floor of ${company.floorCpm} USD.` })
       else bidder.floorCpm = floor
     }
+    /* This DSP's committed play volume (Rob, 7 Oct 2026): overrides the platform default for lists on this DSP; blank inherits it. */
+    const plays = (body.bidder as Record<string, unknown>).committedPlays
+    if (plays !== undefined) {
+      if (plays === null) delete bidder.committedPlays
+      else if (typeof plays !== 'number' || !Number.isInteger(plays) || plays < 1) errors.push({ field: 'bidder.committedPlays', reason: 'Committed plays is a whole number of plays, at least 1, or empty to inherit the platform default.' })
+      else bidder.committedPlays = plays
+    }
   }
 
   /* The advertiser lists are this DSP's own and hold only seat IDs it has

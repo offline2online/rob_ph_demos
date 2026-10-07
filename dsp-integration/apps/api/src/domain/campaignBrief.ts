@@ -8,8 +8,8 @@ import { TOUCH_POINTS, allowsAdvertising, type CampaignBrief } from '@ph-dsp/typ
 type Detail = { field: string; reason: string }
 const TEXTS = [['details', 2000], ['objective', 200], ['landingPageUrl', 500]] as const
 const LISTS = [['promotedProducts', 50], ['skus', 100], ['targetAudiences', 50]] as const
-/* Only touch points that allow advertising at all (28 Sep 2026: Website and
-   Mobile App are HQ-only, so an advertiser's brief can never target them). */
+/* Only touch points that allow advertising at all (every one does since 7 Oct
+   2026, ticket 0jviesctpWGyOYtK20tg; it was not Website or Mobile App before). */
 const POINTS = TOUCH_POINTS.filter((t) => allowsAdvertising(t.name)).map((t) => t.name) as string[]
 
 const strings = (v: unknown) => Array.isArray(v) && v.every((x) => typeof x === 'string' && x.trim())

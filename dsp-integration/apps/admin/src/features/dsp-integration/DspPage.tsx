@@ -153,6 +153,9 @@ export function DspPage({ draftKey, partner }: { draftKey: string; partner: Part
         <Field label="Floor price (CPM)" tip="This DSP's bid floor in USD. It raises the platform floor (Advertiser settings) for this DSP only and can never be lower than it. Leave empty to inherit the platform floor. A buyers list's own floor, if set, overrides this on deals using that list." htmlFor="bidderFloorCpm">
           <Input id="bidderFloorCpm" inputMode="decimal" value={d.floorCpm} placeholder="Platform floor" onChange={(e) => set((x) => ({ ...x, floorCpm: e.target.value.replace(/[^0-9.]/g, '') }))} />
         </Field>
+        <Field label="Committed plays" tip="The play volume deals on this DSP commit to. It overrides the platform default (Advertiser settings) for buyers lists on this DSP, and a buyers list's own committed plays overrides it. Whole number, at least 1. Leave empty to inherit the platform default." htmlFor="bidderCommittedPlays">
+          <Input id="bidderCommittedPlays" inputMode="numeric" value={d.committedPlays} placeholder="Platform default" onChange={(e) => set((x) => ({ ...x, committedPlays: e.target.value.replace(/\D/g, '') }))} />
+        </Field>
       </div>
 
       <SectionLabel><WithTip tip="This DSP's own advertiser whitelist and blacklist, chosen from the seats and advertisers it has synced. An ID only means something to the DSP that issued it, so there is no company-wide advertiser list and nothing can be typed in. The blacklist always applies and no position can opt out of it; the whitelist is only used by positions set to whitelist-only.">Advertiser lists</WithTip></SectionLabel>
