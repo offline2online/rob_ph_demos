@@ -12,6 +12,7 @@ import { useEffect, useState } from 'react'
 import { api, ApiRequestError } from '../../api/client'
 import { Q } from '../../api/queries'
 import { Icon } from '../../shared/Icon'
+import { WithTip } from '../../shared/InfoTip'
 import { T } from '../../theme/phTheme'
 
 type Draft = { name: string; description: string; invitedBuyers: InvitedBuyer[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays: number | null; floorCpm: number | null }
@@ -130,7 +131,7 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
         <Input.TextArea rows={2} value={draft.description} placeholder="So this list is distinguishable in the table below" onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))} />
       </div>
       <div className="mb-3.5">
-        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}><span style={{ color: T.error }}>*</span> Invited buyers</label>
+        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}><WithTip tip="Only advertisers a connected DSP has synced can be invited (who can buy); each is matched on the seat ID that DSP bids under."><span style={{ color: T.error }}>*</span> Invited buyers</WithTip></label>
         <Select
           mode="multiple" className="w-full" aria-label="Invited buyers" showSearch optionFilterProp="label"
           status={errors.invitedBuyers ? 'error' : undefined} loading={partners.isLoading}
@@ -139,18 +140,16 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
           value={draft.invitedBuyers.map(buyerKey)} options={[...(staleOptions.length ? [{ label: 'Not synced', options: staleOptions }] : []), ...options]}
           onChange={setBuyers}
         />
-        <div className="mt-1" style={{ fontSize: 11, color: T.micro }}>Only advertisers a connected DSP has synced can be invited (who can buy); each is matched on the seat ID that DSP bids under.</div>
         {errors.invitedBuyers && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.invitedBuyers}</div>}
       </div>
       <div className="mb-3.5">
-        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}>Targeting criteria</label>
+        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}><WithTip tip="Only variables the retailer has enabled for the invited DSPs are offered. Store segments are variable (switched by store staff) or fixed (HQ Admin only); the deal honours whichever you choose. A personalised criterion is matched against the live visitor at bid time — buyers never see the visitor’s attributes.">Targeting criteria</WithTip></label>
         <Select
           mode="multiple" className="w-full" aria-label="Targeting criteria" showSearch optionFilterProp="label"
           loading={variables.isLoading} placeholder="Add criteria appended to this deal (all must match)"
           notFoundContent="No targeting variables are enabled for the invited DSPs."
           value={draft.targeting.map((c) => c.variable)} options={targetingOptions} onChange={setCriteria}
         />
-        <div className="mt-1" style={{ fontSize: 11, color: T.micro }}>Only variables the retailer has enabled for the invited DSPs are offered. Store segments are variable (switched by store staff) or fixed (HQ Admin only); the deal honours whichever you choose. A personalised criterion is matched against the live visitor at bid time — buyers never see the visitor’s attributes.</div>
         {draft.targeting.map((c) => {
           const def = defOf(c.variable)
           return (
@@ -166,48 +165,44 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
         })}
       </div>
       <div className="mb-3.5">
-        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}>Delivery term</label>
+        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}><WithTip tip="The span this deal is awarded for — leave either side empty for no bound. Outside it, the deal admits nobody.">Delivery term</WithTip></label>
         <DatePicker.RangePicker
           allowEmpty={[true, true]} showTime style={{ width: '100%' }}
           value={[draft.activeFrom ? dayjs(draft.activeFrom) : null, draft.activeTo ? dayjs(draft.activeTo) : null]}
           onChange={(v) => setDraft((d) => ({ ...d, activeFrom: v?.[0] ? v[0].toISOString() : null, activeTo: v?.[1] ? v[1].toISOString() : null }))}
         />
-        <div className="mt-1" style={{ fontSize: 11, color: T.micro }}>The span this deal is awarded for — leave either side empty for no bound. Outside it, the deal admits nobody.</div>
         {errors.activeTo && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.activeTo}</div>}
       </div>
       <div className="mb-3.5">
-        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}>Committed plays</label>
+        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}><WithTip tip="The number of plays this deal commits to over its delivery term. Volume is carried by deals; the open auction always stays per play. Delivery is counted in plays billed at the slots this list is assigned to.">Committed plays</WithTip></label>
         <InputNumber
           min={1} precision={0} style={{ width: '100%' }} aria-label="Committed plays"
           status={errors.committedPlays ? 'error' : undefined} placeholder="Leave empty for per play"
           value={draft.committedPlays} onChange={(v) => setDraft((d) => ({ ...d, committedPlays: typeof v === 'number' ? v : null }))}
         />
-        <div className="mt-1" style={{ fontSize: 11, color: T.micro }}>The number of plays this deal commits to over its delivery term. Volume is carried by deals; the open auction always stays per play. Delivery is counted in plays billed at the slots this list is assigned to.</div>
         {errors.committedPlays && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.committedPlays}</div>}
       </div>
       <div className="mb-3.5">
-        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }} htmlFor="buyersListFloorCpm">Floor price (CPM)</label>
+        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }} htmlFor="buyersListFloorCpm"><WithTip tip="In USD. Applies to deals using this list, overriding the DSP's floor. It can raise the floor but never go below the platform floor. Leave empty to inherit.">Floor price (CPM)</WithTip></label>
         <InputNumber
           id="buyersListFloorCpm" min={0} style={{ width: '100%' }} step={1} placeholder="Inherit the DSP or platform floor"
           status={errors.floorCpm ? 'error' : undefined}
           formatter={(v) => (v === undefined || v === null ? '' : String(v))} parser={(v) => Number(v)}
           value={draft.floorCpm} onChange={(v) => setDraft((d) => ({ ...d, floorCpm: typeof v === 'number' && v > 0 ? v : null }))}
         />
-        <div className="mt-1" style={{ fontSize: 11, color: T.micro }}>In USD. Applies to deals using this list, overriding the DSP's floor. It can raise the floor but never go below the platform floor. Leave empty to inherit.</div>
         {errors.floorCpm && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.floorCpm}</div>}
       </div>
       <div>
-        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}>Auction window closes</label>
+        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}><WithTip tip={
+          editing?.lockedWin
+            ? `Rate locked at ${editing.lockedWin.cpm} CPM on ${new Date(editing.lockedWin.lockedAt).toLocaleString()} — every play window for the rest of the delivery term books at that rate, no re-auction.`
+            : 'The deadline invited brands may submit or revise bids until. The first bid that clears by then locks the winning CPM for the whole delivery term above — no daily re-auction. Leave empty to keep clearing a fresh auction every play window, as before.'
+        }>Auction window closes</WithTip></label>
         <DatePicker
           allowClear showTime style={{ width: '100%' }}
           value={draft.auctionCloses ? dayjs(draft.auctionCloses) : null}
           onChange={(v) => setDraft((d) => ({ ...d, auctionCloses: v ? v.toISOString() : null }))}
         />
-        <div className="mt-1" style={{ fontSize: 11, color: T.micro }}>
-          {editing?.lockedWin
-            ? `Rate locked at ${editing.lockedWin.cpm} CPM on ${new Date(editing.lockedWin.lockedAt).toLocaleString()} — every play window for the rest of the delivery term books at that rate, no re-auction.`
-            : 'The deadline invited brands may submit or revise bids until. The first bid that clears by then locks the winning CPM for the whole delivery term above — no daily re-auction. Leave empty to keep clearing a fresh auction every play window, as before.'}
-        </div>
         {errors.auctionCloses && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.auctionCloses}</div>}
       </div>
     </Modal>
