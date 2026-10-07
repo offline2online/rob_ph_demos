@@ -9,10 +9,9 @@
 import { randomUUID } from 'node:crypto'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
-import { findPosition, windowEndOf } from '../../domain/positions'
+import { findPosition, maxPlayLengthSecFor, windowEndOf } from '../../domain/positions'
 import type { Guards } from '../../http/app'
 import { tx } from '../../db/db'
-import { slotDurationSec } from '../../domain/slots'
 import { notFound, validationFailed } from '../../http/errors'
 import type { PlayTier } from '../../platform/PlaybackSource'
 
@@ -60,7 +59,7 @@ export const testRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => 
     const booking = (await ctx.campaigns.bookings(r.campaignId)).find((bk) => bk.displayTypeId === p.displayType.id && bk.slot === p.slot && bk.windowStart === r.windowStart)
     const handedOff = booking?.assetVersion ?? null
     const written: { tier: PlayTier | null; count: number; versionId: string | null }[] = []
-    const fallbackDur = slotDurationSec(p.displayType) ?? 10
+    const fallbackDur = maxPlayLengthSecFor((await ctx.company.get()).maxPlayLengthSec, p)
     await tx(ctx.db, () => {
       for (const spec of b.plays) {
         const dur = spec.durationSec ?? fallbackDur

@@ -3941,7 +3941,7 @@ A reserve is either a **preferred deal** (the premium window held at the reserve
 
 - **Forecast** for the window = plays × audience = the slot's VAC-d assumed views per window (`assumedViewsPerWindow`, the same figure billing realises against).
 - **Committed volume** = `floor(forecast × (1 − buffer%))`. Expected delivery therefore sits above the guarantee and make-goods are rare. Returned as `forecastImpressions` / `guaranteedImpressions` and stored on the reservation (migration 0046).
-- **Buffer**: `guaranteeBufferPct` on Advertiser settings (a "Guaranteed deals" section beside the category lists), default 10, 0–50, instance-wide. Omitted on save keeps the stored value.
+- **Buffer**: `guaranteeBufferPct` on Advertiser settings (in the "Committed delivery volume" group, beside Default committed plays), default 10, 0–50, instance-wide. Omitted on save keeps the stored value.
 - **To the DSP**: the reservation response carries `dspDeal` — DV360 Programmatic Guaranteed / Amazon guaranteed deal with `unitCount` = the committed impressions; a preferred deal maps to a preferred deal with no volume (`dsp/dealTerms.ts`).
 - **Open (dependencies)**: the exact per-DSP guaranteed-deal field names are to be confirmed against each DSP's sandbox; make-good / under-delivery behaviour when delivery falls below the guarantee is not built — billing is unchanged (realised VAC-d at the reserve price).
 
@@ -3988,10 +3988,60 @@ keeps the won creative renderable; the lookahead sets how early the auction open
   the player is signalling at playout and the auction opens now, as before.
 - Advance window positions are unaffected: they keep the window auction.
 
+## Deal type on the buyers list (Rob, 7 Oct 2026; ticket ke38J410jwLTYu9blGK7)
+
+- **One deal object plus a type**, as DSPs and Broadsign model it. A buyers
+  list carries `dealType`: `private_auction` (invited buyers bid; the
+  two-period model, `auctionCloses` and the locked rate apply), `preferred`
+  (fixed-price first look held at the reserve price; no volume, no auction
+  window) or `guaranteed` (programmatic guaranteed; commits `committedPlays`).
+- **The type decides the fields.** `committedPlays` is captured only for
+  `guaranteed` (pre-filled from Default committed plays; the booked volume
+  per window is still `floor(forecast × (1 − buffer%))`); `auctionCloses`
+  only for `private_auction`. The API refuses the other combinations (400),
+  and a list that is not guaranteed reports no effective committed volume.
+  The floor price CPM (platform → DSP → list; most specific raises it, never
+  below the platform floor) applies to every type.
+- **Authoritative in one place.** On a position assigned to a buyers list, a
+  reservation's `dealType` comes from the list (a private auction books as
+  `preferred`: no volume). A reservation that names a different `dealType`
+  is refused with 409, so the two can never disagree about volume. A
+  position with no list keeps the reservation's own `dealType`.
+- **Mapping to the DSP deal at bid time** is deal ID + type (`dspDealTerms`).
+  Per-DSP deal field names are still to be confirmed against each DSP
+  sandbox (DV360, Amazon Ads, The Trade Desk).
+- Migration 0055: existing lists with committed plays become `guaranteed`,
+  the rest `private_auction`. Older clients that omit `dealType` get the
+  same inference.
+
+### Testing every deal type end to end (Rob, 7 Oct 2026; ticket rFN7TfIXtValP5hfIq1o)
+
+- **Run 7** (`apps/api/test/e2e/run7-deal-types.test.ts`, in `e2e:quick`) has
+  one case group per way a slot transacts, each driven setup → inventory →
+  approval → bid or reserve → auction → hand-off booking → billing: **D1**
+  open RTB (first price above the effective floor; below it falls through;
+  no deal on the request and no volume carried; the real-time per-impression
+  path), **D2** private auction (deal ID on `pmp.deals`, uninvited and
+  deal-less bids refused, two-period locked rate), **D3** preferred deal
+  (reserve, `committedPlays` not captured, DSP told `preferred_deal`), **D4**
+  programmatic guaranteed (committed volume `floor(forecast × (1 − buffer%))`,
+  DV360 `programmatic_guaranteed` / Amazon `guaranteed_deal`, `unitCount` =
+  committed impressions). Every type asserts that the buyers list's
+  `dealType` decides which fields are captured and that billing is realised
+  VAC-d at the cleared or reserve price, with no make-good.
+- The Run 6 journey (`npm run e2e:journey`) adds Phase 5, cases M1–M8:
+  preferred and guaranteed deals over the real API and tick processes.
+- The DSP-specific guaranteed-deal field names are the mapping in
+  `src/dsp/dealTerms.ts`; the mocks prove it is carried, not that a DSP
+  accepts it. **Still to confirm against each DSP sandbox** (DV360, Amazon
+  Ads). The board's *End-to-End Test Spec — DSP Demand Paths (v2)* doc
+  (`f34VQZCy2kkWJfBP6Iwp`) is not in the repo; add Run 7 and Phase 5 to it
+  with these case IDs.
+
 ## Default committed plays — the play config feeds the buyers list (Rob, 7 Oct 2026)
 
-- **Setting**: `defaultCommittedPlays` on Advertiser settings (a "Play defaults"
-  section; field **Default committed plays**). Company-wide, a whole number of
+- **Setting**: `defaultCommittedPlays` on Advertiser settings (in the "Committed delivery
+  volume" group beside the guarantee buffer; field **Default committed plays**). Company-wide, a whole number of
   plays, at least 1, or empty for none (per play); anything else is refused
   with "Default committed plays is a whole number of plays, at least 1, or
   empty." (400). Omitted on save keeps the stored value; `null` clears it

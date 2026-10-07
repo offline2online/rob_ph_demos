@@ -6,7 +6,8 @@ import { buildApp } from '../src/http/app'
 import { expectMatchesContract } from './contract'
 import { testContext } from './helpers'
 
-const list = { name: 'Q4', description: '', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }], activeFrom: null, activeTo: null }
+/* Committed volume belongs to a guaranteed deal only (ticket ke38J410jwLTYu9blGK7): this list is one. */
+const list = { name: 'Q4', description: '', dealType: 'guaranteed', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }], activeFrom: null, activeTo: null }
 const api = '/api/admin/v1'
 
 describe('buyers list committed volume and rate inherit platform -> DSP -> list', () => {
@@ -35,6 +36,11 @@ describe('buyers list committed volume and rate inherit platform -> DSP -> list'
     await app.inject({ method: 'PUT', url: `${api}/buyers-lists/${id}`, payload: { ...list, committedPlays: 1200, floorCpm: 150 } })
     expect((await read(id)).effectiveCommittedPlays).toEqual({ min: 1200, max: 1200, source: 'buyer' })
     expect((await read(id)).effectiveRateCpm).toEqual({ min: 150, max: 150, source: 'buyer' })
+
+    /* A private auction commits no volume, whatever the levels above hold; its rate still inherits. */
+    const auction = (await app.inject({ method: 'POST', url: `${api}/buyers-lists`, payload: { ...list, name: 'Open bids', dealType: 'private_auction' } })).json().id
+    expect((await read(auction)).effectiveCommittedPlays).toEqual({ min: null, max: null, source: 'none' })
+    expect((await read(auction)).effectiveRateCpm).toEqual({ min: 120, max: 120, source: 'dsp' })
   })
 
   it('refuses a bad DSP committed volume and clears it with null', async () => {

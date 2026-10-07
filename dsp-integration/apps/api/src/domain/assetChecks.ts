@@ -5,7 +5,6 @@
 import type { DisplayType } from '@ph-dsp/types'
 import type { Config } from '../config'
 import { type MediaInfo, isVideo } from './media'
-import { slotDurationSec } from './slots'
 
 export type CheckName = 'file_type' | 'file_size' | 'bitrate' | 'dimensions' | 'aspect_ratio' | 'duration' | 'default_present' | 'targeting_permitted' | 'dsp_audit' | 'previously_cleared'
 /* assetId is the role a check ran against ('default' or a targeted version
@@ -43,7 +42,7 @@ const meetsFloor = (a: Size, b: Size) => a.width >= b.width * MIN_SCALE && a.hei
 const floorOf = (s: Size) => `${Math.ceil(s.width * MIN_SCALE)}×${Math.ceil(s.height * MIN_SCALE)}`
 const tag = (checks: Check[], assetId?: string): Check[] => (assetId ? checks.map((c) => ({ ...c, assetId })) : checks)
 
-export function fileChecks(media: MediaInfo | null, sizeBytes: number, dt: DisplayType | null, limits: Config['assetLimits'], assetId?: string): Check[] {
+export function fileChecks(media: MediaInfo | null, sizeBytes: number, dt: DisplayType | null, limits: Config['assetLimits'], assetId?: string, maxPlayLengthSec: number | null = null): Check[] {
   if (!media) {
     return tag([
       { name: 'file_type', passed: false, detail: 'Not a PNG, JPEG or MP4 file.' },
@@ -95,11 +94,12 @@ export function fileChecks(media: MediaInfo | null, sizeBytes: number, dt: Displ
     })
   }
 
-  const slot = dt ? slotDurationSec(dt) : null
+  /* A creative must conform to the slot's max play length (7 Oct 2026): longer is rejected, never truncated. Its own length never feeds the plays count. */
+  const slot = dt ? maxPlayLengthSec : null
   if (!video) checks.push({ name: 'duration', passed: true, detail: 'Not applicable to an image.' })
   else if (!media.durationSec) checks.push({ name: 'duration', passed: false, detail: 'The video has no readable duration.' })
-  else if (slot === null) checks.push({ name: 'duration', passed: true, detail: `${media.durationSec}s; the campaign has no slot duration to check against.` })
-  else checks.push({ name: 'duration', passed: media.durationSec <= slot, detail: `${media.durationSec}s; the slot is ${slot}s.` })
+  else if (slot === null) checks.push({ name: 'duration', passed: true, detail: `${media.durationSec}s; the campaign has no max play length to check against.` })
+  else checks.push({ name: 'duration', passed: media.durationSec <= slot, detail: media.durationSec <= slot ? `${media.durationSec}s; the slot's max play length is ${slot}s.` : `${media.durationSec}s is longer than the slot's max play length of ${slot}s; it is rejected, not trimmed.` })
 
   return tag(checks, assetId)
 }

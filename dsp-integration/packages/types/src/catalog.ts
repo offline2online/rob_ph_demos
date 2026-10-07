@@ -162,6 +162,22 @@ export const MAX_MAX_CAMPAIGNS = 10
 export const maxCampaignsOf = (dt: { phExtensions?: { maxCampaigns?: number | null } | null }, slot: { maxCampaigns?: number | null }): number =>
   slot.maxCampaigns ?? dt.phExtensions?.maxCampaigns ?? DEFAULT_MAX_CAMPAIGNS
 
+/* Max play length (ticket "Max play length as an inherited slot setting",
+   7 Oct 2026): the FIXED duration of one play of a slot, in seconds. It is
+   what a window's plays are counted against — playsPerWindow = floor(window /
+   max play length) — never the loop length and never an advertiser's creative
+   length (pDOOH practice: Broadsign builds the loop from a fixed slot length in
+   loop policy). It is also the longest creative the slot accepts: longer is
+   rejected at upload, never truncated. Same override-always-wins inheritance as
+   reservePriceOf/billingUnitHoursOf: slot, else display type, else the
+   company-wide default (Advertiser settings → maxPlayLengthSec, whose own
+   platform default is 15 s). Whole seconds, 1-600 inclusive. */
+export const DEFAULT_MAX_PLAY_LENGTH_SEC = 15
+export const MIN_MAX_PLAY_LENGTH_SEC = 1
+export const MAX_MAX_PLAY_LENGTH_SEC = 600
+export const maxPlayLengthSecOf = (dt: { phExtensions?: { maxPlayLengthSec?: number | null } | null }, slot: { maxPlayLengthSec?: number | null }, inherited: number = DEFAULT_MAX_PLAY_LENGTH_SEC): number =>
+  slot.maxPlayLengthSec ?? dt.phExtensions?.maxPlayLengthSec ?? inherited
+
 /* The kinds of campaign (pricing types) the exchange knows. A slot does NOT
    carry a targeting capability (Rob, 7 Oct 2026): which targeting dimensions
    a deal may use is defined on the buyers and targeting list assigned to the

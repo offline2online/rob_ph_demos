@@ -6,7 +6,7 @@
    makes the UX real — more slots, stores, DSPs, advertisers, campaigns and
    bookings — is the demo estate in demo.ts, applied on top by default and
    switched off by the tests (Rob, 22 Sep). */
-import { advertiserSlug } from '@ph-dsp/types'
+import { DEFAULT_MAX_PLAY_LENGTH_SEC, advertiserSlug } from '@ph-dsp/types'
 import { generateKeyPairSync } from 'node:crypto'
 import type { Context } from '../context'
 import { seedBookings } from './bookings'
@@ -165,7 +165,7 @@ export async function seed(ctx: Context, opts: { bookings?: boolean; demo?: bool
       currency: 'AUD', floorCpm: 100, interactiveCpe: 0.5,
       auctionOpensHours: 168, playWindowHours: 24, auctionCutoffTime: '18:00', pendingPlayWindowHours: null, pendingPlayWindowEffectiveFrom: null,
       categoryWhitelist: ['Food & Drink', 'Health & Fitness'], categoryBlacklist: ['Finance'], guaranteeBufferPct: 10,
-      uncachedRestriction: 'off', uncachedRestrictionStart: '09:00', uncachedRestrictionEnd: '18:00', bidLookaheadSeconds: 35, defaultCommittedPlays: null,
+      uncachedRestriction: 'off', uncachedRestrictionStart: '09:00', uncachedRestrictionEnd: '18:00', bidLookaheadSeconds: 35, defaultCommittedPlays: null, maxPlayLengthSec: DEFAULT_MAX_PLAY_LENGTH_SEC,
     })
     await ctx.company.saveAdvertiserSettings({
       [advertiserSlug('Nestlé')]: { approvalRequired: false, floorMultiplier: 0.8 },

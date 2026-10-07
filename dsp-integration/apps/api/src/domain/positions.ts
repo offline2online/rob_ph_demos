@@ -8,7 +8,7 @@ import { TRANSACTING_CURRENCY } from './currency'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 import { type Awaitable, allOf, andThen } from '../db/db'
 import { type ReservationStatus, TAKEN } from '../repos/ReservationRepo'
-import { INTERACTIVE_ENABLED, advertiserSlug, assignedOf, billingUnitHoursOf, interactiveReservePriceOf, maxCampaignsOf, openRtbInventoryOf, reservePriceOf, type Assigned } from '@ph-dsp/types'
+import { INTERACTIVE_ENABLED, advertiserSlug, assignedOf, billingUnitHoursOf, interactiveReservePriceOf, maxCampaignsOf, maxPlayLengthSecOf, openRtbInventoryOf, reservePriceOf, type Assigned } from '@ph-dsp/types'
 import { invitedPartnerIds, isInvitedBuyer } from './buyersLists'
 import { isActiveAt, lockedTermSpan } from '../billing/term'
 import { effectiveLists, isBlocked, isOn } from './lists'
@@ -196,6 +196,17 @@ export const windowMs = (ctx: Context, p?: PositionRef | null): Awaitable<number
 export const windowHoursFor = (companyHours: number, p?: PositionRef | null): number =>
   p ? billingUnitHoursOf(p.displayType, p.def, companyHours) : companyHours
 export const windowMsFor = (companyHours: number, p?: PositionRef | null) => windowHoursFor(companyHours, p) * HOUR
+/* A position's max play length, in seconds (max play length ticket, 7 Oct
+   2026): the slot's own, else its display type's, else the company-wide
+   default. The fixed per-play duration plays per window is counted against
+   and the longest creative the slot accepts. Given the company default
+   already read, like windowMsFor. */
+export const maxPlayLengthSecFor = (companySec: number, p: PositionRef): number => maxPlayLengthSecOf(p.displayType, p.def, companySec)
+/* The longest play length any advertiser slot of a display type resolves to: a campaign is uploaded for the display type, not yet a slot, so its creative may be as long as the most generous slot allows (it is checked again against the exact slot at hand-off / bid). */
+export const longestPlayLengthSecFor = (companySec: number, dt: DisplayType): number => {
+  const sold = (dt.phExtensions?.slots ?? []).filter((s) => s.owner === 'advertiser')
+  return Math.max(...(sold.length ? sold : [{}]).map((s) => maxPlayLengthSecOf(dt, s, companySec)))
+}
 /* Does this position follow the company-wide play window (neither the slot
    nor its display type sets a billing unit)? Only these are resized by a
    playWindowHours change, so only their windows defer one (scheduler.ts
@@ -482,8 +493,10 @@ function viewOf(
       width: dt.displayCanvasSize.width,
       height: dt.displayCanvasSize.height,
       orientation: venue?.orientation ?? (dt.displayCanvasSize.width >= dt.displayCanvasSize.height ? 'landscape' : 'portrait'),
+      /* Informational: the slot's share of the loop. What a play lasts, and what plays are counted against, is maxPlayLengthSec. */
       slotDurationSec: slotDurationSec(dt, n) ?? (n ? loop / n : loop),
       loopLengthSec: loop,
+      maxPlayLengthSec: maxPlayLengthSecFor(company.maxPlayLengthSec, p),
       shareOfVoice: n ? Math.round((1 / n) * 1000) / 1000 : 1,
       ...(venue?.openOohVenueType ? { openOohVenueType: venue.openOohVenueType } : {}),
     },
@@ -492,7 +505,7 @@ function viewOf(
        one bid, one booking, one billing line — covers. */
     billingUnitHours: windowHoursFor(company.playWindowHours, p),
     /* The same window as a play count — the transacting unit (plays on ONE display; VAC-d converts plays to views for billing only). */
-    playsPerWindow: playsPerWindowOf(windowMsFor(company.playWindowHours, p), loop),
+    playsPerWindow: playsPerWindowOf(windowMsFor(company.playWindowHours, p), maxPlayLengthSecFor(company.maxPlayLengthSec, p)),
     assumedViewsPerWindow: assumedViewsFor(audience.assumedViewsPerWindow, company.playWindowHours, p),
     /* False when the slot has no audience score: only ever seen by a
        caller who is told so, since inventory excludes such positions. */

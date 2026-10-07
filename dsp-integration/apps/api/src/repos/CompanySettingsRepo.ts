@@ -32,6 +32,8 @@ export interface CompanySettings {
   bidLookaheadSeconds: number
   /* Play config: the committed-plays figure a new buyers list is pre-filled with; null = none (per play). */
   defaultCommittedPlays: number | null
+  /* Max play length: the company-wide default fixed duration of one play, in seconds (a display type and a slot can override it). Plays per window = floor(window / this), never the loop. */
+  maxPlayLengthSec: number
 }
 export interface AdvertiserSettingRecord { approvalRequired: boolean; floorMultiplier: number }
 export type Access = 'all' | string[]
@@ -55,7 +57,7 @@ interface Row {
   pending_play_window_hours: number | null; pending_play_window_effective_from: string | null
   category_whitelist: string; category_blacklist: string; guarantee_buffer_pct: number
   uncached_restriction: 'off' | 'fixed' | 'store_open'; uncached_restriction_start: string; uncached_restriction_end: string
-  bid_lookahead_seconds: number; default_committed_plays: number | null
+  bid_lookahead_seconds: number; default_committed_plays: number | null; max_play_length_sec: number
 }
 
 /* Freeze a snapshot (and the arrays inside it) so a caller can't mutate the
@@ -107,7 +109,7 @@ export function sqliteCompanySettingsRepo(db: Db): CompanySettingsRepo {
         auctionOpensHours: r.auction_opens_hours, playWindowHours: r.play_window_hours, auctionCutoffTime: r.auction_cutoff_time,
         pendingPlayWindowHours: r.pending_play_window_hours, pendingPlayWindowEffectiveFrom: r.pending_play_window_effective_from,
         categoryWhitelist: fromJson(r.category_whitelist, []), categoryBlacklist: fromJson(r.category_blacklist, []), guaranteeBufferPct: r.guarantee_buffer_pct,
-        uncachedRestriction: r.uncached_restriction, uncachedRestrictionStart: r.uncached_restriction_start, uncachedRestrictionEnd: r.uncached_restriction_end, bidLookaheadSeconds: r.bid_lookahead_seconds, defaultCommittedPlays: r.default_committed_plays,
+        uncachedRestriction: r.uncached_restriction, uncachedRestrictionStart: r.uncached_restriction_start, uncachedRestrictionEnd: r.uncached_restriction_end, bidLookaheadSeconds: r.bid_lookahead_seconds, defaultCommittedPlays: r.default_committed_plays, maxPlayLengthSec: r.max_play_length_sec,
       })
     }
     return c.company as CompanySettings
@@ -130,12 +132,12 @@ export function sqliteCompanySettingsRepo(db: Db): CompanySettingsRepo {
         `UPDATE company_advertiser_settings SET currency = ?, floor_cpm = ?, interactive_cpe = ?,
            auction_opens_hours = ?, play_window_hours = ?, auction_cutoff_time = ?, pending_play_window_hours = ?, pending_play_window_effective_from = ?,
            category_whitelist = ?, category_blacklist = ?, guarantee_buffer_pct = ?,
-           uncached_restriction = ?, uncached_restriction_start = ?, uncached_restriction_end = ?, bid_lookahead_seconds = ?, default_committed_plays = ?, updated_at = ? WHERE id = ?`,
+           uncached_restriction = ?, uncached_restriction_start = ?, uncached_restriction_end = ?, bid_lookahead_seconds = ?, default_committed_plays = ?, max_play_length_sec = ?, updated_at = ? WHERE id = ?`,
       ).run(
         s.currency, s.floorCpm, s.interactiveCpe, s.auctionOpensHours, s.playWindowHours, s.auctionCutoffTime,
         s.pendingPlayWindowHours, s.pendingPlayWindowEffectiveFrom,
         toJson(s.categoryWhitelist) ?? '[]', toJson(s.categoryBlacklist) ?? '[]', s.guaranteeBufferPct,
-        s.uncachedRestriction, s.uncachedRestrictionStart, s.uncachedRestrictionEnd, s.bidLookaheadSeconds, s.defaultCommittedPlays, now(), ID,
+        s.uncachedRestriction, s.uncachedRestrictionStart, s.uncachedRestrictionEnd, s.bidLookaheadSeconds, s.defaultCommittedPlays, s.maxPlayLengthSec, now(), ID,
       )
       invalidate()
       return get()

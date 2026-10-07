@@ -6,7 +6,7 @@
    variable (global on the brand entity) are deliberately not fields here. */
 import { App, Button, DatePicker, Input, InputNumber, Modal, Select } from 'antd'
 import { useQuery } from '@tanstack/react-query'
-import { ALL_DSPS, OPERATOR_LABELS, TARGETING_VARIABLES, type BuyersList, type Condition, type InvitedBuyer, type SharedVariable } from '@ph-dsp/types'
+import { ALL_DSPS, OPERATOR_LABELS, TARGETING_VARIABLES, type BuyersList, type BuyersListDealType, type Condition, type InvitedBuyer, type SharedVariable } from '@ph-dsp/types'
 import dayjs from 'dayjs'
 import { useEffect, useRef, useState } from 'react'
 import { api, ApiRequestError } from '../../api/client'
@@ -16,12 +16,12 @@ import { WithTip } from '../../shared/InfoTip'
 import { T } from '../../theme/phTheme'
 import { playsText, rateText, resolveTerm, sourceLabel } from './effectiveTerm'
 
-type Draft = { name: string; description: string; invitedBuyers: InvitedBuyer[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays: number | null; floorCpm: number | null }
+type Draft = { name: string; description: string; dealType: BuyersListDealType; invitedBuyers: InvitedBuyer[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays: number | null; floorCpm: number | null }
 /* An invited buyer is one synced seat of one connected DSP — the Select's value is both halves. */
 const buyerKey = (b: InvitedBuyer) => JSON.stringify([b.partnerId, b.seatId])
-const blankDraft = (): Draft => ({ name: '', description: '', invitedBuyers: [], targeting: [], activeFrom: null, activeTo: null, auctionCloses: null, committedPlays: null, floorCpm: null })
+const blankDraft = (): Draft => ({ name: '', description: '', dealType: 'private_auction', invitedBuyers: [], targeting: [], activeFrom: null, activeTo: null, auctionCloses: null, committedPlays: null, floorCpm: null })
 const draftOf = (l: BuyersList): Draft => ({
-  name: l.name, description: l.description,
+  name: l.name, description: l.description, dealType: l.dealType,
   invitedBuyers: l.invitedBuyers.map((b) => ({ ...b })),
   targeting: (l.targeting ?? []).map((c) => ({ ...c, values: [...c.values] })),
   activeFrom: l.activeFrom, activeTo: l.activeTo, auctionCloses: l.auctionCloses, committedPlays: l.committedPlays, floorCpm: l.floorCpm ?? null,
@@ -40,12 +40,12 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
   const [errors, setErrors] = useState<Record<string, string>>({})
   useEffect(() => {
     if (!open) return
-    setDraft(editing ? draftOf(editing) : { ...blankDraft(), committedPlays: defaultPlaysRef.current })
+    setDraft(editing ? draftOf(editing) : blankDraft())
     setErrors({})
   }, [open, editing])
 
-  /* Play config (Advertiser settings): the committed plays a NEW list starts with. Applied on open, and again
-     if the default arrives or changes while the modal is open and the field is still untouched. Editing a
+  /* Play config (Advertiser settings): the committed plays a NEW guaranteed list starts with. Applied when the
+     guaranteed type is chosen, and again if the default arrives or changes while the field is still untouched. Editing a
      saved list never takes it. */
   const settings = useQuery(Q.advertiserSettings)
   const defaultPlays = settings.data?.defaultCommittedPlays ?? null
@@ -55,8 +55,17 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
   useEffect(() => {
     const prev = defaultPlaysRef.current
     defaultPlaysRef.current = defaultPlays
-    if (open && !editing && untouched.current && prev !== defaultPlays) setDraft((d) => ({ ...d, committedPlays: defaultPlays }))
+    if (open && !editing && untouched.current && prev !== defaultPlays) setDraft((d) => (d.dealType === 'guaranteed' ? { ...d, committedPlays: defaultPlays } : d))
   }, [defaultPlays, open, editing])
+
+  /* The deal type decides which fields the list carries (7 Oct 2026): switching drops what the new type does not capture. */
+  const setDealType = (dealType: BuyersListDealType) => setDraft((d) => ({
+    ...d, dealType,
+    auctionCloses: dealType === 'private_auction' ? d.auctionCloses : null,
+    committedPlays: dealType !== 'guaranteed' ? null : d.committedPlays ?? (untouched.current ? defaultPlaysRef.current : null),
+  }))
+  const guaranteed = draft.dealType === 'guaranteed'
+  const privateAuction = draft.dealType === 'private_auction'
 
   /* The dropdown offers every advertiser (seat) a connected DSP has synced, grouped by DSP — no typing, no identifier type. */
   const partners = useQuery(Q.partners)
@@ -152,6 +161,20 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
         <Input.TextArea rows={2} value={draft.description} placeholder="So this list is distinguishable in the table below" onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))} />
       </div>
       <div className="mb-3.5">
+        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }} htmlFor="buyersListDealType"><WithTip tip="The deal type this list bids against, and where it is set: the DSP deal (deal ID and type) and any reservation on a slot using this list follow it. Private auction: invited buyers bid and the auction window and locked rate apply. Preferred deal: a fixed-price first look held at the reserve price; no volume is committed. Programmatic guaranteed: commits a volume of plays."><span style={{ color: T.error }}>*</span> Deal type</WithTip></label>
+        <Select
+          id="buyersListDealType" className="w-full" aria-label="Deal type" value={draft.dealType} onChange={setDealType}
+          options={[
+            { value: 'private_auction', label: 'Private auction' },
+            { value: 'preferred', label: 'Preferred deal' },
+            { value: 'guaranteed', label: 'Programmatic guaranteed' },
+          ]}
+        />
+        <div className="mt-1" style={{ fontSize: 11.5, color: T.muted }} data-testid="deal-type-note">
+          {privateAuction ? 'Invited buyers bid for the term; no volume is committed.' : guaranteed ? 'Commits a volume of plays; there is no bidding.' : 'Fixed-price first look held at the reserve price; no volume and no bidding.'}
+        </div>
+      </div>
+      <div className="mb-3.5">
         <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}><WithTip tip="Only advertisers a connected DSP has synced can be invited (who can buy); each is matched on the seat ID that DSP bids under."><span style={{ color: T.error }}>*</span> Invited buyers</WithTip></label>
         <Select
           mode="multiple" className="w-full" aria-label="Invited buyers" showSearch optionFilterProp="label"
@@ -194,18 +217,20 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
         />
         {errors.activeTo && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.activeTo}</div>}
       </div>
+      {guaranteed && (
       <div className="mb-3.5">
-        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}><WithTip tip="The number of plays this deal commits to over its delivery term. Volume is carried by deals; the open auction always stays per play. Delivery is counted in plays billed at the slots this list is assigned to.">Committed plays</WithTip></label>
+        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}><WithTip tip="Programmatic guaranteed only: the number of plays this deal commits to over its delivery term. Delivery is counted in plays billed at the slots this list is assigned to. Private auctions and preferred deals commit no volume, so this is not captured for them.">Committed plays</WithTip></label>
         <InputNumber
           min={1} precision={0} style={{ width: '100%' }} aria-label="Committed plays"
-          status={errors.committedPlays ? 'error' : undefined} placeholder={playsText(volume) ?? 'Leave empty for per play'}
+          status={errors.committedPlays ? 'error' : undefined} placeholder={playsText(volume) ?? 'Number of plays to commit'}
           value={draft.committedPlays} onChange={(v) => { untouched.current = false; setDraft((d) => ({ ...d, committedPlays: typeof v === 'number' ? v : null })) }}
         />
         {errors.committedPlays && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.committedPlays}</div>}
         <div className="mt-1" style={{ fontSize: 11.5, color: T.muted }} data-testid="effective-volume">
-          {playsText(volume) ? `Committed volume: ${playsText(volume)} (${sourceLabel(volume.source)})` : 'Committed volume: per play (no level sets one)'}
+          {playsText(volume) ? `Committed volume: ${playsText(volume)} (${sourceLabel(volume.source)})` : 'Committed volume: none set'}
         </div>
       </div>
+      )}
       <div className="mb-3.5">
         <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }} htmlFor="buyersListFloorCpm"><WithTip tip="In USD. Applies to deals using this list, overriding the DSP's floor. It can raise the floor but never go below the platform floor. Leave empty to inherit.">Floor price (CPM)</WithTip></label>
         <InputNumber
@@ -219,6 +244,17 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
           {rateText(rate) ? `Rate: ${rateText(rate)} (${sourceLabel(rate.source)})` : 'Rate: per play'}
         </div>
       </div>
+      {privateAuction && (
+        <div className="mb-3.5">
+          <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}><WithTip tip="Private auction only: the deal's one-time bidding deadline. The first bid to clear by then locks its rate for the rest of the delivery term. Leave empty to clear fresh every play window. Preferred and guaranteed deals are not bid for, so this is not captured for them.">Auction closes</WithTip></label>
+          <DatePicker
+            showTime style={{ width: '100%' }} aria-label="Auction closes" allowClear
+            value={draft.auctionCloses ? dayjs(draft.auctionCloses) : null}
+            onChange={(v) => setDraft((d) => ({ ...d, auctionCloses: v ? v.toISOString() : null }))}
+          />
+          {errors.auctionCloses && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.auctionCloses}</div>}
+        </div>
+      )}
       {editing?.lockedWin && (
         <div style={{ fontSize: 12.5, color: T.muted }}>Rate locked at {editing.lockedWin.cpm} CPM on {new Date(editing.lockedWin.lockedAt).toLocaleString()}: every play for the rest of the delivery term books at that rate.</div>
       )}

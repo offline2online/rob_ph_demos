@@ -155,9 +155,9 @@ describe('POST /v1/campaigns/{id}/assets — automated checks', () => {
   it('checks a video’s duration against the slot, and accepts a zone-sized creative', async () => {
     const { app } = await newApp()
     const id = (await create(app, { ...SWISSE, displayTypeId: 'menu_board' })).json().campaignId
-    /* Menu Board: 45s loop, 3 slots → 15s per slot; zones are 1918/1920/1918 × 1080. */
+    /* Menu Board: max play length 15s (the company default; the loop is 45s); zones are 1918/1920/1918 × 1080. */
     const long = await upload(app, id, 'default', mp4(5760, 1080, 20))
-    expect(long.json().error.details).toEqual([{ field: 'duration', reason: '20s; the slot is 15s.' }])
+    expect(long.json().error.details).toEqual([{ field: 'duration', reason: '20s is longer than the slot\'s max play length of 15s; it is rejected, not trimmed.' }])
     expect((await upload(app, id, 'default', mp4(5760, 1080, 15))).statusCode).toBe(201)
     expect((await upload(app, id, 'default', jpeg(1920, 1080))).statusCode).toBe(201)
   })

@@ -191,17 +191,19 @@ describe('DSP integration switch', () => {
 })
 
 describe('Advertiser settings page', () => {
-  it('shows Pricing, Guaranteed deals and the category lists, in that order, with no Play config boxes, with no auction timing', async () => {
+  it('shows Pricing, Committed delivery volume and the category lists, in that order, with no Play config boxes, with no auction timing', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/available-inventory': { items: [{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', slot: 2, position: 'Supplier slot', partnerName: 'Google DSP' }] } })))
     renderAt('/dsp-integration')
     expect(await screen.findByRole('heading', { name: /Advertiser settings/ })).toBeInTheDocument()
     const text = document.body.textContent ?? ''
-    const order = ['Pricing', 'Guaranteed deals', 'Category lists'].map((h) => text.indexOf(h))
+    const order = ['Pricing', 'Committed delivery volume', 'Category lists'].map((h) => text.indexOf(h))
     /* Available Inventory moved to Advertisers / Inventory (Rob, 20 Sep). */
     expect(text).not.toContain('Available Inventory')
     expect(order).toEqual([...order].sort((a, b) => a - b))
     expect(screen.getByLabelText(/Currency/)).toBeInTheDocument()
-    expect(screen.getByLabelText(/Contingency buffer/, { selector: 'input' })).toBeInTheDocument()
+    expect(screen.getByLabelText(/Guarantee buffer/, { selector: 'input' })).toBeInTheDocument()
+    expect(screen.getByLabelText(/Default committed plays/, { selector: 'input' })).toBeInTheDocument()
+    expect(text).not.toContain('Play defaults')
     expect(screen.queryByRole('group', { name: 'Play config' })).not.toBeInTheDocument()
     for (const gone of ['Deals and reservations', 'Time (derived display only)']) expect(text).not.toContain(gone)
     /* Bid lookahead: company-wide, in seconds, defaulting to 35. */
@@ -590,7 +592,7 @@ describe('Advertisers / Inventory', () => {
        (ticket "Available Inventory: playlist-primary table (drop Display
        type column) with Unassigned indicator", 27 Sep 2026). */
     expect([...inventory.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent))
-      .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Reserve price', 'Max campaigns', 'Billing unit', ''])
+      .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Reserve price', 'Max campaigns', 'Max play length', 'Billing unit', ''])
     /* No interactive-only column: interactive is deferred (5 Oct 2026). */
     expect(within(inventory).getByLabelText('Playlist search')).toBeInTheDocument()
     /* Targeting is defined on the buyers and targeting list, not per slot (Rob, 7 Oct 2026). */
@@ -666,7 +668,7 @@ describe('Advertisers / Inventory', () => {
     await waitFor(() => expect(saved()).toEqual({ items: [{
       displayTypeId: 'menu_board', slot: 2,
       assignedTo: { partnerIds: ['p_google'], advertisers: ['Nestlé'], whitelistOnly: false, buyersListId: null, buyersListIds: [] },
-      interactiveReservePrice: null, reservePriceDefault: null, billingUnitHoursDefault: null, maxCampaignsDefault: null,
+      interactiveReservePrice: null, reservePriceDefault: null, billingUnitHoursDefault: null, maxCampaignsDefault: null, maxPlayLengthSecDefault: null,
     }] }))
     /* This test opens two AntD Selects, drives a save round-trip and waits
        on it with real timers — already the file's slowest, and, measured in
@@ -718,6 +720,11 @@ describe('Advertisers / Inventory', () => {
     expect(within(dialog).getByRole('combobox', { name: 'Targeting criteria' })).toBeInTheDocument()
     expect(within(dialog).queryByText(/PH brand entity|identifier type/i)).toBeNull()
     expect(within(dialog).queryByRole('button', { name: /Add buyer/ })).toBeNull()
+    /* The deal type drives the fields: a new list is a private auction, so it captures the auction window but no committed plays. */
+    expect(within(dialog).getByRole('combobox', { name: 'Deal type' })).toBeInTheDocument()
+    expect(within(dialog).getByTestId('deal-type-note')).toHaveTextContent('no volume is committed')
+    expect(within(dialog).getByLabelText('Auction closes')).toBeInTheDocument()
+    expect(within(dialog).queryByLabelText('Committed plays')).toBeNull()
   }, slow(30000))
 
   /* The modal used to show field errors only when the API sent `details`

@@ -152,6 +152,16 @@ describe('deals (OQ45): per DSP, on the existing buyers list, never under the fl
     expect((await rows(W2))[0].handedOffAt).not.toBeNull()
   })
 
+  it("takes the reservation's deal type from the buyers list, and refuses a different one", async () => {
+    const { ctx, post, RESERVE } = await setup({ listMode: 'deal', buyersListId: 'bl_pg' })
+    await ctx.buyersLists.insert({ id: 'bl_pg', name: 'Swisse PG', description: '', dealType: 'guaranteed', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130002' }], activeFrom: null, activeTo: null, auctionCloses: null, committedPlays: 900 })
+    const clash = await post({ ...RESERVE, dealType: 'preferred' })
+    expect(clash.statusCode).toBe(409)
+    expect(clash.json().error.message).toContain('its buyers list sets the deal type')
+    /* Omitted (or matching), the list decides: guaranteed commits volume. */
+    expect((await post(RESERVE)).json()).toMatchObject({ status: 'reserved', dealType: 'guaranteed', guaranteedImpressions: 720 })
+  })
+
   it('never books a locked rate below the floor in force when the window is booked', async () => {
     const { ctx, post, RESERVE, rows } = await setup({ listMode: 'deal', buyersListId: 'bl_pg' })
     await termDeal(ctx)

@@ -2,7 +2,7 @@
    positive floor, category entries that are real IAB
    categories, and nothing on both category lists. (The advertiser lists are
    per DSP: domain/partnerInput.ts.) */
-import { IAB_CATEGORIES, INTERACTIVE_ENABLED, type AdvertiserSettingsInput } from '@ph-dsp/types'
+import { IAB_CATEGORIES, INTERACTIVE_ENABLED, MAX_MAX_PLAY_LENGTH_SEC, MIN_MAX_PLAY_LENGTH_SEC, type AdvertiserSettingsInput } from '@ph-dsp/types'
 
 import { MAX_GUARANTEE_BUFFER_PCT } from './guarantee'
 import { bidLookaheadOk } from './bidLookahead'
@@ -47,6 +47,9 @@ export function validateAdvertiserSettings(b: Partial<AdvertiserSettingsInput> |
   /* Optional on save (omitted keeps the stored value, null clears it); when a number, a whole number of plays, at least 1. */
   const dcp = b?.defaultCommittedPlays
   if (dcp !== undefined && dcp !== null && (typeof dcp !== 'number' || !Number.isInteger(dcp) || dcp < 1)) out.push({ field: 'defaultCommittedPlays', reason: 'Default committed plays is a whole number of plays, at least 1, or empty.' })
+  /* Optional on save (omitted keeps the stored value); when sent, whole seconds within the allowed range. */
+  const mpl = b?.maxPlayLengthSec
+  if (mpl !== undefined && (typeof mpl !== 'number' || !Number.isInteger(mpl) || mpl < MIN_MAX_PLAY_LENGTH_SEC || mpl > MAX_MAX_PLAY_LENGTH_SEC)) out.push({ field: 'maxPlayLengthSec', reason: `Max play length is a whole number of seconds from ${MIN_MAX_PLAY_LENGTH_SEC} to ${MAX_MAX_PLAY_LENGTH_SEC}.` })
   /* Optional on save (omitted keeps the stored value); when sent, whole seconds, at least 1. */
   if (b?.bidLookaheadSeconds !== undefined && !bidLookaheadOk(b.bidLookaheadSeconds)) out.push({ field: 'bidLookaheadSeconds', reason: 'Bid lookahead is a whole number of seconds, at least 1.' })
   /* Optional on save (omitted keeps the stored value). */

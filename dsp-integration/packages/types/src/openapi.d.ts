@@ -490,6 +490,17 @@ export interface paths {
          *     when neither is set, 1-10 inclusive otherwise. Purely a submission
          *     cap; replaces the former blanket 20-targeted-versions cap for this
          *     slot. Does not feed the auction or billing.
+         *
+         *     maxPlayLengthSec / maxPlayLengthSecDefault: the same override/default
+         *     pattern once more (ticket "Max play length as an inherited slot
+         *     setting", 7 Oct 2026), for the FIXED duration of one play of the
+         *     slot, in whole seconds, 1-600. Slot override, else the display
+         *     type's default, else the company-wide default (Advertiser settings →
+         *     `maxPlayLengthSec`, platform default 15). It is what plays per window
+         *     are counted against — floor(window / max play length) — and the
+         *     longest creative the slot accepts. Unlike the fields above, OMITTED
+         *     means unchanged (a client that predates it never sends it); null
+         *     inherits.
          */
         put: operations["saveAvailableInventory"];
         post?: never;
@@ -1254,7 +1265,10 @@ export interface components {
                 /** @enum {string} */
                 orientation: "landscape" | "portrait";
                 slotDurationSec: number;
+                /** @description Informational. The loop's length; plays per window are NOT counted against it. */
                 loopLengthSec: number;
+                /** @description The fixed duration of one play of this slot (slot, else display type, else company default). Plays per window are counted against it, and a creative longer than it is rejected. */
+                maxPlayLengthSec: number;
                 /** @description 1 / maximumCampaignsPlayedInRotation */
                 shareOfVoice: number;
                 openOohVenueType?: string;
@@ -1270,7 +1284,7 @@ export interface components {
              *     Monday 00:00 UTC.
              */
             billingUnitHours: number;
-            /** @description The transacting unit. Plays this slot gets on one display in one of its windows (billingUnitHours long) — floor(window / loopLengthSec). Assumed views (VAC-d) convert plays to impressions for billing only. */
+            /** @description The transacting unit. Plays this slot gets on one display in one of its windows (billingUnitHours long) — floor(window / maxPlayLengthSec), the slot's fixed per-play duration; never the loop length and never a creative's own length. Assumed views (VAC-d) convert plays to impressions for billing only. */
             playsPerWindow?: number;
             /** @description Assumed views (VAC-d) in one of this position's windows (billingUnitHours long). */
             assumedViewsPerWindow?: number;
@@ -1489,7 +1503,7 @@ export interface components {
             /** @enum {string} */
             type: "reserve" | "bid";
             /**
-             * @description Only for type reserve. preferred (the default, unchanged) holds the premium window at the reserve price with no volume promised. guaranteed also commits a delivery volume: the window's forecast impressions (plays x VAC-d) less the retailer's contingency buffer, returned as guaranteedImpressions and sent to the DSP as the guaranteed unit count in dspDeal. Refused (validation_failed) with type bid.
+             * @description Only for type reserve. preferred (the default, unchanged) holds the premium window at the reserve price with no volume promised. guaranteed also commits a delivery volume: the window's forecast impressions (plays x VAC-d) less the retailer's contingency buffer, returned as guaranteedImpressions and sent to the DSP as the guaranteed unit count in dspDeal. Refused (validation_failed) with type bid. On a position assigned to a buyers list the list's dealType is authoritative: omit this, or send the matching value (a private_auction list books as preferred); a different value is refused with 409 conflict.
              * @default preferred
              * @enum {string}
              */
@@ -1596,6 +1610,11 @@ export interface components {
              * @default 35
              */
             bidLookaheadSeconds: number;
+            /**
+             * @description Max play length: the company-wide default fixed duration of one play of a slot, in whole seconds. A display type and a slot can each override it. Plays per window = floor(window / max play length) and a creative longer than it is rejected. Optional on save: omitted keeps the stored value.
+             * @default 15
+             */
+            maxPlayLengthSec: number;
             /** @description Play config: the committed-plays figure a new buyers list is pre-filled with (the field stays editable per list; editing a saved list never changes it). Whole number, at least 1; null means no default (per play). Optional on save: omitted keeps the stored value, null clears it. */
             defaultCommittedPlays?: number | null;
             /**
@@ -1751,6 +1770,17 @@ export interface components {
             id: string;
             name: string;
             description: string;
+            /**
+             * @description The deal type this list bids against, and the single place it is
+             *     set (Rob, 7 Oct 2026). It maps to the DSP's deal structure (deal
+             *     ID + type) at bid time, and a reservation on a position assigned
+             *     to this list takes its dealType from here. private_auction:
+             *     invited buyers bid, the two-period model applies. preferred:
+             *     fixed-price first look at the reserve price, no volume.
+             *     guaranteed: commits volume. The floor price CPM applies to all.
+             * @enum {string}
+             */
+            dealType: "private_auction" | "preferred" | "guaranteed";
             invitedBuyers: components["schemas"]["InvitedBuyer"][];
             /** @description This list's own bid floor in USD CPM, or null to inherit the DSP's floor, else the platform floor. Never below the platform floor. */
             floorCpm: number | null;
@@ -1988,6 +2018,20 @@ export interface components {
              *     inclusive when set.
              */
             displayTypeMaxCampaigns: number | null;
+            /**
+             * @description The resolved max play length, in seconds: the fixed per-play
+             *     duration of this slot — maxPlayLengthSecOverride when set, else
+             *     displayTypeMaxPlayLengthSec, else companyMaxPlayLengthSec. Plays
+             *     per window are floor(window / this); a creative longer than it
+             *     is rejected at upload.
+             */
+            maxPlayLengthSec: number;
+            /** @description This slot's own max play length, admin-editable here; null means it follows the display type's. 1-600 when set. */
+            maxPlayLengthSecOverride: number | null;
+            /** @description The max play length default set on this slot's display type; null means it has none (the company default applies). The same value on every row sharing a displayTypeId. 1-600 when set. */
+            displayTypeMaxPlayLengthSec: number | null;
+            /** @description The company-wide default max play length (Advertiser settings), what an un-overridden slot on a display type with no default resolves to. */
+            companyMaxPlayLengthSec: number;
         };
         BookingSchedule: {
             /** @description ISO 4217 */
@@ -2435,6 +2479,13 @@ export interface components {
                  *     the slot editor.
                  */
                 maxCampaigns?: number | null;
+                /**
+                 * @description This slot's own max play length in seconds (the fixed
+                 *     duration of one play). Absent or null follows the display
+                 *     type's `maxPlayLengthSec`, else the company default. Set
+                 *     from Advertisers / Inventory, not the slot editor.
+                 */
+                maxPlayLengthSec?: number | null;
             }[];
             /**
              * @description The display type's own reserve price default (decision, 22 Sep),
@@ -2462,6 +2513,14 @@ export interface components {
              *     display type edits the same value), not the slot editor.
              */
             maxCampaigns?: number | null;
+            /**
+             * @description The display type's own max play length default, in seconds,
+             *     inherited by every slot on it with no override of its own.
+             *     Absent or null means the company-wide default applies. Set from
+             *     Advertisers / Inventory (every row for this display type edits
+             *     the same value), not the slot editor.
+             */
+            maxPlayLengthSec?: number | null;
             /** @description POC stand-in; PH Core owns venue and geo metadata and the exchange keeps no copy on integration (Q35). On integration this is read from PH Core's store/display record and the extensions PUT stops accepting it. */
             venue?: {
                 openOohVenueType?: string;
@@ -3350,6 +3409,10 @@ export interface operations {
                         maxCampaigns?: number | null;
                         /** @description The display type's maximum-campaigns default; null = none (the platform default of 5 applies). Must be the same value on every row for a given displayTypeId in one request. */
                         maxCampaignsDefault?: number | null;
+                        /** @description This slot's own max play length override, in whole seconds; null = inherit maxPlayLengthSecDefault. Omitted = unchanged. */
+                        maxPlayLengthSec?: number | null;
+                        /** @description The display type's max play length default, in whole seconds; null = none (the company-wide default applies). Omitted = unchanged. Must be the same value on every row for a given displayTypeId in one request. */
+                        maxPlayLengthSecDefault?: number | null;
                     }[];
                 };
             };
@@ -3767,6 +3830,11 @@ export interface operations {
                      *     field existed.
                      */
                     auctionCloses?: string | null;
+                    /**
+                     * @description The deal type this list bids against (Rob, 7 Oct 2026): private_auction (invited buyers bid; auctionCloses / locked rate apply), preferred (fixed-price first look held at the reserve price; no volume, no auction window) or guaranteed (commits committedPlays). Omitted: guaranteed when committedPlays is set, else private_auction. committedPlays is refused unless guaranteed; auctionCloses is refused unless private_auction (400).
+                     * @enum {string}
+                     */
+                    dealType?: "private_auction" | "preferred" | "guaranteed";
                     /** @description The play volume this deal commits to over its delivery term; a whole number of plays, or null for none (per play). Volume lives on deals, never the open auction. */
                     committedPlays?: number | null;
                     /** @description This list's bid floor in USD CPM (bid floor hierarchy, Rob 7 Oct 2026). Most specific: applies to deals using this list. Never below the platform floor (400 otherwise). Absent or null: inherits the DSP's floor, else the platform's. */
@@ -3824,6 +3892,11 @@ export interface operations {
                      * @description The deal's own one-time bidding deadline (the auction window); see POST's description. Editable even once locked — it no longer has any effect at that point.
                      */
                     auctionCloses?: string | null;
+                    /**
+                     * @description The deal type this list bids against (Rob, 7 Oct 2026): private_auction (invited buyers bid; auctionCloses / locked rate apply), preferred (fixed-price first look held at the reserve price; no volume, no auction window) or guaranteed (commits committedPlays). Omitted: guaranteed when committedPlays is set, else private_auction. committedPlays is refused unless guaranteed; auctionCloses is refused unless private_auction (400).
+                     * @enum {string}
+                     */
+                    dealType?: "private_auction" | "preferred" | "guaranteed";
                     /** @description The play volume this deal commits to over its delivery term; a whole number of plays, or null for none (per play). Volume lives on deals, never the open auction. */
                     committedPlays?: number | null;
                     /** @description This list's bid floor in USD CPM (bid floor hierarchy, Rob 7 Oct 2026). Most specific: applies to deals using this list. Never below the platform floor (400 otherwise). Absent or null: inherits the DSP's floor, else the platform's. */

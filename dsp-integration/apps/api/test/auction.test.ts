@@ -49,7 +49,7 @@ describe('OpenRTB 2.6 DOOH bid requests', () => {
       imp: [{
         id: '1', video: { w: 5760, h: 1080, minduration: 1, maxduration: 15 }, banner: { w: 5760, h: 1080 },
         bidfloor: 100, bidfloorcur: 'USD', qty: { multiplier: 1236, sourcetype: 2 }, exp: 86400,
-        ext: { ph: { orientation: 'landscape', slotDurationSec: 15, loopLengthSec: 45, shareOfVoice: 0.333, playsPerWindow: 1920 } },
+        ext: { ph: { orientation: 'landscape', slotDurationSec: 15, loopLengthSec: 45, maxPlayLengthSec: 15, shareOfVoice: 0.333, playsPerWindow: 5760 } },
       }],
       dooh: { id: 'menu_board', venuetype: ['retail.grocery'], venuetypetax: 1, publisher: { id: 'drg-4471', name: 'Demo Retail Group', domain: 'demoretail.example' } },
       source: { schain: { complete: 1, ver: '1.0', nodes: [{ asi: 'demoretail.example', sid: 'drg-4471', hp: 1 }] } },

@@ -1,0 +1,3 @@
+-- Deal type lives on the buyers list (Rob, 7 Oct 2026; ticket ke38J410jwLTYu9blGK7): one deal object plus a type, as DSPs model it. private_auction = invited buyers bid (two-period auction window / locked rate); preferred = fixed-price first look held at the reserve price, no volume; guaranteed = commits volume (committed_plays). Existing lists that already commit a volume become guaranteed; the rest stay private auctions.
+ALTER TABLE buyers_lists ADD COLUMN deal_type TEXT NOT NULL DEFAULT 'private_auction' CHECK (deal_type IN ('private_auction', 'preferred', 'guaranteed'));
+UPDATE buyers_lists SET deal_type = 'guaranteed' WHERE committed_plays IS NOT NULL;

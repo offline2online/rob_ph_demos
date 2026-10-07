@@ -22,7 +22,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import type { Context } from '../context'
 import { type Check, failed, fileChecks } from '../domain/assetChecks'
 import { EXTENSION, readMedia } from '../domain/media'
-import type { PositionRef } from '../domain/positions'
+import { type PositionRef, maxPlayLengthSecFor } from '../domain/positions'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 import { readCapped } from '../dsp/bidder'
 import { providerOf } from '../dsp/registry'
@@ -84,7 +84,7 @@ export async function queueCreative(ctx: Context, partner: PartnerRecord, bid: {
   }
   if (!bytes) return release(`Unknown creative ${bid.crid} is larger than the asset size limit.`)
   const media = readMedia(bytes)
-  const checks: Check[] = fileChecks(media, bytes.length, p.displayType, ctx.config.assetLimits)
+  const checks: Check[] = fileChecks(media, bytes.length, p.displayType, ctx.config.assetLimits, undefined, maxPlayLengthSecFor((await ctx.company.get()).maxPlayLengthSec, p))
   if (failed(checks).length) return release(`Unknown creative ${bid.crid} failed the automated checks: ${failed(checks).map((c) => c.detail ?? c.name).join(' ')}`)
 
   /* Identity comes from the bytes, never from the crid. */

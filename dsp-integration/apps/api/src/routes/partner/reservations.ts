@@ -143,7 +143,13 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
 
     const reserved = b.type === 'reserve'
     /* Guaranteed: the forecast for this window (plays x VAC-d, as billing realises it), less the retailer's contingency buffer. */
-    const dealType = reserved && b.dealType === 'guaranteed' ? 'guaranteed' : 'preferred'
+    /* On a position assigned to a buyers list the list's deal type is authoritative (7 Oct 2026): the reservation never
+       sets it independently, so the two cannot disagree about whether volume is promised. A private auction books as preferred (no volume). */
+    const listType = deal ? (deal.dealType === 'guaranteed' ? 'guaranteed' : 'preferred') : null
+    if (reserved && listType && b.dealType !== undefined && b.dealType !== listType) {
+      throw conflict(`${deal!.name} is a ${deal!.dealType === 'private_auction' ? 'private auction' : deal!.dealType} deal: its buyers list sets the deal type, so this reservation can only be ${listType}.`)
+    }
+    const dealType = reserved ? (listType ?? (b.dealType === 'guaranteed' ? 'guaranteed' : 'preferred')) : 'preferred'
     const forecast = dealType === 'guaranteed' ? await assumedViewsPerWindow(ctx, pos) : null
     const committed = forecast === null ? null : guaranteedImpressions(forecast, company.guaranteeBufferPct)
     /* Booked at the reserve price when the position has one (OQ52), else
