@@ -266,8 +266,12 @@ export interface paths {
          *     that budget. The answer is always 200: `filled` with the creative
          *     to play, or `no_fill` (no bid cleared in time, nothing approved and
          *     fitting, DSP integration off, position locked…) — on `no_fill` the
-         *     player plays its own content. No creative is retrieved inside tmax:
-         *     only a creative PH has already approved can fill an impression.
+         *     player plays its own content. No creative is retrieved inside tmax.
+         *     A creative PH has approved (or is still reviewing) is served from
+         *     PH's own copy; a creative PH has not seen yet is served at bid time
+         *     from the DSP's own creative URL (`creative.source` = `at_bid`) and
+         *     reviewed after the play, when the player reports it. A creative a
+         *     reviewer rejected does not play, and its content is blocked by hash.
          *     Only a position whose slot is in `realtime` mode can be filled this
          *     way; an advance position answers 409.
          */
@@ -1181,9 +1185,24 @@ export interface components {
             expiresAt?: string;
             /** @description First price */
             clearingCpm?: number;
+            /**
+             * @description Which kind of fill this was; also on `creative.source`.
+             * @enum {string}
+             */
+            creativeSource?: "approved" | "under_review" | "at_bid";
+            /** @description On the proof-of-play answer for an at-bid creative */
+            reviewNote?: string;
             /** @description What to play. The player fetches the asset from `url`. */
             creative?: {
-                campaignId?: string;
+                /** @description Null for an at-bid creative PH has not seen yet; its campaign exists once it has played and been retrieved. */
+                campaignId?: string | null;
+                /**
+                 * @description approved: PH's approved copy. under_review: PH's copy, its
+                 *     review still open. at_bid: the DSP's own creative URL, not
+                 *     yet seen by PH; reviewed after the play.
+                 * @enum {string}
+                 */
+                source?: "approved" | "under_review" | "at_bid";
                 assetVersion?: string;
                 url?: string;
                 mimeType?: string;

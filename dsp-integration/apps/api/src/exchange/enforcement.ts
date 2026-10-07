@@ -75,6 +75,14 @@ export async function checkCampaign(ctx: Context, campaignId: string): Promise<R
   return null
 }
 
+/* The real-time path's version of checkCampaign (Rob, 7 Oct 2026): a creative PH is still reviewing may play, because the review runs after the play. Only a rejected (or never submitted) creative is refused, and an approved one must still be activated. */
+export async function checkCampaignAtBid(ctx: Context, campaignId: string): Promise<Refusal | null> {
+  const status = await ctx.approvals.statusOf(campaignId)
+  if (status === 'awaiting_approval') return null
+  if (status === 'rejected') return { code: 'not_approved', reason: 'The creative was rejected on review and no longer plays.' }
+  return checkCampaign(ctx, campaignId)
+}
+
 /* What the position was opened up to (Rob, 20 Sep): a slot supports
    localised targeting until someone says otherwise on Advertisers /
    Inventory, so a personalised or interactive campaign can't buy it by

@@ -18,6 +18,7 @@ const body = (r: ImpressionRecord, creative?: unknown) => ({
   impressionId: r.id, status: r.status, ...(r.reason ? { reason: r.reason } : {}),
   ...(r.expiresAt ? { expiresAt: r.expiresAt } : {}), ...(r.clearingCpm != null && r.status !== 'no_fill' ? { clearingCpm: r.clearingCpm } : {}),
   ...(creative ? { creative } : {}),
+  ...(r.creativeSource ? { creativeSource: r.creativeSource } : {}), ...(r.reviewNote ? { reviewNote: r.reviewNote } : {}),
 })
 
 export const playerRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => async (app) => {

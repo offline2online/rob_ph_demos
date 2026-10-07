@@ -83,13 +83,81 @@ describe('real-time (player-triggered) bidding', () => {
     expect((await signal()).json().status).toBe('no_fill')
   })
 
-  it('never fetches a creative inside tmax: a creative PH has not approved cannot fill', async () => {
-    const { mocks, signal, ctx } = await setup()
+  it('serves a creative PH has not seen at bid time, without waiting for approval, and reviews it after the play', async () => {
+    const { mocks, signal, played, ctx, displayId } = await setup()
     await mocks.app.inject({ method: 'PUT', url: '/_control/google_dv360/bidder', payload: { advertiserId: '5130002' } })
     const known = (await ctx.approvalCampaigns.listCampaigns({ sources: ['dsp'] })).length
-    const res = (await signal()).json()
-    expect(res.status).toBe('no_fill')
+    const fill = (await signal()).json()
+    /* Filled from the DSP's own creative URL; nothing was retrieved or queued inside tmax. */
+    expect(fill).toMatchObject({ status: 'filled', creativeSource: 'at_bid', creative: { campaignId: null, source: 'at_bid', url: expect.stringContaining('/creatives/') } })
     expect(await ctx.approvalCampaigns.listCampaigns({ sources: ['dsp'] })).toHaveLength(known)
+
+    /* The play is reported: now PH retrieves it and the approval gate sees it. */
+    const done = (await played(fill.impressionId)).json()
+    expect(done.status).toBe('played')
+    const after = await ctx.approvalCampaigns.listCampaigns({ sources: ['dsp'] })
+    expect(after).toHaveLength(known + 1)
+    const rec = (await ctx.impressions.get(fill.impressionId))!
+    expect(rec.campaignId).toMatch(/^c_dsp_/)
+    expect(rec.contentHash).toMatch(/^[0-9a-f]{64}$/)
+    expect(rec.reviewNote).toMatch(/New creative/)
+    expect(ctx.db.prepare('SELECT display_id FROM plays WHERE campaign_id = ?').all(rec.campaignId)).toEqual([{ display_id: displayId }])
+    expect(['awaiting_approval', 'approved']).toContain(await ctx.approvals.statusOf(rec.campaignId as string))
+  })
+
+  it('a creative still in review keeps playing; a rejection stops it and blocks its content hash everywhere', async () => {
+    const { mocks, signal, played, ctx } = await setup()
+    await mocks.app.inject({ method: 'PUT', url: '/_control/google_dv360/bidder', payload: { advertiserId: '5130002' } })
+    const first = (await signal()).json()
+    await played(first.impressionId)
+    const rec = (await ctx.impressions.get(first.impressionId))!
+    const campaignId = rec.campaignId as string
+    expect(await ctx.approvals.statusOf(campaignId)).toBe('awaiting_approval')
+
+    /* Awaiting its post-play review: it plays again, from PH's own copy. */
+    const second = (await signal()).json()
+    expect(second).toMatchObject({ status: 'filled', creativeSource: 'under_review', creative: { campaignId } })
+
+    /* A reviewer rejects it. */
+    await ctx.approvals.reject(campaignId, (await ctx.approvals.view(campaignId)).assetVersion, 'reviewer@retailer.example', 'Not suitable.')
+    const third = (await signal()).json()
+    expect(third).toMatchObject({ status: 'no_fill' })
+    expect(third.reason).toMatch(/rejected|No bid cleared/)
+    /* Blocked by content hash, for any crid, DSP or advertiser. */
+    expect(await ctx.dspCreatives.blockedBy(rec.contentHash as string)).toBe(campaignId)
+    /* Un-rejecting lifts the block. */
+    await ctx.approvals.unreject(campaignId, (await ctx.approvals.view(campaignId)).assetVersion, 'reviewer@retailer.example')
+    expect(await ctx.dspCreatives.blockedBy(rec.contentHash as string)).toBeNull()
+  })
+
+  it('does not review an approved creative again: identical bytes under a stale label resolve to the approved creative', async () => {
+    const { ctx, signal, played } = await setup()
+    const before = await ctx.approvalCampaigns.listCampaigns({ sources: ['dsp'] })
+    const approvedId = (ctx.db.prepare("SELECT campaign_id FROM dsp_creatives WHERE partner_id = 'p_google' AND campaign_id <> ''").get() as { campaign_id: string }).campaign_id
+    expect(await ctx.approvals.statusOf(approvedId)).toBe('approved')
+    /* The label's last fetch-and-hash is old, so the crid can no longer be trusted without a fresh look: it plays at bid time. */
+    ctx.db.prepare("UPDATE dsp_creatives SET verified_at = '2000-01-01T00:00:00.000Z'").run()
+    const fill = (await signal()).json()
+    expect(fill).toMatchObject({ status: 'filled', creativeSource: 'at_bid' })
+    await played(fill.impressionId)
+    const rec = (await ctx.impressions.get(fill.impressionId))!
+    expect(rec.campaignId).toBe(approvedId)
+    expect(rec.reviewNote).toMatch(/identical to creative .*already approved/)
+    expect(await ctx.approvalCampaigns.listCampaigns({ sources: ['dsp'] })).toHaveLength(before.length)
+    expect(await ctx.approvals.statusOf(approvedId)).toBe('approved')
+  })
+
+  it('refuses an at-bid creative that is not under the DSP’s own creative host', async () => {
+    const { ctx, signal } = await setup()
+    ctx.db.prepare("UPDATE dsp_creatives SET verified_at = '2000-01-01T00:00:00.000Z'").run()
+    const real = ctx.bidder.send.bind(ctx.bidder)
+    ctx.bidder.send = async (url, req, o) => {
+      const res = await real(url, req, o)
+      for (const sb of res?.seatbid ?? []) for (const b of sb.bid ?? []) b.iurl = 'https://evil.example/creatives/x.png'
+      return res
+    }
+    const out = (await signal()).json()
+    expect(out.status).toBe('no_fill')
   })
 
   it('answers no_fill when the bidder is slower than tmax', async () => {

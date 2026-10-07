@@ -24,17 +24,24 @@ export interface ImpressionRecord {
   playedAt: string | null
   bidRequests: number
   elapsedMs: number | null
+  /* At-bid creative (migration 0048): see exchange/atBid.ts. */
+  creativeUrl: string | null
+  creativeSource: 'approved' | 'under_review' | 'at_bid' | null
+  contentHash: string | null
+  reviewNote: string | null
 }
 
 interface Row {
   id: string; position_id: string; display_id: string; window_start: string; requested_at: string; status: ImpressionStatus; reason: string | null
   partner_id: string | null; advertiser_id: string | null; campaign_id: string | null; crid: string | null; clearing_cpm: number | null; currency: string
   test_mode: number; asset_version: string | null; expires_at: string | null; played_at: string | null; bid_requests: number; elapsed_ms: number | null
+  creative_url: string | null; creative_source: ImpressionRecord['creativeSource']; content_hash: string | null; review_note: string | null
 }
 const toRecord = (r: Row): ImpressionRecord => ({
   id: r.id, positionId: r.position_id, displayId: r.display_id, windowStart: r.window_start, requestedAt: r.requested_at, status: r.status, reason: r.reason,
   partnerId: r.partner_id, advertiserId: r.advertiser_id, campaignId: r.campaign_id, crid: r.crid, clearingCpm: r.clearing_cpm, currency: r.currency,
   testMode: !!r.test_mode, assetVersion: r.asset_version, expiresAt: r.expires_at, playedAt: r.played_at, bidRequests: r.bid_requests, elapsedMs: r.elapsed_ms,
+  creativeUrl: r.creative_url, creativeSource: r.creative_source, contentHash: r.content_hash, reviewNote: r.review_note,
 })
 
 export interface ImpressionRepo {
@@ -43,14 +50,16 @@ export interface ImpressionRepo {
   /* filled → played, once: false when it was already played, never filled, or its fill has expired (`at` is past expires_at). */
   markPlayed(id: string, at: string, playedAt: string): Awaitable<boolean>
   forPosition(positionId: string): Awaitable<ImpressionRecord[]>
+  /* After the post-play review of an at-bid creative: the campaign it resolved to, its hash and what happened. */
+  recordReview(id: string, r: { campaignId: string | null; contentHash: string | null; note: string }): Awaitable<void>
 }
 
 export function sqliteImpressionRepo(db: Db): ImpressionRepo {
   return {
     insert(r) {
-      prepared(db, `INSERT INTO realtime_impressions (id, position_id, display_id, window_start, requested_at, status, reason, partner_id, advertiser_id, campaign_id, crid, clearing_cpm, currency, test_mode, asset_version, expires_at, played_at, bid_requests, elapsed_ms)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .run(r.id, r.positionId, r.displayId, r.windowStart, r.requestedAt, r.status, r.reason, r.partnerId, r.advertiserId, r.campaignId, r.crid, r.clearingCpm, r.currency, r.testMode ? 1 : 0, r.assetVersion, r.expiresAt, r.playedAt, r.bidRequests, r.elapsedMs)
+      prepared(db, `INSERT INTO realtime_impressions (id, position_id, display_id, window_start, requested_at, status, reason, partner_id, advertiser_id, campaign_id, crid, clearing_cpm, currency, test_mode, asset_version, expires_at, played_at, bid_requests, elapsed_ms, creative_url, creative_source, content_hash, review_note)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(r.id, r.positionId, r.displayId, r.windowStart, r.requestedAt, r.status, r.reason, r.partnerId, r.advertiserId, r.campaignId, r.crid, r.clearingCpm, r.currency, r.testMode ? 1 : 0, r.assetVersion, r.expiresAt, r.playedAt, r.bidRequests, r.elapsedMs, r.creativeUrl, r.creativeSource, r.contentHash, r.reviewNote)
       return r
     },
     get: (id) => {
@@ -59,6 +68,9 @@ export function sqliteImpressionRepo(db: Db): ImpressionRepo {
     },
     markPlayed: (id, at, playedAt) =>
       prepared(db, "UPDATE realtime_impressions SET status = 'played', played_at = ? WHERE id = ? AND status = 'filled' AND expires_at >= ?").run(playedAt, id, at).changes > 0,
+    recordReview: (id, r) => {
+      prepared(db, 'UPDATE realtime_impressions SET campaign_id = COALESCE(?, campaign_id), content_hash = ?, review_note = ? WHERE id = ?').run(r.campaignId, r.contentHash, r.note, id)
+    },
     forPosition: (positionId) => (prepared(db, 'SELECT * FROM realtime_impressions WHERE position_id = ? ORDER BY requested_at').all(positionId) as unknown as Row[]).map(toRecord),
   }
 }

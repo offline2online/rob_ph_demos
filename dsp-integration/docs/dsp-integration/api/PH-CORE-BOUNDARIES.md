@@ -648,11 +648,34 @@ must not wait past its own deadline); it sends the signal at most once per
 impression; it reports proof of play exactly once per played fill, with the
 display it played on; and it caches nothing from a fill beyond `expiresAt`.
 
+**At-bid creative, approved after the play (7 Oct 2026, Rob).** There is no
+time to retrieve and review a creative inside tmax, so a real-time fill may
+carry a creative PH has not seen: the one the DSP supplied in its bid
+(`iurl`, under that DSP's own creative host). The answer says which kind of
+fill it is, in `creative.source`:
+
+| `source` | What the player plays | Review |
+|---|---|---|
+| `approved` | PH's approved copy (`url` on PH's asset host) | Done; never repeated for the same content hash (safe reuse, OQ40). |
+| `under_review` | PH's copy of a creative awaiting a reviewer | Open; the creative keeps playing until the decision. |
+| `at_bid` | **The DSP's own URL**, fetched by the player. `campaignId` is null. | Starts when the player reports the play: PH retrieves, hashes and checks the creative and puts it through the approval gate (or approves it automatically for an advertiser that needs no approval). |
+
+A rejection stops the creative playing going forward and blocks its content
+hash for every crid, DSP and advertiser; the DSP's own audit status stays
+advisory and never approves or blocks (OQ40). **PH Core's player must**
+fetch an `at_bid` creative from the `url` it is given (a DSP-hosted
+address, not PH's asset store), play it as it would an approved one, and
+report the play as usual — the review is triggered by that report, so a
+play that is never reported is never reviewed. It must not cache an `at_bid`
+creative beyond `expiresAt`, and must treat a rejected creative's later
+`no_fill` as normal. The player cannot know a creative's type in advance:
+`mimeType` for an `at_bid` fill is read from the URL's extension.
+
 What the exchange guarantees: nothing is fetched inside tmax, so only an
-already approved, activated creative that fits the display type's canvas can
-fill (at-bid creative with post-bid approval is a separate ticket); a
+already approved, activated creative that fits the display type's canvas, or
+an at-bid creative from the DSP's own host, can fill; a
 Test-mode DSP's bid never fills; impressions are their own table
-(migration 0047) and never touch `reservations` or slot bookings, so
+(migration 0047, at-bid columns 0048) and never touch `reservations` or slot bookings, so
 migration 0021's one-live-winner-per-window index is unaffected. Not yet
 covered: per-impression billing of real-time plays, and per-impression
 `imp.qty` (the request still carries the window's assumed views).

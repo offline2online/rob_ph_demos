@@ -26,8 +26,9 @@
    earlier DSP. NO creative is fetched inside tmax (budget 0): a creative PH
    has not approved is discarded and retrieved for review by an advance
    window, so only an already-approved, activated creative that fits the
-   canvas can fill. (At-bid creative with post-bid approval is a dependent
-   ticket.) A Test-mode DSP's bid is cleared among Test bids but never fills
+   canvas can fill — except that a creative PH has not seen yet may play at
+   bid time and is reviewed after the play (atBid.ts, Rob 7 Oct 2026: there
+   is no time for pre-approval within tmax). A Test-mode DSP's bid is cleared among Test bids but never fills
    an impression. The PH Core player side of this is not in this repo
    (PH-CORE-BOUNDARIES.md "Real-time bidding"). */
 import { randomUUID } from 'node:crypto'
@@ -44,10 +45,11 @@ import type { ImpressionRecord } from '../repos/RealtimeImpressionRepo'
 import { type VettedBid, MAX_BIDS_PER_RESPONSE, bidUrlFor, receivesBidRequests, vetBid } from './auction'
 import { type BidResponse, buildBidRequest } from './openrtb'
 import { tx } from '../db/db'
+import { mimeFromUrl, reviewAtBidCreative } from './atBid'
 
 export interface Fill {
   impression: ImpressionRecord
-  creative?: { campaignId: string; assetVersion: string; url: string; mimeType: string; durationSec: number | null }
+  creative?: { campaignId: string | null; source: 'approved' | 'under_review' | 'at_bid'; assetVersion: string; url: string; mimeType: string; durationSec: number | null }
 }
 
 interface Candidate { dsp: PartnerRecord; price: number; crid: string; vetted: Extract<VettedBid, { ok: true }> }
@@ -69,7 +71,7 @@ export async function signalImpression(ctx: Context, input: { displayId: string;
   const base: ImpressionRecord = {
     id: `imp_${randomUUID().slice(0, 12)}`, positionId: p.positionId, displayId: display.id, windowStart, requestedAt: now.toISOString(), status: 'no_fill', reason: null,
     partnerId: null, advertiserId: null, campaignId: null, crid: null, clearingCpm: null, currency: 'USD', testMode: false, assetVersion: null, expiresAt: null, playedAt: null,
-    bidRequests: 0, elapsedMs: null,
+    bidRequests: 0, elapsedMs: null, creativeUrl: null, creativeSource: null, contentHash: null, reviewNote: null,
   }
   const noFill = async (reason: string, extra: Partial<ImpressionRecord> = {}): Promise<Fill> =>
     ({ impression: await ctx.impressions.insert({ ...base, ...extra, status: 'no_fill', reason, elapsedMs: Date.now() - started }) })
@@ -117,7 +119,7 @@ export async function signalImpression(ctx: Context, input: { displayId: string;
       for (const bid of Array.isArray(seatbid.bid) ? seatbid.bid : []) {
         if (++seen > MAX_BIDS_PER_RESPONSE) break
         if (!bid || typeof bid !== 'object') continue
-        const v = await vetBid(ctx, p, dsp, windowStart, res, typeof seatbid.seat === 'string' ? seatbid.seat : undefined, bid, { creativeFetches: 0 })
+        const v = await vetBid(ctx, p, dsp, windowStart, res, typeof seatbid.seat === 'string' ? seatbid.seat : undefined, bid, { creativeFetches: 0 }, { atBid: true })
         if (v.ok) candidates.push({ dsp, price: bid.price as number, crid: bid.crid as string, vetted: v })
       }
     }
@@ -132,6 +134,16 @@ export async function signalImpression(ctx: Context, input: { displayId: string;
   /* The creative must fit the display type's canvas (as at advance hand-off); a winner whose creative doesn't is passed over. */
   let lastWhy = 'no creative'
   for (const c of live) {
+    /* A creative PH has not seen: served from the DSP's own URL now, reviewed after it plays. */
+    if (c.vetted.atBid) {
+      const { iurl } = c.vetted.atBid
+      const impression = await ctx.impressions.insert({
+        ...base, status: 'filled', partnerId: c.dsp.id, advertiserId: c.vetted.advertiserId, campaignId: null, crid: c.crid, clearingCpm: c.price,
+        assetVersion: null, expiresAt: new Date(now.getTime() + ctx.config.realtimeFillTtlSec * 1000).toISOString(), elapsedMs: Date.now() - started,
+        creativeUrl: iurl, creativeSource: 'at_bid',
+      })
+      return { impression, creative: { campaignId: null, source: 'at_bid', assetVersion: '', url: iurl, mimeType: mimeFromUrl(iurl), durationSec: null } }
+    }
     const approved = await ctx.approvals.liveAssetVersion(c.vetted.campaignId)
     const assets = await ctx.campaigns.latestAssets(c.vetted.campaignId, approved ?? undefined)
     const asset = assets.find((a) => a.role === 'default') ?? assets[0]
@@ -140,11 +152,14 @@ export async function signalImpression(ctx: Context, input: { displayId: string;
     const bad = failed(fileChecks(readMedia(bytes), bytes.length, p.displayType, ctx.config.assetLimits))
     if (bad.length) { lastWhy = `${c.crid} doesn’t fit ${p.displayType.name}: ${bad.map((x) => x.detail ?? x.name).join(' ')}`; continue }
     const assetVersion = approved ?? `v${Math.max(...assets.map((a) => a.version))}`
+    const url = `${ctx.config.publicUrl}/assets/${asset.file}`
+    const source = approved ? 'approved' as const : 'under_review' as const
     const impression = await ctx.impressions.insert({
       ...base, status: 'filled', partnerId: c.dsp.id, advertiserId: c.vetted.advertiserId, campaignId: c.vetted.campaignId, crid: c.crid, clearingCpm: c.price,
       assetVersion, expiresAt: new Date(now.getTime() + ctx.config.realtimeFillTtlSec * 1000).toISOString(), elapsedMs: Date.now() - started,
+      creativeUrl: url, creativeSource: source,
     })
-    return { impression, creative: { campaignId: c.vetted.campaignId, assetVersion, url: `${ctx.config.publicUrl}/assets/${asset.file}`, mimeType: asset.mimeType, durationSec: asset.durationSec ?? null } }
+    return { impression, creative: { campaignId: c.vetted.campaignId, source, assetVersion, url, mimeType: asset.mimeType, durationSec: asset.durationSec ?? null } }
   }
   return noFill(`No bidding creative could play: ${lastWhy}.`)
 }
@@ -157,11 +172,15 @@ export async function confirmPlayed(ctx: Context, id: string, body: { playedAt?:
   if (!rec) throw notFound('Unknown impression.')
   const now = ctx.clock().toISOString()
   const playedAt = body.playedAt ?? now
+  if (!(await ctx.impressions.markPlayed(id, now, playedAt))) return null
+  /* Post-bid approval: a creative PH had not seen is retrieved and put through the approval gate now that it has played. It runs outside the play's own transaction (it fetches over the network), and the play stands whatever the review finds. */
+  if (rec.creativeSource === 'at_bid') await ctx.impressions.recordReview(id, await reviewAtBidCreative(ctx, rec))
+  const done = (await ctx.impressions.get(id)) as ImpressionRecord
   return tx(ctx.db, async () => {
-    if (!(await ctx.impressions.markPlayed(id, now, playedAt))) return null
-    const p = await findPosition(ctx, rec.positionId)
+    const p = await findPosition(ctx, done.positionId)
     const duration = body.durationSec ?? (p ? slotDurationSec(p.displayType) : null) ?? 10
-    ctx.plays.insertTestPlay({ id: `rtp_${randomUUID().slice(0, 12)}`, displayId: rec.displayId, campaignId: rec.campaignId as string, playedAt, durationSec: duration, versionId: rec.assetVersion, tier: 'default', receivedAt: now })
-    return (await ctx.impressions.get(id)) as ImpressionRecord
+    /* A play needs a campaign to be recorded against: an at-bid creative that could not be retrieved or checked has none (its review note says why). */
+    if (done.campaignId) ctx.plays.insertTestPlay({ id: `rtp_${randomUUID().slice(0, 12)}`, displayId: done.displayId, campaignId: done.campaignId, playedAt, durationSec: duration, versionId: done.assetVersion, tier: 'default', receivedAt: now })
+    return done
   })
 }

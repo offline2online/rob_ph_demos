@@ -25,6 +25,8 @@ export interface DspCreativeRepo {
      (domain/campaignRetention.ts), or a later bid with that crid would
      resolve to a creative that no longer exists. */
   deleteForCampaign(campaignId: string): Awaitable<void>
+  /* Block by content hash (Rob, 7 Oct 2026): the campaign whose creative has this exact content and whose latest review decision is a rejection, or null. A rejection blocks the bytes for every crid, DSP and advertiser; un-rejecting it lifts the block. */
+  blockedBy(contentHash: string): Awaitable<string | null>
 }
 
 interface Row { campaign_id: string; content_hash: string | null; iurl: string | null; verified_at: string | null }
@@ -49,6 +51,11 @@ export function sqliteDspCreativeRepo(db: Db): DspCreativeRepo {
     record(partnerId, crid, campaignId, contentHash, iurl, at) {
       prepared(db, 'UPDATE dsp_creatives SET campaign_id = ?, content_hash = ?, iurl = ?, verified_at = ?, claimed_at = NULL WHERE partner_id = ? AND crid = ?')
         .run(campaignId, contentHash, iurl, at, partnerId, crid)
+    },
+    blockedBy(contentHash) {
+      const r = prepared(db, `SELECT a.campaign_id AS id FROM campaign_assets a WHERE a.content_hash = ? AND a.discarded_at IS NULL
+        AND (SELECT status FROM campaign_approvals q WHERE q.campaign_id = a.campaign_id ORDER BY q.created_at DESC, q.seq DESC LIMIT 1) = 'rejected' LIMIT 1`).get(contentHash) as { id: string } | undefined
+      return r?.id ?? null
     },
     deleteForCampaign(campaignId) {
       prepared(db, 'DELETE FROM dsp_creatives WHERE campaign_id = ?').run(campaignId)

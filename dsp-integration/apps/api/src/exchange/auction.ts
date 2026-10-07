@@ -52,7 +52,8 @@ import { type ReservationRecord, TAKEN } from '../repos/ReservationRepo'
 import { advertiserSlug, assignedOf } from '@ph-dsp/types'
 import { isUniqueViolation, tx } from '../db/db'
 import { queueCreative, verifiedCampaign } from './creatives'
-import { checkAdvertiser, checkCampaign, checkCategories, checkFloor, checkTargeting, checkVersionCount, firstRefusal } from './enforcement'
+import { vetAtBidCreative } from './atBid'
+import { checkAdvertiser, checkCampaign, checkCampaignAtBid, checkCategories, checkFloor, checkTargeting, checkVersionCount, firstRefusal } from './enforcement'
 import { handOff } from './handoff'
 import { settlePending } from './pending'
 import { bidderTuning } from '../domain/partnerInput'
@@ -287,7 +288,10 @@ async function clear(ctx: Context, candidates: ReservationRecord[]): Promise<Res
    (exchange/realtime.ts, recorded on its own impression). The advertiser
    blocklist is enforced here, on the bid, using the seat and advertiser
    identity in the response (spec §7). */
-export type VettedBid = { ok: false; reason: string; advertiserId?: string; campaignId?: string } | { ok: true; advertiserId: string; campaignId: string; pricingType: string | null; seatId: string }
+export type VettedBid = { ok: false; reason: string; advertiserId?: string; campaignId?: string } | { ok: true; advertiserId: string; campaignId: string; pricingType: string | null; seatId: string; atBid?: { crid: string; iurl: string } }
+
+/* The real-time path's at-bid creative (exchange/atBid.ts): there is no time to retrieve and review a creative inside tmax, so a creative PH has not seen yet may fill, and is reviewed after it plays. */
+export interface VetOptions { atBid?: boolean }
 
 /* Records one bid from a DSP's response: a candidate (pending) if it passes
    every pre-auction check, otherwise rejected with the reason. */
@@ -302,7 +306,7 @@ async function recordDspBid(ctx: Context, p: PositionRef, dsp: PartnerRecord, st
   return ctx.reservations.insert({ ...base, advertiserId: v.advertiserId, campaignId: v.campaignId, pricingType: v.pricingType })
 }
 
-export async function vetBid(ctx: Context, p: PositionRef, dsp: PartnerRecord, start: string, res: BidResponse, seatId: string | undefined, bid: Bid, budget: { creativeFetches: number }): Promise<VettedBid> {
+export async function vetBid(ctx: Context, p: PositionRef, dsp: PartnerRecord, start: string, res: BidResponse, seatId: string | undefined, bid: Bid, budget: { creativeFetches: number }, opts: VetOptions = {}): Promise<VettedBid> {
   const currency = TRANSACTING_CURRENCY
   const reject = async (reason: string, extra: { advertiserId?: string; campaignId?: string } = {}): Promise<VettedBid> => ({ ok: false, reason, ...extra })
 
@@ -335,6 +339,7 @@ export async function vetBid(ctx: Context, p: PositionRef, dsp: PartnerRecord, s
 
   /* The crid is only a label: it resolves to a creative only while its fetch-and-hash is fresh and the creative URL unchanged. */
   const campaignId = await verifiedCampaign(ctx, dsp.id, bid.crid, bid.iurl)
+  if (!campaignId && opts.atBid) return vetAtBidCreative(ctx, p, dsp, bid, { id: advertiserId, name: seat.name }, seat.id)
   if (!campaignId) {
     /* The one-retrieval budget is spent inside queueCreative, only once a fetch is really attempted: a refused (off-path) URL must not use it up. */
     return reject(await queueCreative(ctx, dsp, { crid: bid.crid, iurl: bid.iurl, ext: bid.ext && typeof bid.ext === 'object' ? bid.ext : undefined }, { id: advertiserId, name: seat.name }, p, budget), { advertiserId })
@@ -344,7 +349,7 @@ export async function vetBid(ctx: Context, p: PositionRef, dsp: PartnerRecord, s
   if (campaign.advertiserId !== advertiserId) return reject(`Creative ${bid.crid} belongs to another advertiser.`, { advertiserId })
   const price = bid.price
   const late = await firstRefusal(
-    () => checkCampaign(ctx, campaignId),
+    () => (opts.atBid ? checkCampaignAtBid(ctx, campaignId) : checkCampaign(ctx, campaignId)),
     () => checkTargeting(p, campaign.pricingType),
     () => checkVersionCount(ctx, p, campaignId),
     () => checkFloor(ctx, price, advertiserId),
