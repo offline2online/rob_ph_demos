@@ -248,6 +248,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/player/v1/impressions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Impression available — ask the exchange to fill a real-time position just before playout
+         * @description The impression-available signal. The exchange sends one OpenRTB
+         *     request per eligible connected DSP (same request as the advance
+         *     auction, `imp.ext.ph.mode` = `realtime`, `tmax` cut to the
+         *     real-time budget), clears the bids first price, and answers within
+         *     that budget. The answer is always 200: `filled` with the creative
+         *     to play, or `no_fill` (no bid cleared in time, nothing approved and
+         *     fitting, DSP integration off, position locked…) — on `no_fill` the
+         *     player plays its own content. No creative is retrieved inside tmax:
+         *     only a creative PH has already approved can fill an impression.
+         *     Only a position whose slot is in `realtime` mode can be filled this
+         *     way; an advance position answers 409.
+         */
+        post: operations["signalImpression"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/player/v1/impressions/{impressionId}/played": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Proof of play for a filled impression
+         * @description Reported once, within the fill's `expiresAt`. Records the play
+         *     against the display and the winning campaign; reporting it twice, or
+         *     for a fill that has expired or was never filled, answers 409.
+         */
+        post: operations["confirmImpressionPlayed"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/reservations/{reservationId}": {
         parameters: {
             query?: never;
@@ -1110,6 +1162,34 @@ export interface components {
                 }[];
             };
         };
+        ImpressionSignal: {
+            /** @description The display about to play the impression. */
+            displayId: string;
+            /** @description The slot (1-based) in that display's display type that is next in the rotation. */
+            slot: number;
+        };
+        ImpressionFill: {
+            impressionId: string;
+            /** @enum {string} */
+            status: "filled" | "no_fill" | "played";
+            /** @description Why there is no fill; absent on a fill. */
+            reason?: string | null;
+            /**
+             * Format: date-time
+             * @description The proof of play must arrive by this time.
+             */
+            expiresAt?: string;
+            /** @description First price */
+            clearingCpm?: number;
+            /** @description What to play. The player fetches the asset from `url`. */
+            creative?: {
+                campaignId?: string;
+                assetVersion?: string;
+                url?: string;
+                mimeType?: string;
+                durationSec?: number | null;
+            };
+        };
         /**
          * @description reserved: held for a named advertiser (and shown as available to that
          *     advertiser), committed at the reserve price, or inside a locked
@@ -1398,11 +1478,11 @@ export interface components {
             /** @enum {string} */
             type: "reserve" | "bid";
             /**
-             * @description Only for type reserve. preferred (default) holds the window at the reserve price with no volume; guaranteed also commits the forecast (plays x VAC-d) less the contingency buffer.
+             * @description Only for type reserve. preferred (the default, unchanged) holds the premium window at the reserve price with no volume promised. guaranteed also commits a delivery volume: the window's forecast impressions (plays x VAC-d) less the retailer's contingency buffer, returned as guaranteedImpressions and sent to the DSP as the guaranteed unit count in dspDeal. Refused (validation_failed) with type bid.
              * @default preferred
              * @enum {string}
              */
-            dealType?: "preferred" | "guaranteed";
+            dealType: "preferred" | "guaranteed";
             /** @description The CPM, in the company currency, at most 10,000. For type bid, the bid, which must clear the effective floor. For type reserve on a position with a reservePrice, the buyer's commitment: it must be at least the reservePrice (validation_failed otherwise), and the booking is made at the reservePrice itself, which must clear the effective floor. For type reserve on a named-advertiser position with no reservePrice, the price agreed through the DSP: it must clear the effective floor, and the booking is made at it. */
             bidCpm: number;
         };
@@ -1413,10 +1493,16 @@ export interface components {
             clearingCpm?: number | null;
             currency?: string;
             reason?: string | null;
-            /** @enum {string} */
+            /**
+             * @description preferred: price held, no volume. guaranteed: guaranteedImpressions is committed.
+             * @enum {string}
+             */
             dealType?: "preferred" | "guaranteed";
+            /** @description Guaranteed only: the window's forecast (plays x VAC-d audience). */
             forecastImpressions?: number | null;
+            /** @description Guaranteed only: the forecast less the contingency buffer; the committed volume. */
             guaranteedImpressions?: number | null;
+            /** @description How the deal is expressed to the buying DSP: DV360 Programmatic Guaranteed or Amazon guaranteed deal (unitCount = guaranteedImpressions), or a preferred deal with no volume. */
             dspDeal?: {
                 /** @enum {string} */
                 dealType?: "preferred" | "guaranteed";
@@ -1481,10 +1567,10 @@ export interface components {
             categoryWhitelist: string[];
             categoryBlacklist: string[];
             /**
-             * @description Guaranteed deals: contingency percent taken off a window's forecast impressions before the rest is committed. Optional on save.
+             * @description Guaranteed deals: the contingency (percent, for screen downtime) taken off a window's forecast impressions (plays x VAC-d audience) before the remainder is committed as the guaranteed volume. Instance-wide. Optional on save: omitted keeps the stored value.
              * @default 10
              */
-            guaranteeBufferPct?: number;
+            guaranteeBufferPct: number;
         };
         AdvertiserSettings: components["schemas"]["AdvertiserSettingsInput"] & {
             /**
@@ -2196,6 +2282,21 @@ export interface components {
                  */
                 salesLocked?: boolean;
                 /**
+                 * @description How this Advertiser slot is sold (7 Oct 2026). `advance`
+                 *     (the default when absent) is the play-window path: bids and
+                 *     reserve bookings for a window, cleared by the scheduled
+                 *     auction. `realtime` sells each impression as the player
+                 *     signals it (POST /api/player/v1/impressions): a bid request
+                 *     goes to the connected DSPs and must clear within tmax. A
+                 *     real-time position takes no window bookings or bids and its
+                 *     windows read unavailable. Set from the slot editor; only an
+                 *     Advertiser slot may be `realtime`, and it is for open and
+                 *     whitelist-only positions (a slot held for named advertisers
+                 *     or assigned to a private auction does not fill in real time).
+                 * @enum {string}
+                 */
+                bidMode?: "advance" | "realtime";
+                /**
                  * @description What a campaign may use on this slot. Absent or empty means
                  *     localised only, which is the default for a new slot. A bid or
                  *     reservation whose campaign is of an unsupported type is refused
@@ -2843,6 +2944,72 @@ export interface operations {
             409: components["responses"]["Conflict"];
             422: components["responses"]["NotEligible"];
             429: components["responses"]["RateLimited"];
+        };
+    };
+    signalImpression: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImpressionSignal"];
+            };
+        };
+        responses: {
+            /** @description Fill or no fill */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImpressionFill"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorised"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    confirmImpressionPlayed: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                impressionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /**
+                     * Format: date-time
+                     * @description When playout started; defaults to now.
+                     */
+                    playedAt?: string;
+                    /** @description Seconds played; defaults to the slot's duration. */
+                    durationSec?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Recorded */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImpressionFill"];
+                };
+            };
+            401: components["responses"]["Unauthorised"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     getReservation: {

@@ -282,6 +282,8 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         const assigned: Assigned = { partnerIds: names(raw.partnerIds), advertisers: names(raw.advertisers), whitelistOnly: raw.whitelistOnly === true, buyersListId: typeof raw.buyersListId === 'string' ? raw.buyersListId : null }
         const bad = await validateAssigned(assigned, (k) => f(`assignedTo.${k}`), partners, def ? assignedOf(def) : { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: null }, ctx.buyersLists)
         errors.push(...bad)
+        /* A real-time slot (7 Oct 2026) sells per impression to open and whitelist-only buyers: no named advertisers, no private auction. */
+        if (def?.bidMode === 'realtime' && (assigned.advertisers.length || assigned.buyersListId)) errors.push({ field: f('assignedTo'), reason: 'This slot is sold in real time (per impression), so it can’t be held for named advertisers or assigned to a private auction. Switch it back to advance bidding on the display type’s slot editor first.' })
 
         const reservePrice = parseReservePrice(r.reservePrice, f('reservePrice'), errors)
         /* Omitted keeps what the slot has (older clients never send it); it

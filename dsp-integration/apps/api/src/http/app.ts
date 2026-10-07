@@ -6,6 +6,7 @@ import { hasScope, type Scope } from '../auth/session'
 import type { Context } from '../context'
 import { HttpError, forbidden, notFound } from './errors'
 import { adminRoutes } from '../routes/admin'
+import { playerRoutes } from '../routes/player'
 import { partnerRoutes } from '../routes/partner'
 import { sellersJsonRoutes } from '../routes/public/sellersJson'
 import { mimeOf } from '../platform/AssetStore'
@@ -116,6 +117,7 @@ export function buildApp(ctx: Context, opts: { logger?: boolean } = {}): Fastify
 
   app.register(adminRoutes(ctx, guards), { prefix: '/api/admin/v1' })
   app.register(partnerRoutes(ctx, guards), { prefix: '/api/v1' })
+  app.register(playerRoutes(ctx, guards), { prefix: '/api/player/v1' })
   app.register(sellersJsonRoutes(ctx))
   /* AssetStore files (stand-in for the platform's asset hosting). */
   app.get<{ Params: { file: string } }>('/assets/:file', async (req, reply) => {

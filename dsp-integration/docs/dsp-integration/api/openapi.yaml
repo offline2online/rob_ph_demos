@@ -38,6 +38,12 @@ tags:
   - name: Partner — Targeting
   - name: Partner — Campaigns
   - name: Partner — Reservations
+  - name: Player — Real-time impressions
+    description: |
+      Called by PH Core's PWA player, not by partners (7 Oct 2026). The
+      player signals an impression is about to play in a real-time position
+      and plays the creative the exchange fills it with. See
+      PH-CORE-BOUNDARIES.md "Real-time bidding".
   - name: Admin — Exchange
   - name: Admin — Advertiser settings
   - name: Admin — Shared targeting variables
@@ -333,6 +339,60 @@ paths:
         '429': {$ref: '#/components/responses/RateLimited'}
         '409': {$ref: '#/components/responses/Conflict'}
         '422': {$ref: '#/components/responses/NotEligible'}
+  /player/v1/impressions:
+    post:
+      tags: [Player — Real-time impressions]
+      operationId: signalImpression
+      summary: Impression available — ask the exchange to fill a real-time position just before playout
+      security: [{playerToken: []}]
+      description: |
+        The impression-available signal. The exchange sends one OpenRTB
+        request per eligible connected DSP (same request as the advance
+        auction, `imp.ext.ph.mode` = `realtime`, `tmax` cut to the
+        real-time budget), clears the bids first price, and answers within
+        that budget. The answer is always 200: `filled` with the creative
+        to play, or `no_fill` (no bid cleared in time, nothing approved and
+        fitting, DSP integration off, position locked…) — on `no_fill` the
+        player plays its own content. No creative is retrieved inside tmax:
+        only a creative PH has already approved can fill an impression.
+        Only a position whose slot is in `realtime` mode can be filled this
+        way; an advance position answers 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ImpressionSignal'}
+      responses:
+        '200': {description: Fill or no fill, content: {application/json: {schema: {$ref: '#/components/schemas/ImpressionFill'}}}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /player/v1/impressions/{impressionId}/played:
+    post:
+      tags: [Player — Real-time impressions]
+      operationId: confirmImpressionPlayed
+      summary: Proof of play for a filled impression
+      security: [{playerToken: []}]
+      description: |
+        Reported once, within the fill's `expiresAt`. Records the play
+        against the display and the winning campaign; reporting it twice, or
+        for a fill that has expired or was never filled, answers 409.
+      parameters: [{name: impressionId, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                playedAt: {type: string, format: date-time, description: When playout started; defaults to now.}
+                durationSec: {type: number, description: Seconds played; defaults to the slot's duration.}
+      responses:
+        '200': {description: Recorded, content: {application/json: {schema: {$ref: '#/components/schemas/ImpressionFill'}}}}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
   /v1/reservations/{reservationId}:
     get:
       tags: [Partner — Reservations]
@@ -1479,6 +1539,10 @@ components:
       type: http
       scheme: bearer
       description: Token issued to a connected DSP or tier-2 partner. Identifies the partner; advertiser is passed per request.
+    playerToken:
+      type: http
+      scheme: bearer
+      description: PH Core's player credential for the Player API (PH_PLAYER_TOKEN). Not a partner token.
     adminSession:
       type: apiKey
       in: cookie
@@ -1535,6 +1599,31 @@ components:
                   field: {type: string}
                   variable: {type: string}
                   reason: {type: string}
+
+    ImpressionSignal:
+      type: object
+      required: [displayId, slot]
+      properties:
+        displayId: {type: string, description: The display about to play the impression.}
+        slot: {type: integer, minimum: 1, description: The slot (1-based) in that display's display type that is next in the rotation.}
+    ImpressionFill:
+      type: object
+      required: [impressionId, status]
+      properties:
+        impressionId: {type: string}
+        status: {type: string, enum: [filled, no_fill, played]}
+        reason: {type: [string, 'null'], description: Why there is no fill; absent on a fill.}
+        expiresAt: {type: string, format: date-time, description: The proof of play must arrive by this time.}
+        clearingCpm: {type: number, description: First price, USD CPM.}
+        creative:
+          type: object
+          description: What to play. The player fetches the asset from `url`.
+          properties:
+            campaignId: {type: string}
+            assetVersion: {type: string}
+            url: {type: string}
+            mimeType: {type: string}
+            durationSec: {type: [number, 'null']}
 
     WindowStatus:
       type: string
@@ -2672,6 +2761,21 @@ components:
                   Inventory when the advertiser can't be removed because slots
                   are sold, cleared by the server itself once the slot has no
                   live booking. Not writable through the slot editor's PUT.
+              bidMode:
+                type: string
+                enum: [advance, realtime]
+                description: |
+                  How this Advertiser slot is sold (7 Oct 2026). `advance`
+                  (the default when absent) is the play-window path: bids and
+                  reserve bookings for a window, cleared by the scheduled
+                  auction. `realtime` sells each impression as the player
+                  signals it (POST /api/player/v1/impressions): a bid request
+                  goes to the connected DSPs and must clear within tmax. A
+                  real-time position takes no window bookings or bids and its
+                  windows read unavailable. Set from the slot editor; only an
+                  Advertiser slot may be `realtime`, and it is for open and
+                  whitelist-only positions (a slot held for named advertisers
+                  or assigned to a private auction does not fill in real time).
               supportedTargeting:
                 type: array
                 description: |

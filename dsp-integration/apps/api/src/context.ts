@@ -28,6 +28,7 @@ import { type LateLedgerRepo, sqliteLateLedgerRepo } from './repos/LateLedgerRep
 import { type CampaignRetentionRepo, sqliteCampaignRetentionRepo } from './repos/CampaignRetentionRepo'
 import { type DspCreativeRepo, sqliteDspCreativeRepo } from './repos/DspCreativeRepo'
 import { type PlayRepo, sqlitePlayRepo } from './repos/PlayRepo'
+import { type ImpressionRepo, sqliteImpressionRepo } from './repos/RealtimeImpressionRepo'
 import { targetingSummary } from './domain/targetingSummary'
 import type { Fetch } from './dsp/DspClient'
 import { type DspProviders, dspProviders } from './dsp/registry'
@@ -69,6 +70,8 @@ export interface Context {
   campaignRetention: CampaignRetentionRepo
   /* The test-only endpoint's synthetic plays (routes/admin/test.ts). */
   plays: PlayRepo
+  /* Real-time impressions the player signalled (exchange/realtime.ts). */
+  impressions: ImpressionRepo
   /* HTTP to the DSPs (the mock DSP service in the POC). */
   fetch: Fetch
   bidder: Bidder
@@ -124,6 +127,7 @@ export function createContext(opts: { config?: Config; db?: Db; flags?: Flags; s
     dspCreatives: g(sqliteDspCreativeRepo(db)),
     campaignRetention: g(sqliteCampaignRetentionRepo(db)),
     plays: g(sqlitePlayRepo(db)),
+    impressions: g(sqliteImpressionRepo(db)),
     clock,
     ...approvalParts(db, config, { displayTypes, company, partners, campaignChanges }),
   }

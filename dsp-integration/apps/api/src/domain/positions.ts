@@ -64,6 +64,12 @@ function assignedCached(def: Slot): Assigned {
   return a
 }
 
+/* How a position is sold (7 Oct 2026): by play window ahead of time (advance,
+   the default — bids, reserve bookings and the scheduled auction) or per
+   impression as the player signals it (realtime, exchange/realtime.ts). */
+export const bidModeOf = (def: Slot): 'advance' | 'realtime' => (def.bidMode === 'realtime' && def.owner === 'advertiser' ? 'realtime' : 'advance')
+export const isRealtime = (p: PositionRef) => bidModeOf(p.def) === 'realtime'
+
 export type Assignment = 'rtb' | 'whitelist_only' | 'deal' | 'reserved'
 export const assignmentOf = (def: Slot): Assignment => {
   const a = assignedCached(def)
@@ -366,6 +372,8 @@ export function windowStatus(p: PositionRef, c: Caller, start: Date, f: WindowFa
      above; every other upcoming one is closed to further sales, even to the
      advertiser it is held for. */
   if (p.def.salesLocked) return 'unavailable'
+  /* A real-time position sells per impression, never a window: nothing to book or bid on. */
+  if (isRealtime(p)) return 'unavailable'
   /* Held for a named advertiser: available only to that advertiser. */
   if (assignmentOf(p.def) === 'reserved' && !c.advertiser) return 'reserved'
   return 'available'

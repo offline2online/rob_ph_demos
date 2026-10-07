@@ -608,6 +608,46 @@ one place in §9.5 where people, not records, touch PH Core.*
    `campaign:author` / `campaign:publish`; per-advertiser guardrails are
    retailer-set. Nothing is issued or enforced until that release.
 
+## Real-time bidding — the player signals, the exchange fills (7 Oct 2026)
+
+A position is sold one of two ways, set on its slot (`bidMode`, saved from
+the display type's slot editor; Advertiser slots only): **advance** (the
+default — a play window is bid on or reserved ahead of time and cleared by the
+scheduled auction) or **realtime** (each impression is sold as the player
+signals it). This is how DV360, The Trade Desk and Amazon transact (they
+answer within tmax and cannot hold a bid open for days) and how DOOH SSPs such
+as Broadsign Reach run the ad loop. A real-time position takes no window bids
+or reservations (`POST /v1/reservations` answers 409), its windows read
+`unavailable`, and the window auction skips it. It is for open and
+whitelist-only positions: a slot held for named advertisers or assigned to a
+private auction cannot be switched to real time.
+
+**The exchange side is this build; the trigger is PH Core's.** The PWA player,
+playback, distribution and playlists are PH Core, so this capability ships only
+when both halves do. The contract, Player API `/api/player/v1` (bearer
+`PH_PLAYER_TOKEN`; the public POC token outside production, and refused with
+401 in production until set, so no deployment breaks):
+
+| Call | PH Core's player… | The exchange… |
+|---|---|---|
+| `POST /impressions` `{displayId, slot}` | …sends it just before the real-time slot's turn in the rotation, early enough to leave the bid budget (`tmax`, default 200 ms, `PH_REALTIME_TMAX_MS`) plus a network round trip. | …sends one OpenRTB request per eligible connected DSP (the advance request, `imp.ext.ph.mode` = `realtime`, `tmax` and `exp` cut to the impression), runs the same pre-auction checks as for an advance bid, first price, and answers `filled` with the creative to play or `no_fill` — always 200, always within the budget. |
+| `POST /impressions/{id}/played` | …sends it once the creative has played, within `expiresAt` (`PH_REALTIME_FILL_TTL_SEC`, default 120 s). | …records the play once against the display and the campaign; a repeat, an expired fill or a `no_fill` answers 409. |
+
+What PH Core's player must guarantee: it plays the filled creative from the
+returned URL, or its own content on `no_fill` or when the answer is late (it
+must not wait past its own deadline); it sends the signal at most once per
+impression; it reports proof of play exactly once per played fill, with the
+display it played on; and it caches nothing from a fill beyond `expiresAt`.
+
+What the exchange guarantees: nothing is fetched inside tmax, so only an
+already approved, activated creative that fits the display type's canvas can
+fill (at-bid creative with post-bid approval is a separate ticket); a
+Test-mode DSP's bid never fills; impressions are their own table
+(migration 0047) and never touch `reservations` or slot bookings, so
+migration 0021's one-live-winner-per-window index is unaffected. Not yet
+covered: per-impression billing of real-time plays, and per-impression
+`imp.qty` (the request still carries the window's assumed views).
+
 ## Reserved for later releases (REQUIREMENTS §9, spec only)
 
 These are reserved names and places, with no behaviour yet:
