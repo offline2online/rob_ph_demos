@@ -4014,6 +4014,30 @@ keeps the won creative renderable; the lookahead sets how early the auction open
   the rest `private_auction`. Older clients that omit `dealType` get the
   same inference.
 
+### Testing every deal type end to end (Rob, 7 Oct 2026; ticket rFN7TfIXtValP5hfIq1o)
+
+- **Run 7** (`apps/api/test/e2e/run7-deal-types.test.ts`, in `e2e:quick`) has
+  one case group per way a slot transacts, each driven setup → inventory →
+  approval → bid or reserve → auction → hand-off booking → billing: **D1**
+  open RTB (first price above the effective floor; below it falls through;
+  no deal on the request and no volume carried; the real-time per-impression
+  path), **D2** private auction (deal ID on `pmp.deals`, uninvited and
+  deal-less bids refused, two-period locked rate), **D3** preferred deal
+  (reserve, `committedPlays` not captured, DSP told `preferred_deal`), **D4**
+  programmatic guaranteed (committed volume `floor(forecast × (1 − buffer%))`,
+  DV360 `programmatic_guaranteed` / Amazon `guaranteed_deal`, `unitCount` =
+  committed impressions). Every type asserts that the buyers list's
+  `dealType` decides which fields are captured and that billing is realised
+  VAC-d at the cleared or reserve price, with no make-good.
+- The Run 6 journey (`npm run e2e:journey`) adds Phase 5, cases M1–M8:
+  preferred and guaranteed deals over the real API and tick processes.
+- The DSP-specific guaranteed-deal field names are the mapping in
+  `src/dsp/dealTerms.ts`; the mocks prove it is carried, not that a DSP
+  accepts it. **Still to confirm against each DSP sandbox** (DV360, Amazon
+  Ads). The board's *End-to-End Test Spec — DSP Demand Paths (v2)* doc
+  (`f34VQZCy2kkWJfBP6Iwp`) is not in the repo; add Run 7 and Phase 5 to it
+  with these case IDs.
+
 ## Default committed plays — the play config feeds the buyers list (Rob, 7 Oct 2026)
 
 - **Setting**: `defaultCommittedPlays` on Advertiser settings (in the "Committed delivery

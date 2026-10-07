@@ -352,6 +352,74 @@ async function main() {
     record('L6b', 'nobody is billed for the fall-through window', li.n === 0, '0 line items', String(li.n))
     d.close()
   }
+
+  /* ---------- Phase 5 — deal types end to end (Run 7 cases M; ticket rFN7TfIXtValP5hfIq1o) ----------
+     The same slot, campaign and processes as L: the retailer makes the slot a reserve-priced
+     deal of each type from the buyers list (Admin API), the advertiser reserves a window over
+     the Partner API, the tick hands it off, the test play reporter plays it and the tick bills it.
+     Open RTB is L2–L6 above; private auction is the vitest Run 3/4/7 (it needs an auction window
+     and a locked term, which this clock-driven journey does not exercise twice). */
+  currentPhase = 5
+  console.log('\nPhase 5 — deal types: preferred and programmatic guaranteed (M1–M8)')
+  const RESERVE_PRICE = floorCpm + 50
+  const assign = (buyersListId: string | null) => admin('PUT', '/available-inventory', { items: [{ displayTypeId: dtId, slot: 1, reservePrice: RESERVE_PRICE, assignedTo: { partnerIds: buyersListId ? [] : [PARTNER], advertisers: [], whitelistOnly: false, buyersListId } }] })
+  const newList = (dealType: string, extra: Record<string, unknown> = {}) => admin('POST', '/buyers-lists', { name: `Run 7 ${dealType}`, dealType, invitedBuyers: [{ partnerId: PARTNER, seatId: '5130002' }], ...extra })
+  const viewsPerWindow = 1200 /* the audience score seeded in Phase 1b */
+  const t0 = Date.parse(w2) + 24 * 3_600_000
+  const winPreferred = new Date(t0 + 2 * 24 * 3_600_000).toISOString()
+  const winGuaranteed = new Date(t0 + 3 * 24 * 3_600_000).toISOString()
+  setClock(new Date(t0 + 60_000))
+  const reserveOn = (windowStart: string) => partner('POST', '/reservations', { positionId: handover.positionId, windowStart, campaignId, advertiserId: ADVERTISER, type: 'reserve', bidCpm: RESERVE_PRICE })
+
+  /* M1 — deal type drives the fields the list captures. */
+  const refusedVolume = await newList('preferred', { committedPlays: 500 })
+  record('M1', 'a preferred deal refuses committed plays (volume is captured for guaranteed only)', refusedVolume.status === 400 && /committedPlays/.test(refusedVolume.text), '400 on committedPlays', `${refusedVolume.status} ${refusedVolume.text.slice(0, 160)}`)
+  const refusedClose = await newList('guaranteed', { committedPlays: 500, auctionCloses: new Date(t0).toISOString() })
+  record('M1b', 'a guaranteed deal refuses an auction window (only a private auction has one)', refusedClose.status === 400 && /auctionCloses/.test(refusedClose.text), '400 on auctionCloses', `${refusedClose.status} ${refusedClose.text.slice(0, 160)}`)
+
+  /* M2–M4 — preferred deal. */
+  const pref = await newList('preferred')
+  must('M2', 'preferred deal created on the buyers list', pref.status === 201 && pref.json?.dealType === 'preferred' && pref.json?.committedPlays == null, '201 dealType preferred, no committed plays', `${pref.status} ${pref.text.slice(0, 200)}`)
+  const assignedPref = await assign(pref.json.id)
+  must('M2b', 'slot assigned to the preferred deal', assignedPref.status === 200, '200', `${assignedPref.status} ${assignedPref.text.slice(0, 200)}`)
+  const prefRes = await reserveOn(winPreferred)
+  must('M3', 'reserve at the reserve price: booked as a preferred deal, no committed volume, DSP told preferred_deal', prefRes.status === 201 && prefRes.json?.status === 'reserved' && prefRes.json?.dealType === 'preferred' && prefRes.json?.clearingCpm === RESERVE_PRICE && prefRes.json?.guaranteedImpressions == null && prefRes.json?.dspDeal?.dspDealKind === 'preferred_deal' && prefRes.json?.dspDeal?.unitCount == null, `reserved, preferred, ${RESERVE_PRICE}, no volume`, `${prefRes.status} ${prefRes.text.slice(0, 300)}`)
+  const clash = await partner('POST', '/reservations', { positionId: handover.positionId, windowStart: winGuaranteed, campaignId, advertiserId: ADVERTISER, type: 'reserve', bidCpm: RESERVE_PRICE, dealType: 'guaranteed' })
+  record('M3b', 'the list is authoritative: a reservation naming guaranteed on a preferred list is refused 409', clash.status === 409, '409', `${clash.status} ${clash.text.slice(0, 200)}`)
+  {
+    const d = db()
+    const bk = d.prepare('SELECT * FROM campaign_slot_bookings WHERE display_type_id = ? AND slot = 1 AND window_start = ?').get(dtId, winPreferred) as any
+    record('M4', 'hand-off: the preferred window is booked for the campaign at once', !!bk && bk.campaign_id === campaignId, `booking for ${campaignId}`, JSON.stringify(bk ?? null))
+    d.close()
+  }
+
+  /* M5–M8 — programmatic guaranteed. */
+  const pg = await newList('guaranteed', { committedPlays: 900 })
+  must('M5', 'programmatic guaranteed deal created with committed plays', pg.status === 201 && pg.json?.dealType === 'guaranteed' && pg.json?.committedPlays === 900, '201 dealType guaranteed, 900', `${pg.status} ${pg.text.slice(0, 200)}`)
+  const assignedPg = await assign(pg.json.id)
+  must('M5b', 'slot reassigned to the guaranteed deal', assignedPg.status === 200, '200', `${assignedPg.status} ${assignedPg.text.slice(0, 200)}`)
+  const bufferPct = (await admin('GET', '/advertiser-settings')).json?.guaranteeBufferPct ?? 10
+  const committed = Math.floor(viewsPerWindow * (1 - bufferPct / 100))
+  const pgRes = await reserveOn(winGuaranteed)
+  must('M6', `reserve: committed volume = floor(forecast ${viewsPerWindow} × (1 − ${bufferPct}%)) = ${committed}, carried to DV360 as programmatic_guaranteed`, pgRes.status === 201 && pgRes.json?.dealType === 'guaranteed' && pgRes.json?.forecastImpressions === viewsPerWindow && pgRes.json?.guaranteedImpressions === committed && pgRes.json?.dspDeal?.dspDealKind === 'programmatic_guaranteed' && pgRes.json?.dspDeal?.unitCount === committed && pgRes.json?.dspDeal?.unit === 'impressions', `guaranteed, ${committed} impressions`, `${pgRes.status} ${pgRes.text.slice(0, 400)}`)
+  {
+    const d = db()
+    const bk = d.prepare('SELECT * FROM campaign_slot_bookings WHERE display_type_id = ? AND slot = 1 AND window_start = ?').get(dtId, winGuaranteed) as any
+    record('M7', 'hand-off: the guaranteed window is booked for the campaign at once', !!bk && bk.campaign_id === campaignId, `booking for ${campaignId}`, JSON.stringify(bk ?? null))
+    d.close()
+  }
+  /* M8 — a short delivery is billed as played at the reserve price: realised VAC-d, no make-good. */
+  const pgPlays = await admin('POST', '/test/plays', { reservationId: pgRes.json.reservationId, plays: [{ tier: 'default', count: 6, durationSec: 15 }] })
+  must('M8a', 'test-only play reporter writes 6 plays for the guaranteed window', pgPlays.status === 201 && pgPlays.json?.total === 6, '201, 6 plays', `${pgPlays.status} ${pgPlays.text.slice(0, 200)}`)
+  setClock(new Date(Date.parse(winGuaranteed) + 24 * 3_600_000 + 60_000))
+  const tick4 = await tick()
+  {
+    const d = db()
+    const li = d.prepare('SELECT * FROM billing_line_items WHERE reservation_id = ?').get(pgRes.json.reservationId) as any
+    const ok = !!li && li.cpm === RESERVE_PRICE && li.plays === 6 && li.realised_views < committed && Math.abs(li.amount - Math.round((li.realised_views / 1000) * RESERVE_PRICE * 100) / 100) < 0.011
+    record('M8', 'billing: realised VAC-d at the reserve price; the shortfall against the committed volume is not made good', ok, `cpm ${RESERVE_PRICE}, 6 plays, amount = realised views × cpm, realised views below ${committed}`, li ? JSON.stringify({ plays: li.plays, cpm: li.cpm, amount: li.amount, realisedViews: li.realised_views }) : `no line item · tick: ${tick4.trim().split('\n').slice(-2).join(' | ')}`)
+    d.close()
+  }
   const restored = await mocks('POST', '/bidder', { mode: 'default' })
   record('P4z', 'mock bidders restored', restored.status === 200, '200', String(restored.status))
 }

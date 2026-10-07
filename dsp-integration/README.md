@@ -272,10 +272,14 @@ npm test
 ```
 
 - **E2E on demand** (E2E Testing Strategy, 1 Oct 2026): `npm run e2e:quick`
-  runs Runs 1–5 (82 stubbed tests) writing `results/e2e-quick.json`;
+  runs Runs 1–5 and Run 7 (105 stubbed tests) writing `results/e2e-quick.json`.
+  **Run 7 (7 Oct 2026) tests every deal type end to end** — D1 open RTB, D2
+  private auction, D3 preferred deal, D4 programmatic guaranteed — in
+  `apps/api/test/e2e/run7-deal-types.test.ts`;
   `npm run e2e:journey` runs Run 6 end to end against a real local instance
   it starts itself (fresh database, ephemeral ports, `PH_TEST_CLOCK`), no
-  browser and no settings changes; `npm run bench -- --assert` is the
+  browser and no settings changes, and its Phase 5 (cases M1–M8) adds the
+  preferred and programmatic guaranteed deals over the Admin and Partner APIs; `npm run bench -- --assert` is the
   performance gate (`--calibrate` first on a new machine). `npm run
   e2e:report` and `npm run e2e:file-bugs` turn `results/*.json` into the
   board's results document and tickets (`BOARD_API_KEY`; `--dry-run`
