@@ -251,34 +251,29 @@ describe('PUT /admin/v1/display-types/{id}/extensions — slot ownership', () =>
   })
 })
 
-/* Ticket, 28 Sep 2026: Website and Mobile App are HQ-only — no advertising.
-   Widened 7 Oct 2026 (ticket HAmTUHQVj63NDiY4hLk8): an Advertiser slot is
-   allowed only when marked for real-time bidding (rtb-web-app-slots.test.ts);
-   without it, and for Stores, the API still refuses. */
-describe('PUT /admin/v1/display-types/{id}/extensions — Website/Mobile App are HQ-only', () => {
+/* Ticket 0jviesctpWGyOYtK20tg (Rob, 7 Oct 2026): Website and Mobile App slots
+   are validated exactly like Digital Signage — Headquarters and Advertiser
+   (advance or real-time) are accepted, Stores is still refused
+   (rtb-web-app-slots.test.ts covers the bid request). */
+describe('PUT /admin/v1/display-types/{id}/extensions — Website/Mobile App follow digital signage', () => {
   const put = (app: ReturnType<typeof buildApp>, id: string, payload: unknown) =>
     app.inject({ method: 'PUT', url: `/api/admin/v1/display-types/${id}/extensions`, payload: payload as object })
 
-  it.each(['Website', 'Mobile App'])('refuses an Advertiser slot not marked for RTB and a Stores slot for %s, accepts Headquarters', async (touchPoint) => {
+  it.each(['Website', 'Mobile App'])('accepts Headquarters and Advertiser slots and refuses a Stores slot for %s', async (touchPoint) => {
     const { app, ctx } = await setup()
     const created = await app.inject({
       method: 'POST', url: '/api/admin/v1/display-types',
-      payload: newType({ id: `dt_${touchPoint}`, touchPoint, playlistSettings: { maximumCampaignsPlayedInRotation: 1 } }),
+      payload: newType({ id: `dt_${touchPoint}`, touchPoint, playlistSettings: { maximumCampaignsPlayedInRotation: 2 } }),
     })
     expect(created.statusCode).toBe(201)
 
-    const advertiser = await put(app, `dt_${touchPoint}`, { slots: [{ label: 'Slot 1', owner: 'advertiser' }] })
-    expect(advertiser.statusCode).toBe(400)
-    expectMatchesContract('PUT', '/admin/v1/display-types/{displayTypeId}/extensions', 400, advertiser.json())
-    expect(advertiser.json().error.details).toEqual([{ field: 'slots[0].bidMode', reason: expect.stringContaining('real-time bidding only') }])
+    const mixed = await put(app, `dt_${touchPoint}`, { slots: [{ label: 'Slot 1', owner: 'internal' }, { label: 'Slot 2', owner: 'advertiser' }] })
+    expect(mixed.statusCode).toBe(200)
+    expect((await ctx.displayTypes.get(`dt_${touchPoint}`))?.phExtensions?.slots).toMatchObject([{ owner: 'internal' }, { owner: 'advertiser' }])
 
-    const retail = await put(app, `dt_${touchPoint}`, { slots: [{ label: 'Slot 1', owner: 'retail' }] })
+    const retail = await put(app, `dt_${touchPoint}`, { slots: [{ label: 'Slot 1', owner: 'retail' }, { label: 'Slot 2', owner: 'internal' }] })
     expect(retail.statusCode).toBe(400)
-    expect(retail.json().error.details).toEqual([{ field: 'slots[0].owner', reason: expect.stringContaining('isn’t available for this touch point') }])
-
-    const internal = await put(app, `dt_${touchPoint}`, { slots: [{ label: 'Slot 1', owner: 'internal' }] })
-    expect(internal.statusCode).toBe(200)
-    expect((await ctx.displayTypes.get(`dt_${touchPoint}`))?.phExtensions?.slots).toMatchObject([{ owner: 'internal' }])
+    expectMatchesContract('PUT', '/admin/v1/display-types/{displayTypeId}/extensions', 400, retail.json())
   })
 })
 

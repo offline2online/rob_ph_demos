@@ -19,29 +19,21 @@ export const TOUCH_POINTS = [
 export type TouchPoint = (typeof TOUCH_POINTS)[number]['name']
 export const touchPointIcon = (name: string) => (TOUCH_POINTS.find((t) => t.name === name) ?? TOUCH_POINTS[0]).icon
 
-/* Website and Mobile App are HQ-only (ticket, 28 Sep 2026): no advertising,
-   so no reserve price, billing unit, max campaigns or venue metadata either
-   (all three only ever apply to an advertiser-owned slot — see
-   reservePriceOf/billingUnitHoursOf/maxCampaignsOf below) — and they never
-   appear in Advertisers / Inventory, Available Inventory, the Inventory API
-   or a bid request, since none of those surface anything but an
-   advertiser-owned slot. Enforced in the slot owner editor (admin) and
-   validateExtensions (api); a campaign brief's own touchPoints (§6) only
-   ever offers the touch points this allows. */
-export const NO_ADVERTISING_TOUCH_POINTS: readonly TouchPoint[] = ['Website', 'Mobile App']
+/* Website and Mobile App slots are set up exactly like Digital Signage (ticket
+   0jviesctpWGyOYtK20tg, decision Rob 7 Oct 2026): the same slot editor, owner
+   list, max slot rotation, Advertiser assignment, reserve, billing unit and
+   campaign cap. This supersedes the 28 Sep "HQ-only" rule and the 7 Oct
+   "RTB-only" switch (HAmTUHQVj63NDiY4hLk8), so no touch point is excluded
+   from advertising any more. The lists are kept (empty) so a touch point can
+   be excluded again in one place. What stays different for them is the bid
+   request, below. */
+export const NO_ADVERTISING_TOUCH_POINTS: readonly TouchPoint[] = []
 export const allowsAdvertising = (touchPoint: string): boolean => !(NO_ADVERTISING_TOUCH_POINTS as readonly string[]).includes(touchPoint)
-
-/* Website and Mobile App slots can be sold, by real-time bidding ONLY
-   (ticket HAmTUHQVj63NDiY4hLk8, decision Rob 7 Oct 2026): a slot there is
-   either Headquarters or an Advertiser slot marked available for RTB — no
-   play windows, reserve, deals or guaranteed path. They are web/app
-   programmatic inventory, so the bid request carries the OpenRTB `site`
-   (Website) or `app` (Mobile App) object, never `dooh`, and no impression
-   multiplier (one impression per render). Digital Signage and Kiosk are
-   unchanged. allowsAdvertising stays false for them: it gates the advance
-   path (campaign briefs, window bids, reservations, deals). */
-export const RTB_ONLY_TOUCH_POINTS: readonly TouchPoint[] = ['Website', 'Mobile App']
+export const RTB_ONLY_TOUCH_POINTS: readonly TouchPoint[] = []
 export const isRtbOnly = (touchPoint: string | undefined): boolean => touchPoint !== undefined && (RTB_ONLY_TOUCH_POINTS as readonly string[]).includes(touchPoint)
+/* Website and Mobile App are web/app programmatic inventory: their bid request
+   carries the OpenRTB `site` (Website) or `app` (Mobile App) object, never
+   `dooh`, and no impression multiplier (one render, one impression). */
 /* Which OpenRTB inventory object a touch point's bid request carries. */
 export const openRtbInventoryOf = (touchPoint: string): 'dooh' | 'site' | 'app' => (touchPoint === 'Website' ? 'site' : touchPoint === 'Mobile App' ? 'app' : 'dooh')
 

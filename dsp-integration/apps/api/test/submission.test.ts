@@ -323,7 +323,7 @@ describe('the campaign brief an advertiser books with (Rob, 20 Sep)', () => {
     const { app, ctx } = await newApp()
     const none = (await create(app, SWISSE)).json().campaignId
     expect((await ctx.campaigns.getCampaign(none))?.brief).toBeUndefined()
-    const bad = await create(app, { ...SWISSE, brief: { details: 42, skus: ['ok', ''], touchPoints: ['Website'], budget: 1000 } })
+    const bad = await create(app, { ...SWISSE, brief: { details: 42, skus: ['ok', ''], touchPoints: ['Billboard'], budget: 1000 } })
     expect(bad.statusCode).toBe(400)
     expect(bad.json().error.details.map((d: { field: string }) => d.field)).toEqual(['brief.budget', 'brief.details', 'brief.skus', 'brief.touchPoints'])
   })
