@@ -497,6 +497,18 @@ ticket once automatically.
      train (PR #301, 3 Oct 2026). The automation also starts that check on
      the train when your ticket lands and notes a failure on the card, but
      catching it here costs nobody a testing round.
+   - **Before setting `patchReady`, run the DSP tests** if the patch
+     touches `dsp-integration/` — the same steps as the train PR's required
+     `e2e-quick` check: `cd dsp-integration && npm ci && npm run typecheck
+     && npm test && npm run e2e:quick` (set `PH_SECRETS_KEY` to any 32-byte
+     base64 value, e.g. 44 `A`s ending `=`). **Change the tests with the
+     code**: a relabelled field, a removed box or a moved DSP quirk breaks
+     a test that looks it up, and both DSP trains that stuck on red CI (PR
+     #330, 6 Oct; PR #335, 7 Oct 2026) were exactly that — handed back with
+     "tests could not be run here". `npm ci` needs the npm registry; if it
+     really is unreachable, do not set `patchReady`: say so in a comment on
+     the card and stop, because an untested DSP patch is how a whole
+     approved train gets stuck at Deploy to Main.
    - `patchReady: true` (boolean) — this is the signal the automated job
      watches for. Do NOT set `status` to `ready-for-testing` yourself —
      you have no way to confirm a PR actually got opened; leave `status`
@@ -783,6 +795,14 @@ own `readyToDeploy` is information, not permission.
    is a belt-and-braces check against a card that moved between the click
    and your run.) If you find one, don't set `trainReady` — note it,
    naming the item, and say it must be approved or rejected first.
+2a. **Verify the train's tests are not red.** If `projects/{id}.trainTestsRed`
+   is set, or the newest `e2e-quick.yml` (a `dsp-integration/` train) /
+   `firestore-rules-test.yml` (a `backlog-tracker/` train) run on the branch
+   — `gh run list --workflow <file> --branch <deployBranch> --limit 1` —
+   failed on the head or on the last commit before a prototype rebuild,
+   don't set `trainReady`: the deploy PR would only park on red CI (PR #335,
+   7 Oct 2026). Note it on the project's cards with the run link and say
+   which test failed. Still running is fine — the deploy waits on it.
 3b. **FAQ impact review — do this whether or not steps 1-2 cleared the
    train.** The tickets in a DEPLOY REQUEST are about to change what the
    product does, and the public help centre (`faq/`, edited from the

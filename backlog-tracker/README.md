@@ -260,7 +260,13 @@ What the train changes:
   on that train. A DSP prototype rebuild on top of the ticket doesn't hide
   it (`testedHeadOf`). The DSP half was added 6 Oct 2026 after PR #330 —
   nine approved tickets blocked at deploy by an e2e-quick failure no card
-  had shown. Tests: `test/train-tests.test.js`.
+  had shown. **A red run also withholds Deploy to Main** (7 Oct 2026, PR
+  #335 — four tickets approved within minutes of landing, before the run
+  finished): the note goes on approved cards too, the project carries
+  `trainTestsRed` (keyed by workflow, cleared when the run passes or the
+  train ships), the board shows a disabled "Tests failing" button in place
+  of Deploy to Main, and `approve_deploy_to_main` refuses. Tests:
+  `test/train-tests.test.js`.
 - **Reject** (`processRevertFromTrain`) — Failed testing on a card writes
   `revertRequested`, and the automation reverts that card's commits back
   off the branch. **A card in Backlog must never have live commits on a

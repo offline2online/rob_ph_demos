@@ -1260,11 +1260,42 @@ function testedHeadOf(runSha, head, changedSince) {
   return changedSince.every((p) => isGeneratedOutput(p)) ? runSha : head;
 }
 
+// What projects/{id}.trainTestsRed should become after reading one test
+// workflow's newest run. Pure, for test/train-tests.test.js. The field is a
+// map keyed by workflow (a project can be red on two at once), each entry
+// { sha, url, at }. Returns the new map, or undefined for "no change": a
+// failed run on the tested commit sets the entry, a passed one clears it,
+// and anything still running (or on a stale commit) leaves it as it was.
+function nextTrainTestsRed(current, workflow, testRun, tested, nowIso) {
+  const key = workflow.replace(/\.ya?ml$/, "");
+  const cur = current && typeof current === "object" ? current : {};
+  if (!testRun || !tested || testRun.headSha !== tested) return undefined;
+  if (String(testRun.status).toLowerCase() !== "completed") return undefined;
+  const conclusion = String(testRun.conclusion).toLowerCase();
+  if (["failure", "timed_out", "startup_failure"].includes(conclusion)) {
+    if (cur[key] && cur[key].sha === tested) return undefined;
+    return { ...cur, [key]: { sha: tested, url: testRun.url || "", at: nowIso } };
+  }
+  if (conclusion === "success" && cur[key]) {
+    const next = { ...cur };
+    delete next[key];
+    return next;
+  }
+  return undefined;
+}
+
+// Every card on a train, tested or already approved, hears about a red run:
+// on 7 Oct 2026 (PR #335) four DSP tickets were approved within minutes of
+// landing, before e2e-quick had finished, so a reporter that only read Ready
+// for Testing found nobody to tell and Deploy to Main went ahead on a train
+// that had been red for 45 minutes. The project also carries the result
+// (trainTestsRed), which is what hides Deploy to Main on the board and makes
+// approve_deploy_to_main refuse until the train is green again.
 async function reportTrainTestResults() {
   const cards = await runQuery({
     from: [{ collectionId: "backlogItems" }],
-    select: { fields: ["deployBranch", "deployCommit", "testsFailedSha", "testsFailedShas", "notes"].map((fieldPath) => ({ fieldPath })) },
-    where: { fieldFilter: { field: { fieldPath: "status" }, op: "EQUAL", value: { stringValue: "ready-for-testing" } } },
+    select: { fields: ["projectId", "deployBranch", "deployCommit", "testsFailedSha", "testsFailedShas", "notes"].map((fieldPath) => ({ fieldPath })) },
+    where: { fieldFilter: { field: { fieldPath: "status" }, op: "IN", value: { arrayValue: { values: [{ stringValue: "ready-for-testing" }, { stringValue: "ready-to-publish" }] } } } },
   });
   const byBranch = new Map();
   for (const c of cards) {
@@ -1280,6 +1311,14 @@ async function reportTrainTestResults() {
       console.log(`[train-tests] ${branch}: couldn't read the branch head (${scrubSecrets(err.message)})`);
       continue;
     }
+    const projectId = (trainCards.find((c) => c.projectId) || {}).projectId || null;
+    let project = null;
+    if (projectId) {
+      try { project = await getProject(projectId); }
+      catch (err) { console.log(`[train-tests] ${branch}: couldn't read project ${projectId} (${scrubSecrets(err.message)})`); }
+    }
+    let red = project ? (project.trainTestsRed || {}) : null;
+    let redChanged = false;
     for (const t of TRAIN_TEST_WORKFLOWS) {
       try {
         const runs = JSON.parse(run("gh", ["run", "list", "--repo", REPO, "--workflow", t.workflow, "--branch", branch,
@@ -1293,11 +1332,15 @@ async function reportTrainTestResults() {
           if (cmp.status === "ahead") changedSince = cmp.files || [];
         }
         const tested = testedHeadOf(testRun.headSha, head, changedSince);
+        if (red) {
+          const next = nextTrainTestsRed(red, t.workflow, testRun, tested, new Date().toISOString());
+          if (next !== undefined) { red = next; redChanged = true; }
+        }
         const targets = trainTestFailureTargets(testRun, tested, trainCards, t.workflow);
         for (const card of targets) {
           const notes = await appendNote(card,
             `The ${t.label} (${t.workflow}) FAILED on this train at ${tested.slice(0, 7)}: ${testRun.url} — ` +
-            `the same check Deploy to Main waits on, so the train will not merge until it is green. ` +
+            `the same check Deploy to Main waits on, so Deploy to Main is withheld until it is green. ` +
             `If this ticket caused it, use Failed testing; otherwise look at the other tickets on ${branch}.`);
           card.notes = notes;
           const testsFailedShas = (card.testsFailedShas || []).concat([`${t.workflow}@${tested}`]).slice(-20);
@@ -1308,6 +1351,10 @@ async function reportTrainTestResults() {
       } catch (err) {
         console.log(`[train-tests] ${branch}: couldn't read the ${t.workflow} result (${scrubSecrets(err.message)})`);
       }
+    }
+    if (project && redChanged) {
+      await patchProject(project.id, { trainTestsRed: Object.keys(red).length ? red : null, updatedAt: new Date().toISOString() });
+      console.log(`[train-tests] ${branch}: trainTestsRed is now ${Object.keys(red).join(", ") || "clear"}`);
     }
   }
 }
@@ -2896,6 +2943,7 @@ async function finishTrain(project, deployBranch, prNumber, trainItems, { touche
     trainReady: false,
     trainLocked: false,
     trainStatus: "idle",
+    trainTestsRed: null, // describes the train that just shipped, not the next one
     trainNote: resetOk
       ? null
       : `Shipped PR #${prNumber}, but ${deployBranch} could not be reset to main automatically — reset it by hand before the next train.`,
@@ -3217,7 +3265,7 @@ async function reconcileMergedTrains() {
     const deployBranch = project.deployBranch || deployBranchForName(project.name);
     const onTrain = onTrainItems(await itemsForProject(project.id));
     if (!onTrain.length) {
-      await patchProject(project.id, { trainStatus: "idle", trainReady: false, trainLocked: false, trainPrNumber: null, updatedAt: new Date().toISOString() });
+      await patchProject(project.id, { trainStatus: "idle", trainReady: false, trainLocked: false, trainPrNumber: null, trainTestsRed: null, updatedAt: new Date().toISOString() });
       continue;
     }
     console.log(`[deploy-train] ${project.id}: PR #${prNumber} was merged outside the pipeline — recording ${onTrain.length} ticket(s) as live`);
@@ -3346,6 +3394,7 @@ async function reconcileLockedTrains() {
       // "conflict" left over from before the tickets were removed — stops
       // applying: there is nothing left on the train for it to describe.
       trainStatus: "idle",
+      trainTestsRed: null,
       trainNote: archiveResult.ok
         ? null
         : `Train emptied and unlocked, but ${deployBranch} could not be reset to main automatically: ${scrubSecrets(archiveResult.error)}. Reset it by hand.`,
@@ -3889,7 +3938,7 @@ module.exports = {
   // test/train-resume.test.js — GitHub-side cancellations re-run; red trains resume when green
   isInfraCheck, rerunInfraChecks, resumeRedTrains, TRAIN_CI_INFRA_RERUNS,
   // test/train-tests.test.js — console tests run on each train push
-  trainTestFailureTargets, touchesConsoleTests, trainTestsFor, testedHeadOf,
+  trainTestFailureTargets, touchesConsoleTests, trainTestsFor, testedHeadOf, nextTrainTestsRed,
   // test/parallel-builds.test.js — patches built in parallel
   patchBaseFor, dependenciesLanded, buildRequestFields, migrationNumberClashes,
   // test/train-follow-up.test.js — a train waiting on CI starts its own next run

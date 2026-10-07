@@ -1475,6 +1475,17 @@ function deployNotifyButtonHTML(project) {
       ? (onTrain.every((i) => i.status === "ready-to-publish") ? onTrain.length : 0)
       : legacyDeployItemsForProject(pid).length;
     if (!deployCount) return "";
+    // The train's required check is red (run-backlog-automation.js's
+    // reportTrainTestResults sets trainTestsRed): merging would only park
+    // the train on a red PR, as PR #335 did on 7 Oct 2026. The cards carry
+    // the failing run's link; the button comes back when the run is green.
+    const red = Object.keys(project.trainTestsRed || {});
+    if (red.length) {
+      return `<button type="button" class="notify-claude-btn" disabled title="${escapeHTML(`Deploy to Main is withheld: ${red.join(" and ")} failed on this project's train. Each ticket's notes link the failing run. Fix it, or send the ticket that broke it back with Failed testing — the button returns once the tests pass.`)}">
+      <span class="material-symbols-outlined notify-claude-icon">error</span>
+      <span class="notify-claude-label">Tests failing</span>
+    </button>`;
+    }
     return `<button type="button" class="notify-claude-btn deploy-notify-btn" data-project-id="${escapeHTML(pid)}">
       <span class="material-symbols-outlined notify-claude-icon">rocket_launch</span>
       <span class="notify-claude-label">Deploy to Main</span>
