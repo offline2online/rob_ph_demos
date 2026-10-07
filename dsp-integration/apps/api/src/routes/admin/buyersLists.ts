@@ -8,11 +8,12 @@ import type { Context } from '../../context'
 import type { Guards } from '../../http/app'
 import { hasDependents, notFound, validationFailed } from '../../http/errors'
 import { tx } from '../../db/db'
+import { positionIdOf } from '../../domain/positions'
 import { permittedFor } from '../../domain/variables'
 import type { Access } from '../../repos/CompanySettingsRepo'
 import type { PartnerRecord } from '../../repos/PartnerRepo'
 
-type Body = { name?: unknown; description?: unknown; invitedBuyers?: unknown; targeting?: unknown; activeFrom?: unknown; activeTo?: unknown; auctionCloses?: unknown }
+type Body = { name?: unknown; description?: unknown; invitedBuyers?: unknown; targeting?: unknown; activeFrom?: unknown; activeTo?: unknown; auctionCloses?: unknown; committedPlays?: unknown }
 
 /* Every slot currently assigned to this buyers list, across every display
    type — what stops a delete (spec "Deleting"). */
@@ -21,10 +22,23 @@ const dependentSlots = async (ctx: Context, buyersListId: string) =>
     (t.phExtensions?.slots ?? []).flatMap((s, i) => (assignedOf(s).buyersListId === buyersListId ? [`${t.name} — ${s.label || `slot ${i + 1}`}`] : [])),
   )
 
+/* The positions a deal is attached to: every slot assigned to it, as `displayTypeId.sN`. */
+const positionsOfDeal = async (ctx: Context, buyersListId: string) =>
+  (await ctx.displayTypes.list()).flatMap((t) =>
+    (t.phExtensions?.slots ?? []).flatMap((s, i) => (assignedOf(s).buyersListId === buyersListId ? [positionIdOf(t.id, i + 1)] : [])),
+  )
+
+/* Volume lives on the deal, never the open auction (open question 45): a
+   deal's delivery is the plays billed at its positions inside its term. */
+const withDelivery = async (ctx: Context, l: BuyersList): Promise<BuyersList> => ({
+  ...l,
+  deliveredPlays: l.committedPlays == null ? 0 : await ctx.billing.playsAt(await positionsOfDeal(ctx, l.id), l.activeFrom, l.activeTo),
+})
+
 export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => async (app) => {
   /* An invited buyer must be a seat a connected DSP actually synced. */
   const partnersById = async () => new Map((await ctx.partners.list()).filter((p) => p.status === 'connected').map((p) => [p.id, p]))
-  const parse = (b: Body, partnerById: Map<string, PartnerRecord>, access: Record<string, Access>, errors: { field: string; reason: string }[]): { name: string; description: string; invitedBuyers: InvitedBuyer[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null } => {
+  const parse = (b: Body, partnerById: Map<string, PartnerRecord>, access: Record<string, Access>, errors: { field: string; reason: string }[]): { name: string; description: string; invitedBuyers: InvitedBuyer[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays: number | null } => {
     const name = typeof b.name === 'string' ? b.name.trim() : ''
     if (!name) errors.push({ field: 'name', reason: 'A name is required.' })
     const description = typeof b.description === 'string' ? b.description.trim() : ''
@@ -80,13 +94,19 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
        before, inside or after activeFrom/activeTo (a deal can be set up to
        award its term ahead of time). */
     const auctionCloses = parseDate(b.auctionCloses, 'auctionCloses')
-    return { name, description, invitedBuyers, targeting, activeFrom, activeTo, auctionCloses }
+    /* committedPlays: the volume this deal commits to over its term — a whole number of plays, or null for none. */
+    let committedPlays: number | null = null
+    if (b.committedPlays !== null && b.committedPlays !== undefined) {
+      if (typeof b.committedPlays !== 'number' || !Number.isInteger(b.committedPlays) || b.committedPlays < 1) errors.push({ field: 'committedPlays', reason: 'A whole number of plays, 1 or more, or null for no volume commitment.' })
+      else committedPlays = b.committedPlays
+    }
+    return { name, description, invitedBuyers, targeting, activeFrom, activeTo, auctionCloses, committedPlays }
   }
 
   app.get('/buyers-lists', async (req) => {
     guards.flagged()
     guards.requireScope(req, 'sections')
-    return { items: await ctx.buyersLists.list() }
+    return { items: await Promise.all((await ctx.buyersLists.list()).map((l) => withDelivery(ctx, l))) }
   })
 
   app.post<{ Body: Body }>('/buyers-lists', async (req, reply) => {
@@ -96,7 +116,7 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     const parsed = parse(req.body ?? {}, await partnersById(), await ctx.company.variableAccess(), errors)
     if (errors.length) throw validationFailed(errors)
     const created: BuyersList = await ctx.buyersLists.insert({ id: `bl_${randomUUID().slice(0, 12)}`, ...parsed })
-    return reply.status(201).send(created)
+    return reply.status(201).send(await withDelivery(ctx, created))
   })
 
   app.put<{ Params: { buyersListId: string }; Body: Body }>('/buyers-lists/:buyersListId', async (req) => {
@@ -106,7 +126,9 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     const errors: { field: string; reason: string }[] = []
     const parsed = parse(req.body ?? {}, await partnersById(), await ctx.company.variableAccess(), errors)
     if (errors.length) throw validationFailed(errors)
-    return ctx.buyersLists.update(req.params.buyersListId, parsed)
+    const updated = await ctx.buyersLists.update(req.params.buyersListId, parsed)
+    if (!updated) throw notFound()
+    return withDelivery(ctx, updated)
   })
 
   app.delete<{ Params: { buyersListId: string } }>('/buyers-lists/:buyersListId', async (req, reply) => {

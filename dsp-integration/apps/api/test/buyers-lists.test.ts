@@ -140,4 +140,64 @@ describe('Buyers lists (spec "Support private auctions")', () => {
       expect((await post(app, [{ variable: 'store.state', op: 'include', values: [] }])).statusCode).toBe(400)
     })
   })
+
+  /* 7 Oct 2026, open question 45: volume is carried by deals, never the open auction. */
+  describe('committed plays (volume lives on the deal)', () => {
+    const term = { activeFrom: '2026-10-01T00:00:00.000Z', activeTo: '2026-10-31T00:00:00.000Z' }
+    const item = (id: string, positionId: string, windowStart: string, plays: number) => ({
+      id: `bl_${id}`, reservationId: id, partnerId: 'p_google', advertiserId: 'nestle', campaignId: 'c_x', positionId, windowStart, windowEnd: windowStart,
+      plays, playedSec: 1, expectedSec: 1, assumedViews: 1, realisedViews: 1, cpm: 1, currency: 'AUD', amount: 1, playsByVersion: [],
+    })
+
+    it('saves, returns and edits committedPlays; null means per play', async () => {
+      const app = buildApp(await testContext())
+      const created = await app.inject({ method: 'POST', url: '/api/admin/v1/buyers-lists', payload: { ...list, ...term, committedPlays: 1000 } })
+      expect(created.statusCode).toBe(201)
+      expectMatchesContract('POST', '/admin/v1/buyers-lists', 201, created.json())
+      expect(created.json()).toMatchObject({ committedPlays: 1000, deliveredPlays: 0 })
+      const plain = await app.inject({ method: 'POST', url: '/api/admin/v1/buyers-lists', payload: list })
+      expect(plain.json()).toMatchObject({ committedPlays: null, deliveredPlays: 0 })
+      const updated = await app.inject({ method: 'PUT', url: `/api/admin/v1/buyers-lists/${created.json().id}`, payload: { ...list, ...term, committedPlays: null } })
+      expectMatchesContract('PUT', '/admin/v1/buyers-lists/{buyersListId}', 200, updated.json())
+      expect(updated.json().committedPlays).toBeNull()
+    })
+
+    it('refuses zero, fractions, negatives and non-numbers', async () => {
+      const app = buildApp(await testContext())
+      for (const committedPlays of [0, 1.5, -3, '1000']) {
+        const res = await app.inject({ method: 'POST', url: '/api/admin/v1/buyers-lists', payload: { ...list, committedPlays } })
+        expect(res.statusCode).toBe(400)
+        expect(res.json().error.details.map((d: { field: string }) => d.field)).toEqual(['committedPlays'])
+      }
+    })
+
+    it("meters delivery in plays at the deal's positions, inside its term only", async () => {
+      const ctx = await testContext()
+      const app = buildApp(ctx)
+      const id = (await app.inject({ method: 'POST', url: '/api/admin/v1/buyers-lists', payload: { ...list, ...term, committedPlays: 1000 } })).json().id
+      await app.inject({
+        method: 'PUT', url: '/api/admin/v1/available-inventory',
+        payload: { items: [{ displayTypeId: 'menu_board', slot: 2, assignedTo: { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: id } }] },
+      })
+      await ctx.billing.insert(item('a', 'menu_board.s2', '2026-10-05T00:00:00.000Z', 120), '2026-10-06T00:00:00.000Z')
+      await ctx.billing.insert(item('b', 'menu_board.s2', '2026-10-20T00:00:00.000Z', 80), '2026-10-21T00:00:00.000Z')
+      await ctx.billing.insert(item('c', 'menu_board.s2', '2026-09-20T00:00:00.000Z', 500), '2026-09-21T00:00:00.000Z') // before the term
+      await ctx.billing.insert(item('d', 'menu_board.s1', '2026-10-05T00:00:00.000Z', 700), '2026-10-06T00:00:00.000Z') // another position
+      const listed = (await app.inject({ method: 'GET', url: '/api/admin/v1/buyers-lists' })).json()
+      expectMatchesContract('GET', '/admin/v1/buyers-lists', 200, listed)
+      expect(listed.items[0]).toMatchObject({ committedPlays: 1000, deliveredPlays: 200 })
+    })
+
+    it('a deal with no commitment reports no delivery: the open auction holds no volume', async () => {
+      const ctx = await testContext()
+      const app = buildApp(ctx)
+      const id = (await app.inject({ method: 'POST', url: '/api/admin/v1/buyers-lists', payload: list })).json().id
+      await app.inject({
+        method: 'PUT', url: '/api/admin/v1/available-inventory',
+        payload: { items: [{ displayTypeId: 'menu_board', slot: 2, assignedTo: { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: id } }] },
+      })
+      await ctx.billing.insert(item('a', 'menu_board.s2', '2026-10-05T00:00:00.000Z', 120), '2026-10-06T00:00:00.000Z')
+      expect((await app.inject({ method: 'GET', url: '/api/admin/v1/buyers-lists' })).json().items[0]).toMatchObject({ committedPlays: null, deliveredPlays: 0 })
+    })
+  })
 })

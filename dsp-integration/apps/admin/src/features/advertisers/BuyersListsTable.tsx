@@ -52,6 +52,12 @@ const RateCell = ({ data }: P) => {
   if (data.auctionCloses) return <span style={{ fontSize: 12.5 }}>Bidding closes {fmt(data.auctionCloses)}</span>
   return <span style={{ color: T.muted }}>Clears every window</span>
 }
+/* Volume lives on the deal (open question 45): 'N of M plays' metered from billing, or 'Per play' for a deal with no commitment. */
+const VolumeCell = ({ data }: P) => {
+  if (!data) return null
+  if (data.committedPlays == null) return <span style={{ color: T.muted }}>Per play</span>
+  return <span style={{ fontSize: 12.5 }}>{data.deliveredPlays.toLocaleString()} of {data.committedPlays.toLocaleString()} plays</span>
+}
 const ActionsCell = ({ data, context }: P) =>
   data ? (
     <span className="inline-flex gap-1">
@@ -72,6 +78,7 @@ export function BuyersListsTable({ lists, canEdit, onChanged }: { lists: BuyersL
     { headerName: 'Invited buyers', width: 150, minWidth: 130, cellRenderer: BuyersCell },
     { headerName: 'Targeting', width: 230, minWidth: 180, cellRenderer: TargetingCell },
     { headerName: 'Delivery term', width: 260, minWidth: 220, cellRenderer: TermCell },
+    { headerName: 'Committed volume', width: 190, minWidth: 160, cellRenderer: VolumeCell },
     { headerName: 'Rate', width: 200, minWidth: 170, cellRenderer: RateCell },
     ...(canEdit ? [{ headerName: '', width: 90, suppressSizeToFit: true, cellRenderer: ActionsCell }] : []),
   ]

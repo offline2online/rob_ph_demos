@@ -1537,6 +1537,13 @@ duplicating it per deal would let one drift from the other:
   sold and falls through to the default campaign. Programmatic guaranteed
   is the reserve-price booking flow (§5 "Reserve price"), delivered with it
   (open question 52).
+- **Volume lives on the deal, never the open auction** (Rob, 7 Oct 2026;
+  open question 45). A deal may carry `committedPlays` over its delivery
+  term; delivery (`deliveredPlays`) is metered in plays from billing line
+  items at the deal's positions, within the term, and the Buyers lists
+  table shows it as "N of M plays" (or "Per play"). The open auction holds
+  no block of plays: no open-RTB position can carry a volume. This replaces
+  the "re-auction after N plays" idea.
 - **Auction resolution rule** (first- vs second-price) is a platform-wide
   setting, defaulting to first-price (this build only implements
   first-price — see §7's clearing rule) — never overridden per list.
@@ -3821,7 +3828,15 @@ partner-contributed attributes have been removed with that scope.
     is priced against the same score-driven floor; its negotiated rate is a
     commitment on top of the floor, never under it, and a deal never
     bypasses the floor. Programmatic guaranteed is the reserve-price booking
-    flow (§5 "Reserve price"; open question 52).
+    flow (§5 "Reserve price"; open question 52). *Volume (7 Oct 2026,
+    Rob):* a committed number of plays over a term is carried by deals,
+    never by the open auction, which stays per play and holds no block of
+    plays. A buyers list carries an optional `committedPlays` (whole number
+    >= 1, null = per play) and a read-only `deliveredPlays`, metered in
+    plays from billing line items at the positions the deal is attached to,
+    inside its delivery term (migration 0050). For a guaranteed deal the
+    figure is the forecast plus the contingency buffer, set by the
+    guaranteed deal path, not typed in.
 46. **Per-DSP bidder tuning.** *Resolved (decision, Rob, 29 Sep 2026):*
     per-DSP QPS ceiling and bidder timeout overrides on the DSP's connection
     settings (§7 "DSP setup"), override-wins over the platform defaults

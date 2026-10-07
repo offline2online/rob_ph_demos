@@ -991,6 +991,7 @@ paths:
                     null = this deal isn't using the two-period model — it
                     clears fresh every play window, same as before this
                     field existed.
+                committedPlays: {type: [integer, 'null'], minimum: 1, description: 'The play volume this deal commits to over its delivery term; a whole number of plays, or null for none (per play). Volume lives on deals, never the open auction.'}
       responses:
         '201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/BuyersList'}}}}
         '400': {$ref: '#/components/responses/ValidationFailed'}
@@ -1027,6 +1028,7 @@ paths:
                   type: [string, 'null']
                   format: date-time
                   description: 'The deal''s own one-time bidding deadline (the auction window); see POST''s description. Editable even once locked — it no longer has any effect at that point.'
+                committedPlays: {type: [integer, 'null'], minimum: 1, description: 'The play volume this deal commits to over its delivery term; a whole number of plays, or null for none (per play). Volume lives on deals, never the open auction.'}
       responses:
         '200': {description: Saved, content: {application/json: {schema: {$ref: '#/components/schemas/BuyersList'}}}}
         '400': {$ref: '#/components/responses/ValidationFailed'}
@@ -2130,12 +2132,30 @@ components:
         is priced against the same score-driven floor as everything else. It
         is a commitment on top of the floor, never under it, and a deal never
         bypasses the floor.
-      required: [id, name, description, invitedBuyers, targeting, activeFrom, activeTo, auctionCloses, lockedWin, createdAt, updatedAt]
+      required: [id, name, description, invitedBuyers, targeting, activeFrom, activeTo, auctionCloses, lockedWin, committedPlays, deliveredPlays, createdAt, updatedAt]
       properties:
         id: {type: string}
         name: {type: string}
         description: {type: string}
         invitedBuyers: {type: array, items: {$ref: '#/components/schemas/InvitedBuyer'}}
+        committedPlays:
+          type: [integer, 'null']
+          minimum: 1
+          description: |
+            The play volume this deal commits to over its delivery term
+            (7 Oct 2026; open question 45). Volume is carried by deals,
+            never by the open auction, which stays per play and holds no
+            block of plays. null = no volume commitment (the deal is per
+            play). For a guaranteed deal the figure is sized from the
+            forecast plus the contingency buffer, not typed in here.
+        deliveredPlays:
+          type: integer
+          minimum: 0
+          readOnly: true
+          description: |
+            Read only. Plays billed so far at every position this deal is
+            attached to, in play windows that start inside the delivery term
+            (summed from billing line items). 0 when committedPlays is null.
         targeting:
           type: array
           items: {$ref: '#/components/schemas/Condition'}

@@ -4,7 +4,7 @@
    buyers) and the targeting criteria appended to the deal. Floor (inherited from the slot), the
    auction resolution rule (platform-wide) and the per-brand relationship
    variable (global on the brand entity) are deliberately not fields here. */
-import { App, Button, DatePicker, Input, Modal, Select } from 'antd'
+import { App, Button, DatePicker, Input, InputNumber, Modal, Select } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { ALL_DSPS, OPERATOR_LABELS, TARGETING_VARIABLES, type BuyersList, type Condition, type InvitedBuyer, type SharedVariable } from '@ph-dsp/types'
 import dayjs from 'dayjs'
@@ -14,15 +14,15 @@ import { Q } from '../../api/queries'
 import { Icon } from '../../shared/Icon'
 import { T } from '../../theme/phTheme'
 
-type Draft = { name: string; description: string; invitedBuyers: InvitedBuyer[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null }
+type Draft = { name: string; description: string; invitedBuyers: InvitedBuyer[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays: number | null }
 /* An invited buyer is one synced seat of one connected DSP — the Select's value is both halves. */
 const buyerKey = (b: InvitedBuyer) => JSON.stringify([b.partnerId, b.seatId])
-const blankDraft = (): Draft => ({ name: '', description: '', invitedBuyers: [], targeting: [], activeFrom: null, activeTo: null, auctionCloses: null })
+const blankDraft = (): Draft => ({ name: '', description: '', invitedBuyers: [], targeting: [], activeFrom: null, activeTo: null, auctionCloses: null, committedPlays: null })
 const draftOf = (l: BuyersList): Draft => ({
   name: l.name, description: l.description,
   invitedBuyers: l.invitedBuyers.map((b) => ({ ...b })),
   targeting: (l.targeting ?? []).map((c) => ({ ...c, values: [...c.values] })),
-  activeFrom: l.activeFrom, activeTo: l.activeTo, auctionCloses: l.auctionCloses,
+  activeFrom: l.activeFrom, activeTo: l.activeTo, auctionCloses: l.auctionCloses, committedPlays: l.committedPlays,
 })
 
 export function BuyersListModal({ open, editing, onClose, onSaved }: {
@@ -174,6 +174,16 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
         />
         <div className="mt-1" style={{ fontSize: 11, color: T.micro }}>The span this deal is awarded for — leave either side empty for no bound. Outside it, the deal admits nobody.</div>
         {errors.activeTo && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.activeTo}</div>}
+      </div>
+      <div className="mb-3.5">
+        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}>Committed plays</label>
+        <InputNumber
+          min={1} precision={0} style={{ width: '100%' }} aria-label="Committed plays"
+          status={errors.committedPlays ? 'error' : undefined} placeholder="Leave empty for per play"
+          value={draft.committedPlays} onChange={(v) => setDraft((d) => ({ ...d, committedPlays: typeof v === 'number' ? v : null }))}
+        />
+        <div className="mt-1" style={{ fontSize: 11, color: T.micro }}>The number of plays this deal commits to over its delivery term. Volume is carried by deals; the open auction always stays per play. Delivery is counted in plays billed at the slots this list is assigned to.</div>
+        {errors.committedPlays && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.committedPlays}</div>}
       </div>
       <div>
         <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}>Auction window closes</label>

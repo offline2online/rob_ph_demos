@@ -1693,6 +1693,21 @@ export interface components {
             description: string;
             invitedBuyers: components["schemas"]["InvitedBuyer"][];
             /**
+             * @description The play volume this deal commits to over its delivery term
+             *     (7 Oct 2026; open question 45). Volume is carried by deals,
+             *     never by the open auction, which stays per play and holds no
+             *     block of plays. null = no volume commitment (the deal is per
+             *     play). For a guaranteed deal the figure is sized from the
+             *     forecast plus the contingency buffer, not typed in here.
+             */
+            committedPlays: number | null;
+            /**
+             * @description Read only. Plays billed so far at every position this deal is
+             *     attached to, in play windows that start inside the delivery term
+             *     (summed from billing line items). 0 when committedPlays is null.
+             */
+            readonly deliveredPlays: number;
+            /**
              * @description Targeting criteria appended to the deal, ANDed (buyers and
              *     targeting definition, 7 Oct 2026). Variable and fixed store
              *     segments, state, suburb (city), display tags, localisation
@@ -3680,6 +3695,8 @@ export interface operations {
                      *     field existed.
                      */
                     auctionCloses?: string | null;
+                    /** @description The play volume this deal commits to over its delivery term; a whole number of plays, or null for none (per play). Volume lives on deals, never the open auction. */
+                    committedPlays?: number | null;
                 };
             };
         };
@@ -3733,6 +3750,8 @@ export interface operations {
                      * @description The deal's own one-time bidding deadline (the auction window); see POST's description. Editable even once locked — it no longer has any effect at that point.
                      */
                     auctionCloses?: string | null;
+                    /** @description The play volume this deal commits to over its delivery term; a whole number of plays, or null for none (per play). Volume lives on deals, never the open auction. */
+                    committedPlays?: number | null;
                 };
             };
         };

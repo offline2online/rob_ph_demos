@@ -20,6 +20,9 @@ export interface BillingRepo {
      each was written (its settlement time): what the late-play ledger
      matches a late play against. */
   coveringPlay(campaignId: string, playedAt: string): Awaitable<{ item: LineItem; computedAt: string }[]>
+  /* Plays billed at these positions in windows that start inside [from, to]
+     (null = no bound): the volume a deal has delivered over its term. */
+  playsAt(positionIds: string[], from: string | null, to: string | null): Awaitable<number>
 }
 
 /* SQLite's default limit on bound parameters is 32,766; a chunk of 500
@@ -61,6 +64,16 @@ export function sqliteBillingRepo(db: Db): BillingRepo {
     list: () => (prepared(db, 'SELECT * FROM billing_line_items ORDER BY window_start, id').all() as Record<string, unknown>[]).map(toItem),
     coveringPlay: (campaignId, playedAt) => (prepared(db, 'SELECT * FROM billing_line_items WHERE campaign_id = ? AND window_start <= ? AND window_end > ? ORDER BY window_start, id')
       .all(campaignId, playedAt, playedAt) as Record<string, unknown>[]).map((r) => ({ item: toItem(r), computedAt: r.computed_at as string })),
+    playsAt(positionIds, from, to) {
+      let total = 0
+      for (let i = 0; i < positionIds.length; i += CHUNK) {
+        const chunk = positionIds.slice(i, i + CHUNK)
+        const r = prepared(db, `SELECT COALESCE(SUM(plays), 0) AS n FROM billing_line_items WHERE position_id IN (${chunk.map(() => '?').join(', ')}) AND (? IS NULL OR window_start >= ?) AND (? IS NULL OR window_start <= ?)`)
+          .get(...chunk, from, from, to, to) as { n: number }
+        total += r.n
+      }
+      return total
+    },
     billedAmong: (reservationIds) => new Set(amounts(reservationIds).keys()),
     amountsFor: (reservationIds) => amounts(reservationIds),
   }
