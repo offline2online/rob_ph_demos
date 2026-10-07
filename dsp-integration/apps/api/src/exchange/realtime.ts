@@ -14,6 +14,11 @@
    and migration 0021's one-live-winner-per-window index is unaffected.
    Impressions are their own rows (migration 0047).
 
+   One auction per play (industry-standard DOOH model): every call here is a
+   fresh auction with its own impression id and request ids; a win fills that
+   one play and nothing is held for the next. Blocks of plays are a deal, not
+   an open-auction win.
+
    One impression, one request per eligible DSP: the advance auction's own
    OpenRTB request (buildBidRequest) with tmax and exp cut to this impression
    and imp.ext.ph.mode = "realtime". Every bid then passes the same

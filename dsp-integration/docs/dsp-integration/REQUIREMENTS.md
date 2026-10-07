@@ -1171,7 +1171,7 @@ played (Billing, below).
   risk profiles: **reserved** commits the brand to a premium rate (the
   reserve price) and holds the window, billed on realised VAC-d at that
   rate with no guaranteed volume and no make-good (§5 "Reserve price"); **open real-time** locks nothing, re-clearing price
-  every auction; a **private auction using the two-period model** locks
+  on every play (one auction per play, 7 Oct 2026: a win buys that one play, never a block of plays — blocks and volumes belong to deals); a **private auction using the two-period model** locks
   the rate but leaves volume variable — the brand pays for actual views,
   not a guaranteed number, but never re-bids for the term. Mechanically
   this needs no separate billing pipeline: the exchange (§7) books every

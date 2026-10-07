@@ -52,6 +52,29 @@ describe('real-time (player-triggered) bidding', () => {
     expect((await played(fill.impressionId)).statusCode).toBe(409)
   })
 
+  it('runs one fresh auction per play: one win is one play, and nothing is held for the next', async () => {
+    const { ctx, sent, signal, played } = await setup()
+    const booked = () => (ctx.db.prepare('SELECT COUNT(*) AS n FROM reservations').get() as { n: number }).n
+    const before = booked()
+    const first = (await signal()).json()
+    expect(first.status).toBe('filled')
+    expect(sent).toHaveLength(1)
+    expect((await played(first.impressionId)).statusCode).toBe(200)
+    const second = (await signal()).json()
+    expect(second.status).toBe('filled')
+    /* The next play called its own auction: a new auction (impression) id and a new bid request id, and the DSP was asked again. */
+    expect(second.impressionId).not.toBe(first.impressionId)
+    expect(sent).toHaveLength(2)
+    expect(sent[1].body.id).not.toBe(sent[0].body.id)
+    /* One win, one play: the first win cannot be played twice, nor the second one counted for the first. */
+    expect((await played(first.impressionId)).statusCode).toBe(409)
+    expect((await played(second.impressionId)).statusCode).toBe(200)
+    expect(ctx.db.prepare("SELECT COUNT(*) AS n FROM plays WHERE id LIKE 'rtp_%'").get()).toEqual({ n: 2 })
+    /* No block: nothing is booked, so nothing is held across plays. */
+    expect(booked()).toBe(before)
+    expect((await ctx.impressions.forPosition('menu_board.s2')).map((i) => i.status)).toEqual(['played', 'played'])
+  })
+
   it('answers no_fill when no bid clears: the bidder says no bid, or bids below the floor', async () => {
     const { mocks, signal } = await setup()
     await mocks.app.inject({ method: 'PUT', url: '/_control/google_dv360/bidder', payload: { mode: 'no_bid' } })

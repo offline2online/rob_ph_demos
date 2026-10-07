@@ -633,6 +633,15 @@ when both halves do. The contract, Player API `/api/player/v1` (bearer
 | `POST /impressions` `{displayId, slot}` | …sends it just before the real-time slot's turn in the rotation, early enough to leave the bid budget (`tmax`, default 200 ms, `PH_REALTIME_TMAX_MS`) plus a network round trip. | …sends one OpenRTB request per eligible connected DSP (the advance request, `imp.ext.ph.mode` = `realtime`, `tmax` and `exp` cut to the impression), runs the same pre-auction checks as for an advance bid, first price, and answers `filled` with the creative to play or `no_fill` — always 200, always within the budget. |
 | `POST /impressions/{id}/played` | …sends it once the creative has played, within `expiresAt` (`PH_REALTIME_FILL_TTL_SEC`, default 120 s). | …records the play once against the display and the campaign; a repeat, an expired fill or a `no_fill` answers 409. |
 
+**One auction per play (7 Oct 2026, the industry-standard DOOH model — Broadsign Reach
+and the pDOOH ecosystem transact in plays).** Each `POST /impressions` is its own
+auction: it gets a fresh impression id (the auction id) and a fresh OpenRTB
+request id per DSP. One winning bid fills exactly one play, and the proof of
+play closes it once. The next play signals again and calls a fresh auction. There
+is no block, N-play hold or re-auction-after-N in the open auction: buying a run
+of plays is a deal (the deals-volume ticket), not something won in the open
+auction.
+
 What PH Core's player must guarantee: it plays the filled creative from the
 returned URL, or its own content on `no_fill` or when the answer is late (it
 must not wait past its own deadline); it sends the signal at most once per
