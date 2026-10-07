@@ -1,6 +1,6 @@
 /* Advertiser settings (spec §4, §5, §6): pricing and the company lists, plus
    the read-only Where these apply and Available Inventory. */
-import { INTERACTIVE_ENABLED, MAX_MAX_CAMPAIGNS, MIN_MAX_CAMPAIGNS, advertiserSlug, assignedOf, billingUnitHoursOf, maxCampaignsOf, interactiveReservePriceOf, reservePriceOf, type AdvertiserSettings, type AdvertiserSettingsInput, type Assigned, type AvailableInventoryRow, type DisplayType, type DspAdvertisers } from '@ph-dsp/types'
+import { INTERACTIVE_ENABLED, MAX_MAX_CAMPAIGNS, MAX_MAX_PLAY_LENGTH_SEC, MIN_MAX_CAMPAIGNS, MIN_MAX_PLAY_LENGTH_SEC, maxPlayLengthSecOf, advertiserSlug, assignedOf, billingUnitHoursOf, maxCampaignsOf, interactiveReservePriceOf, reservePriceOf, type AdvertiserSettings, type AdvertiserSettingsInput, type Assigned, type AvailableInventoryRow, type DisplayType, type DspAdvertisers } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { cleanCategoryList, validateAdvertiserSettings } from '../../domain/advertiserSettings'
@@ -75,6 +75,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         uncachedRestrictionEnd: b.uncachedRestrictionEnd ?? current.uncachedRestrictionEnd,
         bidLookaheadSeconds: b.bidLookaheadSeconds ?? current.bidLookaheadSeconds,
         defaultCommittedPlays: b.defaultCommittedPlays === undefined ? current.defaultCommittedPlays : b.defaultCommittedPlays,
+        maxPlayLengthSec: b.maxPlayLengthSec ?? current.maxPlayLengthSec,
       })
     })
     return view()
@@ -162,6 +163,10 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
           maxCampaigns: maxCampaignsOf(t, s),
           maxCampaignsOverride: s.maxCampaigns ?? null,
           displayTypeMaxCampaigns: t.phExtensions?.maxCampaigns ?? null,
+          maxPlayLengthSec: maxPlayLengthSecOf(t, s, company.maxPlayLengthSec),
+          maxPlayLengthSecOverride: s.maxPlayLengthSec ?? null,
+          displayTypeMaxPlayLengthSec: t.phExtensions?.maxPlayLengthSec ?? null,
+          companyMaxPlayLengthSec: company.maxPlayLengthSec,
         })
       }
     }
@@ -238,6 +243,16 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
     return v
   }
 
+  /* Whole seconds, MIN_MAX_PLAY_LENGTH_SEC to MAX_MAX_PLAY_LENGTH_SEC, or null to inherit (the max play length ticket, 7 Oct 2026). */
+  const parseMaxPlayLength = (v: unknown, field: string, errors: { field: string; reason: string }[]): number | null => {
+    if (v === null || v === undefined) return null
+    if (typeof v !== 'number' || !Number.isInteger(v) || v < MIN_MAX_PLAY_LENGTH_SEC || v > MAX_MAX_PLAY_LENGTH_SEC) {
+      errors.push({ field, reason: `Whole seconds from ${MIN_MAX_PLAY_LENGTH_SEC} to ${MAX_MAX_PLAY_LENGTH_SEC}, or null to inherit.` })
+      return null
+    }
+    return v
+  }
+
   /* Who a slot is assigned to and its reserve
      price override (Rob, 22 Sep): the fields of a sellable slot that live
      here. Everything else about it is set on its display type — including
@@ -247,7 +262,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
   app.put<{ Body: { items?: unknown } }>('/available-inventory', async (req) => {
     guards.flagged()
     guards.requireScope(req, 'admin')
-    const rows = Array.isArray(req.body?.items) ? (req.body.items as { displayTypeId?: unknown; slot?: unknown; assignedTo?: unknown; reservePrice?: unknown; reservePriceDefault?: unknown; interactiveReservePrice?: unknown; billingUnitHours?: unknown; billingUnitHoursDefault?: unknown; maxCampaigns?: unknown; maxCampaignsDefault?: unknown }[]) : null
+    const rows = Array.isArray(req.body?.items) ? (req.body.items as { displayTypeId?: unknown; slot?: unknown; assignedTo?: unknown; reservePrice?: unknown; reservePriceDefault?: unknown; interactiveReservePrice?: unknown; billingUnitHours?: unknown; billingUnitHoursDefault?: unknown; maxCampaigns?: unknown; maxCampaignsDefault?: unknown; maxPlayLengthSec?: unknown; maxPlayLengthSecDefault?: unknown }[]) : null
     if (!rows) throw validationFailed([{ field: 'items', reason: 'An array of slots is required.' }])
     /* Validation, the sold and resize checks and the save are one
        transaction: nothing can be sold, or the slot edited, in between. */
@@ -255,11 +270,12 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
       const partners = await ctx.partners.list()
       const company = await ctx.company.get()
       const errors: { field: string; reason: string }[] = []
-      type Patch = { assigned: Assigned; reservePrice: number | null; interactiveReservePrice: number | null; billingUnitHours: number | null; maxCampaigns: number | null }
+      type Patch = { assigned: Assigned; reservePrice: number | null; interactiveReservePrice: number | null; billingUnitHours: number | null; maxCampaigns: number | null; maxPlayLengthSec: number | null }
       const wanted = new Map<string, Map<number, Patch>>()
       const defaults = new Map<string, number | null>()
       const billingUnitDefaults = new Map<string, number | null>()
       const maxCampaignsDefaults = new Map<string, number | null>()
+      const maxPlayLengthDefaults = new Map<string, number | null>()
       const names = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string').map((x) => x.trim()).filter(Boolean) : [])
 
       for (const [i, r] of rows.entries()) {
@@ -302,10 +318,17 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
           if (maxCampaignsDefaults.has(dt.id) && maxCampaignsDefaults.get(dt.id) !== maxCampaignsDefault) errors.push({ field: f('maxCampaignsDefault'), reason: 'All slots on a display type must submit the same max campaigns default.' })
           else maxCampaignsDefaults.set(dt.id, maxCampaignsDefault)
         }
+        /* Omitted keeps what the slot / display type has (a client that predates max play length never sends it); null inherits. */
+        const maxPlayLengthSec = r.maxPlayLengthSec === undefined ? def?.maxPlayLengthSec ?? null : parseMaxPlayLength(r.maxPlayLengthSec, f('maxPlayLengthSec'), errors)
+        const maxPlayLengthSecDefault = r.maxPlayLengthSecDefault === undefined ? dt?.phExtensions?.maxPlayLengthSec ?? null : parseMaxPlayLength(r.maxPlayLengthSecDefault, f('maxPlayLengthSecDefault'), errors)
+        if (dt) {
+          if (maxPlayLengthDefaults.has(dt.id) && maxPlayLengthDefaults.get(dt.id) !== maxPlayLengthSecDefault) errors.push({ field: f('maxPlayLengthSecDefault'), reason: 'All slots on a display type must submit the same max play length default.' })
+          else maxPlayLengthDefaults.set(dt.id, maxPlayLengthSecDefault)
+        }
 
         if (dt && def && !bad.length) {
           const byType = wanted.get(dt.id) ?? new Map<number, Patch>()
-          byType.set(slot, { assigned, reservePrice, interactiveReservePrice: INTERACTIVE_ENABLED ? interactiveReservePrice : null, billingUnitHours, maxCampaigns })
+          byType.set(slot, { assigned, reservePrice, interactiveReservePrice: INTERACTIVE_ENABLED ? interactiveReservePrice : null, billingUnitHours, maxCampaigns, maxPlayLengthSec })
           wanted.set(dt.id, byType)
         }
       }
@@ -376,11 +399,12 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
           const patch = slots.get(i + 1)
           /* A slot no longer carries a targeting capability (Rob, 7 Oct 2026): drop any saved one. */
           const { supportedTargeting: _legacy, ...slotNow } = s as typeof s & { supportedTargeting?: unknown }
-          return patch ? { ...slotNow, ...assignedToSlot(patch.assigned, partners), reservePrice: patch.reservePrice, interactiveReservePrice: patch.interactiveReservePrice, billingUnitHours: patch.billingUnitHours, maxCampaigns: patch.maxCampaigns } : slotNow
+          return patch ? { ...slotNow, ...assignedToSlot(patch.assigned, partners), reservePrice: patch.reservePrice, interactiveReservePrice: patch.interactiveReservePrice, billingUnitHours: patch.billingUnitHours, maxCampaigns: patch.maxCampaigns, maxPlayLengthSec: patch.maxPlayLengthSec } : slotNow
         })
         if (defaults.has(displayTypeId)) ext.reservePrice = defaults.get(displayTypeId) ?? null
         if (billingUnitDefaults.has(displayTypeId)) ext.billingUnitHours = billingUnitDefaults.get(displayTypeId) ?? null
         if (maxCampaignsDefaults.has(displayTypeId)) ext.maxCampaigns = maxCampaignsDefaults.get(displayTypeId) ?? null
+        if (maxPlayLengthDefaults.has(displayTypeId)) ext.maxPlayLengthSec = maxPlayLengthDefaults.get(displayTypeId) ?? null
         await ctx.displayTypes.saveExtensions(displayTypeId, ext)
       }
     })

@@ -30,7 +30,7 @@ export interface BidRequest {
     exp: number
     /* A deal position carries its SSP-issued deal ID, restricted to the invited seats. */
     pmp?: { private_auction: 1; deals: { id: string; at: 1; wseat: string[] }[] }
-    ext: { ph: { orientation: string; slotDurationSec: number; loopLengthSec: number; shareOfVoice: number; playsPerWindow: number; mode?: 'realtime' } }
+    ext: { ph: { orientation: string; slotDurationSec: number; loopLengthSec: number; maxPlayLengthSec: number; shareOfVoice: number; playsPerWindow: number; mode?: 'realtime' } }
   }[]
   /* Exactly one of these, by the display type's touch point: dooh for
      Digital Signage and Kiosk, site for a Website, app for a Mobile App. */
@@ -92,7 +92,7 @@ export async function buildBidRequest(ctx: Context, p: PositionRef, partner: Par
     id,
     imp: [{
       id: '1',
-      video: { w, h, minduration: 1, ...(view.screen.slotDurationSec > 0 ? { maxduration: view.screen.slotDurationSec } : {}) },
+      video: { w, h, minduration: 1, maxduration: view.screen.maxPlayLengthSec },
       banner: { w, h },
       bidfloor: await bidFloorFor(ctx, p, partner, list?.id),
       bidfloorcur: TRANSACTING_CURRENCY,
@@ -104,7 +104,7 @@ export async function buildBidRequest(ctx: Context, p: PositionRef, partner: Par
       ...(inventory === 'dooh' ? { qty: { multiplier: view.assumedViewsPerWindow, sourcetype: 2 as const } } : {}),
       exp: Math.round(windowMsFor(company.playWindowHours, p) / 1000),
       ...(pmp ? { pmp } : {}),
-      ext: { ph: { orientation: view.screen.orientation, slotDurationSec: view.screen.slotDurationSec, loopLengthSec: view.screen.loopLengthSec, shareOfVoice: view.screen.shareOfVoice, playsPerWindow: view.playsPerWindow } },
+      ext: { ph: { orientation: view.screen.orientation, slotDurationSec: view.screen.slotDurationSec, loopLengthSec: view.screen.loopLengthSec, maxPlayLengthSec: view.screen.maxPlayLengthSec, shareOfVoice: view.screen.shareOfVoice, playsPerWindow: view.playsPerWindow } },
     }],
     ...(inventory === 'dooh' ? {
       dooh: {

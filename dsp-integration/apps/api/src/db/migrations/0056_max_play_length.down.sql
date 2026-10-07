@@ -1,0 +1,1 @@
+ALTER TABLE company_advertiser_settings DROP COLUMN max_play_length_sec;

@@ -37,8 +37,7 @@ import { failed, fileChecks } from '../domain/assetChecks'
 import { readMedia } from '../domain/media'
 import { bidderTuning } from '../domain/partnerInput'
 import { isLive } from '../domain/exchange'
-import { type PositionRef, assignmentOf, effectivePartnerIds, findPosition, isRealtime, isSellable, positionIdOf, positionView, windowMsFor, windowStartOf } from '../domain/positions'
-import { slotDurationSec } from '../domain/slots'
+import { type PositionRef, assignmentOf, effectivePartnerIds, findPosition, isRealtime, isSellable, positionIdOf, positionView, maxPlayLengthSecFor, windowMsFor, windowStartOf } from '../domain/positions'
 import { conflict, notFound } from '../http/errors'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 import type { ImpressionRecord } from '../repos/RealtimeImpressionRepo'
@@ -165,7 +164,7 @@ export async function signalImpression(ctx: Context, input: { displayId: string;
     const asset = assets.find((a) => a.role === 'default') ?? assets[0]
     const bytes = asset ? await ctx.assets.read(asset.file) : null
     if (!asset || !bytes) { lastWhy = `${c.crid} has no creative`; continue }
-    const bad = failed(fileChecks(readMedia(bytes), bytes.length, p.displayType, ctx.config.assetLimits))
+    const bad = failed(fileChecks(readMedia(bytes), bytes.length, p.displayType, ctx.config.assetLimits, undefined, maxPlayLengthSecFor(company.maxPlayLengthSec, p)))
     if (bad.length) { lastWhy = `${c.crid} doesn’t fit ${p.displayType.name}: ${bad.map((x) => x.detail ?? x.name).join(' ')}`; continue }
     const assetVersion = approved ?? `v${Math.max(...assets.map((a) => a.version))}`
     const url = `${ctx.config.publicUrl}/assets/${asset.file}`
@@ -194,7 +193,7 @@ export async function confirmPlayed(ctx: Context, id: string, body: { playedAt?:
   const done = (await ctx.impressions.get(id)) as ImpressionRecord
   return tx(ctx.db, async () => {
     const p = await findPosition(ctx, done.positionId)
-    const duration = body.durationSec ?? (p ? slotDurationSec(p.displayType) : null) ?? 10
+    const duration = body.durationSec ?? (p ? maxPlayLengthSecFor((await ctx.company.get()).maxPlayLengthSec, p) : null) ?? 10
     /* A play needs a campaign to be recorded against: an at-bid creative that could not be retrieved or checked has none (its review note says why). */
     if (done.campaignId) ctx.plays.insertTestPlay({ id: `rtp_${randomUUID().slice(0, 12)}`, displayId: done.displayId, campaignId: done.campaignId, playedAt, durationSec: duration, versionId: done.assetVersion, tier: 'default', receivedAt: now })
     return done

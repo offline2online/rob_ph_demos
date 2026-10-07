@@ -490,6 +490,17 @@ export interface paths {
          *     when neither is set, 1-10 inclusive otherwise. Purely a submission
          *     cap; replaces the former blanket 20-targeted-versions cap for this
          *     slot. Does not feed the auction or billing.
+         *
+         *     maxPlayLengthSec / maxPlayLengthSecDefault: the same override/default
+         *     pattern once more (ticket "Max play length as an inherited slot
+         *     setting", 7 Oct 2026), for the FIXED duration of one play of the
+         *     slot, in whole seconds, 1-600. Slot override, else the display
+         *     type's default, else the company-wide default (Advertiser settings →
+         *     `maxPlayLengthSec`, platform default 15). It is what plays per window
+         *     are counted against — floor(window / max play length) — and the
+         *     longest creative the slot accepts. Unlike the fields above, OMITTED
+         *     means unchanged (a client that predates it never sends it); null
+         *     inherits.
          */
         put: operations["saveAvailableInventory"];
         post?: never;
@@ -1254,7 +1265,10 @@ export interface components {
                 /** @enum {string} */
                 orientation: "landscape" | "portrait";
                 slotDurationSec: number;
+                /** @description Informational. The loop's length; plays per window are NOT counted against it. */
                 loopLengthSec: number;
+                /** @description The fixed duration of one play of this slot (slot, else display type, else company default). Plays per window are counted against it, and a creative longer than it is rejected. */
+                maxPlayLengthSec: number;
                 /** @description 1 / maximumCampaignsPlayedInRotation */
                 shareOfVoice: number;
                 openOohVenueType?: string;
@@ -1270,7 +1284,7 @@ export interface components {
              *     Monday 00:00 UTC.
              */
             billingUnitHours: number;
-            /** @description The transacting unit. Plays this slot gets on one display in one of its windows (billingUnitHours long) — floor(window / loopLengthSec). Assumed views (VAC-d) convert plays to impressions for billing only. */
+            /** @description The transacting unit. Plays this slot gets on one display in one of its windows (billingUnitHours long) — floor(window / maxPlayLengthSec), the slot's fixed per-play duration; never the loop length and never a creative's own length. Assumed views (VAC-d) convert plays to impressions for billing only. */
             playsPerWindow?: number;
             /** @description Assumed views (VAC-d) in one of this position's windows (billingUnitHours long). */
             assumedViewsPerWindow?: number;
@@ -1596,6 +1610,11 @@ export interface components {
              * @default 35
              */
             bidLookaheadSeconds: number;
+            /**
+             * @description Max play length: the company-wide default fixed duration of one play of a slot, in whole seconds. A display type and a slot can each override it. Plays per window = floor(window / max play length) and a creative longer than it is rejected. Optional on save: omitted keeps the stored value.
+             * @default 15
+             */
+            maxPlayLengthSec: number;
             /** @description Play config: the committed-plays figure a new buyers list is pre-filled with (the field stays editable per list; editing a saved list never changes it). Whole number, at least 1; null means no default (per play). Optional on save: omitted keeps the stored value, null clears it. */
             defaultCommittedPlays?: number | null;
             /**
@@ -1999,6 +2018,20 @@ export interface components {
              *     inclusive when set.
              */
             displayTypeMaxCampaigns: number | null;
+            /**
+             * @description The resolved max play length, in seconds: the fixed per-play
+             *     duration of this slot — maxPlayLengthSecOverride when set, else
+             *     displayTypeMaxPlayLengthSec, else companyMaxPlayLengthSec. Plays
+             *     per window are floor(window / this); a creative longer than it
+             *     is rejected at upload.
+             */
+            maxPlayLengthSec: number;
+            /** @description This slot's own max play length, admin-editable here; null means it follows the display type's. 1-600 when set. */
+            maxPlayLengthSecOverride: number | null;
+            /** @description The max play length default set on this slot's display type; null means it has none (the company default applies). The same value on every row sharing a displayTypeId. 1-600 when set. */
+            displayTypeMaxPlayLengthSec: number | null;
+            /** @description The company-wide default max play length (Advertiser settings), what an un-overridden slot on a display type with no default resolves to. */
+            companyMaxPlayLengthSec: number;
         };
         BookingSchedule: {
             /** @description ISO 4217 */
@@ -2446,6 +2479,13 @@ export interface components {
                  *     the slot editor.
                  */
                 maxCampaigns?: number | null;
+                /**
+                 * @description This slot's own max play length in seconds (the fixed
+                 *     duration of one play). Absent or null follows the display
+                 *     type's `maxPlayLengthSec`, else the company default. Set
+                 *     from Advertisers / Inventory, not the slot editor.
+                 */
+                maxPlayLengthSec?: number | null;
             }[];
             /**
              * @description The display type's own reserve price default (decision, 22 Sep),
@@ -2473,6 +2513,14 @@ export interface components {
              *     display type edits the same value), not the slot editor.
              */
             maxCampaigns?: number | null;
+            /**
+             * @description The display type's own max play length default, in seconds,
+             *     inherited by every slot on it with no override of its own.
+             *     Absent or null means the company-wide default applies. Set from
+             *     Advertisers / Inventory (every row for this display type edits
+             *     the same value), not the slot editor.
+             */
+            maxPlayLengthSec?: number | null;
             /** @description POC stand-in; PH Core owns venue and geo metadata and the exchange keeps no copy on integration (Q35). On integration this is read from PH Core's store/display record and the extensions PUT stops accepting it. */
             venue?: {
                 openOohVenueType?: string;
@@ -3361,6 +3409,10 @@ export interface operations {
                         maxCampaigns?: number | null;
                         /** @description The display type's maximum-campaigns default; null = none (the platform default of 5 applies). Must be the same value on every row for a given displayTypeId in one request. */
                         maxCampaignsDefault?: number | null;
+                        /** @description This slot's own max play length override, in whole seconds; null = inherit maxPlayLengthSecDefault. Omitted = unchanged. */
+                        maxPlayLengthSec?: number | null;
+                        /** @description The display type's max play length default, in whole seconds; null = none (the company-wide default applies). Omitted = unchanged. Must be the same value on every row for a given displayTypeId in one request. */
+                        maxPlayLengthSecDefault?: number | null;
                     }[];
                 };
             };

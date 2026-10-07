@@ -136,6 +136,16 @@ export function AdvertiserSettings() {
         </Field>
       </div>
 
+      <SectionLabel><WithTip tip="The fixed length of one play of a slot. Plays per window are counted against it, so they stay countable whatever creatives are booked.">Play length</WithTip></SectionLabel>
+      <div className="flex flex-wrap items-start gap-3.5">
+        <Field label={<span className="block" style={{ minHeight: 36 }}>Max play length</span>} htmlFor="maxPlayLengthSec" tip="The company-wide default length of one play of a slot, in seconds. A display type and then a slot can override it on Advertisers / Inventory (slot wins over display type, which wins over this). Plays per window are the window length divided by it, whoever is booked; a creative longer than it is rejected on upload, never trimmed. Whole seconds, 1 to 600. Default 15." className="w-56">
+          <div className="flex items-center gap-2">
+            <InputNumber id="maxPlayLengthSec" className="w-full" step={1} min={1} max={600} precision={0} placeholder="15" value={s.maxPlayLengthSec ?? 15} onChange={(v) => set('maxPlayLengthSec', (v === null ? null : Number(v)) as number)} />
+            <span>seconds</span>
+          </div>
+        </Field>
+      </div>
+
       <SectionLabel><WithTip tip="IAB category lists, managed once for the whole company and applied to every connected DSP: IAB is one taxonomy all of them speak. Entries are chosen from the IAB categories, never typed. Nothing can sit on both lists. The blacklist always applies and no position can opt out of it. Advertiser whitelists and blacklists are not here: each DSP manages its own, from the advertisers it syncs, on its own page.">Category lists</WithTip></SectionLabel>
       <div className="grid grid-cols-2 gap-3.5">
         <ListEditor label="Categories — whitelist" tone={T.success} icon="category" items={s.categoryWhitelist} options={IAB_OPTIONS} onAdd={add('categoryWhitelist')} onRemove={remove('categoryWhitelist')} empty="Empty — every category is eligible." addLabel="Choose an IAB category…" noneLeft="No IAB categories left to add" />

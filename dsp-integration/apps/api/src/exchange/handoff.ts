@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto'
 import type { Context } from '../context'
 import { failed, fileChecks } from '../domain/assetChecks'
 import { readMedia } from '../domain/media'
-import { findPosition, windowMs } from '../domain/positions'
+import { findPosition, maxPlayLengthSecFor, windowMs } from '../domain/positions'
 import { checkCampaign } from './enforcement'
 import { isUniqueViolation } from '../db/db'
 import type { ReservationRecord } from '../repos/ReservationRepo'
@@ -35,7 +35,7 @@ export async function handOff(ctx: Context, r: ReservationRecord): Promise<Reser
   const asset = assets.find((a) => a.role === 'default') ?? assets[0]
   const bytes = asset ? await ctx.assets.read(asset.file) : null
   if (!asset || !bytes) return notHandedOff('the campaign has no creative.')
-  const checks = fileChecks(readMedia(bytes), bytes.length, p.displayType, ctx.config.assetLimits)
+  const checks = fileChecks(readMedia(bytes), bytes.length, p.displayType, ctx.config.assetLimits, undefined, maxPlayLengthSecFor((await ctx.company.get()).maxPlayLengthSec, p))
   if (failed(checks).length) return notHandedOff(`the creative doesn’t fit ${p.displayType.name}: ${failed(checks).map((c) => c.detail ?? c.name).join(' ')}`)
   const windowEnd = new Date(Date.parse(r.windowStart) + (await windowMs(ctx, p))).toISOString()
   try {

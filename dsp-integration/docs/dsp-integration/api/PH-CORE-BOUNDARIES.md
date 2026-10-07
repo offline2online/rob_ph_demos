@@ -837,6 +837,40 @@ latitude/longitude, store id; read-only, never written), and the
 asserts the bid request's `dooh.venuetype` and the inventory venue fields
 come from the seam value, so swapping the adapter is covered.
 
+### Max play length: the loop must be built from the resolved slot length (7 Oct 2026, ticket KeZZ4HPvATweSiDdn0KI)
+
+**Status: open, owned by PH Core. Contract change, flagged, not built blind.**
+The exchange now counts a window's plays as floor(window length / the slot's
+**max play length**), a fixed per-play duration resolved slot → display type
+→ company default (REQUIREMENTS §5 "Max play length";
+`domain/plays.ts`, `domain/positions.ts` `maxPlayLengthSecFor`). It no
+longer divides by the loop length, and an advertiser's creative length never
+feeds the count. A creative longer than the slot's max play length is
+rejected at upload (and again at hand-off and real-time bid), not trimmed.
+
+That only matches what plays if PH Core builds the loop the same way. PH
+Core to provide:
+
+1. **Loop built from the resolved slot length.** Each advertiser slot in a
+   rotation is allotted exactly its resolved max play length, as Broadsign's
+   loop policy allots a fixed slot length — not the playlist item's
+   `playbackDuration`, and not the creative's own length (a shorter creative
+   is padded to the slot, never stretches the loop).
+2. **The resolved value.** The exchange stays the source of truth for the
+   three-tier setting (Advertiser settings; `PUT /admin/v1/available-inventory`);
+   on integration PH Core reads the resolved `maxPlayLengthSec` per position
+   from the inventory view (`screen.maxPlayLengthSec`) rather than keeping a
+   second copy. `loopLengthSec` is now informational only.
+3. **Proof of play.** `PlaybackSource` plays remain counted as played; PH
+   Core must not report a play of an advertiser slot shorter than its max
+   play length as a full play.
+
+Until then the POC's `slotDurationSec`/`loopLengthSec` venue stand-in still
+drives the display-side rotation, so the plays the exchange sells and the
+plays a real player produces are only guaranteed to agree once item 1 lands.
+Changing a max play length re-derives `playsPerWindow` for future reads and
+bids; windows already booked keep their booked counts.
+
 ### Dependency on PH Core: completeness guarantee and missing-data behaviour (4 Oct 2026, ticket HxMMn84BcCP6y9S2jk3l)
 
 **Status: open, owned by PH Core.** Nothing defines today what happens when a

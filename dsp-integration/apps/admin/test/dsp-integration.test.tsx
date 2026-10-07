@@ -592,7 +592,7 @@ describe('Advertisers / Inventory', () => {
        (ticket "Available Inventory: playlist-primary table (drop Display
        type column) with Unassigned indicator", 27 Sep 2026). */
     expect([...inventory.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent))
-      .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Reserve price', 'Max campaigns', 'Billing unit', ''])
+      .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Reserve price', 'Max campaigns', 'Max play length', 'Billing unit', ''])
     /* No interactive-only column: interactive is deferred (5 Oct 2026). */
     expect(within(inventory).getByLabelText('Playlist search')).toBeInTheDocument()
     /* Targeting is defined on the buyers and targeting list, not per slot (Rob, 7 Oct 2026). */
@@ -668,7 +668,7 @@ describe('Advertisers / Inventory', () => {
     await waitFor(() => expect(saved()).toEqual({ items: [{
       displayTypeId: 'menu_board', slot: 2,
       assignedTo: { partnerIds: ['p_google'], advertisers: ['Nestlé'], whitelistOnly: false, buyersListId: null, buyersListIds: [] },
-      interactiveReservePrice: null, reservePriceDefault: null, billingUnitHoursDefault: null, maxCampaignsDefault: null,
+      interactiveReservePrice: null, reservePriceDefault: null, billingUnitHoursDefault: null, maxCampaignsDefault: null, maxPlayLengthSecDefault: null,
     }] }))
     /* This test opens two AntD Selects, drives a save round-trip and waits
        on it with real timers — already the file's slowest, and, measured in

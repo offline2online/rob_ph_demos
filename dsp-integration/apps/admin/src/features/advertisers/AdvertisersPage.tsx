@@ -7,7 +7,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { App, Button, InputNumber, Select, Spin, Switch } from 'antd'
 import { Tip } from '../../shared/Tip'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
-import { INTERACTIVE_ENABLED, RESERVE_PRICE_TIP, DEFAULT_BILLING_UNIT_HOURS, DEFAULT_MAX_CAMPAIGNS, MAX_MAX_CAMPAIGNS, MIN_MAX_CAMPAIGNS, SLOT_OWNERS, assignedLabels, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type Session } from '@ph-dsp/types'
+import { INTERACTIVE_ENABLED, RESERVE_PRICE_TIP, DEFAULT_BILLING_UNIT_HOURS, DEFAULT_MAX_CAMPAIGNS, MAX_MAX_CAMPAIGNS, MAX_MAX_PLAY_LENGTH_SEC, MIN_MAX_CAMPAIGNS, MIN_MAX_PLAY_LENGTH_SEC, SLOT_OWNERS, assignedLabels, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type Session } from '@ph-dsp/types'
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, ApiRequestError } from '../../api/client'
@@ -70,7 +70,7 @@ export const slotKey = (r: AvailableInventoryRow) => `${r.displayTypeId}:${r.slo
    reservePrice is this slot's own override; null means it follows its
    display type's shared default (below), not "no reserve" (Rob, 22 Sep;
    spec §1 configuration inheritance — override always wins). */
-export interface SlotEdit { assignedTo: Omit<AssignedTo, 'partnerNames' | 'buyersListName' | 'buyersListNames'>; reservePrice: number | null; interactiveReservePrice: number | null; billingUnitHours: number | null; maxCampaigns: number | null }
+export interface SlotEdit { assignedTo: Omit<AssignedTo, 'partnerNames' | 'buyersListName' | 'buyersListNames'>; reservePrice: number | null; interactiveReservePrice: number | null; billingUnitHours: number | null; maxCampaigns: number | null; maxPlayLengthSec: number | null }
 type Edits = Record<string, SlotEdit>
 /* A display type's reserve price default, edited from any of its slot
    rows — every row for the same displayTypeId shares one value. Also used
@@ -87,12 +87,14 @@ type InvCtx = { current: {
   defaults: Defaults
   billingUnitDefaults: Defaults
   maxCampaignsDefaults: Defaults
+  maxPlayLengthDefaults: Defaults
   dsps: DspAdvertisers[]
   buyersLists: BuyersList[]
   set: (key: string, patch: Partial<SlotEdit>) => void
   setDefault: (displayTypeId: string, v: number | null) => void
   setBillingUnitDefault: (displayTypeId: string, v: number | null) => void
   setMaxCampaignsDefault: (displayTypeId: string, v: number | null) => void
+  setMaxPlayLengthDefault: (displayTypeId: string, v: number | null) => void
   openAddBuyersList: (r: AvailableInventoryRow) => void
 } }
 type IP = ICellRendererParams<AvailableInventoryRow, unknown, InvCtx>
@@ -181,7 +183,7 @@ function Pills({ label, value, options, canEdit, placeholder, onChange }: {
 }
 
 const edited = (c: InvCtx['current'], r: AvailableInventoryRow): SlotEdit =>
-  c.edits[slotKey(r)] ?? { assignedTo: r.assignedTo, reservePrice: r.reservePriceOverride, interactiveReservePrice: r.interactiveReservePriceOverride ?? null, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride }
+  c.edits[slotKey(r)] ?? { assignedTo: r.assignedTo, reservePrice: r.reservePriceOverride, interactiveReservePrice: r.interactiveReservePriceOverride ?? null, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride, maxPlayLengthSec: r.maxPlayLengthSecOverride }
 /* The value this slot actually resolves to right now, following the draft
    default when it has no override of its own — the same "override wins"
    read as reservePriceOf, but against unsaved edits. */
@@ -207,6 +209,11 @@ const effectiveMaxCampaigns = (c: InvCtx['current'], r: AvailableInventoryRow): 
   const override = edited(c, r).maxCampaigns
   return override ?? c.maxCampaignsDefaults[r.displayTypeId] ?? DEFAULT_MAX_CAMPAIGNS
 }
+
+/* Max play length (7 Oct 2026): slot override, else the display type's
+   default, else the company default from Advertiser settings. */
+const effectiveMaxPlayLength = (c: InvCtx['current'], r: AvailableInventoryRow): number =>
+  edited(c, r).maxPlayLengthSec ?? c.maxPlayLengthDefaults[r.displayTypeId] ?? r.companyMaxPlayLengthSec
 
 /* Who may buy this position (Rob, 20 Sep; buyers lists/private auctions
    added 23 Sep): DSPs, named advertisers, a buyers list's private auction,
@@ -525,6 +532,43 @@ function MaxCampaignsCell({ data, context }: IP) {
   )
 }
 
+/* The fixed duration of one play of the slot, in seconds: plays per window
+   are counted against it and a longer creative is rejected. Same
+   override/default inheritance UX as MaxCampaignsCell (slot → display type →
+   company default in Advertiser settings). */
+function MaxPlayLengthCell({ data, context }: IP) {
+  if (!data) return null
+  const c = context.current
+  const override = edited(c, data).maxPlayLengthSec
+  const overridden = override != null
+  const value = overridden ? override : (c.maxPlayLengthDefaults[data.displayTypeId] ?? data.companyMaxPlayLengthSec)
+  if (!c.canEdit) return <span>{effectiveMaxPlayLength(c, data)} s</span>
+  return (
+    <div className="flex w-full min-w-0 items-center gap-1">
+      <InputNumber
+        size="small" aria-label={`${data.displayTypeName} slot ${data.zoneSlot}: max play length in seconds${overridden ? ' (override)' : ''}`} min={MIN_MAX_PLAY_LENGTH_SEC} max={MAX_MAX_PLAY_LENGTH_SEC} step={1} precision={0} style={{ width: 72 }}
+        value={value}
+        onChange={(v) => {
+          const next = v === null || v === undefined ? data.companyMaxPlayLengthSec : Math.min(MAX_MAX_PLAY_LENGTH_SEC, Math.max(MIN_MAX_PLAY_LENGTH_SEC, Math.round(Number(v))))
+          if (overridden) c.set(slotKey(data), { maxPlayLengthSec: next })
+          else c.setMaxPlayLengthDefault(data.displayTypeId, next)
+        }}
+      />
+      {overridden ? (
+        <Tip title={`Reset to ${data.displayTypeName}'s max play length default`}>
+          <Button type="text" size="small" className="px-1" aria-label={`${data.displayTypeName} slot ${data.zoneSlot}: reset max play length to the display type's default`}
+            icon={<Icon name="settings_backup_restore" size={13} />} onClick={() => c.set(slotKey(data), { maxPlayLengthSec: null })} />
+        </Tip>
+      ) : (
+        <Tip title={`Override just this slot, independent of ${data.displayTypeName}'s other slots`}>
+          <Button type="text" size="small" className="px-1" aria-label={`${data.displayTypeName} slot ${data.zoneSlot}: override max play length for just this slot`}
+            icon={<Icon name="edit" size={13} />} onClick={() => c.set(slotKey(data), { maxPlayLengthSec: value })} />
+        </Tip>
+      )}
+    </div>
+  )
+}
+
 const header = (label: string, tip: string) => () => <WithTip tip={tip}><span className="ag-header-cell-text">{label}</span></WithTip>
 
 export function AdvertisersPage() {
@@ -615,6 +659,12 @@ export function AdvertisersPage() {
       ...setColumn<AvailableInventoryRow>('Max campaigns', invValues((r) => [String(r.maxCampaigns)])),
     },
     {
+      headerName: 'Max play length', width: 150, minWidth: 135, cellRenderer: MaxPlayLengthCell,
+      headerComponent: header('Max play length', 'The fixed length of one play of this slot, in seconds. Plays per window are the window length divided by this, whoever is booked. A creative longer than it is rejected on upload, never trimmed. Set once for the display type and inherited by every slot on it; override just one slot to give it its own. With neither set, the default in Advertiser settings applies.'),
+      valueGetter: (p) => (p.data ? effectiveMaxPlayLength((p.context as InvCtx).current, p.data) : 0),
+      ...setColumn<AvailableInventoryRow>('Max play length', invValues((r) => [String(r.maxPlayLengthSec)])),
+    },
+    {
       headerName: 'Billing unit', width: 135, minWidth: 120, cellRenderer: BillingUnitCell,
       headerComponent: header('Billing unit', 'The length of this slot’s play windows: each one is auctioned, booked and billed on its own. Set once for the display type and inherited by every slot on it — override just one slot to give it its own value, independent of the others. With neither set, the play-window length in Advertiser settings applies. Can’t change while windows are still bid on or booked under it.'),
       valueGetter: (p) => (p.data ? effectiveBillingUnitHours((p.context as InvCtx).current, p.data) : DEFAULT_BILLING_UNIT_HOURS),
@@ -625,10 +675,10 @@ export function AdvertisersPage() {
   const { draft, setDraft, dirty, reset, commitNext } = useDraft(saved)
   const savedEdits = useMemo<Edits | undefined>(() => inventory.data && Object.fromEntries(invRows.map((r) => {
     const { partnerNames: _names, ...assignedTo } = r.assignedTo
-    return [slotKey(r), { assignedTo, reservePrice: r.reservePriceOverride, interactiveReservePrice: r.interactiveReservePriceOverride ?? null, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride }]
+    return [slotKey(r), { assignedTo, reservePrice: r.reservePriceOverride, interactiveReservePrice: r.interactiveReservePriceOverride ?? null, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride, maxPlayLengthSec: r.maxPlayLengthSecOverride }]
   })), [invRows, inventory.data])
   const inv = useDraft(savedEdits)
-  const savedEditsNow = (r: AvailableInventoryRow): SlotEdit => (inv.draft ?? {})[slotKey(r)] ?? { assignedTo: r.assignedTo, reservePrice: r.reservePriceOverride, interactiveReservePrice: r.interactiveReservePriceOverride ?? null, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride }
+  const savedEditsNow = (r: AvailableInventoryRow): SlotEdit => (inv.draft ?? {})[slotKey(r)] ?? { assignedTo: r.assignedTo, reservePrice: r.reservePriceOverride, interactiveReservePrice: r.interactiveReservePriceOverride ?? null, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride, maxPlayLengthSec: r.maxPlayLengthSecOverride }
   const anyInteractiveReserve = INTERACTIVE_ENABLED && invRows.some((r) => showsInteractiveReserve(r.qrControl, savedEditsNow(r)))
   const visibleInventoryColumns = useMemo(
     () => (anyInteractiveReserve ? inventoryColumns : inventoryColumns.filter((col) => col.headerName !== INTERACTIVE_RESERVE_HEADER)),
@@ -647,7 +697,9 @@ export function AdvertisersPage() {
      statement"). */
   const savedMaxCampaignsDefaults = useMemo<Defaults | undefined>(() => inventory.data && Object.fromEntries(invRows.map((r) => [r.displayTypeId, r.displayTypeMaxCampaigns])), [invRows, inventory.data])
   const maxCampaignsDefaults = useDraft(savedMaxCampaignsDefaults)
-  useReportDirty(dirty || inv.dirty || defaults.dirty || billingUnitDefaults.dirty || maxCampaignsDefaults.dirty)
+  const savedMaxPlayLengthDefaults = useMemo<Defaults | undefined>(() => inventory.data && Object.fromEntries(invRows.map((r) => [r.displayTypeId, r.displayTypeMaxPlayLengthSec ?? null])), [invRows, inventory.data])
+  const maxPlayLengthDefaults = useDraft(savedMaxPlayLengthDefaults)
+  useReportDirty(dirty || inv.dirty || defaults.dirty || billingUnitDefaults.dirty || maxCampaignsDefaults.dirty || maxPlayLengthDefaults.dirty)
   const [saving, setSaving] = useState(false)
   const [shown, setShown] = useState<number | null>(null)
   const data = q.data
@@ -720,17 +772,18 @@ export function AdvertisersPage() {
          reserve price default changed (Rob, 22 Sep), since that's a
          display-type-level field an untouched slot's row still has to
          carry so the server can apply it. */
-      if ((inv.dirty || defaults.dirty || billingUnitDefaults.dirty || maxCampaignsDefaults.dirty) && inv.draft && defaults.draft && billingUnitDefaults.draft && maxCampaignsDefaults.draft) {
+      if ((inv.dirty || defaults.dirty || billingUnitDefaults.dirty || maxCampaignsDefaults.dirty) && inv.draft && defaults.draft && billingUnitDefaults.draft && maxCampaignsDefaults.draft && maxPlayLengthDefaults.draft) {
         const changedSlots = new Set(Object.keys(inv.draft).filter((key) => !deepEqual(inv.draft![key], savedEdits?.[key])))
         const changedTypes = new Set(Object.keys(defaults.draft).filter((id) => defaults.draft![id] !== savedDefaults?.[id]))
         const changedBillingUnitTypes = new Set(Object.keys(billingUnitDefaults.draft).filter((id) => billingUnitDefaults.draft![id] !== savedBillingUnitDefaults?.[id]))
         const changedMaxCampaignsTypes = new Set(Object.keys(maxCampaignsDefaults.draft).filter((id) => maxCampaignsDefaults.draft![id] !== savedMaxCampaignsDefaults?.[id]))
+        const changedMaxPlayLengthTypes = new Set(Object.keys(maxPlayLengthDefaults.draft).filter((id) => maxPlayLengthDefaults.draft![id] !== savedMaxPlayLengthDefaults?.[id]))
         const items = invRows
-          .filter((r) => changedSlots.has(slotKey(r)) || changedTypes.has(r.displayTypeId) || changedBillingUnitTypes.has(r.displayTypeId) || changedMaxCampaignsTypes.has(r.displayTypeId))
+          .filter((r) => changedSlots.has(slotKey(r)) || changedTypes.has(r.displayTypeId) || changedBillingUnitTypes.has(r.displayTypeId) || changedMaxCampaignsTypes.has(r.displayTypeId) || changedMaxPlayLengthTypes.has(r.displayTypeId))
           .map((r) => ({
             displayTypeId: r.displayTypeId, slot: r.slot, ...(inv.draft![slotKey(r)] ?? savedEdits![slotKey(r)]),
             reservePriceDefault: defaults.draft![r.displayTypeId] ?? null, billingUnitHoursDefault: billingUnitDefaults.draft![r.displayTypeId] ?? null,
-            maxCampaignsDefault: maxCampaignsDefaults.draft![r.displayTypeId] ?? null,
+            maxCampaignsDefault: maxCampaignsDefaults.draft![r.displayTypeId] ?? null, maxPlayLengthSecDefault: maxPlayLengthDefaults.draft![r.displayTypeId] ?? null,
           }))
         sent = items
         await api('PUT', '/admin/v1/available-inventory', { items })
@@ -738,6 +791,7 @@ export function AdvertisersPage() {
         defaults.commitNext()
         billingUnitDefaults.commitNext()
         maxCampaignsDefaults.commitNext()
+        maxPlayLengthDefaults.commitNext()
         await qc.invalidateQueries({ queryKey: ['available-inventory'] })
       }
       commitNext()
@@ -755,12 +809,13 @@ export function AdvertisersPage() {
        type): the page finds that display type's default playlist and opens
        its settings. */
     open: (id: string) => navigate(`/playlists?displayTypeId=${encodeURIComponent(id)}`),
-    canEdit, currency: data.currency, edits: inv.draft ?? {}, defaults: defaults.draft ?? {}, billingUnitDefaults: billingUnitDefaults.draft ?? {}, maxCampaignsDefaults: maxCampaignsDefaults.draft ?? {}, dsps: inventory.data?.dsps ?? [],
+    canEdit, currency: data.currency, edits: inv.draft ?? {}, defaults: defaults.draft ?? {}, billingUnitDefaults: billingUnitDefaults.draft ?? {}, maxCampaignsDefaults: maxCampaignsDefaults.draft ?? {}, maxPlayLengthDefaults: maxPlayLengthDefaults.draft ?? {}, dsps: inventory.data?.dsps ?? [],
     buyersLists: buyersLists.data?.items ?? [],
     set: (key: string, patch: Partial<SlotEdit>) => inv.setDraft((cur) => (cur ? { ...cur, [key]: { ...cur[key], ...patch } } : cur)),
     setDefault: (displayTypeId: string, v: number | null) => defaults.setDraft((cur) => (cur ? { ...cur, [displayTypeId]: v } : cur)),
     setBillingUnitDefault: (displayTypeId: string, v: number | null) => billingUnitDefaults.setDraft((cur) => (cur ? { ...cur, [displayTypeId]: v } : cur)),
     setMaxCampaignsDefault: (displayTypeId: string, v: number | null) => maxCampaignsDefaults.setDraft((cur) => (cur ? { ...cur, [displayTypeId]: v } : cur)),
+    setMaxPlayLengthDefault: (displayTypeId: string, v: number | null) => maxPlayLengthDefaults.setDraft((cur) => (cur ? { ...cur, [displayTypeId]: v } : cur)),
     openAddBuyersList: (r: AvailableInventoryRow) => setAddingBuyersListFor(r),
   }
   const context = {
@@ -819,7 +874,7 @@ export function AdvertisersPage() {
         onChanged={() => qc.invalidateQueries({ queryKey: ['buyers-lists'] })}
       />
 
-      {canEdit && <SaveBar dirty={dirty || inv.dirty || defaults.dirty || billingUnitDefaults.dirty || maxCampaignsDefaults.dirty} saving={saving} onSave={onSave} onCancel={() => { reset(); inv.reset(); defaults.reset(); billingUnitDefaults.reset(); maxCampaignsDefaults.reset() }} />}
+      {canEdit && <SaveBar dirty={dirty || inv.dirty || defaults.dirty || billingUnitDefaults.dirty || maxCampaignsDefaults.dirty} saving={saving} onSave={onSave} onCancel={() => { reset(); inv.reset(); defaults.reset(); billingUnitDefaults.reset(); maxCampaignsDefaults.reset(); maxPlayLengthDefaults.reset() }} />}
 
       {/* Picked "+ Add new buyers list…" from a slot's Assigned to picker
           (Rob, 23 Sep): on save, assign the new list straight to that slot. */}

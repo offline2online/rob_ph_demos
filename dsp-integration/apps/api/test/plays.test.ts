@@ -3,11 +3,13 @@ import { playsPerWindowOf, totalPlaysOf, windowMsForPlays } from '../src/domain/
 
 const HOUR = 3_600_000
 describe('plays are the transacting unit', () => {
-  it('derives plays from a time window and the loop length', () => {
+  it('derives plays from a time window and the slot’s max play length', () => {
+    expect(playsPerWindowOf(24 * HOUR, 15)).toBe(5760)
     expect(playsPerWindowOf(24 * HOUR, 45)).toBe(1920)
+    expect(playsPerWindowOf(24 * HOUR, 7)).toBe(12342)
     expect(playsPerWindowOf(168 * HOUR, 60)).toBe(10080)
   })
-  it('is zero without a loop length or a full loop', () => {
+  it('is zero without a play length or a full play', () => {
     expect(playsPerWindowOf(24 * HOUR, 0)).toBe(0)
     expect(playsPerWindowOf(10_000, 45)).toBe(0)
   })
