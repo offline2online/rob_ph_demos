@@ -1,5 +1,7 @@
 /* OpenRTB 2.6 bid requests with the DOOH object (API.md "OpenRTB — what we
-   send and accept"; spec §7 "What a DOOH bid request carries"). A request
+   send and accept"; spec §7 "What a DOOH bid request carries"); a Website or
+   Mobile App slot sold in real time carries `site` or `app` instead, with no
+   impression multiplier. A request
    describes a venue and a moment, never a person: there is no `user`
    object, and no visitor, Personalisation or Computer Vision data. */
 import { bidderTuning } from '../domain/partnerInput'
@@ -7,7 +9,7 @@ import { IAB_CATEGORY_CODES } from '@ph-dsp/types'
 import { TRANSACTING_CURRENCY } from '../domain/currency'
 import type { Context } from '../context'
 import { type PositionRef, assignmentOf, positionView, windowMsFor } from '../domain/positions'
-import { assignedOf } from '@ph-dsp/types'
+import { assignedOf, openRtbInventoryOf } from '@ph-dsp/types'
 import { isInvitedBuyer } from '../domain/buyersLists'
 import { effectiveCategoryLists, effectiveLists, seatDomains } from '../domain/lists'
 import { type Perm, standardBuyerBlocking } from '../dsp/DspProvider'
@@ -22,13 +24,18 @@ export interface BidRequest {
     banner: { w: number; h: number }
     bidfloor: number
     bidfloorcur: string
-    qty: { multiplier: number; sourcetype: 2 }
+    /* Absent on a website or mobile app impression: one impression per render, multiplier 1. */
+    qty?: { multiplier: number; sourcetype: 2 }
     exp: number
     /* A deal position carries its SSP-issued deal ID, restricted to the invited seats. */
     pmp?: { private_auction: 1; deals: { id: string; at: 1; wseat: string[] }[] }
     ext: { ph: { orientation: string; slotDurationSec: number; loopLengthSec: number; shareOfVoice: number; playsPerWindow: number; mode?: 'realtime' } }
   }[]
-  dooh: { id: string; venuetype: string[]; venuetypetax: 1; publisher: { id: string; name: string; domain: string } }
+  /* Exactly one of these, by the display type's touch point: dooh for
+     Digital Signage and Kiosk, site for a Website, app for a Mobile App. */
+  dooh?: { id: string; venuetype: string[]; venuetypetax: 1; publisher: { id: string; name: string; domain: string } }
+  site?: { id: string; name: string; domain: string; publisher: { id: string; name: string; domain: string } }
+  app?: { id: string; name: string; publisher: { id: string; name: string; domain: string } }
   source: { schain: { complete: 1; ver: '1.0'; nodes: { asi: string; sid: string; hp: 1 }[] } }
   cur: string[]
   bcat: string[]
@@ -68,6 +75,8 @@ export async function buildBidRequest(ctx: Context, p: PositionRef, partner: Par
   const lists = effectiveLists(partner)
   const categoryLists = effectiveCategoryLists(company)
   const { width: w, height: h } = view.screen
+  const inventory = openRtbInventoryOf(p.displayType.touchPoint)
+  const publisher = { id: exchange.sellerId, name: exchange.organisation, domain: exchange.domain }
   const listId = assignmentOf(p.def) === 'deal' ? assignedOf(p.def).buyersListId : undefined
   const list = listId ? await ctx.buyersLists.get(listId) : null
   const pmp = list ? { private_auction: 1 as const, deals: [{ id: dealIdOf(list.id), at: 1 as const, wseat: partner.seats.map((x) => x.id).filter((id) => isInvitedBuyer(list, partner.id, id)) }] } : undefined
@@ -82,18 +91,22 @@ export async function buildBidRequest(ctx: Context, p: PositionRef, partner: Par
       /* This position's own window (OQ27): its assumed views and its length. sourcetype is always 2
          (publisher-provided): the audience counts come from our own cameras. 1 (measurement vendor)
          would misrepresent the source and, on The Trade Desk, needs a vendor domain we don't have.
-         If an independent measurement partner is adopted, switch to 1 and send that vendor's domain. */
-      qty: { multiplier: view.assumedViewsPerWindow, sourcetype: 2 },
+         If an independent measurement partner is adopted, switch to 1 and send that vendor's domain.
+         A website or mobile app impression has no multiplier at all (one render, one impression). */
+      ...(inventory === 'dooh' ? { qty: { multiplier: view.assumedViewsPerWindow, sourcetype: 2 as const } } : {}),
       exp: Math.round(windowMsFor(company.playWindowHours, p) / 1000),
       ...(pmp ? { pmp } : {}),
       ext: { ph: { orientation: view.screen.orientation, slotDurationSec: view.screen.slotDurationSec, loopLengthSec: view.screen.loopLengthSec, shareOfVoice: view.screen.shareOfVoice, playsPerWindow: view.playsPerWindow } },
     }],
-    dooh: {
-      id: p.displayType.id,
-      venuetype: view.screen.openOohVenueType ? [view.screen.openOohVenueType] : [],
-      venuetypetax: 1,
-      publisher: { id: exchange.sellerId, name: exchange.organisation, domain: exchange.domain },
-    },
+    ...(inventory === 'dooh' ? {
+      dooh: {
+        id: p.displayType.id,
+        venuetype: view.screen.openOohVenueType ? [view.screen.openOohVenueType] : [],
+        venuetypetax: 1 as const,
+        publisher,
+      },
+    } : inventory === 'site' ? { site: { id: p.displayType.id, name: p.displayType.name, domain: exchange.domain, publisher } }
+      : { app: { id: p.displayType.id, name: p.displayType.name, publisher } }),
     source: { schain: { complete: 1, ver: '1.0', nodes: [{ asi: exchange.domain, sid: exchange.sellerId, hp: 1 }] } },
     cur: [TRANSACTING_CURRENCY],
     bcat: categoryCodes(categoryLists.blockList),

@@ -218,28 +218,33 @@ describe('Playlist Management page', () => {
     ])
   })
 
-  /* Ticket, 28 Sep 2026: Website and Mobile App are HQ-only — no
-     advertising, so Advertiser AND Stores are greyed out for them (unlike
-     Stores' own release-wide "not supported in this release" tooltip,
-     tested above — this one names the touch point) — but, unlike Stores'
-     usual release-wide treatment, still shown on the list rather than left
-     off it, so it reads as "not for this kind of display", not "gone". */
-  it.each(['Website', 'Mobile App'])('offers Headquarters only for a %s display type, with Advertiser and Stores greyed out and a touch-point tooltip', async (touchPoint) => {
-    const restricted = { ...newDisplayType('restricted_dt'), name: `${touchPoint} display`, touchPoint, defaultPlaylistId: 'pl_restricted', playlistSettings: { maximumCampaignsPlayedInRotation: 1 }, phExtensions: { slots: [{ label: 'Slot 1', owner: 'internal' }] } }
+  /* Ticket, 28 Sep 2026: Website and Mobile App were HQ-only. Widened 7 Oct
+     2026 (ticket HAmTUHQVj63NDiY4hLk8): no owner list, but one "Available for
+     RTB" switch per slot — on is an Advertiser slot sold per impression
+     (bidMode realtime), off is Headquarters. Nothing else is offered. */
+  it.each(['Website', 'Mobile App'])('lets a %s slot be marked available for RTB with a switch, instead of an owner list, and saves it', async (touchPoint) => {
+    const restricted = { ...newDisplayType('restricted_dt'), name: `${touchPoint} display`, touchPoint, defaultPlaylistId: 'pl_restricted', playlistSettings: { maximumCampaignsPlayedInRotation: 2 }, phExtensions: { slots: [{ label: 'Slot 1', owner: 'internal' }, { label: 'Slot 2', owner: 'internal' }] } }
     const withRestricted: Record<string, unknown> = {
       ...responses,
       '/api/admin/v1/display-types': { items: [landscape, menuBoard, restricted] },
       '/api/admin/v1/playlists': { items: [...playlists.items, { id: 'pl_restricted', name: `${touchPoint} Playlist`, autoCreatedFor: 'restricted_dt', playlistSettings: {}, assignments: [{ displayTypeId: 'restricted_dt', displayTypeName: `${touchPoint} display`, zoneId: null, zoneName: null }] }] },
     }
-    vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response(JSON.stringify(withRestricted[url.split('?')[0]] ?? {}), { status: 200 })))
+    const puts: { url: string; body: Record<string, unknown> }[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, opts?: RequestInit) => {
+      if (opts?.method === 'PUT') puts.push({ url, body: JSON.parse(String(opts.body)) })
+      return new Response(JSON.stringify(withRestricted[url.split('?')[0]] ?? {}), { status: 200 })
+    }))
     renderAt('/playlists?displayTypeId=restricted_dt', true)
-    const opts = await optionsOf('Slot 1 owner')
-    expect(opts.map((o) => ({ label: o.textContent, disabled: o.classList.contains('ant-select-item-option-disabled') }))).toEqual([
-      { label: 'Headquarters', disabled: false }, { label: 'Advertiser', disabled: true }, { label: 'Stores', disabled: true },
-    ])
-    for (const label of ['Advertiser', 'Stores']) {
-      expect(opts.find((o) => o.textContent === label)!.getAttribute('title')).toMatch(/isn.t available for this touch point/)
-    }
+    const sw = await screen.findByRole('switch', { name: 'Slot 2 available for RTB' })
+    expect(screen.queryByRole('combobox', { name: /Slot \d owner/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('switch', { name: 'Slot 1 available for RTB' })).not.toBeChecked()
+    fireEvent.click(sw)
+    await waitFor(() => expect(within(screen.getByTestId('slot-card-2')).getByText('Advertiser')).toBeInTheDocument())
+    expect(screen.getByRole('switch', { name: 'Slot 2 available for RTB' })).toBeChecked()
+    fireEvent.click(screen.getByText('Save changes'))
+    await waitFor(() => expect(puts.some((p) => p.url.endsWith('/display-types/restricted_dt/extensions'))).toBe(true))
+    const slots = (puts.find((p) => p.url.endsWith('/display-types/restricted_dt/extensions'))!.body as { slots: { owner: string; bidMode?: string }[] }).slots
+    expect(slots.map((x) => [x.owner, x.bidMode])).toEqual([['internal', undefined], ['advertiser', 'realtime']])
   })
 
   /* Ticket, 28 Sep 2026 ("the three zones are still being seen as a single

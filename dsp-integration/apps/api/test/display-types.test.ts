@@ -251,14 +251,15 @@ describe('PUT /admin/v1/display-types/{id}/extensions — slot ownership', () =>
   })
 })
 
-/* Ticket, 28 Sep 2026: Website and Mobile App are HQ-only — no advertising,
-   so the slot editor and the API both refuse anything but a Headquarters
-   slot for them. */
+/* Ticket, 28 Sep 2026: Website and Mobile App are HQ-only — no advertising.
+   Widened 7 Oct 2026 (ticket HAmTUHQVj63NDiY4hLk8): an Advertiser slot is
+   allowed only when marked for real-time bidding (rtb-web-app-slots.test.ts);
+   without it, and for Stores, the API still refuses. */
 describe('PUT /admin/v1/display-types/{id}/extensions — Website/Mobile App are HQ-only', () => {
   const put = (app: ReturnType<typeof buildApp>, id: string, payload: unknown) =>
     app.inject({ method: 'PUT', url: `/api/admin/v1/display-types/${id}/extensions`, payload: payload as object })
 
-  it.each(['Website', 'Mobile App'])('refuses an Advertiser or Stores slot for %s, accepts Headquarters', async (touchPoint) => {
+  it.each(['Website', 'Mobile App'])('refuses an Advertiser slot not marked for RTB and a Stores slot for %s, accepts Headquarters', async (touchPoint) => {
     const { app, ctx } = await setup()
     const created = await app.inject({
       method: 'POST', url: '/api/admin/v1/display-types',
@@ -269,7 +270,7 @@ describe('PUT /admin/v1/display-types/{id}/extensions — Website/Mobile App are
     const advertiser = await put(app, `dt_${touchPoint}`, { slots: [{ label: 'Slot 1', owner: 'advertiser' }] })
     expect(advertiser.statusCode).toBe(400)
     expectMatchesContract('PUT', '/admin/v1/display-types/{displayTypeId}/extensions', 400, advertiser.json())
-    expect(advertiser.json().error.details).toEqual([{ field: 'slots[0].owner', reason: expect.stringContaining('isn’t available for this touch point') }])
+    expect(advertiser.json().error.details).toEqual([{ field: 'slots[0].bidMode', reason: expect.stringContaining('real-time bidding only') }])
 
     const retail = await put(app, `dt_${touchPoint}`, { slots: [{ label: 'Slot 1', owner: 'retail' }] })
     expect(retail.statusCode).toBe(400)

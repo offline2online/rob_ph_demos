@@ -31,6 +31,20 @@ export const touchPointIcon = (name: string) => (TOUCH_POINTS.find((t) => t.name
 export const NO_ADVERTISING_TOUCH_POINTS: readonly TouchPoint[] = ['Website', 'Mobile App']
 export const allowsAdvertising = (touchPoint: string): boolean => !(NO_ADVERTISING_TOUCH_POINTS as readonly string[]).includes(touchPoint)
 
+/* Website and Mobile App slots can be sold, by real-time bidding ONLY
+   (ticket HAmTUHQVj63NDiY4hLk8, decision Rob 7 Oct 2026): a slot there is
+   either Headquarters or an Advertiser slot marked available for RTB — no
+   play windows, reserve, deals or guaranteed path. They are web/app
+   programmatic inventory, so the bid request carries the OpenRTB `site`
+   (Website) or `app` (Mobile App) object, never `dooh`, and no impression
+   multiplier (one impression per render). Digital Signage and Kiosk are
+   unchanged. allowsAdvertising stays false for them: it gates the advance
+   path (campaign briefs, window bids, reservations, deals). */
+export const RTB_ONLY_TOUCH_POINTS: readonly TouchPoint[] = ['Website', 'Mobile App']
+export const isRtbOnly = (touchPoint: string | undefined): boolean => touchPoint !== undefined && (RTB_ONLY_TOUCH_POINTS as readonly string[]).includes(touchPoint)
+/* Which OpenRTB inventory object a touch point's bid request carries. */
+export const openRtbInventoryOf = (touchPoint: string): 'dooh' | 'site' | 'app' => (touchPoint === 'Website' ? 'site' : touchPoint === 'Mobile App' ? 'app' : 'dooh')
+
 /* Same two touch points also have no physical display to lay out or sense
    proximity around: Multi-Zone Layout and every Enabled Feature but QR
    Control (In-Store Radio, MIST, AI Agent, Vision/AI) are hidden for them,

@@ -350,7 +350,11 @@ advertising:
   disabled, matching how the two display types themselves are additive
   rather than a variant of an existing one. Revisit if that's wrong
   ("unless confirmed otherwise").
-- **HQ-only: no advertising.** See *Slot ownership* below — this is the
+- **HQ-only: no advertising — except RTB** (widened 7 Oct 2026, ticket
+  HAmTUHQVj63NDiY4hLk8): a slot may be marked **available for RTB**, and
+  that is the only way to sell one. See *Website and Mobile App: RTB only*
+  below. The rest of this bullet is the advance (window) path, which stays
+  closed to them. See *Slot ownership* below — this is the
   more consequential of the two differences, since it is also what keeps
   Website and Mobile App out of Advertisers / Inventory, Available
   Inventory, the Inventory API and bid requests, without any of those four
@@ -3131,6 +3135,22 @@ playback analytics.**
   its auto-created playlist has nothing overridden (*Default settings*),
   and its rotation is *Default (Unlimited)* until a cap is picked.
   *(Display Types → New display type)*
+- **Website and Mobile App: RTB only** (ticket HAmTUHQVj63NDiY4hLk8, decision
+  Rob 7 Oct 2026): on the playlist's slot editor these two touch points show an
+  *Available for RTB* switch per slot instead of an owner list; on is an
+  Advertiser slot with `bidMode: realtime`, off is Headquarters. RTB is the
+  only programmatic path — no slot windows, reserve price, billing unit,
+  campaign cap, named-advertiser hold, deal play volume or guaranteed path
+  (the API refuses each, and Advertisers / Inventory shows "RTB only" in
+  those columns and offers no advertiser or buyers-list assignment). The bid
+  request carries the OpenRTB `site` (Website) or `app` (Mobile App) object,
+  never `dooh`, and no `imp.qty` (one impression per render, multiplier 1);
+  each marked slot is one auction per impression. Buyers and targeting lists,
+  blocklists, seat permissions, USD bidding and post-bid creative approval
+  apply as for other RTB inventory. No audience score is needed. PH Core
+  stores the flag and calls the signal at render time (PH-CORE-BOUNDARIES.md →
+  "Website and Mobile App slots"). Digital Signage and Kiosk are unchanged.
+  *(Display Types → Playlists → Slot assignment)*
 - **Website and Mobile App touch points** (ticket, 28 Sep 2026): offered
   alongside Digital Signage and Kiosk, HQ-only (no Advertiser/Stores slot,
   no reserve price/billing unit/max campaigns/venue metadata, out of
