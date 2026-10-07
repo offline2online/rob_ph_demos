@@ -680,6 +680,37 @@ migration 0021's one-live-winner-per-window index is unaffected. Not yet
 covered: per-impression billing of real-time plays, and per-impression
 `imp.qty` (the request still carries the window's assumed views).
 
+### Pre-caching approved creatives on the player (7 Oct 2026, Rob)
+
+**PH Core's PWA player owns this; the exchange only hands off the approved
+creative.** Once a creative has won and is approved, the player keeps a copy
+for a defined period so it is resident before the slot's turn rather than
+fetched on demand at hand-off. This mirrors Broadsign Reach's pre-caching of
+approved Reach creatives. Nothing in this repo implements it: the player,
+its cache and distribution are PH Core (REQUIREMENTS section 7, "Creative
+retrieval and hand-off").
+
+What PH Core's player must do:
+
+- **Approved creatives only.** Pre-cache a creative whose `creative.source` is
+  `approved` (PH's copy on PH's asset host). Approval still gates play
+  (section 3): never pre-cache `under_review`, rejected or `at_bid` creatives.
+  The existing rule stands for `at_bid`: never cache beyond `expiresAt`.
+- **Defined lifetime.** Keep a pre-cached creative for a configurable period
+  (cache TTL, config value; exact default to be confirmed by the core team).
+  Evict on expiry, and immediately when the creative is rejected or its
+  content hash is blocked.
+- **Complements the bid lookahead window** (Advertiser settings, separate
+  ticket): the lookahead decides how early the auction resolves, so it sets
+  when a winner is known and can be pre-cached; the cache keeps that winner
+  renderable at hand-off with no fresh fetch.
+- **Falls back safely.** A cache miss or an expired entry fetches from the
+  returned `url` as today, or plays the player's own content if that is late.
+
+What the exchange guarantees: the hand-off already carries the approved
+creative's `url`, `mimeType` and content identity; no exchange change is
+needed for this ticket.
+
 ### Website and Mobile App slots: RTB only (7 Oct 2026, Rob)
 
 A Website or Mobile App display type can now have slots marked **available for
