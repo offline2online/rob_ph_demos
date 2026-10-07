@@ -221,17 +221,20 @@ const assignedValues = (a: Omit<AssignedTo, 'partnerNames' | 'buyersListName' | 
    assignment, so the same list can rank differently on another slot. */
 function PriorityList({ label, ids, names, canEdit, onChange }: { label: string; ids: string[]; names: Map<string, string>; canEdit: boolean; onChange: (next: string[]) => void }) {
   const [dragging, setDragging] = useState<number | null>(null)
+  const [showAll, setShowAll] = useState(false)
+  const LIMIT = 5
   const move = (from: number, to: number) => {
     if (from === to || to < 0 || to >= ids.length) return
     const next = [...ids]
     next.splice(to, 0, ...next.splice(from, 1))
     onChange(next)
   }
-  if (ids.length < 2) return null
+  if (ids.length < 1) return null
+  const hidden = showAll || ids.length <= LIMIT ? 0 : ids.length - LIMIT
   return (
     <div className="mt-2" role="list" aria-label={`${label}: buyers lists in priority order`}>
       <div style={{ fontSize: 12, color: T.muted }} className="mb-1">Priority: tried top to bottom</div>
-      {ids.map((id, i) => (
+      {ids.map((id, i) => i >= ids.length - hidden ? null : (
         <div
           key={id}
           role="listitem"
@@ -254,6 +257,7 @@ function PriorityList({ label, ids, names, canEdit, onChange }: { label: string;
           )}
         </div>
       ))}
+      {hidden > 0 && <Button type="link" size="small" onClick={() => setShowAll(true)}>+{hidden} more</Button>}
     </div>
   )
 }
