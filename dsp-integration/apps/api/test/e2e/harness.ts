@@ -245,8 +245,8 @@ export async function harness(opts: { dbFile?: string } = {}) {
   const admin = {
     approve: (id: string, assetVersion = 'v1') => app.inject({ method: 'POST', url: `/api/admin/v1/campaigns/${id}/approve`, payload: { assetVersion } }),
     activate: (id: string, enabled = true) => app.inject({ method: 'PUT', url: `/api/admin/v1/campaigns/${id}/activation`, payload: { enabled } }),
-    supportTargeting: (supportedTargeting: string[], displayTypeId = DT, reservePrice: number | null = null) =>
-      app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId, slot: 1, supportedTargeting, reservePrice }] } }),
+    setReservePrice: (reservePrice: number | null, displayTypeId = DT) =>
+      app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId, slot: 1, reservePrice }] } }),
     disconnect: (id = 'p_google') => app.inject({ method: 'POST', url: `/api/admin/v1/partners/${id}/disconnect` }),
     connect: (id = 'p_google') => app.inject({ method: 'POST', url: `/api/admin/v1/partners/${id}/connect` }),
     reject: (id: string, reason: string, assetReasons?: { assetId: string; reason: string }[], assetVersion = 'v1') =>

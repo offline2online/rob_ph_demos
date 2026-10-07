@@ -23,11 +23,11 @@ const ADVERTISER_PAGE = {
     items: [
       {
         displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', playlistId: 'pl_menu', unassigned: false, scored: true, unsellableReason: null, slot: 2, zoneSlot: 2, position: 'Supplier slot',
-        assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false }, qrControl: true, visionAi: true, supportedTargeting: ['localised', 'personalised'],
+        assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false }, qrControl: true, visionAi: true,
       },
       {
         displayTypeId: 'portrait', displayTypeName: 'Portrait', touchPoint: 'Digital Signage', playlistName: 'Portrait Playlist', playlistId: 'pl_portrait', unassigned: false, scored: true, unsellableReason: null, slot: 1, zoneSlot: 1, position: 'Slot 1',
-        assignedTo: { partnerIds: [], partnerNames: [], advertisers: [], whitelistOnly: false }, qrControl: false, visionAi: false, supportedTargeting: ['localised'],
+        assignedTo: { partnerIds: [], partnerNames: [], advertisers: [], whitelistOnly: false }, qrControl: false, visionAi: false,
       },
     ],
     dsps: [
@@ -584,7 +584,7 @@ describe('Booking schedule', () => {
 })
 
 describe('Advertisers / Inventory', () => {
-  it('filters both tables by column, and shows what each slot supports and who may buy it', async () => {
+  it('filters both tables by column, and shows who may buy each slot', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch(ADVERTISER_PAGE)))
     renderAt('/advertisers')
     const advertisers = await screen.findByLabelText('Advertisers')
@@ -602,10 +602,11 @@ describe('Advertisers / Inventory', () => {
        (ticket "Available Inventory: playlist-primary table (drop Display
        type column) with Unassigned indicator", 27 Sep 2026). */
     expect([...inventory.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent))
-      .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Targeting supported', 'Reserve price', 'Max campaigns', 'Billing unit', ''])
+      .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Reserve price', 'Max campaigns', 'Billing unit', ''])
     /* No interactive-only column: interactive is deferred (5 Oct 2026). */
     expect(within(inventory).getByLabelText('Playlist search')).toBeInTheDocument()
-    expect(within(inventory).getByLabelText('Targeting supported filter')).toBeInTheDocument()
+    /* Targeting is defined on the buyers and targeting list, not per slot (Rob, 7 Oct 2026). */
+    expect(within(inventory).queryByLabelText('Targeting supported filter')).not.toBeInTheDocument()
     /* QR Control and Vision/AI moved onto the Playlist cell along with the
        rest of the display type's carried-over features (same ticket): QR
        Control is flagged on the display type that has it, and only that
@@ -615,10 +616,8 @@ describe('Advertisers / Inventory', () => {
        Sep). */
     expect(within(inventory).getAllByLabelText('QR Control enabled')).toHaveLength(1)
     expect(within(inventory).getAllByLabelText('Vision/AI enabled')).toHaveLength(1)
-    /* Both editable columns are pills: what the slot supports, and who may
-       buy it. Assigned to shows "All DSPs" only when nothing is chosen. */
+    /* Assigned to is a pill column: who may buy the slot. Assigned to shows "All DSPs" only when nothing is chosen. */
     const cellOf = (label: string) => within(inventory).getAllByLabelText(`Menu Board — Long Format slot 2: ${label}`)[0].closest('.ag-cell') as HTMLElement
-    expect([...cellOf('targeting supported').querySelectorAll('.ant-select-selection-item')].map((t) => t.textContent)).toEqual(['Localised', 'Personalised'])
     expect([...cellOf('assigned to').querySelectorAll('.ant-select-selection-item')].map((t) => t.textContent)).toEqual(['Google DSP'])
     expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled()
 
@@ -670,12 +669,6 @@ describe('Advertisers / Inventory', () => {
     const combo = (row: string, label: string) =>
       within(within(inventory).getAllByLabelText(`${row}: ${label}`)[0].closest('.ag-cell') as HTMLElement).getByRole('combobox')
 
-    /* Interactive (QR Control) is out of the first release: never offered. */
-    fireEvent.mouseDown(combo('Portrait slot 1', 'targeting supported'))
-    expect(await screen.findByText('Personalised', { selector: '.ant-select-item-option-content div' })).toBeInTheDocument()
-    expect(screen.queryByText('Interactive', { selector: '.ant-select-item-option-content div' })).not.toBeInTheDocument()
-    fireEvent.keyDown(combo('Portrait slot 1', 'targeting supported'), { key: 'Escape' })
-
     /* Hold the Menu Board position for an advertiser: a pill, and the DSP the API adds. */
     fireEvent.mouseDown(combo('Menu Board — Long Format slot 2', 'assigned to'))
     fireEvent.click(await screen.findByTitle('Nestlé (Google DSP)'))
@@ -683,7 +676,7 @@ describe('Advertisers / Inventory', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
     /* Only the slot that changed is sent. */
     await waitFor(() => expect(saved()).toEqual({ items: [{
-      displayTypeId: 'menu_board', slot: 2, supportedTargeting: ['localised', 'personalised'],
+      displayTypeId: 'menu_board', slot: 2,
       assignedTo: { partnerIds: ['p_google'], advertisers: ['Nestlé'], whitelistOnly: false, buyersListId: null },
       interactiveReservePrice: null, reservePriceDefault: null, billingUnitHoursDefault: null, maxCampaignsDefault: null,
     }] }))
@@ -794,12 +787,11 @@ describe('Advertisers / Inventory', () => {
     expect(externalUrl('/booking-schedule')).toBe('/booking-schedule')
   })
 
-  it('shows a marketing user what each slot supports, without letting them change it', async () => {
+  it('shows a marketing user who may buy each slot, without letting them change it', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...ADVERTISER_PAGE, '/api/admin/v1/session': { role: 'hq_marketing', scopes: ['sections'] } })))
     renderAt('/advertisers')
     const inventory = await screen.findByLabelText('Available Inventory')
     /* Read-only: the same values as plain text, with nothing to open. */
-    expect(within(inventory).getByText('Localised, Personalised')).toBeInTheDocument()
     expect(within(inventory).getByText('Google DSP')).toBeInTheDocument()
     expect(within(inventory).queryAllByRole('combobox')).toHaveLength(0)
     expect(await screen.findByText('Read only')).toBeInTheDocument()

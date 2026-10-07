@@ -149,7 +149,6 @@ export const displayTypeRoutes = (ctx: Context, guards: Guards): FastifyPluginAs
             buyersListId: kept ? was.buyersListId ?? null : null,
             storeScope: s.owner === 'retail' ? was?.storeScope ?? 'Store staff' : null,
             quota: was?.quota ?? null,
-            ...(kept && was.supportedTargeting ? { supportedTargeting: was.supportedTargeting } : {}),
             ...(kept && was.salesLocked ? { salesLocked: true } : {}),
             /* Editor-set, like label and owner; only an Advertiser slot has one (default: advance). */
             ...(s.owner === 'advertiser' && s.bidMode === 'realtime' ? { bidMode: 'realtime' as const } : {}),

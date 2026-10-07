@@ -99,7 +99,7 @@ interface Handover {
   apiUrl: string; adminUrl: string; mocksUrl: string
   displayTypeId: string; canvas: string; slot: number; positionId: string
   floorCpm: number; currency: string
-  targetingSupported: string[]; reservePrice: number | null; maxCampaigns: number | null; billingUnitHours: number | null
+  reservePrice: number | null; maxCampaigns: number | null; billingUnitHours: number | null
   dsp: string; dspConnected: boolean; cvGenderEnabled: boolean
   displays: string[]; stores: string[]; audienceScore: number | null; slotDurationSec: number | null
 }
@@ -110,7 +110,6 @@ Display type id (new): ${h.displayTypeId}
 Canvas: ${h.canvas}
 Slot label / id: Slot ${h.slot} / ${h.positionId}
 Base floor CPM + currency (company-wide): ${h.floorCpm} ${h.currency}
-Targeting supported: ${h.targetingSupported.join(' + ')}
 Effective reserve price: ${h.reservePrice ?? 'none'}
 Effective max campaigns: ${h.maxCampaigns ?? 'default'}
 Effective billing unit hours: ${h.billingUnitHours ?? 'default'}
@@ -190,9 +189,9 @@ async function main() {
     venue: { openOohVenueType: 'retail.convenience', orientation: 'landscape', loopLengthSec: 30 },
   })
   must('J4a', 'slot 1 owner = Advertiser; loop length set (assignment is Available Inventory\'s, below)', ext.status === 200 && ext.json?.slots?.[0]?.owner === 'advertiser' && ext.json?.venue?.loopLengthSec === 30, 'owner advertiser, loopLengthSec 30', `${ext.status} ${ext.text.slice(0, 300)}`)
-  const inv = await admin('PUT', '/available-inventory', { items: [{ displayTypeId: dtId, slot: 1, supportedTargeting: ['localised', 'personalised'], reservePrice: 50, assignedTo: { partnerIds: [PARTNER], advertisers: [], whitelistOnly: false } }] })
+  const inv = await admin('PUT', '/available-inventory', { items: [{ displayTypeId: dtId, slot: 1, reservePrice: 50, assignedTo: { partnerIds: [PARTNER], advertisers: [], whitelistOnly: false } }] })
   const invRow = inv.json?.items?.find((i: any) => i.displayTypeId === dtId && i.slot === 1)
-  must('J4b', 'assigned to Google DSP (open, not held); targeting supported = localised + personalised', inv.status === 200 && invRow?.assignedTo?.partnerIds?.includes(PARTNER) && !invRow?.assignedTo?.advertisers?.length && JSON.stringify([...(invRow?.supportedTargeting ?? [])].sort()) === JSON.stringify(['localised', 'personalised']), 'partnerIds [p_google], no held advertiser, localised + personalised', `${inv.status} ${JSON.stringify({ assignedTo: invRow?.assignedTo, supportedTargeting: invRow?.supportedTargeting })} ${inv.status !== 200 ? inv.text.slice(0, 300) : ''}`)
+  must('J4b', 'assigned to Google DSP (open, not held)', inv.status === 200 && invRow?.assignedTo?.partnerIds?.includes(PARTNER) && !invRow?.assignedTo?.advertisers?.length, 'partnerIds [p_google], no held advertiser', `${inv.status} ${JSON.stringify({ assignedTo: invRow?.assignedTo })} ${inv.status !== 200 ? inv.text.slice(0, 300) : ''}`)
   const settings = await admin('GET', '/advertiser-settings')
   const floorCpm = settings.json?.floorCpm, currency = settings.json?.currency
   must('J4c', 'base floor read from Advertiser settings (never changed); no personalised multiplier', settings.status === 200 && typeof floorCpm === 'number' && settings.json?.personalisedMultiplier === undefined, 'a number, no multiplier', `${settings.status} floor=${floorCpm}`)
@@ -203,7 +202,7 @@ async function main() {
 
   const handover: Handover = {
     apiUrl: apiUrl + '/v1', adminUrl: apiUrl + '/admin/v1', mocksUrl, displayTypeId: dtId, canvas: `${CANVAS.width}x${CANVAS.height}`, slot: 1, positionId: `${dtId}.s1`,
-    floorCpm, currency, targetingSupported: ['localised', 'personalised'],
+    floorCpm, currency,
     reservePrice: row5?.reservePrice ?? null, maxCampaigns: row5?.maxCampaigns ?? null, billingUnitHours: row5?.billingUnitHours ?? null,
     dsp: PARTNER, dspConnected: google?.status === 'connected', cvGenderEnabled: true, displays: [], stores: [], audienceScore: null, slotDurationSec: null,
   }
@@ -240,9 +239,9 @@ async function main() {
   mkdirSync(pkgDir, { recursive: true })
   writePackage(pkgDir)
   const pricing = pos0?.pricing ?? {}
-  must('K0', 'inventory shows the slot with the same base floor and targeting as the handover',
-    pricing?.effectiveFloorCpm?.localised === floorCpm && pricing?.personalisedMultiplier === undefined && pos0?.supportedTargeting?.includes('personalised'),
-    `floor ${floorCpm}, no personalised price, personalised supported`, JSON.stringify({ pricing, supportedTargeting: pos0?.supportedTargeting }))
+  must('K0', 'inventory shows the slot with the same base floor as the handover',
+    pricing?.effectiveFloorCpm?.localised === floorCpm && pricing?.personalisedMultiplier === undefined,
+    `floor ${floorCpm}, no personalised price`, JSON.stringify({ pricing }))
   const body = campaignBody(dtId, ADVERTISER)
   const createdC = await partner('POST', '/campaigns', body)
   must('K1', 'POST /v1/campaigns with the package body → 201', createdC.status === 201 && !!createdC.json?.campaignId, '201 + campaignId', `${createdC.status} ${createdC.text.slice(0, 300)}`)
@@ -266,12 +265,6 @@ async function main() {
   const readBack = await partner('GET', `/campaigns/${campaignId}`)
   const norm = (t: any[]) => JSON.stringify([...t].sort((a, b) => a.id.localeCompare(b.id)).map((x) => ({ id: x.id, priority: x.priority, pricingType: x.pricingType, rules: x.rules })))
   record('K3b', 'GET /v1/campaigns/{id} returns the four targeted versions and rules unchanged, priorities included', readBack.status === 200 && norm(readBack.json?.targeted ?? []) === norm(body.targeted), norm(body.targeted), `${readBack.status} ${norm(readBack.json?.targeted ?? [])}`)
-  const otherLocalisedOnly = k0pre.json?.items?.find((p: any) => p.positionId !== handover.positionId && p.supportedTargeting?.includes('localised') && !p.supportedTargeting?.includes('personalised'))
-  if (otherLocalisedOnly) {
-    const [e6dt, e6slot] = otherLocalisedOnly.positionId.split('.s')
-    const e6 = await partner('POST', '/campaigns', campaignBody(e6dt, ADVERTISER, Number(e6slot)))
-    record('E6', 'personalised package on a localised-only slot → 400 validation_failed on targeted[n].pricingType', e6.status === 400 && e6.json?.error?.code === 'validation_failed' && (e6.json?.error?.details ?? []).some((d: any) => /pricingType/.test(d.field ?? '')), '400 validation_failed pricingType', `${e6.status} ${e6.text.slice(0, 200)}`)
-  } else record('E6', 'localised-only slot cross-check', true, '-', 'not exercised (no localised-only slot)', 'skipped')
 
   /* ---------- Phase 3 — retailer approve (Admin API replaces Chrome) ---------- */
   currentPhase = 3

@@ -1,6 +1,6 @@
 /* Advertiser settings (spec §4, §5, §6): pricing and the company lists, plus
    the read-only Where these apply and Available Inventory. */
-import { INTERACTIVE_ENABLED, MAX_MAX_CAMPAIGNS, MIN_MAX_CAMPAIGNS, TARGETING_MODES, advertiserSlug, assignedOf, billingUnitHoursOf, maxCampaignsOf, interactiveReservePriceOf, reservePriceOf, supportedTargetingOf, type AdvertiserSettings, type AdvertiserSettingsInput, type Assigned, type AvailableInventoryRow, type DisplayType, type DspAdvertisers, type TargetingMode } from '@ph-dsp/types'
+import { INTERACTIVE_ENABLED, MAX_MAX_CAMPAIGNS, MIN_MAX_CAMPAIGNS, advertiserSlug, assignedOf, billingUnitHoursOf, maxCampaignsOf, interactiveReservePriceOf, reservePriceOf, type AdvertiserSettings, type AdvertiserSettingsInput, type Assigned, type AvailableInventoryRow, type DisplayType, type DspAdvertisers } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { cleanCategoryList, validateAdvertiserSettings } from '../../domain/advertiserSettings'
@@ -144,7 +144,6 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
           },
           qrControl: hasQrControl(t),
           visionAi: hasVisionAi(t),
-          supportedTargeting: supportedTargetingOf(s),
           reservePrice: reservePriceOf(t, s),
           reservePriceOverride: s.reservePrice ?? null,
           interactiveReservePrice: interactiveReservePriceOf(t, s),
@@ -233,7 +232,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
     return v
   }
 
-  /* Who a slot is assigned to, what targeting it supports, and its reserve
+  /* Who a slot is assigned to and its reserve
      price override (Rob, 22 Sep): the fields of a sellable slot that live
      here. Everything else about it is set on its display type — including
      the reserve price *default*, which every row for that display type
@@ -242,16 +241,15 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
   app.put<{ Body: { items?: unknown } }>('/available-inventory', async (req) => {
     guards.flagged()
     guards.requireScope(req, 'admin')
-    const rows = Array.isArray(req.body?.items) ? (req.body.items as { displayTypeId?: unknown; slot?: unknown; supportedTargeting?: unknown; assignedTo?: unknown; reservePrice?: unknown; reservePriceDefault?: unknown; interactiveReservePrice?: unknown; billingUnitHours?: unknown; billingUnitHoursDefault?: unknown; maxCampaigns?: unknown; maxCampaignsDefault?: unknown }[]) : null
+    const rows = Array.isArray(req.body?.items) ? (req.body.items as { displayTypeId?: unknown; slot?: unknown; assignedTo?: unknown; reservePrice?: unknown; reservePriceDefault?: unknown; interactiveReservePrice?: unknown; billingUnitHours?: unknown; billingUnitHoursDefault?: unknown; maxCampaigns?: unknown; maxCampaignsDefault?: unknown }[]) : null
     if (!rows) throw validationFailed([{ field: 'items', reason: 'An array of slots is required.' }])
-    const keys = TARGETING_MODES.map((m) => m.key) as string[]
     /* Validation, the sold and resize checks and the save are one
        transaction: nothing can be sold, or the slot edited, in between. */
     await tx(ctx.db, async () => {
       const partners = await ctx.partners.list()
       const company = await ctx.company.get()
       const errors: { field: string; reason: string }[] = []
-      type Patch = { supportedTargeting: TargetingMode[]; assigned: Assigned; reservePrice: number | null; interactiveReservePrice: number | null; billingUnitHours: number | null; maxCampaigns: number | null }
+      type Patch = { assigned: Assigned; reservePrice: number | null; interactiveReservePrice: number | null; billingUnitHours: number | null; maxCampaigns: number | null }
       const wanted = new Map<string, Map<number, Patch>>()
       const defaults = new Map<string, number | null>()
       const billingUnitDefaults = new Map<string, number | null>()
@@ -266,17 +264,6 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         if (!dt) errors.push({ field: f('displayTypeId'), reason: 'Unknown display type.' })
         else if (!def) errors.push({ field: f('slot'), reason: `${dt.name} has no slot ${slot}.` })
         else if (def.owner !== 'advertiser') errors.push({ field: f('slot'), reason: 'Only an Advertiser slot is sellable inventory.' })
-
-        /* Interactive is deferred (Rob, 5 Oct 2026): a slot that still carries it is saved without it
-           rather than refused, and always keeps at least one type (localised by default). */
-        const sent = Array.isArray(r.supportedTargeting) ? (r.supportedTargeting as unknown[]) : null
-        const modes = INTERACTIVE_ENABLED || !sent?.length ? sent : (sent.filter((m) => m !== 'interactive').length ? sent.filter((m) => m !== 'interactive') : ['localised'])
-        let targeting: TargetingMode[] | null = null
-        if (!modes?.length) errors.push({ field: f('supportedTargeting'), reason: 'Choose at least one type of targeting.' })
-        else if (modes.some((m) => typeof m !== 'string' || !keys.includes(m))) errors.push({ field: f('supportedTargeting'), reason: `One of: ${keys.join(', ')}.` })
-        /* Nothing to engage with without the QR code (Rob, 20 Sep). */
-        else if (modes.includes('interactive') && dt && !hasQrControl(dt)) errors.push({ field: f('supportedTargeting'), reason: 'QR Control is required to support an interactive engagement.' })
-        else targeting = keys.filter((k) => modes.includes(k)) as TargetingMode[]
 
         const raw = (r.assignedTo ?? {}) as { partnerIds?: unknown; advertisers?: unknown; whitelistOnly?: unknown; buyersListId?: unknown }
         const assigned: Assigned = { partnerIds: names(raw.partnerIds), advertisers: names(raw.advertisers), whitelistOnly: raw.whitelistOnly === true, buyersListId: typeof raw.buyersListId === 'string' ? raw.buyersListId : null }
@@ -308,19 +295,13 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
           else maxCampaignsDefaults.set(dt.id, maxCampaignsDefault)
         }
 
-        /* Personalised versions play only on reserved slots (Rob, 5 Oct 2026),
-           so a slot can support them only if it has a reserve price, its own or the display type's default. */
-        if (targeting?.includes('personalised') && reservePrice === null && reservePriceDefault === null) {
-          errors.push({ field: f('supportedTargeting'), reason: 'Personalised needs a reserve price: personalised versions play only on reserved slots.' })
-        }
-
-        if (dt && def && targeting && !bad.length) {
+        if (dt && def && !bad.length) {
           const byType = wanted.get(dt.id) ?? new Map<number, Patch>()
-          byType.set(slot, { supportedTargeting: targeting, assigned, reservePrice, interactiveReservePrice: INTERACTIVE_ENABLED && targeting.includes('interactive') ? interactiveReservePrice : null, billingUnitHours, maxCampaigns })
+          byType.set(slot, { assigned, reservePrice, interactiveReservePrice: INTERACTIVE_ENABLED ? interactiveReservePrice : null, billingUnitHours, maxCampaigns })
           wanted.set(dt.id, byType)
         }
       }
-      if (errors.length) throw validationFailed(errors, 'A slot supports at least one type of targeting, and is assigned to DSPs or advertisers it can actually sell to.')
+      if (errors.length) throw validationFailed(errors, 'A slot is assigned to DSPs or advertisers it can actually sell to.')
 
       /* A sold slot keeps its advertiser (ticket, 30 Sep 2026): taking one off
          a slot that is reserved or sold for a current or future window would
@@ -385,7 +366,9 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         const ext = { ...(dt.phExtensions ?? { slots: [] }) }
         ext.slots = (ext.slots ?? []).map((s, i) => {
           const patch = slots.get(i + 1)
-          return patch ? { ...s, supportedTargeting: patch.supportedTargeting, ...assignedToSlot(patch.assigned, partners), reservePrice: patch.reservePrice, interactiveReservePrice: patch.interactiveReservePrice, billingUnitHours: patch.billingUnitHours, maxCampaigns: patch.maxCampaigns } : s
+          /* A slot no longer carries a targeting capability (Rob, 7 Oct 2026): drop any saved one. */
+          const { supportedTargeting: _legacy, ...slotNow } = s as typeof s & { supportedTargeting?: unknown }
+          return patch ? { ...slotNow, ...assignedToSlot(patch.assigned, partners), reservePrice: patch.reservePrice, interactiveReservePrice: patch.interactiveReservePrice, billingUnitHours: patch.billingUnitHours, maxCampaigns: patch.maxCampaigns } : slotNow
         })
         if (defaults.has(displayTypeId)) ext.reservePrice = defaults.get(displayTypeId) ?? null
         if (billingUnitDefaults.has(displayTypeId)) ext.billingUnitHours = billingUnitDefaults.get(displayTypeId) ?? null

@@ -135,7 +135,7 @@ describe('Advertiser settings (spec §4, §6)', () => {
     expectMatchesContract('GET', '/admin/v1/available-inventory', 200, res.json())
     expect(res.json().items).toEqual([{
       displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board — Long Format / Zone 1', playlistId: 'pl_zone_menu_board_1', unassigned: false, scored: true, unsellableReason: null, salesLocked: false, salesLockedUntil: null, slot: 2, zoneSlot: 2, position: 'Supplier slot',
-      assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false, buyersListId: null, buyersListName: null }, qrControl: true, visionAi: true, supportedTargeting: ['localised'],
+      assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false, buyersListId: null, buyersListName: null }, qrControl: true, visionAi: true,
       reservePrice: null, reservePriceOverride: null, displayTypeReservePrice: null, interactiveReservePrice: null, interactiveReservePriceOverride: null,
       billingUnitHours: 24, billingUnitHoursOverride: null, displayTypeBillingUnitHours: null, companyPlayWindowHours: 24,
       maxCampaigns: 5, maxCampaignsOverride: null, displayTypeMaxCampaigns: null,
@@ -226,7 +226,7 @@ describe('Advertiser settings (spec §4, §6)', () => {
     const ext = (await ctx.displayTypes.get('menu_board'))!.phExtensions!
     await ctx.displayTypes.saveExtensions('menu_board', { ...ext, slots: [...ext.slots, { label: 'Supplier slot 2', owner: 'advertiser' as const, partnerIds: ['p_google'], advertisers: [], listMode: 'rtb' as const }] })
     const row = (slot: number, reservePrice: number | null, reservePriceDefault: number | null) =>
-      ({ displayTypeId: 'menu_board', slot, supportedTargeting: ['localised'], assignedTo: KEEP, reservePrice, reservePriceDefault })
+      ({ displayTypeId: 'menu_board', slot, assignedTo: KEEP, reservePrice, reservePriceDefault })
     const save = (items: ReturnType<typeof row>[]) => app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items } })
     const at = (json: { items: { slot: number }[] }, slot: number) => json.items.find((i) => i.slot === slot)
 
@@ -260,21 +260,19 @@ describe('Advertiser settings (spec §4, §6)', () => {
     ])
   })
 
-  /* Interactive is deferred (Rob, 5 Oct 2026): a save that still names it drops it, clears the interactive reserve price and keeps the slot supporting something. */
-  it('drops interactive from a save and clears its reserve price instead of refusing', async () => {
+  /* Interactive is deferred (Rob, 5 Oct 2026): a save that still sends an interactive reserve price clears it instead of refusing. */
+  it('clears the interactive reserve price instead of refusing', async () => {
     const ctx = await testContext()
     const app = buildApp(ctx)
-    const save = (supportedTargeting: string[], interactiveReservePrice?: number | null) => app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [
-      { displayTypeId: 'menu_board', slot: 2, supportedTargeting, assignedTo: KEEP, reservePrice: 5, reservePriceDefault: null, ...(interactiveReservePrice === undefined ? {} : { interactiveReservePrice }) },
+    const save = (interactiveReservePrice?: number | null) => app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [
+      { displayTypeId: 'menu_board', slot: 2, assignedTo: KEEP, reservePrice: 5, reservePriceDefault: null, ...(interactiveReservePrice === undefined ? {} : { interactiveReservePrice }) },
     ] } })
     const at = (json: { items: { slot: number }[] }) => json.items.find((i) => i.slot === 2)
-    const res = await save(['localised', 'interactive'], 9)
+    const res = await save(9)
     expect(res.statusCode).toBe(200)
     expectMatchesContract('PUT', '/admin/v1/available-inventory', 200, res.json())
-    expect(at(res.json())).toMatchObject({ reservePrice: 5, supportedTargeting: ['localised'], interactiveReservePriceOverride: null })
-    /* Only interactive sent: the slot falls back to localised. */
-    expect(at((await save(['interactive'])).json())).toMatchObject({ supportedTargeting: ['localised'] })
-    expect((await save(['localised'], -1)).statusCode).toBe(400)
+    expect(at(res.json())).toMatchObject({ reservePrice: 5, interactiveReservePriceOverride: null })
+    expect((await save(-1)).statusCode).toBe(400)
   })
 
   /* Max campaigns (ticket "Available Inventory: Max campaigns column + slot
@@ -286,7 +284,7 @@ describe('Advertiser settings (spec §4, §6)', () => {
     const ctx = await testContext()
     const app = buildApp(ctx)
     const row = (slot: number, maxCampaigns: number | null, maxCampaignsDefault: number | null) =>
-      ({ displayTypeId: 'menu_board', slot, supportedTargeting: ['localised'], assignedTo: KEEP, maxCampaigns, maxCampaignsDefault })
+      ({ displayTypeId: 'menu_board', slot, assignedTo: KEEP, maxCampaigns, maxCampaignsDefault })
     const save = (items: ReturnType<typeof row>[]) => app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items } })
     const at = (json: { items: { slot: number }[] }, slot: number) => json.items.find((i) => i.slot === slot)
 
@@ -313,28 +311,24 @@ describe('Advertiser settings (spec §4, §6)', () => {
     expect(bad2.json().error.details).toEqual([{ field: 'items[0].maxCampaigns', reason: 'An integer from 1 to 10, or null to inherit.' }])
   })
 
-  /* What a slot supports is set here; localised only until someone changes it (Rob, 20 Sep). */
-  it('saves what targeting a slot supports, and validates it', async () => {
+  /* Targeting is not a slot property (Rob, 7 Oct 2026): the row has no such field, and a stale one is neither read nor stored. */
+  it('has no slot-level targeting: the row carries none and a legacy value is dropped on save', async () => {
     const ctx = await testContext()
     const app = buildApp(ctx)
-    const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, supportedTargeting: ['interactive', 'localised'], assignedTo: KEEP }] } })
+    const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, assignedTo: KEEP }] } })
     expect(res.statusCode).toBe(200)
     expectMatchesContract('PUT', '/admin/v1/available-inventory', 200, res.json())
-    /* Interactive is dropped (deferred, 5 Oct 2026); what remains is stored on the slot itself. */
-    expect(res.json().items[0].supportedTargeting).toEqual(['localised'])
-    expect((await ctx.displayTypes.get('menu_board'))!.phExtensions!.slots[1].supportedTargeting).toEqual(['localised'])
+    expect(res.json().items[0]).not.toHaveProperty('supportedTargeting')
+    expect((await ctx.displayTypes.get('menu_board'))!.phExtensions!.slots[1]).not.toHaveProperty('supportedTargeting')
 
     const bad = await app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [
-      { displayTypeId: 'menu_board', slot: 2, supportedTargeting: [], assignedTo: KEEP },
-      { displayTypeId: 'menu_board', slot: 1, supportedTargeting: ['localised'], assignedTo: KEEP },
-      { displayTypeId: 'nope', slot: 1, supportedTargeting: ['sideways'], assignedTo: KEEP },
+      { displayTypeId: 'menu_board', slot: 1, assignedTo: KEEP },
+      { displayTypeId: 'nope', slot: 1, assignedTo: KEEP },
     ] } })
     expect(bad.statusCode).toBe(400)
     expect(bad.json().error.details).toEqual([
-      { field: 'items[0].supportedTargeting', reason: 'Choose at least one type of targeting.' },
-      { field: 'items[1].slot', reason: 'Only an Advertiser slot is sellable inventory.' },
-      { field: 'items[2].displayTypeId', reason: 'Unknown display type.' },
-      { field: 'items[2].supportedTargeting', reason: 'One of: localised, personalised.' },
+      { field: 'items[0].slot', reason: 'Only an Advertiser slot is sellable inventory.' },
+      { field: 'items[1].displayTypeId', reason: 'Unknown display type.' },
     ])
   })
 
@@ -343,8 +337,8 @@ describe('Advertiser settings (spec §4, §6)', () => {
   it('assigns a position to DSPs, to named advertisers, or to the whitelist', async () => {
     const ctx = await testContext()
     const app = buildApp(ctx)
-    const save = (assignedTo: Record<string, unknown>, supportedTargeting = ['localised']) =>
-      app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, supportedTargeting, assignedTo }] } })
+    const save = (assignedTo: Record<string, unknown>) =>
+      app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, assignedTo }] } })
     const assigned = (res: { json: () => { items: { assignedTo: unknown }[] } }) => res.json().items[0].assignedTo
 
     /* Nothing chosen: any connected DSP, RTB. */
@@ -371,7 +365,7 @@ describe('Advertiser settings (spec §4, §6)', () => {
     const ctx = await testContext()
     const app = buildApp(ctx)
     const save = (assignedTo: Record<string, unknown>) =>
-      app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, supportedTargeting: ['localised'], assignedTo }] } })
+      app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, assignedTo }] } })
     const fields = async (assignedTo: Record<string, unknown>) => {
       const res = await save(assignedTo)
       expect(res.statusCode).toBe(400)
@@ -401,7 +395,7 @@ describe('Advertiser settings (spec §4, §6)', () => {
     const app = buildApp(ctx)
     const dt = (await ctx.displayTypes.get('menu_board'))!
     await ctx.displayTypes.saveRecord('menu_board', { ...dt, qrControl: { ...(dt.qrControl as object), enabled: false } })
-    const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, supportedTargeting: ['localised'], assignedTo: KEEP }] } })
+    const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, assignedTo: KEEP }] } })
     expect(res.statusCode).toBe(200)
     const rows = (await app.inject({ method: 'GET', url: '/api/admin/v1/available-inventory' })).json()
     expect(rows.items.find((r: { displayTypeId: string }) => r.displayTypeId === 'menu_board').qrControl).toBe(false)
@@ -410,7 +404,7 @@ describe('Advertiser settings (spec §4, §6)', () => {
   it('lets a marketing user read the inventory but not change what it supports', async () => {
     const app = buildApp(await testContext({ role: 'hq_marketing' }))
     expect((await app.inject({ method: 'GET', url: '/api/admin/v1/available-inventory' })).statusCode).toBe(200)
-    expect((await app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, supportedTargeting: ['personalised'], assignedTo: KEEP }] } })).statusCode).toBe(403)
+    expect((await app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, assignedTo: KEEP }] } })).statusCode).toBe(403)
   })
 
   it.each([['PUT', '/advertiser-settings'], ['GET', '/available-inventory']] as const)('%s %s returns 404 with the flag off', async (method, path) => {

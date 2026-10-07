@@ -7,7 +7,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { App, Button, InputNumber, Select, Spin, Switch } from 'antd'
 import { Tip } from '../../shared/Tip'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
-import { INTERACTIVE_ENABLED, RESERVE_PRICE_TIP, DEFAULT_BILLING_UNIT_HOURS, DEFAULT_MAX_CAMPAIGNS, MAX_MAX_CAMPAIGNS, MIN_MAX_CAMPAIGNS, SLOT_OWNERS, TARGETING_MODES, assignedLabels, supportedTargetingOf, targetingLabel, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type Session, type TargetingMode } from '@ph-dsp/types'
+import { INTERACTIVE_ENABLED, RESERVE_PRICE_TIP, DEFAULT_BILLING_UNIT_HOURS, DEFAULT_MAX_CAMPAIGNS, MAX_MAX_CAMPAIGNS, MIN_MAX_CAMPAIGNS, SLOT_OWNERS, assignedLabels, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type Session } from '@ph-dsp/types'
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, ApiRequestError } from '../../api/client'
@@ -68,7 +68,7 @@ export const slotKey = (r: AvailableInventoryRow) => `${r.displayTypeId}:${r.slo
    reservePrice is this slot's own override; null means it follows its
    display type's shared default (below), not "no reserve" (Rob, 22 Sep;
    spec §1 configuration inheritance — override always wins). */
-export interface SlotEdit { supportedTargeting: TargetingMode[]; assignedTo: Omit<AssignedTo, 'partnerNames' | 'buyersListName'>; reservePrice: number | null; interactiveReservePrice: number | null; billingUnitHours: number | null; maxCampaigns: number | null }
+export interface SlotEdit { assignedTo: Omit<AssignedTo, 'partnerNames' | 'buyersListName'>; reservePrice: number | null; interactiveReservePrice: number | null; billingUnitHours: number | null; maxCampaigns: number | null }
 type Edits = Record<string, SlotEdit>
 /* A display type's reserve price default, edited from any of its slot
    rows — every row for the same displayTypeId shares one value. Also used
@@ -179,7 +179,7 @@ function Pills({ label, value, options, canEdit, placeholder, onChange }: {
 }
 
 const edited = (c: InvCtx['current'], r: AvailableInventoryRow): SlotEdit =>
-  c.edits[slotKey(r)] ?? { supportedTargeting: supportedTargetingOf(r), assignedTo: r.assignedTo, reservePrice: r.reservePriceOverride, interactiveReservePrice: r.interactiveReservePriceOverride ?? null, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride }
+  c.edits[slotKey(r)] ?? { assignedTo: r.assignedTo, reservePrice: r.reservePriceOverride, interactiveReservePrice: r.interactiveReservePriceOverride ?? null, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride }
 /* The value this slot actually resolves to right now, following the draft
    default when it has no override of its own — the same "override wins"
    read as reservePriceOf, but against unsaved edits. */
@@ -289,35 +289,6 @@ function AssignedCell({ data, context }: IP) {
   )
 }
 
-/* What a campaign may use on this slot (Rob, 20 Sep): localised only until
-   someone opens it up, and a bid of an unsupported type is refused. */
-/* Interactive (QR Control) is out of the first release, so it is not offered
-   here and is dropped from any slot that still carries it as a default —
-   otherwise saving that slot is refused for want of QR Control. */
-const FIRST_RELEASE_TARGETING = TARGETING_MODES.filter((m) => m.key !== 'interactive')
-function TargetingCell({ data, context }: IP) {
-  if (!data) return null
-  const c = context.current
-  const shown = edited(c, data).supportedTargeting.filter((k) => k !== 'interactive')
-  const value = shown.length ? shown : ['localised']
-  return (
-    <Pills
-      label={`${data.displayTypeName} slot ${data.zoneSlot}: targeting supported`}
-      canEdit={c.canEdit}
-      value={value}
-      options={[{
-        label: 'Targeting',
-        /* Personalised only on a slot with a reserve price, own or inherited (Rob, 5 Oct 2026). */
-        options: FIRST_RELEASE_TARGETING.map((m) => (m.key === 'personalised' && effectiveReservePrice(c, data) === null && !value.includes('personalised')
-          ? { value: m.key, label: m.label, disabled: true, note: 'Set a reserve price first: personalised versions play only on reserved slots.' }
-          : { value: m.key, label: m.label })),
-      }]}
-      /* A slot always supports something: the last one can't be removed. */
-      onChange={(next) => next.length && c.set(slotKey(data), { supportedTargeting: FIRST_RELEASE_TARGETING.filter((m) => next.includes(m.key)).map((m) => m.key) })}
-    />
-  )
-}
-
 /* A CPM premium to reserve the slot in advance of the open auction (Rob,
    22 Sep; spec §1 configuration inheritance — real inheritance, not the
    earlier "copy to every slot" design that failed testing). Following the
@@ -365,16 +336,14 @@ function ReservePriceCell({ data, context }: IP) {
 }
 
 /* The reserve price for the interactive experience on this slot (ticket
-   5eLDRBqEGhNyJSHSIFFG): only offered while Interactive is ticked in
-   Targeting supported, since only then can an interactive campaign be sold
-   here. Empty = interactive campaigns follow the slot's ordinary reserve
+   5eLDRBqEGhNyJSHSIFFG): only offered while interactive campaigns are
+   enabled, on a display type with QR Control. Empty = interactive campaigns follow the slot's ordinary reserve
    price, shown as the placeholder so the fallback is visible. Per slot —
    there is no display-type default for it. */
 /* Gate (ticket L32gi3rXFAmwMCUqP1Dj): interaction happens through QR
-   Control, so the display type must have it AND Interactive must be ticked
-   in Targeting supported. A price already assigned keeps showing even when
+   Control, so the display type must have it. A price already assigned keeps showing even when
    the gate closes later — prices are never silently hidden. */
-const interactiveGateOpen = (qrControl: boolean, e: SlotEdit) => qrControl && e.supportedTargeting.includes('interactive')
+const interactiveGateOpen = (qrControl: boolean, e: SlotEdit) => qrControl
 const showsInteractiveReserve = (qrControl: boolean, e: SlotEdit) => interactiveGateOpen(qrControl, e) || e.interactiveReservePrice !== null
 const INTERACTIVE_RESERVE_HEADER = 'Interactive reserve price'
 
@@ -552,12 +521,6 @@ export function AdvertisersPage() {
       ]),
     },
     {
-      headerName: 'Targeting supported', width: 230, minWidth: 190, cellRenderer: TargetingCell, autoHeight: true,
-      headerComponent: header('Targeting supported', 'What a campaign may use on this slot. Localised only unless you open it up; a bid for a campaign of any other type is refused. Personalised is available only on a slot with a reserve price: personalised versions play only in a window held by a reserve booking, never in an open or private auction.'),
-      valueGetter: (p) => (p.data ? targetingLabel(edited((p.context as InvCtx).current, p.data).supportedTargeting) : ''),
-      ...setColumn<AvailableInventoryRow>('Targeting supported', () => FIRST_RELEASE_TARGETING.map((m) => m.label)),
-    },
-    {
       /* Narrowed to fit the input + reset/override control (ticket, 26 Sep
          2026: these three columns were wider than the fields inside them
          needed, crowding the table). */
@@ -596,10 +559,10 @@ export function AdvertisersPage() {
   const { draft, setDraft, dirty, reset, commitNext } = useDraft(saved)
   const savedEdits = useMemo<Edits | undefined>(() => inventory.data && Object.fromEntries(invRows.map((r) => {
     const { partnerNames: _names, ...assignedTo } = r.assignedTo
-    return [slotKey(r), { supportedTargeting: supportedTargetingOf(r), assignedTo, reservePrice: r.reservePriceOverride, interactiveReservePrice: r.interactiveReservePriceOverride ?? null, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride }]
+    return [slotKey(r), { assignedTo, reservePrice: r.reservePriceOverride, interactiveReservePrice: r.interactiveReservePriceOverride ?? null, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride }]
   })), [invRows, inventory.data])
   const inv = useDraft(savedEdits)
-  const savedEditsNow = (r: AvailableInventoryRow): SlotEdit => (inv.draft ?? {})[slotKey(r)] ?? { supportedTargeting: supportedTargetingOf(r), assignedTo: r.assignedTo, reservePrice: r.reservePriceOverride, interactiveReservePrice: r.interactiveReservePriceOverride ?? null, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride }
+  const savedEditsNow = (r: AvailableInventoryRow): SlotEdit => (inv.draft ?? {})[slotKey(r)] ?? { assignedTo: r.assignedTo, reservePrice: r.reservePriceOverride, interactiveReservePrice: r.interactiveReservePriceOverride ?? null, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride }
   const anyInteractiveReserve = INTERACTIVE_ENABLED && invRows.some((r) => showsInteractiveReserve(r.qrControl, savedEditsNow(r)))
   const visibleInventoryColumns = useMemo(
     () => (anyInteractiveReserve ? inventoryColumns : inventoryColumns.filter((col) => col.headerName !== INTERACTIVE_RESERVE_HEADER)),

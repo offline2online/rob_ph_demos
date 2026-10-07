@@ -443,9 +443,6 @@ export interface paths {
          *     no live booking left on it the lock releases by itself and the
          *     advertiser can be removed.
          *
-         *     supportedTargeting: interactive is only accepted on a display type
-         *     with QR Control enabled.
-         *
          *     reservePrice: a CPM premium at which this slot can be reserved in
          *     advance of the open auction (decision, 22 Sep). Real inheritance
          *     (spec §1 configuration inheritance), not a copy action: a display
@@ -1248,11 +1245,6 @@ export interface components {
             /** @enum {string} */
             assignment: "rtb" | "whitelist_only" | "deal" | "reserved";
             /**
-             * @description What a campaign may use here. A bid or reservation for a campaign of
-             *     any other type is refused with targeting_not_supported.
-             */
-            supportedTargeting: ("localised" | "personalised" | "interactive")[];
-            /**
              * @description This position's play-window length, in hours — its billing unit
              *     (OQ27, 29 Sep 2026): the slot's own, else its display type's,
              *     else the company-wide play window. Every window this position
@@ -1378,23 +1370,15 @@ export interface components {
              *     Optional, but required alongside displayTypeId to resolve that
              *     slot's own max-campaigns cap below — omitted, the submission
              *     falls back to the platform-wide campaignLimits.targetedVersions
-             *     cap, unscoped to any one slot. Also the only way to resolve the
-             *     slot's own Targeting supported setting (ticket "Partner API:
-             *     enforce slot's Targeting supported setting on campaign
-             *     submission") — see default.pricingType and
-             *     targeted[].pricingType below.
+             *     cap, unscoped to any one slot. A slot carries no targeting
+             *     capability of its own: targeting is defined on the buyers and
+             *     targeting list assigned to it.
              */
             slot?: number;
             brief?: components["schemas"]["CampaignBrief"];
             /**
              * @description The untargeted layer every submission must carry — no targeting
-             *     variables, priced at the floor rate. Once displayTypeId and slot
-             *     resolve to a real advertiser slot, its pricingType is validated
-             *     against that slot's own Targeting supported setting the same
-             *     way targeted[].pricingType is below (a "default" pricingType
-             *     reads as localised, matching the auction's own reading of it) —
-             *     400 validation_failed on `default.pricingType` naming the
-             *     slot's supported set when it doesn't.
+             *     variables, priced at the floor rate.
              */
             default: {
                 pricingType: components["schemas"]["PricingType"];
@@ -1405,15 +1389,6 @@ export interface components {
              *     slot's own max campaigns (default + targeted versions, 1-10)
              *     when displayTypeId and slot resolve to a real advertiser slot;
              *     otherwise by the platform-wide campaignLimits.targetedVersions.
-             *     Each version's own pricingType is also validated, once a slot
-             *     resolves, against that slot's Targeting supported setting
-             *     (localised/personalised/interactive, Advertisers / Inventory) —
-             *     ticket "Partner API: enforce slot's Targeting supported setting
-             *     on campaign submission": a submission naming an attribute the
-             *     slot doesn't support is refused 400 validation_failed on
-             *     `targeted[i].pricingType`, naming the offending pricingType and
-             *     the slot's supported set. Server-enforced regardless of what
-             *     the admin UI shows or allows.
              */
             targeted?: {
                 id: string;
@@ -1837,8 +1812,6 @@ export interface components {
              *     use a computer-vision variable).
              */
             visionAi: boolean;
-            /** @description What a campaign may use on this slot; localised only by default. */
-            supportedTargeting: ("localised" | "personalised" | "interactive")[];
             /**
              * @description The resolved CPM premium at which this slot can be reserved in
              *     advance of the open auction: reservePriceOverride when set,
@@ -2315,13 +2288,6 @@ export interface components {
                  * @enum {string}
                  */
                 bidMode?: "advance" | "realtime";
-                /**
-                 * @description What a campaign may use on this slot. Absent or empty means
-                 *     localised only, which is the default for a new slot. A bid or
-                 *     reservation whose campaign is of an unsupported type is refused
-                 *     (targeting_not_supported). Set from Advertisers / Inventory.
-                 */
-                supportedTargeting?: ("localised" | "personalised" | "interactive")[];
                 /**
                  * @description This slot's own override of the display type's reserve
                  *     price (decision, 22 Sep; real inheritance, 22 Sep — spec
@@ -3268,7 +3234,6 @@ export interface operations {
                     items: {
                         displayTypeId: string;
                         slot: number;
-                        supportedTargeting: ("localised" | "personalised" | "interactive")[];
                         assignedTo: {
                             partnerIds: string[];
                             advertisers: string[];
@@ -3282,7 +3247,7 @@ export interface operations {
                         billingUnitHours?: number | null;
                         /** @description The display type's billing-unit default, in whole hours; null = none (the company-wide playWindowHours applies). Must be the same value on every row for a given displayTypeId in one request. */
                         billingUnitHoursDefault?: number | null;
-                        /** @description This slot's own reserve price (CPM) for interactive campaigns only; null = interactive campaigns follow the slot's ordinary reserve price. Only meaningful while `supportedTargeting` includes interactive. Omitted = unchanged is not supported — always send the slot's current value. */
+                        /** @description This slot's own reserve price (CPM) for interactive campaigns only; null = interactive campaigns follow the slot's ordinary reserve price. Only meaningful while interactive campaigns are enabled. Omitted = unchanged is not supported — always send the slot's current value. */
                         interactiveReservePrice?: number | null;
                         /** @description This slot's own maximum-campaigns override; null = inherit maxCampaignsDefault. Omitted = unchanged is not supported — always send the slot's current value. */
                         maxCampaigns?: number | null;

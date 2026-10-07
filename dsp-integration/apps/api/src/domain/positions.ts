@@ -8,7 +8,7 @@ import { TRANSACTING_CURRENCY } from './currency'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 import { type Awaitable, allOf, andThen } from '../db/db'
 import { type ReservationStatus, TAKEN } from '../repos/ReservationRepo'
-import { INTERACTIVE_ENABLED, advertiserSlug, assignedOf, billingUnitHoursOf, interactiveReservePriceOf, maxCampaignsOf, reservePriceOf, supportedTargetingOf, type Assigned } from '@ph-dsp/types'
+import { INTERACTIVE_ENABLED, advertiserSlug, assignedOf, billingUnitHoursOf, interactiveReservePriceOf, maxCampaignsOf, reservePriceOf, type Assigned } from '@ph-dsp/types'
 import { invitedPartnerIds, isInvitedBuyer } from './buyersLists'
 import { isActiveAt, lockedTermSpan } from '../billing/term'
 import { effectiveLists, isBlocked, isOn } from './lists'
@@ -475,8 +475,6 @@ function viewOf(
       ...(venue?.openOohVenueType ? { openOohVenueType: venue.openOohVenueType } : {}),
     },
     assignment: assignmentOf(p.def),
-    /* What a campaign may use here (Rob, 20 Sep); localised only by default. */
-    supportedTargeting: supportedTargetingOf(p.def),
     /* This position's own play-window length (OQ27): what one window —
        one bid, one booking, one billing line — covers. */
     billingUnitHours: windowHoursFor(company.playWindowHours, p),
@@ -491,6 +489,6 @@ function viewOf(
     /* The most campaigns (default + targeted versions) a bid or reservation here may carry. */
     maxCampaigns: maxCampaignsOf(dt, p.def),
     reservePrice: reservePriceOf(dt, p.def),
-    ...(INTERACTIVE_ENABLED && supportedTargetingOf(p.def).includes('interactive') ? { interactiveReservePrice: interactiveReservePriceOf(dt, p.def) } : {}),
+    ...(INTERACTIVE_ENABLED ? { interactiveReservePrice: interactiveReservePriceOf(dt, p.def) } : {}),
   }
 }

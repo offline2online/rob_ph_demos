@@ -161,16 +161,12 @@ describe('Run 2 — E. Partner API refusals', () => {
     expect((await h.partner.create({ ...one([[{ ...COND, values: Array.from({ length: 100 }, (_, i) => `v${i}`) }]]), name: 'x'.repeat(200) })).statusCode).toBe(201)
   })
 
-  it('E6 — targeting the slot doesn’t support (personalised on a localised-only slot) → targeting_not_supported', async () => {
+  it('E6 — a personalised campaign bidding in an open auction → targeting_not_supported', async () => {
     const h = await harness()
     const id = await h.readyApiCampaign('Swisse — E6', 'personalised')
     const res = await h.partner.bid(id, day(0), 300)
     expect(res.statusCode).toBe(422)
-    expect(res.json().error).toMatchObject({ code: 'targeting_not_supported', message: 'This position supports localised targeting only; the campaign is personalised.' })
-    /* Submitting for that slot is refused too. */
-    const create = await h.partner.create({ advertiserId: 'swisse', name: 'Swisse — E6 slot', displayTypeId: 'e2e_signage', slot: 1, default: { pricingType: 'personalised' } })
-    expect(create.statusCode).toBe(400)
-    expect(create.json().error.details).toEqual([{ field: 'default.pricingType', reason: 'This slot supports localised targeting only; personalised is not enabled for it.' }])
+    expect(res.json().error).toMatchObject({ code: 'targeting_not_supported', message: expect.stringContaining('reserve booking') })
   })
 
   it('E7 — a forecast with > 200 positions or a repeated position → validation_failed', async () => {
