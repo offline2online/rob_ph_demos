@@ -802,7 +802,9 @@ own `readyToDeploy` is information, not permission.
    failed on the head or on the last commit before a prototype rebuild,
    don't set `trainReady`: the deploy PR would only park on red CI (PR #335,
    7 Oct 2026). Note it on the project's cards with the run link and say
-   which test failed. Still running is fine — the deploy waits on it.
+   which test failed. Still running is fine: the pipeline holds the deploy
+   until they pass (`trainTestGate`, "Waiting for tests…" on the board), so
+   set `trainReady` and let it wait rather than waiting yourself.
 3b. **FAQ impact review — do this whether or not steps 1-2 cleared the
    train.** The tickets in a DEPLOY REQUEST are about to change what the
    product does, and the public help centre (`faq/`, edited from the

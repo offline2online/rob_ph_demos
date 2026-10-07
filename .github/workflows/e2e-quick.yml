@@ -17,8 +17,13 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# A run the backlog automation dispatches when a ticket lands on the train
+# gets its own group (per commit), so the next ticket landing a minute later
+# no longer cancels it: on 7 Oct 2026 two tickets' runs were cancelled that
+# way and the failure that stuck PR #337 could not be pinned on either. Push
+# and PR runs still cancel their superseded predecessors.
 concurrency:
-  group: e2e-quick-${{ github.ref }}
+  group: e2e-quick-${{ github.event_name == 'workflow_dispatch' && github.sha || github.ref }}
   cancel-in-progress: true
 
 jobs:

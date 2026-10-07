@@ -265,8 +265,16 @@ What the train changes:
   finished): the note goes on approved cards too, the project carries
   `trainTestsRed` (keyed by workflow, cleared when the run passes or the
   train ships), the board shows a disabled "Tests failing" button in place
-  of Deploy to Main, and `approve_deploy_to_main` refuses. Tests:
-  `test/train-tests.test.js`.
+  of Deploy to Main, and `approve_deploy_to_main` refuses. **And the
+  deploy itself waits for green** (7 Oct 2026, PR #337 — approved and
+  deployed while the run was still going, red two minutes later):
+  `processDeployTrain` opens no PR until the train's required checks
+  passed on the commit it ships (`trainTestGate`). Still running → it waits
+  ("Waiting for tests…"); never run or cancelled → it starts one; red → it
+  holds with `trainHold: "tests-red"` ("Tests failing") and carries on by
+  itself once a fix on the train passes, with no second click. e2e-quick
+  runs dispatched per ticket no longer cancel each other, so a red run
+  names the ticket that broke it. Tests: `test/train-tests.test.js`.
 - **Reject** (`processRevertFromTrain`) — Failed testing on a card writes
   `revertRequested`, and the automation reverts that card's commits back
   off the branch. **A card in Backlog must never have live commits on a
