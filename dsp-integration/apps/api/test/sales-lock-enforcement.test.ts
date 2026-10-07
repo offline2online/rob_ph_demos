@@ -21,7 +21,7 @@ async function setup() {
   const ext = (await ctx.displayTypes.get('portrait'))!.phExtensions!
   await ctx.displayTypes.saveExtensions('portrait', {
     ...ext,
-    slots: [{ label: 'Ad', owner: 'advertiser', partnerIds: [], advertisers: [], listMode: 'rtb', buyersListId: null, storeScope: null, quota: null, zoneId: null, supportedTargeting: ['localised'], reservePrice: 150 } as Slot],
+    slots: [{ label: 'Ad', owner: 'advertiser', partnerIds: [], advertisers: [], listMode: 'rtb', buyersListId: null, storeScope: null, quota: null, zoneId: null, reservePrice: 150 } as Slot],
   })
   ctx.db.prepare('INSERT INTO audience_vacd (display_type_id, slot, assumed_views_per_window, counted) VALUES (?, ?, ?, 1)').run('portrait', 1, 800)
   const created = await app.inject({ method: 'POST', url: '/api/v1/campaigns', headers: GOOGLE, payload: { advertiserId: 'swisse', name: 'Swisse — Portrait', displayTypeId: 'portrait', default: { pricingType: 'localised' } } })

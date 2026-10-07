@@ -67,7 +67,7 @@ describe('Buyers lists (spec "Support private auctions")', () => {
 
     const save = (buyersListId: string | null) => app.inject({
       method: 'PUT', url: '/api/admin/v1/available-inventory',
-      payload: { items: [{ displayTypeId: 'menu_board', slot: 2, supportedTargeting: ['localised'], assignedTo: { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId } }] },
+      payload: { items: [{ displayTypeId: 'menu_board', slot: 2, assignedTo: { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId } }] },
     })
     const assigned = await save(id)
     expect(assigned.statusCode).toBe(200)
@@ -87,7 +87,7 @@ describe('Buyers lists (spec "Support private auctions")', () => {
     const app = buildApp(await testContext())
     const save = (assignedTo: Record<string, unknown>) => app.inject({
       method: 'PUT', url: '/api/admin/v1/available-inventory',
-      payload: { items: [{ displayTypeId: 'menu_board', slot: 2, supportedTargeting: ['localised'], assignedTo }] },
+      payload: { items: [{ displayTypeId: 'menu_board', slot: 2, assignedTo }] },
     })
     const res1 = await save({ partnerIds: [], advertisers: ['Nestlé'], whitelistOnly: false, buyersListId: 'bl_nope' })
     expect(res1.statusCode).toBe(400)

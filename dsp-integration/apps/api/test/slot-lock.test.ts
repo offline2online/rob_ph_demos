@@ -26,7 +26,7 @@ async function setup() {
 const rowWith = async (app: ReturnType<typeof buildApp>, advertisers: string[]) => {
   const row = (await app.inject({ method: 'GET', url: INV })).json().items.find((r: { displayTypeId: string }) => r.displayTypeId === 'portrait')
   return {
-    displayTypeId: 'portrait', slot: 1, supportedTargeting: row.supportedTargeting, reservePrice: row.reservePriceOverride, reservePriceDefault: row.displayTypeReservePrice,
+    displayTypeId: 'portrait', slot: 1, reservePrice: row.reservePriceOverride, reservePriceDefault: row.displayTypeReservePrice,
     billingUnitHours: row.billingUnitHoursOverride, billingUnitHoursDefault: row.displayTypeBillingUnitHours, maxCampaigns: row.maxCampaignsOverride, maxCampaignsDefault: row.displayTypeMaxCampaigns,
     assignedTo: { partnerIds: [], advertisers, whitelistOnly: false, buyersListId: null },
   }

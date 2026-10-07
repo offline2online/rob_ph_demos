@@ -4,7 +4,7 @@ import { audienceOf } from '../src/domain/displayTypes'
 import { testContext } from './helpers'
 
 const NOW = new Date('2026-09-20T00:00:00Z')
-const slot = (label: string, owner: string) => ({ label, owner, partnerIds: [], advertisers: [], listMode: 'rtb', buyersListId: null, storeScope: null, quota: null, zoneId: null, supportedTargeting: ['localised'] })
+const slot = (label: string, owner: string) => ({ label, owner, partnerIds: [], advertisers: [], listMode: 'rtb', buyersListId: null, storeScope: null, quota: null, zoneId: null })
 
 async function setup() {
   const ctx = await testContext({ clock: () => NOW })
