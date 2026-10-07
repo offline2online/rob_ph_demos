@@ -70,6 +70,9 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         pendingPlayWindowHours, pendingPlayWindowEffectiveFrom,
         categoryWhitelist: cleanCategoryList(b.categoryWhitelist), categoryBlacklist: cleanCategoryList(b.categoryBlacklist),
         guaranteeBufferPct: b.guaranteeBufferPct ?? current.guaranteeBufferPct,
+        uncachedRestriction: b.uncachedRestriction ?? current.uncachedRestriction,
+        uncachedRestrictionStart: b.uncachedRestrictionStart ?? current.uncachedRestrictionStart,
+        uncachedRestrictionEnd: b.uncachedRestrictionEnd ?? current.uncachedRestrictionEnd,
       })
     })
     return view()

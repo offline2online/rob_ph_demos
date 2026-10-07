@@ -52,6 +52,34 @@ describe('real-time (player-triggered) bidding', () => {
     expect((await played(fill.impressionId)).statusCode).toBe(409)
   })
 
+  it('bandwidth protection: in the restricted window only a cached creative can win; outside it, or off, everything bids as normal', async () => {
+    const { ctx, signal, displayId } = await setup()
+    const crid = ((await ctx.impressions.get((await signal()).json().impressionId))!).crid as string
+    const set = async (patch: Record<string, unknown>) => ctx.company.save({ ...(await ctx.company.get()), ...patch } as any)
+    /* NOW is inside a fixed window: an uncached creative is passed over, a cached one plays, and a missing list means none cached. */
+    const h = NOW.getUTCHours()
+    const hh = (n: number) => `${String((n + 24) % 24).padStart(2, '0')}:00`
+    await set({ uncachedRestriction: 'fixed', uncachedRestrictionStart: hh(h - 1), uncachedRestrictionEnd: hh(h + 1) })
+    expect((await signal()).json()).toMatchObject({ status: 'no_fill', reason: expect.stringContaining('Restricted window') })
+    expect((await signal({ displayId, slot: 2, cachedCrids: ['other'] })).json().status).toBe('no_fill')
+    expect((await signal({ displayId, slot: 2, cachedCrids: [crid] })).json()).toMatchObject({ status: 'filled', clearingCpm: 150 })
+    /* Outside the window: as normal. */
+    await set({ uncachedRestrictionStart: hh(h + 2), uncachedRestrictionEnd: hh(h + 3) })
+    expect((await signal()).json().status).toBe('filled')
+    /* Store trading hours: restricted only while the player says the store is open; a missing signal never blocks. */
+    await set({ uncachedRestriction: 'store_open' })
+    expect((await signal({ displayId, slot: 2, storeOpen: true })).json().status).toBe('no_fill')
+    expect((await signal({ displayId, slot: 2, storeOpen: true, cachedCrids: [crid] })).json().status).toBe('filled')
+    expect((await signal({ displayId, slot: 2, storeOpen: false })).json().status).toBe('filled')
+    expect((await signal()).json().status).toBe('filled')
+    /* Off: never restricted. */
+    await set({ uncachedRestriction: 'off' })
+    expect((await signal({ displayId, slot: 2, storeOpen: true })).json().status).toBe('filled')
+    /* Bad input is refused. */
+    expect((await signal({ displayId, slot: 2, cachedCrids: 'x' })).statusCode).toBe(400)
+    expect((await signal({ displayId, slot: 2, storeOpen: 'yes' })).statusCode).toBe(400)
+  })
+
   it('runs one fresh auction per play: one win is one play, and nothing is held for the next', async () => {
     const { ctx, sent, signal, played } = await setup()
     const booked = () => (ctx.db.prepare('SELECT COUNT(*) AS n FROM reservations').get() as { n: number }).n

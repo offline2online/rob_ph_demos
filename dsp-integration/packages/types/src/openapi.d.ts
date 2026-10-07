@@ -274,6 +274,14 @@ export interface paths {
          *     reviewer rejected does not play, and its content is blocked by hash.
          *     Only a position whose slot is in `realtime` mode can be filled this
          *     way; an advance position answers 409.
+         *
+         *     **Bandwidth protection.** When the retailer has restricted uncached
+         *     creatives (Advertiser settings -> `uncachedRestriction`) and the
+         *     restriction is in force, only a bid whose creative the player
+         *     already holds can win: the player lists those in `cachedCrids`.
+         *     An uncached bid is passed over and the next-best cached bid wins;
+         *     with none, the answer is `no_fill`. Cached creatives bid, win and
+         *     play as normal throughout, so peak trade is not blacked out.
          */
         post: operations["signalImpression"];
         delete?: never;
@@ -1168,6 +1176,10 @@ export interface components {
             displayId: string;
             /** @description The slot (1-based) in that display's display type that is next in the rotation. */
             slot: number;
+            /** @description The creative ids (the `crid` a DSP bids with) the player already holds in its cache. Used only while the uncached-creative restriction is in force (Advertiser settings): then a bid wins only if its crid is listed. Omitted means none are cached. */
+            cachedCrids?: string[];
+            /** @description Whether the display's store is open now, from PH Core's store hours (the same source as the Store Open / Closed targeting variable). Used when the restriction follows store trading hours; omitted is treated as not open, so the exchange never goes dark on a missing signal. */
+            storeOpen?: boolean;
         };
         ImpressionFill: {
             impressionId: string;
@@ -1561,6 +1573,22 @@ export interface components {
             categoryWhitelist: string[];
             categoryBlacklist: string[];
             /**
+             * @description Bandwidth protection (real-time impressions): while the restriction is in force, only a bid whose creative the player already holds in its cache can win; an uncached creative would need a live download. `off`: never restricted. `fixed`: restricted between uncachedRestrictionStart and uncachedRestrictionEnd every day (UTC). `store_open`: restricted while the player reports the store open (`storeOpen` on the impression signal). Optional on save: omitted keeps the stored value.
+             * @default off
+             * @enum {string}
+             */
+            uncachedRestriction: "off" | "fixed" | "store_open";
+            /**
+             * @description Start of the daily restricted window (HH:MM, UTC); used when uncachedRestriction is `fixed`. A start after the end wraps past midnight. Optional on save.
+             * @default 09:00
+             */
+            uncachedRestrictionStart: string;
+            /**
+             * @description End of the daily restricted window (HH:MM, UTC, exclusive); used when uncachedRestriction is `fixed`. Optional on save.
+             * @default 18:00
+             */
+            uncachedRestrictionEnd: string;
+            /**
              * @description Guaranteed deals: the contingency (percent, for screen downtime) taken off a window's forecast impressions (plays x VAC-d audience) before the remainder is committed as the guaranteed volume. Instance-wide. Optional on save: omitted keeps the stored value.
              * @default 10
              */
@@ -1692,6 +1720,8 @@ export interface components {
             name: string;
             description: string;
             invitedBuyers: components["schemas"]["InvitedBuyer"][];
+            /** @description This list's own bid floor in USD CPM, or null to inherit the DSP's floor, else the platform floor. Never below the platform floor. */
+            floorCpm: number | null;
             /**
              * @description The play volume this deal commits to over its delivery term
              *     (7 Oct 2026; open question 45). Volume is carried by deals,
@@ -1701,8 +1731,6 @@ export interface components {
              *     forecast plus the contingency buffer, not typed in here.
              */
             committedPlays: number | null;
-            /** @description This list's own bid floor in USD CPM, or null to inherit the DSP's floor, else the platform floor. Never below the platform floor. */
-            floorCpm: number | null;
             /**
              * @description Read only. Plays billed so far at every position this deal is
              *     attached to, in play windows that start inside the delivery term
@@ -3703,7 +3731,7 @@ export interface operations {
                     auctionCloses?: string | null;
                     /** @description The play volume this deal commits to over its delivery term; a whole number of plays, or null for none (per play). Volume lives on deals, never the open auction. */
                     committedPlays?: number | null;
-                    /** @description This list's bid floor in USD CPM (bid floor hierarchy, Rob 7 Oct 2026). Never below the platform floor (400 otherwise). Absent or null: inherits the DSP's floor, else the platform's. */
+                    /** @description This list's bid floor in USD CPM (bid floor hierarchy, Rob 7 Oct 2026). Most specific: applies to deals using this list. Never below the platform floor (400 otherwise). Absent or null: inherits the DSP's floor, else the platform's. */
                     floorCpm?: number | null;
                 };
             };
@@ -3760,7 +3788,7 @@ export interface operations {
                     auctionCloses?: string | null;
                     /** @description The play volume this deal commits to over its delivery term; a whole number of plays, or null for none (per play). Volume lives on deals, never the open auction. */
                     committedPlays?: number | null;
-                    /** @description This list's bid floor in USD CPM (bid floor hierarchy, Rob 7 Oct 2026). Never below the platform floor (400 otherwise). Absent or null: inherits the DSP's floor, else the platform's. */
+                    /** @description This list's bid floor in USD CPM (bid floor hierarchy, Rob 7 Oct 2026). Most specific: applies to deals using this list. Never below the platform floor (400 otherwise). Absent or null: inherits the DSP's floor, else the platform's. */
                     floorCpm?: number | null;
                 };
             };

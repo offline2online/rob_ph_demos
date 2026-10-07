@@ -711,6 +711,35 @@ What the exchange guarantees: the hand-off already carries the approved
 creative's `url`, `mimeType` and content identity; no exchange change is
 needed for this ticket.
 
+### Bandwidth protection: uncached creatives in a restricted window (7 Oct 2026, Rob)
+
+For a retailer whose in-store network is shared with POS and stock systems,
+live creative downloads must not contend with trading, without going dark at
+peak and without a blunt "what plays when" daypart block. The restriction is
+only on content the player does not already hold: while it is in force a
+real-time impression can be won only by a creative already in the player's
+cache. Cached creative bids, wins and plays as normal; outside the window
+everything bids as normal.
+
+**The exchange cannot see the cache or the store's hours (both PH Core's), so
+the player sends them on `POST /api/player/v1/impressions`:**
+
+- `cachedCrids`: the creative ids (the `crid` a DSP bids with) resident on the
+  player, 500 at most. Only the pre-caching of approved creatives (above) and
+  any earlier play put a creative there. Omitted means none cached.
+- `storeOpen`: whether the display's store is open now, from the same store
+  hours that drive the Store Open / Closed targeting variable. Omitted is
+  treated as not open, so a missing signal never blocks a bid.
+
+The retailer sets the window in Advertiser settings (`uncachedRestriction`):
+`off` (default), `fixed` (a daily start and end, UTC, wrapping past midnight
+when start is after end), or `store_open` (restricted while the player says
+the store is open; "store closed" is not offered). An uncached bid is passed
+over and the next-best cached bid wins; none cached answers `no_fill` and the
+player plays its own content. Not covered: the advance window auction, whose
+winners are known ahead and pre-cached before their slot, and an admin screen
+for the setting (the API and `PUT /advertiser-settings` carry it).
+
 ### Website and Mobile App slots: RTB only (7 Oct 2026, Rob)
 
 A Website or Mobile App display type can now have slots marked **available for

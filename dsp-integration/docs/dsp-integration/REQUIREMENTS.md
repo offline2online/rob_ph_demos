@@ -3926,3 +3926,27 @@ A reserve is either a **preferred deal** (the premium window held at the reserve
 - **Buffer**: `guaranteeBufferPct` on Advertiser settings (a "Guaranteed deals" section beside the category lists), default 10, 0–50, instance-wide. Omitted on save keeps the stored value.
 - **To the DSP**: the reservation response carries `dspDeal` — DV360 Programmatic Guaranteed / Amazon guaranteed deal with `unitCount` = the committed impressions; a preferred deal maps to a preferred deal with no volume (`dsp/dealTerms.ts`).
 - **Open (dependencies)**: the exact per-DSP guaranteed-deal field names are to be confirmed against each DSP's sandbox; make-good / under-delivery behaviour when delivery falls below the guarantee is not built — billing is unchanged (realised VAC-d at the reserve price).
+
+## Bandwidth protection — restrict uncached creatives in defined hours (Rob, 7 Oct 2026)
+
+Our version of Broadsign's network controls, reframed around pre-caching
+rather than a daypart block. A retailer on a bandwidth-constrained in-store
+network can stop live creative downloads contending with trading without going
+dark on peak trade.
+
+- The restriction applies only to a creative **not already cached on the
+  player**. Cached creative bids, wins and plays normally throughout.
+- In the restricted window a real-time bid may win only if its creative is
+  cached (spec section 7, "Creative retrieval and hand-off"; the player's
+  pre-caching is in PH-CORE-BOUNDARIES.md). Uncached bids are passed over, the
+  next-best cached bid wins, and none cached is `no_fill`.
+- The window is a fixed daily start and end (`fixed`, UTC) or the store's
+  trading hours, while the store is **open** (`store_open`; "closed" is not
+  needed). `off` is the default. Outside the window, uncached creative bids
+  and downloads as normal.
+- Cache state and store hours are PH Core's (the same store hours as the Store
+  Open / Closed variable, section 6), so the player reports `cachedCrids` and
+  `storeOpen` on each impression signal; a missing `storeOpen` never blocks.
+- Set in Advertiser settings (`uncachedRestriction`, `uncachedRestrictionStart`,
+  `uncachedRestrictionEnd`). Not yet: an admin screen for it, and the advance
+  window auction (winners there are known ahead and pre-cached before the slot).
