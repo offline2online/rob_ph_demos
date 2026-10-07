@@ -68,7 +68,7 @@ export const slotKey = (r: AvailableInventoryRow) => `${r.displayTypeId}:${r.slo
    reservePrice is this slot's own override; null means it follows its
    display type's shared default (below), not "no reserve" (Rob, 22 Sep;
    spec §1 configuration inheritance — override always wins). */
-export interface SlotEdit { assignedTo: Omit<AssignedTo, 'partnerNames' | 'buyersListName'>; reservePrice: number | null; interactiveReservePrice: number | null; billingUnitHours: number | null; maxCampaigns: number | null }
+export interface SlotEdit { assignedTo: Omit<AssignedTo, 'partnerNames' | 'buyersListName' | 'buyersListNames'>; reservePrice: number | null; interactiveReservePrice: number | null; billingUnitHours: number | null; maxCampaigns: number | null }
 type Edits = Record<string, SlotEdit>
 /* A display type's reserve price default, edited from any of its slot
    rows — every row for the same displayTypeId shares one value. Also used
@@ -216,8 +216,52 @@ const RtbOnlyCell = () => <span style={{ color: T.muted }} title="Website and mo
    or the whitelist. Nothing chosen means any connected DSP. */
 const WHITELIST = '__whitelist__'
 const ADD_BUYERS_LIST = '__add_buyers_list__'
-const assignedValues = (a: Omit<AssignedTo, 'partnerNames' | 'buyersListName'>) =>
-  [...a.partnerIds.map((id) => `dsp:${id}`), ...a.advertisers.map((n) => `adv:${n}`), ...(a.whitelistOnly ? [WHITELIST] : []), ...(a.buyersListId ? [`deal:${a.buyersListId}`] : [])]
+/* The slot's buyers lists in priority order (7 Oct 2026): the waterfall. */
+const tiersOf = (a: { buyersListId: string | null; buyersListIds?: string[] }): string[] => a.buyersListIds ?? (a.buyersListId ? [a.buyersListId] : [])
+const assignedValues = (a: Omit<AssignedTo, 'partnerNames' | 'buyersListName' | 'buyersListNames'>) =>
+  [...a.partnerIds.map((id) => `dsp:${id}`), ...a.advertisers.map((n) => `adv:${n}`), ...(a.whitelistOnly ? [WHITELIST] : []), ...tiersOf(a).map((id) => `deal:${id}`)]
+
+/* The waterfall as rows in priority order: drag a row (or use the arrows) to
+   reorder, top row is tried first. Priority belongs to this slot's
+   assignment, so the same list can rank differently on another slot. */
+function PriorityList({ label, ids, names, canEdit, onChange }: { label: string; ids: string[]; names: Map<string, string>; canEdit: boolean; onChange: (next: string[]) => void }) {
+  const [dragging, setDragging] = useState<number | null>(null)
+  const move = (from: number, to: number) => {
+    if (from === to || to < 0 || to >= ids.length) return
+    const next = [...ids]
+    next.splice(to, 0, ...next.splice(from, 1))
+    onChange(next)
+  }
+  if (ids.length < 2) return null
+  return (
+    <div className="mt-2" role="list" aria-label={`${label}: buyers lists in priority order`}>
+      <div style={{ fontSize: 12, color: T.muted }} className="mb-1">Priority: tried top to bottom</div>
+      {ids.map((id, i) => (
+        <div
+          key={id}
+          role="listitem"
+          draggable={canEdit}
+          onDragStart={() => setDragging(i)}
+          onDragOver={(e) => { if (dragging !== null) e.preventDefault() }}
+          onDrop={(e) => { e.preventDefault(); if (dragging !== null) move(dragging, i); setDragging(null) }}
+          onDragEnd={() => setDragging(null)}
+          className="mb-1 flex items-center gap-2"
+          style={{ border: '1px solid #d9d9d9', borderRadius: 6, padding: '2px 8px', background: dragging === i ? 'rgba(22,155,194,0.10)' : '#fff', cursor: canEdit ? 'grab' : 'default' }}
+        >
+          {canEdit && <Icon name="drag_indicator" size={16} />}
+          <span style={{ fontSize: 12, color: T.muted, minWidth: 14 }} aria-label={`Position ${i + 1}`}>{i + 1}</span>
+          <span className="flex-1 truncate" style={{ fontSize: 13 }}>{names.get(id) ?? id}</span>
+          {canEdit && (
+            <>
+              <Button type="text" size="small" aria-label={`Move ${names.get(id) ?? id} up`} disabled={i === 0} onClick={() => move(i, i - 1)} icon={<Icon name="arrow_upward" size={16} />} />
+              <Button type="text" size="small" aria-label={`Move ${names.get(id) ?? id} down`} disabled={i === ids.length - 1} onClick={() => move(i, i + 1)} icon={<Icon name="arrow_downward" size={16} />} />
+            </>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
 
 function AssignedCell({ data, context }: IP) {
   if (!data) return null
@@ -282,14 +326,29 @@ function AssignedCell({ data, context }: IP) {
            or restricted to a buyers list's private auction — never more
            than one: the newer choice wins (Rob, 23 Sep). */
         if (dealAdded) {
-          c.set(slotKey(data), { assignedTo: { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: dealAdded.slice(5) } })
+          /* Added to the foot of the waterfall; reorder by dragging. */
+          const ids = [...tiersOf(a).filter((id) => next.includes(`deal:${id}`)), dealAdded.slice(5)]
+          c.set(slotKey(data), { assignedTo: { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: ids[0], buyersListIds: ids } })
+          return
+        }
+        /* Removing a pill just drops that tier; the rest keep their order. */
+        const keptTiers = tiersOf(a).filter((id) => next.includes(`deal:${id}`))
+        if (keptTiers.length && !added.length) {
+          c.set(slotKey(data), { assignedTo: { ...a, buyersListId: keptTiers[0], buyersListIds: keptTiers } })
           return
         }
         const advertisers = added.includes(WHITELIST) ? [] : next.filter((v) => v.startsWith('adv:')).map((v) => v.slice(4))
         const whitelistOnly = advertisers.length ? false : next.includes(WHITELIST)
         const partnerIds = next.filter((v) => v.startsWith('dsp:')).map((v) => v.slice(4)).filter((id) => dspNames.has(id))
-        c.set(slotKey(data), { assignedTo: { partnerIds, advertisers, whitelistOnly, buyersListId: null } })
+        c.set(slotKey(data), { assignedTo: { partnerIds, advertisers, whitelistOnly, buyersListId: null, buyersListIds: [] } })
       }}
+    />
+    <PriorityList
+      label={`${data.displayTypeName} slot ${data.zoneSlot}`}
+      ids={tiersOf(a)}
+      names={new Map(c.buyersLists.map((l) => [l.id, l.name]))}
+      canEdit={c.canEdit}
+      onChange={(ids) => c.set(slotKey(data), { assignedTo: { ...a, buyersListId: ids[0] ?? null, buyersListIds: ids } })}
     />
     </>
   )
@@ -522,6 +581,7 @@ export function AdvertisersPage() {
           ...a,
           partnerNames: a.partnerIds.map((id) => inventory.data?.dsps.find((d) => d.partnerId === id)?.name ?? id),
           buyersListName: a.buyersListId ? buyersLists.data?.items.find((l) => l.id === a.buyersListId)?.name ?? a.buyersListId : null,
+          buyersListNames: tiersOf(a).map((id) => buyersLists.data?.items.find((l) => l.id === id)?.name ?? id),
         }).join(', ') || 'All DSPs'
       },
       ...setColumn<AvailableInventoryRow>('Assigned to', () => [
@@ -773,7 +833,7 @@ export function AdvertisersPage() {
         onClose={() => setAddingBuyersListFor(null)}
         onSaved={(list) => {
           qc.invalidateQueries({ queryKey: ['buyers-lists'] })
-          if (addingBuyersListFor) inv.setDraft((cur) => ({ ...(cur ?? {}), [slotKey(addingBuyersListFor)]: { ...edited(invContext, addingBuyersListFor), assignedTo: { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: list.id } } }))
+          if (addingBuyersListFor) inv.setDraft((cur) => ({ ...(cur ?? {}), [slotKey(addingBuyersListFor)]: { ...edited(invContext, addingBuyersListFor), assignedTo: { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: list.id, buyersListIds: [...tiersOf(edited(invContext, addingBuyersListFor).assignedTo), list.id].filter((x, i, all) => all.indexOf(x) === i) } } }))
           setAddingBuyersListFor(null)
         }}
       />

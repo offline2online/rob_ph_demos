@@ -90,7 +90,16 @@ export const STORE_SCOPES = ['Store staff', 'Store manager only', 'Regional mana
    list is mutually exclusive with advertisers and whitelistOnly. Slots saved
    before this carried one partnerId and one advertiser, so they are read as
    one-element lists. */
-export interface Assigned { partnerIds: string[]; advertisers: string[]; whitelistOnly: boolean; buyersListId: string | null }
+export interface Assigned {
+  partnerIds: string[]; advertisers: string[]; whitelistOnly: boolean
+  /* The top tier of the waterfall (the first of buyersListIds), kept for readers that only know one list. */
+  buyersListId: string | null
+  /* Prioritised buyers lists (Rob, 7 Oct 2026; Broadsign model): priority is
+     a property of this slot's assignment, not of the list. Highest first,
+     one list per tier; the exchange tries the first and falls through only
+     when it yields no winning bid at its floor. */
+  buyersListIds: string[]
+}
 type SlotLike = {
   partnerIds?: readonly string[] | null
   advertisers?: readonly string[] | null
@@ -98,19 +107,24 @@ type SlotLike = {
   partnerId?: string | null
   advertiser?: string | null
   buyersListId?: string | null
+  buyersListIds?: readonly string[] | null
 }
 export const assignedOf = (slot: SlotLike): Assigned => {
   const advertisers = [...(slot.advertisers ?? (slot.advertiser ? [slot.advertiser] : []))]
+  /* Slots saved before the waterfall carry one buyersListId: a one-tier waterfall. */
+  const saved = slot.buyersListIds?.length ? slot.buyersListIds : slot.buyersListId ? [slot.buyersListId] : []
+  const buyersListIds = !advertisers.length && slot.listMode === 'deal' ? [...new Set(saved)] : []
   return {
     partnerIds: [...(slot.partnerIds ?? (slot.partnerId ? [slot.partnerId] : []))],
     advertisers,
     whitelistOnly: !advertisers.length && slot.listMode === 'whitelist_only',
-    buyersListId: !advertisers.length && slot.listMode === 'deal' ? slot.buyersListId ?? null : null,
+    buyersListId: buyersListIds[0] ?? null,
+    buyersListIds,
   }
 }
 /* "Any connected DSP", or the pills in order: advertisers, buyers list, then DSPs. */
-export const assignedLabels = (a: { advertisers: readonly string[]; partnerNames?: readonly string[]; whitelistOnly?: boolean; buyersListName?: string | null }): string[] =>
-  [...a.advertisers, ...(a.whitelistOnly ? ['Whitelist only'] : []), ...(a.buyersListName ? [`Buyers list: ${a.buyersListName}`] : []), ...(a.partnerNames ?? [])]
+export const assignedLabels = (a: { advertisers: readonly string[]; partnerNames?: readonly string[]; whitelistOnly?: boolean; buyersListName?: string | null; buyersListNames?: readonly string[] }): string[] =>
+  [...a.advertisers, ...(a.whitelistOnly ? ['Whitelist only'] : []), ...(a.buyersListNames?.length ? a.buyersListNames.map((n, i) => `Buyers list${a.buyersListNames!.length > 1 ? ` ${i + 1}` : ''}: ${n}`) : a.buyersListName ? [`Buyers list: ${a.buyersListName}`] : []), ...(a.partnerNames ?? [])]
 
 /* Reserve price inheritance (Rob, 22 Sep; spec §1 configuration
    inheritance): a display type carries its own reserve price default, and

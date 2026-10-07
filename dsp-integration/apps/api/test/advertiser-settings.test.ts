@@ -56,6 +56,39 @@ describe('Advertiser settings (spec §4, §6)', () => {
     expect(bad.json().error.details.map((d: { field: string }) => d.field)).toEqual(['auctionOpensHours', 'playWindowHours', 'auctionCutoffTime'])
   })
 
+  it('bid lookahead: defaults to 35 s, saves, keeps the stored value when omitted, refuses 0 and non-integers', async () => {
+    const app = buildApp(await testContext())
+    expect((await app.inject({ method: 'GET', url: '/api/admin/v1/advertiser-settings' })).json().bidLookaheadSeconds).toBe(35)
+    const ok = await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: { ...input, bidLookaheadSeconds: 60 } })
+    expect(ok.statusCode).toBe(200)
+    expectMatchesContract('PUT', '/admin/v1/advertiser-settings', 200, ok.json())
+    expect((await app.inject({ method: 'GET', url: '/api/admin/v1/advertiser-settings' })).json().bidLookaheadSeconds).toBe(60)
+    expect((await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: input })).json().bidLookaheadSeconds).toBe(60)
+    for (const bad of [0, -5, 1.5, '35', null]) {
+      const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: { ...input, bidLookaheadSeconds: bad } })
+      expect(res.statusCode).toBe(400)
+      expect(res.json().error.details).toEqual([{ field: 'bidLookaheadSeconds', reason: 'Bid lookahead is a whole number of seconds, at least 1.' }])
+    }
+  })
+
+  it('default committed plays: null by default, saves, omitted keeps it, null clears it, refuses 0 and non-integers', async () => {
+    const app = buildApp(await testContext())
+    const get = async () => (await app.inject({ method: 'GET', url: '/api/admin/v1/advertiser-settings' })).json().defaultCommittedPlays
+    expect(await get()).toBeNull()
+    const ok = await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: { ...input, defaultCommittedPlays: 5000 } })
+    expect(ok.statusCode).toBe(200)
+    expect(await get()).toBe(5000)
+    await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: input })
+    expect(await get()).toBe(5000)
+    await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: { ...input, defaultCommittedPlays: null } })
+    expect(await get()).toBeNull()
+    for (const bad of [0, -5, 1.5, '100']) {
+      const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: { ...input, defaultCommittedPlays: bad } })
+      expect(res.statusCode).toBe(400)
+      expect(res.json().error.details).toEqual([{ field: 'defaultCommittedPlays', reason: 'Default committed plays is a whole number of plays, at least 1, or empty.' }])
+    }
+  })
+
   /* Rob's board ticket, 26 Sep 2026: a length change while windows are still
      active no longer errors out — it's accepted and deferred, with the
      admin told exactly when it takes effect. */
@@ -135,7 +168,7 @@ describe('Advertiser settings (spec §4, §6)', () => {
     expectMatchesContract('GET', '/admin/v1/available-inventory', 200, res.json())
     expect(res.json().items).toEqual([{
       displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board — Long Format / Zone 1', playlistId: 'pl_zone_menu_board_1', unassigned: false, scored: true, unsellableReason: null, salesLocked: false, salesLockedUntil: null, slot: 2, zoneSlot: 2, position: 'Supplier slot',
-      assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false, buyersListId: null, buyersListName: null }, qrControl: true, visionAi: true,
+      assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false, buyersListId: null, buyersListName: null, buyersListIds: [], buyersListNames: [] }, qrControl: true, visionAi: true,
       reservePrice: null, reservePriceOverride: null, displayTypeReservePrice: null, interactiveReservePrice: null, interactiveReservePriceOverride: null,
       billingUnitHours: 24, billingUnitHoursOverride: null, displayTypeBillingUnitHours: null, companyPlayWindowHours: 24,
       maxCampaigns: 5, maxCampaignsOverride: null, displayTypeMaxCampaigns: null,
@@ -343,7 +376,7 @@ describe('Advertiser settings (spec §4, §6)', () => {
 
     /* Nothing chosen: any connected DSP, RTB. */
     expect(assigned(await save({ partnerIds: [], advertisers: [], whitelistOnly: false })))
-      .toEqual({ partnerIds: [], partnerNames: [], advertisers: [], whitelistOnly: false, buyersListId: null, buyersListName: null })
+      .toEqual({ partnerIds: [], partnerNames: [], advertisers: [], whitelistOnly: false, buyersListId: null, buyersListName: null, buyersListIds: [], buyersListNames: [] })
     expect((await ctx.displayTypes.get('menu_board'))!.phExtensions!.slots[1].listMode).toBe('rtb')
 
     /* Several DSPs at once. */

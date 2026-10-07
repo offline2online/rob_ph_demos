@@ -70,6 +70,11 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         pendingPlayWindowHours, pendingPlayWindowEffectiveFrom,
         categoryWhitelist: cleanCategoryList(b.categoryWhitelist), categoryBlacklist: cleanCategoryList(b.categoryBlacklist),
         guaranteeBufferPct: b.guaranteeBufferPct ?? current.guaranteeBufferPct,
+        uncachedRestriction: b.uncachedRestriction ?? current.uncachedRestriction,
+        uncachedRestrictionStart: b.uncachedRestrictionStart ?? current.uncachedRestrictionStart,
+        uncachedRestrictionEnd: b.uncachedRestrictionEnd ?? current.uncachedRestrictionEnd,
+        bidLookaheadSeconds: b.bidLookaheadSeconds ?? current.bidLookaheadSeconds,
+        defaultCommittedPlays: b.defaultCommittedPlays === undefined ? current.defaultCommittedPlays : b.defaultCommittedPlays,
       })
     })
     return view()
@@ -141,6 +146,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
             ...a,
             partnerNames: a.partnerIds.map((id) => partners.find((p) => p.id === id)?.name ?? id),
             buyersListName: a.buyersListId ? buyersLists.find((l) => l.id === a.buyersListId)?.name ?? a.buyersListId : null,
+            buyersListNames: a.buyersListIds.map((id) => buyersLists.find((l) => l.id === id)?.name ?? id),
           },
           qrControl: hasQrControl(t),
           visionAi: hasVisionAi(t),
@@ -265,12 +271,14 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         else if (!def) errors.push({ field: f('slot'), reason: `${dt.name} has no slot ${slot}.` })
         else if (def.owner !== 'advertiser') errors.push({ field: f('slot'), reason: 'Only an Advertiser slot is sellable inventory.' })
 
-        const raw = (r.assignedTo ?? {}) as { partnerIds?: unknown; advertisers?: unknown; whitelistOnly?: unknown; buyersListId?: unknown }
-        const assigned: Assigned = { partnerIds: names(raw.partnerIds), advertisers: names(raw.advertisers), whitelistOnly: raw.whitelistOnly === true, buyersListId: typeof raw.buyersListId === 'string' ? raw.buyersListId : null }
-        const bad = await validateAssigned(assigned, (k) => f(`assignedTo.${k}`), partners, def ? assignedOf(def) : { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: null }, ctx.buyersLists)
+        const raw = (r.assignedTo ?? {}) as { partnerIds?: unknown; advertisers?: unknown; whitelistOnly?: unknown; buyersListId?: unknown; buyersListIds?: unknown }
+        /* The ordered waterfall (7 Oct 2026); an older client sends just buyersListId. Duplicates are kept so validation can name them. */
+        const tiers = Array.isArray(raw.buyersListIds) ? names(raw.buyersListIds) : typeof raw.buyersListId === 'string' && raw.buyersListId ? [raw.buyersListId] : []
+        const assigned: Assigned = { partnerIds: names(raw.partnerIds), advertisers: names(raw.advertisers), whitelistOnly: raw.whitelistOnly === true, buyersListId: tiers[0] ?? null, buyersListIds: tiers }
+        const bad = await validateAssigned(assigned, (k) => f(`assignedTo.${k}`), partners, def ? assignedOf(def) : { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: null, buyersListIds: [] }, ctx.buyersLists)
         errors.push(...bad)
         /* A real-time slot (7 Oct 2026) sells per impression to open and whitelist-only buyers: no named advertisers, no private auction. */
-        if (def?.bidMode === 'realtime' && (assigned.advertisers.length || assigned.buyersListId)) errors.push({ field: f('assignedTo'), reason: 'This slot is sold in real time (per impression), so it can’t be held for named advertisers or assigned to a private auction. Switch it back to advance bidding on the display type’s slot editor first.' })
+        if (def?.bidMode === 'realtime' && (assigned.advertisers.length || assigned.buyersListIds.length)) errors.push({ field: f('assignedTo'), reason: 'This slot is sold in real time (per impression), so it can’t be held for named advertisers or assigned to a private auction. Switch it back to advance bidding on the display type’s slot editor first.' })
 
         const reservePrice = parseReservePrice(r.reservePrice, f('reservePrice'), errors)
         /* Omitted keeps what the slot has (older clients never send it); it
@@ -294,7 +302,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         if (dt && isRtbOnly(dt.touchPoint)) {
           const windowFields: [string, unknown][] = [['reservePrice', reservePrice], ['interactiveReservePrice', interactiveReservePrice], ['reservePriceDefault', reservePriceDefault], ['billingUnitHours', billingUnitHours], ['billingUnitHoursDefault', billingUnitHoursDefault], ['maxCampaigns', maxCampaigns], ['maxCampaignsDefault', maxCampaignsDefault]]
           for (const [k, v] of windowFields) if (v !== null && v !== undefined) errors.push({ field: f(k), reason: `${dt.name} is a ${dt.touchPoint.toLowerCase()} display type: its slots are sold by real-time bidding only, so there is no reserve price, billing unit or campaign cap to set.` })
-          if (assigned.advertisers.length || assigned.buyersListId) errors.push({ field: f('assignedTo'), reason: 'A website or mobile app slot is sold by real-time bidding only: it can’t be held for named advertisers or assigned to a private auction.' })
+          if (assigned.advertisers.length || assigned.buyersListIds.length) errors.push({ field: f('assignedTo'), reason: 'A website or mobile app slot is sold by real-time bidding only: it can’t be held for named advertisers or assigned to a private auction.' })
         }
         if (dt) {
           if (maxCampaignsDefaults.has(dt.id) && maxCampaignsDefaults.get(dt.id) !== maxCampaignsDefault) errors.push({ field: f('maxCampaignsDefault'), reason: 'All slots on a display type must submit the same max campaigns default.' })

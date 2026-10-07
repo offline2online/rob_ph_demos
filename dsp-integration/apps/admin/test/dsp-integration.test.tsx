@@ -191,20 +191,24 @@ describe('DSP integration switch', () => {
 })
 
 describe('Advertiser settings page', () => {
-  it('shows Pricing, the Auction schedule, and the category lists, in that order', async () => {
+  it('shows Pricing, Guaranteed deals, the Play config and the category lists, in that order, with no auction timing', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/available-inventory': { items: [{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', slot: 2, position: 'Supplier slot', partnerName: 'Google DSP' }] } })))
     renderAt('/dsp-integration')
     expect(await screen.findByRole('heading', { name: /Advertiser settings/ })).toBeInTheDocument()
     const text = document.body.textContent ?? ''
-    const order = ['Pricing', 'Auction schedule', 'Auction opens', 'Play-window length', 'Auction cutoff time', 'Category lists'].map((h) => text.indexOf(h))
+    const order = ['Pricing', 'Guaranteed deals', 'Play config', 'Category lists'].map((h) => text.indexOf(h))
     /* Available Inventory moved to Advertisers / Inventory (Rob, 20 Sep). */
     expect(text).not.toContain('Available Inventory')
     expect(order).toEqual([...order].sort((a, b) => a - b))
     expect(screen.getByLabelText(/Currency/)).toBeInTheDocument()
-    /* Stored in hours, shown as days and hours: 168 h = 7 days, 24 h = 1 day. */
-    expect((document.getElementById('auctionOpensHours') as HTMLInputElement).value).toBe('7')
-    expect((document.getElementById('playWindowHours') as HTMLInputElement).value).toBe('1')
-    expect(screen.getByText('18:00 UTC')).toBeInTheDocument()
+    expect(screen.getByLabelText(/Contingency buffer/)).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Play config' })).toBeInTheDocument()
+    /* Bid lookahead: company-wide, in seconds, defaulting to 35. */
+    expect(screen.getByLabelText(/Bid lookahead/)).toHaveValue('35')
+    for (const gone of ['Auction schedule', 'Auction opens', 'Auction cutoff time', 'Play-window length']) expect(text).not.toContain(gone)
+    expect(document.getElementById('auctionOpensHours')).toBeNull()
+    expect(document.getElementById('playWindowHours')).toBeNull()
+    expect(document.getElementById('auctionCutoffTime')).toBeNull()
     for (const l of ['Categories — whitelist', 'Categories — blacklist']) expect(screen.getByRole('region', { name: l })).toBeInTheDocument()
     /* Advertiser lists are each DSP's own: none at company level. */
     for (const l of ['Advertisers — whitelist', 'Advertisers — blacklist']) expect(screen.queryByRole('region', { name: l })).not.toBeInTheDocument()
@@ -214,25 +218,6 @@ describe('Advertiser settings page', () => {
     expect(within(cats).queryByRole('textbox')).not.toBeInTheDocument()
     expect(within(cats).getByRole('combobox', { name: /Choose an IAB category/ })).toBeInTheDocument()
     expect(screen.queryByText('Advertisers', { selector: '.ag-header-cell-text' })).not.toBeInTheDocument()
-  })
-
-  /* Rob's board ticket, 26 Sep 2026: a play-window length change no longer
-     errors out while windows are still active — it's deferred, and the admin
-     is told on the page (not a tooltip) when it will actually take effect. */
-  it('shows when a deferred play-window length change will take effect', async () => {
-    vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/advertiser-settings': { ...advertiserSettings, pendingPlayWindowHours: 168, pendingPlayWindowEffectiveFrom: '2026-09-23T00:00:00.000Z' } })))
-    renderAt('/dsp-integration')
-    expect(await screen.findByText(/Play-window length: change scheduled/)).toBeInTheDocument()
-    const text = document.body.textContent ?? ''
-    expect(text).toContain('current 1 day length')
-    expect(text).toContain('23 Sept 2026, 00:00 UTC')
-    expect(text).toContain('7 days long instead')
-    /* Nothing scheduled: no callout at all. */
-    cleanup()
-    vi.stubGlobal('fetch', vi.fn(fakeFetch()))
-    renderAt('/dsp-integration')
-    await screen.findByRole('heading', { name: /Advertiser settings/ })
-    expect(screen.queryByText(/change scheduled/)).not.toBeInTheDocument()
   })
 })
 
@@ -679,7 +664,7 @@ describe('Advertisers / Inventory', () => {
     /* Only the slot that changed is sent. */
     await waitFor(() => expect(saved()).toEqual({ items: [{
       displayTypeId: 'menu_board', slot: 2,
-      assignedTo: { partnerIds: ['p_google'], advertisers: ['Nestlé'], whitelistOnly: false, buyersListId: null },
+      assignedTo: { partnerIds: ['p_google'], advertisers: ['Nestlé'], whitelistOnly: false, buyersListId: null, buyersListIds: [] },
       interactiveReservePrice: null, reservePriceDefault: null, billingUnitHoursDefault: null, maxCampaignsDefault: null,
     }] }))
     /* This test opens two AntD Selects, drives a save round-trip and waits

@@ -45,6 +45,8 @@ import type { ImpressionRecord } from '../repos/RealtimeImpressionRepo'
 import { type VettedBid, MAX_BIDS_PER_RESPONSE, bidUrlFor, receivesBidRequests, vetBid } from './auction'
 import { type BidResponse, buildBidRequest } from './openrtb'
 import { tx } from '../db/db'
+import { uncachedRestricted } from '../domain/uncachedRestriction'
+import { rtbAuctionOpensAt } from '../domain/bidLookahead'
 import { mimeFromUrl, reviewAtBidCreative } from './atBid'
 
 export interface Fill {
@@ -57,7 +59,7 @@ interface Candidate { dsp: PartnerRecord; price: number; crid: string; vetted: E
 /* Clears one impression for the position the display's next slot is. Always
    returns the stored outcome (filled or no_fill); throws only for a request
    that is wrong (unknown display or position, not a real-time position). */
-export async function signalImpression(ctx: Context, input: { displayId: string; slot: number }): Promise<Fill> {
+export async function signalImpression(ctx: Context, input: { displayId: string; slot: number; cachedCrids?: string[]; storeOpen?: boolean; slotStartsAt?: Date }): Promise<Fill> {
   const started = Date.now()
   const now = ctx.clock()
   const display = await ctx.displays.get(input.displayId)
@@ -66,7 +68,13 @@ export async function signalImpression(ctx: Context, input: { displayId: string;
   if (!p || p.def.owner !== 'advertiser') throw notFound('Unknown position: that slot is not an Advertiser slot on the display’s display type.')
   if (!isRealtime(p)) throw conflict('This position is sold by play window, not in real time.')
 
-  const hours = (await ctx.company.get()).playWindowHours
+  const company = await ctx.company.get()
+  /* The slot's auction opens bidLookaheadSeconds before it plays (Advertiser settings): an earlier signal is refused, not cleared. */
+  if (input.slotStartsAt) {
+    const opens = rtbAuctionOpensAt(company, input.slotStartsAt)
+    if (now < opens) throw conflict(`The auction for that slot opens at ${opens.toISOString()}, ${company.bidLookaheadSeconds}s before it plays.`)
+  }
+  const hours = company.playWindowHours
   const windowStart = windowStartOf(now, windowMsFor(hours, p)).toISOString()
   const base: ImpressionRecord = {
     id: `imp_${randomUUID().slice(0, 12)}`, positionId: p.positionId, displayId: display.id, windowStart, requestedAt: now.toISOString(), status: 'no_fill', reason: null,
@@ -126,8 +134,16 @@ export async function signalImpression(ctx: Context, input: { displayId: string;
   }
   if (!candidates.length) return noFill(sent.length ? 'No bid cleared within tmax.' : 'No DSP has a bid endpoint.')
 
+  /* Bandwidth protection: in the restricted window only a creative the player already holds can win (an uncached one would need a live download). The next-best cached bid wins instead; none cached is no fill. */
+  let eligible = candidates
+  if (uncachedRestricted(company, now, input.storeOpen)) {
+    const cached = new Set(input.cachedCrids ?? [])
+    eligible = candidates.filter((c) => cached.has(c.crid))
+    if (!eligible.length) return noFill('Restricted window: no bid’s creative is cached on the player, and an uncached creative would need a live download.')
+  }
+
   /* First price: highest bid first, ties to the earlier DSP (sort is stable). A Test-mode DSP's bids never fill. */
-  const ranked = [...candidates].sort((a, b) => b.price - a.price)
+  const ranked = [...eligible].sort((a, b) => b.price - a.price)
   const live = ranked.filter((c) => c.dsp.mode === 'live')
   if (!live.length) return noFill('Only Test-mode bids: nothing plays.', { testMode: true, partnerId: ranked[0].dsp.id, advertiserId: ranked[0].vetted.advertiserId, campaignId: ranked[0].vetted.campaignId, crid: ranked[0].crid, clearingCpm: ranked[0].price })
 

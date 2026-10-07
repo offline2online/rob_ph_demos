@@ -1,0 +1,3 @@
+ALTER TABLE company_advertiser_settings DROP COLUMN uncached_restriction_end;
+ALTER TABLE company_advertiser_settings DROP COLUMN uncached_restriction_start;
+ALTER TABLE company_advertiser_settings DROP COLUMN uncached_restriction;

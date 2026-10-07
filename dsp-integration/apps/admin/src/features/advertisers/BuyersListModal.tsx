@@ -8,7 +8,7 @@ import { App, Button, DatePicker, Input, InputNumber, Modal, Select } from 'antd
 import { useQuery } from '@tanstack/react-query'
 import { ALL_DSPS, OPERATOR_LABELS, TARGETING_VARIABLES, type BuyersList, type Condition, type InvitedBuyer, type SharedVariable } from '@ph-dsp/types'
 import dayjs from 'dayjs'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api, ApiRequestError } from '../../api/client'
 import { Q } from '../../api/queries'
 import { Icon } from '../../shared/Icon'
@@ -39,9 +39,23 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
   const [errors, setErrors] = useState<Record<string, string>>({})
   useEffect(() => {
     if (!open) return
-    setDraft(editing ? draftOf(editing) : blankDraft())
+    setDraft(editing ? draftOf(editing) : { ...blankDraft(), committedPlays: defaultPlaysRef.current })
     setErrors({})
   }, [open, editing])
+
+  /* Play config (Advertiser settings): the committed plays a NEW list starts with. Applied on open, and again
+     if the default arrives or changes while the modal is open and the field is still untouched. Editing a
+     saved list never takes it. */
+  const settings = useQuery(Q.advertiserSettings)
+  const defaultPlays = settings.data?.defaultCommittedPlays ?? null
+  const defaultPlaysRef = useRef(defaultPlays)
+  const untouched = useRef(true)
+  useEffect(() => { untouched.current = true }, [open, editing])
+  useEffect(() => {
+    const prev = defaultPlaysRef.current
+    defaultPlaysRef.current = defaultPlays
+    if (open && !editing && untouched.current && prev !== defaultPlays) setDraft((d) => ({ ...d, committedPlays: defaultPlays }))
+  }, [defaultPlays, open, editing])
 
   /* The dropdown offers every advertiser (seat) a connected DSP has synced, grouped by DSP — no typing, no identifier type. */
   const partners = useQuery(Q.partners)
@@ -178,7 +192,7 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
         <InputNumber
           min={1} precision={0} style={{ width: '100%' }} aria-label="Committed plays"
           status={errors.committedPlays ? 'error' : undefined} placeholder="Leave empty for per play"
-          value={draft.committedPlays} onChange={(v) => setDraft((d) => ({ ...d, committedPlays: typeof v === 'number' ? v : null }))}
+          value={draft.committedPlays} onChange={(v) => { untouched.current = false; setDraft((d) => ({ ...d, committedPlays: typeof v === 'number' ? v : null })) }}
         />
         {errors.committedPlays && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.committedPlays}</div>}
       </div>
@@ -192,19 +206,9 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
         />
         {errors.floorCpm && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.floorCpm}</div>}
       </div>
-      <div>
-        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}><WithTip tip={
-          editing?.lockedWin
-            ? `Rate locked at ${editing.lockedWin.cpm} CPM on ${new Date(editing.lockedWin.lockedAt).toLocaleString()} — every play window for the rest of the delivery term books at that rate, no re-auction.`
-            : 'The deadline invited brands may submit or revise bids until. The first bid that clears by then locks the winning CPM for the whole delivery term above — no daily re-auction. Leave empty to keep clearing a fresh auction every play window, as before.'
-        }>Auction window closes</WithTip></label>
-        <DatePicker
-          allowClear showTime style={{ width: '100%' }}
-          value={draft.auctionCloses ? dayjs(draft.auctionCloses) : null}
-          onChange={(v) => setDraft((d) => ({ ...d, auctionCloses: v ? v.toISOString() : null }))}
-        />
-        {errors.auctionCloses && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.auctionCloses}</div>}
-      </div>
+      {editing?.lockedWin && (
+        <div style={{ fontSize: 12.5, color: T.muted }}>Rate locked at {editing.lockedWin.cpm} CPM on {new Date(editing.lockedWin.lockedAt).toLocaleString()}: every play for the rest of the delivery term books at that rate.</div>
+      )}
     </Modal>
   )
 }

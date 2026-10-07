@@ -1,0 +1,1 @@
+ALTER TABLE company_advertiser_settings DROP COLUMN bid_lookahead_seconds;

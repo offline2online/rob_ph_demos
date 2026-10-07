@@ -110,9 +110,13 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
        is locked (auctionOpenAt): a bid then would be left pending on a window
        the deal no longer sells. A reserve commitment on a deal is refused on
        the same terms: the term's rate is already decided. */
-    const deal = assignment === 'deal' ? await ctx.buyersLists.get(assignedOf(pos.def).buyersListId ?? '') : null
+    /* A waterfall (7 Oct 2026) takes bids while any tier's auction is open;
+       the refusal names the top tier's. */
+    const deals = assignment === 'deal' ? await Promise.all(assignedOf(pos.def).buyersListIds.map((id) => ctx.buyersLists.get(id))) : []
+    const stillOpen = deals.some((d) => { const t = d ? termStateAt(d, windowStart) : null; return !(d && t?.active && !t.auctionOpen) })
+    const deal = deals[0] ?? null
     const term = deal ? termStateAt(deal, windowStart) : null
-    if (deal && term?.active && !term.auctionOpen) {
+    if (deal && term?.active && !term.auctionOpen && !stillOpen) {
       throw conflict(term.locked ? `This private auction's term is locked to a winning bid (${deal.name}); its windows take no further bids.` : `Bidding on this private auction closed at ${deal.auctionCloses} (${deal.name}).`)
     }
     if (b.type === 'reserve' && assignment !== 'reserved' && reservePrice === null) throw conflict('Only a position held for this advertiser, or one with a reserve price, can be reserved; bid for it instead.')

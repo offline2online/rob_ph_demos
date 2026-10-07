@@ -44,13 +44,11 @@ const TermCell = ({ data }: P) => {
   if (!from && !to) return <span style={{ color: T.muted }}>Always active</span>
   return <span style={{ fontSize: 12.5 }}>{from ?? 'No start'} → {to ?? 'No end'}</span>
 }
-/* The deal's own one-time bidding deadline, and — once it has cleared —
-   the rate it locked in for the rest of the delivery term above. */
+/* The rate a deal locked in for the rest of its delivery term, if it has one. */
 const RateCell = ({ data }: P) => {
   if (!data) return null
   if (data.lockedWin) return <span style={{ fontSize: 12.5, color: T.primary }}>Locked: {data.lockedWin.cpm} CPM</span>
-  if (data.auctionCloses) return <span style={{ fontSize: 12.5 }}>Bidding closes {fmt(data.auctionCloses)}</span>
-  return <span style={{ color: T.muted }}>Clears every window</span>
+  return <span style={{ color: T.muted }}>Per play</span>
 }
 /* Volume lives on the deal (open question 45): 'N of M plays' metered from billing, or 'Per play' for a deal with no commitment. */
 const VolumeCell = ({ data }: P) => {

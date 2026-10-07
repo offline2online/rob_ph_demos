@@ -1660,6 +1660,32 @@ How an advertiser finds inventory (§5), takes it and fills it. This is the API
 surface of the project and the part a partner actually integrates against.
 The retailer configures it under the **DSP Integration** navigation item.
 
+
+### Prioritised buyers lists — the waterfall (7 Oct 2026)
+
+Decided by Rob, 7 Oct 2026 (Broadsign model): **priority is a property of how
+a list is applied to a slot, not of the list.** A slot's "Assigned to" holds
+an **ordered** list of buyers lists (`Slot.buyersListIds`, highest first;
+`buyersListId` stays as the first for older readers; a slot saved with one
+`buyersListId` is a one-tier waterfall). One list can be on many slots and
+rank differently on each.
+
+- **Exchange**: the auction walks the tiers top-down (`exchange/auction.ts`
+  `clearPosition` → `auctionTier`). Each tier is the position as if only that
+  list were assigned (`tierOf`), so invited buyers, deal ID, the three-level
+  floor and the term are that list's own. The first tier with a valid winning
+  bid at its floor takes the window; otherwise it falls through. A tier whose
+  private auction has closed is passed over; a locked-rate tier books the
+  window when reached. An API bid a tier refuses stays pending for the next
+  tier. **One list per tier this release** — no same-tier price competition.
+- **Admin**: Advertisers / Inventory shows the assigned lists as rows in
+  priority order under the slot's picker; drag a row (or use the arrows) to
+  reorder; a position badge shows the rank. New lists join at the foot.
+- **API**: `assignedTo.buyersListIds` (ordered, no duplicates, each must
+  exist); `buyersListId` alone is still accepted.
+- Known edge: a reserve commitment (`type: reserve`) on a waterfall slot
+  locks the term of the top tier's list.
+
 ### Two API tiers
 
 - **Tier 1 — baseline, mandatory.** Conform to the **published interface of
@@ -3926,3 +3952,61 @@ A reserve is either a **preferred deal** (the premium window held at the reserve
 - **Buffer**: `guaranteeBufferPct` on Advertiser settings (a "Guaranteed deals" section beside the category lists), default 10, 0–50, instance-wide. Omitted on save keeps the stored value.
 - **To the DSP**: the reservation response carries `dspDeal` — DV360 Programmatic Guaranteed / Amazon guaranteed deal with `unitCount` = the committed impressions; a preferred deal maps to a preferred deal with no volume (`dsp/dealTerms.ts`).
 - **Open (dependencies)**: the exact per-DSP guaranteed-deal field names are to be confirmed against each DSP's sandbox; make-good / under-delivery behaviour when delivery falls below the guarantee is not built — billing is unchanged (realised VAC-d at the reserve price).
+
+## Bandwidth protection — restrict uncached creatives in defined hours (Rob, 7 Oct 2026)
+
+Our version of Broadsign's network controls, reframed around pre-caching
+rather than a daypart block. A retailer on a bandwidth-constrained in-store
+network can stop live creative downloads contending with trading without going
+dark on peak trade.
+
+- The restriction applies only to a creative **not already cached on the
+  player**. Cached creative bids, wins and plays normally throughout.
+- In the restricted window a real-time bid may win only if its creative is
+  cached (spec section 7, "Creative retrieval and hand-off"; the player's
+  pre-caching is in PH-CORE-BOUNDARIES.md). Uncached bids are passed over, the
+  next-best cached bid wins, and none cached is `no_fill`.
+- The window is a fixed daily start and end (`fixed`, UTC) or the store's
+  trading hours, while the store is **open** (`store_open`; "closed" is not
+  needed). `off` is the default. Outside the window, uncached creative bids
+  and downloads as normal.
+- Cache state and store hours are PH Core's (the same store hours as the Store
+  Open / Closed variable, section 6), so the player reports `cachedCrids` and
+  `storeOpen` on each impression signal; a missing `storeOpen` never blocks.
+- Set in Advertiser settings (`uncachedRestriction`, `uncachedRestrictionStart`,
+  `uncachedRestrictionEnd`). Not yet: an admin screen for it, and the advance
+  window auction (winners there are known ahead and pre-cached before the slot).
+
+## Bid lookahead — when a real-time slot's auction opens (Rob, 7 Oct 2026)
+
+A real-time slot's auction has to resolve far enough ahead for the winning
+creative to be downloaded and rendered in time. Pre-caching (PH-CORE-BOUNDARIES.md)
+keeps the won creative renderable; the lookahead sets how early the auction opens.
+
+- **Setting**: `bidLookaheadSeconds` on Advertiser settings (a "Real-time bidding"
+  section; field **Bid lookahead**, in seconds). Company-wide, whole seconds, at
+  least 1; anything else is refused with "Bid lookahead is a whole number of
+  seconds, at least 1." (400). Default **35**, matching Broadsign Reach, whose
+  Real-Time Audience API sends bid requests about 35 s before the expected
+  programmatic slot. Omitted on save keeps the stored value (migration 0053).
+- **Per slot, not on a clock**: the auction for a real-time slot opens at
+  `slotStart − bidLookaheadSeconds` (`rtbAuctionOpensAt`, `domain/bidLookahead.ts`).
+  The player's impression signal carries `slotStartsAt`; a signal earlier than
+  that is refused, 409, naming when the auction opens. Without `slotStartsAt`
+  the player is signalling at playout and the auction opens now, as before.
+- Advance window positions are unaffected: they keep the window auction.
+
+## Default committed plays — the play config feeds the buyers list (Rob, 7 Oct 2026)
+
+- **Setting**: `defaultCommittedPlays` on Advertiser settings (a "Play defaults"
+  section; field **Default committed plays**). Company-wide, a whole number of
+  plays, at least 1, or empty for none (per play); anything else is refused
+  with "Default committed plays is a whole number of plays, at least 1, or
+  empty." (400). Omitted on save keeps the stored value; `null` clears it
+  (migration 0054).
+- **Flow**: creating a buyers-and-targeting list pre-fills **Committed plays**
+  from it. It is a default, not a cap: the field stays editable and the saved
+  figure is the list's own. A changed default is picked up by the next new list
+  (and by an open new-list form whose field is still untouched).
+- **Unchanged**: editing a saved list never takes the default; existing lists'
+  `committedPlays` and the "N of M plays" delivery metering are not touched.

@@ -46,7 +46,7 @@ import type { Context } from '../context'
 import { TRANSACTING_CURRENCY } from '../domain/currency'
 import { bookLockedTermWindow, lockTermOnClear, termStateAt } from '../billing'
 import { isLive } from '../domain/exchange'
-import { type PositionRef, allPositions, assignmentOf, effectivePartnerIds, filterAsync, isRealtime, isSellable, nextWindow, positionView, windowMsFor, windowStartOf } from '../domain/positions'
+import { type PositionRef, allPositions, assignmentOf, tierOf, effectivePartnerIds, filterAsync, isRealtime, isSellable, nextWindow, positionView, windowMsFor, windowStartOf } from '../domain/positions'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 import { type ReservationRecord, TAKEN } from '../repos/ReservationRepo'
 import { advertiserSlug, assignedOf } from '@ph-dsp/types'
@@ -146,8 +146,18 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, bidder
   const taken = existing.find((r) => !r.testMode && TAKEN.includes(r.status))
   if (taken) return { ...out, skipped: taken.status === 'reserved' ? 'Reserved: held outside the open auction.' : 'Already sold.' }
 
+  /* The waterfall (7 Oct 2026, Broadsign model): a position assigned several
+     buyers lists tries them top-down, one list per tier. The first tier whose
+     auction yields a winning bid at its floor takes the window; each tier
+     before it that did not falls through. A tier is the position as if only
+     that list were assigned to it (tierOf), so every check (invited buyers,
+     deal ID, the three-level floor, the term) is that list's own. A position
+     with one list, or none, is a single tier and runs exactly as before. */
+  const listIds = assignmentOf(p.def) === 'deal' ? assignedOf(p.def).buyersListIds : []
+  const tiers = listIds.length > 1 ? listIds.map((id) => tierOf(p, id)) : [p]
+
   /* Two-period private auctions (spec "…dynamic VAC-d billing over the
-     delivery term"): once this deal's rate is locked, every window in its
+     delivery term"): once a deal's rate is locked, every window in its
      delivery term books directly at that rate — no bidding. Before it
      locks, a deal with auctionCloses set still runs the real auction
      below like any other, until that deadline passes with nothing having
@@ -155,18 +165,23 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, bidder
      term (falls through, same as an expired delivery term always has). A
      deal with no auctionCloses set never hits either branch here and
      keeps clearing fresh every window, exactly as before this model
-     existed. */
-  if (assignmentOf(p.def) === 'deal') {
-    const listId = assignedOf(p.def).buyersListId
-    const list = listId ? await ctx.buyersLists.get(listId) : null
+     existed. In a waterfall a tier whose auction has closed is passed over
+     and a tier whose rate is locked takes the window when reached. */
+  const open: PositionRef[] = []
+  let closedNote = ''
+  for (const tp of tiers) {
+    if (assignmentOf(tp.def) !== 'deal') { open.push(tp); continue }
+    const list = await ctx.buyersLists.get(assignedOf(tp.def).buyersListId as string)
     const term = list ? termStateAt(list, start) : null
     if (list && term?.active) {
-      if (term.locked) return bookLockedTermWindow(ctx, p, start, list, out)
-      if (!term.auctionOpen) {
-        await settlePending(ctx, p.positionId, start, `The private auction closed with no clearing bid (${list.name}); this window is no longer sold under the deal.`)
-        return { ...out, skipped: `Private auction window closed with no clearing bid (${list.name}).` }
-      }
+      if (term.locked) return bookLockedTermWindow(ctx, tp, start, list, out)
+      if (!term.auctionOpen) { closedNote = list.name; continue }
     }
+    open.push(tp)
+  }
+  if (!open.length) {
+    await settlePending(ctx, p.positionId, start, `The private auction closed with no clearing bid (${closedNote}); this window is no longer sold under the deal.`)
+    return { ...out, skipped: `Private auction window closed with no clearing bid (${closedNote}).` }
   }
 
   /* Locked against new sales (30 Sep 2026): windows already booked were
@@ -177,6 +192,34 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, bidder
     return { ...out, skipped: 'Locked against new sales.' }
   }
 
+  let live: ReservationRecord | null = null
+  let won: PositionRef = p
+  for (const [i, tp] of open.entries()) {
+    live = await auctionTier(ctx, tp, start, bidders, out, i === open.length - 1)
+    if (live) { won = tp; break }
+  }
+  /* Anything still pending for this window now arrived between the read
+     above and the clear (the checks above await), or was never a
+     candidate: it is settled here, never left pending on a closed window.
+     POST /v1/reservations also refuses a bid once the window's auction is
+     claimed (auction_runs), so on the scheduled path this finds nothing. */
+  await settlePending(ctx, p.positionId, start, 'Placed after this window’s auction had cleared.')
+  if (live) {
+    await handOff(ctx, live)
+    out.winner = { reservationId: live.id, partnerId: live.partnerId, advertiserId: live.advertiserId, clearingCpm: live.bidCpm as number }
+    await lockTermOnClear(ctx, won, live)
+  }
+  return out
+}
+
+/* One tier's auction: bid requests to the DSPs this tier invites, the API
+   bids already placed, every pre-auction check against this tier's list
+   and floor, then the clear. Returns the live winner, or null when the
+   tier yields no valid winning bid at its floor, so the waterfall falls
+   through. An API bid this tier refuses is left pending for the next tier
+   to judge, and rejected only by the last (a bid below tier one's floor
+   may clear tier two's). */
+async function auctionTier(ctx: Context, p: PositionRef, start: string, bidders: PartnerRecord[], out: PositionOutcome, last: boolean): Promise<ReservationRecord | null> {
   const candidates: ReservationRecord[] = []
   /* Until Exchange settings are complete, no DSP is sent bid requests (spec
      §7): `bidders` is empty then. */
@@ -193,7 +236,7 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, bidder
     const reqId = `req_${randomUUID().slice(0, 12)}`
     sent.push({ dsp, reqId, res: ctx.bidder.send(url, await buildBidRequest(ctx, p, dsp, reqId, view!), bidderTuning(dsp.bidder, ctx.config)) })
   }
-  out.bidRequests = sent.length
+  out.bidRequests += sent.length
   for (const { dsp, reqId, res: pending } of sent) {
     const res = await pending
     /* A response to some other request (OpenRTB: BidResponse.id echoes
@@ -238,24 +281,13 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, bidder
         () => checkVersionCount(ctx, p, r.campaignId as string),
         () => checkFloor(ctx, r.bidCpm as number, r.advertiserId, { partner, position: p }),
       )
-    if (refusal) await ctx.reservations.update(r.id, { status: 'rejected', reason: refusal.reason })
+    if (refusal) { if (last) await ctx.reservations.update(r.id, { status: 'rejected', reason: refusal.reason }) }
     else candidates.push(r)
   }
 
-  const live = await clear(ctx, candidates.filter((c) => !c.testMode))
+  const winner = await clear(ctx, candidates.filter((c) => !c.testMode))
   await clear(ctx, candidates.filter((c) => c.testMode))
-  /* Anything still pending for this window now arrived between the read
-     above and the clear (the checks above await), or was never a
-     candidate: it is settled here, never left pending on a closed window.
-     POST /v1/reservations also refuses a bid once the window's auction is
-     claimed (auction_runs), so on the scheduled path this finds nothing. */
-  await settlePending(ctx, p.positionId, start, 'Placed after this window’s auction had cleared.')
-  if (live) {
-    await handOff(ctx, live)
-    out.winner = { reservationId: live.id, partnerId: live.partnerId, advertiserId: live.advertiserId, clearingCpm: live.bidCpm as number }
-    await lockTermOnClear(ctx, p, live)
-  }
-  return out
+  return winner
 }
 
 /* First price: the highest bid wins and pays its bid; ties go to the earlier bid.
