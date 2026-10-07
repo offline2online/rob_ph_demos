@@ -236,7 +236,7 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, bidder
         () => checkAdvertiser(ctx, p, partner, seat.name, seat.domain ? [seat.domain] : [], seat.id, start),
         () => checkTargeting(p, r.pricingType),
         () => checkVersionCount(ctx, p, r.campaignId as string),
-        () => checkFloor(ctx, r.bidCpm as number, r.advertiserId),
+        () => checkFloor(ctx, r.bidCpm as number, r.advertiserId, { partner, position: p }),
       )
     if (refusal) await ctx.reservations.update(r.id, { status: 'rejected', reason: refusal.reason })
     else candidates.push(r)
@@ -352,7 +352,7 @@ export async function vetBid(ctx: Context, p: PositionRef, dsp: PartnerRecord, s
     () => (opts.atBid ? checkCampaignAtBid(ctx, campaignId) : checkCampaign(ctx, campaignId)),
     () => checkTargeting(p, campaign.pricingType),
     () => checkVersionCount(ctx, p, campaignId),
-    () => checkFloor(ctx, price, advertiserId),
+    () => checkFloor(ctx, price, advertiserId, { partner: dsp, position: p }),
   )
   if (late) return reject(late.reason, { advertiserId, campaignId })
   return { ok: true, advertiserId, campaignId, pricingType: campaign.pricingType ?? null, seatId: seat.id }

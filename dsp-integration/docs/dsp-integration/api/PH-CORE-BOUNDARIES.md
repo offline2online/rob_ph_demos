@@ -680,6 +680,29 @@ migration 0021's one-live-winner-per-window index is unaffected. Not yet
 covered: per-impression billing of real-time plays, and per-impression
 `imp.qty` (the request still carries the window's assumed views).
 
+### Website and Mobile App slots: RTB only (7 Oct 2026, Rob)
+
+A Website or Mobile App display type can now have slots marked **available for
+RTB** (an Advertiser slot with `bidMode: realtime`, saved from the playlist's
+slot editor). For these two touch points real-time bidding is the **only**
+programmatic path: no play windows, reserve price, billing unit, campaign cap,
+named-advertiser hold, deal (buyers-list private auction) or guaranteed path;
+the API refuses each. Digital Signage and Kiosk are unchanged.
+
+Playlists and website/app rendering are PH Core's, so this needs a PH Core
+change on both sides of the seam:
+
+| PH Core | Exchange |
+|---|---|
+| Stores the slot flag on the playlist slot (the display type's `phExtensions.slots[n].bidMode`) and shows the *Available for RTB* switch. | Validates it: only an Advertiser slot, only `realtime`, never Stores. |
+| At render time, for a flagged slot only, calls `POST /impressions` `{displayId, slot}` once per impression (one render, one impression). An unflagged slot never calls it. The `displayId` is the website or app surface registered under the display type. | Sends one OpenRTB request per eligible DSP with the **`site`** (Website) or **`app`** (Mobile App) object, never `dooh`, and **no `imp.qty`** (multiplier 1). `imp.ext.ph.mode` = `realtime`. Buyers and targeting lists, blocklists, seat permissions, USD bidding and post-bid creative approval apply as for any real-time slot. A web/app slot needs no audience score to be sold. |
+| Renders the winning creative from `creative.url` (an `at_bid` creative is the DSP's own URL), or its own content on `no_fill` or a late answer, and reports the play once. | Answers `filled` or `no_fill`, always 200, within the bid budget. |
+
+`site.id`/`app.id` is the display type's id and `name` its name; `site.domain` and
+`publisher` are the exchange's. No device, user or cookie data is sent.
+Not yet covered: the page URL / app bundle and store URL (`site.page`,
+`app.bundle`), `device` and IFA, which the player would have to supply.
+
 ## Reserved for later releases (REQUIREMENTS §9, spec only)
 
 These are reserved names and places, with no behaviour yet:

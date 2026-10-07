@@ -82,7 +82,7 @@ describe('venue metadata comes from the display-type seam value, not from this b
     await ctx.displayTypes.saveExtensions('menu_board', { ...ext, venue: { ...ext.venue!, openOohVenueType: 'retail.pharmacy' } })
     await runAuction(ctx, W1)
     expect(sent).toHaveLength(1)
-    expect(sent[0].body.dooh.venuetype).toEqual(['retail.pharmacy'])
+    expect(sent[0].body.dooh?.venuetype).toEqual(['retail.pharmacy'])
     const inv = await app.inject({ method: 'GET', url: '/api/v1/inventory/menu_board.s2', headers: GOOGLE })
     expect(inv.json().screen.openOohVenueType).toBe('retail.pharmacy')
     /* Cleared, the field is omitted from the response and the request carries no venue type. */

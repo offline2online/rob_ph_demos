@@ -1,7 +1,7 @@
 /* Slot ownership (spec §1): server-side validation of what the Slot
    assignment editor allows. Ownership decides who may fill a slot; how the
    slot plays is unchanged. */
-import { UNLIMITED, allowsAdvertising, type Assigned, type DisplayType, type DisplayTypeExtensions, type Slot } from '@ph-dsp/types'
+import { UNLIMITED, allowsAdvertising, isRtbOnly, type Assigned, type DisplayType, type DisplayTypeExtensions, type Slot } from '@ph-dsp/types'
 import type { BuyersListRepo } from '../repos/BuyersListRepo'
 import type { CompanySettings } from '../repos/CompanySettingsRepo'
 import type { PartnerRecord } from '../repos/PartnerRepo'
@@ -56,7 +56,10 @@ export function validateExtensions(dt: DisplayType, ext: DisplayTypeExtensions):
   ext.slots.forEach((s, i) => {
     if (!s.label?.trim()) out.push({ field: `slots[${i}].label`, reason: 'A label is required.' })
     if (!(['internal', 'advertiser', 'retail'] as string[]).includes(s.owner)) out.push({ field: `slots[${i}].owner`, reason: 'One of: internal, advertiser, retail.' })
-    else if (!advertisingAllowed && s.owner !== 'internal') out.push({ field: `slots[${i}].owner`, reason: 'Advertising isn’t available for this touch point: only Headquarters slots are allowed.' })
+    else if (!advertisingAllowed && s.owner === 'advertiser' && isRtbOnly(dt.touchPoint)) {
+      /* Website / Mobile App: RTB is the only programmatic path. */
+      if (s.bidMode !== 'realtime') out.push({ field: `slots[${i}].bidMode`, reason: 'On a website or mobile app an Advertiser slot is sold by real-time bidding only: mark it available for RTB.' })
+    } else if (!advertisingAllowed && s.owner !== 'internal') out.push({ field: `slots[${i}].owner`, reason: 'Advertising isn’t available for this touch point: only Headquarters slots are allowed.' })
     else if (s.owner === 'retail') out.push({ field: `slots[${i}].owner`, reason: `Slot ${i + 1}: Stores can’t own a slot in this release — choose internal or advertiser.` })
     if (s.bidMode !== undefined && s.bidMode !== 'advance' && s.bidMode !== 'realtime') out.push({ field: `slots[${i}].bidMode`, reason: 'One of: advance, realtime.' })
     else if (s.bidMode === 'realtime' && s.owner !== 'advertiser') out.push({ field: `slots[${i}].bidMode`, reason: 'Only an Advertiser slot can be sold in real time.' })

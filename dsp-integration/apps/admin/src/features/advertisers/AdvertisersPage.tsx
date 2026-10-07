@@ -7,7 +7,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { App, Button, InputNumber, Select, Spin, Switch } from 'antd'
 import { Tip } from '../../shared/Tip'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
-import { INTERACTIVE_ENABLED, RESERVE_PRICE_TIP, DEFAULT_BILLING_UNIT_HOURS, DEFAULT_MAX_CAMPAIGNS, MAX_MAX_CAMPAIGNS, MIN_MAX_CAMPAIGNS, SLOT_OWNERS, assignedLabels, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type Session } from '@ph-dsp/types'
+import { INTERACTIVE_ENABLED, RESERVE_PRICE_TIP, DEFAULT_BILLING_UNIT_HOURS, DEFAULT_MAX_CAMPAIGNS, MAX_MAX_CAMPAIGNS, MIN_MAX_CAMPAIGNS, SLOT_OWNERS, assignedLabels, isRtbOnly, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type Session } from '@ph-dsp/types'
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, ApiRequestError } from '../../api/client'
@@ -206,6 +206,11 @@ const effectiveMaxCampaigns = (c: InvCtx['current'], r: AvailableInventoryRow): 
   return override ?? c.maxCampaignsDefaults[r.displayTypeId] ?? DEFAULT_MAX_CAMPAIGNS
 }
 
+/* Website and Mobile App slots are sold by real-time bidding only (ticket
+   HAmTUHQVj63NDiY4hLk8): no play windows, reserve price, billing unit or
+   campaign cap, so those cells say so instead of offering an input. */
+const RtbOnlyCell = () => <span style={{ color: T.muted }} title="Website and mobile app slots are sold by real-time bidding only: no play windows, reserve, deals or guaranteed path.">RTB only</span>
+
 /* Who may buy this position (Rob, 20 Sep; buyers lists/private auctions
    added 23 Sep): DSPs, named advertisers, a buyers list's private auction,
    or the whitelist. Nothing chosen means any connected DSP. */
@@ -231,19 +236,20 @@ function AssignedCell({ data, context }: IP) {
     if (!via.includes(d.name)) via.push(d.name)
     advertiserDsps.set(x.name, via)
   }
+  const rtbOnly = isRtbOnly(data.touchPoint)
   const options = [
     { label: 'DSPs', options: c.dsps.map((d) => ({ value: `dsp:${d.partnerId}`, label: d.name })) },
-    {
+    ...(rtbOnly ? [] : [{
       /* Directly underneath DSPs, not after Advertisers (Rob, 23 Sep —
          failed testing, "place the new buyers list directly underneath the
          list of DSP's"). */
-      label: 'Buyers lists (private auction)',
+      label: 'Buyers and targeting (private auction)',
       options: [
         ...c.buyersLists.map((l) => ({ value: `deal:${l.id}`, label: l.name, note: `${l.invitedBuyers.length} invited buyer${l.invitedBuyers.length === 1 ? '' : 's'}` })),
-        { value: ADD_BUYERS_LIST, label: '+ Add new buyers list…' },
+        { value: ADD_BUYERS_LIST, label: '+ Add new buyers and targeting…' },
       ],
     },
-    { label: 'Advertisers', options: [...advertiserDsps.entries()].map(([name, via]) => ({ value: `adv:${name}`, label: `${name} (${via.join(', ')})` })) },
+    { label: 'Advertisers', options: [...advertiserDsps.entries()].map(([name, via]) => ({ value: `adv:${name}`, label: `${name} (${via.join(', ')})` })) }]),
     { label: 'Or', options: [{ value: WHITELIST, label: 'Whitelist only' }] },
   ]
   return (
@@ -297,6 +303,7 @@ function AssignedCell({ data, context }: IP) {
    slot's own input, independent from the others until reset. */
 function ReservePriceCell({ data, context }: IP) {
   if (!data) return null
+  if (isRtbOnly(data.touchPoint)) return <RtbOnlyCell />
   const c = context.current
   const override = edited(c, data).reservePrice
   const overridden = override !== null
@@ -349,6 +356,7 @@ const INTERACTIVE_RESERVE_HEADER = 'Interactive reserve price'
 
 function InteractiveReservePriceCell({ data, context }: IP) {
   if (!data) return null
+  if (isRtbOnly(data.touchPoint)) return <RtbOnlyCell />
   const c = context.current
   const e = edited(c, data)
   if (!showsInteractiveReserve(data.qrControl, e)) return <span style={{ color: T.muted }}>—</span>
@@ -383,6 +391,7 @@ const durationLabel = (hours: number) => {
    company-wide play window (Advertiser settings → Auction schedule). */
 function BillingUnitCell({ data, context }: IP) {
   if (!data) return null
+  if (isRtbOnly(data.touchPoint)) return <RtbOnlyCell />
   const c = context.current
   const override = edited(c, data).billingUnitHours
   const overridden = override !== null
@@ -423,6 +432,7 @@ function BillingUnitCell({ data, context }: IP) {
    marketing user always reads a real number. */
 function MaxCampaignsCell({ data, context }: IP) {
   if (!data) return null
+  if (isRtbOnly(data.touchPoint)) return <RtbOnlyCell />
   const c = context.current
   const override = edited(c, data).maxCampaigns
   /* != null (not !==) so a genuinely-unset value — undefined, e.g. a slot

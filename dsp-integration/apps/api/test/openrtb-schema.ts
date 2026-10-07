@@ -43,3 +43,13 @@ export const OPENRTB_26_DOOH_REQUEST = closed({
   tmax: int,
   at: { enum: [1, 2] },
 }, ['id', 'imp', 'dooh', 'source', 'cur', 'tmax', 'at'])
+
+/* The same request for a Website or Mobile App slot sold in real time
+   (ticket HAmTUHQVj63NDiY4hLk8): `site` or `app` replaces `dooh`, and an
+   impression carries no `qty` multiplier (one impression per render). */
+const publisher = closed({ id: str, name: str, domain: str }, ['id'])
+const webAppImp = (OPENRTB_26_DOOH_REQUEST.properties.imp as { items: { properties: Record<string, unknown>; required: string[] } }).items
+const withoutQty = { ...webAppImp, properties: Object.fromEntries(Object.entries(webAppImp.properties).filter(([k]) => k !== 'qty')) }
+const { dooh: _dooh, ...commonProps } = OPENRTB_26_DOOH_REQUEST.properties as Record<string, unknown>
+export const OPENRTB_26_SITE_REQUEST = closed({ ...commonProps, imp: { type: 'array', minItems: 1, items: withoutQty }, site: closed({ id: str, name: str, domain: str, publisher }, ['id']) }, ['id', 'imp', 'site', 'source', 'cur', 'tmax', 'at'])
+export const OPENRTB_26_APP_REQUEST = closed({ ...commonProps, imp: { type: 'array', minItems: 1, items: withoutQty }, app: closed({ id: str, name: str, publisher }, ['id']) }, ['id', 'imp', 'app', 'source', 'cur', 'tmax', 'at'])

@@ -8,7 +8,7 @@ import { TRANSACTING_CURRENCY } from './currency'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 import { type Awaitable, allOf, andThen } from '../db/db'
 import { type ReservationStatus, TAKEN } from '../repos/ReservationRepo'
-import { INTERACTIVE_ENABLED, advertiserSlug, assignedOf, billingUnitHoursOf, interactiveReservePriceOf, maxCampaignsOf, reservePriceOf, type Assigned } from '@ph-dsp/types'
+import { INTERACTIVE_ENABLED, advertiserSlug, assignedOf, billingUnitHoursOf, interactiveReservePriceOf, isRtbOnly, maxCampaignsOf, reservePriceOf, type Assigned } from '@ph-dsp/types'
 import { invitedPartnerIds, isInvitedBuyer } from './buyersLists'
 import { isActiveAt, lockedTermSpan } from '../billing/term'
 import { effectiveLists, isBlocked, isOn } from './lists'
@@ -409,6 +409,9 @@ export function assumedViewsFor(scored: number, companyHours: number, p: Positio
    creative, and billing keys off that. Loop length is screen context only.
    Returns why not, or null when sellable. */
 export function unsellableReason(ctx: Context, p: PositionRef, known?: { scored: boolean }): Awaitable<string | null> {
+  /* A website or mobile app slot is sold per impression, not by assumed views
+     per window, so there is no audience score to wait for. */
+  if (isRtbOnly(p.displayType.touchPoint)) return null
   /* A caller that already has the slot's audience (Available Inventory
      reads it for `scored`) passes it, saving a second audience read per
      slot. */

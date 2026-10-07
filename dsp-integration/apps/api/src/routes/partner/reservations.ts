@@ -133,7 +133,7 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
       () => checkVersionCount(ctx, pos, c.campaignId),
       /* A reserve-price booking is checked at the rate it is booked at:
          the reserve price never clears below the floor (OQ45). */
-      () => checkFloor(ctx, b.type === 'reserve' && reservePrice !== null ? reservePrice : (b.bidCpm as number), c.advertiserId),
+      () => checkFloor(ctx, b.type === 'reserve' && reservePrice !== null ? reservePrice : (b.bidCpm as number), c.advertiserId, { partner, position: pos }),
     )
     if (refusal) throw new HttpError(422, refusal.code, refusal.reason)
 

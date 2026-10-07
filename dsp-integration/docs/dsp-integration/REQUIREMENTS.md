@@ -11,6 +11,14 @@ record.
 
 **Changelog**
 
+- **7 Oct 2026** — bid floor becomes a three-level hierarchy (Rob; ticket
+  kqsRTYmg1tAYww1vgHMs, build DIlKVuz9yiFANxKz23yP, lists
+  w0Iu6g6efYGjA3U6J1Nv): a **platform floor** (Advertiser settings, advanced),
+  a **DSP floor** per connected DSP and a **buyers and targeting list floor**
+  per list. The most specific floor that is set applies, a blank level
+  inherits from the level above, and the platform floor is the minimum.
+  Every description of a single base floor or a platform-only floor below is
+  rewritten to point at §4 "The floor hierarchy".
 - **7 Oct 2026** — the per-slot "Targeting supported" setting is removed
   (Rob; tickets HmJuWvvVTEZ0l3aUuwA9 and V391ZSMOfIhSQXc4bPT3). A slot no
   longer says which kinds of campaign it takes: what a buyer may target is
@@ -78,7 +86,8 @@ This specification covers these areas, and only these:
    retailer approves them in the **existing Campaigns section** where the
    advertiser requires approval. Whether an advertiser requires approval, and
    its floor multiplier, are set on a new admin-only **Advertisers** screen (§3).
-4. **Pricing**: the currency, the CPM bid floor, audience scoring and a floor multiplier
+4. **Pricing**: the currency, the three-level CPM bid floor (platform, DSP,
+   buyers and targeting list), audience scoring and a floor multiplier
    per advertiser (§4).
 5. **Inventory API**: what inventory exists and what is available, derived
    from the slots assigned on each display type (§5).
@@ -269,7 +278,7 @@ Page-title tooltips for the DSP Integration company pages:
 | Page | Tooltip |
 |---|---|
 | **Exchange settings** | Sets up your organisation as the seller of record for its screens. Configurable here: organisation name, domain, seller ID and ad-ops contact email, all required. Once saved and complete, sellers.json is published at https://[domain]/sellers.json and every bid request carries your domain and seller ID in its SupplyChain; until then no DSP is sent bid requests. Not configurable (platform defaults): seller type (Publisher), the DOOH object, the OpenOOH venue taxonomy, QPS and bid timeout. Bid requests use OpenRTB 2.6 as the minimum supported version for programmatic DOOH; the exchange is designed to adopt 2.7, 2.8 and later versions per DSP as the market moves. |
-| **Advertiser settings** | Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (currency and floor CPM), the Auction schedule (when bidding opens, play-window length, auction cutoff) and Category lists (the IAB category whitelist and blacklist, chosen from the IAB taxonomy and applied to every DSP; each DSP's advertiser lists are on its own page). Per-advertiser campaign approval and floor multipliers, and the inventory advertisers can buy, are on Advertisers / Inventory. |
+| **Advertiser settings** | Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (currency and the platform floor CPM, the minimum of the floor hierarchy, §4; advanced), the Auction schedule (when bidding opens, play-window length, auction cutoff) and Category lists (the IAB category whitelist and blacklist, chosen from the IAB taxonomy and applied to every DSP; each DSP's advertiser lists are on its own page). Per-advertiser campaign approval and floor multipliers, and the inventory advertisers can buy, are on Advertisers / Inventory. |
 | **Shared Targeting Variables** | Variables shared through the API with connected DSPs. Once a variable is enabled for a DSP, that DSP's advertisers can use it in targeting conditions for more advanced campaign targeting; the platform evaluates the condition and never returns the value. They are the same variables as a campaign's Targeting tab. Choose which DSPs may use each one below; default platform variables only in this release. |
 
 The **Enable DSP Integration** switch at the top of Exchange settings has
@@ -341,7 +350,11 @@ advertising:
   disabled, matching how the two display types themselves are additive
   rather than a variant of an existing one. Revisit if that's wrong
   ("unless confirmed otherwise").
-- **HQ-only: no advertising.** See *Slot ownership* below — this is the
+- **HQ-only: no advertising — except RTB** (widened 7 Oct 2026, ticket
+  HAmTUHQVj63NDiY4hLk8): a slot may be marked **available for RTB**, and
+  that is the only way to sell one. See *Website and Mobile App: RTB only*
+  below. The rest of this bullet is the advance (window) path, which stays
+  closed to them. See *Slot ownership* below — this is the
   more consequential of the two differences, since it is also what keeps
   Website and Mobile App out of Advertisers / Inventory, Available
   Inventory, the Inventory API and bid requests, without any of those four
@@ -1050,19 +1063,22 @@ across every DSP and crid they arrive under.
 The currency and the floor are configured
 once, company-wide, in **DSP Integration → Advertiser settings → Pricing**;
 the floor multiplier is set per advertiser on the **Advertisers** screen.
-Every DSP inherits these; nothing pricing-related is set or shown on a DSP's
-page. All values are defaults, overridable per retailer.
+The currency and the platform floor are company-wide; a DSP's own floor is set
+on that DSP's page and a buyers and targeting list's floor on the list
+(§4 "The floor hierarchy"). All values are defaults, overridable per retailer.
 
 ### Pricing field tooltips
 
 | Field | Tooltip |
 |---|---|
 | **Pricing** (section) | Effective floor = floor CPM × the advertiser's floor multiplier (set on Advertisers / Inventory), the same for every campaign type. Bids below it never win. Every play bills at the committed CPM. |
-| **Currency** | Used for the floor CPM, every effective floor and billing. Bid requests carry it as the bid floor currency. |
-| **Floor price (CPM)** | Cost per thousand assumed views (VAC-d). The minimum any bid must meet; bids below it never win. |
+| **Currency** | Used for billing and every price shown. The bid floor signal on a request is in USD (§4, The floor hierarchy). |
+| **Platform floor price (CPM)** | Cost per thousand assumed views (VAC-d). The minimum floor for every DSP and every buyers and targeting list, which can raise it but never go below it. Bids below the resolved floor never win. |
+| **DSP floor price (CPM)** | Optional, per connected DSP. Blank inherits the platform floor; a value raises it for this DSP's bids and cannot go below the platform floor. |
+| **Buyers and targeting list floor price (CPM)** | Optional, per list. Blank inherits the DSP floor; a value raises it for bids under this list and cannot go below the platform floor. |
 
 **A tooltip explains its own field and relates it to the others; it does not
-repeat them** (Rob, 20 Sep). The floor price tooltip carries the VAC-d
+repeat them** (Rob, 20 Sep). The platform floor price tooltip carries the VAC-d
 worked example.
 
 ### Currency
@@ -1070,12 +1086,12 @@ worked example.
 - **Set once, in Advertiser settings → Pricing.** **Any ISO 4217 currency**
   can be chosen; the selector lists every currency by code and name (for
   example *AUD — Australian Dollar*). Default AUD.
-- Applies to the floor CPM, every effective floor and billing. Bid requests
-  carry it as the bid floor currency.
+- Applies to billing and to every price shown in the console. The bid floor
+  signal on the request is stated in USD (§4 "The floor hierarchy").
 - **Phase 1: one instance, one currency, no conversion** (Rob, 4 Oct 2026).
   An instance runs inside one retailer's VPC and that retail media network
-  trades in its own local currency. The floor, every effective floor and all
-  pricing are in that currency, and advertisers bid into the instance in the
+  trades in its own local currency. Billing and all
+  pricing are in that currency (the floor signal on the request is in USD), and advertisers bid into the instance in the
   same currency. There is no cross-currency auction, no FX rates and no
   conversion engine.
 - **A bid's currency is a validation check, not a conversion input.** A bid in
@@ -1124,18 +1140,45 @@ played (Billing, below).
 - **The floor is a CPM: a cost per thousand assumed views.** This is the unit
   DSPs bid in, so the floor applies directly to their bids with no
   conversion.
-- **A single base floor CPM** for all displays, irrespective of display type
-  and playlist. **Default: 100**, in the company currency. Differentiation
+- **The floor is set at three levels, not one** (see "The floor hierarchy"
+  below), and is the same for all displays, irrespective of display type and
+  playlist. The platform floor **defaults to 100**. Differentiation
   comes from each slot's VAC-d score (how many assumed views it delivers),
   not from hand-set per-screen prices.
 - The floor price is the only price the platform must support for bidding:
   bids below the effective floor (below) do not win.
 
+### The floor hierarchy
+
+Rob, 7 Oct 2026. The floor a bid must clear is resolved from three levels:
+
+| Level | Set | Where |
+|---|---|---|
+| **Platform floor** | Once, company-wide | Advertiser settings (advanced) |
+| **DSP floor** | Per connected DSP | That DSP's page |
+| **Buyers and targeting list floor** | Per buyers and targeting list | The list |
+
+- **Resolution.** The most specific floor that is set applies. A blank level
+  inherits from the level above it (list ← DSP ← platform). The platform
+  floor is the minimum: a DSP floor or a list floor can raise the floor but
+  can never set it below the platform floor.
+- **Units.** All floors are in USD. The resolved floor is sent on the bid
+  request as `imp.bidfloor` with `bidfloorcur` `USD`, and a bid below it is
+  rejected.
+- **On top of the resolved floor.** VAC-d (the assumed views the CPM is
+  charged against) and any personalised price (none today, see 5 Oct 2026)
+  apply on top of the resolved floor, as does the advertiser floor
+  multiplier (below).
+- Every other mention of "the floor" in this document means this resolved
+  floor unless it names the platform floor.
+
 ### The levers on the floor
 
 | Lever | Default | Where it is set | Applies to |
 |---|---|---|---|
-| Floor CPM | 100 | Advertiser settings → Pricing | Every campaign |
+| Platform floor CPM (minimum) | 100 | Advertiser settings → Pricing (advanced) | Every campaign |
+| DSP floor CPM | blank (inherits) | The DSP's page | That DSP's bids |
+| Buyers and targeting list floor CPM | blank (inherits) | The list | Bids under that list |
 | Advertiser floor multiplier | **1.0** | Advertisers / Inventory | The floor, per advertiser |
 
 - **Interactive is deferred** (5 Oct 2026): there is no engagement fee
@@ -1144,16 +1187,16 @@ played (Billing, below).
 - **The advertiser floor multiplier** reflects the retailer's relationship
   with that advertiser: for example **0.8** for a preferred supplier, **1.2**
   for a new one. Example: 100 × 0.8 = 80 CPM is what that advertiser's bids
-  must clear, whatever the campaign type. Advertisers / Inventory shows each advertiser's effective base
-  floor (floor × its multiplier).
+  must clear, whatever the campaign type. Advertisers / Inventory shows each advertiser's effective
+  floor (resolved floor × its multiplier).
 - **Every play bills at the committed CPM** (Rob, 5 Oct 2026). The
   personalised multiplier added on 30 Sep 2026 is removed: the auction
-  clears against the base floor (× the advertiser's floor multiplier) and a
+  clears against the resolved floor (× the advertiser's floor multiplier) and a
   window bills at the clearing CPM whichever version played, so there is no
   personalised price anywhere. `PlaybackSource` plays still carry a nullable
   `tier` (`default` / `localised` / `personalised`) as reporting data; billing
   does not price on it (see api/PH-CORE-BOUNDARIES.md, "Playback").
-- **Localised campaigns price at the floor CPM** (times the advertiser
+- **Localised campaigns price at the resolved floor CPM** (times the advertiser
   multiplier).
 - **Engagements are not billed**: interactive campaigns are deferred (5 Oct 2026).
 
@@ -1228,7 +1271,7 @@ played (Billing, below).
   it (the endpoint is the contract), and an advertiser-facing view, which
   rule 3 forbids.
 - **Pre-auction enforcement uses the effective floor CPM** for the campaign's
-  type and advertiser. The auction clears against the base floor (scaled by
+  type and advertiser. The auction clears against the resolved floor (platform, DSP or list; scaled by
   the advertiser's `floorMultiplier`); there is no personalised price (5 Oct 2026).
 
 ## 5. Inventory API
@@ -1303,8 +1346,8 @@ advertisers splitting the position's capacity (§6 "Campaigns and content
 packages" has the retired part-sold model and why it never shipped past
 this document).
 
-- **Pricing** for the requester, in the company currency: the base floor CPM
-  and the effective floor CPM (§4, one floor for every campaign type), including the requester's own advertiser floor multiplier.
+- **Pricing** for the requester, in the company currency: the platform floor CPM
+  and the effective floor CPM (§4, the resolved floor for every campaign type), including the requester's own advertiser floor multiplier.
 - **Reserve price** (decision, Rob, 22 Sep; real inheritance, 22 Sep): a CPM
   premium at which this position can be reserved in advance of the open
   auction. A retailer lets an advertiser commit to a premium rate up front
@@ -1498,6 +1541,13 @@ duplicating it per deal would let one drift from the other:
   sold and falls through to the default campaign. Programmatic guaranteed
   is the reserve-price booking flow (§5 "Reserve price"), delivered with it
   (open question 52).
+- **Volume lives on the deal, never the open auction** (Rob, 7 Oct 2026;
+  open question 45). A deal may carry `committedPlays` over its delivery
+  term; delivery (`deliveredPlays`) is metered in plays from billing line
+  items at the deal's positions, within the term, and the Buyers lists
+  table shows it as "N of M plays" (or "Per play"). The open auction holds
+  no block of plays: no open-RTB position can carry a volume. This replaces
+  the "re-auction after N plays" idea.
 - **Auction resolution rule** (first- vs second-price) is a platform-wide
   setting, defaulting to first-price (this build only implements
   first-price — see §7's clearing rule) — never overridden per list.
@@ -2131,8 +2181,8 @@ category override; the advertiser lists live only on the DSP's own page (§6).
    its QPS ceiling and timeout (the DSP's override, else the platform
    default), then the auction over the
    responses.
-2. **The auction.** The effective floor CPM and currency (§4), sent as the bid
-   floor on the request, plus permitted categories, the advertiser blocklist
+2. **The auction.** The effective floor CPM resolved through the floor hierarchy (§4), sent as `imp.bidfloor` with `bidfloorcur` USD
+   on the request, plus permitted categories, the advertiser blocklist
    and creative approval (§3), all applied **before** a bid can win. Open
    auction only in this release.
 3. **Creative retrieval and hand-off.** The creative is identified by its
@@ -2192,7 +2242,7 @@ arrives last and open-auction fill will look thin until it does.
 - **Screen and loop context**: resolution, aspect, orientation, slot duration,
   loop length and share of voice. `maximumCampaignsPlayedInRotation` *is* the
   share-of-voice denominator.
-- **Bid floor**: the effective floor CPM, in the company currency (§4).
+- **Bid floor**: the effective floor CPM resolved through the hierarchy, sent as `imp.bidfloor` with `bidfloorcur` USD (§4).
 - **Impression multiplier.** One play is an estimated audience (the assumed
   views the CPM is charged against). The Vision/AI passerby count and MIST
   proximity features on the display type can produce a **counted** multiplier
@@ -3085,6 +3135,22 @@ playback analytics.**
   its auto-created playlist has nothing overridden (*Default settings*),
   and its rotation is *Default (Unlimited)* until a cap is picked.
   *(Display Types → New display type)*
+- **Website and Mobile App: RTB only** (ticket HAmTUHQVj63NDiY4hLk8, decision
+  Rob 7 Oct 2026): on the playlist's slot editor these two touch points show an
+  *Available for RTB* switch per slot instead of an owner list; on is an
+  Advertiser slot with `bidMode: realtime`, off is Headquarters. RTB is the
+  only programmatic path — no slot windows, reserve price, billing unit,
+  campaign cap, named-advertiser hold, deal play volume or guaranteed path
+  (the API refuses each, and Advertisers / Inventory shows "RTB only" in
+  those columns and offers no advertiser or buyers-list assignment). The bid
+  request carries the OpenRTB `site` (Website) or `app` (Mobile App) object,
+  never `dooh`, and no `imp.qty` (one impression per render, multiplier 1);
+  each marked slot is one auction per impression. Buyers and targeting lists,
+  blocklists, seat permissions, USD bidding and post-bid creative approval
+  apply as for other RTB inventory. No audience score is needed. PH Core
+  stores the flag and calls the signal at render time (PH-CORE-BOUNDARIES.md →
+  "Website and Mobile App slots"). Digital Signage and Kiosk are unchanged.
+  *(Display Types → Playlists → Slot assignment)*
 - **Website and Mobile App touch points** (ticket, 28 Sep 2026): offered
   alongside Digital Signage and Kiosk, HQ-only (no Advertiser/Stores slot,
   no reserve price/billing unit/max campaigns/venue metadata, out of
@@ -3194,14 +3260,15 @@ playback analytics.**
 ### Pricing
 
 - **Company-wide pricing**: currency (any ISO 4217 currency, listed by code
-  and name), floor CPM,
-  inherited by every DSP, each with the tooltip given in §4.
+  and name), the platform floor CPM,
+  the minimum of the floor hierarchy, each with the tooltip given in §4.
   *(DSP Integration → Advertiser settings → Pricing)*
 - **Advertiser floor multiplier** per advertiser. *(Advertisers)*
 - **Audience scoring framework** (MOVE/VAC-d) the retailer populates, automated
   where cameras are connected. *(spec only)*
+- **Floor hierarchy** (platform, DSP, buyers and targeting list; most specific set wins, blank inherits, platform is the minimum). *(Advertiser settings, DSP page, list)*
 - **Effective floor CPM per pricing type and advertiser**, applied
-  pre-auction and sent as the bid floor with its currency. *(spec only)*
+  pre-auction and sent as `imp.bidfloor` with `bidfloorcur` USD. *(spec only)*
 - **Dynamic VAC-d billing** from existing playback data. *(spec only)*
 
 ### Inventory
@@ -3763,7 +3830,8 @@ partner-contributed attributes have been removed with that scope.
     polling only for this build (`GET /v1/campaigns/{id}/status`); webhooks
     are deferred as a fast-follow, to be revisited if a launch DSP needs push.
 42. **Floor unit.** *Resolved* (§4): the floor is a CPM, a cost per thousand
-    assumed views, which is the unit DSPs bid in.
+    assumed views, which is the unit DSPs bid in. It is resolved through a
+    three-level hierarchy (7 Oct 2026).
 43. **Variable management.** *Resolved (decision, Rob, 29 Sep 2026):* none
     in this build. Variables are platform-defined set values that retailers
     do not manage. **Future release:** retailers will be able to add their
@@ -3780,7 +3848,15 @@ partner-contributed attributes have been removed with that scope.
     is priced against the same score-driven floor; its negotiated rate is a
     commitment on top of the floor, never under it, and a deal never
     bypasses the floor. Programmatic guaranteed is the reserve-price booking
-    flow (§5 "Reserve price"; open question 52).
+    flow (§5 "Reserve price"; open question 52). *Volume (7 Oct 2026,
+    Rob):* a committed number of plays over a term is carried by deals,
+    never by the open auction, which stays per play and holds no block of
+    plays. A buyers list carries an optional `committedPlays` (whole number
+    >= 1, null = per play) and a read-only `deliveredPlays`, metered in
+    plays from billing line items at the positions the deal is attached to,
+    inside its delivery term (migration 0050). For a guaranteed deal the
+    figure is the forecast plus the contingency buffer, set by the
+    guaranteed deal path, not typed in.
 46. **Per-DSP bidder tuning.** *Resolved (decision, Rob, 29 Sep 2026):*
     per-DSP QPS ceiling and bidder timeout overrides on the DSP's connection
     settings (§7 "DSP setup"), override-wins over the platform defaults

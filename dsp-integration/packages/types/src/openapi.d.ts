@@ -1693,6 +1693,33 @@ export interface components {
             description: string;
             invitedBuyers: components["schemas"]["InvitedBuyer"][];
             /**
+             * @description The play volume this deal commits to over its delivery term
+             *     (7 Oct 2026; open question 45). Volume is carried by deals,
+             *     never by the open auction, which stays per play and holds no
+             *     block of plays. null = no volume commitment (the deal is per
+             *     play). For a guaranteed deal the figure is sized from the
+             *     forecast plus the contingency buffer, not typed in here.
+             */
+            committedPlays: number | null;
+            /** @description This list's own bid floor in USD CPM, or null to inherit the DSP's floor, else the platform floor. Never below the platform floor. */
+            floorCpm: number | null;
+            /**
+             * @description Read only. Plays billed so far at every position this deal is
+             *     attached to, in play windows that start inside the delivery term
+             *     (summed from billing line items). 0 when committedPlays is null.
+             */
+            readonly deliveredPlays: number;
+            /**
+             * @description Targeting criteria appended to the deal, ANDed (buyers and
+             *     targeting definition, 7 Oct 2026). Variable and fixed store
+             *     segments, state, suburb (city), display tags, localisation
+             *     variables, and personalised variables only where the retailer has
+             *     enabled them for the invited DSPs. A personalised criterion is a
+             *     predicate only: it is matched against the live visitor at bid
+             *     time and no attribute value is ever sent to the buyer.
+             */
+            targeting: components["schemas"]["Condition"][];
+            /**
              * Format: date-time
              * @description The delivery term's start (spec "Private auctions: two-period
              *     model") — the span being awarded, not the bidding deadline
@@ -2068,6 +2095,8 @@ export interface components {
                 qps?: number | null;
                 /** @description Per-DSP bidder timeout override in ms (Q46), also sent as tmax. Absent: the platform default, 300. null on save clears it. */
                 timeoutMs?: number | null;
+                /** @description This DSP's bid floor in USD CPM (bid floor hierarchy, Rob 7 Oct 2026). Raises the platform floor for this DSP only; never below it (400 otherwise). Absent: inherits the platform floor. null on save clears it. */
+                floorCpm?: number | null;
             };
             /** @description Shown at the top of the DSP page. */
             issues?: {
@@ -2103,6 +2132,8 @@ export interface components {
                 qps?: number | null;
                 /** @description Per-DSP bidder timeout override in ms (Q46), also sent as tmax. Absent: the platform default, 300. null on save clears it. */
                 timeoutMs?: number | null;
+                /** @description This DSP's bid floor in USD CPM (bid floor hierarchy, Rob 7 Oct 2026). Raises the platform floor for this DSP only; never below it (400 otherwise). Absent: inherits the platform floor. null on save clears it. */
+                floorCpm?: number | null;
             };
             /** @enum {string} */
             mode?: "test" | "live";
@@ -3645,6 +3676,12 @@ export interface operations {
                     description: string;
                     invitedBuyers: components["schemas"]["InvitedBuyer"][];
                     /**
+                     * @description Targeting criteria appended to the deal, ANDed. Each must be a
+                     *     shared targeting variable the retailer has enabled for EVERY
+                     *     invited buyer's DSP (400 otherwise). Omitted = no targeting.
+                     */
+                    targeting?: components["schemas"]["Condition"][];
+                    /**
                      * Format: date-time
                      * @description The delivery term's start; inclusive, null = no bound.
                      */
@@ -3664,6 +3701,10 @@ export interface operations {
                      *     field existed.
                      */
                     auctionCloses?: string | null;
+                    /** @description The play volume this deal commits to over its delivery term; a whole number of plays, or null for none (per play). Volume lives on deals, never the open auction. */
+                    committedPlays?: number | null;
+                    /** @description This list's bid floor in USD CPM (bid floor hierarchy, Rob 7 Oct 2026). Never below the platform floor (400 otherwise). Absent or null: inherits the DSP's floor, else the platform's. */
+                    floorCpm?: number | null;
                 };
             };
         };
@@ -3697,6 +3738,12 @@ export interface operations {
                     description: string;
                     invitedBuyers: components["schemas"]["InvitedBuyer"][];
                     /**
+                     * @description Targeting criteria appended to the deal, ANDed. Each must be a
+                     *     shared targeting variable the retailer has enabled for EVERY
+                     *     invited buyer's DSP (400 otherwise). Omitted = no targeting.
+                     */
+                    targeting?: components["schemas"]["Condition"][];
+                    /**
                      * Format: date-time
                      * @description The delivery term's start; inclusive, null = no bound.
                      */
@@ -3711,6 +3758,10 @@ export interface operations {
                      * @description The deal's own one-time bidding deadline (the auction window); see POST's description. Editable even once locked — it no longer has any effect at that point.
                      */
                     auctionCloses?: string | null;
+                    /** @description The play volume this deal commits to over its delivery term; a whole number of plays, or null for none (per play). Volume lives on deals, never the open auction. */
+                    committedPlays?: number | null;
+                    /** @description This list's bid floor in USD CPM (bid floor hierarchy, Rob 7 Oct 2026). Never below the platform floor (400 otherwise). Absent or null: inherits the DSP's floor, else the platform's. */
+                    floorCpm?: number | null;
                 };
             };
         };

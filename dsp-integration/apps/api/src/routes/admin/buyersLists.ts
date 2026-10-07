@@ -2,15 +2,19 @@
    deal objects, managed from Available Inventory's own table underneath the
    Assigned to picker (Rob, 23 Sep). */
 import { randomUUID } from 'node:crypto'
-import { assignedOf, type BuyersList, type InvitedBuyer } from '@ph-dsp/types'
+import { assignedOf, TARGETING_VARIABLES, type BuyersList, type Condition, type InvitedBuyer } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import type { Guards } from '../../http/app'
 import { hasDependents, notFound, validationFailed } from '../../http/errors'
 import { tx } from '../../db/db'
+import { TRANSACTING_CURRENCY } from '../../domain/currency'
+import { positionIdOf } from '../../domain/positions'
+import { permittedFor } from '../../domain/variables'
+import type { Access } from '../../repos/CompanySettingsRepo'
 import type { PartnerRecord } from '../../repos/PartnerRepo'
 
-type Body = { name?: unknown; description?: unknown; invitedBuyers?: unknown; activeFrom?: unknown; activeTo?: unknown; auctionCloses?: unknown }
+type Body = { name?: unknown; description?: unknown; invitedBuyers?: unknown; targeting?: unknown; activeFrom?: unknown; activeTo?: unknown; auctionCloses?: unknown; committedPlays?: unknown; floorCpm?: unknown }
 
 /* Every slot currently assigned to this buyers list, across every display
    type — what stops a delete (spec "Deleting"). */
@@ -19,10 +23,23 @@ const dependentSlots = async (ctx: Context, buyersListId: string) =>
     (t.phExtensions?.slots ?? []).flatMap((s, i) => (assignedOf(s).buyersListId === buyersListId ? [`${t.name} — ${s.label || `slot ${i + 1}`}`] : [])),
   )
 
+/* The positions a deal is attached to: every slot assigned to it, as `displayTypeId.sN`. */
+const positionsOfDeal = async (ctx: Context, buyersListId: string) =>
+  (await ctx.displayTypes.list()).flatMap((t) =>
+    (t.phExtensions?.slots ?? []).flatMap((s, i) => (assignedOf(s).buyersListId === buyersListId ? [positionIdOf(t.id, i + 1)] : [])),
+  )
+
+/* Volume lives on the deal, never the open auction (open question 45): a
+   deal's delivery is the plays billed at its positions inside its term. */
+const withDelivery = async (ctx: Context, l: BuyersList): Promise<BuyersList> => ({
+  ...l,
+  deliveredPlays: l.committedPlays == null ? 0 : await ctx.billing.playsAt(await positionsOfDeal(ctx, l.id), l.activeFrom, l.activeTo),
+})
+
 export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => async (app) => {
   /* An invited buyer must be a seat a connected DSP actually synced. */
   const partnersById = async () => new Map((await ctx.partners.list()).filter((p) => p.status === 'connected').map((p) => [p.id, p]))
-  const parse = (b: Body, partnerById: Map<string, PartnerRecord>, errors: { field: string; reason: string }[]): { name: string; description: string; invitedBuyers: InvitedBuyer[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null } => {
+  const parse = (b: Body, partnerById: Map<string, PartnerRecord>, access: Record<string, Access>, platformFloor: number, errors: { field: string; reason: string }[]): { name: string; description: string; invitedBuyers: InvitedBuyer[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays: number | null; floorCpm: number | null } => {
     const name = typeof b.name === 'string' ? b.name.trim() : ''
     if (!name) errors.push({ field: 'name', reason: 'A name is required.' })
     const description = typeof b.description === 'string' ? b.description.trim() : ''
@@ -38,6 +55,30 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
       else if (!partner.seats.some((x) => x.id === seatId)) errors.push({ field: `invitedBuyers[${i}].seatId`, reason: `Not a seat synced from ${partner.name}.` })
       else if (!invitedBuyers.some((x) => x.partnerId === partnerId && x.seatId === seatId)) invitedBuyers.push({ partnerId, seatId })
     })
+    /* Targeting criteria appended to the deal (Rob, 7 Oct 2026): only
+       variables the retailer has enabled for EVERY invited buyer's DSP, so
+       the deal never offers a dimension some invited DSP cannot use. A
+       personalised criterion is stored as a predicate only; it is matched
+       against the live visitor at bid time and no attribute value reaches
+       the buyer. */
+    const targeting: Condition[] = []
+    const rawTargeting = b.targeting === undefined || b.targeting === null ? [] : Array.isArray(b.targeting) ? (b.targeting as unknown[]) : null
+    if (!rawTargeting) errors.push({ field: 'targeting', reason: 'A list of criteria.' })
+    else if (rawTargeting.length > 20) errors.push({ field: 'targeting', reason: 'At most 20 criteria.' })
+    else {
+      const dsps = [...new Set(invitedBuyers.map((x) => x.partnerId))].flatMap((id) => (partnerById.get(id) ? [partnerById.get(id) as PartnerRecord] : []))
+      rawTargeting.forEach((raw, i) => {
+        const r = (raw ?? {}) as { variable?: unknown; op?: unknown; values?: unknown }
+        const def = TARGETING_VARIABLES.find((v) => v.key === r.variable)
+        if (!def) return void errors.push({ field: `targeting[${i}].variable`, reason: 'Not a shared targeting variable.' })
+        const refused = dsps.filter((p) => !permittedFor(p, access).some((v) => v.key === def.key))
+        if (refused.length) return void errors.push({ field: `targeting[${i}].variable`, reason: `${def.label} is not enabled for ${refused.map((p) => p.name).join(', ')}.` })
+        if (typeof r.op !== 'string' || !def.operators.includes(r.op as never)) return void errors.push({ field: `targeting[${i}].op`, reason: `Not an operator for ${def.label}.` })
+        const values = Array.isArray(r.values) ? (r.values as unknown[]) : []
+        if (!values.length || values.length > 100 || values.some((v) => typeof v !== 'string' || !v.trim() || v.length > 200)) return void errors.push({ field: `targeting[${i}].values`, reason: 'One or more values (up to 100, 200 characters each).' })
+        targeting.push({ source: def.source, variable: def.key, op: r.op as Condition['op'], values: (values as string[]).map((v) => v.trim()) })
+      })
+    }
     const parseDate = (v: unknown, field: string): string | null => {
       if (v === null || v === undefined) return null
       if (typeof v !== 'string' || Number.isNaN(Date.parse(v))) {
@@ -54,23 +95,36 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
        before, inside or after activeFrom/activeTo (a deal can be set up to
        award its term ahead of time). */
     const auctionCloses = parseDate(b.auctionCloses, 'auctionCloses')
-    return { name, description, invitedBuyers, activeFrom, activeTo, auctionCloses }
+    /* committedPlays: the volume this deal commits to over its term — a whole number of plays, or null for none. */
+    let committedPlays: number | null = null
+    if (b.committedPlays !== null && b.committedPlays !== undefined) {
+      if (typeof b.committedPlays !== 'number' || !Number.isInteger(b.committedPlays) || b.committedPlays < 1) errors.push({ field: 'committedPlays', reason: 'A whole number of plays, 1 or more, or null for no volume commitment.' })
+      else committedPlays = b.committedPlays
+    }
+    /* Bid floor hierarchy (7 Oct 2026): blank inherits the DSP's floor, else the platform's; a value can raise the floor, never go below the platform floor. */
+    let floorCpm: number | null = null
+    if (b.floorCpm !== undefined && b.floorCpm !== null) {
+      if (typeof b.floorCpm !== 'number' || !Number.isFinite(b.floorCpm) || b.floorCpm <= 0) errors.push({ field: 'floorCpm', reason: 'Floor price (CPM) must be greater than 0, or empty to inherit.' })
+      else if (b.floorCpm < platformFloor) errors.push({ field: 'floorCpm', reason: `Floor price (CPM) can't be below the platform floor of ${platformFloor} ${TRANSACTING_CURRENCY}.` })
+      else floorCpm = b.floorCpm
+    }
+    return { name, description, invitedBuyers, targeting, activeFrom, activeTo, auctionCloses, committedPlays, floorCpm }
   }
 
   app.get('/buyers-lists', async (req) => {
     guards.flagged()
     guards.requireScope(req, 'sections')
-    return { items: await ctx.buyersLists.list() }
+    return { items: await Promise.all((await ctx.buyersLists.list()).map((l) => withDelivery(ctx, l))) }
   })
 
   app.post<{ Body: Body }>('/buyers-lists', async (req, reply) => {
     guards.flagged()
     guards.requireScope(req, 'admin')
     const errors: { field: string; reason: string }[] = []
-    const parsed = parse(req.body ?? {}, await partnersById(), errors)
+    const parsed = parse(req.body ?? {}, await partnersById(), await ctx.company.variableAccess(), (await ctx.company.get()).floorCpm, errors)
     if (errors.length) throw validationFailed(errors)
     const created: BuyersList = await ctx.buyersLists.insert({ id: `bl_${randomUUID().slice(0, 12)}`, ...parsed })
-    return reply.status(201).send(created)
+    return reply.status(201).send(await withDelivery(ctx, created))
   })
 
   app.put<{ Params: { buyersListId: string }; Body: Body }>('/buyers-lists/:buyersListId', async (req) => {
@@ -78,9 +132,11 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     guards.requireScope(req, 'admin')
     if (!(await ctx.buyersLists.get(req.params.buyersListId))) throw notFound()
     const errors: { field: string; reason: string }[] = []
-    const parsed = parse(req.body ?? {}, await partnersById(), errors)
+    const parsed = parse(req.body ?? {}, await partnersById(), await ctx.company.variableAccess(), (await ctx.company.get()).floorCpm, errors)
     if (errors.length) throw validationFailed(errors)
-    return ctx.buyersLists.update(req.params.buyersListId, parsed)
+    const updated = await ctx.buyersLists.update(req.params.buyersListId, parsed)
+    if (!updated) throw notFound()
+    return withDelivery(ctx, updated)
   })
 
   app.delete<{ Params: { buyersListId: string } }>('/buyers-lists/:buyersListId', async (req, reply) => {

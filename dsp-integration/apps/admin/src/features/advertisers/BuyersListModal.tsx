@@ -1,11 +1,12 @@
-/* New/edit buyers list (spec "Support private auctions" — Available
+/* New/edit buyers and targeting list (spec "Support private auctions" — Available
    Inventory UX): the buyers list and its deal terms are ONE object, created
-   or edited from this one pop-up. Floor (inherited from the slot), the
-   auction resolution rule (platform-wide) and the per-brand relationship
+   or edited from this one pop-up. It carries both who may buy (invited
+   buyers) and the targeting criteria appended to the deal. The floor is optional: blank inherits
+   the DSP's floor, else the platform floor (bid floor hierarchy). The auction resolution rule (platform-wide) and the per-brand relationship
    variable (global on the brand entity) are deliberately not fields here. */
-import { App, Button, DatePicker, Input, Modal, Select } from 'antd'
+import { App, Button, DatePicker, Input, InputNumber, Modal, Select } from 'antd'
 import { useQuery } from '@tanstack/react-query'
-import type { BuyersList, InvitedBuyer } from '@ph-dsp/types'
+import { ALL_DSPS, OPERATOR_LABELS, TARGETING_VARIABLES, type BuyersList, type Condition, type InvitedBuyer, type SharedVariable } from '@ph-dsp/types'
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
 import { api, ApiRequestError } from '../../api/client'
@@ -13,14 +14,15 @@ import { Q } from '../../api/queries'
 import { Icon } from '../../shared/Icon'
 import { T } from '../../theme/phTheme'
 
-type Draft = { name: string; description: string; invitedBuyers: InvitedBuyer[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null }
+type Draft = { name: string; description: string; invitedBuyers: InvitedBuyer[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays: number | null; floorCpm: number | null }
 /* An invited buyer is one synced seat of one connected DSP — the Select's value is both halves. */
 const buyerKey = (b: InvitedBuyer) => JSON.stringify([b.partnerId, b.seatId])
-const blankDraft = (): Draft => ({ name: '', description: '', invitedBuyers: [], activeFrom: null, activeTo: null, auctionCloses: null })
+const blankDraft = (): Draft => ({ name: '', description: '', invitedBuyers: [], targeting: [], activeFrom: null, activeTo: null, auctionCloses: null, committedPlays: null, floorCpm: null })
 const draftOf = (l: BuyersList): Draft => ({
   name: l.name, description: l.description,
   invitedBuyers: l.invitedBuyers.map((b) => ({ ...b })),
-  activeFrom: l.activeFrom, activeTo: l.activeTo, auctionCloses: l.auctionCloses,
+  targeting: (l.targeting ?? []).map((c) => ({ ...c, values: [...c.values] })),
+  activeFrom: l.activeFrom, activeTo: l.activeTo, auctionCloses: l.auctionCloses, committedPlays: l.committedPlays, floorCpm: l.floorCpm ?? null,
 })
 
 export function BuyersListModal({ open, editing, onClose, onSaved }: {
@@ -51,6 +53,31 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
   /* A saved buyer whose seat is no longer synced stays visible (by its seat ID) so it can be removed. */
   const staleOptions = draft.invitedBuyers.filter((b) => !labelOf.has(buyerKey(b))).map((b) => ({ value: buyerKey(b), label: `${b.seatId} (no longer synced)` }))
   const setBuyers = (keys: string[]) => setDraft((d) => ({ ...d, invitedBuyers: keys.map((k) => { const [partnerId, seatId] = JSON.parse(k) as [string, string]; return { partnerId, seatId } }) }))
+
+  /* Targeting criteria offered are exactly the variables the retailer has
+     enabled for EVERY invited buyer's DSP (Shared Targeting Variables) —
+     nothing else is selectable. A criterion already saved on this list that
+     has since been disabled stays visible, marked, so it can be removed. */
+  const variables = useQuery(Q.targetingVariables)
+  const dspIds = [...new Set(draft.invitedBuyers.map((b) => b.partnerId))]
+  const enabledFor = (v: SharedVariable) => v.access === ALL_DSPS || dspIds.every((id) => (v.access as string[]).includes(id))
+  const enabledVars = (variables.data ?? []).filter(enabledFor)
+  const defOf = (key: string) => TARGETING_VARIABLES.find((v) => v.key === key)
+  const groupOptions = (group: 'localisation' | 'personalisation') => ({
+    label: group === 'localisation' ? 'Store and location' : 'Personalised (matched against the live visitor)',
+    options: enabledVars.filter((v) => v.group === group).map((v) => ({ value: v.key, label: v.label })),
+  })
+  const stale = draft.targeting.filter((c) => !enabledVars.some((v) => v.key === c.variable))
+  const targetingOptions = [
+    ...(stale.length ? [{ label: 'No longer enabled', options: stale.map((c) => ({ value: c.variable, label: `${defOf(c.variable)?.label ?? c.variable} (not enabled)` })) }] : []),
+    groupOptions('localisation'), groupOptions('personalisation'),
+  ].filter((g) => g.options.length)
+  const setCriteria = (keys: string[]) => setDraft((d) => ({
+    ...d,
+    targeting: keys.map((k) => d.targeting.find((c) => c.variable === k) ?? { source: defOf(k)?.source ?? 'store', variable: k, op: defOf(k)?.operators[0] ?? 'include', values: [] }),
+  }))
+  const patchCriterion = (key: string, patch: Partial<Condition>) => setDraft((d) => ({ ...d, targeting: d.targeting.map((c) => (c.variable === key ? { ...c, ...patch } : c)) }))
+  const errorFor = (key: string) => Object.entries(errors).find(([f]) => f.startsWith('targeting[') && draft.targeting[Number(f.slice(10, f.indexOf(']')))]?.variable === key)?.[1]
 
   const save = async () => {
     setSaving(true)
@@ -85,11 +112,11 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
   return (
     <Modal
       open={open} width={580} destroyOnHidden confirmLoading={saving} onCancel={onClose} onOk={save}
-      okText={editing ? 'Save changes' : 'Create buyers list'}
+      okText={editing ? 'Save changes' : 'Create buyers and targeting'}
       title={
         <span className="inline-flex items-center gap-2">
           <Icon name="gavel" size={20} style={{ color: T.primary }} />
-          {editing ? 'Edit buyers list' : 'New buyers list'}
+          {editing ? 'Edit buyers and targeting' : 'New buyers and targeting'}
         </span>
       }
     >
@@ -112,8 +139,31 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
           value={draft.invitedBuyers.map(buyerKey)} options={[...(staleOptions.length ? [{ label: 'Not synced', options: staleOptions }] : []), ...options]}
           onChange={setBuyers}
         />
-        <div className="mt-1" style={{ fontSize: 11, color: T.micro }}>Only advertisers a connected DSP has synced can be invited; each is matched on the seat ID that DSP bids under.</div>
+        <div className="mt-1" style={{ fontSize: 11, color: T.micro }}>Only advertisers a connected DSP has synced can be invited (who can buy); each is matched on the seat ID that DSP bids under.</div>
         {errors.invitedBuyers && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.invitedBuyers}</div>}
+      </div>
+      <div className="mb-3.5">
+        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}>Targeting criteria</label>
+        <Select
+          mode="multiple" className="w-full" aria-label="Targeting criteria" showSearch optionFilterProp="label"
+          loading={variables.isLoading} placeholder="Add criteria appended to this deal (all must match)"
+          notFoundContent="No targeting variables are enabled for the invited DSPs."
+          value={draft.targeting.map((c) => c.variable)} options={targetingOptions} onChange={setCriteria}
+        />
+        <div className="mt-1" style={{ fontSize: 11, color: T.micro }}>Only variables the retailer has enabled for the invited DSPs are offered. Store segments are variable (switched by store staff) or fixed (HQ Admin only); the deal honours whichever you choose. A personalised criterion is matched against the live visitor at bid time — buyers never see the visitor’s attributes.</div>
+        {draft.targeting.map((c) => {
+          const def = defOf(c.variable)
+          return (
+            <div key={c.variable} className="mt-2 flex flex-wrap items-center gap-2" data-testid={`criterion-${c.variable}`}>
+              <span style={{ fontSize: 12.5, fontWeight: 500, minWidth: 140 }}>{def?.label ?? c.variable}</span>
+              <Select size="small" style={{ width: 170 }} aria-label={`${def?.label ?? c.variable} operator`} value={c.op} onChange={(op) => patchCriterion(c.variable, { op })}
+                options={(def?.operators ?? [c.op]).map((o) => ({ value: o, label: OPERATOR_LABELS[o] }))} />
+              <Select mode="tags" size="small" style={{ flex: 1, minWidth: 160 }} aria-label={`${def?.label ?? c.variable} values`} tokenSeparators={[',']} open={false}
+                placeholder={def ? `e.g. ${def.values}` : 'Values'} status={errorFor(c.variable) ? 'error' : undefined} value={c.values} onChange={(values) => patchCriterion(c.variable, { values })} />
+              {errorFor(c.variable) && <div className="w-full" style={{ fontSize: 11.5, color: T.error }}>{errorFor(c.variable)}</div>}
+            </div>
+          )
+        })}
       </div>
       <div className="mb-3.5">
         <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}>Delivery term</label>
@@ -124,6 +174,27 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
         />
         <div className="mt-1" style={{ fontSize: 11, color: T.micro }}>The span this deal is awarded for — leave either side empty for no bound. Outside it, the deal admits nobody.</div>
         {errors.activeTo && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.activeTo}</div>}
+      </div>
+      <div className="mb-3.5">
+        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}>Committed plays</label>
+        <InputNumber
+          min={1} precision={0} style={{ width: '100%' }} aria-label="Committed plays"
+          status={errors.committedPlays ? 'error' : undefined} placeholder="Leave empty for per play"
+          value={draft.committedPlays} onChange={(v) => setDraft((d) => ({ ...d, committedPlays: typeof v === 'number' ? v : null }))}
+        />
+        <div className="mt-1" style={{ fontSize: 11, color: T.micro }}>The number of plays this deal commits to over its delivery term. Volume is carried by deals; the open auction always stays per play. Delivery is counted in plays billed at the slots this list is assigned to.</div>
+        {errors.committedPlays && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.committedPlays}</div>}
+      </div>
+      <div className="mb-3.5">
+        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }} htmlFor="buyersListFloorCpm">Floor price (CPM)</label>
+        <InputNumber
+          id="buyersListFloorCpm" min={0} style={{ width: '100%' }} step={1} placeholder="Inherit the DSP or platform floor"
+          status={errors.floorCpm ? 'error' : undefined}
+          formatter={(v) => (v === undefined || v === null ? '' : String(v))} parser={(v) => Number(v)}
+          value={draft.floorCpm} onChange={(v) => setDraft((d) => ({ ...d, floorCpm: typeof v === 'number' && v > 0 ? v : null }))}
+        />
+        <div className="mt-1" style={{ fontSize: 11, color: T.micro }}>In USD. Applies to deals using this list, overriding the DSP's floor. It can raise the floor but never go below the platform floor. Leave empty to inherit.</div>
+        {errors.floorCpm && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.floorCpm}</div>}
       </div>
       <div>
         <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}>Auction window closes</label>

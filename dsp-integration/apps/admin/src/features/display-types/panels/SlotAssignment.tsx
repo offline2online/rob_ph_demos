@@ -20,16 +20,23 @@
    Advertiser and Stores stay on the list, greyed out with their own
    tooltip, rather than left off it.
 
+   Website and Mobile App slots can also be sold, by real-time bidding only
+   (ticket HAmTUHQVj63NDiY4hLk8, decision Rob 7 Oct 2026): instead of an owner
+   list they get one "Available for RTB" switch per slot — on is an Advertiser
+   slot sold per impression, off is Headquarters. No windows, reserve, deals
+   or guaranteed path is offered for them.
+
    On a multi-zone display type this table sits under each zone's own
    playlist and edits that zone's own slots (ticket, 28 Sep 2026) — there is
    no zone to pick per slot, and no other zone's slots showing here. */
-import { Alert, Button, Input, Select } from 'antd'
+import { Alert, Button, Input, Select, Switch } from 'antd'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
-import { SLOT_OWNERS, allowsAdvertising, assignedOf, providerDef, type Partner, type Slot, type SlotOwner } from '@ph-dsp/types'
+import { SLOT_OWNERS, allowsAdvertising, assignedOf, isRtbOnly, providerDef, type Partner, type Slot, type SlotOwner } from '@ph-dsp/types'
 import { useEffect, useMemo, useState } from 'react'
 import { Field } from '../../../shared/Field'
 import { Grid } from '../../../shared/Grid'
 import { Icon } from '../../../shared/Icon'
+import { Tip } from '../../../shared/Tip'
 import { T } from '../../../theme/phTheme'
 import { ownerAssignment, ownerChange } from '../model'
 
@@ -92,6 +99,23 @@ function LabelCell({ data, context: grid }: ICellRendererParams<Row, unknown, Gr
   )
 }
 
+/* Website / Mobile App: the slot is either Headquarters or available for RTB. */
+function RtbCell({ data, context: grid }: ICellRendererParams<Row, unknown, GridCtx>) {
+  if (!data) return null
+  const context = grid.current
+  const on = data.slot.owner === 'advertiser' && data.slot.bidMode === 'realtime'
+  const closed = !on && !context.advertiserOpen(data.i)
+  return (
+    <Tip title={closed ? 'Enable DSP Integration (DSP Integration → Exchange settings) to make a slot available for RTB.' : 'Each impression of this slot is auctioned in real time. Website and mobile app slots have no play windows, reserve, deals or guaranteed path.'}>
+      <span className="inline-flex items-center gap-2">
+        <Switch size="small" aria-label={`Slot ${data.i + 1} available for RTB`} checked={on} disabled={closed}
+          onChange={(v) => context.setSlot(data.i, v ? { owner: 'advertiser', bidMode: 'realtime' } : { owner: 'internal', bidMode: undefined })} />
+        <span style={{ fontSize: 12, color: on ? T.text : T.muted }}>{on ? 'RTB' : 'Not for sale'}</span>
+      </span>
+    </Tip>
+  )
+}
+
 function OwnerCell({ data, context: grid }: ICellRendererParams<Row, unknown, GridCtx>) {
   if (!data) return null
   const context = grid.current
@@ -137,6 +161,7 @@ export function SlotAssignment({ slots, setSlots, partners, advertiserOpen, onFi
      Mobile App are HQ-only). */
   touchPoint: string
 }) {
+  const rtbOnly = isRtbOnly(touchPoint)
   const hqOnly = !allowsAdvertising(touchPoint)
   const offeredOwners = hqOnly ? HQ_ONLY_OWNERS : RELEASE_OWNERS
   const listedOwners = hqOnly ? ALL_OWNERS : RELEASE_OWNERS
@@ -147,9 +172,11 @@ export function SlotAssignment({ slots, setSlots, partners, advertiserOpen, onFi
     () => [
       { headerName: '#', width: 52, suppressSizeToFit: true, valueGetter: (p) => (p.data ? p.data.i + 1 : ''), cellStyle: { color: T.micro, fontSize: 12 } },
       { headerName: 'Label', width: 260, minWidth: 140, cellRenderer: LabelCell },
-      { headerName: 'Owner', width: 180, minWidth: 140, cellRenderer: OwnerCell },
+      rtbOnly
+        ? { headerName: 'Available for RTB', width: 200, minWidth: 170, cellRenderer: RtbCell }
+        : { headerName: 'Owner', width: 180, minWidth: 140, cellRenderer: OwnerCell },
     ],
-    [],
+    [rtbOnly],
   )
   const broken = slots.filter((s) => brokenPartners(ctx, s).length)
   return (

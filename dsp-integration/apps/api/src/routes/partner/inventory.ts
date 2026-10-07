@@ -9,6 +9,7 @@ import type { Context } from '../../context'
 import { TRANSACTING_CURRENCY } from '../../domain/currency'
 import { type Caller, type PositionRef, type WindowStatus, allPositions, assumedViewsPerWindow, callerOf, findPosition, longestWindowMs, nextWindow, positionView, visibilityFor, windowFacts, windowMs, windowStatus, windowsBetween, windowsCovering } from '../../domain/positions'
 import { effectiveFloorCpm } from '../../domain/pricing'
+import { baseFloorFor } from '../../exchange/enforcement'
 import { andThen } from '../../db/db'
 import { type Rules, throwIfRejected, validateRules } from '../../domain/targetingValidation'
 import { notFound, validationFailed } from '../../http/errors'
@@ -173,7 +174,7 @@ export const inventoryRoutes = (ctx: Context): FastifyPluginAsync => async (app)
     const assumedViews = Math.round(views)
     const company = await ctx.company.get()
     const multiplier = c.advertiser ? (await ctx.company.advertiserSetting(c.advertiser.id)).floorMultiplier : 1
-    const cpm = effectiveFloorCpm(company, multiplier)
+    const cpm = effectiveFloorCpm(company, multiplier, await baseFloorFor(ctx, { partner: req.partner }))
     return { assumedViews, currency: TRANSACTING_CURRENCY, estimatedCost: Math.round((assumedViews / 1000) * cpm * 100) / 100 }
   })
 }
