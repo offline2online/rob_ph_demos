@@ -237,10 +237,10 @@ function AssignedCell({ data, context }: IP) {
       /* Directly underneath DSPs, not after Advertisers (Rob, 23 Sep —
          failed testing, "place the new buyers list directly underneath the
          list of DSP's"). */
-      label: 'Buyers lists (private auction)',
+      label: 'Buyers and targeting (private auction)',
       options: [
         ...c.buyersLists.map((l) => ({ value: `deal:${l.id}`, label: l.name, note: `${l.invitedBuyers.length} invited buyer${l.invitedBuyers.length === 1 ? '' : 's'}` })),
-        { value: ADD_BUYERS_LIST, label: '+ Add new buyers list…' },
+        { value: ADD_BUYERS_LIST, label: '+ Add new buyers and targeting…' },
       ],
     },
     { label: 'Advertisers', options: [...advertiserDsps.entries()].map(([name, via]) => ({ value: `adv:${name}`, label: `${name} (${via.join(', ')})` })) },

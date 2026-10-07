@@ -2,15 +2,17 @@
    deal objects, managed from Available Inventory's own table underneath the
    Assigned to picker (Rob, 23 Sep). */
 import { randomUUID } from 'node:crypto'
-import { assignedOf, type BuyersList, type InvitedBuyer } from '@ph-dsp/types'
+import { assignedOf, TARGETING_VARIABLES, type BuyersList, type Condition, type InvitedBuyer } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import type { Guards } from '../../http/app'
 import { hasDependents, notFound, validationFailed } from '../../http/errors'
 import { tx } from '../../db/db'
+import { permittedFor } from '../../domain/variables'
+import type { Access } from '../../repos/CompanySettingsRepo'
 import type { PartnerRecord } from '../../repos/PartnerRepo'
 
-type Body = { name?: unknown; description?: unknown; invitedBuyers?: unknown; activeFrom?: unknown; activeTo?: unknown; auctionCloses?: unknown }
+type Body = { name?: unknown; description?: unknown; invitedBuyers?: unknown; targeting?: unknown; activeFrom?: unknown; activeTo?: unknown; auctionCloses?: unknown }
 
 /* Every slot currently assigned to this buyers list, across every display
    type — what stops a delete (spec "Deleting"). */
@@ -22,7 +24,7 @@ const dependentSlots = async (ctx: Context, buyersListId: string) =>
 export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => async (app) => {
   /* An invited buyer must be a seat a connected DSP actually synced. */
   const partnersById = async () => new Map((await ctx.partners.list()).filter((p) => p.status === 'connected').map((p) => [p.id, p]))
-  const parse = (b: Body, partnerById: Map<string, PartnerRecord>, errors: { field: string; reason: string }[]): { name: string; description: string; invitedBuyers: InvitedBuyer[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null } => {
+  const parse = (b: Body, partnerById: Map<string, PartnerRecord>, access: Record<string, Access>, errors: { field: string; reason: string }[]): { name: string; description: string; invitedBuyers: InvitedBuyer[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null } => {
     const name = typeof b.name === 'string' ? b.name.trim() : ''
     if (!name) errors.push({ field: 'name', reason: 'A name is required.' })
     const description = typeof b.description === 'string' ? b.description.trim() : ''
@@ -38,6 +40,30 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
       else if (!partner.seats.some((x) => x.id === seatId)) errors.push({ field: `invitedBuyers[${i}].seatId`, reason: `Not a seat synced from ${partner.name}.` })
       else if (!invitedBuyers.some((x) => x.partnerId === partnerId && x.seatId === seatId)) invitedBuyers.push({ partnerId, seatId })
     })
+    /* Targeting criteria appended to the deal (Rob, 7 Oct 2026): only
+       variables the retailer has enabled for EVERY invited buyer's DSP, so
+       the deal never offers a dimension some invited DSP cannot use. A
+       personalised criterion is stored as a predicate only; it is matched
+       against the live visitor at bid time and no attribute value reaches
+       the buyer. */
+    const targeting: Condition[] = []
+    const rawTargeting = b.targeting === undefined || b.targeting === null ? [] : Array.isArray(b.targeting) ? (b.targeting as unknown[]) : null
+    if (!rawTargeting) errors.push({ field: 'targeting', reason: 'A list of criteria.' })
+    else if (rawTargeting.length > 20) errors.push({ field: 'targeting', reason: 'At most 20 criteria.' })
+    else {
+      const dsps = [...new Set(invitedBuyers.map((x) => x.partnerId))].flatMap((id) => (partnerById.get(id) ? [partnerById.get(id) as PartnerRecord] : []))
+      rawTargeting.forEach((raw, i) => {
+        const r = (raw ?? {}) as { variable?: unknown; op?: unknown; values?: unknown }
+        const def = TARGETING_VARIABLES.find((v) => v.key === r.variable)
+        if (!def) return void errors.push({ field: `targeting[${i}].variable`, reason: 'Not a shared targeting variable.' })
+        const refused = dsps.filter((p) => !permittedFor(p, access).some((v) => v.key === def.key))
+        if (refused.length) return void errors.push({ field: `targeting[${i}].variable`, reason: `${def.label} is not enabled for ${refused.map((p) => p.name).join(', ')}.` })
+        if (typeof r.op !== 'string' || !def.operators.includes(r.op as never)) return void errors.push({ field: `targeting[${i}].op`, reason: `Not an operator for ${def.label}.` })
+        const values = Array.isArray(r.values) ? (r.values as unknown[]) : []
+        if (!values.length || values.length > 100 || values.some((v) => typeof v !== 'string' || !v.trim() || v.length > 200)) return void errors.push({ field: `targeting[${i}].values`, reason: 'One or more values (up to 100, 200 characters each).' })
+        targeting.push({ source: def.source, variable: def.key, op: r.op as Condition['op'], values: (values as string[]).map((v) => v.trim()) })
+      })
+    }
     const parseDate = (v: unknown, field: string): string | null => {
       if (v === null || v === undefined) return null
       if (typeof v !== 'string' || Number.isNaN(Date.parse(v))) {
@@ -54,7 +80,7 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
        before, inside or after activeFrom/activeTo (a deal can be set up to
        award its term ahead of time). */
     const auctionCloses = parseDate(b.auctionCloses, 'auctionCloses')
-    return { name, description, invitedBuyers, activeFrom, activeTo, auctionCloses }
+    return { name, description, invitedBuyers, targeting, activeFrom, activeTo, auctionCloses }
   }
 
   app.get('/buyers-lists', async (req) => {
@@ -67,7 +93,7 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     guards.flagged()
     guards.requireScope(req, 'admin')
     const errors: { field: string; reason: string }[] = []
-    const parsed = parse(req.body ?? {}, await partnersById(), errors)
+    const parsed = parse(req.body ?? {}, await partnersById(), await ctx.company.variableAccess(), errors)
     if (errors.length) throw validationFailed(errors)
     const created: BuyersList = await ctx.buyersLists.insert({ id: `bl_${randomUUID().slice(0, 12)}`, ...parsed })
     return reply.status(201).send(created)
@@ -78,7 +104,7 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     guards.requireScope(req, 'admin')
     if (!(await ctx.buyersLists.get(req.params.buyersListId))) throw notFound()
     const errors: { field: string; reason: string }[] = []
-    const parsed = parse(req.body ?? {}, await partnersById(), errors)
+    const parsed = parse(req.body ?? {}, await partnersById(), await ctx.company.variableAccess(), errors)
     if (errors.length) throw validationFailed(errors)
     return ctx.buyersLists.update(req.params.buyersListId, parsed)
   })

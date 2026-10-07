@@ -696,7 +696,7 @@ describe('Advertisers / Inventory', () => {
      all, so it went green while the picker was reported broken. This test
      is that missing assertion: the option group's position, the option
      itself, and that it actually opens the modal. */
-  it('offers "+ Add new buyers list…" in the Assigned to picker, and opens the modal', async () => {
+  it('offers "+ Add new buyers and targeting…" in the Assigned to picker, and opens the modal', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch({
       ...ADVERTISER_PAGE,
       '/api/admin/v1/buyers-lists': { items: [{ id: 'bl_1', name: 'Q4 FMCG Private Auction', description: '', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }], activeFrom: null, activeTo: null }] },
@@ -714,7 +714,7 @@ describe('Advertisers / Inventory', () => {
        testing feedback — were verified separately against a real rendered
        Chromium browser, not jsdom.) */
     fireEvent.change(combo, { target: { value: 'Add new buyers' } })
-    const addOption = await screen.findByText('+ Add new buyers list…')
+    const addOption = await screen.findByText('+ Add new buyers and targeting…')
     expect(addOption).toBeInTheDocument()
 
     /* Choosing it is a picker action, not a real choice: it opens the
@@ -723,9 +723,11 @@ describe('Advertisers / Inventory', () => {
        lists table's own — so scope to the one that's actually open.) */
     fireEvent.click(addOption)
     const dialog = await screen.findByRole('dialog')
-    expect(within(dialog).getByText('New buyers list')).toBeInTheDocument()
+    expect(within(dialog).getByText('New buyers and targeting')).toBeInTheDocument()
     /* Invited buyers is one dropdown of synced advertisers: nothing to type, no identifier type to pick. */
     expect(within(dialog).getByRole('combobox', { name: 'Invited buyers' })).toBeInTheDocument()
+    /* One object carries who may buy AND the targeting criteria appended to the deal. */
+    expect(within(dialog).getByRole('combobox', { name: 'Targeting criteria' })).toBeInTheDocument()
     expect(within(dialog).queryByText(/PH brand entity|identifier type/i)).toBeNull()
     expect(within(dialog).queryByRole('button', { name: /Add buyer/ })).toBeNull()
   }, slow(30000))
@@ -750,17 +752,17 @@ describe('Advertisers / Inventory', () => {
     fireEvent.mouseDown(combo)
     await screen.findByRole('listbox')
     fireEvent.change(combo, { target: { value: 'Add new buyers' } })
-    fireEvent.click(await screen.findByText('+ Add new buyers list…'))
+    fireEvent.click(await screen.findByText('+ Add new buyers and targeting…'))
     const dialog = await screen.findByRole('dialog')
-    expect(within(dialog).getByText('New buyers list')).toBeInTheDocument()
+    expect(within(dialog).getByText('New buyers and targeting')).toBeInTheDocument()
 
     fireEvent.change(within(dialog).getByPlaceholderText('e.g. Q4 FMCG private auction'), { target: { value: 'Test deal' } })
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Create buyers list' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create buyers and targeting' }))
 
     /* The modal stays open (the save failed) but says so, rather than
        silently doing nothing. */
     expect(await screen.findByText(/the data is a snapshot/)).toBeInTheDocument()
-    expect(within(dialog).getByText('New buyers list')).toBeInTheDocument()
+    expect(within(dialog).getByText('New buyers and targeting')).toBeInTheDocument()
   }, slow(30000))
 
   /* The CTA opens a new tab, so it can't go through the router — and a

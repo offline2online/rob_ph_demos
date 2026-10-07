@@ -971,6 +971,14 @@ paths:
                 name: {type: string}
                 description: {type: string}
                 invitedBuyers: {type: array, items: {$ref: '#/components/schemas/InvitedBuyer'}}
+                targeting:
+                  type: array
+                  maxItems: 20
+                  items: {$ref: '#/components/schemas/Condition'}
+                  description: |
+                    Targeting criteria appended to the deal, ANDed. Each must be a
+                    shared targeting variable the retailer has enabled for EVERY
+                    invited buyer's DSP (400 otherwise). Omitted = no targeting.
                 activeFrom: {type: [string, 'null'], format: date-time, description: 'The delivery term''s start; inclusive, null = no bound.'}
                 activeTo: {type: [string, 'null'], format: date-time, description: 'The delivery term''s end; inclusive, null = no bound.'}
                 auctionCloses:
@@ -1005,6 +1013,14 @@ paths:
                 name: {type: string}
                 description: {type: string}
                 invitedBuyers: {type: array, items: {$ref: '#/components/schemas/InvitedBuyer'}}
+                targeting:
+                  type: array
+                  maxItems: 20
+                  items: {$ref: '#/components/schemas/Condition'}
+                  description: |
+                    Targeting criteria appended to the deal, ANDed. Each must be a
+                    shared targeting variable the retailer has enabled for EVERY
+                    invited buyer's DSP (400 otherwise). Omitted = no targeting.
                 activeFrom: {type: [string, 'null'], format: date-time, description: 'The delivery term''s start; inclusive, null = no bound.'}
                 activeTo: {type: [string, 'null'], format: date-time, description: 'The delivery term''s end; inclusive, null = no bound.'}
                 auctionCloses:
@@ -2114,12 +2130,23 @@ components:
         is priced against the same score-driven floor as everything else. It
         is a commitment on top of the floor, never under it, and a deal never
         bypasses the floor.
-      required: [id, name, description, invitedBuyers, activeFrom, activeTo, auctionCloses, lockedWin, createdAt, updatedAt]
+      required: [id, name, description, invitedBuyers, targeting, activeFrom, activeTo, auctionCloses, lockedWin, createdAt, updatedAt]
       properties:
         id: {type: string}
         name: {type: string}
         description: {type: string}
         invitedBuyers: {type: array, items: {$ref: '#/components/schemas/InvitedBuyer'}}
+        targeting:
+          type: array
+          items: {$ref: '#/components/schemas/Condition'}
+          description: |
+            Targeting criteria appended to the deal, ANDed (buyers and
+            targeting definition, 7 Oct 2026). Variable and fixed store
+            segments, state, suburb (city), display tags, localisation
+            variables, and personalised variables only where the retailer has
+            enabled them for the invited DSPs. A personalised criterion is a
+            predicate only: it is matched against the live visitor at bid
+            time and no attribute value is ever sent to the buyer.
         activeFrom:
           type: [string, 'null']
           format: date-time

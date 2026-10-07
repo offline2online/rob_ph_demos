@@ -1693,6 +1693,16 @@ export interface components {
             description: string;
             invitedBuyers: components["schemas"]["InvitedBuyer"][];
             /**
+             * @description Targeting criteria appended to the deal, ANDed (buyers and
+             *     targeting definition, 7 Oct 2026). Variable and fixed store
+             *     segments, state, suburb (city), display tags, localisation
+             *     variables, and personalised variables only where the retailer has
+             *     enabled them for the invited DSPs. A personalised criterion is a
+             *     predicate only: it is matched against the live visitor at bid
+             *     time and no attribute value is ever sent to the buyer.
+             */
+            targeting: components["schemas"]["Condition"][];
+            /**
              * Format: date-time
              * @description The delivery term's start (spec "Private auctions: two-period
              *     model") — the span being awarded, not the bidding deadline
@@ -3645,6 +3655,12 @@ export interface operations {
                     description: string;
                     invitedBuyers: components["schemas"]["InvitedBuyer"][];
                     /**
+                     * @description Targeting criteria appended to the deal, ANDed. Each must be a
+                     *     shared targeting variable the retailer has enabled for EVERY
+                     *     invited buyer's DSP (400 otherwise). Omitted = no targeting.
+                     */
+                    targeting?: components["schemas"]["Condition"][];
+                    /**
                      * Format: date-time
                      * @description The delivery term's start; inclusive, null = no bound.
                      */
@@ -3696,6 +3712,12 @@ export interface operations {
                     name: string;
                     description: string;
                     invitedBuyers: components["schemas"]["InvitedBuyer"][];
+                    /**
+                     * @description Targeting criteria appended to the deal, ANDed. Each must be a
+                     *     shared targeting variable the retailer has enabled for EVERY
+                     *     invited buyer's DSP (400 otherwise). Omitted = no targeting.
+                     */
+                    targeting?: components["schemas"]["Condition"][];
                     /**
                      * Format: date-time
                      * @description The delivery term's start; inclusive, null = no bound.

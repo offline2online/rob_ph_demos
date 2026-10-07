@@ -1,10 +1,10 @@
-/* Buyers lists table (spec "Support private auctions" — Available
+/* Buyers and targeting table (spec "Support private auctions" — Available
    Inventory UX): view, manage and edit the buyers lists that are then
    selectable in Available Inventory's Assigned to column, underneath that
    table (Rob, 23 Sep). */
 import { Button } from 'antd'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
-import type { BuyersList } from '@ph-dsp/types'
+import { TARGETING_VARIABLES, type BuyersList } from '@ph-dsp/types'
 import { useState } from 'react'
 import { api, ApiRequestError } from '../../api/client'
 import { DeleteDialog } from '../../shared/DeleteDialog'
@@ -26,6 +26,13 @@ const NameCell = ({ data }: P) =>
     </div>
   ) : null
 const BuyersCell = ({ data }: P) => (data ? <span>{data.invitedBuyers.length} buyer{data.invitedBuyers.length === 1 ? '' : 's'}</span> : null)
+const TargetingCell = ({ data }: P) => {
+  const t = data?.targeting ?? []
+  if (!data) return null
+  if (!t.length) return <span style={{ color: T.muted }}>No targeting</span>
+  const label = (v: string) => TARGETING_VARIABLES.find((x) => x.key === v)?.label ?? v
+  return <span className="truncate" style={{ fontSize: 12.5 }} title={t.map((c) => `${label(c.variable)}: ${c.values.length} value${c.values.length === 1 ? '' : 's'}`).join('; ')}>{t.length} criteri{t.length === 1 ? 'on' : 'a'}: {t.map((c) => label(c.variable)).join(', ')}</span>
+}
 const fmt = (v: string | null) => (v ? new Date(v).toLocaleString() : null)
 /* The delivery term (spec "Private auctions: two-period model", 23 Sep
    2026) — the span this deal is awarded for; was "Active window" before
@@ -61,8 +68,9 @@ export function BuyersListsTable({ lists, canEdit, onChanged }: { lists: BuyersL
   const [deleteBusy, setDeleteBusy] = useState(false)
 
   const columns: ColDef<BuyersList>[] = [
-    { headerName: 'Buyers list', flex: 2, minWidth: 220, cellRenderer: NameCell, valueGetter: (p) => p.data?.name ?? '' },
+    { headerName: 'Buyers and targeting', flex: 2, minWidth: 220, cellRenderer: NameCell, valueGetter: (p) => p.data?.name ?? '' },
     { headerName: 'Invited buyers', width: 150, minWidth: 130, cellRenderer: BuyersCell },
+    { headerName: 'Targeting', width: 230, minWidth: 180, cellRenderer: TargetingCell },
     { headerName: 'Delivery term', width: 260, minWidth: 220, cellRenderer: TermCell },
     { headerName: 'Rate', width: 200, minWidth: 170, cellRenderer: RateCell },
     ...(canEdit ? [{ headerName: '', width: 90, suppressSizeToFit: true, cellRenderer: ActionsCell }] : []),
@@ -97,23 +105,23 @@ export function BuyersListsTable({ lists, canEdit, onChanged }: { lists: BuyersL
     <div className="mt-7">
       <div className="mb-2 flex items-center justify-between gap-3">
         <SectionLabel>
-          <WithTip tip="A reusable private-auction deal: an invited-buyer list plus an active time window, created once and then selectable in Available Inventory's Assigned to column for any slot.">
-            Buyers lists
+          <WithTip tip="A reusable private-auction deal: who can buy (invited buyers) and the targeting criteria appended to the deal, plus an active time window — created once and then selectable in Available Inventory's Assigned to column for any slot.">
+            Buyers and targeting
           </WithTip>
         </SectionLabel>
         {canEdit && (
           <Button type="text" size="small" icon={<Icon name="add" size={16} />} onClick={() => { setEditing(null); setModalOpen(true) }}>
-            New buyers list
+            New buyers and targeting
           </Button>
         )}
       </div>
       {lists.length === 0 ? (
         <div className="flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}>
           <Icon name="gavel" size={18} />
-          <span>No buyers lists yet. Create one to run a private auction on a slot.</span>
+          <span>No buyers and targeting yet. Create one to run a private auction on a slot.</span>
         </div>
       ) : (
-        <Grid<BuyersList> label="Buyers lists" rows={lists} columns={columns} context={context} getRowId={(l) => l.id} rowHeight={52} headerHeight={40} stickyHeader />
+        <Grid<BuyersList> label="Buyers and targeting" rows={lists} columns={columns} context={context} getRowId={(l) => l.id} rowHeight={52} headerHeight={40} stickyHeader />
       )}
       <BuyersListModal open={modalOpen} editing={editing} onClose={() => setModalOpen(false)} onSaved={() => onChanged()} />
       {deleting && (

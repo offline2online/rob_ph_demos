@@ -97,4 +97,47 @@ describe('Buyers lists (spec "Support private auctions")', () => {
     expect(res2.statusCode).toBe(400)
     expect(res2.json().error.details.map((d: { field: string }) => d.field)).toEqual(['items[0].assignedTo.buyersListId'])
   })
+
+  describe('targeting criteria (buyers and targeting definition)', () => {
+    const post = (app: ReturnType<typeof buildApp>, targeting: unknown) =>
+      app.inject({ method: 'POST', url: '/api/admin/v1/buyers-lists', payload: { ...list, targeting } })
+
+    it('stores enabled criteria on the list and defaults to none', async () => {
+      const app = buildApp(await testContext())
+      expect((await post(app, undefined)).json().targeting).toEqual([])
+      const crit = [
+        { source: 'store', variable: 'store.variable_segments', op: 'include', values: ['Cold Day'] },
+        { source: 'store', variable: 'store.fixed_segments', op: 'include', values: ['Airport'] },
+        { source: 'store', variable: 'store.state', op: 'include', values: ['NSW'] },
+        { source: 'store', variable: 'store.display_tags', op: 'include', values: ['Entrance'] },
+      ]
+      const res = await post(app, crit)
+      expect(res.statusCode, res.body).toBe(201)
+      expectMatchesContract('POST', '/admin/v1/buyers-lists', 201, res.json())
+      expect(res.json().targeting).toEqual(crit)
+      expect((await app.inject({ method: 'GET', url: '/api/admin/v1/buyers-lists' })).json().items[0].targeting).toBeDefined()
+    })
+
+    it('refuses a personalised criterion the retailer has not enabled for the DSP, and accepts it once enabled', async () => {
+      const app = buildApp(await testContext())
+      const personalised = [{ source: 'visitor', variable: 'visitor.visitor_segments', op: 'include', values: ['Fitness'] }]
+      const refused = await post(app, personalised)
+      expect(refused.statusCode).toBe(400)
+      expect(JSON.stringify(refused.json())).toContain('targeting[0].variable')
+      const vars = (await app.inject({ method: 'GET', url: '/api/admin/v1/targeting-variables' })).json().items as { key: string; access: unknown }[]
+      const access = Object.fromEntries(vars.map((v) => [v.key, v.access]))
+      access['visitor.visitor_segments'] = ['p_google']
+      expect((await app.inject({ method: 'PUT', url: '/api/admin/v1/targeting-variables', payload: { access } })).statusCode).toBe(200)
+      const ok = await post(app, personalised)
+      expect(ok.statusCode).toBe(201)
+      expect(ok.json().targeting).toEqual(personalised)
+    })
+
+    it('rejects an unknown variable, a wrong operator and empty values', async () => {
+      const app = buildApp(await testContext())
+      expect((await post(app, [{ variable: 'nope', op: 'include', values: ['x'] }])).statusCode).toBe(400)
+      expect((await post(app, [{ variable: 'store.state', op: 'greater_than', values: ['x'] }])).statusCode).toBe(400)
+      expect((await post(app, [{ variable: 'store.state', op: 'include', values: [] }])).statusCode).toBe(400)
+    })
+  })
 })
