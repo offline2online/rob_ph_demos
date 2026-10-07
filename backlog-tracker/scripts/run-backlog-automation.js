@@ -1291,6 +1291,17 @@ function nextTrainTestsRed(current, workflow, testRun, tested, nowIso) {
 // that had been red for 45 minutes. The project also carries the result
 // (trainTestsRed), which is what hides Deploy to Main on the board and makes
 // approve_deploy_to_main refuse until the train is green again.
+// The newest run that actually ran (or is running). GitHub HOLDS a run on a
+// bot-pushed PR head as `action_required` — a prototype rebuild commit gets
+// one every time — and a held run tested nothing: it is neither a pass nor
+// a failure. Taking it as "the newest run" left trainTestsRed set over a
+// green train (7 Oct 2026, PR #337), which would have hidden Deploy to Main
+// for good. Pure, for test/train-tests.test.js; runs are newest first.
+function newestRealRun(runs) {
+  return (runs || []).find((r) => r && String(r.conclusion || "").toLowerCase() !== "action_required"
+    && !["waiting", "requested", "pending"].includes(String(r.status || "").toLowerCase())) || null;
+}
+
 // ── Deploy to Main waits for the train's own tests ─────────────────────────
 // PR #337 (7 Oct 2026): the last ticket landed at 21:44, the train was
 // approved and Deploy to Main clicked while its e2e-quick run was still
@@ -1344,8 +1355,8 @@ function readTrainTestGate(deployBranch) {
     let testRun = null;
     let speaksForHead = false;
     try {
-      testRun = (JSON.parse(run("gh", ["run", "list", "--repo", REPO, "--workflow", t.workflow, "--branch", deployBranch,
-        "--limit", "1", "--json", "headSha,status,conclusion,url"]) || "[]"))[0] || null;
+      testRun = newestRealRun(JSON.parse(run("gh", ["run", "list", "--repo", REPO, "--workflow", t.workflow, "--branch", deployBranch,
+        "--limit", "10", "--json", "headSha,status,conclusion,url"]) || "[]"));
       if (testRun && testRun.headSha === head) speaksForHead = true;
       else if (testRun && testRun.headSha) {
         let ancestor = false;
@@ -1391,9 +1402,8 @@ async function reportTrainTestResults() {
     let redChanged = false;
     for (const t of TRAIN_TEST_WORKFLOWS) {
       try {
-        const runs = JSON.parse(run("gh", ["run", "list", "--repo", REPO, "--workflow", t.workflow, "--branch", branch,
-          "--limit", "1", "--json", "headSha,status,conclusion,url"]) || "[]");
-        const testRun = runs[0] || null;
+        const testRun = newestRealRun(JSON.parse(run("gh", ["run", "list", "--repo", REPO, "--workflow", t.workflow, "--branch", branch,
+          "--limit", "10", "--json", "headSha,status,conclusion,url"]) || "[]"));
         if (!testRun) continue;
         let changedSince = null;
         if (testRun.headSha && testRun.headSha !== head) {
@@ -4032,7 +4042,7 @@ module.exports = {
   // test/train-resume.test.js — GitHub-side cancellations re-run; red trains resume when green
   isInfraCheck, rerunInfraChecks, resumeRedTrains, TRAIN_CI_INFRA_RERUNS,
   // test/train-tests.test.js — console tests run on each train push
-  trainTestFailureTargets, touchesConsoleTests, trainTestsFor, testedHeadOf, nextTrainTestsRed, trainTestGate,
+  trainTestFailureTargets, touchesConsoleTests, trainTestsFor, testedHeadOf, nextTrainTestsRed, trainTestGate, newestRealRun,
   // test/parallel-builds.test.js — patches built in parallel
   patchBaseFor, dependenciesLanded, buildRequestFields, migrationNumberClashes,
   // test/train-follow-up.test.js — a train waiting on CI starts its own next run

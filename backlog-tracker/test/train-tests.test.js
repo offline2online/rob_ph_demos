@@ -3,7 +3,7 @@
 // to Main (PR #301, 3 Oct 2026; for the DSP train's e2e-quick, PR #330,
 // 6 Oct 2026). Drives the pure decision functions.
 const assert = require("assert");
-const { trainTestFailureTargets, touchesConsoleTests, trainTestsFor, testedHeadOf, nextTrainTestsRed, trainTestGate } = require("../scripts/run-backlog-automation.js");
+const { trainTestFailureTargets, touchesConsoleTests, trainTestsFor, testedHeadOf, nextTrainTestsRed, trainTestGate, newestRealRun } = require("../scripts/run-backlog-automation.js");
 
 const HEAD = "aaaaaaa1111111";
 const cards = [{ id: "c1" }, { id: "c2", testsFailedSha: HEAD }, { id: "c3", testsFailedSha: "old" }];
@@ -40,6 +40,9 @@ const cases = [
   ["gate: failed → red", trainTestGate([{ workflow: "e2e-quick.yml", label: "x", run: failed, speaksForHead: true }]).state, "red"],
   ["gate: cancelled by a newer push → missing (start one)", trainTestGate([{ workflow: "e2e-quick.yml", label: "x", run: { ...failed, conclusion: "cancelled" }, speaksForHead: true }]).state, "missing"],
   ["gate: passed, but on an older commit with source changes since → missing", trainTestGate([{ workflow: "e2e-quick.yml", label: "x", run: { ...failed, conclusion: "success" }, speaksForHead: false }]).state, "missing"],
+  ["held run (action_required) is skipped for the newest real one", newestRealRun([{ headSha: "rebuild", status: "completed", conclusion: "action_required" }, { headSha: "fix", status: "completed", conclusion: "success" }]).headSha, "fix"],
+  ["a running run counts", newestRealRun([{ headSha: "a", status: "in_progress", conclusion: "" }, { headSha: "b", status: "completed", conclusion: "failure" }]).headSha, "a"],
+  ["only held runs: none", newestRealRun([{ headSha: "a", status: "completed", conclusion: "action_required" }]), null],
   ["gate: no run at all → missing", trainTestGate([{ workflow: "e2e-quick.yml", label: "x", run: null, speaksForHead: false }]).state, "missing"],
   ["gate: worst wins (green + red → red)", trainTestGate([{ workflow: "a.yml", label: "a", run: { ...failed, conclusion: "success" }, speaksForHead: true }, { workflow: "e2e-quick.yml", label: "x", run: failed, speaksForHead: true }]).workflows.map((w) => w.workflow), ["e2e-quick.yml"]],
 ];
