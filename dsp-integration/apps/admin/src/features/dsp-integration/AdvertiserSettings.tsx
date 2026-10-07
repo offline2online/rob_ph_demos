@@ -13,7 +13,7 @@ import { useSection } from './DspIntegrationLayout'
 import { SubPageHeader } from './SubPageHeader'
 
 export const ADVERTISER_SETTINGS_TIP =
-  "Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (floor CPM, always in USD), Guaranteed deals (contingency buffer) and the Category lists. The Play config shows how plays, the one unit everything transacts in, are sold: per slot by real-time bidding, or as committed plays over a delivery term on a deal (IAB whitelists and blacklists; each DSP's advertiser lists are managed on its own page, from the advertisers it syncs). Read-only here: Where these apply (which DSPs use these lists or keep their own; unlink or relink on the DSP's page). Per-advertiser campaign approval and floor multipliers, and the inventory advertisers can buy, are on Advertisers / Inventory."
+  "Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (floor CPM, always in USD), Guaranteed deals (contingency buffer) and the Category lists. (IAB whitelists and blacklists; each DSP's advertiser lists are managed on its own page, from the advertisers it syncs). Read-only here: Where these apply (which DSPs use these lists or keep their own; unlink or relink on the DSP's page). Per-advertiser campaign approval and floor multipliers, and the inventory advertisers can buy, are on Advertisers / Inventory."
 
 /* The exchange transacts in USD on every instance (TRANSACTING_CURRENCY in the API's
    domain/currency.ts); company.currency is display/reporting only. Everything priced on
@@ -62,16 +62,6 @@ const INTERACTIVE_TIP = (
   </div>
 )
 
-/* "7 days" / "24 hours" / "7 days 6 hours": the derived time display of a play window. */
-function formatHours(hours: number) {
-  const days = Math.floor(hours / 24)
-  const rest = hours % 24
-  const parts: string[] = []
-  if (days) parts.push(`${days} day${days === 1 ? '' : 's'}`)
-  if (rest || !days) parts.push(`${rest} hour${rest === 1 ? '' : 's'}`)
-  return parts.join(' ')
-}
-
 const IAB_OPTIONS = IAB_CATEGORIES.map((c) => ({ value: c, label: `${c} (${IAB_CATEGORY_CODES[c]})` }))
 type ListKey = 'categoryWhitelist' | 'categoryBlacklist'
 const OTHER: Record<ListKey, ListKey> = {
@@ -79,7 +69,7 @@ const OTHER: Record<ListKey, ListKey> = {
 }
 
 export function AdvertiserSettings() {
-  const { draft, update, settings: savedView } = useSection()
+  const { draft, update } = useSection()
   const s = draft.settings
   const set = <K extends keyof AdvertiserSettingsInput>(k: K, v: AdvertiserSettingsInput[K]) => update('settings', (x) => ({ ...x, [k]: v }))
   const add = (k: ListKey) => (name: string) => update('settings', (x) => {
@@ -111,15 +101,21 @@ export function AdvertiserSettings() {
 
       <SectionLabel><WithTip tip="A guaranteed deal commits a delivery volume: the window's forecast impressions (scheduled plays × audience score) less this contingency for screen downtime, so expected delivery sits above the guarantee and make-goods are rare. The committed figure is sent to the DSP as the guaranteed unit count. A preferred deal (the reserve price alone) promises no volume. Applies to every guaranteed deal.">Guaranteed deals</WithTip></SectionLabel>
       <div className="flex flex-wrap items-start gap-3.5">
-        <Field label={<span className="block" style={{ minHeight: 36 }}>Contingency buffer (%)</span>} htmlFor="guaranteeBufferPct" tip="Percentage taken off the forecast to cover screen downtime. Default 10." className="w-40">
-          <InputNumber id="guaranteeBufferPct" className="w-full" step={1} min={0} max={50} placeholder="10" value={s.guaranteeBufferPct ?? 10} onChange={(v) => set('guaranteeBufferPct', (v === null ? null : Number(v)) as number)} />
+        <Field label={<span className="block" style={{ minHeight: 36 }}>Contingency buffer</span>} htmlFor="guaranteeBufferPct" tip="Contingency buffer: the percentage taken off the forecast to cover screen downtime, 0 to 50. Default 10." className="w-40">
+          <div className="flex items-center gap-2">
+            <InputNumber id="guaranteeBufferPct" className="w-full" step={1} min={0} max={50} placeholder="10" value={s.guaranteeBufferPct ?? 10} onChange={(v) => set('guaranteeBufferPct', (v === null ? null : Number(v)) as number)} />
+            <span aria-hidden="true">%</span>
+          </div>
         </Field>
       </div>
 
       <SectionLabel><WithTip tip="How early a real-time slot's auction opens, so the winning creative can be downloaded and rendered before the slot plays. The auction is per slot, opened this long before that slot's own start, not on a schedule.">Real-time bidding</WithTip></SectionLabel>
       <div className="flex flex-wrap items-start gap-3.5">
-        <Field label={<span className="block" style={{ minHeight: 36 }}>Bid lookahead</span>} htmlFor="bidLookaheadSeconds" tip="Seconds before a slot plays that its auction opens, for every real-time slot. Whole seconds, at least 1. Default 35, as Broadsign Reach, whose Real-Time Audience API sends bid requests about 35 seconds ahead of the expected programmatic slot." className="w-40">
-          <InputNumber id="bidLookaheadSeconds" className="w-full" step={1} placeholder="35" suffix="seconds" value={s.bidLookaheadSeconds ?? 35} onChange={(v) => set('bidLookaheadSeconds', (v === null ? null : Number(v)) as number)} />
+        <Field label={<span className="block" style={{ minHeight: 36 }}>Bid lookahead</span>} htmlFor="bidLookaheadSeconds" tip="Bid lookahead, in seconds: how long before a slot plays that its auction opens, for every real-time slot. Whole seconds, at least 1. Default 35, as Broadsign Reach, whose Real-Time Audience API sends bid requests about 35 seconds ahead of the expected programmatic slot." className="w-40">
+          <div className="flex items-center gap-2">
+            <InputNumber id="bidLookaheadSeconds" className="w-full" step={1} placeholder="35" value={s.bidLookaheadSeconds ?? 35} onChange={(v) => set('bidLookaheadSeconds', (v === null ? null : Number(v)) as number)} />
+            <span>seconds</span>
+          </div>
         </Field>
       </div>
 
@@ -128,22 +124,6 @@ export function AdvertiserSettings() {
         <Field label={<span className="block" style={{ minHeight: 36 }}>Default committed plays</span>} htmlFor="defaultCommittedPlays" tip="Pre-fills Committed plays when a new buyers list is created. It stays editable on each list and never changes a saved list or its 'N of M plays' delivery. Whole number, at least 1; leave empty for per play." className="w-56">
           <InputNumber id="defaultCommittedPlays" className="w-full" step={1} min={1} precision={0} placeholder="Per play" value={s.defaultCommittedPlays ?? null} onChange={(v) => set('defaultCommittedPlays', typeof v === 'number' ? v : null)} />
         </Field>
-      </div>
-
-      <SectionLabel><WithTip tip="A play is the one unit the exchange transacts in; time is shown only as a derived display. There is no auction to open or close, and nothing here is scheduled.">Play config</WithTip></SectionLabel>
-      <div className="flex flex-wrap items-stretch gap-3.5 mb-3.5" role="group" aria-label="Play config">
-        <div className="flex-1" style={{ minWidth: 260, border: `1px solid ${T.border}`, borderRadius: 6, padding: '10px 14px', fontSize: 13 }}>
-          <div style={{ color: T.muted, fontSize: 12 }}>Real-time bidding</div>
-          <div><b>Per play.</b> Each play of a slot is bid for as it comes up. No scheduled open or cutoff.</div>
-        </div>
-        <div className="flex-1" style={{ minWidth: 260, border: `1px solid ${T.border}`, borderRadius: 6, padding: '10px 14px', fontSize: 13 }}>
-          <div style={{ color: T.muted, fontSize: 12 }}>Deals and reservations</div>
-          <div><b>Committed plays over a delivery term.</b> Set on each deal; guaranteed deals use the contingency buffer above.</div>
-        </div>
-        <div className="flex-1" style={{ minWidth: 260, border: `1px solid ${T.border}`, borderRadius: 6, padding: '10px 14px', fontSize: 13 }}>
-          <div style={{ color: T.muted, fontSize: 12 }}>Time (derived display only)</div>
-          <div>Shown as a play window of <b>{formatHours(savedView.playWindowHours)}</b>, to turn plays into time on screen.</div>
-        </div>
       </div>
 
       <SectionLabel><WithTip tip="IAB category lists, managed once for the whole company and applied to every connected DSP: IAB is one taxonomy all of them speak. Entries are chosen from the IAB categories, never typed. Nothing can sit on both lists. The blacklist always applies and no position can opt out of it. Advertiser whitelists and blacklists are not here: each DSP manages its own, from the advertisers it syncs, on its own page.">Category lists</WithTip></SectionLabel>

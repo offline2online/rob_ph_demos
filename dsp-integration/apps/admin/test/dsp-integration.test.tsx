@@ -191,18 +191,19 @@ describe('DSP integration switch', () => {
 })
 
 describe('Advertiser settings page', () => {
-  it('shows Pricing, Guaranteed deals, the Play config and the category lists, in that order, with no auction timing', async () => {
+  it('shows Pricing, Guaranteed deals and the category lists, in that order, with no Play config boxes, with no auction timing', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/available-inventory': { items: [{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', slot: 2, position: 'Supplier slot', partnerName: 'Google DSP' }] } })))
     renderAt('/dsp-integration')
     expect(await screen.findByRole('heading', { name: /Advertiser settings/ })).toBeInTheDocument()
     const text = document.body.textContent ?? ''
-    const order = ['Pricing', 'Guaranteed deals', 'Play config', 'Category lists'].map((h) => text.indexOf(h))
+    const order = ['Pricing', 'Guaranteed deals', 'Category lists'].map((h) => text.indexOf(h))
     /* Available Inventory moved to Advertisers / Inventory (Rob, 20 Sep). */
     expect(text).not.toContain('Available Inventory')
     expect(order).toEqual([...order].sort((a, b) => a - b))
     expect(screen.getByLabelText(/Currency/)).toBeInTheDocument()
     expect(screen.getByLabelText(/Contingency buffer/)).toBeInTheDocument()
-    expect(screen.getByRole('group', { name: 'Play config' })).toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Play config' })).not.toBeInTheDocument()
+    for (const gone of ['Deals and reservations', 'Time (derived display only)']) expect(text).not.toContain(gone)
     /* Bid lookahead: company-wide, in seconds, defaulting to 35. */
     expect(screen.getByLabelText(/Bid lookahead/)).toHaveValue('35')
     for (const gone of ['Auction schedule', 'Auction opens', 'Auction cutoff time', 'Play-window length']) expect(text).not.toContain(gone)
