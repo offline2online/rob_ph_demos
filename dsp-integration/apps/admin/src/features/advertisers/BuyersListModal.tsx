@@ -1,8 +1,8 @@
 /* New/edit buyers and targeting list (spec "Support private auctions" — Available
    Inventory UX): the buyers list and its deal terms are ONE object, created
    or edited from this one pop-up. It carries both who may buy (invited
-   buyers) and the targeting criteria appended to the deal. Floor (inherited from the slot), the
-   auction resolution rule (platform-wide) and the per-brand relationship
+   buyers) and the targeting criteria appended to the deal. The floor is optional: blank inherits
+   the DSP's floor, else the platform floor (bid floor hierarchy). The auction resolution rule (platform-wide) and the per-brand relationship
    variable (global on the brand entity) are deliberately not fields here. */
 import { App, Button, DatePicker, Input, InputNumber, Modal, Select } from 'antd'
 import { useQuery } from '@tanstack/react-query'
@@ -14,15 +14,15 @@ import { Q } from '../../api/queries'
 import { Icon } from '../../shared/Icon'
 import { T } from '../../theme/phTheme'
 
-type Draft = { name: string; description: string; invitedBuyers: InvitedBuyer[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays: number | null }
+type Draft = { name: string; description: string; invitedBuyers: InvitedBuyer[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays: number | null; floorCpm: number | null }
 /* An invited buyer is one synced seat of one connected DSP — the Select's value is both halves. */
 const buyerKey = (b: InvitedBuyer) => JSON.stringify([b.partnerId, b.seatId])
-const blankDraft = (): Draft => ({ name: '', description: '', invitedBuyers: [], targeting: [], activeFrom: null, activeTo: null, auctionCloses: null, committedPlays: null })
+const blankDraft = (): Draft => ({ name: '', description: '', invitedBuyers: [], targeting: [], activeFrom: null, activeTo: null, auctionCloses: null, committedPlays: null, floorCpm: null })
 const draftOf = (l: BuyersList): Draft => ({
   name: l.name, description: l.description,
   invitedBuyers: l.invitedBuyers.map((b) => ({ ...b })),
   targeting: (l.targeting ?? []).map((c) => ({ ...c, values: [...c.values] })),
-  activeFrom: l.activeFrom, activeTo: l.activeTo, auctionCloses: l.auctionCloses, committedPlays: l.committedPlays,
+  activeFrom: l.activeFrom, activeTo: l.activeTo, auctionCloses: l.auctionCloses, committedPlays: l.committedPlays, floorCpm: l.floorCpm ?? null,
 })
 
 export function BuyersListModal({ open, editing, onClose, onSaved }: {
@@ -184,6 +184,17 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
         />
         <div className="mt-1" style={{ fontSize: 11, color: T.micro }}>The number of plays this deal commits to over its delivery term. Volume is carried by deals; the open auction always stays per play. Delivery is counted in plays billed at the slots this list is assigned to.</div>
         {errors.committedPlays && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.committedPlays}</div>}
+      </div>
+      <div className="mb-3.5">
+        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }} htmlFor="buyersListFloorCpm">Floor price (CPM)</label>
+        <InputNumber
+          id="buyersListFloorCpm" min={0} style={{ width: '100%' }} step={1} placeholder="Inherit the DSP or platform floor"
+          status={errors.floorCpm ? 'error' : undefined}
+          formatter={(v) => (v === undefined || v === null ? '' : String(v))} parser={(v) => Number(v)}
+          value={draft.floorCpm} onChange={(v) => setDraft((d) => ({ ...d, floorCpm: typeof v === 'number' && v > 0 ? v : null }))}
+        />
+        <div className="mt-1" style={{ fontSize: 11, color: T.micro }}>In USD. Applies to deals using this list, overriding the DSP's floor. It can raise the floor but never go below the platform floor. Leave empty to inherit.</div>
+        {errors.floorCpm && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.floorCpm}</div>}
       </div>
       <div>
         <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}>Auction window closes</label>

@@ -106,6 +106,16 @@ export function applyPartnerInput(p: PartnerRecord, currentSecrets: Record<strin
       else if (typeof v !== 'number' || !Number.isInteger(v) || v < min || v > max) errors.push({ field: `bidder.${k}`, reason: `${label}: a whole number from ${min} to ${max}, or empty for the platform default.` })
       else bidder[k] = v
     }
+    /* This DSP's bid floor (Rob, 7 Oct 2026): raises the platform floor for
+       this DSP only; blank (null) inherits the platform floor, and a value
+       below the platform floor is refused. */
+    const floor = (body.bidder as Record<string, unknown>).floorCpm
+    if (floor !== undefined) {
+      if (floor === null) delete bidder.floorCpm
+      else if (typeof floor !== 'number' || !Number.isFinite(floor) || floor <= 0) errors.push({ field: 'bidder.floorCpm', reason: 'Floor price (CPM) must be greater than 0, or empty to inherit the platform floor.' })
+      else if (floor < company.floorCpm) errors.push({ field: 'bidder.floorCpm', reason: `Floor price (CPM) can't be below the platform floor of ${company.floorCpm} USD.` })
+      else bidder.floorCpm = floor
+    }
   }
 
   /* The advertiser lists are this DSP's own and hold only seat IDs it has

@@ -12,6 +12,7 @@ import { type PositionRef, assignmentOf, positionView, windowMsFor } from '../do
 import { assignedOf, openRtbInventoryOf } from '@ph-dsp/types'
 import { isInvitedBuyer } from '../domain/buyersLists'
 import { effectiveCategoryLists, effectiveLists, seatDomains } from '../domain/lists'
+import { baseFloorFor } from './enforcement'
 import { type Perm, standardBuyerBlocking } from '../dsp/DspProvider'
 import { providerOf } from '../dsp/registry'
 import type { PartnerRecord } from '../repos/PartnerRepo'
@@ -63,8 +64,15 @@ export const categoryCodes = (names: string[]) => names.map((n) => IAB_CATEGORY_
    list's life, and the only ID a bid on that deal's position may quote. */
 export const dealIdOf = (listId: string) => `PH-${listId}`
 
+/* imp.bidfloor: the resolved base floor for this DSP and, on a deal, its
+   buyers list (platform, DSP, list: the most specific set, never below the
+   platform floor), in USD, rounded to cents. The advertiser's floor
+   multiplier is not applied: the request names no advertiser. */
+const bidFloorFor = async (ctx: Context, p: PositionRef, partner: PartnerRecord, buyersListId?: string) =>
+  Math.round((await baseFloorFor(ctx, { partner, position: p, buyersListId })) * 100) / 100
+
 /* One request per sellable position, play window and DSP. The bid floor is
-   the position's base effective floor; each bid is then held to the floor
+   the position's resolved base floor for that DSP; each bid is then held to the floor
    for its own campaign type and advertiser before it can win (spec §4).
    The position's view is the same for every DSP (no advertiser, so no
    floor multiplier); the auction works it out once and passes it in. */
@@ -86,7 +94,7 @@ export async function buildBidRequest(ctx: Context, p: PositionRef, partner: Par
       id: '1',
       video: { w, h, minduration: 1, ...(view.screen.slotDurationSec > 0 ? { maxduration: view.screen.slotDurationSec } : {}) },
       banner: { w, h },
-      bidfloor: view.pricing.effectiveFloorCpm.localised,
+      bidfloor: await bidFloorFor(ctx, p, partner, list?.id),
       bidfloorcur: TRANSACTING_CURRENCY,
       /* This position's own window (OQ27): its assumed views and its length. sourcetype is always 2
          (publisher-provided): the audience counts come from our own cameras. 1 (measurement vendor)

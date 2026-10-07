@@ -52,7 +52,7 @@ export async function vetAtBidCreative(ctx: Context, p: PositionRef, dsp: Partne
     if (blockedBy) return no(`Creative ${crid} is blocked: its content is identical to creative ${blockedBy}, which a reviewer rejected.`, blockedBy)
   }
   /* A creative PH has never held has no campaign yet, so no version count to check. */
-  const refused = checkTargeting(p, null) ?? (await checkFloor(ctx, bid.price as number, advertiser.id))
+  const refused = checkTargeting(p, null) ?? (await checkFloor(ctx, bid.price as number, advertiser.id, { partner: dsp, position: p }))
   if (refused) return no(refused.reason)
   return { ok: true, advertiserId: advertiser.id, campaignId: '', pricingType: null, seatId, atBid: { crid, iurl } }
 }

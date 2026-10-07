@@ -8,12 +8,13 @@ import type { Context } from '../../context'
 import type { Guards } from '../../http/app'
 import { hasDependents, notFound, validationFailed } from '../../http/errors'
 import { tx } from '../../db/db'
+import { TRANSACTING_CURRENCY } from '../../domain/currency'
 import { positionIdOf } from '../../domain/positions'
 import { permittedFor } from '../../domain/variables'
 import type { Access } from '../../repos/CompanySettingsRepo'
 import type { PartnerRecord } from '../../repos/PartnerRepo'
 
-type Body = { name?: unknown; description?: unknown; invitedBuyers?: unknown; targeting?: unknown; activeFrom?: unknown; activeTo?: unknown; auctionCloses?: unknown; committedPlays?: unknown }
+type Body = { name?: unknown; description?: unknown; invitedBuyers?: unknown; targeting?: unknown; activeFrom?: unknown; activeTo?: unknown; auctionCloses?: unknown; committedPlays?: unknown; floorCpm?: unknown }
 
 /* Every slot currently assigned to this buyers list, across every display
    type — what stops a delete (spec "Deleting"). */
@@ -38,7 +39,7 @@ const withDelivery = async (ctx: Context, l: BuyersList): Promise<BuyersList> =>
 export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => async (app) => {
   /* An invited buyer must be a seat a connected DSP actually synced. */
   const partnersById = async () => new Map((await ctx.partners.list()).filter((p) => p.status === 'connected').map((p) => [p.id, p]))
-  const parse = (b: Body, partnerById: Map<string, PartnerRecord>, access: Record<string, Access>, errors: { field: string; reason: string }[]): { name: string; description: string; invitedBuyers: InvitedBuyer[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays: number | null } => {
+  const parse = (b: Body, partnerById: Map<string, PartnerRecord>, access: Record<string, Access>, platformFloor: number, errors: { field: string; reason: string }[]): { name: string; description: string; invitedBuyers: InvitedBuyer[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays: number | null; floorCpm: number | null } => {
     const name = typeof b.name === 'string' ? b.name.trim() : ''
     if (!name) errors.push({ field: 'name', reason: 'A name is required.' })
     const description = typeof b.description === 'string' ? b.description.trim() : ''
@@ -100,7 +101,14 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
       if (typeof b.committedPlays !== 'number' || !Number.isInteger(b.committedPlays) || b.committedPlays < 1) errors.push({ field: 'committedPlays', reason: 'A whole number of plays, 1 or more, or null for no volume commitment.' })
       else committedPlays = b.committedPlays
     }
-    return { name, description, invitedBuyers, targeting, activeFrom, activeTo, auctionCloses, committedPlays }
+    /* Bid floor hierarchy (7 Oct 2026): blank inherits the DSP's floor, else the platform's; a value can raise the floor, never go below the platform floor. */
+    let floorCpm: number | null = null
+    if (b.floorCpm !== undefined && b.floorCpm !== null) {
+      if (typeof b.floorCpm !== 'number' || !Number.isFinite(b.floorCpm) || b.floorCpm <= 0) errors.push({ field: 'floorCpm', reason: 'Floor price (CPM) must be greater than 0, or empty to inherit.' })
+      else if (b.floorCpm < platformFloor) errors.push({ field: 'floorCpm', reason: `Floor price (CPM) can't be below the platform floor of ${platformFloor} ${TRANSACTING_CURRENCY}.` })
+      else floorCpm = b.floorCpm
+    }
+    return { name, description, invitedBuyers, targeting, activeFrom, activeTo, auctionCloses, committedPlays, floorCpm }
   }
 
   app.get('/buyers-lists', async (req) => {
@@ -113,7 +121,7 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     guards.flagged()
     guards.requireScope(req, 'admin')
     const errors: { field: string; reason: string }[] = []
-    const parsed = parse(req.body ?? {}, await partnersById(), await ctx.company.variableAccess(), errors)
+    const parsed = parse(req.body ?? {}, await partnersById(), await ctx.company.variableAccess(), (await ctx.company.get()).floorCpm, errors)
     if (errors.length) throw validationFailed(errors)
     const created: BuyersList = await ctx.buyersLists.insert({ id: `bl_${randomUUID().slice(0, 12)}`, ...parsed })
     return reply.status(201).send(await withDelivery(ctx, created))
@@ -124,7 +132,7 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     guards.requireScope(req, 'admin')
     if (!(await ctx.buyersLists.get(req.params.buyersListId))) throw notFound()
     const errors: { field: string; reason: string }[] = []
-    const parsed = parse(req.body ?? {}, await partnersById(), await ctx.company.variableAccess(), errors)
+    const parsed = parse(req.body ?? {}, await partnersById(), await ctx.company.variableAccess(), (await ctx.company.get()).floorCpm, errors)
     if (errors.length) throw validationFailed(errors)
     const updated = await ctx.buyersLists.update(req.params.buyersListId, parsed)
     if (!updated) throw notFound()

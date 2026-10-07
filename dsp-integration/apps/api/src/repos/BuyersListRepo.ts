@@ -8,14 +8,14 @@ import { type Db, fromJson, prepared, toJson, type Awaitable } from '../db/db'
 
 interface Row {
   id: string; name: string; description: string; invited_buyers: string; targeting: string; active_from: string | null; active_to: string | null
-  auction_closes: string | null; locked_win: string | null; committed_plays: number | null; created_at: string; updated_at: string
+  auction_closes: string | null; locked_win: string | null; committed_plays: number | null; floor_cpm: number | null; created_at: string; updated_at: string
 }
 
 export interface BuyersListRepo {
   list(): Awaitable<BuyersList[]>
   get(id: string): Awaitable<BuyersList | null>
-  insert(l: { id: string; name: string; description: string; invitedBuyers: InvitedBuyer[]; targeting?: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays?: number | null }): Awaitable<BuyersList>
-  update(id: string, patch: { name: string; description: string; invitedBuyers: InvitedBuyer[]; targeting?: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays?: number | null }): Awaitable<BuyersList | null>
+  insert(l: { id: string; name: string; description: string; invitedBuyers: InvitedBuyer[]; targeting?: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays?: number | null; floorCpm?: number | null }): Awaitable<BuyersList>
+  update(id: string, patch: { name: string; description: string; invitedBuyers: InvitedBuyer[]; targeting?: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays?: number | null; floorCpm?: number | null }): Awaitable<BuyersList | null>
   delete(id: string): Awaitable<void>
   /* Locks this deal's rate for the rest of its delivery term, at the first
      clearing bid within its auction window — idempotent: a term already
@@ -29,7 +29,7 @@ export function sqliteBuyersListRepo(db: Db): BuyersListRepo {
   const toRecord = (r: Row): BuyersList => ({
     id: r.id, name: r.name, description: r.description, invitedBuyers: fromJson(r.invited_buyers, []), targeting: fromJson(r.targeting, []),
     activeFrom: r.active_from, activeTo: r.active_to, auctionCloses: r.auction_closes, lockedWin: fromJson(r.locked_win, null),
-    committedPlays: r.committed_plays, deliveredPlays: 0,
+    committedPlays: r.committed_plays, floorCpm: r.floor_cpm, deliveredPlays: 0,
     createdAt: r.created_at, updatedAt: r.updated_at,
   })
   const row = (id: string) => prepared(db, 'SELECT * FROM buyers_lists WHERE id = ?').get(id) as Row | undefined
@@ -41,14 +41,14 @@ export function sqliteBuyersListRepo(db: Db): BuyersListRepo {
     },
     insert(l) {
       const now = new Date().toISOString()
-      prepared(db, 'INSERT INTO buyers_lists (id, name, description, invited_buyers, targeting, active_from, active_to, auction_closes, locked_win, committed_plays, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-        .run(l.id, l.name, l.description, toJson(l.invitedBuyers) ?? '[]', toJson(l.targeting) ?? '[]', l.activeFrom, l.activeTo, l.auctionCloses, null, l.committedPlays ?? null, now, now)
+      prepared(db, 'INSERT INTO buyers_lists (id, name, description, invited_buyers, targeting, active_from, active_to, auction_closes, locked_win, committed_plays, floor_cpm, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(l.id, l.name, l.description, toJson(l.invitedBuyers) ?? '[]', toJson(l.targeting) ?? '[]', l.activeFrom, l.activeTo, l.auctionCloses, null, l.committedPlays ?? null, l.floorCpm ?? null, now, now)
       return toRecord(row(l.id) as Row)
     },
     update(id, patch) {
       if (!row(id)) return null
-      prepared(db, 'UPDATE buyers_lists SET name = ?, description = ?, invited_buyers = ?, targeting = ?, active_from = ?, active_to = ?, auction_closes = ?, committed_plays = ?, updated_at = ? WHERE id = ?')
-        .run(patch.name, patch.description, toJson(patch.invitedBuyers) ?? '[]', toJson(patch.targeting) ?? '[]', patch.activeFrom, patch.activeTo, patch.auctionCloses, patch.committedPlays ?? null, new Date().toISOString(), id)
+      prepared(db, 'UPDATE buyers_lists SET name = ?, description = ?, invited_buyers = ?, targeting = ?, active_from = ?, active_to = ?, auction_closes = ?, committed_plays = ?, floor_cpm = ?, updated_at = ? WHERE id = ?')
+        .run(patch.name, patch.description, toJson(patch.invitedBuyers) ?? '[]', toJson(patch.targeting) ?? '[]', patch.activeFrom, patch.activeTo, patch.auctionCloses, patch.committedPlays ?? null, patch.floorCpm ?? null, new Date().toISOString(), id)
       return toRecord(row(id) as Row)
     },
     delete(id) {

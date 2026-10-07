@@ -272,7 +272,9 @@ describe('DSP page', () => {
     expect(screen.getByLabelText(/Refresh token/)).toHaveAttribute('type', 'password')
     expect(screen.getByText(/Every DSP, this one included, uses the company IAB category lists/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Unlink|Relink/ })).not.toBeInTheDocument()
-    expect(screen.queryByText(/floor|CPM|currency/i, { selector: 'label' })).not.toBeInTheDocument()
+    /* Currency stays company-wide; the DSP's own floor is the one pricing field here (bid floor hierarchy, 7 Oct 2026). */
+    expect(screen.queryByText(/currency/i, { selector: 'label' })).not.toBeInTheDocument()
+    expect(screen.getByLabelText(/Floor price \(CPM\)/)).toHaveAttribute('placeholder', 'Platform floor')
   })
 
   it('the Add card lists what you will need, then Add partner / Cancel', async () => {
@@ -807,7 +809,7 @@ describe('Pricing tooltips', () => {
     renderAt('/dsp-integration/advertiser-settings')
     await screen.findByRole('heading', { name: /Advertiser settings/ })
     const tip = (label: string) => screen.getByText(label).closest('label')!.querySelector('[role="button"]') as HTMLElement
-    fireEvent.mouseEnter(tip('Floor price (CPM)'))
+    fireEvent.mouseEnter(tip('Platform floor price (CPM)'))
     expect(await screen.findByText(/× attention \(VAC: the share who actually look\)/)).toBeInTheDocument()
     expect(screen.getByText(/100 × 27 ÷ 1,000/)).toBeInTheDocument()
 

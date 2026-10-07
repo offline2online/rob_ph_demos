@@ -136,7 +136,7 @@ export function DspPage({ draftKey, partner }: { draftKey: string; partner: Part
         )}
       </div>
 
-      <SectionLabel><WithTip tip="Where we send OpenRTB bid requests for this DSP, and the seats its bids come from. QPS ceiling and bidder timeout use the platform defaults unless set here.">Bidder integration</WithTip></SectionLabel>
+      <SectionLabel><WithTip tip="Where we send OpenRTB bid requests for this DSP, and the seats its bids come from. QPS ceiling and bidder timeout use the platform defaults unless set here. The floor price raises the platform floor for this DSP only.">Bidder integration</WithTip></SectionLabel>
       <div className="grid grid-cols-2 gap-3.5">
         <Field label="Bidder endpoint" required tip="Where we send the bid request." htmlFor="bidderEndpoint">
           <Input id="bidderEndpoint" value={d.bidderEndpoint} placeholder="https://…/openrtb2/bid" onChange={(e) => set((x) => ({ ...x, bidderEndpoint: e.target.value }))} />
@@ -149,6 +149,9 @@ export function DspPage({ draftKey, partner }: { draftKey: string; partner: Part
         </Field>
         <Field label="Bidder timeout (ms)" tip="How long we wait for this DSP's bid. Leave empty for the platform default (300 ms)." htmlFor="bidderTimeoutMs">
           <Input id="bidderTimeoutMs" inputMode="numeric" value={d.timeoutMs} placeholder="300 (platform default)" onChange={(e) => set((x) => ({ ...x, timeoutMs: e.target.value.replace(/\D/g, '') }))} />
+        </Field>
+        <Field label="Floor price (CPM)" tip="This DSP's bid floor in USD. It raises the platform floor (Advertiser settings) for this DSP only and can never be lower than it. Leave empty to inherit the platform floor. A buyers list's own floor, if set, overrides this on deals using that list." htmlFor="bidderFloorCpm">
+          <Input id="bidderFloorCpm" inputMode="decimal" value={d.floorCpm} placeholder="Platform floor" onChange={(e) => set((x) => ({ ...x, floorCpm: e.target.value.replace(/[^0-9.]/g, '') }))} />
         </Field>
       </div>
 

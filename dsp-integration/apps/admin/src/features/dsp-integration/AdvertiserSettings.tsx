@@ -53,7 +53,7 @@ const FloorExample = ({ children, rate }: { children: ReactNode; rate: ReactNode
 
 const FLOOR_TIP = (
   <FloorExample rate={<>At a floor of <b>100</b> per thousand VAC-d: 100 × 27 ÷ 1,000 = <b>$2.70</b> for the daypart.</>}>
-    Cost per thousand assumed views (VAC-d). The minimum any bid must meet; bids below it never win.
+    Cost per thousand assumed views (VAC-d). The platform floor is the minimum any bid must meet; bids below it never win. A DSP's floor (on its page) or a buyers list's floor can raise it for their own bids, never lower it.
   </FloorExample>
 )
 /* The fee relates itself to the floor price tooltip rather than repeating its working (Rob, 20 Sep). */
@@ -134,12 +134,12 @@ export function AdvertiserSettings() {
     <>
       <SubPageHeader icon="rule" title="Advertiser settings" tip={ADVERTISER_SETTINGS_TIP} />
 
-      <SectionLabel><WithTip tip="Effective floor = floor CPM × the advertiser's floor multiplier (set on Advertisers / Inventory), the same for every campaign type. Bids below it never win. Every play bills at the committed price, whatever version plays.">Pricing</WithTip></SectionLabel>
+      <SectionLabel><WithTip tip="Effective floor = the floor in force × the advertiser's floor multiplier. The floor in force is the platform floor here, unless a DSP or a buyers list sets a higher one for its own bids (the most specific wins; never below this) (set on Advertisers / Inventory), the same for every campaign type. Bids below it never win. Every play bills at the committed price, whatever version plays.">Pricing</WithTip></SectionLabel>
       <div className="flex flex-wrap items-start gap-3.5">
         <Field label={<span className="block" style={{ minHeight: 36 }}>Currency</span>} htmlFor="currency" tip="Used for the floor CPM, every effective floor and billing. Bid requests carry it as the bid floor currency." className="w-56">
           <Select id="currency" className="w-full" showSearch optionFilterProp="label" value={s.currency} onChange={(v) => set('currency', v)} options={CURRENCIES} popupMatchSelectWidth={280} />
         </Field>
-        <Field label={<span className="block" style={{ minHeight: 36 }}>Floor price (CPM)</span>} htmlFor="floorCpm" tip={FLOOR_TIP} tipWidth={400} className="w-32">{num('floorCpm', 1, '100')}</Field>
+        <Field label={<span className="block" style={{ minHeight: 36 }}>Platform floor price (CPM)</span>} htmlFor="floorCpm" tip={FLOOR_TIP} tipWidth={400} className="w-32">{num('floorCpm', 1, '100')}</Field>
         {INTERACTIVE_ENABLED && <Field label={<span className="block" style={{ minHeight: 36 }}>Interactive cost per engagement</span>} htmlFor="interactiveCpe" tip={INTERACTIVE_TIP} tipWidth={400} className="w-44">{num('interactiveCpe', 0.05, '0.50', { precision: 2, prefix: s.currency })}</Field>}
       </div>
 

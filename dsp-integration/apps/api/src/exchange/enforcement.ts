@@ -9,7 +9,7 @@ import { type PositionRef, assignmentOf } from '../domain/positions'
 import { isInvitedBuyer } from '../domain/buyersLists'
 import { isActiveAt } from '../billing/term'
 import { effectiveCategoryLists, effectiveLists, isBlocked, isOn } from '../domain/lists'
-import { effectiveFloorCpm } from '../domain/pricing'
+import { effectiveFloorCpm, resolveBaseFloor } from '../domain/pricing'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 import { blockedDomains, categoryCodes } from './openrtb'
 
@@ -109,17 +109,32 @@ export async function checkVersionCount(ctx: Context, p: PositionRef, campaignId
   return versions <= max ? null : { code: 'too_many_versions', reason: `At most ${max} campaigns (default + targeted versions) for this slot.` }
 }
 
-/* The effective floor a bid must clear: the base floor × the advertiser's
-   floor multiplier (spec §4), whatever the campaign's type. The personalised
-   multiplier is not a floor (Rob, 30 Sep 2026): it is charged on personalised
-   plays at billing. An interactive campaign clears the ordinary floor for its
-   plays and pays the engagement fee on top of it (Rob, 20 Sep). */
-export async function floorFor(ctx: Context, advertiserId: string | null | undefined): Promise<number> {
-  const multiplier = advertiserId ? (await ctx.company.advertiserSetting(advertiserId)).floorMultiplier : 1
-  return effectiveFloorCpm(await ctx.company.get(), multiplier)
+/* Where in the floor hierarchy a bid sits (Rob, 7 Oct 2026): the DSP it
+   comes from and, for a deal position, the buyers list it is bidding under.
+   Either may be absent (a bid with no DSP context clears the platform floor). */
+export interface FloorScope { partner?: Pick<PartnerRecord, 'bidder'> | null; position?: PositionRef | null; buyersListId?: string | null }
+
+/* The base floor for a scope: the most specific floor set (buyers list, else
+   DSP, else platform), never below the platform floor. */
+export async function baseFloorFor(ctx: Context, scope: FloorScope = {}): Promise<number> {
+  const company = await ctx.company.get()
+  const listId = scope.buyersListId ?? (scope.position && assignmentOf(scope.position.def) === 'deal' ? assignedOf(scope.position.def).buyersListId : undefined)
+  const list = listId ? await ctx.buyersLists.get(listId) : null
+  return resolveBaseFloor(company.floorCpm, scope.partner?.bidder.floorCpm, list?.floorCpm)
 }
 
-export async function checkFloor(ctx: Context, cpm: number, advertiserId: string | null | undefined): Promise<Refusal | null> {
-  const floor = await floorFor(ctx, advertiserId)
+/* The effective floor a bid must clear: the resolved base floor (platform,
+   DSP, buyers list) × the advertiser's floor multiplier (spec §4), whatever
+   the campaign's type. The personalised multiplier is not a floor (Rob, 30
+   Sep 2026): it is charged on personalised plays at billing. An interactive
+   campaign clears the ordinary floor for its plays and pays the engagement
+   fee on top of it (Rob, 20 Sep). */
+export async function floorFor(ctx: Context, advertiserId: string | null | undefined, scope: FloorScope = {}): Promise<number> {
+  const multiplier = advertiserId ? (await ctx.company.advertiserSetting(advertiserId)).floorMultiplier : 1
+  return effectiveFloorCpm(await ctx.company.get(), multiplier, await baseFloorFor(ctx, scope))
+}
+
+export async function checkFloor(ctx: Context, cpm: number, advertiserId: string | null | undefined, scope: FloorScope = {}): Promise<Refusal | null> {
+  const floor = await floorFor(ctx, advertiserId, scope)
   return cpm >= floor ? null : { code: 'below_floor', reason: `${cpm} is below the effective floor of ${floor} ${TRANSACTING_CURRENCY} CPM.` }
 }

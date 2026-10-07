@@ -992,6 +992,10 @@ paths:
                     clears fresh every play window, same as before this
                     field existed.
                 committedPlays: {type: [integer, 'null'], minimum: 1, description: 'The play volume this deal commits to over its delivery term; a whole number of plays, or null for none (per play). Volume lives on deals, never the open auction.'}
+                floorCpm:
+                  type: [number, 'null']
+                  exclusiveMinimum: 0
+                  description: 'This list''s bid floor in USD CPM (bid floor hierarchy, Rob 7 Oct 2026). Most specific: applies to deals using this list. Never below the platform floor (400 otherwise). Absent or null: inherits the DSP''s floor, else the platform''s.'
       responses:
         '201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/BuyersList'}}}}
         '400': {$ref: '#/components/responses/ValidationFailed'}
@@ -1029,6 +1033,10 @@ paths:
                   format: date-time
                   description: 'The deal''s own one-time bidding deadline (the auction window); see POST''s description. Editable even once locked — it no longer has any effect at that point.'
                 committedPlays: {type: [integer, 'null'], minimum: 1, description: 'The play volume this deal commits to over its delivery term; a whole number of plays, or null for none (per play). Volume lives on deals, never the open auction.'}
+                floorCpm:
+                  type: [number, 'null']
+                  exclusiveMinimum: 0
+                  description: 'This list''s bid floor in USD CPM (bid floor hierarchy, Rob 7 Oct 2026). Most specific: applies to deals using this list. Never below the platform floor (400 otherwise). Absent or null: inherits the DSP''s floor, else the platform''s.'
       responses:
         '200': {description: Saved, content: {application/json: {schema: {$ref: '#/components/schemas/BuyersList'}}}}
         '400': {$ref: '#/components/responses/ValidationFailed'}
@@ -2132,12 +2140,15 @@ components:
         is priced against the same score-driven floor as everything else. It
         is a commitment on top of the floor, never under it, and a deal never
         bypasses the floor.
-      required: [id, name, description, invitedBuyers, targeting, activeFrom, activeTo, auctionCloses, lockedWin, committedPlays, deliveredPlays, createdAt, updatedAt]
+      required: [id, name, description, invitedBuyers, targeting, activeFrom, activeTo, auctionCloses, lockedWin, committedPlays, floorCpm, deliveredPlays, createdAt, updatedAt]
       properties:
         id: {type: string}
         name: {type: string}
         description: {type: string}
         invitedBuyers: {type: array, items: {$ref: '#/components/schemas/InvitedBuyer'}}
+        floorCpm:
+          type: [number, 'null']
+          description: 'This list''s own bid floor in USD CPM, or null to inherit the DSP''s floor, else the platform floor. Never below the platform floor.'
         committedPlays:
           type: [integer, 'null']
           minimum: 1
@@ -2559,6 +2570,7 @@ components:
             seatIds: {type: array, items: {type: string}}
             qps: {type: [integer, 'null'], minimum: 1, maximum: 10000, description: 'Per-DSP QPS ceiling override (Q46). Absent: the platform default, 500. null on save clears it.'}
             timeoutMs: {type: [integer, 'null'], minimum: 50, maximum: 2000, description: 'Per-DSP bidder timeout override in ms (Q46), also sent as tmax. Absent: the platform default, 300. null on save clears it.'}
+            floorCpm: {type: [number, 'null'], exclusiveMinimum: 0, description: 'This DSP''s bid floor in USD CPM (bid floor hierarchy, Rob 7 Oct 2026). Raises the platform floor for this DSP only; never below it (400 otherwise). Absent: inherits the platform floor. null on save clears it.'}
         issues:
           type: array
           description: Shown at the top of the DSP page.
@@ -2597,6 +2609,7 @@ components:
             seatIds: {type: array, items: {type: string}}
             qps: {type: [integer, 'null'], minimum: 1, maximum: 10000, description: 'Per-DSP QPS ceiling override (Q46). Absent: the platform default, 500. null on save clears it.'}
             timeoutMs: {type: [integer, 'null'], minimum: 50, maximum: 2000, description: 'Per-DSP bidder timeout override in ms (Q46), also sent as tmax. Absent: the platform default, 300. null on save clears it.'}
+            floorCpm: {type: [number, 'null'], exclusiveMinimum: 0, description: 'This DSP''s bid floor in USD CPM (bid floor hierarchy, Rob 7 Oct 2026). Raises the platform floor for this DSP only; never below it (400 otherwise). Absent: inherits the platform floor. null on save clears it.'}
         mode: {type: string, enum: [test, live]}
         advertiserWhitelist: {type: array, items: {type: string}, description: 'Seat IDs from this DSP''s synced seats. An ID that is not one of them is refused (422); free text is not accepted.'}
         advertiserBlacklist: {type: array, items: {type: string}, description: Seat IDs from this DSP's synced seats.}

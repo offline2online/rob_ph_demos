@@ -36,6 +36,8 @@ export interface PartnerDraft {
   /* Per-DSP overrides (Q46): empty means the platform default. */
   qps: string
   timeoutMs: string
+  /* This DSP's bid floor (USD CPM); empty inherits the platform floor. */
+  floorCpm: string
   mode: 'test' | 'live'
   advertiserWhitelist: string[]
   advertiserBlacklist: string[]
@@ -49,13 +51,14 @@ export function partnerDraft(p: Partner): PartnerDraft {
     credentials: Object.fromEntries(fields.map((f) => [f.key, f.secret ? '' : String((p.credentials ?? {})[f.key] ?? '')])),
     bidderEndpoint: p.bidder?.bidderEndpoint ?? '', seatIds: (p.bidder?.seatIds ?? []).join(', '),
     qps: p.bidder?.qps != null ? String(p.bidder.qps) : '', timeoutMs: p.bidder?.timeoutMs != null ? String(p.bidder.timeoutMs) : '',
+    floorCpm: p.bidder?.floorCpm != null ? String(p.bidder.floorCpm) : '',
     mode: p.mode, advertiserWhitelist: p.advertiserWhitelist ?? [], advertiserBlacklist: p.advertiserBlacklist ?? [],
   }
 }
 export const blankPartnerDraft = (provider: Provider): PartnerDraft => ({
   provider, isNew: true,
   credentials: Object.fromEntries((providerDef(provider)?.fields ?? []).map((f) => [f.key, ''])),
-  bidderEndpoint: '', seatIds: '', qps: '', timeoutMs: '', mode: 'test', advertiserWhitelist: [], advertiserBlacklist: [],
+  bidderEndpoint: '', seatIds: '', qps: '', timeoutMs: '', floorCpm: '', mode: 'test', advertiserWhitelist: [], advertiserBlacklist: [],
 })
 
 /* An override field: empty clears it (the platform default applies). */
@@ -71,7 +74,7 @@ export function partnerInput(d: PartnerDraft, before: PartnerDraft | undefined) 
     credentials,
     bidder: {
       bidderEndpoint: d.bidderEndpoint.trim(), seatIds: d.seatIds.split(',').map((x) => x.trim()).filter(Boolean),
-      qps: override(d.qps), timeoutMs: override(d.timeoutMs),
+      qps: override(d.qps), timeoutMs: override(d.timeoutMs), floorCpm: override(d.floorCpm),
     },
     mode: d.mode,
     advertiserWhitelist: d.advertiserWhitelist, advertiserBlacklist: d.advertiserBlacklist,

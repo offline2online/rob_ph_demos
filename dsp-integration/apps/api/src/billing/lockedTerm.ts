@@ -39,7 +39,7 @@ export async function bookLockedTermWindow(ctx: Context, p: PositionRef, start: 
      the floor in force now is not sold. It falls through to the default
      campaign, as a deal that clears nothing always has, and is never
      booked below the floor. */
-  const floor = await floorFor(ctx, win.advertiserId)
+  const floor = await floorFor(ctx, win.advertiserId, { partner, position: p, buyersListId: list.id })
   if (win.cpm < floor) {
     return { ...out, skipped: `Private auction: the locked rate (${win.cpm}) is below the effective floor of ${floor} ${TRANSACTING_CURRENCY} CPM, so this window is not sold under ${list.name}.` }
   }

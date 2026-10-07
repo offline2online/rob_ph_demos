@@ -1701,6 +1701,8 @@ export interface components {
              *     forecast plus the contingency buffer, not typed in here.
              */
             committedPlays: number | null;
+            /** @description This list's own bid floor in USD CPM, or null to inherit the DSP's floor, else the platform floor. Never below the platform floor. */
+            floorCpm: number | null;
             /**
              * @description Read only. Plays billed so far at every position this deal is
              *     attached to, in play windows that start inside the delivery term
@@ -2093,6 +2095,8 @@ export interface components {
                 qps?: number | null;
                 /** @description Per-DSP bidder timeout override in ms (Q46), also sent as tmax. Absent: the platform default, 300. null on save clears it. */
                 timeoutMs?: number | null;
+                /** @description This DSP's bid floor in USD CPM (bid floor hierarchy, Rob 7 Oct 2026). Raises the platform floor for this DSP only; never below it (400 otherwise). Absent: inherits the platform floor. null on save clears it. */
+                floorCpm?: number | null;
             };
             /** @description Shown at the top of the DSP page. */
             issues?: {
@@ -2128,6 +2132,8 @@ export interface components {
                 qps?: number | null;
                 /** @description Per-DSP bidder timeout override in ms (Q46), also sent as tmax. Absent: the platform default, 300. null on save clears it. */
                 timeoutMs?: number | null;
+                /** @description This DSP's bid floor in USD CPM (bid floor hierarchy, Rob 7 Oct 2026). Raises the platform floor for this DSP only; never below it (400 otherwise). Absent: inherits the platform floor. null on save clears it. */
+                floorCpm?: number | null;
             };
             /** @enum {string} */
             mode?: "test" | "live";
@@ -3697,6 +3703,8 @@ export interface operations {
                     auctionCloses?: string | null;
                     /** @description The play volume this deal commits to over its delivery term; a whole number of plays, or null for none (per play). Volume lives on deals, never the open auction. */
                     committedPlays?: number | null;
+                    /** @description This list's bid floor in USD CPM (bid floor hierarchy, Rob 7 Oct 2026). Never below the platform floor (400 otherwise). Absent or null: inherits the DSP's floor, else the platform's. */
+                    floorCpm?: number | null;
                 };
             };
         };
@@ -3752,6 +3760,8 @@ export interface operations {
                     auctionCloses?: string | null;
                     /** @description The play volume this deal commits to over its delivery term; a whole number of plays, or null for none (per play). Volume lives on deals, never the open auction. */
                     committedPlays?: number | null;
+                    /** @description This list's bid floor in USD CPM (bid floor hierarchy, Rob 7 Oct 2026). Never below the platform floor (400 otherwise). Absent or null: inherits the DSP's floor, else the platform's. */
+                    floorCpm?: number | null;
                 };
             };
         };
