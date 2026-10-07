@@ -58,10 +58,13 @@ const RateCell = ({ data }: P) => {
    otherwise the volume inherited platform -> DSP, or 'Per play' when no level sets one. */
 const VolumeCell = ({ data }: P) => {
   if (!data) return null
+  if (data.dealType === 'private_auction' || data.dealType === 'preferred') return <span style={{ color: T.muted }}>None (per play)</span>
   if (data.committedPlays != null) return <span style={{ fontSize: 12.5 }}>{data.deliveredPlays.toLocaleString()} of {data.committedPlays.toLocaleString()} plays</span>
   const text = playsText(data.effectiveCommittedPlays)
   return text ? <div><span style={{ fontSize: 12.5 }}>{text}</span><Sub>{sourceLabel(data.effectiveCommittedPlays.source)}</Sub></div> : <span style={{ color: T.muted }}>Per play</span>
 }
+const DEAL_TYPE_LABELS = { private_auction: 'Private auction', preferred: 'Preferred deal', guaranteed: 'Programmatic guaranteed' } as const
+const DealTypeCell = ({ data }: P) => (data ? <span style={{ fontSize: 12.5 }}>{DEAL_TYPE_LABELS[data.dealType] ?? 'Private auction'}</span> : null)
 const ActionsCell = ({ data, context }: P) =>
   data ? (
     <span className="inline-flex gap-1">
@@ -79,6 +82,7 @@ export function BuyersListsTable({ lists, canEdit, onChanged }: { lists: BuyersL
 
   const columns: ColDef<BuyersList>[] = [
     { headerName: 'Buyers and targeting', flex: 2, minWidth: 220, cellRenderer: NameCell, valueGetter: (p) => p.data?.name ?? '' },
+    { headerName: 'Deal type', width: 170, minWidth: 150, cellRenderer: DealTypeCell },
     { headerName: 'Invited buyers', width: 150, minWidth: 130, cellRenderer: BuyersCell },
     { headerName: 'Targeting', width: 230, minWidth: 180, cellRenderer: TargetingCell },
     { headerName: 'Delivery term', width: 260, minWidth: 220, cellRenderer: TermCell },

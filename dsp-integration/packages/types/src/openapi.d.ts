@@ -1489,7 +1489,7 @@ export interface components {
             /** @enum {string} */
             type: "reserve" | "bid";
             /**
-             * @description Only for type reserve. preferred (the default, unchanged) holds the premium window at the reserve price with no volume promised. guaranteed also commits a delivery volume: the window's forecast impressions (plays x VAC-d) less the retailer's contingency buffer, returned as guaranteedImpressions and sent to the DSP as the guaranteed unit count in dspDeal. Refused (validation_failed) with type bid.
+             * @description Only for type reserve. preferred (the default, unchanged) holds the premium window at the reserve price with no volume promised. guaranteed also commits a delivery volume: the window's forecast impressions (plays x VAC-d) less the retailer's contingency buffer, returned as guaranteedImpressions and sent to the DSP as the guaranteed unit count in dspDeal. Refused (validation_failed) with type bid. On a position assigned to a buyers list the list's dealType is authoritative: omit this, or send the matching value (a private_auction list books as preferred); a different value is refused with 409 conflict.
              * @default preferred
              * @enum {string}
              */
@@ -1751,6 +1751,17 @@ export interface components {
             id: string;
             name: string;
             description: string;
+            /**
+             * @description The deal type this list bids against, and the single place it is
+             *     set (Rob, 7 Oct 2026). It maps to the DSP's deal structure (deal
+             *     ID + type) at bid time, and a reservation on a position assigned
+             *     to this list takes its dealType from here. private_auction:
+             *     invited buyers bid, the two-period model applies. preferred:
+             *     fixed-price first look at the reserve price, no volume.
+             *     guaranteed: commits volume. The floor price CPM applies to all.
+             * @enum {string}
+             */
+            dealType: "private_auction" | "preferred" | "guaranteed";
             invitedBuyers: components["schemas"]["InvitedBuyer"][];
             /** @description This list's own bid floor in USD CPM, or null to inherit the DSP's floor, else the platform floor. Never below the platform floor. */
             floorCpm: number | null;
@@ -3767,6 +3778,11 @@ export interface operations {
                      *     field existed.
                      */
                     auctionCloses?: string | null;
+                    /**
+                     * @description The deal type this list bids against (Rob, 7 Oct 2026): private_auction (invited buyers bid; auctionCloses / locked rate apply), preferred (fixed-price first look held at the reserve price; no volume, no auction window) or guaranteed (commits committedPlays). Omitted: guaranteed when committedPlays is set, else private_auction. committedPlays is refused unless guaranteed; auctionCloses is refused unless private_auction (400).
+                     * @enum {string}
+                     */
+                    dealType?: "private_auction" | "preferred" | "guaranteed";
                     /** @description The play volume this deal commits to over its delivery term; a whole number of plays, or null for none (per play). Volume lives on deals, never the open auction. */
                     committedPlays?: number | null;
                     /** @description This list's bid floor in USD CPM (bid floor hierarchy, Rob 7 Oct 2026). Most specific: applies to deals using this list. Never below the platform floor (400 otherwise). Absent or null: inherits the DSP's floor, else the platform's. */
@@ -3824,6 +3840,11 @@ export interface operations {
                      * @description The deal's own one-time bidding deadline (the auction window); see POST's description. Editable even once locked — it no longer has any effect at that point.
                      */
                     auctionCloses?: string | null;
+                    /**
+                     * @description The deal type this list bids against (Rob, 7 Oct 2026): private_auction (invited buyers bid; auctionCloses / locked rate apply), preferred (fixed-price first look held at the reserve price; no volume, no auction window) or guaranteed (commits committedPlays). Omitted: guaranteed when committedPlays is set, else private_auction. committedPlays is refused unless guaranteed; auctionCloses is refused unless private_auction (400).
+                     * @enum {string}
+                     */
+                    dealType?: "private_auction" | "preferred" | "guaranteed";
                     /** @description The play volume this deal commits to over its delivery term; a whole number of plays, or null for none (per play). Volume lives on deals, never the open auction. */
                     committedPlays?: number | null;
                     /** @description This list's bid floor in USD CPM (bid floor hierarchy, Rob 7 Oct 2026). Most specific: applies to deals using this list. Never below the platform floor (400 otherwise). Absent or null: inherits the DSP's floor, else the platform's. */

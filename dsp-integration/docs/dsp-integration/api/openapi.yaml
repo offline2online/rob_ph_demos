@@ -999,6 +999,7 @@ paths:
                     null = this deal isn't using the two-period model — it
                     clears fresh every play window, same as before this
                     field existed.
+                dealType: {type: string, enum: [private_auction, preferred, guaranteed], description: 'The deal type this list bids against (Rob, 7 Oct 2026): private_auction (invited buyers bid; auctionCloses / locked rate apply), preferred (fixed-price first look held at the reserve price; no volume, no auction window) or guaranteed (commits committedPlays). Omitted: guaranteed when committedPlays is set, else private_auction. committedPlays is refused unless guaranteed; auctionCloses is refused unless private_auction (400).'}
                 committedPlays: {type: [integer, 'null'], minimum: 1, description: 'The play volume this deal commits to over its delivery term; a whole number of plays, or null for none (per play). Volume lives on deals, never the open auction.'}
                 floorCpm:
                   type: [number, 'null']
@@ -1040,6 +1041,7 @@ paths:
                   type: [string, 'null']
                   format: date-time
                   description: 'The deal''s own one-time bidding deadline (the auction window); see POST''s description. Editable even once locked — it no longer has any effect at that point.'
+                dealType: {type: string, enum: [private_auction, preferred, guaranteed], description: 'The deal type this list bids against (Rob, 7 Oct 2026): private_auction (invited buyers bid; auctionCloses / locked rate apply), preferred (fixed-price first look held at the reserve price; no volume, no auction window) or guaranteed (commits committedPlays). Omitted: guaranteed when committedPlays is set, else private_auction. committedPlays is refused unless guaranteed; auctionCloses is refused unless private_auction (400).'}
                 committedPlays: {type: [integer, 'null'], minimum: 1, description: 'The play volume this deal commits to over its delivery term; a whole number of plays, or null for none (per play). Volume lives on deals, never the open auction.'}
                 floorCpm:
                   type: [number, 'null']
@@ -1968,7 +1970,7 @@ components:
         campaignId: {type: string}
         advertiserId: {type: string}
         type: {type: string, enum: [reserve, bid]}
-        dealType: {type: string, enum: [preferred, guaranteed], default: preferred, description: 'Only for type reserve. preferred (the default, unchanged) holds the premium window at the reserve price with no volume promised. guaranteed also commits a delivery volume: the window''s forecast impressions (plays x VAC-d) less the retailer''s contingency buffer, returned as guaranteedImpressions and sent to the DSP as the guaranteed unit count in dspDeal. Refused (validation_failed) with type bid.'}
+        dealType: {type: string, enum: [preferred, guaranteed], default: preferred, description: 'Only for type reserve. preferred (the default, unchanged) holds the premium window at the reserve price with no volume promised. guaranteed also commits a delivery volume: the window''s forecast impressions (plays x VAC-d) less the retailer''s contingency buffer, returned as guaranteedImpressions and sent to the DSP as the guaranteed unit count in dspDeal. Refused (validation_failed) with type bid. On a position assigned to a buyers list the list''s dealType is authoritative: omit this, or send the matching value (a private_auction list books as preferred); a different value is refused with 409 conflict.'}
         bidCpm: {type: number, exclusiveMinimum: 0, maximum: 10000, description: 'The CPM, in the company currency, at most 10,000. For type bid, the bid, which must clear the effective floor. For type reserve on a position with a reservePrice, the buyer''s commitment: it must be at least the reservePrice (validation_failed otherwise), and the booking is made at the reservePrice itself, which must clear the effective floor. For type reserve on a named-advertiser position with no reservePrice, the price agreed through the DSP: it must clear the effective floor, and the booking is made at it.'}
     Reservation:
       type: object
@@ -2174,13 +2176,24 @@ components:
         is priced against the same score-driven floor as everything else. It
         is a commitment on top of the floor, never under it, and a deal never
         bypasses the floor.
-      required: [id, name, description, invitedBuyers, targeting, activeFrom, activeTo, auctionCloses, lockedWin, committedPlays, floorCpm, deliveredPlays, effectiveCommittedPlays, effectiveRateCpm, createdAt, updatedAt]
+      required: [id, name, description, dealType, invitedBuyers, targeting, activeFrom, activeTo, auctionCloses, lockedWin, committedPlays, floorCpm, deliveredPlays, effectiveCommittedPlays, effectiveRateCpm, createdAt, updatedAt]
       properties:
         effectiveCommittedPlays: {$ref: '#/components/schemas/EffectiveTerm'}
         effectiveRateCpm: {$ref: '#/components/schemas/EffectiveTerm'}
         id: {type: string}
         name: {type: string}
         description: {type: string}
+        dealType:
+          type: string
+          enum: [private_auction, preferred, guaranteed]
+          description: |
+            The deal type this list bids against, and the single place it is
+            set (Rob, 7 Oct 2026). It maps to the DSP's deal structure (deal
+            ID + type) at bid time, and a reservation on a position assigned
+            to this list takes its dealType from here. private_auction:
+            invited buyers bid, the two-period model applies. preferred:
+            fixed-price first look at the reserve price, no volume.
+            guaranteed: commits volume. The floor price CPM applies to all.
         invitedBuyers: {type: array, items: {$ref: '#/components/schemas/InvitedBuyer'}}
         floorCpm:
           type: [number, 'null']

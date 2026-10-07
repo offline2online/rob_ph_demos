@@ -2,7 +2,7 @@
    deal objects, managed from Available Inventory's own table underneath the
    Assigned to picker (Rob, 23 Sep). */
 import { randomUUID } from 'node:crypto'
-import { assignedOf, TARGETING_VARIABLES, type BuyersList, type Condition, type InvitedBuyer } from '@ph-dsp/types'
+import { assignedOf, TARGETING_VARIABLES, type BuyersList, type BuyersListDealType, type Condition, type InvitedBuyer } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import type { Guards } from '../../http/app'
@@ -15,7 +15,7 @@ import { permittedFor } from '../../domain/variables'
 import type { Access } from '../../repos/CompanySettingsRepo'
 import type { PartnerRecord } from '../../repos/PartnerRepo'
 
-type Body = { name?: unknown; description?: unknown; invitedBuyers?: unknown; targeting?: unknown; activeFrom?: unknown; activeTo?: unknown; auctionCloses?: unknown; committedPlays?: unknown; floorCpm?: unknown }
+type Body = { name?: unknown; description?: unknown; dealType?: unknown; invitedBuyers?: unknown; targeting?: unknown; activeFrom?: unknown; activeTo?: unknown; auctionCloses?: unknown; committedPlays?: unknown; floorCpm?: unknown }
 
 /* Every slot currently assigned to this buyers list, across every display
    type — what stops a delete (spec "Deleting"). */
@@ -38,7 +38,10 @@ const withDelivery = async (ctx: Context, l: BuyersList): Promise<BuyersList> =>
   const company = await ctx.company.get()
   const dsps = new Map((await ctx.partners.list()).map((p) => [p.id, p]))
   const invited = [...new Set(l.invitedBuyers.map((b) => b.partnerId))].map((id) => dsps.get(id)?.bidder)
-  const effectiveCommittedPlays = effectiveTerm({ platform: company.defaultCommittedPlays, dsp: invited.map((b) => b?.committedPlays), buyer: l.committedPlays })
+  /* Only a guaranteed deal carries volume: a private auction or preferred deal reports none, whatever the levels above hold. */
+  const effectiveCommittedPlays = l.dealType === 'guaranteed'
+    ? effectiveTerm({ platform: company.defaultCommittedPlays, dsp: invited.map((b) => b?.committedPlays), buyer: l.committedPlays })
+    : { min: null, max: null, source: 'none' as const }
   const effectiveRateCpm = effectiveTerm({ platform: company.floorCpm, dsp: invited.map((b) => b?.floorCpm), buyer: l.floorCpm }, (n) => Math.max(company.floorCpm, n))
   return { ...l, effectiveCommittedPlays, effectiveRateCpm, deliveredPlays: await deliveredOf(ctx, l) }
 }
@@ -48,10 +51,14 @@ const deliveredOf = async (ctx: Context, l: BuyersList): Promise<number> =>
 export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => async (app) => {
   /* An invited buyer must be a seat a connected DSP actually synced. */
   const partnersById = async () => new Map((await ctx.partners.list()).filter((p) => p.status === 'connected').map((p) => [p.id, p]))
-  const parse = (b: Body, partnerById: Map<string, PartnerRecord>, access: Record<string, Access>, platformFloor: number, errors: { field: string; reason: string }[]): { name: string; description: string; invitedBuyers: InvitedBuyer[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays: number | null; floorCpm: number | null } => {
+  const parse = (b: Body, partnerById: Map<string, PartnerRecord>, access: Record<string, Access>, platformFloor: number, errors: { field: string; reason: string }[]): { name: string; description: string; dealType: BuyersListDealType; invitedBuyers: InvitedBuyer[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays: number | null; floorCpm: number | null } => {
     const name = typeof b.name === 'string' ? b.name.trim() : ''
     if (!name) errors.push({ field: 'name', reason: 'A name is required.' })
     const description = typeof b.description === 'string' ? b.description.trim() : ''
+    /* The deal type (7 Oct 2026) decides which of the fields below the list may carry. Omitted by an older client: guaranteed if it commits plays, else a private auction. */
+    const requestedType = b.dealType === undefined || b.dealType === null ? (typeof b.committedPlays === 'number' ? 'guaranteed' : 'private_auction') : b.dealType
+    if (requestedType !== 'private_auction' && requestedType !== 'preferred' && requestedType !== 'guaranteed') errors.push({ field: 'dealType', reason: 'private_auction, preferred or guaranteed.' })
+    const dealType: BuyersListDealType = requestedType === 'preferred' || requestedType === 'guaranteed' ? requestedType : 'private_auction'
     const rawBuyers = Array.isArray(b.invitedBuyers) ? (b.invitedBuyers as unknown[]) : null
     const invitedBuyers: InvitedBuyer[] = []
     if (!rawBuyers?.length) errors.push({ field: 'invitedBuyers', reason: 'At least one invited buyer is required.' })
@@ -104,9 +111,11 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
        before, inside or after activeFrom/activeTo (a deal can be set up to
        award its term ahead of time). */
     const auctionCloses = parseDate(b.auctionCloses, 'auctionCloses')
+    if (auctionCloses && dealType !== 'private_auction') errors.push({ field: 'auctionCloses', reason: 'Only a private auction has an auction window; a preferred or guaranteed deal is not bid for.' })
     /* committedPlays: the volume this deal commits to over its term — a whole number of plays, or null for none. */
     let committedPlays: number | null = null
-    if (b.committedPlays !== null && b.committedPlays !== undefined) {
+    if (b.committedPlays !== null && b.committedPlays !== undefined && dealType !== 'guaranteed') errors.push({ field: 'committedPlays', reason: 'Only a guaranteed deal commits volume; leave it empty for a private auction or preferred deal.' })
+    else if (b.committedPlays !== null && b.committedPlays !== undefined) {
       if (typeof b.committedPlays !== 'number' || !Number.isInteger(b.committedPlays) || b.committedPlays < 1) errors.push({ field: 'committedPlays', reason: 'A whole number of plays, 1 or more, or null for no volume commitment.' })
       else committedPlays = b.committedPlays
     }
@@ -117,7 +126,7 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
       else if (b.floorCpm < platformFloor) errors.push({ field: 'floorCpm', reason: `Floor price (CPM) can't be below the platform floor of ${platformFloor} ${TRANSACTING_CURRENCY}.` })
       else floorCpm = b.floorCpm
     }
-    return { name, description, invitedBuyers, targeting, activeFrom, activeTo, auctionCloses, committedPlays, floorCpm }
+    return { name, description, dealType, invitedBuyers, targeting, activeFrom, activeTo, auctionCloses, committedPlays, floorCpm }
   }
 
   app.get('/buyers-lists', async (req) => {

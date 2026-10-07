@@ -3988,6 +3988,32 @@ keeps the won creative renderable; the lookahead sets how early the auction open
   the player is signalling at playout and the auction opens now, as before.
 - Advance window positions are unaffected: they keep the window auction.
 
+## Deal type on the buyers list (Rob, 7 Oct 2026; ticket ke38J410jwLTYu9blGK7)
+
+- **One deal object plus a type**, as DSPs and Broadsign model it. A buyers
+  list carries `dealType`: `private_auction` (invited buyers bid; the
+  two-period model, `auctionCloses` and the locked rate apply), `preferred`
+  (fixed-price first look held at the reserve price; no volume, no auction
+  window) or `guaranteed` (programmatic guaranteed; commits `committedPlays`).
+- **The type decides the fields.** `committedPlays` is captured only for
+  `guaranteed` (pre-filled from Default committed plays; the booked volume
+  per window is still `floor(forecast × (1 − buffer%))`); `auctionCloses`
+  only for `private_auction`. The API refuses the other combinations (400),
+  and a list that is not guaranteed reports no effective committed volume.
+  The floor price CPM (platform → DSP → list; most specific raises it, never
+  below the platform floor) applies to every type.
+- **Authoritative in one place.** On a position assigned to a buyers list, a
+  reservation's `dealType` comes from the list (a private auction books as
+  `preferred`: no volume). A reservation that names a different `dealType`
+  is refused with 409, so the two can never disagree about volume. A
+  position with no list keeps the reservation's own `dealType`.
+- **Mapping to the DSP deal at bid time** is deal ID + type (`dspDealTerms`).
+  Per-DSP deal field names are still to be confirmed against each DSP
+  sandbox (DV360, Amazon Ads, The Trade Desk).
+- Migration 0055: existing lists with committed plays become `guaranteed`,
+  the rest `private_auction`. Older clients that omit `dealType` get the
+  same inference.
+
 ## Default committed plays — the play config feeds the buyers list (Rob, 7 Oct 2026)
 
 - **Setting**: `defaultCommittedPlays` on Advertiser settings (a "Play defaults"

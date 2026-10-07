@@ -200,4 +200,39 @@ describe('Buyers lists (spec "Support private auctions")', () => {
       expect((await app.inject({ method: 'GET', url: '/api/admin/v1/buyers-lists' })).json().items[0]).toMatchObject({ committedPlays: null, deliveredPlays: 0 })
     })
   })
+  /* 7 Oct 2026: the deal type lives on the list and decides which fields it may carry. */
+  describe('deal type', () => {
+    const post = (app: ReturnType<typeof buildApp>, payload: Record<string, unknown>) => app.inject({ method: 'POST', url: '/api/admin/v1/buyers-lists', payload: { ...list, ...payload } })
+
+    it('defaults to a private auction, or guaranteed when an older client sends committedPlays', async () => {
+      const app = buildApp(await testContext())
+      const plain = await post(app, {})
+      expectMatchesContract('POST', '/admin/v1/buyers-lists', 201, plain.json())
+      expect(plain.json().dealType).toBe('private_auction')
+      expect((await post(app, { committedPlays: 500 })).json().dealType).toBe('guaranteed')
+    })
+
+    it('only a guaranteed deal commits volume; only a private auction has an auction window', async () => {
+      const app = buildApp(await testContext())
+      const guaranteed = await post(app, { dealType: 'guaranteed', committedPlays: 800 })
+      expect(guaranteed.statusCode).toBe(201)
+      expect(guaranteed.json()).toMatchObject({ dealType: 'guaranteed', committedPlays: 800 })
+      const preferred = await post(app, { dealType: 'preferred' })
+      expect(preferred.statusCode).toBe(201)
+      expect(preferred.json()).toMatchObject({ dealType: 'preferred', committedPlays: null, auctionCloses: null, effectiveCommittedPlays: { source: 'none' } })
+      const closes = '2026-10-10T00:00:00.000Z'
+      expect((await post(app, { dealType: 'private_auction', auctionCloses: closes })).json().auctionCloses).toBe(closes)
+      for (const [payload, field] of [
+        [{ dealType: 'preferred', committedPlays: 100 }, 'committedPlays'],
+        [{ dealType: 'private_auction', committedPlays: 100 }, 'committedPlays'],
+        [{ dealType: 'guaranteed', auctionCloses: closes }, 'auctionCloses'],
+        [{ dealType: 'preferred', auctionCloses: closes }, 'auctionCloses'],
+        [{ dealType: 'sealed_bid' }, 'dealType'],
+      ] as const) {
+        const res = await post(app, payload)
+        expect(res.statusCode).toBe(400)
+        expect(res.json().error.details.map((d: { field: string }) => d.field)).toEqual([field])
+      }
+    })
+  })
 })
