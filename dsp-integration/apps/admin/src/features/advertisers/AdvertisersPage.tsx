@@ -28,6 +28,8 @@ import { BOOKING_SCHEDULE_PATH, externalUrl } from '../booking-schedule/path'
 import { BuyersListModal } from './BuyersListModal'
 import { BuyersListsTable } from './BuyersListsTable'
 
+/* Bidding values are always USD (TRANSACTING_CURRENCY in the API's domain/currency.ts), never the instance's reporting currency. */
+const TRANSACTING_CURRENCY = 'USD'
 interface Data { currency: string; floorCpm: number; items: Advertiser[] }
 type Settings = Record<string, AdvertiserSetting>
 type Ctx = { current: { settings: Settings; data: Data; canEdit: boolean; set: (id: string, patch: Partial<AdvertiserSetting>) => void } }
@@ -59,7 +61,7 @@ function MultiplierCell({ data, context }: P) {
 function EffectiveCell({ data, context }: P) {
   if (!data) return null
   const { settings, data: d } = context.current
-  return <span>{`${d.currency} ${effective(d.floorCpm, settings[data.advertiserId].floorMultiplier).toFixed(2)} CPM`}</span>
+  return <span>{`${TRANSACTING_CURRENCY} ${effective(d.floorCpm, settings[data.advertiserId].floorMultiplier).toFixed(2)} CPM`}</span>
 }
 /* The inventory advertisers can buy: every Advertiser-owned slot on a
    display type (spec §5 "Available Inventory"). No advertisers column. */
@@ -366,13 +368,13 @@ function ReservePriceCell({ data, context }: IP) {
   const value = overridden ? override : c.defaults[data.displayTypeId] ?? null
   if (!c.canEdit) {
     const resolved = effectiveReservePrice(c, data)
-    return <span style={{ color: resolved === null ? T.muted : T.text }}>{resolved === null ? 'No reserve' : `${c.currency} ${resolved}`}</span>
+    return <span style={{ color: resolved === null ? T.muted : T.text }}>{resolved === null ? 'No reserve' : `${TRANSACTING_CURRENCY} ${resolved}`}</span>
   }
   return (
     <div className="flex w-full min-w-0 items-center gap-1" title={RESERVE_PRICE_TIP}>
       <InputNumber
         size="small" aria-label={`${data.displayTypeName} slot ${data.zoneSlot}: reserve price${overridden ? ' (override)' : ''}`} min={0} step={1} style={{ width: 92 }}
-        placeholder="None" prefix={c.currency} value={value ?? undefined}
+        placeholder="None" prefix={TRANSACTING_CURRENCY} value={value ?? undefined}
         onChange={(v) => {
           const next = v === null || v === undefined ? null : Number(v)
           if (overridden) c.set(slotKey(data), { reservePrice: next })
@@ -418,12 +420,12 @@ function InteractiveReservePriceCell({ data, context }: IP) {
   const fallback = effectiveReservePrice(c, data)
   if (!c.canEdit || !interactiveGateOpen(data.qrControl, e)) {
     const resolved = e.interactiveReservePrice ?? fallback
-    return <span style={{ color: resolved === null ? T.muted : T.text }}>{resolved === null ? 'No reserve' : `${c.currency} ${resolved}`}</span>
+    return <span style={{ color: resolved === null ? T.muted : T.text }}>{resolved === null ? 'No reserve' : `${TRANSACTING_CURRENCY} ${resolved}`}</span>
   }
   return (
     <InputNumber
       size="small" aria-label={`${data.displayTypeName} slot ${data.zoneSlot}: interactive reserve price`} min={0} step={1} style={{ width: 112 }}
-      placeholder={fallback === null ? 'None' : String(fallback)} prefix={c.currency} value={e.interactiveReservePrice ?? undefined}
+      placeholder={fallback === null ? 'None' : String(fallback)} prefix={TRANSACTING_CURRENCY} value={e.interactiveReservePrice ?? undefined}
       onChange={(v) => c.set(slotKey(data), { interactiveReservePrice: v === null || v === undefined ? null : Number(v) })}
     />
   )
@@ -663,7 +665,7 @@ export function AdvertisersPage() {
       ...setColumn<Advertiser>('Campaign approval', () => ['Required', 'Not required']),
     },
     { headerName: 'Floor multiplier', width: 140, suppressSizeToFit: true, cellRenderer: MultiplierCell, headerComponent: header('Floor multiplier', 'Scales this advertiser’s floor. Default 1.0, e.g. 0.8 for a preferred supplier or 1.2 for a new one.') },
-    { headerName: 'Effective floor', width: 150, minWidth: 140, cellRenderer: EffectiveCell, headerComponent: header('Effective floor', `Floor CPM (${data.currency} ${data.floorCpm}, set in DSP Integration → Advertiser settings) × this advertiser's floor multiplier.`) },
+    { headerName: 'Effective floor', width: 150, minWidth: 140, cellRenderer: EffectiveCell, headerComponent: header('Effective floor', `Floor CPM (${TRANSACTING_CURRENCY} ${data.floorCpm}, set in DSP Integration → Advertiser settings) × this advertiser's floor multiplier.`) },
     /* Campaigns and Bookings columns removed (Rob's ticket, 26 Sep 2026):
        already covered in Campaign Status and the booking schedule, their
        own operational sections. */
