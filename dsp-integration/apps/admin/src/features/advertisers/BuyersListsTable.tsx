@@ -19,10 +19,22 @@ import { playsText, rateText, sourceLabel } from './effectiveTerm'
 type Ctx = { current: { onEdit: (l: BuyersList) => void; onDelete: (l: BuyersList) => void; canEdit: boolean } }
 type P = ICellRendererParams<BuyersList, unknown, Ctx>
 
-const NameCell = ({ data }: P) =>
+/* The name is the way in (ph-designer: a row's name opens it; the icon button is only a shortcut). */
+const NameCell = ({ data, context }: P) =>
   data ? (
     <div className="min-w-0">
-      <div className="truncate" style={{ fontWeight: 500 }}>{data.name}</div>
+      {context.current.canEdit ? (
+        <button
+          type="button"
+          className="block max-w-full truncate border-0 bg-transparent p-0 text-left hover:underline"
+          style={{ color: T.primary, cursor: 'pointer', font: 'inherit', fontWeight: 500 }}
+          onClick={() => context.current.onEdit(data)}
+        >
+          {data.name}
+        </button>
+      ) : (
+        <div className="truncate" style={{ fontWeight: 500 }}>{data.name}</div>
+      )}
       {data.description && <div className="truncate" style={{ fontSize: 11.5, color: T.muted }}>{data.description}</div>}
     </div>
   ) : null
