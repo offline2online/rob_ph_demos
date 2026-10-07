@@ -28,6 +28,8 @@ export interface CompanySettings {
   uncachedRestriction: 'off' | 'fixed' | 'store_open'
   uncachedRestrictionStart: string
   uncachedRestrictionEnd: string
+  /* Real-time bidding: seconds before a slot plays that its auction opens (domain/bidLookahead.ts). */
+  bidLookaheadSeconds: number
 }
 export interface AdvertiserSettingRecord { approvalRequired: boolean; floorMultiplier: number }
 export type Access = 'all' | string[]
@@ -51,6 +53,7 @@ interface Row {
   pending_play_window_hours: number | null; pending_play_window_effective_from: string | null
   category_whitelist: string; category_blacklist: string; guarantee_buffer_pct: number
   uncached_restriction: 'off' | 'fixed' | 'store_open'; uncached_restriction_start: string; uncached_restriction_end: string
+  bid_lookahead_seconds: number
 }
 
 /* Freeze a snapshot (and the arrays inside it) so a caller can't mutate the
@@ -102,7 +105,7 @@ export function sqliteCompanySettingsRepo(db: Db): CompanySettingsRepo {
         auctionOpensHours: r.auction_opens_hours, playWindowHours: r.play_window_hours, auctionCutoffTime: r.auction_cutoff_time,
         pendingPlayWindowHours: r.pending_play_window_hours, pendingPlayWindowEffectiveFrom: r.pending_play_window_effective_from,
         categoryWhitelist: fromJson(r.category_whitelist, []), categoryBlacklist: fromJson(r.category_blacklist, []), guaranteeBufferPct: r.guarantee_buffer_pct,
-        uncachedRestriction: r.uncached_restriction, uncachedRestrictionStart: r.uncached_restriction_start, uncachedRestrictionEnd: r.uncached_restriction_end,
+        uncachedRestriction: r.uncached_restriction, uncachedRestrictionStart: r.uncached_restriction_start, uncachedRestrictionEnd: r.uncached_restriction_end, bidLookaheadSeconds: r.bid_lookahead_seconds,
       })
     }
     return c.company as CompanySettings
@@ -125,12 +128,12 @@ export function sqliteCompanySettingsRepo(db: Db): CompanySettingsRepo {
         `UPDATE company_advertiser_settings SET currency = ?, floor_cpm = ?, interactive_cpe = ?,
            auction_opens_hours = ?, play_window_hours = ?, auction_cutoff_time = ?, pending_play_window_hours = ?, pending_play_window_effective_from = ?,
            category_whitelist = ?, category_blacklist = ?, guarantee_buffer_pct = ?,
-           uncached_restriction = ?, uncached_restriction_start = ?, uncached_restriction_end = ?, updated_at = ? WHERE id = ?`,
+           uncached_restriction = ?, uncached_restriction_start = ?, uncached_restriction_end = ?, bid_lookahead_seconds = ?, updated_at = ? WHERE id = ?`,
       ).run(
         s.currency, s.floorCpm, s.interactiveCpe, s.auctionOpensHours, s.playWindowHours, s.auctionCutoffTime,
         s.pendingPlayWindowHours, s.pendingPlayWindowEffectiveFrom,
         toJson(s.categoryWhitelist) ?? '[]', toJson(s.categoryBlacklist) ?? '[]', s.guaranteeBufferPct,
-        s.uncachedRestriction, s.uncachedRestrictionStart, s.uncachedRestrictionEnd, now(), ID,
+        s.uncachedRestriction, s.uncachedRestrictionStart, s.uncachedRestrictionEnd, s.bidLookaheadSeconds, now(), ID,
       )
       invalidate()
       return get()

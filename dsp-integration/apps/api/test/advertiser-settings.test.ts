@@ -56,6 +56,21 @@ describe('Advertiser settings (spec §4, §6)', () => {
     expect(bad.json().error.details.map((d: { field: string }) => d.field)).toEqual(['auctionOpensHours', 'playWindowHours', 'auctionCutoffTime'])
   })
 
+  it('bid lookahead: defaults to 35 s, saves, keeps the stored value when omitted, refuses 0 and non-integers', async () => {
+    const app = buildApp(await testContext())
+    expect((await app.inject({ method: 'GET', url: '/api/admin/v1/advertiser-settings' })).json().bidLookaheadSeconds).toBe(35)
+    const ok = await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: { ...input, bidLookaheadSeconds: 60 } })
+    expect(ok.statusCode).toBe(200)
+    expectMatchesContract('PUT', '/admin/v1/advertiser-settings', 200, ok.json())
+    expect((await app.inject({ method: 'GET', url: '/api/admin/v1/advertiser-settings' })).json().bidLookaheadSeconds).toBe(60)
+    expect((await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: input })).json().bidLookaheadSeconds).toBe(60)
+    for (const bad of [0, -5, 1.5, '35', null]) {
+      const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: { ...input, bidLookaheadSeconds: bad } })
+      expect(res.statusCode).toBe(400)
+      expect(res.json().error.details).toEqual([{ field: 'bidLookaheadSeconds', reason: 'Bid lookahead is a whole number of seconds, at least 1.' }])
+    }
+  })
+
   /* Rob's board ticket, 26 Sep 2026: a length change while windows are still
      active no longer errors out — it's accepted and deferred, with the
      admin told exactly when it takes effect. */

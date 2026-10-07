@@ -117,6 +117,13 @@ export function AdvertiserSettings() {
         </Field>
       </div>
 
+      <SectionLabel><WithTip tip="How early a real-time slot's auction opens, so the winning creative can be downloaded and rendered before the slot plays. The auction is per slot, opened this long before that slot's own start, not on a schedule.">Real-time bidding</WithTip></SectionLabel>
+      <div className="flex flex-wrap items-start gap-3.5">
+        <Field label={<span className="block" style={{ minHeight: 36 }}>Bid lookahead</span>} htmlFor="bidLookaheadSeconds" tip="Seconds before a slot plays that its auction opens, for every real-time slot. Whole seconds, at least 1. Default 35, as Broadsign Reach, whose Real-Time Audience API sends bid requests about 35 seconds ahead of the expected programmatic slot." className="w-40">
+          <InputNumber id="bidLookaheadSeconds" className="w-full" step={1} placeholder="35" suffix="seconds" value={s.bidLookaheadSeconds ?? 35} onChange={(v) => set('bidLookaheadSeconds', (v === null ? null : Number(v)) as number)} />
+        </Field>
+      </div>
+
       <SectionLabel><WithTip tip="A play is the one unit the exchange transacts in; time is shown only as a derived display. There is no auction to open or close, and nothing here is scheduled.">Play config</WithTip></SectionLabel>
       <div className="flex flex-wrap items-stretch gap-3.5 mb-3.5" role="group" aria-label="Play config">
         <div className="flex-1" style={{ minWidth: 260, border: `1px solid ${T.border}`, borderRadius: 6, padding: '10px 14px', fontSize: 13 }}>

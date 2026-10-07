@@ -1178,6 +1178,8 @@ export interface components {
             slot: number;
             /** @description The creative ids (the `crid` a DSP bids with) the player already holds in its cache. Used only while the uncached-creative restriction is in force (Advertiser settings): then a bid wins only if its crid is listed. Omitted means none are cached. */
             cachedCrids?: string[];
+            /** @description When the slot is expected to play (Broadsign Reach sends its bid request about 35 s ahead of the expected programmatic slot). The exchange opens the slot's auction `bidLookaheadSeconds` (Advertiser settings) before this time: an earlier signal is refused, 409, naming when it opens. Omitted means the player is signalling at playout and the auction opens now. */
+            slotStartsAt?: string;
             /** @description Whether the display's store is open now, from PH Core's store hours (the same source as the Store Open / Closed targeting variable). Used when the restriction follows store trading hours; omitted is treated as not open, so the exchange never goes dark on a missing signal. */
             storeOpen?: boolean;
         };
@@ -1572,6 +1574,11 @@ export interface components {
             /** @description IAB categories, chosen from the IAB taxonomy (free text is refused, 422). One list for every DSP. */
             categoryWhitelist: string[];
             categoryBlacklist: string[];
+            /**
+             * @description Real-time bidding: how many seconds before a slot plays its auction opens, so the winning creative can be downloaded and rendered in time. Company-wide. Default 35, matching Broadsign Reach (its Real-Time Audience API sends bid requests about 35 s before the expected programmatic slot). Optional on save: omitted keeps the stored value.
+             * @default 35
+             */
+            bidLookaheadSeconds: number;
             /**
              * @description Bandwidth protection (real-time impressions): while the restriction is in force, only a bid whose creative the player already holds in its cache can win; an uncached creative would need a live download. `off`: never restricted. `fixed`: restricted between uncachedRestrictionStart and uncachedRestrictionEnd every day (UTC). `store_open`: restricted while the player reports the store open (`storeOpen` on the impression signal). Optional on save: omitted keeps the stored value.
              * @default off

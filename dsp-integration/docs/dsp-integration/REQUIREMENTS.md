@@ -3950,3 +3950,22 @@ dark on peak trade.
 - Set in Advertiser settings (`uncachedRestriction`, `uncachedRestrictionStart`,
   `uncachedRestrictionEnd`). Not yet: an admin screen for it, and the advance
   window auction (winners there are known ahead and pre-cached before the slot).
+
+## Bid lookahead — when a real-time slot's auction opens (Rob, 7 Oct 2026)
+
+A real-time slot's auction has to resolve far enough ahead for the winning
+creative to be downloaded and rendered in time. Pre-caching (PH-CORE-BOUNDARIES.md)
+keeps the won creative renderable; the lookahead sets how early the auction opens.
+
+- **Setting**: `bidLookaheadSeconds` on Advertiser settings (a "Real-time bidding"
+  section; field **Bid lookahead**, in seconds). Company-wide, whole seconds, at
+  least 1; anything else is refused with "Bid lookahead is a whole number of
+  seconds, at least 1." (400). Default **35**, matching Broadsign Reach, whose
+  Real-Time Audience API sends bid requests about 35 s before the expected
+  programmatic slot. Omitted on save keeps the stored value (migration 0053).
+- **Per slot, not on a clock**: the auction for a real-time slot opens at
+  `slotStart − bidLookaheadSeconds` (`rtbAuctionOpensAt`, `domain/bidLookahead.ts`).
+  The player's impression signal carries `slotStartsAt`; a signal earlier than
+  that is refused, 409, naming when the auction opens. Without `slotStartsAt`
+  the player is signalling at playout and the auction opens now, as before.
+- Advance window positions are unaffected: they keep the window auction.

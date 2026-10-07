@@ -52,6 +52,23 @@ describe('real-time (player-triggered) bidding', () => {
     expect((await played(fill.impressionId)).statusCode).toBe(409)
   })
 
+  it('bid lookahead: a slot\'s auction opens bidLookaheadSeconds before it plays (fixed clock), not on a scheduled clock', async () => {
+    const { ctx, signal, displayId } = await setup()
+    const at = (sec: number) => new Date(NOW.getTime() + sec * 1000).toISOString()
+    /* Default 35 s: a slot 36 s away is not open yet, one 35 s away is. */
+    const early = await signal({ displayId, slot: 2, slotStartsAt: at(36) })
+    expect(early.statusCode).toBe(409)
+    expect(early.json().error.message).toContain(`opens at ${at(1)}`)
+    expect((await signal({ displayId, slot: 2, slotStartsAt: at(35) })).json().status).toBe('filled')
+    /* Company-wide setting moves it. */
+    await ctx.company.save({ ...(await ctx.company.get()), bidLookaheadSeconds: 60 })
+    expect((await signal({ displayId, slot: 2, slotStartsAt: at(61) })).statusCode).toBe(409)
+    expect((await signal({ displayId, slot: 2, slotStartsAt: at(60) })).json().status).toBe('filled')
+    /* No slot start: signalling at playout, as before. */
+    expect((await signal()).json().status).toBe('filled')
+    expect((await signal({ displayId, slot: 2, slotStartsAt: 'soon' })).statusCode).toBe(400)
+  })
+
   it('bandwidth protection: in the restricted window only a cached creative can win; outside it, or off, everything bids as normal', async () => {
     const { ctx, signal, displayId } = await setup()
     const crid = ((await ctx.impressions.get((await signal()).json().impressionId))!).crid as string

@@ -203,6 +203,8 @@ describe('Advertiser settings page', () => {
     expect(screen.getByLabelText(/Currency/)).toBeInTheDocument()
     expect(screen.getByLabelText(/Contingency buffer/)).toBeInTheDocument()
     expect(screen.getByRole('group', { name: 'Play config' })).toBeInTheDocument()
+    /* Bid lookahead: company-wide, in seconds, defaulting to 35. */
+    expect(screen.getByLabelText(/Bid lookahead/)).toHaveValue('35')
     for (const gone of ['Auction schedule', 'Auction opens', 'Auction cutoff time', 'Play-window length']) expect(text).not.toContain(gone)
     expect(document.getElementById('auctionOpensHours')).toBeNull()
     expect(document.getElementById('playWindowHours')).toBeNull()

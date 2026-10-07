@@ -73,6 +73,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         uncachedRestriction: b.uncachedRestriction ?? current.uncachedRestriction,
         uncachedRestrictionStart: b.uncachedRestrictionStart ?? current.uncachedRestrictionStart,
         uncachedRestrictionEnd: b.uncachedRestrictionEnd ?? current.uncachedRestrictionEnd,
+        bidLookaheadSeconds: b.bidLookaheadSeconds ?? current.bidLookaheadSeconds,
       })
     })
     return view()

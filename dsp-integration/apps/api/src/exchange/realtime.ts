@@ -46,6 +46,7 @@ import { type VettedBid, MAX_BIDS_PER_RESPONSE, bidUrlFor, receivesBidRequests, 
 import { type BidResponse, buildBidRequest } from './openrtb'
 import { tx } from '../db/db'
 import { uncachedRestricted } from '../domain/uncachedRestriction'
+import { rtbAuctionOpensAt } from '../domain/bidLookahead'
 import { mimeFromUrl, reviewAtBidCreative } from './atBid'
 
 export interface Fill {
@@ -58,7 +59,7 @@ interface Candidate { dsp: PartnerRecord; price: number; crid: string; vetted: E
 /* Clears one impression for the position the display's next slot is. Always
    returns the stored outcome (filled or no_fill); throws only for a request
    that is wrong (unknown display or position, not a real-time position). */
-export async function signalImpression(ctx: Context, input: { displayId: string; slot: number; cachedCrids?: string[]; storeOpen?: boolean }): Promise<Fill> {
+export async function signalImpression(ctx: Context, input: { displayId: string; slot: number; cachedCrids?: string[]; storeOpen?: boolean; slotStartsAt?: Date }): Promise<Fill> {
   const started = Date.now()
   const now = ctx.clock()
   const display = await ctx.displays.get(input.displayId)
@@ -68,6 +69,11 @@ export async function signalImpression(ctx: Context, input: { displayId: string;
   if (!isRealtime(p)) throw conflict('This position is sold by play window, not in real time.')
 
   const company = await ctx.company.get()
+  /* The slot's auction opens bidLookaheadSeconds before it plays (Advertiser settings): an earlier signal is refused, not cleared. */
+  if (input.slotStartsAt) {
+    const opens = rtbAuctionOpensAt(company, input.slotStartsAt)
+    if (now < opens) throw conflict(`The auction for that slot opens at ${opens.toISOString()}, ${company.bidLookaheadSeconds}s before it plays.`)
+  }
   const hours = company.playWindowHours
   const windowStart = windowStartOf(now, windowMsFor(hours, p)).toISOString()
   const base: ImpressionRecord = {
