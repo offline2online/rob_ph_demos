@@ -1462,6 +1462,16 @@ async function deployGuardForProject(pid) {
         reason: `${stillTesting.length} ticket(s) on this project's deployment train are still in Ready for Testing (e.g. "${stillTesting[0].title}") — merging now would ship them untested too. The board's own Deploy to Main button is hidden until Ready for Testing is empty for this project.`,
       };
     }
+    // Same gate as app.js's "Tests failing" button: the train's required
+    // check is red, so a deploy would only park on a red PR (PR #335).
+    const projSnap = await db().collection("projects").doc(pid).get();
+    const red = Object.keys((projSnap.exists && (projSnap.data() || {}).trainTestsRed) || {});
+    if (red.length) {
+      return {
+        ok: false, deployItems: [],
+        reason: `The tests on this project's deployment train are failing (${red.join(" and ")}), so the board shows "Tests failing" instead of Deploy to Main. Each ticket's notes link the failing run; fix it or send the ticket that broke it back with Failed testing.`,
+      };
+    }
     return { ok: true, deployItems: trainItems, reason: null };
   }
 

@@ -3,7 +3,7 @@
 // to Main (PR #301, 3 Oct 2026; for the DSP train's e2e-quick, PR #330,
 // 6 Oct 2026). Drives the pure decision functions.
 const assert = require("assert");
-const { trainTestFailureTargets, touchesConsoleTests, trainTestsFor, testedHeadOf } = require("../scripts/run-backlog-automation.js");
+const { trainTestFailureTargets, touchesConsoleTests, trainTestsFor, testedHeadOf, nextTrainTestsRed } = require("../scripts/run-backlog-automation.js");
 
 const HEAD = "aaaaaaa1111111";
 const cards = [{ id: "c1" }, { id: "c2", testsFailedSha: HEAD }, { id: "c3", testsFailedSha: "old" }];
@@ -25,6 +25,14 @@ const cases = [
   ["only a prototype rebuild since the run: the run still speaks for the head", testedHeadOf("tick", HEAD, ["dsp-integration/prototype/index.html", "dsp-integration/apps/admin/public/demo/api-snapshot.json"]), "tick"],
   ["a source change since the run: stale, the head", testedHeadOf("tick", HEAD, ["dsp-integration/prototype/index.html", "dsp-integration/apps/api/src/x.ts"]), HEAD],
   ["run not behind the head (diverged): the head", testedHeadOf("tick", HEAD, null), HEAD],
+  // projects/{id}.trainTestsRed — what hides Deploy to Main (PR #335, 7 Oct 2026)
+  ["red on the tested commit: set", nextTrainTestsRed(null, "e2e-quick.yml", failed, HEAD, "t"), { "e2e-quick": { sha: HEAD, url: "u", at: "t" } }],
+  ["already red on that commit: no change", nextTrainTestsRed({ "e2e-quick": { sha: HEAD } }, "e2e-quick.yml", failed, HEAD, "t"), undefined],
+  ["green: cleared, other workflow kept", nextTrainTestsRed({ "e2e-quick": { sha: "x" }, "firestore-rules-test": { sha: "y" } }, "e2e-quick.yml", { ...failed, conclusion: "success" }, HEAD, "t"), { "firestore-rules-test": { sha: "y" } }],
+  ["green with nothing red: no change", nextTrainTestsRed({}, "e2e-quick.yml", { ...failed, conclusion: "success" }, HEAD, "t"), undefined],
+  ["still running: no change", nextTrainTestsRed({ "e2e-quick": { sha: "x" } }, "e2e-quick.yml", { ...failed, status: "in_progress", conclusion: "" }, HEAD, "t"), undefined],
+  ["cancelled (superseded by a newer push): no change", nextTrainTestsRed({}, "e2e-quick.yml", { ...failed, conclusion: "cancelled" }, HEAD, "t"), undefined],
+  ["run on a stale commit: no change", nextTrainTestsRed({}, "e2e-quick.yml", { ...failed, headSha: "older" }, HEAD, "t"), undefined],
 ];
 let failedCount = 0;
 for (const [label, got, want] of cases) {
