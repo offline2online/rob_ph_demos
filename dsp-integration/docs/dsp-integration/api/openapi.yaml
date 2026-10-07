@@ -642,6 +642,12 @@ paths:
         longest creative the slot accepts. Unlike the fields above, OMITTED
         means unchanged (a client that predates it never sends it); null
         inherits.
+
+        inGlobalDeal: whether the slot is in the global deal (ticket "Global
+        deal ID", 8 Oct 2026). Defaults to true; false takes the slot out.
+        OMITTED means unchanged. The flag is kept even while the slot is held
+        for advertisers, whitelist-only or on a buyers list, but has no effect
+        then (the row's `globalDealSuppressedBy` says why).
       security: [{adminSession: []}]
       requestBody:
         required: true
@@ -659,6 +665,7 @@ paths:
                     properties:
                       displayTypeId: {type: string}
                       slot: {type: integer, minimum: 1}
+                      inGlobalDeal: {type: boolean, description: 'Include this slot in the global deal. Omitted = unchanged.'}
                       assignedTo:
                         type: object
                         required: [partnerIds, advertisers, whitelistOnly]
@@ -2019,10 +2026,11 @@ components:
       allOf:
         - $ref: '#/components/schemas/ExchangeInput'
         - type: object
-          required: [published]
+          required: [published, globalDealEnabled, globalDealId]
           properties:
             published: {type: boolean, description: 'Switched on and all four fields complete: sellers.json is live and DSPs are sent bid requests.'}
             sellersJsonUrl: {type: [string, 'null']}
+            globalDealId: {type: string, readOnly: true, description: 'The global deal ID (always PH-GLOBAL), carried on pmp.deals of an eligible open position''s bid request while `globalDealEnabled` is true.'}
     ExchangeInput:
       type: object
       required: [enabled, organisation, domain, sellerId, contactEmail]
@@ -2036,6 +2044,14 @@ components:
         domain: {type: string}
         sellerId: {type: string}
         contactEmail: {type: string, description: An email address when set}
+        globalDealEnabled:
+          type: boolean
+          description: |
+            The instance-level master switch for the global deal (8 Oct 2026):
+            one deal ID, `globalDealId`, that resolves to every open,
+            exchange-eligible position whose slot is in it, for DSPs that only
+            transact on deals. Off for a new instance. Omitted on a save keeps
+            the stored value.
     Features:
       type: object
       required: [dspIntegration]
@@ -2275,7 +2291,7 @@ components:
         updatedAt: {type: string, format: date-time}
     AvailableInventoryRow:
       type: object
-      required: [displayTypeId, displayTypeName, playlistName, playlistId, unassigned, scored, unsellableReason, salesLocked, slot, zoneSlot, position, assignedTo, qrControl, visionAi, reservePrice, reservePriceOverride, displayTypeReservePrice, interactiveReservePrice, interactiveReservePriceOverride, billingUnitHours, billingUnitHoursOverride, displayTypeBillingUnitHours, companyPlayWindowHours, maxCampaigns, maxCampaignsOverride, displayTypeMaxCampaigns, maxPlayLengthSec, maxPlayLengthSecOverride, displayTypeMaxPlayLengthSec, companyMaxPlayLengthSec]
+      required: [displayTypeId, displayTypeName, playlistName, playlistId, unassigned, scored, unsellableReason, salesLocked, inGlobalDeal, globalDealSuppressedBy, slot, zoneSlot, position, assignedTo, qrControl, visionAi, reservePrice, reservePriceOverride, displayTypeReservePrice, interactiveReservePrice, interactiveReservePriceOverride, billingUnitHours, billingUnitHoursOverride, displayTypeBillingUnitHours, companyPlayWindowHours, maxCampaigns, maxCampaignsOverride, displayTypeMaxCampaigns, maxPlayLengthSec, maxPlayLengthSecOverride, displayTypeMaxPlayLengthSec, companyMaxPlayLengthSec]
       properties:
         displayTypeId: {type: string}
         displayTypeName: {type: string}
@@ -2297,6 +2313,18 @@ components:
             playlist slot against new sales when slots are sold", 30 Sep
             2026). Existing bookings are unaffected; the lock releases by
             itself once the booking schedule has no live booking on the slot.
+        inGlobalDeal:
+          type: boolean
+          description: The slot's own "include in global deal" flag (default true). Whether it takes effect also depends on `globalDealSuppressedBy` and the master switch (Exchange.globalDealEnabled).
+        globalDealSuppressedBy:
+          type: [string, 'null']
+          enum: [reserved, whitelist_only, deal, null]
+          description: |
+            Why the flag has no effect: `reserved` (held for named advertisers),
+            `whitelist_only`, or `deal` (assigned to a buyers list). null when
+            the slot is open. Being open and being in the global deal are not
+            the same thing: the default never exposes inventory the retailer
+            meant to restrict.
         salesLockedUntil:
           type: [string, 'null']
           format: date-time
@@ -2895,6 +2923,17 @@ components:
                   Inventory when the advertiser can't be removed because slots
                   are sold, cleared by the server itself once the slot has no
                   live booking. Not writable through the slot editor's PUT.
+              inGlobalDeal:
+                type: boolean
+                description: |
+                  Whether this Advertiser slot is in the global deal (8 Oct 2026).
+                  Absent means true: a new slot is in it automatically (opt-out,
+                  not opt-in). Set from Advertisers / Inventory
+                  (PUT /admin/v1/available-inventory), not the slot editor. It
+                  only takes effect while the slot is open and the master switch
+                  (Exchange.globalDealEnabled) is on: a slot held for named
+                  advertisers, whitelist-only or on a buyers list is never in the
+                  global deal, whatever this says.
               bidMode:
                 type: string
                 enum: [advance, realtime]

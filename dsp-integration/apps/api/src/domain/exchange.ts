@@ -10,9 +10,14 @@ export const isComplete = (e: ExchangeInput) => [e.organisation, e.domain, e.sel
    sellers.json published and any DSP sent a bid request. */
 export const isLive = (e: ExchangeInput) => e.enabled && isComplete(e)
 
+/* The global deal (8 Oct 2026): one deal ID for every open, exchange-eligible
+   position on this instance, for DSPs that only transact on deals. Fixed,
+   not issued per list: there is one per instance, so it is never stored. */
+export const GLOBAL_DEAL_ID = 'PH-GLOBAL'
+
 export const toApiExchange = (e: ExchangeInput): Exchange => {
   const published = isLive(e)
-  return { ...e, published, sellersJsonUrl: published ? `https://${e.domain}/sellers.json` : null }
+  return { ...e, globalDealEnabled: e.globalDealEnabled === true, globalDealId: GLOBAL_DEAL_ID, published, sellersJsonUrl: published ? `https://${e.domain}/sellers.json` : null }
 }
 
 export const sellersJson = (e: ExchangeInput) => ({
@@ -30,8 +35,9 @@ const DOMAIN = /^(?!-)[a-z0-9-]+(\.[a-z0-9-]+)+$/i
    well formed. */
 export function validateExchange(b: Partial<ExchangeInput> | undefined) {
   const out: { field: string; reason: string }[] = []
+  if (b?.globalDealEnabled !== undefined && typeof b.globalDealEnabled !== 'boolean') out.push({ field: 'globalDealEnabled', reason: 'Say whether the global deal is on (true or false).' })
   if (typeof b?.enabled !== 'boolean') out.push({ field: 'enabled', reason: 'Say whether DSP integration is switched on (true or false).' })
-  const req = (k: Exclude<keyof ExchangeInput, 'enabled'>, label: string) => {
+  const req = (k: Exclude<keyof ExchangeInput, 'enabled' | 'globalDealEnabled'>, label: string) => {
     if (typeof b?.[k] !== 'string') out.push({ field: k, reason: `${label} is required.` })
     else if (b.enabled && !b[k]!.trim()) out.push({ field: k, reason: `${label} is required.` })
   }

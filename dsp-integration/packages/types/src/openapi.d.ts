@@ -501,6 +501,12 @@ export interface paths {
          *     longest creative the slot accepts. Unlike the fields above, OMITTED
          *     means unchanged (a client that predates it never sends it); null
          *     inherits.
+         *
+         *     inGlobalDeal: whether the slot is in the global deal (ticket "Global
+         *     deal ID", 8 Oct 2026). Defaults to true; false takes the slot out.
+         *     OMITTED means unchanged. The flag is kept even while the slot is held
+         *     for advertisers, whitelist-only or on a buyers list, but has no effect
+         *     then (the row's `globalDealSuppressedBy` says why).
          */
         put: operations["saveAvailableInventory"];
         post?: never;
@@ -1541,6 +1547,8 @@ export interface components {
             /** @description Switched on and all four fields complete: sellers.json is live and DSPs are sent bid requests. */
             published: boolean;
             sellersJsonUrl?: string | null;
+            /** @description The global deal ID (always PH-GLOBAL), carried on pmp.deals of an eligible open position's bid request while `globalDealEnabled` is true. */
+            readonly globalDealId: string;
         };
         /**
          * @description The four seller-of-record fields are required while `enabled` is
@@ -1555,6 +1563,14 @@ export interface components {
             sellerId: string;
             /** @description An email address when set */
             contactEmail: string;
+            /**
+             * @description The instance-level master switch for the global deal (8 Oct 2026):
+             *     one deal ID, `globalDealId`, that resolves to every open,
+             *     exchange-eligible position whose slot is in it, for DSPs that only
+             *     transact on deals. Off for a new instance. Omitted on a save keeps
+             *     the stored value.
+             */
+            globalDealEnabled?: boolean;
         };
         Features: {
             /** @description The build flag is on and the retailer has DSP integration switched on. */
@@ -1858,6 +1874,17 @@ export interface components {
              *     itself once the booking schedule has no live booking on the slot.
              */
             salesLocked: boolean;
+            /** @description The slot's own "include in global deal" flag (default true). Whether it takes effect also depends on `globalDealSuppressedBy` and the master switch (Exchange.globalDealEnabled). */
+            inGlobalDeal: boolean;
+            /**
+             * @description Why the flag has no effect: `reserved` (held for named advertisers),
+             *     `whitelist_only`, or `deal` (assigned to a buyers list). null when
+             *     the slot is open. Being open and being in the global deal are not
+             *     the same thing: the default never exposes inventory the retailer
+             *     meant to restrict.
+             * @enum {string|null}
+             */
+            globalDealSuppressedBy: "reserved" | "whitelist_only" | "deal" | null;
             /**
              * Format: date-time
              * @description When the last live booking on a locked slot finishes playing, i.e. the earliest the lock can release; null when not locked.
@@ -2414,6 +2441,17 @@ export interface components {
                  *     live booking. Not writable through the slot editor's PUT.
                  */
                 salesLocked?: boolean;
+                /**
+                 * @description Whether this Advertiser slot is in the global deal (8 Oct 2026).
+                 *     Absent means true: a new slot is in it automatically (opt-out,
+                 *     not opt-in). Set from Advertisers / Inventory
+                 *     (PUT /admin/v1/available-inventory), not the slot editor. It
+                 *     only takes effect while the slot is open and the master switch
+                 *     (Exchange.globalDealEnabled) is on: a slot held for named
+                 *     advertisers, whitelist-only or on a buyers list is never in the
+                 *     global deal, whatever this says.
+                 */
+                inGlobalDeal?: boolean;
                 /**
                  * @description How this Advertiser slot is sold (7 Oct 2026). `advance`
                  *     (the default when absent) is the play-window path: bids and
@@ -3390,6 +3428,8 @@ export interface operations {
                     items: {
                         displayTypeId: string;
                         slot: number;
+                        /** @description Include this slot in the global deal. Omitted = unchanged. */
+                        inGlobalDeal?: boolean;
                         assignedTo: {
                             partnerIds: string[];
                             advertisers: string[];

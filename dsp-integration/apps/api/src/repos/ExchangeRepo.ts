@@ -9,7 +9,7 @@ export interface ExchangeRepo {
 }
 
 const ID = 'exchange'
-interface Row { enabled: number; organisation: string; domain: string; seller_id: string; contact_email: string }
+interface Row { enabled: number; organisation: string; domain: string; seller_id: string; contact_email: string; global_deal_enabled: number }
 
 export function sqliteExchangeRepo(db: Db): ExchangeRepo {
   const now = () => new Date().toISOString()
@@ -22,14 +22,14 @@ export function sqliteExchangeRepo(db: Db): ExchangeRepo {
       prepared(db, 'INSERT INTO exchange (id, updated_at) VALUES (?, ?) ON CONFLICT (id) DO NOTHING').run(ID, now())
       r = select()!
     }
-    return { enabled: r.enabled === 1, organisation: r.organisation, domain: r.domain, sellerId: r.seller_id, contactEmail: r.contact_email }
+    return { enabled: r.enabled === 1, organisation: r.organisation, domain: r.domain, sellerId: r.seller_id, contactEmail: r.contact_email, globalDealEnabled: r.global_deal_enabled === 1 }
   }
   return {
     get,
     save(e) {
       get()
-      prepared(db, 'UPDATE exchange SET enabled = ?, organisation = ?, domain = ?, seller_id = ?, contact_email = ?, updated_at = ? WHERE id = ?')
-        .run(e.enabled ? 1 : 0, e.organisation, e.domain, e.sellerId, e.contactEmail, now(), ID)
+      prepared(db, 'UPDATE exchange SET enabled = ?, organisation = ?, domain = ?, seller_id = ?, contact_email = ?, global_deal_enabled = ?, updated_at = ? WHERE id = ?')
+        .run(e.enabled ? 1 : 0, e.organisation, e.domain, e.sellerId, e.contactEmail, e.globalDealEnabled ? 1 : 0, now(), ID)
       return get()
     },
   }

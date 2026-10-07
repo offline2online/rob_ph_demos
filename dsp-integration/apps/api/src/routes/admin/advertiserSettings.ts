@@ -5,7 +5,7 @@ import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { cleanCategoryList, validateAdvertiserSettings } from '../../domain/advertiserSettings'
 import { tx } from '../../db/db'
-import { companyWindowCommitments, positionIdOf, slotWindowCommitments, unsellableReason } from '../../domain/positions'
+import { companyWindowCommitments, globalDealSuppressedBy, positionIdOf, slotInGlobalDeal, slotWindowCommitments, unsellableReason } from '../../domain/positions'
 import { audienceOf, zonesOf } from '../../domain/displayTypes'
 import { assignedToSlot, validateAssigned } from '../../domain/slots'
 import type { Guards } from '../../http/app'
@@ -142,7 +142,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         const playlistName = (playlistId && (await ctx.playlists.get(playlistId))?.name) || '—'
         const audience = await audienceOf(ctx.audience, t, i + 1)
         items.push({
-          displayTypeId: t.id, displayTypeName: t.name, touchPoint: t.touchPoint, playlistName, playlistId, unassigned, scored: audience.scored, unsellableReason: await unsellableReason(ctx, { positionId: positionIdOf(t.id, i + 1), displayType: t, slot: i + 1, def: s }, audience), salesLocked: s.salesLocked === true, salesLockedUntil: s.salesLocked ? await slotBookedUntil(ctx, t.id, i + 1) : null, slot: i + 1, zoneSlot, position: s.label,
+          displayTypeId: t.id, displayTypeName: t.name, touchPoint: t.touchPoint, playlistName, playlistId, unassigned, scored: audience.scored, unsellableReason: await unsellableReason(ctx, { positionId: positionIdOf(t.id, i + 1), displayType: t, slot: i + 1, def: s }, audience), salesLocked: s.salesLocked === true, inGlobalDeal: slotInGlobalDeal(s), globalDealSuppressedBy: globalDealSuppressedBy(s), salesLockedUntil: s.salesLocked ? await slotBookedUntil(ctx, t.id, i + 1) : null, slot: i + 1, zoneSlot, position: s.label,
           assignedTo: {
             ...a,
             partnerNames: a.partnerIds.map((id) => partners.find((p) => p.id === id)?.name ?? id),
@@ -262,7 +262,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
   app.put<{ Body: { items?: unknown } }>('/available-inventory', async (req) => {
     guards.flagged()
     guards.requireScope(req, 'admin')
-    const rows = Array.isArray(req.body?.items) ? (req.body.items as { displayTypeId?: unknown; slot?: unknown; assignedTo?: unknown; reservePrice?: unknown; reservePriceDefault?: unknown; interactiveReservePrice?: unknown; billingUnitHours?: unknown; billingUnitHoursDefault?: unknown; maxCampaigns?: unknown; maxCampaignsDefault?: unknown; maxPlayLengthSec?: unknown; maxPlayLengthSecDefault?: unknown }[]) : null
+    const rows = Array.isArray(req.body?.items) ? (req.body.items as { displayTypeId?: unknown; slot?: unknown; assignedTo?: unknown; reservePrice?: unknown; reservePriceDefault?: unknown; interactiveReservePrice?: unknown; billingUnitHours?: unknown; billingUnitHoursDefault?: unknown; maxCampaigns?: unknown; maxCampaignsDefault?: unknown; maxPlayLengthSec?: unknown; maxPlayLengthSecDefault?: unknown; inGlobalDeal?: unknown }[]) : null
     if (!rows) throw validationFailed([{ field: 'items', reason: 'An array of slots is required.' }])
     /* Validation, the sold and resize checks and the save are one
        transaction: nothing can be sold, or the slot edited, in between. */
@@ -270,7 +270,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
       const partners = await ctx.partners.list()
       const company = await ctx.company.get()
       const errors: { field: string; reason: string }[] = []
-      type Patch = { assigned: Assigned; reservePrice: number | null; interactiveReservePrice: number | null; billingUnitHours: number | null; maxCampaigns: number | null; maxPlayLengthSec: number | null }
+      type Patch = { inGlobalDeal: boolean; assigned: Assigned; reservePrice: number | null; interactiveReservePrice: number | null; billingUnitHours: number | null; maxCampaigns: number | null; maxPlayLengthSec: number | null }
       const wanted = new Map<string, Map<number, Patch>>()
       const defaults = new Map<string, number | null>()
       const billingUnitDefaults = new Map<string, number | null>()
@@ -295,6 +295,10 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         errors.push(...bad)
         /* A real-time slot (7 Oct 2026) sells per impression to open and whitelist-only buyers: no named advertisers, no private auction. */
         if (def?.bidMode === 'realtime' && (assigned.advertisers.length || assigned.buyersListIds.length)) errors.push({ field: f('assignedTo'), reason: 'This slot is sold in real time (per impression), so it can’t be held for named advertisers or assigned to a private auction. Switch it back to advance bidding on the display type’s slot editor first.' })
+
+        /* The global deal flag (8 Oct 2026): omitted keeps the slot's, so a client that predates it never changes it. */
+        if (r.inGlobalDeal !== undefined && typeof r.inGlobalDeal !== 'boolean') errors.push({ field: f('inGlobalDeal'), reason: 'inGlobalDeal must be true or false.' })
+        const inGlobalDealNow = typeof r.inGlobalDeal === 'boolean' ? r.inGlobalDeal : def ? slotInGlobalDeal(def) : true
 
         const reservePrice = parseReservePrice(r.reservePrice, f('reservePrice'), errors)
         /* Omitted keeps what the slot has (older clients never send it); it
@@ -328,7 +332,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
 
         if (dt && def && !bad.length) {
           const byType = wanted.get(dt.id) ?? new Map<number, Patch>()
-          byType.set(slot, { assigned, reservePrice, interactiveReservePrice: INTERACTIVE_ENABLED ? interactiveReservePrice : null, billingUnitHours, maxCampaigns, maxPlayLengthSec })
+          byType.set(slot, { inGlobalDeal: inGlobalDealNow, assigned, reservePrice, interactiveReservePrice: INTERACTIVE_ENABLED ? interactiveReservePrice : null, billingUnitHours, maxCampaigns, maxPlayLengthSec })
           wanted.set(dt.id, byType)
         }
       }
@@ -399,7 +403,8 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
           const patch = slots.get(i + 1)
           /* A slot no longer carries a targeting capability (Rob, 7 Oct 2026): drop any saved one. */
           const { supportedTargeting: _legacy, ...slotNow } = s as typeof s & { supportedTargeting?: unknown }
-          return patch ? { ...slotNow, ...assignedToSlot(patch.assigned, partners), reservePrice: patch.reservePrice, interactiveReservePrice: patch.interactiveReservePrice, billingUnitHours: patch.billingUnitHours, maxCampaigns: patch.maxCampaigns, maxPlayLengthSec: patch.maxPlayLengthSec } : slotNow
+          const { inGlobalDeal: _flag, ...slotBase } = slotNow
+          return patch ? { ...slotBase, ...(patch.inGlobalDeal ? {} : { inGlobalDeal: false }), ...assignedToSlot(patch.assigned, partners), reservePrice: patch.reservePrice, interactiveReservePrice: patch.interactiveReservePrice, billingUnitHours: patch.billingUnitHours, maxCampaigns: patch.maxCampaigns, maxPlayLengthSec: patch.maxPlayLengthSec } : slotNow
         })
         if (defaults.has(displayTypeId)) ext.reservePrice = defaults.get(displayTypeId) ?? null
         if (billingUnitDefaults.has(displayTypeId)) ext.billingUnitHours = billingUnitDefaults.get(displayTypeId) ?? null

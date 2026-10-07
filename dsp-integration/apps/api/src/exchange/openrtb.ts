@@ -8,10 +8,11 @@ import { bidderTuning } from '../domain/partnerInput'
 import { IAB_CATEGORY_CODES } from '@ph-dsp/types'
 import { TRANSACTING_CURRENCY } from '../domain/currency'
 import type { Context } from '../context'
-import { type PositionRef, assignmentOf, positionView, windowMsFor } from '../domain/positions'
+import { type PositionRef, assignmentOf, inGlobalDeal, positionView, windowMsFor } from '../domain/positions'
 import { assignedOf, openRtbInventoryOf } from '@ph-dsp/types'
 import { isInvitedBuyer } from '../domain/buyersLists'
 import { effectiveCategoryLists, effectiveLists, seatDomains } from '../domain/lists'
+import { GLOBAL_DEAL_ID } from '../domain/exchange'
 import { baseFloorFor } from './enforcement'
 import { type Perm, standardBuyerBlocking } from '../dsp/DspProvider'
 import { providerOf } from '../dsp/registry'
@@ -28,8 +29,10 @@ export interface BidRequest {
     /* Absent on a website or mobile app impression: one impression per render, multiplier 1. */
     qty?: { multiplier: number; sourcetype: 2 }
     exp: number
-    /* A deal position carries its SSP-issued deal ID, restricted to the invited seats. */
-    pmp?: { private_auction: 1; deals: { id: string; at: 1; wseat: string[] }[] }
+    /* A deal position carries its SSP-issued deal ID, restricted to the invited seats (private_auction 1).
+       An open position in the global deal carries the global deal ID with private_auction 0 and no wseat:
+       it is open inventory behind a deal handle, not a PMP/PG deal. */
+    pmp?: { private_auction: 0 | 1; deals: { id: string; at: 1; wseat?: string[] }[] }
     ext: { ph: { orientation: string; slotDurationSec: number; loopLengthSec: number; maxPlayLengthSec: number; shareOfVoice: number; playsPerWindow: number; mode?: 'realtime' } }
   }[]
   /* Exactly one of these, by the display type's touch point: dooh for
@@ -87,7 +90,8 @@ export async function buildBidRequest(ctx: Context, p: PositionRef, partner: Par
   const publisher = { id: exchange.sellerId, name: exchange.organisation, domain: exchange.domain }
   const listId = assignmentOf(p.def) === 'deal' ? assignedOf(p.def).buyersListId : undefined
   const list = listId ? await ctx.buyersLists.get(listId) : null
-  const pmp = list ? { private_auction: 1 as const, deals: [{ id: dealIdOf(list.id), at: 1 as const, wseat: partner.seats.map((x) => x.id).filter((id) => isInvitedBuyer(list, partner.id, id)) }] } : undefined
+  const pmp = list ? { private_auction: 1 as const, deals: [{ id: dealIdOf(list.id), at: 1 as const, wseat: partner.seats.map((x) => x.id).filter((id) => isInvitedBuyer(list, partner.id, id)) }] }
+    : inGlobalDeal(p.def, exchange.globalDealEnabled === true) ? { private_auction: 0 as const, deals: [{ id: GLOBAL_DEAL_ID, at: 1 as const }] } : undefined
   return {
     id,
     imp: [{

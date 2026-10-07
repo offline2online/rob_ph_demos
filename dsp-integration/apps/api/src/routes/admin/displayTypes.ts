@@ -151,6 +151,8 @@ export const displayTypeRoutes = (ctx: Context, guards: Guards): FastifyPluginAs
             storeScope: s.owner === 'retail' ? was?.storeScope ?? 'Store staff' : null,
             quota: was?.quota ?? null,
             ...(kept && was.salesLocked ? { salesLocked: true } : {}),
+            /* Set from Advertisers / Inventory, not here: kept as saved (absent = in the global deal). */
+            ...(kept && was.inGlobalDeal === false ? { inGlobalDeal: false } : {}),
             /* Editor-set, like label and owner; only an Advertiser slot has one (default: advance). */
             ...(s.owner === 'advertiser' && s.bidMode === 'realtime' ? { bidMode: 'realtime' as const } : {}),
           }

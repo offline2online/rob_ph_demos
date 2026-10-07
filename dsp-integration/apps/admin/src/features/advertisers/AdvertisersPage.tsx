@@ -4,7 +4,7 @@
    the estate, which moved here from Advertiser settings (Rob, 20 Sep).
    Campaigns are not approved here. Changes are applied with Save changes. */
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { App, Button, InputNumber, Select, Spin, Switch } from 'antd'
+import { App, Button, Checkbox, InputNumber, Select, Spin, Switch } from 'antd'
 import { Tip } from '../../shared/Tip'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
 import { INTERACTIVE_ENABLED, RESERVE_PRICE_TIP, DEFAULT_BILLING_UNIT_HOURS, DEFAULT_MAX_CAMPAIGNS, MAX_MAX_CAMPAIGNS, MAX_MAX_PLAY_LENGTH_SEC, MIN_MAX_CAMPAIGNS, MIN_MAX_PLAY_LENGTH_SEC, SLOT_OWNERS, assignedLabels, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type Session } from '@ph-dsp/types'
@@ -70,7 +70,7 @@ export const slotKey = (r: AvailableInventoryRow) => `${r.displayTypeId}:${r.slo
    reservePrice is this slot's own override; null means it follows its
    display type's shared default (below), not "no reserve" (Rob, 22 Sep;
    spec §1 configuration inheritance — override always wins). */
-export interface SlotEdit { assignedTo: Omit<AssignedTo, 'partnerNames' | 'buyersListName' | 'buyersListNames'>; reservePrice: number | null; interactiveReservePrice: number | null; billingUnitHours: number | null; maxCampaigns: number | null; maxPlayLengthSec: number | null }
+export interface SlotEdit { assignedTo: Omit<AssignedTo, 'partnerNames' | 'buyersListName' | 'buyersListNames'>; reservePrice: number | null; interactiveReservePrice: number | null; billingUnitHours: number | null; maxCampaigns: number | null; maxPlayLengthSec: number | null; inGlobalDeal: boolean }
 type Edits = Record<string, SlotEdit>
 /* A display type's reserve price default, edited from any of its slot
    rows — every row for the same displayTypeId shares one value. Also used
@@ -183,7 +183,7 @@ function Pills({ label, value, options, canEdit, placeholder, onChange }: {
 }
 
 const edited = (c: InvCtx['current'], r: AvailableInventoryRow): SlotEdit =>
-  c.edits[slotKey(r)] ?? { assignedTo: r.assignedTo, reservePrice: r.reservePriceOverride, interactiveReservePrice: r.interactiveReservePriceOverride ?? null, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride, maxPlayLengthSec: r.maxPlayLengthSecOverride }
+  c.edits[slotKey(r)] ?? { assignedTo: r.assignedTo, reservePrice: r.reservePriceOverride, interactiveReservePrice: r.interactiveReservePriceOverride ?? null, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride, maxPlayLengthSec: r.maxPlayLengthSecOverride, inGlobalDeal: r.inGlobalDeal }
 /* The value this slot actually resolves to right now, following the draft
    default when it has no override of its own — the same "override wins"
    read as reservePriceOf, but against unsaved edits. */
@@ -357,7 +357,32 @@ function AssignedCell({ data, context }: IP) {
       canEdit={c.canEdit}
       onChange={(ids) => c.set(slotKey(data), { assignedTo: { ...a, buyersListId: ids[0] ?? null, buyersListIds: ids } })}
     />
+    <GlobalDealFlag data={data} c={c} />
     </>
+  )
+}
+
+/* "In global deal" (8 Oct 2026): defaults ON, and is suppressed whenever the
+   slot is held for named advertisers, whitelist-only or on a buyers list, so
+   the default never exposes inventory the retailer meant to restrict. The
+   choice is kept while suppressed; it simply has no effect. */
+const GLOBAL_DEAL_TIP = 'Include this slot in the global deal: the one deal ID (see Exchange settings) a DSP that only buys on deals can target to reach every open slot. On by default; untick to keep the slot out. It has no effect while the slot is held for named advertisers, whitelist-only or on a buyers list, and none while the global deal is off in Exchange settings.'
+function GlobalDealFlag({ data, c }: { data: AvailableInventoryRow; c: InvCtx['current'] }) {
+  const e = edited(c, data)
+  const a = e.assignedTo
+  const suppressed = a.advertisers.length ? 'held for named advertisers' : a.whitelistOnly ? 'whitelist-only' : tiersOf(a).length ? 'on a buyers list' : null
+  return (
+    <Tip title={suppressed ? `Not in the global deal: this slot is ${suppressed}.` : GLOBAL_DEAL_TIP}>
+      <Checkbox
+        className="mt-1"
+        checked={e.inGlobalDeal !== false && !suppressed}
+        disabled={!c.canEdit || !!suppressed}
+        onChange={(x) => c.set(slotKey(data), { inGlobalDeal: x.target.checked })}
+        aria-label={`${data.displayTypeName} slot ${data.zoneSlot}: in global deal`}
+      >
+        <span style={{ fontSize: 12, color: T.muted }}>In global deal</span>
+      </Checkbox>
+    </Tip>
   )
 }
 
@@ -675,10 +700,10 @@ export function AdvertisersPage() {
   const { draft, setDraft, dirty, reset, commitNext } = useDraft(saved)
   const savedEdits = useMemo<Edits | undefined>(() => inventory.data && Object.fromEntries(invRows.map((r) => {
     const { partnerNames: _names, ...assignedTo } = r.assignedTo
-    return [slotKey(r), { assignedTo, reservePrice: r.reservePriceOverride, interactiveReservePrice: r.interactiveReservePriceOverride ?? null, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride, maxPlayLengthSec: r.maxPlayLengthSecOverride }]
+    return [slotKey(r), { assignedTo, reservePrice: r.reservePriceOverride, interactiveReservePrice: r.interactiveReservePriceOverride ?? null, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride, maxPlayLengthSec: r.maxPlayLengthSecOverride, inGlobalDeal: r.inGlobalDeal }]
   })), [invRows, inventory.data])
   const inv = useDraft(savedEdits)
-  const savedEditsNow = (r: AvailableInventoryRow): SlotEdit => (inv.draft ?? {})[slotKey(r)] ?? { assignedTo: r.assignedTo, reservePrice: r.reservePriceOverride, interactiveReservePrice: r.interactiveReservePriceOverride ?? null, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride, maxPlayLengthSec: r.maxPlayLengthSecOverride }
+  const savedEditsNow = (r: AvailableInventoryRow): SlotEdit => (inv.draft ?? {})[slotKey(r)] ?? { assignedTo: r.assignedTo, reservePrice: r.reservePriceOverride, interactiveReservePrice: r.interactiveReservePriceOverride ?? null, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride, maxPlayLengthSec: r.maxPlayLengthSecOverride, inGlobalDeal: r.inGlobalDeal }
   const anyInteractiveReserve = INTERACTIVE_ENABLED && invRows.some((r) => showsInteractiveReserve(r.qrControl, savedEditsNow(r)))
   const visibleInventoryColumns = useMemo(
     () => (anyInteractiveReserve ? inventoryColumns : inventoryColumns.filter((col) => col.headerName !== INTERACTIVE_RESERVE_HEADER)),

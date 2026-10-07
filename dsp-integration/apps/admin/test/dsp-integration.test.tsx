@@ -155,7 +155,7 @@ describe('DSP integration switch', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
     await waitFor(() => expect(calls).toHaveLength(1))
     /* Nothing is thrown away: the seller of record goes back as it was. */
-    expect(calls[0].body).toEqual({ enabled: false, organisation: 'Demo Retail Group', domain: 'demoretail.example', sellerId: 'drg-4471', contactEmail: 'adops@demoretail.example' })
+    expect(calls[0].body).toEqual({ enabled: false, organisation: 'Demo Retail Group', domain: 'demoretail.example', sellerId: 'drg-4471', contactEmail: 'adops@demoretail.example', globalDealEnabled: false })
     await waitFor(async () => expect(await navLabels()).not.toContain('Advertisers / Inventory'))
     expect(await navLabels()).toContain('DSP Integration')
 

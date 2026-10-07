@@ -75,6 +75,18 @@ export const assignmentOf = (def: Slot): Assignment => {
   const a = assignedCached(def)
   return a.advertisers.length ? 'reserved' : a.buyersListIds.length ? 'deal' : a.whitelistOnly ? 'whitelist_only' : 'rtb'
 }
+/* The global deal (8 Oct 2026): one deal ID for all open, exchange-eligible
+   inventory. The slot's own flag defaults ON (absent = in) but is SUPPRESSED
+   whenever the slot is held for a named advertiser, whitelist-only or on a
+   buyers list, so the default never exposes inventory the retailer meant to
+   restrict. Being open and being in the global deal are not the same thing. */
+export const globalDealSuppressedBy = (def: Slot): Exclude<Assignment, 'rtb'> | null => {
+  const a = assignmentOf(def)
+  return a === 'rtb' ? null : a
+}
+export const slotInGlobalDeal = (def: Slot) => def.inGlobalDeal !== false
+/* Is this position carried on the global deal, given the instance master switch? */
+export const inGlobalDeal = (def: Slot, masterOn: boolean) => masterOn && slotInGlobalDeal(def) && globalDealSuppressedBy(def) === null
 /* One tier of a position's buyers-list waterfall (7 Oct 2026): the position
    as if only this list were assigned to it, so every per-deal check (invited
    buyers, deal ID, floor, term) reads that list. */

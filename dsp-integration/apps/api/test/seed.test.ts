@@ -23,7 +23,7 @@ describe('seed data', () => {
     expect(access['store.suburb']).toEqual([])
     expect(access['visitor.age']).toEqual([])
     expect(access['visitor.purchase_intent']).toEqual(['p_google'])
-    expect(await ctx.exchange.get()).toEqual({ enabled: true, organisation: 'Demo Retail Group', domain: 'demoretail.example', sellerId: 'drg-4471', contactEmail: 'adops@demoretail.example' })
+    expect(await ctx.exchange.get()).toEqual({ enabled: true, organisation: 'Demo Retail Group', domain: 'demoretail.example', sellerId: 'drg-4471', contactEmail: 'adops@demoretail.example', globalDealEnabled: false })
   })
 
   it('an unseeded database reports spec defaults', async () => {
@@ -32,6 +32,6 @@ describe('seed data', () => {
     expect((await ctx.company.variableAccess())['store.display_tags']).toBe('all')
     /* Computer Vision sits in Personalisation Variables now, so it defaults to no DSP. */
     expect((await ctx.company.variableAccess())['store.cv_gender']).toEqual([])
-    expect(await ctx.exchange.get()).toEqual({ enabled: false, organisation: '', domain: '', sellerId: '', contactEmail: '' })
+    expect(await ctx.exchange.get()).toEqual({ enabled: false, organisation: '', domain: '', sellerId: '', contactEmail: '', globalDealEnabled: false })
   })
 })

@@ -46,7 +46,7 @@ import type { Context } from '../context'
 import { TRANSACTING_CURRENCY } from '../domain/currency'
 import { bookLockedTermWindow, lockTermOnClear, termStateAt } from '../billing'
 import { isLive } from '../domain/exchange'
-import { type PositionRef, allPositions, assignmentOf, tierOf, effectivePartnerIds, filterAsync, isRealtime, isSellable, nextWindow, positionView, windowMsFor, windowStartOf } from '../domain/positions'
+import { type PositionRef, allPositions, assignmentOf, inGlobalDeal, tierOf, effectivePartnerIds, filterAsync, isRealtime, isSellable, nextWindow, positionView, windowMsFor, windowStartOf } from '../domain/positions'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 import { type ReservationRecord, TAKEN } from '../repos/ReservationRepo'
 import { advertiserSlug, assignedOf } from '@ph-dsp/types'
@@ -59,6 +59,7 @@ import { settlePending } from './pending'
 import { bidderTuning } from '../domain/partnerInput'
 import { providerOf } from '../dsp/registry'
 import { type Bid, type BidResponse, buildBidRequest, dealIdOf } from './openrtb'
+import { GLOBAL_DEAL_ID } from '../domain/exchange'
 
 export interface PositionOutcome {
   positionId: string
@@ -361,6 +362,8 @@ export async function vetBid(ctx: Context, p: PositionRef, dsp: PartnerRecord, s
     const listId = assignedOf(p.def).buyersListId
     if (!listId || bid.dealid !== dealIdOf(listId)) return reject(`Bid ${bid.dealid ? `quotes deal ${bid.dealid}` : 'has no dealid'}; this private auction requires ${listId ? dealIdOf(listId) : 'its deal ID'}.`)
   }
+  /* The global deal ID is only good on a position that is in the global deal (8 Oct 2026): quoting it elsewhere, or while the master switch is off, is refused rather than silently treated as open. Quoting it on an eligible position competes exactly as open exchange (same floor, first-price, same checks). */
+  if (bid.dealid === GLOBAL_DEAL_ID && !inGlobalDeal(p.def, (await ctx.exchange.get()).globalDealEnabled === true)) return reject(`Bid quotes the global deal ${GLOBAL_DEAL_ID}; this position is not in the global deal.`)
   const domains = (bid.adomain ?? []).map((d) => d.trim().toLowerCase())
   const seat = dsp.seats.find((s) => s.domain && domains.includes(s.domain.toLowerCase()))
   if (!seat) return reject(`Unknown advertiser${domains.length ? ` (${domains.join(', ')})` : ''}: not one of ${dsp.name}’s advertisers.`)
