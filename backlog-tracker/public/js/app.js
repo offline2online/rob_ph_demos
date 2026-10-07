@@ -1439,7 +1439,22 @@ function deployNotifyButtonHTML(project) {
   const inProgress = routine?.status === "in-progress" && !isStale;
 
   if (!inProgress && deployHandedOver(project)) {
+    // The pipeline holds an approved deploy until the train's own tests pass
+    // (trainTestGate in run-backlog-automation.js); say which, not "Deploying".
+    const holdNote = escapeHTML(project.trainNote || "");
+    if (project.trainHold === "tests-red") {
+      return `<button type="button" class="notify-claude-btn" disabled title="${holdNote}">
+      <span class="material-symbols-outlined notify-claude-icon">error</span>
+      <span class="notify-claude-label">Tests failing</span>
+    </button>`;
+    }
     timedSpinnerShown = true;
+    if (project.trainHold === "tests-running") {
+      return `<button type="button" class="notify-claude-btn notify-claude-btn-working" disabled title="${holdNote}">
+      <span class="notify-claude-spinner"></span>
+      <span class="notify-claude-label">Waiting for tests&hellip;</span>
+    </button>`;
+    }
     const awaitingHuman = project.trainStatus === "awaiting-human-merge";
     const label = awaitingHuman ? "Waiting for merge&hellip;" : "Deploying&hellip;";
     const title = awaitingHuman

@@ -1291,6 +1291,87 @@ function nextTrainTestsRed(current, workflow, testRun, tested, nowIso) {
 // that had been red for 45 minutes. The project also carries the result
 // (trainTestsRed), which is what hides Deploy to Main on the board and makes
 // approve_deploy_to_main refuse until the train is green again.
+// The newest run that actually ran (or is running). GitHub HOLDS a run on a
+// bot-pushed PR head as `action_required` — a prototype rebuild commit gets
+// one every time — and a held run tested nothing: it is neither a pass nor
+// a failure. Taking it as "the newest run" left trainTestsRed set over a
+// green train (7 Oct 2026, PR #337), which would have hidden Deploy to Main
+// for good. Pure, for test/train-tests.test.js; runs are newest first.
+function newestRealRun(runs) {
+  return (runs || []).find((r) => r && String(r.conclusion || "").toLowerCase() !== "action_required"
+    && !["waiting", "requested", "pending"].includes(String(r.status || "").toLowerCase())) || null;
+}
+
+// ── Deploy to Main waits for the train's own tests ─────────────────────────
+// PR #337 (7 Oct 2026): the last ticket landed at 21:44, the train was
+// approved and Deploy to Main clicked while its e2e-quick run was still
+// going, the run went red at 21:51, and the deploy opened a PR that parked
+// red two minutes later. trainTestsRed (above) can only stop a click once a
+// run has FAILED; this gate makes the deploy itself refuse to open a PR
+// until the train's required checks have PASSED on the commit it ships, and
+// hold — not give up — when they haven't, so a fix pushed to the train
+// carries the approved deploy through with nobody clicking again.
+//
+// Pure, for test/train-tests.test.js. `checks`: one entry per required
+// workflow, { workflow, label, run: newest run or null, speaksForHead }
+// where speaksForHead says that run tested the head being shipped (itself,
+// or the commit before a prototype rebuild — testedHeadOf). Returns
+// { state: "green" | "pending" | "missing" | "red", workflows: [...] } —
+// the worst state wins, red over missing over pending.
+function trainTestGate(checks) {
+  const rank = { green: 0, pending: 1, missing: 2, red: 3 };
+  let state = "green";
+  const workflows = [];
+  for (const c of checks || []) {
+    const r = c.run;
+    let st;
+    if (!r || !c.speaksForHead) st = "missing";
+    else if (String(r.status).toLowerCase() !== "completed") st = "pending";
+    else {
+      const concl = String(r.conclusion).toLowerCase();
+      if (concl === "success") st = "green";
+      else if (["failure", "timed_out", "startup_failure"].includes(concl)) st = "red";
+      else st = "missing"; // cancelled, skipped, stale: nothing tested this head
+    }
+    if (st !== "green") workflows.push({ workflow: c.workflow, label: c.label, state: st, url: (r && r.url) || "", sha: (r && r.headSha) || "" });
+    if (rank[st] > rank[state]) state = st;
+  }
+  return { state, workflows };
+}
+
+// Reads the gate for a train that checkoutTrain() has fetched. Never throws:
+// anything it can't read counts as "missing", and missing tests are started.
+function readTrainTestGate(deployBranch) {
+  let paths = [];
+  try {
+    run("git", ["fetch", "origin", "main", "--quiet"]);
+    paths = run("git", ["diff", "--name-only", `origin/main...origin/${deployBranch}`]).split("\n").filter(Boolean);
+  } catch (err) {
+    console.log(`[deploy-train] couldn't diff ${deployBranch} against main (${scrubSecrets(err.message)}) — gating on every train test`);
+    paths = TRAIN_TEST_WORKFLOWS.map((t) => `${t.prefix}x`);
+  }
+  const head = run("git", ["rev-parse", `origin/${deployBranch}`]).trim();
+  const checks = trainTestsFor(paths).map((t) => {
+    let testRun = null;
+    let speaksForHead = false;
+    try {
+      testRun = newestRealRun(JSON.parse(run("gh", ["run", "list", "--repo", REPO, "--workflow", t.workflow, "--branch", deployBranch,
+        "--limit", "10", "--json", "headSha,status,conclusion,url"]) || "[]"));
+      if (testRun && testRun.headSha === head) speaksForHead = true;
+      else if (testRun && testRun.headSha) {
+        let ancestor = false;
+        try { run("git", ["merge-base", "--is-ancestor", testRun.headSha, head]); ancestor = true; } catch { /* not behind the head */ }
+        const since = ancestor ? run("git", ["diff", "--name-only", testRun.headSha, head]).split("\n").filter(Boolean) : null;
+        speaksForHead = testedHeadOf(testRun.headSha, head, since) === testRun.headSha;
+      }
+    } catch (err) {
+      console.log(`[deploy-train] couldn't read ${t.workflow} on ${deployBranch} (${scrubSecrets(err.message)})`);
+    }
+    return { workflow: t.workflow, label: t.label, run: testRun, speaksForHead };
+  });
+  return { head, ...trainTestGate(checks) };
+}
+
 async function reportTrainTestResults() {
   const cards = await runQuery({
     from: [{ collectionId: "backlogItems" }],
@@ -1321,9 +1402,8 @@ async function reportTrainTestResults() {
     let redChanged = false;
     for (const t of TRAIN_TEST_WORKFLOWS) {
       try {
-        const runs = JSON.parse(run("gh", ["run", "list", "--repo", REPO, "--workflow", t.workflow, "--branch", branch,
-          "--limit", "1", "--json", "headSha,status,conclusion,url"]) || "[]");
-        const testRun = runs[0] || null;
+        const testRun = newestRealRun(JSON.parse(run("gh", ["run", "list", "--repo", REPO, "--workflow", t.workflow, "--branch", branch,
+          "--limit", "10", "--json", "headSha,status,conclusion,url"]) || "[]"));
         if (!testRun) continue;
         let changedSince = null;
         if (testRun.headSha && testRun.headSha !== head) {
@@ -2943,7 +3023,7 @@ async function finishTrain(project, deployBranch, prNumber, trainItems, { touche
     trainReady: false,
     trainLocked: false,
     trainStatus: "idle",
-    trainTestsRed: null, // describes the train that just shipped, not the next one
+    trainTestsRed: null, trainHold: null, // describe the train that just shipped, not the next one
     trainNote: resetOk
       ? null
       : `Shipped PR #${prNumber}, but ${deployBranch} could not be reset to main automatically — reset it by hand before the next train.`,
@@ -3033,6 +3113,29 @@ async function processDeployTrain(project) {
     });
     return;
   }
+
+  // 0b. The train's own tests must have passed on what ships (see
+  //     trainTestGate). Held, not refused: trainReady stays set, so the
+  //     next run picks the deploy back up by itself once they are green.
+  const gate = readTrainTestGate(deployBranch);
+  if (gate.state !== "green") {
+    discardWorkingTree();
+    if (gate.state === "missing") dispatchTrainTests(deployBranch, gate.workflows.filter((w) => w.state === "missing").map((w) => TRAIN_TEST_WORKFLOWS.find((t) => t.workflow === w.workflow).prefix + "x"), "deploy-train");
+    const red = gate.state === "red";
+    const what = gate.workflows.map((w) => `${w.label} ${w.state === "red" ? `failed${w.url ? ` (${w.url})` : ""}` : w.state === "pending" ? "is still running" : "has not run on this commit yet — started it"}`).join("; ");
+    console.log(`[deploy-train] ${project.id}: holding the deploy — train tests ${gate.state} on ${gate.head.slice(0, 7)}: ${what}`);
+    if (gate.state === "pending" || gate.state === "missing") followUpReasons.push(`${project.id}: deploy waiting on the train's tests`);
+    await patchProject(project.id, {
+      trainStatus: "deploying",
+      trainHold: red ? "tests-red" : "tests-running",
+      trainNote: red
+        ? `Deploy held, nothing merged: ${what}. Fix it on ${deployBranch} (or send the ticket that broke it back with Failed testing) — the approved deploy carries on by itself once the tests pass.`
+        : `Deploy to Main is waiting for the train's tests before opening the PR: ${what}. It carries on by itself when they pass.`,
+      updatedAt: new Date().toISOString(),
+    });
+    return;
+  }
+  if (project.trainHold) await patchProject(project.id, { trainHold: null, updatedAt: new Date().toISOString() });
 
   // 1. Bring main in. This used to be the only remaining conflict path, and
   //    still is for anything other than faq/data/index.json — it needs
@@ -3265,7 +3368,7 @@ async function reconcileMergedTrains() {
     const deployBranch = project.deployBranch || deployBranchForName(project.name);
     const onTrain = onTrainItems(await itemsForProject(project.id));
     if (!onTrain.length) {
-      await patchProject(project.id, { trainStatus: "idle", trainReady: false, trainLocked: false, trainPrNumber: null, trainTestsRed: null, updatedAt: new Date().toISOString() });
+      await patchProject(project.id, { trainStatus: "idle", trainReady: false, trainLocked: false, trainPrNumber: null, trainTestsRed: null, trainHold: null, updatedAt: new Date().toISOString() });
       continue;
     }
     console.log(`[deploy-train] ${project.id}: PR #${prNumber} was merged outside the pipeline — recording ${onTrain.length} ticket(s) as live`);
@@ -3395,6 +3498,7 @@ async function reconcileLockedTrains() {
       // applying: there is nothing left on the train for it to describe.
       trainStatus: "idle",
       trainTestsRed: null,
+      trainHold: null,
       trainNote: archiveResult.ok
         ? null
         : `Train emptied and unlocked, but ${deployBranch} could not be reset to main automatically: ${scrubSecrets(archiveResult.error)}. Reset it by hand.`,
@@ -3938,7 +4042,7 @@ module.exports = {
   // test/train-resume.test.js — GitHub-side cancellations re-run; red trains resume when green
   isInfraCheck, rerunInfraChecks, resumeRedTrains, TRAIN_CI_INFRA_RERUNS,
   // test/train-tests.test.js — console tests run on each train push
-  trainTestFailureTargets, touchesConsoleTests, trainTestsFor, testedHeadOf, nextTrainTestsRed,
+  trainTestFailureTargets, touchesConsoleTests, trainTestsFor, testedHeadOf, nextTrainTestsRed, trainTestGate, newestRealRun,
   // test/parallel-builds.test.js — patches built in parallel
   patchBaseFor, dependenciesLanded, buildRequestFields, migrationNumberClashes,
   // test/train-follow-up.test.js — a train waiting on CI starts its own next run
