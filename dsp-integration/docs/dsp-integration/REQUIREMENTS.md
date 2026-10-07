@@ -3941,7 +3941,7 @@ A reserve is either a **preferred deal** (the premium window held at the reserve
 
 - **Forecast** for the window = plays × audience = the slot's VAC-d assumed views per window (`assumedViewsPerWindow`, the same figure billing realises against).
 - **Committed volume** = `floor(forecast × (1 − buffer%))`. Expected delivery therefore sits above the guarantee and make-goods are rare. Returned as `forecastImpressions` / `guaranteedImpressions` and stored on the reservation (migration 0046).
-- **Buffer**: `guaranteeBufferPct` on Advertiser settings (a "Guaranteed deals" section beside the category lists), default 10, 0–50, instance-wide. Omitted on save keeps the stored value.
+- **Buffer**: `guaranteeBufferPct` on Advertiser settings (in the "Committed delivery volume" group, beside Default committed plays), default 10, 0–50, instance-wide. Omitted on save keeps the stored value.
 - **To the DSP**: the reservation response carries `dspDeal` — DV360 Programmatic Guaranteed / Amazon guaranteed deal with `unitCount` = the committed impressions; a preferred deal maps to a preferred deal with no volume (`dsp/dealTerms.ts`).
 - **Open (dependencies)**: the exact per-DSP guaranteed-deal field names are to be confirmed against each DSP's sandbox; make-good / under-delivery behaviour when delivery falls below the guarantee is not built — billing is unchanged (realised VAC-d at the reserve price).
 
@@ -4016,8 +4016,8 @@ keeps the won creative renderable; the lookahead sets how early the auction open
 
 ## Default committed plays — the play config feeds the buyers list (Rob, 7 Oct 2026)
 
-- **Setting**: `defaultCommittedPlays` on Advertiser settings (a "Play defaults"
-  section; field **Default committed plays**). Company-wide, a whole number of
+- **Setting**: `defaultCommittedPlays` on Advertiser settings (in the "Committed delivery
+  volume" group beside the guarantee buffer; field **Default committed plays**). Company-wide, a whole number of
   plays, at least 1, or empty for none (per play); anything else is refused
   with "Default committed plays is a whole number of plays, at least 1, or
   empty." (400). Omitted on save keeps the stored value; `null` clears it
