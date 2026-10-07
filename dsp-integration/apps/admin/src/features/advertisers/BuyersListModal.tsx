@@ -192,19 +192,9 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
         />
         {errors.floorCpm && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.floorCpm}</div>}
       </div>
-      <div>
-        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}><WithTip tip={
-          editing?.lockedWin
-            ? `Rate locked at ${editing.lockedWin.cpm} CPM on ${new Date(editing.lockedWin.lockedAt).toLocaleString()} — every play window for the rest of the delivery term books at that rate, no re-auction.`
-            : 'The deadline invited brands may submit or revise bids until. The first bid that clears by then locks the winning CPM for the whole delivery term above — no daily re-auction. Leave empty to keep clearing a fresh auction every play window, as before.'
-        }>Auction window closes</WithTip></label>
-        <DatePicker
-          allowClear showTime style={{ width: '100%' }}
-          value={draft.auctionCloses ? dayjs(draft.auctionCloses) : null}
-          onChange={(v) => setDraft((d) => ({ ...d, auctionCloses: v ? v.toISOString() : null }))}
-        />
-        {errors.auctionCloses && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.auctionCloses}</div>}
-      </div>
+      {editing?.lockedWin && (
+        <div style={{ fontSize: 12.5, color: T.muted }}>Rate locked at {editing.lockedWin.cpm} CPM on {new Date(editing.lockedWin.lockedAt).toLocaleString()}: every play for the rest of the delivery term books at that rate.</div>
+      )}
     </Modal>
   )
 }

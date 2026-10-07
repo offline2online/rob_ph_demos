@@ -4,7 +4,6 @@
 import { InputNumber, Select } from 'antd'
 import { IAB_CATEGORIES, IAB_CATEGORY_CODES, INTERACTIVE_ENABLED, type AdvertiserSettingsInput } from '@ph-dsp/types'
 import { type ReactNode, useMemo } from 'react'
-import { Callout } from '../../shared/Callout'
 import { Field } from '../../shared/Field'
 import { WithTip } from '../../shared/InfoTip'
 import { ListEditor, addExclusive } from '../../shared/ListEditor'
@@ -14,7 +13,7 @@ import { useSection } from './DspIntegrationLayout'
 import { SubPageHeader } from './SubPageHeader'
 
 export const ADVERTISER_SETTINGS_TIP =
-  "Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (currency, and floor CPM), the Auction schedule (when bidding opens, play-window length, auction cutoff) and the Category lists (IAB whitelists and blacklists; each DSP's advertiser lists are managed on its own page, from the advertisers it syncs). Read-only here: Where these apply (which DSPs use these lists or keep their own; unlink or relink on the DSP's page). Per-advertiser campaign approval and floor multipliers, and the inventory advertisers can buy, are on Advertisers / Inventory."
+  "Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (currency, and floor CPM), Guaranteed deals (contingency buffer) and the Category lists. The Play config shows how plays, the one unit everything transacts in, are sold: per slot by real-time bidding, or as committed plays over a delivery term on a deal (IAB whitelists and blacklists; each DSP's advertiser lists are managed on its own page, from the advertisers it syncs). Read-only here: Where these apply (which DSPs use these lists or keep their own; unlink or relink on the DSP's page). Per-advertiser campaign approval and floor multipliers, and the inventory advertisers can buy, are on Advertisers / Inventory."
 
 /* Every ISO 4217 currency, listed by code and name (spec §4). */
 const CURRENCIES = (() => {
@@ -64,46 +63,14 @@ const INTERACTIVE_TIP = (
   </div>
 )
 
-/* The auction cutoff, every half hour (UTC). */
-const CUTOFF_TIMES = Array.from({ length: 48 }, (_, i) => {
-  const t = `${String(Math.floor(i / 2)).padStart(2, '0')}:${i % 2 ? '30' : '00'}`
-  return { value: t, label: `${t} UTC` }
-})
-
-/* "7 days" / "24 hours" / "7 days 6 hours" — the play-window length, in the
-   deferred-change callout below (Rob's board ticket, 26 Sep 2026). */
-function formatDuration(hours: number) {
+/* "7 days" / "24 hours" / "7 days 6 hours": the derived time display of a play window. */
+function formatHours(hours: number) {
   const days = Math.floor(hours / 24)
   const rest = hours % 24
   const parts: string[] = []
   if (days) parts.push(`${days} day${days === 1 ? '' : 's'}`)
   if (rest || !days) parts.push(`${rest} hour${rest === 1 ? '' : 's'}`)
   return parts.join(' ')
-}
-/* "26 Sep 2026, 00:00 UTC" — every play window is anchored to UTC (Q13), so
-   the effective date is shown in it rather than the viewer's own time zone.
-   Date and time are formatted and joined separately (as formatSync does in
-   DspPage.tsx), not via one combined toLocaleString call, so the join is
-   always ", " rather than whatever a locale's combined pattern happens to
-   use. */
-function formatEffectiveDate(iso: string) {
-  const t = new Date(iso)
-  const date = t.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
-  const time = t.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'UTC' })
-  return `${date}, ${time} UTC`
-}
-
-/* A duration stored in hours, entered as days and hours. */
-function DaysHours({ id, hours, onChange }: { id: string; hours: number; onChange: (hours: number) => void }) {
-  const days = Math.floor((hours ?? 0) / 24)
-  const rest = (hours ?? 0) % 24
-  const whole = (v: number | string | null) => Math.max(0, Math.floor(Number(v) || 0))
-  return (
-    <div className="flex gap-2">
-      <InputNumber id={id} aria-label="Days" className="flex-1" min={0} precision={0} value={days} suffix="days" onChange={(v) => onChange(whole(v) * 24 + rest)} />
-      <InputNumber aria-label="Hours" className="flex-1" min={0} max={23} precision={0} value={rest} suffix="hours" onChange={(v) => onChange(days * 24 + Math.min(23, whole(v)))} />
-    </div>
-  )
 }
 
 const IAB_OPTIONS = IAB_CATEGORIES.map((c) => ({ value: c, label: `${c} (${IAB_CATEGORY_CODES[c]})` }))
@@ -150,24 +117,21 @@ export function AdvertiserSettings() {
         </Field>
       </div>
 
-      <SectionLabel><WithTip tip="In-store screens can't take a bid per play, so advertisers bid for a play window that clears ahead of time. Bidding for a window opens, closes at the auction cutoff (when the auction runs) and the winner holds the slot for the whole window. Times are UTC.">Auction schedule</WithTip></SectionLabel>
-      <div className="flex flex-wrap items-start gap-3.5">
-        <Field label={<span className="block" style={{ minHeight: 36 }}>Auction opens</span>} htmlFor="auctionOpensHours" tip="How long before the auction cutoff bidding for a play window opens, for example 7 days." className="w-64">
-          <DaysHours id="auctionOpensHours" hours={s.auctionOpensHours} onChange={(v) => set('auctionOpensHours', v)} />
-        </Field>
-        <Field label={<span className="block" style={{ minHeight: 36 }}>Play-window length</span>} htmlFor="playWindowHours" tip="The minimum period a won slot is held, in days and hours, for example 24 hours or 7 days. If any window is already bid on or booked, a change to this can't reach it — it takes effect once every one of those has played." className="w-64">
-          <DaysHours id="playWindowHours" hours={s.playWindowHours} onChange={(v) => set('playWindowHours', v)} />
-        </Field>
-        <Field label={<span className="block" style={{ minHeight: 36 }}>Auction cutoff time</span>} htmlFor="auctionCutoffTime" tip="The daily time by which bids must be in. The auction for the next play window runs then; 18:00 gives six hours before a midnight window." className="w-36">
-          <Select id="auctionCutoffTime" className="w-full" value={s.auctionCutoffTime} onChange={(v) => set('auctionCutoffTime', v)} options={CUTOFF_TIMES} />
-        </Field>
+      <SectionLabel><WithTip tip="A play is the one unit the exchange transacts in; time is shown only as a derived display. There is no auction to open or close, and nothing here is scheduled.">Play config</WithTip></SectionLabel>
+      <div className="flex flex-wrap items-stretch gap-3.5 mb-3.5" role="group" aria-label="Play config">
+        <div className="flex-1" style={{ minWidth: 260, border: `1px solid ${T.border}`, borderRadius: 6, padding: '10px 14px', fontSize: 13 }}>
+          <div style={{ color: T.muted, fontSize: 12 }}>Real-time bidding</div>
+          <div><b>Per play.</b> Each play of a slot is bid for as it comes up. No scheduled open or cutoff.</div>
+        </div>
+        <div className="flex-1" style={{ minWidth: 260, border: `1px solid ${T.border}`, borderRadius: 6, padding: '10px 14px', fontSize: 13 }}>
+          <div style={{ color: T.muted, fontSize: 12 }}>Deals and reservations</div>
+          <div><b>Committed plays over a delivery term.</b> Set on each deal; guaranteed deals use the contingency buffer above.</div>
+        </div>
+        <div className="flex-1" style={{ minWidth: 260, border: `1px solid ${T.border}`, borderRadius: 6, padding: '10px 14px', fontSize: 13 }}>
+          <div style={{ color: T.muted, fontSize: 12 }}>Time (derived display only)</div>
+          <div>Shown as a play window of <b>{formatHours(savedView.playWindowHours)}</b>, to turn plays into time on screen.</div>
+        </div>
       </div>
-      {savedView.pendingPlayWindowHours != null && savedView.pendingPlayWindowEffectiveFrom && (
-        <Callout tone="info" icon="schedule" className="mb-3.5">
-          <b>Play-window length: change scheduled.</b> Every window already bid on or booked keeps its current {formatDuration(savedView.playWindowHours)} length.
-          Once all of those have played — from <b>{formatEffectiveDate(savedView.pendingPlayWindowEffectiveFrom)}</b> onwards — new windows will be {formatDuration(savedView.pendingPlayWindowHours)} long instead.
-        </Callout>
-      )}
 
       <SectionLabel><WithTip tip="IAB category lists, managed once for the whole company and applied to every connected DSP: IAB is one taxonomy all of them speak. Entries are chosen from the IAB categories, never typed. Nothing can sit on both lists. The blacklist always applies and no position can opt out of it. Advertiser whitelists and blacklists are not here: each DSP manages its own, from the advertisers it syncs, on its own page.">Category lists</WithTip></SectionLabel>
       <div className="grid grid-cols-2 gap-3.5">
