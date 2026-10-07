@@ -1,0 +1,1 @@
+ALTER TABLE company_advertiser_settings DROP COLUMN default_committed_plays;

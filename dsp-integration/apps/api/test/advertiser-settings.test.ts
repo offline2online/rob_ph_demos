@@ -71,6 +71,24 @@ describe('Advertiser settings (spec §4, §6)', () => {
     }
   })
 
+  it('default committed plays: null by default, saves, omitted keeps it, null clears it, refuses 0 and non-integers', async () => {
+    const app = buildApp(await testContext())
+    const get = async () => (await app.inject({ method: 'GET', url: '/api/admin/v1/advertiser-settings' })).json().defaultCommittedPlays
+    expect(await get()).toBeNull()
+    const ok = await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: { ...input, defaultCommittedPlays: 5000 } })
+    expect(ok.statusCode).toBe(200)
+    expect(await get()).toBe(5000)
+    await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: input })
+    expect(await get()).toBe(5000)
+    await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: { ...input, defaultCommittedPlays: null } })
+    expect(await get()).toBeNull()
+    for (const bad of [0, -5, 1.5, '100']) {
+      const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: { ...input, defaultCommittedPlays: bad } })
+      expect(res.statusCode).toBe(400)
+      expect(res.json().error.details).toEqual([{ field: 'defaultCommittedPlays', reason: 'Default committed plays is a whole number of plays, at least 1, or empty.' }])
+    }
+  })
+
   /* Rob's board ticket, 26 Sep 2026: a length change while windows are still
      active no longer errors out — it's accepted and deferred, with the
      admin told exactly when it takes effect. */

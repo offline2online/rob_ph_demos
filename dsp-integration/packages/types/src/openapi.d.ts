@@ -1579,6 +1579,8 @@ export interface components {
              * @default 35
              */
             bidLookaheadSeconds: number;
+            /** @description Play config: the committed-plays figure a new buyers list is pre-filled with (still editable per list). Whole number, at least 1; null means no default (per play). Optional on save: omitted keeps the stored value, null clears it. */
+            defaultCommittedPlays?: number | null;
             /**
              * @description Bandwidth protection (real-time impressions): while the restriction is in force, only a bid whose creative the player already holds in its cache can win; an uncached creative would need a live download. `off`: never restricted. `fixed`: restricted between uncachedRestrictionStart and uncachedRestrictionEnd every day (UTC). `store_open`: restricted while the player reports the store open (`storeOpen` on the impression signal). Optional on save: omitted keeps the stored value.
              * @default off

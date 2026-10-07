@@ -124,6 +124,13 @@ export function AdvertiserSettings() {
         </Field>
       </div>
 
+      <SectionLabel><WithTip tip="Defaults the exchange offers when something new is set up. Nothing here changes an existing deal.">Play defaults</WithTip></SectionLabel>
+      <div className="flex flex-wrap items-start gap-3.5">
+        <Field label={<span className="block" style={{ minHeight: 36 }}>Default committed plays</span>} htmlFor="defaultCommittedPlays" tip="Pre-fills Committed plays when a new buyers list is created. It stays editable on each list and never changes a saved list or its 'N of M plays' delivery. Whole number, at least 1; leave empty for per play." className="w-56">
+          <InputNumber id="defaultCommittedPlays" className="w-full" step={1} min={1} precision={0} placeholder="Per play" value={s.defaultCommittedPlays ?? null} onChange={(v) => set('defaultCommittedPlays', typeof v === 'number' ? v : null)} />
+        </Field>
+      </div>
+
       <SectionLabel><WithTip tip="A play is the one unit the exchange transacts in; time is shown only as a derived display. There is no auction to open or close, and nothing here is scheduled.">Play config</WithTip></SectionLabel>
       <div className="flex flex-wrap items-stretch gap-3.5 mb-3.5" role="group" aria-label="Play config">
         <div className="flex-1" style={{ minWidth: 260, border: `1px solid ${T.border}`, borderRadius: 6, padding: '10px 14px', fontSize: 13 }}>

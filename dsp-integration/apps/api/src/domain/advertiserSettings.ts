@@ -44,6 +44,9 @@ export function validateAdvertiserSettings(b: Partial<AdvertiserSettingsInput> |
   /* Optional on save (omitted keeps the stored value); when sent, a percentage from 0 to 50. */
   const buf = b?.guaranteeBufferPct
   if (buf !== undefined && (typeof buf !== 'number' || !Number.isFinite(buf) || buf < 0 || buf > MAX_GUARANTEE_BUFFER_PCT)) out.push({ field: 'guaranteeBufferPct', reason: `The guarantee buffer is a percentage from 0 to ${MAX_GUARANTEE_BUFFER_PCT}.` })
+  /* Optional on save (omitted keeps the stored value, null clears it); when a number, a whole number of plays, at least 1. */
+  const dcp = b?.defaultCommittedPlays
+  if (dcp !== undefined && dcp !== null && (typeof dcp !== 'number' || !Number.isInteger(dcp) || dcp < 1)) out.push({ field: 'defaultCommittedPlays', reason: 'Default committed plays is a whole number of plays, at least 1, or empty.' })
   /* Optional on save (omitted keeps the stored value); when sent, whole seconds, at least 1. */
   if (b?.bidLookaheadSeconds !== undefined && !bidLookaheadOk(b.bidLookaheadSeconds)) out.push({ field: 'bidLookaheadSeconds', reason: 'Bid lookahead is a whole number of seconds, at least 1.' })
   /* Optional on save (omitted keeps the stored value). */

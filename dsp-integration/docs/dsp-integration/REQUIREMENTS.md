@@ -3995,3 +3995,18 @@ keeps the won creative renderable; the lookahead sets how early the auction open
   that is refused, 409, naming when the auction opens. Without `slotStartsAt`
   the player is signalling at playout and the auction opens now, as before.
 - Advance window positions are unaffected: they keep the window auction.
+
+## Default committed plays — the play config feeds the buyers list (Rob, 7 Oct 2026)
+
+- **Setting**: `defaultCommittedPlays` on Advertiser settings (a "Play defaults"
+  section; field **Default committed plays**). Company-wide, a whole number of
+  plays, at least 1, or empty for none (per play); anything else is refused
+  with "Default committed plays is a whole number of plays, at least 1, or
+  empty." (400). Omitted on save keeps the stored value; `null` clears it
+  (migration 0054).
+- **Flow**: creating a buyers-and-targeting list pre-fills **Committed plays**
+  from it. It is a default, not a cap: the field stays editable and the saved
+  figure is the list's own. A changed default is picked up by the next new list
+  (and by an open new-list form whose field is still untouched).
+- **Unchanged**: editing a saved list never takes the default; existing lists'
+  `committedPlays` and the "N of M plays" delivery metering are not touched.
