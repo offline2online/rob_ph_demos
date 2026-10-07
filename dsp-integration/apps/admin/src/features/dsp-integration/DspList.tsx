@@ -13,6 +13,8 @@ import { NAV_COLLAPSE_BELOW } from '../../shared/AppShell'
 import { useViewportWidth } from '../../shared/useViewportWidth'
 import { T } from '../../theme/phTheme'
 import { useSection } from './DspIntegrationLayout'
+/* Bidding values are always USD (TRANSACTING_CURRENCY in the API's domain/currency.ts), not the instance currency. */
+const TRANSACTING_CURRENCY = 'USD'
 
 export const PATHS = {
   exchange: '/dsp-integration/exchange',
@@ -55,7 +57,7 @@ export function DspList() {
 
   const company = [
     { to: PATHS.exchange, icon: 'storefront', title: 'Exchange settings', sub: saved.exchange.enabled ? `${draft.exchange.organisation || 'Client'} is seller of record` : 'DSP integration off' },
-    { to: PATHS.advertiserSettings, icon: 'rule', title: 'Advertiser settings', sub: `${advertisers} advertisers · floor ${draft.settings.currency || 'AUD'} ${draft.settings.floorCpm ?? '—'} CPM` },
+    { to: PATHS.advertiserSettings, icon: 'rule', title: 'Advertiser settings', sub: `${advertisers} advertisers · floor ${TRANSACTING_CURRENCY} ${draft.settings.floorCpm ?? '—'} CPM` },
     { to: PATHS.variables, icon: 'tune', title: 'Shared Targeting Variables', sub: `${TARGETING_VARIABLES.length} platform variables` },
   ].slice(0, published ? undefined : 1)
 

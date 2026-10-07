@@ -68,7 +68,7 @@ describe('DSP Integration section', () => {
       'Exchange settings', 'Advertiser settings', 'Shared Targeting Variables',
       'Google DSP — Live', 'Amazon Ads DSP — Connection error', 'The Trade Desk — Not set up yet',
     ])
-    expect(within(nav).getByText('3 advertisers · floor AUD 100 CPM')).toBeInTheDocument()
+    expect(within(nav).getByText('3 advertisers · floor USD 100 CPM')).toBeInTheDocument()
     expect(within(nav).queryByText(/category lists/)).not.toBeInTheDocument()
   })
 
