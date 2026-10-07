@@ -1645,6 +1645,10 @@ export interface components {
             buyersListId: string | null;
             /** @description The same buyers list by name */
             buyersListName: string | null;
+            /** @description The buyers lists assigned to this slot in priority order (a waterfall): the first is tried first and the exchange falls through to the next only when the tier above yields no winning bid at its floor. Priority belongs to the slot, so one list may rank differently on each slot it is assigned to. One list per tier. buyersListId is the first of these. */
+            buyersListIds?: string[];
+            /** @description The same lists by name, in the same order. */
+            buyersListNames?: string[];
         };
         /**
          * @description One invited buyer on a buyers list (deal): a seat (advertiser) that a
@@ -2330,6 +2334,8 @@ export interface components {
                  *     whitelistOnly; listMode is deal whenever this is set.
                  */
                 buyersListId?: string | null;
+                /** @description The slot's buyers lists in priority order (waterfall); buyersListId is the first. */
+                buyersListIds?: string[];
                 storeScope?: string | null;
                 quota?: number | null;
                 /**

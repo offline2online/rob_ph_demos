@@ -73,8 +73,12 @@ export const isRealtime = (p: PositionRef) => bidModeOf(p.def) === 'realtime'
 export type Assignment = 'rtb' | 'whitelist_only' | 'deal' | 'reserved'
 export const assignmentOf = (def: Slot): Assignment => {
   const a = assignedCached(def)
-  return a.advertisers.length ? 'reserved' : a.buyersListId ? 'deal' : a.whitelistOnly ? 'whitelist_only' : 'rtb'
+  return a.advertisers.length ? 'reserved' : a.buyersListIds.length ? 'deal' : a.whitelistOnly ? 'whitelist_only' : 'rtb'
 }
+/* One tier of a position's buyers-list waterfall (7 Oct 2026): the position
+   as if only this list were assigned to it, so every per-deal check (invited
+   buyers, deal ID, floor, term) reads that list. */
+export const tierOf = (p: PositionRef, buyersListId: string): PositionRef => ({ ...p, def: { ...p.def, listMode: 'deal', buyersListId, buyersListIds: [buyersListId] } })
 /* Held for one of these advertisers (case-insensitively). */
 export const heldFor = (def: Slot, name: string) => assignedCached(def).advertisers.some((a) => a.trim().toLowerCase() === name.trim().toLowerCase())
 
@@ -109,8 +113,10 @@ export function callerOf(partner: PartnerRecord, advertiserId: string | undefine
    once per position on every inventory read. */
 export function effectivePartnerIds(ctx: Context, def: Slot, partners?: Awaitable<PartnerRecord[]>): Awaitable<string[] | null> {
   const a = assignedCached(def)
-  if (a.buyersListId) {
-    return andThen(ctx.buyersLists.get(a.buyersListId), (list) => (list ? andThen(partners ?? ctx.partners.list(), (all) => invitedPartnerIds(list, all)) : []))
+  if (a.buyersListIds.length) {
+    /* A waterfall: any tier's invited DSPs may see the position; each tier's own bid request goes only to its own (auction.ts). */
+    return andThen(allOf(a.buyersListIds.map((id) => ctx.buyersLists.get(id))), (lists) =>
+      andThen(partners ?? ctx.partners.list(), (all) => [...new Set(lists.flatMap((l) => (l ? invitedPartnerIds(l, all) : [])))]))
   }
   return a.partnerIds.length ? a.partnerIds : null
 }
@@ -123,8 +129,8 @@ export async function advertiserMayBuy(ctx: Context, p: PositionRef, partner: Pa
   const a = assignmentOf(p.def)
   if (a === 'reserved') return heldFor(p.def, name)
   if (a === 'deal') {
-    const list = await ctx.buyersLists.get(assignedCached(p.def).buyersListId as string)
-    return !!list && isActiveAt(list, ctx.clock().toISOString()) && isInvitedBuyer(list, partner.id, seatId)
+    const lists = await Promise.all(assignedCached(p.def).buyersListIds.map((id) => ctx.buyersLists.get(id)))
+    return lists.some((list) => !!list && isActiveAt(list, ctx.clock().toISOString()) && isInvitedBuyer(list, partner.id, seatId))
   }
   if (a === 'whitelist_only') return !!seatId && isOn(seatId, eff.allowList)
   return true
@@ -150,13 +156,13 @@ export async function visibilityFor(ctx: Context, c: Caller): Promise<(p: Positi
     if (a === 'rtb') return seats.length > 0
     if (a === 'whitelist_only') return whitelisted
     if (a === 'reserved') return seats.some((s) => heldFor(p.def, s.name))
-    return andThen(ctx.buyersLists.get(assignedCached(p.def).buyersListId as string), (list) =>
-      !!list && isActiveAt(list, ctx.clock().toISOString()) && seats.some((s) => isInvitedBuyer(list, me, s.id)))
+    return andThen(allOf(assignedCached(p.def).buyersListIds.map((id) => ctx.buyersLists.get(id))), (lists) =>
+      lists.some((list) => !!list && isActiveAt(list, ctx.clock().toISOString()) && seats.some((s) => isInvitedBuyer(list, me, s.id))))
   }
   /* Sync-first (db.ts andThen): once per position on every inventory read. */
   return (p) =>
     andThen(isSellable(ctx, p), (sellable) =>
-      sellable && andThen(effectivePartnerIds(ctx, p.def, assignedCached(p.def).buyersListId ? (partners ??= ctx.partners.list()) : undefined), (allowed) => allows(p, allowed)))
+      sellable && andThen(effectivePartnerIds(ctx, p.def, assignedCached(p.def).buyersListIds.length ? (partners ??= ctx.partners.list()) : undefined), (allowed) => allows(p, allowed)))
 }
 
 export const isVisible = async (ctx: Context, p: PositionRef, c: Caller) => (await visibilityFor(ctx, c))(p)
@@ -348,7 +354,11 @@ export function windowFacts(ctx: Context, p: PositionRef, starts?: Date[], prefe
    and takes no other bid for it. */
 function lockedTermOf(ctx: Context, p: PositionRef): Awaitable<ReturnType<typeof lockedTermSpan> | null> {
   if (assignmentOf(p.def) !== 'deal') return null
-  return andThen(ctx.buyersLists.get(assignedCached(p.def).buyersListId as string), (list) => (list ? lockedTermSpan(list) : null))
+  /* Any tier whose rate is locked books the position's windows (first, highest tier, wins). */
+  return andThen(allOf(assignedCached(p.def).buyersListIds.map((id) => ctx.buyersLists.get(id))), (lists) => {
+    for (const list of lists) { const span = list ? lockedTermSpan(list) : null; if (span) return span }
+    return null
+  })
 }
 
 /* Synchronous on purpose: availability over a year asks it 366 times per

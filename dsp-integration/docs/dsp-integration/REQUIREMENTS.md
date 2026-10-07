@@ -1660,6 +1660,32 @@ How an advertiser finds inventory (§5), takes it and fills it. This is the API
 surface of the project and the part a partner actually integrates against.
 The retailer configures it under the **DSP Integration** navigation item.
 
+
+### Prioritised buyers lists — the waterfall (7 Oct 2026)
+
+Decided by Rob, 7 Oct 2026 (Broadsign model): **priority is a property of how
+a list is applied to a slot, not of the list.** A slot's "Assigned to" holds
+an **ordered** list of buyers lists (`Slot.buyersListIds`, highest first;
+`buyersListId` stays as the first for older readers; a slot saved with one
+`buyersListId` is a one-tier waterfall). One list can be on many slots and
+rank differently on each.
+
+- **Exchange**: the auction walks the tiers top-down (`exchange/auction.ts`
+  `clearPosition` → `auctionTier`). Each tier is the position as if only that
+  list were assigned (`tierOf`), so invited buyers, deal ID, the three-level
+  floor and the term are that list's own. The first tier with a valid winning
+  bid at its floor takes the window; otherwise it falls through. A tier whose
+  private auction has closed is passed over; a locked-rate tier books the
+  window when reached. An API bid a tier refuses stays pending for the next
+  tier. **One list per tier this release** — no same-tier price competition.
+- **Admin**: Advertisers / Inventory shows the assigned lists as rows in
+  priority order under the slot's picker; drag a row (or use the arrows) to
+  reorder; a position badge shows the rank. New lists join at the foot.
+- **API**: `assignedTo.buyersListIds` (ordered, no duplicates, each must
+  exist); `buyersListId` alone is still accepted.
+- Known edge: a reserve commitment (`type: reserve`) on a waterfall slot
+  locks the term of the top tier's list.
+
 ### Two API tiers
 
 - **Tier 1 — baseline, mandatory.** Conform to the **published interface of

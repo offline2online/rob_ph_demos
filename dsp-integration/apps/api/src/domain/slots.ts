@@ -88,8 +88,10 @@ export async function validateAssigned(
   const unknown = a.partnerIds.filter((id) => !partners.some((p) => p.id === id))
   if (unknown.length) out.push({ field: field('partnerIds'), reason: `Unknown DSP: ${unknown.join(', ')}.` })
   if (a.advertisers.length && a.whitelistOnly) out.push({ field: field('whitelistOnly'), reason: 'A position is either held for named advertisers or open to the whitelist, not both.' })
-  if (a.buyersListId && (a.advertisers.length || a.whitelistOnly)) out.push({ field: field('buyersListId'), reason: 'A private auction (buyers list) is mutually exclusive with named advertisers and the whitelist.' })
-  if (a.buyersListId && !(await buyersLists.get(a.buyersListId))) out.push({ field: field('buyersListId'), reason: 'Unknown buyers list.' })
+  if (a.buyersListIds.length && (a.advertisers.length || a.whitelistOnly)) out.push({ field: field('buyersListId'), reason: 'A private auction (buyers list) is mutually exclusive with named advertisers and the whitelist.' })
+  /* The waterfall (7 Oct 2026): an ordered list, one list per tier, so a list can appear once. */
+  if (new Set(a.buyersListIds).size !== a.buyersListIds.length) out.push({ field: field('buyersListIds'), reason: 'A buyers list can be in the waterfall once: each tier holds one list.' })
+  for (const id of a.buyersListIds) if (!(await buyersLists.get(id))) out.push({ field: field(a.buyersListIds.length > 1 ? 'buyersListIds' : 'buyersListId'), reason: `Unknown buyers list${a.buyersListIds.length > 1 ? ` (${id})` : ''}.` })
   /* The advertiser has to be a seat on a DSP this position can sell through. */
   const scope = a.partnerIds.length ? partners.filter((p) => a.partnerIds.includes(p.id)) : partners
   for (const name of a.advertisers) {
@@ -116,13 +118,14 @@ export async function validateAssigned(
    buyers list's own invited buyers are resolved to DSPs live at auction
    time (positions.ts effectivePartnerIds), not cached here — partnerIds is
    left as the caller's own DSP-level choice (usually empty) for a deal. */
-export function assignedToSlot(a: Assigned, partners: PartnerRecord[]): Pick<Slot, 'partnerIds' | 'advertisers' | 'listMode' | 'buyersListId'> {
+export function assignedToSlot(a: Assigned, partners: PartnerRecord[]): Pick<Slot, 'partnerIds' | 'advertisers' | 'listMode' | 'buyersListId' | 'buyersListIds'> {
   const implied = a.advertisers.flatMap((name) => partners.filter((p) => p.seats.some((s) => s.name === name)).map((p) => p.id))
   return {
     partnerIds: [...new Set([...a.partnerIds, ...implied])],
     advertisers: [...a.advertisers],
-    listMode: a.advertisers.length ? null : a.buyersListId ? 'deal' : a.whitelistOnly ? 'whitelist_only' : 'rtb',
-    buyersListId: a.advertisers.length ? null : a.buyersListId,
+    listMode: a.advertisers.length ? null : a.buyersListIds.length ? 'deal' : a.whitelistOnly ? 'whitelist_only' : 'rtb',
+    buyersListId: a.advertisers.length ? null : a.buyersListIds[0] ?? null,
+    buyersListIds: a.advertisers.length ? [] : [...a.buyersListIds],
   }
 }
 

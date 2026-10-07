@@ -664,7 +664,7 @@ describe('Advertisers / Inventory', () => {
     /* Only the slot that changed is sent. */
     await waitFor(() => expect(saved()).toEqual({ items: [{
       displayTypeId: 'menu_board', slot: 2,
-      assignedTo: { partnerIds: ['p_google'], advertisers: ['Nestlé'], whitelistOnly: false, buyersListId: null },
+      assignedTo: { partnerIds: ['p_google'], advertisers: ['Nestlé'], whitelistOnly: false, buyersListId: null, buyersListIds: [] },
       interactiveReservePrice: null, reservePriceDefault: null, billingUnitHoursDefault: null, maxCampaignsDefault: null,
     }] }))
     /* This test opens two AntD Selects, drives a save round-trip and waits

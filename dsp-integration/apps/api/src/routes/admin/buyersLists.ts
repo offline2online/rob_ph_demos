@@ -20,13 +20,13 @@ type Body = { name?: unknown; description?: unknown; invitedBuyers?: unknown; ta
    type — what stops a delete (spec "Deleting"). */
 const dependentSlots = async (ctx: Context, buyersListId: string) =>
   (await ctx.displayTypes.list()).flatMap((t) =>
-    (t.phExtensions?.slots ?? []).flatMap((s, i) => (assignedOf(s).buyersListId === buyersListId ? [`${t.name} — ${s.label || `slot ${i + 1}`}`] : [])),
+    (t.phExtensions?.slots ?? []).flatMap((s, i) => (assignedOf(s).buyersListIds.includes(buyersListId) ? [`${t.name} — ${s.label || `slot ${i + 1}`}`] : [])),
   )
 
 /* The positions a deal is attached to: every slot assigned to it, as `displayTypeId.sN`. */
 const positionsOfDeal = async (ctx: Context, buyersListId: string) =>
   (await ctx.displayTypes.list()).flatMap((t) =>
-    (t.phExtensions?.slots ?? []).flatMap((s, i) => (assignedOf(s).buyersListId === buyersListId ? [positionIdOf(t.id, i + 1)] : [])),
+    (t.phExtensions?.slots ?? []).flatMap((s, i) => (assignedOf(s).buyersListIds.includes(buyersListId) ? [positionIdOf(t.id, i + 1)] : [])),
   )
 
 /* Volume lives on the deal, never the open auction (open question 45): a

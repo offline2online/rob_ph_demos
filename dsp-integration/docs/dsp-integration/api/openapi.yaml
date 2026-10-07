@@ -2086,6 +2086,8 @@ components:
         whitelistOnly: {type: boolean, description: 'Only advertisers on the whitelist may bid; never true when advertisers is non-empty or buyersListId is set.'}
         buyersListId: {type: [string, 'null'], description: 'A private auction restricted to this buyers list''s invited buyers; null means not a private auction.'}
         buyersListName: {type: [string, 'null'], description: The same buyers list by name, for display.}
+        buyersListIds: {type: array, items: {type: string}, description: 'The buyers lists assigned to this slot in priority order (a waterfall): the first is tried first and the exchange falls through to the next only when the tier above yields no winning bid at its floor. Priority belongs to the slot, so one list may rank differently on each slot it is assigned to. One list per tier. buyersListId is the first of these. Optional on write (omitted: buyersListId alone).'}
+        buyersListNames: {type: array, items: {type: string}, description: The same lists by name, in the same order.}
     InvitedBuyer:
       type: object
       description: |
@@ -2806,6 +2808,10 @@ components:
                   invited buyers (set from Advertisers / Inventory, not the
                   slot editor). Mutually exclusive with advertisers and
                   whitelistOnly; listMode is deal whenever this is set.
+              buyersListIds:
+                type: array
+                description: The slot's buyers lists in priority order (waterfall); buyersListId is the first.
+                items: {type: string}
               storeScope: {type: [string, 'null']}
               quota: {type: [integer, 'null']}
               salesLocked:
