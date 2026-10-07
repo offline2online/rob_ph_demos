@@ -14,6 +14,7 @@ import { Q } from '../../api/queries'
 import { Icon } from '../../shared/Icon'
 import { WithTip } from '../../shared/InfoTip'
 import { T } from '../../theme/phTheme'
+import { playsText, rateText, resolveTerm, sourceLabel } from './effectiveTerm'
 
 type Draft = { name: string; description: string; invitedBuyers: InvitedBuyer[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays: number | null; floorCpm: number | null }
 /* An invited buyer is one synced seat of one connected DSP — the Select's value is both halves. */
@@ -59,6 +60,12 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
 
   /* The dropdown offers every advertiser (seat) a connected DSP has synced, grouped by DSP — no typing, no identifier type. */
   const partners = useQuery(Q.partners)
+  /* What the two terms resolve to for this draft: platform default -> DSP -> this list (Rob, 7 Oct 2026), so
+     neither field is ever left looking blank. The platform floor clamps a lower DSP floor up, as the exchange does. */
+  const draftDsps = [...new Set(draft.invitedBuyers.map((b) => b.partnerId))].map((id) => (partners.data ?? []).find((p) => p.id === id)?.bidder)
+  const platformFloor = settings.data?.floorCpm
+  const volume = resolveTerm(defaultPlays, draftDsps.map((b) => b?.committedPlays), draft.committedPlays)
+  const rate = resolveTerm(platformFloor, draftDsps.map((b) => b?.floorCpm), draft.floorCpm, (n) => Math.max(platformFloor ?? 0, n))
   const connected = (partners.data ?? []).filter((p) => p.status === 'connected' && p.seats?.length)
   const labelOf = new Map(connected.flatMap((p) => (p.seats ?? []).map((s) => [buyerKey({ partnerId: p.id, seatId: s.id }), `${s.name} (${p.name})`] as const)))
   const options = connected.map((p) => ({
@@ -191,20 +198,26 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
         <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}><WithTip tip="The number of plays this deal commits to over its delivery term. Volume is carried by deals; the open auction always stays per play. Delivery is counted in plays billed at the slots this list is assigned to.">Committed plays</WithTip></label>
         <InputNumber
           min={1} precision={0} style={{ width: '100%' }} aria-label="Committed plays"
-          status={errors.committedPlays ? 'error' : undefined} placeholder="Leave empty for per play"
+          status={errors.committedPlays ? 'error' : undefined} placeholder={playsText(volume) ?? 'Leave empty for per play'}
           value={draft.committedPlays} onChange={(v) => { untouched.current = false; setDraft((d) => ({ ...d, committedPlays: typeof v === 'number' ? v : null })) }}
         />
         {errors.committedPlays && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.committedPlays}</div>}
+        <div className="mt-1" style={{ fontSize: 11.5, color: T.muted }} data-testid="effective-volume">
+          {playsText(volume) ? `Committed volume: ${playsText(volume)} (${sourceLabel(volume.source)})` : 'Committed volume: per play (no level sets one)'}
+        </div>
       </div>
       <div className="mb-3.5">
         <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }} htmlFor="buyersListFloorCpm"><WithTip tip="In USD. Applies to deals using this list, overriding the DSP's floor. It can raise the floor but never go below the platform floor. Leave empty to inherit.">Floor price (CPM)</WithTip></label>
         <InputNumber
-          id="buyersListFloorCpm" min={0} style={{ width: '100%' }} step={1} placeholder="Inherit the DSP or platform floor"
+          id="buyersListFloorCpm" min={0} style={{ width: '100%' }} step={1} placeholder={rateText(rate) ?? 'Inherit the DSP or platform floor'}
           status={errors.floorCpm ? 'error' : undefined}
           formatter={(v) => (v === undefined || v === null ? '' : String(v))} parser={(v) => Number(v)}
           value={draft.floorCpm} onChange={(v) => setDraft((d) => ({ ...d, floorCpm: typeof v === 'number' && v > 0 ? v : null }))}
         />
         {errors.floorCpm && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.floorCpm}</div>}
+        <div className="mt-1" style={{ fontSize: 11.5, color: T.muted }} data-testid="effective-rate">
+          {rateText(rate) ? `Rate: ${rateText(rate)} (${sourceLabel(rate.source)})` : 'Rate: per play'}
+        </div>
       </div>
       {editing?.lockedWin && (
         <div style={{ fontSize: 12.5, color: T.muted }}>Rate locked at {editing.lockedWin.cpm} CPM on {new Date(editing.lockedWin.lockedAt).toLocaleString()}: every play for the rest of the delivery term books at that rate.</div>

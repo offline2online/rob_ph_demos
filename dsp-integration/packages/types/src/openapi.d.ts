@@ -1178,7 +1178,10 @@ export interface components {
             slot: number;
             /** @description The creative ids (the `crid` a DSP bids with) the player already holds in its cache. Used only while the uncached-creative restriction is in force (Advertiser settings): then a bid wins only if its crid is listed. Omitted means none are cached. */
             cachedCrids?: string[];
-            /** @description When the slot is expected to play (Broadsign Reach sends its bid request about 35 s ahead of the expected programmatic slot). The exchange opens the slot's auction `bidLookaheadSeconds` (Advertiser settings) before this time: an earlier signal is refused, 409, naming when it opens. Omitted means the player is signalling at playout and the auction opens now. */
+            /**
+             * Format: date-time
+             * @description When the slot is expected to play (Broadsign Reach sends its bid request about 35 s ahead of the expected programmatic slot). The exchange opens the slot's auction `bidLookaheadSeconds` (Advertiser settings) before this time: an earlier signal is refused, 409, naming when it opens. Omitted means the player is signalling at playout and the auction opens now.
+             */
             slotStartsAt?: string;
             /** @description Whether the display's store is open now, from PH Core's store hours (the same source as the Store Open / Closed targeting variable). Used when the restriction follows store trading hours; omitted is treated as not open, so the exchange never goes dark on a missing signal. */
             storeOpen?: boolean;
@@ -1543,6 +1546,20 @@ export interface components {
             /** @description The build flag is on and the retailer has DSP integration switched on. */
             dspIntegration: boolean;
         };
+        /**
+         * @description Read only. A deal term resolved through the hierarchy platform default
+         *     -> DSP -> buyers list (Rob, 7 Oct 2026), so a list never shows blank.
+         *     When the list's invited buyers sit on DSPs that resolve differently,
+         *     min and max differ and source is `mixed`. For the rate this is the
+         *     base bid floor in USD CPM; for volume it is plays (null/null with
+         *     source `none` when nothing is set at any level: the deal is per play).
+         */
+        EffectiveTerm: {
+            min: number | null;
+            max: number | null;
+            /** @enum {string} */
+            source: "buyer" | "dsp" | "platform" | "mixed" | "none";
+        };
         AdvertiserSettingsInput: {
             /**
              * @description ISO 4217
@@ -1579,7 +1596,7 @@ export interface components {
              * @default 35
              */
             bidLookaheadSeconds: number;
-            /** @description Play config: the committed-plays figure a new buyers list is pre-filled with (still editable per list). Whole number, at least 1; null means no default (per play). Optional on save: omitted keeps the stored value, null clears it. */
+            /** @description Play config: the committed-plays figure a new buyers list is pre-filled with (the field stays editable per list; editing a saved list never changes it). Whole number, at least 1; null means no default (per play). Optional on save: omitted keeps the stored value, null clears it. */
             defaultCommittedPlays?: number | null;
             /**
              * @description Bandwidth protection (real-time impressions): while the restriction is in force, only a bid whose creative the player already holds in its cache can win; an uncached creative would need a live download. `off`: never restricted. `fixed`: restricted between uncachedRestrictionStart and uncachedRestrictionEnd every day (UTC). `store_open`: restricted while the player reports the store open (`storeOpen` on the impression signal). Optional on save: omitted keeps the stored value.
@@ -1647,9 +1664,9 @@ export interface components {
             buyersListId: string | null;
             /** @description The same buyers list by name */
             buyersListName: string | null;
-            /** @description The buyers lists assigned to this slot in priority order (a waterfall): the first is tried first and the exchange falls through to the next only when the tier above yields no winning bid at its floor. Priority belongs to the slot, so one list may rank differently on each slot it is assigned to. One list per tier. buyersListId is the first of these. */
+            /** @description The buyers lists assigned to this slot in priority order (a waterfall): the first is tried first and the exchange falls through to the next only when the tier above yields no winning bid at its floor. Priority belongs to the slot, so one list may rank differently on each slot it is assigned to. One list per tier. buyersListId is the first of these. Optional on write (omitted: buyersListId alone). */
             buyersListIds?: string[];
-            /** @description The same lists by name, in the same order. */
+            /** @description The same lists by name */
             buyersListNames?: string[];
         };
         /**
@@ -1729,6 +1746,8 @@ export interface components {
          *     bypasses the floor.
          */
         BuyersList: {
+            effectiveCommittedPlays: components["schemas"]["EffectiveTerm"];
+            effectiveRateCpm: components["schemas"]["EffectiveTerm"];
             id: string;
             name: string;
             description: string;
@@ -2138,6 +2157,8 @@ export interface components {
                 timeoutMs?: number | null;
                 /** @description This DSP's bid floor in USD CPM (bid floor hierarchy, Rob 7 Oct 2026). Raises the platform floor for this DSP only; never below it (400 otherwise). Absent: inherits the platform floor. null on save clears it. */
                 floorCpm?: number | null;
+                /** @description This DSP's committed play volume (Rob, 7 Oct 2026). Overrides the platform default (Advertiser settings) for buyers lists whose invited buyers are on this DSP; a buyers list's own committedPlays overrides it. Absent: inherits the platform default. null on save clears it. */
+                committedPlays?: number | null;
             };
             /** @description Shown at the top of the DSP page. */
             issues?: {
@@ -2175,6 +2196,8 @@ export interface components {
                 timeoutMs?: number | null;
                 /** @description This DSP's bid floor in USD CPM (bid floor hierarchy, Rob 7 Oct 2026). Raises the platform floor for this DSP only; never below it (400 otherwise). Absent: inherits the platform floor. null on save clears it. */
                 floorCpm?: number | null;
+                /** @description This DSP's committed play volume (Rob, 7 Oct 2026). Overrides the platform default (Advertiser settings) for buyers lists whose invited buyers are on this DSP; a buyers list's own committedPlays overrides it. Absent: inherits the platform default. null on save clears it. */
+                committedPlays?: number | null;
             };
             /** @enum {string} */
             mode?: "test" | "live";

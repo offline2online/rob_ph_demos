@@ -2018,6 +2018,22 @@ components:
       properties:
         dspIntegration: {type: boolean, description: The build flag is on and the retailer has DSP integration switched on.}
 
+    EffectiveTerm:
+      type: object
+      readOnly: true
+      required: [min, max, source]
+      description: |
+        Read only. A deal term resolved through the hierarchy platform default
+        -> DSP -> buyers list (Rob, 7 Oct 2026), so a list never shows blank.
+        When the list's invited buyers sit on DSPs that resolve differently,
+        min and max differ and source is `mixed`. For the rate this is the
+        base bid floor in USD CPM; for volume it is plays (null/null with
+        source `none` when nothing is set at any level: the deal is per play).
+      properties:
+        min: {type: [number, 'null']}
+        max: {type: [number, 'null']}
+        source: {type: string, enum: [buyer, dsp, platform, mixed, none]}
+
     AdvertiserSettingsInput:
       type: object
       required: [currency, floorCpm, interactiveCpe, auctionOpensHours, playWindowHours, auctionCutoffTime, categoryWhitelist, categoryBlacklist]
@@ -2158,8 +2174,10 @@ components:
         is priced against the same score-driven floor as everything else. It
         is a commitment on top of the floor, never under it, and a deal never
         bypasses the floor.
-      required: [id, name, description, invitedBuyers, targeting, activeFrom, activeTo, auctionCloses, lockedWin, committedPlays, floorCpm, deliveredPlays, createdAt, updatedAt]
+      required: [id, name, description, invitedBuyers, targeting, activeFrom, activeTo, auctionCloses, lockedWin, committedPlays, floorCpm, deliveredPlays, effectiveCommittedPlays, effectiveRateCpm, createdAt, updatedAt]
       properties:
+        effectiveCommittedPlays: {$ref: '#/components/schemas/EffectiveTerm'}
+        effectiveRateCpm: {$ref: '#/components/schemas/EffectiveTerm'}
         id: {type: string}
         name: {type: string}
         description: {type: string}
@@ -2589,6 +2607,7 @@ components:
             qps: {type: [integer, 'null'], minimum: 1, maximum: 10000, description: 'Per-DSP QPS ceiling override (Q46). Absent: the platform default, 500. null on save clears it.'}
             timeoutMs: {type: [integer, 'null'], minimum: 50, maximum: 2000, description: 'Per-DSP bidder timeout override in ms (Q46), also sent as tmax. Absent: the platform default, 300. null on save clears it.'}
             floorCpm: {type: [number, 'null'], exclusiveMinimum: 0, description: 'This DSP''s bid floor in USD CPM (bid floor hierarchy, Rob 7 Oct 2026). Raises the platform floor for this DSP only; never below it (400 otherwise). Absent: inherits the platform floor. null on save clears it.'}
+            committedPlays: {type: [integer, 'null'], minimum: 1, description: 'This DSP''s committed play volume (Rob, 7 Oct 2026). Overrides the platform default (Advertiser settings) for buyers lists whose invited buyers are on this DSP; a buyers list''s own committedPlays overrides it. Absent: inherits the platform default. null on save clears it.'}
         issues:
           type: array
           description: Shown at the top of the DSP page.
@@ -2628,6 +2647,7 @@ components:
             qps: {type: [integer, 'null'], minimum: 1, maximum: 10000, description: 'Per-DSP QPS ceiling override (Q46). Absent: the platform default, 500. null on save clears it.'}
             timeoutMs: {type: [integer, 'null'], minimum: 50, maximum: 2000, description: 'Per-DSP bidder timeout override in ms (Q46), also sent as tmax. Absent: the platform default, 300. null on save clears it.'}
             floorCpm: {type: [number, 'null'], exclusiveMinimum: 0, description: 'This DSP''s bid floor in USD CPM (bid floor hierarchy, Rob 7 Oct 2026). Raises the platform floor for this DSP only; never below it (400 otherwise). Absent: inherits the platform floor. null on save clears it.'}
+            committedPlays: {type: [integer, 'null'], minimum: 1, description: 'This DSP''s committed play volume (Rob, 7 Oct 2026). Overrides the platform default (Advertiser settings) for buyers lists whose invited buyers are on this DSP; a buyers list''s own committedPlays overrides it. Absent: inherits the platform default. null on save clears it.'}
         mode: {type: string, enum: [test, live]}
         advertiserWhitelist: {type: array, items: {type: string}, description: 'Seat IDs from this DSP''s synced seats. An ID that is not one of them is refused (422); free text is not accepted.'}
         advertiserBlacklist: {type: array, items: {type: string}, description: Seat IDs from this DSP's synced seats.}

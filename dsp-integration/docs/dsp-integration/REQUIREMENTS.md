@@ -4002,3 +4002,27 @@ keeps the won creative renderable; the lookahead sets how early the auction open
   (and by an open new-list form whose field is still untouched).
 - **Unchanged**: editing a saved list never takes the default; existing lists'
   `committedPlays` and the "N of M plays" delivery metering are not touched.
+
+## Buyers list: committed volume and rate inherit platform → DSP → list (Rob, 7 Oct 2026)
+
+- **Bug**: the Buyers and targeting table and modal showed a list's own committed
+  volume only, so a list with none read "Per play" / blank even when a default
+  was set. Both fields now always show the value in force.
+- **Hierarchy** (same pattern as the three-level bid floor): the platform
+  default, overridden by the DSP's value where set, overridden by the list's own.
+  - **Committed volume (plays)**: platform = Advertiser settings → Default
+    committed plays; DSP = `bidder.committedPlays` (new, DSP page → Committed
+    plays; whole number ≥ 1, `null` clears, else 400); list = `committedPlays`.
+  - **Rate (USD CPM)**: the base bid floor — platform floor → DSP `floorCpm` →
+    list `floorCpm`, never below the platform floor. Once a deal's auction clears
+    its locked rate shows instead ("Locked: X CPM").
+- **API**: `BuyersList.effectiveCommittedPlays` and `effectiveRateCpm`
+  (`EffectiveTerm`: `min`, `max`, `source` = `buyer | dsp | platform | mixed |
+  none`), read only. A list's invited buyers can sit on DSPs that resolve
+  differently: then `min`≠`max` and `source` is `mixed`; the UI shows the range.
+- **UI**: table cells show the value with its source underneath ("platform
+  default", "from the DSP", "set on this list"); a list with its own volume keeps
+  "N of M plays". The modal shows a line under Committed plays and Floor price
+  ("Committed volume: … (platform default)", "Rate: USD … CPM (from the DSP)")
+  and uses the inherited value as the empty field's placeholder.
+  `nothing set at any level` still reads "Per play".

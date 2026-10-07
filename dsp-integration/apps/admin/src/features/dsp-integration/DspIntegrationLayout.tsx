@@ -38,6 +38,8 @@ export interface PartnerDraft {
   timeoutMs: string
   /* This DSP's bid floor (USD CPM); empty inherits the platform floor. */
   floorCpm: string
+  /* This DSP's committed play volume; empty inherits the platform default (Advertiser settings). */
+  committedPlays: string
   mode: 'test' | 'live'
   advertiserWhitelist: string[]
   advertiserBlacklist: string[]
@@ -52,13 +54,14 @@ export function partnerDraft(p: Partner): PartnerDraft {
     bidderEndpoint: p.bidder?.bidderEndpoint ?? '', seatIds: (p.bidder?.seatIds ?? []).join(', '),
     qps: p.bidder?.qps != null ? String(p.bidder.qps) : '', timeoutMs: p.bidder?.timeoutMs != null ? String(p.bidder.timeoutMs) : '',
     floorCpm: p.bidder?.floorCpm != null ? String(p.bidder.floorCpm) : '',
+    committedPlays: p.bidder?.committedPlays != null ? String(p.bidder.committedPlays) : '',
     mode: p.mode, advertiserWhitelist: p.advertiserWhitelist ?? [], advertiserBlacklist: p.advertiserBlacklist ?? [],
   }
 }
 export const blankPartnerDraft = (provider: Provider): PartnerDraft => ({
   provider, isNew: true,
   credentials: Object.fromEntries((providerDef(provider)?.fields ?? []).map((f) => [f.key, ''])),
-  bidderEndpoint: '', seatIds: '', qps: '', timeoutMs: '', floorCpm: '', mode: 'test', advertiserWhitelist: [], advertiserBlacklist: [],
+  bidderEndpoint: '', seatIds: '', qps: '', timeoutMs: '', floorCpm: '', committedPlays: '', mode: 'test', advertiserWhitelist: [], advertiserBlacklist: [],
 })
 
 /* An override field: empty clears it (the platform default applies). */
@@ -74,7 +77,7 @@ export function partnerInput(d: PartnerDraft, before: PartnerDraft | undefined) 
     credentials,
     bidder: {
       bidderEndpoint: d.bidderEndpoint.trim(), seatIds: d.seatIds.split(',').map((x) => x.trim()).filter(Boolean),
-      qps: override(d.qps), timeoutMs: override(d.timeoutMs), floorCpm: override(d.floorCpm),
+      qps: override(d.qps), timeoutMs: override(d.timeoutMs), floorCpm: override(d.floorCpm), committedPlays: override(d.committedPlays),
     },
     mode: d.mode,
     advertiserWhitelist: d.advertiserWhitelist, advertiserBlacklist: d.advertiserBlacklist,

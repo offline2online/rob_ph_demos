@@ -14,6 +14,7 @@ import { WithTip } from '../../shared/InfoTip'
 import { SectionLabel } from '../../shared/SectionLabel'
 import { T } from '../../theme/phTheme'
 import { BuyersListModal } from './BuyersListModal'
+import { playsText, rateText, sourceLabel } from './effectiveTerm'
 
 type Ctx = { current: { onEdit: (l: BuyersList) => void; onDelete: (l: BuyersList) => void; canEdit: boolean } }
 type P = ICellRendererParams<BuyersList, unknown, Ctx>
@@ -44,17 +45,22 @@ const TermCell = ({ data }: P) => {
   if (!from && !to) return <span style={{ color: T.muted }}>Always active</span>
   return <span style={{ fontSize: 12.5 }}>{from ?? 'No start'} → {to ?? 'No end'}</span>
 }
-/* The rate a deal locked in for the rest of its delivery term, if it has one. */
+/* Rate (USD CPM): the rate a deal locked in for the rest of its delivery term, once it has one; until then the
+   rate it inherits platform -> DSP -> this list, so the cell is never blank. */
+const Sub = ({ children }: { children: string }) => <div style={{ fontSize: 11.5, color: T.muted }}>{children}</div>
 const RateCell = ({ data }: P) => {
   if (!data) return null
   if (data.lockedWin) return <span style={{ fontSize: 12.5, color: T.primary }}>Locked: {data.lockedWin.cpm} CPM</span>
-  return <span style={{ color: T.muted }}>Per play</span>
+  const text = rateText(data.effectiveRateCpm)
+  return text ? <div><span style={{ fontSize: 12.5 }}>{text}</span><Sub>{sourceLabel(data.effectiveRateCpm.source)}</Sub></div> : <span style={{ color: T.muted }}>Per play</span>
 }
-/* Volume lives on the deal (open question 45): 'N of M plays' metered from billing, or 'Per play' for a deal with no commitment. */
+/* Volume lives on the deal (open question 45): 'N of M plays' metered from billing for a deal with its own commitment;
+   otherwise the volume inherited platform -> DSP, or 'Per play' when no level sets one. */
 const VolumeCell = ({ data }: P) => {
   if (!data) return null
-  if (data.committedPlays == null) return <span style={{ color: T.muted }}>Per play</span>
-  return <span style={{ fontSize: 12.5 }}>{data.deliveredPlays.toLocaleString()} of {data.committedPlays.toLocaleString()} plays</span>
+  if (data.committedPlays != null) return <span style={{ fontSize: 12.5 }}>{data.deliveredPlays.toLocaleString()} of {data.committedPlays.toLocaleString()} plays</span>
+  const text = playsText(data.effectiveCommittedPlays)
+  return text ? <div><span style={{ fontSize: 12.5 }}>{text}</span><Sub>{sourceLabel(data.effectiveCommittedPlays.source)}</Sub></div> : <span style={{ color: T.muted }}>Per play</span>
 }
 const ActionsCell = ({ data, context }: P) =>
   data ? (

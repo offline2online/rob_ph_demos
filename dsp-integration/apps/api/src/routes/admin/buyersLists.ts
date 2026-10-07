@@ -9,6 +9,7 @@ import type { Guards } from '../../http/app'
 import { hasDependents, notFound, validationFailed } from '../../http/errors'
 import { tx } from '../../db/db'
 import { TRANSACTING_CURRENCY } from '../../domain/currency'
+import { effectiveTerm } from '../../domain/pricing'
 import { positionIdOf } from '../../domain/positions'
 import { permittedFor } from '../../domain/variables'
 import type { Access } from '../../repos/CompanySettingsRepo'
@@ -31,10 +32,18 @@ const positionsOfDeal = async (ctx: Context, buyersListId: string) =>
 
 /* Volume lives on the deal, never the open auction (open question 45): a
    deal's delivery is the plays billed at its positions inside its term. */
-const withDelivery = async (ctx: Context, l: BuyersList): Promise<BuyersList> => ({
-  ...l,
-  deliveredPlays: l.committedPlays == null ? 0 : await ctx.billing.playsAt(await positionsOfDeal(ctx, l.id), l.activeFrom, l.activeTo),
-})
+const withDelivery = async (ctx: Context, l: BuyersList): Promise<BuyersList> => {
+  /* Committed volume and rate inherit platform default -> DSP -> this list (Rob, 7 Oct 2026); the rate is the
+     base bid floor in USD CPM (the deal's own floor, else its DSP's, else the platform's), never blank. */
+  const company = await ctx.company.get()
+  const dsps = new Map((await ctx.partners.list()).map((p) => [p.id, p]))
+  const invited = [...new Set(l.invitedBuyers.map((b) => b.partnerId))].map((id) => dsps.get(id)?.bidder)
+  const effectiveCommittedPlays = effectiveTerm({ platform: company.defaultCommittedPlays, dsp: invited.map((b) => b?.committedPlays), buyer: l.committedPlays })
+  const effectiveRateCpm = effectiveTerm({ platform: company.floorCpm, dsp: invited.map((b) => b?.floorCpm), buyer: l.floorCpm }, (n) => Math.max(company.floorCpm, n))
+  return { ...l, effectiveCommittedPlays, effectiveRateCpm, deliveredPlays: await deliveredOf(ctx, l) }
+}
+const deliveredOf = async (ctx: Context, l: BuyersList): Promise<number> =>
+  l.committedPlays == null ? 0 : await ctx.billing.playsAt(await positionsOfDeal(ctx, l.id), l.activeFrom, l.activeTo)
 
 export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => async (app) => {
   /* An invited buyer must be a seat a connected DSP actually synced. */
