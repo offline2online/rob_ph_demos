@@ -7,7 +7,6 @@
    auction clears the effective floor → hand-off → billing on realised
    dynamic VAC-d. Every external seam is a stub (harness.ts). */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { supportedTargetingOf } from '@ph-dsp/types'
 import { findPosition } from '../../src/domain/positions'
 import { isLive } from '../../src/domain/exchange'
 import { runAuction } from '../../src/exchange/auction'
@@ -38,7 +37,6 @@ describe('preconditions / fixtures', () => {
     const p = (await findPosition(h.ctx, POS))!
     expect(p.displayType).toMatchObject({ touchPoint: 'Digital Signage', multiZone: { enabled: false } })
     expect((await h.ctx.displays.summaryByDisplayType(DT)).displays).toBeGreaterThan(0)
-    expect(supportedTargetingOf(p.def)).toEqual(['localised'])
     expect(await h.ctx.company.get()).toMatchObject({ floorCpm: 100, currency: 'AUD' })
     expect(await h.ctx.company.advertiserSetting('swisse')).toMatchObject({ approvalRequired: true, floorMultiplier: 1 })
   })
@@ -211,7 +209,7 @@ describe('B. Auction / floor', () => {
 
   it('B5 — personalised is sold only through a reserve booking: never bid in an open auction', async () => {
     const h = await harness()
-    /* Localised only (default): a personalised campaign can't buy it at all. */
+    /* A personalised campaign can't win a window in an open auction. */
     const { id: pers } = await h.submitApiCampaign('Swisse — B5 personalised', 'personalised')
     await h.admin.approve(pers)
     await h.admin.activate(pers)
@@ -219,11 +217,8 @@ describe('B. Auction / floor', () => {
     const unsupported = await place('bid', 200)
     expect(unsupported.statusCode).toBe(422)
     expect(unsupported.json().error.code).toBe('targeting_not_supported')
-    /* Personalised can't be ticked on a slot with no reserve price (Rob, 5 Oct 2026). */
-    const noReserve = await h.admin.supportTargeting(['localised', 'personalised'])
-    expect(noReserve.statusCode).toBe(400)
-    /* With a reserve price it can, but a bid is still refused: personalised plays only in a reserved window. */
-    expect((await h.admin.supportTargeting(['localised', 'personalised'], undefined, 150)).statusCode).toBe(200)
+    /* With a reserve price a bid is still refused: personalised plays only in a reserved window. */
+    expect((await h.admin.setReservePrice(150)).statusCode).toBe(200)
     const bid = await place('bid', 200)
     expect(bid.statusCode).toBe(422)
     expect(bid.json().error).toMatchObject({ code: 'targeting_not_supported' })

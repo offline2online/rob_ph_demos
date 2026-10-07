@@ -152,13 +152,12 @@ describe('PUT /admin/v1/display-types/{id}/extensions — slot ownership', () =>
 
   it('keeps what Advertisers / Inventory set while the slot stays sellable, and drops it when it doesn’t', async () => {
     const { app, ctx } = await setup()
-    await app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, supportedTargeting: ['localised', 'personalised'], reservePrice: 150, assignedTo: { partnerIds: [], advertisers: ['Nestlé'], whitelistOnly: false } }] } })
+    await app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, reservePrice: 150, assignedTo: { partnerIds: [], advertisers: ['Nestlé'], whitelistOnly: false } }] } })
     const kept = await put(app, 'menu_board', menuSlots({ label: 'Brand slot' }))
-    expect(kept.json().slots[1]).toMatchObject({ advertisers: ['Nestlé'], partnerIds: ['p_google'], supportedTargeting: ['localised', 'personalised'] })
+    expect(kept.json().slots[1]).toMatchObject({ advertisers: ['Nestlé'], partnerIds: ['p_google'] })
     /* Owner changed: it is no longer sellable inventory, so the assignment goes. */
     const dropped = await put(app, 'menu_board', { slots: [{ label: 'Priority 1', owner: 'internal', zoneId: 'z1' }, { label: 'Brand slot', owner: 'internal', zoneId: 'z1' }, { label: 'Store choice', owner: 'internal', zoneId: 'z1' }] })
     expect(dropped.json().slots[1]).toMatchObject({ advertisers: [], partnerIds: [], listMode: null })
-    expect((await ctx.displayTypes.get('menu_board'))?.phExtensions?.slots[1].supportedTargeting).toBeUndefined()
   })
 
   it('ignores an assignment sent with the slots, and gives a Stores slot the default scope', async () => {

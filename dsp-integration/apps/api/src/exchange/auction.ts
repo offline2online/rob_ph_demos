@@ -46,13 +46,14 @@ import type { Context } from '../context'
 import { TRANSACTING_CURRENCY } from '../domain/currency'
 import { bookLockedTermWindow, lockTermOnClear, termStateAt } from '../billing'
 import { isLive } from '../domain/exchange'
-import { type PositionRef, allPositions, assignmentOf, effectivePartnerIds, filterAsync, isSellable, nextWindow, positionView, windowMsFor, windowStartOf } from '../domain/positions'
+import { type PositionRef, allPositions, assignmentOf, effectivePartnerIds, filterAsync, isRealtime, isSellable, nextWindow, positionView, windowMsFor, windowStartOf } from '../domain/positions'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 import { type ReservationRecord, TAKEN } from '../repos/ReservationRepo'
 import { advertiserSlug, assignedOf } from '@ph-dsp/types'
 import { isUniqueViolation, tx } from '../db/db'
 import { queueCreative, verifiedCampaign } from './creatives'
-import { checkAdvertiser, checkCampaign, checkCategories, checkFloor, checkTargeting, checkVersionCount, firstRefusal } from './enforcement'
+import { vetAtBidCreative } from './atBid'
+import { checkAdvertiser, checkCampaign, checkCampaignAtBid, checkCategories, checkFloor, checkTargeting, checkVersionCount, firstRefusal } from './enforcement'
 import { handOff } from './handoff'
 import { settlePending } from './pending'
 import { bidderTuning } from '../domain/partnerInput'
@@ -138,6 +139,7 @@ export async function runAuction(ctx: Context, at?: Date): Promise<AuctionResult
 
 async function clearPosition(ctx: Context, p: PositionRef, start: string, bidders: PartnerRecord[]): Promise<PositionOutcome> {
   const out: PositionOutcome = { positionId: p.positionId, bidRequests: 0, bids: 0, winner: null }
+  if (isRealtime(p)) return { ...out, skipped: 'Sold in real time, per impression: no window auction.' }
   if (assignmentOf(p.def) === 'reserved') return { ...out, skipped: 'Held for a named advertiser: booked by reservation.' }
   if (!(await ctx.displays.summaryByDisplayType(p.displayType.id)).displays) return { ...out, skipped: 'No displays.' }
   const existing = await ctx.reservations.forWindow(p.positionId, start)
@@ -279,18 +281,34 @@ async function clear(ctx: Context, candidates: ReservationRecord[]): Promise<Res
   })
 }
 
+/* A DSP bid, vetted against every pre-auction check (spec §7): either
+   rejected with the reason (and who it was from, once known), or the
+   advertiser, creative and pricing type it would compete with. Shared by the
+   window auction (recorded as a reservation) and the real-time path
+   (exchange/realtime.ts, recorded on its own impression). The advertiser
+   blocklist is enforced here, on the bid, using the seat and advertiser
+   identity in the response (spec §7). */
+export type VettedBid = { ok: false; reason: string; advertiserId?: string; campaignId?: string } | { ok: true; advertiserId: string; campaignId: string; pricingType: string | null; seatId: string; atBid?: { crid: string; iurl: string } }
+
+/* The real-time path's at-bid creative (exchange/atBid.ts): there is no time to retrieve and review a creative inside tmax, so a creative PH has not seen yet may fill, and is reviewed after it plays. */
+export interface VetOptions { atBid?: boolean }
+
 /* Records one bid from a DSP's response: a candidate (pending) if it passes
-   every pre-auction check, otherwise rejected with the reason. The
-   advertiser blocklist is enforced here, on the bid, using the seat and
-   advertiser identity in the response (spec §7). */
+   every pre-auction check, otherwise rejected with the reason. */
 async function recordDspBid(ctx: Context, p: PositionRef, dsp: PartnerRecord, start: string, res: BidResponse, seatId: string | undefined, bid: Bid, budget: { creativeFetches: number }): Promise<ReservationRecord> {
-  const currency = TRANSACTING_CURRENCY
   const base: ReservationRecord = {
     id: `res_${randomUUID().slice(0, 12)}`, partnerId: dsp.id, advertiserId: null, campaignId: null, positionId: p.positionId, windowStart: start,
-    type: 'bid', channel: 'openrtb', bidCpm: typeof bid.price === 'number' ? bid.price : null, currency, status: 'pending', clearingCpm: null, reason: null,
+    type: 'bid', channel: 'openrtb', bidCpm: typeof bid.price === 'number' ? bid.price : null, currency: TRANSACTING_CURRENCY, status: 'pending', clearingCpm: null, reason: null,
     testMode: dsp.mode !== 'live', pricingType: null, handedOffAt: null,
   }
-  const reject = async (reason: string, extra: Partial<ReservationRecord> = {}) => ctx.reservations.insert({ ...base, ...extra, status: 'rejected', reason })
+  const v = await vetBid(ctx, p, dsp, start, res, seatId, bid, budget)
+  if (!v.ok) return ctx.reservations.insert({ ...base, advertiserId: v.advertiserId ?? null, campaignId: v.campaignId ?? null, status: 'rejected', reason: v.reason })
+  return ctx.reservations.insert({ ...base, advertiserId: v.advertiserId, campaignId: v.campaignId, pricingType: v.pricingType })
+}
+
+export async function vetBid(ctx: Context, p: PositionRef, dsp: PartnerRecord, start: string, res: BidResponse, seatId: string | undefined, bid: Bid, budget: { creativeFetches: number }, opts: VetOptions = {}): Promise<VettedBid> {
+  const currency = TRANSACTING_CURRENCY
+  const reject = async (reason: string, extra: { advertiserId?: string; campaignId?: string } = {}): Promise<VettedBid> => ({ ok: false, reason, ...extra })
 
   /* The exchange transacts in USD on every instance (domain/currency.ts):
      DV360 and The Trade Desk bid USD only, so there is no conversion. `cur`
@@ -321,6 +339,7 @@ async function recordDspBid(ctx: Context, p: PositionRef, dsp: PartnerRecord, st
 
   /* The crid is only a label: it resolves to a creative only while its fetch-and-hash is fresh and the creative URL unchanged. */
   const campaignId = await verifiedCampaign(ctx, dsp.id, bid.crid, bid.iurl)
+  if (!campaignId && opts.atBid) return vetAtBidCreative(ctx, p, dsp, bid, { id: advertiserId, name: seat.name }, seat.id)
   if (!campaignId) {
     /* The one-retrieval budget is spent inside queueCreative, only once a fetch is really attempted: a refused (off-path) URL must not use it up. */
     return reject(await queueCreative(ctx, dsp, { crid: bid.crid, iurl: bid.iurl, ext: bid.ext && typeof bid.ext === 'object' ? bid.ext : undefined }, { id: advertiserId, name: seat.name }, p, budget), { advertiserId })
@@ -330,11 +349,11 @@ async function recordDspBid(ctx: Context, p: PositionRef, dsp: PartnerRecord, st
   if (campaign.advertiserId !== advertiserId) return reject(`Creative ${bid.crid} belongs to another advertiser.`, { advertiserId })
   const price = bid.price
   const late = await firstRefusal(
-    () => checkCampaign(ctx, campaignId),
+    () => (opts.atBid ? checkCampaignAtBid(ctx, campaignId) : checkCampaign(ctx, campaignId)),
     () => checkTargeting(p, campaign.pricingType),
     () => checkVersionCount(ctx, p, campaignId),
     () => checkFloor(ctx, price, advertiserId),
   )
   if (late) return reject(late.reason, { advertiserId, campaignId })
-  return ctx.reservations.insert({ ...base, advertiserId, campaignId, pricingType: campaign.pricingType ?? null })
+  return { ok: true, advertiserId, campaignId, pricingType: campaign.pricingType ?? null, seatId: seat.id }
 }

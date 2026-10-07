@@ -90,6 +90,12 @@ export async function queueCreative(ctx: Context, partner: PartnerRecord, bid: {
   /* Identity comes from the bytes, never from the crid. */
   const contentHash = createHash('sha256').update(bytes).digest('hex')
   const campaignId = creativeCampaignId(advertiser.id, contentHash)
+  /* A rejection blocks these exact bytes everywhere (Rob, 7 Oct 2026): any crid, DSP or advertiser. The crid is pointed at the rejected creative, so its bids are refused as unapproved and it is never queued again. */
+  const blockedBy = await ctx.dspCreatives.blockedBy(contentHash)
+  if (blockedBy) {
+    await ctx.dspCreatives.record(partner.id, bid.crid, blockedBy, contentHash, bid.iurl ?? null, new Date().toISOString())
+    return `Creative ${bid.crid} is blocked: its content is identical to creative ${blockedBy}, which a reviewer rejected.`
+  }
   const existing = await ctx.campaigns.getCampaign(campaignId)
   if (existing) {
     /* This creative is already in PH (through another crid or DSP, or this crid before it rotated): record the label and stop. */

@@ -14,7 +14,7 @@
    is already running, and a second run changes nothing. */
 import { TRANSACTING_CURRENCY } from '../domain/currency'
 import { randomUUID } from 'node:crypto'
-import { advertiserSlug, supportedTargetingOf, type DisplayTypeExtensions, type Slot } from '@ph-dsp/types'
+import { advertiserSlug, reservePriceOf, type DisplayTypeExtensions, type Slot } from '@ph-dsp/types'
 import type { Context } from '../context'
 import { onFree, tx } from '../db/db'
 import { allPositions, nextWindow, windowMs } from '../domain/positions'
@@ -53,7 +53,7 @@ const DEMO_DISPLAYS: [string, string, string, string][] = [
 ]
 
 const slot = (label: string, over: Partial<Slot> = {}): Slot => ({
-  label, owner: 'advertiser', partnerIds: [], advertisers: [], listMode: 'rtb', storeScope: null, quota: null, supportedTargeting: ['localised'], reservePrice: null, ...over,
+  label, owner: 'advertiser', partnerIds: [], advertisers: [], listMode: 'rtb', storeScope: null, quota: null, reservePrice: null, ...over,
 })
 
 /* Four sellable positions on Landscape, three on Portrait. Each display type
@@ -63,17 +63,17 @@ const DEMO_SLOTS: Record<string, { cap: number; loopLengthSec: number; reservePr
   landscape: {
     cap: 4, loopLengthSec: 48, reservePrice: 150,
     slots: [
-      slot('Hero slot', { supportedTargeting: ['localised', 'personalised'], reservePrice: 220 }),
-      slot('Supplier slot', { partnerIds: ['p_google'], supportedTargeting: ['localised', 'personalised'] }),
+      slot('Hero slot', { reservePrice: 220 }),
+      slot('Supplier slot', { partnerIds: ['p_google'], }),
       slot('Whitelist slot', { listMode: 'whitelist_only' }),
-      slot('Held for Nestlé', { partnerIds: ['p_google'], advertisers: ['Nestlé'], listMode: null, supportedTargeting: ['localised', 'personalised'] }),
+      slot('Held for Nestlé', { partnerIds: ['p_google'], advertisers: ['Nestlé'], listMode: null, }),
     ],
   },
   portrait: {
     cap: 3, loopLengthSec: 24, reservePrice: 90,
     slots: [
-      slot('Aisle hero', { supportedTargeting: ['localised', 'personalised'], reservePrice: 120 }),
-      slot('Health & beauty', { partnerIds: ['p_google', 'p_ttd'], supportedTargeting: ['localised', 'personalised'] }),
+      slot('Aisle hero', { reservePrice: 120 }),
+      slot('Health & beauty', { partnerIds: ['p_google', 'p_ttd'], }),
       slot('Held for Swisse', { partnerIds: ['p_google'], advertisers: ['Swisse'], listMode: null }),
     ],
   },
@@ -353,9 +353,8 @@ async function seedDemoBookings(ctx: Context) {
       const allowed = position.def.partnerIds ?? []
       if (allowed.length && !allowed.includes(brand.partnerId)) continue
       if ((position.def.advertisers ?? []).length && !position.def.advertisers!.includes(brand.name)) continue
-      const supported = supportedTargetingOf(position.def)
       const wanted = PRICING[(b + n) % PRICING.length]
-      const pricingType = supported.includes(wanted) ? wanted : 'localised'
+      const pricingType = wanted === 'personalised' && reservePriceOf(dt, position.def) === null ? 'localised' : wanted
       const campaignId = (await campaignOf(brand.advertiserId, pricingType)) ??
         (await campaignFor(ctx, { ...brand, displayTypeId: dt.id }, '#37474f', dt.displayCanvasSize.width, dt.displayCanvasSize.height))
       /* Packed into the next three weeks, so the Daily view is busy rather

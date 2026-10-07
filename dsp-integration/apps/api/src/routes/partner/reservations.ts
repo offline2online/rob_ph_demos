@@ -31,7 +31,7 @@ import { assignedOf, interactiveReservePriceOf, reservePriceOf } from '@ph-dsp/t
 import { guaranteedImpressions } from '../../domain/guarantee'
 import { dspDealTerms } from '../../dsp/dealTerms'
 import { termStateAt } from '../../billing/term'
-import { assignmentOf, assumedViewsPerWindow, closesAtFor, effectivePartnerIds, findPosition, heldFor, opensAtFor, unsellableReason, windowHoursFor, windowStartOf } from '../../domain/positions'
+import { assignmentOf, assumedViewsPerWindow, closesAtFor, effectivePartnerIds, findPosition, heldFor, isRealtime, opensAtFor, unsellableReason, windowHoursFor, windowStartOf } from '../../domain/positions'
 import { checkAdvertiser, checkCampaign, checkFloor, checkTargeting, checkVersionCount, firstRefusal } from '../../exchange/enforcement'
 import { handOff } from '../../exchange/handoff'
 import { auctionClaimed } from '../../exchange/scheduler'
@@ -86,6 +86,7 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
     if (invalid.length) throw validationFailed(invalid)
 
     const pos = p!
+    if (isRealtime(pos)) throw conflict('This position sells in real time, per impression: it takes no window bids or reservations.')
     const windowStart = start!.toISOString()
     const reservePrice = (campaign!.pricingType === 'interactive' ? interactiveReservePriceOf : reservePriceOf)(pos.displayType, pos.def)
     /* A reserve-price commitment is at least the posted reserve price

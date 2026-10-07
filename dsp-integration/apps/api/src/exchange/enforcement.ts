@@ -4,7 +4,7 @@
    win. Used by POST /v1/reservations and by the auction for DSP bids. */
 import type { Context } from '../context'
 import { TRANSACTING_CURRENCY } from '../domain/currency'
-import { assignedOf, maxCampaignsOf, supportedTargetingOf, targetingLabel } from '@ph-dsp/types'
+import { INTERACTIVE_ENABLED, assignedOf, maxCampaignsOf } from '@ph-dsp/types'
 import { type PositionRef, assignmentOf } from '../domain/positions'
 import { isInvitedBuyer } from '../domain/buyersLists'
 import { isActiveAt } from '../billing/term'
@@ -75,14 +75,21 @@ export async function checkCampaign(ctx: Context, campaignId: string): Promise<R
   return null
 }
 
-/* What the position was opened up to (Rob, 20 Sep): a slot supports
-   localised targeting until someone says otherwise on Advertisers /
-   Inventory, so a personalised or interactive campaign can't buy it by
-   default. A campaign with no type of its own counts as localised. */
+/* The real-time path's version of checkCampaign (Rob, 7 Oct 2026): a creative PH is still reviewing may play, because the review runs after the play. Only a rejected (or never submitted) creative is refused, and an approved one must still be activated. */
+export async function checkCampaignAtBid(ctx: Context, campaignId: string): Promise<Refusal | null> {
+  const status = await ctx.approvals.statusOf(campaignId)
+  if (status === 'awaiting_approval') return null
+  if (status === 'rejected') return { code: 'not_approved', reason: 'The creative was rejected on review and no longer plays.' }
+  return checkCampaign(ctx, campaignId)
+}
+
+/* What kind of campaign may bid. Targeting is not a property of the slot
+   (Rob, 7 Oct 2026): which dimensions a deal may use is defined on the buyers
+   and targeting list assigned to the slot. Only the campaign's own type is
+   checked here. A campaign with no type of its own counts as localised. */
 export function checkTargeting(p: PositionRef, pricingType: string | null | undefined, reserve = false): Refusal | null {
-  const supported = supportedTargetingOf(p.def)
   const wanted = pricingType === 'personalised' || pricingType === 'interactive' ? pricingType : 'localised'
-  if (!supported.includes(wanted)) return { code: 'targeting_not_supported', reason: `This position supports ${targetingLabel(supported).toLowerCase()} targeting only; the campaign is ${wanted}.` }
+  if (wanted === 'interactive' && !INTERACTIVE_ENABLED) return { code: 'targeting_not_supported', reason: 'Interactive campaigns are not available yet; the campaign is interactive.' }
   /* Personalised versions are sold only through a reserve booking (Rob,
      5 Oct 2026): an open or private auction clears default and localised
      only, so a personalised campaign cannot bid for a window. */

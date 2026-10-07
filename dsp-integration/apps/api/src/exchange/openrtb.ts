@@ -26,7 +26,7 @@ export interface BidRequest {
     exp: number
     /* A deal position carries its SSP-issued deal ID, restricted to the invited seats. */
     pmp?: { private_auction: 1; deals: { id: string; at: 1; wseat: string[] }[] }
-    ext: { ph: { orientation: string; slotDurationSec: number; loopLengthSec: number; shareOfVoice: number; playsPerWindow: number } }
+    ext: { ph: { orientation: string; slotDurationSec: number; loopLengthSec: number; shareOfVoice: number; playsPerWindow: number; mode?: 'realtime' } }
   }[]
   dooh: { id: string; venuetype: string[]; venuetypetax: 1; publisher: { id: string; name: string; domain: string } }
   source: { schain: { complete: 1; ver: '1.0'; nodes: { asi: string; sid: string; hp: 1 }[] } }

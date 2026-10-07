@@ -176,7 +176,7 @@ describe('a slot’s billing unit sets its play-window length (OQ27)', () => {
   it('refuses to change a slot’s billing unit while windows sold under it are still to play; the company value alone defers', async () => {
     const { ctx, app } = await setup()
     const row = (billingUnitHours: number | null, billingUnitHoursDefault: number | null = null) =>
-      ({ displayTypeId: 'menu_board', slot: 2, supportedTargeting: ['localised'], assignedTo: { partnerIds: ['p_google'], advertisers: [], whitelistOnly: false }, reservePrice: null, reservePriceDefault: null, billingUnitHours, billingUnitHoursDefault })
+      ({ displayTypeId: 'menu_board', slot: 2, assignedTo: { partnerIds: ['p_google'], advertisers: [], whitelistOnly: false }, reservePrice: null, reservePriceDefault: null, billingUnitHours, billingUnitHoursDefault })
     const save = (...items: ReturnType<typeof row>[]) => app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items } })
     /* Whole hours only, now that it lays out windows. */
     expect((await save(row(1.5))).statusCode).toBe(400)

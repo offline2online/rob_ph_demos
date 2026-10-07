@@ -248,6 +248,62 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/player/v1/impressions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Impression available — ask the exchange to fill a real-time position just before playout
+         * @description The impression-available signal. The exchange sends one OpenRTB
+         *     request per eligible connected DSP (same request as the advance
+         *     auction, `imp.ext.ph.mode` = `realtime`, `tmax` cut to the
+         *     real-time budget), clears the bids first price, and answers within
+         *     that budget. The answer is always 200: `filled` with the creative
+         *     to play, or `no_fill` (no bid cleared in time, nothing approved and
+         *     fitting, DSP integration off, position locked…) — on `no_fill` the
+         *     player plays its own content. No creative is retrieved inside tmax.
+         *     A creative PH has approved (or is still reviewing) is served from
+         *     PH's own copy; a creative PH has not seen yet is served at bid time
+         *     from the DSP's own creative URL (`creative.source` = `at_bid`) and
+         *     reviewed after the play, when the player reports it. A creative a
+         *     reviewer rejected does not play, and its content is blocked by hash.
+         *     Only a position whose slot is in `realtime` mode can be filled this
+         *     way; an advance position answers 409.
+         */
+        post: operations["signalImpression"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/player/v1/impressions/{impressionId}/played": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Proof of play for a filled impression
+         * @description Reported once, within the fill's `expiresAt`. Records the play
+         *     against the display and the winning campaign; reporting it twice, or
+         *     for a fill that has expired or was never filled, answers 409.
+         */
+        post: operations["confirmImpressionPlayed"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/reservations/{reservationId}": {
         parameters: {
             query?: never;
@@ -386,9 +442,6 @@ export interface paths {
          *     /admin/v1/available-inventory/lock`); once the booking schedule has
          *     no live booking left on it the lock releases by itself and the
          *     advertiser can be removed.
-         *
-         *     supportedTargeting: interactive is only accepted on a display type
-         *     with QR Control enabled.
          *
          *     reservePrice: a CPM premium at which this slot can be reserved in
          *     advance of the open auction (decision, 22 Sep). Real inheritance
@@ -1110,6 +1163,49 @@ export interface components {
                 }[];
             };
         };
+        ImpressionSignal: {
+            /** @description The display about to play the impression. */
+            displayId: string;
+            /** @description The slot (1-based) in that display's display type that is next in the rotation. */
+            slot: number;
+        };
+        ImpressionFill: {
+            impressionId: string;
+            /** @enum {string} */
+            status: "filled" | "no_fill" | "played";
+            /** @description Why there is no fill; absent on a fill. */
+            reason?: string | null;
+            /**
+             * Format: date-time
+             * @description The proof of play must arrive by this time.
+             */
+            expiresAt?: string;
+            /** @description First price */
+            clearingCpm?: number;
+            /**
+             * @description Which kind of fill this was; also on `creative.source`.
+             * @enum {string}
+             */
+            creativeSource?: "approved" | "under_review" | "at_bid";
+            /** @description On the proof-of-play answer for an at-bid creative */
+            reviewNote?: string;
+            /** @description What to play. The player fetches the asset from `url`. */
+            creative?: {
+                /** @description Null for an at-bid creative PH has not seen yet; its campaign exists once it has played and been retrieved. */
+                campaignId?: string | null;
+                /**
+                 * @description approved: PH's approved copy. under_review: PH's copy, its
+                 *     review still open. at_bid: the DSP's own creative URL, not
+                 *     yet seen by PH; reviewed after the play.
+                 * @enum {string}
+                 */
+                source?: "approved" | "under_review" | "at_bid";
+                assetVersion?: string;
+                url?: string;
+                mimeType?: string;
+                durationSec?: number | null;
+            };
+        };
         /**
          * @description reserved: held for a named advertiser (and shown as available to that
          *     advertiser), committed at the reserve price, or inside a locked
@@ -1148,11 +1244,6 @@ export interface components {
             };
             /** @enum {string} */
             assignment: "rtb" | "whitelist_only" | "deal" | "reserved";
-            /**
-             * @description What a campaign may use here. A bid or reservation for a campaign of
-             *     any other type is refused with targeting_not_supported.
-             */
-            supportedTargeting: ("localised" | "personalised" | "interactive")[];
             /**
              * @description This position's play-window length, in hours — its billing unit
              *     (OQ27, 29 Sep 2026): the slot's own, else its display type's,
@@ -1279,23 +1370,15 @@ export interface components {
              *     Optional, but required alongside displayTypeId to resolve that
              *     slot's own max-campaigns cap below — omitted, the submission
              *     falls back to the platform-wide campaignLimits.targetedVersions
-             *     cap, unscoped to any one slot. Also the only way to resolve the
-             *     slot's own Targeting supported setting (ticket "Partner API:
-             *     enforce slot's Targeting supported setting on campaign
-             *     submission") — see default.pricingType and
-             *     targeted[].pricingType below.
+             *     cap, unscoped to any one slot. A slot carries no targeting
+             *     capability of its own: targeting is defined on the buyers and
+             *     targeting list assigned to it.
              */
             slot?: number;
             brief?: components["schemas"]["CampaignBrief"];
             /**
              * @description The untargeted layer every submission must carry — no targeting
-             *     variables, priced at the floor rate. Once displayTypeId and slot
-             *     resolve to a real advertiser slot, its pricingType is validated
-             *     against that slot's own Targeting supported setting the same
-             *     way targeted[].pricingType is below (a "default" pricingType
-             *     reads as localised, matching the auction's own reading of it) —
-             *     400 validation_failed on `default.pricingType` naming the
-             *     slot's supported set when it doesn't.
+             *     variables, priced at the floor rate.
              */
             default: {
                 pricingType: components["schemas"]["PricingType"];
@@ -1306,15 +1389,6 @@ export interface components {
              *     slot's own max campaigns (default + targeted versions, 1-10)
              *     when displayTypeId and slot resolve to a real advertiser slot;
              *     otherwise by the platform-wide campaignLimits.targetedVersions.
-             *     Each version's own pricingType is also validated, once a slot
-             *     resolves, against that slot's Targeting supported setting
-             *     (localised/personalised/interactive, Advertisers / Inventory) —
-             *     ticket "Partner API: enforce slot's Targeting supported setting
-             *     on campaign submission": a submission naming an attribute the
-             *     slot doesn't support is refused 400 validation_failed on
-             *     `targeted[i].pricingType`, naming the offending pricingType and
-             *     the slot's supported set. Server-enforced regardless of what
-             *     the admin UI shows or allows.
              */
             targeted?: {
                 id: string;
@@ -1398,11 +1472,11 @@ export interface components {
             /** @enum {string} */
             type: "reserve" | "bid";
             /**
-             * @description Only for type reserve. preferred (default) holds the window at the reserve price with no volume; guaranteed also commits the forecast (plays x VAC-d) less the contingency buffer.
+             * @description Only for type reserve. preferred (the default, unchanged) holds the premium window at the reserve price with no volume promised. guaranteed also commits a delivery volume: the window's forecast impressions (plays x VAC-d) less the retailer's contingency buffer, returned as guaranteedImpressions and sent to the DSP as the guaranteed unit count in dspDeal. Refused (validation_failed) with type bid.
              * @default preferred
              * @enum {string}
              */
-            dealType?: "preferred" | "guaranteed";
+            dealType: "preferred" | "guaranteed";
             /** @description The CPM, in the company currency, at most 10,000. For type bid, the bid, which must clear the effective floor. For type reserve on a position with a reservePrice, the buyer's commitment: it must be at least the reservePrice (validation_failed otherwise), and the booking is made at the reservePrice itself, which must clear the effective floor. For type reserve on a named-advertiser position with no reservePrice, the price agreed through the DSP: it must clear the effective floor, and the booking is made at it. */
             bidCpm: number;
         };
@@ -1413,10 +1487,16 @@ export interface components {
             clearingCpm?: number | null;
             currency?: string;
             reason?: string | null;
-            /** @enum {string} */
+            /**
+             * @description preferred: price held, no volume. guaranteed: guaranteedImpressions is committed.
+             * @enum {string}
+             */
             dealType?: "preferred" | "guaranteed";
+            /** @description Guaranteed only: the window's forecast (plays x VAC-d audience). */
             forecastImpressions?: number | null;
+            /** @description Guaranteed only: the forecast less the contingency buffer; the committed volume. */
             guaranteedImpressions?: number | null;
+            /** @description How the deal is expressed to the buying DSP: DV360 Programmatic Guaranteed or Amazon guaranteed deal (unitCount = guaranteedImpressions), or a preferred deal with no volume. */
             dspDeal?: {
                 /** @enum {string} */
                 dealType?: "preferred" | "guaranteed";
@@ -1481,10 +1561,10 @@ export interface components {
             categoryWhitelist: string[];
             categoryBlacklist: string[];
             /**
-             * @description Guaranteed deals: contingency percent taken off a window's forecast impressions before the rest is committed. Optional on save.
+             * @description Guaranteed deals: the contingency (percent, for screen downtime) taken off a window's forecast impressions (plays x VAC-d audience) before the remainder is committed as the guaranteed volume. Instance-wide. Optional on save: omitted keeps the stored value.
              * @default 10
              */
-            guaranteeBufferPct?: number;
+            guaranteeBufferPct: number;
         };
         AdvertiserSettings: components["schemas"]["AdvertiserSettingsInput"] & {
             /**
@@ -1732,8 +1812,6 @@ export interface components {
              *     use a computer-vision variable).
              */
             visionAi: boolean;
-            /** @description What a campaign may use on this slot; localised only by default. */
-            supportedTargeting: ("localised" | "personalised" | "interactive")[];
             /**
              * @description The resolved CPM premium at which this slot can be reserved in
              *     advance of the open auction: reservePriceOverride when set,
@@ -2196,12 +2274,20 @@ export interface components {
                  */
                 salesLocked?: boolean;
                 /**
-                 * @description What a campaign may use on this slot. Absent or empty means
-                 *     localised only, which is the default for a new slot. A bid or
-                 *     reservation whose campaign is of an unsupported type is refused
-                 *     (targeting_not_supported). Set from Advertisers / Inventory.
+                 * @description How this Advertiser slot is sold (7 Oct 2026). `advance`
+                 *     (the default when absent) is the play-window path: bids and
+                 *     reserve bookings for a window, cleared by the scheduled
+                 *     auction. `realtime` sells each impression as the player
+                 *     signals it (POST /api/player/v1/impressions): a bid request
+                 *     goes to the connected DSPs and must clear within tmax. A
+                 *     real-time position takes no window bookings or bids and its
+                 *     windows read unavailable. Set from the slot editor; only an
+                 *     Advertiser slot may be `realtime`, and it is for open and
+                 *     whitelist-only positions (a slot held for named advertisers
+                 *     or assigned to a private auction does not fill in real time).
+                 * @enum {string}
                  */
-                supportedTargeting?: ("localised" | "personalised" | "interactive")[];
+                bidMode?: "advance" | "realtime";
                 /**
                  * @description This slot's own override of the display type's reserve
                  *     price (decision, 22 Sep; real inheritance, 22 Sep — spec
@@ -2845,6 +2931,72 @@ export interface operations {
             429: components["responses"]["RateLimited"];
         };
     };
+    signalImpression: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImpressionSignal"];
+            };
+        };
+        responses: {
+            /** @description Fill or no fill */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImpressionFill"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorised"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    confirmImpressionPlayed: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                impressionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /**
+                     * Format: date-time
+                     * @description When playout started; defaults to now.
+                     */
+                    playedAt?: string;
+                    /** @description Seconds played; defaults to the slot's duration. */
+                    durationSec?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Recorded */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImpressionFill"];
+                };
+            };
+            401: components["responses"]["Unauthorised"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
     getReservation: {
         parameters: {
             query?: never;
@@ -3082,7 +3234,6 @@ export interface operations {
                     items: {
                         displayTypeId: string;
                         slot: number;
-                        supportedTargeting: ("localised" | "personalised" | "interactive")[];
                         assignedTo: {
                             partnerIds: string[];
                             advertisers: string[];
@@ -3096,7 +3247,7 @@ export interface operations {
                         billingUnitHours?: number | null;
                         /** @description The display type's billing-unit default, in whole hours; null = none (the company-wide playWindowHours applies). Must be the same value on every row for a given displayTypeId in one request. */
                         billingUnitHoursDefault?: number | null;
-                        /** @description This slot's own reserve price (CPM) for interactive campaigns only; null = interactive campaigns follow the slot's ordinary reserve price. Only meaningful while `supportedTargeting` includes interactive. Omitted = unchanged is not supported — always send the slot's current value. */
+                        /** @description This slot's own reserve price (CPM) for interactive campaigns only; null = interactive campaigns follow the slot's ordinary reserve price. Only meaningful while interactive campaigns are enabled. Omitted = unchanged is not supported — always send the slot's current value. */
                         interactiveReservePrice?: number | null;
                         /** @description This slot's own maximum-campaigns override; null = inherit maxCampaignsDefault. Omitted = unchanged is not supported — always send the slot's current value. */
                         maxCampaigns?: number | null;

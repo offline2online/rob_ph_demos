@@ -59,6 +59,15 @@ export interface Config {
   rejectedCampaignRetentionDays: number
   /* Partner API: one static bearer token per seeded partner (token → partner id). */
   partnerTokens: Record<string, string>
+  /* Real-time bidding (7 Oct 2026). playerToken: the bearer PH Core's player
+     presents to the Player API; the public POC default outside production,
+     and null in production until PH_PLAYER_TOKEN is set — the Player API then
+     answers 401 to everything rather than the deployment failing to start.
+     realtimeTmaxMs: the budget to clear one impression (OpenRTB tmax, ~100–300 ms).
+     realtimeFillTtlSec: how long after a fill the proof of play is accepted. */
+  playerToken: string | null
+  realtimeTmaxMs: number
+  realtimeFillTtlSec: number
   /* ---- Security and scalability limits (review, 23 Sep 2026). Each bounds
      what one caller can make the exchange do, so one partner can't degrade
      it for everyone. Defaults are generous for real traffic. ---- */
@@ -148,6 +157,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     },
     bidEndpointSource: env.BID_ENDPOINT_SOURCE === 'partner' ? 'partner' : 'mock',
     partnerTokens: partnerTokensFrom(env),
+    playerToken: env.PH_PLAYER_TOKEN || (env.NODE_ENV === 'production' ? null : 'poc-token-player'),
+    realtimeTmaxMs: Math.min(1000, Math.max(50, Number(env.PH_REALTIME_TMAX_MS ?? 200) || 200)),
+    realtimeFillTtlSec: Math.max(5, Number(env.PH_REALTIME_FILL_TTL_SEC ?? 120) || 120),
     maxBidCpm: 10_000,
     maxBidResponseBytes: 64 * 1024,
     creativeReverifyMs: 60 * 60 * 1000,

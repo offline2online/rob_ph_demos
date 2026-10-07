@@ -4,20 +4,29 @@ Source: *Real-Time Personalised Surface Architecture Specification v1.2*
 (Personalisation Hub, 3 Sept 2026), as rescoped 29–30 Sep 2026, plus the `Display Types & Playlist
 Management` prototype (`displaytypesandplaylists.jsx`).
 
-**Version:** 2 Oct 2026 (dated, not numbered). Scope follows the 29–30 Sep
+**Version:** 7 Oct 2026 (dated, not numbered). Scope follows the 29–30 Sep
 2026 rescope to "the exchange", recorded as E2E Test Spec v2.4 (30 Sep); this
 file never carried a version number of its own, and this changelog starts the
 record.
 
 **Changelog**
 
+- **7 Oct 2026** — the per-slot "Targeting supported" setting is removed
+  (Rob; tickets HmJuWvvVTEZ0l3aUuwA9 and V391ZSMOfIhSQXc4bPT3). A slot no
+  longer says which kinds of campaign it takes: what a buyer may target is
+  defined on the buyers and targeting list, not on the slot. The column is
+  gone from Available Inventory, `supportedTargeting` is gone from the
+  position in `GET /v1/inventory`, `GET`/`PUT /admin/v1/available-inventory`
+  and the slot, and any stored value is ignored. Two rules stay: a
+  personalised campaign is accepted only in a `type: reserve` booking
+  (refused `targeting_not_supported` otherwise), and interactive remains
+  deferred. Mentions of the setting below this note are superseded.
 - **5 Oct 2026** — interactive campaigns deferred for this release (Rob;
   ticket B2FBG5Ro9yqrcH3xICFz): the focus is the basic framework. They are
   hidden everywhere behind one flag, `INTERACTIVE_ENABLED` (false, in
   `packages/types` catalog), rather than deleted, so they can return. No
   Interactive cost per engagement field, tooltip or lever; no Interactive
-  option in Targeting supported (slots offer localised and personalised; a
-  slot that had it ticked reads as the rest, localised by default); no
+  targeting option; no
   interactive reserve price column or QR Control greying on Available
   Inventory; no interactive effective floor, `costPerEngagement` or
   interactive reserve price on `GET /v1/inventory`; a campaign submission
@@ -27,8 +36,7 @@ record.
   8 and the functional requirements below describe the deferred behaviour
   only as "deferred"; the earlier interactive wording is superseded.
 - **5 Oct 2026** — personalised versions are sold only through reserved
-  slots (Rob; ticket Ba5QdLIzCbJGMHfawjAP): Personalised is selectable in
-  Targeting supported only on a slot with a reserve price, a personalised
+  slots (Rob; ticket Ba5QdLIzCbJGMHfawjAP): a personalised
   campaign is refused (`targeting_not_supported`) outside a `type: reserve`
   booking, and only a reserve-held window plays personalised versions
   (migration 0045). Reserve price tooltip updated.
@@ -417,8 +425,8 @@ unreshaped; Digital Signage/Kiosk playback and analytics are untouched.
   — is managed on *Advertisers / Inventory* (§5), and appears here
   read-only on the slot card. A Stores slot takes the default scope (*Store
   staff*); its scope is no longer editable anywhere in this build. Changing
-  a slot's owner away from *Advertiser* drops the assignment and the
-  supported targeting with it, since the position is no longer sellable;
+  a slot's owner away from *Advertiser* drops the assignment with
+  it, since the position is no longer sellable;
   changing anything else keeps them.
 
   **On a multi-zone display type, each zone has its own rotation and its
@@ -1171,7 +1179,7 @@ played (Billing, below).
   risk profiles: **reserved** commits the brand to a premium rate (the
   reserve price) and holds the window, billed on realised VAC-d at that
   rate with no guaranteed volume and no make-good (§5 "Reserve price"); **open real-time** locks nothing, re-clearing price
-  every auction; a **private auction using the two-period model** locks
+  on every play (one auction per play, 7 Oct 2026: a win buys that one play, never a block of plays — blocks and volumes belong to deals); a **private auction using the two-period model** locks
   the rate but leaves volume variable — the brand pays for actual views,
   not a guaranteed number, but never re-bids for the term. Mechanically
   this needs no separate billing pipeline: the exchange (§7) books every
@@ -1364,7 +1372,7 @@ connected DSPs can bid on, one row per slot. **Playlist-primary** (ticket
 "Available Inventory: playlist-primary table (drop Display type column)
 with Unassigned indicator", 27 Sep 2026 — this replaced an earlier layout
 that led with a separate **Display type** column): columns are **Playlist**,
-**Slot**, **Position**, **Assigned to**, **Targeting supported**, **Reserve
+**Slot**, **Position**, **Assigned to**, **Reserve
 price**, **Max campaigns**, **Billing unit** and an **Open** link to the
 display type. There is **no advertisers column** and no separate Display
 type column. Every column carries a filter, as the platform's tables do.
@@ -1396,9 +1404,8 @@ display exists to play them at all.
 
 Slots are made available by setting their owner to *Advertiser* on a display
 type (explained in the section's tooltip); that part is not editable here.
-Three fields are: **Assigned to** (above), **Targeting supported** — each a
-multi-select that drops a pill per choice into the cell — and **Reserve
-price**, a CPM input (blank = following the display type's default, or no
+Two fields are: **Assigned to** (above), a multi-select that drops a pill
+per choice into the cell, and **Reserve price**, a CPM input (blank = following the display type's default, or no
 reserve if it has none either). Editing a slot that has no override of its
 own edits its display type's shared default instead, reaching every other
 slot on that display type at once; an **Override** action next to the input
@@ -1409,23 +1416,15 @@ position returns*, above, for the currency, the billing note, the "override
 always wins, no explicit opt-out" simplification, and what's not built yet).
 **Admin only**, same as the other two; a marketing user reads it as plain
 text — the resolved value, not which of the two levels it came from.
-**Targeting supported** is (Rob, 20 Sep): each slot says which kinds of
-campaign it will take — **localised** and **personalised** (interactive is deferred, 5 Oct 2026) —
-ticked independently, with **localised only** as the default for a slot that
-has never been changed. A slot always supports at least one, so the last one
-ticked can't be unticked. What a slot supports is part of the contract with
-DSPs: it is on the position in `GET /v1/inventory`, and a bid or reservation
-for a campaign of any other type is refused with `targeting_not_supported`,
-alongside the floor and list checks. Personalised campaigns
-carry their own multiplier (§4), so this is also the
-control over what a slot can be sold for. **Personalised is selectable only
-on a slot that has a reserve price** (its own or inherited; Rob, 5 Oct 2026):
-the option is disabled with a note otherwise, and the save is refused. A
-personalised campaign is accepted only in a reserve booking (`POST
-/v1/reservations`, `type: reserve`); a bid for one, in an open or private
-auction, is refused `targeting_not_supported`. The Targeting supported
-tooltip says so. **Admin only**: a marketing user
-sees them but can't change them.
+**Targeting is not set per slot** (Rob, 7 Oct 2026; there was a per-slot setting
+for it from 20 Sep): what a buyer may target is
+defined on the buyers and targeting list. The one rule that remains on the
+slot side is that personalised versions are sold only through reserve
+booking: a personalised campaign is accepted only in a reserve booking
+(`POST /v1/reservations`, `type: reserve`) on a slot with a reserve price
+(its own or inherited; Rob, 5 Oct 2026), and a bid for one, in an open or
+private auction, is refused `targeting_not_supported`. **Admin only**: a
+marketing user sees the fields but can't change them.
 
 **Interactive is deferred** (5 Oct 2026). It is not offered in the picker;
 a slot that had it ticked reads as the remaining types (localised by
@@ -2272,8 +2271,7 @@ fields. The canonical definition is `app/src/model/schema.js` and
               billingUnitHours,     // this slot's own override = its play-window length, in whole hours; null = inherit the display type's billingUnitHours above, else the company playWindowHours (§5; OQ27)
               maxCampaigns }],      // this slot's own override; null = inherit the display type's maxCampaigns above, 1-10 inclusive when set (§5)
                                     // listMode: rtb | whitelist_only | deal | null; buyersListId set only when listMode is deal (§5 "Private auctions")
-                                    // each slot also carries supportedTargeting (what it can target, I5t9MJsN) and
-                                    // salesLocked / salesLockedUntil (set by PUT /admin/v1/available-inventory/lock, cleared by the scheduler; not writable through the slot editor)
+                                    // each slot also carries salesLocked / salesLockedUntil (set by PUT /admin/v1/available-inventory/lock, cleared by the scheduler; not writable through the slot editor)
     defaultVacd,                   // number | null: the display type's default VAC-d (ZSfSP5sr, 1 Oct 2026, migration 0035); a slot with neither this nor an audience_vacd row is unscored
     venue: { openOohVenueType, orientation, loopLengthSec }   // POC stand-in for a PH Core value (Q35): PH Core owns venue and geo; on integration this is read from its store/display record and the PUT stops accepting `venue`
   }
@@ -2421,8 +2419,7 @@ Company-level:
 - **Advertisers / Inventory** (an admin writes it; marketing reads it):
   `advertiserSettings: { [advertiser]: { approvalRequired, floorMultiplier } }`
   (defaults `true` / 1.0), and per sellable slot what it is assigned to
-  (`partnerIds`, `advertisers`, list mode) and the targeting it supports
-  (`supportedTargeting`, localised only by default).
+  (`partnerIds`, `advertisers`, list mode).
 - **Shared targeting variables**: the platform's default variables, grouped
   as Localisation Variables and Personalisation Variables, each with example
   values (or a fixed tooltip text) for its tooltip, read-only in this
@@ -3213,7 +3210,7 @@ playback analytics.**
   forecast, scoped to what the requester could buy. *(spec only)*
 - **Available Inventory**: every advertiser-owned slot across the estate
   that connected DSPs can bid on (Display type, Playlist, Slot, Position,
-  Assigned to, Targeting supported, Reserve price, Max campaigns, Billing
+  Assigned to, Reserve price, Max campaigns, Billing
   unit, and an Open link), with no advertisers column and a filter on
   every column. *(Advertisers / Inventory → Available Inventory)*
 - **Reserve price, inherited from its display type** (decision, 22 Sep; real
@@ -3258,12 +3255,10 @@ playback analytics.**
   default, or named DSPs, named advertisers (reserved) or the whitelist —
   as a multi-select of pills, set by an admin and enforced on every bid.
   *(Advertisers / Inventory → Available Inventory)*
-- **Targeting supported per slot**: which kinds of campaign a slot takes —
-  localised, personalised (interactive deferred) — localised only by default, set by
-  an admin, published on the position and enforced on every bid.
-  Personalised needs a reserve price on the slot (own or inherited) and is
-  sold only through reserve bookings (5 Oct 2026).
-  *(Advertisers / Inventory → Available Inventory)*
+- **Personalised only by reserve booking**: a personalised campaign is
+  accepted only in a `type: reserve` booking, on a slot with a reserve price
+  (own or inherited); targeting is defined on the buyers and targeting list,
+  not per slot (7 Oct 2026). *(Advertisers / Inventory → Available Inventory)*
 - **Campaign schedule** (renamed from "Booking schedule", ticket 26 Sep
   2026; **page title "Advertiser Bookings"** and the second tab **"Upcoming
   Campaign Approval"** since 27 Sep 2026 — its URL key stays

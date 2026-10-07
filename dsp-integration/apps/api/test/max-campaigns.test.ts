@@ -18,7 +18,7 @@ async function setup(maxCampaigns: number | null, targetedCount: number) {
   const ext = (await ctx.displayTypes.get('portrait'))!.phExtensions!
   await ctx.displayTypes.saveExtensions('portrait', {
     ...ext,
-    slots: [{ label: 'Ad', owner: 'advertiser', partnerIds: [], advertisers: [], listMode: 'rtb', buyersListId: null, storeScope: null, quota: null, zoneId: null, supportedTargeting: ['localised'], maxCampaigns, reservePrice: 150 } as Slot],
+    slots: [{ label: 'Ad', owner: 'advertiser', partnerIds: [], advertisers: [], listMode: 'rtb', buyersListId: null, storeScope: null, quota: null, zoneId: null, maxCampaigns, reservePrice: 150 } as Slot],
   })
   ctx.db.prepare('INSERT INTO audience_vacd (display_type_id, slot, assumed_views_per_window, counted) VALUES (?, ?, ?, 1)').run('portrait', 1, 800)
   /* Submitted with no slot (the 20-version guard only), approved, activated. */
