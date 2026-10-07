@@ -1411,7 +1411,7 @@ connected DSPs can bid on, one row per slot. **Playlist-primary** (ticket
 with Unassigned indicator", 27 Sep 2026 — this replaced an earlier layout
 that led with a separate **Display type** column): columns are **Playlist**,
 **Slot**, **Position**, **Assigned to**, **Reserve
-price**, **Max campaigns**, **Billing unit** and an **Open** link to the
+price**, **Max campaigns**, **Max play length**, **Billing unit** and an **Open** link to the
 display type. There is **no advertisers column** and no separate Display
 type column. Every column carries a filter, as the platform's tables do.
 
@@ -1648,6 +1648,22 @@ campaigns an advertiser may submit for a slot, replacing the blanket
 20-targeted-versions cap (§6, security submission bounds) for that slot
 once a submission names it; without a resolvable slot, the platform-wide
 20-cap still applies unchanged.
+
+**Max play length** (`maxPlayLengthSec` on a slot, with a display-type-level
+default and a company default in Advertiser settings — same
+override-always-wins inheritance as the settings above: slot, else display
+type, else company; platform default 15 seconds; whole seconds, 1-600): the
+fixed duration of one play of the slot (ticket "Max play length as an
+inherited slot setting", 7 Oct 2026). It is the divisor of the plays model:
+`playsPerWindow` = floor(window / max play length) — never the loop length
+and never a creative's own length. A creative longer than the slot's max play
+length fails the upload duration check and is **rejected, not truncated**;
+the upload check uses the longest max play length among the display type's
+advertiser slots, and each slot's own value is re-checked at hand-off and at
+real-time bid. Admin-editable on Available Inventory, marketing read-only.
+*PH Core seam:* the loop must be built from the resolved slot length so a
+play really lasts that long — see `api/PH-CORE-BOUNDARIES.md`, "Max play
+length: the loop must be built from the resolved slot length".
 
 ## 6. DSP integration — the advertiser & DSP interface
 
@@ -2336,11 +2352,13 @@ fields. The canonical definition is `app/src/model/schema.js` and
     reservePrice,                  // the display type's own reserve price default; CPM or null (real inheritance, 22 Sep — §5)
     billingUnitHours,               // the display type's own billing-unit default = play-window length, in whole hours; null = the company playWindowHours (§5 "Billing unit"; OQ27, 29 Sep 2026)
     maxCampaigns,                  // the display type's own max-campaigns default; null = platform default of 5, 1-10 inclusive (§5, ticket "Max campaigns column + slot playlist statement")
+    maxPlayLengthSec,              // the display type's own max-play-length default, whole seconds 1-600; null = the company default (Advertiser settings), platform default 15 (§5 "Max play length")
     slots: [{ label, owner, zoneId,   // zoneId: the zone this slot belongs to on a multi-zone display type (one segment per zone, in zone order); absent on a single-zone one
               partnerId, advertiser, listMode, buyersListId, storeScope, quota,
               reservePrice,         // this slot's own override; CPM, or null = inherit the display type's reservePrice above (§5)
               billingUnitHours,     // this slot's own override = its play-window length, in whole hours; null = inherit the display type's billingUnitHours above, else the company playWindowHours (§5; OQ27)
-              maxCampaigns }],      // this slot's own override; null = inherit the display type's maxCampaigns above, 1-10 inclusive when set (§5)
+              maxCampaigns,         // this slot's own override; null = inherit the display type's maxCampaigns above, 1-10 inclusive when set (§5)
+              maxPlayLengthSec }],  // this slot's own override = the fixed duration of one play, whole seconds 1-600; null = inherit the display type's maxPlayLengthSec above, else the company default (§5 "Max play length")
                                     // listMode: rtb | whitelist_only | deal | null; buyersListId set only when listMode is deal (§5 "Private auctions")
                                     // each slot also carries salesLocked / salesLockedUntil (set by PUT /admin/v1/available-inventory/lock, cleared by the scheduler; not writable through the slot editor)
     defaultVacd,                   // number | null: the display type's default VAC-d (ZSfSP5sr, 1 Oct 2026, migration 0035); a slot with neither this nor an audience_vacd row is unscored
@@ -2396,8 +2414,9 @@ way as `activeFrom`/`activeTo`; `lockedWin` is written only by the exchange
 ### Playlist
 
 The existing playlist, item and scene records, and how they play, are
-unchanged by this project. Loop length is read for inventory display and
-VAC-d billing only.
+unchanged by this project. Loop length is read for inventory display only;
+plays per window are counted against the slot's max play length (§5), not
+the loop length.
 
 ### Campaign (additions to the existing campaign record)
 
@@ -3295,7 +3314,7 @@ playback analytics.**
   forecast, scoped to what the requester could buy. *(spec only)*
 - **Available Inventory**: every advertiser-owned slot across the estate
   that connected DSPs can bid on (Display type, Playlist, Slot, Position,
-  Assigned to, Reserve price, Max campaigns, Billing
+  Assigned to, Reserve price, Max campaigns, Max play length, Billing
   unit, and an Open link), with no advertisers column and a filter on
   every column. *(Advertisers / Inventory → Available Inventory)*
 - **Reserve price, inherited from its display type** (decision, 22 Sep; real

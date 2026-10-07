@@ -403,7 +403,8 @@ the bid request's `exp` and `qty.multiplier`, the hand-off booking and
 billing (one line item per window, expected seconds and assumed views for
 that window's length) all follow it. **The play is the transacting unit**
 (6 Oct 2026): a window's time length is shown alongside the play count it
-holds — `playsPerWindow` = floor(window / loop length), plays on one display,
+holds — `playsPerWindow` = floor(window / `screen.maxPlayLengthSec`) — the slot's
+max play length, never the loop length — plays on one display,
 also sent as `imp.ext.ph.playsPerWindow` — and the impression multiplier
 (VAC-d, `qty.multiplier`) only converts plays to estimated impressions for
 pricing and billing. Billing is unchanged: plays × multiplier. Assumed views are scored per company
@@ -621,9 +622,14 @@ Per-DSP deal-ID format requirements are still to be confirmed.
   assumption to confirm with TTD at integration.
 - **Never included:** any visitor data, Personalisation Variables or
   Computer Vision values; no `user` object.
-- Screen and loop context (orientation, slot duration, loop length, share of
-  voice) go in `imp.ext.ph` if the DSP doesn't read them from DOOH fields:
-  `{ "orientation": "landscape", "slotDurationSec": 15, "loopLengthSec": 45, "shareOfVoice": 0.333 }`.
+- Screen and loop context (orientation, slot duration, max play length, loop
+  length, share of voice) go in `imp.ext.ph` if the DSP doesn't read them from
+  DOOH fields: `{ "orientation": "landscape", "slotDurationSec": 15,
+  "maxPlayLengthSec": 15, "loopLengthSec": 45, "shareOfVoice": 0.333 }`.
+  `maxPlayLengthSec` is informational for the loop: plays are not counted
+  against `loopLengthSec`. `imp.video.maxduration` is the max play length
+  (`minduration` and `maxduration` are both the slot's fixed play), so a
+  creative longer than it is rejected rather than truncated.
 
 **Bid response — what we require:** `seatbid[].seat`, `bid.price` (CPM,
 ≥ `bidfloor`), `bid.crid` (a reference label; the creative it points at must be an approved creative, identified by content hash), `bid.adomain`
