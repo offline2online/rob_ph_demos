@@ -795,7 +795,7 @@ describe('Pricing tooltips', () => {
     renderAt('/dsp-integration/advertiser-settings')
     await screen.findByRole('heading', { name: /Advertiser settings/ })
     const tip = (label: string) => screen.getByText(label).closest('label')!.querySelector('[role="button"]') as HTMLElement
-    fireEvent.mouseEnter(tip('Platform floor price (CPM)'))
+    fireEvent.mouseEnter(tip('Platform floor price (CPM, USD)'))
     expect(await screen.findByText(/× attention \(VAC: the share who actually look\)/)).toBeInTheDocument()
     expect(screen.getByText(/100 × 27 ÷ 1,000/)).toBeInTheDocument()
 
