@@ -2,7 +2,7 @@
    edited here (advertiser lists are per DSP, on its own page); Where these apply is read-only. The inventory table moved to
    Advertisers / Inventory (Rob, 20 Sep). */
 import { Input, InputNumber, Select, Switch } from 'antd'
-import { IAB_CATEGORIES, IAB_CATEGORY_CODES, INTERACTIVE_ENABLED, type AdvertiserSettingsInput } from '@ph-dsp/types'
+import { IAB_TAXONOMY, INTERACTIVE_ENABLED, type AdvertiserSettingsInput } from '@ph-dsp/types'
 import { type ReactNode, useMemo } from 'react'
 import { Field } from '../../shared/Field'
 import { WithTip } from '../../shared/InfoTip'
@@ -87,7 +87,8 @@ const UNCACHED_OPTIONS = [
   { value: 'off', label: 'Off' }, { value: 'fixed', label: 'Fixed hours' }, { value: 'store_open', label: 'Store trading hours' },
 ]
 
-const IAB_OPTIONS = IAB_CATEGORIES.map((c) => ({ value: c, label: `${c} (${IAB_CATEGORY_CODES[c]})` }))
+/* The full IAB Content Taxonomy 1.0, tier 1 then its subcategories. A saved legacy name (Beauty, Retail, Finance) still works but is not offered again. */
+const IAB_OPTIONS = IAB_TAXONOMY.map((c) => ({ value: c.name, label: `${c.name} (${c.code})` }))
 type ListKey = 'categoryWhitelist' | 'categoryBlacklist'
 const OTHER: Record<ListKey, ListKey> = {
   categoryWhitelist: 'categoryBlacklist', categoryBlacklist: 'categoryWhitelist',

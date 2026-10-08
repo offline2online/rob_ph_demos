@@ -11,12 +11,14 @@ import { DeleteDialog } from '../../shared/DeleteDialog'
 import { Grid } from '../../shared/Grid'
 import { Icon } from '../../shared/Icon'
 import { WithTip } from '../../shared/InfoTip'
+import { Tip } from '../../shared/Tip'
 import { SectionLabel } from '../../shared/SectionLabel'
 import { T } from '../../theme/phTheme'
 import { BuyersListModal } from './BuyersListModal'
 import { playsText, rateText, sourceLabel } from './effectiveTerm'
 
-type Ctx = { current: { onEdit: (l: BuyersList) => void; onDelete: (l: BuyersList) => void; canEdit: boolean } }
+type Capacity = Map<string, { plays: number; displayTypes: number; positions: number }>
+type Ctx = { current: { capacity: Capacity; onEdit: (l: BuyersList) => void; onDelete: (l: BuyersList) => void; canEdit: boolean } }
 type P = ICellRendererParams<BuyersList, unknown, Ctx>
 
 /* The name is the way in (ph-designer: a row's name opens it; the icon button is only a shortcut). */
@@ -72,15 +74,26 @@ const RateCell = ({ data }: P) => {
   const text = rateText(data.effectiveRateCpm)
   return text ? <div><span style={{ fontSize: 12.5 }}>{text}</span><Sub>{sourceLabel(data.effectiveRateCpm.source)}</Sub></div> : <span style={{ color: T.muted }}>Per play</span>
 }
-/* Volume lives on the deal (open question 45): 'N of M plays' metered from billing for a deal with its own commitment;
+/* Volume lives on the deal (open question 45): the single committed figure ('M plays', no 'of' denominator: a guaranteed deal is sold, not capped) for a deal with its own commitment;
    otherwise the volume inherited platform -> DSP, or 'Per play' when no level sets one. */
 const VolumeCell = ({ data }: P) => {
   if (!data) return null
   /* Only a guaranteed deal commits volume; a private auction or preferred deal has none, so nothing is shown for it. */
   if (data.dealType !== 'guaranteed') return <span style={{ color: T.muted }}>Not applicable</span>
-  if (data.committedPlays != null) return <span style={{ fontSize: 12.5 }}>{data.deliveredPlays.toLocaleString()} of {data.committedPlays.toLocaleString()} plays</span>
+  if (data.committedPlays != null) return <span style={{ fontSize: 12.5 }}>{data.committedPlays.toLocaleString()} plays</span>
   const text = playsText(data.effectiveCommittedPlays)
   return text ? <div><span style={{ fontSize: 12.5 }}>{text}</span><Sub>{sourceLabel(data.effectiveCommittedPlays.source)}</Sub></div> : <span style={{ color: T.muted }}>Per play</span>
+}
+/* Combined plays per window across every position the list is assigned to (8 Oct 2026): the capacity ceiling for committed volume. */
+const CapacityCell = ({ data, context }: P) => {
+  if (!data) return null
+  const c = context.current.capacity.get(data.id)
+  if (!c) return <span style={{ color: T.muted }}>Not assigned</span>
+  return (
+    <Tip title={`${c.plays.toLocaleString('en-US')} plays per window across ${c.positions} assigned position${c.positions === 1 ? '' : 's'} on ${c.displayTypes} display type${c.displayTypes === 1 ? '' : 's'}: the sum of each one's plays per display x displays registered in PH Core.`}>
+      <span style={{ fontSize: 12.5 }}>{c.plays.toLocaleString('en-US')}</span>
+    </Tip>
+  )
 }
 const DEAL_TYPE_LABELS = { private_auction: 'Private auction', preferred: 'Preferred deal', guaranteed: 'Programmatic guaranteed' } as const
 const DealTypeCell = ({ data }: P) => (data ? <span style={{ fontSize: 12.5 }}>{DEAL_TYPE_LABELS[data.dealType] ?? 'Private auction'}</span> : null)
@@ -92,7 +105,7 @@ const ActionsCell = ({ data, context }: P) =>
     </span>
   ) : null
 
-export function BuyersListsTable({ lists, canEdit, onChanged }: { lists: BuyersList[]; canEdit: boolean; onChanged: () => void }) {
+export function BuyersListsTable({ lists, canEdit, capacity, onChanged }: { lists: BuyersList[]; canEdit: boolean; capacity: Capacity; onChanged: () => void }) {
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<BuyersList | null>(null)
   const [deleting, setDeleting] = useState<BuyersList | null>(null)
@@ -108,11 +121,12 @@ export function BuyersListsTable({ lists, canEdit, onChanged }: { lists: BuyersL
     { headerName: 'Targeting', width: 230, minWidth: 180, cellRenderer: TargetingCell, valueGetter: (p) => JSON.stringify(p.data?.targeting ?? []) },
     { headerName: 'Delivery term', width: 260, minWidth: 220, cellRenderer: TermCell, valueGetter: (p) => `${p.data?.activeFrom}|${p.data?.activeTo}` },
     { headerName: 'Committed volume', width: 190, minWidth: 160, cellRenderer: VolumeCell, valueGetter: (p) => JSON.stringify([p.data?.dealType, p.data?.committedPlays, p.data?.deliveredPlays, p.data?.effectiveCommittedPlays]) },
+    { headerName: 'Capacity (plays per window)', width: 190, minWidth: 170, cellRenderer: CapacityCell, valueGetter: (p) => p.context.current.capacity.get(p.data?.id ?? '')?.plays ?? 0 },
     { headerName: 'Rate', width: 200, minWidth: 170, cellRenderer: RateCell, valueGetter: (p) => JSON.stringify([p.data?.lockedWin, p.data?.effectiveRateCpm]) },
     ...(canEdit ? [{ headerName: '', width: 90, suppressSizeToFit: true, cellRenderer: ActionsCell }] : []),
   ]
   const context = {
-    canEdit,
+    canEdit, capacity,
     onEdit: (l: BuyersList) => {
       setEditing(l)
       setModalOpen(true)
@@ -150,9 +164,6 @@ export function BuyersListsTable({ lists, canEdit, onChanged }: { lists: BuyersL
             New buyers and targeting list
           </Button>
         )}
-      </div>
-      <div className="mb-2" style={{ fontSize: 12.5, color: T.muted }}>
-        Deals for guaranteed and programmatic campaigns: who can buy, what they target and the terms.
       </div>
       {lists.length === 0 ? (
         <div className="flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}>

@@ -6,7 +6,7 @@
    variable (global on the brand entity) are deliberately not fields here. */
 import { App, Button, DatePicker, Input, InputNumber, Modal, Select } from 'antd'
 import { useQuery } from '@tanstack/react-query'
-import { ALL_DSPS, IAB_CATEGORIES, OPERATOR_LABELS, TARGETING_VARIABLES, type BuyersList, type BuyersListDealType, type Condition, type InvitedBuyer, type SharedVariable } from '@ph-dsp/types'
+import { ALL_DSPS, IAB_TAXONOMY, OPERATOR_LABELS, TARGETING_VARIABLES, type BuyersList, type BuyersListDealType, type Condition, type InvitedBuyer, type SharedVariable } from '@ph-dsp/types'
 import dayjs from 'dayjs'
 import { useEffect, useRef, useState } from 'react'
 import { api, ApiRequestError } from '../../api/client'
@@ -18,6 +18,8 @@ import { playsText, rateText, resolveTerm, sourceLabel } from './effectiveTerm'
 
 type Draft = { name: string; description: string; dealType: BuyersListDealType; invitedBuyers: InvitedBuyer[]; invitedCategories: string[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays: number | null; floorCpm: number | null }
 /* An invited buyer is one synced seat of one connected DSP — the Select's value is both halves. */
+/* The full IAB Content Taxonomy 1.0, tier 1 then its subcategories. */
+const IAB_CATEGORY_OPTIONS = IAB_TAXONOMY.map((c) => ({ value: c.name, label: `${c.name} (${c.code})` }))
 const buyerKey = (b: InvitedBuyer) => JSON.stringify([b.partnerId, b.seatId])
 const blankDraft = (): Draft => ({ name: '', description: '', dealType: 'private_auction', invitedBuyers: [], invitedCategories: [], targeting: [], activeFrom: null, activeTo: null, auctionCloses: null, committedPlays: null, floorCpm: null })
 const draftOf = (l: BuyersList): Draft => ({
@@ -193,7 +195,7 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
           mode="multiple" className="w-full" aria-label="Invited IAB categories" showSearch optionFilterProp="label"
           status={Object.keys(errors).some((f) => f.startsWith('invitedCategories')) ? 'error' : undefined}
           placeholder="Choose IAB categories"
-          value={draft.invitedCategories} options={IAB_CATEGORIES.map((c) => ({ value: c, label: c }))}
+          value={draft.invitedCategories} options={IAB_CATEGORY_OPTIONS}
           onChange={(invitedCategories: string[]) => setDraft((d) => ({ ...d, invitedCategories }))}
         />
         {Object.entries(errors).filter(([f]) => f.startsWith('invitedCategories')).map(([f, reason]) => <div key={f} className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{reason}</div>)}

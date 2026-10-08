@@ -94,7 +94,8 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
          "Unassigned" indicator, not a live/sold state (that's out of scope
          — this build has no such concept). Per display type, since a
          multi-zone display type's zones all share the one physical screen. */
-      const unassigned = (await ctx.displays.summaryByDisplayType(t.id)).displays === 0
+      const displayCount = (await ctx.displays.summaryByDisplayType(t.id)).displays
+      const unassigned = displayCount === 0
       /* zoneSlot: this slot's 1-based position within its own zone's segment
          of the list, rather than `slot`'s flat position across every zone
          (ticket, 28 Sep 2026 — Rob: setting Zone 2's first slot showed as
@@ -143,6 +144,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
           displayTypeMaxPlayLengthSec: t.phExtensions?.maxPlayLengthSec ?? null,
           companyMaxPlayLengthSec: company.maxPlayLengthSec,
           slotCount,
+          displayCount,
           playsPerWindow: playsPerWindowOf(billingUnitHoursOf(t, s) * 3_600_000, maxPlayLengthSecOf(t, s, company.maxPlayLengthSec), slotCount),
         })
       }

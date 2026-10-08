@@ -118,6 +118,12 @@ const PlaylistCell = ({ data }: ICellRendererParams<AvailableInventoryRow>) =>
       <Tip title={data.playlistName}>
         <span className="truncate cursor-pointer" tabIndex={0} aria-label={`Playlist: ${data.playlistName}`}>{data.playlistName}</span>
       </Tip>
+      {/* Devices registered to this display type in PH Core (8 Oct 2026); absent from a pre-8-Oct demo snapshot, so then nothing is shown. */}
+      {typeof data.displayCount === 'number' && (
+        <Tip title={`${data.displayCount.toLocaleString('en-US')} display${data.displayCount === 1 ? '' : 's'} registered to ${data.displayTypeName} in PH Core.`}>
+          <span className="shrink-0" style={{ color: T.muted }} aria-label={`${data.displayCount} registered displays`}>({data.displayCount.toLocaleString('en-US')})</span>
+        </Tip>
+      )}
       {data.visionAi && (
         <Tip title="Vision/AI is enabled on this display type: on-device computer vision for passerby insight and person match.">
           <span className="inline-flex" aria-label="Vision/AI enabled"><Icon name="visibility" size={15} style={{ color: T.primary }} /></span>
@@ -318,7 +324,7 @@ function AssignedCell({ data, context }: IP) {
       ],
     },
     { label: 'Advertisers', options: [...advertiserDsps.entries()].map(([name, via]) => ({ value: `adv:${name}`, label: `${name} (${via.join(', ')})` })) },
-    { label: 'Or', options: [{ value: WHITELIST, label: 'Whitelist only' }, { value: GLOBAL_CHIP, label: GLOBAL_CHIP_LABEL, disabled: !!suppressed, note: suppressed ? `Not in global deals: this slot is ${suppressed}.` : undefined }] },
+    { label: 'Or', options: [{ value: WHITELIST, label: 'Whitelist only' }, { value: GLOBAL_CHIP, label: GLOBAL_CHIP_LABEL, disabled: !!suppressed, note: suppressed ? `Unavailable: this slot is ${suppressed}.` : undefined }] },
   ]
   return (
     <>
@@ -334,7 +340,7 @@ function AssignedCell({ data, context }: IP) {
       label={`${data.displayTypeName} slot ${data.zoneSlot}: assigned to`}
       placeholder="Unassigned"
       canEdit={c.canEdit}
-      value={[...assignedValues(a), ...(globalOn ? [GLOBAL_CHIP] : [])]}
+      value={[...assignedValues(a), ...(globalOn && !suppressed ? [GLOBAL_CHIP] : [])]}
       options={options}
       onChange={(picked) => {
         /* A picker action, not a real choice: open the modal and leave this
@@ -376,7 +382,6 @@ function AssignedCell({ data, context }: IP) {
         c.set(slotKey(data), { ...flag, assignedTo: { partnerIds, advertisers, whitelistOnly, buyersListId: null, buyersListIds: [] } })
       }}
     />
-    {suppressed && globalOn && <div style={{ fontSize: 12, color: T.muted }}>Not in global deals: this slot is {suppressed}.</div>}
     {!c.canEdit || a.partnerIds.length || a.advertisers.length || a.whitelistOnly || tiersOf(a).length || globalOn ? null : (
       <div style={{ fontSize: 12, color: T.muted }}>Unassigned: not offered to any buyer</div>
     )}
@@ -673,9 +678,17 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
     },
     {
       headerName: 'Plays per window', width: 150, minWidth: 135,
-      headerComponent: header('Plays per window', 'How many plays this slot gets in one billing unit: billing unit ÷ (max slot length × slots playing). Max slot length applies to every campaign on the loop, HQ campaigns included, and HQ slots fill part of the loop even though they are not listed here. Calculated, never typed: it updates as you change the max slot length or billing unit.'),
+      headerComponent: header('Plays per window', 'How many plays this slot gets in one billing unit on ONE display: billing unit ÷ (max slot length × slots playing). The figure in brackets is the fleet total: that per-display figure × the displays registered to this display type in PH Core (the count in brackets after the playlist name). Max slot length applies to every campaign on the loop, HQ campaigns included, and HQ slots fill part of the loop even though they are not listed here. Calculated, never typed: it updates as you change the max slot length or billing unit.'),
       valueGetter: (p) => (p.data ? effectivePlaysPerWindow((p.context as InvCtx).current, p.data) : 0),
-      cellRenderer: ({ value }: { value: number }) => <span>{value.toLocaleString('en-US')}</span>,
+      cellRenderer: ({ value, data }: ICellRendererParams<AvailableInventoryRow>) => {
+        const per = Number(value)
+        const fleet = typeof data?.displayCount === 'number' ? per * data.displayCount : null
+        return fleet === null ? <span>{per.toLocaleString('en-US')}</span> : (
+          <Tip title={`${per.toLocaleString('en-US')} plays per display; (${fleet.toLocaleString('en-US')}) across all ${data!.displayCount} display${data!.displayCount === 1 ? '' : 's'} registered to ${data!.displayTypeName}.`}>
+            <span>{per.toLocaleString('en-US')} <span style={{ color: T.muted }}>({fleet.toLocaleString('en-US')})</span></span>
+          </Tip>
+        )
+      },
     },
     {
       headerName: INTERACTIVE_RESERVE_HEADER, width: 170, minWidth: 150, cellRenderer: InteractiveReservePriceCell,
@@ -865,6 +878,22 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
     setMaxPlayLengthDefault: (displayTypeId: string, v: number | null) => maxPlayLengthDefaults.setDraft((cur) => (cur ? { ...cur, [displayTypeId]: v } : cur)),
     openAddBuyersList: (r: AvailableInventoryRow) => setAddingBuyersListFor(r),
   }
+  /* Combined plays per window per buyers list (8 Oct 2026): the fleet total (plays per display x displays registered in PH Core)
+     of every position the list is assigned to, summed - the ceiling for a guaranteed deal's committed volume. Read from the
+     draft, so assigning or unassigning a list, or changing a billing unit, recalculates before save. */
+  const listCapacity = new Map<string, { plays: number; displayTypes: number; positions: number }>()
+  const countedTypes = new Map<string, Set<string>>()
+  for (const r of invRows) {
+    if (typeof r.displayCount !== 'number') continue
+    const fleet = effectivePlaysPerWindow(invContext, r) * r.displayCount
+    for (const id of new Set(tiersOf(edited(invContext, r).assignedTo))) {
+      const cur = listCapacity.get(id) ?? { plays: 0, displayTypes: 0, positions: 0 }
+      const types = countedTypes.get(id) ?? new Set<string>()
+      types.add(r.displayTypeId)
+      countedTypes.set(id, types)
+      listCapacity.set(id, { plays: cur.plays + fleet, displayTypes: types.size, positions: cur.positions + 1 })
+    }
+  }
   const context = {
     settings: draft, data, canEdit,
     set: (id: string, patch: Partial<AdvertiserSetting>) => setDraft((cur) => (cur ? { ...cur, [id]: { ...cur[id], ...patch } } : cur)),
@@ -907,6 +936,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
       <BuyersListsTable
         lists={buyersLists.data?.items ?? []}
         canEdit={canEdit}
+        capacity={listCapacity}
         onChanged={() => qc.invalidateQueries({ queryKey: ['buyers-lists'] })}
       />
 

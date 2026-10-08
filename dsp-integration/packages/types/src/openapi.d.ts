@@ -2049,6 +2049,8 @@ export interface components {
             companyMaxPlayLengthSec: number;
             /** @description Slots playing — the loop positions in this slot's rotation (Max campaigns in rotation, Playlist Management), HQ positions included although only advertiser slots are listed here. Read-only. */
             slotCount: number;
+            /** @description The devices registered to this slot's display type in PH Core (Displays & Devices), the same count the booking schedule shows. Available Inventory shows it in brackets after the playlist name, and multiplies playsPerWindow by it for the bracketed fleet total. Per display type, so the same on every row sharing a displayTypeId; not an orientation roll-up. Read-only. */
+            displayCount: number;
             /** @description Derived, read-only — floor(billing unit / (maxPlayLengthSec x slotCount)). The admin screen recalculates it from the draft as the inputs change. */
             playsPerWindow: number;
         };
