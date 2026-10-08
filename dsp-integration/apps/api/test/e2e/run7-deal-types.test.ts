@@ -10,6 +10,8 @@
      D2 — private auction (PMP / buyers list)
      D3 — preferred deal (reserve, no committed volume)
      D4 — programmatic guaranteed (reserve with committed volume)
+     D5 — Computer Vision gender targeting on a deal (guaranteed, with lighter
+          preferred and private-auction variants); never the open real-time slot
 
    Fixture: the harness's one Advertiser slot (floor 100, assumed views 800 per
    window, two displays, a one-slot rotation). Reserve price 150 where the
@@ -20,11 +22,14 @@
    mapping is carried, not that a DSP accepts it. */
 import type { BuyersListDealType } from '@ph-dsp/types'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { png } from '../media'
+import { checkTargeting } from '../../src/exchange/enforcement'
+import { findPosition } from '../../src/domain/positions'
 import { guaranteedImpressions } from '../../src/domain/guarantee'
 import { dspDealTerms } from '../../src/dsp/dealTerms'
 import { runAuction } from '../../src/exchange/auction'
 import { runBilling } from '../../src/exchange/billing'
-import { ASSUMED_VIEWS, DT, GOOGLE, day, harness, response, swisseBid } from './harness'
+import { ASSUMED_VIEWS, DT, GOOGLE, POS, day, harness, response, swisseBid } from './harness'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -287,5 +292,101 @@ describe('Run 7 — D4 programmatic guaranteed: reserve with committed volume', 
     expect(second.statusCode).toBe(409)
     expect(h.campaigns.handoffs.filter((b) => b.windowStart === day(1).toISOString())).toHaveLength(1)
     expect(h.campaigns.refusedBookings).toEqual([])
+  })
+})
+
+/* D5 — a premium paid to target a gender through Computer Vision (variable
+   store.cv_gender), on webcam (Vision/AI) screens (ticket U8jqGDjvUjs8C4rkXG2E,
+   8 Oct 2026; needs IYNdMlPtQ7rhplRwbK0q: personalised targeting on every deal
+   type, never the open real-time slot). Committed volume comes from the
+   gendered subset of the slot's VAC-d (AudienceSource.targetedShare), not the
+   whole slot. The POC share is a fixed fraction per AND group of rules; PH
+   Core supplies the measured detection rate. */
+const MALE = [[{ source: 'store', variable: 'store.cv_gender', op: 'match_exactly', values: ['Male'] }]]
+const RTB_ONLY = 'the open real-time auction clears default and localised only'
+
+/* The slot has Vision/AI on its display type and the retailer has opened store.cv_gender to every DSP. */
+async function cvHarness(dealType: BuyersListDealType, extra: Record<string, unknown> = {}) {
+  const h = await dealHarness(dealType, extra)
+  const dt = (await h.ctx.displayTypes.get(DT))! as { enabledFeatures?: { visionAi?: Record<string, unknown> } }
+  await h.ctx.displayTypes.saveRecord(DT, { ...dt, enabledFeatures: { ...dt.enabledFeatures, visionAi: { ...dt.enabledFeatures?.visionAi, enabled: true } } } as never)
+  expect(((await h.ctx.displayTypes.get(DT)) as { enabledFeatures?: { visionAi?: { enabled?: boolean } } }).enabledFeatures?.visionAi?.enabled).toBe(true)
+  await h.ctx.company.saveVariableAccess({ ...(await h.ctx.company.variableAccess()), 'store.cv_gender': 'all' })
+  return h
+}
+/* A personalised campaign: the mandatory default plus a Male version, submitted, approved and activated. */
+async function cvCampaign(h: H, name: string) {
+  const created = await h.partner.create({ advertiserId: 'swisse', name, displayTypeId: DT, default: { pricingType: 'personalised' }, targeted: [{ id: 'men', priority: 1, pricingType: 'personalised', rules: MALE }] })
+  expect(created.statusCode, created.body).toBe(201)
+  const id = created.json().campaignId as string
+  for (const version of ['default', 'men']) expect((await h.partner.upload(id, version, png(1920, 1080))).statusCode).toBe(201)
+  expect((await h.partner.submit(id)).statusCode).toBe(200)
+  const ap = await h.admin.approve(id, (await h.ctx.approvals.view(id)).assetVersion as string); expect(ap.statusCode, ap.body).toBe(200)
+  expect((await h.admin.activate(id)).statusCode).toBe(200)
+  return id
+}
+
+describe('Run 7 — D5 Computer Vision gender on a deal: personalised, targeted forecast', () => {
+  it('D5.1 — guaranteed: Male targeting is accepted; volume = floor(gendered forecast × (1 − buffer%)), not the whole-slot VAC-d; DV360 PG / Amazon guaranteed deal carry it; personalised-eligible; billed realised VAC-d, no make-good', async () => {
+    const h = await cvHarness('guaranteed')
+    const campaignId = await cvCampaign(h, 'Swisse — D5.1')
+    const targeted = Math.round(ASSUMED_VIEWS * (await h.ctx.audience.targetedShare(DT, MALE as never)))
+    const committed = guaranteedImpressions(targeted, BUFFER_PCT)
+    expect(targeted, 'the gendered subset is smaller than the whole slot').toBeLessThan(ASSUMED_VIEWS)
+    expect(committed).toBeLessThan(COMMITTED)
+    const res = await reserve(h, campaignId, day(1))
+    expect(res.statusCode, res.body).toBe(201)
+    expect(res.json()).toMatchObject({ status: 'reserved', dealType: 'guaranteed', clearingCpm: RESERVE, forecastImpressions: targeted, guaranteedImpressions: committed })
+    expect(res.json().dspDeal).toEqual({ dealType: 'guaranteed', dspDealKind: 'programmatic_guaranteed', unitCount: committed, unit: 'impressions' })
+    expect(dspDealTerms('amazon_dsp', 'guaranteed', committed)).toEqual({ dealType: 'guaranteed', dspDealKind: 'guaranteed_deal', unitCount: committed, unit: 'impressions' })
+    /* Held outside the auction, handed off, and the personalised version may play in the deal-held window. */
+    expect(await rowsOf(h, day(1))).toMatchObject([{ type: 'reserve', dealType: 'guaranteed', forecastImpressions: targeted, guaranteedImpressions: committed }])
+    expect(booked(h, day(1))).toMatchObject([{ campaignId, displayTypeId: DT, personalisedEligible: true }])
+    expect((await runAuction(h.ctx, day(1))).positions[0]).toMatchObject({ bidRequests: 0, winner: null })
+    /* A quarter of the time played: billed on the realised VAC-d at the deal rate; the shortfall against the commitment is not made good. */
+    const [item] = await bill(h, campaignId, day(1), { plays: 1440, playedSec: EXPECTED_SEC / 4 })
+    expect(item).toMatchObject({ campaignId, cpm: RESERVE, realisedViews: ASSUMED_VIEWS / 4 })
+    expect(ASSUMED_VIEWS / 4).toBeLessThan(committed)
+    expect(item.amount).toBeCloseTo((ASSUMED_VIEWS / 4 / 1000) * RESERVE, 2)
+    expect(await runBilling(h.ctx)).toEqual([])
+  })
+
+  it('D5.2 — the same targeting on an open real-time position is still refused targeting_not_supported', async () => {
+    const h = await cvHarness('guaranteed')
+    const campaignId = await cvCampaign(h, 'Swisse — D5.2')
+    await h.admin.slot({ listMode: 'rtb', buyersListId: null, buyersListIds: [] })
+    const pos = (await findPosition(h.ctx, POS))!
+    expect(checkTargeting(pos, 'personalised')).toMatchObject({ code: 'targeting_not_supported', reason: expect.stringContaining(RTB_ONLY) })
+    expect(checkTargeting(pos, 'localised')).toBeNull()
+    /* Nothing is booked for it through the API either. */
+    expect((await h.partner.bid(campaignId, day(1), 300)).statusCode).toBeGreaterThanOrEqual(400)
+    expect(anyBooked(h)).toEqual([])
+  })
+
+  it('D5.3 — preferred variant: accepted, no committed volume, personalised-eligible, billed at the reserve price', async () => {
+    const h = await cvHarness('preferred')
+    const campaignId = await cvCampaign(h, 'Swisse — D5.3')
+    const res = await reserve(h, campaignId, day(1))
+    expect(res.statusCode, res.body).toBe(201)
+    expect(res.json()).toMatchObject({ status: 'reserved', dealType: 'preferred', clearingCpm: RESERVE, forecastImpressions: null, guaranteedImpressions: null })
+    expect(res.json().dspDeal).toEqual({ dealType: 'preferred', dspDealKind: 'preferred_deal', unitCount: null, unit: null })
+    expect(booked(h, day(1))).toMatchObject([{ campaignId, personalisedEligible: true }])
+    const [item] = await bill(h, campaignId, day(1), { plays: 2880, playedSec: EXPECTED_SEC / 2 })
+    expect(item).toMatchObject({ cpm: RESERVE, realisedViews: ASSUMED_VIEWS / 2, amount: 60 })
+  })
+
+  it('D5.4 — private-auction variant: a gendered bid clears, the first win locks the rate for the term, later windows book at it, personalised-eligible', async () => {
+    const h = await cvHarness('private_auction')
+    const { id: _id, lockedWin: _l, createdAt: _c, updatedAt: _u, ...l } = (await h.ctx.buyersLists.get('bl_private_auction'))! as Record<string, unknown>
+    await h.ctx.buyersLists.update('bl_private_auction', { ...l, activeTo: '2026-09-27T23:59:59.000Z', auctionCloses: day(1).toISOString() } as never)
+    await h.bidder.control({ mode: 'no_bid' })
+    const campaignId = await cvCampaign(h, 'Swisse — D5.4')
+    expect((await h.partner.bid(campaignId, day(1), 210)).statusCode).toBe(201)
+    expect((await runAuction(h.ctx, day(1))).positions[0].winner).toMatchObject({ clearingCpm: 210 })
+    expect((await h.ctx.buyersLists.get(h.list.id))!.lockedWin).toMatchObject({ cpm: 210, advertiserId: 'swisse', campaignId })
+    for (const w of [day(2), day(3)]) {
+      expect((await runAuction(h.ctx, w)).positions[0]).toMatchObject({ bidRequests: 0, winner: { clearingCpm: 210 } })
+      expect(booked(h, w)).toMatchObject([{ campaignId, personalisedEligible: true }])
+    }
   })
 })

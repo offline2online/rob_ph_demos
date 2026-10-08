@@ -321,7 +321,7 @@ async function main() {
      Open RTB is L2–L6 above; private auction is the vitest Run 3/4/7 (it needs an auction window
      and a locked term, which this clock-driven journey does not exercise twice). */
   currentPhase = 5
-  console.log('\nPhase 5 — deal types: preferred and programmatic guaranteed (M1–M8)')
+  console.log('\nPhase 5 — deal types: preferred and programmatic guaranteed, CV gender (M1–M9)')
   const RESERVE_PRICE = floorCpm + 50
   const assign = (buyersListId: string | null) => admin('PUT', '/available-inventory', { items: [{ displayTypeId: dtId, slot: 1, reservePrice: RESERVE_PRICE, assignedTo: { partnerIds: buyersListId ? [] : [PARTNER], advertisers: [], whitelistOnly: false, buyersListId } }] })
   const newList = (dealType: string, extra: Record<string, unknown> = {}) => admin('POST', '/buyers-lists', { name: `Run 7 ${dealType}`, dealType, invitedBuyers: [{ partnerId: PARTNER, seatId: '5130002' }], ...extra })
@@ -360,13 +360,16 @@ async function main() {
   const assignedPg = await assign(pg.json.id)
   must('M5b', 'slot reassigned to the guaranteed deal', assignedPg.status === 200, '200', `${assignedPg.status} ${assignedPg.text.slice(0, 200)}`)
   const bufferPct = (await admin('GET', '/advertiser-settings')).json?.guaranteeBufferPct ?? 10
-  const committed = Math.floor(viewsPerWindow * (1 - bufferPct / 100))
+  /* The campaign carries personalised Computer Vision gender versions (K), so the commitment is made against the gendered subset the camera can reach, not the whole slot (8 Oct 2026): one AND group of rules is half the slot's views in the POC audience source. */
+  const GENDER_SHARE = 0.5
+  const forecast = Math.round(viewsPerWindow * GENDER_SHARE)
+  const committed = Math.floor(forecast * (1 - bufferPct / 100))
   const pgRes = await reserveOn(winGuaranteed)
-  must('M6', `reserve: committed volume = floor(forecast ${viewsPerWindow} × (1 − ${bufferPct}%)) = ${committed}, carried to DV360 as programmatic_guaranteed`, pgRes.status === 201 && pgRes.json?.dealType === 'guaranteed' && pgRes.json?.forecastImpressions === viewsPerWindow && pgRes.json?.guaranteedImpressions === committed && pgRes.json?.dspDeal?.dspDealKind === 'programmatic_guaranteed' && pgRes.json?.dspDeal?.unitCount === committed && pgRes.json?.dspDeal?.unit === 'impressions', `guaranteed, ${committed} impressions`, `${pgRes.status} ${pgRes.text.slice(0, 400)}`)
+  must('M6', `CV gender guaranteed deal (D5): committed volume = floor(gendered forecast ${forecast} × (1 − ${bufferPct}%)) = ${committed}, not the whole-slot ${Math.floor(viewsPerWindow * (1 - bufferPct / 100))}; carried to DV360 as programmatic_guaranteed`, pgRes.status === 201 && pgRes.json?.dealType === 'guaranteed' && pgRes.json?.forecastImpressions === forecast && pgRes.json?.guaranteedImpressions === committed && pgRes.json?.dspDeal?.dspDealKind === 'programmatic_guaranteed' && pgRes.json?.dspDeal?.unitCount === committed && pgRes.json?.dspDeal?.unit === 'impressions', `guaranteed, ${committed} impressions`, `${pgRes.status} ${pgRes.text.slice(0, 400)}`)
   {
     const d = db()
     const bk = d.prepare('SELECT * FROM campaign_slot_bookings WHERE display_type_id = ? AND slot = 1 AND window_start = ?').get(dtId, winGuaranteed) as any
-    record('M7', 'hand-off: the guaranteed window is booked for the campaign at once', !!bk && bk.campaign_id === campaignId, `booking for ${campaignId}`, JSON.stringify(bk ?? null))
+    record('M7', 'hand-off: the guaranteed window is booked for the campaign at once, personalised versions eligible', !!bk && bk.campaign_id === campaignId && bk.personalised_eligible === 1, `booking for ${campaignId}`, JSON.stringify(bk ?? null))
     d.close()
   }
   /* M8 — a short delivery is billed as played at the reserve price: realised VAC-d, no make-good. */
@@ -381,6 +384,14 @@ async function main() {
     record('M8', 'billing: realised VAC-d at the reserve price; the shortfall against the committed volume is not made good', ok, `cpm ${RESERVE_PRICE}, 6 plays, amount = realised views × cpm, realised views below ${committed}`, li ? JSON.stringify({ plays: li.plays, cpm: li.cpm, amount: li.amount, realisedViews: li.realised_views }) : `no line item · tick: ${tick4.trim().split('\n').slice(-2).join(' | ')}`)
     d.close()
   }
+  /* M9 — an open real-time slot sells no window to a personalised (CV gender) campaign at all: the API refuses the booking outright (409), and nothing is booked. The targeting_not_supported refusal on the per-impression path is vitest's D5.2. */
+  const openAgain = await assign(null)
+  const winOpen = new Date(t0 + 5 * 24 * 3_600_000).toISOString()
+  const openTry = await partner('POST', '/reservations', { positionId: handover.positionId, windowStart: winOpen, campaignId, advertiserId: ADVERTISER, type: 'bid', bidCpm: RESERVE_PRICE + 100 })
+  const openBk = db()
+  const openBooked = openBk.prepare('SELECT 1 FROM campaign_slot_bookings WHERE display_type_id = ? AND slot = 1 AND window_start = ?').get(dtId, winOpen)
+  openBk.close()
+  record('M9', 'CV gender (personalised) campaign on an open real-time slot: refused, nothing booked', openAgain.status === 200 && openTry.status === 409 && !openBooked, '409 (real-time position takes no window sale), no booking', `${openAgain.status} ${openTry.status} ${openTry.text.slice(0, 200)} booked=${!!openBooked}`)
   const restored = await mocks('POST', '/bidder', { mode: 'default' })
   record('P4z', 'mock bidders restored', restored.status === 200, '200', String(restored.status))
 }
