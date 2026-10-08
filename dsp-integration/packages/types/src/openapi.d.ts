@@ -2627,6 +2627,11 @@ export interface components {
                 /** @description Live windows won or reserved */
                 bookedWindows: number;
             };
+            /**
+             * Format: date-time
+             * @description When this campaign last actually played on any display in a live environment (Campaign Status "Last used" column). PH Core's playback data, read through PlaybackSource.lastPlayed; null when it has never played.
+             */
+            lastPlayedAt?: string | null;
             activation: {
                 enabled: boolean;
             };

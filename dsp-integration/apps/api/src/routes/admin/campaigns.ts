@@ -11,9 +11,9 @@ import { HttpError, notFound, validationFailed } from '../../http/errors'
 
 export const campaignRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => async (app) => {
   type Held = Map<string, { bookedWindows: number; nextWindowStart: string | null }>
-  const toCampaign = (c: Awaited<ReturnType<typeof ctx.approvalCampaigns.listCampaigns>>[number], r: Awaited<ReturnType<typeof ctx.campaigns.getCampaign>>, held: Held): Campaign => ({
+  const toCampaign = (c: Awaited<ReturnType<typeof ctx.approvalCampaigns.listCampaigns>>[number], r: Awaited<ReturnType<typeof ctx.campaigns.getCampaign>>, held: Held, lastPlayed: Map<string, string>): Campaign => ({
     campaignId: c.campaignId, name: c.name, source: c.source, advertiserId: c.advertiserId, advertiserName: c.advertiserName,
-    partnerId: c.partnerId, partnerName: c.partnerName, displayTypeId: r?.displayTypeId ?? null, pricingType: r?.pricingType ?? null, schedule: scheduleOf(c.campaignId, held), activation: c.activation,
+    partnerId: c.partnerId, partnerName: c.partnerName, displayTypeId: r?.displayTypeId ?? null, pricingType: r?.pricingType ?? null, schedule: scheduleOf(c.campaignId, held), lastPlayedAt: lastPlayed.get(c.campaignId) ?? null, activation: c.activation,
     ...campaignLayerSummary(r?.targeting),
     ...(r?.brief ? { brief: r.brief } : {}),
   })
@@ -27,8 +27,10 @@ export const campaignRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync
        used to load every live sale ever made — 100,000 rows after months —
        and filter that whole list once per campaign. */
     const [refs, held] = [await ctx.approvalCampaigns.listCampaigns(), await ctx.reservations.liveByCampaign(ctx.clock().toISOString())]
+    /* Last used is PH Core's playback data (api/PH-CORE-BOUNDARIES.md, PlaybackSource.lastPlayed); the exchange holds none of it. */
+    const lastPlayed = await ctx.playback.lastPlayed()
     const platform = new Map((await ctx.campaigns.listCampaigns()).map((c) => [c.campaignId, c]))
-    return { items: refs.map((c) => toCampaign(c, platform.get(c.campaignId) ?? null, held)) }
+    return { items: refs.map((c) => toCampaign(c, platform.get(c.campaignId) ?? null, held, lastPlayed)) }
   })
 
   app.put<{ Params: { id: string }; Body: { enabled?: unknown } }>('/campaigns/:id/activation', async (req) => {
@@ -36,7 +38,7 @@ export const campaignRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync
     try {
       const c = await ctx.approvals.setActivation(req.params.id, req.body.enabled)
       if (!c) throw notFound()
-      return toCampaign(c, await ctx.campaigns.getCampaign(c.campaignId), await ctx.reservations.liveByCampaign(ctx.clock().toISOString()))
+      return toCampaign(c, await ctx.campaigns.getCampaign(c.campaignId), await ctx.reservations.liveByCampaign(ctx.clock().toISOString()), await ctx.playback.lastPlayed())
     } catch (e) {
       if (e instanceof ApprovalError) throw new HttpError(e.status, e.code, e.message)
       throw e

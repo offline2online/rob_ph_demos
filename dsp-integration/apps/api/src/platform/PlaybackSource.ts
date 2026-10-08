@@ -41,6 +41,11 @@ export interface PlaybackSource {
      (receivedAt, id) cursor when one is given. The late-play ledger reads
      what arrived since its last scan with this; plays with no received-at
      time are never returned (they cannot be late). */
+  /* When each campaign last played on any display, whenever that was
+     (Rob, 8 Oct 2026, Campaign Status "Last used" column). Campaigns that
+     never played are absent. Aggregated where the plays are stored — one
+     answer for the whole table, never a row per play. */
+  lastPlayed(): Awaitable<Map<string, string>>
   receivedBetween(q: { since: string; upTo: string; after?: { receivedAt: string; id: string }; limit: number }): Awaitable<ReceivedPlay[]>
 }
 
@@ -52,6 +57,11 @@ export const sqlitePlaybackSource = (db: Db): PlaybackSource => ({
       ? prepared(db, 'SELECT * FROM plays WHERE campaign_id = ? AND played_at >= ? AND played_at < ? ORDER BY played_at').all(campaignId, from, to)
       : prepared(db, 'SELECT * FROM plays WHERE played_at >= ? AND played_at < ? ORDER BY played_at').all(from, to)) as unknown as Row[]
     return rows.map((r) => ({ displayId: r.display_id, campaignId: r.campaign_id, playedAt: r.played_at, durationSec: r.duration_sec, versionId: r.version_id, tier: r.tier }))
+  },
+  lastPlayed() {
+    /* MAX(played_at) per campaign from the covering index (campaign_id, played_at, ...). */
+    const rows = prepared(db, 'SELECT campaign_id, MAX(played_at) AS last_played_at FROM plays GROUP BY campaign_id').all() as unknown as { campaign_id: string; last_played_at: string }[]
+    return new Map(rows.map((r) => [r.campaign_id, r.last_played_at]))
   },
   receivedBetween({ since, upTo, after, limit }) {
     const rows = (after

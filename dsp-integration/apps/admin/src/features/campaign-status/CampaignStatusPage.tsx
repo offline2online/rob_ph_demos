@@ -23,6 +23,11 @@
    switching a campaign on is what this table is for — and DSP sits between
    Playlist name and No. of campaigns.
 
+   Triage order (Rob, 8 Oct 2026): Received replaces Schedule and Last used
+   closes the row. Rows open Awaiting approval first, oldest Received at the
+   top, then decided rows by Last used, most recent first (triage.ts).
+   Last used is PH Core's playback data (Campaign.lastPlayedAt).
+
    The Approved / Awaiting approval / Rejected counts above the table set
    the Status column's own filter when clicked (ticket, 27 Sep 2026); the
    table stays filtered until the user clears it from that column's funnel.
@@ -42,6 +47,7 @@ import { Icon } from '../../shared/Icon'
 import { externalSetColumn, pageSetColumn, searchColumn, setColumn } from '../../shared/TableFilters'
 import { T } from '../../theme/phTheme'
 import { CAMPAIGN_STATUS_PATH, useCampaignActions } from './useCampaigns'
+import { elapsedSince, triageOrder } from './triage'
 
 interface Ctx {
   approvals: Record<string, Approval>
@@ -53,6 +59,7 @@ interface Ctx {
   reject: (a: Approval, reason: string) => Promise<void>
   unreject: (a: Approval) => Promise<void>
   activate: (c: Campaign, enabled: boolean) => Promise<void>
+  now: number
 }
 type P = ICellRendererParams<Campaign, unknown, { current: Ctx }>
 
@@ -90,18 +97,20 @@ const VariablesCell = ({ variables, ruleLines }: { variables: string[]; ruleLine
 }
 const LocalisedVariablesCell = ({ data }: P) => (data ? <VariablesCell variables={data.localisedVariables} ruleLines={data.localisedRuleLines} /> : null)
 const PersonalisedVariablesCell = ({ data }: P) => (data ? <VariablesCell variables={data.personalisedVariables} ruleLines={data.personalisedRuleLines} /> : null)
-/* When the advertiser's booking starts, so what is up next sorts to the top. */
-const ScheduleCell = ({ data }: P) => {
+/* When the creative's approval request was received, with the time since in
+   brackets — a snapshot taken when the page loaded, never ticking (Rob, 8 Oct
+   2026). Only while the row is Awaiting approval: once decided there is no
+   waiting left to measure, so it reads as a dash. */
+const fmtUtc = (iso: string) => new Date(iso).toLocaleString('en-GB', { timeZone: 'UTC', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+const ReceivedCell = ({ data, context }: P) => {
   if (!data) return null
-  const { nextWindowStart, bookedWindows } = data.schedule ?? { nextWindowStart: null, bookedWindows: 0 }
-  if (!nextWindowStart) return <span style={{ fontSize: 12, color: T.micro }}>{bookedWindows ? 'Finished' : 'Not booked'}</span>
-  return (
-    <div className="min-w-0 py-1.5">
-      <div className="truncate">{new Date(nextWindowStart).toLocaleDateString('en-GB', { timeZone: 'UTC', weekday: 'short', day: 'numeric', month: 'short' })}</div>
-      <div style={{ fontSize: 11, color: T.micro }}>{bookedWindows} window{bookedWindows === 1 ? '' : 's'} booked</div>
-    </div>
-  )
+  const a = context.current.approvals[data.campaignId]
+  if (a?.status !== 'awaiting_approval' || !a.submittedAt) return <span style={{ color: T.micro }}>—</span>
+  return <span className="block truncate">{fmtUtc(a.submittedAt)} <span style={{ color: T.micro }}>({elapsedSince(a.submittedAt, context.current.now)})</span></span>
 }
+/* When the campaign last actually played live — PH Core's playback data. */
+const LastUsedCell = ({ data }: P) =>
+  data?.lastPlayedAt ? <span className="block truncate">{fmtUtc(data.lastPlayedAt)}</span> : <span style={{ color: T.micro }}>—</span>
 
 /* Approve, reject or switch a campaign on from the table (Rob, 20 Sep). */
 function RowMenu({ data, context }: P) {
@@ -162,11 +171,13 @@ export function CampaignStatusPage() {
   /* Draft never surfaces in a retailer-facing view (ticket, 22 Sep, §3):
      the retailer only ever sees a campaign once it has been submitted. */
   const all = useMemo(() => nonHq.filter((c) => approvals[c.campaignId]?.status !== 'draft'), [nonHq, approvals])
-  const rows = useMemo(() => all.filter((c) => {
+  /* Taken once when the page loads: the elapsed figure does not tick. */
+  const [now] = useState(() => Date.now())
+  const rows = useMemo(() => triageOrder(all.filter((c) => {
     if (advertiserId && c.advertiserId !== advertiserId) return false
     const s = approvals[c.campaignId]?.status
     return !statusFilter.length || (!!s && (statusFilter as string[]).includes(s))
-  }), [all, advertiserId, statusFilter, approvals])
+  }), approvals), [all, advertiserId, statusFilter, approvals])
   const counts = useMemo(() => {
     const c = { approved: 0, awaiting_approval: 0, rejected: 0 }
     for (const row of all) {
@@ -179,7 +190,7 @@ export function CampaignStatusPage() {
   const reason = useRef('')
 
   const ctx: Ctx = {
-    approvals, canApprove, busy, open: (id) => navigate(`${CAMPAIGN_STATUS_PATH}/${id}`), approve, reject, unreject, activate,
+    approvals, canApprove, busy, now, open: (id) => navigate(`${CAMPAIGN_STATUS_PATH}/${id}`), approve, reject, unreject, activate,
     askReject: (a) => {
       reason.current = ''
       setRejecting(a)
@@ -212,10 +223,10 @@ export function CampaignStatusPage() {
       ...externalSetColumn<Campaign>('Advertiser', advertiserOptions.map((a) => a.label), advertiserOptions.find((a) => a.value === advertiserId)?.label,
         (name) => setAdvertiserFilter(advertiserOptions.find((a) => a.label === name)?.value)),
     },
+    /* Received replaces Schedule (Rob, 8 Oct 2026): the forward schedule is no longer relevant on the real-time path. */
     {
-      /* What the advertiser booked, earliest first, so what is up next is at the top. */
-      headerName: 'Schedule', width: 150, minWidth: 130, cellRenderer: ScheduleCell, sort: 'asc', comparator: (a, b) => (a || '9999').localeCompare(b || '9999'),
-      valueGetter: (p) => p.data?.schedule.nextWindowStart ?? '',
+      headerName: 'Received', width: 190, minWidth: 160, cellRenderer: ReceivedCell,
+      valueGetter: (p) => (p.data && approvals[p.data.campaignId]?.status === 'awaiting_approval' ? approvals[p.data.campaignId]?.submittedAt ?? '' : ''),
     },
     {
       headerName: 'Status', width: 180, minWidth: 150, cellRenderer: StatusCell,
@@ -238,6 +249,7 @@ export function CampaignStatusPage() {
       headerName: 'Personalised variables', width: 200, minWidth: 160, cellRenderer: PersonalisedVariablesCell,
       valueGetter: (p) => p.data?.personalisedVariables.join(', ') ?? '',
     },
+    { headerName: 'Last used', width: 150, minWidth: 130, cellRenderer: LastUsedCell, valueGetter: (p) => p.data?.lastPlayedAt ?? '' },
     { headerName: '', width: 56, suppressSizeToFit: true, pinned: 'right', cellRenderer: RowMenu },
   ], [approvals, all, advertiserOptions, advertiserId, statusOptions, statusFilter])
 

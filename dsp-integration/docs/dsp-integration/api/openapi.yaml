@@ -3136,6 +3136,7 @@ components:
           properties:
             nextWindowStart: {type: [string, 'null'], format: date-time, description: The next play window this campaign holds, or null when none is ahead.}
             bookedWindows: {type: integer, description: Live windows won or reserved, past and future.}
+        lastPlayedAt: {type: [string, 'null'], format: date-time, description: 'When this campaign last actually played on any display in a live environment (Campaign Status "Last used" column). PH Core''s playback data, read through PlaybackSource.lastPlayed; null when it has never played.'}
         activation:
           type: object
           required: [enabled]
