@@ -637,8 +637,9 @@ paths:
         setting", 7 Oct 2026), for the FIXED duration of one play of the
         slot, in whole seconds, 1-600. Slot override, else the display
         type's default, else the company-wide default (Advertiser settings →
-        `maxPlayLengthSec`, platform default 15). It is what plays per window
-        are counted against — floor(window / max play length) — and the
+        `maxPlayLengthSec`, platform default 15). It is the longest one play may run
+        (HQ campaigns included); plays per window are floor(window / (max
+        play length x slots in the rotation)) — and the
         longest creative the slot accepts. Unlike the fields above, OMITTED
         means unchanged (a client that predates it never sends it); null
         inherits.
@@ -1750,8 +1751,8 @@ components:
             height: {type: integer}
             orientation: {type: string, enum: [landscape, portrait]}
             slotDurationSec: {type: number}
-            loopLengthSec: {type: number, description: Informational. The loop's length; plays per window are NOT counted against it.}
-            maxPlayLengthSec: {type: integer, description: 'The fixed duration of one play of this slot (slot, else display type, else company default). Plays per window are counted against it, and a creative longer than it is rejected.'}
+            loopLengthSec: {type: number, description: Informational. The loop's length as the schedule runs it. Plays per window are counted against maxPlayLengthSec x slotCount (the retailer's own settings), not this figure.}
+            maxPlayLengthSec: {type: integer, description: 'Max slot length: the longest one play of this slot may run (slot, else display type, else company default). It binds every campaign on the position, HQ''s included. Plays per window are counted against it (times slotCount), and a creative longer than it is rejected.'}
             shareOfVoice: {type: number, description: 1 / maximumCampaignsPlayedInRotation}
             openOohVenueType: {type: string}
         assignment: {type: string, enum: [rtb, whitelist_only, deal, reserved]}
@@ -1764,9 +1765,13 @@ components:
             is sold in (availability, a reservation's windowStart, the bid
             request's `exp`) is this long, laid back to back from a fixed
             Monday 00:00 UTC.
+        slotCount:
+          type: integer
+          minimum: 1
+          description: The slots (loop positions) in the rotation this slot plays in — Max campaigns in rotation in Playlist Management. HQ positions count as well as advertiser ones.
         playsPerWindow:
           type: integer
-          description: The transacting unit. Plays this slot gets on one display in one of its windows (billingUnitHours long) — floor(window / maxPlayLengthSec), the slot's fixed per-play duration; never the loop length and never a creative's own length. Assumed views (VAC-d) convert plays to impressions for billing only.
+          description: The transacting unit. Plays this slot gets on one display in one of its windows (billingUnitHours long) — floor(window / (screen.maxPlayLengthSec x slotCount)). Derived from the retailer's three settings, never typed and never from a creative's own length. Assumed views (VAC-d) convert plays to impressions for billing only.
         assumedViewsPerWindow:
           type: integer
           description: Assumed views (VAC-d) in one of this position's windows (billingUnitHours long).
@@ -2103,7 +2108,7 @@ components:
         categoryWhitelist: {type: array, items: {type: string}, description: 'IAB categories, chosen from the IAB taxonomy (free text is refused, 422). One list for every DSP.'}
         categoryBlacklist: {type: array, items: {type: string}}
         bidLookaheadSeconds: {type: integer, minimum: 1, default: 35, description: 'Real-time bidding: how many seconds before a slot plays its auction opens, so the winning creative can be downloaded and rendered in time. Company-wide. Default 35, matching Broadsign Reach (its Real-Time Audience API sends bid requests about 35 s before the expected programmatic slot). Optional on save: omitted keeps the stored value.'}
-        maxPlayLengthSec: {type: integer, minimum: 1, maximum: 600, default: 15, description: 'Max play length: the company-wide default fixed duration of one play of a slot, in whole seconds. A display type and a slot can each override it. Plays per window = floor(window / max play length) and a creative longer than it is rejected. Optional on save: omitted keeps the stored value.'}
+        maxPlayLengthSec: {type: integer, minimum: 1, maximum: 600, default: 15, description: 'Max play length: the company-wide default fixed duration of one play of a slot, in whole seconds. A display type and a slot can each override it. Plays per window = floor(window / (max play length x slots in the rotation)) and a creative longer than it is rejected. Optional on save: omitted keeps the stored value.'}
         defaultCommittedPlays: {type: integer, minimum: 1, nullable: true, description: 'Play config: the committed-plays figure a new buyers list is pre-filled with (the field stays editable per list; editing a saved list never changes it). Whole number, at least 1; null means no default (per play). Optional on save: omitted keeps the stored value, null clears it.'}
         uncachedRestriction: {type: string, enum: [off, fixed, store_open], default: off, description: 'Bandwidth protection (real-time impressions): while the restriction is in force, only a bid whose creative the player already holds in its cache can win; an uncached creative would need a live download. `off`: never restricted. `fixed`: restricted between uncachedRestrictionStart and uncachedRestrictionEnd every day (UTC). `store_open`: restricted while the player reports the store open (`storeOpen` on the impression signal). Optional on save: omitted keeps the stored value.'}
         uncachedRestrictionStart: {type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$', default: '09:00', description: 'Start of the daily restricted window (HH:MM, UTC); used when uncachedRestriction is `fixed`. A start after the end wraps past midnight. Optional on save.'}
@@ -2316,7 +2321,7 @@ components:
         updatedAt: {type: string, format: date-time}
     AvailableInventoryRow:
       type: object
-      required: [displayTypeId, displayTypeName, playlistName, playlistId, unassigned, scored, unsellableReason, salesLocked, inGlobalDeal, globalDealSuppressedBy, slot, zoneSlot, position, assignedTo, qrControl, visionAi, reservePrice, reservePriceOverride, displayTypeReservePrice, interactiveReservePrice, interactiveReservePriceOverride, billingUnitHours, billingUnitHoursOverride, displayTypeBillingUnitHours, companyPlayWindowHours, maxCampaigns, maxCampaignsOverride, displayTypeMaxCampaigns, maxPlayLengthSec, maxPlayLengthSecOverride, displayTypeMaxPlayLengthSec, companyMaxPlayLengthSec]
+      required: [displayTypeId, displayTypeName, playlistName, playlistId, unassigned, scored, unsellableReason, salesLocked, inGlobalDeal, globalDealSuppressedBy, slot, zoneSlot, position, assignedTo, qrControl, visionAi, reservePrice, reservePriceOverride, displayTypeReservePrice, interactiveReservePrice, interactiveReservePriceOverride, billingUnitHours, billingUnitHoursOverride, displayTypeBillingUnitHours, companyPlayWindowHours, maxCampaigns, maxCampaignsOverride, displayTypeMaxCampaigns, maxPlayLengthSec, maxPlayLengthSecOverride, displayTypeMaxPlayLengthSec, companyMaxPlayLengthSec, slotCount, playsPerWindow]
       properties:
         displayTypeId: {type: string}
         displayTypeName: {type: string}
@@ -2515,7 +2520,7 @@ components:
             The resolved max play length, in seconds: the fixed per-play
             duration of this slot — maxPlayLengthSecOverride when set, else
             displayTypeMaxPlayLengthSec, else companyMaxPlayLengthSec. Plays
-            per window are floor(window / this); a creative longer than it
+            per window are floor(window / (this x slotCount)); a creative longer than it
             is rejected at upload.
         maxPlayLengthSecOverride:
           type: [integer, 'null']
@@ -2526,6 +2531,13 @@ components:
         companyMaxPlayLengthSec:
           type: integer
           description: The company-wide default max play length (Advertiser settings), what an un-overridden slot on a display type with no default resolves to.
+        slotCount:
+          type: integer
+          minimum: 1
+          description: Slots playing — the loop positions in this slot's rotation (Max campaigns in rotation, Playlist Management), HQ positions included although only advertiser slots are listed here. Read-only.
+        playsPerWindow:
+          type: integer
+          description: Derived, read-only — floor(billing unit / (maxPlayLengthSec x slotCount)). The admin screen recalculates it from the draft as the inputs change.
 
     BookingSchedule:
       type: object

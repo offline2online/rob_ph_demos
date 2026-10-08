@@ -496,8 +496,9 @@ export interface paths {
          *     setting", 7 Oct 2026), for the FIXED duration of one play of the
          *     slot, in whole seconds, 1-600. Slot override, else the display
          *     type's default, else the company-wide default (Advertiser settings →
-         *     `maxPlayLengthSec`, platform default 15). It is what plays per window
-         *     are counted against — floor(window / max play length) — and the
+         *     `maxPlayLengthSec`, platform default 15). It is the longest one play may run
+         *     (HQ campaigns included); plays per window are floor(window / (max
+         *     play length x slots in the rotation)) — and the
          *     longest creative the slot accepts. Unlike the fields above, OMITTED
          *     means unchanged (a client that predates it never sends it); null
          *     inherits.
@@ -1271,9 +1272,9 @@ export interface components {
                 /** @enum {string} */
                 orientation: "landscape" | "portrait";
                 slotDurationSec: number;
-                /** @description Informational. The loop's length; plays per window are NOT counted against it. */
+                /** @description Informational. The loop's length as the schedule runs it. Plays per window are counted against maxPlayLengthSec x slotCount (the retailer's own settings) */
                 loopLengthSec: number;
-                /** @description The fixed duration of one play of this slot (slot, else display type, else company default). Plays per window are counted against it, and a creative longer than it is rejected. */
+                /** @description Max slot length: the longest one play of this slot may run (slot, else display type, else company default). It binds every campaign on the position, HQ's included. Plays per window are counted against it (times slotCount), and a creative longer than it is rejected. */
                 maxPlayLengthSec: number;
                 /** @description 1 / maximumCampaignsPlayedInRotation */
                 shareOfVoice: number;
@@ -1290,7 +1291,9 @@ export interface components {
              *     Monday 00:00 UTC.
              */
             billingUnitHours: number;
-            /** @description The transacting unit. Plays this slot gets on one display in one of its windows (billingUnitHours long) — floor(window / maxPlayLengthSec), the slot's fixed per-play duration; never the loop length and never a creative's own length. Assumed views (VAC-d) convert plays to impressions for billing only. */
+            /** @description The slots (loop positions) in the rotation this slot plays in — Max campaigns in rotation in Playlist Management. HQ positions count as well as advertiser ones. */
+            slotCount?: number;
+            /** @description The transacting unit. Plays this slot gets on one display in one of its windows (billingUnitHours long) — floor(window / (screen.maxPlayLengthSec x slotCount)). Derived from the retailer's three settings, never typed and never from a creative's own length. Assumed views (VAC-d) convert plays to impressions for billing only. */
             playsPerWindow?: number;
             /** @description Assumed views (VAC-d) in one of this position's windows (billingUnitHours long). */
             assumedViewsPerWindow?: number;
@@ -1627,7 +1630,7 @@ export interface components {
              */
             bidLookaheadSeconds: number;
             /**
-             * @description Max play length: the company-wide default fixed duration of one play of a slot, in whole seconds. A display type and a slot can each override it. Plays per window = floor(window / max play length) and a creative longer than it is rejected. Optional on save: omitted keeps the stored value.
+             * @description Max play length: the company-wide default fixed duration of one play of a slot, in whole seconds. A display type and a slot can each override it. Plays per window = floor(window / (max play length x slots in the rotation)) and a creative longer than it is rejected. Optional on save: omitted keeps the stored value.
              * @default 15
              */
             maxPlayLengthSec: number;
@@ -2057,7 +2060,7 @@ export interface components {
              * @description The resolved max play length, in seconds: the fixed per-play
              *     duration of this slot — maxPlayLengthSecOverride when set, else
              *     displayTypeMaxPlayLengthSec, else companyMaxPlayLengthSec. Plays
-             *     per window are floor(window / this); a creative longer than it
+             *     per window are floor(window / (this x slotCount)); a creative longer than it
              *     is rejected at upload.
              */
             maxPlayLengthSec: number;
@@ -2067,6 +2070,10 @@ export interface components {
             displayTypeMaxPlayLengthSec: number | null;
             /** @description The company-wide default max play length (Advertiser settings), what an un-overridden slot on a display type with no default resolves to. */
             companyMaxPlayLengthSec: number;
+            /** @description Slots playing — the loop positions in this slot's rotation (Max campaigns in rotation, Playlist Management), HQ positions included although only advertiser slots are listed here. Read-only. */
+            slotCount: number;
+            /** @description Derived, read-only — floor(billing unit / (maxPlayLengthSec x slotCount)). The admin screen recalculates it from the draft as the inputs change. */
+            playsPerWindow: number;
         };
         BookingSchedule: {
             /** @description ISO 4217 */

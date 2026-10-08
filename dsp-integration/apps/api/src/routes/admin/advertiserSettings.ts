@@ -7,7 +7,8 @@ import { cleanCategoryList, validateAdvertiserSettings } from '../../domain/adve
 import { tx } from '../../db/db'
 import { companyWindowCommitments, globalDealSuppressedBy, positionIdOf, slotInGlobalDeal, slotWindowCommitments, unsellableReason } from '../../domain/positions'
 import { audienceOf, zonesOf } from '../../domain/displayTypes'
-import { assignedToSlot, validateAssigned } from '../../domain/slots'
+import { playsPerWindowOf } from '../../domain/plays'
+import { assignedToSlot, rotationSizeOf, validateAssigned } from '../../domain/slots'
 import type { Guards } from '../../http/app'
 import { conflict, hasDependents, notFound, validationFailed } from '../../http/errors'
 import { releaseSettledSlotLocks, slotBookedUntil, slotLiveBookings } from '../../domain/slotLock'
@@ -141,6 +142,8 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         const playlistId = playlistIdOf(s)
         const playlistName = (playlistId && (await ctx.playlists.get(playlistId))?.name) || '—'
         const audience = await audienceOf(ctx.audience, t, i + 1)
+        /* An unlimited rotation has no countable loop: treat it as one slot. */
+        const slotCount = Math.max(1, rotationSizeOf(t, i + 1))
         items.push({
           displayTypeId: t.id, displayTypeName: t.name, touchPoint: t.touchPoint, playlistName, playlistId, unassigned, scored: audience.scored, unsellableReason: await unsellableReason(ctx, { positionId: positionIdOf(t.id, i + 1), displayType: t, slot: i + 1, def: s }, audience), salesLocked: s.salesLocked === true, inGlobalDeal: slotInGlobalDeal(s), globalDealSuppressedBy: globalDealSuppressedBy(s), salesLockedUntil: s.salesLocked ? await slotBookedUntil(ctx, t.id, i + 1) : null, slot: i + 1, zoneSlot, position: s.label,
           assignedTo: {
@@ -167,6 +170,8 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
           maxPlayLengthSecOverride: s.maxPlayLengthSec ?? null,
           displayTypeMaxPlayLengthSec: t.phExtensions?.maxPlayLengthSec ?? null,
           companyMaxPlayLengthSec: company.maxPlayLengthSec,
+          slotCount,
+          playsPerWindow: playsPerWindowOf(billingUnitHoursOf(t, s, company.playWindowHours) * 3_600_000, maxPlayLengthSecOf(t, s, company.maxPlayLengthSec), slotCount),
         })
       }
     }

@@ -517,7 +517,9 @@ function viewOf(
        one bid, one booking, one billing line — covers. */
     billingUnitHours: windowHoursFor(company.playWindowHours, p),
     /* The same window as a play count — the transacting unit (plays on ONE display; VAC-d converts plays to views for billing only). */
-    playsPerWindow: playsPerWindowOf(windowMsFor(company.playWindowHours, p), maxPlayLengthSecFor(company.maxPlayLengthSec, p)),
+    playsPerWindow: playsPerWindowOf(windowMsFor(company.playWindowHours, p), maxPlayLengthSecFor(company.maxPlayLengthSec, p), n),
+    /* The loop positions the maths counts: every slot of the rotation, HQ's included. */
+    slotCount: Math.max(1, n),
     assumedViewsPerWindow: assumedViewsFor(audience.assumedViewsPerWindow, company.playWindowHours, p),
     /* False when the slot has no audience score: only ever seen by a
        caller who is told so, since inventory excludes such positions. */

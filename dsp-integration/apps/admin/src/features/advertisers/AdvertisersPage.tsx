@@ -215,6 +215,15 @@ const effectiveMaxCampaigns = (c: InvCtx['current'], r: AvailableInventoryRow): 
 const effectiveMaxPlayLength = (c: InvCtx['current'], r: AvailableInventoryRow): number =>
   edited(c, r).maxPlayLengthSec ?? c.maxPlayLengthDefaults[r.displayTypeId] ?? r.companyMaxPlayLengthSec
 
+/* Plays per window (8 Oct 2026): derived, never typed — floor(billing unit /
+   (max slot length x slots playing)), from the draft's own values so any
+   change to either input recalculates before save. Slots playing counts
+   every loop position, HQ's too. */
+const effectivePlaysPerWindow = (c: InvCtx['current'], r: AvailableInventoryRow): number => {
+  const loopSec = effectiveMaxPlayLength(c, r) * Math.max(1, r.slotCount)
+  return loopSec > 0 ? Math.floor((effectiveBillingUnitHours(c, r) * 3600) / loopSec) : 0
+}
+
 /* Who may buy this position (Rob, 20 Sep; buyers lists/private auctions
    added 23 Sep): DSPs, named advertisers, a buyers list's private auction,
    or the whitelist. Nothing chosen means any connected DSP. */
@@ -685,7 +694,7 @@ export function AdvertisersPage() {
     },
     {
       headerName: 'Max play length', width: 150, minWidth: 135, cellRenderer: MaxPlayLengthCell,
-      headerComponent: header('Max play length', 'The fixed length of one play of this slot, in seconds. Plays per window are the window length divided by this, whoever is booked. A creative longer than it is rejected on upload, never trimmed. Set once for the display type and inherited by every slot on it; override just one slot to give it its own. With neither set, the default in Advertiser settings applies.'),
+      headerComponent: header('Max play length', 'Max slot length: the longest one play of this slot may run, in seconds. It applies to every campaign on the loop, HQ campaigns included, and HQ slots fill part of the loop. Plays per window are the billing unit divided by this × the slots playing. A creative longer than it is rejected on upload, never trimmed. Set once for the display type and inherited by every slot on it; override just one slot to give it its own. With neither set, the default in Advertiser settings applies.'),
       valueGetter: (p) => (p.data ? effectiveMaxPlayLength((p.context as InvCtx).current, p.data) : 0),
       ...setColumn<AvailableInventoryRow>('Max play length', invValues((r) => [String(r.maxPlayLengthSec)])),
     },
@@ -693,6 +702,18 @@ export function AdvertisersPage() {
       headerName: 'Billing unit', width: 135, minWidth: 120, cellRenderer: BillingUnitCell,
       headerComponent: header('Billing unit', 'The length of this slot’s play windows: each one is auctioned, booked and billed on its own. Set once for the display type and inherited by every slot on it — override just one slot to give it its own value, independent of the others. With neither set, the play-window length in Advertiser settings applies. Can’t change while windows are still bid on or booked under it.'),
       valueGetter: (p) => (p.data ? effectiveBillingUnitHours((p.context as InvCtx).current, p.data) : DEFAULT_BILLING_UNIT_HOURS),
+    },
+    {
+      headerName: 'Slots playing', width: 130, minWidth: 115,
+      headerComponent: header('Slots playing', 'The number of slots in the playlist loop, set in Playlist Management (Max campaigns in rotation). This table lists advertiser slots only, but HQ slots fill part of the same loop and are counted. Read-only.'),
+      valueGetter: (p) => p.data?.slotCount ?? 0,
+      cellRenderer: ({ value }: { value: number }) => <span>{value}</span>,
+    },
+    {
+      headerName: 'Plays per window', width: 150, minWidth: 135,
+      headerComponent: header('Plays per window', 'How many plays this slot gets in one billing unit: billing unit ÷ (max slot length × slots playing). Max slot length applies to every campaign on the loop, HQ campaigns included, and HQ slots fill part of the loop even though they are not listed here. Calculated, never typed: it updates as you change the max slot length or billing unit.'),
+      valueGetter: (p) => (p.data ? effectivePlaysPerWindow((p.context as InvCtx).current, p.data) : 0),
+      cellRenderer: ({ value }: { value: number }) => <span>{value.toLocaleString('en-US')}</span>,
     },
     { headerName: '', width: 76, suppressSizeToFit: true, cellRenderer: OpenCell },
   ], [invRows, inventory.data, buyersLists.data])

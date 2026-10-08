@@ -65,18 +65,18 @@ describe('max play length through the API', () => {
     expect(badCompany.json().error.details).toEqual([{ field: 'maxPlayLengthSec', reason: 'Max play length is a whole number of seconds from 1 to 600.' }])
   })
 
-  it('counts plays per window against the max play length, not the loop, and sends it in the bid request', async () => {
+  it('derives plays per window from max play length × slots, and sends it in the bid request', async () => {
     const ctx = await testContext({ clock: () => NOW })
     const app = buildApp(ctx)
     const get = async () => (await app.inject({ method: 'GET', url: '/api/v1/inventory', headers: GOOGLE })).json().items[0]
-    /* Menu Board: 45 s loop, 24-hour window. 24 h / 15 s default = 5760 (it was 1920 against the loop). */
-    expect(await get()).toMatchObject({ playsPerWindow: 5760, screen: { loopLengthSec: 45, maxPlayLengthSec: 15 } })
+    /* Menu Board: 3 slots, 24-hour window. 24 h / (15 s default x 3 slots) = 1920. */
+    expect(await get()).toMatchObject({ playsPerWindow: 1920, slotCount: 3, screen: { loopLengthSec: 45, maxPlayLengthSec: 15 } })
     const ext = (await ctx.displayTypes.get('menu_board'))!.phExtensions!
     await ctx.displayTypes.saveExtensions('menu_board', { ...ext, maxPlayLengthSec: 20 })
-    expect(await get()).toMatchObject({ playsPerWindow: 4320, screen: { loopLengthSec: 45, maxPlayLengthSec: 20 } })
+    expect(await get()).toMatchObject({ playsPerWindow: 1440, screen: { loopLengthSec: 45, maxPlayLengthSec: 20 } })
     const ext2 = (await ctx.displayTypes.get('menu_board'))!.phExtensions!
     await ctx.displayTypes.saveExtensions('menu_board', { ...ext2, slots: ext2.slots.map((s, i) => (i === 1 ? { ...s, maxPlayLengthSec: 30 } : s)) })
-    expect(await get()).toMatchObject({ playsPerWindow: 2880, screen: { maxPlayLengthSec: 30 } })
+    expect(await get()).toMatchObject({ playsPerWindow: 960, screen: { maxPlayLengthSec: 30 } })
   })
 
   it('rejects a creative longer than the slot’s max play length, whatever the loop, and never lets its length change plays', async () => {
@@ -93,6 +93,6 @@ describe('max play length through the API', () => {
     expect((await upload(16)).statusCode).toBe(201)
     expect((await upload(21)).statusCode).toBe(422)
     /* A short creative changes nothing about the slot's plays. */
-    expect((await app.inject({ method: 'GET', url: '/api/v1/inventory', headers: GOOGLE })).json().items[0].playsPerWindow).toBe(4320)
+    expect((await app.inject({ method: 'GET', url: '/api/v1/inventory', headers: GOOGLE })).json().items[0].playsPerWindow).toBe(1440)
   })
 })
