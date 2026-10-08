@@ -622,7 +622,7 @@ describe('Advertisers / Inventory', () => {
        Sep). */
     expect(within(inventory).getAllByLabelText('QR Control enabled')).toHaveLength(1)
     expect(within(inventory).getAllByLabelText('Vision/AI enabled')).toHaveLength(1)
-    /* Assigned to is a pill column: who may buy the slot. Assigned to shows "All DSPs" only when nothing is chosen. */
+    /* Assigned to is a pill column: who may buy the slot. Assigned to shows "Included in global deal" only when nothing is chosen. */
     const cellOf = (label: string) => within(inventory).getAllByLabelText(`Menu Board — Long Format slot 2: ${label}`)[0].closest('.ag-cell') as HTMLElement
     expect([...cellOf('assigned to').querySelectorAll('.ant-select-selection-item')].map((t) => t.textContent)).toEqual(['Google DSP'])
     expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled()

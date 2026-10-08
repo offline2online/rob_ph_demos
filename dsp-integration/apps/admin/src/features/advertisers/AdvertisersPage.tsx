@@ -326,7 +326,7 @@ function AssignedCell({ data, context }: IP) {
     )}
     <Pills
       label={`${data.displayTypeName} slot ${data.zoneSlot}: assigned to`}
-      placeholder="All DSPs"
+      placeholder="Included in global deal"
       canEdit={c.canEdit}
       value={assignedValues(a)}
       options={options}
@@ -661,10 +661,10 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
           partnerNames: a.partnerIds.map((id) => inventory.data?.dsps.find((d) => d.partnerId === id)?.name ?? id),
           buyersListName: a.buyersListId ? buyersLists.data?.items.find((l) => l.id === a.buyersListId)?.name ?? a.buyersListId : null,
           buyersListNames: tiersOf(a).map((id) => buyersLists.data?.items.find((l) => l.id === id)?.name ?? id),
-        }).join(', ') || 'All DSPs'
+        }).join(', ') || 'Included in global deal'
       },
       ...setColumn<AvailableInventoryRow>('Assigned to', () => [
-        'All DSPs', 'Whitelist only',
+        'Included in global deal', 'Whitelist only',
         ...(inventory.data?.dsps ?? []).flatMap((d) => [d.name, ...d.advertisers.map((a) => a.name)]),
         ...(buyersLists.data?.items ?? []).map((l) => `Buyers list: ${l.name}`),
       ]),
