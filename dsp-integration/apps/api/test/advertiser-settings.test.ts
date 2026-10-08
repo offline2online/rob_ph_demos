@@ -71,6 +71,21 @@ describe('Advertiser settings (spec §4, §6)', () => {
     }
   })
 
+  it('cached asset retention: defaults to 48 h, saves, keeps the stored value when omitted, refuses 0 and non-integers', async () => {
+    const app = buildApp(await testContext())
+    expect((await app.inject({ method: 'GET', url: '/api/admin/v1/advertiser-settings' })).json().cachedAssetRetentionHours).toBe(48)
+    const ok = await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: { ...input, cachedAssetRetentionHours: 72 } })
+    expect(ok.statusCode).toBe(200)
+    expectMatchesContract('PUT', '/admin/v1/advertiser-settings', 200, ok.json())
+    expect((await app.inject({ method: 'GET', url: '/api/admin/v1/advertiser-settings' })).json().cachedAssetRetentionHours).toBe(72)
+    expect((await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: input })).json().cachedAssetRetentionHours).toBe(72)
+    for (const bad of [0, -5, 1.5, '48', null]) {
+      const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: { ...input, cachedAssetRetentionHours: bad } })
+      expect(res.statusCode).toBe(400)
+      expect(res.json().error.details).toEqual([{ field: 'cachedAssetRetentionHours', reason: 'Cached asset retention is a whole number of hours, at least 1.' }])
+    }
+  })
+
   it('default committed plays: null by default, saves, omitted keeps it, null clears it, refuses 0 and non-integers', async () => {
     const app = buildApp(await testContext())
     const get = async () => (await app.inject({ method: 'GET', url: '/api/admin/v1/advertiser-settings' })).json().defaultCommittedPlays

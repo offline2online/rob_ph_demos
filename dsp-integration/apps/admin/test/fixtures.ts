@@ -5,7 +5,7 @@ export const partners = { items: [
 ] }
 export const advertiserSettings = {
   currency: 'AUD', floorCpm: 100, interactiveCpe: 0.5,
-  bidLookaheadSeconds: 35, defaultCommittedPlays: null, maxPlayLengthSec: 15,
+  bidLookaheadSeconds: 35, cachedAssetRetentionHours: 48, defaultCommittedPlays: null, maxPlayLengthSec: 15,
   categoryWhitelist: ['Food & Drink', 'Health & Fitness'], categoryBlacklist: ['Finance'],
 }
 export const exchange = { enabled: true, organisation: 'Demo Retail Group', domain: 'demoretail.example', sellerId: 'drg-4471', contactEmail: 'adops@demoretail.example', published: true, sellersJsonUrl: 'https://demoretail.example/sellers.json' }

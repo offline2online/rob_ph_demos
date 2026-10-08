@@ -1,0 +1,1 @@
+ALTER TABLE company_advertiser_settings DROP COLUMN cached_asset_retention_hours;

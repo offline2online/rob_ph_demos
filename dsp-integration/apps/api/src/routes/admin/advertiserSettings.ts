@@ -47,6 +47,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         uncachedRestrictionStart: b.uncachedRestrictionStart ?? current.uncachedRestrictionStart,
         uncachedRestrictionEnd: b.uncachedRestrictionEnd ?? current.uncachedRestrictionEnd,
         bidLookaheadSeconds: b.bidLookaheadSeconds ?? current.bidLookaheadSeconds,
+        cachedAssetRetentionHours: b.cachedAssetRetentionHours ?? current.cachedAssetRetentionHours,
         defaultCommittedPlays: b.defaultCommittedPlays === undefined ? current.defaultCommittedPlays : b.defaultCommittedPlays,
         maxPlayLengthSec: b.maxPlayLengthSec ?? current.maxPlayLengthSec,
       })

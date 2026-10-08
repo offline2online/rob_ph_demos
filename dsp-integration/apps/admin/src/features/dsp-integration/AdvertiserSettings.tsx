@@ -156,12 +156,18 @@ export function AdvertiserSettings() {
         </Field>
       </div>
 
-      <SectionLabel><WithTip tip="How early a real-time slot's auction opens, so the winning creative can be downloaded and rendered before the slot plays. The auction is per slot, opened this long before that slot's own start, not on a schedule.">Real-time bidding</WithTip></SectionLabel>
+      <SectionLabel><WithTip tip="How early a real-time slot's auction opens, so the winning creative can be downloaded and rendered before the slot plays (the auction is per slot, opened this long before that slot's own start, not on a schedule), and how long the player may keep a pre-cached approved creative.">Real-time bidding</WithTip></SectionLabel>
       <div className="flex flex-wrap items-start gap-3.5">
         <Field label={<span className="block" style={{ minHeight: 36 }}>Digital signage bid lookahead</span>} htmlFor="bidLookaheadSeconds" tip="Digital signage bid lookahead, in seconds: how long before an available digital signage slot plays that its bid (auction) becomes available, so the auction resolves far enough ahead for the winning creative to be downloaded and rendered in time. Applies to digital signage slots only; it is not used for programmatic on a website or mobile app. Whole seconds, at least 1. Default 35, as Broadsign Reach, whose Real-Time Audience API sends bid requests about 35 seconds ahead of the expected programmatic slot." className="w-64">
           <div className="flex items-center gap-2">
             <InputNumber id="bidLookaheadSeconds" className="w-full" step={1} placeholder="35" value={s.bidLookaheadSeconds ?? 35} onChange={(v) => set('bidLookaheadSeconds', (v === null ? null : Number(v)) as number)} />
             <span>seconds</span>
+          </div>
+        </Field>
+        <Field label={<span className="block" style={{ minHeight: 36 }}>Cached asset retention</span>} htmlFor="cachedAssetRetentionHours" tip="Cached asset retention, in hours: the longest the PWA player keeps a pre-cached, approved creative before evicting it. Default 48, matching Broadsign Air's pre-cache horizon. It is an upper bound, not a guaranteed hold: a rejected creative is evicted immediately, and the player's disk limit and least-recently-used eviction still apply. Approved creatives only. Whole hours, at least 1." tipWidth={400} className="w-64">
+          <div className="flex items-center gap-2">
+            <InputNumber id="cachedAssetRetentionHours" className="w-full" step={1} min={1} precision={0} placeholder="48" value={s.cachedAssetRetentionHours ?? 48} onChange={(v) => set('cachedAssetRetentionHours', (v === null ? null : Number(v)) as number)} />
+            <span>hours</span>
           </div>
         </Field>
         <Field label={<span className="block" style={{ minHeight: 36 }}>Uncached creative restriction</span>} htmlFor="uncachedRestriction" tip={UNCACHED_TIP} tipWidth={400} className="w-64">
