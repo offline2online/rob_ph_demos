@@ -72,13 +72,13 @@ const RateCell = ({ data }: P) => {
   const text = rateText(data.effectiveRateCpm)
   return text ? <div><span style={{ fontSize: 12.5 }}>{text}</span><Sub>{sourceLabel(data.effectiveRateCpm.source)}</Sub></div> : <span style={{ color: T.muted }}>Per play</span>
 }
-/* Volume lives on the deal (open question 45): 'N of M plays' metered from billing for a deal with its own commitment;
+/* Volume lives on the deal (open question 45): the single committed figure ('M plays', no 'of' denominator: a guaranteed deal is sold, not capped) for a deal with its own commitment;
    otherwise the volume inherited platform -> DSP, or 'Per play' when no level sets one. */
 const VolumeCell = ({ data }: P) => {
   if (!data) return null
   /* Only a guaranteed deal commits volume; a private auction or preferred deal has none, so nothing is shown for it. */
   if (data.dealType !== 'guaranteed') return <span style={{ color: T.muted }}>Not applicable</span>
-  if (data.committedPlays != null) return <span style={{ fontSize: 12.5 }}>{data.deliveredPlays.toLocaleString()} of {data.committedPlays.toLocaleString()} plays</span>
+  if (data.committedPlays != null) return <span style={{ fontSize: 12.5 }}>{data.committedPlays.toLocaleString()} plays</span>
   const text = playsText(data.effectiveCommittedPlays)
   return text ? <div><span style={{ fontSize: 12.5 }}>{text}</span><Sub>{sourceLabel(data.effectiveCommittedPlays.source)}</Sub></div> : <span style={{ color: T.muted }}>Per play</span>
 }

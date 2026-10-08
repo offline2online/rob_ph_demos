@@ -1571,7 +1571,7 @@ duplicating it per deal would let one drift from the other:
   open question 45). A deal may carry `committedPlays` over its delivery
   term; delivery (`deliveredPlays`) is metered in plays from billing line
   items at the deal's positions, within the term, and the Buyers lists
-  table shows it as "N of M plays" (or "Per play"). The open auction holds
+  table shows only the committed figure, "M plays" (or "Per play"), never "N of M" (8 Oct 2026: a guaranteed deal is sold, not capped). The open auction holds
   no block of plays: no open-RTB position can carry a volume. This replaces
   the "re-auction after N plays" idea.
 - **Auction resolution rule** (first- vs second-price) is a platform-wide
