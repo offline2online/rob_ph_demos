@@ -7,7 +7,7 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   envDir: '../../',
-  envPrefix: ['VITE_', 'DSP_INTEGRATION_ENABLED'],
+  envPrefix: ['VITE_', 'DSP_INTEGRATION_ENABLED', 'SELF_SERVICE_ENABLED'],
   server: {
     port: 5173,
     proxy: { '/api': 'http://127.0.0.1:4000', '/assets': 'http://127.0.0.1:4000' },
