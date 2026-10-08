@@ -589,6 +589,9 @@ describe('Advertisers / Inventory', () => {
        already covered in Campaign Status and the booking schedule. */
     expect(within(advertisers).queryByRole('button', { name: /Bookings/ })).not.toBeInTheDocument()
 
+    /* Advertisers table sits last, under Available Inventory and Buyers and targeting (ticket AkDMbOJn0QBV0ZcEM5tm). */
+    expect(screen.getByText('Buyers and targeting').compareDocumentPosition(advertisers) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
     const inventory = await screen.findByLabelText('Available Inventory')
     /* Playlist leads the table; Display type was removed as its own column
        (ticket "Available Inventory: playlist-primary table (drop Display

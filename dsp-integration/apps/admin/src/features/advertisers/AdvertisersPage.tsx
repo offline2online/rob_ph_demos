@@ -858,17 +858,6 @@ export function AdvertisersPage() {
         <Button color="primary" variant="text" size="small" icon={<Icon name="calendar_month" size={16} />} onClick={() => window.open(externalUrl(BOOKING_SCHEDULE_PATH), '_blank', 'noopener')}>Booking schedule</Button>
         {!canEdit && <StatusPill colour={T.muted} icon="visibility">Read only</StatusPill>}
       </div>
-      {data.items.length === 0 ? (
-        <div className="flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}><Icon name="sell" size={18} />No advertisers yet. They appear here once a DSP is connected.</div>
-      ) : (
-        <>
-          <div className="mb-2" style={{ fontSize: 13 }}>{showingCount(shown ?? data.items.length, data.items.length, `advertiser${data.items.length === 1 ? '' : 's'}`)}</div>
-          <Grid<Advertiser>
-            label="Advertisers" rows={data.items} columns={columns} context={context} getRowId={(a) => a.advertiserId}
-            stickyHeader headerHeight={40} floatingFiltersHeight={40} onFilterChanged={(e) => setShown(e.api.getDisplayedRowCount())}
-          />
-        </>
-      )}
       <SectionLabel><WithTip tip="Every advertiser-owned slot across the estate that connected DSPs can bid on. Slots are made available by setting their owner to Advertiser on a display type.">Available Inventory</WithTip></SectionLabel>
       {inventory.data && invRows.length === 0 ? (
         <div className="flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}>
@@ -899,6 +888,19 @@ export function AdvertisersPage() {
         onChanged={() => qc.invalidateQueries({ queryKey: ['buyers-lists'] })}
       />
 
+      {/* Advertisers table sits last, under Buyers and targeting (ticket AkDMbOJn0QBV0ZcEM5tm). */}
+      <SectionLabel>Advertisers</SectionLabel>
+      {data.items.length === 0 ? (
+        <div className="flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}><Icon name="sell" size={18} />No advertisers yet. They appear here once a DSP is connected.</div>
+      ) : (
+        <>
+          <div className="mb-2" style={{ fontSize: 13 }}>{showingCount(shown ?? data.items.length, data.items.length, `advertiser${data.items.length === 1 ? '' : 's'}`)}</div>
+          <Grid<Advertiser>
+            label="Advertisers" rows={data.items} columns={columns} context={context} getRowId={(a) => a.advertiserId}
+            stickyHeader headerHeight={40} floatingFiltersHeight={40} onFilterChanged={(e) => setShown(e.api.getDisplayedRowCount())}
+          />
+        </>
+      )}
       {canEdit && <SaveBar dirty={dirty || inv.dirty || defaults.dirty || billingUnitDefaults.dirty || maxCampaignsDefaults.dirty} saving={saving} onSave={onSave} onCancel={() => { reset(); inv.reset(); defaults.reset(); billingUnitDefaults.reset(); maxCampaignsDefaults.reset(); maxPlayLengthDefaults.reset() }} />}
 
       {/* Picked "+ Add new buyers list…" from a slot's Assigned to picker
