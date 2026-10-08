@@ -1455,8 +1455,8 @@ live/active state** — this build has no such concept, and Unassigned is
 never about whether campaigns are currently playing, only whether any
 display exists to play them at all.
 
-Slots are made available by setting their owner to *Advertiser* on a display
-type (explained in the section's tooltip); that part is not editable here.
+Slots are made available by setting their owner to *Advertiser* on a playlist
+(explained in the section's tooltip); that part is not editable here.
 Two fields are: **Assigned to** (above), a multi-select that drops a pill
 per choice into the cell, and **Reserve price**, a CPM input (blank = following the display type's default, or no
 reserve if it has none either). Editing a slot that has no override of its
