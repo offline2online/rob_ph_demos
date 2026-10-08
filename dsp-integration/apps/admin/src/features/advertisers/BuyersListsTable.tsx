@@ -11,12 +11,14 @@ import { DeleteDialog } from '../../shared/DeleteDialog'
 import { Grid } from '../../shared/Grid'
 import { Icon } from '../../shared/Icon'
 import { WithTip } from '../../shared/InfoTip'
+import { Tip } from '../../shared/Tip'
 import { SectionLabel } from '../../shared/SectionLabel'
 import { T } from '../../theme/phTheme'
 import { BuyersListModal } from './BuyersListModal'
 import { playsText, rateText, sourceLabel } from './effectiveTerm'
 
-type Ctx = { current: { onEdit: (l: BuyersList) => void; onDelete: (l: BuyersList) => void; canEdit: boolean } }
+type Capacity = Map<string, { plays: number; displayTypes: number; positions: number }>
+type Ctx = { current: { capacity: Capacity; onEdit: (l: BuyersList) => void; onDelete: (l: BuyersList) => void; canEdit: boolean } }
 type P = ICellRendererParams<BuyersList, unknown, Ctx>
 
 /* The name is the way in (ph-designer: a row's name opens it; the icon button is only a shortcut). */
@@ -82,6 +84,17 @@ const VolumeCell = ({ data }: P) => {
   const text = playsText(data.effectiveCommittedPlays)
   return text ? <div><span style={{ fontSize: 12.5 }}>{text}</span><Sub>{sourceLabel(data.effectiveCommittedPlays.source)}</Sub></div> : <span style={{ color: T.muted }}>Per play</span>
 }
+/* Combined plays per window across every position the list is assigned to (8 Oct 2026): the capacity ceiling for committed volume. */
+const CapacityCell = ({ data, context }: P) => {
+  if (!data) return null
+  const c = context.current.capacity.get(data.id)
+  if (!c) return <span style={{ color: T.muted }}>Not assigned</span>
+  return (
+    <Tip title={`${c.plays.toLocaleString('en-US')} plays per window across ${c.positions} assigned position${c.positions === 1 ? '' : 's'} on ${c.displayTypes} display type${c.displayTypes === 1 ? '' : 's'}: the sum of each one's plays per display x displays registered in PH Core.`}>
+      <span style={{ fontSize: 12.5 }}>{c.plays.toLocaleString('en-US')}</span>
+    </Tip>
+  )
+}
 const DEAL_TYPE_LABELS = { private_auction: 'Private auction', preferred: 'Preferred deal', guaranteed: 'Programmatic guaranteed' } as const
 const DealTypeCell = ({ data }: P) => (data ? <span style={{ fontSize: 12.5 }}>{DEAL_TYPE_LABELS[data.dealType] ?? 'Private auction'}</span> : null)
 const ActionsCell = ({ data, context }: P) =>
@@ -92,7 +105,7 @@ const ActionsCell = ({ data, context }: P) =>
     </span>
   ) : null
 
-export function BuyersListsTable({ lists, canEdit, onChanged }: { lists: BuyersList[]; canEdit: boolean; onChanged: () => void }) {
+export function BuyersListsTable({ lists, canEdit, capacity, onChanged }: { lists: BuyersList[]; canEdit: boolean; capacity: Capacity; onChanged: () => void }) {
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<BuyersList | null>(null)
   const [deleting, setDeleting] = useState<BuyersList | null>(null)
@@ -108,11 +121,12 @@ export function BuyersListsTable({ lists, canEdit, onChanged }: { lists: BuyersL
     { headerName: 'Targeting', width: 230, minWidth: 180, cellRenderer: TargetingCell, valueGetter: (p) => JSON.stringify(p.data?.targeting ?? []) },
     { headerName: 'Delivery term', width: 260, minWidth: 220, cellRenderer: TermCell, valueGetter: (p) => `${p.data?.activeFrom}|${p.data?.activeTo}` },
     { headerName: 'Committed volume', width: 190, minWidth: 160, cellRenderer: VolumeCell, valueGetter: (p) => JSON.stringify([p.data?.dealType, p.data?.committedPlays, p.data?.deliveredPlays, p.data?.effectiveCommittedPlays]) },
+    { headerName: 'Capacity (plays per window)', width: 190, minWidth: 170, cellRenderer: CapacityCell, valueGetter: (p) => p.context.current.capacity.get(p.data?.id ?? '')?.plays ?? 0 },
     { headerName: 'Rate', width: 200, minWidth: 170, cellRenderer: RateCell, valueGetter: (p) => JSON.stringify([p.data?.lockedWin, p.data?.effectiveRateCpm]) },
     ...(canEdit ? [{ headerName: '', width: 90, suppressSizeToFit: true, cellRenderer: ActionsCell }] : []),
   ]
   const context = {
-    canEdit,
+    canEdit, capacity,
     onEdit: (l: BuyersList) => {
       setEditing(l)
       setModalOpen(true)

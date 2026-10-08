@@ -878,6 +878,22 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
     setMaxPlayLengthDefault: (displayTypeId: string, v: number | null) => maxPlayLengthDefaults.setDraft((cur) => (cur ? { ...cur, [displayTypeId]: v } : cur)),
     openAddBuyersList: (r: AvailableInventoryRow) => setAddingBuyersListFor(r),
   }
+  /* Combined plays per window per buyers list (8 Oct 2026): the fleet total (plays per display x displays registered in PH Core)
+     of every position the list is assigned to, summed - the ceiling for a guaranteed deal's committed volume. Read from the
+     draft, so assigning or unassigning a list, or changing a billing unit, recalculates before save. */
+  const listCapacity = new Map<string, { plays: number; displayTypes: number; positions: number }>()
+  const countedTypes = new Map<string, Set<string>>()
+  for (const r of invRows) {
+    if (typeof r.displayCount !== 'number') continue
+    const fleet = effectivePlaysPerWindow(invContext, r) * r.displayCount
+    for (const id of new Set(tiersOf(edited(invContext, r).assignedTo))) {
+      const cur = listCapacity.get(id) ?? { plays: 0, displayTypes: 0, positions: 0 }
+      const types = countedTypes.get(id) ?? new Set<string>()
+      types.add(r.displayTypeId)
+      countedTypes.set(id, types)
+      listCapacity.set(id, { plays: cur.plays + fleet, displayTypes: types.size, positions: cur.positions + 1 })
+    }
+  }
   const context = {
     settings: draft, data, canEdit,
     set: (id: string, patch: Partial<AdvertiserSetting>) => setDraft((cur) => (cur ? { ...cur, [id]: { ...cur[id], ...patch } } : cur)),
@@ -920,6 +936,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
       <BuyersListsTable
         lists={buyersLists.data?.items ?? []}
         canEdit={canEdit}
+        capacity={listCapacity}
         onChanged={() => qc.invalidateQueries({ queryKey: ['buyers-lists'] })}
       />
 

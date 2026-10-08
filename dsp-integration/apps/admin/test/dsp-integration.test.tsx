@@ -666,6 +666,22 @@ describe('Advertisers / Inventory', () => {
     expect(within(inventory).getByText('(23,040)')).toBeInTheDocument()
   })
 
+  /* Ticket ZglKshE5dUVasljNcIPH (8 Oct 2026): a buyers list shows the sum of the fleet plays per window of every position it is assigned to. */
+  it('shows a buyers list the combined fleet plays per window of its assigned positions', async () => {
+    const inv = ADVERTISER_PAGE['/api/admin/v1/available-inventory']
+    const row = { ...inv.items[0], displayCount: 12, slotCount: 3, billingUnitHours: 24, maxPlayLengthSec: 15, companyMaxPlayLengthSec: 15 }
+    const assigned = { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: 'bl_1', buyersListIds: ['bl_1'] }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({
+      ...ADVERTISER_PAGE,
+      '/api/admin/v1/buyers-lists': { items: [{ id: 'bl_1', name: 'Pharma brands', description: '', invitedBuyers: [], invitedCategories: [], targeting: [], activeFrom: null, activeTo: null, dealType: 'guaranteed' }] },
+      '/api/admin/v1/available-inventory': { ...inv, items: [{ ...row, assignedTo: assigned }, { ...row, slot: 5, zoneSlot: 5, displayTypeId: 'portrait', displayTypeName: 'Portrait', displayCount: 1, assignedTo: assigned }] },
+    })))
+    renderAt('/advertisers')
+    const table = await screen.findByLabelText('Buyers and targeting')
+    /* (1,920 per display x 12) + (1,920 x 1) = 24,960 */
+    expect(await within(table).findByText('24,960')).toBeInTheDocument()
+  })
+
   /* Ticket, 30 Sep 2026: a slot with no audience score is flagged in place; it can still be saved. */
   it('warns on a slot with no audience score', async () => {
     const reason = 'No audience score yet.'
