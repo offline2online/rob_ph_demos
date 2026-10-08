@@ -22,11 +22,11 @@ const ADVERTISER_PAGE = {
   '/api/admin/v1/available-inventory': {
     items: [
       {
-        displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', playlistId: 'pl_menu', unassigned: false, scored: true, unsellableReason: null, slot: 2, zoneSlot: 2, position: 'Supplier slot',
+        displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', playlistId: 'pl_menu', unassigned: false, displayCount: 12, scored: true, unsellableReason: null, slot: 2, zoneSlot: 2, position: 'Supplier slot',
         assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false }, qrControl: true, visionAi: true,
       },
       {
-        displayTypeId: 'portrait', displayTypeName: 'Portrait', touchPoint: 'Digital Signage', playlistName: 'Portrait Playlist', playlistId: 'pl_portrait', unassigned: false, scored: true, unsellableReason: null, slot: 1, zoneSlot: 1, position: 'Slot 1',
+        displayTypeId: 'portrait', displayTypeName: 'Portrait', touchPoint: 'Digital Signage', playlistName: 'Portrait Playlist', playlistId: 'pl_portrait', unassigned: false, displayCount: 1, scored: true, unsellableReason: null, slot: 1, zoneSlot: 1, position: 'Slot 1',
         assignedTo: { partnerIds: [], partnerNames: [], advertisers: [], whitelistOnly: false }, qrControl: false, visionAi: false,
       },
     ],
@@ -192,7 +192,7 @@ describe('DSP integration switch', () => {
 
 describe('Advertiser settings page', () => {
   it('shows Pricing, Play configuration, Real-time bidding and the category lists, in that order, with no Play config boxes, with no auction timing', async () => {
-    vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/available-inventory': { items: [{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', slot: 2, position: 'Supplier slot', partnerName: 'Google DSP' }] } })))
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/available-inventory': { items: [{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', displayCount: 12, slot: 2, position: 'Supplier slot', partnerName: 'Google DSP' }] } })))
     renderAt('/dsp-integration')
     expect(await screen.findByRole('heading', { name: /Advertiser settings/ })).toBeInTheDocument()
     const text = document.body.textContent ?? ''
@@ -648,6 +648,22 @@ describe('Advertisers / Inventory', () => {
     renderAt('/advertisers')
     const inventory = await screen.findByLabelText('Available Inventory')
     expect(within(inventory).getByLabelText('Unassigned')).toBeInTheDocument()
+  })
+
+  /* Ticket LFs0YIJs65DX8Aevfgn0, 8 Oct 2026: registered display count beside the playlist name; plays per window shows per-display (fleet total). */
+  it('shows the registered display count after the playlist name and the fleet total after plays per window', async () => {
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({
+      ...ADVERTISER_PAGE,
+      '/api/admin/v1/available-inventory': {
+        ...ADVERTISER_PAGE['/api/admin/v1/available-inventory'],
+        items: [{ ...ADVERTISER_PAGE['/api/admin/v1/available-inventory'].items[0], displayCount: 12, slotCount: 3, billingUnitHours: 24, maxPlayLengthSec: 15, companyMaxPlayLengthSec: 15 }],
+      },
+    })))
+    renderAt('/advertisers')
+    const inventory = await screen.findByLabelText('Available Inventory')
+    expect(await within(inventory).findByLabelText('12 registered displays')).toHaveTextContent('(12)')
+    expect(within(inventory).getByText('1,920')).toBeInTheDocument()
+    expect(within(inventory).getByText('(23,040)')).toBeInTheDocument()
   })
 
   /* Ticket, 30 Sep 2026: a slot with no audience score is flagged in place; it can still be saved. */

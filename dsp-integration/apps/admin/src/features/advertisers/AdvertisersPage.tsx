@@ -118,6 +118,12 @@ const PlaylistCell = ({ data }: ICellRendererParams<AvailableInventoryRow>) =>
       <Tip title={data.playlistName}>
         <span className="truncate cursor-pointer" tabIndex={0} aria-label={`Playlist: ${data.playlistName}`}>{data.playlistName}</span>
       </Tip>
+      {/* Devices registered to this display type in PH Core (8 Oct 2026); absent from a pre-8-Oct demo snapshot, so then nothing is shown. */}
+      {typeof data.displayCount === 'number' && (
+        <Tip title={`${data.displayCount.toLocaleString('en-US')} display${data.displayCount === 1 ? '' : 's'} registered to ${data.displayTypeName} in PH Core.`}>
+          <span className="shrink-0" style={{ color: T.muted }} aria-label={`${data.displayCount} registered displays`}>({data.displayCount.toLocaleString('en-US')})</span>
+        </Tip>
+      )}
       {data.visionAi && (
         <Tip title="Vision/AI is enabled on this display type: on-device computer vision for passerby insight and person match.">
           <span className="inline-flex" aria-label="Vision/AI enabled"><Icon name="visibility" size={15} style={{ color: T.primary }} /></span>
@@ -672,9 +678,17 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
     },
     {
       headerName: 'Plays per window', width: 150, minWidth: 135,
-      headerComponent: header('Plays per window', 'How many plays this slot gets in one billing unit: billing unit ÷ (max slot length × slots playing). Max slot length applies to every campaign on the loop, HQ campaigns included, and HQ slots fill part of the loop even though they are not listed here. Calculated, never typed: it updates as you change the max slot length or billing unit.'),
+      headerComponent: header('Plays per window', 'How many plays this slot gets in one billing unit on ONE display: billing unit ÷ (max slot length × slots playing). The figure in brackets is the fleet total: that per-display figure × the displays registered to this display type in PH Core (the count in brackets after the playlist name). Max slot length applies to every campaign on the loop, HQ campaigns included, and HQ slots fill part of the loop even though they are not listed here. Calculated, never typed: it updates as you change the max slot length or billing unit.'),
       valueGetter: (p) => (p.data ? effectivePlaysPerWindow((p.context as InvCtx).current, p.data) : 0),
-      cellRenderer: ({ value }: { value: number }) => <span>{value.toLocaleString('en-US')}</span>,
+      cellRenderer: ({ value, data }: ICellRendererParams<AvailableInventoryRow>) => {
+        const per = Number(value)
+        const fleet = typeof data?.displayCount === 'number' ? per * data.displayCount : null
+        return fleet === null ? <span>{per.toLocaleString('en-US')}</span> : (
+          <Tip title={`${per.toLocaleString('en-US')} plays per display; (${fleet.toLocaleString('en-US')}) across all ${data!.displayCount} display${data!.displayCount === 1 ? '' : 's'} registered to ${data!.displayTypeName}.`}>
+            <span>{per.toLocaleString('en-US')} <span style={{ color: T.muted }}>({fleet.toLocaleString('en-US')})</span></span>
+          </Tip>
+        )
+      },
     },
     {
       headerName: INTERACTIVE_RESERVE_HEADER, width: 170, minWidth: 150, cellRenderer: InteractiveReservePriceCell,
