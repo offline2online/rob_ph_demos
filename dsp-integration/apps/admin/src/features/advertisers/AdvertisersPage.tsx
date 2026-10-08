@@ -4,7 +4,7 @@
    the estate, which moved here from Advertiser settings (Rob, 20 Sep).
    Campaigns are not approved here. Changes are applied with Save changes. */
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { App, Button, Checkbox, InputNumber, Select, Spin, Switch } from 'antd'
+import { App, Button, InputNumber, Select, Spin, Switch } from 'antd'
 import { Tip } from '../../shared/Tip'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
 import { INTERACTIVE_ENABLED, RESERVE_PRICE_TIP, PLATFORM_DEFAULT_BILLING_UNIT_HOURS, DEFAULT_MAX_CAMPAIGNS, MAX_MAX_CAMPAIGNS, MAX_MAX_PLAY_LENGTH_SEC, MIN_MAX_CAMPAIGNS, MIN_MAX_PLAY_LENGTH_SEC, SLOT_OWNERS, assignedLabels, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type Session } from '@ph-dsp/types'
@@ -230,6 +230,9 @@ const effectivePlaysPerWindow = (c: InvCtx['current'], r: AvailableInventoryRow)
    or the whitelist. Nothing chosen means any connected DSP. */
 const WHITELIST = '__whitelist__'
 const ADD_BUYERS_LIST = '__add_buyers_list__'
+/* Global deal membership as a chip (9 Oct 2026): outside the numbered waterfall, backed by Slot.inGlobalDeal. */
+const GLOBAL_CHIP = '__global_deal__'
+const GLOBAL_CHIP_LABEL = 'Included in global deals'
 /* The slot's buyers lists in priority order (7 Oct 2026): the waterfall. */
 const tiersOf = (a: { buyersListId: string | null; buyersListIds?: string[] }): string[] => a.buyersListIds ?? (a.buyersListId ? [a.buyersListId] : [])
 const assignedValues = (a: Omit<AssignedTo, 'partnerNames' | 'buyersListName' | 'buyersListNames'>) =>
@@ -299,6 +302,9 @@ function AssignedCell({ data, context }: IP) {
     if (!via.includes(d.name)) via.push(d.name)
     advertiserDsps.set(x.name, via)
   }
+  const e = edited(c, data)
+  const suppressed = a.advertisers.length ? 'held for named advertisers' : a.whitelistOnly ? 'whitelist-only' : tiersOf(a).length ? 'on a buyers list' : null
+  const globalOn = e.inGlobalDeal !== false
   const options = [
     { label: 'DSPs', options: c.dsps.map((d) => ({ value: `dsp:${d.partnerId}`, label: d.name })) },
     {
@@ -312,7 +318,7 @@ function AssignedCell({ data, context }: IP) {
       ],
     },
     { label: 'Advertisers', options: [...advertiserDsps.entries()].map(([name, via]) => ({ value: `adv:${name}`, label: `${name} (${via.join(', ')})` })) },
-    { label: 'Or', options: [{ value: WHITELIST, label: 'Whitelist only' }] },
+    { label: 'Or', options: [{ value: WHITELIST, label: 'Whitelist only' }, { value: GLOBAL_CHIP, label: GLOBAL_CHIP_LABEL, disabled: !!suppressed, note: suppressed ? `Not in global deals: this slot is ${suppressed}.` : undefined }] },
   ]
   return (
     <>
@@ -326,19 +332,28 @@ function AssignedCell({ data, context }: IP) {
     )}
     <Pills
       label={`${data.displayTypeName} slot ${data.zoneSlot}: assigned to`}
-      placeholder="Included in global deal"
+      placeholder="Unassigned"
       canEdit={c.canEdit}
-      value={assignedValues(a)}
+      value={[...assignedValues(a), ...(globalOn ? [GLOBAL_CHIP] : [])]}
       options={options}
-      onChange={(next) => {
+      onChange={(picked) => {
         /* A picker action, not a real choice: open the modal and leave this
            slot's assignment untouched until it's saved (Rob, 23 Sep). */
-        if (next.includes(ADD_BUYERS_LIST)) {
+        if (picked.includes(ADD_BUYERS_LIST)) {
           c.openAddBuyersList(data)
           return
         }
+        /* The global deal chip is not an assignment: it only sets Slot.inGlobalDeal
+           (remove clears, re-add sets) and is left alone while the slot is held. */
+        const wantGlobal = suppressed ? globalOn : picked.includes(GLOBAL_CHIP)
+        const next = picked.filter((v) => v !== GLOBAL_CHIP)
+        const flag = wantGlobal === globalOn ? {} : { inGlobalDeal: wantGlobal }
         const was = assignedValues(a)
         const added = next.filter((v) => !was.includes(v))
+        if (!added.length && next.length === was.length) {
+          c.set(slotKey(data), flag)
+          return
+        }
         const dealAdded = added.find((v) => v.startsWith('deal:'))
         /* A position is held for named advertisers, open to the whitelist,
            or restricted to a buyers list's private auction — never more
@@ -346,21 +361,25 @@ function AssignedCell({ data, context }: IP) {
         if (dealAdded) {
           /* Added to the foot of the waterfall; reorder by dragging. */
           const ids = [...tiersOf(a).filter((id) => next.includes(`deal:${id}`)), dealAdded.slice(5)]
-          c.set(slotKey(data), { assignedTo: { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: ids[0], buyersListIds: ids } })
+          c.set(slotKey(data), { ...flag, assignedTo: { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: ids[0], buyersListIds: ids } })
           return
         }
         /* Removing a pill just drops that tier; the rest keep their order. */
         const keptTiers = tiersOf(a).filter((id) => next.includes(`deal:${id}`))
         if (keptTiers.length && !added.length) {
-          c.set(slotKey(data), { assignedTo: { ...a, buyersListId: keptTiers[0], buyersListIds: keptTiers } })
+          c.set(slotKey(data), { ...flag, assignedTo: { ...a, buyersListId: keptTiers[0], buyersListIds: keptTiers } })
           return
         }
         const advertisers = added.includes(WHITELIST) ? [] : next.filter((v) => v.startsWith('adv:')).map((v) => v.slice(4))
         const whitelistOnly = advertisers.length ? false : next.includes(WHITELIST)
         const partnerIds = next.filter((v) => v.startsWith('dsp:')).map((v) => v.slice(4)).filter((id) => dspNames.has(id))
-        c.set(slotKey(data), { assignedTo: { partnerIds, advertisers, whitelistOnly, buyersListId: null, buyersListIds: [] } })
+        c.set(slotKey(data), { ...flag, assignedTo: { partnerIds, advertisers, whitelistOnly, buyersListId: null, buyersListIds: [] } })
       }}
     />
+    {suppressed && globalOn && <div style={{ fontSize: 12, color: T.muted }}>Not in global deals: this slot is {suppressed}.</div>}
+    {!c.canEdit || a.partnerIds.length || a.advertisers.length || a.whitelistOnly || tiersOf(a).length || globalOn ? null : (
+      <div style={{ fontSize: 12, color: T.muted }}>Unassigned: not offered to any buyer</div>
+    )}
     <PriorityList
       label={`${data.displayTypeName} slot ${data.zoneSlot}`}
       ids={tiersOf(a)}
@@ -368,32 +387,7 @@ function AssignedCell({ data, context }: IP) {
       canEdit={c.canEdit}
       onChange={(ids) => c.set(slotKey(data), { assignedTo: { ...a, buyersListId: ids[0] ?? null, buyersListIds: ids } })}
     />
-    <GlobalDealFlag data={data} c={c} />
     </>
-  )
-}
-
-/* "In global deal" (8 Oct 2026): defaults ON, and is suppressed whenever the
-   slot is held for named advertisers, whitelist-only or on a buyers list, so
-   the default never exposes inventory the retailer meant to restrict. The
-   choice is kept while suppressed; it simply has no effect. */
-const GLOBAL_DEAL_TIP = 'Include this slot in the global deal: the one deal ID (see Exchange settings) a DSP that only buys on deals can target to reach every open slot. On by default; untick to keep the slot out. It has no effect while the slot is held for named advertisers, whitelist-only or on a buyers list, and none while the global deal is off in Exchange settings.'
-function GlobalDealFlag({ data, c }: { data: AvailableInventoryRow; c: InvCtx['current'] }) {
-  const e = edited(c, data)
-  const a = e.assignedTo
-  const suppressed = a.advertisers.length ? 'held for named advertisers' : a.whitelistOnly ? 'whitelist-only' : tiersOf(a).length ? 'on a buyers list' : null
-  return (
-    <Tip title={suppressed ? `Not in the global deal: this slot is ${suppressed}.` : GLOBAL_DEAL_TIP}>
-      <Checkbox
-        className="mt-1"
-        checked={e.inGlobalDeal !== false && !suppressed}
-        disabled={!c.canEdit || !!suppressed}
-        onChange={(x) => c.set(slotKey(data), { inGlobalDeal: x.target.checked })}
-        aria-label={`${data.displayTypeName} slot ${data.zoneSlot}: in global deal`}
-      >
-        <span style={{ fontSize: 12, color: T.muted }}>In global deal</span>
-      </Checkbox>
-    </Tip>
   )
 }
 
@@ -652,7 +646,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
     { headerName: 'Position', width: 130, minWidth: 110, cellRenderer: SlotCell, valueGetter: (p) => p.data?.position ?? '', ...searchColumn<AvailableInventoryRow>('Position') },
     {
       headerName: 'Assigned to', width: 240, minWidth: 200, cellRenderer: AssignedCell, autoHeight: true,
-      headerComponent: header('Assigned to', 'Who may buy this position: pick DSPs to say who may bid, advertisers to hold it for them (their DSP comes along), a buyers list to restrict it to a private auction among its invited buyers, or the whitelist. Nothing chosen means any connected DSP.'),
+      headerComponent: header('Assigned to', 'Who may buy this position: pick DSPs to say who may bid, advertisers to hold it for them (their DSP comes along), a buyers list to restrict it to a private auction among its invited buyers, or the whitelist. The Included in global deals chip adds it to the one global deal ID (see Advertiser settings); remove it with its cross. An empty cell is valid: the slot is unassigned and does not sell, for holding it back for your own use.'),
       valueGetter: (p) => {
         if (!p.data) return ''
         const a = edited((p.context as InvCtx).current, p.data).assignedTo
@@ -661,10 +655,10 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
           partnerNames: a.partnerIds.map((id) => inventory.data?.dsps.find((d) => d.partnerId === id)?.name ?? id),
           buyersListName: a.buyersListId ? buyersLists.data?.items.find((l) => l.id === a.buyersListId)?.name ?? a.buyersListId : null,
           buyersListNames: tiersOf(a).map((id) => buyersLists.data?.items.find((l) => l.id === id)?.name ?? id),
-        }).join(', ') || 'Included in global deal'
+        }).concat(edited((p.context as InvCtx).current, p.data).inGlobalDeal !== false ? [GLOBAL_CHIP_LABEL] : []).join(', ') || 'Unassigned'
       },
       ...setColumn<AvailableInventoryRow>('Assigned to', () => [
-        'Included in global deal', 'Whitelist only',
+        GLOBAL_CHIP_LABEL, 'Unassigned', 'Whitelist only',
         ...(inventory.data?.dsps ?? []).flatMap((d) => [d.name, ...d.advertisers.map((a) => a.name)]),
         ...(buyersLists.data?.items ?? []).map((l) => `Buyers list: ${l.name}`),
       ]),

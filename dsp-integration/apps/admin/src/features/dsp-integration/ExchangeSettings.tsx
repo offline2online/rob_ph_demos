@@ -32,7 +32,7 @@ export const SWITCH_TIP =
 /* The global deal (8 Oct 2026): one deal ID for all open, exchange-eligible inventory. */
 export const GLOBAL_DEAL_ID = 'PH-GLOBAL'
 export const GLOBAL_DEAL_TIP =
-  'One deal ID, PH-GLOBAL, that covers every open position on this instance, for DSPs that can only buy on a deal. A DSP targets that deal with its own targeting and reaches all open inventory without a deal per position. A bid on it competes exactly as on the open exchange: same floor, first price, same checks and approval. It does not lower the floor and does not guarantee delivery. Each slot is in it by default; untick a slot on Advertisers / Inventory to keep it out. A slot held for named advertisers, whitelist-only or on a buyers list is never in it.'
+  'One deal ID, PH-GLOBAL, that covers every open position on this instance, for DSPs that can only buy on a deal. A DSP targets that deal with its own targeting and reaches all open inventory without a deal per position. A bid on it competes exactly as on the open exchange: same floor, first price, same checks and approval. It does not lower the floor and does not guarantee delivery. Each slot is in it by default; remove the \'Included in global deals\' chip from a slot\'s Assigned to on Advertisers / Inventory to keep it out. Enable it in Advertiser settings. A slot held for named advertisers, whitelist-only or on a buyers list is never in it.'
 
 export function ExchangeSettings() {
   const { draft, saved, update, published } = useSection()
@@ -72,16 +72,6 @@ export function ExchangeSettings() {
               <Input id="contactEmail" value={e.contactEmail} placeholder="adops@…" onChange={(x) => set('contactEmail', x.target.value)} />
             </Field>
           </div>
-          <SectionLabel><WithTip tip={GLOBAL_DEAL_TIP}>Global deal</WithTip></SectionLabel>
-          <div className="mb-3.5 flex items-center justify-between border-b py-3" style={{ borderColor: T.divider }}>
-            <label htmlFor="globalDealEnabled" style={{ fontSize: 14, color: T.text }}>Enable global deal</label>
-            <Switch id="globalDealEnabled" checked={e.globalDealEnabled === true} onChange={(on) => update('exchange', (x) => ({ ...x, globalDealEnabled: on }))} />
-          </div>
-          {e.globalDealEnabled === true && (
-            <div className="mb-3.5" style={{ fontSize: 14, color: T.text }}>
-              Deal ID <code style={{ fontFamily: MONO }}>{GLOBAL_DEAL_ID}</code>: give this to a DSP that only transacts on deals.
-            </div>
-          )}
           {published ? (
             <Callout tone="success" icon="public">sellers.json is published at <code>{url}</code>.</Callout>
           ) : (

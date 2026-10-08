@@ -91,6 +91,8 @@ export const globalDealSuppressedBy = (def: Slot): Exclude<Assignment, 'rtb'> | 
   return a === 'rtb' ? null : a
 }
 export const slotInGlobalDeal = (def: Slot) => def.inGlobalDeal !== false
+/* Nothing assigned and no global-deal membership: the slot is held back, not open to every DSP. */
+export const isUnassigned = (def: Slot) => assignmentOf(def) === 'rtb' && assignedCached(def).partnerIds.length === 0 && !slotInGlobalDeal(def)
 /* Is this position carried on the global deal, given the instance master switch? */
 export const inGlobalDeal = (def: Slot, masterOn: boolean) => masterOn && slotInGlobalDeal(def) && globalDealSuppressedBy(def) === null
 /* One tier of a position's buyers-list waterfall (7 Oct 2026): the position
@@ -399,6 +401,10 @@ export function assumedViewsFor(scored: number, p: PositionRef) {
    creative, and billing keys off that. Loop length is screen context only.
    Returns why not, or null when sellable. */
 export function unsellableReason(ctx: Context, p: PositionRef, known?: { scored: boolean }): Awaitable<string | null> {
+  /* Unassigned (9 Oct 2026): no DSP, advertiser, whitelist or buyers list, and
+     not in the global deal. A valid state, for holding a slot for own use: it
+     does not sell. */
+  if (isUnassigned(p.def)) return 'Unassigned: not offered to any buyer.'
   /* A website or mobile app has no camera audience to score, so it is never
      held back for lack of one (ticket 0jviesctpWGyOYtK20tg). */
   if (openRtbInventoryOf(p.displayType.touchPoint) !== 'dooh') return null

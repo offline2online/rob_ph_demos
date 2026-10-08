@@ -1,7 +1,7 @@
 /* Advertiser settings (spec §4, §5, §6): Pricing and the IAB category lists are
    edited here (advertiser lists are per DSP, on its own page); Where these apply is read-only. The inventory table moved to
    Advertisers / Inventory (Rob, 20 Sep). */
-import { Input, InputNumber, Select } from 'antd'
+import { Input, InputNumber, Select, Switch } from 'antd'
 import { IAB_CATEGORIES, IAB_CATEGORY_CODES, INTERACTIVE_ENABLED, type AdvertiserSettingsInput } from '@ph-dsp/types'
 import { type ReactNode, useMemo } from 'react'
 import { Field } from '../../shared/Field'
@@ -11,6 +11,7 @@ import { SectionLabel } from '../../shared/SectionLabel'
 import { T } from '../../theme/phTheme'
 import { useSection } from './DspIntegrationLayout'
 import { SubPageHeader } from './SubPageHeader'
+import { GLOBAL_DEAL_ID, GLOBAL_DEAL_TIP } from './ExchangeSettings'
 
 export const ADVERTISER_SETTINGS_TIP =
   "Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (floor CPM, always in USD); Play configuration (max slot length, default committed plays, guaranteed-deal buffer and the uncached-creative restriction); Real-time bidding (bid lookahead); and the Category lists (IAB whitelists and blacklists; each DSP's advertiser lists are managed on its own page, from the advertisers it syncs). Read-only here: Where these apply (which DSPs use these lists or keep their own; unlink or relink on the DSP's page). Per-advertiser campaign approval and floor multipliers, and the inventory advertisers can buy, are on Advertisers / Inventory."
@@ -122,6 +123,18 @@ export function AdvertiserSettings() {
         <Field label={<span className="block" style={{ minHeight: 36 }}>Platform floor price (CPM, USD)</span>} htmlFor="floorCpm" tip={FLOOR_TIP} tipWidth={400} className="w-32">{num('floorCpm', 1, '100')}</Field>
         {INTERACTIVE_ENABLED && <Field label={<span className="block" style={{ minHeight: 36 }}>Interactive cost per engagement (USD)</span>} htmlFor="interactiveCpe" tip={INTERACTIVE_TIP} tipWidth={400} className="w-44">{num('interactiveCpe', 0.05, '0.50', { precision: 2, prefix: TRANSACTING_CURRENCY })}</Field>}
       </div>
+
+      {/* Reach setting (9 Oct 2026, moved from Exchange settings): its own line, not part of Play configuration. */}
+      <SectionLabel><WithTip tip={GLOBAL_DEAL_TIP}>Reach</WithTip></SectionLabel>
+      <div className="mb-3.5 flex items-center justify-between border-b py-3" style={{ borderColor: T.divider }}>
+        <label htmlFor="globalDealEnabled" style={{ fontSize: 14, color: T.text }}>Enable global deal</label>
+        <Switch id="globalDealEnabled" checked={draft.exchange.globalDealEnabled === true} onChange={(on) => update('exchange', (x) => ({ ...x, globalDealEnabled: on }))} />
+      </div>
+      {draft.exchange.globalDealEnabled === true && (
+        <div className="mb-3.5" style={{ fontSize: 14, color: T.text }}>
+          Deal ID <code style={{ fontFamily: 'ui-monospace, monospace' }}>{GLOBAL_DEAL_ID}</code>: give this to a DSP that only transacts on deals.
+        </div>
+      )}
 
       <SectionLabel><WithTip tip="How many plays a slot offers and what a deal commits to. The company max slot length sets the default length of one play, which a display type and then a slot can override. The buffer decides a guaranteed deal's committed volume, worked out from the slot's forecast. The default seeds Committed plays on a new buyers list. They are separate: changing one never changes another.">Play configuration</WithTip></SectionLabel>
       <div className="flex flex-wrap items-start gap-3.5">

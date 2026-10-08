@@ -622,9 +622,9 @@ describe('Advertisers / Inventory', () => {
        Sep). */
     expect(within(inventory).getAllByLabelText('QR Control enabled')).toHaveLength(1)
     expect(within(inventory).getAllByLabelText('Vision/AI enabled')).toHaveLength(1)
-    /* Assigned to is a pill column: who may buy the slot. Assigned to shows "Included in global deal" only when nothing is chosen. */
+    /* Assigned to is a pill column: who may buy the slot, plus the removable Included in global deals chip (slot default, 9 Oct 2026). */
     const cellOf = (label: string) => within(inventory).getAllByLabelText(`Menu Board — Long Format slot 2: ${label}`)[0].closest('.ag-cell') as HTMLElement
-    expect([...cellOf('assigned to').querySelectorAll('.ant-select-selection-item')].map((t) => t.textContent)).toEqual(['Google DSP'])
+    expect([...cellOf('assigned to').querySelectorAll('.ant-select-selection-item')].map((t) => t.textContent)).toEqual(['Google DSP', 'Included in global deals'])
     expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled()
 
   })
@@ -662,6 +662,31 @@ describe('Advertisers / Inventory', () => {
     const inventory = await screen.findByLabelText('Available Inventory')
     expect(within(inventory).getByRole('status')).toHaveTextContent(reason)
   })
+
+  /* Ticket hWXYjK6GPVVQTXpKw3Rm (9 Oct 2026): global deal membership is a removable chip in Assigned to. */
+  it('removes and re-adds the Included in global deals chip, saving the slot flag', async () => {
+    const calls: { url: string; body: unknown }[] = []
+    const saved = () => calls.filter((c) => c.url.includes('available-inventory')).at(-1)?.body as { items: { inGlobalDeal?: boolean }[] } | undefined
+    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
+      if (init?.method === 'PUT') calls.push({ url, body: JSON.parse(String(init.body)) })
+      return fakeFetch(ADVERTISER_PAGE)(url)
+    }))
+    renderAt('/advertisers')
+    const inventory = await screen.findByLabelText('Available Inventory')
+    const cell = () => within(inventory).getAllByLabelText('Menu Board — Long Format slot 2: assigned to')[0].closest('.ag-cell') as HTMLElement
+    const chip = () => [...cell().querySelectorAll('.ant-select-selection-item')].find((t) => t.textContent === 'Included in global deals')
+    expect(chip()).toBeTruthy()
+    fireEvent.click(chip()!.querySelector('.ant-select-selection-item-remove')!)
+    await waitFor(() => expect(chip()).toBeFalsy())
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(saved()?.items[0].inGlobalDeal).toBe(false))
+  }, slow(45000))
+
+  it('puts the global deal switch in Advertiser settings, not Exchange settings', async () => {
+    vi.stubGlobal('fetch', vi.fn(fakeFetch(ADVERTISER_PAGE)))
+    renderAt('/dsp-integration/advertiser-settings')
+    expect(await screen.findByRole('switch', { name: 'Enable global deal' })).toBeInTheDocument()
+  }, slow(45000))
 
   it('holds a position for an advertiser, and never offers interactive targeting', async () => {
     const calls: { url: string; body: unknown }[] = []
@@ -805,7 +830,7 @@ describe('Advertisers / Inventory', () => {
     renderAt('/advertisers')
     const inventory = await screen.findByLabelText('Available Inventory')
     /* Read-only: the same values as plain text, with nothing to open. */
-    expect(within(inventory).getByText('Google DSP')).toBeInTheDocument()
+    expect(within(inventory).getByText('Google DSP, Included in global deals')).toBeInTheDocument()
     expect(within(inventory).queryAllByRole('combobox')).toHaveLength(0)
     expect(await screen.findByText('Read only')).toBeInTheDocument()
   })

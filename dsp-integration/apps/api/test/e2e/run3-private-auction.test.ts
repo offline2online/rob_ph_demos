@@ -272,8 +272,11 @@ describe('Run 3 — global deal (P9–P11)', () => {
     expect(lastImp(h).pmp?.deals[0].id).toBe(GLOBAL_DEAL_ID)
     expect((await setInGlobalDeal(h, false)).statusCode).toBe(200)
     expect(await row()).toMatchObject({ inGlobalDeal: false })
+    /* Chip removed with nothing else assigned (9 Oct 2026): unassigned, a valid state that does not sell, so no bid request goes out. */
+    const sent = h.bidder.log.bidRequests.length
     await h.signal()
-    expect(lastImp(h).pmp).toBeUndefined()
+    expect(h.bidder.log.bidRequests.length).toBe(sent)
+    expect((await row()).unsellableReason).toMatch(/Unassigned/)
     /* Omitted keeps the slot's flag (a client that predates it). */
     expect((await setInGlobalDeal(h)).statusCode).toBe(200)
     expect(await row()).toMatchObject({ inGlobalDeal: false })
