@@ -2,7 +2,7 @@
    positive floor, category entries that are real IAB
    categories, and nothing on both category lists. (The advertiser lists are
    per DSP: domain/partnerInput.ts.) */
-import { IAB_CATEGORIES, INTERACTIVE_ENABLED, MAX_MAX_PLAY_LENGTH_SEC, MIN_MAX_PLAY_LENGTH_SEC, type AdvertiserSettingsInput } from '@ph-dsp/types'
+import { canonicalIabCategory, INTERACTIVE_ENABLED, MAX_MAX_PLAY_LENGTH_SEC, MIN_MAX_PLAY_LENGTH_SEC, type AdvertiserSettingsInput } from '@ph-dsp/types'
 
 import { MAX_GUARANTEE_BUFFER_PCT } from './guarantee'
 import { bidLookaheadOk } from './bidLookahead'
@@ -22,10 +22,9 @@ export const cleanList = (xs: unknown) => {
 /* An entry only means something to a DSP if it is one of the IAB categories
    the bid request carries a code for, so free text is refused. Returns the
    canonical spelling (a name matched without regard to case). */
-const IAB_BY_KEY = new Map<string, string>(IAB_CATEGORIES.map((c) => [key(c), c]))
 export const cleanCategoryList = (xs: unknown) => {
   const seen = new Set<string>()
-  return cleanList(xs).map((x) => IAB_BY_KEY.get(key(x)) ?? x).filter((x) => !seen.has(x) && seen.add(x))
+  return cleanList(xs).map((x) => canonicalIabCategory(x) ?? x).filter((x) => !seen.has(x) && seen.add(x))
 }
 
 export function validateAdvertiserSettings(b: Partial<AdvertiserSettingsInput> | undefined): Detail[] {
@@ -61,7 +60,7 @@ export function validateAdvertiserSettings(b: Partial<AdvertiserSettingsInput> |
   }
   for (const k of ['categoryWhitelist', 'categoryBlacklist'] as const) {
     if (!Array.isArray(b?.[k])) { out.push({ field: k, reason: 'Required.' }); continue }
-    for (const x of cleanList(b?.[k])) if (!IAB_BY_KEY.has(key(x))) out.push({ field: k, reason: `${x} is not an IAB category. Choose from the IAB taxonomy: ${IAB_CATEGORIES.join(', ')}.` })
+    for (const x of cleanList(b?.[k])) if (!canonicalIabCategory(x)) out.push({ field: k, reason: `${x} is not an IAB category. Choose from the IAB Content Taxonomy (tier 1, or tier 2 as "Tier 1 › Tier 2").` })
   }
   const both = (a: unknown, c: unknown, field: string) => {
     const black = new Set(cleanCategoryList(c).map(key))

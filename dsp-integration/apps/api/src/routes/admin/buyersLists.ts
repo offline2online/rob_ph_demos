@@ -2,7 +2,7 @@
    deal objects, managed from Available Inventory's own table underneath the
    Assigned to picker (Rob, 23 Sep). */
 import { randomUUID } from 'node:crypto'
-import { assignedOf, IAB_CATEGORIES, TARGETING_VARIABLES, type BuyersList, type BuyersListDealType, type Condition, type InvitedBuyer } from '@ph-dsp/types'
+import { assignedOf, canonicalIabCategory, TARGETING_VARIABLES, type BuyersList, type BuyersListDealType, type Condition, type InvitedBuyer } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import type { Guards } from '../../http/app'
@@ -77,8 +77,8 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     const rawCategories = b.invitedCategories === undefined || b.invitedCategories === null ? [] : Array.isArray(b.invitedCategories) ? (b.invitedCategories as unknown[]) : null
     if (!rawCategories) errors.push({ field: 'invitedCategories', reason: 'A list of IAB categories.' })
     else rawCategories.forEach((raw, i) => {
-      const c = IAB_CATEGORIES.find((x) => typeof raw === 'string' && x.toLowerCase() === raw.trim().toLowerCase())
-      if (!c) errors.push({ field: `invitedCategories[${i}]`, reason: `${typeof raw === 'string' ? raw : 'That'} is not an IAB category. Choose from the IAB taxonomy: ${IAB_CATEGORIES.join(', ')}.` })
+      const c = canonicalIabCategory(raw)
+      if (!c) errors.push({ field: `invitedCategories[${i}]`, reason: `${typeof raw === 'string' ? raw : 'That'} is not an IAB category. Choose from the IAB Content Taxonomy (tier 1, or tier 2 as "Tier 1 › Tier 2").` })
       else if (!invitedCategories.includes(c)) invitedCategories.push(c)
     })
     if (!invitedBuyers.length && !invitedCategories.length && !errors.some((e) => e.field.startsWith('invitedBuyers') || e.field.startsWith('invitedCategories'))) errors.push({ field: 'invitedBuyers', reason: 'Invite at least one buyer or one IAB category.' })

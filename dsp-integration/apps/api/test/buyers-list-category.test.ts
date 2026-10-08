@@ -26,6 +26,15 @@ describe('Buyers lists — invite by IAB category (gate M12)', () => {
     expect(put.json().invitedCategories).toEqual(['Food & Drink', 'Beauty'])
   })
 
+  it('accepts a tier-2 subcategory and refuses a name outside the taxonomy', async () => {
+    const { app } = await withCategories()
+    const ok = await app.inject({ method: 'POST', url, payload: { ...base, invitedBuyers: [], invitedCategories: ['food & drink › vegan'] } })
+    expect(ok.statusCode).toBe(201)
+    expect(ok.json().invitedCategories).toEqual(['Food & Drink › Vegan'])
+    const bad = await app.inject({ method: 'POST', url, payload: { ...base, invitedBuyers: [], invitedCategories: ['Food & Drink › Gadgets'] } })
+    expect(bad.statusCode).toBe(400)
+  })
+
   it('refuses a list with neither buyers nor categories', async () => {
     const { app } = await withCategories()
     for (const payload of [{ ...base, invitedBuyers: [], invitedCategories: [] }, { ...base }]) {

@@ -2,7 +2,7 @@
    (DspProvider.ts). Auth is the TTD-Auth header carrying the API token; the
    partner's advertisers are paged from /v3/advertiser/query/partner. The
    supply source ID identifies PH on TTD's side for the bidding path. */
-import { IAB_CATEGORIES } from '@ph-dsp/types'
+import { canonicalIabCategory } from '@ph-dsp/types'
 import { type AuditVerdict, auditCheckFrom } from '../domain/dspAudit'
 import { type DspClient, type Fetch, type Seat, domainOf, unreachable } from './DspClient'
 import { type EffectiveLists, seatDomains } from '../domain/lists'
@@ -18,7 +18,7 @@ const ttdMessage = async (r: Response) => {
 
 /* The advertiser's IAB category, only when TTD reports a name from our IAB taxonomy (buyers lists can invite by category, 7 Oct 2026). */
 const categoryOf = (v?: string) => {
-  const category = IAB_CATEGORIES.find((c) => c.toLowerCase() === v?.trim().toLowerCase())
+  const category = canonicalIabCategory(v)
   return category ? { category } : {}
 }
 

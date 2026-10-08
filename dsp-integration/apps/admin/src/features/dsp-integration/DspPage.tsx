@@ -6,7 +6,7 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { App, Button, Input, Segmented, Select } from 'antd'
 import { Tip } from '../../shared/Tip'
-import { IAB_CATEGORIES, providerDef, type Partner } from '@ph-dsp/types'
+import { providerDef, type Partner } from '@ph-dsp/types'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ApiRequestError } from '../../api/client'

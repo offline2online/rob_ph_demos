@@ -61,7 +61,7 @@ export interface BidResponse { id?: string; cur?: string; seatbid?: { seat?: str
    told us for it (seats pulled on connect). */
 export const blockedDomains = (partner: PartnerRecord, blockList: string[]) => seatDomains(partner, blockList)
 
-export const categoryCodes = (names: string[]) => names.map((n) => IAB_CATEGORY_CODES[n as keyof typeof IAB_CATEGORY_CODES]).filter(Boolean)
+export const categoryCodes = (names: string[]) => names.map((n) => IAB_CATEGORY_CODES[n]).filter(Boolean)
 
 /* The deal ID for a buyers list: derived (no stored column), stable for the
    list's life, and the only ID a bid on that deal's position may quote. */
