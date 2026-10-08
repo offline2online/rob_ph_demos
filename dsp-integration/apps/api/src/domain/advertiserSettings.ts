@@ -38,9 +38,6 @@ export function validateAdvertiserSettings(b: Partial<AdvertiserSettingsInput> |
   if (INTERACTIVE_ENABLED && (typeof cpe !== 'number' || !Number.isFinite(cpe) || cpe < 0 || Math.round(cpe * 100) !== cpe * 100)) {
     out.push({ field: 'interactiveCpe', reason: 'Interactive cost per engagement is 0 or more, to the cent.' })
   }
-  if (!Number.isInteger(b?.auctionOpensHours) || (b?.auctionOpensHours as number) < 1) out.push({ field: 'auctionOpensHours', reason: 'Auction opens must be at least 1 hour before the cutoff.' })
-  if (!Number.isInteger(b?.playWindowHours) || (b?.playWindowHours as number) < 1 || (b?.playWindowHours as number) > 8760) out.push({ field: 'playWindowHours', reason: 'The play window is between 1 hour and 365 days.' })
-  if (typeof b?.auctionCutoffTime !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(b.auctionCutoffTime)) out.push({ field: 'auctionCutoffTime', reason: 'A time of day, HH:MM.' })
   /* Optional on save (omitted keeps the stored value); when sent, a percentage from 0 to 50. */
   const buf = b?.guaranteeBufferPct
   if (buf !== undefined && (typeof buf !== 'number' || !Number.isFinite(buf) || buf < 0 || buf > MAX_GUARANTEE_BUFFER_PCT)) out.push({ field: 'guaranteeBufferPct', reason: `The guarantee buffer is a percentage from 0 to ${MAX_GUARANTEE_BUFFER_PCT}.` })

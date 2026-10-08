@@ -34,7 +34,7 @@ const B = png(5760, 1080, 2)
 
 async function setup(dspFetch?: Fetch) {
   const mocks = mockDsps()
-  const ctx = await testContext({ clock: () => NOW, dspFetch: dspFetch ?? mocks.fetchImpl })
+  const ctx = await testContext({ byWindow: true, clock: () => NOW, dspFetch: dspFetch ?? mocks.fetchImpl })
   const app = buildApp(ctx)
   const upload = async (id: string, bytes: Buffer, version = 'default') => {
     const m = multipart({ version }, { name: 'menu.png', bytes })

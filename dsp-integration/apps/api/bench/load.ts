@@ -56,7 +56,7 @@ import { campaignFor } from '../src/seed/bookings'
 import { buildApp } from '../src/http/app'
 import { runAuction } from '../src/exchange/auction'
 import { runBilling } from '../src/exchange/billing'
-import { allPositions, biddingOpensAt, nextWindow, windowMs, windowStartOf } from '../src/domain/positions'
+import { allPositions, nextWindow, windowMs, windowStartOf } from '../src/domain/positions'
 import { mockDsps } from '../test/helpers'
 
 /* --assert / --calibrate: the regression gate (bench/gate.ts) runs this file
@@ -112,7 +112,12 @@ if (SCALE > 0) {
   const insStore = ctx.db.prepare('INSERT INTO stores (id, name, region) VALUES (?, ?, ?)')
   const insDisplay = ctx.db.prepare('INSERT INTO displays (id, name, store, store_id, display_type_id) VALUES (?, ?, ?, ?, ?)')
   const insVacd = ctx.db.prepare('INSERT INTO audience_vacd (display_type_id, slot, assumed_views_per_window, counted) VALUES (?, ?, ?, 0)')
-  const advSlot = (label: string) => ({ label, owner: 'advertiser', partnerIds: [], advertisers: [], listMode: null, storeScope: null, quota: null })
+  /* Only a private auction (deal) is sold by play window since 8 Oct 2026; every other position is real time and takes no window bids. The synthetic estate is therefore one open deal, so the window paths (availability, bids, the deal clearing) are what is measured. */
+  await ctx.buyersLists.insert({
+    id: 'bl_bench', name: 'Bench deal', description: '', activeFrom: null, activeTo: null, auctionCloses: null,
+    invitedBuyers: ((await ctx.partners.get('p_google'))?.seats ?? []).map((seat) => ({ partnerId: 'p_google', seatId: seat.id })),
+  })
+  const advSlot = (label: string) => ({ label, owner: 'advertiser', partnerIds: [], advertisers: [], listMode: 'deal', buyersListId: 'bl_bench', buyersListIds: ['bl_bench'], storeScope: null, quota: null })
   ctx.db.exec('BEGIN')
   for (let s = 0; s < STORES; s++) insStore.run(`bench_st_${s}`, `Bench store ${s}`, `Region ${s % 8}`)
   const stores = await ctx.stores.list()
@@ -251,7 +256,8 @@ await drive('GET  /v1/inventory (bad token → 401)', () => fetch(`${BASE}/v1/in
   for (const s of google.seats) if (await ctx.campaigns.getCampaign(`c_seed_${advertiserSlug(s.name)}`)) seats.push(advertiserSlug(s.name))
   const windows: string[] = []
   const companyLen = await windowMs(ctx)
-  for (let win = await nextWindow(ctx); Date.now() >= (await biddingOpensAt(ctx, win)).getTime(); win = new Date(win.getTime() + companyLen)) windows.push(win.toISOString())
+  /* The next three platform-default windows: a window can be bid on until it starts. */
+  for (let win = await nextWindow(ctx), n = 0; n < 3; win = new Date(win.getTime() + companyLen), n++) windows.push(win.toISOString())
   const total = seats.length * visible.length * windows.length
   let next = 0
   let placed = 0

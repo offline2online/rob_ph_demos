@@ -2,7 +2,9 @@ import Ajv2020 from 'ajv/dist/2020'
 import type { Slot } from '@ph-dsp/types'
 import { describe, expect, it } from 'vitest'
 import { sweepRejectedCampaigns } from '../src/domain/campaignRetention'
+import { findPosition } from '../src/domain/positions'
 import { runAuction } from '../src/exchange/auction'
+import { claimAuction } from '../src/exchange/scheduler'
 import { type BidRequest, buildBidRequest } from '../src/exchange/openrtb'
 import { buildApp } from '../src/http/app'
 import { expectMatchesContract } from './contract'
@@ -20,7 +22,7 @@ async function setup() {
     if (url.includes('/openrtb2/bid')) sent.push({ url, body: JSON.parse(String(init?.body)) })
     return mocks.fetchImpl(url, init)
   }
-  const ctx = await testContext({ clock: () => NOW, dspFetch: fetchImpl })
+  const ctx = await testContext({ byWindow: true, clock: () => NOW, dspFetch: fetchImpl })
   const app = buildApp(ctx)
   const bidder = (b: Record<string, unknown>) => mocks.app.inject({ method: 'PUT', url: '/_control/google_dv360/bidder', payload: b })
   const setSlot = async (patch: Partial<Slot>) => {
@@ -138,7 +140,7 @@ describe('the auction', () => {
     expect(await ctx.approvals.view(queued.campaignId)).toMatchObject({ status: 'awaiting_approval' })
   })
 
-  it('enforces the effective floor, the blacklist, whitelist-only and categories before a bid can win', async () => {
+  it('enforces the effective floor, the blacklist and categories before a bid can win', async () => {
     const { ctx, bidder, setSlot, rows, activate, queued } = await setup()
     await runAuction(ctx, W1)
     await activate(await queued('Nestlé — crid-5130001'))
@@ -153,9 +155,6 @@ describe('the auction', () => {
     await ctx.partners.update('p_google', { blockList: ['5130001'], allowList: ['5130002'] })
     expect(await reason(new Date('2026-09-23T00:00:00.000Z'))).toBe('Nestlé is on the advertiser blacklist.')
     await ctx.partners.update('p_google', { blockList: [], allowList: ['5130002'] })
-    await setSlot({ listMode: 'whitelist_only' })
-    expect(await reason(new Date('2026-09-24T00:00:00.000Z'))).toBe('Nestlé is not on the advertiser whitelist for this whitelist-only position.')
-    await setSlot({ listMode: 'rtb' })
     await ctx.company.save({ ...(await ctx.company.get()), categoryBlacklist: ['Food & Drink'] })
     expect(await reason(new Date('2026-09-25T00:00:00.000Z'))).toBe('Category IAB8 is on the category blacklist.')
     await ctx.company.save({ ...(await ctx.company.get()), categoryBlacklist: [] })
@@ -349,29 +348,28 @@ describe('POST /v1/reservations and GET …/{id}', () => {
     const res = await reserve({ ...BID, type: 'reserve', bidCpm: 175 })
     expect(res.statusCode).toBe(201)
     expect(res.json()).toMatchObject({ status: 'reserved', clearingCpm: 175, currency: 'USD' })
-    expect((await runAuction(ctx, W1)).positions[0].skipped).toBe('Held for a named advertiser: booked by reservation.')
+    /* The window clearing only considers private-auction positions; asked for by name, a held one is skipped. */
+    expect((await runAuction(ctx, W1)).positions).toEqual([])
+    expect((await runAuction(ctx, W1, { positions: [await findPosition(ctx, 'menu_board.s2') as never] })).positions[0].skipped).toBe('Held for a named advertiser: booked by reservation.')
     expect((await reserve({ ...BID, type: 'reserve' })).statusCode).toBe(409)
   })
 
-  it('only takes bids while the window’s auction is open (Auction schedule): from 7 days before the 18:00 cutoff until the cutoff', async () => {
+  it('takes a bid for any window that has not started: there is no company auction schedule', async () => {
     const { reserve, approve, activate } = await setup()
     await approve('c_api_swisse')
     await activate('c_api_swisse')
-    const early = await reserve({ ...BID, windowStart: '2026-09-28T00:00:00.000Z' })
-    expect(early.statusCode).toBe(409)
-    expectMatchesContract('POST', '/v1/reservations', 409, early.json())
-    expect(early.json().error.message).toBe('Bidding for that window opens at 2026-09-20T18:00:00.000Z.')
+    expect((await reserve({ ...BID, windowStart: '2026-09-28T00:00:00.000Z' })).statusCode).toBe(201)
     expect((await reserve({ ...BID, windowStart: '2026-09-27T00:00:00.000Z' })).statusCode).toBe(201)
   })
 
-  it('refuses a bid once the window’s auction has run', async () => {
-    const ctx = await testContext({ clock: () => new Date('2026-09-20T18:00:00.000Z') })
-    const app = buildApp(ctx)
-    await app.inject({ method: 'POST', url: '/api/admin/v1/campaigns/c_api_swisse/approve', payload: { assetVersion: 'v1' } })
-    await app.inject({ method: 'PUT', url: '/api/admin/v1/campaigns/c_api_swisse/activation', payload: { enabled: true } })
+  it('refuses a bid once the window’s auction has been claimed', async () => {
+    const { ctx, app, approve, activate } = await setup()
+    await approve('c_api_swisse')
+    await activate('c_api_swisse')
+    expect(await claimAuction(ctx, `${W1.toISOString()}#menu_board.s2`)).toBe(true)
     const late = await app.inject({ method: 'POST', url: '/api/v1/reservations', headers: GOOGLE, payload: BID })
     expect(late.statusCode).toBe(409)
-    expect(late.json().error.message).toBe('Bidding for that window closed at 2026-09-20T18:00:00.000Z, when its auction ran.')
+    expect(late.json().error.message).toBe('Bidding for that window closed: its auction has run.')
   })
 
   it('validates the request, and hides other partners’ reservations', async () => {
@@ -382,7 +380,7 @@ describe('POST /v1/reservations and GET …/{id}', () => {
     expect(res.json().error.details.map((d: { field: string }) => d.field)).toEqual(['advertiserId', 'bidCpm', 'campaignId', 'positionId', 'windowStart'])
     const past = await reserve({ ...BID, windowStart: '2026-09-20T00:00:00.000Z' })
     expect(past.statusCode).toBe(409)
-    expect(past.json().error.message).toBe('Bidding for that window closed at 2026-09-19T18:00:00.000Z, when its auction ran.')
+    expect(past.json().error.message).toBe('Bidding for that window closed: it has started.')
     const other = await app.inject({ method: 'GET', url: '/api/v1/reservations/res_nope', headers: GOOGLE })
     expect(other.statusCode).toBe(404)
     expectMatchesContract('GET', '/v1/reservations/{reservationId}', 404, other.json())

@@ -8,7 +8,7 @@ import { TRANSACTING_CURRENCY } from './currency'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 import { type Awaitable, allOf, andThen } from '../db/db'
 import { type ReservationStatus, TAKEN } from '../repos/ReservationRepo'
-import { INTERACTIVE_ENABLED, advertiserSlug, assignedOf, billingUnitHoursOf, interactiveReservePriceOf, maxCampaignsOf, maxPlayLengthSecOf, openRtbInventoryOf, reservePriceOf, type Assigned } from '@ph-dsp/types'
+import { INTERACTIVE_ENABLED, PLATFORM_DEFAULT_BILLING_UNIT_HOURS, advertiserSlug, assignedOf, billingUnitHoursOf, interactiveReservePriceOf, maxCampaignsOf, maxPlayLengthSecOf, openRtbInventoryOf, reservePriceOf, type Assigned } from '@ph-dsp/types'
 import { invitedPartnerIds, isInvitedBuyer } from './buyersLists'
 import { isActiveAt, lockedTermSpan } from '../billing/term'
 import { effectiveLists, isBlocked, isOn } from './lists'
@@ -64,11 +64,17 @@ function assignedCached(def: Slot): Assigned {
   return a
 }
 
-/* How a position is sold (7 Oct 2026): by play window ahead of time (advance,
-   the default — bids, reserve bookings and the scheduled auction) or per
-   impression as the player signals it (realtime, exchange/realtime.ts). */
-export const bidModeOf = (def: Slot): 'advance' | 'realtime' => (def.bidMode === 'realtime' && def.owner === 'advertiser' ? 'realtime' : 'advance')
-export const isRealtime = (p: PositionRef) => bidModeOf(p.def) === 'realtime'
+/* How a position is sold (8 Oct 2026): per impression as the player signals
+   it (real time, exchange/realtime.ts) unless it is held for named
+   advertisers or assigned to a private auction. Those two are the only
+   positions sold by play window ahead of time; an open (rtb) or
+   whitelist-only position is always real time, with no window bidding,
+   no window reservation and no scheduled clearing. There is no per-slot
+   setting for it. */
+export const isRealtime = (p: PositionRef) => {
+  const a = assignmentOf(p.def)
+  return a === 'rtb' || a === 'whitelist_only'
+}
 
 export type Assignment = 'rtb' | 'whitelist_only' | 'deal' | 'reserved'
 export const assignmentOf = (def: Slot): Assignment => {
@@ -196,18 +202,13 @@ const HOUR = 3_600_000
    decision Rob 29 Sep 2026: the per-slot Billing unit is the source of
    truth for window length and billing granularity). Override always wins:
    the slot's own billingUnitHours, else its display type's default, else
-   the company-wide play window (Advertiser settings → Auction schedule;
-   Q27), which is now only the default a slot inherits. The company value
-   is always set (platform default 24), so the platform default is reached
-   through it. Without a position: the company value, for the few callers
-   that genuinely mean "the company default". */
-export const windowHoursOf = (ctx: Context, p?: PositionRef | null): Awaitable<number> => andThen(ctx.company.get(), (company) => windowHoursFor(company.playWindowHours, p))
-export const windowMs = (ctx: Context, p?: PositionRef | null): Awaitable<number> => andThen(windowHoursOf(ctx, p), (hours) => hours * HOUR)
-/* The same, given the company play window already read — for loops over
-   many positions, which read company settings once. */
-export const windowHoursFor = (companyHours: number, p?: PositionRef | null): number =>
-  p ? billingUnitHoursOf(p.displayType, p.def, companyHours) : companyHours
-export const windowMsFor = (companyHours: number, p?: PositionRef | null) => windowHoursFor(companyHours, p) * HOUR
+   the platform default (PLATFORM_DEFAULT_BILLING_UNIT_HOURS, a named
+   constant, not a company setting: the company-wide play window was
+   removed on 8 Oct 2026). Without a position: the platform default. */
+export const windowHoursFor = (p?: PositionRef | null): number => (p ? billingUnitHoursOf(p.displayType, p.def) : PLATFORM_DEFAULT_BILLING_UNIT_HOURS)
+export const windowMsFor = (p?: PositionRef | null) => windowHoursFor(p) * HOUR
+export const windowHoursOf = (_ctx: Context, p?: PositionRef | null): number => windowHoursFor(p)
+export const windowMs = (_ctx: Context, p?: PositionRef | null): number => windowMsFor(p)
 /* A position's max play length, in seconds (max play length ticket, 7 Oct
    2026): the slot's own, else its display type's, else the company-wide
    default. The fixed per-play duration plays per window is counted against
@@ -219,47 +220,19 @@ export const longestPlayLengthSecFor = (companySec: number, dt: DisplayType): nu
   const sold = (dt.phExtensions?.slots ?? []).filter((s) => s.owner === 'advertiser')
   return Math.max(...(sold.length ? sold : [{}]).map((s) => maxPlayLengthSecOf(dt, s, companySec)))
 }
-/* Does this position follow the company-wide play window (neither the slot
-   nor its display type sets a billing unit)? Only these are resized by a
-   playWindowHours change, so only their windows defer one (scheduler.ts
-   promotePendingPlayWindowIfDue). */
-export const followsCompanyWindow = (p: PositionRef) => p.def.billingUnitHours == null && p.displayType.phExtensions?.billingUnitHours == null
-/* The shortest play window any position (or the company default) has: the
+/* The shortest play window any position (or the platform default) has: the
    finest grid every position's windows can be read against — billing's
    "has anything ended yet" query and the booking schedule's columns. */
-export const shortestWindowMs = async (ctx: Context) => {
-  const hours = (await ctx.company.get()).playWindowHours
-  return Math.min(windowMsFor(hours), ...(await allPositions(ctx)).map((p) => windowMsFor(hours, p)))
-}
+export const shortestWindowMs = async (ctx: Context) => Math.min(windowMsFor(), ...(await allPositions(ctx)).map((p) => windowMsFor(p)))
 /* The longest: how far back a window still running now can have started. */
-export const longestWindowMs = async (ctx: Context) => {
-  const hours = (await ctx.company.get()).playWindowHours
-  return Math.max(windowMsFor(hours), ...(await allPositions(ctx)).map((p) => windowMsFor(hours, p)))
-}
+export const longestWindowMs = async (ctx: Context) => Math.max(windowMsFor(), ...(await allPositions(ctx)).map((p) => windowMsFor(p)))
 /* When a reservation's window ends: its start plus its position's window
-   length (the company default for a position no longer in the estate). */
+   length (the platform default for a position no longer in the estate). */
 export const windowEndOf = async (ctx: Context, r: { positionId: string; windowStart: string }) => (await windowEnds(ctx))(r)
-/* windowEndOf for many reservations: reads the company window and the
-   position index once, then answers each one synchronously. */
+/* windowEndOf for many reservations: reads the position index once, then answers each one synchronously. */
 export async function windowEnds(ctx: Context): Promise<(r: { positionId: string; windowStart: string }) => number> {
-  const hours = (await ctx.company.get()).playWindowHours
   const index = await positionIndex(ctx)
-  return (r) => Date.parse(r.windowStart) + windowMsFor(hours, index.byId.get(r.positionId) ?? null)
-}
-
-/* Windows still bid on or booked (live, not Test mode) that a change to
-   the company-wide play window would have to resize: those on positions
-   that follow it (or that have since left the estate, conservatively).
-   Same "active" read the deferral has always used — a window starting now
-   or later (routes/admin/advertiserSettings.ts, scheduler.ts). */
-export async function companyWindowCommitments(ctx: Context) {
-  const active = await ctx.reservations.byStatus(['pending', 'won', 'reserved'], ctx.clock().toISOString())
-  const index = await positionIndex(ctx)
-  return active.filter((r) => {
-    if (r.testMode) return false
-    const p = index.byId.get(r.positionId) ?? null
-    return !p || followsCompanyWindow(p)
-  })
+  return (r) => Date.parse(r.windowStart) + windowMsFor(index.byId.get(r.positionId) ?? null)
 }
 
 /* A slot's own windows still bid on or booked (live, not Test mode) that
@@ -283,36 +256,20 @@ export async function slotWindowCommitments(ctx: Context, positionId: string, le
    Every length is laid from the same anchor (OQ27): a weekly slot's window
    starts on a Monday that is also a daily slot's window start, so one
    auction (keyed on its start) clears both. `len` is the window length in
-   ms — windowMs(ctx, p) for a position, the company default otherwise. */
+   ms — windowMs(ctx, p) for a position, the platform default otherwise. */
 const ANCHOR = Date.UTC(1970, 0, 5)
 export function windowStartOf(at: Date, len: number) {
   return new Date(ANCHOR + Math.floor((at.getTime() - ANCHOR) / len) * len)
 }
 
-/* The auction for a play window (Auction schedule, Q13): bidding closes at
-   the last daily cutoff (UTC) at or before the window starts, when the
-   auction runs, and opens `auctionOpensHours` before that. The same for a
-   window of any length: it depends only on when the window starts. */
-type AuctionSchedule = { auctionCutoffTime: string; auctionOpensHours: number }
-export function closesAtFor(company: AuctionSchedule, start: Date) {
-  const [h, m] = company.auctionCutoffTime.split(':').map(Number)
-  const d = new Date(start)
-  const cutoff = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), h, m)
-  return new Date(cutoff > start.getTime() ? cutoff - 86_400_000 : cutoff)
+/* The first window that can still be booked or auctioned: the one after the
+   window `at` falls in. Deal windows are cleared one window ahead
+   (exchange/scheduler.ts), so a window that has started is never sold. */
+export function nextWindow(ctx: Context, len?: number): Date {
+  return nextWindowFor(ctx.clock(), len ?? windowMsFor())
 }
-export const opensAtFor = (company: AuctionSchedule, start: Date) => new Date(closesAtFor(company, start).getTime() - company.auctionOpensHours * 3_600_000)
-export const biddingClosesAt = async (ctx: Context, start: Date) => closesAtFor(await ctx.company.get(), start)
-export const biddingOpensAt = async (ctx: Context, start: Date) => opensAtFor(await ctx.company.get(), start)
-
-/* The first window that can still be sold: its auction hasn't run yet. */
-export function nextWindow(ctx: Context, len?: number): Awaitable<Date> {
-  return andThen(ctx.company.get(), (company) => nextWindowFor(company, ctx.clock(), len ?? windowMsFor(company.playWindowHours)))
-}
-export function nextWindowFor(company: AuctionSchedule, at: Date, len: number) {
-  const now = at.getTime()
-  let w = windowStartOf(at, len)
-  while (now >= closesAtFor(company, w).getTime()) w = new Date(w.getTime() + len)
-  return w
+export function nextWindowFor(at: Date, len: number) {
+  return new Date(windowStartOf(at, len).getTime() + len)
 }
 
 /* Every window starting within [from, to] (dates, inclusive), laid from
@@ -363,8 +320,8 @@ export function windowFacts(ctx: Context, p: PositionRef, starts?: Date[], prefe
       ? andThen(ctx.reservations.inRange(p.positionId, starts[0].toISOString(), new Date(starts[starts.length - 1].getTime() + 1).toISOString()), (rows) =>
           new Map(rows.filter((r) => !r.testMode && TAKEN.includes(r.status)).map((r) => [r.windowStart, r.status])))
       : none
-  return andThen(allOf([ctx.company.get(), ctx.displays.summaryByDisplayType(p.displayType.id), lockedTermOf(ctx, p), taken] as const), ([company, displays, lockedTerm, t]) => ({
-    next: nextWindowFor(company, ctx.clock(), windowMsFor(company.playWindowHours, p)).getTime(),
+  return andThen(allOf([ctx.displays.summaryByDisplayType(p.displayType.id), lockedTermOf(ctx, p), taken] as const), ([displays, lockedTerm, t]) => ({
+    next: nextWindowFor(ctx.clock(), windowMsFor(p)).getTime(),
     hasDisplays: displays.displays > 0,
     lockedTerm,
     taken: t,
@@ -418,17 +375,17 @@ export async function windowStatusAt(ctx: Context, p: PositionRef, c: Caller, st
 }
 
 /* Assumed views (VAC-d) for one of this position's windows. The audience
-   source scores a slot per company play window (AudienceSource: the figure
-   HQ populates is per window, and every window was the company length
-   before OQ27); a slot with its own billing unit gets that figure scaled
-   to its window's length — a weekly window on a daily-scored slot is seven
-   days' views. A slot that follows the company window is unchanged. */
+   source scores a slot per platform-default window
+   (PLATFORM_DEFAULT_BILLING_UNIT_HOURS; AudienceSource: the figure HQ
+   populates is per window); a slot with another billing unit gets that
+   figure scaled to its window's length — a weekly window on a daily-scored
+   slot is seven days' views. */
 export function assumedViewsPerWindow(ctx: Context, p: PositionRef): Awaitable<number> {
-  return andThen(allOf([audienceOf(ctx.audience, p.displayType, p.slot), ctx.company.get()] as const), ([audience, company]) => assumedViewsFor(audience.assumedViewsPerWindow, company.playWindowHours, p))
+  return andThen(audienceOf(ctx.audience, p.displayType, p.slot), (audience) => assumedViewsFor(audience.assumedViewsPerWindow, p))
 }
-/* The same, given the slot's scored figure and the company window already read. */
-export function assumedViewsFor(scored: number, companyHours: number, p: PositionRef) {
-  const ratio = windowHoursFor(companyHours, p) / companyHours
+/* The same, given the slot's scored figure already read. */
+export function assumedViewsFor(scored: number, p: PositionRef) {
+  const ratio = windowHoursFor(p) / PLATFORM_DEFAULT_BILLING_UNIT_HOURS
   return ratio === 1 ? scored : Math.round(scored * ratio)
 }
 
@@ -515,12 +472,12 @@ function viewOf(
     assignment: assignmentOf(p.def),
     /* This position's own play-window length (OQ27): what one window —
        one bid, one booking, one billing line — covers. */
-    billingUnitHours: windowHoursFor(company.playWindowHours, p),
+    billingUnitHours: windowHoursFor(p),
     /* The same window as a play count — the transacting unit (plays on ONE display; VAC-d converts plays to views for billing only). */
-    playsPerWindow: playsPerWindowOf(windowMsFor(company.playWindowHours, p), maxPlayLengthSecFor(company.maxPlayLengthSec, p), n),
+    playsPerWindow: playsPerWindowOf(windowMsFor(p), maxPlayLengthSecFor(company.maxPlayLengthSec, p), n),
     /* The loop positions the maths counts: every slot of the rotation, HQ's included. */
     slotCount: Math.max(1, n),
-    assumedViewsPerWindow: assumedViewsFor(audience.assumedViewsPerWindow, company.playWindowHours, p),
+    assumedViewsPerWindow: assumedViewsFor(audience.assumedViewsPerWindow, p),
     /* False when the slot has no audience score: only ever seen by a
        caller who is told so, since inventory excludes such positions. */
     scored: audience.scored,

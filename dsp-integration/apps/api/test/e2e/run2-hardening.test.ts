@@ -13,14 +13,14 @@ import { lineItems } from '../../src/exchange/billing'
 import { claimAuction, schedulerTick } from '../../src/exchange/scheduler'
 import { prepared } from '../../src/db/db'
 import { mp4, png } from '../media'
-import { AMAZON, GOOGLE, POS, TTD, arnottsBid, day, harness, response, swisseBid } from './harness'
+import { AMAZON, GOOGLE, OPEN_DEAL, POS, TTD, arnottsBid, day, harness, response, swisseBid } from './harness'
 
 afterEach(() => {
   vi.unstubAllGlobals()
 })
 
 type H = Awaited<ReturnType<typeof harness>>
-/* 18:00 UTC the day before is a window's auction cutoff (seed: auctionCutoffTime 18:00). */
+/* There is no auction cutoff any more (8 Oct 2026): a deal window is cleared once the window before it is running, so 18:00 UTC the day before is simply a moment inside that. */
 const cutoffOf = (w: Date) => new Date(w.getTime() - 6 * 3_600_000 + 30_000)
 const tick = async (h: H) => {
   const logs: string[] = []
@@ -210,8 +210,9 @@ describe('Run 2 — E. Partner API refusals', () => {
   it('E10 — another partner’s campaign, reservation or position → 404 (no IDOR)', async () => {
     const h = await harness()
     await h.addSecondDsp()
-    /* The position is Google's only. */
-    await h.admin.slot({ partnerIds: ['p_google'] })
+    /* The position is Google's only: the open deal it sits on invites Google's seats alone. */
+    const open = (await h.ctx.buyersLists.get(OPEN_DEAL))!
+    await h.ctx.buyersLists.update(OPEN_DEAL, { ...open, invitedBuyers: open.invitedBuyers.filter((b) => b.partnerId === 'p_google') })
     const id = await h.readyApiCampaign('Swisse — E10')
     const r = await h.partner.bid(id, day(0), 200)
     expect(r.statusCode).toBe(201)
@@ -527,10 +528,10 @@ describe('Run 2 — H. Scheduling, concurrency & billing faults', () => {
   it('H2 — a bid for a window already claimed in auction_runs → 409 "closed"', async () => {
     const h = await harness()
     const id = await h.readyApiCampaign('Swisse — H2')
-    expect(await claimAuction(h.ctx, day(0).toISOString())).toBe(true)
+    expect(await claimAuction(h.ctx, `${day(0).toISOString()}#${POS}`)).toBe(true)
     const res = await h.partner.bid(id, day(0), 200)
     expect(res.statusCode).toBe(409)
-    expect(res.json().error.message).toMatch(/^Bidding for that window closed at .*, when its auction ran\.$/)
+    expect(res.json().error.message).toMatch(/^Bidding for that window closed: its auction has run\.$/)
     expect((await h.partner.bid(id, day(1), 200)).statusCode).toBe(201)
   })
 
@@ -572,7 +573,7 @@ describe('Run 2 — H. Scheduling, concurrency & billing faults', () => {
     const h = await harness()
     h.setNow(cutoffOf(day(0)))
     const claim = (ageMin: number) => prepared(h.ctx.db, "INSERT INTO auction_runs (window_start, claimed_at, claimed_by, finished_at) VALUES (?, ?, 'other-host:1', NULL) ON CONFLICT (window_start) DO UPDATE SET claimed_at = excluded.claimed_at, claimed_by = excluded.claimed_by, finished_at = excluded.finished_at")
-      .run(day(0).toISOString(), new Date(cutoffOf(day(0)).getTime() - ageMin * 60_000).toISOString())
+      .run(`${day(0).toISOString()}#${POS}`, new Date(cutoffOf(day(0)).getTime() - ageMin * 60_000).toISOString())
     claim(14)
     expect((await tick(h)).logs.filter((l) => l.startsWith('Auction cleared'))).toHaveLength(0)
     expect(claims(h)[0].claimed_by).toBe('other-host:1')

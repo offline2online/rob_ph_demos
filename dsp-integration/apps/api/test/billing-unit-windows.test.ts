@@ -1,6 +1,6 @@
 /* OQ27 (decision, Rob, 29 Sep 2026): a slot's Billing unit (billingUnitHours
-   — slot override, else display type default, else the company-wide play
-   window, else 24h) is the source of truth for its play-window length and
+   — slot override, else display type default, else the platform default of
+   24h) is the source of truth for its play-window length and
    billing granularity. Before this it was informational only: a 168-hour
    unit changed nothing (E2E T7). */
 import type { Slot } from '@ph-dsp/types'
@@ -10,7 +10,7 @@ import { allPositions, findPosition, windowMs } from '../src/domain/positions'
 import { runAuction } from '../src/exchange/auction'
 import { runBilling } from '../src/exchange/billing'
 import { buildBidRequest } from '../src/exchange/openrtb'
-import { dueWindowStarts } from '../src/exchange/scheduler'
+import { dueDealAuctions } from '../src/exchange/scheduler'
 import { buildApp } from '../src/http/app'
 import type { ReservationRecord } from '../src/repos/ReservationRepo'
 import { expectMatchesContract } from './contract'
@@ -31,18 +31,18 @@ const won = (over: Partial<ReservationRecord>): ReservationRecord => ({
 
 async function setup(clock: () => Date = () => NOW) {
   const mocks = mockDsps()
-  const ctx = await testContext({ clock, dspFetch: mocks.fetchImpl })
+  const ctx = await testContext({ clock, dspFetch: mocks.fetchImpl, byWindow: true })
   const app = buildApp(ctx)
   /* The second Advertiser slot is scored like the seeded one; an unscored slot isn't sold. */
   ctx.db.prepare('INSERT INTO audience_vacd (display_type_id, slot, assumed_views_per_window, counted) VALUES (?, ?, ?, 1)').run('menu_board', 3, 1236)
   /* Slot 2 (the seeded Supplier slot) gets a weekly billing unit; slot 3
      becomes a second Advertiser slot with no override of its own, so it
-     keeps the company default (24 hours). */
+     keeps the platform default (24 hours). */
   const setSlots = async (patch: Record<number, Partial<Slot>>) => {
     const ext = (await ctx.displayTypes.get('menu_board'))!.phExtensions!
     await ctx.displayTypes.saveExtensions('menu_board', { ...ext, slots: ext.slots.map((s, i) => (patch[i + 1] ? { ...s, ...patch[i + 1] } : s)) })
   }
-  const weekly = async () => await setSlots({ 2: { billingUnitHours: 168 }, 3: { owner: 'advertiser', partnerIds: ['p_google'], listMode: 'rtb', storeScope: null } })
+  const weekly = async () => await setSlots({ 2: { billingUnitHours: 168 }, 3: { owner: 'advertiser', partnerIds: ['p_google'], listMode: 'deal', buyersListId: 'bl_test_open', storeScope: null } })
   const activate = (id: string) => app.inject({ method: 'PUT', url: `/api/admin/v1/campaigns/${id}/activation`, payload: { enabled: true } })
   const queued = async (name: string) => (await ctx.approvalCampaigns.listCampaigns({ sources: ['dsp'] })).find((c) => c.name === name)!.campaignId
   const get = (url: string) => app.inject({ method: 'GET', url: `/api${url}`, headers: GOOGLE })
@@ -50,9 +50,9 @@ async function setup(clock: () => Date = () => NOW) {
 }
 
 describe('a slot’s billing unit sets its play-window length (OQ27)', () => {
-  it('gives a 168-hour slot weekly windows — availability, inventory and bid request — while a slot without an override keeps the company default', async () => {
+  it('gives a 168-hour slot weekly windows — availability, inventory and bid request — while a slot without an override keeps the platform default', async () => {
     const { ctx, weekly, get } = await setup()
-    /* The seeded Supplier slot's audience is scored per company (24h) window. */
+    /* The seeded Supplier slot's audience is scored per platform-default (24h) window. */
     const scored = (await audienceOf(ctx.audience, (await ctx.displayTypes.get('menu_board'))!, 2)).assumedViewsPerWindow
     await weekly()
     expect(await windowMs(ctx, await findPosition(ctx, 'menu_board.s2'))).toBe(168 * HOUR)
@@ -84,9 +84,9 @@ describe('a slot’s billing unit sets its play-window length (OQ27)', () => {
   it('auctions a weekly slot only on its own window starts, which one auction shares with the daily slots', async () => {
     const { ctx, app, weekly } = await setup()
     await weekly()
-    /* The scheduler looks at both grids' current and next windows, once each. */
-    expect((await dueWindowStarts(ctx)).map((d) => d.toISOString())).toEqual([
-      '2026-09-14T00:00:00.000Z', '2026-09-20T00:00:00.000Z', '2026-09-21T00:00:00.000Z',
+    /* The scheduler owes each deal position the window after the one running, on its own grid: here both are Monday 21 Sep. */
+    expect((await dueDealAuctions(ctx)).map((d) => [d.position.positionId, d.windowStart.toISOString()])).toEqual([
+      ['menu_board.s2', '2026-09-21T00:00:00.000Z'], ['menu_board.s3', '2026-09-21T00:00:00.000Z'],
     ])
     /* Monday: both slots clear together. Tuesday: only the daily one. */
     expect((await runAuction(ctx, MON_21)).positions.map((p) => p.positionId)).toEqual(['menu_board.s2', 'menu_board.s3'])
@@ -173,7 +173,7 @@ describe('a slot’s billing unit sets its play-window length (OQ27)', () => {
     expect(res.json().totals).toMatchObject({ bookedWindows: 1 })
   })
 
-  it('refuses to change a slot’s billing unit while windows sold under it are still to play; the company value alone defers', async () => {
+  it('refuses to change a slot’s billing unit while windows sold under it are still to play', async () => {
     const { ctx, app } = await setup()
     const row = (billingUnitHours: number | null, billingUnitHoursDefault: number | null = null) =>
       ({ displayTypeId: 'menu_board', slot: 2, assignedTo: { partnerIds: ['p_google'], advertisers: [], whitelistOnly: false }, reservePrice: null, reservePriceDefault: null, billingUnitHours, billingUnitHoursDefault })
@@ -194,17 +194,6 @@ describe('a slot’s billing unit sets its play-window length (OQ27)', () => {
     await ctx.reservations.update('res_tue', { status: 'lost' })
     const ok = await save(row(168))
     expect(ok.statusCode).toBe(200)
-    expect(ok.json().items[0]).toMatchObject({ billingUnitHours: 168, billingUnitHoursOverride: 168, companyPlayWindowHours: 24 })
-
-    /* A company play-window change isn't held back by a slot with its own unit. */
-    await ctx.reservations.insert(won({ id: 'res_week', windowStart: MON_28.toISOString(), status: 'pending', clearingCpm: null }))
-    const company = { ...(await ctx.company.get()) }
-    const settings = await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: { ...company, playWindowHours: 48 } })
-    expect(settings.json()).toMatchObject({ playWindowHours: 48, pendingPlayWindowHours: null })
-    /* …and a slot with no unit of its own now inherits it. */
-    const inherited = await save(row(null))
-    expect(inherited.statusCode).toBe(400)
-    await ctx.reservations.update('res_week', { status: 'lost' })
-    expect((await save(row(null))).json().items[0]).toMatchObject({ billingUnitHours: 48, billingUnitHoursOverride: null })
+    expect(ok.json().items[0]).toMatchObject({ billingUnitHours: 168, billingUnitHoursOverride: 168 })
   })
 })

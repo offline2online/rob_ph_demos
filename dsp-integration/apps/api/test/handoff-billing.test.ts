@@ -18,7 +18,7 @@ const won = (over: Partial<ReservationRecord>): ReservationRecord => ({
 
 async function setup(clock = () => NOW) {
   const mocks = mockDsps()
-  const ctx = await testContext({ clock, dspFetch: mocks.fetchImpl })
+  const ctx = await testContext({ byWindow: true, clock, dspFetch: mocks.fetchImpl })
   const app = buildApp(ctx)
   const activate = (id: string) => app.inject({ method: 'PUT', url: `/api/admin/v1/campaigns/${id}/activation`, payload: { enabled: true } })
   return { ctx, app, mocks, activate }

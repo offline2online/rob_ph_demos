@@ -13,7 +13,7 @@ import { randomUUID } from 'node:crypto'
 import { advertiserSlug } from '@ph-dsp/types'
 import type { Context } from '../context'
 import { onFree } from '../db/db'
-import { allPositions, nextWindow, windowMs } from '../domain/positions'
+import { type PositionRef, allPositions, isRealtime, nextWindow, windowMs } from '../domain/positions'
 import { audienceOf } from '../domain/displayTypes'
 
 const money = [120, 135, 150, 165, 180, 195]
@@ -57,8 +57,18 @@ export async function campaignFor(ctx: Context, brand: { advertiserId: string; n
   return id
 }
 
+/* Sample bookings go on positions that are sold by window (held for named
+   advertisers, or on a private auction): an open or whitelist-only position is
+   sold in real time and takes no window booking (8 Oct 2026). An estate with
+   none (the base seed's single open Supplier slot) falls back to booking on any
+   position, as sample history for the booking schedule and billing. */
+export const bookablePositions = (all: PositionRef[]) => {
+  const windowed = all.filter((p) => !isRealtime(p))
+  return windowed.length ? windowed : all
+}
+
 export async function seedBookings(ctx: Context) {
-  const positions = await allPositions(ctx)
+  const positions = bookablePositions(await allPositions(ctx))
   const brands = (await ctx.partners.list())
     .filter((p) => p.status === 'connected')
     .flatMap((p) => p.seats.map((s) => ({ partnerId: p.id, name: s.name, advertiserId: advertiserSlug(s.name), live: p.mode === 'live' })))

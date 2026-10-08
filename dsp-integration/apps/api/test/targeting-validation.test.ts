@@ -60,7 +60,7 @@ describe('validateRules — targeting permission validation (spec §6)', () => {
 
 describe('Targeting on the forecast', () => {
   const setup = async () => {
-    const app = buildApp(await testContext({ clock: () => NOW }))
+    const app = buildApp(await testContext({ byWindow: true, clock: () => NOW }))
     return (rules: unknown) => app.inject({ method: 'POST', url: '/api/v1/inventory/forecast', headers: { authorization: 'Bearer poc-token-google-dv360' }, payload: { positionIds: ['menu_board.s2'], from: '2026-09-21', to: '2026-09-21', rules } })
   }
 

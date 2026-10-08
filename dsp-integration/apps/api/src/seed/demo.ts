@@ -19,7 +19,7 @@ import type { Context } from '../context'
 import { onFree, tx } from '../db/db'
 import { allPositions, nextWindow, windowMs } from '../domain/positions'
 import type { StoredTargeting } from '../domain/targetingSummary'
-import { CHECKS, campaignFor } from './bookings'
+import { CHECKS, bookablePositions, campaignFor } from './bookings'
 import { audienceOf } from '../domain/displayTypes'
 
 /* ------------------------------------------------------------- the estate */
@@ -56,6 +56,8 @@ const slot = (label: string, over: Partial<Slot> = {}): Slot => ({
   label, owner: 'advertiser', partnerIds: [], advertisers: [], listMode: 'rtb', storeScope: null, quota: null, reservePrice: null, ...over,
 })
 
+const DEMO_DEAL_ID = 'bl_demo_private_auction'
+
 /* Four sellable positions on Landscape, three on Portrait. Each display type
    carries a reserve price default that its slots inherit; one slot on each
    overrides it (the hero slot is dearer). */
@@ -64,7 +66,8 @@ const DEMO_SLOTS: Record<string, { cap: number; loopLengthSec: number; reservePr
     cap: 4, loopLengthSec: 48, reservePrice: 150,
     slots: [
       slot('Hero slot', { reservePrice: 220 }),
-      slot('Supplier slot', { partnerIds: ['p_google'], }),
+      /* Sold by window: the demo's private auction. Every other open slot is real time. */
+      slot('Supplier slot', { partnerIds: ['p_google'], listMode: 'deal', buyersListId: DEMO_DEAL_ID }),
       slot('Whitelist slot', { listMode: 'whitelist_only' }),
       slot('Held for Nestlé', { partnerIds: ['p_google'], advertisers: ['Nestlé'], listMode: null, }),
     ],
@@ -253,6 +256,15 @@ export async function seedDemo(ctx: Context) {
       if (allowList.length !== p.allowList.length) await ctx.partners.update(partnerId, { allowList })
     }
 
+    /* The demo's one private auction (8 Oct 2026: windows are sold only under a deal or by a hold; every other open slot is real time), inviting every seat of Google DSP. */
+    if (!(await ctx.buyersLists.get(DEMO_DEAL_ID))) {
+      const google = await ctx.partners.get('p_google')
+      await ctx.buyersLists.insert({
+        id: DEMO_DEAL_ID, name: 'Demo private auction', description: 'Open to every Google DSP advertiser; no auction deadline, so it clears a fresh auction every play window.',
+        invitedBuyers: (google?.seats ?? []).map((s) => ({ partnerId: 'p_google', seatId: s.id })), activeFrom: null, activeTo: null, auctionCloses: null,
+      })
+    }
+
     /* Slots: only on a display type that has no sellable position yet, so a
        hand-edited estate is never overwritten. */
     for (const [id, spec] of Object.entries(DEMO_SLOTS)) {
@@ -318,7 +330,8 @@ const PRICING: ('localised' | 'personalised')[] = ['localised', 'localised', 'pe
    as bookings.ts. Past windows for two advertisers, with plays, so billing
    has more than one line. */
 async function seedDemoBookings(ctx: Context) {
-  const positions = await allPositions(ctx)
+  const everyPosition = await allPositions(ctx)
+  const positions = bookablePositions(everyPosition)
   const brands = (await ctx.partners.list())
     .filter((p) => p.status === 'connected')
     .flatMap((p) => p.seats.map((s) => ({ partnerId: p.id, name: s.name, advertiserId: advertiserSlug(s.name) })))
@@ -333,7 +346,7 @@ async function seedDemoBookings(ctx: Context) {
   }
   const currency = TRANSACTING_CURRENCY
   const insVacd = ctx.db.prepare('INSERT INTO audience_vacd (display_type_id, slot, assumed_views_per_window, counted) VALUES (?, ?, ?, 0)')
-  for (const p of positions) {
+  for (const p of everyPosition) {
     if ((await audienceOf(ctx.audience, p.displayType, p.slot)).assumedViewsPerWindow) continue
     const n = Math.max(1, (await ctx.displays.listByDisplayType(p.displayType.id)).length) * 412
     await onFree(ctx.db, () => insVacd.run(p.displayType.id, p.slot, n))

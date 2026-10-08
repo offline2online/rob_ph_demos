@@ -8,17 +8,6 @@ export interface CompanySettings {
   floorCpm: number
   /* Charged per engagement (a QR Control scan) on an interactive campaign, on top of the CPM. */
   interactiveCpe: number
-  /* Auction schedule: bidding opens this long before the cutoff; window length; daily cutoff (HH:MM, UTC). */
-  auctionOpensHours: number
-  playWindowHours: number
-  auctionCutoffTime: string
-  /* Set together (route/admin/advertiserSettings.ts) when playWindowHours is
-     changed while a non-test window is still pending/won/reserved: the
-     requested length waits here, and playWindowHours keeps its current
-     value, until every such window has played (schedulerTick promotes it
-     then — see exchange/scheduler.ts). Both null when nothing is deferred. */
-  pendingPlayWindowHours: number | null
-  pendingPlayWindowEffectiveFrom: string | null
   categoryWhitelist: string[]
   categoryBlacklist: string[]
   /* Guaranteed deals: the contingency haircut (percent, 0–50) taken off a window's forecast impressions
@@ -53,8 +42,6 @@ export interface CompanySettingsRepo {
 const ID = 'company'
 interface Row {
   currency: string; floor_cpm: number; interactive_cpe: number
-  auction_opens_hours: number; play_window_hours: number; auction_cutoff_time: string
-  pending_play_window_hours: number | null; pending_play_window_effective_from: string | null
   category_whitelist: string; category_blacklist: string; guarantee_buffer_pct: number
   uncached_restriction: 'off' | 'fixed' | 'store_open'; uncached_restriction_start: string; uncached_restriction_end: string
   bid_lookahead_seconds: number; default_committed_plays: number | null; max_play_length_sec: number
@@ -68,8 +55,7 @@ const frozen = <T extends object>(o: T): Readonly<T> => {
 }
 
 /* Performance note. These settings are read on every hot path — several
-   times per play window in availability, forecast and the auction (window
-   length, cutoff, floor, lists) — and change only when an admin presses
+   times per play window in availability, forecast and the auction (floor, lists) — and change only when an admin presses
    Save changes. So reads are served from an in-process snapshot that every
    write through this repository replaces, and a read never writes (it used
    to run an INSERT … ON CONFLICT on each call, taking SQLite's write lock
@@ -106,8 +92,6 @@ export function sqliteCompanySettingsRepo(db: Db): CompanySettingsRepo {
       const r = read()
       c.company = frozen({
         currency: r.currency, floorCpm: r.floor_cpm, interactiveCpe: r.interactive_cpe,
-        auctionOpensHours: r.auction_opens_hours, playWindowHours: r.play_window_hours, auctionCutoffTime: r.auction_cutoff_time,
-        pendingPlayWindowHours: r.pending_play_window_hours, pendingPlayWindowEffectiveFrom: r.pending_play_window_effective_from,
         categoryWhitelist: fromJson(r.category_whitelist, []), categoryBlacklist: fromJson(r.category_blacklist, []), guaranteeBufferPct: r.guarantee_buffer_pct,
         uncachedRestriction: r.uncached_restriction, uncachedRestrictionStart: r.uncached_restriction_start, uncachedRestrictionEnd: r.uncached_restriction_end, bidLookaheadSeconds: r.bid_lookahead_seconds, defaultCommittedPlays: r.default_committed_plays, maxPlayLengthSec: r.max_play_length_sec,
       })
@@ -130,12 +114,10 @@ export function sqliteCompanySettingsRepo(db: Db): CompanySettingsRepo {
       ensure()
       prepared(db,
         `UPDATE company_advertiser_settings SET currency = ?, floor_cpm = ?, interactive_cpe = ?,
-           auction_opens_hours = ?, play_window_hours = ?, auction_cutoff_time = ?, pending_play_window_hours = ?, pending_play_window_effective_from = ?,
            category_whitelist = ?, category_blacklist = ?, guarantee_buffer_pct = ?,
            uncached_restriction = ?, uncached_restriction_start = ?, uncached_restriction_end = ?, bid_lookahead_seconds = ?, default_committed_plays = ?, max_play_length_sec = ?, updated_at = ? WHERE id = ?`,
       ).run(
-        s.currency, s.floorCpm, s.interactiveCpe, s.auctionOpensHours, s.playWindowHours, s.auctionCutoffTime,
-        s.pendingPlayWindowHours, s.pendingPlayWindowEffectiveFrom,
+        s.currency, s.floorCpm, s.interactiveCpe,
         toJson(s.categoryWhitelist) ?? '[]', toJson(s.categoryBlacklist) ?? '[]', s.guaranteeBufferPct,
         s.uncachedRestriction, s.uncachedRestrictionStart, s.uncachedRestrictionEnd, s.bidLookaheadSeconds, s.defaultCommittedPlays, s.maxPlayLengthSec, now(), ID,
       )

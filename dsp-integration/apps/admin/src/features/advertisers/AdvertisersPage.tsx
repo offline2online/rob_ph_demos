@@ -7,7 +7,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { App, Button, Checkbox, InputNumber, Select, Spin, Switch } from 'antd'
 import { Tip } from '../../shared/Tip'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
-import { INTERACTIVE_ENABLED, RESERVE_PRICE_TIP, DEFAULT_BILLING_UNIT_HOURS, DEFAULT_MAX_CAMPAIGNS, MAX_MAX_CAMPAIGNS, MAX_MAX_PLAY_LENGTH_SEC, MIN_MAX_CAMPAIGNS, MIN_MAX_PLAY_LENGTH_SEC, SLOT_OWNERS, assignedLabels, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type Session } from '@ph-dsp/types'
+import { INTERACTIVE_ENABLED, RESERVE_PRICE_TIP, PLATFORM_DEFAULT_BILLING_UNIT_HOURS, DEFAULT_MAX_CAMPAIGNS, MAX_MAX_CAMPAIGNS, MAX_MAX_PLAY_LENGTH_SEC, MIN_MAX_CAMPAIGNS, MIN_MAX_PLAY_LENGTH_SEC, SLOT_OWNERS, assignedLabels, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type Session } from '@ph-dsp/types'
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, ApiRequestError } from '../../api/client'
@@ -198,7 +198,7 @@ const effectiveReservePrice = (c: InvCtx['current'], r: AvailableInventoryRow): 
    the slot nor its display type sets one (OQ27, 29 Sep 2026). */
 const effectiveBillingUnitHours = (c: InvCtx['current'], r: AvailableInventoryRow): number => {
   const override = edited(c, r).billingUnitHours
-  return override ?? c.billingUnitDefaults[r.displayTypeId] ?? r.companyPlayWindowHours
+  return override ?? c.billingUnitDefaults[r.displayTypeId] ?? PLATFORM_DEFAULT_BILLING_UNIT_HOURS
 }
 /* Same "override wins" read, against unsaved edits, for max campaigns
    (ticket "Available Inventory: Max campaigns column + slot playlist
@@ -396,7 +396,7 @@ function GlobalDealFlag({ data, c }: { data: AvailableInventoryRow; c: InvCtx['c
   )
 }
 
-/* A CPM premium to reserve the slot in advance of the open auction (Rob,
+/* A CPM premium to reserve the slot in advance of delivery (Rob,
    22 Sep; spec §1 configuration inheritance — real inheritance, not the
    earlier "copy to every slot" design that failed testing). Following the
    default (no override): the input edits every slot on this display type
@@ -482,18 +482,19 @@ const durationLabel = (hours: number) => {
   return `${hours}h`
 }
 
-/* The slot's play-window length: the granularity it is auctioned, booked
+/* The slot's play-window length: the granularity it is booked
    and billed (dynamic VAC-d) against (spec "Private auctions: two-period
    model", 23 Sep 2026; the source of truth since OQ27, 29 Sep 2026).
    Same override/default inheritance and editing UX as ReservePriceCell
    below, in whole hours rather than a CPM; with neither set it follows the
-   company-wide play window (Advertiser settings → Auction schedule). */
+   platform default (PLATFORM_DEFAULT_BILLING_UNIT_HOURS, 24 hours: not a
+   company setting since 8 Oct 2026). */
 function BillingUnitCell({ data, context }: IP) {
   if (!data) return null
   const c = context.current
   const override = edited(c, data).billingUnitHours
   const overridden = override !== null
-  const value = overridden ? override : (c.billingUnitDefaults[data.displayTypeId] ?? data.companyPlayWindowHours)
+  const value = overridden ? override : (c.billingUnitDefaults[data.displayTypeId] ?? PLATFORM_DEFAULT_BILLING_UNIT_HOURS)
   if (!c.canEdit) return <span>{durationLabel(effectiveBillingUnitHours(c, data))}</span>
   return (
     <div className="flex w-full min-w-0 items-center gap-1">
@@ -501,7 +502,7 @@ function BillingUnitCell({ data, context }: IP) {
         size="small" aria-label={`${data.displayTypeName} slot ${data.zoneSlot}: billing unit (hours)${overridden ? ' (override)' : ''}`} min={1} max={8760} step={1} precision={0} style={{ width: 84 }}
         suffix="h" value={value}
         onChange={(v) => {
-          const next = v === null || v === undefined ? data.companyPlayWindowHours : Number(v)
+          const next = v === null || v === undefined ? PLATFORM_DEFAULT_BILLING_UNIT_HOURS : Number(v)
           if (overridden) c.set(slotKey(data), { billingUnitHours: next })
           else c.setBillingUnitDefault(data.displayTypeId, next)
         }}
@@ -701,8 +702,8 @@ export function AdvertisersPage() {
     },
     {
       headerName: 'Billing unit', width: 135, minWidth: 120, cellRenderer: BillingUnitCell,
-      headerComponent: header('Billing unit', 'The length of this slot’s play windows: each one is auctioned, booked and billed on its own. Set once for the display type and inherited by every slot on it — override just one slot to give it its own value, independent of the others. With neither set, the play-window length in Advertiser settings applies. Can’t change while windows are still bid on or booked under it.'),
-      valueGetter: (p) => (p.data ? effectiveBillingUnitHours((p.context as InvCtx).current, p.data) : DEFAULT_BILLING_UNIT_HOURS),
+      headerComponent: header('Billing unit', 'The length of this slot’s play windows: each one is booked and billed on its own. Set once for the display type and inherited by every slot on it — override just one slot to give it its own value, independent of the others. With neither set, the play-window length in Advertiser settings applies. Can’t change while windows are still bid on or booked under it.'),
+      valueGetter: (p) => (p.data ? effectiveBillingUnitHours((p.context as InvCtx).current, p.data) : PLATFORM_DEFAULT_BILLING_UNIT_HOURS),
     },
     {
       headerName: 'Slots playing', width: 130, minWidth: 115,

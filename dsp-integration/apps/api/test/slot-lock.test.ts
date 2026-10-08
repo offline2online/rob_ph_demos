@@ -17,8 +17,8 @@ const book = async (ctx: Awaited<ReturnType<typeof testContext>>, windowStart: s
   })
 
 async function setup() {
-  const ctx = await testContext({ clock: () => NOW })
-  await ctx.displayTypes.saveExtensions('portrait', { slots: [{ label: 'Ad', owner: 'advertiser', partnerIds: [], advertisers: [], listMode: 'rtb', buyersListId: null, storeScope: null, quota: null, zoneId: null }] } as never)
+  const ctx = await testContext({ byWindow: true, clock: () => NOW })
+  await ctx.displayTypes.saveExtensions('portrait', { slots: [{ label: 'Ad', owner: 'advertiser', partnerIds: [], advertisers: [], listMode: 'deal', buyersListId: 'bl_test_open', storeScope: null, quota: null, zoneId: null }] } as never)
   return { ctx, app: buildApp(ctx) }
 }
 

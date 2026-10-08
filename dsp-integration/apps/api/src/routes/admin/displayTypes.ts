@@ -113,20 +113,6 @@ export const displayTypeRoutes = (ctx: Context, guards: Guards): FastifyPluginAs
       const stranded = []
       for (const [i, s] of body.slots.entries()) if (previous[i]?.owner === 'advertiser' && s.owner !== 'advertiser') stranded.push(...(await liveCommitments(ctx, dt.id, i + 1)))
       if (stranded.length) throw hasDependents("An Advertiser slot can't be changed to another owner while it is reserved or sold for a current or future window.", dependentDetails({ canDelete: false, dependents: stranded }))
-      /* Real-time bidding (7 Oct 2026): switching a slot to real time takes it off
-         the window path, so it can't hold a current or future booking, and it is
-         for open and whitelist-only positions: a slot held for named advertisers
-         or assigned to a private auction is sold by reservation or by its deal. */
-      const toRealtime = []
-      const badRealtime: { field: string; reason: string }[] = []
-      for (const [i, s] of body.slots.entries()) {
-        if (s.bidMode !== 'realtime' || previous[i]?.bidMode === 'realtime') continue
-        const a = previous[i]?.owner === 'advertiser' ? assignmentOf(previous[i]) : 'rtb'
-        if (a === 'reserved' || a === 'deal') badRealtime.push({ field: `slots[${i}].bidMode`, reason: `A slot ${a === 'reserved' ? 'held for named advertisers' : 'assigned to a private auction'} can't be sold in real time: clear its assignment on Advertisers / Inventory first.` })
-        else toRealtime.push(...(await liveCommitments(ctx, dt.id, i + 1)))
-      }
-      if (badRealtime.length) throw validationFailed(badRealtime)
-      if (toRealtime.length) throw hasDependents("A slot can't be switched to real-time bidding while it is reserved or sold for a current or future window.", dependentDetails({ canDelete: false, dependents: toRealtime }))
       /* Who set the default: a changed value from this editor is manual. An
          unchanged one (the form round-trips it on every save) keeps its
          source, so saving slots never turns a computer-vision figure into a
@@ -153,8 +139,6 @@ export const displayTypeRoutes = (ctx: Context, guards: Guards): FastifyPluginAs
             ...(kept && was.salesLocked ? { salesLocked: true } : {}),
             /* Set from Advertisers / Inventory, not here: kept as saved (absent = in the global deal). */
             ...(kept && was.inGlobalDeal === false ? { inGlobalDeal: false } : {}),
-            /* Editor-set, like label and owner; only an Advertiser slot has one (default: advance). */
-            ...(s.owner === 'advertiser' && s.bidMode === 'realtime' ? { bidMode: 'realtime' as const } : {}),
           }
         }),
         /* Absent keeps what is saved; null clears it (the slot is unscored again). */

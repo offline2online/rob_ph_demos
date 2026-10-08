@@ -163,7 +163,6 @@ export async function seed(ctx: Context, opts: { bookings?: boolean; demo?: bool
 
     await ctx.company.save({
       currency: 'AUD', floorCpm: 100, interactiveCpe: 0.5,
-      auctionOpensHours: 168, playWindowHours: 24, auctionCutoffTime: '18:00', pendingPlayWindowHours: null, pendingPlayWindowEffectiveFrom: null,
       categoryWhitelist: ['Food & Drink', 'Health & Fitness'], categoryBlacklist: ['Finance'], guaranteeBufferPct: 10,
       uncachedRestriction: 'off', uncachedRestrictionStart: '09:00', uncachedRestrictionEnd: '18:00', bidLookaheadSeconds: 35, defaultCommittedPlays: null, maxPlayLengthSec: DEFAULT_MAX_PLAY_LENGTH_SEC,
     })

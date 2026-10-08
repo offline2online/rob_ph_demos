@@ -1,5 +1,6 @@
-/* Real-time (player-triggered) bidding, 7 Oct 2026. The other way to sell a
-   position, alongside the advance window path (auction.ts): at or just before
+/* Real-time (player-triggered) bidding, 7 Oct 2026. How every open and
+   whitelist-only position is sold (a private auction is cleared by window in
+   auction.ts): at or just before
    playout the player signals that an impression is available, the exchange
    asks every eligible connected DSP for a bid within tmax (~100-300 ms), the
    winning creative plays and the player reports the proof of play. This is
@@ -8,8 +9,10 @@
    Reach run the ad loop: the player holds an open programmatic slot and asks
    just ahead of the impression.
 
-   A slot says which way it is sold (`bidMode`, domain/positions.ts bidModeOf).
-   A real-time position takes no window bids or reservations and the window
+   Every position that is not held for named advertisers or assigned to a
+   private auction is sold this way (domain/positions.ts isRealtime): there
+   is no other way to sell an open or whitelist-only slot (8 Oct 2026).
+   A real-time position takes no window bids or reservations and the deal
    auction skips it, so nothing here touches `reservations` or slot bookings
    and migration 0021's one-live-winner-per-window index is unaffected.
    Impressions are their own rows (migration 0047).
@@ -73,8 +76,8 @@ export async function signalImpression(ctx: Context, input: { displayId: string;
     const opens = rtbAuctionOpensAt(company, input.slotStartsAt)
     if (now < opens) throw conflict(`The auction for that slot opens at ${opens.toISOString()}, ${company.bidLookaheadSeconds}s before it plays.`)
   }
-  const hours = company.playWindowHours
-  const windowStart = windowStartOf(now, windowMsFor(hours, p)).toISOString()
+  /* The billing window the play falls in: the position's billing unit. */
+  const windowStart = windowStartOf(now, windowMsFor(p)).toISOString()
   const base: ImpressionRecord = {
     id: `imp_${randomUUID().slice(0, 12)}`, positionId: p.positionId, displayId: display.id, windowStart, requestedAt: now.toISOString(), status: 'no_fill', reason: null,
     partnerId: null, advertiserId: null, campaignId: null, crid: null, clearingCpm: null, currency: 'USD', testMode: false, assetVersion: null, expiresAt: null, playedAt: null,

@@ -22,6 +22,8 @@ export const OPENRTB_26_DOOH_REQUEST = closed({
       /* 2.6 impression multiplier: sourcetype 1 measurement vendor/estimate, 2 publisher/counted. */
       qty: closed({ multiplier: num, sourcetype: { enum: [0, 1, 2] }, vendor: str }, ['multiplier']),
       exp: int,
+      /* Private marketplace: a deal-assigned position carries its deal ID here. */
+      pmp: { type: 'object' },
       ext: { type: 'object' },
     }, ['id', 'bidfloor', 'bidfloorcur']),
   },

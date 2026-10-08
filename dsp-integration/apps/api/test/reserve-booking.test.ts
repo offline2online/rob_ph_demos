@@ -25,13 +25,13 @@ const W3 = '2026-09-23T00:00:00.000Z'
 
 async function setup(slot: Partial<Slot> = {}) {
   let now = NOW
-  const ctx = await testContext({ clock: () => now })
+  const ctx = await testContext({ byWindow: true, clock: () => now })
   const app = buildApp(ctx)
   /* Portrait: one advertiser slot, reserve price 150 CPM (floor 100). */
   const ext = (await ctx.displayTypes.get('portrait'))!.phExtensions!
   await ctx.displayTypes.saveExtensions('portrait', {
     ...ext,
-    slots: [{ label: 'Ad', owner: 'advertiser', partnerIds: [], advertisers: [], listMode: 'rtb', buyersListId: null, storeScope: null, quota: null, zoneId: null, reservePrice: 150, ...slot } as Slot],
+    slots: [{ label: 'Ad', owner: 'advertiser', partnerIds: [], advertisers: [], listMode: 'deal', buyersListId: 'bl_test_open', storeScope: null, quota: null, zoneId: null, reservePrice: 150, ...slot } as Slot],
   })
   ctx.db.prepare('INSERT INTO audience_vacd (display_type_id, slot, assumed_views_per_window, counted) VALUES (?, ?, ?, 1)').run('portrait', 1, 800)
   /* A Swisse campaign whose creative fits Portrait, approved and activated,
@@ -76,13 +76,11 @@ describe('reserve-price booking (OQ52): commit, hold as Reserved, honour at the 
     expect(res.json()).toMatchObject({ status: 'reserved', clearingCpm: 150 })
   })
 
-  it('can be made ahead of the open auction, but not once the window’s auction has run', async () => {
+  it('can be made any time ahead of the window, but not once it has started', async () => {
     const { post, RESERVE } = await setup()
-    /* 5 Oct: bidding for it doesn't open until 28 Sep; a reservation is taken now. */
+    /* There is no company auction schedule: a reservation is taken for a window weeks out. */
     const ahead = await post({ ...RESERVE, windowStart: '2026-10-05T00:00:00.000Z' })
     expect(ahead.statusCode).toBe(201)
-    const bid = await post({ ...RESERVE, type: 'bid', windowStart: '2026-10-06T00:00:00.000Z' })
-    expect(bid.json().error.message).toBe('Bidding for that window opens at 2026-09-28T18:00:00.000Z.')
     const past = await post({ ...RESERVE, windowStart: '2026-09-20T00:00:00.000Z' })
     expect(past.statusCode).toBe(409)
   })

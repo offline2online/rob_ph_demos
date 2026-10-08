@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { findPosition } from '../src/domain/positions'
 import { runAuction } from '../src/exchange/auction'
 import { buildApp } from '../src/http/app'
 import { NOW, mockDsps, testContext } from './helpers'
@@ -7,7 +8,7 @@ const PLAYER = { authorization: 'Bearer poc-token-player' }
 const GOOGLE = { authorization: 'Bearer poc-token-google-dv360' }
 const W1 = new Date('2026-09-21T00:00:00.000Z')
 
-/* The mock DSP's creative has to be known and approved before it can fill a real-time impression (no creative is fetched inside tmax), so one advance auction on slot 2 runs first and introduces it. */
+/* The mock DSP's creative has to be known and approved before it can fill a real-time impression (no creative is fetched inside tmax), so one deal auction on slot 2 (which sits on an open deal until the slot goes open) runs first and introduces it. */
 async function setup(opts: { realtime?: boolean } = {}) {
   const mocks = mockDsps()
   const sent: { url: string; body: Record<string, any> }[] = []
@@ -15,12 +16,13 @@ async function setup(opts: { realtime?: boolean } = {}) {
     if (url.includes('/openrtb2/bid')) sent.push({ url, body: JSON.parse(String(init?.body)) })
     return mocks.fetchImpl(url, init)
   }
-  const ctx = await testContext({ clock: () => NOW, dspFetch: fetchImpl })
+  const ctx = await testContext({ byWindow: true, clock: () => NOW, dspFetch: fetchImpl })
   const app = buildApp(ctx)
   await runAuction(ctx, W1)
-  const setMode = async (bidMode: 'advance' | 'realtime') => {
+  /* A slot is real time when it is open (not on a deal, not held for named advertisers): 'window' puts it back on the open deal. */
+  const setMode = async (mode: 'window' | 'realtime') => {
     const ext = (await ctx.displayTypes.get('menu_board'))!.phExtensions!
-    await ctx.displayTypes.saveExtensions('menu_board', { ...ext, slots: ext.slots.map((s, i) => (i === 1 ? { ...s, bidMode } : s)) })
+    await ctx.displayTypes.saveExtensions('menu_board', { ...ext, slots: ext.slots.map((s, i) => (i === 1 ? (mode === 'realtime' ? { ...s, listMode: 'rtb' as const, buyersListId: null } : { ...s, listMode: 'deal' as const, buyersListId: 'bl_test_open' }) : s)) })
   }
   if (opts.realtime !== false) await setMode('realtime')
   const displayId = ((await ctx.displays.listByDisplayType('menu_board'))[0]).id
@@ -38,7 +40,7 @@ describe('real-time (player-triggered) bidding', () => {
     const fill = res.json()
     expect(fill).toMatchObject({ status: 'filled', clearingCpm: 150, creative: { mimeType: 'image/png' } })
     expect(fill.creative.campaignId).toMatch(/^c_dsp_/)
-    /* The request is the advance auction's, cut to the impression. */
+    /* The request is the deal auction's, cut to the impression. */
     expect(sent).toHaveLength(1)
     expect(sent[0].body).toMatchObject({ tmax: 200, imp: [{ exp: 120, ext: { ph: { mode: 'realtime' } } }] })
     expect(sent[0].body).not.toHaveProperty('user')
@@ -214,13 +216,15 @@ describe('real-time (player-triggered) bidding', () => {
     expect(Date.now() - t0).toBeLessThan(900)
   })
 
-  it('leaves advance positions unaffected: the window auction skips a real-time one and still sells an advance one', async () => {
+  it('leaves deal positions unaffected: the window auction skips a real-time one and still sells a deal one', async () => {
     const { ctx, app, setMode, signal } = await setup()
     const W2 = new Date('2026-09-22T00:00:00.000Z')
-    expect((await runAuction(ctx, W2)).positions.find((p) => p.positionId === 'menu_board.s2')).toMatchObject({ skipped: expect.stringContaining('real time'), bidRequests: 0 })
+    /* The window clearing only considers deal positions; asked for by name, a real-time one is skipped. */
+    expect((await runAuction(ctx, W2)).positions.find((p) => p.positionId === 'menu_board.s2')).toBeUndefined()
+    expect((await runAuction(ctx, W2, { positions: [(await findPosition(ctx, 'menu_board.s2'))!] })).positions[0]).toMatchObject({ skipped: expect.stringContaining('real time'), bidRequests: 0 })
     const avail = await app.inject({ method: 'GET', url: '/api/v1/inventory/menu_board.s2/availability?from=2026-09-22&to=2026-09-22', headers: GOOGLE })
     expect(avail.json().windows[0].status).toBe('unavailable')
-    await setMode('advance')
+    await setMode('window')
     expect((await signal()).statusCode).toBe(409)
     const again = await runAuction(ctx, new Date('2026-09-23T00:00:00.000Z'))
     expect(again.positions.find((p) => p.positionId === 'menu_board.s2')).toMatchObject({ winner: { advertiserId: 'nestle' } })
@@ -246,19 +250,25 @@ describe('real-time (player-triggered) bidding', () => {
     expect((await signal({ displayId, slot: 1 })).statusCode).toBe(404) // not an Advertiser slot
   })
 
-  it('a position is real-time only by an Advertiser slot’s bidMode, saved from the slot editor', async () => {
-    const { ctx, app } = await setup({ realtime: false })
+  it('a position is real time exactly when it is open or whitelist-only: a held slot or a private auction is not, and there is no per-slot switch', async () => {
+    const { ctx, app, setMode, signal } = await setup()
+    const slot = async (patch: Record<string, unknown>) => {
+      const ext = (await ctx.displayTypes.get('menu_board'))!.phExtensions!
+      await ctx.displayTypes.saveExtensions('menu_board', { ...ext, slots: ext.slots.map((s, i) => (i === 1 ? { ...s, ...patch } : s)) } as never)
+    }
+    await setMode('realtime')
+    expect((await signal()).statusCode).toBe(200)
+    await slot({ listMode: 'whitelist_only' })
+    expect((await signal()).statusCode).toBe(200)
+    await slot({ listMode: 'deal', buyersListId: 'bl_test_open' })
+    expect((await signal()).statusCode).toBe(409)
+    await slot({ listMode: null, advertisers: ['Swisse'], buyersListId: null })
+    expect((await signal()).statusCode).toBe(409)
+    /* The slot editor no longer takes a bidMode: it is ignored, not stored. */
     const ext = (await ctx.displayTypes.get('menu_board'))!.phExtensions!
     const base = ext.slots.map((s) => (s.owner === 'retail' ? { ...s, owner: 'internal' as const } : s))
-    const put = (slots: unknown[]) => app.inject({ method: 'PUT', url: '/api/admin/v1/display-types/menu_board/extensions', payload: { ...ext, slots } })
-    const bad = await put(base.map((s, i) => (i === 0 ? { ...s, owner: 'internal', bidMode: 'realtime' } : s)))
-    expect(bad.statusCode).toBe(400)
-    expect(JSON.stringify(bad.json())).toMatch(/Only an Advertiser slot/)
-    const ok = await put(base.map((s, i) => (i === 1 ? { ...s, bidMode: 'realtime' } : s)))
-    expect(ok.statusCode).toBe(200)
-    expect(ok.json().slots[1].bidMode).toBe('realtime')
-    expect(ok.json().slots[0].bidMode).toBeUndefined()
-    /* Saving it again without bidMode puts the slot back on the window path. */
-    expect((await put(base)).json().slots[1].bidMode).toBeUndefined()
+    const saved = await app.inject({ method: 'PUT', url: '/api/admin/v1/display-types/menu_board/extensions', payload: { ...ext, slots: base.map((s, i) => (i === 1 ? { ...s, bidMode: 'advance' } : s)) } })
+    expect(saved.statusCode).toBe(200)
+    expect(saved.json().slots[1]).not.toHaveProperty('bidMode')
   })
 })

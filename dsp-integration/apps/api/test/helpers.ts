@@ -32,7 +32,7 @@ export const NOW = new Date('2026-09-20T10:00:00.000Z')
 
 export const TEST_KEY = randomBytes(32).toString('base64')
 
-export async function testContext(opts: { flag?: boolean; role?: Role; seeded?: boolean; bookings?: boolean; demo?: boolean; dspFetch?: Fetch; clock?: () => Date } = {}) {
+export async function testContext(opts: { flag?: boolean; role?: Role; seeded?: boolean; bookings?: boolean; demo?: boolean; dspFetch?: Fetch; clock?: () => Date; byWindow?: boolean } = {}) {
   const ctx = createContext({
     config: { ...loadConfig({ DSP_MOCKS_URL: 'http://mocks.test' }), dbFile: ':memory:', assetsDir: mkdtempSync(join(tmpdir(), 'ph-assets-')) },
     db: openDb(':memory:'),
@@ -45,5 +45,22 @@ export async function testContext(opts: { flag?: boolean; role?: Role; seeded?: 
   /* The sample bookings and the demo estate are opt-in here: a test wants a
      clean, minimal schedule it can count. */
   if (opts.seeded !== false) await seed(ctx, { bookings: opts.bookings === true, demo: opts.demo === true })
+  /* byWindow: the seeded Menu Board's open supplier slot is sold by play window (on one perpetual open deal) so a window can be bid on and auctioned: an open slot is otherwise real time. */
+  if (opts.byWindow) await sellByWindow(ctx, 'menu_board', 2)
   return ctx
+}
+
+/* Sell a slot by play window, the only way left besides a reservation held
+   for named advertisers (8 Oct 2026: every open or whitelist-only position is
+   sold in real time). It is assigned to a perpetual open deal — no dates, no
+   auctionCloses, inviting every seat of every DSP that exists now — so a
+   window can be bid on, auctioned and billed the way the open auction used to
+   be in these tests. Call it again after adding a DSP to invite its seats. */
+export async function sellByWindow(ctx: Awaited<ReturnType<typeof testContext>>, displayTypeId: string, slot: number, listId = 'bl_test_open') {
+  const invitedBuyers = (await ctx.partners.list()).flatMap((p) => p.seats.map((s) => ({ partnerId: p.id, seatId: s.id })))
+  const existing = await ctx.buyersLists.get(listId)
+  if (existing) await ctx.buyersLists.update(listId, { name: existing.name, description: '', dealType: existing.dealType, invitedBuyers, activeFrom: existing.activeFrom, activeTo: existing.activeTo, auctionCloses: existing.auctionCloses })
+  else await ctx.buyersLists.insert({ id: listId, name: 'Open deal (test)', description: '', invitedBuyers, activeFrom: null, activeTo: null, auctionCloses: null })
+  const ext = (await ctx.displayTypes.get(displayTypeId))!.phExtensions!
+  await ctx.displayTypes.saveExtensions(displayTypeId, { ...ext, slots: ext.slots.map((s, i) => (i === slot - 1 ? { ...s, listMode: 'deal' as const, buyersListId: listId } : s)) })
 }

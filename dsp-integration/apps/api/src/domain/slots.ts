@@ -58,8 +58,6 @@ export function validateExtensions(dt: DisplayType, ext: DisplayTypeExtensions):
     if (!(['internal', 'advertiser', 'retail'] as string[]).includes(s.owner)) out.push({ field: `slots[${i}].owner`, reason: 'One of: internal, advertiser, retail.' })
     else if (!advertisingAllowed && s.owner !== 'internal') out.push({ field: `slots[${i}].owner`, reason: 'Advertising isn’t available for this touch point: only Headquarters slots are allowed.' })
     else if (s.owner === 'retail') out.push({ field: `slots[${i}].owner`, reason: `Slot ${i + 1}: Stores can’t own a slot in this release — choose internal or advertiser.` })
-    if (s.bidMode !== undefined && s.bidMode !== 'advance' && s.bidMode !== 'realtime') out.push({ field: `slots[${i}].bidMode`, reason: 'One of: advance, realtime.' })
-    else if (s.bidMode === 'realtime' && s.owner !== 'advertiser') out.push({ field: `slots[${i}].bidMode`, reason: 'Only an Advertiser slot can be sold in real time.' })
     if (!zones.length) {
       if (s.zoneId != null) out.push({ field: `slots[${i}].zoneId`, reason: 'Unknown zone.' })
     } else if (i < n && (s.zoneId ?? null) !== expected[i]) {

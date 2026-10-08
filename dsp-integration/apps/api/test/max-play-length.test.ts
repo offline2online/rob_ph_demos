@@ -12,7 +12,7 @@ import { NOW, testContext } from './helpers'
 
 const GOOGLE = { authorization: 'Bearer poc-token-google-dv360' }
 const KEEP = { partnerIds: ['p_google'], advertisers: [], whitelistOnly: false }
-const SETTINGS = { currency: 'NZD', floorCpm: 120, interactiveCpe: 1.25, auctionOpensHours: 72, playWindowHours: 24, auctionCutoffTime: '20:30', categoryWhitelist: ['Food & Drink'], categoryBlacklist: ['Finance'] }
+const SETTINGS = { currency: 'NZD', floorCpm: 120, interactiveCpe: 1.25, categoryWhitelist: ['Food & Drink'], categoryBlacklist: ['Finance'] }
 
 describe('maxPlayLengthSecOf', () => {
   it('lets the slot win over the display type, which wins over the company default', () => {

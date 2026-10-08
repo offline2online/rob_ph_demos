@@ -27,15 +27,16 @@ async function setup(touchPoint: 'Website' | 'Mobile App') {
 }
 
 describe.each([['Website', 'site', OPENRTB_26_SITE_REQUEST], ['Mobile App', 'app', OPENRTB_26_APP_REQUEST]] as const)('%s slots follow digital signage, with a site/app bid request', (touchPoint, object, schema) => {
-  const slots = [{ label: 'Header', owner: 'internal' }, { label: 'Sidebar', owner: 'advertiser', bidMode: 'realtime' }]
+  const slots = [{ label: 'Header', owner: 'internal' }, { label: 'Sidebar', owner: 'advertiser' }]
 
-  it('accepts advance and real-time Advertiser slots like digital signage, and refuses Stores', async () => {
+  it('accepts Advertiser slots like digital signage (open ones are real time), ignores a legacy bidMode, and refuses Stores', async () => {
     const { put, ctx, id } = await setup(touchPoint)
     const ok = await put(slots)
     expect(ok.statusCode).toBe(200)
-    expect((await ctx.displayTypes.get(id))?.phExtensions?.slots[1]).toMatchObject({ owner: 'advertiser', bidMode: 'realtime' })
+    expect((await ctx.displayTypes.get(id))?.phExtensions?.slots[1]).toMatchObject({ owner: 'advertiser' })
     expect((await put([slots[0], { label: 'Sidebar', owner: 'advertiser' }])).statusCode).toBe(200)
     expect((await put([slots[0], { label: 'Sidebar', owner: 'advertiser', bidMode: 'advance' }])).statusCode).toBe(200)
+    expect((await ctx.displayTypes.get(id))?.phExtensions?.slots[1]).not.toHaveProperty('bidMode')
     expect((await put([slots[0], { label: 'Sidebar', owner: 'retail' }])).statusCode).toBe(400)
   })
 
@@ -65,7 +66,7 @@ describe.each([['Website', 'site', OPENRTB_26_SITE_REQUEST], ['Mobile App', 'app
     const item = (over: Record<string, unknown>) => ({ displayTypeId: id, slot: 2, assignedTo: { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: null }, reservePrice: null, billingUnitHours: null, maxCampaigns: null, ...over })
     const save = (over: Record<string, unknown>) => app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [item(over)] } })
     expect((await save({})).statusCode).toBe(200)
-    /* An advance slot (the default) can also be held for a named advertiser. */
+    /* An open slot can also be held for a named advertiser. */
     await put([slots[0], { label: 'Sidebar', owner: 'advertiser' }])
     for (const over of [{ maxCampaigns: 3 }, { reservePrice: 5 }, { billingUnitHours: 24 }, { assignedTo: { partnerIds: [], advertisers: ['Nestlé'], whitelistOnly: false, buyersListId: null } }]) {
       const res = await save(over)

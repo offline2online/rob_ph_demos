@@ -226,10 +226,17 @@ export interface paths {
         /**
          * Reserve (at a reserve price, or for a named advertiser) or bid (CPM) for a play window
          * @description Approved and activated campaigns only. Pre-auction checks apply
-         *     (floor, lists, categories, approval, activation). A bid is taken
-         *     while the window's auction is open: from auctionOpensHours before
-         *     the auction cutoff until the cutoff (Advertiser settings → Auction
-         *     schedule). A reservation can be made any time before the cutoff.
+         *     (floor, lists, categories, approval, activation). Only a position
+         *     sold by play window takes a booking: one held for named advertisers
+         *     (reserve) or assigned to a private auction (bid or reserve). Every
+         *     other position is sold in real time, per impression, and answers
+         *     409. There is no company auction schedule (removed 8 Oct 2026): a
+         *     window can be bid on or booked until it starts, or until its
+         *     private auction has cleared it, and what governs a private auction
+         *     is the buyers list's own dates. A bid is taken while the list's
+         *     `auctionCloses` has not passed (never once the term is locked), a
+         *     window must fall inside its delivery term (`activeFrom` /
+         *     `activeTo`), and a reservation follows the same term.
          *
          *     Reserve-price booking (programmatic guaranteed; open questions 45 and
          *     52, decided by Rob on 29 Sep 2026): `type: reserve` on a position with
@@ -260,8 +267,8 @@ export interface paths {
         /**
          * Impression available — ask the exchange to fill a real-time position just before playout
          * @description The impression-available signal. The exchange sends one OpenRTB
-         *     request per eligible connected DSP (same request as the advance
-         *     auction, `imp.ext.ph.mode` = `realtime`, `tmax` cut to the
+         *     request per eligible connected DSP (same request as a private
+         *     auction's, `imp.ext.ph.mode` = `realtime`, `tmax` cut to the
          *     real-time budget), clears the bids first price, and answers within
          *     that budget. The answer is always 200: `filled` with the creative
          *     to play, or `no_fill` (no bid cleared in time, nothing approved and
@@ -272,8 +279,9 @@ export interface paths {
          *     from the DSP's own creative URL (`creative.source` = `at_bid`) and
          *     reviewed after the play, when the player reports it. A creative a
          *     reviewer rejected does not play, and its content is blocked by hash.
-         *     Only a position whose slot is in `realtime` mode can be filled this
-         *     way; an advance position answers 409.
+         *     Every position that is not held for named advertisers or assigned
+         *     to a private auction (open and whitelist-only positions) is filled
+         *     this way; a held or private-auction position answers 409.
          *
          *     **Bandwidth protection.** When the retailer has restricted uncached
          *     creatives (Advertiser settings -> `uncachedRestriction`) and the
@@ -452,7 +460,7 @@ export interface paths {
          *     advertiser can be removed.
          *
          *     reservePrice: a CPM premium at which this slot can be reserved in
-         *     advance of the open auction (decision, 22 Sep). Real inheritance
+         *     advance of delivery (decision, 22 Sep). Real inheritance
          *     (spec §1 configuration inheritance), not a copy action: a display
          *     type carries its own reserve price default (reservePriceDefault,
          *     below), and a slot's own reservePrice is null until explicitly
@@ -477,7 +485,9 @@ export interface paths {
          *     auctions: two-period model", 23 Sep 2026). Since OQ27 (29 Sep 2026)
          *     it is the slot's play-window length — the windows it is auctioned,
          *     booked and billed against; when neither is set the slot inherits
-         *     the company-wide `playWindowHours` (platform default 24). Whole
+         *     the platform default (24 hours, a named constant, not a setting).
+         *     Plays per window is not derived from that figure: it is max play
+         *     length x slot count over the billing unit. Whole
          *     hours, 1-8760. A change that would alter the resolved length of a
          *     slot with windows still bid on or booked (live, not yet played) is
          *     refused (`validation_failed`, naming the slot and when its last
@@ -1599,21 +1609,6 @@ export interface components {
              * @default AUD
              */
             currency: string;
-            /**
-             * @description Auction schedule: how long before the auction cutoff bidding for a play window opens, in hours (shown as days and hours).
-             * @default 168
-             */
-            auctionOpensHours: number;
-            /**
-             * @description Auction schedule: the default play-window length, in hours (shown as days and hours) — since OQ27 (29 Sep 2026) only what a slot inherits when neither it nor its display type sets a billing unit; a slot's billing unit is its window length. While any current window on an inheriting slot is bid on or booked, a change is deferred rather than applied — see pendingPlayWindowHours.
-             * @default 24
-             */
-            playWindowHours: number;
-            /**
-             * @description Auction schedule: the daily time (HH:MM, UTC) by which bids must be received; the auction for the next play window runs then.
-             * @default 18:00
-             */
-            auctionCutoffTime: string;
             /** @default 100 */
             floorCpm: number;
             /**
@@ -1658,23 +1653,7 @@ export interface components {
              */
             guaranteeBufferPct: number;
         };
-        AdvertiserSettings: components["schemas"]["AdvertiserSettingsInput"] & {
-            /**
-             * @description Read-only. Set when a playWindowHours change was requested
-             *     while a non-test window was still bid on or booked: the
-             *     requested length, waiting to take effect at
-             *     pendingPlayWindowEffectiveFrom. Null when nothing is deferred.
-             */
-            pendingPlayWindowHours: number | null;
-            /**
-             * Format: date-time
-             * @description Read-only. When pendingPlayWindowHours takes effect — once
-             *     every window active when it was requested has played (a
-             *     booking made since, running later than that, pushes this
-             *     out). Null when nothing is deferred.
-             */
-            pendingPlayWindowEffectiveFrom: string | null;
-        };
+        AdvertiserSettings: components["schemas"]["AdvertiserSettingsInput"];
         /** @description A DSP and the advertisers it brings, for a picker or a filter. */
         DspAdvertisers: {
             partnerId: string;
@@ -1969,7 +1948,7 @@ export interface components {
             visionAi: boolean;
             /**
              * @description The resolved CPM premium at which this slot can be reserved in
-             *     advance of the open auction: reservePriceOverride when set,
+             *     advance of delivery: reservePriceOverride when set,
              *     else displayTypeReservePrice, else null. Company currency;
              *     this is what is published on the position in `GET /v1/inventory`.
              */
@@ -1990,8 +1969,8 @@ export interface components {
             /**
              * @description The resolved billing-unit granularity, in hours (spec "Private
              *     auctions: two-period model", 23 Sep 2026): billingUnitHoursOverride
-             *     when set, else displayTypeBillingUnitHours, else
-             *     companyPlayWindowHours. Always a real number — unlike reserve
+             *     when set, else displayTypeBillingUnitHours, else the platform
+             *     default (24 hours). Always a real number — unlike reserve
              *     price, there is no "no billing unit" state. Since OQ27 (29 Sep
              *     2026) this is the slot's play-window length: the windows it is
              *     auctioned, booked and billed against.
@@ -2006,18 +1985,11 @@ export interface components {
             /**
              * @description The billing-unit default set on this slot's display type; null
              *     means the display type has none either (so an un-overridden
-             *     slot resolves to companyPlayWindowHours). The same value on
+             *     slot resolves to the platform default of 24 hours). The same value on
              *     every row sharing a displayTypeId. Editable from any of those
              *     rows — see `PUT`'s billingUnitHoursDefault.
              */
             displayTypeBillingUnitHours: number | null;
-            /**
-             * @description The company-wide play window (Advertiser settings →
-             *     playWindowHours, platform default 24): what a slot's billing
-             *     unit resolves to when neither it nor its display type sets one
-             *     (OQ27, 29 Sep 2026). The same on every row; read-only here.
-             */
-            companyPlayWindowHours: number;
             /**
              * @description The resolved reserve price (CPM) for an interactive campaign on
              *     this slot: interactiveReservePriceOverride when set, else
@@ -2470,21 +2442,6 @@ export interface components {
                  */
                 inGlobalDeal?: boolean;
                 /**
-                 * @description How this Advertiser slot is sold (7 Oct 2026). `advance`
-                 *     (the default when absent) is the play-window path: bids and
-                 *     reserve bookings for a window, cleared by the scheduled
-                 *     auction. `realtime` sells each impression as the player
-                 *     signals it (POST /api/player/v1/impressions): a bid request
-                 *     goes to the connected DSPs and must clear within tmax. A
-                 *     real-time position takes no window bookings or bids and its
-                 *     windows read unavailable. Set from the slot editor; only an
-                 *     Advertiser slot may be `realtime`, and it is for open and
-                 *     whitelist-only positions (a slot held for named advertisers
-                 *     or assigned to a private auction does not fill in real time).
-                 * @enum {string}
-                 */
-                bidMode?: "advance" | "realtime";
-                /**
                  * @description This slot's own override of the display type's reserve
                  *     price (decision, 22 Sep; real inheritance, 22 Sep — spec
                  *     §1 configuration inheritance, not a copy action). Absent
@@ -2499,9 +2456,8 @@ export interface components {
                  *     2026): the granularity a CPM is quoted and charged
                  *     against — default one day (24 hours). Same inheritance as
                  *     reservePrice: absent or null follows the display type's
-                 *     own `billingUnitHours` (below), else the company-wide
-                 *     play window (Advertiser settings → playWindowHours,
-                 *     platform default 24). Set from Advertisers / Inventory,
+                 *     own `billingUnitHours` (below), else the platform default
+                 *     (24 hours, a named constant, not a setting). Set from Advertisers / Inventory,
                  *     not the slot editor. The source of truth for this slot's
                  *     play-window length (OQ27, 29 Sep 2026): its windows are
                  *     this long, each auctioned, booked and billed (dynamic
@@ -2555,7 +2511,7 @@ export interface components {
              * @description The display type's own billing-unit default (spec "Private
              *     auctions: two-period model", 23 Sep 2026), inherited by every
              *     slot on it with no override of its own. Absent or null means
-             *     the company-wide play window (playWindowHours) applies. Set from
+             *     the platform default (24 hours) applies. Set from
              *     Advertisers / Inventory (every row for this display type edits
              *     the same value), not the slot editor.
              */
@@ -3458,7 +3414,7 @@ export interface operations {
                         reservePriceDefault?: number | null;
                         /** @description This slot's own billing-unit override (its play-window length), in whole hours; null = inherit billingUnitHoursDefault. Omitted = unchanged is not supported — always send the slot's current value. */
                         billingUnitHours?: number | null;
-                        /** @description The display type's billing-unit default, in whole hours; null = none (the company-wide playWindowHours applies). Must be the same value on every row for a given displayTypeId in one request. */
+                        /** @description The display type's billing-unit default, in whole hours; null = none (the platform default of 24 hours applies). Must be the same value on every row for a given displayTypeId in one request. */
                         billingUnitHoursDefault?: number | null;
                         /** @description This slot's own reserve price (CPM) for interactive campaigns only; null = interactive campaigns follow the slot's ordinary reserve price. Only meaningful while interactive campaigns are enabled. Omitted = unchanged is not supported — always send the slot's current value. */
                         interactiveReservePrice?: number | null;

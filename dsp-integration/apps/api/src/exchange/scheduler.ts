@@ -1,12 +1,16 @@
-/* The scheduled jobs (API.md "Jobs with no API"): each play window is
-   cleared once, at its auction cutoff (Advertiser settings → Auction
-   schedule); windows that have ended are billed; settled bids past their
-   retention are deleted. No UI and no endpoint. */
+/* The scheduled jobs (API.md "Jobs with no API"): private-auction (deal)
+   windows are cleared one window ahead, and a deal with an auctionCloses
+   runs its one deciding auction when that deadline passes; windows that
+   have ended are billed; settled bids past their retention are deleted.
+   Nothing else is auctioned on a schedule: every other position is sold in
+   real time, per impression (Rob, 8 Oct 2026). No UI and no endpoint. */
 import { hostname } from 'node:os'
 import type { Context } from '../context'
 import { tx } from '../db/db'
 import { sweepRejectedCampaigns } from '../domain/campaignRetention'
-import { allPositions, closesAtFor, companyWindowCommitments, windowMsFor, windowStartOf } from '../domain/positions'
+import { assignedOf, type BuyersList } from '@ph-dsp/types'
+import { isActiveAt, isTermLocked } from '../billing/term'
+import { type PositionRef, allPositions, assignmentOf, nextWindowFor, windowMsFor, windowStartOf } from '../domain/positions'
 import { releaseSettledSlotLocks } from '../domain/slotLock'
 import { sweepSettledReservations } from '../domain/reservationRetention'
 import { runAuction } from './auction'
@@ -18,7 +22,9 @@ const INSTANCE = `${hostname()}:${process.pid}`
    next tick takes the window over. */
 const STALE_CLAIM_MS = 15 * 60_000
 
-/* Claims a window's auction for this process. Which process clears a window
+/* Claims an auction for this process (`windowStart` is the claim key: a
+   window start, or `<window start>#<position>` / `decide:...` for the
+   scheduler's per-position claims). Which process clears a window
    is settled in the database (auction_runs, migration 0024), not in
    memory: several API replicas, a CronJob tick and the CLI can all see a
    cutoff pass, and exactly one of them runs the auction. (Migration 0021
@@ -35,8 +41,8 @@ const finishAuction = (ctx: Context, windowStart: string) => ctx.auctionRuns.fin
 const releaseAuction = (ctx: Context, windowStart: string) => ctx.auctionRuns.release(windowStart, INSTANCE)
 
 /* One pass of the scheduled work: bill the windows that have ended, sweep
-   settled bids, then clear any window whose auction cutoff passed within
-   the last hour and that no process has cleared yet. Shared by the
+   settled bids, then clear the deal windows that are due (dueDealAuctions)
+   and that no process has cleared yet. Shared by the
    in-process scheduler below, the scheduler:tick CLI (a Kubernetes
    CronJob) and the hosted API's request-driven tick (deploy/firebase/). */
 export async function schedulerTick(ctx: Context, log: (msg: string) => void) {
@@ -78,12 +84,8 @@ export async function schedulerTick(ctx: Context, log: (msg: string) => void) {
     if (swept) log(`Deleted ${swept} settled bid${swept === 1 ? '' : 's'} older than ${ctx.config.reservationRetentionDays} days.`)
     await sweepAuctionRuns(ctx)
   })
-  await job('Play-window length', async () => {
-    const changed = await promotePendingPlayWindowIfDue(ctx)
-    if (changed) log(`Play-window length changed to ${changed} hours; every window still active started under the previous length.`)
-  })
   /* A bid still pending for a window that has started will never clear:
-     its auction never ran (the process was down past the cutoff), or the
+     its deal auction never ran (the process was down), or the
      position was removed from the estate after the bid was placed. It is
      settled as lost rather than left pending for ever. */
   await job('Settling', async () => {
@@ -96,26 +98,28 @@ export async function schedulerTick(ctx: Context, log: (msg: string) => void) {
   })
   /* Switched off (Exchange settings): nothing new is sold. */
   if ((await ctx.exchange.get()).enabled) {
-    const now = ctx.clock().getTime()
-    const company = await ctx.company.get()
-    for (const w of await dueWindowStarts(ctx)) {
-      const cutoff = closesAtFor(company, w).getTime()
-      /* Due once its cutoff has passed, and still worth running late — a
-         process down for hours — as long as the window itself hasn't
-         started; after that the window is skipped, and Settling above tells
-         its bidders. (Before this a cutoff more than an hour old was skipped
-         even with the window still to come.) */
-      if (now < cutoff || now >= w.getTime()) continue
-      const start = w.toISOString()
-      if (!(await claimAuction(ctx, start))) continue
+    /* Deal windows, grouped by the window they clear so each group is one
+       auction (bidders are read once, positions clear in parallel). Each
+       position's claim is its own key: which process clears it is settled in
+       the database, as before. */
+    const due = await dueDealAuctions(ctx)
+    const groups = new Map<string, DueDealAuction[]>()
+    for (const d of due) {
+      const g = `${d.windowStart.toISOString()}|${d.deciding.length ? 'decide' : 'window'}`
+      groups.set(g, [...(groups.get(g) ?? []), d])
+    }
+    for (const group of groups.values()) {
+      const claimed: DueDealAuction[] = []
+      for (const d of group) if (await claimAuction(ctx, d.key)) claimed.push(d)
+      if (!claimed.length) continue
       await job('Auction', async () => {
         try {
-          const res = await runAuction(ctx, w)
-          await finishAuction(ctx, start)
+          const res = await runAuction(ctx, claimed[0].windowStart, { positions: claimed.map((d) => d.position), deciding: new Set(claimed.flatMap((d) => d.deciding)) })
+          for (const d of claimed) await finishAuction(ctx, d.key)
           const failed = res.positions.filter((p) => p.skipped?.startsWith('Failed:')).length
           log(`Auction cleared ${res.windowStart}: ${res.positions.filter((p) => p.winner).length} of ${res.positions.length} positions won${failed ? `, ${failed} failed` : ''}.`)
         } catch (e) {
-          await releaseAuction(ctx, start)
+          for (const d of claimed) await releaseAuction(ctx, d.key)
           throw e
         }
       })
@@ -124,53 +128,49 @@ export async function schedulerTick(ctx: Context, log: (msg: string) => void) {
   if (errors.length) throw new Error(`Scheduler tick: ${errors.join('; ')}`)
 }
 
-/* The window starts an auction could be due for: the current and next
-   window of every window length in the estate (OQ27 — each slot's billing
-   unit is its window length, all laid from one anchor), once each and in
-   order. A start two lengths share (a Monday, for daily and weekly slots)
-   is one auction: runAuction clears every position whose window starts
-   then. */
-export async function dueWindowStarts(ctx: Context): Promise<Date[]> {
-  const hours = (await ctx.company.get()).playWindowHours
-  const lengths = new Set([windowMsFor(hours), ...(await allPositions(ctx)).map((p) => windowMsFor(hours, p))])
-  const starts = new Set<number>()
-  for (const len of lengths) {
-    const current = windowStartOf(ctx.clock(), len).getTime()
-    starts.add(current).add(current + len)
-  }
-  return [...starts].sort((a, b) => a - b).map((t) => new Date(t))
-}
+/* A deal window or deciding auction the scheduler owes: the position, the
+   window it clears, the claim key, and the buyers lists whose one
+   term-deciding auction this is (empty for an ordinary window). */
+export interface DueDealAuction { position: PositionRef; windowStart: Date; key: string; deciding: string[] }
 
-/* A play-window length change deferred past currently active windows
-   (Advertiser settings → Auction schedule; routes/admin/advertiserSettings.ts):
-   once the effective date arrives, promote it — but only if nothing booked
-   since the change still runs past it. A locked-rate deal can book a window
-   directly, further out than anything active when the change was requested;
-   if one does, push the effective date out to cover it and wait, rather than
-   resizing a window that's still live. Returns the new playWindowHours once
-   promoted, else null.
-   Since OQ27 the company value is only the window a slot inherits when
-   neither it nor its display type sets a billing unit, so only those
-   slots' windows hold the change back (companyWindowCommitments); a slot
-   with its own billing unit isn't resized by it and never delays it.
-   One transaction: an Advertiser settings save can't land between the read
-   and the write and be overwritten. */
-export async function promotePendingPlayWindowIfDue(ctx: Context): Promise<number | null> {
-  return tx(ctx.db, async () => {
-    const company = await ctx.company.get()
-    if (company.pendingPlayWindowHours == null || company.pendingPlayWindowEffectiveFrom == null) return null
-    const now = ctx.clock().toISOString()
-    if (now < company.pendingPlayWindowEffectiveFrom) return null
-    const active = await companyWindowCommitments(ctx)
-    if (active.length) {
-      const extendedTo = new Date(Math.max(...active.map((r) => Date.parse(r.windowStart) + company.playWindowHours * 3_600_000))).toISOString()
-      if (extendedTo !== company.pendingPlayWindowEffectiveFrom) await ctx.company.save({ ...company, pendingPlayWindowEffectiveFrom: extendedTo })
-      return null
+/* The first window of a position, of length `len`, that starts at or after `at`. */
+const windowAtOrAfter = (at: Date, len: number) => { const w = windowStartOf(at, len); return w.getTime() >= at.getTime() ? w : new Date(w.getTime() + len) }
+
+/* What the scheduler owes now (Rob, 8 Oct 2026): only deals are cleared by
+   a schedule. For each position assigned to buyers lists:
+   - its next window (the one after the window now running, each slot's own
+     billing unit long) is cleared once, when some list is in its delivery
+     term there (activeFrom/activeTo) and either has no auctionCloses (a
+     buyers list clears a fresh auction every play window), or has locked
+     its rate (the window is booked at it), or its deadline has passed (the
+     window is then told it is not sold under the deal);
+   - a list with an auctionCloses that has passed and that has not locked
+     runs ONE deciding auction, on the first window of its term not yet
+     started. A clear locks the winning CPM for the rest of the term
+     (billing/lockedTerm.ts); the claim, kept for good, is what makes it
+     once. Before auctionCloses nothing clears: bids wait for the deadline. */
+export async function dueDealAuctions(ctx: Context): Promise<DueDealAuction[]> {
+  const now = ctx.clock()
+  const out: DueDealAuction[] = []
+  for (const p of await allPositions(ctx)) {
+    if (assignmentOf(p.def) !== 'deal') continue
+    const lists = (await Promise.all(assignedOf(p.def).buyersListIds.map((id) => ctx.buyersLists.get(id)))).filter((l): l is BuyersList => !!l)
+    const len = windowMsFor(p)
+    const next = nextWindowFor(now, len)
+    const nextIso = next.toISOString()
+    const closed = (l: BuyersList) => !!l.auctionCloses && now.getTime() > Date.parse(l.auctionCloses)
+    if (lists.some((l) => isActiveAt(l, nextIso) && (!l.auctionCloses || isTermLocked(l) || closed(l)))) {
+      out.push({ position: p, windowStart: next, key: `${nextIso}#${p.positionId}`, deciding: [] })
     }
-    const hours = company.pendingPlayWindowHours
-    await ctx.company.save({ ...company, playWindowHours: hours, pendingPlayWindowHours: null, pendingPlayWindowEffectiveFrom: null })
-    return hours
-  })
+    for (const l of lists) {
+      if (!l.auctionCloses || isTermLocked(l) || !closed(l)) continue
+      const first = l.activeFrom ? windowAtOrAfter(new Date(l.activeFrom), len) : next
+      const w = first.getTime() > next.getTime() ? first : next
+      if (l.activeTo && w.getTime() > Date.parse(l.activeTo)) continue
+      out.push({ position: p, windowStart: w, key: `decide:${l.id}:${p.positionId}`, deciding: [l.id] })
+    }
+  }
+  return out.sort((a, b) => a.windowStart.getTime() - b.windowStart.getTime())
 }
 
 /* Finished auction claims older than the reservation retention are deleted
@@ -180,12 +180,13 @@ function sweepAuctionRuns(ctx: Context) {
   return ctx.auctionRuns.deleteFinishedBefore(cutoff)
 }
 
-/* True while a process holds this window's auction (claimed, not finished):
-   bidding for it is over even if the cutoff hasn't quite passed by this
-   process's clock. POST /v1/reservations refuses a bid then, so no bid can
-   slip in between the auction reading its candidates and clearing. */
-export async function auctionClaimed(ctx: Context, windowStart: string): Promise<boolean> {
-  return ctx.auctionRuns.isClaimed(windowStart)
+/* True while a process holds (or has finished) this position's auction for
+   the window: bidding for it is over even if the deadline hasn't quite
+   passed by this process's clock. POST /v1/reservations refuses a bid then,
+   so no bid can slip in between the auction reading its candidates and
+   clearing. */
+export async function auctionClaimed(ctx: Context, windowStart: string, positionId: string): Promise<boolean> {
+  return ctx.auctionRuns.isClaimed(`${windowStart}#${positionId}`)
 }
 
 export function startAuctionScheduler(ctx: Context, log: (msg: string) => void, everyMs = 60_000) {
