@@ -1798,6 +1798,14 @@ export interface components {
              */
             dealType: "private_auction" | "preferred" | "guaranteed";
             invitedBuyers: components["schemas"]["InvitedBuyer"][];
+            /**
+             * @description IAB categories whose advertisers are all invited, resolved live
+             *     against each connected DSP's synced seats (a seat's DSP-reported
+             *     `category`). Combines with `invitedBuyers` as a union; the
+             *     advertiser blacklist still subtracts. A category no seat reports
+             *     admits nobody.
+             */
+            invitedCategories: string[];
             /** @description This list's own bid floor in USD CPM, or null to inherit the DSP's floor, else the platform floor. Never below the platform floor. */
             floorCpm: number | null;
             /**
@@ -2242,6 +2250,8 @@ export interface components {
             seats?: {
                 id: string;
                 name: string;
+                /** @description The advertiser's IAB category as reported by the DSP, when it reports one. */
+                category?: string;
             }[];
             /** @description This DSP's own advertiser whitelist: seat IDs from its synced seats (the ids in seats). Always present; there is no company-wide advertiser list. */
             advertiserWhitelist?: string[];
@@ -3843,7 +3853,14 @@ export interface operations {
                 "application/json": {
                     name: string;
                     description: string;
-                    invitedBuyers: components["schemas"]["InvitedBuyer"][];
+                    invitedBuyers?: components["schemas"]["InvitedBuyer"][];
+                    /**
+                     * @description IAB categories whose advertisers are all invited (union with
+                     *     `invitedBuyers`). Each must be from the IAB taxonomy
+                     *     (400 validation_failed otherwise). At least one buyer or
+                     *     one category is required. Omitted = none.
+                     */
+                    invitedCategories?: string[];
                     /**
                      * @description Targeting criteria appended to the deal, ANDed. Each must be a
                      *     shared targeting variable the retailer has enabled for EVERY
@@ -3910,7 +3927,14 @@ export interface operations {
                 "application/json": {
                     name: string;
                     description: string;
-                    invitedBuyers: components["schemas"]["InvitedBuyer"][];
+                    invitedBuyers?: components["schemas"]["InvitedBuyer"][];
+                    /**
+                     * @description IAB categories whose advertisers are all invited (union with
+                     *     `invitedBuyers`). Each must be from the IAB taxonomy
+                     *     (400 validation_failed otherwise). At least one buyer or
+                     *     one category is required. Omitted = none.
+                     */
+                    invitedCategories?: string[];
                     /**
                      * @description Targeting criteria appended to the deal, ANDed. Each must be a
                      *     shared targeting variable the retailer has enabled for EVERY

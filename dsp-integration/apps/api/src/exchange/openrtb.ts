@@ -90,7 +90,7 @@ export async function buildBidRequest(ctx: Context, p: PositionRef, partner: Par
   const publisher = { id: exchange.sellerId, name: exchange.organisation, domain: exchange.domain }
   const listId = assignmentOf(p.def) === 'deal' ? assignedOf(p.def).buyersListId : undefined
   const list = listId ? await ctx.buyersLists.get(listId) : null
-  const pmp = list ? { private_auction: 1 as const, deals: [{ id: dealIdOf(list.id), at: 1 as const, wseat: partner.seats.map((x) => x.id).filter((id) => isInvitedBuyer(list, partner.id, id)) }] }
+  const pmp = list ? { private_auction: 1 as const, deals: [{ id: dealIdOf(list.id), at: 1 as const, wseat: partner.seats.map((x) => x.id).filter((id) => isInvitedBuyer(list, partner, id)) }] }
     : inGlobalDeal(p.def, exchange.globalDealEnabled === true) ? { private_auction: 0 as const, deals: [{ id: GLOBAL_DEAL_ID, at: 1 as const }] } : undefined
   return {
     id,

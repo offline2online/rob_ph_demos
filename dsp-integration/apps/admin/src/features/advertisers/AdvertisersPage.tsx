@@ -296,7 +296,7 @@ function AssignedCell({ data, context }: IP) {
          list of DSP's"). */
       label: 'Buyers and targeting (private auction)',
       options: [
-        ...c.buyersLists.map((l) => ({ value: `deal:${l.id}`, label: l.name, note: `${l.invitedBuyers.length} invited buyer${l.invitedBuyers.length === 1 ? '' : 's'}` })),
+        ...c.buyersLists.map((l) => ({ value: `deal:${l.id}`, label: l.name, note: [l.invitedBuyers.length ? `${l.invitedBuyers.length} invited buyer${l.invitedBuyers.length === 1 ? '' : 's'}` : '', (l.invitedCategories ?? []).length ? `Category: ${l.invitedCategories.join(', ')}` : ''].filter(Boolean).join(' + ') })),
         { value: ADD_BUYERS_LIST, label: '+ Add new buyers and targeting…' },
       ],
     },

@@ -38,7 +38,13 @@ const NameCell = ({ data, context }: P) =>
       {data.description && <div className="truncate" style={{ fontSize: 11.5, color: T.muted }}>{data.description}</div>}
     </div>
   ) : null
-const BuyersCell = ({ data }: P) => (data ? <span>{data.invitedBuyers.length} buyer{data.invitedBuyers.length === 1 ? '' : 's'}</span> : null)
+/* Who the deal is for: named advertisers, IAB categories, or both (a union). */
+const BuyersCell = ({ data }: P) => {
+  if (!data) return null
+  const buyers = data.invitedBuyers.length ? `${data.invitedBuyers.length} buyer${data.invitedBuyers.length === 1 ? '' : 's'}` : ''
+  const cats = (data.invitedCategories ?? []).length ? `Category: ${data.invitedCategories.join(', ')}` : ''
+  return <span className="truncate" title={[buyers, cats].filter(Boolean).join(' + ')}>{[buyers, cats].filter(Boolean).join(' + ')}</span>
+}
 const TargetingCell = ({ data }: P) => {
   const t = data?.targeting ?? []
   if (!data) return null
@@ -98,7 +104,7 @@ export function BuyersListsTable({ lists, canEdit, onChanged }: { lists: BuyersL
     /* These cells have no field, so AG Grid saw an unchanged value (undefined) after a save and kept the old cell:
        an edited deal type kept showing "Private auction". Each gets a valueGetter over everything it renders. */
     { headerName: 'Deal type', width: 170, minWidth: 150, cellRenderer: DealTypeCell, valueGetter: (p) => p.data?.dealType ?? '' },
-    { headerName: 'Invited buyers', width: 150, minWidth: 130, cellRenderer: BuyersCell, valueGetter: (p) => JSON.stringify(p.data?.invitedBuyers ?? []) },
+    { headerName: 'Invited buyers', width: 190, minWidth: 130, cellRenderer: BuyersCell, valueGetter: (p) => JSON.stringify([p.data?.invitedBuyers ?? [], p.data?.invitedCategories ?? []]) },
     { headerName: 'Targeting', width: 230, minWidth: 180, cellRenderer: TargetingCell, valueGetter: (p) => JSON.stringify(p.data?.targeting ?? []) },
     { headerName: 'Delivery term', width: 260, minWidth: 220, cellRenderer: TermCell, valueGetter: (p) => `${p.data?.activeFrom}|${p.data?.activeTo}` },
     { headerName: 'Committed volume', width: 190, minWidth: 160, cellRenderer: VolumeCell, valueGetter: (p) => JSON.stringify([p.data?.dealType, p.data?.committedPlays, p.data?.deliveredPlays, p.data?.effectiveCommittedPlays]) },

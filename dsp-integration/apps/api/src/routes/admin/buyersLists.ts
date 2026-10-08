@@ -2,12 +2,13 @@
    deal objects, managed from Available Inventory's own table underneath the
    Assigned to picker (Rob, 23 Sep). */
 import { randomUUID } from 'node:crypto'
-import { assignedOf, TARGETING_VARIABLES, type BuyersList, type BuyersListDealType, type Condition, type InvitedBuyer } from '@ph-dsp/types'
+import { assignedOf, IAB_CATEGORIES, TARGETING_VARIABLES, type BuyersList, type BuyersListDealType, type Condition, type InvitedBuyer } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import type { Guards } from '../../http/app'
 import { hasDependents, notFound, validationFailed } from '../../http/errors'
 import { tx } from '../../db/db'
+import { invitedPartnerIds } from '../../domain/buyersLists'
 import { TRANSACTING_CURRENCY } from '../../domain/currency'
 import { effectiveTerm } from '../../domain/pricing'
 import { positionIdOf } from '../../domain/positions'
@@ -15,7 +16,7 @@ import { permittedFor } from '../../domain/variables'
 import type { Access } from '../../repos/CompanySettingsRepo'
 import type { PartnerRecord } from '../../repos/PartnerRepo'
 
-type Body = { name?: unknown; description?: unknown; dealType?: unknown; invitedBuyers?: unknown; targeting?: unknown; activeFrom?: unknown; activeTo?: unknown; auctionCloses?: unknown; committedPlays?: unknown; floorCpm?: unknown }
+type Body = { name?: unknown; description?: unknown; dealType?: unknown; invitedBuyers?: unknown; invitedCategories?: unknown; targeting?: unknown; activeFrom?: unknown; activeTo?: unknown; auctionCloses?: unknown; committedPlays?: unknown; floorCpm?: unknown }
 
 /* Every slot currently assigned to this buyers list, across every display
    type — what stops a delete (spec "Deleting"). */
@@ -37,7 +38,7 @@ const withDelivery = async (ctx: Context, l: BuyersList): Promise<BuyersList> =>
      base bid floor in USD CPM (the deal's own floor, else its DSP's, else the platform's), never blank. */
   const company = await ctx.company.get()
   const dsps = new Map((await ctx.partners.list()).map((p) => [p.id, p]))
-  const invited = [...new Set(l.invitedBuyers.map((b) => b.partnerId))].map((id) => dsps.get(id)?.bidder)
+  const invited = invitedPartnerIds(l, [...dsps.values()]).map((id) => dsps.get(id)?.bidder)
   /* Only a guaranteed deal carries volume: a private auction or preferred deal reports none, whatever the levels above hold. */
   const effectiveCommittedPlays = l.dealType === 'guaranteed'
     ? effectiveTerm({ platform: company.defaultCommittedPlays, dsp: invited.map((b) => b?.committedPlays), buyer: l.committedPlays })
@@ -51,7 +52,7 @@ const deliveredOf = async (ctx: Context, l: BuyersList): Promise<number> =>
 export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => async (app) => {
   /* An invited buyer must be a seat a connected DSP actually synced. */
   const partnersById = async () => new Map((await ctx.partners.list()).filter((p) => p.status === 'connected').map((p) => [p.id, p]))
-  const parse = (b: Body, partnerById: Map<string, PartnerRecord>, access: Record<string, Access>, platformFloor: number, errors: { field: string; reason: string }[]): { name: string; description: string; dealType: BuyersListDealType; invitedBuyers: InvitedBuyer[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays: number | null; floorCpm: number | null } => {
+  const parse = (b: Body, partnerById: Map<string, PartnerRecord>, access: Record<string, Access>, platformFloor: number, errors: { field: string; reason: string }[]): { name: string; description: string; dealType: BuyersListDealType; invitedBuyers: InvitedBuyer[]; invitedCategories: string[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays: number | null; floorCpm: number | null } => {
     const name = typeof b.name === 'string' ? b.name.trim() : ''
     if (!name) errors.push({ field: 'name', reason: 'A name is required.' })
     const description = typeof b.description === 'string' ? b.description.trim() : ''
@@ -61,8 +62,8 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     const dealType: BuyersListDealType = requestedType === 'preferred' || requestedType === 'guaranteed' ? requestedType : 'private_auction'
     const rawBuyers = Array.isArray(b.invitedBuyers) ? (b.invitedBuyers as unknown[]) : null
     const invitedBuyers: InvitedBuyer[] = []
-    if (!rawBuyers?.length) errors.push({ field: 'invitedBuyers', reason: 'At least one invited buyer is required.' })
-    else rawBuyers.forEach((raw, i) => {
+    if (b.invitedBuyers !== undefined && b.invitedBuyers !== null && !rawBuyers) errors.push({ field: 'invitedBuyers', reason: 'A list of seats.' })
+    rawBuyers?.forEach((raw, i) => {
       const r = (raw ?? {}) as { partnerId?: unknown; seatId?: unknown }
       const partnerId = typeof r.partnerId === 'string' ? r.partnerId.trim() : ''
       const seatId = typeof r.seatId === 'string' ? r.seatId.trim() : ''
@@ -71,6 +72,16 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
       else if (!partner.seats.some((x) => x.id === seatId)) errors.push({ field: `invitedBuyers[${i}].seatId`, reason: `Not a seat synced from ${partner.name}.` })
       else if (!invitedBuyers.some((x) => x.partnerId === partnerId && x.seatId === seatId)) invitedBuyers.push({ partnerId, seatId })
     })
+    /* Invited by IAB category (Rob, 7 Oct 2026): IAB taxonomy names only, never free text (400 otherwise). Combines with the named seats as a union; a list needs at least one of the two. */
+    const invitedCategories: string[] = []
+    const rawCategories = b.invitedCategories === undefined || b.invitedCategories === null ? [] : Array.isArray(b.invitedCategories) ? (b.invitedCategories as unknown[]) : null
+    if (!rawCategories) errors.push({ field: 'invitedCategories', reason: 'A list of IAB categories.' })
+    else rawCategories.forEach((raw, i) => {
+      const c = IAB_CATEGORIES.find((x) => typeof raw === 'string' && x.toLowerCase() === raw.trim().toLowerCase())
+      if (!c) errors.push({ field: `invitedCategories[${i}]`, reason: `${typeof raw === 'string' ? raw : 'That'} is not an IAB category. Choose from the IAB taxonomy: ${IAB_CATEGORIES.join(', ')}.` })
+      else if (!invitedCategories.includes(c)) invitedCategories.push(c)
+    })
+    if (!invitedBuyers.length && !invitedCategories.length && !errors.some((e) => e.field.startsWith('invitedBuyers') || e.field.startsWith('invitedCategories'))) errors.push({ field: 'invitedBuyers', reason: 'Invite at least one buyer or one IAB category.' })
     /* Targeting criteria appended to the deal (Rob, 7 Oct 2026): only
        variables the retailer has enabled for EVERY invited buyer's DSP, so
        the deal never offers a dimension some invited DSP cannot use. A
@@ -82,7 +93,7 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     if (!rawTargeting) errors.push({ field: 'targeting', reason: 'A list of criteria.' })
     else if (rawTargeting.length > 20) errors.push({ field: 'targeting', reason: 'At most 20 criteria.' })
     else {
-      const dsps = [...new Set(invitedBuyers.map((x) => x.partnerId))].flatMap((id) => (partnerById.get(id) ? [partnerById.get(id) as PartnerRecord] : []))
+      const dsps = invitedPartnerIds({ invitedBuyers, invitedCategories } as BuyersList, [...partnerById.values()]).map((id) => partnerById.get(id) as PartnerRecord)
       rawTargeting.forEach((raw, i) => {
         const r = (raw ?? {}) as { variable?: unknown; op?: unknown; values?: unknown }
         const def = TARGETING_VARIABLES.find((v) => v.key === r.variable)
@@ -126,7 +137,7 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
       else if (b.floorCpm < platformFloor) errors.push({ field: 'floorCpm', reason: `Floor price (CPM) can't be below the platform floor of ${platformFloor} ${TRANSACTING_CURRENCY}.` })
       else floorCpm = b.floorCpm
     }
-    return { name, description, dealType, invitedBuyers, targeting, activeFrom, activeTo, auctionCloses, committedPlays, floorCpm }
+    return { name, description, dealType, invitedBuyers, invitedCategories, targeting, activeFrom, activeTo, auctionCloses, committedPlays, floorCpm }
   }
 
   app.get('/buyers-lists', async (req) => {
