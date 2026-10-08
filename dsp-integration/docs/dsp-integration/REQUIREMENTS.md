@@ -1498,6 +1498,20 @@ It carries:
   entry whose DSP is not connected or whose seat that DSP never synced.
   An entry whose seat later disappears from a re-sync stays on the list
   (shown "no longer synced" so it can be removed) and matches nobody.
+- **Invited IAB categories** (ticket M9aTqeDgGfRZoL3AEw9i): an optional
+  multi-select of **IAB Content Taxonomy categories**, so a list can invite
+  a whole category of buyers (say, every automotive advertiser) without
+  naming each one. It is a **union with the named advertisers above**: a
+  seat is invited if it is one of the named buyers *or* its category is one
+  of the invited categories. Only the IAB taxonomy is offered — no free-text
+  or custom categories. Categories are **resolved live** against each
+  seat's `Seat.category` (the category its DSP reports at sync) every time,
+  never copied onto the list, so a re-sync that changes a seat's category,
+  or a newly synced seat in an invited category, takes effect immediately
+  with nothing to re-save. A seat with no reported category matches no
+  category. A list with **no named buyers and no invited categories admits
+  nobody** (it does not fall back to open RTB). The buyers-list table shows
+  each list's **scope** — the named buyers and/or invited categories.
 - **Delivery term**: inclusive `activeFrom`/`activeTo` — the span this deal
   is awarded for (a week, a month, a quarter); either or both may be
   open-ended. Outside it, the deal admits nobody — it does not fall back
@@ -1577,7 +1591,7 @@ kind of error (23 Sep).
 **Entitlement is enforced the same way blacklist/whitelist already are**
 (§6 "Advertiser lists"), at both bid intake (OpenRTB response and the API's
 `POST /v1/reservations`) and again when the auction clears: a bid from a
-seat that is not one of the deal's invited buyers (matched exactly on its DSP and seat ID), or that arrives outside
+seat that is not one of the deal's invited buyers (matched exactly on its DSP and seat ID, or by the DSP-reported category of its seat against the list's invited IAB categories), or that arrives outside
 the deal's delivery term, is refused `not_invited`, naming the deal. Unlike
 `reserved`, a deal position is **not** taken out of the open auction and
 booked directly — until its rate locks (below), it runs as a real auction
@@ -1665,6 +1679,35 @@ real-time bid. Admin-editable on Available Inventory, marketing read-only.
 play really lasts that long — see `api/PH-CORE-BOUNDARIES.md`, "Max play
 length: the loop must be built from the resolved slot length".
 
+**Plays per window** (derived, never typed; ticket "Derive plays per window
+from slot length x slots / billing unit", 8 Oct 2026; `apps/api/src/domain/plays.ts`):
+how many plays one slot gets on one display in one window.
+
+```
+loop length      = max slot length x slots in rotation
+plays per window = floor(billing unit / loop length)
+```
+
+- **Billing unit** is the slot's play-window length (§5 "Billing unit").
+- **Max slot length** is the resolved Max play length (§5 "Max play length":
+  slot, else display type, else company). It binds **every** campaign on the
+  loop, HQ campaigns included, so a position's play length never varies with
+  who is booked or with a creative's own length.
+- **Slots in rotation** is the number of positions in the playlist loop (Max
+  campaigns in rotation, Playlist Management). **HQ positions are counted**
+  as well as advertiser ones: HQ slots fill part of the same loop even though
+  Available Inventory lists advertiser slots only. A position plays once per
+  loop, so more slots in the loop means fewer plays per window.
+- A window shorter than one loop holds 0 plays; there is always at least one
+  slot in a rotation.
+
+Available Inventory shows two read-only columns for it: **Slots playing** (the
+loop's slot count, HQ included) and **Plays per window** (the formula above,
+recalculated in the editor as the max slot length or billing unit is changed
+before saving). *PH Core seam:* the loop PH Core builds must use the same
+resolved max slot length and slot count so a play really lasts that long —
+see `api/PH-CORE-BOUNDARIES.md`.
+
 ## 6. DSP integration — the advertiser & DSP interface
 
 How an advertiser finds inventory (§5), takes it and fills it. This is the API
@@ -1691,7 +1734,9 @@ rank differently on each.
   tier. **One list per tier this release** — no same-tier price competition.
 - **Admin**: Advertisers / Inventory shows the assigned lists as rows in
   priority order under the slot's picker; drag a row (or use the arrows) to
-  reorder; a position badge shows the rank. New lists join at the foot.
+  reorder; a position badge shows the rank. New lists join at the foot. The
+  priority rows only appear once two or more lists are assigned to the slot —
+  with one list there is nothing to order, so none are shown.
 - **API**: `assignedTo.buyersListIds` (ordered, no duplicates, each must
   exist); `buyersListId` alone is still accepted.
 - Known edge: a reserve commitment (`type: reserve`) on a waterfall slot
