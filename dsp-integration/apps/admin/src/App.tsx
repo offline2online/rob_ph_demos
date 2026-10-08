@@ -101,7 +101,7 @@ function featureRoutes(flags: Flags): RouteObject[] {
           path: 'advertisers',
           /* The prototype's intro line, as the page-title tooltip (decision 2). */
           handle: { title: 'Advertisers / Inventory', tip: 'Every advertiser using the platform, across all DSPs, and the inventory they can buy: every advertiser-owned slot across the estate.' } satisfies RouteHandle,
-          element: <WhileDspOn><AdvertisersPage /></WhileDspOn>,
+          element: <WhileDspOn><AdvertisersPage flags={flags} /></WhileDspOn>,
         },
         /* Its own page, opened in a new tab from Available Inventory or an advertiser
            (Rob, 20 Sep) — just the schedule, so no Display Types / DSP Integration

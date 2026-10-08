@@ -27,6 +27,7 @@ import { T } from '../../theme/phTheme'
 import { BOOKING_SCHEDULE_PATH, externalUrl } from '../booking-schedule/path'
 import { BuyersListModal } from './BuyersListModal'
 import { BuyersListsTable } from './BuyersListsTable'
+import { type Flags, envFlags } from '../../flags'
 
 /* Bidding values are always USD (TRANSACTING_CURRENCY in the API's domain/currency.ts), never the instance's reporting currency. */
 const TRANSACTING_CURRENCY = 'USD'
@@ -325,7 +326,7 @@ function AssignedCell({ data, context }: IP) {
     )}
     <Pills
       label={`${data.displayTypeName} slot ${data.zoneSlot}: assigned to`}
-      placeholder="All DSPs"
+      placeholder="Included in global deal"
       canEdit={c.canEdit}
       value={assignedValues(a)}
       options={options}
@@ -607,7 +608,9 @@ function MaxPlayLengthCell({ data, context }: IP) {
 
 const header = (label: string, tip: string) => () => <WithTip tip={tip}><span className="ag-header-cell-text">{label}</span></WithTip>
 
-export function AdvertisersPage() {
+const MAX_CAMPAIGNS_HEADER = 'Max campaigns'
+
+export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) {
   const navigate = useNavigate()
   const { message, modal } = App.useApp()
   const qc = useQueryClient()
@@ -658,10 +661,10 @@ export function AdvertisersPage() {
           partnerNames: a.partnerIds.map((id) => inventory.data?.dsps.find((d) => d.partnerId === id)?.name ?? id),
           buyersListName: a.buyersListId ? buyersLists.data?.items.find((l) => l.id === a.buyersListId)?.name ?? a.buyersListId : null,
           buyersListNames: tiersOf(a).map((id) => buyersLists.data?.items.find((l) => l.id === id)?.name ?? id),
-        }).join(', ') || 'All DSPs'
+        }).join(', ') || 'Included in global deal'
       },
       ...setColumn<AvailableInventoryRow>('Assigned to', () => [
-        'All DSPs', 'Whitelist only',
+        'Included in global deal', 'Whitelist only',
         ...(inventory.data?.dsps ?? []).flatMap((d) => [d.name, ...d.advertisers.map((a) => a.name)]),
         ...(buyersLists.data?.items ?? []).map((l) => `Buyers list: ${l.name}`),
       ]),
@@ -685,7 +688,7 @@ export function AdvertisersPage() {
       },
     },
     {
-      headerName: 'Max campaigns', width: 140, minWidth: 125, cellRenderer: MaxCampaignsCell,
+      headerName: MAX_CAMPAIGNS_HEADER, width: 140, minWidth: 125, cellRenderer: MaxCampaignsCell,
       /* Written for the retail media manager setting this, not the
          advertiser submitting against it (ticket "Max campaigns: … revise
          tooltip for retail media manager") — so no "purchase additional
@@ -727,10 +730,12 @@ export function AdvertisersPage() {
   })), [invRows, inventory.data])
   const inv = useDraft(savedEdits)
   const savedEditsNow = (r: AvailableInventoryRow): SlotEdit => (inv.draft ?? {})[slotKey(r)] ?? { assignedTo: r.assignedTo, reservePrice: r.reservePriceOverride, interactiveReservePrice: r.interactiveReservePriceOverride ?? null, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride, maxPlayLengthSec: r.maxPlayLengthSecOverride, inGlobalDeal: r.inGlobalDeal }
+  /* Max campaigns only matters for self-service, which is not built yet (Rob, 8 Oct 2026): hide the column, with its header tip, filter and inline edit, until the selfService flag is on. Data, API field and the display-type default are untouched. */
+  const selfService = flags.selfService === true
   const anyInteractiveReserve = INTERACTIVE_ENABLED && invRows.some((r) => showsInteractiveReserve(r.qrControl, savedEditsNow(r)))
   const visibleInventoryColumns = useMemo(
-    () => (anyInteractiveReserve ? inventoryColumns : inventoryColumns.filter((col) => col.headerName !== INTERACTIVE_RESERVE_HEADER)),
-    [inventoryColumns, anyInteractiveReserve],
+    () => inventoryColumns.filter((col) => (anyInteractiveReserve || col.headerName !== INTERACTIVE_RESERVE_HEADER) && (selfService || col.headerName !== MAX_CAMPAIGNS_HEADER)),
+    [inventoryColumns, anyInteractiveReserve, selfService],
   )
   /* One reserve price default per display type, shared by every one of its
      rows (Rob, 22 Sep) — a separate draft from the per-slot one above. */
@@ -881,7 +886,7 @@ export function AdvertisersPage() {
         <Button color="primary" variant="text" size="small" icon={<Icon name="calendar_month" size={16} />} onClick={() => window.open(externalUrl(BOOKING_SCHEDULE_PATH), '_blank', 'noopener')}>Booking schedule</Button>
         {!canEdit && <StatusPill colour={T.muted} icon="visibility">Read only</StatusPill>}
       </div>
-      <SectionLabel><WithTip tip="Every advertiser-owned slot across the estate that connected DSPs can bid on. Slots are made available by setting their owner to Advertiser on a display type.">Available Inventory</WithTip></SectionLabel>
+      <SectionLabel><WithTip tip="Every advertiser-owned slot across the estate that connected DSPs can bid on. Slots are made available by setting their owner to Advertiser on a playlist.">Available Inventory</WithTip></SectionLabel>
       {inventory.data && invRows.length === 0 ? (
         <div className="flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}>
           <Icon name="view_week" size={18} />

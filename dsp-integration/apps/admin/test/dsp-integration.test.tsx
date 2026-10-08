@@ -37,8 +37,8 @@ const ADVERTISER_PAGE = {
   },
 }
 
-const renderAt = (path: string, dspIntegration = true) => {
-  const router = createMemoryRouter(appRoutes({ dspIntegration }), { initialEntries: [path] })
+const renderAt = (path: string, dspIntegration = true, selfService = false) => {
+  const router = createMemoryRouter(appRoutes({ dspIntegration, selfService }), { initialEntries: [path] })
   render(<Providers><RouterProvider router={router} /></Providers>)
   return router
 }
@@ -578,6 +578,15 @@ describe('Booking schedule', () => {
 })
 
 describe('Advertisers / Inventory', () => {
+  /* Max campaigns only matters for self-service (Rob, 8 Oct 2026): hidden unless the selfService flag is on. */
+  it('shows the Max campaigns column only when the selfService flag is on', async () => {
+    vi.stubGlobal('fetch', vi.fn(fakeFetch(ADVERTISER_PAGE)))
+    renderAt('/advertisers', true, true)
+    const inventory = await screen.findByLabelText('Available Inventory')
+    expect([...inventory.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent))
+      .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Reserve price', 'Max campaigns', 'Max play length', 'Billing unit', 'Slots playing', 'Plays per window', ''])
+  })
+
   it('filters both tables by column, and shows who may buy each slot', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch(ADVERTISER_PAGE)))
     renderAt('/advertisers')
@@ -599,7 +608,7 @@ describe('Advertisers / Inventory', () => {
        (ticket "Available Inventory: playlist-primary table (drop Display
        type column) with Unassigned indicator", 27 Sep 2026). */
     expect([...inventory.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent))
-      .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Reserve price', 'Max campaigns', 'Max play length', 'Billing unit', 'Slots playing', 'Plays per window', ''])
+      .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Reserve price', 'Max play length', 'Billing unit', 'Slots playing', 'Plays per window', ''])
     /* No interactive-only column: interactive is deferred (5 Oct 2026). */
     expect(within(inventory).getByLabelText('Playlist search')).toBeInTheDocument()
     /* Targeting is defined on the buyers and targeting list, not per slot (Rob, 7 Oct 2026). */
@@ -613,7 +622,7 @@ describe('Advertisers / Inventory', () => {
        Sep). */
     expect(within(inventory).getAllByLabelText('QR Control enabled')).toHaveLength(1)
     expect(within(inventory).getAllByLabelText('Vision/AI enabled')).toHaveLength(1)
-    /* Assigned to is a pill column: who may buy the slot. Assigned to shows "All DSPs" only when nothing is chosen. */
+    /* Assigned to is a pill column: who may buy the slot. Assigned to shows "Included in global deal" only when nothing is chosen. */
     const cellOf = (label: string) => within(inventory).getAllByLabelText(`Menu Board — Long Format slot 2: ${label}`)[0].closest('.ag-cell') as HTMLElement
     expect([...cellOf('assigned to').querySelectorAll('.ant-select-selection-item')].map((t) => t.textContent)).toEqual(['Google DSP'])
     expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled()
