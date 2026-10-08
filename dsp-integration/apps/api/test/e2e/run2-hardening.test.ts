@@ -161,12 +161,11 @@ describe('Run 2 — E. Partner API refusals', () => {
     expect((await h.partner.create({ ...one([[{ ...COND, values: Array.from({ length: 100 }, (_, i) => `v${i}`) }]]), name: 'x'.repeat(200) })).statusCode).toBe(201)
   })
 
-  it('E6 — a personalised campaign bidding in an open auction → targeting_not_supported', async () => {
+  it('E6 — a personalised campaign bidding on a deal is accepted (8 Oct 2026); the open real-time refusal is in personalised-on-deals.test.ts', async () => {
     const h = await harness()
     const id = await h.readyApiCampaign('Swisse — E6', 'personalised')
     const res = await h.partner.bid(id, day(0), 300)
-    expect(res.statusCode).toBe(422)
-    expect(res.json().error).toMatchObject({ code: 'targeting_not_supported', message: expect.stringContaining('reserve booking') })
+    expect(res.statusCode).toBe(201)
   })
 
   it('E7 — a forecast with > 200 positions or a repeated position → validation_failed', async () => {

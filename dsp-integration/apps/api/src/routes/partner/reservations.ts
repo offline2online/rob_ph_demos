@@ -28,7 +28,7 @@ import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { TRANSACTING_CURRENCY } from '../../domain/currency'
 import { assignedOf, interactiveReservePriceOf, reservePriceOf } from '@ph-dsp/types'
-import { guaranteedImpressions } from '../../domain/guarantee'
+import { guaranteedImpressions, personalisedShare } from '../../domain/guarantee'
 import { dspDealTerms } from '../../dsp/dealTerms'
 import { termStateAt } from '../../billing/term'
 import { assignmentOf, assumedViewsPerWindow, effectivePartnerIds, findPosition, heldFor, isRealtime, unsellableReason, windowHoursFor, windowStartOf } from '../../domain/positions'
@@ -152,7 +152,10 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
       throw conflict(`${deal!.name} is a ${deal!.dealType === 'private_auction' ? 'private auction' : deal!.dealType} deal: its buyers list sets the deal type, so this reservation can only be ${listType}.`)
     }
     const dealType = reserved ? (listType ?? (b.dealType === 'guaranteed' ? 'guaranteed' : 'preferred')) : 'preferred'
-    const forecast = dealType === 'guaranteed' ? await assumedViewsPerWindow(ctx, pos) : null
+    /* A personalised-targeted deal commits from the targeted assumed views, not the slot's whole VAC-d. */
+    const forecast = dealType === 'guaranteed'
+      ? Math.round((await assumedViewsPerWindow(ctx, pos)) * (await personalisedShare(c.targeting, (rules) => ctx.audience.targetedShare(pos.displayType.id, rules))))
+      : null
     const committed = forecast === null ? null : guaranteedImpressions(forecast, company.guaranteeBufferPct)
     /* Booked at the reserve price when the position has one (OQ52), else
        at the price agreed through the DSP (Q11). */

@@ -90,10 +90,13 @@ export async function checkCampaignAtBid(ctx: Context, campaignId: string): Prom
 export function checkTargeting(p: PositionRef, pricingType: string | null | undefined, reserve = false): Refusal | null {
   const wanted = pricingType === 'personalised' || pricingType === 'interactive' ? pricingType : 'localised'
   if (wanted === 'interactive' && !INTERACTIVE_ENABLED) return { code: 'targeting_not_supported', reason: 'Interactive campaigns are not available yet; the campaign is interactive.' }
-  /* Personalised versions are sold only through a reserve booking (Rob,
-     5 Oct 2026): an open or private auction clears default and localised
-     only, so a personalised campaign cannot bid for a window. */
-  if (wanted === 'personalised' && !reserve) return { code: 'targeting_not_supported', reason: 'Personalised campaigns are sold only through a reserve booking (type reserve) on a slot with a reserve price; open and private auctions clear default and localised only.' }
+  /* Personalised versions play in a reserve booking or a deal (Rob, 8 Oct
+     2026, replacing the 5 Oct reserve-only rule): private auction, preferred
+     and guaranteed deals may target Personalisation Variables, but the open
+     real-time auction may not. The per-impression path cannot resolve
+     personalised targeting and render approved creative inside the bid
+     window, so an open or whitelist-only position still refuses it. */
+  if (wanted === 'personalised' && !reserve && assignmentOf(p.def) !== 'deal') return { code: 'targeting_not_supported', reason: 'Personalised campaigns are sold only through a reserve booking or a deal (private auction, preferred or guaranteed); the open real-time auction clears default and localised only.' }
   return null
 }
 
