@@ -247,7 +247,8 @@ function PriorityList({ label, ids, names, canEdit, onChange }: { label: string;
     next.splice(to, 0, ...next.splice(from, 1))
     onChange(next)
   }
-  if (ids.length < 1) return null
+  /* Ordering only means something with two or more lists (ticket fbJdWqr5SwcInFFofwCc, 8 Oct 2026). */
+  if (ids.length < 2) return null
   const hidden = showAll || ids.length <= LIMIT ? 0 : ids.length - LIMIT
   return (
     <div className="mt-2" role="list" aria-label={`${label}: buyers lists in priority order`}>

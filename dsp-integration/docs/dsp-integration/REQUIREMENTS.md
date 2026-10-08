@@ -1734,7 +1734,9 @@ rank differently on each.
   tier. **One list per tier this release** — no same-tier price competition.
 - **Admin**: Advertisers / Inventory shows the assigned lists as rows in
   priority order under the slot's picker; drag a row (or use the arrows) to
-  reorder; a position badge shows the rank. New lists join at the foot.
+  reorder; a position badge shows the rank. New lists join at the foot. The
+  priority rows only appear once two or more lists are assigned to the slot —
+  with one list there is nothing to order, so none are shown.
 - **API**: `assignedTo.buyersListIds` (ordered, no duplicates, each must
   exist); `buyersListId` alone is still accepted.
 - Known edge: a reserve commitment (`type: reserve`) on a waterfall slot
