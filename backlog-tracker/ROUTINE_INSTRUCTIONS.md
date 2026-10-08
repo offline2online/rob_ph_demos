@@ -500,8 +500,15 @@ ticket once automatically.
    - **Before setting `patchReady`, run the DSP tests** if the patch
      touches `dsp-integration/` — the same steps as the train PR's required
      `e2e-quick` check: `cd dsp-integration && npm ci && npm run typecheck
-     && npm test && npm run e2e:quick` (set `PH_SECRETS_KEY` to any 32-byte
-     base64 value, e.g. 44 `A`s ending `=`). **Change the tests with the
+     && npm test && npm run test:layout && npm run e2e:quick` (set
+     `PH_SECRETS_KEY` to any 32-byte base64 value, e.g. 44 `A`s ending `=`;
+     `test:layout` needs Chromium — `npx playwright install chromium`, or in
+     a Claude Code cloud session point it at the preinstalled
+     `/opt/pw-browsers`). **The layout check fails on any admin change that
+     wraps a label or moves a control off its row** — a longer label in a
+     narrow field is the usual cause (8 Oct 2026: "Digital signage bid
+     lookahead" wrapped in a 160px field); widen the field rather than
+     adding the page to `known-issues.json`. **Change the tests with the
      code**: a relabelled field, a removed box or a moved DSP quirk breaks
      a test that looks it up, and both DSP trains that stuck on red CI (PR
      #330, 6 Oct; PR #335, 7 Oct 2026) were exactly that — handed back with
