@@ -14,7 +14,7 @@ import { SubPageHeader } from './SubPageHeader'
 import { GLOBAL_DEAL_ID, GLOBAL_DEAL_TIP } from './ExchangeSettings'
 
 export const ADVERTISER_SETTINGS_TIP =
-  "Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (floor CPM, always in USD); Play configuration (max slot length, default committed plays, guaranteed-deal buffer and the uncached-creative restriction); Real-time bidding (bid lookahead); and the Category lists (IAB whitelists and blacklists; each DSP's advertiser lists are managed on its own page, from the advertisers it syncs). Read-only here: Where these apply (which DSPs use these lists or keep their own; unlink or relink on the DSP's page). Per-advertiser campaign approval and floor multipliers, and the inventory advertisers can buy, are on Advertisers / Inventory."
+  "Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (floor CPM, always in USD); Play configuration (max slot length, default committed plays, guaranteed-deal buffer and the uncached-creative restriction); Real-time bidding (digital signage bid lookahead); and the Category lists (IAB whitelists and blacklists; each DSP's advertiser lists are managed on its own page, from the advertisers it syncs). Read-only here: Where these apply (which DSPs use these lists or keep their own; unlink or relink on the DSP's page). Per-advertiser campaign approval and floor multipliers, and the inventory advertisers can buy, are on Advertisers / Inventory."
 
 /* The exchange transacts in USD on every instance (TRANSACTING_CURRENCY in the API's
    domain/currency.ts); company.currency is display/reporting only. Everything priced on
@@ -171,7 +171,7 @@ export function AdvertiserSettings() {
 
       <SectionLabel><WithTip tip="How early a real-time slot's auction opens, so the winning creative can be downloaded and rendered before the slot plays. The auction is per slot, opened this long before that slot's own start, not on a schedule.">Real-time bidding</WithTip></SectionLabel>
       <div className="flex flex-wrap items-start gap-3.5">
-        <Field label={<span className="block" style={{ minHeight: 36 }}>Bid lookahead</span>} htmlFor="bidLookaheadSeconds" tip="Bid lookahead, in seconds: how long before a slot plays that its auction opens, for every real-time slot. Whole seconds, at least 1. Default 35, as Broadsign Reach, whose Real-Time Audience API sends bid requests about 35 seconds ahead of the expected programmatic slot." className="w-40">
+        <Field label={<span className="block" style={{ minHeight: 36 }}>Digital signage bid lookahead</span>} htmlFor="bidLookaheadSeconds" tip="Digital signage bid lookahead, in seconds: how long before an available digital signage slot plays that its bid (auction) becomes available, so the auction resolves far enough ahead for the winning creative to be downloaded and rendered in time. Applies to digital signage slots only; it is not used for programmatic on a website or mobile app. Whole seconds, at least 1. Default 35, as Broadsign Reach, whose Real-Time Audience API sends bid requests about 35 seconds ahead of the expected programmatic slot." className="w-40">
           <div className="flex items-center gap-2">
             <InputNumber id="bidLookaheadSeconds" className="w-full" step={1} placeholder="35" value={s.bidLookaheadSeconds ?? 35} onChange={(v) => set('bidLookaheadSeconds', (v === null ? null : Number(v)) as number)} />
             <span>seconds</span>
