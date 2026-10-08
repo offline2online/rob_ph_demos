@@ -318,7 +318,7 @@ function AssignedCell({ data, context }: IP) {
       ],
     },
     { label: 'Advertisers', options: [...advertiserDsps.entries()].map(([name, via]) => ({ value: `adv:${name}`, label: `${name} (${via.join(', ')})` })) },
-    { label: 'Or', options: [{ value: WHITELIST, label: 'Whitelist only' }, { value: GLOBAL_CHIP, label: GLOBAL_CHIP_LABEL, disabled: !!suppressed, note: suppressed ? `Not in global deals: this slot is ${suppressed}.` : undefined }] },
+    { label: 'Or', options: [{ value: WHITELIST, label: 'Whitelist only' }, { value: GLOBAL_CHIP, label: GLOBAL_CHIP_LABEL, disabled: !!suppressed, note: suppressed ? `Unavailable: this slot is ${suppressed}.` : undefined }] },
   ]
   return (
     <>
@@ -334,7 +334,7 @@ function AssignedCell({ data, context }: IP) {
       label={`${data.displayTypeName} slot ${data.zoneSlot}: assigned to`}
       placeholder="Unassigned"
       canEdit={c.canEdit}
-      value={[...assignedValues(a), ...(globalOn ? [GLOBAL_CHIP] : [])]}
+      value={[...assignedValues(a), ...(globalOn && !suppressed ? [GLOBAL_CHIP] : [])]}
       options={options}
       onChange={(picked) => {
         /* A picker action, not a real choice: open the modal and leave this
@@ -376,7 +376,6 @@ function AssignedCell({ data, context }: IP) {
         c.set(slotKey(data), { ...flag, assignedTo: { partnerIds, advertisers, whitelistOnly, buyersListId: null, buyersListIds: [] } })
       }}
     />
-    {suppressed && globalOn && <div style={{ fontSize: 12, color: T.muted }}>Not in global deals: this slot is {suppressed}.</div>}
     {!c.canEdit || a.partnerIds.length || a.advertisers.length || a.whitelistOnly || tiersOf(a).length || globalOn ? null : (
       <div style={{ fontSize: 12, color: T.muted }}>Unassigned: not offered to any buyer</div>
     )}
