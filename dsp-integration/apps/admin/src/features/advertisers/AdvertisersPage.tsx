@@ -678,6 +678,12 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
       valueGetter: (p) => (p.data ? effectiveReservePrice((p.context as InvCtx).current, p.data) ?? -1 : -1),
     },
     {
+      headerName: 'Plays per window', width: 150, minWidth: 135,
+      headerComponent: header('Plays per window', 'How many plays this slot gets in one billing unit: billing unit ÷ (max slot length × slots playing). Max slot length applies to every campaign on the loop, HQ campaigns included, and HQ slots fill part of the loop even though they are not listed here. Calculated, never typed: it updates as you change the max slot length or billing unit.'),
+      valueGetter: (p) => (p.data ? effectivePlaysPerWindow((p.context as InvCtx).current, p.data) : 0),
+      cellRenderer: ({ value }: { value: number }) => <span>{value.toLocaleString('en-US')}</span>,
+    },
+    {
       headerName: INTERACTIVE_RESERVE_HEADER, width: 170, minWidth: 150, cellRenderer: InteractiveReservePriceCell,
       headerComponent: header('Interactive reserve price', "The reserve price (CPM) for the interactive experience on this slot, so it can be priced apart from the slot's ordinary reserve price. Only available while Interactive is selected in Targeting supported. Empty = interactive campaigns use the slot's reserve price."),
       valueGetter: (p) => {
@@ -713,12 +719,6 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
       headerComponent: header('Slots playing', 'The number of slots in the playlist loop, set in Playlist Management (Max campaigns in rotation). This table lists advertiser slots only, but HQ slots fill part of the same loop and are counted. Read-only.'),
       valueGetter: (p) => p.data?.slotCount ?? 0,
       cellRenderer: ({ value }: { value: number }) => <span>{value}</span>,
-    },
-    {
-      headerName: 'Plays per window', width: 150, minWidth: 135,
-      headerComponent: header('Plays per window', 'How many plays this slot gets in one billing unit: billing unit ÷ (max slot length × slots playing). Max slot length applies to every campaign on the loop, HQ campaigns included, and HQ slots fill part of the loop even though they are not listed here. Calculated, never typed: it updates as you change the max slot length or billing unit.'),
-      valueGetter: (p) => (p.data ? effectivePlaysPerWindow((p.context as InvCtx).current, p.data) : 0),
-      cellRenderer: ({ value }: { value: number }) => <span>{value.toLocaleString('en-US')}</span>,
     },
     { headerName: '', width: 76, suppressSizeToFit: true, cellRenderer: OpenCell },
   ], [invRows, inventory.data, buyersLists.data])

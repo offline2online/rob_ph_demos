@@ -584,7 +584,7 @@ describe('Advertisers / Inventory', () => {
     renderAt('/advertisers', true, true)
     const inventory = await screen.findByLabelText('Available Inventory')
     expect([...inventory.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent))
-      .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Reserve price', 'Max campaigns', 'Max play length', 'Billing unit', 'Slots playing', 'Plays per window', ''])
+      .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Reserve price', 'Plays per window', 'Max campaigns', 'Max play length', 'Billing unit', 'Slots playing', ''])
   })
 
   it('filters both tables by column, and shows who may buy each slot', async () => {
@@ -608,7 +608,7 @@ describe('Advertisers / Inventory', () => {
        (ticket "Available Inventory: playlist-primary table (drop Display
        type column) with Unassigned indicator", 27 Sep 2026). */
     expect([...inventory.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent))
-      .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Reserve price', 'Max play length', 'Billing unit', 'Slots playing', 'Plays per window', ''])
+      .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Reserve price', 'Plays per window', 'Max play length', 'Billing unit', 'Slots playing', ''])
     /* No interactive-only column: interactive is deferred (5 Oct 2026). */
     expect(within(inventory).getByLabelText('Playlist search')).toBeInTheDocument()
     /* Targeting is defined on the buyers and targeting list, not per slot (Rob, 7 Oct 2026). */
