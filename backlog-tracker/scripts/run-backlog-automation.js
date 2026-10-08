@@ -3358,11 +3358,16 @@ async function reconcileMergedTrains() {
     if (!prNumber) continue;
     let pr = null;
     try {
-      pr = JSON.parse(run("gh", ["pr", "view", String(prNumber), "--repo", REPO, "--json", "state,files"]));
+      pr = JSON.parse(run("gh", ["pr", "view", String(prNumber), "--repo", REPO, "--json", "state,files,headRefOid"]));
     } catch (err) {
       console.log(`[deploy-train] ${project.id}: couldn't read PR #${prNumber} state (${err.message}) — skipping this run`);
       continue;
     }
+    // Keep the PR mergeable while it waits for its person: a commit that
+    // lands after the hand-over (a late ticket, a prototype rebuild) gets its
+    // checks HELD by GitHub, and nothing else approves them in this state —
+    // PR #342 (8 Oct 2026) sat with no CI on its head until someone noticed.
+    if (pr.state === "OPEN") { approveHeldRuns(pr.headRefOid); continue; }
     if (pr.state !== "MERGED") continue;
     project = await getProject(project.id);
     const deployBranch = project.deployBranch || deployBranchForName(project.name);
