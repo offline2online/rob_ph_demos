@@ -3527,7 +3527,13 @@ playback analytics.**
   *sellable* windows over the period shown (booked or still available,
   excluding windows with no displays yet or before the earliest one still
   open to sell) — a dash when nothing was sellable at all, never a
-  misleading 0%. "Booked revenue" is renamed **Estimated revenue** — more
+  misleading 0%. **Only booked-ahead inventory counts (8 Oct 2026, ticket
+  "% sold misleading for real-time positions"):** open and whitelist-only
+  positions are sold per impression and never pre-booked, so they are left
+  out of the sellable count; % sold reads over deal and reserved positions
+  only, and a display type whose positions are all real-time shows a dash.
+  Estimated revenue is likewise booked-ahead only; real-time revenue is
+  realised per play and is not forecast here. "Booked revenue" is renamed **Estimated revenue** — more
   honest about what it is before a window has actually played: booked CPM ×
   assumed views, not confirmed spend. **Billed revenue is dropped from this
   table** — invoicing what actually played is the DSP's own concern, not

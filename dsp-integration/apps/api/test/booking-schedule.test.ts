@@ -3,7 +3,7 @@ import { runBilling } from '../src/exchange/billing'
 import { buildApp } from '../src/http/app'
 import type { ReservationRecord } from '../src/repos/ReservationRepo'
 import { expectMatchesContract } from './contract'
-import { NOW, testContext } from './helpers'
+import { NOW, sellByWindow, testContext } from './helpers'
 
 const booking = (over: Partial<ReservationRecord>): ReservationRecord => ({
   id: 'r_x', partnerId: 'p_google', advertiserId: 'swisse', campaignId: 'c_api_swisse', positionId: 'menu_board.s2', windowStart: '2026-09-22T00:00:00.000Z',
@@ -29,6 +29,16 @@ describe('GET /admin/v1/booking-schedule', () => {
     expect(body.positions[0]).toMatchObject({ displayTypeName: 'Menu Board — Long Format', slot: 2, slotLabel: 'Supplier slot', partnerNames: ['Google DSP'], assignment: 'rtb' })
     /* The current window can no longer be sold; the next one can. */
     expect(body.positions[0].windows.slice(0, 2).map((w: { status: string }) => w.status)).toEqual(['unavailable', 'available'])
+    /* Ticket 1n6upwMWSLGxszhg5u7k: an open (real-time) position is never pre-booked, so its windows are not "sellable" and % sold is a dash, not 0%. */
+    expect(body.totals).toEqual({ bookedWindows: 0, sellableWindows: 0, bookedRevenue: 0, billedRevenue: 0 })
+    expect(body.revenue[0]).toMatchObject({ displayTypeId: 'menu_board', bookedWindows: 0, sellableWindows: 0 })
+  })
+
+  it('counts sellable windows only over booked-ahead (deal) positions', async () => {
+    const { ctx, get } = await setup()
+    await sellByWindow(ctx, 'menu_board', 2)
+    const body = (await get()).json()
+    expect(body.positions[0]).toMatchObject({ assignment: 'deal' })
     expect(body.totals).toEqual({ bookedWindows: 0, sellableWindows: 13, bookedRevenue: 0, billedRevenue: 0 })
   })
 
@@ -49,6 +59,7 @@ describe('GET /admin/v1/booking-schedule', () => {
 
   it('shows each booking at the price it was booked at, with booked and billed revenue per display type', async () => {
     const { ctx, get } = await setup()
+    await sellByWindow(ctx, 'menu_board', 2)
     await ctx.reservations.insert(booking({}))
     await ctx.reservations.insert(booking({ id: 'r_test', windowStart: '2026-09-23T00:00:00.000Z', testMode: true, status: 'won', type: 'bid' }))
     await runBilling(ctx)
@@ -89,6 +100,7 @@ describe('GET /admin/v1/booking-schedule', () => {
 
   it('narrows to one campaign, over whatever range its bookings fall in', async () => {
     const { ctx, get } = await setup()
+    await sellByWindow(ctx, 'menu_board', 2)
     await ctx.reservations.insert(booking({ windowStart: '2026-11-02T00:00:00.000Z' }))
     const res = await get('?campaignId=c_api_swisse')
     expectMatchesContract('GET', '/admin/v1/booking-schedule', 200, res.json())
@@ -101,6 +113,7 @@ describe('GET /admin/v1/booking-schedule', () => {
 
   it('narrows to one advertiser or one DSP', async () => {
     const { ctx, get } = await setup()
+    await sellByWindow(ctx, 'menu_board', 2)
     await ctx.reservations.insert(booking({}))
     const swisse = await get('?advertiserId=swisse&from=2026-09-15&to=2026-09-23')
     expect(swisse.json().totals.bookedWindows).toBe(1)

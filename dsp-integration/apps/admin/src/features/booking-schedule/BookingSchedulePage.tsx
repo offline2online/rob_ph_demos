@@ -478,7 +478,7 @@ export function BookingSchedulePage() {
             />
           )}
 
-          <SectionLabel><WithTip tip="Per display type, over the play windows shown. % sold = booked ÷ sellable windows. Estimated revenue = booked CPM × assumed views ÷ 1000 — what billing eventually charges, once a window has actually played, may differ.">Booking revenue</WithTip></SectionLabel>
+          <SectionLabel><WithTip tip="Per display type, over the play windows shown. % sold = booked ÷ sellable windows of booked-ahead (deal and reserved) positions only; positions sold in real time, per play, are left out, and a display type with only those shows a dash. Estimated revenue = booked CPM × assumed views ÷ 1000 — what billing eventually charges, once a window has actually played, may differ.">Booking revenue</WithTip></SectionLabel>
           <Grid<RevenueRow>
             label="Booking revenue"
             rows={data.revenue}
