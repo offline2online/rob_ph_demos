@@ -223,7 +223,8 @@ describe('real-time (player-triggered) bidding', () => {
     expect((await runAuction(ctx, W2)).positions.find((p) => p.positionId === 'menu_board.s2')).toBeUndefined()
     expect((await runAuction(ctx, W2, { positions: [(await findPosition(ctx, 'menu_board.s2'))!] })).positions[0]).toMatchObject({ skipped: expect.stringContaining('real time'), bidRequests: 0 })
     const avail = await app.inject({ method: 'GET', url: '/api/v1/inventory/menu_board.s2/availability?from=2026-09-22&to=2026-09-22', headers: GOOGLE })
-    expect(avail.json().windows[0].status).toBe('unavailable')
+    /* Sold per impression: no forward window series, and the lookahead says how to bid. */
+    expect(avail.json()).toEqual({ positionId: 'menu_board.s2', sale: 'realtime', bidLookaheadSeconds: 35, windows: [] })
     await setMode('window')
     expect((await signal()).statusCode).toBe(409)
     const again = await runAuction(ctx, new Date('2026-09-23T00:00:00.000Z'))

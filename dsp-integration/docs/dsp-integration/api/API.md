@@ -137,7 +137,7 @@ integration switched on.
 |---|---|---|
 | GET | `/v1/inventory` | Sellable advertiser-owned positions this caller could buy. Filters: `advertiserId`, `displayTypeId`, `touchPoint`, `storeIds` (Personalisation Hub store IDs), `region` (the platform's store region), `from`, `to`, `status`. |
 | GET | `/v1/inventory/{positionId}` | One position in full. |
-| GET | `/v1/inventory/{positionId}/availability?from=&to=` | Status per play window: `available`, `reserved`, `sold`, `unavailable`. |
+| GET | `/v1/inventory/{positionId}/availability?from=&to=` | Status per play window: `available`, `reserved`, `sold`, `unavailable` — for a position sold by play window. A real-time position answers `sale: "realtime"` with no windows (see *Availability* below). |
 | POST | `/v1/inventory/forecast` | Projected assumed views and estimated cost for positions, dates and optional targeting rules. |
 
 A position returns: id, display type, slot and label, zone, store and
@@ -157,6 +157,20 @@ before. Since 29 Sep 2026 it also means a window a buyer has committed to
 at the reserve price, or a window inside a private-auction term that is
 locked. A window like that is spoken for. It is not auctioned and takes no
 bids. It reads `sold` once it has played.
+
+**Availability depends on how the position is sold (8 Oct 2026).** The
+response carries `sale`:
+
+- `window` — a position held for named advertisers (`reserved`) or assigned to
+  a private auction (deal): genuine forward bookings exist, so `windows` has a
+  status for every play window in the range, including locked-term and
+  reserved windows.
+- `realtime` — an open (`rtb`) or whitelist-only position. It is sold per
+  impression, as the player signals; nothing is booked ahead, so there is no
+  forward series to report and `windows` is `[]`. `bidLookaheadSeconds` says
+  how long before a slot plays its auction opens: bid inside that window with
+  the real-time signal, not by reserving a window. Reserving or bidding on a
+  window of such a position answers `conflict` (409).
 
 Hidden from the caller: HQ and Stores slots, positions reserved to another
 advertiser, and positions the caller's advertiser is blacklisted from or not

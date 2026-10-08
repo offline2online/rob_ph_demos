@@ -148,6 +148,7 @@ export function stubPlayback() {
   const source: PlaybackSource = {
     listPlays: () => [],
     receivedBetween: () => [],
+    lastPlayed: () => new Map(),
     /* Async, as the real playback store is (the seam is awaitable). */
     async totals(q) {
       calls.push(q)

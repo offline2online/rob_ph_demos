@@ -61,7 +61,7 @@ slower than that should cache, as the stand-ins now do.
 | `StoreSource` | read only, **never written** | Stores | `list`, `get` → `{id, name, region}`. On integration also the store/display **venue and geo** record: OpenOOH venue type, latitude/longitude, store id (see "Venue and geo metadata" below). The POC has no such seam yet; its stand-in is `phExtensions.venue` on the display type. | Inventory store/region filters, booking schedule, OpenRTB `dooh.venuetype`, inventory venue fields | `get` ≤ 0.05 ms |
 | `CampaignSource` (`platform/CampaignSource.ts`) | read + write | Campaigns service | `getCampaign`, `listCampaigns`, `setActivation`, `createCampaign`, `addAsset`, `latestAssets(campaignId, atVersion?: string)`, `bookSlot`, `bookings`, `deleteCampaign` | **Hot**: `getCampaign` per bid in the auction | `getCampaign` ≤ 0.5 ms |
 | Approval adapter (`packages/campaign-approval/src/adapter/CampaignSource.ts`): the **second facet of the same real campaign source** (it must not get `bookSlot` or `createCampaign`) | read + activation | Campaigns service | `getCampaign`, `listCampaigns`, `setActivation`, `onCampaignChanged`, `discardEditsAfter` | Approval screens, `isCampaignEligible` before every bid, reservation and hand-off | see the integration guide |
-| `PlaybackSource` | read only | Playback logging | `totals({campaignId, displayTypeId, from, to})`, `listPlays` | Billing, once per ended window | aggregated at the source: ≤ 1 s for 2 million plays |
+| `PlaybackSource` | read only | Playback logging | `totals({campaignId, displayTypeId, from, to})`, `listPlays`, `lastPlayed()` | Billing, once per ended window; Campaign Status "Last used" column (one call per table load) | aggregated at the source: ≤ 1 s for 2 million plays |
 | `AssetStore` | write + read | Asset hosting / CDN | `put`, `read`, `url` | Creative upload and DSP creative retrieval; hand-off re-validation | — |
 | `AudienceSource` | read only | Audience scoring (MOVE/VAC-d, spec §4) | `forSlot`, `targetedShare` | **Hot**: per position in inventory, forecast, OpenRTB `qty.multiplier` | ≤ 0.1 ms |
 | `SessionSource` (`auth/session.ts`) | read only | HQ Admin session and roles | `current()` → `{userId, name, role}` | Every Admin API request | — |
@@ -135,6 +135,14 @@ provide one breaks something specific, named here.
   - This build only stores and validates targeting. **Targeting evaluation
     stays PH Core's.**
 - **`PlaybackSource`**
+  - `lastPlayed()` (Rob, 8 Oct 2026, Campaign Status "Last used" column)
+    returns the time each campaign last actually played on any display in a
+    live environment, as campaignId → ISO timestamp (never-played
+    campaigns absent). This is playback/analytics data owned by the
+    existing Personalisation Hub analytics system; the exchange holds none
+    of it and only displays it as `Campaign.lastPlayedAt`. It must be
+    answered from the store's own aggregate (a `MAX(played_at)` per
+    campaign), never by reading plays: one call per table load.
   - `totals` counts and sums a campaign's plays on one display type's
     displays in a window **where the plays are stored**: a window on 1,000
     displays is 1.9 million rows, 23 s as rows in JavaScript, 0.65 s from

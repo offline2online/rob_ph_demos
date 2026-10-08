@@ -132,9 +132,11 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [positionId, windows]
+                required: [positionId, sale, windows]
                 properties:
                   positionId: {type: string}
+                  sale: {type: string, enum: [window, realtime], description: '`window`: sold by play window ahead of time (held for named advertisers, or a private auction) — `windows` carries the status of each. `realtime`: open or whitelist-only, sold per impression as the player signals — nothing is booked ahead, so `windows` is empty.'}
+                  bidLookaheadSeconds: {type: integer, description: 'Only when `sale` is `realtime`: seconds before a slot plays that its auction opens. Bid per impression inside this window; there is nothing to reserve ahead.'}
                   windows: {type: array, items: {$ref: '#/components/schemas/PlayWindow'}}
         '400': {$ref: '#/components/responses/ValidationFailed'}
         '401': {$ref: '#/components/responses/Unauthorised'}
@@ -3134,6 +3136,7 @@ components:
           properties:
             nextWindowStart: {type: [string, 'null'], format: date-time, description: The next play window this campaign holds, or null when none is ahead.}
             bookedWindows: {type: integer, description: Live windows won or reserved, past and future.}
+        lastPlayedAt: {type: [string, 'null'], format: date-time, description: 'When this campaign last actually played on any display in a live environment (Campaign Status "Last used" column). PH Core''s playback data, read through PlaybackSource.lastPlayed; null when it has never played.'}
         activation:
           type: object
           required: [enabled]

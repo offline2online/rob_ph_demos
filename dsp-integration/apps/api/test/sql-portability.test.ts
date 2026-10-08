@@ -278,3 +278,16 @@ describe('no raw SQL outside platform/, repos/ and db/', () => {
     expect(exec.test('re.exec(s)')).toBe(false)
   })
 })
+
+describe('PlaybackSource.lastPlayed', () => {
+  it('returns each campaign\'s latest play, and omits campaigns that never played', async () => {
+    const db = fresh()
+    db.prepare("INSERT INTO displays (id, name, store, display_type_id) VALUES ('d1', 'd1', 'S', 'dt')").run()
+    const play = db.prepare('INSERT INTO plays (id, display_id, campaign_id, played_at, duration_sec) VALUES (?, ?, ?, ?, ?)')
+    play.run('p1', 'd1', 'c1', '2026-10-01T01:00:00.000Z', 10)
+    play.run('p2', 'd1', 'c1', '2026-10-03T01:00:00.000Z', 10)
+    play.run('p3', 'd1', 'c2', '2026-10-02T01:00:00.000Z', 10)
+    const m = await sqlitePlaybackSource(db).lastPlayed()
+    expect(Object.fromEntries(m)).toEqual({ c1: '2026-10-03T01:00:00.000Z', c2: '2026-10-02T01:00:00.000Z' })
+  })
+})

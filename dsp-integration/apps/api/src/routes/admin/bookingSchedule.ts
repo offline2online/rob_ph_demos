@@ -23,7 +23,7 @@ import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import type { Guards } from '../../http/app'
 import { validationFailed } from '../../http/errors'
-import { allPositions, assignmentOf, assumedViewsPerWindow, effectivePartnerIds, nextWindow, shortestWindowMs, windowMs, windowStartOf, windowsBetween } from '../../domain/positions'
+import { allPositions, assignmentOf, assumedViewsPerWindow, effectivePartnerIds, isRealtime, nextWindow, shortestWindowMs, windowMs, windowStartOf, windowsBetween } from '../../domain/positions'
 import type { StoredTargeting } from '../../domain/targetingSummary'
 import { TAKEN, type ReservationRecord } from '../../repos/ReservationRepo'
 import { zonePlaceOf } from '../../domain/displayTypes'
@@ -149,7 +149,12 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
          ticket "% of slots sold"): it's this display type's whole market,
          not just what one advertiser could have bought, so % sold reads
          the same whichever filter is applied. */
-      if (first && hasDisplays && start.getTime() >= firstSellable) rev.sellableWindows++
+      /* Booked-ahead inventory only (ticket 1n6upwMWSLGxszhg5u7k, 8 Oct 2026):
+         an open or whitelist-only position is sold per impression and is
+         never pre-booked, so counting its windows would read as under-selling.
+         A display type with only real-time positions has no sellable windows
+         and the table shows a dash. */
+      if (first && hasDisplays && !isRealtime(p) && start.getTime() >= firstSellable) rev.sellableWindows++
       const x = live.get(`${p.positionId}|${start.toISOString()}`)
       const r = x && (!f.campaignId || x.campaignId === f.campaignId) && (!f.advertiserId || x.advertiserId === f.advertiserId) && (!f.partnerId || x.partnerId === f.partnerId) ? x : undefined
       if (r) {

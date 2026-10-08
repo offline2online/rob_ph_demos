@@ -2627,6 +2627,11 @@ export interface components {
                 /** @description Live windows won or reserved */
                 bookedWindows: number;
             };
+            /**
+             * Format: date-time
+             * @description When this campaign last actually played on any display in a live environment (Campaign Status "Last used" column). PH Core's playback data, read through PlaybackSource.lastPlayed; null when it has never played.
+             */
+            lastPlayedAt?: string | null;
             activation: {
                 enabled: boolean;
             };
@@ -2851,6 +2856,10 @@ export interface operations {
                 content: {
                     "application/json": {
                         positionId: string;
+                        /** @description `window`: sold by play window ahead of time (held for named advertisers, or a private auction) — `windows` carries the status of each. `realtime`: open or whitelist-only, sold per impression as the player signals — nothing is booked ahead, so `windows` is empty. */
+                        sale: "window" | "realtime";
+                        /** @description Only when `sale` is `realtime`: seconds before a slot plays that its auction opens. Bid per impression inside this window; there is nothing to reserve ahead. */
+                        bidLookaheadSeconds?: number;
                         windows: components["schemas"]["PlayWindow"][];
                     };
                 };

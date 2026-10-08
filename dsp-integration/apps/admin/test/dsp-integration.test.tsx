@@ -319,7 +319,7 @@ describe('Advertisers screen (admin only)', () => {
 describe('Campaign Status stand-in', () => {
   const campaign = {
     campaignId: 'c1', name: 'Swisse spring', source: 'api', advertiserId: 'swisse', advertiserName: 'Swisse', partnerId: 'p_google', partnerName: 'Google DSP',
-    displayTypeId: 'portrait', pricingType: 'localised', activation: { enabled: false }, schedule: { nextWindowStart: '2026-09-22T00:00:00.000Z', bookedWindows: 2 },
+    displayTypeId: 'portrait', pricingType: 'localised', activation: { enabled: false }, schedule: { nextWindowStart: '2026-09-22T00:00:00.000Z', bookedWindows: 2 }, lastPlayedAt: null,
     brief: { details: 'Spring immunity range.', promotedProducts: ['Ultiboost Immune'], objective: 'Brand Awareness', touchPoints: ['Digital Signage'] },
     /* One playlist: the mandatory default layer plus one localised upsell (spec §6). */
     campaignCount: 2, localisedVariables: ['Fixed Store Segments'], localisedRuleLines: ['metro-open (priority 10): Fixed Store Segments includes selected Metro'],
@@ -368,9 +368,9 @@ describe('Campaign Status stand-in', () => {
        next is at the top; DSP between Playlist name and No. of campaigns
        (ticket, 27 Sep 2026). */
     expect([...grid.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent)).toEqual([
-      'Activation', 'Advertiser', 'Schedule', 'Status', 'Playlist name', 'DSP', 'No. of campaigns', 'Localised variables', 'Personalised variables', '',
+      'Activation', 'Advertiser', 'Received', 'Status', 'Playlist name', 'DSP', 'No. of campaigns', 'Localised variables', 'Personalised variables', 'Last used', '',
     ])
-    expect(await within(grid).findByText('2 windows booked', {}, { timeout: 10000 })).toBeInTheDocument()
+    expect(await within(grid).findByText('Swisse spring', {}, { timeout: 10000 })).toBeInTheDocument()
     /* One playlist, one submission: the default layer plus a localised
        upsell — the count and the high-level variable summary. */
     expect(within(grid).getByText('2')).toBeInTheDocument()

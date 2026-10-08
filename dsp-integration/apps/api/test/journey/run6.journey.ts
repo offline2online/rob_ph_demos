@@ -289,74 +289,30 @@ async function main() {
   const activated = await admin('PUT', `/campaigns/${campaignId}/activation`, { enabled: true })
   record('L1c', 'campaign activated', activated.status === 200, '200', `${activated.status} ${activated.text.slice(0, 120)}`)
 
-  /* ---------- Phase 4 — advertiser bid & verify (Partner API + tick) ---------- */
+  /* ---------- Phase 4 — advertiser view of the open slot (Partner API) ---------- */
   currentPhase = 4
-  console.log('\nPhase 4 — advertiser bid & verify (L2–L6)')
+  console.log('\nPhase 4 — advertiser availability and the retired windowed auction (L2–L6)')
   const day = (d: Date) => d.toISOString().slice(0, 10)
   const avail = await partner('GET', `/inventory/${handover.positionId}/availability?advertiserId=${ADVERTISER}&from=${day(START)}&to=${day(new Date(START.getTime() + 7 * 86_400_000))}`)
-  const windows: any[] = avail.json?.windows ?? avail.json?.items ?? []
-  const nextOpen = windows.find((w) => w.status === 'available')
-  must('L2a', 'the next open window is available', !!nextOpen, 'an available window', `${avail.status} ${JSON.stringify(windows.slice(0, 3))}`)
-  const windowStart: string = nextOpen.windowStart ?? nextOpen.start
-  const below = await partner('POST', '/reservations', { positionId: handover.positionId, windowStart, campaignId, advertiserId: ADVERTISER, type: 'bid', bidCpm: Math.max(1, floorCpm - 10) })
-  record('L2b', 'a bid below the base floor is refused below_floor', below.status === 422 || (below.status === 400 && /floor/.test(below.text)), '422 below_floor', `${below.status} ${below.text.slice(0, 160)}`)
-  const bidCpm = floorCpm + 20 // 120 on a base of 100, accepted
-  const bid = await partner('POST', '/reservations', { positionId: handover.positionId, windowStart, campaignId, advertiserId: ADVERTISER, type: 'bid', bidCpm })
-  must('L2', `a bid of ${bidCpm} (base ${floorCpm}) is accepted for a campaign with personalised versions`, bid.status === 201 && bid.json?.status === 'pending', '201 pending', `${bid.status} ${bid.text.slice(0, 200)}`)
-  const reservationId: string = bid.json.reservationId
-  /* Clear the window: move the clock past its cutoff and tick. No settings change. */
-  const cutoff = new Date(Date.parse(windowStart) - 6 * 3_600_000) // seed cutoff 18:00 UTC the day before
-  setClock(new Date(cutoff.getTime() + 60_000))
-  const tick1 = await tick()
-  const res1 = await partner('GET', `/reservations/${reservationId}`)
-  must('L2c', 'the auction clears the window; the campaign wins at its own price', res1.json?.status === 'won' && res1.json?.clearingCpm === bidCpm, `won at ${bidCpm}`, `${JSON.stringify(res1.json)} · tick: ${tick1.trim().split('\n').slice(-2).join(' | ')}`)
-  {
-    const d = db()
-    const bk = d.prepare('SELECT * FROM campaign_slot_bookings WHERE display_type_id = ? AND slot = 1 AND window_start = ?').get(dtId, windowStart) as any
-    record('L3', 'hand-off: a booking exists for the slot and window carrying this campaign', !!bk && bk.campaign_id === campaignId, `booking for ${campaignId}`, JSON.stringify(bk ?? null))
-    const ho = d.prepare('SELECT handed_off_at, reason FROM reservations WHERE id = ?').get(reservationId) as any
-    record('L3b', 'reservation marked handed off, no refusal reason', !!ho?.handed_off_at && !ho?.reason, 'handed_off_at set', JSON.stringify(ho))
-    d.close()
-  }
+  /* Since 8 Oct 2026 an open (rtb) slot is sold per impression, bid bidLookaheadSeconds before each
+     play: there is no window series to report, and the endpoint says so (REQUIREMENTS §5). */
+  const lookahead = avail.json?.bidLookaheadSeconds
+  must('L2a', 'an open slot is sold per impression: availability reports sale "realtime", the bid lookahead and no window series',
+    avail.status === 200 && avail.json?.positionId === handover.positionId && avail.json?.sale === 'realtime' && typeof lookahead === 'number' && lookahead > 0 && Array.isArray(avail.json?.windows) && avail.json.windows.length === 0,
+    'sale realtime, bidLookaheadSeconds > 0, windows []', `${avail.status} ${avail.text.slice(0, 300)}`)
+  /* The window bid, clearing, hand-off and window billing cases (L2b, L2, L2c, L3, L4, L6) were written for
+     the retired windowed auction (company cutoff, scheduled clearing, type "bid"). Window sales that remain
+     are deals on a buyers list, which Phase 5 drives end to end (reserve, hand-off, billing); per-impression
+     fills and proof of play are vitest's realtime.test.ts. */
+  const retired = 'windowed auction retired 8 Oct 2026; open slots are sold per impression (covered by realtime.test.ts), deals by Phase 5'
+  for (const [id, title] of [['L2b', 'a bid below the base floor is refused'], ['L2', 'a window bid is accepted'], ['L2c', 'the auction clears the window'], ['L3', 'hand-off: a booking for the cleared window'], ['L4', 'billing for a cleared window'], ['L6', 'a window with no eligible bid falls through']] as const)
+    record(id, title, true, retired, retired, 'skipped')
   const settingsAfter = await admin('GET', '/advertiser-settings')
-  record('L2e', 'Advertiser settings untouched by clearing the window (test clock, not the cutoff hack)', settingsAfter.text === settingsBefore, 'identical', settingsAfter.text === settingsBefore ? 'identical' : `changed: ${settingsAfter.text.slice(0, 200)}`)
-
-  /* L4 — end the window, report plays, bill. */
-  const windowEnd = new Date(Date.parse(windowStart) + 24 * 3_600_000)
-  const plays = await admin('POST', '/test/plays', { reservationId, plays: [{ tier: 'default', count: 6, durationSec: 15 }, { tier: 'localised', count: 2, durationSec: 15 }, { tier: 'personalised', count: 4, durationSec: 15 }] })
-  must('L4a', 'test-only play reporter writes plays for the won window', plays.status === 201 && plays.json?.total === 12, '201, 12 plays', `${plays.status} ${plays.text.slice(0, 200)}`)
-  setClock(new Date(windowEnd.getTime() + 60_000))
-  const tick2 = await tick()
-  {
-    const d = db()
-    const li = d.prepare('SELECT * FROM billing_line_items WHERE reservation_id = ?').get(reservationId) as any
-    const basePlays = 8, pPlays = 4
-    const ok = !!li && li.plays === 12 && li.cpm === bidCpm && Math.abs(li.amount - Math.round((li.realised_views / 1000) * bidCpm * 100) / 100) < 0.011
-    record('L4', 'billing: every play, whatever tier, at the cleared CPM against realised VAC-d; no split', ok,
-      `plays 12 (${basePlays} base + ${pPlays} personalised), cpm ${bidCpm}, amount = realised views × cpm`, li ? JSON.stringify({ plays: li.plays, cpm: li.cpm, amount: li.amount, realisedViews: li.realised_views }) : `no line item · tick: ${tick2.trim().split('\n').slice(-2).join(' | ')}`)
-    d.close()
-  }
+  record('L2e', 'Advertiser settings untouched by the journey so far', settingsAfter.text === settingsBefore, 'identical', settingsAfter.text === settingsBefore ? 'identical' : `changed: ${settingsAfter.text.slice(0, 200)}`)
   /* L5 — continuity. */
   const final = await partner('GET', `/campaigns/${campaignId}`)
-  record('L5', 'the campaign from K, on the slot from J, is the one booked and billed; stored versions and targeting unchanged', final.status === 200 && norm(final.json?.targeted ?? []) === norm(body.targeted) && final.json?.displayTypeId === dtId, 'same id, slot, targeting', `${final.status} displayTypeId=${final.json?.displayTypeId} targetingUnchanged=${norm(final.json?.targeted ?? []) === norm(body.targeted)}`)
-
-  /* L6 — fall-through: a later window nobody bids on. Bidders are already no-bid. */
-  const w2 = new Date(windowEnd.getTime() + 24 * 3_600_000).toISOString() // the window after next
-  const cutoff2 = new Date(Date.parse(w2) - 6 * 3_600_000)
-  setClock(new Date(cutoff2.getTime() + 60_000))
-  const tick3 = await tick()
-  {
-    const d = db()
-    const bk = d.prepare('SELECT * FROM campaign_slot_bookings WHERE display_type_id = ? AND slot = 1 AND window_start = ?').get(dtId, w2)
-    const won = d.prepare("SELECT COUNT(*) AS n FROM reservations WHERE position_id = ? AND window_start = ? AND status IN ('won','reserved')").get(handover.positionId, w2) as { n: number }
-    const run = d.prepare('SELECT * FROM auction_runs WHERE window_start = ?').get(w2)
-    record('L6', 'a window with no eligible bid: auction runs, no winner, no booking', !!run && won.n === 0 && !bk, 'auction run, 0 won, no booking', JSON.stringify({ auctioned: !!run, won: won.n, booking: bk ?? null, tick: tick3.trim().split('\n').slice(-1)[0] }))
-    setClock(new Date(Date.parse(w2) + 24 * 3_600_000 + 60_000))
-    await tick()
-    const li = d.prepare('SELECT COUNT(*) AS n FROM billing_line_items WHERE position_id = ? AND window_start = ?').get(handover.positionId, w2) as { n: number }
-    record('L6b', 'nobody is billed for the fall-through window', li.n === 0, '0 line items', String(li.n))
-    d.close()
-  }
+  record('L5', 'the campaign from K, on the slot from J, is unchanged: stored versions and targeting', final.status === 200 && norm(final.json?.targeted ?? []) === norm(body.targeted) && final.json?.displayTypeId === dtId, 'same id, slot, targeting', `${final.status} displayTypeId=${final.json?.displayTypeId} targetingUnchanged=${norm(final.json?.targeted ?? []) === norm(body.targeted)}`)
+  const w2 = new Date(START.getTime() + 3 * 86_400_000).toISOString().slice(0, 10) + 'T00:00:00.000Z' // Phase 5 windows start after this
 
   /* ---------- Phase 5 — deal types end to end (Run 7 cases M; ticket rFN7TfIXtValP5hfIq1o) ----------
      The same slot, campaign and processes as L: the retailer makes the slot a reserve-priced

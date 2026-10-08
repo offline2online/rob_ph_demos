@@ -7,7 +7,7 @@
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { TRANSACTING_CURRENCY } from '../../domain/currency'
-import { type Caller, type PositionRef, type WindowStatus, allPositions, assumedViewsPerWindow, callerOf, findPosition, longestWindowMs, nextWindow, positionView, visibilityFor, windowFacts, windowMs, windowStatus, windowsBetween, windowsCovering } from '../../domain/positions'
+import { type Caller, type PositionRef, type WindowStatus, allPositions, assumedViewsPerWindow, callerOf, findPosition, isRealtime, longestWindowMs, nextWindow, positionView, visibilityFor, windowFacts, windowMs, windowStatus, windowsBetween, windowsCovering } from '../../domain/positions'
 import { effectiveFloorCpm } from '../../domain/pricing'
 import { baseFloorFor } from '../../exchange/enforcement'
 import { andThen } from '../../db/db'
@@ -131,7 +131,11 @@ export const inventoryRoutes = (ctx: Context): FastifyPluginAsync => async (app)
     if (!range) throw validationFailed([{ field: 'from', reason: 'from and to are dates (YYYY-MM-DD), from ≤ to, at most a year apart.' }])
     const c = callerOf(req.partner, req.query.advertiserId)
     const p = await visibleOne(c, req.params.positionId)
-    return { positionId: p.positionId, windows: await windowsOf(ctx, p, c, (await startsOf(p, from!, to!))!) }
+    /* A real-time position (open or whitelist-only) is sold per impression, bid
+       bidLookaheadSeconds before each play: nothing is booked ahead, so there is no
+       forward series of windows to report (8 Oct 2026). Say so, don't fabricate one. */
+    if (isRealtime(p)) return { positionId: p.positionId, sale: 'realtime' as const, bidLookaheadSeconds: (await ctx.company.get()).bidLookaheadSeconds, windows: [] }
+    return { positionId: p.positionId, sale: 'window' as const, windows: await windowsOf(ctx, p, c, (await startsOf(p, from!, to!))!) }
   })
 
   app.post<{ Body: { positionIds?: unknown; from?: unknown; to?: unknown; advertiserId?: unknown; rules?: unknown } }>('/inventory/forecast', async (req) => {
