@@ -1,7 +1,7 @@
 /* Advertiser settings (spec §4, §5, §6): Pricing and the IAB category lists are
    edited here (advertiser lists are per DSP, on its own page); Where these apply is read-only. The inventory table moved to
    Advertisers / Inventory (Rob, 20 Sep). */
-import { InputNumber, Select } from 'antd'
+import { Input, InputNumber, Select } from 'antd'
 import { IAB_CATEGORIES, IAB_CATEGORY_CODES, INTERACTIVE_ENABLED, type AdvertiserSettingsInput } from '@ph-dsp/types'
 import { type ReactNode, useMemo } from 'react'
 import { Field } from '../../shared/Field'
@@ -13,7 +13,7 @@ import { useSection } from './DspIntegrationLayout'
 import { SubPageHeader } from './SubPageHeader'
 
 export const ADVERTISER_SETTINGS_TIP =
-  "Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (floor CPM, always in USD); Play configuration (max slot length, default committed plays and guaranteed-deal buffer); Real-time bidding (bid lookahead); and the Category lists (IAB whitelists and blacklists; each DSP's advertiser lists are managed on its own page, from the advertisers it syncs). Read-only here: Where these apply (which DSPs use these lists or keep their own; unlink or relink on the DSP's page). Per-advertiser campaign approval and floor multipliers, and the inventory advertisers can buy, are on Advertisers / Inventory."
+  "Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (floor CPM, always in USD); Play configuration (max slot length, default committed plays, guaranteed-deal buffer and the uncached-creative restriction); Real-time bidding (bid lookahead); and the Category lists (IAB whitelists and blacklists; each DSP's advertiser lists are managed on its own page, from the advertisers it syncs). Read-only here: Where these apply (which DSPs use these lists or keep their own; unlink or relink on the DSP's page). Per-advertiser campaign approval and floor multipliers, and the inventory advertisers can buy, are on Advertisers / Inventory."
 
 /* The exchange transacts in USD on every instance (TRANSACTING_CURRENCY in the API's
    domain/currency.ts); company.currency is display/reporting only. Everything priced on
@@ -76,6 +76,16 @@ const DEFAULT_PLAYS_TIP = (
   </div>
 )
 
+const UNCACHED_TIP = (
+  <div style={{ fontSize: 12 }}>
+    Bandwidth protection. Suppresses only <b>not-yet-cached</b> creatives from winning in the window: a bid wins there only if the player already holds its creative. Cached creative plays throughout, and outside the window everything bids as normal.
+    <div className="mt-2"><b>Fixed hours</b>: restricted between the start and end every day, in UTC (a start after the end wraps past midnight). <b>Store trading hours</b>: restricted while the store is open, as the player reports it; no times to set, and a missing report never blocks a bid. <b>Off</b> (default): never restricted.</div>
+  </div>
+)
+const UNCACHED_OPTIONS = [
+  { value: 'off', label: 'Off' }, { value: 'fixed', label: 'Fixed hours' }, { value: 'store_open', label: 'Store trading hours' },
+]
+
 const IAB_OPTIONS = IAB_CATEGORIES.map((c) => ({ value: c, label: `${c} (${IAB_CATEGORY_CODES[c]})` }))
 type ListKey = 'categoryWhitelist' | 'categoryBlacklist'
 const OTHER: Record<ListKey, ListKey> = {
@@ -131,6 +141,19 @@ export function AdvertiserSettings() {
         <Field label={<span className="block" style={{ minHeight: 36 }}>Default committed plays</span>} htmlFor="defaultCommittedPlays" tip={DEFAULT_PLAYS_TIP} tipWidth={400} className="w-56">
           <InputNumber id="defaultCommittedPlays" className="w-full" step={1} min={1} precision={0} placeholder="Per play" value={s.defaultCommittedPlays ?? null} onChange={(v) => set('defaultCommittedPlays', typeof v === 'number' ? v : null)} />
         </Field>
+        <Field label={<span className="block" style={{ minHeight: 36 }}>Uncached creative restriction</span>} htmlFor="uncachedRestriction" tip={UNCACHED_TIP} tipWidth={400} className="w-56">
+          <Select id="uncachedRestriction" className="w-full" value={s.uncachedRestriction ?? 'off'} options={UNCACHED_OPTIONS} onChange={(v) => set('uncachedRestriction', v)} />
+        </Field>
+        {s.uncachedRestriction === 'fixed' && (
+          <Field label={<span className="block" style={{ minHeight: 36 }}>Restricted from (UTC)</span>} htmlFor="uncachedRestrictionStart" tip="Start of the daily restricted window, in UTC (HH:MM). A start after the end wraps past midnight." className="w-40">
+            <Input id="uncachedRestrictionStart" type="time" value={s.uncachedRestrictionStart ?? '09:00'} onChange={(e) => e.target.value && set('uncachedRestrictionStart', e.target.value)} />
+          </Field>
+        )}
+        {s.uncachedRestriction === 'fixed' && (
+          <Field label={<span className="block" style={{ minHeight: 36 }}>Restricted until (UTC)</span>} htmlFor="uncachedRestrictionEnd" tip="End of the daily restricted window, in UTC (HH:MM, exclusive)." className="w-40">
+            <Input id="uncachedRestrictionEnd" type="time" value={s.uncachedRestrictionEnd ?? '18:00'} onChange={(e) => e.target.value && set('uncachedRestrictionEnd', e.target.value)} />
+          </Field>
+        )}
       </div>
 
       <SectionLabel><WithTip tip="How early a real-time slot's auction opens, so the winning creative can be downloaded and rendered before the slot plays. The auction is per slot, opened this long before that slot's own start, not on a schedule.">Real-time bidding</WithTip></SectionLabel>

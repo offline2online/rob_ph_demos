@@ -204,6 +204,8 @@ describe('Advertiser settings page', () => {
     expect(screen.getByLabelText(/Guarantee buffer/, { selector: 'input' })).toBeInTheDocument()
     expect(screen.getByLabelText(/Default committed plays/, { selector: 'input' })).toBeInTheDocument()
     expect(screen.getByLabelText(/Max play length/, { selector: 'input' })).toBeInTheDocument()
+    expect(document.getElementById('uncachedRestriction')).not.toBeNull()
+    expect(document.getElementById('uncachedRestrictionStart')).toBeNull()
     expect(text).not.toContain('Committed delivery volume')
     expect(text).not.toContain('Play defaults')
     expect(screen.queryByRole('group', { name: 'Play config' })).not.toBeInTheDocument()
