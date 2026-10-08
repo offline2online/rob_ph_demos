@@ -615,6 +615,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/booking-schedule/capacity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Plays per day for every advertiser-owned slot, pre-booked vs available to bid, by localized segment
+         * @description Per position and day (UTC): total plays (the plays of every billing-unit
+         *     window in the stores' trading hours, not a flat 24h / billing unit),
+         *     the plays pre-booked reserve deals hold outright (firm), and the
+         *     remainder, only "available to bid" and indicative (the auction decides).
+         *     Each localized segment a campaign targets is a further cut over the
+         *     screens carrying it. Segments overlap on screens, so cuts are not
+         *     additive. Without dates: today and the 13 days after.
+         */
+        get: operations["getBookingCapacity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/targeting-variables": {
         parameters: {
             query?: never;
@@ -2053,6 +2079,47 @@ export interface components {
             displayCount: number;
             /** @description Derived, read-only — floor(billing unit / (maxPlayLengthSec x slotCount)). The admin screen recalculates it from the draft as the inputs change. */
             playsPerWindow: number;
+        };
+        BookingCapacity: {
+            days: string[];
+            positions: {
+                positionId: string;
+                displayTypeId: string;
+                displayTypeName: string;
+                slot: number;
+                slotLabel: string;
+                /** @description Sold per impression */
+                realtime: boolean;
+                /** @description Displays the slot plays on. */
+                screens: number;
+                /** @description The slot's billing unit. */
+                windowHours: number;
+                days: {
+                    /** Format: date */
+                    date: string;
+                    /** @description Plays across the whole estate in the stores' trading hours. */
+                    totalPlays: number;
+                    /** @description Plays pre-booked deals hold outright */
+                    firmPlays: number;
+                    /** @description totalPlays less firmPlays; indicative */
+                    availableToBid: number;
+                    deals: {
+                        reservationId: string;
+                        advertiserName: string;
+                        /** @description Plays the deal commits on this day. */
+                        plays: number;
+                    }[];
+                    segments: {
+                        segment: string;
+                        screens: number;
+                        /** @description Segment screens x plays per day. */
+                        totalPlays: number;
+                        firmPlays: number;
+                        /** @description Available to bid within this cut; cuts overlap */
+                        availableToBid: number;
+                    }[];
+                }[];
+            }[];
         };
         BookingSchedule: {
             /** @description ISO 4217 */
@@ -3587,6 +3654,32 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BookingSchedule"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorised"];
+        };
+    };
+    getBookingCapacity: {
+        parameters: {
+            query?: {
+                from?: string;
+                /** @description At most 92 days after from. */
+                to?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Capacity */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookingCapacity"];
                 };
             };
             400: components["responses"]["ValidationFailed"];

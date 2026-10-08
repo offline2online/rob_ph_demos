@@ -4,6 +4,7 @@ import type { Guards } from '../../http/app'
 import { advertiserRoutes } from './advertisers'
 import { advertiserSettingsRoutes } from './advertiserSettings'
 import { bookingScheduleRoutes } from './bookingSchedule'
+import { bookingCapacityRoutes } from './bookingCapacity'
 import { buyersListRoutes } from './buyersLists'
 import { campaignRoutes } from './campaigns'
 import { displayTypeRoutes } from './displayTypes'
@@ -24,6 +25,7 @@ export const adminRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync =>
   await app.register(buyersListRoutes(ctx, guards))
   await app.register(advertiserRoutes(ctx, guards))
   await app.register(bookingScheduleRoutes(ctx, guards))
+  await app.register(bookingCapacityRoutes(ctx, guards))
   await app.register(exchangeRoutes(ctx, guards))
   await app.register(lostRevenueRoutes(ctx, guards))
   await app.register(targetingVariableRoutes(ctx, guards))

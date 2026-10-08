@@ -3543,6 +3543,24 @@ playback analytics.**
   *eligible* to buy the slot) — the two can differ whenever a slot takes
   bids from more than one DSP, and only the former is guaranteed to match
   the advertiser shown beside it. *(Campaign schedule → Booking schedule tab)*
+- **Plays per day on the Booking schedule** (decision Rob 9 Oct 2026;
+  `GET /admin/v1/booking-schedule/capacity`, `domain/dailyCapacity.ts`): a
+  "Plays per day" table under the schedule, one column per day. The window is
+  still the clearing unit; the day is a roll-up of it. A slot's plays on a day
+  are the plays of every billing-unit window running in the stores' trading
+  hours (a store's `open_hour`/`close_hour`, migration 0061), not a flat
+  24h ÷ billing unit: a 24/7 display on an 8h unit has three windows, an
+  in-store display open for one 8h window has one, and a window only partly
+  open counts the plays that fit. Per slot and day: total plays (whole estate);
+  **pre-booked** plays, the reserve deals' commitment netted off firmly; and
+  **available to bid**, the remainder, indicative (the auction decides; a
+  pre-booked deal holds outright). Each localized segment (fixed or variable
+  store segment, `stores.segments`) that any campaign targets is a further cut:
+  its screens × plays per day, its own pre-booked plays netted off, the rest
+  "available to bid within this cut". Segments overlap on screens, so the cuts
+  are not additive to each other or to the estate figure. Day boundaries are
+  UTC and store hours are hours of that day (no store time zones in this POC).
+  Firm = reserve bookings only. Spec: §5, §6.
 - **Play-window booked/available summary, wherever the page counts
   "windows"** (ticket "anytime you use the word Windows please show a
   representation of how many are booked versus … localised … personalised
