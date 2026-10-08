@@ -475,7 +475,7 @@ describe('Booking schedule', () => {
       { start: '2026-09-22T00:00:00.000Z', end: '2026-09-23T00:00:00.000Z' },
     ],
     positions: [{
-      positionId: 'menu_board.s2', displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', slot: 2, slotLabel: 'Supplier slot', zoneName: 'Zone 2', zoneSlot: 1, partnerNames: ['Google DSP'], assignment: 'rtb', displayCount: 3,
+      positionId: 'menu_board.s2', displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', slot: 2, slotLabel: 'Supplier slot', zoneName: 'Zone 2', zoneSlot: 1, partnerNames: ['Google DSP'], assignment: 'deal', realTime: false, recentPlays: null, displayCount: 3,
       windows: [
         { start: '2026-09-21T00:00:00.000Z', status: 'available', booking: null },
         { start: '2026-09-22T00:00:00.000Z', status: 'booked', booking: { reservationId: 'r1', campaignId: 'c1', advertiserId: 'swisse', partnerId: 'p_google', pricingType: 'personalised', type: 'reserve', advertiserName: 'Swisse', partnerName: 'Google DSP', cpm: 175, assumedViews: 1236, bookedRevenue: 216.3, billedRevenue: null, layers: { default: true, localised: false, personalised: true }, personalisedTriggers: { computerVision: false, aggregateStore: false, individual: true } } },
@@ -517,6 +517,22 @@ describe('Booking schedule', () => {
     expect(within(grid).getByLabelText('Advertiser filter')).toBeInTheDocument()
     /* Multi-zone: numbered within the zone, as Available Inventory does (A0GyTNsA, 1 Oct 2026). */
     expect(within(grid).getByText('Zone 2 / Slot 1 · Supplier slot')).toBeInTheDocument()
+  })
+
+  /* Ticket vhRFN1K3N4Giw1Z0OEI6 (8 Oct 2026): an open position is sold per impression, so no forward grid. */
+  it('shows an open position as real-time plays with dashes, and counts only booked-ahead positions in the header', async () => {
+    const open = {
+      ...schedule.positions[0], positionId: 'menu_board.s3', slot: 3, zoneSlot: 2, assignment: 'rtb', realTime: true, recentPlays: 42,
+      windows: schedule.positions[0].windows.map((w) => ({ start: w.start, status: 'unavailable', booking: null })),
+    }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/booking-schedule': { ...schedule, positions: [schedule.positions[0], open] } })))
+    renderAt('/booking-schedule')
+    const grid = await screen.findByLabelText('Booking schedule', { selector: '.ag-theme-alpine' })
+    expect(await within(grid).findByText(/Real time · sold per impression · 42 plays in the last 7 days/)).toBeInTheDocument()
+    expect(within(grid).getAllByText('—').length).toBeGreaterThanOrEqual(2)
+    expect(within(grid).getAllByText('Available')).toHaveLength(1) // only the deal position's unbooked window
+    expect(within(grid).getAllByText(/windows booked/)).toHaveLength(1)
+    expect(screen.getByText(/1 of 2 booked/)).toBeInTheDocument()
   })
 
   it('stands alone — no Display Types / DSP Integration nav — and shows the DSP that actually booked it, not every DSP merely eligible to', async () => {

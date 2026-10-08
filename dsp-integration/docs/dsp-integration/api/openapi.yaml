@@ -2539,7 +2539,7 @@ components:
           type: array
           items:
             type: object
-            required: [positionId, displayTypeId, displayTypeName, slot, slotLabel, zoneName, zoneSlot, partnerNames, assignment, displayCount, windows]
+            required: [positionId, displayTypeId, displayTypeName, slot, slotLabel, zoneName, zoneSlot, partnerNames, assignment, realTime, recentPlays, displayCount, windows]
             properties:
               positionId: {type: string}
               displayTypeId: {type: string}
@@ -2555,6 +2555,12 @@ components:
                 description: The slot's 1-based place within its own zone (equals `slot` on a single-zone display type) — the number Available Inventory shows. positionId keeps the flat index.
               partnerNames: {type: array, items: {type: string}, description: 'The DSPs the slot is tied to; empty = any connected DSP.'}
               assignment: {type: string, enum: [rtb, whitelist_only, deal, reserved]}
+              realTime:
+                type: boolean
+                description: True for an open or whitelist-only position, sold per impression and never booked ahead. Its windows are all `unavailable` with no booking (no forward grid), and it is left out of every booked / sellable roll-up.
+              recentPlays:
+                type: [integer, 'null']
+                description: For a real-time position, the live (non-test) plays proved in the last 7 days; null on a deal or reserved position.
               displayCount:
                 type: integer
                 description: |

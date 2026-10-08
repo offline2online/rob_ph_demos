@@ -30,6 +30,8 @@ import { zonePlaceOf } from '../../domain/displayTypes'
 import { advertiserSlug } from '@ph-dsp/types'
 
 const DAY = 86_400_000
+/* How far back a real-time position's plays are counted (ticket vhRFN1K3N4Giw1Z0OEI6, 8 Oct 2026). */
+export const RECENT_PLAYS_DAYS = 7
 const round2 = (n: number) => Math.round(n * 100) / 100
 
 export interface ScheduleFilter { campaignId?: string; advertiserId?: string; partnerId?: string }
@@ -112,6 +114,11 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
     return t
   }
   const firstSellableMemo = new Map<number, number>()
+  /* Real-time (open / whitelist-only) positions are sold per impression and
+     never booked ahead (ticket vhRFN1K3N4Giw1Z0OEI6, 8 Oct 2026): instead of
+     a forward grid they report the live plays proved in the last week, read
+     in one grouped query. */
+  const recentPlays = await ctx.impressions.playedCountsSince(new Date(ctx.clock().getTime() - RECENT_PLAYS_DAYS * DAY).toISOString())
 
   /* Only advertisers with something booked in this range are worth filtering
      by (Rob, 20 Sep), so the picker is built before any filter is applied. */
@@ -140,8 +147,10 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
     const counted = new Set<number>()
     const rev = revenue.get(p.displayType.id) ?? { displayTypeId: p.displayType.id, displayTypeName: p.displayType.name, bookedWindows: 0, sellableWindows: 0, bookedRevenue: 0, billedRevenue: 0 }
     revenue.set(p.displayType.id, rev)
+    const realTime = isRealtime(p)
     const windows = []
     for (const column of starts) {
+
       const start = windowStartOf(column, len)
       const first = !counted.has(start.getTime())
       counted.add(start.getTime())
@@ -154,7 +163,7 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
          never pre-booked, so counting its windows would read as under-selling.
          A display type with only real-time positions has no sellable windows
          and the table shows a dash. */
-      if (first && hasDisplays && !isRealtime(p) && start.getTime() >= firstSellable) rev.sellableWindows++
+      if (first && hasDisplays && !realTime && start.getTime() >= firstSellable) rev.sellableWindows++
       const x = live.get(`${p.positionId}|${start.toISOString()}`)
       const r = x && (!f.campaignId || x.campaignId === f.campaignId) && (!f.advertiserId || x.advertiserId === f.advertiserId) && (!f.partnerId || x.partnerId === f.partnerId) ? x : undefined
       if (r) {
@@ -187,7 +196,10 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
         })
         continue
       }
-      const open = hasDisplays && start.getTime() >= firstSellable
+      /* No forward grid for a real-time position: an unbooked column is a
+         dash, never "available". (A booking already on one — made before the
+         position went real-time — still shows, since it is real revenue.) */
+      const open = hasDisplays && !realTime && start.getTime() >= firstSellable
       windows.push({ start: column.toISOString(), status: open ? ('available' as const) : ('unavailable' as const), booking: null })
     }
     positions.push({
@@ -195,7 +207,7 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
       /* Multi-zone: "Zone n / Slot m", as Available Inventory numbers it
          (A0GyTNsA, 1 Oct 2026); positionId stays the flat index. */
       zoneName: zonePlaceOf(p.displayType, p.slot)?.zoneName ?? null, zoneSlot: zonePlaceOf(p.displayType, p.slot)?.zoneSlot ?? p.slot,
-      partnerNames: ((await effectivePartnerIds(ctx, p.def)) ?? []).map((id) => partners.find((x) => x.id === id)?.name ?? id), assignment: assignmentOf(p.def), windows,
+      partnerNames: ((await effectivePartnerIds(ctx, p.def)) ?? []).map((id) => partners.find((x) => x.id === id)?.name ?? id), assignment: assignmentOf(p.def), realTime, recentPlays: realTime ? (recentPlays.get(p.positionId) ?? 0) : null, windows,
     })
   }
   /* One advertiser selected: only the positions it actually holds (Rob, 20 Sep). */

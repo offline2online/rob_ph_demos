@@ -110,7 +110,10 @@ function windowSummaryOf(position: Position) {
   const upsells = (['localised', 'personalised'] as const)
     .map((k) => ({ k, n: booked.filter((w) => w.booking!.layers[k]).length }))
     .filter((u) => u.n > 0)
-  return { booked: booked.length, total: position.windows.length, upsells }
+  /* A real-time position has no forward windows to count (ticket
+     vhRFN1K3N4Giw1Z0OEI6, 8 Oct 2026): only a booking made before it went
+     real-time counts, and then against itself. */
+  return { booked: booked.length, total: position.realTime ? booked.length : position.windows.length, upsells }
 }
 
 function PositionCell({ data }: ICellRendererParams<Row>) {
@@ -126,7 +129,9 @@ function PositionCell({ data }: ICellRendererParams<Row>) {
         {data.position.zoneName ? `${data.position.zoneName} / Slot ${data.position.zoneSlot}` : `Slot ${data.position.slot}`} · {data.position.slotLabel}
       </div>
       <div className="flex flex-wrap items-center gap-x-1.5" style={{ fontSize: 10.5, color: T.muted }}>
-        <span>{booked} of {total} windows booked</span>
+        {data.position.realTime
+          ? <span>Real time · sold per impression · {data.position.recentPlays ?? 0} play{data.position.recentPlays === 1 ? '' : 's'} in the last 7 days</span>
+          : <span>{booked} of {total} windows booked</span>}
         {upsells.map(({ k, n }) => (
           <span key={k} className="inline-flex items-center gap-0.5">
             <LayerTag layerKey={k} />
@@ -271,6 +276,8 @@ function GroupedCell({ cells, money }: { cells: Cell[]; money: (n: number) => st
 
 function WindowCell({ value, context, data }: ICellRendererParams<Row, Group, Ctx>) {
   if (!value?.cells.length) return null
+  /* Real-time inventory is sold per impression: no booked / available grid. */
+  if (data?.position.realTime && !value.cells.some((c) => c.booking)) return <span style={{ fontSize: 11, color: T.micro }}>—</span>
   const { money, view } = context.current
   return (
     <div className="flex w-full min-w-0 flex-col justify-center gap-0.5 py-1">

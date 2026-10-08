@@ -3482,6 +3482,18 @@ playback analytics.**
   `?tab=campaign-status`, so refreshing the browser stays on the tab you
   were on instead of dropping back to Booking schedule. Campaign detail's
   back link opens the same URL.
+- **Booking schedule tab — forward booking only where it exists (8 Oct
+  2026, ticket "Booking schedule: real-time positions show plays, not a
+  forward grid").** Only deals and reserved slots commit inventory ahead, so
+  only they get the booked / available grid and count towards the "N of M
+  windows booked" rows and the header roll-up. An open or whitelist-only
+  position is sold per impression: the API flags it `realTime` and gives
+  `recentPlays` (live, non-test plays proved in the last 7 days, one grouped
+  query); the tab reads **"Real time · sold per impression · N plays in the
+  last 7 days"** with a dash in every window cell, never "Available". A
+  booking made before a position went real-time still shows (it is real
+  revenue). Plays-per-day availability for deal / reserved is ticket
+  pXz9hpWIONwucHGJijsF's.
 - **Booking schedule tab**: every advertiser position across its play
   windows, booked / available / unavailable, **at the top of the tab**,
   with booking revenue per display type and then what sold by campaign

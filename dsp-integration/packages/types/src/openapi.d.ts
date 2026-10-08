@@ -2077,6 +2077,10 @@ export interface components {
                 partnerNames: string[];
                 /** @enum {string} */
                 assignment: "rtb" | "whitelist_only" | "deal" | "reserved";
+                /** @description True for an open or whitelist-only position, sold per impression and never booked ahead. Its windows are all `unavailable` with no booking (no forward grid), and it is left out of every booked / sellable roll-up. */
+                realTime: boolean;
+                /** @description For a real-time position, the live (non-test) plays proved in the last 7 days; null on a deal or reserved position. */
+                recentPlays: number | null;
                 /**
                  * @description Displays using this display type across the whole retail
                  *     footprint: plain sizing from the display source. This
@@ -2856,7 +2860,10 @@ export interface operations {
                 content: {
                     "application/json": {
                         positionId: string;
-                        /** @description `window`: sold by play window ahead of time (held for named advertisers, or a private auction) — `windows` carries the status of each. `realtime`: open or whitelist-only, sold per impression as the player signals — nothing is booked ahead, so `windows` is empty. */
+                        /**
+                         * @description `window`: sold by play window ahead of time (held for named advertisers, or a private auction) — `windows` carries the status of each. `realtime`: open or whitelist-only, sold per impression as the player signals — nothing is booked ahead, so `windows` is empty.
+                         * @enum {string}
+                         */
                         sale: "window" | "realtime";
                         /** @description Only when `sale` is `realtime`: seconds before a slot plays that its auction opens. Bid per impression inside this window; there is nothing to reserve ahead. */
                         bidLookaheadSeconds?: number;
