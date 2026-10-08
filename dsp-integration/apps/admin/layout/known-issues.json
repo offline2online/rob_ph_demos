@@ -1,0 +1,131 @@
+{
+ "_comment": "Layout problems that existed when the check was added (8 Oct 2026). Reported, not failed on; fix one and delete its entry. See layout/layout.spec.ts.",
+ "issues": [
+  {
+   "page": "display-types",
+   "viewport": "tablet",
+   "rule": "tooltip",
+   "where": "info icon “Defaults inherited by every display of t”",
+   "note": "60.9px from the text it explains (max 12px)"
+  },
+  {
+   "page": "display-types",
+   "viewport": "tablet",
+   "rule": "grid",
+   "where": "div “Touch PointtvDigital Signage”",
+   "note": "stacked fields do not share a left edge (351 / 370px)"
+  },
+  {
+   "page": "dsp-exchange-settings",
+   "viewport": "tablet",
+   "rule": "grid",
+   "where": "div “storefrontExchange settingsinfocheck_cir”",
+   "note": "labels on one row are 287.9px apart vertically"
+  },
+  {
+   "page": "dsp-advertiser-settings",
+   "viewport": "tablet",
+   "rule": "tooltip",
+   "where": "info icon “More information”",
+   "note": "66.5px from the text it explains (max 12px)"
+  },
+  {
+   "page": "dsp-advertiser-settings",
+   "viewport": "tablet",
+   "rule": "grid",
+   "where": "div “CurrencyinfoUSD",
+   "note": "US Dollar” — controls on one row are 30.0px apart vertically"
+  },
+  {
+   "page": "dsp-advertiser-settings",
+   "viewport": "tablet",
+   "rule": "grid",
+   "where": "div “Default committed playsinfo”",
+   "note": "controls on one row are 8.0px apart vertically"
+  },
+  {
+   "page": "dsp-partner-amazon",
+   "viewport": "tablet",
+   "rule": "field-row",
+   "where": "div “Seller auth tokeninfo”",
+   "note": "wrapped onto a row of its own (220px wide in a 452px container; rows above hold 2 fields each)"
+  },
+  {
+   "page": "dsp-partner-ttd",
+   "viewport": "tablet",
+   "rule": "field-row",
+   "where": "div “Seller auth tokeninfo”",
+   "note": "wrapped onto a row of its own (220px wide in a 452px container; rows above hold 2 fields each)"
+  },
+  {
+   "page": "dsp-partner-ttd",
+   "viewport": "tablet",
+   "rule": "grid",
+   "where": "div “*API tokeninfo”",
+   "note": "controls on one row are 5.0px apart vertically"
+  },
+  {
+   "page": "display-types",
+   "viewport": "desktop",
+   "rule": "tooltip",
+   "where": "info icon “Defaults inherited by every display of t”",
+   "note": "486.9px from the text it explains (max 12px)"
+  },
+  {
+   "page": "display-types",
+   "viewport": "desktop",
+   "rule": "grid",
+   "where": "div “Touch PointtvDigital Signage”",
+   "note": "stacked fields do not share a left edge (545 / 564px)"
+  },
+  {
+   "page": "dsp-exchange-settings",
+   "viewport": "desktop",
+   "rule": "grid",
+   "where": "div “storefrontExchange settingsinfocheck_cir”",
+   "note": "labels on one row are 287.9px apart vertically"
+  },
+  {
+   "page": "dsp-advertiser-settings",
+   "viewport": "desktop",
+   "rule": "tooltip",
+   "where": "info icon “More information”",
+   "note": "66.5px from the text it explains (max 12px)"
+  },
+  {
+   "page": "dsp-advertiser-settings",
+   "viewport": "desktop",
+   "rule": "grid",
+   "where": "div “CurrencyinfoUSD",
+   "note": "US Dollar” — controls on one row are 30.0px apart vertically"
+  },
+  {
+   "page": "dsp-advertiser-settings",
+   "viewport": "desktop",
+   "rule": "grid",
+   "where": "div “Max play lengthinfoseconds”",
+   "note": "controls on one row are 8.0px apart vertically"
+  },
+  {
+   "page": "dsp-partner-amazon",
+   "viewport": "desktop",
+   "rule": "field-row",
+   "where": "div “Seller auth tokeninfo”",
+   "note": "wrapped onto a row of its own (433px wide in a 878px container; rows above hold 2 fields each)"
+  },
+  {
+   "page": "dsp-partner-ttd",
+   "viewport": "desktop",
+   "rule": "field-row",
+   "where": "div “Seller auth tokeninfo”",
+   "note": "wrapped onto a row of its own (433px wide in a 878px container; rows above hold 2 fields each)"
+  },
+  {
+   "page": "dsp-partner-ttd",
+   "viewport": "desktop",
+   "rule": "grid",
+   "where": "div “*API tokeninfo”",
+   "note": "controls on one row are 5.0px apart vertically"
+  }
+ ]
+}

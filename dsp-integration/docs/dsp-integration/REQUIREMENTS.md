@@ -4192,3 +4192,37 @@ keeps the won creative renderable; the lookahead sets how early the per-impressi
   ("Committed volume: … (platform default)", "Rate: USD … CPM (from the DSP)")
   and uses the inherited value as the empty field's placeholder.
   `nothing set at any level` still reads "Per play".
+
+## Visual layout check — tablet and desktop (Rob, 8 Oct 2026; ticket A3QkqCjHRP58R0lSAtKM)
+
+The test suite was all functional: nothing checked that fields share a row or
+that a tooltip sits beside what it explains. A layout check now runs with the
+suite and gates the deploy train.
+
+- **What it covers**: every DSP integration admin page — Display Types,
+  Playlist Management, Advertisers / Inventory (with Buyers and targeting),
+  Advertiser Bookings, Campaign detail, Exchange settings, Advertiser settings,
+  Shared targeting variables and each DSP's page — at **tablet (820 × 1180)
+  and desktop (1440 × 900)**. **Mobile is out of scope and not captured.**
+- **Rules (objective, geometry, `apps/admin/layout/rules.ts`)**:
+  1. *Field rows* — a field wrapped onto a row of its own while its
+     equal-width siblings share rows above it fails; fields marked
+     `data-layout-pair="<name>"` must sit on one row.
+  2. *Tooltips* — every info icon follows the text it explains on the same
+     line, no more than 12 px away, vertically centred on it; an icon with no
+     text before it, or at the far end of the row, fails.
+  3. *Grid* — fields on one row share a label line and a control line (1.5 px
+     tolerance); fields stacked in one column share a left edge.
+- **Baseline**: `layout/known-issues.json` lists what was already misaligned
+  when the check was added. They are reported on every run but do not fail it;
+  anything else does. Fixing one means deleting its entry (a listed issue that
+  no longer happens is flagged). Screenshots of each page and viewport are
+  attached to the report; once `layout/baselines/.enforce` exists they are
+  compared with the committed `baselines/<page>-<viewport>.png` (1 % pixel
+  tolerance) and an unreviewed diff fails. Intended visual changes update the
+  baselines in the same change (`--update-snapshots`).
+- **Where it runs**: `npm run test:layout`, a step in `e2e-quick.yml` (the
+  required check on the train and on PRs to `main`, so a failure blocks Deploy
+  to Main) and in `e2e.config.json`'s quick and full modes. It builds the
+  hosted-demo bundle and serves it itself; it needs no API process.
+

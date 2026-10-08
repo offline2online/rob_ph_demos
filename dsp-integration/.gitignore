@@ -9,3 +9,8 @@ dist/
 # Vite's local cache
 apps/admin/.vite/
 results/
+
+# Layout check output
+apps/admin/dist-layout/
+apps/admin/test-results/
+apps/admin/playwright-report/
