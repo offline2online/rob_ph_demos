@@ -146,7 +146,7 @@ length, share of voice, OpenOOH venue type), assignment (`rtb`,
 `whitelist_only`, `reserved`), assumed views per window, pricing (floor
 and the one effective floor for the caller's advertiser),
 and `reservePrice`
-(a CPM premium to reserve the position in advance of the open auction, or
+(a CPM premium to reserve the position for a window, or
 null — the resolved value: a slot's own override, else its display type's
 reserve price default, else null; set on Advertisers / Inventory). A
 buyer books it with `POST /v1/reservations`, `type: reserve` (see
@@ -224,7 +224,7 @@ queue (`apps/api/src/config.ts` → `assetLimits`, enforced in
 
 | Method | Path | Purpose | Main errors |
 |---|---|---|---|
-| POST | `/v1/reservations` | `type: reserve` or `type: bid`, both with `bidCpm`, for a `positionId` and `windowStart`, with an approved and activated `campaignId` (`not_approved` otherwise). A reserve on a position with a `reservePrice` is a reserve-price booking (see below). A reserve on a position held for a named advertiser with no reserve price is booked at its agreed `bidCpm` (Q11). Any other reserve gets `conflict`. A bid is taken only while the window's auction is open: from `auctionOpensHours` before the auction cutoff until the cutoff. A reserve can be made any time before the cutoff. Both are refused once a tick has claimed the window's auction, if that is earlier (`conflict`). `bidCpm` is at most the exchange ceiling (10,000; `validation_failed`). One open bid or reservation per advertiser and window, enforced by the database (migration 0026). A personalised campaign is accepted only in a `type: reserve` booking (`targeting_not_supported` otherwise). The campaign's version count (the default layer plus its targeted versions) must not exceed the position's `maxCampaigns` (`too_many_versions` otherwise). | `not_approved`, `below_floor`, `advertiser_blocked`, `category_blocked`, `not_on_whitelist`, `targeting_not_supported`, `too_many_versions`, `conflict` |
+| POST | `/v1/reservations` | `type: reserve` or `type: bid`, both with `bidCpm`, for a `positionId` and `windowStart`, with an approved and activated `campaignId` (`not_approved` otherwise). A reserve on a position with a `reservePrice` is a reserve-price booking (see below). A reserve on a position held for a named advertiser with no reserve price is booked at its agreed `bidCpm` (Q11). Any other reserve gets `conflict`. Only a position sold by play window takes a booking: one held for named advertisers (reserve) or assigned to a private auction (bid or reserve); every other position is sold in real time, per impression, and answers `conflict` (409). There is no company auction schedule (removed 8 Oct 2026): a window can be bid on or booked until it starts, or until its private auction has cleared it, and a deal is governed by its buyers list's `activeFrom`/`activeTo`/`auctionCloses`. `bidCpm` is at most the exchange ceiling (10,000; `validation_failed`). One open bid or reservation per advertiser and window, enforced by the database (migration 0026). A personalised campaign is accepted only in a `type: reserve` booking (`targeting_not_supported` otherwise). The campaign's version count (the default layer plus its targeted versions) must not exceed the position's `maxCampaigns` (`too_many_versions` otherwise). | `not_approved`, `below_floor`, `advertiser_blocked`, `category_blocked`, `not_on_whitelist`, `targeting_not_supported`, `too_many_versions`, `conflict` |
 | GET | `/v1/reservations/{id}` | Outcome: `pending`, `won`, `lost`, `reserved`, `rejected`, with clearing CPM and reason. | `not_found` |
 
 A won or reserved campaign is handed to the existing campaign system for
@@ -300,9 +300,9 @@ The Admin API keeps answering, and switching off deletes nothing.
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/admin/v1/advertiser-settings` | Currency, floor CPM, multipliers, the auction schedule (`auctionOpensHours`, `playWindowHours`, `auctionCutoffTime`), read-only `pendingPlayWindowHours`/`pendingPlayWindowEffectiveFrom` (a `playWindowHours` change deferred past currently active windows — null when nothing is pending; 26 Sep 2026), and the IAB `categoryWhitelist`/`categoryBlacklist` (one pair for every DSP; entries must be IAB taxonomy names, else `400`; there is no per-DSP override, and no company advertiser list). |
-| PUT | `/admin/v1/advertiser-settings` | Save changes (pricing, auction schedule and lists). An entry can't be on both lists (`validation_failed`). Changing the play-window length while a non-test window is still bid on or booked no longer fails the request (26 Sep 2026): `playWindowHours` keeps its current value and the change is deferred — reflected in the response's `pendingPlayWindowHours`/`pendingPlayWindowEffectiveFrom` — until every such window has played, at which point the scheduled job (not this endpoint) applies it. |
-| GET | `/admin/v1/available-inventory` | Rows: display type, playlist, slot, position, `assignedTo` (now also `buyersListId`/`buyersListName`, null unless the slot is a private auction), `reservePrice` (resolved), `reservePriceOverride` (this slot's own, null = inheriting) and `displayTypeReservePrice` (the display type's default, same on every row of that type), likewise `billingUnitHours` (resolved, always a number)/`billingUnitHoursOverride`/`displayTypeBillingUnitHours` (23 Sep 2026; when neither is set the slot inherits `companyPlayWindowHours`, the company-wide play window, platform default 24 — OQ27, 29 Sep 2026: this resolved value is the slot's play-window length, see "Play windows are per slot" below), plus `inGlobalDeal` (the slot's own global deal flag, default true) and `globalDealSuppressedBy` (`reserved`, `whitelist_only`, `deal`, or null when open), and `dsps` (each DSP and its advertisers) for the Assigned to picker. `PUT` takes `inGlobalDeal` per item (omitted = unchanged). No advertisers column. |
+| GET | `/admin/v1/advertiser-settings` | Currency, floor CPM, multipliers, and the IAB `categoryWhitelist`/`categoryBlacklist` (one pair for every DSP; entries must be IAB taxonomy names, else `400`; there is no per-DSP override, and no company advertiser list). |
+| PUT | `/admin/v1/advertiser-settings` | Save changes (pricing and lists). An entry can't be on both lists (`validation_failed`). There is no auction schedule or company play-window setting: `auctionOpensHours`, `auctionCutoffTime`, `playWindowHours` and the read-only `pendingPlayWindowHours`/`pendingPlayWindowEffectiveFrom` were removed on 8 Oct 2026 (migration 0059), and a body that still sends one is refused or ignored as unknown. |
+| GET | `/admin/v1/available-inventory` | Rows: display type, playlist, slot, position, `assignedTo` (now also `buyersListId`/`buyersListName`, null unless the slot is a private auction), `reservePrice` (resolved), `reservePriceOverride` (this slot's own, null = inheriting) and `displayTypeReservePrice` (the display type's default, same on every row of that type), likewise `billingUnitHours` (resolved, always a number)/`billingUnitHoursOverride`/`displayTypeBillingUnitHours` (23 Sep 2026; when neither is set the slot uses the platform default of 24 hours; `companyPlayWindowHours` was removed from this response on 8 Oct 2026 — this resolved value is the slot's play-window length, see "Play windows are per slot" below), plus `inGlobalDeal` (the slot's own global deal flag, default true) and `globalDealSuppressedBy` (`reserved`, `whitelist_only`, `deal`, or null when open), and `dsps` (each DSP and its advertisers) for the Assigned to picker. `PUT` takes `inGlobalDeal` per item (omitted = unchanged). No advertisers column. |
 | PUT | `/admin/v1/available-inventory` | Save changes — per slot, `assignedTo` (`partnerIds`, `advertisers`, `whitelistOnly`, `buyersListId`; nothing chosen = any connected DSP, an advertiser's DSP is added automatically, and `buyersListId` is mutually exclusive with `advertisers`/`whitelistOnly` — `validation_failed` if more than one is set, or if `buyersListId` names no buyers list), `reservePrice`/`reservePriceDefault` (this slot's own override and the display type's own default — a CPM, or null; real inheritance, 22 Sep — always send the slot's current values, there is no "unchanged" omission) and, the same shape, `billingUnitHours`/`billingUnitHoursDefault` (whole hours, 1–8760, or null; must be the same `…Default` on every row for a given display type in one request). A billing-unit change that would alter the resolved window length of a slot that still has live windows bid on, booked or not yet billed is refused (`validation_failed` on that row's `billingUnitHours`, naming when the last one ends; OQ27, 29 Sep 2026). The editable fields of a slot; its label and owner are set on its display type. Admin only. Removing an advertiser from a slot with a live booking is `409 has_dependents` (slots are sold); lock the slot instead. |
 | PUT | `/admin/v1/available-inventory/lock` | Lock a sold slot against new sales (`displayTypeId`, `slot`). New bids, reservations and auction wins are refused (`409 conflict` on the Partner API; the window reads `unavailable`); existing bookings run on. `409 conflict` if nothing is booked on the slot. No unlock: the lock releases itself once the booking schedule has no live booking on the slot (bookings only, never playback). Rows carry `salesLocked` / `salesLockedUntil`. |
 | GET | `/admin/v1/booking-schedule?from=&to=` | Reached from Available Inventory. Every advertiser-owned slot across its play windows: booked (advertiser, DSP, reserve or bid, the CPM it was booked at, booked and billed revenue), available or unavailable; plus booking revenue per display type and in total. Live bookings only (never Test mode). Default: the current window and the next 13; at most 92 days. `campaignId`, `advertiserId` or `partnerId` narrow it, and `advertiserId` leaves only the positions that advertiser holds; with `campaignId` the range covers all of that campaign's bookings. Each booking says which campaign type it is, and the response also totals the bookings by campaign type. `dsps` lists the DSPs and, under each, **only the advertisers with something booked in the range**, because that is what the filter is for. Each position also carries `displayCount` (displays using its display type across the whole retail footprint), and each booking a `layers` object (`default`, `localised`, `personalised` — which of the one advertiser's three layers this purchase actually carries, ticket "Booking schedule: single-advertiser stacking tile"), and a `personalisedTriggers` object (`computerVision`, `aggregateStore`, `individual`) when `layers.personalised`, `null` otherwise (ticket "Booking schedule: personalised trigger icons") — the client's stacked tile (see REQUIREMENTS §6) is built entirely from these fields plus `pricingType`, with no separate endpoint. |
@@ -392,7 +392,8 @@ window of a locked-rate term is one billing unit long.
 
 **Play windows are per slot** (OQ27, decision Rob, 29 Sep 2026). A slot's
 resolved billing unit — its own override, else its display type's default,
-else the company-wide `playWindowHours`, else 24 — is its play-window
+else the platform default of 24 hours (a named constant; the company
+`playWindowHours` setting was removed on 8 Oct 2026) — is its play-window
 length. Every length is laid back to back from the same anchor (Monday
 00:00 UTC), so a 168-hour slot's windows start on Mondays, which are also
 daily slots' window starts: one auction (keyed on the window start) clears
@@ -407,11 +408,17 @@ holds — `playsPerWindow` = floor(window / `screen.maxPlayLengthSec`) — the s
 max play length, never the loop length — plays on one display,
 also sent as `imp.ext.ph.playsPerWindow` — and the impression multiplier
 (VAC-d, `qty.multiplier`) only converts plays to estimated impressions for
-pricing and billing. Billing is unchanged: plays × multiplier. Assumed views are scored per company
-play window (`AudienceSource`) and scaled to a slot's own window length. A
-`playWindowHours` change is deferred only on the windows of slots that
-inherit it; a slot's own billing unit can't change while it has live
+pricing and billing. Billing is unchanged: plays × multiplier. Assumed views are scored per platform-default
+window (`AudienceSource`) and scaled to a slot's own window length. A
+slot's own billing unit can't change while it has live
 windows (see `PUT /admin/v1/available-inventory`).
+
+**Real time, not windows, for everything else** (8 Oct 2026, decision Rob):
+the windowed auction was retired. An open or whitelist-only position is
+sold per impression (`POST /impressions`, Player API), has no per-slot
+`bidMode` (`advance`/`realtime` removed) and takes no window booking. Only
+positions held for named advertisers or assigned to a private auction are
+booked or bid by window.
 
 ### Campaign approval
 
@@ -470,13 +477,13 @@ integration, and nothing else in the build may depend on their internals.
 
 ## Jobs with no API
 
-- **SSP auction**: a scheduled job clears each play window at its auction
-  cutoff (Advertiser settings → Auction schedule), ahead of time (OpenRTB
-  section below). For demos, `npm run auction:run` runs one window. No UI
+- **SSP auction**: a scheduled job clears each private-auction play window
+  once its list's `auctionCloses` has passed (there is no company auction
+  schedule, removed 8 Oct 2026), ahead of time (OpenRTB section below). For demos, `npm run auction:run` runs one window. No UI
   and no endpoint. Which process clears a window is settled in the
   database (`auction_runs`, migration 0024): a tick claims the window
   first, so several API instances, a CronJob and the CLI can all see a
-  cutoff pass and exactly one of them auctions it — DSPs are sent one
+  private auction's close pass and exactly one of them auctions it — DSPs are sent one
   round of bid requests. The scheduled work runs in the API process every
   minute (`PH_SCHEDULER=in-process`, the default) or from outside
   (`PH_SCHEDULER=off` and `npm run scheduler:tick` once a minute — a
@@ -484,7 +491,7 @@ integration, and nothing else in the build may depend on their internals.
   **`PH_TEST_CLOCK`** (test only) sets "now" for the API and `scheduler:tick`: an ISO
   instant, or the path of a file holding one (re-read on every call, so a
   runner advances every process by rewriting it). It lets a test pass an
-  auction cutoff or a window end without changing any company setting; the
+  auction close or a window end without changing any company setting; the
   API refuses to start with it set under `NODE_ENV=production`.
   **Test-only endpoints** (E2E Testing Strategy §3.3, 1 Oct 2026; off under
   `NODE_ENV=production`, where they are 404): `POST /admin/v1/test/plays`
@@ -505,7 +512,7 @@ integration, and nothing else in the build may depend on their internals.
   can bill now and counts a window's plays where they are stored
   (`PlaybackSource.totals`), so it costs the same after a year of windows
   as on day one (scalability review, 24 Sep 2026).
-  A cutoff missed by hours (the process down) is still auctioned as long
+  A close missed by hours (the process down) is still auctioned as long
   as the window hasn't started; a window that starts with bids still
   pending has them settled `lost` with a reason (stability review, 24 Sep
   2026). A DSP's malformed answer, or a fault clearing one position, is

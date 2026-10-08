@@ -8,7 +8,7 @@
                /sellers.json, /assets/*. ONE instance at most, because the
                database is a single SQLite file (host.ts).
 
-   Scheduled work (billing, the auction at its cutoff, retention) runs inside
+   Scheduled work (billing, deal auctions, retention) runs inside
    dspApi on the back of requests (host.ts). A Cloud Scheduler job would need
    cloudscheduler.googleapis.com, which the deploy's service account is not
    allowed to enable (first deploy, 23 Sep 2026); host.ts keeps a

@@ -125,7 +125,7 @@ and never-cleared bids are now deleted `PH_RESERVATION_RETENTION_DAYS`
 
 **The auction did not need changing.** It is bounded by the DSPs' round
 trip — positions ÷ 16 × round trip: 12.7 s for 2,408 positions at 80 ms,
-45 s at the 300 ms timeout — and runs once per play window. 4,807 bid
+45 s at the 300 ms timeout — and runs once per play window (that is the shape of a private-auction window today; open positions are sold per impression since 8 Oct 2026, see the real-time notes). 4,807 bid
 requests and 4,807 bids in 12.7 s is 127 requests/s per DSP, well inside
 the 500 QPS ceiling. Raising `PH_AUCTION_CONCURRENCY` to 64 would clear
 the same estate in about 3 s at up to 500/s per DSP.

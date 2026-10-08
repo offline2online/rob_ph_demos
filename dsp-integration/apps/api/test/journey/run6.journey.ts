@@ -9,6 +9,11 @@
    and all three share one PH_TEST_CLOCK file, which is how a window is
    cleared and ended inside one run without touching Advertiser settings.
 
+   Note (8 Oct 2026): the windowed auction was retired (company auction
+   schedule, play-window setting and per-slot bidMode removed; migration
+   0059). Comments below that mention a company cutoff or the seed's
+   18:00 UTC schedule describe the journey as written before then.
+
    Cases are the Run 6 Runbook's J/K/L. Each records pass / fail / known-gap
    with expected and actual; the run exits non-zero on any fail. Results go
    to results/<timestamp>.json (one record per case ID, for report-e2e and

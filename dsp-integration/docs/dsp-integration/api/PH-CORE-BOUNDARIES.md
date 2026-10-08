@@ -244,7 +244,7 @@ provide one breaks something specific, named here.
 | `0025` (covering index on `plays`), `0033` (`plays.version_id` / `tier`), `0039` (`version_id` in that index) | Stand-in only | Dropped with `plays`; the playback store answers `totals` itself, and must supply the version id and tier (see `PlaybackSource`). `0039`'s `billing_line_items.plays_by_version` is **Kept**. |
 | `0034` (`reservations.personalised_multiplier`, personalised columns on `billing_line_items`) | This build (Rob, 30 Sep 2026) | Columns kept, no longer written (5 Oct 2026): the personalised multiplier was removed; every play bills at the committed CPM. |
 | `0026` (one open API bid per advertiser and window) | This build (24 Sep 2026) | Kept: a partial unique index, as 0021. |
-| `0027` (`company_advertiser_settings`: deferred play-window change) | This build (26 Sep 2026) | Kept. |
+| `0027` (`company_advertiser_settings`: deferred play-window change) | This build (26 Sep 2026) | Kept; its deferred-change and auction-schedule columns were dropped by `0059` (8 Oct 2026, windowed auction retired). |
 | `0028` (`playlists.playlist_settings`), `0029` (multi-zone layout on the playlist) | **PH Core stand-in** (`playlists`) | Dropped with `playlists`: the playlist service owns its own settings and zoning (`PlaylistSource.saveSettings`). |
 | `0030` (a DSP's own category lists on `partners`) | This build (28 Sep 2026) | Kept. |
 | `0031` (`assets.content_hash`, `discarded_at`; `campaign_slot_bookings.asset_version`) | Mixed | `assets` and the booking's `asset_version` are the campaign system's: the booking must carry the version it plays (see `CampaignSource.bookSlot`). Content-hash reuse and discard are this build's approval records. |
@@ -338,7 +338,8 @@ What the module must guarantee:
   term is judged one way.
 - **Billing unit is the window length.** `billingUnitMs(ctx, position)`
   is the slot's `billingUnitHours`, else its display type's default, else
-  the company play window (OQ27). It is not informational: a 168-hour
+  the platform default of 24 hours, a named constant (OQ27; the company
+  play window was removed 8 Oct 2026). It is not informational: a 168-hour
   slot bills one line item a week.
 - **Engagement-based billing is declared, not built** (BUILD-PLAN
   section 10). `billingBasis: 'engagement'` throws `NotImplementedError`
@@ -424,7 +425,7 @@ platform:
 2. **One auction per window, settled in the database** (24 Sep 2026).
    - A tick claims a window in `auction_runs` (migration 0024) before
      auctioning it: one row per window, so however many instances, CronJob
-     ticks or CLI runs see a cutoff pass, exactly one clears it and DSPs
+     ticks or CLI runs see a private auction's close pass, exactly one clears it and DSPs
      get one round of bid requests. A claim unfinished after 15 minutes
      (a process that died mid-auction) is taken over.
    - So the scheduler runs in every API process (`PH_SCHEDULER=in-process`)
@@ -610,17 +611,21 @@ one place in §9.5 where people, not records, touch PH Core.*
 
 ## Real-time bidding — the player signals, the exchange fills (7 Oct 2026)
 
-A position is sold one of two ways, set on its slot (`bidMode`, saved from
-the display type's slot editor; Advertiser slots only): **advance** (the
-default — a play window is bid on or reserved ahead of time and cleared by the
-scheduled auction) or **realtime** (each impression is sold as the player
+A position is sold one of two ways, decided by how it is held, not by a
+setting (the per-slot `bidMode`, `advance` or `realtime`, and the company
+auction schedule were removed on 8 Oct 2026, decision Rob, migration 0059):
+**by play window** (only a position held for named advertisers, reserve, or
+assigned to a private auction — bid or reserve, cleared by that auction) or
+**in real time** (every other position: each impression is sold as the player
 signals it). This is how DV360, The Trade Desk and Amazon transact (they
 answer within tmax and cannot hold a bid open for days) and how DOOH SSPs such
 as Broadsign Reach run the ad loop. A real-time position takes no window bids
 or reservations (`POST /v1/reservations` answers 409), its windows read
-`unavailable`, and the window auction skips it. It is for open and
-whitelist-only positions: a slot held for named advertisers or assigned to a
-private auction cannot be switched to real time.
+`unavailable`, and the window auction skips it. Open and whitelist-only
+positions are always sold this way; a slot held for named advertisers or
+assigned to a private auction is always sold by window, until it starts or
+its private auction has cleared it (deals: buyers list `activeFrom`/
+`activeTo`/`auctionCloses`).
 
 **The exchange side is this build; the trigger is PH Core's.** The PWA player,
 playback, distribution and playlists are PH Core, so this capability ships only
@@ -630,7 +635,7 @@ when both halves do. The contract, Player API `/api/player/v1` (bearer
 
 | Call | PH Core's player… | The exchange… |
 |---|---|---|
-| `POST /impressions` `{displayId, slot}` | …sends it just before the real-time slot's turn in the rotation, early enough to leave the bid budget (`tmax`, default 200 ms, `PH_REALTIME_TMAX_MS`) plus a network round trip. | …sends one OpenRTB request per eligible connected DSP (the advance request, `imp.ext.ph.mode` = `realtime`, `tmax` and `exp` cut to the impression), runs the same pre-auction checks as for an advance bid, first price, and answers `filled` with the creative to play or `no_fill` — always 200, always within the budget. |
+| `POST /impressions` `{displayId, slot}` | …sends it just before the real-time slot's turn in the rotation, early enough to leave the bid budget (`tmax`, default 200 ms, `PH_REALTIME_TMAX_MS`) plus a network round trip. | …sends one OpenRTB request per eligible connected DSP (the advance request, `imp.ext.ph.mode` = `realtime`, `tmax` and `exp` cut to the impression), runs the same pre-auction checks as for a window bid, first price, and answers `filled` with the creative to play or `no_fill` — always 200, always within the budget. |
 | `POST /impressions/{id}/played` | …sends it once the creative has played, within `expiresAt` (`PH_REALTIME_FILL_TTL_SEC`, default 120 s). | …records the play once against the display and the campaign; a repeat, an expired fill or a `no_fill` answers 409. |
 
 **One auction per play (7 Oct 2026, the industry-standard DOOH model — Broadsign Reach
@@ -736,7 +741,7 @@ The retailer sets the window in Advertiser settings (`uncachedRestriction`):
 when start is after end), or `store_open` (restricted while the player says
 the store is open; "store closed" is not offered). An uncached bid is passed
 over and the next-best cached bid wins; none cached answers `no_fill` and the
-player plays its own content. Not covered: the advance window auction, whose
+player plays its own content. Not covered: the private-auction window clear, whose
 winners are known ahead and pre-cached before their slot, and an admin screen
 for the setting (the API and `PUT /advertiser-settings` carry it).
 
@@ -747,8 +752,8 @@ and behaviour as Digital Signage**: Maximum Campaigns Played In Rotation, the
 owner list (Headquarters / Advertiser) and Advertiser assignment on
 Advertisers / Inventory (reserve price, billing unit, max campaigns, named
 advertisers, deals). This supersedes the earlier "RTB only" switch
-(*Available for RTB*) and the 28 Sep "HQ-only" rule. A slot's `bidMode`
-(`advance` default, or `realtime`) works as for any other touch point.
+(*Available for RTB*) and the 28 Sep "HQ-only" rule. A slot is sold in real time or by window
+as for any other touch point (no `bidMode`, removed 8 Oct 2026).
 What stays different is the bid request: web/app programmatic inventory.
 
 Playlists and website/app rendering are PH Core's, so this needs a PH Core
@@ -756,7 +761,7 @@ change on both sides of the seam:
 
 | PH Core | Exchange |
 |---|---|
-| Stores the slot owner and mode on the playlist slot (the display type's `phExtensions.slots[n]`), edited in the same slot editor as digital signage. | Validates it as for digital signage: Headquarters or Advertiser, `advance` or `realtime`, never Stores. |
+| Stores the slot owner on the playlist slot (the display type's `phExtensions.slots[n]`), edited in the same slot editor as digital signage. | Validates it as for digital signage: Headquarters or Advertiser, never Stores. |
 | At render time, for a real-time Advertiser slot only, calls `POST /impressions` `{displayId, slot}` once per impression (one render, one impression). A Headquarters slot never calls it. The `displayId` is the website or app surface registered under the display type. | Sends one OpenRTB request per eligible DSP with the **`site`** (Website) or **`app`** (Mobile App) object, never `dooh`, and **no `imp.qty`** (multiplier 1). `imp.ext.ph.mode` = `realtime`. Buyers and targeting lists, blocklists, seat permissions, USD bidding and post-bid creative approval apply as for any real-time slot. A web/app slot needs no audience score to be sold. |
 | Renders the winning creative from `creative.url` (an `at_bid` creative is the DSP's own URL), or its own content on `no_fill` or a late answer, and reports the play once. | Answers `filled` or `no_fill`, always 200, within the bid budget. |
 

@@ -366,7 +366,7 @@ All approved by Rob (decision 5). The reason for each change is given.
 | `POST /v1/reservations`: approved **and activated** campaigns only, and only while the window's auction is open (7 days before until the auction runs, 6 hours before); `Conflict` description names it (19 Sep, Rob, Q13/Q14). Wording only; no new fields or codes | Rob's answers to Q13 and Q14 |
 | `CampaignBrief` on `CampaignCreate` and `Campaign` (20 Sep, Rob) | An advertiser's booking must carry its campaign brief, as the platform's Campaign Brief tab holds it |
 | `GET /admin/v1/booking-schedule` and schemas `BookingSchedule`, `BookingRevenue`, `BookingRevenueTotals` (19 Sep, Rob) | Rob asked for a schedule of booked and available slots with booking revenue, linked from Available Inventory |
-| `AdvertiserSettingsInput` (and so `AdvertiserSettings`): `auctionOpensHours`, `playWindowHours`, `auctionCutoffTime` (19 Sep, Rob's board ticket and Q13) | The auction schedule becomes retailer settings, replacing the POC config values |
+| `AdvertiserSettingsInput` (and so `AdvertiserSettings`): `auctionOpensHours`, `playWindowHours`, `auctionCutoffTime` (19 Sep, Rob's board ticket and Q13; **all three removed 8 Oct 2026**, see Q13) | The auction schedule becomes retailer settings, replacing the POC config values |
 | `ReservationCreate.bidCpm` required for both types: the bid, or the reservation price agreed through the DSP (19 Sep, Rob, Q11) | A reservation must record the price it was booked at |
 | `AdvertiserSettings.interactiveCpe` replaces `interactiveMultiplier`; `Pricing.effectiveFloorCpm` drops `interactive` / `personalisedInteractive` and `Pricing.costPerEngagement` is added; `AvailableInventoryRow.qrControl`; `Advertiser.bookings`; the booking schedule's `dsps` lists only advertisers with bookings (21 Sep, Rob) | Interactive became a price per engagement rather than a multiplier on the CPM, interactive targeting needs QR Control, and both the schedule's advertiser filter and the advertisers table's Bookings link are only offered where there is a booking to look at |
 | `Slot.partnerIds` / `Slot.advertisers` replace `Slot.partnerId` / `Slot.advertiser`; `AvailableInventoryRow.assignedTo` (new `AssignedTo`) replaces its `partnerName`; `assignedTo` on the `PUT /admin/v1/available-inventory` item; `dsps` on both inventory responses (new shared `DspAdvertisers`); `BookingSchedule` position `partnerNames` replaces `partnerName` (20 Sep, Rob) | A position can now be assigned to several DSPs and several named advertisers at once, from one multi-select on Advertisers / Inventory. The display type's slot editor sets the label and owner only |
@@ -579,29 +579,19 @@ since the picker was removed (Rob, 20 Sep) and nothing edits it now.
 12. ~~Category whitelist scope~~ **Accepted (Rob, 19 Sep):** the category
     blacklist applies to every bid; the category whitelist only on
     whitelist-only positions.
-13. ~~When the auction runs~~ **Resolved (Rob, 19 Sep):** three retailer
-    settings in **Advertiser settings → Auction schedule**, directly under
-    Pricing, in this order: **Auction opens** (how long before the cutoff
-    bidding opens; days + hours; default 7 days), **Play-window length**
-    (days + hours; default 24 hours) and **Auction cutoff time** (daily,
-    UTC, every half hour; default 18:00, the six hours before a midnight
-    window Rob accepted). A window's auction closes at the last cutoff at or
-    before it starts — the scheduled job clears it then — and bidding opens
-    *Auction opens* before that. Windows start at UTC midnight and follow
-    each other back to back from a Monday, so 7-day windows run Monday to
-    Monday. **Changed (Rob's board ticket, 26 Sep 2026):** a length change
-    while any window is still bid on or booked no longer errors out
-    (existing bookings are keyed on the old length, and can't be resized) —
-    it's accepted and deferred instead. `playWindowHours` keeps its current
-    value and the request is held on the company record
-    (`pendingPlayWindowHours`/`pendingPlayWindowEffectiveFrom`) until every
-    such window has played; `schedulerTick` promotes it then, pushing the
-    effective date out further if a booking made in the meantime (a
-    locked-rate deal, still under the old length) runs later still. The
-    admin page shows the pending change and the date it takes effect
-    directly under Play-window length, not as a rejected save. Times are
-    UTC because the platform's company time zone isn't available to this
-    build.
+13. ~~When the auction runs~~ **Superseded (Rob, 8 Oct 2026): the windowed
+    auction was retired.** The three retailer settings of 19 Sep (Auction
+    opens, Play-window length, Auction cutoff time, under *Advertiser
+    settings → Auction schedule*), the deferred play-window change
+    (`pendingPlayWindowHours`) and the per-slot `bidMode` (`advance` |
+    `realtime`) are gone (migration 0059). There is no company auction
+    schedule and no company play window. Open and whitelist-only positions
+    are sold in real time, per impression; only a position held for named
+    advertisers, or assigned to a private auction (a buyers list), takes
+    window bookings and bids. A window's length is its billing unit (slot,
+    else display type, else the 24-hour platform default); a deal is
+    governed by its buyers list's `activeFrom` / `activeTo` / `auctionCloses`.
+    Windows still start at UTC midnight.
 14. ~~Does the hand-off activate the campaign?~~ **Resolved (Rob, 19 Sep):**
     no — a campaign must already be approved **and activated** before it
     can bid or be reserved, so a winning bid fits straight into the slot.
@@ -684,7 +674,7 @@ Each is configurable in `apps/api/src/config.ts`.
 | Where DSP Integration opens (Rob, 20 Sep) | Built | The section opens on **Exchange settings** until the four seller-of-record fields are complete and `sellers.json` is published, and on **Advertiser settings** after that (`DspIndex`). Tests: admin +1. Browser-checked |
 | Floor price and multiplier tooltips explain the maths (Rob's board ticket, 19 Sep) | Built | The Floor price (CPM) tooltip now carries Rob's worked example as a table — footfall → visibility (ROTS) → attention (VAC) → share of time → 27 VAC-d, then 100 × 27 ÷ 1,000 = $2.70 for a two-hour daypart. The Personalised tooltip carries the same example at 150 CPM ($4.05) and the Interactive one at 300 CPM ($8.10), stacked at 450 CPM ($12.15), noting that the advertiser's floor multiplier scales that again. (Superseded: the floor is the base only. Interactive is a cost per engagement since 21 Sep, and the personalised multiplier is a per-play charge at billing since 30 Sep, not a floor. The 450/360 examples no longer apply.) `InfoTip`/`Field` take a tooltip width so the table fits. Tests: admin +1. Browser-checked |
 | Booking schedule with booking revenue (Rob, 19 Sep; filed on the board) | Built | New admin endpoint `GET /admin/v1/booking-schedule?from=&to=` (contract addition) and a read-only page, **DSP Integration → Advertiser settings → Available Inventory → Booking schedule**: a revenue table per display type (booked windows, booked revenue = booked CPM × assumed views ÷ 1000, billed revenue from billing once played, with a total row), then the schedule — one row per advertiser slot, one column per play window: booked (advertiser, bookmark = reserved / gavel = won, the CPM it was booked at, booked revenue; hover for DSP, views and billed), Available, or — (can no longer be sold). Live bookings only; default the current window and the next 13; a date range of up to 92 days; no save bar. Not in the prototype: built from ph-designer patterns (SubPageHeader, SectionLabel, AG Grid with a pinned first column and horizontal scroll inside the grid, AntD RangePicker). Tests: API +3, admin +2. Browser-checked, including booked cells |
-| Bidding play-window length and auction cutoff in Advertiser settings → Pricing | Built | The Auction schedule section (Q13): Auction opens, Play-window length, Auction cutoff time; contract fields added; migration 0015 |
+| Bidding play-window length and auction cutoff in Advertiser settings → Pricing | Retired (8 Oct 2026) | Was the Auction schedule section (Q13): Auction opens, Play-window length, Auction cutoff time; migration 0015. Removed with the windowed auction (migration 0059) |
 
 ### Back-end completion: PH Core boundaries, hardening and load (23 Sep 2026)
 
@@ -761,7 +751,7 @@ Rob chose the Firebase project over browser-only saves or a separate host.
     POC tokens don't work there.
   - CORS is answered for GitHub Pages, githack and localhost.
   - Each IP gets 20 requests/s.
-- **Scheduled work** (billing, the auction at its cutoff, retention) runs
+- **Scheduled work** (billing, deal auctions at their `auctionCloses`, retention) runs
   inside `dspApi`, at most every five minutes, triggered by requests. The
   planned `dspApiTick` Cloud Scheduler job failed the first deploy: the
   service account may not enable `cloudscheduler.googleapis.com`.
@@ -940,7 +930,8 @@ edges" has the table):
 - **Reproduced and fixed**: a bid placed while the auction waited on the
   bidders was stranded pending for ever; a DSP's malformed answer took the
   whole auction down and the tick retried it for ever; billing throwing
-  stopped the auction due in the same minute; a cutoff missed by more than
+  stopped the auction due in the same minute; a close (then the daily cutoff, now a deal's
+  `auctionCloses`) missed by more than
   an hour was never auctioned and its bids never settled; a 1e12 CPM API
   bid was taken; two processes starting on one empty database both seeded
   and the second crashed.

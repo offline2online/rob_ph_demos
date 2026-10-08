@@ -4,13 +4,29 @@ Source: *Real-Time Personalised Surface Architecture Specification v1.2*
 (Personalisation Hub, 3 Sept 2026), as rescoped 29–30 Sep 2026, plus the `Display Types & Playlist
 Management` prototype (`displaytypesandplaylists.jsx`).
 
-**Version:** 7 Oct 2026 (dated, not numbered). Scope follows the 29–30 Sep
+**Version:** 8 Oct 2026 (dated, not numbered). Scope follows the 29–30 Sep
 2026 rescope to "the exchange", recorded as E2E Test Spec v2.4 (30 Sep); this
 file never carried a version number of its own, and this changelog starts the
 record.
 
 **Changelog**
 
+- **8 Oct 2026** — the windowed auction is retired (decision Rob; ticket
+  SNSgusJ3spY5ljqooiwa, code in f11bb1f, migration 0059). There is **no
+  company auction schedule** (`auctionOpensHours`, `auctionCutoffTime`), **no
+  company play-window length** (`playWindowHours`, with its pending and
+  deferred-change bookkeeping) and **no per-slot bid mode** (`bidMode`,
+  advance | realtime). A position nobody holds a deal on is sold in real
+  time, per impression. Only a position held for named advertisers
+  (reserve) or assigned to a private auction (a buyers list) takes window
+  bookings and bids. A window's length is the billing unit: the slot's
+  `billingUnitHours`, else the display type's default, else a platform
+  default of 24 hours (a named constant, not a setting). A window can be
+  booked or bid on until it starts, or until a private auction has cleared
+  it; what governs a deal is the buyers list's `activeFrom` / `activeTo` /
+  `auctionCloses`. Mentions below of an auction opening, an auction cutoff,
+  a company auction schedule, a company play window or an advance bid mode
+  are superseded.
 - **7 Oct 2026** — bid floor becomes a three-level hierarchy (Rob; ticket
   kqsRTYmg1tAYww1vgHMs, build DIlKVuz9yiFANxKz23yP, lists
   w0Iu6g6efYGjA3U6J1Nv): a **platform floor** (Advertiser settings, advanced),
@@ -278,7 +294,7 @@ Page-title tooltips for the DSP Integration company pages:
 | Page | Tooltip |
 |---|---|
 | **Exchange settings** | Sets up your organisation as the seller of record for its screens. Configurable here: organisation name, domain, seller ID and ad-ops contact email, all required. Once saved and complete, sellers.json is published at https://[domain]/sellers.json and every bid request carries your domain and seller ID in its SupplyChain; until then no DSP is sent bid requests. Not configurable (platform defaults): seller type (Publisher), the DOOH object, the OpenOOH venue taxonomy, QPS and bid timeout. Bid requests use OpenRTB 2.6 as the minimum supported version for programmatic DOOH; the exchange is designed to adopt 2.7, 2.8 and later versions per DSP as the market moves. |
-| **Advertiser settings** | Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (currency and the platform floor CPM, the minimum of the floor hierarchy, §4; advanced), the Auction schedule (when bidding opens, play-window length, auction cutoff) and Category lists (the IAB category whitelist and blacklist, chosen from the IAB taxonomy and applied to every DSP; each DSP's advertiser lists are on its own page). Per-advertiser campaign approval and floor multipliers, and the inventory advertisers can buy, are on Advertisers / Inventory. |
+| **Advertiser settings** | Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (currency and the platform floor CPM, the minimum of the floor hierarchy, §4; advanced), and Category lists (the IAB category whitelist and blacklist, chosen from the IAB taxonomy and applied to every DSP; each DSP's advertiser lists are on its own page). Per-advertiser campaign approval and floor multipliers, and the inventory advertisers can buy, are on Advertisers / Inventory. |
 | **Shared Targeting Variables** | Variables shared through the API with connected DSPs. Once a variable is enabled for a DSP, that DSP's advertisers can use it in targeting conditions for more advanced campaign targeting; the platform evaluates the condition and never returns the value. They are the same variables as a campaign's Targeting tab. Choose which DSPs may use each one below; default platform variables only in this release. |
 
 The **Enable DSP Integration** switch at the top of Exchange settings has
@@ -1210,7 +1226,7 @@ Rob, 7 Oct 2026. The floor a bid must clear is resolved from three levels:
   the two-period model itself). A CPM is a rate, not a fixed sum: the brand
   wins at a bid CPM that then holds for the whole delivery term (no daily
   re-auction), and each billing unit (the slot's own play window — §5 "Billing
-  unit"; the company play window when the slot and its display type set
+  unit"; the display type's default, else 24 hours, when the slot sets
   none) is billed at that agreed CPM against the realised VAC-d for
   that unit. The term total is simply the sum of its billing units'
   settlements at the one agreed rate. This sits between the two other
@@ -1344,10 +1360,9 @@ this document).
 - **Pricing** for the requester, in the company currency: the platform floor CPM
   and the effective floor CPM (§4, the resolved floor for every campaign type), including the requester's own advertiser floor multiplier.
 - **Reserve price** (decision, Rob, 22 Sep; real inheritance, 22 Sep): a CPM
-  premium at which this position can be reserved in advance of the open
-  auction. A retailer lets an advertiser commit to a premium rate up front
-  to hold the slot for a window, which takes that window out of the open
-  auction. The reserve price is the CPM the booking clears and is billed
+  premium at which this position can be reserved in advance of real-time
+  selling. A retailer lets an advertiser commit to a premium rate up front
+  to hold the slot for a window, which takes that window out of real-time selling. The reserve price is the CPM the booking clears and is billed
   at — not an amount added to the floor — and it must itself clear the
   buyer's effective floor (§4). A booking is billed on realised VAC-d at
   that CPM, as a floor commitment: no guaranteed volume, no make-good (§4
@@ -1374,12 +1389,12 @@ this document).
 
   **The booking flow** (Rob, 29 Sep 2026; open questions 45 and 52):
   1. **Commit.** A buyer sends `POST /v1/reservations` with `type: reserve`
-     for a future window, any time before that window's auction cutoff. Its
+     for a future window, any time before that window starts. Its
      `bidCpm` must be at least the reserve price (`400 validation_failed`
      otherwise); the booking is made at the reserve price, which must clear
      the buyer's effective floor (`422 below_floor` otherwise).
   2. **Held as Reserved.** The window is booked and handed off at once. Its
-     availability reads **Reserved**; the auction never clears it, bids
+     availability reads **Reserved**; no auction clears it, bids
      already waiting on it are settled lost, and new bids are refused.
   3. **Honoured.** When the window plays, the booking stands at the reserve
      price.
@@ -1528,7 +1543,9 @@ It carries:
   rate" below). `auctionCloses` is null on a deal that isn't using this
   model — it keeps clearing a fresh auction every play window, exactly as
   a buyers list always has (unchanged default behaviour; this is
-  additive, not a breaking change to every existing deal).
+  additive, not a breaking change to every existing deal). Bidding on a
+  window stays open until it starts or the private auction has cleared it;
+  there is no company cutoff time (removed 8 Oct 2026).
 
 **Explicitly not on the buyers list** — each already has its own home, and
 duplicating it per deal would let one drift from the other:
@@ -1628,24 +1645,24 @@ as a buyers list always has.
 
 **Billing unit** (`billingUnitHours` on a slot, with a display-type-level
 default — same override-always-wins inheritance as reserve price, §5
-"Reserve price" above; when neither is set the slot inherits the
-company-wide play-window length, Advertiser settings → Auction schedule,
-whose platform default is 24 hours/one day): the granularity a CPM is
+"Reserve price" above; when neither is set the slot uses the platform
+default of 24 hours/one day, a named constant rather than a setting — the
+company-wide play-window length setting was removed 8 Oct 2026): the granularity a CPM is
 quoted and charged against, surfaced in Available Inventory next to Reserve
 price. **It is the source of truth for the slot's play-window length and
 billing granularity** (open question 27, decision Rob, 29 Sep 2026): every
-slot — not only private auctions using the two-period model — is auctioned,
-booked, handed off and billed in windows one billing unit long, each billed
+slot — not only private auctions using the two-period model — is
+booked, bid on, handed off and billed in windows one billing unit long, each billed
 on its own realised VAC-d (§4 "Billing"). Windows of every length are laid
 back to back from the same fixed Monday 00:00 UTC, so a 7-day slot's
 windows start on Mondays that are also daily slots' window starts, and one
 auction clears both. Whole hours, 1 hour to 365 days. A slot's billing unit
 can't change while it has live windows bid on, booked or not yet billed
 under the current one; the save is refused `400 validation_failed`, naming
-when the last one ends. (The two rules differ and both stand: a change to the company-wide
-`playWindowHours` is deferred with an effective date, never refused — see
-§6 "Selling a play window" — while a `billingUnitHours` change is refused
-`400` for as long as the slot has unbilled windows.)
+when the last one ends. (There is no company play-window length to change, so no deferred
+change with an effective date: `playWindowHours` and its pending-change
+bookkeeping were removed 8 Oct 2026, and a `billingUnitHours` change is
+refused `400` for as long as the slot has unbilled windows.)
 
 **Max campaigns** (`maxCampaigns` on a slot, with a display-type-level
 default — same override-always-wins inheritance as reserve price and
@@ -2086,17 +2103,20 @@ analytics rebuild would consume and the optional/nullable fields a future
 proof-of-audience measurement path would populate — neither is built here,
 and neither changes what this paragraph says about today's system.
 
-### Selling a play window, not an impression
+### Selling a play window, or an impression (8 Oct 2026)
 
-Per-impression RTB does not suit signage, where creatives are often video and
-must be on the player before they can play. The auction is therefore for a
-**play window**, cleared ahead of the window. A window's length is its
-slot's billing unit (§5 "Billing unit"; open question 27, 29 Sep 2026) —
-the slot's own, else its display type's default, else the company-wide
-play-window length (Advertiser settings → Auction schedule, default 24
-hours), which is now only that inherited default. A change to the company
-value is deferred until every live window on the slots that inherit it has
-played. The winner
+There is no company auction schedule and no per-slot bid mode (removed
+8 Oct 2026). **A position nobody holds a deal on** (open, or whitelist-only)
+**is sold in real time, one auction per impression** (see "Bid lookahead"
+below). **Only a position held for named advertisers (reserve) or assigned
+to a private auction (a buyers list) takes window bookings and bids**: it is
+sold for a **play window**, ahead of the window, because creatives are often
+video and must be on the player before they can play. A window's length is
+its slot's billing unit (§5 "Billing unit"; open question 27, 29 Sep 2026) —
+the slot's own, else its display type's default, else the platform default of
+24 hours (a named constant, not a setting). A window can be booked or bid on
+until it starts, or until a private auction has cleared it; the buyers list's
+`activeFrom` / `activeTo` / `auctionCloses` govern a deal. The winner
 holds the advertiser slot for that window: its approved campaign is handed to
 the existing campaign system, which **distributes and plays it as it does
 today**. Distribution, caching and playback are unchanged.
@@ -2426,13 +2446,13 @@ fields. The canonical definition is `app/src/model/schema.js` and
                                   maximumCampaignsPlayedInRotation }] },   // per zone (28 Sep 2026): null = Default (Unlimited, no slots); n = that zone's slot count
   phExtensions: {                  // THIS PROJECT's additions
     reservePrice,                  // the display type's own reserve price default; CPM or null (real inheritance, 22 Sep — §5)
-    billingUnitHours,               // the display type's own billing-unit default = play-window length, in whole hours; null = the company playWindowHours (§5 "Billing unit"; OQ27, 29 Sep 2026)
+    billingUnitHours,               // the display type's own billing-unit default = play-window length, in whole hours; null = the platform default of 24 (§5 "Billing unit"; OQ27, 29 Sep 2026)
     maxCampaigns,                  // the display type's own max-campaigns default; null = platform default of 5, 1-10 inclusive (§5, ticket "Max campaigns column + slot playlist statement")
     maxPlayLengthSec,              // the display type's own max-play-length default, whole seconds 1-600; null = the company default (Advertiser settings), platform default 15 (§5 "Max play length")
     slots: [{ label, owner, zoneId,   // zoneId: the zone this slot belongs to on a multi-zone display type (one segment per zone, in zone order); absent on a single-zone one
               partnerId, advertiser, listMode, buyersListId, storeScope, quota,
               reservePrice,         // this slot's own override; CPM, or null = inherit the display type's reservePrice above (§5)
-              billingUnitHours,     // this slot's own override = its play-window length, in whole hours; null = inherit the display type's billingUnitHours above, else the company playWindowHours (§5; OQ27)
+              billingUnitHours,     // this slot's own override = its play-window length, in whole hours; null = inherit the display type's billingUnitHours above, else the platform default of 24 (§5; OQ27)
               maxCampaigns,         // this slot's own override; null = inherit the display type's maxCampaigns above, 1-10 inclusive when set (§5)
               maxPlayLengthSec }],  // this slot's own override = the fixed duration of one play, whole seconds 1-600; null = inherit the display type's maxPlayLengthSec above, else the company default (§5 "Max play length")
                                     // listMode: rtb | whitelist_only | deal | null; buyersListId set only when listMode is deal (§5 "Private auctions")
@@ -2575,10 +2595,10 @@ Company-level:
 
 - **Advertiser settings**: `currency` (any ISO 4217 code; default `AUD`),
   `floorCpm`, `interactiveCpe` (kept, not
-  editable while interactive is deferred; defaults 100 / 0.50), the auction schedule (`auctionOpensHours`,
-  `playWindowHours`, `auctionCutoffTime`; defaults 168 / 24 / 18:00 UTC —
-  `playWindowHours` is only the window a slot inherits when neither it nor
-  its display type sets a billing unit, open question 27),
+  editable while interactive is deferred; defaults 100 / 0.50). The auction schedule (`auctionOpensHours`,
+  `playWindowHours`, `auctionCutoffTime`) was removed 8 Oct 2026 (migration
+  0059): a window's length is the billing unit (slot, else display type, else
+  the platform's 24 hours), not a setting.
   IAB-category whitelists and blacklists (`categoryWhitelist`,
   `categoryBlacklist`). There are no company-level advertiser lists: they
   are per DSP (partner `allowList` / `blockList`, §6).
@@ -3395,17 +3415,17 @@ playback analytics.**
   every column. *(Advertisers / Inventory → Available Inventory)*
 - **Reserve price, inherited from its display type** (decision, 22 Sep; real
   inheritance, 22 Sep): a CPM premium to reserve the position in advance of
-  the open auction, or no reserve, set once on the display type and
+  real-time selling, or no reserve, set once on the display type and
   automatically reaching every slot on it — override just one slot to give
   it its own value, independent from then on; published on the position,
   resolved, and bookable: a buyer's reserve commitment holds the window as
-  Reserved, out of the open auction, billed on realised VAC-d at the
+  Reserved, out of real-time selling, billed on realised VAC-d at the
   reserve price (open questions 45 and 52, resolved 29 Sep 2026).
   *(Advertisers / Inventory → Available Inventory)*
 - **Billing unit = play-window length** (open question 27, decision Rob,
   29 Sep 2026): the slot's billing unit (slot override, else display type
-  default, else the company play window, else 24 hours) sets the length of
-  every window it is auctioned, booked and billed against, each billed on
+  default, else the platform's 24 hours) sets the length of
+  every window it is booked, bid on and billed against, each billed on
   its own realised VAC-d. Windows of every length are aligned to Monday
   00:00 UTC. Admin-editable, marketing read-only; can't change while the
   slot has live or unbilled windows. *(Advertisers / Inventory → Available
@@ -3752,8 +3772,8 @@ the system now guarantees:
 - **One job can't stop another.** Billing, retention, settling and the
   auction are isolated in the tick; a failure is logged and reported, and
   the auction due that minute still runs.
-- **A missed cutoff is recovered**: the window is auctioned late while it
-  hasn't started, and settled once it has.
+- **Late recovery of a missed auction cutoff** was removed 8 Oct 2026 with
+  the cutoff itself: a window can be booked or bid on until it starts.
 - **API bids have the DSP bids' ceiling** (10,000 CPM).
 - **Two processes starting on one empty database** both come up: one
   migrates and seeds, the other waits and serves.
@@ -3832,8 +3852,9 @@ until that section is edited.
   upload/submit" gap is closed.
 - **Play-window length (Q27; §4 "Billing", §5 "Billing unit", §6 "Selling
   a play window").** A slot's billing unit is its play-window length and
-  billing granularity, for every slot. The company play-window length is
-  only the inherited default (24 hours).
+  billing granularity, for every slot. The company play-window length
+  setting was removed 8 Oct 2026; the default is a platform constant (24
+  hours).
 - **Deals and reserve-price booking (Q45, Q52; §4 "Billing", §5 "Reserve
   price" and "Private auctions").** Deals are per DSP, built on the buyers
   list, and priced on top of the same floor, never under it. A reserve-price
@@ -3887,9 +3908,9 @@ partner-contributed attributes have been removed with that scope.
     slot's Billing unit (`billingUnitHours`: slot override, else display
     type default — the same override-always-wins inheritance as reserve
     price and max campaigns) is the source of truth for its play-window
-    length and billing granularity. The company-wide play-window length is
-    only the default a slot inherits when neither sets one; the platform
-    default stays 24 hours. See §5 "Billing unit".
+    length and billing granularity. The company-wide play-window length
+    setting was removed 8 Oct 2026; when neither slot nor display type sets
+    one the platform default is 24 hours (a named constant). See §5 "Billing unit".
 29. **Partial-estate delivery.** *Resolved (decision, Rob, 29 Sep 2026):* no
     guarantee or make-good model in this build. Every assignment mode bills
     on realised VAC-d (§4 "Billing"); plays that did not happen are not
@@ -4061,14 +4082,14 @@ dark on peak trade.
   Open / Closed variable, section 6), so the player reports `cachedCrids` and
   `storeOpen` on each impression signal; a missing `storeOpen` never blocks.
 - Set in Advertiser settings (`uncachedRestriction`, `uncachedRestrictionStart`,
-  `uncachedRestrictionEnd`). Not yet: an admin screen for it, and the advance
-  window auction (winners there are known ahead and pre-cached before the slot).
+  `uncachedRestrictionEnd`). Not yet: an admin screen for it. (The advance
+  window auction that would have pre-cached known winners was removed 8 Oct 2026.)
 
 ## Bid lookahead — when a real-time slot's auction opens (Rob, 7 Oct 2026)
 
 A real-time slot's auction has to resolve far enough ahead for the winning
 creative to be downloaded and rendered in time. Pre-caching (PH-CORE-BOUNDARIES.md)
-keeps the won creative renderable; the lookahead sets how early the auction opens.
+keeps the won creative renderable; the lookahead sets how early the per-impression auction opens (the only auction timing left: the company auction-opens setting was removed 8 Oct 2026).
 
 - **Setting**: `bidLookaheadSeconds` on Advertiser settings (a "Real-time bidding"
   section; field **Bid lookahead**, in seconds). Company-wide, whole seconds, at
@@ -4081,7 +4102,7 @@ keeps the won creative renderable; the lookahead sets how early the auction open
   The player's impression signal carries `slotStartsAt`; a signal earlier than
   that is refused, 409, naming when the auction opens. Without `slotStartsAt`
   the player is signalling at playout and the auction opens now, as before.
-- Advance window positions are unaffected: they keep the window auction.
+- Positions held for a deal (reserve or a private auction) are unaffected: they take window bookings and bids, not per-impression auctions.
 
 ## Deal type on the buyers list (Rob, 7 Oct 2026; ticket ke38J410jwLTYu9blGK7)
 

@@ -135,7 +135,7 @@ export function createHost(opts: { store: BlobStore; dataDir: string; migrations
   const uploaded = new Set<string>()
   /* Persist one change at a time, in order. */
   let chain: Promise<void> = Promise.resolve()
-  /* The scheduled work (billing, the auction at its cutoff, retention) runs
+  /* The scheduled work (billing, deal auctions, retention) runs
      on the back of ordinary requests, at most every TICK_EVERY_MS: Cloud
      Scheduler isn't enabled on the project (the deploy's service account
      may not enable it), so there is no timer. On a demo that means an
@@ -236,7 +236,7 @@ export function createHost(opts: { store: BlobStore; dataDir: string; migrations
     if (wait) return json(429, { error: { code: 'rate_limited', message: `Too many requests; retry in ${wait}s.` } }, { ...corsHeaders, 'Retry-After': String(wait) })
 
     const { ctx, app, instance } = await boot()
-    /* The Cloud Scheduler job (index.ts): billing, the auction at its cutoff,
+    /* The Cloud Scheduler job (index.ts): billing, deal auctions,
        and the rejected-campaign retention sweep. */
     if (req.url.split('?')[0] === '/_tasks/tick') {
       if (req.method !== 'POST' || req.headers['x-tick-token'] !== instance.tickToken) return json(404, { error: { code: 'not_found', message: 'Not found.' } }, corsHeaders)
