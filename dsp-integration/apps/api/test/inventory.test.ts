@@ -125,6 +125,7 @@ describe('GET /v1/inventory/{positionId} and …/availability', () => {
     expectMatchesContract('GET', '/v1/inventory/{positionId}/availability', 200, res.json())
     expect(res.json()).toEqual({
       positionId: 'menu_board.s2',
+      sale: 'window',
       windows: [
         { start: '2026-09-20T00:00:00.000Z', end: '2026-09-21T00:00:00.000Z', status: 'unavailable', assumedViews: 1236 },
         { start: '2026-09-21T00:00:00.000Z', end: '2026-09-22T00:00:00.000Z', status: 'available', assumedViews: 1236 },

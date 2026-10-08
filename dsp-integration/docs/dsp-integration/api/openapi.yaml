@@ -132,9 +132,11 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [positionId, windows]
+                required: [positionId, sale, windows]
                 properties:
                   positionId: {type: string}
+                  sale: {type: string, enum: [window, realtime], description: '`window`: sold by play window ahead of time (held for named advertisers, or a private auction) — `windows` carries the status of each. `realtime`: open or whitelist-only, sold per impression as the player signals — nothing is booked ahead, so `windows` is empty.'}
+                  bidLookaheadSeconds: {type: integer, description: 'Only when `sale` is `realtime`: seconds before a slot plays that its auction opens. Bid per impression inside this window; there is nothing to reserve ahead.'}
                   windows: {type: array, items: {$ref: '#/components/schemas/PlayWindow'}}
         '400': {$ref: '#/components/responses/ValidationFailed'}
         '401': {$ref: '#/components/responses/Unauthorised'}

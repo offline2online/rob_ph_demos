@@ -2851,6 +2851,10 @@ export interface operations {
                 content: {
                     "application/json": {
                         positionId: string;
+                        /** @description `window`: sold by play window ahead of time (held for named advertisers, or a private auction) — `windows` carries the status of each. `realtime`: open or whitelist-only, sold per impression as the player signals — nothing is booked ahead, so `windows` is empty. */
+                        sale: "window" | "realtime";
+                        /** @description Only when `sale` is `realtime`: seconds before a slot plays that its auction opens. Bid per impression inside this window; there is nothing to reserve ahead. */
+                        bidLookaheadSeconds?: number;
                         windows: components["schemas"]["PlayWindow"][];
                     };
                 };

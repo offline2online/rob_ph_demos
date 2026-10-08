@@ -1303,7 +1303,10 @@ through their own inventory mechanisms where their spec supports it.
 GET  /v1/inventory                         sellable positions visible to this partner/advertiser
 GET  /v1/inventory/{positionId}            one position in full
 GET  /v1/inventory/{positionId}/availability?from=&to=
-                                           status per play window across a date range
+                                           status per play window across a date range (a position sold by
+                                           window: `sale: "window"`); a real-time (open / whitelist-only)
+                                           position answers `sale: "realtime"`, `windows: []` and
+                                           `bidLookaheadSeconds` — sold per impression, nothing booked ahead
 POST /v1/inventory/forecast                projected assumed views for a spec + targeting
 ```
 
