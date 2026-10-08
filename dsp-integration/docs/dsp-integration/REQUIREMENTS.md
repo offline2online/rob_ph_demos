@@ -1679,6 +1679,35 @@ real-time bid. Admin-editable on Available Inventory, marketing read-only.
 play really lasts that long — see `api/PH-CORE-BOUNDARIES.md`, "Max play
 length: the loop must be built from the resolved slot length".
 
+**Plays per window** (derived, never typed; ticket "Derive plays per window
+from slot length x slots / billing unit", 8 Oct 2026; `apps/api/src/domain/plays.ts`):
+how many plays one slot gets on one display in one window.
+
+```
+loop length      = max slot length x slots in rotation
+plays per window = floor(billing unit / loop length)
+```
+
+- **Billing unit** is the slot's play-window length (§5 "Billing unit").
+- **Max slot length** is the resolved Max play length (§5 "Max play length":
+  slot, else display type, else company). It binds **every** campaign on the
+  loop, HQ campaigns included, so a position's play length never varies with
+  who is booked or with a creative's own length.
+- **Slots in rotation** is the number of positions in the playlist loop (Max
+  campaigns in rotation, Playlist Management). **HQ positions are counted**
+  as well as advertiser ones: HQ slots fill part of the same loop even though
+  Available Inventory lists advertiser slots only. A position plays once per
+  loop, so more slots in the loop means fewer plays per window.
+- A window shorter than one loop holds 0 plays; there is always at least one
+  slot in a rotation.
+
+Available Inventory shows two read-only columns for it: **Slots playing** (the
+loop's slot count, HQ included) and **Plays per window** (the formula above,
+recalculated in the editor as the max slot length or billing unit is changed
+before saving). *PH Core seam:* the loop PH Core builds must use the same
+resolved max slot length and slot count so a play really lasts that long —
+see `api/PH-CORE-BOUNDARIES.md`.
+
 ## 6. DSP integration — the advertiser & DSP interface
 
 How an advertiser finds inventory (§5), takes it and fills it. This is the API
