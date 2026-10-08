@@ -316,7 +316,9 @@ function PlaysPerDay({ data }: { data: BookingCapacity }) {
   const toggle = (id: string) => setOpen((o) => { const n = new Set(o); if (n.has(id)) n.delete(id); else n.add(id); return n })
   const head = { fontSize: 11, fontWeight: 600, color: T.micro, textAlign: 'left' as const, padding: '6px 8px', borderBottom: `1px solid ${T.borderSubtle}`, whiteSpace: 'nowrap' as const }
   const cell = { fontSize: 11.5, padding: '6px 8px', borderBottom: `1px solid ${T.borderSubtle}`, verticalAlign: 'top' as const, whiteSpace: 'nowrap' as const }
-  if (data.positions.length === 0) return <div style={{ fontSize: 12.5, color: T.muted }}>No advertiser positions yet.</div>
+  /* An answer without the capacity shape (an API from before this table, or the
+     offline snapshot) reads as "nothing to show", never a crash of the whole page. */
+  if (!Array.isArray(data.positions) || !Array.isArray(data.days) || data.positions.length === 0) return <div style={{ fontSize: 12.5, color: T.muted }}>No advertiser positions yet.</div>
   return (
     <div style={{ overflowX: 'auto' }}>
       <table style={{ borderCollapse: 'collapse', width: '100%' }} aria-label="Plays per day">
@@ -329,7 +331,7 @@ function PlaysPerDay({ data }: { data: BookingCapacity }) {
         <tbody>
           {data.positions.map((p) => {
             const isOpen = open.has(p.positionId)
-            const cuts = p.days[0]?.segments.map((x) => x.segment) ?? []
+            const cuts = p.days?.[0]?.segments?.map((x) => x.segment) ?? []
             return (
               <Fragment key={p.positionId}>
                 <tr>
