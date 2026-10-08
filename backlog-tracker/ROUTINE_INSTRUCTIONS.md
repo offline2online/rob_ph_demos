@@ -499,12 +499,20 @@ ticket once automatically.
      catching it here costs nobody a testing round.
    - **Before setting `patchReady`, run the DSP tests** if the patch
      touches `dsp-integration/` — the same steps as the train PR's required
-     `e2e-quick` check: `cd dsp-integration && npm ci && npm run typecheck
-     && npm test && npm run test:layout && npm run e2e:quick` (set
-     `PH_SECRETS_KEY` to any 32-byte base64 value, e.g. 44 `A`s ending `=`;
+     `e2e-quick` check: `cd dsp-integration && npm ci && export CI=1 &&
+     npm run typecheck && npm test && npm run test:layout && npm run
+     e2e:quick` (set `PH_SECRETS_KEY` to any 32-byte base64 value, e.g. 44
+     `A`s ending `=`). **`CI=1` is not optional in a cloud session**: the
+     admin suite uses tight laptop timeouts unless `CI` is set, a cloud
+     sandbox renders jsdom + Ant Design as slowly as a CI runner, and
+     without it the heavy admin tests time out and look like a hang — the
+     reason builds on 7–8 Oct 2026 reported "the admin vitest file hung"
+     and handed back patches that then turned the train red. With `CI=1`
+     the admin suite passes in about 8 minutes: give the command a 15-minute
+     timeout and wait for it rather than killing it.
      `test:layout` needs Chromium — `npx playwright install chromium`, or in
      a Claude Code cloud session point it at the preinstalled
-     `/opt/pw-browsers`). **The layout check fails on any admin change that
+     `/opt/pw-browsers`. **The layout check fails on any admin change that
      wraps a label or moves a control off its row** — a longer label in a
      narrow field is the usual cause (8 Oct 2026: "Digital signage bid
      lookahead" wrapped in a 160px field); widen the field rather than
