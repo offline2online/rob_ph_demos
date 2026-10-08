@@ -151,9 +151,6 @@ export function BuyersListsTable({ lists, canEdit, onChanged }: { lists: BuyersL
           </Button>
         )}
       </div>
-      <div className="mb-2" style={{ fontSize: 12.5, color: T.muted }}>
-        Deals for guaranteed and programmatic campaigns: who can buy, what they target and the terms.
-      </div>
       {lists.length === 0 ? (
         <div className="flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}>
           <Icon name="gavel" size={18} />
