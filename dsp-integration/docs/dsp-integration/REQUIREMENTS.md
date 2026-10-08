@@ -1498,6 +1498,20 @@ It carries:
   entry whose DSP is not connected or whose seat that DSP never synced.
   An entry whose seat later disappears from a re-sync stays on the list
   (shown "no longer synced" so it can be removed) and matches nobody.
+- **Invited IAB categories** (ticket M9aTqeDgGfRZoL3AEw9i): an optional
+  multi-select of **IAB Content Taxonomy categories**, so a list can invite
+  a whole category of buyers (say, every automotive advertiser) without
+  naming each one. It is a **union with the named advertisers above**: a
+  seat is invited if it is one of the named buyers *or* its category is one
+  of the invited categories. Only the IAB taxonomy is offered — no free-text
+  or custom categories. Categories are **resolved live** against each
+  seat's `Seat.category` (the category its DSP reports at sync) every time,
+  never copied onto the list, so a re-sync that changes a seat's category,
+  or a newly synced seat in an invited category, takes effect immediately
+  with nothing to re-save. A seat with no reported category matches no
+  category. A list with **no named buyers and no invited categories admits
+  nobody** (it does not fall back to open RTB). The buyers-list table shows
+  each list's **scope** — the named buyers and/or invited categories.
 - **Delivery term**: inclusive `activeFrom`/`activeTo` — the span this deal
   is awarded for (a week, a month, a quarter); either or both may be
   open-ended. Outside it, the deal admits nobody — it does not fall back
@@ -1577,7 +1591,7 @@ kind of error (23 Sep).
 **Entitlement is enforced the same way blacklist/whitelist already are**
 (§6 "Advertiser lists"), at both bid intake (OpenRTB response and the API's
 `POST /v1/reservations`) and again when the auction clears: a bid from a
-seat that is not one of the deal's invited buyers (matched exactly on its DSP and seat ID), or that arrives outside
+seat that is not one of the deal's invited buyers (matched exactly on its DSP and seat ID, or by the DSP-reported category of its seat against the list's invited IAB categories), or that arrives outside
 the deal's delivery term, is refused `not_invited`, naming the deal. Unlike
 `reserved`, a deal position is **not** taken out of the open auction and
 booked directly — until its rate locks (below), it runs as a real auction
