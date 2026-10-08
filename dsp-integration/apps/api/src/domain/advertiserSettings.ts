@@ -6,6 +6,7 @@ import { IAB_CATEGORIES, INTERACTIVE_ENABLED, MAX_MAX_PLAY_LENGTH_SEC, MIN_MAX_P
 
 import { MAX_GUARANTEE_BUFFER_PCT } from './guarantee'
 import { bidLookaheadOk } from './bidLookahead'
+import { cachedAssetRetentionOk } from './cachedAssetRetention'
 import { HHMM, UNCACHED_MODES } from './uncachedRestriction'
 
 type Detail = { field: string; reason: string }
@@ -49,6 +50,8 @@ export function validateAdvertiserSettings(b: Partial<AdvertiserSettingsInput> |
   if (mpl !== undefined && (typeof mpl !== 'number' || !Number.isInteger(mpl) || mpl < MIN_MAX_PLAY_LENGTH_SEC || mpl > MAX_MAX_PLAY_LENGTH_SEC)) out.push({ field: 'maxPlayLengthSec', reason: `Max play length is a whole number of seconds from ${MIN_MAX_PLAY_LENGTH_SEC} to ${MAX_MAX_PLAY_LENGTH_SEC}.` })
   /* Optional on save (omitted keeps the stored value); when sent, whole seconds, at least 1. */
   if (b?.bidLookaheadSeconds !== undefined && !bidLookaheadOk(b.bidLookaheadSeconds)) out.push({ field: 'bidLookaheadSeconds', reason: 'Bid lookahead is a whole number of seconds, at least 1.' })
+  /* Optional on save (omitted keeps the stored value); when sent, whole hours, at least 1. */
+  if (b?.cachedAssetRetentionHours !== undefined && !cachedAssetRetentionOk(b.cachedAssetRetentionHours)) out.push({ field: 'cachedAssetRetentionHours', reason: 'Cached asset retention is a whole number of hours, at least 1.' })
   /* Optional on save (omitted keeps the stored value). */
   const mode = b?.uncachedRestriction
   if (mode !== undefined && !(UNCACHED_MODES as readonly unknown[]).includes(mode)) out.push({ field: 'uncachedRestriction', reason: `One of ${UNCACHED_MODES.join(', ')}.` })

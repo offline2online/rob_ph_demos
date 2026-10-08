@@ -211,7 +211,9 @@ describe('Advertiser settings page', () => {
     expect(screen.queryByRole('group', { name: 'Play config' })).not.toBeInTheDocument()
     for (const gone of ['Deals and reservations', 'Time (derived display only)']) expect(text).not.toContain(gone)
     /* Bid lookahead: company-wide, in seconds, defaulting to 35. */
-    expect(screen.getByLabelText(/Bid lookahead/, { selector: 'input' })).toHaveValue('35')
+    expect(screen.getByLabelText(/Digital signage bid lookahead/, { selector: 'input' })).toHaveValue('35')
+    /* Cached asset retention sits beside it: company-wide, in hours, defaulting to 48. */
+    expect(screen.getByLabelText(/Cached asset retention/, { selector: 'input' })).toHaveValue('48')
     for (const gone of ['Auction schedule', 'Auction opens', 'Auction cutoff time', 'Play-window length']) expect(text).not.toContain(gone)
     expect(document.getElementById('auctionOpensHours')).toBeNull()
     expect(document.getElementById('playWindowHours')).toBeNull()

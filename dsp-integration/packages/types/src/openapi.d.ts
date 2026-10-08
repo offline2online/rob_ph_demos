@@ -1625,6 +1625,11 @@ export interface components {
              */
             bidLookaheadSeconds: number;
             /**
+             * @description Pre-caching: how many hours PH Core's PWA player may retain a cached, approved creative before evicting it. Company-wide. Default 48, matching Broadsign Air's pre-cache horizon. An upper bound, not a guaranteed hold: a rejected creative is evicted at once, and the player's disk cap and least-recently-used eviction still apply. Optional on save: omitted keeps the stored value.
+             * @default 48
+             */
+            cachedAssetRetentionHours: number;
+            /**
              * @description Max play length: the company-wide default fixed duration of one play of a slot, in whole seconds. A display type and a slot can each override it. Plays per window = floor(window / (max play length x slots in the rotation)) and a creative longer than it is rejected. Optional on save: omitted keeps the stored value.
              * @default 15
              */

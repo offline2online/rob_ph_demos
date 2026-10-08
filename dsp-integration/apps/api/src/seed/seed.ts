@@ -164,7 +164,7 @@ export async function seed(ctx: Context, opts: { bookings?: boolean; demo?: bool
     await ctx.company.save({
       currency: 'AUD', floorCpm: 100, interactiveCpe: 0.5,
       categoryWhitelist: ['Food & Drink', 'Health & Fitness'], categoryBlacklist: ['Finance'], guaranteeBufferPct: 10,
-      uncachedRestriction: 'off', uncachedRestrictionStart: '09:00', uncachedRestrictionEnd: '18:00', bidLookaheadSeconds: 35, defaultCommittedPlays: null, maxPlayLengthSec: DEFAULT_MAX_PLAY_LENGTH_SEC,
+      uncachedRestriction: 'off', uncachedRestrictionStart: '09:00', uncachedRestrictionEnd: '18:00', bidLookaheadSeconds: 35, cachedAssetRetentionHours: 48, defaultCommittedPlays: null, maxPlayLengthSec: DEFAULT_MAX_PLAY_LENGTH_SEC,
     })
     await ctx.company.saveAdvertiserSettings({
       [advertiserSlug('Nestlé')]: { approvalRequired: false, floorMultiplier: 0.8 },

@@ -701,10 +701,18 @@ What PH Core's player must do:
   `approved` (PH's copy on PH's asset host). Approval still gates play
   (section 3): never pre-cache `under_review`, rejected or `at_bid` creatives.
   The existing rule stands for `at_bid`: never cache beyond `expiresAt`.
-- **Defined lifetime.** Keep a pre-cached creative for a configurable period
-  (cache TTL, config value; exact default to be confirmed by the core team).
-  Evict on expiry, and immediately when the creative is rejected or its
-  content hash is blocked.
+- **Defined lifetime: a configurable retention period, default 48 hours**
+  (8 Oct 2026, Rob; matches Broadsign's pre-cache horizon in Broadsign Air).
+  The retailer sets it in Advertiser settings > Real-time bidding as *Cached
+  asset retention* (`cachedAssetRetentionHours`, whole hours, at least 1),
+  beside the bid lookahead window, since both are PWA player settings. The
+  exchange stores and publishes the value; the player enforces it. Evict on
+  expiry, and **immediately when the creative is rejected or its content hash
+  is blocked, regardless of the retention timer**.
+- **Retention is an upper bound, not a guaranteed hold.** It never overrides
+  the player's disk limits: least-recently-used eviction and the disk-size cap
+  still apply, so an asset may leave the cache before its retention elapses.
+  The period applies to approved creatives only (approval still gates play).
 - **Complements the bid lookahead window** (Advertiser settings, separate
   ticket): the lookahead decides how early the auction resolves, so it sets
   when a winner is known and can be pre-cached; the cache keeps that winner
