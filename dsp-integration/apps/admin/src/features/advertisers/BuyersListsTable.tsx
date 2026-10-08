@@ -141,15 +141,18 @@ export function BuyersListsTable({ lists, canEdit, onChanged }: { lists: BuyersL
     <div className="mt-7">
       <div className="mb-2 flex items-center justify-between gap-3">
         <SectionLabel>
-          <WithTip tip="A reusable private-auction deal: who can buy (invited buyers) and the targeting criteria appended to the deal, plus an active time window — created once and then selectable in Available Inventory's Assigned to column for any slot.">
+          <WithTip tip="Reusable deal definitions for guaranteed and programmatic campaigns. Each list sets the deal type (private auction, preferred deal or programmatic guaranteed), who can buy (invited advertisers and IAB categories), the targeting criteria appended to the deal, the delivery term, the committed plays (programmatic guaranteed), the floor price and the auction close (private auction). Create one once, then pick it in Available Inventory's Assigned to column for any slot.">
             Buyers and targeting
           </WithTip>
         </SectionLabel>
         {canEdit && (
           <Button type="text" size="small" icon={<Icon name="add" size={16} />} onClick={() => { setEditing(null); setModalOpen(true) }}>
-            New buyers and targeting
+            New buyers and targeting list
           </Button>
         )}
+      </div>
+      <div className="mb-2" style={{ fontSize: 12.5, color: T.muted }}>
+        Deals for guaranteed and programmatic campaigns: who can buy, what they target and the terms.
       </div>
       {lists.length === 0 ? (
         <div className="flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}>
