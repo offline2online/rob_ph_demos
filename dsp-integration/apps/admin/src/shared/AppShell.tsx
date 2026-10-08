@@ -38,7 +38,7 @@ export function AppShell({ title, nav, children }: { title: ReactNode; nav: NavI
     </>
   )
   if (nav.length === 0) {
-    return <div className="ph-min-full-height w-full bg-white p-5" style={{ color: T.text, fontSize: 14 }}>{header}{children}</div>
+    return <main className="ph-min-full-height w-full bg-white p-5" style={{ color: T.text, fontSize: 14 }}>{header}{children}</main>
   }
   return (
     <div className="ph-min-full-height flex w-full items-stretch bg-white" style={{ color: T.text, fontSize: 14 }}>
@@ -76,7 +76,7 @@ export function AppShell({ title, nav, children }: { title: ReactNode; nav: NavI
           {!collapsed && <div aria-hidden="true">{AFTER.map((l) => <Static key={l}>{l}</Static>)}</div>}
         </div>
       </nav>
-      <div className="min-w-0 flex-1 p-5">{header}{children}</div>
+      <main className="min-w-0 flex-1 p-5">{header}{children}</main>
     </div>
   )
 }

@@ -72,6 +72,16 @@ jobs:
       - name: Full suites (api, admin, campaign-approval, dsp-mocks; Runs 1–5 included)
         if: steps.scope.outputs.run == 'true'
         run: npm test
+      # Visual layout check (ticket A3QkqCjHRP58R0lSAtKM): every admin page at
+      # tablet and desktop, alignment rules + (once baselines are enforced)
+      # screenshots. Part of this required check, so a misalignment blocks
+      # Deploy to Main like any other red test.
+      - name: Install Chromium for the layout check
+        if: steps.scope.outputs.run == 'true'
+        run: npx playwright install --with-deps chromium
+      - name: Visual layout check (tablet + desktop)
+        if: steps.scope.outputs.run == 'true'
+        run: npm run test:layout
       - name: Runs 1–5 as JSON (results/e2e-quick.json)
         if: steps.scope.outputs.run == 'true'
         run: npm run e2e:quick
@@ -82,5 +92,7 @@ jobs:
         if: always() && steps.scope.outputs.run == 'true'
         with:
           name: e2e-quick-results-${{ github.sha }}
-          path: dsp-integration/results/
+          path: |
+            dsp-integration/results/
+            dsp-integration/apps/admin/test-results/
           if-no-files-found: ignore

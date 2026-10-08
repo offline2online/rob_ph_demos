@@ -25,6 +25,7 @@
     "bench": "npm run bench -w @ph-dsp/api --",
     "board:sync": "node scripts/sync-board-docs.mjs",
     "board:tickets": "node scripts/board-tickets.mjs",
+    "test:layout": "npm run test:layout -w @ph-dsp/admin",
     "e2e:journey": "npm run e2e:journey -w @ph-dsp/api",
     "e2e:quick": "npm run e2e:quick -w @ph-dsp/api",
     "e2e:report": "node scripts/report-e2e.mjs",

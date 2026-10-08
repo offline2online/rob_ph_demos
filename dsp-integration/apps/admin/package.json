@@ -9,7 +9,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "test:layout": "playwright test",
+    "test:layout:update": "playwright test --update-snapshots"
   },
   "dependencies": {
     "@ph-dsp/campaign-approval": "*",
@@ -24,6 +26,7 @@
     "react-router-dom": "^6.30.6"
   },
   "devDependencies": {
+    "@playwright/test": "^1.56.1",
     "@tailwindcss/vite": "^4.3.3",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.3",
