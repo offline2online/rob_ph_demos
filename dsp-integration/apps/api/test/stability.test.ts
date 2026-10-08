@@ -38,10 +38,12 @@ const GOOGLE = { authorization: 'Bearer poc-token-google-dv360' }
 const W1 = new Date('2026-09-21T00:00:00.000Z')
 const W2 = new Date('2026-09-22T00:00:00.000Z')
 const POS = 'menu_board.s2'
+/* The scheduler's claim key for a deal window: the window start and the position (8 Oct 2026). */
+const K1 = `${W1.toISOString()}#${POS}`
 const SWISSE = { positionId: POS, windowStart: W1.toISOString(), campaignId: 'c_api_swisse', advertiserId: 'swisse', type: 'bid', bidCpm: 200 }
 /* Nestlé's campaign is seeded approved and activated, so it can bid through the API too. */
 const NESTLE = { ...SWISSE, campaignId: 'c_dsp_nestle', advertiserId: 'nestle', bidCpm: 150 }
-/* 18:00 UTC on 20 Sep is W1's auction cutoff (seed: auctionCutoffTime 18:00). */
+/* 18:00 UTC on 20 Sep is a moment inside the window before W1, when W1 is the deal window due (there is no auction cutoff any more). */
 const AT_CUTOFF = new Date('2026-09-20T18:00:30.000Z')
 
 async function setup(clock: () => Date = () => NOW) {
@@ -55,7 +57,7 @@ async function setup(clock: () => Date = () => NOW) {
     const body = hooks.rewrite((await res.json()) as BidResponse, JSON.parse(String(init?.body)) as BidRequest)
     return new Response(typeof body === 'string' ? body : JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
   }
-  const ctx = await testContext({ clock, dspFetch: fetchImpl })
+  const ctx = await testContext({ byWindow: true, clock, dspFetch: fetchImpl })
   /* Capacity, not the limiter, is under test. */
   ctx.config.partnerRateLimit = { perSecond: 100_000, burst: 100_000 }
   const app = buildApp(ctx)
@@ -188,10 +190,10 @@ describe('a bid arriving while the auction is running', () => {
   it('once a tick has claimed the window’s auction, a bid is refused even if this process’s clock is still before the cutoff', async () => {
     const { ctx, reserve, ready } = await setup()
     await ready()
-    expect(await claimAuction(ctx, W1.toISOString())).toBe(true)
+    expect(await claimAuction(ctx, K1)).toBe(true)
     const res = await reserve(SWISSE)
     expect(res.statusCode).toBe(409)
-    expect(res.json().error.message).toMatch(/^Bidding for that window closed at/)
+    expect(res.json().error.message).toMatch(/^Bidding for that window closed: its auction has run/)
     /* Another window is unaffected. */
     expect((await reserve({ ...SWISSE, windowStart: W2.toISOString() })).statusCode).toBe(201)
   })
@@ -260,7 +262,7 @@ describe('a DSP whose answer is not a bid response', () => {
     expect(logs).toContain('Auction cleared 2026-09-21T00:00:00.000Z: 0 of 1 positions won, 1 failed.')
     expect((await rows()).filter((r) => r.status === 'pending')).toHaveLength(0)
     expect((await rows()).find((r) => r.channel === 'api')).toMatchObject({ status: 'lost', reason: 'The auction for this position failed: reservations store refused the write' })
-    expect(claims()).toMatchObject([{ window_start: W1.toISOString(), finished_at: expect.any(String) }])
+    expect(claims()).toMatchObject([{ window_start: K1, finished_at: expect.any(String) }])
   })
 })
 
@@ -328,7 +330,7 @@ describe('the scheduled tick', () => {
     let t = AT_CUTOFF
     const { ctx, tick, claims } = await setup(() => t)
     const claim = (ageMin: number) => prepared(ctx.db, "INSERT INTO auction_runs (window_start, claimed_at, claimed_by, finished_at) VALUES (?, ?, 'other-host:1', NULL) ON CONFLICT (window_start) DO UPDATE SET claimed_at = excluded.claimed_at, claimed_by = excluded.claimed_by, finished_at = excluded.finished_at")
-      .run(W1.toISOString(), new Date(t.getTime() - ageMin * 60_000).toISOString())
+      .run(K1, new Date(t.getTime() - ageMin * 60_000).toISOString())
     claim(14)
     expect((await tick()).logs.filter((l) => l.startsWith('Auction cleared'))).toHaveLength(0)
     expect(claims()[0].claimed_by).toBe('other-host:1')
@@ -357,7 +359,8 @@ describe('the scheduled tick', () => {
     ins.run('2026-01-02T00:00:00.000Z', '2026-01-01T18:00:00Z', 'x', null)
     ins.run('2026-09-01T00:00:00.000Z', '2026-08-31T18:00:00Z', 'x', '2026-08-31T18:01:00Z')
     await tick()
-    expect(claims().map((c) => c.window_start)).toEqual(['2026-01-02T00:00:00.000Z', '2026-09-01T00:00:00.000Z'])
+    /* The tick itself claims the deal window that is due (the one after the running window). */
+    expect(claims().map((c) => c.window_start)).toEqual(['2026-01-02T00:00:00.000Z', '2026-09-01T00:00:00.000Z', K1])
   })
 
   it('switched off, the tick still bills and settles but never claims an auction', async () => {

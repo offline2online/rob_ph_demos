@@ -10,6 +10,7 @@
    a floor. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { runAuction } from '../../src/exchange/auction'
+import { findPosition } from '../../src/domain/positions'
 import { DT, DT_B, GOOGLE, POS, POS_B, day, fixture, harness } from './harness'
 
 afterEach(() => {
@@ -52,8 +53,10 @@ describe('Run 5 — reserved', () => {
     await hold(h)
     const before = h.bidder.log.bidRequests.filter((r) => (r.body as { dooh?: { id?: string } }).dooh?.id === DT).length
     const out = await runAuction(h.ctx, day(1))
-    const p = out.positions.find((x) => x.positionId === POS)!
-    expect(p).toMatchObject({ bidRequests: 0, bids: 0, winner: null, skipped: 'Held for a named advertiser: booked by reservation.' })
+    /* The window clearing only ever considers private-auction positions: a held one is not in it, and is told so if asked for by name. */
+    expect(out.positions.find((x) => x.positionId === POS)).toBeUndefined()
+    const asked = await runAuction(h.ctx, day(1), { positions: [(await findPosition(h.ctx, POS))!] })
+    expect(asked.positions[0]).toMatchObject({ bidRequests: 0, bids: 0, winner: null, skipped: 'Held for a named advertiser: booked by reservation.' })
     expect(h.bidder.log.bidRequests.filter((r) => (r.body as { dooh?: { id?: string } }).dooh?.id === DT).length).toBe(before)
     /* A bid on it is refused: reserve it instead. */
     const id = await h.readyApiCampaign('Swisse — R2')

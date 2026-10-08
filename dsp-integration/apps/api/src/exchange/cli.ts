@@ -1,4 +1,4 @@
-/* npm run auction:run — clear one play window now (for demos and testing).
+/* npm run auction:run — clear one play window of private-auction (deal) positions now (for demos and testing).
    Default: the next window that can be sold; or --window=YYYY-MM-DD.
    Needs the mock DSP service running (npm run dev:mocks) for DSP bids. */
 import { createContext } from '../context'

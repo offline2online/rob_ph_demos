@@ -18,7 +18,7 @@ describe('one campaign per display type, slot and play window', () => {
   const booking = (id: string) => ({ id, campaignId: 'c_dsp_nestle', displayTypeId: 'menu_board', slot: 2, windowStart: W, windowEnd: '2026-09-26T00:00:00.000Z' })
 
   it('the stand-in campaign source refuses a second booking for the same slot and window', async () => {
-    const ctx = await testContext({ clock: () => NOW })
+    const ctx = await testContext({ byWindow: true, clock: () => NOW })
     await ctx.campaigns.bookSlot(booking('bk_first'))
     let error: unknown
     try { await ctx.campaigns.bookSlot(booking('bk_second')) } catch (e) { error = e }
@@ -31,7 +31,7 @@ describe('one campaign per display type, slot and play window', () => {
   })
 
   it('the hand-off treats that uniqueness failure as already booked, not as an error', async () => {
-    const ctx = await testContext({ clock: () => NOW, dspFetch: mockDsps().fetchImpl })
+    const ctx = await testContext({ byWindow: true, clock: () => NOW, dspFetch: mockDsps().fetchImpl })
     const W1 = new Date('2026-09-21T00:00:00.000Z')
     const W2 = new Date('2026-09-22T00:00:00.000Z')
     await runAuction(ctx, W1)
@@ -49,7 +49,7 @@ describe('one campaign per display type, slot and play window', () => {
 
 describe('files are served with nosniff and a CSP that blocks script', () => {
   it('an /assets/:file response carries both, and a missing file does not leak a body', async () => {
-    const app = buildApp(await testContext({ clock: () => NOW }))
+    const app = buildApp(await testContext({ byWindow: true, clock: () => NOW }))
     const url = (await app.inject({ method: 'GET', url: '/api/admin/v1/campaigns/c_api_swisse/approval' })).json().creative.assetUrl
     const res = await app.inject({ method: 'GET', url })
     expect(res.statusCode).toBe(200)
@@ -63,7 +63,7 @@ describe('files are served with nosniff and a CSP that blocks script', () => {
 
 describe('AudienceSource.targetedShare', () => {
   it('halves per AND group: a two-group forecast is a quarter of the untargeted one', async () => {
-    const ctx = await testContext({ clock: () => NOW })
+    const ctx = await testContext({ byWindow: true, clock: () => NOW })
     expect(POC_SHARE_PER_AND_GROUP).toBe(0.5)
     expect(await ctx.audience.targetedShare('menu_board', undefined)).toBe(1)
     expect(await ctx.audience.targetedShare('menu_board', [])).toBe(1)
@@ -79,7 +79,7 @@ describe('AudienceSource.targetedShare', () => {
 
 describe('indexes the seam guarantees lean on', () => {
   it('the stand-in carries the booking uniqueness and campaign lookup indexes (migrations 0020, 0021)', async () => {
-    const ctx = await testContext({ clock: () => NOW })
+    const ctx = await testContext({ byWindow: true, clock: () => NOW })
     const names = (ctx.db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'campaign_slot_bookings'").all() as { name: string }[]).map((r) => r.name)
     expect(names).toContain('campaign_slot_bookings_one_per_window')
     expect(names).toContain('campaign_slot_bookings_campaign')

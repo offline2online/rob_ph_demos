@@ -16,9 +16,9 @@ falls back to the read-only snapshot, as it did before this existed.
 |---|---|
 | `dspApi` | HTTPS, public. The unchanged POC API (`apps/api`) plus the mock DSPs (`apps/dsp-mocks`, in-process), wrapped by `functions/src/host.ts`. At most **one instance**, because the database is a single SQLite file. |
 
-**Scheduled work has no timer.** Billing ended windows, clearing an auction
-at its cutoff and the rejected-campaign retention sweep run inside `dspApi`,
-at most every five minutes, triggered by ordinary requests. So an auction
+**Scheduled work has no timer.** Billing ended windows, clearing deal
+auctions and the rejected-campaign retention sweep run inside `dspApi`,
+at most every five minutes, triggered by ordinary requests. So a deal auction
 whose hour passes with nobody using the demo isn't cleared by itself.
 
 It runs alongside the request that triggered it, not in front of it, and the

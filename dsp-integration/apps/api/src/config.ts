@@ -12,7 +12,7 @@ export interface Config {
      (deploy/kubernetes/). */
   host: string
   /* ---- Running on a cluster (scalability review, 24 Sep 2026). ---- */
-  /* The scheduled work (billing, the auction at its cutoff, retention):
+  /* The scheduled work (billing, deal windows and deciding auctions, retention):
      'in-process' (the default) runs it in this process every minute; 'off'
      leaves it to `npm run scheduler:tick` run from outside — a CronJob —
      once several replicas share one database and none of them should

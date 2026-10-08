@@ -138,13 +138,16 @@ export const interactiveReservePriceOf = (dt: { phExtensions?: { reservePrice?: 
    override-always-wins inheritance as reservePriceOf, but always resolves
    to a real number — unlike a reserve price, there is no "no billing unit"
    state. Since OQ27 (Rob, 29 Sep 2026) it is also the slot's play-window
-   length — the source of truth for how it is auctioned and billed — and
-   when neither the slot nor its display type sets one it inherits the
-   company-wide play window (`inherited`: Advertiser settings →
-   playWindowHours), whose own platform default is 24 hours (one day). */
-export const DEFAULT_BILLING_UNIT_HOURS = 24
-export const billingUnitHoursOf = (dt: { phExtensions?: { billingUnitHours?: number | null } | null }, slot: { billingUnitHours?: number | null }, inherited: number = DEFAULT_BILLING_UNIT_HOURS): number =>
-  slot.billingUnitHours ?? dt.phExtensions?.billingUnitHours ?? inherited
+   length — the source of truth for how it is booked and billed. The chain
+   is slot, then display type, then PLATFORM_DEFAULT_BILLING_UNIT_HOURS.
+   There is no company-wide play window any more (Rob, 8 Oct 2026): the
+   platform default is a named constant of its own, not a setting, and is
+   only the last resort. Plays per window is NOT derived from it as a flat
+   24-hour figure: it is max play length x slot count over the billing unit
+   (plays.ts). */
+export const PLATFORM_DEFAULT_BILLING_UNIT_HOURS = 24
+export const billingUnitHoursOf = (dt: { phExtensions?: { billingUnitHours?: number | null } | null }, slot: { billingUnitHours?: number | null }): number =>
+  slot.billingUnitHours ?? dt.phExtensions?.billingUnitHours ?? PLATFORM_DEFAULT_BILLING_UNIT_HOURS
 
 /* Max campaigns (ticket "Available Inventory: Max campaigns column + slot
    playlist statement"): the single authority on how many campaigns

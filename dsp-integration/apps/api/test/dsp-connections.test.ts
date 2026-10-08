@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { runAuction } from '../src/exchange/auction'
 import { buildApp } from '../src/http/app'
 import { expectMatchesContract } from './contract'
-import { NOW, mockDsps, testContext } from './helpers'
+import { NOW, mockDsps, testContext, sellByWindow } from './helpers'
 
 const setup = async () => {
   const mocks = mockDsps()
-  const ctx = await testContext({ dspFetch: mocks.fetchImpl, clock: () => NOW })
+  const ctx = await testContext({ byWindow: true, dspFetch: mocks.fetchImpl, clock: () => NOW })
   const app = buildApp(ctx)
   const call = (method: 'GET' | 'PUT' | 'POST', url: string, payload?: object) => app.inject({ method, url: `/api/admin/v1${url}`, payload })
   const control = (method: 'PUT' | 'POST', url: string, payload?: object) => mocks.app.inject({ method, url: `/_control${url}`, payload })
@@ -89,7 +89,10 @@ describe('The Trade Desk against the mock TTD API v3', () => {
     await addTtd(call)
     await call('POST', '/partners/p_the_trade_desk/connect')
     await call('PUT', '/partners/p_the_trade_desk', { bidder: { bidderEndpoint: 'https://bid.thetradedesk.example/openrtb2', seatIds: ['ttd-seat-1'] } })
-    /* Tie the Menu Board's advertiser slot to TTD, so only TTD bids for it. */
+    /* The slot sits on an open deal: invite TTD's synced seats, then tie the slot to TTD, so only TTD bids for it. */
+    await sellByWindow(ctx, 'menu_board', 2)
+    const open = (await ctx.buyersLists.get('bl_test_open'))!
+    await ctx.buyersLists.update(open.id, { name: open.name, description: '', dealType: open.dealType, invitedBuyers: open.invitedBuyers.filter((b) => b.partnerId === 'p_the_trade_desk'), activeFrom: null, activeTo: null, auctionCloses: null })
     const ext = (await ctx.displayTypes.get('menu_board'))!.phExtensions!
     await ctx.displayTypes.saveExtensions('menu_board', { ...ext, slots: ext.slots.map((s, i) => (i === 1 ? { ...s, partnerIds: ['p_the_trade_desk'] } : s)) })
     await runAuction(ctx, new Date('2026-09-21T00:00:00.000Z'))

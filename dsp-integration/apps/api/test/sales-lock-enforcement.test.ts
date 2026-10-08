@@ -16,12 +16,12 @@ const W1 = '2026-09-21T00:00:00.000Z'
 const LOCKED = 'This position is locked against new sales: its existing bookings continue, but no further window can be bid on or reserved.'
 
 async function setup() {
-  const ctx = await testContext({ clock: () => NOW })
+  const ctx = await testContext({ byWindow: true, clock: () => NOW })
   const app = buildApp(ctx)
   const ext = (await ctx.displayTypes.get('portrait'))!.phExtensions!
   await ctx.displayTypes.saveExtensions('portrait', {
     ...ext,
-    slots: [{ label: 'Ad', owner: 'advertiser', partnerIds: [], advertisers: [], listMode: 'rtb', buyersListId: null, storeScope: null, quota: null, zoneId: null, reservePrice: 150 } as Slot],
+    slots: [{ label: 'Ad', owner: 'advertiser', partnerIds: [], advertisers: [], listMode: 'deal', buyersListId: 'bl_test_open', storeScope: null, quota: null, zoneId: null, reservePrice: 150 } as Slot],
   })
   ctx.db.prepare('INSERT INTO audience_vacd (display_type_id, slot, assumed_views_per_window, counted) VALUES (?, ?, ?, 1)').run('portrait', 1, 800)
   const created = await app.inject({ method: 'POST', url: '/api/v1/campaigns', headers: GOOGLE, payload: { advertiserId: 'swisse', name: 'Swisse — Portrait', displayTypeId: 'portrait', default: { pricingType: 'localised' } } })

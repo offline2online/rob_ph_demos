@@ -1,6 +1,6 @@
 # The scheduled work as a CronJob, for a shared (external) database with
 # PH_SCHEDULER=off on the API pods: one tick a minute bills the windows
-# that have ended, clears any window whose auction cutoff has passed, and
+# that have ended, clears any deal (private-auction) window that is due, and
 # runs the retention sweeps, then exits. Which process clears a window is
 # settled in the database (auction_runs, migration 0024), so a tick that
 # overlaps the previous one, or an API pod still running its in-process

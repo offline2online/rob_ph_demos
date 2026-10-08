@@ -44,8 +44,12 @@ export function auctionOpenAt(list: BuyersList, at: string): boolean {
 
 export interface TermState { active: boolean; locked: boolean; auctionOpen: boolean }
 
-/* Everything the exchange asks about a deal for one window start, at once. */
-export const termStateAt = (list: BuyersList, at: string): TermState => ({ active: isActiveAt(list, at), locked: isTermLocked(list), auctionOpen: auctionOpenAt(list, at) })
+/* Everything the exchange asks about a deal for one window start, at once.
+   `at` is the window start (the delivery term is read there); `now`, when
+   given, is the moment bidding is judged against auctionCloses (the route
+   takes bids until the deadline passes in real time). Without it the window
+   start stands in for it, as the scheduler's one-window-ahead clearing does. */
+export const termStateAt = (list: BuyersList, at: string, now: string = at): TermState => ({ active: isActiveAt(list, at), locked: isTermLocked(list), auctionOpen: auctionOpenAt(list, now) })
 
 /* The delivery term of a deal whose rate is locked; null while it is not.
    Every window in it is spoken for: the exchange books each directly at the

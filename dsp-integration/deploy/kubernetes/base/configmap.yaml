@@ -13,7 +13,7 @@ data:
   POC_ROLE: hq_admin
   # This API's public origin: creative URLs are built on it.
   PH_PUBLIC_URL: https://exchange.example-retailer.com
-  # Scheduled work (billing, the auction at its cutoff, retention) runs in
+  # Scheduled work (billing, deal auctions, retention) runs in
   # the API process. Set to "off" and run optional/scheduler-cronjob.yaml
   # once the database is shared by several replicas (README, "Scaling out").
   PH_SCHEDULER: in-process

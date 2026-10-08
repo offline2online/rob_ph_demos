@@ -32,7 +32,7 @@ async function setup() {
     const body = hooks.rewrite((await res.json()) as BidResponse, JSON.parse(String(init?.body)) as BidRequest)
     return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
   }
-  const ctx = await testContext({ clock: () => NOW, dspFetch: fetchImpl })
+  const ctx = await testContext({ byWindow: true, clock: () => NOW, dspFetch: fetchImpl })
   const app = buildApp(ctx)
   const rows = async (start = W1) => ctx.reservations.forWindow(POS, start.toISOString())
   /* Nestlé's first bid queues its creative (approved automatically); activate

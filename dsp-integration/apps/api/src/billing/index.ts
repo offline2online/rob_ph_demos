@@ -29,7 +29,7 @@
 
    Per slot (OQ27, Rob 29 Sep 2026): the window length here is the slot's
    own billing unit (positions.ts windowMs(ctx, p) — slot override, else
-   display type default, else the company play window), so a slot with a
+   display type default, else the platform default), so a slot with a
    168-hour unit bills one line item a week, on that week's realised VAC-d,
    with a week's expected seconds and a week's assumed views.
 
@@ -93,7 +93,7 @@ export function assertBillingBasis(basis: BillingBasis): void {
 }
 
 /* The billing unit of a position, in ms: its slot's billingUnitHours, else
-   its display type's default, else the company play window (OQ27, Rob
+   its display type's default, else the platform default (OQ27, Rob
    29 Sep 2026). This is not informational: it is the length of every window
    billed for the position, so a slot with a 168-hour unit bills one line
    item a week. */

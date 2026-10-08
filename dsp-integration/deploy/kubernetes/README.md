@@ -128,7 +128,7 @@ twenty partners at their ceiling is about a pod's worth. Start with:
 - **The auction** is bounded by the DSPs' round trip, not the estate: 2,408
   positions with 3 DSPs is 4,807 bid requests, 12.7 s at an 80 ms round
   trip, 45 s at the 300 ms timeout, 16 positions at a time. It runs once
-  per play window (once a day by default) inside the API pod
+  per private-auction play window (once a day by default; open positions are sold in real time and need no window auction) inside the API pod
   (`in-process`) or the CronJob. `PH_AUCTION_CONCURRENCY=64` would clear
   the same estate in about 3 s at up to 500 requests/s per DSP.
 - **Billing** runs with the auction: a window on 1,000 displays is 1.9
@@ -162,7 +162,7 @@ path to N replicas is one change: **the database.**
 - Then: `replicas: 2+`, `PH_SCHEDULER=off` on the API pods,
   `kubectl apply -k deploy/kubernetes/optional` for the HPA (CPU at 60%),
   the PodDisruptionBudget and the scheduler CronJob (one tick a minute:
-  billing, the auction at its cutoff, retention). Which pod clears a window
+  billing, deal auctions, retention). Which pod clears a window
   is settled in `auction_runs`, so a CronJob tick overlapping the previous
   one, or an API pod still running its own scheduler, never auctions a
   window twice. Two pods (or a pod and a tick) starting together on an
@@ -204,6 +204,6 @@ What the review of 24 Sep 2026 checked, and where each control lives.
   `terminationGracePeriodSeconds` is 30.
 - **Probes:** `/healthz` (liveness) and `/readyz` (readiness and start-up).
 - **Scheduled work:** every minute, in-process or as the CronJob — billing
-  the windows that have ended, the auction for any window whose cutoff has
-  just passed, the bid and rejected-campaign retention sweeps. `npm run
+  the windows that have ended, the deal auction for any window that is due (a deal's
+  `auctionCloses`), the bid and rejected-campaign retention sweeps. `npm run
   scheduler:tick` (`node tick.mjs` in the image) is one pass.

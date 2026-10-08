@@ -3,12 +3,10 @@ import type { DisplayType } from '@ph-dsp/types'
 import { buildApp } from '../src/http/app'
 import { expectMatchesContract } from './contract'
 import { NOW, testContext } from './helpers'
-import { biddingClosesAt, biddingOpensAt, nextWindow, windowMs, windowStartOf } from '../src/domain/positions'
-import { promotePendingPlayWindowIfDue } from '../src/exchange/scheduler'
+import { nextWindow, windowMs, windowStartOf } from '../src/domain/positions'
 
 const input = {
   currency: 'NZD', floorCpm: 120, interactiveCpe: 1.25,
-  auctionOpensHours: 72, playWindowHours: 168, auctionCutoffTime: '20:30',
   categoryWhitelist: ['Food & Drink'], categoryBlacklist: ['Finance'],
 }
 
@@ -48,12 +46,14 @@ describe('Advertiser settings (spec §4, §6)', () => {
     expect(res.json().error.details.map((d: { field: string }) => d.field)).toEqual(['currency', 'floorCpm', 'categoryWhitelist'])
   })
 
-  it('saves the auction schedule, and validates it', async () => {
+  it('has no auction schedule or company play window any more: the fields are not settings, and are ignored if sent', async () => {
     const app = buildApp(await testContext())
-    const ok = await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: input })
-    expect(ok.json()).toMatchObject({ auctionOpensHours: 72, playWindowHours: 168, auctionCutoffTime: '20:30' })
-    const bad = await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: { ...input, auctionOpensHours: 0, playWindowHours: 1.5, auctionCutoffTime: '24:00' } })
-    expect(bad.json().error.details.map((d: { field: string }) => d.field)).toEqual(['auctionOpensHours', 'playWindowHours', 'auctionCutoffTime'])
+    const got = (await app.inject({ method: 'GET', url: '/api/admin/v1/advertiser-settings' })).json()
+    for (const gone of ['auctionOpensHours', 'playWindowHours', 'auctionCutoffTime', 'pendingPlayWindowHours', 'pendingPlayWindowEffectiveFrom']) expect(got).not.toHaveProperty(gone)
+    const ok = await app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: { ...input, auctionOpensHours: 0, playWindowHours: 1.5, auctionCutoffTime: '24:00' } })
+    expect(ok.statusCode).toBe(200)
+    for (const gone of ['auctionOpensHours', 'playWindowHours', 'auctionCutoffTime']) expect(ok.json()).not.toHaveProperty(gone)
+    expect(windowStartOf(NOW, await windowMs(await testContext())).toISOString()).toBe('2026-09-20T00:00:00.000Z')
   })
 
   it('bid lookahead: defaults to 35 s, saves, keeps the stored value when omitted, refuses 0 and non-integers', async () => {
@@ -89,78 +89,13 @@ describe('Advertiser settings (spec §4, §6)', () => {
     }
   })
 
-  /* Rob's board ticket, 26 Sep 2026: a length change while windows are still
-     active no longer errors out — it's accepted and deferred, with the
-     admin told exactly when it takes effect. */
-  it('defers a play-window length change while a window is still bid on or booked, and says when it takes effect', async () => {
+  it('drives the play windows from the billing unit: the platform default is a day, a slot can make it a week, and the next window is the one after the running one', async () => {
     const ctx = await testContext({ clock: () => NOW })
-    await ctx.reservations.insert({
-      id: 'r1', partnerId: 'p_google', advertiserId: 'nestle', campaignId: 'c_dsp_nestle', positionId: 'menu_board.s2', windowStart: '2026-09-22T00:00:00.000Z',
-      type: 'bid', channel: 'api', bidCpm: 120, currency: 'AUD', status: 'pending', clearingCpm: null, reason: null, testMode: false, pricingType: 'localised', handedOffAt: null,
-    })
-    const res = await buildApp(ctx).inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: input })
-    expect(res.statusCode).toBe(200)
-    expectMatchesContract('PUT', '/admin/v1/advertiser-settings', 200, res.json())
-    /* Untouched — the seeded 24-hour length — until r1's window (starting
-       2026-09-22, so ending 2026-09-23) has played. */
-    expect(res.json()).toMatchObject({ playWindowHours: 24, pendingPlayWindowHours: 168, pendingPlayWindowEffectiveFrom: '2026-09-23T00:00:00.000Z' })
-
-    /* A Test-mode bid never blocks or defers anything (spec §7: no real spend). */
-    await ctx.reservations.update('r1', { status: 'lost' })
-    await ctx.reservations.insert({
-      id: 'r2', partnerId: 'p_google', advertiserId: 'nestle', campaignId: 'c_dsp_nestle', positionId: 'menu_board.s2', windowStart: '2026-09-24T00:00:00.000Z',
-      type: 'bid', channel: 'api', bidCpm: 120, currency: 'AUD', status: 'won', clearingCpm: 120, reason: null, testMode: true, pricingType: 'localised', handedOffAt: null,
-    })
-    const immediate = await buildApp(ctx).inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: { ...input, playWindowHours: 48 } })
-    expect(immediate.json()).toMatchObject({ playWindowHours: 48, pendingPlayWindowHours: null, pendingPlayWindowEffectiveFrom: null })
-  })
-
-  it('promotes a deferred play-window length change once every active window has played — waiting longer if a booking made since runs later', async () => {
-    let now = NOW
-    const ctx = await testContext({ clock: () => now })
-    await ctx.reservations.insert({
-      id: 'r1', partnerId: 'p_google', advertiserId: 'nestle', campaignId: 'c_dsp_nestle', positionId: 'menu_board.s2', windowStart: '2026-09-22T00:00:00.000Z',
-      type: 'bid', channel: 'api', bidCpm: 120, currency: 'AUD', status: 'pending', clearingCpm: null, reason: null, testMode: false, pricingType: 'localised', handedOffAt: null,
-    })
-    const saved = await buildApp(ctx).inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: input })
-    expect(saved.json()).toMatchObject({ playWindowHours: 24, pendingPlayWindowHours: 168, pendingPlayWindowEffectiveFrom: '2026-09-23T00:00:00.000Z' })
-
-    /* Before the effective date: nothing happens. */
-    expect(await promotePendingPlayWindowIfDue(ctx)).toBeNull()
-    expect((await ctx.company.get()).playWindowHours).toBe(24)
-
-    /* r1's window has played by the effective date, but a booking made since
-       (still under the old, unpromoted length) runs later — the change waits
-       for that one too, and the effective date moves out to cover it. */
-    await ctx.reservations.insert({
-      id: 'r2', partnerId: 'p_google', advertiserId: 'nestle', campaignId: 'c_dsp_nestle', positionId: 'menu_board.s2', windowStart: '2026-09-25T00:00:00.000Z',
-      type: 'reserve', channel: 'api', bidCpm: 120, currency: 'AUD', status: 'won', clearingCpm: 120, reason: null, testMode: false, pricingType: 'localised', handedOffAt: null,
-    })
-    now = new Date('2026-09-23T00:00:00.000Z')
-    expect(await promotePendingPlayWindowIfDue(ctx)).toBeNull()
-    expect((await ctx.company.get()).playWindowHours).toBe(24)
-    expect((await ctx.company.get()).pendingPlayWindowEffectiveFrom).toBe('2026-09-26T00:00:00.000Z')
-
-    /* r2 has played too, by its own (pushed-out) effective date: the change lands. */
-    now = new Date('2026-09-26T00:00:00.000Z')
-    expect(await promotePendingPlayWindowIfDue(ctx)).toBe(168)
-    expect(await ctx.company.get()).toMatchObject({ playWindowHours: 168, pendingPlayWindowHours: null, pendingPlayWindowEffectiveFrom: null })
-  })
-
-  it('drives the play windows: length, the daily cutoff when the auction runs, and when bidding opens', async () => {
-    const ctx = await testContext({ clock: () => NOW })
-    /* Defaults: 24-hour windows, cutoff 18:00 UTC, bidding opens 7 days before the cutoff. */
-    const w = new Date('2026-09-22T00:00:00.000Z')
-    expect((await biddingClosesAt(ctx, w)).toISOString()).toBe('2026-09-21T18:00:00.000Z')
-    expect((await biddingOpensAt(ctx, w)).toISOString()).toBe('2026-09-14T18:00:00.000Z')
+    expect(await windowMs(ctx)).toBe(86_400_000)
     expect((await nextWindow(ctx)).toISOString()).toBe('2026-09-21T00:00:00.000Z')
-    /* A midnight cutoff: the auction runs as the window starts. */
-    await ctx.company.save({ ...(await ctx.company.get()), auctionCutoffTime: '00:00' })
-    expect((await biddingClosesAt(ctx, w)).toISOString()).toBe('2026-09-22T00:00:00.000Z')
     /* 7-day windows run Monday to Monday. */
-    await ctx.company.save({ ...(await ctx.company.get()), playWindowHours: 168, auctionCutoffTime: '18:00' })
-    expect(windowStartOf(NOW, await windowMs(ctx)).toISOString()).toBe('2026-09-14T00:00:00.000Z')
-    expect((await nextWindow(ctx)).toISOString()).toBe('2026-09-21T00:00:00.000Z')
+    expect(windowStartOf(NOW, 168 * 3_600_000).toISOString()).toBe('2026-09-14T00:00:00.000Z')
+    expect((await nextWindow(ctx, 168 * 3_600_000)).toISOString()).toBe('2026-09-21T00:00:00.000Z')
   })
 
   it('Available Inventory lists every advertiser-owned slot, with no advertisers column', async () => {
@@ -170,7 +105,7 @@ describe('Advertiser settings (spec §4, §6)', () => {
       displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board — Long Format / Zone 1', playlistId: 'pl_zone_menu_board_1', unassigned: false, scored: true, unsellableReason: null, salesLocked: false, inGlobalDeal: true, globalDealSuppressedBy: null, salesLockedUntil: null, slot: 2, zoneSlot: 2, position: 'Supplier slot',
       assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false, buyersListId: null, buyersListName: null, buyersListIds: [], buyersListNames: [] }, qrControl: true, visionAi: true,
       reservePrice: null, reservePriceOverride: null, displayTypeReservePrice: null, interactiveReservePrice: null, interactiveReservePriceOverride: null,
-      billingUnitHours: 24, billingUnitHoursOverride: null, displayTypeBillingUnitHours: null, companyPlayWindowHours: 24,
+      billingUnitHours: 24, billingUnitHoursOverride: null, displayTypeBillingUnitHours: null,
       maxCampaigns: 5, maxCampaignsOverride: null, displayTypeMaxCampaigns: null,
       maxPlayLengthSec: 15, maxPlayLengthSecOverride: null, displayTypeMaxPlayLengthSec: null, companyMaxPlayLengthSec: 15, slotCount: 3, playsPerWindow: 1920,
     }])

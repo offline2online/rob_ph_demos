@@ -197,32 +197,35 @@ describe('Run 3 — private auction: non-happy', () => {
   })
 })
 
-/* Global deal ID (ticket rkm4bgISL7W0thKc7SwW, Rob 8 Oct 2026): one deal handle on open inventory. The fixture here is the plain open slot, not a buyers list. */
+/* Global deal ID (ticket rkm4bgISL7W0thKc7SwW, Rob 8 Oct 2026): one deal handle on open inventory. An open slot is sold in real time (8 Oct 2026), so these cases move the fixture's slot off its deal and signal impressions. */
 const globalDeal = async (h: Awaited<ReturnType<typeof harness>>, on = true) => h.ctx.exchange.save({ ...(await h.ctx.exchange.get()), globalDealEnabled: on })
 const lastImp = (h: Awaited<ReturnType<typeof harness>>) => h.bidder.log.bidRequests.at(-1)!.body.imp[0]
 const setInGlobalDeal = async (h: Awaited<ReturnType<typeof harness>>, inGlobalDeal?: boolean) =>
   h.app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: DT, slot: 1, reservePrice: null, ...(inGlobalDeal === undefined ? {} : { inGlobalDeal }) }] } })
 
 describe('Run 3 — global deal (P9–P11)', () => {
+  /* The creative is introduced under the fixture's deal, then the slot goes open: sold in real time. */
+  const openSlot = async (h: Awaited<ReturnType<typeof harness>>, crid: string) => {
+    await h.approvedCrid(crid, day(0))
+    await h.admin.slot({ listMode: 'rtb', buyersListId: null })
+  }
   it('P9 — an open slot carries the global deal on pmp.deals and competes as open exchange at the same floor', async () => {
     const h = await harness()
-    await h.approvedCrid('crid-p9', day(0))
-    await runAuction(h.ctx, day(1))
+    await openSlot(h, 'crid-p9')
+    await h.signal()
     const open = lastImp(h)
     expect(open.pmp).toBeUndefined()
     await globalDeal(h)
-    const out = await runAuction(h.ctx, day(2))
+    const fill = await h.signal()
     const imp = lastImp(h)
     /* An open deal handle, not a private auction: no invited seats, private_auction 0. */
     expect(imp.pmp).toEqual({ private_auction: 0, deals: [{ id: GLOBAL_DEAL_ID, at: 1 }] })
     expect(imp.bidfloor).toBe(open.bidfloor)
     /* First price, same floor: the bid quoting the global deal wins like any open bid. */
-    expect(out.positions[0]).toMatchObject({ bidRequests: 1, winner: { advertiserId: 'swisse', clearingCpm: 150 } })
-    expect(booked(h, day(2))).toHaveLength(1)
+    expect(fill).toMatchObject({ status: 'filled', clearingCpm: 150 })
     /* A bid below the floor is still refused: the global deal does not lower it. */
     h.bidder.setScript((req) => ({ body: response(req, [{ ...swisseBid(req, { price: 99, crid: 'crid-p9' }), dealid: GLOBAL_DEAL_ID }]) }))
-    await runAuction(h.ctx, day(3))
-    expect((await h.rows(day(3)))[0]).toMatchObject({ status: 'rejected', reason: '99 is below the effective floor of 100 USD CPM.' })
+    expect(await h.signal()).toMatchObject({ status: 'no_fill' })
     /* A real PMP deal still wins its own way: the buyers list's deal ID, not the global one. */
     const list = await h.ctx.buyersLists.insert({ id: 'bl_p9', name: 'P9 deal', description: '', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130002' }], activeFrom: null, activeTo: null, auctionCloses: null })
     await h.admin.slot({ listMode: 'deal', buyersListId: list.id, partnerIds: [] })
@@ -233,48 +236,49 @@ describe('Run 3 — global deal (P9–P11)', () => {
 
   it('P10 — suppressed when held for an advertiser, whitelist-only, on a buyers list, or the master switch is off; a blocked buyer is still refused', async () => {
     const h = await harness()
-    await h.approvedCrid('crid-p10', day(0))
+    await openSlot(h, 'crid-p10')
     await globalDeal(h)
-    /* Held for a named advertiser: booked by reservation, no bid request at all. */
+    /* Held for a named advertiser: booked by reservation, never signalled in real time, no bid request at all. */
+    const before = h.bidder.log.bidRequests.length
     await h.admin.slot({ advertisers: ['Swisse'], listMode: null })
-    expect((await runAuction(h.ctx, day(1))).positions[0]).toMatchObject({ bidRequests: 0, skipped: 'Held for a named advertiser: booked by reservation.' })
+    expect((await h.signal()).statusCode).toBe(409)
+    expect(h.bidder.log.bidRequests.length).toBe(before)
     /* Whitelist-only: still requested, but never on the global deal. */
     await h.admin.slot({ advertisers: [], listMode: 'whitelist_only' })
-    await runAuction(h.ctx, day(2))
+    await h.signal()
     expect(lastImp(h).pmp).toBeUndefined()
     /* Master switch off: open slot, flag on, no global deal. */
     await h.admin.slot({ advertisers: [], listMode: 'rtb' })
     await globalDeal(h, false)
-    await runAuction(h.ctx, day(3))
+    await h.signal()
     expect(lastImp(h).pmp).toBeUndefined()
     /* A bid quoting the global deal where it isn't offered is refused, not treated as open. */
     h.bidder.setScript((req) => ({ body: response(req, [{ ...swisseBid(req, { price: 150, crid: 'crid-p10' }), dealid: GLOBAL_DEAL_ID }]) }))
-    await runAuction(h.ctx, day(4))
-    expect((await h.rows(day(4)))[0]).toMatchObject({ status: 'rejected', reason: expect.stringContaining('not in the global deal') })
+    expect(await h.signal()).toMatchObject({ status: 'no_fill' })
     /* On again, but the advertiser is blacklisted: same pre-auction checks as open exchange. */
     await globalDeal(h)
     h.bidder.setScript(null)
     await h.ctx.partners.update('p_google', { blockList: ['5130002'] })
-    expect((await runAuction(h.ctx, day(5))).positions[0].winner).toBeNull()
-    expect((await h.rows(day(5)))[0]).toMatchObject({ status: 'rejected', reason: 'Swisse is on the advertiser blacklist.' })
+    expect(await h.signal()).toMatchObject({ status: 'no_fill' })
   })
 
   it('P11 — the per-slot flag defaults on and a retailer can opt a slot out and back in', async () => {
     const h = await harness()
+    await openSlot(h, 'crid-p11')
     await globalDeal(h)
     const row = async () => (await h.app.inject({ method: 'GET', url: '/api/admin/v1/available-inventory' })).json().items.find((r: { displayTypeId: string; slot: number }) => r.displayTypeId === DT && r.slot === 1)
     expect(await row()).toMatchObject({ inGlobalDeal: true, globalDealSuppressedBy: null })
-    await runAuction(h.ctx, day(0))
+    await h.signal()
     expect(lastImp(h).pmp?.deals[0].id).toBe(GLOBAL_DEAL_ID)
     expect((await setInGlobalDeal(h, false)).statusCode).toBe(200)
     expect(await row()).toMatchObject({ inGlobalDeal: false })
-    await runAuction(h.ctx, day(1))
+    await h.signal()
     expect(lastImp(h).pmp).toBeUndefined()
     /* Omitted keeps the slot's flag (a client that predates it). */
     expect((await setInGlobalDeal(h)).statusCode).toBe(200)
     expect(await row()).toMatchObject({ inGlobalDeal: false })
     expect((await setInGlobalDeal(h, true)).statusCode).toBe(200)
-    await runAuction(h.ctx, day(2))
+    await h.signal()
     expect(lastImp(h).pmp?.deals[0].id).toBe(GLOBAL_DEAL_ID)
     /* A slot held for an advertiser reports why the flag has no effect. */
     await h.admin.slot({ advertisers: ['Swisse'], listMode: null })

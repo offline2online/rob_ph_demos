@@ -1,11 +1,11 @@
 /* Advertiser settings (spec §4, §5, §6): pricing and the company lists, plus
    the read-only Where these apply and Available Inventory. */
-import { INTERACTIVE_ENABLED, MAX_MAX_CAMPAIGNS, MAX_MAX_PLAY_LENGTH_SEC, MIN_MAX_CAMPAIGNS, MIN_MAX_PLAY_LENGTH_SEC, maxPlayLengthSecOf, advertiserSlug, assignedOf, billingUnitHoursOf, maxCampaignsOf, interactiveReservePriceOf, reservePriceOf, type AdvertiserSettings, type AdvertiserSettingsInput, type Assigned, type AvailableInventoryRow, type DisplayType, type DspAdvertisers } from '@ph-dsp/types'
+import { INTERACTIVE_ENABLED, PLATFORM_DEFAULT_BILLING_UNIT_HOURS, MAX_MAX_CAMPAIGNS, MAX_MAX_PLAY_LENGTH_SEC, MIN_MAX_CAMPAIGNS, MIN_MAX_PLAY_LENGTH_SEC, maxPlayLengthSecOf, advertiserSlug, assignedOf, billingUnitHoursOf, maxCampaignsOf, interactiveReservePriceOf, reservePriceOf, type AdvertiserSettings, type AdvertiserSettingsInput, type Assigned, type AvailableInventoryRow, type DisplayType, type DspAdvertisers } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { cleanCategoryList, validateAdvertiserSettings } from '../../domain/advertiserSettings'
 import { tx } from '../../db/db'
-import { companyWindowCommitments, globalDealSuppressedBy, positionIdOf, slotInGlobalDeal, slotWindowCommitments, unsellableReason } from '../../domain/positions'
+import { globalDealSuppressedBy, positionIdOf, slotInGlobalDeal, slotWindowCommitments, unsellableReason } from '../../domain/positions'
 import { audienceOf, zonesOf } from '../../domain/displayTypes'
 import { playsPerWindowOf } from '../../domain/plays'
 import { assignedToSlot, rotationSizeOf, validateAssigned } from '../../domain/slots'
@@ -37,38 +37,10 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
     const errors = validateAdvertiserSettings(req.body)
     if (errors.length) throw validationFailed(errors, 'An entry can’t be on both category lists, and pricing must be positive.')
     const b = req.body as AdvertiserSettingsInput
-    /* Windows already bid on or booked are keyed on the current length (Q13)
-       — changing it can't reach back and resize them. It used to be refused
-       outright while any were still active; now the new length is deferred
-       instead (Rob's board ticket, 26 Sep 2026): playWindowHours stays as it
-       is and the request waits in pendingPlayWindowHours until every such
-       window has played, at which point schedulerTick (exchange/scheduler.ts)
-       promotes it on its own. A request that doesn't touch playWindowHours
-       leaves any change already pending exactly as it was. Since OQ27 only
-       the windows of slots that inherit it count (companyWindowCommitments):
-       a slot with its own billing unit isn't resized by this change.
-       One transaction from the read to the save: a scheduler tick promoting
-       a deferred length can't land in between and be overwritten. */
     await tx(ctx.db, async () => {
       const current = await ctx.company.get()
-      let playWindowHours = current.playWindowHours
-      let pendingPlayWindowHours = current.pendingPlayWindowHours
-      let pendingPlayWindowEffectiveFrom = current.pendingPlayWindowEffectiveFrom
-      if (b.playWindowHours !== current.playWindowHours) {
-        const active = await companyWindowCommitments(ctx)
-        if (!active.length) {
-          playWindowHours = b.playWindowHours
-          pendingPlayWindowHours = null
-          pendingPlayWindowEffectiveFrom = null
-        } else {
-          pendingPlayWindowHours = b.playWindowHours
-          pendingPlayWindowEffectiveFrom = new Date(Math.max(...active.map((r) => Date.parse(r.windowStart) + current.playWindowHours * 3_600_000))).toISOString()
-        }
-      }
       await ctx.company.save({
         currency: b.currency, floorCpm: b.floorCpm, interactiveCpe: INTERACTIVE_ENABLED ? b.interactiveCpe : current.interactiveCpe,
-        auctionOpensHours: b.auctionOpensHours, playWindowHours, auctionCutoffTime: b.auctionCutoffTime,
-        pendingPlayWindowHours, pendingPlayWindowEffectiveFrom,
         categoryWhitelist: cleanCategoryList(b.categoryWhitelist), categoryBlacklist: cleanCategoryList(b.categoryBlacklist),
         guaranteeBufferPct: b.guaranteeBufferPct ?? current.guaranteeBufferPct,
         uncachedRestriction: b.uncachedRestriction ?? current.uncachedRestriction,
@@ -159,10 +131,9 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
           interactiveReservePrice: interactiveReservePriceOf(t, s),
           interactiveReservePriceOverride: s.interactiveReservePrice ?? null,
           displayTypeReservePrice: t.phExtensions?.reservePrice ?? null,
-          billingUnitHours: billingUnitHoursOf(t, s, company.playWindowHours),
+          billingUnitHours: billingUnitHoursOf(t, s),
           billingUnitHoursOverride: s.billingUnitHours ?? null,
           displayTypeBillingUnitHours: t.phExtensions?.billingUnitHours ?? null,
-          companyPlayWindowHours: company.playWindowHours,
           maxCampaigns: maxCampaignsOf(t, s),
           maxCampaignsOverride: s.maxCampaigns ?? null,
           displayTypeMaxCampaigns: t.phExtensions?.maxCampaigns ?? null,
@@ -171,7 +142,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
           displayTypeMaxPlayLengthSec: t.phExtensions?.maxPlayLengthSec ?? null,
           companyMaxPlayLengthSec: company.maxPlayLengthSec,
           slotCount,
-          playsPerWindow: playsPerWindowOf(billingUnitHoursOf(t, s, company.playWindowHours) * 3_600_000, maxPlayLengthSecOf(t, s, company.maxPlayLengthSec), slotCount),
+          playsPerWindow: playsPerWindowOf(billingUnitHoursOf(t, s) * 3_600_000, maxPlayLengthSecOf(t, s, company.maxPlayLengthSec), slotCount),
         })
       }
     }
@@ -225,7 +196,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
      auctions: two-period model", 23 Sep 2026) — the same override/default
      pair as reservePrice/reservePriceDefault above. Whole hours, up to a
      year, since OQ27 made it the slot's play-window length: the same
-     bounds as the company play window it replaces for the slot. */
+     bounds the company play window had before it was removed. */
   const parseBillingUnitHours = (v: unknown, field: string, errors: { field: string; reason: string }[]): number | null => {
     if (v === null || v === undefined) return null
     if (typeof v !== 'number' || !Number.isInteger(v) || v < 1 || v > 8760) {
@@ -298,8 +269,6 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         const assigned: Assigned = { partnerIds: names(raw.partnerIds), advertisers: names(raw.advertisers), whitelistOnly: raw.whitelistOnly === true, buyersListId: tiers[0] ?? null, buyersListIds: tiers }
         const bad = await validateAssigned(assigned, (k) => f(`assignedTo.${k}`), partners, def ? assignedOf(def) : { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: null, buyersListIds: [] }, ctx.buyersLists)
         errors.push(...bad)
-        /* A real-time slot (7 Oct 2026) sells per impression to open and whitelist-only buyers: no named advertisers, no private auction. */
-        if (def?.bidMode === 'realtime' && (assigned.advertisers.length || assigned.buyersListIds.length)) errors.push({ field: f('assignedTo'), reason: 'This slot is sold in real time (per impression), so it can’t be held for named advertisers or assigned to a private auction. Switch it back to advance bidding on the display type’s slot editor first.' })
 
         /* The global deal flag (8 Oct 2026): omitted keeps the slot's, so a client that predates it never changes it. */
         if (r.inGlobalDeal !== undefined && typeof r.inGlobalDeal !== 'boolean') errors.push({ field: f('inGlobalDeal'), reason: 'inGlobalDeal must be true or false.' })
@@ -371,14 +340,13 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
 
       /* A slot's billing unit is its play-window length (OQ27, Rob 29 Sep
          2026), so changing it — its own override, or the display type
-         default it inherits, or dropping back to the company window — would
+         default it inherits, or dropping back to the platform default — would
          resize windows already bid on or booked under the old length: a
          locked-rate term's windows, a sold week half played. Refused for just
          the slots that have any, naming when the last one ends; every other
-         slot's change goes through as before. (The company-wide value is
-         deferred instead — it spans every inheriting slot, so it waits on
-         its own — but a slot's is one row's edit, and its CPM is quoted
-         against it: the admin tries again once those windows have played.) */
+         slot's change goes through as before. (A slot's billing unit is one
+         row's edit, and its CPM is quoted against it: the admin tries again
+         once those windows have played.) */
       const resizing: { field: string; reason: string }[] = []
       for (const [displayTypeId, slots] of wanted) {
         const dt = (await ctx.displayTypes.get(displayTypeId))!
@@ -386,8 +354,8 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         for (const [i, s] of (dt.phExtensions?.slots ?? []).entries()) {
           if (s.owner !== 'advertiser') continue
           const patch = slots.get(i + 1)
-          const before = billingUnitHoursOf(dt, s, company.playWindowHours)
-          const after = (patch ? patch.billingUnitHours : s.billingUnitHours ?? null) ?? newDefault ?? company.playWindowHours
+          const before = billingUnitHoursOf(dt, s)
+          const after = (patch ? patch.billingUnitHours : s.billingUnitHours ?? null) ?? newDefault ?? PLATFORM_DEFAULT_BILLING_UNIT_HOURS
           if (after === before) continue
           const active = await slotWindowCommitments(ctx, positionIdOf(displayTypeId, i + 1), before * 3_600_000)
           if (!active.length) continue

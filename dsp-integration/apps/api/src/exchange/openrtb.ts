@@ -106,7 +106,7 @@ export async function buildBidRequest(ctx: Context, p: PositionRef, partner: Par
          If an independent measurement partner is adopted, switch to 1 and send that vendor's domain.
          A website or mobile app impression has no multiplier at all (one render, one impression). */
       ...(inventory === 'dooh' ? { qty: { multiplier: view.assumedViewsPerWindow, sourcetype: 2 as const } } : {}),
-      exp: Math.round(windowMsFor(company.playWindowHours, p) / 1000),
+      exp: Math.round(windowMsFor(p) / 1000),
       ...(pmp ? { pmp } : {}),
       ext: { ph: { orientation: view.screen.orientation, slotDurationSec: view.screen.slotDurationSec, loopLengthSec: view.screen.loopLengthSec, maxPlayLengthSec: view.screen.maxPlayLengthSec, shareOfVoice: view.screen.shareOfVoice, playsPerWindow: view.playsPerWindow } },
     }],

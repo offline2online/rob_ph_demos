@@ -25,15 +25,20 @@ const W1 = '2026-09-21T00:00:00.000Z'
 const W2 = '2026-09-22T00:00:00.000Z'
 const W3 = '2026-09-23T00:00:00.000Z'
 
-async function setup(slot: Partial<Slot> = {}) {
+async function setup(slot: Partial<Slot> = {}, dealType: 'private_auction' | 'guaranteed' = 'private_auction') {
   let now = NOW
-  const ctx = await testContext({ clock: () => now })
+  const ctx = await testContext({ byWindow: true, clock: () => now })
+  /* On a position under a buyers list the list's deal type is authoritative: a guaranteed reserve needs a guaranteed list. */
+  if (dealType === 'guaranteed') {
+    const open = (await ctx.buyersLists.get('bl_test_open'))!
+    await ctx.buyersLists.update(open.id, { name: open.name, description: '', dealType: 'guaranteed', invitedBuyers: open.invitedBuyers, activeFrom: null, activeTo: null, auctionCloses: null })
+  }
   const app = buildApp(ctx)
   /* Portrait: one advertiser slot, reserve price 150 CPM (floor 100). */
   const ext = (await ctx.displayTypes.get('portrait'))!.phExtensions!
   await ctx.displayTypes.saveExtensions('portrait', {
     ...ext,
-    slots: [{ label: 'Ad', owner: 'advertiser', partnerIds: [], advertisers: [], listMode: 'rtb', buyersListId: null, storeScope: null, quota: null, zoneId: null, reservePrice: 150, ...slot } as Slot],
+    slots: [{ label: 'Ad', owner: 'advertiser', partnerIds: [], advertisers: [], listMode: 'deal', buyersListId: 'bl_test_open', storeScope: null, quota: null, zoneId: null, reservePrice: 150, ...slot } as Slot],
   })
   ctx.db.prepare('INSERT INTO audience_vacd (display_type_id, slot, assumed_views_per_window, counted) VALUES (?, ?, ?, 1)').run('portrait', 1, 800)
   /* A Swisse campaign whose creative fits Portrait, approved and activated,
@@ -57,13 +62,13 @@ async function setup(slot: Partial<Slot> = {}) {
 
 const settings = async (app: Awaited<ReturnType<typeof setup>>['app'], guaranteeBufferPct?: number) => {
   const cur = (await app.inject({ url: '/api/admin/v1/advertiser-settings' })).json()
-  const { pendingPlayWindowHours: _a, pendingPlayWindowEffectiveFrom: _b, ...input } = cur
+  const input = cur
   return app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: guaranteeBufferPct === undefined ? input : { ...input, guaranteeBufferPct } })
 }
 
 describe('guaranteed deal path: forecast (plays x VAC-d) less the contingency buffer', () => {
   it('defaults the buffer to 10% and commits 90% of the 800 forecast', async () => {
-    const { app, post, RESERVE, rows } = await setup()
+    const { app, post, RESERVE, rows } = await setup({}, 'guaranteed')
     expect((await app.inject({ url: '/api/admin/v1/advertiser-settings' })).json().guaranteeBufferPct).toBe(10)
     const res = await post({ ...RESERVE, dealType: 'guaranteed' })
     expect(res.statusCode).toBe(201)
@@ -75,7 +80,7 @@ describe('guaranteed deal path: forecast (plays x VAC-d) less the contingency bu
   })
 
   it('changing the buffer in Advertiser settings changes the committed figure', async () => {
-    const { app, post, RESERVE } = await setup()
+    const { app, post, RESERVE } = await setup({}, 'guaranteed')
     expect((await settings(app, 25)).json().guaranteeBufferPct).toBe(25)
     const res = await post({ ...RESERVE, dealType: 'guaranteed' })
     expect(res.json()).toMatchObject({ forecastImpressions: 800, guaranteedImpressions: 600 })

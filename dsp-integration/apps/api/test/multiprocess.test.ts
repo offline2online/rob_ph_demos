@@ -5,8 +5,11 @@
    SQLite writes; separate processes can. Real clock, real sockets, the
    seed's estate; the DSP bidders are unreachable (no bid is no failure).
 
-   Skipped in the two minutes around midnight UTC, when "the next window's
-   cutoff a minute ago" can't be expressed with a daily cutoff time. */
+   Only a private auction (deal) is cleared by a tick now (8 Oct 2026), so the
+   seeded Supplier slot is put on an open deal first, over the admin API.
+
+   Skipped in the minutes around midnight UTC, when the window a tick clears
+   (the one after the running window) would change under the test. */
 import { type ChildProcess, spawn } from 'node:child_process'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -22,7 +25,7 @@ const GOOGLE = { authorization: 'Bearer poc-token-google-dv360', 'content-type':
 const POS = 'menu_board.s2'
 
 const minuteOfDay = new Date().getUTCHours() * 60 + new Date().getUTCMinutes()
-const nearMidnight = minuteOfDay >= 23 * 60 + 57 || minuteOfDay <= 2
+const nearMidnight = minuteOfDay >= 23 * 60 + 55 || minuteOfDay <= 2
 
 const dir = mkdtempSync(join(tmpdir(), 'ph-multi-'))
 const env = {
@@ -53,7 +56,6 @@ const ready = async (port: number) => {
 }
 const api = (port: number, method: string, path: string, body?: unknown, headers: Record<string, string> = GOOGLE) =>
   fetch(`http://127.0.0.1:${port}${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) })
-const hhmm = (d: Date) => `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`
 
 afterAll(async () => {
   for (const c of children) if (c.exitCode === null) c.kill('SIGTERM')
@@ -62,13 +64,6 @@ afterAll(async () => {
 
 describe.skipIf(nearMidnight)('two API processes and three ticks on one database', () => {
   const ports = [41000 + Math.floor(Math.random() * 10_000), 51000 + Math.floor(Math.random() * 10_000)]
-  const settings = async (port: number, patch: Record<string, unknown>) => {
-    const current = await (await api(port, 'GET', '/api/admin/v1/advertiser-settings', undefined, {})).json() as Record<string, unknown>
-    const res = await api(port, 'PUT', '/api/admin/v1/advertiser-settings', { ...current, ...patch }, { 'content-type': 'application/json' })
-    expect(res.status, await res.text()).toBe(200)
-    /* The other process reads company settings from a 1 s snapshot. */
-    await new Promise((r) => setTimeout(r, 1200))
-  }
   let window = ''
   let swisseId = ''
   let nestleId = ''
@@ -81,11 +76,18 @@ describe.skipIf(nearMidnight)('two API processes and three ticks on one database
   }, 60_000)
 
   it('the same bid on both processes at once: one advertiser holds one bid, whichever process took it', async () => {
-    /* Bidding for the next window closes at a cutoff two minutes from now. */
-    const cutoff = new Date(Date.now() + 2 * 60_000)
-    const w = new Date(Date.UTC(cutoff.getUTCFullYear(), cutoff.getUTCMonth(), cutoff.getUTCDate() + 1))
+    /* The next daily window is the one a tick clears. */
+    const now = new Date()
+    const w = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1))
     window = w.toISOString()
-    await settings(ports[0], { auctionCutoffTime: hhmm(cutoff), auctionOpensHours: 168 })
+    /* Sold by window: an open deal inviting both seats, on the Supplier slot. */
+    const json = { 'content-type': 'application/json' }
+    const list = await api(ports[0], 'POST', '/api/admin/v1/buyers-lists', { name: 'Multiprocess open deal', dealType: 'private_auction', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }, { partnerId: 'p_google', seatId: '5130002' }] }, json)
+    expect(list.status, await list.clone().text()).toBe(201)
+    const listId = (await list.json()).id as string
+    const assign = await api(ports[0], 'PUT', '/api/admin/v1/available-inventory', { items: [{ displayTypeId: 'menu_board', slot: 2, reservePrice: null, assignedTo: { partnerIds: ['p_google'], advertisers: [], whitelistOnly: false, buyersListId: listId, buyersListIds: [listId] } }] }, json)
+    expect(assign.status, await assign.clone().text()).toBe(200)
+    await new Promise((r) => setTimeout(r, 1200))
     /* A fresh database carries the sample bookings, which may hold this
        window already; clear it so it is for sale. */
     const db = new DatabaseSync(env.PH_DB_FILE)
@@ -114,8 +116,7 @@ describe.skipIf(nearMidnight)('two API processes and three ticks on one database
     }
   }, 60_000)
 
-  it('three ticks seeing the cutoff pass at once auction the window once; the fourth finds nothing to do', async () => {
-    await settings(ports[1], { auctionCutoffTime: hhmm(new Date(Date.now() - 60_000)) })
+  it('three ticks seeing the deal window due at once auction it once; the fourth finds nothing to do', async () => {
     const ticks = [run(['src/exchange/tickCli.ts']), run(['src/exchange/tickCli.ts']), run(['src/exchange/tickCli.ts'])]
     const codes = await Promise.all(ticks.map(exited))
     const lines = ticks.flatMap((t) => output.get(t)!)
@@ -127,7 +128,10 @@ describe.skipIf(nearMidnight)('two API processes and three ticks on one database
       expect((await (await api(port, 'GET', `/api/v1/reservations/${nestleId}`)).json())).toMatchObject({ status: 'lost', reason: 'Outbid: the window cleared at 200 USD CPM.' })
     }
     const db = new DatabaseSync(env.PH_DB_FILE, { readOnly: true })
-    expect(db.prepare('SELECT window_start, finished_at FROM auction_runs').all()).toMatchObject([{ window_start: window, finished_at: expect.any(String) }])
+    /* The fresh database carries the demo estate too, whose own deal position is cleared by the same ticks: every claim is finished, and ours is among them exactly once. */
+    const claims = db.prepare('SELECT window_start, finished_at FROM auction_runs').all() as { window_start: string; finished_at: string | null }[]
+    expect(claims.filter((c) => c.window_start === `${window}#${POS}`)).toMatchObject([{ finished_at: expect.any(String) }])
+    expect(claims.every((c) => c.finished_at !== null)).toBe(true)
     expect((db.prepare("SELECT COUNT(*) AS n FROM reservations WHERE position_id = ? AND window_start = ? AND status IN ('won', 'reserved') AND test_mode = 0").get(POS, window) as { n: number }).n).toBe(1)
     db.close()
     /* A late bid, after the auction: refused, and nothing is left pending. */

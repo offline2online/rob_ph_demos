@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest'
 import { advertiserSlug } from '@ph-dsp/types'
 import { buildApp } from '../src/http/app'
-import { allPositions } from '../src/domain/positions'
+import { allPositions, isRealtime } from '../src/domain/positions'
 import { listAdvertisers } from '../src/routes/admin/advertisers'
 import { seedDemo } from '../src/seed/demo'
 import { NOW, testContext } from './helpers'
@@ -54,7 +54,9 @@ describe('demo estate', () => {
 
     const booked = (await ctx.reservations.byStatus(['won', 'reserved'], new Date(0).toISOString())).filter((r) => !r.testMode)
     const byPosition = new Set(booked.map((r) => r.positionId))
-    for (const p of await allPositions(ctx)) expect(byPosition.has(p.positionId), `${p.positionId} has a booking`).toBe(true)
+    /* Sold by window (a private auction, or held for a named advertiser) = booked; open and whitelist-only positions are real time and take no window bookings. */
+    /* (The base seed's sample history on menu_board.s2 predates this and stays.) */
+    for (const p of await allPositions(ctx)) expect(byPosition.has(p.positionId), `${p.positionId} ${isRealtime(p) ? 'has no window booking (real time)' : 'has a booking'}`).toBe(!isRealtime(p) || p.positionId === 'menu_board.s2')
     expect(new Set(booked.map((r) => r.pricingType))).toEqual(new Set(['localised', 'personalised']))
     expect(booked.filter((r) => r.type === 'reserve').length).toBeGreaterThan(3)
 

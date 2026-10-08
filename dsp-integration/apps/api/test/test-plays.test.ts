@@ -17,7 +17,7 @@ const won = (over: Partial<ReservationRecord> = {}): ReservationRecord => ({
 
 describe('POST /admin/v1/test/plays', () => {
   it('writes plays with their tier, spread over the display type’s displays and inside the window', async () => {
-    const ctx = await testContext({ clock: () => NOW })
+    const ctx = await testContext({ byWindow: true, clock: () => NOW })
     await ctx.reservations.insert(won())
     const res = await buildApp(ctx).inject({ method: 'POST', url: '/api/admin/v1/test/plays', payload: { reservationId: 'res_tp_1', plays: [{ tier: 'default', count: 4 }, { tier: 'personalised', count: 2, durationSec: 8 }] } })
     expect(res.statusCode).toBe(201)
@@ -32,7 +32,7 @@ describe('POST /admin/v1/test/plays', () => {
   /* Contract v3.1 row 3 (DDOjJoYjraKROu4Ainj5): every play carries the
      version it showed, which is the version handed off on the booking. */
   it('each play carries the booking’s asset version, and the line item reports plays per version', async () => {
-    const ctx = await testContext({ clock: () => NOW, dspFetch: mockDsps().fetchImpl })
+    const ctx = await testContext({ byWindow: true, clock: () => NOW, dspFetch: mockDsps().fetchImpl })
     const app = buildApp(ctx)
     await runAuction(ctx, new Date('2026-09-21T00:00:00.000Z'))
     const nestle = (await ctx.approvalCampaigns.listCampaigns({ sources: ['dsp'] })).find((c) => c.name === 'Nestlé — crid-5130001')!.campaignId
@@ -61,7 +61,7 @@ describe('POST /admin/v1/test/plays', () => {
   })
 
   it('validates the body and refuses an unknown reservation', async () => {
-    const app = buildApp(await testContext({ clock: () => NOW }))
+    const app = buildApp(await testContext({ byWindow: true, clock: () => NOW }))
     expect((await app.inject({ method: 'POST', url: '/api/admin/v1/test/plays', payload: { plays: [] } })).statusCode).toBe(400)
     expect((await app.inject({ method: 'POST', url: '/api/admin/v1/test/plays', payload: { reservationId: 'x', plays: [{ tier: 'gold', count: 1 }] } })).statusCode).toBe(400)
     expect((await app.inject({ method: 'POST', url: '/api/admin/v1/test/plays', payload: { reservationId: 'nope', plays: [{ tier: 'default', count: 1 }] } })).statusCode).toBe(404)
@@ -70,7 +70,7 @@ describe('POST /admin/v1/test/plays', () => {
 
   it('does not exist in production', async () => {
     expect(loadConfig({ NODE_ENV: 'production', PARTNER_TOKENS: '{"t":"p"}' }).testEndpoints).toBe(false)
-    const ctx = await testContext({ clock: () => NOW })
+    const ctx = await testContext({ byWindow: true, clock: () => NOW })
     ctx.config.testEndpoints = false
     await ctx.reservations.insert(won())
     const res = await buildApp(ctx).inject({ method: 'POST', url: '/api/admin/v1/test/plays', payload: { reservationId: 'res_tp_1', plays: [{ tier: 'default', count: 1 }] } })

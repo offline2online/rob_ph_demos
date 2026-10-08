@@ -61,15 +61,16 @@ const bill = async (h: H, campaignId: string, w: Date, plays: { plays: number; p
   return (await runBilling(h.ctx)).filter((i) => i.windowStart === w.toISOString())
 }
 
-describe('Run 7 — D1 open RTB: per-play auction, first price, no volume', () => {
+describe('Run 7 — D1 open deal: per-window auction, first price, no volume', () => {
+  /* The open auction by window is gone (8 Oct 2026): an open slot is sold per play (D1.5). The fixture's slot sits on one perpetual open deal, which clears a fresh first-price auction every window, as a buyers list with no auctionCloses always has. */
   it('D1.1 — set up → approve → bid above the floor wins at its own price, is handed off and billed on realised VAC-d', async () => {
     const h = await harness()
-    expect((await h.ctx.buyersLists.list()).length, 'an open slot has no buyers list').toBe(0)
+    expect((await h.ctx.buyersLists.list()).length, 'one perpetual open deal').toBe(1)
     const campaignId = await h.approvedCrid('crid-d1', day(0))
     const out = await runAuction(h.ctx, day(1))
     expect(out.positions[0]).toMatchObject({ bidRequests: 1, winner: { advertiserId: 'swisse', clearingCpm: 150 } })
-    /* Open auction: the request carries no deal, and nothing is carried beyond this window. */
-    expect(h.bidder.log.bidRequests.at(-1)!.body.imp[0].pmp).toBeUndefined()
+    /* No auctionCloses: nothing is locked or carried beyond this window. */
+    expect((await h.ctx.buyersLists.get('bl_e2e_open'))!.lockedWin).toBeNull()
     expect(await rowsOf(h, day(1))).toMatchObject([{ campaignId, status: 'won', clearingCpm: 150, dealType: 'preferred', guaranteedImpressions: null }])
     expect(booked(h, day(1))).toMatchObject([{ campaignId, displayTypeId: DT, slot: 1 }])
     expect(booked(h, day(2))).toEqual([])
@@ -113,10 +114,9 @@ describe('Run 7 — D1 open RTB: per-play auction, first price, no volume', () =
 
   it('D1.5 — real-time per impression: the player signals, the request is cut to the impression, a bid above the floor fills it first price, proof of play is logged', async () => {
     const h = await harness()
-    /* The creative has to be known and approved before it can fill inside tmax: one advance auction introduces it. */
+    /* The creative has to be known and approved before it can fill inside tmax: one deal auction introduces it. Then the slot goes open, which is real time. */
     const campaignId = await h.approvedCrid('crid-d1-rt', day(0))
-    const ext = (await h.ctx.displayTypes.get(DT))!.phExtensions!
-    await h.ctx.displayTypes.saveExtensions(DT, { ...ext, slots: ext.slots.map((s, i) => (i === 0 ? { ...s, bidMode: 'realtime' } : s)) } as never)
+    await h.admin.slot({ listMode: 'rtb', buyersListId: null })
     const PLAYER = { authorization: 'Bearer poc-token-player' }
     const signal = await h.app.inject({ method: 'POST', url: '/api/player/v1/impressions', headers: PLAYER, payload: { displayId: `d_${DT}_1`, slot: 1 } })
     expect(signal.statusCode).toBe(200)
@@ -268,7 +268,7 @@ describe('Run 7 — D4 programmatic guaranteed: reserve with committed volume', 
   it('D4.3 — the buffer is the retailer’s: changing it in Advertiser settings changes the next booking’s commitment', async () => {
     const h = await dealHarness('guaranteed')
     const cur = (await h.app.inject({ url: '/api/admin/v1/advertiser-settings' })).json()
-    const { pendingPlayWindowHours: _a, pendingPlayWindowEffectiveFrom: _b, ...input } = cur
+    const input = cur
     expect((await h.app.inject({ method: 'PUT', url: '/api/admin/v1/advertiser-settings', payload: { ...input, guaranteeBufferPct: 25 } })).statusCode).toBe(200)
     const id = await h.readyApiCampaign('Swisse — D4.3')
     expect((await reserve(h, id, day(1))).json()).toMatchObject({ forecastImpressions: ASSUMED_VIEWS, guaranteedImpressions: guaranteedImpressions(ASSUMED_VIEWS, 25) })

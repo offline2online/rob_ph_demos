@@ -8,7 +8,7 @@
    2026, programmatic guaranteed): `type: reserve` on a position with a
    reserve price (reservePriceOf: the slot's override, else its display
    type's default) is a buyer's commitment to that window at the reserve
-   price. It may be made ahead of the open auction, up to the cutoff. The
+   price. It may be made any time before the window starts. The
    window is held as Reserved at once: a `reserved` row, which the auction
    never clears (the one-live-winner-per-window index, migration 0021, counts
    it). It is booked and billed at the reserve price itself on the window's
@@ -31,7 +31,7 @@ import { assignedOf, interactiveReservePriceOf, reservePriceOf } from '@ph-dsp/t
 import { guaranteedImpressions } from '../../domain/guarantee'
 import { dspDealTerms } from '../../dsp/dealTerms'
 import { termStateAt } from '../../billing/term'
-import { assignmentOf, assumedViewsPerWindow, closesAtFor, effectivePartnerIds, findPosition, heldFor, isRealtime, opensAtFor, unsellableReason, windowHoursFor, windowStartOf } from '../../domain/positions'
+import { assignmentOf, assumedViewsPerWindow, effectivePartnerIds, findPosition, heldFor, isRealtime, unsellableReason, windowHoursFor, windowStartOf } from '../../domain/positions'
 import { checkAdvertiser, checkCampaign, checkFloor, checkTargeting, checkVersionCount, firstRefusal } from '../../exchange/enforcement'
 import { handOff } from '../../exchange/handoff'
 import { auctionClaimed } from '../../exchange/scheduler'
@@ -81,7 +81,7 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
     /* The start of one of this position's own windows: its billing unit
        long (OQ27), so a weekly slot's windows start on Mondays. */
     const company = await ctx.company.get()
-    const hours = windowHoursFor(company.playWindowHours, p)
+    const hours = windowHoursFor(p)
     if (!start || Number.isNaN(start.getTime()) || windowStartOf(start, hours * 3_600_000).getTime() !== start.getTime()) invalid.push({ field: 'windowStart', reason: `The start of one of this position's ${hours}-hour play windows (UTC).` })
     if (invalid.length) throw validationFailed(invalid)
 
@@ -95,11 +95,11 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
       throw validationFailed([{ field: 'bidCpm', reason: `The reserve price for this position is ${reservePrice} ${TRANSACTING_CURRENCY} CPM; commit to at least that.` }])
     }
     const now = ctx.clock().getTime()
-    /* A reservation is made in advance of the open auction (spec §5
-       "Reserve price"), so only a bid waits for bidding to open. Both stop
-       at the cutoff. */
-    if (b.type === 'bid' && now < opensAtFor(company, start!).getTime()) throw conflict(`Bidding for that window opens at ${opensAtFor(company, start!).toISOString()}.`)
-    if (now >= closesAtFor(company, start!).getTime() || (await auctionClaimed(ctx, windowStart))) throw conflict(`Bidding for that window closed at ${closesAtFor(company, start!).toISOString()}, when its auction ran.`)
+    const nowIso = new Date(now).toISOString()
+    /* No company auction schedule any more (Rob, 8 Oct 2026): a window can be
+       bid on or booked until it starts, or until its deal auction has been
+       claimed; what governs a deal is its own dates, checked below. */
+    if (now >= start!.getTime() || (await auctionClaimed(ctx, windowStart, pos.positionId))) throw conflict(`Bidding for that window closed: ${now >= start!.getTime() ? 'it has started' : 'its auction has run'}.`)
     /* Unscored (or duration-less) slot: refused with the reason, never sold at 0 views. */
     const unsellable = await unsellableReason(ctx, pos)
     if (unsellable) throw conflict(unsellable)
@@ -113,9 +113,11 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
     /* A waterfall (7 Oct 2026) takes bids while any tier's auction is open;
        the refusal names the top tier's. */
     const deals = assignment === 'deal' ? await Promise.all(assignedOf(pos.def).buyersListIds.map((id) => ctx.buyersLists.get(id))) : []
-    const stillOpen = deals.some((d) => { const t = d ? termStateAt(d, windowStart) : null; return !(d && t?.active && !t.auctionOpen) })
+    const stillOpen = deals.some((d) => { const t = d ? termStateAt(d, windowStart, nowIso) : null; return !(d && t?.active && !t.auctionOpen) })
+    /* The deal's delivery term (activeFrom/activeTo) gates what can be bid on or booked: a window outside every assigned list's term is not sold under the deal. */
+    if (deals.length && !deals.some((d) => d && termStateAt(d, windowStart, nowIso).active)) throw conflict('That window is outside the delivery term of this private auction (activeFrom/activeTo); it is not sold under the deal.')
     const deal = deals[0] ?? null
-    const term = deal ? termStateAt(deal, windowStart) : null
+    const term = deal ? termStateAt(deal, windowStart, nowIso) : null
     if (deal && term?.active && !term.auctionOpen && !stillOpen) {
       throw conflict(term.locked ? `This private auction's term is locked to a winning bid (${deal.name}); its windows take no further bids.` : `Bidding on this private auction closed at ${deal.auctionCloses} (${deal.name}).`)
     }

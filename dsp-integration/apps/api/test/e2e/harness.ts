@@ -20,6 +20,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { extname, join } from 'node:path'
+import { assignedOf } from '@ph-dsp/types'
 import { vi } from 'vitest'
 import { staticSession } from '../../src/auth/session'
 import { loadConfig } from '../../src/config'
@@ -51,6 +52,7 @@ const SECRETS_KEY = randomBytes(32).toString('base64')
 export const day = (n: number) => new Date(Date.UTC(2026, 8, 21 + n))
 
 /* The fixture's position: one Digital Signage display type, single zone, one Advertiser slot. */
+export const OPEN_DEAL = 'bl_e2e_open'
 export const DT = 'e2e_signage'
 export const POS = `${DT}.s1`
 export const DT_B = 'e2e_signage_b'
@@ -245,8 +247,12 @@ export async function harness(opts: { dbFile?: string } = {}) {
   const admin = {
     approve: (id: string, assetVersion = 'v1') => app.inject({ method: 'POST', url: `/api/admin/v1/campaigns/${id}/approve`, payload: { assetVersion } }),
     activate: (id: string, enabled = true) => app.inject({ method: 'PUT', url: `/api/admin/v1/campaigns/${id}/activation`, payload: { enabled } }),
-    setReservePrice: (reservePrice: number | null, displayTypeId = DT) =>
-      app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId, slot: 1, reservePrice }] } }),
+    /* The Available Inventory save replaces a slot's assignment, so it is sent back as it stands. */
+    setReservePrice: async (reservePrice: number | null, displayTypeId = DT) => {
+      const def = (await ctx.displayTypes.get(displayTypeId))!.phExtensions!.slots[0]
+      const a = assignedOf(def)
+      return app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId, slot: 1, reservePrice, assignedTo: { partnerIds: a.partnerIds, advertisers: a.advertisers, whitelistOnly: a.whitelistOnly, buyersListId: a.buyersListId, buyersListIds: a.buyersListIds } }] } })
+    },
     disconnect: (id = 'p_google') => app.inject({ method: 'POST', url: `/api/admin/v1/partners/${id}/disconnect` }),
     connect: (id = 'p_google') => app.inject({ method: 'POST', url: `/api/admin/v1/partners/${id}/connect` }),
     reject: (id: string, reason: string, assetReasons?: { assetId: string; reason: string }[], assetVersion = 'v1') =>
@@ -297,6 +303,11 @@ export async function harness(opts: { dbFile?: string } = {}) {
         seats: [{ id: 'ttd-adv-1', name: 'Arnott’s', domain: 'arnotts.com' }], listsLinked: true, allowList: [], blockList: [], categoryAllowList: [], categoryBlockList: [],
       } as never)
     }
+    const open = await ctx.buyersLists.get(OPEN_DEAL)
+    if (open) {
+      const invitedBuyers = (await ctx.partners.list()).flatMap((p) => p.seats.map((s) => ({ partnerId: p.id, seatId: s.id })))
+      await ctx.buyersLists.update(OPEN_DEAL, { name: open.name, description: '', dealType: open.dealType, invitedBuyers, activeFrom: open.activeFrom, activeTo: open.activeTo, auctionCloses: open.auctionCloses })
+    }
     for (const dt of [DT, DT_B]) {
       const t = await ctx.displayTypes.get(dt)
       if (t) await ctx.displayTypes.saveExtensions(dt, { ...t.phExtensions!, slots: t.phExtensions!.slots.map((s) => ({ ...s, partnerIds: [...new Set([...(s.partnerIds ?? []), 'p_ttd'])] })) } as never)
@@ -316,10 +327,15 @@ export async function harness(opts: { dbFile?: string } = {}) {
   }
   const queuedCampaign = async (crid: string, partnerId = 'p_google') =>
     onFree(ctx.db, () => (ctx.db.prepare('SELECT campaign_id FROM dsp_creatives WHERE partner_id = ? AND crid = ?').get(partnerId, crid) as { campaign_id: string } | undefined)?.campaign_id ?? null)
+  /* The player's impression-available signal for a real-time position (every open or whitelist-only slot). */
+  const signal = async (displayId = `d_${DT}_1`, slot = 1) => {
+    const res = await app.inject({ method: 'POST', url: '/api/player/v1/impressions', headers: { authorization: 'Bearer poc-token-player' }, payload: { displayId, slot } })
+    return { statusCode: res.statusCode, ...(res.json() as Record<string, unknown>) } as { statusCode: number; status?: string; clearingCpm?: number; impressionId?: string; creative?: { campaignId: string | null }; error?: { code: string; message: string } }
+  }
   const rows = async (w: Date, positionId = POS) => ctx.reservations.forWindow(positionId, w.toISOString())
 
   return {
-    ctx, app, bidder, playback, assets, campaigns, admin, partner, submitApiCampaign, readyApiCampaign, approvedCrid, queuedCampaign, rows, addSecondDsp,
+    ctx, app, bidder, playback, assets, campaigns, admin, partner, submitApiCampaign, readyApiCampaign, approvedCrid, queuedCampaign, rows, addSecondDsp, signal,
     setNow: (d: Date) => (now = d),
   }
 }
@@ -332,6 +348,9 @@ export type Harness = Awaited<ReturnType<typeof harness>>
    Advertiser slot is taken out so the fixture's position is the estate's
    only one. */
 export async function fixture(ctx: Context, opts: { second?: boolean } = {}) {
+  /* Windows are sold only under a private auction now (8 Oct 2026: every open position is real time), so the fixture's slot sits on one perpetual open deal — no dates, no auctionCloses — inviting every seat there is. A test of the real-time path switches the slot off it (admin.slot({ listMode: 'rtb', buyersListId: null, buyersListIds: [] })). */
+  const inviteAll = async () => (await ctx.partners.list()).flatMap((p) => p.seats.map((s) => ({ partnerId: p.id, seatId: s.id })))
+  if (!(await ctx.buyersLists.get(OPEN_DEAL))) await ctx.buyersLists.insert({ id: OPEN_DEAL, name: 'E2E open deal', description: '', invitedBuyers: await inviteAll(), activeFrom: null, activeTo: null, auctionCloses: null })
   const addSignage = async (id: string, name: string) => {
     await ctx.playlists.create({ id: `pl_${id}`, name: `${name} Playlist`, autoCreatedFor: id, items: [{ id: `pi_${id}`, campaignId: 'c_notice', priority: 1, playbackDuration: 30, campaignType: ['LOCALISED', 'ON_ROTATION'], enabled: true }] })
     const base = SEED_DISPLAY_TYPES[0]
@@ -340,7 +359,7 @@ export async function fixture(ctx: Context, opts: { second?: boolean } = {}) {
       playlistSettings: { ...base.playlistSettings, maximumCampaignsPlayedInRotation: 1 },
       multiZone: { enabled: false, zones: [] },
       phExtensions: {
-        slots: [{ label: 'Advertiser slot', owner: 'advertiser', partnerIds: ['p_google'], advertisers: [], listMode: 'rtb', storeScope: null, quota: null }],
+        slots: [{ label: 'Advertiser slot', owner: 'advertiser', partnerIds: ['p_google'], advertisers: [], listMode: 'deal', buyersListId: OPEN_DEAL, storeScope: null, quota: null }],
         venue: { openOohVenueType: 'retail.grocery', orientation: 'landscape' as const, loopLengthSec: 30 },
       },
     } as never)

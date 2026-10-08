@@ -15,14 +15,14 @@ const W1 = '2026-09-21T00:00:00.000Z'
 /* A display type made the way HQ Admin makes one: a capped rotation, two
    displays, an Advertiser slot, and no audience row. */
 async function setup(loopLengthSec: number | null = 40) {
-  const ctx = await testContext({ clock: () => NOW })
+  const ctx = await testContext({ byWindow: true, clock: () => NOW })
   const app = buildApp(ctx)
   const dt: DisplayType = {
     id: 'dt_ui', name: 'UI-made kiosk', touchPoint: 'Digital Signage', description: null, displayCanvasSize: { width: 1080, height: 1920 }, backgroundColor: '#000000',
     defaultPlaylistId: 'pl_portrait', playlistSettings: { maximumCampaignsPlayedInRotation: 2 }, qrControl: {}, enabledFeatures: {}, multiZone: { enabled: false, zones: [] },
   }
   expect((await app.inject({ method: 'POST', url: '/api/admin/v1/display-types', payload: dt })).statusCode).toBe(201)
-  const slot = (label: string, owner: string) => ({ label, owner, partnerIds: [], advertisers: [], listMode: 'rtb', buyersListId: null, storeScope: null, quota: null, zoneId: null }) as unknown as Slot
+  const slot = (label: string, owner: string) => ({ label, owner, partnerIds: [], advertisers: [], listMode: 'deal', buyersListId: 'bl_test_open', storeScope: null, quota: null, zoneId: null }) as unknown as Slot
   await ctx.displayTypes.saveExtensions('dt_ui', { slots: [slot('Ad 1', 'advertiser'), slot('Ad 2', 'internal')], ...(loopLengthSec ? { venue: { openOohVenueType: 'retail.grocery', orientation: 'portrait', loopLengthSec } } : {}) } as never)
   const ins = ctx.db.prepare("INSERT INTO displays (id, name, store, store_id, display_type_id) VALUES (?, 'Kiosk', 'Sydney CBD', 'st_sydney_cbd', 'dt_ui')")
   ins.run('d_ui_1'); ins.run('d_ui_2')

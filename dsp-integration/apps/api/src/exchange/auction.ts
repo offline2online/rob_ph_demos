@@ -1,9 +1,16 @@
-/* The SSP auction (spec §6 "Selling a play window", §7): clears one play
-   window for every sellable position, ahead of the window. Open auction,
-   first price (OpenRTB at=1). Candidates are the API bids placed through
+/* The private-auction (deal) clearing (spec §6, §7): clears one play window
+   for the positions assigned to a buyers list, ahead of the window. First
+   price (OpenRTB at=1). Candidates are the API bids placed through
    POST /v1/reservations and the bids DSPs return to our OpenRTB requests;
    every pre-auction check applies before any bid can win. A position held
    for a named advertiser is booked by reservation, not auctioned.
+
+   This is the ONLY window auction left (Rob, 8 Oct 2026). Every position
+   that is not a deal or held for named advertisers is sold in real time,
+   per impression (realtime.ts), and has no window auction, no advance
+   bidding and no company auction schedule. The scheduler
+   (scheduler.ts dueDealAuctions) triggers this per deal window, one window
+   ahead, and once per deal when its auctionCloses passes.
 
    Test-mode DSPs receive requests and their bids are cleared among
    themselves, but a Test-mode win never takes the window, is never billed
@@ -99,14 +106,22 @@ export const receivesBidRequests = (p: PartnerRecord) => p.status === 'connected
 export const POSITION_CONCURRENCY = 16
 export const MAX_BIDS_PER_RESPONSE = 10
 
-export async function runAuction(ctx: Context, at?: Date): Promise<AuctionResult> {
+/* Which positions to clear, and which buyers lists are having their one
+   term-deciding auction (exchange/scheduler.ts dueDealAuctions): a list in
+   `deciding` takes bids even though its auctionCloses has passed. */
+export interface AuctionOptions { positions?: readonly PositionRef[]; deciding?: ReadonlySet<string> }
+
+/* Clears one window for private-auction (deal) positions only: every other
+   position is sold in real time (realtime.ts), with no window auction. */
+export async function runAuction(ctx: Context, at?: Date, opts: AuctionOptions = {}): Promise<AuctionResult> {
   const windowStart = at ?? (await nextWindow(ctx))
   const start = windowStart.toISOString()
   /* Switched off or incomplete: no DSP is sent a bid request. */
   const exchangeLive = isLive(await ctx.exchange.get())
-  /* The positions whose own window starts here (OQ27). */
-  const hours = (await ctx.company.get()).playWindowHours
-  const startingHere = (await allPositions(ctx)).filter((p) => windowStartOf(windowStart, windowMsFor(hours, p)).getTime() === windowStart.getTime())
+  /* The deal positions whose own window starts here (OQ27), or the ones the caller names. */
+  const startingHere = opts.positions
+    ? [...opts.positions]
+    : (await allPositions(ctx)).filter((p) => assignmentOf(p.def) === 'deal' && windowStartOf(windowStart, windowMsFor(p)).getTime() === windowStart.getTime())
   /* Unscored slots are skipped: no audience score means no assumed views to sell. */
   const positions = await filterAsync(startingHere, (p) => isSellable(ctx, p))
   /* The DSPs that receive bid requests, read once for the whole auction,
@@ -120,7 +135,7 @@ export async function runAuction(ctx: Context, at?: Date): Promise<AuctionResult
       const i = next++
       const p = positions[i]
       try {
-        outcomes[i] = await clearPosition(ctx, p, start, bidders)
+        outcomes[i] = await clearPosition(ctx, p, start, bidders, opts.deciding)
       } catch (e) {
         /* One position's failure (a fault in a DSP's answer, a store that
            refused a write) is that position's outcome, not the auction's:
@@ -138,7 +153,7 @@ export async function runAuction(ctx: Context, at?: Date): Promise<AuctionResult
   return { windowStart: start, positions: outcomes }
 }
 
-async function clearPosition(ctx: Context, p: PositionRef, start: string, bidders: PartnerRecord[]): Promise<PositionOutcome> {
+async function clearPosition(ctx: Context, p: PositionRef, start: string, bidders: PartnerRecord[], deciding?: ReadonlySet<string>): Promise<PositionOutcome> {
   const out: PositionOutcome = { positionId: p.positionId, bidRequests: 0, bids: 0, winner: null }
   if (isRealtime(p)) return { ...out, skipped: 'Sold in real time, per impression: no window auction.' }
   if (assignmentOf(p.def) === 'reserved') return { ...out, skipped: 'Held for a named advertiser: booked by reservation.' }
@@ -176,7 +191,7 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, bidder
     const term = list ? termStateAt(list, start) : null
     if (list && term?.active) {
       if (term.locked) return bookLockedTermWindow(ctx, tp, start, list, out)
-      if (!term.auctionOpen) { closedNote = list.name; continue }
+      if (!term.auctionOpen && !deciding?.has(list.id)) { closedNote = list.name; continue }
     }
     open.push(tp)
   }
