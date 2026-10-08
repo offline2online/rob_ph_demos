@@ -10,7 +10,7 @@ describe('Exchange settings and sellers.json (spec §7)', () => {
   it('returns the seller of record and where sellers.json is published', async () => {
     const res = await buildApp(await testContext()).inject({ method: 'GET', url: '/api/admin/v1/exchange' })
     expectMatchesContract('GET', '/admin/v1/exchange', 200, res.json())
-    expect(res.json()).toEqual({ ...valid, published: true, sellersJsonUrl: 'https://demoretail.example/sellers.json' })
+    expect(res.json()).toEqual({ ...valid, globalDealEnabled: false, globalDealId: 'PH-GLOBAL', published: true, sellersJsonUrl: 'https://demoretail.example/sellers.json' })
   })
 
   it('publishes sellers.json with the platform defaults (PUBLISHER, not confidential)', async () => {
@@ -90,7 +90,7 @@ describe('DSP integration switch (Exchange settings)', () => {
     const saved = await app.inject({ method: 'PUT', url: '/api/admin/v1/exchange', payload: off })
     expect(saved.statusCode).toBe(200)
     expectMatchesContract('PUT', '/admin/v1/exchange', 200, saved.json())
-    expect(saved.json()).toEqual({ ...off, published: false, sellersJsonUrl: null })
+    expect(saved.json()).toEqual({ ...off, globalDealEnabled: false, globalDealId: 'PH-GLOBAL', published: false, sellersJsonUrl: null })
 
     const features = await app.inject({ method: 'GET', url: '/api/admin/v1/features' })
     expectMatchesContract('GET', '/admin/v1/features', 200, features.json())

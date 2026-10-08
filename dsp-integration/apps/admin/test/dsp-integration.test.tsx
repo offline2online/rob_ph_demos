@@ -155,7 +155,7 @@ describe('DSP integration switch', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
     await waitFor(() => expect(calls).toHaveLength(1))
     /* Nothing is thrown away: the seller of record goes back as it was. */
-    expect(calls[0].body).toEqual({ enabled: false, organisation: 'Demo Retail Group', domain: 'demoretail.example', sellerId: 'drg-4471', contactEmail: 'adops@demoretail.example' })
+    expect(calls[0].body).toEqual({ enabled: false, organisation: 'Demo Retail Group', domain: 'demoretail.example', sellerId: 'drg-4471', contactEmail: 'adops@demoretail.example', globalDealEnabled: false })
     await waitFor(async () => expect(await navLabels()).not.toContain('Advertisers / Inventory'))
     expect(await navLabels()).toContain('DSP Integration')
 
@@ -191,18 +191,20 @@ describe('DSP integration switch', () => {
 })
 
 describe('Advertiser settings page', () => {
-  it('shows Pricing, Committed delivery volume and the category lists, in that order, with no Play config boxes, with no auction timing', async () => {
+  it('shows Pricing, Play configuration, Real-time bidding and the category lists, in that order, with no Play config boxes, with no auction timing', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/available-inventory': { items: [{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', slot: 2, position: 'Supplier slot', partnerName: 'Google DSP' }] } })))
     renderAt('/dsp-integration')
     expect(await screen.findByRole('heading', { name: /Advertiser settings/ })).toBeInTheDocument()
     const text = document.body.textContent ?? ''
-    const order = ['Pricing', 'Committed delivery volume', 'Category lists'].map((h) => text.indexOf(h))
+    const order = ['Pricing', 'Play configuration', 'Real-time bidding', 'Category lists'].map((h) => text.indexOf(h))
     /* Available Inventory moved to Advertisers / Inventory (Rob, 20 Sep). */
     expect(text).not.toContain('Available Inventory')
     expect(order).toEqual([...order].sort((a, b) => a - b))
     expect(screen.getByLabelText(/Currency/)).toBeInTheDocument()
     expect(screen.getByLabelText(/Guarantee buffer/, { selector: 'input' })).toBeInTheDocument()
     expect(screen.getByLabelText(/Default committed plays/, { selector: 'input' })).toBeInTheDocument()
+    expect(screen.getByLabelText(/Max play length/, { selector: 'input' })).toBeInTheDocument()
+    expect(text).not.toContain('Committed delivery volume')
     expect(text).not.toContain('Play defaults')
     expect(screen.queryByRole('group', { name: 'Play config' })).not.toBeInTheDocument()
     for (const gone of ['Deals and reservations', 'Time (derived display only)']) expect(text).not.toContain(gone)
@@ -587,12 +589,15 @@ describe('Advertisers / Inventory', () => {
        already covered in Campaign Status and the booking schedule. */
     expect(within(advertisers).queryByRole('button', { name: /Bookings/ })).not.toBeInTheDocument()
 
+    /* Advertisers table sits last, under Available Inventory and Buyers and targeting (ticket AkDMbOJn0QBV0ZcEM5tm). */
+    expect(screen.getByText('Buyers and targeting').compareDocumentPosition(advertisers) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
     const inventory = await screen.findByLabelText('Available Inventory')
     /* Playlist leads the table; Display type was removed as its own column
        (ticket "Available Inventory: playlist-primary table (drop Display
        type column) with Unassigned indicator", 27 Sep 2026). */
     expect([...inventory.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent))
-      .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Reserve price', 'Max campaigns', 'Max play length', 'Billing unit', ''])
+      .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Reserve price', 'Max campaigns', 'Max play length', 'Billing unit', 'Slots playing', 'Plays per window', ''])
     /* No interactive-only column: interactive is deferred (5 Oct 2026). */
     expect(within(inventory).getByLabelText('Playlist search')).toBeInTheDocument()
     /* Targeting is defined on the buyers and targeting list, not per slot (Rob, 7 Oct 2026). */

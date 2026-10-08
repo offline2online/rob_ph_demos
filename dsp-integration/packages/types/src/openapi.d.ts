@@ -496,11 +496,18 @@ export interface paths {
          *     setting", 7 Oct 2026), for the FIXED duration of one play of the
          *     slot, in whole seconds, 1-600. Slot override, else the display
          *     type's default, else the company-wide default (Advertiser settings →
-         *     `maxPlayLengthSec`, platform default 15). It is what plays per window
-         *     are counted against — floor(window / max play length) — and the
+         *     `maxPlayLengthSec`, platform default 15). It is the longest one play may run
+         *     (HQ campaigns included); plays per window are floor(window / (max
+         *     play length x slots in the rotation)) — and the
          *     longest creative the slot accepts. Unlike the fields above, OMITTED
          *     means unchanged (a client that predates it never sends it); null
          *     inherits.
+         *
+         *     inGlobalDeal: whether the slot is in the global deal (ticket "Global
+         *     deal ID", 8 Oct 2026). Defaults to true; false takes the slot out.
+         *     OMITTED means unchanged. The flag is kept even while the slot is held
+         *     for advertisers, whitelist-only or on a buyers list, but has no effect
+         *     then (the row's `globalDealSuppressedBy` says why).
          */
         put: operations["saveAvailableInventory"];
         post?: never;
@@ -1265,9 +1272,9 @@ export interface components {
                 /** @enum {string} */
                 orientation: "landscape" | "portrait";
                 slotDurationSec: number;
-                /** @description Informational. The loop's length; plays per window are NOT counted against it. */
+                /** @description Informational. The loop's length as the schedule runs it. Plays per window are counted against maxPlayLengthSec x slotCount (the retailer's own settings) */
                 loopLengthSec: number;
-                /** @description The fixed duration of one play of this slot (slot, else display type, else company default). Plays per window are counted against it, and a creative longer than it is rejected. */
+                /** @description Max slot length: the longest one play of this slot may run (slot, else display type, else company default). It binds every campaign on the position, HQ's included. Plays per window are counted against it (times slotCount), and a creative longer than it is rejected. */
                 maxPlayLengthSec: number;
                 /** @description 1 / maximumCampaignsPlayedInRotation */
                 shareOfVoice: number;
@@ -1284,7 +1291,9 @@ export interface components {
              *     Monday 00:00 UTC.
              */
             billingUnitHours: number;
-            /** @description The transacting unit. Plays this slot gets on one display in one of its windows (billingUnitHours long) — floor(window / maxPlayLengthSec), the slot's fixed per-play duration; never the loop length and never a creative's own length. Assumed views (VAC-d) convert plays to impressions for billing only. */
+            /** @description The slots (loop positions) in the rotation this slot plays in — Max campaigns in rotation in Playlist Management. HQ positions count as well as advertiser ones. */
+            slotCount?: number;
+            /** @description The transacting unit. Plays this slot gets on one display in one of its windows (billingUnitHours long) — floor(window / (screen.maxPlayLengthSec x slotCount)). Derived from the retailer's three settings, never typed and never from a creative's own length. Assumed views (VAC-d) convert plays to impressions for billing only. */
             playsPerWindow?: number;
             /** @description Assumed views (VAC-d) in one of this position's windows (billingUnitHours long). */
             assumedViewsPerWindow?: number;
@@ -1541,6 +1550,8 @@ export interface components {
             /** @description Switched on and all four fields complete: sellers.json is live and DSPs are sent bid requests. */
             published: boolean;
             sellersJsonUrl?: string | null;
+            /** @description The global deal ID (always PH-GLOBAL), carried on pmp.deals of an eligible open position's bid request while `globalDealEnabled` is true. */
+            readonly globalDealId: string;
         };
         /**
          * @description The four seller-of-record fields are required while `enabled` is
@@ -1555,6 +1566,14 @@ export interface components {
             sellerId: string;
             /** @description An email address when set */
             contactEmail: string;
+            /**
+             * @description The instance-level master switch for the global deal (8 Oct 2026):
+             *     one deal ID, `globalDealId`, that resolves to every open,
+             *     exchange-eligible position whose slot is in it, for DSPs that only
+             *     transact on deals. Off for a new instance. Omitted on a save keeps
+             *     the stored value.
+             */
+            globalDealEnabled?: boolean;
         };
         Features: {
             /** @description The build flag is on and the retailer has DSP integration switched on. */
@@ -1611,7 +1630,7 @@ export interface components {
              */
             bidLookaheadSeconds: number;
             /**
-             * @description Max play length: the company-wide default fixed duration of one play of a slot, in whole seconds. A display type and a slot can each override it. Plays per window = floor(window / max play length) and a creative longer than it is rejected. Optional on save: omitted keeps the stored value.
+             * @description Max play length: the company-wide default fixed duration of one play of a slot, in whole seconds. A display type and a slot can each override it. Plays per window = floor(window / (max play length x slots in the rotation)) and a creative longer than it is rejected. Optional on save: omitted keeps the stored value.
              * @default 15
              */
             maxPlayLengthSec: number;
@@ -1782,6 +1801,14 @@ export interface components {
              */
             dealType: "private_auction" | "preferred" | "guaranteed";
             invitedBuyers: components["schemas"]["InvitedBuyer"][];
+            /**
+             * @description IAB categories whose advertisers are all invited, resolved live
+             *     against each connected DSP's synced seats (a seat's DSP-reported
+             *     `category`). Combines with `invitedBuyers` as a union; the
+             *     advertiser blacklist still subtracts. A category no seat reports
+             *     admits nobody.
+             */
+            invitedCategories: string[];
             /** @description This list's own bid floor in USD CPM, or null to inherit the DSP's floor, else the platform floor. Never below the platform floor. */
             floorCpm: number | null;
             /**
@@ -1858,6 +1885,17 @@ export interface components {
              *     itself once the booking schedule has no live booking on the slot.
              */
             salesLocked: boolean;
+            /** @description The slot's own "include in global deal" flag (default true). Whether it takes effect also depends on `globalDealSuppressedBy` and the master switch (Exchange.globalDealEnabled). */
+            inGlobalDeal: boolean;
+            /**
+             * @description Why the flag has no effect: `reserved` (held for named advertisers),
+             *     `whitelist_only`, or `deal` (assigned to a buyers list). null when
+             *     the slot is open. Being open and being in the global deal are not
+             *     the same thing: the default never exposes inventory the retailer
+             *     meant to restrict.
+             * @enum {string|null}
+             */
+            globalDealSuppressedBy: "reserved" | "whitelist_only" | "deal" | null;
             /**
              * Format: date-time
              * @description When the last live booking on a locked slot finishes playing, i.e. the earliest the lock can release; null when not locked.
@@ -2022,7 +2060,7 @@ export interface components {
              * @description The resolved max play length, in seconds: the fixed per-play
              *     duration of this slot — maxPlayLengthSecOverride when set, else
              *     displayTypeMaxPlayLengthSec, else companyMaxPlayLengthSec. Plays
-             *     per window are floor(window / this); a creative longer than it
+             *     per window are floor(window / (this x slotCount)); a creative longer than it
              *     is rejected at upload.
              */
             maxPlayLengthSec: number;
@@ -2032,6 +2070,10 @@ export interface components {
             displayTypeMaxPlayLengthSec: number | null;
             /** @description The company-wide default max play length (Advertiser settings), what an un-overridden slot on a display type with no default resolves to. */
             companyMaxPlayLengthSec: number;
+            /** @description Slots playing — the loop positions in this slot's rotation (Max campaigns in rotation, Playlist Management), HQ positions included although only advertiser slots are listed here. Read-only. */
+            slotCount: number;
+            /** @description Derived, read-only — floor(billing unit / (maxPlayLengthSec x slotCount)). The admin screen recalculates it from the draft as the inputs change. */
+            playsPerWindow: number;
         };
         BookingSchedule: {
             /** @description ISO 4217 */
@@ -2215,6 +2257,8 @@ export interface components {
             seats?: {
                 id: string;
                 name: string;
+                /** @description The advertiser's IAB category as reported by the DSP, when it reports one. */
+                category?: string;
             }[];
             /** @description This DSP's own advertiser whitelist: seat IDs from its synced seats (the ids in seats). Always present; there is no company-wide advertiser list. */
             advertiserWhitelist?: string[];
@@ -2414,6 +2458,17 @@ export interface components {
                  *     live booking. Not writable through the slot editor's PUT.
                  */
                 salesLocked?: boolean;
+                /**
+                 * @description Whether this Advertiser slot is in the global deal (8 Oct 2026).
+                 *     Absent means true: a new slot is in it automatically (opt-out,
+                 *     not opt-in). Set from Advertisers / Inventory
+                 *     (PUT /admin/v1/available-inventory), not the slot editor. It
+                 *     only takes effect while the slot is open and the master switch
+                 *     (Exchange.globalDealEnabled) is on: a slot held for named
+                 *     advertisers, whitelist-only or on a buyers list is never in the
+                 *     global deal, whatever this says.
+                 */
+                inGlobalDeal?: boolean;
                 /**
                  * @description How this Advertiser slot is sold (7 Oct 2026). `advance`
                  *     (the default when absent) is the play-window path: bids and
@@ -3390,6 +3445,8 @@ export interface operations {
                     items: {
                         displayTypeId: string;
                         slot: number;
+                        /** @description Include this slot in the global deal. Omitted = unchanged. */
+                        inGlobalDeal?: boolean;
                         assignedTo: {
                             partnerIds: string[];
                             advertisers: string[];
@@ -3803,7 +3860,14 @@ export interface operations {
                 "application/json": {
                     name: string;
                     description: string;
-                    invitedBuyers: components["schemas"]["InvitedBuyer"][];
+                    invitedBuyers?: components["schemas"]["InvitedBuyer"][];
+                    /**
+                     * @description IAB categories whose advertisers are all invited (union with
+                     *     `invitedBuyers`). Each must be from the IAB taxonomy
+                     *     (400 validation_failed otherwise). At least one buyer or
+                     *     one category is required. Omitted = none.
+                     */
+                    invitedCategories?: string[];
                     /**
                      * @description Targeting criteria appended to the deal, ANDed. Each must be a
                      *     shared targeting variable the retailer has enabled for EVERY
@@ -3870,7 +3934,14 @@ export interface operations {
                 "application/json": {
                     name: string;
                     description: string;
-                    invitedBuyers: components["schemas"]["InvitedBuyer"][];
+                    invitedBuyers?: components["schemas"]["InvitedBuyer"][];
+                    /**
+                     * @description IAB categories whose advertisers are all invited (union with
+                     *     `invitedBuyers`). Each must be from the IAB taxonomy
+                     *     (400 validation_failed otherwise). At least one buyer or
+                     *     one category is required. Omitted = none.
+                     */
+                    invitedCategories?: string[];
                     /**
                      * @description Targeting criteria appended to the deal, ANDed. Each must be a
                      *     shared targeting variable the retailer has enabled for EVERY

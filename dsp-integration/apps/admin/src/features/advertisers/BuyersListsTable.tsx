@@ -19,14 +19,32 @@ import { playsText, rateText, sourceLabel } from './effectiveTerm'
 type Ctx = { current: { onEdit: (l: BuyersList) => void; onDelete: (l: BuyersList) => void; canEdit: boolean } }
 type P = ICellRendererParams<BuyersList, unknown, Ctx>
 
-const NameCell = ({ data }: P) =>
+/* The name is the way in (ph-designer: a row's name opens it; the icon button is only a shortcut). */
+const NameCell = ({ data, context }: P) =>
   data ? (
     <div className="min-w-0">
-      <div className="truncate" style={{ fontWeight: 500 }}>{data.name}</div>
+      {context.current.canEdit ? (
+        <button
+          type="button"
+          className="block max-w-full truncate border-0 bg-transparent p-0 text-left hover:underline"
+          style={{ color: T.primary, cursor: 'pointer', font: 'inherit', fontWeight: 500 }}
+          onClick={() => context.current.onEdit(data)}
+        >
+          {data.name}
+        </button>
+      ) : (
+        <div className="truncate" style={{ fontWeight: 500 }}>{data.name}</div>
+      )}
       {data.description && <div className="truncate" style={{ fontSize: 11.5, color: T.muted }}>{data.description}</div>}
     </div>
   ) : null
-const BuyersCell = ({ data }: P) => (data ? <span>{data.invitedBuyers.length} buyer{data.invitedBuyers.length === 1 ? '' : 's'}</span> : null)
+/* Who the deal is for: named advertisers, IAB categories, or both (a union). */
+const BuyersCell = ({ data }: P) => {
+  if (!data) return null
+  const buyers = data.invitedBuyers.length ? `${data.invitedBuyers.length} buyer${data.invitedBuyers.length === 1 ? '' : 's'}` : ''
+  const cats = (data.invitedCategories ?? []).length ? `Category: ${data.invitedCategories.join(', ')}` : ''
+  return <span className="truncate" title={[buyers, cats].filter(Boolean).join(' + ')}>{[buyers, cats].filter(Boolean).join(' + ')}</span>
+}
 const TargetingCell = ({ data }: P) => {
   const t = data?.targeting ?? []
   if (!data) return null
@@ -58,7 +76,8 @@ const RateCell = ({ data }: P) => {
    otherwise the volume inherited platform -> DSP, or 'Per play' when no level sets one. */
 const VolumeCell = ({ data }: P) => {
   if (!data) return null
-  if (data.dealType === 'private_auction' || data.dealType === 'preferred') return <span style={{ color: T.muted }}>None (per play)</span>
+  /* Only a guaranteed deal commits volume; a private auction or preferred deal has none, so nothing is shown for it. */
+  if (data.dealType !== 'guaranteed') return <span style={{ color: T.muted }}>Not applicable</span>
   if (data.committedPlays != null) return <span style={{ fontSize: 12.5 }}>{data.deliveredPlays.toLocaleString()} of {data.committedPlays.toLocaleString()} plays</span>
   const text = playsText(data.effectiveCommittedPlays)
   return text ? <div><span style={{ fontSize: 12.5 }}>{text}</span><Sub>{sourceLabel(data.effectiveCommittedPlays.source)}</Sub></div> : <span style={{ color: T.muted }}>Per play</span>
@@ -81,13 +100,15 @@ export function BuyersListsTable({ lists, canEdit, onChanged }: { lists: BuyersL
   const [deleteBusy, setDeleteBusy] = useState(false)
 
   const columns: ColDef<BuyersList>[] = [
-    { headerName: 'Buyers and targeting', flex: 2, minWidth: 220, cellRenderer: NameCell, valueGetter: (p) => p.data?.name ?? '' },
-    { headerName: 'Deal type', width: 170, minWidth: 150, cellRenderer: DealTypeCell },
-    { headerName: 'Invited buyers', width: 150, minWidth: 130, cellRenderer: BuyersCell },
-    { headerName: 'Targeting', width: 230, minWidth: 180, cellRenderer: TargetingCell },
-    { headerName: 'Delivery term', width: 260, minWidth: 220, cellRenderer: TermCell },
-    { headerName: 'Committed volume', width: 190, minWidth: 160, cellRenderer: VolumeCell },
-    { headerName: 'Rate', width: 200, minWidth: 170, cellRenderer: RateCell },
+    { headerName: 'Buyers and targeting', flex: 2, minWidth: 220, cellRenderer: NameCell, valueGetter: (p) => `${p.data?.name}|${p.data?.description}` },
+    /* These cells have no field, so AG Grid saw an unchanged value (undefined) after a save and kept the old cell:
+       an edited deal type kept showing "Private auction". Each gets a valueGetter over everything it renders. */
+    { headerName: 'Deal type', width: 170, minWidth: 150, cellRenderer: DealTypeCell, valueGetter: (p) => p.data?.dealType ?? '' },
+    { headerName: 'Invited buyers', width: 190, minWidth: 130, cellRenderer: BuyersCell, valueGetter: (p) => JSON.stringify([p.data?.invitedBuyers ?? [], p.data?.invitedCategories ?? []]) },
+    { headerName: 'Targeting', width: 230, minWidth: 180, cellRenderer: TargetingCell, valueGetter: (p) => JSON.stringify(p.data?.targeting ?? []) },
+    { headerName: 'Delivery term', width: 260, minWidth: 220, cellRenderer: TermCell, valueGetter: (p) => `${p.data?.activeFrom}|${p.data?.activeTo}` },
+    { headerName: 'Committed volume', width: 190, minWidth: 160, cellRenderer: VolumeCell, valueGetter: (p) => JSON.stringify([p.data?.dealType, p.data?.committedPlays, p.data?.deliveredPlays, p.data?.effectiveCommittedPlays]) },
+    { headerName: 'Rate', width: 200, minWidth: 170, cellRenderer: RateCell, valueGetter: (p) => JSON.stringify([p.data?.lockedWin, p.data?.effectiveRateCpm]) },
     ...(canEdit ? [{ headerName: '', width: 90, suppressSizeToFit: true, cellRenderer: ActionsCell }] : []),
   ]
   const context = {

@@ -41,7 +41,7 @@ export async function checkAdvertiser(ctx: Context, p: PositionRef, partner: Par
   if (assignment === 'deal') {
     const listId = assignedOf(p.def).buyersListId
     const list = listId ? await ctx.buyersLists.get(listId) : null
-    if (!list || !isActiveAt(list, windowStart ?? ctx.clock().toISOString()) || !isInvitedBuyer(list, partner.id, seatId)) {
+    if (!list || !isActiveAt(list, windowStart ?? ctx.clock().toISOString()) || !isInvitedBuyer(list, partner, seatId)) {
       return { code: 'not_invited', reason: `${name} is not an invited buyer on this private auction${list ? ` (${list.name})` : ''}.` }
     }
   }

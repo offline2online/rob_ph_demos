@@ -75,6 +75,18 @@ export const assignmentOf = (def: Slot): Assignment => {
   const a = assignedCached(def)
   return a.advertisers.length ? 'reserved' : a.buyersListIds.length ? 'deal' : a.whitelistOnly ? 'whitelist_only' : 'rtb'
 }
+/* The global deal (8 Oct 2026): one deal ID for all open, exchange-eligible
+   inventory. The slot's own flag defaults ON (absent = in) but is SUPPRESSED
+   whenever the slot is held for a named advertiser, whitelist-only or on a
+   buyers list, so the default never exposes inventory the retailer meant to
+   restrict. Being open and being in the global deal are not the same thing. */
+export const globalDealSuppressedBy = (def: Slot): Exclude<Assignment, 'rtb'> | null => {
+  const a = assignmentOf(def)
+  return a === 'rtb' ? null : a
+}
+export const slotInGlobalDeal = (def: Slot) => def.inGlobalDeal !== false
+/* Is this position carried on the global deal, given the instance master switch? */
+export const inGlobalDeal = (def: Slot, masterOn: boolean) => masterOn && slotInGlobalDeal(def) && globalDealSuppressedBy(def) === null
 /* One tier of a position's buyers-list waterfall (7 Oct 2026): the position
    as if only this list were assigned to it, so every per-deal check (invited
    buyers, deal ID, floor, term) reads that list. */
@@ -130,7 +142,7 @@ export async function advertiserMayBuy(ctx: Context, p: PositionRef, partner: Pa
   if (a === 'reserved') return heldFor(p.def, name)
   if (a === 'deal') {
     const lists = await Promise.all(assignedCached(p.def).buyersListIds.map((id) => ctx.buyersLists.get(id)))
-    return lists.some((list) => !!list && isActiveAt(list, ctx.clock().toISOString()) && isInvitedBuyer(list, partner.id, seatId))
+    return lists.some((list) => !!list && isActiveAt(list, ctx.clock().toISOString()) && isInvitedBuyer(list, partner, seatId))
   }
   if (a === 'whitelist_only') return !!seatId && isOn(seatId, eff.allowList)
   return true
@@ -157,7 +169,7 @@ export async function visibilityFor(ctx: Context, c: Caller): Promise<(p: Positi
     if (a === 'whitelist_only') return whitelisted
     if (a === 'reserved') return seats.some((s) => heldFor(p.def, s.name))
     return andThen(allOf(assignedCached(p.def).buyersListIds.map((id) => ctx.buyersLists.get(id))), (lists) =>
-      lists.some((list) => !!list && isActiveAt(list, ctx.clock().toISOString()) && seats.some((s) => isInvitedBuyer(list, me, s.id))))
+      lists.some((list) => !!list && isActiveAt(list, ctx.clock().toISOString()) && seats.some((s) => isInvitedBuyer(list, c.partner, s.id))))
   }
   /* Sync-first (db.ts andThen): once per position on every inventory read. */
   return (p) =>
@@ -505,7 +517,9 @@ function viewOf(
        one bid, one booking, one billing line — covers. */
     billingUnitHours: windowHoursFor(company.playWindowHours, p),
     /* The same window as a play count — the transacting unit (plays on ONE display; VAC-d converts plays to views for billing only). */
-    playsPerWindow: playsPerWindowOf(windowMsFor(company.playWindowHours, p), maxPlayLengthSecFor(company.maxPlayLengthSec, p)),
+    playsPerWindow: playsPerWindowOf(windowMsFor(company.playWindowHours, p), maxPlayLengthSecFor(company.maxPlayLengthSec, p), n),
+    /* The loop positions the maths counts: every slot of the rotation, HQ's included. */
+    slotCount: Math.max(1, n),
     assumedViewsPerWindow: assumedViewsFor(audience.assumedViewsPerWindow, company.playWindowHours, p),
     /* False when the slot has no audience score: only ever seen by a
        caller who is told so, since inventory excludes such positions. */

@@ -1,0 +1,2 @@
+-- Global deal (Rob, 8 Oct 2026; ticket rkm4bgISL7W0thKc7SwW): the retailer's instance-level master switch for the one deal ID that resolves to every open, exchange-eligible position, for DSPs that only transact on deals. Off by default: the retailer turns it on in Exchange settings. The per-slot "include in global deal" flag lives on the slot (default on).
+ALTER TABLE exchange ADD COLUMN global_deal_enabled INTEGER NOT NULL DEFAULT 0;

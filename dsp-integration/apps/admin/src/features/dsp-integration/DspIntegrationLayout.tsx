@@ -103,7 +103,7 @@ export const useSection = () => {
 }
 
 const settingsInput = (s: AdvertiserSettings): AdvertiserSettingsInput => s
-const exchangeInput = ({ enabled, organisation, domain, sellerId, contactEmail }: ExchangeInput): ExchangeInput => ({ enabled: !!enabled, organisation, domain, sellerId, contactEmail })
+const exchangeInput = ({ enabled, organisation, domain, sellerId, contactEmail, globalDealEnabled }: ExchangeInput): ExchangeInput => ({ enabled: !!enabled, organisation, domain, sellerId, contactEmail, globalDealEnabled: !!globalDealEnabled })
 
 function Section({ partners, settings, exchange, published, variables }: { partners: Partner[]; settings: AdvertiserSettings; exchange: ExchangeInput; published: boolean; variables: SharedVariable[] }) {
   const { message } = App.useApp()

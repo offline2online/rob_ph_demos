@@ -6,7 +6,7 @@
    variable (global on the brand entity) are deliberately not fields here. */
 import { App, Button, DatePicker, Input, InputNumber, Modal, Select } from 'antd'
 import { useQuery } from '@tanstack/react-query'
-import { ALL_DSPS, OPERATOR_LABELS, TARGETING_VARIABLES, type BuyersList, type BuyersListDealType, type Condition, type InvitedBuyer, type SharedVariable } from '@ph-dsp/types'
+import { ALL_DSPS, IAB_CATEGORIES, OPERATOR_LABELS, TARGETING_VARIABLES, type BuyersList, type BuyersListDealType, type Condition, type InvitedBuyer, type SharedVariable } from '@ph-dsp/types'
 import dayjs from 'dayjs'
 import { useEffect, useRef, useState } from 'react'
 import { api, ApiRequestError } from '../../api/client'
@@ -16,13 +16,14 @@ import { WithTip } from '../../shared/InfoTip'
 import { T } from '../../theme/phTheme'
 import { playsText, rateText, resolveTerm, sourceLabel } from './effectiveTerm'
 
-type Draft = { name: string; description: string; dealType: BuyersListDealType; invitedBuyers: InvitedBuyer[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays: number | null; floorCpm: number | null }
+type Draft = { name: string; description: string; dealType: BuyersListDealType; invitedBuyers: InvitedBuyer[]; invitedCategories: string[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays: number | null; floorCpm: number | null }
 /* An invited buyer is one synced seat of one connected DSP — the Select's value is both halves. */
 const buyerKey = (b: InvitedBuyer) => JSON.stringify([b.partnerId, b.seatId])
-const blankDraft = (): Draft => ({ name: '', description: '', dealType: 'private_auction', invitedBuyers: [], targeting: [], activeFrom: null, activeTo: null, auctionCloses: null, committedPlays: null, floorCpm: null })
+const blankDraft = (): Draft => ({ name: '', description: '', dealType: 'private_auction', invitedBuyers: [], invitedCategories: [], targeting: [], activeFrom: null, activeTo: null, auctionCloses: null, committedPlays: null, floorCpm: null })
 const draftOf = (l: BuyersList): Draft => ({
   name: l.name, description: l.description, dealType: l.dealType,
   invitedBuyers: l.invitedBuyers.map((b) => ({ ...b })),
+  invitedCategories: [...(l.invitedCategories ?? [])],
   targeting: (l.targeting ?? []).map((c) => ({ ...c, values: [...c.values] })),
   activeFrom: l.activeFrom, activeTo: l.activeTo, auctionCloses: l.auctionCloses, committedPlays: l.committedPlays, floorCpm: l.floorCpm ?? null,
 })
@@ -175,7 +176,7 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
         </div>
       </div>
       <div className="mb-3.5">
-        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}><WithTip tip="Only advertisers a connected DSP has synced can be invited (who can buy); each is matched on the seat ID that DSP bids under."><span style={{ color: T.error }}>*</span> Invited buyers</WithTip></label>
+        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}><WithTip tip="Only advertisers a connected DSP has synced can be invited (who can buy); each is matched on the seat ID that DSP bids under.">Invited buyers</WithTip></label>
         <Select
           mode="multiple" className="w-full" aria-label="Invited buyers" showSearch optionFilterProp="label"
           status={errors.invitedBuyers ? 'error' : undefined} loading={partners.isLoading}
@@ -185,6 +186,17 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
           onChange={setBuyers}
         />
         {errors.invitedBuyers && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.invitedBuyers}</div>}
+      </div>
+      <div className="mb-3.5">
+        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}><WithTip tip="Invite every advertiser a connected DSP reports in these IAB categories, without naming each one. Combines with the invited buyers above (either is enough to be invited); the advertiser blacklist still applies. Resolved live, so advertisers a DSP adds or re-categorises move in or out with no edit. Fill in at least one of the two.">Invited IAB categories</WithTip></label>
+        <Select
+          mode="multiple" className="w-full" aria-label="Invited IAB categories" showSearch optionFilterProp="label"
+          status={Object.keys(errors).some((f) => f.startsWith('invitedCategories')) ? 'error' : undefined}
+          placeholder="Choose IAB categories"
+          value={draft.invitedCategories} options={IAB_CATEGORIES.map((c) => ({ value: c, label: c }))}
+          onChange={(invitedCategories: string[]) => setDraft((d) => ({ ...d, invitedCategories }))}
+        />
+        {Object.entries(errors).filter(([f]) => f.startsWith('invitedCategories')).map(([f, reason]) => <div key={f} className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{reason}</div>)}
       </div>
       <div className="mb-3.5">
         <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}><WithTip tip="Only variables the retailer has enabled for the invited DSPs are offered. Store segments are variable (switched by store staff) or fixed (HQ Admin only); the deal honours whichever you choose. A personalised criterion is matched against the live visitor at bid time — buyers never see the visitor’s attributes.">Targeting criteria</WithTip></label>

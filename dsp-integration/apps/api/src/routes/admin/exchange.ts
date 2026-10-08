@@ -31,6 +31,6 @@ export const exchangeRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync
     const errors = validateExchange(req.body)
     if (errors.length) throw validationFailed(errors)
     const b = req.body as ExchangeInput
-    return toApiExchange(await ctx.exchange.save({ enabled: b.enabled, organisation: b.organisation.trim(), domain: b.domain.trim().toLowerCase(), sellerId: b.sellerId.trim(), contactEmail: b.contactEmail.trim() }))
+    return toApiExchange(await ctx.exchange.save({ enabled: b.enabled, organisation: b.organisation.trim(), domain: b.domain.trim().toLowerCase(), sellerId: b.sellerId.trim(), contactEmail: b.contactEmail.trim(), globalDealEnabled: typeof b.globalDealEnabled === 'boolean' ? b.globalDealEnabled : (await ctx.exchange.get()).globalDealEnabled }))
   })
 }

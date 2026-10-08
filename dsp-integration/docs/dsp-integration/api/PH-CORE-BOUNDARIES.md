@@ -871,6 +871,22 @@ plays a real player produces are only guaranteed to agree once item 1 lands.
 Changing a max play length re-derives `playsPerWindow` for future reads and
 bids; windows already booked keep their booked counts.
 
+**Update, 8 Oct 2026 (ticket 7uWimKA8oaTJEQDVatG2): the count is now
+floor(window / (max slot length × slots in the rotation)).** `slotCount` on
+the inventory view and Available Inventory row is the rotation size, HQ
+positions included, and `playsPerWindow` is derived from it, never typed.
+Two PH Core requirements follow:
+
+4. **Max slot length binds HQ campaigns too.** The exchange has no HQ campaign
+   upload (HQ campaigns are authored in PH Core), so it cannot reject an
+   over-length HQ creative itself. PH Core must apply the same resolved
+   `maxPlayLengthSec` to an HQ campaign's creative with the same over-length
+   rejection an advertiser creative gets at upload — otherwise an HQ position
+   could overrun its share of the loop and the plays sold would not fit.
+5. **HQ positions fill part of the loop.** They are not on Available
+   Inventory but are counted in `slotCount`; PH Core must keep the rotation
+   size it reports to the exchange equal to the playlist's real slot count.
+
 ### Dependency on PH Core: completeness guarantee and missing-data behaviour (4 Oct 2026, ticket HxMMn84BcCP6y9S2jk3l)
 
 **Status: open, owned by PH Core.** Nothing defines today what happens when a

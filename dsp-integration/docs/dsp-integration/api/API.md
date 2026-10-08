@@ -281,8 +281,8 @@ env var, with no switcher and no cookie (see *POC stand-ins* below).
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/admin/v1/exchange` | The DSP integration switch (`enabled`), organisation, domain, seller ID, contact email, `published`, `sellersJsonUrl`. |
-| PUT | `/admin/v1/exchange` | Save changes. `enabled` is required. While it is true, all four fields are required; switched off, they may be blank and are kept as sent. `published` is true, and sellers.json is served, only when switched on and complete. |
+| GET | `/admin/v1/exchange` | The DSP integration switch (`enabled`), organisation, domain, seller ID, contact email, the global deal master switch (`globalDealEnabled`, off for a new instance) and its fixed ID (`globalDealId`, `PH-GLOBAL`), `published`, `sellersJsonUrl`. |
+| PUT | `/admin/v1/exchange` | Save changes. `enabled` is required. While it is true, all four fields are required; switched off, they may be blank and are kept as sent. `globalDealEnabled` is optional (omitted keeps the stored value). `published` is true, and sellers.json is served, only when switched on and complete. |
 | GET | `/admin/v1/features` | `{ dspIntegration }`: whether the retailer has DSP integration switched on (always false with the build flag off). Readable by admin and marketing users, unlike Exchange settings, because it decides what the navigation shows. |
 
 **The DSP integration switch** (Rob, 24 Sep 2026; REQUIREMENTS §7). Off
@@ -302,7 +302,7 @@ The Admin API keeps answering, and switching off deletes nothing.
 |---|---|---|
 | GET | `/admin/v1/advertiser-settings` | Currency, floor CPM, multipliers, the auction schedule (`auctionOpensHours`, `playWindowHours`, `auctionCutoffTime`), read-only `pendingPlayWindowHours`/`pendingPlayWindowEffectiveFrom` (a `playWindowHours` change deferred past currently active windows — null when nothing is pending; 26 Sep 2026), and the IAB `categoryWhitelist`/`categoryBlacklist` (one pair for every DSP; entries must be IAB taxonomy names, else `400`; there is no per-DSP override, and no company advertiser list). |
 | PUT | `/admin/v1/advertiser-settings` | Save changes (pricing, auction schedule and lists). An entry can't be on both lists (`validation_failed`). Changing the play-window length while a non-test window is still bid on or booked no longer fails the request (26 Sep 2026): `playWindowHours` keeps its current value and the change is deferred — reflected in the response's `pendingPlayWindowHours`/`pendingPlayWindowEffectiveFrom` — until every such window has played, at which point the scheduled job (not this endpoint) applies it. |
-| GET | `/admin/v1/available-inventory` | Rows: display type, playlist, slot, position, `assignedTo` (now also `buyersListId`/`buyersListName`, null unless the slot is a private auction), `reservePrice` (resolved), `reservePriceOverride` (this slot's own, null = inheriting) and `displayTypeReservePrice` (the display type's default, same on every row of that type), likewise `billingUnitHours` (resolved, always a number)/`billingUnitHoursOverride`/`displayTypeBillingUnitHours` (23 Sep 2026; when neither is set the slot inherits `companyPlayWindowHours`, the company-wide play window, platform default 24 — OQ27, 29 Sep 2026: this resolved value is the slot's play-window length, see "Play windows are per slot" below), plus `dsps` (each DSP and its advertisers) for the Assigned to picker. No advertisers column. |
+| GET | `/admin/v1/available-inventory` | Rows: display type, playlist, slot, position, `assignedTo` (now also `buyersListId`/`buyersListName`, null unless the slot is a private auction), `reservePrice` (resolved), `reservePriceOverride` (this slot's own, null = inheriting) and `displayTypeReservePrice` (the display type's default, same on every row of that type), likewise `billingUnitHours` (resolved, always a number)/`billingUnitHoursOverride`/`displayTypeBillingUnitHours` (23 Sep 2026; when neither is set the slot inherits `companyPlayWindowHours`, the company-wide play window, platform default 24 — OQ27, 29 Sep 2026: this resolved value is the slot's play-window length, see "Play windows are per slot" below), plus `inGlobalDeal` (the slot's own global deal flag, default true) and `globalDealSuppressedBy` (`reserved`, `whitelist_only`, `deal`, or null when open), and `dsps` (each DSP and its advertisers) for the Assigned to picker. `PUT` takes `inGlobalDeal` per item (omitted = unchanged). No advertisers column. |
 | PUT | `/admin/v1/available-inventory` | Save changes — per slot, `assignedTo` (`partnerIds`, `advertisers`, `whitelistOnly`, `buyersListId`; nothing chosen = any connected DSP, an advertiser's DSP is added automatically, and `buyersListId` is mutually exclusive with `advertisers`/`whitelistOnly` — `validation_failed` if more than one is set, or if `buyersListId` names no buyers list), `reservePrice`/`reservePriceDefault` (this slot's own override and the display type's own default — a CPM, or null; real inheritance, 22 Sep — always send the slot's current values, there is no "unchanged" omission) and, the same shape, `billingUnitHours`/`billingUnitHoursDefault` (whole hours, 1–8760, or null; must be the same `…Default` on every row for a given display type in one request). A billing-unit change that would alter the resolved window length of a slot that still has live windows bid on, booked or not yet billed is refused (`validation_failed` on that row's `billingUnitHours`, naming when the last one ends; OQ27, 29 Sep 2026). The editable fields of a slot; its label and owner are set on its display type. Admin only. Removing an advertiser from a slot with a live booking is `409 has_dependents` (slots are sold); lock the slot instead. |
 | PUT | `/admin/v1/available-inventory/lock` | Lock a sold slot against new sales (`displayTypeId`, `slot`). New bids, reservations and auction wins are refused (`409 conflict` on the Partner API; the window reads `unavailable`); existing bookings run on. `409 conflict` if nothing is booked on the slot. No unlock: the lock releases itself once the booking schedule has no live booking on the slot (bookings only, never playback). Rows carry `salesLocked` / `salesLockedUntil`. |
 | GET | `/admin/v1/booking-schedule?from=&to=` | Reached from Available Inventory. Every advertiser-owned slot across its play windows: booked (advertiser, DSP, reserve or bid, the CPM it was booked at, booked and billed revenue), available or unavailable; plus booking revenue per display type and in total. Live bookings only (never Test mode). Default: the current window and the next 13; at most 92 days. `campaignId`, `advertiserId` or `partnerId` narrow it, and `advertiserId` leaves only the positions that advertiser holds; with `campaignId` the range covers all of that campaign's bookings. Each booking says which campaign type it is, and the response also totals the bookings by campaign type. `dsps` lists the DSPs and, under each, **only the advertisers with something booked in the range**, because that is what the filter is for. Each position also carries `displayCount` (displays using its display type across the whole retail footprint), and each booking a `layers` object (`default`, `localised`, `personalised` — which of the one advertiser's three layers this purchase actually carries, ticket "Booking schedule: single-advertiser stacking tile"), and a `personalisedTriggers` object (`computerVision`, `aggregateStore`, `individual`) when `layers.personalised`, `null` otherwise (ticket "Booking schedule: personalised trigger icons") — the client's stacked tile (see REQUIREMENTS §6) is built entirely from these fields plus `pricingType`, with no separate endpoint. |
@@ -363,8 +363,8 @@ to any number of slots via `available-inventory`'s `assignedTo.buyersListId`.
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/admin/v1/buyers-lists` | Every buyers list: `id`, `name`, `description`, `dealType` (`private_auction`, `preferred` or `guaranteed`: the one place a deal's type is set; a reservation on a slot using the list follows it), `invitedBuyers` (`partnerId` and `seatId`: a seat a connected DSP synced; POST/PUT refuse a DSP that isn't connected or a seat it never synced), `activeFrom`/`activeTo` (the delivery term; ISO date-time or null = no bound), `auctionCloses` (the auction window's bidding deadline; ISO date-time or null = not using the two-period model), `committedPlays` (the play volume the deal commits to over its delivery term: a whole number >= 1, or null = per play; volume lives on deals, never the open auction) and `deliveredPlays` (read only: plays billed at every position the deal is attached to, in windows starting inside the term; 0 when `committedPlays` is null), `lockedWin` (null until the term's one-time auction clears or an invited buyer commits at the reserve price; then `{cpm, partnerId, advertiserId, campaignId, pricingType, channel, lockedAt, source}`, read only; `source` is `auction` or `reserve`, and a missing `source` reads as `auction`). |
-| POST | `/admin/v1/buyers-lists` | Create: `name`, `description`, `dealType` (optional; omitted = `guaranteed` if `committedPlays` is set, else `private_auction`; `committedPlays` is refused unless `guaranteed`, `auctionCloses` unless `private_auction`), `invitedBuyers` (at least one), `activeFrom`, `activeTo`, `auctionCloses` (optional; null = not using the two-period model), `committedPlays` (optional; whole number >= 1 or null). `422 validation_failed` naming the field (e.g. `name`, `invitedBuyers[0].value`, `activeTo` if before `activeFrom`). `lockedWin` can't be set here. The exchange writes it once: the first time a bid clears within `auctionCloses`, or when an invited buyer first commits at the reserve price. |
+| GET | `/admin/v1/buyers-lists` | Every buyers list: `id`, `name`, `description`, `dealType` (`private_auction`, `preferred` or `guaranteed`: the one place a deal's type is set; a reservation on a slot using the list follows it), `invitedBuyers` (`partnerId` and `seatId`: a seat a connected DSP synced; POST/PUT refuse a DSP that isn't connected or a seat it never synced), `invitedCategories` (IAB category names whose advertisers are all invited, resolved live against each seat's DSP-reported `category`; a union with `invitedBuyers`; the advertiser blacklist still subtracts), `activeFrom`/`activeTo` (the delivery term; ISO date-time or null = no bound), `auctionCloses` (the auction window's bidding deadline; ISO date-time or null = not using the two-period model), `committedPlays` (the play volume the deal commits to over its delivery term: a whole number >= 1, or null = per play; volume lives on deals, never the open auction) and `deliveredPlays` (read only: plays billed at every position the deal is attached to, in windows starting inside the term; 0 when `committedPlays` is null), `lockedWin` (null until the term's one-time auction clears or an invited buyer commits at the reserve price; then `{cpm, partnerId, advertiserId, campaignId, pricingType, channel, lockedAt, source}`, read only; `source` is `auction` or `reserve`, and a missing `source` reads as `auction`). |
+| POST | `/admin/v1/buyers-lists` | Create: `name`, `description`, `dealType` (optional; omitted = `guaranteed` if `committedPlays` is set, else `private_auction`; `committedPlays` is refused unless `guaranteed`, `auctionCloses` unless `private_auction`), `invitedBuyers` and/or `invitedCategories` (IAB taxonomy only, else `400 validation_failed` on `invitedCategories[i]`; at least one buyer or category is required), `activeFrom`, `activeTo`, `auctionCloses` (optional; null = not using the two-period model), `committedPlays` (optional; whole number >= 1 or null). `422 validation_failed` naming the field (e.g. `name`, `invitedBuyers[0].value`, `activeTo` if before `activeFrom`). `lockedWin` can't be set here. The exchange writes it once: the first time a bid clears within `auctionCloses`, or when an invited buyer first commits at the reserve price. |
 | PUT | `/admin/v1/buyers-lists/{id}` | Replace the same fields (not `lockedWin`). `404` if unknown, `422 validation_failed` as above. |
 | DELETE | `/admin/v1/buyers-lists/{id}` | Delete. `409 has_dependents` naming every slot still assigned to it (a slot's own `displayTypeName — position`) — a buyers list can't be removed out from under a live position. |
 
@@ -403,7 +403,8 @@ the bid request's `exp` and `qty.multiplier`, the hand-off booking and
 billing (one line item per window, expected seconds and assumed views for
 that window's length) all follow it. **The play is the transacting unit**
 (6 Oct 2026): a window's time length is shown alongside the play count it
-holds — `playsPerWindow` = floor(window / loop length), plays on one display,
+holds — `playsPerWindow` = floor(window / `screen.maxPlayLengthSec`) — the slot's
+max play length, never the loop length — plays on one display,
 also sent as `imp.ext.ph.playsPerWindow` — and the impression multiplier
 (VAC-d, `qty.multiplier`) only converts plays to estimated impressions for
 pricing and billing. Billing is unchanged: plays × multiplier. Assumed views are scored per company
@@ -572,6 +573,24 @@ The deal ID is derived from the list (no stored column). A bid on that position
 must quote it as `bid.dealid`; a bid with no `dealid` or another one is rejected.
 Per-DSP deal-ID format requirements are still to be confirmed.
 
+**The global deal (8 Oct 2026).** For DSPs that can only transact on deals, a
+single instance-wide deal ID, `PH-GLOBAL`, resolves to all open, exchange-eligible
+inventory. While the retailer's master switch is on (Exchange settings,
+`globalDealEnabled`), a bid request for an open position whose slot is in the
+global deal carries
+`imp[0].pmp = { private_auction: 0, deals: [{ id: "PH-GLOBAL", at: 1 }] }`:
+`private_auction` is 0 and there is no `wseat`, so it is never mistaken for a
+private or locked deal. A bid may quote `PH-GLOBAL` or no `dealid`; it competes
+exactly as on the open exchange: same base floor (`imp.bidfloor` is unchanged),
+first-price, same pre-auction checks, approval gate and USD rule. It does not
+lower the floor and gives no guaranteed delivery. A bid that quotes `PH-GLOBAL`
+on a position that is not in the global deal is rejected. A slot is in the
+global deal when the master switch is on, its `inGlobalDeal` flag is not false
+(the default) and it is open: a slot held for named advertisers, whitelist-only
+or assigned to a buyers list is never in it, and then carries its own deal (a
+buyers list's `PH-<id>`) or none. Advertiser blacklists and DSP seat lists
+apply as they do for open exchange.
+
 **Bid request (per sellable position and play window):**
 
 ```json
@@ -621,9 +640,14 @@ Per-DSP deal-ID format requirements are still to be confirmed.
   assumption to confirm with TTD at integration.
 - **Never included:** any visitor data, Personalisation Variables or
   Computer Vision values; no `user` object.
-- Screen and loop context (orientation, slot duration, loop length, share of
-  voice) go in `imp.ext.ph` if the DSP doesn't read them from DOOH fields:
-  `{ "orientation": "landscape", "slotDurationSec": 15, "loopLengthSec": 45, "shareOfVoice": 0.333 }`.
+- Screen and loop context (orientation, slot duration, max play length, loop
+  length, share of voice) go in `imp.ext.ph` if the DSP doesn't read them from
+  DOOH fields: `{ "orientation": "landscape", "slotDurationSec": 15,
+  "maxPlayLengthSec": 15, "loopLengthSec": 45, "shareOfVoice": 0.333 }`.
+  `maxPlayLengthSec` is informational for the loop: plays are not counted
+  against `loopLengthSec`. `imp.video.maxduration` is the max play length
+  (`minduration` and `maxduration` are both the slot's fixed play), so a
+  creative longer than it is rejected rather than truncated.
 
 **Bid response — what we require:** `seatbid[].seat`, `bid.price` (CPM,
 ≥ `bidfloor`), `bid.crid` (a reference label; the creative it points at must be an approved creative, identified by content hash), `bid.adomain`

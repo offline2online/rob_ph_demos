@@ -13,7 +13,7 @@ import { useSection } from './DspIntegrationLayout'
 import { SubPageHeader } from './SubPageHeader'
 
 export const ADVERTISER_SETTINGS_TIP =
-  "Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (floor CPM, always in USD), Committed delivery volume (guarantee buffer and default committed plays) and the Category lists. (IAB whitelists and blacklists; each DSP's advertiser lists are managed on its own page, from the advertisers it syncs). Read-only here: Where these apply (which DSPs use these lists or keep their own; unlink or relink on the DSP's page). Per-advertiser campaign approval and floor multipliers, and the inventory advertisers can buy, are on Advertisers / Inventory."
+  "Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (floor CPM, always in USD); Play configuration (max slot length, default committed plays and guaranteed-deal buffer); Real-time bidding (bid lookahead); and the Category lists (IAB whitelists and blacklists; each DSP's advertiser lists are managed on its own page, from the advertisers it syncs). Read-only here: Where these apply (which DSPs use these lists or keep their own; unlink or relink on the DSP's page). Per-advertiser campaign approval and floor multipliers, and the inventory advertisers can buy, are on Advertisers / Inventory."
 
 /* The exchange transacts in USD on every instance (TRANSACTING_CURRENCY in the API's
    domain/currency.ts); company.currency is display/reporting only. Everything priced on
@@ -113,8 +113,15 @@ export function AdvertiserSettings() {
         {INTERACTIVE_ENABLED && <Field label={<span className="block" style={{ minHeight: 36 }}>Interactive cost per engagement (USD)</span>} htmlFor="interactiveCpe" tip={INTERACTIVE_TIP} tipWidth={400} className="w-44">{num('interactiveCpe', 0.05, '0.50', { precision: 2, prefix: TRANSACTING_CURRENCY })}</Field>}
       </div>
 
-      <SectionLabel><WithTip tip="The two settings that drive how many plays a deal commits to, side by side. The buffer decides a guaranteed deal's committed volume, worked out from the slot's forecast. The default seeds Committed plays on a new buyers list. They are separate: changing one never changes the other.">Committed delivery volume</WithTip></SectionLabel>
+      <SectionLabel><WithTip tip="How many plays a slot offers and what a deal commits to. The company max slot length sets the default length of one play, which a display type and then a slot can override. The buffer decides a guaranteed deal's committed volume, worked out from the slot's forecast. The default seeds Committed plays on a new buyers list. They are separate: changing one never changes another.">Play configuration</WithTip></SectionLabel>
       <div className="flex flex-wrap items-start gap-3.5">
+        <Field label={<span className="block" style={{ minHeight: 36 }}>Max play length</span>} htmlFor="maxPlayLengthSec" tip="The company-wide default length of one play of a slot, in seconds. A display type and then a slot can override it on Advertisers / Inventory (slot wins over display type, which wins over this). Plays per window are the billing unit divided by it × the slots playing in the loop (HQ slots included), whoever is booked; it applies to HQ campaigns too; a creative longer than it is rejected on upload, never trimmed. Whole seconds, 1 to 600. Default 15." className="w-56">
+          <div className="flex items-center gap-2">
+            <InputNumber id="maxPlayLengthSec" className="w-full" step={1} min={1} max={600} precision={0} placeholder="15" value={s.maxPlayLengthSec ?? 15} onChange={(v) => set('maxPlayLengthSec', (v === null ? null : Number(v)) as number)} />
+            <span>seconds</span>
+          </div>
+        </Field>
+      
         <Field label={<span className="block" style={{ minHeight: 36 }}>Guarantee buffer</span>} htmlFor="guaranteeBufferPct" tip={BUFFER_TIP} tipWidth={400} className="w-40">
           <div className="flex items-center gap-2">
             <InputNumber id="guaranteeBufferPct" className="w-full" step={1} min={0} max={50} placeholder="10" value={s.guaranteeBufferPct ?? 10} onChange={(v) => set('guaranteeBufferPct', (v === null ? null : Number(v)) as number)} />
@@ -131,16 +138,6 @@ export function AdvertiserSettings() {
         <Field label={<span className="block" style={{ minHeight: 36 }}>Bid lookahead</span>} htmlFor="bidLookaheadSeconds" tip="Bid lookahead, in seconds: how long before a slot plays that its auction opens, for every real-time slot. Whole seconds, at least 1. Default 35, as Broadsign Reach, whose Real-Time Audience API sends bid requests about 35 seconds ahead of the expected programmatic slot." className="w-40">
           <div className="flex items-center gap-2">
             <InputNumber id="bidLookaheadSeconds" className="w-full" step={1} placeholder="35" value={s.bidLookaheadSeconds ?? 35} onChange={(v) => set('bidLookaheadSeconds', (v === null ? null : Number(v)) as number)} />
-            <span>seconds</span>
-          </div>
-        </Field>
-      </div>
-
-      <SectionLabel><WithTip tip="The fixed length of one play of a slot. Plays per window are counted against it, so they stay countable whatever creatives are booked.">Play length</WithTip></SectionLabel>
-      <div className="flex flex-wrap items-start gap-3.5">
-        <Field label={<span className="block" style={{ minHeight: 36 }}>Max play length</span>} htmlFor="maxPlayLengthSec" tip="The company-wide default length of one play of a slot, in seconds. A display type and then a slot can override it on Advertisers / Inventory (slot wins over display type, which wins over this). Plays per window are the window length divided by it, whoever is booked; a creative longer than it is rejected on upload, never trimmed. Whole seconds, 1 to 600. Default 15." className="w-56">
-          <div className="flex items-center gap-2">
-            <InputNumber id="maxPlayLengthSec" className="w-full" step={1} min={1} max={600} precision={0} placeholder="15" value={s.maxPlayLengthSec ?? 15} onChange={(v) => set('maxPlayLengthSec', (v === null ? null : Number(v)) as number)} />
             <span>seconds</span>
           </div>
         </Field>

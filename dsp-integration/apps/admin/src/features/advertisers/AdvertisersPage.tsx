@@ -4,7 +4,7 @@
    the estate, which moved here from Advertiser settings (Rob, 20 Sep).
    Campaigns are not approved here. Changes are applied with Save changes. */
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { App, Button, InputNumber, Select, Spin, Switch } from 'antd'
+import { App, Button, Checkbox, InputNumber, Select, Spin, Switch } from 'antd'
 import { Tip } from '../../shared/Tip'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
 import { INTERACTIVE_ENABLED, RESERVE_PRICE_TIP, DEFAULT_BILLING_UNIT_HOURS, DEFAULT_MAX_CAMPAIGNS, MAX_MAX_CAMPAIGNS, MAX_MAX_PLAY_LENGTH_SEC, MIN_MAX_CAMPAIGNS, MIN_MAX_PLAY_LENGTH_SEC, SLOT_OWNERS, assignedLabels, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type Session } from '@ph-dsp/types'
@@ -70,7 +70,7 @@ export const slotKey = (r: AvailableInventoryRow) => `${r.displayTypeId}:${r.slo
    reservePrice is this slot's own override; null means it follows its
    display type's shared default (below), not "no reserve" (Rob, 22 Sep;
    spec §1 configuration inheritance — override always wins). */
-export interface SlotEdit { assignedTo: Omit<AssignedTo, 'partnerNames' | 'buyersListName' | 'buyersListNames'>; reservePrice: number | null; interactiveReservePrice: number | null; billingUnitHours: number | null; maxCampaigns: number | null; maxPlayLengthSec: number | null }
+export interface SlotEdit { assignedTo: Omit<AssignedTo, 'partnerNames' | 'buyersListName' | 'buyersListNames'>; reservePrice: number | null; interactiveReservePrice: number | null; billingUnitHours: number | null; maxCampaigns: number | null; maxPlayLengthSec: number | null; inGlobalDeal: boolean }
 type Edits = Record<string, SlotEdit>
 /* A display type's reserve price default, edited from any of its slot
    rows — every row for the same displayTypeId shares one value. Also used
@@ -183,7 +183,7 @@ function Pills({ label, value, options, canEdit, placeholder, onChange }: {
 }
 
 const edited = (c: InvCtx['current'], r: AvailableInventoryRow): SlotEdit =>
-  c.edits[slotKey(r)] ?? { assignedTo: r.assignedTo, reservePrice: r.reservePriceOverride, interactiveReservePrice: r.interactiveReservePriceOverride ?? null, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride, maxPlayLengthSec: r.maxPlayLengthSecOverride }
+  c.edits[slotKey(r)] ?? { assignedTo: r.assignedTo, reservePrice: r.reservePriceOverride, interactiveReservePrice: r.interactiveReservePriceOverride ?? null, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride, maxPlayLengthSec: r.maxPlayLengthSecOverride, inGlobalDeal: r.inGlobalDeal }
 /* The value this slot actually resolves to right now, following the draft
    default when it has no override of its own — the same "override wins"
    read as reservePriceOf, but against unsaved edits. */
@@ -214,6 +214,15 @@ const effectiveMaxCampaigns = (c: InvCtx['current'], r: AvailableInventoryRow): 
    default, else the company default from Advertiser settings. */
 const effectiveMaxPlayLength = (c: InvCtx['current'], r: AvailableInventoryRow): number =>
   edited(c, r).maxPlayLengthSec ?? c.maxPlayLengthDefaults[r.displayTypeId] ?? r.companyMaxPlayLengthSec
+
+/* Plays per window (8 Oct 2026): derived, never typed — floor(billing unit /
+   (max slot length x slots playing)), from the draft's own values so any
+   change to either input recalculates before save. Slots playing counts
+   every loop position, HQ's too. */
+const effectivePlaysPerWindow = (c: InvCtx['current'], r: AvailableInventoryRow): number => {
+  const loopSec = effectiveMaxPlayLength(c, r) * Math.max(1, r.slotCount)
+  return loopSec > 0 ? Math.floor((effectiveBillingUnitHours(c, r) * 3600) / loopSec) : 0
+}
 
 /* Who may buy this position (Rob, 20 Sep; buyers lists/private auctions
    added 23 Sep): DSPs, named advertisers, a buyers list's private auction,
@@ -296,7 +305,7 @@ function AssignedCell({ data, context }: IP) {
          list of DSP's"). */
       label: 'Buyers and targeting (private auction)',
       options: [
-        ...c.buyersLists.map((l) => ({ value: `deal:${l.id}`, label: l.name, note: `${l.invitedBuyers.length} invited buyer${l.invitedBuyers.length === 1 ? '' : 's'}` })),
+        ...c.buyersLists.map((l) => ({ value: `deal:${l.id}`, label: l.name, note: [l.invitedBuyers.length ? `${l.invitedBuyers.length} invited buyer${l.invitedBuyers.length === 1 ? '' : 's'}` : '', (l.invitedCategories ?? []).length ? `Category: ${l.invitedCategories.join(', ')}` : ''].filter(Boolean).join(' + ') })),
         { value: ADD_BUYERS_LIST, label: '+ Add new buyers and targeting…' },
       ],
     },
@@ -357,7 +366,32 @@ function AssignedCell({ data, context }: IP) {
       canEdit={c.canEdit}
       onChange={(ids) => c.set(slotKey(data), { assignedTo: { ...a, buyersListId: ids[0] ?? null, buyersListIds: ids } })}
     />
+    <GlobalDealFlag data={data} c={c} />
     </>
+  )
+}
+
+/* "In global deal" (8 Oct 2026): defaults ON, and is suppressed whenever the
+   slot is held for named advertisers, whitelist-only or on a buyers list, so
+   the default never exposes inventory the retailer meant to restrict. The
+   choice is kept while suppressed; it simply has no effect. */
+const GLOBAL_DEAL_TIP = 'Include this slot in the global deal: the one deal ID (see Exchange settings) a DSP that only buys on deals can target to reach every open slot. On by default; untick to keep the slot out. It has no effect while the slot is held for named advertisers, whitelist-only or on a buyers list, and none while the global deal is off in Exchange settings.'
+function GlobalDealFlag({ data, c }: { data: AvailableInventoryRow; c: InvCtx['current'] }) {
+  const e = edited(c, data)
+  const a = e.assignedTo
+  const suppressed = a.advertisers.length ? 'held for named advertisers' : a.whitelistOnly ? 'whitelist-only' : tiersOf(a).length ? 'on a buyers list' : null
+  return (
+    <Tip title={suppressed ? `Not in the global deal: this slot is ${suppressed}.` : GLOBAL_DEAL_TIP}>
+      <Checkbox
+        className="mt-1"
+        checked={e.inGlobalDeal !== false && !suppressed}
+        disabled={!c.canEdit || !!suppressed}
+        onChange={(x) => c.set(slotKey(data), { inGlobalDeal: x.target.checked })}
+        aria-label={`${data.displayTypeName} slot ${data.zoneSlot}: in global deal`}
+      >
+        <span style={{ fontSize: 12, color: T.muted }}>In global deal</span>
+      </Checkbox>
+    </Tip>
   )
 }
 
@@ -660,7 +694,7 @@ export function AdvertisersPage() {
     },
     {
       headerName: 'Max play length', width: 150, minWidth: 135, cellRenderer: MaxPlayLengthCell,
-      headerComponent: header('Max play length', 'The fixed length of one play of this slot, in seconds. Plays per window are the window length divided by this, whoever is booked. A creative longer than it is rejected on upload, never trimmed. Set once for the display type and inherited by every slot on it; override just one slot to give it its own. With neither set, the default in Advertiser settings applies.'),
+      headerComponent: header('Max play length', 'Max slot length: the longest one play of this slot may run, in seconds. It applies to every campaign on the loop, HQ campaigns included, and HQ slots fill part of the loop. Plays per window are the billing unit divided by this × the slots playing. A creative longer than it is rejected on upload, never trimmed. Set once for the display type and inherited by every slot on it; override just one slot to give it its own. With neither set, the default in Advertiser settings applies.'),
       valueGetter: (p) => (p.data ? effectiveMaxPlayLength((p.context as InvCtx).current, p.data) : 0),
       ...setColumn<AvailableInventoryRow>('Max play length', invValues((r) => [String(r.maxPlayLengthSec)])),
     },
@@ -669,16 +703,28 @@ export function AdvertisersPage() {
       headerComponent: header('Billing unit', 'The length of this slot’s play windows: each one is auctioned, booked and billed on its own. Set once for the display type and inherited by every slot on it — override just one slot to give it its own value, independent of the others. With neither set, the play-window length in Advertiser settings applies. Can’t change while windows are still bid on or booked under it.'),
       valueGetter: (p) => (p.data ? effectiveBillingUnitHours((p.context as InvCtx).current, p.data) : DEFAULT_BILLING_UNIT_HOURS),
     },
+    {
+      headerName: 'Slots playing', width: 130, minWidth: 115,
+      headerComponent: header('Slots playing', 'The number of slots in the playlist loop, set in Playlist Management (Max campaigns in rotation). This table lists advertiser slots only, but HQ slots fill part of the same loop and are counted. Read-only.'),
+      valueGetter: (p) => p.data?.slotCount ?? 0,
+      cellRenderer: ({ value }: { value: number }) => <span>{value}</span>,
+    },
+    {
+      headerName: 'Plays per window', width: 150, minWidth: 135,
+      headerComponent: header('Plays per window', 'How many plays this slot gets in one billing unit: billing unit ÷ (max slot length × slots playing). Max slot length applies to every campaign on the loop, HQ campaigns included, and HQ slots fill part of the loop even though they are not listed here. Calculated, never typed: it updates as you change the max slot length or billing unit.'),
+      valueGetter: (p) => (p.data ? effectivePlaysPerWindow((p.context as InvCtx).current, p.data) : 0),
+      cellRenderer: ({ value }: { value: number }) => <span>{value.toLocaleString('en-US')}</span>,
+    },
     { headerName: '', width: 76, suppressSizeToFit: true, cellRenderer: OpenCell },
   ], [invRows, inventory.data, buyersLists.data])
   const saved = useMemo<Settings | undefined>(() => q.data && Object.fromEntries(q.data.items.map((a) => [a.advertiserId, { approvalRequired: a.approvalRequired, floorMultiplier: a.floorMultiplier }])), [q.data])
   const { draft, setDraft, dirty, reset, commitNext } = useDraft(saved)
   const savedEdits = useMemo<Edits | undefined>(() => inventory.data && Object.fromEntries(invRows.map((r) => {
     const { partnerNames: _names, ...assignedTo } = r.assignedTo
-    return [slotKey(r), { assignedTo, reservePrice: r.reservePriceOverride, interactiveReservePrice: r.interactiveReservePriceOverride ?? null, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride, maxPlayLengthSec: r.maxPlayLengthSecOverride }]
+    return [slotKey(r), { assignedTo, reservePrice: r.reservePriceOverride, interactiveReservePrice: r.interactiveReservePriceOverride ?? null, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride, maxPlayLengthSec: r.maxPlayLengthSecOverride, inGlobalDeal: r.inGlobalDeal }]
   })), [invRows, inventory.data])
   const inv = useDraft(savedEdits)
-  const savedEditsNow = (r: AvailableInventoryRow): SlotEdit => (inv.draft ?? {})[slotKey(r)] ?? { assignedTo: r.assignedTo, reservePrice: r.reservePriceOverride, interactiveReservePrice: r.interactiveReservePriceOverride ?? null, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride, maxPlayLengthSec: r.maxPlayLengthSecOverride }
+  const savedEditsNow = (r: AvailableInventoryRow): SlotEdit => (inv.draft ?? {})[slotKey(r)] ?? { assignedTo: r.assignedTo, reservePrice: r.reservePriceOverride, interactiveReservePrice: r.interactiveReservePriceOverride ?? null, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride, maxPlayLengthSec: r.maxPlayLengthSecOverride, inGlobalDeal: r.inGlobalDeal }
   const anyInteractiveReserve = INTERACTIVE_ENABLED && invRows.some((r) => showsInteractiveReserve(r.qrControl, savedEditsNow(r)))
   const visibleInventoryColumns = useMemo(
     () => (anyInteractiveReserve ? inventoryColumns : inventoryColumns.filter((col) => col.headerName !== INTERACTIVE_RESERVE_HEADER)),
@@ -833,17 +879,6 @@ export function AdvertisersPage() {
         <Button color="primary" variant="text" size="small" icon={<Icon name="calendar_month" size={16} />} onClick={() => window.open(externalUrl(BOOKING_SCHEDULE_PATH), '_blank', 'noopener')}>Booking schedule</Button>
         {!canEdit && <StatusPill colour={T.muted} icon="visibility">Read only</StatusPill>}
       </div>
-      {data.items.length === 0 ? (
-        <div className="flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}><Icon name="sell" size={18} />No advertisers yet. They appear here once a DSP is connected.</div>
-      ) : (
-        <>
-          <div className="mb-2" style={{ fontSize: 13 }}>{showingCount(shown ?? data.items.length, data.items.length, `advertiser${data.items.length === 1 ? '' : 's'}`)}</div>
-          <Grid<Advertiser>
-            label="Advertisers" rows={data.items} columns={columns} context={context} getRowId={(a) => a.advertiserId}
-            stickyHeader headerHeight={40} floatingFiltersHeight={40} onFilterChanged={(e) => setShown(e.api.getDisplayedRowCount())}
-          />
-        </>
-      )}
       <SectionLabel><WithTip tip="Every advertiser-owned slot across the estate that connected DSPs can bid on. Slots are made available by setting their owner to Advertiser on a display type.">Available Inventory</WithTip></SectionLabel>
       {inventory.data && invRows.length === 0 ? (
         <div className="flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}>
@@ -874,6 +909,19 @@ export function AdvertisersPage() {
         onChanged={() => qc.invalidateQueries({ queryKey: ['buyers-lists'] })}
       />
 
+      {/* Advertisers table sits last, under Buyers and targeting (ticket AkDMbOJn0QBV0ZcEM5tm). */}
+      <SectionLabel>Advertisers</SectionLabel>
+      {data.items.length === 0 ? (
+        <div className="flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}><Icon name="sell" size={18} />No advertisers yet. They appear here once a DSP is connected.</div>
+      ) : (
+        <>
+          <div className="mb-2" style={{ fontSize: 13 }}>{showingCount(shown ?? data.items.length, data.items.length, `advertiser${data.items.length === 1 ? '' : 's'}`)}</div>
+          <Grid<Advertiser>
+            label="Advertisers" rows={data.items} columns={columns} context={context} getRowId={(a) => a.advertiserId}
+            stickyHeader headerHeight={40} floatingFiltersHeight={40} onFilterChanged={(e) => setShown(e.api.getDisplayedRowCount())}
+          />
+        </>
+      )}
       {canEdit && <SaveBar dirty={dirty || inv.dirty || defaults.dirty || billingUnitDefaults.dirty || maxCampaignsDefaults.dirty} saving={saving} onSave={onSave} onCancel={() => { reset(); inv.reset(); defaults.reset(); billingUnitDefaults.reset(); maxCampaignsDefaults.reset(); maxPlayLengthDefaults.reset() }} />}
 
       {/* Picked "+ Add new buyers list…" from a slot's Assigned to picker

@@ -6,7 +6,7 @@
    first). No real DSP is ever called from the POC. */
 /* An advertiser pulled from the DSP. `domain` (not returned by the API) is
    how a bid response's adomain is matched to it. */
-export interface Seat { id: string; name: string; domain?: string }
+export interface Seat { id: string; name: string; domain?: string; category?: string }
 export type ConnectResult = { ok: true; seats: Seat[] } | { ok: false; reason: string }
 
 export interface DspClient {
