@@ -52,8 +52,8 @@ assert.strictEqual(applyIntake(full).desc, applyIntake(applyIntake(full).desc).d
 assert.strictEqual(applyIntake("The save button crashes when the title is empty").type, "bug");
 assert.strictEqual(applyIntake("Add an export button to the archive page").type, "feature");
 
-// 6. Over-long structured output keeps the original text (board limit 2000).
-const long = "x ".repeat(990);
+// 6. Over-long structured output keeps the original text (board limit 10000).
+const long = "x ".repeat(5100);
 assert.strictEqual(applyIntake(long).desc, long.trim());
 
 // 7. Only intake's own flag is its to manage.
