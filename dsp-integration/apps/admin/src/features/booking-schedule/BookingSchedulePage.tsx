@@ -25,9 +25,9 @@ import { useQuery } from '@tanstack/react-query'
 import { Alert, DatePicker, Segmented, Spin } from 'antd'
 import { Tip } from '../../shared/Tip'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
-import { SLOT_OWNERS, type BookingSchedule as Schedule } from '@ph-dsp/types'
+import { SLOT_OWNERS, type BookingCapacity, type BookingSchedule as Schedule } from '@ph-dsp/types'
 import dayjs, { type Dayjs } from 'dayjs'
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { api } from '../../api/client'
 import { Grid } from '../../shared/Grid'
@@ -110,7 +110,10 @@ function windowSummaryOf(position: Position) {
   const upsells = (['localised', 'personalised'] as const)
     .map((k) => ({ k, n: booked.filter((w) => w.booking!.layers[k]).length }))
     .filter((u) => u.n > 0)
-  return { booked: booked.length, total: position.windows.length, upsells }
+  /* A real-time position has no forward windows to count (ticket
+     vhRFN1K3N4Giw1Z0OEI6, 8 Oct 2026): only a booking made before it went
+     real-time counts, and then against itself. */
+  return { booked: booked.length, total: position.realTime ? booked.length : position.windows.length, upsells }
 }
 
 function PositionCell({ data }: ICellRendererParams<Row>) {
@@ -126,7 +129,9 @@ function PositionCell({ data }: ICellRendererParams<Row>) {
         {data.position.zoneName ? `${data.position.zoneName} / Slot ${data.position.zoneSlot}` : `Slot ${data.position.slot}`} · {data.position.slotLabel}
       </div>
       <div className="flex flex-wrap items-center gap-x-1.5" style={{ fontSize: 10.5, color: T.muted }}>
-        <span>{booked} of {total} windows booked</span>
+        {data.position.realTime
+          ? <span>Real time · sold per impression · {data.position.recentPlays ?? 0} play{data.position.recentPlays === 1 ? '' : 's'} in the last 7 days</span>
+          : <span>{booked} of {total} windows booked</span>}
         {upsells.map(({ k, n }) => (
           <span key={k} className="inline-flex items-center gap-0.5">
             <LayerTag layerKey={k} />
@@ -271,6 +276,8 @@ function GroupedCell({ cells, money }: { cells: Cell[]; money: (n: number) => st
 
 function WindowCell({ value, context, data }: ICellRendererParams<Row, Group, Ctx>) {
   if (!value?.cells.length) return null
+  /* Real-time inventory is sold per impression: no booked / available grid. */
+  if (data?.position.realTime && !value.cells.some((c) => c.booking)) return <span style={{ fontSize: 11, color: T.micro }}>—</span>
   const { money, view } = context.current
   return (
     <div className="flex w-full min-w-0 flex-col justify-center gap-0.5 py-1">
@@ -295,6 +302,84 @@ const PercentSoldCell = ({ data }: ICellRendererParams<RevenueRow>) => {
   return <span style={{ fontWeight: data.total ? 600 : 400 }}>{pct}%</span>
 }
 
+/* Plays per day (decision Rob 9 Oct 2026): the day is how a retailer reads a
+   booking, but the window is what clears, so each figure is the plays of every
+   window in the stores' trading hours rolled up to the day. Pre-booked deals
+   are netted off firmly; the rest is only "available to bid" (indicative, the
+   auction decides). A segment cut is its own screens x plays, and cuts overlap
+   on screens, so they are never added to each other or to the estate figure. */
+const PLAYS_TIP = 'Plays per day = the plays of every billing-unit window running in the stores’ trading hours that day (not a flat 24h ÷ billing unit). Pre-booked = plays committed by deals, netted off firmly. Available to bid = the rest, indicative: the auction decides. Segment cuts overlap on screens, so they do not add up to the total.'
+const plays = (n: number) => n.toLocaleString('en-GB')
+
+function PlaysPerDay({ data }: { data: BookingCapacity }) {
+  const [open, setOpen] = useState<Set<string>>(new Set())
+  const toggle = (id: string) => setOpen((o) => { const n = new Set(o); if (n.has(id)) n.delete(id); else n.add(id); return n })
+  const head = { fontSize: 11, fontWeight: 600, color: T.micro, textAlign: 'left' as const, padding: '6px 8px', borderBottom: `1px solid ${T.borderSubtle}`, whiteSpace: 'nowrap' as const }
+  const cell = { fontSize: 11.5, padding: '6px 8px', borderBottom: `1px solid ${T.borderSubtle}`, verticalAlign: 'top' as const, whiteSpace: 'nowrap' as const }
+  /* An answer without the capacity shape (an API from before this table, or the
+     offline snapshot) reads as "nothing to show", never a crash of the whole page. */
+  if (!Array.isArray(data.positions) || !Array.isArray(data.days) || data.positions.length === 0) return <div style={{ fontSize: 12.5, color: T.muted }}>No advertiser positions yet.</div>
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table style={{ borderCollapse: 'collapse', width: '100%' }} aria-label="Plays per day">
+        <thead>
+          <tr>
+            <th style={head}>Position</th>
+            {data.days.map((d) => <th key={d} style={head}>{fmt(new Date(d), { weekday: 'short', day: 'numeric', month: 'short' })}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {data.positions.map((p) => {
+            const isOpen = open.has(p.positionId)
+            const cuts = p.days?.[0]?.segments?.map((x) => x.segment) ?? []
+            return (
+              <Fragment key={p.positionId}>
+                <tr>
+                  <td style={cell}>
+                    <button type="button" className="inline-flex items-center gap-1" style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', font: 'inherit' }}
+                      aria-expanded={isOpen} onClick={() => toggle(p.positionId)}>
+                      <Icon name={isOpen ? 'expand_less' : 'expand_more'} size={16} />
+                      <span>{p.displayTypeName}</span>
+                    </button>
+                    <div style={{ fontSize: 10.5, color: T.muted, paddingLeft: 18 }}>
+                      Slot {p.slot} · {p.screens} screens · {p.windowHours}h window{p.realtime ? ' · real time' : ''}
+                    </div>
+                  </td>
+                  {p.days.map((d) => (
+                    <td key={d.date} style={cell}>
+                      <div style={{ fontWeight: 600 }}>{plays(d.totalPlays)} plays</div>
+                      <div style={{ color: BOOKED.colour }}>{plays(d.firmPlays)} pre-booked</div>
+                      <div style={{ color: T.success }}>{plays(d.availableToBid)} available to bid</div>
+                    </td>
+                  ))}
+                </tr>
+                {isOpen && (
+                  <tr>
+                    <td style={{ ...cell, color: T.muted }}>
+                      {cuts.length ? 'Available to bid within each cut (cuts overlap, not additive)' : 'No localized segment is targeted yet.'}
+                    </td>
+                    {p.days.map((d) => (
+                      <td key={d.date} style={cell}>
+                        {d.deals.map((x) => <div key={x.reservationId} style={{ color: BOOKED.colour }}>{x.advertiserName}: {plays(x.plays)} plays</div>)}
+                        {d.segments.map((x) => (
+                          <div key={x.segment}>
+                            <b>{x.segment}</b> · {x.screens} screens · {plays(x.totalPlays)} plays
+                            <div style={{ color: T.muted }}>{plays(x.firmPlays)} pre-booked · {plays(x.availableToBid)} available to bid within this cut</div>
+                          </div>
+                        ))}
+                      </td>
+                    ))}
+                  </tr>
+                )}
+              </Fragment>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 export function BookingSchedulePage() {
   const [params, setParams] = useSearchParams()
   const advertiserId = params.get('advertiserId') ?? undefined
@@ -306,6 +391,9 @@ export function BookingSchedulePage() {
   const q = `?from=${from}&to=${to}${advertiserId ? `&advertiserId=${encodeURIComponent(advertiserId)}` : ''}${partnerId ? `&partnerId=${encodeURIComponent(partnerId)}` : ''}`
   const schedule = useQuery({ queryKey: ['booking-schedule', q], queryFn: () => api<Schedule>('GET', `/admin/v1/booking-schedule${q}`) })
   const data = schedule.data
+  /* Plays per day reads the first fortnight of the range: a column per day. */
+  const capacityTo = dayjs(from).add(13, 'day').isBefore(dayjs(to)) ? dayjs(from).add(13, 'day').format('YYYY-MM-DD') : to
+  const capacity = useQuery({ queryKey: ['booking-capacity', from, capacityTo], queryFn: () => api<BookingCapacity>('GET', `/admin/v1/booking-schedule/capacity?from=${from}&to=${capacityTo}`) })
   const currency = data?.currency ?? 'AUD'
   const money = useMemo(() => {
     const f = new Intl.NumberFormat('en-AU', { style: 'currency', currency })
@@ -477,6 +565,10 @@ export function BookingSchedulePage() {
               stickyHeader
             />
           )}
+
+          <SectionLabel><WithTip tip={PLAYS_TIP}>Plays per day</WithTip></SectionLabel>
+          {capacity.isError && <Alert className="mb-4" type="error" showIcon message="Plays per day couldn’t be loaded." />}
+          {capacity.data ? <PlaysPerDay data={capacity.data} /> : !capacity.isError && <Spin />}
 
           <SectionLabel><WithTip tip="Per display type, over the play windows shown. % sold = booked ÷ sellable windows of booked-ahead (deal and reserved) positions only; positions sold in real time, per play, are left out, and a display type with only those shows a dash. Estimated revenue = booked CPM × assumed views ÷ 1000 — what billing eventually charges, once a window has actually played, may differ.">Booking revenue</WithTip></SectionLabel>
           <Grid<RevenueRow>

@@ -42,8 +42,8 @@ record.
   gone from Available Inventory, `supportedTargeting` is gone from the
   position in `GET /v1/inventory`, `GET`/`PUT /admin/v1/available-inventory`
   and the slot, and any stored value is ignored. Two rules stay: a
-  personalised campaign is accepted only in a `type: reserve` booking
-  (refused `targeting_not_supported` otherwise), and interactive remains
+  personalised campaign is accepted only in a `type: reserve` booking or on
+  a deal (refused `targeting_not_supported` on an open real-time position), and interactive remains
   deferred. Mentions of the setting below this note are superseded.
 - **5 Oct 2026** — interactive campaigns deferred for this release (Rob;
   ticket B2FBG5Ro9yqrcH3xICFz): the focus is the basic framework. They are
@@ -59,7 +59,20 @@ record.
   own right. The stored `interactiveCpe` is kept untouched. Sections 4, 5,
   8 and the functional requirements below describe the deferred behaviour
   only as "deferred"; the earlier interactive wording is superseded.
-- **5 Oct 2026** — personalised versions are sold only through reserved
+- **8 Oct 2026** — personalised targeting is sold on deals as well as
+  reserve bookings (Rob; ticket IYNdMlPtQ7rhplRwbK0q). The whole
+  Personalisation Variables group (§6) is targetable on all three deal types
+  (private_auction, preferred, guaranteed) and on reserve bookings, but stays
+  out of the open real-time auction: an open or whitelist-only bid carrying a
+  personalised rule is still refused `targeting_not_supported`, because the
+  per-impression path cannot resolve personalised targeting and render
+  approved creative inside `bidLookaheadSeconds`. A guaranteed deal with
+  personalised targeting commits from the TARGETED assumed views, not the
+  slot's whole VAC-d, so `floor(forecast × (1 − buffer%))` never
+  over-commits. `booking.personalisedEligible` is true for a reserve-held
+  window and for a deal-held window whose campaign is personalised. Supersedes
+  the 5 Oct entry below and the "reserve only" wording in §4, §5 and §6.
+- **5 Oct 2026** — (superseded 8 Oct: now also on deals) personalised versions are sold only through reserved
   slots (Rob; ticket Ba5QdLIzCbJGMHfawjAP): a personalised
   campaign is refused (`targeting_not_supported`) outside a `type: reserve`
   booking, and only a reserve-held window plays personalised versions
@@ -1476,10 +1489,12 @@ text — the resolved value, not which of the two levels it came from.
 for it from 20 Sep): what a buyer may target is
 defined on the buyers and targeting list. The one rule that remains on the
 slot side is that personalised versions are sold only through reserve
-booking: a personalised campaign is accepted only in a reserve booking
-(`POST /v1/reservations`, `type: reserve`) on a slot with a reserve price
-(its own or inherited; Rob, 5 Oct 2026), and a bid for one, in an open or
-private auction, is refused `targeting_not_supported`. **Admin only**: a
+booking or on a deal: a personalised campaign is accepted in a reserve
+booking (`POST /v1/reservations`, `type: reserve`) on a slot with a reserve
+price (its own or inherited; Rob, 5 Oct 2026) and, since 8 Oct 2026, in a bid
+or reservation on a position held by a buyers-list deal (private auction,
+preferred, guaranteed); a bid for one on an open real-time position is refused
+`targeting_not_supported`. **Admin only**: a
 marketing user sees the fields but can't change them.
 
 **Interactive is deferred** (5 Oct 2026). It is not offered in the picker;
@@ -1837,12 +1852,17 @@ stores its criteria didn't match unsold to it. That model is retired:
   throughout (§5, §7 Billing), so retiring the part-sold submission shape
   is retiring a plan, not a running behaviour. The **Part-sold** position
   status (§5) is removed along with it.
-- **Personalised versions play only in a reserve-held window** (Rob, 5 Oct
-  2026): open and private auctions clear default and localised only, so
-  personalisation cannot be used to game the auction. The reserve booking is
-  pre-committed by one advertiser, who submits the personalised variations
-  alongside the mandatory default; it bills on realised VAC-d at the reserve
-  price, as today, with no special billing.
+- **Personalised versions play in a reserve-held or deal-held window, never
+  the open real-time auction** (Rob, 5 Oct 2026; widened to deals 8 Oct 2026):
+  the open per-impression path cannot resolve personalised targeting and
+  render approved creative inside the bid window, so it clears default and
+  localised only. A reserve booking or a deal (private auction, preferred,
+  guaranteed) is pre-committed, so the advertiser submits the personalised
+  variations alongside the mandatory default; it bills on realised VAC-d at
+  the booked rate, with no special billing. A guaranteed deal's committed
+  volume comes from the targeted assumed views (the share of the slot's VAC-d
+  its personalised versions reach, e.g. the gendered subset a camera
+  detects), not the whole VAC-d.
 - **localised and personalised are upsells on the one purchase**, not
   alternatives to it: a booking's tile stacks whichever of the two the
   advertiser's submission also carries, on top of the mandatory default
@@ -2327,9 +2347,10 @@ category override; the advertiser lists live only on the DSP's own page (§6).
    handed to the **existing campaign system** for that slot and window.
    Distribution to players, caching, playback and playback analytics are the
    existing platform's and are unchanged. The booking carries
-   `personalisedEligible`, true only for a window held by a reserve booking
-   (5 Oct 2026): personalised versions are eligible to play there and
-   nowhere else; an auction-won window plays default and localised only.
+   `personalisedEligible`, true for a window held by a reserve booking
+   (5 Oct 2026) or by a deal with a personalised campaign (8 Oct 2026):
+   personalised versions are eligible to play there and nowhere else; a window
+   on an open real-time position plays default and localised only.
 4. **Supply-chain transparency.** A published `sellers.json` and a
    `SupplyChain` object on every bid request.
 5. **Reconciliation and billing** from existing playback data.
@@ -3458,9 +3479,10 @@ playback analytics.**
   default, or named DSPs, named advertisers (reserved) or the whitelist —
   as a multi-select of pills, set by an admin and enforced on every bid.
   *(Advertisers / Inventory → Available Inventory)*
-- **Personalised only by reserve booking**: a personalised campaign is
-  accepted only in a `type: reserve` booking, on a slot with a reserve price
-  (own or inherited); targeting is defined on the buyers and targeting list,
+- **Personalised on reserve bookings and deals, never open real-time**: a
+  personalised campaign is accepted in a `type: reserve` booking (on a slot
+  with a reserve price, own or inherited) and on a deal-held position
+  (private auction, preferred, guaranteed; 8 Oct 2026); targeting is defined on the buyers and targeting list,
   not per slot (7 Oct 2026). *(Advertisers / Inventory → Available Inventory)*
 - **Campaign schedule** (renamed from "Booking schedule", ticket 26 Sep
   2026; **page title "Advertiser Bookings"** and the second tab **"Upcoming
@@ -3482,6 +3504,18 @@ playback analytics.**
   `?tab=campaign-status`, so refreshing the browser stays on the tab you
   were on instead of dropping back to Booking schedule. Campaign detail's
   back link opens the same URL.
+- **Booking schedule tab — forward booking only where it exists (8 Oct
+  2026, ticket "Booking schedule: real-time positions show plays, not a
+  forward grid").** Only deals and reserved slots commit inventory ahead, so
+  only they get the booked / available grid and count towards the "N of M
+  windows booked" rows and the header roll-up. An open or whitelist-only
+  position is sold per impression: the API flags it `realTime` and gives
+  `recentPlays` (live, non-test plays proved in the last 7 days, one grouped
+  query); the tab reads **"Real time · sold per impression · N plays in the
+  last 7 days"** with a dash in every window cell, never "Available". A
+  booking made before a position went real-time still shows (it is real
+  revenue). Plays-per-day availability for deal / reserved is ticket
+  pXz9hpWIONwucHGJijsF's.
 - **Booking schedule tab**: every advertiser position across its play
   windows, booked / available / unavailable, **at the top of the tab**,
   with booking revenue per display type and then what sold by campaign
@@ -3509,6 +3543,24 @@ playback analytics.**
   *eligible* to buy the slot) — the two can differ whenever a slot takes
   bids from more than one DSP, and only the former is guaranteed to match
   the advertiser shown beside it. *(Campaign schedule → Booking schedule tab)*
+- **Plays per day on the Booking schedule** (decision Rob 9 Oct 2026;
+  `GET /admin/v1/booking-schedule/capacity`, `domain/dailyCapacity.ts`): a
+  "Plays per day" table under the schedule, one column per day. The window is
+  still the clearing unit; the day is a roll-up of it. A slot's plays on a day
+  are the plays of every billing-unit window running in the stores' trading
+  hours (a store's `open_hour`/`close_hour`, migration 0061), not a flat
+  24h ÷ billing unit: a 24/7 display on an 8h unit has three windows, an
+  in-store display open for one 8h window has one, and a window only partly
+  open counts the plays that fit. Per slot and day: total plays (whole estate);
+  **pre-booked** plays, the reserve deals' commitment netted off firmly; and
+  **available to bid**, the remainder, indicative (the auction decides; a
+  pre-booked deal holds outright). Each localized segment (fixed or variable
+  store segment, `stores.segments`) that any campaign targets is a further cut:
+  its screens × plays per day, its own pre-booked plays netted off, the rest
+  "available to bid within this cut". Segments overlap on screens, so the cuts
+  are not additive to each other or to the estate figure. Day boundaries are
+  UTC and store hours are hours of that day (no store time zones in this POC).
+  Firm = reserve bookings only. Spec: §5, §6.
 - **Play-window booked/available summary, wherever the page counts
   "windows"** (ticket "anytime you use the word Windows please show a
   representation of how many are booked versus … localised … personalised

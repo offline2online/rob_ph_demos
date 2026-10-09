@@ -15,7 +15,7 @@ import { Tip } from '../../shared/Tip'
 import { SectionLabel } from '../../shared/SectionLabel'
 import { T } from '../../theme/phTheme'
 import { BuyersListModal } from './BuyersListModal'
-import { playsText, rateText, sourceLabel } from './effectiveTerm'
+import { cpmKind, cpmKindHint, playsText, rateText, sourceLabel } from './effectiveTerm'
 
 type Capacity = Map<string, { plays: number; displayTypes: number; positions: number }>
 type Ctx = { current: { capacity: Capacity; onEdit: (l: BuyersList) => void; onDelete: (l: BuyersList) => void; canEdit: boolean } }
@@ -70,9 +70,13 @@ const TermCell = ({ data }: P) => {
 const Sub = ({ children }: { children: string }) => <div style={{ fontSize: 11.5, color: T.muted }}>{children}</div>
 const RateCell = ({ data }: P) => {
   if (!data) return null
-  if (data.lockedWin) return <span style={{ fontSize: 12.5, color: T.primary }}>Locked: {data.lockedWin.cpm} CPM</span>
+  const kind = cpmKind(data.dealType)
+  if (data.lockedWin) return <Tip title="Locked: the rate this deal's auction settled at, billed for the rest of its delivery term."><span style={{ fontSize: 12.5, color: T.primary }}>Locked: {data.lockedWin.cpm} CPM</span></Tip>
   const text = rateText(data.effectiveRateCpm)
-  return text ? <div><span style={{ fontSize: 12.5 }}>{text}</span><Sub>{sourceLabel(data.effectiveRateCpm.source)}</Sub></div> : <span style={{ color: T.muted }}>Per play</span>
+  const src = sourceLabel(data.effectiveRateCpm?.source ?? 'none')
+  return text
+    ? <Tip title={`${cpmKindHint(data.dealType)}${src ? ` Source: ${src}.` : ''}`}><div><span style={{ fontSize: 12.5 }}>{text} {kind}</span><Sub>{src}</Sub></div></Tip>
+    : <span style={{ color: T.muted }}>Per play</span>
 }
 /* Volume lives on the deal (open question 45): the single committed figure ('M plays', no 'of' denominator: a guaranteed deal is sold, not capped) for a deal with its own commitment;
    otherwise the volume inherited platform -> DSP, or 'Per play' when no level sets one. */
@@ -114,6 +118,7 @@ export function BuyersListsTable({ lists, canEdit, capacity, onChanged }: { list
 
   const columns: ColDef<BuyersList>[] = [
     { headerName: 'Buyers and targeting', flex: 2, minWidth: 220, cellRenderer: NameCell, valueGetter: (p) => `${p.data?.name}|${p.data?.description}` },
+    { headerName: 'CPM', width: 200, minWidth: 170, cellRenderer: RateCell, valueGetter: (p) => JSON.stringify([p.data?.dealType, p.data?.lockedWin, p.data?.effectiveRateCpm]) },
     /* These cells have no field, so AG Grid saw an unchanged value (undefined) after a save and kept the old cell:
        an edited deal type kept showing "Private auction". Each gets a valueGetter over everything it renders. */
     { headerName: 'Deal type', width: 170, minWidth: 150, cellRenderer: DealTypeCell, valueGetter: (p) => p.data?.dealType ?? '' },
@@ -122,7 +127,6 @@ export function BuyersListsTable({ lists, canEdit, capacity, onChanged }: { list
     { headerName: 'Delivery term', width: 260, minWidth: 220, cellRenderer: TermCell, valueGetter: (p) => `${p.data?.activeFrom}|${p.data?.activeTo}` },
     { headerName: 'Committed volume', width: 190, minWidth: 160, cellRenderer: VolumeCell, valueGetter: (p) => JSON.stringify([p.data?.dealType, p.data?.committedPlays, p.data?.deliveredPlays, p.data?.effectiveCommittedPlays]) },
     { headerName: 'Capacity (plays per window)', width: 190, minWidth: 170, cellRenderer: CapacityCell, valueGetter: (p) => p.context.current.capacity.get(p.data?.id ?? '')?.plays ?? 0 },
-    { headerName: 'Rate', width: 200, minWidth: 170, cellRenderer: RateCell, valueGetter: (p) => JSON.stringify([p.data?.lockedWin, p.data?.effectiveRateCpm]) },
     ...(canEdit ? [{ headerName: '', width: 90, suppressSizeToFit: true, cellRenderer: ActionsCell }] : []),
   ]
   const context = {

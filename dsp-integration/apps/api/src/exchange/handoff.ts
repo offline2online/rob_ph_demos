@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto'
 import type { Context } from '../context'
 import { failed, fileChecks } from '../domain/assetChecks'
 import { readMedia } from '../domain/media'
-import { findPosition, maxPlayLengthSecFor, windowMs } from '../domain/positions'
+import { assignmentOf, findPosition, maxPlayLengthSecFor, windowMs } from '../domain/positions'
 import { checkCampaign } from './enforcement'
 import { isUniqueViolation } from '../db/db'
 import type { ReservationRecord } from '../repos/ReservationRepo'
@@ -47,9 +47,10 @@ export async function handOff(ctx: Context, r: ReservationRecord): Promise<Reser
          was handed. An HQ campaign has no approval, so it carries the
          stand-in's label for its latest assets. */
       assetVersion: live ?? `v${Math.max(...assets.map((a) => a.version))}`,
-      /* Personalised versions are eligible only in a reserve-held window
-         (Rob, 5 Oct 2026); a won (auction) window plays default/localised. */
-      personalisedEligible: r.status === 'reserved',
+      /* Personalised versions are eligible in a reserve-held window and in a
+         deal-held window whose campaign is personalised (Rob, 8 Oct 2026);
+         a window on an open real-time position never is. */
+      personalisedEligible: r.status === 'reserved' || (assignmentOf(p.def) === 'deal' && r.pricingType === 'personalised'),
     })
   } catch (e) {
     /* One campaign per slot per window (migration 0021): never two. */

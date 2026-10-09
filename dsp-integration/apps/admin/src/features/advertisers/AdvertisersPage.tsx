@@ -6,6 +6,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { App, Button, InputNumber, Select, Spin, Switch } from 'antd'
 import { Tip } from '../../shared/Tip'
+import { cpmKindHint, cpmSummary, sourceLabel } from './effectiveTerm'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
 import { INTERACTIVE_ENABLED, RESERVE_PRICE_TIP, PLATFORM_DEFAULT_BILLING_UNIT_HOURS, DEFAULT_MAX_CAMPAIGNS, MAX_MAX_CAMPAIGNS, MAX_MAX_PLAY_LENGTH_SEC, MIN_MAX_CAMPAIGNS, MIN_MAX_PLAY_LENGTH_SEC, SLOT_OWNERS, assignedLabels, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type Session } from '@ph-dsp/types'
 import { useMemo, useState } from 'react'
@@ -247,7 +248,7 @@ const assignedValues = (a: Omit<AssignedTo, 'partnerNames' | 'buyersListName' | 
 /* The waterfall as rows in priority order: drag a row (or use the arrows) to
    reorder, top row is tried first. Priority belongs to this slot's
    assignment, so the same list can rank differently on another slot. */
-function PriorityList({ label, ids, names, canEdit, onChange }: { label: string; ids: string[]; names: Map<string, string>; canEdit: boolean; onChange: (next: string[]) => void }) {
+function PriorityList({ label, ids, names, cpms, canEdit, onChange }: { label: string; ids: string[]; names: Map<string, string>; cpms: Map<string, { summary: string | null; hint: string; source: string }>; canEdit: boolean; onChange: (next: string[]) => void }) {
   const [dragging, setDragging] = useState<number | null>(null)
   const [showAll, setShowAll] = useState(false)
   const LIMIT = 5
@@ -277,7 +278,11 @@ function PriorityList({ label, ids, names, canEdit, onChange }: { label: string;
         >
           {canEdit && <Icon name="drag_indicator" size={16} />}
           <span style={{ fontSize: 12, color: T.muted, minWidth: 14 }} aria-label={`Position ${i + 1}`}>{i + 1}</span>
-          <span className="flex-1 truncate" style={{ fontSize: 13 }}>{names.get(id) ?? id}</span>
+          {(() => {
+            const cpm = cpms.get(id)
+            const name = <span className="flex-1 truncate" style={{ fontSize: 13 }}>{names.get(id) ?? id}</span>
+            return cpm?.summary ? <Tip title={`${cpm.summary}. ${cpm.hint}${cpm.source ? ` Source: ${cpm.source}.` : ''}`} placement="right">{name}</Tip> : name
+          })()}
           {canEdit && (
             <>
               <Button type="text" size="small" aria-label={`Move ${names.get(id) ?? id} up`} disabled={i === 0} onClick={() => move(i, i - 1)} icon={<Icon name="arrow_upward" size={16} />} />
@@ -389,6 +394,7 @@ function AssignedCell({ data, context }: IP) {
       label={`${data.displayTypeName} slot ${data.zoneSlot}`}
       ids={tiersOf(a)}
       names={new Map(c.buyersLists.map((l) => [l.id, l.name]))}
+      cpms={new Map(c.buyersLists.map((l) => [l.id, { summary: cpmSummary(l), hint: cpmKindHint(l.dealType), source: sourceLabel(l.effectiveRateCpm?.source ?? 'none') }]))}
       canEdit={c.canEdit}
       onChange={(ids) => c.set(slotKey(data), { assignedTo: { ...a, buyersListId: ids[0] ?? null, buyersListIds: ids } })}
     />

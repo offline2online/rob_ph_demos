@@ -858,6 +858,28 @@ paths:
         '400': {$ref: '#/components/responses/ValidationFailed'}
         '401': {$ref: '#/components/responses/Unauthorised'}
 
+  /admin/v1/booking-schedule/capacity:
+    get:
+      tags: [Admin — Advertiser settings]
+      operationId: getBookingCapacity
+      summary: Plays per day for every advertiser-owned slot, pre-booked vs available to bid, by localized segment
+      description: |
+        Per position and day (UTC): total plays (the plays of every billing-unit
+        window in the stores' trading hours, not a flat 24h / billing unit),
+        the plays pre-booked reserve deals hold outright (firm), and the
+        remainder, only "available to bid" and indicative (the auction decides).
+        Each localized segment a campaign targets is a further cut over the
+        screens carrying it. Segments overlap on screens, so cuts are not
+        additive. Without dates: today and the 13 days after.
+      security: [{adminSession: []}]
+      parameters:
+        - {name: from, in: query, schema: {type: string, format: date}}
+        - {name: to, in: query, schema: {type: string, format: date}, description: 'At most 92 days after from.'}
+      responses:
+        '200': {description: Capacity, content: {application/json: {schema: {$ref: '#/components/schemas/BookingCapacity'}}}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+
   /admin/v1/targeting-variables:
     get:
       tags: [Admin — Shared targeting variables]
@@ -2527,6 +2549,56 @@ components:
           type: integer
           description: Derived, read-only — floor(billing unit / (maxPlayLengthSec x slotCount)). The admin screen recalculates it from the draft as the inputs change.
 
+    BookingCapacity:
+      type: object
+      required: [days, positions]
+      properties:
+        days: {type: array, items: {type: string, format: date}}
+        positions:
+          type: array
+          items:
+            type: object
+            required: [positionId, displayTypeId, displayTypeName, slot, slotLabel, realtime, screens, windowHours, days]
+            properties:
+              positionId: {type: string}
+              displayTypeId: {type: string}
+              displayTypeName: {type: string}
+              slot: {type: integer}
+              slotLabel: {type: string}
+              realtime: {type: boolean, description: Sold per impression, never pre-booked, so its firm layer is always 0.}
+              screens: {type: integer, description: Displays the slot plays on.}
+              windowHours: {type: number, description: The slot's billing unit.}
+              days:
+                type: array
+                items:
+                  type: object
+                  required: [date, totalPlays, firmPlays, availableToBid, deals, segments]
+                  properties:
+                    date: {type: string, format: date}
+                    totalPlays: {type: integer, description: Plays across the whole estate in the stores' trading hours.}
+                    firmPlays: {type: integer, description: Plays pre-booked deals hold outright, netted off hard.}
+                    availableToBid: {type: integer, description: totalPlays less firmPlays; indicative, the auction decides.}
+                    deals:
+                      type: array
+                      items:
+                        type: object
+                        required: [reservationId, advertiserName, plays]
+                        properties:
+                          reservationId: {type: string}
+                          advertiserName: {type: string}
+                          plays: {type: integer, description: Plays the deal commits on this day.}
+                    segments:
+                      type: array
+                      items:
+                        type: object
+                        required: [segment, screens, totalPlays, firmPlays, availableToBid]
+                        properties:
+                          segment: {type: string}
+                          screens: {type: integer}
+                          totalPlays: {type: integer, description: Segment screens x plays per day.}
+                          firmPlays: {type: integer}
+                          availableToBid: {type: integer, description: Available to bid within this cut; cuts overlap, so not additive.}
+
     BookingSchedule:
       type: object
       required: [currency, windows, positions, revenue, dsps, byPricingType, totals]
@@ -2539,7 +2611,7 @@ components:
           type: array
           items:
             type: object
-            required: [positionId, displayTypeId, displayTypeName, slot, slotLabel, zoneName, zoneSlot, partnerNames, assignment, displayCount, windows]
+            required: [positionId, displayTypeId, displayTypeName, slot, slotLabel, zoneName, zoneSlot, partnerNames, assignment, realTime, recentPlays, displayCount, windows]
             properties:
               positionId: {type: string}
               displayTypeId: {type: string}
@@ -2555,6 +2627,12 @@ components:
                 description: The slot's 1-based place within its own zone (equals `slot` on a single-zone display type) — the number Available Inventory shows. positionId keeps the flat index.
               partnerNames: {type: array, items: {type: string}, description: 'The DSPs the slot is tied to; empty = any connected DSP.'}
               assignment: {type: string, enum: [rtb, whitelist_only, deal, reserved]}
+              realTime:
+                type: boolean
+                description: True for an open or whitelist-only position, sold per impression and never booked ahead. Its windows are all `unavailable` with no booking (no forward grid), and it is left out of every booked / sellable roll-up.
+              recentPlays:
+                type: [integer, 'null']
+                description: For a real-time position, the live (non-test) plays proved in the last 7 days; null on a deal or reserved position.
               displayCount:
                 type: integer
                 description: |

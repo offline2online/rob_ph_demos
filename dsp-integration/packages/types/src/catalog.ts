@@ -193,16 +193,17 @@ export type TargetingMode = 'localised' | 'personalised' | 'interactive'
 export const INTERACTIVE_ENABLED = false
 const ALL_TARGETING_MODES: { key: TargetingMode; label: string; tip: string }[] = [
   { key: 'localised', label: 'Localised', tip: 'Store-level targeting only: the campaign varies by store, not by who is in front of the screen.' },
-  { key: 'personalised', label: 'Personalised', tip: 'The campaign may use Personalisation Variables about the visitor. Only available on a slot with a reserve price: personalised versions play only in a window held by a reserve booking, never in an open or private auction.' },
+  { key: 'personalised', label: 'Personalised', tip: 'The campaign may use Personalisation Variables about the visitor. Personalised versions play in a window held by a reserve booking or sold as a deal (private auction, preferred or guaranteed), never in the open real-time auction.' },
   { key: 'interactive', label: 'Interactive', tip: 'The campaign may respond to the visitor on screen. Pays the interactive cost per engagement on top of the CPM.' },
 ]
 export const TARGETING_MODES = ALL_TARGETING_MODES.filter((m) => INTERACTIVE_ENABLED || m.key !== 'interactive')
 /* The reserve price tooltip (Rob, 5 Oct 2026), shared by the Available
    Inventory column and the display type's reserve price field. */
-export const RESERVE_PRICE_TIP = 'The premium CPM an advertiser commits to up front to hold this slot for a window, out of the open auction. Reserved slots are the only slots that play personalised versions: once committed, the advertiser submits the personalised variations their creative needs alongside the default.'
-/* Personalised versions are sold only through reserved slots (Rob, 5 Oct
-   2026), so a personalised campaign is accepted only on a slot that has a
-   reserve price, its own or inherited. */
+export const RESERVE_PRICE_TIP = 'The premium CPM an advertiser commits to up front to hold this slot for a window, out of the open auction. Reserved and deal-held slots play personalised versions (the open real-time auction never does): once committed, the advertiser submits the personalised variations their creative needs alongside the default.'
+/* Personalised versions are sold through reserve bookings (Rob, 5 Oct 2026)
+   and, since 8 Oct 2026, on deals too (never the open real-time auction).
+   This reports only the reserve-price route; a deal-held slot is also
+   eligible (enforcement.checkTargeting). */
 export const personalisedAllowedOn = (dt: { phExtensions?: { reservePrice?: number | null } | null }, slot: { reservePrice?: number | null }): boolean =>
   reservePriceOf(dt, slot) !== null
 export const targetingLabel = (modes: readonly string[]) =>

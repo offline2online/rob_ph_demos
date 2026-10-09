@@ -23,3 +23,18 @@ export const sourceLabel = (s: TermSource) => SOURCE[s]
 const range = (t: MaybeTerm, f: (n: number) => string) => (!t || t.min === null || t.max === null ? null : t.min === t.max ? f(t.min) : `${f(t.min)}–${f(t.max)}`)
 export const playsText = (t: MaybeTerm) => { const r = range(t, (n) => n.toLocaleString()); return r === null ? null : `${r} plays` }
 export const rateText = (t: MaybeTerm) => { const r = range(t, (n) => String(n)); return r === null ? null : `USD ${r} CPM` }
+
+/* Floor or committed (8 Oct 2026): a private auction's CPM is the minimum an invited buyer must bid above (the clearing
+   price can land higher until the deal locks); a preferred or guaranteed deal's is the fixed rate the window clears and bills at. */
+type DealType = BuyersList['dealType']
+export const cpmKind = (d: DealType | undefined) => (d === 'preferred' || d === 'guaranteed' ? 'committed' : 'floor')
+export const cpmKindHint = (d: DealType | undefined) =>
+  cpmKind(d) === 'floor'
+    ? 'Floor CPM: the minimum an invited buyer must bid above. The clearing price can land higher until the deal locks.'
+    : 'Committed CPM: the fixed rate this window clears and bills at.'
+/* One line for a list, e.g. "USD 4–6 CPM floor", or the locked rate once the deal has one. */
+export const cpmSummary = (l: Pick<BuyersList, 'dealType' | 'lockedWin' | 'effectiveRateCpm'>) => {
+  if (l.lockedWin) return `Locked: ${l.lockedWin.cpm} CPM`
+  const t = rateText(l.effectiveRateCpm)
+  return t ? `${t} ${cpmKind(l.dealType)}` : null
+}

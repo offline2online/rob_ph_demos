@@ -27,11 +27,33 @@ describe('GET /admin/v1/booking-schedule', () => {
     expect(body.windows[0]).toEqual({ start: '2026-09-20T00:00:00.000Z', end: '2026-09-21T00:00:00.000Z' })
     expect(body.positions.map((p: { positionId: string }) => p.positionId)).toEqual(['menu_board.s2'])
     expect(body.positions[0]).toMatchObject({ displayTypeName: 'Menu Board — Long Format', slot: 2, slotLabel: 'Supplier slot', partnerNames: ['Google DSP'], assignment: 'rtb' })
-    /* The current window can no longer be sold; the next one can. */
-    expect(body.positions[0].windows.slice(0, 2).map((w: { status: string }) => w.status)).toEqual(['unavailable', 'available'])
+    /* Ticket vhRFN1K3N4Giw1Z0OEI6: an open position is sold per impression, so no window reads "available". */
+    expect(body.positions[0]).toMatchObject({ realTime: true, recentPlays: 0 })
+    expect(body.positions[0].windows.every((w: { status: string }) => w.status === 'unavailable')).toBe(true)
     /* Ticket 1n6upwMWSLGxszhg5u7k: an open (real-time) position is never pre-booked, so its windows are not "sellable" and % sold is a dash, not 0%. */
     expect(body.totals).toEqual({ bookedWindows: 0, sellableWindows: 0, bookedRevenue: 0, billedRevenue: 0 })
     expect(body.revenue[0]).toMatchObject({ displayTypeId: 'menu_board', bookedWindows: 0, sellableWindows: 0 })
+  })
+
+  /* Ticket vhRFN1K3N4Giw1Z0OEI6 (8 Oct 2026): an open position has no forward grid; it reports recent live plays instead. */
+  it('flags an open position real-time with its last-7-day plays and no forward windows, and a deal position not', async () => {
+    const { ctx, get } = await setup()
+    const open = (await get()).json().positions[0]
+    expect(open).toMatchObject({ assignment: 'rtb', realTime: true, recentPlays: 0 })
+    expect(open.windows.every((w: { status: string; booking: unknown }) => w.status === 'unavailable' && w.booking === null)).toBe(true)
+    const imp = (id: string, over: Record<string, unknown>) => ctx.impressions.insert({
+      id, positionId: 'menu_board.s2', displayId: 'd1', windowStart: '2026-09-20T00:00:00.000Z', requestedAt: NOW.toISOString(), status: 'played', reason: null,
+      partnerId: null, advertiserId: null, campaignId: null, crid: null, clearingCpm: 5, currency: 'AUD', testMode: false, assetVersion: null, expiresAt: null,
+      playedAt: NOW.toISOString(), bidRequests: 1, elapsedMs: 1, creativeUrl: null, creativeSource: null, contentHash: null, reviewNote: null, ...over,
+    })
+    await imp('i1', {})
+    await imp('i2', {})
+    await imp('i3', { testMode: true })
+    await imp('i4', { playedAt: new Date(NOW.getTime() - 8 * 86_400_000).toISOString() })
+    await imp('i5', { status: 'filled', playedAt: null })
+    expect((await get()).json().positions[0].recentPlays).toBe(2)
+    await sellByWindow(ctx, 'menu_board', 2)
+    expect((await get()).json().positions[0]).toMatchObject({ assignment: 'deal', realTime: false, recentPlays: null })
   })
 
   it('counts sellable windows only over booked-ahead (deal) positions', async () => {

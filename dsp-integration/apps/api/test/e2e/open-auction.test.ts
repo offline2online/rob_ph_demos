@@ -207,26 +207,20 @@ describe('B. Auction / floor', () => {
     expect((await h.rows(day(3))).find((r) => r.channel === 'openrtb')).toMatchObject({ status: 'lost' })
   })
 
-  it('B5 — personalised is sold only through a reserve booking: never bid in an open auction', async () => {
+  it('B5 — personalised is sold on deals and reserve bookings: a bid on the deal position is accepted', async () => {
     const h = await harness()
-    /* A personalised campaign can't win a window in an open auction. */
     const { id: pers } = await h.submitApiCampaign('Swisse — B5 personalised', 'personalised')
     await h.admin.approve(pers)
     await h.admin.activate(pers)
     const place = (type: 'bid' | 'reserve', bidCpm: number, w = day(0)) => h.partner.reserve({ positionId: POS, windowStart: w.toISOString(), campaignId: pers, advertiserId: 'swisse', type, bidCpm })
-    const unsupported = await place('bid', 200)
-    expect(unsupported.statusCode).toBe(422)
-    expect(unsupported.json().error.code).toBe('targeting_not_supported')
-    /* With a reserve price a bid is still refused: personalised plays only in a reserved window. */
+    /* The fixture slot sits on an open deal, so a personalised bid is accepted (open real-time is refused: personalised-on-deals.test.ts). */
+    expect((await place('bid', 200)).statusCode).toBe(201)
     expect((await h.admin.setReservePrice(150)).statusCode).toBe(200)
-    const bid = await place('bid', 200)
-    expect(bid.statusCode).toBe(422)
-    expect(bid.json().error).toMatchObject({ code: 'targeting_not_supported' })
     /* A reserve booking is taken at the reserve price, no uplift, and its window is eligible for personalised plays. */
-    const held = await place('reserve', 150)
+    const held = await place('reserve', 150, day(1))
     expect(held.statusCode).toBe(201)
     expect(held.json()).toMatchObject({ status: 'reserved', clearingCpm: 150 })
-    expect(bookingsFor(h, day(0))[0]).toMatchObject({ campaignId: pers, personalisedEligible: true })
+    expect(bookingsFor(h, day(1))[0]).toMatchObject({ campaignId: pers, personalisedEligible: true })
   })
 })
 

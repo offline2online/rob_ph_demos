@@ -217,6 +217,9 @@ export async function seedDemo(ctx: Context) {
     /* Stores and displays. */
     const insStore = ctx.db.prepare('INSERT INTO stores (id, name, region) VALUES (?, ?, ?) ON CONFLICT DO NOTHING')
     for (const s of DEMO_STORES) report.stores += Number(insStore.run(s.id, s.name, s.region).changes)
+    /* Localized segments for the booking schedule's plays-per-day cuts (stand-in for the platform's store segments). */
+    const setSegments = ctx.db.prepare('UPDATE stores SET segments = ? WHERE id = ? AND segments = ?')
+    for (const [id, segs] of [['st_melbourne_cbd', ['Metro']], ['st_brisbane_city', ['Metro']], ['st_perth_cbd', ['Metro']], ['st_newcastle', ['Regional']]] as const) setSegments.run(JSON.stringify(segs), id, '[]')
     const storeId = ctx.db.prepare('SELECT id FROM stores WHERE name = ?')
     const insDisplay = ctx.db.prepare('INSERT INTO displays (id, name, store, store_id, display_type_id) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING')
     for (const [id, name, store, dt] of DEMO_DISPLAYS) {

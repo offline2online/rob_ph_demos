@@ -38,9 +38,9 @@ export interface SlotBooking {
      module's own opaque string, the value latestAssets resolves
      (eeBT1Qp33GdsPcxG2As3, 2 Oct 2026). */
   assetVersion?: string | null
-  /* True only for a window held by a reserve booking (Rob, 5 Oct 2026):
-     personalised versions are eligible to play there and nowhere else. An
-     open or private auction window plays default and localised only. */
+  /* True for a window held by a reserve booking (Rob, 5 Oct 2026) or by a
+     deal with a personalised campaign (8 Oct 2026). A window on an open
+     real-time position plays default and localised only. */
   personalisedEligible?: boolean
 }
 /* One uploaded creative file. `version` increases with every upload to the campaign. */

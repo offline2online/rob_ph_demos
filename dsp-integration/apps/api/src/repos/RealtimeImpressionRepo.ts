@@ -50,6 +50,8 @@ export interface ImpressionRepo {
   /* filled → played, once: false when it was already played, never filled, or its fill has expired (`at` is past expires_at). */
   markPlayed(id: string, at: string, playedAt: string): Awaitable<boolean>
   forPosition(positionId: string): Awaitable<ImpressionRecord[]>
+  /* Live (non-test) plays proved since `since`, per position, in one grouped query. */
+  playedCountsSince(since: string): Awaitable<Map<string, number>>
   /* After the post-play review of an at-bid creative: the campaign it resolved to, its hash and what happened. */
   recordReview(id: string, r: { campaignId: string | null; contentHash: string | null; note: string }): Awaitable<void>
 }
@@ -71,6 +73,9 @@ export function sqliteImpressionRepo(db: Db): ImpressionRepo {
     recordReview: (id, r) => {
       prepared(db, 'UPDATE realtime_impressions SET campaign_id = COALESCE(?, campaign_id), content_hash = ?, review_note = ? WHERE id = ?').run(r.campaignId, r.contentHash, r.note, id)
     },
+    playedCountsSince: (since) => new Map(
+      (prepared(db, "SELECT position_id, COUNT(*) AS n FROM realtime_impressions WHERE status = 'played' AND test_mode = 0 AND played_at >= ? GROUP BY position_id").all(since) as unknown as { position_id: string; n: number }[])
+        .map((r) => [r.position_id, r.n] as const)),
     forPosition: (positionId) => (prepared(db, 'SELECT * FROM realtime_impressions WHERE position_id = ? ORDER BY requested_at').all(positionId) as unknown as Row[]).map(toRecord),
   }
 }

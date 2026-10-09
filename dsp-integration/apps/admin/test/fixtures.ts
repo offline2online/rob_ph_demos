@@ -17,6 +17,7 @@ export const variables = { items: [
 export const session = { userId: 'u', name: 'HQ Admin (POC)', role: 'hq_admin' }
 
 export const routes: Record<string, unknown> = {
+  '/api/admin/v1/booking-schedule/capacity': { days: [], positions: [] },
   '/api/admin/v1/session': session,
   '/api/admin/v1/partners': partners,
   '/api/admin/v1/advertiser-settings': advertiserSettings,
