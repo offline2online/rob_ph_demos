@@ -1592,6 +1592,12 @@ duplicating it per deal would let one drift from the other:
   table shows only the committed figure, "M plays" (or "Per play"), never "N of M" (8 Oct 2026: a guaranteed deal is sold, not capped). The open auction holds
   no block of plays: no open-RTB position can carry a volume. This replaces
   the "re-auction after N plays" idea.
+- **Buyers and targeting table column order** (Rob, 9 Oct 2026; ticket
+  NaIaKMgfutxgGaN84SDi): Buyers and targeting, CPM (agreed/committed rate, always
+  second), Deal type, Invited buyers, Committed volume, Estimated volume,
+  Targeting, Delivery term. *Estimated volume* (was "Capacity") is an estimate
+  of the plays per window available to the list from the criteria set on it,
+  summed over its assigned positions; its tooltip says it is not a hard figure.
 - **Auction resolution rule** (first- vs second-price) is a platform-wide
   setting, defaulting to first-price (this build only implements
   first-price — see §7's clearing rule) — never overridden per list.
