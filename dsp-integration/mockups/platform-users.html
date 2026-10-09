@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Company Settings – Users</title>
+<title>Company Settings – Users / Advertisers</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
@@ -72,13 +72,12 @@ input:focus,select:focus{outline:0;border-color:var(--primary);box-shadow:0 0 0 
 <body>
 <div class="frame" id="frame" style="position:relative">
   <nav class="snav" aria-label="Company Settings">
-    <a>Platform Set-up</a><a>Brand / Logo / Guidelines</a><a>Campaign Settings</a><a>Retail Admin Set-up</a>
+    <a>Platform Set-up</a><a class="active" aria-current="page">Users / Advertisers</a><a>Brand / Logo / Guidelines</a><a>Campaign Settings</a><a>Retail Admin Set-up</a>
     <a>Retail Settings</a><a class="sub">Store Segments</a><a class="sub">Display Tags</a><a class="sub">CTA Settings</a>
-    <a class="active" aria-current="page">Users</a>
   </nav>
 
   <main class="main">
-    <h1 style="display:flex;align-items:center;gap:8px">Users <span class="tip" tabindex="0" aria-describedby="tipText"><span class="material-symbols-outlined" aria-label="About this page">info</span><span class="tiptext" role="tooltip" id="tipText">Manage everyone who can log in to the platform from one place. Head-office roles run the platform; Advertiser users log in scoped to a single brand to self-manage its campaign approvals, analytics and insights.</span></span></h1>
+    <h1 style="display:flex;align-items:center;gap:8px">Users / Advertisers <span class="tip" tabindex="0" aria-describedby="tipText"><span class="material-symbols-outlined" aria-label="About this page">info</span><span class="tiptext" role="tooltip" id="tipText">Manage everyone who can log in to the platform from one place. Head-office roles run the platform; Advertiser users log in scoped to a single brand to self-manage its campaign approvals, analytics and insights.</span></span></h1>
     <div class="rule"></div>
 
     <div class="bar">
@@ -146,7 +145,7 @@ var users=[
  {f:"Tom",l:"Reyes",e:"tom.reyes@retailer.example",r:"Marketing",ll:"Yesterday, 16:40"},
  {f:"Amara",l:"Okafor",e:"amara.okafor@retailer.example",r:"Help Desk",ll:"7 Oct 2026, 11:05"},
  {f:"Jess",l:"Palmer",e:"jess.palmer@acmebev.example",r:"Advertiser",adv:"Acme Beverages",src:"DSP",ll:"Today, 08:31"},
- {f:"Luca",l:"Bianchi",e:"luca@freshfields.example",r:"Advertiser",adv:"Fresh Fields Dairy",src:"Manual",ll:"Never"}
+ {f:"Luca",l:"Bianchi",e:"luca@freshfields.example",r:"Advertiser",adv:"Fresh Fields Dairy",src:"Manual",ll:"Never Signed In"}
 ];
 var $=function(i){return document.getElementById(i)};
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
@@ -156,7 +155,7 @@ function render(){
     var role=u.r==="Advertiser"
       ?'<span class="pill adv">Advertiser</span><div class="sub">'+esc(u.adv)+(u.src==="Manual"?" · manual":" · DSP")+'</div>'
       :'<span class="pill">'+esc(u.r)+'</span>';
-    return "<tr><td><b>"+esc(u.f)+"</b></td><td><b>"+esc(u.l)+"</b></td><td>"+esc(u.e)+"</td><td>"+role+'</td><td>'+(u.ll?esc(u.ll):'<span class="muted">Never</span>')+
+    return "<tr><td><b>"+esc(u.f)+"</b></td><td><b>"+esc(u.l)+"</b></td><td>"+esc(u.e)+"</td><td>"+role+'</td><td>'+(u.ll?esc(u.ll):'<span class="muted">Never Signed In</span>')+
       '</td><td class="act"><button class="btn text" data-del="'+i+'" aria-label="Remove user"><span class="material-symbols-outlined">delete</span></button></td></tr>';
   }).join("");
 }
@@ -180,7 +179,7 @@ $("form").onsubmit=function(e){
   var bad=false;checks.forEach(function(c){$(c[0]).classList.toggle("invalid",!c[1]);if(!c[1])bad=true});
   $("emErr").style.display=emOk||!$("em").value.trim()?"none":"block";
   if(bad)return;
-  var u={f:$("fn").value.trim(),l:$("ln").value.trim(),e:$("em").value.trim(),r:$("role").value,ll:"Never"};
+  var u={f:$("fn").value.trim(),l:$("ln").value.trim(),e:$("em").value.trim(),r:$("role").value,ll:"Never Signed In"};
   if(isAdv){u.adv=manual?$("man").value.trim():$("adv").value;u.src=manual?"Manual":"DSP"}
   var invite=$("inv").checked;
   users.push(u);render();close_();
