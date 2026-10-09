@@ -105,25 +105,22 @@ input:focus,select:focus{outline:0;border-color:var(--primary);box-shadow:0 0 0 
           <div class="field"><label for="role">Role <i>*</i></label>
             <select id="role">
               <option value="">Select a role</option>
-              <optgroup label="HQ Admin"><option>Admin</option><option>Marketing</option><option>Help Desk</option></optgroup>
-              <optgroup label="Advertiser"><option>Advertiser</option></optgroup>
+              <optgroup label="Internal users"><option>Admin</option><option>Marketing</option><option>Help Desk</option></optgroup>
+              <optgroup label="External users"><option>Advertiser</option></optgroup>
             </select>
           </div>
 
           <div id="advBlock" class="hide">
             <div class="divider">Advertiser</div>
             <div class="note">This user will only see campaigns (approvals), analytics and insights for the brand you choose.</div>
-            <div class="radio" role="radiogroup" aria-label="Advertiser source">
-              <label><input type="radio" name="src" value="dsp" checked> From DSP sync</label>
-              <label><input type="radio" name="src" value="manual"> Add manually</label>
+            <div class="field"><label for="adv">Advertiser <i>*</i></label>
+              <select id="adv"></select>
+              <div class="sub" style="margin-top:4px">DSP-synced advertisers and direct advertisers added manually.</div>
             </div>
-            <div class="field" id="dspField"><label for="adv">Advertiser <i>*</i></label>
-              <select id="adv"><option value="">Select an advertiser</option></select>
-              <div class="sub" style="margin-top:4px">Advertisers synced through your connected DSPs.</div>
-            </div>
-            <div class="field hide" id="manField"><label for="man">Brand name <i>*</i></label>
+            <div class="field hide" id="manField"><label for="man">New advertiser name <i>*</i></label>
               <input type="text" id="man" placeholder="e.g. Fresh Fields Dairy">
-              <div class="sub" style="margin-top:4px">For brands you deal with directly. Shown as the advertiser name alongside their campaigns.</div>
+              <div class="err" id="manErr"></div>
+              <div class="sub" style="margin-top:4px">Added as a direct advertiser (no DSP), shown as &ldquo;Name (Direct)&rdquo; and selectable for everyone.</div>
             </div>
           </div>
         </div>
@@ -139,12 +136,14 @@ input:focus,select:focus{outline:0;border-color:var(--primary);box-shadow:0 0 0 
 
 <script>
 var DSP_ADVERTISERS=["Acme Beverages","Northwind Foods","Contoso Cosmetics","Globex Snacks","Initech Electronics"];
+var DIRECT_ADVERTISERS=["Fresh Fields Dairy"];
+var NEW="__new__";
 var users=[
  {f:"Priya",l:"Shah",e:"priya.shah@retailer.example",r:"Admin",ll:"Today, 09:12"},
  {f:"Tom",l:"Reyes",e:"tom.reyes@retailer.example",r:"Marketing",ll:"Yesterday, 16:40"},
  {f:"Amara",l:"Okafor",e:"amara.okafor@retailer.example",r:"Help Desk",ll:"7 Oct 2026, 11:05"},
  {f:"Jess",l:"Palmer",e:"jess.palmer@acmebev.example",r:"Advertiser",adv:"Acme Beverages",src:"DSP",ll:"Today, 08:31"},
- {f:"Luca",l:"Bianchi",e:"luca@freshfields.example",r:"Advertiser",adv:"Fresh Fields Dairy",src:"Manual",ll:"Never Signed In"}
+ {f:"Luca",l:"Bianchi",e:"luca@freshfields.example",r:"Advertiser",adv:"Fresh Fields Dairy",src:"Direct",ll:"Never Signed In"}
 ];
 var $=function(i){return document.getElementById(i)};
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
@@ -152,37 +151,49 @@ function render(){
   $("count").textContent=users.length;
   $("rows").innerHTML=users.map(function(u,i){
     var role=u.r==="Advertiser"
-      ?'<span class="pill adv">Advertiser</span><div class="sub">'+esc(u.adv)+(u.src==="Manual"?" · manual":" · DSP")+'</div>'
+      ?'<span class="pill adv">Advertiser</span><div class="sub">'+esc(u.src==="Direct"?u.adv+" (Direct)":u.adv)+(u.src==="Direct"?" · Direct":" · DSP")+'</div>'
       :'<span class="pill">'+esc(u.r)+'</span>';
     return "<tr><td><b>"+esc(u.f)+"</b></td><td><b>"+esc(u.l)+"</b></td><td>"+esc(u.e)+"</td><td>"+role+'</td><td>'+(u.ll?esc(u.ll):'<span class="muted">Never Signed In</span>')+
       '</td><td class="act"><button class="btn text" data-del="'+i+'" aria-label="Remove user"><span class="material-symbols-outlined">delete</span></button></td></tr>';
   }).join("");
 }
-$("adv").innerHTML+=DSP_ADVERTISERS.map(function(a){return"<option>"+a+"</option>"}).join("");
+function fillAdv(sel){
+  var h='<option value="">Select an advertiser</option><optgroup label="DSP advertisers">'+DSP_ADVERTISERS.map(function(a){return'<option value="dsp:'+esc(a)+'">'+esc(a)+'</option>'}).join("")+'</optgroup>';
+  if(DIRECT_ADVERTISERS.length)h+='<optgroup label="Direct advertisers">'+DIRECT_ADVERTISERS.map(function(a){return'<option value="direct:'+esc(a)+'">'+esc(a)+' (Direct)</option>'}).join("")+'</optgroup>';
+  $("adv").innerHTML=h+'<option value="'+NEW+'">Add new advertiser\u2026</option>';
+  if(sel)$("adv").value=sel;
+}
+function advName(a){return a.src==="Direct"?a.name+" (Direct)":a.name}
 function syncRole(){$("advBlock").classList.toggle("hide",$("role").value!=="Advertiser")}
-function syncSrc(){var m=document.querySelector('input[name=src]:checked').value==="manual";$("dspField").classList.toggle("hide",m);$("manField").classList.toggle("hide",!m)}
-function open_(){$("form").reset();syncRole();syncSrc();document.querySelectorAll(".invalid").forEach(function(x){x.classList.remove("invalid")});$("emErr").style.display="none";$("mask").classList.add("open");$("mask").scrollTop=0;$("fn").focus()}
+function syncSrc(){$("manField").classList.toggle("hide",$("adv").value!==NEW);if($("adv").value!==NEW){$("man").classList.remove("invalid");$("manErr").style.display="none"}}
+function open_(){$("form").reset();fillAdv();syncRole();syncSrc();$("manErr").style.display="none";document.querySelectorAll(".invalid").forEach(function(x){x.classList.remove("invalid")});$("emErr").style.display="none";$("mask").classList.add("open");$("mask").scrollTop=0;$("fn").focus()}
 function close_(){$("mask").classList.remove("open");$("addBtn").focus()}
 $("addBtn").onclick=open_;$("cancel").onclick=close_;
 $("mask").addEventListener("mousedown",function(e){if(e.target===$("mask"))close_()});
 document.addEventListener("keydown",function(e){if(e.key==="Escape"&&$("mask").classList.contains("open"))close_()});
 $("role").onchange=syncRole;
-document.querySelectorAll("input[name=src]").forEach(function(r){r.onchange=syncSrc});
+$("adv").onchange=syncSrc;
 $("rows").onclick=function(e){var b=e.target.closest("[data-del]");if(b){users.splice(+b.dataset.del,1);render()}};
 $("form").onsubmit=function(e){
   e.preventDefault();
-  var isAdv=$("role").value==="Advertiser",manual=document.querySelector('input[name=src]:checked').value==="manual";
+  var isAdv=$("role").value==="Advertiser",manual=isAdv&&$("adv").value===NEW;
   var emOk=/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test($("em").value.trim());
   var checks=[["fn",!!$("fn").value.trim()],["ln",!!$("ln").value.trim()],["em",emOk],["role",!!$("role").value]];
   if(isAdv)checks.push(manual?["man",!!$("man").value.trim()]:["adv",!!$("adv").value]);
-  var bad=false;checks.forEach(function(c){$(c[0]).classList.toggle("invalid",!c[1]);if(!c[1])bad=true});
+  var newName=$("man").value.trim(),dup=false;
+  if(manual&&newName){var lc=newName.toLowerCase();dup=DSP_ADVERTISERS.concat(DIRECT_ADVERTISERS).some(function(n){return n.toLowerCase()===lc});
+    $("manErr").textContent=dup?"An advertiser called \u201c"+newName+"\u201d already exists \u2013 pick it from the list instead.":"";$("manErr").style.display=dup?"block":"none";$("man").classList.toggle("invalid",dup)}
+  var bad=dup;checks.forEach(function(c){$(c[0]).classList.toggle("invalid",!c[1]);if(!c[1])bad=true});
   $("emErr").style.display=emOk||!$("em").value.trim()?"none":"block";
   if(bad)return;
   var u={f:$("fn").value.trim(),l:$("ln").value.trim(),e:$("em").value.trim(),r:$("role").value,ll:"Never Signed In"};
-  if(isAdv){u.adv=manual?$("man").value.trim():$("adv").value;u.src=manual?"Manual":"DSP"}
+  if(isAdv){
+    if(manual){u.adv=newName;u.src="Direct";DIRECT_ADVERTISERS.push(newName)}
+    else{var pv=$("adv").value.split(":");u.src=pv[0]==="direct"?"Direct":"DSP";u.adv=$("adv").value.slice(pv[0].length+1)}
+  }
   var invite=$("invite").checked;
   users.push(u);render();close_();
-  $("toast").textContent="Added "+u.f+" "+u.l+" as "+u.r+(u.adv?" for "+u.adv:"")+". "+(invite?"An invitation email will be sent to "+u.e+" (sent by PH Core).":"No invitation email was sent.");
+  $("toast").textContent="Added "+u.f+" "+u.l+" as "+u.r+(u.adv?" for "+advName({src:u.src,name:u.adv}):"")+". "+(invite?"An invitation email will be sent to "+u.e+" (sent by PH Core).":"No invitation email was sent.");
   $("toast").classList.add("show");setTimeout(function(){$("toast").classList.remove("show")},4000);
 };
 render();
