@@ -246,7 +246,6 @@ nothing here can even read it without the key.
 | `apps/api/src/domain/sspAudit.ts`, `repos/SspAuditRepo.ts`, `routes/admin/sspAuditLog.ts`, `apps/admin/src/features/dsp-integration/ChangeHistory.tsx` | The SSP settings change history (9 Oct 2026): a before/after snapshot of every in-scope setting around each admin write, diffed into `ssp_audit_log` (migration 0062) with human/agent actor, field, old → new value and time; read at `GET /admin/v1/ssp-audit-log` and on DSP Integration → Change history. See REQUIREMENTS §3a |
 | `scripts/sync-board-docs.mjs` | `npm run board:sync` — pushes `REQUIREMENTS.md` and `README.md` to the board's Docs page, and `api/PH-CORE-BOUNDARIES.md` to its three board parts (`MIRRORS`), and verifies them (see above) |
 | `scripts/board-tickets.mjs` | `npm run board:tickets` — reports where this project's tickets are, and moves them between statuses when work reached `main` outside the board's own Deploy to Main (see above) |
-| `mockups/platform-users.html` | Mock-up (9 Oct 2026): Company Settings → **Users**, a standalone HTML page (no build, no API) for platform users — table of First name / Last name / Email / Role, **Add user** modal, roles Admin / Marketing / Help Desk (HQ) and Advertiser (scoped to one brand, picked from DSP-synced advertisers or added manually by brand name). In-memory only; not part of the hosted prototype build |
 
 ## Running it
 
