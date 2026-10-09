@@ -760,6 +760,18 @@ schedule's own second tab, 26 Sep 2026). It carries per-advertiser settings
 and, below them, the inventory those advertisers can buy (§5); **campaigns
 are not approved here.**
 
+**Direct advertisers (9 Oct 2026).** An advertiser with a direct relationship
+with the retailer, not brought by any DSP, is added on this page (admin only,
+saved at once; `POST /admin/v1/advertisers/direct`, table `direct_advertisers`,
+migration 0063) and removed with `DELETE /admin/v1/advertisers/direct/{id}`
+(refused while it has campaigns or bookings). It is listed with the DSP
+advertisers (`direct: true`, empty `via`) and takes the same approval and floor
+settings. Wherever a DSP name would accompany an advertiser it reads
+**"Name (Direct)"**: the Via column, the Assigned to options, and the booking
+schedule (its advertiser filter, offered only when no DSP is picked, and its
+tiles). A DSP seat of the same name wins, so one advertiser is never listed
+twice.
+
 **Admin and marketing users both see it** (Rob, 20 Sep): marketing reads it,
 and only an admin changes approval, pricing, what a position is assigned to
 or what targeting it supports. A read-only viewer sees a *Read only* pill in

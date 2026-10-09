@@ -605,6 +605,16 @@ describe('Advertisers / Inventory', () => {
       .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Reserve price', 'Plays per window', 'Max campaigns', 'Max play length', 'Billing unit', 'Slots playing', ''])
   })
 
+  it('lists a direct advertiser as "Name (Direct)" in Via and in the Assigned to options, and lets an admin add one', async () => {
+    const page = { ...ADVERTISER_PAGE, '/api/admin/v1/advertisers': { ...ADVERTISER_PAGE['/api/admin/v1/advertisers'], items: [...ADVERTISER_PAGE['/api/admin/v1/advertisers'].items, { advertiserId: 'acme-foods', name: 'Acme Foods', via: [], direct: true, approvalRequired: true, floorMultiplier: 1, effectiveFloorCpm: 100, bookings: 0, campaigns: { draft: 0, awaiting_approval: 0, approved: 0, rejected: 0 } }] } }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch(page)))
+    renderAt('/advertisers')
+    const advertisers = await screen.findByLabelText('Advertisers')
+    expect(await within(advertisers).findByText('Acme Foods (Direct)')).toBeInTheDocument()
+    expect(screen.getByLabelText('Direct advertiser name')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add direct advertiser' })).toBeDisabled()
+  })
+
   it('filters both tables by column, and shows who may buy each slot', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch(ADVERTISER_PAGE)))
     renderAt('/advertisers')

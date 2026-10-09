@@ -1217,6 +1217,35 @@ paths:
                   items: {type: array, items: {$ref: '#/components/schemas/Advertiser'}}
         '401': {$ref: '#/components/responses/Unauthorised'}
         '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [Admin — Advertisers]
+      operationId: addDirectAdvertiser
+      summary: Add an advertiser with a direct relationship with the retailer (no DSP)
+      security: [{adminSession: [admin]}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: {type: string, minLength: 1, maxLength: 80}
+      responses:
+        '201':
+          description: Added
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [advertiserId, name]
+                properties:
+                  advertiserId: {type: string}
+                  name: {type: string}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
     put:
       tags: [Admin — Advertisers]
       operationId: saveAdvertisers
@@ -1240,6 +1269,20 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorised'}
         '403': {$ref: '#/components/responses/Forbidden'}
 
+  /admin/v1/advertisers/direct/{advertiserId}:
+    delete:
+      tags: [Admin — Advertisers]
+      operationId: removeDirectAdvertiser
+      summary: Remove a direct advertiser (refused while it has campaigns or bookings)
+      security: [{adminSession: [admin]}]
+      parameters:
+        - {name: advertiserId, in: path, required: true, schema: {type: string}}
+      responses:
+        '204': {description: Removed}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
   /admin/v1/approvals:
     get:
       tags: [Admin — Campaign approval]
@@ -2794,6 +2837,15 @@ components:
           type: array
           description: The DSPs the filters offer, and the advertisers each one brings.
           items: {$ref: '#/components/schemas/DspAdvertisers'}
+        directAdvertisers:
+          type: array
+          description: Advertisers with a direct relationship with the retailer (no DSP) that have something booked, named "Name (Direct)". Offered by the advertiser filter when no DSP is picked.
+          items:
+            type: object
+            required: [advertiserId, name]
+            properties:
+              advertiserId: {type: string}
+              name: {type: string}
         byPricingType:
           type: array
           description: The same bookings by campaign type, so a retailer can see what is selling.
@@ -2930,7 +2982,10 @@ components:
           properties:
             advertiserId: {type: string}
             name: {type: string}
-            via: {type: array, items: {type: string}, description: DSP names}
+            via: {type: array, items: {type: string}, description: 'DSP names; empty for a direct advertiser'}
+            direct:
+              type: boolean
+              description: True for an advertiser with a direct relationship with the retailer (no DSP). Shown as "Name (Direct)" in place of the DSP name.
             effectiveFloorCpm: {type: number}
             bookings:
               type: integer

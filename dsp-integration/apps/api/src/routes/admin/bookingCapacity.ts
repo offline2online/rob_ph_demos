@@ -15,7 +15,7 @@ import { allPositions, isRealtime, maxPlayLengthSecFor, windowMs, windowStartOf 
 import { playsForGroups, screensOf, segmentsTargeted, type ScreenGroup } from '../../domain/dailyCapacity'
 import { rotationSizeOf } from '../../domain/slots'
 import { TAKEN } from '../../repos/ReservationRepo'
-import { advertiserSlug } from '@ph-dsp/types'
+import { advertiserSlug, directLabel } from '@ph-dsp/types'
 
 const DAY = 86_400_000
 
@@ -23,7 +23,7 @@ export async function bookingCapacity(ctx: Context, days: Date[]): Promise<Booki
   const company = await ctx.company.get()
   const stores = new Map((await ctx.stores.list()).map((s) => [s.id, s]))
   const partners = await ctx.partners.list()
-  const advertiserName = new Map(partners.flatMap((p) => p.seats.map((s) => [advertiserSlug(s.name), s.name] as const)))
+  const advertiserName = new Map([...(await ctx.company.directAdvertisers()).map((d) => [d.advertiserId, directLabel(d.name)] as const), ...partners.flatMap((p) => p.seats.map((s) => [advertiserSlug(s.name), s.name] as const))])
   /* Segments any campaign targets: each becomes a cut wherever a store carries it. */
   const targetedSegments = [...new Set((await ctx.campaigns.listCampaigns()).flatMap((c) => segmentsTargeted(c.targeting)))].sort()
   const first = days[0].getTime()

@@ -27,6 +27,7 @@ export interface CompanySettings {
   maxPlayLengthSec: number
 }
 export interface AdvertiserSettingRecord { approvalRequired: boolean; floorMultiplier: number }
+export interface DirectAdvertiserRecord { advertiserId: string; name: string }
 export type Access = 'all' | string[]
 
 export const DEFAULT_ADVERTISER_SETTING: AdvertiserSettingRecord = { approvalRequired: true, floorMultiplier: 1 }
@@ -37,6 +38,10 @@ export interface CompanySettingsRepo {
   advertiserSetting(advertiserId: string): Awaitable<AdvertiserSettingRecord>
   advertiserSettings(): Awaitable<Record<string, AdvertiserSettingRecord>>
   saveAdvertiserSettings(settings: Record<string, AdvertiserSettingRecord>): Awaitable<void>
+  /* Advertisers with a direct relationship with the retailer (no DSP), by name. */
+  directAdvertisers(): Awaitable<DirectAdvertiserRecord[]>
+  addDirectAdvertiser(advertiserId: string, name: string): Awaitable<void>
+  removeDirectAdvertiser(advertiserId: string): Awaitable<void>
   variableAccess(): Awaitable<Record<string, Access>>
   saveVariableAccess(access: Record<string, Access>): Awaitable<void>
 }
@@ -140,6 +145,13 @@ export function sqliteCompanySettingsRepo(db: Db): CompanySettingsRepo {
       } finally {
         invalidate()
       }
+    },
+    directAdvertisers: () => (prepared(db, 'SELECT advertiser_id, name FROM direct_advertisers ORDER BY name').all() as { advertiser_id: string; name: string }[]).map((r) => ({ advertiserId: r.advertiser_id, name: r.name })),
+    addDirectAdvertiser(advertiserId, name) {
+      prepared(db, 'INSERT INTO direct_advertisers (advertiser_id, name, created_at) VALUES (?, ?, ?) ON CONFLICT (advertiser_id) DO NOTHING').run(advertiserId, name, now())
+    },
+    removeDirectAdvertiser(advertiserId) {
+      prepared(db, 'DELETE FROM direct_advertisers WHERE advertiser_id = ?').run(advertiserId)
     },
     variableAccess() {
       const c = fresh()

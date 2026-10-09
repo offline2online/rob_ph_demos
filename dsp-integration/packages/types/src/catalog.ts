@@ -375,6 +375,10 @@ export const defaultVariableAccess = (v: TargetingVariableDef): 'all' | string[]
 
 /* ---------------------------------------------------------- advertisers */
 
+/* An advertiser with a direct relationship with the retailer (no DSP) is
+   shown as "Name (Direct)" wherever a DSP name would otherwise accompany it. */
+export const directLabel = (name: string) => `${name} (Direct)`
+
 /* Stable advertiser id: a slug of the seat name, shared across DSPs
    (decision 6), e.g. "L'Oréal" → "loreal". */
 export const advertiserSlug = (name: string) =>
