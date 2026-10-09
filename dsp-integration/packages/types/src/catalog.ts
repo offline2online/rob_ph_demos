@@ -334,15 +334,18 @@ export const TARGETING_VARIABLES: TargetingVariableDef[] = [
   loc('store.country', 'Country', 'Australia, New Zealand', LIST),
   /* Languages Spoken by Store Staff was removed from the default set — not
      supported initially, revisit in a later release (ticket, 22 Sep). */
-  /* Computer Vision first, then the aggregates, then the rest (Rob, 20 Sep).
+  /* Computer Vision first, then the aggregates, then Purchase Intent, Purchase History, SKUs and Events, then the rest (Rob, 20 Sep; 8 Oct 2026).
      Both are personalisation, so both default to no DSP (Q49 revisited). */
   per('store.cv_gender', 'Gender (Computer Vision)', 'Female, Male', COMPARE_EXACT, 'Read by Vision/AI running at the edge, for the person in front of the display — e.g. Female, Male. Nothing leaves the store.', 'store'),
   per('store.cv_age', 'Estimated Age (Computer Vision)', '18–24, 25–34, 35–44', COMPARE, 'Estimated by Vision/AI running at the edge, for the person in front of the display — e.g. 18–24, 25–34, 35–44. Nothing leaves the store.', 'store'),
   per('store.reason_for_visit', 'Reason for Visit (Aggregate)', 'Returns, New phone, Bill enquiry (share of the queue here for the same reason)', COMPARE, 'Everyone in the queue here right now, not one visitor: the share waiting for the same reason — e.g. Returns, New phone, Bill enquiry', 'store'),
   per('store.device_type_aggregate', 'Device Type (Aggregate)', 'iPhone, Pixel, Samsung', COMPARE, 'Everyone in the store right now, not one visitor: the share carrying each device — e.g. iPhone, Pixel, Samsung', 'store'),
+  per('visitor.purchase_intent', 'Purchase Intent', 'Browse, Replenish, Gift', LIST),
+  per('visitor.purchase_history', 'Purchase History', 'Bought in the last 30 days', LIST),
+  per('visitor.skus', 'SKUs', 'SKU-10234, SKU-55871', LIST, 'SKUs the visitor has looked at before; target by listing SKUs — e.g. SKU-10234, SKU-55871'),
+  per('visitor.events', 'Events', 'Scanned QR code, Viewed product page, Added to cart', LIST, 'Events in store or from a previous web session — e.g. Scanned QR code, Viewed product page, Added to cart'),
   per('visitor.age', 'Age', '18–24, 25–34, 35–44', COMPARE, 'The identified visitor’s age, from the systems that hold the customer record (CRM, CDP or loyalty) — e.g. 18–24, 25–34, 35–44'),
   per('visitor.gender', 'Gender', 'Female, Male', ONE, 'The identified visitor’s gender, from the systems that hold the customer record (CRM, CDP or loyalty) — e.g. Female, Male'),
-  per('visitor.purchase_intent', 'Purchase Intent', 'Browse, Replenish, Gift', LIST),
   per('visitor.visitor_segments', 'Visitor Segments', 'New parent, Fitness, Value seeker', LIST),
   per('visitor.reason_for_visit', 'Reason for Visit', 'Returns, New phone, Bill enquiry', LIST, 'Why the visitor in front of the screen is here, for that one person — e.g. Returns, New phone, Bill enquiry. The aggregate version above is the whole queue.'),
   per('visitor.device_type', 'Device Type', 'iPhone, Pixel, Samsung', LIST, 'The device the visitor in front of the screen is carrying — e.g. iPhone, Pixel, Samsung'),
@@ -350,9 +353,6 @@ export const TARGETING_VARIABLES: TargetingVariableDef[] = [
   per('visitor.product_type', 'Product Type', 'Handset, Accessory', LIST),
   per('visitor.plan_type', 'Plan Type', 'Postpaid, Prepaid', LIST),
   per('visitor.plan_value', 'Plan Value', '$45, $65 per month', LIST),
-  per('visitor.purchase_history', 'Purchase History', 'Bought in the last 30 days', LIST),
-  per('visitor.events', 'Events', 'Scanned QR code, Viewed product page, Added to cart', LIST, 'Events in store or from a previous web session — e.g. Scanned QR code, Viewed product page, Added to cart'),
-  per('visitor.skus', 'SKUs', 'SKU-10234, SKU-55871', LIST, 'SKUs the visitor has looked at before; target by listing SKUs — e.g. SKU-10234, SKU-55871'),
 ]
 export const ALL_DSPS = 'all' as const
 /* Defaults (spec §6): Localisation → all connected DSPs; Personalisation → none. */
