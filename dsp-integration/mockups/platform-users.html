@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Company Settings – Users</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+<style>
+:root{--primary:#169bc2;--tint:rgba(22,155,194,.10);--text:#333;--muted:rgba(0,0,0,.45);--divider:rgba(5,5,5,.06);--border:#d9d9d9;--error:#ff4d4f;--success:#52c41a}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%}
+body{font:14px/1.5715 Roboto,"Helvetica Neue",Helvetica,Arial,sans-serif;color:var(--text);background:#fff}
+.material-symbols-outlined{font-variation-settings:'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 24;font-size:20px;vertical-align:middle;line-height:1}
+.frame{display:flex;min-height:100vh;padding:20px;gap:20px}
+/* secondary nav (Company Settings archetype) */
+.snav{width:245px;flex:none;border-right:1px solid var(--divider);margin:-20px 0 -20px -20px;padding:20px 0}
+.snav a{display:block;padding:8px 20px;color:var(--text);text-decoration:none;cursor:default}
+.snav a.sub{padding-left:36px}
+.snav a.active{color:var(--primary);background:var(--tint)}
+.main{flex:1;min-width:0;max-width:960px}
+h1{font-size:20px;font-weight:700;margin:0}
+.rule{height:1px;background:var(--divider);margin:16px 0}
+.muted{color:var(--muted)}
+.bar{display:flex;align-items:center;justify-content:space-between;margin:16px 0 8px;gap:12px;flex-wrap:wrap}
+.btn{font:inherit;height:32px;padding:0 15px;border-radius:6px;border:1px solid var(--border);background:#fff;color:var(--text);cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+.btn.primary:hover{background:#38b0cf;border-color:#38b0cf}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn.text{border-color:transparent;background:none;padding:0 8px}
+table{width:100%;border-collapse:collapse;border:1px solid var(--divider);border-radius:8px}
+th{background:#fafafa;text-align:left;font-weight:700;padding:12px 16px;border-bottom:1px solid var(--divider)}
+td{padding:12px 16px;border-bottom:1px solid var(--divider)}
+tr:last-child td{border-bottom:0}
+tbody tr:hover{background:#e8fdff}
+td.act{width:48px;text-align:right}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:0 10px;border-radius:9999px;font-size:12px;line-height:22px;background:#f5f5f5}
+.pill.adv{background:var(--tint);color:var(--primary)}
+.sub{color:var(--muted);font-size:12px}
+/* modal (absolute inside the frame, never fixed) */
+.mask{display:none;position:absolute;inset:0;background:rgba(0,0,0,.45);z-index:10;padding:60px 20px;overflow:auto}
+.mask.open{display:block}
+.modal{background:#fff;border-radius:8px;max-width:480px;margin:0 auto;box-shadow:0 6px 16px rgba(0,0,0,.12)}
+.modal header{padding:16px 24px;border-bottom:1px solid var(--divider);font-size:16px;font-weight:500}
+.modal .body{padding:20px 24px}
+.modal footer{padding:12px 24px;border-top:1px solid var(--divider);display:flex;justify-content:flex-end;gap:8px}
+.field{margin-bottom:16px}
+.row{display:flex;gap:12px}.row .field{flex:1}
+label{display:block;margin-bottom:4px}
+label i{color:var(--error);font-style:normal}
+input[type=text],input[type=email],select{font:inherit;width:100%;height:32px;padding:4px 11px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text)}
+input:focus,select:focus{outline:0;border-color:var(--primary);box-shadow:0 0 0 2px var(--tint)}
+.invalid{border-color:var(--error)!important}
+.err{color:var(--error);font-size:12px;display:none}
+.divider{font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin:20px 0 12px}
+.radio{display:flex;gap:16px;margin-bottom:12px}
+.radio label{display:flex;align-items:center;gap:6px;margin:0;cursor:pointer}
+.note{background:var(--tint);border-radius:6px;padding:8px 12px;margin-bottom:16px;font-size:13px}
+.hide{display:none}
+.tip{position:relative;display:inline-flex;color:var(--muted);cursor:help;outline:0}
+.tip:hover,.tip:focus{color:var(--primary)}
+.tiptext{display:none;position:absolute;left:0;top:28px;width:320px;padding:8px 12px;border-radius:6px;background:rgba(0,0,0,.85);color:#fff;font-size:14px;font-weight:400;line-height:1.5715;z-index:5}
+.tip:hover .tiptext,.tip:focus .tiptext{display:block}
+.toast{display:none;margin-bottom:8px;padding:8px 12px;border-radius:6px;background:#f6ffed;border:1px solid #b7eb8f}
+.toast.show{display:block}
+@media(max-width:700px){.snav{display:none}}
+</style>
+</head>
+<body>
+<div class="frame" id="frame" style="position:relative">
+  <nav class="snav" aria-label="Company Settings">
+    <a>Platform Set-up</a><a>Brand / Logo / Guidelines</a><a>Campaign Settings</a><a>Retail Admin Set-up</a>
+    <a>Retail Settings</a><a class="sub">Store Segments</a><a class="sub">Display Tags</a><a class="sub">CTA Settings</a>
+    <a class="active" aria-current="page">Users</a>
+  </nav>
+
+  <main class="main">
+    <h1 style="display:flex;align-items:center;gap:8px">Users <span class="tip" tabindex="0" aria-describedby="tipText"><span class="material-symbols-outlined" aria-label="About this page">info</span><span class="tiptext" role="tooltip" id="tipText">Manage everyone who can log in to the platform from one place. Head-office roles run the platform; Advertiser users log in scoped to a single brand to self-manage its campaign approvals, analytics and insights.</span></span></h1>
+    <div class="rule"></div>
+
+    <div class="bar">
+      <div><b id="count">0</b> Users</div>
+      <button class="btn primary" id="addBtn"><span class="material-symbols-outlined">add</span>Add user</button>
+    </div>
+    <div class="toast" id="toast" role="status"></div>
+
+    <table>
+      <thead><tr><th>First name</th><th>Last name</th><th>Email address</th><th>Role</th><th>Last login</th><th></th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <p class="sub" style="margin-top:12px">Mock-up: changes are held in this page only and are not saved.</p>
+  </main>
+
+  <div class="mask" id="mask">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mt">
+      <header id="mt">Add user</header>
+      <form id="form" novalidate>
+        <div class="body">
+          <div class="row">
+            <div class="field"><label for="fn">First name <i>*</i></label><input type="text" id="fn"></div>
+            <div class="field"><label for="ln">Last name <i>*</i></label><input type="text" id="ln"></div>
+          </div>
+          <div class="field"><label for="em">Email address <i>*</i></label><input type="email" id="em"><div class="err" id="emErr">Enter a valid email address</div></div>
+          <div class="field"><label for="role">Role <i>*</i></label>
+            <select id="role">
+              <option value="">Select a role</option>
+              <optgroup label="HQ Admin"><option>Admin</option><option>Marketing</option><option>Help Desk</option></optgroup>
+              <optgroup label="Advertiser"><option>Advertiser</option></optgroup>
+            </select>
+          </div>
+
+          <div id="advBlock" class="hide">
+            <div class="divider">Advertiser</div>
+            <div class="note">This user will only see campaigns (approvals), analytics and insights for the brand you choose.</div>
+            <div class="radio" role="radiogroup" aria-label="Advertiser source">
+              <label><input type="radio" name="src" value="dsp" checked> From DSP sync</label>
+              <label><input type="radio" name="src" value="manual"> Add manually</label>
+            </div>
+            <div class="field" id="dspField"><label for="adv">Advertiser <i>*</i></label>
+              <select id="adv"><option value="">Select an advertiser</option></select>
+              <div class="sub" style="margin-top:4px">Advertisers synced through your connected DSPs.</div>
+            </div>
+            <div class="field hide" id="manField"><label for="man">Brand name <i>*</i></label>
+              <input type="text" id="man" placeholder="e.g. Fresh Fields Dairy">
+              <div class="sub" style="margin-top:4px">For brands you deal with directly. Shown as the advertiser name alongside their campaigns.</div>
+            </div>
+          </div>
+        </div>
+        <footer>
+          <button type="button" class="btn" id="cancel">Cancel</button>
+          <button type="submit" class="btn primary">Add user</button>
+        </footer>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+var DSP_ADVERTISERS=["Acme Beverages","Northwind Foods","Contoso Cosmetics","Globex Snacks","Initech Electronics"];
+var users=[
+ {f:"Priya",l:"Shah",e:"priya.shah@retailer.example",r:"Admin",ll:"Today, 09:12"},
+ {f:"Tom",l:"Reyes",e:"tom.reyes@retailer.example",r:"Marketing",ll:"Yesterday, 16:40"},
+ {f:"Amara",l:"Okafor",e:"amara.okafor@retailer.example",r:"Help Desk",ll:"7 Oct 2026, 11:05"},
+ {f:"Jess",l:"Palmer",e:"jess.palmer@acmebev.example",r:"Advertiser",adv:"Acme Beverages",src:"DSP",ll:"Today, 08:31"},
+ {f:"Luca",l:"Bianchi",e:"luca@freshfields.example",r:"Advertiser",adv:"Fresh Fields Dairy",src:"Manual",ll:"Never"}
+];
+var $=function(i){return document.getElementById(i)};
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
+function render(){
+  $("count").textContent=users.length;
+  $("rows").innerHTML=users.map(function(u,i){
+    var role=u.r==="Advertiser"
+      ?'<span class="pill adv">Advertiser</span><div class="sub">'+esc(u.adv)+(u.src==="Manual"?" · manual":" · DSP")+'</div>'
+      :'<span class="pill">'+esc(u.r)+'</span>';
+    return "<tr><td><b>"+esc(u.f)+"</b></td><td><b>"+esc(u.l)+"</b></td><td>"+esc(u.e)+"</td><td>"+role+'</td><td>'+(u.ll?esc(u.ll):'<span class="muted">Never</span>')+
+      '</td><td class="act"><button class="btn text" data-del="'+i+'" aria-label="Remove user"><span class="material-symbols-outlined">delete</span></button></td></tr>';
+  }).join("");
+}
+$("adv").innerHTML+=DSP_ADVERTISERS.map(function(a){return"<option>"+a+"</option>"}).join("");
+function syncRole(){$("advBlock").classList.toggle("hide",$("role").value!=="Advertiser")}
+function syncSrc(){var m=document.querySelector('input[name=src]:checked').value==="manual";$("dspField").classList.toggle("hide",m);$("manField").classList.toggle("hide",!m)}
+function open_(){$("form").reset();syncRole();syncSrc();document.querySelectorAll(".invalid").forEach(function(x){x.classList.remove("invalid")});$("emErr").style.display="none";$("mask").classList.add("open");$("mask").scrollTop=0;$("fn").focus()}
+function close_(){$("mask").classList.remove("open");$("addBtn").focus()}
+$("addBtn").onclick=open_;$("cancel").onclick=close_;
+$("mask").addEventListener("mousedown",function(e){if(e.target===$("mask"))close_()});
+document.addEventListener("keydown",function(e){if(e.key==="Escape"&&$("mask").classList.contains("open"))close_()});
+$("role").onchange=syncRole;
+document.querySelectorAll("input[name=src]").forEach(function(r){r.onchange=syncSrc});
+$("rows").onclick=function(e){var b=e.target.closest("[data-del]");if(b){users.splice(+b.dataset.del,1);render()}};
+$("form").onsubmit=function(e){
+  e.preventDefault();
+  var isAdv=$("role").value==="Advertiser",manual=document.querySelector('input[name=src]:checked').value==="manual";
+  var emOk=/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test($("em").value.trim());
+  var checks=[["fn",!!$("fn").value.trim()],["ln",!!$("ln").value.trim()],["em",emOk],["role",!!$("role").value]];
+  if(isAdv)checks.push(manual?["man",!!$("man").value.trim()]:["adv",!!$("adv").value]);
+  var bad=false;checks.forEach(function(c){$(c[0]).classList.toggle("invalid",!c[1]);if(!c[1])bad=true});
+  $("emErr").style.display=emOk||!$("em").value.trim()?"none":"block";
+  if(bad)return;
+  var u={f:$("fn").value.trim(),l:$("ln").value.trim(),e:$("em").value.trim(),r:$("role").value,ll:"Never"};
+  if(isAdv){u.adv=manual?$("man").value.trim():$("adv").value;u.src=manual?"Manual":"DSP"}
+  users.push(u);render();close_();
+  $("toast").textContent="Added "+u.f+" "+u.l+" as "+u.r+(u.adv?" for "+u.adv:"")+".";
+  $("toast").classList.add("show");setTimeout(function(){$("toast").classList.remove("show")},4000);
+};
+render();
+</script>
+</body>
+</html>
