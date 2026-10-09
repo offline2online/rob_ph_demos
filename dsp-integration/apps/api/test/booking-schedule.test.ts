@@ -24,6 +24,8 @@ describe('GET /admin/v1/booking-schedule', () => {
     expectMatchesContract('GET', '/admin/v1/booking-schedule', 200, res.json())
     const body = res.json()
     expect(body.windows).toHaveLength(14)
+    /* Booked amounts are USD whatever the instance reports in (spec section 4). */
+    expect(body.currency).toBe('USD')
     expect(body.windows[0]).toEqual({ start: '2026-09-20T00:00:00.000Z', end: '2026-09-21T00:00:00.000Z' })
     expect(body.positions.map((p: { positionId: string }) => p.positionId)).toEqual(['menu_board.s2'])
     expect(body.positions[0]).toMatchObject({ displayTypeName: 'Menu Board — Long Format', slot: 2, slotLabel: 'Supplier slot', partnerNames: ['Google DSP'], assignment: 'rtb' })

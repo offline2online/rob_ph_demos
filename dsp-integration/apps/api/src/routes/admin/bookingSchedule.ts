@@ -26,6 +26,7 @@ import { validationFailed } from '../../http/errors'
 import { allPositions, assignmentOf, assumedViewsPerWindow, effectivePartnerIds, isRealtime, nextWindow, shortestWindowMs, windowMs, windowStartOf, windowsBetween } from '../../domain/positions'
 import type { StoredTargeting } from '../../domain/targetingSummary'
 import { TAKEN, type ReservationRecord } from '../../repos/ReservationRepo'
+import { TRANSACTING_CURRENCY } from '../../domain/currency'
 import { zonePlaceOf } from '../../domain/displayTypes'
 import { advertiserSlug } from '@ph-dsp/types'
 
@@ -214,7 +215,8 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
   const shown = f.advertiserId ? positions.filter((p) => p.windows.some((w) => w.booking?.advertiserId === f.advertiserId)) : positions
   const rows = [...revenue.values()]
   return {
-    currency: (await ctx.company.get()).currency,
+    /* Booked CPM x views is in the exchange's one currency, not the instance's display currency. */
+    currency: TRANSACTING_CURRENCY,
     windows: starts.map((s) => ({ start: s.toISOString(), end: new Date(s.getTime() + len).toISOString() })),
     positions: shown,
     revenue: rows,

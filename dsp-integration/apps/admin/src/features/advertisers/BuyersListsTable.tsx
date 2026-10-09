@@ -88,13 +88,13 @@ const VolumeCell = ({ data }: P) => {
   const text = playsText(data.effectiveCommittedPlays)
   return text ? <div><span style={{ fontSize: 12.5 }}>{text}</span><Sub>{sourceLabel(data.effectiveCommittedPlays.source)}</Sub></div> : <span style={{ color: T.muted }}>Per play</span>
 }
-/* Combined plays per window across every position the list is assigned to (8 Oct 2026): the capacity ceiling for committed volume. */
+/* Estimated volume (8 Oct 2026): combined plays per window across every position the list is assigned to, an estimate from the criteria set on the list rather than a hard figure; the ceiling for committed volume. */
 const CapacityCell = ({ data, context }: P) => {
   if (!data) return null
   const c = context.current.capacity.get(data.id)
   if (!c) return <span style={{ color: T.muted }}>Not assigned</span>
   return (
-    <Tip title={`${c.plays.toLocaleString('en-US')} plays per window across ${c.positions} assigned position${c.positions === 1 ? '' : 's'} on ${c.displayTypes} display type${c.displayTypes === 1 ? '' : 's'}: the sum of each one's plays per display x displays registered in PH Core.`}>
+    <Tip title={`Estimated volume, not a hard figure, based on the buyers and targeting criteria set on this list: ${c.plays.toLocaleString('en-US')} plays per window across ${c.positions} assigned position${c.positions === 1 ? '' : 's'} on ${c.displayTypes} display type${c.displayTypes === 1 ? '' : 's'}: the sum of each one's plays per display x displays registered in PH Core.`}>
       <span style={{ fontSize: 12.5 }}>{c.plays.toLocaleString('en-US')}</span>
     </Tip>
   )
@@ -123,10 +123,10 @@ export function BuyersListsTable({ lists, canEdit, capacity, onChanged }: { list
        an edited deal type kept showing "Private auction". Each gets a valueGetter over everything it renders. */
     { headerName: 'Deal type', width: 170, minWidth: 150, cellRenderer: DealTypeCell, valueGetter: (p) => p.data?.dealType ?? '' },
     { headerName: 'Invited buyers', width: 190, minWidth: 130, cellRenderer: BuyersCell, valueGetter: (p) => JSON.stringify([p.data?.invitedBuyers ?? [], p.data?.invitedCategories ?? []]) },
+    { headerName: 'Committed volume', width: 190, minWidth: 160, cellRenderer: VolumeCell, valueGetter: (p) => JSON.stringify([p.data?.dealType, p.data?.committedPlays, p.data?.deliveredPlays, p.data?.effectiveCommittedPlays]) },
+    { headerName: 'Estimated volume', width: 190, minWidth: 170, cellRenderer: CapacityCell, valueGetter: (p) => p.context.current.capacity.get(p.data?.id ?? '')?.plays ?? 0 },
     { headerName: 'Targeting', width: 230, minWidth: 180, cellRenderer: TargetingCell, valueGetter: (p) => JSON.stringify(p.data?.targeting ?? []) },
     { headerName: 'Delivery term', width: 260, minWidth: 220, cellRenderer: TermCell, valueGetter: (p) => `${p.data?.activeFrom}|${p.data?.activeTo}` },
-    { headerName: 'Committed volume', width: 190, minWidth: 160, cellRenderer: VolumeCell, valueGetter: (p) => JSON.stringify([p.data?.dealType, p.data?.committedPlays, p.data?.deliveredPlays, p.data?.effectiveCommittedPlays]) },
-    { headerName: 'Capacity (plays per window)', width: 190, minWidth: 170, cellRenderer: CapacityCell, valueGetter: (p) => p.context.current.capacity.get(p.data?.id ?? '')?.plays ?? 0 },
     ...(canEdit ? [{ headerName: '', width: 90, suppressSizeToFit: true, cellRenderer: ActionsCell }] : []),
   ]
   const context = {

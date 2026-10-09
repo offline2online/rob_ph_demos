@@ -1592,6 +1592,12 @@ duplicating it per deal would let one drift from the other:
   table shows only the committed figure, "M plays" (or "Per play"), never "N of M" (8 Oct 2026: a guaranteed deal is sold, not capped). The open auction holds
   no block of plays: no open-RTB position can carry a volume. This replaces
   the "re-auction after N plays" idea.
+- **Buyers and targeting table column order** (Rob, 9 Oct 2026; ticket
+  NaIaKMgfutxgGaN84SDi): Buyers and targeting, CPM (agreed/committed rate, always
+  second), Deal type, Invited buyers, Committed volume, Estimated volume,
+  Targeting, Delivery term. *Estimated volume* (was "Capacity") is an estimate
+  of the plays per window available to the list from the criteria set on it,
+  summed over its assigned positions; its tooltip says it is not a hard figure.
 - **Auction resolution rule** (first- vs second-price) is a platform-wide
   setting, defaulting to first-price (this build only implements
   first-price — see §7's clearing rule) — never overridden per list.
@@ -1942,27 +1948,35 @@ back.**
 
 | Group | Variables, in display order |
 |---|---|
-| **Localisation Variables** | Store Open / Closed; Fixed Store Segments; Variable Store Segments; Display Tag(s); Suburb; Postcode; State; Country; Reason for Visit (Aggregate); Computer Vision Gender; Computer Vision Estimated Age |
-| **Personalisation Variables** | Age; Gender; Purchase Intent; Visitor Segments; Device Type; Product Holdings; Product Type; Plan Type; Plan Value; Purchase History; Events; SKUs |
+| **Localisation Variables** | Store Open / Closed; Fixed Store Segments; Variable Store Segments; Display Tag(s); Suburb; Postcode; State; Country |
+| **Personalisation Variables** | Gender (Computer Vision); Estimated Age (Computer Vision); Reason for Visit (Aggregate); Device Type (Aggregate); Purchase Intent; Purchase History; SKUs; Events; Age; Gender; Visitor Segments; Reason for Visit; Device Type; Product Holdings; Product Type; Plan Type; Plan Value |
 
 - **Localisation Variables** describe the store and the moment: whether the
   store is open or closed, the store record and its segments, display tags,
-  the aggregate reason for visit of the people queueing there, and what
-  **Vision/AI** detects in front of the display without identifying anyone:
+  suburb, postcode, state and country:
   - **Store Open / Closed**: whether the store is open or closed at the time,
     from its store hours (values *Open*, *Closed*). It sits at the top of the
     list.
-  - **Computer Vision Gender**: detected by Vision/AI for the person in front
-    of the display (for example Female, Male).
-  - **Computer Vision Estimated Age**: an age band estimated by Vision/AI
-    (for example 18–24, 25–34, 35–44).
-
-  The two Computer Vision variables only have values on displays with
-  Vision/AI enabled; how the existing platform evaluates them is unchanged.
 - **Personalisation Variables** describe the identified visitor. They are
   PH Core's visitor variables, populated by the Live Visitor Profile project
   and evaluated by PH Core; this build only grants and validates their use,
-  per DSP, on Shared Targeting Variables. Three of them need a note:
+  per DSP, on Shared Targeting Variables. The list opens with the
+  Computer Vision and aggregate variables, then Purchase Intent, Purchase
+  History, SKUs and Events, then the rest. **Gender and Age each appear
+  twice on purpose**: *Gender (Computer Vision)* and *Estimated Age
+  (Computer Vision)* come from Vision/AI, *Gender* and *Age* from the
+  systems that hold the customer record. They are distinct variables. Some
+  of them need a note:
+  - **Gender (Computer Vision)**: detected by Vision/AI for the person in
+    front of the display (for example Female, Male). Nothing leaves the store.
+  - **Estimated Age (Computer Vision)**: an age band estimated by Vision/AI
+    (for example 18–24, 25–34, 35–44). The two Computer Vision variables only
+    have values on displays with Vision/AI enabled; how the existing platform
+    evaluates them is unchanged.
+  - **Reason for Visit (Aggregate)** and **Device Type (Aggregate)**: the
+    whole queue or store right now, not one visitor (the share waiting for
+    the same reason, or carrying each device). *Reason for Visit* and
+    *Device Type* below them are the individual visitor's.
   - **Device Type**: the device the visitor has with them in store (for
     example iPhone, Pixel, Samsung).
   - **Events**: events that occurred in store or in a previous web session
@@ -1999,8 +2013,7 @@ are added.
   state. Choosing *All connected DSPs* supersedes individual selections.
 - The selection shows in the table as pills: *All connected DSPs*, the named
   DSPs, or *None*.
-- **Defaults**: Localisation Variables (including the two Computer Vision
-  variables) to *All connected DSPs*; **Personalisation Variables to None**.
+- **Defaults**: Localisation Variables to *All connected DSPs*; **Personalisation Variables to None**.
 - Changes are applied with **Save changes** (see *Saving changes*).
 - A partner sees only what it may use, via `GET /v1/targeting/attributes`.
   **Permissioning shows up as a smaller vocabulary, never as a rejected
@@ -2747,8 +2760,8 @@ schema-consuming replacement is separately commissioned.
 
 *Depends on 9.1.*
 
-- Elevates Computer Vision from a **targeting-only** input (§6's Computer
-  Vision Gender / Computer Vision Estimated Age Localisation Variables) to
+- Elevates Computer Vision from a **targeting-only** input (§6's Gender (Computer
+  Vision) / Estimated Age (Computer Vision) Personalisation Variables) to
   also being a **measurement source**: opportunity-to-see, dwell, attention
   seconds and anonymised age band / gender flow into the canonical event
   schema (§9.1) as populated values on the `cv` fields it already reserves —
@@ -3655,10 +3668,10 @@ playback analytics.**
 - **Shared Targeting Variables page**: the variables shared through the API
   with connected DSPs, whose advertisers can use them once enabled; the
   default platform variables, read-only, under two headings, **Localisation
-  Variables** (Store Open / Closed first, and including Reason for Visit
-  (Aggregate), Computer Vision Gender and Computer Vision Estimated Age) and
-  **Personalisation Variables** (Age, Gender, Purchase Intent, Visitor
-  Segments, Device Type, then the rest, ending with Events and SKUs), each a
+  Variables** (Store Open / Closed first) and **Personalisation Variables**
+  (Gender (Computer Vision), Estimated Age (Computer Vision), Reason for
+  Visit (Aggregate), Device Type (Aggregate), Purchase Intent, Purchase
+  History, SKUs, Events, then Age, Gender, Visitor Segments and the rest), each a
   two-column table (*Variable*, *DSPs that may target it*) with an info
   tooltip of example values on each variable.
   *(DSP Integration → Shared Targeting Variables)*
