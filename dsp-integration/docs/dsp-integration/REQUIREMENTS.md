@@ -1082,6 +1082,49 @@ across every DSP and crid they arrive under.
   `startCampaignRetentionScheduler`) the same way the auction and billing
   jobs already run — no separate cron infrastructure needed.
 
+## 3a. SSP settings change history (9 Oct 2026; ticket W9b1lEcTUbEMphsmBma3)
+
+Every change to a retailer-side SSP setting is kept in an append-only audit
+log, shown to people on **DSP Integration → Change history** and queryable by
+an agent at `GET /admin/v1/ssp-audit-log`. It exists so a floor that moves —
+above all when an agent tunes per-display-type CPM — is never unexplained.
+
+- **In scope**: the exchange settings; pricing and auction settings (floor
+  CPM, bid lookahead, max play length, category lists, guarantee buffer, …);
+  the per-advertiser floor multiplier; which DSPs may target each shared
+  variable; every buyers list (deal); every display type's SSP extensions
+  (slots: owner, reserve prices and the per-display-type floor, billing unit,
+  assignment, deals, locks); and each DSP's bid settings (floor, committed
+  plays, QPS, timeout, seats, lists). Anything changed outside the admin API
+  (a seed script, a database edit) is not recorded.
+- **One entry per field changed**: actor (type `human` or `agent`, id, name,
+  and the HQ session it went through), object (type, id, label), change type
+  (`created` / `updated` / `deleted`), dotted field path
+  (`bidder.floorCpm`, `slots[2].reservePrice`; arrays of objects index from 1),
+  old value, new value, time, the request, an optional reason, and a
+  `changeId` shared by everything one save changed. A save that changes
+  nothing, or is rejected, writes nothing.
+- **Recorded around the request, not in each route** (`domain/sspAudit.ts`,
+  hooks in `http/app.ts`): a snapshot of every in-scope setting before and
+  after each admin write, diffed. A setting added to a route later — or the
+  per-display-type floor stored on a slot — is covered without its route
+  remembering to log it. Audited writes run one at a time so each diff holds
+  only its own change, and the entries are written before the response
+  leaves, so a client reading the history right after its save sees it.
+- **Who made the change**: the session's HQ user, unless the request says it
+  is an agent — `X-Actor-Type: agent` with `X-Actor-Id` (and optionally
+  `X-Actor-Name`); `X-Change-Reason` adds a reason for either kind. An agent
+  that does not give its id is refused (400). In the POC this is
+  self-asserted; on integration the agent's identity comes from the
+  platform's service credential (PH-CORE-BOUNDARIES).
+- **Query** (admin only): `objectType`, `objectId`, `field` or `fieldPrefix`,
+  `actorType`, `actorId`, `changeId`, `from`/`to`, `order` (newest first by
+  default), `limit` (≤ 500) and `cursor`. "When did this display type's
+  floor last change, and who changed it?" is
+  `?objectType=display_type&objectId=<id>&fieldPrefix=slots[2]&limit=1`.
+- **Storage**: `ssp_audit_log` (migration 0062). Nothing in the API updates or
+  deletes a row.
+
 ## 4. Pricing — CPM bid floor and floor multiplier
 
 The currency and the floor are configured
@@ -1592,6 +1635,12 @@ duplicating it per deal would let one drift from the other:
   table shows only the committed figure, "M plays" (or "Per play"), never "N of M" (8 Oct 2026: a guaranteed deal is sold, not capped). The open auction holds
   no block of plays: no open-RTB position can carry a volume. This replaces
   the "re-auction after N plays" idea.
+- **Buyers and targeting table column order** (Rob, 9 Oct 2026; ticket
+  NaIaKMgfutxgGaN84SDi): Buyers and targeting, CPM (agreed/committed rate, always
+  second), Deal type, Invited buyers, Committed volume, Estimated volume,
+  Targeting, Delivery term. *Estimated volume* (was "Capacity") is an estimate
+  of the plays per window available to the list from the criteria set on it,
+  summed over its assigned positions; its tooltip says it is not a hard figure.
 - **Auction resolution rule** (first- vs second-price) is a platform-wide
   setting, defaulting to first-price (this build only implements
   first-price — see §7's clearing rule) — never overridden per list.
@@ -1771,11 +1820,34 @@ rank differently on each.
   priority order under the slot's picker; drag a row (or use the arrows) to
   reorder; a position badge shows the rank. New lists join at the foot. The
   priority rows only appear once two or more lists are assigned to the slot —
-  with one list there is nothing to order, so none are shown.
+  with one list there is nothing to order, so none are shown
+  (unless the slot also has an Open auction tier; see below).
 - **API**: `assignedTo.buyersListIds` (ordered, no duplicates, each must
   exist); `buyersListId` alone is still accepted.
 - Known edge: a reserve commitment (`type: reserve`) on a waterfall slot
   locks the term of the top tier's list.
+
+#### Deals and the Open auction share one priority order (9 Oct 2026)
+
+A DSP and a buyers list are not mutually exclusive on a slot. The priority order
+is:
+
+1. **Deals** — resolved ahead of time, on lookahead.
+2. **An explicit Open auction separator** — real time, per play.
+3. **The DSPs the Open auction runs across**, or **All DSPs**
+   (`assignedTo.partnerIds` empty with `assignedTo.openAuction` true).
+
+If no deal wins, the slot falls through to the Open auction.
+
+- **Data**: `Slot.openAuction` / `assignedTo.openAuction`. Absent means false, so
+  older slots are unchanged.
+- **Admin**: a DSP group headed **DSPs (open auction)**, starting with **All
+  DSPs**. All DSPs and named DSPs are alternatives. Picking one never clears
+  deals, and adding a deal never clears DSPs.
+- **Still exclusive**: named advertisers and the whitelist clear deals and the
+  Open auction (the API answers 400).
+- **Not yet in the exchange**: real-time Open auction fallthrough for a window
+  no deal wins (tracked on a sibling ticket).
 
 ### The global deal — one deal ID for all open inventory (8 Oct 2026)
 
@@ -1942,27 +2014,35 @@ back.**
 
 | Group | Variables, in display order |
 |---|---|
-| **Localisation Variables** | Store Open / Closed; Fixed Store Segments; Variable Store Segments; Display Tag(s); Suburb; Postcode; State; Country; Reason for Visit (Aggregate); Computer Vision Gender; Computer Vision Estimated Age |
-| **Personalisation Variables** | Age; Gender; Purchase Intent; Visitor Segments; Device Type; Product Holdings; Product Type; Plan Type; Plan Value; Purchase History; Events; SKUs |
+| **Localisation Variables** | Store Open / Closed; Fixed Store Segments; Variable Store Segments; Display Tag(s); Suburb; Postcode; State; Country |
+| **Personalisation Variables** | Gender (Computer Vision); Estimated Age (Computer Vision); Reason for Visit (Aggregate); Device Type (Aggregate); Purchase Intent; Purchase History; SKUs; Events; Age; Gender; Visitor Segments; Reason for Visit; Device Type; Product Holdings; Product Type; Plan Type; Plan Value |
 
 - **Localisation Variables** describe the store and the moment: whether the
   store is open or closed, the store record and its segments, display tags,
-  the aggregate reason for visit of the people queueing there, and what
-  **Vision/AI** detects in front of the display without identifying anyone:
+  suburb, postcode, state and country:
   - **Store Open / Closed**: whether the store is open or closed at the time,
     from its store hours (values *Open*, *Closed*). It sits at the top of the
     list.
-  - **Computer Vision Gender**: detected by Vision/AI for the person in front
-    of the display (for example Female, Male).
-  - **Computer Vision Estimated Age**: an age band estimated by Vision/AI
-    (for example 18–24, 25–34, 35–44).
-
-  The two Computer Vision variables only have values on displays with
-  Vision/AI enabled; how the existing platform evaluates them is unchanged.
 - **Personalisation Variables** describe the identified visitor. They are
   PH Core's visitor variables, populated by the Live Visitor Profile project
   and evaluated by PH Core; this build only grants and validates their use,
-  per DSP, on Shared Targeting Variables. Three of them need a note:
+  per DSP, on Shared Targeting Variables. The list opens with the
+  Computer Vision and aggregate variables, then Purchase Intent, Purchase
+  History, SKUs and Events, then the rest. **Gender and Age each appear
+  twice on purpose**: *Gender (Computer Vision)* and *Estimated Age
+  (Computer Vision)* come from Vision/AI, *Gender* and *Age* from the
+  systems that hold the customer record. They are distinct variables. Some
+  of them need a note:
+  - **Gender (Computer Vision)**: detected by Vision/AI for the person in
+    front of the display (for example Female, Male). Nothing leaves the store.
+  - **Estimated Age (Computer Vision)**: an age band estimated by Vision/AI
+    (for example 18–24, 25–34, 35–44). The two Computer Vision variables only
+    have values on displays with Vision/AI enabled; how the existing platform
+    evaluates them is unchanged.
+  - **Reason for Visit (Aggregate)** and **Device Type (Aggregate)**: the
+    whole queue or store right now, not one visitor (the share waiting for
+    the same reason, or carrying each device). *Reason for Visit* and
+    *Device Type* below them are the individual visitor's.
   - **Device Type**: the device the visitor has with them in store (for
     example iPhone, Pixel, Samsung).
   - **Events**: events that occurred in store or in a previous web session
@@ -1999,8 +2079,7 @@ are added.
   state. Choosing *All connected DSPs* supersedes individual selections.
 - The selection shows in the table as pills: *All connected DSPs*, the named
   DSPs, or *None*.
-- **Defaults**: Localisation Variables (including the two Computer Vision
-  variables) to *All connected DSPs*; **Personalisation Variables to None**.
+- **Defaults**: Localisation Variables to *All connected DSPs*; **Personalisation Variables to None**.
 - Changes are applied with **Save changes** (see *Saving changes*).
 - A partner sees only what it may use, via `GET /v1/targeting/attributes`.
   **Permissioning shows up as a smaller vocabulary, never as a rejected
@@ -2747,8 +2826,8 @@ schema-consuming replacement is separately commissioned.
 
 *Depends on 9.1.*
 
-- Elevates Computer Vision from a **targeting-only** input (§6's Computer
-  Vision Gender / Computer Vision Estimated Age Localisation Variables) to
+- Elevates Computer Vision from a **targeting-only** input (§6's Gender (Computer
+  Vision) / Estimated Age (Computer Vision) Personalisation Variables) to
   also being a **measurement source**: opportunity-to-see, dwell, attention
   seconds and anonymised age band / gender flow into the canonical event
   schema (§9.1) as populated values on the `cv` fields it already reserves —
@@ -3655,10 +3734,10 @@ playback analytics.**
 - **Shared Targeting Variables page**: the variables shared through the API
   with connected DSPs, whose advertisers can use them once enabled; the
   default platform variables, read-only, under two headings, **Localisation
-  Variables** (Store Open / Closed first, and including Reason for Visit
-  (Aggregate), Computer Vision Gender and Computer Vision Estimated Age) and
-  **Personalisation Variables** (Age, Gender, Purchase Intent, Visitor
-  Segments, Device Type, then the rest, ending with Events and SKUs), each a
+  Variables** (Store Open / Closed first) and **Personalisation Variables**
+  (Gender (Computer Vision), Estimated Age (Computer Vision), Reason for
+  Visit (Aggregate), Device Type (Aggregate), Purchase Intent, Purchase
+  History, SKUs, Events, then Age, Gender, Visitor Segments and the rest), each a
   two-column table (*Variable*, *DSPs that may target it*) with an info
   tooltip of example values on each variable.
   *(DSP Integration → Shared Targeting Variables)*

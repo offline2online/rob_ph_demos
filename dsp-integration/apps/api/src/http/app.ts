@@ -12,10 +12,14 @@ import { sellersJsonRoutes } from '../routes/public/sellersJson'
 import { mimeOf } from '../platform/AssetStore'
 import { onFree } from '../db/db'
 import { appliedVersions, loadMigrations } from '../db/migrate'
+import { auditActorOf, diffSnapshots, isAuditedWrite, takeSnapshot, type Snapshot } from '../domain/sspAudit'
+import type { AuditActor } from '../repos/SspAuditRepo'
 
 declare module 'fastify' {
   interface FastifyRequest {
     session: Session
+    /* Set while an audited SSP-settings write is in flight (domain/sspAudit.ts). */
+    sspAudit?: { actor: AuditActor; reason: string | null; before: Snapshot; release: () => void }
   }
 }
 
@@ -71,6 +75,43 @@ export function buildApp(ctx: Context, opts: { logger?: boolean } = {}): Fastify
     if (req.url.startsWith('/api/')) reply.header('Cache-Control', 'no-store')
     return payload
   })
+
+
+  /* SSP settings audit log: an admin write that can change a retailer-side
+     setting runs alone (so the before and after snapshots hold only its own
+     change), and every field it changed is recorded before the response
+     leaves — a client that reads the history right after its save sees it. */
+  let auditTail: Promise<void> = Promise.resolve()
+  app.decorateRequest('sspAudit', undefined)
+  app.addHook('preHandler', async (req) => {
+    if (!isAuditedWrite(req)) return
+    const { actor, reason } = auditActorOf(req)
+    let release!: () => void
+    const turn = auditTail
+    auditTail = new Promise<void>((r) => (release = r))
+    await turn
+    try {
+      req.sspAudit = { actor, reason, before: await takeSnapshot(ctx), release }
+    } catch (e) {
+      release()
+      throw e
+    }
+  })
+  app.addHook('onSend', async (req, reply, payload) => {
+    const a = req.sspAudit
+    if (!a) return payload
+    req.sspAudit = undefined
+    try {
+      if (reply.statusCode < 300) {
+        const drafts = diffSnapshots(a.before, await takeSnapshot(ctx))
+        await ctx.sspAudit.record({ actor: a.actor, request: `${req.method} ${req.url.split('?')[0]}`, reason: a.reason, at: new Date().toISOString() }, drafts)
+      }
+    } finally {
+      a.release()
+    }
+    return payload
+  })
+  app.addHook('onRequestAbort', async (req) => req.sspAudit?.release())
 
   app.setErrorHandler((err, _req, reply) => {
     if (err instanceof HttpError) return reply.status(err.status).send(err.body())

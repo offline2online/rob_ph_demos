@@ -39,6 +39,8 @@ import { T } from '../../theme/phTheme'
 /* The hosted build's read-only snapshot (see src/demo/staticApi.ts). */
 import { isSnapshotDemo } from '../../demo/mode'
 
+const TRANSACTING_CURRENCY = 'USD' // mirrors the API's domain/currency.ts
+
 type Position = Schedule['positions'][number]
 type Cell = Position['windows'][number]
 type Booking = NonNullable<Cell['booking']>
@@ -394,11 +396,14 @@ export function BookingSchedulePage() {
   /* Plays per day reads the first fortnight of the range: a column per day. */
   const capacityTo = dayjs(from).add(13, 'day').isBefore(dayjs(to)) ? dayjs(from).add(13, 'day').format('YYYY-MM-DD') : to
   const capacity = useQuery({ queryKey: ['booking-capacity', from, capacityTo], queryFn: () => api<BookingCapacity>('GET', `/admin/v1/booking-schedule/capacity?from=${from}&to=${capacityTo}`) })
-  const currency = data?.currency ?? 'AUD'
+  /* Every amount here is a booked CPM x assumed views, and the exchange books in
+     USD whatever the instance reports in (spec section 4: one instance, one
+     currency, no conversion), so never format with company.currency or a
+     locale default - a THB or AUD instance would label USD amounts as baht. */
   const money = useMemo(() => {
-    const f = new Intl.NumberFormat('en-AU', { style: 'currency', currency })
+    const f = new Intl.NumberFormat('en-US', { style: 'currency', currency: TRANSACTING_CURRENCY })
     return (n: number) => f.format(n)
-  }, [currency])
+  }, [])
 
   /* Columns: one per window, week or month. */
   const groups = useMemo<{ key: string; label: string; index: number[] }[]>(() => {

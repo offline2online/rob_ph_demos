@@ -91,6 +91,10 @@ export interface Assigned {
      one list per tier; the exchange tries the first and falls through only
      when it yields no winning bid at its floor. */
   buyersListIds: string[]
+  /* An explicit Open auction tier below the deals (Rob, 9 Oct 2026): deals resolve ahead of time, and a window no deal
+     wins falls through to the open auction, which runs across partnerIds (none = All DSPs). Never set with named
+     advertisers or the whitelist. A slot with no deal is open by default; this only records the explicit choice. */
+  openAuction: boolean
 }
 type SlotLike = {
   partnerIds?: readonly string[] | null
@@ -100,6 +104,7 @@ type SlotLike = {
   advertiser?: string | null
   buyersListId?: string | null
   buyersListIds?: readonly string[] | null
+  openAuction?: boolean | null
 }
 export const assignedOf = (slot: SlotLike): Assigned => {
   const advertisers = [...(slot.advertisers ?? (slot.advertiser ? [slot.advertiser] : []))]
@@ -112,11 +117,13 @@ export const assignedOf = (slot: SlotLike): Assigned => {
     whitelistOnly: !advertisers.length && slot.listMode === 'whitelist_only',
     buyersListId: buyersListIds[0] ?? null,
     buyersListIds,
+    openAuction: !advertisers.length && slot.listMode !== 'whitelist_only' && slot.openAuction === true,
   }
 }
 /* "Any connected DSP", or the pills in order: advertisers, buyers list, then DSPs. */
-export const assignedLabels = (a: { advertisers: readonly string[]; partnerNames?: readonly string[]; whitelistOnly?: boolean; buyersListName?: string | null; buyersListNames?: readonly string[] }): string[] =>
-  [...a.advertisers, ...(a.whitelistOnly ? ['Whitelist only'] : []), ...(a.buyersListNames?.length ? a.buyersListNames.map((n, i) => `Buyers list${a.buyersListNames!.length > 1 ? ` ${i + 1}` : ''}: ${n}`) : a.buyersListName ? [`Buyers list: ${a.buyersListName}`] : []), ...(a.partnerNames ?? [])]
+export const ALL_DSPS_LABEL = 'All DSPs'
+export const assignedLabels = (a: { advertisers: readonly string[]; partnerNames?: readonly string[]; whitelistOnly?: boolean; buyersListName?: string | null; buyersListNames?: readonly string[]; openAuction?: boolean; partnerIds?: readonly string[] }): string[] =>
+  [...a.advertisers, ...(a.whitelistOnly ? ['Whitelist only'] : []), ...(a.buyersListNames?.length ? a.buyersListNames.map((n, i) => `Buyers list${a.buyersListNames!.length > 1 ? ` ${i + 1}` : ''}: ${n}`) : a.buyersListName ? [`Buyers list: ${a.buyersListName}`] : []), ...(a.partnerNames ?? []), ...(a.openAuction && !a.partnerIds?.length ? [ALL_DSPS_LABEL] : [])]
 
 /* Reserve price inheritance (Rob, 22 Sep; spec §1 configuration
    inheritance): a display type carries its own reserve price default, and
@@ -162,6 +169,14 @@ export const billingUnitHoursOf = (dt: { phExtensions?: { billingUnitHours?: num
 export const DEFAULT_MAX_CAMPAIGNS = 5
 export const MIN_MAX_CAMPAIGNS = 1
 export const MAX_MAX_CAMPAIGNS = 10
+/* Per-display-type floor (CPM, USD): null/absent inherits the central floor at
+   read time. Never a copy of the central value, so a later change to the
+   central floor reaches every inheriting type, and "inherit" stays distinct
+   from "set to the same number". */
+export const displayTypeFloorCpmOf = (dt: { phExtensions?: { floorCpm?: number | null } | null }): number | null => {
+  const v = dt.phExtensions?.floorCpm
+  return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null
+}
 export const maxCampaignsOf = (dt: { phExtensions?: { maxCampaigns?: number | null } | null }, slot: { maxCampaigns?: number | null }): number =>
   slot.maxCampaigns ?? dt.phExtensions?.maxCampaigns ?? DEFAULT_MAX_CAMPAIGNS
 
@@ -334,15 +349,18 @@ export const TARGETING_VARIABLES: TargetingVariableDef[] = [
   loc('store.country', 'Country', 'Australia, New Zealand', LIST),
   /* Languages Spoken by Store Staff was removed from the default set — not
      supported initially, revisit in a later release (ticket, 22 Sep). */
-  /* Computer Vision first, then the aggregates, then the rest (Rob, 20 Sep).
+  /* Computer Vision first, then the aggregates, then Purchase Intent, Purchase History, SKUs and Events, then the rest (Rob, 20 Sep; 8 Oct 2026).
      Both are personalisation, so both default to no DSP (Q49 revisited). */
   per('store.cv_gender', 'Gender (Computer Vision)', 'Female, Male', COMPARE_EXACT, 'Read by Vision/AI running at the edge, for the person in front of the display — e.g. Female, Male. Nothing leaves the store.', 'store'),
   per('store.cv_age', 'Estimated Age (Computer Vision)', '18–24, 25–34, 35–44', COMPARE, 'Estimated by Vision/AI running at the edge, for the person in front of the display — e.g. 18–24, 25–34, 35–44. Nothing leaves the store.', 'store'),
   per('store.reason_for_visit', 'Reason for Visit (Aggregate)', 'Returns, New phone, Bill enquiry (share of the queue here for the same reason)', COMPARE, 'Everyone in the queue here right now, not one visitor: the share waiting for the same reason — e.g. Returns, New phone, Bill enquiry', 'store'),
   per('store.device_type_aggregate', 'Device Type (Aggregate)', 'iPhone, Pixel, Samsung', COMPARE, 'Everyone in the store right now, not one visitor: the share carrying each device — e.g. iPhone, Pixel, Samsung', 'store'),
+  per('visitor.purchase_intent', 'Purchase Intent', 'Browse, Replenish, Gift', LIST),
+  per('visitor.purchase_history', 'Purchase History', 'Bought in the last 30 days', LIST),
+  per('visitor.skus', 'SKUs', 'SKU-10234, SKU-55871', LIST, 'SKUs the visitor has looked at before; target by listing SKUs — e.g. SKU-10234, SKU-55871'),
+  per('visitor.events', 'Events', 'Scanned QR code, Viewed product page, Added to cart', LIST, 'Events in store or from a previous web session — e.g. Scanned QR code, Viewed product page, Added to cart'),
   per('visitor.age', 'Age', '18–24, 25–34, 35–44', COMPARE, 'The identified visitor’s age, from the systems that hold the customer record (CRM, CDP or loyalty) — e.g. 18–24, 25–34, 35–44'),
   per('visitor.gender', 'Gender', 'Female, Male', ONE, 'The identified visitor’s gender, from the systems that hold the customer record (CRM, CDP or loyalty) — e.g. Female, Male'),
-  per('visitor.purchase_intent', 'Purchase Intent', 'Browse, Replenish, Gift', LIST),
   per('visitor.visitor_segments', 'Visitor Segments', 'New parent, Fitness, Value seeker', LIST),
   per('visitor.reason_for_visit', 'Reason for Visit', 'Returns, New phone, Bill enquiry', LIST, 'Why the visitor in front of the screen is here, for that one person — e.g. Returns, New phone, Bill enquiry. The aggregate version above is the whole queue.'),
   per('visitor.device_type', 'Device Type', 'iPhone, Pixel, Samsung', LIST, 'The device the visitor in front of the screen is carrying — e.g. iPhone, Pixel, Samsung'),
@@ -350,9 +368,6 @@ export const TARGETING_VARIABLES: TargetingVariableDef[] = [
   per('visitor.product_type', 'Product Type', 'Handset, Accessory', LIST),
   per('visitor.plan_type', 'Plan Type', 'Postpaid, Prepaid', LIST),
   per('visitor.plan_value', 'Plan Value', '$45, $65 per month', LIST),
-  per('visitor.purchase_history', 'Purchase History', 'Bought in the last 30 days', LIST),
-  per('visitor.events', 'Events', 'Scanned QR code, Viewed product page, Added to cart', LIST, 'Events in store or from a previous web session — e.g. Scanned QR code, Viewed product page, Added to cart'),
-  per('visitor.skus', 'SKUs', 'SKU-10234, SKU-55871', LIST, 'SKUs the visitor has looked at before; target by listing SKUs — e.g. SKU-10234, SKU-55871'),
 ]
 export const ALL_DSPS = 'all' as const
 /* Defaults (spec §6): Localisation → all connected DSPs; Personalisation → none. */

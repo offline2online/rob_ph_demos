@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { findPosition } from '../src/domain/positions'
+import { findPosition, windowMsFor, windowStartOf } from '../src/domain/positions'
 import { runAuction } from '../src/exchange/auction'
 import { buildApp } from '../src/http/app'
 import { NOW, mockDsps, testContext } from './helpers'
@@ -52,6 +52,29 @@ describe('real-time (player-triggered) bidding', () => {
     expect(ctx.db.prepare('SELECT campaign_id, display_id, duration_sec FROM plays WHERE campaign_id = ?').all(fill.creative.campaignId)).toEqual([{ campaign_id: fill.creative.campaignId, display_id: displayId, duration_sec: 15 }])
     /* Once only. */
     expect((await played(fill.impressionId)).statusCode).toBe(409)
+  })
+
+  /* Ticket nPLBmjJe7voOxLeU5zrA (9 Oct 2026): a window no deal wins falls through to the per-play Open auction. */
+  it('a deal slot with an Open auction tier: a play in a window no deal won falls through to real-time bidding', async () => {
+    const { ctx, app, signal, displayId } = await setup()
+    await ctx.buyersLists.insert({ id: 'bl_quiet', name: 'Quiet', description: '', activeFrom: null, activeTo: null, auctionCloses: null, invitedBuyers: [{ partnerId: 'p_google', seatId: '5130002' }] })
+    const assign = async (openAuction: boolean) => {
+      const ext = (await ctx.displayTypes.get('menu_board'))!.phExtensions!
+      await ctx.displayTypes.saveExtensions('menu_board', { ...ext, slots: ext.slots.map((s, i) => (i === 1 ? { ...s, listMode: 'deal' as const, buyersListId: 'bl_quiet', buyersListIds: ['bl_quiet'], partnerIds: [], openAuction } : s)) })
+    }
+    /* Deals only: sold by window, never in real time. */
+    await assign(false)
+    expect((await signal()).statusCode).toBe(409)
+    /* With the Open auction tier, a window the deal does not win is sold per play. */
+    await assign(true)
+    const out = await runAuction(ctx, new Date('2026-09-22T00:00:00.000Z'), { positions: [(await findPosition(ctx, 'menu_board.s2'))!] })
+    expect(out.positions[0]).toMatchObject({ winner: null, skipped: expect.stringContaining('Open auction') })
+    expect((await signal()).json()).toMatchObject({ status: 'filled', clearingCpm: 150 })
+    /* Its DSPs see the position in partner inventory. */
+    expect((await app.inject({ method: 'GET', url: '/api/v1/inventory/menu_board.s2', headers: GOOGLE })).statusCode).toBe(200)
+    /* A window already won under a deal is not re-sold per play. */
+    await ctx.reservations.insert({ id: 'res_deal_win', partnerId: 'p_google', advertiserId: 'nestle', campaignId: null, positionId: 'menu_board.s2', windowStart: windowStartOf(NOW, windowMsFor((await findPosition(ctx, 'menu_board.s2'))!)).toISOString(), type: 'bid', channel: 'openrtb', bidCpm: 100, currency: 'USD', status: 'won', clearingCpm: 100, reason: null, testMode: false, pricingType: null, handedOffAt: null })
+    expect((await signal({ displayId, slot: 2 })).json()).toMatchObject({ status: 'no_fill' })
   })
 
   it('bid lookahead: a slot\'s auction opens bidLookaheadSeconds before it plays (fixed clock), not on a scheduled clock', async () => {

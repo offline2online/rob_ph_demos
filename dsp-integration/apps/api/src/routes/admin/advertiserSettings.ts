@@ -266,11 +266,11 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         else if (!def) errors.push({ field: f('slot'), reason: `${dt.name} has no slot ${slot}.` })
         else if (def.owner !== 'advertiser') errors.push({ field: f('slot'), reason: 'Only an Advertiser slot is sellable inventory.' })
 
-        const raw = (r.assignedTo ?? {}) as { partnerIds?: unknown; advertisers?: unknown; whitelistOnly?: unknown; buyersListId?: unknown; buyersListIds?: unknown }
+        const raw = (r.assignedTo ?? {}) as { partnerIds?: unknown; advertisers?: unknown; whitelistOnly?: unknown; buyersListId?: unknown; buyersListIds?: unknown; openAuction?: unknown }
         /* The ordered waterfall (7 Oct 2026); an older client sends just buyersListId. Duplicates are kept so validation can name them. */
         const tiers = Array.isArray(raw.buyersListIds) ? names(raw.buyersListIds) : typeof raw.buyersListId === 'string' && raw.buyersListId ? [raw.buyersListId] : []
-        const assigned: Assigned = { partnerIds: names(raw.partnerIds), advertisers: names(raw.advertisers), whitelistOnly: raw.whitelistOnly === true, buyersListId: tiers[0] ?? null, buyersListIds: tiers }
-        const bad = await validateAssigned(assigned, (k) => f(`assignedTo.${k}`), partners, def ? assignedOf(def) : { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: null, buyersListIds: [] }, ctx.buyersLists)
+        const assigned: Assigned = { partnerIds: names(raw.partnerIds), advertisers: names(raw.advertisers), whitelistOnly: raw.whitelistOnly === true, buyersListId: tiers[0] ?? null, buyersListIds: tiers, openAuction: raw.openAuction === true }
+        const bad = await validateAssigned(assigned, (k) => f(`assignedTo.${k}`), partners, def ? assignedOf(def) : { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: null, buyersListIds: [], openAuction: false }, ctx.buyersLists)
         errors.push(...bad)
 
         /* The global deal flag (8 Oct 2026): omitted keeps the slot's, so a client that predates it never changes it. */

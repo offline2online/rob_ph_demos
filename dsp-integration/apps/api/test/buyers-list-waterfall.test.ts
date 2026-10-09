@@ -67,4 +67,20 @@ describe('buyers-list waterfall', () => {
     expect(assignedOf(after.find((p) => p.positionId === p2.positionId)!.def).buyersListIds).toEqual(['bl_b', 'bl_a'])
     expect((await put(p1, ['bl_a', 'bl_a'])).statusCode).toBe(400)
   })
+
+  /* Ticket Y3GzIlj2goQMJaGUwTey (9 Oct 2026): deals and an explicit Open auction (DSPs, or All DSPs) share one slot. */
+  it('keeps deals and an Open auction on one slot, and refuses it beside named advertisers', async () => {
+    const { ctx, app } = await setup()
+    const [p1] = await allPositions(ctx)
+    const put = (assignedTo: object) => app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: p1.displayType.id, slot: p1.slot, assignedTo }] } })
+    const base = { advertisers: [], whitelistOnly: false, buyersListId: 'bl_a', buyersListIds: ['bl_a', 'bl_b'] }
+    expect((await put({ ...base, partnerIds: ['p_google'], openAuction: true })).statusCode).toBe(200)
+    let a = assignedOf((await allPositions(ctx)).find((p) => p.positionId === p1.positionId)!.def)
+    expect(a).toMatchObject({ buyersListIds: ['bl_a', 'bl_b'], partnerIds: ['p_google'], openAuction: true })
+    expect((await put({ ...base, partnerIds: [], openAuction: true })).statusCode).toBe(200)
+    a = assignedOf((await allPositions(ctx)).find((p) => p.positionId === p1.positionId)!.def)
+    expect(a).toMatchObject({ partnerIds: [], openAuction: true })
+    const bad = await put({ ...base, partnerIds: [], advertisers: ['Nestlé'], openAuction: true })
+    expect(bad.statusCode).toBe(400)
+  })
 })

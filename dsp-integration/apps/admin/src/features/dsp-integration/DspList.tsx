@@ -20,6 +20,7 @@ export const PATHS = {
   exchange: '/dsp-integration/exchange',
   advertiserSettings: '/dsp-integration/advertiser-settings',
   variables: '/dsp-integration/targeting-variables',
+  history: '/dsp-integration/change-history',
   partner: (id: string) => `/dsp-integration/partners/${id}`,
   add: (provider: string) => `/dsp-integration/add/${provider}`,
 }
@@ -59,6 +60,7 @@ export function DspList() {
     { to: PATHS.exchange, icon: 'storefront', title: 'Exchange settings', sub: saved.exchange.enabled ? `${draft.exchange.organisation || 'Client'} is seller of record` : 'DSP integration off' },
     { to: PATHS.advertiserSettings, icon: 'rule', title: 'Advertiser settings', sub: `${advertisers} advertisers · floor ${TRANSACTING_CURRENCY} ${draft.settings.floorCpm ?? '—'} CPM` },
     { to: PATHS.variables, icon: 'tune', title: 'Shared Targeting Variables', sub: `${TARGETING_VARIABLES.length} platform variables` },
+    { to: PATHS.history, icon: 'history', title: 'Change history', sub: 'Who changed which setting, and when' },
   ].slice(0, published ? undefined : 1)
 
   return (

@@ -354,6 +354,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/ssp-audit-log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Change history of the retailer-side SSP settings (9 Oct 2026)
+         * @description Every change to an SSP setting made through the admin API, one entry
+         *     per field changed: who (a human, or an agent that identified itself),
+         *     the object and field, the old and new value, and when. Covers the
+         *     exchange settings, pricing and floors (`pricing_settings`, the
+         *     per-advertiser floor multiplier, a DSP's bid floor), buyers lists
+         *     (deals), and every display type's SSP extensions — slot reserve
+         *     prices and the per-display-type floor, billing unit, assignment and
+         *     locks. Append-only; this is the only way to read it.
+         *
+         *     An agent that writes a setting must say so on the write —
+         *     `X-Actor-Type: agent` and `X-Actor-Id` (optionally `X-Actor-Name`,
+         *     and `X-Change-Reason` for either kind of actor) — or the change is
+         *     recorded as the HQ user's. An agent asking "when did this floor change,
+         *     and who changed it?" filters here by `objectType`, `objectId`,
+         *     `field` (or `fieldPrefix`, e.g. `slots[2]`), `actorType`/`actorId`
+         *     and `from`/`to`; `changeId` returns every field one save changed.
+         *     Newest first unless `order=asc`; follow `next` as `cursor` for more.
+         *     Field paths are dotted (`bidder.floorCpm`); an array of objects is
+         *     indexed from 1 (`slots[2].reservePrice`).
+         */
+        get: operations["listSspAuditLog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/features": {
         parameters: {
             query?: never;
@@ -1582,6 +1620,38 @@ export interface components {
                 unit?: "impressions" | null;
             } | null;
         };
+        SspAuditEntry: {
+            id: string;
+            /** Format: date-time */
+            at: string;
+            /** @description Shared by every entry one save produced */
+            changeId: string;
+            actor: {
+                /** @enum {string} */
+                type: "human" | "agent";
+                /** @description The HQ user for a human; the agent's own identifier (`X-Actor-Id`) for an agent */
+                id: string;
+                name: string;
+                /** @description The HQ session the write went through */
+                sessionUserId: string;
+            };
+            /** @description Method and path of the write, e.g. `PUT /api/admin/v1/exchange` */
+            request: string;
+            /** @description `X-Change-Reason`, when sent */
+            reason: string | null;
+            /** @enum {string} */
+            objectType: "exchange" | "pricing_settings" | "advertiser_setting" | "targeting_variable_access" | "buyers_list" | "display_type" | "dsp_partner";
+            objectId: string;
+            /** @description The object's name when it was changed */
+            objectLabel: string;
+            /** @enum {string} */
+            changeType: "created" | "updated" | "deleted";
+            field: string;
+            /** @description null when the field did not exist */
+            oldValue: unknown;
+            /** @description null when the field was removed */
+            newValue: unknown;
+        };
         Exchange: components["schemas"]["ExchangeInput"] & {
             /** @description Switched on and all four fields complete: sellers.json is live and DSPs are sent bid requests. */
             published: boolean;
@@ -1716,6 +1786,8 @@ export interface components {
             buyersListIds?: string[];
             /** @description The same lists by name */
             buyersListNames?: string[];
+            /** @description Whether the slot has an explicit Open auction tier below its deals (Rob, 9 Oct 2026). Deals (buyersListIds, in priority order) resolve ahead of time; the Open auction tier sits below them and runs across partnerIds, or across every connected DSP when partnerIds is empty ("All DSPs"). Without a deal this is simply "the slot is offered to the open auction". Optional on write (omitted: false when the slot is on a deal, true otherwise). Mutually exclusive with named advertisers and whitelistOnly, like the deals. */
+            openAuction?: boolean;
         };
         /**
          * @description One invited buyer on a buyers list (deal): a seat (advertiser) that a
@@ -2446,6 +2518,14 @@ export interface components {
              */
             defaultVacd?: number | null;
             /**
+             * @description Per-display-type floor price (CPM, USD). Null or absent = inherit the
+             *     central floor, resolved at read time (never a copy). A number is an
+             *     explicit override for this display type only. No editor writes it
+             *     in this release; it is stored for a later user or optimisation
+             *     agent. Never below the central floor when resolved.
+             */
+            floorCpm?: number | null;
+            /**
              * @description Who set the default. `computer_vision` (written by PH Core
              *     through `PUT …/default-vacd`) is counted and overrides a manual
              *     value; `manual` (this editor) is modelled. Set by the server —
@@ -2499,6 +2579,8 @@ export interface components {
                 buyersListId?: string | null;
                 /** @description The slot's buyers lists in priority order (waterfall); buyersListId is the first. */
                 buyersListIds?: string[];
+                /** @description The slot has an explicit Open auction tier below its deals, across partnerIds (empty = all connected DSPs). Set from Advertisers / Inventory. */
+                openAuction?: boolean;
                 storeScope?: string | null;
                 quota?: number | null;
                 /**
@@ -3320,6 +3402,52 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Exchange"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorised"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    listSspAuditLog: {
+        parameters: {
+            query?: {
+                objectType?: "exchange" | "pricing_settings" | "advertiser_setting" | "targeting_variable_access" | "buyers_list" | "display_type" | "dsp_partner";
+                /** @description e.g. a display type id, buyers list id, partner id */
+                objectId?: string;
+                /** @description Exact field path */
+                field?: string;
+                /** @description A field and everything under it (`slots[2]` matches `slots[2].reservePrice`) */
+                fieldPrefix?: string;
+                actorType?: "human" | "agent";
+                actorId?: string;
+                changeId?: string;
+                /** @description Entries at or after */
+                from?: string;
+                /** @description Entries at or before */
+                to?: string;
+                order?: "asc" | "desc";
+                limit?: number;
+                /** @description The `next` of the previous page */
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of entries */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["SspAuditEntry"][];
+                        /** @description Pass as `cursor` for the next page; null at the end */
+                        next: string | null;
+                    };
                 };
             };
             400: components["responses"]["ValidationFailed"];

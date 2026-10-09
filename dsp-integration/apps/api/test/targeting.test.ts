@@ -19,13 +19,15 @@ describe('Shared Targeting Variables (spec §6)', () => {
     expect(personalisation.slice(0, 4).map((v: { label: string }) => v.label)).toEqual(['Gender (Computer Vision)', 'Estimated Age (Computer Vision)', 'Reason for Visit (Aggregate)', 'Device Type (Aggregate)'])
     expect(personalisation[0].exampleValues).toMatch(/Vision\/AI running at the edge/)
     expect(personalisation.find((v: { key: string }) => v.key === 'visitor.age').exampleValues).toMatch(/CRM, CDP or loyalty/)
+    /* Then Purchase Intent, Purchase History, SKUs and Events, then the rest (Rob, 8 Oct 2026). */
+    expect(personalisation.slice(4, 9).map((v: { label: string }) => v.label)).toEqual(['Purchase Intent', 'Purchase History', 'SKUs', 'Events', 'Age'])
     /* Reason for Visit at the individual level sits just above Device Type (Rob, 20 Sep). */
     const keys = personalisation.map((v: { key: string }) => v.key)
     expect(keys[keys.indexOf('visitor.device_type') - 1]).toBe('visitor.reason_for_visit')
     /* Not supported initially — removed from the default set (ticket, 22 Sep). */
     expect(items.find((v: { key: string }) => v.key === 'store.languages')).toBeUndefined()
     /* They all default to no DSP; the seed names Google on two of them. */
-    expect(personalisation.map((v: { access: unknown }) => v.access)).toEqual([[], [], ['p_google'], [], [], [], ['p_google'], [], [], [], [], [], [], [], [], [], []])
+    expect(personalisation.map((v: { access: unknown }) => v.access)).toEqual([[], [], ['p_google'], [], ['p_google'], [], [], [], [], [], [], [], [], [], [], [], []])
   })
 
   it('saves access per variable, de-duplicating DSP ids', async () => {

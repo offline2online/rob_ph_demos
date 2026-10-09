@@ -15,6 +15,7 @@ import { type PartnerRepo, sqlitePartnerRepo } from './repos/PartnerRepo'
 import { type CompanySettingsRepo, sqliteCompanySettingsRepo } from './repos/CompanySettingsRepo'
 import { type ExchangeRepo, sqliteExchangeRepo } from './repos/ExchangeRepo'
 import { type BuyersListRepo, sqliteBuyersListRepo } from './repos/BuyersListRepo'
+import { type SspAuditRepo, sqliteSspAuditRepo } from './repos/SspAuditRepo'
 import type { CampaignSource as ApprovalCampaignSource } from '@ph-dsp/campaign-approval/adapter'
 import { pocCampaignSource } from '@ph-dsp/campaign-approval/poc'
 import { type ApprovalService, createApprovalService } from '@ph-dsp/campaign-approval/server'
@@ -51,6 +52,8 @@ export interface Context {
   company: CompanySettingsRepo
   exchange: ExchangeRepo
   buyersLists: BuyersListRepo
+  /* The SSP settings change history (domain/sspAudit.ts); written by the app's hooks, append-only. */
+  sspAudit: SspAuditRepo
   /* The DSPs, one DspProvider each (dsp/DspProvider.ts): management client,
      bid URL, creative-path rule and pre-approval hook. Read by provider key
      through providerOf(); nothing else branches on which DSP it is. */
@@ -116,6 +119,7 @@ export function createContext(opts: { config?: Config; db?: Db; flags?: Flags; s
     company,
     exchange: g(sqliteExchangeRepo(db)),
     buyersLists: g(sqliteBuyersListRepo(db)),
+    sspAudit: g(sqliteSspAuditRepo(db)),
     dsp: dspProviders(config.dsp, config.bidders, opts.dspFetch),
     fetch: opts.dspFetch ?? ((url, init) => fetch(url, init)),
     bidder: httpBidder(opts.dspFetch ?? ((url, init) => fetch(url, init)), { timeoutMs: config.bidderTimeoutMs, qps: config.bidderQps, maxResponseBytes: config.maxBidResponseBytes }),
