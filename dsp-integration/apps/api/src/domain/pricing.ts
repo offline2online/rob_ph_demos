@@ -18,11 +18,13 @@ const cents = (n: number) => Math.round(n * 100) / 100
 /* The bid floor hierarchy (Rob, 7 Oct 2026): platform floor (Advertiser
    settings), then a per-DSP floor, then a per-buyers-list floor. The most
    specific floor that is set applies; a blank level inherits from the one
-   above. The platform floor is the minimum: a DSP or list floor can raise
+   above. A display type may also carry its own floor (null = inherit the
+   platform floor at read time; nothing in the product writes it yet), which
+   sits between the platform and the DSP. The platform floor is the minimum: a DSP or list floor can raise
    it, never lower it (a stored value below it, because the platform floor
    was raised later, is clamped up to it). All in USD. */
-export function resolveBaseFloor(platformCpm: number, dspCpm?: number | null, listCpm?: number | null): number {
-  const level = typeof listCpm === 'number' ? listCpm : typeof dspCpm === 'number' ? dspCpm : platformCpm
+export function resolveBaseFloor(platformCpm: number, dspCpm?: number | null, listCpm?: number | null, displayTypeCpm?: number | null): number {
+  const level = typeof listCpm === 'number' ? listCpm : typeof dspCpm === 'number' ? dspCpm : typeof displayTypeCpm === 'number' ? displayTypeCpm : platformCpm
   return Math.max(platformCpm, level)
 }
 

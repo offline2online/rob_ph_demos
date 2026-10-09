@@ -145,6 +145,8 @@ export const displayTypeRoutes = (ctx: Context, guards: Guards): FastifyPluginAs
         /* Absent keeps what is saved; null clears it (the slot is unscored again). */
         ...((body.defaultVacd === undefined ? dt.phExtensions?.defaultVacd : body.defaultVacd) != null ? { defaultVacd: (body.defaultVacd === undefined ? dt.phExtensions?.defaultVacd : body.defaultVacd) as number } : {}),
         ...(vacdSource ? { defaultVacdSource: vacdSource } : {}),
+        /* Not editable here: carried as saved so a slots save never clears an override. */
+        ...(dt.phExtensions?.floorCpm != null ? { floorCpm: dt.phExtensions.floorCpm } : {}),
         ...((body.venue ?? dt.phExtensions?.venue) ? { venue: body.venue ?? dt.phExtensions?.venue } : {}),
       }
       return ctx.displayTypes.saveExtensions(req.params.id, ext)

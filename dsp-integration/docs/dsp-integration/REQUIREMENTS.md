@@ -1082,6 +1082,49 @@ across every DSP and crid they arrive under.
   `startCampaignRetentionScheduler`) the same way the auction and billing
   jobs already run — no separate cron infrastructure needed.
 
+## 3a. SSP settings change history (9 Oct 2026; ticket W9b1lEcTUbEMphsmBma3)
+
+Every change to a retailer-side SSP setting is kept in an append-only audit
+log, shown to people on **DSP Integration → Change history** and queryable by
+an agent at `GET /admin/v1/ssp-audit-log`. It exists so a floor that moves —
+above all when an agent tunes per-display-type CPM — is never unexplained.
+
+- **In scope**: the exchange settings; pricing and auction settings (floor
+  CPM, bid lookahead, max play length, category lists, guarantee buffer, …);
+  the per-advertiser floor multiplier; which DSPs may target each shared
+  variable; every buyers list (deal); every display type's SSP extensions
+  (slots: owner, reserve prices and the per-display-type floor, billing unit,
+  assignment, deals, locks); and each DSP's bid settings (floor, committed
+  plays, QPS, timeout, seats, lists). Anything changed outside the admin API
+  (a seed script, a database edit) is not recorded.
+- **One entry per field changed**: actor (type `human` or `agent`, id, name,
+  and the HQ session it went through), object (type, id, label), change type
+  (`created` / `updated` / `deleted`), dotted field path
+  (`bidder.floorCpm`, `slots[2].reservePrice`; arrays of objects index from 1),
+  old value, new value, time, the request, an optional reason, and a
+  `changeId` shared by everything one save changed. A save that changes
+  nothing, or is rejected, writes nothing.
+- **Recorded around the request, not in each route** (`domain/sspAudit.ts`,
+  hooks in `http/app.ts`): a snapshot of every in-scope setting before and
+  after each admin write, diffed. A setting added to a route later — or the
+  per-display-type floor stored on a slot — is covered without its route
+  remembering to log it. Audited writes run one at a time so each diff holds
+  only its own change, and the entries are written before the response
+  leaves, so a client reading the history right after its save sees it.
+- **Who made the change**: the session's HQ user, unless the request says it
+  is an agent — `X-Actor-Type: agent` with `X-Actor-Id` (and optionally
+  `X-Actor-Name`); `X-Change-Reason` adds a reason for either kind. An agent
+  that does not give its id is refused (400). In the POC this is
+  self-asserted; on integration the agent's identity comes from the
+  platform's service credential (PH-CORE-BOUNDARIES).
+- **Query** (admin only): `objectType`, `objectId`, `field` or `fieldPrefix`,
+  `actorType`, `actorId`, `changeId`, `from`/`to`, `order` (newest first by
+  default), `limit` (≤ 500) and `cursor`. "When did this display type's
+  floor last change, and who changed it?" is
+  `?objectType=display_type&objectId=<id>&fieldPrefix=slots[2]&limit=1`.
+- **Storage**: `ssp_audit_log` (migration 0062). Nothing in the API updates or
+  deletes a row.
+
 ## 4. Pricing — CPM bid floor and floor multiplier
 
 The currency and the floor are configured

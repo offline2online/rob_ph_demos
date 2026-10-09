@@ -169,6 +169,14 @@ export const billingUnitHoursOf = (dt: { phExtensions?: { billingUnitHours?: num
 export const DEFAULT_MAX_CAMPAIGNS = 5
 export const MIN_MAX_CAMPAIGNS = 1
 export const MAX_MAX_CAMPAIGNS = 10
+/* Per-display-type floor (CPM, USD): null/absent inherits the central floor at
+   read time. Never a copy of the central value, so a later change to the
+   central floor reaches every inheriting type, and "inherit" stays distinct
+   from "set to the same number". */
+export const displayTypeFloorCpmOf = (dt: { phExtensions?: { floorCpm?: number | null } | null }): number | null => {
+  const v = dt.phExtensions?.floorCpm
+  return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null
+}
 export const maxCampaignsOf = (dt: { phExtensions?: { maxCampaigns?: number | null } | null }, slot: { maxCampaigns?: number | null }): number =>
   slot.maxCampaigns ?? dt.phExtensions?.maxCampaigns ?? DEFAULT_MAX_CAMPAIGNS
 

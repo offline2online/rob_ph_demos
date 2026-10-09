@@ -8,11 +8,11 @@ import { TRANSACTING_CURRENCY } from './currency'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 import { type Awaitable, allOf, andThen } from '../db/db'
 import { type ReservationStatus, TAKEN } from '../repos/ReservationRepo'
-import { INTERACTIVE_ENABLED, PLATFORM_DEFAULT_BILLING_UNIT_HOURS, advertiserSlug, assignedOf, billingUnitHoursOf, interactiveReservePriceOf, maxCampaignsOf, maxPlayLengthSecOf, openRtbInventoryOf, reservePriceOf, type Assigned } from '@ph-dsp/types'
+import { INTERACTIVE_ENABLED, PLATFORM_DEFAULT_BILLING_UNIT_HOURS, advertiserSlug, assignedOf, billingUnitHoursOf, displayTypeFloorCpmOf, interactiveReservePriceOf, maxCampaignsOf, maxPlayLengthSecOf, openRtbInventoryOf, reservePriceOf, type Assigned } from '@ph-dsp/types'
 import { invitedPartnerIds, isInvitedBuyer } from './buyersLists'
 import { isActiveAt, lockedTermSpan } from '../billing/term'
 import { effectiveLists, isBlocked, isOn } from './lists'
-import { effectiveFloorCpm } from './pricing'
+import { effectiveFloorCpm, resolveBaseFloor } from './pricing'
 import { rotationSizeOf, slotDurationSec } from './slots'
 import { audienceOf } from './displayTypes'
 import { playsPerWindowOf } from './plays'
@@ -499,7 +499,7 @@ function viewOf(
        caller who is told so, since inventory excludes such positions. */
     scored: audience.scored,
     /* One floor for every campaign type; no personalised price (Rob, 5 Oct 2026). */
-    pricing: { currency: TRANSACTING_CURRENCY, floorCpm: company.floorCpm, effectiveFloorCpm: { localised: effectiveFloorCpm(company, multiplier) } },
+    pricing: { currency: TRANSACTING_CURRENCY, floorCpm: company.floorCpm, effectiveFloorCpm: { localised: effectiveFloorCpm(company, multiplier, resolveBaseFloor(company.floorCpm, null, null, displayTypeFloorCpmOf(dt))) } },
     /* The most campaigns (default + targeted versions) a bid or reservation here may carry. */
     maxCampaigns: maxCampaignsOf(dt, p.def),
     reservePrice: reservePriceOf(dt, p.def),

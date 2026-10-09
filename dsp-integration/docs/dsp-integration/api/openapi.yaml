@@ -450,6 +450,60 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorised'}
         '403': {$ref: '#/components/responses/Forbidden'}
 
+  /admin/v1/ssp-audit-log:
+    get:
+      tags: [Admin — Exchange]
+      operationId: listSspAuditLog
+      summary: Change history of the retailer-side SSP settings (9 Oct 2026)
+      description: |
+        Every change to an SSP setting made through the admin API, one entry
+        per field changed: who (a human, or an agent that identified itself),
+        the object and field, the old and new value, and when. Covers the
+        exchange settings, pricing and floors (`pricing_settings`, the
+        per-advertiser floor multiplier, a DSP's bid floor), buyers lists
+        (deals), and every display type's SSP extensions — slot reserve
+        prices and the per-display-type floor, billing unit, assignment and
+        locks. Append-only; this is the only way to read it.
+
+        An agent that writes a setting must say so on the write —
+        `X-Actor-Type: agent` and `X-Actor-Id` (optionally `X-Actor-Name`,
+        and `X-Change-Reason` for either kind of actor) — or the change is
+        recorded as the HQ user's. An agent asking "when did this floor change,
+        and who changed it?" filters here by `objectType`, `objectId`,
+        `field` (or `fieldPrefix`, e.g. `slots[2]`), `actorType`/`actorId`
+        and `from`/`to`; `changeId` returns every field one save changed.
+        Newest first unless `order=asc`; follow `next` as `cursor` for more.
+        Field paths are dotted (`bidder.floorCpm`); an array of objects is
+        indexed from 1 (`slots[2].reservePrice`).
+      security: [{adminSession: []}]
+      parameters:
+        - {name: objectType, in: query, schema: {type: string, enum: [exchange, pricing_settings, advertiser_setting, targeting_variable_access, buyers_list, display_type, dsp_partner]}}
+        - {name: objectId, in: query, schema: {type: string}, description: 'e.g. a display type id, buyers list id, partner id'}
+        - {name: field, in: query, schema: {type: string}, description: Exact field path}
+        - {name: fieldPrefix, in: query, schema: {type: string}, description: 'A field and everything under it (`slots[2]` matches `slots[2].reservePrice`)'}
+        - {name: actorType, in: query, schema: {type: string, enum: [human, agent]}}
+        - {name: actorId, in: query, schema: {type: string}}
+        - {name: changeId, in: query, schema: {type: string}}
+        - {name: from, in: query, schema: {type: string, format: date-time}, description: Entries at or after}
+        - {name: to, in: query, schema: {type: string, format: date-time}, description: Entries at or before}
+        - {name: order, in: query, schema: {type: string, enum: [asc, desc], default: desc}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 100}}
+        - {name: cursor, in: query, schema: {type: string}, description: The `next` of the previous page}
+      responses:
+        '200':
+          description: A page of entries
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/SspAuditEntry'}}
+                  next: {type: [string, 'null'], description: Pass as `cursor` for the next page; null at the end}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+
   /admin/v1/features:
     get:
       tags: [Admin — Exchange]
@@ -2077,6 +2131,30 @@ components:
             unitCount: {type: [integer, 'null']}
             unit: {type: [string, 'null'], enum: [impressions, null]}
 
+    SspAuditEntry:
+      type: object
+      required: [id, at, changeId, actor, request, reason, objectType, objectId, objectLabel, changeType, field, oldValue, newValue]
+      properties:
+        id: {type: string}
+        at: {type: string, format: date-time}
+        changeId: {type: string, description: Shared by every entry one save produced}
+        actor:
+          type: object
+          required: [type, id, name, sessionUserId]
+          properties:
+            type: {type: string, enum: [human, agent]}
+            id: {type: string, description: 'The HQ user for a human; the agent''s own identifier (`X-Actor-Id`) for an agent'}
+            name: {type: string}
+            sessionUserId: {type: string, description: The HQ session the write went through}
+        request: {type: string, description: 'Method and path of the write, e.g. `PUT /api/admin/v1/exchange`'}
+        reason: {type: [string, 'null'], description: '`X-Change-Reason`, when sent'}
+        objectType: {type: string, enum: [exchange, pricing_settings, advertiser_setting, targeting_variable_access, buyers_list, display_type, dsp_partner]}
+        objectId: {type: string}
+        objectLabel: {type: string, description: The object's name when it was changed}
+        changeType: {type: string, enum: [created, updated, deleted]}
+        field: {type: string}
+        oldValue: {description: 'null when the field did not exist'}
+        newValue: {description: 'null when the field was removed'}
     Exchange:
       allOf:
         - $ref: '#/components/schemas/ExchangeInput'
@@ -2957,6 +3035,16 @@ components:
             where it has one), so no slot is unscored. Editing it reaches
             every display that was never overridden. Absent keeps the saved
             value; null clears it.
+        floorCpm:
+          type: [number, 'null']
+          exclusiveMinimum: 0
+          description: |
+            Per-display-type floor (CPM, USD). Null or absent inherits the
+            central floor, resolved at read time (never a copy); a number
+            overrides it for this display type only. Stored for a later user or
+            optimisation agent: no editor writes it in this release. A DSP or
+            buyers-list floor still wins over it, and the resolved floor is
+            never below the central floor.
         defaultVacdSource:
           type: string
           enum: [manual, computer_vision]

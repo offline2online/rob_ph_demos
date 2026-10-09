@@ -17,6 +17,7 @@ import { AdvertiserSettings } from './features/dsp-integration/AdvertiserSetting
 import { CampaignSchedulePage } from './features/booking-schedule/CampaignSchedulePage'
 import { BOOKING_SCHEDULE_PATH } from './features/booking-schedule/path'
 import { ExchangeSettings, SWITCH_TIP } from './features/dsp-integration/ExchangeSettings'
+import { ChangeHistory } from './features/dsp-integration/ChangeHistory'
 import { SharedTargetingVariables } from './features/dsp-integration/SharedTargetingVariables'
 import { AppShell, type NavItem } from './shared/AppShell'
 import { Icon } from './shared/Icon'
@@ -93,6 +94,7 @@ function featureRoutes(flags: Flags): RouteObject[] {
             { path: 'exchange', element: <ExchangeSettings /> },
             { path: 'advertiser-settings', element: <AdvertiserSettings /> },
             { path: 'targeting-variables', element: <SharedTargetingVariables /> },
+            { path: 'change-history', element: <ChangeHistory /> },
             { path: 'partners/:id', element: <PartnerRoute /> },
             { path: 'add/:provider', element: <AddPartnerRoute /> },
           ],
