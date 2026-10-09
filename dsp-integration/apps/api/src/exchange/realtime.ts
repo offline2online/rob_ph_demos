@@ -40,9 +40,10 @@ import { failed, fileChecks } from '../domain/assetChecks'
 import { readMedia } from '../domain/media'
 import { bidderTuning } from '../domain/partnerInput'
 import { isLive } from '../domain/exchange'
-import { type PositionRef, assignmentOf, effectivePartnerIds, findPosition, isRealtime, isSellable, positionIdOf, positionView, maxPlayLengthSecFor, windowMsFor, windowStartOf } from '../domain/positions'
+import { type PositionRef, assignmentOf, effectivePartnerIds, fallsThroughToOpen, findPosition, isRealtime, openTierOf, isSellable, positionIdOf, positionView, maxPlayLengthSecFor, windowMsFor, windowStartOf } from '../domain/positions'
 import { conflict, notFound } from '../http/errors'
 import type { PartnerRecord } from '../repos/PartnerRepo'
+import { TAKEN } from '../repos/ReservationRepo'
 import type { ImpressionRecord } from '../repos/RealtimeImpressionRepo'
 import { type VettedBid, MAX_BIDS_PER_RESPONSE, bidUrlFor, receivesBidRequests, vetBid } from './auction'
 import { type BidResponse, buildBidRequest } from './openrtb'
@@ -66,8 +67,11 @@ export async function signalImpression(ctx: Context, input: { displayId: string;
   const now = ctx.clock()
   const display = await ctx.displays.get(input.displayId)
   if (!display) throw notFound('Unknown display.')
-  const p = await findPosition(ctx, positionIdOf(display.displayTypeId, input.slot))
-  if (!p || p.def.owner !== 'advertiser') throw notFound('Unknown position: that slot is not an Advertiser slot on the display’s display type.')
+  const found = await findPosition(ctx, positionIdOf(display.displayTypeId, input.slot))
+  if (!found || found.def.owner !== 'advertiser') throw notFound('Unknown position: that slot is not an Advertiser slot on the display’s display type.')
+  /* A deal slot with an Open auction tier (9 Oct 2026) is cleared by window first; a play in a window no deal won is auctioned here as the open tier. */
+  const fallthrough = fallsThroughToOpen(found.def)
+  const p = fallthrough ? openTierOf(found) : found
   if (!isRealtime(p)) throw conflict('This position is sold by play window, not in real time.')
 
   const company = await ctx.company.get()
@@ -87,6 +91,10 @@ export async function signalImpression(ctx: Context, input: { displayId: string;
     ({ impression: await ctx.impressions.insert({ ...base, ...extra, status: 'no_fill', reason, elapsedMs: Date.now() - started }) })
 
   if (!isLive(await ctx.exchange.get())) return noFill('DSP integration is not live.')
+  if (fallthrough) {
+    const taken = (await ctx.reservations.forWindow(p.positionId, windowStart)).find((r) => !r.testMode && TAKEN.includes(r.status))
+    if (taken) return noFill('This window was won under a deal: the Open auction only sells windows no deal won.')
+  }
   if (!(await isSellable(ctx, p))) return noFill('The position has no audience score.')
   if (p.def.salesLocked) return noFill('The position is locked against new sales.')
   const assignment = assignmentOf(p.def)
