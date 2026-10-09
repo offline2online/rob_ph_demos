@@ -19,6 +19,12 @@ import { TIPS } from '../tooltips'
 const SubSettings = ({ children }: { children: ReactNode }) => (
   <div className="mt-3 ml-7 grid grid-cols-2 gap-3 rounded-md border p-3" style={{ background: T.surfaceAlt, borderColor: T.borderSubtle }}>{children}</div>
 )
+const VISION_CUSTOM_FIELDS = [
+  { key: 'streamQuality', label: 'Stream quality (px)', min: 1 },
+  { key: 'fps', label: 'Frames per second', min: 1 },
+  { key: 'frameSkip', label: 'Frame skip', min: 0 },
+  { key: 'missThreshold', label: 'Miss threshold (frames)', min: 0 },
+]
 const hex = (c: { toHexString: () => string }) => c.toHexString()
 
 export function EnabledFeaturesPanel({ d, update, open, onToggle }: { d: DisplayType; update: (fn: (d: DisplayType) => DisplayType) => void; open: boolean; onToggle: () => void }) {
@@ -76,13 +82,25 @@ export function EnabledFeaturesPanel({ d, update, open, onToggle }: { d: Display
             {available && on && f.key === 'vision_ai' && (
               <SubSettings>
                 <Field label="Mode" htmlFor="visionMode">
-                  <Select id="visionMode" className="w-full" value={(featureConfig(d, 'vision_ai').mode as string) || VISION_MODES[0]}
+                  <Select id="visionMode" className="w-full" value={VISION_MODES.includes(featureConfig(d, 'vision_ai').mode as string) ? (featureConfig(d, 'vision_ai').mode as string) : VISION_MODES[0]}
                     onChange={(v) => update((t) => withFeature(t, 'vision_ai', { mode: v }))} options={VISION_MODES.map((m) => ({ value: m, label: m }))} />
                 </Field>
                 <Field label="Detection preset" htmlFor="visionPreset">
                   <Select id="visionPreset" className="w-full" value={(featureConfig(d, 'vision_ai').preset as string) || 'Balanced'}
                     onChange={(v) => update((t) => withFeature(t, 'vision_ai', { preset: v, ...DETECTION_PRESETS[v] }))} options={Object.keys(DETECTION_PRESETS).map((k) => ({ value: k, label: k }))} />
                 </Field>
+                {featureConfig(d, 'vision_ai').preset === 'Custom' && (
+                  <div className="col-span-2 grid grid-cols-2 gap-3" role="group" aria-label="Advanced settings">
+                    <div className="col-span-2 text-sm font-medium">Advanced settings</div>
+                    {VISION_CUSTOM_FIELDS.map((cf) => (
+                      <Field key={cf.key} label={cf.label}>
+                        <InputNumber aria-label={cf.label} className="w-full" min={cf.min} precision={0}
+                          value={(featureConfig(d, 'vision_ai')[cf.key] as number | undefined) ?? DETECTION_PRESETS.Balanced[cf.key]}
+                          onChange={(v) => update((t) => withFeature(t, 'vision_ai', { [cf.key]: Number(v ?? cf.min) }))} />
+                      </Field>
+                    ))}
+                  </div>
+                )}
               </SubSettings>
             )}
           </div>

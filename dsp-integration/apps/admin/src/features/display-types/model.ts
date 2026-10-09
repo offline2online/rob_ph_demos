@@ -18,7 +18,7 @@ export const PHANTOM_POSITIONS = ['Top Left', 'Top Right', 'Bottom Left', 'Botto
 export const PHANTOM_SIZING_MODES = ['Fit to Display', 'Fixed', 'Scale to Content']
 export const MOBILE_SITE_TEMPLATES = ['Mobile App', 'Pharmacy - Store Connect', 'PH Walk-Thru']
 export const MIST_ZONES = ['Personalisation Hub Demo - Welcome Zone', 'Front of Store', 'Aisle 3', 'Checkout Queue', 'Service Desk']
-export const VISION_MODES = ['Monitor Passerby & Campaign Engagement Data', 'Passerby Count Only', 'Targeting & Personalisation', 'Engagement Only']
+export const VISION_MODES = ['Monitor Passerby & Campaign Engagement Data', 'Basic Targeting by Gender & Age']
 export const DETECTION_PRESETS: Record<string, Record<string, number>> = {
   Fast: { streamQuality: 480, fps: 10, frameSkip: 7, missThreshold: 10 },
   Balanced: { streamQuality: 640, fps: 15, frameSkip: 5, missThreshold: 15 },
