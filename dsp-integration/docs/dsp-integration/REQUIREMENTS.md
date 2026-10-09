@@ -1777,11 +1777,34 @@ rank differently on each.
   priority order under the slot's picker; drag a row (or use the arrows) to
   reorder; a position badge shows the rank. New lists join at the foot. The
   priority rows only appear once two or more lists are assigned to the slot —
-  with one list there is nothing to order, so none are shown.
+  with one list there is nothing to order, so none are shown
+  (unless the slot also has an Open auction tier; see below).
 - **API**: `assignedTo.buyersListIds` (ordered, no duplicates, each must
   exist); `buyersListId` alone is still accepted.
 - Known edge: a reserve commitment (`type: reserve`) on a waterfall slot
   locks the term of the top tier's list.
+
+#### Deals and the Open auction share one priority order (9 Oct 2026)
+
+A DSP and a buyers list are not mutually exclusive on a slot. The priority order
+is:
+
+1. **Deals** — resolved ahead of time, on lookahead.
+2. **An explicit Open auction separator** — real time, per play.
+3. **The DSPs the Open auction runs across**, or **All DSPs**
+   (`assignedTo.partnerIds` empty with `assignedTo.openAuction` true).
+
+If no deal wins, the slot falls through to the Open auction.
+
+- **Data**: `Slot.openAuction` / `assignedTo.openAuction`. Absent means false, so
+  older slots are unchanged.
+- **Admin**: a DSP group headed **DSPs (open auction)**, starting with **All
+  DSPs**. All DSPs and named DSPs are alternatives. Picking one never clears
+  deals, and adding a deal never clears DSPs.
+- **Still exclusive**: named advertisers and the whitelist clear deals and the
+  Open auction (the API answers 400).
+- **Not yet in the exchange**: real-time Open auction fallthrough for a window
+  no deal wins (tracked on a sibling ticket).
 
 ### The global deal — one deal ID for all open inventory (8 Oct 2026)
 
