@@ -248,10 +248,10 @@ export const COMPANY_FEATURE_AVAILABILITY: Record<FeatureKey, boolean> = {
   in_store_radio: false, qr_control: true, proximity_mist: true, ai_agent_playback: false, vision_ai: true,
 }
 export type FeatureKey = 'in_store_radio' | 'qr_control' | 'proximity_mist' | 'ai_agent_playback' | 'vision_ai'
+/* No MIST proximity row: that is set up per store and per display, not on the display type (ticket Rc0LQRuDtHXMHaDsTKeG). */
 export const FEATURES: { key: FeatureKey; icon: string; label: string; short: string; hint: string }[] = [
   { key: 'in_store_radio', icon: 'music_note', label: 'Enable In-Store Radio', short: 'In-Store Radio', hint: 'Synchronised in-store audio.' },
   { key: 'qr_control', icon: 'qr_code_2', label: 'Enable QR Control', short: 'QR Control', hint: 'Renders the pairing QR inside the phantom zone so a customer can pair a device to this surface.' },
-  { key: 'proximity_mist', icon: 'sensors', label: 'Enable Proximity based Personalisation (using MIST)', short: 'MIST', hint: 'Triggers personalisation from a MIST zone or vBeacon rather than a scan.' },
   { key: 'ai_agent_playback', icon: 'smart_toy', label: 'Allow AI-Agents to Control Campaign Playback', short: 'AI Agent', hint: 'A connected AI Agent sees every Active, AI-Agent-Enabled campaign assigned to this display and can trigger playback. Campaigns without that flag stay invisible to the agent.' },
   { key: 'vision_ai', icon: 'visibility', label: 'Enable Vision/AI (BETA)', short: 'Vision/AI', hint: 'On-device passerby insight and person match. Emits confidence-scored attributes.' },
 ]

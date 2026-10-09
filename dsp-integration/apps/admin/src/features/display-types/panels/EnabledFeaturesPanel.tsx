@@ -11,7 +11,7 @@ import { InfoTip, WithTip } from '../../../shared/InfoTip'
 import { SummaryChip } from '../../../shared/SummaryChip'
 import { T } from '../../../theme/phTheme'
 import {
-  COMPANY_FEATURE_AVAILABILITY, DETECTION_PRESETS, FEATURES, MIST_ZONES, MOBILE_SITE_TEMPLATES, VISION_MODES,
+  COMPANY_FEATURE_AVAILABILITY, DETECTION_PRESETS, FEATURES, MOBILE_SITE_TEMPLATES, VISION_MODES,
   featureConfig, featureOn, featuresSummary, qr, withFeature, withQr, type FeatureKey,
 } from '../model'
 import { TIPS } from '../tooltips'
@@ -28,7 +28,7 @@ export function EnabledFeaturesPanel({ d, update, open, onToggle }: { d: Display
     update((t) => (key === 'qr_control' ? withQr(t, (x) => ({ ...x, enabled: on })) : withFeature(t, key, { enabled: on })))
   /* Website and Mobile App keep QR Control (Phantom Zone/QR Control "as
      today") but hide every other feature — they have no physical display
-     for in-store radio, MIST proximity or on-device Vision/AI to run on
+     for in-store radio or on-device Vision/AI to run on
      (ticket, 28 Sep 2026). */
   const visibleFeatures = hasStructuralFeatures(d.touchPoint) ? FEATURES : FEATURES.filter((f) => f.key === 'qr_control')
 
@@ -70,18 +70,6 @@ export function EnabledFeaturesPanel({ d, update, open, onToggle }: { d: Display
                 <Field label="Mobile site template" htmlFor="mobileSiteTemplate">
                   <Select id="mobileSiteTemplate" className="w-full" value={q.mobileSiteTemplate || MOBILE_SITE_TEMPLATES[0]}
                     onChange={(v) => update((t) => withQr(t, (x) => ({ ...x, mobileSiteTemplate: v })))} options={MOBILE_SITE_TEMPLATES.map((m) => ({ value: m, label: m }))} />
-                </Field>
-              </SubSettings>
-            )}
-            {available && on && f.key === 'proximity_mist' && (
-              <SubSettings>
-                <Field label="Mode" htmlFor="mistMode">
-                  <Select id="mistMode" className="w-full" value={(featureConfig(d, 'proximity_mist').mode as string) || 'zone'}
-                    onChange={(v) => update((t) => withFeature(t, 'proximity_mist', { mode: v }))} options={[{ value: 'zone', label: 'Zone' }, { value: 'vbeacon', label: 'vBeacon' }]} />
-                </Field>
-                <Field label="Zone" htmlFor="mistZone">
-                  <Select id="mistZone" className="w-full" value={(featureConfig(d, 'proximity_mist').zone as string) || MIST_ZONES[0]}
-                    onChange={(v) => update((t) => withFeature(t, 'proximity_mist', { zone: v }))} options={MIST_ZONES.map((z) => ({ value: z, label: z }))} />
                 </Field>
               </SubSettings>
             )}
