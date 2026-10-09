@@ -52,6 +52,18 @@ describe('Advertisers (admin only, spec §3)', () => {
     expect(((await app.inject({ method: 'GET', url: '/api/admin/v1/advertisers' })).json().items as { advertiserId: string }[]).some((a) => a.advertiserId === 'acme-foods')).toBe(false)
   })
 
+  it('holds a slot for a direct advertiser from Available Inventory’s Assigned to', async () => {
+    const app = buildApp(await testContext())
+    expect((await app.inject({ method: 'POST', url: '/api/admin/v1/advertisers/direct', payload: { name: 'Acme Foods' } })).statusCode).toBe(201)
+    const save = (advertisers: string[]) => app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, assignedTo: { partnerIds: [], advertisers, whitelistOnly: false } }] } })
+    const res = await save(['Acme Foods'])
+    expect(res.statusCode).toBe(200)
+    expect(res.json().items[0].assignedTo).toMatchObject({ advertisers: ['Acme Foods'], partnerIds: [], openAuction: false })
+    /* Alongside a DSP advertiser too; an unknown name is still refused. */
+    expect((await save(['Acme Foods', 'Nestlé'])).json().items[0].assignedTo).toMatchObject({ advertisers: ['Acme Foods', 'Nestlé'], partnerIds: ['p_google'] })
+    expect((await save(['Nobody Ltd'])).statusCode).toBe(400)
+  })
+
   it('refuses a duplicate, a blank name, a DSP advertiser, and non-admins', async () => {
     const app = buildApp(await testContext())
     const post = (name: unknown) => app.inject({ method: 'POST', url: '/api/admin/v1/advertisers/direct', payload: { name } })

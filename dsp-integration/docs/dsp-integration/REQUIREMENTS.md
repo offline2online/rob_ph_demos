@@ -770,7 +770,9 @@ settings. Wherever a DSP name would accompany an advertiser it reads
 **"Name (Direct)"**: the Via column, the Assigned to options, and the booking
 schedule (its advertiser filter, offered only when no DSP is picked, and its
 tiles). A DSP seat of the same name wins, so one advertiser is never listed
-twice.
+twice. Picking one in a slot's Assigned to holds that slot for it and saves
+like a DSP advertiser (no DSP comes along, since it has none); before
+9 Oct 2026 the save was refused as "not an advertiser on any connected DSP".
 
 **Admin and marketing users both see it** (Rob, 20 Sep): marketing reads it,
 and only an admin changes approval, pricing, what a position is assigned to

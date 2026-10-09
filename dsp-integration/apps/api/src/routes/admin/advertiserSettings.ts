@@ -257,6 +257,8 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
       const maxPlayLengthDefaults = new Map<string, number | null>()
       const names = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string').map((x) => x.trim()).filter(Boolean) : [])
 
+      /* Direct advertisers (no DSP) can be held on a slot too. */
+      const directNames = (await ctx.company.directAdvertisers()).map((d) => d.name)
       for (const [i, r] of rows.entries()) {
         const f = (k: string) => `items[${i}].${k}`
         const dt = typeof r.displayTypeId === 'string' ? await ctx.displayTypes.get(r.displayTypeId) : null
@@ -270,7 +272,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         /* The ordered waterfall (7 Oct 2026); an older client sends just buyersListId. Duplicates are kept so validation can name them. */
         const tiers = Array.isArray(raw.buyersListIds) ? names(raw.buyersListIds) : typeof raw.buyersListId === 'string' && raw.buyersListId ? [raw.buyersListId] : []
         const assigned: Assigned = { partnerIds: names(raw.partnerIds), advertisers: names(raw.advertisers), whitelistOnly: raw.whitelistOnly === true, buyersListId: tiers[0] ?? null, buyersListIds: tiers, openAuction: raw.openAuction === true }
-        const bad = await validateAssigned(assigned, (k) => f(`assignedTo.${k}`), partners, def ? assignedOf(def) : { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: null, buyersListIds: [], openAuction: false }, ctx.buyersLists)
+        const bad = await validateAssigned(assigned, (k) => f(`assignedTo.${k}`), partners, def ? assignedOf(def) : { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: null, buyersListIds: [], openAuction: false }, ctx.buyersLists, directNames)
         errors.push(...bad)
 
         /* The global deal flag (8 Oct 2026): omitted keeps the slot's, so a client that predates it never changes it. */
