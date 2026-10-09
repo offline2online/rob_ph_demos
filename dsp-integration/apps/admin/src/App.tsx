@@ -87,14 +87,14 @@ function featureRoutes(flags: Flags): RouteObject[] {
           /* The tip that used to sit on the Enable DSP Integration switch now
              explains the whole section from its page title (same ticket). */
           handle: { title: 'DSP Integration', tip: SWITCH_TIP } satisfies RouteHandle,
-          element: <DspIntegrationLayout />,
+          element: <DspIntegrationLayout changeHistory={flags.changeHistory === true} />,
           children: [
             /* Exchange settings until the exchange is published, then Advertiser settings (Rob, 20 Sep). */
             { index: true, element: <DspIndex /> },
             { path: 'exchange', element: <ExchangeSettings /> },
             { path: 'advertiser-settings', element: <AdvertiserSettings /> },
             { path: 'targeting-variables', element: <SharedTargetingVariables /> },
-            { path: 'change-history', element: <ChangeHistory /> },
+            ...(flags.changeHistory ? [{ path: 'change-history', element: <ChangeHistory /> }] : []),
             { path: 'partners/:id', element: <PartnerRoute /> },
             { path: 'add/:provider', element: <AddPartnerRoute /> },
           ],

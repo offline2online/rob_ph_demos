@@ -105,7 +105,7 @@ export const useSection = () => {
 const settingsInput = (s: AdvertiserSettings): AdvertiserSettingsInput => s
 const exchangeInput = ({ enabled, organisation, domain, sellerId, contactEmail, globalDealEnabled }: ExchangeInput): ExchangeInput => ({ enabled: !!enabled, organisation, domain, sellerId, contactEmail, globalDealEnabled: !!globalDealEnabled })
 
-function Section({ partners, settings, exchange, published, variables }: { partners: Partner[]; settings: AdvertiserSettings; exchange: ExchangeInput; published: boolean; variables: SharedVariable[] }) {
+function Section({ partners, settings, exchange, published, variables, changeHistory }: { changeHistory: boolean; partners: Partner[]; settings: AdvertiserSettings; exchange: ExchangeInput; published: boolean; variables: SharedVariable[] }) {
   const { message } = App.useApp()
   const qc = useQueryClient()
   const saved = useMemo<SectionDraft>(
@@ -158,7 +158,7 @@ function Section({ partners, settings, exchange, published, variables }: { partn
 
   return (
     <SectionContext.Provider value={{ draft, saved, update, partners, settings, variables, published, setShowSaveBar }}>
-      <ListPageLayout list={<DspList />}>
+      <ListPageLayout list={<DspList changeHistory={changeHistory} />}>
         <Outlet />
         {showSaveBar && <SaveBar dirty={dirty} saving={saving} onSave={onSave} onCancel={reset} />}
       </ListPageLayout>
@@ -175,7 +175,7 @@ export function DspIndex() {
   return <Navigate to={published ? 'advertiser-settings' : 'exchange'} replace />
 }
 
-export function DspIntegrationLayout() {
+export function DspIntegrationLayout({ changeHistory = false }: { changeHistory?: boolean }) {
   const { pathname } = useLocation()
   const partners = usePartners(true)
   const settings = useAdvertiserSettings(true)
@@ -187,5 +187,5 @@ export function DspIntegrationLayout() {
      a bookmark to a DSP page lands on Exchange settings. Nothing is deleted. */
   if (!exchange.data.published && pathname !== PATHS.exchange && pathname !== '/dsp-integration') return <Navigate to={PATHS.exchange} replace />
   /* Keyed by page: leaving a page (after confirming) starts from the saved values. */
-  return <Section key={pathname} partners={partners.data} settings={settings.data} exchange={ex} published={exchange.data.published} variables={variables.data} />
+  return <Section key={pathname} partners={partners.data} settings={settings.data} exchange={ex} published={exchange.data.published} variables={variables.data} changeHistory={changeHistory} />
 }
