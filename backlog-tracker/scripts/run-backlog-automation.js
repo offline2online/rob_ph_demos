@@ -1372,6 +1372,91 @@ function readTrainTestGate(deployBranch) {
   return { head, ...trainTestGate(checks) };
 }
 
+// ── Auto-eject the ticket that turned the train red ─────────────────────────
+// Each ticket's train tests run on its own commit (e2e-quick's per-commit
+// dispatch group), so a red train names its culprit: the first ticket whose
+// own run failed while everything before it on the train passed. On 8 Oct
+// 2026 such a ticket (booking schedule plays-per-day) held five approved
+// tickets for an hour until someone noticed. If the culprit is still in
+// Ready for Testing — nobody has approved it — this does exactly what a
+// person's "Failed testing" click does (back to Backlog + revertRequested,
+// so processRevertFromTrain takes its commits off the branch and the train
+// is green again) and rebuilds it once with the failing run on its notes.
+// An approved culprit is never ejected: that is a person's call, and the
+// deploy gate already holds the train for it.
+//
+// Pure, for test/train-tests.test.js.
+//   order: the train's commits, oldest first
+//   cards: the train's cards ({ id, status, deployCommit })
+//   runs:  { [sha]: newest real run on that commit ({ status, conclusion }) }
+// Returns the card to eject, or null (nothing red yet, the culprit is
+// approved, or the evidence is incomplete — a run still going or missing).
+function pickRedCulprit(order, cards, runs) {
+  const at = new Map((order || []).map((sha, i) => [sha, i]));
+  const onTrain = (cards || []).filter((c) => c && at.has(c.deployCommit)).sort((a, b) => at.get(a.deployCommit) - at.get(b.deployCommit));
+  for (const card of onTrain) {
+    const r = (runs || {})[card.deployCommit];
+    if (!r || String(r.status).toLowerCase() !== "completed") return null;
+    const concl = String(r.conclusion).toLowerCase();
+    if (concl === "success") continue;
+    if (!["failure", "timed_out"].includes(concl)) return null; // cancelled etc.: no verdict on this ticket
+    return card.status === "ready-for-testing" ? card : null;
+  }
+  return null;
+}
+
+async function ejectRedCulprits() {
+  const cards = await runQuery({
+    from: [{ collectionId: "backlogItems" }],
+    select: { fields: ["projectId", "title", "status", "deployBranch", "deployCommit", "autoRebuilds", "notes", "revertRequested"].map((fieldPath) => ({ fieldPath })) },
+    where: { fieldFilter: { field: { fieldPath: "status" }, op: "IN", value: { arrayValue: { values: [{ stringValue: "ready-for-testing" }, { stringValue: "ready-to-publish" }] } } } },
+  });
+  const byBranch = new Map();
+  for (const c of cards) {
+    if (!c.deployBranch || !c.deployCommit || c.revertRequested) continue;
+    if (!byBranch.has(c.deployBranch)) byBranch.set(c.deployBranch, []);
+    byBranch.get(c.deployBranch).push(c);
+  }
+  for (const [branch, trainCards] of byBranch) {
+    try {
+      const order = JSON.parse(run("gh", ["api", `repos/${REPO}/compare/main...${encodeURIComponent(branch)}`, "-q", "[.commits[].sha]"]) || "[]");
+      for (const t of TRAIN_TEST_WORKFLOWS) {
+        const runs = {};
+        for (const c of trainCards) {
+          const list = JSON.parse(run("gh", ["api", `repos/${REPO}/actions/workflows/${t.workflow}/runs?head_sha=${c.deployCommit}&per_page=10`,
+            "-q", "[.workflow_runs[] | {headSha: .head_sha, status, conclusion, url: .html_url}]"]) || "[]");
+          const real = newestRealRun(list);
+          if (real) runs[c.deployCommit] = real;
+        }
+        const culprit = pickRedCulprit(order, trainCards, runs);
+        if (!culprit) continue;
+        const r = runs[culprit.deployCommit];
+        const project = await getProject(culprit.projectId).catch(() => null);
+        const autoRebuild = !!project && (Number(culprit.autoRebuilds) || 0) < 1;
+        const text = `${t.label} (${t.workflow}) failed on this ticket's own commit ${culprit.deployCommit.slice(0, 7)} while everything before it on ${branch} passed: ${r.url || ""}`;
+        const notes = await appendNote(culprit,
+          `Sent back automatically (Failed testing [tests]): ${text}. Its commits are being reverted off the train so the tickets around it can still ship. ` +
+          (autoRebuild ? `A rebuild was started with this failure on its notes — the build must make that check pass before handing the patch back.` : `It was already rebuilt once automatically; a person needs to look at it.`));
+        await patchItem(culprit.id, {
+          status: "backlog",
+          revertRequested: true,
+          lastFailureReason: { category: "tests", text, action: "failed-testing", at: new Date() },
+          notes,
+          updatedAt: new Date().toISOString(),
+          // The rebuild must start from the train WITHOUT this ticket's
+          // commits, so it is queued by processRevertFromTrain once they are
+          // off the branch, not here.
+          ...(autoRebuild ? { autoRebuilds: (Number(culprit.autoRebuilds) || 0) + 1, rebuildAfterRevert: true } : {}),
+        });
+        console.log(`[train-eject] ${branch}: ${culprit.id} turned ${t.workflow} red at ${culprit.deployCommit.slice(0, 7)} — sent back to Backlog and off the train${autoRebuild ? ", rebuild follows the revert" : ""}`);
+        break; // one ejection per branch per run; the next run re-reads the train after the revert
+      }
+    } catch (err) {
+      console.log(`[train-eject] ${branch}: couldn't check for a red culprit (${scrubSecrets(err.message)})`);
+    }
+  }
+}
+
 async function reportTrainTestResults() {
   const cards = await runQuery({
     from: [{ collectionId: "backlogItems" }],
@@ -2492,6 +2577,13 @@ async function processRevertFromTrain(item) {
     notes,
   });
   console.log(`[train-revert] ${item.id}: reverted ${reverted.length} commit(s) off ${deployBranch}`);
+  if (item.rebuildAfterRevert) {
+    // Sent back by ejectRedCulprits: rebuild it now the train is clean.
+    const project = await getProject(item.projectId).catch(() => null);
+    if (project) queueBuildRequest(project, item.id);
+    await patchItem(item.id, { rebuildAfterRevert: false, updatedAt: new Date().toISOString() });
+    console.log(`[train-revert] ${item.id}: rebuild queued after the automatic send-back`);
+  }
   run("git", ["checkout", "main", "--quiet"]);
 }
 
@@ -3992,6 +4084,14 @@ async function main() {
   // for. See the top-level catch below for the "run itself died" case.
   await sweepShippedPatchFiles();
   try {
+    await ejectRedCulprits();
+  } catch (err) {
+    console.log(`[train-eject] failed: ${err.message}`);
+  }
+  // Rebuilds queued by this run's reverts (rebuildAfterRevert) — the earlier
+  // flush ran before the reverts did.
+  await flushBuildRequests();
+  try {
     await reportTrainTestResults();
   } catch (err) {
     // Reporting only — never fail the run over it.
@@ -4047,7 +4147,7 @@ module.exports = {
   // test/train-resume.test.js — GitHub-side cancellations re-run; red trains resume when green
   isInfraCheck, rerunInfraChecks, resumeRedTrains, TRAIN_CI_INFRA_RERUNS,
   // test/train-tests.test.js — console tests run on each train push
-  trainTestFailureTargets, touchesConsoleTests, trainTestsFor, testedHeadOf, nextTrainTestsRed, trainTestGate, newestRealRun,
+  trainTestFailureTargets, touchesConsoleTests, trainTestsFor, testedHeadOf, nextTrainTestsRed, trainTestGate, newestRealRun, pickRedCulprit,
   // test/parallel-builds.test.js — patches built in parallel
   patchBaseFor, dependenciesLanded, buildRequestFields, migrationNumberClashes,
   // test/train-follow-up.test.js — a train waiting on CI starts its own next run

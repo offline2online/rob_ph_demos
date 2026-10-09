@@ -274,7 +274,15 @@ What the train changes:
   holds with `trainHold: "tests-red"` ("Tests failing") and carries on by
   itself once a fix on the train passes, with no second click. e2e-quick
   runs dispatched per ticket no longer cancel each other, so a red run
-  names the ticket that broke it. Tests: `test/train-tests.test.js`.
+  names the ticket that broke it. **And the culprit is sent back by
+  itself** (`ejectRedCulprits`, 9 Oct 2026): the first ticket whose own run
+  failed while everything before it passed, if it is still in Ready for
+  Testing, gets exactly what a person's Failed testing click does — back to
+  Backlog, `revertRequested`, its commits reverted off the branch — and is
+  rebuilt once (`rebuildAfterRevert`, after the revert, so the rebuild starts
+  from a clean train) with the failing run on its notes. An approved
+  culprit is never ejected; the deploy gate holds the train for a person.
+  Tests: `test/train-tests.test.js`.
 - **Reject** (`processRevertFromTrain`) — Failed testing on a card writes
   `revertRequested`, and the automation reverts that card's commits back
   off the branch. **A card in Backlog must never have live commits on a
