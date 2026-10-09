@@ -2305,19 +2305,22 @@ retailer switch DSP integration on and off.
 
 - **Off the first time a retailer lands on DSP Integration.** Switched off,
   the switch is all Exchange settings shows, and the section's list shows
-  only Exchange settings.
+  Exchange settings, Shared Targeting Variables and Change history — not Advertiser settings or the partner DSPs (narrowed 9 Oct
+  2026: the other pages are still used by direct advertisers).
 - **Switching on** shows the seller-of-record fields below. Once they are
   saved and complete, `sellers.json` is published and the rest of the
-  section appears: Advertiser settings, Shared Targeting Variables and the
-  DSP pages. Until then, a link to one of those pages opens Exchange
-  settings instead.
+  section appears: Advertiser settings and the DSP pages. Until then, a link
+  to one of those pages opens Exchange settings instead.
 - **Like every toggle in the section, it is an unsaved change until Save
   changes.** Switching it off before saving also drops unsaved edits to the
   fields it hides.
 - **While it is off:**
-  - Advertisers / Inventory is hidden from the navigation, and a link to it
-    (or to Campaign schedule — see below) opens the first page instead. DSP
-    Integration stays, because the switch is there.
+  - Campaign schedule and its Campaign status tab are hidden, and a link
+    to them opens the first page instead. **Advertisers / Inventory stays
+    in the navigation and opens** (9 Oct 2026): direct advertisers, not
+    going through a DSP, use it. DSP Integration stays too, as do Shared
+    Targeting Variables and Change history inside it; only Advertiser
+    settings and the partner DSPs are hidden.
   - No DSP is sent bid requests; the scheduled auction doesn't run.
   - The Partner API and `sellers.json` answer 404, exactly as with the
     build's feature flag off.
@@ -3764,9 +3767,10 @@ playback analytics.**
 ### DSP integration and exchange
 
 - **DSP integration switch** (Rob, 24 Sep 2026): **Enable DSP Integration**
-  at the top of Exchange settings, off at first; while off, Advertisers /
-  Inventory (and, from there, Campaign schedule's Campaign status tab) is
-  hidden, no bid requests are sent, the Partner API and `sellers.json`
+  at the top of Exchange settings, off at first; while off, only
+  Advertiser settings, the partner DSPs and Campaign schedule (with its
+  Campaign status tab) are hidden — Advertisers / Inventory and Shared
+  Targeting Variables stay (9 Oct 2026) — no bid requests are sent, the Partner API and `sellers.json`
   answer 404, and nothing is deleted. What the switch is for is explained
   by the tooltip on the **DSP Integration page title**, not beside the
   switch (ticket pM0Bc2pO8WnxeV9UpI8e, 28 Sep 2026); Display Types Details
