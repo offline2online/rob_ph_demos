@@ -1716,6 +1716,8 @@ export interface components {
             buyersListIds?: string[];
             /** @description The same lists by name */
             buyersListNames?: string[];
+            /** @description Whether the slot has an explicit Open auction tier below its deals (Rob, 9 Oct 2026). Deals (buyersListIds, in priority order) resolve ahead of time; the Open auction tier sits below them and runs across partnerIds, or across every connected DSP when partnerIds is empty ("All DSPs"). Without a deal this is simply "the slot is offered to the open auction". Optional on write (omitted: false when the slot is on a deal, true otherwise). Mutually exclusive with named advertisers and whitelistOnly, like the deals. */
+            openAuction?: boolean;
         };
         /**
          * @description One invited buyer on a buyers list (deal): a seat (advertiser) that a
@@ -2499,6 +2501,8 @@ export interface components {
                 buyersListId?: string | null;
                 /** @description The slot's buyers lists in priority order (waterfall); buyersListId is the first. */
                 buyersListIds?: string[];
+                /** @description The slot has an explicit Open auction tier below its deals, across partnerIds (empty = all connected DSPs). Set from Advertisers / Inventory. */
+                openAuction?: boolean;
                 storeScope?: string | null;
                 quota?: number | null;
                 /**

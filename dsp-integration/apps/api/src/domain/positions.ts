@@ -92,7 +92,7 @@ export const globalDealSuppressedBy = (def: Slot): Exclude<Assignment, 'rtb'> | 
 }
 export const slotInGlobalDeal = (def: Slot) => def.inGlobalDeal !== false
 /* Nothing assigned and no global-deal membership: the slot is held back, not open to every DSP. */
-export const isUnassigned = (def: Slot) => assignmentOf(def) === 'rtb' && assignedCached(def).partnerIds.length === 0 && !slotInGlobalDeal(def)
+export const isUnassigned = (def: Slot) => assignmentOf(def) === 'rtb' && assignedCached(def).partnerIds.length === 0 && !assignedCached(def).openAuction && !slotInGlobalDeal(def)
 /* Is this position carried on the global deal, given the instance master switch? */
 export const inGlobalDeal = (def: Slot, masterOn: boolean) => masterOn && slotInGlobalDeal(def) && globalDealSuppressedBy(def) === null
 /* One tier of a position's buyers-list waterfall (7 Oct 2026): the position

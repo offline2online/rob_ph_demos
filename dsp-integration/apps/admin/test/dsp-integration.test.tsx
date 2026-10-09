@@ -698,6 +698,19 @@ describe('Advertisers / Inventory', () => {
     expect(await within(table).findByText('24,960')).toBeInTheDocument()
   })
 
+  /* Ticket Y3GzIlj2goQMJaGUwTey (9 Oct 2026): deals above an explicit Open auction, the DSPs it runs across below it. */
+  it('shows an Open auction separator under the deals, with the DSP or All DSPs beneath it', async () => {
+    const inv = ADVERTISER_PAGE['/api/admin/v1/available-inventory']
+    const lists = [{ id: 'bl_1', name: 'Pharma brands', description: '', invitedBuyers: [], invitedCategories: [], targeting: [], activeFrom: null, activeTo: null, dealType: 'private_auction' }]
+    const assigned = { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: 'bl_1', buyersListIds: ['bl_1'], openAuction: true }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...ADVERTISER_PAGE, '/api/admin/v1/buyers-lists': { items: lists }, '/api/admin/v1/available-inventory': { ...inv, items: [{ ...inv.items[0], assignedTo: assigned }] } })))
+    renderAt('/advertisers')
+    const inventory = await screen.findByLabelText('Available Inventory')
+    const cell = within(inventory).getAllByLabelText('Menu Board — Long Format slot 2: assigned to')[0].closest('.ag-cell') as HTMLElement
+    expect(within(cell).getByRole('separator', { name: 'Open auction' })).toBeInTheDocument()
+    expect(within(within(cell).getByRole('list', { name: /open auction DSPs/ })).getByText('All DSPs')).toBeInTheDocument()
+  }, slow(45000))
+
   /* Ticket, 30 Sep 2026: a slot with no audience score is flagged in place; it can still be saved. */
   it('warns on a slot with no audience score', async () => {
     const reason = 'No audience score yet.'
@@ -758,7 +771,7 @@ describe('Advertisers / Inventory', () => {
     /* Only the slot that changed is sent. */
     await waitFor(() => expect(saved()).toEqual({ items: [{
       displayTypeId: 'menu_board', slot: 2,
-      assignedTo: { partnerIds: ['p_google'], advertisers: ['Nestlé'], whitelistOnly: false, buyersListId: null, buyersListIds: [] },
+      assignedTo: { partnerIds: ['p_google'], advertisers: ['Nestlé'], whitelistOnly: false, buyersListId: null, buyersListIds: [], openAuction: false },
       interactiveReservePrice: null, reservePriceDefault: null, billingUnitHoursDefault: null, maxCampaignsDefault: null, maxPlayLengthSecDefault: null,
     }] }))
     /* This test opens two AntD Selects, drives a save round-trip and waits

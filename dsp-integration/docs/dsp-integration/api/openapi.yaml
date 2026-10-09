@@ -2180,6 +2180,7 @@ components:
         buyersListName: {type: [string, 'null'], description: The same buyers list by name, for display.}
         buyersListIds: {type: array, items: {type: string}, description: 'The buyers lists assigned to this slot in priority order (a waterfall): the first is tried first and the exchange falls through to the next only when the tier above yields no winning bid at its floor. Priority belongs to the slot, so one list may rank differently on each slot it is assigned to. One list per tier. buyersListId is the first of these. Optional on write (omitted: buyersListId alone).'}
         buyersListNames: {type: array, items: {type: string}, description: The same lists by name, in the same order.}
+        openAuction: {type: boolean, description: 'Whether the slot has an explicit Open auction tier below its deals (Rob, 9 Oct 2026). Deals (buyersListIds, in priority order) resolve ahead of time; the Open auction tier sits below them and runs across partnerIds, or across every connected DSP when partnerIds is empty ("All DSPs"). Without a deal this is simply "the slot is offered to the open auction". Optional on write (omitted: false when the slot is on a deal, true otherwise). Mutually exclusive with named advertisers and whitelistOnly, like the deals.'}
     InvitedBuyer:
       type: object
       description: |
@@ -3018,6 +3019,9 @@ components:
                 type: array
                 description: The slot's buyers lists in priority order (waterfall); buyersListId is the first.
                 items: {type: string}
+              openAuction:
+                type: boolean
+                description: The slot has an explicit Open auction tier below its deals, across partnerIds (empty = all connected DSPs). Set from Advertisers / Inventory.
               storeScope: {type: [string, 'null']}
               quota: {type: [integer, 'null']}
               salesLocked:

@@ -8,7 +8,7 @@ import { App, Button, InputNumber, Select, Spin, Switch } from 'antd'
 import { Tip } from '../../shared/Tip'
 import { cpmKindHint, cpmSummary, sourceLabel } from './effectiveTerm'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
-import { INTERACTIVE_ENABLED, RESERVE_PRICE_TIP, PLATFORM_DEFAULT_BILLING_UNIT_HOURS, DEFAULT_MAX_CAMPAIGNS, MAX_MAX_CAMPAIGNS, MAX_MAX_PLAY_LENGTH_SEC, MIN_MAX_CAMPAIGNS, MIN_MAX_PLAY_LENGTH_SEC, SLOT_OWNERS, assignedLabels, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type Session } from '@ph-dsp/types'
+import { INTERACTIVE_ENABLED, RESERVE_PRICE_TIP, PLATFORM_DEFAULT_BILLING_UNIT_HOURS, DEFAULT_MAX_CAMPAIGNS, MAX_MAX_CAMPAIGNS, MAX_MAX_PLAY_LENGTH_SEC, MIN_MAX_CAMPAIGNS, MIN_MAX_PLAY_LENGTH_SEC, SLOT_OWNERS, ALL_DSPS_LABEL, assignedLabels, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type Session } from '@ph-dsp/types'
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, ApiRequestError } from '../../api/client'
@@ -242,13 +242,15 @@ const GLOBAL_CHIP = '__global_deal__'
 const GLOBAL_CHIP_LABEL = 'Included in global deals'
 /* The slot's buyers lists in priority order (7 Oct 2026): the waterfall. */
 const tiersOf = (a: { buyersListId: string | null; buyersListIds?: string[] }): string[] => a.buyersListIds ?? (a.buyersListId ? [a.buyersListId] : [])
+/* "All DSPs" (9 Oct 2026): the open auction across every connected DSP, an explicit choice rather than an empty list. */
+const ALL_DSPS = 'dsp:__all__'
 const assignedValues = (a: Omit<AssignedTo, 'partnerNames' | 'buyersListName' | 'buyersListNames'>) =>
-  [...a.partnerIds.map((id) => `dsp:${id}`), ...a.advertisers.map((n) => `adv:${n}`), ...(a.whitelistOnly ? [WHITELIST] : []), ...tiersOf(a).map((id) => `deal:${id}`)]
+  [...a.partnerIds.map((id) => `dsp:${id}`), ...(a.openAuction && !a.partnerIds.length ? [ALL_DSPS] : []), ...a.advertisers.map((n) => `adv:${n}`), ...(a.whitelistOnly ? [WHITELIST] : []), ...tiersOf(a).map((id) => `deal:${id}`)]
 
 /* The waterfall as rows in priority order: drag a row (or use the arrows) to
    reorder, top row is tried first. Priority belongs to this slot's
    assignment, so the same list can rank differently on another slot. */
-function PriorityList({ label, ids, names, cpms, canEdit, onChange }: { label: string; ids: string[]; names: Map<string, string>; cpms: Map<string, { summary: string | null; hint: string; source: string }>; canEdit: boolean; onChange: (next: string[]) => void }) {
+function PriorityList({ label, ids, names, cpms, canEdit, onChange, openAuction, openDsps }: { label: string; ids: string[]; names: Map<string, string>; cpms: Map<string, { summary: string | null; hint: string; source: string }>; canEdit: boolean; onChange: (next: string[]) => void; openAuction: boolean; openDsps: string[] }) {
   const [dragging, setDragging] = useState<number | null>(null)
   const [showAll, setShowAll] = useState(false)
   const LIMIT = 5
@@ -258,12 +260,13 @@ function PriorityList({ label, ids, names, cpms, canEdit, onChange }: { label: s
     next.splice(to, 0, ...next.splice(from, 1))
     onChange(next)
   }
-  /* Ordering only means something with two or more lists (ticket fbJdWqr5SwcInFFofwCc, 8 Oct 2026). */
-  if (ids.length < 2) return null
+  /* Ordering only means something with two or more lists (ticket fbJdWqr5SwcInFFofwCc, 8 Oct 2026), unless an
+     Open auction sits below the deals: then the fallthrough is shown even for one deal (9 Oct 2026). */
+  if (ids.length < 2 && !(ids.length === 1 && openAuction)) return null
   const hidden = showAll || ids.length <= LIMIT ? 0 : ids.length - LIMIT
   return (
     <div className="mt-2" role="list" aria-label={`${label}: buyers lists in priority order`}>
-      <div style={{ fontSize: 12, color: T.muted }} className="mb-1">Priority: tried top to bottom</div>
+      <div style={{ fontSize: 12, color: T.muted }} className="mb-1">{openAuction ? 'Deals: tried top to bottom, resolved ahead of time' : 'Priority: tried top to bottom'}</div>
       {ids.map((id, i) => i >= ids.length - hidden ? null : (
         <div
           key={id}
@@ -292,6 +295,22 @@ function PriorityList({ label, ids, names, cpms, canEdit, onChange }: { label: s
         </div>
       ))}
       {hidden > 0 && <Button type="link" size="small" onClick={() => setShowAll(true)}>+{hidden} more</Button>}
+      {openAuction && (
+        /* The fallthrough, spelled out: deals above, the open auction (resolved in real time, per play) and the
+           DSPs it runs across below. */
+        <div role="separator" aria-label="Open auction" className="mt-1">
+          <div className="flex items-center gap-2" style={{ fontSize: 12, color: T.muted, borderTop: '1px dashed #d9d9d9', paddingTop: 4 }}>
+            <Icon name="south" size={14} /><span style={{ fontWeight: 500, color: T.text }}>Open auction</span><span>if no deal wins · real time, per play</span>
+          </div>
+          <div role="list" aria-label={`${label}: open auction DSPs`} className="mt-1">
+            {openDsps.map((n) => (
+              <div key={n} role="listitem" className="mb-1 flex items-center gap-2" style={{ border: '1px solid #d9d9d9', borderRadius: 6, padding: '2px 8px', background: '#fff' }}>
+                <Icon name="gavel" size={14} /><span className="flex-1 truncate" style={{ fontSize: 13 }}>{n}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -317,7 +336,7 @@ function AssignedCell({ data, context }: IP) {
   const suppressed = a.advertisers.length ? 'held for named advertisers' : a.whitelistOnly ? 'whitelist-only' : tiersOf(a).length ? 'on a buyers list' : null
   const globalOn = e.inGlobalDeal !== false
   const options = [
-    { label: 'DSPs', options: c.dsps.map((d) => ({ value: `dsp:${d.partnerId}`, label: d.name })) },
+    { label: 'DSPs (open auction)', options: [{ value: ALL_DSPS, label: ALL_DSPS_LABEL, note: 'Open auction across every connected DSP' }, ...c.dsps.map((d) => ({ value: `dsp:${d.partnerId}`, label: d.name }))] },
     {
       /* Directly underneath DSPs, not after Advertisers (Rob, 23 Sep —
          failed testing, "place the new buyers list directly underneath the
@@ -366,28 +385,22 @@ function AssignedCell({ data, context }: IP) {
           return
         }
         const dealAdded = added.find((v) => v.startsWith('deal:'))
-        /* A position is held for named advertisers, open to the whitelist,
-           or restricted to a buyers list's private auction — never more
-           than one: the newer choice wins (Rob, 23 Sep). */
-        if (dealAdded) {
-          /* Added to the foot of the waterfall; reorder by dragging. */
-          const ids = [...tiersOf(a).filter((id) => next.includes(`deal:${id}`)), dealAdded.slice(5)]
-          c.set(slotKey(data), { ...flag, assignedTo: { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: ids[0], buyersListIds: ids } })
-          return
-        }
-        /* Removing a pill just drops that tier; the rest keep their order. */
-        const keptTiers = tiersOf(a).filter((id) => next.includes(`deal:${id}`))
-        if (keptTiers.length && !added.length) {
-          c.set(slotKey(data), { ...flag, assignedTo: { ...a, buyersListId: keptTiers[0], buyersListIds: keptTiers } })
-          return
-        }
-        const advertisers = added.includes(WHITELIST) ? [] : next.filter((v) => v.startsWith('adv:')).map((v) => v.slice(4))
-        const whitelistOnly = advertisers.length ? false : next.includes(WHITELIST)
-        const partnerIds = next.filter((v) => v.startsWith('dsp:')).map((v) => v.slice(4)).filter((id) => dspNames.has(id))
-        c.set(slotKey(data), { ...flag, assignedTo: { partnerIds, advertisers, whitelistOnly, buyersListId: null, buyersListIds: [] } })
+        /* Deals sit above the Open auction in one priority order (9 Oct 2026), so a DSP and a buyers list can share
+           a slot. What still excludes the deals is a hold for named advertisers or the whitelist: the newer choice
+           wins (Rob, 23 Sep). A new deal goes to the foot of the waterfall; reorder by dragging. */
+        const holdAdded = added.some((v) => v.startsWith('adv:') || v === WHITELIST)
+        const dealIds = holdAdded ? [] : [...tiersOf(a).filter((id) => next.includes(`deal:${id}`)), ...(dealAdded ? [dealAdded.slice(5)] : [])]
+        const advertisers = dealIds.length || added.includes(WHITELIST) ? [] : next.filter((v) => v.startsWith('adv:')).map((v) => v.slice(4))
+        const whitelistOnly = dealIds.length || advertisers.length ? false : next.includes(WHITELIST)
+        /* "All DSPs" and named DSPs are alternatives: the newer choice wins. */
+        const named = next.filter((v) => v.startsWith('dsp:') && v !== ALL_DSPS).map((v) => v.slice(4)).filter((id) => dspNames.has(id))
+        const allOn = next.includes(ALL_DSPS) && !(added.some((v) => v.startsWith('dsp:') && v !== ALL_DSPS))
+        const partnerIds = added.includes(ALL_DSPS) ? [] : named
+        const openAuction = !advertisers.length && !whitelistOnly && (allOn || partnerIds.length > 0)
+        c.set(slotKey(data), { ...flag, assignedTo: { partnerIds, advertisers, whitelistOnly, buyersListId: dealIds[0] ?? null, buyersListIds: dealIds, openAuction } })
       }}
     />
-    {!c.canEdit || a.partnerIds.length || a.advertisers.length || a.whitelistOnly || tiersOf(a).length || globalOn ? null : (
+    {!c.canEdit || a.partnerIds.length || a.openAuction || a.advertisers.length || a.whitelistOnly || tiersOf(a).length || globalOn ? null : (
       <div style={{ fontSize: 12, color: T.muted }}>Unassigned: not offered to any buyer</div>
     )}
     <PriorityList
@@ -397,6 +410,8 @@ function AssignedCell({ data, context }: IP) {
       cpms={new Map(c.buyersLists.map((l) => [l.id, { summary: cpmSummary(l), hint: cpmKindHint(l.dealType), source: sourceLabel(l.effectiveRateCpm?.source ?? 'none') }]))}
       canEdit={c.canEdit}
       onChange={(ids) => c.set(slotKey(data), { assignedTo: { ...a, buyersListId: ids[0] ?? null, buyersListIds: ids } })}
+      openAuction={a.openAuction === true}
+      openDsps={a.partnerIds.length ? a.partnerIds.map((id) => dspNames.get(id) ?? id) : [ALL_DSPS_LABEL]}
     />
     </>
   )
@@ -669,7 +684,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
         }).concat(edited((p.context as InvCtx).current, p.data).inGlobalDeal !== false ? [GLOBAL_CHIP_LABEL] : []).join(', ') || 'Unassigned'
       },
       ...setColumn<AvailableInventoryRow>('Assigned to', () => [
-        GLOBAL_CHIP_LABEL, 'Unassigned', 'Whitelist only',
+        GLOBAL_CHIP_LABEL, 'Unassigned', 'Whitelist only', ALL_DSPS_LABEL,
         ...(inventory.data?.dsps ?? []).flatMap((d) => [d.name, ...d.advertisers.map((a) => a.name)]),
         ...(buyersLists.data?.items ?? []).map((l) => `Buyers list: ${l.name}`),
       ]),
@@ -969,7 +984,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
         onClose={() => setAddingBuyersListFor(null)}
         onSaved={(list) => {
           qc.invalidateQueries({ queryKey: ['buyers-lists'] })
-          if (addingBuyersListFor) inv.setDraft((cur) => ({ ...(cur ?? {}), [slotKey(addingBuyersListFor)]: { ...edited(invContext, addingBuyersListFor), assignedTo: { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: list.id, buyersListIds: [...tiersOf(edited(invContext, addingBuyersListFor).assignedTo), list.id].filter((x, i, all) => all.indexOf(x) === i) } } }))
+          if (addingBuyersListFor) inv.setDraft((cur) => ({ ...(cur ?? {}), [slotKey(addingBuyersListFor)]: { ...edited(invContext, addingBuyersListFor), assignedTo: { partnerIds: edited(invContext, addingBuyersListFor).assignedTo.partnerIds, advertisers: [], whitelistOnly: false, buyersListId: list.id, buyersListIds: [...tiersOf(edited(invContext, addingBuyersListFor).assignedTo), list.id].filter((x, i, all) => all.indexOf(x) === i), openAuction: edited(invContext, addingBuyersListFor).assignedTo.openAuction } } }))
           setAddingBuyersListFor(null)
         }}
       />
