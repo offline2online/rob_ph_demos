@@ -2957,6 +2957,16 @@ components:
             where it has one), so no slot is unscored. Editing it reaches
             every display that was never overridden. Absent keeps the saved
             value; null clears it.
+        floorCpm:
+          type: [number, 'null']
+          exclusiveMinimum: 0
+          description: |
+            Per-display-type floor (CPM, USD). Null or absent inherits the
+            central floor, resolved at read time (never a copy); a number
+            overrides it for this display type only. Stored for a later user or
+            optimisation agent: no editor writes it in this release. A DSP or
+            buyers-list floor still wins over it, and the resolved floor is
+            never below the central floor.
         defaultVacdSource:
           type: string
           enum: [manual, computer_vision]

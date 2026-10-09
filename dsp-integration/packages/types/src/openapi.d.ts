@@ -2448,6 +2448,14 @@ export interface components {
              */
             defaultVacd?: number | null;
             /**
+             * @description Per-display-type floor price (CPM, USD). Null or absent = inherit the
+             *     central floor, resolved at read time (never a copy). A number is an
+             *     explicit override for this display type only. No editor writes it
+             *     in this release; it is stored for a later user or optimisation
+             *     agent. Never below the central floor when resolved.
+             */
+            floorCpm?: number | null;
+            /**
              * @description Who set the default. `computer_vision` (written by PH Core
              *     through `PUT …/default-vacd`) is counted and overrides a manual
              *     value; `manual` (this editor) is modelled. Set by the server —

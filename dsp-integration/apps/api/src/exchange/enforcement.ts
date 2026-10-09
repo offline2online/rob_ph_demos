@@ -4,7 +4,7 @@
    win. Used by POST /v1/reservations and by the auction for DSP bids. */
 import type { Context } from '../context'
 import { TRANSACTING_CURRENCY } from '../domain/currency'
-import { INTERACTIVE_ENABLED, assignedOf, maxCampaignsOf } from '@ph-dsp/types'
+import { INTERACTIVE_ENABLED, assignedOf, displayTypeFloorCpmOf, maxCampaignsOf } from '@ph-dsp/types'
 import { type PositionRef, assignmentOf } from '../domain/positions'
 import { isInvitedBuyer } from '../domain/buyersLists'
 import { isActiveAt } from '../billing/term'
@@ -123,7 +123,7 @@ export async function baseFloorFor(ctx: Context, scope: FloorScope = {}): Promis
   const company = await ctx.company.get()
   const listId = scope.buyersListId ?? (scope.position && assignmentOf(scope.position.def) === 'deal' ? assignedOf(scope.position.def).buyersListId : undefined)
   const list = listId ? await ctx.buyersLists.get(listId) : null
-  return resolveBaseFloor(company.floorCpm, scope.partner?.bidder.floorCpm, list?.floorCpm)
+  return resolveBaseFloor(company.floorCpm, scope.partner?.bidder.floorCpm, list?.floorCpm, scope.position ? displayTypeFloorCpmOf(scope.position.displayType) : null)
 }
 
 /* The effective floor a bid must clear: the resolved base floor (platform,
