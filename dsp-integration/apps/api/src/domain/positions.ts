@@ -76,6 +76,11 @@ export const isRealtime = (p: PositionRef) => {
   return a === 'rtb' || a === 'whitelist_only'
 }
 
+/* A deal slot with an explicit Open auction tier below its deals (ticket nPLBmjJe7voOxLeU5zrA, 9 Oct 2026): the window is auctioned to the deals as before, and a window that no deal wins falls through to the real-time per-play open auction. */
+export const fallsThroughToOpen = (def: Slot) => assignmentOf(def) === 'deal' && assignedCached(def).openAuction
+/* The slot as its Open auction tier sees it: no deals, so open across its chosen DSPs (partnerIds; none = All DSPs). */
+export const openTierOf = (p: PositionRef): PositionRef => ({ ...p, def: { ...p.def, listMode: 'rtb', buyersListId: null, buyersListIds: [], openAuction: true } })
+
 export type Assignment = 'rtb' | 'whitelist_only' | 'deal' | 'reserved'
 export const assignmentOf = (def: Slot): Assignment => {
   const a = assignedCached(def)
@@ -92,13 +97,13 @@ export const globalDealSuppressedBy = (def: Slot): Exclude<Assignment, 'rtb'> | 
 }
 export const slotInGlobalDeal = (def: Slot) => def.inGlobalDeal !== false
 /* Nothing assigned and no global-deal membership: the slot is held back, not open to every DSP. */
-export const isUnassigned = (def: Slot) => assignmentOf(def) === 'rtb' && assignedCached(def).partnerIds.length === 0 && !slotInGlobalDeal(def)
+export const isUnassigned = (def: Slot) => assignmentOf(def) === 'rtb' && assignedCached(def).partnerIds.length === 0 && !assignedCached(def).openAuction && !slotInGlobalDeal(def)
 /* Is this position carried on the global deal, given the instance master switch? */
 export const inGlobalDeal = (def: Slot, masterOn: boolean) => masterOn && slotInGlobalDeal(def) && globalDealSuppressedBy(def) === null
 /* One tier of a position's buyers-list waterfall (7 Oct 2026): the position
    as if only this list were assigned to it, so every per-deal check (invited
    buyers, deal ID, floor, term) reads that list. */
-export const tierOf = (p: PositionRef, buyersListId: string): PositionRef => ({ ...p, def: { ...p.def, listMode: 'deal', buyersListId, buyersListIds: [buyersListId] } })
+export const tierOf = (p: PositionRef, buyersListId: string): PositionRef => ({ ...p, def: { ...p.def, listMode: 'deal', buyersListId, buyersListIds: [buyersListId], openAuction: false } })
 /* Held for one of these advertisers (case-insensitively). */
 export const heldFor = (def: Slot, name: string) => assignedCached(def).advertisers.some((a) => a.trim().toLowerCase() === name.trim().toLowerCase())
 
@@ -134,9 +139,10 @@ export function callerOf(partner: PartnerRecord, advertiserId: string | undefine
 export function effectivePartnerIds(ctx: Context, def: Slot, partners?: Awaitable<PartnerRecord[]>): Awaitable<string[] | null> {
   const a = assignedCached(def)
   if (a.buyersListIds.length) {
-    /* A waterfall: any tier's invited DSPs may see the position; each tier's own bid request goes only to its own (auction.ts). */
+    /* A waterfall: any tier's invited DSPs may see the position; each tier's own bid request goes only to its own (auction.ts). An Open auction tier below the deals adds its own DSPs (none chosen = All DSPs, so unrestricted). */
+    if (a.openAuction && !a.partnerIds.length) return null
     return andThen(allOf(a.buyersListIds.map((id) => ctx.buyersLists.get(id))), (lists) =>
-      andThen(partners ?? ctx.partners.list(), (all) => [...new Set(lists.flatMap((l) => (l ? invitedPartnerIds(l, all) : [])))]))
+      andThen(partners ?? ctx.partners.list(), (all) => [...new Set([...lists.flatMap((l) => (l ? invitedPartnerIds(l, all) : [])), ...(a.openAuction ? a.partnerIds : [])])]))
   }
   return a.partnerIds.length ? a.partnerIds : null
 }
@@ -149,7 +155,9 @@ export async function advertiserMayBuy(ctx: Context, p: PositionRef, partner: Pa
   const a = assignmentOf(p.def)
   if (a === 'reserved') return heldFor(p.def, name)
   if (a === 'deal') {
-    const lists = await Promise.all(assignedCached(p.def).buyersListIds.map((id) => ctx.buyersLists.get(id)))
+    const open = assignedCached(p.def)
+    if (open.openAuction && (!open.partnerIds.length || open.partnerIds.includes(partner.id))) return true
+    const lists = await Promise.all(open.buyersListIds.map((id) => ctx.buyersLists.get(id)))
     return lists.some((list) => !!list && isActiveAt(list, ctx.clock().toISOString()) && isInvitedBuyer(list, partner, seatId))
   }
   if (a === 'whitelist_only') return !!seatId && isOn(seatId, eff.allowList)
@@ -176,7 +184,10 @@ export async function visibilityFor(ctx: Context, c: Caller): Promise<(p: Positi
     if (a === 'rtb') return seats.length > 0
     if (a === 'whitelist_only') return whitelisted
     if (a === 'reserved') return seats.some((s) => heldFor(p.def, s.name))
-    return andThen(allOf(assignedCached(p.def).buyersListIds.map((id) => ctx.buyersLists.get(id))), (lists) =>
+    /* The Open auction tier below the deals is open to its DSPs (none chosen = All DSPs) whatever the deals invite. */
+    const open = assignedCached(p.def)
+    if (open.openAuction && (!open.partnerIds.length || open.partnerIds.includes(me)) && seats.length > 0) return true
+    return andThen(allOf(open.buyersListIds.map((id) => ctx.buyersLists.get(id))), (lists) =>
       lists.some((list) => !!list && isActiveAt(list, ctx.clock().toISOString()) && seats.some((s) => isInvitedBuyer(list, c.partner, s.id))))
   }
   /* Sync-first (db.ts andThen): once per position on every inventory read. */

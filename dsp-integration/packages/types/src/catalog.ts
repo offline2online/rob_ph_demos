@@ -91,6 +91,10 @@ export interface Assigned {
      one list per tier; the exchange tries the first and falls through only
      when it yields no winning bid at its floor. */
   buyersListIds: string[]
+  /* An explicit Open auction tier below the deals (Rob, 9 Oct 2026): deals resolve ahead of time, and a window no deal
+     wins falls through to the open auction, which runs across partnerIds (none = All DSPs). Never set with named
+     advertisers or the whitelist. A slot with no deal is open by default; this only records the explicit choice. */
+  openAuction: boolean
 }
 type SlotLike = {
   partnerIds?: readonly string[] | null
@@ -100,6 +104,7 @@ type SlotLike = {
   advertiser?: string | null
   buyersListId?: string | null
   buyersListIds?: readonly string[] | null
+  openAuction?: boolean | null
 }
 export const assignedOf = (slot: SlotLike): Assigned => {
   const advertisers = [...(slot.advertisers ?? (slot.advertiser ? [slot.advertiser] : []))]
@@ -112,11 +117,13 @@ export const assignedOf = (slot: SlotLike): Assigned => {
     whitelistOnly: !advertisers.length && slot.listMode === 'whitelist_only',
     buyersListId: buyersListIds[0] ?? null,
     buyersListIds,
+    openAuction: !advertisers.length && slot.listMode !== 'whitelist_only' && slot.openAuction === true,
   }
 }
 /* "Any connected DSP", or the pills in order: advertisers, buyers list, then DSPs. */
-export const assignedLabels = (a: { advertisers: readonly string[]; partnerNames?: readonly string[]; whitelistOnly?: boolean; buyersListName?: string | null; buyersListNames?: readonly string[] }): string[] =>
-  [...a.advertisers, ...(a.whitelistOnly ? ['Whitelist only'] : []), ...(a.buyersListNames?.length ? a.buyersListNames.map((n, i) => `Buyers list${a.buyersListNames!.length > 1 ? ` ${i + 1}` : ''}: ${n}`) : a.buyersListName ? [`Buyers list: ${a.buyersListName}`] : []), ...(a.partnerNames ?? [])]
+export const ALL_DSPS_LABEL = 'All DSPs'
+export const assignedLabels = (a: { advertisers: readonly string[]; partnerNames?: readonly string[]; whitelistOnly?: boolean; buyersListName?: string | null; buyersListNames?: readonly string[]; openAuction?: boolean; partnerIds?: readonly string[] }): string[] =>
+  [...a.advertisers, ...(a.whitelistOnly ? ['Whitelist only'] : []), ...(a.buyersListNames?.length ? a.buyersListNames.map((n, i) => `Buyers list${a.buyersListNames!.length > 1 ? ` ${i + 1}` : ''}: ${n}`) : a.buyersListName ? [`Buyers list: ${a.buyersListName}`] : []), ...(a.partnerNames ?? []), ...(a.openAuction && !a.partnerIds?.length ? [ALL_DSPS_LABEL] : [])]
 
 /* Reserve price inheritance (Rob, 22 Sep; spec §1 configuration
    inheritance): a display type carries its own reserve price default, and

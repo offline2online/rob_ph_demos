@@ -134,6 +134,7 @@ export const displayTypeRoutes = (ctx: Context, guards: Guards): FastifyPluginAs
             listMode: s.owner === 'advertiser' ? (kept ? was.listMode ?? 'rtb' : 'rtb') : null,
             buyersListId: kept ? was.buyersListId ?? null : null,
             ...(kept && was.buyersListIds?.length ? { buyersListIds: was.buyersListIds } : {}),
+            ...(kept && was.openAuction ? { openAuction: true } : {}),
             storeScope: s.owner === 'retail' ? was?.storeScope ?? 'Store staff' : null,
             quota: was?.quota ?? null,
             ...(kept && was.salesLocked ? { salesLocked: true } : {}),
