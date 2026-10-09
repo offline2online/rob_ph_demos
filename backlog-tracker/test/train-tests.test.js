@@ -3,7 +3,7 @@
 // to Main (PR #301, 3 Oct 2026; for the DSP train's e2e-quick, PR #330,
 // 6 Oct 2026). Drives the pure decision functions.
 const assert = require("assert");
-const { trainTestFailureTargets, touchesConsoleTests, trainTestsFor, testedHeadOf, nextTrainTestsRed, trainTestGate, newestRealRun } = require("../scripts/run-backlog-automation.js");
+const { trainTestFailureTargets, touchesConsoleTests, trainTestsFor, testedHeadOf, nextTrainTestsRed, trainTestGate, newestRealRun, pickRedCulprit } = require("../scripts/run-backlog-automation.js");
 
 const HEAD = "aaaaaaa1111111";
 const cards = [{ id: "c1" }, { id: "c2", testsFailedSha: HEAD }, { id: "c3", testsFailedSha: "old" }];
@@ -40,6 +40,24 @@ const cases = [
   ["gate: failed → red", trainTestGate([{ workflow: "e2e-quick.yml", label: "x", run: failed, speaksForHead: true }]).state, "red"],
   ["gate: cancelled by a newer push → missing (start one)", trainTestGate([{ workflow: "e2e-quick.yml", label: "x", run: { ...failed, conclusion: "cancelled" }, speaksForHead: true }]).state, "missing"],
   ["gate: passed, but on an older commit with source changes since → missing", trainTestGate([{ workflow: "e2e-quick.yml", label: "x", run: { ...failed, conclusion: "success" }, speaksForHead: false }]).state, "missing"],
+  // pickRedCulprit — auto-eject the ticket that turned the train red (8 Oct 2026)
+  ...(() => {
+    const order = ["a", "rebuildA", "b", "rebuildB", "c"];
+    const A = { id: "A", status: "ready-to-publish", deployCommit: "a" };
+    const B = { id: "B", status: "ready-for-testing", deployCommit: "b" };
+    const C = { id: "C", status: "ready-for-testing", deployCommit: "c" };
+    const ok = { status: "completed", conclusion: "success" }, red = { status: "completed", conclusion: "failure" };
+    return [
+      ["culprit: first red after green, in testing", pickRedCulprit(order, [C, A, B], { a: ok, b: red, c: red })?.id, "B"],
+      ["all green: nobody", pickRedCulprit(order, [A, B, C], { a: ok, b: ok, c: ok }), null],
+      ["first red is approved: never ejected", pickRedCulprit(order, [A, B, C], { a: red, b: red, c: red }), null],
+      ["a run before it still going: wait", pickRedCulprit(order, [A, B, C], { a: { status: "in_progress" }, b: red }), null],
+      ["a run before it missing: wait", pickRedCulprit(order, [A, B, C], { b: red }), null],
+      ["cancelled before it: no verdict", pickRedCulprit(order, [A, B, C], { a: { status: "completed", conclusion: "cancelled" }, b: red }), null],
+      ["first ticket on the train red: it is the culprit", pickRedCulprit(order, [B, C], { b: red, c: red })?.id, "B"],
+      ["a card whose commit left the train is ignored", pickRedCulprit(order, [{ id: "X", status: "ready-for-testing", deployCommit: "gone" }, A, C], { a: ok, c: red })?.id, "C"],
+    ];
+  })(),
   ["held run (action_required) is skipped for the newest real one", newestRealRun([{ headSha: "rebuild", status: "completed", conclusion: "action_required" }, { headSha: "fix", status: "completed", conclusion: "success" }]).headSha, "fix"],
   ["a running run counts", newestRealRun([{ headSha: "a", status: "in_progress", conclusion: "" }, { headSha: "b", status: "completed", conclusion: "failure" }]).headSha, "a"],
   ["only held runs: none", newestRealRun([{ headSha: "a", status: "completed", conclusion: "action_required" }]), null],
