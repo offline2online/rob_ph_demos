@@ -58,8 +58,6 @@ input:focus,select:focus{outline:0;border-color:var(--primary);box-shadow:0 0 0 
 .radio label{display:flex;align-items:center;gap:6px;margin:0;cursor:pointer}
 .note{background:var(--tint);border-radius:6px;padding:8px 12px;margin-bottom:16px;font-size:13px}
 .hide{display:none}
-.invite{display:flex;align-items:center;gap:8px;margin:0 auto 0 0;cursor:pointer}
-.invite input{margin:0}
 .tip{position:relative;display:inline-flex;color:var(--muted);cursor:help;outline:0}
 .tip:hover,.tip:focus{color:var(--primary)}
 .tiptext{display:none;position:absolute;left:0;top:28px;width:320px;padding:8px 12px;border-radius:6px;background:rgba(0,0,0,.85);color:#fff;font-size:14px;font-weight:400;line-height:1.5715;z-index:5}
@@ -129,7 +127,6 @@ input:focus,select:focus{outline:0;border-color:var(--primary);box-shadow:0 0 0 
           </div>
         </div>
         <footer>
-          <label class="invite" for="inv"><input type="checkbox" id="inv" checked> Send Invitation Email</label>
           <button type="button" class="btn" id="cancel">Cancel</button>
           <button type="submit" class="btn primary">Add user</button>
         </footer>
@@ -162,7 +159,7 @@ function render(){
 $("adv").innerHTML+=DSP_ADVERTISERS.map(function(a){return"<option>"+a+"</option>"}).join("");
 function syncRole(){$("advBlock").classList.toggle("hide",$("role").value!=="Advertiser")}
 function syncSrc(){var m=document.querySelector('input[name=src]:checked').value==="manual";$("dspField").classList.toggle("hide",m);$("manField").classList.toggle("hide",!m)}
-function open_(){$("form").reset();$("inv").checked=true;syncRole();syncSrc();document.querySelectorAll(".invalid").forEach(function(x){x.classList.remove("invalid")});$("emErr").style.display="none";$("mask").classList.add("open");$("mask").scrollTop=0;$("fn").focus()}
+function open_(){$("form").reset();syncRole();syncSrc();document.querySelectorAll(".invalid").forEach(function(x){x.classList.remove("invalid")});$("emErr").style.display="none";$("mask").classList.add("open");$("mask").scrollTop=0;$("fn").focus()}
 function close_(){$("mask").classList.remove("open");$("addBtn").focus()}
 $("addBtn").onclick=open_;$("cancel").onclick=close_;
 $("mask").addEventListener("mousedown",function(e){if(e.target===$("mask"))close_()});
@@ -181,9 +178,8 @@ $("form").onsubmit=function(e){
   if(bad)return;
   var u={f:$("fn").value.trim(),l:$("ln").value.trim(),e:$("em").value.trim(),r:$("role").value,ll:"Never Signed In"};
   if(isAdv){u.adv=manual?$("man").value.trim():$("adv").value;u.src=manual?"Manual":"DSP"}
-  var invite=$("inv").checked;
   users.push(u);render();close_();
-  $("toast").textContent="Added "+u.f+" "+u.l+" as "+u.r+(u.adv?" for "+u.adv:"")+". "+(invite?"An invitation email will be sent to "+u.e+" (sent by PH Core).":"No invitation email was sent.");
+  $("toast").textContent="Added "+u.f+" "+u.l+" as "+u.r+(u.adv?" for "+u.adv:"")+".";
   $("toast").classList.add("show");setTimeout(function(){$("toast").classList.remove("show")},4000);
 };
 render();
