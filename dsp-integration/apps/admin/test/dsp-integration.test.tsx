@@ -65,7 +65,7 @@ describe('DSP Integration section', () => {
     renderAt('/dsp-integration/exchange')
     const nav = await screen.findByRole('navigation', { name: 'DSP Integration' })
     expect(within(nav).getAllByRole('link').map((l) => l.getAttribute('aria-label'))).toEqual([
-      'Exchange settings', 'Advertiser settings', 'Shared Targeting Variables',
+      'Exchange settings', 'Advertiser settings', 'Shared Targeting Variables', 'Change history',
       'Google DSP — Live', 'Amazon Ads DSP — Connection error', 'The Trade Desk — Not set up yet',
     ])
     expect(within(nav).getByText('3 advertisers · floor USD 100 CPM')).toBeInTheDocument()
@@ -914,5 +914,40 @@ describe('Pricing tooltips', () => {
 
     /* Interactive campaigns are deferred (5 Oct 2026): no engagement field in Pricing. */
     expect(screen.queryByText('Interactive cost per engagement')).not.toBeInTheDocument()
+  })
+})
+
+describe('Change history page', () => {
+  const entry = (over: Record<string, unknown>) => ({
+    id: 'aud_1', at: '2026-10-09T08:30:00.000Z', changeId: 'chg_1', request: 'PUT /api/admin/v1/available-inventory', reason: null,
+    objectType: 'display_type', objectId: 'menu_board', objectLabel: 'Menu Board — Long Format', changeType: 'updated',
+    field: 'slots[2].reservePrice', oldValue: 10, newValue: 25,
+    actor: { type: 'agent', id: 'agent:cpm-tuner', name: 'CPM tuner', sessionUserId: 'u_hq_admin' }, ...over,
+  })
+
+  it('lists who changed which setting, from what to what, telling people from agents', async () => {
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/ssp-audit-log': { items: [
+      entry({}),
+      entry({ id: 'aud_2', objectType: 'exchange', objectId: 'exchange', objectLabel: 'Exchange settings', field: 'globalDealEnabled', oldValue: false, newValue: true, reason: 'Open to deal-only DSPs', actor: { type: 'human', id: 'u_hq_admin', name: 'HQ Admin (POC)', sessionUserId: 'u_hq_admin' } }),
+    ], next: null } })))
+    renderAt('/dsp-integration/change-history')
+    expect(await screen.findByRole('heading', { name: /Change history/ })).toBeInTheDocument()
+    expect(await screen.findByText('slots[2].reservePrice')).toBeInTheDocument()
+    expect(screen.getByText('CPM tuner')).toBeInTheDocument()
+    expect(screen.getByText('Agent')).toBeInTheDocument()
+    expect(screen.getByText('Person')).toBeInTheDocument()
+    expect(screen.getByText('globalDealEnabled')).toBeInTheDocument()
+    expect(screen.getByText('Reason: Open to deal-only DSPs')).toBeInTheDocument()
+  })
+
+  it('says so when nothing has changed yet, and filters through the API', async () => {
+    const fetchMock = vi.fn(fakeFetch({ '/api/admin/v1/ssp-audit-log': { items: [], next: null } }))
+    vi.stubGlobal('fetch', fetchMock)
+    renderAt('/dsp-integration/change-history')
+    expect(await screen.findByText(/No settings have been changed yet/)).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Field'), { target: { value: 'floorCpm' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+    await waitFor(() => expect(fetchMock.mock.calls.some(([u]) => String(u).includes('fieldPrefix=floorCpm'))).toBe(true))
+    expect(await screen.findByText('No changes match these filters.')).toBeInTheDocument()
   })
 })
