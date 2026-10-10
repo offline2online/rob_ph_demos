@@ -3785,14 +3785,27 @@ async function processRevertPr(item) {
 // the top of every scheduled tick, so a card's deploy status catches up
 // within a couple of minutes of the run actually finishing even though
 // nothing pushes that update proactively.
+//
+// A card whose deploy FAILED is re-checked too, for a week after its merge:
+// the fix for a transient deploy failure is re-running that same run, and
+// `gh run view` reports the latest attempt's conclusion, so the card turns
+// green on the next tick instead of saying "Deploy failure" forever
+// (10 Oct 2026, PR #359 — run 38087481082 failed on a Google blip and
+// passed on re-run).
+const DEPLOY_FAILURE_RECHECK_MS = 7 * 24 * 60 * 60 * 1000;
 async function reconcileDeployStatuses() {
-  const pending = await runQuery({
+  const byConclusion = (value) => runQuery({
     from: [{ collectionId: "backlogItems" }],
-    select: selectFields(["deployRunUrl", "mergedAt", "updatedAt"]),
-    where: { fieldFilter: { field: { fieldPath: "deployConclusion" }, op: "EQUAL", value: { stringValue: "pending" } } },
+    select: selectFields(["deployRunUrl", "deployConclusion", "mergedAt", "updatedAt"]),
+    where: { fieldFilter: { field: { fieldPath: "deployConclusion" }, op: "EQUAL", value: { stringValue: value } } },
   });
+  const failedSince = Date.now() - DEPLOY_FAILURE_RECHECK_MS;
+  const pending = [
+    ...(await byConclusion("pending")),
+    ...(await byConclusion("failure")).filter((i) => i.deployRunUrl && Date.parse(i.mergedAt || i.updatedAt || 0) >= failedSince),
+  ];
   if (!pending.length) return;
-  console.log(`[deploy-status] ${pending.length} item(s) with a pending deploy to check`);
+  console.log(`[deploy-status] ${pending.length} item(s) with a pending or failed deploy to check`);
   for (const item of pending) {
     try {
       let match = null;
@@ -3807,6 +3820,7 @@ async function reconcileDeployStatuses() {
         match = findDispatchedDeployRun(item.mergedAt || item.updatedAt || new Date(0).toISOString());
       }
       if (!match || match.status !== "completed") continue; // still running (or genuinely not found yet) — leave "pending", try again next tick
+      if ((match.conclusion || "unknown") === item.deployConclusion) continue; // a failed run not re-run (yet) — nothing to write
       await patchItem(item.id, {
         deployConclusion: match.conclusion || "unknown",
         ...(match.url ? { deployRunUrl: match.url } : {}),
