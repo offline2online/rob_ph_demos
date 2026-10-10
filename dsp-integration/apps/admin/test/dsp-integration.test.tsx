@@ -621,8 +621,16 @@ describe('Advertisers / Inventory', () => {
     renderAt('/advertisers')
     const advertisers = await screen.findByLabelText('Advertisers')
     expect(await within(advertisers).findByText('Acme Foods (Direct)')).toBeInTheDocument()
-    expect(screen.getByLabelText('Direct advertiser name')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Add direct advertiser' })).toBeDisabled()
+    /* No inline add field any more: a top-right CTA opens a pop-up (ticket d4q91vrL5z4gLHBKypHo). */
+    expect(screen.queryByLabelText('Direct advertiser name')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Add new Advertiser/ }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByLabelText('Advertiser name')).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Add advertiser' })).toBeDisabled()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    /* Only a direct advertiser can be deleted. */
+    expect(within(advertisers).getByRole('button', { name: 'Delete Acme Foods' })).toBeInTheDocument()
+    expect(within(advertisers).getAllByRole('button', { name: /^Delete / })).toHaveLength(1)
   })
 
   it('filters both tables by column, and shows who may buy each slot', async () => {

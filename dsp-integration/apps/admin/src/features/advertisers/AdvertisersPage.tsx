@@ -4,16 +4,17 @@
    the estate, which moved here from Advertiser settings (Rob, 20 Sep).
    Campaigns are not approved here. Changes are applied with Save changes. */
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { App, Button, Input, InputNumber, Select, Spin, Switch } from 'antd'
+import { App, Button, Input, InputNumber, Modal, Select, Spin, Switch } from 'antd'
 import { Tip } from '../../shared/Tip'
 import { cpmKindHint, cpmSummary, sourceLabel } from './effectiveTerm'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
 import { INTERACTIVE_ENABLED, RESERVE_PRICE_TIP, PLATFORM_DEFAULT_BILLING_UNIT_HOURS, DEFAULT_MAX_CAMPAIGNS, MAX_MAX_CAMPAIGNS, MAX_MAX_PLAY_LENGTH_SEC, MIN_MAX_CAMPAIGNS, MIN_MAX_PLAY_LENGTH_SEC, SLOT_OWNERS, ALL_DSPS_LABEL, assignedLabels, directLabel, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type Session } from '@ph-dsp/types'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, ApiRequestError } from '../../api/client'
 import { Q } from '../../api/queries'
 import { Callout } from '../../shared/Callout'
+import { DeleteDialog } from '../../shared/DeleteDialog'
 import { Grid } from '../../shared/Grid'
 import { Icon } from '../../shared/Icon'
 import { WithTip } from '../../shared/InfoTip'
@@ -34,7 +35,7 @@ import { type Flags, envFlags } from '../../flags'
 const TRANSACTING_CURRENCY = 'USD'
 interface Data { currency: string; floorCpm: number; items: Advertiser[] }
 type Settings = Record<string, AdvertiserSetting>
-type Ctx = { current: { settings: Settings; data: Data; canEdit: boolean; set: (id: string, patch: Partial<AdvertiserSetting>) => void } }
+type Ctx = { current: { settings: Settings; data: Data; canEdit: boolean; set: (id: string, patch: Partial<AdvertiserSetting>) => void; onDelete: (a: Advertiser) => void } }
 type P = ICellRendererParams<Advertiser, unknown, Ctx>
 
 const effective = (floor: number, m: number) => Math.round(floor * (m || 0) * 100) / 100
@@ -67,32 +68,55 @@ function EffectiveCell({ data, context }: P) {
   const { settings, data: d } = context.current
   return <span>{`${TRANSACTING_CURRENCY} ${effective(d.floorCpm, settings[data.advertiserId].floorMultiplier).toFixed(2)} CPM`}</span>
 }
-/* Add an advertiser with a direct relationship with the retailer (no DSP). It
-   is saved at once (not part of Save changes) and listed as "Name (Direct)". */
-function AddDirectAdvertiser({ onAdded }: { onAdded: () => void }) {
+/* Add an advertiser with a direct relationship with the retailer (no DSP), from
+   the "Add new Advertiser" pop-up. It is saved at once (not part of Save
+   changes) and listed as "Name (Direct)". */
+function AddAdvertiserModal({ open, onClose, onAdded }: { open: boolean; onClose: () => void; onAdded: () => void }) {
   const { message } = App.useApp()
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    if (open) { setName(''); setError(null) }
+  }, [open])
   const add = async () => {
+    if (!name.trim() || busy) return
     setBusy(true)
+    setError(null)
     try {
       await api('POST', '/admin/v1/advertisers/direct', { name })
-      setName('')
       onAdded()
-      message.success('Direct advertiser added')
+      onClose()
+      message.success('Advertiser added')
     } catch (e) {
-      message.error(e instanceof ApiRequestError ? e.message : 'Could not add the advertiser.')
+      setError(e instanceof ApiRequestError ? e.message : 'Could not add the advertiser.')
     } finally {
       setBusy(false)
     }
   }
   return (
-    <div className="mb-2 flex items-center gap-2">
-      <Input aria-label="Direct advertiser name" placeholder="Direct advertiser name (no DSP)" maxLength={80} style={{ width: 280 }} value={name} onChange={(e) => setName(e.target.value)} onPressEnter={() => name.trim() && !busy && add()} />
-      <Button size="small" disabled={!name.trim() || busy} onClick={add}>Add direct advertiser</Button>
-    </div>
+    <Modal
+      open={open} width={460} destroyOnHidden confirmLoading={busy} onCancel={onClose} onOk={add}
+      okText="Add advertiser" okButtonProps={{ disabled: !name.trim() }}
+      title={
+        <span className="inline-flex items-center gap-2">
+          <Icon name="sell" size={20} style={{ color: T.primary }} />
+          Add new Advertiser
+        </span>
+      }
+    >
+      <label htmlFor="direct-advertiser-name" className="mb-1 block" style={{ fontSize: 13, fontWeight: 500 }}>Advertiser name</label>
+      <Input id="direct-advertiser-name" aria-label="Advertiser name" maxLength={80} autoFocus value={name} status={error ? 'error' : undefined} onChange={(e) => setName(e.target.value)} onPressEnter={add} />
+      <div className="mt-1.5" style={{ fontSize: 12, color: error ? T.error : T.muted }}>
+        {error ?? 'A direct advertiser has its own relationship with you, with no DSP in between.'}
+      </div>
+    </Modal>
   )
 }
+const ActionsCell = ({ data, context }: P) =>
+  data?.direct && context.current.canEdit ? (
+    <Button type="text" size="small" danger aria-label={`Delete ${data.name}`} icon={<Icon name="delete" size={15} />} onClick={() => context.current.onDelete(data)} />
+  ) : null
 
 /* The inventory advertisers can buy: every Advertiser-owned slot on a
    display type (spec §5 "Available Inventory"). No advertisers column. */
@@ -815,6 +839,10 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
   const maxPlayLengthDefaults = useDraft(savedMaxPlayLengthDefaults)
   useReportDirty(dirty || inv.dirty || defaults.dirty || billingUnitDefaults.dirty || maxCampaignsDefaults.dirty || maxPlayLengthDefaults.dirty)
   const [saving, setSaving] = useState(false)
+  const [addingAdvertiser, setAddingAdvertiser] = useState(false)
+  const [deleting, setDeleting] = useState<Advertiser | null>(null)
+  const [deleteError, setDeleteError] = useState<ApiRequestError | null>(null)
+  const [deleteBusy, setDeleteBusy] = useState(false)
   const [shown, setShown] = useState<number | null>(null)
   const data = q.data
   const columns = useMemo<ColDef<Advertiser>[]>(() => data ? [
@@ -835,7 +863,8 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
     /* Campaigns and Bookings columns removed (Rob's ticket, 26 Sep 2026):
        already covered in Campaign Status and the booking schedule, their
        own operational sections. */
-  ] : [], [data])
+    ...(canEdit ? [{ headerName: '', width: 70, suppressSizeToFit: true, cellRenderer: ActionsCell }] : []),
+  ] : [], [data, canEdit])
 
   if (q.error) return <Callout tone="error" icon="block">{q.error instanceof ApiRequestError ? q.error.message : 'Could not load advertisers.'}</Callout>
   if (!data || !draft) return <Spin />
@@ -950,6 +979,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
   }
   const context = {
     settings: draft, data, canEdit,
+    onDelete: (a: Advertiser) => { setDeleting(a); setDeleteError(null) },
     set: (id: string, patch: Partial<AdvertiserSetting>) => setDraft((cur) => (cur ? { ...cur, [id]: { ...cur[id], ...patch } } : cur)),
   }
 
@@ -960,6 +990,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
           well below the fold on a page with any real number of advertisers
           or slots. */}
       <div className="mb-3.5 flex items-center justify-end gap-3">
+        {canEdit && <Button type="primary" icon={<Icon name="add" size={16} />} onClick={() => setAddingAdvertiser(true)}>Add new Advertiser</Button>}
         <Button color="primary" variant="text" size="small" icon={<Icon name="calendar_month" size={16} />} onClick={() => window.open(externalUrl(BOOKING_SCHEDULE_PATH), '_blank', 'noopener')}>Booking schedule</Button>
         {!canEdit && <StatusPill colour={T.muted} icon="visibility">Read only</StatusPill>}
       </div>
@@ -996,7 +1027,6 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
 
       {/* Advertisers table sits last, under Buyers and targeting (ticket AkDMbOJn0QBV0ZcEM5tm). */}
       <SectionLabel>Advertisers</SectionLabel>
-      {canEdit && <AddDirectAdvertiser onAdded={() => qc.invalidateQueries({ queryKey: ['advertisers'] })} />}
       {data.items.length === 0 ? (
         <div className="flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}><Icon name="sell" size={18} />No advertisers yet. They appear here once a DSP is connected.</div>
       ) : (
@@ -1012,6 +1042,27 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
 
       {/* Picked "+ Add new buyers list…" from a slot's Assigned to picker
           (Rob, 23 Sep): on save, assign the new list straight to that slot. */}
+      <AddAdvertiserModal open={addingAdvertiser} onClose={() => setAddingAdvertiser(false)} onAdded={() => qc.invalidateQueries({ queryKey: ['advertisers'] })} />
+      {deleting && (
+        <DeleteDialog
+          open name={deleting.name} blockedReason={deleteError?.message} deleting={deleteBusy} onClose={() => setDeleting(null)}
+          onDelete={async () => {
+            setDeleteBusy(true)
+            try {
+              await api('DELETE', `/admin/v1/advertisers/direct/${deleting.advertiserId}`)
+              setDeleting(null)
+              qc.invalidateQueries({ queryKey: ['advertisers'] })
+              message.success('Advertiser deleted')
+            } catch (e) {
+              setDeleteError(e instanceof ApiRequestError ? e : null)
+            } finally {
+              setDeleteBusy(false)
+            }
+          }}
+        >
+          This removes the direct advertiser. It can’t be undone, and it isn’t possible while it has campaigns or bookings.
+        </DeleteDialog>
+      )}
       <BuyersListModal
         open={!!addingBuyersListFor}
         editing={null}

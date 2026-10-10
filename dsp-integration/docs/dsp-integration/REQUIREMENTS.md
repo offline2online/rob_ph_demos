@@ -763,8 +763,11 @@ are not approved here.**
 **Direct advertisers (9 Oct 2026).** An advertiser with a direct relationship
 with the retailer, not brought by any DSP, is added on this page (admin only,
 saved at once; `POST /admin/v1/advertisers/direct`, table `direct_advertisers`,
-migration 0063) and removed with `DELETE /admin/v1/advertisers/direct/{id}`
-(refused while it has campaigns or bookings). It is listed with the DSP
+migration 0063) from the **Add new Advertiser** button at the top right of the
+page, which opens a pop-up asking for the name (no inline field), and removed
+with the delete icon beside it in the Advertisers table
+(`DELETE /admin/v1/advertisers/direct/{id}`, refused while it has campaigns or
+bookings; DSP advertisers have no delete icon). It is listed with the DSP
 advertisers (`direct: true`, empty `via`) and takes the same approval and floor
 settings. Wherever a DSP name would accompany an advertiser it reads
 **"Name (Direct)"**: the Via column, the Assigned to options, and the booking
