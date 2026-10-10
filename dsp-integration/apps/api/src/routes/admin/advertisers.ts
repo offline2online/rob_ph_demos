@@ -9,7 +9,7 @@ import { conflict, notFound, validationFailed } from '../../http/errors'
 import { effectiveFloorCpm } from '../../domain/pricing'
 import { allPositions, findPosition, nextWindow, windowMs } from '../../domain/positions'
 import { TAKEN } from '../../repos/ReservationRepo'
-import { invitedDeals } from '../../domain/advertiserDeals'
+import { invitedDealIds } from '../../domain/advertiserDeals'
 
 export async function listAdvertisers(ctx: Context): Promise<Advertiser[]> {
   const company = await ctx.company.get()
@@ -151,7 +151,7 @@ export const advertiserRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     if (!a) throw notFound('Not an advertiser.')
     const at = req.query.at ?? ctx.clock().toISOString()
     if (Number.isNaN(Date.parse(at))) throw validationFailed([{ field: 'at', reason: 'A date-time.' }])
-    return { items: (await invitedDeals(ctx, a.advertiserId, at)).map((l) => ({ buyersListId: l.id, dealId: l.dealId, name: l.name, dealType: l.dealType, activeFrom: l.activeFrom, activeTo: l.activeTo })) }
+    return { items: (await invitedDealIds(ctx, a.advertiserId, at)).filter((e) => e.deals.length).map(({ list: l, deals }) => ({ buyersListId: l.id, dealId: deals[0].dealId, deals, name: l.name, dealType: l.dealType, activeFrom: l.activeFrom, activeTo: l.activeTo })) }
   })
 
   /* Save changes. Applies to future submissions; campaigns already awaiting

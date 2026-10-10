@@ -17,11 +17,17 @@ export async function invitedDeals(ctx: Pick<Context, 'company' | 'partners' | '
   return dealsForSeats(await ctx.buyersLists.list(), live, at)
 }
 
+/* Per list, the deal ID(s) this advertiser's mapped DSPs accept (ticket fgBVnNItNcu7qMBUtqH7): a list has one deal ID per DSP, and an advertiser holds seats on one or more of them, so only those are its to use. */
+export async function invitedDealIds(ctx: Pick<Context, 'company' | 'partners' | 'buyersLists'>, advertiserId: string, at: string): Promise<{ list: BuyersList; deals: { partnerId: string; dealId: string }[] }[]> {
+  const partnerIds = new Set(((await ctx.company.advertiserSeats())[advertiserId] ?? []).map((m) => m.partnerId))
+  return (await invitedDeals(ctx, advertiserId, at)).map((list) => ({ list, deals: list.deals.filter((d) => partnerIds.has(d.partnerId) && !d.retiredAt).map(({ partnerId, dealId }) => ({ partnerId, dealId })) }))
+}
+
 /* Refuse any deal ID not among the advertiser's invited deals. `held` are IDs the campaign already carries, which stay valid even once the deal's term has ended. */
 export async function assertInvitedDeals(ctx: Pick<Context, 'company' | 'partners' | 'buyersLists'>, advertiserId: string | null | undefined, field: string, dealIds: string[], held: string[], at: string): Promise<void> {
   const wanted = dealIds.filter((d) => !held.includes(d))
   if (!wanted.length) return
-  const allowed = new Set((await invitedDeals(ctx, advertiserId ?? '', at)).map((l) => l.dealId))
+  const allowed = new Set((await invitedDealIds(ctx, advertiserId ?? '', at)).flatMap((e) => e.deals.map((d) => d.dealId)))
   const bad = wanted.filter((d) => !allowed.has(d))
   if (bad.length) throw validationFailed([{ field, reason: allowed.size
     ? `Not a deal this advertiser is an invited buyer on: ${bad.join(', ')}.`

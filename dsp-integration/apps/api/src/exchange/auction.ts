@@ -376,7 +376,7 @@ export async function vetBid(ctx: Context, p: PositionRef, dsp: PartnerRecord, s
   /* A deal position clears only bids quoting its deal ID (pmp.deals). */
   if (assignmentOf(p.def) === 'deal') {
     const listId = assignedOf(p.def).buyersListId
-    const required = listId ? (await ctx.buyersLists.get(listId))?.dealId : undefined
+    const required = listId ? await ctx.buyersLists.dealIdFor(listId, dsp.id) : undefined
     if (!required || bid.dealid !== required) return reject(`Bid ${bid.dealid ? `quotes deal ${bid.dealid}` : 'has no dealid'}; this private auction requires ${required ?? 'its deal ID'}.`)
   }
   /* The global deal ID is only good on a position that is in the global deal (8 Oct 2026): quoting it elsewhere, or while the master switch is off, is refused rather than silently treated as open. Quoting it on an eligible position competes exactly as open exchange (same floor, first-price, same checks). */

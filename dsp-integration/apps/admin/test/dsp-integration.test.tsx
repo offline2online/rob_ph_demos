@@ -916,6 +916,24 @@ describe('Advertisers / Inventory', () => {
     expect(await within(dialog).findByTestId('deal-type-new-deal-note')).toHaveTextContent('new Deal ID')
   })
 
+  /* Ticket fgBVnNItNcu7qMBUtqH7: a list that invites seats on two DSPs shows one deal ID per DSP. */
+  it('shows one deal ID per DSP on a cross-DSP buyers list', async () => {
+    const inv = ADVERTISER_PAGE['/api/admin/v1/available-inventory']
+    const deals = [{ partnerId: 'p_google', dealId: 'PH-AAAAAAAAAA', retiredAt: null }, { partnerId: 'p_ttd', dealId: 'PH-BBBBBBBBBB', retiredAt: null }, { partnerId: 'p_old', dealId: 'PH-CCCCCCCCCC', retiredAt: '2026-10-01T00:00:00Z' }]
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({
+      ...ADVERTISER_PAGE,
+      '/api/admin/v1/buyers-lists': { items: [{ id: 'bl_1', dealId: 'PH-AAAAAAAAAA', deals, name: 'Cross DSP', description: '', invitedBuyers: [], invitedCategories: [], targeting: [], activeFrom: null, activeTo: null, dealType: 'private_auction' }] },
+      '/api/admin/v1/available-inventory': inv,
+    })))
+    renderAt('/advertisers')
+    const table = await screen.findByLabelText('Buyers and targeting')
+    expect(await within(table).findByText('PH-AAAAAAAAAA, PH-BBBBBBBBBB')).toBeInTheDocument()
+    fireEvent.click(within(table).getByRole('button', { name: 'Edit Cross DSP' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByRole('textbox', { name: /Deal ID — Google/ })).toHaveValue('PH-AAAAAAAAAA')
+    expect(within(dialog).getAllByRole('textbox', { name: /^Deal ID/ })).toHaveLength(2)
+  })
+
   /* Ticket Y3GzIlj2goQMJaGUwTey (9 Oct 2026): deals above an explicit Open auction, the DSPs it runs across below it. */
   it('shows an Open auction separator under the deals, with the DSP or All DSPs beneath it', async () => {
     const inv = ADVERTISER_PAGE['/api/admin/v1/available-inventory']

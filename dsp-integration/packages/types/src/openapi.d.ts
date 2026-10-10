@@ -2180,7 +2180,10 @@ export interface components {
         Deal: {
             buyersListId: string;
             name: string;
+            /** @description The deal ID for the calling DSP (Partner API) — each DSP accepts its own. The admin view also carries `deals`, the full set. */
             dealId: string;
+            /** @description Admin view only: every DSP deal ID of the list. */
+            deals?: components["schemas"]["ListDeal"][];
             /** @enum {string} */
             dealType: "private_auction" | "preferred" | "guaranteed";
             activeFrom: string | null;
@@ -2189,6 +2192,20 @@ export interface components {
             /** @description The deal's resolved base floor in USD CPM. */
             rateCpm?: number;
             creativeRequirements: components["schemas"]["CreativeRequirement"][];
+        };
+        DspDealId: {
+            partnerId: string;
+            dealId: string;
+        };
+        ListDeal: {
+            partnerId: string;
+            /** @description Generated, immutable; what this DSP bids under (`pmp.deals[].id`). */
+            dealId: string;
+            /**
+             * Format: date-time
+             * @description Set when the list no longer names a seat on this DSP. The ID is retained.
+             */
+            retiredAt: string | null;
         };
         /**
          * @description A reusable private-auction deal (spec "Support private auctions";
@@ -2212,7 +2229,9 @@ export interface components {
             effectiveCommittedPlays: components["schemas"]["EffectiveTerm"];
             effectiveRateCpm: components["schemas"]["EffectiveTerm"];
             id: string;
-            /** @description The deal ID, minted by the platform when the list is created (PH- plus 10 characters, e.g. PH-7K2M9QXW4B; lists that pre-date it carry PH-<id>). Unique and immutable. This is what the DSP bids under (`pmp.deals[].id` on the bid request, `dealid` on the bid) and what a campaign's `dealId` refers to. Never supplied by a client: a POST that includes one is a 400, and a PUT may only echo it unchanged. */
+            /** @description One deal ID per DSP the list invites a named seat on (ticket fgBVnNItNcu7qMBUtqH7). The list is one object with shared terms (rate, delivery term, invited buyers, auction window / locked rate); only the deal identifier is per DSP, because DV360 and The Trade Desk each accept their own deal. Inviting the first named seat on a DSP mints that DSP's ID; removing its last named seat sets `retiredAt` (the ID is kept, never reused, until the term ends); re-inviting revives the same ID. Derived from `invitedBuyers`, never supplied. */
+            readonly deals: components["schemas"]["ListDeal"][];
+            /** @description The deal ID, minted by the platform when the list is created (PH- plus 10 characters, e.g. PH-7K2M9QXW4B; lists that pre-date it carry PH-<id>). Unique and immutable. It is the list's own ID and goes to the first DSP invited; every DSP's own ID is in `deals`. This is what the DSP bids under (`pmp.deals[].id` on the bid request, `dealid` on the bid) and what a campaign's `dealId` refers to. Never supplied by a client: a POST that includes one is a 400, and a PUT may only echo it unchanged. */
             readonly dealId: string;
             name: string;
             description: string;
@@ -4875,8 +4894,10 @@ export interface operations {
                 content: {
                     "application/json": {
                         items: {
+                            /** @description The deal ID for each DSP the advertiser has a mapped seat on in this list — the one its seat accepts (DV360 accepts the DV360 deal, The Trade Desk its own). */
+                            deals: components["schemas"]["DspDealId"][];
                             buyersListId: string;
-                            /** @description The deal ID to send as a campaign's `dealId`: the platform-minted ID on the buyers list. */
+                            /** @description The deal ID to send as a campaign's `dealId`: the platform-minted ID of the advertiser's DSP on the buyers list (the first of `deals` when its seats span several DSPs). */
                             dealId: string;
                             name: string;
                             /** @enum {string} */

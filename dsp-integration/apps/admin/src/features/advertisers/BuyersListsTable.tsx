@@ -101,7 +101,7 @@ const CapacityCell = ({ data, context }: P) => {
     </Tip>
   )
 }
-const DealIdCell = ({ data }: P) => (data ? <span style={{ fontSize: 12.5, fontFamily: 'monospace' }}>{data.dealId}</span> : null)
+const DealIdCell = ({ data }: P) => (data ? <span style={{ fontSize: 12.5, fontFamily: 'monospace' }}>{(data.deals ?? []).filter((d) => !d.retiredAt).map((d) => d.dealId).join(', ') || data.dealId}</span> : null)
 const DEAL_TYPE_LABELS = { private_auction: 'Private auction', preferred: 'Preferred deal', guaranteed: 'Programmatic guaranteed' } as const
 const DealTypeCell = ({ data }: P) => (data ? <span style={{ fontSize: 12.5 }}>{DEAL_TYPE_LABELS[data.dealType] ?? 'Private auction'}</span> : null)
 const ActionsCell = ({ data, context }: P) =>

@@ -1412,10 +1412,14 @@ paths:
                     type: array
                     items:
                       type: object
-                      required: [buyersListId, dealId, name, dealType, activeFrom, activeTo]
+                      required: [buyersListId, dealId, deals, name, dealType, activeFrom, activeTo]
                       properties:
+                        deals:
+                          type: array
+                          description: The deal ID for each DSP the advertiser has a mapped seat on in this list — the one its seat accepts (DV360 accepts the DV360 deal, The Trade Desk its own).
+                          items: {$ref: '#/components/schemas/DspDealId'}
                         buyersListId: {type: string}
-                        dealId: {type: string, description: 'The deal ID to send as a campaign''s `dealId`: the platform-minted ID on the buyers list.'}
+                        dealId: {type: string, description: 'The deal ID to send as a campaign''s `dealId`: the platform-minted ID of the advertiser''s DSP on the buyers list (the first of `deals` when its seats span several DSPs).'}
                         name: {type: string}
                         dealType: {type: string, enum: [private_auction, preferred, guaranteed]}
                         activeFrom: {type: string, nullable: true}
@@ -2847,13 +2851,27 @@ components:
       properties:
         buyersListId: {type: string}
         name: {type: string}
-        dealId: {type: string}
+        dealId: {type: string, description: 'The deal ID for the calling DSP (Partner API) — each DSP accepts its own. The admin view also carries `deals`, the full set.'}
+        deals: {type: array, items: {$ref: '#/components/schemas/ListDeal'}, description: 'Admin view only: every DSP deal ID of the list.'}
         dealType: {type: string, enum: [private_auction, preferred, guaranteed]}
         activeFrom: {type: [string, 'null']}
         activeTo: {type: [string, 'null']}
         auctionCloses: {type: [string, 'null']}
         rateCpm: {type: number, description: The deal's resolved base floor in USD CPM.}
         creativeRequirements: {type: array, items: {$ref: '#/components/schemas/CreativeRequirement'}}
+    DspDealId:
+      type: object
+      required: [partnerId, dealId]
+      properties:
+        partnerId: {type: string}
+        dealId: {type: string}
+    ListDeal:
+      type: object
+      required: [partnerId, dealId, retiredAt]
+      properties:
+        partnerId: {type: string}
+        dealId: {type: string, description: 'Generated, immutable; what this DSP bids under (`pmp.deals[].id`).'}
+        retiredAt: {type: [string, 'null'], format: date-time, description: Set when the list no longer names a seat on this DSP. The ID is retained.}
     BuyersList:
       type: object
       description: |
@@ -2873,16 +2891,22 @@ components:
         is priced against the same score-driven floor as everything else. It
         is a commitment on top of the floor, never under it, and a deal never
         bypasses the floor.
-      required: [id, dealId, name, description, dealType, invitedBuyers, invitedCategories, targeting, activeFrom, activeTo, auctionCloses, lockedWin, committedPlays, floorCpm, deliveredPlays, effectiveCommittedPlays, effectiveRateCpm, createdAt, updatedAt]
+      required: [id, dealId, deals, name, description, dealType, invitedBuyers, invitedCategories, targeting, activeFrom, activeTo, auctionCloses, lockedWin, committedPlays, floorCpm, deliveredPlays, effectiveCommittedPlays, effectiveRateCpm, createdAt, updatedAt]
       properties:
         effectiveCommittedPlays: {$ref: '#/components/schemas/EffectiveTerm'}
         effectiveRateCpm: {$ref: '#/components/schemas/EffectiveTerm'}
         id: {type: string}
+        deals:
+          type: array
+          readOnly: true
+          description: |
+            One deal ID per DSP the list invites a named seat on (ticket fgBVnNItNcu7qMBUtqH7). The list is one object with shared terms (rate, delivery term, invited buyers, auction window / locked rate); only the deal identifier is per DSP, because DV360 and The Trade Desk each accept their own deal. Inviting the first named seat on a DSP mints that DSP's ID; removing its last named seat sets `retiredAt` (the ID is kept, never reused, until the term ends); re-inviting revives the same ID. Derived from `invitedBuyers`, never supplied.
+          items: {$ref: '#/components/schemas/ListDeal'}
         dealId:
           type: string
           readOnly: true
           description: |
-            The deal ID, minted by the platform when the list is created (PH- plus 10 characters, e.g. PH-7K2M9QXW4B; lists that pre-date it carry PH-<id>). Unique and immutable. This is what the DSP bids under (`pmp.deals[].id` on the bid request, `dealid` on the bid) and what a campaign's `dealId` refers to. Never supplied by a client: a POST that includes one is a 400, and a PUT may only echo it unchanged.
+            The deal ID, minted by the platform when the list is created (PH- plus 10 characters, e.g. PH-7K2M9QXW4B; lists that pre-date it carry PH-<id>). Unique and immutable. It is the list's own ID and goes to the first DSP invited; every DSP's own ID is in `deals`. This is what the DSP bids under (`pmp.deals[].id` on the bid request, `dealid` on the bid) and what a campaign's `dealId` refers to. Never supplied by a client: a POST that includes one is a 400, and a PUT may only echo it unchanged.
         name: {type: string}
         description: {type: string}
         dealType:

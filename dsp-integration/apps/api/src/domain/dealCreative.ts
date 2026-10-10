@@ -67,11 +67,13 @@ export function creativeMisfit(set: CreativeRequirement[], creative: { width: nu
 }
 
 /* What a DSP buyer transacts against: the list's identity and commercial terms plus the creative-requirements set from its attached positions. */
-export async function dealOf(ctx: Context, list: BuyersList, rateCpm?: number) {
+export async function dealOf(ctx: Context, list: BuyersList, rateCpm?: number, partnerId?: string) {
   return {
     buyersListId: list.id,
     name: list.name,
-    dealId: list.dealId,
+    /* A DSP sees only its own deal ID (ticket fgBVnNItNcu7qMBUtqH7); the admin view (no partner) shows the whole set. */
+    dealId: partnerId ? ((await ctx.buyersLists.dealIdFor(list.id, partnerId)) ?? list.dealId) : list.dealId,
+    ...(partnerId ? {} : { deals: list.deals }),
     dealType: list.dealType,
     activeFrom: list.activeFrom,
     activeTo: list.activeTo,
