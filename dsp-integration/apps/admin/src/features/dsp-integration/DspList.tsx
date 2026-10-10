@@ -14,8 +14,6 @@ import { NAV_COLLAPSE_BELOW } from '../../shared/AppShell'
 import { useViewportWidth } from '../../shared/useViewportWidth'
 import { T } from '../../theme/phTheme'
 import { useSection } from './DspIntegrationLayout'
-/* Bidding values are always USD (TRANSACTING_CURRENCY in the API's domain/currency.ts), not the instance currency. */
-const TRANSACTING_CURRENCY = 'USD'
 
 export const PATHS = {
   exchange: '/dsp-integration/exchange',
@@ -53,13 +51,12 @@ function Row({ active, collapsed, dashed, title, onClick, children }: { active: 
 export function DspList() {
   const { pathname } = useLocation()
   const navigate = useNavigate()
-  const { draft, saved, partners, published } = useSection()
+  const { draft, partners, published } = useSection()
   const collapsed = useViewportWidth() < NAV_COLLAPSE_BELOW
-  const advertisers = new Set(partners.flatMap((p) => (p.seats ?? []).map((s) => s.name.toLowerCase()))).size
 
   const company = [
-    { to: PATHS.exchange, icon: 'storefront', title: 'Exchange settings', sub: saved.exchange.enabled ? `${draft.exchange.organisation || 'Client'} is seller of record` : 'DSP integration off' },
-    { to: PATHS.advertiserSettings, icon: 'rule', title: 'Advertiser settings', sub: `${advertisers} advertisers · floor ${TRANSACTING_CURRENCY} ${draft.settings.floorCpm ?? '—'} CPM` },
+    { to: PATHS.exchange, icon: 'storefront', title: 'DSP integration', sub: 'Exchange settings' },
+    { to: PATHS.advertiserSettings, icon: 'rule', title: 'Advertiser settings', sub: 'Floor CPM, play configuration, real-time bidding, category lists' },
     { to: PATHS.variables, icon: 'tune', title: 'Shared Targeting Variables', sub: `${TARGETING_VARIABLES.length} platform variables` },
     { to: PATHS.history, icon: 'history', title: 'Change history', sub: 'Who changed which setting, and when' },
   ].filter((c) => published || c.to !== PATHS.advertiserSettings)

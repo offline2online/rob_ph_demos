@@ -54,7 +54,7 @@ export function navFor(flags: Flags, session: Session | undefined, dspOn = false
     /* Marketing users read it too (spec §3). */
     ...(flags.dspIntegration ? [{ to: '/advertisers', label: 'Advertisers / Inventory' }] : []),
     /* Last in the list. Flag off: hidden (decision 6). Admin users only. */
-    ...(flags.dspIntegration && admin ? [{ to: '/dsp-integration', label: 'DSP Integration' }] : []),
+    ...(flags.dspIntegration && admin ? [{ to: '/dsp-integration', label: 'Advertiser Settings' }] : []),
   ]
 }
 
@@ -86,7 +86,7 @@ function featureRoutes(flags: Flags): RouteObject[] {
           path: 'dsp-integration',
           /* The tip that used to sit on the Enable DSP Integration switch now
              explains the whole section from its page title (same ticket). */
-          handle: { title: 'DSP Integration', tip: SWITCH_TIP } satisfies RouteHandle,
+          handle: { title: 'Advertiser Settings', tip: SWITCH_TIP } satisfies RouteHandle,
           element: <DspIntegrationLayout />,
           children: [
             /* Exchange settings until the exchange is published, then Advertiser settings (Rob, 20 Sep). */

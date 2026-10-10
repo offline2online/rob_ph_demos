@@ -65,11 +65,10 @@ describe('DSP Integration section', () => {
     renderAt('/dsp-integration/exchange')
     const nav = await screen.findByRole('navigation', { name: 'DSP Integration' })
     expect(within(nav).getAllByRole('link').map((l) => l.getAttribute('aria-label'))).toEqual([
-      'Exchange settings', 'Advertiser settings', 'Shared Targeting Variables', 'Change history',
+      'DSP integration', 'Advertiser settings', 'Shared Targeting Variables', 'Change history',
       'Google DSP — Live', 'Amazon Ads DSP — Connection error', 'The Trade Desk — Not set up yet',
     ])
-    expect(within(nav).getByText('3 advertisers · floor USD 100 CPM')).toBeInTheDocument()
-    expect(within(nav).queryByText(/category lists/)).not.toBeInTheDocument()
+    expect(within(nav).getByText('Floor CPM, play configuration, real-time bidding, category lists')).toBeInTheDocument()
   })
 
   it('Exchange settings: four required fields, Published, and where sellers.json is', async () => {
@@ -116,8 +115,8 @@ describe('DSP integration switch', () => {
     expect(screen.queryByText('Incomplete')).not.toBeInTheDocument()
     /* Advertiser settings and the DSPs wait; the rest of the company pages stay (Rob, 9 Oct 2026). */
     const list = screen.getByRole('navigation', { name: 'DSP Integration' })
-    expect(within(list).getAllByRole('link').map((l) => l.getAttribute('aria-label'))).toEqual(['Exchange settings', 'Shared Targeting Variables', 'Change history'])
-    expect(within(list).getByText('DSP integration off')).toBeInTheDocument()
+    expect(within(list).getAllByRole('link').map((l) => l.getAttribute('aria-label'))).toEqual(['DSP integration', 'Shared Targeting Variables', 'Change history'])
+    expect(within(list).getByText('Exchange settings')).toBeInTheDocument()
   })
 
   it('switching on shows the seller-of-record fields, as an unsaved change', async () => {
@@ -159,7 +158,7 @@ describe('DSP integration switch', () => {
     /* Advertisers / Inventory stays: direct advertisers use it with no DSP (Rob, 9 Oct 2026). */
     await waitFor(() => expect(calls).toHaveLength(1))
     expect(await navLabels()).toContain('Advertisers / Inventory')
-    expect(await navLabels()).toContain('DSP Integration')
+    expect(await navLabels()).toContain('Advertiser Settings')
 
     fireEvent.click(await screen.findByRole('switch', { name: 'Enable DSP Integration' }))
     expect((screen.getByLabelText(/Organisation/) as HTMLInputElement).value).toBe('Demo Retail Group')
@@ -174,7 +173,7 @@ describe('DSP integration switch', () => {
     const advertisers = { currency: 'AUD', floorCpm: 100, items: [] }
     vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/exchange': OFF, '/api/admin/v1/features': { dspIntegration: false }, '/api/admin/v1/advertisers': advertisers })))
     const router = renderAt('/advertisers')
-    await waitFor(async () => expect(await navLabels()).toEqual(['Display Types', 'Playlist Management', 'Advertisers / Inventory', 'DSP Integration']))
+    await waitFor(async () => expect(await navLabels()).toEqual(['Display Types', 'Playlist Management', 'Advertisers / Inventory', 'Advertiser Settings']))
     expect(router.state.location.pathname).toBe('/advertisers')
     cleanup()
     const variables = renderAt('/dsp-integration/targeting-variables')
@@ -302,7 +301,7 @@ describe('Advertisers screen (admin only)', () => {
     /* Campaign Status is no longer a nav item of its own (ticket, 26 Sep
        2026) — it's the second tab of Campaign schedule, opened contextually
        from here rather than listed in the nav. */
-    expect(within(nav).getAllByRole('link').map((l) => l.textContent?.replace(/^[a-z_]+/, ''))).toEqual(['Display Types', 'Playlist Management', 'Advertisers / Inventory', 'DSP Integration'])
+    expect(within(nav).getAllByRole('link').map((l) => l.textContent?.replace(/^[a-z_]+/, ''))).toEqual(['Display Types', 'Playlist Management', 'Advertisers / Inventory', 'Advertiser Settings'])
     expect(screen.getByRole('button', { name: /Every advertiser using the platform, across all DSPs, and the inventory they can buy/ })).toBeInTheDocument()
   })
 
