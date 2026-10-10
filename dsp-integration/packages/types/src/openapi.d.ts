@@ -910,6 +910,85 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/approvals/approve-assign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve campaigns one at a time and group them under a creative ID
+         * @description Approves each listed campaign (they must all be Awaiting approval, at
+         *     the version reviewed) and assigns them to a creative ID — the grouping
+         *     a DSP bids on, so a private-auction bid targets the group rather than
+         *     one campaign. Omit `creativeId` to mint a new one across these
+         *     campaigns; name an existing one to join it. A creative ID spans one
+         *     advertiser's campaigns only: every campaign listed must belong to the
+         *     same advertiser, and so must the existing ID. All or nothing — a stale
+         *     version, a mixed advertiser or a campaign that is not awaiting approval
+         *     approves none of them. The advertiser reads the result as `creativeId`
+         *     on the campaign's status.
+         */
+        post: operations["approveAndAssignCreativeId"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/approvals/assign-creative-id": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Group an auto-approved advertiser's campaigns under a creative ID
+         * @description For an advertiser who does not require approval: submission was the
+         *     approval, so there is no retailer step to assign a creative ID and the
+         *     advertiser does it from their own campaign table. Every listed campaign
+         *     must already be Approved and belong to one advertiser who does not
+         *     require approval (an advertiser whose campaigns the retailer approves
+         *     gets its creative IDs from `approveAndAssignCreativeId` instead). Omit
+         *     `creativeId` to mint a new one across them; name an existing one to
+         *     join it — it must belong to the same advertiser. All or nothing.
+         */
+        post: operations["assignCreativeId"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/creative-ids": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Creative IDs in use, each with the campaigns grouped under it
+         * @description For the "Approve + assign to existing creative ID" picker: each ID with
+         *     its member campaigns and the touch points they run on, so the reviewer
+         *     matches by seeing siblings rather than a bare ID. An ID with no
+         *     campaigns left is not listed.
+         */
+        get: operations["listCreativeIds"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/campaigns/{campaignId}/approval": {
         parameters: {
             query?: never;
@@ -1627,6 +1706,12 @@ export interface components {
             mode?: "manual" | "auto" | null;
             reason?: string | null;
             assetVersion?: string | null;
+            /**
+             * @description The creative ID the retailer grouped this campaign under when it
+             *     approved it (the grouping a DSP bids on); null until then. A
+             *     resubmitted creative keeps it while it awaits re-approval.
+             */
+            creativeId?: string | null;
             /**
              * @description The approved version that is running — eligible for reservation,
              *     bidding and hand-off — whatever is under review (open question 38,
@@ -2562,6 +2647,12 @@ export interface components {
             /** @description The current rejection's per-asset breakdown, when the reviewer named specific assets (spec §3, "asset-level rejection"). */
             assetReasons?: components["schemas"]["AssetRejection"][];
             checks?: components["schemas"]["Check"][];
+            /**
+             * @description The creative ID the retailer grouped this campaign under when it
+             *     approved it (the grouping a DSP bids on); null until then. A
+             *     resubmitted creative keeps it while it awaits re-approval.
+             */
+            creativeId: string | null;
             /**
              * @description The approved version that is running — eligible for reservation,
              *     bidding and hand-off — whatever is under review (open question 38,
@@ -4608,6 +4699,118 @@ export interface operations {
                         };
                         items: components["schemas"]["Approval"][];
                         nextCursor?: string | null;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorised"];
+        };
+    };
+    approveAndAssignCreativeId: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    items: {
+                        campaignId: string;
+                        /** @description The version reviewed; rejected with 409 if it has changed. */
+                        assetVersion: string;
+                    }[];
+                    /** @description An existing creative ID to join; omit or null to mint a new one. */
+                    creativeId?: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Approved and assigned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        creativeId: string;
+                        approvals: components["schemas"]["Approval"][];
+                    };
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorised"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    assignCreativeId: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    campaignIds: string[];
+                    /** @description An existing creative ID to join; omit or null to mint a new one. */
+                    creativeId?: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Assigned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        creativeId: string;
+                        approvals: components["schemas"]["Approval"][];
+                    };
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorised"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    listCreativeIds: {
+        parameters: {
+            query?: {
+                advertiserId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Creative IDs */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            creativeId: string;
+                            advertiserId: string;
+                            advertiserName: string | null;
+                            /** Format: date-time */
+                            createdAt: string;
+                            campaigns: {
+                                campaignId: string;
+                                name: string;
+                                touchPoints: string[];
+                            }[];
+                        }[];
                     };
                 };
             };
