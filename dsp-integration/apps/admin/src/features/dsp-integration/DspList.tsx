@@ -2,8 +2,9 @@
    onboarding order (DV360, Amazon Ads DSP, The Trade Desk; spec §7). A DSP
    not set up yet opens its Add card. Contracts to icons below 900px.
    Until DSP integration is switched on and Exchange settings are published,
-   only Exchange settings is listed (Rob, 24 Sep 2026): set up the exchange
-   first, then the rest appears. */
+   only Advertiser settings and the partner DSPs are held back (Rob, 24 Sep
+   2026; narrowed 9 Oct 2026): Exchange settings, Shared Targeting Variables
+   and Change history stay listed, since direct advertisers use them too. */
 import { PROVIDERS, TARGETING_VARIABLES, type Partner } from '@ph-dsp/types'
 import type { ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
@@ -13,8 +14,6 @@ import { NAV_COLLAPSE_BELOW } from '../../shared/AppShell'
 import { useViewportWidth } from '../../shared/useViewportWidth'
 import { T } from '../../theme/phTheme'
 import { useSection } from './DspIntegrationLayout'
-/* Bidding values are always USD (TRANSACTING_CURRENCY in the API's domain/currency.ts), not the instance currency. */
-const TRANSACTING_CURRENCY = 'USD'
 
 export const PATHS = {
   exchange: '/dsp-integration/exchange',
@@ -49,19 +48,19 @@ function Row({ active, collapsed, dashed, title, onClick, children }: { active: 
   )
 }
 
-export function DspList() {
+export function DspList({ changeHistory = false }: { changeHistory?: boolean }) {
   const { pathname } = useLocation()
   const navigate = useNavigate()
-  const { draft, saved, partners, published } = useSection()
+  const { draft, partners, published } = useSection()
   const collapsed = useViewportWidth() < NAV_COLLAPSE_BELOW
-  const advertisers = new Set(partners.flatMap((p) => (p.seats ?? []).map((s) => s.name.toLowerCase()))).size
 
   const company = [
-    { to: PATHS.exchange, icon: 'storefront', title: 'Exchange settings', sub: saved.exchange.enabled ? `${draft.exchange.organisation || 'Client'} is seller of record` : 'DSP integration off' },
-    { to: PATHS.advertiserSettings, icon: 'rule', title: 'Advertiser settings', sub: `${advertisers} advertisers · floor ${TRANSACTING_CURRENCY} ${draft.settings.floorCpm ?? '—'} CPM` },
+    { to: PATHS.exchange, icon: 'storefront', title: 'DSP integration', sub: 'Exchange settings' },
+    { to: PATHS.advertiserSettings, icon: 'rule', title: 'Advertiser settings', sub: 'Floor CPM, play configuration, real-time bidding, category lists' },
     { to: PATHS.variables, icon: 'tune', title: 'Shared Targeting Variables', sub: `${TARGETING_VARIABLES.length} platform variables` },
-    { to: PATHS.history, icon: 'history', title: 'Change history', sub: 'Who changed which setting, and when' },
-  ].slice(0, published ? undefined : 1)
+    /* Behind the changeHistory flag (Rob, 9 Oct 2026): hidden until a future release. */
+    ...(changeHistory ? [{ to: PATHS.history, icon: 'history', title: 'Change history', sub: 'Who changed which setting, and when' }] : []),
+  ].filter((c) => published || c.to !== PATHS.advertiserSettings)
 
   return (
     <nav aria-label="DSP Integration" style={{ width: collapsed ? 64 : undefined }}>

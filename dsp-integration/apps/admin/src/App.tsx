@@ -41,27 +41,27 @@ export interface RouteHandle { title: string; tip?: string; hideNav?: boolean }
    nothing at all. The API enforces the same.
 
    `dspOn` is the retailer's own DSP integration switch (Exchange settings,
-   Rob 24 Sep 2026): while it is off — or not yet known — Advertisers /
-   Inventory (and, from there, Campaign schedule's Campaign status tab) is
-   hidden. DSP Integration stays, because the switch lives there. */
+   Rob 24 Sep 2026): while it is off — or not yet known — Campaign schedule
+   (and its Campaign status tab) is hidden. Advertisers / Inventory and DSP
+   Integration stay (Rob, 9 Oct 2026): direct advertisers use Advertisers /
+   Inventory without a DSP, and the switch itself lives in DSP Integration. */
 export function navFor(flags: Flags, session: Session | undefined, dspOn = false): NavItem[] {
   if (session && session.role === 'hq_helpdesk') return []
   const admin = session?.role === 'hq_admin'
-  const selling = flags.dspIntegration && dspOn
   return [
     { to: '/display-types', label: 'Display Types' },
     { to: '/playlists', label: 'Playlist Management' },
     /* Marketing users read it too (spec §3). */
-    ...(selling ? [{ to: '/advertisers', label: 'Advertisers / Inventory' }] : []),
+    ...(flags.dspIntegration ? [{ to: '/advertisers', label: 'Advertisers / Inventory' }] : []),
     /* Last in the list. Flag off: hidden (decision 6). Admin users only. */
-    ...(flags.dspIntegration && admin ? [{ to: '/dsp-integration', label: 'DSP Integration' }] : []),
+    ...(flags.dspIntegration && admin ? [{ to: '/dsp-integration', label: 'Advertiser Settings' }] : []),
   ]
 }
 
-/* Campaign schedule (Booking schedule + its Campaign status tab) and
-   Advertisers / Inventory open only while DSP integration is switched on; a
-   bookmark or an old tab lands on the first page instead. Their records are
-   untouched either way. */
+/* Campaign schedule (Booking schedule + its Campaign status tab) opens only
+   while DSP integration is switched on; a bookmark or an old tab lands on the
+   first page instead. Its records are untouched either way. Advertisers /
+   Inventory is not gated: direct advertisers use it with no DSP. */
 function WhileDspOn({ children }: { children: ReactNode }) {
   const features = useFeatures()
   if (!features.data) return null
@@ -86,15 +86,15 @@ function featureRoutes(flags: Flags): RouteObject[] {
           path: 'dsp-integration',
           /* The tip that used to sit on the Enable DSP Integration switch now
              explains the whole section from its page title (same ticket). */
-          handle: { title: 'DSP Integration', tip: SWITCH_TIP } satisfies RouteHandle,
-          element: <DspIntegrationLayout />,
+          handle: { title: 'Advertiser Settings', tip: SWITCH_TIP } satisfies RouteHandle,
+          element: <DspIntegrationLayout changeHistory={flags.changeHistory === true} />,
           children: [
             /* Exchange settings until the exchange is published, then Advertiser settings (Rob, 20 Sep). */
             { index: true, element: <DspIndex /> },
             { path: 'exchange', element: <ExchangeSettings /> },
             { path: 'advertiser-settings', element: <AdvertiserSettings /> },
             { path: 'targeting-variables', element: <SharedTargetingVariables /> },
-            { path: 'change-history', element: <ChangeHistory /> },
+            ...(flags.changeHistory ? [{ path: 'change-history', element: <ChangeHistory /> }] : []),
             { path: 'partners/:id', element: <PartnerRoute /> },
             { path: 'add/:provider', element: <AddPartnerRoute /> },
           ],
@@ -103,7 +103,7 @@ function featureRoutes(flags: Flags): RouteObject[] {
           path: 'advertisers',
           /* The prototype's intro line, as the page-title tooltip (decision 2). */
           handle: { title: 'Advertisers / Inventory', tip: 'Every advertiser using the platform, across all DSPs, and the inventory they can buy: every advertiser-owned slot across the estate.' } satisfies RouteHandle,
-          element: <WhileDspOn><AdvertisersPage flags={flags} /></WhileDspOn>,
+          element: <AdvertisersPage flags={flags} />,
         },
         /* Its own page, opened in a new tab from Available Inventory or an advertiser
            (Rob, 20 Sep) — just the schedule, so no Display Types / DSP Integration
@@ -130,8 +130,8 @@ function featureRoutes(flags: Flags): RouteObject[] {
 /* Once the first page is up, fetch every other section this user can open
    in the background, so a first click on any of them has its data already
    (page-load review, Rob 24 Sep 2026). Only what the user may see: DSP
-   pages need the flag, admin-only reads need an admin, and Campaign Status /
-   Advertisers / Inventory need DSP integration switched on. A prefetch that
+   pages need the flag, admin-only reads need an admin, and Campaign Status
+   needs DSP integration switched on. A prefetch that
    fails is simply fetched again when its page opens. */
 const PREFETCH_AFTER_MS = 800
 function usePrefetchSections(flags: Flags, session: Session | undefined, dspOn: boolean | undefined) {
@@ -143,7 +143,8 @@ function usePrefetchSections(flags: Flags, session: Session | undefined, dspOn: 
       Q.displayTypes, Q.playlists,
       ...(flags.dspIntegration ? [Q.partners, Q.advertiserSettings] : []),
       ...(flags.dspIntegration && admin ? [Q.exchange, Q.targetingVariables] : []),
-      ...(flags.dspIntegration && dspOn ? [Q.advertisers, Q.availableInventory, Q.buyersLists, Q.campaigns] : []),
+      ...(flags.dspIntegration ? [Q.advertisers, Q.availableInventory, Q.buyersLists] : []),
+      ...(flags.dspIntegration && dspOn ? [Q.campaigns] : []),
     ]
     /* After the page in front of the user has asked for its own data. */
     const timer = setTimeout(() => wanted.forEach((q) => void qc.prefetchQuery(q)), PREFETCH_AFTER_MS)

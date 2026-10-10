@@ -815,6 +815,77 @@ export interface paths {
         get: operations["listAdvertisers"];
         /** Save changes — approval required and floor multiplier per advertiser */
         put: operations["saveAdvertisers"];
+        /** Add an advertiser with a direct relationship with the retailer (no DSP) */
+        post: operations["addDirectAdvertiser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/advertisers/direct/{advertiserId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove a direct advertiser (refused while it has campaigns or bookings) */
+        delete: operations["removeDirectAdvertiser"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Platform users (Company Settings → Users) */
+        get: operations["listPlatformUsers"];
+        put?: never;
+        /** Add a user. An Advertiser user is bound to one advertiser from GET /admin/v1/advertisers. */
+        post: operations["addPlatformUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/users/{email}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Change a user's name, role or advertiser. The email address cannot change. */
+        put: operations["savePlatformUser"];
+        post?: never;
+        /** Remove a user */
+        delete: operations["removePlatformUser"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/users/{email}/scope": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What a user may see. An Advertiser user is limited to their own advertiser's campaigns; PH Core reads this when it signs them in. */
+        get: operations["getPlatformUserScope"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -2296,6 +2367,11 @@ export interface components {
             revenue: components["schemas"]["BookingRevenue"][];
             /** @description The DSPs the filters offer, and the advertisers each one brings. */
             dsps: components["schemas"]["DspAdvertisers"][];
+            /** @description Advertisers with a direct relationship with the retailer (no DSP) that have something booked, named "Name (Direct)". Offered by the advertiser filter when no DSP is picked. */
+            directAdvertisers?: {
+                advertiserId: string;
+                name: string;
+            }[];
             /** @description The same bookings by campaign type, so a retailer can see what is selling. */
             byPricingType: {
                 pricingType: components["schemas"]["PricingType"];
@@ -2422,11 +2498,37 @@ export interface components {
             /** @default 1 */
             floorMultiplier: number;
         };
+        PlatformUserInput: {
+            firstName: string;
+            lastName?: string;
+            /** @description Required when adding; ignored on save (it cannot change). */
+            email?: string;
+            /** @enum {string} */
+            role: "Admin" | "Marketing" | "Help Desk" | "Advertiser";
+            /** @description Required for role Advertiser; an advertiserId from GET /admin/v1/advertisers. */
+            advertiserId?: string;
+            /** @description Send the invitation email (PH Core sends it). Add only. */
+            invite?: boolean;
+        };
+        PlatformUser: {
+            email: string;
+            firstName: string;
+            lastName: string;
+            /** @enum {string} */
+            role: "Admin" | "Marketing" | "Help Desk" | "Advertiser";
+            advertiserId: string | null;
+            advertiserName: string | null;
+            advertiserDirect: boolean | null;
+            invited: boolean;
+            lastLoginAt: string | null;
+        };
         Advertiser: components["schemas"]["AdvertiserSetting"] & {
             advertiserId: string;
             name: string;
-            /** @description DSP names */
+            /** @description DSP names; empty for a direct advertiser */
             via: string[];
+            /** @description True for an advertiser with a direct relationship with the retailer (no DSP). Shown as "Name (Direct)" in place of the DSP name. */
+            direct?: boolean;
             effectiveFloorCpm: number;
             /**
              * @description Play windows this advertiser holds from the current window on.
@@ -2518,11 +2620,12 @@ export interface components {
              */
             defaultVacd?: number | null;
             /**
-             * @description Per-display-type floor price (CPM, USD). Null or absent = inherit the
-             *     central floor, resolved at read time (never a copy). A number is an
-             *     explicit override for this display type only. No editor writes it
-             *     in this release; it is stored for a later user or optimisation
-             *     agent. Never below the central floor when resolved.
+             * @description Per-display-type floor (CPM, USD). Null or absent inherits the
+             *     central floor, resolved at read time (never a copy); a number
+             *     overrides it for this display type only. Stored for a later user or
+             *     optimisation agent: no editor writes it in this release. A DSP or
+             *     buyers-list floor still wins over it, and the resolved floor is
+             *     never below the central floor.
              */
             floorCpm?: number | null;
             /**
@@ -4267,6 +4370,214 @@ export interface operations {
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorised"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    addDirectAdvertiser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Added */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        advertiserId: string;
+                        name: string;
+                    };
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorised"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    removeDirectAdvertiser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                advertiserId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorised"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    listPlatformUsers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Users */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["PlatformUser"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorised"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    addPlatformUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlatformUserInput"];
+            };
+        };
+        responses: {
+            /** @description Added */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformUser"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorised"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    savePlatformUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                email: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlatformUserInput"];
+            };
+        };
+        responses: {
+            /** @description Saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformUser"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorised"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    removePlatformUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                email: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorised"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getPlatformUserScope: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                email: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Scope */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        email: string;
+                        role: string;
+                        /** @description Null for an internal user (not limited to one advertiser). */
+                        advertiser: {
+                            advertiserId: string;
+                            name: string;
+                            direct: boolean;
+                            bookings: number;
+                            campaigns: {
+                                [key: string]: number;
+                            };
+                        } | null;
+                        campaigns: {
+                            campaignId: string;
+                            name: string;
+                            activation: {
+                                enabled: boolean;
+                            };
+                            approval: string;
+                        }[];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorised"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     listApprovals: {

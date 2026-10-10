@@ -760,6 +760,40 @@ schedule's own second tab, 26 Sep 2026). It carries per-advertiser settings
 and, below them, the inventory those advertisers can buy (§5); **campaigns
 are not approved here.**
 
+**Direct advertisers (9 Oct 2026).** An advertiser with a direct relationship
+with the retailer, not brought by any DSP, is added on this page (admin only,
+saved at once; `POST /admin/v1/advertisers/direct`, table `direct_advertisers`,
+migration 0063) from the **Add new Advertiser** button at the top right of the
+page, which opens a pop-up asking for the name (no inline field), and removed
+with the delete icon beside it in the Advertisers table
+(`DELETE /admin/v1/advertisers/direct/{id}`, refused while it has campaigns or
+bookings; DSP advertisers have no delete icon). It is listed with the DSP
+advertisers (`direct: true`, empty `via`) and takes the same approval and floor
+settings. Wherever a DSP name would accompany an advertiser it reads
+**"Name (Direct)"**: the Via column, the Assigned to options, and the booking
+schedule (its advertiser filter, offered only when no DSP is picked, and its
+tiles). A DSP seat of the same name wins, so one advertiser is never listed
+twice. Picking one in a slot's Assigned to holds that slot for it and saves
+like a DSP advertiser (no DSP comes along, since it has none); before
+9 Oct 2026 the save was refused as "not an advertiser on any connected DSP".
+
+**Users page on the real API (10 Oct 2026, ticket H6BcvdNZUvdP8Ebh5Tve).**
+`mockups/platform-users.html` (Company Settings → Users) reads and saves
+through `GET/POST /admin/v1/users`, `PUT/DELETE /admin/v1/users/{email}`
+(table `platform_users`, migration 0064; admin only; email lower-cased, fixed
+after creation). Its Advertiser drop-down is `GET /admin/v1/advertisers`, the
+same source as this page: DSP advertisers, then direct ones as "Name (Direct)".
+Choosing **+ Add new advertiser…** in the modal calls
+`POST /admin/v1/advertisers/direct` first, so the advertiser exists on both
+pages at once, then saves the user against it. An Advertiser user must name a
+known advertiser. Internal users (Admin, Marketing, Help Desk) are stored the
+same way but have no sign-in behind them. **Signing in is PH Core's**
+(`api/PH-CORE-BOUNDARIES.md`): the API only supplies
+`GET /admin/v1/users/{email}/scope`, which returns the user's advertiser and
+only that advertiser's campaigns (with approval status), for PH Core to apply
+when it signs an Advertiser user in. This repo has no advertiser-facing login,
+insights or analytics screen to scope; that part needs the platform.
+
 **Admin and marketing users both see it** (Rob, 20 Sep): marketing reads it,
 and only an admin changes approval, pricing, what a position is assigned to
 or what targeting it supports. A read-only viewer sees a *Read only* pill in
@@ -2293,19 +2327,22 @@ retailer switch DSP integration on and off.
 
 - **Off the first time a retailer lands on DSP Integration.** Switched off,
   the switch is all Exchange settings shows, and the section's list shows
-  only Exchange settings.
+  Exchange settings, Shared Targeting Variables and Change history — not Advertiser settings or the partner DSPs (narrowed 9 Oct
+  2026: the other pages are still used by direct advertisers).
 - **Switching on** shows the seller-of-record fields below. Once they are
   saved and complete, `sellers.json` is published and the rest of the
-  section appears: Advertiser settings, Shared Targeting Variables and the
-  DSP pages. Until then, a link to one of those pages opens Exchange
-  settings instead.
+  section appears: Advertiser settings and the DSP pages. Until then, a link
+  to one of those pages opens Exchange settings instead.
 - **Like every toggle in the section, it is an unsaved change until Save
   changes.** Switching it off before saving also drops unsaved edits to the
   fields it hides.
 - **While it is off:**
-  - Advertisers / Inventory is hidden from the navigation, and a link to it
-    (or to Campaign schedule — see below) opens the first page instead. DSP
-    Integration stays, because the switch is there.
+  - Campaign schedule and its Campaign status tab are hidden, and a link
+    to them opens the first page instead. **Advertisers / Inventory stays
+    in the navigation and opens** (9 Oct 2026): direct advertisers, not
+    going through a DSP, use it. DSP Integration stays too, as do Shared
+    Targeting Variables and Change history inside it; only Advertiser
+    settings and the partner DSPs are hidden.
   - No DSP is sent bid requests; the scheduled auction doesn't run.
   - The Partner API and `sellers.json` answer 404, exactly as with the
     build's feature flag off.
@@ -3752,9 +3789,10 @@ playback analytics.**
 ### DSP integration and exchange
 
 - **DSP integration switch** (Rob, 24 Sep 2026): **Enable DSP Integration**
-  at the top of Exchange settings, off at first; while off, Advertisers /
-  Inventory (and, from there, Campaign schedule's Campaign status tab) is
-  hidden, no bid requests are sent, the Partner API and `sellers.json`
+  at the top of Exchange settings, off at first; while off, only
+  Advertiser settings, the partner DSPs and Campaign schedule (with its
+  Campaign status tab) are hidden — Advertisers / Inventory and Shared
+  Targeting Variables stay (9 Oct 2026) — no bid requests are sent, the Partner API and `sellers.json`
   answer 404, and nothing is deleted. What the switch is for is explained
   by the tooltip on the **DSP Integration page title**, not beside the
   switch (ticket pM0Bc2pO8WnxeV9UpI8e, 28 Sep 2026); Display Types Details

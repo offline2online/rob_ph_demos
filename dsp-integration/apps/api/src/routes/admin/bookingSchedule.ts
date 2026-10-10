@@ -28,7 +28,7 @@ import type { StoredTargeting } from '../../domain/targetingSummary'
 import { TAKEN, type ReservationRecord } from '../../repos/ReservationRepo'
 import { TRANSACTING_CURRENCY } from '../../domain/currency'
 import { zonePlaceOf } from '../../domain/displayTypes'
-import { advertiserSlug } from '@ph-dsp/types'
+import { advertiserSlug, directLabel } from '@ph-dsp/types'
 
 const DAY = 86_400_000
 /* How far back a real-time position's plays are counted (ticket vhRFN1K3N4Giw1Z0OEI6, 8 Oct 2026). */
@@ -84,7 +84,8 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
   const len = await shortestWindowMs(ctx)
   const partners = await ctx.partners.list()
   /* Advertiser names come from the DSPs' seats, keyed by their slug. */
-  const advertiserName = new Map(partners.flatMap((p) => p.seats.map((s) => [advertiserSlug(s.name), s.name] as const)))
+  const direct = await ctx.company.directAdvertisers()
+  const advertiserName = new Map([...direct.map((d) => [d.advertiserId, directLabel(d.name)] as const), ...partners.flatMap((p) => p.seats.map((s) => [advertiserSlug(s.name), s.name] as const))])
   const revenue = new Map<string, BookingSchedule['revenue'][number]>()
   const byType = new Map<string, BookingSchedule['byPricingType'][number]>()
 
@@ -225,6 +226,8 @@ export async function bookingSchedule(ctx: Context, starts: Date[], f: ScheduleF
       partnerId: p.id, name: p.name,
       advertisers: p.seats.map((s) => ({ advertiserId: advertiserSlug(s.name), name: s.name })).filter((a) => booked.has(a.advertiserId)),
     })),
+    /* Direct advertisers (no DSP) with something booked: offered when no DSP is picked. */
+    directAdvertisers: direct.filter((d) => booked.has(d.advertiserId) && !partners.some((p) => p.seats.some((x) => advertiserSlug(x.name) === d.advertiserId))).map((d) => ({ advertiserId: d.advertiserId, name: directLabel(d.name) })),
     byPricingType: [...byType.values()],
     totals: {
       bookedWindows: rows.reduce((n, r) => n + r.bookedWindows, 0),

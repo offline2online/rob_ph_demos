@@ -20,7 +20,7 @@ export default defineConfig({
   use: { baseURL: 'http://127.0.0.1:4173/' },
   projects: Object.entries(VIEWPORTS).map(([name, viewport]) => ({ name, use: { viewport, deviceScaleFactor: 1 } })),
   webServer: {
-    command: 'DSP_INTEGRATION_ENABLED=true VITE_DEMO=1 npx vite build --base=./ --outDir dist-layout && node layout/serve.mjs dist-layout 4173',
+    command: 'DSP_INTEGRATION_ENABLED=true CHANGE_HISTORY_ENABLED=true VITE_DEMO=1 npx vite build --base=./ --outDir dist-layout && node layout/serve.mjs dist-layout 4173',
     url: 'http://127.0.0.1:4173/',
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,
