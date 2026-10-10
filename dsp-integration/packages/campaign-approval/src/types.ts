@@ -73,6 +73,8 @@ export interface Approval {
      it while it awaits re-approval (the assignment belongs to the campaign,
      not to one version of its creative). */
   creativeId?: string | null
+  /* The private-auction deal ID the advertiser set at authoring, as submitted; null for a direct campaign. */
+  dealId?: string | null
   targetingSummary?: string
   creative?: Creative | null
   canvas?: Canvas | null
@@ -86,7 +88,9 @@ export interface CreativeIdView {
   advertiserId: string
   advertiserName: string | null
   createdAt: string
-  campaigns: { campaignId: string; name: string; touchPoints: string[] }[]
+  /* The deal every member belongs to; null for a direct ID (no deal). A creative ID never straddles two deals. */
+  dealId: string | null
+  campaigns: { campaignId: string; name: string; touchPoints: string[]; dealId: string | null }[]
 }
 
 export interface StatusCounts { draft: number; awaiting_approval: number; approved: number; rejected: number }

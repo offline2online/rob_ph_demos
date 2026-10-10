@@ -25,13 +25,18 @@ export function triageOrder(rows: Campaign[], approvals: Record<string, Approval
   })
 }
 
-/* Grouped by advertiser (ticket IDGsyELBJsjlAYjizSqT): advertisers A–Z, and
-   within each the order given — a stable sort, so the triage order holds
-   inside every group. Rows with no advertiser come last. */
-export function byAdvertiser(rows: Campaign[]): Campaign[] {
+/* Grouped advertiser → deal ID → campaign (ticket DLhjuhbTqJS2uAvhh0I8):
+   advertisers A–Z; within each, deals A–Z with the no-deal campaigns last
+   (they sit directly under the advertiser, no deal layer); within each the
+   order given — a stable sort, so the triage order holds inside every group.
+   Rows with no advertiser come last. */
+export function byAdvertiserDeal(rows: Campaign[]): Campaign[] {
   return [...rows].sort((a, b) => {
     if (!a.advertiserName !== !b.advertiserName) return a.advertiserName ? -1 : 1
-    return (a.advertiserName ?? '').localeCompare(b.advertiserName ?? '')
+    const adv = (a.advertiserName ?? '').localeCompare(b.advertiserName ?? '')
+    if (adv) return adv
+    if (!a.dealId !== !b.dealId) return a.dealId ? -1 : 1
+    return (a.dealId ?? '').localeCompare(b.dealId ?? '')
   })
 }
 

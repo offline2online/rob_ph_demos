@@ -154,3 +154,157 @@ describe('Assign a creative ID for an auto-approved advertiser', () => {
     expect((await assign(app, [])).statusCode).toBe(400)
   })
 })
+
+/* The private-auction (deal ID) flow — REQUIREMENTS §3 "The two approval
+   flows", cases B1–B9 (ticket DLhjuhbTqJS2uAvhh0I8). */
+describe('Private auction (deal ID) flow', () => {
+  /* Swisse campaigns, three of them tagged with deal PMP-1 (a clone of the seeded
+     c_api_swisse, assets and all) and the seeded two submitted. */
+  async function dealSetup() {
+    const s = await setup()
+    const { ctx } = s
+    const cols = (ctx.db.prepare('PRAGMA table_info(campaigns)').all() as { name: string }[]).map((c) => c.name)
+    const clone = async (id: string, name: string, deal: string | null) => {
+      ctx.db.prepare(`INSERT INTO campaigns (${cols.join(',')}) SELECT ${cols.map((c) => (c === 'id' ? '?' : c === 'name' ? '?' : c === 'deal_id' ? '?' : c)).join(',')} FROM campaigns WHERE id = 'c_api_swisse'`).run(id, name, deal)
+      for (const a of ctx.db.prepare("SELECT * FROM campaign_assets WHERE campaign_id = 'c_api_swisse'").all() as Record<string, unknown>[]) {
+        const keys = Object.keys(a)
+        ctx.db.prepare(`INSERT INTO campaign_assets (${keys.join(',')}) VALUES (${keys.map(() => '?').join(',')})`).run(...keys.map((k) => (k === 'id' ? randomUUID() : k === 'campaign_id' ? id : a[k])) as never[])
+      }
+      await ctx.approvals.submit(id, [], 'Swisse')
+    }
+    await clone('c_deal_a', 'Deal A', 'PMP-1')
+    await clone('c_deal_b', 'Deal B', 'PMP-1')
+    await clone('c_deal_c', 'Deal C', 'PMP-1')
+    await clone('c_deal_other', 'Other deal', 'PMP-2')
+    ctx.db.prepare("UPDATE campaigns SET deal_id = 'PMP-1' WHERE id = 'c_api_swisse'").run()
+    await ctx.approvals.changed('c_api_swisse', 'Swisse')
+    const reject = (id: string, reason = 'Price in the artwork.') =>
+      ctx.approvals.reject(id, 'v1', 'HQ Admin (POC)', reason)
+    return { ...s, reject }
+  }
+
+  it('B1 carries the advertiser-set deal ID through submission onto the campaign status', async () => {
+    const { app } = await dealSetup()
+    const body = { advertiserId: 'swisse', name: 'Swisse — Deal', displayTypeId: 'landscape', default: { pricingType: 'localised' } }
+    const res = await app.inject({ method: 'POST', url: '/api/v1/campaigns', headers: G, payload: { ...body, dealId: 'PMP-1' } })
+    expect(res.statusCode).toBe(201)
+    expectMatchesContract('POST', '/v1/campaigns', 201, res.json())
+    expect(res.json().dealId).toBe('PMP-1')
+    const status = await app.inject({ method: 'GET', url: `/api/v1/campaigns/${res.json().campaignId}/status`, headers: G })
+    expectMatchesContract('GET', '/v1/campaigns/{campaignId}/status', 200, status.json())
+    expect(status.json()).toMatchObject({ dealId: 'PMP-1', creativeId: null })
+    /* The admin table reads it off the campaign. */
+    const list = (await app.inject({ method: 'GET', url: '/api/admin/v1/campaigns' })).json().items as { campaignId: string; dealId?: string }[]
+    expect(list.find((c) => c.campaignId === res.json().campaignId)?.dealId).toBe('PMP-1')
+    /* A direct campaign has no deal; an empty deal ID is refused. */
+    const direct = await app.inject({ method: 'POST', url: '/api/v1/campaigns', headers: G, payload: body })
+    expect(direct.json().dealId).toBeNull()
+    for (const dealId of ['', '   ', 5]) {
+      const bad = await app.inject({ method: 'POST', url: '/api/v1/campaigns', headers: G, payload: { ...body, dealId } })
+      expect(bad.statusCode).toBe(400)
+      expectMatchesContract('POST', '/v1/campaigns', 400, bad.json())
+    }
+  })
+
+  it('B2 approves a subset of a deal into a new creative ID, leaving the rest awaiting approval', async () => {
+    const { approve, view } = await dealSetup()
+    const res = await approve(['c_deal_a', 'c_deal_b'])
+    expect(res.statusCode).toBe(200)
+    expect(await view('c_deal_a')).toMatchObject({ status: 'approved', creativeId: res.json().creativeId, dealId: 'PMP-1' })
+    expect(await view('c_deal_c')).toMatchObject({ status: 'awaiting_approval', creativeId: null, dealId: 'PMP-1' })
+  })
+
+  it('B3 a later round adds a second creative ID (new or existing) to the same deal', async () => {
+    const { approve, creativeIds } = await dealSetup()
+    const first = (await approve(['c_deal_a'])).json().creativeId as string
+    const second = (await approve(['c_deal_b'])).json().creativeId as string
+    expect(second).not.toBe(first)
+    expect((await creativeIds('?advertiserId=swisse&dealId=PMP-1')).map((g) => g.creativeId).sort()).toEqual([first, second].sort())
+    const joined = await approve(['c_deal_c'], first)
+    expect(joined.json().creativeId).toBe(first)
+  })
+
+  it('B4 refuses a selection that mixes deals, or deal and non-deal campaigns, approving none', async () => {
+    const { approve, view } = await dealSetup()
+    const mixedDeals = await approve(['c_deal_a', 'c_deal_other'])
+    expect(mixedDeals.statusCode).toBe(400)
+    expectMatchesContract('POST', '/admin/v1/approvals/approve-assign', 400, mixedDeals.json())
+    expect(mixedDeals.json().error.message).toMatch(/one deal/)
+    expect((await approve(['c_deal_a', 'c_api_swisse_kids'])).statusCode).toBe(400)
+    expect((await view('c_deal_a')).status).toBe('awaiting_approval')
+    /* An existing ID of another deal, or of no deal, is refused too. */
+    const other = (await approve(['c_deal_other'])).json().creativeId as string
+    const wrong = await approve(['c_deal_a'], other)
+    expect(wrong.statusCode).toBe(400)
+    expect(wrong.json().error.message).toMatch(/does not belong to deal PMP-1/)
+    const direct = (await approve(['c_api_swisse_kids'])).json().creativeId as string
+    expect((await approve(['c_deal_a'], direct)).statusCode).toBe(400)
+    expect((await view('c_deal_a')).status).toBe('awaiting_approval')
+  })
+
+  it('B5 lists only the same deal\'s creative IDs for a deal campaign', async () => {
+    const { approve, creativeIds } = await dealSetup()
+    const one = (await approve(['c_deal_a'])).json().creativeId as string
+    const two = (await approve(['c_deal_other'])).json().creativeId as string
+    const direct = (await approve(['c_api_swisse_kids'])).json().creativeId as string
+    expect((await creativeIds('?advertiserId=swisse&dealId=PMP-1')).map((g) => g.creativeId)).toEqual([one])
+    expect((await creativeIds('?advertiserId=swisse&dealId=PMP-2')).map((g) => g.creativeId)).toEqual([two])
+    expect((await creativeIds('?advertiserId=swisse&dealId=')).map((g) => g.creativeId)).toEqual([direct])
+    expect((await creativeIds('?advertiserId=swisse')).length).toBe(3)
+    expect((await creativeIds('?advertiserId=swisse&dealId=PMP-1'))[0]).toMatchObject({ dealId: 'PMP-1', campaigns: [{ campaignId: 'c_deal_a', dealId: 'PMP-1' }] })
+  })
+
+  it('B6 rejects one campaign with a reason and approves the rest of the deal', async () => {
+    const { approve, view, reject } = await dealSetup()
+    await reject('c_deal_b')
+    const res = await approve(['c_deal_a', 'c_deal_c'])
+    expect(res.statusCode).toBe(200)
+    expect(await view('c_deal_b')).toMatchObject({ status: 'rejected', reason: 'Price in the artwork.', creativeId: null })
+    expect(await view('c_deal_a')).toMatchObject({ status: 'approved', creativeId: res.json().creativeId })
+  })
+
+  it('B7 re-attaches a rejected-then-fixed campaign to the SAME creative ID, minting none', async () => {
+    const { ctx, approve, view, reject, creativeIds } = await dealSetup()
+    await reject('c_deal_b')
+    const { creativeId } = (await approve(['c_deal_a', 'c_deal_c'])).json()
+    await ctx.approvals.unreject('c_deal_b', 'v1', 'HQ Admin (POC)')
+    /* The deal has exactly one ID, which is what the picker pre-highlights. */
+    expect((await creativeIds('?advertiserId=swisse&dealId=PMP-1')).map((g) => g.creativeId)).toEqual([creativeId])
+    const again = await approve(['c_deal_b'], creativeId)
+    expect(again.json().creativeId).toBe(creativeId)
+    expect(await view('c_deal_b')).toMatchObject({ status: 'approved', creativeId })
+    expect(await creativeIds('?advertiserId=swisse')).toHaveLength(1)
+  })
+
+  it('B8 offers several IDs, with none pre-highlightable, when the deal has more than one', async () => {
+    const { approve, creativeIds } = await dealSetup()
+    await approve(['c_deal_a'])
+    await approve(['c_deal_b'])
+    expect(await creativeIds('?advertiserId=swisse&dealId=PMP-1')).toHaveLength(2)
+  })
+
+  it('B9 keeps its own creative ID when an approved deal campaign is edited and resubmitted', async () => {
+    const { ctx, approve, view } = await dealSetup()
+    const { creativeId } = (await approve(['c_deal_a'])).json()
+    ctx.db.prepare("INSERT INTO campaign_assets (id, campaign_id, version, role, file, mime_type, width, height, size_bytes, created_at) VALUES (?, 'c_deal_a', 2, 'default', 'x.png', 'image/png', 1080, 1920, 1, ?)")
+      .run(randomUUID(), NOW.toISOString())
+    await ctx.approvals.changed('c_deal_a', 'Swisse')
+    expect(await view('c_deal_a')).toMatchObject({ status: 'awaiting_approval', pendingEdit: true, creativeId, dealId: 'PMP-1' })
+    expect((await approve(['c_deal_a'], creativeId)).json().creativeId).toBe(creativeId)
+  })
+})
+
+/* Direct flow A5: a rejected campaign carries the reason and, never having
+   been approved, has no creative ID; HQ then approves the fixed one afresh. */
+describe('Direct flow: reject then fix', () => {
+  it('a rejected campaign has no creative ID and can be approved after resubmission', async () => {
+    const { ctx, app, approve, view, version } = await setup()
+    await ctx.approvals.reject('c_api_swisse', await version('c_api_swisse'), 'HQ Admin (POC)', 'Price in artwork')
+    const rejected = await app.inject({ method: 'GET', url: '/api/v1/campaigns/c_api_swisse/status', headers: G })
+    expect(rejected.json()).toMatchObject({ status: 'rejected', reason: 'Price in artwork', creativeId: null })
+    await ctx.approvals.unreject('c_api_swisse', 'v1', 'HQ Admin (POC)')
+    const res = await approve(['c_api_swisse'])
+    expect(res.statusCode).toBe(200)
+    expect((await view('c_api_swisse')).creativeId).toBe(res.json().creativeId)
+  })
+})

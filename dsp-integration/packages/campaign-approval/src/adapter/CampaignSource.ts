@@ -16,6 +16,8 @@ export interface CampaignRef {
   source: 'hq' | 'api' | 'dsp'
   advertiserId: string | null
   advertiserName: string | null
+  /* The private-auction deal the advertiser tagged the campaign with at authoring; absent/null for a direct campaign. Immutable through approval. */
+  dealId?: string | null
   partnerId: string | null
   partnerName: string | null
   activation: { enabled: boolean }

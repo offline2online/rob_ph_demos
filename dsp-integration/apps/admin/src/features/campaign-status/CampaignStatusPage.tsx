@@ -46,7 +46,7 @@ import { Tip } from '../../shared/Tip'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
 import { ApprovalStatusBadge, STATUS_LABELS, type Approval, type ApprovalStatus } from '@ph-dsp/campaign-approval/ui'
 import type { Campaign } from '@ph-dsp/types'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../../api/client'
 import { Q } from '../../api/queries'
@@ -55,7 +55,7 @@ import { Icon } from '../../shared/Icon'
 import { externalSetColumn, pageSetColumn, searchColumn, setColumn } from '../../shared/TableFilters'
 import { T } from '../../theme/phTheme'
 import { CAMPAIGN_STATUS_PATH, useCampaignActions } from './useCampaigns'
-import { byAdvertiser, elapsedSince, triageOrder } from './triage'
+import { byAdvertiserDeal, elapsedSince, triageOrder } from './triage'
 
 interface Ctx {
   approvals: Record<string, Approval>
@@ -64,13 +64,20 @@ interface Ctx {
   open: (id: string) => void
   selected: ReadonlySet<string>
   toggle: (id: string, on: boolean) => void
+  /* The first row of each advertiser / deal group carries that group's tick-all
+     box: its key is the first campaign's id, its value the group's selectable campaigns. */
+  advGroups: ReadonlyMap<string, GroupInfo>
+  dealGroups: ReadonlyMap<string, GroupInfo>
+  toggleGroup: (ids: string[], on: boolean) => void
   unreject: (a: Approval) => Promise<void>
   activate: (c: Campaign, enabled: boolean) => Promise<void>
   now: number
 }
 type P = ICellRendererParams<Campaign, unknown, { current: Ctx }>
 /* One creative ID and the campaigns grouped under it (GET /admin/v1/creative-ids). */
-interface CreativeIdGroup { creativeId: string; campaigns: { campaignId: string; name: string; touchPoints: string[] }[] }
+interface CreativeIdGroup { creativeId: string; dealId?: string | null; campaigns: { campaignId: string; name: string; touchPoints: string[] }[] }
+/* A group's label and the campaigns in it that can be ticked. */
+interface GroupInfo { label: string; ids: string[] }
 
 /* The statuses a retailer sees here (never Draft), in the order the counts show them. */
 const FILTERABLE_STATUSES = ['approved', 'awaiting_approval', 'rejected'] as const
@@ -98,6 +105,26 @@ const SelectCell = ({ data, context }: P) => {
   if (!data || !isSelectable(a) || !c.canApprove) return null
   return <Checkbox aria-label={`Select ${data.name}`} checked={c.selected.has(data.campaignId)} onChange={(e) => c.toggle(data.campaignId, e.target.checked)} />
 }
+
+/* Advertiser and Deal ID show once per group, on the group's first row, with a
+   box that ticks (or unticks) every selectable campaign in the group; it shows
+   partial when only some are ticked. Pinned left with the selection box. */
+const GroupCell = ({ data, context, groups, fallback }: P & { groups: 'advGroups' | 'dealGroups'; fallback?: string }) => {
+  const c = context.current
+  const g = data && c[groups].get(data.campaignId)
+  if (!g) return null
+  const on = g.ids.filter((id) => c.selected.has(id)).length
+  return (
+    <span className="flex items-center gap-2 truncate" title={g.label}>
+      {c.canApprove && g.ids.length > 0 && (
+        <Checkbox aria-label={`Select all ${g.label}`} checked={on === g.ids.length} indeterminate={on > 0 && on < g.ids.length} onChange={(e) => c.toggleGroup(g.ids, e.target.checked)} />
+      )}
+      <b className="truncate">{g.label || fallback}</b>
+    </span>
+  )
+}
+const AdvertiserCell = (p: P) => <GroupCell {...p} groups="advGroups" fallback="—" />
+const DealCell = (p: P) => <GroupCell {...p} groups="dealGroups" />
 
 /* The campaign's own name, opening the campaign. Hovering shows its details
    (the existing HQ Admin tooltip pattern): who, which DSP, where it runs,
@@ -212,7 +239,7 @@ export function CampaignStatusPage() {
   const all = useMemo(() => nonHq.filter((c) => approvals[c.campaignId]?.status !== 'draft'), [nonHq, approvals])
   /* Taken once when the page loads: the elapsed figure does not tick. */
   const [now] = useState(() => Date.now())
-  const rows = useMemo(() => byAdvertiser(triageOrder(all.filter((c) => {
+  const rows = useMemo(() => byAdvertiserDeal(triageOrder(all.filter((c) => {
     if (advertiserId && c.advertiserId !== advertiserId) return false
     const s = approvals[c.campaignId]?.status
     return !statusFilter.length || (!!s && (statusFilter as string[]).includes(s))
@@ -238,8 +265,28 @@ export function CampaignStatusPage() {
   const autoOnly = autoSelected > 0 && !mixed
   /* A creative ID spans one advertiser's campaigns, so the assign actions need exactly one. */
   const advertisers = new Set(selectedRows.map((c) => c.advertiserId))
-  const oneAdvertiser = selectedRows.length > 0 && advertisers.size === 1 && !advertisers.has(null)
+  const oneAdvertiserOnly = selectedRows.length > 0 && advertisers.size === 1 && !advertisers.has(null)
+  /* One-advertiser, and within it one deal (or none): a creative ID never straddles two deals. */
+  const deals = new Set(selectedRows.map((c) => c.dealId ?? null))
+  const oneDeal = deals.size === 1
+  const deal = oneDeal ? [...deals][0] : null
+  const oneAdvertiser = oneAdvertiserOnly && oneDeal
   const toggle = (id: string, on: boolean) => setTicked((t) => { const n = new Set(t); if (on) n.add(id); else n.delete(id); return n })
+  const toggleGroup = (ids: string[], on: boolean) => setTicked((t) => { const n = new Set(t); for (const id of ids) { if (on) n.add(id); else n.delete(id) } return n })
+  /* Group boxes act on the rows the column filters leave showing. */
+  const { advGroups, dealGroups } = useMemo(() => {
+    const shown = rows.filter((c) => !visible || visible.has(c.campaignId))
+    const adv = new Map<string, GroupInfo>(), dealMap = new Map<string, GroupInfo>()
+    let a: GroupInfo | null = null, d: GroupInfo | null = null, prevAdv: string | null | undefined, prevDeal: string | null | undefined
+    for (const c of shown) {
+      const advKey = c.advertiserId ?? c.advertiserName ?? null
+      if (advKey !== prevAdv || a === null) { a = { label: c.advertiserName ?? '', ids: [] }; adv.set(c.campaignId, a); prevAdv = advKey; prevDeal = undefined }
+      const dealKey = c.dealId ?? null
+      if (dealKey !== prevDeal) { d = { label: dealKey ?? '', ids: [] }; if (dealKey) dealMap.set(c.campaignId, d); prevDeal = dealKey }
+      if (isSelectable(approvals[c.campaignId])) { a.ids.push(c.campaignId); if (dealKey) d!.ids.push(c.campaignId) }
+    }
+    return { advGroups: adv, dealGroups: dealMap }
+  }, [rows, visible, approvals])
   const awaitingIds = rows.filter((c) => approvals[c.campaignId]?.status === 'awaiting_approval' && (!visible || visible.has(c.campaignId))).map((c) => c.campaignId)
   const [picking, setPicking] = useState(false)
   const [choice, setChoice] = useState<string | null>(null)
@@ -251,8 +298,9 @@ export function CampaignStatusPage() {
   }
   /* Each creative ID this advertiser has, with the campaigns (and touch points) already under it. */
   const creativeIds = useQuery({
-    queryKey: ['creative-ids', [...advertisers][0] ?? null],
-    queryFn: () => api<{ items: CreativeIdGroup[] }>('GET', `/admin/v1/creative-ids?advertiserId=${encodeURIComponent([...advertisers][0] ?? '')}`).then((r) => r.items),
+    queryKey: ['creative-ids', [...advertisers][0] ?? null, deal],
+    /* A deal campaign is offered only that deal's IDs; a direct one only direct IDs. */
+    queryFn: () => api<{ items: CreativeIdGroup[] }>('GET', `/admin/v1/creative-ids?advertiserId=${encodeURIComponent([...advertisers][0] ?? '')}&dealId=${encodeURIComponent(deal ?? '')}`).then((r) => r.items),
     enabled: picking && oneAdvertiser,
   })
   /* A resubmitted creative goes back to the ID it originally belonged to. */
@@ -261,9 +309,15 @@ export function CampaignStatusPage() {
     setChoice(originals.size === 1 ? [...originals][0] : null)
     setPicking(true)
   }
+  /* Anchored by the deal (REQUIREMENTS.md, Flow B step 5): a deal campaign with no ID of its own
+     (rejected, now fixed) is offered the deal's one creative ID, pre-highlighted. With several IDs
+     in the deal the anchor is ambiguous, so nothing is pre-highlighted and HQ chooses. */
+  useEffect(() => {
+    if (picking && deal && originals.size === 0 && !choice && creativeIds.data?.length === 1) setChoice(creativeIds.data[0].creativeId)
+  }, [picking, deal, originals.size, choice, creativeIds.data])
 
   const ctx: Ctx = {
-    approvals, canApprove, busy, now, open: (id) => navigate(`${CAMPAIGN_STATUS_PATH}/${id}`), unreject, activate, selected, toggle,
+    approvals, canApprove, busy, now, open: (id) => navigate(`${CAMPAIGN_STATUS_PATH}/${id}`), unreject, activate, selected, toggle, advGroups, dealGroups, toggleGroup,
   }
   const values = (of: (c: Campaign) => string) => () => all.map(of).filter((v) => v && v !== '—')
   const advertiserOptions = useMemo(() => [...new Map(
@@ -283,16 +337,18 @@ export function CampaignStatusPage() {
   }
   const statusOptions = FILTERABLE_STATUSES.filter((k) => counts[k] > 0 || statusFilter.includes(k))
   const columns = useMemo<ColDef<Campaign>[]>(() => [
-    { headerName: '', width: 44, minWidth: 44, suppressSizeToFit: true, cellRenderer: SelectCell },
-    /* Activation first (ticket, 27 Sep 2026): switch an approved campaign on. */
-    { headerName: 'Activation', width: 160, suppressSizeToFit: true, cellRenderer: ActivationCell },
+    { headerName: '', width: 44, minWidth: 44, suppressSizeToFit: true, pinned: 'left', cellRenderer: SelectCell },
     /* Then who submitted it: every other column here is about the one
        playlist an advertiser submitted for a slot. */
     {
-      headerName: 'Advertiser', width: 150, minWidth: 130, valueGetter: (p) => p.data?.advertiserName ?? '—',
+      headerName: 'Advertiser', width: 190, minWidth: 160, pinned: 'left', cellRenderer: AdvertiserCell, valueGetter: (p) => p.data?.advertiserName ?? '—',
       ...externalSetColumn<Campaign>('Advertiser', advertiserOptions.map((a) => a.label), advertiserOptions.find((a) => a.value === advertiserId)?.label,
         (name) => setAdvertiserFilter(advertiserOptions.find((a) => a.label === name)?.value)),
     },
+    /* Deal ID (private auctions): the advertiser's own grouping, set at authoring. Empty for a direct campaign. */
+    { headerName: 'Deal ID', width: 150, minWidth: 130, pinned: 'left', cellRenderer: DealCell, valueGetter: (p) => p.data?.dealId ?? '', ...setColumn<Campaign>('Deal ID', values((c) => c.dealId ?? '')) },
+    /* Activation leads the unpinned columns (ticket, 27 Sep 2026): switch an approved campaign on. */
+    { headerName: 'Activation', width: 160, suppressSizeToFit: true, cellRenderer: ActivationCell },
     /* Received replaces Schedule (Rob, 8 Oct 2026): the forward schedule is no longer relevant on the real-time path. */
     {
       headerName: 'Received', width: 190, minWidth: 160, cellRenderer: ReceivedCell,
@@ -354,7 +410,7 @@ export function CampaignStatusPage() {
                 <Button type="primary" size="small" ghost disabled={busy === 'batch'} onClick={openPicker}>Assign to existing creative ID</Button>
               </>
             ) : (
-              <span style={{ color: T.muted }}>Choose one advertiser’s campaigns to group them under a creative ID.</span>
+              <span style={{ color: T.muted }}>{oneAdvertiserOnly ? 'Choose campaigns from one deal, or none, to group them under a creative ID.' : 'Choose one advertiser’s campaigns to group them under a creative ID.'}</span>
             )
           ) : oneAdvertiser ? (
             <>
@@ -362,7 +418,7 @@ export function CampaignStatusPage() {
               <Button type="primary" size="small" ghost disabled={busy === 'batch'} onClick={openPicker}>Approve + assign to existing creative ID</Button>
             </>
           ) : (
-            <span style={{ color: T.muted }}>Choose one advertiser’s campaigns to approve them into a creative ID.</span>
+            <span style={{ color: T.muted }}>{oneAdvertiserOnly ? 'Choose campaigns from one deal, or none, to approve them into a creative ID.' : 'Choose one advertiser’s campaigns to approve them into a creative ID.'}</span>
           )}
           {!autoOnly && !mixed && <Button size="small" danger onClick={() => { setReason(''); setRejecting(true) }}>Reject…</Button>}
           <Button size="small" type="link" onClick={() => setTicked(new Set())}>Clear</Button>
@@ -404,12 +460,12 @@ export function CampaignStatusPage() {
       >
         <p style={{ color: T.muted }}>Pick the creative ID these {selectedRows.length === 1 ? 'campaign belongs' : 'campaigns belong'} with. Each shows the campaigns already under it, so you can match by their siblings.{autoOnly ? '' : ' “Approve” here approves the creative.'}</p>
         {creativeIds.isLoading ? <Spin /> : !creativeIds.data?.length ? (
-          <p>This advertiser has no creative IDs yet. Use “{autoOnly ? 'Generate creative ID' : 'Approve + assign to new creative ID'}”.</p>
+          <p>{deal ? `Deal ${deal} has no creative IDs yet.` : 'This advertiser has no creative IDs yet.'} Use “{autoOnly ? 'Generate creative ID' : 'Approve + assign to new creative ID'}”.</p>
         ) : (
           <Radio.Group value={choice} onChange={(e) => setChoice(e.target.value)} className="flex flex-col gap-2" aria-label="Creative IDs">
             {creativeIds.data.map((g) => (
               <Radio key={g.creativeId} value={g.creativeId} className="rounded border p-2" style={{ alignItems: 'flex-start', borderColor: choice === g.creativeId ? T.primary : T.border }}>
-                <b>{g.creativeId}</b>{originals.has(g.creativeId) && <Tag color="blue" className="ml-2">original (resubmission)</Tag>}
+                <b>{g.creativeId}</b>{originals.has(g.creativeId) && <Tag color="blue" className="ml-2">original (resubmission)</Tag>}{deal && g.dealId === deal && <Tag color="green" className="ml-2">same deal ({deal})</Tag>}
                 <ul className="m-0 mt-1 list-none p-0" style={{ fontSize: 12, color: T.muted }}>
                   {g.campaigns.map((m) => <li key={m.campaignId}>{m.name} — {m.touchPoints.join(', ') || 'no touch points'}</li>)}
                 </ul>

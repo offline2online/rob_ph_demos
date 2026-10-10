@@ -28,6 +28,8 @@ export interface NewCampaign {
   partnerId: string; displayTypeId: string | null; pricingType: NonNullable<Campaign['pricingType']>
   /* The advertiser's campaign brief (Rob, 20 Sep); absent when it sent none. */
   brief?: CampaignBrief
+  /* The private-auction deal this campaign belongs to (Partner API dealId); absent for a direct campaign. */
+  dealId?: string
 }
 /* A campaign booked into a display type's slot for a play window: the
    existing campaign system's side of the hand-off (spec §6). */
@@ -78,7 +80,7 @@ export interface CampaignSource {
 
 interface Row {
   id: string; name: string; targeting: string | null; source: Campaign['source']; advertiser_id: string | null
-  partner_id: string | null; display_type_id: string | null; pricing_type: Campaign['pricingType']; activation_enabled: number; brief: string | null
+  partner_id: string | null; display_type_id: string | null; pricing_type: Campaign['pricingType']; activation_enabled: number; brief: string | null; deal_id: string | null
 }
 interface AssetRow {
   id: string; campaign_id: string; version: number; role: string; file: string; mime_type: string
@@ -93,6 +95,7 @@ const toRecord = (r: Row): CampaignRecord => ({
   partnerId: r.partner_id, partnerName: null, displayTypeId: r.display_type_id, pricingType: r.pricing_type,
   activation: { enabled: !!r.activation_enabled }, targeting: fromJson(r.targeting, null),
   ...(r.brief ? { brief: fromJson<CampaignBrief>(r.brief, {}) } : {}),
+  ...(r.deal_id ? { dealId: r.deal_id } : {}),
 })
 
 /* opts.onChange: called with a campaign's id after this facet changes it
@@ -122,6 +125,7 @@ export function sqliteCampaignSource(db: Db, opts: { onChange?: (id: string) => 
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
       ).run(c.id, c.name, toJson(c.targeting), new Date().toISOString(), c.source, c.advertiserId, c.partnerId, c.displayTypeId, c.pricingType)
       if (c.brief) prepared(db, 'UPDATE campaigns SET brief = ? WHERE id = ?').run(toJson(c.brief), c.id)
+      if (c.dealId) prepared(db, 'UPDATE campaigns SET deal_id = ? WHERE id = ?').run(c.dealId, c.id)
       return get(c.id) as CampaignRecord
     },
     addAsset(a) {
