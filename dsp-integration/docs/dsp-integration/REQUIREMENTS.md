@@ -760,6 +760,24 @@ schedule's own second tab, 26 Sep 2026). It carries per-advertiser settings
 and, below them, the inventory those advertisers can buy (§5); **campaigns
 are not approved here.**
 
+**Advertiser ↔ DSP seat mapping (10 Oct 2026, ticket T0gLfo2zDrRXPVGcvEoL).**
+A PH advertiser maps to one or more DSP seats, each `{ partnerId, seatId }`, the
+identifier an invited buyer on a buyers list carries (table `advertiser_seats`,
+migration 0066). Seats are **chosen from what the connected DSPs synced, never
+typed**: `PUT /admin/v1/advertisers/{advertiserId}/seats` (admin) replaces the
+mapping and answers 400 for a seat no connected DSP has synced. An advertiser
+buying through several DSPs maps a seat per DSP. `GET /admin/v1/advertisers`
+returns it as `dspSeats` (`partnerName`, `seatName`, `synced`). **Resolution for
+authoring:** `GET /admin/v1/advertisers/{advertiserId}/deals[?at=]` lists the
+buyers lists whose invited buyers include any of the advertiser's mapped seats
+(exact `{ partnerId, seatId }` match; an IAB-category invitation alone does not
+count) and whose delivery term covers `at` (default now); this is what the
+authoring deal-ID picker lists. A **direct advertiser has no mapping** (the PUT
+is refused) and resolves to no deals. **Kept live:** a re-sync that drops a seat
+leaves it in `dspSeats` with `synced: false`, so it can be re-pointed, and it no
+longer resolves any deal. The mapping screen is not built yet; this is the data
+and API.
+
 **Direct advertisers (9 Oct 2026).** An advertiser with a direct relationship
 with the retailer, not brought by any DSP, is added on this page (admin only,
 saved at once; `POST /admin/v1/advertisers/direct`, table `direct_advertisers`,

@@ -28,6 +28,7 @@ export interface CompanySettings {
 }
 export interface AdvertiserSettingRecord { approvalRequired: boolean; floorMultiplier: number }
 export interface DirectAdvertiserRecord { advertiserId: string; name: string }
+export interface AdvertiserSeatRecord { partnerId: string; seatId: string }
 export type Access = 'all' | string[]
 
 export const DEFAULT_ADVERTISER_SETTING: AdvertiserSettingRecord = { approvalRequired: true, floorMultiplier: 1 }
@@ -52,6 +53,10 @@ export interface CompanySettingsRepo {
   directAdvertisers(): Awaitable<DirectAdvertiserRecord[]>
   addDirectAdvertiser(advertiserId: string, name: string): Awaitable<void>
   removeDirectAdvertiser(advertiserId: string): Awaitable<void>
+  /* The DSP seats each PH advertiser bids under, by advertiserId. */
+  advertiserSeats(): Awaitable<Record<string, AdvertiserSeatRecord[]>>
+  /* Replace one advertiser's seat mapping. */
+  saveAdvertiserSeats(advertiserId: string, seats: AdvertiserSeatRecord[]): Awaitable<void>
   /* Platform users (Company Settings -> Users), by first name. */
   platformUsers(): Awaitable<PlatformUserRecord[]>
   platformUser(email: string): Awaitable<PlatformUserRecord | null>
@@ -171,6 +176,17 @@ export function sqliteCompanySettingsRepo(db: Db): CompanySettingsRepo {
     },
     removeDirectAdvertiser(advertiserId) {
       prepared(db, 'DELETE FROM direct_advertisers WHERE advertiser_id = ?').run(advertiserId)
+      prepared(db, 'DELETE FROM advertiser_seats WHERE advertiser_id = ?').run(advertiserId)
+    },
+    advertiserSeats() {
+      const out: Record<string, AdvertiserSeatRecord[]> = {}
+      for (const r of prepared(db, 'SELECT advertiser_id, partner_id, seat_id FROM advertiser_seats ORDER BY advertiser_id, partner_id, seat_id').all() as { advertiser_id: string; partner_id: string; seat_id: string }[]) (out[r.advertiser_id] ??= []).push({ partnerId: r.partner_id, seatId: r.seat_id })
+      return out
+    },
+    saveAdvertiserSeats(advertiserId, seats) {
+      prepared(db, 'DELETE FROM advertiser_seats WHERE advertiser_id = ?').run(advertiserId)
+      const ins = prepared(db, 'INSERT INTO advertiser_seats (advertiser_id, partner_id, seat_id, created_at) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING')
+      for (const s of seats) ins.run(advertiserId, s.partnerId, s.seatId, now())
     },
     platformUsers: () => (prepared(db, 'SELECT * FROM platform_users ORDER BY first_name, last_name, email').all() as unknown as UserRow[]).map(userOf),
     platformUser: (email) => {

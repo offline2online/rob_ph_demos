@@ -1308,6 +1308,79 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorised'}
         '403': {$ref: '#/components/responses/Forbidden'}
 
+  /admin/v1/advertisers/{advertiserId}/seats:
+    put:
+      tags: [Admin — Advertisers]
+      operationId: saveAdvertiserSeats
+      summary: Map an advertiser to the DSP seats it bids under (replaces its mapping; seats must be synced; none for a direct advertiser)
+      security: [{adminSession: [admin]}]
+      parameters:
+        - {name: advertiserId, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [seats]
+              properties:
+                seats:
+                  type: array
+                  items:
+                    type: object
+                    required: [partnerId, seatId]
+                    properties:
+                      partnerId: {type: string}
+                      seatId: {type: string}
+      responses:
+        '200':
+          description: The advertiser with its mapping
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Advertiser'}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /admin/v1/advertisers/{advertiserId}/deals:
+    get:
+      tags: [Admin — Advertisers]
+      operationId: listAdvertiserDeals
+      summary: Deals this advertiser is an invited buyer on (what the authoring deal-ID picker lists)
+      description: |
+        Buyers lists whose invited buyers include any of the advertiser's synced, mapped
+        { partnerId, seatId } (exact match) and whose delivery term covers `at`.
+        A direct advertiser has no mapped seats and gets none.
+      security: [{adminSession: [admin]}]
+      parameters:
+        - {name: advertiserId, in: path, required: true, schema: {type: string}}
+        - {name: at, in: query, required: false, schema: {type: string, format: date-time}, description: Defaults to now.}
+      responses:
+        '200':
+          description: Deals
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [buyersListId, name, dealType, activeFrom, activeTo]
+                      properties:
+                        buyersListId: {type: string}
+                        name: {type: string}
+                        dealType: {type: string, enum: [private_auction, preferred, guaranteed]}
+                        activeFrom: {type: string, nullable: true}
+                        activeTo: {type: string, nullable: true}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
   /admin/v1/advertisers/direct/{advertiserId}:
     delete:
       tags: [Admin — Advertisers]
@@ -3348,7 +3421,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/AdvertiserSetting'
         - type: object
-          required: [advertiserId, name, via, effectiveFloorCpm, campaigns, bookings]
+          required: [advertiserId, name, via, effectiveFloorCpm, campaigns, bookings, dspSeats]
           properties:
             advertiserId: {type: string}
             name: {type: string}
@@ -3357,6 +3430,22 @@ components:
               type: boolean
               description: True for an advertiser with a direct relationship with the retailer (no DSP). Shown as "Name (Direct)" in place of the DSP name.
             effectiveFloorCpm: {type: number}
+            dspSeats:
+              type: array
+              description: |
+                The DSP seats this advertiser bids under, each the same { partnerId, seatId }
+                an invited buyer on a buyers list carries. Always empty for a direct advertiser.
+                A seat a re-sync dropped stays listed with synced false so it can be re-pointed,
+                and no longer resolves any deal.
+              items:
+                type: object
+                required: [partnerId, seatId, partnerName, seatName, synced]
+                properties:
+                  partnerId: {type: string}
+                  seatId: {type: string}
+                  partnerName: {type: string}
+                  seatName: {type: string, nullable: true}
+                  synced: {type: boolean}
             bookings:
               type: integer
               description: |

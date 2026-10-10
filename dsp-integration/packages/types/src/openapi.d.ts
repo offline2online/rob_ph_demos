@@ -823,6 +823,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/advertisers/{advertiserId}/seats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Map an advertiser to the DSP seats it bids under (replaces its mapping; seats must be synced; none for a direct advertiser) */
+        put: operations["saveAdvertiserSeats"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/advertisers/{advertiserId}/deals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Deals this advertiser is an invited buyer on (what the authoring deal-ID picker lists)
+         * @description Buyers lists whose invited buyers include any of the advertiser's synced, mapped
+         *     { partnerId, seatId } (exact match) and whose delivery term covers `at`.
+         *     A direct advertiser has no mapped seats and gets none.
+         */
+        get: operations["listAdvertiserDeals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/advertisers/direct/{advertiserId}": {
         parameters: {
             query?: never;
@@ -2634,6 +2673,19 @@ export interface components {
             /** @description True for an advertiser with a direct relationship with the retailer (no DSP). Shown as "Name (Direct)" in place of the DSP name. */
             direct?: boolean;
             effectiveFloorCpm: number;
+            /**
+             * @description The DSP seats this advertiser bids under, each the same { partnerId, seatId }
+             *     an invited buyer on a buyers list carries. Always empty for a direct advertiser.
+             *     A seat a re-sync dropped stays listed with synced false so it can be re-pointed,
+             *     and no longer resolves any deal.
+             */
+            dspSeats: {
+                partnerId: string;
+                seatId: string;
+                partnerName: string;
+                seatName: string | null;
+                synced: boolean;
+            }[];
             /**
              * @description Play windows this advertiser holds from the current window on.
              *     0 means it has nothing on the booking schedule, so there is
@@ -4522,6 +4574,79 @@ export interface operations {
             401: components["responses"]["Unauthorised"];
             403: components["responses"]["Forbidden"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    saveAdvertiserSeats: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                advertiserId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    seats: {
+                        partnerId: string;
+                        seatId: string;
+                    }[];
+                };
+            };
+        };
+        responses: {
+            /** @description The advertiser with its mapping */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Advertiser"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorised"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listAdvertiserDeals: {
+        parameters: {
+            query?: {
+                /** @description Defaults to now. */
+                at?: string;
+            };
+            header?: never;
+            path: {
+                advertiserId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deals */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            buyersListId: string;
+                            name: string;
+                            /** @enum {string} */
+                            dealType: "private_auction" | "preferred" | "guaranteed";
+                            activeFrom: string | null;
+                            activeTo: string | null;
+                        }[];
+                    };
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorised"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     removeDirectAdvertiser: {

@@ -76,4 +76,64 @@ describe('Advertisers (admin only, spec §3)', () => {
     const marketing = buildApp(await testContext({ role: 'hq_marketing' }))
     expect((await marketing.inject({ method: 'POST', url: '/api/admin/v1/advertisers/direct', payload: { name: 'X' } })).statusCode).toBe(403)
   })
+  describe('DSP seat mapping and deal resolution (ticket T0gLfo2zDrRXPVGcvEoL)', () => {
+    const base = '/api/admin/v1/advertisers'
+    const deal = (app: ReturnType<typeof buildApp>, name: string, invitedBuyers: { partnerId: string; seatId: string }[], extra: object = {}) =>
+      app.inject({ method: 'POST', url: '/api/admin/v1/buyers-lists', payload: { name, invitedBuyers, activeFrom: null, activeTo: null, ...extra } })
+
+    it('maps an advertiser to synced seats and resolves exactly the deals inviting them', async () => {
+      const app = buildApp(await testContext())
+      const swisse = { partnerId: 'p_google', seatId: '5130002' }
+      expect((await deal(app, 'Swisse deal', [swisse])).statusCode).toBe(201)
+      expect((await deal(app, 'Nestle deal', [{ partnerId: 'p_google', seatId: '5130001' }])).statusCode).toBe(201)
+      const put = await app.inject({ method: 'PUT', url: `${base}/swisse/seats`, payload: { seats: [swisse, swisse] } })
+      expect(put.statusCode).toBe(200)
+      expectMatchesContract('PUT', '/admin/v1/advertisers/{advertiserId}/seats', 200, put.json())
+      expect(put.json().dspSeats).toEqual([{ ...swisse, partnerName: expect.any(String), seatName: 'Swisse', synced: true }])
+      const deals = await app.inject({ method: 'GET', url: `${base}/swisse/deals` })
+      expectMatchesContract('GET', '/admin/v1/advertisers/{advertiserId}/deals', 200, deals.json())
+      expect(deals.json().items.map((d: { name: string }) => d.name)).toEqual(['Swisse deal'])
+      /* The same seat id under another DSP is a different seat: no match. */
+      expect((await app.inject({ method: 'GET', url: `${base}/nestle/deals` })).json().items).toEqual([])
+    })
+
+    it('limits resolution to the deal’s delivery term', async () => {
+      const app = buildApp(await testContext())
+      const seat = { partnerId: 'p_google', seatId: '5130002' }
+      await deal(app, 'Past', [seat], { activeFrom: '2026-01-01T00:00:00Z', activeTo: '2026-02-01T00:00:00Z' })
+      await deal(app, 'Now', [seat], { activeFrom: '2026-09-01T00:00:00Z', activeTo: '2026-12-01T00:00:00Z' })
+      await app.inject({ method: 'PUT', url: `${base}/swisse/seats`, payload: { seats: [seat] } })
+      const names = async (at?: string) => (await app.inject({ method: 'GET', url: `${base}/swisse/deals${at ? `?at=${at}` : ''}` })).json().items.map((d: { name: string }) => d.name)
+      expect(await names()).toEqual(['Now'])
+      expect(await names('2026-01-15T00:00:00Z')).toEqual(['Past'])
+      expect((await app.inject({ method: 'GET', url: `${base}/swisse/deals?at=nope` })).statusCode).toBe(400)
+    })
+
+    it('refuses unsynced or typed seats, non-admins, and any seat on a direct advertiser, which resolves no deals', async () => {
+      const app = buildApp(await testContext())
+      const put = (id: string, seats: unknown) => app.inject({ method: 'PUT', url: `${base}/${id}/seats`, payload: { seats } })
+      const bad = await put('swisse', [{ partnerId: 'p_google', seatId: 'typed-by-hand' }, { partnerId: 'nope', seatId: '1' }])
+      expect(bad.statusCode).toBe(400)
+      expect(bad.json().error.details.map((d: { field: string }) => d.field)).toEqual(['seats[0].seatId', 'seats[1].partnerId'])
+      expect((await put('swisse', 'x')).statusCode).toBe(400)
+      expect((await put('nobody', [])).statusCode).toBe(404)
+      await app.inject({ method: 'POST', url: `${base}/direct`, payload: { name: 'Acme Foods' } })
+      expect((await put('acme-foods', [{ partnerId: 'p_google', seatId: '5130002' }])).statusCode).toBe(400)
+      expect((await app.inject({ method: 'GET', url: `${base}/acme-foods/deals` })).json().items).toEqual([])
+      expect((await buildApp(await testContext({ role: 'hq_marketing' })).inject({ method: 'PUT', url: `${base}/swisse/seats`, payload: { seats: [] } })).statusCode).toBe(403)
+    })
+
+    it('a re-sync that drops (re-keys) a seat keeps it shown as not synced and stops resolving through it', async () => {
+      const ctx = await testContext()
+      const app = buildApp(ctx)
+      const seat = { partnerId: 'p_google', seatId: '5130002' }
+      await deal(app, 'Swisse deal', [seat])
+      await app.inject({ method: 'PUT', url: `${base}/swisse/seats`, payload: { seats: [seat] } })
+      const p = (await ctx.partners.get('p_google'))!
+      await ctx.partners.update('p_google', { ...p, seats: p.seats.map((x) => (x.id === seat.seatId ? { ...x, id: 'reissued-1' } : x)) })
+      const sw = (await app.inject({ method: 'GET', url: base })).json().items.find((a: { advertiserId: string }) => a.advertiserId === 'swisse')
+      expect(sw.dspSeats).toEqual([{ ...seat, partnerName: expect.any(String), seatName: null, synced: false }])
+      expect((await app.inject({ method: 'GET', url: `${base}/swisse/deals` })).json().items).toEqual([])
+    })
+  })
 })

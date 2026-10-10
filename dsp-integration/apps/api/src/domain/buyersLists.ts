@@ -10,6 +10,7 @@
    judged in billing/term.ts, not here. */
 import type { BuyersList } from '@ph-dsp/types'
 import type { PartnerRecord } from '../repos/PartnerRepo'
+import { isActiveAt } from '../billing/term'
 
 /* Is this seat of this DSP one of the list's invited buyers? */
 export function isInvitedBuyer(list: BuyersList, partner: Pick<PartnerRecord, 'id' | 'seats'>, seatId?: string | null): boolean {
@@ -25,4 +26,14 @@ export function isInvitedBuyer(list: BuyersList, partner: Pick<PartnerRecord, 'i
    the DSPs a deal's bid requests actually go to. */
 export function invitedPartnerIds(list: BuyersList, partners: PartnerRecord[]): string[] {
   return partners.filter((p) => p.seats.some((seat) => isInvitedBuyer(list, p, seat.id))).map((p) => p.id)
+}
+
+/* Deals an advertiser is an invited buyer on (ticket T0gLfo2zDrRXPVGcvEoL): the
+   lists whose invited buyers include any of the advertiser's mapped
+   { partnerId, seatId }, matched exactly, whose delivery term covers `at`.
+   A direct advertiser maps no seats and so resolves to none. Category
+   invitations are deliberately not counted: only a mapped seat is matched. */
+export function dealsForSeats(lists: BuyersList[], seats: { partnerId: string; seatId: string }[], at: string): BuyersList[] {
+  if (!seats.length) return []
+  return lists.filter((l) => isActiveAt(l, at) && l.invitedBuyers.some((b) => seats.some((s) => s.partnerId === b.partnerId && s.seatId === b.seatId)))
 }
