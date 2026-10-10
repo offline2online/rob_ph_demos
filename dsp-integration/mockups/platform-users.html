@@ -67,6 +67,9 @@ input:focus,select:focus{outline:0;border-color:var(--primary);box-shadow:0 0 0 
 .tip:hover .tiptext,.tip:focus .tiptext{display:block}
 .toast{display:none;margin-bottom:8px;padding:8px 12px;border-radius:6px;background:#f6ffed;border:1px solid #b7eb8f}
 .toast.show{display:block}
+.blockerr{display:none;margin-bottom:8px;padding:8px 12px;border-radius:6px;background:#fff2f0;border:1px solid #ffccc7;color:#a8071a}
+.blockerr.show{display:block}
+#advRows tr{cursor:default}
 @media(max-width:700px){.snav{display:none}}
 </style>
 </head>
@@ -91,6 +94,16 @@ input:focus,select:focus{outline:0;border-color:var(--primary);box-shadow:0 0 0 
       <thead><tr><th>First name</th><th>Last name</th><th>Email address</th><th>Role</th><th>Last login</th><th></th></tr></thead>
       <tbody id="rows"></tbody>
     </table>
+
+    <div class="bar" style="margin-top:32px">
+      <div><b id="advCount">0</b> Advertisers</div>
+    </div>
+    <div class="blockerr" id="advErr" role="alert"></div>
+    <table>
+      <thead><tr><th>Advertiser</th><th>Source</th><th>Users</th><th></th></tr></thead>
+      <tbody id="advRows"></tbody>
+    </table>
+    <p class="sub" style="margin-top:12px">Mirrors Advertisers / Inventory. Direct advertisers can be deleted once no user is assigned to them; DSP advertisers are managed by their DSP.</p>
     <p class="sub" style="margin-top:12px">Mock-up: changes are held in this page only and are not saved.</p>
   </main>
 
@@ -155,6 +168,17 @@ function render(){
     return '<tr data-edit="'+i+'" title="Click to edit"><td><b>'+esc(u.f)+"</b></td><td><b>"+esc(u.l)+"</b></td><td>"+esc(u.e)+"</td><td>"+role+'</td><td>'+(u.ll?esc(u.ll):'<span class="muted">Never Signed In</span>')+
       '</td><td class="act"><button class="btn text" data-del="'+i+'" aria-label="Remove user"><span class="material-symbols-outlined">delete</span></button></td></tr>';
   }).join("");
+  if(typeof renderAdv==="function")renderAdv();
+}
+function advUsers(name,src){return users.filter(function(u){return u.r==="Advertiser"&&u.adv===name&&u.src===src})}
+function renderAdv(){
+  var list=DSP_ADVERTISERS.map(function(n){return{n:n,src:"DSP"}}).concat(DIRECT_ADVERTISERS.map(function(n){return{n:n,src:"Direct"}}));
+  $("advCount").textContent=list.length;
+  $("advRows").innerHTML=list.map(function(a,i){
+    var c=advUsers(a.n,a.src).length,d=a.src==="Direct";
+    return '<tr><td><b>'+esc(d?a.n+" (Direct)":a.n)+'</b></td><td><span class="pill'+(d?' adv':'')+'">'+(d?"Direct":"DSP")+'</span></td><td>'+c+'</td><td class="act">'+
+      (d?'<button class="btn text" data-deladv="'+esc(a.n)+'" aria-label="Delete advertiser '+esc(a.n)+'"><span class="material-symbols-outlined">delete</span></button>':'')+'</td></tr>';
+  }).join("");
 }
 function fillAdv(sel){
   var h='<option value="">Select an advertiser</option><optgroup label="DSP advertisers">'+DSP_ADVERTISERS.map(function(a){return'<option value="dsp:'+esc(a)+'">'+esc(a)+'</option>'}).join("")+'</optgroup>';
@@ -177,7 +201,11 @@ $("mask").addEventListener("mousedown",function(e){if(e.target===$("mask"))close
 document.addEventListener("keydown",function(e){if(e.key==="Escape"&&$("mask").classList.contains("open"))close_()});
 $("role").onchange=syncRole;
 $("adv").onchange=syncSrc;
-$("rows").onclick=function(e){var b=e.target.closest("[data-del]");if(b){users.splice(+b.dataset.del,1);render();return}var t=e.target.closest("[data-edit]");if(t)open_(+t.dataset.edit)};
+$("advRows").onclick=function(e){var b=e.target.closest("[data-deladv]");if(!b)return;
+  var n=b.dataset.deladv,us=advUsers(n,"Direct"),er=$("advErr");
+  if(us.length){er.textContent="Can\u2019t delete \u201c"+n+" (Direct)\u201d: it still has "+us.length+" assigned user"+(us.length>1?"s":"")+" ("+us.map(function(u){return(u.f+" "+u.l).trim()+" \u2013 "+u.e}).join("; ")+"). Delete or reassign "+(us.length>1?"them":"that user")+" first, then delete the advertiser.";er.classList.add("show");return}
+  er.classList.remove("show");DIRECT_ADVERTISERS.splice(DIRECT_ADVERTISERS.indexOf(n),1);renderAdv()};
+$("rows").onclick=function(e){var b=e.target.closest("[data-del]");if(b){users.splice(+b.dataset.del,1);$("advErr").classList.remove("show");render();return}var t=e.target.closest("[data-edit]");if(t)open_(+t.dataset.edit)};
 $("form").onsubmit=function(e){
   e.preventDefault();
   var isAdv=$("role").value==="Advertiser",manual=isAdv&&$("adv").value===NEW;
