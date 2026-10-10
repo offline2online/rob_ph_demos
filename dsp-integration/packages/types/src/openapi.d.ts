@@ -2689,6 +2689,10 @@ export interface components {
             /** @description Tooltip text */
             exampleValues: string;
             access: components["schemas"]["VariableAccess"];
+            /** @description The values a targeting condition may match, defined centrally. Empty unless the variable is shared with a DSP. */
+            values: string[];
+            /** @description Any value may be entered at selection time instead of choosing from the defined list. */
+            freeText: boolean;
         };
         /** @enum {string} */
         Provider: "google_dv360" | "amazon_dsp" | "the_trade_desk";
@@ -4319,6 +4323,13 @@ export interface operations {
                     /** @description variableKey → "all" or a list of partner ids ([] = none). */
                     access: {
                         [key: string]: components["schemas"]["VariableAccess"];
+                    };
+                    /** @description variableKey → the matchable values defined for it. Only for a variable shared with a DSP (a variable that is not shared loses its values). Omitted keys keep what they have. */
+                    values?: {
+                        [key: string]: {
+                            values: string[];
+                            freeText: boolean;
+                        };
                     };
                 };
             };

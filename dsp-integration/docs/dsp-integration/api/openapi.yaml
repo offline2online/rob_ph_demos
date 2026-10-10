@@ -1021,6 +1021,15 @@ paths:
                   type: object
                   description: variableKey → "all" or a list of partner ids ([] = none).
                   additionalProperties: {$ref: '#/components/schemas/VariableAccess'}
+                values:
+                  type: object
+                  description: variableKey → the matchable values defined for it. Only for a variable shared with a DSP (a variable that is not shared loses its values). Omitted keys keep what they have.
+                  additionalProperties:
+                    type: object
+                    required: [values, freeText]
+                    properties:
+                      values: {type: array, items: {type: string}}
+                      freeText: {type: boolean}
       responses:
         '200':
           description: Saved
@@ -3390,13 +3399,18 @@ components:
         - {type: array, items: {type: string}}
     SharedVariable:
       type: object
-      required: [key, label, group, exampleValues, access]
+      required: [key, label, group, exampleValues, access, values, freeText]
       properties:
         key: {type: string}
         label: {type: string}
         group: {type: string, enum: [localisation, personalisation]}
         exampleValues: {type: string, description: Tooltip text}
         access: {$ref: '#/components/schemas/VariableAccess'}
+        values:
+          type: array
+          items: {type: string}
+          description: The values a targeting condition may match, defined centrally. Empty unless the variable is shared with a DSP.
+        freeText: {type: boolean, description: Any value may be entered at selection time instead of choosing from the defined list.}
 
     Provider: {type: string, enum: [google_dv360, amazon_dsp, the_trade_desk]}
     Partner:

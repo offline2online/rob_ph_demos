@@ -4,7 +4,7 @@
    unsaved changes asks first (prototype PartnersView). */
 import { useQueryClient } from '@tanstack/react-query'
 import { App, Spin } from 'antd'
-import { providerDef, type AdvertiserSettings, type AdvertiserSettingsInput, type ExchangeInput, type Partner, type Provider, type SharedVariable, type VariableAccess } from '@ph-dsp/types'
+import { providerDef, type AdvertiserSettings, type AdvertiserSettingsInput, type ExchangeInput, type Partner, type Provider, type SharedVariable, type VariableAccess, type VariableValues } from '@ph-dsp/types'
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { ApiRequestError } from '../../api/client'
@@ -21,6 +21,8 @@ export interface SectionDraft {
   exchange: ExchangeInput
   settings: AdvertiserSettingsInput
   access: Record<string, VariableAccess>
+  /* Matchable values per shared variable, defined centrally (Shared Targeting Variables). */
+  values: Record<string, VariableValues>
   /* Keyed by partner id, or `new:<provider>` for a DSP added but not yet saved. */
   partners: Record<string, PartnerDraft>
 }
@@ -111,6 +113,7 @@ function Section({ partners, settings, exchange, published, variables, changeHis
   const saved = useMemo<SectionDraft>(
     () => ({
       exchange, settings: settingsInput(settings), access: Object.fromEntries(variables.map((v) => [v.key, v.access])),
+      values: Object.fromEntries(variables.map((v) => [v.key, { values: v.values, freeText: v.freeText }])),
       partners: Object.fromEntries(partners.map((p) => [p.id, partnerDraft(p)])),
     }),
     [exchange, settings, variables, partners],
@@ -137,7 +140,7 @@ function Section({ partners, settings, exchange, published, variables, changeHis
     try {
       if (!deepEqual(draft.exchange, saved.exchange)) await saveExchange(draft.exchange)
       if (!deepEqual(draft.settings, saved.settings)) await saveAdvertiserSettings(draft.settings)
-      if (!deepEqual(draft.access, saved.access)) await saveVariableAccess(draft.access)
+      if (!deepEqual(draft.access, saved.access) || !deepEqual(draft.values, saved.values)) await saveVariableAccess(draft.access, draft.values)
       let created: string | undefined
       for (const [key, d] of Object.entries(draft.partners)) {
         if (deepEqual(d, saved.partners[key])) continue

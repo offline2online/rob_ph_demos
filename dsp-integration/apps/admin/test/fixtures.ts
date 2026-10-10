@@ -10,9 +10,9 @@ export const advertiserSettings = {
 }
 export const exchange = { enabled: true, organisation: 'Demo Retail Group', domain: 'demoretail.example', sellerId: 'drg-4471', contactEmail: 'adops@demoretail.example', published: true, sellersJsonUrl: 'https://demoretail.example/sellers.json' }
 export const variables = { items: [
-  { key: 'store.hours', label: 'Store Open / Closed', group: 'localisation', exampleValues: 'Whether the store is open or closed at the time — e.g. Open, Closed', access: 'all' },
-  { key: 'store.suburb', label: 'Suburb', group: 'localisation', exampleValues: 'e.g. Surry Hills, Parramatta', access: [] },
-  { key: 'visitor.purchase_intent', label: 'Purchase Intent', group: 'personalisation', exampleValues: 'e.g. Browse, Replenish, Gift', access: ['p_google'] },
+  { key: 'store.hours', label: 'Store Open / Closed', group: 'localisation', exampleValues: 'Whether the store is open or closed at the time — e.g. Open, Closed', access: 'all', values: [], freeText: false },
+  { key: 'store.suburb', label: 'Suburb', group: 'localisation', exampleValues: 'e.g. Surry Hills, Parramatta', access: [], values: [], freeText: false },
+  { key: 'visitor.purchase_intent', label: 'Purchase Intent', group: 'personalisation', exampleValues: 'e.g. Browse, Replenish, Gift', access: ['p_google'], values: [], freeText: false },
 ] }
 export const session = { userId: 'u', name: 'HQ Admin (POC)', role: 'hq_admin' }
 

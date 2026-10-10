@@ -133,6 +133,21 @@ describe('Buyers lists (spec "Support private auctions")', () => {
       expect(ok.json().targeting).toEqual(personalised)
     })
 
+    it('only accepts values defined in Shared Targeting Variables, unless the variable is free text', async () => {
+      const app = buildApp(await testContext())
+      const put = (values: unknown) => app.inject({ method: 'PUT', url: '/api/admin/v1/targeting-variables', payload: { access: { 'store.state': ['p_google'] }, values } })
+      /* Nothing defined: open, so lists saved before values existed keep working. */
+      expect((await post(app, [{ variable: 'store.state', op: 'include', values: ['NSW'] }])).statusCode).toBe(201)
+      expect((await put({ 'store.state': { values: ['NSW', 'VIC'], freeText: false } })).statusCode).toBe(200)
+      expect((await post(app, [{ variable: 'store.state', op: 'include', values: ['NSW', 'VIC'] }])).statusCode).toBe(201)
+      const refused = await post(app, [{ variable: 'store.state', op: 'include', values: ['QLD'] }])
+      expect(refused.statusCode).toBe(400)
+      expect(JSON.stringify(refused.json())).toContain('QLD is not defined for')
+      expect(JSON.stringify(refused.json())).toContain('in Shared Targeting Variables.')
+      expect((await put({ 'store.state': { values: ['NSW'], freeText: true } })).statusCode).toBe(200)
+      expect((await post(app, [{ variable: 'store.state', op: 'include', values: ['QLD'] }])).statusCode).toBe(201)
+    })
+
     it('rejects an unknown variable, a wrong operator and empty values', async () => {
       const app = buildApp(await testContext())
       expect((await post(app, [{ variable: 'nope', op: 'include', values: ['x'] }])).statusCode).toBe(400)

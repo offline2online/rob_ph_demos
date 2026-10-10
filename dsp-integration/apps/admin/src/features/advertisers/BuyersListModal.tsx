@@ -224,8 +224,15 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
               <span style={{ fontSize: 12.5, fontWeight: 500, minWidth: 140 }}>{def?.label ?? c.variable}</span>
               <Select size="small" style={{ width: 170 }} aria-label={`${def?.label ?? c.variable} operator`} value={c.op} onChange={(op) => patchCriterion(c.variable, { op })}
                 options={(def?.operators ?? [c.op]).map((o) => ({ value: o, label: OPERATOR_LABELS[o] }))} />
-              <Select mode="tags" size="small" style={{ flex: 1, minWidth: 160 }} aria-label={`${def?.label ?? c.variable} values`} tokenSeparators={[',']} open={false}
-                placeholder={def ? `e.g. ${def.values}` : 'Values'} status={errorFor(c.variable) ? 'error' : undefined} value={c.values} onChange={(values) => patchCriterion(c.variable, { values })} />
+              {(() => {
+                /* Values are defined once in Shared Targeting Variables; the list selects from them. */
+                const sv = (variables.data ?? []).find((v) => v.key === c.variable)
+                const label = `${def?.label ?? c.variable} values`
+                const status = errorFor(c.variable) ? 'error' : undefined
+                if (sv?.freeText) return <Select mode="tags" size="small" style={{ flex: 1, minWidth: 160 }} aria-label={label} tokenSeparators={[',']} open={false} placeholder={def ? `e.g. ${def.values}` : 'Values'} status={status} value={c.values} onChange={(values) => patchCriterion(c.variable, { values })} />
+                if (sv?.values.length) return <Select mode="multiple" size="small" style={{ flex: 1, minWidth: 160 }} aria-label={label} placeholder="Choose values" status={status} value={c.values} options={[...new Set([...sv.values, ...c.values])].map((v) => ({ value: v, label: v }))} onChange={(values) => patchCriterion(c.variable, { values })} />
+                return <span style={{ fontSize: 12, color: T.micro }}>Define its values in Shared Targeting Variables</span>
+              })()}
               {errorFor(c.variable) && <div className="w-full" style={{ fontSize: 11.5, color: T.error }}>{errorFor(c.variable)}</div>}
             </div>
           )

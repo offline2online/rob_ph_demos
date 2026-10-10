@@ -262,6 +262,16 @@ describe('Shared Targeting Variables page', () => {
     expect(screen.getByText('Personalisation Variables')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Variables shared through the API/ })).toBeInTheDocument()
   })
+
+  it('has a Values column: inactive until the variable is shared, then a multi-select with a Free text tick', async () => {
+    renderAt('/dsp-integration/targeting-variables')
+    await screen.findByRole('heading', { name: /Shared Targeting Variables/ })
+    expect((await screen.findAllByText('Values')).length).toBeGreaterThanOrEqual(2)
+    expect(screen.getAllByText('Share with a DSP to define values').length).toBeGreaterThan(0)
+    expect(screen.queryByLabelText('Postcode values')).not.toBeInTheDocument()
+    expect((await screen.findAllByLabelText('Store Open / Closed values')).length).toBeGreaterThan(0)
+    expect(screen.getAllByRole('checkbox', { name: 'Free text' }).length).toBeGreaterThan(0)
+  })
 })
 
 describe('DSP page', () => {
