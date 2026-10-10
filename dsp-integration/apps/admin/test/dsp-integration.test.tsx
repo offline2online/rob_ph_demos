@@ -37,8 +37,8 @@ const ADVERTISER_PAGE = {
   },
 }
 
-const renderAt = (path: string, dspIntegration = true, selfService = false) => {
-  const router = createMemoryRouter(appRoutes({ dspIntegration, selfService }), { initialEntries: [path] })
+const renderAt = (path: string, dspIntegration = true, selfService = false, changeHistory = true) => {
+  const router = createMemoryRouter(appRoutes({ dspIntegration, selfService, changeHistory }), { initialEntries: [path] })
   render(<Providers><RouterProvider router={router} /></Providers>)
   return router
 }
@@ -65,11 +65,10 @@ describe('DSP Integration section', () => {
     renderAt('/dsp-integration/exchange')
     const nav = await screen.findByRole('navigation', { name: 'DSP Integration' })
     expect(within(nav).getAllByRole('link').map((l) => l.getAttribute('aria-label'))).toEqual([
-      'Exchange settings', 'Advertiser settings', 'Shared Targeting Variables', 'Change history',
+      'DSP integration', 'Advertiser settings', 'Shared Targeting Variables', 'Change history',
       'Google DSP — Live', 'Amazon Ads DSP — Connection error', 'The Trade Desk — Not set up yet',
     ])
-    expect(within(nav).getByText('3 advertisers · floor USD 100 CPM')).toBeInTheDocument()
-    expect(within(nav).queryByText(/category lists/)).not.toBeInTheDocument()
+    expect(within(nav).getByText('Floor CPM, play configuration, real-time bidding, category lists')).toBeInTheDocument()
   })
 
   it('Exchange settings: four required fields, Published, and where sellers.json is', async () => {
@@ -116,8 +115,8 @@ describe('DSP integration switch', () => {
     expect(screen.queryByText('Incomplete')).not.toBeInTheDocument()
     /* Advertiser settings and the DSPs wait; the rest of the company pages stay (Rob, 9 Oct 2026). */
     const list = screen.getByRole('navigation', { name: 'DSP Integration' })
-    expect(within(list).getAllByRole('link').map((l) => l.getAttribute('aria-label'))).toEqual(['Exchange settings', 'Shared Targeting Variables', 'Change history'])
-    expect(within(list).getByText('DSP integration off')).toBeInTheDocument()
+    expect(within(list).getAllByRole('link').map((l) => l.getAttribute('aria-label'))).toEqual(['DSP integration', 'Shared Targeting Variables', 'Change history'])
+    expect(within(list).getByText('Exchange settings')).toBeInTheDocument()
   })
 
   it('switching on shows the seller-of-record fields, as an unsaved change', async () => {
@@ -159,7 +158,7 @@ describe('DSP integration switch', () => {
     /* Advertisers / Inventory stays: direct advertisers use it with no DSP (Rob, 9 Oct 2026). */
     await waitFor(() => expect(calls).toHaveLength(1))
     expect(await navLabels()).toContain('Advertisers / Inventory')
-    expect(await navLabels()).toContain('DSP Integration')
+    expect(await navLabels()).toContain('Advertiser Settings')
 
     fireEvent.click(await screen.findByRole('switch', { name: 'Enable DSP Integration' }))
     expect((screen.getByLabelText(/Organisation/) as HTMLInputElement).value).toBe('Demo Retail Group')
@@ -174,7 +173,7 @@ describe('DSP integration switch', () => {
     const advertisers = { currency: 'AUD', floorCpm: 100, items: [] }
     vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/exchange': OFF, '/api/admin/v1/features': { dspIntegration: false }, '/api/admin/v1/advertisers': advertisers })))
     const router = renderAt('/advertisers')
-    await waitFor(async () => expect(await navLabels()).toEqual(['Display Types', 'Playlist Management', 'Advertisers / Inventory', 'DSP Integration']))
+    await waitFor(async () => expect(await navLabels()).toEqual(['Display Types', 'Playlist Management', 'Advertisers / Inventory', 'Advertiser Settings']))
     expect(router.state.location.pathname).toBe('/advertisers')
     cleanup()
     const variables = renderAt('/dsp-integration/targeting-variables')
@@ -302,7 +301,7 @@ describe('Advertisers screen (admin only)', () => {
     /* Campaign Status is no longer a nav item of its own (ticket, 26 Sep
        2026) — it's the second tab of Campaign schedule, opened contextually
        from here rather than listed in the nav. */
-    expect(within(nav).getAllByRole('link').map((l) => l.textContent?.replace(/^[a-z_]+/, ''))).toEqual(['Display Types', 'Playlist Management', 'Advertisers / Inventory', 'DSP Integration'])
+    expect(within(nav).getAllByRole('link').map((l) => l.textContent?.replace(/^[a-z_]+/, ''))).toEqual(['Display Types', 'Playlist Management', 'Advertisers / Inventory', 'Advertiser Settings'])
     expect(screen.getByRole('button', { name: /Every advertiser using the platform, across all DSPs, and the inventory they can buy/ })).toBeInTheDocument()
   })
 
@@ -622,8 +621,16 @@ describe('Advertisers / Inventory', () => {
     renderAt('/advertisers')
     const advertisers = await screen.findByLabelText('Advertisers')
     expect(await within(advertisers).findByText('Acme Foods (Direct)')).toBeInTheDocument()
-    expect(screen.getByLabelText('Direct advertiser name')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Add direct advertiser' })).toBeDisabled()
+    /* No inline add field any more: a top-right CTA opens a pop-up (ticket d4q91vrL5z4gLHBKypHo). */
+    expect(screen.queryByLabelText('Direct advertiser name')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Add new Advertiser/ }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByLabelText('Advertiser name')).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Add advertiser' })).toBeDisabled()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    /* Only a direct advertiser can be deleted. */
+    expect(within(advertisers).getByRole('button', { name: 'Delete Acme Foods' })).toBeInTheDocument()
+    expect(within(advertisers).getAllByRole('button', { name: /^Delete / })).toHaveLength(1)
   })
 
   it('filters both tables by column, and shows who may buy each slot', async () => {
@@ -959,6 +966,13 @@ describe('Change history page', () => {
     expect(screen.getByText('Person')).toBeInTheDocument()
     expect(screen.getByText('globalDealEnabled')).toBeInTheDocument()
     expect(screen.getByText('Reason: Open to deal-only DSPs')).toBeInTheDocument()
+  })
+
+  /* Behind the changeHistory flag (Rob, 9 Oct 2026): no menu row while it is off. */
+  it('hides the menu row and the page while the changeHistory flag is off', async () => {
+    renderAt('/dsp-integration/exchange', true, false, false)
+    const nav = await screen.findByRole('navigation', { name: 'DSP Integration' })
+    expect(within(nav).getAllByRole('link').map((l) => l.getAttribute('aria-label'))).not.toContain('Change history')
   })
 
   it('says so when nothing has changed yet, and filters through the API', async () => {
