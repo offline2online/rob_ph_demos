@@ -25,7 +25,7 @@ const blankDraft = (): Draft => ({ name: '', description: '', dealType: 'private
 const draftOf = (l: BuyersList): Draft => ({
   name: l.name, description: l.description, dealType: l.dealType,
   invitedBuyers: l.invitedBuyers.map((b) => ({ ...b })),
-  invitedCategories: [...(l.invitedCategories ?? [])],
+  invitedCategories: l.dealType === 'private_auction' ? [...(l.invitedCategories ?? [])] : [],
   targeting: (l.targeting ?? []).map((c) => ({ ...c, values: [...c.values] })),
   activeFrom: l.activeFrom, activeTo: l.activeTo, auctionCloses: l.auctionCloses, committedPlays: l.committedPlays, floorCpm: l.floorCpm ?? null,
 })
@@ -65,6 +65,7 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
   const setDealType = (dealType: BuyersListDealType) => setDraft((d) => ({
     ...d, dealType,
     auctionCloses: dealType === 'private_auction' ? d.auctionCloses : null,
+    invitedCategories: dealType === 'private_auction' ? d.invitedCategories : [],
     committedPlays: dealType !== 'guaranteed' ? null : d.committedPlays ?? (untouched.current ? defaultPlaysRef.current : null),
   }))
   const guaranteed = draft.dealType === 'guaranteed'
@@ -189,8 +190,8 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
         />
         {errors.invitedBuyers && <div className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{errors.invitedBuyers}</div>}
       </div>
-      <div className="mb-3.5">
-        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}><WithTip tip="Invite every advertiser a connected DSP reports in these IAB categories, without naming each one. Combines with the invited buyers above (either is enough to be invited); the advertiser blacklist still applies. Resolved live, so advertisers a DSP adds or re-categorises move in or out with no edit. Fill in at least one of the two.">Invited IAB categories</WithTip></label>
+      {privateAuction && <div className="mb-3.5">
+        <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}><WithTip tip="Widens who may bid in this private auction: invite every advertiser a connected DSP reports in these IAB categories, without naming each one. Combines with the invited buyers above (either is enough to bid); the advertiser blacklist still applies. Resolved live, so advertisers a DSP adds or re-categorises move in or out with no edit. A category is a bid-time filter only: the deal ID is shared with, and authored against, named buyers. Fill in at least one of the two.">Invited IAB categories</WithTip></label>
         <Select
           mode="multiple" className="w-full" aria-label="Invited IAB categories" showSearch optionFilterProp="label"
           status={Object.keys(errors).some((f) => f.startsWith('invitedCategories')) ? 'error' : undefined}
@@ -199,7 +200,8 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
           onChange={(invitedCategories: string[]) => setDraft((d) => ({ ...d, invitedCategories }))}
         />
         {Object.entries(errors).filter(([f]) => f.startsWith('invitedCategories')).map(([f, reason]) => <div key={f} className="mt-1" style={{ fontSize: 11.5, color: T.error }}>{reason}</div>)}
-      </div>
+        {!draft.invitedBuyers.length && draft.invitedCategories.length > 0 && <div className="mt-1" style={{ fontSize: 11.5, color: T.muted }} data-testid="category-only-note">Category-only: matching advertisers can bid, but the deal ID can’t be formally shared or authored against until you invite at least one named buyer.</div>}
+      </div>}
       <div className="mb-3.5">
         <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}><WithTip tip="Only variables the retailer has enabled for the invited DSPs are offered. Store segments are variable (switched by store staff) or fixed (HQ Admin only); the deal honours whichever you choose. A personalised criterion is matched against the live visitor at bid time — buyers never see the visitor’s attributes.">Targeting criteria</WithTip></label>
         <Select

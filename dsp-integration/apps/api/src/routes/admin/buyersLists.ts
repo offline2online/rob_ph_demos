@@ -78,6 +78,8 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     const invitedCategories: string[] = []
     const rawCategories = b.invitedCategories === undefined || b.invitedCategories === null ? [] : Array.isArray(b.invitedCategories) ? (b.invitedCategories as unknown[]) : null
     if (!rawCategories) errors.push({ field: 'invitedCategories', reason: 'A list of IAB categories.' })
+    /* Categories are a private-auction bid-time filter only: a preferred or guaranteed deal is a bilateral commitment to named seats, so an invited category has no meaning there. */
+    else if (rawCategories.length && dealType !== 'private_auction') errors.push({ field: 'invitedCategories', reason: 'Only a private auction can invite IAB categories; a preferred or guaranteed deal is with named buyers.' })
     else rawCategories.forEach((raw, i) => {
       const c = canonicalIabCategory(raw)
       if (!c) errors.push({ field: `invitedCategories[${i}]`, reason: `${typeof raw === 'string' ? raw : 'That'} is not an IAB category. Choose from the IAB Content Taxonomy (tier 1, or tier 2 as "Tier 1 › Tier 2").` })

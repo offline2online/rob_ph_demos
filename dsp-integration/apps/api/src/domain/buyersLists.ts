@@ -4,7 +4,7 @@
    the DSP itself synced, picked from that DSP's seats — { partnerId, seatId }
    — so entitlement is an exact match on the identifier the DSP bids under;
    nothing is matched by name (ticket W8wjh2wtFTnHZUO0Exuu, Rob 4 Oct 2026).
-   A list may also invite whole IAB categories; those resolve live (below).
+   A list may also invite whole IAB categories; those resolve live (below). They are a private-auction bid-time filter only: a category match can't be shared as a deal ID (DV360 / The Trade Desk share a deal with a named seat), so a category-only list has no named buyer to share with.
 
    The two-period model (delivery term, auctionCloses, the locked rate) is
    judged in billing/term.ts, not here. */
@@ -18,6 +18,8 @@ export function isInvitedBuyer(list: BuyersList, partner: Pick<PartnerRecord, 'i
   if (list.invitedBuyers.some((b) => b.partnerId === partner.id && b.seatId === seatId)) return true
   /* Invited by IAB category (Rob, 7 Oct 2026): resolved live against the seat's DSP-reported category, so a seat the DSP re-categorises, or a new one it syncs, moves in or out of the deal with no edit. A category no seat reports admits nobody. */
   if (!list.invitedCategories.length) return false
+  /* Categories widen who may bid in a private auction only; a preferred or guaranteed deal is with named seats. */
+  if (list.dealType && list.dealType !== 'private_auction') return false
   const category = partner.seats.find((s) => s.id === seatId)?.category
   return !!category && list.invitedCategories.includes(category)
 }

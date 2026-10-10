@@ -45,7 +45,9 @@ const BuyersCell = ({ data }: P) => {
   if (!data) return null
   const buyers = data.invitedBuyers.length ? `${data.invitedBuyers.length} buyer${data.invitedBuyers.length === 1 ? '' : 's'}` : ''
   const cats = (data.invitedCategories ?? []).length ? `Category: ${data.invitedCategories.join(', ')}` : ''
-  return <span className="truncate" title={[buyers, cats].filter(Boolean).join(' + ')}>{[buyers, cats].filter(Boolean).join(' + ')}</span>
+  const text = [buyers, cats].filter(Boolean).join(' + ')
+  const categoryOnly = !buyers && !!cats
+  return <span className="truncate" title={categoryOnly ? `${text} — no named buyer: can’t be shared or authored until one is added` : text}>{text}{categoryOnly && <span style={{ color: T.muted }}> · not shareable</span>}</span>
 }
 const TargetingCell = ({ data }: P) => {
   const t = data?.targeting ?? []

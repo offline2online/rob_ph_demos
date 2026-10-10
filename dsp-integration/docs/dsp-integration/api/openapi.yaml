@@ -1126,6 +1126,7 @@ paths:
                   type: array
                   items: {type: string}
                   description: |
+                    Private auction only (400 on preferred / guaranteed). A bid-time filter, not a shareable deal: the deal ID is shared with named seats only.
                     IAB categories whose advertisers are all invited (union with
                     `invitedBuyers`). Each must be from the IAB taxonomy
                     (400 validation_failed otherwise). At least one buyer or
@@ -1195,6 +1196,7 @@ paths:
                   type: array
                   items: {type: string}
                   description: |
+                    Private auction only (400 on preferred / guaranteed). A bid-time filter, not a shareable deal: the deal ID is shared with named seats only.
                     IAB categories whose advertisers are all invited (union with
                     `invitedBuyers`). Each must be from the IAB taxonomy
                     (400 validation_failed otherwise). At least one buyer or
@@ -2814,6 +2816,7 @@ components:
           type: array
           items: {type: string}
           description: |
+            Private auction only (400 on preferred / guaranteed). A bid-time filter, not a shareable deal: the deal ID is shared with named seats only.
             IAB categories whose advertisers are all invited, resolved live
             against each connected DSP's synced seats (a seat's DSP-reported
             `category`). Combines with `invitedBuyers` as a union; the

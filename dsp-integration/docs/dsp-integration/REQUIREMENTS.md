@@ -4535,6 +4535,18 @@ keeps the won creative renderable; the lookahead sets how early the per-impressi
   two-period model, `auctionCloses` and the locked rate apply), `preferred`
   (fixed-price first look held at the reserve price; no volume, no auction
   window) or `guaranteed` (programmatic guaranteed; commits `committedPlays`).
+- **Invited IAB categories are private-auction only** (ticket
+  WPb7NbbeqJmhEOzSeBSl). The field is shown only when the type is
+  `private_auction`; `preferred` and `guaranteed` are bilateral commitments
+  to named seats, so it is hidden and the API refuses invited categories on
+  them (400). In a private auction a category **widens who may bid** (the
+  union rule in §5, resolved live) but is **a bid-time filter, not a
+  shareable deal**: DV360 / The Trade Desk share and accept a deal ID with a
+  *named seat*, so a deal ID is shared with, and authored against, named
+  invited seats only — a category-matched advertiser does not resolve the
+  deal in the authoring picker. A category-only list admits category-matched
+  bidders but has no named buyer to share with; the admin UI flags it
+  ("not shareable") until at least one named seat is added.
 - **The type decides the fields.** `committedPlays` is captured only for
   `guaranteed` (pre-filled from Default committed plays; the booked volume
   per window is still `floor(forecast × (1 − buffer%))`); `auctionCloses`
