@@ -69,7 +69,6 @@ input:focus,select:focus{outline:0;border-color:var(--primary);box-shadow:0 0 0 
 .toast.show{display:block}
 .blockerr{display:none;margin-bottom:8px;padding:8px 12px;border-radius:6px;background:#fff2f0;border:1px solid #ffccc7;color:#a8071a}
 .blockerr.show{display:block}
-#advRows tr{cursor:default}
 @media(max-width:700px){.snav{display:none}}
 </style>
 </head>
@@ -81,7 +80,7 @@ input:focus,select:focus{outline:0;border-color:var(--primary);box-shadow:0 0 0 
   </nav>
 
   <main class="main">
-    <h1 style="display:flex;align-items:center;gap:8px">Add Users / Advertisers <span class="tip" tabindex="0" aria-describedby="tipText"><span class="material-symbols-outlined" aria-label="About this page">info</span><span class="tiptext" role="tooltip" id="tipText">Use this page to give people access to the platform and to add new advertisers. Add a platform user to grant a head-office team member a role, or add an Advertiser user to give a brand representative secure access limited to their own brand&rsquo;s campaign approvals, analytics and insights. New direct advertisers, those not connected through a DSP, can also be created here while adding an Advertiser user.</span></span></h1>
+    <h1 style="display:flex;align-items:center;gap:8px">Add Users / Advertisers <span class="tip" tabindex="0" aria-describedby="tipText"><span class="material-symbols-outlined" aria-label="About this page">info</span><span class="tiptext" role="tooltip" id="tipText">Use this page to give people access to the platform. Add a platform user to grant a head-office team member a role, or add an Advertiser user to give a brand representative secure access limited to their own brand&rsquo;s campaign approvals, analytics and insights. The advertiser list comes from Advertisers / Inventory, where advertisers are added and managed.</span></span></h1>
     <div class="rule"></div>
 
     <div class="bar">
@@ -95,15 +94,6 @@ input:focus,select:focus{outline:0;border-color:var(--primary);box-shadow:0 0 0 
       <tbody id="rows"></tbody>
     </table>
 
-    <div class="bar" style="margin-top:32px">
-      <div><b id="advCount">0</b> Advertisers</div>
-    </div>
-    <div class="blockerr" id="advErr" role="alert"></div>
-    <table>
-      <thead><tr><th>Advertiser</th><th>Source</th><th>Users</th><th></th></tr></thead>
-      <tbody id="advRows"></tbody>
-    </table>
-    <p class="sub" style="margin-top:12px">Mirrors Advertisers / Inventory. Direct advertisers can be deleted once no user is assigned to them; DSP advertisers are managed by their DSP.</p>
     <p class="sub" style="margin-top:12px">Mock-up: changes are held in this page only and are not saved.</p>
   </main>
 
@@ -127,13 +117,10 @@ input:focus,select:focus{outline:0;border-color:var(--primary);box-shadow:0 0 0 
 
           <div id="advBlock" class="hide">
             <div class="divider">Advertiser</div>
-            <div class="field"><label for="adv">Advertiser <i>*</i> <span class="tip" tabindex="0" aria-describedby="advTip"><span class="material-symbols-outlined" aria-label="About this field" style="font-size:16px;vertical-align:middle">info</span><span class="tiptext" role="tooltip" id="advTip">DSP-synced advertisers and direct advertisers added manually.</span></span></label>
+            <div class="field"><label for="adv">Advertiser <i>*</i> <span class="tip" tabindex="0" aria-describedby="advTip"><span class="material-symbols-outlined" aria-label="About this field" style="font-size:16px;vertical-align:middle">info</span><span class="tiptext" role="tooltip" id="advTip">The list mirrors Advertisers / Inventory (DSP and direct advertisers).</span></span></label>
               <select id="adv"></select>
             </div>
-            <div class="field hide" id="manField"><label for="man">New advertiser name <i>*</i> <span class="tip" tabindex="0" aria-describedby="manTip"><span class="material-symbols-outlined" aria-label="About this field" style="font-size:16px;vertical-align:middle">info</span><span class="tiptext" role="tooltip" id="manTip">Added as a direct advertiser (no DSP), shown as &ldquo;Name (Direct)&rdquo; and selectable for everyone.</span></span></label>
-              <input type="text" id="man" placeholder="e.g. Fresh Fields Dairy">
-              <div class="err" id="manErr"></div>
-            </div>
+            <div class="sub" style="margin-top:-8px">Advertisers are managed in Advertisers / Inventory. To add one, go to that page and choose Add new Advertiser.</div>
           </div>
         </div>
         <footer>
@@ -149,7 +136,6 @@ input:focus,select:focus{outline:0;border-color:var(--primary);box-shadow:0 0 0 
 <script>
 var DSP_ADVERTISERS=["Acme Beverages","Northwind Foods","Contoso Cosmetics","Globex Snacks","Initech Electronics"];
 var DIRECT_ADVERTISERS=["Fresh Fields Dairy"];
-var NEW="__new__";
 var users=[
  {f:"Priya",l:"Shah",e:"priya.shah@retailer.example",r:"Admin",ll:"Today, 09:12"},
  {f:"Tom",l:"Reyes",e:"tom.reyes@retailer.example",r:"Marketing",ll:"Yesterday, 16:40"},
@@ -168,62 +154,39 @@ function render(){
     return '<tr data-edit="'+i+'" title="Click to edit"><td><b>'+esc(u.f)+"</b></td><td><b>"+esc(u.l)+"</b></td><td>"+esc(u.e)+"</td><td>"+role+'</td><td>'+(u.ll?esc(u.ll):'<span class="muted">Never Signed In</span>')+
       '</td><td class="act"><button class="btn text" data-del="'+i+'" aria-label="Remove user"><span class="material-symbols-outlined">delete</span></button></td></tr>';
   }).join("");
-  if(typeof renderAdv==="function")renderAdv();
-}
-function advUsers(name,src){return users.filter(function(u){return u.r==="Advertiser"&&u.adv===name&&u.src===src})}
-function renderAdv(){
-  var list=DSP_ADVERTISERS.map(function(n){return{n:n,src:"DSP"}}).concat(DIRECT_ADVERTISERS.map(function(n){return{n:n,src:"Direct"}}));
-  $("advCount").textContent=list.length;
-  $("advRows").innerHTML=list.map(function(a,i){
-    var c=advUsers(a.n,a.src).length,d=a.src==="Direct";
-    return '<tr><td><b>'+esc(d?a.n+" (Direct)":a.n)+'</b></td><td><span class="pill'+(d?' adv':'')+'">'+(d?"Direct":"DSP")+'</span></td><td>'+c+'</td><td class="act">'+
-      (d?'<button class="btn text" data-deladv="'+esc(a.n)+'" aria-label="Delete advertiser '+esc(a.n)+'"><span class="material-symbols-outlined">delete</span></button>':'')+'</td></tr>';
-  }).join("");
 }
 function fillAdv(sel){
   var h='<option value="">Select an advertiser</option><optgroup label="DSP advertisers">'+DSP_ADVERTISERS.map(function(a){return'<option value="dsp:'+esc(a)+'">'+esc(a)+'</option>'}).join("")+'</optgroup>';
   if(DIRECT_ADVERTISERS.length)h+='<optgroup label="Direct advertisers">'+DIRECT_ADVERTISERS.map(function(a){return'<option value="direct:'+esc(a)+'">'+esc(a)+' (Direct)</option>'}).join("")+'</optgroup>';
-  $("adv").innerHTML=h+'<option value="'+NEW+'">Add new advertiser\u2026</option>';
+  $("adv").innerHTML=h;
   if(sel)$("adv").value=sel;
 }
 function advName(a){return a.src==="Direct"?a.name+" (Direct)":a.name}
 function syncRole(){$("advBlock").classList.toggle("hide",$("role").value!=="Advertiser")}
-function syncSrc(){$("manField").classList.toggle("hide",$("adv").value!==NEW);if($("adv").value!==NEW){$("man").classList.remove("invalid");$("manErr").style.display="none"}}
 var editing=-1;
 function open_(i){editing=typeof i==="number"?i:-1;var ed=editing>=0,u=ed?users[editing]:null;$("form").reset();fillAdv(ed&&u.r==="Advertiser"?(u.src==="Direct"?"direct:":"dsp:")+u.adv:"");
   $("mt").textContent=ed?"Edit user":"Add user";$("submitBtn").textContent=ed?"Save changes":"Add user";
   document.querySelector(".invite").classList.toggle("hide",ed);$("em").readOnly=ed;$("emNote").classList.toggle("hide",!ed);
   if(ed){$("fn").value=u.f;$("ln").value=u.l;$("em").value=u.e;$("role").value=u.r}
-  syncRole();syncSrc();$("manErr").style.display="none";document.querySelectorAll(".invalid").forEach(function(x){x.classList.remove("invalid")});$("emErr").style.display="none";$("mask").classList.add("open");$("mask").scrollTop=0;$("fn").focus()}
+  syncRole();document.querySelectorAll(".invalid").forEach(function(x){x.classList.remove("invalid")});$("emErr").style.display="none";$("mask").classList.add("open");$("mask").scrollTop=0;$("fn").focus()}
 function close_(){$("mask").classList.remove("open");editing=-1;$("addBtn").focus()}
 $("addBtn").onclick=function(){open_()};$("cancel").onclick=close_;
 $("mask").addEventListener("mousedown",function(e){if(e.target===$("mask"))close_()});
 document.addEventListener("keydown",function(e){if(e.key==="Escape"&&$("mask").classList.contains("open"))close_()});
 $("role").onchange=syncRole;
-$("adv").onchange=syncSrc;
-$("advRows").onclick=function(e){var b=e.target.closest("[data-deladv]");if(!b)return;
-  var n=b.dataset.deladv,us=advUsers(n,"Direct"),er=$("advErr");
-  if(us.length){er.textContent="Can\u2019t delete \u201c"+n+" (Direct)\u201d: it still has "+us.length+" assigned user"+(us.length>1?"s":"")+" ("+us.map(function(u){return(u.f+" "+u.l).trim()+" \u2013 "+u.e}).join("; ")+"). Delete or reassign "+(us.length>1?"them":"that user")+" first, then delete the advertiser.";er.classList.add("show");return}
-  er.classList.remove("show");DIRECT_ADVERTISERS.splice(DIRECT_ADVERTISERS.indexOf(n),1);renderAdv()};
-$("rows").onclick=function(e){var b=e.target.closest("[data-del]");if(b){users.splice(+b.dataset.del,1);$("advErr").classList.remove("show");render();return}var t=e.target.closest("[data-edit]");if(t)open_(+t.dataset.edit)};
+$("rows").onclick=function(e){var b=e.target.closest("[data-del]");if(b){users.splice(+b.dataset.del,1);render();return}var t=e.target.closest("[data-edit]");if(t)open_(+t.dataset.edit)};
 $("form").onsubmit=function(e){
   e.preventDefault();
-  var isAdv=$("role").value==="Advertiser",manual=isAdv&&$("adv").value===NEW;
+  var isAdv=$("role").value==="Advertiser";
   var emOk=/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test($("em").value.trim());
   var checks=[["fn",!!$("fn").value.trim()],["em",emOk],["role",!!$("role").value]];
-  if(isAdv)checks.push(manual?["man",!!$("man").value.trim()]:["adv",!!$("adv").value]);
-  var newName=$("man").value.trim(),dup=false;
-  if(manual&&newName){var lc=newName.toLowerCase();dup=DSP_ADVERTISERS.concat(DIRECT_ADVERTISERS).some(function(n){return n.toLowerCase()===lc});
-    $("manErr").textContent=dup?"An advertiser called \u201c"+newName+"\u201d already exists \u2013 pick it from the list instead.":"";$("manErr").style.display=dup?"block":"none";$("man").classList.toggle("invalid",dup)}
-  var bad=dup;checks.forEach(function(c){$(c[0]).classList.toggle("invalid",!c[1]);if(!c[1])bad=true});
+  if(isAdv)checks.push(["adv",!!$("adv").value]);
+  var bad=false;checks.forEach(function(c){$(c[0]).classList.toggle("invalid",!c[1]);if(!c[1])bad=true});
   $("emErr").style.display=emOk||!$("em").value.trim()?"none":"block";
   if(bad)return;
   var old=editing>=0?users[editing]:null;
   var u={f:$("fn").value.trim(),l:$("ln").value.trim(),e:old?old.e:$("em").value.trim(),r:$("role").value,ll:old?old.ll:"Never Signed In"};
-  if(isAdv){
-    if(manual){u.adv=newName;u.src="Direct";DIRECT_ADVERTISERS.push(newName)}
-    else{var pv=$("adv").value.split(":");u.src=pv[0]==="direct"?"Direct":"DSP";u.adv=$("adv").value.slice(pv[0].length+1)}
-  }
+  if(isAdv){var pv=$("adv").value.split(":");u.src=pv[0]==="direct"?"Direct":"DSP";u.adv=$("adv").value.slice(pv[0].length+1)}
   if(old){users[editing]=u;render();close_();
     $("toast").textContent="Saved changes to "+u.f+" "+u.l+" ("+u.r+(u.adv?", "+advName({src:u.src,name:u.adv}):"")+"). Email address unchanged.";
     $("toast").classList.add("show");setTimeout(function(){$("toast").classList.remove("show")},4000);return}
