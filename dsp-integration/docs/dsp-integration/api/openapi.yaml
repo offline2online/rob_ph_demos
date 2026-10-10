@@ -1283,6 +1283,126 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
+  /admin/v1/users:
+    get:
+      tags: [Admin — Users]
+      operationId: listPlatformUsers
+      summary: Platform users (Company Settings → Users)
+      security: [{adminSession: [admin]}]
+      responses:
+        '200':
+          description: Users
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/PlatformUser'}}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [Admin — Users]
+      operationId: addPlatformUser
+      summary: Add a user. An Advertiser user is bound to one advertiser from GET /admin/v1/advertisers.
+      security: [{adminSession: [admin]}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PlatformUserInput'}
+      responses:
+        '201':
+          description: Added
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PlatformUser'}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /admin/v1/users/{email}:
+    put:
+      tags: [Admin — Users]
+      operationId: savePlatformUser
+      summary: Change a user's name, role or advertiser. The email address cannot change.
+      security: [{adminSession: [admin]}]
+      parameters:
+        - {name: email, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PlatformUserInput'}
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PlatformUser'}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    delete:
+      tags: [Admin — Users]
+      operationId: removePlatformUser
+      summary: Remove a user
+      security: [{adminSession: [admin]}]
+      parameters:
+        - {name: email, in: path, required: true, schema: {type: string}}
+      responses:
+        '204': {description: Removed}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /admin/v1/users/{email}/scope:
+    get:
+      tags: [Admin — Users]
+      operationId: getPlatformUserScope
+      summary: What a user may see. An Advertiser user is limited to their own advertiser's campaigns; PH Core reads this when it signs them in.
+      security: [{adminSession: [admin]}]
+      parameters:
+        - {name: email, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: Scope
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [email, role, advertiser, campaigns]
+                properties:
+                  email: {type: string}
+                  role: {type: string}
+                  advertiser:
+                    nullable: true
+                    type: object
+                    description: Null for an internal user (not limited to one advertiser).
+                    required: [advertiserId, name, direct, bookings, campaigns]
+                    properties:
+                      advertiserId: {type: string}
+                      name: {type: string}
+                      direct: {type: boolean}
+                      bookings: {type: integer}
+                      campaigns: {type: object, additionalProperties: {type: integer}}
+                  campaigns:
+                    type: array
+                    items:
+                      type: object
+                      required: [campaignId, name, activation, approval]
+                      properties:
+                        campaignId: {type: string}
+                        name: {type: string}
+                        activation:
+                          type: object
+                          required: [enabled]
+                          properties:
+                            enabled: {type: boolean}
+                        approval: {type: string}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /admin/v1/approvals:
     get:
       tags: [Admin — Campaign approval]
@@ -2974,6 +3094,29 @@ components:
       properties:
         approvalRequired: {type: boolean, default: true}
         floorMultiplier: {type: number, exclusiveMinimum: 0, default: 1.0}
+    PlatformUserInput:
+      type: object
+      required: [firstName, role]
+      properties:
+        firstName: {type: string, maxLength: 80}
+        lastName: {type: string, maxLength: 80}
+        email: {type: string, description: Required when adding; ignored on save (it cannot change).}
+        role: {type: string, enum: [Admin, Marketing, Help Desk, Advertiser]}
+        advertiserId: {type: string, description: Required for role Advertiser; an advertiserId from GET /admin/v1/advertisers.}
+        invite: {type: boolean, description: Send the invitation email (PH Core sends it). Add only.}
+    PlatformUser:
+      type: object
+      required: [email, firstName, lastName, role, advertiserId, advertiserName, advertiserDirect, invited, lastLoginAt]
+      properties:
+        email: {type: string}
+        firstName: {type: string}
+        lastName: {type: string}
+        role: {type: string, enum: [Admin, Marketing, Help Desk, Advertiser]}
+        advertiserId: {type: string, nullable: true}
+        advertiserName: {type: string, nullable: true}
+        advertiserDirect: {type: boolean, nullable: true}
+        invited: {type: boolean}
+        lastLoginAt: {type: string, nullable: true}
     Advertiser:
       allOf:
         - $ref: '#/components/schemas/AdvertiserSetting'
