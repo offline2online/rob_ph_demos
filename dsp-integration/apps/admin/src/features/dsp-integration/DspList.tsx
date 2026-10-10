@@ -48,7 +48,7 @@ function Row({ active, collapsed, dashed, title, onClick, children }: { active: 
   )
 }
 
-export function DspList() {
+export function DspList({ changeHistory = false }: { changeHistory?: boolean }) {
   const { pathname } = useLocation()
   const navigate = useNavigate()
   const { draft, partners, published } = useSection()
@@ -58,7 +58,8 @@ export function DspList() {
     { to: PATHS.exchange, icon: 'storefront', title: 'DSP integration', sub: 'Exchange settings' },
     { to: PATHS.advertiserSettings, icon: 'rule', title: 'Advertiser settings', sub: 'Floor CPM, play configuration, real-time bidding, category lists' },
     { to: PATHS.variables, icon: 'tune', title: 'Shared Targeting Variables', sub: `${TARGETING_VARIABLES.length} platform variables` },
-    { to: PATHS.history, icon: 'history', title: 'Change history', sub: 'Who changed which setting, and when' },
+    /* Behind the changeHistory flag (Rob, 9 Oct 2026): hidden until a future release. */
+    ...(changeHistory ? [{ to: PATHS.history, icon: 'history', title: 'Change history', sub: 'Who changed which setting, and when' }] : []),
   ].filter((c) => published || c.to !== PATHS.advertiserSettings)
 
   return (

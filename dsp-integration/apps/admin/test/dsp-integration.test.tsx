@@ -37,8 +37,8 @@ const ADVERTISER_PAGE = {
   },
 }
 
-const renderAt = (path: string, dspIntegration = true, selfService = false) => {
-  const router = createMemoryRouter(appRoutes({ dspIntegration, selfService }), { initialEntries: [path] })
+const renderAt = (path: string, dspIntegration = true, selfService = false, changeHistory = true) => {
+  const router = createMemoryRouter(appRoutes({ dspIntegration, selfService, changeHistory }), { initialEntries: [path] })
   render(<Providers><RouterProvider router={router} /></Providers>)
   return router
 }
@@ -958,6 +958,13 @@ describe('Change history page', () => {
     expect(screen.getByText('Person')).toBeInTheDocument()
     expect(screen.getByText('globalDealEnabled')).toBeInTheDocument()
     expect(screen.getByText('Reason: Open to deal-only DSPs')).toBeInTheDocument()
+  })
+
+  /* Behind the changeHistory flag (Rob, 9 Oct 2026): no menu row while it is off. */
+  it('hides the menu row and the page while the changeHistory flag is off', async () => {
+    renderAt('/dsp-integration/exchange', true, false, false)
+    const nav = await screen.findByRole('navigation', { name: 'DSP Integration' })
+    expect(within(nav).getAllByRole('link').map((l) => l.getAttribute('aria-label'))).not.toContain('Change history')
   })
 
   it('says so when nothing has changed yet, and filters through the API', async () => {
