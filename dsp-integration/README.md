@@ -218,6 +218,7 @@ nothing here can even read it without the key.
 | `apps/api/src/routes/admin/bookingCapacity.ts`, `domain/dailyCapacity.ts` | Plays per day on the Booking schedule (9 Oct 2026): `GET /admin/v1/booking-schedule/capacity`. Per slot and day, total plays rolled up from the billing-unit windows in the stores' trading hours, plays pre-booked reserve deals hold firmly, and the indicative remainder "available to bid", plus a cut per localized segment a campaign targets (overlapping, not additive). Migration `0061` adds `stores.segments`, `open_hour`, `close_hour`. Day boundaries are UTC. |
 | `apps/api/src/domain/exchange.ts` (`GLOBAL_DEAL_ID`), `domain/positions.ts` (`inGlobalDeal`) | The global deal (8 Oct 2026, migration `0057`): one deal ID, `PH-GLOBAL`, for all open, exchange-eligible inventory, for DSPs that only transact on deals. Master switch `exchange.globalDealEnabled` (Exchange settings, off by default) plus a per-slot `inGlobalDeal` flag (default on; Advertisers / Inventory), suppressed for a slot held for advertisers, whitelist-only or on a buyers list. The request carries `pmp.deals[0].id = PH-GLOBAL` with `private_auction: 0`; the bid competes as open exchange (same floor, first price, same checks). Tests: `test/global-deal.test.ts`, E2E run 3 P9–P11 |
 | `apps/api/src/http/rateLimit.ts` | The Partner API's per-partner token bucket (429 `rate_limited`) |
+| `docs/dsp-integration/AWS-DEMO-TEST-FLOW.md` | The person-run test flow for the 10 Dec 2026 AWS demo: the table, the direct advertiser flow and the DSP flow through per-campaign approval into creative IDs, each step mapped to its automated case (E2E Run 8) |
 | `apps/api/test/e2e/` | The end-to-end suite for the DSP demand paths, following the board doc *End-to-End Test Spec — DSP Demand Paths (v2)*: Run 1 open auction (`open-auction.test.ts`), Run 2 hardening, Run 3 private auction, Run 4 two-period, Run 5 reserved (`run2`–`run5-*.test.ts`). `harness.ts` stubs every PH Core seam: the DSP bidder (over `apps/dsp-mocks`, plus scripted, slow and abortable responses), DSP auth, playback (can be made to throw), an asset store keyed by content hash, a campaign source that records hand-offs, one token per partner, and a controllable clock. Nothing reaches the network. It runs with the rest of the API suite (`npm test`), or alone with `npx vitest run test/e2e` in `apps/api`. Every case passes; a case whose bug was fixed stays as its regression, naming the backlog id. It is the before/after gate for structural refactors. Results are board docs titled *E2E Test Results — …* |
 | `apps/api/bench/load.ts` | `npm run bench` — load benchmark for the Partner API, the auction and (with `--admin`) the admin API, at demo scale or a synthetic large estate (see SECURITY-PERFORMANCE.md, ADMIN-API-PERFORMANCE.md) |
 | `apps/api/src/platform/` | Stand-ins for the existing platform: `DisplayTypeSource`, `PlaylistSource`, `DisplaySource`, `StoreSource`, `CampaignSource` (including slot bookings for the hand-off), `PlaybackSource`, `AssetStore`, `AudienceSource` |
@@ -277,10 +278,13 @@ npm test
 ```
 
 - **E2E on demand** (E2E Testing Strategy, 1 Oct 2026): `npm run e2e:quick`
-  runs Runs 1–5 and Run 7 (105 stubbed tests) writing `results/e2e-quick.json`.
+  runs Runs 1–5, 7 and 8 (125 stubbed tests) writing `results/e2e-quick.json`.
   **Run 7 (7 Oct 2026) tests every deal type end to end** — D1 open RTB, D2
   private auction, D3 preferred deal, D4 programmatic guaranteed — in
-  `apps/api/test/e2e/run7-deal-types.test.ts`;
+  `apps/api/test/e2e/run7-deal-types.test.ts`. **Run 8 (10 Oct 2026) is the
+  AWS demo**: the direct advertiser flow and the DSP flow through per-campaign
+  approval into creative IDs (`run8-aws-demo.test.ts`; walkthrough in
+  `docs/dsp-integration/AWS-DEMO-TEST-FLOW.md`);
   `npm run e2e:journey` runs Run 6 end to end against a real local instance
   it starts itself (fresh database, ephemeral ports, `PH_TEST_CLOCK`), no
   browser and no settings changes, and its Phase 5 (cases M1–M8) adds the

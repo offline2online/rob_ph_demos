@@ -3576,7 +3576,7 @@ playback analytics.**
 - **Server-side enforcement**: campaigns that are not *Approved* are excluded
   from reservation, bidding and hand-off, and cannot be activated.
   *(spec only)*
-- **Campaign table now groups by playlist, not by layer**: Advertiser first,
+- **Campaign table now groups by playlist, not by layer** *(superseded 10 Oct 2026: one row is now one campaign — Campaign name, Touch points, Creative ID, grouped by advertiser; see "Retailer review" above. Kept as history.)*: Advertiser first,
   then Schedule, Playlist name (was Name), No. of campaigns (this
   submission's layer count), and Localised variables / Personalised
   variables — a high-level summary per column with the exact rules on
@@ -4387,6 +4387,25 @@ keeps the won creative renderable; the lookahead sets how early the per-impressi
   VAC-d at the cleared or reserve price, with no make-good.
 - The Run 6 journey (`npm run e2e:journey`) adds Phase 5, cases M1–M8:
   preferred and guaranteed deals over the real API and tick processes.
+- **Run 8 — the AWS demo (10 Dec 2026; ticket ZHPV0Lj5N883RKGfYThw)**
+  (`apps/api/test/e2e/run8-aws-demo.test.ts`, in `e2e:quick`) covers both
+  ways demand reaches the retailer against the per-campaign approval and
+  creative ID spec (§3 "Creative IDs"). **Direct advertiser flow** — D1 two
+  submissions wait with no creative ID, then are approved into one new ID;
+  D2 a selection spanning advertisers is refused whole; D3 a rejection
+  carries its reason to the advertiser, the fixed creative is resubmitted
+  and joins an existing ID; D4 updating an approved creative is a pending
+  edit that keeps its ID; D5 an advertiser that does not require approval is
+  approved on submission and groups its own campaigns; D6 only an approved,
+  activated campaign bids. **DSP flow** — S1 a new creative on a bid is
+  queued, approved into a new ID, activated and wins the next window; S2 a
+  second creative joins the first one's ID; S3 a rejected DSP creative stays
+  out of the auction. The admin table's behaviour (checkboxes, advertiser
+  scoping, picker, reason dialog) is the "Upcoming Campaign Approval —
+  creative IDs" suite in `apps/admin/test/dsp-integration.test.tsx`. The
+  person-run walkthrough, ending in an acceptance checklist, is
+  `docs/dsp-integration/AWS-DEMO-TEST-FLOW.md`; keep the three in step when
+  the approval flow changes.
 - The DSP-specific guaranteed-deal field names are the mapping in
   `src/dsp/dealTerms.ts`; the mocks prove it is carried, not that a DSP
   accepts it. **Still to confirm against each DSP sandbox** (DV360, Amazon

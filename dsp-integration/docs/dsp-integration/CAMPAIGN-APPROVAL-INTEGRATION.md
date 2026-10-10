@@ -273,8 +273,9 @@ retrieved again with identical bytes is not re-audited.
 - **Beside the campaign (default).** Run
   `migrations/0100_campaign_approvals.up.sql` and
   `migrations/0101_asset_level_rejection.up.sql` (asset-level rejection
-  detail + the safe-reuse clearance table, ticket 22 Sep) with your
-  migrator, in that order; each `.down.sql` reverts its own migration.
+  detail + the safe-reuse clearance table, ticket 22 Sep) and
+  `migrations/0103_creative_ids.up.sql` (creative IDs, 10 Oct 2026 — see
+  "Creative IDs" below) with your migrator, in that order; each `.down.sql` reverts its own migration.
   Nothing in the campaign table changes.
 - **On the campaign record (spec §8's target shape).** Add `status` and
   `approval` (JSON: `mode`, `assetVersion`, `submittedAt`, `reviewedBy`,
@@ -327,6 +328,40 @@ check each component's props in and behaviour out.
 In this repo the suites pass against both the in-memory reference adapter
 (`packages/campaign-approval`) and the POC adapter
 (`apps/api/test/approvals.test.ts`).
+
+## Creative IDs (10 Oct 2026)
+
+Approval is per campaign, and approving also **assigns the campaign to a
+creative ID** — the group of one advertiser's campaigns a DSP bids on in a
+private auction (REQUIREMENTS.md §3 "Creative IDs"). What the main repo must
+carry over:
+
+- **Tables.** `0103_creative_ids` adds `creative_ids` (ID, advertiser) and
+  `campaign_creative_ids` (campaign → ID). If you move approval onto the
+  campaign record (§4), the assignment moves with it: one nullable
+  `creativeId` per campaign, and the advertiser must match the ID's.
+- **Service.** `ApprovalService.approveAndAssign(items, creativeId, reviewer)` (all or
+  nothing: one advertiser, every item Awaiting approval at its current
+  `assetVersion`, an existing ID of the same advertiser) and
+  `assignCreativeId(campaignIds, creativeId, actor)` (auto-approved advertisers
+  only — their campaigns are Approved on submission so never reach the
+  retailer). Routes: `POST /approvals/approve-assign`,
+  `POST /approvals/assign-creative-id`, `GET /creative-ids`.
+- **UI.** The table's checkbox selection and its two actions — **Approve +
+  assign to new creative ID** / **Approve + assign to existing creative ID**
+  (advertiser-scoped: hidden when the ticks span advertisers) — and
+  **Reject…** with a required reason replace the per-row accept/reject. The
+  existing-ID picker lists each ID's member campaigns and touch points and
+  pre-highlights the ID a resubmitted campaign already had. The detail page's
+  own Approve does not assign an ID.
+- **Resubmission keeps the ID.** An edit to an approved creative is a pending
+  edit (Q38) and stays attached to its creative ID; rejecting the edit
+  leaves the live version and ID untouched.
+- **Status to the advertiser.** `CampaignStatus.creativeId` and `reason`
+  (pending / rejected with reason / assigned to a creative ID).
+- **Tests.** `apps/api/test/creative-ids.test.ts` (unit), the admin
+  "Upcoming Campaign Approval — creative IDs" suite, and E2E Run 8
+  (`apps/api/test/e2e/run8-aws-demo.test.ts`) for the whole path.
 
 ## One real source, two facets
 
