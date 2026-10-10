@@ -4052,7 +4052,7 @@ document.getElementById("ei-save").addEventListener("click", async () => {
   } catch (err) {
     await showAlert(describeSaveError(err, [
       { label: "Title", value: title, max: 200 },
-      { label: "Description", value: desc, max: 2000 },
+      { label: "Description", value: desc, max: 10000 },
     ]));
     return;
   } finally {
@@ -4469,7 +4469,7 @@ const niAttachments = createAttachmentController({
 
 // Live "X / max" readout for a bounded field, driven off the element's own
 // maxLength (works for both <input maxlength> and <textarea maxlength>) —
-// see firestore.rules for the actual caps this mirrors (desc 2000, title
+// see firestore.rules for the actual caps this mirrors (desc 10000, title
 // 200, project/interface/doc name 80-120, interface/doc contentMd 20000).
 // Returns an update() the caller can invoke after setting .value
 // programmatically (opening Edit item, opening a Docs modal, ...), since
@@ -4671,7 +4671,7 @@ async function submitNewItem() {
   try {
     newItemId = await addItem(activeNewItemProjectId, title, desc, type, category);
   } catch (err) {
-    await showAlert(describeSaveError(err, [{ label: "Description", value: desc, max: 2000 }]));
+    await showAlert(describeSaveError(err, [{ label: "Description", value: desc, max: 10000 }]));
     return;
   }
   closeForm();
@@ -6741,7 +6741,7 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
     // field's own bound (see firestore.rules), but assigning .value
     // straight from script — exactly what this line does — bypasses
     // maxlength entirely. Without this, dictating a long description ran
-    // straight past 2000 characters with nothing visible until the
+    // straight past 10000 characters with nothing visible until the
     // eventual Firestore write failed with a bare 403 permission-denied.
     // Only clamps when the field actually declares a maxlength, so this
     // never truncates an unbounded field.

@@ -19,7 +19,7 @@
 "use strict";
 
 const INTAKE_SETTER = "ph-ticket-intake";
-const DESC_MAX = 2000; // the board's own description limit
+const DESC_MAX = 10000; // the board's own description limit
 const PLACEHOLDER = "_Not provided — needed before this can be built._";
 // What a gap the build session fills in reads as; PLACEHOLDER is still
 // recognised on tickets written before the split.

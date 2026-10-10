@@ -391,9 +391,10 @@ async function rpc(token, method, params, id = 1) {
     assert.match(res.body.result.content[0].text, /No project with id nope/);
   });
 
-  await test("refuses a description past the board's own 2000-character limit", async () => {
-    const res = await rpc(tokens.access_token, "tools/call", { name: "create_backlog_item", arguments: { projectId: "proj1", desc: "x".repeat(2001) } });
+  await test("refuses a description past the board's own 10000-character limit, naming it", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", { name: "create_backlog_item", arguments: { projectId: "proj1", desc: "x".repeat(10001) } });
     assert.strictEqual(res.body.result.isError, true);
+    assert.match(res.body.result.content[0].text, /limit is 10000/);
   });
 
   await test("adds a comment labelled with the person's email", async () => {
