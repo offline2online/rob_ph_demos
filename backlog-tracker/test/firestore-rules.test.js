@@ -203,6 +203,11 @@ async function main() {
   await check("A member added to consoleUsers can read the board", "allow", () => getDoc(doc(as(MEMBER), "projects/p1")));
   await check("A member added to consoleUsers can write the board", "allow", () =>
     setDoc(doc(as(MEMBER), "backlogItems/i1"), { desc: "Edited by a teammate" }, { merge: true }));
+  // desc cap: 8000 since 10 Oct 2026 (a filled-in intake ran past the old 2000).
+  await check("A ticket description up to 8000 characters saves", "allow", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { desc: "x".repeat(8000) }, { merge: true }));
+  await check("A ticket description over 8000 characters is refused", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { desc: "x".repeat(8001) }, { merge: true }));
   await check("A viewer can read the board", "allow", () => getDoc(doc(as(VIEWER), "projects/p1")));
   await check("A viewer CANNOT write the board", "deny", () =>
     setDoc(doc(as(VIEWER), "backlogItems/i1"), { desc: "Viewers don't get to" }, { merge: true }));

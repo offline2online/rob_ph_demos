@@ -19,7 +19,12 @@
 "use strict";
 
 const INTAKE_SETTER = "ph-ticket-intake";
-const DESC_MAX = 2000; // the board's own description limit
+// The board's own description limit — firestore.rules (isValidItemCommon),
+// the MCP tools, boardApi and the board's own textareas all read or mirror
+// this one number. 2000 until 10 Oct 2026, when a build session filling a
+// dictated ticket's Test steps / Dependencies / Spec reference ran past it
+// and Firestore answered with a bare PERMISSION_DENIED (TliIpVQXVzfHUN4TvrLP).
+const DESC_MAX = 8000;
 const PLACEHOLDER = "_Not provided — needed before this can be built._";
 // What a gap the build session fills in reads as; PLACEHOLDER is still
 // recognised on tickets written before the split.
@@ -97,7 +102,15 @@ function applyIntake(rawDesc) {
 // Is this blocked flag one intake itself raised (and so intake's to clear)?
 const isIntakeFlag = (blocked) => !!(blocked && blocked.reason && blocked.setBy === INTAKE_SETTER);
 
+// The plain-language refusal for a description over the cap, or null when it
+// fits. Firestore's rules can only answer PERMISSION_DENIED, so every path we
+// control says this instead, with the actual numbers.
+const descLengthError = (desc) => {
+  const n = String(desc == null ? "" : desc).length;
+  return n > DESC_MAX ? `description too long (${n} > ${DESC_MAX})` : null;
+};
+
 // Does a description still carry a section nobody has filled in yet?
 const hasIntakePlaceholder = (desc) => PLACEHOLDERS.some((p) => String(desc || "").includes(p));
 
-module.exports = { applyIntake, parseSections, inferType, isIntakeFlag, hasIntakePlaceholder, INTAKE_SETTER, DESC_MAX, PLACEHOLDER, TO_COMPLETE, SECTIONS };
+module.exports = { applyIntake, parseSections, inferType, isIntakeFlag, hasIntakePlaceholder, descLengthError, INTAKE_SETTER, DESC_MAX, PLACEHOLDER, TO_COMPLETE, SECTIONS };

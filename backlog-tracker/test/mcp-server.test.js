@@ -391,9 +391,22 @@ async function rpc(token, method, params, id = 1) {
     assert.match(res.body.result.content[0].text, /No project with id nope/);
   });
 
-  await test("refuses a description past the board's own 2000-character limit", async () => {
-    const res = await rpc(tokens.access_token, "tools/call", { name: "create_backlog_item", arguments: { projectId: "proj1", desc: "x".repeat(2001) } });
+  await test("refuses a description past the board's own 8000-character limit, naming the length", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", { name: "create_backlog_item", arguments: { projectId: "proj1", desc: "x".repeat(8001) } });
     assert.strictEqual(res.body.result.isError, true);
+    assert.match(res.body.result.content[0].text, /description too long \(8001 > 8000\)/);
+  });
+
+  await test("accepts a description between the old 2000 and the new 8000 cap", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", { name: "update_backlog_item", arguments: { itemId: "old1", desc: "Outcome text. ".repeat(400) } });
+    assert.notStrictEqual(res.body.result.isError, true, res.body.result.content[0].text);
+    assert.strictEqual(env.store.col("backlogItems").get("old1").desc.length, "Outcome text. ".repeat(400).trim().length);
+  });
+
+  await test("update_backlog_item refuses an over-cap description with the length", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", { name: "update_backlog_item", arguments: { itemId: "old1", desc: "y".repeat(9000) } });
+    assert.strictEqual(res.body.result.isError, true);
+    assert.match(res.body.result.content[0].text, /description too long \(9000 > 8000\)/);
   });
 
   await test("adds a comment labelled with the person's email", async () => {

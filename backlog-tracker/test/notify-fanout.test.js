@@ -184,6 +184,24 @@ async function click(db, mod, extra = {}) {
     assert.ok(block.includes("n8") && block.includes("…"));
   });
 
+  await test("every build session is told the desc cap and how to report an over-cap write", async () => {
+    const mod = loadIndex(makeFakeDb(seed()), secrets);
+    const hint = mod.__test.perItemSelfReportHint("p1", "t1");
+    assert.match(hint, /capped at 8000 characters/);
+    assert.match(hint, /description too long \(<N> > 8000\)/);
+  });
+
+  await test("boardApi names an over-cap backlogItems desc instead of passing it through", async () => {
+    const mod = loadIndex(makeFakeDb(seed()), secrets);
+    const base = "/v1/projects/backlog-tracker-e4ed2/databases/(default)/documents";
+    const long = { fields: { desc: { stringValue: "x".repeat(8123) } } };
+    assert.strictEqual(mod.__test.boardApiDescError(`${base}/backlogItems/t1`, long), "description too long (8123 > 8000)");
+    assert.strictEqual(mod.__test.boardApiDescError(`${base}/backlogItems/t1`, { fields: { desc: { stringValue: "x".repeat(8000) } } }), null);
+    assert.strictEqual(mod.__test.boardApiDescError(`${base}/projects/p1`, long), null, "only backlogItems.desc is checked");
+    const commit = { writes: [{ update: { name: `projects/x/databases/(default)/documents/backlogItems/t1`, ...long } }] };
+    assert.strictEqual(mod.__test.boardApiDescError(`${base}:commit`, commit), "description too long (8123 > 8000)");
+  });
+
   console.log(`\n${passed} passed, ${failures.length} failed`);
   process.exit(failures.length ? 1 : 0);
 })();

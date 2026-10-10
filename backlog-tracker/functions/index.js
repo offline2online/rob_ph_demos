@@ -14,7 +14,7 @@ const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
-const { applyIntake, isIntakeFlag, INTAKE_SETTER } = require("./intake");
+const { applyIntake, isIntakeFlag, INTAKE_SETTER, DESC_MAX, descLengthError } = require("./intake");
 const { isTrainRelevantItem, trainLockShouldClear, trainHandoverReason } = require("./train-lock");
 const { offloadPatchFiles, hasPatchFiles } = require("./patch-offload");
 
@@ -207,7 +207,8 @@ function itemNotesBlock(item, { max = 12, maxChars = 1500 } = {}) {
 }
 
 function perItemSelfReportHint(projectId, itemId) {
-  return `\n\nWhen you finish this run (whether you set patchReady or stopped on a blocker), PATCH backlogItems/${itemId} with buildSession.status set to "done" (or "error" with buildSession.errorMessage, if you stopped early) and buildSession.finishedAt set to now. Do NOT write projects/${projectId}.notifyRoutine — other tickets from the same click are still being built by their own sessions, and the board waits for every one of them.`;
+  return `\n\nbacklogItems.desc is capped at ${DESC_MAX} characters. Check the length of the description you write before the PATCH (trim the sections you filled in, never the person's Outcome): Firestore answers an over-cap write with a bare PERMISSION_DENIED and drops the whole PATCH, patchReady included. If it happens anyway, report it as "description too long (<N> > ${DESC_MAX})" in buildSession.errorMessage, not as a permissions problem.` +
+    `\n\nWhen you finish this run (whether you set patchReady or stopped on a blocker), PATCH backlogItems/${itemId} with buildSession.status set to "done" (or "error" with buildSession.errorMessage, if you stopped early) and buildSession.finishedAt set to now. Do NOT write projects/${projectId}.notifyRoutine — other tickets from the same click are still being built by their own sessions, and the board waits for every one of them.`;
 }
 
 function perItemFireText({ item, siblings, projectId, projectName, prefix = "", suffix = "" }) {
@@ -2013,6 +2014,31 @@ function boardApiPathAllowed(pathname, body) {
   return BOARD_API_COLLECTIONS.includes(first);
 }
 
+// The proxy runs as the service account, so firestore.rules' desc cap
+// (isValidItemCommon) never sees what comes through here. Check it ourselves
+// and say what is wrong in words — the rules themselves can only ever answer
+// PERMISSION_DENIED, which is what sent the build session for
+// TliIpVQXVzfHUN4TvrLP looking for a permissions problem. Returns the
+// message for the first over-cap backlogItems desc in a PATCH/POST/:commit
+// body, or null.
+function boardApiDescError(pathname, body) {
+  const rest = pathname.slice(FIRESTORE_DOCS.length);
+  const docs = [];
+  if (rest === ":commit") {
+    for (const w of (body && Array.isArray(body.writes) ? body.writes : [])) {
+      if (w && w.update && /\/documents\/backlogItems\//.test(String(w.update.name || ""))) docs.push(w.update);
+    }
+  } else if (/^\/backlogItems(\/|$)/.test(rest)) {
+    docs.push(body || {});
+  }
+  for (const d of docs) {
+    const v = d && d.fields && d.fields.desc && d.fields.desc.stringValue;
+    const err = typeof v === "string" ? descLengthError(v) : null;
+    if (err) return err;
+  }
+  return null;
+}
+
 // Wrong-key attempts per address, per instance: the key is a long random
 // secret, but nothing used to stop someone trying at the function's full
 // throughput. 20 misses in ten minutes and that address waits.
@@ -2042,6 +2068,11 @@ exports.boardApi = onRequest({ secrets: [BOARD_API_KEY], cors: false, timeoutSec
   // still be on the path; normalise so both work.
   const url = new URL((req.originalUrl || req.url).replace(/^\/boardApi(?=\/|$)/, ""), FIRESTORE_HOST);
   if (!boardApiPathAllowed(url.pathname, req.body)) { res.status(403).json({ error: "path or collection not allowed" }); return; }
+  const descErr = ["POST", "PATCH"].includes(req.method) ? boardApiDescError(url.pathname, req.body) : null;
+  if (descErr) {
+    res.status(400).json({ error: { code: 400, status: "INVALID_ARGUMENT", message: `${descErr} — backlogItems.desc is capped at ${DESC_MAX} characters; trim it and send the PATCH again` } });
+    return;
+  }
   try {
     const auth = new GoogleAuth({ scopes: ["https://www.googleapis.com/auth/datastore"] });
     const client = await auth.getClient();
@@ -2076,4 +2107,4 @@ exports.syncConsoleUserClaims = mcp.syncConsoleUserClaims;
 // test/routine-binding-trigger.test.js exercise resolveRoutineCredentials
 // directly instead of standing up a full onDocumentUpdated + fetch-mocking
 // harness for something that's pure db-read-then-fallback logic.
-exports.__test = { runTicketIntake, resolveRoutineCredentials, stampMs, itemNotesBlock, perItemFireText, fireBuildSessionsPerItem };
+exports.__test = { boardApiDescError, perItemSelfReportHint, runTicketIntake, resolveRoutineCredentials, stampMs, itemNotesBlock, perItemFireText, fireBuildSessionsPerItem };

@@ -1184,9 +1184,31 @@ It's a nudge, not a hard block — two genuinely different requests can share
 a lot of wording, and this only ever compares against *open* items, so it
 never second-guesses prior art that's already shipped or been archived.
 
+### The description cap is 8000 characters (10 Oct 2026)
+
+`backlogItems.desc` was capped at 2000. A build session fills a dictated
+ticket's Test steps / Dependencies / Spec reference into `desc` in the same
+PATCH as `patchFiles`/`patchReady` (`ROUTINE_INSTRUCTIONS.md` → "Complete
+the intake sections first"); on DSP ticket `TliIpVQXVzfHUN4TvrLP` (9 Oct
+2026) the result ran past 2000, Firestore refused the whole PATCH with a
+bare PERMISSION_DENIED, and the ticket never got `patchReady`. The cap is
+now 8000 everywhere it is enforced, kept in step by hand:
+`firestore.rules` → `isValidItemCommon()`, `functions/intake.js` →
+`DESC_MAX` (which the MCP tools and `boardApi` import), and the board's
+`maxlength`/`describeSaveError` limits in `public/index.html` and
+`public/js/app.js`. Every path we control now refuses an over-cap
+description as **"description too long (N > 8000)"** instead: the MCP
+`create_backlog_item`/`update_backlog_item` tools, the `boardApi` proxy
+(400 `INVALID_ARGUMENT` — it runs as the service account, so before this
+it skipped the cap entirely), and the build-session fire text, which states
+the cap and tells the session to check the length before the PATCH and to
+report an over-cap refusal in those words. The direct Firestore path still
+answers PERMISSION_DENIED — rules can't say anything else.
+
 ### A bounded text field now says so before the write fails
 
-`firestore.rules` caps several string fields (`backlogItems.desc` at 2000,
+`firestore.rules` caps several string fields (`backlogItems.desc` at 8000 —
+2000 until 10 Oct 2026, see below —
 `title` at 200, project/interface/doc `name` at 80-120, interface/doc
 `contentMd` at 20000) and rejects a write over the cap with a bare 403
 permission-denied — nothing in that error names the field or the limit.
@@ -1196,7 +1218,7 @@ carry one too, matching their 20000-character rule, which they didn't
 before), but said nothing to someone approaching a limit, and did nothing
 at all against dictation, which sets `.value` straight from script — a path
 that bypasses `maxlength` entirely, called out explicitly as a way to run
-past 2000 characters without noticing. Two fixes: `wireCharCount()` puts a
+past the description cap without noticing. Two fixes: `wireCharCount()` puts a
 live "X / max" readout under every bounded field, turning amber near the
 cap and red at it; and `createDictationController`'s `onresult` handler now
 clamps to the field's own `maxLength` the same way typing already was,

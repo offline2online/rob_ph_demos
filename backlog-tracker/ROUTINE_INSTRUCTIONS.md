@@ -375,6 +375,18 @@ Outcome text exactly as written) and send it **in the same PATCH as
 patch while a placeholder is still in the description, and rebuilds the
 ticket once automatically.
 
+**`desc` is capped at 8000 characters** (`DESC_MAX` in
+`functions/intake.js`, enforced by `firestore.rules`). Check the length of
+the rewritten description before you send the PATCH; if it is over, tighten
+the sections *you* wrote — never the person's Outcome. Firestore answers an
+over-cap write with a bare `PERMISSION_DENIED` and drops the whole PATCH,
+`patchReady` included, so if you see that on a PATCH carrying `desc`,
+measure the description before suspecting the credentials, and report it
+as `description too long (<N> > 8000)` in `buildSession.errorMessage` and
+on the card. (The `boardApi` fallback says exactly that itself, as a 400.)
+DSP ticket `TliIpVQXVzfHUN4TvrLP` blocked on this on 9 Oct 2026, under the
+old 2000 cap.
+
 ## For each Backlog item found
 
 1. Give it a proper subject line: a short, specific, plain-English title

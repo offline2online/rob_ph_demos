@@ -129,7 +129,7 @@ deleted by hand).
 {
   projectId: string,
   title: string,       // short subject line — see "Titles" below
-  desc: string,
+  desc: string,                  // ≤ 8000 chars (DESC_MAX in functions/intake.js; was 2000 until 10 Oct 2026)
   type: "feature" | "bug",
   category: string,    // one of CATEGORIES, see below
   status: "backlog" | "ready-for-testing" | "ready-to-publish" |

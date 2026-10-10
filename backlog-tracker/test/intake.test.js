@@ -3,7 +3,7 @@
 // Run with:  node test/intake.test.js
 "use strict";
 const assert = require("assert");
-const { applyIntake, isIntakeFlag, hasIntakePlaceholder, INTAKE_SETTER, PLACEHOLDER, TO_COMPLETE } = require("../functions/intake");
+const { applyIntake, isIntakeFlag, hasIntakePlaceholder, descLengthError, INTAKE_SETTER, DESC_MAX, PLACEHOLDER, TO_COMPLETE } = require("../functions/intake");
 
 // 1. A dictated ticket with a clear outcome is NOT blocked (4 Oct 2026): the
 //    other sections are left for the build session to complete.
@@ -52,9 +52,15 @@ assert.strictEqual(applyIntake(full).desc, applyIntake(applyIntake(full).desc).d
 assert.strictEqual(applyIntake("The save button crashes when the title is empty").type, "bug");
 assert.strictEqual(applyIntake("Add an export button to the archive page").type, "feature");
 
-// 6. Over-long structured output keeps the original text (board limit 2000).
-const long = "x ".repeat(990);
+// 6. Over-long structured output keeps the original text (board limit DESC_MAX).
+const long = "x ".repeat(DESC_MAX / 2 - 10);
 assert.strictEqual(applyIntake(long).desc, long.trim());
+
+// 6b. The cap is 8000, and an over-cap description is named with its length.
+assert.strictEqual(DESC_MAX, 8000);
+assert.strictEqual(descLengthError("x".repeat(8000)), null);
+assert.strictEqual(descLengthError("x".repeat(8001)), "description too long (8001 > 8000)");
+assert.strictEqual(descLengthError(undefined), null);
 
 // 7. Only intake's own flag is its to manage.
 assert.ok(isIntakeFlag({ reason: "needs-decision", setBy: INTAKE_SETTER }));
