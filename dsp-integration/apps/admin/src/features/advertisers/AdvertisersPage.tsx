@@ -983,14 +983,20 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
     set: (id: string, patch: Partial<AdvertiserSetting>) => setDraft((cur) => (cur ? { ...cur, [id]: { ...cur[id], ...patch } } : cur)),
   }
 
+  /* Add new Advertiser sits on the right of the Advertisers table's count
+     line, not at the top of the page (ticket KoW5tVsf8grTJoui5DWt). */
+  const addAdvertiserButton = canEdit
+    ? <Button type="primary" icon={<Icon name="add" size={16} />} onClick={() => setAddingAdvertiser(true)}>Add new Advertiser</Button>
+    : null
+
   return (
     <div>
       {/* Booking schedule CTA moved here, top right of the page (ticket, 27
           Sep 2026) — it used to sit beside the Available Inventory heading,
           well below the fold on a page with any real number of advertisers
-          or slots. */}
+          or slots. Add new Advertiser sits on the Advertisers table's count
+          line instead (addAdvertiserButton above). */}
       <div className="mb-3.5 flex items-center justify-end gap-3">
-        {canEdit && <Button type="primary" icon={<Icon name="add" size={16} />} onClick={() => setAddingAdvertiser(true)}>Add new Advertiser</Button>}
         <Button color="primary" variant="text" size="small" icon={<Icon name="calendar_month" size={16} />} onClick={() => window.open(externalUrl(BOOKING_SCHEDULE_PATH), '_blank', 'noopener')}>Booking schedule</Button>
         {!canEdit && <StatusPill colour={T.muted} icon="visibility">Read only</StatusPill>}
       </div>
@@ -1028,10 +1034,16 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
       {/* Advertisers table sits last, under Buyers and targeting (ticket AkDMbOJn0QBV0ZcEM5tm). */}
       <SectionLabel>Advertisers</SectionLabel>
       {data.items.length === 0 ? (
-        <div className="flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}><Icon name="sell" size={18} />No advertisers yet. They appear here once a DSP is connected.</div>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}><Icon name="sell" size={18} />No advertisers yet. They appear here once a DSP is connected.</div>
+          {addAdvertiserButton}
+        </div>
       ) : (
         <>
-          <div className="mb-2" style={{ fontSize: 13 }}>{showingCount(shown ?? data.items.length, data.items.length, `advertiser${data.items.length === 1 ? '' : 's'}`)}</div>
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div style={{ fontSize: 13 }}>{showingCount(shown ?? data.items.length, data.items.length, `advertiser${data.items.length === 1 ? '' : 's'}`)}</div>
+            {addAdvertiserButton}
+          </div>
           <Grid<Advertiser>
             label="Advertisers" rows={data.items} columns={columns} context={context} getRowId={(a) => a.advertiserId}
             stickyHeader headerHeight={40} floatingFiltersHeight={40} onFilterChanged={(e) => setShown(e.api.getDisplayedRowCount())}

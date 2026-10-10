@@ -157,14 +157,14 @@ export function BuyersListsTable({ lists, canEdit, capacity, onChanged }: { list
 
   return (
     <div className="mt-7">
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <SectionLabel>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <SectionLabel style={{ margin: 0 }}>
           <WithTip tip="Reusable deal definitions for guaranteed and programmatic campaigns. Each list sets the deal type (private auction, preferred deal or programmatic guaranteed), who can buy (invited advertisers and IAB categories), the targeting criteria appended to the deal, the delivery term, the committed plays (programmatic guaranteed), the floor price and the auction close (private auction). Create one once, then pick it in Available Inventory's Assigned to column for any slot.">
             Buyers and targeting
           </WithTip>
         </SectionLabel>
         {canEdit && (
-          <Button type="text" size="small" icon={<Icon name="add" size={16} />} onClick={() => { setEditing(null); setModalOpen(true) }}>
+          <Button type="primary" icon={<Icon name="add" size={16} />} onClick={() => { setEditing(null); setModalOpen(true) }}>
             New buyers and targeting list
           </Button>
         )}
