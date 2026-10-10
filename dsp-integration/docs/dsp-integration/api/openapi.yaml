@@ -1449,6 +1449,17 @@ paths:
         version, a mixed advertiser or a campaign that is not awaiting approval
         approves none of them. The advertiser reads the result as `creativeId`
         on the campaign's status.
+
+        **Two flows use this one endpoint.** A *direct* campaign has no deal
+        ID. A *private-auction* campaign carries the `dealId` its advertiser
+        set at authoring time; the caller never sends it, it is read from the
+        campaigns. A deal is approved per subset across rounds, so one deal
+        can accumulate several creative IDs; a selection must not mix deals,
+        or deal and non-deal campaigns, and an existing ID must belong to the
+        same deal. A campaign rejected and resubmitted fixed joins the creative
+        ID already minted for its deal group. (Deal-ID behaviour lands with
+        ticket DLhjuhbTqJS2uAvhh0I8; see REQUIREMENTS.md, *The two approval
+        flows*.)
       security: [{adminSession: [approver]}]
       requestBody:
         required: true

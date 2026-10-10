@@ -154,3 +154,34 @@ describe('Assign a creative ID for an auto-approved advertiser', () => {
     expect((await assign(app, [])).statusCode).toBe(400)
   })
 })
+
+/* The private-auction (deal ID) flow — REQUIREMENTS §3 "The two approval
+   flows", cases B1–B9. They need `dealId` on the campaign, which lands with
+   ticket DLhjuhbTqJS2uAvhh0I8; whichever ticket adds the field turns each
+   into an assertion. Named here so the suite lists them. */
+describe('Private auction (deal ID) flow', () => {
+  it.todo('B1 carries the advertiser-set deal ID through submission onto the campaign status')
+  it.todo('B2 approves a subset of a deal into a new creative ID, leaving the rest awaiting approval')
+  it.todo('B3 a later round adds a second creative ID (new or existing) to the same deal')
+  it.todo('B4 refuses a selection that mixes deals, or deal and non-deal campaigns, approving none')
+  it.todo('B5 lists only the same deal\'s creative IDs for a deal campaign')
+  it.todo('B6 rejects one campaign with a reason and approves the rest of the deal')
+  it.todo('B7 re-attaches a rejected-then-fixed campaign to the SAME creative ID, minting none')
+  it.todo('B8 pre-highlights nothing when the deal has several IDs and the anchor is ambiguous')
+  it.todo('B9 keeps its own creative ID when an approved deal campaign is edited and resubmitted')
+})
+
+/* Direct flow A5: a rejected campaign carries the reason and, never having
+   been approved, has no creative ID; HQ then approves the fixed one afresh. */
+describe('Direct flow: reject then fix', () => {
+  it('a rejected campaign has no creative ID and can be approved after resubmission', async () => {
+    const { ctx, app, approve, view, version } = await setup()
+    await ctx.approvals.reject('c_api_swisse', await version('c_api_swisse'), 'HQ Admin (POC)', 'Price in artwork')
+    const rejected = await app.inject({ method: 'GET', url: '/api/v1/campaigns/c_api_swisse/status', headers: G })
+    expect(rejected.json()).toMatchObject({ status: 'rejected', reason: 'Price in artwork', creativeId: null })
+    await ctx.approvals.unreject('c_api_swisse', 'v1', 'HQ Admin (POC)')
+    const res = await approve(['c_api_swisse'])
+    expect(res.statusCode).toBe(200)
+    expect((await view('c_api_swisse')).creativeId).toBe(res.json().creativeId)
+  })
+})
