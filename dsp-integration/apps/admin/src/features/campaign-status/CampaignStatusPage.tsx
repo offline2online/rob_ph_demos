@@ -23,6 +23,9 @@
    grouping a DSP bids on — either a new one or an existing one, picked by
    seeing the campaigns already under it. The assign actions are hidden when
    the ticked campaigns span advertisers (a creative ID belongs to one).
+   An auto-approved advertiser's campaigns (approved on submission, no
+   retailer step) are ticked the same way and offer "Generate creative ID" /
+   "Assign to existing creative ID" instead (ticket XnN1Kwl39F8C8DrOkwQn).
    Reject needs a reason, which the advertiser sees. REQUIREMENTS.md →
    Retailer review → "Creative IDs".
 
@@ -74,6 +77,11 @@ const FILTERABLE_STATUSES = ['approved', 'awaiting_approval', 'rejected'] as con
 type FilterableStatus = (typeof FILTERABLE_STATUSES)[number]
 const isFilterable = (s: string): s is FilterableStatus => (FILTERABLE_STATUSES as readonly string[]).includes(s)
 
+/* Approved on submission (the advertiser does not require approval): there is
+   no retailer step to give it a creative ID, so the advertiser groups it here. */
+const isAutoApproved = (a: Approval | undefined) => a?.status === 'approved' && a.mode === 'auto'
+const isSelectable = (a: Approval | undefined) => a?.status === 'awaiting_approval' || isAutoApproved(a)
+
 const StatusCell = ({ data, context }: P) => {
   const a = data && context.current.approvals[data.campaignId]
   return a ? <ApprovalStatusBadge status={a.status} mode={a.mode} /> : <span style={{ color: T.micro }}>—</span>
@@ -87,7 +95,7 @@ const touchPointsOf = (c: Campaign) => c.brief?.touchPoints ?? []
 const SelectCell = ({ data, context }: P) => {
   const c = context.current
   const a = data && c.approvals[data.campaignId]
-  if (!data || a?.status !== 'awaiting_approval' || !c.canApprove) return null
+  if (!data || !isSelectable(a) || !c.canApprove) return null
   return <Checkbox aria-label={`Select ${data.name}`} checked={c.selected.has(data.campaignId)} onChange={(e) => c.toggle(data.campaignId, e.target.checked)} />
 }
 
@@ -198,7 +206,7 @@ export function CampaignStatusPage() {
   const campaigns = useQuery(Q.campaigns)
   /* Only what came in through a DSP or the Partner API. */
   const nonHq = useMemo(() => (campaigns.data ?? []).filter((c) => c.source !== 'hq'), [campaigns.data])
-  const { approvals, canApprove, busy, approveAssign, rejectMany, unreject, activate } = useCampaignActions(nonHq.map((c) => c.campaignId))
+  const { approvals, canApprove, busy, approveAssign, assignCreativeId, rejectMany, unreject, activate } = useCampaignActions(nonHq.map((c) => c.campaignId))
   /* Draft never surfaces in a retailer-facing view (ticket, 22 Sep, §3):
      the retailer only ever sees a campaign once it has been submitted. */
   const all = useMemo(() => nonHq.filter((c) => approvals[c.campaignId]?.status !== 'draft'), [nonHq, approvals])
@@ -221,9 +229,13 @@ export function CampaignStatusPage() {
      (or a filter) that takes a row away takes its tick with it. */
   const [ticked, setTicked] = useState<ReadonlySet<string>>(new Set())
   const [visible, setVisible] = useState<ReadonlySet<string> | null>(null)
-  const selectedRows = useMemo(() => rows.filter((c) => ticked.has(c.campaignId) && approvals[c.campaignId]?.status === 'awaiting_approval' && (!visible || visible.has(c.campaignId))), [rows, ticked, approvals, visible])
+  const selectedRows = useMemo(() => rows.filter((c) => ticked.has(c.campaignId) && isSelectable(approvals[c.campaignId]) && (!visible || visible.has(c.campaignId))), [rows, ticked, approvals, visible])
   const selected = useMemo(() => new Set(selectedRows.map((c) => c.campaignId)), [selectedRows])
   const selectedApprovals = selectedRows.map((c) => approvals[c.campaignId]!)
+  /* Awaiting ones are approved by the retailer; auto-approved ones are grouped by the advertiser. The two are never actioned together. */
+  const autoSelected = selectedApprovals.filter(isAutoApproved).length
+  const mixed = autoSelected > 0 && autoSelected < selectedApprovals.length
+  const autoOnly = autoSelected > 0 && !mixed
   /* A creative ID spans one advertiser's campaigns, so the assign actions need exactly one. */
   const advertisers = new Set(selectedRows.map((c) => c.advertiserId))
   const oneAdvertiser = selectedRows.length > 0 && advertisers.size === 1 && !advertisers.has(null)
@@ -333,7 +345,18 @@ export function CampaignStatusPage() {
       {selectedRows.length > 0 && (
         <section aria-label="Approve selected campaigns" className="mb-3 flex flex-wrap items-center gap-2" style={{ fontSize: 13 }}>
           <b>{selectedRows.length} selected</b>
-          {oneAdvertiser ? (
+          {mixed ? (
+            <span style={{ color: T.muted }}>Choose either campaigns awaiting approval or auto-approved ones, not both.</span>
+          ) : autoOnly ? (
+            oneAdvertiser ? (
+              <>
+                <Button type="primary" size="small" loading={busy === 'batch'} onClick={() => void done(assignCreativeId(selectedApprovals))}>Generate creative ID</Button>
+                <Button type="primary" size="small" ghost disabled={busy === 'batch'} onClick={openPicker}>Assign to existing creative ID</Button>
+              </>
+            ) : (
+              <span style={{ color: T.muted }}>Choose one advertiser’s campaigns to group them under a creative ID.</span>
+            )
+          ) : oneAdvertiser ? (
             <>
               <Button type="primary" size="small" loading={busy === 'batch'} onClick={() => void done(approveAssign(selectedApprovals))}>Approve + assign to new creative ID</Button>
               <Button type="primary" size="small" ghost disabled={busy === 'batch'} onClick={openPicker}>Approve + assign to existing creative ID</Button>
@@ -341,7 +364,7 @@ export function CampaignStatusPage() {
           ) : (
             <span style={{ color: T.muted }}>Choose one advertiser’s campaigns to approve them into a creative ID.</span>
           )}
-          <Button size="small" danger onClick={() => { setReason(''); setRejecting(true) }}>Reject…</Button>
+          {!autoOnly && !mixed && <Button size="small" danger onClick={() => { setReason(''); setRejecting(true) }}>Reject…</Button>}
           <Button size="small" type="link" onClick={() => setTicked(new Set())}>Clear</Button>
         </section>
       )}
@@ -368,20 +391,20 @@ export function CampaignStatusPage() {
       />
       <Modal
         open={picking}
-        title="Approve + assign to existing creative ID"
-        okText={choice ? `Approve + assign to ${choice}` : 'Approve + assign'}
+        title={autoOnly ? 'Assign to existing creative ID' : 'Approve + assign to existing creative ID'}
+        okText={`${autoOnly ? 'Assign' : 'Approve + assign'}${choice ? ` to ${choice}` : ''}`}
         okButtonProps={{ disabled: !choice }}
         confirmLoading={busy === 'batch'}
         onCancel={() => setPicking(false)}
         onOk={async () => {
-          const ok = await done(approveAssign(selectedApprovals, choice!))
+          const ok = await done(autoOnly ? assignCreativeId(selectedApprovals, choice!) : approveAssign(selectedApprovals, choice!))
           if (ok) setPicking(false)
         }}
         width={640}
       >
-        <p style={{ color: T.muted }}>Pick the creative ID these {selectedRows.length === 1 ? 'campaign belongs' : 'campaigns belong'} with. Each shows the campaigns already under it, so you can match by their siblings. “Approve” here approves the creative.</p>
+        <p style={{ color: T.muted }}>Pick the creative ID these {selectedRows.length === 1 ? 'campaign belongs' : 'campaigns belong'} with. Each shows the campaigns already under it, so you can match by their siblings.{autoOnly ? '' : ' “Approve” here approves the creative.'}</p>
         {creativeIds.isLoading ? <Spin /> : !creativeIds.data?.length ? (
-          <p>This advertiser has no creative IDs yet. Use “Approve + assign to new creative ID”.</p>
+          <p>This advertiser has no creative IDs yet. Use “{autoOnly ? 'Generate creative ID' : 'Approve + assign to new creative ID'}”.</p>
         ) : (
           <Radio.Group value={choice} onChange={(e) => setChoice(e.target.value)} className="flex flex-col gap-2" aria-label="Creative IDs">
             {creativeIds.data.map((g) => (

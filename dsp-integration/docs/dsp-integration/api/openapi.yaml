@@ -1485,6 +1485,47 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
+  /admin/v1/approvals/assign-creative-id:
+    post:
+      tags: [Admin — Campaign approval]
+      operationId: assignCreativeId
+      summary: Group an auto-approved advertiser's campaigns under a creative ID
+      description: |
+        For an advertiser who does not require approval: submission was the
+        approval, so there is no retailer step to assign a creative ID and the
+        advertiser does it from their own campaign table. Every listed campaign
+        must already be Approved and belong to one advertiser who does not
+        require approval (an advertiser whose campaigns the retailer approves
+        gets its creative IDs from `approveAndAssignCreativeId` instead). Omit
+        `creativeId` to mint a new one across them; name an existing one to
+        join it — it must belong to the same advertiser. All or nothing.
+      security: [{adminSession: [approver]}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [campaignIds]
+              properties:
+                campaignIds: {type: array, minItems: 1, maxItems: 100, items: {type: string}}
+                creativeId: {type: [string, 'null'], description: An existing creative ID to join; omit or null to mint a new one.}
+      responses:
+        '200':
+          description: Assigned
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [creativeId, approvals]
+                properties:
+                  creativeId: {type: string}
+                  approvals: {type: array, items: {$ref: '#/components/schemas/Approval'}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
   /admin/v1/creative-ids:
     get:
       tags: [Admin — Campaign approval]

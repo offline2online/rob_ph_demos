@@ -1071,9 +1071,27 @@ approving (ticket IDGsyELBJsjlAYjizSqT).
   `GET /admin/v1/creative-ids?advertiserId=` lists the IDs with their
   campaigns and touch points; `Approval.creativeId` and
   `CampaignStatus.creativeId` carry the assignment.
-- **Not covered here.** Bidding on a creative ID in the exchange, creative
-  IDs for campaigns that are approved automatically (no approval required),
-  and assigning an ID from the campaign detail page are separate work.
+- **Auto-approved advertisers group their own campaigns** (ticket
+  XnN1Kwl39F8C8DrOkwQn). An advertiser with *Approval required* off has
+  every campaign approved on submission, so it never reaches the retailer's
+  approval step and nobody else can assign its creative ID. Those
+  campaigns (Approved, mode `auto`) get a tick box in the advertiser's
+  campaign table in PH Core HQ admin (the same table, filtered to the
+  advertiser). Ticking one advertiser's campaigns offers **Generate creative
+  ID** (mints a new ID across them) and **Assign to existing creative ID**
+  (the same picker, each ID shown with its member campaigns and touch
+  points); there is no Approve or Reject, because they are already
+  approved. An auto-approved selection cannot be mixed with campaigns
+  awaiting the retailer. The advertiser then uses the ID in the DSP.
+  `POST /admin/v1/approvals/assign-creative-id` (approver scope) takes
+  `campaignIds` and an optional `creativeId`; every campaign must be
+  Approved and belong to one advertiser who does not require approval
+  (otherwise 400 — the retailer assigns that advertiser's IDs — or 409 if
+  not approved), and an existing ID must belong to the same advertiser.
+  All or nothing. The POC has no advertiser login, so the HQ admin session
+  stands in for the advertiser.
+- **Not covered here.** Bidding on a creative ID in the exchange, and
+  assigning an ID from the campaign detail page, are separate work.
 
 ### Asset-level rejection detail (ticket, 22 Sep)
 

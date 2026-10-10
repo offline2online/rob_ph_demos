@@ -496,7 +496,10 @@ describe('Upcoming Campaign Approval — creative IDs', () => {
   const winter = camp('c3', 'Nestlé winter', 'nestle', 'Nestlé')
   const autumn = camp('c4', 'Swisse autumn', 'swisse', 'Swisse')
   const resubmitted = camp('c5', 'Swisse summer', 'swisse', 'Swisse')
-  const campaigns = [spring, kids, winter, autumn, resubmitted]
+  /* Nestlé does not require approval: its campaigns were approved on submission (mode 'auto'). */
+  const oat = camp('c6', 'Nestlé oats', 'nestle', 'Nestlé')
+  const milk = camp('c7', 'Nestlé milk', 'nestle', 'Nestlé')
+  const campaigns = [spring, kids, winter, autumn, resubmitted, oat, milk]
   const routes = {
     '/api/admin/v1/campaigns': { items: campaigns },
     '/api/admin/v1/campaigns/c1/approval': approvalOf(spring),
@@ -504,6 +507,8 @@ describe('Upcoming Campaign Approval — creative IDs', () => {
     '/api/admin/v1/campaigns/c3/approval': approvalOf(winter),
     '/api/admin/v1/campaigns/c4/approval': approvalOf(autumn, 'approved', 'CR-AAAA1111'),
     '/api/admin/v1/campaigns/c5/approval': approvalOf(resubmitted, 'awaiting_approval', 'CR-AAAA1111'),
+    '/api/admin/v1/campaigns/c6/approval': { ...approvalOf(oat, 'approved'), mode: 'auto' },
+    '/api/admin/v1/campaigns/c7/approval': { ...approvalOf(milk, 'approved'), mode: 'auto' },
     '/api/admin/v1/creative-ids': {
       items: [
         { creativeId: 'CR-AAAA1111', advertiserId: 'swisse', advertiserName: 'Swisse', createdAt: '2026-10-01T00:00:00.000Z', campaigns: [{ campaignId: 'c4', name: 'Swisse autumn', touchPoints: ['Digital Signage'] }, { campaignId: 'c5', name: 'Swisse summer', touchPoints: ['Mobile Site'] }] },
@@ -591,6 +596,29 @@ describe('Upcoming Campaign Approval — creative IDs', () => {
     await waitFor(() => expect(posts).toHaveLength(1))
     expect(posts[0].body).toEqual({ items: [{ campaignId: 'c5', assetVersion: 'v1' }], creativeId: 'CR-BBBB2222' })
   }, slow(45000))
+
+  it('lets an auto-approved advertiser group its own campaigns under a new or existing creative ID, with no approve or reject', async () => {
+    const grid = await open()
+    tick(grid, 'Nestlé oats')
+    tick(grid, 'Nestlé milk')
+    expect(await screen.findByRole('button', { name: 'Generate creative ID' })).toBeInTheDocument()
+    expect(cta(/Approve \+/)).not.toBeInTheDocument()
+    expect(cta('Reject…')).not.toBeInTheDocument()
+    /* Mixed with a campaign awaiting the retailer: neither action is offered. */
+    tick(grid, 'Nestlé winter')
+    await waitFor(() => expect(cta('Generate creative ID')).not.toBeInTheDocument())
+    tick(grid, 'Nestlé winter')
+    fireEvent.click(await screen.findByRole('button', { name: 'Generate creative ID' }))
+    await waitFor(() => expect(posts.map((p) => p.url)).toEqual(['/api/admin/v1/approvals/assign-creative-id']))
+    expect(posts[0].body).toEqual({ campaignIds: ['c7', 'c6'] })
+    tick(grid, 'Nestlé oats')
+    fireEvent.click(await screen.findByRole('button', { name: 'Assign to existing creative ID' }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(await within(dialog).findByRole('radio', { name: /CR-BBBB2222/ }, { timeout: 5000 }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Assign to CR-BBBB2222' }))
+    await waitFor(() => expect(posts).toHaveLength(2))
+    expect(posts[1].body).toEqual({ campaignIds: ['c6'], creativeId: 'CR-BBBB2222' })
+  }, slow(60000))
 
   it('rejects only once a reason is typed, and sends it', async () => {
     const grid = await open()

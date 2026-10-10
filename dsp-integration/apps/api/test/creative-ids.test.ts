@@ -118,3 +118,39 @@ describe('Approve + assign to a creative ID', () => {
     expect(await view('c_api_swisse')).toMatchObject({ status: 'approved', creativeId, pendingEdit: false })
   })
 })
+
+/* Auto-approved advertisers (ticket XnN1Kwl39F8C8DrOkwQn): submission is the
+   approval, so the advertiser groups its own approved campaigns. Seeded:
+   Nestlé does not require approval (c_dsp_nestle is Approved), Swisse does. */
+describe('Assign a creative ID for an auto-approved advertiser', () => {
+  const assign = (app: Awaited<ReturnType<typeof setup>>['app'], campaignIds: string[], creativeId?: string | null) =>
+    app.inject({ method: 'POST', url: '/api/admin/v1/approvals/assign-creative-id', payload: { campaignIds, ...(creativeId !== undefined ? { creativeId } : {}) } })
+
+  it('mints a new ID, then a second campaign joins it from the existing-ID list', async () => {
+    const { app, view, creativeIds } = await setup()
+    const res = await assign(app, ['c_dsp_nestle'])
+    expect(res.statusCode).toBe(200)
+    expectMatchesContract('POST', '/admin/v1/approvals/assign-creative-id', 200, res.json())
+    const { creativeId } = res.json()
+    expect(creativeId).toMatch(/^CR-[0-9A-F]{8}$/)
+    expect(await view('c_dsp_nestle')).toMatchObject({ status: 'approved', mode: 'auto', creativeId })
+    expect((await creativeIds('?advertiserId=nestle'))[0]).toMatchObject({ creativeId, campaigns: [{ campaignId: 'c_dsp_nestle' }] })
+    const again = await assign(app, ['c_dsp_nestle'], creativeId)
+    expect(again.json().creativeId).toBe(creativeId)
+  })
+
+  it('refuses an advertiser whose campaigns the retailer approves, a campaign not yet approved, and an unknown or foreign ID', async () => {
+    const { app, approve } = await setup()
+    await approve(['c_api_swisse'])
+    const swisse = await assign(app, ['c_api_swisse'])
+    expect(swisse.statusCode).toBe(400)
+    expectMatchesContract('POST', '/admin/v1/approvals/assign-creative-id', 400, swisse.json())
+    expect(swisse.json().error.message).toMatch(/retailer/)
+    expect((await assign(app, ['c_dsp_nestle'], 'CR-NOPE0000')).statusCode).toBe(404)
+    const { creativeId } = (await approve(['c_api_swisse_kids'])).json()
+    const foreign = await assign(app, ['c_dsp_nestle'], creativeId)
+    expect(foreign.statusCode).toBe(400)
+    expect(foreign.json().error.message).toMatch(/different advertiser/)
+    expect((await assign(app, [])).statusCode).toBe(400)
+  })
+})

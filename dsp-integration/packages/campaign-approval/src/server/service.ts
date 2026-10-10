@@ -263,6 +263,48 @@ export function createApprovalService(o: ApprovalServiceOptions) {
       })
     },
 
+    /* Group already-approved campaigns under a creative ID, for an advertiser
+       who does not require approval: submission was the approval, so there is
+       no reviewer step to assign the ID and the advertiser does it from their
+       own campaign table. `creativeId` null mints a new one across the
+       campaigns; otherwise they join that existing ID. All or nothing; a
+       creative ID spans one advertiser's campaigns only. */
+    async assignCreativeId(campaignIds: string[], creativeId: string | null, actor: string) {
+      if (!campaignIds.length) throw new ApprovalError(400, 'validation_failed', 'Choose at least one campaign.')
+      if (new Set(campaignIds).size !== campaignIds.length) throw new ApprovalError(400, 'validation_failed', 'A campaign can only be listed once.')
+      return transaction(async () => {
+        const campaigns: CampaignRef[] = []
+        for (const id of campaignIds) {
+          const c = await campaign(id)
+          if (c.source === 'hq' || !c.advertiserId) throw new ApprovalError(400, 'validation_failed', `${c.name} is not an advertiser campaign, so it has no creative ID.`)
+          if (await o.requiresApproval(c.advertiserId)) throw new ApprovalError(400, 'validation_failed', `${c.name} is approved by the retailer, which assigns its creative ID.`)
+          if ((await statusOf(c)) !== 'approved') throw new ApprovalError(409, 'conflict', `${c.name} is not approved.`)
+          campaigns.push(c)
+        }
+        const advertiserId = campaigns[0].advertiserId!
+        if (campaigns.some((c) => c.advertiserId !== advertiserId)) throw new ApprovalError(400, 'validation_failed', 'A creative ID spans only one advertiser’s campaigns. Choose campaigns from a single advertiser.')
+        if (creativeId) {
+          const existing = await store.creativeId(creativeId)
+          if (!existing) throw new ApprovalError(404, 'not_found', 'That creative ID does not exist.')
+          if (existing.advertiserId !== advertiserId) throw new ApprovalError(400, 'validation_failed', 'That creative ID belongs to a different advertiser.')
+        }
+        const at = now()
+        let target = creativeId
+        if (!target) {
+          for (let tries = 0; !target; tries++) {
+            const candidate = `CR-${randomBytes(4).toString('hex').toUpperCase()}`
+            if (!(await store.creativeId(candidate))) target = candidate
+            else if (tries > 8) throw new Error('Could not mint a unique creative ID.')
+          }
+          await store.createCreativeId(target, advertiserId, actor, at)
+        }
+        for (const c of campaigns) await store.assignCreativeId(c.campaignId, target, actor, at)
+        const approvals: Approval[] = []
+        for (const c of campaigns) approvals.push(await toView(c, false))
+        return { creativeId: target, approvals }
+      })
+    },
+
     /* The creative IDs in use, each with the campaigns grouped under it — so
        a reviewer picks an existing one by seeing its siblings. An ID whose
        campaigns have all moved on is not listed. The host adds touch points. */

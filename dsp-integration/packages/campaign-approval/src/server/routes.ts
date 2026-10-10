@@ -53,6 +53,18 @@ export const approvalRoutes = (service: ApprovalService, hooks: ApprovalRouteHoo
     } catch (e) { return send(reply, e) }
   })
 
+  /* Group already-approved campaigns of an auto-approved advertiser under a
+     creative ID: a new one (creativeId omitted) or an existing one. */
+  app.post<{ Body: { campaignIds?: string[]; creativeId?: string | null } }>('/approvals/assign-creative-id', async (req, reply) => {
+    hooks.guard(req)
+    hooks.requireApprover(req)
+    const ids = req.body?.campaignIds
+    if (!Array.isArray(ids) || !ids.length || ids.length > 100 || ids.some((i) => typeof i !== 'string') || (req.body?.creativeId != null && typeof req.body.creativeId !== 'string')) {
+      return reply.status(400).send({ error: { code: 'validation_failed', message: 'Send 1–100 campaignIds.', details: [{ field: 'campaignIds', reason: 'Required.' }] } })
+    }
+    try { return await service.assignCreativeId(ids, req.body.creativeId ?? null, hooks.reviewer(req)) } catch (e) { return send(reply, e) }
+  })
+
   app.post<{ Params: { id: string }; Body: { assetVersion?: string; reason?: string; assetReasons?: AssetRejection[] } }>('/campaigns/:id/reject', async (req, reply) => {
     hooks.guard(req)
     hooks.requireApprover(req)

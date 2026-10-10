@@ -74,6 +74,12 @@ export function useCampaignActions(campaignIds: string[]) {
       const res = await api<{ creativeId: string }>('POST', '/admin/v1/approvals/approve-assign', { items: as.map((a) => ({ campaignId: a.campaignId, assetVersion: a.assetVersion })), ...(creativeId ? { creativeId } : {}) })
       return `${as.length === 1 ? '1 campaign' : `${as.length} campaigns`} approved under creative ID ${res.creativeId}.`
     }),
+    /* An auto-approved advertiser's campaigns are already approved: group the
+       ticked ones under a creative ID, a new one or an existing one. */
+    assignCreativeId: (as: Approval[], creativeId?: string) => batch(async () => {
+      const res = await api<{ creativeId: string }>('POST', '/admin/v1/approvals/assign-creative-id', { campaignIds: as.map((a) => a.campaignId), ...(creativeId ? { creativeId } : {}) })
+      return `${as.length === 1 ? '1 campaign' : `${as.length} campaigns`} grouped under creative ID ${res.creativeId}.`
+    }),
     /* Reject each ticked campaign with the same reason, which the advertiser sees. */
     rejectMany: (as: Approval[], reason: string) => batch(async () => {
       for (const a of as) await api('POST', `/admin/v1/campaigns/${a.campaignId}/reject`, { assetVersion: a.assetVersion, reason })
