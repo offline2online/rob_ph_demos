@@ -238,7 +238,7 @@ describe('POST /v1/campaigns/{id}/submit and GET …/status', () => {
     const res = await submit(app, id)
     expect(res.statusCode).toBe(200)
     expectMatchesContract('POST', '/v1/campaigns/{campaignId}/submit', 200, res.json())
-    expect(res.json()).toEqual({ campaignId: id, status: 'awaiting_approval', mode: 'manual', reason: null, assetVersion: 'v1', liveAssetVersion: null, pendingEdit: false })
+    expect(res.json()).toEqual({ campaignId: id, status: 'awaiting_approval', mode: 'manual', reason: null, assetVersion: 'v1', creativeId: null, liveAssetVersion: null, pendingEdit: false })
     const approval = await ctx.approvals.view(id)
     expect(approval.checks.map((c) => c.name)).toEqual(['file_type', 'file_size', 'bitrate', 'aspect_ratio', 'dimensions', 'duration', 'default_present', 'targeting_permitted'])
     expect(approval.audit?.map((a) => [a.action, a.by])).toEqual([['submitted', 'Google DSP']])
@@ -276,7 +276,7 @@ describe('POST /v1/campaigns/{id}/submit and GET …/status', () => {
     await app.inject({ method: 'POST', url: `/api/admin/v1/campaigns/${id}/approve`, payload: { assetVersion: 'v1' } })
     await app.inject({ method: 'PUT', url: `/api/admin/v1/campaigns/${id}/activation`, payload: { enabled: true } })
     await upload(app, id, 'default', png(3840, 2160))
-    expect((await status(app, id)).json()).toEqual({ campaignId: id, status: 'awaiting_approval', mode: 'manual', reason: null, assetVersion: 'v2', liveAssetVersion: 'v1', pendingEdit: true })
+    expect((await status(app, id)).json()).toEqual({ campaignId: id, status: 'awaiting_approval', mode: 'manual', reason: null, assetVersion: 'v2', creativeId: null, liveAssetVersion: 'v1', pendingEdit: true })
     const list = (await app.inject({ method: 'GET', url: '/api/admin/v1/campaigns' })).json().items
     expect(list.find((c: { campaignId: string }) => c.campaignId === id).activation).toEqual({ enabled: true })
   })

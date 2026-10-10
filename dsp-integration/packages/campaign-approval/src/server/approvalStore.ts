@@ -25,6 +25,10 @@ const toRow = (r: Raw): ApprovalRow => ({
   reviewedBy: r.reviewed_by, reviewedAt: r.reviewed_at, reason: r.reason, assetReasons: r.asset_reasons ? JSON.parse(r.asset_reasons) : [], checks: JSON.parse(r.checks),
 })
 
+export interface CreativeIdRow { creativeId: string; advertiserId: string; createdAt: string }
+interface RawCreativeId { creative_id: string; advertiser_id: string; created_at: string }
+const toCreativeId = (r: RawCreativeId): CreativeIdRow => ({ creativeId: r.creative_id, advertiserId: r.advertiser_id, createdAt: r.created_at })
+
 export function approvalStore(db: SqlDb) {
   /* Each statement is prepared once per SQL text (scalability review,
      24 Sep 2026): the eligibility check behind every bid in an auction and
@@ -77,6 +81,36 @@ export function approvalStore(db: SqlDb) {
       return andThen(stmt('SELECT * FROM campaign_approval_audit WHERE campaign_id = ? ORDER BY at, seq').all(campaignId), (rs) =>
         (rs as { at: string; action: AuditAction; actor: string | null; reason: string | null; asset_version: string; asset_reasons: string | null }[])
           .map((a) => ({ at: a.at, action: a.action, by: a.actor, reason: a.reason, assetVersion: a.asset_version, ...(a.asset_reasons ? { assetReasons: JSON.parse(a.asset_reasons) } : {}) })))
+    },
+    /* Creative IDs: the grouping a DSP bids on, one advertiser's campaigns
+       each. The assignment is keyed by campaign, so it survives a new asset
+       version (a resubmission keeps its ID while it awaits re-approval). */
+    creativeIdOf(campaignId: string): Awaitable<string | null> {
+      return andThen(stmt('SELECT creative_id FROM campaign_creative_ids WHERE campaign_id = ?').get(campaignId), (r) => (r as { creative_id: string } | undefined)?.creative_id ?? null)
+    },
+    creativeId(creativeId: string): Awaitable<CreativeIdRow | null> {
+      return andThen(stmt('SELECT creative_id, advertiser_id, created_at FROM creative_ids WHERE creative_id = ?').get(creativeId), (r) => (r ? toCreativeId(r as RawCreativeId) : null))
+    },
+    creativeIds(advertiserId?: string): Awaitable<CreativeIdRow[]> {
+      return andThen(
+        advertiserId
+          ? stmt('SELECT creative_id, advertiser_id, created_at FROM creative_ids WHERE advertiser_id = ? ORDER BY created_at, creative_id').all(advertiserId)
+          : stmt('SELECT creative_id, advertiser_id, created_at FROM creative_ids ORDER BY created_at, creative_id').all(),
+        (rs) => (rs as RawCreativeId[]).map(toCreativeId))
+    },
+    /* Every assignment as [campaignId, creativeId], oldest first. */
+    assignments(): Awaitable<{ campaignId: string; creativeId: string }[]> {
+      return andThen(stmt('SELECT campaign_id, creative_id FROM campaign_creative_ids ORDER BY assigned_at, campaign_id').all(),
+        (rs) => (rs as { campaign_id: string; creative_id: string }[]).map((r) => ({ campaignId: r.campaign_id, creativeId: r.creative_id })))
+    },
+    createCreativeId(creativeId: string, advertiserId: string, by: string | null, at: string): Awaitable<void> {
+      return andThen(stmt('INSERT INTO creative_ids (creative_id, advertiser_id, created_at, created_by) VALUES (?, ?, ?, ?)').run(creativeId, advertiserId, at, by), () => undefined)
+    },
+    assignCreativeId(campaignId: string, creativeId: string, by: string | null, at: string): Awaitable<void> {
+      return andThen(stmt(
+        `INSERT INTO campaign_creative_ids (campaign_id, creative_id, assigned_at, assigned_by) VALUES (?, ?, ?, ?)
+         ON CONFLICT (campaign_id) DO UPDATE SET creative_id = excluded.creative_id, assigned_at = excluded.assigned_at, assigned_by = excluded.assigned_by`,
+      ).run(campaignId, creativeId, at, by), () => undefined)
     },
     /* Safe reuse (spec §3): record that a human (never auto-approve) has
        cleared this asset at this exact content. */

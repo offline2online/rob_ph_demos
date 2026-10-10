@@ -38,6 +38,21 @@ export const approvalRoutes = (service: ApprovalService, hooks: ApprovalRouteHoo
     try { return await service.approve(req.params.id, req.body?.assetVersion ?? '', hooks.reviewer(req)) } catch (e) { return send(reply, e) }
   })
 
+  /* Approve campaigns one at a time and group them under a creative ID: a new
+     one (creativeId omitted) or an existing one. All or nothing. */
+  app.post<{ Body: { items?: { campaignId?: string; assetVersion?: string }[]; creativeId?: string | null } }>('/approvals/approve-assign', async (req, reply) => {
+    hooks.guard(req)
+    hooks.requireApprover(req)
+    const items = req.body?.items
+    const bad = !Array.isArray(items) || !items.length || items.length > 100 || items.some((i) => typeof i?.campaignId !== 'string' || typeof i?.assetVersion !== 'string')
+    if (bad || (req.body?.creativeId != null && typeof req.body.creativeId !== 'string')) {
+      return reply.status(400).send({ error: { code: 'validation_failed', message: 'Send 1–100 items, each with a campaignId and the assetVersion reviewed.', details: [{ field: 'items', reason: 'Required.' }] } })
+    }
+    try {
+      return await service.approveAndAssign(items!.map((i) => ({ campaignId: i.campaignId!, assetVersion: i.assetVersion! })), req.body.creativeId ?? null, hooks.reviewer(req))
+    } catch (e) { return send(reply, e) }
+  })
+
   app.post<{ Params: { id: string }; Body: { assetVersion?: string; reason?: string; assetReasons?: AssetRejection[] } }>('/campaigns/:id/reject', async (req, reply) => {
     hooks.guard(req)
     hooks.requireApprover(req)

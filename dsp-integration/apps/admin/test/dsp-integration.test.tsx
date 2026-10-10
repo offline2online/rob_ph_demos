@@ -374,24 +374,26 @@ describe('Campaign Status stand-in', () => {
     /* The filters name themselves and list what is there (Rob, 20 Sep). */
     expect((await within(grid).findAllByLabelText('Advertiser filter', {}, { timeout: 10000 })).length).toBeGreaterThan(0)
     expect(within(grid).getAllByLabelText('DSP filter').length).toBeGreaterThan(0)
-    /* Activation first, then Advertiser and Schedule, sorted so what is up
-       next is at the top; DSP between Playlist name and No. of campaigns
-       (ticket, 27 Sep 2026). */
+    /* A selection box first, then Activation, Advertiser, Received and Status;
+       one row is one campaign (Campaign name, Touch points, Creative ID — no
+       Playlist name or No. of campaigns), grouped by advertiser (ticket
+       IDGsyELBJsjlAYjizSqT). */
     expect([...grid.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent)).toEqual([
-      'Activation', 'Advertiser', 'Received', 'Status', 'Playlist name', 'DSP', 'No. of campaigns', 'Localised variables', 'Personalised variables', 'Last used', '',
+      '', 'Activation', 'Advertiser', 'Received', 'Status', 'Campaign name', 'Touch points', 'Creative ID', 'DSP', 'Localised variables', 'Personalised variables', 'Last used', '',
     ])
     expect(await within(grid).findByText('Swisse spring', {}, { timeout: 10000 })).toBeInTheDocument()
-    /* One playlist, one submission: the default layer plus a localised
-       upsell — the count and the high-level variable summary. */
-    expect(within(grid).getByText('2')).toBeInTheDocument()
+    /* The touch points it runs on, and the high-level variable summary. */
+    expect(within(grid).getByText('Digital Signage')).toBeInTheDocument()
     expect(within(grid).getByText('Fixed Store Segments')).toBeInTheDocument()
     /* Nothing targeted on the personalised layer for this playlist. */
     expect(within(grid).getAllByText('—').length).toBeGreaterThan(0)
-    /* And a row menu for approving, rejecting, undoing a rejection, or switching a campaign on. */
+    /* And a row menu for opening, undoing a rejection, or switching a campaign on — approving and rejecting are by selection. */
     expect(within(grid).getByLabelText('Swisse spring: options')).toBeInTheDocument()
     fireEvent.click(within(grid).getByLabelText('Swisse spring: options'))
     /* Awaiting approval, not Rejected, so Undo rejection is offered but disabled. */
     expect(await screen.findByRole('menuitem', { name: /Undo rejection/ }, { timeout: 10000 })).toHaveAttribute('aria-disabled', 'true')
+    expect(screen.queryByRole('menuitem', { name: /^Approve$/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: /Reject/ })).not.toBeInTheDocument()
   })
 
   it('sits on a tab named Upcoming Campaign Approval', async () => {
@@ -475,6 +477,134 @@ describe('Campaign Status stand-in', () => {
     /* Approve and Reject are on the campaign too, not only in the table. */
     expect(await screen.findByRole('button', { name: /Approve/ })).toBeInTheDocument()
   })
+})
+
+/* Ticket IDGsyELBJsjlAYjizSqT: campaigns are approved one at a time and
+   grouped under a creative ID (the grouping a DSP bids on). */
+describe('Upcoming Campaign Approval — creative IDs', () => {
+  const base = {
+    source: 'api', partnerId: 'p_google', partnerName: 'Google DSP', displayTypeId: 'portrait', pricingType: 'localised', activation: { enabled: false },
+    schedule: { nextWindowStart: null, bookedWindows: 0 }, lastPlayedAt: null, brief: { details: 'x', touchPoints: ['Digital Signage'] },
+    campaignCount: 1, localisedVariables: ['Fixed Store Segments'], localisedRuleLines: [], personalisedVariables: [], personalisedRuleLines: [],
+  }
+  const camp = (campaignId: string, name: string, advertiserId: string, advertiserName: string, extra: object = {}) => ({ ...base, campaignId, name, advertiserId, advertiserName, ...extra })
+  const approvalOf = (c: { campaignId: string; name: string }, status = 'awaiting_approval', creativeId: string | null = null) => ({
+    campaignId: c.campaignId, campaignName: c.name, status, mode: 'manual', assetVersion: 'v1', submittedAt: '2026-10-01T00:00:00.000Z', reviewedBy: null, reviewedAt: null, reason: null, checks: [], creativeId,
+  })
+  const spring = camp('c1', 'Swisse spring', 'swisse', 'Swisse')
+  const kids = camp('c2', 'Swisse kids', 'swisse', 'Swisse', { brief: { details: 'x', touchPoints: ['Digital Signage', 'Mobile Site'] } })
+  const winter = camp('c3', 'Nestlé winter', 'nestle', 'Nestlé')
+  const autumn = camp('c4', 'Swisse autumn', 'swisse', 'Swisse')
+  const resubmitted = camp('c5', 'Swisse summer', 'swisse', 'Swisse')
+  const campaigns = [spring, kids, winter, autumn, resubmitted]
+  const routes = {
+    '/api/admin/v1/campaigns': { items: campaigns },
+    '/api/admin/v1/campaigns/c1/approval': approvalOf(spring),
+    '/api/admin/v1/campaigns/c2/approval': approvalOf(kids),
+    '/api/admin/v1/campaigns/c3/approval': approvalOf(winter),
+    '/api/admin/v1/campaigns/c4/approval': approvalOf(autumn, 'approved', 'CR-AAAA1111'),
+    '/api/admin/v1/campaigns/c5/approval': approvalOf(resubmitted, 'awaiting_approval', 'CR-AAAA1111'),
+    '/api/admin/v1/creative-ids': {
+      items: [
+        { creativeId: 'CR-AAAA1111', advertiserId: 'swisse', advertiserName: 'Swisse', createdAt: '2026-10-01T00:00:00.000Z', campaigns: [{ campaignId: 'c4', name: 'Swisse autumn', touchPoints: ['Digital Signage'] }, { campaignId: 'c5', name: 'Swisse summer', touchPoints: ['Mobile Site'] }] },
+        { creativeId: 'CR-BBBB2222', advertiserId: 'swisse', advertiserName: 'Swisse', createdAt: '2026-10-02T00:00:00.000Z', campaigns: [{ campaignId: 'c9', name: 'Swisse winter', touchPoints: ['Digital Signage'] }] },
+      ],
+    },
+    '/api/admin/v1/booking-schedule': { currency: 'AUD', windows: [], positions: [], revenue: [], dsps: [], byPricingType: [], totals: { bookedWindows: 0, bookedRevenue: 0, billedRevenue: 0 } },
+  }
+  const posts: { url: string; body: any }[] = []
+  beforeEach(() => {
+    posts.length = 0
+    const get = fakeFetch(routes)
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        posts.push({ url, body: JSON.parse(String(init.body)) })
+        return new Response(JSON.stringify({ creativeId: 'CR-NEW00000', approvals: [] }), { status: 200 })
+      }
+      return get(url)
+    }))
+  })
+  const open = async () => {
+    renderAt('/booking-schedule?tab=campaign-status')
+    const grid = await screen.findByLabelText('Campaign Status')
+    await within(grid).findByLabelText('Select Swisse spring', {}, { timeout: 10000 })
+    return grid
+  }
+  const tick = (grid: HTMLElement, name: string) => fireEvent.click(within(grid).getByLabelText(`Select ${name}`))
+  const cta = (name: RegExp | string) => screen.queryByRole('button', { name })
+
+  it('has no per-row approve or reject, and only Awaiting-approval campaigns can be ticked', async () => {
+    const grid = await open()
+    expect(within(grid).queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument()
+    expect(within(grid).queryByRole('button', { name: 'Reject' })).not.toBeInTheDocument()
+    expect(within(grid).queryByLabelText('Select Swisse autumn')).not.toBeInTheDocument()
+    /* An approved campaign shows the creative ID it was grouped under; a resubmission says so. */
+    expect(within(grid).getAllByText(/CR-AAAA1111/).length).toBe(2)
+    expect(within(grid).getByText('(resubmission)')).toBeInTheDocument()
+  }, slow(45000))
+
+  it('shows the campaign’s details on hover', async () => {
+    const grid = await open()
+    fireEvent.mouseEnter(within(grid).getByRole('button', { name: 'Swisse kids' }))
+    expect(await screen.findByText('Pricing:', {}, { timeout: 5000 })).toBeInTheDocument()
+    for (const label of ['Advertiser:', 'DSP:', 'Touch points:', 'Localised variables:']) expect(screen.getAllByText(label).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Digital Signage, Mobile Site', { exact: false }).length).toBeGreaterThan(1)
+  }, slow(45000))
+
+  it('offers the assign actions only while the ticked campaigns are one advertiser’s', async () => {
+    const grid = await open()
+    expect(cta(/Approve \+ assign/)).not.toBeInTheDocument()
+    tick(grid, 'Swisse spring')
+    tick(grid, 'Swisse kids')
+    expect(await screen.findByRole('button', { name: 'Approve + assign to new creative ID' })).toBeInTheDocument()
+    expect(cta('Approve + assign to existing creative ID')).toBeInTheDocument()
+    tick(grid, 'Nestlé winter')
+    await waitFor(() => expect(cta(/Approve \+ assign/)).not.toBeInTheDocument())
+    expect(cta('Reject…')).toBeInTheDocument()
+    tick(grid, 'Nestlé winter')
+    expect(await screen.findByRole('button', { name: 'Approve + assign to new creative ID' })).toBeInTheDocument()
+  }, slow(45000))
+
+  it('approves the ticked campaigns into a new creative ID', async () => {
+    const grid = await open()
+    tick(grid, 'Swisse spring')
+    tick(grid, 'Swisse kids')
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve + assign to new creative ID' }))
+    await waitFor(() => expect(posts.map((p) => p.url)).toEqual(['/api/admin/v1/approvals/approve-assign']))
+    /* Grouped by advertiser, then name: kids before spring. */
+    expect(posts[0].body).toEqual({ items: [{ campaignId: 'c2', assetVersion: 'v1' }, { campaignId: 'c1', assetVersion: 'v1' }] })
+  }, slow(45000))
+
+  it('picks an existing creative ID by its campaigns, pre-highlighting the one a resubmission came from', async () => {
+    const grid = await open()
+    tick(grid, 'Swisse summer')
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve + assign to existing creative ID' }))
+    const dialog = await screen.findByRole('dialog')
+    /* Each ID with its member campaigns and their touch points. */
+    expect(await within(dialog).findByText('CR-BBBB2222', {}, { timeout: 5000 })).toBeInTheDocument()
+    expect(within(dialog).getByText('Swisse winter — Digital Signage')).toBeInTheDocument()
+    expect(within(dialog).getByText('Swisse summer — Mobile Site')).toBeInTheDocument()
+    expect(within(dialog).getByText('original (resubmission)')).toBeInTheDocument()
+    expect(within(dialog).getByRole('radio', { name: /CR-AAAA1111/ })).toBeChecked()
+    fireEvent.click(within(dialog).getByRole('radio', { name: /CR-BBBB2222/ }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Approve + assign to CR-BBBB2222' }))
+    await waitFor(() => expect(posts).toHaveLength(1))
+    expect(posts[0].body).toEqual({ items: [{ campaignId: 'c5', assetVersion: 'v1' }], creativeId: 'CR-BBBB2222' })
+  }, slow(45000))
+
+  it('rejects only once a reason is typed, and sends it', async () => {
+    const grid = await open()
+    tick(grid, 'Nestlé winter')
+    fireEvent.click(await screen.findByRole('button', { name: 'Reject…' }))
+    const dialog = await screen.findByRole('dialog')
+    const reject = within(dialog).getByRole('button', { name: 'Reject' })
+    expect(reject).toBeDisabled()
+    fireEvent.change(within(dialog).getByLabelText('Reason'), { target: { value: 'Price shown in the artwork.' } })
+    await waitFor(() => expect(reject).toBeEnabled())
+    fireEvent.click(reject)
+    await waitFor(() => expect(posts).toHaveLength(1))
+    expect(posts[0]).toEqual({ url: '/api/admin/v1/campaigns/c3/reject', body: { assetVersion: 'v1', reason: 'Price shown in the artwork.' } })
+  }, slow(45000))
 })
 
 describe('Booking schedule', () => {

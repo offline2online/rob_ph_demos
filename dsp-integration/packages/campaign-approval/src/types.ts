@@ -68,10 +68,25 @@ export interface Approval {
   /* The most recent edit a reviewer rejected, which was discarded while the
      live version carried on; cleared by the next edit. */
   rejectedEdit?: { assetVersion: string; reason: string | null; at: string }
+  /* The creative ID this campaign is grouped under for DSP bidding, once a
+     retailer has approved it into one. null until then. A resubmission keeps
+     it while it awaits re-approval (the assignment belongs to the campaign,
+     not to one version of its creative). */
+  creativeId?: string | null
   targetingSummary?: string
   creative?: Creative | null
   canvas?: Canvas | null
   audit?: AuditEntry[]
+}
+
+/* A creative ID and the campaigns grouped under it. The service fills
+   campaigns' name; the host adds touchPoints, which it alone knows. */
+export interface CreativeIdView {
+  creativeId: string
+  advertiserId: string
+  advertiserName: string | null
+  createdAt: string
+  campaigns: { campaignId: string; name: string; touchPoints: string[] }[]
 }
 
 export interface StatusCounts { draft: number; awaiting_approval: number; approved: number; rejected: number }

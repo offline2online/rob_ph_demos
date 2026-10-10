@@ -1433,6 +1433,100 @@ paths:
                   items: {type: array, items: {$ref: '#/components/schemas/Approval'}}
                   nextCursor: {type: [string, 'null']}
         '401': {$ref: '#/components/responses/Unauthorised'}
+  /admin/v1/approvals/approve-assign:
+    post:
+      tags: [Admin — Campaign approval]
+      operationId: approveAndAssignCreativeId
+      summary: Approve campaigns one at a time and group them under a creative ID
+      description: |
+        Approves each listed campaign (they must all be Awaiting approval, at
+        the version reviewed) and assigns them to a creative ID — the grouping
+        a DSP bids on, so a private-auction bid targets the group rather than
+        one campaign. Omit `creativeId` to mint a new one across these
+        campaigns; name an existing one to join it. A creative ID spans one
+        advertiser's campaigns only: every campaign listed must belong to the
+        same advertiser, and so must the existing ID. All or nothing — a stale
+        version, a mixed advertiser or a campaign that is not awaiting approval
+        approves none of them. The advertiser reads the result as `creativeId`
+        on the campaign's status.
+      security: [{adminSession: [approver]}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items:
+                    type: object
+                    required: [campaignId, assetVersion]
+                    properties:
+                      campaignId: {type: string}
+                      assetVersion: {type: string, description: The version reviewed; rejected with 409 if it has changed.}
+                creativeId: {type: [string, 'null'], description: An existing creative ID to join; omit or null to mint a new one.}
+      responses:
+        '200':
+          description: Approved and assigned
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [creativeId, approvals]
+                properties:
+                  creativeId: {type: string}
+                  approvals: {type: array, items: {$ref: '#/components/schemas/Approval'}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /admin/v1/creative-ids:
+    get:
+      tags: [Admin — Campaign approval]
+      operationId: listCreativeIds
+      summary: Creative IDs in use, each with the campaigns grouped under it
+      description: |
+        For the "Approve + assign to existing creative ID" picker: each ID with
+        its member campaigns and the touch points they run on, so the reviewer
+        matches by seeing siblings rather than a bare ID. An ID with no
+        campaigns left is not listed.
+      security: [{adminSession: []}]
+      parameters:
+        - {name: advertiserId, in: query, required: false, schema: {type: string}}
+      responses:
+        '200':
+          description: Creative IDs
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [creativeId, advertiserId, advertiserName, createdAt, campaigns]
+                      properties:
+                        creativeId: {type: string}
+                        advertiserId: {type: string}
+                        advertiserName: {type: [string, 'null']}
+                        createdAt: {type: string, format: date-time}
+                        campaigns:
+                          type: array
+                          items:
+                            type: object
+                            required: [campaignId, name, touchPoints]
+                            properties:
+                              campaignId: {type: string}
+                              name: {type: string}
+                              touchPoints: {type: array, items: {type: string}}
+        '401': {$ref: '#/components/responses/Unauthorised'}
   /admin/v1/campaigns/{campaignId}/approval:
     get:
       tags: [Admin — Campaign approval]
@@ -2240,6 +2334,12 @@ components:
         mode: {type: [string, 'null'], enum: [manual, auto, null]}
         reason: {type: [string, 'null']}
         assetVersion: {type: [string, 'null']}
+        creativeId:
+          type: [string, 'null']
+          description: |
+            The creative ID the retailer grouped this campaign under when it
+            approved it (the grouping a DSP bids on); null until then. A
+            resubmitted creative keeps it while it awaits re-approval.
         liveAssetVersion:
           type: [string, 'null']
           description: |
@@ -3148,7 +3248,7 @@ components:
 
     Approval:
       type: object
-      required: [campaignId, status, assetVersion, liveAssetVersion, pendingEdit]
+      required: [campaignId, status, assetVersion, liveAssetVersion, pendingEdit, creativeId]
       properties:
         campaignId: {type: string}
         campaignName: {type: string}
@@ -3166,6 +3266,12 @@ components:
           description: The current rejection's per-asset breakdown, when the reviewer named specific assets (spec §3, "asset-level rejection").
           items: {$ref: '#/components/schemas/AssetRejection'}
         checks: {type: array, items: {$ref: '#/components/schemas/Check'}}
+        creativeId:
+          type: [string, 'null']
+          description: |
+            The creative ID the retailer grouped this campaign under when it
+            approved it (the grouping a DSP bids on); null until then. A
+            resubmitted creative keeps it while it awaits re-approval.
         liveAssetVersion:
           type: [string, 'null']
           description: |

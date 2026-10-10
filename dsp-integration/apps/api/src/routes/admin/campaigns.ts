@@ -33,6 +33,15 @@ export const campaignRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync
     return { items: refs.map((c) => toCampaign(c, platform.get(c.campaignId) ?? null, held, lastPlayed)) }
   })
 
+  /* The creative IDs in use, each with the campaigns grouped under it and the
+     touch points they run on, so a reviewer picks one by its siblings. */
+  app.get<{ Querystring: { advertiserId?: string } }>('/creative-ids', async (req) => {
+    guards.flagged()
+    const items = await ctx.approvals.creativeIds(req.query.advertiserId || undefined)
+    const platform = new Map((await ctx.campaigns.listCampaigns()).map((c) => [c.campaignId, c]))
+    return { items: items.map((g) => ({ ...g, campaigns: g.campaigns.map((m) => ({ ...m, touchPoints: platform.get(m.campaignId)?.brief?.touchPoints ?? [] })) })) }
+  })
+
   app.put<{ Params: { id: string }; Body: { enabled?: unknown } }>('/campaigns/:id/activation', async (req) => {
     if (typeof req.body?.enabled !== 'boolean') throw validationFailed([{ field: 'enabled', reason: 'Must be true or false.' }])
     try {
