@@ -1137,10 +1137,26 @@ tickets must satisfy.
 | B8 | Private auction | Resubmitted campaign, deal has several IDs, anchor ambiguous | No ID pre-highlighted; HQ chooses |
 | B9 | Private auction | Approved deal campaign edited and resubmitted | Keeps its own ID, as A6 |
 
-Cases A1–A7 run today. B1–B9 need `dealId` on the campaign and the deal
-grouping from DLhjuhbTqJS2uAvhh0I8; they are recorded as pending tests in
-`apps/api/test/creative-ids.test.ts` so the suite names them, and are turned
-into assertions by whichever ticket lands the deal-ID field.
+All of A1–A7 and B1–B9 run: `apps/api/test/creative-ids.test.ts` for the
+API cases and the admin tests in `dsp-integration.test.tsx` ("deal IDs") for
+the screens (ticket DLhjuhbTqJS2uAvhh0I8).
+
+Built:
+
+- `dealId` on the campaign: the Partner API takes an optional non-empty
+  `dealId` (an empty string is 400); stored in `campaigns.deal_id`
+  (migration 0065); returned on campaign status, `GET /admin/v1/campaigns`
+  and on creative-ID members.
+- One deal per creative ID, enforced server-side: approve-assign and
+  assign-creative-id answer 400 on a mixed selection or on another deal's
+  existing ID.
+- `GET /admin/v1/creative-ids?dealId=` scopes the picker. The picker
+  pre-highlights the deal's only ID, tagged "same deal (<deal>)", and
+  highlights nothing when the deal has several IDs.
+- The table is advertiser > deal ID > campaign, with the selection,
+  Advertiser and Deal ID columns pinned left and tick-all boxes in the group
+  cells. AG Grid Enterprise row grouping is unlicensed, so community AG Grid
+  with pinned cells is used; the "prototype both" comparison was not made.
 
 ### Creative IDs: campaigns are approved one at a time and grouped for the DSP to bid on
 
