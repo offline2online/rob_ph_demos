@@ -884,6 +884,28 @@ describe('Advertisers / Inventory', () => {
     expect(await within(table).findByText('24,960')).toBeInTheDocument()
   })
 
+  /* Ticket 5CCgGEYSkVoDTH9yNSYu (10 Oct 2026): the deal ID is minted by the platform, shown read-only, and never part of the save payload. */
+  it('shows a read-only Deal ID in the buyers table and edit modal, and warns that changing the deal type mints a new deal', async () => {
+    const inv = ADVERTISER_PAGE['/api/admin/v1/available-inventory']
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({
+      ...ADVERTISER_PAGE,
+      '/api/admin/v1/buyers-lists': { items: [{ id: 'bl_1', dealId: 'PH-7K2M9QXW4B', name: 'Pharma brands', description: '', invitedBuyers: [], invitedCategories: [], targeting: [], activeFrom: null, activeTo: null, dealType: 'private_auction' }] },
+      '/api/admin/v1/available-inventory': inv,
+    })))
+    renderAt('/advertisers')
+    const table = await screen.findByLabelText('Buyers and targeting')
+    expect(await within(table).findByText('PH-7K2M9QXW4B')).toBeInTheDocument()
+    fireEvent.click(within(table).getByRole('button', { name: 'Edit Pharma brands' }))
+    const dialog = await screen.findByRole('dialog')
+    const id = within(dialog).getByRole('textbox', { name: 'Deal ID' })
+    expect(id).toHaveValue('PH-7K2M9QXW4B')
+    expect(id).toHaveAttribute('readonly')
+    expect(within(dialog).queryByTestId('deal-type-new-deal-note')).not.toBeInTheDocument()
+    fireEvent.mouseDown(within(dialog).getByRole('combobox', { name: 'Deal type' }))
+    fireEvent.click(await screen.findByText('Preferred deal', { selector: '.ant-select-item-option-content' }))
+    expect(await within(dialog).findByTestId('deal-type-new-deal-note')).toHaveTextContent('new Deal ID')
+  })
+
   /* Ticket Y3GzIlj2goQMJaGUwTey (9 Oct 2026): deals above an explicit Open auction, the DSPs it runs across below it. */
   it('shows an Open auction separator under the deals, with the DSP or All DSPs beneath it', async () => {
     const inv = ADVERTISER_PAGE['/api/admin/v1/available-inventory']

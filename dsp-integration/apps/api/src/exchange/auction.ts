@@ -65,7 +65,7 @@ import { handOff } from './handoff'
 import { settlePending } from './pending'
 import { bidderTuning } from '../domain/partnerInput'
 import { providerOf } from '../dsp/registry'
-import { type Bid, type BidResponse, buildBidRequest, dealIdOf } from './openrtb'
+import { type Bid, type BidResponse, buildBidRequest } from './openrtb'
 import { GLOBAL_DEAL_ID } from '../domain/exchange'
 
 export interface PositionOutcome {
@@ -376,7 +376,8 @@ export async function vetBid(ctx: Context, p: PositionRef, dsp: PartnerRecord, s
   /* A deal position clears only bids quoting its deal ID (pmp.deals). */
   if (assignmentOf(p.def) === 'deal') {
     const listId = assignedOf(p.def).buyersListId
-    if (!listId || bid.dealid !== dealIdOf(listId)) return reject(`Bid ${bid.dealid ? `quotes deal ${bid.dealid}` : 'has no dealid'}; this private auction requires ${listId ? dealIdOf(listId) : 'its deal ID'}.`)
+    const required = listId ? (await ctx.buyersLists.get(listId))?.dealId : undefined
+    if (!required || bid.dealid !== required) return reject(`Bid ${bid.dealid ? `quotes deal ${bid.dealid}` : 'has no dealid'}; this private auction requires ${required ?? 'its deal ID'}.`)
   }
   /* The global deal ID is only good on a position that is in the global deal (8 Oct 2026): quoting it elsewhere, or while the master switch is off, is refused rather than silently treated as open. Quoting it on an eligible position competes exactly as open exchange (same floor, first-price, same checks). */
   if (bid.dealid === GLOBAL_DEAL_ID && !inGlobalDeal(p.def, (await ctx.exchange.get()).globalDealEnabled === true)) return reject(`Bid quotes the global deal ${GLOBAL_DEAL_ID}; this position is not in the global deal.`)

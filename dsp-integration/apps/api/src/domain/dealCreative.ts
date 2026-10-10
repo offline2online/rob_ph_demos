@@ -13,7 +13,6 @@
 import { assignedOf } from '@ph-dsp/types'
 import type { BuyersList } from '@ph-dsp/types'
 import type { Context } from '../context'
-import { dealIdOf } from '../exchange/openrtb'
 import { allPositions, maxPlayLengthSecFor, type PositionRef } from './positions'
 
 export type CreativeType = 'image' | 'video'
@@ -72,7 +71,7 @@ export async function dealOf(ctx: Context, list: BuyersList, rateCpm?: number) {
   return {
     buyersListId: list.id,
     name: list.name,
-    dealId: dealIdOf(list.id),
+    dealId: list.dealId,
     dealType: list.dealType,
     activeFrom: list.activeFrom,
     activeTo: list.activeTo,

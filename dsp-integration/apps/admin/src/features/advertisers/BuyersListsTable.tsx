@@ -101,6 +101,7 @@ const CapacityCell = ({ data, context }: P) => {
     </Tip>
   )
 }
+const DealIdCell = ({ data }: P) => (data ? <span style={{ fontSize: 12.5, fontFamily: 'monospace' }}>{data.dealId}</span> : null)
 const DEAL_TYPE_LABELS = { private_auction: 'Private auction', preferred: 'Preferred deal', guaranteed: 'Programmatic guaranteed' } as const
 const DealTypeCell = ({ data }: P) => (data ? <span style={{ fontSize: 12.5 }}>{DEAL_TYPE_LABELS[data.dealType] ?? 'Private auction'}</span> : null)
 const ActionsCell = ({ data, context }: P) =>
@@ -120,6 +121,7 @@ export function BuyersListsTable({ lists, canEdit, capacity, onChanged }: { list
 
   const columns: ColDef<BuyersList>[] = [
     { headerName: 'Buyers and targeting', flex: 2, minWidth: 220, cellRenderer: NameCell, valueGetter: (p) => `${p.data?.name}|${p.data?.description}` },
+    { headerName: 'Deal ID', field: 'dealId', width: 170, minWidth: 150, cellRenderer: DealIdCell },
     { headerName: 'CPM', width: 200, minWidth: 170, cellRenderer: RateCell, valueGetter: (p) => JSON.stringify([p.data?.dealType, p.data?.lockedWin, p.data?.effectiveRateCpm]) },
     /* These cells have no field, so AG Grid saw an unchanged value (undefined) after a save and kept the old cell:
        an edited deal type kept showing "Private auction". Each gets a valueGetter over everything it renders. */

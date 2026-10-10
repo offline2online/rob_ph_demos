@@ -154,7 +154,7 @@ describe('Run 7 — D2 private auction: invited buyers, deal ID, locked rate', (
     const campaignId = await h.approvedCrid('crid-d2', day(0))
     expect((await runAuction(h.ctx, day(1))).positions[0].winner).toMatchObject({ advertiserId: 'swisse', clearingCpm: 150 })
     /* The buyers list is the single source of the DSP deal: the request's deal is built from it. */
-    expect(h.bidder.log.bidRequests.at(-1)!.body.imp[0].pmp).toMatchObject({ private_auction: 1, deals: [{ id: `PH-${h.list.id}`, wseat: ['5130002'] }] })
+    expect(h.bidder.log.bidRequests.at(-1)!.body.imp[0].pmp).toMatchObject({ private_auction: 1, deals: [{ id: h.list.dealId, wseat: ['5130002'] }] })
     expect(booked(h, day(1))).toMatchObject([{ campaignId, displayTypeId: DT }])
     const [item] = await bill(h, campaignId, day(1), { plays: 5760, playedSec: EXPECTED_SEC })
     expect(item).toMatchObject({ cpm: 150, realisedViews: ASSUMED_VIEWS, amount: 120 })
@@ -169,7 +169,7 @@ describe('Run 7 — D2 private auction: invited buyers, deal ID, locked rate', (
     expect(api.json().error.code).toBe('not_invited')
     h.bidder.setScript((req) => ({ body: response(req, [{ ...swisseBid(req, { price: 150, crid: 'crid-d2-3' }), dealid: 'PH-other' }]) }))
     await runAuction(h.ctx, day(2))
-    expect((await rowsOf(h, day(2)))[0]).toMatchObject({ status: 'rejected', reason: expect.stringContaining(`requires PH-${h.list.id}`) })
+    expect((await rowsOf(h, day(2)))[0]).toMatchObject({ status: 'rejected', reason: expect.stringContaining(`requires ${h.list.dealId}`) })
     h.bidder.setScript((req) => ({ body: response(req, [swisseBid(req, { price: FLOOR - 1, crid: 'crid-d2-3' })]) }))
     await runAuction(h.ctx, day(3))
     expect((await rowsOf(h, day(3)))[0]).toMatchObject({ status: 'rejected', reason: `${FLOOR - 1} is below the effective floor of ${FLOOR} USD CPM.` })

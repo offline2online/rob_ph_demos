@@ -97,6 +97,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/deals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The deals this partner is invited to, with the creative requirements to size for
+         * @description A deal is a buyers list (deal ID, type, term, rate) combined with the
+         *     positions it is attached to. The creative requirements are derived from
+         *     those positions, never stored on the deal, and are a set: one entry per
+         *     distinct format (canvas size + max play length + creative types), so a
+         *     list attached to portrait and landscape slots returns both. Empty while
+         *     the list is attached to no slot. Only deals one of this partner's seats
+         *     is invited to are listed.
+         */
+        get: operations["listDeals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/campaigns": {
         parameters: {
             query?: never;
@@ -801,8 +827,25 @@ export interface paths {
         /** Every buyers list (private-auction deal), for the Assigned to picker and the buyers lists table */
         get: operations["listBuyersLists"];
         put?: never;
-        /** New buyers list — the buyers list and its deal terms are one object */
+        /** New buyers list — the buyers list and its deal terms are one object; the platform mints its immutable dealId (a client-supplied dealId is a 400) */
         post: operations["createBuyersList"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/buyers-lists/{buyersListId}/deal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A buyers list as the deal a DSP buyer sees, with creative requirements derived from its attached positions */
+        get: operations["getBuyersListDeal"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -817,7 +860,10 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Save changes to a buyers list's name, description, invited buyers or active window */
+        /**
+         * Save changes to a buyers list's name, description, invited buyers or active window
+         * @description The deal ID and the deal type are fixed once saved (like a DV360 deal). Rate, delivery term, invited buyers and the other terms are edited in place (200, same `dealId`). A `dealType` different from the saved one mints a NEW deal instead: 201 with a new `id` and `dealId`, the original list left untouched (its slot assignments and campaigns stay on it until it ends). An omitted `dealType` means unchanged. A `dealId` other than the saved one is a 400.
+         */
         put: operations["updateBuyersList"];
         post?: never;
         /** Delete; 409 while any slot is still assigned to it */
@@ -2114,6 +2160,33 @@ export interface components {
              */
             source?: "auction" | "reserve";
         };
+        CreativeRequirement: {
+            /** @description Canvas size in pixels (owned by PH Core, read per display type). */
+            canvas: {
+                width: number;
+                height: number;
+            };
+            /** @enum {string} */
+            orientation: "landscape" | "portrait" | "square";
+            /** @description The longest creative these positions play: the slot's resolved max play length. */
+            maxPlayLengthSec: number;
+            formats: ("image" | "video")[];
+            /** @description The attached positions this requirement covers. */
+            positionIds: string[];
+        };
+        Deal: {
+            buyersListId: string;
+            name: string;
+            dealId: string;
+            /** @enum {string} */
+            dealType: "private_auction" | "preferred" | "guaranteed";
+            activeFrom: string | null;
+            activeTo: string | null;
+            auctionCloses: string | null;
+            /** @description The deal's resolved base floor in USD CPM. */
+            rateCpm?: number;
+            creativeRequirements: components["schemas"]["CreativeRequirement"][];
+        };
         /**
          * @description A reusable private-auction deal (spec "Support private auctions";
          *     two-period model, 23 Sep 2026): an invited-buyer list, a delivery
@@ -2136,6 +2209,8 @@ export interface components {
             effectiveCommittedPlays: components["schemas"]["EffectiveTerm"];
             effectiveRateCpm: components["schemas"]["EffectiveTerm"];
             id: string;
+            /** @description The deal ID, minted by the platform when the list is created (PH- plus 10 characters, e.g. PH-7K2M9QXW4B; lists that pre-date it carry PH-<id>). Unique and immutable. This is what the DSP bids under (`pmp.deals[].id` on the bid request, `dealid` on the bid) and what a campaign's `dealId` refers to. Never supplied by a client: a POST that includes one is a 400, and a PUT may only echo it unchanged. */
+            readonly dealId: string;
             name: string;
             description: string;
             /**
@@ -2151,7 +2226,8 @@ export interface components {
             dealType: "private_auction" | "preferred" | "guaranteed";
             invitedBuyers: components["schemas"]["InvitedBuyer"][];
             /**
-             * @description IAB categories whose advertisers are all invited, resolved live
+             * @description Private auction only (400 on preferred / guaranteed). A bid-time filter, not a shareable deal: the deal ID is shared with named seats only.
+             *     IAB categories whose advertisers are all invited, resolved live
              *     against each connected DSP's synced seats (a seat's DSP-reported
              *     `category`). Combines with `invitedBuyers` as a union; the
              *     advertiser blacklist still subtracts. A category no seat reports
@@ -3429,6 +3505,30 @@ export interface operations {
             429: components["responses"]["RateLimited"];
         };
     };
+    listDeals: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deals */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["Deal"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorised"];
+            429: components["responses"]["RateLimited"];
+        };
+    };
     createCampaign: {
         parameters: {
             query?: never;
@@ -4424,11 +4524,14 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    /** @description Optional; must equal the saved deal ID (400 otherwise). Immutable. */
+                    dealId?: string;
                     name: string;
                     description: string;
                     invitedBuyers?: components["schemas"]["InvitedBuyer"][];
                     /**
-                     * @description IAB categories whose advertisers are all invited (union with
+                     * @description Private auction only (400 on preferred / guaranteed). A bid-time filter, not a shareable deal: the deal ID is shared with named seats only.
+                     *     IAB categories whose advertisers are all invited (union with
                      *     `invitedBuyers`). Each must be from the IAB taxonomy
                      *     (400 validation_failed otherwise). At least one buyer or
                      *     one category is required. Omitted = none.
@@ -4486,6 +4589,29 @@ export interface operations {
             401: components["responses"]["Unauthorised"];
         };
     };
+    getBuyersListDeal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                buyersListId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The deal */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Deal"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
     updateBuyersList: {
         parameters: {
             query?: never;
@@ -4502,7 +4628,8 @@ export interface operations {
                     description: string;
                     invitedBuyers?: components["schemas"]["InvitedBuyer"][];
                     /**
-                     * @description IAB categories whose advertisers are all invited (union with
+                     * @description Private auction only (400 on preferred / guaranteed). A bid-time filter, not a shareable deal: the deal ID is shared with named seats only.
+                     *     IAB categories whose advertisers are all invited (union with
                      *     `invitedBuyers`). Each must be from the IAB taxonomy
                      *     (400 validation_failed otherwise). At least one buyer or
                      *     one category is required. Omitted = none.
@@ -4542,8 +4669,17 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Saved */
+            /** @description Saved in place; same dealId */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuyersList"];
+                };
+            };
+            /** @description The deal type changed */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };

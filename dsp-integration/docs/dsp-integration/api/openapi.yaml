@@ -1134,7 +1134,7 @@ paths:
     post:
       tags: [Admin — Advertiser settings]
       operationId: createBuyersList
-      summary: New buyers list — the buyers list and its deal terms are one object
+      summary: New buyers list — the buyers list and its deal terms are one object; the platform mints its immutable dealId (a client-supplied dealId is a 400)
       security: [{adminSession: []}]
       requestBody:
         required: true
@@ -1144,6 +1144,7 @@ paths:
               type: object
               required: [name, description, activeFrom, activeTo]
               properties:
+                dealId: {type: string, description: 'Optional; must equal the saved deal ID (400 otherwise). Immutable.'}
                 name: {type: string}
                 description: {type: string}
                 invitedBuyers: {type: array, items: {$ref: '#/components/schemas/InvitedBuyer'}}
@@ -1204,6 +1205,8 @@ paths:
       tags: [Admin — Advertiser settings]
       operationId: updateBuyersList
       summary: Save changes to a buyers list's name, description, invited buyers or active window
+      description: |
+        The deal ID and the deal type are fixed once saved (like a DV360 deal). Rate, delivery term, invited buyers and the other terms are edited in place (200, same `dealId`). A `dealType` different from the saved one mints a NEW deal instead: 201 with a new `id` and `dealId`, the original list left untouched (its slot assignments and campaigns stay on it until it ends). An omitted `dealType` means unchanged. A `dealId` other than the saved one is a 400.
       security: [{adminSession: []}]
       parameters: [{name: buyersListId, in: path, required: true, schema: {type: string}}]
       requestBody:
@@ -1247,7 +1250,8 @@ paths:
                   exclusiveMinimum: 0
                   description: 'This list''s bid floor in USD CPM (bid floor hierarchy, Rob 7 Oct 2026). Most specific: applies to deals using this list. Never below the platform floor (400 otherwise). Absent or null: inherits the DSP''s floor, else the platform''s.'
       responses:
-        '200': {description: Saved, content: {application/json: {schema: {$ref: '#/components/schemas/BuyersList'}}}}
+        '200': {description: Saved in place; same dealId, content: {application/json: {schema: {$ref: '#/components/schemas/BuyersList'}}}}
+        '201': {description: The deal type changed, so a new deal was minted with a new id and dealId; the original is unchanged, content: {application/json: {schema: {$ref: '#/components/schemas/BuyersList'}}}}
         '400': {$ref: '#/components/responses/ValidationFailed'}
         '401': {$ref: '#/components/responses/Unauthorised'}
         '404': {$ref: '#/components/responses/NotFound'}
@@ -2856,11 +2860,16 @@ components:
         is priced against the same score-driven floor as everything else. It
         is a commitment on top of the floor, never under it, and a deal never
         bypasses the floor.
-      required: [id, name, description, dealType, invitedBuyers, invitedCategories, targeting, activeFrom, activeTo, auctionCloses, lockedWin, committedPlays, floorCpm, deliveredPlays, effectiveCommittedPlays, effectiveRateCpm, createdAt, updatedAt]
+      required: [id, dealId, name, description, dealType, invitedBuyers, invitedCategories, targeting, activeFrom, activeTo, auctionCloses, lockedWin, committedPlays, floorCpm, deliveredPlays, effectiveCommittedPlays, effectiveRateCpm, createdAt, updatedAt]
       properties:
         effectiveCommittedPlays: {$ref: '#/components/schemas/EffectiveTerm'}
         effectiveRateCpm: {$ref: '#/components/schemas/EffectiveTerm'}
         id: {type: string}
+        dealId:
+          type: string
+          readOnly: true
+          description: |
+            The deal ID, minted by the platform when the list is created (PH- plus 10 characters, e.g. PH-7K2M9QXW4B; lists that pre-date it carry PH-<id>). Unique and immutable. This is what the DSP bids under (`pmp.deals[].id` on the bid request, `dealid` on the bid) and what a campaign's `dealId` refers to. Never supplied by a client: a POST that includes one is a 400, and a PUT may only echo it unchanged.
         name: {type: string}
         description: {type: string}
         dealType:

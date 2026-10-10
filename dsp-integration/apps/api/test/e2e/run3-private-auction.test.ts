@@ -78,11 +78,11 @@ describe('Run 3 — private auction: happy', () => {
     await h.approvedCrid('crid-p1b', day(0))
     expect((await runAuction(h.ctx, day(1))).positions[0].winner).toMatchObject({ advertiserId: 'swisse' })
     const imp = h.bidder.log.bidRequests.at(-1)!.body.imp[0]
-    expect(imp.pmp).toMatchObject({ private_auction: 1, deals: [{ id: `PH-${h.list.id}`, at: 1, wseat: ['5130002'] }] })
+    expect(imp.pmp).toMatchObject({ private_auction: 1, deals: [{ id: h.list.dealId, at: 1, wseat: ['5130002'] }] })
     for (const [i, dealid] of [undefined, 'PH-other'].entries()) {
       h.bidder.setScript((req) => ({ body: response(req, [{ ...swisseBid(req, { price: 150, crid: 'crid-p1b' }), dealid }]) }))
       await runAuction(h.ctx, day(2 + i))
-      expect((await h.rows(day(2 + i)))[0]).toMatchObject({ status: 'rejected', reason: expect.stringContaining(`requires PH-${h.list.id}`) })
+      expect((await h.rows(day(2 + i)))[0]).toMatchObject({ status: 'rejected', reason: expect.stringContaining(`requires ${h.list.dealId}`) })
     }
   })
 
@@ -231,7 +231,7 @@ describe('Run 3 — global deal (P9–P11)', () => {
     await h.admin.slot({ listMode: 'deal', buyersListId: list.id, partnerIds: [] })
     h.bidder.setScript(null)
     await runAuction(h.ctx, day(4))
-    expect(lastImp(h).pmp).toMatchObject({ private_auction: 1, deals: [{ id: `PH-${list.id}` }] })
+    expect(lastImp(h).pmp).toMatchObject({ private_auction: 1, deals: [{ id: list.dealId }] })
   })
 
   it('P10 — suppressed when held for an advertiser, whitelist-only, on a buyers list, or the master switch is off; a blocked buyer is still refused', async () => {
