@@ -169,7 +169,7 @@ function Section({ partners, settings, exchange, published, variables }: { partn
 /* Where DSP Integration opens (Rob, 20 Sep): Exchange settings until the
    seller-of-record details are complete and sellers.json is published, then
    Advertiser settings. While DSP integration is switched off, or not yet
-   published, Exchange settings is the only page (Rob, 24 Sep 2026). */
+   published, Exchange settings is the landing page (Rob, 24 Sep 2026). */
 export function DspIndex() {
   const { published } = useSection()
   return <Navigate to={published ? 'advertiser-settings' : 'exchange'} replace />
@@ -183,9 +183,10 @@ export function DspIntegrationLayout() {
   const variables = useTargetingVariables()
   const ex = useMemo(() => (exchange.data ? exchangeInput(exchange.data) : undefined), [exchange.data])
   if (!partners.data || !settings.data || !ex || !exchange.data || !variables.data) return <Spin />
-  /* Until it is switched on and published, the rest of the section waits:
-     a bookmark to a DSP page lands on Exchange settings. Nothing is deleted. */
-  if (!exchange.data.published && pathname !== PATHS.exchange && pathname !== '/dsp-integration') return <Navigate to={PATHS.exchange} replace />
+  /* Until it is switched on and published, Advertiser settings and the partner
+     DSPs wait: a bookmark to one lands on Exchange settings. Shared Targeting
+     Variables and Change history stay open (Rob, 9 Oct 2026). Nothing is deleted. */
+  if (!exchange.data.published && pathname !== PATHS.exchange && pathname !== PATHS.variables && pathname !== PATHS.history && pathname !== '/dsp-integration') return <Navigate to={PATHS.exchange} replace />
   /* Keyed by page: leaving a page (after confirming) starts from the saved values. */
   return <Section key={pathname} partners={partners.data} settings={settings.data} exchange={ex} published={exchange.data.published} variables={variables.data} />
 }

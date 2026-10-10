@@ -11,7 +11,7 @@ import { InfoTip, WithTip } from '../../../shared/InfoTip'
 import { SummaryChip } from '../../../shared/SummaryChip'
 import { T } from '../../../theme/phTheme'
 import {
-  COMPANY_FEATURE_AVAILABILITY, DETECTION_PRESETS, FEATURES, MIST_ZONES, MOBILE_SITE_TEMPLATES, VISION_MODES,
+  COMPANY_FEATURE_AVAILABILITY, DETECTION_PRESETS, FEATURES, MOBILE_SITE_TEMPLATES, VISION_MODES,
   featureConfig, featureOn, featuresSummary, qr, withFeature, withQr, type FeatureKey,
 } from '../model'
 import { TIPS } from '../tooltips'
@@ -19,6 +19,12 @@ import { TIPS } from '../tooltips'
 const SubSettings = ({ children }: { children: ReactNode }) => (
   <div className="mt-3 ml-7 grid grid-cols-2 gap-3 rounded-md border p-3" style={{ background: T.surfaceAlt, borderColor: T.borderSubtle }}>{children}</div>
 )
+const VISION_CUSTOM_FIELDS = [
+  { key: 'streamQuality', label: 'Stream quality (px)', min: 1 },
+  { key: 'fps', label: 'Frames per second', min: 1 },
+  { key: 'frameSkip', label: 'Frame skip', min: 0 },
+  { key: 'missThreshold', label: 'Miss threshold (frames)', min: 0 },
+]
 const hex = (c: { toHexString: () => string }) => c.toHexString()
 
 export function EnabledFeaturesPanel({ d, update, open, onToggle }: { d: DisplayType; update: (fn: (d: DisplayType) => DisplayType) => void; open: boolean; onToggle: () => void }) {
@@ -28,7 +34,7 @@ export function EnabledFeaturesPanel({ d, update, open, onToggle }: { d: Display
     update((t) => (key === 'qr_control' ? withQr(t, (x) => ({ ...x, enabled: on })) : withFeature(t, key, { enabled: on })))
   /* Website and Mobile App keep QR Control (Phantom Zone/QR Control "as
      today") but hide every other feature — they have no physical display
-     for in-store radio, MIST proximity or on-device Vision/AI to run on
+     for in-store radio or on-device Vision/AI to run on
      (ticket, 28 Sep 2026). */
   const visibleFeatures = hasStructuralFeatures(d.touchPoint) ? FEATURES : FEATURES.filter((f) => f.key === 'qr_control')
 
@@ -73,28 +79,28 @@ export function EnabledFeaturesPanel({ d, update, open, onToggle }: { d: Display
                 </Field>
               </SubSettings>
             )}
-            {available && on && f.key === 'proximity_mist' && (
-              <SubSettings>
-                <Field label="Mode" htmlFor="mistMode">
-                  <Select id="mistMode" className="w-full" value={(featureConfig(d, 'proximity_mist').mode as string) || 'zone'}
-                    onChange={(v) => update((t) => withFeature(t, 'proximity_mist', { mode: v }))} options={[{ value: 'zone', label: 'Zone' }, { value: 'vbeacon', label: 'vBeacon' }]} />
-                </Field>
-                <Field label="Zone" htmlFor="mistZone">
-                  <Select id="mistZone" className="w-full" value={(featureConfig(d, 'proximity_mist').zone as string) || MIST_ZONES[0]}
-                    onChange={(v) => update((t) => withFeature(t, 'proximity_mist', { zone: v }))} options={MIST_ZONES.map((z) => ({ value: z, label: z }))} />
-                </Field>
-              </SubSettings>
-            )}
             {available && on && f.key === 'vision_ai' && (
               <SubSettings>
                 <Field label="Mode" htmlFor="visionMode">
-                  <Select id="visionMode" className="w-full" value={(featureConfig(d, 'vision_ai').mode as string) || VISION_MODES[0]}
+                  <Select id="visionMode" className="w-full" value={VISION_MODES.includes(featureConfig(d, 'vision_ai').mode as string) ? (featureConfig(d, 'vision_ai').mode as string) : VISION_MODES[0]}
                     onChange={(v) => update((t) => withFeature(t, 'vision_ai', { mode: v }))} options={VISION_MODES.map((m) => ({ value: m, label: m }))} />
                 </Field>
                 <Field label="Detection preset" htmlFor="visionPreset">
                   <Select id="visionPreset" className="w-full" value={(featureConfig(d, 'vision_ai').preset as string) || 'Balanced'}
                     onChange={(v) => update((t) => withFeature(t, 'vision_ai', { preset: v, ...DETECTION_PRESETS[v] }))} options={Object.keys(DETECTION_PRESETS).map((k) => ({ value: k, label: k }))} />
                 </Field>
+                {featureConfig(d, 'vision_ai').preset === 'Custom' && (
+                  <div className="col-span-2 grid grid-cols-2 gap-3" role="group" aria-label="Advanced settings">
+                    <div className="col-span-2 text-sm font-medium">Advanced settings</div>
+                    {VISION_CUSTOM_FIELDS.map((cf) => (
+                      <Field key={cf.key} label={cf.label}>
+                        <InputNumber aria-label={cf.label} className="w-full" min={cf.min} precision={0}
+                          value={(featureConfig(d, 'vision_ai')[cf.key] as number | undefined) ?? DETECTION_PRESETS.Balanced[cf.key]}
+                          onChange={(v) => update((t) => withFeature(t, 'vision_ai', { [cf.key]: Number(v ?? cf.min) }))} />
+                      </Field>
+                    ))}
+                  </div>
+                )}
               </SubSettings>
             )}
           </div>

@@ -78,6 +78,7 @@ export async function validateAssigned(
   partners: PartnerRecord[],
   previous: Assigned,
   buyersLists: BuyersListRepo,
+  direct: string[] = [],
 ): Promise<Detail[]> {
   const out: Detail[] = []
   const unknown = a.partnerIds.filter((id) => !partners.some((p) => p.id === id))
@@ -88,9 +89,11 @@ export async function validateAssigned(
   /* The waterfall (7 Oct 2026): an ordered list, one list per tier, so a list can appear once. */
   if (new Set(a.buyersListIds).size !== a.buyersListIds.length) out.push({ field: field('buyersListIds'), reason: 'A buyers list can be in the waterfall once: each tier holds one list.' })
   for (const id of a.buyersListIds) if (!(await buyersLists.get(id))) out.push({ field: field(a.buyersListIds.length > 1 ? 'buyersListIds' : 'buyersListId'), reason: `Unknown buyers list${a.buyersListIds.length > 1 ? ` (${id})` : ''}.` })
-  /* The advertiser has to be a seat on a DSP this position can sell through. */
+  /* The advertiser has to be a seat on a DSP this position can sell through,
+     or a direct advertiser (no DSP), which needs no seat. */
   const scope = a.partnerIds.length ? partners.filter((p) => a.partnerIds.includes(p.id)) : partners
   for (const name of a.advertisers) {
+    if (direct.includes(name) && !partners.some((x) => x.seats.some((s) => s.name === name))) continue
     const p = scope.find((x) => x.seats.some((s) => s.name === name))
     const seat = p?.seats.find((s) => s.name === name)
     if (!p || !seat) {

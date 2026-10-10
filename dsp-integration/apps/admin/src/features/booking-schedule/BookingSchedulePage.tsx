@@ -222,7 +222,7 @@ function layerLine(k: LayerKey, booking: Booking): string {
 function BookingTile({ booking, money }: { booking: Booking; money: (n: number) => string }) {
   const present = LAYERS_TOP_DOWN.filter((k) => booking.layers[k])
   const layersTip = present.map((k) => layerLine(k, booking)).join(' · ')
-  const tip = `${booking.advertiserName} via ${booking.partnerName} · ${booking.type === 'reserve' ? 'Reserved' : 'Won at auction'} at ${booking.cpm} CPM · ${booking.assumedViews.toLocaleString('en-GB')} assumed views · booked ${money(booking.bookedRevenue)} · ${layersTip}`
+  const tip = `${booking.advertiserName}${booking.advertiserName.endsWith('(Direct)') ? '' : ` via ${booking.partnerName}`} · ${booking.type === 'reserve' ? 'Reserved' : 'Won at auction'} at ${booking.cpm} CPM · ${booking.assumedViews.toLocaleString('en-GB')} assumed views · booked ${money(booking.bookedRevenue)} · ${layersTip}`
   return (
     <Tip title={tip}>
       <div className="flex w-full min-w-0 flex-col gap-0.5 rounded px-1 py-0.5" style={{ background: BOOKED.bg, borderLeft: `3px solid ${BOOKED.colour}` }}>
@@ -427,9 +427,11 @@ export function BookingSchedulePage() {
   const dsps = data?.dsps ?? []
   const advertiserOptions = useMemo(() => {
     const chosen = partnerId ? dsps.filter((d) => d.partnerId === partnerId) : dsps
-    return [...new Map(chosen.flatMap((d) => d.advertisers.map((a) => [a.advertiserId, a.name] as const))).entries()]
+    /* Direct advertisers (no DSP) belong to no DSP, so only an unfiltered DSP list offers them. */
+    const direct = partnerId ? [] : (data?.directAdvertisers ?? [])
+    return [...new Map([...chosen.flatMap((d) => d.advertisers), ...direct].map((a) => [a.advertiserId, a.name] as const)).entries()]
       .map(([value, label]) => ({ value, label }))
-  }, [dsps, partnerId])
+  }, [dsps, partnerId, data?.directAdvertisers])
   const setFilter = (key: 'advertiserId' | 'partnerId', value?: string, currentAdvertiser?: string) => {
     const next = new URLSearchParams(params)
     if (value) next.set(key, value)

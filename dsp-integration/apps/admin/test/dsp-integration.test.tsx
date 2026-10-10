@@ -114,9 +114,9 @@ describe('DSP integration switch', () => {
     expect(screen.getByRole('button', { name: /retail media network.*sell ad inventory on your in-store screens.*new revenue opportunity/ })).toBeInTheDocument()
     expect(screen.queryByLabelText(/Organisation/)).not.toBeInTheDocument()
     expect(screen.queryByText('Incomplete')).not.toBeInTheDocument()
-    /* Only Exchange settings in the section's list, and no DSPs yet. */
+    /* Advertiser settings and the DSPs wait; the rest of the company pages stay (Rob, 9 Oct 2026). */
     const list = screen.getByRole('navigation', { name: 'DSP Integration' })
-    expect(within(list).getAllByRole('link').map((l) => l.getAttribute('aria-label'))).toEqual(['Exchange settings'])
+    expect(within(list).getAllByRole('link').map((l) => l.getAttribute('aria-label'))).toEqual(['Exchange settings', 'Shared Targeting Variables', 'Change history'])
     expect(within(list).getByText('DSP integration off')).toBeInTheDocument()
   })
 
@@ -156,7 +156,9 @@ describe('DSP integration switch', () => {
     await waitFor(() => expect(calls).toHaveLength(1))
     /* Nothing is thrown away: the seller of record goes back as it was. */
     expect(calls[0].body).toEqual({ enabled: false, organisation: 'Demo Retail Group', domain: 'demoretail.example', sellerId: 'drg-4471', contactEmail: 'adops@demoretail.example', globalDealEnabled: false })
-    await waitFor(async () => expect(await navLabels()).not.toContain('Advertisers / Inventory'))
+    /* Advertisers / Inventory stays: direct advertisers use it with no DSP (Rob, 9 Oct 2026). */
+    await waitFor(() => expect(calls).toHaveLength(1))
+    expect(await navLabels()).toContain('Advertisers / Inventory')
     expect(await navLabels()).toContain('DSP Integration')
 
     fireEvent.click(await screen.findByRole('switch', { name: 'Enable DSP Integration' }))
@@ -168,11 +170,20 @@ describe('DSP integration switch', () => {
     expect(await screen.findByText('Published')).toBeInTheDocument()
   }, slow(30_000))
 
-  it('switched off: Campaign schedule and Advertisers / Inventory are hidden and their links go home', async () => {
-    vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/exchange': OFF, '/api/admin/v1/features': { dspIntegration: false } })))
+  it('switched off: Advertisers / Inventory and Shared Targeting Variables stay open; Campaign schedule is hidden', async () => {
+    const advertisers = { currency: 'AUD', floorCpm: 100, items: [] }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/exchange': OFF, '/api/admin/v1/features': { dspIntegration: false }, '/api/admin/v1/advertisers': advertisers })))
     const router = renderAt('/advertisers')
-    await waitFor(() => expect(router.state.location.pathname).toBe('/display-types'))
-    expect(await navLabels()).toEqual(['Display Types', 'Playlist Management', 'DSP Integration'])
+    await waitFor(async () => expect(await navLabels()).toEqual(['Display Types', 'Playlist Management', 'Advertisers / Inventory', 'DSP Integration']))
+    expect(router.state.location.pathname).toBe('/advertisers')
+    cleanup()
+    const variables = renderAt('/dsp-integration/targeting-variables')
+    expect(await screen.findByRole('heading', { name: /Shared Targeting Variables/ })).toBeInTheDocument()
+    expect(variables.state.location.pathname).toBe('/dsp-integration/targeting-variables')
+    cleanup()
+    const settings = renderAt('/dsp-integration/advertiser-settings')
+    expect(await screen.findByRole('heading', { name: /Exchange settings/ })).toBeInTheDocument()
+    expect(settings.state.location.pathname).toBe('/dsp-integration/exchange')
     cleanup()
     /* Campaign Status is no longer a nav item of its own — it's the second
        tab of Campaign schedule, gated the same way. */
@@ -603,6 +614,16 @@ describe('Advertisers / Inventory', () => {
     const inventory = await screen.findByLabelText('Available Inventory')
     expect([...inventory.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent))
       .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Reserve price', 'Plays per window', 'Max campaigns', 'Max play length', 'Billing unit', 'Slots playing', ''])
+  })
+
+  it('lists a direct advertiser as "Name (Direct)" in Via and in the Assigned to options, and lets an admin add one', async () => {
+    const page = { ...ADVERTISER_PAGE, '/api/admin/v1/advertisers': { ...ADVERTISER_PAGE['/api/admin/v1/advertisers'], items: [...ADVERTISER_PAGE['/api/admin/v1/advertisers'].items, { advertiserId: 'acme-foods', name: 'Acme Foods', via: [], direct: true, approvalRequired: true, floorMultiplier: 1, effectiveFloorCpm: 100, bookings: 0, campaigns: { draft: 0, awaiting_approval: 0, approved: 0, rejected: 0 } }] } }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch(page)))
+    renderAt('/advertisers')
+    const advertisers = await screen.findByLabelText('Advertisers')
+    expect(await within(advertisers).findByText('Acme Foods (Direct)')).toBeInTheDocument()
+    expect(screen.getByLabelText('Direct advertiser name')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add direct advertiser' })).toBeDisabled()
   })
 
   it('filters both tables by column, and shows who may buy each slot', async () => {

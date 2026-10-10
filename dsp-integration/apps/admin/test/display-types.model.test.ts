@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AdvertiserSettings, DisplayType, Partner, Playlist, Slot } from '@ph-dsp/types'
 import {
-  capSummary, capValueFor, expectedSlotCount, featuresSummary, isCappedFor, newDisplayType, normaliseSlots, ownerAssignment, phantomSummary, resizeSlots, slotIndicesFor, styleSummary, zonesSummary,
+  DETECTION_PRESETS, VISION_MODES, capSummary, capValueFor, expectedSlotCount, featuresSummary, isCappedFor, newDisplayType, normaliseSlots, ownerAssignment, phantomSummary, resizeSlots, slotIndicesFor, styleSummary, zonesSummary,
 } from '../src/features/display-types/model'
 
 const base = (over: Partial<DisplayType> = {}): DisplayType => ({ ...newDisplayType('t'), playlistSettings: { maximumCampaignsPlayedInRotation: null }, ...over })
@@ -136,5 +136,15 @@ describe('slot ownership helpers', () => {
     const capped = normaliseSlots({ ...single, multiZone: { enabled: true, zones: [{ ...zone(1), maximumCampaignsPlayedInRotation: 2 }, zone(2)] } })
     expect(capped.phExtensions?.slots.map((x) => x.label)).toEqual(['Priority 1', 'Supplier slot'])
     expect(labels(capSummary(zoned, true, 'z1'))).toEqual(['3 slots', '1 Headquarters', '2 Advertiser'])
+  })
+})
+
+describe('Vision/AI settings', () => {
+  it('offers exactly two modes, the monitoring one first', () => {
+    expect(VISION_MODES).toEqual(['Monitor Passerby & Campaign Engagement Data', 'Basic Targeting by Gender & Age'])
+  })
+  it('keeps Fast / Balanced / Accurate / Custom presets, Custom carrying no values of its own', () => {
+    expect(Object.keys(DETECTION_PRESETS)).toEqual(['Fast', 'Balanced', 'Accurate', 'Custom'])
+    expect(DETECTION_PRESETS.Custom).toEqual({})
   })
 })

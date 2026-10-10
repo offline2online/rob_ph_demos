@@ -45,6 +45,8 @@ describe('SSP settings audit log', () => {
   it('records an agent change, distinguishable from a human one, and filters by actor, field, object and time', async () => {
     const { app, log } = await setup()
     await app.inject({ method: 'PUT', url: `${BASE}/available-inventory`, payload: { items: [slotRow(10)] } })
+    /* Timestamps are millisecond-precise and `from` is inclusive: keep the first write off the boundary. */
+    await new Promise((r) => setTimeout(r, 5))
     const between = new Date().toISOString()
     await new Promise((r) => setTimeout(r, 5))
     const res = await app.inject({ method: 'PUT', url: `${BASE}/available-inventory`, headers: AGENT, payload: { items: [slotRow(25)] } })
