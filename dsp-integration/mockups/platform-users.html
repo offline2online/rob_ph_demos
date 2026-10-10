@@ -101,7 +101,7 @@ input:focus,select:focus{outline:0;border-color:var(--primary);box-shadow:0 0 0 
         <div class="body">
           <div class="row">
             <div class="field"><label for="fn">First name <i>*</i></label><input type="text" id="fn"></div>
-            <div class="field"><label for="ln">Last name <i>*</i></label><input type="text" id="ln"></div>
+            <div class="field"><label for="ln">Last name</label><input type="text" id="ln"></div>
           </div>
           <div class="field"><label for="em">Email address <i>*</i></label><input type="email" id="em"><div class="err" id="emErr">Enter a valid email address</div><div class="sub hide" id="emNote" style="margin-top:4px">Email address can’t be changed after the user is created.</div></div>
           <div class="field"><label for="role">Role <i>*</i></label>
@@ -114,15 +114,12 @@ input:focus,select:focus{outline:0;border-color:var(--primary);box-shadow:0 0 0 
 
           <div id="advBlock" class="hide">
             <div class="divider">Advertiser</div>
-            <div class="note">This user will only see campaigns (approvals), analytics and insights for the brand you choose.</div>
-            <div class="field"><label for="adv">Advertiser <i>*</i></label>
+            <div class="field"><label for="adv">Advertiser <i>*</i> <span class="tip" tabindex="0" aria-describedby="advTip"><span class="material-symbols-outlined" aria-label="About this field" style="font-size:16px;vertical-align:middle">info</span><span class="tiptext" role="tooltip" id="advTip">DSP-synced advertisers and direct advertisers added manually.</span></span></label>
               <select id="adv"></select>
-              <div class="sub" style="margin-top:4px">DSP-synced advertisers and direct advertisers added manually.</div>
             </div>
-            <div class="field hide" id="manField"><label for="man">New advertiser name <i>*</i></label>
+            <div class="field hide" id="manField"><label for="man">New advertiser name <i>*</i> <span class="tip" tabindex="0" aria-describedby="manTip"><span class="material-symbols-outlined" aria-label="About this field" style="font-size:16px;vertical-align:middle">info</span><span class="tiptext" role="tooltip" id="manTip">Added as a direct advertiser (no DSP), shown as &ldquo;Name (Direct)&rdquo; and selectable for everyone.</span></span></label>
               <input type="text" id="man" placeholder="e.g. Fresh Fields Dairy">
               <div class="err" id="manErr"></div>
-              <div class="sub" style="margin-top:4px">Added as a direct advertiser (no DSP), shown as &ldquo;Name (Direct)&rdquo; and selectable for everyone.</div>
             </div>
           </div>
         </div>
@@ -185,7 +182,7 @@ $("form").onsubmit=function(e){
   e.preventDefault();
   var isAdv=$("role").value==="Advertiser",manual=isAdv&&$("adv").value===NEW;
   var emOk=/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test($("em").value.trim());
-  var checks=[["fn",!!$("fn").value.trim()],["ln",!!$("ln").value.trim()],["em",emOk],["role",!!$("role").value]];
+  var checks=[["fn",!!$("fn").value.trim()],["em",emOk],["role",!!$("role").value]];
   if(isAdv)checks.push(manual?["man",!!$("man").value.trim()]:["adv",!!$("adv").value]);
   var newName=$("man").value.trim(),dup=false;
   if(manual&&newName){var lc=newName.toLowerCase();dup=DSP_ADVERTISERS.concat(DIRECT_ADVERTISERS).some(function(n){return n.toLowerCase()===lc});
