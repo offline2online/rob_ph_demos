@@ -975,26 +975,22 @@ with a minimal change to the campaign table:
   POC's own placeholder detail page only until then. In the POC it is no
   longer its own admin nav item — see *Campaign schedule* under §7 for where
   it now lives.)
-- **One row is one playlist, not one row per campaign** (ticket "Campaign
-  Status: Playlist name column, submitted count, localised/personalised
-  targeting columns, Advertiser first"): an advertiser submits exactly one
-  content package per slot — the mandatory default layer plus its optional
-  localised/personalised upsells (§6 "Campaigns and content packages") —
-  stored on the one existing campaign record, so the table's row is that
-  record, not one row per layer. **Column order, left to right
-  (ticket, 27 Sep 2026): Activation (the approve/reject control, or the
-  activation toggle once approved), Advertiser, Schedule, Status, Playlist
-  name, DSP, No. of campaigns, Localised variables, Personalised
-  variables**, then the row menu. **Playlist name** replaces
-  *Name* — the submission's own name — and its click-through is the
-  campaign-name link above, filtered to this playlist: because every layer
-  of the submission already lives on the one record, opening it already
-  shows every campaign the advertiser submitted for this slot, so this is
-  not a second, separate link target. **No. of campaigns** is the layer
-  count for that one submission — the mandatory default plus however many
-  targeted versions — checked against the slot's own Max campaigns cap at
-  submission time (§5, ticket "Available Inventory: Max campaigns column +
-  slot playlist statement"), not recomputed on this table.
+- **One row is one campaign** (ticket IDGsyELBJsjlAYjizSqT, 10 Oct 2026,
+  replacing "one row is one playlist"): an advertiser authors campaigns one
+  at a time through the normal HQ Admin flow and submits each for approval,
+  so each lands in this table as its own row (§6 "Campaigns and content
+  packages" — the layers of a submission are still one campaign record).
+  **Column order, left to right: a selection box, Activation, Advertiser,
+  Received, Status, Campaign name, Touch points, Creative ID, DSP, Localised
+  variables, Personalised variables, Last used**, then the row menu.
+  **Campaign name** replaces *Playlist name* and links to the actual
+  campaign (the link above); **hovering it** shows the campaign's details in
+  the existing HQ Admin tooltip — advertiser, DSP, touch points, pricing and
+  the localised/personalised variables. The *No. of campaigns* column is
+  gone (it is one-for-one now). **Touch points** shows the touch points the
+  campaign is active on (its brief's `touchPoints`). **Creative ID** shows
+  the ID it is grouped under, or an em dash until it is assigned. **Rows are
+  grouped by advertiser** (A–Z), keeping the triage order inside each group.
 - **Localised variables / Personalised variables columns**: a high-level
   summary in the cell — the deduped Shared Targeting Variable names (§6
   "Shared Targeting Variables") targeted across that playlist's localised
@@ -1003,25 +999,16 @@ with a minimal change to the campaign table:
   specific variable, operator and values from every layer of that pricing
   type on this playlist, consolidated into one view, not shown per layer
   separately.
-- For a campaign **Awaiting approval**, the **activation status toggle is
-  hidden** and a **consolidated segmented Approve/Reject control** is shown
-  in its place (ticket, 26 Sep) — one pill, not two loose actions: left half
-  Accept (tick), right half Reject (cross), with a divider between them and
-  a colour-coded hover/press state (green left, red right; neutral at
-  rest) so intent is clear before committing. Accepting the left half
-  approves directly; the right half still requires a reason — pressing it
-  opens the reject-with-reason popover and the rejection only commits once
-  a reason is entered and confirmed there, exactly as before. Presentation
-  only: no change to who may approve/reject or to the reason requirement.
-  The campaign detail page (linked from the playlist name, above) shows the
-  same control next to its own status bar, whose activation toggle is kept
-  visible but **disabled** while Awaiting approval, so the table and the
-  detail page read identically.
-- **Once approved, the segmented control is replaced by the activation
-  toggle** — in the table and, with the status bar's toggle switching from
-  disabled to live, on the detail page too. From that point the advertiser
-  can reserve, bid and activate the campaign through the API/DSP interface.
-  The retailer can switch it off at any time with the same toggle.
+- **There is no per-row accept or reject** (ticket IDGsyELBJsjlAYjizSqT).
+  A campaign **Awaiting approval** has a checkbox instead, and its
+  activation toggle is shown disabled until it is approved. Approving and
+  rejecting are done on the ticked campaigns — see *Creative IDs* below.
+  The campaign detail page keeps its own Approve/Reject control next to its
+  status bar; approving there does **not** assign a creative ID.
+- **Once approved, the activation toggle works** — in the table and on the
+  detail page. From that point the advertiser can reserve, bid and activate
+  the campaign through the API/DSP interface. The retailer can switch it
+  off at any time with the same toggle.
 - Campaigns approved automatically are marked as such under their status.
 - The review view shows the creative rendered on the target display type's
   canvas, the advertiser and partner, a summary of the targeting rules and
@@ -1030,6 +1017,81 @@ with a minimal change to the campaign table:
   price, offer terms or disclosures. A price baked into supplied artwork is a
   compliance breach that an automated dimension check will not catch, which
   is why a human approves.
+
+### Creative IDs: campaigns are approved one at a time and grouped for the DSP to bid on
+
+A DSP bidding in a **private auction** bids on a **creative ID**, not on one
+campaign: the creative ID is the group of an advertiser's approved
+campaigns that the bid applies to. The retailer assigns it as part of
+approving (ticket IDGsyELBJsjlAYjizSqT).
+
+- **Selection.** On *Upcoming Campaign Approval* the retailer ticks one or
+  more campaigns that are **Awaiting approval** (only they have a box). A
+  bar above the table shows what can be done with the selection.
+- **A creative ID spans one advertiser's campaigns only.** The two assign
+  actions appear **only when every ticked campaign belongs to one
+  advertiser**; if the selection spans advertisers they are hidden (a hint
+  says to choose one advertiser's campaigns) and **Reject…** stays.
+- **Two approve actions**, both leading with "Approve" so the retailer
+  knows this is the approval of the creative, and both naming the creative
+  ID:
+  - **Approve + assign to new creative ID** — mints a new ID across the
+    ticked campaigns and approves each.
+  - **Approve + assign to existing creative ID** — opens a picker listing
+    **each of that advertiser's creative IDs with its member campaigns, and
+    their touch points, expanded**, so the retailer matches by seeing the
+    siblings rather than a bare ID. Choosing one approves the ticked
+    campaigns into it. The picker never lists another advertiser's IDs.
+- **All or nothing.** The request is checked before anything is written: a
+  stale `assetVersion` (the creative changed after the retailer opened it),
+  a campaign that is not Awaiting approval, a mixed selection or another
+  advertiser's creative ID refuses the whole request and approves none of
+  it.
+- **The result goes back to the advertiser.** A campaign's status
+  (`GET /v1/campaigns/{id}/status`) is one of: **pending**
+  (`awaiting_approval`), **rejected** (with the reason) or **assigned to a
+  creative ID** (`approved`, with `creativeId`).
+- **Reject needs a reason.** **Reject…** on the selection opens a dialog
+  whose Reject button stays disabled until a reason is typed. The same
+  reason is recorded against each ticked campaign and reaches the advertiser
+  as the campaign's status `reason`, to fix before resubmitting.
+- **Resubmission.** When an advertiser updates a creative that has a
+  creative ID, it goes back to **Awaiting approval** as a pending edit (the
+  approved version keeps running, open question 38) and **keeps its creative
+  ID**, because the assignment belongs to the campaign, not to one version
+  of its creative. In the picker the ID it originally belonged to is
+  **pre-highlighted and tagged "original (resubmission)"**, so approving it
+  puts it back where it was; the table shows "(resubmission)" beside its ID.
+  Rejecting the edit discards it and leaves the live version, and its ID,
+  untouched.
+- **Data and API.** Migration `0103_creative_ids` adds `creative_ids`
+  (ID, advertiser) and `campaign_creative_ids` (campaign → ID).
+  `POST /admin/v1/approvals/approve-assign` (approver scope) takes
+  `items: [{campaignId, assetVersion}]` and an optional `creativeId`;
+  `GET /admin/v1/creative-ids?advertiserId=` lists the IDs with their
+  campaigns and touch points; `Approval.creativeId` and
+  `CampaignStatus.creativeId` carry the assignment.
+- **Auto-approved advertisers group their own campaigns** (ticket
+  XnN1Kwl39F8C8DrOkwQn). An advertiser with *Approval required* off has
+  every campaign approved on submission, so it never reaches the retailer's
+  approval step and nobody else can assign its creative ID. Those
+  campaigns (Approved, mode `auto`) get a tick box in the advertiser's
+  campaign table in PH Core HQ admin (the same table, filtered to the
+  advertiser). Ticking one advertiser's campaigns offers **Generate creative
+  ID** (mints a new ID across them) and **Assign to existing creative ID**
+  (the same picker, each ID shown with its member campaigns and touch
+  points); there is no Approve or Reject, because they are already
+  approved. An auto-approved selection cannot be mixed with campaigns
+  awaiting the retailer. The advertiser then uses the ID in the DSP.
+  `POST /admin/v1/approvals/assign-creative-id` (approver scope) takes
+  `campaignIds` and an optional `creativeId`; every campaign must be
+  Approved and belong to one advertiser who does not require approval
+  (otherwise 400 — the retailer assigns that advertiser's IDs — or 409 if
+  not approved), and an existing ID must belong to the same advertiser.
+  All or nothing. The POC has no advertiser login, so the HQ admin session
+  stands in for the advertiser.
+- **Not covered here.** Bidding on a creative ID in the exchange, and
+  assigning an ID from the campaign detail page, are separate work.
 
 ### Asset-level rejection detail (ticket, 22 Sep)
 
@@ -3514,7 +3576,7 @@ playback analytics.**
 - **Server-side enforcement**: campaigns that are not *Approved* are excluded
   from reservation, bidding and hand-off, and cannot be activated.
   *(spec only)*
-- **Campaign table now groups by playlist, not by layer**: Advertiser first,
+- **Campaign table now groups by playlist, not by layer** *(superseded 10 Oct 2026: one row is now one campaign — Campaign name, Touch points, Creative ID, grouped by advertiser; see "Retailer review" above. Kept as history.)*: Advertiser first,
   then Schedule, Playlist name (was Name), No. of campaigns (this
   submission's layer count), and Localised variables / Personalised
   variables — a high-level summary per column with the exact rules on
@@ -4325,6 +4387,25 @@ keeps the won creative renderable; the lookahead sets how early the per-impressi
   VAC-d at the cleared or reserve price, with no make-good.
 - The Run 6 journey (`npm run e2e:journey`) adds Phase 5, cases M1–M8:
   preferred and guaranteed deals over the real API and tick processes.
+- **Run 8 — the AWS demo (10 Dec 2026; ticket ZHPV0Lj5N883RKGfYThw)**
+  (`apps/api/test/e2e/run8-aws-demo.test.ts`, in `e2e:quick`) covers both
+  ways demand reaches the retailer against the per-campaign approval and
+  creative ID spec (§3 "Creative IDs"). **Direct advertiser flow** — D1 two
+  submissions wait with no creative ID, then are approved into one new ID;
+  D2 a selection spanning advertisers is refused whole; D3 a rejection
+  carries its reason to the advertiser, the fixed creative is resubmitted
+  and joins an existing ID; D4 updating an approved creative is a pending
+  edit that keeps its ID; D5 an advertiser that does not require approval is
+  approved on submission and groups its own campaigns; D6 only an approved,
+  activated campaign bids. **DSP flow** — S1 a new creative on a bid is
+  queued, approved into a new ID, activated and wins the next window; S2 a
+  second creative joins the first one's ID; S3 a rejected DSP creative stays
+  out of the auction. The admin table's behaviour (checkboxes, advertiser
+  scoping, picker, reason dialog) is the "Upcoming Campaign Approval —
+  creative IDs" suite in `apps/admin/test/dsp-integration.test.tsx`. The
+  person-run walkthrough, ending in an acceptance checklist, is
+  `docs/dsp-integration/AWS-DEMO-TEST-FLOW.md`; keep the three in step when
+  the approval flow changes.
 - The DSP-specific guaranteed-deal field names are the mapping in
   `src/dsp/dealTerms.ts`; the mocks prove it is carried, not that a DSP
   accepts it. **Still to confirm against each DSP sandbox** (DV360, Amazon

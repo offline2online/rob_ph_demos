@@ -11,10 +11,10 @@
    never lapses and the two versions never both run. Rejecting it discards
    it (the adapter drops its assets, the row goes, the audit stays) and the
    live version carries on untouched. */
-import { createHash } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import type { CampaignRef, CampaignSource } from '../adapter/CampaignSource'
 import type { Awaitable, SqlDb } from '../db'
-import { STATUSES, type Approval, type ApprovalStatus, type AssetRejection, type Check, type StatusCounts } from '../types'
+import { STATUSES, type Approval, type ApprovalStatus, type AssetRejection, type Check, type CreativeIdView, type StatusCounts } from '../types'
 import { type ApprovalRow, approvalStore } from './approvalStore'
 import { type ApprovalEvent, TransitionError, transition } from './stateMachine'
 
@@ -85,12 +85,14 @@ export function createApprovalService(o: ApprovalServiceOptions) {
     const live = await store.liveVersion(c.campaignId)
     const trail = full ? await store.auditTrail(c.campaignId) : null
     const discarded = trail ? rejectedEdit(trail) : undefined
+    const creativeId = await store.creativeIdOf(c.campaignId)
     return {
       campaignId: c.campaignId, campaignName: c.name, ...(c.advertiserName ? { advertiserName: c.advertiserName } : {}), ...(c.partnerName ? { partnerName: c.partnerName } : {}),
       status: r?.status ?? 'draft', mode: r?.mode ?? null, assetVersion: c.assetVersion,
       submittedAt: r?.submittedAt ?? null, reviewedBy: r?.reviewedBy ?? null, reviewedAt: r?.reviewedAt ?? null, reason: r?.reason ?? null,
       ...(r?.assetReasons?.length ? { assetReasons: r.assetReasons } : {}),
       checks: r?.checks ?? [],
+      creativeId,
       liveAssetVersion: live, pendingEdit: !!live && live !== c.assetVersion && r?.status === 'awaiting_approval',
       ...(discarded ? { rejectedEdit: discarded } : {}),
       ...(full ? { targetingSummary: c.targetingSummary, creative: c.creative, canvas: c.canvas, audit: trail! } : {}),
@@ -121,6 +123,20 @@ export function createApprovalService(o: ApprovalServiceOptions) {
     const auditAssetReasons = e.type === 'reject' ? e.assetReasons : undefined
     for (const action of t.audit) await store.audit(c.campaignId, c.assetVersion, action, action === 'auto_approved' || action === 'reused_clearance' ? null : actor, auditReason, at, auditAssetReasons)
     return t
+  }
+
+  /* A human approval of the version: the decision, and the clearance that lets
+     an unchanged resubmission skip re-review. */
+  const approveReviewed = async (c: CampaignRef, reviewer: string) => {
+    await apply(c, { type: 'approve' }, reviewer)
+    /* Safe reuse (spec §3): a genuine human decision clears this exact
+       content — every asset of the version (or, from an adapter that
+       lists none, the default creative) and its targeting rules — so a
+       later, unchanged resubmission can skip re-review. */
+    const at = now()
+    const assets = c.assets ?? (c.creative?.contentHash ? [{ assetId: 'default', contentHash: c.creative.contentHash }] : [])
+    for (const a of assets) if (a.contentHash) await store.recordHumanClearance(c.campaignId, a.assetId, a.contentHash, reviewer, at)
+    await store.recordHumanClearance(c.campaignId, TARGETING_ASSET, sha256(c.targetingSummary), reviewer, at)
   }
 
   /* Q38: eligible while ANY version is approved — the live one keeps
@@ -196,17 +212,118 @@ export function createApprovalService(o: ApprovalServiceOptions) {
       return transaction(async () => {
       const c = await campaign(id)
       if (assetVersion !== c.assetVersion) throw new ApprovalError(409, 'conflict', 'The creative changed after you opened it. Review the new version.')
-      await apply(c, { type: 'approve' }, reviewer)
-      /* Safe reuse (spec §3): a genuine human decision clears this exact
-         content — every asset of the version (or, from an adapter that
-         lists none, the default creative) and its targeting rules — so a
-         later, unchanged resubmission can skip re-review. */
-      const at = now()
-      const assets = c.assets ?? (c.creative?.contentHash ? [{ assetId: 'default', contentHash: c.creative.contentHash }] : [])
-      for (const a of assets) if (a.contentHash) await store.recordHumanClearance(c.campaignId, a.assetId, a.contentHash, reviewer, at)
-      await store.recordHumanClearance(c.campaignId, TARGETING_ASSET, sha256(c.targetingSummary), reviewer, at)
+      await approveReviewed(c, reviewer)
       return toView(c, true)
       })
+    },
+
+    /* Approve campaigns one at a time AND group them under a creative ID
+       (the grouping a DSP bids on). `creativeId` null mints a new ID across
+       the campaigns; otherwise they join that existing ID. Everything is
+       checked before anything is written, so a stale version or a mixed
+       advertiser approves none of them. A creative ID spans one advertiser's
+       campaigns only. A resubmitted campaign that still holds its original
+       ID is moved only if the caller names a different one. */
+    async approveAndAssign(items: { campaignId: string; assetVersion: string }[], creativeId: string | null, reviewer: string) {
+      if (!items.length) throw new ApprovalError(400, 'validation_failed', 'Choose at least one campaign.')
+      if (new Set(items.map((i) => i.campaignId)).size !== items.length) throw new ApprovalError(400, 'validation_failed', 'A campaign can only be listed once.')
+      return transaction(async () => {
+        const campaigns: CampaignRef[] = []
+        for (const i of items) {
+          const c = await campaign(i.campaignId)
+          if (c.source === 'hq' || !c.advertiserId) throw new ApprovalError(400, 'validation_failed', `${c.name} is not an advertiser campaign, so it has no creative ID.`)
+          if (i.assetVersion !== c.assetVersion) throw new ApprovalError(409, 'conflict', `The creative for ${c.name} changed after you opened it. Review the new version.`)
+          if ((await statusOf(c)) !== 'awaiting_approval') throw new ApprovalError(409, 'conflict', `${c.name} is not awaiting approval.`)
+          campaigns.push(c)
+        }
+        const advertiserId = campaigns[0].advertiserId!
+        if (campaigns.some((c) => c.advertiserId !== advertiserId)) throw new ApprovalError(400, 'validation_failed', 'A creative ID spans only one advertiser’s campaigns. Choose campaigns from a single advertiser.')
+        if (creativeId) {
+          const existing = await store.creativeId(creativeId)
+          if (!existing) throw new ApprovalError(404, 'not_found', 'That creative ID does not exist.')
+          if (existing.advertiserId !== advertiserId) throw new ApprovalError(400, 'validation_failed', 'That creative ID belongs to a different advertiser.')
+        }
+        const at = now()
+        let target = creativeId
+        if (!target) {
+          for (let tries = 0; !target; tries++) {
+            const candidate = `CR-${randomBytes(4).toString('hex').toUpperCase()}`
+            if (!(await store.creativeId(candidate))) target = candidate
+            else if (tries > 8) throw new Error('Could not mint a unique creative ID.')
+          }
+          await store.createCreativeId(target, advertiserId, reviewer, at)
+        }
+        for (const c of campaigns) {
+          await approveReviewed(c, reviewer)
+          await store.assignCreativeId(c.campaignId, target, reviewer, at)
+        }
+        const approvals: Approval[] = []
+        for (const c of campaigns) approvals.push(await toView(c, false))
+        return { creativeId: target, approvals }
+      })
+    },
+
+    /* Group already-approved campaigns under a creative ID, for an advertiser
+       who does not require approval: submission was the approval, so there is
+       no reviewer step to assign the ID and the advertiser does it from their
+       own campaign table. `creativeId` null mints a new one across the
+       campaigns; otherwise they join that existing ID. All or nothing; a
+       creative ID spans one advertiser's campaigns only. */
+    async assignCreativeId(campaignIds: string[], creativeId: string | null, actor: string) {
+      if (!campaignIds.length) throw new ApprovalError(400, 'validation_failed', 'Choose at least one campaign.')
+      if (new Set(campaignIds).size !== campaignIds.length) throw new ApprovalError(400, 'validation_failed', 'A campaign can only be listed once.')
+      return transaction(async () => {
+        const campaigns: CampaignRef[] = []
+        for (const id of campaignIds) {
+          const c = await campaign(id)
+          if (c.source === 'hq' || !c.advertiserId) throw new ApprovalError(400, 'validation_failed', `${c.name} is not an advertiser campaign, so it has no creative ID.`)
+          if (await o.requiresApproval(c.advertiserId)) throw new ApprovalError(400, 'validation_failed', `${c.name} is approved by the retailer, which assigns its creative ID.`)
+          if ((await statusOf(c)) !== 'approved') throw new ApprovalError(409, 'conflict', `${c.name} is not approved.`)
+          campaigns.push(c)
+        }
+        const advertiserId = campaigns[0].advertiserId!
+        if (campaigns.some((c) => c.advertiserId !== advertiserId)) throw new ApprovalError(400, 'validation_failed', 'A creative ID spans only one advertiser’s campaigns. Choose campaigns from a single advertiser.')
+        if (creativeId) {
+          const existing = await store.creativeId(creativeId)
+          if (!existing) throw new ApprovalError(404, 'not_found', 'That creative ID does not exist.')
+          if (existing.advertiserId !== advertiserId) throw new ApprovalError(400, 'validation_failed', 'That creative ID belongs to a different advertiser.')
+        }
+        const at = now()
+        let target = creativeId
+        if (!target) {
+          for (let tries = 0; !target; tries++) {
+            const candidate = `CR-${randomBytes(4).toString('hex').toUpperCase()}`
+            if (!(await store.creativeId(candidate))) target = candidate
+            else if (tries > 8) throw new Error('Could not mint a unique creative ID.')
+          }
+          await store.createCreativeId(target, advertiserId, actor, at)
+        }
+        for (const c of campaigns) await store.assignCreativeId(c.campaignId, target, actor, at)
+        const approvals: Approval[] = []
+        for (const c of campaigns) approvals.push(await toView(c, false))
+        return { creativeId: target, approvals }
+      })
+    },
+
+    /* The creative IDs in use, each with the campaigns grouped under it — so
+       a reviewer picks an existing one by seeing its siblings. An ID whose
+       campaigns have all moved on is not listed. The host adds touch points. */
+    async creativeIds(advertiserId?: string): Promise<CreativeIdView[]> {
+      const members = new Map<string, string[]>()
+      for (const a of await store.assignments()) members.set(a.creativeId, [...(members.get(a.creativeId) ?? []), a.campaignId])
+      const out: CreativeIdView[] = []
+      for (const row of await store.creativeIds(advertiserId)) {
+        const campaigns: CreativeIdView['campaigns'] = []
+        let advertiserName: string | null = null
+        for (const id of members.get(row.creativeId) ?? []) {
+          const c = await o.campaigns.getCampaign(id)
+          if (!c) continue
+          advertiserName ??= c.advertiserName
+          campaigns.push({ campaignId: id, name: c.name, touchPoints: [] })
+        }
+        if (campaigns.length) out.push({ creativeId: row.creativeId, advertiserId: row.advertiserId, advertiserName, createdAt: row.createdAt, campaigns })
+      }
+      return out
     },
 
     async reject(id: string, assetVersion: string, reviewer: string, reason: string, assetReasons?: AssetRejection[]) {

@@ -37,10 +37,12 @@ export const partnerAdvertiser = (p: PartnerRecord, advertiserId: string) => p.s
    approval (status, assetVersion) while the approved version keeps running
    (liveAssetVersion); pendingEdit says which case this is. An edit the
    retailer rejected is discarded — status is back to the live version's —
-   and rejectedEdit says so, with the reason, until the next edit. */
-const statusView = (a: Pick<Approval, 'campaignId' | 'status' | 'mode' | 'reason' | 'assetVersion' | 'liveAssetVersion' | 'pendingEdit' | 'rejectedEdit'>) => ({
+   and rejectedEdit says so, with the reason, until the next edit.
+   creativeId is the grouping the retailer assigned on approval (null until
+   then); an advertiser reads pending, rejected + reason, or that ID here. */
+const statusView = (a: Pick<Approval, 'campaignId' | 'status' | 'mode' | 'reason' | 'assetVersion' | 'liveAssetVersion' | 'pendingEdit' | 'rejectedEdit' | 'creativeId'>) => ({
   campaignId: a.campaignId, status: a.status, mode: a.mode, reason: a.reason, assetVersion: a.assetVersion,
-  liveAssetVersion: a.liveAssetVersion, pendingEdit: a.pendingEdit, ...(a.rejectedEdit ? { rejectedEdit: a.rejectedEdit } : {}),
+  creativeId: a.creativeId, liveAssetVersion: a.liveAssetVersion, pendingEdit: a.pendingEdit, ...(a.rejectedEdit ? { rejectedEdit: a.rejectedEdit } : {}),
 })
 
 const approvalError = (e: unknown) => (e instanceof ApprovalError ? new HttpError(e.status, e.code, e.message) : e)

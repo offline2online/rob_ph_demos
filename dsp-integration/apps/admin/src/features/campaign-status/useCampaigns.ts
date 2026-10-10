@@ -44,12 +44,47 @@ export function useCampaignActions(campaignIds: string[]) {
       setBusy(null)
     }
   }
+  /* Several campaigns in one go (the table's selection): the result is toasted
+     and returned, never thrown, so the page decides what to clear. */
+  const batch = async (run: () => Promise<string>) => {
+    setBusy('batch')
+    try {
+      const done = await run()
+      message.success(done)
+      return true
+    } catch (e) {
+      message.error(e instanceof ApiRequestError ? e.message : 'Something went wrong.')
+      return false
+    } finally {
+      await qc.invalidateQueries({ queryKey: ['poc-campaigns'] })
+      await qc.invalidateQueries({ queryKey: ['creative-ids'] })
+      await reload()
+      setBusy(null)
+    }
+  }
   return {
     approvals,
     canApprove: session.data?.role === 'hq_admin',
     busy,
     approve: (a: Approval) => act(a.campaignId, () => api('POST', `/admin/v1/campaigns/${a.campaignId}/approve`, { assetVersion: a.assetVersion })),
     reject: (a: Approval, reason: string) => act(a.campaignId, () => api('POST', `/admin/v1/campaigns/${a.campaignId}/reject`, { assetVersion: a.assetVersion, reason })),
+    /* Approve the ticked campaigns of ONE advertiser and group them under a
+       creative ID — a new one (creativeId omitted) or an existing one. All or nothing. */
+    approveAssign: (as: Approval[], creativeId?: string) => batch(async () => {
+      const res = await api<{ creativeId: string }>('POST', '/admin/v1/approvals/approve-assign', { items: as.map((a) => ({ campaignId: a.campaignId, assetVersion: a.assetVersion })), ...(creativeId ? { creativeId } : {}) })
+      return `${as.length === 1 ? '1 campaign' : `${as.length} campaigns`} approved under creative ID ${res.creativeId}.`
+    }),
+    /* An auto-approved advertiser's campaigns are already approved: group the
+       ticked ones under a creative ID, a new one or an existing one. */
+    assignCreativeId: (as: Approval[], creativeId?: string) => batch(async () => {
+      const res = await api<{ creativeId: string }>('POST', '/admin/v1/approvals/assign-creative-id', { campaignIds: as.map((a) => a.campaignId), ...(creativeId ? { creativeId } : {}) })
+      return `${as.length === 1 ? '1 campaign' : `${as.length} campaigns`} grouped under creative ID ${res.creativeId}.`
+    }),
+    /* Reject each ticked campaign with the same reason, which the advertiser sees. */
+    rejectMany: (as: Approval[], reason: string) => batch(async () => {
+      for (const a of as) await api('POST', `/admin/v1/campaigns/${a.campaignId}/reject`, { assetVersion: a.assetVersion, reason })
+      return `${as.length === 1 ? '1 campaign' : `${as.length} campaigns`} rejected. The advertiser sees the reason.`
+    }),
     unreject: (a: Approval, reason?: string) => act(a.campaignId, () => api('POST', `/admin/v1/campaigns/${a.campaignId}/unreject`, { assetVersion: a.assetVersion, reason })),
     activate: (c: Campaign, enabled: boolean) => act(c.campaignId, () => api('PUT', `/admin/v1/campaigns/${c.campaignId}/activation`, { enabled })),
   }

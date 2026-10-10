@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Campaign } from '@ph-dsp/types'
-import { elapsedSince, triageOrder } from '../src/features/campaign-status/triage'
+import { byAdvertiser, elapsedSince, triageOrder } from '../src/features/campaign-status/triage'
 
 const c = (campaignId: string, lastPlayedAt: string | null = null) => ({ campaignId, name: campaignId, lastPlayedAt }) as unknown as Campaign
 const ap = (status: string, submittedAt: string | null = null) => ({ status, submittedAt }) as never
@@ -20,5 +20,13 @@ describe('Upcoming Campaign Approval triage order', () => {
     expect(elapsedSince('2026-10-08T11:48:00Z', now)).toBe('12m')
     expect(elapsedSince('2026-10-08T08:40:00Z', now)).toBe('3h 20m')
     expect(elapsedSince('2026-10-06T08:00:00Z', now)).toBe('2d 4h')
+  })
+})
+
+describe('Upcoming Campaign Approval grouping', () => {
+  const a = (id: string, advertiserName: string | null) => ({ campaignId: id, name: id, advertiserName }) as unknown as Campaign
+  it('groups by advertiser A–Z, keeping the given order inside each group and unattributed rows last', () => {
+    const rows = [a('1', 'Swisse'), a('2', null), a('3', 'Nestlé'), a('4', 'Swisse'), a('5', 'Nestlé')]
+    expect(byAdvertiser(rows).map((r) => r.campaignId)).toEqual(['3', '5', '1', '4', '2'])
   })
 })

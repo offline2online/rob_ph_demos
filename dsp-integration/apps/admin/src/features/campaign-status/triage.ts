@@ -25,6 +25,16 @@ export function triageOrder(rows: Campaign[], approvals: Record<string, Approval
   })
 }
 
+/* Grouped by advertiser (ticket IDGsyELBJsjlAYjizSqT): advertisers A–Z, and
+   within each the order given — a stable sort, so the triage order holds
+   inside every group. Rows with no advertiser come last. */
+export function byAdvertiser(rows: Campaign[]): Campaign[] {
+  return [...rows].sort((a, b) => {
+    if (!a.advertiserName !== !b.advertiserName) return a.advertiserName ? -1 : 1
+    return (a.advertiserName ?? '').localeCompare(b.advertiserName ?? '')
+  })
+}
+
 /* "2d 4h", "3h 20m", "12m", "<1m" — a snapshot against `now`, never ticking. */
 export function elapsedSince(iso: string, now: number): string {
   const mins = Math.max(0, Math.floor((now - Date.parse(iso)) / 60000))
