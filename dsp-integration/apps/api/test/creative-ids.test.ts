@@ -224,22 +224,16 @@ describe('Private auction (deal ID) flow', () => {
     expect(joined.json().creativeId).toBe(first)
   })
 
-  it('B4 refuses a selection that mixes deals, or deal and non-deal campaigns, approving none', async () => {
-    const { approve, view } = await dealSetup()
-    const mixedDeals = await approve(['c_deal_a', 'c_deal_other'])
-    expect(mixedDeals.statusCode).toBe(400)
-    expectMatchesContract('POST', '/admin/v1/approvals/approve-assign', 400, mixedDeals.json())
-    expect(mixedDeals.json().error.message).toMatch(/one deal/)
-    expect((await approve(['c_deal_a', 'c_api_swisse_kids'])).statusCode).toBe(400)
-    expect((await view('c_deal_a')).status).toBe('awaiting_approval')
-    /* An existing ID of another deal, or of no deal, is refused too. */
-    const other = (await approve(['c_deal_other'])).json().creativeId as string
-    const wrong = await approve(['c_deal_a'], other)
-    expect(wrong.statusCode).toBe(400)
-    expect(wrong.json().error.message).toMatch(/does not belong to deal PMP-1/)
-    const direct = (await approve(['c_api_swisse_kids'])).json().creativeId as string
-    expect((await approve(['c_deal_a'], direct)).statusCode).toBe(400)
-    expect((await view('c_deal_a')).status).toBe('awaiting_approval')
+  it('B4 lets a selection mix deals, or deal and direct campaigns: one creative, many deals', async () => {
+    const { approve, view, creativeIds } = await dealSetup()
+    const mixed = await approve(['c_deal_a', 'c_deal_other', 'c_api_swisse_kids'])
+    expect(mixed.statusCode).toBe(200)
+    const id = mixed.json().creativeId as string
+    expect(await view('c_deal_other')).toMatchObject({ status: 'approved', creativeId: id, dealIds: ['PMP-2'] })
+    /* An existing ID is joinable whatever its deals. */
+    expect((await approve(['c_deal_b'], id)).json().creativeId).toBe(id)
+    const [g] = await creativeIds('?advertiserId=swisse')
+    expect(g).toMatchObject({ creativeId: id, dealIds: ['PMP-1', 'PMP-2'], direct: true })
   })
 
   it('B5 lists only the same deal\'s creative IDs for a deal campaign', async () => {
@@ -251,7 +245,45 @@ describe('Private auction (deal ID) flow', () => {
     expect((await creativeIds('?advertiserId=swisse&dealId=PMP-2')).map((g) => g.creativeId)).toEqual([two])
     expect((await creativeIds('?advertiserId=swisse&dealId=')).map((g) => g.creativeId)).toEqual([direct])
     expect((await creativeIds('?advertiserId=swisse')).length).toBe(3)
-    expect((await creativeIds('?advertiserId=swisse&dealId=PMP-1'))[0]).toMatchObject({ dealId: 'PMP-1', campaigns: [{ campaignId: 'c_deal_a', dealId: 'PMP-1' }] })
+    expect((await creativeIds('?advertiserId=swisse&dealId=PMP-1'))[0]).toMatchObject({ dealId: 'PMP-1', dealIds: ['PMP-1'], direct: false, campaigns: [{ campaignId: 'c_deal_a', dealId: 'PMP-1', dealIds: ['PMP-1'] }] })
+  })
+
+  it('B10 crossover: a direct campaign gets a deal after the fact, from the retailer or the advertiser, and its creative ID resolves per deal', async () => {
+    const { app, approve, view, creativeIds } = await dealSetup()
+    const { creativeId } = (await approve(['c_api_swisse_kids', 'c_deal_a'])).json()
+    expect((await creativeIds('?advertiserId=swisse&dealId=PMP-3')).length).toBe(0)
+    /* Retailer adds a deal on the campaign (the creative-ID record is untouched). */
+    const put = await app.inject({ method: 'PUT', url: '/api/admin/v1/campaigns/c_api_swisse_kids/deals', payload: { dealIds: ['PMP-3', 'PMP-4', 'PMP-3'] } })
+    expect(put.statusCode).toBe(200)
+    expectMatchesContract('PUT', '/admin/v1/campaigns/{campaignId}/deals', 200, put.json())
+    expect(put.json()).toMatchObject({ dealIds: ['PMP-3', 'PMP-4'], direct: true, creativeId })
+    /* Per deal, the same creative appears under each; the direct arrangement is kept. */
+    for (const d of ['PMP-1', 'PMP-3', 'PMP-4']) expect((await creativeIds(`?advertiserId=swisse&dealId=${d}`)).map((g) => g.creativeId)).toEqual([creativeId])
+    expect((await creativeIds('?advertiserId=swisse&dealId=')).map((g) => g.creativeId)).toEqual([creativeId])
+    /* The authored deal cannot be removed; dropping the added ones leaves it. */
+    await app.inject({ method: 'PUT', url: '/api/admin/v1/campaigns/c_deal_a/deals', payload: { dealIds: ['PMP-4'] } })
+    expect(await view('c_deal_a')).toMatchObject({ dealIds: ['PMP-1', 'PMP-4'] })
+    await app.inject({ method: 'PUT', url: '/api/admin/v1/campaigns/c_deal_a/deals', payload: { dealIds: [] } })
+    expect(await view('c_deal_a')).toMatchObject({ dealIds: ['PMP-1'] })
+    /* The campaign list carries the set too. */
+    const list = (await app.inject({ method: 'GET', url: '/api/admin/v1/campaigns' })).json().items as { campaignId: string; dealIds?: string[] }[]
+    expect(list.find((c) => c.campaignId === 'c_api_swisse_kids')?.dealIds).toEqual(['PMP-3', 'PMP-4'])
+    /* Bad input is refused. */
+    for (const dealIds of ['PMP-1', [5], ['']]) expect((await app.inject({ method: 'PUT', url: '/api/admin/v1/campaigns/c_deal_a/deals', payload: { dealIds } })).statusCode).toBe(400)
+    expect((await app.inject({ method: 'PUT', url: '/api/admin/v1/campaigns/nope/deals', payload: { dealIds: [] } })).statusCode).toBe(404)
+  })
+
+  it('B11 the advertiser sets deals on its own campaign through the Partner API', async () => {
+    const { app, view } = await dealSetup()
+    const res = await app.inject({ method: 'POST', url: '/api/v1/campaigns', headers: G, payload: { advertiserId: 'swisse', name: 'Swisse — Direct', displayTypeId: 'landscape', default: { pricingType: 'localised' } } })
+    const id = res.json().campaignId as string
+    const put = await app.inject({ method: 'PUT', url: `/api/v1/campaigns/${id}/deals`, headers: G, payload: { dealIds: ['PMP-7'] } })
+    expect(put.statusCode).toBe(200)
+    expectMatchesContract('PUT', '/v1/campaigns/{campaignId}/deals', 200, put.json())
+    expect(put.json()).toMatchObject({ dealId: 'PMP-7', dealIds: ['PMP-7'] })
+    expect(await view(id)).toMatchObject({ dealIds: ['PMP-7'], direct: true })
+    /* Not another partner's. */
+    expect((await app.inject({ method: 'PUT', url: `/api/v1/campaigns/${id}/deals`, headers: { authorization: 'Bearer poc-token-amazon-dsp' }, payload: { dealIds: ['X'] } })).statusCode).toBe(404)
   })
 
   it('B6 rejects one campaign with a reason and approves the rest of the deal', async () => {

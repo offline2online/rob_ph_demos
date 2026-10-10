@@ -354,6 +354,12 @@ carry over:
   existing-ID picker lists each ID's member campaigns and touch points and
   pre-highlights the ID a resubmitted campaign already had. The detail page's
   own Approve does not assign an ID.
+- **Deals are a set (`0104_campaign_deals`, 10 Oct 2026).** A campaign carries
+  the deal it was authored with plus `campaign_deals` rows added later
+  (`ApprovalService.setDeals`, `PUT …/campaigns/{id}/deals` for the retailer
+  and the advertiser). A creative ID's `dealIds` is the union of its
+  campaigns'; nothing restricts a creative to one deal. If approval moves
+  onto the main campaign record, the deal set moves with it.
 - **Resubmission keeps the ID.** An edit to an approved creative is a pending
   edit (Q38) and stays attached to its creative ID; rejecting the edit
   leaves the live version and ID untouched.

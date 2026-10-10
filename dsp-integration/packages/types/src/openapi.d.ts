@@ -191,6 +191,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/campaigns/{campaignId}/deals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set the deals this campaign is associated with, beyond the one it was authored with (advertiser)
+         * @description Replaces the campaign's added deals; the authored `dealId` is always
+         *     kept. Lets an advertiser whose campaign first ran direct also run it
+         *     through a DSP by adding a deal after the fact. Returns the campaign
+         *     status with the full `dealIds` set.
+         */
+        put: operations["setCampaignDealsPartner"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/campaigns/{campaignId}/status": {
         parameters: {
             query?: never;
@@ -971,15 +994,15 @@ export interface paths {
          *     approves none of them. The advertiser reads the result as `creativeId`
          *     on the campaign's status.
          *
-         *     **Two flows use this one endpoint.** A *direct* campaign has no deal
-         *     ID. A *private-auction* campaign carries the `dealId` its advertiser
-         *     set at authoring time; the caller never sends it, it is read from the
-         *     campaigns. A deal is approved per subset across rounds, so one deal
-         *     can accumulate several creative IDs; a selection must not mix deals,
-         *     or deal and non-deal campaigns, and an existing ID must belong to the
-         *     same deal. A campaign rejected and resubmitted fixed joins the creative
-         *     ID already minted for its deal group. A mixed selection, or an existing ID
-         *     of another deal, is a 400 and approves none.
+         *     **Deals.** A *direct* campaign was authored with no deal ID. A
+         *     *private-auction* campaign carries the `dealId` its advertiser set at
+         *     authoring; the caller never sends it. A campaign carries a *set* of
+         *     deals (`PUT …/deals` adds more later), and a creative ID takes its
+         *     deals from the campaigns grouped under it, so the same creative can be
+         *     in many deals, and/or have a direct arrangement, at once — a selection
+         *     may mix deals and an existing ID may be joined whatever its deals.
+         *     A campaign rejected and resubmitted fixed joins the creative ID
+         *     already minted for it.
          */
         post: operations["approveAndAssignCreativeId"];
         delete?: never;
@@ -1329,6 +1352,30 @@ export interface paths {
         /** Campaigns for the stand-in POC campaign table (existing campaign list) */
         get: operations["listCampaigns"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/campaigns/{campaignId}/deals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set the deals a campaign is associated with, beyond its authored one (retailer)
+         * @description Replaces the campaign's added deals. The deal it was authored with is
+         *     always kept and cannot be removed. Used for the crossover — a campaign
+         *     first run direct that is later also run through a DSP — and works at
+         *     any time after authoring. The creative ID the campaign is grouped
+         *     under picks the change up: its deal set is derived from its campaigns.
+         */
+        put: operations["setCampaignDeals"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1770,6 +1817,12 @@ export interface components {
              *     retailer on approval, and a deal can accumulate more than one.
              */
             dealId?: string | null;
+            /**
+             * @description Every deal the campaign is associated with: the authored `dealId`
+             *     plus any added since with `PUT …/deals` (sorted). Empty for a
+             *     campaign with none. The campaign carries a set, not a single deal.
+             */
+            dealIds?: string[];
             /**
              * @description The approved version that is running — eligible for reservation,
              *     bidding and hand-off — whatever is under review (open question 38,
@@ -2731,6 +2784,10 @@ export interface components {
              *     retailer on approval, and a deal can accumulate more than one.
              */
             dealId?: string | null;
+            /** @description Every deal the campaign is associated with — the authored dealId plus any added since (sorted). */
+            dealIds?: string[];
+            /** @description True when the campaign was authored with no deal; it keeps a direct arrangement once a deal is added. */
+            direct?: boolean;
             /**
              * @description The approved version that is running — eligible for reservation,
              *     bidding and hand-off — whatever is under review (open question 38,
@@ -3036,8 +3093,12 @@ export interface components {
             source: "hq" | "api" | "dsp";
             advertiserId?: string | null;
             advertiserName?: string | null;
-            /** @description The private-auction deal ID the advertiser tagged this campaign with; absent for a direct campaign. */
+            /** @description The private-auction deal ID the advertiser tagged this campaign with; absent for a direct campaign. The first of dealIds. */
             dealId?: string;
+            /** @description Every deal the campaign is associated with (authored plus added); absent when none. */
+            dealIds?: string[];
+            /** @description True when the campaign was authored with no deal */
+            direct?: boolean;
             partnerId?: string | null;
             partnerName?: string | null;
             displayTypeId?: string | null;
@@ -3488,6 +3549,37 @@ export interface operations {
             401: components["responses"]["Unauthorised"];
             404: components["responses"]["NotFound"];
             429: components["responses"]["RateLimited"];
+        };
+    };
+    setCampaignDealsPartner: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                campaignId: components["parameters"]["CampaignId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    dealIds: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description Status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CampaignStatus"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorised"];
+            404: components["responses"]["NotFound"];
         };
     };
     getCampaignStatus: {
@@ -4956,8 +5048,12 @@ export interface operations {
                     "application/json": {
                         items: {
                             creativeId: string;
-                            /** @description The deal every member belongs to; null for a direct ID. An ID never straddles two deals. */
+                            /** @description The first of dealIds */
                             dealId: string | null;
+                            /** @description Every deal any member campaign is associated with (sorted). One creative can be in many deals at once; the deals are taken from its campaigns, not picked separately. */
+                            dealIds: string[];
+                            /** @description True when some member campaign was authored with no deal */
+                            direct: boolean;
                             advertiserId: string;
                             advertiserName: string | null;
                             /** Format: date-time */
@@ -4965,8 +5061,12 @@ export interface operations {
                             campaigns: {
                                 campaignId: string;
                                 name: string;
-                                /** @description The deal this member campaign belongs to; null for a direct campaign. The picker pre-highlights the ID whose members share a selected campaign's deal. */
+                                /** @description The first of dealIds */
                                 dealId: string | null;
+                                /** @description Every deal this member campaign is associated with (sorted). */
+                                dealIds: string[];
+                                /** @description True when this campaign was authored with no deal. */
+                                direct: boolean;
                                 touchPoints: string[];
                             }[];
                         }[];
@@ -5469,6 +5569,37 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorised"];
+        };
+    };
+    setCampaignDeals: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                campaignId: components["parameters"]["CampaignId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    dealIds: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description Saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Approval"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorised"];
+            404: components["responses"]["NotFound"];
         };
     };
     setCampaignActivation: {

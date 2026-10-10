@@ -1168,7 +1168,7 @@ describe('Upcoming Campaign Approval — deal IDs', () => {
     '/api/admin/v1/campaigns': { items: campaigns },
     ...Object.fromEntries(campaigns.map((c) => [`/api/admin/v1/campaigns/${c.campaignId}/approval`, approvalOf(c, 'awaiting_approval', null, c.dealId ?? null)])),
     '/api/admin/v1/creative-ids': {
-      items: [{ creativeId: 'CR-DEAL0001', advertiserId: 'swisse', advertiserName: 'Swisse', dealId: 'PMP-1', createdAt: '2026-10-01T00:00:00.000Z', campaigns: [{ campaignId: 'd9', name: 'Swisse nap', touchPoints: ['Digital Signage'], dealId: 'PMP-1' }] }],
+      items: [{ creativeId: 'CR-DEAL0001', advertiserId: 'swisse', advertiserName: 'Swisse', dealId: 'PMP-1', dealIds: ['PMP-1'], direct: false, createdAt: '2026-10-01T00:00:00.000Z', campaigns: [{ campaignId: 'd9', name: 'Swisse nap', touchPoints: ['Digital Signage'], dealId: 'PMP-1', dealIds: ['PMP-1'], direct: false }] }],
     },
     '/api/admin/v1/booking-schedule': { currency: 'AUD', windows: [], positions: [], revenue: [], dsps: [], byPricingType: [], totals: { bookedWindows: 0, bookedRevenue: 0, billedRevenue: 0 } },
   }
@@ -1215,13 +1215,12 @@ describe('Upcoming Campaign Approval — deal IDs', () => {
     await waitFor(() => expect((within(grid).getByLabelText('Select all Swisse') as HTMLInputElement).indeterminate).toBe(true))
   }, slow(45000))
 
-  it('hides the assign actions across advertisers or deals, keeping Reject', async () => {
+  it('keeps the assign actions across deals of one advertiser, hides them across advertisers, keeping Reject', async () => {
     const grid = await open()
     fireEvent.click(within(grid).getByLabelText('Select all PMP-1'))
     expect(await screen.findByRole('button', { name: 'Approve + assign to new creative ID' })).toBeInTheDocument()
     fireEvent.click(within(grid).getByLabelText('Select Swisse focus'))
-    await waitFor(() => expect(screen.queryByRole('button', { name: /Approve \+ assign/ })).not.toBeInTheDocument())
-    expect(screen.getByText(/one deal, or none/)).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Approve + assign to new creative ID' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Reject…' })).toBeInTheDocument()
     fireEvent.click(within(grid).getByLabelText('Select all PMP-9'))
     await waitFor(() => expect(screen.getByText(/one advertiser/)).toBeInTheDocument())
@@ -1234,7 +1233,7 @@ describe('Upcoming Campaign Approval — deal IDs', () => {
     const dialog = await screen.findByRole('dialog')
     expect(await within(dialog).findByText('same deal (PMP-1)', {}, { timeout: 5000 })).toBeInTheDocument()
     await waitFor(() => expect(within(dialog).getByRole('radio', { name: /CR-DEAL0001/ })).toBeChecked())
-    expect(gets.some((u) => u.includes('creative-ids') && u.includes('dealId=PMP-1'))).toBe(true)
+    expect(gets.some((u) => u.includes('creative-ids') && !u.includes('dealId='))).toBe(true)
     expect(within(dialog).getByRole('button', { name: 'Approve + assign to CR-DEAL0001' })).toBeInTheDocument()
   }, slow(45000))
 })

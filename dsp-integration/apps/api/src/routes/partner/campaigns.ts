@@ -40,9 +40,9 @@ export const partnerAdvertiser = (p: PartnerRecord, advertiserId: string) => p.s
    and rejectedEdit says so, with the reason, until the next edit.
    creativeId is the grouping the retailer assigned on approval (null until
    then); an advertiser reads pending, rejected + reason, or that ID here. */
-const statusView = (a: Pick<Approval, 'campaignId' | 'status' | 'mode' | 'reason' | 'assetVersion' | 'liveAssetVersion' | 'pendingEdit' | 'rejectedEdit' | 'creativeId' | 'dealId'>) => ({
+const statusView = (a: Pick<Approval, 'campaignId' | 'status' | 'mode' | 'reason' | 'assetVersion' | 'liveAssetVersion' | 'pendingEdit' | 'rejectedEdit' | 'creativeId' | 'dealId' | 'dealIds'>) => ({
   campaignId: a.campaignId, status: a.status, mode: a.mode, reason: a.reason, assetVersion: a.assetVersion,
-  creativeId: a.creativeId, dealId: a.dealId ?? null, liveAssetVersion: a.liveAssetVersion, pendingEdit: a.pendingEdit, ...(a.rejectedEdit ? { rejectedEdit: a.rejectedEdit } : {}),
+  creativeId: a.creativeId, dealId: a.dealId ?? null, dealIds: a.dealIds ?? [], liveAssetVersion: a.liveAssetVersion, pendingEdit: a.pendingEdit, ...(a.rejectedEdit ? { rejectedEdit: a.rejectedEdit } : {}),
 })
 
 const approvalError = (e: unknown) => (e instanceof ApprovalError ? new HttpError(e.status, e.code, e.message) : e)
@@ -167,6 +167,16 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
      bounds what one partner can do, not the process — with twenty partners
      it allowed 40 × 200 MB in memory at once. This one bounds the process. */
   let uploadsInFlight = 0
+  /* The advertiser's side of the crossover: set the deals this campaign is
+     associated with beyond the one it was authored with. Replaces the added set. */
+  app.put<{ Params: { id: string }; Body: { dealIds?: unknown } }>('/campaigns/:id/deals', async (req) => {
+    await own(req.partner, req.params.id)
+    requireConnected(req.partner)
+    const ids = req.body?.dealIds
+    if (!Array.isArray(ids) || ids.some((d) => typeof d !== 'string')) throw validationFailed([{ field: 'dealIds', reason: 'An array of deal IDs.' }])
+    try { return statusView(await ctx.approvals.setDeals(req.params.id, ids as string[], req.partner.name)) } catch (e) { throw approvalError(e) }
+  })
+
   app.post<{ Params: { id: string } }>('/campaigns/:id/assets', async (req, reply) => {
     /* Ownership first: another partner's campaign is 404 whatever state the caller is in. */
     const c = await own(req.partner, req.params.id)

@@ -112,6 +112,23 @@ export function approvalStore(db: SqlDb) {
          ON CONFLICT (campaign_id) DO UPDATE SET creative_id = excluded.creative_id, assigned_at = excluded.assigned_at, assigned_by = excluded.assigned_by`,
       ).run(campaignId, creativeId, at, by), () => undefined)
     },
+    /* Deals added to a campaign after authoring (the authored deal lives on the campaign itself). */
+    addedDeals(campaignId: string): Awaitable<string[]> {
+      return andThen(stmt('SELECT deal_id FROM campaign_deals WHERE campaign_id = ? ORDER BY deal_id').all(campaignId), (rs) => (rs as { deal_id: string }[]).map((r) => r.deal_id))
+    },
+    allAddedDeals(): Awaitable<Map<string, string[]>> {
+      return andThen(stmt('SELECT campaign_id, deal_id FROM campaign_deals ORDER BY deal_id').all(), (rs) => {
+        const m = new Map<string, string[]>()
+        for (const r of rs as { campaign_id: string; deal_id: string }[]) m.set(r.campaign_id, [...(m.get(r.campaign_id) ?? []), r.deal_id])
+        return m
+      })
+    },
+    addDeal(campaignId: string, dealId: string, by: string | null, at: string): Awaitable<void> {
+      return andThen(stmt('INSERT INTO campaign_deals (campaign_id, deal_id, added_at, added_by) VALUES (?, ?, ?, ?)').run(campaignId, dealId, at, by), () => undefined)
+    },
+    removeDeal(campaignId: string, dealId: string): Awaitable<void> {
+      return andThen(stmt('DELETE FROM campaign_deals WHERE campaign_id = ? AND deal_id = ?').run(campaignId, dealId), () => undefined)
+    },
     /* Safe reuse (spec §3): record that a human (never auto-approve) has
        cleared this asset at this exact content. */
     recordHumanClearance(campaignId: string, assetId: string, contentHash: string, clearedBy: string, at: string): Awaitable<void> {

@@ -73,8 +73,12 @@ export interface Approval {
      it while it awaits re-approval (the assignment belongs to the campaign,
      not to one version of its creative). */
   creativeId?: string | null
-  /* The private-auction deal ID the advertiser set at authoring, as submitted; null for a direct campaign. */
+  /* The private-auction deal ID the advertiser set at authoring, as submitted; null for a direct campaign. Kept for older callers: the first of dealIds. */
   dealId?: string | null
+  /* Every deal the campaign is associated with: the authored deal plus any added since (sorted). Empty for a campaign with none. */
+  dealIds?: string[]
+  /* True when the campaign was authored with no deal, i.e. it has a direct arrangement — which it keeps if a deal is added later (the crossover). */
+  direct?: boolean
   targetingSummary?: string
   creative?: Creative | null
   canvas?: Canvas | null
@@ -88,9 +92,13 @@ export interface CreativeIdView {
   advertiserId: string
   advertiserName: string | null
   createdAt: string
-  /* The deal every member belongs to; null for a direct ID (no deal). A creative ID never straddles two deals. */
+  /* The first of dealIds, or null when there is none; kept for older callers. */
   dealId: string | null
-  campaigns: { campaignId: string; name: string; touchPoints: string[]; dealId: string | null }[]
+  /* Every deal any member campaign is associated with (sorted): one creative can be in many deals at once. */
+  dealIds: string[]
+  /* True when some member campaign has a direct arrangement (authored with no deal). */
+  direct: boolean
+  campaigns: { campaignId: string; name: string; touchPoints: string[]; dealId: string | null; dealIds: string[]; direct: boolean }[]
 }
 
 export interface StatusCounts { draft: number; awaiting_approval: number; approved: number; rejected: number }
