@@ -9,6 +9,7 @@ import type { Guards } from '../../http/app'
 import type { PartnerRecord } from '../../repos/PartnerRepo'
 import multipart from '@fastify/multipart'
 import { campaignRoutes } from './campaigns'
+import { dealRoutes } from './deals'
 import { inventoryRoutes } from './inventory'
 import { reservationRoutes } from './reservations'
 import { targetingRoutes } from './targeting'
@@ -40,5 +41,6 @@ export const partnerRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync 
   await app.register(targetingRoutes(ctx))
   await app.register(campaignRoutes(ctx))
   await app.register(inventoryRoutes(ctx))
+  await app.register(dealRoutes(ctx))
   await app.register(reservationRoutes(ctx))
 }

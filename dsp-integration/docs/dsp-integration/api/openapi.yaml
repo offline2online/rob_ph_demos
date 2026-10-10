@@ -196,6 +196,32 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorised'}
         '429': {$ref: '#/components/responses/RateLimited'}
 
+  /v1/deals:
+    get:
+      tags: [Partner — Inventory]
+      operationId: listDeals
+      summary: The deals this partner is invited to, with the creative requirements to size for
+      description: |
+        A deal is a buyers list (deal ID, type, term, rate) combined with the
+        positions it is attached to. The creative requirements are derived from
+        those positions, never stored on the deal, and are a set: one entry per
+        distinct format (canvas size + max play length + creative types), so a
+        list attached to portrait and landscape slots returns both. Empty while
+        the list is attached to no slot. Only deals one of this partner's seats
+        is invited to are listed.
+      responses:
+        '200':
+          description: Deals
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/Deal'}}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+
   /v1/campaigns:
     post:
       tags: [Partner — Campaigns]
@@ -1134,6 +1160,19 @@ paths:
         '201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/BuyersList'}}}}
         '400': {$ref: '#/components/responses/ValidationFailed'}
         '401': {$ref: '#/components/responses/Unauthorised'}
+  /admin/v1/buyers-lists/{buyersListId}/deal:
+    get:
+      tags: [Admin — Advertiser settings]
+      operationId: getBuyersListDeal
+      summary: A buyers list as the deal a DSP buyer sees, with creative requirements derived from its attached positions
+      security: [{adminSession: []}]
+      parameters: [{name: buyersListId, in: path, required: true, schema: {type: string}}]
+      responses:
+        '200':
+          description: The deal
+          content: {application/json: {schema: {$ref: '#/components/schemas/Deal'}}}
+        '404': {$ref: '#/components/responses/NotFound'}
+
   /admin/v1/buyers-lists/{buyersListId}:
     put:
       tags: [Admin — Advertiser settings]
@@ -2634,6 +2673,32 @@ components:
             effective floor in force when the window is booked.
             In both cases each window is billed on its own realised VAC-d.
             There is no guaranteed volume and no make-good.
+    CreativeRequirement:
+      type: object
+      required: [canvas, orientation, maxPlayLengthSec, formats, positionIds]
+      properties:
+        canvas:
+          type: object
+          required: [width, height]
+          properties: {width: {type: integer}, height: {type: integer}}
+          description: Canvas size in pixels (owned by PH Core, read per display type).
+        orientation: {type: string, enum: [landscape, portrait, square]}
+        maxPlayLengthSec: {type: number, description: 'The longest creative these positions play: the slot''s resolved max play length.'}
+        formats: {type: array, items: {type: string, enum: [image, video]}}
+        positionIds: {type: array, items: {type: string}, description: The attached positions this requirement covers.}
+    Deal:
+      type: object
+      required: [buyersListId, name, dealId, dealType, activeFrom, activeTo, auctionCloses, creativeRequirements]
+      properties:
+        buyersListId: {type: string}
+        name: {type: string}
+        dealId: {type: string}
+        dealType: {type: string, enum: [private_auction, preferred, guaranteed]}
+        activeFrom: {type: [string, 'null']}
+        activeTo: {type: [string, 'null']}
+        auctionCloses: {type: [string, 'null']}
+        rateCpm: {type: number, description: The deal's resolved base floor in USD CPM.}
+        creativeRequirements: {type: array, items: {$ref: '#/components/schemas/CreativeRequirement'}}
     BuyersList:
       type: object
       description: |

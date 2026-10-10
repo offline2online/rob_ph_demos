@@ -2035,6 +2035,32 @@ surface of the project and the part a partner actually integrates against.
 The retailer configures it under the **DSP Integration** navigation item.
 
 
+### What a DSP is sent for a deal — terms plus derived creative requirements (10 Oct 2026, ticket lksouRswtc6CLFevvE4J)
+
+The "deal" a DSP buyer transacts against is a **combination of two separate
+things**: the buyers list (deal ID, rate, term, type, invited buyers) and the
+slot allocation (the positions that list is attached to). The list carries no
+inventory itself; the attachment binds it to slots.
+
+- **Creative requirements are derived, never stored on the deal.** They come
+  from the positions the list is attached to (any tier of a slot's waterfall).
+- **They are a set, one entry per distinct format** — canvas size + max play
+  length + creative types (image / video) — so a list attached to portrait and
+  landscape slots, or to slots with different play lengths, returns several.
+  Each entry names the attached positions it covers. A list attached to no
+  slot has an empty set.
+- **Max play length** is the slot's resolved value (slot → display type →
+  company, "Max play length"). **Canvas size and format per display type are
+  owned by PH Core** and read read-only; this project keeps no copy of them
+  (api/PH-CORE-BOUNDARIES.md "Canvas and format per display type").
+- **What is served:** `GET /v1/deals` (Partner API) lists the deals the calling
+  DSP is invited to with deal ID, type, term, rate and the requirements set;
+  `GET /admin/v1/buyers-lists/{id}/deal` is the same view for HQ.
+- **Authoring validates against the same set.** `creativeMisfit()`
+  (`apps/api/src/domain/dealCreative.ts`) is the one check PH Core campaign
+  authoring (IQndewUPKJHbHRR2hAgG) applies to a campaign that picks the deal,
+  so what the buyer is told and what is enforced cannot drift.
+
 ### Prioritised buyers lists — the waterfall (7 Oct 2026)
 
 Decided by Rob, 7 Oct 2026 (Broadsign model): **priority is a property of how

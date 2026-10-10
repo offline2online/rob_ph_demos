@@ -9,6 +9,8 @@ import type { Guards } from '../../http/app'
 import { hasDependents, notFound, validationFailed } from '../../http/errors'
 import { tx } from '../../db/db'
 import { invitedPartnerIds } from '../../domain/buyersLists'
+import { baseFloorFor } from '../../exchange/enforcement'
+import { dealOf } from '../../domain/dealCreative'
 import { TRANSACTING_CURRENCY } from '../../domain/currency'
 import { effectiveTerm } from '../../domain/pricing'
 import { positionIdOf } from '../../domain/positions'
@@ -144,6 +146,15 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     guards.flagged()
     guards.requireScope(req, 'sections')
     return { items: await Promise.all((await ctx.buyersLists.list()).map((l) => withDelivery(ctx, l))) }
+  })
+
+  /* The deal as a DSP buyer sees it: terms plus the creative requirements derived from the attached positions. */
+  app.get<{ Params: { buyersListId: string } }>('/buyers-lists/:buyersListId/deal', async (req) => {
+    guards.flagged()
+    guards.requireScope(req, 'sections')
+    const list = await ctx.buyersLists.get(req.params.buyersListId)
+    if (!list) throw notFound()
+    return dealOf(ctx, list, await baseFloorFor(ctx, { buyersListId: list.id }))
   })
 
   app.post<{ Body: Body }>('/buyers-lists', async (req, reply) => {
