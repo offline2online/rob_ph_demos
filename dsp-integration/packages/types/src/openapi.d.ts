@@ -229,8 +229,11 @@ export interface paths {
          * Set the deals this campaign is associated with, beyond the one it was authored with (advertiser)
          * @description Replaces the campaign's added deals; the authored `dealId` is always
          *     kept. Lets an advertiser whose campaign first ran direct also run it
-         *     through a DSP by adding a deal after the fact. Returns the campaign
-         *     status with the full `dealIds` set.
+         *     through a DSP by adding a deal after the fact. Each added ID must be a
+         *     deal the advertiser is an invited buyer on (400 otherwise). Changing
+         *     the set on an approved campaign sends it back to Awaiting approval; before
+         *     approval it just changes. Returns the campaign status with the full
+         *     `dealIds` set.
          */
         put: operations["setCampaignDealsPartner"];
         post?: never;
@@ -1769,7 +1772,7 @@ export interface components {
         CampaignCreate: {
             advertiserId: string;
             name: string;
-            /** @description Optional private-auction deal ID the advertiser groups this campaign under (set at authoring in PH Core). The retailer approves a deal's campaigns in subsets, each subset into a creative ID. Omitted for a direct campaign; present, it must be non-empty. */
+            /** @description Optional private-auction deal ID the advertiser groups this campaign under (set at authoring in PH Core). It must be the platform-minted `dealId` of a buyers list the advertiser is an invited buyer on (through its mapped DSP seat; list them with GET /admin/v1/advertisers/{advertiserId}/deals), never free text: anything else is a 400, as is any deal ID for an advertiser with no deal relationship (a direct advertiser), whose campaigns carry none. The retailer approves a deal's campaigns in subsets, each subset into a creative ID (deal ID = the grouping going in; creative ID = minted by HQ on approval). Omitted for a campaign with no deal. */
             dealId?: string;
             displayTypeId?: string;
             /**
@@ -4862,6 +4865,8 @@ export interface operations {
                     "application/json": {
                         items: {
                             buyersListId: string;
+                            /** @description The deal ID to send as a campaign's `dealId`: the platform-minted ID on the buyers list. */
+                            dealId: string;
                             name: string;
                             /** @enum {string} */
                             dealType: "private_auction" | "preferred" | "guaranteed";

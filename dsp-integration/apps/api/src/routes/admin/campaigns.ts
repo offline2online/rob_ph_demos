@@ -1,6 +1,7 @@
 /* Campaigns: the POC stand-in list and activation toggle (existing
    platform), plus the approval module's routes. Activation is enforced by
    the module: only an approved campaign can be activated (spec §3). */
+import { assertInvitedDeals } from '../../domain/advertiserDeals'
 import { ApprovalError, approvalRoutes } from '@ph-dsp/campaign-approval/server'
 import type { Campaign } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
@@ -52,6 +53,8 @@ export const campaignRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync
     guards.requireScope(req, 'approver')
     const ids = req.body?.dealIds
     if (!Array.isArray(ids) || ids.some((d) => typeof d !== 'string')) throw validationFailed([{ field: 'dealIds', reason: 'An array of deal IDs.' }])
+    const pc = await ctx.campaigns.getCampaign(req.params.id)
+    if (pc) await assertInvitedDeals(ctx, pc.advertiserId, 'dealIds', ids as string[], (await ctx.approvals.view(pc.campaignId)).dealIds ?? [], ctx.clock().toISOString())
     try { return await ctx.approvals.setDeals(req.params.id, ids as string[], req.session.name) } catch (e) {
       if (e instanceof ApprovalError) throw new HttpError(e.status, e.code, e.message)
       throw e

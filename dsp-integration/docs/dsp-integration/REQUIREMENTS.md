@@ -1050,8 +1050,18 @@ tickets must satisfy.
 
 - **Deal ID** — the *advertiser/DSP-facing* grouping going **in**: the
   private-auction deal a campaign is booked against. Set by the advertiser at
-  authoring time in PH Core and carried through submission unchanged. It is
-  optional: a campaign with no deal ID is a direct campaign.
+  authoring time in PH Core and carried through submission. It is a
+  **reference to the deal ID the platform minted on the buyers list** (ticket
+  5CCgGEYSkVoDTH9yNSYu), never free text, chosen from the private-auction
+  deals the advertiser is an invited buyer on through its mapped DSP seat
+  (ticket T0gLfo2zDrRXPVGcvEoL). Whether the field exists at all is decided by
+  context, not left blank: an advertiser with a deal relationship (a private
+  auction through a DSP) has it; a **direct advertiser** — a direct retainer
+  relationship with the retailer, shown "Name (Direct)" — has no deal, so the
+  field is not shown and the API refuses a deal ID for it. Several campaigns
+  may carry the same deal ID. Before approval the advertiser may change the
+  association; changing it on an approved campaign sends it back to Awaiting
+  approval, like any other resubmission.
 - **Creative ID** — minted (or chosen) by **HQ on approval**. It signals
   that this group of campaigns is approved and biddable. It spans **one
   advertiser** only, and a campaign belongs to at most one.
@@ -1149,6 +1159,7 @@ tickets must satisfy.
 | B2 | Private auction | Approve a subset of a deal into a new ID | Subset `approved` with the ID; the rest Awaiting approval |
 | B3 | Private auction | A second round approves another subset | Into a new ID, or an existing one; the deal now holds one or more IDs |
 | B4 | Private auction | Selection mixing two deals, or deal and non-deal | Assign actions hidden; API 400; nothing approved |
+| B12 | Private auction | Change a campaign's deal before / after approval | Before: changes in place. After: back to Awaiting approval. A deal the advertiser is not invited to: 400 |
 | B5 | Private auction | Picker for a deal campaign | Lists only that deal's creative IDs |
 | B6 | Private auction | Reject one campaign with a reason, approve the rest | Rejected one carries the reason; others approved into the ID; deal not blocked |
 | B7 | Private auction | Rejected campaign resubmitted fixed | Picker pre-highlights the deal group's ID; approving attaches to the SAME ID, none minted |
@@ -1161,9 +1172,17 @@ the screens (ticket DLhjuhbTqJS2uAvhh0I8).
 
 Built:
 
-- `dealId` on the campaign: the Partner API takes an optional non-empty
-  `dealId` (an empty string is 400); stored in `campaigns.deal_id`
-  (migration 0065); returned on campaign status, `GET /admin/v1/campaigns`
+- `dealId` on the campaign (ticket IQndewUPKJHbHRR2hAgG): the Partner API
+  takes an optional `dealId` that must be the platform-minted `dealId` of a
+  buyers list the advertiser is an invited buyer on (400 `validation_failed`
+  otherwise, including any deal ID for an advertiser with no mapped DSP seats,
+  which is every direct advertiser); the same rule holds for the added deals on
+  `PUT …/campaigns/{id}/deals` (admin and Partner), where a change on an
+  approved campaign resubmits it (`returned_for_review`, never a reused
+  clearance). The picker's source is `GET /admin/v1/advertisers/{id}/deals`
+  (name and `dealId`). Stored in `campaigns.deal_id` (migration 0065, a
+  reference by value to `buyers_lists.deal_id`, which is unique and immutable);
+  the campaign detail page shows the deal IDs only when there are any; returned on campaign status, `GET /admin/v1/campaigns`
   and on creative-ID members.
 - One deal per creative ID, enforced server-side: approve-assign and
   assign-creative-id answer 400 on a mixed selection or on another deal's

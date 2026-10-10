@@ -362,6 +362,15 @@ export function createApprovalService(o: ApprovalServiceOptions) {
         const at = now()
         for (const d of have) if (!want.has(d)) await store.removeDeal(campaignId, d)
         for (const d of want) if (!have.has(d)) await store.addDeal(campaignId, d, actor, at)
+        /* Changing the deal association of an approved campaign sends it back for approval (ticket
+           IQndewUPKJHbHRR2hAgG), like any other change to it. Never a reused clearance: the
+           creative's bytes are unchanged, but the deal it will run under is not. Before approval
+           there is nothing to resubmit. */
+        const changed = [...want].some((d) => !have.has(d)) || [...have].some((d) => !want.has(d))
+        if (changed && (await statusOf(c)) === 'approved') {
+          const latest = await store.latest(campaignId)
+          await apply(c, { type: 'change', requiresApproval: await o.requiresApproval(c.advertiserId), preCleared: false }, actor, { checks: await withClearance(c, latest?.checks ?? []) })
+        }
         return toView(c, false)
       })
     },
