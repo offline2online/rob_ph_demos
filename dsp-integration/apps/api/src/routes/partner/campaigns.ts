@@ -25,7 +25,7 @@ type PricingType = (typeof PRICING_TYPES)[number]
 type Detail = { field: string; reason: string }
 
 interface CreateBody {
-  advertiserId?: unknown; name?: unknown; displayTypeId?: unknown; slot?: unknown; brief?: unknown
+  advertiserId?: unknown; name?: unknown; dealId?: unknown; displayTypeId?: unknown; slot?: unknown; brief?: unknown
   default?: { pricingType?: unknown }
   targeted?: { id?: unknown; priority?: unknown; pricingType?: unknown; rules?: unknown }[]
 }
@@ -40,9 +40,9 @@ export const partnerAdvertiser = (p: PartnerRecord, advertiserId: string) => p.s
    and rejectedEdit says so, with the reason, until the next edit.
    creativeId is the grouping the retailer assigned on approval (null until
    then); an advertiser reads pending, rejected + reason, or that ID here. */
-const statusView = (a: Pick<Approval, 'campaignId' | 'status' | 'mode' | 'reason' | 'assetVersion' | 'liveAssetVersion' | 'pendingEdit' | 'rejectedEdit' | 'creativeId'>) => ({
+const statusView = (a: Pick<Approval, 'campaignId' | 'status' | 'mode' | 'reason' | 'assetVersion' | 'liveAssetVersion' | 'pendingEdit' | 'rejectedEdit' | 'creativeId' | 'dealId'>) => ({
   campaignId: a.campaignId, status: a.status, mode: a.mode, reason: a.reason, assetVersion: a.assetVersion,
-  creativeId: a.creativeId, liveAssetVersion: a.liveAssetVersion, pendingEdit: a.pendingEdit, ...(a.rejectedEdit ? { rejectedEdit: a.rejectedEdit } : {}),
+  creativeId: a.creativeId, dealId: a.dealId ?? null, liveAssetVersion: a.liveAssetVersion, pendingEdit: a.pendingEdit, ...(a.rejectedEdit ? { rejectedEdit: a.rejectedEdit } : {}),
 })
 
 const approvalError = (e: unknown) => (e instanceof ApprovalError ? new HttpError(e.status, e.code, e.message) : e)
@@ -70,6 +70,11 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
     if (typeof b.advertiserId !== 'string' || !partnerAdvertiser(req.partner, b.advertiserId)) invalid.push({ field: 'advertiserId', reason: `Not an advertiser on ${req.partner.name}.` })
     if (typeof b.name !== 'string' || !b.name.trim()) invalid.push({ field: 'name', reason: 'Required.' })
     else if (b.name.trim().length > lim.nameLength) invalid.push({ field: 'name', reason: `At most ${lim.nameLength} characters.` })
+    /* dealId (optional): the private-auction deal the advertiser groups this
+       campaign under. Present, it must be a non-empty string. */
+    const dealId = typeof b.dealId === 'string' ? b.dealId.trim() : b.dealId
+    if (b.dealId !== undefined && (typeof dealId !== 'string' || !dealId)) invalid.push({ field: 'dealId', reason: 'A non-empty deal ID.' })
+    else if (typeof dealId === 'string' && dealId.length > lim.nameLength) invalid.push({ field: 'dealId', reason: `At most ${lim.nameLength} characters.` })
     const dt = typeof b.displayTypeId === 'string' ? await ctx.displayTypes.get(b.displayTypeId) : null
     if (b.displayTypeId !== undefined && (typeof b.displayTypeId !== 'string' || !dt)) invalid.push({ field: 'displayTypeId', reason: 'Unknown display type.' })
     /* slot (optional): which of the display type's advertiser slots this
@@ -149,6 +154,7 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
       advertiserId: b.advertiserId as string, partnerId: req.partner.id, displayTypeId: (b.displayTypeId as string | undefined) ?? null,
       pricingType,
       ...(brief.brief ? { brief: brief.brief } : {}),
+      ...(typeof dealId === 'string' ? { dealId } : {}),
     })
     return reply.status(201).send(statusView(await ctx.approvals.view(c.campaignId)))
   })

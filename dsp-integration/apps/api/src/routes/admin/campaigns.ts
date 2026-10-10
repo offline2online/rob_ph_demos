@@ -16,6 +16,7 @@ export const campaignRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync
     partnerId: c.partnerId, partnerName: c.partnerName, displayTypeId: r?.displayTypeId ?? null, pricingType: r?.pricingType ?? null, schedule: scheduleOf(c.campaignId, held), lastPlayedAt: lastPlayed.get(c.campaignId) ?? null, activation: c.activation,
     ...campaignLayerSummary(r?.targeting),
     ...(r?.brief ? { brief: r.brief } : {}),
+    ...(r?.dealId ? { dealId: r.dealId } : {}),
   })
   /* What the advertiser booked: the next window it holds, and how many (Rob, 20 Sep). */
   const scheduleOf = (campaignId: string, held: Held): Campaign['schedule'] => held.get(campaignId) ?? { nextWindowStart: null, bookedWindows: 0 }
@@ -35,9 +36,9 @@ export const campaignRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync
 
   /* The creative IDs in use, each with the campaigns grouped under it and the
      touch points they run on, so a reviewer picks one by its siblings. */
-  app.get<{ Querystring: { advertiserId?: string } }>('/creative-ids', async (req) => {
+  app.get<{ Querystring: { advertiserId?: string; dealId?: string } }>('/creative-ids', async (req) => {
     guards.flagged()
-    const items = await ctx.approvals.creativeIds(req.query.advertiserId || undefined)
+    const items = await ctx.approvals.creativeIds(req.query.advertiserId || undefined, req.query.dealId === undefined ? undefined : req.query.dealId || null)
     const platform = new Map((await ctx.campaigns.listCampaigns()).map((c) => [c.campaignId, c]))
     return { items: items.map((g) => ({ ...g, campaigns: g.campaigns.map((m) => ({ ...m, touchPoints: platform.get(m.campaignId)?.brief?.touchPoints ?? [] })) })) }
   })

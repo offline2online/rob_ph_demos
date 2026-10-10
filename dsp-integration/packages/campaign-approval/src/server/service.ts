@@ -80,6 +80,22 @@ export function createApprovalService(o: ApprovalServiceOptions) {
     return out
   }
 
+  /* A creative ID never straddles two deals (REQUIREMENTS.md, The two approval
+     flows, rule 3): the ticked campaigns share one deal (or all have none),
+     and an existing ID joined must already belong to that same deal. */
+  const checkDeal = async (campaigns: CampaignRef[], existingId: string | null) => {
+    const deal = campaigns[0].dealId ?? null
+    if (campaigns.some((c) => (c.dealId ?? null) !== deal)) throw new ApprovalError(400, 'validation_failed', 'A creative ID spans one deal only. Choose campaigns from a single deal, or campaigns with no deal.')
+    if (existingId) {
+      const members = new Set(campaigns.map((c) => c.campaignId))
+      for (const a of await store.assignments()) {
+        if (a.creativeId !== existingId || members.has(a.campaignId)) continue
+        const m = await o.campaigns.getCampaign(a.campaignId)
+        if (m && (m.dealId ?? null) !== deal) throw new ApprovalError(400, 'validation_failed', deal ? `That creative ID does not belong to deal ${deal}.` : 'That creative ID belongs to a deal; these campaigns have none.')
+      }
+    }
+  }
+
   const toView = async (c: CampaignRef, full: boolean): Promise<Approval> => {
     const r = await currentRow(c)
     const live = await store.liveVersion(c.campaignId)
@@ -93,6 +109,7 @@ export function createApprovalService(o: ApprovalServiceOptions) {
       ...(r?.assetReasons?.length ? { assetReasons: r.assetReasons } : {}),
       checks: r?.checks ?? [],
       creativeId,
+      dealId: c.dealId ?? null,
       liveAssetVersion: live, pendingEdit: !!live && live !== c.assetVersion && r?.status === 'awaiting_approval',
       ...(discarded ? { rejectedEdit: discarded } : {}),
       ...(full ? { targetingSummary: c.targetingSummary, creative: c.creative, canvas: c.canvas, audit: trail! } : {}),
@@ -243,6 +260,7 @@ export function createApprovalService(o: ApprovalServiceOptions) {
           if (!existing) throw new ApprovalError(404, 'not_found', 'That creative ID does not exist.')
           if (existing.advertiserId !== advertiserId) throw new ApprovalError(400, 'validation_failed', 'That creative ID belongs to a different advertiser.')
         }
+        await checkDeal(campaigns, creativeId)
         const at = now()
         let target = creativeId
         if (!target) {
@@ -288,6 +306,7 @@ export function createApprovalService(o: ApprovalServiceOptions) {
           if (!existing) throw new ApprovalError(404, 'not_found', 'That creative ID does not exist.')
           if (existing.advertiserId !== advertiserId) throw new ApprovalError(400, 'validation_failed', 'That creative ID belongs to a different advertiser.')
         }
+        await checkDeal(campaigns, creativeId)
         const at = now()
         let target = creativeId
         if (!target) {
@@ -308,7 +327,7 @@ export function createApprovalService(o: ApprovalServiceOptions) {
     /* The creative IDs in use, each with the campaigns grouped under it — so
        a reviewer picks an existing one by seeing its siblings. An ID whose
        campaigns have all moved on is not listed. The host adds touch points. */
-    async creativeIds(advertiserId?: string): Promise<CreativeIdView[]> {
+    async creativeIds(advertiserId?: string, dealId?: string | null): Promise<CreativeIdView[]> {
       const members = new Map<string, string[]>()
       for (const a of await store.assignments()) members.set(a.creativeId, [...(members.get(a.creativeId) ?? []), a.campaignId])
       const out: CreativeIdView[] = []
@@ -319,9 +338,11 @@ export function createApprovalService(o: ApprovalServiceOptions) {
           const c = await o.campaigns.getCampaign(id)
           if (!c) continue
           advertiserName ??= c.advertiserName
-          campaigns.push({ campaignId: id, name: c.name, touchPoints: [] })
+          campaigns.push({ campaignId: id, name: c.name, touchPoints: [], dealId: c.dealId ?? null })
         }
-        if (campaigns.length) out.push({ creativeId: row.creativeId, advertiserId: row.advertiserId, advertiserName, createdAt: row.createdAt, campaigns })
+        const deal = campaigns.find((m) => m.dealId)?.dealId ?? null
+        /* dealId undefined lists every ID; null lists direct IDs only; a string lists that deal's. */
+        if (campaigns.length && (dealId === undefined || deal === dealId)) out.push({ creativeId: row.creativeId, advertiserId: row.advertiserId, advertiserName, createdAt: row.createdAt, dealId: deal, campaigns })
       }
       return out
     },

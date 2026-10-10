@@ -374,12 +374,12 @@ describe('Campaign Status stand-in', () => {
     /* The filters name themselves and list what is there (Rob, 20 Sep). */
     expect((await within(grid).findAllByLabelText('Advertiser filter', {}, { timeout: 10000 })).length).toBeGreaterThan(0)
     expect(within(grid).getAllByLabelText('DSP filter').length).toBeGreaterThan(0)
-    /* A selection box first, then Activation, Advertiser, Received and Status;
+    /* Pinned left: the selection box, Advertiser and Deal ID; then Activation, Received and Status;
        one row is one campaign (Campaign name, Touch points, Creative ID — no
        Playlist name or No. of campaigns), grouped by advertiser (ticket
        IDGsyELBJsjlAYjizSqT). */
     expect([...grid.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent)).toEqual([
-      '', 'Activation', 'Advertiser', 'Received', 'Status', 'Campaign name', 'Touch points', 'Creative ID', 'DSP', 'Localised variables', 'Personalised variables', 'Last used', '',
+      '', 'Advertiser', 'Deal ID', 'Activation', 'Received', 'Status', 'Campaign name', 'Touch points', 'Creative ID', 'DSP', 'Localised variables', 'Personalised variables', 'Last used', '',
     ])
     expect(await within(grid).findByText('Swisse spring', {}, { timeout: 10000 })).toBeInTheDocument()
     /* The touch points it runs on, and the high-level variable summary. */
@@ -1143,4 +1143,98 @@ describe('Change history page', () => {
     await waitFor(() => expect(fetchMock.mock.calls.some(([u]) => String(u).includes('fieldPrefix=floorCpm'))).toBe(true))
     expect(await screen.findByText('No changes match these filters.')).toBeInTheDocument()
   })
+})
+
+
+/* Deal IDs (ticket DLhjuhbTqJS2uAvhh0I8): the table groups advertiser → deal ID →
+   campaign; the group cells carry tick-all boxes on the one selection set. */
+describe('Upcoming Campaign Approval — deal IDs', () => {
+  const base = {
+    source: 'api', partnerId: 'p_google', partnerName: 'Google DSP', displayTypeId: 'portrait', pricingType: 'localised', activation: { enabled: false },
+    schedule: { nextWindowStart: null, bookedWindows: 0 }, lastPlayedAt: null, brief: { details: 'x', touchPoints: ['Digital Signage'] },
+    campaignCount: 1, localisedVariables: [], localisedRuleLines: [], personalisedVariables: [], personalisedRuleLines: [],
+  }
+  const camp = (campaignId: string, name: string, advertiserId: string, advertiserName: string, dealId?: string) => ({ ...base, campaignId, name, advertiserId, advertiserName, ...(dealId ? { dealId } : {}) })
+  const approvalOf = (c: { campaignId: string; name: string }, status = 'awaiting_approval', creativeId: string | null = null, dealId: string | null = null) => ({
+    campaignId: c.campaignId, campaignName: c.name, status, mode: 'manual', assetVersion: 'v1', submittedAt: '2026-10-01T00:00:00.000Z', reviewedBy: null, reviewedAt: null, reason: null, checks: [], creativeId, dealId,
+  })
+  const a1 = camp('d1', 'Swisse sleep', 'swisse', 'Swisse', 'PMP-1')
+  const a2 = camp('d2', 'Swisse energy', 'swisse', 'Swisse', 'PMP-1')
+  const a3 = camp('d3', 'Swisse focus', 'swisse', 'Swisse', 'PMP-2')
+  const a4 = camp('d4', 'Swisse direct', 'swisse', 'Swisse')
+  const n1 = camp('d5', 'Nestlé oats', 'nestle', 'Nestlé', 'PMP-9')
+  const campaigns = [a1, a2, a3, a4, n1]
+  const routes: Record<string, unknown> = {
+    '/api/admin/v1/campaigns': { items: campaigns },
+    ...Object.fromEntries(campaigns.map((c) => [`/api/admin/v1/campaigns/${c.campaignId}/approval`, approvalOf(c, 'awaiting_approval', null, c.dealId ?? null)])),
+    '/api/admin/v1/creative-ids': {
+      items: [{ creativeId: 'CR-DEAL0001', advertiserId: 'swisse', advertiserName: 'Swisse', dealId: 'PMP-1', createdAt: '2026-10-01T00:00:00.000Z', campaigns: [{ campaignId: 'd9', name: 'Swisse nap', touchPoints: ['Digital Signage'], dealId: 'PMP-1' }] }],
+    },
+    '/api/admin/v1/booking-schedule': { currency: 'AUD', windows: [], positions: [], revenue: [], dsps: [], byPricingType: [], totals: { bookedWindows: 0, bookedRevenue: 0, billedRevenue: 0 } },
+  }
+  const posts: { url: string; body: any }[] = []
+  const gets: string[] = []
+  beforeEach(() => {
+    posts.length = 0
+    gets.length = 0
+    const get = fakeFetch(routes as never)
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        posts.push({ url, body: JSON.parse(String(init.body)) })
+        return new Response(JSON.stringify({ creativeId: 'CR-NEW00000', approvals: [] }), { status: 200 })
+      }
+      gets.push(url)
+      return get(url)
+    }))
+  })
+  const open = async () => {
+    renderAt('/booking-schedule?tab=campaign-status')
+    const grid = await screen.findByLabelText('Campaign Status')
+    await within(grid).findByLabelText('Select Swisse sleep', {}, { timeout: 10000 })
+    return grid
+  }
+  const ticked = (grid: HTMLElement) => [...grid.querySelectorAll<HTMLInputElement>('input[aria-label^="Select "]:checked')].map((i) => i.getAttribute('aria-label')).filter((l) => !l?.startsWith('Select all '))
+
+  it('shows each advertiser and deal once, with a tick-all box on it', async () => {
+    const grid = await open()
+    expect(within(grid).getAllByLabelText('Select all Swisse')).toHaveLength(1)
+    expect(within(grid).getAllByLabelText('Select all PMP-1')).toHaveLength(1)
+    expect(within(grid).getAllByLabelText('Select all PMP-2')).toHaveLength(1)
+    /* The no-deal campaign sits under its advertiser with no deal layer. */
+    expect(within(grid).getAllByLabelText(/^Select all /)).toHaveLength(5)
+  }, slow(45000))
+
+  it('ticks a deal’s campaigns from its box, an advertiser’s from its box, and shows partial', async () => {
+    const grid = await open()
+    fireEvent.click(within(grid).getByLabelText('Select all PMP-1'))
+    await waitFor(() => expect(ticked(grid)).toEqual(['Select Swisse energy', 'Select Swisse sleep']))
+    expect(await screen.findByText('2 selected')).toBeInTheDocument()
+    fireEvent.click(within(grid).getByLabelText('Select all Swisse'))
+    await waitFor(() => expect(ticked(grid)).toHaveLength(4))
+    fireEvent.click(within(grid).getByLabelText('Select Swisse direct'))
+    await waitFor(() => expect((within(grid).getByLabelText('Select all Swisse') as HTMLInputElement).indeterminate).toBe(true))
+  }, slow(45000))
+
+  it('hides the assign actions across advertisers or deals, keeping Reject', async () => {
+    const grid = await open()
+    fireEvent.click(within(grid).getByLabelText('Select all PMP-1'))
+    expect(await screen.findByRole('button', { name: 'Approve + assign to new creative ID' })).toBeInTheDocument()
+    fireEvent.click(within(grid).getByLabelText('Select Swisse focus'))
+    await waitFor(() => expect(screen.queryByRole('button', { name: /Approve \+ assign/ })).not.toBeInTheDocument())
+    expect(screen.getByText(/one deal, or none/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reject…' })).toBeInTheDocument()
+    fireEvent.click(within(grid).getByLabelText('Select all PMP-9'))
+    await waitFor(() => expect(screen.getByText(/one advertiser/)).toBeInTheDocument())
+  }, slow(45000))
+
+  it('asks for the deal’s IDs and pre-highlights the deal’s only one, tagged same deal', async () => {
+    const grid = await open()
+    fireEvent.click(within(grid).getByLabelText('Select all PMP-1'))
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve + assign to existing creative ID' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(await within(dialog).findByText('same deal (PMP-1)', {}, { timeout: 5000 })).toBeInTheDocument()
+    await waitFor(() => expect(within(dialog).getByRole('radio', { name: /CR-DEAL0001/ })).toBeChecked())
+    expect(gets.some((u) => u.includes('creative-ids') && u.includes('dealId=PMP-1'))).toBe(true)
+    expect(within(dialog).getByRole('button', { name: 'Approve + assign to CR-DEAL0001' })).toBeInTheDocument()
+  }, slow(45000))
 })

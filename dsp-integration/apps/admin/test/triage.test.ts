@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Campaign } from '@ph-dsp/types'
-import { byAdvertiser, elapsedSince, triageOrder } from '../src/features/campaign-status/triage'
+import { byAdvertiserDeal, elapsedSince, triageOrder } from '../src/features/campaign-status/triage'
 
 const c = (campaignId: string, lastPlayedAt: string | null = null) => ({ campaignId, name: campaignId, lastPlayedAt }) as unknown as Campaign
 const ap = (status: string, submittedAt: string | null = null) => ({ status, submittedAt }) as never
@@ -27,6 +27,11 @@ describe('Upcoming Campaign Approval grouping', () => {
   const a = (id: string, advertiserName: string | null) => ({ campaignId: id, name: id, advertiserName }) as unknown as Campaign
   it('groups by advertiser A–Z, keeping the given order inside each group and unattributed rows last', () => {
     const rows = [a('1', 'Swisse'), a('2', null), a('3', 'Nestlé'), a('4', 'Swisse'), a('5', 'Nestlé')]
-    expect(byAdvertiser(rows).map((r) => r.campaignId)).toEqual(['3', '5', '1', '4', '2'])
+    expect(byAdvertiserDeal(rows).map((r) => r.campaignId)).toEqual(['3', '5', '1', '4', '2'])
+  })
+  it('puts deals A–Z under their advertiser, with no-deal campaigns after them', () => {
+    const d = (id: string, advertiserName: string, dealId?: string) => ({ campaignId: id, name: id, advertiserName, ...(dealId ? { dealId } : {}) }) as unknown as Campaign
+    const rows = [d('1', 'Swisse'), d('2', 'Swisse', 'PMP-2'), d('3', 'Swisse', 'PMP-1'), d('4', 'Swisse', 'PMP-2'), d('5', 'Nestlé')]
+    expect(byAdvertiserDeal(rows).map((r) => r.campaignId)).toEqual(['5', '3', '2', '4', '1'])
   })
 })

@@ -20,7 +20,7 @@ export interface PocLookups {
   listeners?: Set<(id: string) => void>
 }
 
-interface Row { id: string; name: string; source: CampaignRef['source']; advertiser_id: string | null; partner_id: string | null; display_type_id: string | null; activation_enabled: number; targeting: string | null }
+interface Row { id: string; name: string; source: CampaignRef['source']; advertiser_id: string | null; partner_id: string | null; display_type_id: string | null; activation_enabled: number; targeting: string | null; deal_id?: string | null }
 interface AssetRow { version: number; role: string; file: string; mime_type: string; width: number; height: number; content_hash: string | null }
 
 /* This adapter's assetVersion is `v<n>`, n the highest campaign_assets
@@ -49,6 +49,7 @@ export function pocCampaignSource(db: SqlDb, lookups: PocLookups): CampaignSourc
       campaignId: r.id, name: r.name, source: r.source,
       advertiserId: r.advertiser_id, advertiserName: r.advertiser_id ? await lookups.advertiserName(r.advertiser_id) : null,
       partnerId: r.partner_id, partnerName: r.partner_id ? await lookups.partnerName(r.partner_id) : null,
+      dealId: r.deal_id ?? null,
       activation: { enabled: !!r.activation_enabled },
       assetVersion: `v${version}`,
       targetingSummary: await lookups.targetingSummary(r.targeting ? JSON.parse(r.targeting) : null),

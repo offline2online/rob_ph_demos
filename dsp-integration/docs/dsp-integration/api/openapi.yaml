@@ -1457,9 +1457,8 @@ paths:
         can accumulate several creative IDs; a selection must not mix deals,
         or deal and non-deal campaigns, and an existing ID must belong to the
         same deal. A campaign rejected and resubmitted fixed joins the creative
-        ID already minted for its deal group. (Deal-ID behaviour lands with
-        ticket DLhjuhbTqJS2uAvhh0I8; see REQUIREMENTS.md, *The two approval
-        flows*.)
+        ID already minted for its deal group. A mixed selection, or an existing ID
+        of another deal, is a 400 and approves none.
       security: [{adminSession: [approver]}]
       requestBody:
         required: true
@@ -1550,6 +1549,7 @@ paths:
       security: [{adminSession: []}]
       parameters:
         - {name: advertiserId, in: query, required: false, schema: {type: string}}
+        - {name: dealId, in: query, required: false, schema: {type: string}, description: 'Only the IDs of this deal; an empty value lists only direct IDs (no deal). Omitted lists every ID. The picker sends the selected campaigns'' deal so a deal campaign never sees another deal''s IDs.'}
       responses:
         '200':
           description: Creative IDs
@@ -1563,9 +1563,10 @@ paths:
                     type: array
                     items:
                       type: object
-                      required: [creativeId, advertiserId, advertiserName, createdAt, campaigns]
+                      required: [creativeId, advertiserId, advertiserName, createdAt, dealId, campaigns]
                       properties:
                         creativeId: {type: string}
+                        dealId: {type: [string, 'null'], description: The deal every member belongs to; null for a direct ID. An ID never straddles two deals.}
                         advertiserId: {type: string}
                         advertiserName: {type: [string, 'null']}
                         createdAt: {type: string, format: date-time}
@@ -1573,10 +1574,11 @@ paths:
                           type: array
                           items:
                             type: object
-                            required: [campaignId, name, touchPoints]
+                            required: [campaignId, name, touchPoints, dealId]
                             properties:
                               campaignId: {type: string}
                               name: {type: string}
+                              dealId: {type: [string, 'null'], description: The deal this member campaign belongs to; null for a direct campaign. The picker pre-highlights the ID whose members share a selected campaign's deal.}
                               touchPoints: {type: array, items: {type: string}}
         '401': {$ref: '#/components/responses/Unauthorised'}
   /admin/v1/campaigns/{campaignId}/approval:
@@ -2289,6 +2291,7 @@ components:
       properties:
         advertiserId: {type: string}
         name: {type: string, maxLength: 200}
+        dealId: {type: string, maxLength: 200, description: 'Optional private-auction deal ID the advertiser groups this campaign under (set at authoring in PH Core). The retailer approves a deal''s campaigns in subsets, each subset into a creative ID. Omitted for a direct campaign; present, it must be non-empty.'}
         displayTypeId: {type: string}
         slot:
           type: integer
@@ -2392,6 +2395,13 @@ components:
             The creative ID the retailer grouped this campaign under when it
             approved it (the grouping a DSP bids on); null until then. A
             resubmitted creative keeps it while it awaits re-approval.
+        dealId:
+          type: [string, 'null']
+          description: |
+            The private-auction deal ID the advertiser set on the campaign at
+            authoring, as submitted; null for a direct campaign. Never changes
+            through approval. The creative ID is separate: minted by the
+            retailer on approval, and a deal can accumulate more than one.
         liveAssetVersion:
           type: [string, 'null']
           description: |
@@ -3324,6 +3334,13 @@ components:
             The creative ID the retailer grouped this campaign under when it
             approved it (the grouping a DSP bids on); null until then. A
             resubmitted creative keeps it while it awaits re-approval.
+        dealId:
+          type: [string, 'null']
+          description: |
+            The private-auction deal ID the advertiser set on the campaign at
+            authoring, as submitted; null for a direct campaign. Never changes
+            through approval. The creative ID is separate: minted by the
+            retailer on approval, and a deal can accumulate more than one.
         liveAssetVersion:
           type: [string, 'null']
           description: |
@@ -3650,6 +3667,7 @@ components:
         source: {type: string, enum: [hq, api, dsp]}
         advertiserId: {type: [string, 'null']}
         advertiserName: {type: [string, 'null']}
+        dealId: {type: string, description: The private-auction deal ID the advertiser tagged this campaign with; absent for a direct campaign.}
         partnerId: {type: [string, 'null']}
         partnerName: {type: [string, 'null']}
         displayTypeId: {type: [string, 'null']}

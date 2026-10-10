@@ -931,6 +931,16 @@ export interface paths {
          *     version, a mixed advertiser or a campaign that is not awaiting approval
          *     approves none of them. The advertiser reads the result as `creativeId`
          *     on the campaign's status.
+         *
+         *     **Two flows use this one endpoint.** A *direct* campaign has no deal
+         *     ID. A *private-auction* campaign carries the `dealId` its advertiser
+         *     set at authoring time; the caller never sends it, it is read from the
+         *     campaigns. A deal is approved per subset across rounds, so one deal
+         *     can accumulate several creative IDs; a selection must not mix deals,
+         *     or deal and non-deal campaigns, and an existing ID must belong to the
+         *     same deal. A campaign rejected and resubmitted fixed joins the creative
+         *     ID already minted for its deal group. A mixed selection, or an existing ID
+         *     of another deal, is a 400 and approves none.
          */
         post: operations["approveAndAssignCreativeId"];
         delete?: never;
@@ -1627,6 +1637,8 @@ export interface components {
         CampaignCreate: {
             advertiserId: string;
             name: string;
+            /** @description Optional private-auction deal ID the advertiser groups this campaign under (set at authoring in PH Core). The retailer approves a deal's campaigns in subsets, each subset into a creative ID. Omitted for a direct campaign; present, it must be non-empty. */
+            dealId?: string;
             displayTypeId?: string;
             /**
              * @description Which of displayTypeId's advertiser-owned slots this submission
@@ -1712,6 +1724,13 @@ export interface components {
              *     resubmitted creative keeps it while it awaits re-approval.
              */
             creativeId?: string | null;
+            /**
+             * @description The private-auction deal ID the advertiser set on the campaign at
+             *     authoring, as submitted; null for a direct campaign. Never changes
+             *     through approval. The creative ID is separate: minted by the
+             *     retailer on approval, and a deal can accumulate more than one.
+             */
+            dealId?: string | null;
             /**
              * @description The approved version that is running — eligible for reservation,
              *     bidding and hand-off — whatever is under review (open question 38,
@@ -2654,6 +2673,13 @@ export interface components {
              */
             creativeId: string | null;
             /**
+             * @description The private-auction deal ID the advertiser set on the campaign at
+             *     authoring, as submitted; null for a direct campaign. Never changes
+             *     through approval. The creative ID is separate: minted by the
+             *     retailer on approval, and a deal can accumulate more than one.
+             */
+            dealId?: string | null;
+            /**
              * @description The approved version that is running — eligible for reservation,
              *     bidding and hand-off — whatever is under review (open question 38,
              *     resolved 29 Sep 2026). null until a version has been approved.
@@ -2958,6 +2984,8 @@ export interface components {
             source: "hq" | "api" | "dsp";
             advertiserId?: string | null;
             advertiserName?: string | null;
+            /** @description The private-auction deal ID the advertiser tagged this campaign with; absent for a direct campaign. */
+            dealId?: string;
             partnerId?: string | null;
             partnerName?: string | null;
             displayTypeId?: string | null;
@@ -4785,6 +4813,8 @@ export interface operations {
         parameters: {
             query?: {
                 advertiserId?: string;
+                /** @description Only the IDs of this deal; an empty value lists only direct IDs (no deal). Omitted lists every ID. The picker sends the selected campaigns' deal so a deal campaign never sees another deal's IDs. */
+                dealId?: string;
             };
             header?: never;
             path?: never;
@@ -4801,6 +4831,8 @@ export interface operations {
                     "application/json": {
                         items: {
                             creativeId: string;
+                            /** @description The deal every member belongs to; null for a direct ID. An ID never straddles two deals. */
+                            dealId: string | null;
                             advertiserId: string;
                             advertiserName: string | null;
                             /** Format: date-time */
@@ -4808,6 +4840,8 @@ export interface operations {
                             campaigns: {
                                 campaignId: string;
                                 name: string;
+                                /** @description The deal this member campaign belongs to; null for a direct campaign. The picker pre-highlights the ID whose members share a selected campaign's deal. */
+                                dealId: string | null;
                                 touchPoints: string[];
                             }[];
                         }[];
