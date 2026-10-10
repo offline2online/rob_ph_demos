@@ -840,6 +840,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Platform users (Company Settings → Users) */
+        get: operations["listPlatformUsers"];
+        put?: never;
+        /** Add a user. An Advertiser user is bound to one advertiser from GET /admin/v1/advertisers. */
+        post: operations["addPlatformUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/users/{email}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Change a user's name, role or advertiser. The email address cannot change. */
+        put: operations["savePlatformUser"];
+        post?: never;
+        /** Remove a user */
+        delete: operations["removePlatformUser"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/users/{email}/scope": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What a user may see. An Advertiser user is limited to their own advertiser's campaigns; PH Core reads this when it signs them in. */
+        get: operations["getPlatformUserScope"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/approvals": {
         parameters: {
             query?: never;
@@ -2444,6 +2497,30 @@ export interface components {
             approvalRequired: boolean;
             /** @default 1 */
             floorMultiplier: number;
+        };
+        PlatformUserInput: {
+            firstName: string;
+            lastName?: string;
+            /** @description Required when adding; ignored on save (it cannot change). */
+            email?: string;
+            /** @enum {string} */
+            role: "Admin" | "Marketing" | "Help Desk" | "Advertiser";
+            /** @description Required for role Advertiser; an advertiserId from GET /admin/v1/advertisers. */
+            advertiserId?: string;
+            /** @description Send the invitation email (PH Core sends it). Add only. */
+            invite?: boolean;
+        };
+        PlatformUser: {
+            email: string;
+            firstName: string;
+            lastName: string;
+            /** @enum {string} */
+            role: "Admin" | "Marketing" | "Help Desk" | "Advertiser";
+            advertiserId: string | null;
+            advertiserName: string | null;
+            advertiserDirect: boolean | null;
+            invited: boolean;
+            lastLoginAt: string | null;
         };
         Advertiser: components["schemas"]["AdvertiserSetting"] & {
             advertiserId: string;
@@ -4350,6 +4427,157 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    listPlatformUsers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Users */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["PlatformUser"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorised"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    addPlatformUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlatformUserInput"];
+            };
+        };
+        responses: {
+            /** @description Added */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformUser"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorised"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    savePlatformUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                email: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlatformUserInput"];
+            };
+        };
+        responses: {
+            /** @description Saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformUser"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorised"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    removePlatformUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                email: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorised"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getPlatformUserScope: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                email: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Scope */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        email: string;
+                        role: string;
+                        /** @description Null for an internal user (not limited to one advertiser). */
+                        advertiser: {
+                            advertiserId: string;
+                            name: string;
+                            direct: boolean;
+                            bookings: number;
+                            campaigns: {
+                                [key: string]: number;
+                            };
+                        } | null;
+                        campaigns: {
+                            campaignId: string;
+                            name: string;
+                            activation: {
+                                enabled: boolean;
+                            };
+                            approval: string;
+                        }[];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorised"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     listApprovals: {

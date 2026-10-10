@@ -32,6 +32,16 @@ export type Access = 'all' | string[]
 
 export const DEFAULT_ADVERTISER_SETTING: AdvertiserSettingRecord = { approvalRequired: true, floorMultiplier: 1 }
 
+export interface PlatformUserRecord {
+  email: string
+  firstName: string
+  lastName: string
+  role: 'Admin' | 'Marketing' | 'Help Desk' | 'Advertiser'
+  advertiserId: string | null
+  invited: boolean
+  lastLoginAt: string | null
+}
+
 export interface CompanySettingsRepo {
   get(): Awaitable<CompanySettings>
   save(s: CompanySettings): Awaitable<CompanySettings>
@@ -42,9 +52,18 @@ export interface CompanySettingsRepo {
   directAdvertisers(): Awaitable<DirectAdvertiserRecord[]>
   addDirectAdvertiser(advertiserId: string, name: string): Awaitable<void>
   removeDirectAdvertiser(advertiserId: string): Awaitable<void>
+  /* Platform users (Company Settings -> Users), by first name. */
+  platformUsers(): Awaitable<PlatformUserRecord[]>
+  platformUser(email: string): Awaitable<PlatformUserRecord | null>
+  /* Insert or replace by email (the key, lower-cased by the caller). */
+  savePlatformUser(u: PlatformUserRecord): Awaitable<void>
+  removePlatformUser(email: string): Awaitable<boolean>
   variableAccess(): Awaitable<Record<string, Access>>
   saveVariableAccess(access: Record<string, Access>): Awaitable<void>
 }
+
+interface UserRow { email: string; first_name: string; last_name: string; role: PlatformUserRecord['role']; advertiser_id: string | null; invited: number; last_login_at: string | null }
+const userOf = (r: UserRow): PlatformUserRecord => ({ email: r.email, firstName: r.first_name, lastName: r.last_name, role: r.role, advertiserId: r.advertiser_id, invited: r.invited === 1, lastLoginAt: r.last_login_at })
 
 const ID = 'company'
 interface Row {
@@ -153,6 +172,18 @@ export function sqliteCompanySettingsRepo(db: Db): CompanySettingsRepo {
     removeDirectAdvertiser(advertiserId) {
       prepared(db, 'DELETE FROM direct_advertisers WHERE advertiser_id = ?').run(advertiserId)
     },
+    platformUsers: () => (prepared(db, 'SELECT * FROM platform_users ORDER BY first_name, last_name, email').all() as unknown as UserRow[]).map(userOf),
+    platformUser: (email) => {
+      const r = prepared(db, 'SELECT * FROM platform_users WHERE email = ?').get(email) as unknown as UserRow | undefined
+      return r ? userOf(r) : null
+    },
+    savePlatformUser(u) {
+      prepared(db,
+        `INSERT INTO platform_users (email, first_name, last_name, role, advertiser_id, invited, last_login_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (email) DO UPDATE SET first_name = excluded.first_name, last_name = excluded.last_name, role = excluded.role, advertiser_id = excluded.advertiser_id`,
+      ).run(u.email, u.firstName, u.lastName, u.role, u.advertiserId, u.invited ? 1 : 0, u.lastLoginAt, now())
+    },
+    removePlatformUser: (email) => prepared(db, 'DELETE FROM platform_users WHERE email = ?').run(email).changes > 0,
     variableAccess() {
       const c = fresh()
       if (!c.access) {

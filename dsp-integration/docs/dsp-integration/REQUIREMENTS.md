@@ -777,6 +777,23 @@ twice. Picking one in a slot's Assigned to holds that slot for it and saves
 like a DSP advertiser (no DSP comes along, since it has none); before
 9 Oct 2026 the save was refused as "not an advertiser on any connected DSP".
 
+**Users page on the real API (10 Oct 2026, ticket H6BcvdNZUvdP8Ebh5Tve).**
+`mockups/platform-users.html` (Company Settings → Users) reads and saves
+through `GET/POST /admin/v1/users`, `PUT/DELETE /admin/v1/users/{email}`
+(table `platform_users`, migration 0064; admin only; email lower-cased, fixed
+after creation). Its Advertiser drop-down is `GET /admin/v1/advertisers`, the
+same source as this page: DSP advertisers, then direct ones as "Name (Direct)".
+Choosing **+ Add new advertiser…** in the modal calls
+`POST /admin/v1/advertisers/direct` first, so the advertiser exists on both
+pages at once, then saves the user against it. An Advertiser user must name a
+known advertiser. Internal users (Admin, Marketing, Help Desk) are stored the
+same way but have no sign-in behind them. **Signing in is PH Core's**
+(`api/PH-CORE-BOUNDARIES.md`): the API only supplies
+`GET /admin/v1/users/{email}/scope`, which returns the user's advertiser and
+only that advertiser's campaigns (with approval status), for PH Core to apply
+when it signs an Advertiser user in. This repo has no advertiser-facing login,
+insights or analytics screen to scope; that part needs the platform.
+
 **Admin and marketing users both see it** (Rob, 20 Sep): marketing reads it,
 and only an admin changes approval, pricing, what a position is assigned to
 or what targeting it supports. A read-only viewer sees a *Read only* pill in

@@ -16,6 +16,7 @@ import { playlistRoutes } from './playlists'
 import { sessionRoutes } from './session'
 import { sspAuditLogRoutes } from './sspAuditLog'
 import { testRoutes } from './test'
+import { userRoutes } from './users'
 
 export const adminRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => async (app) => {
   await app.register(sessionRoutes(ctx, guards))
@@ -25,6 +26,7 @@ export const adminRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync =>
   await app.register(advertiserSettingsRoutes(ctx, guards))
   await app.register(buyersListRoutes(ctx, guards))
   await app.register(advertiserRoutes(ctx, guards))
+  await app.register(userRoutes(ctx, guards))
   await app.register(bookingScheduleRoutes(ctx, guards))
   await app.register(bookingCapacityRoutes(ctx, guards))
   await app.register(exchangeRoutes(ctx, guards))
