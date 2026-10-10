@@ -242,3 +242,15 @@ const ITEMS = {
   console.log(`\n${passed} passed, ${failures.length} failed\n`);
   if (failures.length) process.exit(1);
 })();
+
+// A click's notification waits until every sent ticket has left Backlog.
+{
+  const { batchStillBuilding } = require("../scripts/run-backlog-automation.js");
+  const now = Date.now();
+  const project = { notifyRoutine: { status: "in-progress", firedAt: new Date(now - 60000).toISOString(), sentItemIds: ["a", "b", "c"] } };
+  assert.deepStrictEqual(batchStillBuilding(project, { a: { status: "backlog" }, b: { status: "ready-for-testing" }, c: { status: "backlog", blocked: { reason: "x" } } }, now), ["a"]);
+  assert.deepStrictEqual(batchStillBuilding(project, { a: { status: "ready-for-testing" }, b: { status: "backlog", buildSession: { status: "error" } }, c: null }, now), []);
+  const stale = { notifyRoutine: { ...project.notifyRoutine, firedAt: new Date(now - 4 * 3600e3).toISOString() } };
+  assert.deepStrictEqual(batchStillBuilding(stale, { a: { status: "backlog" } }, now), []);
+  console.log("ok - batchStillBuilding holds the notification until the click has landed");
+}

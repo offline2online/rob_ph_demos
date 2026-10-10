@@ -912,7 +912,7 @@ function unauthorized(res, detail) {
 // The board, as tools
 // ══════════════════════════════════════════════════════════════════════════
 
-const { applyIntake, isIntakeFlag, INTAKE_SETTER } = require("./intake");
+const { applyIntake, isIntakeFlag, INTAKE_SETTER, DESC_MAX } = require("./intake");
 
 const CATEGORIES = [
   "Pricing & Offers", "Product Assets", "HQ Admin", "Retail Admin",
@@ -1708,7 +1708,7 @@ const TOOLS = [
       type: "object",
       properties: {
         projectId: { type: "string", description: "Which project (from list_projects)." },
-        desc: { type: "string", description: "What the feature or bug is, in plain language. Up to 2000 characters." },
+        desc: { type: "string", description: "What the feature or bug is, in plain language. Up to " + DESC_MAX + " characters." },
         title: { type: "string", description: "Optional short title; derived from desc when omitted." },
         type: { type: "string", enum: ["feature", "bug"], description: "Default feature." },
         category: { type: "string", enum: CATEGORIES, description: "Area impacted; best-guessed from desc when omitted." },
@@ -1718,7 +1718,7 @@ const TOOLS = [
     async run(args, session) {
       const desc = String(args.desc || "").trim();
       if (!desc) return toolError("desc is required.");
-      if (desc.length > 2000) return toolError("desc is limited to 2000 characters (the board's own limit).");
+      if (desc.length > DESC_MAX) return toolError(`desc is ${desc.length} characters — the limit is ${DESC_MAX} (the board's own limit). Trim it and resubmit.`);
       const projectSnap = await db().collection("projects").doc(String(args.projectId)).get();
       if (!projectSnap.exists) return toolError(`No project with id ${args.projectId}. Call list_projects first.`);
       // ph-ticket-intake: structure into the four sections, infer type and
@@ -1780,7 +1780,7 @@ const TOOLS = [
       if (args.desc != null) {
         const d = String(args.desc).trim();
         if (!d) return toolError("desc cannot be emptied.");
-        if (d.length > 2000) return toolError("desc is limited to 2000 characters.");
+        if (d.length > DESC_MAX) return toolError(`desc is ${d.length} characters — the limit is ${DESC_MAX}. Trim it and resubmit.`);
         fields.desc = d;
       }
       if (args.type != null) {

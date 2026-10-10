@@ -312,7 +312,7 @@ service cloud.firestore {
     function isValidItemCommon() {
       return isNonEmptyBoundedString(incoming().projectId, 100) &&
         isNonEmptyBoundedString(incoming().title, 200) &&
-        isNonEmptyBoundedString(incoming().desc, 2000) &&
+        isNonEmptyBoundedString(incoming().desc, 10000) &&
         incoming().type in ["feature", "bug"] &&
         incoming().status in ["backlog", "ready-for-testing", "ready-to-publish", "published-live", "archived"] &&
         // previewUrl is rendered as a link on every member's board: http(s) only.
