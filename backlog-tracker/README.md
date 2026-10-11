@@ -1168,6 +1168,22 @@ deploy run colored by its outcome. Before this, confirming a batch of cards
 were genuinely live meant fetching the deployed `app.js` and comparing its
 hash against `main` by hand.
 
+**A transient deploy failure heals itself (10 Oct 2026).** PR #359's
+deploy (run 38087481082) failed on a one-off "Failed to make request to
+https://firestore.googleapis.com" and both of its cards sat at "Deploy
+failure" until a person re-ran it. Two changes stop that recurring:
+`deploy-backlog-tracker.yml` now retries that error (and connection
+resets/timeouts) like its other transient Google errors, and
+`reconcileDeployStatuses()` acts on a failed run via `healFailedDeploy()`:
+if a newer deploy of `main` succeeded, the card takes that run (main is
+cumulative, so it shipped this merge too); if a newer one is still going,
+it waits; if the failed run is still the newest, it re-runs its failed job
+once and the card goes back to "Deploy running…". A failure on that
+re-attempt is reported as a real one. Failed cards are also re-checked for
+a week after merging, so re-running the run by hand turns them green on
+the next tick. An older run is never re-run over a newer deploy — that
+would put older code live. Tests: `test/deploy-heal.test.js`.
+
 ### The New Item form nudges toward folding in a likely duplicate
 
 Three cards asking for the same thing, reworded three ways, were each

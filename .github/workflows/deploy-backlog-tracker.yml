@@ -228,6 +228,11 @@ jobs:
         # operation"), so each retry first waits for the project's in-flight
         # Cloud Functions operations to drain (up to 10 minutes). Deploying
         # again is idempotent: unchanged functions are skipped.
+        # "Failed to make request to https://firestore.googleapis.com" (with
+        # "There was an error retrieving the Firestore database") is the CLI
+        # failing to read the (default) database before the rules deploy — a
+        # network blip, not a missing database. It failed run 38087481082
+        # (10 Oct 2026, PR #359) outright and the same job passed on re-run.
         run: |
           gcloud auth activate-service-account --key-file="$RUNNER_TEMP/firebase-sa.json" --quiet
           set -o pipefail
@@ -250,7 +255,7 @@ jobs:
             if npx firebase-tools@13 deploy --only hosting,functions,firestore:rules --project backlog-tracker-e4ed2 --non-interactive --force 2>&1 | tee "$RUNNER_TEMP/deploy.log"; then
               exit 0
             fi
-            if ! grep -qE "HTTP Error: (409|429|500|502|503|504)|unable to queue the operation|Deadline Exceeded|Failed to list functions" "$RUNNER_TEMP/deploy.log"; then
+            if ! grep -qE "HTTP Error: (409|429|500|502|503|504)|unable to queue the operation|Deadline Exceeded|Failed to list functions|Failed to make request to https://[a-z]+\.googleapis\.com|ECONNRESET|ETIMEDOUT|socket hang up" "$RUNNER_TEMP/deploy.log"; then
               echo "Deploy failed and the failure is not a transient Google error — not retrying."
               exit 1
             fi

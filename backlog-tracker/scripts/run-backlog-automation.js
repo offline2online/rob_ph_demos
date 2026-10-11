@@ -3785,14 +3785,61 @@ async function processRevertPr(item) {
 // the top of every scheduled tick, so a card's deploy status catches up
 // within a couple of minutes of the run actually finishing even though
 // nothing pushes that update proactively.
+//
+// A card whose deploy FAILED is re-checked too, for a week after its merge:
+// the fix for a transient deploy failure is re-running that same run, and
+// `gh run view` reports the latest attempt's conclusion, so the card turns
+// green on the next tick instead of saying "Deploy failure" forever
+// (10 Oct 2026, PR #359 — run 38087481082 failed on a Google blip and
+// passed on re-run).
+const DEPLOY_FAILURE_RECHECK_MS = 7 * 24 * 60 * 60 * 1000;
+
+// What to do about a deploy run that finished "failure". main is cumulative,
+// so a NEWER deploy of main that succeeded has shipped this merge too — the
+// card takes that run. A newer run still going means wait for it. Only when
+// the failed run is still the newest is it re-run, once (`--failed`, its
+// first re-attempt): re-running an older run over a newer deploy would put
+// older code live. Its second failure is reported as a real one. `cache`
+// (runId -> verdict) keeps the cards of one train, which share a run, from
+// re-running it once each. `gh` is injectable for the tests.
+function healFailedDeploy(runId, cache, gh = (args) => run("gh", args)) {
+  if (cache.has(runId)) return cache.get(runId);
+  let verdict = { action: "report" };
+  try {
+    const failed = JSON.parse(gh(["run", "view", runId, "--repo", REPO, "--json", "createdAt,attempt"]));
+    const runs = JSON.parse(gh([
+      "run", "list", "--repo", REPO, "--workflow", "deploy-backlog-tracker.yml",
+      "--branch", "main", "--limit", "20", "--json", "databaseId,url,createdAt,status,conclusion",
+    ]));
+    const newer = runs.filter((r) => String(r.databaseId) !== String(runId) && r.createdAt > failed.createdAt);
+    const newerSuccess = newer.find((r) => r.status === "completed" && r.conclusion === "success");
+    if (newerSuccess) verdict = { action: "adopt", run: newerSuccess };
+    else if (newer.some((r) => r.status !== "completed")) verdict = { action: "wait" };
+    else if (!newer.length && Number(failed.attempt || 1) < 2) {
+      gh(["run", "rerun", String(runId), "--repo", REPO, "--failed"]);
+      verdict = { action: "rerun" };
+    }
+  } catch (err) {
+    console.log(`[deploy-status] couldn't decide about failed deploy run ${runId} (${scrubSecrets(err.message)}) — reporting it as failed`);
+  }
+  cache.set(runId, verdict);
+  return verdict;
+}
+
 async function reconcileDeployStatuses() {
-  const pending = await runQuery({
+  const byConclusion = (value) => runQuery({
     from: [{ collectionId: "backlogItems" }],
-    select: selectFields(["deployRunUrl", "mergedAt", "updatedAt"]),
-    where: { fieldFilter: { field: { fieldPath: "deployConclusion" }, op: "EQUAL", value: { stringValue: "pending" } } },
+    select: selectFields(["deployRunUrl", "deployConclusion", "mergedAt", "updatedAt"]),
+    where: { fieldFilter: { field: { fieldPath: "deployConclusion" }, op: "EQUAL", value: { stringValue: value } } },
   });
+  const failedSince = Date.now() - DEPLOY_FAILURE_RECHECK_MS;
+  const pending = [
+    ...(await byConclusion("pending")),
+    ...(await byConclusion("failure")).filter((i) => i.deployRunUrl && Date.parse(i.mergedAt || i.updatedAt || 0) >= failedSince),
+  ];
   if (!pending.length) return;
-  console.log(`[deploy-status] ${pending.length} item(s) with a pending deploy to check`);
+  console.log(`[deploy-status] ${pending.length} item(s) with a pending or failed deploy to check`);
+  const healCache = new Map();
   for (const item of pending) {
     try {
       let match = null;
@@ -3807,12 +3854,30 @@ async function reconcileDeployStatuses() {
         match = findDispatchedDeployRun(item.mergedAt || item.updatedAt || new Date(0).toISOString());
       }
       if (!match || match.status !== "completed") continue; // still running (or genuinely not found yet) — leave "pending", try again next tick
+      let conclusion = match.conclusion || "unknown";
+      let url = match.url || item.deployRunUrl || null;
+      const matchRunId = runId || (String(match.url || "").match(/\/runs\/(\d+)/) || [])[1];
+      if (conclusion === "failure" && matchRunId) {
+        const verdict = healFailedDeploy(matchRunId, healCache);
+        if (verdict.action === "rerun") {
+          console.log(`[deploy-status] ${item.id}: deploy run ${matchRunId} failed — re-running its failed job once`);
+          if (item.deployConclusion !== "pending") await patchItem(item.id, { deployConclusion: "pending", updatedAt: new Date().toISOString() });
+          continue;
+        }
+        if (verdict.action === "wait") continue;
+        if (verdict.action === "adopt") {
+          conclusion = "success";
+          url = verdict.run.url;
+          console.log(`[deploy-status] ${item.id}: run ${matchRunId} failed, but a newer deploy of main succeeded and carries this merge — ${url}`);
+        }
+      }
+      if (conclusion === item.deployConclusion && url === item.deployRunUrl) continue; // nothing changed
       await patchItem(item.id, {
-        deployConclusion: match.conclusion || "unknown",
-        ...(match.url ? { deployRunUrl: match.url } : {}),
+        deployConclusion: conclusion,
+        ...(url ? { deployRunUrl: url } : {}),
         updatedAt: new Date().toISOString(),
       });
-      console.log(`[deploy-status] ${item.id}: deploy run finished — ${match.conclusion || "unknown"}`);
+      console.log(`[deploy-status] ${item.id}: deploy run finished — ${conclusion}`);
     } catch (err) {
       console.log(`[deploy-status] ${item.id}: couldn't refresh deploy status (${err.message}) — will retry next run`);
     }
@@ -4185,4 +4250,6 @@ module.exports = {
   patchBaseFor, dependenciesLanded, buildRequestFields, migrationNumberClashes,
   // test/train-follow-up.test.js — a train waiting on CI starts its own next run
   followUpDue, FOLLOW_UP_MAX_WAIT_MS,
+  // test/deploy-heal.test.js — a transient deploy failure heals itself
+  healFailedDeploy,
 };

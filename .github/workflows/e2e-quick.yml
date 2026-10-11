@@ -30,7 +30,13 @@ jobs:
   e2e-quick:
     name: e2e-quick
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 30, not 15 (11 Oct 2026): the full suites alone had grown to ~13 min,
+    # green runs were finishing in 14m46s, and PR #363's train sat blocked
+    # for two hours while run after run hit the 15-minute limit. GitHub
+    # reports that limit as "cancelled", which the backlog automation reads
+    # as "nothing tested this commit" and dispatches again, so every run
+    # that hit the limit was retried and hit it again.
+    timeout-minutes: 30
     permissions:
       contents: read
       pull-requests: read   # the scope step lists the PR's files
