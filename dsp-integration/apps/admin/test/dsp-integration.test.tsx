@@ -915,6 +915,57 @@ describe('Advertisers / Inventory', () => {
     expect(await within(dialog).findByTestId('deal-type-new-deal-note')).toHaveTextContent('new Deal ID')
   })
 
+  /* Ticket KcqiJpzR5RXy4TWODYlG: term versions. The pop-up shows the version and acceptance, saves a name change silently, and warns before a rate change that makes accepted buyers re-accept. */
+  const TERMS_LIST = { id: 'bl_1', dealId: 'PH-7K2M9QXW4B', name: 'Pharma brands', description: '', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }], invitedCategories: [], targeting: [], activeFrom: null, activeTo: null, dealType: 'private_auction', floorCpm: 120, termVersion: 3, buyerAcceptance: [{ partnerId: 'p_google', seatId: '5130001', state: 'accepted', acceptedVersion: 3, acceptedAt: '2026-10-10T00:00:00Z' }] }
+  const termsFetch = (requiresReacceptance: boolean, puts: unknown[]) => vi.fn(async (url: string, init?: RequestInit) => {
+    const path = url.split('?')[0]
+    if (init?.method === 'POST' && path.endsWith('/term-check')) {
+      return new Response(JSON.stringify({ currentVersion: 3, nextVersion: 4, changes: [], requiresReacceptance, affectedBuyers: requiresReacceptance ? [{ partnerId: 'p_google', partnerName: 'Google DSP', seatId: '5130001', acceptedVersion: 3 }] : [] }), { status: 200 })
+    }
+    if (init?.method === 'PUT') { puts.push(JSON.parse(String(init.body))); return new Response(JSON.stringify({ ...TERMS_LIST, termVersion: 4 }), { status: 200 }) }
+    return fakeFetch({ ...ADVERTISER_PAGE, '/api/admin/v1/buyers-lists': { items: [TERMS_LIST] } })(url)
+  })
+  const openTermsEditor = async () => {
+    renderAt('/advertisers')
+    const table = await screen.findByLabelText('Buyers and targeting')
+    fireEvent.click(await within(table).findByRole('button', { name: 'Edit Pharma brands' }))
+    return screen.findByRole('dialog')
+  }
+
+  it('shows the term version and saves a change that needs no re-acceptance without a warning', async () => {
+    const puts: unknown[] = []
+    vi.stubGlobal('fetch', termsFetch(false, puts))
+    const dialog = await openTermsEditor()
+    expect(within(dialog).getByTestId('term-version')).toHaveTextContent('Term version 3 · 1 of 1 invited buyers on this version')
+    fireEvent.change(within(dialog).getByPlaceholderText('e.g. Q4 FMCG private auction'), { target: { value: 'Pharma brands 2' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(puts).toHaveLength(1))
+    expect(screen.queryByText('Buyers will need to re-accept this deal')).not.toBeInTheDocument()
+  }, slow(30000))
+
+  it('warns before saving a term change that makes accepted buyers re-accept; Keep editing saves nothing', async () => {
+    const puts: unknown[] = []
+    vi.stubGlobal('fetch', termsFetch(true, puts))
+    const dialog = await openTermsEditor()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save changes' }))
+    const warning = await screen.findByTestId('reacceptance-warning')
+    expect(screen.getAllByText('Buyers will need to re-accept this deal').length).toBeGreaterThan(0)
+    expect(warning).toHaveTextContent('term version 4')
+    expect(warning).toHaveTextContent('5130001 (Google DSP)')
+    fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }))
+    await waitFor(() => expect(screen.queryByTestId('reacceptance-warning')).not.toBeInTheDocument())
+    expect(puts).toHaveLength(0)
+  }, slow(30000))
+
+  it('saves the term change once the retailer chooses Save and request re-acceptance', async () => {
+    const puts: unknown[] = []
+    vi.stubGlobal('fetch', termsFetch(true, puts))
+    const dialog = await openTermsEditor()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save changes' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Save and request re-acceptance' }))
+    await waitFor(() => expect(puts).toHaveLength(1))
+  }, slow(30000))
+
   /* Ticket fgBVnNItNcu7qMBUtqH7: a list that invites seats on two DSPs shows one deal ID per DSP. */
   it('shows one deal ID per DSP on a cross-DSP buyers list', async () => {
     const inv = ADVERTISER_PAGE['/api/admin/v1/available-inventory']

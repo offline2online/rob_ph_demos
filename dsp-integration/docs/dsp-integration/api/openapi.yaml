@@ -1232,6 +1232,50 @@ paths:
         '400': {$ref: '#/components/responses/ValidationFailed'}
         '404': {$ref: '#/components/responses/NotFound'}
 
+  /admin/v1/buyers-lists/{buyersListId}/term-check:
+    post:
+      tags: [Admin — Advertiser settings]
+      operationId: checkBuyersListTerms
+      summary: Would this change need buyers to re-accept? (no write)
+      description: |
+        Takes the same body as PUT and writes nothing. Returns whether saving it would create a new term version, which fields changed, and which buyers (with their DSP) had accepted and would have to accept again, so the UI can warn before save. An omitted `dealType` means the current one; a different one mints a new deal and is not a re-acceptance.
+      security: [{adminSession: []}]
+      parameters: [{name: buyersListId, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, additionalProperties: true, description: 'The same fields as PUT /admin/v1/buyers-lists/{buyersListId}.'}}}
+      responses:
+        '200': {description: The check, content: {application/json: {schema: {$ref: '#/components/schemas/TermCheck'}}}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /admin/v1/buyers-lists/{buyersListId}/term-versions:
+    get:
+      tags: [Admin — Advertiser settings]
+      operationId: listBuyersListTermVersions
+      summary: Every term version of the deal, newest first — what changed, when and by whom
+      security: [{adminSession: []}]
+      parameters: [{name: buyersListId, in: path, required: true, schema: {type: string}}]
+      responses:
+        '200':
+          description: The history
+          content: {application/json: {schema: {type: object, required: [items], properties: {items: {type: array, items: {$ref: '#/components/schemas/TermVersion'}}}}}}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /admin/v1/buyers-lists/{buyersListId}/acceptances:
+    post:
+      tags: [Admin — Advertiser settings]
+      operationId: recordBuyersListAcceptance
+      summary: Record that an invited buyer accepted the deal's current terms
+      description: The buyer accepts on their DSP; this records it against the current term version. The seat must be a named invited buyer of the list (400 otherwise).
+      security: [{adminSession: []}]
+      parameters: [{name: buyersListId, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [partnerId, seatId], properties: {partnerId: {type: string}, seatId: {type: string}}}}}
+      responses:
+        '200': {description: The list with its updated buyerAcceptance, content: {application/json: {schema: {$ref: '#/components/schemas/BuyersList'}}}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
   /admin/v1/buyers-lists/{buyersListId}:
     put:
       tags: [Admin — Advertiser settings]
@@ -2916,6 +2960,54 @@ components:
       properties:
         partnerId: {type: string}
         dealId: {type: string}
+    BuyerAcceptance:
+      type: object
+      required: [partnerId, seatId, state, acceptedVersion, acceptedAt]
+      properties:
+        partnerId: {type: string}
+        seatId: {type: string}
+        state:
+          type: string
+          enum: [pending, accepted, reacceptance_required]
+          description: 'pending: has not accepted yet. accepted: holds the current acceptable terms. reacceptance_required: accepted an earlier version and a later change (floor, committed plays, delivery term or auction window) needs it to accept again. Bidding is not paused meanwhile: the exchange keeps bidding at the current terms; the per-DSP behaviour (continue on the prior terms or pause) is still to be confirmed against the DV360 and The Trade Desk sandboxes.'
+        acceptedVersion: {type: [integer, 'null'], description: The term version this buyer last accepted; null if never.}
+        acceptedAt: {type: [string, 'null'], format: date-time}
+    TermChange:
+      type: object
+      required: [field, from, to]
+      properties:
+        field: {type: string, enum: [floorCpm, committedPlays, activeFrom, activeTo, auctionCloses, invitedBuyers, invitedCategories]}
+        from: {description: Previous value (any JSON)}
+        to: {description: New value (any JSON)}
+        requiresReacceptance: {type: boolean, description: 'True for floorCpm, committedPlays, activeFrom, activeTo and auctionCloses; invite / remove changes version the deal but do not force re-acceptance.'}
+    TermCheck:
+      type: object
+      required: [currentVersion, nextVersion, changes, requiresReacceptance, affectedBuyers]
+      properties:
+        currentVersion: {type: integer}
+        nextVersion: {type: integer, description: 'The version a save would create; equal to currentVersion when nothing in the terms changes.'}
+        changes: {type: array, items: {$ref: '#/components/schemas/TermChange'}}
+        requiresReacceptance: {type: boolean, description: 'True when saving would leave buyers who had accepted on an older version. Always false for a deal-type change, which mints a new deal instead.'}
+        affectedBuyers:
+          type: array
+          description: Buyers (with their DSP) that had accepted and would need to re-accept.
+          items:
+            type: object
+            required: [partnerId, partnerName, seatId, acceptedVersion]
+            properties:
+              partnerId: {type: string}
+              partnerName: {type: string}
+              seatId: {type: string}
+              acceptedVersion: {type: integer}
+    TermVersion:
+      type: object
+      required: [version, at, by, changes, requiresReacceptance]
+      properties:
+        version: {type: integer}
+        at: {type: string, format: date-time}
+        by: {type: string, description: Who saved it (the admin user or agent name).}
+        changes: {type: array, items: {$ref: '#/components/schemas/TermChange'}}
+        requiresReacceptance: {type: boolean}
     ListDeal:
       type: object
       required: [partnerId, dealId, retiredAt]
@@ -2942,8 +3034,19 @@ components:
         is priced against the same score-driven floor as everything else. It
         is a commitment on top of the floor, never under it, and a deal never
         bypasses the floor.
-      required: [id, dealId, deals, name, description, dealType, invitedBuyers, invitedCategories, targeting, activeFrom, activeTo, auctionCloses, lockedWin, committedPlays, floorCpm, deliveredPlays, effectiveCommittedPlays, effectiveRateCpm, createdAt, updatedAt]
+      required: [id, dealId, deals, name, description, dealType, invitedBuyers, invitedCategories, targeting, activeFrom, activeTo, auctionCloses, lockedWin, committedPlays, floorCpm, deliveredPlays, termVersion, buyerAcceptance, effectiveCommittedPlays, effectiveRateCpm, createdAt, updatedAt]
       properties:
+        termVersion:
+          type: integer
+          readOnly: true
+          minimum: 1
+          description: |
+            The version of the deal's mutable terms (rate/floor, committed plays, delivery term, auction window, invited buyers and categories). Starts at 1 and goes up by one on every saved change to those terms; the deal ID and deal type never change. The history is `GET .../term-versions`.
+        buyerAcceptance:
+          type: array
+          readOnly: true
+          description: One entry per named invited buyer (seat), with the term version it has accepted. Buyers invited only by IAB category are not tracked individually.
+          items: {$ref: '#/components/schemas/BuyerAcceptance'}
         effectiveCommittedPlays: {$ref: '#/components/schemas/EffectiveTerm'}
         effectiveRateCpm: {$ref: '#/components/schemas/EffectiveTerm'}
         id: {type: string}
