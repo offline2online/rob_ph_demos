@@ -2351,6 +2351,18 @@ headings; managing (adding or editing) variables is a later release.
 removed from the default set (ticket, 22 Sep); a later release will add it
 back.**
 
+**Values (ticket t5CXokTIz7TCnIkj5pci, migration 0068).** Each *shared*
+variable has a **Values** column on this page: the list of values a buyer can
+match against it, defined once centrally. A variable can instead be ticked
+**Free text**, which leaves it open to any value entered at selection time.
+Values and the free-text tick are kept only while the variable is shared with
+a DSP; un-sharing a variable clears them. `GET` and `PUT
+/admin/v1/targeting-variables` carry `values` and `freeText`, values are
+trimmed and de-duplicated, and a buyers list's criteria on a shared variable
+are selected from that vocabulary rather than typed. A variable with no values
+defined and not ticked Free text still accepts any value, so existing lists
+keep working.
+
 | Group | Variables, in display order |
 |---|---|
 | **Localisation Variables** | Store Open / Closed; Fixed Store Segments; Variable Store Segments; Display Tag(s); Suburb; Postcode; State; Country |
