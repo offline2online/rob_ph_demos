@@ -368,10 +368,8 @@ describe('Campaign Status stand-in', () => {
        DSPs" copy and no Draft count (ticket, 22 Sep — Draft never surfaces
        in a retailer-facing view). */
     await waitFor(() => expect(document.body.textContent).toMatch(/1 campaign/), { timeout: 10000 })
-    /* The counts follow each campaign's approval, which loads after the list. */
-    await waitFor(() => expect(document.body.textContent).toMatch(/Awaiting approval.*1/), { timeout: 10000 })
-    expect(document.body.textContent).toMatch(/Approved.*0/)
-    expect(document.body.textContent).toMatch(/Rejected.*0/)
+    /* The Approved / Awaiting approval / Rejected selector is gone (ticket dinPPBl9Rk95UbrXoRbt): status is filtered in its column. */
+    expect(screen.queryByRole('button', { name: /^Awaiting approval\s*\d/ })).not.toBeInTheDocument()
     expect(document.body.textContent).not.toMatch(/submitted by advertisers and DSPs/)
     expect(document.body.textContent).not.toMatch(/Draft/)
     const grid = screen.getByLabelText('Campaign Status')
@@ -379,17 +377,16 @@ describe('Campaign Status stand-in', () => {
     expect(await within(grid).findByText('Swisse spring', {}, { timeout: 10000 })).toBeInTheDocument()
     /* HQ's own campaigns aren't this build's business. */
     expect(within(grid).queryByText('Zinger Box — hero')).not.toBeInTheDocument()
-    /* The status filter is a column filter; the counts above the table only set it. */
+    /* The status filter is a column filter. */
     expect(grid.querySelectorAll('.ag-floating-filter').length).toBeGreaterThan(0)
     /* The filters name themselves and list what is there (Rob, 20 Sep). */
     expect((await within(grid).findAllByLabelText('Advertiser filter', {}, { timeout: 10000 })).length).toBeGreaterThan(0)
     expect(within(grid).getAllByLabelText('DSP filter').length).toBeGreaterThan(0)
-    /* Pinned left: the selection box, Advertiser and Deal ID; then Activation, Received and Status;
-       one row is one campaign (Campaign name, Touch points, Creative ID — no
-       Playlist name or No. of campaigns), grouped by advertiser (ticket
-       IDGsyELBJsjlAYjizSqT). */
+    /* Pinned left: the selection box, Status and Advertiser; one row is one campaign
+       (ticket IDGsyELBJsjlAYjizSqT), grouped by advertiser. Order per ticket
+       dinPPBl9Rk95UbrXoRbt: Activation sits left of Last used, Received left of Activation. */
     expect([...grid.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent)).toEqual([
-      '', 'Advertiser', 'Deal ID', 'Activation', 'Received', 'Status', 'Campaign name', 'Touch points', 'Creative ID', 'DSP', 'Localised variables', 'Personalised variables', 'Last used', '',
+      '', 'Status', 'Advertiser', 'Campaign name', 'Touch points', 'Display types', 'Creative ID', 'Deal ID', 'DSP', 'Localised variables', 'Personalised variables', 'Received', 'Activation', 'Last used', '',
     ])
     expect(await within(grid).findByText('Swisse spring', {}, { timeout: 10000 })).toBeInTheDocument()
     /* The touch points it runs on, and the high-level variable summary. */
@@ -432,9 +429,9 @@ describe('Campaign Status stand-in', () => {
     await waitFor(() => expect(reloaded.state.location.search).toBe(''))
   })
 
-  /* Ticket, 27 Sep 2026: clicking a count sets the Status column's own
-     filter; it stays on until cleared from that column's funnel. */
-  it('filters the Status column to a status when its count is clicked, until the filter is cleared', async () => {
+  /* The Status column's own funnel is the only status filter (ticket dinPPBl9Rk95UbrXoRbt);
+     it stays on until cleared from that funnel. */
+  it('filters by status from the Status column funnel, until the filter is cleared', async () => {
     const approved = { ...campaign, campaignId: 'c2', name: 'Blackmores autumn' }
     vi.stubGlobal('fetch', vi.fn(fakeFetch({
       ...routes,
@@ -448,17 +445,15 @@ describe('Campaign Status stand-in', () => {
     const hidden = (name: string) => waitFor(() => expect(within(grid()).queryByText(name)).not.toBeInTheDocument(), { timeout: 10000 })
     await shown('Blackmores autumn')
     await shown('Swisse spring')
+    /* No selector above the table, and no select-all CTA. */
+    expect(screen.queryByRole('button', { name: /^Approved\s*\d/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Select all awaiting/ })).not.toBeInTheDocument()
 
-    fireEvent.click(await screen.findByRole('button', { name: /^Approved\s*1$/ }, { timeout: 10000 }))
+    fireEvent.click(await within(grid()).findByLabelText('Status filter', {}, { timeout: 10000 }))
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Approved' }))
     await hidden('Swisse spring')
     await shown('Blackmores autumn')
-    expect(screen.getByRole('button', { name: /^Approved\s*1$/ })).toHaveAttribute('aria-pressed', 'true')
-    /* The column's own funnel shows it as on. */
     await waitFor(() => expect(within(grid()).getAllByLabelText('Status filter')[0]).toHaveAttribute('aria-pressed', 'true'))
-
-    fireEvent.click(screen.getByRole('button', { name: /^Awaiting approval\s*1$/ }))
-    await hidden('Blackmores autumn')
-    await shown('Swisse spring')
 
     /* Clearing the column filter is the way back to every campaign. */
     fireEvent.click(within(grid()).getAllByLabelText('Status filter')[0])
@@ -548,11 +543,15 @@ describe('Upcoming Campaign Approval — creative IDs', () => {
   const tick = (grid: HTMLElement, name: string) => fireEvent.click(within(grid).getByLabelText(`Select ${name}`))
   const cta = (name: RegExp | string) => screen.queryByRole('button', { name })
 
-  it('has no per-row approve or reject, and only Awaiting-approval campaigns can be ticked', async () => {
+  it('has no per-row approve or reject, and every campaign has exactly one box', async () => {
     const grid = await open()
     expect(within(grid).queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument()
     expect(within(grid).queryByRole('button', { name: 'Reject' })).not.toBeInTheDocument()
-    expect(within(grid).queryByLabelText('Select Swisse autumn')).not.toBeInTheDocument()
+    expect(within(grid).getByLabelText('Select Swisse autumn')).toBeInTheDocument()
+    /* Seven campaigns and two advertisers: seven row boxes and two group boxes, nothing doubled. */
+    const labels = [...grid.querySelectorAll('input[aria-label^="Select "]')].map((i) => i.getAttribute('aria-label'))
+    expect(new Set(labels).size).toBe(9)
+    expect(labels.filter((l) => l?.startsWith('Select all '))).toHaveLength(2)
     /* An approved campaign shows the creative ID it was grouped under; a resubmission says so. */
     expect(within(grid).getAllByText(/CR-AAAA1111/).length).toBe(2)
     expect(within(grid).getByText('(resubmission)')).toBeInTheDocument()
@@ -568,23 +567,23 @@ describe('Upcoming Campaign Approval — creative IDs', () => {
 
   it('offers the assign actions only while the ticked campaigns are one advertiser’s', async () => {
     const grid = await open()
-    expect(cta(/Approve \+ assign/)).not.toBeInTheDocument()
+    expect(cta(/^Approve/)).not.toBeInTheDocument()
     tick(grid, 'Swisse spring')
     tick(grid, 'Swisse kids')
-    expect(await screen.findByRole('button', { name: 'Approve + assign to new creative ID' })).toBeInTheDocument()
-    expect(cta('Approve + assign to existing creative ID')).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Approve Selected' })).toBeInTheDocument()
+    expect(cta('Approve into existing creative ID')).toBeInTheDocument()
     tick(grid, 'Nestlé winter')
-    await waitFor(() => expect(cta(/Approve \+ assign/)).not.toBeInTheDocument())
-    expect(cta('Reject…')).toBeInTheDocument()
+    await waitFor(() => expect(cta(/^Approve/)).not.toBeInTheDocument())
+    expect(cta('Reject Selected')).toBeInTheDocument()
     tick(grid, 'Nestlé winter')
-    expect(await screen.findByRole('button', { name: 'Approve + assign to new creative ID' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Approve Selected' })).toBeInTheDocument()
   }, slow(45000))
 
   it('approves the ticked campaigns into a new creative ID', async () => {
     const grid = await open()
     tick(grid, 'Swisse spring')
     tick(grid, 'Swisse kids')
-    fireEvent.click(await screen.findByRole('button', { name: 'Approve + assign to new creative ID' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve Selected' }))
     await waitFor(() => expect(posts.map((p) => p.url)).toEqual(['/api/admin/v1/approvals/approve-assign']))
     /* Grouped by advertiser, then name: kids before spring. */
     expect(posts[0].body).toEqual({ items: [{ campaignId: 'c2', assetVersion: 'v1' }, { campaignId: 'c1', assetVersion: 'v1' }] })
@@ -593,7 +592,7 @@ describe('Upcoming Campaign Approval — creative IDs', () => {
   it('picks an existing creative ID by its campaigns, pre-highlighting the one a resubmission came from', async () => {
     const grid = await open()
     tick(grid, 'Swisse summer')
-    fireEvent.click(await screen.findByRole('button', { name: 'Approve + assign to existing creative ID' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve into existing creative ID' }))
     const dialog = await screen.findByRole('dialog')
     /* Each ID with its member campaigns and their touch points. */
     expect(await within(dialog).findByText('CR-BBBB2222', {}, { timeout: 5000 })).toBeInTheDocument()
@@ -602,7 +601,7 @@ describe('Upcoming Campaign Approval — creative IDs', () => {
     expect(within(dialog).getByText('original (resubmission)')).toBeInTheDocument()
     expect(within(dialog).getByRole('radio', { name: /CR-AAAA1111/ })).toBeChecked()
     fireEvent.click(within(dialog).getByRole('radio', { name: /CR-BBBB2222/ }))
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Approve + assign to CR-BBBB2222' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Approve to CR-BBBB2222' }))
     await waitFor(() => expect(posts).toHaveLength(1))
     expect(posts[0].body).toEqual({ items: [{ campaignId: 'c5', assetVersion: 'v1' }], creativeId: 'CR-BBBB2222' })
   }, slow(45000))
@@ -612,9 +611,9 @@ describe('Upcoming Campaign Approval — creative IDs', () => {
     tick(grid, 'Nestlé oats')
     tick(grid, 'Nestlé milk')
     expect(await screen.findByRole('button', { name: 'Generate creative ID' })).toBeInTheDocument()
-    expect(cta(/Approve \+/)).not.toBeInTheDocument()
-    expect(cta('Reject…')).not.toBeInTheDocument()
-    /* Mixed with a campaign awaiting the retailer: neither action is offered. */
+    expect(cta(/^Approve/)).not.toBeInTheDocument()
+    expect(cta('Reject Selected')).not.toBeInTheDocument()
+    /* Mixed with a campaign awaiting the retailer: no action suits every row. */
     tick(grid, 'Nestlé winter')
     await waitFor(() => expect(cta('Generate creative ID')).not.toBeInTheDocument())
     tick(grid, 'Nestlé winter')
@@ -633,7 +632,7 @@ describe('Upcoming Campaign Approval — creative IDs', () => {
   it('rejects only once a reason is typed, and sends it', async () => {
     const grid = await open()
     tick(grid, 'Nestlé winter')
-    fireEvent.click(await screen.findByRole('button', { name: 'Reject…' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Reject Selected' }))
     const dialog = await screen.findByRole('dialog')
     const reject = within(dialog).getByRole('button', { name: 'Reject' })
     expect(reject).toBeDisabled()
@@ -1245,45 +1244,49 @@ describe('Upcoming Campaign Approval — deal IDs', () => {
   }
   const ticked = (grid: HTMLElement) => [...grid.querySelectorAll<HTMLInputElement>('input[aria-label^="Select "]:checked')].map((i) => i.getAttribute('aria-label')).filter((l) => !l?.startsWith('Select all '))
 
-  it('shows each advertiser and deal once, with a tick-all box on it', async () => {
+  const tickRow = (grid: HTMLElement, name: string) => fireEvent.click(within(grid).getByLabelText(`Select ${name}`))
+
+  it('shows each advertiser once on a group row with the one tick-all box, and each deal on its campaigns', async () => {
     const grid = await open()
+    expect(within(grid).getAllByLabelText(/^Select all /)).toHaveLength(2)
     expect(within(grid).getAllByLabelText('Select all Swisse')).toHaveLength(1)
-    expect(within(grid).getAllByLabelText('Select all PMP-1')).toHaveLength(1)
-    expect(within(grid).getAllByLabelText('Select all PMP-2')).toHaveLength(1)
-    /* The no-deal campaign sits under its advertiser with no deal layer. */
-    expect(within(grid).getAllByLabelText(/^Select all /)).toHaveLength(5)
+    expect(within(grid).getAllByLabelText('Select all Nestlé')).toHaveLength(1)
+    /* One box on every row, a group row included: 5 campaigns + 2 advertisers. */
+    expect(new Set([...grid.querySelectorAll('input[aria-label^="Select "]')].map((i) => i.getAttribute('aria-label'))).size).toBe(7)
+    expect(within(grid).getAllByText('PMP-1')).toHaveLength(2)
   }, slow(45000))
 
-  it('ticks a deal’s campaigns from its box, an advertiser’s from its box, and shows partial', async () => {
+  it('ticks an advertiser’s campaigns from its box, and shows partial', async () => {
     const grid = await open()
-    fireEvent.click(within(grid).getByLabelText('Select all PMP-1'))
-    await waitFor(() => expect(ticked(grid)).toEqual(['Select Swisse energy', 'Select Swisse sleep']))
-    expect(await screen.findByText('2 selected')).toBeInTheDocument()
     fireEvent.click(within(grid).getByLabelText('Select all Swisse'))
     await waitFor(() => expect(ticked(grid)).toHaveLength(4))
+    expect(await screen.findByText('4 selected')).toBeInTheDocument()
     fireEvent.click(within(grid).getByLabelText('Select Swisse direct'))
     await waitFor(() => expect((within(grid).getByLabelText('Select all Swisse') as HTMLInputElement).indeterminate).toBe(true))
   }, slow(45000))
 
-  it('keeps the assign actions across deals of one advertiser, hides them across advertisers, keeping Reject', async () => {
+  it('keeps the approve actions across deals of one advertiser, hides them across advertisers, keeping Reject Selected', async () => {
     const grid = await open()
-    fireEvent.click(within(grid).getByLabelText('Select all PMP-1'))
-    expect(await screen.findByRole('button', { name: 'Approve + assign to new creative ID' })).toBeInTheDocument()
-    fireEvent.click(within(grid).getByLabelText('Select Swisse focus'))
-    expect(await screen.findByRole('button', { name: 'Approve + assign to new creative ID' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Reject…' })).toBeInTheDocument()
-    fireEvent.click(within(grid).getByLabelText('Select all PMP-9'))
+    tickRow(grid, 'Swisse sleep')
+    tickRow(grid, 'Swisse energy')
+    expect(await screen.findByRole('button', { name: 'Approve Selected' })).toBeInTheDocument()
+    tickRow(grid, 'Swisse focus')
+    expect(await screen.findByRole('button', { name: 'Approve Selected' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reject Selected' })).toBeInTheDocument()
+    tickRow(grid, 'Nestlé oats')
     await waitFor(() => expect(screen.getByText(/one advertiser/)).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: 'Approve Selected' })).not.toBeInTheDocument()
   }, slow(45000))
 
   it('asks for the deal’s IDs and pre-highlights the deal’s only one, tagged same deal', async () => {
     const grid = await open()
-    fireEvent.click(within(grid).getByLabelText('Select all PMP-1'))
-    fireEvent.click(await screen.findByRole('button', { name: 'Approve + assign to existing creative ID' }))
+    tickRow(grid, 'Swisse sleep')
+    tickRow(grid, 'Swisse energy')
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve into existing creative ID' }))
     const dialog = await screen.findByRole('dialog')
     expect(await within(dialog).findByText('same deal (PMP-1)', {}, { timeout: 5000 })).toBeInTheDocument()
     await waitFor(() => expect(within(dialog).getByRole('radio', { name: /CR-DEAL0001/ })).toBeChecked())
     expect(gets.some((u) => u.includes('creative-ids') && !u.includes('dealId='))).toBe(true)
-    expect(within(dialog).getByRole('button', { name: 'Approve + assign to CR-DEAL0001' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Approve to CR-DEAL0001' })).toBeInTheDocument()
   }, slow(45000))
 })

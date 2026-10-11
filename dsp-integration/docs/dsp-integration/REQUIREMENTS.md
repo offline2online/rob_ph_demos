@@ -1219,19 +1219,35 @@ campaign: the creative ID is the group of an advertiser's approved
 campaigns that the bid applies to. The retailer assigns it as part of
 approving (ticket IDGsyELBJsjlAYjizSqT).
 
-- **Selection.** On *Upcoming Campaign Approval* the retailer ticks one or
-  more campaigns that are **Awaiting approval** (only they have a box). A
-  bar above the table shows what can be done with the selection.
+- **Table layout and selection** (ticket dinPPBl9Rk95UbrXoRbt). Columns,
+  left to right: selection box, Status, Advertiser, Campaign name, Touch
+  points, Display types, Creative ID, Deal ID, DSP, Localised variables,
+  Personalised variables, Received, Activation, Last used. Every row has
+  **exactly one** box. Each advertiser is a group row whose single box ticks
+  every campaign beneath it (partial when only some are ticked); a campaign
+  row's box ticks that campaign. Filtering is **in the columns** — status is
+  filtered in the Status column's funnel; there is no Approved / Awaiting
+  approval / Rejected selector and no "select all awaiting approval" link.
+- **Selection actions** sit at the top right of the table and follow the
+  status of the ticked rows:
+  - **Awaiting approval and/or Rejected** → **Approve Selected** and
+    **Reject Selected** (a rejected campaign is first returned to Awaiting
+    approval, then decided).
+  - **Approved** → **Activate Selected** and **Deactivate Selected**. A
+    campaign cannot be activated before it is approved, so these never
+    appear for an unapproved row.
+  - **A mix of the two** → no action is shown, since none is valid across
+    the whole selection.
 - **A creative ID spans one advertiser's campaigns only.** The two assign
   actions appear **only when every ticked campaign belongs to one
   advertiser**; if the selection spans advertisers they are hidden (a hint
-  says to choose one advertiser's campaigns) and **Reject…** stays.
+  says to choose one advertiser's campaigns) and **Reject Selected** stays.
 - **Two approve actions**, both leading with "Approve" so the retailer
   knows this is the approval of the creative, and both naming the creative
   ID:
-  - **Approve + assign to new creative ID** — mints a new ID across the
+  - **Approve Selected** — mints a new ID across the
     ticked campaigns and approves each.
-  - **Approve + assign to existing creative ID** — opens a picker listing
+  - **Approve into existing creative ID** — opens a picker listing
     **each of that advertiser's creative IDs with its member campaigns, and
     their touch points, expanded**, so the retailer matches by seeing the
     siblings rather than a bare ID. Choosing one approves the ticked
@@ -1245,7 +1261,7 @@ approving (ticket IDGsyELBJsjlAYjizSqT).
   (`GET /v1/campaigns/{id}/status`) is one of: **pending**
   (`awaiting_approval`), **rejected** (with the reason) or **assigned to a
   creative ID** (`approved`, with `creativeId`).
-- **Reject needs a reason.** **Reject…** on the selection opens a dialog
+- **Reject needs a reason.** **Reject Selected** opens a dialog
   whose Reject button stays disabled until a reason is typed. The same
   reason is recorded against each ticked campaign and reaches the advertiser
   as the campaign's status `reason`, to fix before resubmitting.
