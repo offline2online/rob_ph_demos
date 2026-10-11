@@ -72,4 +72,15 @@ describe('Buyers lists — invite by IAB category (gate M12)', () => {
     expect(isInvitedBuyer(byCategory, none, '5130001')).toBe(false)
     expect(invitedPartnerIds(byCategory, [none])).toEqual([])
   })
+
+  it('refuses invited categories on a preferred or guaranteed deal, and ignores them at bid time', async () => {
+    const { app, ctx } = await withCategories()
+    for (const dealType of ['preferred', 'guaranteed']) {
+      const res = await app.inject({ method: 'POST', url, payload: { ...base, dealType, invitedBuyers: [{ partnerId: 'p_google', seatId: '5130002' }], invitedCategories: ['Food & Drink'], ...(dealType === 'guaranteed' ? { committedPlays: 100 } : {}) } })
+      expect(res.statusCode).toBe(400)
+      expect(res.json().error.details.map((d: { field: string }) => d.field)).toEqual(['invitedCategories'])
+    }
+    const partner = (await ctx.partners.get('p_google'))!
+    expect(isInvitedBuyer({ dealType: 'preferred', invitedBuyers: [], invitedCategories: ['Food & Drink'] } as never, partner, '5130001')).toBe(false)
+  })
 })

@@ -75,7 +75,7 @@ interface Ctx {
 }
 type P = ICellRendererParams<Campaign, unknown, { current: Ctx }>
 /* One creative ID and the campaigns grouped under it (GET /admin/v1/creative-ids). */
-interface CreativeIdGroup { creativeId: string; dealId?: string | null; campaigns: { campaignId: string; name: string; touchPoints: string[] }[] }
+interface CreativeIdGroup { creativeId: string; dealId?: string | null; dealIds?: string[]; direct?: boolean; campaigns: { campaignId: string; name: string; touchPoints: string[] }[] }
 /* A group's label and the campaigns in it that can be ticked. */
 interface GroupInfo { label: string; ids: string[] }
 
@@ -266,11 +266,11 @@ export function CampaignStatusPage() {
   /* A creative ID spans one advertiser's campaigns, so the assign actions need exactly one. */
   const advertisers = new Set(selectedRows.map((c) => c.advertiserId))
   const oneAdvertiserOnly = selectedRows.length > 0 && advertisers.size === 1 && !advertisers.has(null)
-  /* One-advertiser, and within it one deal (or none): a creative ID never straddles two deals. */
+  /* A creative can be in many deals at once (its deals come from its campaigns), so the selection may mix deals.
+     When it is all one deal, the picker flags the IDs already in that deal. */
   const deals = new Set(selectedRows.map((c) => c.dealId ?? null))
-  const oneDeal = deals.size === 1
-  const deal = oneDeal ? [...deals][0] : null
-  const oneAdvertiser = oneAdvertiserOnly && oneDeal
+  const deal = deals.size === 1 ? [...deals][0] : null
+  const oneAdvertiser = oneAdvertiserOnly
   const toggle = (id: string, on: boolean) => setTicked((t) => { const n = new Set(t); if (on) n.add(id); else n.delete(id); return n })
   const toggleGroup = (ids: string[], on: boolean) => setTicked((t) => { const n = new Set(t); for (const id of ids) { if (on) n.add(id); else n.delete(id) } return n })
   /* Group boxes act on the rows the column filters leave showing. */
@@ -298,9 +298,9 @@ export function CampaignStatusPage() {
   }
   /* Each creative ID this advertiser has, with the campaigns (and touch points) already under it. */
   const creativeIds = useQuery({
-    queryKey: ['creative-ids', [...advertisers][0] ?? null, deal],
-    /* A deal campaign is offered only that deal's IDs; a direct one only direct IDs. */
-    queryFn: () => api<{ items: CreativeIdGroup[] }>('GET', `/admin/v1/creative-ids?advertiserId=${encodeURIComponent([...advertisers][0] ?? '')}&dealId=${encodeURIComponent(deal ?? '')}`).then((r) => r.items),
+    queryKey: ['creative-ids', [...advertisers][0] ?? null],
+    /* Every ID this advertiser has: a creative may join a further deal, so none is hidden for being in another. */
+    queryFn: () => api<{ items: CreativeIdGroup[] }>('GET', `/admin/v1/creative-ids?advertiserId=${encodeURIComponent([...advertisers][0] ?? '')}`).then((r) => r.items),
     enabled: picking && oneAdvertiser,
   })
   /* A resubmitted creative goes back to the ID it originally belonged to. */
@@ -410,7 +410,7 @@ export function CampaignStatusPage() {
                 <Button type="primary" size="small" ghost disabled={busy === 'batch'} onClick={openPicker}>Assign to existing creative ID</Button>
               </>
             ) : (
-              <span style={{ color: T.muted }}>{oneAdvertiserOnly ? 'Choose campaigns from one deal, or none, to group them under a creative ID.' : 'Choose one advertiser’s campaigns to group them under a creative ID.'}</span>
+              <span style={{ color: T.muted }}>Choose one advertiser’s campaigns to group them under a creative ID.</span>
             )
           ) : oneAdvertiser ? (
             <>
@@ -418,7 +418,7 @@ export function CampaignStatusPage() {
               <Button type="primary" size="small" ghost disabled={busy === 'batch'} onClick={openPicker}>Approve + assign to existing creative ID</Button>
             </>
           ) : (
-            <span style={{ color: T.muted }}>{oneAdvertiserOnly ? 'Choose campaigns from one deal, or none, to approve them into a creative ID.' : 'Choose one advertiser’s campaigns to approve them into a creative ID.'}</span>
+            <span style={{ color: T.muted }}>Choose one advertiser’s campaigns to approve them into a creative ID.</span>
           )}
           {!autoOnly && !mixed && <Button size="small" danger onClick={() => { setReason(''); setRejecting(true) }}>Reject…</Button>}
           <Button size="small" type="link" onClick={() => setTicked(new Set())}>Clear</Button>
@@ -460,12 +460,12 @@ export function CampaignStatusPage() {
       >
         <p style={{ color: T.muted }}>Pick the creative ID these {selectedRows.length === 1 ? 'campaign belongs' : 'campaigns belong'} with. Each shows the campaigns already under it, so you can match by their siblings.{autoOnly ? '' : ' “Approve” here approves the creative.'}</p>
         {creativeIds.isLoading ? <Spin /> : !creativeIds.data?.length ? (
-          <p>{deal ? `Deal ${deal} has no creative IDs yet.` : 'This advertiser has no creative IDs yet.'} Use “{autoOnly ? 'Generate creative ID' : 'Approve + assign to new creative ID'}”.</p>
+          <p>This advertiser has no creative IDs yet. Use “{autoOnly ? 'Generate creative ID' : 'Approve + assign to new creative ID'}”.</p>
         ) : (
           <Radio.Group value={choice} onChange={(e) => setChoice(e.target.value)} className="flex flex-col gap-2" aria-label="Creative IDs">
             {creativeIds.data.map((g) => (
               <Radio key={g.creativeId} value={g.creativeId} className="rounded border p-2" style={{ alignItems: 'flex-start', borderColor: choice === g.creativeId ? T.primary : T.border }}>
-                <b>{g.creativeId}</b>{originals.has(g.creativeId) && <Tag color="blue" className="ml-2">original (resubmission)</Tag>}{deal && g.dealId === deal && <Tag color="green" className="ml-2">same deal ({deal})</Tag>}
+                <b>{g.creativeId}</b>{originals.has(g.creativeId) && <Tag color="blue" className="ml-2">original (resubmission)</Tag>}{deal && (g.dealIds ?? (g.dealId ? [g.dealId] : [])).includes(deal) && <Tag color="green" className="ml-2">same deal ({deal})</Tag>}{(g.dealIds?.length ?? 0) > 1 && <Tag className="ml-2">{g.dealIds!.length} deals</Tag>}
                 <ul className="m-0 mt-1 list-none p-0" style={{ fontSize: 12, color: T.muted }}>
                   {g.campaigns.map((m) => <li key={m.campaignId}>{m.name} — {m.touchPoints.join(', ') || 'no touch points'}</li>)}
                 </ul>

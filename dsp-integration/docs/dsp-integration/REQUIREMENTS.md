@@ -760,6 +760,24 @@ schedule's own second tab, 26 Sep 2026). It carries per-advertiser settings
 and, below them, the inventory those advertisers can buy (§5); **campaigns
 are not approved here.**
 
+**Advertiser ↔ DSP seat mapping (10 Oct 2026, ticket T0gLfo2zDrRXPVGcvEoL).**
+A PH advertiser maps to one or more DSP seats, each `{ partnerId, seatId }`, the
+identifier an invited buyer on a buyers list carries (table `advertiser_seats`,
+migration 0066). Seats are **chosen from what the connected DSPs synced, never
+typed**: `PUT /admin/v1/advertisers/{advertiserId}/seats` (admin) replaces the
+mapping and answers 400 for a seat no connected DSP has synced. An advertiser
+buying through several DSPs maps a seat per DSP. `GET /admin/v1/advertisers`
+returns it as `dspSeats` (`partnerName`, `seatName`, `synced`). **Resolution for
+authoring:** `GET /admin/v1/advertisers/{advertiserId}/deals[?at=]` lists the
+buyers lists whose invited buyers include any of the advertiser's mapped seats
+(exact `{ partnerId, seatId }` match; an IAB-category invitation alone does not
+count) and whose delivery term covers `at` (default now); this is what the
+authoring deal-ID picker lists. A **direct advertiser has no mapping** (the PUT
+is refused) and resolves to no deals. **Kept live:** a re-sync that drops a seat
+leaves it in `dspSeats` with `synced: false`, so it can be re-pointed, and it no
+longer resolves any deal. The mapping screen is not built yet; this is the data
+and API.
+
 **Direct advertisers (9 Oct 2026).** An advertiser with a direct relationship
 with the retailer, not brought by any DSP, is added on this page (admin only,
 saved at once; `POST /admin/v1/advertisers/direct`, table `direct_advertisers`,
@@ -1032,8 +1050,18 @@ tickets must satisfy.
 
 - **Deal ID** — the *advertiser/DSP-facing* grouping going **in**: the
   private-auction deal a campaign is booked against. Set by the advertiser at
-  authoring time in PH Core and carried through submission unchanged. It is
-  optional: a campaign with no deal ID is a direct campaign.
+  authoring time in PH Core and carried through submission. It is a
+  **reference to the deal ID the platform minted on the buyers list** (ticket
+  5CCgGEYSkVoDTH9yNSYu), never free text, chosen from the private-auction
+  deals the advertiser is an invited buyer on through its mapped DSP seat
+  (ticket T0gLfo2zDrRXPVGcvEoL). Whether the field exists at all is decided by
+  context, not left blank: an advertiser with a deal relationship (a private
+  auction through a DSP) has it; a **direct advertiser** — a direct retainer
+  relationship with the retailer, shown "Name (Direct)" — has no deal, so the
+  field is not shown and the API refuses a deal ID for it. Several campaigns
+  may carry the same deal ID. Before approval the advertiser may change the
+  association; changing it on an approved campaign sends it back to Awaiting
+  approval, like any other resubmission.
 - **Creative ID** — minted (or chosen) by **HQ on approval**. It signals
   that this group of campaigns is approved and biddable. It spans **one
   advertiser** only, and a campaign belongs to at most one.
@@ -1131,16 +1159,41 @@ tickets must satisfy.
 | B2 | Private auction | Approve a subset of a deal into a new ID | Subset `approved` with the ID; the rest Awaiting approval |
 | B3 | Private auction | A second round approves another subset | Into a new ID, or an existing one; the deal now holds one or more IDs |
 | B4 | Private auction | Selection mixing two deals, or deal and non-deal | Assign actions hidden; API 400; nothing approved |
+| B12 | Private auction | Change a campaign's deal before / after approval | Before: changes in place. After: back to Awaiting approval. A deal the advertiser is not invited to: 400 |
 | B5 | Private auction | Picker for a deal campaign | Lists only that deal's creative IDs |
 | B6 | Private auction | Reject one campaign with a reason, approve the rest | Rejected one carries the reason; others approved into the ID; deal not blocked |
 | B7 | Private auction | Rejected campaign resubmitted fixed | Picker pre-highlights the deal group's ID; approving attaches to the SAME ID, none minted |
 | B8 | Private auction | Resubmitted campaign, deal has several IDs, anchor ambiguous | No ID pre-highlighted; HQ chooses |
 | B9 | Private auction | Approved deal campaign edited and resubmitted | Keeps its own ID, as A6 |
 
-Cases A1–A7 run today. B1–B9 need `dealId` on the campaign and the deal
-grouping from DLhjuhbTqJS2uAvhh0I8; they are recorded as pending tests in
-`apps/api/test/creative-ids.test.ts` so the suite names them, and are turned
-into assertions by whichever ticket lands the deal-ID field.
+All of A1–A7 and B1–B9 run: `apps/api/test/creative-ids.test.ts` for the
+API cases and the admin tests in `dsp-integration.test.tsx` ("deal IDs") for
+the screens (ticket DLhjuhbTqJS2uAvhh0I8).
+
+Built:
+
+- `dealId` on the campaign (ticket IQndewUPKJHbHRR2hAgG): the Partner API
+  takes an optional `dealId` that must be the platform-minted `dealId` of a
+  buyers list the advertiser is an invited buyer on (400 `validation_failed`
+  otherwise, including any deal ID for an advertiser with no mapped DSP seats,
+  which is every direct advertiser); the same rule holds for the added deals on
+  `PUT …/campaigns/{id}/deals` (admin and Partner), where a change on an
+  approved campaign resubmits it (`returned_for_review`, never a reused
+  clearance). The picker's source is `GET /admin/v1/advertisers/{id}/deals`
+  (name and `dealId`). Stored in `campaigns.deal_id` (migration 0065, a
+  reference by value to `buyers_lists.deal_id`, which is unique and immutable);
+  the campaign detail page shows the deal IDs only when there are any; returned on campaign status, `GET /admin/v1/campaigns`
+  and on creative-ID members.
+- One deal per creative ID, enforced server-side: approve-assign and
+  assign-creative-id answer 400 on a mixed selection or on another deal's
+  existing ID.
+- `GET /admin/v1/creative-ids?dealId=` scopes the picker. The picker
+  pre-highlights the deal's only ID, tagged "same deal (<deal>)", and
+  highlights nothing when the deal has several IDs.
+- The table is advertiser > deal ID > campaign, with the selection,
+  Advertiser and Deal ID columns pinned left and tick-all boxes in the group
+  cells. AG Grid Enterprise row grouping is unlicensed, so community AG Grid
+  with pinned cells is used; the "prototype both" comparison was not made.
 
 ### Creative IDs: campaigns are approved one at a time and grouped for the DSP to bid on
 
@@ -2018,6 +2071,32 @@ How an advertiser finds inventory (§5), takes it and fills it. This is the API
 surface of the project and the part a partner actually integrates against.
 The retailer configures it under the **DSP Integration** navigation item.
 
+
+### What a DSP is sent for a deal — terms plus derived creative requirements (10 Oct 2026, ticket lksouRswtc6CLFevvE4J)
+
+The "deal" a DSP buyer transacts against is a **combination of two separate
+things**: the buyers list (deal ID, rate, term, type, invited buyers) and the
+slot allocation (the positions that list is attached to). The list carries no
+inventory itself; the attachment binds it to slots.
+
+- **Creative requirements are derived, never stored on the deal.** They come
+  from the positions the list is attached to (any tier of a slot's waterfall).
+- **They are a set, one entry per distinct format** — canvas size + max play
+  length + creative types (image / video) — so a list attached to portrait and
+  landscape slots, or to slots with different play lengths, returns several.
+  Each entry names the attached positions it covers. A list attached to no
+  slot has an empty set.
+- **Max play length** is the slot's resolved value (slot → display type →
+  company, "Max play length"). **Canvas size and format per display type are
+  owned by PH Core** and read read-only; this project keeps no copy of them
+  (api/PH-CORE-BOUNDARIES.md "Canvas and format per display type").
+- **What is served:** `GET /v1/deals` (Partner API) lists the deals the calling
+  DSP is invited to with deal ID, type, term, rate and the requirements set;
+  `GET /admin/v1/buyers-lists/{id}/deal` is the same view for HQ.
+- **Authoring validates against the same set.** `creativeMisfit()`
+  (`apps/api/src/domain/dealCreative.ts`) is the one check PH Core campaign
+  authoring (IQndewUPKJHbHRR2hAgG) applies to a campaign that picks the deal,
+  so what the buyer is told and what is enforced cannot drift.
 
 ### Prioritised buyers lists — the waterfall (7 Oct 2026)
 
@@ -4475,6 +4554,18 @@ keeps the won creative renderable; the lookahead sets how early the per-impressi
   two-period model, `auctionCloses` and the locked rate apply), `preferred`
   (fixed-price first look held at the reserve price; no volume, no auction
   window) or `guaranteed` (programmatic guaranteed; commits `committedPlays`).
+- **Invited IAB categories are private-auction only** (ticket
+  WPb7NbbeqJmhEOzSeBSl). The field is shown only when the type is
+  `private_auction`; `preferred` and `guaranteed` are bilateral commitments
+  to named seats, so it is hidden and the API refuses invited categories on
+  them (400). In a private auction a category **widens who may bid** (the
+  union rule in §5, resolved live) but is **a bid-time filter, not a
+  shareable deal**: DV360 / The Trade Desk share and accept a deal ID with a
+  *named seat*, so a deal ID is shared with, and authored against, named
+  invited seats only — a category-matched advertiser does not resolve the
+  deal in the authoring picker. A category-only list admits category-matched
+  bidders but has no named buyer to share with; the admin UI flags it
+  ("not shareable") until at least one named seat is added.
 - **The type decides the fields.** `committedPlays` is captured only for
   `guaranteed` (pre-filled from Default committed plays; the booked volume
   per window is still `floor(forecast × (1 − buffer%))`); `auctionCloses`

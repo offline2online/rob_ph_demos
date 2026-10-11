@@ -45,7 +45,9 @@ const BuyersCell = ({ data }: P) => {
   if (!data) return null
   const buyers = data.invitedBuyers.length ? `${data.invitedBuyers.length} buyer${data.invitedBuyers.length === 1 ? '' : 's'}` : ''
   const cats = (data.invitedCategories ?? []).length ? `Category: ${data.invitedCategories.join(', ')}` : ''
-  return <span className="truncate" title={[buyers, cats].filter(Boolean).join(' + ')}>{[buyers, cats].filter(Boolean).join(' + ')}</span>
+  const text = [buyers, cats].filter(Boolean).join(' + ')
+  const categoryOnly = !buyers && !!cats
+  return <span className="truncate" title={categoryOnly ? `${text} — no named buyer: can’t be shared or authored until one is added` : text}>{text}{categoryOnly && <span style={{ color: T.muted }}> · not shareable</span>}</span>
 }
 const TargetingCell = ({ data }: P) => {
   const t = data?.targeting ?? []
@@ -99,6 +101,7 @@ const CapacityCell = ({ data, context }: P) => {
     </Tip>
   )
 }
+const DealIdCell = ({ data }: P) => (data ? <span style={{ fontSize: 12.5, fontFamily: 'monospace' }}>{(data.deals ?? []).filter((d) => !d.retiredAt).map((d) => d.dealId).join(', ') || data.dealId}</span> : null)
 const DEAL_TYPE_LABELS = { private_auction: 'Private auction', preferred: 'Preferred deal', guaranteed: 'Programmatic guaranteed' } as const
 const DealTypeCell = ({ data }: P) => (data ? <span style={{ fontSize: 12.5 }}>{DEAL_TYPE_LABELS[data.dealType] ?? 'Private auction'}</span> : null)
 const ActionsCell = ({ data, context }: P) =>
@@ -118,6 +121,7 @@ export function BuyersListsTable({ lists, canEdit, capacity, onChanged }: { list
 
   const columns: ColDef<BuyersList>[] = [
     { headerName: 'Buyers and targeting', flex: 2, minWidth: 220, cellRenderer: NameCell, valueGetter: (p) => `${p.data?.name}|${p.data?.description}` },
+    { headerName: 'Deal ID', field: 'dealId', width: 170, minWidth: 150, cellRenderer: DealIdCell },
     { headerName: 'CPM', width: 200, minWidth: 170, cellRenderer: RateCell, valueGetter: (p) => JSON.stringify([p.data?.dealType, p.data?.lockedWin, p.data?.effectiveRateCpm]) },
     /* These cells have no field, so AG Grid saw an unchanged value (undefined) after a save and kept the old cell:
        an edited deal type kept showing "Private auction". Each gets a valueGetter over everything it renders. */

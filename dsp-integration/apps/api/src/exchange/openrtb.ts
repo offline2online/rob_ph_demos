@@ -63,9 +63,6 @@ export const blockedDomains = (partner: PartnerRecord, blockList: string[]) => s
 
 export const categoryCodes = (names: string[]) => names.map((n) => IAB_CATEGORY_CODES[n]).filter(Boolean)
 
-/* The deal ID for a buyers list: derived (no stored column), stable for the
-   list's life, and the only ID a bid on that deal's position may quote. */
-export const dealIdOf = (listId: string) => `PH-${listId}`
 
 /* imp.bidfloor: the resolved base floor for this DSP and, on a deal, its
    buyers list (platform, DSP, list: the most specific set, never below the
@@ -90,7 +87,7 @@ export async function buildBidRequest(ctx: Context, p: PositionRef, partner: Par
   const publisher = { id: exchange.sellerId, name: exchange.organisation, domain: exchange.domain }
   const listId = assignmentOf(p.def) === 'deal' ? assignedOf(p.def).buyersListId : undefined
   const list = listId ? await ctx.buyersLists.get(listId) : null
-  const pmp = list ? { private_auction: 1 as const, deals: [{ id: dealIdOf(list.id), at: 1 as const, wseat: partner.seats.map((x) => x.id).filter((id) => isInvitedBuyer(list, partner, id)) }] }
+  const pmp = list ? { private_auction: 1 as const, deals: [{ id: (await ctx.buyersLists.dealIdFor(list.id, partner.id)) as string, at: 1 as const, wseat: partner.seats.map((x) => x.id).filter((id) => isInvitedBuyer(list, partner, id)) }] }
     : inGlobalDeal(p.def, exchange.globalDealEnabled === true) ? { private_auction: 0 as const, deals: [{ id: GLOBAL_DEAL_ID, at: 1 as const }] } : undefined
   return {
     id,

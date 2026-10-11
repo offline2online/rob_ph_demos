@@ -12,7 +12,7 @@ describe('Shared Targeting Variables (spec §6)', () => {
     expectMatchesContract('GET', '/admin/v1/targeting-variables', 200, res.json())
     const items = res.json().items
     expect(items).toHaveLength(25)
-    expect(items[0]).toEqual({ key: 'store.hours', label: 'Store Open / Closed', group: 'localisation', exampleValues: 'Whether the store is open or closed at the time — e.g. Open, Closed', access: 'all' })
+    expect(items[0]).toEqual({ key: 'store.hours', label: 'Store Open / Closed', group: 'localisation', exampleValues: 'Whether the store is open or closed at the time — e.g. Open, Closed', access: 'all', values: [], freeText: false })
     expect(items.find((v: { key: string }) => v.key === 'store.fixed_segments').exampleValues).toBe('e.g. Airport, Metro, Regional')
     /* Computer Vision first, then the aggregates, then the rest (Rob, 20 Sep). */
     const personalisation = items.filter((v: { group: string }) => v.group === 'personalisation')
@@ -77,5 +77,23 @@ describe('GET /v1/targeting/attributes', () => {
     expect(res.statusCode).toBe(401)
     expectMatchesContract('GET', '/v1/targeting/attributes', 401, res.json())
     expect((await buildApp(await testContext({ flag: false })).inject({ method: 'GET', url: '/api/v1/targeting/attributes', headers: GOOGLE })).statusCode).toBe(404)
+  })
+
+  it('defines matchable values for a shared variable only, and persists them with the free-text flag', async () => {
+    const app = buildApp(await testContext())
+    const put = (payload: object) => app.inject({ method: 'PUT', url: '/api/admin/v1/targeting-variables', payload })
+    const unshared = await put({ access: { 'store.suburb': [] }, values: { 'store.suburb': { values: ['Surry Hills'], freeText: false } } })
+    expect(unshared.statusCode).toBe(400)
+    expect(unshared.json().error.details[0].reason).toMatch(/Share the variable with a DSP/)
+    const ok = await put({ access: { 'store.suburb': ['p_google'], 'store.postcode': 'all' }, values: { 'store.suburb': { values: [' Surry Hills ', 'Parramatta', 'Surry Hills'], freeText: false }, 'store.postcode': { values: [], freeText: true } } })
+    expect(ok.statusCode).toBe(200)
+    expectMatchesContract('PUT', '/admin/v1/targeting-variables', 200, ok.json())
+    const get = (await app.inject({ method: 'GET', url: '/api/admin/v1/targeting-variables' })).json().items as { key: string; values: string[]; freeText: boolean }[]
+    expect(get.find((v) => v.key === 'store.suburb')).toMatchObject({ values: ['Surry Hills', 'Parramatta'], freeText: false })
+    expect(get.find((v) => v.key === 'store.postcode')).toMatchObject({ values: [], freeText: true })
+    /* Un-sharing a variable drops its definition. */
+    await put({ access: { 'store.suburb': [] } })
+    const after = (await app.inject({ method: 'GET', url: '/api/admin/v1/targeting-variables' })).json().items as { key: string; values: string[] }[]
+    expect(after.find((v) => v.key === 'store.suburb')?.values).toEqual([])
   })
 })

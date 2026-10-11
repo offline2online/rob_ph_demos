@@ -5,6 +5,7 @@
      GET  /v1/campaigns/{id}            stored default + targeted versions (priorities, rules) and status
      GET  /v1/campaigns/{id}/status     approval status
    A partner only ever sees its own campaigns; anyone else's is not found. */
+import { assertInvitedDeals } from '../../domain/advertiserDeals'
 import { createHash, randomUUID } from 'node:crypto'
 import { type Approval, ApprovalError } from '@ph-dsp/campaign-approval/server'
 import { INTERACTIVE_ENABLED, advertiserSlug, maxCampaignsOf } from '@ph-dsp/types'
@@ -40,9 +41,9 @@ export const partnerAdvertiser = (p: PartnerRecord, advertiserId: string) => p.s
    and rejectedEdit says so, with the reason, until the next edit.
    creativeId is the grouping the retailer assigned on approval (null until
    then); an advertiser reads pending, rejected + reason, or that ID here. */
-const statusView = (a: Pick<Approval, 'campaignId' | 'status' | 'mode' | 'reason' | 'assetVersion' | 'liveAssetVersion' | 'pendingEdit' | 'rejectedEdit' | 'creativeId' | 'dealId'>) => ({
+const statusView = (a: Pick<Approval, 'campaignId' | 'status' | 'mode' | 'reason' | 'assetVersion' | 'liveAssetVersion' | 'pendingEdit' | 'rejectedEdit' | 'creativeId' | 'dealId' | 'dealIds'>) => ({
   campaignId: a.campaignId, status: a.status, mode: a.mode, reason: a.reason, assetVersion: a.assetVersion,
-  creativeId: a.creativeId, dealId: a.dealId ?? null, liveAssetVersion: a.liveAssetVersion, pendingEdit: a.pendingEdit, ...(a.rejectedEdit ? { rejectedEdit: a.rejectedEdit } : {}),
+  creativeId: a.creativeId, dealId: a.dealId ?? null, dealIds: a.dealIds ?? [], liveAssetVersion: a.liveAssetVersion, pendingEdit: a.pendingEdit, ...(a.rejectedEdit ? { rejectedEdit: a.rejectedEdit } : {}),
 })
 
 const approvalError = (e: unknown) => (e instanceof ApprovalError ? new HttpError(e.status, e.code, e.message) : e)
@@ -75,6 +76,14 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
     const dealId = typeof b.dealId === 'string' ? b.dealId.trim() : b.dealId
     if (b.dealId !== undefined && (typeof dealId !== 'string' || !dealId)) invalid.push({ field: 'dealId', reason: 'A non-empty deal ID.' })
     else if (typeof dealId === 'string' && dealId.length > lim.nameLength) invalid.push({ field: 'dealId', reason: `At most ${lim.nameLength} characters.` })
+    /* Only a deal the advertiser is an invited buyer on (ticket IQndewUPKJHbHRR2hAgG). */
+    if (typeof dealId === 'string' && dealId && typeof b.advertiserId === 'string' && !invalid.some((d) => d.field === 'dealId')) {
+      try { await assertInvitedDeals(ctx, b.advertiserId, 'dealId', [dealId], [], ctx.clock().toISOString()) } catch (e) {
+        const d = (e as { details?: Detail[] }).details
+        if (!d) throw e
+        invalid.push(...d)
+      }
+    }
     const dt = typeof b.displayTypeId === 'string' ? await ctx.displayTypes.get(b.displayTypeId) : null
     if (b.displayTypeId !== undefined && (typeof b.displayTypeId !== 'string' || !dt)) invalid.push({ field: 'displayTypeId', reason: 'Unknown display type.' })
     /* slot (optional): which of the display type's advertiser slots this
@@ -167,6 +176,18 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
      bounds what one partner can do, not the process — with twenty partners
      it allowed 40 × 200 MB in memory at once. This one bounds the process. */
   let uploadsInFlight = 0
+  /* The advertiser's side of the crossover: set the deals this campaign is
+     associated with beyond the one it was authored with. Replaces the added set. */
+  app.put<{ Params: { id: string }; Body: { dealIds?: unknown } }>('/campaigns/:id/deals', async (req) => {
+    await own(req.partner, req.params.id)
+    requireConnected(req.partner)
+    const ids = req.body?.dealIds
+    if (!Array.isArray(ids) || ids.some((d) => typeof d !== 'string')) throw validationFailed([{ field: 'dealIds', reason: 'An array of deal IDs.' }])
+    const c = await own(req.partner, req.params.id)
+    await assertInvitedDeals(ctx, c.advertiserId, 'dealIds', ids as string[], (await ctx.approvals.view(c.campaignId)).dealIds ?? [], ctx.clock().toISOString())
+    try { return statusView(await ctx.approvals.setDeals(req.params.id, ids as string[], req.partner.name)) } catch (e) { throw approvalError(e) }
+  })
+
   app.post<{ Params: { id: string } }>('/campaigns/:id/assets', async (req, reply) => {
     /* Ownership first: another partner's campaign is 404 whatever state the caller is in. */
     const c = await own(req.partner, req.params.id)

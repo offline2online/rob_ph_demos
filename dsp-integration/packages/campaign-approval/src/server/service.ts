@@ -80,21 +80,10 @@ export function createApprovalService(o: ApprovalServiceOptions) {
     return out
   }
 
-  /* A creative ID never straddles two deals (REQUIREMENTS.md, The two approval
-     flows, rule 3): the ticked campaigns share one deal (or all have none),
-     and an existing ID joined must already belong to that same deal. */
-  const checkDeal = async (campaigns: CampaignRef[], existingId: string | null) => {
-    const deal = campaigns[0].dealId ?? null
-    if (campaigns.some((c) => (c.dealId ?? null) !== deal)) throw new ApprovalError(400, 'validation_failed', 'A creative ID spans one deal only. Choose campaigns from a single deal, or campaigns with no deal.')
-    if (existingId) {
-      const members = new Set(campaigns.map((c) => c.campaignId))
-      for (const a of await store.assignments()) {
-        if (a.creativeId !== existingId || members.has(a.campaignId)) continue
-        const m = await o.campaigns.getCampaign(a.campaignId)
-        if (m && (m.dealId ?? null) !== deal) throw new ApprovalError(400, 'validation_failed', deal ? `That creative ID does not belong to deal ${deal}.` : 'That creative ID belongs to a deal; these campaigns have none.')
-      }
-    }
-  }
+  /* A campaign's deal set: the deal authored with it plus any added since
+     (REQUIREMENTS.md §3 "Creative IDs"). A campaign authored with no deal has a
+     direct arrangement, which it keeps if a deal is added later. */
+  const dealsOf = async (c: CampaignRef) => [...new Set([...(c.dealId ? [c.dealId] : []), ...(await store.addedDeals(c.campaignId))])].sort()
 
   const toView = async (c: CampaignRef, full: boolean): Promise<Approval> => {
     const r = await currentRow(c)
@@ -102,6 +91,7 @@ export function createApprovalService(o: ApprovalServiceOptions) {
     const trail = full ? await store.auditTrail(c.campaignId) : null
     const discarded = trail ? rejectedEdit(trail) : undefined
     const creativeId = await store.creativeIdOf(c.campaignId)
+    const dealIds = await dealsOf(c)
     return {
       campaignId: c.campaignId, campaignName: c.name, ...(c.advertiserName ? { advertiserName: c.advertiserName } : {}), ...(c.partnerName ? { partnerName: c.partnerName } : {}),
       status: r?.status ?? 'draft', mode: r?.mode ?? null, assetVersion: c.assetVersion,
@@ -109,7 +99,7 @@ export function createApprovalService(o: ApprovalServiceOptions) {
       ...(r?.assetReasons?.length ? { assetReasons: r.assetReasons } : {}),
       checks: r?.checks ?? [],
       creativeId,
-      dealId: c.dealId ?? null,
+      dealId: dealIds[0] ?? null, dealIds, direct: !c.dealId,
       liveAssetVersion: live, pendingEdit: !!live && live !== c.assetVersion && r?.status === 'awaiting_approval',
       ...(discarded ? { rejectedEdit: discarded } : {}),
       ...(full ? { targetingSummary: c.targetingSummary, creative: c.creative, canvas: c.canvas, audit: trail! } : {}),
@@ -260,7 +250,6 @@ export function createApprovalService(o: ApprovalServiceOptions) {
           if (!existing) throw new ApprovalError(404, 'not_found', 'That creative ID does not exist.')
           if (existing.advertiserId !== advertiserId) throw new ApprovalError(400, 'validation_failed', 'That creative ID belongs to a different advertiser.')
         }
-        await checkDeal(campaigns, creativeId)
         const at = now()
         let target = creativeId
         if (!target) {
@@ -306,7 +295,6 @@ export function createApprovalService(o: ApprovalServiceOptions) {
           if (!existing) throw new ApprovalError(404, 'not_found', 'That creative ID does not exist.')
           if (existing.advertiserId !== advertiserId) throw new ApprovalError(400, 'validation_failed', 'That creative ID belongs to a different advertiser.')
         }
-        await checkDeal(campaigns, creativeId)
         const at = now()
         let target = creativeId
         if (!target) {
@@ -338,13 +326,53 @@ export function createApprovalService(o: ApprovalServiceOptions) {
           const c = await o.campaigns.getCampaign(id)
           if (!c) continue
           advertiserName ??= c.advertiserName
-          campaigns.push({ campaignId: id, name: c.name, touchPoints: [], dealId: c.dealId ?? null })
+          const dealIds = await dealsOf(c)
+          campaigns.push({ campaignId: id, name: c.name, touchPoints: [], dealId: dealIds[0] ?? null, dealIds, direct: !c.dealId })
         }
-        const deal = campaigns.find((m) => m.dealId)?.dealId ?? null
-        /* dealId undefined lists every ID; null lists direct IDs only; a string lists that deal's. */
-        if (campaigns.length && (dealId === undefined || deal === dealId)) out.push({ creativeId: row.creativeId, advertiserId: row.advertiserId, advertiserName, createdAt: row.createdAt, dealId: deal, campaigns })
+        /* The creative's deals are the union of its campaigns': one creative, many deals. */
+        const dealIds = [...new Set(campaigns.flatMap((m) => m.dealIds))].sort()
+        const direct = campaigns.some((m) => m.direct)
+        /* dealId undefined lists every ID; null lists those with a direct arrangement; a string lists the IDs in that deal. */
+        const listed = dealId === undefined || (dealId === null ? direct : dealIds.includes(dealId))
+        if (campaigns.length && listed) out.push({ creativeId: row.creativeId, advertiserId: row.advertiserId, advertiserName, createdAt: row.createdAt, dealId: dealIds[0] ?? null, dealIds, direct, campaigns })
       }
       return out
+    },
+
+    /* Set the deals a campaign is associated with, beyond the one it was
+       authored with (which cannot be removed). The retailer or the advertiser
+       does this from the campaign — including after the fact, when a campaign
+       first run direct is also run through a DSP. Replaces the added set. */
+    /* Every campaign's full deal set in one read, for the campaign list. */
+    async dealSets(): Promise<Map<string, string[]>> {
+      const added = await store.allAddedDeals()
+      const out = new Map<string, string[]>()
+      for (const c of await o.campaigns.listCampaigns()) out.set(c.campaignId, [...new Set([...(c.dealId ? [c.dealId] : []), ...(added.get(c.campaignId) ?? [])])].sort())
+      return out
+    },
+
+    async setDeals(campaignId: string, dealIds: string[], actor: string): Promise<Approval> {
+      const ids = [...new Set(dealIds.map((d) => (typeof d === 'string' ? d.trim() : '')))]
+      if (ids.some((d) => !d || d.length > 200) || ids.length > 50) throw new ApprovalError(400, 'validation_failed', 'Send up to 50 deal IDs, each 1–200 characters.')
+      return transaction(async () => {
+        const c = await campaign(campaignId)
+        if (c.source === 'hq') throw new ApprovalError(400, 'validation_failed', `${c.name} is not an advertiser campaign, so it has no deals.`)
+        const want = new Set(ids.filter((d) => d !== c.dealId))
+        const have = new Set(await store.addedDeals(campaignId))
+        const at = now()
+        for (const d of have) if (!want.has(d)) await store.removeDeal(campaignId, d)
+        for (const d of want) if (!have.has(d)) await store.addDeal(campaignId, d, actor, at)
+        /* Changing the deal association of an approved campaign sends it back for approval (ticket
+           IQndewUPKJHbHRR2hAgG), like any other change to it. Never a reused clearance: the
+           creative's bytes are unchanged, but the deal it will run under is not. Before approval
+           there is nothing to resubmit. */
+        const changed = [...want].some((d) => !have.has(d)) || [...have].some((d) => !want.has(d))
+        if (changed && (await statusOf(c)) === 'approved') {
+          const latest = await store.latest(campaignId)
+          await apply(c, { type: 'change', requiresApproval: await o.requiresApproval(c.advertiserId), preCleared: false }, actor, { checks: await withClearance(c, latest?.checks ?? []) })
+        }
+        return toView(c, false)
+      })
     },
 
     async reject(id: string, assetVersion: string, reviewer: string, reason: string, assetReasons?: AssetRejection[]) {

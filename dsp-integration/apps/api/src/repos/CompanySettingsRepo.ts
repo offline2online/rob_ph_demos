@@ -28,7 +28,10 @@ export interface CompanySettings {
 }
 export interface AdvertiserSettingRecord { approvalRequired: boolean; floorMultiplier: number }
 export interface DirectAdvertiserRecord { advertiserId: string; name: string }
+export interface AdvertiserSeatRecord { partnerId: string; seatId: string }
 export type Access = 'all' | string[]
+/* The matchable values defined for a shared variable (Shared Targeting Variables). */
+export interface VariableValues { values: string[]; freeText: boolean }
 
 export const DEFAULT_ADVERTISER_SETTING: AdvertiserSettingRecord = { approvalRequired: true, floorMultiplier: 1 }
 
@@ -52,6 +55,10 @@ export interface CompanySettingsRepo {
   directAdvertisers(): Awaitable<DirectAdvertiserRecord[]>
   addDirectAdvertiser(advertiserId: string, name: string): Awaitable<void>
   removeDirectAdvertiser(advertiserId: string): Awaitable<void>
+  /* The DSP seats each PH advertiser bids under, by advertiserId. */
+  advertiserSeats(): Awaitable<Record<string, AdvertiserSeatRecord[]>>
+  /* Replace one advertiser's seat mapping. */
+  saveAdvertiserSeats(advertiserId: string, seats: AdvertiserSeatRecord[]): Awaitable<void>
   /* Platform users (Company Settings -> Users), by first name. */
   platformUsers(): Awaitable<PlatformUserRecord[]>
   platformUser(email: string): Awaitable<PlatformUserRecord | null>
@@ -59,7 +66,10 @@ export interface CompanySettingsRepo {
   savePlatformUser(u: PlatformUserRecord): Awaitable<void>
   removePlatformUser(email: string): Awaitable<boolean>
   variableAccess(): Awaitable<Record<string, Access>>
-  saveVariableAccess(access: Record<string, Access>): Awaitable<void>
+  /* Defined values per variable key; a variable with none defined is absent. */
+  variableValues(): Awaitable<Record<string, VariableValues>>
+  /* Upsert access per key; `values` (when given) also replaces those keys' defined values. */
+  saveVariableAccess(access: Record<string, Access>, values?: Record<string, VariableValues>): Awaitable<void>
 }
 
 interface UserRow { email: string; first_name: string; last_name: string; role: PlatformUserRecord['role']; advertiser_id: string | null; invited: number; last_login_at: string | null }
@@ -104,7 +114,7 @@ export function sqliteCompanySettingsRepo(db: Db): CompanySettingsRepo {
     return r
   }
 
-  let cache: { at: number; company?: Readonly<CompanySettings>; advertisers?: Readonly<Record<string, AdvertiserSettingRecord>>; access?: Readonly<Record<string, Access>> } = { at: 0 }
+  let cache: { at: number; company?: Readonly<CompanySettings>; advertisers?: Readonly<Record<string, AdvertiserSettingRecord>>; access?: Readonly<Record<string, Access>>; values?: Readonly<Record<string, VariableValues>> } = { at: 0 }
   const fresh = () => {
     if (Date.now() - cache.at > CACHE_TTL_MS) cache = { at: Date.now() }
     return cache
@@ -171,6 +181,17 @@ export function sqliteCompanySettingsRepo(db: Db): CompanySettingsRepo {
     },
     removeDirectAdvertiser(advertiserId) {
       prepared(db, 'DELETE FROM direct_advertisers WHERE advertiser_id = ?').run(advertiserId)
+      prepared(db, 'DELETE FROM advertiser_seats WHERE advertiser_id = ?').run(advertiserId)
+    },
+    advertiserSeats() {
+      const out: Record<string, AdvertiserSeatRecord[]> = {}
+      for (const r of prepared(db, 'SELECT advertiser_id, partner_id, seat_id FROM advertiser_seats ORDER BY advertiser_id, partner_id, seat_id').all() as { advertiser_id: string; partner_id: string; seat_id: string }[]) (out[r.advertiser_id] ??= []).push({ partnerId: r.partner_id, seatId: r.seat_id })
+      return out
+    },
+    saveAdvertiserSeats(advertiserId, seats) {
+      prepared(db, 'DELETE FROM advertiser_seats WHERE advertiser_id = ?').run(advertiserId)
+      const ins = prepared(db, 'INSERT INTO advertiser_seats (advertiser_id, partner_id, seat_id, created_at) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING')
+      for (const s of seats) ins.run(advertiserId, s.partnerId, s.seatId, now())
     },
     platformUsers: () => (prepared(db, 'SELECT * FROM platform_users ORDER BY first_name, last_name, email').all() as unknown as UserRow[]).map(userOf),
     platformUser: (email) => {
@@ -194,13 +215,26 @@ export function sqliteCompanySettingsRepo(db: Db): CompanySettingsRepo {
       }
       return { ...c.access }
     },
-    saveVariableAccess(access) {
+    variableValues() {
+      const c = fresh()
+      if (!c.values) {
+        const rows = prepared(db, 'SELECT variable_key, value_list, free_text FROM variable_access').all() as { variable_key: string; value_list: string; free_text: number }[]
+        c.values = Object.freeze(Object.fromEntries(rows.map((r) => [r.variable_key, { values: fromJson<string[]>(r.value_list, []), freeText: r.free_text === 1 }]).filter(([, v]) => (v as VariableValues).values.length || (v as VariableValues).freeText)))
+      }
+      return { ...c.values }
+    },
+    saveVariableAccess(access, values) {
+      const current = this.variableAccess() as Record<string, Access>
       const stmt = prepared(db,
         `INSERT INTO variable_access (variable_key, access, updated_at) VALUES (?, ?, ?)
          ON CONFLICT (variable_key) DO UPDATE SET access = excluded.access, updated_at = excluded.updated_at`,
       )
+      const setValues = prepared(db, 'UPDATE variable_access SET value_list = ?, free_text = ? WHERE variable_key = ?')
       try {
         for (const [k, a] of Object.entries(access)) stmt.run(k, toJson(a) as string, now())
+        /* A key given only values still needs its row: it keeps the access it already has. */
+        for (const k of Object.keys(values ?? {})) if (!(k in access)) stmt.run(k, toJson(current[k]) as string, now())
+        for (const [k, v] of Object.entries(values ?? {})) setValues.run(toJson(v.values) as string, v.freeText ? 1 : 0, k)
       } finally {
         invalidate()
       }

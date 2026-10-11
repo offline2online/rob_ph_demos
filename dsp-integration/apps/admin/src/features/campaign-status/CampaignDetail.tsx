@@ -145,6 +145,8 @@ export function CampaignDetail() {
       </div>
       <div className="mb-3" style={{ fontSize: 12.5, color: T.muted }}>
         {c.advertiserName ?? 'Unknown advertiser'} · via {c.partnerName ?? 'Unknown DSP'} · {c.source === 'dsp' ? 'Submitted through the DSP' : 'Submitted through the Partner API'}
+        {/* Only a campaign with a deal shows one: a direct campaign has none, so no empty field. */}
+        {!!c.dealIds?.length && <> · Deal ID <span data-testid="campaign-deal-ids">{c.dealIds.join(', ')}</span></>}
       </div>
 
       <Tabs

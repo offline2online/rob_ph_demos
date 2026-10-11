@@ -858,6 +858,26 @@ latitude/longitude, store id; read-only, never written), and the
 asserts the bid request's `dooh.venuetype` and the inventory venue fields
 come from the seam value, so swapping the adapter is covered.
 
+## Canvas and format per display type — owned by PH Core (10 Oct 2026, ticket lksouRswtc6CLFevvE4J)
+
+**Owner: PH Core**, read-only, the same way venue and geo metadata are. The
+exchange derives a deal's **creative requirements** (one entry per distinct
+canvas size + max play length + creative types across the positions a buyers
+list is attached to; `domain/dealCreative.ts`) and shares them with the DSP
+(`GET /v1/deals`). It stores no copy of canvas or format.
+
+**POC stand-in:** canvas is `displayCanvasSize` on the display type record;
+creative types are fixed to image + video (what the bid request already offers
+as banner + video) in `creativeFormatsOf`. Both are stand-ins for PH Core
+values. Max play length is not PH Core's here: it is the exchange's resolved
+slot value (see "Max play length" below).
+
+**PH Core to provide:** per display type, its canvas size and the creative
+types it can play, through the display-type seam, so a change reaches the next
+read of a deal with nothing re-saved. The same derived set must be what PH Core
+campaign authoring validates a campaign against when it picks the deal
+(`creativeMisfit`), so the DSP's brief and authoring never drift.
+
 ### Max play length: the loop must be built from the resolved slot length (7 Oct 2026, ticket KeZZ4HPvATweSiDdn0KI)
 
 **Status: open, owned by PH Core. Contract change, flagged, not built blind.**

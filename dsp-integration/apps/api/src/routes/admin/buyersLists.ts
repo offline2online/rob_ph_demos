@@ -7,16 +7,19 @@ import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import type { Guards } from '../../http/app'
 import { hasDependents, notFound, validationFailed } from '../../http/errors'
+import { mintDealId } from '../../repos/BuyersListRepo'
 import { tx } from '../../db/db'
 import { invitedPartnerIds } from '../../domain/buyersLists'
+import { baseFloorFor } from '../../exchange/enforcement'
+import { dealOf } from '../../domain/dealCreative'
 import { TRANSACTING_CURRENCY } from '../../domain/currency'
 import { effectiveTerm } from '../../domain/pricing'
 import { positionIdOf } from '../../domain/positions'
-import { permittedFor } from '../../domain/variables'
-import type { Access } from '../../repos/CompanySettingsRepo'
+import { permittedFor, undefinedValues } from '../../domain/variables'
+import type { Access, VariableValues } from '../../repos/CompanySettingsRepo'
 import type { PartnerRecord } from '../../repos/PartnerRepo'
 
-type Body = { name?: unknown; description?: unknown; dealType?: unknown; invitedBuyers?: unknown; invitedCategories?: unknown; targeting?: unknown; activeFrom?: unknown; activeTo?: unknown; auctionCloses?: unknown; committedPlays?: unknown; floorCpm?: unknown }
+type Body = { dealId?: unknown; name?: unknown; description?: unknown; dealType?: unknown; invitedBuyers?: unknown; invitedCategories?: unknown; targeting?: unknown; activeFrom?: unknown; activeTo?: unknown; auctionCloses?: unknown; committedPlays?: unknown; floorCpm?: unknown }
 
 /* Every slot currently assigned to this buyers list, across every display
    type — what stops a delete (spec "Deleting"). */
@@ -52,7 +55,7 @@ const deliveredOf = async (ctx: Context, l: BuyersList): Promise<number> =>
 export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => async (app) => {
   /* An invited buyer must be a seat a connected DSP actually synced. */
   const partnersById = async () => new Map((await ctx.partners.list()).filter((p) => p.status === 'connected').map((p) => [p.id, p]))
-  const parse = (b: Body, partnerById: Map<string, PartnerRecord>, access: Record<string, Access>, platformFloor: number, errors: { field: string; reason: string }[]): { name: string; description: string; dealType: BuyersListDealType; invitedBuyers: InvitedBuyer[]; invitedCategories: string[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays: number | null; floorCpm: number | null } => {
+  const parse = (b: Body, partnerById: Map<string, PartnerRecord>, access: Record<string, Access>, defined: Record<string, VariableValues>, platformFloor: number, errors: { field: string; reason: string }[]): { name: string; description: string; dealType: BuyersListDealType; invitedBuyers: InvitedBuyer[]; invitedCategories: string[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays: number | null; floorCpm: number | null } => {
     const name = typeof b.name === 'string' ? b.name.trim() : ''
     if (!name) errors.push({ field: 'name', reason: 'A name is required.' })
     const description = typeof b.description === 'string' ? b.description.trim() : ''
@@ -76,6 +79,8 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     const invitedCategories: string[] = []
     const rawCategories = b.invitedCategories === undefined || b.invitedCategories === null ? [] : Array.isArray(b.invitedCategories) ? (b.invitedCategories as unknown[]) : null
     if (!rawCategories) errors.push({ field: 'invitedCategories', reason: 'A list of IAB categories.' })
+    /* Categories are a private-auction bid-time filter only: a preferred or guaranteed deal is a bilateral commitment to named seats, so an invited category has no meaning there. */
+    else if (rawCategories.length && dealType !== 'private_auction') errors.push({ field: 'invitedCategories', reason: 'Only a private auction can invite IAB categories; a preferred or guaranteed deal is with named buyers.' })
     else rawCategories.forEach((raw, i) => {
       const c = canonicalIabCategory(raw)
       if (!c) errors.push({ field: `invitedCategories[${i}]`, reason: `${typeof raw === 'string' ? raw : 'That'} is not an IAB category. Choose from the IAB Content Taxonomy (tier 1, or tier 2 as "Tier 1 › Tier 2").` })
@@ -103,6 +108,8 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
         if (typeof r.op !== 'string' || !def.operators.includes(r.op as never)) return void errors.push({ field: `targeting[${i}].op`, reason: `Not an operator for ${def.label}.` })
         const values = Array.isArray(r.values) ? (r.values as unknown[]) : []
         if (!values.length || values.length > 100 || values.some((v) => typeof v !== 'string' || !v.trim() || v.length > 200)) return void errors.push({ field: `targeting[${i}].values`, reason: 'One or more values (up to 100, 200 characters each).' })
+        const undef = undefinedValues(def.key, (values as string[]).map((v) => v.trim()), defined)
+        if (undef.length) return void errors.push({ field: `targeting[${i}].values`, reason: `${undef.join(', ')} ${undef.length === 1 ? 'is' : 'are'} not defined for ${def.label} in Shared Targeting Variables.` })
         targeting.push({ source: def.source, variable: def.key, op: r.op as Condition['op'], values: (values as string[]).map((v) => v.trim()) })
       })
     }
@@ -146,23 +153,44 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     return { items: await Promise.all((await ctx.buyersLists.list()).map((l) => withDelivery(ctx, l))) }
   })
 
+  /* The deal as a DSP buyer sees it: terms plus the creative requirements derived from the attached positions. */
+  app.get<{ Params: { buyersListId: string } }>('/buyers-lists/:buyersListId/deal', async (req) => {
+    guards.flagged()
+    guards.requireScope(req, 'sections')
+    const list = await ctx.buyersLists.get(req.params.buyersListId)
+    if (!list) throw notFound()
+    return dealOf(ctx, list, await baseFloorFor(ctx, { buyersListId: list.id }))
+  })
+
   app.post<{ Body: Body }>('/buyers-lists', async (req, reply) => {
     guards.flagged()
     guards.requireScope(req, 'admin')
     const errors: { field: string; reason: string }[] = []
-    const parsed = parse(req.body ?? {}, await partnersById(), await ctx.company.variableAccess(), (await ctx.company.get()).floorCpm, errors)
+    /* The deal ID is minted by the platform (ticket 5CCgGEYSkVoDTH9yNSYu): a typed one is refused, not ignored. */
+    if (req.body?.dealId !== undefined) errors.push({ field: 'dealId', reason: 'The deal ID is generated by the platform; leave it out.' })
+    const parsed = parse(req.body ?? {}, await partnersById(), await ctx.company.variableAccess(), await ctx.company.variableValues(), (await ctx.company.get()).floorCpm, errors)
     if (errors.length) throw validationFailed(errors)
-    const created: BuyersList = await ctx.buyersLists.insert({ id: `bl_${randomUUID().slice(0, 12)}`, ...parsed })
+    const created: BuyersList = await ctx.buyersLists.insert({ id: `bl_${randomUUID().slice(0, 12)}`, dealId: mintDealId(), ...parsed })
     return reply.status(201).send(await withDelivery(ctx, created))
   })
 
-  app.put<{ Params: { buyersListId: string }; Body: Body }>('/buyers-lists/:buyersListId', async (req) => {
+  app.put<{ Params: { buyersListId: string }; Body: Body }>('/buyers-lists/:buyersListId', async (req, reply) => {
     guards.flagged()
     guards.requireScope(req, 'admin')
-    if (!(await ctx.buyersLists.get(req.params.buyersListId))) throw notFound()
+    const existing = await ctx.buyersLists.get(req.params.buyersListId)
+    if (!existing) throw notFound()
     const errors: { field: string; reason: string }[] = []
-    const parsed = parse(req.body ?? {}, await partnersById(), await ctx.company.variableAccess(), (await ctx.company.get()).floorCpm, errors)
+    /* Immutable like a DV360 deal: the ID can be echoed back unchanged, never altered. */
+    if (req.body?.dealId !== undefined && req.body.dealId !== existing.dealId) errors.push({ field: 'dealId', reason: 'A deal ID cannot be changed.' })
+    /* An omitted dealType means "as it is" on an edit, so an older client can never mint a new deal by accident. */
+    const body: Body = { ...(req.body ?? {}), dealType: req.body?.dealType ?? existing.dealType }
+    const parsed = parse(body, await partnersById(), await ctx.company.variableAccess(), await ctx.company.variableValues(), (await ctx.company.get()).floorCpm, errors)
     if (errors.length) throw validationFailed(errors)
+    /* A different deal type is a different deal: insert a new list with a new ID and leave this one (and its slot assignments and campaigns) as it was until it ends. */
+    if (parsed.dealType !== existing.dealType) {
+      const minted: BuyersList = await ctx.buyersLists.insert({ id: `bl_${randomUUID().slice(0, 12)}`, dealId: mintDealId(), ...parsed })
+      return reply.status(201).send(await withDelivery(ctx, minted))
+    }
     const updated = await ctx.buyersLists.update(req.params.buyersListId, parsed)
     if (!updated) throw notFound()
     return withDelivery(ctx, updated)

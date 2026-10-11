@@ -36,6 +36,7 @@ export type Features = S['Features']
 export type SharedVariable = S['SharedVariable']
 export type TargetingAttribute = S['TargetingAttribute']
 export type VariableAccess = S['VariableAccess']
+export type VariableValues = Pick<SharedVariable, 'values' | 'freeText'>
 export type Campaign = S['Campaign']
 export type CampaignBrief = S['CampaignBrief']
 export type Approval = S['Approval']

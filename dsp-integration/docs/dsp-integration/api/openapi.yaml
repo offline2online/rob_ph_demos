@@ -196,6 +196,32 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorised'}
         '429': {$ref: '#/components/responses/RateLimited'}
 
+  /v1/deals:
+    get:
+      tags: [Partner — Inventory]
+      operationId: listDeals
+      summary: The deals this partner is invited to, with the creative requirements to size for
+      description: |
+        A deal is a buyers list (deal ID, type, term, rate) combined with the
+        positions it is attached to. The creative requirements are derived from
+        those positions, never stored on the deal, and are a set: one entry per
+        distinct format (canvas size + max play length + creative types), so a
+        list attached to portrait and landscape slots returns both. Empty while
+        the list is attached to no slot. Only deals one of this partner's seats
+        is invited to are listed.
+      responses:
+        '200':
+          description: Deals
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/Deal'}}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+
   /v1/campaigns:
     post:
       tags: [Partner — Campaigns]
@@ -290,6 +316,34 @@ paths:
         '200': {description: Campaign, content: {application/json: {schema: {$ref: '#/components/schemas/CampaignDetail'}}}}
         '401': {$ref: '#/components/responses/Unauthorised'}
         '429': {$ref: '#/components/responses/RateLimited'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /v1/campaigns/{campaignId}/deals:
+    put:
+      tags: [Partner — Campaigns]
+      operationId: setCampaignDealsPartner
+      summary: Set the deals this campaign is associated with, beyond the one it was authored with (advertiser)
+      description: |
+        Replaces the campaign's added deals; the authored `dealId` is always
+        kept. Lets an advertiser whose campaign first ran direct also run it
+        through a DSP by adding a deal after the fact. Each added ID must be a
+        deal the advertiser is an invited buyer on (400 otherwise). Changing
+        the set on an approved campaign sends it back to Awaiting approval; before
+        approval it just changes. Returns the campaign status with the full
+        `dealIds` set.
+      parameters: [{$ref: '#/components/parameters/CampaignId'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [dealIds]
+              properties:
+                dealIds: {type: array, maxItems: 50, items: {type: string, minLength: 1, maxLength: 200}}
+      responses:
+        '200': {description: Status, content: {application/json: {schema: {$ref: '#/components/schemas/CampaignStatus'}}}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
         '404': {$ref: '#/components/responses/NotFound'}
   /v1/campaigns/{campaignId}/status:
     get:
@@ -967,6 +1021,15 @@ paths:
                   type: object
                   description: variableKey → "all" or a list of partner ids ([] = none).
                   additionalProperties: {$ref: '#/components/schemas/VariableAccess'}
+                values:
+                  type: object
+                  description: variableKey → the matchable values defined for it. Only for a variable shared with a DSP (a variable that is not shared loses its values). Omitted keys keep what they have.
+                  additionalProperties:
+                    type: object
+                    required: [values, freeText]
+                    properties:
+                      values: {type: array, items: {type: string}}
+                      freeText: {type: boolean}
       responses:
         '200':
           description: Saved
@@ -1083,7 +1146,7 @@ paths:
     post:
       tags: [Admin — Advertiser settings]
       operationId: createBuyersList
-      summary: New buyers list — the buyers list and its deal terms are one object
+      summary: New buyers list — the buyers list and its deal terms are one object; the platform mints its immutable dealId (a client-supplied dealId is a 400)
       security: [{adminSession: []}]
       requestBody:
         required: true
@@ -1093,6 +1156,7 @@ paths:
               type: object
               required: [name, description, activeFrom, activeTo]
               properties:
+                dealId: {type: string, description: 'Optional; must equal the saved deal ID (400 otherwise). Immutable.'}
                 name: {type: string}
                 description: {type: string}
                 invitedBuyers: {type: array, items: {$ref: '#/components/schemas/InvitedBuyer'}}
@@ -1100,6 +1164,7 @@ paths:
                   type: array
                   items: {type: string}
                   description: |
+                    Private auction only (400 on preferred / guaranteed). A bid-time filter, not a shareable deal: the deal ID is shared with named seats only.
                     IAB categories whose advertisers are all invited (union with
                     `invitedBuyers`). Each must be from the IAB taxonomy
                     (400 validation_failed otherwise). At least one buyer or
@@ -1134,11 +1199,26 @@ paths:
         '201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/BuyersList'}}}}
         '400': {$ref: '#/components/responses/ValidationFailed'}
         '401': {$ref: '#/components/responses/Unauthorised'}
+  /admin/v1/buyers-lists/{buyersListId}/deal:
+    get:
+      tags: [Admin — Advertiser settings]
+      operationId: getBuyersListDeal
+      summary: A buyers list as the deal a DSP buyer sees, with creative requirements derived from its attached positions
+      security: [{adminSession: []}]
+      parameters: [{name: buyersListId, in: path, required: true, schema: {type: string}}]
+      responses:
+        '200':
+          description: The deal
+          content: {application/json: {schema: {$ref: '#/components/schemas/Deal'}}}
+        '404': {$ref: '#/components/responses/NotFound'}
+
   /admin/v1/buyers-lists/{buyersListId}:
     put:
       tags: [Admin — Advertiser settings]
       operationId: updateBuyersList
       summary: Save changes to a buyers list's name, description, invited buyers or active window
+      description: |
+        The deal ID and the deal type are fixed once saved (like a DV360 deal). Rate, delivery term, invited buyers and the other terms are edited in place (200, same `dealId`). A `dealType` different from the saved one mints a NEW deal instead: 201 with a new `id` and `dealId`, the original list left untouched (its slot assignments and campaigns stay on it until it ends). An omitted `dealType` means unchanged. A `dealId` other than the saved one is a 400.
       security: [{adminSession: []}]
       parameters: [{name: buyersListId, in: path, required: true, schema: {type: string}}]
       requestBody:
@@ -1156,6 +1236,7 @@ paths:
                   type: array
                   items: {type: string}
                   description: |
+                    Private auction only (400 on preferred / guaranteed). A bid-time filter, not a shareable deal: the deal ID is shared with named seats only.
                     IAB categories whose advertisers are all invited (union with
                     `invitedBuyers`). Each must be from the IAB taxonomy
                     (400 validation_failed otherwise). At least one buyer or
@@ -1181,7 +1262,8 @@ paths:
                   exclusiveMinimum: 0
                   description: 'This list''s bid floor in USD CPM (bid floor hierarchy, Rob 7 Oct 2026). Most specific: applies to deals using this list. Never below the platform floor (400 otherwise). Absent or null: inherits the DSP''s floor, else the platform''s.'
       responses:
-        '200': {description: Saved, content: {application/json: {schema: {$ref: '#/components/schemas/BuyersList'}}}}
+        '200': {description: Saved in place; same dealId, content: {application/json: {schema: {$ref: '#/components/schemas/BuyersList'}}}}
+        '201': {description: The deal type changed, so a new deal was minted with a new id and dealId; the original is unchanged, content: {application/json: {schema: {$ref: '#/components/schemas/BuyersList'}}}}
         '400': {$ref: '#/components/responses/ValidationFailed'}
         '401': {$ref: '#/components/responses/Unauthorised'}
         '404': {$ref: '#/components/responses/NotFound'}
@@ -1268,6 +1350,84 @@ paths:
         '400': {$ref: '#/components/responses/ValidationFailed'}
         '401': {$ref: '#/components/responses/Unauthorised'}
         '403': {$ref: '#/components/responses/Forbidden'}
+
+  /admin/v1/advertisers/{advertiserId}/seats:
+    put:
+      tags: [Admin — Advertisers]
+      operationId: saveAdvertiserSeats
+      summary: Map an advertiser to the DSP seats it bids under (replaces its mapping; seats must be synced; none for a direct advertiser)
+      security: [{adminSession: [admin]}]
+      parameters:
+        - {name: advertiserId, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [seats]
+              properties:
+                seats:
+                  type: array
+                  items:
+                    type: object
+                    required: [partnerId, seatId]
+                    properties:
+                      partnerId: {type: string}
+                      seatId: {type: string}
+      responses:
+        '200':
+          description: The advertiser with its mapping
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Advertiser'}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /admin/v1/advertisers/{advertiserId}/deals:
+    get:
+      tags: [Admin — Advertisers]
+      operationId: listAdvertiserDeals
+      summary: Deals this advertiser is an invited buyer on (what the authoring deal-ID picker lists)
+      description: |
+        Buyers lists whose invited buyers include any of the advertiser's synced, mapped
+        { partnerId, seatId } (exact match) and whose delivery term covers `at`.
+        A direct advertiser has no mapped seats and gets none.
+      security: [{adminSession: [admin]}]
+      parameters:
+        - {name: advertiserId, in: path, required: true, schema: {type: string}}
+        - {name: at, in: query, required: false, schema: {type: string, format: date-time}, description: Defaults to now.}
+      responses:
+        '200':
+          description: Deals
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [buyersListId, dealId, deals, name, dealType, activeFrom, activeTo]
+                      properties:
+                        deals:
+                          type: array
+                          description: The deal ID for each DSP the advertiser has a mapped seat on in this list — the one its seat accepts (DV360 accepts the DV360 deal, The Trade Desk its own).
+                          items: {$ref: '#/components/schemas/DspDealId'}
+                        buyersListId: {type: string}
+                        dealId: {type: string, description: 'The deal ID to send as a campaign''s `dealId`: the platform-minted ID of the advertiser''s DSP on the buyers list (the first of `deals` when its seats span several DSPs).'}
+                        name: {type: string}
+                        dealType: {type: string, enum: [private_auction, preferred, guaranteed]}
+                        activeFrom: {type: string, nullable: true}
+                        activeTo: {type: string, nullable: true}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
 
   /admin/v1/advertisers/direct/{advertiserId}:
     delete:
@@ -1450,15 +1610,15 @@ paths:
         approves none of them. The advertiser reads the result as `creativeId`
         on the campaign's status.
 
-        **Two flows use this one endpoint.** A *direct* campaign has no deal
-        ID. A *private-auction* campaign carries the `dealId` its advertiser
-        set at authoring time; the caller never sends it, it is read from the
-        campaigns. A deal is approved per subset across rounds, so one deal
-        can accumulate several creative IDs; a selection must not mix deals,
-        or deal and non-deal campaigns, and an existing ID must belong to the
-        same deal. A campaign rejected and resubmitted fixed joins the creative
-        ID already minted for its deal group. A mixed selection, or an existing ID
-        of another deal, is a 400 and approves none.
+        **Deals.** A *direct* campaign was authored with no deal ID. A
+        *private-auction* campaign carries the `dealId` its advertiser set at
+        authoring; the caller never sends it. A campaign carries a *set* of
+        deals (`PUT …/deals` adds more later), and a creative ID takes its
+        deals from the campaigns grouped under it, so the same creative can be
+        in many deals, and/or have a direct arrangement, at once — a selection
+        may mix deals and an existing ID may be joined whatever its deals.
+        A campaign rejected and resubmitted fixed joins the creative ID
+        already minted for it.
       security: [{adminSession: [approver]}]
       requestBody:
         required: true
@@ -1563,10 +1723,12 @@ paths:
                     type: array
                     items:
                       type: object
-                      required: [creativeId, advertiserId, advertiserName, createdAt, dealId, campaigns]
+                      required: [creativeId, advertiserId, advertiserName, createdAt, dealId, dealIds, direct, campaigns]
                       properties:
                         creativeId: {type: string}
-                        dealId: {type: [string, 'null'], description: The deal every member belongs to; null for a direct ID. An ID never straddles two deals.}
+                        dealId: {type: [string, 'null'], description: The first of dealIds, or null when there is none; kept for older callers.}
+                        dealIds: {type: array, items: {type: string}, description: 'Every deal any member campaign is associated with (sorted). One creative can be in many deals at once; the deals are taken from its campaigns, not picked separately.'}
+                        direct: {type: boolean, description: True when some member campaign was authored with no deal, i.e. the creative also has a direct arrangement.}
                         advertiserId: {type: string}
                         advertiserName: {type: [string, 'null']}
                         createdAt: {type: string, format: date-time}
@@ -1574,11 +1736,13 @@ paths:
                           type: array
                           items:
                             type: object
-                            required: [campaignId, name, touchPoints, dealId]
+                            required: [campaignId, name, touchPoints, dealId, dealIds, direct]
                             properties:
                               campaignId: {type: string}
                               name: {type: string}
-                              dealId: {type: [string, 'null'], description: The deal this member campaign belongs to; null for a direct campaign. The picker pre-highlights the ID whose members share a selected campaign's deal.}
+                              dealId: {type: [string, 'null'], description: The first of dealIds, or null when there is none.}
+                              dealIds: {type: array, items: {type: string}, description: Every deal this member campaign is associated with (sorted).}
+                              direct: {type: boolean, description: True when this campaign was authored with no deal.}
                               touchPoints: {type: array, items: {type: string}}
         '401': {$ref: '#/components/responses/Unauthorised'}
   /admin/v1/campaigns/{campaignId}/approval:
@@ -1891,6 +2055,33 @@ paths:
                 properties:
                   items: {type: array, items: {$ref: '#/components/schemas/Campaign'}}
         '401': {$ref: '#/components/responses/Unauthorised'}
+  /admin/v1/campaigns/{campaignId}/deals:
+    put:
+      tags: [Admin — Campaign approval]
+      operationId: setCampaignDeals
+      summary: Set the deals a campaign is associated with, beyond its authored one (retailer)
+      description: |
+        Replaces the campaign's added deals. The deal it was authored with is
+        always kept and cannot be removed. Used for the crossover — a campaign
+        first run direct that is later also run through a DSP — and works at
+        any time after authoring. The creative ID the campaign is grouped
+        under picks the change up: its deal set is derived from its campaigns.
+      security: [{adminSession: [approver]}]
+      parameters: [{$ref: '#/components/parameters/CampaignId'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [dealIds]
+              properties:
+                dealIds: {type: array, maxItems: 50, items: {type: string, minLength: 1, maxLength: 200}}
+      responses:
+        '200': {description: Saved, content: {application/json: {schema: {$ref: '#/components/schemas/Approval'}}}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /admin/v1/campaigns/{campaignId}/activation:
     put:
       tags: [POC stand-in — existing platform]
@@ -2291,7 +2482,7 @@ components:
       properties:
         advertiserId: {type: string}
         name: {type: string, maxLength: 200}
-        dealId: {type: string, maxLength: 200, description: 'Optional private-auction deal ID the advertiser groups this campaign under (set at authoring in PH Core). The retailer approves a deal''s campaigns in subsets, each subset into a creative ID. Omitted for a direct campaign; present, it must be non-empty.'}
+        dealId: {type: string, maxLength: 200, description: 'Optional private-auction deal ID the advertiser groups this campaign under (set at authoring in PH Core). It must be the platform-minted `dealId` of a buyers list the advertiser is an invited buyer on (through its mapped DSP seat; list them with GET /admin/v1/advertisers/{advertiserId}/deals), never free text: anything else is a 400, as is any deal ID for an advertiser with no deal relationship (a direct advertiser), whose campaigns carry none. The retailer approves a deal''s campaigns in subsets, each subset into a creative ID (deal ID = the grouping going in; creative ID = minted by HQ on approval). Omitted for a campaign with no deal.'}
         displayTypeId: {type: string}
         slot:
           type: integer
@@ -2402,6 +2593,13 @@ components:
             authoring, as submitted; null for a direct campaign. Never changes
             through approval. The creative ID is separate: minted by the
             retailer on approval, and a deal can accumulate more than one.
+        dealIds:
+          type: array
+          items: {type: string}
+          description: |
+            Every deal the campaign is associated with: the authored `dealId`
+            plus any added since with `PUT …/deals` (sorted). Empty for a
+            campaign with none. The campaign carries a set, not a single deal.
         liveAssetVersion:
           type: [string, 'null']
           description: |
@@ -2634,6 +2832,46 @@ components:
             effective floor in force when the window is booked.
             In both cases each window is billed on its own realised VAC-d.
             There is no guaranteed volume and no make-good.
+    CreativeRequirement:
+      type: object
+      required: [canvas, orientation, maxPlayLengthSec, formats, positionIds]
+      properties:
+        canvas:
+          type: object
+          required: [width, height]
+          properties: {width: {type: integer}, height: {type: integer}}
+          description: Canvas size in pixels (owned by PH Core, read per display type).
+        orientation: {type: string, enum: [landscape, portrait, square]}
+        maxPlayLengthSec: {type: number, description: 'The longest creative these positions play: the slot''s resolved max play length.'}
+        formats: {type: array, items: {type: string, enum: [image, video]}}
+        positionIds: {type: array, items: {type: string}, description: The attached positions this requirement covers.}
+    Deal:
+      type: object
+      required: [buyersListId, name, dealId, dealType, activeFrom, activeTo, auctionCloses, creativeRequirements]
+      properties:
+        buyersListId: {type: string}
+        name: {type: string}
+        dealId: {type: string, description: 'The deal ID for the calling DSP (Partner API) — each DSP accepts its own. The admin view also carries `deals`, the full set.'}
+        deals: {type: array, items: {$ref: '#/components/schemas/ListDeal'}, description: 'Admin view only: every DSP deal ID of the list.'}
+        dealType: {type: string, enum: [private_auction, preferred, guaranteed]}
+        activeFrom: {type: [string, 'null']}
+        activeTo: {type: [string, 'null']}
+        auctionCloses: {type: [string, 'null']}
+        rateCpm: {type: number, description: The deal's resolved base floor in USD CPM.}
+        creativeRequirements: {type: array, items: {$ref: '#/components/schemas/CreativeRequirement'}}
+    DspDealId:
+      type: object
+      required: [partnerId, dealId]
+      properties:
+        partnerId: {type: string}
+        dealId: {type: string}
+    ListDeal:
+      type: object
+      required: [partnerId, dealId, retiredAt]
+      properties:
+        partnerId: {type: string}
+        dealId: {type: string, description: 'Generated, immutable; what this DSP bids under (`pmp.deals[].id`).'}
+        retiredAt: {type: [string, 'null'], format: date-time, description: Set when the list no longer names a seat on this DSP. The ID is retained.}
     BuyersList:
       type: object
       description: |
@@ -2653,11 +2891,22 @@ components:
         is priced against the same score-driven floor as everything else. It
         is a commitment on top of the floor, never under it, and a deal never
         bypasses the floor.
-      required: [id, name, description, dealType, invitedBuyers, invitedCategories, targeting, activeFrom, activeTo, auctionCloses, lockedWin, committedPlays, floorCpm, deliveredPlays, effectiveCommittedPlays, effectiveRateCpm, createdAt, updatedAt]
+      required: [id, dealId, deals, name, description, dealType, invitedBuyers, invitedCategories, targeting, activeFrom, activeTo, auctionCloses, lockedWin, committedPlays, floorCpm, deliveredPlays, effectiveCommittedPlays, effectiveRateCpm, createdAt, updatedAt]
       properties:
         effectiveCommittedPlays: {$ref: '#/components/schemas/EffectiveTerm'}
         effectiveRateCpm: {$ref: '#/components/schemas/EffectiveTerm'}
         id: {type: string}
+        deals:
+          type: array
+          readOnly: true
+          description: |
+            One deal ID per DSP the list invites a named seat on (ticket fgBVnNItNcu7qMBUtqH7). The list is one object with shared terms (rate, delivery term, invited buyers, auction window / locked rate); only the deal identifier is per DSP, because DV360 and The Trade Desk each accept their own deal. Inviting the first named seat on a DSP mints that DSP's ID; removing its last named seat sets `retiredAt` (the ID is kept, never reused, until the term ends); re-inviting revives the same ID. Derived from `invitedBuyers`, never supplied.
+          items: {$ref: '#/components/schemas/ListDeal'}
+        dealId:
+          type: string
+          readOnly: true
+          description: |
+            The deal ID, minted by the platform when the list is created (PH- plus 10 characters, e.g. PH-7K2M9QXW4B; lists that pre-date it carry PH-<id>). Unique and immutable. It is the list's own ID and goes to the first DSP invited; every DSP's own ID is in `deals`. This is what the DSP bids under (`pmp.deals[].id` on the bid request, `dealid` on the bid) and what a campaign's `dealId` refers to. Never supplied by a client: a POST that includes one is a 400, and a PUT may only echo it unchanged.
         name: {type: string}
         description: {type: string}
         dealType:
@@ -2676,6 +2925,7 @@ components:
           type: array
           items: {type: string}
           description: |
+            Private auction only (400 on preferred / guaranteed). A bid-time filter, not a shareable deal: the deal ID is shared with named seats only.
             IAB categories whose advertisers are all invited, resolved live
             against each connected DSP's synced seats (a seat's DSP-reported
             `category`). Combines with `invitedBuyers` as a union; the
@@ -3173,13 +3423,18 @@ components:
         - {type: array, items: {type: string}}
     SharedVariable:
       type: object
-      required: [key, label, group, exampleValues, access]
+      required: [key, label, group, exampleValues, access, values, freeText]
       properties:
         key: {type: string}
         label: {type: string}
         group: {type: string, enum: [localisation, personalisation]}
         exampleValues: {type: string, description: Tooltip text}
         access: {$ref: '#/components/schemas/VariableAccess'}
+        values:
+          type: array
+          items: {type: string}
+          description: The values a targeting condition may match, defined centrally. Empty unless the variable is shared with a DSP.
+        freeText: {type: boolean, description: Any value may be entered at selection time instead of choosing from the defined list.}
 
     Provider: {type: string, enum: [google_dv360, amazon_dsp, the_trade_desk]}
     Partner:
@@ -3283,7 +3538,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/AdvertiserSetting'
         - type: object
-          required: [advertiserId, name, via, effectiveFloorCpm, campaigns, bookings]
+          required: [advertiserId, name, via, effectiveFloorCpm, campaigns, bookings, dspSeats]
           properties:
             advertiserId: {type: string}
             name: {type: string}
@@ -3292,6 +3547,22 @@ components:
               type: boolean
               description: True for an advertiser with a direct relationship with the retailer (no DSP). Shown as "Name (Direct)" in place of the DSP name.
             effectiveFloorCpm: {type: number}
+            dspSeats:
+              type: array
+              description: |
+                The DSP seats this advertiser bids under, each the same { partnerId, seatId }
+                an invited buyer on a buyers list carries. Always empty for a direct advertiser.
+                A seat a re-sync dropped stays listed with synced false so it can be re-pointed,
+                and no longer resolves any deal.
+              items:
+                type: object
+                required: [partnerId, seatId, partnerName, seatName, synced]
+                properties:
+                  partnerId: {type: string}
+                  seatId: {type: string}
+                  partnerName: {type: string}
+                  seatName: {type: string, nullable: true}
+                  synced: {type: boolean}
             bookings:
               type: integer
               description: |
@@ -3341,6 +3612,11 @@ components:
             authoring, as submitted; null for a direct campaign. Never changes
             through approval. The creative ID is separate: minted by the
             retailer on approval, and a deal can accumulate more than one.
+        dealIds:
+          type: array
+          items: {type: string}
+          description: Every deal the campaign is associated with — the authored dealId plus any added since (sorted).
+        direct: {type: boolean, description: True when the campaign was authored with no deal; it keeps a direct arrangement once a deal is added.}
         liveAssetVersion:
           type: [string, 'null']
           description: |
@@ -3667,7 +3943,9 @@ components:
         source: {type: string, enum: [hq, api, dsp]}
         advertiserId: {type: [string, 'null']}
         advertiserName: {type: [string, 'null']}
-        dealId: {type: string, description: The private-auction deal ID the advertiser tagged this campaign with; absent for a direct campaign.}
+        dealId: {type: string, description: The private-auction deal ID the advertiser tagged this campaign with; absent for a direct campaign. The first of dealIds.}
+        dealIds: {type: array, items: {type: string}, description: Every deal the campaign is associated with (authored plus added); absent when none.}
+        direct: {type: boolean, description: True when the campaign was authored with no deal, so it keeps a direct arrangement even once a deal is added.}
         partnerId: {type: [string, 'null']}
         partnerName: {type: [string, 'null']}
         displayTypeId: {type: [string, 'null']}

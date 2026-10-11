@@ -262,6 +262,16 @@ describe('Shared Targeting Variables page', () => {
     expect(screen.getByText('Personalisation Variables')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Variables shared through the API/ })).toBeInTheDocument()
   })
+
+  it('has a Values column: inactive until the variable is shared, then a multi-select with a Free text tick', async () => {
+    renderAt('/dsp-integration/targeting-variables')
+    await screen.findByRole('heading', { name: /Shared Targeting Variables/ })
+    expect((await screen.findAllByText('Values')).length).toBeGreaterThanOrEqual(2)
+    expect(screen.getAllByText('Share with a DSP to define values').length).toBeGreaterThan(0)
+    expect(screen.queryByLabelText('Postcode values')).not.toBeInTheDocument()
+    expect((await screen.findAllByLabelText('Store Open / Closed values')).length).toBeGreaterThan(0)
+    expect(screen.getAllByRole('checkbox', { name: 'Free text' }).length).toBeGreaterThan(0)
+  })
 })
 
 describe('DSP page', () => {
@@ -884,6 +894,46 @@ describe('Advertisers / Inventory', () => {
     expect(await within(table).findByText('24,960')).toBeInTheDocument()
   })
 
+  /* Ticket 5CCgGEYSkVoDTH9yNSYu (10 Oct 2026): the deal ID is minted by the platform, shown read-only, and never part of the save payload. */
+  it('shows a read-only Deal ID in the buyers table and edit modal, and warns that changing the deal type mints a new deal', async () => {
+    const inv = ADVERTISER_PAGE['/api/admin/v1/available-inventory']
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({
+      ...ADVERTISER_PAGE,
+      '/api/admin/v1/buyers-lists': { items: [{ id: 'bl_1', dealId: 'PH-7K2M9QXW4B', name: 'Pharma brands', description: '', invitedBuyers: [], invitedCategories: [], targeting: [], activeFrom: null, activeTo: null, dealType: 'private_auction' }] },
+      '/api/admin/v1/available-inventory': inv,
+    })))
+    renderAt('/advertisers')
+    const table = await screen.findByLabelText('Buyers and targeting')
+    expect(await within(table).findByText('PH-7K2M9QXW4B')).toBeInTheDocument()
+    fireEvent.click(within(table).getByRole('button', { name: 'Edit Pharma brands' }))
+    const dialog = await screen.findByRole('dialog')
+    const id = within(dialog).getByRole('textbox', { name: 'Deal ID' })
+    expect(id).toHaveValue('PH-7K2M9QXW4B')
+    expect(id).toHaveAttribute('readonly')
+    expect(within(dialog).queryByTestId('deal-type-new-deal-note')).not.toBeInTheDocument()
+    fireEvent.mouseDown(within(dialog).getByRole('combobox', { name: 'Deal type' }))
+    fireEvent.click(await screen.findByText('Preferred deal', { selector: '.ant-select-item-option-content' }))
+    expect(await within(dialog).findByTestId('deal-type-new-deal-note')).toHaveTextContent('new Deal ID')
+  })
+
+  /* Ticket fgBVnNItNcu7qMBUtqH7: a list that invites seats on two DSPs shows one deal ID per DSP. */
+  it('shows one deal ID per DSP on a cross-DSP buyers list', async () => {
+    const inv = ADVERTISER_PAGE['/api/admin/v1/available-inventory']
+    const deals = [{ partnerId: 'p_google', dealId: 'PH-AAAAAAAAAA', retiredAt: null }, { partnerId: 'p_ttd', dealId: 'PH-BBBBBBBBBB', retiredAt: null }, { partnerId: 'p_old', dealId: 'PH-CCCCCCCCCC', retiredAt: '2026-10-01T00:00:00Z' }]
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({
+      ...ADVERTISER_PAGE,
+      '/api/admin/v1/buyers-lists': { items: [{ id: 'bl_1', dealId: 'PH-AAAAAAAAAA', deals, name: 'Cross DSP', description: '', invitedBuyers: [], invitedCategories: [], targeting: [], activeFrom: null, activeTo: null, dealType: 'private_auction' }] },
+      '/api/admin/v1/available-inventory': inv,
+    })))
+    renderAt('/advertisers')
+    const table = await screen.findByLabelText('Buyers and targeting')
+    expect(await within(table).findByText('PH-AAAAAAAAAA, PH-BBBBBBBBBB')).toBeInTheDocument()
+    fireEvent.click(within(table).getByRole('button', { name: 'Edit Cross DSP' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByRole('textbox', { name: /Deal ID — Google/ })).toHaveValue('PH-AAAAAAAAAA')
+    expect(within(dialog).getAllByRole('textbox', { name: /^Deal ID/ })).toHaveLength(2)
+  })
+
   /* Ticket Y3GzIlj2goQMJaGUwTey (9 Oct 2026): deals above an explicit Open auction, the DSPs it runs across below it. */
   it('shows an Open auction separator under the deals, with the DSP or All DSPs beneath it', async () => {
     const inv = ADVERTISER_PAGE['/api/admin/v1/available-inventory']
@@ -1168,7 +1218,7 @@ describe('Upcoming Campaign Approval — deal IDs', () => {
     '/api/admin/v1/campaigns': { items: campaigns },
     ...Object.fromEntries(campaigns.map((c) => [`/api/admin/v1/campaigns/${c.campaignId}/approval`, approvalOf(c, 'awaiting_approval', null, c.dealId ?? null)])),
     '/api/admin/v1/creative-ids': {
-      items: [{ creativeId: 'CR-DEAL0001', advertiserId: 'swisse', advertiserName: 'Swisse', dealId: 'PMP-1', createdAt: '2026-10-01T00:00:00.000Z', campaigns: [{ campaignId: 'd9', name: 'Swisse nap', touchPoints: ['Digital Signage'], dealId: 'PMP-1' }] }],
+      items: [{ creativeId: 'CR-DEAL0001', advertiserId: 'swisse', advertiserName: 'Swisse', dealId: 'PMP-1', dealIds: ['PMP-1'], direct: false, createdAt: '2026-10-01T00:00:00.000Z', campaigns: [{ campaignId: 'd9', name: 'Swisse nap', touchPoints: ['Digital Signage'], dealId: 'PMP-1', dealIds: ['PMP-1'], direct: false }] }],
     },
     '/api/admin/v1/booking-schedule': { currency: 'AUD', windows: [], positions: [], revenue: [], dsps: [], byPricingType: [], totals: { bookedWindows: 0, bookedRevenue: 0, billedRevenue: 0 } },
   }
@@ -1215,13 +1265,12 @@ describe('Upcoming Campaign Approval — deal IDs', () => {
     await waitFor(() => expect((within(grid).getByLabelText('Select all Swisse') as HTMLInputElement).indeterminate).toBe(true))
   }, slow(45000))
 
-  it('hides the assign actions across advertisers or deals, keeping Reject', async () => {
+  it('keeps the assign actions across deals of one advertiser, hides them across advertisers, keeping Reject', async () => {
     const grid = await open()
     fireEvent.click(within(grid).getByLabelText('Select all PMP-1'))
     expect(await screen.findByRole('button', { name: 'Approve + assign to new creative ID' })).toBeInTheDocument()
     fireEvent.click(within(grid).getByLabelText('Select Swisse focus'))
-    await waitFor(() => expect(screen.queryByRole('button', { name: /Approve \+ assign/ })).not.toBeInTheDocument())
-    expect(screen.getByText(/one deal, or none/)).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Approve + assign to new creative ID' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Reject…' })).toBeInTheDocument()
     fireEvent.click(within(grid).getByLabelText('Select all PMP-9'))
     await waitFor(() => expect(screen.getByText(/one advertiser/)).toBeInTheDocument())
@@ -1234,7 +1283,7 @@ describe('Upcoming Campaign Approval — deal IDs', () => {
     const dialog = await screen.findByRole('dialog')
     expect(await within(dialog).findByText('same deal (PMP-1)', {}, { timeout: 5000 })).toBeInTheDocument()
     await waitFor(() => expect(within(dialog).getByRole('radio', { name: /CR-DEAL0001/ })).toBeChecked())
-    expect(gets.some((u) => u.includes('creative-ids') && u.includes('dealId=PMP-1'))).toBe(true)
+    expect(gets.some((u) => u.includes('creative-ids') && !u.includes('dealId='))).toBe(true)
     expect(within(dialog).getByRole('button', { name: 'Approve + assign to CR-DEAL0001' })).toBeInTheDocument()
   }, slow(45000))
 })
