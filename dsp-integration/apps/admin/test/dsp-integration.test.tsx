@@ -1191,8 +1191,8 @@ describe('Pricing tooltips', () => {
   it('explain how a floor CPM becomes what an advertiser pays, without repeating the working', async () => {
     renderAt('/dsp-integration/advertiser-settings')
     await screen.findByRole('heading', { name: /Advertiser settings/ })
-    const tip = (label: string) => screen.getByText(label).closest('label')!.querySelector('[role="button"]') as HTMLElement
-    fireEvent.mouseEnter(tip('Platform floor price (CPM, USD)'))
+    const tip = (label: string) => screen.getByText(label, { exact: true }).closest('label')!.querySelector('[role="button"]') as HTMLElement
+    fireEvent.mouseEnter(tip('CPM floor'))
     expect(await screen.findByText(/× attention \(VAC: the share who actually look\)/)).toBeInTheDocument()
     expect(screen.getByText(/100 × 27 ÷ 1,000/)).toBeInTheDocument()
 

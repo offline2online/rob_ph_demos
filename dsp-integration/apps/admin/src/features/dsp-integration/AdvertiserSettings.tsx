@@ -5,7 +5,7 @@ import { Input, InputNumber, Select, Switch } from 'antd'
 import { IAB_TAXONOMY, INTERACTIVE_ENABLED, type AdvertiserSettingsInput } from '@ph-dsp/types'
 import { type ReactNode, useMemo } from 'react'
 import { Field } from '../../shared/Field'
-import { WithTip } from '../../shared/InfoTip'
+import { InfoTip, WithTip } from '../../shared/InfoTip'
 import { ListEditor, addExclusive } from '../../shared/ListEditor'
 import { SectionLabel } from '../../shared/SectionLabel'
 import { T } from '../../theme/phTheme'
@@ -117,25 +117,23 @@ export function AdvertiserSettings() {
       <SubPageHeader icon="rule" title="Advertiser settings" tip={ADVERTISER_SETTINGS_TIP} />
 
       <SectionLabel><WithTip tip="Effective floor = the floor in force × the advertiser's floor multiplier. The floor in force is the platform floor here, unless a DSP or a buyers list sets a higher one for its own bids (the most specific wins; never below this) (set on Advertisers / Inventory), the same for every campaign type. Bids below it never win. Every play bills at the committed price, whatever version plays.">Pricing</WithTip></SectionLabel>
-      <div className="flex flex-wrap items-start gap-3.5">
-        <Field label={<span className="block" style={{ minHeight: 36 }}>Currency</span>} htmlFor="currency" tip="Fixed at USD on every instance: floors, reserves and bids are all transacted in USD, whatever currency this instance reports in. Bid requests carry USD as the bid floor currency." className="w-56">
+      <div className="flex flex-wrap items-end gap-3.5">
+        <Field label={<span className="block whitespace-nowrap">Currency</span>} htmlFor="currency" tip="Fixed at USD on every instance: floors, reserves and bids are all transacted in USD, whatever currency this instance reports in. Bid requests carry USD as the bid floor currency." className="w-44">
           <Select id="currency" className="w-full" disabled value={TRANSACTING_CURRENCY} options={[{ value: TRANSACTING_CURRENCY, label: 'USD — US Dollar' }]} />
         </Field>
-        <Field label={<span className="block" style={{ minHeight: 36 }}>Platform floor price (CPM, USD)</span>} htmlFor="floorCpm" tip={FLOOR_TIP} tipWidth={400} className="w-32">{num('floorCpm', 1, '100')}</Field>
+        <Field label={<span className="block whitespace-nowrap">CPM floor</span>} htmlFor="floorCpm" tip={FLOOR_TIP} tipWidth={400} className="w-32">{num('floorCpm', 1, '100')}</Field>
         {INTERACTIVE_ENABLED && <Field label={<span className="block" style={{ minHeight: 36 }}>Interactive cost per engagement (USD)</span>} htmlFor="interactiveCpe" tip={INTERACTIVE_TIP} tipWidth={400} className="w-44">{num('interactiveCpe', 0.05, '0.50', { precision: 2, prefix: TRANSACTING_CURRENCY })}</Field>}
       </div>
 
       {/* Reach setting (9 Oct 2026, moved from Exchange settings): its own line, not part of Play configuration. */}
       <SectionLabel><WithTip tip={GLOBAL_DEAL_TIP}>Reach</WithTip></SectionLabel>
       <div className="mb-3.5 flex items-center justify-between border-b py-3" style={{ borderColor: T.divider }}>
-        <label htmlFor="globalDealEnabled" style={{ fontSize: 14, color: T.text }}>Enable global deal</label>
+        <label htmlFor="globalDealEnabled" className="flex items-center gap-[5px]" style={{ fontSize: 14, color: T.text }}>
+          Enable global deal
+          <InfoTip text={`Deal ID ${GLOBAL_DEAL_ID}: give this to a DSP that only transacts on deals.`} />
+        </label>
         <Switch id="globalDealEnabled" checked={draft.exchange.globalDealEnabled === true} onChange={(on) => update('exchange', (x) => ({ ...x, globalDealEnabled: on }))} />
       </div>
-      {draft.exchange.globalDealEnabled === true && (
-        <div className="mb-3.5" style={{ fontSize: 14, color: T.text }}>
-          Deal ID <code style={{ fontFamily: 'ui-monospace, monospace' }}>{GLOBAL_DEAL_ID}</code>: give this to a DSP that only transacts on deals.
-        </div>
-      )}
 
       <SectionLabel><WithTip tip="How many plays a slot offers and what a deal commits to. The company max slot length sets the default length of one play, which a display type and then a slot can override. The buffer decides a guaranteed deal's committed volume, worked out from the slot's forecast. The default seeds Committed plays on a new buyers list. They are separate: changing one never changes another.">Play configuration</WithTip></SectionLabel>
       <div className="flex flex-wrap items-start gap-3.5">
@@ -159,13 +157,13 @@ export function AdvertiserSettings() {
 
       <SectionLabel><WithTip tip="How early a real-time slot's auction opens, so the winning creative can be downloaded and rendered before the slot plays (the auction is per slot, opened this long before that slot's own start, not on a schedule), and how long the player may keep a pre-cached approved creative.">Real-time bidding</WithTip></SectionLabel>
       <div className="flex flex-wrap items-start gap-3.5">
-        <Field label={<span className="block" style={{ minHeight: 36 }}>Digital signage bid lookahead</span>} htmlFor="bidLookaheadSeconds" tip="Digital signage bid lookahead, in seconds: how long before an available digital signage slot plays that its bid (auction) becomes available, so the auction resolves far enough ahead for the winning creative to be downloaded and rendered in time. Applies to digital signage slots only; it is not used for programmatic on a website or mobile app. Whole seconds, at least 1. Default 35, as Broadsign Reach, whose Real-Time Audience API sends bid requests about 35 seconds ahead of the expected programmatic slot." className="w-64">
+        <Field label={<span className="block" style={{ minHeight: 36 }}>Digital signage bid lookahead</span>} htmlFor="bidLookaheadSeconds" tip="Digital signage bid lookahead, in seconds: how long before an available digital signage slot plays that its bid (auction) becomes available, so the auction resolves far enough ahead for the winning creative to be downloaded and rendered in time. Applies to digital signage slots only; it is not used for programmatic on a website or mobile app. Whole seconds, at least 1. Default 35." className="w-64">
           <div className="flex items-center gap-2">
             <InputNumber id="bidLookaheadSeconds" className="w-full" step={1} placeholder="35" value={s.bidLookaheadSeconds ?? 35} onChange={(v) => set('bidLookaheadSeconds', (v === null ? null : Number(v)) as number)} />
             <span>seconds</span>
           </div>
         </Field>
-        <Field label={<span className="block" style={{ minHeight: 36 }}>Cached asset retention</span>} htmlFor="cachedAssetRetentionHours" tip="Cached asset retention, in hours: the longest the PWA player keeps a pre-cached, approved creative before evicting it. Default 48, matching Broadsign Air's pre-cache horizon. It is an upper bound, not a guaranteed hold: a rejected creative is evicted immediately, and the player's disk limit and least-recently-used eviction still apply. Approved creatives only. Whole hours, at least 1." tipWidth={400} className="w-64">
+        <Field label={<span className="block" style={{ minHeight: 36 }}>Cached asset retention</span>} htmlFor="cachedAssetRetentionHours" tip="Cached asset retention, in hours: the longest the PWA player keeps a pre-cached, approved creative before evicting it. Default 48. It is an upper bound, not a guaranteed hold: a rejected creative is evicted immediately, and the player's disk limit and least-recently-used eviction still apply. Approved creatives only. Whole hours, at least 1." tipWidth={400} className="w-64">
           <div className="flex items-center gap-2">
             <InputNumber id="cachedAssetRetentionHours" className="w-full" step={1} min={1} precision={0} placeholder="48" value={s.cachedAssetRetentionHours ?? 48} onChange={(v) => set('cachedAssetRetentionHours', (v === null ? null : Number(v)) as number)} />
             <span>hours</span>
