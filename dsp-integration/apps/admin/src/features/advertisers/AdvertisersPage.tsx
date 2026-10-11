@@ -841,7 +841,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
   const [saving, setSaving] = useState(false)
   const [addingAdvertiser, setAddingAdvertiser] = useState(false)
   const [deleting, setDeleting] = useState<Advertiser | null>(null)
-  const [deleteError, setDeleteError] = useState<ApiRequestError | null>(null)
+  const [deleteError, setDeleteError] = useState<{ message: string } | null>(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [shown, setShown] = useState<number | null>(null)
   const data = q.data
@@ -1066,13 +1066,13 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
               qc.invalidateQueries({ queryKey: ['advertisers'] })
               message.success('Advertiser deleted')
             } catch (e) {
-              setDeleteError(e instanceof ApiRequestError ? e : null)
+              setDeleteError({ message: e instanceof Error && e.message ? e.message : 'The advertiser could not be deleted. Try again.' })
             } finally {
               setDeleteBusy(false)
             }
           }}
         >
-          This removes the direct advertiser. It can’t be undone, and it isn’t possible while it has campaigns or bookings.
+          This removes the direct advertiser. It can’t be undone, and it isn’t possible while it has campaigns or bookings, or is assigned to a slot on Available Inventory.
         </DeleteDialog>
       )}
       <BuyersListModal
