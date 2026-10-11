@@ -1102,13 +1102,14 @@ tickets must satisfy.
    request-level all-or-nothing rule in *Creative IDs* still holds *within*
    one approve request: a stale version or a mixed selection refuses that
    request. It is not a rule that a whole deal must be approved together.)
-3. **Selection stays one advertiser, and within a deal one deal.** The
-   assign actions are offered only when every ticked campaign shares one
-   advertiser; a selection that mixes deal IDs, or mixes deal and non-deal
-   campaigns, is refused (the actions are hidden with a hint), so a creative
-   ID never straddles two deals. An existing creative ID offered in the
-   picker is one already minted for **that deal**; the picker for a deal
-   campaign never lists another deal's IDs or the advertiser's non-deal IDs.
+3. **Selection stays one advertiser; deals may be mixed** (ticket
+   FXIOlaN93QM18yqCEBM7, 10 Oct 2026). The assign actions are offered when
+   every ticked campaign shares one advertiser. A selection may mix deal IDs,
+   or deal and non-deal campaigns: a creative ID takes its deals from the
+   campaigns it groups, so **one creative can be in many deals at once**
+   (and/or have a direct arrangement) rather than being duplicated per deal.
+   The picker lists all of the advertiser's creative IDs; when the ticked
+   campaigns share one deal, IDs already in that deal are tagged "same deal".
 4. **Reject one, approve the rest.** HQ may reject a single campaign in a deal
    with a reason (required, as in Flow A) and approve the others in the same
    or a later round. The rejection does not hold up the rest of the deal.
@@ -1124,9 +1125,25 @@ tickets must satisfy.
    approved campaign that is later edited and resubmitted keeps its own
    creative ID exactly as in Flow A step 4.
 6. **The advertiser/DSP sees both ids.** Campaign status carries the
-   `dealId` (always, as submitted) and the `creativeId` (null until
-   approved). The DSP bids on the deal using the creative IDs approved
-   under it.
+   `dealId` / `dealIds` (as submitted, plus any added since) and the
+   `creativeId` (null until approved). The DSP bids on a deal using the
+   creative IDs associated with **that** deal: `GET /admin/v1/creative-ids?
+   dealId=` resolves per deal, so a creative in three deals is listed under
+   each.
+
+**Deal association is a set, kept on the campaign** (FXIOlaN93QM18yqCEBM7).
+A campaign carries a *set* of deals: the one set at authoring
+(`campaigns.deal_id`, immutable through approval) plus any added later
+(`campaign_deals`, migration `0104`). Either the retailer
+(`PUT /admin/v1/campaigns/{id}/deals`, approver scope) or the advertiser
+(`PUT /v1/campaigns/{id}/deals`, its own campaigns) replaces the added
+deals; nothing is done on the creative ID record. This is also the
+**crossover**: a campaign first run direct (authored with no deal) and later
+also run through a DSP gets a deal added after the fact, and keeps its
+direct arrangement (`direct: true`). A creative ID's deal set
+(`CreativeIdView.dealIds`) is the union of its campaigns'. Not built here:
+the dropdown of the deals an advertiser is invited on (needs the DSP seat
+mapping, T0gLfo2zDrRXPVGcvEoL), so any non-empty deal ID is accepted for now.
 
 **Where the flows must agree (no gaps or contradictions):**
 
@@ -1135,11 +1152,11 @@ tickets must satisfy.
 | Deal ID | none (null) | set at authoring, immutable through approval |
 | Row in approval table | ungrouped, grouped by advertiser | grouped by deal ID under advertiser |
 | Who mints the creative ID | HQ, on approval | HQ, on approval |
-| Granularity of an approval | any subset of one advertiser's campaigns | any subset of one deal's campaigns |
-| Creative IDs per grouping | many per advertiser | many per deal, accumulating |
+| Granularity of an approval | any subset of one advertiser's campaigns | any subset of one advertiser's campaigns, deals may be mixed |
+| Creative IDs per grouping | many per advertiser | many per deal, accumulating; one creative may be in many deals |
 | Reject | reason required, per ticked campaign | same; others in the deal unaffected |
 | Fixed/resubmitted campaign | keeps its own ID; picker pre-highlights | attaches to the SAME ID as its deal group; picker pre-highlights, anchored by the deal |
-| Auto-approved advertiser | groups own campaigns (*Generate creative ID*) | same actions, and the deal rules (3) above apply |
+| Auto-approved advertiser | groups own campaigns (*Generate creative ID*) | same actions; deals may be mixed (3 above) |
 | Same endpoint | `POST /admin/v1/approvals/approve-assign` | same; `dealId` is read from the campaigns, never sent by the caller |
 
 **Test cases (both flows must stay covered; the API suite is
@@ -1221,7 +1238,7 @@ approving (ticket IDGsyELBJsjlAYjizSqT).
     campaigns into it. The picker never lists another advertiser's IDs.
 - **All or nothing per request** (not per deal — a deal is approved per subset, across rounds). The request is checked before anything is written: a
   stale `assetVersion` (the creative changed after the retailer opened it),
-  a campaign that is not Awaiting approval, a mixed selection or another
+  a campaign that is not Awaiting approval, a selection of more than one advertiser or another
   advertiser's creative ID refuses the whole request and approves none of
   it.
 - **The result goes back to the advertiser.** A campaign's status
@@ -1246,7 +1263,7 @@ approving (ticket IDGsyELBJsjlAYjizSqT).
   `POST /admin/v1/approvals/approve-assign` (approver scope) takes
   `items: [{campaignId, assetVersion}]` and an optional `creativeId`;
   `GET /admin/v1/creative-ids?advertiserId=` lists the IDs with their
-  campaigns and touch points; `Approval.creativeId` and
+  campaigns, touch points and deal set (`dealIds`, `direct`); `Approval.creativeId` and
   `CampaignStatus.creativeId` carry the assignment.
 - **Auto-approved advertisers group their own campaigns** (ticket
   XnN1Kwl39F8C8DrOkwQn). An advertiser with *Approval required* off has
