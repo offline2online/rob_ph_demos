@@ -3,7 +3,7 @@
    a phantom zone (prototype defect 3, fixed). */
 import { ColorPicker, InputNumber, Select, Switch } from 'antd'
 import { hasStructuralFeatures, type DisplayType } from '@ph-dsp/types'
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { CollapsiblePanel } from '../../../shared/CollapsiblePanel'
 import { Field } from '../../../shared/Field'
 import { Icon } from '../../../shared/Icon'
@@ -15,16 +15,47 @@ import {
   featureConfig, featureOn, featuresSummary, qr, withFeature, withQr, type FeatureKey,
 } from '../model'
 import { TIPS } from '../tooltips'
+import { PRESET_TIP, VISION_SECTIONS, type VisionSection } from '../visionSettings'
 
 const SubSettings = ({ children }: { children: ReactNode }) => (
   <div className="mt-3 ml-7 grid grid-cols-2 gap-3 rounded-md border p-3" style={{ background: T.surfaceAlt, borderColor: T.borderSubtle }}>{children}</div>
 )
-const VISION_CUSTOM_FIELDS = [
-  { key: 'streamQuality', label: 'Stream quality (px)', min: 1 },
-  { key: 'fps', label: 'Frames per second', min: 1 },
-  { key: 'frameSkip', label: 'Frame skip', min: 0 },
-  { key: 'missThreshold', label: 'Miss threshold (frames)', min: 0 },
-]
+function VisionSectionBlock({ section, d, update }: { section: VisionSection; d: DisplayType; update: (fn: (d: DisplayType) => DisplayType) => void }) {
+  const [open, setOpen] = useState(true)
+  const cfg = featureConfig(d, 'vision_ai')
+  const set = (key: string, value: unknown) => update((t) => withFeature(t, 'vision_ai', { [key]: value }))
+  return (
+    <section className="col-span-2" aria-label={section.title}>
+      <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className="mb-2 flex w-full cursor-pointer items-center gap-1.5 border-0 bg-transparent p-0 text-left" style={{ fontSize: 13.5, fontWeight: 500, color: T.text }}>
+        <Icon name={open ? 'expand_more' : 'chevron_right'} size={18} style={{ color: T.muted }} />
+        {section.title}
+      </button>
+      {open && (
+        <div className="grid grid-cols-2 gap-3">
+          {section.fields.map((f) => {
+            const value = cfg[f.key] ?? f.default
+            return (
+              <Field key={f.key} label={f.label} tip={f.tip} htmlFor={`vision-${f.key}`}>
+                {f.kind === 'number' && (
+                  <InputNumber id={`vision-${f.key}`} className="w-full" min={f.min} step={f.step} precision={f.precision}
+                    value={value as number} onChange={(v) => set(f.key, Number(v ?? f.min ?? 0))} />
+                )}
+                {f.kind === 'select' && (
+                  <Select id={`vision-${f.key}`} className="w-full" value={value as string} onChange={(v) => set(f.key, v)} options={(f.options ?? []).map((o) => ({ value: o, label: o }))} />
+                )}
+                {f.kind === 'switch' && <Switch id={`vision-${f.key}`} aria-label={f.label} checked={!!value} onChange={(v) => set(f.key, v)} />}
+              </Field>
+            )
+          })}
+        </div>
+      )}
+    </section>
+  )
+}
+const visionMode = (d: DisplayType) => {
+  const m = featureConfig(d, 'vision_ai').mode as string
+  return VISION_MODES.includes(m) ? m : VISION_MODES[0]
+}
 const hex = (c: { toHexString: () => string }) => c.toHexString()
 
 export function EnabledFeaturesPanel({ d, update, open, onToggle }: { d: DisplayType; update: (fn: (d: DisplayType) => DisplayType) => void; open: boolean; onToggle: () => void }) {
@@ -82,23 +113,18 @@ export function EnabledFeaturesPanel({ d, update, open, onToggle }: { d: Display
             {available && on && f.key === 'vision_ai' && (
               <SubSettings>
                 <Field label="Mode" htmlFor="visionMode">
-                  <Select id="visionMode" className="w-full" value={VISION_MODES.includes(featureConfig(d, 'vision_ai').mode as string) ? (featureConfig(d, 'vision_ai').mode as string) : VISION_MODES[0]}
+                  <Select id="visionMode" className="w-full" value={visionMode(d)}
                     onChange={(v) => update((t) => withFeature(t, 'vision_ai', { mode: v }))} options={VISION_MODES.map((m) => ({ value: m, label: m }))} />
                 </Field>
-                <Field label="Detection preset" htmlFor="visionPreset">
-                  <Select id="visionPreset" className="w-full" value={(featureConfig(d, 'vision_ai').preset as string) || 'Balanced'}
-                    onChange={(v) => update((t) => withFeature(t, 'vision_ai', { preset: v, ...DETECTION_PRESETS[v] }))} options={Object.keys(DETECTION_PRESETS).map((k) => ({ value: k, label: k }))} />
-                </Field>
-                {featureConfig(d, 'vision_ai').preset === 'Custom' && (
-                  <div className="col-span-2 grid grid-cols-2 gap-3" role="group" aria-label="Advanced settings">
-                    <div className="col-span-2 text-sm font-medium">Advanced settings</div>
-                    {VISION_CUSTOM_FIELDS.map((cf) => (
-                      <Field key={cf.key} label={cf.label}>
-                        <InputNumber aria-label={cf.label} className="w-full" min={cf.min} precision={0}
-                          value={(featureConfig(d, 'vision_ai')[cf.key] as number | undefined) ?? DETECTION_PRESETS.Balanced[cf.key]}
-                          onChange={(v) => update((t) => withFeature(t, 'vision_ai', { [cf.key]: Number(v ?? cf.min) }))} />
-                      </Field>
-                    ))}
+                {visionMode(d) === VISION_MODES[0] && (
+                  <Field label="Detection Preset" tip={PRESET_TIP} htmlFor="visionPreset">
+                    <Select id="visionPreset" className="w-full" value={(featureConfig(d, 'vision_ai').preset as string) || 'Balanced'}
+                      onChange={(v) => update((t) => withFeature(t, 'vision_ai', { preset: v, ...DETECTION_PRESETS[v] }))} options={Object.keys(DETECTION_PRESETS).map((k) => ({ value: k, label: k }))} />
+                  </Field>
+                )}
+                {visionMode(d) === VISION_MODES[0] && featureConfig(d, 'vision_ai').preset === 'Custom' && (
+                  <div className="col-span-2 grid grid-cols-2 gap-3" role="group" aria-label="Custom detection settings">
+                    {VISION_SECTIONS.map((s) => <VisionSectionBlock key={s.id} section={s} d={d} update={update} />)}
                   </div>
                 )}
               </SubSettings>
