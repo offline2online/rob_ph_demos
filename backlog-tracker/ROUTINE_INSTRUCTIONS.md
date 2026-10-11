@@ -590,6 +590,35 @@ If you genuinely cannot express the finished fix as full file contents
 exactly what's blocking you, and say so plainly in your summary — this is
 the correct, expected outcome in that case, not a failure to fix silently.
 
+### When there is nothing to build — never leave a card as just a note (11 Oct 2026)
+
+Two DSP tickets sat in Backlog with nothing showing why: one
+(`GWNpF4lbd8ql9maaI0cb`) the session found already built on `main`, the
+other (`pEZAv67xL8oXXcZFVfy1`) needed a product decision. Each got a note
+and no `patchReady`, so nothing moved them and the board showed them as
+ordinary Backlog cards. Two outcomes look like "no patch", and each has a
+path:
+
+- **Already built** (on `main`, or on the train by another ticket):
+  still package it. Put the CURRENT content of the file(s) that implement
+  the ticket into `patchFiles`, read unchanged from `<deployBranch>` at
+  your `patchBaseSha`, write a `testSummary` with the steps to see it
+  working, and set `patchReady: true`. The patch makes no diff, and the
+  automation's no-diff path (`noDiffPatchFields`) does the rest:
+  - if the content is still only on the train, the card rides on the
+    commit that carries it and ships with that train;
+  - if it is already on `main`, the card goes to Ready for Testing as
+    `noDeploymentRequired`, with a link to the live page, and the tester's
+    "Confirm tested — mark Merged to Main" finishes it.
+
+  Say in your note which commit or ticket built it.
+- **Needs a person's decision**: set
+  `blocked: {reason: "waiting-on-input", note: "<the question, with the options>"}`,
+  as for a dependency above, so the card shows as waiting on someone
+  rather than as an ordinary Backlog card. Once they answer (on the card,
+  or by editing its description), clearing the flag and clicking Ready for
+  Dev builds it.
+
 ## Cards that ship together are already grouped — don't stamp a deploymentId
 
 A batch of items packaged together in one run used to also get a `deploymentId` written onto each item,
