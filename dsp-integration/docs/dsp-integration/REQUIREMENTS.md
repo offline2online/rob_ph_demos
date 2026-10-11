@@ -1102,13 +1102,14 @@ tickets must satisfy.
    request-level all-or-nothing rule in *Creative IDs* still holds *within*
    one approve request: a stale version or a mixed selection refuses that
    request. It is not a rule that a whole deal must be approved together.)
-3. **Selection stays one advertiser, and within a deal one deal.** The
-   assign actions are offered only when every ticked campaign shares one
-   advertiser; a selection that mixes deal IDs, or mixes deal and non-deal
-   campaigns, is refused (the actions are hidden with a hint), so a creative
-   ID never straddles two deals. An existing creative ID offered in the
-   picker is one already minted for **that deal**; the picker for a deal
-   campaign never lists another deal's IDs or the advertiser's non-deal IDs.
+3. **Selection stays one advertiser; deals may be mixed** (ticket
+   FXIOlaN93QM18yqCEBM7, 10 Oct 2026). The assign actions are offered when
+   every ticked campaign shares one advertiser. A selection may mix deal IDs,
+   or deal and non-deal campaigns: a creative ID takes its deals from the
+   campaigns it groups, so **one creative can be in many deals at once**
+   (and/or have a direct arrangement) rather than being duplicated per deal.
+   The picker lists all of the advertiser's creative IDs; when the ticked
+   campaigns share one deal, IDs already in that deal are tagged "same deal".
 4. **Reject one, approve the rest.** HQ may reject a single campaign in a deal
    with a reason (required, as in Flow A) and approve the others in the same
    or a later round. The rejection does not hold up the rest of the deal.
@@ -1124,9 +1125,25 @@ tickets must satisfy.
    approved campaign that is later edited and resubmitted keeps its own
    creative ID exactly as in Flow A step 4.
 6. **The advertiser/DSP sees both ids.** Campaign status carries the
-   `dealId` (always, as submitted) and the `creativeId` (null until
-   approved). The DSP bids on the deal using the creative IDs approved
-   under it.
+   `dealId` / `dealIds` (as submitted, plus any added since) and the
+   `creativeId` (null until approved). The DSP bids on a deal using the
+   creative IDs associated with **that** deal: `GET /admin/v1/creative-ids?
+   dealId=` resolves per deal, so a creative in three deals is listed under
+   each.
+
+**Deal association is a set, kept on the campaign** (FXIOlaN93QM18yqCEBM7).
+A campaign carries a *set* of deals: the one set at authoring
+(`campaigns.deal_id`, immutable through approval) plus any added later
+(`campaign_deals`, migration `0104`). Either the retailer
+(`PUT /admin/v1/campaigns/{id}/deals`, approver scope) or the advertiser
+(`PUT /v1/campaigns/{id}/deals`, its own campaigns) replaces the added
+deals; nothing is done on the creative ID record. This is also the
+**crossover**: a campaign first run direct (authored with no deal) and later
+also run through a DSP gets a deal added after the fact, and keeps its
+direct arrangement (`direct: true`). A creative ID's deal set
+(`CreativeIdView.dealIds`) is the union of its campaigns'. Not built here:
+the dropdown of the deals an advertiser is invited on (needs the DSP seat
+mapping, T0gLfo2zDrRXPVGcvEoL), so any non-empty deal ID is accepted for now.
 
 **Where the flows must agree (no gaps or contradictions):**
 
@@ -1135,11 +1152,11 @@ tickets must satisfy.
 | Deal ID | none (null) | set at authoring, immutable through approval |
 | Row in approval table | ungrouped, grouped by advertiser | grouped by deal ID under advertiser |
 | Who mints the creative ID | HQ, on approval | HQ, on approval |
-| Granularity of an approval | any subset of one advertiser's campaigns | any subset of one deal's campaigns |
-| Creative IDs per grouping | many per advertiser | many per deal, accumulating |
+| Granularity of an approval | any subset of one advertiser's campaigns | any subset of one advertiser's campaigns, deals may be mixed |
+| Creative IDs per grouping | many per advertiser | many per deal, accumulating; one creative may be in many deals |
 | Reject | reason required, per ticked campaign | same; others in the deal unaffected |
 | Fixed/resubmitted campaign | keeps its own ID; picker pre-highlights | attaches to the SAME ID as its deal group; picker pre-highlights, anchored by the deal |
-| Auto-approved advertiser | groups own campaigns (*Generate creative ID*) | same actions, and the deal rules (3) above apply |
+| Auto-approved advertiser | groups own campaigns (*Generate creative ID*) | same actions; deals may be mixed (3 above) |
 | Same endpoint | `POST /admin/v1/approvals/approve-assign` | same; `dealId` is read from the campaigns, never sent by the caller |
 
 **Test cases (both flows must stay covered; the API suite is
@@ -1202,33 +1219,49 @@ campaign: the creative ID is the group of an advertiser's approved
 campaigns that the bid applies to. The retailer assigns it as part of
 approving (ticket IDGsyELBJsjlAYjizSqT).
 
-- **Selection.** On *Upcoming Campaign Approval* the retailer ticks one or
-  more campaigns that are **Awaiting approval** (only they have a box). A
-  bar above the table shows what can be done with the selection.
+- **Table layout and selection** (ticket dinPPBl9Rk95UbrXoRbt). Columns,
+  left to right: selection box, Status, Advertiser, Campaign name, Touch
+  points, Display types, Creative ID, Deal ID, DSP, Localised variables,
+  Personalised variables, Received, Activation, Last used. Every row has
+  **exactly one** box. Each advertiser is a group row whose single box ticks
+  every campaign beneath it (partial when only some are ticked); a campaign
+  row's box ticks that campaign. Filtering is **in the columns** — status is
+  filtered in the Status column's funnel; there is no Approved / Awaiting
+  approval / Rejected selector and no "select all awaiting approval" link.
+- **Selection actions** sit at the top right of the table and follow the
+  status of the ticked rows:
+  - **Awaiting approval and/or Rejected** → **Approve Selected** and
+    **Reject Selected** (a rejected campaign is first returned to Awaiting
+    approval, then decided).
+  - **Approved** → **Activate Selected** and **Deactivate Selected**. A
+    campaign cannot be activated before it is approved, so these never
+    appear for an unapproved row.
+  - **A mix of the two** → no action is shown, since none is valid across
+    the whole selection.
 - **A creative ID spans one advertiser's campaigns only.** The two assign
   actions appear **only when every ticked campaign belongs to one
   advertiser**; if the selection spans advertisers they are hidden (a hint
-  says to choose one advertiser's campaigns) and **Reject…** stays.
+  says to choose one advertiser's campaigns) and **Reject Selected** stays.
 - **Two approve actions**, both leading with "Approve" so the retailer
   knows this is the approval of the creative, and both naming the creative
   ID:
-  - **Approve + assign to new creative ID** — mints a new ID across the
+  - **Approve Selected** — mints a new ID across the
     ticked campaigns and approves each.
-  - **Approve + assign to existing creative ID** — opens a picker listing
+  - **Approve into existing creative ID** — opens a picker listing
     **each of that advertiser's creative IDs with its member campaigns, and
     their touch points, expanded**, so the retailer matches by seeing the
     siblings rather than a bare ID. Choosing one approves the ticked
     campaigns into it. The picker never lists another advertiser's IDs.
 - **All or nothing per request** (not per deal — a deal is approved per subset, across rounds). The request is checked before anything is written: a
   stale `assetVersion` (the creative changed after the retailer opened it),
-  a campaign that is not Awaiting approval, a mixed selection or another
+  a campaign that is not Awaiting approval, a selection of more than one advertiser or another
   advertiser's creative ID refuses the whole request and approves none of
   it.
 - **The result goes back to the advertiser.** A campaign's status
   (`GET /v1/campaigns/{id}/status`) is one of: **pending**
   (`awaiting_approval`), **rejected** (with the reason) or **assigned to a
   creative ID** (`approved`, with `creativeId`).
-- **Reject needs a reason.** **Reject…** on the selection opens a dialog
+- **Reject needs a reason.** **Reject Selected** opens a dialog
   whose Reject button stays disabled until a reason is typed. The same
   reason is recorded against each ticked campaign and reaches the advertiser
   as the campaign's status `reason`, to fix before resubmitting.
@@ -1246,7 +1279,7 @@ approving (ticket IDGsyELBJsjlAYjizSqT).
   `POST /admin/v1/approvals/approve-assign` (approver scope) takes
   `items: [{campaignId, assetVersion}]` and an optional `creativeId`;
   `GET /admin/v1/creative-ids?advertiserId=` lists the IDs with their
-  campaigns and touch points; `Approval.creativeId` and
+  campaigns, touch points and deal set (`dealIds`, `direct`); `Approval.creativeId` and
   `CampaignStatus.creativeId` carry the assignment.
 - **Auto-approved advertisers group their own campaigns** (ticket
   XnN1Kwl39F8C8DrOkwQn). An advertiser with *Approval required* off has
@@ -1821,6 +1854,29 @@ submission, bid or reservation for an interactive campaign is refused
 greying and the interactive reserve price column are hidden with it; the
 Playlist cell still flags a display type that has QR Control.
 
+### Deal ID: generated and immutable (10 Oct 2026, ticket 5CCgGEYSkVoDTH9yNSYu)
+
+Every buyers list carries a **`dealId`**, minted by the platform when the list
+is created (`PH-` plus 10 characters, e.g. `PH-7K2M9QXW4B`; migration 0067
+backfilled existing lists with `PH-<list id>`, which is what their bid
+requests already carried). It is unique, never typed and never edited, and it
+is the one identifier the DSP bids under (`pmp.deals[].id` on the request, a
+bid's `dealid` checked against it) and the key a campaign's `dealId` refers to.
+
+- **Immutable, like DV360.** The deal ID and the deal type are fixed once
+  saved. `PUT /admin/v1/buyers-lists/{id}` with the same type edits in place
+  (200, same `dealId`); with a different `dealType` it inserts a **new** list
+  with a new ID (201) and leaves the original untouched, keeping its slot
+  assignments and campaigns until it ends. A `dealId` in a POST, or a PUT
+  that differs from the saved one, is a 400. An edit that omits `dealType`
+  means "unchanged".
+- **Mutable terms stay mutable**: rate (floor CPM), delivery term, invited
+  buyers, targeting and the rest edit in place. Term versioning is a
+  separate ticket.
+- **Admin**: the Buyers and targeting table has a read-only Deal ID column
+  and the edit modal a read-only Deal ID field; changing the type shows a
+  note, and saving reports the new ID.
+
 ### Private auctions (buyers lists) (23 Sep 2026)
 
 Today PH only exposes a floor price to the DSP: it cannot run a private
@@ -1894,7 +1950,7 @@ duplicating it per deal would let one drift from the other:
 - **A deal is per DSP and priced on top of the floor** (Rob, 29 Sep 2026;
   open question 45). It is bilateral: its invited buyers resolve to DSP
   seats, and a locked term binds one DSP's buyer; there is no company-wide
-  deal. Its rate is a commitment on top of the same score-driven floor,
+  deal. **The list is cross-DSP; the deal identity is per DSP** (ticket fgBVnNItNcu7qMBUtqH7, 10 Oct 2026): a buyers list is one object that may invite named seats on several DSPs, and it resolves to one generated, immutable deal ID per DSP (`deals: [{ partnerId, dealId, retiredAt }]`), because DV360 and The Trade Desk each accept their own deal. Rate, delivery term, invited buyers and the auction window / locked rate are the list's and apply across its DSP deals; only the identifier differs, and a locked-rate clear still binds the one winning seat. Inviting the first named seat on a DSP mints that DSP's ID; removing its last named seat retires it (kept, never reused, so a campaign or bid quoting it still resolves; re-inviting revives the same ID). A DSP's bid request carries its own ID on `pmp.deals[].id` and only that ID clears for it; the authoring picker shows an advertiser the ID for the DSP its seat is on. A DSP admitted only by IAB category has no named seat, so its ID is minted on its first bid request (migration 0069). Its rate is a commitment on top of the same score-driven floor,
   never under it: a bid or reserve below the effective floor is refused
   `below_floor`, and a locked-term window whose rate has fallen below the
   floor in force when it is booked (the floor or a multiplier rose) is not
@@ -2097,6 +2153,27 @@ inventory itself; the attachment binds it to slots.
   (`apps/api/src/domain/dealCreative.ts`) is the one check PH Core campaign
   authoring (IQndewUPKJHbHRR2hAgG) applies to a campaign that picks the deal,
   so what the buyer is told and what is enforced cannot drift.
+
+### Sharing a deal with the buyer — deal sheet now, API push later (11 Oct 2026, ticket DbiT9qrFwL4O5ibgSowF)
+
+A buyer cannot use a deal until it exists in their own DSP. Today that is a manual hand-off, the same way DV360 and
+The Trade Desk set up a deal: the seller shares the deal ID, terms and creative spec out of band and the buyer creates the
+deal themselves (DV360: Inventory > My Inventory > new deal with our deal ID, exchange and format; TTD: a first-party /
+private contract with our deal ID). **The deal ID is the handshake; the buyer keys it in.**
+
+- **The deal sheet (built).** For a buyers list, one entry per invited DSP carrying that DSP's own deal ID (each DSP has
+  its own, "Deal ID" above), the seats invited on it and where the buyer keys it in, plus the deal type, rate (the locked
+  rate once the deal has one, else its resolved floor), delivery term, auction close, committed plays (guaranteed only) and
+  the creative-requirements set derived from the attached positions (format, canvas size, max play length).
+  `GET /admin/v1/buyers-lists/{id}/deal-sheet` returns it as JSON, or as a downloadable CSV with `?format=csv` (one row per
+  DSP deal ID and creative format). It is read-only and stores nothing. The Buyers and targeting table has a **Deal
+  sheet** action that shows it on screen with **Copy** (plain text for an email or chat) and **Download CSV**.
+- **A list that invites only IAB categories has no named seat**, so its sheet has no entries: invite a buyer first.
+- **The API push (later, not built).** A seller-initiated push where the SSP sends a deal proposal straight into the DSP so
+  it appears in the buyer's platform ready to accept (DV360 Marketplace / deal proposal; TTD supply-partner deal push).
+  **Hard gate:** it needs PH to be a certified, recognised supply source on each DSP (§7 supply-source certification:
+  DV360 exchange enablement, TTD adding the seller as a supply partner). Not available for the 10 Dec AWS demo timeline;
+  file it as a follow-on once certification is in progress.
 
 ### Prioritised buyers lists — the waterfall (7 Oct 2026)
 
@@ -2310,6 +2387,18 @@ headings; managing (adding or editing) variables is a later release.
 **Languages Spoken by Store Staff is not supported initially and was
 removed from the default set (ticket, 22 Sep); a later release will add it
 back.**
+
+**Values (ticket t5CXokTIz7TCnIkj5pci, migration 0068).** Each *shared*
+variable has a **Values** column on this page: the list of values a buyer can
+match against it, defined once centrally. A variable can instead be ticked
+**Free text**, which leaves it open to any value entered at selection time.
+Values and the free-text tick are kept only while the variable is shared with
+a DSP; un-sharing a variable clears them. `GET` and `PUT
+/admin/v1/targeting-variables` carry `values` and `freeText`, values are
+trimmed and de-duplicated, and a buyers list's criteria on a shared variable
+are selected from that vocabulary rather than typed. A variable with no values
+defined and not ticked Free text still accepts any value, so existing lists
+keep working.
 
 | Group | Variables, in display order |
 |---|---|
@@ -2894,6 +2983,8 @@ Used only for the delete check in §1: a display type with any display whose
 buyersList: {
   id, name, description,
   invitedBuyers: [{ partnerId, seatId }],      // a seat a connected DSP synced (partners.seats); matched exactly
+  deals: [{ partnerId, dealId, retiredAt }],   // one generated, immutable deal ID per DSP (table buyers_list_deals, migration 0069);
+                                                //   retiredAt set when the DSP's last named seat is removed; the ID is kept and revived on re-invite
   activeFrom, activeTo,                        // the delivery term; ISO date-time or null = no bound (inclusive)
   auctionCloses,                               // the auction window's bidding deadline; ISO date-time or null = not using
                                                 //   the two-period model — clears a fresh auction every play window (23 Sep 2026)
@@ -4421,7 +4512,7 @@ partner-contributed attributes have been removed with that scope.
 45. **Deals.** *Resolved (decision, Rob, 29 Sep 2026; built with open
     question 52):* deals are per DSP and bilateral — this buyer, these
     terms — built on the existing deal object, the buyers list (§5 "Private
-    auctions (buyers lists)"). Company-wide deals are not modelled. A deal
+    auctions (buyers lists)"). Company-wide deals are not modelled. *Cross-DSP lists (10 Oct 2026):* "a deal is per DSP" means the deal **identity** is per DSP — a list may invite seats on several DSPs and carries one deal ID for each; its terms are shared (§5 "Private auctions"). A deal
     is priced against the same score-driven floor; its negotiated rate is a
     commitment on top of the floor, never under it, and a deal never
     bypasses the floor. Programmatic guaranteed is the reserve-price booking

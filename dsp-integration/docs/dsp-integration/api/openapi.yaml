@@ -1212,6 +1212,26 @@ paths:
           content: {application/json: {schema: {$ref: '#/components/schemas/Deal'}}}
         '404': {$ref: '#/components/responses/NotFound'}
 
+  /admin/v1/buyers-lists/{buyersListId}/deal-sheet:
+    get:
+      tags: [Admin — Advertiser settings]
+      operationId: getBuyersListDealSheet
+      summary: The deal sheet — what a DSP buyer needs to key the deal into their own platform
+      description: |
+        Everything the retail media team shares out of band so a buyer can create the deal on their side (DV360 and The Trade Desk both work this way today; the deal ID is the handshake): one entry per invited DSP with that DSP's own deal ID and the seats invited on it, plus the deal type, rate, delivery term and the creative-requirements set derived from the attached positions. Read-only. `?format=csv` returns the same as a downloadable sheet, one row per DSP deal ID and creative format. A list that invites only IAB categories names no seat and has no entries. The seller-initiated API push is a later phase, gated on DSP supply-source certification.
+      security: [{adminSession: []}]
+      parameters:
+        - {name: buyersListId, in: path, required: true, schema: {type: string}}
+        - {name: format, in: query, required: false, schema: {type: string, enum: [json, csv]}}
+      responses:
+        '200':
+          description: The deal sheet
+          content:
+            application/json: {schema: {$ref: '#/components/schemas/DealSheet'}}
+            text/csv: {schema: {type: string}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
   /admin/v1/buyers-lists/{buyersListId}:
     put:
       tags: [Admin — Advertiser settings]
@@ -2859,6 +2879,37 @@ components:
         auctionCloses: {type: [string, 'null']}
         rateCpm: {type: number, description: The deal's resolved base floor in USD CPM.}
         creativeRequirements: {type: array, items: {$ref: '#/components/schemas/CreativeRequirement'}}
+    DealSheet:
+      type: object
+      required: [buyersListId, name, dealType, currency, rateCpm, rateKind, activeFrom, activeTo, auctionCloses, committedPlays, entries, creativeRequirements]
+      properties:
+        buyersListId: {type: string}
+        name: {type: string}
+        dealType: {type: string, enum: [private_auction, preferred, guaranteed]}
+        currency: {type: string}
+        rateCpm: {type: number, description: 'The rate in CPM: the deal''s locked rate once it has one, else its resolved base floor.'}
+        rateKind: {type: string, enum: [floor, fixed]}
+        activeFrom: {type: [string, 'null']}
+        activeTo: {type: [string, 'null']}
+        auctionCloses: {type: [string, 'null']}
+        committedPlays: {type: [integer, 'null'], description: Guaranteed deals only.}
+        entries: {type: array, items: {$ref: '#/components/schemas/DealSheetEntry'}}
+        creativeRequirements: {type: array, items: {$ref: '#/components/schemas/CreativeRequirement'}}
+    DealSheetEntry:
+      type: object
+      required: [partnerId, dsp, provider, dealId, seats, setup]
+      properties:
+        partnerId: {type: string}
+        dsp: {type: string}
+        provider: {$ref: '#/components/schemas/Provider'}
+        dealId: {type: string, description: This DSP's own deal ID.}
+        seats:
+          type: array
+          items:
+            type: object
+            required: [id, name]
+            properties: {id: {type: string}, name: {type: string}}
+        setup: {type: string, description: Where the buyer keys the deal in on that DSP.}
     DspDealId:
       type: object
       required: [partnerId, dealId]

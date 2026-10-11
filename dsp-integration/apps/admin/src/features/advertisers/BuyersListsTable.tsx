@@ -15,10 +15,11 @@ import { Tip } from '../../shared/Tip'
 import { SectionLabel } from '../../shared/SectionLabel'
 import { T } from '../../theme/phTheme'
 import { BuyersListModal } from './BuyersListModal'
+import { DealSheetModal } from './DealSheetModal'
 import { cpmKind, cpmKindHint, playsText, rateText, sourceLabel } from './effectiveTerm'
 
 type Capacity = Map<string, { plays: number; displayTypes: number; positions: number }>
-type Ctx = { current: { capacity: Capacity; onEdit: (l: BuyersList) => void; onDelete: (l: BuyersList) => void; canEdit: boolean } }
+type Ctx = { current: { capacity: Capacity; onEdit: (l: BuyersList) => void; onDelete: (l: BuyersList) => void; onShare: (l: BuyersList) => void; canEdit: boolean } }
 type P = ICellRendererParams<BuyersList, unknown, Ctx>
 
 /* The name is the way in (ph-designer: a row's name opens it; the icon button is only a shortcut). */
@@ -107,6 +108,7 @@ const DealTypeCell = ({ data }: P) => (data ? <span style={{ fontSize: 12.5 }}>{
 const ActionsCell = ({ data, context }: P) =>
   data ? (
     <span className="inline-flex gap-1">
+      <Button type="text" size="small" aria-label={`Deal sheet for ${data.name}`} icon={<Icon name="ios_share" size={15} />} onClick={() => context.current.onShare(data)} />
       <Button type="text" size="small" aria-label={`Edit ${data.name}`} icon={<Icon name="edit" size={15} />} onClick={() => context.current.onEdit(data)} />
       <Button type="text" size="small" danger aria-label={`Delete ${data.name}`} icon={<Icon name="delete" size={15} />} onClick={() => context.current.onDelete(data)} />
     </span>
@@ -116,6 +118,7 @@ export function BuyersListsTable({ lists, canEdit, capacity, onChanged }: { list
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<BuyersList | null>(null)
   const [deleting, setDeleting] = useState<BuyersList | null>(null)
+  const [sharing, setSharing] = useState<BuyersList | null>(null)
   const [deleteError, setDeleteError] = useState<ApiRequestError | null>(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
 
@@ -131,7 +134,7 @@ export function BuyersListsTable({ lists, canEdit, capacity, onChanged }: { list
     { headerName: 'Estimated volume', width: 190, minWidth: 170, cellRenderer: CapacityCell, valueGetter: (p) => p.context.current.capacity.get(p.data?.id ?? '')?.plays ?? 0 },
     { headerName: 'Targeting', width: 230, minWidth: 180, cellRenderer: TargetingCell, valueGetter: (p) => JSON.stringify(p.data?.targeting ?? []) },
     { headerName: 'Delivery term', width: 260, minWidth: 220, cellRenderer: TermCell, valueGetter: (p) => `${p.data?.activeFrom}|${p.data?.activeTo}` },
-    ...(canEdit ? [{ headerName: '', width: 90, suppressSizeToFit: true, cellRenderer: ActionsCell }] : []),
+    ...(canEdit ? [{ headerName: '', width: 120, suppressSizeToFit: true, cellRenderer: ActionsCell }] : []),
   ]
   const context = {
     canEdit, capacity,
@@ -139,6 +142,7 @@ export function BuyersListsTable({ lists, canEdit, capacity, onChanged }: { list
       setEditing(l)
       setModalOpen(true)
     },
+    onShare: (l: BuyersList) => setSharing(l),
     onDelete: (l: BuyersList) => {
       setDeleting(l)
       setDeleteError(null)
@@ -182,6 +186,7 @@ export function BuyersListsTable({ lists, canEdit, capacity, onChanged }: { list
         <Grid<BuyersList> label="Buyers and targeting" rows={lists} columns={columns} context={context} getRowId={(l) => l.id} rowHeight={52} headerHeight={40} stickyHeader />
       )}
       <BuyersListModal open={modalOpen} editing={editing} onClose={() => setModalOpen(false)} onSaved={() => onChanged()} />
+      <DealSheetModal list={sharing} onClose={() => setSharing(null)} />
       {deleting && (
         <DeleteDialog
           open={!!deleting} name={deleting.name}

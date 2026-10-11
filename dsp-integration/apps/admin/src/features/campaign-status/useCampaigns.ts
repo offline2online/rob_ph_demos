@@ -71,6 +71,8 @@ export function useCampaignActions(campaignIds: string[]) {
     /* Approve the ticked campaigns of ONE advertiser and group them under a
        creative ID — a new one (creativeId omitted) or an existing one. All or nothing. */
     approveAssign: (as: Approval[], creativeId?: string) => batch(async () => {
+      /* A rejected campaign goes back to Awaiting approval first (the state machine's only way on), then is approved with the rest. */
+      for (const a of as) if (a.status === 'rejected') await api('POST', `/admin/v1/campaigns/${a.campaignId}/unreject`, { assetVersion: a.assetVersion })
       const res = await api<{ creativeId: string }>('POST', '/admin/v1/approvals/approve-assign', { items: as.map((a) => ({ campaignId: a.campaignId, assetVersion: a.assetVersion })), ...(creativeId ? { creativeId } : {}) })
       return `${as.length === 1 ? '1 campaign' : `${as.length} campaigns`} approved under creative ID ${res.creativeId}.`
     }),
@@ -82,8 +84,17 @@ export function useCampaignActions(campaignIds: string[]) {
     }),
     /* Reject each ticked campaign with the same reason, which the advertiser sees. */
     rejectMany: (as: Approval[], reason: string) => batch(async () => {
-      for (const a of as) await api('POST', `/admin/v1/campaigns/${a.campaignId}/reject`, { assetVersion: a.assetVersion, reason })
+      for (const a of as) {
+        if (a.status === 'rejected') await api('POST', `/admin/v1/campaigns/${a.campaignId}/unreject`, { assetVersion: a.assetVersion })
+        await api('POST', `/admin/v1/campaigns/${a.campaignId}/reject`, { assetVersion: a.assetVersion, reason })
+      }
       return `${as.length === 1 ? '1 campaign' : `${as.length} campaigns`} rejected. The advertiser sees the reason.`
+    }),
+    /* Switch the ticked, approved campaigns on or off; any already in that state are left as they are. */
+    activateMany: (cs: Campaign[], enabled: boolean) => batch(async () => {
+      const changing = cs.filter((c) => c.activation.enabled !== enabled)
+      for (const c of changing) await api('PUT', `/admin/v1/campaigns/${c.campaignId}/activation`, { enabled })
+      return `${changing.length === 1 ? '1 campaign' : `${changing.length} campaigns`} ${enabled ? 'activated' : 'deactivated'}.`
     }),
     unreject: (a: Approval, reason?: string) => act(a.campaignId, () => api('POST', `/admin/v1/campaigns/${a.campaignId}/unreject`, { assetVersion: a.assetVersion, reason })),
     activate: (c: Campaign, enabled: boolean) => act(c.campaignId, () => api('PUT', `/admin/v1/campaigns/${c.campaignId}/activation`, { enabled })),

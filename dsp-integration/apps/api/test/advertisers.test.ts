@@ -64,6 +64,18 @@ describe('Advertisers (admin only, spec §3)', () => {
     expect((await save(['Nobody Ltd'])).statusCode).toBe(400)
   })
 
+  it('refuses to delete a direct advertiser still assigned to a slot, naming the slot', async () => {
+    const app = buildApp(await testContext())
+    await app.inject({ method: 'POST', url: '/api/admin/v1/advertisers/direct', payload: { name: 'Acme Foods' } })
+    await app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, assignedTo: { partnerIds: [], advertisers: ['Acme Foods'], whitelistOnly: false } }] } })
+    const del = () => app.inject({ method: 'DELETE', url: '/api/admin/v1/advertisers/direct/acme-foods' })
+    const res = await del()
+    expect(res.statusCode).toBe(409)
+    expect(res.json().error.message).toMatch(/Acme Foods is assigned to a slot.*slot 2/)
+    await app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, assignedTo: { partnerIds: [], advertisers: [], whitelistOnly: false } }] } })
+    expect((await del()).statusCode).toBe(204)
+  })
+
   it('refuses a duplicate, a blank name, a DSP advertiser, and non-admins', async () => {
     const app = buildApp(await testContext())
     const post = (name: unknown) => app.inject({ method: 'POST', url: '/api/admin/v1/advertisers/direct', payload: { name } })
