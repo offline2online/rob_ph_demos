@@ -915,7 +915,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
          reserve price default changed (Rob, 22 Sep), since that's a
          display-type-level field an untouched slot's row still has to
          carry so the server can apply it. */
-      if ((inv.dirty || defaults.dirty || billingUnitDefaults.dirty || maxCampaignsDefaults.dirty) && inv.draft && defaults.draft && billingUnitDefaults.draft && maxCampaignsDefaults.draft && maxPlayLengthDefaults.draft) {
+      if ((inv.dirty || defaults.dirty || billingUnitDefaults.dirty || maxCampaignsDefaults.dirty || maxPlayLengthDefaults.dirty) && inv.draft && defaults.draft && billingUnitDefaults.draft && maxCampaignsDefaults.draft && maxPlayLengthDefaults.draft) {
         const changedSlots = new Set(Object.keys(inv.draft).filter((key) => !deepEqual(inv.draft![key], savedEdits?.[key])))
         const changedTypes = new Set(Object.keys(defaults.draft).filter((id) => defaults.draft![id] !== savedDefaults?.[id]))
         const changedBillingUnitTypes = new Set(Object.keys(billingUnitDefaults.draft).filter((id) => billingUnitDefaults.draft![id] !== savedBillingUnitDefaults?.[id]))
@@ -1050,7 +1050,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
           />
         </>
       )}
-      {canEdit && <SaveBar dirty={dirty || inv.dirty || defaults.dirty || billingUnitDefaults.dirty || maxCampaignsDefaults.dirty} saving={saving} onSave={onSave} onCancel={() => { reset(); inv.reset(); defaults.reset(); billingUnitDefaults.reset(); maxCampaignsDefaults.reset(); maxPlayLengthDefaults.reset() }} />}
+      {canEdit && <SaveBar dirty={dirty || inv.dirty || defaults.dirty || billingUnitDefaults.dirty || maxCampaignsDefaults.dirty || maxPlayLengthDefaults.dirty} saving={saving} onSave={onSave} onCancel={() => { reset(); inv.reset(); defaults.reset(); billingUnitDefaults.reset(); maxCampaignsDefaults.reset(); maxPlayLengthDefaults.reset() }} />}
 
       {/* Picked "+ Add new buyers list…" from a slot's Assigned to picker
           (Rob, 23 Sep): on save, assign the new list straight to that slot. */}

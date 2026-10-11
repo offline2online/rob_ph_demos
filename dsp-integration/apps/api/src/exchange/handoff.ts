@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto'
 import type { Context } from '../context'
 import { failed, fileChecks } from '../domain/assetChecks'
 import { readMedia } from '../domain/media'
-import { assignmentOf, findPosition, maxPlayLengthSecFor, windowMs } from '../domain/positions'
+import { assignmentOf, findPosition, windowMs } from '../domain/positions'
 import { checkCampaign } from './enforcement'
 import { isUniqueViolation } from '../db/db'
 import type { ReservationRecord } from '../repos/ReservationRepo'
@@ -35,7 +35,9 @@ export async function handOff(ctx: Context, r: ReservationRecord): Promise<Reser
   const asset = assets.find((a) => a.role === 'default') ?? assets[0]
   const bytes = asset ? await ctx.assets.read(asset.file) : null
   if (!asset || !bytes) return notHandedOff('the campaign has no creative.')
-  const checks = fileChecks(readMedia(bytes), bytes.length, p.displayType, ctx.config.assetLimits, undefined, maxPlayLengthSecFor((await ctx.company.get()).maxPlayLengthSec, p))
+  /* Max play length governs submissions from the moment it changes, not creatives already accepted: the duration was checked at submission, so a booked
+     campaign is never un-handed-off because the limit was lowered afterwards. */
+  const checks = fileChecks(readMedia(bytes), bytes.length, p.displayType, ctx.config.assetLimits, undefined, null)
   if (failed(checks).length) return notHandedOff(`the creative doesn’t fit ${p.displayType.name}: ${failed(checks).map((c) => c.detail ?? c.name).join(' ')}`)
   const windowEnd = new Date(Date.parse(r.windowStart) + (await windowMs(ctx, p))).toISOString()
   try {
