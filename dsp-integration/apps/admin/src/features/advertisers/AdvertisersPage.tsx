@@ -572,7 +572,10 @@ function BillingUnitCell({ data, context }: IP) {
   const override = edited(c, data).billingUnitHours
   const overridden = override !== null
   const value = overridden ? override : (c.billingUnitDefaults[data.displayTypeId] ?? PLATFORM_DEFAULT_BILLING_UNIT_HOURS)
-  if (!c.canEdit) return <span>{durationLabel(effectiveBillingUnitHours(c, data))}</span>
+  /* A change scheduled from the end of the slot's last committed window (OQ27, Rob 11 Oct 2026). Shown until the edit in progress matches the current length, which cancels it. */
+  const pending = data.billingUnitPending && effectiveBillingUnitHours(c, data) !== data.billingUnitHours ? data.billingUnitPending : null
+  const pendingText = pending ? `${data.billingUnitHours} h → ${pending.hours} h from ${new Date(pending.effectiveFrom).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })} UTC` : ''
+  if (!c.canEdit) return <span>{durationLabel(effectiveBillingUnitHours(c, data))}{pending && <span style={{ color: T.muted }}> ({pendingText})</span>}</span>
   return (
     <div className="flex w-full min-w-0 items-center gap-1">
       <InputNumber
@@ -593,6 +596,11 @@ function BillingUnitCell({ data, context }: IP) {
         <Tip title={`Override just this slot, independent of ${data.displayTypeName}'s other slots`}>
           <Button type="text" size="small" className="px-1" aria-label={`${data.displayTypeName} slot ${data.zoneSlot}: override the billing unit for just this slot`}
             icon={<Icon name="edit" size={13} />} onClick={() => c.set(slotKey(data), { billingUnitHours: value })} />
+        </Tip>
+      )}
+      {pending && (
+        <Tip title={`${pendingText}. Windows already bid on, booked or awaiting billing keep their current length; set it back to ${data.billingUnitHours} h to cancel.`}>
+          <span className="min-w-0 truncate whitespace-nowrap" style={{ color: T.muted }} data-testid="billing-unit-pending">{pendingText}</span>
         </Tip>
       )}
     </div>
@@ -795,8 +803,8 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
       ...setColumn<AvailableInventoryRow>('Max play length', invValues((r) => [String(r.maxPlayLengthSec)])),
     },
     {
-      headerName: 'Billing unit', width: 135, minWidth: 120, cellRenderer: BillingUnitCell,
-      headerComponent: header('Billing unit', 'The length of this slot’s play windows: each one is booked and billed on its own. Set once for the display type and inherited by every slot on it — override just one slot to give it its own value, independent of the others. With neither set, the play-window length in Advertiser settings applies. Can’t change while windows are still bid on or booked under it.'),
+      headerName: 'Billing unit', width: 270, minWidth: 135, cellRenderer: BillingUnitCell,
+      headerComponent: header('Billing unit', 'The length of this slot’s play windows: each one is booked and billed on its own. Set once for the display type and inherited by every slot on it — override just one slot to give it its own value, independent of the others. With neither set, the play-window length in Advertiser settings applies. A slot with windows still bid on, booked or awaiting billing keeps their length: the change applies from the end of the last of them, and the row shows it until then.'),
       valueGetter: (p) => (p.data ? effectiveBillingUnitHours((p.context as InvCtx).current, p.data) : PLATFORM_DEFAULT_BILLING_UNIT_HOURS),
     },
     {

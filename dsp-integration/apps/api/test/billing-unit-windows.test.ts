@@ -173,27 +173,48 @@ describe('a slot’s billing unit sets its play-window length (OQ27)', () => {
     expect(res.json().totals).toMatchObject({ bookedWindows: 1 })
   })
 
-  it('refuses to change a slot’s billing unit while windows sold under it are still to play', async () => {
-    const { ctx, app } = await setup()
+  it('schedules a billing unit change on a slot with committed windows instead of refusing it (OQ27, Rob 11 Oct 2026)', async () => {
+    let now = NOW
+    const { ctx, app } = await setup(() => now)
     const row = (billingUnitHours: number | null, billingUnitHoursDefault: number | null = null) =>
       ({ displayTypeId: 'menu_board', slot: 2, assignedTo: { partnerIds: ['p_google'], advertisers: [], whitelistOnly: false }, reservePrice: null, reservePriceDefault: null, billingUnitHours, billingUnitHoursDefault })
     const save = (...items: ReturnType<typeof row>[]) => app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items } })
     /* Whole hours only, now that it lays out windows. */
     expect((await save(row(1.5))).statusCode).toBe(400)
-    /* The seeded 15 Sep window has played but isn't billed yet: that holds it too. */
+    /* The seeded 15 Sep window has played but isn't billed yet: that holds it too, so the change is scheduled. */
     const held = await save(row(168))
-    expect(held.statusCode).toBe(400)
-    expect(held.json().error.details[0]).toMatchObject({ field: 'items[0].billingUnitHours' })
+    expect(held.statusCode).toBe(200)
+    const pending = held.json().items[0]
+    expect(pending).toMatchObject({ billingUnitHours: 24, billingUnitHoursOverride: 168, billingUnitPending: { hours: 168, effectiveFrom: '2026-09-21T00:00:00.000Z' } })
+    expect(await windowMs(ctx, await findPosition(ctx, 'menu_board.s2'))).toBe(24 * HOUR)
+    /* Sending the row back as it is keeps the change; sending the current length cancels it. */
+    expect((await save(row(168))).json().items[0].billingUnitPending).toMatchObject({ hours: 168, effectiveFrom: pending.billingUnitPending.effectiveFrom })
+    const cancelled = await save(row(24))
+    expect(cancelled.statusCode).toBe(200)
+    expect(cancelled.json().items[0]).toMatchObject({ billingUnitHours: 24, billingUnitPending: null })
+
     await runBilling(ctx)
     await ctx.reservations.insert(won({ id: 'res_tue', windowStart: '2026-09-22T00:00:00.000Z', status: 'pending', clearingCpm: null }))
-    /* Via the display type default, too. */
+    /* Via the display type default, too: from the end of the last committed window. */
     const viaDefault = await save(row(null, 168))
-    expect(viaDefault.statusCode).toBe(400)
-    expect(viaDefault.json().error.details[0].reason).toMatch(/24-hour billing unit \(the last ends 2026-09-23T00:00:00.000Z\)/)
-    /* Test mode never holds anything; once nothing live is left, it saves. */
-    await ctx.reservations.update('res_tue', { status: 'lost' })
-    const ok = await save(row(168))
-    expect(ok.statusCode).toBe(200)
-    expect(ok.json().items[0]).toMatchObject({ billingUnitHours: 168, billingUnitHoursOverride: 168 })
+    expect(viaDefault.statusCode).toBe(200)
+    expect(viaDefault.json().items[0]).toMatchObject({ billingUnitHours: 24, billingUnitPending: { hours: 168, effectiveFrom: '2026-09-23T00:00:00.000Z' } })
+    /* The booked window keeps its length, and nothing at or after the change is sold at the old one. */
+    expect(await windowMs(ctx, await findPosition(ctx, 'menu_board.s2'))).toBe(24 * HOUR)
+    expect(await dueDealAuctions(ctx).then((d) => d.some((x) => x.position.positionId === 'menu_board.s2' && x.windowStart.getTime() >= Date.parse('2026-09-23T00:00:00.000Z')))).toBe(false)
+    /* Once it is due, windows are cut at the new length. */
+    now = new Date('2026-09-23T00:00:00.000Z')
+    expect(await windowMs(ctx, await findPosition(ctx, 'menu_board.s2'))).toBe(168 * HOUR)
+    const after = (await app.inject({ method: 'GET', url: '/api/admin/v1/available-inventory' })).json().items.find((r: { slot: number }) => r.slot === 2)
+    expect(after).toMatchObject({ billingUnitHours: 168, billingUnitPending: null })
+  })
+
+  it('changes a billing unit at once on a slot with nothing committed', async () => {
+    const { ctx, app } = await setup()
+    await runBilling(ctx)
+    const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, assignedTo: { partnerIds: ['p_google'], advertisers: [], whitelistOnly: false }, reservePrice: null, reservePriceDefault: null, billingUnitHours: 8, billingUnitHoursDefault: null }] } })
+    expect(res.statusCode).toBe(200)
+    expect(res.json().items[0]).toMatchObject({ billingUnitHours: 8, billingUnitPending: null })
+    expect(await windowMs(ctx, await findPosition(ctx, 'menu_board.s2'))).toBe(8 * HOUR)
   })
 })

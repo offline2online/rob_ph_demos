@@ -3282,6 +3282,20 @@ components:
             This slot's own billing unit, admin-editable here; null means
             it has none and follows displayTypeBillingUnitHours (spec §1
             configuration inheritance — override always wins).
+        billingUnitPending:
+          type: [object, 'null']
+          required: [hours, effectiveFrom]
+          description: |
+            A scheduled change to this slot's billing unit (OQ27, 11 Oct
+            2026): `billingUnitHours` is the current window length and stays
+            so until `effectiveFrom`, the end of the slot's last committed
+            window, when `hours` takes over. Null when nothing is pending.
+            While it is pending, `billingUnitHoursOverride` is the value it
+            will become, so sending the row back unchanged keeps the change
+            and sending the current length cancels it.
+          properties:
+            hours: {type: integer}
+            effectiveFrom: {type: string, format: date-time}
         displayTypeBillingUnitHours:
           type: [number, 'null']
           description: |
@@ -3956,6 +3970,23 @@ components:
                   play-window length (OQ27, 29 Sep 2026): its windows are
                   this long, each auctioned, booked and billed (dynamic
                   VAC-d) on its own.
+              billingUnitChange:
+                type: [object, 'null']
+                required: [hours, previousHours, override, effectiveFrom]
+                description: |
+                  A billing-unit change scheduled on a slot with windows
+                  already bid on, booked or played-but-unbilled (OQ27,
+                  decision Rob, 11 Oct 2026). `billingUnitHours` above stays
+                  the current length until `effectiveFrom` — the end of the
+                  slot's last committed window — then `override` becomes the
+                  slot's billingUnitHours and the change stays as the record of
+                  the earlier length. Windows starting
+                  at or after `effectiveFrom` are not sold until it has.
+                properties:
+                  hours: {type: integer, minimum: 1, maximum: 8760, description: The window length that applies from effectiveFrom.}
+                  previousHours: {type: integer, minimum: 1, maximum: 8760, description: The length of every window starting before effectiveFrom; kept after the change has taken effect so billing and hand-off still read earlier windows at it.}
+                  override: {type: [integer, 'null'], description: What billingUnitHours becomes (null = follow the display type default).}
+                  effectiveFrom: {type: string, format: date-time}
               interactiveReservePrice:
                 type: [number, 'null']
                 description: |

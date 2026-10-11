@@ -425,8 +425,9 @@ also sent as `imp.ext.ph.playsPerWindow` — and the impression multiplier
 (VAC-d, `qty.multiplier`) only converts plays to estimated impressions for
 pricing and billing. Billing is unchanged: plays × multiplier. Assumed views are scored per platform-default
 window (`AudienceSource`) and scaled to a slot's own window length. A
-slot's own billing unit can't change while it has live
-windows (see `PUT /admin/v1/available-inventory`).
+slot's own billing unit change is scheduled from the end of its last
+committed window, not refused (`billingUnitPending` on `PUT
+/admin/v1/available-inventory`; OQ27, 11 Oct 2026).
 
 **Real time, not windows, for everything else** (8 Oct 2026, decision Rob):
 the windowed auction was retired. An open or whitelist-only position is

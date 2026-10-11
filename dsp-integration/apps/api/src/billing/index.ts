@@ -45,7 +45,7 @@
 import { randomUUID } from 'node:crypto'
 import type { Context } from '../context'
 import type { PlayTotals } from '../platform/PlaybackSource'
-import { assumedViewsPerWindow, findPosition, shortestWindowMs, windowMs, type PositionRef } from '../domain/positions'
+import { assumedViewsPerWindow, findPosition, shortestWindowMs, windowMsAt, windowMsFor, type PositionRef } from '../domain/positions'
 import type { ReservationRecord } from '../repos/ReservationRepo'
 import { rotationSizeOf } from '../domain/slots'
 
@@ -97,7 +97,7 @@ export function assertBillingBasis(basis: BillingBasis): void {
    29 Sep 2026). This is not informational: it is the length of every window
    billed for the position, so a slot with a 168-hour unit bills one line
    item a week. */
-export const billingUnitMs = async (ctx: Context, p: PositionRef): Promise<number> => windowMs(ctx, p)
+export const billingUnitMs = async (_ctx: Context, p: PositionRef, windowStartMs?: number): Promise<number> => (windowStartMs === undefined ? windowMsFor(p) : windowMsAt(p, windowStartMs))
 
 const round2 = (n: number) => Math.round(n * 100) / 100
 
@@ -108,7 +108,7 @@ const round2 = (n: number) => Math.round(n * 100) / 100
    writes. */
 export async function computeLineItem(ctx: Context, r: ReservationRecord, p: PositionRef, played: PlayTotals, basis: BillingBasis = BILLING_BASIS): Promise<LineItem> {
   assertBillingBasis(basis)
-  const len = await billingUnitMs(ctx, p)
+  const len = await billingUnitMs(ctx, p, Date.parse(r.windowStart))
   const end = Date.parse(r.windowStart) + len
   const displays = (await ctx.displays.summaryByDisplayType(p.displayType.id)).displays
   const slots = rotationSizeOf(p.displayType, p.slot)
@@ -151,7 +151,7 @@ export async function runBilling(ctx: Context): Promise<LineItem[]> {
   for (const r of await ctx.reservations.billable(new Date(now - (await shortestWindowMs(ctx))).toISOString())) {
     const p = await findPosition(ctx, r.positionId)
     if (!p) continue
-    const end = Date.parse(r.windowStart) + (await billingUnitMs(ctx, p))
+    const end = Date.parse(r.windowStart) + (await billingUnitMs(ctx, p, Date.parse(r.windowStart)))
     if (end > now) continue
     /* The settlement time is the cut-off: the totals count what was received
        up to it, and the line item records it as written then, so a play

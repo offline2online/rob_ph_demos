@@ -2052,13 +2052,21 @@ booked, bid on, handed off and billed in windows one billing unit long, each bil
 on its own realised VAC-d (§4 "Billing"). Windows of every length are laid
 back to back from the same fixed Monday 00:00 UTC, so a 7-day slot's
 windows start on Mondays that are also daily slots' window starts, and one
-auction clears both. Whole hours, 1 hour to 365 days. A slot's billing unit
-can't change while it has live windows bid on, booked or not yet billed
-under the current one; the save is refused `400 validation_failed`, naming
-when the last one ends. (There is no company play-window length to change, so no deferred
-change with an effective date: `playWindowHours` and its pending-change
-bookkeeping were removed 8 Oct 2026, and a `billingUnitHours` change is
-refused `400` for as long as the slot has unbilled windows.)
+auction clears both. Whole hours, 1 hour to 365 days. The billing unit is still the window length, and a
+change to it is **scheduled, not refused** (decision Rob, 11 Oct 2026): the
+save is accepted, windows already bid on, booked or played but not yet
+billed keep their current length, and the new unit applies from the end of
+the last of them (never earlier than the next window to be sold). Until
+then the slot's `billingUnitHours` is still the current length, the
+inventory row carries `billingUnitPending` (`hours`, `effectiveFrom`), the
+page shows "4 h → 8 h from <date/time>", and no window starting at or after
+`effectiveFrom` is sold (it would be cut at the old length and then
+resized). Editing the value again replaces the pending change; setting it
+back to the current length cancels it; a slot with nothing committed
+changes at once. The change lives on the slot as `billingUnitChange` and is
+applied by the clock (`billingChangeApplied`), not by a job. (There is no
+company play-window length to change: `playWindowHours` and its
+pending-change bookkeeping were removed 8 Oct 2026.)
 
 **Max campaigns** (`maxCampaigns` on a slot, with a display-type-level
 default — same override-always-wins inheritance as reserve price and
@@ -3968,8 +3976,8 @@ playback analytics.**
   default, else the platform's 24 hours) sets the length of
   every window it is booked, bid on and billed against, each billed on
   its own realised VAC-d. Windows of every length are aligned to Monday
-  00:00 UTC. Admin-editable, marketing read-only; can't change while the
-  slot has live or unbilled windows. *(Advertisers / Inventory → Available
+  00:00 UTC. Admin-editable, marketing read-only; a change on a slot with live or
+  unbilled windows is scheduled from the end of the last of them (OQ27, 11 Oct 2026). *(Advertisers / Inventory → Available
   Inventory)*
 - **Max campaigns, inherited from its display type** (ticket "Available
   Inventory: Max campaigns column + slot playlist statement"): the
