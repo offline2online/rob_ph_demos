@@ -25,6 +25,20 @@ export interface PositionRef {
   def: Slot
 }
 
+/* A slot as it is at `now`: a scheduled billing-unit change (OQ27, Rob 11 Oct
+   2026) that has come due is applied — the slot's billingUnitHours becomes
+   what was scheduled and the change clears. One that hasn't is left on the
+   slot, whose billingUnitHours is still the current window length. */
+export function billingChangeApplied<S extends Slot>(slot: S, now: number): S {
+  const c = slot.billingUnitChange
+  if (!c || Date.parse(c.effectiveFrom) > now) return slot
+  /* The change stays on the slot (it says how long the earlier windows are); it is no longer pending. */
+  return { ...slot, billingUnitHours: c.override } as S
+}
+export const changePending = (slot: Slot, now: number): Slot['billingUnitChange'] => (slot.billingUnitChange && Date.parse(slot.billingUnitChange.effectiveFrom) > now ? slot.billingUnitChange : null)
+/* Whether a window can't be sold yet because it starts at or after a pending billing-unit change: it would be cut at the old length, then resized. `now` is the position index's own clock reading, so a change already in force never blocks. */
+export const beyondPendingChange = (def: Slot, windowStartMs: number, now: number): boolean => !!changePending(def, now) && windowStartMs >= Date.parse(def.billingUnitChange!.effectiveFrom)
+
 export const positionIdOf = (displayTypeId: string, slot: number) => `${displayTypeId}.s${slot}`
 
 /* The estate's positions, derived from the display types once per
@@ -36,17 +50,23 @@ export const positionIdOf = (displayTypeId: string, slot: number) => `${displayT
    snapshot with new records), and lasts exactly as long as the snapshot. A
    display type source that hands out fresh records on every call simply
    never hits it — the same cost as before, never a stale answer. */
-interface PositionIndex { count: number; all: readonly PositionRef[]; byId: Map<string, PositionRef> }
+interface PositionIndex { count: number; all: readonly PositionRef[]; byId: Map<string, PositionRef>; changeAt: number }
 const indexes = new WeakMap<DisplayType, PositionIndex>()
 async function positionIndex(ctx: Context): Promise<PositionIndex> {
   const list = await ctx.displayTypes.list()
   const key = list[0]
+  const now = ctx.clock().getTime()
   const cached = key ? indexes.get(key) : undefined
-  if (cached && cached.count === list.length) return cached
+  /* A scheduled billing-unit change takes effect with the clock, not with a new snapshot: the index is rebuilt once one is due. */
+  if (cached && cached.count === list.length && now < cached.changeAt) return cached
   const all = list.flatMap((dt) =>
-    (dt.phExtensions?.slots ?? []).flatMap((def, i) => (def.owner === 'advertiser' ? [{ positionId: positionIdOf(dt.id, i + 1), displayType: dt, slot: i + 1, def }] : [])),
+    (dt.phExtensions?.slots ?? []).flatMap((slot, i) => {
+      const def = billingChangeApplied(slot, now)
+      return def.owner === 'advertiser' ? [{ positionId: positionIdOf(dt.id, i + 1), displayType: dt, slot: i + 1, def }] : []
+    }),
   )
-  const index: PositionIndex = { count: list.length, all, byId: new Map(all.map((p) => [p.positionId, p])) }
+  const changeAt = Math.min(Infinity, ...list.flatMap((dt) => (dt.phExtensions?.slots ?? []).flatMap((s) => (s.billingUnitChange && Date.parse(s.billingUnitChange.effectiveFrom) > now ? [Date.parse(s.billingUnitChange.effectiveFrom)] : []))))
+  const index: PositionIndex = { count: list.length, all, byId: new Map(all.map((p) => [p.positionId, p])), changeAt }
   if (key) indexes.set(key, index)
   return index
 }
@@ -222,6 +242,11 @@ export const windowHoursFor = (p?: PositionRef | null): number => (p ? billingUn
 export const windowMsFor = (p?: PositionRef | null) => windowHoursFor(p) * HOUR
 export const windowHoursOf = (_ctx: Context, p?: PositionRef | null): number => windowHoursFor(p)
 export const windowMs = (_ctx: Context, p?: PositionRef | null): number => windowMsFor(p)
+/* The length of the window that starts at `startMs`: windows before a billing-unit change (OQ27, 11 Oct 2026) keep the length they were sold at, so billing and hand-off read them at it even once the new unit is in force. */
+export const windowMsAt = (p: PositionRef | null | undefined, startMs: number): number => {
+  const c = p?.def.billingUnitChange
+  return c && startMs < Date.parse(c.effectiveFrom) ? c.previousHours * HOUR : windowMsFor(p)
+}
 /* A position's max play length, in seconds (max play length ticket, 7 Oct
    2026): the slot's own, else its display type's, else the company-wide
    default. The fixed per-play duration plays per window is counted against
@@ -245,7 +270,7 @@ export const windowEndOf = async (ctx: Context, r: { positionId: string; windowS
 /* windowEndOf for many reservations: reads the position index once, then answers each one synchronously. */
 export async function windowEnds(ctx: Context): Promise<(r: { positionId: string; windowStart: string }) => number> {
   const index = await positionIndex(ctx)
-  return (r) => Date.parse(r.windowStart) + windowMsFor(index.byId.get(r.positionId) ?? null)
+  return (r) => Date.parse(r.windowStart) + windowMsAt(index.byId.get(r.positionId), Date.parse(r.windowStart))
 }
 
 /* A slot's own windows still bid on or booked (live, not Test mode) that
@@ -322,7 +347,7 @@ export type WindowStatus = 'available' | 'reserved' | 'sold' | 'unavailable'
    each such window to the status that took it, and `lockedTerm` is the
    delivery term of a deal this position is assigned to once its rate is
    locked, if it has one: both decide which windows read Reserved (OQ52). */
-export interface WindowFacts { next: number; hasDisplays: boolean; taken: Map<string, ReservationStatus>; lockedTerm?: { activeFrom: string | null; activeTo: string | null } | null }
+export interface WindowFacts { next: number; now: number; hasDisplays: boolean; taken: Map<string, ReservationStatus>; lockedTerm?: { activeFrom: string | null; activeTo: string | null } | null }
 const NO_WINDOWS: ReadonlyMap<string, ReservationStatus> = new Map()
 /* Sync-first (db.ts andThen): the status filter asks it for every position. */
 export function windowFacts(ctx: Context, p: PositionRef, starts?: Date[], prefetched?: Map<string, Map<string, ReservationStatus>>): Awaitable<WindowFacts> {
@@ -335,6 +360,7 @@ export function windowFacts(ctx: Context, p: PositionRef, starts?: Date[], prefe
       : none
   return andThen(allOf([ctx.displays.summaryByDisplayType(p.displayType.id), lockedTermOf(ctx, p), taken] as const), ([displays, lockedTerm, t]) => ({
     next: nextWindowFor(ctx.clock(), windowMsFor(p)).getTime(),
+    now: ctx.clock().getTime(),
     hasDisplays: displays.displays > 0,
     lockedTerm,
     taken: t,
@@ -369,6 +395,7 @@ export function windowStatus(p: PositionRef, c: Caller, start: Date, f: WindowFa
   if (took) return took === 'reserved' && upcoming && assignmentOf(p.def) !== 'reserved' ? 'reserved' : 'sold'
   if (!upcoming) return 'unavailable'
   if (!f.hasDisplays) return 'unavailable'
+  if (beyondPendingChange(p.def, start.getTime(), f.now)) return 'unavailable'
   /* Inside a locked deal term: already spoken for, not open to bids. */
   if (f.lockedTerm && isActiveAt(f.lockedTerm, iso)) return 'reserved'
   /* Locked against new sales (30 Sep 2026): windows already sold read Sold

@@ -156,15 +156,16 @@ describe('Run 4 — two-period: non-happy', () => {
      no longer informational. It can't change while the slot has windows bid
      on, booked or not yet billed under the current unit: the admin save is
      refused, and the windows already sold keep billing as they were sold. */
-  it('T7 — changing billingUnitHours mid-term is refused while sold windows are unbilled; they bill as 24-hour windows', async () => {
+  it('T7 — changing billingUnitHours mid-term is scheduled while sold windows are unbilled; they bill as 24-hour windows', async () => {
     const h = await termHarness()
     await runAuction(h.ctx, day(2))
     const inventory = (await h.app.inject({ method: 'GET', url: '/api/admin/v1/available-inventory' })).json()
     const { displayTypeId, slot, assignedTo, reservePrice, reservePriceDefault, billingUnitHoursDefault } = inventory.items.find((i: { displayTypeId: string; slot: number }) => i.displayTypeId === DT && i.slot === 1)
     const row = { displayTypeId, slot, assignedTo, reservePrice, reservePriceDefault, billingUnitHours: 168, billingUnitHoursDefault }
     const change = await h.app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [row] } })
-    expect(change.statusCode).toBe(400)
-    expect(change.json().error.details[0]).toMatchObject({ field: 'items[0].billingUnitHours', reason: expect.stringMatching(/24-hour billing unit/) })
+    /* Scheduled, not refused (Rob, 11 Oct 2026): the sold windows keep their length. */
+    expect(change.statusCode).toBe(200)
+    expect(change.json().items.find((i: { slot: number }) => i.slot === slot)).toMatchObject({ billingUnitHours: 24, billingUnitPending: { hours: 168 } })
     h.playback.script(h.campaignId, day(1), { plays: 2880, playedSec: 86_400 })
     h.playback.script(h.campaignId, day(2), { plays: 2880, playedSec: 86_400 })
     h.setNow(new Date('2026-09-24T00:01:00.000Z'))

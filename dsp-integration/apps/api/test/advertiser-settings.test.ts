@@ -120,7 +120,7 @@ describe('Advertiser settings (spec §4, §6)', () => {
       displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board — Long Format / Zone 1', playlistId: 'pl_zone_menu_board_1', unassigned: false, scored: true, unsellableReason: null, salesLocked: false, inGlobalDeal: true, globalDealSuppressedBy: null, salesLockedUntil: null, slot: 2, zoneSlot: 2, position: 'Supplier slot',
       assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false, buyersListId: null, buyersListName: null, buyersListIds: [], buyersListNames: [], openAuction: false }, qrControl: true, visionAi: true,
       reservePrice: null, reservePriceOverride: null, displayTypeReservePrice: null, interactiveReservePrice: null, interactiveReservePriceOverride: null,
-      billingUnitHours: 24, billingUnitHoursOverride: null, displayTypeBillingUnitHours: null,
+      billingUnitHours: 24, billingUnitHoursOverride: null, billingUnitPending: null, displayTypeBillingUnitHours: null,
       maxCampaigns: 5, maxCampaignsOverride: null, displayTypeMaxCampaigns: null,
       maxPlayLengthSec: 15, maxPlayLengthSecOverride: null, displayTypeMaxPlayLengthSec: null, companyMaxPlayLengthSec: 15, slotCount: 3, displayCount: 3, playsPerWindow: 1920,
     }])

@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto'
 import type { Context } from '../context'
 import { failed, fileChecks } from '../domain/assetChecks'
 import { readMedia } from '../domain/media'
-import { assignmentOf, findPosition, windowMs } from '../domain/positions'
+import { assignmentOf, findPosition, windowMsAt } from '../domain/positions'
 import { checkCampaign } from './enforcement'
 import { isUniqueViolation } from '../db/db'
 import type { ReservationRecord } from '../repos/ReservationRepo'
@@ -39,7 +39,7 @@ export async function handOff(ctx: Context, r: ReservationRecord): Promise<Reser
      campaign is never un-handed-off because the limit was lowered afterwards. */
   const checks = fileChecks(readMedia(bytes), bytes.length, p.displayType, ctx.config.assetLimits, undefined, null)
   if (failed(checks).length) return notHandedOff(`the creative doesn’t fit ${p.displayType.name}: ${failed(checks).map((c) => c.detail ?? c.name).join(' ')}`)
-  const windowEnd = new Date(Date.parse(r.windowStart) + (await windowMs(ctx, p))).toISOString()
+  const windowEnd = new Date(Date.parse(r.windowStart) + windowMsAt(p, Date.parse(r.windowStart))).toISOString()
   try {
     await ctx.campaigns.bookSlot({
       id: `bk_${randomUUID().slice(0, 12)}`, campaignId: r.campaignId, displayTypeId: p.displayType.id, slot: p.slot,

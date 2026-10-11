@@ -2610,6 +2610,20 @@ export interface components {
              */
             billingUnitHoursOverride: number | null;
             /**
+             * @description A scheduled change to this slot's billing unit (OQ27, 11 Oct
+             *     2026): `billingUnitHours` is the current window length and stays
+             *     so until `effectiveFrom`, the end of the slot's last committed
+             *     window, when `hours` takes over. Null when nothing is pending.
+             *     While it is pending, `billingUnitHoursOverride` is the value it
+             *     will become, so sending the row back unchanged keeps the change
+             *     and sending the current length cancels it.
+             */
+            billingUnitPending?: {
+                hours: number;
+                /** Format: date-time */
+                effectiveFrom: string;
+            } | null;
+            /**
              * @description The billing-unit default set on this slot's display type; null
              *     means the display type has none either (so an un-overridden
              *     slot resolves to the platform default of 24 hours). The same value on
@@ -3214,6 +3228,26 @@ export interface components {
                  *     VAC-d) on its own.
                  */
                 billingUnitHours?: number | null;
+                /**
+                 * @description A billing-unit change scheduled on a slot with windows
+                 *     already bid on, booked or played-but-unbilled (OQ27,
+                 *     decision Rob, 11 Oct 2026). `billingUnitHours` above stays
+                 *     the current length until `effectiveFrom` — the end of the
+                 *     slot's last committed window — then `override` becomes the
+                 *     slot's billingUnitHours and the change stays as the record of
+                 *     the earlier length. Windows starting
+                 *     at or after `effectiveFrom` are not sold until it has.
+                 */
+                billingUnitChange?: {
+                    /** @description The window length that applies from effectiveFrom. */
+                    hours: number;
+                    /** @description The length of every window starting before effectiveFrom; kept after the change has taken effect so billing and hand-off still read earlier windows at it. */
+                    previousHours: number;
+                    /** @description What billingUnitHours becomes (null = follow the display type default). */
+                    override: number | null;
+                    /** Format: date-time */
+                    effectiveFrom: string;
+                } | null;
                 /**
                  * @description This slot's own reserve price (CPM) for interactive
                  *     campaigns (ticket 5eLDRBqEGhNyJSHSIFFG, 4 Oct 2026):

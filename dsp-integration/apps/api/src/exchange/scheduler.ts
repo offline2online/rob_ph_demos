@@ -10,7 +10,7 @@ import { tx } from '../db/db'
 import { sweepRejectedCampaigns } from '../domain/campaignRetention'
 import { assignedOf, type BuyersList } from '@ph-dsp/types'
 import { isActiveAt, isTermLocked } from '../billing/term'
-import { type PositionRef, allPositions, assignmentOf, nextWindowFor, windowMsFor, windowStartOf } from '../domain/positions'
+import { type PositionRef, allPositions, beyondPendingChange, assignmentOf, nextWindowFor, windowMsFor, windowStartOf } from '../domain/positions'
 import { releaseSettledSlotLocks } from '../domain/slotLock'
 import { sweepSettledReservations } from '../domain/reservationRetention'
 import { runAuction } from './auction'
@@ -158,6 +158,8 @@ export async function dueDealAuctions(ctx: Context): Promise<DueDealAuction[]> {
     const len = windowMsFor(p)
     const next = nextWindowFor(now, len)
     const nextIso = next.toISOString()
+    /* A window past a pending billing-unit change waits for it to take effect. */
+    if (beyondPendingChange(p.def, next.getTime(), now.getTime())) continue
     const closed = (l: BuyersList) => !!l.auctionCloses && now.getTime() > Date.parse(l.auctionCloses)
     if (lists.some((l) => isActiveAt(l, nextIso) && (!l.auctionCloses || isTermLocked(l) || closed(l)))) {
       out.push({ position: p, windowStart: next, key: `${nextIso}#${p.positionId}`, deciding: [] })

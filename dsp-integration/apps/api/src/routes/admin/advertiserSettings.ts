@@ -1,11 +1,11 @@
 /* Advertiser settings (spec §4, §5, §6): pricing and the company lists, plus
    the read-only Where these apply and Available Inventory. */
-import { INTERACTIVE_ENABLED, PLATFORM_DEFAULT_BILLING_UNIT_HOURS, MAX_MAX_CAMPAIGNS, MAX_MAX_PLAY_LENGTH_SEC, MIN_MAX_CAMPAIGNS, MIN_MAX_PLAY_LENGTH_SEC, maxPlayLengthSecOf, advertiserSlug, assignedOf, billingUnitHoursOf, maxCampaignsOf, interactiveReservePriceOf, reservePriceOf, type AdvertiserSettings, type AdvertiserSettingsInput, type Assigned, type AvailableInventoryRow, type DisplayType, type DspAdvertisers } from '@ph-dsp/types'
+import { INTERACTIVE_ENABLED, PLATFORM_DEFAULT_BILLING_UNIT_HOURS, MAX_MAX_CAMPAIGNS, MAX_MAX_PLAY_LENGTH_SEC, MIN_MAX_CAMPAIGNS, MIN_MAX_PLAY_LENGTH_SEC, maxPlayLengthSecOf, advertiserSlug, assignedOf, billingUnitHoursOf, maxCampaignsOf, interactiveReservePriceOf, reservePriceOf, type AdvertiserSettings, type AdvertiserSettingsInput, type Assigned, type AvailableInventoryRow, type DisplayType, type DspAdvertisers, type Slot } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { cleanCategoryList, validateAdvertiserSettings } from '../../domain/advertiserSettings'
 import { tx } from '../../db/db'
-import { globalDealSuppressedBy, positionIdOf, slotInGlobalDeal, slotWindowCommitments, unsellableReason } from '../../domain/positions'
+import { billingChangeApplied, changePending, globalDealSuppressedBy, nextWindowFor, positionIdOf, slotInGlobalDeal, slotWindowCommitments, unsellableReason } from '../../domain/positions'
 import { audienceOf, zonesOf } from '../../domain/displayTypes'
 import { playsPerWindowOf } from '../../domain/plays'
 import { assignedToSlot, rotationSizeOf, validateAssigned } from '../../domain/slots'
@@ -66,6 +66,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
     const buyersLists = await ctx.buyersLists.list()
     const items: AvailableInventoryRow[] = []
     const company = await ctx.company.get()
+    const nowMs = ctx.clock().getTime()
     for (const t of await ctx.displayTypes.list()) {
       const zones = zonesOf(t)
       /* A position's playlist, per slot: the zone playlist it's tagged to
@@ -107,7 +108,10 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
          no zoneId (a single-zone display type) has only one segment, so this
          is the same value as `slot`. */
       const zoneSlotCounts = new Map<string | null, number>()
-      for (const [i, s] of (t.phExtensions?.slots ?? []).entries()) {
+      for (const [i, saved] of (t.phExtensions?.slots ?? []).entries()) {
+        /* A scheduled billing-unit change that has come due is already in force. */
+        const s = billingChangeApplied(saved, nowMs)
+        const pending = changePending(s, nowMs) ?? null
         const zoneKey = zoneOfSlot(s)?.id ?? null
         const zoneSlot = (zoneSlotCounts.get(zoneKey) ?? 0) + 1
         zoneSlotCounts.set(zoneKey, zoneSlot)
@@ -134,7 +138,9 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
           interactiveReservePriceOverride: s.interactiveReservePrice ?? null,
           displayTypeReservePrice: t.phExtensions?.reservePrice ?? null,
           billingUnitHours: billingUnitHoursOf(t, s),
-          billingUnitHoursOverride: s.billingUnitHours ?? null,
+          /* While a change is pending this is the value it will become, so a row sent back unchanged keeps it. */
+          billingUnitHoursOverride: pending ? pending.override : s.billingUnitHours ?? null,
+          billingUnitPending: pending ? { hours: pending.hours, effectiveFrom: pending.effectiveFrom } : null,
           displayTypeBillingUnitHours: t.phExtensions?.billingUnitHours ?? null,
           maxCampaigns: maxCampaignsOf(t, s),
           maxCampaignsOverride: s.maxCampaigns ?? null,
@@ -344,45 +350,56 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
       if (sold.length) throw hasDependents('Slots are sold, so the advertiser can’t be removed. Existing bookings continue.', sold)
 
       /* A slot's billing unit is its play-window length (OQ27, Rob 29 Sep
-         2026), so changing it — its own override, or the display type
-         default it inherits, or dropping back to the platform default — would
-         resize windows already bid on or booked under the old length: a
-         locked-rate term's windows, a sold week half played. Refused for just
-         the slots that have any, naming when the last one ends; every other
-         slot's change goes through as before. (A slot's billing unit is one
-         row's edit, and its CPM is quoted against it: the admin tries again
-         once those windows have played.) */
-      const resizing: { field: string; reason: string }[] = []
+         2026), so changing it would resize windows already bid on, booked or
+         played but not yet billed. Decision Rob, 11 Oct 2026: the change is
+         accepted and scheduled instead. Those windows keep their length; the
+         new one applies from the end of the last of them, and the slot's
+         billingUnitHours stays the current length until then
+         (domain/positions.ts billingChangeApplied). A slot with nothing
+         committed changes at once. Editing a slot that already has a change
+         pending replaces it; sending its current length cancels it; sending
+         the row back as it was keeps it (the row's override IS the pending
+         value, see inventory()). */
+      const nowMs = ctx.clock().getTime()
+      type Plan = { billingUnitHours: number | null; billingUnitChange: NonNullable<Slot['billingUnitChange']> | null }
+      const plans = new Map<string, Map<number, Plan>>()
       for (const [displayTypeId, slots] of wanted) {
         const dt = (await ctx.displayTypes.get(displayTypeId))!
         const newDefault = billingUnitDefaults.has(displayTypeId) ? billingUnitDefaults.get(displayTypeId) ?? null : dt.phExtensions?.billingUnitHours ?? null
-        for (const [i, s] of (dt.phExtensions?.slots ?? []).entries()) {
-          if (s.owner !== 'advertiser') continue
+        const byType = new Map<number, Plan>()
+        plans.set(displayTypeId, byType)
+        for (const [i, saved] of (dt.phExtensions?.slots ?? []).entries()) {
+          if (saved.owner !== 'advertiser') continue
           const patch = slots.get(i + 1)
+          if (!patch) continue
+          const s = billingChangeApplied(saved, nowMs)
+          const pending = changePending(s, nowMs) ?? null
           const before = billingUnitHoursOf(dt, s)
-          const after = (patch ? patch.billingUnitHours : s.billingUnitHours ?? null) ?? newDefault ?? PLATFORM_DEFAULT_BILLING_UNIT_HOURS
-          if (after === before) continue
+          const after = patch.billingUnitHours ?? newDefault ?? PLATFORM_DEFAULT_BILLING_UNIT_HOURS
+          /* Untouched: what it already was, or what is already pending. */
+          if (pending && after === pending.hours && patch.billingUnitHours === pending.override) { byType.set(i + 1, { billingUnitHours: s.billingUnitHours ?? null, billingUnitChange: pending }); continue }
+          /* Nothing to change (or a pending change cancelled); a change already in force stays, as the record of the earlier length. */
+          if (after === before) { byType.set(i + 1, { billingUnitHours: patch.billingUnitHours, billingUnitChange: pending ? null : s.billingUnitChange ?? null }); continue }
           const active = await slotWindowCommitments(ctx, positionIdOf(displayTypeId, i + 1), before * 3_600_000)
-          if (!active.length) continue
-          const until = new Date(Math.max(...active.map((r) => Date.parse(r.windowStart) + before * 3_600_000))).toISOString()
-          const row = rows.findIndex((r) => r.displayTypeId === displayTypeId && r.slot === i + 1)
-          resizing.push({
-            field: row >= 0 ? `items[${row}].billingUnitHours` : 'items',
-            reason: `${dt.name} slot ${i + 1} has windows bid on, booked or not yet billed under its ${before}-hour billing unit (the last ends ${until}); its billing unit can change once they have played and been billed.`,
-          })
+          if (!active.length) { byType.set(i + 1, { billingUnitHours: patch.billingUnitHours, billingUnitChange: null }); continue }
+          /* Never earlier than the next window to be sold: a window already running keeps its length too. */
+          const effectiveFrom = new Date(Math.max(nextWindowFor(ctx.clock(), before * 3_600_000).getTime(), ...active.map((r) => Date.parse(r.windowStart) + before * 3_600_000))).toISOString()
+          /* The current length is pinned on the slot itself, so a display type default edited in the same save can't resize it early. */
+          byType.set(i + 1, { billingUnitHours: before, billingUnitChange: { hours: after, previousHours: before, override: patch.billingUnitHours, effectiveFrom } })
         }
       }
-      if (resizing.length) throw validationFailed(resizing, 'A slot’s billing unit is its play-window length, so it can’t change while windows already bid on or booked under it are still to play.')
 
       for (const [displayTypeId, slots] of wanted) {
         const dt = (await ctx.displayTypes.get(displayTypeId))!
         const ext = { ...(dt.phExtensions ?? { slots: [] }) }
-        ext.slots = (ext.slots ?? []).map((s, i) => {
+        ext.slots = (ext.slots ?? []).map((saved, i) => {
+          const s = billingChangeApplied(saved, nowMs)
           const patch = slots.get(i + 1)
+          const plan = plans.get(displayTypeId)?.get(i + 1)
           /* A slot no longer carries a targeting capability (Rob, 7 Oct 2026): drop any saved one. */
           const { supportedTargeting: _legacy, ...slotNow } = s as typeof s & { supportedTargeting?: unknown }
-          const { inGlobalDeal: _flag, ...slotBase } = slotNow
-          return patch ? { ...slotBase, ...(patch.inGlobalDeal ? {} : { inGlobalDeal: false }), ...assignedToSlot(patch.assigned, partners), reservePrice: patch.reservePrice, interactiveReservePrice: patch.interactiveReservePrice, billingUnitHours: patch.billingUnitHours, maxCampaigns: patch.maxCampaigns, maxPlayLengthSec: patch.maxPlayLengthSec } : slotNow
+          const { inGlobalDeal: _flag, billingUnitChange: keptChange, ...slotBase } = slotNow
+          return patch ? { ...slotBase, ...(patch.inGlobalDeal ? {} : { inGlobalDeal: false }), ...assignedToSlot(patch.assigned, partners), reservePrice: patch.reservePrice, interactiveReservePrice: patch.interactiveReservePrice, billingUnitHours: plan ? plan.billingUnitHours : patch.billingUnitHours, ...((plan ? plan.billingUnitChange : keptChange) ? { billingUnitChange: plan ? plan.billingUnitChange : keptChange } : {}), maxCampaigns: patch.maxCampaigns, maxPlayLengthSec: patch.maxPlayLengthSec } : slotNow
         })
         if (defaults.has(displayTypeId)) ext.reservePrice = defaults.get(displayTypeId) ?? null
         if (billingUnitDefaults.has(displayTypeId)) ext.billingUnitHours = billingUnitDefaults.get(displayTypeId) ?? null
