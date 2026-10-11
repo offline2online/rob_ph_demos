@@ -2121,6 +2121,51 @@ before saving). *PH Core seam:* the loop PH Core builds must use the same
 resolved max slot length and slot count so a play really lasts that long —
 see `api/PH-CORE-BOUNDARIES.md`.
 
+#### Term versioning and re-acceptance (11 Oct 2026; ticket KcqiJpzR5RXy4TWODYlG)
+
+A deal's ID and type never change; its **mutable terms** are versioned on the
+same deal ID. The terms are the rate (`floorCpm`), `committedPlays`, the
+delivery term (`activeFrom` / `activeTo`), the auction window
+(`auctionCloses`, private auction only) and who is invited. `termVersion`
+starts at 1 and every saved change to those terms adds a version, recorded
+append-only in `buyers_list_term_versions` (migration `0070`): what changed
+field by field, when, and who (the same actor the §3a audit log records, so a
+human or an identified agent). §3a continues to record the field-level change
+as well. A name or description change, or the same instant written differently,
+is not a new version.
+
+- **Re-acceptance.** A change to the rate, committed plays, delivery term or
+  auction window alters what an invited buyer agreed to, so buyers who had
+  accepted must accept again. Each named invited buyer carries the version it
+  accepted (`buyerAcceptance[]`: `pending` never accepted, `accepted` on the
+  current version, `reacceptance_required` on an older one). Inviting or
+  removing a buyer, or inviting a category, versions the deal but does not ask
+  anyone who already accepted to accept again; a removed buyer loses its
+  acceptance.
+- **Bidding while a buyer has not re-accepted.** Not paused and not held to
+  the old terms: the exchange keeps bidding at the deal's current terms.
+  Whether each DSP should instead bid on the prior accepted terms, or pause,
+  is still to be confirmed against the DV360 and The Trade Desk sandboxes; the
+  acceptance state is what that decision will read.
+- **Retailer warning, before save.** `POST /admin/v1/buyers-lists/{id}/term-check`
+  takes the same body as the PUT, writes nothing, and returns the term
+  changes, `requiresReacceptance`, the new version and the buyers who would
+  have to re-accept. The edit pop-up calls it when the retailer clicks Save
+  changes, and if it says so, asks them to confirm, naming the affected buyers
+  and DSPs. A change that does not touch accepted terms saves without it.
+- **API.** `GET /buyers-lists` returns `termVersion` and `buyerAcceptance`;
+  `GET /buyers-lists/{id}/term-versions` the history;
+  `POST /buyers-lists/{id}/acceptances` records a buyer accepting the current
+  version (recorded by an admin on the buyer's behalf until the DSP
+  integrations report acceptance themselves). Only named invited buyers
+  accept; a buyer invited by category is not tracked individually yet. A
+  deal-type change mints a new deal and is not a re-acceptance.
+
+Code: `domain/termVersions.ts`, `repos/BuyersListRepo.ts`,
+`routes/admin/buyersLists.ts`, `BuyersListModal.tsx`. Tests:
+`test/buyers-list-term-versions.test.ts` and the admin test "warns before
+saving a term change that makes accepted buyers re-accept…".
+
 ## 6. DSP integration — the advertiser & DSP interface
 
 How an advertiser finds inventory (§5), takes it and fills it. This is the API
