@@ -2154,6 +2154,27 @@ inventory itself; the attachment binds it to slots.
   authoring (IQndewUPKJHbHRR2hAgG) applies to a campaign that picks the deal,
   so what the buyer is told and what is enforced cannot drift.
 
+### Sharing a deal with the buyer — deal sheet now, API push later (11 Oct 2026, ticket DbiT9qrFwL4O5ibgSowF)
+
+A buyer cannot use a deal until it exists in their own DSP. Today that is a manual hand-off, the same way DV360 and
+The Trade Desk set up a deal: the seller shares the deal ID, terms and creative spec out of band and the buyer creates the
+deal themselves (DV360: Inventory > My Inventory > new deal with our deal ID, exchange and format; TTD: a first-party /
+private contract with our deal ID). **The deal ID is the handshake; the buyer keys it in.**
+
+- **The deal sheet (built).** For a buyers list, one entry per invited DSP carrying that DSP's own deal ID (each DSP has
+  its own, "Deal ID" above), the seats invited on it and where the buyer keys it in, plus the deal type, rate (the locked
+  rate once the deal has one, else its resolved floor), delivery term, auction close, committed plays (guaranteed only) and
+  the creative-requirements set derived from the attached positions (format, canvas size, max play length).
+  `GET /admin/v1/buyers-lists/{id}/deal-sheet` returns it as JSON, or as a downloadable CSV with `?format=csv` (one row per
+  DSP deal ID and creative format). It is read-only and stores nothing. The Buyers and targeting table has a **Deal
+  sheet** action that shows it on screen with **Copy** (plain text for an email or chat) and **Download CSV**.
+- **A list that invites only IAB categories has no named seat**, so its sheet has no entries: invite a buyer first.
+- **The API push (later, not built).** A seller-initiated push where the SSP sends a deal proposal straight into the DSP so
+  it appears in the buyer's platform ready to accept (DV360 Marketplace / deal proposal; TTD supply-partner deal push).
+  **Hard gate:** it needs PH to be a certified, recognised supply source on each DSP (§7 supply-source certification:
+  DV360 exchange enablement, TTD adding the seller as a supply partner). Not available for the 10 Dec AWS demo timeline;
+  file it as a follow-on once certification is in progress.
+
 ### Prioritised buyers lists — the waterfall (7 Oct 2026)
 
 Decided by Rob, 7 Oct 2026 (Broadsign model): **priority is a property of how

@@ -12,6 +12,7 @@ import { tx } from '../../db/db'
 import { invitedPartnerIds } from '../../domain/buyersLists'
 import { baseFloorFor } from '../../exchange/enforcement'
 import { dealOf } from '../../domain/dealCreative'
+import { dealSheetCsv, dealSheetOf } from '../../domain/dealSheet'
 import { TRANSACTING_CURRENCY } from '../../domain/currency'
 import { effectiveTerm } from '../../domain/pricing'
 import { positionIdOf } from '../../domain/positions'
@@ -160,6 +161,18 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     const list = await ctx.buyersLists.get(req.params.buyersListId)
     if (!list) throw notFound()
     return dealOf(ctx, list, await baseFloorFor(ctx, { buyersListId: list.id }))
+  })
+
+  /* The deal sheet (ticket DbiT9qrFwL4O5ibgSowF): the deal ID per DSP, terms and creative spec a buyer keys into their DSP. JSON, or a downloadable CSV with ?format=csv. */
+  app.get<{ Params: { buyersListId: string }; Querystring: { format?: string } }>('/buyers-lists/:buyersListId/deal-sheet', async (req, reply) => {
+    guards.flagged()
+    guards.requireScope(req, 'sections')
+    const list = await ctx.buyersLists.get(req.params.buyersListId)
+    if (!list) throw notFound()
+    const sheet = await dealSheetOf(ctx, list)
+    if (req.query.format === undefined || req.query.format === 'json') return sheet
+    if (req.query.format !== 'csv') throw validationFailed([{ field: 'format', reason: 'json or csv.' }])
+    return reply.header('content-type', 'text/csv; charset=utf-8').header('content-disposition', `attachment; filename="deal-sheet-${list.id}.csv"`).send(dealSheetCsv(sheet))
   })
 
   app.post<{ Body: Body }>('/buyers-lists', async (req, reply) => {

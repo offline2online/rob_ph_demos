@@ -855,6 +855,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/buyers-lists/{buyersListId}/deal-sheet": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The deal sheet — what a DSP buyer needs to key the deal into their own platform
+         * @description Everything the retail media team shares out of band so a buyer can create the deal on their side (DV360 and The Trade Desk both work this way today; the deal ID is the handshake): one entry per invited DSP with that DSP's own deal ID and the seats invited on it, plus the deal type, rate, delivery term and the creative-requirements set derived from the attached positions. Read-only. `?format=csv` returns the same as a downloadable sheet, one row per DSP deal ID and creative format. A list that invites only IAB categories names no seat and has no entries. The seller-initiated API push is a later phase, gated on DSP supply-source certification.
+         */
+        get: operations["getBuyersListDealSheet"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/buyers-lists/{buyersListId}": {
         parameters: {
             query?: never;
@@ -2192,6 +2212,37 @@ export interface components {
             /** @description The deal's resolved base floor in USD CPM. */
             rateCpm?: number;
             creativeRequirements: components["schemas"]["CreativeRequirement"][];
+        };
+        DealSheet: {
+            buyersListId: string;
+            name: string;
+            /** @enum {string} */
+            dealType: "private_auction" | "preferred" | "guaranteed";
+            currency: string;
+            /** @description The rate in CPM: the deal's locked rate once it has one, else its resolved base floor. */
+            rateCpm: number;
+            /** @enum {string} */
+            rateKind: "floor" | "fixed";
+            activeFrom: string | null;
+            activeTo: string | null;
+            auctionCloses: string | null;
+            /** @description Guaranteed deals only. */
+            committedPlays: number | null;
+            entries: components["schemas"]["DealSheetEntry"][];
+            creativeRequirements: components["schemas"]["CreativeRequirement"][];
+        };
+        DealSheetEntry: {
+            partnerId: string;
+            dsp: string;
+            provider: components["schemas"]["Provider"];
+            /** @description This DSP's own deal ID. */
+            dealId: string;
+            seats: {
+                id: string;
+                name: string;
+            }[];
+            /** @description Where the buyer keys the deal in on that DSP. */
+            setup: string;
         };
         DspDealId: {
             partnerId: string;
@@ -4642,6 +4693,33 @@ export interface operations {
                     "application/json": components["schemas"]["Deal"];
                 };
             };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getBuyersListDealSheet: {
+        parameters: {
+            query?: {
+                format?: "json" | "csv";
+            };
+            header?: never;
+            path: {
+                buyersListId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The deal sheet */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DealSheet"];
+                    "text/csv": string;
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
             404: components["responses"]["NotFound"];
         };
     };
