@@ -30,6 +30,14 @@ describe('Shared Targeting Variables (spec §6)', () => {
     expect(personalisation.map((v: { access: unknown }) => v.access)).toEqual([[], [], ['p_google'], [], ['p_google'], [], [], [], [], [], [], [], [], [], [], [], []])
   })
 
+  it('offers the IAB age brackets as fixed values once age is shared, and ignores edits to them', async () => {
+    const app = buildApp(await testContext())
+    const brackets = ['18–24', '25–34', '35–44', '45–54', '55–64', '65+']
+    const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/targeting-variables', payload: { access: { 'visitor.age': 'all', 'store.cv_age': 'all' }, values: { 'visitor.age': { values: ['30'], freeText: true } } } })
+    expect(res.statusCode).toBe(200)
+    for (const k of ['visitor.age', 'store.cv_age']) expect(res.json().items.find((v: { key: string }) => v.key === k)).toMatchObject({ values: brackets, freeText: false, fixed: true })
+  })
+
   it('saves access per variable, de-duplicating DSP ids', async () => {
     const app = buildApp(await testContext())
     const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/targeting-variables', payload: { access: { 'visitor.skus': ['p_google', 'p_google', 'p_amazon'], 'store.suburb': 'all' } } })

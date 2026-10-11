@@ -55,6 +55,7 @@ export function validateRules(rules: unknown, at: string, partner: PartnerRecord
       }
       const values = c.values
       if (!Array.isArray(values) || !values.length || values.some((v) => typeof v !== 'string' || !v.trim())) invalid.push({ field: `${f}.values`, reason: 'A non-empty list of values.' })
+      else if (def.fixedValues && values.some((v) => !def.fixedValues!.includes(v as string))) invalid.push({ field: `${f}.values`, reason: `${def.label} takes IAB age brackets: ${def.fixedValues.join(', ')}.` })
       else if (values.length > maxValues) invalid.push({ field: `${f}.values`, reason: `At most ${maxValues} values per condition.` })
       else if (limits && values.some((v) => (v as string).length > limits.valueLength)) invalid.push({ field: `${f}.values`, reason: `Each value at most ${limits.valueLength} characters.` })
     })

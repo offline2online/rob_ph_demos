@@ -169,7 +169,7 @@ const DEMO_CAMPAIGNS: DemoCampaign[] = [
   { id: 'c_demo_nestle_kitkat', name: 'Nestlé — KitKat break', advertiser: 'Nestlé', partnerId: 'p_google', displayTypeId: 'landscape', pricingType: 'personalised', state: 'approved', colour: '#c8102e', line: 'Have a break', createdAt: '2026-09-10T09:00:00.000Z',
     /* Combines the individual and computer-vision trigger tiers, so the demo
        estate has at least one tile with more than one trigger icon lit. */
-    targeting: personalised(['Value seeker', 'Snacker'], [[rule('store.cv_age', 'equal', ['18–24'])]]),
+    targeting: personalised(['Value seeker', 'Snacker'], [[rule('store.cv_age', 'include', ['18–24'])]]),
     brief: brief('Afternoon snack occasion on entrance screens; personalised creative for value seekers, or anyone the display reads as a younger shopper.', { promotedProducts: ['KitKat 4 Finger', 'KitKat Chunky'], skus: ['SKU-20411', 'SKU-20412'], targetAudiences: ['Afternoon shoppers'], landingPageUrl: 'https://kitkat.com.au' }) },
   { id: 'c_demo_nestle_purina', name: 'Nestlé — Purina ONE', advertiser: 'Nestlé', partnerId: 'p_google', displayTypeId: 'portrait', pricingType: 'localised', state: 'draft', colour: '#6a1b9a', line: 'Purina ONE', createdAt: '2026-09-19T14:00:00.000Z',
     targeting: LOCALISED, brief: brief('Pet aisle portrait screens, pending creative sign-off.', { promotedProducts: ['Purina ONE Adult'] }) },

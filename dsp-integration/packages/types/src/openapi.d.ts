@@ -2885,6 +2885,8 @@ export interface components {
             values: string[];
             /** @description Any value may be entered at selection time instead of choosing from the defined list. */
             freeText: boolean;
+            /** @description The platform fixes the values (age: the IAB brackets 18–24 … 65+); they are not editable and never free text. */
+            fixed?: boolean;
         };
         /** @enum {string} */
         Provider: "google_dv360" | "amazon_dsp" | "the_trade_desk";

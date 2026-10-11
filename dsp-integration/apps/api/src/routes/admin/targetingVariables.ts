@@ -1,6 +1,7 @@
 /* Shared Targeting Variables (spec §6): which DSPs may target each variable. */
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
+import { TARGETING_VARIABLES } from '@ph-dsp/types'
 import { isShared, sharedVariables, validateAccess, validateValues } from '../../domain/variables'
 import type { Guards } from '../../http/app'
 import { validationFailed } from '../../http/errors'
@@ -26,6 +27,8 @@ export const targetingVariableRoutes = (ctx: Context, guards: Guards): FastifyPl
     /* De-duplicated, trimmed values; a variable no longer shared loses its definition. */
     const values: Record<string, VariableValues> = Object.fromEntries(Object.entries((req.body!.values ?? {}) as Record<string, VariableValues>).map(([k, v]) => [k, { values: [...new Set(v.values.map((x) => x.trim()))], freeText: v.freeText }]))
     for (const k of Object.keys(access)) if (!isShared(effective[k])) values[k] = { values: [], freeText: false }
+    /* A closed vocabulary (age brackets) is the platform's, not the retailer's to edit. */
+    for (const v of TARGETING_VARIABLES) if (v.fixedValues) delete values[v.key]
     await ctx.company.saveVariableAccess(access, values)
     return { items: sharedVariables(await ctx.company.variableAccess(), await ctx.company.variableValues()) }
   })
