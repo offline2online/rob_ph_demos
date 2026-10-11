@@ -1838,6 +1838,29 @@ submission, bid or reservation for an interactive campaign is refused
 greying and the interactive reserve price column are hidden with it; the
 Playlist cell still flags a display type that has QR Control.
 
+### Deal ID: generated and immutable (10 Oct 2026, ticket 5CCgGEYSkVoDTH9yNSYu)
+
+Every buyers list carries a **`dealId`**, minted by the platform when the list
+is created (`PH-` plus 10 characters, e.g. `PH-7K2M9QXW4B`; migration 0067
+backfilled existing lists with `PH-<list id>`, which is what their bid
+requests already carried). It is unique, never typed and never edited, and it
+is the one identifier the DSP bids under (`pmp.deals[].id` on the request, a
+bid's `dealid` checked against it) and the key a campaign's `dealId` refers to.
+
+- **Immutable, like DV360.** The deal ID and the deal type are fixed once
+  saved. `PUT /admin/v1/buyers-lists/{id}` with the same type edits in place
+  (200, same `dealId`); with a different `dealType` it inserts a **new** list
+  with a new ID (201) and leaves the original untouched, keeping its slot
+  assignments and campaigns until it ends. A `dealId` in a POST, or a PUT
+  that differs from the saved one, is a 400. An edit that omits `dealType`
+  means "unchanged".
+- **Mutable terms stay mutable**: rate (floor CPM), delivery term, invited
+  buyers, targeting and the rest edit in place. Term versioning is a
+  separate ticket.
+- **Admin**: the Buyers and targeting table has a read-only Deal ID column
+  and the edit modal a read-only Deal ID field; changing the type shows a
+  note, and saving reports the new ID.
+
 ### Private auctions (buyers lists) (23 Sep 2026)
 
 Today PH only exposes a floor price to the DSP: it cannot run a private
