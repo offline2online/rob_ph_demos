@@ -11,13 +11,17 @@ export const isShared = (a: Access | undefined) => a === ALL_DSPS || (Array.isAr
 export const sharedVariables = (access: Record<string, Access>, values: Record<string, VariableValues> = {}): SharedVariable[] =>
   TARGETING_VARIABLES.map((v) => ({
     key: v.key, label: v.label, group: v.group, exampleValues: v.tip ?? `e.g. ${v.values}`, access: access[v.key],
-    /* Values only exist for a shared variable. */
-    values: isShared(access[v.key]) ? values[v.key]?.values ?? [] : [], freeText: isShared(access[v.key]) && !!values[v.key]?.freeText,
+    /* Values only exist for a shared variable. A closed vocabulary (age brackets) is fixed by the platform, never free text. */
+    values: !isShared(access[v.key]) ? [] : v.fixedValues ? [...v.fixedValues] : values[v.key]?.values ?? [],
+    freeText: isShared(access[v.key]) && !v.fixedValues && !!values[v.key]?.freeText,
+    ...(v.fixedValues ? { fixed: true } : {}),
   }))
 
 /* A buyers-list criterion may only match values defined for the variable, unless it is free text. A variable
    with nothing defined and not free text stays open, so lists saved before values existed keep working. */
 export const undefinedValues = (key: string, matched: string[], values: Record<string, VariableValues>) => {
+  const fixed = TARGETING_VARIABLES.find((v) => v.key === key)?.fixedValues
+  if (fixed) return matched.filter((m) => !fixed.includes(m))
   const d = values[key]
   if (!d || d.freeText || !d.values.length) return []
   return matched.filter((m) => !d.values.includes(m))

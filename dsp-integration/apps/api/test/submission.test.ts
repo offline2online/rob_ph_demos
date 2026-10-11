@@ -89,7 +89,7 @@ describe('POST /v1/campaigns', () => {
     const { app } = await newApp()
     const res = await create(app, {
       ...SWISSE,
-      targeted: [{ id: 'young', priority: 10, pricingType: 'personalised', rules: [[{ source: 'visitor', variable: 'visitor.age', op: 'less_than', values: ['30'] }], [{ source: 'visitor', variable: 'visitor.skus', op: 'include', values: ['SKU-1'] }, { source: 'visitor', variable: 'visitor.age', op: 'equal', values: ['25'] }]] }],
+      targeted: [{ id: 'young', priority: 10, pricingType: 'personalised', rules: [[{ source: 'visitor', variable: 'visitor.age', op: 'include', values: ['25–34'] }], [{ source: 'visitor', variable: 'visitor.skus', op: 'include', values: ['SKU-1'] }, { source: 'visitor', variable: 'visitor.age', op: 'include', values: ['25–34'] }]] }],
     })
     expect(res.statusCode).toBe(422)
     expectMatchesContract('POST', '/v1/campaigns', 422, res.json())

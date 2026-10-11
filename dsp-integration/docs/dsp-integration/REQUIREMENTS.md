@@ -2476,10 +2476,39 @@ keep working.
   of them need a note:
   - **Gender (Computer Vision)**: detected by Vision/AI for the person in
     front of the display (for example Female, Male). Nothing leaves the store.
-  - **Estimated Age (Computer Vision)**: an age band estimated by Vision/AI
-    (for example 18–24, 25–34, 35–44). The two Computer Vision variables only
-    have values on displays with Vision/AI enabled; how the existing platform
-    evaluates them is unchanged.
+  - **Estimated Age (Computer Vision)**: an age estimated by Vision/AI for
+    the person in front of the display and matched to the IAB age brackets
+    (below). The two Computer Vision variables only have values on displays
+    with Vision/AI enabled.
+  - **Age bracket targeting (ticket KSj8nmrRWxli74JeEpbM, built by
+    qKfkkikIyuLa5CqHMBhJ, 11 Oct 2026).** **Age** (`visitor.age`) and
+    **Estimated Age (Computer Vision)** (`store.cv_age`) are targeted by the
+    **six IAB brackets** — `18–24`, `25–34`, `35–44`, `45–54`, `55–64`, `65+` —
+    which are **fixed platform values**:
+    - **Fixed, not editable.** The brackets are the platform's, not defined
+      per retailer. On Shared Targeting Variables the Values column shows them
+      read-only (with "IAB brackets, fixed by the platform"), the Free text
+      tick is not offered, and `GET` / `PUT /admin/v1/targeting-variables`
+      always return the six brackets for a shared age variable
+      (`fixed: true`) and ignore any `values` or `freeText` sent for it.
+    - **Operators: `include` and `exclude_or` only** ("is one of" / "is none
+      of"). There is no numeric age, no comparison (`equal`,
+      `greater_than` …) and no `match_exactly`: selecting the bracket(s) *is*
+      the targeting. A condition with any other operator, or a value that is
+      not one of the six brackets, is a validation error naming the allowed
+      brackets.
+    - **Membership matching.** PH Core evaluates a condition by membership:
+      `include` is met when the visitor's bracket is one of those selected,
+      `exclude_or` when it is none of them. For the identified **Age** the
+      visitor's age falls in exactly one bracket.
+    - **Overlap matching for Computer Vision.** A Vision/AI estimate can
+      straddle two brackets (for example 23–27 across `18–24` and `25–34`).
+      `store.cv_age` matches when the estimate overlaps **any** selected
+      bracket (`include`), and for `exclude_or` only when it overlaps none —
+      so reach wins at a boundary. Nothing leaves the store.
+    - Both variables stay personalisation variables: default access *None*,
+      shared per DSP as above. Partners read the brackets from
+      `GET /v1/targeting/attributes`; see `api/API.md`.
   - **Reason for Visit (Aggregate)** and **Device Type (Aggregate)**: the
     whole queue or store right now, not one visitor (the share waiting for
     the same reason, or carrying each device). *Reason for Visit* and

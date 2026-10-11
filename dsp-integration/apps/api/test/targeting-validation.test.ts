@@ -20,7 +20,7 @@ describe('validateRules — targeting permission validation (spec §6)', () => {
   })
 
   it('rejects a variable not permitted for the DSP, naming it (once, however often it is used)', () => {
-    expect(check([[cond('visitor.age', 'greater_than', ['30'])], [cond('visitor.gender', 'equal', ['Female']), cond('visitor.age', 'less_than', ['50'])]]).notPermitted).toEqual([
+    expect(check([[cond('visitor.age', 'include', ['35–44'])], [cond('visitor.gender', 'equal', ['Female']), cond('visitor.age', 'exclude_or', ['45–54'])]]).notPermitted).toEqual([
       { variable: 'visitor.age', reason: 'Not enabled for Google DSP.' },
       { variable: 'visitor.gender', reason: 'Not enabled for Google DSP.' },
     ])
@@ -36,9 +36,16 @@ describe('validateRules — targeting permission validation (spec §6)', () => {
   })
 
   it('checks each operator against the variable’s own set', () => {
-    expect(check([[cond('store.hours', 'include', ['Open']), cond('store.cv_age', 'greater_than_or_equal', ['25']), cond('store.cv_gender', 'match_exactly', ['Female'])]]).invalid).toEqual([
+    expect(check([[cond('store.hours', 'include', ['Open']), cond('store.cv_age', 'include', ['25–34']), cond('store.cv_gender', 'match_exactly', ['Female'])]]).invalid).toEqual([
       { field: 'rules[0][0].op', reason: 'Store Open / Closed takes equal, not equal.' },
     ])
+  })
+
+  it('targets age by IAB bracket only: membership, never a number or a comparison', () => {
+    const check = (rules: unknown) => validateRules(rules, 'rules', partner, { ...access, 'visitor.age': 'all', 'store.cv_age': 'all' }, 100)
+    expect(check([[cond('visitor.age', 'include', ['18–24', '25–34']), cond('store.cv_age', 'exclude_or', ['65+'])]]).invalid).toEqual([])
+    expect(check([[cond('visitor.age', 'greater_than', ['35–44'])]]).invalid).toEqual([{ field: 'rules[0][0].op', reason: 'Age takes includes selected, excludes selected [OR].' }])
+    expect(check([[cond('store.cv_age', 'include', ['23'])]]).invalid).toEqual([{ field: 'rules[0][0].values', reason: 'Estimated Age (Computer Vision) takes IAB age brackets: 18–24, 25–34, 35–44, 45–54, 55–64, 65+.' }])
   })
 
   it('caps values per condition (Q48: 100 SKUs) and needs at least one', () => {
@@ -74,7 +81,7 @@ describe('Targeting on the forecast', () => {
 
   it('rejects a variable the DSP may not target (422), and malformed rules (400)', async () => {
     const forecast = await setup()
-    const refused = await forecast([[cond('visitor.age', 'less_than', ['30'])]])
+    const refused = await forecast([[cond('visitor.age', 'include', ['25–34'])]])
     expect(refused.statusCode).toBe(422)
     expectMatchesContract('POST', '/v1/inventory/forecast', 422, refused.json())
     expect(refused.json().error.details).toEqual([{ variable: 'visitor.age', reason: 'Not enabled for Google DSP.' }])

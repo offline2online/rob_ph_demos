@@ -200,6 +200,11 @@ selected), `match_exactly`, `exclude_or` (excludes selected [OR]),
 `exclude_and` (excludes selected [AND]), `equal`, `not_equal`,
 `greater_than`, `less_than`, `greater_than_or_equal`, `less_than_or_equal`.
 Which ones a variable takes is listed by `GET /v1/targeting/attributes`.
+**Age** (`visitor.age`, `store.cv_age`) is targeted by IAB bracket: values
+are `18–24`, `25–34`, `35–44`, `45–54`, `55–64`, `65+`, the operators are
+`include` and `exclude_or` only (no number, no comparison), and any other
+value is a validation error. PH Core matches by membership; a Computer
+Vision estimate that straddles two brackets matches any overlapping bracket.
 At most 100 values per condition: a cap on list length (SKU lists included). Whether a SKU exists is PH Core's to say; the exchange only counts.
 
 **Validation only.** Every condition's variable must be enabled for the

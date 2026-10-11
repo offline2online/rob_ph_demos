@@ -3603,6 +3603,7 @@ components:
           items: {type: string}
           description: The values a targeting condition may match, defined centrally. Empty unless the variable is shared with a DSP.
         freeText: {type: boolean, description: Any value may be entered at selection time instead of choosing from the defined list.}
+        fixed: {type: boolean, description: 'The platform fixes the values (age: the IAB brackets 18–24 … 65+); they are not editable and never free text.'}
 
     Provider: {type: string, enum: [google_dv360, amazon_dsp, the_trade_desk]}
     Partner:

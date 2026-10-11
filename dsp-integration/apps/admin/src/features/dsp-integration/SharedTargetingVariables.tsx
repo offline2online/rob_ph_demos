@@ -32,6 +32,8 @@ const ValuesCell = ({ data, context }: ICellRendererParams<SharedVariable, unkno
   const a = context.current.access[data.key]
   const shared = a === 'all' || a.length > 0
   if (!shared) return <div className="py-2" style={{ fontSize: 12, color: T.micro }}>Share with a DSP to define values</div>
+  /* Age brackets are the platform's (IAB): shown, not editable. */
+  if (data.fixed) return <div className="w-full min-w-0 py-1.5"><Select mode="multiple" size="small" className="w-full" open={false} disabled aria-label={`${data.label} values`} value={data.values} /><div className="mt-1" style={{ fontSize: 12, color: T.micro }}>IAB brackets, fixed by the platform. Select one or more when targeting.</div></div>
   const cur = context.current.values[data.key] ?? { values: [], freeText: false }
   return (
     <div className="w-full min-w-0 py-1.5">

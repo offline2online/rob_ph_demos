@@ -325,6 +325,9 @@ export interface TargetingVariableDef {
   values: string
   tip?: string
   operators: Operator[]
+  /* A closed vocabulary: the only values a condition may match, fixed by the
+     platform rather than defined per retailer (age → the IAB brackets). */
+  fixedValues?: readonly string[]
 }
 /* Operators per variable, matched to the platform's Targeting tab (BUILD-PLAN
    Q4, read from demo.personalisationhub.com). The platform has four sets. */
@@ -332,10 +335,15 @@ const LIST: Operator[] = ['include', 'match_exactly', 'exclude_or', 'exclude_and
 const COMPARE: Operator[] = ['equal', 'not_equal', 'greater_than', 'less_than', 'greater_than_or_equal', 'less_than_or_equal']
 const COMPARE_EXACT: Operator[] = [...COMPARE, 'match_exactly']
 const ONE: Operator[] = ['equal', 'not_equal']
+/* Age is targeted by selecting IAB brackets, never by a number or a comparison
+   (11 Oct 2026): selecting the bracket(s) is the targeting, so a condition is
+   a membership check — "is one of" or "is none of". */
+export const AGE_BRACKETS = ['18–24', '25–34', '35–44', '45–54', '55–64', '65+'] as const
+const MEMBER: Operator[] = ['include', 'exclude_or']
 const loc = (key: string, label: string, values: string, operators: Operator[], tip?: string): TargetingVariableDef => ({ key, source: 'store', group: 'localisation', label, values, tip, operators })
 /* Personalisation variables are mostly visitor data; the aggregates and the
    Computer Vision ones are store data, in the same group (Rob, 20 Sep). */
-const per = (key: string, label: string, values: string, operators: Operator[], tip?: string, source: 'store' | 'visitor' = 'visitor'): TargetingVariableDef => ({ key, source, group: 'personalisation', label, values, tip, operators })
+const per = (key: string, label: string, values: string, operators: Operator[], tip?: string, source: 'store' | 'visitor' = 'visitor', fixedValues?: readonly string[]): TargetingVariableDef => ({ key, source, group: 'personalisation', label, values, tip, operators, ...(fixedValues ? { fixedValues } : {}) })
 
 /* The platform's default variables, in display order (spec §6). */
 export const TARGETING_VARIABLES: TargetingVariableDef[] = [
@@ -352,14 +360,14 @@ export const TARGETING_VARIABLES: TargetingVariableDef[] = [
   /* Computer Vision first, then the aggregates, then Purchase Intent, Purchase History, SKUs and Events, then the rest (Rob, 20 Sep; 8 Oct 2026).
      Both are personalisation, so both default to no DSP (Q49 revisited). */
   per('store.cv_gender', 'Gender (Computer Vision)', 'Female, Male', COMPARE_EXACT, 'Read by Vision/AI running at the edge, for the person in front of the display — e.g. Female, Male. Nothing leaves the store.', 'store'),
-  per('store.cv_age', 'Estimated Age (Computer Vision)', '18–24, 25–34, 35–44', COMPARE, 'Estimated by Vision/AI running at the edge, for the person in front of the display — e.g. 18–24, 25–34, 35–44. Nothing leaves the store.', 'store'),
+  per('store.cv_age', 'Estimated Age (Computer Vision)', AGE_BRACKETS.join(', '), MEMBER, 'Estimated by Vision/AI running at the edge, for the person in front of the display, and matched to IAB age brackets: select the brackets to target. An estimate that straddles two brackets (say 23–27) matches either, so reach wins at the boundary. Nothing leaves the store.', 'store', AGE_BRACKETS),
   per('store.reason_for_visit', 'Reason for Visit (Aggregate)', 'Returns, New phone, Bill enquiry (share of the queue here for the same reason)', COMPARE, 'Everyone in the queue here right now, not one visitor: the share waiting for the same reason — e.g. Returns, New phone, Bill enquiry', 'store'),
   per('store.device_type_aggregate', 'Device Type (Aggregate)', 'iPhone, Pixel, Samsung', COMPARE, 'Everyone in the store right now, not one visitor: the share carrying each device — e.g. iPhone, Pixel, Samsung', 'store'),
   per('visitor.purchase_intent', 'Purchase Intent', 'Browse, Replenish, Gift', LIST),
   per('visitor.purchase_history', 'Purchase History', 'Bought in the last 30 days', LIST),
   per('visitor.skus', 'SKUs', 'SKU-10234, SKU-55871', LIST, 'SKUs the visitor has looked at before; target by listing SKUs — e.g. SKU-10234, SKU-55871'),
   per('visitor.events', 'Events', 'Scanned QR code, Viewed product page, Added to cart', LIST, 'Events in store or from a previous web session — e.g. Scanned QR code, Viewed product page, Added to cart'),
-  per('visitor.age', 'Age', '18–24, 25–34, 35–44', COMPARE, 'The identified visitor’s age, from the systems that hold the customer record (CRM, CDP or loyalty) — e.g. 18–24, 25–34, 35–44'),
+  per('visitor.age', 'Age', AGE_BRACKETS.join(', '), MEMBER, 'The identified visitor’s age, from the systems that hold the customer record (CRM, CDP or loyalty), matched to IAB age brackets: select the brackets to target — e.g. 18–24, 25–34, 35–44', 'visitor', AGE_BRACKETS),
   per('visitor.gender', 'Gender', 'Female, Male', ONE, 'The identified visitor’s gender, from the systems that hold the customer record (CRM, CDP or loyalty) — e.g. Female, Male'),
   per('visitor.visitor_segments', 'Visitor Segments', 'New parent, Fitness, Value seeker', LIST),
   per('visitor.reason_for_visit', 'Reason for Visit', 'Returns, New phone, Bill enquiry', LIST, 'Why the visitor in front of the screen is here, for that one person — e.g. Returns, New phone, Bill enquiry. The aggregate version above is the whole queue.'),
