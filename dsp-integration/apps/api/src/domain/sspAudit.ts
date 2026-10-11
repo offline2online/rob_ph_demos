@@ -29,8 +29,9 @@ import { validationFailed } from '../http/errors'
 
 /* The admin paths whose writes can change an SSP setting. */
 const AUDITED = /^\/api\/admin\/v1\/(exchange|advertiser-settings|advertisers|available-inventory|buyers-lists|display-types|partners|targeting-variables)(\/|$)/
+/* term-check is a dry run (POST only because it carries the draft), so it is not a write. */
 export const isAuditedWrite = (req: Pick<FastifyRequest, 'method' | 'url'>) =>
-  req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS' && AUDITED.test(req.url.split('?')[0])
+  req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS' && AUDITED.test(req.url.split('?')[0]) && !/\/term-check$/.test(req.url.split('?')[0])
 
 const header = (req: FastifyRequest, name: string) => {
   const v = req.headers[name]

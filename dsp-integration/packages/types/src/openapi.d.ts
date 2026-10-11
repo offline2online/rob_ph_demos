@@ -875,6 +875,63 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/buyers-lists/{buyersListId}/term-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Would this change need buyers to re-accept? (no write)
+         * @description Takes the same body as PUT and writes nothing. Returns whether saving it would create a new term version, which fields changed, and which buyers (with their DSP) had accepted and would have to accept again, so the UI can warn before save. An omitted `dealType` means the current one; a different one mints a new deal and is not a re-acceptance.
+         */
+        post: operations["checkBuyersListTerms"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/buyers-lists/{buyersListId}/term-versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every term version of the deal, newest first — what changed, when and by whom */
+        get: operations["listBuyersListTermVersions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/buyers-lists/{buyersListId}/acceptances": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record that an invited buyer accepted the deal's current terms
+         * @description The buyer accepts on their DSP; this records it against the current term version. The seat must be a named invited buyer of the list (400 otherwise).
+         */
+        post: operations["recordBuyersListAcceptance"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/buyers-lists/{buyersListId}": {
         parameters: {
             query?: never;
@@ -2248,6 +2305,53 @@ export interface components {
             partnerId: string;
             dealId: string;
         };
+        BuyerAcceptance: {
+            partnerId: string;
+            seatId: string;
+            /**
+             * @description pending: has not accepted yet. accepted: holds the current acceptable terms. reacceptance_required: accepted an earlier version and a later change (floor, committed plays, delivery term or auction window) needs it to accept again. Bidding is not paused meanwhile: the exchange keeps bidding at the current terms; the per-DSP behaviour (continue on the prior terms or pause) is still to be confirmed against the DV360 and The Trade Desk sandboxes.
+             * @enum {string}
+             */
+            state: "pending" | "accepted" | "reacceptance_required";
+            /** @description The term version this buyer last accepted; null if never. */
+            acceptedVersion: number | null;
+            /** Format: date-time */
+            acceptedAt: string | null;
+        };
+        TermChange: {
+            /** @enum {string} */
+            field: "floorCpm" | "committedPlays" | "activeFrom" | "activeTo" | "auctionCloses" | "invitedBuyers" | "invitedCategories";
+            /** @description Previous value (any JSON) */
+            from: unknown;
+            /** @description New value (any JSON) */
+            to: unknown;
+            /** @description True for floorCpm, committedPlays, activeFrom, activeTo and auctionCloses; invite / remove changes version the deal but do not force re-acceptance. */
+            requiresReacceptance?: boolean;
+        };
+        TermCheck: {
+            currentVersion: number;
+            /** @description The version a save would create; equal to currentVersion when nothing in the terms changes. */
+            nextVersion: number;
+            changes: components["schemas"]["TermChange"][];
+            /** @description True when saving would leave buyers who had accepted on an older version. Always false for a deal-type change, which mints a new deal instead. */
+            requiresReacceptance: boolean;
+            /** @description Buyers (with their DSP) that had accepted and would need to re-accept. */
+            affectedBuyers: {
+                partnerId: string;
+                partnerName: string;
+                seatId: string;
+                acceptedVersion: number;
+            }[];
+        };
+        TermVersion: {
+            version: number;
+            /** Format: date-time */
+            at: string;
+            /** @description Who saved it (the admin user or agent name). */
+            by: string;
+            changes: components["schemas"]["TermChange"][];
+            requiresReacceptance: boolean;
+        };
         ListDeal: {
             partnerId: string;
             /** @description Generated, immutable; what this DSP bids under (`pmp.deals[].id`). */
@@ -2277,6 +2381,10 @@ export interface components {
          *     bypasses the floor.
          */
         BuyersList: {
+            /** @description The version of the deal's mutable terms (rate/floor, committed plays, delivery term, auction window, invited buyers and categories). Starts at 1 and goes up by one on every saved change to those terms; the deal ID and deal type never change. The history is `GET .../term-versions`. */
+            readonly termVersion: number;
+            /** @description One entry per named invited buyer (seat), with the term version it has accepted. Buyers invited only by IAB category are not tracked individually. */
+            readonly buyerAcceptance: components["schemas"]["BuyerAcceptance"][];
             effectiveCommittedPlays: components["schemas"]["EffectiveTerm"];
             effectiveRateCpm: components["schemas"]["EffectiveTerm"];
             id: string;
@@ -4717,6 +4825,92 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["DealSheet"];
                     "text/csv": string;
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    checkBuyersListTerms: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                buyersListId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description The check */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TermCheck"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listBuyersListTermVersions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                buyersListId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The history */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["TermVersion"][];
+                    };
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    recordBuyersListAcceptance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                buyersListId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    partnerId: string;
+                    seatId: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The list with its updated buyerAcceptance */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuyersList"];
                 };
             };
             400: components["responses"]["ValidationFailed"];
