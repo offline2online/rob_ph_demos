@@ -1934,7 +1934,7 @@ duplicating it per deal would let one drift from the other:
 - **A deal is per DSP and priced on top of the floor** (Rob, 29 Sep 2026;
   open question 45). It is bilateral: its invited buyers resolve to DSP
   seats, and a locked term binds one DSP's buyer; there is no company-wide
-  deal. Its rate is a commitment on top of the same score-driven floor,
+  deal. **The list is cross-DSP; the deal identity is per DSP** (ticket fgBVnNItNcu7qMBUtqH7, 10 Oct 2026): a buyers list is one object that may invite named seats on several DSPs, and it resolves to one generated, immutable deal ID per DSP (`deals: [{ partnerId, dealId, retiredAt }]`), because DV360 and The Trade Desk each accept their own deal. Rate, delivery term, invited buyers and the auction window / locked rate are the list's and apply across its DSP deals; only the identifier differs, and a locked-rate clear still binds the one winning seat. Inviting the first named seat on a DSP mints that DSP's ID; removing its last named seat retires it (kept, never reused, so a campaign or bid quoting it still resolves; re-inviting revives the same ID). A DSP's bid request carries its own ID on `pmp.deals[].id` and only that ID clears for it; the authoring picker shows an advertiser the ID for the DSP its seat is on. A DSP admitted only by IAB category has no named seat, so its ID is minted on its first bid request (migration 0069). Its rate is a commitment on top of the same score-driven floor,
   never under it: a bid or reserve below the effective floor is refused
   `below_floor`, and a locked-term window whose rate has fallen below the
   floor in force when it is booked (the floor or a multiplier rose) is not
@@ -2934,6 +2934,8 @@ Used only for the delete check in §1: a display type with any display whose
 buyersList: {
   id, name, description,
   invitedBuyers: [{ partnerId, seatId }],      // a seat a connected DSP synced (partners.seats); matched exactly
+  deals: [{ partnerId, dealId, retiredAt }],   // one generated, immutable deal ID per DSP (table buyers_list_deals, migration 0069);
+                                                //   retiredAt set when the DSP's last named seat is removed; the ID is kept and revived on re-invite
   activeFrom, activeTo,                        // the delivery term; ISO date-time or null = no bound (inclusive)
   auctionCloses,                               // the auction window's bidding deadline; ISO date-time or null = not using
                                                 //   the two-period model — clears a fresh auction every play window (23 Sep 2026)
@@ -4461,7 +4463,7 @@ partner-contributed attributes have been removed with that scope.
 45. **Deals.** *Resolved (decision, Rob, 29 Sep 2026; built with open
     question 52):* deals are per DSP and bilateral — this buyer, these
     terms — built on the existing deal object, the buyers list (§5 "Private
-    auctions (buyers lists)"). Company-wide deals are not modelled. A deal
+    auctions (buyers lists)"). Company-wide deals are not modelled. *Cross-DSP lists (10 Oct 2026):* "a deal is per DSP" means the deal **identity** is per DSP — a list may invite seats on several DSPs and carries one deal ID for each; its terms are shared (§5 "Private auctions"). A deal
     is priced against the same score-driven floor; its negotiated rate is a
     commitment on top of the floor, never under it, and a deal never
     bypasses the floor. Programmatic guaranteed is the reserve-price booking
