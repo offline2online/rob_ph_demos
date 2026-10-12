@@ -1,9 +1,12 @@
-/* New/edit buyers and targeting list (spec "Support private auctions" — Available
+/* New/edit deal and buyers list (spec "Support private auctions" — Available
    Inventory UX): the buyers list and its deal terms are ONE object, created
    or edited from this one pop-up. It carries both who may buy (invited
    buyers) and the targeting criteria appended to the deal. The floor is optional: blank inherits
    the DSP's floor, else the platform floor (bid floor hierarchy). The auction resolution rule (platform-wide) and the per-brand relationship
-   variable (global on the brand entity) are deliberately not fields here. */
+   variable (global on the brand entity) are deliberately not fields here.
+
+   Lifecycle (ticket QG40V1vVwqp9NtFmlC9H): Save as draft (shared with no DSP; it can be assigned to slots) -> Finalise (needs at
+   least one assigned slot; opens FinaliseDealModal to confirm the slots, deal ID and terms) -> Share deal (inside that pop-up). */
 import { App, Button, DatePicker, Input, InputNumber, Modal, Select } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { ALL_DSPS, IAB_TAXONOMY, OPERATOR_LABELS, TARGETING_VARIABLES, type BuyersList, type BuyersListDealType, type Condition, type InvitedBuyer, type SharedVariable, type TermCheck } from '@ph-dsp/types'
@@ -13,8 +16,10 @@ import { api, ApiRequestError } from '../../api/client'
 import { Q } from '../../api/queries'
 import { Icon } from '../../shared/Icon'
 import { WithTip } from '../../shared/InfoTip'
+import { Tip } from '../../shared/Tip'
 import { T } from '../../theme/phTheme'
 import { playsText, rateText, resolveTerm, sourceLabel } from './effectiveTerm'
+import { FinaliseDealModal } from './FinaliseDealModal'
 
 type Draft = { name: string; description: string; dealType: BuyersListDealType; invitedBuyers: InvitedBuyer[]; invitedCategories: string[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays: number | null; floorCpm: number | null }
 /* An invited buyer is one synced seat of one connected DSP — the Select's value is both halves. */
@@ -40,6 +45,11 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
   const { message, modal } = App.useApp()
   const [draft, setDraft] = useState<Draft>(blankDraft)
   const [saving, setSaving] = useState(false)
+  /* Set once Finalise has saved the draft: the confirmation pop-up for it. */
+  const [finalising, setFinalising] = useState<BuyersList | null>(null)
+  const isDraft = !editing || editing.status === 'draft'
+  /* Absent on the hosted read-only snapshot, which pre-dates drafts. */
+  const slots = editing?.assignedSlots ?? []
   const [errors, setErrors] = useState<Record<string, string>>({})
   useEffect(() => {
     if (!open) return
@@ -131,7 +141,7 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
     })
   })
 
-  const save = async () => {
+  const save = async (finalise = false) => {
     setSaving(true)
     setErrors({})
     const payload = draft
@@ -142,10 +152,12 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
       }
       const saved = editing
         ? await api<BuyersList>('PUT', `/admin/v1/buyers-lists/${editing.id}`, payload)
-        : await api<BuyersList>('POST', '/admin/v1/buyers-lists', payload)
+        : await api<BuyersList>('POST', '/admin/v1/buyers-lists', { ...payload, status: 'draft' })
       /* A changed deal type is saved as a new deal with a new ID; the original row stays as it was. */
       if (editing && saved.id !== editing.id) message.success(`Deal type changed, so a new deal was created. Its Deal ID is ${saved.dealId}; the original deal (${editing.dealId}) is unchanged.`)
       onSaved(saved)
+      /* Finalise saves what is on screen first, so the pop-up confirms exactly what will be shared. A changed deal type is a new deal with no slots yet, so it cannot be finalised from here. */
+      if (finalise && saved.id === editing?.id) { setFinalising(saved); return }
       onClose()
     } catch (e) {
       /* Every other save flow in this app surfaces SOMETHING on failure
@@ -168,16 +180,32 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
   }
 
   return (
+    <>
     <Modal
-      open={open} width={580} destroyOnHidden confirmLoading={saving} onCancel={onClose} onOk={save}
-      okText={editing ? 'Save changes' : 'Create buyers and targeting'}
+      open={open} width={580} destroyOnHidden confirmLoading={saving} onCancel={onClose}
+      footer={[
+        <Button key="cancel" onClick={onClose}>Cancel</Button>,
+        <Button key="save" type={isDraft && editing ? 'default' : 'primary'} loading={saving} onClick={() => save()}>{!isDraft ? 'Save changes' : editing ? 'Save draft' : 'Save as draft'}</Button>,
+        ...(isDraft ? [
+          <Tip key="finalise" title={slots.length ? undefined : 'Assign this deal to at least one slot in Available Inventory first. A deal with no inventory can’t be finalised.'}>
+            <span><Button type="primary" disabled={saving || !editing || !slots.length} onClick={() => save(true)}>Finalise</Button></span>
+          </Tip>,
+        ] : []),
+      ]}
       title={
         <span className="inline-flex items-center gap-2">
           <Icon name="gavel" size={20} style={{ color: T.primary }} />
-          {editing ? 'Edit buyers and targeting' : 'New buyers and targeting'}
+          {editing ? 'Edit deal and buyers list' : 'New deal and buyers list'}
         </span>
       }
     >
+      <div className="mb-3.5" style={{ fontSize: 12.5, color: T.muted }} data-testid="deal-status-note">
+        {!isDraft
+          ? 'Shared with the invited buyers. A change to its terms asks the buyers who accepted to accept again.'
+          : editing
+            ? `Draft: not shared with any DSP. ${slots.length ? `Assigned to ${slots.length} slot${slots.length === 1 ? '' : 's'}; finalise it to share it.` : 'Assign it to a slot in Available Inventory, then finalise it to share it.'}`
+            : 'Save as draft first: nothing is shared with any DSP. Then assign it to a slot in Available Inventory and finalise it.'}
+      </div>
       <div className="mb-3.5">
         <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}><span style={{ color: T.error }}>*</span> Name</label>
         <Input value={draft.name} status={errors.name ? 'error' : undefined} placeholder="e.g. Q4 FMCG private auction" onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))} />
@@ -319,5 +347,7 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
         <div style={{ fontSize: 12.5, color: T.muted }}>Rate locked at {editing.lockedWin.cpm} CPM on {new Date(editing.lockedWin.lockedAt).toLocaleString()}: every play for the rest of the delivery term books at that rate.</div>
       )}
     </Modal>
+      <FinaliseDealModal list={finalising} onClose={() => setFinalising(null)} onShared={(l) => { setFinalising(null); onSaved(l); onClose() }} />
+    </>
   )
 }

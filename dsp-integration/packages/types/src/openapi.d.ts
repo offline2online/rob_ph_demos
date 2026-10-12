@@ -875,6 +875,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/buyers-lists/{buyersListId}/share": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Share the deal — send the deal ID and terms to the invited buyers' DSPs (the confirmation step of Finalise)
+         * @description Moves a draft deal to `shared`. It is one fixed offer broadcast to the invited buyers for deal authorisation, not a proposal the buyer can modify. Refused with 400 `validation_failed` unless the deal has at least one assigned slot (`assignedSlots`) and at least one named invited buyer (a category-only deal names no seat to share with). Sharing a deal that is already shared is a no-op that returns it unchanged. From now on a change to the deal's terms creates a new term version and asks the buyers who accepted to accept again.
+         */
+        post: operations["shareBuyersList"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/buyers-lists/{buyersListId}/term-check": {
         parameters: {
             query?: never;
@@ -2381,6 +2401,23 @@ export interface components {
          *     bypasses the floor.
          */
         BuyersList: {
+            /**
+             * @description The deal's lifecycle (ticket QG40V1vVwqp9NtFmlC9H). `draft`: defined and saved, but sent to no DSP: it is left out of `GET /v1/deals`, no bid request quotes it and its edits are not versioned, so nothing needs re-accepting. It can be assigned to slots (that is how it gets inventory). `shared`: the retailer finalised it and pressed Share deal (`POST .../share`), which sent the deal ID and terms to the invited buyers for authorisation. It is one fixed offer to the invited buyers, not a negotiable proposal. From then on a change to its terms creates a new term version and asks the buyers who accepted to accept again.
+             * @enum {string}
+             */
+            readonly status: "draft" | "shared";
+            /**
+             * Format: date-time
+             * @description When the deal was shared; null while it is a draft. Lists that pre-date drafts are shared as of when they were created.
+             */
+            readonly sharedAt: string | null;
+            /** @description Every slot (position) the deal is assigned to, saved assignments only. A deal can be shared only when this has at least one entry. */
+            readonly assignedSlots: {
+                /** @description displayTypeId.sN */
+                positionId: string;
+                /** @description Display type name — slot label */
+                label: string;
+            }[];
             /** @description The version of the deal's mutable terms (rate/floor, committed plays, delivery term, auction window, invited buyers and categories). Starts at 1 and goes up by one on every saved change to those terms; the deal ID and deal type never change. The history is `GET .../term-versions`. */
             readonly termVersion: number;
             /** @description One entry per named invited buyer (seat), with the term version it has accepted. Buyers invited only by IAB category are not tracked individually. */
@@ -4754,6 +4791,11 @@ export interface operations {
                 "application/json": {
                     /** @description Optional; must equal the saved deal ID (400 otherwise). Immutable. */
                     dealId?: string;
+                    /**
+                     * @description draft: save the deal without sharing it with any DSP (what the admin UI's Save as draft sends); it is shared later with POST .../share once it has a slot. Omitted: shared, as every list was before drafts existed. Ignored on PUT: a deal is shared only through the share operation.
+                     * @enum {string}
+                     */
+                    status?: "draft" | "shared";
                     name: string;
                     description: string;
                     invitedBuyers?: components["schemas"]["InvitedBuyer"][];
@@ -4861,6 +4903,30 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["DealSheet"];
                     "text/csv": string;
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    shareBuyersList: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                buyersListId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The shared deal */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuyersList"];
                 };
             };
             400: components["responses"]["ValidationFailed"];

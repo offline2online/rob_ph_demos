@@ -405,10 +405,10 @@ function AssignedCell({ data, context }: IP) {
       /* Directly underneath DSPs, not after Advertisers (Rob, 23 Sep —
          failed testing, "place the new buyers list directly underneath the
          list of DSP's"). */
-      label: 'Buyers and targeting (private auction)',
+      label: 'Deals and buyers lists (private auction)',
       options: [
         ...c.buyersLists.map((l) => ({ value: `deal:${l.id}`, label: l.name, note: [l.invitedBuyers.length ? `${l.invitedBuyers.length} invited buyer${l.invitedBuyers.length === 1 ? '' : 's'}` : '', (l.invitedCategories ?? []).length ? `Category: ${l.invitedCategories.join(', ')}` : ''].filter(Boolean).join(' + ') })),
-        { value: ADD_BUYERS_LIST, label: '+ Add new buyers and targeting…' },
+        { value: ADD_BUYERS_LIST, label: '+ Add new deal and buyers list…' },
       ],
     },
     { label: 'Advertisers', options: [...advertiserDsps.entries()].map(([name, via]) => ({ value: `adv:${name}`, label: via.length ? `${name} (${via.join(', ')})` : directLabel(name) })) },
@@ -1048,7 +1048,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
         onChanged={() => qc.invalidateQueries({ queryKey: ['buyers-lists'] })}
       />
 
-      {/* Advertisers table sits last, under Buyers and targeting (ticket AkDMbOJn0QBV0ZcEM5tm). */}
+      {/* Advertisers table sits last, under Deals and buyers lists (ticket AkDMbOJn0QBV0ZcEM5tm). */}
       <SectionLabel>Advertisers</SectionLabel>
       {data.items.length === 0 ? (
         <div className="flex items-center justify-between gap-3">

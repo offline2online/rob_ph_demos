@@ -1,4 +1,4 @@
-/* Buyers and targeting table (spec "Support private auctions" — Available
+/* Deals and buyers lists table (spec "Support private auctions" — Available
    Inventory UX): view, manage and edit the buyers lists that are then
    selectable in Available Inventory's Assigned to column, underneath that
    table (Rob, 23 Sep). */
@@ -39,6 +39,7 @@ const NameCell = ({ data, context }: P) =>
         <div className="truncate" style={{ fontWeight: 500 }}>{data.name}</div>
       )}
       {data.description && <div className="truncate" style={{ fontSize: 11.5, color: T.muted }}>{data.description}</div>}
+      {data.status === 'draft' && <div style={{ fontSize: 11.5, color: T.muted }} data-testid={`draft-${data.id}`}>Draft · not shared with any DSP</div>}
     </div>
   ) : null
 /* Who the deal is for: named advertisers, IAB categories, or both (a union). */
@@ -108,7 +109,7 @@ const DealTypeCell = ({ data }: P) => (data ? <span style={{ fontSize: 12.5 }}>{
 const ActionsCell = ({ data, context }: P) =>
   data ? (
     <span className="inline-flex gap-1">
-      <Button type="text" size="small" aria-label={`Deal sheet for ${data.name}`} icon={<Icon name="ios_share" size={15} />} onClick={() => context.current.onShare(data)} />
+      {data.status === 'shared' && <Button type="text" size="small" aria-label={`Deal sheet for ${data.name}`} icon={<Icon name="ios_share" size={15} />} onClick={() => context.current.onShare(data)} />}
       <Button type="text" size="small" aria-label={`Edit ${data.name}`} icon={<Icon name="edit" size={15} />} onClick={() => context.current.onEdit(data)} />
       <Button type="text" size="small" danger aria-label={`Delete ${data.name}`} icon={<Icon name="delete" size={15} />} onClick={() => context.current.onDelete(data)} />
     </span>
@@ -123,7 +124,7 @@ export function BuyersListsTable({ lists, canEdit, capacity, onChanged }: { list
   const [deleteBusy, setDeleteBusy] = useState(false)
 
   const columns: ColDef<BuyersList>[] = [
-    { headerName: 'Buyers and targeting', flex: 2, minWidth: 220, cellRenderer: NameCell, valueGetter: (p) => `${p.data?.name}|${p.data?.description}` },
+    { headerName: 'Deals and buyers lists', flex: 2, minWidth: 220, cellRenderer: NameCell, valueGetter: (p) => `${p.data?.name}|${p.data?.description}|${p.data?.status}` },
     { headerName: 'Deal ID', field: 'dealId', width: 170, minWidth: 150, cellRenderer: DealIdCell },
     { headerName: 'CPM', width: 200, minWidth: 170, cellRenderer: RateCell, valueGetter: (p) => JSON.stringify([p.data?.dealType, p.data?.lockedWin, p.data?.effectiveRateCpm]) },
     /* These cells have no field, so AG Grid saw an unchanged value (undefined) after a save and kept the old cell:
@@ -167,23 +168,23 @@ export function BuyersListsTable({ lists, canEdit, capacity, onChanged }: { list
     <div className="mt-7">
       <div className="mb-3 flex items-center justify-between gap-3">
         <SectionLabel style={{ margin: 0 }}>
-          <WithTip tip="Reusable deal definitions for guaranteed and programmatic campaigns. Each list sets the deal type (private auction, preferred deal or programmatic guaranteed), who can buy (invited advertisers and IAB categories), the targeting criteria appended to the deal, the delivery term, the committed plays (programmatic guaranteed), the floor price and the auction close (private auction). Create one once, then pick it in Available Inventory's Assigned to column for any slot.">
-            Buyers and targeting
+          <WithTip tip="Reusable deal definitions for guaranteed and programmatic campaigns. Each list sets the deal type (private auction, preferred deal or programmatic guaranteed), who can buy (invited advertisers and IAB categories), the targeting criteria appended to the deal, the delivery term, the committed plays (programmatic guaranteed), the floor price and the auction close (private auction). Save it as a draft, assign it to slots in Available Inventory's Assigned to column, then finalise it and share the deal with the invited buyers.">
+            Deals and buyers lists
           </WithTip>
         </SectionLabel>
         {canEdit && (
           <Button type="primary" icon={<Icon name="add" size={16} />} onClick={() => { setEditing(null); setModalOpen(true) }}>
-            New buyers and targeting list
+            New deal and buyers list
           </Button>
         )}
       </div>
       {lists.length === 0 ? (
         <div className="flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}>
           <Icon name="gavel" size={18} />
-          <span>No buyers and targeting yet. Create one to run a private auction on a slot.</span>
+          <span>No deals or buyers lists yet. Create one to run a private auction on a slot.</span>
         </div>
       ) : (
-        <Grid<BuyersList> label="Buyers and targeting" rows={lists} columns={columns} context={context} getRowId={(l) => l.id} rowHeight={52} headerHeight={40} stickyHeader />
+        <Grid<BuyersList> label="Deals and buyers lists" rows={lists} columns={columns} context={context} getRowId={(l) => l.id} rowHeight={52} headerHeight={40} stickyHeader />
       )}
       <BuyersListModal open={modalOpen} editing={editing} onClose={() => setModalOpen(false)} onSaved={() => onChanged()} />
       <DealSheetModal list={sharing} onClose={() => setSharing(null)} />
@@ -193,7 +194,7 @@ export function BuyersListsTable({ lists, canEdit, capacity, onChanged }: { list
           blockedReason={deleteError?.message}
           deleting={deleteBusy} onDelete={confirmDelete} onClose={() => setDeleting(null)}
         >
-          This removes the buyers list. It can’t be undone.
+          This removes the deal and buyers list. It can’t be undone.
           {deleteError?.body?.error.details?.length ? (
             <ul className="mt-2 mb-0 pl-[18px]">
               {deleteError.body.error.details.map((d, i) => <li key={i}>{d.reason}</li>)}

@@ -1157,6 +1157,7 @@ paths:
               required: [name, description, activeFrom, activeTo]
               properties:
                 dealId: {type: string, description: 'Optional; must equal the saved deal ID (400 otherwise). Immutable.'}
+                status: {type: string, enum: [draft, shared], description: 'draft: save the deal without sharing it with any DSP (what the admin UI''s Save as draft sends); it is shared later with POST .../share once it has a slot. Omitted: shared, as every list was before drafts existed. Ignored on PUT: a deal is shared only through the share operation.'}
                 name: {type: string}
                 description: {type: string}
                 invitedBuyers: {type: array, items: {$ref: '#/components/schemas/InvitedBuyer'}}
@@ -1232,6 +1233,19 @@ paths:
         '400': {$ref: '#/components/responses/ValidationFailed'}
         '404': {$ref: '#/components/responses/NotFound'}
 
+  /admin/v1/buyers-lists/{buyersListId}/share:
+    post:
+      tags: [Admin — Advertiser settings]
+      operationId: shareBuyersList
+      summary: Share the deal — send the deal ID and terms to the invited buyers' DSPs (the confirmation step of Finalise)
+      description: |
+        Moves a draft deal to `shared`. It is one fixed offer broadcast to the invited buyers for deal authorisation, not a proposal the buyer can modify. Refused with 400 `validation_failed` unless the deal has at least one assigned slot (`assignedSlots`) and at least one named invited buyer (a category-only deal names no seat to share with). Sharing a deal that is already shared is a no-op that returns it unchanged. From now on a change to the deal's terms creates a new term version and asks the buyers who accepted to accept again.
+      security: [{adminSession: []}]
+      parameters: [{name: buyersListId, in: path, required: true, schema: {type: string}}]
+      responses:
+        '200': {description: The shared deal, content: {application/json: {schema: {$ref: '#/components/schemas/BuyersList'}}}}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /admin/v1/buyers-lists/{buyersListId}/term-check:
     post:
       tags: [Admin — Advertiser settings]
@@ -3034,8 +3048,25 @@ components:
         is priced against the same score-driven floor as everything else. It
         is a commitment on top of the floor, never under it, and a deal never
         bypasses the floor.
-      required: [id, dealId, deals, name, description, dealType, invitedBuyers, invitedCategories, targeting, activeFrom, activeTo, auctionCloses, lockedWin, committedPlays, floorCpm, deliveredPlays, termVersion, buyerAcceptance, effectiveCommittedPlays, effectiveRateCpm, createdAt, updatedAt]
+      required: [id, dealId, deals, name, description, dealType, invitedBuyers, invitedCategories, targeting, activeFrom, activeTo, auctionCloses, lockedWin, committedPlays, floorCpm, deliveredPlays, status, sharedAt, assignedSlots, termVersion, buyerAcceptance, effectiveCommittedPlays, effectiveRateCpm, createdAt, updatedAt]
       properties:
+        status:
+          type: string
+          enum: [draft, shared]
+          readOnly: true
+          description: |
+            The deal's lifecycle (ticket QG40V1vVwqp9NtFmlC9H). `draft`: defined and saved, but sent to no DSP: it is left out of `GET /v1/deals`, no bid request quotes it and its edits are not versioned, so nothing needs re-accepting. It can be assigned to slots (that is how it gets inventory). `shared`: the retailer finalised it and pressed Share deal (`POST .../share`), which sent the deal ID and terms to the invited buyers for authorisation. It is one fixed offer to the invited buyers, not a negotiable proposal. From then on a change to its terms creates a new term version and asks the buyers who accepted to accept again.
+        sharedAt: {type: [string, 'null'], format: date-time, readOnly: true, description: When the deal was shared; null while it is a draft. Lists that pre-date drafts are shared as of when they were created.}
+        assignedSlots:
+          type: array
+          readOnly: true
+          description: Every slot (position) the deal is assigned to, saved assignments only. A deal can be shared only when this has at least one entry.
+          items:
+            type: object
+            required: [positionId, label]
+            properties:
+              positionId: {type: string, description: 'displayTypeId.sN'}
+              label: {type: string, description: 'Display type name — slot label'}
         termVersion:
           type: integer
           readOnly: true
