@@ -997,6 +997,22 @@ describe('Advertisers / Inventory', () => {
     expect(within(within(cell).getByRole('list', { name: /open auction DSPs/ })).getByText('All DSPs')).toBeInTheDocument()
   }, slow(45000))
 
+  /* Ticket 3FFOpIpry1XM29TimpJy (12 Oct 2026): Included in global deals stays selectable on a buyers-list slot and sits in the open tier, unnumbered. */
+  it('keeps Included in global deals selectable with a buyers list, listed in the open auction beneath the numbered lists', async () => {
+    const inv = ADVERTISER_PAGE['/api/admin/v1/available-inventory']
+    const lists = [{ id: 'bl_1', name: 'Confectionery', description: '', invitedBuyers: [], invitedCategories: [], targeting: [], activeFrom: null, activeTo: null, dealType: 'private_auction' }]
+    const assigned = { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: 'bl_1', buyersListIds: ['bl_1'], openAuction: false }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...ADVERTISER_PAGE, '/api/admin/v1/buyers-lists': { items: lists }, '/api/admin/v1/available-inventory': { ...inv, items: [{ ...inv.items[0], assignedTo: assigned, inGlobalDeal: true }] } })))
+    renderAt('/advertisers')
+    const inventory = await screen.findByLabelText('Available Inventory')
+    const cell = within(inventory).getAllByLabelText('Menu Board — Long Format slot 2: assigned to')[0].closest('.ag-cell') as HTMLElement
+    expect([...cell.querySelectorAll('.ant-select-selection-item')].map((t) => t.textContent)).toEqual(['Confectionery', 'Included in global deals'])
+    expect(within(cell).getByRole('separator', { name: 'Open auction' })).toBeInTheDocument()
+    const open = within(cell).getByRole('list', { name: /open auction DSPs/ })
+    expect(within(open).getByText('Included in global deals')).toBeInTheDocument()
+    expect(within(open).queryByLabelText(/^Position/)).toBeNull()
+  }, slow(45000))
+
   /* Ticket, 30 Sep 2026: a slot with no audience score is flagged in place; it can still be saved. */
   it('warns on a slot with no audience score', async () => {
     const reason = 'No audience score yet.'

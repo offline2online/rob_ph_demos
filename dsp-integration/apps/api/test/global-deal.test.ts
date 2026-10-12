@@ -3,7 +3,7 @@
    cases are the E2E run 3 cases P9–P11 (test/e2e/run3-private-auction.test.ts). */
 import { describe, expect, it } from 'vitest'
 import { GLOBAL_DEAL_ID, toApiExchange, validateExchange } from '../src/domain/exchange'
-import { globalDealSuppressedBy, inGlobalDeal, slotInGlobalDeal } from '../src/domain/positions'
+import { fallsThroughToOpen, globalDealSuppressedBy, inGlobalDeal, openTierOf, slotInGlobalDeal } from '../src/domain/positions'
 import type { Slot } from '@ph-dsp/types'
 import { harness } from './e2e/harness'
 
@@ -18,12 +18,33 @@ describe('global deal — which slots are in it', () => {
   it('a slot can opt out', () => {
     expect(inGlobalDeal(slot({ inGlobalDeal: false }), true)).toBe(false)
   })
-  it('the default is suppressed when held for an advertiser, whitelist-only or on a buyers list', () => {
+  it('the default is suppressed when held for an advertiser or whitelist-only', () => {
     expect(globalDealSuppressedBy(slot({ advertisers: ['Swisse'], listMode: null }))).toBe('reserved')
     expect(globalDealSuppressedBy(slot({ listMode: 'whitelist_only' }))).toBe('whitelist_only')
-    expect(globalDealSuppressedBy(slot({ listMode: 'deal', buyersListId: 'bl1', buyersListIds: ['bl1'] }))).toBe('deal')
-    for (const s of [slot({ advertisers: ['Swisse'], listMode: null }), slot({ listMode: 'whitelist_only' }), slot({ listMode: 'deal', buyersListIds: ['bl1'] })]) expect(inGlobalDeal(s, true)).toBe(false)
+    for (const s of [slot({ advertisers: ['Swisse'], listMode: null }), slot({ listMode: 'whitelist_only' })]) expect(inGlobalDeal(s, true)).toBe(false)
     expect(globalDealSuppressedBy(slot())).toBeNull()
+  })
+  /* 12 Oct 2026 (ticket 3FFOpIpry1XM29TimpJy): a buyers list no longer suppresses it. The global deal sits in the open tier beneath the numbered lists, opt-in on a restricted slot. */
+  it('a buyers-list slot can also be in the global deal, but only when explicitly included', () => {
+    const deal: Partial<Slot> = { listMode: 'deal', buyersListId: 'bl1', buyersListIds: ['bl1'] }
+    expect(globalDealSuppressedBy(slot(deal))).toBeNull()
+    expect(slotInGlobalDeal(slot(deal))).toBe(false)
+    expect(inGlobalDeal(slot({ ...deal, inGlobalDeal: true }), true)).toBe(true)
+    expect(inGlobalDeal(slot({ ...deal, inGlobalDeal: true }), false)).toBe(false)
+  })
+  it('a buyers-list slot falls through to the open tier for the global deal alone, or for chosen DSPs', () => {
+    const deal: Partial<Slot> = { listMode: 'deal', buyersListId: 'bl1', buyersListIds: ['bl1'] }
+    expect(fallsThroughToOpen(slot(deal), true)).toBe(false)
+    expect(fallsThroughToOpen(slot({ ...deal, inGlobalDeal: true }), true)).toBe(true)
+    expect(fallsThroughToOpen(slot({ ...deal, inGlobalDeal: true }), false)).toBe(false)
+    expect(fallsThroughToOpen(slot({ ...deal, openAuction: true, partnerIds: ['p_google'] }), false)).toBe(true)
+  })
+  it('the open tier of a buyers-list slot carries the global deal flag and no deals', () => {
+    const p = openTierOf({ def: slot({ listMode: 'deal', buyersListId: 'bl1', buyersListIds: ['bl1'], inGlobalDeal: true }) } as never)
+    expect(p.def.buyersListIds).toEqual([])
+    expect(inGlobalDeal(p.def, true)).toBe(true)
+    const off = openTierOf({ def: slot({ listMode: 'deal', buyersListId: 'bl1', buyersListIds: ['bl1'], openAuction: true }) } as never)
+    expect(inGlobalDeal(off.def, true)).toBe(false)
   })
 })
 

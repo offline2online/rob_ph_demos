@@ -70,7 +70,7 @@ export async function signalImpression(ctx: Context, input: { displayId: string;
   const found = await findPosition(ctx, positionIdOf(display.displayTypeId, input.slot))
   if (!found || found.def.owner !== 'advertiser') throw notFound('Unknown position: that slot is not an Advertiser slot on the display’s display type.')
   /* A deal slot with an Open auction tier (9 Oct 2026) is cleared by window first; a play in a window no deal won is auctioned here as the open tier. */
-  const fallthrough = fallsThroughToOpen(found.def)
+  const fallthrough = fallsThroughToOpen(found.def, (await ctx.exchange.get()).globalDealEnabled === true)
   const p = fallthrough ? openTierOf(found) : found
   if (!isRealtime(p)) throw conflict('This position is sold by play window, not in real time.')
 

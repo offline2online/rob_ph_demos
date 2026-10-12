@@ -97,9 +97,11 @@ export const isRealtime = (p: PositionRef) => {
 }
 
 /* A deal slot with an explicit Open auction tier below its deals (ticket nPLBmjJe7voOxLeU5zrA, 9 Oct 2026): the window is auctioned to the deals as before, and a window that no deal wins falls through to the real-time per-play open auction. */
-export const fallsThroughToOpen = (def: Slot) => assignmentOf(def) === 'deal' && assignedCached(def).openAuction
+/* A buyers-list slot falls through to the real-time open tier when it has an Open auction (DSPs chosen) or is in the
+   global deal with the master switch on (12 Oct 2026): both sit in that one bottom pool and bid together. */
+export const fallsThroughToOpen = (def: Slot, globalMasterOn = false) => assignmentOf(def) === 'deal' && (assignedCached(def).openAuction || (globalMasterOn && slotInGlobalDeal(def)))
 /* The slot as its Open auction tier sees it: no deals, so open across its chosen DSPs (partnerIds; none = All DSPs). */
-export const openTierOf = (p: PositionRef): PositionRef => ({ ...p, def: { ...p.def, listMode: 'rtb', buyersListId: null, buyersListIds: [], openAuction: true } })
+export const openTierOf = (p: PositionRef): PositionRef => ({ ...p, def: { ...p.def, inGlobalDeal: slotInGlobalDeal(p.def), listMode: 'rtb', buyersListId: null, buyersListIds: [], openAuction: assignedCached(p.def).openAuction || assignedCached(p.def).partnerIds.length > 0 } })
 
 export type Assignment = 'rtb' | 'whitelist_only' | 'deal' | 'reserved'
 export const assignmentOf = (def: Slot): Assignment => {
@@ -108,14 +110,19 @@ export const assignmentOf = (def: Slot): Assignment => {
 }
 /* The global deal (8 Oct 2026): one deal ID for all open, exchange-eligible
    inventory. The slot's own flag defaults ON (absent = in) but is SUPPRESSED
-   whenever the slot is held for a named advertiser, whitelist-only or on a
-   buyers list, so the default never exposes inventory the retailer meant to
-   restrict. Being open and being in the global deal are not the same thing. */
-export const globalDealSuppressedBy = (def: Slot): Exclude<Assignment, 'rtb'> | null => {
+   whenever the slot is held for a named advertiser or whitelist-only, so the
+   default never exposes inventory the retailer meant to restrict.
+   A buyers list does NOT suppress it (12 Oct 2026): the numbered buyers lists
+   are the priority stack and the global deal is a member of the open tier
+   beneath it, bidding in one simultaneous pool with any chosen DSPs. Because a
+   buyers-list slot is restricted by intent, there it is OPT-IN: only an
+   explicit inGlobalDeal: true counts, so assigning a list never exposes the
+   slot to the global deal by default. */
+export const globalDealSuppressedBy = (def: Slot): Exclude<Assignment, 'rtb' | 'deal'> | null => {
   const a = assignmentOf(def)
-  return a === 'rtb' ? null : a
+  return a === 'rtb' || a === 'deal' ? null : a
 }
-export const slotInGlobalDeal = (def: Slot) => def.inGlobalDeal !== false
+export const slotInGlobalDeal = (def: Slot) => assignmentOf(def) === 'deal' ? def.inGlobalDeal === true : def.inGlobalDeal !== false
 /* Nothing assigned and no global-deal membership: the slot is held back, not open to every DSP. */
 export const isUnassigned = (def: Slot) => assignmentOf(def) === 'rtb' && assignedCached(def).partnerIds.length === 0 && !assignedCached(def).openAuction && !slotInGlobalDeal(def)
 /* Is this position carried on the global deal, given the instance master switch? */
@@ -160,7 +167,7 @@ export function effectivePartnerIds(ctx: Context, def: Slot, partners?: Awaitabl
   const a = assignedCached(def)
   if (a.buyersListIds.length) {
     /* A waterfall: any tier's invited DSPs may see the position; each tier's own bid request goes only to its own (auction.ts). An Open auction tier below the deals adds its own DSPs (none chosen = All DSPs, so unrestricted). */
-    if (a.openAuction && !a.partnerIds.length) return null
+    if ((a.openAuction || slotInGlobalDeal(def)) && !a.partnerIds.length) return null
     return andThen(allOf(a.buyersListIds.map((id) => ctx.buyersLists.get(id))), (lists) =>
       andThen(partners ?? ctx.partners.list(), (all) => [...new Set([...lists.flatMap((l) => (l ? invitedPartnerIds(l, all) : [])), ...(a.openAuction ? a.partnerIds : [])])]))
   }

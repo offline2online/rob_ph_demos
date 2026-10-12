@@ -283,7 +283,9 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
 
         /* The global deal flag (8 Oct 2026): omitted keeps the slot's, so a client that predates it never changes it. */
         if (r.inGlobalDeal !== undefined && typeof r.inGlobalDeal !== 'boolean') errors.push({ field: f('inGlobalDeal'), reason: 'inGlobalDeal must be true or false.' })
-        const inGlobalDealNow = typeof r.inGlobalDeal === 'boolean' ? r.inGlobalDeal : def ? slotInGlobalDeal(def) : true
+        /* A buyers-list slot is opt-in (only an explicit true counts), so an omitted flag on a slot that becomes one is off. */
+        const becomesDeal = !assigned.advertisers.length && assigned.buyersListIds.length > 0
+        const inGlobalDealNow = typeof r.inGlobalDeal === 'boolean' ? r.inGlobalDeal : def ? (becomesDeal ? def.inGlobalDeal === true : def.inGlobalDeal !== false) : !becomesDeal
 
         const reservePrice = parseReservePrice(r.reservePrice, f('reservePrice'), errors)
         /* Omitted keeps what the slot has (older clients never send it); it
@@ -399,7 +401,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
           /* A slot no longer carries a targeting capability (Rob, 7 Oct 2026): drop any saved one. */
           const { supportedTargeting: _legacy, ...slotNow } = s as typeof s & { supportedTargeting?: unknown }
           const { inGlobalDeal: _flag, billingUnitChange: keptChange, ...slotBase } = slotNow
-          return patch ? { ...slotBase, ...(patch.inGlobalDeal ? {} : { inGlobalDeal: false }), ...assignedToSlot(patch.assigned, partners), reservePrice: patch.reservePrice, interactiveReservePrice: patch.interactiveReservePrice, billingUnitHours: plan ? plan.billingUnitHours : patch.billingUnitHours, ...((plan ? plan.billingUnitChange : keptChange) ? { billingUnitChange: plan ? plan.billingUnitChange : keptChange } : {}), maxCampaigns: patch.maxCampaigns, maxPlayLengthSec: patch.maxPlayLengthSec } : slotNow
+          return patch ? { ...slotBase, ...(patch.inGlobalDeal ? (!patch.assigned.advertisers.length && patch.assigned.buyersListIds.length ? { inGlobalDeal: true } : {}) : { inGlobalDeal: false }), ...assignedToSlot(patch.assigned, partners), reservePrice: patch.reservePrice, interactiveReservePrice: patch.interactiveReservePrice, billingUnitHours: plan ? plan.billingUnitHours : patch.billingUnitHours, ...((plan ? plan.billingUnitChange : keptChange) ? { billingUnitChange: plan ? plan.billingUnitChange : keptChange } : {}), maxCampaigns: patch.maxCampaigns, maxPlayLengthSec: patch.maxPlayLengthSec } : slotNow
         })
         if (defaults.has(displayTypeId)) ext.reservePrice = defaults.get(displayTypeId) ?? null
         if (billingUnitDefaults.has(displayTypeId)) ext.billingUnitHours = billingUnitDefaults.get(displayTypeId) ?? null

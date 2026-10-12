@@ -234,7 +234,7 @@ describe('Run 3 — global deal (P9–P11)', () => {
     expect(lastImp(h).pmp).toMatchObject({ private_auction: 1, deals: [{ id: list.dealId }] })
   })
 
-  it('P10 — suppressed when held for an advertiser, whitelist-only, on a buyers list, or the master switch is off; a blocked buyer is still refused', async () => {
+  it('P10 — suppressed when held for an advertiser, whitelist-only, or the master switch is off; a blocked buyer is still refused', async () => {
     const h = await harness()
     await openSlot(h, 'crid-p10')
     await globalDeal(h)
