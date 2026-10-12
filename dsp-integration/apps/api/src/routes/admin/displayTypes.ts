@@ -188,6 +188,8 @@ export const displayTypeRoutes = (ctx: Context, guards: Guards): FastifyPluginAs
       if (!check.canDelete) {
         throw hasDependents(check.dependents.some((d) => d.kind === 'display')
           ? "This display type can't be deleted while displays are assigned to it."
+          : check.dependents.some((d) => d.kind === 'slot')
+          ? "This display type can't be deleted while any of its slots is owned by an advertiser. Delete what is assigned to those slots in Advertising inventory, or set every slot's owner to HQ in Playlist management."
           /* Q47: hard block while a current or future window is sold or reserved. */
           : "This display type can't be deleted while its positions are reserved or sold for a current or future window.", dependentDetails(check))
       }

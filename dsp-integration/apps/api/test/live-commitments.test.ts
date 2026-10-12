@@ -21,7 +21,22 @@ async function setup() {
   return { ctx, app: buildApp(ctx), dt }
 }
 
+/* Ticket WCjNQRPCDoKGqDMtGE2F: once no window is live the slot itself must be HQ-owned too. */
+const handSlotToHq = (ctx: Awaited<ReturnType<typeof testContext>>) =>
+  ctx.displayTypes.saveExtensions('portrait', { slots: [{ label: 'Ad', owner: 'hq', partnerIds: [], advertisers: [], listMode: null, buyersListId: null, storeScope: null, quota: null, zoneId: null }] } as never)
+
 describe('Q47 hard blocks while inventory is reserved or sold', () => {
+  it('refuses deleting a display type while a slot is owned by an advertiser, until every slot is HQ-owned', async () => {
+    const { ctx, app } = await setup()
+    const del = await app.inject({ method: 'DELETE', url: '/api/admin/v1/display-types/portrait' })
+    expect(del.statusCode).toBe(409)
+    expect(del.json().error.code).toBe('has_dependents')
+    expect(del.json().error.message).toContain('Playlist management')
+    expect(del.json().error.details).toEqual([{ field: 'slot', reason: 'Ad · Owned by an advertiser' }])
+    await handSlotToHq(ctx)
+    expect((await app.inject({ method: 'DELETE', url: '/api/admin/v1/display-types/portrait' })).statusCode).toBe(204)
+  })
+
   it('refuses deleting a display type with a future reservation, and allows it once the window has played', async () => {
     const { ctx, app } = await setup()
     await book(ctx, '2026-09-22T00:00:00.000Z')
@@ -32,9 +47,10 @@ describe('Q47 hard blocks while inventory is reserved or sold', () => {
     /* The dialog's own check says so first, and disables Delete. */
     const check = await app.inject({ method: 'GET', url: '/api/admin/v1/display-types/portrait/delete-check' })
     expectMatchesContract('GET', '/admin/v1/display-types/{displayTypeId}/delete-check', 200, check.json())
-    expect(check.json()).toEqual({ canDelete: false, dependents: [{ kind: 'reservation', name: 'portrait.s1', detail: 'window 2026-09-22 · reserved' }] })
+    expect(check.json()).toEqual({ canDelete: false, dependents: [{ kind: 'reservation', name: 'portrait.s1', detail: 'window 2026-09-22 · reserved' }, { kind: 'slot', name: 'Ad', detail: 'Owned by an advertiser' }] })
 
     ctx.db.prepare("UPDATE reservations SET window_start = '2026-09-10T00:00:00.000Z'").run()
+    await handSlotToHq(ctx)
     expect((await app.inject({ method: 'DELETE', url: '/api/admin/v1/display-types/portrait' })).statusCode).toBe(204)
   })
 
@@ -43,6 +59,7 @@ describe('Q47 hard blocks while inventory is reserved or sold', () => {
     await book(ctx, '2026-09-20T00:00:00.000Z', { status: 'won' })
     expect((await app.inject({ method: 'DELETE', url: '/api/admin/v1/display-types/portrait' })).json().error.details[0].reason).toContain('sold')
     ctx.db.prepare('UPDATE reservations SET test_mode = 1').run()
+    await handSlotToHq(ctx)
     expect((await app.inject({ method: 'DELETE', url: '/api/admin/v1/display-types/portrait' })).statusCode).toBe(204)
   })
 

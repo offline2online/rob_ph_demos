@@ -4077,7 +4077,7 @@ components:
             type: object
             required: [kind, name]
             properties:
-              kind: {type: string, enum: [display, display_type_default, zone, reservation], description: 'reservation: a position reserved or sold for a current or future window (Q47); name is the position id, detail the window and whether it is sold or reserved.'}
+              kind: {type: string, enum: [display, display_type_default, zone, reservation, slot], description: 'slot: a slot still owned by an advertiser (name is its label). reservation: a position reserved or sold for a current or future window (Q47); name is the position id, detail the window and whether it is sold or reserved.'}
               name: {type: string}
               detail: {type: string, description: e.g. store name or zone name}
 

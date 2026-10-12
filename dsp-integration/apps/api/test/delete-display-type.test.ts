@@ -14,13 +14,14 @@ describe('delete a display type (spec §1)', () => {
         { kind: 'display', name: 'Menu Board', detail: 'Sydney CBD' },
         { kind: 'display', name: 'Menu Board', detail: 'Chatswood' },
         { kind: 'display', name: 'Menu Board', detail: 'Bondi Junction' },
+        { kind: 'slot', name: 'Supplier slot', detail: 'Owned by an advertiser' },
       ],
     })
     const del = await app.inject({ method: 'DELETE', url: '/api/admin/v1/display-types/menu_board' })
     expect(del.statusCode).toBe(409)
     expectMatchesContract('DELETE', '/admin/v1/display-types/{displayTypeId}', 409, del.json())
     expect(del.json().error.code).toBe('has_dependents')
-    expect(del.json().error.details.map((d: { reason: string }) => d.reason)).toEqual(['Menu Board · Sydney CBD', 'Menu Board · Chatswood', 'Menu Board · Bondi Junction'])
+    expect(del.json().error.details.map((d: { reason: string }) => d.reason)).toEqual(['Menu Board · Sydney CBD', 'Menu Board · Chatswood', 'Menu Board · Bondi Junction', 'Supplier slot · Owned by an advertiser'])
   })
 
   it('deletes a display type with no displays, keeping its auto-created playlist', async () => {

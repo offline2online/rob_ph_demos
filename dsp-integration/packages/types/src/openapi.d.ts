@@ -3330,10 +3330,10 @@ export interface components {
             canDelete: boolean;
             dependents: {
                 /**
-                 * @description reservation: a position reserved or sold for a current or future window (Q47); name is the position id, detail the window and whether it is sold or reserved.
+                 * @description slot: a slot still owned by an advertiser (name is its label). reservation: a position reserved or sold for a current or future window (Q47); name is the position id, detail the window and whether it is sold or reserved.
                  * @enum {string}
                  */
-                kind: "display" | "display_type_default" | "zone" | "reservation";
+                kind: "display" | "display_type_default" | "zone" | "reservation" | "slot";
                 name: string;
                 /** @description e.g. store name or zone name */
                 detail?: string;
