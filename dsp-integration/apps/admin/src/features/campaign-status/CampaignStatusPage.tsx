@@ -370,7 +370,12 @@ export function CampaignStatusPage() {
     else next.delete('status')
     setParams(next, { replace: true })
   }
-  const statusOptions = FILTERABLE_STATUSES.filter((k) => counts[k] > 0 || statusFilter.includes(k))
+  /* Memoised: it is a column-definition dependency, and a new array on every render rebuilt the
+     columns on every render. AG Grid answers new column definitions by recreating the floating
+     filters and dropping what was typed or ticked in them, so a Campaign name, Touch points,
+     Display types, Creative ID, Deal ID or DSP filter was cleared by the very re-render its own
+     change caused (ticket pHOcPNaBqRDzNTENqnZE). */
+  const statusOptions = useMemo(() => FILTERABLE_STATUSES.filter((k) => counts[k] > 0 || statusFilter.includes(k)), [counts, statusFilter])
   /* A group row filters on its campaigns' values; a campaign row on its own. */
   const joined = (p: { data?: Row }, of: (c: Campaign) => string, groupOf: (g: GroupInfo) => string) => (p.data?.group ? groupOf(p.data.group) : p.data ? of(p.data) : '')
   const columns = useMemo<ColDef<Row>[]>(() => [

@@ -467,6 +467,58 @@ describe('Campaign Status stand-in', () => {
     await shown('Swisse spring')
   }, slow(45000))
 
+  /* Ticket pHOcPNaBqRDzNTENqnZE (12 Oct 2026): every column filter on the table works,
+     not just the Status and Advertiser funnels. */
+  it('filters by every column: campaign name, touch points, display types, creative ID, deal ID and DSP', async () => {
+    const other = {
+      ...campaign, campaignId: 'c2', name: 'Blackmores autumn', advertiserId: 'blackmores', advertiserName: 'Blackmores',
+      partnerId: 'p_ttd', partnerName: 'The Trade Desk', displayTypeId: 'landscape', dealId: 'DEAL-77',
+      brief: { ...campaign.brief, touchPoints: ['Mobile'] },
+    }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({
+      ...routes,
+      '/api/admin/v1/campaigns': { items: [{ ...campaign, dealId: 'DEAL-11' }, other, hq] },
+      '/api/admin/v1/campaigns/c1/approval': { ...approval, creativeId: 'CR-AAA' },
+      '/api/admin/v1/campaigns/c2/approval': { ...approval, campaignId: 'c2', campaignName: 'Blackmores autumn', status: 'approved', creativeId: 'CR-BBB' },
+    })))
+    renderAt('/booking-schedule?tab=campaign-status')
+    const grid = () => screen.getByLabelText('Campaign Status')
+    const shown = (name: string) => waitFor(() => expect(within(grid()).getAllByText(name).length).toBeGreaterThan(0), { timeout: 10000 })
+    const hidden = (name: string) => waitFor(() => expect(within(grid()).queryByText(name)).not.toBeInTheDocument(), { timeout: 10000 })
+    await shown('Swisse spring')
+    await shown('Blackmores autumn')
+    /* The approvals arrive after the campaigns; wait for them so the columns settle before filtering. */
+    await waitFor(() => expect(within(grid()).getByText('CR-AAA')).toBeInTheDocument(), { timeout: 10000 })
+
+    for (const [label, text, keep, drop] of [
+      ['Campaign name', 'Blackmores', 'Blackmores autumn', 'Swisse spring'],
+      ['Creative ID', 'CR-AAA', 'Swisse spring', 'Blackmores autumn'],
+      ['Deal ID', 'DEAL-77', 'Blackmores autumn', 'Swisse spring'],
+    ] as const) {
+      fireEvent.change(within(grid()).getByLabelText(`${label} search`), { target: { value: text } })
+      await hidden(drop)
+      await shown(keep)
+      fireEvent.change(within(grid()).getByLabelText(`${label} search`), { target: { value: "" } })
+      await shown(drop)
+    }
+    for (const [label, value, keep, drop] of [
+      ['Touch points', 'Mobile', 'Blackmores autumn', 'Swisse spring'],
+      ['Display types', 'landscape', 'Blackmores autumn', 'Swisse spring'],
+      ['DSP', 'Google DSP', 'Swisse spring', 'Blackmores autumn'],
+    ] as const) {
+      fireEvent.click(within(grid()).getAllByLabelText(`${label} filter`)[0])
+      const box = await screen.findByRole('checkbox', { name: new RegExp(`^${value}$`, 'i') })
+      fireEvent.click(box)
+      await hidden(drop)
+      await shown(keep)
+      fireEvent.click(await screen.findByRole('button', { name: 'Clear Filter' }))
+      await shown(drop)
+      /* Close this funnel's popup so the next one is the only one open. */
+      fireEvent.click(within(grid()).getAllByLabelText(`${label} filter`)[0])
+      await waitFor(() => expect(screen.queryByRole('button', { name: 'Clear Filter' })).not.toBeInTheDocument(), { timeout: 10000 })
+    }
+  }, slow(90000))
+
   it('never lists a Draft campaign — a retailer only ever sees one that has been submitted', async () => {
     const draftApproval = { ...approval, status: 'draft', mode: null, submittedAt: null }
     vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...routes, '/api/admin/v1/campaigns/c1/approval': draftApproval })))

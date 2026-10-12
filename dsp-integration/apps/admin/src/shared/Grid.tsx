@@ -5,7 +5,7 @@
    drives the fit. */
 import type { ColDef, GridApi, GridOptions } from 'ag-grid-community'
 import { AgGridReact } from 'ag-grid-react'
-import { createContext, useContext, useEffect, useMemo, useRef } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef } from 'react'
 import type { ComponentType } from 'react'
 
 /* Cells read the page's latest values through params.context.current, a ref,
@@ -54,6 +54,14 @@ export function Grid<Row>({ rows, columns, context, getRowId, label, height, sti
   const api = useRef<GridApi<Row> | null>(null)
   const ctx = useRef(context)
   ctx.current = context
+  /* Stable on purpose: an inline getRowId is a new function every render, which AG Grid reads
+     as changed grid options and answers by reloading every column — recreating the floating
+     filters and clearing whatever was typed or ticked in them, so any page that re-rendered
+     when its filter changed (Campaign Approval does, to untick hidden rows) lost its filter
+     the moment it applied (ticket pHOcPNaBqRDzNTENqnZE). */
+  const rowId = useRef(getRowId)
+  rowId.current = getRowId
+  const stableRowId = useCallback((p: { data: Row }) => rowId.current(p.data), [])
   /* Once someone has dragged a column edge, sizeColumnsToFit would throw
      their widths away (it re-derives every width from the column
      definitions) the next time it runs — including when a row expands and
@@ -90,7 +98,7 @@ export function Grid<Row>({ rows, columns, context, getRowId, label, height, sti
         rowData={rows}
         columnDefs={liveColumns}
         context={ctx}
-        getRowId={(p) => getRowId(p.data)}
+        getRowId={stableRowId}
         domLayout={height ? 'normal' : 'autoHeight'}
         headerHeight={40}
         rowHeight={42}

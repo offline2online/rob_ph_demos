@@ -16,7 +16,7 @@
    the filter model and everything else in the grid behave as usual. */
 import { Button, Checkbox, Dropdown, Input } from 'antd'
 import type { ColDef, IFloatingFilterParams, TextMatcherParams } from 'ag-grid-community'
-import { useMemo, useState } from 'react'
+import { forwardRef, useImperativeHandle, useMemo, useState } from 'react'
 import { Icon } from './Icon'
 import { T } from '../theme/phTheme'
 
@@ -42,9 +42,18 @@ interface Params extends IFloatingFilterParams {
   values?: () => string[]
 }
 
+/* AG Grid destroys and re-creates a floating filter that cannot be told the
+   grid's filter model changed (no onParentModelChanged), and a changed model
+   is exactly what typing or ticking causes — so the box lost its text, its
+   focus and its ticks the moment a filter applied, and the filter appeared
+   not to work (ticket pHOcPNaBqRDzNTENqnZE). Both filters below hold their
+   state from the grid's own model and follow it when it changes. */
+const modelText = (model: { filter?: string | null } | null | undefined) => model?.filter ?? ''
+
 /* The search box: type to filter, ✕ to clear. */
-function SearchFilter(props: Params) {
-  const [text, setText] = useState('')
+const SearchFilter = forwardRef<unknown, Params>(function SearchFilter(props, ref) {
+  const [text, setText] = useState(() => modelText(props.currentParentModel()))
+  useImperativeHandle(ref, () => ({ onParentModelChanged: (model: { filter?: string | null } | null) => setText(modelText(model)) }))
   const change = (v: string) => {
     setText(v)
     props.parentFilterInstance((filter) => filter.onFloatingFilterChanged('contains', v || null))
@@ -59,7 +68,7 @@ function SearchFilter(props: Params) {
       onChange={(e) => change(e.target.value)}
     />
   )
-}
+})
 
 /* The funnel and its popup. `chosen` and `onChange` are the filter's state,
    wherever it is kept: AG Grid's filter model, or the page's own URL. */
@@ -114,8 +123,9 @@ export function Funnel({ label, values, chosen, onChange, single }: {
 }
 
 /* The grid-backed set filter: AG Grid holds the chosen values. */
-function SetFilter(props: Params) {
-  const [chosen, setChosen] = useState<string[]>([])
+const SetFilter = forwardRef<unknown, Params>(function SetFilter(props, ref) {
+  const [chosen, setChosen] = useState<string[]>(() => parse(modelText(props.currentParentModel())))
+  useImperativeHandle(ref, () => ({ onParentModelChanged: (model: { filter?: string | null } | null) => setChosen(parse(modelText(model))) }))
   const values = useMemo(() => [...new Set((props.values?.() ?? []).filter(Boolean))], [props])
   return (
     <Funnel
@@ -128,7 +138,7 @@ function SetFilter(props: Params) {
       }}
     />
   )
-}
+})
 
 /* Column definitions: one or the other, as the platform does it. */
 export const searchColumn = <Row,>(label: string): Partial<ColDef<Row>> => ({
