@@ -137,48 +137,48 @@ export function AdvertiserSettings() {
 
       <SectionLabel><WithTip tip="How many plays a slot offers and what a deal commits to. The company max slot length sets the default length of one play, which a display type and then a slot can override. The buffer decides a guaranteed deal's committed volume, worked out from the slot's forecast. The default seeds Committed plays on a new buyers list. They are separate: changing one never changes another.">Play configuration</WithTip></SectionLabel>
       <div className="flex flex-wrap items-start gap-3.5">
-        <Field label={<span className="block" style={{ minHeight: 36 }}>Max play length</span>} htmlFor="maxPlayLengthSec" tip="The company-wide default length of one play of a slot, in seconds. A display type and then a slot can override it on Advertisers / Inventory (slot wins over display type, which wins over this). Plays per window are the billing unit divided by it × the slots playing in the loop (HQ slots included), whoever is booked; it applies to HQ campaigns too; a creative longer than it is rejected on upload, never trimmed. Whole seconds, 1 to 600. Default 15." className="w-56">
+        <Field label={<span className="block whitespace-nowrap">Max play length</span>} htmlFor="maxPlayLengthSec" tip="The company-wide default length of one play of a slot, in seconds. A display type and then a slot can override it on Advertisers / Inventory (slot wins over display type, which wins over this). Plays per window are the billing unit divided by it × the slots playing in the loop (HQ slots included), whoever is booked; it applies to HQ campaigns too; a creative longer than it is rejected on upload, never trimmed. Whole seconds, 1 to 600. Default 15." className="w-56">
           <div className="flex items-center gap-2">
             <InputNumber id="maxPlayLengthSec" className="w-full" step={1} min={1} max={600} precision={0} placeholder="15" value={s.maxPlayLengthSec ?? 15} onChange={(v) => set('maxPlayLengthSec', (v === null ? null : Number(v)) as number)} />
             <span>seconds</span>
           </div>
         </Field>
       
-        <Field label={<span className="block" style={{ minHeight: 36 }}>Guarantee buffer</span>} htmlFor="guaranteeBufferPct" tip={BUFFER_TIP} tipWidth={400} className="w-40">
+        <Field label={<span className="block whitespace-nowrap">Guarantee buffer</span>} htmlFor="guaranteeBufferPct" tip={BUFFER_TIP} tipWidth={400} className="w-40">
           <div className="flex items-center gap-2">
             <InputNumber id="guaranteeBufferPct" className="w-full" step={1} min={0} max={50} placeholder="10" value={s.guaranteeBufferPct ?? 10} onChange={(v) => set('guaranteeBufferPct', (v === null ? null : Number(v)) as number)} />
             <span aria-hidden="true">%</span>
           </div>
         </Field>
-        <Field label={<span className="block" style={{ minHeight: 36 }}>Default committed plays</span>} htmlFor="defaultCommittedPlays" tip={DEFAULT_PLAYS_TIP} tipWidth={400} className="w-56">
+        <Field label={<span className="block whitespace-nowrap">Default committed plays</span>} htmlFor="defaultCommittedPlays" tip={DEFAULT_PLAYS_TIP} tipWidth={400} className="w-56">
           <InputNumber id="defaultCommittedPlays" className="w-full" step={1} min={1} precision={0} placeholder="Per play" value={s.defaultCommittedPlays ?? null} onChange={(v) => set('defaultCommittedPlays', typeof v === 'number' ? v : null)} />
         </Field>
       </div>
 
       <SectionLabel><WithTip tip="How early a real-time slot's auction opens, so the winning creative can be downloaded and rendered before the slot plays (the auction is per slot, opened this long before that slot's own start, not on a schedule), and how long the player may keep a pre-cached approved creative.">Real-time bidding</WithTip></SectionLabel>
       <div className="flex flex-wrap items-start gap-3.5">
-        <Field label={<span className="block" style={{ minHeight: 36 }}>Digital signage bid lookahead</span>} htmlFor="bidLookaheadSeconds" tip="Digital signage bid lookahead, in seconds: how long before an available digital signage slot plays that its bid (auction) becomes available, so the auction resolves far enough ahead for the winning creative to be downloaded and rendered in time. Applies to digital signage slots only; it is not used for programmatic on a website or mobile app. Whole seconds, at least 1. Default 35." className="w-64">
+        <Field label={<span className="block whitespace-nowrap">Digital signage bid lookahead</span>} htmlFor="bidLookaheadSeconds" tip="Digital signage bid lookahead, in seconds: how long before an available digital signage slot plays that its bid (auction) becomes available, so the auction resolves far enough ahead for the winning creative to be downloaded and rendered in time. Applies to digital signage slots only; it is not used for programmatic on a website or mobile app. Whole seconds, at least 1. Default 35." className="w-64">
           <div className="flex items-center gap-2">
             <InputNumber id="bidLookaheadSeconds" className="w-full" step={1} placeholder="35" value={s.bidLookaheadSeconds ?? 35} onChange={(v) => set('bidLookaheadSeconds', (v === null ? null : Number(v)) as number)} />
             <span>seconds</span>
           </div>
         </Field>
-        <Field label={<span className="block" style={{ minHeight: 36 }}>Cached asset retention</span>} htmlFor="cachedAssetRetentionHours" tip="Cached asset retention, in hours: the longest the PWA player keeps a pre-cached, approved creative before evicting it. Default 48. It is an upper bound, not a guaranteed hold: a rejected creative is evicted immediately, and the player's disk limit and least-recently-used eviction still apply. Approved creatives only. Whole hours, at least 1." tipWidth={400} className="w-64">
+        <Field label={<span className="block whitespace-nowrap">Cached asset retention</span>} htmlFor="cachedAssetRetentionHours" tip="Cached asset retention, in hours: the longest the PWA player keeps a pre-cached, approved creative before evicting it. Default 48. It is an upper bound, not a guaranteed hold: a rejected creative is evicted immediately, and the player's disk limit and least-recently-used eviction still apply. Approved creatives only. Whole hours, at least 1." tipWidth={400} className="w-64">
           <div className="flex items-center gap-2">
             <InputNumber id="cachedAssetRetentionHours" className="w-full" step={1} min={1} precision={0} placeholder="48" value={s.cachedAssetRetentionHours ?? 48} onChange={(v) => set('cachedAssetRetentionHours', (v === null ? null : Number(v)) as number)} />
             <span>hours</span>
           </div>
         </Field>
-        <Field label={<span className="block" style={{ minHeight: 36 }}>Uncached creative restriction</span>} htmlFor="uncachedRestriction" tip={UNCACHED_TIP} tipWidth={400} className="w-64">
+        <Field label={<span className="block whitespace-nowrap">Uncached creative restriction</span>} htmlFor="uncachedRestriction" tip={UNCACHED_TIP} tipWidth={400} className="w-64">
           <Select id="uncachedRestriction" className="w-full" value={s.uncachedRestriction ?? 'off'} options={UNCACHED_OPTIONS} onChange={(v) => set('uncachedRestriction', v)} />
         </Field>
         {s.uncachedRestriction === 'fixed' && (
-          <Field label={<span className="block" style={{ minHeight: 36 }}>Restricted from (UTC)</span>} htmlFor="uncachedRestrictionStart" tip="Start of the daily restricted window, in UTC (HH:MM). A start after the end wraps past midnight." className="w-40">
+          <Field label={<span className="block whitespace-nowrap">Restricted from (UTC)</span>} htmlFor="uncachedRestrictionStart" tip="Start of the daily restricted window, in UTC (HH:MM). A start after the end wraps past midnight." className="w-40">
             <Input id="uncachedRestrictionStart" type="time" value={s.uncachedRestrictionStart ?? '09:00'} onChange={(e) => e.target.value && set('uncachedRestrictionStart', e.target.value)} />
           </Field>
         )}
         {s.uncachedRestriction === 'fixed' && (
-          <Field label={<span className="block" style={{ minHeight: 36 }}>Restricted until (UTC)</span>} htmlFor="uncachedRestrictionEnd" tip="End of the daily restricted window, in UTC (HH:MM, exclusive)." className="w-40">
+          <Field label={<span className="block whitespace-nowrap">Restricted until (UTC)</span>} htmlFor="uncachedRestrictionEnd" tip="End of the daily restricted window, in UTC (HH:MM, exclusive)." className="w-40">
             <Input id="uncachedRestrictionEnd" type="time" value={s.uncachedRestrictionEnd ?? '18:00'} onChange={(e) => e.target.value && set('uncachedRestrictionEnd', e.target.value)} />
           </Field>
         )}
