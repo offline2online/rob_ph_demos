@@ -1873,7 +1873,7 @@ bid's `dealid` checked against it) and the key a campaign's `dealId` refers to.
 - **Mutable terms stay mutable**: rate (floor CPM), delivery term, invited
   buyers, targeting and the rest edit in place. Term versioning is a
   separate ticket.
-- **Admin**: the Buyers and targeting table has a read-only Deal ID column
+- **Admin**: the Deals and buyers lists table has a read-only Deal ID column
   and the edit modal a read-only Deal ID field; changing the type shows a
   note, and saving reports the new ID.
 
@@ -1964,8 +1964,10 @@ duplicating it per deal would let one drift from the other:
   table shows only the committed figure, "M plays" (or "Per play"), never "N of M" (8 Oct 2026: a guaranteed deal is sold, not capped). The open auction holds
   no block of plays: no open-RTB position can carry a volume. This replaces
   the "re-auction after N plays" idea.
-- **Buyers and targeting table column order** (Rob, 9 Oct 2026; ticket
-  NaIaKMgfutxgGaN84SDi): Buyers and targeting, CPM (agreed/committed rate, always
+- **Deals and buyers lists table column order** (Rob, 9 Oct 2026; ticket
+  NaIaKMgfutxgGaN84SDi; the table was called "Buyers and targeting" until
+  12 Oct 2026, ticket QG40V1vVwqp9NtFmlC9H, which renamed it and its
+  "+ New deal and buyers list" button, copy only): Deals and buyers lists, CPM (agreed/committed rate, always
   second), Deal type, Invited buyers, Committed volume, Estimated volume,
   Targeting, Delivery term. *Estimated volume* (was "Capacity") is an estimate
   of the plays per window available to the list from the criteria set on it,
@@ -2174,6 +2176,34 @@ Code: `domain/termVersions.ts`, `repos/BuyersListRepo.ts`,
 `test/buyers-list-term-versions.test.ts` and the admin test "warns before
 saving a term change that makes accepted buyers re-accept…".
 
+#### Deal lifecycle: draft, Finalise, Share deal (12 Oct 2026; ticket QG40V1vVwqp9NtFmlC9H)
+
+A deal used to go live the moment it was saved, even with no inventory on it.
+It now has three steps, held as `BuyersList.shareStatus` (`draft` | `shared`,
+migration 0071; every list that existed before is `shared`):
+
+1. **Save as draft.** Creating a deal always makes a draft. A draft is shared
+   with no DSP and is not live to buyers (`isInvitedBuyer` is false for it, so
+   it is not in a DSP's `GET /deals`, cannot be bid on and does not resolve for
+   an advertiser). It can be assigned to slots in Available Inventory, which is
+   how inventory gets attached, and changed freely: no re-acceptance.
+2. **Finalise.** Enabled only once the deal has at least one assigned slot and
+   one named invited buyer. It saves the draft, then opens a confirmation
+   listing every assigned slot, the deal ID(s), the terms and the invited buyers.
+3. **Share deal** (in that confirmation). `POST /admin/v1/buyers-lists/{id}/share`
+   (400 with no slot or no named buyer; idempotent) marks it `shared` and stamps
+   `sharedAt`. It is a fixed deal broadcast to the invited buyers' DSPs for
+   authorisation, not a negotiable proposal: the wording is deliberately not
+   "Send proposal". The seller-side push to the DSP is still the later phase
+   below; today sharing is the state change that makes the deal live to buyers.
+
+**Re-approval gate.** Term versioning above applies from the moment a deal is
+shared: a change to the floor, committed plays, delivery term or auction window
+of a `shared` deal asks accepted buyers to accept again; on a draft it records a
+version but asks nobody (`reaccept_version` does not move, the term check
+reports `requiresReacceptance: false`, and `POST .../acceptances` is refused
+with 400). Shared is its own state on the record, distinct from the term version.
+
 ## 6. DSP integration — the advertiser & DSP interface
 
 How an advertiser finds inventory (§5), takes it and fills it. This is the API
@@ -2219,7 +2249,7 @@ private contract with our deal ID). **The deal ID is the handshake; the buyer ke
   rate once the deal has one, else its resolved floor), delivery term, auction close, committed plays (guaranteed only) and
   the creative-requirements set derived from the attached positions (format, canvas size, max play length).
   `GET /admin/v1/buyers-lists/{id}/deal-sheet` returns it as JSON, or as a downloadable CSV with `?format=csv` (one row per
-  DSP deal ID and creative format). It is read-only and stores nothing. The Buyers and targeting table has a **Deal
+  DSP deal ID and creative format). It is read-only and stores nothing. The Deals and buyers lists table has a **Deal
   sheet** action that shows it on screen with **Copy** (plain text for an email or chat) and **Download CSV**.
 - **A list that invites only IAB categories has no named seat**, so its sheet has no entries: invite a buyer first.
 - **The API push (later, not built).** A seller-initiated push where the SSP sends a deal proposal straight into the DSP so
@@ -4829,7 +4859,7 @@ keeps the won creative renderable; the lookahead sets how early the per-impressi
 
 ## Buyers list: committed volume and rate inherit platform → DSP → list (Rob, 7 Oct 2026)
 
-- **Bug**: the Buyers and targeting table and modal showed a list's own committed
+- **Bug**: the Deals and buyers lists table and modal showed a list's own committed
   volume only, so a list with none read "Per play" / blank even when a default
   was set. Both fields now always show the value in force.
 - **Hierarchy** (same pattern as the three-level bid floor): the platform
