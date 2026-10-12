@@ -39,7 +39,7 @@ export function DeleteDisplayType({ name, check, deleting, onDelete, onClose }: 
               <>
                 <b>This display type can't be deleted.</b>{' '}
                 {displays > 0 && <>{displays} display{displays > 1 ? 's are' : ' is'} assigned to it. Remove {displays > 1 ? 'them' : 'it'} from the platform, or assign {displays > 1 ? 'them' : 'it'} to another display type, first.{' '}</>}
-                {slots > 0 && <>{slots} slot{slots > 1 ? 's are' : ' is'} owned by an advertiser. To delete this display type, either delete what is assigned to {slots > 1 ? 'those slots' : 'that slot'} in Advertising inventory, or change {slots > 1 ? 'each slot\'s' : 'the slot\'s'} owner to HQ in Playlist management (every slot owner must be HQ).{' '}</>}
+                {slots > 0 && <>{slots} slot{slots > 1 ? 's are' : ' is'} owned by an advertiser. To delete this display type, remove the advertiser {slots > 1 ? 'slots' : 'slot'} from this display type's playlist in Playlist management.{' '}</>}
                 {windows > 0 && <>{windows} play window{windows > 1 ? 's are' : ' is'} reserved or sold on its positions. It can be deleted once {windows > 1 ? 'they have' : 'it has'} played.</>}
               </>
             }
