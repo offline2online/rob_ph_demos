@@ -35,7 +35,7 @@ export function CampaignSchedulePage() {
       onChange={onChange}
       items={[
         { key: 'booking', label: 'Booking schedule', children: <BookingSchedulePage /> },
-        { key: 'campaign-status', label: 'Upcoming Campaign Approval', children: <CampaignStatusPage /> },
+        { key: 'campaign-status', label: 'Campaign Approval', children: <CampaignStatusPage /> },
       ]}
     />
   )

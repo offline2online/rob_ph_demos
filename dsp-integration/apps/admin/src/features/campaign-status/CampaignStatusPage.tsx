@@ -80,7 +80,7 @@ interface Ctx {
 }
 /* An advertiser's group row sits above its campaigns; its one box ticks them all.
    It is a Campaign-shaped row so the grid's filters and ids treat it like any other. */
-interface GroupInfo { key: string; label: string; deals: string; dsps: string; names: string }
+interface GroupInfo { key: string; label: string; deals: string; dsps: string; names: string; touchPoints: string; displayTypes: string; creativeIds: string }
 type Row = Campaign & { group?: GroupInfo }
 type P = ICellRendererParams<Row, unknown, { current: Ctx }>
 /* One creative ID and the campaigns grouped under it (GET /admin/v1/creative-ids). */
@@ -256,25 +256,32 @@ export function CampaignStatusPage() {
   /* A group row above each advertiser's campaigns. Its filterable values are its campaigns' joined, so a column filter keeps it while any campaign beneath still matches. */
   const rows = useMemo<Row[]>(() => {
     const out: Row[] = []
-    let current: { g: GroupInfo; deals: Set<string>; dsps: Set<string>; names: string[] } | null = null
+    let current: { g: GroupInfo; deals: Set<string>; dsps: Set<string>; names: string[]; touchPoints: Set<string>; displayTypes: Set<string>; creativeIds: Set<string> } | null = null
     let prevKey: string | undefined
     for (const c of campaignRows) {
       const key = c.advertiserId ?? c.advertiserName ?? ''
       if (!current || key !== prevKey) {
-        current = { g: { key, label: c.advertiserName ?? '', deals: '', dsps: '', names: '' }, deals: new Set(), dsps: new Set(), names: [] }
+        current = { g: { key, label: c.advertiserName ?? '', deals: '', dsps: '', names: '', touchPoints: '', displayTypes: '', creativeIds: '' }, deals: new Set(), dsps: new Set(), names: [], touchPoints: new Set(), displayTypes: new Set(), creativeIds: new Set() }
         prevKey = key
         out.push({ ...c, campaignId: `group:${key}`, name: current.g.label, group: current.g })
       }
       if (c.dealId) current.deals.add(c.dealId)
       if (c.partnerName) current.dsps.add(c.partnerName)
       current.names.push(c.name)
+      for (const t of touchPointsOf(c)) current.touchPoints.add(t)
+      if (c.displayTypeId) current.displayTypes.add(displayTypeNames.get(c.displayTypeId) ?? c.displayTypeId)
+      const creativeId = approvals[c.campaignId]?.creativeId
+      if (creativeId) current.creativeIds.add(creativeId)
       current.g.deals = [...current.deals].join(', ')
       current.g.dsps = [...current.dsps].join(', ')
       current.g.names = current.names.join(' ')
+      current.g.touchPoints = [...current.touchPoints].join(', ')
+      current.g.displayTypes = [...current.displayTypes].join(', ')
+      current.g.creativeIds = [...current.creativeIds].join(' ')
       out.push(c)
     }
     return out
-  }, [campaignRows])
+  }, [campaignRows, approvals, displayTypeNames])
   const counts = useMemo(() => {
     const c = { approved: 0, awaiting_approval: 0, rejected: 0 }
     for (const row of all) {
@@ -381,11 +388,11 @@ export function CampaignStatusPage() {
     },
     /* The campaign's own name, linking to it; then where it runs, and the creative ID and deal it is grouped under. */
     { headerName: 'Campaign name', width: 220, minWidth: 180, cellRenderer: CampaignNameCell, valueGetter: (p) => joined(p, (c) => c.name, (g) => g.names), ...searchColumn<Row>('Campaign name') },
-    { headerName: 'Touch points', width: 170, minWidth: 140, cellRenderer: TouchPointsCell, valueGetter: (p) => (p.data && !p.data.group ? touchPointsOf(p.data).join(', ') : '') },
-    { headerName: 'Display types', width: 160, minWidth: 130, cellRenderer: DisplayTypesCell, valueGetter: (p) => (p.data && !p.data.group && p.data.displayTypeId ? displayTypeNames.get(p.data.displayTypeId) ?? p.data.displayTypeId : '') },
-    { headerName: 'Creative ID', width: 170, minWidth: 140, cellRenderer: CreativeIdCell, valueGetter: (p) => (p.data && !p.data.group ? approvals[p.data.campaignId]?.creativeId ?? '' : '') },
+    { headerName: 'Touch points', width: 170, minWidth: 140, cellRenderer: TouchPointsCell, valueGetter: (p) => joined(p, (c) => touchPointsOf(c).join(', '), (g) => g.touchPoints), ...setColumn<Row>('Touch points', () => all.flatMap(touchPointsOf)) },
+    { headerName: 'Display types', width: 160, minWidth: 130, cellRenderer: DisplayTypesCell, valueGetter: (p) => joined(p, (c) => (c.displayTypeId ? displayTypeNames.get(c.displayTypeId) ?? c.displayTypeId : ''), (g) => g.displayTypes), ...setColumn<Row>('Display types', () => all.map((c) => (c.displayTypeId ? displayTypeNames.get(c.displayTypeId) ?? c.displayTypeId : ''))) },
+    { headerName: 'Creative ID', width: 170, minWidth: 140, cellRenderer: CreativeIdCell, valueGetter: (p) => (p.data?.group ? p.data.group.creativeIds : p.data ? approvals[p.data.campaignId]?.creativeId ?? '' : ''), ...searchColumn<Row>('Creative ID') },
     /* Deal ID (private auctions): the advertiser's own grouping, set at authoring. Empty for a direct campaign. */
-    { headerName: 'Deal ID', width: 150, minWidth: 130, cellRenderer: DealCell, valueGetter: (p) => joined(p, (c) => c.dealId ?? '', (g) => g.deals), ...setColumn<Row>('Deal ID', values((c) => c.dealId ?? '')) },
+    { headerName: 'Deal ID', width: 150, minWidth: 130, cellRenderer: DealCell, valueGetter: (p) => joined(p, (c) => c.dealId ?? '', (g) => g.deals), ...searchColumn<Row>('Deal ID') },
     { headerName: 'DSP', width: 150, minWidth: 130, valueGetter: (p) => (p.data?.group ? p.data.group.dsps : p.data?.partnerName ?? '—'), ...setColumn<Row>('DSP', values((c) => c.partnerName ?? '')) },
     {
       headerName: 'Localised variables', width: 200, minWidth: 160, cellRenderer: LocalisedVariablesCell,
