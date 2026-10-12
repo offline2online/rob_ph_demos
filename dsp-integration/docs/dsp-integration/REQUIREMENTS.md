@@ -1873,7 +1873,7 @@ bid's `dealid` checked against it) and the key a campaign's `dealId` refers to.
 - **Mutable terms stay mutable**: rate (floor CPM), delivery term, invited
   buyers, targeting and the rest edit in place. Term versioning is a
   separate ticket.
-- **Admin**: the Buyers and targeting table has a read-only Deal ID column
+- **Admin**: the Deals and buyers lists table has a read-only Deal ID column
   and the edit modal a read-only Deal ID field; changing the type shows a
   note, and saving reports the new ID.
 
@@ -2249,7 +2249,7 @@ private contract with our deal ID). **The deal ID is the handshake; the buyer ke
   rate once the deal has one, else its resolved floor), delivery term, auction close, committed plays (guaranteed only) and
   the creative-requirements set derived from the attached positions (format, canvas size, max play length).
   `GET /admin/v1/buyers-lists/{id}/deal-sheet` returns it as JSON, or as a downloadable CSV with `?format=csv` (one row per
-  DSP deal ID and creative format). It is read-only and stores nothing. The Buyers and targeting table has a **Deal
+  DSP deal ID and creative format). It is read-only and stores nothing. The Deals and buyers lists table has a **Deal
   sheet** action that shows it on screen with **Copy** (plain text for an email or chat) and **Download CSV**.
 - **A list that invites only IAB categories has no named seat**, so its sheet has no entries: invite a buyer first.
 - **The API push (later, not built).** A seller-initiated push where the SSP sends a deal proposal straight into the DSP so
@@ -4859,7 +4859,7 @@ keeps the won creative renderable; the lookahead sets how early the per-impressi
 
 ## Buyers list: committed volume and rate inherit platform → DSP → list (Rob, 7 Oct 2026)
 
-- **Bug**: the Buyers and targeting table and modal showed a list's own committed
+- **Bug**: the Deals and buyers lists table and modal showed a list's own committed
   volume only, so a list with none read "Per play" / blank even when a default
   was set. Both fields now always show the value in force.
 - **Hierarchy** (same pattern as the three-level bid floor): the platform
