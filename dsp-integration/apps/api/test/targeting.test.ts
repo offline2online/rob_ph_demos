@@ -99,7 +99,9 @@ describe('GET /v1/targeting/attributes', () => {
     const get = (await app.inject({ method: 'GET', url: '/api/admin/v1/targeting-variables' })).json().items as { key: string; values: string[]; freeText: boolean }[]
     expect(get.find((v) => v.key === 'store.suburb')).toMatchObject({ values: ['Surry Hills', 'Parramatta'], freeText: false })
     expect(get.find((v) => v.key === 'store.postcode')).toMatchObject({ values: [], freeText: true })
-    /* Un-sharing a variable drops its definition. */
+    /* Un-sharing a variable drops its definition, even when the save still carries its old values. */
+    const unshare = await put({ access: { 'store.suburb': [] }, values: { 'store.suburb': { values: ['Surry Hills'], freeText: false } } })
+    expect(unshare.statusCode).toBe(200)
     await put({ access: { 'store.suburb': [] } })
     const after = (await app.inject({ method: 'GET', url: '/api/admin/v1/targeting-variables' })).json().items as { key: string; values: string[] }[]
     expect(after.find((v) => v.key === 'store.suburb')?.values).toEqual([])

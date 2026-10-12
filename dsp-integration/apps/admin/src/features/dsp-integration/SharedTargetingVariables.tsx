@@ -60,7 +60,11 @@ export function SharedTargetingVariables() {
   ], [])
   const context = {
     access: draft.access, values: draft.values, dsps: partners,
-    set: (key: string, v: VariableAccess) => update('access', (a) => ({ ...a, [key]: v })),
+    set: (key: string, v: VariableAccess) => {
+      update('access', (a) => ({ ...a, [key]: v }))
+      /* Un-sharing a variable drops its values, so the save is never rejected for values on an unshared variable. */
+      if (v !== 'all' && !v.length) update('values', (cur) => (cur[key] ? { ...cur, [key]: { values: [], freeText: false } } : cur))
+    },
     setValues: (key: string, v: VariableValues) => update('values', (cur) => ({ ...cur, [key]: v })),
   }
   return (

@@ -26,12 +26,11 @@ export function DspPicker({ label, value, dsps, onChange }: { label: string; val
       <Divider className="my-1" />
       {dsps.map((d) => {
         const def = providerDef(d.provider)
-        const sub = d.status === 'connected' ? null : d.status === 'error' ? 'Connection error' : 'Not connected'
         return (
           <Checkbox key={d.id} checked={all || ids.includes(d.id)} disabled={all} onChange={() => toggle(d.id)} className="w-full px-1 py-1">
             <span className="inline-flex items-start gap-1.5" style={{ fontSize: 12.5 }}>
               <Icon name={def?.icon ?? 'handshake'} size={15} style={{ color: def?.colour }} />
-              <span>{d.name}{sub && <div style={{ fontSize: 11, color: T.micro }}>{sub}</div>}</span>
+              <span>{d.name}</span>
             </span>
           </Checkbox>
         )

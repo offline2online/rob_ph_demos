@@ -17,9 +17,16 @@ export const targetingVariableRoutes = (ctx: Context, guards: Guards): FastifyPl
   app.put<{ Body: { access?: unknown; values?: unknown } }>('/targeting-variables', async (req) => {
     guards.flagged()
     guards.requireScope(req, 'admin')
+    const before = await ctx.company.variableAccess()
+    /* Un-sharing a variable that was shared drops its definition rather than failing the save. */
+    const bodyValues = req.body?.values
+    if (bodyValues && typeof bodyValues === 'object' && !Array.isArray(bodyValues) && req.body?.access && typeof req.body.access === 'object') {
+      const acc = req.body.access as Record<string, Access>
+      for (const k of Object.keys(bodyValues)) if (k in acc && !isShared(acc[k]) && isShared(before[k])) (bodyValues as Record<string, unknown>)[k] = { values: [], freeText: false }
+    }
     const errors = validateAccess(req.body?.access, (await ctx.partners.list()).map((p) => p.id))
     /* Values are checked against the access as it will be after this save. */
-    const effective = { ...(await ctx.company.variableAccess()), ...(req.body?.access as Record<string, Access>) }
+    const effective = { ...before, ...(req.body?.access as Record<string, Access>) }
     if (!errors.length) errors.push(...validateValues(req.body?.values, effective))
     if (errors.length) throw validationFailed(errors)
     /* De-duplicate ids; an unset key keeps its default. */
