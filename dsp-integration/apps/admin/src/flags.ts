@@ -3,8 +3,9 @@
 export interface Flags {
   readonly dspIntegration: boolean
   /* Self-service for advertisers (not built yet). Off by default: UI that only
-     matters once advertisers submit their own campaigns, such as the Available
-     Inventory "Max campaigns" column, stays hidden until this is switched on. */
+     matters once advertisers submit their own campaigns stays hidden until this
+     is switched on. (The Available Inventory "Max campaigns" column is no longer
+     gated by it: restored 12 Oct 2026.) */
   readonly selfService?: boolean
   /* DSP Integration → Change history. Off by default (Rob, 9 Oct 2026: "we will
      deal with this in a future release"): the menu row and the page's route stay

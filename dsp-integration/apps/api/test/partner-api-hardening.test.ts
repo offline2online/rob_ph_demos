@@ -122,16 +122,16 @@ describe('request size limits', () => {
      resolvable displayTypeId + slot is given; without one, the platform-wide
      cap still applies exactly as before (proved by the test above, which
      sends no slot at all). menu_board slot 2 is Google's seeded advertiser
-     slot (seed.ts), with no maxCampaigns of its own — platform default 5. */
+     slot (seed.ts), with no maxCampaigns of its own — platform default 10. */
   it('bounds a content package by its slot’s own max campaigns, once a slot resolves it', async () => {
     const { create } = await setup()
     const versionsOf = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `v${i}`, priority: i, pricingType: 'localised', rules: [[COND]] }))
     const forSlot = { ...SWISSE, displayTypeId: 'menu_board', slot: 2 }
-    /* Default (1) + 4 targeted = 5, exactly the platform default cap. */
-    expect((await create({ ...forSlot, targeted: versionsOf(4) })).statusCode).toBe(201)
+    /* Default (1) + 9 targeted = 10, exactly the platform default cap. */
+    expect((await create({ ...forSlot, targeted: versionsOf(9) })).statusCode).toBe(201)
     /* One more tips it over — the slot's cap, not the global 20. */
-    expect((await create({ ...forSlot, targeted: versionsOf(5) })).json().error.details)
-      .toEqual([{ field: 'targeted', reason: 'At most 5 campaigns (default + targeted versions) for this slot.' }])
+    expect((await create({ ...forSlot, targeted: versionsOf(10) })).json().error.details)
+      .toEqual([{ field: 'targeted', reason: 'At most 10 campaigns (default + targeted versions) for this slot.' }])
     /* Unknown slot, and a non-advertiser slot (Priority 1 is Headquarters'). */
     expect((await create({ ...forSlot, slot: 99 })).json().error.details).toContainEqual({ field: 'slot', reason: 'Menu Board — Long Format has no slot 99.' })
     expect((await create({ ...forSlot, slot: 1 })).json().error.details).toContainEqual({ field: 'slot', reason: 'Only an Advertiser slot is sellable inventory.' })

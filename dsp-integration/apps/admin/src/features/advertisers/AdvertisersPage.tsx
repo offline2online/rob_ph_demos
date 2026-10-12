@@ -623,7 +623,7 @@ function BillingUnitCell({ data, context }: IP) {
    campaigns column + slot playlist statement") — purely a submission cap,
    it does not feed the auction or billing. Same override/default
    inheritance UX as ReservePriceCell/BillingUnitCell above, bounded
-   1-10 inclusive; unlike reserve price there's no "unlimited" state, so a
+   1-25 inclusive; unlike reserve price there's no "unlimited" state, so a
    marketing user always reads a real number. */
 function MaxCampaignsCell({ data, context }: IP) {
   if (!data) return null
@@ -633,8 +633,8 @@ function MaxCampaignsCell({ data, context }: IP) {
      whose maxCampaignsOverride the API hasn't populated, not just an
      explicit null — is never mistaken for an override: that mistake left
      the input showing blank with a stray "(override)"/reset affordance
-     instead of the real default of 5 (ticket "Max campaigns: show default
-     of 5 in the column"). */
+     instead of the real platform default (ticket "Max campaigns: show default
+     in the column"). */
   const overridden = override != null
   const value = overridden ? override : (c.maxCampaignsDefaults[data.displayTypeId] ?? DEFAULT_MAX_CAMPAIGNS)
   if (!c.canEdit) return <span>{effectiveMaxCampaigns(c, data)}</span>
@@ -774,6 +774,16 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
       valueGetter: (p) => (p.data ? effectiveReservePrice((p.context as InvCtx).current, p.data) ?? -1 : -1),
     },
     {
+      headerName: MAX_CAMPAIGNS_HEADER, width: 140, minWidth: 125, cellRenderer: MaxCampaignsCell,
+      /* Written for the retail media manager setting this, not the
+         advertiser submitting against it (ticket "Max campaigns: … revise
+         tooltip for retail media manager") — so no "purchase additional
+         slots" line, which reads as advertiser-facing upsell copy. */
+      headerComponent: header('Max campaigns', 'The maximum number of campaigns an advertiser can submit to be played for this purchased slot.'),
+      valueGetter: (p) => (p.data ? effectiveMaxCampaigns((p.context as InvCtx).current, p.data) : DEFAULT_MAX_CAMPAIGNS),
+      ...setColumn<AvailableInventoryRow>('Max campaigns', invValues((r) => [String(r.maxCampaigns)])),
+    },
+    {
       headerName: 'Plays per window', width: 150, minWidth: 135,
       headerComponent: header('Plays per window', 'How many plays this slot gets in one billing unit on ONE display: billing unit ÷ (max slot length × slots playing). The figure in brackets is the fleet total: that per-display figure × the displays registered to this display type in PH Core (the count in brackets after the playlist name). Max slot length applies to every campaign on the loop, HQ campaigns included, and HQ slots fill part of the loop even though they are not listed here. Calculated, never typed: it updates as you change the max slot length or billing unit.'),
       valueGetter: (p) => (p.data ? effectivePlaysPerWindow((p.context as InvCtx).current, p.data) : 0),
@@ -796,16 +806,6 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
         const e = edited(c, p.data)
         return showsInteractiveReserve(p.data.qrControl, e) ? e.interactiveReservePrice ?? effectiveReservePrice(c, p.data) ?? -1 : -1
       },
-    },
-    {
-      headerName: MAX_CAMPAIGNS_HEADER, width: 140, minWidth: 125, cellRenderer: MaxCampaignsCell,
-      /* Written for the retail media manager setting this, not the
-         advertiser submitting against it (ticket "Max campaigns: … revise
-         tooltip for retail media manager") — so no "purchase additional
-         slots" line, which reads as advertiser-facing upsell copy. */
-      headerComponent: header('Max campaigns', 'The maximum number of campaigns an advertiser can submit to be played for this purchased slot.'),
-      valueGetter: (p) => (p.data ? effectiveMaxCampaigns((p.context as InvCtx).current, p.data) : DEFAULT_MAX_CAMPAIGNS),
-      ...setColumn<AvailableInventoryRow>('Max campaigns', invValues((r) => [String(r.maxCampaigns)])),
     },
     {
       headerName: 'Max play length', width: 150, minWidth: 135, cellRenderer: MaxPlayLengthCell,
@@ -834,12 +834,10 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
   })), [invRows, inventory.data])
   const inv = useDraft(savedEdits)
   const savedEditsNow = (r: AvailableInventoryRow): SlotEdit => (inv.draft ?? {})[slotKey(r)] ?? { assignedTo: r.assignedTo, reservePrice: r.reservePriceOverride, interactiveReservePrice: r.interactiveReservePriceOverride ?? null, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride, maxPlayLengthSec: r.maxPlayLengthSecOverride, inGlobalDeal: r.inGlobalDeal }
-  /* Max campaigns only matters for self-service, which is not built yet (Rob, 8 Oct 2026): hide the column, with its header tip, filter and inline edit, until the selfService flag is on. Data, API field and the display-type default are untouched. */
-  const selfService = flags.selfService === true
   const anyInteractiveReserve = INTERACTIVE_ENABLED && invRows.some((r) => showsInteractiveReserve(r.qrControl, savedEditsNow(r)))
   const visibleInventoryColumns = useMemo(
-    () => inventoryColumns.filter((col) => (anyInteractiveReserve || col.headerName !== INTERACTIVE_RESERVE_HEADER) && (selfService || col.headerName !== MAX_CAMPAIGNS_HEADER)),
-    [inventoryColumns, anyInteractiveReserve, selfService],
+    () => inventoryColumns.filter((col) => (anyInteractiveReserve || col.headerName !== INTERACTIVE_RESERVE_HEADER)),
+    [inventoryColumns, anyInteractiveReserve],
   )
   /* One reserve price default per display type, shared by every one of its
      rows (Rob, 22 Sep) — a separate draft from the per-slot one above. */

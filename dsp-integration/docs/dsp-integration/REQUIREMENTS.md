@@ -2070,7 +2070,7 @@ pending-change bookkeeping were removed 8 Oct 2026.)
 
 **Max campaigns** (`maxCampaigns` on a slot, with a display-type-level
 default — same override-always-wins inheritance as reserve price and
-billing unit above; platform default 5 when neither is set; 1-10
+billing unit above; platform default 10 when neither is set; 1-25
 inclusive): the retailer-controlled maximum number of campaigns — the
 mandatory default layer plus optional targeted versions — an advertiser
 may submit for this slot (ticket "Available Inventory: Max campaigns
@@ -3034,13 +3034,13 @@ fields. The canonical definition is `app/src/model/schema.js` and
   phExtensions: {                  // THIS PROJECT's additions
     reservePrice,                  // the display type's own reserve price default; CPM or null (real inheritance, 22 Sep — §5)
     billingUnitHours,               // the display type's own billing-unit default = play-window length, in whole hours; null = the platform default of 24 (§5 "Billing unit"; OQ27, 29 Sep 2026)
-    maxCampaigns,                  // the display type's own max-campaigns default; null = platform default of 5, 1-10 inclusive (§5, ticket "Max campaigns column + slot playlist statement")
+    maxCampaigns,                  // the display type's own max-campaigns default; null = platform default of 10, 1-25 inclusive (§5, ticket "Max campaigns column + slot playlist statement")
     maxPlayLengthSec,              // the display type's own max-play-length default, whole seconds 1-600; null = the company default (Advertiser settings), platform default 15 (§5 "Max play length")
     slots: [{ label, owner, zoneId,   // zoneId: the zone this slot belongs to on a multi-zone display type (one segment per zone, in zone order); absent on a single-zone one
               partnerId, advertiser, listMode, buyersListId, storeScope, quota,
               reservePrice,         // this slot's own override; CPM, or null = inherit the display type's reservePrice above (§5)
               billingUnitHours,     // this slot's own override = its play-window length, in whole hours; null = inherit the display type's billingUnitHours above, else the platform default of 24 (§5; OQ27)
-              maxCampaigns,         // this slot's own override; null = inherit the display type's maxCampaigns above, 1-10 inclusive when set (§5)
+              maxCampaigns,         // this slot's own override; null = inherit the display type's maxCampaigns above, 1-25 inclusive when set (§5)
               maxPlayLengthSec }],  // this slot's own override = the fixed duration of one play, whole seconds 1-600; null = inherit the display type's maxPlayLengthSec above, else the company default (§5 "Max play length")
                                     // listMode: rtb | whitelist_only | deal | null; buyersListId set only when listMode is deal (§5 "Private auctions")
                                     // each slot also carries salesLocked / salesLockedUntil (set by PUT /admin/v1/available-inventory/lock, cleared by the scheduler; not writable through the slot editor)
@@ -3999,7 +3999,7 @@ playback analytics.**
   forecast, scoped to what the requester could buy. *(spec only)*
 - **Available Inventory**: every advertiser-owned slot across the estate
   that connected DSPs can bid on (Display type, Playlist, Slot, Position,
-  Assigned to, Reserve price, Max campaigns, Max play length, Billing
+  Assigned to, Reserve price, Max campaigns, Plays per window, Max play length, Billing
   unit, and an Open link), with no advertisers column and a filter on
   every column. *(Advertisers / Inventory → Available Inventory)*
 - **Reserve price, inherited from its display type** (decision, 22 Sep; real
@@ -4023,7 +4023,7 @@ playback analytics.**
   Inventory: Max campaigns column + slot playlist statement"): the
   retailer-controlled maximum number of campaigns (default + targeted
   versions) this advertiser may submit for the slot — same
-  override-always-wins inheritance as reserve price, default 5, 1-10
+  override-always-wins inheritance as reserve price, default 10, 1-25
   inclusive — replacing the platform-wide 20-targeted-versions cap for
   that slot once a submission names it. Admin-editable, marketing
   read-only, filterable, with an info tooltip. Purely a submission cap —
@@ -4302,7 +4302,7 @@ are in `api/PH-CORE-BOUNDARIES.md`.
   versions) a submission may carry is its slot's own **Max campaigns**
   (§5, ticket "Available Inventory: Max campaigns column + slot playlist
   statement") once `displayTypeId` and `slot` resolve to a real advertiser
-  slot — retailer-controlled, default 5, 1-10 inclusive — replacing the
+  slot — retailer-controlled, default 10, 1-25 inclusive — replacing the
   platform-wide **≤ 20 targeted versions** cap for that slot; a submission
   naming no resolvable slot still falls back to that 20-cap as a
   package-size guard (approval precedes booking, so the slot is often
