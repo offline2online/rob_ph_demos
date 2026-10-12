@@ -121,7 +121,7 @@ describe('Advertiser settings (spec §4, §6)', () => {
       assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false, buyersListId: null, buyersListName: null, buyersListIds: [], buyersListNames: [], openAuction: false }, qrControl: true, visionAi: true,
       reservePrice: null, reservePriceOverride: null, displayTypeReservePrice: null, interactiveReservePrice: null, interactiveReservePriceOverride: null,
       billingUnitHours: 24, billingUnitHoursOverride: null, billingUnitPending: null, displayTypeBillingUnitHours: null,
-      maxCampaigns: 5, maxCampaignsOverride: null, displayTypeMaxCampaigns: null,
+      maxCampaigns: 10, maxCampaignsOverride: null, displayTypeMaxCampaigns: null,
       maxPlayLengthSec: 15, maxPlayLengthSecOverride: null, displayTypeMaxPlayLengthSec: null, companyMaxPlayLengthSec: 15, slotCount: 3, displayCount: 3, playsPerWindow: 1920,
     }])
     /* The picker behind Assigned to: every DSP and the advertisers it brings. */
@@ -264,7 +264,7 @@ describe('Advertiser settings (spec §4, §6)', () => {
      price above, but always resolves to a real integer (the platform
      default of 5), bounded 1-10. Purely a submission cap — proved directly
      against POST /v1/campaigns in campaigns.test.ts. */
-  it('inherits a max campaigns cap from its display type, lets a slot override it, and bounds it 1-10', async () => {
+  it('inherits a max campaigns cap from its display type, lets a slot override it, and bounds it 1-25', async () => {
     const ctx = await testContext()
     const app = buildApp(ctx)
     const row = (slot: number, maxCampaigns: number | null, maxCampaignsDefault: number | null) =>
@@ -272,9 +272,9 @@ describe('Advertiser settings (spec §4, §6)', () => {
     const save = (items: ReturnType<typeof row>[]) => app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items } })
     const at = (json: { items: { slot: number }[] }, slot: number) => json.items.find((i) => i.slot === slot)
 
-    /* Nothing set: the platform default of 5 applies. */
+    /* Nothing set: the platform default of 10 applies. */
     const untouched = await app.inject({ method: 'GET', url: '/api/admin/v1/available-inventory' })
-    expect(at(untouched.json(), 2)).toMatchObject({ maxCampaigns: 5, maxCampaignsOverride: null, displayTypeMaxCampaigns: null })
+    expect(at(untouched.json(), 2)).toMatchObject({ maxCampaigns: 10, maxCampaignsOverride: null, displayTypeMaxCampaigns: null })
 
     /* Setting the default on the one Advertiser slot on menu_board reaches it. */
     const set = await save([row(2, null, 8)])
@@ -287,12 +287,12 @@ describe('Advertiser settings (spec §4, §6)', () => {
     const overridden = await save([row(2, 3, 8)])
     expect(at(overridden.json(), 2)).toMatchObject({ maxCampaigns: 3, maxCampaignsOverride: 3, displayTypeMaxCampaigns: 8 })
 
-    /* Rejected: out of the 1-10 range, and a non-integer. */
-    const bad = await save([row(2, 11, 8)])
+    /* Rejected: out of the 1-25 range, and a non-integer. */
+    const bad = await save([row(2, 26, 8)])
     expect(bad.statusCode).toBe(400)
-    expect(bad.json().error.details).toEqual([{ field: 'items[0].maxCampaigns', reason: 'An integer from 1 to 10, or null to inherit.' }])
+    expect(bad.json().error.details).toEqual([{ field: 'items[0].maxCampaigns', reason: 'An integer from 1 to 25, or null to inherit.' }])
     const bad2 = await app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ ...row(2, 0.5, 8) }] } })
-    expect(bad2.json().error.details).toEqual([{ field: 'items[0].maxCampaigns', reason: 'An integer from 1 to 10, or null to inherit.' }])
+    expect(bad2.json().error.details).toEqual([{ field: 'items[0].maxCampaigns', reason: 'An integer from 1 to 25, or null to inherit.' }])
   })
 
   /* Targeting is not a slot property (Rob, 7 Oct 2026): the row has no such field, and a stale one is neither read nor stored. */

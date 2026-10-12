@@ -154,7 +154,7 @@ export async function dueDealAuctions(ctx: Context): Promise<DueDealAuction[]> {
   const out: DueDealAuction[] = []
   for (const p of await allPositions(ctx)) {
     if (assignmentOf(p.def) !== 'deal') continue
-    const lists = (await Promise.all(assignedOf(p.def).buyersListIds.map((id) => ctx.buyersLists.get(id)))).filter((l): l is BuyersList => !!l)
+    const lists = (await Promise.all(assignedOf(p.def).buyersListIds.map((id) => ctx.buyersLists.get(id)))).filter((l): l is BuyersList => !!l && l.status === 'shared' /* a draft is not live to buyers */)
     const len = windowMsFor(p)
     const next = nextWindowFor(now, len)
     const nextIso = next.toISOString()

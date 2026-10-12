@@ -10,7 +10,7 @@ import { baseFloorFor } from '../../exchange/enforcement'
 export const dealRoutes = (ctx: Context): FastifyPluginAsync => async (app) => {
   app.get('/deals', async (req) => {
     const partner = req.partner
-    const lists = (await ctx.buyersLists.list()).filter((l) => partner.seats.some((s) => isInvitedBuyer(l, partner, s.id)))
+    const lists = (await ctx.buyersLists.list()).filter((l) => l.status === 'shared' /* a draft is shared with no DSP yet */ && partner.seats.some((s) => isInvitedBuyer(l, partner, s.id)))
     return { items: await Promise.all(lists.map(async (l) => dealOf(ctx, l, Math.round((await baseFloorFor(ctx, { partner, buyersListId: l.id })) * 100) / 100, partner.id))) }
   })
 }

@@ -72,7 +72,7 @@ const BUFFER_TIP = (
 )
 const DEFAULT_PLAYS_TIP = (
   <div style={{ fontSize: 12 }}>
-    A starting value for <b>Committed plays</b> on a <b>new buyers and targeting list</b>. It is only a default: never a cap, the field stays editable, and the list keeps its own figure.
+    A starting value for <b>Committed plays</b> on a <b>new deal and buyers list</b>. It is only a default: never a cap, the field stays editable, and the list keeps its own figure.
     <div className="mt-2">It pre-fills a new list only. It never changes a saved list or any existing list, and a changed default is picked up by the next new list. It does not affect how a guaranteed deal’s volume is computed (that is the Guarantee buffer). Whole number, at least 1; leave empty for per play.</div>
   </div>
 )

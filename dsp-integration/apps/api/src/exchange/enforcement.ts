@@ -41,7 +41,8 @@ export async function checkAdvertiser(ctx: Context, p: PositionRef, partner: Par
   if (assignment === 'deal') {
     const listId = assignedOf(p.def).buyersListId
     const list = listId ? await ctx.buyersLists.get(listId) : null
-    if (!list || !isActiveAt(list, windowStart ?? ctx.clock().toISOString()) || !isInvitedBuyer(list, partner, seatId)) {
+    /* A draft deal is shared with no DSP yet, so nobody is invited to it. */
+    if (!list || list.status !== 'shared' || !isActiveAt(list, windowStart ?? ctx.clock().toISOString()) || !isInvitedBuyer(list, partner, seatId)) {
       return { code: 'not_invited', reason: `${name} is not an invited buyer on this private auction${list ? ` (${list.name})` : ''}.` }
     }
   }

@@ -31,6 +31,20 @@ describe('Delete display type dialog', () => {
     expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled()
   })
 
+  it('blocks while a slot is owned by an advertiser, naming both ways to clear it', () => {
+    render(
+      <Providers>
+        <DeleteDisplayType name="Portrait" deleting={false} onDelete={() => {}} onClose={() => {}}
+          check={{ canDelete: false, dependents: [{ kind: 'slot', name: 'Ad', detail: 'Owned by an advertiser' }] }} />
+      </Providers>,
+    )
+    expect(screen.getByText(/1 slot is owned by an advertiser/)).toBeInTheDocument()
+    expect(screen.getByText(/Advertising inventory/)).toBeInTheDocument()
+    expect(screen.getByText(/Playlist management/)).toBeInTheDocument()
+    expect(screen.queryByText(/play windows? (is|are) reserved/)).toBeNull()
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled()
+  })
+
   it('confirms a permanent delete when nothing is assigned', () => {
     render(<Providers><DeleteDisplayType name="Kiosk" deleting={false} onDelete={() => {}} onClose={() => {}} check={{ canDelete: true, dependents: [] }} /></Providers>)
     expect(screen.getByText(/This permanently deletes the display type and its settings/)).toBeInTheDocument()

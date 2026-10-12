@@ -163,12 +163,12 @@ export const billingUnitHoursOf = (dt: { phExtensions?: { billingUnitHours?: num
    20-targeted-versions submission cap for that slot. Purely a submission
    cap: it does not feed the auction or billing. Same override-always-wins
    inheritance as reservePriceOf/billingUnitHoursOf, but always resolves to
-   a real integer (the platform default of 5 when neither the slot nor its
+   a real integer (the platform default of 10 when neither the slot nor its
    display type sets one) — like billing unit, there is no "unlimited"
-   state, and it is bounded 1-10 inclusive whenever a real value is set. */
-export const DEFAULT_MAX_CAMPAIGNS = 5
+   state, and it is bounded 1-25 inclusive whenever a real value is set. */
+export const DEFAULT_MAX_CAMPAIGNS = 10
 export const MIN_MAX_CAMPAIGNS = 1
-export const MAX_MAX_CAMPAIGNS = 10
+export const MAX_MAX_CAMPAIGNS = 25
 /* Per-display-type floor (CPM, USD): null/absent inherits the central floor at
    read time. Never a copy of the central value, so a later change to the
    central floor reaches every inheriting type, and "inherit" stays distinct

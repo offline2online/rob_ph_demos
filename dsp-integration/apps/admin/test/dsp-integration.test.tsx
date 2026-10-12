@@ -830,13 +830,13 @@ describe('Booking schedule', () => {
 })
 
 describe('Advertisers / Inventory', () => {
-  /* Max campaigns only matters for self-service (Rob, 8 Oct 2026): hidden unless the selfService flag is on. */
-  it('shows the Max campaigns column only when the selfService flag is on', async () => {
+  /* Max campaigns is back without any flag (12 Oct 2026), between Reserve price and Plays per window. */
+  it('shows the Max campaigns column between Reserve price and Plays per window, with no flag needed', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch(ADVERTISER_PAGE)))
-    renderAt('/advertisers', true, true)
+    renderAt('/advertisers')
     const inventory = await screen.findByLabelText('Available Inventory')
     expect([...inventory.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent))
-      .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Reserve price', 'Plays per window', 'Max campaigns', 'Max play length', 'Billing unit', 'Slots playing', ''])
+      .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Reserve price', 'Max campaigns', 'Plays per window', 'Max play length', 'Billing unit', 'Slots playing', ''])
   })
 
   it('lists a direct advertiser as "Name (Direct)" in Via and in the Assigned to options, and lets an admin add one', async () => {
@@ -871,14 +871,14 @@ describe('Advertisers / Inventory', () => {
     expect(within(advertisers).queryByRole('button', { name: /Bookings/ })).not.toBeInTheDocument()
 
     /* Advertisers table sits last, under Available Inventory and Buyers and targeting (ticket AkDMbOJn0QBV0ZcEM5tm). */
-    expect(screen.getByText('Buyers and targeting').compareDocumentPosition(advertisers) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getByText('Deals and buyers lists').compareDocumentPosition(advertisers) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 
     const inventory = await screen.findByLabelText('Available Inventory')
     /* Playlist leads the table; Display type was removed as its own column
        (ticket "Available Inventory: playlist-primary table (drop Display
        type column) with Unassigned indicator", 27 Sep 2026). */
     expect([...inventory.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent))
-      .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Reserve price', 'Plays per window', 'Max play length', 'Billing unit', 'Slots playing', ''])
+      .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Reserve price', 'Max campaigns', 'Plays per window', 'Max play length', 'Billing unit', 'Slots playing', ''])
     /* No interactive-only column: interactive is deferred (5 Oct 2026). */
     expect(within(inventory).getByLabelText('Playlist search')).toBeInTheDocument()
     /* Targeting is defined on the buyers and targeting list, not per slot (Rob, 7 Oct 2026). */
@@ -945,7 +945,7 @@ describe('Advertisers / Inventory', () => {
       '/api/admin/v1/available-inventory': { ...inv, items: [{ ...row, assignedTo: assigned }, { ...row, slot: 5, zoneSlot: 5, displayTypeId: 'portrait', displayTypeName: 'Portrait', displayCount: 1, assignedTo: assigned }] },
     })))
     renderAt('/advertisers')
-    const table = await screen.findByLabelText('Buyers and targeting')
+    const table = await screen.findByLabelText('Deals and buyers lists')
     /* (1,920 per display x 12) + (1,920 x 1) = 24,960 */
     expect(await within(table).findByText('24,960')).toBeInTheDocument()
   })
@@ -959,7 +959,7 @@ describe('Advertisers / Inventory', () => {
       '/api/admin/v1/available-inventory': inv,
     })))
     renderAt('/advertisers')
-    const table = await screen.findByLabelText('Buyers and targeting')
+    const table = await screen.findByLabelText('Deals and buyers lists')
     expect(await within(table).findByText('PH-7K2M9QXW4B')).toBeInTheDocument()
     fireEvent.click(within(table).getByRole('button', { name: 'Edit Pharma brands' }))
     const dialog = await screen.findByRole('dialog')
@@ -984,10 +984,45 @@ describe('Advertisers / Inventory', () => {
   })
   const openTermsEditor = async () => {
     renderAt('/advertisers')
-    const table = await screen.findByLabelText('Buyers and targeting')
+    const table = await screen.findByLabelText('Deals and buyers lists')
     fireEvent.click(await within(table).findByRole('button', { name: 'Edit Pharma brands' }))
     return screen.findByRole('dialog')
   }
+
+  /* Deal lifecycle (ticket QG40V1vVwqp9NtFmlC9H): Save as draft -> Finalise -> Share deal. */
+  const draftFetch = (slots: { positionId: string; label: string }[], calls: { method: string; url: string; body?: unknown }[]) => {
+    const draft = { ...TERMS_LIST, status: 'draft', sharedAt: null, termVersion: 1, buyerAcceptance: [], assignedSlots: slots }
+    return vi.fn(async (url: string, init?: RequestInit) => {
+      const path = url.split('?')[0]
+      if (init?.method === 'PUT') { calls.push({ method: 'PUT', url: path, body: JSON.parse(String(init.body)) }); return new Response(JSON.stringify(draft), { status: 200 }) }
+      if (init?.method === 'POST' && path.endsWith('/term-check')) return new Response(JSON.stringify({ currentVersion: 1, nextVersion: 1, changes: [], requiresReacceptance: false, affectedBuyers: [] }), { status: 200 })
+      if (init?.method === 'POST' && path.endsWith('/share')) { calls.push({ method: 'POST', url: path }); return new Response(JSON.stringify({ ...draft, status: 'shared', sharedAt: '2026-10-12T00:00:00Z' }), { status: 200 }) }
+      return fakeFetch({ ...ADVERTISER_PAGE, '/api/admin/v1/buyers-lists': { items: [draft] } })(url)
+    })
+  }
+
+  it('a draft with no assigned slot cannot be finalised and is marked as not shared', async () => {
+    vi.stubGlobal('fetch', draftFetch([], []))
+    const dialog = await openTermsEditor()
+    expect(within(dialog).getByTestId('deal-status-note')).toHaveTextContent('Draft: not shared with any DSP')
+    expect(within(dialog).getByRole('button', { name: 'Save draft' })).toBeEnabled()
+    expect(within(dialog).getByRole('button', { name: 'Finalise' })).toBeDisabled()
+    expect(within(dialog).queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument()
+  }, slow(30000))
+
+  it('Finalise confirms the slots and terms, and Share deal shares the deal', async () => {
+    const calls: { method: string; url: string; body?: unknown }[] = []
+    vi.stubGlobal('fetch', draftFetch([{ positionId: 'menu_board.s2', label: 'Menu Board — Long Format' }], calls))
+    const dialog = await openTermsEditor()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Finalise' }))
+    const summary = await screen.findByTestId('finalise-summary')
+    expect(within(summary).getByTestId('finalise-slots')).toHaveTextContent('Menu Board — Long Format')
+    expect(summary).toHaveTextContent('PH-7K2M9QXW4B')
+    expect(calls.map((c) => c.method)).toEqual(['PUT'])
+    expect(calls.some((c) => c.url.endsWith('/share'))).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Share deal' }))
+    await waitFor(() => expect(calls.map((c) => c.url.split('/').pop())).toEqual(['bl_1', 'share']))
+  }, slow(30000))
 
   it('shows the term version and saves a change that needs no re-acceptance without a warning', async () => {
     const puts: unknown[] = []
@@ -1033,7 +1068,7 @@ describe('Advertisers / Inventory', () => {
       '/api/admin/v1/available-inventory': inv,
     })))
     renderAt('/advertisers')
-    const table = await screen.findByLabelText('Buyers and targeting')
+    const table = await screen.findByLabelText('Deals and buyers lists')
     expect(await within(table).findByText('PH-AAAAAAAAAA, PH-BBBBBBBBBB')).toBeInTheDocument()
     fireEvent.click(within(table).getByRole('button', { name: 'Edit Cross DSP' }))
     const dialog = await screen.findByRole('dialog')
@@ -1149,7 +1184,7 @@ describe('Advertisers / Inventory', () => {
      all, so it went green while the picker was reported broken. This test
      is that missing assertion: the option group's position, the option
      itself, and that it actually opens the modal. */
-  it('offers "+ Add new buyers and targeting…" in the Assigned to picker, and opens the modal', async () => {
+  it('offers "+ Add new deal and buyers list…" in the Assigned to picker, and opens the modal', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch({
       ...ADVERTISER_PAGE,
       '/api/admin/v1/buyers-lists': { items: [{ id: 'bl_1', name: 'Q4 FMCG Private Auction', description: '', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }], activeFrom: null, activeTo: null }] },
@@ -1166,8 +1201,8 @@ describe('Advertisers / Inventory', () => {
        scroll position. (Group order and dedup — round 1's own failed-
        testing feedback — were verified separately against a real rendered
        Chromium browser, not jsdom.) */
-    fireEvent.change(combo, { target: { value: 'Add new buyers' } })
-    const addOption = await screen.findByText('+ Add new buyers and targeting…')
+    fireEvent.change(combo, { target: { value: 'Add new deal' } })
+    const addOption = await screen.findByText('+ Add new deal and buyers list…')
     expect(addOption).toBeInTheDocument()
 
     /* Choosing it is a picker action, not a real choice: it opens the
@@ -1176,7 +1211,7 @@ describe('Advertisers / Inventory', () => {
        lists table's own — so scope to the one that's actually open.) */
     fireEvent.click(addOption)
     const dialog = await screen.findByRole('dialog')
-    expect(within(dialog).getByText('New buyers and targeting')).toBeInTheDocument()
+    expect(within(dialog).getByText('New deal and buyers list')).toBeInTheDocument()
     /* Invited buyers is one dropdown of synced advertisers: nothing to type, no identifier type to pick. */
     expect(within(dialog).getByRole('combobox', { name: 'Invited buyers' })).toBeInTheDocument()
     /* One object carries who may buy AND the targeting criteria appended to the deal. */
@@ -1209,18 +1244,18 @@ describe('Advertisers / Inventory', () => {
     const combo = within(within(inventory).getAllByLabelText('Menu Board — Long Format slot 2: assigned to')[0].closest('.ag-cell') as HTMLElement).getByRole('combobox')
     fireEvent.mouseDown(combo)
     await screen.findByRole('listbox')
-    fireEvent.change(combo, { target: { value: 'Add new buyers' } })
-    fireEvent.click(await screen.findByText('+ Add new buyers and targeting…'))
+    fireEvent.change(combo, { target: { value: 'Add new deal' } })
+    fireEvent.click(await screen.findByText('+ Add new deal and buyers list…'))
     const dialog = await screen.findByRole('dialog')
-    expect(within(dialog).getByText('New buyers and targeting')).toBeInTheDocument()
+    expect(within(dialog).getByText('New deal and buyers list')).toBeInTheDocument()
 
     fireEvent.change(within(dialog).getByPlaceholderText('e.g. Q4 FMCG private auction'), { target: { value: 'Test deal' } })
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Create buyers and targeting' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save as draft' }))
 
     /* The modal stays open (the save failed) but says so, rather than
        silently doing nothing. */
     expect(await screen.findByText(/the data is a snapshot/)).toBeInTheDocument()
-    expect(within(dialog).getByText('New buyers and targeting')).toBeInTheDocument()
+    expect(within(dialog).getByText('New deal and buyers list')).toBeInTheDocument()
   }, slow(30000))
 
   /* The CTA opens a new tab, so it can't go through the router — and a

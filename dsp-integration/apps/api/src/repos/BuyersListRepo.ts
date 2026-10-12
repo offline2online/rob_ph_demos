@@ -10,7 +10,7 @@ import { type Db, fromJson, prepared, toJson, tx, type Awaitable } from '../db/d
 
 interface Row {
   id: string; deal_id: string; name: string; description: string; deal_type: BuyersListDealType; invited_buyers: string; invited_categories: string; targeting: string; active_from: string | null; active_to: string | null
-  auction_closes: string | null; locked_win: string | null; committed_plays: number | null; floor_cpm: number | null; created_at: string; updated_at: string; term_version: number; reaccept_version: number
+  auction_closes: string | null; locked_win: string | null; committed_plays: number | null; floor_cpm: number | null; created_at: string; updated_at: string; term_version: number; reaccept_version: number; shared_at: string | null
 }
 interface AcceptanceRow { partner_id: string; seat_id: string; accepted_version: number; accepted_at: string }
 interface VersionRow { version: number; at: string; by_name: string; changes: string; requires_reacceptance: number }
@@ -24,9 +24,11 @@ export interface DealRow { deal_id: string; list_id: string; partner_id: string;
 export interface BuyersListRepo {
   list(): Awaitable<BuyersList[]>
   get(id: string): Awaitable<BuyersList | null>
-  insert(l: { by?: string; id: string; dealId?: string; name: string; description: string; dealType?: BuyersListDealType; invitedBuyers: InvitedBuyer[]; invitedCategories?: string[]; targeting?: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays?: number | null; floorCpm?: number | null }): Awaitable<BuyersList>
+  insert(l: { by?: string; id: string; dealId?: string; name: string; description: string; dealType?: BuyersListDealType; invitedBuyers: InvitedBuyer[]; invitedCategories?: string[]; targeting?: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays?: number | null; floorCpm?: number | null; /* false: saved as a draft, shared with no DSP yet. Omitted: shared, as every list was before drafts existed. */ shared?: boolean }): Awaitable<BuyersList>
   update(id: string, patch: { by?: string; name: string; description: string; dealType: BuyersListDealType; invitedBuyers: InvitedBuyer[]; invitedCategories?: string[]; targeting?: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays?: number | null; floorCpm?: number | null }): Awaitable<BuyersList | null>
   delete(id: string): Awaitable<void>
+  /* Shares a draft deal with its invited buyers: stamps shared_at. From here its term changes ask buyers to re-accept. Idempotent (a shared deal keeps its first shared_at). Null if the list doesn't exist. */
+  share(id: string): Awaitable<BuyersList | null>
   /* Records that a named invited buyer accepted the deal's current terms. Null if the list doesn't exist; the route has already checked the seat is invited. */
   accept(id: string, partnerId: string, seatId: string): Awaitable<BuyersList | null>
   /* Newest first. */
@@ -75,6 +77,7 @@ export function sqliteBuyersListRepo(db: Db): BuyersListRepo {
     effectiveCommittedPlays: { min: r.committed_plays, max: r.committed_plays, source: r.committed_plays == null ? 'none' : 'buyer' },
     effectiveRateCpm: { min: r.floor_cpm, max: r.floor_cpm, source: r.floor_cpm == null ? 'none' : 'buyer' },
     termVersion: r.term_version, buyerAcceptance: acceptanceOf(r),
+    status: r.shared_at ? 'shared' : 'draft', sharedAt: r.shared_at, assignedSlots: [],
     createdAt: r.created_at, updatedAt: r.updated_at,
   })
   const row = (id: string) => prepared(db, 'SELECT * FROM buyers_lists WHERE id = ?').get(id) as Row | undefined
@@ -87,8 +90,8 @@ export function sqliteBuyersListRepo(db: Db): BuyersListRepo {
     insert(l) {
       const now = new Date().toISOString()
       const ids = l.dealId ?? mintDealId()
-      prepared(db, 'INSERT INTO buyers_lists (id, deal_id, name, description, deal_type, invited_buyers, invited_categories, targeting, active_from, active_to, auction_closes, locked_win, committed_plays, floor_cpm, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-        .run(l.id, ids, l.name, l.description, l.dealType ?? 'private_auction', toJson(l.invitedBuyers) ?? '[]', toJson(l.invitedCategories ?? []) ?? '[]', toJson(l.targeting) ?? '[]', l.activeFrom, l.activeTo, l.auctionCloses, null, l.committedPlays ?? null, l.floorCpm ?? null, now, now)
+      prepared(db, 'INSERT INTO buyers_lists (id, deal_id, name, description, deal_type, invited_buyers, invited_categories, targeting, active_from, active_to, auction_closes, locked_win, committed_plays, floor_cpm, created_at, updated_at, shared_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(l.id, ids, l.name, l.description, l.dealType ?? 'private_auction', toJson(l.invitedBuyers) ?? '[]', toJson(l.invitedCategories ?? []) ?? '[]', toJson(l.targeting) ?? '[]', l.activeFrom, l.activeTo, l.auctionCloses, null, l.committedPlays ?? null, l.floorCpm ?? null, now, now, l.shared === false ? null : now)
       syncDeals(l.id, ids, l.invitedBuyers)
       prepared(db, 'INSERT INTO buyers_list_term_versions (list_id, version, at, by_name, changes, requires_reacceptance) VALUES (?, 1, ?, ?, ?, 0)').run(l.id, now, l.by ?? 'system', '[]')
       return toRecord(row(l.id) as Row)
@@ -99,7 +102,8 @@ export function sqliteBuyersListRepo(db: Db): BuyersListRepo {
       const now = new Date().toISOString()
       return tx(db, () => {
         const was = toRecord(before)
-        const changes = termChanges(was, { floorCpm: patch.floorCpm ?? null, committedPlays: patch.committedPlays ?? null, activeFrom: patch.activeFrom, activeTo: patch.activeTo, auctionCloses: patch.auctionCloses, invitedBuyers: patch.invitedBuyers, invitedCategories: patch.invitedCategories ?? [] })
+        /* A draft has been sent to no one, so nobody has terms to re-accept: its edits are not versioned. */
+        const changes = !before.shared_at ? [] : termChanges(was, { floorCpm: patch.floorCpm ?? null, committedPlays: patch.committedPlays ?? null, activeFrom: patch.activeFrom, activeTo: patch.activeTo, auctionCloses: patch.auctionCloses, invitedBuyers: patch.invitedBuyers, invitedCategories: patch.invitedCategories ?? [] })
         const version = before.term_version + (changes.length ? 1 : 0)
         const reaccept = needsReacceptance(changes) ? version : before.reaccept_version
         prepared(db, 'UPDATE buyers_lists SET name = ?, description = ?, deal_type = ?, invited_buyers = ?, invited_categories = ?, targeting = ?, active_from = ?, active_to = ?, auction_closes = ?, committed_plays = ?, floor_cpm = ?, term_version = ?, reaccept_version = ?, updated_at = ? WHERE id = ?')
@@ -113,6 +117,16 @@ export function sqliteBuyersListRepo(db: Db): BuyersListRepo {
         syncDeals(id, before.deal_id, patch.invitedBuyers)
         return toRecord(row(id) as Row)
       })
+    },
+    share(id) {
+      const r = row(id)
+      if (!r) return null
+      if (!r.shared_at) {
+        const now = new Date().toISOString()
+        /* Every invited buyer starts pending on the terms as shared. */
+        prepared(db, 'UPDATE buyers_lists SET shared_at = ?, reaccept_version = term_version, updated_at = ? WHERE id = ?').run(now, now, id)
+      }
+      return toRecord(row(id) as Row)
     },
     accept(id, partnerId, seatId) {
       const r = row(id)

@@ -215,7 +215,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
     return v
   }
 
-  /* An integer 1-10 inclusive, or null to inherit (ticket "Available
+  /* An integer 1-25 inclusive, or null to inherit (ticket "Available
      Inventory: Max campaigns column + slot playlist statement") — the
      same override/default pair as reservePrice/reservePriceDefault and
      billingUnitHours/billingUnitHoursDefault above. */
