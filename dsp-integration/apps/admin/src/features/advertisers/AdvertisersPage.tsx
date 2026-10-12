@@ -292,7 +292,7 @@ const effectivePlaysPerWindow = (c: InvCtx['current'], r: AvailableInventoryRow)
    or the whitelist. Nothing chosen means any connected DSP. */
 const WHITELIST = '__whitelist__'
 const ADD_BUYERS_LIST = '__add_buyers_list__'
-/* Global deal membership as a chip (9 Oct 2026): outside the numbered waterfall, backed by Slot.inGlobalDeal. */
+/* Global deal membership as a chip (9 Oct 2026), backed by Slot.inGlobalDeal; on a buyers-list slot it sits in the open tier beneath the numbered lists (12 Oct 2026). */
 const GLOBAL_CHIP = '__global_deal__'
 const GLOBAL_CHIP_LABEL = 'Included in global deals'
 /* The slot's buyers lists in priority order (7 Oct 2026): the waterfall. */
@@ -305,7 +305,7 @@ const assignedValues = (a: Omit<AssignedTo, 'partnerNames' | 'buyersListName' | 
 /* The waterfall as rows in priority order: drag a row (or use the arrows) to
    reorder, top row is tried first. Priority belongs to this slot's
    assignment, so the same list can rank differently on another slot. */
-function PriorityList({ label, ids, names, cpms, canEdit, onChange, openAuction, openDsps }: { label: string; ids: string[]; names: Map<string, string>; cpms: Map<string, { summary: string | null; hint: string; source: string }>; canEdit: boolean; onChange: (next: string[]) => void; openAuction: boolean; openDsps: string[] }) {
+function PriorityList({ label, ids, names, cpms, canEdit, onChange, openAuction, globalDeal, openDsps }: { label: string; ids: string[]; names: Map<string, string>; cpms: Map<string, { summary: string | null; hint: string; source: string }>; canEdit: boolean; onChange: (next: string[]) => void; openAuction: boolean; globalDeal: boolean; openDsps: string[] }) {
   const [dragging, setDragging] = useState<number | null>(null)
   const [showAll, setShowAll] = useState(false)
   const LIMIT = 5
@@ -317,11 +317,13 @@ function PriorityList({ label, ids, names, cpms, canEdit, onChange, openAuction,
   }
   /* Ordering only means something with two or more lists (ticket fbJdWqr5SwcInFFofwCc, 8 Oct 2026), unless an
      Open auction sits below the deals: then the fallthrough is shown even for one deal (9 Oct 2026). */
-  if (ids.length < 2 && !(ids.length === 1 && openAuction)) return null
+  /* The open tier is the chosen DSPs and/or the global deal (12 Oct 2026): one pool, every entry bids at once. */
+  const openTier = openAuction || globalDeal
+  if (ids.length < 2 && !(ids.length === 1 && openTier)) return null
   const hidden = showAll || ids.length <= LIMIT ? 0 : ids.length - LIMIT
   return (
     <div className="mt-2" role="list" aria-label={`${label}: buyers lists in priority order`}>
-      <div style={{ fontSize: 12, color: T.muted }} className="mb-1">{openAuction ? 'Deals: tried top to bottom, resolved ahead of time' : 'Priority: tried top to bottom'}</div>
+      <div style={{ fontSize: 12, color: T.muted }} className="mb-1">{openTier ? 'Deals: tried top to bottom, resolved ahead of time' : 'Priority: tried top to bottom'}</div>
       {ids.map((id, i) => i >= ids.length - hidden ? null : (
         <div
           key={id}
@@ -350,12 +352,12 @@ function PriorityList({ label, ids, names, cpms, canEdit, onChange, openAuction,
         </div>
       ))}
       {hidden > 0 && <Button type="link" size="small" onClick={() => setShowAll(true)}>+{hidden} more</Button>}
-      {openAuction && (
+      {openTier && (
         /* The fallthrough, spelled out: deals above, the open auction (resolved in real time, per play) and the
            DSPs it runs across below. */
         <div role="separator" aria-label="Open auction" className="mt-1">
           <div className="flex items-center gap-2" style={{ fontSize: 12, color: T.muted, borderTop: '1px dashed #d9d9d9', paddingTop: 4 }}>
-            <Icon name="south" size={14} /><span style={{ fontWeight: 500, color: T.text }}>Open auction</span><span>if no deal wins · real time, per play</span>
+            <Icon name="south" size={14} /><span style={{ fontWeight: 500, color: T.text }}>Open auction</span><span>if no deal wins · real time, per play · all bid at once, highest bid wins</span>
           </div>
           <div role="list" aria-label={`${label}: open auction DSPs`} className="mt-1">
             {openDsps.map((n) => (
@@ -363,6 +365,11 @@ function PriorityList({ label, ids, names, cpms, canEdit, onChange, openAuction,
                 <Icon name="gavel" size={14} /><span className="flex-1 truncate" style={{ fontSize: 13 }}>{n}</span>
               </div>
             ))}
+            {globalDeal && (
+              <div role="listitem" className="mb-1 flex items-center gap-2" style={{ border: '1px solid #d9d9d9', borderRadius: 6, padding: '2px 8px', background: '#fff' }}>
+                <Icon name="public" size={14} /><span className="flex-1 truncate" style={{ fontSize: 13 }}>{GLOBAL_CHIP_LABEL}</span>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -389,7 +396,8 @@ function AssignedCell({ data, context }: IP) {
     advertiserDsps.set(x.name, via)
   }
   const e = edited(c, data)
-  const suppressed = a.advertisers.length ? 'held for named advertisers' : a.whitelistOnly ? 'whitelist-only' : tiersOf(a).length ? 'on a buyers list' : null
+  /* A buyers list does not suppress the global deal (12 Oct 2026): it sits in the open tier beneath the numbered lists. */
+  const suppressed = a.advertisers.length ? 'held for named advertisers' : a.whitelistOnly ? 'whitelist-only' : null
   const globalOn = e.inGlobalDeal !== false
   const options = [
     { label: 'DSPs (open auction)', options: [{ value: ALL_DSPS, label: ALL_DSPS_LABEL, note: 'Open auction across every connected DSP' }, ...c.dsps.map((d) => ({ value: `dsp:${d.partnerId}`, label: d.name }))] },
@@ -431,7 +439,9 @@ function AssignedCell({ data, context }: IP) {
         }
         /* The global deal chip is not an assignment: it only sets Slot.inGlobalDeal
            (remove clears, re-add sets) and is left alone while the slot is held. */
-        const wantGlobal = suppressed ? globalOn : picked.includes(GLOBAL_CHIP)
+        let wantGlobal = suppressed ? globalOn : picked.includes(GLOBAL_CHIP)
+        /* A restricted slot is opt-in to the global deal: putting the first buyers list on a slot that was open does not carry its default membership across. */
+        if (!suppressed && globalOn && !tiersOf(a).length && picked.some((v) => v.startsWith('deal:'))) wantGlobal = false
         const next = picked.filter((v) => v !== GLOBAL_CHIP)
         const flag = wantGlobal === globalOn ? {} : { inGlobalDeal: wantGlobal }
         const was = assignedValues(a)
@@ -467,7 +477,8 @@ function AssignedCell({ data, context }: IP) {
       canEdit={c.canEdit}
       onChange={(ids) => c.set(slotKey(data), { assignedTo: { ...a, buyersListId: ids[0] ?? null, buyersListIds: ids } })}
       openAuction={a.openAuction === true}
-      openDsps={a.partnerIds.length ? a.partnerIds.map((id) => dspNames.get(id) ?? id) : [ALL_DSPS_LABEL]}
+      globalDeal={globalOn && !suppressed}
+      openDsps={a.openAuction ? (a.partnerIds.length ? a.partnerIds.map((id) => dspNames.get(id) ?? id) : [ALL_DSPS_LABEL]) : []}
     />
     </>
   )
@@ -736,7 +747,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
     { headerName: 'Position', width: 130, minWidth: 110, cellRenderer: SlotCell, valueGetter: (p) => p.data?.position ?? '', ...searchColumn<AvailableInventoryRow>('Position') },
     {
       headerName: 'Assigned to', width: 240, minWidth: 200, cellRenderer: AssignedCell, autoHeight: true,
-      headerComponent: header('Assigned to', 'Who may buy this position: pick DSPs to say who may bid, advertisers to hold it for them (their DSP comes along), a buyers list to restrict it to a private auction among its invited buyers, or the whitelist. The Included in global deals chip adds it to the one global deal ID (see Advertiser settings); remove it with its cross. An empty cell is valid: the slot is unassigned and does not sell, for holding it back for your own use.'),
+      headerComponent: header('Assigned to', 'Who may buy this position: pick DSPs to say who may bid, advertisers to hold it for them (their DSP comes along), a buyers list to restrict it to a private auction among its invited buyers, or the whitelist. The Included in global deals chip adds it to the one global deal ID (see Advertiser settings); remove it with its cross. With a buyers list it sits in the open auction beneath the numbered lists, bidding alongside any DSPs there. An empty cell is valid: the slot is unassigned and does not sell, for holding it back for your own use.'),
       valueGetter: (p) => {
         if (!p.data) return ''
         const a = edited((p.context as InvCtx).current, p.data).assignedTo

@@ -197,7 +197,7 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, bidder
   }
   if (!open.length) {
     await settlePending(ctx, p.positionId, start, `The private auction closed with no clearing bid (${closedNote}); this window is no longer sold under the deal.`)
-    return { ...out, skipped: `Private auction window closed with no clearing bid (${closedNote}).${fallsThroughToOpen(p.def) ? ' Plays fall through to the real-time Open auction.' : ''}` }
+    return { ...out, skipped: `Private auction window closed with no clearing bid (${closedNote}).${fallsThroughToOpen(p.def, (await ctx.exchange.get()).globalDealEnabled === true) ? ' Plays fall through to the real-time Open auction.' : ''}` }
   }
 
   /* Locked against new sales (30 Sep 2026): windows already booked were
@@ -220,7 +220,7 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, bidder
      POST /v1/reservations also refuses a bid once the window's auction is
      claimed (auction_runs), so on the scheduled path this finds nothing. */
   await settlePending(ctx, p.positionId, start, 'Placed after this window’s auction had cleared.')
-  if (!live && fallsThroughToOpen(p.def)) out.skipped = 'No deal won this window: plays fall through to the real-time Open auction.'
+  if (!live && fallsThroughToOpen(p.def, (await ctx.exchange.get()).globalDealEnabled === true)) out.skipped = 'No deal won this window: plays fall through to the real-time Open auction.'
   if (live) {
     await handOff(ctx, live)
     out.winner = { reservationId: live.id, partnerId: live.partnerId, advertiserId: live.advertiserId, clearingCpm: live.bidCpm as number }

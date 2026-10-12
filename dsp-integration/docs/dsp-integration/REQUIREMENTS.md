@@ -2292,11 +2292,22 @@ a deal per position.
   **defaulting on**: opt-out, not opt-in. It sits next to the Advertiser
   assignment on Advertisers / Inventory.
 - **Deference rule.** The flag is suppressed whenever the slot is held for a
-  named advertiser, whitelist-only or assigned to a buyers list (and an
-  advertiser or seat on the blacklist is refused as on any open bid), so the
-  default never exposes inventory the retailer meant to restrict. Being open
-  and being in the global deal are not the same thing. The admin shows the
-  flag disabled with the reason.
+  named advertiser or whitelist-only (and an advertiser or seat on the
+  blacklist is refused as on any open bid), so the default never exposes
+  inventory the retailer meant to restrict. Being open and being in the global
+  deal are not the same thing. The admin shows the flag disabled with the
+  reason.
+- **With a buyers list (12 Oct 2026).** A buyers list does not suppress it.
+  The numbered buyers lists are the priority stack (first look, tried in
+  order); the global deal is a member of the **open-auction tier** beneath
+  them, alongside any DSPs chosen for the open auction. That tier is one
+  simultaneous pool with no ranking inside it: if no named priority takes the
+  window or play, every DSP and the global deal bid at once and the highest
+  bid wins. The admin lists it as a removable chip like any DSP, and under
+  the "Open auction" divider, unnumbered. Because a buyers-list slot is
+  restricted by intent, membership there is **opt-in**: only an explicit
+  `inGlobalDeal: true` counts, and putting a first buyers list on an open slot
+  does not carry the default across.
 - **Bidding.** A global-deal bid competes exactly as on the open exchange:
   same base floor, first-price, same pre-auction checks, approval gate and USD
   rule. It does not lower the floor, grants no guaranteed delivery and is open
