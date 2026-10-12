@@ -382,6 +382,11 @@ describe('Campaign Status stand-in', () => {
     /* The filters name themselves and list what is there (Rob, 20 Sep). */
     expect((await within(grid).findAllByLabelText('Advertiser filter', {}, { timeout: 10000 })).length).toBeGreaterThan(0)
     expect(within(grid).getAllByLabelText('DSP filter').length).toBeGreaterThan(0)
+    /* Touch points and Display types filter from a list; Creative ID and Deal ID take pasted text. */
+    expect(within(grid).getAllByLabelText('Touch points filter').length).toBeGreaterThan(0)
+    expect(within(grid).getAllByLabelText('Display types filter').length).toBeGreaterThan(0)
+    expect(within(grid).getByLabelText('Creative ID search')).toBeInTheDocument()
+    expect(within(grid).getByLabelText('Deal ID search')).toBeInTheDocument()
     /* Pinned left: the selection box, Status and Advertiser; one row is one campaign
        (ticket IDGsyELBJsjlAYjizSqT), grouped by advertiser. Order per ticket
        dinPPBl9Rk95UbrXoRbt: Activation sits left of Last used, Received left of Activation. */
@@ -403,10 +408,10 @@ describe('Campaign Status stand-in', () => {
     expect(screen.queryByRole('menuitem', { name: /Reject/ })).not.toBeInTheDocument()
   })
 
-  it('sits on a tab named Upcoming Campaign Approval', async () => {
+  it('sits on a tab named Campaign Approval', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch(routes)))
     renderAt('/booking-schedule?tab=campaign-status')
-    expect(await screen.findByRole('tab', { name: 'Upcoming Campaign Approval', selected: true }, { timeout: 10000 })).toBeInTheDocument()
+    expect(await screen.findByRole('tab', { name: 'Campaign Approval', selected: true }, { timeout: 10000 })).toBeInTheDocument()
     expect(screen.queryByRole('tab', { name: 'Campaign status' })).not.toBeInTheDocument()
   })
 
@@ -418,12 +423,12 @@ describe('Campaign Status stand-in', () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch(routes)))
     const router = renderAt('/booking-schedule')
     expect(await screen.findByRole('tab', { name: 'Booking schedule', selected: true }, { timeout: 10000 })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('tab', { name: 'Upcoming Campaign Approval' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Campaign Approval' }))
     await waitFor(() => expect(router.state.location.search).toBe('?tab=campaign-status'))
     cleanup()
     /* A refresh re-mounts the page at the same URL. */
     const reloaded = renderAt('/booking-schedule?tab=campaign-status')
-    expect(await screen.findByRole('tab', { name: 'Upcoming Campaign Approval', selected: true }, { timeout: 10000 })).toBeInTheDocument()
+    expect(await screen.findByRole('tab', { name: 'Campaign Approval', selected: true }, { timeout: 10000 })).toBeInTheDocument()
     expect(reloaded.state.location.search).toBe('?tab=campaign-status')
     fireEvent.click(screen.getByRole('tab', { name: 'Booking schedule' }))
     await waitFor(() => expect(reloaded.state.location.search).toBe(''))
