@@ -5,7 +5,9 @@
 import { Button } from 'antd'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
 import { TARGETING_VARIABLES, type BuyersList } from '@ph-dsp/types'
+import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
+import { Q } from '../../api/queries'
 import { api, ApiRequestError } from '../../api/client'
 import { DeleteDialog } from '../../shared/DeleteDialog'
 import { Grid } from '../../shared/Grid'
@@ -19,7 +21,7 @@ import { DealSheetModal } from './DealSheetModal'
 import { cpmKind, cpmKindHint, playsText, rateText, sourceLabel } from './effectiveTerm'
 
 type Capacity = Map<string, { plays: number; displayTypes: number; positions: number }>
-type Ctx = { current: { capacity: Capacity; onEdit: (l: BuyersList) => void; onDelete: (l: BuyersList) => void; onShare: (l: BuyersList) => void; canEdit: boolean } }
+type Ctx = { current: { capacity: Capacity; dspName: (partnerId: string) => string; seatName: (partnerId: string, seatId: string) => string; onEdit: (l: BuyersList) => void; onDelete: (l: BuyersList) => void; onShare: (l: BuyersList) => void; canEdit: boolean } }
 type P = ICellRendererParams<BuyersList, unknown, Ctx>
 
 /* The name is the way in (ph-designer: a row's name opens it; the icon button is only a shortcut). */
@@ -43,13 +45,25 @@ const NameCell = ({ data, context }: P) =>
     </div>
   ) : null
 /* Who the deal is for: named advertisers, IAB categories, or both (a union). */
-const BuyersCell = ({ data }: P) => {
+const BuyersCell = ({ data, context }: P) => {
   if (!data) return null
   const buyers = data.invitedBuyers.length ? `${data.invitedBuyers.length} buyer${data.invitedBuyers.length === 1 ? '' : 's'}` : ''
   const cats = (data.invitedCategories ?? []).length ? `Category: ${data.invitedCategories.join(', ')}` : ''
   const text = [buyers, cats].filter(Boolean).join(' + ')
   const categoryOnly = !buyers && !!cats
-  return <span className="truncate" title={categoryOnly ? `${text} — no named buyer: can’t be shared or authored until one is added` : text}>{text}{categoryOnly && <span style={{ color: T.muted }}> · not shareable</span>}</span>
+  const { dspName, seatName } = context.current
+  const rows = data.invitedBuyers.map((b) => `${seatName(b.partnerId, b.seatId)} (${dspName(b.partnerId)})`)
+  const note = categoryOnly ? `${text} — no named buyer: can’t be shared or authored until one is added` : ''
+  const tip = rows.length || cats ? (
+    <div>
+      {rows.length > 0 && <div style={{ fontWeight: 500 }}>Invited buyers</div>}
+      {rows.map((r) => <div key={r}>{r}</div>)}
+      {cats && <div style={rows.length ? { marginTop: 4 } : undefined}>{cats}</div>}
+      {note && <div style={{ marginTop: 4 }}>{note}</div>}
+    </div>
+  ) : null
+  const cell = <span className="truncate">{text}{categoryOnly && <span style={{ color: T.muted }}> · not shareable</span>}</span>
+  return tip ? <Tip title={tip}>{cell}</Tip> : cell
 }
 const TargetingCell = ({ data }: P) => {
   const t = data?.targeting ?? []
@@ -103,7 +117,14 @@ const CapacityCell = ({ data, context }: P) => {
     </Tip>
   )
 }
-const DealIdCell = ({ data }: P) => (data ? <span style={{ fontSize: 12.5, fontFamily: 'monospace' }}>{(data.deals ?? []).filter((d) => !d.retiredAt).map((d) => d.dealId).join(', ') || data.dealId}</span> : null)
+const DealIdCell = ({ data, context }: P) => {
+  if (!data) return null
+  const live = (data.deals ?? []).filter((d) => !d.retiredAt)
+  const cell = <span style={{ fontSize: 12.5, fontFamily: 'monospace' }}>{live.map((d) => d.dealId).join(', ') || data.dealId}</span>
+  /* One deal ID per DSP that has an invited buyer; hover names which DSP each belongs to. */
+  if (!live.length) return cell
+  return <Tip title={<div>{live.map((d) => <div key={d.dealId}>{context.current.dspName(d.partnerId)}: <span style={{ fontFamily: 'monospace' }}>{d.dealId}</span></div>)}</div>}>{cell}</Tip>
+}
 const DEAL_TYPE_LABELS = { private_auction: 'Private auction', preferred: 'Preferred deal', guaranteed: 'Programmatic guaranteed' } as const
 const DealTypeCell = ({ data }: P) => (data ? <span style={{ fontSize: 12.5 }}>{DEAL_TYPE_LABELS[data.dealType] ?? 'Private auction'}</span> : null)
 const ActionsCell = ({ data, context }: P) =>
@@ -116,6 +137,9 @@ const ActionsCell = ({ data, context }: P) =>
   ) : null
 
 export function BuyersListsTable({ lists, canEdit, capacity, onChanged }: { lists: BuyersList[]; canEdit: boolean; capacity: Capacity; onChanged: () => void }) {
+  const partners = useQuery(Q.partners)
+  const dspName = (id: string) => (partners.data ?? []).find((p) => p.id === id)?.name ?? id
+  const seatName = (pid: string, sid: string) => (partners.data ?? []).find((p) => p.id === pid)?.seats?.find((x) => x.id === sid)?.name ?? sid
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<BuyersList | null>(null)
   const [deleting, setDeleting] = useState<BuyersList | null>(null)
@@ -138,7 +162,7 @@ export function BuyersListsTable({ lists, canEdit, capacity, onChanged }: { list
     ...(canEdit ? [{ headerName: '', width: 120, suppressSizeToFit: true, cellRenderer: ActionsCell }] : []),
   ]
   const context = {
-    canEdit, capacity,
+    canEdit, capacity, dspName, seatName,
     onEdit: (l: BuyersList) => {
       setEditing(l)
       setModalOpen(true)

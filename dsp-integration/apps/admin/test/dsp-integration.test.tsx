@@ -1076,6 +1076,21 @@ describe('Advertisers / Inventory', () => {
     expect(within(dialog).getAllByRole('textbox', { name: /^Deal ID/ })).toHaveLength(2)
   })
 
+  /* Ticket 2DfVi3PvWSKARQXoWtGy: hovering Invited buyers lists them; hovering Deal ID names each DSP's deal. */
+  it('shows the invited buyers and each DSP deal ID on hover', async () => {
+    const deals = [{ partnerId: 'p_google', dealId: 'PH-AAAAAAAAAA', retiredAt: null }, { partnerId: 'p_ttd', dealId: 'PH-BBBBBBBBBB', retiredAt: null }]
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({
+      ...ADVERTISER_PAGE,
+      '/api/admin/v1/buyers-lists': { items: [{ id: 'bl_1', dealId: 'PH-AAAAAAAAAA', deals, name: 'Cross DSP', description: '', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }, { partnerId: 'p_ttd', seatId: 'x1' }], invitedCategories: [], targeting: [], activeFrom: null, activeTo: null, dealType: 'private_auction' }] },
+    })))
+    renderAt('/advertisers')
+    const table = await screen.findByLabelText('Deals and buyers lists')
+    fireEvent.mouseOver(await within(table).findByText('2 buyers'))
+    expect(await screen.findByText('Invited buyers')).toBeInTheDocument()
+    fireEvent.mouseOver(within(table).getByText('PH-AAAAAAAAAA, PH-BBBBBBBBBB'))
+    expect(await screen.findByText('PH-BBBBBBBBBB')).toBeInTheDocument()
+  })
+
   /* Ticket Y3GzIlj2goQMJaGUwTey (9 Oct 2026): deals above an explicit Open auction, the DSPs it runs across below it. */
   it('shows an Open auction separator under the deals, with the DSP or All DSPs beneath it', async () => {
     const inv = ADVERTISER_PAGE['/api/admin/v1/available-inventory']
