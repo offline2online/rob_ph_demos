@@ -839,12 +839,12 @@ describe('Advertisers / Inventory', () => {
       .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Reserve price', 'Max campaigns', 'Plays per window', 'Max play length', 'Slots playing', ''])
   })
 
-  it('lists a direct advertiser as "Name (Direct)" in Via and in the Assigned to options, and lets an admin add one', async () => {
+  it('lists a direct advertiser as "Direct advertiser" in Via and "Name (Direct)" in the Assigned to options, and lets an admin add one', async () => {
     const page = { ...ADVERTISER_PAGE, '/api/admin/v1/advertisers': { ...ADVERTISER_PAGE['/api/admin/v1/advertisers'], items: [...ADVERTISER_PAGE['/api/admin/v1/advertisers'].items, { advertiserId: 'acme-foods', name: 'Acme Foods', via: [], direct: true, approvalRequired: true, floorMultiplier: 1, effectiveFloorCpm: 100, bookings: 0, campaigns: { draft: 0, awaiting_approval: 0, approved: 0, rejected: 0 } }] } }
     vi.stubGlobal('fetch', vi.fn(fakeFetch(page)))
     renderAt('/advertisers')
     const advertisers = await screen.findByLabelText('Advertisers')
-    expect(await within(advertisers).findByText('Acme Foods (Direct)')).toBeInTheDocument()
+    expect(await within(advertisers).findByText('Direct advertiser')).toBeInTheDocument()
     /* No inline add field any more: a top-right CTA opens a pop-up (ticket d4q91vrL5z4gLHBKypHo). */
     expect(screen.queryByLabelText('Direct advertiser name')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Add new Advertiser/ }))

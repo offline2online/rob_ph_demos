@@ -40,8 +40,9 @@ type P = ICellRendererParams<Advertiser, unknown, Ctx>
 const effective = (floor: number, m: number) => Math.round(floor * (m || 0) * 100) / 100
 
 const NameCell = ({ data }: P) => (data ? <span className="inline-flex min-w-0 items-center gap-1.5"><Icon name="sell" size={14} style={{ color: SLOT_OWNERS.advertiser.colour }} /><span className="truncate">{data.name}</span></span> : null)
-/* A direct advertiser (no DSP) shows "Name (Direct)" where a DSP name would be. */
-const viaOf = (a: Advertiser) => (a.direct ? directLabel(a.name) : a.via.join(', '))
+/* A direct advertiser (no DSP) shows "Direct advertiser" where a DSP name would be. */
+const DIRECT_VIA = 'Direct advertiser'
+const viaOf = (a: Advertiser) => (a.direct ? DIRECT_VIA : a.via.join(', '))
 const ViaCell = ({ data }: P) => (data ? <span className="truncate" style={{ color: T.muted }}>{viaOf(data)}</span> : null)
 function ApprovalCell({ data, context }: P) {
   if (!data) return null
@@ -874,7 +875,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
     {
       headerName: 'Via', width: 170, minWidth: 120, cellRenderer: ViaCell, valueGetter: (p) => (p.data ? viaOf(p.data) : ''),
       headerComponent: header('Via', "The DSP(s) this advertiser's campaigns come through."),
-      ...setColumn<Advertiser>('Via', () => data.items.flatMap((a) => (a.direct ? [directLabel(a.name)] : a.via))),
+      ...setColumn<Advertiser>('Via', () => data.items.flatMap((a) => (a.direct ? [DIRECT_VIA] : a.via))),
     },
     {
       headerName: 'Campaign approval', width: 160, suppressSizeToFit: true, cellRenderer: ApprovalCell,
