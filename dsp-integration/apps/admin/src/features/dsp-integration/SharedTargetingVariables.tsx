@@ -26,7 +26,7 @@ type Ctx = { current: { access: Record<string, VariableAccess>; values: Record<s
 const VariableCell = ({ data }: ICellRendererParams<SharedVariable>) => (data ? <WithTip tip={data.exampleValues}>{data.label}</WithTip> : null)
 const PickerCell = ({ data, context }: ICellRendererParams<SharedVariable, unknown, Ctx>) =>
   data ? <div className="w-full min-w-0 py-1.5"><DspPicker label={data.label} value={context.current.access[data.key]} dsps={context.current.dsps} onChange={(v) => context.current.set(data.key, v)} /></div> : null
-const VALUES_TIP = 'The values a targeting condition may match, defined once here and selected from a private-auction deal or a direct campaign. Type a value and press Enter or comma. Tick Free text to leave the variable open: the value is entered when targeting is selected. Pulling values from PH Core is a later enhancement.'
+const VALUES_TIP = 'The values a targeting condition may match, defined once here and selected from a private-auction deal or a direct campaign. Type a value and press Enter or comma. If you do not define any values, the advertiser enters the value as free text when creating a campaign (the Free text box below does the same even when values are listed). Pulling values from PH Core is a later enhancement.'
 const ValuesCell = ({ data, context }: ICellRendererParams<SharedVariable, unknown, Ctx>) => {
   if (!data) return null
   const a = context.current.access[data.key]
@@ -39,12 +39,13 @@ const ValuesCell = ({ data, context }: ICellRendererParams<SharedVariable, unkno
     <div className="w-full min-w-0 py-1.5">
       <Select
         mode="tags" size="small" className="w-full" open={false} tokenSeparators={[',']} aria-label={`${data.label} values`}
-        placeholder={cur.freeText ? 'Any value (free text)' : 'Define values'} value={cur.values}
+        placeholder={cur.freeText ? 'Any value (free text)' : 'User-defined values; leave empty for advertiser free text'} value={cur.values}
         onChange={(values: string[]) => context.current.setValues(data.key, { ...cur, values: [...new Set(values.map((v) => v.trim()).filter(Boolean))] })}
       />
       <Checkbox className="mt-1" checked={cur.freeText} onChange={(e) => context.current.setValues(data.key, { ...cur, freeText: e.target.checked })}>
         <span style={{ fontSize: 12 }}>Free text</span>
       </Checkbox>
+      {!cur.freeText && !cur.values.length && <div className="mt-1" style={{ fontSize: 12, color: T.micro }}>No values defined: the advertiser enters free text when creating a campaign.</div>}
     </div>
   )
 }
