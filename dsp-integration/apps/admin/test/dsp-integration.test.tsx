@@ -1020,8 +1020,8 @@ describe('Advertisers / Inventory', () => {
     expect(within(summary).getByTestId('finalise-slots')).toHaveTextContent('Menu Board — Long Format')
     expect(summary).toHaveTextContent('PH-7K2M9QXW4B')
     /* The creative the DSP must supply: supported formats and pixel resolution per slot. */
-    const creative = await within(summary).findByText(/Image \+ Video, 1080×1920 px \(portrait\), max play 15s/)
-    expect(creative.closest('li')).toHaveTextContent('Menu Board — Long Format')
+    const creative = await within(summary).findByText(/image \+ video, 1080×1920 \(portrait\), max play 15s/)
+    expect(creative.closest('div')).toHaveTextContent('Menu Board — Long Format')
     expect(calls.map((c) => c.method)).toEqual(['PUT'])
     expect(calls.some((c) => c.url.endsWith('/share'))).toBe(false)
     fireEvent.click(screen.getByRole('button', { name: 'Share deal' }))
