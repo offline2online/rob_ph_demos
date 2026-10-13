@@ -9,7 +9,7 @@
    least one assigned slot; opens FinaliseDealModal to confirm the slots, deal ID and terms) -> Share deal (inside that pop-up). */
 import { App, Button, DatePicker, Input, InputNumber, Modal, Select } from 'antd'
 import { useQuery } from '@tanstack/react-query'
-import { ALL_DSPS, IAB_TAXONOMY, OPERATOR_LABELS, TARGETING_VARIABLES, type BuyersList, type BuyersListDealType, type Condition, type InvitedBuyer, type SharedVariable, type TermCheck } from '@ph-dsp/types'
+import { ALL_DSPS, OPERATOR_LABELS, TARGETING_VARIABLES, type BuyersList, type BuyersListDealType, type Condition, type InvitedBuyer, type SharedVariable, type TermCheck } from '@ph-dsp/types'
 import dayjs from 'dayjs'
 import { useEffect, useRef, useState } from 'react'
 import { api, ApiRequestError } from '../../api/client'
@@ -17,6 +17,7 @@ import { Q } from '../../api/queries'
 import { Icon } from '../../shared/Icon'
 import { WithTip } from '../../shared/InfoTip'
 import { Tip } from '../../shared/Tip'
+import { IAB_OPTIONS_SORTED, iabFilterOption } from '../../shared/iabOptions'
 import { T } from '../../theme/phTheme'
 import { playsText, rateText, resolveTerm, sourceLabel } from './effectiveTerm'
 import { FinaliseDealModal } from './FinaliseDealModal'
@@ -24,7 +25,7 @@ import { FinaliseDealModal } from './FinaliseDealModal'
 type Draft = { name: string; description: string; dealType: BuyersListDealType; invitedBuyers: InvitedBuyer[]; invitedCategories: string[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays: number | null; floorCpm: number | null }
 /* An invited buyer is one synced seat of one connected DSP — the Select's value is both halves. */
 /* The full IAB Content Taxonomy 1.0, tier 1 then its subcategories. */
-const IAB_CATEGORY_OPTIONS = IAB_TAXONOMY.map((c) => ({ value: c.name, label: `${c.name} (${c.code})` }))
+const IAB_CATEGORY_OPTIONS = IAB_OPTIONS_SORTED
 const buyerKey = (b: InvitedBuyer) => JSON.stringify([b.partnerId, b.seatId])
 const blankDraft = (): Draft => ({ name: '', description: '', dealType: 'private_auction', invitedBuyers: [], invitedCategories: [], targeting: [], activeFrom: null, activeTo: null, auctionCloses: null, committedPlays: null, floorCpm: null })
 const draftOf = (l: BuyersList): Draft => ({
@@ -258,7 +259,7 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
       {privateAuction && <div className="mb-3.5">
         <label className="mb-1 block" style={{ fontSize: 13, color: T.muted }}><WithTip tip="Widens who may bid in this private auction: invite every advertiser a connected DSP reports in these IAB categories, without naming each one. Combines with the invited buyers above (either is enough to bid); the advertiser blacklist still applies. Resolved live, so advertisers a DSP adds or re-categorises move in or out with no edit. A category is a bid-time filter only: the deal ID is shared with, and authored against, named buyers. Fill in at least one of the two.">Invited IAB categories</WithTip></label>
         <Select
-          mode="multiple" className="w-full" aria-label="Invited IAB categories" showSearch optionFilterProp="label"
+          mode="multiple" className="w-full" aria-label="Invited IAB categories" showSearch filterOption={iabFilterOption}
           status={Object.keys(errors).some((f) => f.startsWith('invitedCategories')) ? 'error' : undefined}
           placeholder="Choose IAB categories"
           value={draft.invitedCategories} options={IAB_CATEGORY_OPTIONS}

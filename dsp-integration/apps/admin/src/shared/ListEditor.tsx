@@ -7,6 +7,7 @@ import { Button, Input, Select, Tag } from 'antd'
 import { useState } from 'react'
 import { T } from '../theme/phTheme'
 import { Icon } from './Icon'
+import { iabFilterOption } from './iabOptions'
 
 const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase()
 
@@ -50,7 +51,7 @@ export function ListEditor({ label, tone, icon, items, suggestions = [], options
         {items.length === 0 && <span style={{ fontSize: 11.5, color: T.micro }}>{empty}</span>}
       </div>
       {options ? (
-        <Select size="small" className="w-full" showSearch optionFilterProp="label" value={null} placeholder={addLabel} aria-label={`${label}: ${addLabel}`}
+        <Select size="small" className="w-full" showSearch filterOption={iabFilterOption} value={null} placeholder={addLabel} aria-label={`${label}: ${addLabel}`}
           disabled={!pickable.length} options={pickable} notFoundContent={noneLeft} onChange={(v: string | null) => v && add(v)} />
       ) : (
         <div className="flex gap-1.5">
