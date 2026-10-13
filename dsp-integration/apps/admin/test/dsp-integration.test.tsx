@@ -186,7 +186,7 @@ describe('DSP integration switch', () => {
     cleanup()
     /* Campaign Status is no longer a nav item of its own — it's the second
        tab of Campaign schedule, gated the same way. */
-    const campaigns = renderAt('/booking-schedule?tab=campaign-status')
+    const campaigns = renderAt('/booking-schedule')
     await waitFor(() => expect(campaigns.state.location.pathname).toBe('/display-types'))
   })
 
@@ -363,7 +363,7 @@ describe('Campaign Status stand-in', () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch(routes)))
     /* Campaign Status is the Campaign schedule section's second tab now
        (ticket, 26 Sep 2026), not its own route. */
-    renderAt('/booking-schedule?tab=campaign-status')
+    renderAt('/booking-schedule')
     /* Heading: total + per-status counts, no "submitted by advertisers and
        DSPs" copy and no Draft count (ticket, 22 Sep — Draft never surfaces
        in a retailer-facing view). */
@@ -408,30 +408,14 @@ describe('Campaign Status stand-in', () => {
     expect(screen.queryByRole('menuitem', { name: /Reject/ })).not.toBeInTheDocument()
   })
 
-  it('sits on a tab named Campaign Approval', async () => {
+  /* Ticket BG4LKXiqTMYNm8jRNFDk (13 Oct 2026): the Booking schedule tab is gone, so the
+     page is Campaign Approval with the table straight under the header and no tabs. */
+  it('is a page named Campaign Approval with no tabs', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch(routes)))
-    renderAt('/booking-schedule?tab=campaign-status')
-    expect(await screen.findByRole('tab', { name: 'Campaign Approval', selected: true }, { timeout: 10000 })).toBeInTheDocument()
-    expect(screen.queryByRole('tab', { name: 'Campaign status' })).not.toBeInTheDocument()
-  })
-
-  /* Ticket HSTgB0s6l56UWH71JwOv (30 Sep 2026, reversing LH8iavmKqMB8mjHs9M8m):
-     the tab lives in the URL, so a browser refresh on Upcoming Campaign
-     Approval stays there; Booking schedule is the default and leaves no
-     `tab` param. */
-  it('keeps the Upcoming Campaign Approval tab in the URL, so a reload stays on it', async () => {
-    vi.stubGlobal('fetch', vi.fn(fakeFetch(routes)))
-    const router = renderAt('/booking-schedule')
-    expect(await screen.findByRole('tab', { name: 'Booking schedule', selected: true }, { timeout: 10000 })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('tab', { name: 'Campaign Approval' }))
-    await waitFor(() => expect(router.state.location.search).toBe('?tab=campaign-status'))
-    cleanup()
-    /* A refresh re-mounts the page at the same URL. */
-    const reloaded = renderAt('/booking-schedule?tab=campaign-status')
-    expect(await screen.findByRole('tab', { name: 'Campaign Approval', selected: true }, { timeout: 10000 })).toBeInTheDocument()
-    expect(reloaded.state.location.search).toBe('?tab=campaign-status')
-    fireEvent.click(screen.getByRole('tab', { name: 'Booking schedule' }))
-    await waitFor(() => expect(reloaded.state.location.search).toBe(''))
+    renderAt('/booking-schedule')
+    expect(await screen.findByLabelText('Campaign Status', {}, { timeout: 10000 })).toBeInTheDocument()
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument()
+    expect(screen.queryByText('Booking schedule')).not.toBeInTheDocument()
   })
 
   /* The Status column's own funnel is the only status filter (ticket dinPPBl9Rk95UbrXoRbt);
@@ -443,7 +427,7 @@ describe('Campaign Status stand-in', () => {
       '/api/admin/v1/campaigns': { items: [campaign, approved, hq] },
       '/api/admin/v1/campaigns/c2/approval': { ...approval, campaignId: 'c2', campaignName: 'Blackmores autumn', status: 'approved' },
     })))
-    renderAt('/booking-schedule?tab=campaign-status')
+    renderAt('/booking-schedule')
     /* Re-query the grid each time: AG Grid redraws its rows as the filter changes. */
     const grid = () => screen.getByLabelText('Campaign Status')
     const shown = (name: string) => waitFor(() => expect(within(grid()).getByText(name)).toBeInTheDocument(), { timeout: 10000 })
@@ -481,7 +465,7 @@ describe('Campaign Status stand-in', () => {
       '/api/admin/v1/campaigns/c1/approval': { ...approval, creativeId: 'CR-AAA' },
       '/api/admin/v1/campaigns/c2/approval': { ...approval, campaignId: 'c2', campaignName: 'Blackmores autumn', status: 'approved', creativeId: 'CR-BBB' },
     })))
-    renderAt('/booking-schedule?tab=campaign-status')
+    renderAt('/booking-schedule')
     const grid = () => screen.getByLabelText('Campaign Status')
     const shown = (name: string) => waitFor(() => expect(within(grid()).getAllByText(name).length).toBeGreaterThan(0), { timeout: 10000 })
     const hidden = (name: string) => waitFor(() => expect(within(grid()).queryByText(name)).not.toBeInTheDocument(), { timeout: 10000 })
@@ -522,7 +506,7 @@ describe('Campaign Status stand-in', () => {
   it('never lists a Draft campaign — a retailer only ever sees one that has been submitted', async () => {
     const draftApproval = { ...approval, status: 'draft', mode: null, submittedAt: null }
     vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...routes, '/api/admin/v1/campaigns/c1/approval': draftApproval })))
-    renderAt('/booking-schedule?tab=campaign-status')
+    renderAt('/booking-schedule')
     await waitFor(() => expect(document.body.textContent).toMatch(/0 campaigns/), { timeout: 10000 })
     const grid = screen.getByLabelText('Campaign Status')
     await waitFor(() => expect(within(grid).queryByText('Swisse spring')).not.toBeInTheDocument(), { timeout: 10000 })
@@ -592,7 +576,7 @@ describe('Upcoming Campaign Approval — creative IDs', () => {
     }))
   })
   const open = async () => {
-    renderAt('/booking-schedule?tab=campaign-status')
+    renderAt('/booking-schedule')
     const grid = await screen.findByLabelText('Campaign Status')
     await within(grid).findByLabelText('Select Swisse spring', {}, { timeout: 10000 })
     return grid
@@ -628,7 +612,7 @@ describe('Upcoming Campaign Approval — creative IDs', () => {
     tick(grid, 'Swisse spring')
     tick(grid, 'Swisse kids')
     expect(await screen.findByRole('button', { name: 'Approve Selected' })).toBeInTheDocument()
-    expect(cta('Approve into existing creative ID')).toBeInTheDocument()
+    expect(cta('Approve and add to existing creative ID')).toBeInTheDocument()
     tick(grid, 'Nestlé winter')
     await waitFor(() => expect(cta(/^Approve/)).not.toBeInTheDocument())
     expect(cta('Reject Selected')).toBeInTheDocument()
@@ -649,7 +633,7 @@ describe('Upcoming Campaign Approval — creative IDs', () => {
   it('picks an existing creative ID by its campaigns, pre-highlighting the one a resubmission came from', async () => {
     const grid = await open()
     tick(grid, 'Swisse summer')
-    fireEvent.click(await screen.findByRole('button', { name: 'Approve into existing creative ID' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve and add to existing creative ID' }))
     const dialog = await screen.findByRole('dialog')
     /* Each ID with its member campaigns and their touch points. */
     expect(await within(dialog).findByText('CR-BBBB2222', {}, { timeout: 5000 })).toBeInTheDocument()
@@ -658,7 +642,7 @@ describe('Upcoming Campaign Approval — creative IDs', () => {
     expect(within(dialog).getByText('original (resubmission)')).toBeInTheDocument()
     expect(within(dialog).getByRole('radio', { name: /CR-AAAA1111/ })).toBeChecked()
     fireEvent.click(within(dialog).getByRole('radio', { name: /CR-BBBB2222/ }))
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Approve to CR-BBBB2222' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Approve and add to CR-BBBB2222' }))
     await waitFor(() => expect(posts).toHaveLength(1))
     expect(posts[0].body).toEqual({ items: [{ campaignId: 'c5', assetVersion: 'v1' }], creativeId: 'CR-BBBB2222' })
   }, slow(45000))
@@ -701,131 +685,12 @@ describe('Upcoming Campaign Approval — creative IDs', () => {
   }, slow(45000))
 })
 
-describe('Booking schedule', () => {
-  const schedule = {
-    currency: 'AUD',
-    windows: [
-      { start: '2026-09-21T00:00:00.000Z', end: '2026-09-22T00:00:00.000Z' },
-      { start: '2026-09-22T00:00:00.000Z', end: '2026-09-23T00:00:00.000Z' },
-    ],
-    positions: [{
-      positionId: 'menu_board.s2', displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', slot: 2, slotLabel: 'Supplier slot', zoneName: 'Zone 2', zoneSlot: 1, partnerNames: ['Google DSP'], assignment: 'deal', realTime: false, recentPlays: null, displayCount: 3,
-      windows: [
-        { start: '2026-09-21T00:00:00.000Z', status: 'available', booking: null },
-        { start: '2026-09-22T00:00:00.000Z', status: 'booked', booking: { reservationId: 'r1', campaignId: 'c1', advertiserId: 'swisse', partnerId: 'p_google', pricingType: 'personalised', type: 'reserve', advertiserName: 'Swisse', partnerName: 'Google DSP', cpm: 175, assumedViews: 1236, bookedRevenue: 216.3, billedRevenue: null, layers: { default: true, localised: false, personalised: true }, personalisedTriggers: { computerVision: false, aggregateStore: false, individual: true } } },
-      ],
-    }],
-    revenue: [{ displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', bookedWindows: 1, sellableWindows: 2, bookedRevenue: 216.3, billedRevenue: 0 }],
-    byPricingType: [{ pricingType: 'personalised', bookedWindows: 1, bookedRevenue: 216.3 }],
-    totals: { bookedWindows: 1, sellableWindows: 2, bookedRevenue: 216.3, billedRevenue: 0 },
-  }
-
-  it('is linked from Available Inventory, which now sits on Advertisers / Inventory', async () => {
+describe('Booking schedule (not in the initial release)', () => {
+  it('has no Booking schedule button on Advertisers / Inventory', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch(ADVERTISER_PAGE)))
     renderAt('/advertisers')
     expect(await screen.findByLabelText('Available Inventory')).toBeInTheDocument()
-    expect(await screen.findByRole('button', { name: /Booking schedule/ })).toBeInTheDocument()
-  })
-
-  it('shows booking revenue, what sold by campaign type, and each slot’s windows at the price booked', async () => {
-    vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/booking-schedule': schedule })))
-    renderAt('/booking-schedule')
-    expect(await screen.findByRole('heading', { name: /Booking schedule/ })).toBeInTheDocument()
-    const revenue = await screen.findByLabelText('Booking revenue')
-    expect(await within(revenue).findAllByText('$216.30')).toHaveLength(2)
-    /* Single-advertiser stacking tile (ticket, 22 Sep): one tile per booked
-       window, the advertiser name at the top, stacking only the layers the
-       booking actually carries. The fixture's one booking is default plus
-       personalised (2 layers, no localised upsell), so the tile shows
-       Swisse once (plus once more in the Advertiser column) and no
-       per-layer competition — the other, unbooked window just reads
-       Available. */
-    const grid = await screen.findByLabelText('Booking schedule', { selector: '.ag-theme-alpine' })
-    expect(within(grid).getAllByText('Swisse')).toHaveLength(2) // the Advertiser column, and the tile
-    expect(within(grid).getAllByText('Available')).toHaveLength(1) // the other, unbooked window
-    expect(screen.queryByRole('region', { name: 'Save changes' })).not.toBeInTheDocument()
-    /* Views, and DSP/advertiser as column filters like every other table (Rob, 20 Sep). */
-    expect(screen.getByRole('radio', { name: 'Weekly' })).toBeInTheDocument()
-    expect([...grid.querySelectorAll('.ag-header-cell-text')].slice(0, 3).map((h) => h.textContent)).toEqual(['Advertiser', 'DSP', 'Position'])
-    expect(within(grid).getByLabelText('DSP filter')).toBeInTheDocument()
-    expect(within(grid).getByLabelText('Advertiser filter')).toBeInTheDocument()
-    /* Multi-zone: numbered within the zone, as Available Inventory does (A0GyTNsA, 1 Oct 2026). */
-    expect(within(grid).getByText('Zone 2 / Slot 1 · Supplier slot')).toBeInTheDocument()
-  })
-
-  /* Ticket vhRFN1K3N4Giw1Z0OEI6 (8 Oct 2026): an open position is sold per impression, so no forward grid. */
-  it('shows an open position as real-time plays with dashes, and counts only booked-ahead positions in the header', async () => {
-    const open = {
-      ...schedule.positions[0], positionId: 'menu_board.s3', slot: 3, zoneSlot: 2, assignment: 'rtb', realTime: true, recentPlays: 42,
-      windows: schedule.positions[0].windows.map((w) => ({ start: w.start, status: 'unavailable', booking: null })),
-    }
-    vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/booking-schedule': { ...schedule, positions: [schedule.positions[0], open] } })))
-    renderAt('/booking-schedule')
-    const grid = await screen.findByLabelText('Booking schedule', { selector: '.ag-theme-alpine' })
-    expect(await within(grid).findByText(/Real time · sold per impression · 42 plays in the last 7 days/)).toBeInTheDocument()
-    expect(within(grid).getAllByText('—').length).toBeGreaterThanOrEqual(2)
-    expect(within(grid).getAllByText('Available')).toHaveLength(1) // only the deal position's unbooked window
-    expect(within(grid).getAllByText(/windows booked/)).toHaveLength(1)
-    expect(screen.getByText(/1 of 2 booked/)).toBeInTheDocument()
-  })
-
-  it('stands alone — no Display Types / DSP Integration nav — and shows the DSP that actually booked it, not every DSP merely eligible to', async () => {
-    const eligibleForMore = {
-      ...schedule,
-      positions: [{
-        /* Eligible to bid: both DSPs. Actually booked: only Google DSP
-           (the fixture's one booking) — the DSP column must reflect the
-           latter, not the former (ticket, 21 Sep). */
-        ...schedule.positions[0], partnerNames: ['Google DSP', 'Amazon Ads DSP'],
-      }],
-    }
-    vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/booking-schedule': eligibleForMore })))
-    renderAt('/booking-schedule')
-    expect(await screen.findByRole('heading', { name: /Booking schedule/ })).toBeInTheDocument()
-    expect(screen.queryByRole('navigation', { name: 'Display Types and DSP Integration' })).not.toBeInTheDocument()
-    const grid = await screen.findByLabelText('Booking schedule', { selector: '.ag-theme-alpine' })
-    expect(within(grid).getByText('Google DSP')).toBeInTheDocument()
-    expect(within(grid).queryByText(/Amazon Ads DSP/)).not.toBeInTheDocument()
-  })
-
-  it('stacks a tile up to three layers, with no count on the localised layer', async () => {
-    const allThree = {
-      ...schedule,
-      positions: [{
-        ...schedule.positions[0],
-        displayCount: 4,
-        windows: [
-          schedule.positions[0].windows[0],
-          {
-            start: '2026-09-22T00:00:00.000Z', status: 'booked',
-            booking: {
-              ...schedule.positions[0].windows[1].booking, pricingType: 'localised',
-              layers: { default: true, localised: true, personalised: true },
-              personalisedTriggers: { computerVision: true, aggregateStore: false, individual: false },
-            },
-          },
-        ],
-      }],
-    }
-    vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/booking-schedule': allThree })))
-    renderAt('/booking-schedule')
-    const grid = await screen.findByLabelText('Booking schedule', { selector: '.ag-theme-alpine' })
-    /* All three layers on the one tile: DEFAULT, LOC (a pill, no count), and PERS with its lit trigger icon
-       (ticket "Booking schedule: personalised trigger icons"). The display
-       count itself now sits in brackets on the Position cell rather than
-       its own Displays column (ticket "remove the displays column … show
-       that number of displays in brackets after the display name", 22
-       Sep). */
-    expect(within(grid).getByText('(4)')).toBeInTheDocument() // the display count, on the Position cell
-    expect(within(grid).queryByText('3 of 4')).not.toBeInTheDocument()
-    expect(within(grid).getByText('DEFAULT')).toBeInTheDocument()
-    /* LOC and PERS each appear twice: once on the tile's own layer row, and
-       once more in the Position cell's row-level "N of M windows booked"
-       summary (ticket "Also for the play windows … show a representation
-       of how many are booked versus … localised … personalised …", 22
-       Sep), which is always on screen now, not only in Weekly/Monthly. */
-    expect(within(grid).getAllByText('LOC')).toHaveLength(2)
-    expect(within(grid).getAllByText('PERS')).toHaveLength(2)
+    expect(screen.queryByRole('button', { name: /Booking schedule/ })).not.toBeInTheDocument()
   })
 })
 
@@ -839,12 +704,12 @@ describe('Advertisers / Inventory', () => {
       .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Reserve price', 'Max campaigns', 'Plays per window', 'Max play length', 'Slots playing', ''])
   })
 
-  it('lists a direct advertiser as "Name (Direct)" in Via and in the Assigned to options, and lets an admin add one', async () => {
+  it('lists a direct advertiser as "Direct advertiser" in Via and "Name (Direct)" in the Assigned to options, and lets an admin add one', async () => {
     const page = { ...ADVERTISER_PAGE, '/api/admin/v1/advertisers': { ...ADVERTISER_PAGE['/api/admin/v1/advertisers'], items: [...ADVERTISER_PAGE['/api/admin/v1/advertisers'].items, { advertiserId: 'acme-foods', name: 'Acme Foods', via: [], direct: true, approvalRequired: true, floorMultiplier: 1, effectiveFloorCpm: 100, bookings: 0, campaigns: { draft: 0, awaiting_approval: 0, approved: 0, rejected: 0 } }] } }
     vi.stubGlobal('fetch', vi.fn(fakeFetch(page)))
     renderAt('/advertisers')
     const advertisers = await screen.findByLabelText('Advertisers')
-    expect(await within(advertisers).findByText('Acme Foods (Direct)')).toBeInTheDocument()
+    expect(await within(advertisers).findByText('Direct advertiser')).toBeInTheDocument()
     /* No inline add field any more: a top-right CTA opens a pop-up (ticket d4q91vrL5z4gLHBKypHo). */
     expect(screen.queryByLabelText('Direct advertiser name')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Add new Advertiser/ }))
@@ -1277,20 +1142,6 @@ describe('Advertisers / Inventory', () => {
     expect(within(dialog).getByText('New deal and buyers list')).toBeInTheDocument()
   }, slow(30000))
 
-  /* The CTA opens a new tab, so it can't go through the router — and a
-     bare path 404s wherever the bundle isn't served from the domain root
-     (ticket d5lCFNAL: the hosted prototype routes in the hash). */
-  it('opens the booking schedule at a URL that works where the bundle is served', async () => {
-    vi.stubGlobal('fetch', vi.fn(fakeFetch(ADVERTISER_PAGE)))
-    const opened: string[] = []
-    vi.stubGlobal('open', vi.fn((url: string) => { opened.push(url); return null }))
-    renderAt('/advertisers')
-    await screen.findByLabelText('Advertisers')
-    fireEvent.click(screen.getByRole('button', { name: /Booking schedule/ }))
-    /* Served from the root, as the app is inside HQ Admin: the plain route. */
-    expect(opened).toEqual(['/booking-schedule'])
-  })
-
   it('in the hosted build, puts the route in the hash under the bundle\u2019s base', async () => {
     vi.stubEnv('VITE_DEMO', '1')
     vi.stubEnv('BASE_URL', './')
@@ -1415,7 +1266,7 @@ describe('Upcoming Campaign Approval — deal IDs', () => {
     }))
   })
   const open = async () => {
-    renderAt('/booking-schedule?tab=campaign-status')
+    renderAt('/booking-schedule')
     const grid = await screen.findByLabelText('Campaign Status')
     await within(grid).findByLabelText('Select Swisse sleep', {}, { timeout: 10000 })
     return grid
@@ -1460,11 +1311,11 @@ describe('Upcoming Campaign Approval — deal IDs', () => {
     const grid = await open()
     tickRow(grid, 'Swisse sleep')
     tickRow(grid, 'Swisse energy')
-    fireEvent.click(await screen.findByRole('button', { name: 'Approve into existing creative ID' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve and add to existing creative ID' }))
     const dialog = await screen.findByRole('dialog')
     expect(await within(dialog).findByText('same deal (PMP-1)', {}, { timeout: 5000 })).toBeInTheDocument()
     await waitFor(() => expect(within(dialog).getByRole('radio', { name: /CR-DEAL0001/ })).toBeChecked())
     expect(gets.some((u) => u.includes('creative-ids') && !u.includes('dealId='))).toBe(true)
-    expect(within(dialog).getByRole('button', { name: 'Approve to CR-DEAL0001' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Approve and add to CR-DEAL0001' })).toBeInTheDocument()
   }, slow(45000))
 })

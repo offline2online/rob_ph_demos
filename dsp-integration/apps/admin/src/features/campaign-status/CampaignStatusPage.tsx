@@ -307,6 +307,9 @@ export function CampaignStatusPage() {
   /* A creative ID spans one advertiser's campaigns, so the assign actions need exactly one. */
   const advertisers = new Set(selectedRows.map((c) => c.advertiserId))
   const oneAdvertiser = selectedRows.length > 0 && advertisers.size === 1 && !advertisers.has(null)
+  /* "Into an existing creative ID" is only offered when the advertiser has other campaigns to share one with
+     (ticket 9Jwr8yv502KRR6LbEKD6): otherwise there is no ID it could be added to. */
+  const hasOtherCampaigns = oneAdvertiser && all.some((c) => c.advertiserId === [...advertisers][0] && !selected.has(c.campaignId))
   /* A creative can be in many deals at once (its deals come from its campaigns), so the selection may mix deals.
      When it is all one deal, the picker flags the IDs already in that deal. */
   const deals = new Set(selectedRows.map((c) => c.dealId ?? null))
@@ -437,14 +440,14 @@ export function CampaignStatusPage() {
                 {autoOnly && oneAdvertiser && (
                   <>
                     <Button type="primary" size="small" ghost loading={busy === 'batch'} onClick={() => void done(assignCreativeId(selectedApprovals))}>Generate creative ID</Button>
-                    <Button type="primary" size="small" ghost disabled={busy === 'batch'} onClick={openPicker}>Assign to existing creative ID</Button>
+                    {hasOtherCampaigns && <Button type="primary" size="small" ghost disabled={busy === 'batch'} onClick={openPicker}>Assign to existing creative ID</Button>}
                   </>
                 )}
               </>
             ) : oneAdvertiser ? (
               <>
                 <Button type="primary" size="small" loading={busy === 'batch'} onClick={() => void done(approveAssign(selectedApprovals))}>Approve Selected</Button>
-                <Button type="primary" size="small" ghost disabled={busy === 'batch'} onClick={openPicker}>Approve into existing creative ID</Button>
+                {hasOtherCampaigns && <Button type="primary" size="small" ghost disabled={busy === 'batch'} onClick={openPicker}>Approve and add to existing creative ID</Button>}
                 <Button size="small" danger onClick={() => { setReason(''); setRejecting(true) }}>Reject Selected</Button>
               </>
             ) : (
@@ -478,8 +481,8 @@ export function CampaignStatusPage() {
       />
       <Modal
         open={picking}
-        title={autoOnly ? 'Assign to existing creative ID' : 'Approve into existing creative ID'}
-        okText={`${autoOnly ? 'Assign' : 'Approve'}${choice ? ` to ${choice}` : ''}`}
+        title={autoOnly ? 'Assign to existing creative ID' : 'Approve and add to existing creative ID'}
+        okText={`${autoOnly ? 'Assign' : 'Approve and add'}${choice ? ` to ${choice}` : ''}`}
         okButtonProps={{ disabled: !choice }}
         confirmLoading={busy === 'batch'}
         onCancel={() => setPicking(false)}
@@ -489,7 +492,7 @@ export function CampaignStatusPage() {
         }}
         width={640}
       >
-        <p style={{ color: T.muted }}>Pick the creative ID these {selectedRows.length === 1 ? 'campaign belongs' : 'campaigns belong'} with. Each shows the campaigns already under it, so you can match by their siblings.{autoOnly ? '' : ' “Approve” here approves the creative.'}</p>
+        <p style={{ color: T.muted }}>Pick the creative ID these {selectedRows.length === 1 ? 'campaign belongs' : 'campaigns belong'} with. Each shows the campaigns already under it, so you can match by their siblings.{autoOnly ? '' : ' Approving here also adds the campaigns to the chosen creative ID.'}</p>
         {creativeIds.isLoading ? <Spin /> : !creativeIds.data?.length ? (
           <p>This advertiser has no creative IDs yet. Use “{autoOnly ? 'Generate creative ID' : 'Approve Selected'}”.</p>
         ) : (

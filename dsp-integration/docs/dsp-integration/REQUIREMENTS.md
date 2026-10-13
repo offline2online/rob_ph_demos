@@ -4079,6 +4079,13 @@ playback analytics.**
   with a reserve price, own or inherited) and on a deal-held position
   (private auction, preferred, guaranteed; 8 Oct 2026); targeting is defined on the buyers and targeting list,
   not per slot (7 Oct 2026). *(Advertisers / Inventory → Available Inventory)*
+- **Campaign Approval supersedes the two-tab Campaign schedule below** (ticket
+  BG4LKXiqTMYNm8jRNFDk, 13 Oct 2026): the Booking schedule is not supported in
+  the initial release, so the page is titled **Campaign Approval**, has no
+  tabs, and the Campaign Status table sits directly under the page header.
+  The booking schedule component and API remain in the code, unrouted. Old
+  `?tab=campaign-status` links still open the page. Where the paragraphs
+  below describe the Booking schedule tab, they describe a later release.
 - **Campaign schedule** (renamed from "Booking schedule", ticket 26 Sep
   2026; **page title "Advertiser Bookings"** and the second tab **"Upcoming
   Campaign Approval"** since 27 Sep 2026 — its URL key stays

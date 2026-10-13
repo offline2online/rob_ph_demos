@@ -33,19 +33,18 @@ const ValuesCell = ({ data, context }: ICellRendererParams<SharedVariable, unkno
   const shared = a === 'all' || a.length > 0
   if (!shared) return <div className="py-2" style={{ fontSize: 12, color: T.micro }}>Share with a DSP to define values</div>
   /* Age brackets are the platform's (IAB): shown, not editable. */
-  if (data.fixed) return <div className="w-full min-w-0 py-1.5"><Select mode="multiple" size="small" className="w-full" open={false} disabled aria-label={`${data.label} values`} value={data.values} /><div className="mt-1" style={{ fontSize: 12, color: T.micro }}>IAB brackets, fixed by the platform. Select one or more when targeting.</div></div>
+  if (data.fixed) return <div className="w-full min-w-0 py-1.5"><Select mode="multiple" size="small" className="w-full" open={false} disabled aria-label={`${data.label} values`} value={data.values} /></div>
   const cur = context.current.values[data.key] ?? { values: [], freeText: false }
   return (
     <div className="w-full min-w-0 py-1.5">
       <Select
         mode="tags" size="small" className="w-full" open={false} tokenSeparators={[',']} aria-label={`${data.label} values`}
-        placeholder={cur.freeText ? 'Any value (free text)' : 'User-defined values; leave empty for advertiser free text'} value={cur.values}
+        placeholder={cur.freeText ? 'Any value (free text)' : 'User-defined values'} value={cur.values}
         onChange={(values: string[]) => context.current.setValues(data.key, { ...cur, values: [...new Set(values.map((v) => v.trim()).filter(Boolean))] })}
       />
       <Checkbox className="mt-1" checked={cur.freeText} onChange={(e) => context.current.setValues(data.key, { ...cur, freeText: e.target.checked })}>
         <span style={{ fontSize: 12 }}>Free text</span>
       </Checkbox>
-      {!cur.freeText && !cur.values.length && <div className="mt-1" style={{ fontSize: 12, color: T.micro }}>No values defined: the advertiser enters free text when creating a campaign.</div>}
     </div>
   )
 }

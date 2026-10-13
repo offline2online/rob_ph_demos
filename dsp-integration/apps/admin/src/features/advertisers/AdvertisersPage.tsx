@@ -26,7 +26,6 @@ import { useReportDirty } from '../../shared/UnsavedChanges'
 import { deepEqual } from '../../shared/deepEqual'
 import { useDraft } from '../../shared/useDraft'
 import { T } from '../../theme/phTheme'
-import { BOOKING_SCHEDULE_PATH, externalUrl } from '../booking-schedule/path'
 import { BuyersListModal } from './BuyersListModal'
 import { BuyersListsTable } from './BuyersListsTable'
 import { type Flags, envFlags } from '../../flags'
@@ -41,8 +40,9 @@ type P = ICellRendererParams<Advertiser, unknown, Ctx>
 const effective = (floor: number, m: number) => Math.round(floor * (m || 0) * 100) / 100
 
 const NameCell = ({ data }: P) => (data ? <span className="inline-flex min-w-0 items-center gap-1.5"><Icon name="sell" size={14} style={{ color: SLOT_OWNERS.advertiser.colour }} /><span className="truncate">{data.name}</span></span> : null)
-/* A direct advertiser (no DSP) shows "Name (Direct)" where a DSP name would be. */
-const viaOf = (a: Advertiser) => (a.direct ? directLabel(a.name) : a.via.join(', '))
+/* A direct advertiser (no DSP) shows "Direct advertiser" where a DSP name would be. */
+const DIRECT_VIA = 'Direct advertiser'
+const viaOf = (a: Advertiser) => (a.direct ? DIRECT_VIA : a.via.join(', '))
 const ViaCell = ({ data }: P) => (data ? <span className="truncate" style={{ color: T.muted }}>{viaOf(data)}</span> : null)
 function ApprovalCell({ data, context }: P) {
   if (!data) return null
@@ -875,7 +875,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
     {
       headerName: 'Via', width: 170, minWidth: 120, cellRenderer: ViaCell, valueGetter: (p) => (p.data ? viaOf(p.data) : ''),
       headerComponent: header('Via', "The DSP(s) this advertiser's campaigns come through."),
-      ...setColumn<Advertiser>('Via', () => data.items.flatMap((a) => (a.direct ? [directLabel(a.name)] : a.via))),
+      ...setColumn<Advertiser>('Via', () => data.items.flatMap((a) => (a.direct ? [DIRECT_VIA] : a.via))),
     },
     {
       headerName: 'Campaign approval', width: 160, suppressSizeToFit: true, cellRenderer: ApprovalCell,
@@ -1018,15 +1018,15 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
 
   return (
     <div>
-      {/* Booking schedule CTA moved here, top right of the page (ticket, 27
-          Sep 2026) — it used to sit beside the Available Inventory heading,
-          well below the fold on a page with any real number of advertisers
-          or slots. Add new Advertiser sits on the Advertisers table's count
-          line instead (addAdvertiserButton above). */}
-      <div className="mb-3.5 flex items-center justify-end gap-3">
-        <Button color="primary" variant="text" size="small" icon={<Icon name="calendar_month" size={16} />} onClick={() => window.open(externalUrl(BOOKING_SCHEDULE_PATH), '_blank', 'noopener')}>Booking schedule</Button>
-        {!canEdit && <StatusPill colour={T.muted} icon="visibility">Read only</StatusPill>}
-      </div>
+      {/* The Booking schedule CTA that sat top right here was removed
+          (ticket ihUvxsReyHQczbwFctaM, 13 Oct 2026); the schedule is reached
+          from Advertiser Bookings. Add new Advertiser sits on the
+          Advertisers table's count line (addAdvertiserButton above). */}
+      {!canEdit && (
+        <div className="mb-3.5 flex items-center justify-end gap-3">
+          <StatusPill colour={T.muted} icon="visibility">Read only</StatusPill>
+        </div>
+      )}
       <SectionLabel><WithTip tip="Every advertiser-owned slot across the estate that connected DSPs can bid on. Slots are made available by setting their owner to Advertiser on a playlist.">Available Inventory</WithTip></SectionLabel>
       {inventory.data && invRows.length === 0 ? (
         <div className="flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}>
