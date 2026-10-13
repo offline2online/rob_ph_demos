@@ -995,6 +995,7 @@ describe('Advertisers / Inventory', () => {
     return vi.fn(async (url: string, init?: RequestInit) => {
       const path = url.split('?')[0]
       if (init?.method === 'PUT') { calls.push({ method: 'PUT', url: path, body: JSON.parse(String(init.body)) }); return new Response(JSON.stringify(draft), { status: 200 }) }
+      if (path.endsWith('/deal-sheet')) return new Response(JSON.stringify({ buyersListId: 'bl_1', name: 'Pharma brands', dealType: 'private_auction', currency: 'USD', rateCpm: 120, rateKind: 'floor', activeFrom: null, activeTo: null, auctionCloses: null, committedPlays: null, entries: [], creativeRequirements: [{ canvas: { width: 1080, height: 1920 }, orientation: 'portrait', maxPlayLengthSec: 15, formats: ['image', 'video'], positionIds: slots.map((s) => s.positionId) }] }), { status: 200 })
       if (init?.method === 'POST' && path.endsWith('/term-check')) return new Response(JSON.stringify({ currentVersion: 1, nextVersion: 1, changes: [], requiresReacceptance: false, affectedBuyers: [] }), { status: 200 })
       if (init?.method === 'POST' && path.endsWith('/share')) { calls.push({ method: 'POST', url: path }); return new Response(JSON.stringify({ ...draft, status: 'shared', sharedAt: '2026-10-12T00:00:00Z' }), { status: 200 }) }
       return fakeFetch({ ...ADVERTISER_PAGE, '/api/admin/v1/buyers-lists': { items: [draft] } })(url)
@@ -1018,6 +1019,9 @@ describe('Advertisers / Inventory', () => {
     const summary = await screen.findByTestId('finalise-summary')
     expect(within(summary).getByTestId('finalise-slots')).toHaveTextContent('Menu Board — Long Format')
     expect(summary).toHaveTextContent('PH-7K2M9QXW4B')
+    /* The creative the DSP must supply: supported formats and pixel resolution per slot. */
+    const creative = await within(summary).findByText(/Image \+ Video, 1080×1920 px \(portrait\), max play 15s/)
+    expect(creative.closest('li')).toHaveTextContent('Menu Board — Long Format')
     expect(calls.map((c) => c.method)).toEqual(['PUT'])
     expect(calls.some((c) => c.url.endsWith('/share'))).toBe(false)
     fireEvent.click(screen.getByRole('button', { name: 'Share deal' }))

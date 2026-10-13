@@ -184,7 +184,7 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
     <>
     <Modal
       open={open} width={580} destroyOnHidden confirmLoading={saving} onCancel={onClose}
-      footer={[
+      footer={<div className="flex justify-end gap-2" data-testid="deal-actions">{[
         <Button key="cancel" onClick={onClose}>Cancel</Button>,
         <Button key="save" type={isDraft && editing ? 'default' : 'primary'} loading={saving} onClick={() => save()}>{!isDraft ? 'Save changes' : editing ? 'Save draft' : 'Save as draft'}</Button>,
         ...(isDraft ? [
@@ -192,7 +192,7 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
             <span><Button type="primary" disabled={saving || !editing || !slots.length} onClick={() => save(true)}>Finalise</Button></span>
           </Tip>,
         ] : []),
-      ]}
+      ]}</div>}
       title={
         <span className="inline-flex items-center gap-2">
           <Icon name="gavel" size={20} style={{ color: T.primary }} />

@@ -875,6 +875,13 @@ as banner + video) in `creativeFormatsOf`. Both are stand-ins for PH Core
 values. Max play length is not PH Core's here: it is the exchange's resolved
 slot value (see "Max play length" below).
 
+**PH Core to provide, for every ad slot (13 Oct 2026, ticket
+JE9dQN8DTYDn5KbU7A3d):** the **supported creative formats** and the **pixel
+resolution** (width × height) the slot plays. When a deal is finalised the
+admin confirmation shows them (Creative required) and sharing the deal sends
+them to the DSP with the deal details, so the buyer supplies creative that
+plays. They must therefore be explicit PH Core values, not the stand-ins above.
+
 **PH Core to provide:** per display type, its canvas size and the creative
 types it can play, through the display-type seam, so a change reaches the next
 read of a deal with nothing re-saved. The same derived set must be what PH Core
