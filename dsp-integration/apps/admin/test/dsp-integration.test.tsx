@@ -720,11 +720,11 @@ describe('Booking schedule', () => {
     totals: { bookedWindows: 1, sellableWindows: 2, bookedRevenue: 216.3, billedRevenue: 0 },
   }
 
-  it('is linked from Available Inventory, which now sits on Advertisers / Inventory', async () => {
+  it('has no Booking schedule button on Advertisers / Inventory', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch(ADVERTISER_PAGE)))
     renderAt('/advertisers')
     expect(await screen.findByLabelText('Available Inventory')).toBeInTheDocument()
-    expect(await screen.findByRole('button', { name: /Booking schedule/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Booking schedule/ })).not.toBeInTheDocument()
   })
 
   it('shows booking revenue, what sold by campaign type, and each slot’s windows at the price booked', async () => {
@@ -1276,20 +1276,6 @@ describe('Advertisers / Inventory', () => {
     expect(await screen.findByText(/the data is a snapshot/)).toBeInTheDocument()
     expect(within(dialog).getByText('New deal and buyers list')).toBeInTheDocument()
   }, slow(30000))
-
-  /* The CTA opens a new tab, so it can't go through the router — and a
-     bare path 404s wherever the bundle isn't served from the domain root
-     (ticket d5lCFNAL: the hosted prototype routes in the hash). */
-  it('opens the booking schedule at a URL that works where the bundle is served', async () => {
-    vi.stubGlobal('fetch', vi.fn(fakeFetch(ADVERTISER_PAGE)))
-    const opened: string[] = []
-    vi.stubGlobal('open', vi.fn((url: string) => { opened.push(url); return null }))
-    renderAt('/advertisers')
-    await screen.findByLabelText('Advertisers')
-    fireEvent.click(screen.getByRole('button', { name: /Booking schedule/ }))
-    /* Served from the root, as the app is inside HQ Admin: the plain route. */
-    expect(opened).toEqual(['/booking-schedule'])
-  })
 
   it('in the hosted build, puts the route in the hash under the bundle\u2019s base', async () => {
     vi.stubEnv('VITE_DEMO', '1')
