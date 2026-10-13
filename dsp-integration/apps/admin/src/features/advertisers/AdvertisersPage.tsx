@@ -954,6 +954,8 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
         maxPlayLengthDefaults.commitNext()
         await qc.invalidateQueries({ queryKey: ['available-inventory'] })
       }
+      /* Slot assignments change each list's assignedSlots, which gates Finalise in the deal pop-up. */
+      void qc.invalidateQueries({ queryKey: ['buyers-lists'] })
       commitNext()
       await qc.invalidateQueries({ queryKey: ['advertisers'] })
     } catch (e) {
