@@ -6,7 +6,7 @@ import { Button } from 'antd'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
 import { TARGETING_VARIABLES, type BuyersList } from '@ph-dsp/types'
 import { useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Q } from '../../api/queries'
 import { api, ApiRequestError } from '../../api/client'
 import { DeleteDialog } from '../../shared/DeleteDialog'
@@ -147,7 +147,10 @@ export function BuyersListsTable({ lists, canEdit, capacity, onChanged }: { list
   const [deleteError, setDeleteError] = useState<ApiRequestError | null>(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
 
-  const columns: ColDef<BuyersList>[] = [
+  /* Memoised: a new array each render makes AG Grid reload its columns and remount every cell,
+     so a late re-render (the partners query resolving) swapped the cells out from under a click.
+     Cells read anything that changes (names, capacity, handlers) through context.current. */
+  const columns = useMemo<ColDef<BuyersList>[]>(() => [
     { headerName: 'Deals and buyers lists', flex: 2, minWidth: 220, cellRenderer: NameCell, valueGetter: (p) => `${p.data?.name}|${p.data?.description}|${p.data?.status}` },
     { headerName: 'Deal ID', field: 'dealId', width: 170, minWidth: 150, cellRenderer: DealIdCell },
     { headerName: 'CPM', width: 200, minWidth: 170, cellRenderer: RateCell, valueGetter: (p) => JSON.stringify([p.data?.dealType, p.data?.lockedWin, p.data?.effectiveRateCpm]) },
@@ -160,7 +163,7 @@ export function BuyersListsTable({ lists, canEdit, capacity, onChanged }: { list
     { headerName: 'Targeting', width: 230, minWidth: 180, cellRenderer: TargetingCell, valueGetter: (p) => JSON.stringify(p.data?.targeting ?? []) },
     { headerName: 'Delivery term', width: 260, minWidth: 220, cellRenderer: TermCell, valueGetter: (p) => `${p.data?.activeFrom}|${p.data?.activeTo}` },
     ...(canEdit ? [{ headerName: '', width: 120, suppressSizeToFit: true, cellRenderer: ActionsCell }] : []),
-  ]
+  ], [canEdit])
   const context = {
     canEdit, capacity, dspName, seatName,
     onEdit: (l: BuyersList) => {
