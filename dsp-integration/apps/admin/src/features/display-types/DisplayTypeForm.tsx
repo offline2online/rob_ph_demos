@@ -1,5 +1,5 @@
 /* The display type form — one column in reading order (spec "Page layout"):
-   preview, Touch Point, name, canvas size, background, default playlist,
+   preview, Touch Point, name, description, canvas size, background, default playlist,
    then the collapsed panels, Playlist Settings always last (ticket, 27 Sep
    2026). Playlist Settings itself (including slot assignment) moved to
    Playlist Management, under each playlist, 26 Sep 2026 — editing them
@@ -94,6 +94,10 @@ export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, onAddPla
       </Field>
       <Field label="Display Type Name" required htmlFor="dtName" className="mb-4">
         <Input id="dtName" value={d.name} autoFocus={!d.name} placeholder="Name this display type" status={d.name ? undefined : 'warning'} onChange={(e) => set({ name: e.target.value })} />
+      </Field>
+      <Field label="Description" htmlFor="dtDescription" className="mb-4">
+        <Input.TextArea id="dtDescription" rows={3} value={d.description ?? ''} placeholder="Describe this display type"
+          onChange={(e) => set({ description: e.target.value === '' ? null : e.target.value })} />
       </Field>
       <Field label="Display Canvas Size (Resolution)" required className="mb-4">
         <div className="flex items-center gap-2">
