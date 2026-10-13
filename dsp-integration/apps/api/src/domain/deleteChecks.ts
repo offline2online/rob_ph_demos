@@ -19,9 +19,8 @@ export async function displayTypeDeleteCheck(ctx: Context, id: string): Promise<
 }
 
 /* A slot still owned by an advertiser (ticket WCjNQRPCDoKGqDMtGE2F): deleting
-   the display type would orphan it. Cleared by removing the slot's assignments
-   in Advertising inventory, or by setting its owner to HQ in Playlist
-   management. Takes the place of a reservation row for the same slot. */
+   the display type would orphan it. Cleared only by removing the advertiser
+   slots from the display type's playlist in Playlist management. Takes the place of a reservation row for the same slot. */
 export async function advertiserSlots(ctx: Context, displayTypeId: string): Promise<DeleteCheck['dependents']> {
   const dt = await ctx.displayTypes.get(displayTypeId)
   return (dt?.phExtensions?.slots ?? []).flatMap((s, i) => (s.owner === 'advertiser' ? [{ kind: 'slot' as const, name: s.label || `Slot ${i + 1}`, detail: 'Owned by an advertiser' }] : []))

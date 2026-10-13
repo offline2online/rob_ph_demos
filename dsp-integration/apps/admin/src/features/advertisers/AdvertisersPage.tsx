@@ -1079,9 +1079,12 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
             setDeleteBusy(true)
             try {
               await api('DELETE', `/admin/v1/advertisers/direct/${deleting.advertiserId}`)
+              /* Drop the row from the cached list at once, so the table doesn't wait on a refetch of
+                 every advertiser to show the delete (Rob, 12 Oct 2026); the refetch then confirms it. */
+              qc.setQueryData<Data>(Q.advertisers.queryKey, (cur) => cur && { ...cur, items: cur.items.filter((x) => x.advertiserId !== deleting.advertiserId) })
               setDeleting(null)
-              qc.invalidateQueries({ queryKey: ['advertisers'] })
               message.success('Advertiser deleted')
+              void qc.invalidateQueries({ queryKey: Q.advertisers.queryKey })
             } catch (e) {
               setDeleteError({ message: e instanceof Error && e.message ? e.message : 'The advertiser could not be deleted. Try again.' })
             } finally {

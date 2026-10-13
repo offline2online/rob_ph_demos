@@ -31,7 +31,7 @@ describe('Delete display type dialog', () => {
     expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled()
   })
 
-  it('blocks while a slot is owned by an advertiser, naming both ways to clear it', () => {
+  it('blocks while a slot is owned by an advertiser, naming removal from the playlist as the only way', () => {
     render(
       <Providers>
         <DeleteDisplayType name="Portrait" deleting={false} onDelete={() => {}} onClose={() => {}}
@@ -39,8 +39,9 @@ describe('Delete display type dialog', () => {
       </Providers>,
     )
     expect(screen.getByText(/1 slot is owned by an advertiser/)).toBeInTheDocument()
-    expect(screen.getByText(/Advertising inventory/)).toBeInTheDocument()
-    expect(screen.getByText(/Playlist management/)).toBeInTheDocument()
+    expect(screen.getByText(/remove the advertiser slot from this display type's playlist in Playlist management/)).toBeInTheDocument()
+    expect(screen.queryByText(/Advertising inventory/)).toBeNull()
+    expect(screen.queryByText(/change the slot's owner to HQ/)).toBeNull()
     expect(screen.queryByText(/play windows? (is|are) reserved/)).toBeNull()
     expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled()
   })
