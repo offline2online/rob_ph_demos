@@ -136,7 +136,6 @@ function NameCell({ data, context }: Params) {
         <span className="truncate">{p.name}</span>
         <Button type="text" size="small" aria-label={`Rename ${p.name}`} icon={<Icon name="edit" size={14} style={{ color: T.micro }} />} onClick={() => c.startEdit(p)} />
       </div>
-      {p.autoCreatedFor && <div className="mt-[3px]"><Pill>auto-created with {c.typeName(p.autoCreatedFor)}</Pill></div>}
     </div>
   )
 }
@@ -453,7 +452,7 @@ export function PlaylistManagementPage({ flags }: { flags: Flags }) {
         fullWidthCellRenderer={SettingsRow}
         getRowHeight={(p: RowHeightParams<Row>) => {
           if (p.data?.kind === 'settings') return Math.max(1, rowHeights.current.get(p.data.p.id) ?? estimateSettingsHeight(p.data.p, draft.types, slotAssignment))
-          return p.data?.p.autoCreatedFor ? 62 : 44
+          return 44
         }}
         /* Expanding a row inserts a taller settings row; recompute every row's height and position. */
         onRowDataUpdated={(e) => e.api.resetRowHeights()}
