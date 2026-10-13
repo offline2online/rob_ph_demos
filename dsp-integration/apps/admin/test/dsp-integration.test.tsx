@@ -836,7 +836,7 @@ describe('Advertisers / Inventory', () => {
     renderAt('/advertisers')
     const inventory = await screen.findByLabelText('Available Inventory')
     expect([...inventory.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent))
-      .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Reserve price', 'Max campaigns', 'Plays per window', 'Max play length', 'Billing unit', 'Slots playing', ''])
+      .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Reserve price', 'Max campaigns', 'Plays per window', 'Max play length', 'Slots playing', ''])
   })
 
   it('lists a direct advertiser as "Name (Direct)" in Via and in the Assigned to options, and lets an admin add one', async () => {
@@ -878,7 +878,7 @@ describe('Advertisers / Inventory', () => {
        (ticket "Available Inventory: playlist-primary table (drop Display
        type column) with Unassigned indicator", 27 Sep 2026). */
     expect([...inventory.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent))
-      .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Reserve price', 'Max campaigns', 'Plays per window', 'Max play length', 'Billing unit', 'Slots playing', ''])
+      .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Reserve price', 'Max campaigns', 'Plays per window', 'Max play length', 'Slots playing', ''])
     /* No interactive-only column: interactive is deferred (5 Oct 2026). */
     expect(within(inventory).getByLabelText('Playlist search')).toBeInTheDocument()
     /* Targeting is defined on the buyers and targeting list, not per slot (Rob, 7 Oct 2026). */
@@ -1020,8 +1020,8 @@ describe('Advertisers / Inventory', () => {
     expect(within(summary).getByTestId('finalise-slots')).toHaveTextContent('Menu Board — Long Format')
     expect(summary).toHaveTextContent('PH-7K2M9QXW4B')
     /* The creative the DSP must supply: supported formats and pixel resolution per slot. */
-    const creative = await within(summary).findByText(/Image \+ Video, 1080×1920 px \(portrait\), max play 15s/)
-    expect(creative.closest('li')).toHaveTextContent('Menu Board — Long Format')
+    const creative = await within(summary).findByText(/image \+ video, 1080×1920 \(portrait\), max play 15s/)
+    expect(creative.closest('div')).toHaveTextContent('Menu Board — Long Format')
     expect(calls.map((c) => c.method)).toEqual(['PUT'])
     expect(calls.some((c) => c.url.endsWith('/share'))).toBe(false)
     fireEvent.click(screen.getByRole('button', { name: 'Share deal' }))
