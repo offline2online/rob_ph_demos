@@ -45,7 +45,7 @@ export interface CapSlotsProps {
   onFixConnection: (partnerId: string) => void
 }
 
-export function PlaylistSettingsPanel({ playlist, editable, onUpdate, open, onToggle, capSlots = null }: {
+export function PlaylistSettingsPanel({ playlist, editable, onUpdate, open, onToggle, capSlots = null, capSummaryOf = null }: {
   playlist: PlaylistOption | undefined
   /* True while `playlist` is still a local draft, with no Playlist
      Management row of its own to edit it from yet. */
@@ -56,9 +56,16 @@ export function PlaylistSettingsPanel({ playlist, editable, onUpdate, open, onTo
   /* Set while the display type is still new: the rotation cap and slots
      are edited here too. */
   capSlots?: CapSlotsProps | null
+  /* The display type and flag whose rotation cap and slot owners the
+     collapsed header summarises when `capSlots` isn't set (a saved display
+     type) — the same "4 slots · 3 Headquarters · 1 Advertiser" chips
+     Playlist Management shows for this playlist, instead of only "Default
+     settings" (ticket VfHbcjmZCPNFQEHNPk4X, 13 Oct 2026). */
+  capSummaryOf?: { d: DisplayType; slotAssignment: boolean } | null
 }) {
   const navigate = useNavigate()
   if (!playlist) return null
+  const summaryCap = capSlots ?? capSummaryOf
   const asPlaylist: Playlist = {
     id: playlist.id, name: playlist.name, autoCreatedFor: playlist.autoCreatedFor,
     playlistSettings: playlist.playlistSettings ?? {}, assignments: [],
@@ -69,7 +76,7 @@ export function PlaylistSettingsPanel({ playlist, editable, onUpdate, open, onTo
       open={open}
       onToggle={onToggle}
       summary={[
-        ...(capSlots && expectedSlotCount(capSlots.d) > 0 ? capSummary(capSlots.d, capSlots.slotAssignment) : []).map(({ key, ...c }) => <SummaryChip key={`cap-${key}`} {...c} />),
+        ...(summaryCap && expectedSlotCount(summaryCap.d) > 0 ? capSummary(summaryCap.d, summaryCap.slotAssignment) : []).map(({ key, ...c }) => <SummaryChip key={`cap-${key}`} {...c} />),
         ...styleSummary(asPlaylist).map(({ key, ...c }) => <SummaryChip key={key} {...c} />),
       ]}
     >
