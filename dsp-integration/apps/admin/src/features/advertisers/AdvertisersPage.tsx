@@ -259,6 +259,11 @@ const effectiveReservePrice = (c: InvCtx['current'], r: AvailableInventoryRow): 
    reserve price, there's no "none" state: the company-wide play window
    (Advertiser settings, platform default 24 hours) applies once neither
    the slot nor its display type sets one (OQ27, 29 Sep 2026). */
+/* The billing window is locked to the 24 h platform default (13 Oct 2026):
+   with the window fixed, the buyer reasons about one stable daily figure
+   and the column is no longer shown or edited per row. Stored overrides
+   are untouched; the column is just not offered. */
+const BILLING_UNIT_HEADER = 'Billing unit'
 const effectiveBillingUnitHours = (c: InvCtx['current'], r: AvailableInventoryRow): number => {
   const override = edited(c, r).billingUnitHours
   return override ?? c.billingUnitDefaults[r.displayTypeId] ?? PLATFORM_DEFAULT_BILLING_UNIT_HOURS
@@ -839,7 +844,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
   const savedEditsNow = (r: AvailableInventoryRow): SlotEdit => (inv.draft ?? {})[slotKey(r)] ?? { assignedTo: r.assignedTo, reservePrice: r.reservePriceOverride, interactiveReservePrice: r.interactiveReservePriceOverride ?? null, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride, maxPlayLengthSec: r.maxPlayLengthSecOverride, inGlobalDeal: r.inGlobalDeal }
   const anyInteractiveReserve = INTERACTIVE_ENABLED && invRows.some((r) => showsInteractiveReserve(r.qrControl, savedEditsNow(r)))
   const visibleInventoryColumns = useMemo(
-    () => inventoryColumns.filter((col) => (anyInteractiveReserve || col.headerName !== INTERACTIVE_RESERVE_HEADER)),
+    () => inventoryColumns.filter((col) => col.headerName !== BILLING_UNIT_HEADER && (anyInteractiveReserve || col.headerName !== INTERACTIVE_RESERVE_HEADER)),
     [inventoryColumns, anyInteractiveReserve],
   )
   /* One reserve price default per display type, shared by every one of its
