@@ -751,9 +751,12 @@ the player sends them on `POST /api/player/v1/impressions`:**
 - `storeOpen`: whether the display's store is open now, from the same store
   hours that drive the Store Open / Closed targeting variable. Omitted is
   treated as not open, so a missing signal never blocks a bid.
+- `localTime`: the player's own local time of day, `HH:MM` (24-hour), the
+  store's wall clock. The `fixed` window is judged against this, not UTC.
+  Omitted means a fixed window cannot be placed, so nothing is restricted.
 
 The retailer sets the window in Advertiser settings (`uncachedRestriction`):
-`off` (default), `fixed` (a daily start and end, UTC, wrapping past midnight
+`off` (default), `fixed` (a daily start and end in the player's local time, wrapping past midnight
 when start is after end), or `store_open` (restricted while the player says
 the store is open; "store closed" is not offered). An uncached bid is passed
 over and the next-best cached bid wins; none cached answers `no_fill` and the
@@ -871,6 +874,13 @@ creative types are fixed to image + video (what the bid request already offers
 as banner + video) in `creativeFormatsOf`. Both are stand-ins for PH Core
 values. Max play length is not PH Core's here: it is the exchange's resolved
 slot value (see "Max play length" below).
+
+**PH Core to provide, for every ad slot (13 Oct 2026, ticket
+JE9dQN8DTYDn5KbU7A3d):** the **supported creative formats** and the **pixel
+resolution** (width × height) the slot plays. When a deal is finalised the
+admin confirmation shows them (Creative required) and sharing the deal sends
+them to the DSP with the deal details, so the buyer supplies creative that
+plays. They must therefore be explicit PH Core values, not the stand-ins above.
 
 **PH Core to provide:** per display type, its canvas size and the creative
 types it can play, through the display-type seam, so a change reaches the next

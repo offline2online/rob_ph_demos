@@ -2,11 +2,12 @@
    edited here (advertiser lists are per DSP, on its own page); Where these apply is read-only. The inventory table moved to
    Advertisers / Inventory (Rob, 20 Sep). */
 import { Input, InputNumber, Select, Switch } from 'antd'
-import { IAB_TAXONOMY, INTERACTIVE_ENABLED, type AdvertiserSettingsInput } from '@ph-dsp/types'
+import { INTERACTIVE_ENABLED, type AdvertiserSettingsInput } from '@ph-dsp/types'
 import { type ReactNode, useMemo } from 'react'
 import { Field } from '../../shared/Field'
 import { InfoTip, WithTip } from '../../shared/InfoTip'
 import { ListEditor, addExclusive } from '../../shared/ListEditor'
+import { IAB_OPTIONS_SORTED } from '../../shared/iabOptions'
 import { SectionLabel } from '../../shared/SectionLabel'
 import { T } from '../../theme/phTheme'
 import { useSection } from './DspIntegrationLayout'
@@ -80,7 +81,7 @@ const DEFAULT_PLAYS_TIP = (
 const UNCACHED_TIP = (
   <div style={{ fontSize: 12 }}>
     Bandwidth protection. Suppresses only <b>not-yet-cached</b> creatives from winning in the window: a bid wins there only if the player already holds its creative. Cached creative plays throughout, and outside the window everything bids as normal.
-    <div className="mt-2"><b>Fixed hours</b>: restricted between the start and end every day, in UTC (a start after the end wraps past midnight). <b>Store trading hours</b>: restricted while the store is open, as the player reports it; no times to set, and a missing report never blocks a bid. <b>Off</b> (default): never restricted.</div>
+    <div className="mt-2"><b>Fixed hours</b>: restricted between the start and end every day, in the local time of the store where each player runs (a start after the end wraps past midnight). <b>Store trading hours</b>: restricted while the store is open, as the player reports it; no times to set, and a missing report never blocks a bid. <b>Off</b> (default): never restricted.</div>
   </div>
 )
 const UNCACHED_OPTIONS = [
@@ -88,7 +89,7 @@ const UNCACHED_OPTIONS = [
 ]
 
 /* The full IAB Content Taxonomy 1.0, tier 1 then its subcategories. A saved legacy name (Beauty, Retail, Finance) still works but is not offered again. */
-const IAB_OPTIONS = IAB_TAXONOMY.map((c) => ({ value: c.name, label: `${c.name} (${c.code})` }))
+const IAB_OPTIONS = IAB_OPTIONS_SORTED
 type ListKey = 'categoryWhitelist' | 'categoryBlacklist'
 const OTHER: Record<ListKey, ListKey> = {
   categoryWhitelist: 'categoryBlacklist', categoryBlacklist: 'categoryWhitelist',
@@ -173,12 +174,12 @@ export function AdvertiserSettings() {
           <Select id="uncachedRestriction" className="w-full" value={s.uncachedRestriction ?? 'off'} options={UNCACHED_OPTIONS} onChange={(v) => set('uncachedRestriction', v)} />
         </Field>
         {s.uncachedRestriction === 'fixed' && (
-          <Field label={<span className="block whitespace-nowrap">Restricted from (UTC)</span>} htmlFor="uncachedRestrictionStart" tip="Start of the daily restricted window, in UTC (HH:MM). A start after the end wraps past midnight." className="w-40">
+          <Field label={<span className="block whitespace-nowrap">Restricted from</span>} htmlFor="uncachedRestrictionStart" tip="Start of the daily restricted window, in the player’s local (store) time (HH:MM). A start after the end wraps past midnight." className="w-40">
             <Input id="uncachedRestrictionStart" type="time" value={s.uncachedRestrictionStart ?? '09:00'} onChange={(e) => e.target.value && set('uncachedRestrictionStart', e.target.value)} />
           </Field>
         )}
         {s.uncachedRestriction === 'fixed' && (
-          <Field label={<span className="block whitespace-nowrap">Restricted until (UTC)</span>} htmlFor="uncachedRestrictionEnd" tip="End of the daily restricted window, in UTC (HH:MM, exclusive)." className="w-40">
+          <Field label={<span className="block whitespace-nowrap">Restricted until</span>} htmlFor="uncachedRestrictionEnd" tip="End of the daily restricted window, in the player’s local (store) time (HH:MM, exclusive)." className="w-40">
             <Input id="uncachedRestrictionEnd" type="time" value={s.uncachedRestrictionEnd ?? '18:00'} onChange={(e) => e.target.value && set('uncachedRestrictionEnd', e.target.value)} />
           </Field>
         )}

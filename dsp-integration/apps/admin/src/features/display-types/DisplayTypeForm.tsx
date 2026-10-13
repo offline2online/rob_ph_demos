@@ -188,6 +188,7 @@ export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, onAddPla
         open={open.playlistSettings}
         onToggle={() => toggle('playlistSettings')}
         capSlots={isNewDisplayType ? { d, update, slotAssignment, partners, advertiserOpen, onFixConnection } : null}
+        capSummaryOf={isNewDisplayType ? null : { d, slotAssignment }}
       />}
     </div>
   )

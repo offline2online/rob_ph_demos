@@ -1,7 +1,9 @@
 /* Finalise confirmation (ticket QG40V1vVwqp9NtFmlC9H): the last look before a draft deal is shared. It lists every slot the deal is
    assigned to and the deal ID, terms and invited buyers, so the retailer can check them before anything leaves the platform.
    "Share deal" then sends the deal, including its deal ID, to the invited buyers via their DSP for authorisation. It is one fixed
-   deal broadcast to the invited buyers, not a negotiable proposal: a buyer can accept it, not change it. */
+   deal broadcast to the invited buyers, not a negotiable proposal: a buyer can accept it, not change it.
+   It also shows the creative the DSP must supply for each slot (supported formats and pixel resolution, from PH Core via the deal
+   sheet's creativeRequirements), since that is sent with the deal when it is shared (ticket JE9dQN8DTYDn5KbU7A3d). */
 import { App, Button, Modal } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import type { BuyersList, components } from '@ph-dsp/types'
@@ -11,6 +13,7 @@ import { T } from '../../theme/phTheme'
 
 type Sheet = components['schemas']['DealSheet']
 const TYPE_LABEL = { private_auction: 'Private auction', preferred: 'Preferred deal', guaranteed: 'Programmatic guaranteed' } as const
+const FORMAT_LABEL = { image: 'Image', video: 'Video' } as const
 const when = (v: string | null) => (v ? new Date(v).toLocaleString() : null)
 
 export function FinaliseDealModal({ list, onClose, onShared }: { list: BuyersList | null; onClose: () => void; onShared: (list: BuyersList) => void }) {
@@ -30,14 +33,15 @@ export function FinaliseDealModal({ list, onClose, onShared }: { list: BuyersLis
       setSharing(false)
     }
   }
+  const slotLabels = new Map((list?.assignedSlots ?? []).map((s) => [s.positionId, s.label]))
   const label = (s: string) => <dt style={{ color: T.muted }}>{s}</dt>
   return (
     <Modal
       open={!!list} onCancel={onClose} width={600} destroyOnHidden title={`Finalise deal: ${list?.name ?? ''}`}
-      footer={[
-        <Button key="back" onClick={onClose}>Back</Button>,
-        <Button key="share" type="primary" loading={sharing} onClick={share}>Share deal</Button>,
-      ]}
+      footer={<div className="flex justify-end gap-2" data-testid="finalise-actions">
+        <Button onClick={onClose}>Back</Button>
+        <Button type="primary" loading={sharing} onClick={share}>Share deal</Button>
+      </div>}
     >
       {list && (
         <div style={{ fontSize: 13.5 }} data-testid="finalise-summary">
@@ -47,6 +51,18 @@ export function FinaliseDealModal({ list, onClose, onShared }: { list: BuyersLis
           <div style={{ fontWeight: 500 }}>Slots ({(list.assignedSlots ?? []).length})</div>
           <ul className="mb-3" style={{ paddingLeft: 18 }} data-testid="finalise-slots">
             {(list.assignedSlots ?? []).map((s) => <li key={s.positionId}>{s.label}</li>)}
+          </ul>
+          <div style={{ fontWeight: 500 }}>Creative required</div>
+          <p style={{ color: T.muted, margin: '2px 0 4px' }}>Sent to the DSP with the deal, so buyers supply creative in these formats at these resolutions.</p>
+          <ul className="mb-3" style={{ paddingLeft: 18 }} data-testid="finalise-creative">
+            {!data && <li style={{ color: T.muted }}>…</li>}
+            {data && !data.creativeRequirements.length && <li style={{ color: T.muted }}>None: assign this deal to a slot first.</li>}
+            {data?.creativeRequirements.map((r) => (
+              <li key={r.positionIds.join(',')}>
+                {r.formats.map((f) => FORMAT_LABEL[f]).join(' + ')}, {r.canvas.width}×{r.canvas.height} px ({r.orientation}), max play {r.maxPlayLengthSec}s
+                <div style={{ color: T.muted }}>{r.positionIds.map((id) => slotLabels.get(id) ?? id).join('; ')}</div>
+              </li>
+            ))}
           </ul>
           <dl className="m-0 grid grid-cols-[150px_1fr] gap-y-1">
             {label('Deal ID')}

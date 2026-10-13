@@ -178,6 +178,19 @@ describe('Display Types page', () => {
     expect(await screen.findByRole('button', { name: 'Show settings for Landscape Playlist' })).toBeInTheDocument()
   }, slow(30000))
 
+  /* Ticket VfHbcjmZCPNFQEHNPk4X, 13 Oct 2026: a saved display type's Playlist
+     Settings header shows the same slot chips Playlist Management does (its
+     rotation cap and Headquarters/Advertiser slots), not only "Default
+     settings". */
+  it('Playlist Settings header summarises a saved display type\'s slots and their owners', async () => {
+    renderAt('/display-types?id=menu_board', true)
+    await screen.findByText('Display Preview')
+    const header = within(screen.getByRole('region', { name: 'Playlist Settings' })).getByRole('button', { expanded: false })
+    expect(within(header).getByText('3 slots')).toBeInTheDocument()
+    expect(within(header).getByText(/1 Advertiser/)).toBeInTheDocument()
+    expect(within(header).getByText('Default settings')).toBeInTheDocument()
+  })
+
   /* Ticket, 28 Sep 2026: a new display type starts with every setting at
      its default — its playlist's panel reads "Default settings", nothing
      overridden — and, since there's no Playlist Management row until Save,

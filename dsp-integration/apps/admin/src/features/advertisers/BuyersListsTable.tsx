@@ -141,7 +141,9 @@ export function BuyersListsTable({ lists, canEdit, capacity, onChanged }: { list
   const dspName = (id: string) => (partners.data ?? []).find((p) => p.id === id)?.name ?? id
   const seatName = (pid: string, sid: string) => (partners.data ?? []).find((p) => p.id === pid)?.seats?.find((x) => x.id === sid)?.name ?? sid
   const [modalOpen, setModalOpen] = useState(false)
-  const [editing, setEditing] = useState<BuyersList | null>(null)
+  const [editingSnapshot, setEditing] = useState<BuyersList | null>(null)
+  /* Read the open list from the live rows, so slots assigned while it is open (or since it was last opened) enable Finalise at once. */
+  const editing = editingSnapshot ? lists.find((l) => l.id === editingSnapshot.id) ?? editingSnapshot : null
   const [deleting, setDeleting] = useState<BuyersList | null>(null)
   const [sharing, setSharing] = useState<BuyersList | null>(null)
   const [deleteError, setDeleteError] = useState<ApiRequestError | null>(null)

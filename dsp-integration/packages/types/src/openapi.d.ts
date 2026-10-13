@@ -1669,6 +1669,8 @@ export interface components {
             slotStartsAt?: string;
             /** @description Whether the display's store is open now, from PH Core's store hours (the same source as the Store Open / Closed targeting variable). Used when the restriction follows store trading hours; omitted is treated as not open, so the exchange never goes dark on a missing signal. */
             storeOpen?: boolean;
+            /** @description The player's own local time of day (HH:MM, 24-hour), i.e. the store's wall clock. Used when the restriction is on fixed hours, which are the player's local hours, not UTC; omitted means the fixed window cannot be placed, so nothing is restricted. */
+            localTime?: string;
         };
         ImpressionFill: {
             impressionId: string;
@@ -2146,7 +2148,7 @@ export interface components {
             /** @description Play config: the committed-plays figure a new buyers list is pre-filled with (the field stays editable per list; editing a saved list never changes it). Whole number, at least 1; null means no default (per play). Optional on save: omitted keeps the stored value, null clears it. */
             defaultCommittedPlays?: number | null;
             /**
-             * @description Bandwidth protection (real-time impressions): while the restriction is in force, only a bid whose creative the player already holds in its cache can win; an uncached creative would need a live download. `off`: never restricted. `fixed`: restricted between uncachedRestrictionStart and uncachedRestrictionEnd every day (UTC). `store_open`: restricted while the player reports the store open (`storeOpen` on the impression signal). Optional on save: omitted keeps the stored value.
+             * @description Bandwidth protection (real-time impressions): while the restriction is in force, only a bid whose creative the player already holds in its cache can win; an uncached creative would need a live download. `off`: never restricted. `fixed`: restricted between uncachedRestrictionStart and uncachedRestrictionEnd every day, in the player's local time. `store_open`: restricted while the player reports the store open (`storeOpen` on the impression signal). Optional on save: omitted keeps the stored value.
              * @default off
              * @enum {string}
              */

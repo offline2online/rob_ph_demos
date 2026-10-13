@@ -62,7 +62,7 @@ interface Candidate { dsp: PartnerRecord; price: number; crid: string; vetted: E
 /* Clears one impression for the position the display's next slot is. Always
    returns the stored outcome (filled or no_fill); throws only for a request
    that is wrong (unknown display or position, not a real-time position). */
-export async function signalImpression(ctx: Context, input: { displayId: string; slot: number; cachedCrids?: string[]; storeOpen?: boolean; slotStartsAt?: Date }): Promise<Fill> {
+export async function signalImpression(ctx: Context, input: { displayId: string; slot: number; cachedCrids?: string[]; storeOpen?: boolean; localTime?: string; slotStartsAt?: Date }): Promise<Fill> {
   const started = Date.now()
   const now = ctx.clock()
   const display = await ctx.displays.get(input.displayId)
@@ -146,7 +146,7 @@ export async function signalImpression(ctx: Context, input: { displayId: string;
 
   /* Bandwidth protection: in the restricted window only a creative the player already holds can win (an uncached one would need a live download). The next-best cached bid wins instead; none cached is no fill. */
   let eligible = candidates
-  if (uncachedRestricted(company, now, input.storeOpen)) {
+  if (uncachedRestricted(company, input.localTime, input.storeOpen)) {
     const cached = new Set(input.cachedCrids ?? [])
     eligible = candidates.filter((c) => cached.has(c.crid))
     if (!eligible.length) return noFill('Restricted window: no bid’s creative is cached on the player, and an uncached creative would need a live download.')

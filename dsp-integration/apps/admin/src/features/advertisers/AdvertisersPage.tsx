@@ -779,7 +779,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
          advertiser submitting against it (ticket "Max campaigns: … revise
          tooltip for retail media manager") — so no "purchase additional
          slots" line, which reads as advertiser-facing upsell copy. */
-      headerComponent: header('Max campaigns', 'The maximum number of campaigns an advertiser can submit to be played for this purchased slot.'),
+      headerComponent: header('Max campaigns', 'The maximum number of campaigns an advertiser can submit for this purchased slot. Only one campaign plays in the slot at a time: the highest-priority one, based on the data mapped to the display type in the store. For example, an advertiser can submit 10 campaigns, but only the top-priority campaign of those 10 plays on the display, not all 10.'),
       valueGetter: (p) => (p.data ? effectiveMaxCampaigns((p.context as InvCtx).current, p.data) : DEFAULT_MAX_CAMPAIGNS),
       ...setColumn<AvailableInventoryRow>('Max campaigns', invValues((r) => [String(r.maxCampaigns)])),
     },
@@ -954,6 +954,8 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
         maxPlayLengthDefaults.commitNext()
         await qc.invalidateQueries({ queryKey: ['available-inventory'] })
       }
+      /* Slot assignments change each list's assignedSlots, which gates Finalise in the deal pop-up. */
+      void qc.invalidateQueries({ queryKey: ['buyers-lists'] })
       commitNext()
       await qc.invalidateQueries({ queryKey: ['advertisers'] })
     } catch (e) {
