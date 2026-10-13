@@ -993,7 +993,12 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
      draft, so assigning or unassigning a list, or changing a billing unit, recalculates before save. */
   const listCapacity = new Map<string, { plays: number; displayTypes: number; positions: number }>()
   const countedTypes = new Map<string, Set<string>>()
+  /* The slots each list is assigned to, for the Slots column's hover on the Deals and buyers lists table. */
+  const listSlots = new Map<string, { displayType: string; playlist: string; position: string; slot: number; playsPerWindow: number | null }[]>()
   for (const r of invRows) {
+    for (const id of new Set(tiersOf(edited(invContext, r).assignedTo))) {
+      listSlots.set(id, [...(listSlots.get(id) ?? []), { displayType: r.displayTypeName, playlist: r.playlistName, position: r.position, slot: r.zoneSlot, playsPerWindow: effectivePlaysPerWindow(invContext, r) }])
+    }
     if (typeof r.displayCount !== 'number') continue
     const fleet = effectivePlaysPerWindow(invContext, r) * r.displayCount
     for (const id of new Set(tiersOf(edited(invContext, r).assignedTo))) {
@@ -1055,6 +1060,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
         lists={buyersLists.data?.items ?? []}
         canEdit={canEdit}
         capacity={listCapacity}
+        slots={listSlots}
         onChanged={() => qc.invalidateQueries({ queryKey: ['buyers-lists'] })}
       />
 

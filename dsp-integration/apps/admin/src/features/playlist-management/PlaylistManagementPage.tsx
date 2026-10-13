@@ -153,19 +153,25 @@ function AssignedCell({ data, context }: Params) {
   const content = (
     <div className="max-w-[280px]">
       <div className="mb-1.5" style={{ fontSize: 11.5, color: T.muted }}>{REASSIGN_TIP}</div>
-      {data.p.assignments.map((a, i) => (
-        <div key={i} className="flex items-center justify-between gap-2 py-1" style={{ fontSize: 12.5, borderTop: i > 0 ? `1px solid ${T.borderSubtle}` : 'none' }}>
-          <span className="flex min-w-0 items-center gap-1.5">
-            <Icon name="dashboard_customize" size={14} style={{ color: T.muted }} />
-            <b className="truncate">{a.displayTypeName}</b>
-            <span style={{ color: T.muted }}>·</span>
-            <span className="whitespace-nowrap" style={{ color: T.muted }}>{where(a)}</span>
-          </span>
-          <Button color="primary" variant="text" size="small" className="px-1" onClick={() => c.open(a.displayTypeId)}>
-            Open<Icon name="arrow_forward" size={13} />
-          </Button>
-        </div>
-      ))}
+      {data.p.assignments.map((a, i) => {
+        const description = c.types.find((t) => t.id === a.displayTypeId)?.description?.trim()
+        return (
+          <div key={i} className="py-1" style={{ fontSize: 12.5, borderTop: i > 0 ? `1px solid ${T.borderSubtle}` : 'none' }}>
+            <div className="flex items-center justify-between gap-2">
+              <span className="flex min-w-0 items-center gap-1.5">
+                <Icon name="dashboard_customize" size={14} style={{ color: T.muted }} />
+                <b className="truncate">{a.displayTypeName}</b>
+                <span style={{ color: T.muted }}>·</span>
+                <span className="whitespace-nowrap" style={{ color: T.muted }}>{where(a)}</span>
+              </span>
+              <Button color="primary" variant="text" size="small" className="px-1" onClick={() => c.open(a.displayTypeId)}>
+                Open<Icon name="arrow_forward" size={13} />
+              </Button>
+            </div>
+            {description && <div className="mt-0.5" style={{ fontSize: 11.5, color: T.muted, paddingLeft: 20 }}>{description}</div>}
+          </div>
+        )
+      })}
     </div>
   )
   return (

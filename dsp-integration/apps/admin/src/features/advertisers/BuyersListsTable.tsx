@@ -4,7 +4,7 @@
    table (Rob, 23 Sep). */
 import { Button } from 'antd'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
-import { TARGETING_VARIABLES, type BuyersList } from '@ph-dsp/types'
+import type { BuyersList } from '@ph-dsp/types'
 import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { Q } from '../../api/queries'
@@ -21,7 +21,8 @@ import { DealSheetModal } from './DealSheetModal'
 import { cpmKind, cpmKindHint, playsText, rateText, sourceLabel } from './effectiveTerm'
 
 type Capacity = Map<string, { plays: number; displayTypes: number; positions: number }>
-type Ctx = { current: { capacity: Capacity; dspName: (partnerId: string) => string; seatName: (partnerId: string, seatId: string) => string; onEdit: (l: BuyersList) => void; onDelete: (l: BuyersList) => void; onShare: (l: BuyersList) => void; canEdit: boolean } }
+type SlotInfo = { displayType: string; playlist: string; position: string; slot: number; playsPerWindow: number | null }
+type Ctx = { current: { capacity: Capacity; slots: Map<string, SlotInfo[]>; dspName: (partnerId: string) => string; seatName: (partnerId: string, seatId: string) => string; onEdit: (l: BuyersList) => void; onDelete: (l: BuyersList) => void; onShare: (l: BuyersList) => void; canEdit: boolean } }
 type P = ICellRendererParams<BuyersList, unknown, Ctx>
 
 /* The name is the way in (ph-designer: a row's name opens it; the icon button is only a shortcut). */
@@ -70,12 +71,23 @@ const BuyersCell = ({ data, context }: P) => {
   const cell = <span className="truncate">{text}{categoryOnly && <span style={{ color: T.muted }}> · not shareable</span>}</span>
   return tip ? <Tip title={tip}>{cell}</Tip> : cell
 }
-const TargetingCell = ({ data }: P) => {
-  const t = data?.targeting ?? []
+/* The slots the deal is assigned to (Available Inventory's Assigned to column); hover lists each with its details. */
+const SlotsCell = ({ data, context }: P) => {
   if (!data) return null
-  if (!t.length) return <span style={{ color: T.muted }}>No targeting</span>
-  const label = (v: string) => TARGETING_VARIABLES.find((x) => x.key === v)?.label ?? v
-  return <span className="truncate" style={{ fontSize: 12.5 }} title={t.map((c) => `${label(c.variable)}: ${c.values.length} value${c.values.length === 1 ? '' : 's'}`).join('; ')}>{t.length} criteri{t.length === 1 ? 'on' : 'a'}: {t.map((c) => label(c.variable)).join(', ')}</span>
+  const rows = context.current.slots.get(data.id) ?? []
+  if (!rows.length) return <span style={{ color: T.muted }}>Not assigned</span>
+  const tip = (
+    <div>
+      <div style={{ fontWeight: 500 }}>Assigned slots</div>
+      {rows.map((r, i) => (
+        <div key={i} style={{ marginTop: 4 }}>
+          <div>{r.displayType} · {r.playlist || 'No playlist'}</div>
+          <div>{r.position} (slot {r.slot}){r.playsPerWindow != null ? ` · ${r.playsPerWindow.toLocaleString('en-US')} plays per window` : ''}</div>
+        </div>
+      ))}
+    </div>
+  )
+  return <Tip title={tip}><span style={{ fontSize: 12.5 }}>{rows.length} slot{rows.length === 1 ? '' : 's'}</span></Tip>
 }
 const fmt = (v: string | null) => (v ? new Date(v).toLocaleString() : null)
 /* The delivery term (spec "Private auctions: two-period model", 23 Sep
@@ -141,7 +153,7 @@ const ActionsCell = ({ data, context }: P) =>
     </span>
   ) : null
 
-export function BuyersListsTable({ lists, canEdit, capacity, onChanged }: { lists: BuyersList[]; canEdit: boolean; capacity: Capacity; onChanged: () => void }) {
+export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged }: { lists: BuyersList[]; canEdit: boolean; capacity: Capacity; slots: Map<string, SlotInfo[]>; onChanged: () => void }) {
   const partners = useQuery(Q.partners)
   const dspName = (id: string) => (partners.data ?? []).find((p) => p.id === id)?.name ?? id
   const seatName = (pid: string, sid: string) => (partners.data ?? []).find((p) => p.id === pid)?.seats?.find((x) => x.id === sid)?.name ?? sid
@@ -165,14 +177,14 @@ export function BuyersListsTable({ lists, canEdit, capacity, onChanged }: { list
        an edited deal type kept showing "Private auction". Each gets a valueGetter over everything it renders. */
     { headerName: 'Deal type', width: 170, minWidth: 150, cellRenderer: DealTypeCell, valueGetter: (p) => p.data?.dealType ?? '' },
     { headerName: 'Invited buyers', width: 190, minWidth: 130, cellRenderer: BuyersCell, valueGetter: (p) => JSON.stringify([p.data?.invitedBuyers ?? [], p.data?.invitedCategories ?? []]) },
+    { headerName: 'Slots', width: 150, minWidth: 120, cellRenderer: SlotsCell, valueGetter: (p) => JSON.stringify(p.context.current.slots.get(p.data?.id ?? '') ?? []) },
     { headerName: 'Committed volume', width: 190, minWidth: 160, cellRenderer: VolumeCell, valueGetter: (p) => JSON.stringify([p.data?.dealType, p.data?.committedPlays, p.data?.deliveredPlays, p.data?.effectiveCommittedPlays]) },
     { headerName: 'Estimated volume', width: 190, minWidth: 170, cellRenderer: CapacityCell, valueGetter: (p) => p.context.current.capacity.get(p.data?.id ?? '')?.plays ?? 0 },
-    { headerName: 'Targeting', width: 230, minWidth: 180, cellRenderer: TargetingCell, valueGetter: (p) => JSON.stringify(p.data?.targeting ?? []) },
     { headerName: 'Delivery term', width: 260, minWidth: 220, cellRenderer: TermCell, valueGetter: (p) => `${p.data?.activeFrom}|${p.data?.activeTo}` },
     ...(canEdit ? [{ headerName: '', width: 120, suppressSizeToFit: true, cellRenderer: ActionsCell }] : []),
   ], [canEdit])
   const context = {
-    canEdit, capacity, dspName, seatName,
+    canEdit, capacity, slots, dspName, seatName,
     onEdit: (l: BuyersList) => {
       setEditing(l)
       setModalOpen(true)
