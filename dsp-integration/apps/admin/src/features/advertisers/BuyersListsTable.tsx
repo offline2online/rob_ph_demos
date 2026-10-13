@@ -25,25 +25,30 @@ type Ctx = { current: { capacity: Capacity; dspName: (partnerId: string) => stri
 type P = ICellRendererParams<BuyersList, unknown, Ctx>
 
 /* The name is the way in (ph-designer: a row's name opens it; the icon button is only a shortcut). */
-const NameCell = ({ data, context }: P) =>
-  data ? (
+const NameCell = ({ data, context }: P) => {
+  if (!data) return null
+  const name = context.current.canEdit ? (
+    <button
+      type="button"
+      className="block max-w-full truncate border-0 bg-transparent p-0 text-left hover:underline"
+      style={{ color: T.primary, cursor: 'pointer', font: 'inherit', fontWeight: 500 }}
+      onClick={() => context.current.onEdit(data)}
+    >
+      {data.name}
+    </button>
+  ) : (
+    <div className="truncate" style={{ fontWeight: 500 }}>{data.name}</div>
+  )
+  return (
     <div className="min-w-0">
-      {context.current.canEdit ? (
-        <button
-          type="button"
-          className="block max-w-full truncate border-0 bg-transparent p-0 text-left hover:underline"
-          style={{ color: T.primary, cursor: 'pointer', font: 'inherit', fontWeight: 500 }}
-          onClick={() => context.current.onEdit(data)}
-        >
-          {data.name}
-        </button>
-      ) : (
-        <div className="truncate" style={{ fontWeight: 500 }}>{data.name}</div>
-      )}
-      {data.description && <div className="truncate" style={{ fontSize: 11.5, color: T.muted }}>{data.description}</div>}
+      {/* The description is not a second line in the row: hovering the name shows it under the name. */}
+      {data.description
+        ? <Tip title={<div><div style={{ fontWeight: 500 }}>{data.name}</div><div>{data.description}</div></div>}>{name}</Tip>
+        : name}
       {data.status === 'draft' && <div style={{ fontSize: 11.5, color: T.muted }} data-testid={`draft-${data.id}`}>Draft · not shared with any DSP</div>}
     </div>
-  ) : null
+  )
+}
 /* Who the deal is for: named advertisers, IAB categories, or both (a union). */
 const BuyersCell = ({ data, context }: P) => {
   if (!data) return null
