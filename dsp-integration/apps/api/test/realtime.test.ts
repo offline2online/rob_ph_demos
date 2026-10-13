@@ -100,14 +100,18 @@ describe('real-time (player-triggered) bidding', () => {
     const set = async (patch: Record<string, unknown>) => ctx.company.save({ ...(await ctx.company.get()), ...patch } as any)
     /* NOW is inside a fixed window: an uncached creative is passed over, a cached one plays, and a missing list means none cached. */
     const h = NOW.getUTCHours()
+    const localTime = `${String(h).padStart(2, '0')}:30`
     const hh = (n: number) => `${String((n + 24) % 24).padStart(2, '0')}:00`
     await set({ uncachedRestriction: 'fixed', uncachedRestrictionStart: hh(h - 1), uncachedRestrictionEnd: hh(h + 1) })
-    expect((await signal()).json()).toMatchObject({ status: 'no_fill', reason: expect.stringContaining('Restricted window') })
-    expect((await signal({ displayId, slot: 2, cachedCrids: ['other'] })).json().status).toBe('no_fill')
-    expect((await signal({ displayId, slot: 2, cachedCrids: [crid] })).json()).toMatchObject({ status: 'filled', clearingCpm: 150 })
+    expect((await signal({ displayId, slot: 2, localTime })).json()).toMatchObject({ status: 'no_fill', reason: expect.stringContaining('Restricted window') })
+    expect((await signal({ displayId, slot: 2, localTime, cachedCrids: ['other'] })).json().status).toBe('no_fill')
+    /* The window is the player's own clock: no local time reported never blocks. */
+    expect((await signal()).json().status).toBe('filled')
+    expect((await signal({ displayId, slot: 2, localTime: '25:99' })).statusCode).toBe(400)
+    expect((await signal({ displayId, slot: 2, localTime, cachedCrids: [crid] })).json()).toMatchObject({ status: 'filled', clearingCpm: 150 })
     /* Outside the window: as normal. */
     await set({ uncachedRestrictionStart: hh(h + 2), uncachedRestrictionEnd: hh(h + 3) })
-    expect((await signal()).json().status).toBe('filled')
+    expect((await signal({ displayId, slot: 2, localTime })).json().status).toBe('filled')
     /* Store trading hours: restricted only while the player says the store is open; a missing signal never blocks. */
     await set({ uncachedRestriction: 'store_open' })
     expect((await signal({ displayId, slot: 2, storeOpen: true })).json().status).toBe('no_fill')

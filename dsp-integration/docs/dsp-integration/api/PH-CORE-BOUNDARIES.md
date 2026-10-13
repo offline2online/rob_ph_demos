@@ -751,9 +751,12 @@ the player sends them on `POST /api/player/v1/impressions`:**
 - `storeOpen`: whether the display's store is open now, from the same store
   hours that drive the Store Open / Closed targeting variable. Omitted is
   treated as not open, so a missing signal never blocks a bid.
+- `localTime`: the player's own local time of day, `HH:MM` (24-hour), the
+  store's wall clock. The `fixed` window is judged against this, not UTC.
+  Omitted means a fixed window cannot be placed, so nothing is restricted.
 
 The retailer sets the window in Advertiser settings (`uncachedRestriction`):
-`off` (default), `fixed` (a daily start and end, UTC, wrapping past midnight
+`off` (default), `fixed` (a daily start and end in the player's local time, wrapping past midnight
 when start is after end), or `store_open` (restricted while the player says
 the store is open; "store closed" is not offered). An uncached bid is passed
 over and the next-best cached bid wins; none cached answers `no_fill` and the

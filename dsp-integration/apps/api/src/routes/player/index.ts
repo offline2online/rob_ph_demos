@@ -9,6 +9,7 @@ import type { Context } from '../../context'
 import { confirmPlayed, signalImpression } from '../../exchange/realtime'
 import type { Guards } from '../../http/app'
 import { HttpError, conflict, notFound, validationFailed } from '../../http/errors'
+import { HHMM } from '../../domain/uncachedRestriction'
 import { tokenBucket } from '../../http/rateLimit'
 import type { ImpressionRecord } from '../../repos/RealtimeImpressionRepo'
 
@@ -32,13 +33,14 @@ export const playerRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync =
     if (!(await ctx.exchange.get()).enabled) throw notFound('DSP integration is switched off.')
   })
 
-  app.post<{ Body: { displayId?: unknown; slot?: unknown; cachedCrids?: unknown; storeOpen?: unknown; slotStartsAt?: unknown } }>('/impressions', async (req, reply) => {
+  app.post<{ Body: { displayId?: unknown; slot?: unknown; cachedCrids?: unknown; storeOpen?: unknown; localTime?: unknown; slotStartsAt?: unknown } }>('/impressions', async (req, reply) => {
     const b = req.body ?? {}
     const invalid = []
     if (typeof b.displayId !== 'string' || !b.displayId) invalid.push({ field: 'displayId', reason: 'Required.' })
     if (!(typeof b.slot === 'number' && Number.isInteger(b.slot) && b.slot >= 1)) invalid.push({ field: 'slot', reason: 'A slot number, 1 or more.' })
     if (b.cachedCrids !== undefined && !(Array.isArray(b.cachedCrids) && b.cachedCrids.length <= 500 && b.cachedCrids.every((c) => typeof c === 'string'))) invalid.push({ field: 'cachedCrids', reason: 'A list of creative ids, 500 at most.' })
     if (b.storeOpen !== undefined && typeof b.storeOpen !== 'boolean') invalid.push({ field: 'storeOpen', reason: 'true or false.' })
+    if (b.localTime !== undefined && !(typeof b.localTime === 'string' && HHMM.test(b.localTime))) invalid.push({ field: 'localTime', reason: 'The player’s local time of day, HH:MM (24-hour).' })
     if (b.slotStartsAt !== undefined && (typeof b.slotStartsAt !== 'string' || Number.isNaN(Date.parse(b.slotStartsAt)))) invalid.push({ field: 'slotStartsAt', reason: 'An ISO 8601 date-time.' })
     if (invalid.length) throw validationFailed(invalid)
     const wait = limiter.take(b.displayId as string)
@@ -46,7 +48,7 @@ export const playerRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync =
       reply.header('Retry-After', String(wait))
       throw new HttpError(429, 'rate_limited', `Too many impression signals from ${b.displayId}; retry in ${wait}s.`)
     }
-    const { impression, creative } = await signalImpression(ctx, { displayId: b.displayId as string, slot: b.slot as number, cachedCrids: b.cachedCrids as string[] | undefined, storeOpen: b.storeOpen as boolean | undefined, slotStartsAt: b.slotStartsAt ? new Date(b.slotStartsAt as string) : undefined })
+    const { impression, creative } = await signalImpression(ctx, { displayId: b.displayId as string, slot: b.slot as number, cachedCrids: b.cachedCrids as string[] | undefined, storeOpen: b.storeOpen as boolean | undefined, localTime: b.localTime as string | undefined, slotStartsAt: b.slotStartsAt ? new Date(b.slotStartsAt as string) : undefined })
     return body(impression, creative)
   })
 

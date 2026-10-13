@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { uncachedRestricted } from '../src/domain/uncachedRestriction'
 
-const at = (hhmm: string) => new Date(`2026-10-07T${hhmm}:00.000Z`)
+const at = (hhmm: string) => hhmm
 const fixed = (start: string, end: string) => ({ uncachedRestriction: 'fixed' as const, uncachedRestrictionStart: start, uncachedRestrictionEnd: end })
 
 describe('uncachedRestricted', () => {
@@ -13,6 +13,10 @@ describe('uncachedRestricted', () => {
     expect(uncachedRestricted(fixed('22:00', '06:00'), at('05:59'), undefined)).toBe(true)
     expect(uncachedRestricted(fixed('22:00', '06:00'), at('12:00'), undefined)).toBe(false)
     expect(uncachedRestricted(fixed('09:00', '09:00'), at('09:00'), undefined)).toBe(false)
+  })
+  it('fixed window with no player local time never restricts', () => {
+    expect(uncachedRestricted(fixed('00:00', '23:59'), undefined, undefined)).toBe(false)
+    expect(uncachedRestricted(fixed('00:00', '23:59'), 'late', undefined)).toBe(false)
   })
   it('store_open follows the player report only; off never restricts', () => {
     const s = { uncachedRestrictionStart: '09:00', uncachedRestrictionEnd: '18:00' }

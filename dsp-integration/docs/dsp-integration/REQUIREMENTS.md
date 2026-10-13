@@ -4731,13 +4731,13 @@ dark on peak trade.
   cached (spec section 7, "Creative retrieval and hand-off"; the player's
   pre-caching is in PH-CORE-BOUNDARIES.md). Uncached bids are passed over, the
   next-best cached bid wins, and none cached is `no_fill`.
-- The window is a fixed daily start and end (`fixed`, UTC) or the store's
+- The window is a fixed daily start and end (`fixed`, in the player's local time, not UTC; Rob, 13 Oct 2026) or the store's
   trading hours, while the store is **open** (`store_open`; "closed" is not
   needed). `off` is the default. Outside the window, uncached creative bids
   and downloads as normal.
 - Cache state and store hours are PH Core's (the same store hours as the Store
   Open / Closed variable, section 6), so the player reports `cachedCrids` and
-  `storeOpen` on each impression signal; a missing `storeOpen` never blocks.
+  `storeOpen` and `localTime` (HH:MM on the player's clock) on each impression signal; a missing `storeOpen` or `localTime` never blocks.
 - Set in Advertiser settings (`uncachedRestriction`, `uncachedRestrictionStart`,
   `uncachedRestrictionEnd`). Not yet: an admin screen for it. (The advance
   window auction that would have pre-cached known winners was removed 8 Oct 2026.)
