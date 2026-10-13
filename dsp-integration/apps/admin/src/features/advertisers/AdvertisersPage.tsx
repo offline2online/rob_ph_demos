@@ -814,7 +814,10 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
       ...setColumn<AvailableInventoryRow>('Max play length', invValues((r) => [String(r.maxPlayLengthSec)])),
     },
     {
-      headerName: 'Billing unit', width: 270, minWidth: 135, cellRenderer: BillingUnitCell,
+      /* Hidden (13 Oct 2026, ticket 9NnP1rY6KFkAxCGp4cQh): the window is locked to the
+         24 h platform default, so it is no longer surfaced per row. Kept in the column
+         list so the value still feeds plays per window and the saved payload. */
+      headerName: 'Billing unit', hide: true, width: 270, minWidth: 135, cellRenderer: BillingUnitCell,
       headerComponent: header('Billing unit', 'The length of this slot’s play windows: each one is booked and billed on its own. Set once for the display type and inherited by every slot on it — override just one slot to give it its own value, independent of the others. With neither set, the play-window length in Advertiser settings applies. A slot with windows still bid on, booked or awaiting billing keeps their length: the change applies from the end of the last of them, and the row shows it until then.'),
       valueGetter: (p) => (p.data ? effectiveBillingUnitHours((p.context as InvCtx).current, p.data) : PLATFORM_DEFAULT_BILLING_UNIT_HOURS),
     },
