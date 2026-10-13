@@ -217,8 +217,20 @@ function SettingsSummaryCell({ data, context }: Params) {
   const playlist = c.playlists.find((x) => x.id === data.p.id)
   const single = data.p.assignments.length === 1 ? c.types.find((t) => t.id === data.p.assignments[0].displayTypeId) : undefined
   const zoneId = data.p.assignments[0]?.zoneId ?? null
+  /* Chips wrap onto more lines in a narrow column; report the height so the
+     row grows to fit instead of clipping them (same measure as SettingsRow). */
+  const ref = useRef<HTMLSpanElement>(null)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const measure = () => c.measureSettings(`summary:${data.p.id}`, el.getBoundingClientRect().height)
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    measure()
+    return () => ro.disconnect()
+  }, [data.p.id])
   return (
-    <span className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+    <span ref={ref} className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 py-1.5">
       {single && isCappedFor(single, zoneId) && capSummary(single, c.slotAssignment, zoneId).map(({ key, ...chip }) => <SummaryChip key={`cap-${key}`} {...chip} />)}
       {playlist && styleSummary(playlist).map(({ key, ...chip }) => <SummaryChip key={`style-${key}`} {...chip} />)}
     </span>
@@ -458,7 +470,7 @@ export function PlaylistManagementPage({ flags }: { flags: Flags }) {
         fullWidthCellRenderer={SettingsRow}
         getRowHeight={(p: RowHeightParams<Row>) => {
           if (p.data?.kind === 'settings') return Math.max(1, rowHeights.current.get(p.data.p.id) ?? estimateSettingsHeight(p.data.p, draft.types, slotAssignment))
-          return 44
+          return Math.max(44, rowHeights.current.get(`summary:${p.data!.p.id}`) ?? 0)
         }}
         /* Expanding a row inserts a taller settings row; recompute every row's height and position. */
         onRowDataUpdated={(e) => e.api.resetRowHeights()}
