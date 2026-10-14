@@ -40,7 +40,10 @@ const MOCKS_DIR = resolve(API_DIR, '../dsp-mocks')
 const ROOT = resolve(API_DIR, '../../')
 const TOKEN = 'poc-token-google-dv360'
 const PARTNER = 'p_google'
-const ADVERTISER = 'swisse'
+/* A seeded demo advertiser on Google's seat that needs approval (the base
+   seed's Swisse placeholder is retired by the demo estate). */
+const ADVERTISER = 'mondelez-international'
+const ADVERTISER_NAME = 'Mondelez International'
 /* The journey's own "now": a Thursday mid-morning UTC. Windows are 24 h
    from 00:00 UTC with a cutoff at 18:00 UTC the day before (seed defaults). */
 const START = new Date('2026-10-01T10:00:00.000Z')
@@ -118,7 +121,7 @@ Base floor CPM + currency (company-wide): ${h.floorCpm} ${h.currency}
 Effective reserve price: ${h.reservePrice ?? 'none'}
 Effective max campaigns: ${h.maxCampaigns ?? 'default'}
 Effective billing unit hours: ${h.billingUnitHours ?? 'default'}
-Advertiser: Swisse / ${ADVERTISER}
+Advertiser: ${ADVERTISER_NAME} / ${ADVERTISER}
 DSP: Google DSP / ${PARTNER} (connected, Live): ${h.dspConnected ? 'yes' : 'no'}
 store.cv_gender enabled for ${PARTNER}: ${h.cvGenderEnabled ? 'yes' : 'no'}
 Displays / stores: ${h.displays.length} (${h.displays.join(', ')}) / ${h.stores.length} (${h.stores.join(', ')})
@@ -169,7 +172,7 @@ async function main() {
   console.log('\nPhase 1 — retailer setup (J)')
   const partners = await admin('GET', '/partners')
   const google = partners.json?.items?.find((p: any) => p.id === PARTNER)
-  must('J0', 'Google DSP connected and Live; Swisse on its seat', google?.status === 'connected' && google?.mode === 'live' && google?.seats?.some((s: any) => /swisse/i.test(s.name)), 'connected, live, Swisse seat', JSON.stringify({ status: google?.status, mode: google?.mode, seats: google?.seats?.map((s: any) => s.name) }))
+  must('J0', 'Google DSP connected and Live; Mondelez International on its seat', google?.status === 'connected' && google?.mode === 'live' && google?.seats?.some((s: any) => s.name === ADVERTISER_NAME), 'connected, live, Mondelez International seat', JSON.stringify({ status: google?.status, mode: google?.mode, seats: google?.seats?.map((s: any) => s.name) }))
   const access = await admin('PUT', '/targeting-variables', { access: { 'store.cv_gender': [PARTNER] } })
   const cv = access.json?.items?.find((v: any) => v.key === 'store.cv_gender')
   must('J0b', 'store.cv_gender enabled for Google DSP', access.status === 200 && (cv?.access === 'all' || cv?.access?.includes?.(PARTNER) || cv?.partnerIds?.includes?.(PARTNER)), `access includes ${PARTNER}`, `${access.status} ${JSON.stringify(cv)}`)
@@ -324,7 +327,7 @@ async function main() {
   console.log('\nPhase 5 — deal types: preferred and programmatic guaranteed, CV gender (M1–M9)')
   const RESERVE_PRICE = floorCpm + 50
   const assign = (buyersListId: string | null) => admin('PUT', '/available-inventory', { items: [{ displayTypeId: dtId, slot: 1, reservePrice: RESERVE_PRICE, assignedTo: { partnerIds: buyersListId ? [] : [PARTNER], advertisers: [], whitelistOnly: false, buyersListId } }] })
-  const newList = (dealType: string, extra: Record<string, unknown> = {}) => admin('POST', '/buyers-lists', { name: `Run 7 ${dealType}`, dealType, invitedBuyers: [{ partnerId: PARTNER, seatId: '5130002' }], ...extra })
+  const newList = (dealType: string, extra: Record<string, unknown> = {}) => admin('POST', '/buyers-lists', { name: `Run 7 ${dealType}`, dealType, invitedBuyers: [{ partnerId: PARTNER, seatId: '5130005' }], ...extra })
   const viewsPerWindow = 1200 /* the audience score seeded in Phase 1b */
   const t0 = Date.parse(w2) + 24 * 3_600_000
   const winPreferred = new Date(t0 + 2 * 24 * 3_600_000).toISOString()

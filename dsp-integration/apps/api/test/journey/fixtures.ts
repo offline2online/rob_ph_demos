@@ -30,7 +30,7 @@ export const BAD = { file: 'bad/Bad-Wrong-Canvas-1080x1920.png', bytes: png(1080
 
 export function campaignBody(displayTypeId: string, advertiserId: string, slot = 1) {
   return {
-    advertiserId, name: 'Run 6 — Pharma Brand (Swisse)', displayTypeId, slot,
+    advertiserId, name: 'Run 6 — Confectionery Brand (Mondelez International)', displayTypeId, slot,
     default: { pricingType: 'localised' },
     targeted: versions().filter((v) => v.targeting).map((v) => ({ id: v.id, priority: v.targeting!.priority, pricingType: v.targeting!.pricingType, rules: v.targeting!.rules })),
   }
@@ -45,7 +45,7 @@ export function writePackage(dir: string) {
   const manifest = {
     generated: 'test/journey/fixtures.ts — synthetic media, Run 6 Runbook version table',
     canvas: CANVAS,
-    campaign: { body: campaignBody('<displayTypeId from the handover>', 'swisse') },
+    campaign: { body: campaignBody('<displayTypeId from the handover>', 'mondelez-international') },
     versions: versions().map((v) => ({ id: v.id, file: v.file })),
     /* The ±5% aspect-ratio rule (PR 329039a): ratio within 5% of the canvas and
        each side at least 50% of it. 1280×720 and 1365×768 pass; 1080×1920 fails. */
