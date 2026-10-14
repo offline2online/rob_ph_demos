@@ -48,9 +48,9 @@ describe('Display Types page', () => {
     expect(within(list).getAllByRole('option').map((o) => o.textContent)).toEqual([expect.stringContaining('Landscape'), expect.stringContaining('Menu Board — Long Format')])
 
     const labels = Array.from(document.querySelectorAll('label')).map((l) => l.textContent)
-    /* Default VAC-d sits under the canvas size (ticket jhVpFHHsCp2L48vn4lRe,
-       4 Oct 2026); its label carries the info-tooltip icon's ligature text. */
-    expect(labels.slice(0, 8)).toEqual(['Touch Point', '*Display Type Name', 'Description', '*Display Canvas Size (Resolution)', 'Default VAC-d (assumed views per play window)info', 'Store Zoneinfo', 'Background Color', 'Default Playlist'])
+    /* Store Zone then Default VAC-d sit under the canvas size (ticket
+       jhVpFHHsCp2L48vn4lRe, 4 Oct 2026; order swapped 14 Oct 2026); its label carries the info-tooltip icon's ligature text. */
+    expect(labels.slice(0, 8)).toEqual(['Touch Point', '*Display Type Name', 'Description', '*Display Canvas Size (Resolution)', 'Store Zoneinfo', 'Default VAC-d (assumed views per play window)info', 'Background Color', 'Default Playlist'])
 
     /* Playlist Settings editing (and slot assignment) moved to Playlist
        Management, under each playlist, 26 Sep 2026 (see
