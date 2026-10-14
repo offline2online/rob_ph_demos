@@ -3179,6 +3179,16 @@ components:
         displayTypeId: {type: string}
         displayTypeName: {type: string}
         touchPoint: {type: string}
+        playlistDisplayTypes:
+          type: array
+          description: Every display type this row's playlist is assigned to (as its default playlist or a zone's), with each one's description. Available Inventory lists them when the playlist name is hovered. Read-only; absent from a demo snapshot taken before 14 Oct 2026.
+          items:
+            type: object
+            required: [id, name, description]
+            properties:
+              id: {type: string}
+              name: {type: string}
+              description: {type: [string, 'null']}
         scored:
           type: boolean
           description: |

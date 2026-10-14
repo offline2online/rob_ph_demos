@@ -799,6 +799,22 @@ describe('Advertisers / Inventory', () => {
     expect(within(inventory).getByText('(23,040)')).toBeInTheDocument()
   })
 
+  /* Ticket NPs6MBZQ6CfhFPHmBuGp (14 Oct 2026): hovering the playlist names it plus each assigned display type and its description. */
+  it('shows the playlist name with its assigned display types and their descriptions on hover', async () => {
+    const inv = ADVERTISER_PAGE['/api/admin/v1/available-inventory']
+    const playlistDisplayTypes = [
+      { id: 'menu_board', name: 'Menu Board — Long Format', description: 'Portrait menu screens above the counter' },
+      { id: 'portrait', name: 'Portrait', description: null },
+    ]
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...ADVERTISER_PAGE, '/api/admin/v1/available-inventory': { ...inv, items: [{ ...inv.items[0], playlistDisplayTypes }] } })))
+    renderAt('/advertisers')
+    const inventory = await screen.findByLabelText('Available Inventory')
+    fireEvent.mouseOver(await within(inventory).findByLabelText('Playlist: Menu Board Playlist'))
+    expect(await screen.findByText('Assigned display types:')).toBeInTheDocument()
+    expect(screen.getByText(/Portrait menu screens above the counter/)).toBeInTheDocument()
+    expect(screen.getByText(/\(no description\)/)).toBeInTheDocument()
+  }, slow(45000))
+
   /* Ticket ZglKshE5dUVasljNcIPH (8 Oct 2026): a buyers list shows the sum of the fleet plays per window of every position it is assigned to. */
   it('shows a buyers list the combined fleet plays per window of its assigned positions', async () => {
     const inv = ADVERTISER_PAGE['/api/admin/v1/available-inventory']
