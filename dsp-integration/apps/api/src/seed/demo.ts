@@ -2,7 +2,7 @@
    exercised for real, on top of the base seed. Four advertiser slots on
    Landscape and three on Portrait (the Menu Board keeps its three), twelve
    stores and thirty-odd displays so display counts and reach differ per
-   position, three DSPs with a dozen advertisers between them, settings for
+   position, three DSPs and two direct advertisers — a dozen between them, all real suppliers to a global convenience retailer (7-Eleven) — settings for
    each, campaigns in every approval state with briefs and creatives,
    localised / personalised bookings on every position so the
    booking schedule's layer pills all have something to show, reserve prices
@@ -67,7 +67,7 @@ const DEMO_SLOTS: Record<string, { cap: number; loopLengthSec: number; reservePr
     slots: [
       slot('Hero slot', { reservePrice: 220 }),
       /* Sold by window: the demo's private auction. Every other open slot is real time. */
-      slot('Supplier slot', { partnerIds: ['p_google'], listMode: 'deal', buyersListId: DEMO_DEAL_ID }),
+      slot('Supplier slot', { partnerIds: ['p_google', 'p_ttd'], listMode: 'deal', buyersListId: DEMO_DEAL_ID }),
       slot('Whitelist slot', { listMode: 'whitelist_only' }),
       slot('Held for Nestlé', { partnerIds: ['p_google'], advertisers: ['Nestlé'], listMode: null, }),
     ],
@@ -77,46 +77,55 @@ const DEMO_SLOTS: Record<string, { cap: number; loopLengthSec: number; reservePr
     slots: [
       slot('Aisle hero', { reservePrice: 120 }),
       slot('Health & beauty', { partnerIds: ['p_google', 'p_ttd'], }),
-      slot('Held for Swisse', { partnerIds: ['p_google'], advertisers: ['Swisse'], listMode: null }),
+      slot('Held for Red Bull & Gatorade', { partnerIds: [], advertisers: ['Red Bull', 'Gatorade'], listMode: null }),
     ],
   },
 }
 
-/* Who each DSP brings. Unilever is on two DSPs, which is what the
-   Advertisers table's "via" column exists to show. */
+/* Who each DSP brings: suppliers a global convenience retailer (7-Eleven)
+   really buys from, beverages and confectionery first. Unilever is on two
+   DSPs, which is what the Advertisers table's "via" column exists to show.
+   Nestlé's seat is the base seed's; the base seed's Swisse and L'Oréal
+   placeholders are retired by `retirePlaceholderAdvertisers` below. */
 const DEMO_SEATS: Record<string, { id: string; name: string; domain: string }[]> = {
   p_google: [
-    { id: '5130003', name: 'Arnott’s', domain: 'arnotts.com.au' },
-    { id: '5130004', name: 'Coca-Cola', domain: 'coca-cola.com' },
-    { id: '5130005', name: 'Unilever', domain: 'unilever.com' },
-    { id: '5130006', name: 'Mars Wrigley', domain: 'mars.com' },
-    { id: '5130007', name: 'Kellogg’s', domain: 'kelloggs.com.au' },
+    { id: '5130003', name: 'Coca-Cola', domain: 'coca-cola.com' },
+    { id: '5130004', name: 'Mars Wrigley', domain: 'mars.com' },
+    { id: '5130005', name: 'Mondelez International', domain: 'mondelezinternational.com' },
+    { id: '5130006', name: 'Kellanova', domain: 'kellanova.com' },
+    { id: '5130007', name: 'Unilever', domain: 'unilever.com' },
   ],
-  p_amazon: [{ id: '588104412', name: 'Colgate-Palmolive', domain: 'colgatepalmolive.com' }],
+  p_amazon: [{ id: '588104412', name: 'The Hershey Company', domain: 'thehersheycompany.com' }],
   p_ttd: [
     { id: 'ttd-7001', name: 'Unilever', domain: 'unilever.com' },
-    { id: 'ttd-7002', name: 'Procter & Gamble', domain: 'pg.com' },
-    { id: 'ttd-7003', name: 'Bega', domain: 'bega.com.au' },
-    { id: 'ttd-7004', name: 'Lion', domain: 'lionco.com' },
+    { id: 'ttd-7002', name: 'PepsiCo', domain: 'pepsico.com' },
+    { id: 'ttd-7003', name: 'Frito-Lay', domain: 'fritolay.com' },
+    { id: 'ttd-7004', name: 'Monster Energy', domain: 'monsterenergy.com' },
   ],
 }
+
+/* Advertisers that deal with the retailer directly, with no DSP. */
+const DEMO_DIRECT = ['Red Bull', 'Gatorade']
+const DIRECT_PARTNER = 'direct'
 
 /* Advertisers whitelisted on each demo DSP, by seat name. */
 const DEMO_WHITELIST: Record<string, string[]> = {
   p_google: ['Coca-Cola', 'Unilever'],
-  p_ttd: ['Unilever', 'Procter & Gamble'],
+  p_ttd: ['Unilever', 'PepsiCo'],
 }
 
 const DEMO_ADVERTISER_SETTINGS: Record<string, { approvalRequired: boolean; floorMultiplier: number }> = {
-  [advertiserSlug('Arnott’s')]: { approvalRequired: false, floorMultiplier: 0.9 },
   [advertiserSlug('Coca-Cola')]: { approvalRequired: false, floorMultiplier: 1.1 },
-  [advertiserSlug('Unilever')]: { approvalRequired: true, floorMultiplier: 1 },
+  [advertiserSlug('PepsiCo')]: { approvalRequired: false, floorMultiplier: 1.1 },
+  [advertiserSlug('Red Bull')]: { approvalRequired: false, floorMultiplier: 1.2 },
+  [advertiserSlug('Monster Energy')]: { approvalRequired: true, floorMultiplier: 1.3 },
+  [advertiserSlug('Gatorade')]: { approvalRequired: false, floorMultiplier: 1 },
   [advertiserSlug('Mars Wrigley')]: { approvalRequired: true, floorMultiplier: 0.95 },
-  [advertiserSlug('Kellogg’s')]: { approvalRequired: true, floorMultiplier: 1 },
-  [advertiserSlug('Colgate-Palmolive')]: { approvalRequired: true, floorMultiplier: 1.25 },
-  [advertiserSlug('Procter & Gamble')]: { approvalRequired: false, floorMultiplier: 1.15 },
-  [advertiserSlug('Bega')]: { approvalRequired: true, floorMultiplier: 0.85 },
-  [advertiserSlug('Lion')]: { approvalRequired: true, floorMultiplier: 1.3 },
+  [advertiserSlug('Mondelez International')]: { approvalRequired: true, floorMultiplier: 1 },
+  [advertiserSlug('The Hershey Company')]: { approvalRequired: true, floorMultiplier: 1.05 },
+  [advertiserSlug('Kellanova')]: { approvalRequired: true, floorMultiplier: 1 },
+  [advertiserSlug('Frito-Lay')]: { approvalRequired: false, floorMultiplier: 0.9 },
+  [advertiserSlug('Unilever')]: { approvalRequired: true, floorMultiplier: 1 },
 }
 
 /* ---------------------------------------------------------- the campaigns */
@@ -171,36 +180,40 @@ const DEMO_CAMPAIGNS: DemoCampaign[] = [
        estate has at least one tile with more than one trigger icon lit. */
     targeting: personalised(['Value seeker', 'Snacker'], [[rule('store.cv_age', 'include', ['18–24'])]]),
     brief: brief('Afternoon snack occasion on entrance screens; personalised creative for value seekers, or anyone the display reads as a younger shopper.', { promotedProducts: ['KitKat 4 Finger', 'KitKat Chunky'], skus: ['SKU-20411', 'SKU-20412'], targetAudiences: ['Afternoon shoppers'], landingPageUrl: 'https://kitkat.com.au' }) },
-  { id: 'c_demo_nestle_purina', name: 'Nestlé — Purina ONE', advertiser: 'Nestlé', partnerId: 'p_google', displayTypeId: 'portrait', pricingType: 'localised', state: 'draft', colour: '#6a1b9a', line: 'Purina ONE', createdAt: '2026-09-19T14:00:00.000Z',
-    targeting: LOCALISED, brief: brief('Pet aisle portrait screens, pending creative sign-off.', { promotedProducts: ['Purina ONE Adult'] }) },
-  { id: 'c_demo_swisse_mens', name: 'Swisse — Men’s Ultivite', advertiser: 'Swisse', partnerId: 'p_google', displayTypeId: 'landscape', pricingType: 'localised', state: 'awaiting', colour: '#004d40', line: 'Men’s Ultivite', createdAt: '2026-09-19T09:30:00.000Z',
-    targeting: states('NSW', 'VIC'), brief: brief('East-coast launch of the reformulated Men’s Ultivite.', { promotedProducts: ['Men’s Ultivite'], targetAudiences: ['Men 30–55'], objective: 'Brand Awareness' }) },
-  { id: 'c_demo_swisse_beauty', name: 'Swisse — Beauty collagen', advertiser: 'Swisse', partnerId: 'p_google', displayTypeId: 'portrait', pricingType: 'localised', state: 'approved', colour: '#ad1457', line: 'Scan for a sample', createdAt: '2026-09-12T09:00:00.000Z',
-    targeting: intentTargeted(['Browse', 'Gift']), brief: brief('Sample offer in the beauty aisle for browsers and gift shoppers.', { promotedProducts: ['Beauty Collagen Glow'], targetAudiences: ['Beauty browsers'], landingPageUrl: 'https://swisse.com/collagen' }) },
-  { id: 'c_demo_arnotts_timtam', name: 'Arnott’s — Tim Tam Double Coat', advertiser: 'Arnott’s', partnerId: 'p_google', displayTypeId: 'landscape', pricingType: 'localised', state: 'approved', colour: '#3e2723', line: 'Double Coat is back', createdAt: '2026-09-11T09:00:00.000Z',
-    targeting: metro('localised'), brief: brief('Metro stores only, while stocks last.', { promotedProducts: ['Tim Tam Double Coat'], skus: ['SKU-30101'] }) },
-  { id: 'c_demo_arnotts_shapes', name: 'Arnott’s — Shapes Pizza', advertiser: 'Arnott’s', partnerId: 'p_google', displayTypeId: 'menu_board', pricingType: 'localised', state: 'approved_off', colour: '#e65100', line: 'Shapes Pizza', createdAt: '2026-09-08T09:00:00.000Z',
-    targeting: LOCALISED, brief: brief('Approved but switched off until the in-store display stock lands.', { promotedProducts: ['Shapes Pizza'] }) },
+  { id: 'c_demo_nestle_coffee', name: 'Nestlé — Nescafé iced coffee', advertiser: 'Nestlé', partnerId: 'p_google', displayTypeId: 'portrait', pricingType: 'localised', state: 'draft', colour: '#4e342e', line: 'Iced coffee, ready to go', createdAt: '2026-09-19T14:00:00.000Z',
+    targeting: LOCALISED, brief: brief('Grab-and-go iced coffee beside the chiller, pending creative sign-off.', { promotedProducts: ['Nescafé Iced Coffee 250ml'] }) },
+  { id: 'c_demo_redbull_summer', name: 'Red Bull — Summer Energy', advertiser: 'Red Bull', partnerId: DIRECT_PARTNER, displayTypeId: 'landscape', pricingType: 'localised', state: 'approved', colour: '#1a237e', line: 'Gives you wings', createdAt: '2026-09-11T09:00:00.000Z',
+    targeting: metro('localised'), brief: brief('Metro stores through the summer, booked direct with the retailer.', { promotedProducts: ['Red Bull 250ml', 'Red Bull Sugarfree 250ml'], skus: ['SKU-50101'] }) },
+  { id: 'c_demo_redbull_edition', name: 'Red Bull — Summer Edition', advertiser: 'Red Bull', partnerId: DIRECT_PARTNER, displayTypeId: 'portrait', pricingType: 'localised', state: 'awaiting', colour: '#c62828', line: 'The Summer Edition', createdAt: '2026-09-19T09:30:00.000Z',
+    targeting: states('NSW', 'VIC'), brief: brief('Limited-run flavour for the east coast.', { promotedProducts: ['Red Bull Summer Edition 250ml'], targetAudiences: ['Adults 18–34'], objective: 'Brand Awareness' }) },
   { id: 'c_demo_cocacola_zero', name: 'Coca-Cola — Zero Sugar', advertiser: 'Coca-Cola', partnerId: 'p_google', displayTypeId: 'landscape', pricingType: 'personalised', state: 'approved', colour: '#000000', line: 'Zero Sugar. Real taste.', createdAt: '2026-09-09T09:00:00.000Z',
     /* Combines the individual and aggregate-store trigger tiers. */
     targeting: personalised(['Fitness', 'Health'], [[rule('store.reason_for_visit', 'equal', ['Returns'])]]),
     brief: brief('Always-on Zero Sugar with a fitness-segment variant, or when the queue here is mostly here for returns (a proxy for a busier, more price-sensitive moment).', { promotedProducts: ['Coca-Cola Zero Sugar 600ml'], skus: ['SKU-40011'], targetAudiences: ['Fitness'] }) },
-  { id: 'c_demo_cocacola_summer', name: 'Coca-Cola — Summer share pack', advertiser: 'Coca-Cola', partnerId: 'p_google', displayTypeId: 'portrait', pricingType: 'localised', state: 'draft', colour: '#f40009', line: 'Share a Coke', createdAt: '2026-09-20T11:00:00.000Z',
-    targeting: localisedUpsell('Entrance', 'Food Court'), brief: brief('Entrance and food-court screens get the Summer variant; the default plays everywhere else.', { promotedProducts: ['Coca-Cola 24pk'] }) },
-  { id: 'c_demo_unilever_dove', name: 'Unilever — Dove Deep Moisture', advertiser: 'Unilever', partnerId: 'p_ttd', displayTypeId: 'portrait', pricingType: 'localised', state: 'awaiting', colour: '#1565c0', line: 'Dove', createdAt: '2026-09-19T16:00:00.000Z',
-    targeting: LOCALISED, brief: brief('Beauty aisle portrait screens, all stores.', { promotedProducts: ['Dove Deep Moisture Body Wash'], objective: 'Brand Awareness' }) },
-  { id: 'c_demo_unilever_streets', name: 'Unilever — Streets Magnum', advertiser: 'Unilever', partnerId: 'p_google', displayTypeId: 'landscape', pricingType: 'localised', state: 'rejected', colour: '#4e342e', line: 'Magnum — 2 for $8', createdAt: '2026-09-17T12:00:00.000Z',
-    targeting: LOCALISED, brief: brief('Magnum multi-buy on the checkout screens.', { promotedProducts: ['Magnum Classic 4pk'] }), rejectReason: 'Price shown in the artwork (2 for $8). Prices come from Personalisation Hub, not the creative.' },
+  { id: 'c_demo_cocacola_share', name: 'Coca-Cola — Share a Coke', advertiser: 'Coca-Cola', partnerId: 'p_google', displayTypeId: 'portrait', pricingType: 'localised', state: 'draft', colour: '#f40009', line: 'Share a Coke', createdAt: '2026-09-20T11:00:00.000Z',
+    targeting: localisedUpsell('Entrance', 'Food Court'), brief: brief('Entrance and food-court screens get the Share a Coke variant; the default plays everywhere else.', { promotedProducts: ['Coca-Cola 600ml Share bottles'] }) },
+  { id: 'c_demo_pepsi_max', name: 'PepsiCo — Pepsi Max Summer', advertiser: 'PepsiCo', partnerId: 'p_ttd', displayTypeId: 'landscape', pricingType: 'localised', state: 'approved', colour: '#0d47a1', line: 'Maximum taste', createdAt: '2026-09-14T09:00:00.000Z',
+    targeting: LOCALISED, brief: brief('Summer chiller push on the entrance screens.', { promotedProducts: ['Pepsi Max 600ml'] }) },
+  { id: 'c_demo_pepsi_mtndew', name: 'PepsiCo — Mountain Dew Game Night', advertiser: 'PepsiCo', partnerId: 'p_ttd', displayTypeId: 'portrait', pricingType: 'personalised', state: 'draft', colour: '#689f38', line: 'Game on', createdAt: '2026-09-21T09:00:00.000Z',
+    targeting: personalised(['Snacker']), brief: brief('Evening snack occasion; personalised for the snacker segment.', { promotedProducts: ['Mountain Dew 600ml'] }) },
+  { id: 'c_demo_monster_ultra', name: 'Monster Energy — Ultra Paradise', advertiser: 'Monster Energy', partnerId: 'p_ttd', displayTypeId: 'menu_board', pricingType: 'localised', state: 'awaiting', colour: '#2e7d32', line: 'Unleash the beast', createdAt: '2026-09-20T08:00:00.000Z',
+    targeting: LOCALISED, brief: brief('Cold-drink zone on the menu boards.', { promotedProducts: ['Monster Ultra Paradise 500ml'] }) },
+  { id: 'c_demo_gatorade_summer', name: 'Gatorade — Summer Hydration', advertiser: 'Gatorade', partnerId: DIRECT_PARTNER, displayTypeId: 'menu_board', pricingType: 'localised', state: 'approved_off', colour: '#e65100', line: 'Fuel the game', createdAt: '2026-09-08T09:00:00.000Z',
+    targeting: LOCALISED, brief: brief('Approved but switched off until the in-store display stock lands.', { promotedProducts: ['Gatorade Orange 600ml'] }) },
   { id: 'c_demo_mars_mms', name: 'Mars Wrigley — M&M’s Crispy', advertiser: 'Mars Wrigley', partnerId: 'p_google', displayTypeId: 'landscape', pricingType: 'localised', state: 'approved', colour: '#ffb300', line: 'M&M’s Crispy', createdAt: '2026-09-13T09:00:00.000Z',
     targeting: states('QLD', 'WA'), brief: brief('Northern and western states while the weather is warm.', { promotedProducts: ['M&M’s Crispy 145g'] }) },
-  { id: 'c_demo_kelloggs_nutrigrain', name: 'Kellogg’s — Nutri-Grain', advertiser: 'Kellogg’s', partnerId: 'p_google', displayTypeId: 'menu_board', pricingType: 'localised', state: 'awaiting', colour: '#2e7d32', line: 'Iron Man Food', createdAt: '2026-09-20T08:00:00.000Z',
-    targeting: LOCALISED, brief: brief('Breakfast daypart on the menu boards.', { promotedProducts: ['Nutri-Grain 500g'] }) },
-  { id: 'c_demo_pg_gillette', name: 'Procter & Gamble — Gillette Labs', advertiser: 'Procter & Gamble', partnerId: 'p_ttd', displayTypeId: 'landscape', pricingType: 'personalised', state: 'approved', colour: '#0d47a1', line: 'Gillette Labs', createdAt: '2026-09-14T09:00:00.000Z',
-    targeting: personalised(['Grooming']), brief: brief('Personalised for visitors in the grooming segment; localised elsewhere.', { promotedProducts: ['Gillette Labs Razor'], targetAudiences: ['Men 25–45'] }) },
-  { id: 'c_demo_bega_peanut', name: 'Bega — Peanut Butter', advertiser: 'Bega', partnerId: 'p_ttd', displayTypeId: 'landscape', pricingType: 'localised', state: 'rejected', colour: '#8d6e63', line: 'Bega Peanut Butter', createdAt: '2026-09-18T10:00:00.000Z',
-    targeting: LOCALISED, brief: brief('Spread awareness.'), rejectReason: 'Creative is 1280×720; the Landscape canvas is 1920×1080.' },
-  { id: 'c_demo_lion_xxxx', name: 'Lion — XXXX Zero', advertiser: 'Lion', partnerId: 'p_ttd', displayTypeId: 'menu_board', pricingType: 'localised', state: 'draft', colour: '#f9a825', line: 'XXXX Zero', createdAt: '2026-09-21T09:00:00.000Z',
-    targeting: LOCALISED, brief: brief('Zero-alcohol range on the menu boards; awaiting category approval.') },
+  { id: 'c_demo_mondelez_easter', name: 'Mondelez — Cadbury Easter', advertiser: 'Mondelez International', partnerId: 'p_google', displayTypeId: 'landscape', pricingType: 'localised', state: 'approved', colour: '#4a148c', line: 'Cadbury Easter', createdAt: '2026-09-12T09:00:00.000Z',
+    targeting: metro('localised'), brief: brief('Easter range at the front of store, metro stores first.', { promotedProducts: ['Cadbury Dairy Milk Easter Eggs'], skus: ['SKU-30101'] }) },
+  { id: 'c_demo_kellanova_pringles', name: 'Kellanova — Pringles Game Day', advertiser: 'Kellanova', partnerId: 'p_google', displayTypeId: 'landscape', pricingType: 'personalised', state: 'approved', colour: '#b71c1c', line: 'Once you pop', createdAt: '2026-09-15T09:00:00.000Z',
+    targeting: personalised(['Snacker']), brief: brief('Game-day snacking, personalised for the snacker segment; localised elsewhere.', { promotedProducts: ['Pringles Original 134g'], targetAudiences: ['Snackers'] }) },
+  { id: 'c_demo_fritolay_doritos', name: 'Frito-Lay — Doritos Game Night', advertiser: 'Frito-Lay', partnerId: 'p_ttd', displayTypeId: 'landscape', pricingType: 'personalised', state: 'approved', colour: '#d84315', line: 'For the bold', createdAt: '2026-09-14T11:00:00.000Z',
+    targeting: personalised(['Snacker', 'Value seeker']), brief: brief('Personalised for the snacker and value-seeker segments.', { promotedProducts: ['Doritos Nacho Cheese 170g'] }) },
+  { id: 'c_demo_unilever_magnum', name: 'Unilever — Magnum Classic', advertiser: 'Unilever', partnerId: 'p_google', displayTypeId: 'landscape', pricingType: 'localised', state: 'rejected', colour: '#4e342e', line: 'Magnum — 2 for $8', createdAt: '2026-09-17T12:00:00.000Z',
+    targeting: LOCALISED, brief: brief('Magnum multi-buy on the checkout screens.', { promotedProducts: ['Magnum Classic 4pk'] }), rejectReason: 'Price shown in the artwork (2 for $8). Prices come from Personalisation Hub, not the creative.' },
+  { id: 'c_demo_unilever_streets', name: 'Unilever — Streets Cornetto', advertiser: 'Unilever', partnerId: 'p_ttd', displayTypeId: 'portrait', pricingType: 'localised', state: 'awaiting', colour: '#1565c0', line: 'Cornetto', createdAt: '2026-09-19T16:00:00.000Z',
+    targeting: LOCALISED, brief: brief('Ice-cream freezer portrait screens, all stores.', { promotedProducts: ['Streets Cornetto Classic 4pk'], objective: 'Brand Awareness' }) },
+  { id: 'c_demo_hershey_reeses', name: 'The Hershey Company — Reese’s Cups', advertiser: 'The Hershey Company', partnerId: 'p_amazon', displayTypeId: 'landscape', pricingType: 'localised', state: 'rejected', colour: '#6d4c41', line: 'Reese’s Cups', createdAt: '2026-09-18T10:00:00.000Z',
+    targeting: LOCALISED, brief: brief('Reese’s launch at the checkout.'), rejectReason: 'Creative is 1280×720; the Landscape canvas is 1920×1080.' },
 ]
 
 const svg = (w: number, h: number, bg: string, brand: string, line: string) =>
@@ -208,10 +221,46 @@ const svg = (w: number, h: number, bg: string, brand: string, line: string) =>
     `<text x="50%" y="45%" fill="#fff" font-family="Helvetica, Arial, sans-serif" font-size="${Math.round(h / 8)}" font-weight="700" text-anchor="middle">${brand}</text>` +
     `<text x="50%" y="60%" fill="#fff" font-family="Helvetica, Arial, sans-serif" font-size="${Math.round(h / 18)}" text-anchor="middle">${line}</text></svg>`)
 
+/* ------------------------------------------------- retiring placeholders */
+
+/* The base seed (kept minimal, and counted by the API tests) brings Swisse and
+   L'Oréal, which are not suppliers to a convenience retailer. When the demo
+   estate is applied they are retired: their DSP seats are dropped and their
+   three sample campaigns are re-labelled under advertisers that are, with a
+   new creative. Idempotent; on a database that already holds bookings under
+   the old names, reset it rather than re-running this. */
+const PLACEHOLDER_SEATS = ['Swisse', 'L\'Oréal', 'L’Oréal']
+const RELABELLED = [
+  { id: 'c_api_swisse', from: 'swisse', advertiser: 'Mondelez International', name: 'Mondelez — Cadbury Easter', colour: '#4a148c', line: 'Cadbury Easter' },
+  { id: 'c_api_swisse_kids', from: 'swisse', advertiser: 'Kellanova', name: 'Kellanova — Pringles Game Day (draft)', colour: '#b71c1c', line: 'Pringles Game Day' },
+  { id: 'c_dsp_loreal', from: 'loreal', advertiser: 'The Hershey Company', name: 'The Hershey Company — Reese’s Party Pack', colour: '#6d4c41', line: 'Reese’s Party Pack — A$29.95' },
+]
+
+export async function retirePlaceholderAdvertisers(ctx: Context) {
+  for (const p of await ctx.partners.list()) {
+    const gone = p.seats.filter((s) => PLACEHOLDER_SEATS.includes(s.name))
+    if (!gone.length) continue
+    const ids = new Set(gone.map((s) => s.id))
+    await ctx.partners.update(p.id, { seats: p.seats.filter((s) => !ids.has(s.id)), allowList: p.allowList.filter((id) => !ids.has(id)) })
+  }
+  for (const r of RELABELLED) {
+    const row = ctx.db.prepare('SELECT advertiser_id AS a, display_type_id AS d FROM campaigns WHERE id = ?').get(r.id) as { a: string; d: string } | undefined
+    if (!row || row.a !== r.from) continue
+    const dt = await ctx.displayTypes.get(row.d)
+    const { width, height } = dt?.displayCanvasSize ?? { width: 1920, height: 1080 }
+    const file = await ctx.assets.put(svg(width, height, r.colour, r.advertiser, r.line), '.svg')
+    await onFree(ctx.db, () => {
+      ctx.db.prepare('UPDATE campaigns SET name = ?, advertiser_id = ? WHERE id = ?').run(r.name, advertiserSlug(r.advertiser), r.id)
+      ctx.db.prepare('UPDATE campaign_assets SET file = ? WHERE campaign_id = ?').run(file, r.id)
+    })
+  }
+}
+
 /* ---------------------------------------------------------------- apply */
 
 export async function seedDemo(ctx: Context) {
   const report = { stores: 0, displays: 0, slots: 0, seats: 0, campaigns: 0, bookings: 0 }
+  await retirePlaceholderAdvertisers(ctx)
 
   await tx(ctx.db, async () => {
     /* Stores and displays. */
@@ -246,6 +295,10 @@ export async function seedDemo(ctx: Context) {
       report.seats += missing.length
     }
 
+    /* Direct advertisers (no DSP). */
+    const direct = new Set((await ctx.company.directAdvertisers()).map((d) => d.advertiserId))
+    for (const name of DEMO_DIRECT) if (!direct.has(advertiserSlug(name))) await ctx.company.addDirectAdvertiser(advertiserSlug(name), name)
+
     /* Advertiser settings (only where none is saved yet) and the lists. */
     const saved = await ctx.company.advertiserSettings()
     const fresh = Object.fromEntries(Object.entries(DEMO_ADVERTISER_SETTINGS).filter(([id]) => !(id in saved)))
@@ -259,12 +312,12 @@ export async function seedDemo(ctx: Context) {
       if (allowList.length !== p.allowList.length) await ctx.partners.update(partnerId, { allowList })
     }
 
-    /* The demo's one private auction (8 Oct 2026: windows are sold only under a deal or by a hold; every other open slot is real time), inviting every seat of Google DSP. */
+    /* The demo's one private auction (8 Oct 2026: windows are sold only under a deal or by a hold; every other open slot is real time), inviting every seat of Google DSP and The Trade Desk. */
     if (!(await ctx.buyersLists.get(DEMO_DEAL_ID))) {
-      const google = await ctx.partners.get('p_google')
+      const invited = (await Promise.all(['p_google', 'p_ttd'].map((id) => ctx.partners.get(id)))).flatMap((p) => (p?.seats ?? []).map((s) => ({ partnerId: p!.id, seatId: s.id })))
       await ctx.buyersLists.insert({
-        id: DEMO_DEAL_ID, name: 'Demo private auction', description: 'Open to every Google DSP advertiser; no auction deadline, so it clears a fresh auction every play window.',
-        invitedBuyers: (google?.seats ?? []).map((s) => ({ partnerId: 'p_google', seatId: s.id })), activeFrom: null, activeTo: null, auctionCloses: null,
+        id: DEMO_DEAL_ID, name: 'Demo private auction', description: 'Open to every Google DSP and Trade Desk advertiser; no auction deadline, so it clears a fresh auction every play window.',
+        invitedBuyers: invited, activeFrom: null, activeTo: null, auctionCloses: null,
       })
     }
 
@@ -338,6 +391,8 @@ async function seedDemoBookings(ctx: Context) {
   const brands = (await ctx.partners.list())
     .filter((p) => p.status === 'connected')
     .flatMap((p) => p.seats.map((s) => ({ partnerId: p.id, name: s.name, advertiserId: advertiserSlug(s.name) })))
+    /* Advertisers with no DSP book direct with the retailer. */
+    .concat(DEMO_DIRECT.map((name) => ({ partnerId: DIRECT_PARTNER, name, advertiserId: advertiserSlug(name) })))
     /* One booking identity per advertiser: the first DSP that brings it. */
     .filter((b, i, all) => all.findIndex((x) => x.advertiserId === b.advertiserId) === i)
   if (!positions.length || !brands.length) return 0
@@ -362,22 +417,27 @@ async function seedDemoBookings(ctx: Context) {
 
   let written = 0
   for (const [b, brand] of brands.entries()) {
+    /* Only what a position is assigned to can book it, so each advertiser
+       rotates through the positions it may use (a DSP-only or direct
+       advertiser would otherwise land on slots it can't book and show none). */
+    const eligible = positions.filter((p) => {
+      const allowed = p.def.partnerIds ?? []
+      if (allowed.length && !allowed.includes(brand.partnerId)) return false
+      return !(p.def.advertisers ?? []).length
+    })
+    if (!eligible.length) continue
     for (let n = 0; n < 6; n++) {
-      const position = positions[(b + n) % positions.length]
+      const position = eligible[(b + n) % eligible.length]
       const dt = position.displayType
-      /* Only what the position is assigned to can book it. */
-      const allowed = position.def.partnerIds ?? []
-      if (allowed.length && !allowed.includes(brand.partnerId)) continue
-      if ((position.def.advertisers ?? []).length && !position.def.advertisers!.includes(brand.name)) continue
       const wanted = PRICING[(b + n) % PRICING.length]
       const pricingType = wanted === 'personalised' && reservePriceOf(dt, position.def) === null ? 'localised' : wanted
       const campaignId = (await campaignOf(brand.advertiserId, pricingType)) ??
         (await campaignFor(ctx, { ...brand, displayTypeId: dt.id }, '#37474f', dt.displayCanvasSize.width, dt.displayCanvasSize.height))
       /* Packed into the next three weeks, so the Daily view is busy rather
          than one booking a fortnight: advertiser and window step at
-         different strides, and a clash on a sold window is simply skipped. */
+         different strides (modulo a prime, so twelve advertisers sharing one deal slot rarely meet), and a clash on a sold window is simply skipped. */
       const { len, first } = await gridOf(position)
-      const start = new Date(first + ((b * 2 + n * 5) % 21) * len).toISOString()
+      const start = new Date(first + ((b * 7 + n * 13) % 61) * len).toISOString()
       const id = `res_demo_${brand.advertiserId}_${n}`
       if (await ctx.reservations.get(id)) continue
       if ((await ctx.reservations.forWindow(position.positionId, start)).some((r) => !r.testMode && ['won', 'reserved'].includes(r.status))) continue
@@ -401,15 +461,15 @@ async function seedDemoBookings(ctx: Context) {
      would sit nearly empty in the rotation above: give the holder a run of
      windows on it. */
   for (const position of positions) {
-    for (const name of position.def.advertisers ?? []) {
+    for (const [hi, name] of (position.def.advertisers ?? []).entries()) {
       const brand = brands.find((x) => x.name === name)
       if (!brand) continue
       const dt = position.displayType
       const campaignId = (await campaignOf(brand.advertiserId, 'localised')) ??
         (await campaignFor(ctx, { ...brand, displayTypeId: dt.id }, '#37474f', dt.displayCanvasSize.width, dt.displayCanvasSize.height))
       const { len, first } = await gridOf(position)
-      for (const [k, day] of [1, 2, 5, 8, 12].entries()) {
-        const id = `res_demo_held_${position.positionId}_${k}`
+      for (const [k, day] of [1, 2, 5, 8, 12].map((d) => d * 2 + hi).entries()) {
+        const id = `res_demo_held_${position.positionId}_${brand.advertiserId}_${k}`
         const start = new Date(first + day * len).toISOString()
         if (await ctx.reservations.get(id)) continue
         if ((await ctx.reservations.forWindow(position.positionId, start)).some((r) => !r.testMode && ['won', 'reserved'].includes(r.status))) continue
@@ -419,7 +479,7 @@ async function seedDemoBookings(ctx: Context) {
           type: 'reserve', channel: 'api', bidCpm: cpm, currency, status: 'reserved', clearingCpm: cpm, reason: null,
           testMode: false, pricingType: 'localised', handedOffAt: new Date().toISOString(),
         })
-        await ctx.campaigns.bookSlot({ id: `bk_demo_held_${position.positionId}_${k}`, campaignId, displayTypeId: dt.id, slot: position.slot, windowStart: start, windowEnd: new Date(Date.parse(start) + len).toISOString() })
+        await ctx.campaigns.bookSlot({ id: `bk_demo_held_${position.positionId}_${brand.advertiserId}_${k}`, campaignId, displayTypeId: dt.id, slot: position.slot, windowStart: start, windowEnd: new Date(Date.parse(start) + len).toISOString() })
         written++
       }
     }
@@ -430,11 +490,11 @@ async function seedDemoBookings(ctx: Context) {
   if (hero && !(await ctx.reservations.get('res_demo_past_cocacola'))) {
     const play = ctx.db.prepare('INSERT INTO plays (id, display_id, campaign_id, played_at, duration_sec) VALUES (?, ?, ?, ?, 12)')
     const displays = (await ctx.displays.listByDisplayType('landscape')).slice(0, 4)
-    for (const [k, past] of [['cocacola', 'c_demo_cocacola_zero', '2026-09-16'], ['arnotts', 'c_demo_arnotts_timtam', '2026-09-17']].entries()) {
+    for (const [k, past] of [['cocacola', 'c_demo_cocacola_zero', '2026-09-16'], ['mars', 'c_demo_mars_mms', '2026-09-17']].entries()) {
       const [key, campaignId, day] = past
       if (!(await ctx.campaigns.getCampaign(campaignId))) continue
       const start = `${day}T00:00:00.000Z`
-      const brand = brands.find((x) => x.advertiserId === advertiserSlug(key === 'cocacola' ? 'Coca-Cola' : 'Arnott’s'))
+      const brand = brands.find((x) => x.advertiserId === advertiserSlug(key === 'cocacola' ? 'Coca-Cola' : 'Mars Wrigley'))
       if (!brand) continue
       await ctx.reservations.insert({
         id: `res_demo_past_${key}`, partnerId: brand.partnerId, advertiserId: brand.advertiserId, campaignId, positionId: hero.positionId, windowStart: start,

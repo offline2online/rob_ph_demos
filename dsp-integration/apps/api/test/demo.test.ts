@@ -33,13 +33,19 @@ describe('demo estate', () => {
     const advertisers = await listAdvertisers(ctx)
     expect(advertisers.length).toBeGreaterThanOrEqual(12)
     expect(advertisers.find((a) => a.advertiserId === advertiserSlug('Unilever'))!.via.sort()).toEqual(['Google DSP', 'The Trade Desk'])
-    expect(advertisers.find((a) => a.advertiserId === advertiserSlug('Lion'))).toMatchObject({ approvalRequired: true, floorMultiplier: 1.3 })
+    expect(advertisers.find((a) => a.advertiserId === advertiserSlug('Monster Energy'))).toMatchObject({ approvalRequired: true, floorMultiplier: 1.3 })
+    /* Real suppliers to a convenience retailer; the base seed's placeholders are gone. */
+    const names = advertisers.map((a) => a.name)
+    expect(names).toEqual(expect.arrayContaining(['Coca-Cola', 'PepsiCo', 'Red Bull', 'Monster Energy', 'Gatorade', 'Mars Wrigley', 'Mondelez International', 'The Hershey Company', 'Nestlé', 'Kellanova', 'Frito-Lay', 'Unilever']))
+    expect(names).not.toContain('Swisse')
+    expect(names).not.toContain("L'Oréal")
+    expect(advertisers.filter((a) => a.direct).map((a) => a.name).sort()).toEqual(['Gatorade', 'Red Bull'])
     /* Every state is represented somewhere. */
     const totals = advertisers.reduce((acc, a) => ({ draft: acc.draft + a.campaigns.draft, awaiting_approval: acc.awaiting_approval + a.campaigns.awaiting_approval, approved: acc.approved + a.campaigns.approved, rejected: acc.rejected + a.campaigns.rejected }), { draft: 0, awaiting_approval: 0, approved: 0, rejected: 0 })
     expect(Object.values(totals).every((n) => n >= 2)).toBe(true)
-    expect(await ctx.approvals.statusOf('c_demo_bega_peanut')).toBe('rejected')
-    expect(await ctx.approvals.statusOf('c_demo_arnotts_shapes')).toBe('approved')
-    expect((ctx.db.prepare('SELECT activation_enabled AS on_ FROM campaigns WHERE id = ?').get('c_demo_arnotts_shapes') as { on_: number }).on_).toBe(0)
+    expect(await ctx.approvals.statusOf('c_demo_hershey_reeses')).toBe('rejected')
+    expect(await ctx.approvals.statusOf('c_demo_gatorade_summer')).toBe('approved')
+    expect((ctx.db.prepare('SELECT activation_enabled AS on_ FROM campaigns WHERE id = ?').get('c_demo_gatorade_summer') as { on_: number }).on_).toBe(0)
   })
 
   it('books every position in more than one layer, and inventory shows them all', async () => {
@@ -48,7 +54,7 @@ describe('demo estate', () => {
     const res = await app.inject({ method: 'GET', url: '/api/v1/inventory', headers: { authorization: 'Bearer poc-token-google-dv360' } })
     expect(res.statusCode).toBe(200)
     const ids = res.json().items.map((p: { positionId: string }) => p.positionId)
-    expect(ids).toEqual(expect.arrayContaining(['landscape.s1', 'landscape.s2', 'landscape.s4', 'portrait.s1', 'portrait.s2', 'portrait.s3', 'menu_board.s2']))
+    expect(ids).toEqual(expect.arrayContaining(['landscape.s1', 'landscape.s2', 'landscape.s4', 'portrait.s1', 'portrait.s2', 'menu_board.s2']))
     /* The whitelist slot is open to whitelisted advertisers only, and Google has some. */
     expect(ids).toContain('landscape.s3')
 
