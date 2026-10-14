@@ -586,8 +586,8 @@ export interface paths {
          *
          *     maxCampaigns / maxCampaignsDefault: the same override/default
          *     pattern again, for the maximum number of campaigns (default +
-         *     targeted versions) this advertiser may submit for the slot — 5
-         *     when neither is set, 1-10 inclusive otherwise. Purely a submission
+         *     targeted versions) this advertiser may submit for the slot — 10
+         *     when neither is set, 1-25 inclusive otherwise. Purely a submission
          *     cap; replaces the former blanket 20-targeted-versions cap for this
          *     slot. Does not feed the auction or billing.
          *
@@ -1896,7 +1896,7 @@ export interface components {
             /**
              * @description Optional upsells on top of the mandatory default layer —
              *     localised and/or personalised targeted versions. Bounded by
-             *     slot's own max campaigns (default + targeted versions, 1-10)
+             *     slot's own max campaigns (default + targeted versions, 1-25)
              *     when displayTypeId and slot resolve to a real advertiser slot;
              *     otherwise by the platform-wide campaignLimits.targetedVersions.
              */
@@ -2514,6 +2514,12 @@ export interface components {
             displayTypeId: string;
             displayTypeName: string;
             touchPoint?: string;
+            /** @description Every display type this row's playlist is assigned to (as its default playlist or a zone's), with each one's description. Available Inventory lists them when the playlist name is hovered. Read-only; absent from a demo snapshot taken before 14 Oct 2026. */
+            playlistDisplayTypes?: {
+                id: string;
+                name: string;
+                description: string | null;
+            }[];
             /**
              * @description Whether the slot has an audience score (an audience_vacd row).
              *     An unscored slot reports 0 assumed views, so it is never
@@ -2686,25 +2692,25 @@ export interface components {
              * @description The resolved maximum number of campaigns (the mandatory default
              *     layer plus optional targeted versions) this advertiser may
              *     submit for this slot: maxCampaignsOverride when set, else
-             *     displayTypeMaxCampaigns, else the platform default of 5.
+             *     displayTypeMaxCampaigns, else the platform default of 10.
              *     Purely a submission cap — it does not feed the auction or
-             *     billing. Always a real integer, 1-10 inclusive — unlike reserve
+             *     billing. Always a real integer, 1-25 inclusive — unlike reserve
              *     price, there is no "unlimited" state.
              */
             maxCampaigns: number;
             /**
              * @description This slot's own maximum campaigns, admin-editable here; null
              *     means it has none and follows displayTypeMaxCampaigns (spec §1
-             *     configuration inheritance — override always wins). 1-10
+             *     configuration inheritance — override always wins). 1-25
              *     inclusive when set.
              */
             maxCampaignsOverride: number | null;
             /**
              * @description The maximum-campaigns default set on this slot's display type;
              *     null means the display type has none either (so an
-             *     un-overridden slot resolves to the platform default of 5). The
+             *     un-overridden slot resolves to the platform default of 10). The
              *     same value on every row sharing a displayTypeId. Editable from
-             *     any of those rows — see `PUT`'s maxCampaignsDefault. 1-10
+             *     any of those rows — see `PUT`'s maxCampaignsDefault. 1-25
              *     inclusive when set.
              */
             displayTypeMaxCampaigns: number | null;
@@ -3306,7 +3312,7 @@ export interface components {
                  *     campaigns (spec §1 configuration inheritance — override
                  *     always wins). Absent or null means it has none and
                  *     follows the display type's own `maxCampaigns` (below),
-                 *     else the platform default of 5. 1-10 inclusive when set.
+                 *     else the platform default of 10. 1-25 inclusive when set.
                  *     A purely-submission cap: the single authority on how many
                  *     campaigns (default + targeted versions) an advertiser may
                  *     submit for this slot, replacing the former blanket
@@ -3344,7 +3350,7 @@ export interface components {
             /**
              * @description The display type's own maximum-campaigns default, inherited by
              *     every slot on it with no override of its own. Absent or null
-             *     means the platform default of 5 applies. 1-10 inclusive when
+             *     means the platform default of 10 applies. 1-25 inclusive when
              *     set. Set from Advertisers / Inventory (every row for this
              *     display type edits the same value), not the slot editor.
              */
@@ -4364,7 +4370,7 @@ export interface operations {
                         interactiveReservePrice?: number | null;
                         /** @description This slot's own maximum-campaigns override; null = inherit maxCampaignsDefault. Omitted = unchanged is not supported — always send the slot's current value. */
                         maxCampaigns?: number | null;
-                        /** @description The display type's maximum-campaigns default; null = none (the platform default of 5 applies). Must be the same value on every row for a given displayTypeId in one request. */
+                        /** @description The display type's maximum-campaigns default; null = none (the platform default of 10 applies). Must be the same value on every row for a given displayTypeId in one request. */
                         maxCampaignsDefault?: number | null;
                         /** @description This slot's own max play length override, in whole seconds; null = inherit maxPlayLengthSecDefault. Omitted = unchanged. */
                         maxPlayLengthSec?: number | null;

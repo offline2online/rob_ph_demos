@@ -67,7 +67,14 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
     const items: AvailableInventoryRow[] = []
     const company = await ctx.company.get()
     const nowMs = ctx.clock().getTime()
-    for (const t of await ctx.displayTypes.list()) {
+    const allTypes = await ctx.displayTypes.list()
+    /* Every display type a playlist is assigned to (as a default playlist or a zone's), so the
+       playlist's hover can name them with their descriptions (ticket NPs6MBZQ6CfhFPHmBuGp, 14 Oct 2026). */
+    const typesOfPlaylist = (playlistId: string | null) => (playlistId
+      ? allTypes.filter((d) => d.defaultPlaylistId === playlistId || zonesOf(d).some((z) => z.playlistId === playlistId))
+        .map((d) => ({ id: d.id, name: d.name, description: d.description ?? null }))
+      : [])
+    for (const t of allTypes) {
       const zones = zonesOf(t)
       /* A position's playlist, per slot: the zone playlist it's tagged to
          (Slot.zoneId) when this is a multi-zone display type and the slot
@@ -123,7 +130,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         /* An unlimited rotation has no countable loop: treat it as one slot. */
         const slotCount = Math.max(1, rotationSizeOf(t, i + 1))
         items.push({
-          displayTypeId: t.id, displayTypeName: t.name, touchPoint: t.touchPoint, playlistName, playlistId, unassigned, scored: audience.scored, unsellableReason: await unsellableReason(ctx, { positionId: positionIdOf(t.id, i + 1), displayType: t, slot: i + 1, def: s }, audience), salesLocked: s.salesLocked === true, inGlobalDeal: slotInGlobalDeal(s), globalDealSuppressedBy: globalDealSuppressedBy(s), salesLockedUntil: s.salesLocked ? await slotBookedUntil(ctx, t.id, i + 1) : null, slot: i + 1, zoneSlot, position: s.label,
+          displayTypeId: t.id, displayTypeName: t.name, touchPoint: t.touchPoint, playlistName, playlistId, playlistDisplayTypes: typesOfPlaylist(playlistId), unassigned, scored: audience.scored, unsellableReason: await unsellableReason(ctx, { positionId: positionIdOf(t.id, i + 1), displayType: t, slot: i + 1, def: s }, audience), salesLocked: s.salesLocked === true, inGlobalDeal: slotInGlobalDeal(s), globalDealSuppressedBy: globalDealSuppressedBy(s), salesLockedUntil: s.salesLocked ? await slotBookedUntil(ctx, t.id, i + 1) : null, slot: i + 1, zoneSlot, position: s.label,
           assignedTo: {
             ...a,
             partnerNames: a.partnerIds.map((id) => partners.find((p) => p.id === id)?.name ?? id),

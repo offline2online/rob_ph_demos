@@ -104,13 +104,17 @@ export const advertiserRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     return reply.status(201).send({ advertiserId, name })
   })
 
-  /* Remove a direct advertiser. Refused while it has campaigns or bookings, or is held on a slot. */
+  /* Remove a direct advertiser. Refused while it has campaigns or bookings, has users, or is held on a slot. */
   app.delete<{ Params: { advertiserId: string } }>('/advertisers/direct/:advertiserId', async (req, reply) => {
     guards.flagged()
     guards.requireScope(req, 'admin')
     const a = (await listAdvertisers(ctx)).find((x) => x.advertiserId === req.params.advertiserId)
     if (!a || !a.direct) throw notFound('Not a direct advertiser.')
     if (a.bookings > 0 || Object.values(a.campaigns).some((n) => n > 0)) throw conflict(`${a.name} has campaigns or bookings, so it can't be removed.`)
+    /* Hard block: users bound to this advertiser (Company Settings -> Users) would be left
+       pointing at nobody, so they must be removed first. */
+    const users = (await ctx.company.platformUsers()).filter((u) => u.role === 'Advertiser' && u.advertiserId === a.advertiserId)
+    if (users.length) throw conflict(`${a.name} has ${users.length === 1 ? 'a user' : `${users.length} users`} associated with it: ${users.map((u) => u.email).join(', ')}. Remove ${users.length === 1 ? 'that user' : 'those users'} in Company Settings → Users before deleting the brand and advertiser.`)
     /* A slot that still holds the advertiser would be left pointing at nobody, so name each one
        and refuse until it is removed from them (Rob, 10 Oct 2026). */
     const held: string[] = []

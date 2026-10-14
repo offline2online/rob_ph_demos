@@ -171,7 +171,19 @@ const PlaylistCell = ({ data }: ICellRendererParams<AvailableInventoryRow>) =>
     <span className="inline-flex min-w-0 items-center gap-[5px]">
       {/* The name can be long and the column is hard to widen on a touch screen, so
           hovering or tapping it shows the full playlist name (ticket E2iOwJHM, 4 Oct 2026). */}
-      <Tip title={data.playlistName}>
+      {/* The hover also names the display types the playlist is assigned to, each with its description
+          (ticket NPs6MBZQ6CfhFPHmBuGp, 14 Oct 2026); a pre-14-Oct demo snapshot has none, so then just the name. */}
+      <Tip title={data.playlistDisplayTypes?.length ? (
+        <div>
+          <div style={{ fontWeight: 500 }}>{data.playlistName}</div>
+          <div style={{ marginTop: 4 }}>Assigned display type{data.playlistDisplayTypes.length === 1 ? '' : 's'}:</div>
+          <ul style={{ margin: '2px 0 0', paddingLeft: 16 }}>
+            {data.playlistDisplayTypes.map((d) => (
+              <li key={d.id}><span style={{ fontWeight: 500 }}>{d.name}</span>{d.description ? `: ${d.description}` : ' (no description)'}</li>
+            ))}
+          </ul>
+        </div>
+      ) : data.playlistName}>
         <span className="truncate cursor-pointer" tabIndex={0} aria-label={`Playlist: ${data.playlistName}`}>{data.playlistName}</span>
       </Tip>
       {/* Devices registered to this display type in PH Core (8 Oct 2026); absent from a pre-8-Oct demo snapshot, so then nothing is shown. */}
@@ -1108,7 +1120,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
             }
           }}
         >
-          This removes the direct advertiser. It can’t be undone, and it isn’t possible while it has campaigns or bookings, or is assigned to a slot on Available Inventory.
+          This removes the direct advertiser. It can’t be undone, and it isn’t possible while it has users, campaigns or bookings, or is assigned to a slot on Available Inventory.
         </DeleteDialog>
       )}
       <BuyersListModal
