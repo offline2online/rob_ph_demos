@@ -109,7 +109,7 @@ describe('hosted API', () => {
     expect(pre.status).toBe(204)
     expect(pre.headers['Access-Control-Allow-Origin']).toBe(ORIGIN)
     expect((await get(h, '/api/admin/v1/session', { origin: 'https://evil.example' })).headers['Access-Control-Allow-Origin']).toBeUndefined()
-    const approval = await get(h, '/api/admin/v1/campaigns/c_demo_arnotts_shapes/approval')
+    const approval = await get(h, '/api/admin/v1/campaigns/c_demo_gatorade_summer/approval')
     expect(approval.body.toString()).toMatch(/"https:\/\/api\.example\/assets\//)
   }, 60_000)
 

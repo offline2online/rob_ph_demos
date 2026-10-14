@@ -32,6 +32,23 @@ export const CHECKS = (w: number, h: number) => [
 ]
 const COLOURS = ['#1b5e20', '#b3261e', '#0b4f6c', '#4a148c', '#8d6e00', '#37474f']
 
+/* What each advertiser's standing booking is called when it has no campaign
+   of its own to book with (the demo estate's campaigns are in demo.ts). */
+const STANDING_NAMES: Record<string, string> = {
+  nestle: 'Nestlé — Nescafé Gold winter',
+  'coca-cola': 'Coca-Cola — Share a Coke',
+  pepsico: 'PepsiCo — Pepsi Max summer',
+  'red-bull': 'Red Bull — Summer Energy',
+  'monster-energy': 'Monster Energy — Ultra Paradise',
+  gatorade: 'Gatorade — Summer Hydration',
+  'mars-wrigley': 'Mars Wrigley — Skittles & Extra',
+  'mondelez-international': 'Mondelez — Cadbury Easter',
+  'the-hershey-company': 'The Hershey Company — Reese’s Cups',
+  kellanova: 'Kellanova — Pringles Game Day',
+  'frito-lay': 'Frito-Lay — Doritos Game Night',
+  unilever: 'Unilever — Magnum Classic',
+}
+
 /* A campaign the advertiser could really have booked with: approved, and
    switched on. Returns the id, or null if the advertiser already has one. */
 export async function campaignFor(ctx: Context, brand: { advertiserId: string; name: string; partnerId: string; displayTypeId: string }, colour: string, width: number, height: number) {
@@ -43,7 +60,7 @@ export async function campaignFor(ctx: Context, brand: { advertiserId: string; n
       `INSERT INTO campaigns (id, name, targeting, created_at, source, advertiser_id, partner_id, display_type_id, pricing_type, activation_enabled, brief)
        VALUES (?, ?, ?, ?, 'api', ?, ?, ?, 'localised', 0, ?)`,
     ).run(
-      id, `${brand.name} — always on`, JSON.stringify({ default: { pricingType: 'localised' } }), new Date().toISOString(),
+      id, STANDING_NAMES[brand.advertiserId] ?? `${brand.name} — always on`, JSON.stringify({ default: { pricingType: 'localised' } }), new Date().toISOString(),
       brand.advertiserId, brand.partnerId, brand.displayTypeId,
       JSON.stringify({ details: `${brand.name}'s standing booking across the estate.`, objective: 'Increase Revenue / Sales', touchPoints: ['Digital Signage'] }),
     )

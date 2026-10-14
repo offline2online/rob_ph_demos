@@ -11,7 +11,7 @@ import { generateKeyPairSync } from 'node:crypto'
 import type { Context } from '../context'
 import { seedBookings } from './bookings'
 import { seedCampaigns } from './campaigns'
-import { seedDemo } from './demo'
+import { retirePlaceholderAdvertisers, seedDemo } from './demo'
 import { tx } from '../db/db'
 
 const blankFeatures = () => ({
@@ -186,6 +186,8 @@ export async function seed(ctx: Context, opts: { bookings?: boolean; demo?: bool
   }, 'IMMEDIATE')
   if (!seeded) return false
   await seedCampaigns(ctx)
+  /* Before the sample bookings, so none are written under the placeholder names. */
+  if (opts.demo !== false) await retirePlaceholderAdvertisers(ctx)
   if (opts.bookings !== false) await seedBookings(ctx)
   if (opts.demo !== false) await seedDemo(ctx)
   return true

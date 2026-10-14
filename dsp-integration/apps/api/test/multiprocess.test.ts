@@ -82,7 +82,7 @@ describe.skipIf(nearMidnight)('two API processes and three ticks on one database
     window = w.toISOString()
     /* Sold by window: an open deal inviting both seats, on the Supplier slot. */
     const json = { 'content-type': 'application/json' }
-    const list = await api(ports[0], 'POST', '/api/admin/v1/buyers-lists', { name: 'Multiprocess open deal', dealType: 'private_auction', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }, { partnerId: 'p_google', seatId: '5130002' }] }, json)
+    const list = await api(ports[0], 'POST', '/api/admin/v1/buyers-lists', { name: 'Multiprocess open deal', dealType: 'private_auction', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }, { partnerId: 'p_google', seatId: '5130005' }] }, json)
     expect(list.status, await list.clone().text()).toBe(201)
     const listId = (await list.json()).id as string
     const assign = await api(ports[0], 'PUT', '/api/admin/v1/available-inventory', { items: [{ displayTypeId: 'menu_board', slot: 2, reservePrice: null, assignedTo: { partnerIds: ['p_google'], advertisers: [], whitelistOnly: false, buyersListId: listId, buyersListIds: [listId] } }] }, json)
@@ -99,7 +99,7 @@ describe.skipIf(nearMidnight)('two API processes and three ticks on one database
       expect((await api(ports[1], 'PUT', `/api/admin/v1/campaigns/${id}/activation`, { enabled: true }, { 'content-type': 'application/json' })).status).toBeLessThan(300)
     }
     const bid = (port: number, body: Record<string, unknown>) => api(port, 'POST', '/api/v1/reservations', { positionId: POS, windowStart: window, type: 'bid', ...body })
-    const swisse = { campaignId: 'c_api_swisse', advertiserId: 'swisse', bidCpm: 200 }
+    const swisse = { campaignId: 'c_api_swisse', advertiserId: 'mondelez-international', bidCpm: 200 }
     const nestle = { campaignId: 'c_dsp_nestle', advertiserId: 'nestle', bidCpm: 150 }
     const res = await Promise.all(Array.from({ length: 16 }, (_, i) => bid(ports[i % 2], swisse)))
     const codes = res.map((r) => r.status).sort()
@@ -135,7 +135,7 @@ describe.skipIf(nearMidnight)('two API processes and three ticks on one database
     expect((db.prepare("SELECT COUNT(*) AS n FROM reservations WHERE position_id = ? AND window_start = ? AND status IN ('won', 'reserved') AND test_mode = 0").get(POS, window) as { n: number }).n).toBe(1)
     db.close()
     /* A late bid, after the auction: refused, and nothing is left pending. */
-    const late = await api(ports[0], 'POST', '/api/v1/reservations', { positionId: POS, windowStart: window, type: 'bid', campaignId: 'c_api_swisse', advertiserId: 'swisse', bidCpm: 300 })
+    const late = await api(ports[0], 'POST', '/api/v1/reservations', { positionId: POS, windowStart: window, type: 'bid', campaignId: 'c_api_swisse', advertiserId: 'mondelez-international', bidCpm: 300 })
     expect(late.status).toBe(409)
     const again = run(['src/exchange/tickCli.ts'])
     expect(await exited(again)).toBe(0)
