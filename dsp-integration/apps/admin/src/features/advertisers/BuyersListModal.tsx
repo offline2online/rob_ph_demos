@@ -189,7 +189,7 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
         <Button key="save" type={isDraft && editing ? 'default' : 'primary'} loading={saving} onClick={() => save()}>{!isDraft ? 'Save changes' : editing ? 'Save draft' : 'Save as draft'}</Button>,
         ...(isDraft ? [
           <Tip key="finalise" title={slots.length ? undefined : 'Assign this deal to at least one slot in Available Inventory first. A deal with no inventory can’t be finalised.'}>
-            <span><Button type="primary" disabled={saving || !editing || !slots.length} onClick={() => save(true)}>Finalise</Button></span>
+            <span><Button type="primary" disabled={saving || !editing || !slots.length} onClick={() => save(true)}>Finalise deal terms</Button></span>
           </Tip>,
         ] : []),
       ]}</div>}

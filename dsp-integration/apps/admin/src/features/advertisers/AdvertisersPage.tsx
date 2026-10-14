@@ -9,7 +9,7 @@ import { Tip } from '../../shared/Tip'
 import { cpmKindHint, cpmSummary, sourceLabel } from './effectiveTerm'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
 import { INTERACTIVE_ENABLED, RESERVE_PRICE_TIP, PLATFORM_DEFAULT_BILLING_UNIT_HOURS, DEFAULT_MAX_CAMPAIGNS, MAX_MAX_CAMPAIGNS, MAX_MAX_PLAY_LENGTH_SEC, MIN_MAX_CAMPAIGNS, MIN_MAX_PLAY_LENGTH_SEC, SLOT_OWNERS, ALL_DSPS_LABEL, assignedLabels, directLabel, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type Session } from '@ph-dsp/types'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, ApiRequestError } from '../../api/client'
 import { Q } from '../../api/queries'
@@ -219,8 +219,18 @@ const PlaylistCell = ({ data }: ICellRendererParams<AvailableInventoryRow>) =>
       )}
     </span>
   ) : null
+/* The hover names the slot's number, its zone and the display type with its description (ticket c5S06G5mN6F3GJTI8bxD,
+   14 Oct 2026); a pre-14-Oct demo snapshot has neither zone nor description, so then just the number and display type. */
 const SlotCell = ({ data }: ICellRendererParams<AvailableInventoryRow>) =>
-  data ? <div className="min-w-0 truncate">{data.position}</div> : null
+  data ? (
+    <Tip title={<div>
+      <div style={{ fontWeight: 500 }}>{data.position}</div>
+      <div>Slot {data.zoneSlot}{data.zoneName ? ` of ${data.zoneName}` : ''}</div>
+      <div>{data.displayTypeName}{data.displayTypeDescription ? `: ${data.displayTypeDescription}` : ''}</div>
+    </div>}>
+      <div className="min-w-0 truncate cursor-pointer" tabIndex={0} aria-label={`Position: ${data.position}`}>{data.position}</div>
+    </Tip>
+  ) : null
 /* Opens the display type with Playlist Settings — where slot assignment
    lives — already expanded (Rob, 20 Sep). */
 const OpenCell = ({ data, context }: IP) =>
@@ -718,7 +728,17 @@ function MaxPlayLengthCell({ data, context }: IP) {
   )
 }
 
-const header = (label: string, tip: string) => () => <WithTip tip={tip}><span className="ag-header-cell-text">{label}</span></WithTip>
+/* Assigned to header tooltip (14 Oct 2026): how slots are assigned and how the waterfall reads, with one worked example. */
+const ASSIGNED_TO_TIP = (
+  <div className="flex flex-col gap-[6px]">
+    <p className="m-0"><strong>Assigning.</strong> Pick DSPs or buyers lists for this slot in the Assigned to cell. An empty cell is valid: the slot is unassigned and does not sell.</p>
+    <p className="m-0"><strong>Waterfall.</strong> The deals and buyers lists you assign form an ordered priority stack, tried highest first. Beneath them sits the Open auction tier: the DSPs (or All DSPs) chosen for the open auction, plus the global deal where included. If no deal wins the window, the slot falls through to the Open auction.</p>
+    <p className="m-0"><strong>Priority.</strong> Drag the rows to reorder, or use the arrows. The position badge shows each rank.</p>
+    <p className="m-0"><strong>Example.</strong> A slot has buyers list 1, buyers list 2, then the Open auction. Each window is offered to buyers list 1 first; if it does not take it, to buyers list 2; and if no deal wins, it clears in the Open auction.</p>
+  </div>
+)
+
+const header = (label: string, tip: ReactNode) => () => <WithTip tip={tip}><span className="ag-header-cell-text">{label}</span></WithTip>
 
 const MAX_CAMPAIGNS_HEADER = 'Max campaigns'
 
@@ -764,7 +784,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
     { headerName: 'Position', width: 130, minWidth: 110, cellRenderer: SlotCell, valueGetter: (p) => p.data?.position ?? '', ...searchColumn<AvailableInventoryRow>('Position') },
     {
       headerName: 'Assigned to', width: 240, minWidth: 200, cellRenderer: AssignedCell, autoHeight: true,
-      headerComponent: header('Assigned to', 'Who may buy this position: pick DSPs to say who may bid, advertisers to hold it for them (their DSP comes along), a buyers list to restrict it to a private auction among its invited buyers, or the whitelist. The Included in global deals chip adds it to the one global deal ID (see Advertiser settings); remove it with its cross. With a buyers list it sits in the open auction beneath the numbered lists, bidding alongside any DSPs there. An empty cell is valid: the slot is unassigned and does not sell, for holding it back for your own use.'),
+      headerComponent: header('Assigned to', ASSIGNED_TO_TIP),
       valueGetter: (p) => {
         if (!p.data) return ''
         const a = edited((p.context as InvCtx).current, p.data).assignedTo
@@ -1049,6 +1069,14 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
           <StatusPill colour={T.muted} icon="visibility">Read only</StatusPill>
         </div>
       )}
+      <BuyersListsTable
+        lists={buyersLists.data?.items ?? []}
+        canEdit={canEdit}
+        capacity={listCapacity}
+        slots={listSlots}
+        onChanged={() => qc.invalidateQueries({ queryKey: ['buyers-lists'] })}
+      />
+
       <SectionLabel><WithTip tip="Every advertiser-owned slot across the estate that connected DSPs can bid on. Slots are made available by setting their owner to Advertiser on a playlist.">Available Inventory</WithTip></SectionLabel>
       {inventory.data && invRows.length === 0 ? (
         <div className="flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}>
@@ -1072,14 +1100,6 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
           />
         </>
       )}
-
-      <BuyersListsTable
-        lists={buyersLists.data?.items ?? []}
-        canEdit={canEdit}
-        capacity={listCapacity}
-        slots={listSlots}
-        onChanged={() => qc.invalidateQueries({ queryKey: ['buyers-lists'] })}
-      />
 
       {/* Advertisers table sits last, under Deals and buyers lists (ticket AkDMbOJn0QBV0ZcEM5tm). */}
       <SectionLabel>Advertisers</SectionLabel>

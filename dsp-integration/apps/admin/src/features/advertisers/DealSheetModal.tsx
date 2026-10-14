@@ -6,6 +6,7 @@ import type { BuyersList, components } from '@ph-dsp/types'
 import { api } from '../../api/client'
 import { Icon } from '../../shared/Icon'
 import { T } from '../../theme/phTheme'
+import { slotLine } from './slotLine'
 
 type Sheet = components['schemas']['DealSheet']
 const TYPE_LABEL = { private_auction: 'Private auction', preferred: 'Preferred deal', guaranteed: 'Programmatic guaranteed' } as const
@@ -17,10 +18,12 @@ export function dealSheetText(s: Sheet): string {
   const creative = s.creativeRequirements.length
     ? s.creativeRequirements.map((r) => `  - ${r.formats.join(' + ')}, ${r.canvas.width}x${r.canvas.height} (${r.orientation}), max play ${r.maxPlayLengthSec}s`).join('\n')
     : '  - None yet: the deal is not attached to a slot'
+  const slots = s.slots?.length ? s.slots.map((x) => `  - ${slotLine(x)}`).join('\n') : '  - None yet: the deal is not attached to a slot'
   const shared = [
     `Deal: ${s.name}`, `Deal type: ${TYPE_LABEL[s.dealType]}`, `Rate: ${s.rateCpm} ${s.currency} CPM (${s.rateKind === 'fixed' ? 'fixed' : 'floor'})`, `Delivery term: ${term}`,
     ...(s.committedPlays != null ? [`Committed plays: ${s.committedPlays.toLocaleString()}`] : []),
     ...(s.auctionCloses ? [`Auction closes: ${when(s.auctionCloses)}`] : []),
+    'Slots:', slots,
     'Creative requirements:', creative,
   ].join('\n')
   const perDsp = s.entries.map((e) => `${e.dsp}\nDeal ID: ${e.dealId}\nInvited seats: ${e.seats.map((x) => `${x.name} (${x.id})`).join(', ')}\n${e.setup}`)
@@ -64,6 +67,12 @@ export function DealSheetModal({ list, onClose }: { list: BuyersList | null; onC
             <dt style={{ color: T.muted }}>Delivery term</dt><dd className="m-0">{when(data.activeFrom) ?? 'No start'} → {when(data.activeTo) ?? 'No end'}</dd>
             {data.committedPlays != null && <><dt style={{ color: T.muted }}>Committed plays</dt><dd className="m-0">{data.committedPlays.toLocaleString()}</dd></>}
             {data.auctionCloses && <><dt style={{ color: T.muted }}>Auction closes</dt><dd className="m-0">{when(data.auctionCloses)}</dd></>}
+            <dt style={{ color: T.muted }}>Slots</dt>
+            <dd className="m-0" data-testid="deal-sheet-slots">
+              {data.slots?.length
+                ? data.slots.map((x) => <div key={x.positionId}>{slotLine(x)}</div>)
+                : <span style={{ color: T.muted }}>None yet: this deal is not attached to a slot</span>}
+            </dd>
             <dt style={{ color: T.muted }}>Creative</dt>
             <dd className="m-0">
               {data.creativeRequirements.length

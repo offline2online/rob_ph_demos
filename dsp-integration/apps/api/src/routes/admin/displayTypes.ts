@@ -94,6 +94,7 @@ export const displayTypeRoutes = (ctx: Context, guards: Guards): FastifyPluginAs
       const errors = validateExtensions(dt, body)
       const dv = body.defaultVacd
       if (dv != null && !(Number.isInteger(dv) && dv >= 0)) errors.push({ field: 'defaultVacd', reason: 'A whole number of assumed views per play window, 0 or more.' })
+      if (body.storeZone != null && !['exterior', 'entrance', 'checkout', 'aisles', 'other'].includes(body.storeZone)) errors.push({ field: 'storeZone', reason: 'One of exterior, entrance, checkout, aisles or other.' })
       if (errors.length) throw validationFailed(errors)
       /* While the retailer has DSP integration switched off (Exchange settings),
          no NEW advertiser slot: a slot may be Advertiser only if it already was
@@ -147,6 +148,8 @@ export const displayTypeRoutes = (ctx: Context, guards: Guards): FastifyPluginAs
         ...(vacdSource ? { defaultVacdSource: vacdSource } : {}),
         /* Not editable here: carried as saved so a slots save never clears an override. */
         ...(dt.phExtensions?.floorCpm != null ? { floorCpm: dt.phExtensions.floorCpm } : {}),
+        /* Absent keeps what is saved; null clears it (not defined). */
+        ...((body.storeZone === undefined ? dt.phExtensions?.storeZone : body.storeZone) ? { storeZone: (body.storeZone === undefined ? dt.phExtensions?.storeZone : body.storeZone) as NonNullable<typeof body.storeZone> } : {}),
         ...((body.venue ?? dt.phExtensions?.venue) ? { venue: body.venue ?? dt.phExtensions?.venue } : {}),
       }
       return ctx.displayTypes.saveExtensions(req.params.id, ext)

@@ -13,6 +13,7 @@ import { useState } from 'react'
 import { api, ApiRequestError } from '../../api/client'
 import { InfoTip } from '../../shared/InfoTip'
 import { T } from '../../theme/phTheme'
+import { slotLine } from './slotLine'
 
 type Sheet = components['schemas']['DealSheet']
 const TYPE_LABEL = { private_auction: 'Private auction', preferred: 'Preferred deal', guaranteed: 'Programmatic guaranteed' } as const
@@ -35,9 +36,9 @@ export function FinaliseDealModal({ list, onClose, onShared }: { list: BuyersLis
       setSharing(false)
     }
   }
-  const slotLabels = new Map((list?.assignedSlots ?? []).map((s) => [s.positionId, s.label]))
+  const slotLabels = new Map((list?.assignedSlots ?? []).map((s) => [s.positionId, slotLine(s)]))
   const label = (s: string) => <dt style={{ color: T.muted }}>{s}</dt>
-  const guidance = <>Check the slots and terms below. <strong>Share deal</strong> sends this deal, including its deal ID, to the invited buyers via their DSP for authorisation. It is a fixed deal: buyers can accept it but not change it. After it is shared, any change to its terms asks the buyers who accepted to accept again.</>
+  const guidance = <>Check the slots and terms below. <strong>Confirm and share deal with DSPs</strong> is the final step: it sends this deal, including its deal ID, to the invited buyers via each DSP for authorisation. It is a fixed deal: buyers can accept it but not change it. After it is shared, any change to its terms asks the buyers who accepted to accept again.</>
   return (
     <Modal
       open={!!list} onCancel={onClose} width={640} destroyOnHidden
@@ -45,7 +46,7 @@ export function FinaliseDealModal({ list, onClose, onShared }: { list: BuyersLis
         <InfoTip text={<span data-testid="finalise-guidance">{guidance}</span>} size={18} width={360} /></span>}
       footer={<div className="flex justify-end gap-2" data-testid="finalise-actions">
         <Button onClick={onClose}>Back</Button>
-        <Button type="primary" loading={sharing} onClick={share}>Share deal</Button>
+        <Button type="primary" loading={sharing} onClick={share}>Confirm and share deal with DSPs</Button>
       </div>}
     >
       {list && (
@@ -68,7 +69,7 @@ export function FinaliseDealModal({ list, onClose, onShared }: { list: BuyersLis
             {list.auctionCloses && <>{label('Auction closes')}<dd className="m-0">{when(list.auctionCloses)}</dd></>}
             {label(`Slots (${(list.assignedSlots ?? []).length})`)}
             <dd className="m-0" data-testid="finalise-slots">
-              {(list.assignedSlots ?? []).map((s) => <div key={s.positionId}>{s.label}</div>)}
+              {(list.assignedSlots ?? []).map((s) => <div key={s.positionId}>{slotLine(s)}</div>)}
             </dd>
             {label('Creative')}
             <dd className="m-0" data-testid="finalise-creative">

@@ -211,10 +211,10 @@ export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged }:
   }
 
   return (
-    <div className="mt-7">
+    <div className="mb-7">
       <div className="mb-3 flex items-center justify-between gap-3">
         <SectionLabel style={{ margin: 0 }}>
-          <WithTip tip="Reusable deal definitions for guaranteed and programmatic campaigns. Each list sets the deal type (private auction, preferred deal or programmatic guaranteed), who can buy (invited advertisers and IAB categories), the targeting criteria appended to the deal, the delivery term, the committed plays (programmatic guaranteed), the floor price and the auction close (private auction). Save it as a draft, assign it to slots in Available Inventory's Assigned to column, then finalise it and share the deal with the invited buyers.">
+          <WithTip tip="Deals and buyers lists decide who can buy your advertiser slots, and on what terms. Each list sets the deal type (private auction, preferred deal or programmatic guaranteed), the invited buyers, the delivery term and the price. To set one up: 1. Create a buyers list. 2. Assign it to slots in Available Inventory's Assigned to column. 3. Finalise the deal terms, then confirm and share the deal with the DSPs.">
             Deals and buyers lists
           </WithTip>
         </SectionLabel>
@@ -227,7 +227,7 @@ export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged }:
       {lists.length === 0 ? (
         <div className="flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}>
           <Icon name="gavel" size={18} />
-          <span>No deals or buyers lists yet. Create one to run a private auction on a slot.</span>
+          <span>No deals or buyers lists yet. Create a buyers list, then assign it to slots in Available Inventory.</span>
         </div>
       ) : (
         <Grid<BuyersList> label="Deals and buyers lists" rows={lists} columns={columns} context={context} getRowId={(l) => l.id} rowHeight={52} headerHeight={40} stickyHeader />

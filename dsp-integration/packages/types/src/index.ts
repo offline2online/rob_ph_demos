@@ -8,6 +8,15 @@ type S = components['schemas']
 export type ApiError = S['Error']
 export type DisplayType = S['DisplayType']
 export type DisplayTypeExtensions = S['DisplayTypeExtensions']
+export type StoreZone = NonNullable<DisplayTypeExtensions['storeZone']>
+/* The IAB / IAB Europe in-store retail media zones, in the standard's order. */
+export const STORE_ZONES: { value: StoreZone; label: string }[] = [
+  { value: 'exterior', label: 'Exterior to store' },
+  { value: 'entrance', label: 'Entrance and out of category' },
+  { value: 'checkout', label: 'Checkout' },
+  { value: 'aisles', label: 'In aisles' },
+  { value: 'other', label: 'Other' },
+]
 export type Slot = DisplayTypeExtensions['slots'][number]
 export type SlotOwner = Slot['owner']
 export type Venue = NonNullable<DisplayTypeExtensions['venue']>

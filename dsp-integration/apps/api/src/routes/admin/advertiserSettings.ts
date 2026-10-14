@@ -130,7 +130,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         /* An unlimited rotation has no countable loop: treat it as one slot. */
         const slotCount = Math.max(1, rotationSizeOf(t, i + 1))
         items.push({
-          displayTypeId: t.id, displayTypeName: t.name, touchPoint: t.touchPoint, playlistName, playlistId, playlistDisplayTypes: typesOfPlaylist(playlistId), unassigned, scored: audience.scored, unsellableReason: await unsellableReason(ctx, { positionId: positionIdOf(t.id, i + 1), displayType: t, slot: i + 1, def: s }, audience), salesLocked: s.salesLocked === true, inGlobalDeal: slotInGlobalDeal(s), globalDealSuppressedBy: globalDealSuppressedBy(s), salesLockedUntil: s.salesLocked ? await slotBookedUntil(ctx, t.id, i + 1) : null, slot: i + 1, zoneSlot, position: s.label,
+          displayTypeId: t.id, displayTypeName: t.name, displayTypeDescription: t.description ?? null, zoneName: zoneOfSlot(s)?.name ?? null, touchPoint: t.touchPoint, playlistName, playlistId, playlistDisplayTypes: typesOfPlaylist(playlistId), unassigned, scored: audience.scored, unsellableReason: await unsellableReason(ctx, { positionId: positionIdOf(t.id, i + 1), displayType: t, slot: i + 1, def: s }, audience), salesLocked: s.salesLocked === true, inGlobalDeal: slotInGlobalDeal(s), globalDealSuppressedBy: globalDealSuppressedBy(s), salesLockedUntil: s.salesLocked ? await slotBookedUntil(ctx, t.id, i + 1) : null, slot: i + 1, zoneSlot, position: s.label,
           assignedTo: {
             ...a,
             partnerNames: a.partnerIds.map((id) => partners.find((p) => p.id === id)?.name ?? id),
