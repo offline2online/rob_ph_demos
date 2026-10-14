@@ -3184,6 +3184,19 @@ export interface components {
              * @enum {string}
              */
             readonly defaultVacdSource?: "manual" | "computer_vision";
+            /**
+             * @description Where this display type physically sits in the store, using the
+             *     five in-store zones of the IAB / IAB Europe In-Store Retail Media
+             *     Definitions and Measurement Standards: `exterior` (Exterior to
+             *     store), `entrance` (Entrance and out of category), `checkout`
+             *     (Checkout), `aisles` (In aisles), `other` (Other). A
+             *     classification and reporting label only: it does not change the
+             *     floor, which stays score-driven. Set on the display type; every
+             *     slot inherits it. Absent keeps the saved value; null clears it
+             *     (not defined, the default).
+             * @enum {string|null}
+             */
+            storeZone?: "exterior" | "entrance" | "checkout" | "aisles" | "other" | null;
             slots: {
                 label: string;
                 /** @enum {string} */

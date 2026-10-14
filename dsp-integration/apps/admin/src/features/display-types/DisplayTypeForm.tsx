@@ -10,7 +10,7 @@
    Playlist dropdown above it is hidden — there's nothing to pick between
    yet, since no playlist exists until Save creates one. */
 import { Button, ColorPicker, Input, InputNumber, Select } from 'antd'
-import { hasStructuralFeatures, TOUCH_POINTS, type DisplayType, type Partner, type Playlist, type TouchPoint } from '@ph-dsp/types'
+import { hasStructuralFeatures, STORE_ZONES, TOUCH_POINTS, type DisplayType, type Partner, type Playlist, type TouchPoint } from '@ph-dsp/types'
 import { useState } from 'react'
 import { Field } from '../../shared/Field'
 import { Icon } from '../../shared/Icon'
@@ -113,14 +113,25 @@ export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, onAddPla
           phExtensions.defaultVacd; shown only where extensions are saved
           (slot ownership on). Empty clears it (ticket jhVpFHHsCp2L48vn4lRe). */}
       {slotAssignment && (
-        <Field label="Default VAC-d (assumed views per play window)" htmlFor="defaultVacd" tip={TIPS.defaultVacd} className="mb-4">
-          <InputNumber
-            id="defaultVacd" min={0} precision={0} style={{ width: 160 }} placeholder="None (unscored)"
-            value={d.phExtensions?.defaultVacd ?? null}
-            /* null, not absent: the API keeps an absent value and clears on null. */
-            onChange={(v) => update((t) => ({ ...t, phExtensions: { ...(t.phExtensions ?? { slots: [] }), defaultVacd: v == null ? null : Number(v) } }))}
-          />
-        </Field>
+        <div className="flex flex-wrap items-start gap-6">
+          <Field label="Default VAC-d (assumed views per play window)" htmlFor="defaultVacd" tip={TIPS.defaultVacd} className="mb-4">
+            <InputNumber
+              id="defaultVacd" min={0} precision={0} style={{ width: 160 }} placeholder="None (unscored)"
+              value={d.phExtensions?.defaultVacd ?? null}
+              /* null, not absent: the API keeps an absent value and clears on null. */
+              onChange={(v) => update((t) => ({ ...t, phExtensions: { ...(t.phExtensions ?? { slots: [] }), defaultVacd: v == null ? null : Number(v) } }))}
+            />
+          </Field>
+          {/* IAB / IAB Europe store zone: a label, set on the type and inherited by its slots. */}
+          <Field label="Store Zone" htmlFor="storeZone" tip={TIPS.storeZone} className="mb-4">
+            <Select
+              id="storeZone" allowClear style={{ width: 260 }} placeholder="Not defined"
+              value={d.phExtensions?.storeZone ?? undefined}
+              options={STORE_ZONES}
+              onChange={(v) => update((t) => ({ ...t, phExtensions: { ...(t.phExtensions ?? { slots: [] }), storeZone: v ?? null } }))}
+            />
+          </Field>
+        </div>
       )}
       <Field label="Background Color" className="mb-4">
         <ColorPicker aria-label="Background Color" value={d.backgroundColor} onChange={(c) => set({ backgroundColor: c.toHexString() })} />
