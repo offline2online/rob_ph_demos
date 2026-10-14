@@ -1023,7 +1023,12 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
   }
   const context = {
     settings: draft, data, canEdit,
-    onDelete: (a: Advertiser) => { setDeleting(a); setDeleteError(null) },
+    /* An advertiser with history can't be removed: say so when the dialog opens, rather than letting
+       Delete fail with an error (ticket HMCgINMMY0cvG0fmC3vR). Users and slots are still checked by the API. */
+    onDelete: (a: Advertiser) => {
+      setDeleting(a)
+      setDeleteError(a.bookings > 0 || Object.values(a.campaigns).some((n) => n > 0) ? { message: `${a.name} has campaigns or bookings, so it can't be removed.` } : null)
+    },
     set: (id: string, patch: Partial<AdvertiserSetting>) => setDraft((cur) => (cur ? { ...cur, [id]: { ...cur[id], ...patch } } : cur)),
   }
 
@@ -1120,7 +1125,9 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
             }
           }}
         >
-          This removes the direct advertiser. It can’t be undone, and it isn’t possible while it has users, campaigns or bookings, or is assigned to a slot on Available Inventory.
+          {deleteError
+            ? deleteError.message
+            : 'This removes the direct advertiser. It can’t be undone, and it isn’t possible while it has users, campaigns or bookings, or is assigned to a slot on Available Inventory.'}
         </DeleteDialog>
       )}
       <BuyersListModal
