@@ -2308,6 +2308,22 @@ export interface components {
             /** @description Guaranteed deals only. */
             committedPlays: number | null;
             entries: components["schemas"]["DealSheetEntry"][];
+            /** @description Every slot the deal is assigned to, with its number, zone and the display type's description, so the buyer knows where the deal plays. Empty while the deal is attached to no slot. */
+            slots: {
+                /** @description displayTypeId.sN */
+                positionId: string;
+                /** @description Display type name — slot label */
+                label: string;
+                displayTypeName: string;
+                /** @description The slot's flat 1-based number on the display type, across every zone. */
+                slot: number;
+                /** @description The zone this slot plays in on a multi-zone display type; null on a single-zone one. */
+                zoneName: string | null;
+                /** @description The slot's 1-based number within its zone (the same as `slot` on a single-zone display type): what Available Inventory shows as Slot. */
+                zoneSlot: number;
+                /** @description The display type's description. */
+                description: string | null;
+            }[];
             creativeRequirements: components["schemas"]["CreativeRequirement"][];
         };
         DealSheetEntry: {
@@ -2419,6 +2435,15 @@ export interface components {
                 positionId: string;
                 /** @description Display type name — slot label */
                 label: string;
+                displayTypeName: string;
+                /** @description The slot's flat 1-based number on the display type, across every zone. */
+                slot: number;
+                /** @description The zone this slot plays in on a multi-zone display type; null on a single-zone one. */
+                zoneName: string | null;
+                /** @description The slot's 1-based number within its zone (the same as `slot` on a single-zone display type): what Available Inventory shows as Slot. */
+                zoneSlot: number;
+                /** @description The display type's description. */
+                description: string | null;
             }[];
             /** @description The version of the deal's mutable terms (rate/floor, committed plays, delivery term, auction window, invited buyers and categories). Starts at 1 and goes up by one on every saved change to those terms; the deal ID and deal type never change. The history is `GET .../term-versions`. */
             readonly termVersion: number;
@@ -2514,6 +2539,10 @@ export interface components {
             displayTypeId: string;
             displayTypeName: string;
             touchPoint?: string;
+            /** @description The display type's description */
+            displayTypeDescription?: string | null;
+            /** @description The zone this slot plays in on a multi-zone display type; null on a single-zone one. Absent from a demo snapshot taken before 14 Oct 2026. */
+            zoneName?: string | null;
             /** @description Every display type this row's playlist is assigned to (as its default playlist or a zone's), with each one's description. Available Inventory lists them when the playlist name is hovered. Read-only; absent from a demo snapshot taken before 14 Oct 2026. */
             playlistDisplayTypes?: {
                 id: string;

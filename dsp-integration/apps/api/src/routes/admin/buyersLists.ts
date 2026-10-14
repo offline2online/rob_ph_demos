@@ -18,6 +18,7 @@ import { dealSheetCsv, dealSheetOf } from '../../domain/dealSheet'
 import { TRANSACTING_CURRENCY } from '../../domain/currency'
 import { effectiveTerm } from '../../domain/pricing'
 import { positionIdOf } from '../../domain/positions'
+import { slotDetailOf, type SlotDetail } from '../../domain/displayTypes'
 import { permittedFor, undefinedValues } from '../../domain/variables'
 import type { Access, VariableValues } from '../../repos/CompanySettingsRepo'
 import type { PartnerRecord } from '../../repos/PartnerRepo'
@@ -31,12 +32,14 @@ const dependentSlots = async (ctx: Context, buyersListId: string) =>
     (t.phExtensions?.slots ?? []).flatMap((s, i) => (assignedOf(s).buyersListIds.includes(buyersListId) ? [`${t.name} — ${s.label || `slot ${i + 1}`}`] : [])),
   )
 
+type AssignedSlot = SlotDetail & { positionId: string; label: string; displayTypeName: string }
+
 /* Every slot assigned to each list, saved assignments only: what Finalise confirms and what a deal needs at least one of before it can be shared. */
 const assignedSlotsByList = async (ctx: Context) => {
-  const out = new Map<string, { positionId: string; label: string }[]>()
+  const out = new Map<string, AssignedSlot[]>()
   for (const t of await ctx.displayTypes.list()) {
     ;(t.phExtensions?.slots ?? []).forEach((s, i) => {
-      for (const id of new Set(assignedOf(s).buyersListIds)) out.set(id, [...(out.get(id) ?? []), { positionId: positionIdOf(t.id, i + 1), label: `${t.name} — ${s.label || `slot ${i + 1}`}` }])
+      for (const id of new Set(assignedOf(s).buyersListIds)) out.set(id, [...(out.get(id) ?? []), { positionId: positionIdOf(t.id, i + 1), label: `${t.name} — ${s.label || `slot ${i + 1}`}`, displayTypeName: t.name, ...slotDetailOf(t, i + 1) }])
     })
   }
   return out
@@ -50,7 +53,7 @@ const positionsOfDeal = async (ctx: Context, buyersListId: string) =>
 
 /* Volume lives on the deal, never the open auction (open question 45): a
    deal's delivery is the plays billed at its positions inside its term. */
-const withDelivery = async (ctx: Context, l: BuyersList, slots?: Map<string, { positionId: string; label: string }[]>): Promise<BuyersList> => {
+const withDelivery = async (ctx: Context, l: BuyersList, slots?: Map<string, AssignedSlot[]>): Promise<BuyersList> => {
   /* Committed volume and rate inherit platform default -> DSP -> this list (Rob, 7 Oct 2026); the rate is the
      base bid floor in USD CPM (the deal's own floor, else its DSP's, else the platform's), never blank. */
   const company = await ctx.company.get()

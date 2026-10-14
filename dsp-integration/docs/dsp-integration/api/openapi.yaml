@@ -2940,7 +2940,7 @@ components:
         creativeRequirements: {type: array, items: {$ref: '#/components/schemas/CreativeRequirement'}}
     DealSheet:
       type: object
-      required: [buyersListId, name, dealType, currency, rateCpm, rateKind, activeFrom, activeTo, auctionCloses, committedPlays, entries, creativeRequirements]
+      required: [buyersListId, name, dealType, currency, rateCpm, rateKind, activeFrom, activeTo, auctionCloses, committedPlays, entries, slots, creativeRequirements]
       properties:
         buyersListId: {type: string}
         name: {type: string}
@@ -2953,6 +2953,20 @@ components:
         auctionCloses: {type: [string, 'null']}
         committedPlays: {type: [integer, 'null'], description: Guaranteed deals only.}
         entries: {type: array, items: {$ref: '#/components/schemas/DealSheetEntry'}}
+        slots:
+          type: array
+          description: Every slot the deal is assigned to, with its number, zone and the display type's description, so the buyer knows where the deal plays. Empty while the deal is attached to no slot.
+          items:
+            type: object
+            required: [positionId, label, displayTypeName, slot, zoneName, zoneSlot, description]
+            properties:
+              positionId: {type: string, description: 'displayTypeId.sN'}
+              label: {type: string, description: 'Display type name — slot label'}
+              displayTypeName: {type: string}
+              slot: {type: integer, description: 'The slot''s flat 1-based number on the display type, across every zone.'}
+              zoneName: {type: [string, 'null'], description: 'The zone this slot plays in on a multi-zone display type; null on a single-zone one.'}
+              zoneSlot: {type: integer, description: 'The slot''s 1-based number within its zone (the same as `slot` on a single-zone display type): what Available Inventory shows as Slot.'}
+              description: {type: [string, 'null'], description: The display type's description.}
         creativeRequirements: {type: array, items: {$ref: '#/components/schemas/CreativeRequirement'}}
     DealSheetEntry:
       type: object
@@ -3064,10 +3078,15 @@ components:
           description: Every slot (position) the deal is assigned to, saved assignments only. A deal can be shared only when this has at least one entry.
           items:
             type: object
-            required: [positionId, label]
+            required: [positionId, label, displayTypeName, slot, zoneName, zoneSlot, description]
             properties:
               positionId: {type: string, description: 'displayTypeId.sN'}
               label: {type: string, description: 'Display type name — slot label'}
+              displayTypeName: {type: string}
+              slot: {type: integer, description: 'The slot''s flat 1-based number on the display type, across every zone.'}
+              zoneName: {type: [string, 'null'], description: 'The zone this slot plays in on a multi-zone display type; null on a single-zone one.'}
+              zoneSlot: {type: integer, description: 'The slot''s 1-based number within its zone (the same as `slot` on a single-zone display type): what Available Inventory shows as Slot.'}
+              description: {type: [string, 'null'], description: The display type's description.}
         termVersion:
           type: integer
           readOnly: true
@@ -3179,6 +3198,8 @@ components:
         displayTypeId: {type: string}
         displayTypeName: {type: string}
         touchPoint: {type: string}
+        displayTypeDescription: {type: [string, 'null'], description: The display type's description, shown beside the slot on Available Inventory (ticket c5S06G5mN6F3GJTI8bxD). Absent from a demo snapshot taken before 14 Oct 2026.}
+        zoneName: {type: [string, 'null'], description: The zone this slot plays in on a multi-zone display type; null on a single-zone one. Absent from a demo snapshot taken before 14 Oct 2026.}
         playlistDisplayTypes:
           type: array
           description: Every display type this row's playlist is assigned to (as its default playlist or a zone's), with each one's description. Available Inventory lists them when the playlist name is hovered. Read-only; absent from a demo snapshot taken before 14 Oct 2026.

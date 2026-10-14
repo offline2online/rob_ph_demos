@@ -49,6 +49,15 @@ describe('Buyers list draft -> share', () => {
     expect(listed.assignedSlots).toHaveLength(1)
     expect(listed.assignedSlots[0].label).toContain('—')
     expectMatchesContract('GET', '/admin/v1/buyers-lists', 200, { items: [listed] })
+    /* Ticket c5S06G5mN6F3GJTI8bxD: each slot says its number within its zone, the zone and the display type's description. */
+    expect(listed.assignedSlots[0]).toMatchObject({ displayTypeName: expect.any(String), slot: expect.any(Number), zoneSlot: expect.any(Number) })
+    expect(listed.assignedSlots[0]).toHaveProperty('zoneName')
+    expect(listed.assignedSlots[0]).toHaveProperty('description')
+    const sheet = (await app.inject({ method: 'GET', url: `${U}/${id}/deal-sheet` })).json()
+    expect(sheet.slots).toHaveLength(1)
+    expect(sheet.slots[0]).toMatchObject({ positionId: listed.assignedSlots[0].positionId, zoneSlot: listed.assignedSlots[0].zoneSlot, zoneName: listed.assignedSlots[0].zoneName })
+    expectMatchesContract('GET', '/admin/v1/buyers-lists/{buyersListId}/deal-sheet', 200, sheet)
+    expect((await app.inject({ method: 'GET', url: `${U}/${id}/deal-sheet?format=csv` })).body).toContain('Slots')
 
     const shared = await app.inject({ method: 'POST', url: `${U}/${id}/share` })
     expect(shared.statusCode, JSON.stringify(shared.json())).toBe(200)

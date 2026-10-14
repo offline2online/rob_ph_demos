@@ -9,7 +9,8 @@ import type { Context } from '../context'
 import { dealSetupHint } from '../dsp/dealTerms'
 import { baseFloorFor } from '../exchange/enforcement'
 import { TRANSACTING_CURRENCY } from './currency'
-import { creativeRequirementsFor, type CreativeRequirement } from './dealCreative'
+import { creativeRequirementsFor, positionsOfList, type CreativeRequirement } from './dealCreative'
+import { slotDetailOf, type SlotDetail } from './displayTypes'
 
 export interface DealSheetEntry {
   partnerId: string
@@ -19,6 +20,12 @@ export interface DealSheetEntry {
   seats: { id: string; name: string }[]
   setup: string
 }
+
+/* A slot the deal is assigned to, as the buyer should read it: number, zone and the display type's description. */
+export interface DealSheetSlot extends SlotDetail { positionId: string; displayTypeName: string; label: string }
+
+export const slotLine = (s: DealSheetSlot): string =>
+  `${s.displayTypeName}${s.description ? ` (${s.description})` : ''}${s.zoneName ? `, ${s.zoneName}` : ''}, slot ${s.zoneSlot}`
 
 export interface DealSheet {
   buyersListId: string
@@ -32,6 +39,7 @@ export interface DealSheet {
   auctionCloses: string | null
   committedPlays: number | null
   entries: DealSheetEntry[]
+  slots: DealSheetSlot[]
   creativeRequirements: CreativeRequirement[]
 }
 
@@ -62,6 +70,7 @@ export async function dealSheetOf(ctx: Context, list: BuyersList): Promise<DealS
     auctionCloses: list.auctionCloses,
     committedPlays: list.dealType === 'guaranteed' ? list.committedPlays ?? null : null,
     entries,
+    slots: (await positionsOfList(ctx, list.id)).map((p) => ({ positionId: p.positionId, displayTypeName: p.displayType.name, label: `${p.displayType.name} — ${p.def.label || `slot ${p.slot}`}`, ...slotDetailOf(p.displayType, p.slot) })),
     creativeRequirements: await creativeRequirementsFor(ctx, list.id),
   }
 }
@@ -73,11 +82,11 @@ const cell = (v: string | number | null): string => {
 
 /* A flat sheet a buyer can open in Excel: one row per DSP deal ID and creative format. */
 export function dealSheetCsv(sheet: DealSheet): string {
-  const head = ['Deal name', 'DSP', 'Deal ID', 'Deal type', `Rate (${sheet.currency} CPM)`, 'Rate basis', 'Delivery from', 'Delivery to', 'Auction closes', 'Committed plays', 'Invited seats', 'Creative formats', 'Canvas size', 'Orientation', 'Max play length (s)']
+  const head = ['Deal name', 'DSP', 'Deal ID', 'Deal type', `Rate (${sheet.currency} CPM)`, 'Rate basis', 'Delivery from', 'Delivery to', 'Auction closes', 'Committed plays', 'Invited seats', 'Slots', 'Creative formats', 'Canvas size', 'Orientation', 'Max play length (s)']
   const reqs: (CreativeRequirement | null)[] = sheet.creativeRequirements.length ? sheet.creativeRequirements : [null]
   const rows = sheet.entries.flatMap((e) => reqs.map((r) => [
     sheet.name, e.dsp, e.dealId, DEAL_TYPE_LABEL[sheet.dealType], sheet.rateCpm, sheet.rateKind === 'fixed' ? 'Fixed rate' : 'Floor',
-    sheet.activeFrom, sheet.activeTo, sheet.auctionCloses, sheet.committedPlays, e.seats.map((s) => `${s.name} (${s.id})`).join('; '),
+    sheet.activeFrom, sheet.activeTo, sheet.auctionCloses, sheet.committedPlays, e.seats.map((s) => `${s.name} (${s.id})`).join('; '), sheet.slots.map(slotLine).join('; '),
     r?.formats.join(' + ') ?? '', r ? `${r.canvas.width}x${r.canvas.height}` : '', r?.orientation ?? '', r?.maxPlayLengthSec ?? '',
   ]))
   return `${[head, ...rows].map((r) => r.map(cell).join(',')).join('\r\n')}\r\n`

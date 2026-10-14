@@ -219,8 +219,18 @@ const PlaylistCell = ({ data }: ICellRendererParams<AvailableInventoryRow>) =>
       )}
     </span>
   ) : null
+/* The hover names the slot's number, its zone and the display type with its description (ticket c5S06G5mN6F3GJTI8bxD,
+   14 Oct 2026); a pre-14-Oct demo snapshot has neither zone nor description, so then just the number and display type. */
 const SlotCell = ({ data }: ICellRendererParams<AvailableInventoryRow>) =>
-  data ? <div className="min-w-0 truncate">{data.position}</div> : null
+  data ? (
+    <Tip title={<div>
+      <div style={{ fontWeight: 500 }}>{data.position}</div>
+      <div>Slot {data.zoneSlot}{data.zoneName ? ` of ${data.zoneName}` : ''}</div>
+      <div>{data.displayTypeName}{data.displayTypeDescription ? `: ${data.displayTypeDescription}` : ''}</div>
+    </div>}>
+      <div className="min-w-0 truncate cursor-pointer" tabIndex={0} aria-label={`Position: ${data.position}`}>{data.position}</div>
+    </Tip>
+  ) : null
 /* Opens the display type with Playlist Settings — where slot assignment
    lives — already expanded (Rob, 20 Sep). */
 const OpenCell = ({ data, context }: IP) =>

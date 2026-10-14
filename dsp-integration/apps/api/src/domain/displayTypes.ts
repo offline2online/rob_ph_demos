@@ -100,6 +100,15 @@ export async function ensureReferencedPlaylists(dt: DisplayType, playlists: Play
   }
 }
 
+/* What a deal's slot line says (ticket c5S06G5mN6F3GJTI8bxD, 14 Oct 2026): the slot's number within its zone, the zone
+   (null on a single-zone display type) and the display type's description, so a buyer reading Finalise or the deal sheet
+   knows where the slot is without opening Display Types. */
+export interface SlotDetail { slot: number; zoneName: string | null; zoneSlot: number; description: string | null }
+export const slotDetailOf = (dt: DisplayType, slot: number): SlotDetail => {
+  const place = zonePlaceOf(dt, slot)
+  return { slot, zoneName: place?.zoneName ?? null, zoneSlot: place?.zoneSlot ?? slot, description: dt.description ?? null }
+}
+
 /* Playlist as the contract returns it, with its display type and zone assignments.
    With zones on, each zone's own playlist is what plays, so the default
    playlist is no longer listed as assigned (it still carries the layout and
