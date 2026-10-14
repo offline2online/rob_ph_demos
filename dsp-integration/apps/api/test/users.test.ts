@@ -21,6 +21,17 @@ describe('Platform users (Company Settings → Users)', () => {
     expect(advs.find((a) => a.advertiserId === 'fresh-fields-dairy')?.direct).toBe(true)
   })
 
+  it('will not delete a direct advertiser while users are associated with it', async () => {
+    const app = buildApp(await testContext())
+    await app.inject({ method: 'POST', url: `${API}/advertisers/direct`, payload: { name: 'Fresh Fields Dairy' } })
+    await app.inject({ method: 'POST', url: `${API}/users`, payload: { firstName: 'Luca', email: 'luca@freshfields.example', role: 'Advertiser', advertiserId: 'fresh-fields-dairy' } })
+    const blocked = await app.inject({ method: 'DELETE', url: `${API}/advertisers/direct/fresh-fields-dairy` })
+    expect(blocked.statusCode).toBe(409)
+    expect(blocked.json().error.message).toContain('luca@freshfields.example')
+    await app.inject({ method: 'DELETE', url: `${API}/users/luca@freshfields.example` })
+    expect((await app.inject({ method: 'DELETE', url: `${API}/advertisers/direct/fresh-fields-dairy` })).statusCode).toBe(204)
+  })
+
   it('refuses an Advertiser user with an unknown advertiser, a bad email, a duplicate', async () => {
     const app = buildApp(await testContext())
     const bad = await app.inject({ method: 'POST', url: `${API}/users`, payload: { firstName: '', email: 'nope', role: 'Advertiser', advertiserId: 'nobody' } })

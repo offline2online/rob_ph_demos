@@ -1108,7 +1108,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
             }
           }}
         >
-          This removes the direct advertiser. It can’t be undone, and it isn’t possible while it has campaigns or bookings, or is assigned to a slot on Available Inventory.
+          This removes the direct advertiser. It can’t be undone, and it isn’t possible while it has users, campaigns or bookings, or is assigned to a slot on Available Inventory.
         </DeleteDialog>
       )}
       <BuyersListModal
