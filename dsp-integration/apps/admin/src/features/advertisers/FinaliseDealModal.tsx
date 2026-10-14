@@ -37,7 +37,7 @@ export function FinaliseDealModal({ list, onClose, onShared }: { list: BuyersLis
   }
   const slotLabels = new Map((list?.assignedSlots ?? []).map((s) => [s.positionId, s.label]))
   const label = (s: string) => <dt style={{ color: T.muted }}>{s}</dt>
-  const guidance = <>Check the slots and terms below. <strong>Share deal</strong> sends this deal, including its deal ID, to the invited buyers via their DSP for authorisation. It is a fixed deal: buyers can accept it but not change it. After it is shared, any change to its terms asks the buyers who accepted to accept again.</>
+  const guidance = <>Check the slots and terms below. <strong>Confirm and share deal with DSPs</strong> is the final step: it sends this deal, including its deal ID, to the invited buyers via each DSP for authorisation. It is a fixed deal: buyers can accept it but not change it. After it is shared, any change to its terms asks the buyers who accepted to accept again.</>
   return (
     <Modal
       open={!!list} onCancel={onClose} width={640} destroyOnHidden
@@ -45,7 +45,7 @@ export function FinaliseDealModal({ list, onClose, onShared }: { list: BuyersLis
         <InfoTip text={<span data-testid="finalise-guidance">{guidance}</span>} size={18} width={360} /></span>}
       footer={<div className="flex justify-end gap-2" data-testid="finalise-actions">
         <Button onClick={onClose}>Back</Button>
-        <Button type="primary" loading={sharing} onClick={share}>Share deal</Button>
+        <Button type="primary" loading={sharing} onClick={share}>Confirm and share deal with DSPs</Button>
       </div>}
     >
       {list && (

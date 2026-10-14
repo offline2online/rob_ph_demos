@@ -737,6 +737,8 @@ describe('Advertisers / Inventory', () => {
 
     /* Advertisers table sits last, under Available Inventory and Buyers and targeting (ticket AkDMbOJn0QBV0ZcEM5tm). */
     expect(screen.getByText('Deals and buyers lists').compareDocumentPosition(advertisers) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    /* Deals and buyers lists lead the page, above Available Inventory (ticket nTxDlW4zBjEKE9k1yKWO). */
+    expect(screen.getByText('Deals and buyers lists').compareDocumentPosition(screen.getByText('Available Inventory')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 
     const inventory = await screen.findByLabelText('Available Inventory')
     /* Playlist leads the table; Display type was removed as its own column
@@ -888,7 +890,7 @@ describe('Advertisers / Inventory', () => {
     const dialog = await openTermsEditor()
     expect(within(dialog).getByTestId('deal-status-note')).toHaveTextContent('Draft: not shared with any DSP')
     expect(within(dialog).getByRole('button', { name: 'Save draft' })).toBeEnabled()
-    expect(within(dialog).getByRole('button', { name: 'Finalise' })).toBeDisabled()
+    expect(within(dialog).getByRole('button', { name: 'Finalise deal terms' })).toBeDisabled()
     expect(within(dialog).queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument()
   }, slow(30000))
 
@@ -896,7 +898,7 @@ describe('Advertisers / Inventory', () => {
     const calls: { method: string; url: string; body?: unknown }[] = []
     vi.stubGlobal('fetch', draftFetch([{ positionId: 'menu_board.s2', label: 'Menu Board — Long Format' }], calls))
     const dialog = await openTermsEditor()
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Finalise' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Finalise deal terms' }))
     const summary = await screen.findByTestId('finalise-summary')
     expect(within(summary).getByTestId('finalise-slots')).toHaveTextContent('Menu Board — Long Format')
     expect(summary).toHaveTextContent('PH-7K2M9QXW4B')
@@ -905,7 +907,7 @@ describe('Advertisers / Inventory', () => {
     expect(creative.closest('div')).toHaveTextContent('Menu Board — Long Format')
     expect(calls.map((c) => c.method)).toEqual(['PUT'])
     expect(calls.some((c) => c.url.endsWith('/share'))).toBe(false)
-    fireEvent.click(screen.getByRole('button', { name: 'Share deal' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm and share deal with DSPs' }))
     await waitFor(() => expect(calls.map((c) => c.url.split('/').pop())).toEqual(['bl_1', 'share']))
   }, slow(30000))
 

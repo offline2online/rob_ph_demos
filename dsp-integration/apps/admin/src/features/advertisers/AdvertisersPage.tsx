@@ -1049,6 +1049,14 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
           <StatusPill colour={T.muted} icon="visibility">Read only</StatusPill>
         </div>
       )}
+      <BuyersListsTable
+        lists={buyersLists.data?.items ?? []}
+        canEdit={canEdit}
+        capacity={listCapacity}
+        slots={listSlots}
+        onChanged={() => qc.invalidateQueries({ queryKey: ['buyers-lists'] })}
+      />
+
       <SectionLabel><WithTip tip="Every advertiser-owned slot across the estate that connected DSPs can bid on. Slots are made available by setting their owner to Advertiser on a playlist.">Available Inventory</WithTip></SectionLabel>
       {inventory.data && invRows.length === 0 ? (
         <div className="flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}>
@@ -1072,14 +1080,6 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
           />
         </>
       )}
-
-      <BuyersListsTable
-        lists={buyersLists.data?.items ?? []}
-        canEdit={canEdit}
-        capacity={listCapacity}
-        slots={listSlots}
-        onChanged={() => qc.invalidateQueries({ queryKey: ['buyers-lists'] })}
-      />
 
       {/* Advertisers table sits last, under Deals and buyers lists (ticket AkDMbOJn0QBV0ZcEM5tm). */}
       <SectionLabel>Advertisers</SectionLabel>
