@@ -4,7 +4,7 @@
    table (Rob, 23 Sep). */
 import { Button } from 'antd'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
-import type { BuyersList } from '@ph-dsp/types'
+import { storeZoneLabel, type BuyersList, type StoreZone } from '@ph-dsp/types'
 import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { Q } from '../../api/queries'
@@ -21,7 +21,7 @@ import { DealSheetModal } from './DealSheetModal'
 import { cpmKind, cpmKindHint, rateText, sourceLabel } from './effectiveTerm'
 
 type Capacity = Map<string, { plays: number; displayTypes: number; positions: number }>
-type SlotInfo = { displayType: string; playlist: string; position: string; slot: number; playsPerWindow: number | null }
+type SlotInfo = { displayType: string; description: string | null; storeZone: StoreZone | null; zoneName: string | null; playlist: string; position: string; slot: number; playsPerWindow: number | null }
 type Ctx = { current: { capacity: Capacity; slots: Map<string, SlotInfo[]>; dspName: (partnerId: string) => string; seatName: (partnerId: string, seatId: string) => string; onEdit: (l: BuyersList) => void; onDelete: (l: BuyersList) => void; onShare: (l: BuyersList) => void; canEdit: boolean } }
 type P = ICellRendererParams<BuyersList, unknown, Ctx>
 
@@ -81,7 +81,10 @@ const SlotsCell = ({ data, context }: P) => {
       <div style={{ fontWeight: 500 }}>Assigned slots</div>
       {rows.map((r, i) => (
         <div key={i} style={{ marginTop: 4 }}>
-          <div>{r.displayType} · {r.playlist || 'No playlist'}</div>
+          <div style={{ fontWeight: 500 }}>{r.displayType}{r.description ? ` (${r.description})` : ''}</div>
+          <div>{r.playlist || 'No playlist'}{r.zoneName ? ` · ${r.zoneName}` : ''}</div>
+          {/* The IAB store zone set on the display type (ticket yZ8BvwUQV4Yc7a0IVwak, 15 Oct 2026). */}
+          <div>IAB zone: {storeZoneLabel(r.storeZone) ?? 'Not defined'}</div>
           <div>{r.position} (slot {r.slot}){r.playsPerWindow != null ? ` · ${r.playsPerWindow.toLocaleString('en-US')} plays per window` : ''}</div>
         </div>
       ))}

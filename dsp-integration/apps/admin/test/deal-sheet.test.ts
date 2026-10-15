@@ -7,7 +7,7 @@ describe('dealSheetText', () => {
     const text = dealSheetText({
       buyersListId: 'bl_1', name: 'Q4 deal', dealType: 'preferred', currency: 'USD', rateCpm: 150, rateKind: 'floor', activeFrom: null, activeTo: null, auctionCloses: null, committedPlays: null,
       entries: [{ partnerId: 'p_google', dsp: 'Google DV360', provider: 'google_dv360', dealId: 'PH-ABC1234567', seats: [{ id: '51', name: 'Nestlé' }], setup: 'DV360: do it.' }],
-      slots: [{ positionId: 'a.s1', label: 'Menu Board — Slot A', displayTypeName: 'Menu Board', slot: 3, zoneName: 'Zone 2', zoneSlot: 1, description: 'Long format menu' }],
+      slots: [{ positionId: 'a.s1', label: 'Menu Board — Slot A', displayTypeName: 'Menu Board', slot: 3, zoneName: 'Zone 2', zoneSlot: 1, description: 'Long format menu', storeZone: 'checkout' }],
       creativeRequirements: [{ canvas: { width: 1080, height: 1920 }, orientation: 'portrait', maxPlayLengthSec: 15, formats: ['image', 'video'], positionIds: ['a.s1'] }],
     })
     expect(text).toContain('Deal ID: PH-ABC1234567')
@@ -15,6 +15,6 @@ describe('dealSheetText', () => {
     expect(text).toContain('150 USD CPM (floor)')
     expect(text).toContain('image + video, 1080x1920 (portrait), max play 15s')
     expect(text).toContain('Nestlé (51)')
-    expect(text).toContain('Menu Board (Long format menu), Zone 2, slot 1')
+    expect(text).toContain('Menu Board (Long format menu), Zone 2, slot 1, IAB zone: Checkout')
   })
 })

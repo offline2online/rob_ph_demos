@@ -8,7 +8,7 @@ import { App, Button, Input, InputNumber, Modal, Select, Spin, Switch } from 'an
 import { Tip } from '../../shared/Tip'
 import { cpmKindHint, cpmSummary, sourceLabel } from './effectiveTerm'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
-import { INTERACTIVE_ENABLED, RESERVE_PRICE_TIP, PLATFORM_DEFAULT_BILLING_UNIT_HOURS, DEFAULT_MAX_CAMPAIGNS, MAX_MAX_CAMPAIGNS, MAX_MAX_PLAY_LENGTH_SEC, MIN_MAX_CAMPAIGNS, MIN_MAX_PLAY_LENGTH_SEC, SLOT_OWNERS, ALL_DSPS_LABEL, assignedLabels, directLabel, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type Session } from '@ph-dsp/types'
+import { INTERACTIVE_ENABLED, RESERVE_PRICE_TIP, PLATFORM_DEFAULT_BILLING_UNIT_HOURS, DEFAULT_MAX_CAMPAIGNS, MAX_MAX_CAMPAIGNS, MAX_MAX_PLAY_LENGTH_SEC, MIN_MAX_CAMPAIGNS, MIN_MAX_PLAY_LENGTH_SEC, SLOT_OWNERS, ALL_DSPS_LABEL, assignedLabels, directLabel, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type Session, storeZoneLabel, type StoreZone } from '@ph-dsp/types'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, ApiRequestError } from '../../api/client'
@@ -179,7 +179,11 @@ const PlaylistCell = ({ data }: ICellRendererParams<AvailableInventoryRow>) =>
           <div style={{ marginTop: 4 }}>Assigned display type{data.playlistDisplayTypes.length === 1 ? '' : 's'}:</div>
           <ul style={{ margin: '2px 0 0', paddingLeft: 16 }}>
             {data.playlistDisplayTypes.map((d) => (
-              <li key={d.id}><span style={{ fontWeight: 500 }}>{d.name}</span>{d.description ? `: ${d.description}` : ' (no description)'}</li>
+              <li key={d.id}>
+                <span style={{ fontWeight: 500 }}>{d.name}</span>{d.description ? `: ${d.description}` : ' (no description)'}
+                {/* The IAB store zone set on the display type, when there is one (ticket yZ8BvwUQV4Yc7a0IVwak, 15 Oct 2026). */}
+                {storeZoneLabel(d.storeZone) && <div>IAB zone: {storeZoneLabel(d.storeZone)}</div>}
+              </li>
             ))}
           </ul>
         </div>
@@ -1026,10 +1030,10 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
   const listCapacity = new Map<string, { plays: number; displayTypes: number; positions: number }>()
   const countedTypes = new Map<string, Set<string>>()
   /* The slots each list is assigned to, for the Slots column's hover on the Deals and buyers lists table. */
-  const listSlots = new Map<string, { displayType: string; playlist: string; position: string; slot: number; playsPerWindow: number | null }[]>()
+  const listSlots = new Map<string, { displayType: string; description: string | null; storeZone: StoreZone | null; zoneName: string | null; playlist: string; position: string; slot: number; playsPerWindow: number | null }[]>()
   for (const r of invRows) {
     for (const id of new Set(tiersOf(edited(invContext, r).assignedTo))) {
-      listSlots.set(id, [...(listSlots.get(id) ?? []), { displayType: r.displayTypeName, playlist: r.playlistName, position: r.position, slot: r.zoneSlot, playsPerWindow: effectivePlaysPerWindow(invContext, r) }])
+      listSlots.set(id, [...(listSlots.get(id) ?? []), { displayType: r.displayTypeName, description: r.displayTypeDescription ?? null, storeZone: r.displayTypeStoreZone ?? null, zoneName: r.zoneName ?? null, playlist: r.playlistName, position: r.position, slot: r.zoneSlot, playsPerWindow: effectivePlaysPerWindow(invContext, r) }])
     }
     if (typeof r.displayCount !== 'number') continue
     const fleet = effectivePlaysPerWindow(invContext, r) * r.displayCount

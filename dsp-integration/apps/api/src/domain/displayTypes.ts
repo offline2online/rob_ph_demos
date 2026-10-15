@@ -1,5 +1,5 @@
 /* Stand-in rules for the existing display type record (POC only). */
-import { TOUCH_POINTS, type DisplayType, type Playlist } from '@ph-dsp/types'
+import { TOUCH_POINTS, type DisplayType, type Playlist, type StoreZone } from '@ph-dsp/types'
 import type { AudienceSource } from '../platform/AudienceSource'
 import type { PlaylistRecord, PlaylistSource } from '../platform/PlaylistSource'
 
@@ -100,13 +100,14 @@ export async function ensureReferencedPlaylists(dt: DisplayType, playlists: Play
   }
 }
 
-/* What a deal's slot line says (ticket c5S06G5mN6F3GJTI8bxD, 14 Oct 2026): the slot's number within its zone, the zone
+/* storeZone: the IAB / IAB Europe store zone set on the display type (null when not defined), shown beside each slot on Finalise and the deal sheet.
+   What a deal's slot line says (ticket c5S06G5mN6F3GJTI8bxD, 14 Oct 2026): the slot's number within its zone, the zone
    (null on a single-zone display type) and the display type's description, so a buyer reading Finalise or the deal sheet
    knows where the slot is without opening Display Types. */
-export interface SlotDetail { slot: number; zoneName: string | null; zoneSlot: number; description: string | null }
+export interface SlotDetail { slot: number; zoneName: string | null; zoneSlot: number; description: string | null; storeZone: StoreZone | null }
 export const slotDetailOf = (dt: DisplayType, slot: number): SlotDetail => {
   const place = zonePlaceOf(dt, slot)
-  return { slot, zoneName: place?.zoneName ?? null, zoneSlot: place?.zoneSlot ?? slot, description: dt.description ?? null }
+  return { slot, zoneName: place?.zoneName ?? null, zoneSlot: place?.zoneSlot ?? slot, description: dt.description ?? null, storeZone: dt.phExtensions?.storeZone ?? null }
 }
 
 /* Playlist as the contract returns it, with its display type and zone assignments.
