@@ -323,3 +323,20 @@ describe('Display Types page', () => {
     }
   }, slow(30000))
 })
+
+describe('Display Type Image', () => {
+  it('shows the placeholder tile beside the preview, and the Update picture dialog offers a drop zone after Delete', async () => {
+    renderAt('/display-types?id=landscape', true)
+    const tile = await screen.findByTestId('display-type-image')
+    expect(tile.querySelector('img')).toBeNull()
+    expect(screen.getByTestId('display-preview').parentElement!.parentElement).toBe(tile.parentElement!.parentElement)
+    fireEvent.click(screen.getByRole('button', { name: 'Update Picture' }))
+    expect(await screen.findByText(/Update picture \(Delete current image/)).toBeInTheDocument()
+    expect(screen.getByText('Select a new picture')).toBeInTheDocument()
+    expect(within(screen.getByRole('dialog')).getByRole('button', { name: 'Save' })).toBeDisabled()
+    fireEvent.change(screen.getByLabelText('Browse for an image'), { target: { files: [new File(['x'], 'a.txt', { type: 'text/plain' })] } })
+    expect(await screen.findByRole('alert')).toHaveTextContent('PNG or JPEG')
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByText('Select a new picture')).toBeNull())
+  }, slow(30000))
+})

@@ -45,6 +45,21 @@ describe('display types — POC stand-in endpoints', () => {
     expect(res.json().defaultPlaylistId).toBe('pl_dt_new_layout')
   })
 
+  it('saves, replaces and clears the Display Type Image, and rejects anything but a small PNG/JPEG', async () => {
+    const { app } = await setup()
+    const png = 'data:image/png;base64,iVBORw0KGgo='
+    expect((await app.inject({ method: 'POST', url: '/api/admin/v1/display-types', payload: newType({ imageUrl: png }) })).json().imageUrl).toBe(png)
+    const put = (imageUrl: string | null) => app.inject({ method: 'PUT', url: '/api/admin/v1/display-types/dt_new/record', payload: newType({ imageUrl }) })
+    const jpg = 'data:image/jpeg;base64,/9j/4AAQ'
+    expect((await put(jpg)).json().imageUrl).toBe(jpg)
+    expect((await app.inject({ method: 'GET', url: '/api/admin/v1/display-types/dt_new/record' })).json().imageUrl).toBe(jpg)
+    expect((await put('data:text/html;base64,PGI+')).statusCode).toBe(400)
+    expect((await put('data:image/png;base64,' + 'A'.repeat(400 * 1024))).statusCode).toBe(400)
+    const cleared = await put(null)
+    expect(cleared.statusCode).toBe(200)
+    expect(cleared.json().imageUrl).toBeUndefined()
+  })
+
   it('POST rejects unknown touch points and a missing name', async () => {
     const { app } = await setup()
     const res = await app.inject({ method: 'POST', url: '/api/admin/v1/display-types', payload: newType({ touchPoint: 'Responsive Web', name: ' ' }) })

@@ -22,6 +22,7 @@ import { PhantomZonePanel } from './panels/PhantomZonePanel'
 import { PlaylistSettingsPanel } from './panels/PlaylistSettingsPanel'
 import { TIPS } from './tooltips'
 import { Preview } from './Preview'
+import { ImageTile } from './ImageTile'
 
 export interface PlaylistOption { id: string; name: string; autoCreatedFor: string | null; playlistSettings?: Record<string, unknown> }
 
@@ -73,7 +74,10 @@ export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, onAddPla
 
   return (
     <div>
-      <div className="mb-4"><Preview d={d} playlistName={playlistName} /></div>
+      <div className="mb-4 flex flex-wrap items-start gap-8">
+        <Preview d={d} playlistName={playlistName} />
+        <ImageTile d={d} onChange={(url) => set({ imageUrl: url })} />
+      </div>
       <Field label="Touch Point" htmlFor="touchPoint" className="mb-4">
         <Select
           id="touchPoint"

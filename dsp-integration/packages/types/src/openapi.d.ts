@@ -3454,6 +3454,8 @@ export interface components {
                 height: number;
             };
             backgroundColor?: string;
+            /** @description Display Type Image: a PNG or JPEG data URL (at most 400 KB), cropped in the editor. null or absent means no image (the placeholder shows). */
+            imageUrl?: string | null;
             defaultPlaylistId?: string;
             /** @description Maximum Campaigns Played In Rotation only, as of 26 Sep 2026 — the slot count and slot assignment (phExtensions) size and sell that specific display type's screen, so they stay here even though the other playlist settings moved to the Playlist record. null means inherit. */
             playlistSettings: {
