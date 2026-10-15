@@ -818,7 +818,7 @@ describe('Advertisers / Inventory', () => {
   }, slow(45000))
 
   /* Ticket ZglKshE5dUVasljNcIPH (8 Oct 2026): a buyers list shows the sum of the fleet plays per window of every position it is assigned to. */
-  it('shows a buyers list the combined fleet plays per window of its assigned positions', async () => {
+  it('no longer shows committed or estimated volume columns in the deals and buyers lists table', async () => {
     const inv = ADVERTISER_PAGE['/api/admin/v1/available-inventory']
     const row = { ...inv.items[0], displayCount: 12, slotCount: 3, billingUnitHours: 24, maxPlayLengthSec: 15, companyMaxPlayLengthSec: 15 }
     const assigned = { partnerIds: [], advertisers: [], whitelistOnly: false, buyersListId: 'bl_1', buyersListIds: ['bl_1'] }
@@ -829,8 +829,11 @@ describe('Advertisers / Inventory', () => {
     })))
     renderAt('/advertisers')
     const table = await screen.findByLabelText('Deals and buyers lists')
-    /* (1,920 per display x 12) + (1,920 x 1) = 24,960 */
-    expect(await within(table).findByText('24,960')).toBeInTheDocument()
+    expect(await within(table).findByText('Pharma brands')).toBeInTheDocument()
+    /* Ticket KmX6jT2vmp50yrG1sRVy (14 Oct 2026): the two volume columns were removed from this table. */
+    expect(within(table).queryByText('Committed volume')).toBeNull()
+    expect(within(table).queryByText('Estimated volume')).toBeNull()
+    expect(within(table).queryByText('24,960')).toBeNull()
   })
 
   /* Ticket 5CCgGEYSkVoDTH9yNSYu (10 Oct 2026): the deal ID is minted by the platform, shown read-only, and never part of the save payload. */
