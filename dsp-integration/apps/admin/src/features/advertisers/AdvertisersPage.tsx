@@ -157,6 +157,9 @@ type InvCtx = { current: {
   setMaxCampaignsDefault: (displayTypeId: string, v: number | null) => void
   setMaxPlayLengthDefault: (displayTypeId: string, v: number | null) => void
   openAddBuyersList: (r: AvailableInventoryRow) => void
+  /* The other slots on the same display type that a replicate would reach (sales-locked ones are skipped), and the replicate itself. */
+  siblingsOf: (r: AvailableInventoryRow) => AvailableInventoryRow[]
+  copyAssignedToSiblings: (r: AvailableInventoryRow) => void
 } }
 type IP = ICellRendererParams<AvailableInventoryRow, unknown, InvCtx>
 /* Playlist is the primary column (ticket "Available Inventory:
@@ -431,6 +434,7 @@ function AssignedCell({ data, context }: IP) {
     advertiserDsps.set(x.name, via)
   }
   const e = edited(c, data)
+  const siblings = c.siblingsOf(data).length
   /* A buyers list does not suppress the global deal (12 Oct 2026): it sits in the open tier beneath the numbered lists. */
   const suppressed = a.advertisers.length ? 'held for named advertisers' : a.whitelistOnly ? 'whitelist-only' : null
   const globalOn = e.inGlobalDeal !== false
@@ -459,6 +463,8 @@ function AssignedCell({ data, context }: IP) {
         <span className="mb-1 inline-flex items-center gap-1" style={{ fontSize: 12, color: T.muted }}><Icon name="lock" size={14} />Locked to new sales</span>
       </Tip>
     )}
+    <div className="flex w-full min-w-0 items-start gap-1">
+    <div className="min-w-0 flex-1">
     <Pills
       label={`${data.displayTypeName} slot ${data.zoneSlot}: assigned to`}
       placeholder="Unassigned"
@@ -501,6 +507,15 @@ function AssignedCell({ data, context }: IP) {
         c.set(slotKey(data), { ...flag, assignedTo: { partnerIds, advertisers, whitelistOnly, buyersListId: dealIds[0] ?? null, buyersListIds: dealIds, openAuction } })
       }}
     />
+    </div>
+    {c.canEdit && siblings > 0 && (
+      /* Define once, replicate (ticket qyzG6XXIYZEJb2YZEQEH): copies this slot's Assigned to to the other slots on the same display type. */
+      <Tip title={`Copy this assignment to the other ${siblings} slot${siblings === 1 ? '' : 's'} on ${data.displayTypeName}`}>
+        <Button size="small" type="text" aria-label={`${data.displayTypeName} slot ${data.zoneSlot}: copy assigned to all other slots on this display type`}
+          icon={<Icon name="content_copy" size={16} />} onClick={() => c.copyAssignedToSiblings(data)} />
+      </Tip>
+    )}
+    </div>
     {!c.canEdit || a.partnerIds.length || a.openAuction || a.advertisers.length || a.whitelistOnly || tiersOf(a).length || globalOn ? null : (
       <div style={{ fontSize: 12, color: T.muted }}>Unassigned: not offered to any buyer</div>
     )}
@@ -1027,6 +1042,13 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
     setMaxCampaignsDefault: (displayTypeId: string, v: number | null) => maxCampaignsDefaults.setDraft((cur) => (cur ? { ...cur, [displayTypeId]: v } : cur)),
     setMaxPlayLengthDefault: (displayTypeId: string, v: number | null) => maxPlayLengthDefaults.setDraft((cur) => (cur ? { ...cur, [displayTypeId]: v } : cur)),
     openAddBuyersList: (r: AvailableInventoryRow) => setAddingBuyersListFor(r),
+    siblingsOf: (r: AvailableInventoryRow): AvailableInventoryRow[] => invRows.filter((o) => o.displayTypeId === r.displayTypeId && slotKey(o) !== slotKey(r) && !o.salesLocked),
+    copyAssignedToSiblings: (r: AvailableInventoryRow): void => {
+      const from = edited(invContext, r)
+      const targets = invContext.siblingsOf(r)
+      inv.setDraft((cur) => cur && Object.fromEntries(Object.entries(cur).map(([k, v]) => [k, targets.some((t) => slotKey(t) === k) ? { ...v, assignedTo: { ...from.assignedTo, partnerIds: [...from.assignedTo.partnerIds], advertisers: [...from.assignedTo.advertisers], buyersListIds: [...tiersOf(from.assignedTo)] }, inGlobalDeal: from.inGlobalDeal } : v])))
+      message.success(`Copied to ${targets.length} other slot${targets.length === 1 ? '' : 's'} on ${r.displayTypeName}. Save changes to apply.`)
+    },
   }
   /* Combined plays per window per buyers list (8 Oct 2026): the fleet total (plays per display x displays registered in PH Core)
      of every position the list is assigned to, summed - the ceiling for a guaranteed deal's committed volume. Read from the

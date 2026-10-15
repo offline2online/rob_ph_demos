@@ -994,6 +994,24 @@ describe('Advertisers / Inventory', () => {
     expect(within(within(cell).getByRole('list', { name: /open auction DSPs/ })).getByText('All DSPs')).toBeInTheDocument()
   }, slow(45000))
 
+  /* Ticket qyzG6XXIYZEJb2YZEQEH (15 Oct 2026): define Assigned to once on a slot, replicate it to the display type's other slots. */
+  it('replicates one slot\'s Assigned to to the other slots on the same display type', async () => {
+    const inv = ADVERTISER_PAGE['/api/admin/v1/available-inventory']
+    const row = inv.items[0]
+    const items = [{ ...row, assignedTo: { ...row.assignedTo, openAuction: true } }, { ...row, slot: 3, zoneSlot: 3, assignedTo: { partnerIds: [], partnerNames: [], advertisers: [], whitelistOnly: false } }, inv.items[1]]
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...ADVERTISER_PAGE, '/api/admin/v1/available-inventory': { ...inv, items } })))
+    renderAt('/advertisers')
+    const inventory = await screen.findByLabelText('Available Inventory')
+    const selected = (n: number) => {
+      const cell = within(inventory).getAllByLabelText(`Menu Board — Long Format slot ${n}: assigned to`)[0].closest('.ag-cell') as HTMLElement
+      return [...cell.querySelectorAll('.ant-select-selection-item')].map((t) => t.textContent)
+    }
+    expect(selected(3)).not.toContain('Google DSP')
+    expect(within(inventory).queryByLabelText('Portrait slot 1: copy assigned to all other slots on this display type')).toBeNull()
+    fireEvent.click(within(inventory).getByLabelText('Menu Board — Long Format slot 2: copy assigned to all other slots on this display type'))
+    await waitFor(() => expect(selected(3)).toContain('Google DSP'))
+  }, slow(45000))
+
   /* Ticket 3FFOpIpry1XM29TimpJy (12 Oct 2026): Included in global deals stays selectable on a buyers-list slot and sits in the open tier, unnumbered. */
   it('keeps Included in global deals selectable with a buyers list, listed in the open auction beneath the numbered lists', async () => {
     const inv = ADVERTISER_PAGE['/api/admin/v1/available-inventory']
