@@ -9,7 +9,7 @@
    least one assigned slot; opens FinaliseDealModal to confirm the slots, deal ID and terms) -> Share deal (inside that pop-up). */
 import { App, Button, DatePicker, Input, InputNumber, Modal, Select } from 'antd'
 import { useQuery } from '@tanstack/react-query'
-import { ALL_DSPS, OPERATOR_LABELS, TARGETING_VARIABLES, type BuyersList, type BuyersListDealType, type Condition, type InvitedBuyer, type SharedVariable, type TermCheck } from '@ph-dsp/types'
+import { ALL_DSPS, OPERATOR_LABELS, formatAggregateValue, isAggregateVariable, parseAggregateValue, TARGETING_VARIABLES, type BuyersList, type BuyersListDealType, type Condition, type InvitedBuyer, type SharedVariable, type TermCheck } from '@ph-dsp/types'
 import dayjs from 'dayjs'
 import { useEffect, useRef, useState } from 'react'
 import { api, ApiRequestError } from '../../api/client'
@@ -288,6 +288,20 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
                 const sv = (variables.data ?? []).find((v) => v.key === c.variable)
                 const label = `${def?.label ?? c.variable} values`
                 const status = errorFor(c.variable) ? 'error' : undefined
+                if (isAggregateVariable(c.variable)) {
+                  /* A share of everyone present: category (from Shared Targeting Variables), comparison, percentage. */
+                  const { category, pct } = parseAggregateValue(c.values[0])
+                  const setAgg = (cat: string | undefined, n: number | null) => patchCriterion(c.variable, { values: n !== null ? [formatAggregateValue(cat ?? '', n)] : cat ? [cat] : [] })
+                  return (
+                    <>
+                      <Select size="small" style={{ minWidth: 160 }} aria-label={label} placeholder="Choose category" status={status} value={category || undefined}
+                        options={[...new Set([...(sv?.values ?? []), ...(category ? [category] : [])])].map((v) => ({ value: v, label: v }))} onChange={(v) => setAgg(v, pct)} />
+                      <InputNumber size="small" min={0} max={100} style={{ width: 110 }} aria-label={`${def?.label ?? c.variable} percentage`} placeholder="Percentage" addonAfter="%" status={status}
+                        value={pct} onChange={(n) => setAgg(category || undefined, n === null ? null : Number(n))} />
+                      {!sv?.values.length && <span style={{ fontSize: 12, color: T.micro }}>Define its values in Shared Targeting Variables</span>}
+                    </>
+                  )
+                }
                 if (sv?.freeText) return <Select mode="tags" size="small" style={{ flex: 1, minWidth: 160 }} aria-label={label} tokenSeparators={[',']} open={false} placeholder={def ? `e.g. ${def.values}` : 'Values'} status={status} value={c.values} onChange={(values) => patchCriterion(c.variable, { values })} />
                 if (sv?.values.length) return <Select mode="multiple" size="small" style={{ flex: 1, minWidth: 160 }} aria-label={label} placeholder="Choose values" status={status} value={c.values} options={[...new Set([...sv.values, ...c.values])].map((v) => ({ value: v, label: v }))} onChange={(values) => patchCriterion(c.variable, { values })} />
                 return <span style={{ fontSize: 12, color: T.micro }}>Define its values in Shared Targeting Variables</span>

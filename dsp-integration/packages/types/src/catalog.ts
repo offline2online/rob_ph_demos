@@ -377,6 +377,17 @@ export const TARGETING_VARIABLES: TargetingVariableDef[] = [
   per('visitor.plan_type', 'Plan Type', 'Postpaid, Prepaid', LIST),
   per('visitor.plan_value', 'Plan Value', '$45, $65 per month', LIST),
 ]
+/* Aggregate variables describe a share of everyone present, not one visitor, so a criterion on one is
+   "<category> <operator> <percentage>". It is stored in the ordinary Condition shape: op is the comparison and
+   values is the single string "<category>: <n>%" (Rob, 15 Oct 2026). */
+export const AGGREGATE_VARIABLE_KEYS: readonly string[] = ['store.reason_for_visit', 'store.device_type_aggregate']
+export const isAggregateVariable = (key: string) => AGGREGATE_VARIABLE_KEYS.includes(key)
+export const formatAggregateValue = (category: string, pct: number) => `${category}: ${pct}%`
+export function parseAggregateValue(v: string | undefined): { category: string; pct: number | null } {
+  const m = /^(.*): (\d+(?:\.\d+)?)%$/.exec(v ?? '')
+  return m ? { category: m[1], pct: Number(m[2]) } : { category: v ?? '', pct: null }
+}
+export const isValidAggregateValue = (v: string) => { const p = parseAggregateValue(v); return !!p.category.trim() && p.pct !== null && p.pct >= 0 && p.pct <= 100 }
 export const ALL_DSPS = 'all' as const
 /* Defaults (spec §6): Localisation → all connected DSPs; Personalisation → none. */
 export const defaultVariableAccess = (v: TargetingVariableDef): 'all' | string[] => (v.group === 'personalisation' ? [] : ALL_DSPS)
