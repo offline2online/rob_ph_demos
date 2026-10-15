@@ -2330,8 +2330,123 @@ export interface components {
                 storeZone?: "exterior" | "entrance" | "checkout" | "aisles" | "other" | null;
             }[];
             creativeRequirements: components["schemas"]["CreativeRequirement"][];
+            /** @description The DV360 Seller API Order (the parent deal). A change to the rate or creative config returns it to PENDING_ACCEPTANCE (the buyer accepts again), matching PH term versioning. */
+            order: {
+                name: string;
+                /** @enum {string} */
+                status: "DRAFT" | "PENDING_ACCEPTANCE" | "ACCEPTED";
+            };
+            /** @description The DV360 Seller API Product. Each entry's `inventorySource` is the InventorySource. */
+            product: {
+                name: string;
+                displayName: string;
+                /** @enum {string} */
+                transactionType: "PRIVATE_AUCTION" | "PREFERRED_DEAL" | "PROGRAMMATIC_GUARANTEED";
+                /** @enum {string} */
+                pricingType: "CPM";
+                startTime: string | null;
+                endTime: string | null;
+                creativeConfig: {
+                    creativeType: string;
+                    width: number;
+                    height: number;
+                    maxDurationSec: number;
+                }[];
+            };
+            termVersion: number;
+            /** @description What the deal targets. The DSP never sees these rules (the deal ID is only a key; PH applies targeting seller-side). */
+            targeting: {
+                /** @description Criteria that map to a DV360 targeting type, grouped by it. */
+                targetingCriteria: {
+                    /** @enum {string} */
+                    targetingType: "GEO" | "AUDIENCE" | "DEVICE" | "VENUE";
+                    conditions: {
+                        variable: string;
+                        /** @description The Shared Targeting Variable's display name. */
+                        name: string;
+                        /** @enum {string} */
+                        group: "localisation" | "personalisation";
+                        operator: string;
+                        values: string[];
+                        /** @description The condition in words. */
+                        text: string;
+                    }[];
+                }[];
+                /** @description PH criteria with no DV360 targeting type, flagged seller-side only. */
+                sellerSideOnly: {
+                    variable: string;
+                    /** @description The Shared Targeting Variable's display name. */
+                    name: string;
+                    /** @enum {string} */
+                    group: "localisation" | "personalisation";
+                    operator: string;
+                    values: string[];
+                    /** @description The condition in words. */
+                    text: string;
+                }[];
+                /** @description Every condition in words, joined by AND; "No additional targeting (all attached positions)" when none. */
+                plainLanguage: string;
+            };
+            /** @description Where the deal plays, narrowed by localisation criteria only. Personalisation criteria never narrow the screen list. */
+            inventoryScope: {
+                /** @description OpenOOH venue types. */
+                venueTypes: string[];
+                geography: string[];
+                stores: number;
+                displays: number;
+                storesBeforeTargeting: number;
+                displaysBeforeTargeting: number;
+                screenFormats: {
+                    width: number;
+                    height: number;
+                    orientation: string;
+                }[];
+                /** @description Localisation criteria that narrowed the counts. */
+                narrowedBy: string[];
+                /** @description Localisation criteria PH applies at bid time that the counts do not reflect. */
+                notReflectedInCounts: string[];
+                summary: string;
+            };
+            /** @description An estimate, not a promise. Plays per window x screens, VAC-d assumed views, x the targeted share. */
+            estimatedVolume: {
+                /** @enum {string} */
+                label: "Estimate";
+                playsPerWindow: number;
+                assumedViewsPerWindow: number;
+                targetedShare: number;
+                windows: number | null;
+                playsInTerm: number | null;
+                assumedViewsInTerm: number | null;
+                /** @description Programmatic guaranteed only - forecast x (1 - buffer%). */
+                guaranteedImpressionsPerWindow: number | null;
+                bufferPct: number | null;
+                assumedViewsPerPlay: number | null;
+            };
+            /** @description Programmatic guaranteed only - committed plays x assumed views per play. Committed plays stay the stored figure. */
+            guaranteedImpressions: number | null;
+            /** @description A short plain-language description to paste into a DSP's description field. */
+            description: string;
         };
         DealSheetEntry: {
+            /** @description The DV360 Seller API InventorySource for this DSP, keyed by external deal ID. */
+            inventorySource: {
+                externalDealId: string;
+                rateDetails: {
+                    rate: number;
+                    /** @enum {string} */
+                    rateType: "CPM floor" | "CPM fixed";
+                    currency: string;
+                };
+                timeRange: {
+                    startTime: string | null;
+                    endTime: string | null;
+                };
+                /** @enum {string} */
+                buyerStatus: "PENDING" | "ACTIVE";
+                /** @enum {string} */
+                sellerStatus: "PENDING" | "ACTIVE";
+                termVersion: number;
+            };
             partnerId: string;
             dsp: string;
             provider: components["schemas"]["Provider"];

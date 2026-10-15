@@ -23,18 +23,31 @@ export const sourceLabel = (s: TermSource) => SOURCE[s]
 const range = (t: MaybeTerm, f: (n: number) => string) => (!t || t.min === null || t.max === null ? null : t.min === t.max ? f(t.min) : `${f(t.min)}–${f(t.max)}`)
 export const playsText = (t: MaybeTerm) => { const r = range(t, (n) => n.toLocaleString()); return r === null ? null : `${r} plays` }
 export const rateText = (t: MaybeTerm) => { const r = range(t, (n) => String(n)); return r === null ? null : `USD ${r} CPM` }
+/* The Rate column's number on its own; the Rate type (DV360's wording) sits beside it. */
+export const rateValue = (t: MaybeTerm) => { const r = range(t, (n) => String(n)); return r === null ? null : `USD ${r}` }
 
 /* Floor or committed (8 Oct 2026): a private auction's CPM is the minimum an invited buyer must bid above (the clearing
    price can land higher until the deal locks); a preferred or guaranteed deal's is the fixed rate the window clears and bills at. */
 type DealType = BuyersList['dealType']
 export const cpmKind = (d: DealType | undefined) => (d === 'preferred' || d === 'guaranteed' ? 'committed' : 'floor')
+/* Rate type, in DV360's words (ticket DbSVEGXNIWlYW68UQnY3): CPM floor for a Private auction, CPM fixed for a Preferred deal and Programmatic guaranteed. */
+export const rateTypeOf = (d: DealType | undefined) => (cpmKind(d) === 'floor' ? 'CPM floor' : 'CPM fixed')
 export const cpmKindHint = (d: DealType | undefined) =>
   cpmKind(d) === 'floor'
-    ? 'Floor CPM: the minimum an invited buyer must bid above. The clearing price can land higher until the deal locks.'
-    : 'Committed CPM: the fixed rate this window clears and bills at.'
-/* One line for a list, e.g. "USD 4–6 CPM floor", or the locked rate once the deal has one. */
+    ? 'CPM floor: the minimum a buyer must bid above. The clearing price can land higher until the deal locks.'
+    : 'CPM fixed: the fixed rate this window clears and bills at.'
+/* One line for a list, e.g. "USD 4–6 · CPM floor", or the locked rate once the deal has one. */
 export const cpmSummary = (l: Pick<BuyersList, 'dealType' | 'lockedWin' | 'effectiveRateCpm'>) => {
   if (l.lockedWin) return `Locked: ${l.lockedWin.cpm} CPM`
-  const t = rateText(l.effectiveRateCpm)
-  return t ? `${t} ${cpmKind(l.dealType)}` : null
+  const t = rateValue(l.effectiveRateCpm)
+  return t ? `${t} · ${rateTypeOf(l.dealType)}` : null
 }
+/* PH's share status and buyer acceptance in DV360's wording: a shared deal is Pending until the buyers hold the current terms, then Active. */
+export const buyerStatusOf = (l: Pick<BuyersList, 'status' | 'termVersion' | 'buyerAcceptance'>): { label: 'Pending' | 'Active'; reacceptance: boolean } | null => {
+  if (l.status !== 'shared') return null
+  const acc = l.buyerAcceptance ?? []
+  const active = acc.length > 0 && acc.every((a) => a.state === 'accepted' && a.acceptedVersion === l.termVersion)
+  return { label: active ? 'Active' : 'Pending', reacceptance: acc.some((a) => a.state === 'reacceptance_required') }
+}
+/* Guaranteed impressions are derived: committed plays x assumed views per play (stored: plays only). */
+export const impressionsOf = (plays: number | null | undefined, viewsPerPlay: number | null | undefined) => (plays != null && viewsPerPlay ? Math.round(plays * viewsPerPlay) : null)
