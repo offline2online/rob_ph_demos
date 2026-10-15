@@ -1,7 +1,7 @@
 /* Shared Targeting Variables (spec §6): the platform's default variables,
    read-only, and which DSPs may target each one. A partner sees only what
    it may use — a smaller vocabulary, never a rejected request. */
-import { ALL_DSPS, TARGETING_VARIABLES, type SharedVariable } from '@ph-dsp/types'
+import { ALL_DSPS, TARGETING_VARIABLES, isAggregateVariable, parseAggregateValue, type SharedVariable } from '@ph-dsp/types'
 import type { Access, VariableValues } from '../repos/CompanySettingsRepo'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 
@@ -20,6 +20,12 @@ export const sharedVariables = (access: Record<string, Access>, values: Record<s
 /* A buyers-list criterion may only match values defined for the variable, unless it is free text. A variable
    with nothing defined and not free text stays open, so lists saved before values existed keep working. */
 export const undefinedValues = (key: string, matched: string[], values: Record<string, VariableValues>) => {
+  /* An aggregate criterion is "<category>: <n>%": only the category is a defined value, never the whole string. */
+  if (isAggregateVariable(key)) {
+    const d = values[key]
+    if (!d || d.freeText || !d.values.length) return []
+    return matched.filter((m) => !d.values.includes(parseAggregateValue(m).category))
+  }
   const fixed = TARGETING_VARIABLES.find((v) => v.key === key)?.fixedValues
   if (fixed) return matched.filter((m) => !fixed.includes(m))
   const d = values[key]

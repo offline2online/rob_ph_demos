@@ -148,6 +148,19 @@ describe('Buyers lists (spec "Support private auctions")', () => {
       expect((await post(app, [{ variable: 'store.state', op: 'include', values: ['QLD'] }])).statusCode).toBe(201)
     })
 
+    it('validates an aggregate criterion ("<category>: <n>%") by its category, not the whole string', async () => {
+      const app = buildApp(await testContext())
+      const put = (values: unknown) => app.inject({ method: 'PUT', url: '/api/admin/v1/targeting-variables', payload: { access: { 'store.reason_for_visit': ['p_google'] }, values } })
+      expect((await put({ 'store.reason_for_visit': { values: ['Returns', 'Health and beauty'], freeText: false } })).statusCode).toBe(200)
+      const crit = (v: string) => [{ variable: 'store.reason_for_visit', op: 'greater_than', values: [v] }]
+      expect((await post(app, crit('Health and beauty: 50%'))).statusCode).toBe(201)
+      const unknown = await post(app, crit('Warranty: 50%'))
+      expect(unknown.statusCode).toBe(400)
+      expect(JSON.stringify(unknown.json())).toContain('Warranty: 50% is not defined for')
+      expect((await post(app, crit('Returns'))).statusCode).toBe(400)
+      expect((await post(app, crit('Returns: 101%'))).statusCode).toBe(400)
+    })
+
     it('rejects an unknown variable, a wrong operator and empty values', async () => {
       const app = buildApp(await testContext())
       expect((await post(app, [{ variable: 'nope', op: 'include', values: ['x'] }])).statusCode).toBe(400)
