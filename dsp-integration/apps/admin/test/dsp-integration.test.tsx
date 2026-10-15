@@ -731,6 +731,9 @@ describe('Advertisers / Inventory', () => {
     renderAt('/advertisers')
     const advertisers = await screen.findByLabelText('Advertisers')
     expect(await within(advertisers).findByText('Direct advertiser')).toBeInTheDocument()
+    /* A direct advertiser has no DSP seat, so the Buyers list column reads N/A rather than 0. */
+    const acme = advertisers.querySelector('.ag-center-cols-container [row-id="acme-foods"]')!
+    expect([...acme.querySelectorAll('[role="gridcell"]')][2].textContent).toBe('N/A')
     /* No inline add field any more: a top-right CTA opens a pop-up (ticket d4q91vrL5z4gLHBKypHo). */
     expect(screen.queryByLabelText('Direct advertiser name')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Add new Advertiser/ }))

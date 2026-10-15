@@ -752,8 +752,8 @@ const header = (label: string, tip: ReactNode) => () => <WithTip tip={tip}><span
 
 const MAX_CAMPAIGNS_HEADER = 'Max campaigns'
 
-/* Numeric columns (ticket D3D4iQaQnGQ0cVA6WR4T): narrow, counts right-aligned under a right-aligned header. */
-const COUNT_COLUMN: Partial<ColDef<Advertiser>> = { cellStyle: { textAlign: 'right' }, headerClass: 'ag-right-aligned-header' }
+/* Numeric columns (ticket D3D4iQaQnGQ0cVA6WR4T): narrow, counts centred in the column under a centred header (ticket ACnS3x2Hrdt9Kk4RMVi5). */
+const COUNT_COLUMN: Partial<ColDef<Advertiser>> = { cellStyle: { textAlign: 'center' }, headerClass: 'ag-center-aligned-header' }
 /* A seat is the { partnerId, seatId } pair an invited buyer on a buyers list carries. */
 const buyersListCount = (a: Advertiser, lists: BuyersList[]) => {
   const seats = new Set((a.dspSeats ?? []).map((s) => `${s.partnerId}\u0000${s.seatId}`))
@@ -937,7 +937,9 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
          advertiser's DSP seats (the same { partnerId, seatId } pair). Category invites are a bid-time filter, not membership. */
       headerName: 'Buyers list', width: 105, suppressSizeToFit: true, ...COUNT_COLUMN,
       headerComponent: header('Buyers list', 'How many buyers lists this advertiser is currently included in, by one of its DSP seats being an invited buyer. A direct advertiser has no DSP seat, so is never on one.'),
-      valueGetter: (p) => (p.data ? buyersListCount(p.data, buyersLists.data?.items ?? []) : 0),
+      /* A direct advertiser has no DSP seat so can never be on a buyers list: N/A, not 0 (ticket vX0B3zmwiwUJWaRjUjCw, 15 Oct 2026). */
+      valueGetter: (p) => (p.data ? (p.data.direct ? 'N/A' : buyersListCount(p.data, buyersLists.data?.items ?? [])) : 0),
+      comparator: (x, y) => (x === 'N/A' ? -1 : 0) - (y === 'N/A' ? -1 : 0) || (typeof x === 'number' && typeof y === 'number' ? x - y : 0),
     },
     {
       headerName: 'Campaign approval', width: 160, suppressSizeToFit: true, cellRenderer: ApprovalCell,
@@ -1136,7 +1138,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
         onChanged={() => qc.invalidateQueries({ queryKey: ['buyers-lists'] })}
       />
 
-      <SectionLabel><WithTip tip="Every advertiser-owned slot across the estate that connected DSPs can bid on. Slots are made available by setting their owner to Advertiser on a playlist.">Available Inventory</WithTip></SectionLabel>
+      <SectionLabel><WithTip tip="Every advertiser-owned slot across the estate that advertisers can buy. A slot can be sold to connected DSPs through the open auction or a private auction, or assigned to Direct advertisers, who sign in to HQ Admin to add and manage their own campaigns. Slots are made available by setting their owner to Advertiser on a playlist.">Available Inventory</WithTip></SectionLabel>
       {inventory.data && invRows.length === 0 ? (
         <div className="flex items-center gap-2" style={{ fontSize: 12.5, color: T.muted }}>
           <Icon name="view_week" size={18} />

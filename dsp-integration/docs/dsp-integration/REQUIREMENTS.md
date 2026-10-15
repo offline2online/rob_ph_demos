@@ -4024,7 +4024,9 @@ playback analytics.**
 - **Inventory API**: list, detail, availability per play window and
   forecast, scoped to what the requester could buy. *(spec only)*
 - **Available Inventory**: every advertiser-owned slot across the estate
-  that connected DSPs can bid on (Display type, Playlist, Slot, Position,
+  that advertisers can buy, through connected DSPs (open or private auction)
+  or assigned to Direct advertisers who sign in to HQ Admin to manage their
+  campaigns (Display type, Playlist, Slot, Position,
   Assigned to, Reserve price, Max campaigns, Plays per window, Max play length, Billing
   unit, and an Open link), with no advertisers column and a filter on
   every column. *(Advertisers / Inventory → Available Inventory)*
