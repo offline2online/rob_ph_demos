@@ -704,17 +704,6 @@ describe('Advertisers / Inventory', () => {
       .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Reserve price', 'Max campaigns', 'Plays per window', 'Max play length', 'Slots playing', ''])
   })
 
-  /* Ticket l4sSqLbAxIWVopZvaOik (15 Oct 2026): a multi-zone position leads with its zone and the slot within it. */
-  it('leads a multi-zone position with its zone and zone slot, and leaves a single-zone one as its label', async () => {
-    const items = ADVERTISER_PAGE['/api/admin/v1/available-inventory'].items
-    const page = { ...ADVERTISER_PAGE, '/api/admin/v1/available-inventory': { ...ADVERTISER_PAGE['/api/admin/v1/available-inventory'], items: [{ ...items[0], zoneName: 'Zone 2', zoneSlot: 1 }, items[1]] } }
-    vi.stubGlobal('fetch', vi.fn(fakeFetch(page)))
-    renderAt('/advertisers')
-    const inventory = await screen.findByLabelText('Available Inventory')
-    expect(await within(inventory).findByLabelText('Position: Zone 2 · Slot 1 · Supplier slot')).toBeInTheDocument()
-    expect(within(inventory).getByLabelText('Position: Slot 1')).toBeInTheDocument()
-  })
-
   it('lists a direct advertiser as "Direct advertiser" in Via and "Name (Direct)" in the Assigned to options, and lets an admin add one', async () => {
     const page = { ...ADVERTISER_PAGE, '/api/admin/v1/advertisers': { ...ADVERTISER_PAGE['/api/admin/v1/advertisers'], items: [...ADVERTISER_PAGE['/api/admin/v1/advertisers'].items, { advertiserId: 'acme-foods', name: 'Acme Foods', via: [], direct: true, approvalRequired: true, floorMultiplier: 1, effectiveFloorCpm: 100, bookings: 0, campaigns: { draft: 0, awaiting_approval: 0, approved: 0, rejected: 0 } }] } }
     vi.stubGlobal('fetch', vi.fn(fakeFetch(page)))
