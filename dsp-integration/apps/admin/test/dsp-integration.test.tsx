@@ -1026,6 +1026,22 @@ describe('Advertisers / Inventory', () => {
     expect(await screen.findByText('PH-BBBBBBBBBB')).toBeInTheDocument()
   })
 
+  /* Ticket oUZbsA7WrkPHSmbYd5B6: hovering a deal's name lists its targeting criteria, with or without a description. */
+  it('shows a deal’s targeting criteria when its name is hovered', async () => {
+    const base = { invitedBuyers: [], invitedCategories: [], activeFrom: null, activeTo: null, dealType: 'private_auction' }
+    const lists = [
+      { ...base, id: 'bl_1', name: 'Eastern states', description: 'Big metros', targeting: [{ source: 'store', variable: 'store.state', op: 'include', values: ['NSW', 'VIC'] }] },
+      { ...base, id: 'bl_2', name: 'No blurb', description: '', targeting: [{ source: 'store', variable: 'store.state', op: 'include', values: ['QLD'] }] },
+    ]
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...ADVERTISER_PAGE, '/api/admin/v1/buyers-lists': { items: lists } })))
+    renderAt('/advertisers')
+    const table = await screen.findByLabelText('Deals and buyers lists')
+    fireEvent.mouseOver(await within(table).findByText('No blurb'))
+    const tip = await screen.findByTestId('targeting-tip-bl_2')
+    expect(tip).toHaveTextContent('Targeting criteria')
+    expect(tip).toHaveTextContent('State: includes selected QLD')
+  }, slow(45000))
+
   /* Ticket Y3GzIlj2goQMJaGUwTey (9 Oct 2026): deals above an explicit Open auction, the DSPs it runs across below it. */
   it('shows an Open auction separator under the deals, with the DSP or All DSPs beneath it', async () => {
     const inv = ADVERTISER_PAGE['/api/admin/v1/available-inventory']

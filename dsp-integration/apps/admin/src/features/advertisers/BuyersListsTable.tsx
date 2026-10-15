@@ -4,7 +4,7 @@
    table (Rob, 23 Sep). */
 import { Button } from 'antd'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
-import { storeZoneLabel, type BuyersList, type StoreZone } from '@ph-dsp/types'
+import { OPERATOR_LABELS, TARGETING_VARIABLES, storeZoneLabel, type BuyersList, type StoreZone } from '@ph-dsp/types'
 import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { Q } from '../../api/queries'
@@ -25,6 +25,10 @@ type SlotInfo = { displayType: string; description: string | null; storeZone: St
 type Ctx = { current: { capacity: Capacity; slots: Map<string, SlotInfo[]>; dspName: (partnerId: string) => string; seatName: (partnerId: string, seatId: string) => string; onEdit: (l: BuyersList) => void; onDelete: (l: BuyersList) => void; onShare: (l: BuyersList) => void; canEdit: boolean } }
 type P = ICellRendererParams<BuyersList, unknown, Ctx>
 
+/* One line per targeting rule, in the words of the criteria picker: "State: includes selected NSW, VIC". */
+const targetingLines = (l: BuyersList): string[] =>
+  (l.targeting ?? []).map((c) => `${TARGETING_VARIABLES.find((v) => v.key === c.variable)?.label ?? c.variable}: ${OPERATOR_LABELS[c.op] ?? c.op} ${c.values.join(', ')}`.trim())
+
 /* The name is the way in (ph-designer: a row's name opens it; the icon button is only a shortcut). */
 const NameCell = ({ data, context }: P) => {
   if (!data) return null
@@ -40,11 +44,19 @@ const NameCell = ({ data, context }: P) => {
   ) : (
     <div className="truncate" style={{ fontWeight: 500 }}>{data.name}</div>
   )
+  const rules = targetingLines(data)
   return (
     <div className="min-w-0">
-      {/* The description is not a second line in the row: hovering the name shows it under the name. */}
-      {data.description
-        ? <Tip title={<div><div style={{ fontWeight: 500 }}>{data.name}</div><div>{data.description}</div></div>}>{name}</Tip>
+      {/* The description and targeting rules are not extra lines in the row: hovering the name shows them under the name. */}
+      {data.description || rules.length
+        ? <Tip title={<div>
+          <div style={{ fontWeight: 500 }}>{data.name}</div>
+          {data.description && <div>{data.description}</div>}
+          {rules.length > 0 && <div data-testid={`targeting-tip-${data.id}`} style={data.description ? { marginTop: 4 } : undefined}>
+            <div style={{ fontWeight: 500 }}>Targeting criteria</div>
+            {rules.map((r) => <div key={r}>{r}</div>)}
+          </div>}
+        </div>}>{name}</Tip>
         : name}
       {data.status === 'draft' && <div style={{ fontSize: 11.5, color: T.muted }} data-testid={`draft-${data.id}`}>Draft · not shared with any DSP</div>}
       {/* A shared deal's status in DV360's words, alongside PH's Shared. */}
@@ -156,7 +168,7 @@ export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged }:
      so a late re-render (the partners query resolving) swapped the cells out from under a click.
      Cells read anything that changes (names, capacity, handlers) through context.current. */
   const columns = useMemo<ColDef<BuyersList>[]>(() => [
-    { headerName: 'Deals and buyers lists', flex: 2, minWidth: 220, cellRenderer: NameCell, valueGetter: (p) => `${p.data?.name}|${p.data?.description}|${p.data?.status}|${p.data?.termVersion}|${JSON.stringify(p.data?.buyerAcceptance ?? [])}` },
+    { headerName: 'Deals and buyers lists', flex: 2, minWidth: 220, cellRenderer: NameCell, valueGetter: (p) => `${p.data?.name}|${p.data?.description}|${JSON.stringify(p.data?.targeting ?? [])}|${p.data?.status}|${p.data?.termVersion}|${JSON.stringify(p.data?.buyerAcceptance ?? [])}` },
     { headerName: 'Deal ID', field: 'dealId', width: 170, minWidth: 150, cellRenderer: DealIdCell },
     { headerName: 'Rate', width: 200, minWidth: 170, cellRenderer: RateCell, valueGetter: (p) => JSON.stringify([p.data?.dealType, p.data?.lockedWin, p.data?.effectiveRateCpm]) },
     /* These cells have no field, so AG Grid saw an unchanged value (undefined) after a save and kept the old cell:
