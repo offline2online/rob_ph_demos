@@ -15,7 +15,7 @@ import { SubPageHeader } from './SubPageHeader'
 import { GLOBAL_DEAL_ID, GLOBAL_DEAL_TIP } from './ExchangeSettings'
 
 export const ADVERTISER_SETTINGS_TIP =
-  "Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (floor CPM, always in USD); Play configuration (max slot length, default committed plays, guaranteed-deal buffer); Real-time bidding (digital signage bid lookahead and the uncached-creative restriction); and the Category lists (IAB whitelists and blacklists; each DSP's advertiser lists are managed on its own page, from the advertisers it syncs). Read-only here: Where these apply (which DSPs use these lists or keep their own; unlink or relink on the DSP's page). Per-advertiser campaign approval and floor multipliers, and the inventory advertisers can buy, are on Advertisers / Inventory."
+  "Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (floor CPM, always in USD); Play configuration (max slot length, default committed plays, guaranteed-deal buffer); Real-time bidding (digital signage bid lookahead and the uncached-creative restriction); and the Category lists (IAB whitelists and blacklists; each DSP's advertiser lists are managed on its own page, from the advertisers it syncs). Read-only here: Where these apply (which DSPs use these lists or keep their own; unlink or relink on the DSP's page). Per-advertiser campaign approval, and the inventory advertisers can buy, are on Advertisers / Inventory."
 
 /* The exchange transacts in USD on every instance (TRANSACTING_CURRENCY in the API's
    domain/currency.ts); company.currency is display/reporting only. Everything priced on
@@ -60,7 +60,7 @@ const FLOOR_TIP = (
 const INTERACTIVE_TIP = (
   <div style={{ fontSize: 12 }}>
     What an advertiser pays each time someone engages with an interactive campaign — scanning its QR Control code to carry on with the brand on their own phone.
-    <div className="mt-2">Charged per engagement, <b>on top of the CPM</b>: an interactive campaign still clears the <b>floor price</b> for its plays, and adds this for each scan. The advertiser’s floor multiplier does not scale it. Set it to 0 to leave engagements unpriced.</div>
+    <div className="mt-2">Charged per engagement, <b>on top of the CPM</b>: an interactive campaign still clears the <b>floor price</b> for its plays, and adds this for each scan. Set it to 0 to leave engagements unpriced.</div>
   </div>
 )
 
@@ -117,7 +117,7 @@ export function AdvertiserSettings() {
     <>
       <SubPageHeader icon="rule" title="Advertiser settings" tip={ADVERTISER_SETTINGS_TIP} />
 
-      <SectionLabel><WithTip tip="Effective floor = the floor in force × the advertiser's floor multiplier. The floor in force is the platform floor here, unless a DSP or a buyers list sets a higher one for its own bids (the most specific wins; never below this) (set on Advertisers / Inventory), the same for every campaign type. Bids below it never win. Every play bills at the committed price, whatever version plays.">Pricing</WithTip></SectionLabel>
+      <SectionLabel><WithTip tip="The floor in force is the platform floor here, unless a DSP or a buyers list sets a higher one for its own bids (the most specific wins; never below this) (set on Advertisers / Inventory), the same for every campaign type. Bids below it never win. Every play bills at the committed price, whatever version plays.">Pricing</WithTip></SectionLabel>
       <div className="flex flex-wrap items-end gap-3.5">
         <Field label={<span className="block whitespace-nowrap">Currency</span>} htmlFor="currency" tip="Fixed at USD on every instance: floors, reserves and bids are all transacted in USD, whatever currency this instance reports in. Bid requests carry USD as the bid floor currency." className="w-44">
           <Select id="currency" className="w-full" disabled value={TRANSACTING_CURRENCY} options={[{ value: TRANSACTING_CURRENCY, label: 'USD — US Dollar' }]} />

@@ -3062,8 +3062,6 @@ export interface components {
         AdvertiserSetting: {
             /** @default true */
             approvalRequired: boolean;
-            /** @default 1 */
-            floorMultiplier: number;
         };
         PlatformUserInput: {
             firstName: string;
@@ -3096,7 +3094,6 @@ export interface components {
             via: string[];
             /** @description True for an advertiser with a direct relationship with the retailer (no DSP). Shown as "Name (Direct)" in place of the DSP name. */
             direct?: boolean;
-            effectiveFloorCpm: number;
             /**
              * @description The DSP seats this advertiser bids under, each the same { partnerId, seatId }
              *     an invited buyer on a buyers list carries. Always empty for a direct advertiser.

@@ -4,20 +4,20 @@ import { expectMatchesContract } from './contract'
 import { testContext } from './helpers'
 
 describe('Advertisers (admin only, spec §3)', () => {
-  it('saves approval and floor multiplier; effective floor follows', async () => {
+  it('saves campaign approval', async () => {
     const app = buildApp(await testContext())
-    const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/advertisers', payload: { settings: { swisse: { approvalRequired: false, floorMultiplier: 1.25 } } } })
+    const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/advertisers', payload: { settings: { swisse: { approvalRequired: false } } } })
     expect(res.statusCode).toBe(200)
     expectMatchesContract('PUT', '/admin/v1/advertisers', 200, res.body || undefined)
     const list = (await app.inject({ method: 'GET', url: '/api/admin/v1/advertisers' })).json().items
-    expect(list.find((a: { advertiserId: string }) => a.advertiserId === 'swisse')).toMatchObject({ approvalRequired: false, floorMultiplier: 1.25, effectiveFloorCpm: 125 })
+    expect(list.find((a: { advertiserId: string }) => a.advertiserId === 'swisse')).toMatchObject({ approvalRequired: false })
   })
 
-  it('rejects unknown advertisers and a non-positive multiplier', async () => {
-    const res = await buildApp(await testContext()).inject({ method: 'PUT', url: '/api/admin/v1/advertisers', payload: { settings: { nobody: { approvalRequired: true, floorMultiplier: 1 }, nestle: { approvalRequired: 'yes', floorMultiplier: 0 } } } })
+  it('rejects unknown advertisers and a non-boolean approval', async () => {
+    const res = await buildApp(await testContext()).inject({ method: 'PUT', url: '/api/admin/v1/advertisers', payload: { settings: { nobody: { approvalRequired: true }, nestle: { approvalRequired: 'yes' } } } })
     expect(res.statusCode).toBe(400)
     expectMatchesContract('PUT', '/admin/v1/advertisers', 400, res.json())
-    expect(res.json().error.details.map((d: { field: string }) => d.field)).toEqual(['settings.nobody', 'settings.nestle.approvalRequired', 'settings.nestle.floorMultiplier'])
+    expect(res.json().error.details.map((d: { field: string }) => d.field)).toEqual(['settings.nobody', 'settings.nestle.approvalRequired'])
   })
 
   it('non-admin sessions get 403', async () => {
@@ -47,7 +47,7 @@ describe('Advertisers (admin only, spec §3)', () => {
     expect(items.find((a) => a.advertiserId === 'acme-foods')).toMatchObject({ via: [], direct: true, approvalRequired: true })
     expect(items.find((a) => a.advertiserId === 'swisse')?.direct).toBe(false)
     /* Its settings save like any other advertiser's. */
-    expect((await app.inject({ method: 'PUT', url: '/api/admin/v1/advertisers', payload: { settings: { 'acme-foods': { approvalRequired: false, floorMultiplier: 0.9 } } } })).statusCode).toBe(200)
+    expect((await app.inject({ method: 'PUT', url: '/api/admin/v1/advertisers', payload: { settings: { 'acme-foods': { approvalRequired: false } } } })).statusCode).toBe(200)
     expect((await app.inject({ method: 'DELETE', url: '/api/admin/v1/advertisers/direct/acme-foods' })).statusCode).toBe(204)
     expect(((await app.inject({ method: 'GET', url: '/api/admin/v1/advertisers' })).json().items as { advertiserId: string }[]).some((a) => a.advertiserId === 'acme-foods')).toBe(false)
   })

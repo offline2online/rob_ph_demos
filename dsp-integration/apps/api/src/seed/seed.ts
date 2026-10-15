@@ -167,9 +167,9 @@ export async function seed(ctx: Context, opts: { bookings?: boolean; demo?: bool
       uncachedRestriction: 'off', uncachedRestrictionStart: '09:00', uncachedRestrictionEnd: '18:00', bidLookaheadSeconds: 35, cachedAssetRetentionHours: 48, defaultCommittedPlays: null, maxPlayLengthSec: DEFAULT_MAX_PLAY_LENGTH_SEC,
     })
     await ctx.company.saveAdvertiserSettings({
-      [advertiserSlug('Nestlé')]: { approvalRequired: false, floorMultiplier: 0.8 },
-      [advertiserSlug('Swisse')]: { approvalRequired: true, floorMultiplier: 1 },
-      [advertiserSlug("L'Oréal")]: { approvalRequired: true, floorMultiplier: 1.2 },
+      [advertiserSlug('Nestlé')]: { approvalRequired: false },
+      [advertiserSlug('Swisse')]: { approvalRequired: true },
+      [advertiserSlug("L'Oréal")]: { approvalRequired: true },
     })
     await ctx.company.saveVariableAccess({
       'store.suburb': [], 'store.postcode': [], 'store.country': [],

@@ -15,8 +15,8 @@ const ADVERTISER_PAGE = {
   '/api/admin/v1/advertisers': {
     currency: 'AUD', floorCpm: 100,
     items: [
-      { advertiserId: 'nestle', name: 'Nestlé', via: ['Google DSP'], approvalRequired: false, floorMultiplier: 0.8, effectiveFloorCpm: 80, bookings: 3, campaigns: { draft: 0, awaiting_approval: 1, approved: 2, rejected: 0 } },
-      { advertiserId: 'swisse', name: 'Swisse', via: ['Google DSP', 'Amazon Ads DSP'], approvalRequired: true, floorMultiplier: 1, effectiveFloorCpm: 100, bookings: 0, campaigns: { draft: 1, awaiting_approval: 0, approved: 0, rejected: 0 } },
+      { advertiserId: 'nestle', name: 'Nestlé', via: ['Google DSP'], approvalRequired: false, bookings: 3, campaigns: { draft: 0, awaiting_approval: 1, approved: 2, rejected: 0 } },
+      { advertiserId: 'swisse', name: 'Swisse', via: ['Google DSP', 'Amazon Ads DSP'], approvalRequired: true, bookings: 0, campaigns: { draft: 1, awaiting_approval: 0, approved: 0, rejected: 0 } },
     ],
   },
   '/api/admin/v1/available-inventory': {
@@ -301,7 +301,7 @@ describe('DSP page', () => {
 })
 
 describe('Advertisers screen (admin only)', () => {
-  const advertisers = { currency: 'AUD', floorCpm: 100, items: [{ advertiserId: 'nestle', name: 'Nestlé', via: ['Google DSP'], approvalRequired: false, floorMultiplier: 0.8, effectiveFloorCpm: 80, campaigns: { draft: 0, awaiting_approval: 1, approved: 2, rejected: 0 } }] }
+  const advertisers = { currency: 'AUD', floorCpm: 100, items: [{ advertiserId: 'nestle', name: 'Nestlé', via: ['Google DSP'], approvalRequired: false, campaigns: { draft: 0, awaiting_approval: 1, approved: 2, rejected: 0 } }] }
 
   it('sits below Playlist Management and above DSP Integration in the nav for admins, with the prototype’s columns', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/advertisers': advertisers })))
@@ -316,7 +316,7 @@ describe('Advertisers screen (admin only)', () => {
   })
 
   it('is read-only for a marketing user, who doesn’t get DSP Integration at all', async () => {
-    const advertisers = { currency: 'AUD', floorCpm: 100, items: [{ advertiserId: 'nestle', name: 'Nestlé', via: ['Google DSP'], approvalRequired: false, floorMultiplier: 0.8, effectiveFloorCpm: 80, campaigns: { draft: 0, awaiting_approval: 1, approved: 2, rejected: 0 } }] }
+    const advertisers = { currency: 'AUD', floorCpm: 100, items: [{ advertiserId: 'nestle', name: 'Nestlé', via: ['Google DSP'], approvalRequired: false, campaigns: { draft: 0, awaiting_approval: 1, approved: 2, rejected: 0 } }] }
     vi.stubGlobal('fetch', vi.fn(fakeFetch({ '/api/admin/v1/session': { userId: 'u', name: 'HQ Marketing (POC)', role: 'hq_marketing' }, '/api/admin/v1/advertisers': advertisers })))
     renderAt('/advertisers')
     const nav = await screen.findByRole('navigation', { name: 'Display Types and DSP Integration' })
@@ -324,7 +324,7 @@ describe('Advertisers screen (admin only)', () => {
     await waitFor(() => expect(within(nav).getAllByRole('link').map((l) => l.textContent?.replace(/^[a-z_]+/, ''))).toEqual(['Display Types', 'Playlist Management', 'Advertisers / Inventory']))
     expect(await screen.findByText('Read only')).toBeInTheDocument()
     expect(await screen.findByLabelText('Nestlé: campaign approval')).toBeDisabled()
-    expect(screen.getByLabelText('Nestlé: floor multiplier')).toBeDisabled()
+    expect(screen.queryByLabelText('Nestlé: floor multiplier')).not.toBeInTheDocument()
     expect(screen.queryByRole('region', { name: 'Save changes' })).not.toBeInTheDocument()
   })
 
@@ -705,7 +705,7 @@ describe('Advertisers / Inventory', () => {
   })
 
   it('lists a direct advertiser as "Direct advertiser" in Via and "Name (Direct)" in the Assigned to options, and lets an admin add one', async () => {
-    const page = { ...ADVERTISER_PAGE, '/api/admin/v1/advertisers': { ...ADVERTISER_PAGE['/api/admin/v1/advertisers'], items: [...ADVERTISER_PAGE['/api/admin/v1/advertisers'].items, { advertiserId: 'acme-foods', name: 'Acme Foods', via: [], direct: true, approvalRequired: true, floorMultiplier: 1, effectiveFloorCpm: 100, bookings: 0, campaigns: { draft: 0, awaiting_approval: 0, approved: 0, rejected: 0 } }] } }
+    const page = { ...ADVERTISER_PAGE, '/api/admin/v1/advertisers': { ...ADVERTISER_PAGE['/api/admin/v1/advertisers'], items: [...ADVERTISER_PAGE['/api/admin/v1/advertisers'].items, { advertiserId: 'acme-foods', name: 'Acme Foods', via: [], direct: true, approvalRequired: true, bookings: 0, campaigns: { draft: 0, awaiting_approval: 0, approved: 0, rejected: 0 } }] } }
     vi.stubGlobal('fetch', vi.fn(fakeFetch(page)))
     renderAt('/advertisers')
     const advertisers = await screen.findByLabelText('Advertisers')

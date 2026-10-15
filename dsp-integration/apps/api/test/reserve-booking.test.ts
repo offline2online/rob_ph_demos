@@ -44,7 +44,7 @@ async function setup(slot: Partial<Slot> = {}) {
   await app.inject({ method: 'PUT', url: `/api/admin/v1/campaigns/${cid}/activation`, payload: { enabled: true } })
   const post = (body: Record<string, unknown>, headers = GOOGLE) => app.inject({ method: 'POST', url: '/api/v1/reservations', headers, payload: body })
   const RESERVE = { positionId: 'portrait.s1', windowStart: W1, campaignId: cid, advertiserId: 'swisse', type: 'reserve', bidCpm: 150 }
-  /* Nestlé on the same DSP: approved, activated, and its floor is 80. */
+  /* Nestlé on the same DSP: approved, activated, and its floor is the same 100. */
   const NESTLE_BID = { positionId: 'portrait.s1', windowStart: W1, campaignId: 'c_dsp_nestle', advertiserId: 'nestle', type: 'bid', bidCpm: 400 }
   const status = async (from: string, to: string, headers = GOOGLE) =>
     (await app.inject({ url: `/api/v1/inventory/portrait.s1/availability?from=${from}&to=${to}`, headers })).json().windows.map((w: { status: string }) => w.status)
@@ -176,7 +176,7 @@ describe('deals (OQ45): per DSP, on the existing buyers list, never under the fl
   it('refuses a deal rate below the effective floor at intake, bid or reserve', async () => {
     const { ctx, post, RESERVE } = await setup({ listMode: 'deal', buyersListId: 'bl_pg', reservePrice: 120 })
     await termDeal(ctx)
-    await ctx.company.saveAdvertiserSettings({ swisse: { approvalRequired: true, floorMultiplier: 1.5 } })
+    await ctx.company.save({ ...(await ctx.company.get()), floorCpm: 150 })
     const bid = await post({ ...RESERVE, type: 'bid', bidCpm: 140 })
     expect(bid.json().error).toMatchObject({ code: 'below_floor', message: '140 is below the effective floor of 150 USD CPM.' })
     const reserve = await post({ ...RESERVE, bidCpm: 140 })

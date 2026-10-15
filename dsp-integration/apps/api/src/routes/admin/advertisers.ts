@@ -6,7 +6,6 @@ import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import type { Guards } from '../../http/app'
 import { conflict, notFound, validationFailed } from '../../http/errors'
-import { effectiveFloorCpm } from '../../domain/pricing'
 import { allPositions, findPosition, nextWindow, windowMs } from '../../domain/positions'
 import { TAKEN } from '../../repos/ReservationRepo'
 import { invitedDealIds } from '../../domain/advertiserDeals'
@@ -70,7 +69,7 @@ export async function listAdvertisers(ctx: Context): Promise<Advertiser[]> {
   for (const [advertiserId, a] of [...byId.entries()].sort((x, y) => x[1].name.localeCompare(y[1].name))) {
     const s = await ctx.company.advertiserSetting(advertiserId)
     out.push({
-      advertiserId, name: a.name, via: a.via, direct: direct.has(advertiserId), ...s, effectiveFloorCpm: effectiveFloorCpm(company, s.floorMultiplier),
+      advertiserId, name: a.name, via: a.via, direct: direct.has(advertiserId), ...s,
       bookings: bookings.get(advertiserId) ?? 0,
       dspSeats: direct.has(advertiserId) ? [] : (mapped[advertiserId] ?? []).map((m) => {
         const p = partners.get(m.partnerId)
@@ -169,7 +168,7 @@ export const advertiserRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
 
   /* Save changes. Applies to future submissions; campaigns already awaiting
      approval stay in the queue (spec §3). */
-  app.put<{ Body: { settings?: Record<string, { approvalRequired?: unknown; floorMultiplier?: unknown }> } }>('/advertisers', async (req, reply) => {
+  app.put<{ Body: { settings?: Record<string, { approvalRequired?: unknown }> } }>('/advertisers', async (req, reply) => {
     guards.flagged()
     guards.requireScope(req, 'admin')
     const settings = req.body?.settings
@@ -179,10 +178,9 @@ export const advertiserRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     for (const [id, s] of Object.entries(settings)) {
       if (!known.has(id)) errors.push({ field: `settings.${id}`, reason: 'Not an advertiser on any DSP.' })
       if (typeof s?.approvalRequired !== 'boolean') errors.push({ field: `settings.${id}.approvalRequired`, reason: 'Must be true or false.' })
-      if (typeof s?.floorMultiplier !== 'number' || !(s.floorMultiplier > 0)) errors.push({ field: `settings.${id}.floorMultiplier`, reason: 'Must be greater than 0.' })
     }
     if (errors.length) throw validationFailed(errors)
-    await ctx.company.saveAdvertiserSettings(settings as Record<string, { approvalRequired: boolean; floorMultiplier: number }>)
+    await ctx.company.saveAdvertiserSettings(settings as Record<string, { approvalRequired: boolean }>)
     return reply.status(200).send()
   })
 }
