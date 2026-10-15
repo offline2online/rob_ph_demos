@@ -85,17 +85,16 @@ All paths are served from the retailer's own instance
 ## Pricing maths (used by inventory, forecast and the auction)
 
 ```
-effective floor CPM = floorCpm × advertiser floorMultiplier   (every campaign type)
+effective floor CPM = the resolved floor CPM   (every advertiser and campaign type)
 
 billing: every play = committed (clearing) CPM, whichever version played
 ```
 
-Defaults: floor 100, advertiser 1.0. **There is no personalised multiplier**
+Default floor: 100. **There is no advertiser floor multiplier** (removed 15 Oct 2026). **There is no personalised multiplier**
 (removed 5 Oct 2026; it was charged per personalised play from 30 Sep 2026).
-Bids and the auction clear against the base floor × the advertiser's floor
-multiplier whatever the campaign's type, and a window bills at the CPM it
-clears at for every play. The advertiser's floor multiplier scales the floor
-only. Interactive campaigns are deferred for this release (5 Oct 2026): a
+Bids and the auction clear against the resolved floor whatever the
+advertiser or campaign type, and a window bills at the CPM it clears at for
+every play. Interactive campaigns are deferred for this release (5 Oct 2026): a
 campaign submission with an interactive layer is refused `422
 targeting_not_supported`, and positions publish no interactive price. A position reports `pricing.effectiveFloorCpm.localised`
 (the one floor).
@@ -144,7 +143,7 @@ A position returns: id, display type, slot and label, zone, store and
 display counts (unique platform store IDs and displays using the display type), screen (width, height, orientation, slot duration, loop
 length, share of voice, OpenOOH venue type), assignment (`rtb`,
 `whitelist_only`, `reserved`), assumed views per window, pricing (floor
-and the one effective floor for the caller's advertiser),
+and the one effective floor, the resolved floor),
 and `reservePrice`
 (a CPM premium to reserve the position for a window, or
 null — the resolved value: a slot's own override, else its display type's
@@ -320,7 +319,7 @@ The Admin API keeps answering, and switching off deletes nothing.
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/admin/v1/advertiser-settings` | Currency, floor CPM, multipliers, and the IAB `categoryWhitelist`/`categoryBlacklist` (one pair for every DSP; entries must be IAB taxonomy names, else `400`; there is no per-DSP override, and no company advertiser list). |
+| GET | `/admin/v1/advertiser-settings` | Currency, floor CPM, and the IAB `categoryWhitelist`/`categoryBlacklist` (one pair for every DSP; entries must be IAB taxonomy names, else `400`; there is no per-DSP override, and no company advertiser list). |
 | PUT | `/admin/v1/advertiser-settings` | Save changes (pricing and lists). An entry can't be on both lists (`validation_failed`). There is no auction schedule or company play-window setting: `auctionOpensHours`, `auctionCutoffTime`, `playWindowHours` and the read-only `pendingPlayWindowHours`/`pendingPlayWindowEffectiveFrom` were removed on 8 Oct 2026 (migration 0059), and a body that still sends one is refused or ignored as unknown. |
 | GET | `/admin/v1/available-inventory` | Rows: display type, playlist, slot, position, `assignedTo` (now also `buyersListId`/`buyersListName`, null unless the slot is a private auction), `reservePrice` (resolved), `reservePriceOverride` (this slot's own, null = inheriting) and `displayTypeReservePrice` (the display type's default, same on every row of that type), likewise `billingUnitHours` (resolved, always a number)/`billingUnitHoursOverride`/`displayTypeBillingUnitHours` (23 Sep 2026; when neither is set the slot uses the platform default of 24 hours; `companyPlayWindowHours` was removed from this response on 8 Oct 2026 — this resolved value is the slot's play-window length, see "Play windows are per slot" below), plus `inGlobalDeal` (the slot's own global deal flag, default true) and `globalDealSuppressedBy` (`reserved`, `whitelist_only`, `deal`, or null when open), and `dsps` (each DSP and its advertisers) for the Assigned to picker. `PUT` takes `inGlobalDeal` per item (omitted = unchanged). No advertisers column. |
 | PUT | `/admin/v1/available-inventory` | Save changes — per slot, `assignedTo` (`partnerIds`, `advertisers`, `whitelistOnly`, `buyersListId`; nothing chosen = any connected DSP, an advertiser's DSP is added automatically, and `buyersListId` is mutually exclusive with `advertisers`/`whitelistOnly` — `validation_failed` if more than one is set, or if `buyersListId` names no buyers list), `reservePrice`/`reservePriceDefault` (this slot's own override and the display type's own default — a CPM, or null; real inheritance, 22 Sep — always send the slot's current values, there is no "unchanged" omission) and, the same shape, `billingUnitHours`/`billingUnitHoursDefault` (whole hours, 1–8760, or null; must be the same `…Default` on every row for a given display type in one request). A billing-unit change that would alter the resolved window length of a slot that still has live windows bid on, booked or not yet billed is refused (`validation_failed` on that row's `billingUnitHours`, naming when the last one ends; OQ27, 29 Sep 2026). The editable fields of a slot; its label and owner are set on its display type. Admin only. Removing an advertiser from a slot with a live booking is `409 has_dependents` (slots are sold); lock the slot instead. |
@@ -370,8 +369,8 @@ bidder integration is complete. A DSP has only its own advertiser lists
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/admin/v1/advertisers` | Every advertiser across DSPs: name, via (DSPs), approval required, floor multiplier, effective floor CPM, its campaigns by approval status and `bookings` (play windows it holds from the current one on, 0 = nothing to open on the schedule); plus company currency and floor. |
-| PUT | `/admin/v1/advertisers` | Save changes: `settings` map of advertiser id → `{approvalRequired, floorMultiplier}`. |
+| GET | `/admin/v1/advertisers` | Every advertiser across DSPs: name, via (DSPs), approval required, its campaigns by approval status and `bookings` (play windows it holds from the current one on, 0 = nothing to open on the schedule); plus company currency and floor. |
+| PUT | `/admin/v1/advertisers` | Save changes: `settings` map of advertiser id → `{approvalRequired}`. |
 
 Non-admin sessions get `403 forbidden`.
 
@@ -655,8 +654,8 @@ apply as they do for open exchange.
 }
 ```
 
-- `bidfloor` = effective floor CPM for the position (the base floor × the
-  advertiser's multiplier; 100 in this example, not a personalised floor); `bidfloorcur` = company
+- `bidfloor` = effective floor CPM for the position (the resolved floor;
+  100 in this example, not a personalised floor); `bidfloorcur` = company
   currency.
 - `qty.multiplier` = assumed views for the window (VAC-d); `sourcetype` is always 2
   (publisher-provided: the audience counts come from our own cameras) on every DSP, and no

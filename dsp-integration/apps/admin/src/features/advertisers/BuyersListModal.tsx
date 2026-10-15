@@ -2,8 +2,7 @@
    Inventory UX): the buyers list and its deal terms are ONE object, created
    or edited from this one pop-up. It carries both who may buy (invited
    buyers) and the targeting criteria appended to the deal. The floor is optional: blank inherits
-   the DSP's floor, else the platform floor (bid floor hierarchy). The auction resolution rule (platform-wide) and the per-brand relationship
-   variable (global on the brand entity) are deliberately not fields here.
+   the DSP's floor, else the platform floor (bid floor hierarchy). The auction resolution rule (platform-wide) is deliberately not a field here.
 
    Lifecycle (ticket QG40V1vVwqp9NtFmlC9H): Save as draft (shared with no DSP; it can be assigned to slots) -> Finalise (needs at
    least one assigned slot; opens FinaliseDealModal to confirm the slots, deal ID and terms) -> Share deal (inside that pop-up). */
