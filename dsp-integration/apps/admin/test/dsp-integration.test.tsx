@@ -15,7 +15,7 @@ const ADVERTISER_PAGE = {
   '/api/admin/v1/advertisers': {
     currency: 'AUD', floorCpm: 100,
     items: [
-      { advertiserId: 'nestle', name: 'Nestlé', via: ['Google DSP'], approvalRequired: false, bookings: 3, campaigns: { draft: 0, awaiting_approval: 1, approved: 2, rejected: 0 } },
+      { advertiserId: 'nestle', name: 'Nestlé', via: ['Google DSP'], dspSeats: [{ partnerId: 'p_google', seatId: 'seat-nestle', partnerName: 'Google DSP', seatName: null, synced: true }], approvalRequired: false, bookings: 3, campaigns: { draft: 0, awaiting_approval: 1, approved: 2, rejected: 0 } },
       { advertiserId: 'swisse', name: 'Swisse', via: ['Google DSP', 'Amazon Ads DSP'], approvalRequired: true, bookings: 0, campaigns: { draft: 1, awaiting_approval: 0, approved: 0, rejected: 0 } },
     ],
   },
@@ -702,6 +702,27 @@ describe('Advertisers / Inventory', () => {
     const inventory = await screen.findByLabelText('Available Inventory')
     expect([...inventory.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent))
       .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Reserve price', 'Max campaigns', 'Plays per window', 'Max play length', 'Slots playing', ''])
+  })
+
+  it('shows buyers list and campaign counts on the Advertisers table, in the specified column order', async () => {
+    const page = { ...ADVERTISER_PAGE, '/api/admin/v1/buyers-lists': { items: [
+      { id: 'l1', name: 'List one', invitedBuyers: [{ partnerId: 'p_google', seatId: 'seat-nestle' }], invitedCategories: [] },
+      { id: 'l2', name: 'List two', invitedBuyers: [{ partnerId: 'p_google', seatId: 'seat-nestle' }, { partnerId: 'p_other', seatId: 'x' }], invitedCategories: [] },
+      { id: 'l3', name: 'List three', invitedBuyers: [{ partnerId: 'p_other', seatId: 'x' }], invitedCategories: [] },
+    ] } }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch(page)))
+    renderAt('/advertisers')
+    const advertisers = await screen.findByLabelText('Advertisers')
+    const heads = [...advertisers.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent)
+    expect(heads.slice(0, 8)).toEqual(['Advertiser', 'Via', 'Buyers list', 'Campaign approval', 'Campaigns', 'Awaiting approval', 'Approved', 'Rejected'])
+    await waitFor(() => {
+      const row = advertisers.querySelector('.ag-center-cols-container [row-id="nestle"]')!
+      const cells = [...row.querySelectorAll('[role="gridcell"]')].map((c) => c.textContent)
+      expect(cells.slice(2, 3).concat(cells.slice(4, 8))).toEqual(['2', '3', '1', '2', '0'])
+    })
+    /* Swisse: draft campaigns are not counted, and it is on no list. */
+    const swisse = advertisers.querySelector('.ag-center-cols-container [row-id="swisse"]')!
+    expect([...swisse.querySelectorAll('[role="gridcell"]')].map((c) => c.textContent).filter((_, i) => i === 2 || (i >= 4 && i <= 7))).toEqual(['0', '0', '0', '0', '0'])
   })
 
   it('lists a direct advertiser as "Direct advertiser" in Via and "Name (Direct)" in the Assigned to options, and lets an admin add one', async () => {

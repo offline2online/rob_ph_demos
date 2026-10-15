@@ -754,6 +754,19 @@ const header = (label: string, tip: ReactNode) => () => <WithTip tip={tip}><span
 
 const MAX_CAMPAIGNS_HEADER = 'Max campaigns'
 
+/* Numeric columns (ticket D3D4iQaQnGQ0cVA6WR4T): narrow, counts right-aligned under a right-aligned header. */
+const COUNT_COLUMN: Partial<ColDef<Advertiser>> = { cellStyle: { textAlign: 'right' }, headerClass: 'ag-right-aligned-header' }
+/* A seat is the { partnerId, seatId } pair an invited buyer on a buyers list carries. */
+const buyersListCount = (a: Advertiser, lists: BuyersList[]) => {
+  const seats = new Set((a.dspSeats ?? []).map((s) => `${s.partnerId}\u0000${s.seatId}`))
+  return lists.filter((l) => l.invitedBuyers.some((b) => seats.has(`${b.partnerId}\u0000${b.seatId}`))).length
+}
+/* Drafts are left out (Campaign Status does the same), so Campaigns is always the sum of the three that follow it. */
+const campaignCounts = (a: Advertiser) => {
+  const awaiting = a.campaigns?.awaiting_approval ?? 0, approved = a.campaigns?.approved ?? 0, rejected = a.campaigns?.rejected ?? 0
+  return { awaiting, approved, rejected, total: awaiting + approved + rejected }
+}
+
 export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) {
   const navigate = useNavigate()
   const { message, modal } = App.useApp()
@@ -922,16 +935,43 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
       ...setColumn<Advertiser>('Via', () => data.items.flatMap((a) => (a.direct ? [DIRECT_VIA] : a.via))),
     },
     {
+      /* Buyers list count (ticket D3D4iQaQnGQ0cVA6WR4T, 15 Oct 2026): the lists whose invited buyers include one of this
+         advertiser's DSP seats (the same { partnerId, seatId } pair). Category invites are a bid-time filter, not membership. */
+      headerName: 'Buyers list', width: 105, suppressSizeToFit: true, ...COUNT_COLUMN,
+      headerComponent: header('Buyers list', 'How many buyers lists this advertiser is currently included in, by one of its DSP seats being an invited buyer. A direct advertiser has no DSP seat, so is never on one.'),
+      valueGetter: (p) => (p.data ? buyersListCount(p.data, buyersLists.data?.items ?? []) : 0),
+    },
+    {
       headerName: 'Campaign approval', width: 160, suppressSizeToFit: true, cellRenderer: ApprovalCell,
       valueGetter: (p) => (p.data && (p.context as Ctx).current.settings[p.data.advertiserId]?.approvalRequired ? 'Required' : 'Not required'),
       headerComponent: header('Campaign approval', 'Required: the advertiser’s campaigns wait for approval in the Campaigns section. Not required: they publish after automated checks.'),
       ...setColumn<Advertiser>('Campaign approval', () => ['Required', 'Not required']),
     },
+    {
+      headerName: 'Campaigns', width: 110, suppressSizeToFit: true, ...COUNT_COLUMN,
+      headerComponent: header('Campaigns', 'All of this advertiser’s submitted campaigns: Awaiting approval + Approved + Rejected. Drafts are not counted: the retailer only sees a campaign once it is submitted.'),
+      valueGetter: (p) => (p.data ? campaignCounts(p.data).total : 0),
+    },
+    {
+      headerName: 'Awaiting approval', width: 150, suppressSizeToFit: true, ...COUNT_COLUMN,
+      headerComponent: header('Awaiting approval', 'Submitted campaigns waiting for the retailer to approve or reject them in Campaign Status.'),
+      valueGetter: (p) => (p.data ? campaignCounts(p.data).awaiting : 0),
+    },
+    {
+      headerName: 'Approved', width: 105, suppressSizeToFit: true, ...COUNT_COLUMN,
+      headerComponent: header('Approved', 'Campaigns that are approved.'),
+      valueGetter: (p) => (p.data ? campaignCounts(p.data).approved : 0),
+    },
+    {
+      headerName: 'Rejected', width: 105, suppressSizeToFit: true, ...COUNT_COLUMN,
+      headerComponent: header('Rejected', 'Campaigns the retailer rejected.'),
+      valueGetter: (p) => (p.data ? campaignCounts(p.data).rejected : 0),
+    },
     /* Campaigns and Bookings columns removed (Rob's ticket, 26 Sep 2026):
        already covered in Campaign Status and the booking schedule, their
        own operational sections. */
     ...(canEdit ? [{ headerName: '', width: 70, suppressSizeToFit: true, cellRenderer: ActionsCell }] : []),
-  ] : [], [data, canEdit])
+  ] : [], [data, canEdit, buyersLists.data])
 
   if (q.error) return <Callout tone="error" icon="block">{q.error instanceof ApiRequestError ? q.error.message : 'Could not load advertisers.'}</Callout>
   if (!data || !draft) return <Spin />
