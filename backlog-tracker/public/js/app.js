@@ -4010,6 +4010,7 @@ function openEditItemModal(id) {
   eiTitleInput.focus();
 }
 function closeEditItemModal() {
+  eiDictation.halt();
   // Closing mid-recording doesn't lose the recording — createAttachmentController
   // captures the target item id in its own closure at start time, so the
   // upload still lands on the right item even after editingItemId below
@@ -4065,6 +4066,7 @@ document.getElementById("ei-comment-submit").addEventListener("click", () => {
   if (!editingItemId) return;
   const text = eiCommentInput.value;
   if (!text.trim()) return;
+  eiDictation.halt();
   addItemComment(editingItemId, text);
   eiCommentInput.value = "";
 });
@@ -4273,6 +4275,7 @@ function openQuickCommentModal(id, readOnly) {
   if (!readOnly) qcCommentInput.focus();
 }
 function closeQuickCommentModal() {
+  qcDictation.halt();
   qcAttachments.stopRecording();
   qcBackdrop.hidden = true;
   quickCommentItemId = null;
@@ -4287,6 +4290,7 @@ qcSubmitBtn.addEventListener("click", () => {
   if (!quickCommentItemId) return;
   const text = qcCommentInput.value;
   if (!text.trim()) return;
+  qcDictation.halt();
   addItemComment(quickCommentItemId, text);
   // Stays open, unlike before: this is a thread now, and the comment you
   // just wrote appears in it when the write comes back through the
@@ -4343,6 +4347,7 @@ function openResolveModal(id) {
   rsAsk();
 }
 function closeResolveModal() {
+  rsDictation.halt();
   rsBackdrop.hidden = true;
   resolveItemId = null;
   resolveQueue = [];
@@ -4351,6 +4356,7 @@ async function submitResolveAnswer() {
   if (!resolveItemId || resolveBusy || !resolveQueue.length) return;
   const text = rsInput.value.trim();
   if (!text) return;
+  rsDictation.halt();
   const item = allItems.find((i) => i.id === resolveItemId);
   if (!item) return;
   resolveBusy = true;
@@ -5619,6 +5625,7 @@ function openConceptDetailPage(id) {
   renderConceptDetailPage();
 }
 function closeConceptDetailPage() {
+  conceptDictation.halt();
   conceptDetailId = null;
   conceptDetailPage.hidden = true;
   document.getElementById("projects-root").hidden = false;
@@ -5752,6 +5759,7 @@ document.getElementById("concept-comment-submit").addEventListener("click", asyn
   const input = document.getElementById("concept-comment-input");
   const text = input.value;
   if (!text.trim()) return;
+  conceptDictation.halt();
   await addConceptComment(conceptDetailId, text);
   input.value = "";
 });
@@ -6992,7 +7000,8 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
       // the OS has actually released the hardware. A short delay here
       // gives that teardown time to finish before recognition.start()
       // tries to claim the mic itself.
-      setTimeout(() => startListening(false), 250);
+      // Skipped if dictation was halted (submit/close) during the delay.
+      setTimeout(() => { if (wakeWanted) startListening(false); }, 250);
     }).catch((err) => {
       wakeWanted = false;
       releaseWakeLock();
@@ -7013,6 +7022,17 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
   // can use to force dictation off and clear any error line without
   // reaching into this closure's private state directly. Uses stop(), not
   // abort(), so the utterance in flight is still finalized into the field.
+  // Hard stop for when the field's owner is done with it (comment
+  // submitted, modal closed): detaches the handlers first so a late final
+  // result can't write back into a field that was just cleared, then
+  // aborts so the browser releases the microphone straight away rather
+  // than after the utterance in flight is finalized.
+  function halt() {
+    if (!listening) return;
+    const r = recognition;
+    stopListening();
+    if (r) { try { r.abort(); } catch (err) {} }
+  }
   function stop() {
     if (!listening) return;
     if (restartTimer || suspendedWhileHidden) { stopListening(); return; } // between sessions — nothing in flight
@@ -7033,7 +7053,7 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
     micBtn.disabled = true;
     micBtn.title = "Dictation isn't supported in this browser — Chrome or Edge support it, or you can just type instead.";
     showError("Dictation isn't supported in this browser — Chrome or Edge support it, or you can just type instead.");
-    return { stop, clearError: () => showError("") };
+    return { stop, halt, clearError: () => showError("") };
   }
   micBtn.hidden = false;
   micBtn.innerHTML = MIC_ICON_SVG;
@@ -7056,7 +7076,7 @@ function createDictationController({ textareaEl, micBtn, hintEl, errorEl, onStop
     }
   }
   if (typeof document !== "undefined") document.addEventListener("visibilitychange", onVisibilityChange);
-  return { stop, clearError: () => showError("") };
+  return { stop, halt, clearError: () => showError("") };
 }
 
 const niDictation = createDictationController({
@@ -7067,19 +7087,19 @@ const niDictation = createDictationController({
   onStop: (text) => setTypeToggle(suggestType(text)),
   charCountUpdate: updateNiDescCount,
 });
-createDictationController({
+const qcDictation = createDictationController({
   textareaEl: qcCommentInput,
   micBtn: document.getElementById("qc-mic-btn"),
   hintEl: document.getElementById("qc-listening-hint"),
   errorEl: document.getElementById("qc-mic-error"),
 });
-createDictationController({
+const rsDictation = createDictationController({
   textareaEl: document.getElementById("rs-input"),
   micBtn: document.getElementById("rs-mic-btn"),
   hintEl: document.getElementById("rs-listening-hint"),
   errorEl: document.getElementById("rs-mic-error"),
 });
-createDictationController({
+const eiDictation = createDictationController({
   textareaEl: eiCommentInput,
   micBtn: document.getElementById("ei-mic-btn"),
   hintEl: document.getElementById("ei-listening-hint"),
@@ -7094,7 +7114,7 @@ createDictationController({
 // next deploy. Every dictation controller is created here, after that
 // const, for that reason; test/app-boots.test.mjs imports this module
 // under a stub DOM and fails if evaluation stops early again.
-createDictationController({
+const conceptDictation = createDictationController({
   textareaEl: document.getElementById("concept-comment-input"),
   micBtn: document.getElementById("concept-mic-btn"),
   hintEl: document.getElementById("concept-listening-hint"),
