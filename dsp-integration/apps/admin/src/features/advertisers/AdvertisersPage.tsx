@@ -752,8 +752,8 @@ const header = (label: string, tip: ReactNode) => () => <WithTip tip={tip}><span
 
 const MAX_CAMPAIGNS_HEADER = 'Max campaigns'
 
-/* Numeric columns (ticket D3D4iQaQnGQ0cVA6WR4T): narrow, counts right-aligned under a right-aligned header. */
-const COUNT_COLUMN: Partial<ColDef<Advertiser>> = { cellStyle: { textAlign: 'right' }, headerClass: 'ag-right-aligned-header' }
+/* Numeric columns (ticket D3D4iQaQnGQ0cVA6WR4T): narrow, counts centred in the column under a centred header (ticket ACnS3x2Hrdt9Kk4RMVi5). */
+const COUNT_COLUMN: Partial<ColDef<Advertiser>> = { cellStyle: { textAlign: 'center' }, headerClass: 'ag-center-aligned-header' }
 /* A seat is the { partnerId, seatId } pair an invited buyer on a buyers list carries. */
 const buyersListCount = (a: Advertiser, lists: BuyersList[]) => {
   const seats = new Set((a.dspSeats ?? []).map((s) => `${s.partnerId}\u0000${s.seatId}`))
