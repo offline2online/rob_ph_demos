@@ -38,10 +38,10 @@ describe('GET /v1/inventory', () => {
     })
   })
 
-  it('prices for the requesting advertiser (floor multiplier), and publishes no engagement fee', async () => {
+  it('prices at the slot floor for any requesting advertiser, and publishes no engagement fee', async () => {
     const { get } = await setup()
     const item = (await get('/inventory?advertiserId=nestle')).json().items[0]
-    expect(item.pricing.effectiveFloorCpm).toEqual({ localised: 80 })
+    expect(item.pricing.effectiveFloorCpm).toEqual({ localised: 100 })
     /* Interactive campaigns are deferred (5 Oct 2026): no engagement fee or interactive price is published. */
     expect(item.pricing).not.toHaveProperty('costPerEngagement')
     expect(item).not.toHaveProperty('interactiveReservePrice')
@@ -161,7 +161,7 @@ describe('POST /v1/inventory/forecast', () => {
     expect(res.statusCode).toBe(200)
     expectMatchesContract('POST', '/v1/inventory/forecast', 200, res.json())
     expect(res.json()).toEqual({ assumedViews: 2472, currency: 'USD', estimatedCost: 247.2 })
-    expect((await forecast({ ...TWO_DAYS, advertiserId: 'nestle' })).json().estimatedCost).toBe(197.76)
+    expect((await forecast({ ...TWO_DAYS, advertiserId: 'nestle' })).json().estimatedCost).toBe(247.2) // same floor for every advertiser
     /* Only windows the caller could still buy count. */
     expect((await forecast({ ...TWO_DAYS, from: '2026-09-19' })).json().assumedViews).toBe(2472)
   })

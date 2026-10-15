@@ -103,15 +103,12 @@ describe('SSP settings audit log', () => {
     expect((await log('?objectType=exchange&field=globalDealEnabled')).items[0]).toMatchObject({ oldValue: false, newValue: true })
   })
 
-  it('records a DSP’s bid floor and the per-advertiser floor multiplier', async () => {
+  it('records a DSP’s bid floor', async () => {
     const { app, log } = await setup()
     const partner = (await app.inject({ method: 'GET', url: `${BASE}/partners/p_google` })).json()
     const put = await app.inject({ method: 'PUT', url: `${BASE}/partners/p_google`, headers: AGENT, payload: { credentials: {}, bidder: { ...partner.bidder, floorCpm: 333 } } })
     expect(put.statusCode).toBe(200)
     expect((await log('?objectType=dsp_partner&field=bidder.floorCpm')).items[0]).toMatchObject({ objectId: 'p_google', newValue: 333, actor: { type: 'agent' } })
-    const adv = (await app.inject({ method: 'GET', url: `${BASE}/advertisers` })).json().items[0]
-    expect((await app.inject({ method: 'PUT', url: `${BASE}/advertisers`, payload: { settings: { [adv.advertiserId]: { approvalRequired: adv.approvalRequired, floorMultiplier: 2.5 } } } })).statusCode).toBe(200)
-    expect((await log('?objectType=advertiser_setting&field=floorMultiplier')).items[0]).toMatchObject({ objectId: adv.advertiserId, newValue: 2.5 })
   })
 
   it('pages with limit and cursor, and is admin only', async () => {

@@ -1,5 +1,5 @@
 /* Advertisers / Inventory (spec §3, §5; admin only): every advertiser across
-   all DSPs, with campaign approval and floor multiplier per advertiser, and
+   all DSPs, with campaign approval per advertiser, and
    below it the inventory they can buy — every advertiser-owned slot across
    the estate, which moved here from Advertiser settings (Rob, 20 Sep).
    Campaigns are not approved here. Changes are applied with Save changes. */
@@ -39,9 +39,8 @@ type P = ICellRendererParams<Advertiser, unknown, Ctx>
 
 /* The grid can paint a row for a moment after it has left the list (a delete drops it from the cache first),
    so a cell must cope with its advertiser having no setting any more. */
-const FALLBACK_SETTING: AdvertiserSetting = { approvalRequired: true, floorMultiplier: 1 }
+const FALLBACK_SETTING: AdvertiserSetting = { approvalRequired: true }
 const settingOf = (settings: Settings, id: string): AdvertiserSetting => settings[id] ?? FALLBACK_SETTING
-const effective = (floor: number, m: number) => Math.round(floor * (m || 0) * 100) / 100
 
 const NameCell = ({ data }: P) => (data ? <span className="inline-flex min-w-0 items-center gap-1.5"><Icon name="sell" size={14} style={{ color: SLOT_OWNERS.advertiser.colour }} /><span className="truncate">{data.name}</span></span> : null)
 /* A direct advertiser (no DSP) shows "Direct advertiser" where a DSP name would be. */
@@ -57,20 +56,6 @@ function ApprovalCell({ data, context }: P) {
       <span style={{ fontSize: 11.5, color: T.muted }}>{s.approvalRequired ? 'Required' : 'Not required'}</span>
     </span>
   )
-}
-function MultiplierCell({ data, context }: P) {
-  if (!data) return null
-  return (
-    <InputNumber size="small" aria-label={`${data.name}: floor multiplier`} disabled={!context.current.canEdit} step={0.05} min={0} style={{ width: 90 }}
-      formatter={(v) => (v === undefined || v === null ? '' : String(v))} parser={(v) => Number(v)}
-      value={settingOf(context.current.settings, data.advertiserId).floorMultiplier}
-      onChange={(v) => context.current.set(data.advertiserId, { floorMultiplier: v === null ? 1 : Number(v) })} />
-  )
-}
-function EffectiveCell({ data, context }: P) {
-  if (!data) return null
-  const { settings, data: d } = context.current
-  return <span>{`${TRANSACTING_CURRENCY} ${effective(d.floorCpm, settingOf(settings, data.advertiserId).floorMultiplier).toFixed(2)} CPM`}</span>
 }
 /* Add an advertiser with a direct relationship with the retailer (no DSP), from
    the "Add new Advertiser" pop-up. It is saved at once (not part of Save
@@ -232,14 +217,18 @@ const PlaylistCell = ({ data }: ICellRendererParams<AvailableInventoryRow>) =>
   ) : null
 /* The hover names the slot's number, its zone and the display type with its description (ticket c5S06G5mN6F3GJTI8bxD,
    14 Oct 2026); a pre-14-Oct demo snapshot has neither zone nor description, so then just the number and display type. */
+/* A multi-zone display type's Position leads with the zone and the slot within it ("Zone 2 / Slot 1 · label"), so it reads as
+   an independent zone on the same display type (ticket l4sSqLbAxIWVopZvaOik, 15 Oct 2026); a single-zone one is just its label. */
+export const positionText = (r: Pick<AvailableInventoryRow, 'position' | 'zoneName' | 'zoneSlot'>): string =>
+  r.zoneName ? `${r.zoneName} / Slot ${r.zoneSlot} · ${r.position}` : r.position
 const SlotCell = ({ data }: ICellRendererParams<AvailableInventoryRow>) =>
   data ? (
     <Tip title={<div>
-      <div style={{ fontWeight: 500 }}>{data.position}</div>
+      <div style={{ fontWeight: 500 }}>{positionText(data)}</div>
       <div>Slot {data.zoneSlot}{data.zoneName ? ` of ${data.zoneName}` : ''}</div>
       <div>{data.displayTypeName}{data.displayTypeDescription ? `: ${data.displayTypeDescription}` : ''}</div>
     </div>}>
-      <div className="min-w-0 truncate cursor-pointer" tabIndex={0} aria-label={`Position: ${data.position}`}>{data.position}</div>
+      <div className="min-w-0 truncate cursor-pointer" tabIndex={0} aria-label={`Position: ${positionText(data)}`}>{positionText(data)}</div>
     </Tip>
   ) : null
 /* Opens the display type with Playlist Settings — where slot assignment
@@ -804,7 +793,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
        separate playlist and starts at slot 1). Equal to `slot` on a
        single-zone display type. */
     { headerName: 'Slot', width: 70, field: 'zoneSlot', suppressSizeToFit: true, cellStyle: { color: T.muted }, ...setColumn<AvailableInventoryRow>('Slot', invValues((r) => [String(r.zoneSlot)])) },
-    { headerName: 'Position', width: 130, minWidth: 110, cellRenderer: SlotCell, valueGetter: (p) => p.data?.position ?? '', ...searchColumn<AvailableInventoryRow>('Position') },
+    { headerName: 'Position', width: 200, minWidth: 150, cellRenderer: SlotCell, valueGetter: (p) => (p.data ? positionText(p.data) : ''), ...searchColumn<AvailableInventoryRow>('Position') },
     {
       headerName: 'Assigned to', width: 240, minWidth: 200, cellRenderer: AssignedCell, autoHeight: true,
       headerComponent: header('Assigned to', ASSIGNED_TO_TIP),
@@ -889,7 +878,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
     },
     { headerName: '', width: 76, suppressSizeToFit: true, cellRenderer: OpenCell },
   ], [invRows, inventory.data, buyersLists.data])
-  const saved = useMemo<Settings | undefined>(() => q.data && Object.fromEntries(q.data.items.map((a) => [a.advertiserId, { approvalRequired: a.approvalRequired, floorMultiplier: a.floorMultiplier }])), [q.data])
+  const saved = useMemo<Settings | undefined>(() => q.data && Object.fromEntries(q.data.items.map((a) => [a.advertiserId, { approvalRequired: a.approvalRequired }])), [q.data])
   const { draft, setDraft, dirty, reset, commitNext } = useDraft(saved)
   const savedEdits = useMemo<Edits | undefined>(() => inventory.data && Object.fromEntries(invRows.map((r) => {
     const { partnerNames: _names, ...assignedTo } = r.assignedTo
@@ -938,8 +927,6 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
       headerComponent: header('Campaign approval', 'Required: the advertiser’s campaigns wait for approval in the Campaigns section. Not required: they publish after automated checks.'),
       ...setColumn<Advertiser>('Campaign approval', () => ['Required', 'Not required']),
     },
-    { headerName: 'Floor multiplier', width: 140, suppressSizeToFit: true, cellRenderer: MultiplierCell, headerComponent: header('Floor multiplier', 'Scales this advertiser’s floor. Default 1.0, e.g. 0.8 for a preferred supplier or 1.2 for a new one.') },
-    { headerName: 'Effective floor', width: 150, minWidth: 140, cellRenderer: EffectiveCell, headerComponent: header('Effective floor', `Floor CPM (${TRANSACTING_CURRENCY} ${data.floorCpm}, set in DSP Integration → Advertiser settings) × this advertiser's floor multiplier.`) },
     /* Campaigns and Bookings columns removed (Rob's ticket, 26 Sep 2026):
        already covered in Campaign Status and the booking schedule, their
        own operational sections. */
@@ -1074,7 +1061,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
   /* Every listed advertiser needs a setting to render. The draft only follows the list once a refetch
      has been taken up, so for a render after a delete or add (or while the page has unsaved edits) a row
      can be missing from it: fall back to what the server last sent rather than crash the page. */
-  const settingsFor: Settings = Object.fromEntries(data.items.map((a) => [a.advertiserId, draft?.[a.advertiserId] ?? saved?.[a.advertiserId] ?? { approvalRequired: a.approvalRequired, floorMultiplier: a.floorMultiplier }]))
+  const settingsFor: Settings = Object.fromEntries(data.items.map((a) => [a.advertiserId, draft?.[a.advertiserId] ?? saved?.[a.advertiserId] ?? { approvalRequired: a.approvalRequired }]))
   const context = {
     settings: settingsFor, data, canEdit,
     /* An advertiser with history can't be removed: say so when the dialog opens, rather than letting

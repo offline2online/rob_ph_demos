@@ -114,18 +114,18 @@ const DEMO_WHITELIST: Record<string, string[]> = {
   p_ttd: ['Unilever', 'PepsiCo'],
 }
 
-const DEMO_ADVERTISER_SETTINGS: Record<string, { approvalRequired: boolean; floorMultiplier: number }> = {
-  [advertiserSlug('Coca-Cola')]: { approvalRequired: false, floorMultiplier: 1.1 },
-  [advertiserSlug('PepsiCo')]: { approvalRequired: false, floorMultiplier: 1.1 },
-  [advertiserSlug('Red Bull')]: { approvalRequired: false, floorMultiplier: 1.2 },
-  [advertiserSlug('Monster Energy')]: { approvalRequired: true, floorMultiplier: 1.3 },
-  [advertiserSlug('Gatorade')]: { approvalRequired: false, floorMultiplier: 1 },
-  [advertiserSlug('Mars Wrigley')]: { approvalRequired: true, floorMultiplier: 0.95 },
-  [advertiserSlug('Mondelez International')]: { approvalRequired: true, floorMultiplier: 1 },
-  [advertiserSlug('The Hershey Company')]: { approvalRequired: true, floorMultiplier: 1.05 },
-  [advertiserSlug('Kellanova')]: { approvalRequired: true, floorMultiplier: 1 },
-  [advertiserSlug('Frito-Lay')]: { approvalRequired: false, floorMultiplier: 0.9 },
-  [advertiserSlug('Unilever')]: { approvalRequired: true, floorMultiplier: 1 },
+const DEMO_ADVERTISER_SETTINGS: Record<string, { approvalRequired: boolean }> = {
+  [advertiserSlug('Coca-Cola')]: { approvalRequired: false },
+  [advertiserSlug('PepsiCo')]: { approvalRequired: false },
+  [advertiserSlug('Red Bull')]: { approvalRequired: false },
+  [advertiserSlug('Monster Energy')]: { approvalRequired: true },
+  [advertiserSlug('Gatorade')]: { approvalRequired: false },
+  [advertiserSlug('Mars Wrigley')]: { approvalRequired: true },
+  [advertiserSlug('Mondelez International')]: { approvalRequired: true },
+  [advertiserSlug('The Hershey Company')]: { approvalRequired: true },
+  [advertiserSlug('Kellanova')]: { approvalRequired: true },
+  [advertiserSlug('Frito-Lay')]: { approvalRequired: false },
+  [advertiserSlug('Unilever')]: { approvalRequired: true },
 }
 
 /* ---------------------------------------------------------- the campaigns */
@@ -188,7 +188,7 @@ const DEMO_CAMPAIGNS: DemoCampaign[] = [
     targeting: states('NSW', 'VIC'), brief: brief('Limited-run flavour for the east coast.', { promotedProducts: ['Red Bull Summer Edition 250ml'], targetAudiences: ['Adults 18–34'], objective: 'Brand Awareness' }) },
   { id: 'c_demo_cocacola_zero', name: 'Coca-Cola — Zero Sugar', advertiser: 'Coca-Cola', partnerId: 'p_google', displayTypeId: 'landscape', pricingType: 'personalised', state: 'approved', colour: '#000000', line: 'Zero Sugar. Real taste.', createdAt: '2026-09-09T09:00:00.000Z',
     /* Combines the individual and aggregate-store trigger tiers. */
-    targeting: personalised(['Fitness', 'Health'], [[rule('store.reason_for_visit', 'equal', ['Returns'])]]),
+    targeting: personalised(['Fitness', 'Health'], [[rule('store.reason_for_visit', 'greater_than_or_equal', ['Returns: 30%'])]]),
     brief: brief('Always-on Zero Sugar with a fitness-segment variant, or when the queue here is mostly here for returns (a proxy for a busier, more price-sensitive moment).', { promotedProducts: ['Coca-Cola Zero Sugar 600ml'], skus: ['SKU-40011'], targetAudiences: ['Fitness'] }) },
   { id: 'c_demo_cocacola_share', name: 'Coca-Cola — Share a Coke', advertiser: 'Coca-Cola', partnerId: 'p_google', displayTypeId: 'portrait', pricingType: 'localised', state: 'draft', colour: '#f40009', line: 'Share a Coke', createdAt: '2026-09-20T11:00:00.000Z',
     targeting: localisedUpsell('Entrance', 'Food Court'), brief: brief('Entrance and food-court screens get the Share a Coke variant; the default plays everywhere else.', { promotedProducts: ['Coca-Cola 600ml Share bottles'] }) },

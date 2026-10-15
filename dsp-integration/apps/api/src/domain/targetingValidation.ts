@@ -2,7 +2,7 @@
    checked, then stored in the existing targeting structure (AND groups of OR
    conditions) and evaluated by the existing platform. Nothing here decides
    what matches. */
-import { OPERATOR_LABELS, TARGETING_VARIABLES, type Operator } from '@ph-dsp/types'
+import { OPERATOR_LABELS, TARGETING_VARIABLES, isAggregateVariable, isValidAggregateValue, type Operator } from '@ph-dsp/types'
 import type { Access } from '../repos/CompanySettingsRepo'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 import { HttpError, validationFailed } from '../http/errors'
@@ -55,6 +55,7 @@ export function validateRules(rules: unknown, at: string, partner: PartnerRecord
       }
       const values = c.values
       if (!Array.isArray(values) || !values.length || values.some((v) => typeof v !== 'string' || !v.trim())) invalid.push({ field: `${f}.values`, reason: 'A non-empty list of values.' })
+      else if (isAggregateVariable(def.key) && (values.length !== 1 || !isValidAggregateValue(values[0] as string))) invalid.push({ field: `${f}.values`, reason: `${def.label} takes one category and a percentage from 0 to 100, e.g. "Returns: 25%".` })
       else if (def.fixedValues && values.some((v) => !def.fixedValues!.includes(v as string))) invalid.push({ field: `${f}.values`, reason: `${def.label} takes IAB age brackets: ${def.fixedValues.join(', ')}.` })
       else if (values.length > maxValues) invalid.push({ field: `${f}.values`, reason: `At most ${maxValues} values per condition.` })
       else if (limits && values.some((v) => (v as string).length > limits.valueLength)) invalid.push({ field: `${f}.values`, reason: `Each value at most ${limits.valueLength} characters.` })

@@ -91,8 +91,16 @@ record.
 
 - **5 Oct 2026** — personalised multiplier removed (supersedes the 30 Sep
   entry below): every play bills at the committed CPM, whichever version
-  played; there is no personalised price anywhere. The bid floor and the
-  advertiser floor multiplier are unchanged.
+  played; there is no personalised price anywhere. The bid floor is
+  unchanged.
+
+- **15 Oct 2026** — advertiser floor multiplier removed (ticket
+  sAYCqT0mE4ZlhoV5vFnW; wording follow-up Xkcwtxl3HikqaXT2O6rL): an
+  advertiser no longer has a floor multiplier and the Advertisers screen shows
+  no per-advertiser effective floor. Every advertiser's bids clear the same
+  resolved floor (§4, the floor hierarchy); the effective floor on a position
+  or bid request is that resolved floor. This supersedes every earlier
+  mention of a per-advertiser multiplier below.
 
 - **1 Oct 2026** — default VAC-d per display type with per-display override
   (`phExtensions.defaultVacd`, `displays.vacd_override`, migration 0035);
@@ -113,11 +121,10 @@ This specification covers these areas, and only these:
 2. **Playlist management**: editing and deleting playlists only (§2).
 3. **Campaign asset approval**: advertisers submit campaign assets, and the
    retailer approves them in the **existing Campaigns section** where the
-   advertiser requires approval. Whether an advertiser requires approval, and
-   its floor multiplier, are set on a new admin-only **Advertisers** screen (§3).
+   advertiser requires approval. Whether an advertiser requires approval is
+   set on a new admin-only **Advertisers** screen (§3).
 4. **Pricing**: the currency, the three-level CPM bid floor (platform, DSP,
-   buyers and targeting list), audience scoring and a floor multiplier
-   per advertiser (§4).
+   buyers and targeting list) and audience scoring (§4).
 5. **Inventory API**: what inventory exists and what is available, derived
    from the slots assigned on each display type (§5).
 6. **DSP integration**: the advertiser/DSP interface and the shared targeting
@@ -307,7 +314,7 @@ Page-title tooltips for the DSP Integration company pages:
 | Page | Tooltip |
 |---|---|
 | **Exchange settings** | Sets up your organisation as the seller of record for its screens. Configurable here: organisation name, domain, seller ID and ad-ops contact email, all required. Once saved and complete, sellers.json is published at https://[domain]/sellers.json and every bid request carries your domain and seller ID in its SupplyChain; until then no DSP is sent bid requests. Not configurable (platform defaults): seller type (Publisher), the DOOH object, the OpenOOH venue taxonomy, QPS and bid timeout. Bid requests use OpenRTB 2.6 as the minimum supported version for programmatic DOOH; the exchange is designed to adopt 2.7, 2.8 and later versions per DSP as the market moves. |
-| **Advertiser settings** | Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (currency and the platform floor CPM, the minimum of the floor hierarchy, §4; advanced), and Category lists (the IAB category whitelist and blacklist, chosen from the full IAB Content Taxonomy 1.0 — 26 tier-1 categories and their tier-2 subcategories, stored as "Tier 1" or "Tier 1 › Tier 2" and sent as the OpenRTB `bcat` codes (IAB8, IAB8-16) — and applied to every DSP; the same list invites buyers by category on a buyers list; each DSP's advertiser lists are on its own page). Per-advertiser campaign approval and floor multipliers, and the inventory advertisers can buy, are on Advertisers / Inventory. |
+| **Advertiser settings** | Company-wide advertiser settings, applied to every DSP. Configurable here: Pricing (currency and the platform floor CPM, the minimum of the floor hierarchy, §4; advanced), and Category lists (the IAB category whitelist and blacklist, chosen from the full IAB Content Taxonomy 1.0 — 26 tier-1 categories and their tier-2 subcategories, stored as "Tier 1" or "Tier 1 › Tier 2" and sent as the OpenRTB `bcat` codes (IAB8, IAB8-16) — and applied to every DSP; the same list invites buyers by category on a buyers list; each DSP's advertiser lists are on its own page). Per-advertiser campaign approval, and the inventory advertisers can buy, are on Advertisers / Inventory. |
 | **Shared Targeting Variables** | Variables shared through the API with connected DSPs. Once a variable is enabled for a DSP, that DSP's advertisers can use it in targeting conditions for more advanced campaign targeting; the platform evaluates the condition and never returns the value. They are the same variables as a campaign's Targeting tab. Choose which DSPs may use each one below; default platform variables only in this release. |
 
 The **Enable DSP Integration** switch at the top of Exchange settings has
@@ -341,8 +348,8 @@ fixed-width form beside a second column.
 - **Help desk users see none of it.**
 
 On **Advertisers / Inventory**, a marketing user reads the advertisers and
-the inventory but cannot change campaign approval or floor multipliers:
-approval policy and pricing stay with an admin.
+the inventory but cannot change campaign approval: approval policy stays
+with an admin.
 
 Enforced server-side as well as in the navigation, like everything else the
 UI restricts. The POC's stand-in session carries the three roles
@@ -830,13 +837,10 @@ place of *Admin only* and no Save changes bar.
     Automated asset checks still run.
   - Changing the toggle applies to future submissions once saved. Campaigns
     already *Awaiting approval* stay in the queue for a decision.
-- **Floor multiplier** per advertiser (default 1.0), with the resulting
-  effective floor shown alongside, in the company currency (§4).
 - Changes are applied with **Save changes** (see *Saving changes*).
 - **Column tooltips** (see *Help text*): *Via* (the DSPs the advertiser's
   campaigns come through); *Campaign approval* (what Required and Not
-  required do); *Floor multiplier* (default 1.0, e.g. 0.8 preferred, 1.2
-  new); *Effective floor* (floor CPM × the advertiser's floor multiplier).
+  required do).
 
 ### Submission
 
@@ -1397,7 +1401,7 @@ above all when an agent tunes per-display-type CPM — is never unexplained.
 
 - **In scope**: the exchange settings; pricing and auction settings (floor
   CPM, bid lookahead, max play length, category lists, guarantee buffer, …);
-  the per-advertiser floor multiplier; which DSPs may target each shared
+  which DSPs may target each shared
   variable; every buyers list (deal); every display type's SSP extensions
   (slots: owner, reserve prices and the per-display-type floor, billing unit,
   assignment, deals, locks); and each DSP's bid settings (floor, committed
@@ -1431,11 +1435,10 @@ above all when an agent tunes per-display-type CPM — is never unexplained.
 - **Storage**: `ssp_audit_log` (migration 0062). Nothing in the API updates or
   deletes a row.
 
-## 4. Pricing — CPM bid floor and floor multiplier
+## 4. Pricing — CPM bid floor
 
 The currency and the floor are configured
-once, company-wide, in **DSP Integration → Advertiser settings → Pricing**;
-the floor multiplier is set per advertiser on the **Advertisers** screen.
+once, company-wide, in **DSP Integration → Advertiser settings → Pricing**.
 The currency and the platform floor are company-wide; a DSP's own floor is set
 on that DSP's page and a buyers and targeting list's floor on the list
 (§4 "The floor hierarchy"). All values are defaults, overridable per retailer.
@@ -1444,7 +1447,7 @@ on that DSP's page and a buyers and targeting list's floor on the list
 
 | Field | Tooltip |
 |---|---|
-| **Pricing** (section) | Effective floor = floor CPM × the advertiser's floor multiplier (set on Advertisers / Inventory), the same for every campaign type. Bids below it never win. Every play bills at the committed CPM. |
+| **Pricing** (section) | The floor a bid must clear is the resolved floor (platform, DSP or list; see the floor hierarchy), the same for every advertiser and campaign type. Bids below it never win. Every play bills at the committed CPM. |
 | **Currency** | Used for billing and every price shown. The bid floor signal on a request is in USD (§4, The floor hierarchy). |
 | **Platform floor price (CPM)** | Cost per thousand assumed views (VAC-d). The minimum floor for every DSP and every buyers and targeting list, which can raise it but never go below it. Bids below the resolved floor never win. |
 | **DSP floor price (CPM)** | Optional, per connected DSP. Blank inherits the platform floor; a value raises it for this DSP's bids and cannot go below the platform floor. |
@@ -1540,8 +1543,7 @@ Rob, 7 Oct 2026. The floor a bid must clear is resolved from three levels:
   rejected.
 - **On top of the resolved floor.** VAC-d (the assumed views the CPM is
   charged against) and any personalised price (none today, see 5 Oct 2026)
-  apply on top of the resolved floor, as does the advertiser floor
-  multiplier (below).
+  apply on top of the resolved floor.
 - Every other mention of "the floor" in this document means this resolved
   floor unless it names the platform floor.
 
@@ -1552,25 +1554,21 @@ Rob, 7 Oct 2026. The floor a bid must clear is resolved from three levels:
 | Platform floor CPM (minimum) | 100 | Advertiser settings → Pricing (advanced) | Every campaign |
 | DSP floor CPM | blank (inherits) | The DSP's page | That DSP's bids |
 | Buyers and targeting list floor CPM | blank (inherits) | The list | Bids under that list |
-| Advertiser floor multiplier | **1.0** | Advertisers / Inventory | The floor, per advertiser |
 
 - **Interactive is deferred** (5 Oct 2026): there is no engagement fee
   lever. The stored `interactiveCpe` setting is kept but neither shown nor
   edited, and no price for it is published.
-- **The advertiser floor multiplier** reflects the retailer's relationship
-  with that advertiser: for example **0.8** for a preferred supplier, **1.2**
-  for a new one. Example: 100 × 0.8 = 80 CPM is what that advertiser's bids
-  must clear, whatever the campaign type. Advertisers / Inventory shows each advertiser's effective
-  floor (resolved floor × its multiplier).
+- **There is no per-advertiser floor adjustment** (15 Oct 2026): every
+  advertiser's bids must clear the same resolved floor, whatever the campaign
+  type.
 - **Every play bills at the committed CPM** (Rob, 5 Oct 2026). The
   personalised multiplier added on 30 Sep 2026 is removed: the auction
-  clears against the resolved floor (× the advertiser's floor multiplier) and a
+  clears against the resolved floor and a
   window bills at the clearing CPM whichever version played, so there is no
   personalised price anywhere. `PlaybackSource` plays still carry a nullable
   `tier` (`default` / `localised` / `personalised`) as reporting data; billing
   does not price on it (see api/PH-CORE-BOUNDARIES.md, "Playback").
-- **Localised campaigns price at the resolved floor CPM** (times the advertiser
-  multiplier).
+- **Localised campaigns price at the resolved floor CPM**.
 - **Engagements are not billed**: interactive campaigns are deferred (5 Oct 2026).
 
 ### Billing
@@ -1643,9 +1641,9 @@ Rob, 7 Oct 2026. The floor a bid must clear is resolved from three levels:
   (per currency, by when the play played). Not built: an HQ Admin screen for
   it (the endpoint is the contract), and an advertiser-facing view, which
   rule 3 forbids.
-- **Pre-auction enforcement uses the effective floor CPM** for the campaign's
-  type and advertiser. The auction clears against the resolved floor (platform, DSP or list; scaled by
-  the advertiser's `floorMultiplier`); there is no personalised price (5 Oct 2026).
+- **Pre-auction enforcement uses the effective floor CPM**, which is the
+  resolved floor (platform, DSP or list); there is no personalised price
+  (5 Oct 2026).
 
 ## 5. Inventory API
 
@@ -1723,7 +1721,7 @@ packages" has the retired part-sold model and why it never shipped past
 this document).
 
 - **Pricing** for the requester, in the company currency: the platform floor CPM
-  and the effective floor CPM (§4, the resolved floor for every campaign type), including the requester's own advertiser floor multiplier.
+  and the effective floor CPM (§4, the resolved floor for every campaign type).
 - **Reserve price** (decision, Rob, 22 Sep; real inheritance, 22 Sep): a CPM
   premium at which this position can be reserved in advance of real-time
   selling. A retailer lets an advertiser commit to a premium rate up front
@@ -1953,7 +1951,7 @@ duplicating it per deal would let one drift from the other:
   deal. **The list is cross-DSP; the deal identity is per DSP** (ticket fgBVnNItNcu7qMBUtqH7, 10 Oct 2026): a buyers list is one object that may invite named seats on several DSPs, and it resolves to one generated, immutable deal ID per DSP (`deals: [{ partnerId, dealId, retiredAt }]`), because DV360 and The Trade Desk each accept their own deal. Rate, delivery term, invited buyers and the auction window / locked rate are the list's and apply across its DSP deals; only the identifier differs, and a locked-rate clear still binds the one winning seat. Inviting the first named seat on a DSP mints that DSP's ID; removing its last named seat retires it (kept, never reused, so a campaign or bid quoting it still resolves; re-inviting revives the same ID). A DSP's bid request carries its own ID on `pmp.deals[].id` and only that ID clears for it; the authoring picker shows an advertiser the ID for the DSP its seat is on. A DSP admitted only by IAB category has no named seat, so its ID is minted on its first bid request (migration 0069). Its rate is a commitment on top of the same score-driven floor,
   never under it: a bid or reserve below the effective floor is refused
   `below_floor`, and a locked-term window whose rate has fallen below the
-  floor in force when it is booked (the floor or a multiplier rose) is not
+  floor in force when it is booked (the floor rose) is not
   sold and falls through to the default campaign. Programmatic guaranteed
   is the reserve-price booking flow (§5 "Reserve price"), delivered with it
   (open question 52).
@@ -3222,8 +3220,8 @@ Company-level:
   `categoryBlacklist`). There are no company-level advertiser lists: they
   are per DSP (partner `allowList` / `blockList`, §6).
 - **Advertisers / Inventory** (an admin writes it; marketing reads it):
-  `advertiserSettings: { [advertiser]: { approvalRequired, floorMultiplier } }`
-  (defaults `true` / 1.0), and per sellable slot what it is assigned to
+  `advertiserSettings: { [advertiser]: { approvalRequired } }`
+  (default `true`), and per sellable slot what it is assigned to
   (`partnerIds`, `advertisers`, list mode).
 - **Shared targeting variables**: the platform's default variables, grouped
   as Localisation Variables and Personalisation Variables, each with example
@@ -3968,8 +3966,7 @@ playback analytics.**
   between them — see *Campaign schedule* below), editable by an admin and
   read-only for marketing: every
   advertiser across all DSPs, with a **Campaign approval** toggle (Required /
-  Not required, default Required), a **floor multiplier** (default 1.0) with
-  the effective floor shown in the company currency, its **campaigns by
+  Not required, default Required), its **campaigns by
   approval status** (which open Campaign Status filtered to it) and a
   **Bookings** link when it has any, plus a tooltip on each column. No
   campaign approval takes place here. *(Advertisers / Inventory)*
@@ -4015,11 +4012,10 @@ playback analytics.**
   and name), the platform floor CPM,
   the minimum of the floor hierarchy, each with the tooltip given in §4.
   *(DSP Integration → Advertiser settings → Pricing)*
-- **Advertiser floor multiplier** per advertiser. *(Advertisers)*
 - **Audience scoring framework** (MOVE/VAC-d) the retailer populates, automated
   where cameras are connected. *(spec only)*
 - **Floor hierarchy** (platform, DSP, buyers and targeting list; most specific set wins, blank inherits, platform is the minimum). *(Advertiser settings, DSP page, list)*
-- **Effective floor CPM per pricing type and advertiser**, applied
+- **Effective (resolved) floor CPM per pricing type**, applied
   pre-auction and sent as `imp.bidfloor` with `bidfloorcur` USD. *(spec only)*
 - **Dynamic VAC-d billing** from existing playback data. *(spec only)*
 
