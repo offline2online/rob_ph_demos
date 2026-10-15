@@ -232,14 +232,18 @@ const PlaylistCell = ({ data }: ICellRendererParams<AvailableInventoryRow>) =>
   ) : null
 /* The hover names the slot's number, its zone and the display type with its description (ticket c5S06G5mN6F3GJTI8bxD,
    14 Oct 2026); a pre-14-Oct demo snapshot has neither zone nor description, so then just the number and display type. */
+/* A multi-zone display type's Position leads with the zone and the slot within it ("Zone 2 / Slot 1 · label"), so it reads as
+   an independent zone on the same display type (ticket l4sSqLbAxIWVopZvaOik, 15 Oct 2026); a single-zone one is just its label. */
+export const positionText = (r: Pick<AvailableInventoryRow, 'position' | 'zoneName' | 'zoneSlot'>): string =>
+  r.zoneName ? `${r.zoneName} / Slot ${r.zoneSlot} · ${r.position}` : r.position
 const SlotCell = ({ data }: ICellRendererParams<AvailableInventoryRow>) =>
   data ? (
     <Tip title={<div>
-      <div style={{ fontWeight: 500 }}>{data.position}</div>
+      <div style={{ fontWeight: 500 }}>{positionText(data)}</div>
       <div>Slot {data.zoneSlot}{data.zoneName ? ` of ${data.zoneName}` : ''}</div>
       <div>{data.displayTypeName}{data.displayTypeDescription ? `: ${data.displayTypeDescription}` : ''}</div>
     </div>}>
-      <div className="min-w-0 truncate cursor-pointer" tabIndex={0} aria-label={`Position: ${data.position}`}>{data.position}</div>
+      <div className="min-w-0 truncate cursor-pointer" tabIndex={0} aria-label={`Position: ${positionText(data)}`}>{positionText(data)}</div>
     </Tip>
   ) : null
 /* Opens the display type with Playlist Settings — where slot assignment
@@ -804,7 +808,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
        separate playlist and starts at slot 1). Equal to `slot` on a
        single-zone display type. */
     { headerName: 'Slot', width: 70, field: 'zoneSlot', suppressSizeToFit: true, cellStyle: { color: T.muted }, ...setColumn<AvailableInventoryRow>('Slot', invValues((r) => [String(r.zoneSlot)])) },
-    { headerName: 'Position', width: 130, minWidth: 110, cellRenderer: SlotCell, valueGetter: (p) => p.data?.position ?? '', ...searchColumn<AvailableInventoryRow>('Position') },
+    { headerName: 'Position', width: 200, minWidth: 150, cellRenderer: SlotCell, valueGetter: (p) => (p.data ? positionText(p.data) : ''), ...searchColumn<AvailableInventoryRow>('Position') },
     {
       headerName: 'Assigned to', width: 240, minWidth: 200, cellRenderer: AssignedCell, autoHeight: true,
       headerComponent: header('Assigned to', ASSIGNED_TO_TIP),
