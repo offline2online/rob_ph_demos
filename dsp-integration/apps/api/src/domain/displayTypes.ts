@@ -50,6 +50,9 @@ export const zonePlaceOf = (dt: DisplayType, slot: number): { zoneName: string; 
   return { zoneName: zone.name, zoneSlot }
 }
 
+/* Display Type Image (15 Oct 2026): a cropped PNG/JPEG data URL saved on the record. */
+export const MAX_IMAGE_CHARS = 400 * 1024
+
 export function validateRecord(dt: DisplayType): Detail[] {
   const out: Detail[] = []
   if (!dt.name?.trim()) out.push({ field: 'name', reason: 'Display Type Name is required.' })
@@ -57,6 +60,8 @@ export function validateRecord(dt: DisplayType): Detail[] {
   const { width, height } = dt.displayCanvasSize ?? {}
   if (!Number.isInteger(width) || width < 1) out.push({ field: 'displayCanvasSize.width', reason: 'Must be a positive whole number.' })
   if (!Number.isInteger(height) || height < 1) out.push({ field: 'displayCanvasSize.height', reason: 'Must be a positive whole number.' })
+  if (dt.imageUrl != null && (typeof dt.imageUrl !== 'string' || !/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(dt.imageUrl) || dt.imageUrl.length > MAX_IMAGE_CHARS))
+    out.push({ field: 'imageUrl', reason: 'A PNG or JPEG image of at most 400 KB.' })
   return out
 }
 

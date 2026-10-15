@@ -8,7 +8,7 @@ export interface DisplayTypeSource {
   list(): Awaitable<DisplayType[]>
   get(id: string): Awaitable<DisplayType | null>
   create(dt: DisplayType): Awaitable<DisplayType>
-  /* Existing fields only; phExtensions is left as it is. */
+  /* Existing fields (and imageUrl) only; phExtensions is left as it is. */
   saveRecord(id: string, dt: DisplayType): Awaitable<DisplayType | null>
   saveExtensions(id: string, ext: DisplayTypeExtensions): Awaitable<DisplayTypeExtensions | null>
   delete(id: string): Awaitable<boolean>
@@ -27,6 +27,7 @@ interface Row {
   qr_control: string
   enabled_features: string
   ph_extensions: string | null
+  image_url: string | null
 }
 
 /* multiZone now lives on the default playlist's own row (migration 0029) —
@@ -46,6 +47,7 @@ const toRecord = (r: Row, zoneJsonByPlaylistId: Map<string, string | null>): Dis
     enabledFeatures: fromJson(r.enabled_features, {}),
     multiZone: fromJson(r.default_playlist_id ? zoneJsonByPlaylistId.get(r.default_playlist_id) ?? null : null, { enabled: false, zones: [] }),
   }
+  if (r.image_url !== null) out.imageUrl = r.image_url
   if (r.default_playlist_id !== null) out.defaultPlaylistId = r.default_playlist_id
   if (r.ph_extensions !== null) out.phExtensions = fromJson(r.ph_extensions, { slots: [] })
   migrateZonedSlots(out)
@@ -131,13 +133,13 @@ export function sqliteDisplayTypeSource(db: Db): DisplayTypeSource {
     create(dt) {
       prepared(db,
         `INSERT INTO display_types (id, touch_point, name, description, canvas_width, canvas_height, background_color,
-           default_playlist_id, playlist_settings, qr_control, enabled_features, ph_extensions, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           default_playlist_id, playlist_settings, qr_control, enabled_features, ph_extensions, image_url, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         dt.id, dt.touchPoint, dt.name, dt.description ?? null, dt.displayCanvasSize.width, dt.displayCanvasSize.height,
         dt.backgroundColor ?? '#333333', dt.defaultPlaylistId ?? null, toJson(dt.playlistSettings) ?? '{}',
         toJson(dt.qrControl ?? {}) ?? '{}', toJson(dt.enabledFeatures ?? {}) ?? '{}',
-        toJson(dt.phExtensions), now(),
+        toJson(dt.phExtensions), dt.imageUrl ?? null, now(),
       )
       saveMultiZone(dt.defaultPlaylistId, dt.multiZone)
       invalidate()
@@ -147,11 +149,11 @@ export function sqliteDisplayTypeSource(db: Db): DisplayTypeSource {
       const res = prepared(db,
         `UPDATE display_types SET touch_point = ?, name = ?, description = ?, canvas_width = ?, canvas_height = ?,
            background_color = ?, default_playlist_id = ?, playlist_settings = ?, qr_control = ?, enabled_features = ?,
-           updated_at = ? WHERE id = ?`,
+           image_url = ?, updated_at = ? WHERE id = ?`,
       ).run(
         dt.touchPoint, dt.name, dt.description ?? null, dt.displayCanvasSize.width, dt.displayCanvasSize.height,
         dt.backgroundColor ?? '#333333', dt.defaultPlaylistId ?? null, toJson(dt.playlistSettings) ?? '{}',
-        toJson(dt.qrControl ?? {}) ?? '{}', toJson(dt.enabledFeatures ?? {}) ?? '{}', now(), id,
+        toJson(dt.qrControl ?? {}) ?? '{}', toJson(dt.enabledFeatures ?? {}) ?? '{}', dt.imageUrl ?? null, now(), id,
       )
       if (res.changes) saveMultiZone(dt.defaultPlaylistId, dt.multiZone)
       invalidate()

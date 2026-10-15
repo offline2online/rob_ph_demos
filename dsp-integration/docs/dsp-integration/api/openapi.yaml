@@ -4173,6 +4173,7 @@ components:
           required: [width, height]
           properties: {width: {type: integer}, height: {type: integer}}
         backgroundColor: {type: string}
+        imageUrl: {type: [string, 'null'], description: 'Display Type Image: a PNG or JPEG data URL (at most 400 KB), cropped in the editor. null or absent means no image (the placeholder shows).'}
         defaultPlaylistId: {type: string}
         playlistSettings: {type: object, additionalProperties: true, description: 'Maximum Campaigns Played In Rotation only, as of 26 Sep 2026 — the slot count and slot assignment (phExtensions) size and sell that specific display type''s screen, so they stay here even though the other playlist settings moved to the Playlist record. null means inherit.'}
         qrControl: {type: object, additionalProperties: true}

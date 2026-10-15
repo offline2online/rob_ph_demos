@@ -2,6 +2,7 @@
    with its touch point, name, canvas size and structure/feature badges. */
 import { Button } from 'antd'
 import { touchPointIcon, type DisplayType } from '@ph-dsp/types'
+import { DisplayTypeThumb } from './ImageTile'
 import { Icon } from '../../shared/Icon'
 import { Tip } from '../../shared/Tip'
 import { T } from '../../theme/phTheme'
@@ -34,6 +35,7 @@ export function DisplayTypeList({ types, selectedId, onSelect, onNew, onDelete }
             >
               <div className="flex min-w-0 items-center gap-[7px]">
                 <Icon name={touchPointIcon(t.touchPoint)} size={17} style={{ color: active ? T.primary : T.muted, flexShrink: 0 }} />
+                {t.imageUrl && <DisplayTypeThumb src={t.imageUrl} size={24} />}
                 <span className="min-w-0 flex-1 truncate" style={{ fontSize: 13, color: active ? T.primary : T.text }}>{t.name}</span>
                 <Button
                   type="text"
