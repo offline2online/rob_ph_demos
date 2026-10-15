@@ -937,7 +937,9 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
          advertiser's DSP seats (the same { partnerId, seatId } pair). Category invites are a bid-time filter, not membership. */
       headerName: 'Buyers list', width: 105, suppressSizeToFit: true, ...COUNT_COLUMN,
       headerComponent: header('Buyers list', 'How many buyers lists this advertiser is currently included in, by one of its DSP seats being an invited buyer. A direct advertiser has no DSP seat, so is never on one.'),
-      valueGetter: (p) => (p.data ? buyersListCount(p.data, buyersLists.data?.items ?? []) : 0),
+      /* A direct advertiser has no DSP seat so can never be on a buyers list: N/A, not 0 (ticket vX0B3zmwiwUJWaRjUjCw, 15 Oct 2026). */
+      valueGetter: (p) => (p.data ? (p.data.direct ? 'N/A' : buyersListCount(p.data, buyersLists.data?.items ?? [])) : 0),
+      comparator: (x, y) => (x === 'N/A' ? -1 : 0) - (y === 'N/A' ? -1 : 0) || (typeof x === 'number' && typeof y === 'number' ? x - y : 0),
     },
     {
       headerName: 'Campaign approval', width: 160, suppressSizeToFit: true, cellRenderer: ApprovalCell,
