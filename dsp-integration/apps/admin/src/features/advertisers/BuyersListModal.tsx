@@ -279,31 +279,39 @@ export function BuyersListModal({ open, editing, onClose, onSaved }: {
           const def = defOf(c.variable)
           return (
             <div key={c.variable} className="mt-2 flex flex-wrap items-center gap-2" data-testid={`criterion-${c.variable}`}>
-              <span style={{ fontSize: 12.5, fontWeight: 500, minWidth: 140 }}>{def?.label ?? c.variable}</span>
-              <Select size="small" style={{ width: 170 }} aria-label={`${def?.label ?? c.variable} operator`} value={c.op} onChange={(op) => patchCriterion(c.variable, { op })}
-                options={(def?.operators ?? [c.op]).map((o) => ({ value: o, label: OPERATOR_LABELS[o] }))} />
               {(() => {
-                /* Values are defined once in Shared Targeting Variables; the list selects from them. */
                 const sv = (variables.data ?? []).find((v) => v.key === c.variable)
                 const label = `${def?.label ?? c.variable} values`
                 const status = errorFor(c.variable) ? 'error' : undefined
+                const operator = (width: number) => (
+                  <Select size="small" style={{ width }} aria-label={`${def?.label ?? c.variable} operator`} value={c.op} onChange={(op) => patchCriterion(c.variable, { op })}
+                    options={(def?.operators ?? [c.op]).map((o) => ({ value: o, label: OPERATOR_LABELS[o] }))} />
+                )
                 if (isAggregateVariable(c.variable)) {
-                  /* A share of everyone present: category (from Shared Targeting Variables), comparison, percentage. */
+                  /* A share of everyone present, in one row: category (from Shared Targeting Variables), comparison, percentage. The name sits on its own line above so all three fit. */
                   const { category, pct } = parseAggregateValue(c.values[0])
                   const setAgg = (cat: string | undefined, n: number | null) => patchCriterion(c.variable, { values: n !== null ? [formatAggregateValue(cat ?? '', n)] : cat ? [cat] : [] })
                   return (
                     <>
-                      <Select size="small" style={{ minWidth: 160 }} aria-label={label} placeholder="Choose category" status={status} value={category || undefined}
+                      <span className="w-full" style={{ fontSize: 12.5, fontWeight: 500 }}>{def?.label ?? c.variable}</span>
+                      <Select size="small" style={{ flex: 1, minWidth: 120 }} aria-label={label} placeholder="Choose category" status={status} value={category || undefined}
                         options={[...new Set([...(sv?.values ?? []), ...(category ? [category] : [])])].map((v) => ({ value: v, label: v }))} onChange={(v) => setAgg(v, pct)} />
-                      <InputNumber size="small" min={0} max={100} style={{ width: 110 }} aria-label={`${def?.label ?? c.variable} percentage`} placeholder="Percentage" addonAfter="%" status={status}
+                      {operator(150)}
+                      <InputNumber size="small" min={0} max={100} style={{ width: 100 }} aria-label={`${def?.label ?? c.variable} percentage`} placeholder="Percentage" addonAfter="%" status={status}
                         value={pct} onChange={(n) => setAgg(category || undefined, n === null ? null : Number(n))} />
                       {!sv?.values.length && <span style={{ fontSize: 12, color: T.micro }}>Define its values in Shared Targeting Variables</span>}
                     </>
                   )
                 }
-                if (sv?.freeText) return <Select mode="tags" size="small" style={{ flex: 1, minWidth: 160 }} aria-label={label} tokenSeparators={[',']} open={false} placeholder={def ? `e.g. ${def.values}` : 'Values'} status={status} value={c.values} onChange={(values) => patchCriterion(c.variable, { values })} />
-                if (sv?.values.length) return <Select mode="multiple" size="small" style={{ flex: 1, minWidth: 160 }} aria-label={label} placeholder="Choose values" status={status} value={c.values} options={[...new Set([...sv.values, ...c.values])].map((v) => ({ value: v, label: v }))} onChange={(values) => patchCriterion(c.variable, { values })} />
-                return <span style={{ fontSize: 12, color: T.micro }}>Define its values in Shared Targeting Variables</span>
+                return (
+                  <>
+                    <span style={{ fontSize: 12.5, fontWeight: 500, minWidth: 140 }}>{def?.label ?? c.variable}</span>
+                    {operator(170)}
+                    {sv?.freeText ? <Select mode="tags" size="small" style={{ flex: 1, minWidth: 160 }} aria-label={label} tokenSeparators={[',']} open={false} placeholder={def ? `e.g. ${def.values}` : 'Values'} status={status} value={c.values} onChange={(values) => patchCriterion(c.variable, { values })} />
+                      : sv?.values.length ? <Select mode="multiple" size="small" style={{ flex: 1, minWidth: 160 }} aria-label={label} placeholder="Choose values" status={status} value={c.values} options={[...new Set([...sv.values, ...c.values])].map((v) => ({ value: v, label: v }))} onChange={(values) => patchCriterion(c.variable, { values })} />
+                      : <span style={{ fontSize: 12, color: T.micro }}>Define its values in Shared Targeting Variables</span>}
+                  </>
+                )
               })()}
               {errorFor(c.variable) && <div className="w-full" style={{ fontSize: 11.5, color: T.error }}>{errorFor(c.variable)}</div>}
             </div>
