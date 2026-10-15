@@ -1,7 +1,7 @@
 /* Pricing maths (spec §4; API.md "Pricing maths"). Used by the Advertisers
    screen, inventory, forecast and the auction.
 
-   effective floor CPM = resolved base floor × advertiser floorMultiplier
+   effective floor CPM = resolved base floor (there is no advertiser-level multiplier)
    (resolved base floor: see resolveBaseFloor — platform, DSP, buyers list)
    A bid, and the auction, clear against that one floor whatever the
    campaign's type. There is no personalised multiplier (Rob, 5 Oct 2026):
@@ -9,8 +9,7 @@
 
    Interactive is not a multiplier (Rob, 20 Sep): an interactive campaign
    pays the ordinary floor for its plays, and `interactiveCpe` on top each
-   time someone engages with it — scanning the QR Control code. The
-   advertiser's floor multiplier does not scale that fee. */
+   time someone engages with it — scanning the QR Control code. */
 export interface PricingInputs { floorCpm: number; interactiveCpe: number }
 
 const cents = (n: number) => Math.round(n * 100) / 100
@@ -43,6 +42,6 @@ export function effectiveTerm(levels: { platform: number | null; dsp: (number | 
   return { min: values.length ? Math.min(...values) : null, max: values.length ? Math.max(...values) : null, source: sources.size === 1 ? [...sources][0] : 'mixed' }
 }
 
-export function effectiveFloorCpm(p: PricingInputs, advertiserFloorMultiplier: number, base: number = p.floorCpm) {
-  return cents(base * advertiserFloorMultiplier)
+export function effectiveFloorCpm(p: PricingInputs, base: number = p.floorCpm) {
+  return cents(base)
 }

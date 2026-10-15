@@ -85,17 +85,16 @@ All paths are served from the retailer's own instance
 ## Pricing maths (used by inventory, forecast and the auction)
 
 ```
-effective floor CPM = floorCpm × advertiser floorMultiplier   (every campaign type)
+effective floor CPM = resolved base floor   (every campaign type; no advertiser multiplier)
 
 billing: every play = committed (clearing) CPM, whichever version played
 ```
 
 Defaults: floor 100, advertiser 1.0. **There is no personalised multiplier**
 (removed 5 Oct 2026; it was charged per personalised play from 30 Sep 2026).
-Bids and the auction clear against the base floor × the advertiser's floor
-multiplier whatever the campaign's type, and a window bills at the CPM it
-clears at for every play. The advertiser's floor multiplier scales the floor
-only. Interactive campaigns are deferred for this release (5 Oct 2026): a
+Bids and the auction clear against the base floor
+whatever the campaign's type, and a window bills at the CPM it
+clears at for every play. Interactive campaigns are deferred for this release (5 Oct 2026): a
 campaign submission with an interactive layer is refused `422
 targeting_not_supported`, and positions publish no interactive price. A position reports `pricing.effectiveFloorCpm.localised`
 (the one floor).
@@ -370,8 +369,8 @@ bidder integration is complete. A DSP has only its own advertiser lists
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/admin/v1/advertisers` | Every advertiser across DSPs: name, via (DSPs), approval required, floor multiplier, effective floor CPM, its campaigns by approval status and `bookings` (play windows it holds from the current one on, 0 = nothing to open on the schedule); plus company currency and floor. |
-| PUT | `/admin/v1/advertisers` | Save changes: `settings` map of advertiser id → `{approvalRequired, floorMultiplier}`. |
+| GET | `/admin/v1/advertisers` | Every advertiser across DSPs: name, via (DSPs), approval required, its campaigns by approval status and `bookings` (play windows it holds from the current one on, 0 = nothing to open on the schedule); plus company currency and floor. |
+| PUT | `/admin/v1/advertisers` | Save changes: `settings` map of advertiser id → `{approvalRequired}`. |
 
 Non-admin sessions get `403 forbidden`.
 

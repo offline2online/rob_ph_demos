@@ -176,7 +176,7 @@ describe('deals (OQ45): per DSP, on the existing buyers list, never under the fl
   it('refuses a deal rate below the effective floor at intake, bid or reserve', async () => {
     const { ctx, post, RESERVE } = await setup({ listMode: 'deal', buyersListId: 'bl_pg', reservePrice: 120 })
     await termDeal(ctx)
-    await ctx.company.saveAdvertiserSettings({ swisse: { approvalRequired: true, floorMultiplier: 1.5 } })
+    await ctx.company.save({ ...(await ctx.company.get()), floorCpm: 150 })
     const bid = await post({ ...RESERVE, type: 'bid', bidCpm: 140 })
     expect(bid.json().error).toMatchObject({ code: 'below_floor', message: '140 is below the effective floor of 150 USD CPM.' })
     const reserve = await post({ ...RESERVE, bidCpm: 140 })

@@ -110,8 +110,8 @@ describe('SSP settings audit log', () => {
     expect(put.statusCode).toBe(200)
     expect((await log('?objectType=dsp_partner&field=bidder.floorCpm')).items[0]).toMatchObject({ objectId: 'p_google', newValue: 333, actor: { type: 'agent' } })
     const adv = (await app.inject({ method: 'GET', url: `${BASE}/advertisers` })).json().items[0]
-    expect((await app.inject({ method: 'PUT', url: `${BASE}/advertisers`, payload: { settings: { [adv.advertiserId]: { approvalRequired: adv.approvalRequired, floorMultiplier: 2.5 } } } })).statusCode).toBe(200)
-    expect((await log('?objectType=advertiser_setting&field=floorMultiplier')).items[0]).toMatchObject({ objectId: adv.advertiserId, newValue: 2.5 })
+    expect((await app.inject({ method: 'PUT', url: `${BASE}/advertisers`, payload: { settings: { [adv.advertiserId]: { approvalRequired: !adv.approvalRequired } } } })).statusCode).toBe(200)
+    expect((await log('?objectType=advertiser_setting&field=approvalRequired')).items[0]).toMatchObject({ objectId: adv.advertiserId, newValue: !adv.approvalRequired })
   })
 
   it('pages with limit and cursor, and is admin only', async () => {

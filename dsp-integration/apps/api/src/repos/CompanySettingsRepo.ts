@@ -26,14 +26,14 @@ export interface CompanySettings {
   /* Max play length: the company-wide default fixed duration of one play, in seconds (a display type and a slot can override it). Plays per window = floor(window / this), never the loop. */
   maxPlayLengthSec: number
 }
-export interface AdvertiserSettingRecord { approvalRequired: boolean; floorMultiplier: number }
+export interface AdvertiserSettingRecord { approvalRequired: boolean }
 export interface DirectAdvertiserRecord { advertiserId: string; name: string }
 export interface AdvertiserSeatRecord { partnerId: string; seatId: string }
 export type Access = 'all' | string[]
 /* The matchable values defined for a shared variable (Shared Targeting Variables). */
 export interface VariableValues { values: string[]; freeText: boolean }
 
-export const DEFAULT_ADVERTISER_SETTING: AdvertiserSettingRecord = { approvalRequired: true, floorMultiplier: 1 }
+export const DEFAULT_ADVERTISER_SETTING: AdvertiserSettingRecord = { approvalRequired: true }
 
 export interface PlatformUserRecord {
   email: string
@@ -138,7 +138,7 @@ export function sqliteCompanySettingsRepo(db: Db): CompanySettingsRepo {
     const c = fresh()
     if (!c.advertisers) {
       const rows = prepared(db, 'SELECT * FROM advertiser_settings').all() as { advertiser_id: string; approval_required: number; floor_multiplier: number }[]
-      c.advertisers = Object.freeze(Object.fromEntries(rows.map((r) => [r.advertiser_id, Object.freeze({ approvalRequired: !!r.approval_required, floorMultiplier: r.floor_multiplier })])))
+      c.advertisers = Object.freeze(Object.fromEntries(rows.map((r) => [r.advertiser_id, Object.freeze({ approvalRequired: !!r.approval_required })])))
     }
     return c.advertisers
   }
@@ -165,12 +165,11 @@ export function sqliteCompanySettingsRepo(db: Db): CompanySettingsRepo {
     advertiserSetting: (id) => ({ ...DEFAULT_ADVERTISER_SETTING, ...(advertiserMap()[id] ?? {}) }),
     saveAdvertiserSettings(settings) {
       const stmt = prepared(db,
-        `INSERT INTO advertiser_settings (advertiser_id, approval_required, floor_multiplier, updated_at) VALUES (?, ?, ?, ?)
-         ON CONFLICT (advertiser_id) DO UPDATE SET approval_required = excluded.approval_required,
-           floor_multiplier = excluded.floor_multiplier, updated_at = excluded.updated_at`,
+        `INSERT INTO advertiser_settings (advertiser_id, approval_required, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT (advertiser_id) DO UPDATE SET approval_required = excluded.approval_required, updated_at = excluded.updated_at`,
       )
       try {
-        for (const [id, s] of Object.entries(settings)) stmt.run(id, s.approvalRequired ? 1 : 0, s.floorMultiplier, now())
+        for (const [id, s] of Object.entries(settings)) stmt.run(id, s.approvalRequired ? 1 : 0, now())
       } finally {
         invalidate()
       }

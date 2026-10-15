@@ -128,14 +128,13 @@ export async function baseFloorFor(ctx: Context, scope: FloorScope = {}): Promis
 }
 
 /* The effective floor a bid must clear: the resolved base floor (platform,
-   DSP, buyers list) × the advertiser's floor multiplier (spec §4), whatever
-   the campaign's type. The personalised multiplier is not a floor (Rob, 30
+   DSP, buyers list), whatever the campaign's type. There is no advertiser-level
+   multiplier (Rob, 15 Oct 2026). The personalised multiplier is not a floor (Rob, 30
    Sep 2026): it is charged on personalised plays at billing. An interactive
    campaign clears the ordinary floor for its plays and pays the engagement
    fee on top of it (Rob, 20 Sep). */
 export async function floorFor(ctx: Context, advertiserId: string | null | undefined, scope: FloorScope = {}): Promise<number> {
-  const multiplier = advertiserId ? (await ctx.company.advertiserSetting(advertiserId)).floorMultiplier : 1
-  return effectiveFloorCpm(await ctx.company.get(), multiplier, await baseFloorFor(ctx, scope))
+  return effectiveFloorCpm(await ctx.company.get(), await baseFloorFor(ctx, scope))
 }
 
 export async function checkFloor(ctx: Context, cpm: number, advertiserId: string | null | undefined, scope: FloorScope = {}): Promise<Refusal | null> {

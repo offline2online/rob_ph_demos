@@ -79,7 +79,7 @@ paths:
         excluded by whitelist-only, or reserved to another advertiser) are omitted,
         never returned as errors.
       parameters:
-        - {name: advertiserId, in: query, schema: {type: string}, description: Scope to one of the partner's advertisers (applies their lists and floor multiplier).}
+        - {name: advertiserId, in: query, schema: {type: string}, description: Scope to one of the partner's advertisers (applies their lists).}
         - {name: displayTypeId, in: query, schema: {type: string}}
         - {name: touchPoint, in: query, schema: {type: string, enum: [Digital Signage, Kiosk]}}
         - {name: storeIds, in: query, schema: {type: array, items: {type: string}}, style: form, explode: false, description: Personalisation Hub store IDs (stores are managed by the platform).}
@@ -514,7 +514,7 @@ paths:
         per field changed: who (a human, or an agent that identified itself),
         the object and field, the old and new value, and when. Covers the
         exchange settings, pricing and floors (`pricing_settings`, the
-        per-advertiser floor multiplier, a DSP's bid floor), buyers lists
+        a DSP's bid floor), buyers lists
         (deals), and every display type's SSP extensions — slot reserve
         prices and the per-display-type floor, billing unit, assignment and
         locks. Append-only; this is the only way to read it.
@@ -1409,7 +1409,7 @@ paths:
     put:
       tags: [Admin — Advertisers]
       operationId: saveAdvertisers
-      summary: Save changes — approval required and floor multiplier per advertiser
+      summary: Save changes — approval required per advertiser
       security: [{adminSession: [admin]}]
       requestBody:
         required: true
@@ -2496,7 +2496,7 @@ components:
           type: object
           description: |
             What a bid must clear per thousand assumed views, for this caller:
-            the base floor × the advertiser's floor multiplier, whatever the
+            the base floor (platform, DSP or buyers list), whatever the
             campaign's type. There is no personalised price (Rob, 5 Oct 2026).
           required: [localised]
           properties:
@@ -3743,10 +3743,9 @@ components:
 
     AdvertiserSetting:
       type: object
-      required: [approvalRequired, floorMultiplier]
+      required: [approvalRequired]
       properties:
         approvalRequired: {type: boolean, default: true}
-        floorMultiplier: {type: number, exclusiveMinimum: 0, default: 1.0}
     PlatformUserInput:
       type: object
       required: [firstName, role]
@@ -3774,7 +3773,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/AdvertiserSetting'
         - type: object
-          required: [advertiserId, name, via, effectiveFloorCpm, campaigns, bookings, dspSeats]
+          required: [advertiserId, name, via, campaigns, bookings, dspSeats]
           properties:
             advertiserId: {type: string}
             name: {type: string}
@@ -3782,7 +3781,6 @@ components:
             direct:
               type: boolean
               description: True for an advertiser with a direct relationship with the retailer (no DSP). Shown as "Name (Direct)" in place of the DSP name.
-            effectiveFloorCpm: {type: number}
             dspSeats:
               type: array
               description: |

@@ -301,11 +301,11 @@ describe('read side used by the slot picker (flag-gated)', () => {
     expect(res.json()).not.toHaveProperty('whereTheseApply')
   })
 
-  it('GET /admin/v1/advertisers: admin only, with effective floors', async () => {
+  it('GET /admin/v1/advertisers: admin only', async () => {
     const res = await (await setup()).app.inject({ method: 'GET', url: '/api/admin/v1/advertisers' })
     expectMatchesContract('GET', '/admin/v1/advertisers', 200, res.json())
-    expect(res.json().items.map((a: { advertiserId: string; via: string[]; effectiveFloorCpm: number }) => [a.advertiserId, a.via, a.effectiveFloorCpm])).toEqual([
-      ['loreal', ['Amazon Ads DSP'], 120], ['nestle', ['Google DSP'], 80], ['swisse', ['Google DSP'], 100],
+    expect(res.json().items.map((a: { advertiserId: string; via: string[] }) => [a.advertiserId, a.via])).toEqual([
+      ['loreal', ['Amazon Ads DSP']], ['nestle', ['Google DSP']], ['swisse', ['Google DSP']],
     ])
     const forbidden = await (await setup({ role: 'hq_helpdesk' })).app.inject({ method: 'GET', url: '/api/admin/v1/advertisers' })
     expect(forbidden.statusCode).toBe(403)
