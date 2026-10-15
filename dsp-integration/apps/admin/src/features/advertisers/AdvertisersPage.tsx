@@ -28,6 +28,8 @@ import { useDraft } from '../../shared/useDraft'
 import { T } from '../../theme/phTheme'
 import { BuyersListModal } from './BuyersListModal'
 import { BuyersListsTable } from './BuyersListsTable'
+import { positionSlotNumber, positionText } from './slotLine'
+export { positionText }
 import { type Flags, envFlags } from '../../flags'
 
 /* Bidding values are always USD (TRANSACTING_CURRENCY in the API's domain/currency.ts), never the instance's reporting currency. */
@@ -217,15 +219,11 @@ const PlaylistCell = ({ data }: ICellRendererParams<AvailableInventoryRow>) =>
   ) : null
 /* The hover names the slot's number, its zone and the display type with its description (ticket c5S06G5mN6F3GJTI8bxD,
    14 Oct 2026); a pre-14-Oct demo snapshot has neither zone nor description, so then just the number and display type. */
-/* A multi-zone display type's Position leads with the zone and the slot within it ("Zone 2 / Slot 1 · label"), so it reads as
-   an independent zone on the same display type (ticket l4sSqLbAxIWVopZvaOik, 15 Oct 2026); a single-zone one is just its label. */
-export const positionText = (r: Pick<AvailableInventoryRow, 'position' | 'zoneName' | 'zoneSlot'>): string =>
-  r.zoneName ? `${r.zoneName} / Slot ${r.zoneSlot} · ${r.position}` : r.position
 const SlotCell = ({ data }: ICellRendererParams<AvailableInventoryRow>) =>
   data ? (
     <Tip title={<div>
       <div style={{ fontWeight: 500 }}>{positionText(data)}</div>
-      <div>Slot {data.zoneSlot}{data.zoneName ? ` of ${data.zoneName}` : ''}</div>
+      {positionSlotNumber(data) && <div>{positionSlotNumber(data)}</div>}
       <div>{data.displayTypeName}{data.displayTypeDescription ? `: ${data.displayTypeDescription}` : ''}</div>
     </div>}>
       <div className="min-w-0 truncate cursor-pointer" tabIndex={0} aria-label={`Position: ${positionText(data)}`}>{positionText(data)}</div>
