@@ -17,6 +17,8 @@ export const STORE_ZONES: { value: StoreZone; label: string }[] = [
   { value: 'aisles', label: 'In aisles' },
   { value: 'other', label: 'Other' },
 ]
+/* The label for a store zone value (null/undefined: not defined). */
+export const storeZoneLabel = (z: StoreZone | null | undefined): string | null => STORE_ZONES.find((s) => s.value === z)?.label ?? null
 export type Slot = DisplayTypeExtensions['slots'][number]
 export type SlotOwner = Slot['owner']
 export type Venue = NonNullable<DisplayTypeExtensions['venue']>

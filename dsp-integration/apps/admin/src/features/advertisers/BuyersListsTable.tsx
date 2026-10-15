@@ -4,7 +4,7 @@
    table (Rob, 23 Sep). */
 import { Button } from 'antd'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
-import type { BuyersList } from '@ph-dsp/types'
+import { storeZoneLabel, type BuyersList, type StoreZone } from '@ph-dsp/types'
 import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { Q } from '../../api/queries'
@@ -18,10 +18,10 @@ import { SectionLabel } from '../../shared/SectionLabel'
 import { T } from '../../theme/phTheme'
 import { BuyersListModal } from './BuyersListModal'
 import { DealSheetModal } from './DealSheetModal'
-import { cpmKind, cpmKindHint, playsText, rateText, sourceLabel } from './effectiveTerm'
+import { cpmKind, cpmKindHint, rateText, sourceLabel } from './effectiveTerm'
 
 type Capacity = Map<string, { plays: number; displayTypes: number; positions: number }>
-type SlotInfo = { displayType: string; playlist: string; position: string; slot: number; playsPerWindow: number | null }
+type SlotInfo = { displayType: string; description: string | null; storeZone: StoreZone | null; zoneName: string | null; playlist: string; position: string; slot: number; playsPerWindow: number | null }
 type Ctx = { current: { capacity: Capacity; slots: Map<string, SlotInfo[]>; dspName: (partnerId: string) => string; seatName: (partnerId: string, seatId: string) => string; onEdit: (l: BuyersList) => void; onDelete: (l: BuyersList) => void; onShare: (l: BuyersList) => void; canEdit: boolean } }
 type P = ICellRendererParams<BuyersList, unknown, Ctx>
 
@@ -81,7 +81,10 @@ const SlotsCell = ({ data, context }: P) => {
       <div style={{ fontWeight: 500 }}>Assigned slots</div>
       {rows.map((r, i) => (
         <div key={i} style={{ marginTop: 4 }}>
-          <div>{r.displayType} · {r.playlist || 'No playlist'}</div>
+          <div style={{ fontWeight: 500 }}>{r.displayType}{r.description ? ` (${r.description})` : ''}</div>
+          <div>{r.playlist || 'No playlist'}{r.zoneName ? ` · ${r.zoneName}` : ''}</div>
+          {/* The IAB store zone set on the display type (ticket yZ8BvwUQV4Yc7a0IVwak, 15 Oct 2026). */}
+          <div>IAB zone: {storeZoneLabel(r.storeZone) ?? 'Not defined'}</div>
           <div>{r.position} (slot {r.slot}){r.playsPerWindow != null ? ` · ${r.playsPerWindow.toLocaleString('en-US')} plays per window` : ''}</div>
         </div>
       ))}
@@ -112,27 +115,6 @@ const RateCell = ({ data }: P) => {
   return text
     ? <Tip title={`${cpmKindHint(data.dealType)}${src ? ` Source: ${src}.` : ''}`}><div><span style={{ fontSize: 12.5 }}>{text} {kind}</span><Sub>{src}</Sub></div></Tip>
     : <span style={{ color: T.muted }}>Per play</span>
-}
-/* Volume lives on the deal (open question 45): the single committed figure ('M plays', no 'of' denominator: a guaranteed deal is sold, not capped) for a deal with its own commitment;
-   otherwise the volume inherited platform -> DSP, or 'Per play' when no level sets one. */
-const VolumeCell = ({ data }: P) => {
-  if (!data) return null
-  /* Only a guaranteed deal commits volume; a private auction or preferred deal has none, so nothing is shown for it. */
-  if (data.dealType !== 'guaranteed') return <span style={{ color: T.muted }}>Not applicable</span>
-  if (data.committedPlays != null) return <span style={{ fontSize: 12.5 }}>{data.committedPlays.toLocaleString()} plays</span>
-  const text = playsText(data.effectiveCommittedPlays)
-  return text ? <div><span style={{ fontSize: 12.5 }}>{text}</span><Sub>{sourceLabel(data.effectiveCommittedPlays.source)}</Sub></div> : <span style={{ color: T.muted }}>Per play</span>
-}
-/* Estimated volume (8 Oct 2026): combined plays per window across every position the list is assigned to, an estimate from the criteria set on the list rather than a hard figure; the ceiling for committed volume. */
-const CapacityCell = ({ data, context }: P) => {
-  if (!data) return null
-  const c = context.current.capacity.get(data.id)
-  if (!c) return <span style={{ color: T.muted }}>Not assigned</span>
-  return (
-    <Tip title={`Estimated volume, not a hard figure, based on the buyers and targeting criteria set on this list: ${c.plays.toLocaleString('en-US')} plays per window across ${c.positions} assigned position${c.positions === 1 ? '' : 's'} on ${c.displayTypes} display type${c.displayTypes === 1 ? '' : 's'}: the sum of each one's plays per display x displays registered in PH Core.`}>
-      <span style={{ fontSize: 12.5 }}>{c.plays.toLocaleString('en-US')}</span>
-    </Tip>
-  )
 }
 const DealIdCell = ({ data, context }: P) => {
   if (!data) return null
@@ -178,8 +160,6 @@ export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged }:
     { headerName: 'Deal type', width: 170, minWidth: 150, cellRenderer: DealTypeCell, valueGetter: (p) => p.data?.dealType ?? '' },
     { headerName: 'Invited buyers', width: 190, minWidth: 130, cellRenderer: BuyersCell, valueGetter: (p) => JSON.stringify([p.data?.invitedBuyers ?? [], p.data?.invitedCategories ?? []]) },
     { headerName: 'Slots', width: 150, minWidth: 120, cellRenderer: SlotsCell, valueGetter: (p) => JSON.stringify(p.context.current.slots.get(p.data?.id ?? '') ?? []) },
-    { headerName: 'Committed volume', width: 190, minWidth: 160, cellRenderer: VolumeCell, valueGetter: (p) => JSON.stringify([p.data?.dealType, p.data?.committedPlays, p.data?.deliveredPlays, p.data?.effectiveCommittedPlays]) },
-    { headerName: 'Estimated volume', width: 190, minWidth: 170, cellRenderer: CapacityCell, valueGetter: (p) => p.context.current.capacity.get(p.data?.id ?? '')?.plays ?? 0 },
     { headerName: 'Delivery term', width: 260, minWidth: 220, cellRenderer: TermCell, valueGetter: (p) => `${p.data?.activeFrom}|${p.data?.activeTo}` },
     ...(canEdit ? [{ headerName: '', width: 120, suppressSizeToFit: true, cellRenderer: ActionsCell }] : []),
   ], [canEdit])

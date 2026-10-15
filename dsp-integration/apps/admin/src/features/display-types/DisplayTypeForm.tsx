@@ -114,14 +114,6 @@ export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, onAddPla
           (slot ownership on). Empty clears it (ticket jhVpFHHsCp2L48vn4lRe). */}
       {slotAssignment && (
         <div className="flex flex-wrap items-start gap-6">
-          <Field label="Default VAC-d (assumed views per play window)" htmlFor="defaultVacd" tip={TIPS.defaultVacd} className="mb-4">
-            <InputNumber
-              id="defaultVacd" min={0} precision={0} style={{ width: 160 }} placeholder="None (unscored)"
-              value={d.phExtensions?.defaultVacd ?? null}
-              /* null, not absent: the API keeps an absent value and clears on null. */
-              onChange={(v) => update((t) => ({ ...t, phExtensions: { ...(t.phExtensions ?? { slots: [] }), defaultVacd: v == null ? null : Number(v) } }))}
-            />
-          </Field>
           {/* IAB / IAB Europe store zone: a label, set on the type and inherited by its slots. */}
           <Field label="Store Zone" htmlFor="storeZone" tip={TIPS.storeZone} className="mb-4">
             <Select
@@ -129,6 +121,14 @@ export function DisplayTypeForm({ d, update, playlists, zonePlaylistId, onAddPla
               value={d.phExtensions?.storeZone ?? undefined}
               options={STORE_ZONES}
               onChange={(v) => update((t) => ({ ...t, phExtensions: { ...(t.phExtensions ?? { slots: [] }), storeZone: v ?? null } }))}
+            />
+          </Field>
+          <Field label="Default VAC-d (assumed views per play window)" htmlFor="defaultVacd" tip={TIPS.defaultVacd} className="mb-4">
+            <InputNumber
+              id="defaultVacd" min={0} precision={0} style={{ width: 160 }} placeholder="None (unscored)"
+              value={d.phExtensions?.defaultVacd ?? null}
+              /* null, not absent: the API keeps an absent value and clears on null. */
+              onChange={(v) => update((t) => ({ ...t, phExtensions: { ...(t.phExtensions ?? { slots: [] }), defaultVacd: v == null ? null : Number(v) } }))}
             />
           </Field>
         </div>

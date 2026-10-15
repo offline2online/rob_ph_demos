@@ -53,8 +53,11 @@ describe('Buyers list draft -> share', () => {
     expect(listed.assignedSlots[0]).toMatchObject({ displayTypeName: expect.any(String), slot: expect.any(Number), zoneSlot: expect.any(Number) })
     expect(listed.assignedSlots[0]).toHaveProperty('zoneName')
     expect(listed.assignedSlots[0]).toHaveProperty('description')
+    /* Ticket yZ8BvwUQV4Yc7a0IVwak: and the display type's IAB store zone (null when not defined). */
+    expect(listed.assignedSlots[0]).toHaveProperty('storeZone')
     const sheet = (await app.inject({ method: 'GET', url: `${U}/${id}/deal-sheet` })).json()
     expect(sheet.slots).toHaveLength(1)
+    expect(sheet.slots[0]).toHaveProperty('storeZone')
     expect(sheet.slots[0]).toMatchObject({ positionId: listed.assignedSlots[0].positionId, zoneSlot: listed.assignedSlots[0].zoneSlot, zoneName: listed.assignedSlots[0].zoneName })
     expectMatchesContract('GET', '/admin/v1/buyers-lists/{buyersListId}/deal-sheet', 200, sheet)
     expect((await app.inject({ method: 'GET', url: `${U}/${id}/deal-sheet?format=csv` })).body).toContain('Slots')

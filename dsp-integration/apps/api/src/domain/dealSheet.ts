@@ -4,7 +4,7 @@
    DSP has its own deal ID (ticket fgBVnNItNcu7qMBUtqH7). The seller-initiated API push is a later phase, gated on PH being
    a certified supply source on each DSP (REQUIREMENTS.md §5 "Sharing a deal with the buyer", §7).
    Read-only: it derives from the list, its DSPs and its attached positions and stores nothing. */
-import type { BuyersList } from '@ph-dsp/types'
+import { storeZoneLabel, type BuyersList } from '@ph-dsp/types'
 import type { Context } from '../context'
 import { dealSetupHint } from '../dsp/dealTerms'
 import { baseFloorFor } from '../exchange/enforcement'
@@ -25,7 +25,7 @@ export interface DealSheetEntry {
 export interface DealSheetSlot extends SlotDetail { positionId: string; displayTypeName: string; label: string }
 
 export const slotLine = (s: DealSheetSlot): string =>
-  `${s.displayTypeName}${s.description ? ` (${s.description})` : ''}${s.zoneName ? `, ${s.zoneName}` : ''}, slot ${s.zoneSlot}`
+  `${s.displayTypeName}${s.description ? ` (${s.description})` : ''}${s.zoneName ? `, ${s.zoneName}` : ''}, slot ${s.zoneSlot}${s.storeZone ? `, IAB zone: ${storeZoneLabel(s.storeZone)}` : ''}`
 
 export interface DealSheet {
   buyersListId: string

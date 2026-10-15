@@ -2323,6 +2323,11 @@ export interface components {
                 zoneSlot: number;
                 /** @description The display type's description. */
                 description: string | null;
+                /**
+                 * @description The IAB / IAB Europe store zone set on the display type; null when not defined. Absent from a demo snapshot taken before 15 Oct 2026.
+                 * @enum {string|null}
+                 */
+                storeZone?: "exterior" | "entrance" | "checkout" | "aisles" | "other" | null;
             }[];
             creativeRequirements: components["schemas"]["CreativeRequirement"][];
         };
@@ -2444,6 +2449,11 @@ export interface components {
                 zoneSlot: number;
                 /** @description The display type's description. */
                 description: string | null;
+                /**
+                 * @description The IAB / IAB Europe store zone set on the display type; null when not defined. Absent from a demo snapshot taken before 15 Oct 2026.
+                 * @enum {string|null}
+                 */
+                storeZone?: "exterior" | "entrance" | "checkout" | "aisles" | "other" | null;
             }[];
             /** @description The version of the deal's mutable terms (rate/floor, committed plays, delivery term, auction window, invited buyers and categories). Starts at 1 and goes up by one on every saved change to those terms; the deal ID and deal type never change. The history is `GET .../term-versions`. */
             readonly termVersion: number;
@@ -2543,11 +2553,21 @@ export interface components {
             displayTypeDescription?: string | null;
             /** @description The zone this slot plays in on a multi-zone display type; null on a single-zone one. Absent from a demo snapshot taken before 14 Oct 2026. */
             zoneName?: string | null;
+            /**
+             * @description The IAB / IAB Europe store zone set on the row's display type; null when not defined. Absent from a demo snapshot taken before 15 Oct 2026.
+             * @enum {string|null}
+             */
+            displayTypeStoreZone?: "exterior" | "entrance" | "checkout" | "aisles" | "other" | null;
             /** @description Every display type this row's playlist is assigned to (as its default playlist or a zone's), with each one's description. Available Inventory lists them when the playlist name is hovered. Read-only; absent from a demo snapshot taken before 14 Oct 2026. */
             playlistDisplayTypes?: {
                 id: string;
                 name: string;
                 description: string | null;
+                /**
+                 * @description That display type's IAB store zone; null when not defined. Absent from a demo snapshot taken before 15 Oct 2026.
+                 * @enum {string|null}
+                 */
+                storeZone?: "exterior" | "entrance" | "checkout" | "aisles" | "other" | null;
             }[];
             /**
              * @description Whether the slot has an audience score (an audience_vacd row).
