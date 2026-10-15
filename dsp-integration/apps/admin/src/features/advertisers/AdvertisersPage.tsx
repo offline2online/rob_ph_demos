@@ -37,6 +37,10 @@ type Settings = Record<string, AdvertiserSetting>
 type Ctx = { current: { settings: Settings; data: Data; canEdit: boolean; set: (id: string, patch: Partial<AdvertiserSetting>) => void; onDelete: (a: Advertiser) => void } }
 type P = ICellRendererParams<Advertiser, unknown, Ctx>
 
+/* The grid can paint a row for a moment after it has left the list (a delete drops it from the cache first),
+   so a cell must cope with its advertiser having no setting any more. */
+const FALLBACK_SETTING: AdvertiserSetting = { approvalRequired: true, floorMultiplier: 1 }
+const settingOf = (settings: Settings, id: string): AdvertiserSetting => settings[id] ?? FALLBACK_SETTING
 const effective = (floor: number, m: number) => Math.round(floor * (m || 0) * 100) / 100
 
 const NameCell = ({ data }: P) => (data ? <span className="inline-flex min-w-0 items-center gap-1.5"><Icon name="sell" size={14} style={{ color: SLOT_OWNERS.advertiser.colour }} /><span className="truncate">{data.name}</span></span> : null)
@@ -46,7 +50,7 @@ const viaOf = (a: Advertiser) => (a.direct ? DIRECT_VIA : a.via.join(', '))
 const ViaCell = ({ data }: P) => (data ? <span className="truncate" style={{ color: T.muted }}>{viaOf(data)}</span> : null)
 function ApprovalCell({ data, context }: P) {
   if (!data) return null
-  const s = context.current.settings[data.advertiserId]
+  const s = settingOf(context.current.settings, data.advertiserId)
   return (
     <span className="inline-flex items-center gap-2">
       <Switch size="small" aria-label={`${data.name}: campaign approval`} disabled={!context.current.canEdit} checked={s.approvalRequired} onChange={(v) => context.current.set(data.advertiserId, { approvalRequired: v })} />
@@ -59,14 +63,14 @@ function MultiplierCell({ data, context }: P) {
   return (
     <InputNumber size="small" aria-label={`${data.name}: floor multiplier`} disabled={!context.current.canEdit} step={0.05} min={0} style={{ width: 90 }}
       formatter={(v) => (v === undefined || v === null ? '' : String(v))} parser={(v) => Number(v)}
-      value={context.current.settings[data.advertiserId].floorMultiplier}
+      value={settingOf(context.current.settings, data.advertiserId).floorMultiplier}
       onChange={(v) => context.current.set(data.advertiserId, { floorMultiplier: v === null ? 1 : Number(v) })} />
   )
 }
 function EffectiveCell({ data, context }: P) {
   if (!data) return null
   const { settings, data: d } = context.current
-  return <span>{`${TRANSACTING_CURRENCY} ${effective(d.floorCpm, settings[data.advertiserId].floorMultiplier).toFixed(2)} CPM`}</span>
+  return <span>{`${TRANSACTING_CURRENCY} ${effective(d.floorCpm, settingOf(settings, data.advertiserId).floorMultiplier).toFixed(2)} CPM`}</span>
 }
 /* Add an advertiser with a direct relationship with the retailer (no DSP), from
    the "Add new Advertiser" pop-up. It is saved at once (not part of Save
@@ -1045,8 +1049,12 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
       listCapacity.set(id, { plays: cur.plays + fleet, displayTypes: types.size, positions: cur.positions + 1 })
     }
   }
+  /* Every listed advertiser needs a setting to render. The draft only follows the list once a refetch
+     has been taken up, so for a render after a delete or add (or while the page has unsaved edits) a row
+     can be missing from it: fall back to what the server last sent rather than crash the page. */
+  const settingsFor: Settings = Object.fromEntries(data.items.map((a) => [a.advertiserId, draft?.[a.advertiserId] ?? saved?.[a.advertiserId] ?? { approvalRequired: a.approvalRequired, floorMultiplier: a.floorMultiplier }]))
   const context = {
-    settings: draft, data, canEdit,
+    settings: settingsFor, data, canEdit,
     /* An advertiser with history can't be removed: say so when the dialog opens, rather than letting
        Delete fail with an error (ticket HMCgINMMY0cvG0fmC3vR). Users and slots are still checked by the API. */
     onDelete: (a: Advertiser) => {
