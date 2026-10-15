@@ -2,7 +2,7 @@
    deal objects, managed from Available Inventory's own table underneath the
    Assigned to picker (Rob, 23 Sep). */
 import { randomUUID } from 'node:crypto'
-import { assignedOf, canonicalIabCategory, TARGETING_VARIABLES, type BuyersList, type BuyersListDealType, type TermCheck, type Condition, type InvitedBuyer } from '@ph-dsp/types'
+import { assignedOf, canonicalIabCategory, isAggregateVariable, isValidAggregateValue, TARGETING_VARIABLES, type BuyersList, type BuyersListDealType, type TermCheck, type Condition, type InvitedBuyer } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import type { Guards } from '../../http/app'
@@ -125,6 +125,7 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
         if (typeof r.op !== 'string' || !def.operators.includes(r.op as never)) return void errors.push({ field: `targeting[${i}].op`, reason: `Not an operator for ${def.label}.` })
         const values = Array.isArray(r.values) ? (r.values as unknown[]) : []
         if (!values.length || values.length > 100 || values.some((v) => typeof v !== 'string' || !v.trim() || v.length > 200)) return void errors.push({ field: `targeting[${i}].values`, reason: 'One or more values (up to 100, 200 characters each).' })
+        if (isAggregateVariable(def.key) && (values.length !== 1 || !isValidAggregateValue((values[0] as string).trim()))) return void errors.push({ field: `targeting[${i}].values`, reason: `${def.label} takes one category and a percentage from 0 to 100, e.g. "Returns: 25%".` })
         const undef = undefinedValues(def.key, (values as string[]).map((v) => v.trim()), defined)
         if (undef.length) return void errors.push({ field: `targeting[${i}].values`, reason: `${undef.join(', ')} ${undef.length === 1 ? 'is' : 'are'} not defined for ${def.label} in Shared Targeting Variables.` })
         targeting.push({ source: def.source, variable: def.key, op: r.op as Condition['op'], values: (values as string[]).map((v) => v.trim()) })
