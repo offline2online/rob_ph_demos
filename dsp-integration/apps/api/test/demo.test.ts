@@ -33,7 +33,7 @@ describe('demo estate', () => {
     const advertisers = await listAdvertisers(ctx)
     expect(advertisers.length).toBeGreaterThanOrEqual(12)
     expect(advertisers.find((a) => a.advertiserId === advertiserSlug('Unilever'))!.via.sort()).toEqual(['Google DSP', 'The Trade Desk'])
-    expect(advertisers.find((a) => a.advertiserId === advertiserSlug('Monster Energy'))).toMatchObject({ approvalRequired: true })
+    expect(advertisers.find((a) => a.advertiserId === advertiserSlug('Monster Energy'))).toMatchObject({ approvalRequired: true, floorMultiplier: 1.3 })
     /* Real suppliers to a convenience retailer; the base seed's placeholders are gone. */
     const names = advertisers.map((a) => a.name)
     expect(names).toEqual(expect.arrayContaining(['Coca-Cola', 'PepsiCo', 'Red Bull', 'Monster Energy', 'Gatorade', 'Mars Wrigley', 'Mondelez International', 'The Hershey Company', 'Nestlé', 'Kellanova', 'Frito-Lay', 'Unilever']))

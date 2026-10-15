@@ -149,8 +149,8 @@ describe('the auction', () => {
       return (await rows(start))[0].reason
     }
     await bidder({ mode: 'below_floor' })
-    /* Half the sent floor of 100 is 50; the floor is 100. */
-    expect(await reason(W2)).toBe('50 is below the effective floor of 100 USD CPM.')
+    /* Half the sent floor of 100 is 50; Nestlé's own floor is 100 × 0.8. */
+    expect(await reason(W2)).toBe('50 is below the effective floor of 80 USD CPM.')
     await bidder({ mode: 'bid', priceCpm: 150 })
     await ctx.partners.update('p_google', { blockList: ['5130001'], allowList: ['5130002'] })
     expect(await reason(new Date('2026-09-23T00:00:00.000Z'))).toBe('Nestlé is on the advertiser blacklist.')

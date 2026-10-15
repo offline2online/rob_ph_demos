@@ -481,9 +481,10 @@ export function positionView(ctx: Context, p: PositionRef, c: Caller) {
       ctx.displays.summaryByDisplayType(dt.id),
       loopLengthSec(ctx, dt),
       ctx.company.get(),
+      c.advertiser ? ctx.company.advertiserSetting(c.advertiser.id) : null,
       audienceOf(ctx.audience, dt, p.slot),
     ] as const),
-    ([displays, loop, company, audience]) => viewOf(p, displays, loop, company, audience),
+    ([displays, loop, company, setting, audience]) => viewOf(p, displays, loop, company, setting ? setting.floorMultiplier : 1, audience),
   )
 }
 function viewOf(
@@ -491,6 +492,7 @@ function viewOf(
   displays: { stores: number; displays: number },
   loop: number,
   company: Awaited<ReturnType<Context['company']['get']>>,
+  multiplier: number,
   audience: Awaited<ReturnType<Context['audience']['forSlot']>>,
 ) {
   const dt = p.displayType
@@ -531,7 +533,7 @@ function viewOf(
        caller who is told so, since inventory excludes such positions. */
     scored: audience.scored,
     /* One floor for every campaign type; no personalised price (Rob, 5 Oct 2026). */
-    pricing: { currency: TRANSACTING_CURRENCY, floorCpm: company.floorCpm, effectiveFloorCpm: { localised: effectiveFloorCpm(company, resolveBaseFloor(company.floorCpm, null, null, displayTypeFloorCpmOf(dt))) } },
+    pricing: { currency: TRANSACTING_CURRENCY, floorCpm: company.floorCpm, effectiveFloorCpm: { localised: effectiveFloorCpm(company, multiplier, resolveBaseFloor(company.floorCpm, null, null, displayTypeFloorCpmOf(dt))) } },
     /* The most campaigns (default + targeted versions) a bid or reservation here may carry. */
     maxCampaigns: maxCampaignsOf(dt, p.def),
     reservePrice: reservePriceOf(dt, p.def),

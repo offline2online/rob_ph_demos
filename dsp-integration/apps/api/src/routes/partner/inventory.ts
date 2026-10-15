@@ -177,7 +177,8 @@ export const inventoryRoutes = (ctx: Context): FastifyPluginAsync => async (app)
     }
     const assumedViews = Math.round(views)
     const company = await ctx.company.get()
-    const cpm = effectiveFloorCpm(company, await baseFloorFor(ctx, { partner: req.partner }))
+    const multiplier = c.advertiser ? (await ctx.company.advertiserSetting(c.advertiser.id)).floorMultiplier : 1
+    const cpm = effectiveFloorCpm(company, multiplier, await baseFloorFor(ctx, { partner: req.partner }))
     return { assumedViews, currency: TRANSACTING_CURRENCY, estimatedCost: Math.round((assumedViews / 1000) * cpm * 100) / 100 }
   })
 }

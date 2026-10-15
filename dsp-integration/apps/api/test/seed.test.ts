@@ -16,8 +16,8 @@ describe('seed data', () => {
   it('company settings, advertiser settings, variable access and exchange', async () => {
     const ctx = await testContext()
     expect(await ctx.company.get()).toMatchObject({ currency: 'AUD', floorCpm: 100, interactiveCpe: 0.5 })
-    expect(await ctx.company.advertiserSetting('nestle')).toEqual({ approvalRequired: false })
-    expect(await ctx.company.advertiserSetting('unknown')).toEqual({ approvalRequired: true })
+    expect(await ctx.company.advertiserSetting('nestle')).toEqual({ approvalRequired: false, floorMultiplier: 0.8 })
+    expect(await ctx.company.advertiserSetting('unknown')).toEqual({ approvalRequired: true, floorMultiplier: 1 })
     const access = await ctx.company.variableAccess()
     expect(access['store.hours']).toBe('all')
     expect(access['store.suburb']).toEqual([])

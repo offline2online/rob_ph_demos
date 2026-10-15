@@ -92,7 +92,7 @@ describe('Run 8 — direct advertiser flow (Partner API → retailer approval �
     const h = await harness()
     const kept: [string, Awaited<ReturnType<typeof h.ctx.company.advertiserSetting>>][] = []
     for (const k of ['nestle', 'l-oreal']) kept.push([k, await h.ctx.company.advertiserSetting(k)])
-    await h.ctx.company.saveAdvertiserSettings({ ...Object.fromEntries(kept), swisse: { approvalRequired: false } })
+    await h.ctx.company.saveAdvertiserSettings({ ...Object.fromEntries(kept), swisse: { approvalRequired: false, floorMultiplier: 1 } })
     const a = await h.submitApiCampaign('Swisse — R8 D5 a')
     const b = await h.submitApiCampaign('Swisse — R8 D5 b')
     expect(a.submitted.json().status).toBe('approved')

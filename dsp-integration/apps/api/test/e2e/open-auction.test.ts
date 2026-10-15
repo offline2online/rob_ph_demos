@@ -38,7 +38,7 @@ describe('preconditions / fixtures', () => {
     expect(p.displayType).toMatchObject({ touchPoint: 'Digital Signage', multiZone: { enabled: false } })
     expect((await h.ctx.displays.summaryByDisplayType(DT)).displays).toBeGreaterThan(0)
     expect(await h.ctx.company.get()).toMatchObject({ floorCpm: 100, currency: 'AUD' })
-    expect(await h.ctx.company.advertiserSetting('swisse')).toMatchObject({ approvalRequired: true })
+    expect(await h.ctx.company.advertiserSetting('swisse')).toMatchObject({ approvalRequired: true, floorMultiplier: 1 })
   })
 })
 

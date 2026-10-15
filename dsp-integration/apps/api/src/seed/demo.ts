@@ -114,18 +114,18 @@ const DEMO_WHITELIST: Record<string, string[]> = {
   p_ttd: ['Unilever', 'PepsiCo'],
 }
 
-const DEMO_ADVERTISER_SETTINGS: Record<string, { approvalRequired: boolean }> = {
-  [advertiserSlug('Coca-Cola')]: { approvalRequired: false },
-  [advertiserSlug('PepsiCo')]: { approvalRequired: false },
-  [advertiserSlug('Red Bull')]: { approvalRequired: false },
-  [advertiserSlug('Monster Energy')]: { approvalRequired: true },
-  [advertiserSlug('Gatorade')]: { approvalRequired: false },
-  [advertiserSlug('Mars Wrigley')]: { approvalRequired: true },
-  [advertiserSlug('Mondelez International')]: { approvalRequired: true },
-  [advertiserSlug('The Hershey Company')]: { approvalRequired: true },
-  [advertiserSlug('Kellanova')]: { approvalRequired: true },
-  [advertiserSlug('Frito-Lay')]: { approvalRequired: false },
-  [advertiserSlug('Unilever')]: { approvalRequired: true },
+const DEMO_ADVERTISER_SETTINGS: Record<string, { approvalRequired: boolean; floorMultiplier: number }> = {
+  [advertiserSlug('Coca-Cola')]: { approvalRequired: false, floorMultiplier: 1.1 },
+  [advertiserSlug('PepsiCo')]: { approvalRequired: false, floorMultiplier: 1.1 },
+  [advertiserSlug('Red Bull')]: { approvalRequired: false, floorMultiplier: 1.2 },
+  [advertiserSlug('Monster Energy')]: { approvalRequired: true, floorMultiplier: 1.3 },
+  [advertiserSlug('Gatorade')]: { approvalRequired: false, floorMultiplier: 1 },
+  [advertiserSlug('Mars Wrigley')]: { approvalRequired: true, floorMultiplier: 0.95 },
+  [advertiserSlug('Mondelez International')]: { approvalRequired: true, floorMultiplier: 1 },
+  [advertiserSlug('The Hershey Company')]: { approvalRequired: true, floorMultiplier: 1.05 },
+  [advertiserSlug('Kellanova')]: { approvalRequired: true, floorMultiplier: 1 },
+  [advertiserSlug('Frito-Lay')]: { approvalRequired: false, floorMultiplier: 0.9 },
+  [advertiserSlug('Unilever')]: { approvalRequired: true, floorMultiplier: 1 },
 }
 
 /* ---------------------------------------------------------- the campaigns */

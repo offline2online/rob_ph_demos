@@ -452,7 +452,7 @@ describe('Run 2 — G. Approval lifecycle (non-happy)', () => {
     /* The advertiser is switched to "approval not required" after the rejection. */
     const kept: [string, Awaited<ReturnType<typeof h.ctx.company.advertiserSetting>>][] = []
     for (const k of ['nestle', "l-oreal"]) kept.push([k, await h.ctx.company.advertiserSetting(k)])
-    await h.ctx.company.saveAdvertiserSettings({ ...Object.fromEntries(kept), swisse: { approvalRequired: false } })
+    await h.ctx.company.saveAdvertiserSettings({ ...Object.fromEntries(kept), swisse: { approvalRequired: false, floorMultiplier: 1 } })
     expect((await h.ctx.company.advertiserSetting('swisse')).approvalRequired).toBe(false)
     expect((await h.admin.unreject(id)).statusCode).toBe(200)
     expect(await h.ctx.approvals.view(id)).toMatchObject({ status: 'awaiting_approval' })

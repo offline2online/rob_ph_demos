@@ -70,7 +70,7 @@ export async function listAdvertisers(ctx: Context): Promise<Advertiser[]> {
   for (const [advertiserId, a] of [...byId.entries()].sort((x, y) => x[1].name.localeCompare(y[1].name))) {
     const s = await ctx.company.advertiserSetting(advertiserId)
     out.push({
-      advertiserId, name: a.name, via: a.via, direct: direct.has(advertiserId), ...s,
+      advertiserId, name: a.name, via: a.via, direct: direct.has(advertiserId), ...s, effectiveFloorCpm: effectiveFloorCpm(company, s.floorMultiplier),
       bookings: bookings.get(advertiserId) ?? 0,
       dspSeats: direct.has(advertiserId) ? [] : (mapped[advertiserId] ?? []).map((m) => {
         const p = partners.get(m.partnerId)
@@ -169,7 +169,7 @@ export const advertiserRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
 
   /* Save changes. Applies to future submissions; campaigns already awaiting
      approval stay in the queue (spec §3). */
-  app.put<{ Body: { settings?: Record<string, { approvalRequired?: unknown; }> } }>('/advertisers', async (req, reply) => {
+  app.put<{ Body: { settings?: Record<string, { approvalRequired?: unknown; floorMultiplier?: unknown }> } }>('/advertisers', async (req, reply) => {
     guards.flagged()
     guards.requireScope(req, 'admin')
     const settings = req.body?.settings
@@ -179,9 +179,10 @@ export const advertiserRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     for (const [id, s] of Object.entries(settings)) {
       if (!known.has(id)) errors.push({ field: `settings.${id}`, reason: 'Not an advertiser on any DSP.' })
       if (typeof s?.approvalRequired !== 'boolean') errors.push({ field: `settings.${id}.approvalRequired`, reason: 'Must be true or false.' })
+      if (typeof s?.floorMultiplier !== 'number' || !(s.floorMultiplier > 0)) errors.push({ field: `settings.${id}.floorMultiplier`, reason: 'Must be greater than 0.' })
     }
     if (errors.length) throw validationFailed(errors)
-    await ctx.company.saveAdvertiserSettings(settings as Record<string, { approvalRequired: boolean }>)
+    await ctx.company.saveAdvertiserSettings(settings as Record<string, { approvalRequired: boolean; floorMultiplier: number }>)
     return reply.status(200).send()
   })
 }
