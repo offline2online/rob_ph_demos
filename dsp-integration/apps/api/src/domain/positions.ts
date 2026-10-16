@@ -473,17 +473,20 @@ export function loopLengthSec(ctx: Context, dt: DisplayType): Awaitable<number> 
 }
 
 /* Sync-first (db.ts andThen): a page of inventory builds up to 200. */
-export function positionView(ctx: Context, p: PositionRef, c: Caller) {
+/* windowStart (ISO): quote the view for that play window, its assumed views the sum of the displays' hour-of-week VAC-d over it (vacdProfile.ts). Without it, the flat per-billing-unit figure. */
+export function positionView(ctx: Context, p: PositionRef, c: Caller, windowStart?: string) {
   const dt = p.displayType
+  const startMs = windowStart ? Date.parse(windowStart) : NaN
+  const window = Number.isFinite(startMs) ? { startMs, endMs: startMs + windowMsFor(p) } : undefined
   return andThen(
     allOf([
       /* Counts, never the display rows (review, 24 Sep 2026). */
       ctx.displays.summaryByDisplayType(dt.id),
       loopLengthSec(ctx, dt),
       ctx.company.get(),
-      audienceOf(ctx.audience, dt, p.slot),
+      audienceOf(ctx.audience, dt, p.slot, window),
     ] as const),
-    ([displays, loop, company, audience]) => viewOf(p, displays, loop, company, audience),
+    ([displays, loop, company, audience]) => viewOf(p, displays, loop, company, audience, !!window),
   )
 }
 function viewOf(
@@ -492,6 +495,7 @@ function viewOf(
   loop: number,
   company: Awaited<ReturnType<Context['company']['get']>>,
   audience: Awaited<ReturnType<Context['audience']['forSlot']>>,
+  forWindow = false,
 ) {
   const dt = p.displayType
   /* The rotation this slot plays in — its zone's own on a multi-zone
@@ -526,7 +530,8 @@ function viewOf(
     playsPerWindow: playsPerWindowOf(windowMsFor(p), maxPlayLengthSecFor(company.maxPlayLengthSec, p), n),
     /* The loop positions the maths counts: every slot of the rotation, HQ's included. */
     slotCount: Math.max(1, n),
-    assumedViewsPerWindow: assumedViewsFor(audience.assumedViewsPerWindow, p),
+    /* Already this window's own sum when a window was asked for; otherwise scaled from the default billing unit. */
+    assumedViewsPerWindow: forWindow ? audience.assumedViewsPerWindow : assumedViewsFor(audience.assumedViewsPerWindow, p),
     /* False when the slot has no audience score: only ever seen by a
        caller who is told so, since inventory excludes such positions. */
     scored: audience.scored,

@@ -114,7 +114,7 @@ export async function signalImpression(ctx: Context, input: { displayId: string;
   if (!dsps.length) return unsold('No connected DSP can bid on this position.', 'no_bids')
 
   /* One request per DSP, all at once, each held to the impression's budget. */
-  const view = await positionView(ctx, p, { partner: dsps[0], advertiser: null, unknownAdvertiser: false })
+  const view = await positionView(ctx, p, { partner: dsps[0], advertiser: null, unknownAdvertiser: false }, windowStart)
   const sent: { dsp: PartnerRecord; reqId: string; res: Promise<BidResponse | null> }[] = []
   const timers: ReturnType<typeof setTimeout>[] = []
   for (const dsp of dsps) {

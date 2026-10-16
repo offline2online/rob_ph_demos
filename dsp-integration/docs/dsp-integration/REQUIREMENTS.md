@@ -4215,7 +4215,20 @@ playback analytics.**
   each display at its resolved hours, not the store's for every display. Still
   to build (follow-up tickets): no slots, bid requests or bookings outside a
   display's hours and no unsold/missed-revenue accounting for them, publishing
-  per-screen hours to SSPs/DSPs, and the hour-of-week VAC-d profile.
+  per-screen hours to SSPs/DSPs.
+- **Hour-of-week VAC-d** (ticket L0lA4mMgRdA7YTcQpGxg, 16 Oct 2026;
+  `domain/vacdProfile.ts`, `displays.vacd_profile`, migration 0074): a display
+  may carry 168 hourly assumed-view values (Monday 00:00 UTC first). With none
+  it follows its type's `defaultVacd`, spread flat, so existing figures do not
+  move. A play window's assumed views — the bid request's
+  `imp.qty.multiplier` and the window figure — are the sum of the hours the
+  window covers over the display's profiles (`positionView(..., windowStart)`,
+  used by the scheduled and real-time auctions); a day is the sum of its 24
+  hours. `shapedProfile()` builds a quiet-hours shape with the same weekly total:
+  after hours is a lower share, and an external screen's share
+  (`EXTERNAL_QUIET_SHARE`) is street/mall traffic, never zero. A slot with its
+  own `audience_vacd` score stays flat. Still to build: an admin editor for the
+  profile and daily VAC-d on the Booking schedule.
 - **Play-window booked/available summary, wherever the page counts
   "windows"** (ticket "anytime you use the word Windows please show a
   representation of how many are booked versus … localised … personalised

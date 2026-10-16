@@ -243,7 +243,7 @@ async function auctionTier(ctx: Context, p: PositionRef, start: string, bidders:
   const allowed = await effectivePartnerIds(ctx, p.def, bidders)
   const dsps = bidders.filter((d) => allowed === null || allowed.includes(d.id))
   /* The position as every DSP sees it, once (no advertiser, so no floor multiplier). */
-  const view = dsps.length ? await positionView(ctx, p, { partner: dsps[0], advertiser: null, unknownAdvertiser: false }) : null
+  const view = dsps.length ? await positionView(ctx, p, { partner: dsps[0], advertiser: null, unknownAdvertiser: false }, start) : null
   /* Every DSP for this position at once; responses are then processed in
      the DSPs' own order so the outcome doesn't depend on who answered first. */
   const sent: { dsp: PartnerRecord; reqId: string; res: ReturnType<Context['bidder']['send']> }[] = []
