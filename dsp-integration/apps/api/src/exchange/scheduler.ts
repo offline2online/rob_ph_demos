@@ -13,6 +13,7 @@ import { isActiveAt, isTermLocked } from '../billing/term'
 import { type PositionRef, allPositions, beyondPendingChange, assignmentOf, nextWindowFor, windowMsFor, windowStartOf } from '../domain/positions'
 import { releaseSettledSlotLocks } from '../domain/slotLock'
 import { sweepSettledReservations } from '../domain/reservationRetention'
+import { sweepUnsold } from '../domain/unsold'
 import { runAuction } from './auction'
 import { recordLatePlays, runBilling } from './billing'
 
@@ -82,6 +83,7 @@ export async function schedulerTick(ctx: Context, log: (msg: string) => void) {
   await job('Retention', async () => {
     const swept = await sweepSettledReservations(ctx, ctx.config.reservationRetentionDays, ctx.clock)
     if (swept) log(`Deleted ${swept} settled bid${swept === 1 ? '' : 's'} older than ${ctx.config.reservationRetentionDays} days.`)
+    await sweepUnsold(ctx, ctx.config.unsoldRetentionDays, ctx.clock)
     await sweepAuctionRuns(ctx)
   })
   /* A bid still pending for a window that has started will never clear:

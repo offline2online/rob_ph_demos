@@ -26,6 +26,7 @@ import { type ReservationRepo, sqliteReservationRepo } from './repos/Reservation
 import { type AuctionRunRepo, sqliteAuctionRunRepo } from './repos/AuctionRunRepo'
 import { type BillingRepo, sqliteBillingRepo } from './repos/BillingRepo'
 import { type LateLedgerRepo, sqliteLateLedgerRepo } from './repos/LateLedgerRepo'
+import { type UnsoldSlotRepo, sqliteUnsoldSlotRepo } from './repos/UnsoldSlotRepo'
 import { type CampaignRetentionRepo, sqliteCampaignRetentionRepo } from './repos/CampaignRetentionRepo'
 import { type DspCreativeRepo, sqliteDspCreativeRepo } from './repos/DspCreativeRepo'
 import { type PlayRepo, sqlitePlayRepo } from './repos/PlayRepo'
@@ -67,6 +68,8 @@ export interface Context {
   billing: BillingRepo
   /* Plays received after their window's line item (billing/late.ts). */
   lateLedger: LateLedgerRepo
+  /* Unsold real-time impression opportunities, hourly aggregate (domain/unsold.ts). */
+  unsold: UnsoldSlotRepo
   /* DSP creative-ID claims (exchange/creatives.ts). */
   dspCreatives: DspCreativeRepo
   /* The rejected-campaign sweep's reads and deletes (domain/campaignRetention.ts). */
@@ -128,6 +131,7 @@ export function createContext(opts: { config?: Config; db?: Db; flags?: Flags; s
     auctionRuns: g(sqliteAuctionRunRepo(db)),
     billing: g(sqliteBillingRepo(db)),
     lateLedger: g(sqliteLateLedgerRepo(db)),
+    unsold: g(sqliteUnsoldSlotRepo(db)),
     dspCreatives: g(sqliteDspCreativeRepo(db)),
     campaignRetention: g(sqliteCampaignRetentionRepo(db)),
     plays: g(sqlitePlayRepo(db)),

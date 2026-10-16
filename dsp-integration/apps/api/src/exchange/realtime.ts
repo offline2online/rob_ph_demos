@@ -51,6 +51,8 @@ import { tx } from '../db/db'
 import { uncachedRestricted } from '../domain/uncachedRestriction'
 import { rtbAuctionOpensAt } from '../domain/bidLookahead'
 import { mimeFromUrl, reviewAtBidCreative } from './atBid'
+import { recordUnsold } from '../domain/unsold'
+import type { UnsoldReason } from '../repos/UnsoldSlotRepo'
 
 export interface Fill {
   impression: ImpressionRecord
@@ -89,6 +91,12 @@ export async function signalImpression(ctx: Context, input: { displayId: string;
   }
   const noFill = async (reason: string, extra: Partial<ImpressionRecord> = {}): Promise<Fill> =>
     ({ impression: await ctx.impressions.insert({ ...base, ...extra, status: 'no_fill', reason, elapsedMs: Date.now() - started }) })
+  /* A no fill at the bidding stage is an unsold opportunity: counted for the unsold-slots report (domain/unsold.ts). Test-mode outcomes never are. */
+  const unsold = async (reason: string, why: UnsoldReason, extra: Partial<ImpressionRecord> = {}): Promise<Fill> => {
+    const fill = await noFill(reason, extra)
+    if (!fill.impression.testMode) await recordUnsold(ctx, p, { displayId: display.id, storeId: display.storeId ?? null }, now, why)
+    return fill
+  }
 
   if (!isLive(await ctx.exchange.get())) return noFill('DSP integration is not live.')
   if (fallthrough) {
@@ -103,7 +111,7 @@ export async function signalImpression(ctx: Context, input: { displayId: string;
   const bidders = (await ctx.partners.list()).filter(receivesBidRequests)
   const allowed = await effectivePartnerIds(ctx, p.def, bidders)
   const dsps = bidders.filter((d) => allowed === null || allowed.includes(d.id))
-  if (!dsps.length) return noFill('No connected DSP can bid on this position.')
+  if (!dsps.length) return unsold('No connected DSP can bid on this position.', 'no_bids')
 
   /* One request per DSP, all at once, each held to the impression's budget. */
   const view = await positionView(ctx, p, { partner: dsps[0], advertiser: null, unknownAdvertiser: false })
@@ -128,6 +136,8 @@ export async function signalImpression(ctx: Context, input: { displayId: string;
   timers.forEach(clearTimeout)
 
   const candidates: Candidate[] = []
+  let belowFloor = 0
+  let rejected = 0
   for (const [i, { dsp, reqId }] of sent.entries()) {
     const res = answers[i]
     if (!res || typeof res !== 'object' || (res.id !== undefined && res.id !== reqId)) continue
@@ -139,17 +149,22 @@ export async function signalImpression(ctx: Context, input: { displayId: string;
         if (!bid || typeof bid !== 'object') continue
         const v = await vetBid(ctx, p, dsp, windowStart, res, typeof seatbid.seat === 'string' ? seatbid.seat : undefined, bid, { creativeFetches: 0 }, { atBid: true })
         if (v.ok) candidates.push({ dsp, price: bid.price as number, crid: bid.crid as string, vetted: v })
+        else { rejected++; if (v.code === 'below_floor') belowFloor++ }
       }
     }
   }
-  if (!candidates.length) return noFill(sent.length ? 'No bid cleared within tmax.' : 'No DSP has a bid endpoint.')
+  if (!candidates.length) {
+    /* Bids that arrived but were all refused: under the floor when every refusal was, else some other refusal (unapproved creative, unknown advertiser...). Nothing arrived: no bids. */
+    const why: UnsoldReason = !rejected ? 'no_bids' : belowFloor === rejected ? 'below_floor' : 'other'
+    return unsold(sent.length ? 'No bid cleared within tmax.' : 'No DSP has a bid endpoint.', why)
+  }
 
   /* Bandwidth protection: in the restricted window only a creative the player already holds can win (an uncached one would need a live download). The next-best cached bid wins instead; none cached is no fill. */
   let eligible = candidates
   if (uncachedRestricted(company, input.localTime, input.storeOpen)) {
     const cached = new Set(input.cachedCrids ?? [])
     eligible = candidates.filter((c) => cached.has(c.crid))
-    if (!eligible.length) return noFill('Restricted window: no bid’s creative is cached on the player, and an uncached creative would need a live download.')
+    if (!eligible.length) return unsold('Restricted window: no bid’s creative is cached on the player, and an uncached creative would need a live download.', 'uncached')
   }
 
   /* First price: highest bid first, ties to the earlier DSP (sort is stable). A Test-mode DSP's bids never fill. */
@@ -187,7 +202,7 @@ export async function signalImpression(ctx: Context, input: { displayId: string;
     })
     return { impression, creative: { campaignId: c.vetted.campaignId, source, assetVersion, url, mimeType: asset.mimeType, durationSec: asset.durationSec ?? null } }
   }
-  return noFill(`No bidding creative could play: ${lastWhy}.`)
+  return unsold(`No bidding creative could play: ${lastWhy}.`, 'no_creative')
 }
 
 /* Proof of play, once, while the fill is still valid. The play row is the

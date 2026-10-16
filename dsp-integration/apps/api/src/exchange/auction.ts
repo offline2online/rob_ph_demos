@@ -337,7 +337,7 @@ async function clear(ctx: Context, candidates: ReservationRecord[]): Promise<Res
    (exchange/realtime.ts, recorded on its own impression). The advertiser
    blocklist is enforced here, on the bid, using the seat and advertiser
    identity in the response (spec §7). */
-export type VettedBid = { ok: false; reason: string; advertiserId?: string; campaignId?: string } | { ok: true; advertiserId: string; campaignId: string; pricingType: string | null; seatId: string; atBid?: { crid: string; iurl: string } }
+export type VettedBid = { ok: false; reason: string; code?: string; advertiserId?: string; campaignId?: string } | { ok: true; advertiserId: string; campaignId: string; pricingType: string | null; seatId: string; atBid?: { crid: string; iurl: string } }
 
 /* The real-time path's at-bid creative (exchange/atBid.ts): there is no time to retrieve and review a creative inside tmax, so a creative PH has not seen yet may fill, and is reviewed after it plays. */
 export interface VetOptions { atBid?: boolean }
@@ -357,7 +357,7 @@ async function recordDspBid(ctx: Context, p: PositionRef, dsp: PartnerRecord, st
 
 export async function vetBid(ctx: Context, p: PositionRef, dsp: PartnerRecord, start: string, res: BidResponse, seatId: string | undefined, bid: Bid, budget: { creativeFetches: number }, opts: VetOptions = {}): Promise<VettedBid> {
   const currency = TRANSACTING_CURRENCY
-  const reject = async (reason: string, extra: { advertiserId?: string; campaignId?: string } = {}): Promise<VettedBid> => ({ ok: false, reason, ...extra })
+  const reject = async (reason: string, extra: { advertiserId?: string; campaignId?: string; code?: string } = {}): Promise<VettedBid> => ({ ok: false, reason, ...extra })
 
   /* The exchange transacts in USD on every instance (domain/currency.ts):
      DV360 and The Trade Desk bid USD only, so there is no conversion. `cur`
@@ -406,6 +406,6 @@ export async function vetBid(ctx: Context, p: PositionRef, dsp: PartnerRecord, s
     () => checkVersionCount(ctx, p, campaignId),
     () => checkFloor(ctx, price, advertiserId, { partner: dsp, position: p }),
   )
-  if (late) return reject(late.reason, { advertiserId, campaignId })
+  if (late) return reject(late.reason, { advertiserId, campaignId, code: late.code })
   return { ok: true, advertiserId, campaignId, pricingType: campaign.pricingType ?? null, seatId: seat.id }
 }
