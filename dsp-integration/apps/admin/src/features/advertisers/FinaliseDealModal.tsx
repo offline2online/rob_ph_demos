@@ -13,6 +13,7 @@ import { useState } from 'react'
 import { api, ApiRequestError } from '../../api/client'
 import { InfoTip } from '../../shared/InfoTip'
 import { T } from '../../theme/phTheme'
+import { rateTypeOf } from './effectiveTerm'
 import { slotLine } from './slotLine'
 
 type Sheet = components['schemas']['DealSheet']
@@ -28,7 +29,7 @@ export function FinaliseDealModal({ list, onClose, onShared }: { list: BuyersLis
     setSharing(true)
     try {
       const shared = await api<BuyersList>('POST', `/admin/v1/buyers-lists/${list.id}/share`)
-      message.success('Deal shared with the invited buyers')
+      message.success('Deal shared with the buyers')
       onShared(shared)
     } catch (e) {
       message.error(e instanceof ApiRequestError ? [e.message, ...(e.body?.error.details ?? []).map((d) => d.reason)].join(' ') : 'Could not share this deal.')
@@ -61,11 +62,12 @@ export function FinaliseDealModal({ list, onClose, onShared }: { list: BuyersLis
           ))}
           <dl className="m-0 grid grid-cols-[150px_1fr] gap-y-1">
             {!data?.entries.length && <>{label('Deal ID')}<dd className="m-0" style={{ fontFamily: 'monospace' }}>{list.dealId}</dd></>}
-            {!data?.entries.length && <>{label('Invited buyers')}<dd className="m-0">{`${list.invitedBuyers.length} buyer${list.invitedBuyers.length === 1 ? '' : 's'}`}</dd></>}
+            {!data?.entries.length && <>{label('Buyers')}<dd className="m-0">{`${list.invitedBuyers.length} buyer${list.invitedBuyers.length === 1 ? '' : 's'}`}</dd></>}
             {label('Deal type')}<dd className="m-0">{TYPE_LABEL[list.dealType]}</dd>
-            {label('Rate')}<dd className="m-0">{data ? `${data.rateCpm} ${data.currency} CPM (${data.rateKind === 'fixed' ? 'fixed' : 'floor'})` : '…'}</dd>
-            {label('Delivery term')}<dd className="m-0">{when(list.activeFrom) ?? 'No start'} → {when(list.activeTo) ?? 'No end'}</dd>
-            {list.committedPlays != null && <>{label('Committed plays')}<dd className="m-0">{list.committedPlays.toLocaleString()}</dd></>}
+            {label('Rate')}<dd className="m-0">{data ? `${data.rateCpm} ${data.currency}` : '…'}</dd>
+            {label('Rate type')}<dd className="m-0">{rateTypeOf(list.dealType)}</dd>
+            {label('Flight dates')}<dd className="m-0">{when(list.activeFrom) ?? 'No start date'} → {when(list.activeTo) ?? 'No end date'}</dd>
+            {list.committedPlays != null && <>{label('Guaranteed impressions')}<dd className="m-0">{data?.guaranteedImpressions != null ? data.guaranteedImpressions.toLocaleString() : '…'}<div style={{ color: T.muted, fontSize: 12.5 }}>{list.committedPlays.toLocaleString()} plays</div></dd></>}
             {list.auctionCloses && <>{label('Auction closes')}<dd className="m-0">{when(list.auctionCloses)}</dd></>}
             {label(`Slots (${(list.assignedSlots ?? []).length})`)}
             <dd className="m-0" data-testid="finalise-slots">

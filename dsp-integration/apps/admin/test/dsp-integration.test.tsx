@@ -942,7 +942,7 @@ describe('Advertisers / Inventory', () => {
     const puts: unknown[] = []
     vi.stubGlobal('fetch', termsFetch(false, puts))
     const dialog = await openTermsEditor()
-    expect(within(dialog).getByTestId('term-version')).toHaveTextContent('Term version 3 · 1 of 1 invited buyers on this version')
+    expect(within(dialog).getByTestId('term-version')).toHaveTextContent('Term version 3 · 1 of 1 buyers on this version')
     fireEvent.change(within(dialog).getByPlaceholderText('e.g. Q4 FMCG private auction'), { target: { value: 'Pharma brands 2' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Save changes' }))
     await waitFor(() => expect(puts).toHaveLength(1))
@@ -990,6 +990,27 @@ describe('Advertisers / Inventory', () => {
     expect(within(dialog).getAllByRole('textbox', { name: /^Deal ID/ })).toHaveLength(2)
   })
 
+  /* Ticket DbSVEGXNIWlYW68UQnY3: the table reads in DV360's terms. */
+  it('labels the table in DV360 terms: Rate with its rate type, Buyers, Flight dates, and Pending / Active beside Shared', async () => {
+    const base = { description: '', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }], invitedCategories: [], targeting: [], activeFrom: null, activeTo: null, status: 'shared', termVersion: 2 }
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({
+      ...ADVERTISER_PAGE,
+      '/api/admin/v1/buyers-lists': { items: [
+        { ...base, id: 'bl_1', dealId: 'PH-AAAAAAAAAA', name: 'Floor deal', dealType: 'private_auction', effectiveRateCpm: { min: 5, max: 5, source: 'buyer' }, buyerAcceptance: [{ partnerId: 'p_google', seatId: '5130001', state: 'accepted', acceptedVersion: 2, acceptedAt: null }] },
+        { ...base, id: 'bl_2', dealId: 'PH-BBBBBBBBBB', name: 'Fixed deal', dealType: 'guaranteed', effectiveRateCpm: { min: 7, max: 7, source: 'buyer' }, buyerAcceptance: [{ partnerId: 'p_google', seatId: '5130001', state: 'reacceptance_required', acceptedVersion: 1, acceptedAt: null }] },
+      ] },
+    })))
+    renderAt('/advertisers')
+    const table = await screen.findByLabelText('Deals and buyers lists')
+    expect(await within(table).findByText('Floor deal')).toBeInTheDocument()
+    for (const h of ['Rate', 'Buyers', 'Flight dates', 'Deal type', 'Deal ID']) expect(within(table).getAllByText(h).length).toBeGreaterThan(0)
+    for (const old of ['CPM', 'Invited buyers', 'Delivery term']) expect(within(table).queryByText(old)).toBeNull()
+    expect(within(table).getByTestId('rate-type-bl_1')).toHaveTextContent('CPM floor')
+    expect(within(table).getByTestId('rate-type-bl_2')).toHaveTextContent('CPM fixed')
+    expect(within(table).getByTestId('status-bl_1')).toHaveTextContent('Shared · Active')
+    expect(within(table).getByTestId('status-bl_2')).toHaveTextContent('Shared · Pending · re-acceptance required')
+  })
+
   /* Ticket 2DfVi3PvWSKARQXoWtGy: hovering Invited buyers lists them; hovering Deal ID names each DSP's deal. */
   it('shows the invited buyers and each DSP deal ID on hover', async () => {
     const deals = [{ partnerId: 'p_google', dealId: 'PH-AAAAAAAAAA', retiredAt: null }, { partnerId: 'p_ttd', dealId: 'PH-BBBBBBBBBB', retiredAt: null }]
@@ -1000,10 +1021,26 @@ describe('Advertisers / Inventory', () => {
     renderAt('/advertisers')
     const table = await screen.findByLabelText('Deals and buyers lists')
     fireEvent.mouseOver(await within(table).findByText('2 buyers'))
-    expect(await screen.findByText('Invited buyers')).toBeInTheDocument()
+    expect(await within(await screen.findByRole('tooltip')).findByText('Buyers')).toBeInTheDocument()
     fireEvent.mouseOver(within(table).getByText('PH-AAAAAAAAAA, PH-BBBBBBBBBB'))
     expect(await screen.findByText('PH-BBBBBBBBBB')).toBeInTheDocument()
   })
+
+  /* Ticket oUZbsA7WrkPHSmbYd5B6: hovering a deal's name lists its targeting criteria, with or without a description. */
+  it('shows a deal’s targeting criteria when its name is hovered', async () => {
+    const base = { invitedBuyers: [], invitedCategories: [], activeFrom: null, activeTo: null, dealType: 'private_auction' }
+    const lists = [
+      { ...base, id: 'bl_1', name: 'Eastern states', description: 'Big metros', targeting: [{ source: 'store', variable: 'store.state', op: 'include', values: ['NSW', 'VIC'] }] },
+      { ...base, id: 'bl_2', name: 'No blurb', description: '', targeting: [{ source: 'store', variable: 'store.state', op: 'include', values: ['QLD'] }] },
+    ]
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...ADVERTISER_PAGE, '/api/admin/v1/buyers-lists': { items: lists } })))
+    renderAt('/advertisers')
+    const table = await screen.findByLabelText('Deals and buyers lists')
+    fireEvent.mouseOver(await within(table).findByText('No blurb'))
+    const tip = await screen.findByTestId('targeting-tip-bl_2')
+    expect(tip).toHaveTextContent('Targeting criteria')
+    expect(tip).toHaveTextContent('State: includes selected QLD')
+  }, slow(45000))
 
   /* Ticket Y3GzIlj2goQMJaGUwTey (9 Oct 2026): deals above an explicit Open auction, the DSPs it runs across below it. */
   it('shows an Open auction separator under the deals, with the DSP or All DSPs beneath it', async () => {
@@ -1160,7 +1197,7 @@ describe('Advertisers / Inventory', () => {
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText('New deal and buyers list')).toBeInTheDocument()
     /* Invited buyers is one dropdown of synced advertisers: nothing to type, no identifier type to pick. */
-    expect(within(dialog).getByRole('combobox', { name: 'Invited buyers' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('combobox', { name: 'Buyers' })).toBeInTheDocument()
     /* One object carries who may buy AND the targeting criteria appended to the deal. */
     expect(within(dialog).getByRole('combobox', { name: 'Targeting criteria' })).toBeInTheDocument()
     expect(within(dialog).queryByText(/PH brand entity|identifier type/i)).toBeNull()
@@ -1169,7 +1206,7 @@ describe('Advertisers / Inventory', () => {
     expect(within(dialog).getByRole('combobox', { name: 'Deal type' })).toBeInTheDocument()
     expect(within(dialog).getByTestId('deal-type-note')).toHaveTextContent('no volume is committed')
     expect(within(dialog).getByLabelText('Auction closes')).toBeInTheDocument()
-    expect(within(dialog).queryByLabelText('Committed plays')).toBeNull()
+    expect(within(dialog).queryByLabelText('Guaranteed impressions')).toBeNull()
   }, slow(30000))
 
   /* The modal used to show field errors only when the API sent `details`

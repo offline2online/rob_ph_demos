@@ -2940,7 +2940,7 @@ components:
         creativeRequirements: {type: array, items: {$ref: '#/components/schemas/CreativeRequirement'}}
     DealSheet:
       type: object
-      required: [buyersListId, name, dealType, currency, rateCpm, rateKind, activeFrom, activeTo, auctionCloses, committedPlays, entries, slots, creativeRequirements]
+      required: [buyersListId, name, dealType, currency, rateCpm, rateKind, activeFrom, activeTo, auctionCloses, committedPlays, entries, slots, creativeRequirements, order, product, termVersion, targeting, inventoryScope, estimatedVolume, guaranteedImpressions, description]
       properties:
         buyersListId: {type: string}
         name: {type: string}
@@ -2969,10 +2969,128 @@ components:
               description: {type: [string, 'null'], description: The display type's description.}
               storeZone: {type: [string, 'null'], enum: [exterior, entrance, checkout, aisles, other, null], description: The IAB / IAB Europe store zone set on the display type; null when not defined. Absent from a demo snapshot taken before 15 Oct 2026.}
         creativeRequirements: {type: array, items: {$ref: '#/components/schemas/CreativeRequirement'}}
+        order:
+          type: object
+          description: The DV360 Seller API Order (the parent deal). A change to the rate or creative config returns it to PENDING_ACCEPTANCE (the buyer accepts again), matching PH term versioning.
+          required: [name, status]
+          properties:
+            name: {type: string}
+            status: {type: string, enum: [DRAFT, PENDING_ACCEPTANCE, ACCEPTED]}
+        product:
+          type: object
+          description: The DV360 Seller API Product. Each entry's `inventorySource` is the InventorySource.
+          required: [name, displayName, transactionType, pricingType, startTime, endTime, creativeConfig]
+          properties:
+            name: {type: string}
+            displayName: {type: string}
+            transactionType: {type: string, enum: [PRIVATE_AUCTION, PREFERRED_DEAL, PROGRAMMATIC_GUARANTEED]}
+            pricingType: {type: string, enum: [CPM]}
+            startTime: {type: [string, 'null']}
+            endTime: {type: [string, 'null']}
+            creativeConfig:
+              type: array
+              items:
+                type: object
+                required: [creativeType, width, height, maxDurationSec]
+                properties: {creativeType: {type: string}, width: {type: integer}, height: {type: integer}, maxDurationSec: {type: number}}
+        termVersion: {type: integer}
+        targeting:
+          type: object
+          description: What the deal targets. The DSP never sees these rules (the deal ID is only a key; PH applies targeting seller-side).
+          required: [targetingCriteria, sellerSideOnly, plainLanguage]
+          properties:
+            targetingCriteria:
+              type: array
+              description: Criteria that map to a DV360 targeting type, grouped by it.
+              items:
+                type: object
+                required: [targetingType, conditions]
+                properties:
+                  targetingType: {type: string, enum: [GEO, AUDIENCE, DEVICE, VENUE]}
+                  conditions:
+                    type: array
+                    items:
+                      type: object
+                      required: [variable, name, group, operator, values, text]
+                      properties:
+                        variable: {type: string}
+                        name: {type: string, description: The Shared Targeting Variable's display name.}
+                        group: {type: string, enum: [localisation, personalisation]}
+                        operator: {type: string}
+                        values: {type: array, items: {type: string}}
+                        text: {type: string, description: The condition in words.}
+            sellerSideOnly:
+              type: array
+              description: PH criteria with no DV360 targeting type, flagged seller-side only.
+              items:
+                type: object
+                required: [variable, name, group, operator, values, text]
+                properties:
+                  variable: {type: string}
+                  name: {type: string, description: The Shared Targeting Variable's display name.}
+                  group: {type: string, enum: [localisation, personalisation]}
+                  operator: {type: string}
+                  values: {type: array, items: {type: string}}
+                  text: {type: string, description: The condition in words.}
+            plainLanguage: {type: string, description: 'Every condition in words, joined by AND; "No additional targeting (all attached positions)" when none.'}
+        inventoryScope:
+          type: object
+          description: Where the deal plays, narrowed by localisation criteria only. Personalisation criteria never narrow the screen list.
+          required: [venueTypes, geography, stores, displays, storesBeforeTargeting, displaysBeforeTargeting, screenFormats, narrowedBy, notReflectedInCounts, summary]
+          properties:
+            venueTypes: {type: array, items: {type: string}, description: OpenOOH venue types.}
+            geography: {type: array, items: {type: string}}
+            stores: {type: integer}
+            displays: {type: integer}
+            storesBeforeTargeting: {type: integer}
+            displaysBeforeTargeting: {type: integer}
+            screenFormats:
+              type: array
+              items:
+                type: object
+                required: [width, height, orientation]
+                properties: {width: {type: integer}, height: {type: integer}, orientation: {type: string}}
+            narrowedBy: {type: array, items: {type: string}, description: Localisation criteria that narrowed the counts.}
+            notReflectedInCounts: {type: array, items: {type: string}, description: Localisation criteria PH applies at bid time that the counts do not reflect.}
+            summary: {type: string}
+        estimatedVolume:
+          type: object
+          description: An estimate, not a promise. Plays per window x screens, VAC-d assumed views, x the targeted share.
+          required: [label, playsPerWindow, assumedViewsPerWindow, targetedShare, windows, playsInTerm, assumedViewsInTerm, guaranteedImpressionsPerWindow, bufferPct, assumedViewsPerPlay]
+          properties:
+            label: {type: string, enum: [Estimate]}
+            playsPerWindow: {type: integer}
+            assumedViewsPerWindow: {type: integer}
+            targetedShare: {type: number}
+            windows: {type: [integer, 'null']}
+            playsInTerm: {type: [integer, 'null']}
+            assumedViewsInTerm: {type: [integer, 'null']}
+            guaranteedImpressionsPerWindow: {type: [integer, 'null'], description: Programmatic guaranteed only - forecast x (1 - buffer%).}
+            bufferPct: {type: [number, 'null']}
+            assumedViewsPerPlay: {type: [number, 'null']}
+        guaranteedImpressions: {type: [integer, 'null'], description: Programmatic guaranteed only - committed plays x assumed views per play. Committed plays stay the stored figure.}
+        description: {type: string, description: A short plain-language description to paste into a DSP's description field.}
     DealSheetEntry:
       type: object
-      required: [partnerId, dsp, provider, dealId, seats, setup]
+      required: [partnerId, dsp, provider, dealId, seats, setup, inventorySource]
       properties:
+        inventorySource:
+          type: object
+          description: The DV360 Seller API InventorySource for this DSP, keyed by external deal ID.
+          required: [externalDealId, rateDetails, timeRange, buyerStatus, sellerStatus, termVersion]
+          properties:
+            externalDealId: {type: string}
+            rateDetails:
+              type: object
+              required: [rate, rateType, currency]
+              properties: {rate: {type: number}, rateType: {type: string, enum: [CPM floor, CPM fixed]}, currency: {type: string}}
+            timeRange:
+              type: object
+              required: [startTime, endTime]
+              properties: {startTime: {type: [string, 'null']}, endTime: {type: [string, 'null']}}
+            buyerStatus: {type: string, enum: [PENDING, ACTIVE]}
+            sellerStatus: {type: string, enum: [PENDING, ACTIVE]}
+            termVersion: {type: integer}
         partnerId: {type: string}
         dsp: {type: string}
         provider: {$ref: '#/components/schemas/Provider'}

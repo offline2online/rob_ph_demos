@@ -4,7 +4,7 @@
    table (Rob, 23 Sep). */
 import { Button } from 'antd'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
-import { storeZoneLabel, type BuyersList, type StoreZone } from '@ph-dsp/types'
+import { OPERATOR_LABELS, TARGETING_VARIABLES, storeZoneLabel, type BuyersList, type StoreZone } from '@ph-dsp/types'
 import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { Q } from '../../api/queries'
@@ -18,12 +18,16 @@ import { SectionLabel } from '../../shared/SectionLabel'
 import { T } from '../../theme/phTheme'
 import { BuyersListModal } from './BuyersListModal'
 import { DealSheetModal } from './DealSheetModal'
-import { cpmKind, cpmKindHint, rateText, sourceLabel } from './effectiveTerm'
+import { buyerStatusOf, cpmKindHint, rateTypeOf, rateValue, sourceLabel } from './effectiveTerm'
 
 type Capacity = Map<string, { plays: number; displayTypes: number; positions: number }>
 type SlotInfo = { displayType: string; description: string | null; storeZone: StoreZone | null; zoneName: string | null; playlist: string; position: string; slot: number; playsPerWindow: number | null }
 type Ctx = { current: { capacity: Capacity; slots: Map<string, SlotInfo[]>; dspName: (partnerId: string) => string; seatName: (partnerId: string, seatId: string) => string; onEdit: (l: BuyersList) => void; onDelete: (l: BuyersList) => void; onShare: (l: BuyersList) => void; canEdit: boolean } }
 type P = ICellRendererParams<BuyersList, unknown, Ctx>
+
+/* One line per targeting rule, in the words of the criteria picker: "State: includes selected NSW, VIC". */
+const targetingLines = (l: BuyersList): string[] =>
+  (l.targeting ?? []).map((c) => `${TARGETING_VARIABLES.find((v) => v.key === c.variable)?.label ?? c.variable}: ${OPERATOR_LABELS[c.op] ?? c.op} ${c.values.join(', ')}`.trim())
 
 /* The name is the way in (ph-designer: a row's name opens it; the icon button is only a shortcut). */
 const NameCell = ({ data, context }: P) => {
@@ -40,13 +44,26 @@ const NameCell = ({ data, context }: P) => {
   ) : (
     <div className="truncate" style={{ fontWeight: 500 }}>{data.name}</div>
   )
+  const rules = targetingLines(data)
   return (
     <div className="min-w-0">
-      {/* The description is not a second line in the row: hovering the name shows it under the name. */}
-      {data.description
-        ? <Tip title={<div><div style={{ fontWeight: 500 }}>{data.name}</div><div>{data.description}</div></div>}>{name}</Tip>
+      {/* The description and targeting rules are not extra lines in the row: hovering the name shows them under the name. */}
+      {data.description || rules.length
+        ? <Tip title={<div>
+          <div style={{ fontWeight: 500 }}>{data.name}</div>
+          {data.description && <div>{data.description}</div>}
+          {rules.length > 0 && <div data-testid={`targeting-tip-${data.id}`} style={data.description ? { marginTop: 4 } : undefined}>
+            <div style={{ fontWeight: 500 }}>Targeting criteria</div>
+            {rules.map((r) => <div key={r}>{r}</div>)}
+          </div>}
+        </div>}>{name}</Tip>
         : name}
       {data.status === 'draft' && <div style={{ fontSize: 11.5, color: T.muted }} data-testid={`draft-${data.id}`}>Draft · not shared with any DSP</div>}
+      {/* A shared deal's status in DV360's words, alongside PH's Shared. */}
+      {(() => {
+        const s = buyerStatusOf(data)
+        return s && <div style={{ fontSize: 11.5, color: s.reacceptance ? T.error : T.muted }} data-testid={`status-${data.id}`}>Shared · {s.label}{s.reacceptance ? ' · re-acceptance required' : ''}</div>
+      })()}
     </div>
   )
 }
@@ -62,7 +79,7 @@ const BuyersCell = ({ data, context }: P) => {
   const note = categoryOnly ? `${text} — no named buyer: can’t be shared or authored until one is added` : ''
   const tip = rows.length || cats ? (
     <div>
-      {rows.length > 0 && <div style={{ fontWeight: 500 }}>Invited buyers</div>}
+      {rows.length > 0 && <div style={{ fontWeight: 500 }}>Buyers</div>}
       {rows.map((r) => <div key={r}>{r}</div>)}
       {cats && <div style={rows.length ? { marginTop: 4 } : undefined}>{cats}</div>}
       {note && <div style={{ marginTop: 4 }}>{note}</div>}
@@ -93,7 +110,7 @@ const SlotsCell = ({ data, context }: P) => {
   return <Tip title={tip}><span style={{ fontSize: 12.5 }}>{rows.length} slot{rows.length === 1 ? '' : 's'}</span></Tip>
 }
 const fmt = (v: string | null) => (v ? new Date(v).toLocaleString() : null)
-/* The delivery term (spec "Private auctions: two-period model", 23 Sep
+/* The flight dates (spec "Private auctions: two-period model", 23 Sep
    2026) — the span this deal is awarded for; was "Active window" before
    the auction window (bidding deadline) became a separate period. */
 const TermCell = ({ data }: P) => {
@@ -101,19 +118,18 @@ const TermCell = ({ data }: P) => {
   const from = fmt(data.activeFrom)
   const to = fmt(data.activeTo)
   if (!from && !to) return <span style={{ color: T.muted }}>Always active</span>
-  return <span style={{ fontSize: 12.5 }}>{from ?? 'No start'} → {to ?? 'No end'}</span>
+  return <span style={{ fontSize: 12.5 }}>{from ?? 'No start date'} → {to ?? 'No end date'}</span>
 }
-/* Rate (USD CPM): the rate a deal locked in for the rest of its delivery term, once it has one; until then the
+/* Rate (USD CPM): the rate a deal locked in for the rest of its flight, once it has one; until then the
    rate it inherits platform -> DSP -> this list, so the cell is never blank. */
 const Sub = ({ children }: { children: string }) => <div style={{ fontSize: 11.5, color: T.muted }}>{children}</div>
 const RateCell = ({ data }: P) => {
   if (!data) return null
-  const kind = cpmKind(data.dealType)
-  if (data.lockedWin) return <Tip title="Locked: the rate this deal's auction settled at, billed for the rest of its delivery term."><span style={{ fontSize: 12.5, color: T.primary }}>Locked: {data.lockedWin.cpm} CPM</span></Tip>
-  const text = rateText(data.effectiveRateCpm)
+  if (data.lockedWin) return <Tip title="Locked: the rate this deal's auction settled at, billed for the rest of its flight."><span style={{ fontSize: 12.5, color: T.primary }}>Locked: {data.lockedWin.cpm} CPM</span></Tip>
+  const text = rateValue(data.effectiveRateCpm)
   const src = sourceLabel(data.effectiveRateCpm?.source ?? 'none')
   return text
-    ? <Tip title={`${cpmKindHint(data.dealType)}${src ? ` Source: ${src}.` : ''}`}><div><span style={{ fontSize: 12.5 }}>{text} {kind}</span><Sub>{src}</Sub></div></Tip>
+    ? <Tip title={`${cpmKindHint(data.dealType)}${src ? ` Source: ${src}.` : ''}`}><div><span style={{ fontSize: 12.5 }}>{text}</span> <span style={{ fontSize: 12.5, color: T.muted }} data-testid={`rate-type-${data.id}`}>{rateTypeOf(data.dealType)}</span><Sub>{src}</Sub></div></Tip>
     : <span style={{ color: T.muted }}>Per play</span>
 }
 const DealIdCell = ({ data, context }: P) => {
@@ -152,15 +168,15 @@ export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged }:
      so a late re-render (the partners query resolving) swapped the cells out from under a click.
      Cells read anything that changes (names, capacity, handlers) through context.current. */
   const columns = useMemo<ColDef<BuyersList>[]>(() => [
-    { headerName: 'Deals and buyers lists', flex: 2, minWidth: 220, cellRenderer: NameCell, valueGetter: (p) => `${p.data?.name}|${p.data?.description}|${p.data?.status}` },
+    { headerName: 'Deals and buyers lists', flex: 2, minWidth: 220, cellRenderer: NameCell, valueGetter: (p) => `${p.data?.name}|${p.data?.description}|${JSON.stringify(p.data?.targeting ?? [])}|${p.data?.status}|${p.data?.termVersion}|${JSON.stringify(p.data?.buyerAcceptance ?? [])}` },
     { headerName: 'Deal ID', field: 'dealId', width: 170, minWidth: 150, cellRenderer: DealIdCell },
-    { headerName: 'CPM', width: 200, minWidth: 170, cellRenderer: RateCell, valueGetter: (p) => JSON.stringify([p.data?.dealType, p.data?.lockedWin, p.data?.effectiveRateCpm]) },
+    { headerName: 'Rate', width: 200, minWidth: 170, cellRenderer: RateCell, valueGetter: (p) => JSON.stringify([p.data?.dealType, p.data?.lockedWin, p.data?.effectiveRateCpm]) },
     /* These cells have no field, so AG Grid saw an unchanged value (undefined) after a save and kept the old cell:
        an edited deal type kept showing "Private auction". Each gets a valueGetter over everything it renders. */
     { headerName: 'Deal type', width: 170, minWidth: 150, cellRenderer: DealTypeCell, valueGetter: (p) => p.data?.dealType ?? '' },
-    { headerName: 'Invited buyers', width: 190, minWidth: 130, cellRenderer: BuyersCell, valueGetter: (p) => JSON.stringify([p.data?.invitedBuyers ?? [], p.data?.invitedCategories ?? []]) },
+    { headerName: 'Buyers', width: 190, minWidth: 130, cellRenderer: BuyersCell, valueGetter: (p) => JSON.stringify([p.data?.invitedBuyers ?? [], p.data?.invitedCategories ?? []]) },
     { headerName: 'Slots', width: 150, minWidth: 120, cellRenderer: SlotsCell, valueGetter: (p) => JSON.stringify(p.context.current.slots.get(p.data?.id ?? '') ?? []) },
-    { headerName: 'Delivery term', width: 260, minWidth: 220, cellRenderer: TermCell, valueGetter: (p) => `${p.data?.activeFrom}|${p.data?.activeTo}` },
+    { headerName: 'Flight dates', width: 260, minWidth: 220, cellRenderer: TermCell, valueGetter: (p) => `${p.data?.activeFrom}|${p.data?.activeTo}` },
     ...(canEdit ? [{ headerName: '', width: 120, suppressSizeToFit: true, cellRenderer: ActionsCell }] : []),
   ], [canEdit])
   const context = {
@@ -194,7 +210,7 @@ export function BuyersListsTable({ lists, canEdit, capacity, slots, onChanged }:
     <div className="mb-7">
       <div className="mb-3 flex items-center justify-between gap-3">
         <SectionLabel style={{ margin: 0 }}>
-          <WithTip tip="Deals and buyers lists decide who can buy your advertiser slots, and on what terms. Each list sets the deal type (private auction, preferred deal or programmatic guaranteed), the invited buyers, the delivery term and the price. To set one up: 1. Create a buyers list. 2. Assign it to slots in Available Inventory's Assigned to column. 3. Finalise the deal terms, then confirm and share the deal with the DSPs.">
+          <WithTip tip="Deals and buyers lists decide who can buy your advertiser slots, and on what terms. Each list sets the deal type (private auction, preferred deal or programmatic guaranteed), the buyers, the flight dates and the rate. To set one up: 1. Create a buyers list. 2. Assign it to slots in Available Inventory's Assigned to column. 3. Finalise the deal terms, then confirm and share the deal with the DSPs.">
             Deals and buyers lists
           </WithTip>
         </SectionLabel>
