@@ -139,14 +139,17 @@ describe('a slot’s billing unit sets its play-window length (OQ27)', () => {
     const { ctx, setSlots, activate, queued } = await setup()
     const list = await ctx.buyersLists.insert({
       id: 'bl_weekly', name: 'Weekly term deal', description: '', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }],
-      activeFrom: null, activeTo: null, auctionCloses: '2026-09-29T00:00:00.000Z',
+      activeFrom: null, activeTo: null, auctionCloses: null,
     })
     await setSlots({ 2: { billingUnitHours: 168, listMode: 'deal', buyersListId: list.id } })
     await runAuction(ctx, MON_21)
     await activate(await queued('Nestlé — crid-5130001'))
-    /* The term's one real auction: the week of 28 Sep clears and locks the rate. */
+    /* The week of 28 Sep clears. Nothing locks a new deal any more (16 Oct 2026), so the lock a deal made under the retired two-period model carried is written directly. */
     const locking = await runAuction(ctx, MON_28)
     expect(locking.positions[0].winner).toMatchObject({ partnerId: 'p_google', advertiserId: 'nestle' })
+    expect((await ctx.buyersLists.get(list.id))!.lockedWin).toBeNull()
+    const won = (await ctx.reservations.get(locking.positions[0].winner!.reservationId))!
+    await ctx.buyersLists.lockWin(list.id, { cpm: won.bidCpm as number, partnerId: won.partnerId, advertiserId: won.advertiserId, campaignId: won.campaignId as string, pricingType: won.pricingType, channel: won.channel, lockedAt: MON_28.toISOString(), source: 'auction' })
     const cpm = (await ctx.buyersLists.get(list.id))!.lockedWin!.cpm
     /* A Tuesday is not a window of this slot: nothing is booked. */
     expect((await runAuction(ctx, new Date('2026-09-29T00:00:00.000Z'))).positions).toEqual([])

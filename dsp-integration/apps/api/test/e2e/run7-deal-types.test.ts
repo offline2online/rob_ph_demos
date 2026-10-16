@@ -134,16 +134,15 @@ describe('Run 7 — D1 open deal: per-window auction, first price, no volume', (
   })
 })
 
-describe('Run 7 — D2 private auction: invited buyers, deal ID, locked rate', () => {
-  const termDeal = async (h: H) => {
-    const { id: _id, lockedWin: _l, createdAt: _c, updatedAt: _u, ...l } = (await h.ctx.buyersLists.get('bl_private_auction'))! as Record<string, unknown>
-    await h.ctx.buyersLists.update('bl_private_auction', { ...l, activeTo: '2026-09-27T23:59:59.000Z', auctionCloses: day(1).toISOString() } as never)
-  }
-
-  it('D2.1 — deal type drives the fields: auctionCloses is captured, committed plays are not', async () => {
+describe('Run 7 — D2 private auction: invited buyers, deal ID, a first-price bid per slot', () => {
+  it('D2.1 — deal type drives the fields: no auction window, no committed plays', async () => {
     const h = await dealHarness('private_auction')
     const put = (payload: Record<string, unknown>) => h.app.inject({ method: 'POST', url: '/api/admin/v1/buyers-lists', payload: { name: 'D2.1', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130002' }], ...payload } })
-    expect((await put({ dealType: 'private_auction', auctionCloses: day(1).toISOString() })).json()).toMatchObject({ dealType: 'private_auction', committedPlays: null, effectiveCommittedPlays: { source: 'none' } })
+    expect((await put({ dealType: 'private_auction' })).json()).toMatchObject({ dealType: 'private_auction', committedPlays: null, auctionCloses: null, effectiveCommittedPlays: { source: 'none' } })
+    /* The auction window is retired (16 Oct 2026): invited buyers bid per slot throughout the flight. */
+    const window = await put({ dealType: 'private_auction', auctionCloses: day(1).toISOString() })
+    expect(window.statusCode).toBe(400)
+    expect(window.json().error.details).toEqual([{ field: 'auctionCloses', reason: expect.stringContaining('no longer have an auction window') }])
     const bad = await put({ dealType: 'private_auction', committedPlays: 500 })
     expect(bad.statusCode).toBe(400)
     expect(bad.json().error.details).toEqual([{ field: 'committedPlays', reason: expect.stringContaining('Only a guaranteed deal') }])
@@ -176,30 +175,31 @@ describe('Run 7 — D2 private auction: invited buyers, deal ID, locked rate', (
     expect([day(1), day(2), day(3)].flatMap((w) => booked(h, w))).toEqual([])
   })
 
-  it('D2.4 — two-period: the first clear locks the rate for the term; later windows book at it, outside-term bids are refused', async () => {
-    const h = await dealHarness('private_auction')
-    await termDeal(h)
+  it('D2.4 — per-slot bidding: two invited buyers clear on successive slots, each at its own first price; no rate lock is written; a slot with no bid falls through', async () => {
+    const h = await dealHarness('private_auction', { invitedBuyers: [{ partnerId: 'p_google', seatId: '5130002' }, { partnerId: 'p_google', seatId: '5130001' }], activeTo: '2026-09-27T23:59:59.000Z' })
     await h.bidder.control({ mode: 'no_bid' })
-    const campaignId = await h.readyApiCampaign('Swisse — D2.4')
-    expect((await h.partner.bid(campaignId, day(1), 210)).statusCode).toBe(201)
-    expect((await runAuction(h.ctx, day(1))).positions[0].winner).toMatchObject({ clearingCpm: 210 })
-    expect((await h.ctx.buyersLists.get(h.list.id))!.lockedWin).toMatchObject({ cpm: 210, advertiserId: 'swisse', campaignId })
-    for (const w of [day(2), day(3)]) {
-      expect((await runAuction(h.ctx, w)).positions[0]).toMatchObject({ bidRequests: 0, winner: { clearingCpm: 210 } })
-      expect(booked(h, w)).toMatchObject([{ campaignId }])
-    }
-    /* A window past the term is outside the lock and the invitation. */
-    const after = await h.partner.bid(campaignId, day(7), 300)
-    expect(after.statusCode).toBeGreaterThanOrEqual(400)
-    /* Each window billed on its own realised VAC-d at the locked rate. */
-    h.playback.script(campaignId, day(2), { plays: 2880, playedSec: EXPECTED_SEC / 2 })
+    const swisse = await h.readyApiCampaign('Swisse — D2.4')
+    const nestle = await h.readyApiCampaign('Nestlé — D2.4', 'localised', 'nestle')
+    expect((await h.partner.bid(swisse, day(1), 210)).statusCode).toBe(201)
+    expect((await h.partner.bid(nestle, day(2), 180, { advertiserId: 'nestle' })).statusCode).toBe(201)
+    expect((await runAuction(h.ctx, day(1))).positions[0].winner).toMatchObject({ advertiserId: 'swisse', clearingCpm: 210 })
+    expect((await runAuction(h.ctx, day(2))).positions[0].winner).toMatchObject({ advertiserId: 'nestle', clearingCpm: 180 })
+    /* Nothing is held between slots: no lock, and a slot nobody bid on is not sold. */
+    expect((await h.ctx.buyersLists.get(h.list.id))!.lockedWin).toBeNull()
+    expect((await runAuction(h.ctx, day(3))).positions[0].winner).toBeNull()
+    expect(booked(h, day(3))).toEqual([])
+    /* Bidding stays open on later slots of the flight; a window past it is outside the deal. */
+    expect((await h.partner.bid(swisse, day(4), 200)).statusCode).toBe(201)
+    expect((await h.partner.bid(swisse, day(7), 300)).statusCode).toBeGreaterThanOrEqual(400)
+    /* Each window billed on its own realised VAC-d at its own cleared rate. */
+    h.playback.script(swisse, day(1), { plays: 2880, playedSec: EXPECTED_SEC / 2 })
     h.setNow(new Date(day(5).getTime()))
-    const items = (await runBilling(h.ctx)).filter((i) => i.windowStart === day(2).toISOString())
+    const items = (await runBilling(h.ctx)).filter((i) => i.windowStart === day(1).toISOString())
     expect(items).toMatchObject([{ cpm: 210, realisedViews: ASSUMED_VIEWS / 2, amount: 84 }])
   })
 })
 
-describe('Run 7 — D3 preferred deal: reserve price, no committed volume', () => {
+describe('Run 7 — D3 preferred deal: one named buyer, fixed CPM, first look per slot, no committed volume', () => {
   it('D3.1 — deal type drives the fields: no committed plays, no auction window; the list reports no effective volume', async () => {
     const h = await dealHarness('preferred')
     expect(h.list).toMatchObject({ dealType: 'preferred', committedPlays: null, auctionCloses: null })
@@ -229,6 +229,20 @@ describe('Run 7 — D3 preferred deal: reserve price, no committed volume', () =
     const [item] = await bill(h, campaignId, day(1), { plays: 1440, playedSec: EXPECTED_SEC / 4 })
     expect(item).toMatchObject({ cpm: RESERVE, realisedViews: ASSUMED_VIEWS / 4, amount: 30 })
     expect(await runBilling(h.ctx)).toEqual([])
+  })
+
+  it('D3.4 — first look at the fixed CPM: the buyer takes a slot at the fixed CPM (not its bid); on a pass the slot is unsold; nothing is reserved', async () => {
+    const h = await dealHarness('preferred', { floorCpm: 140, activeTo: '2026-09-27T23:59:59.000Z' })
+    await h.bidder.control({ mode: 'no_bid' })
+    const campaignId = await h.readyApiCampaign('Swisse — D3.4')
+    expect((await h.partner.bid(campaignId, day(1), 210)).statusCode).toBe(201)
+    const taken = await runAuction(h.ctx, day(1))
+    expect(taken.positions[0].winner).toMatchObject({ advertiserId: 'swisse', clearingCpm: 140 })
+    expect(await rowsOf(h, day(1))).toMatchObject([{ status: 'won', bidCpm: 210, clearingCpm: 140 }])
+    /* A pass: no bid for day 2, so the slot goes unsold, and no window was held for it in advance. */
+    expect(await rowsOf(h, day(2))).toEqual([])
+    expect((await runAuction(h.ctx, day(2))).positions[0].winner).toBeNull()
+    expect((await h.ctx.buyersLists.get(h.list.id))!.lockedWin).toBeNull()
   })
 
   it('D3.3 — the list is authoritative: a reservation naming guaranteed is refused (409); a bid or one under the reserve price is refused', async () => {
@@ -375,18 +389,16 @@ describe('Run 7 — D5 Computer Vision gender on a deal: personalised, targeted 
     expect(item).toMatchObject({ cpm: RESERVE, realisedViews: ASSUMED_VIEWS / 2, amount: 60 })
   })
 
-  it('D5.4 — private-auction variant: a gendered bid clears, the first win locks the rate for the term, later windows book at it, personalised-eligible', async () => {
+  it('D5.4 — private-auction variant: a gendered bid clears per slot at its own first price with no rate lock, personalised-eligible', async () => {
     const h = await cvHarness('private_auction')
-    const { id: _id, lockedWin: _l, createdAt: _c, updatedAt: _u, ...l } = (await h.ctx.buyersLists.get('bl_private_auction'))! as Record<string, unknown>
-    await h.ctx.buyersLists.update('bl_private_auction', { ...l, activeTo: '2026-09-27T23:59:59.000Z', auctionCloses: day(1).toISOString() } as never)
     await h.bidder.control({ mode: 'no_bid' })
     const campaignId = await cvCampaign(h, 'Swisse — D5.4')
     expect((await h.partner.bid(campaignId, day(1), 210)).statusCode).toBe(201)
     expect((await runAuction(h.ctx, day(1))).positions[0].winner).toMatchObject({ clearingCpm: 210 })
-    expect((await h.ctx.buyersLists.get(h.list.id))!.lockedWin).toMatchObject({ cpm: 210, advertiserId: 'swisse', campaignId })
-    for (const w of [day(2), day(3)]) {
-      expect((await runAuction(h.ctx, w)).positions[0]).toMatchObject({ bidRequests: 0, winner: { clearingCpm: 210 } })
-      expect(booked(h, w)).toMatchObject([{ campaignId, personalisedEligible: true }])
-    }
+    expect((await h.ctx.buyersLists.get(h.list.id))!.lockedWin).toBeNull()
+    expect(booked(h, day(1))).toMatchObject([{ campaignId, personalisedEligible: true }])
+    expect((await h.partner.bid(campaignId, day(2), 190)).statusCode).toBe(201)
+    expect((await runAuction(h.ctx, day(2))).positions[0].winner).toMatchObject({ clearingCpm: 190 })
+    expect(booked(h, day(2))).toMatchObject([{ campaignId, personalisedEligible: true }])
   })
 })

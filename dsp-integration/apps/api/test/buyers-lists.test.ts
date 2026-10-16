@@ -240,21 +240,22 @@ describe('Buyers lists (spec "Support private auctions")', () => {
       expect((await post(app, { committedPlays: 500 })).json().dealType).toBe('guaranteed')
     })
 
-    it('only a guaranteed deal commits volume; only a private auction has an auction window', async () => {
+    it('only a guaranteed deal commits volume; a preferred deal is one buyer at a fixed CPM; no deal has an auction window any more', async () => {
       const app = buildApp(await testContext())
       const guaranteed = await post(app, { dealType: 'guaranteed', committedPlays: 800 })
       expect(guaranteed.statusCode).toBe(201)
       expect(guaranteed.json()).toMatchObject({ dealType: 'guaranteed', committedPlays: 800 })
-      const preferred = await post(app, { dealType: 'preferred' })
+      const preferred = await post(app, { dealType: 'preferred', floorCpm: 150 })
       expect(preferred.statusCode).toBe(201)
       expect(preferred.json()).toMatchObject({ dealType: 'preferred', committedPlays: null, auctionCloses: null, effectiveCommittedPlays: { source: 'none' } })
       const closes = '2026-10-10T00:00:00.000Z'
-      expect((await post(app, { dealType: 'private_auction', auctionCloses: closes })).json().auctionCloses).toBe(closes)
-      for (const [payload, field] of [
-        [{ dealType: 'preferred', committedPlays: 100 }, 'committedPlays'],
+            for (const [payload, field] of [
+        [{ dealType: 'preferred', floorCpm: 150, committedPlays: 100 }, 'committedPlays'],
+        [{ dealType: 'preferred' }, 'floorCpm'],
+        [{ dealType: 'private_auction', auctionCloses: closes }, 'auctionCloses'],
         [{ dealType: 'private_auction', committedPlays: 100 }, 'committedPlays'],
         [{ dealType: 'guaranteed', auctionCloses: closes }, 'auctionCloses'],
-        [{ dealType: 'preferred', auctionCloses: closes }, 'auctionCloses'],
+        [{ dealType: 'preferred', floorCpm: 150, auctionCloses: closes }, 'auctionCloses'],
         [{ dealType: 'sealed_bid' }, 'dealType'],
       ] as const) {
         const res = await post(app, payload)

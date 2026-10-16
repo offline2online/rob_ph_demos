@@ -31,7 +31,7 @@ describe('Buyers list deal ID', () => {
     expect((await put({ ...list, dealId: created.dealId })).statusCode).toBe(200)
     expect((await put({ ...list, dealId: 'PH-OTHER' })).statusCode).toBe(400)
 
-    const changed = await put({ ...list, dealType: 'preferred' })
+    const changed = await put({ ...list, dealType: 'preferred', floorCpm: 150 })
     expect(changed.statusCode).toBe(201)
     expectMatchesContract('PUT', '/admin/v1/buyers-lists/{buyersListId}', 201, changed.json())
     expect(changed.json().id).not.toBe(created.id)
@@ -45,8 +45,8 @@ describe('Buyers list deal ID', () => {
 
   it('an edit that omits dealType leaves a preferred deal as it is', async () => {
     const app = buildApp(await testContext())
-    const created = (await app.inject({ method: 'POST', url: URL, payload: { ...list, dealType: 'preferred' } })).json()
-    const res = await app.inject({ method: 'PUT', url: `${URL}/${created.id}`, payload: { ...list, name: 'Renamed' } })
+    const created = (await app.inject({ method: 'POST', url: URL, payload: { ...list, dealType: 'preferred', floorCpm: 150 } })).json()
+    const res = await app.inject({ method: 'PUT', url: `${URL}/${created.id}`, payload: { ...list, floorCpm: 150, name: 'Renamed' } })
     expect(res.statusCode).toBe(200)
     expect(res.json()).toMatchObject({ id: created.id, dealId: created.dealId, dealType: 'preferred' })
   })

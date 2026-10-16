@@ -1,18 +1,16 @@
-/* Books a play window at a private auction's already-locked rate (the
-   two-period model's second half; the term rules are in ./term). The
-   exchange's auction calls this for a locked deal in place of bidding. */
+/* Books a play window at the rate a private auction locked before the two-period model was retired (16 Oct 2026; term rules in ./term). Nothing locks a new deal any more; the exchange's auction calls this only for a legacy locked deal, in place of bidding, until its flight ends. */
 import { randomUUID } from 'node:crypto'
 import type { Context } from '../context'
 import { TRANSACTING_CURRENCY } from '../domain/currency'
 import { isUniqueViolation } from '../db/db'
-import { type PositionRef, assignmentOf } from '../domain/positions'
+import { type PositionRef } from '../domain/positions'
 import { isTermLocked } from './term'
 import { floorFor } from '../exchange/enforcement'
 import { handOff } from '../exchange/handoff'
 import { settlePending } from '../exchange/pending'
 import type { PositionOutcome } from '../exchange/auction'
 import type { ReservationRecord } from '../repos/ReservationRepo'
-import { assignedOf, type BuyersList } from '@ph-dsp/types'
+import type { BuyersList } from '@ph-dsp/types'
 
 /* Books this window at a private auction's already-locked rate directly —
    no bidding, no fresh clearing — the same winning identity every window
@@ -62,23 +60,4 @@ export async function bookLockedTermWindow(ctx: Context, p: PositionRef, start: 
   }
   await handOff(ctx, r)
   return { ...out, skipped: `Private auction: booked at ${list.name}'s locked rate (${win.cpm}), no re-auction.`, winner: { reservationId: r.id, partnerId: r.partnerId, advertiserId: r.advertiserId, clearingCpm: r.clearingCpm as number } }
-}
-
-/* This window's clear is the deal's ONE term-deciding auction the moment it
-   has auctionCloses set and isn't locked yet: lock it now so every later
-   window in the delivery term reuses this rate instead of re-auctioning
-   (spec "…dynamic VAC-d billing over the delivery term"). A deal with no
-   auctionCloses never reaches here locked, so it keeps clearing fresh every
-   window as it always has. */
-export async function lockTermOnClear(ctx: Context, p: PositionRef, live: ReservationRecord): Promise<void> {
-  if (assignmentOf(p.def) !== 'deal') return
-  const listId = assignedOf(p.def).buyersListId
-  const list = listId ? await ctx.buyersLists.get(listId) : null
-  if (list?.auctionCloses && !isTermLocked(list)) {
-    /* lockWin is first-wins on its own: a term already locked is left as is. */
-    await ctx.buyersLists.lockWin(list.id, {
-      cpm: live.bidCpm as number, partnerId: live.partnerId, advertiserId: live.advertiserId, campaignId: live.campaignId as string,
-      pricingType: live.pricingType, channel: live.channel, lockedAt: ctx.clock().toISOString(), source: 'auction',
-    })
-  }
 }

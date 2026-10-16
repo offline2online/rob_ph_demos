@@ -27,6 +27,22 @@ record.
   `auctionCloses`. Mentions below of an auction opening, an auction cutoff,
   a company auction schedule, a company play window or an advance bid mode
   are superseded.
+- **16 Oct 2026** — private auction and preferred deal aligned to the industry
+  standard, no PH extensions (Rob; ticket nPskZXYOZZ87teIBCgy6, from
+  24VWhzDd4yv7CswOPrGX). **Private auction**: the two-period model is
+  retired. There is no auction window (`auctionCloses`) and no rate lock
+  (`lockedWin`); invited buyers bid per slot on the deal ID throughout the
+  flight, first price, against the deal's CPM floor; nothing is held
+  between windows, and a slot with no clearing bid falls through to the
+  open auction or the default campaign. A deal already locked keeps booking
+  its locked rate until its flight ends. **Preferred deal**: one named
+  buyer at a fixed CPM with first look at each slot ahead of private and
+  open auction; the buyer may pass; no window is reserved. **Programmatic
+  guaranteed** is unchanged and is the only type that reserves inventory.
+  **Waterfall**: PG, preferred, private auction, open auction. The sections
+  below that describe the auction window, the locked rate or a preferred
+  deal held at the reserve price are superseded, and kept only to explain
+  what a legacy locked deal does.
 - **7 Oct 2026** — bid floor becomes a three-level hierarchy (Rob; ticket
   kqsRTYmg1tAYww1vgHMs, build DIlKVuz9yiFANxKz23yP, lists
   w0Iu6g6efYGjA3U6J1Nv): a **platform floor** (Advertiser settings, advanced),
@@ -1937,24 +1953,13 @@ It carries:
   open-ended. Outside it, the deal admits nobody — it does not fall back
   to open RTB. (Named "active time window" before the two-period model
   below split it from the auction window; the field names are unchanged.)
-- **Auction window** (`auctionCloses`, 23 Sep 2026 — the two-period model):
-  a second, narrower, optional period distinct from the delivery term
-  above. Bidding for a private auction is **not** slot-by-slot per play —
-  a brand bids to hold a slot position across the whole delivery term, not
-  once per window — so a deal using this model carries its own one-time
-  bidding deadline: invited brands may submit and revise bids until
-  `auctionCloses`, and the first bid that clears within it locks the
-  winning CPM for the rest of the delivery term (`lockedWin`; see "Locked
-  rate" below). `auctionCloses` is null on a deal that isn't using this
-  model — it keeps clearing a fresh auction every play window, exactly as
-  a buyers list always has (unchanged default behaviour; this is
-  additive, not a breaking change to every existing deal). Bidding on a
-  window stays open until it starts or the private auction has cleared it;
-  there is no company cutoff time (removed 8 Oct 2026).
-
-**Explicitly not on the buyers list** — each already has its own home, and
-duplicating it per deal would let one drift from the other:
-
+- **Auction window** (`auctionCloses`) — **retired 16 Oct 2026**. Private
+  auctions are industry standard: invited buyers bid on each slot throughout
+  the delivery term, first price, against the deal's CPM floor, and every
+  window clears fresh. The API refuses a new `auctionCloses` (400); the
+  value on a deal that already has one is kept as a record and is otherwise
+  inert (migration 0075 cleared it on every deal that had not locked). A
+  window can be bid on until it starts or its auction has cleared it.
 - **Floor** is never set on the deal. It is inherited from the position
   (§4, driven by the display type/slot's own reserve and floor), the same as
   every other assignment mode. Rationale: the floor is the retailer's
@@ -2009,7 +2014,7 @@ the whitelist — assigning one clears the other two, same "newer choice
 wins" rule already governing advertisers vs. whitelist. Underneath
 Available Inventory, a **Buyers lists** table lists every buyers list
 (name/description, invited buyer count, delivery term, and its rate —
-"Clears every window", "Bidding closes `<auctionCloses>`" or "Locked:
+"Clears every window" or, for a deal locked before 16 Oct 2026, "Locked:
 `<cpm>` CPM"), with **Edit** and **Delete**; delete is refused
 (`has_dependents`) while any slot is still assigned to it. Saving the modal (create or edit) always surfaces a message
 on failure, even when the API's error carries no field-level `details` to
@@ -2036,25 +2041,16 @@ no connected DSP's seats — correctly admits **nobody**, not everybody:
 this is the one place in the assignment model where an empty resolved DSP
 list means "restricted to none" rather than "unrestricted."
 
-**Locked rate (the two-period model, 23 Sep 2026)**: a deal with
-`auctionCloses` set runs exactly like any other deal — a real auction,
-bid requests going out each play window — until a bid clears at or before
-that deadline. That clear is the term's one deciding auction: the winning
-identity and CPM are written to `lockedWin` (once, never overwritten —
-first clear wins) and every later play window in the delivery term is
-booked **directly** at that rate, with no bid requests and no fresh
-clearing (`exchange/auction.ts`'s `bookLockedTermWindow`). An invited
-buyer's reserve-price commitment (§5 "Reserve price") locks the term the
-same way, at the reserve price (`lockedWin.source: reserve`); its windows
-are then held and booked as Reserved. Each such window
-is still its own reservation, still billed on its own realised VAC-d for
-that window (§4 "Billing") — dynamic VAC-d is unchanged, only the rate is
-fixed for the term rather than re-cleared per unit. If `auctionCloses`
-passes with nothing having cleared, the deal simply stops soliciting bids
-for the rest of the delivery term — the same "falls through, no reserve
-floor is ever crossed" outcome as an expired delivery term. A deal with no
-`auctionCloses` never locks and keeps clearing fresh every window, exactly
-as a buyers list always has.
+**Locked rate (the two-period model, 23 Sep 2026; retired 16 Oct 2026)**:
+nothing locks a rate any more. Only a deal locked **before** 16 Oct 2026
+still carries `lockedWin`: its winning identity and CPM are honoured until
+the flight ends, and every later play window is booked **directly** at that
+rate, with no bid requests and no fresh clearing (`exchange/auction.ts`'s
+`bookLockedTermWindow`), still below no floor in force. Each such window is
+its own reservation, billed on its own realised VAC-d for that window (§4
+"Billing"). A reserve-price commitment on a private auction no longer locks
+the term. A deal with no `lockedWin` clears a fresh first-price auction every
+window.
 
 **Billing unit** (`billingUnitHours` on a slot, with a display-type-level
 default — same override-always-wins inheritance as reserve price, §5
@@ -4849,10 +4845,15 @@ keeps the won creative renderable; the lookahead sets how early the per-impressi
 ## Deal type on the buyers list (Rob, 7 Oct 2026; ticket ke38J410jwLTYu9blGK7)
 
 - **One deal object plus a type**, as DSPs and Broadsign model it. A buyers
-  list carries `dealType`: `private_auction` (invited buyers bid; the
-  two-period model, `auctionCloses` and the locked rate apply), `preferred`
-  (fixed-price first look held at the reserve price; no volume, no auction
-  window) or `guaranteed` (programmatic guaranteed; commits `committedPlays`).
+  list carries `dealType`: `private_auction` (invited buyers bid per
+  slot throughout the flight, first price against the CPM floor; no auction
+  window, no lock), `preferred` (one named buyer, a fixed CPM, first look at
+  each slot ahead of private and open auction, may pass; no volume and no
+  window reserved) or `guaranteed` (programmatic guaranteed; commits
+  `committedPlays`; the only type that reserves inventory). The waterfall is
+  PG, preferred, private auction, open auction (16 Oct 2026). A preferred deal
+  must have exactly one invited buyer and a fixed CPM (`floorCpm`); the buyer's
+  bid at or above it takes the slot at the fixed CPM, not at the bid.
 - **Invited IAB categories are private-auction only** (ticket
   WPb7NbbeqJmhEOzSeBSl). The field is shown only when the type is
   `private_auction`; `preferred` and `guaranteed` are bilateral commitments
@@ -4867,8 +4868,8 @@ keeps the won creative renderable; the lookahead sets how early the per-impressi
   ("not shareable") until at least one named seat is added.
 - **The type decides the fields.** `committedPlays` is captured only for
   `guaranteed` (pre-filled from Default committed plays; the booked volume
-  per window is still `floor(forecast × (1 − buffer%))`); `auctionCloses`
-  only for `private_auction`. The API refuses the other combinations (400),
+  per window is still `floor(forecast × (1 − buffer%))`); no type
+  captures `auctionCloses` any more. The API refuses the other combinations (400),
   and a list that is not guaranteed reports no effective committed volume.
   The floor price CPM (platform → DSP → list; most specific raises it, never
   below the platform floor) applies to every type.

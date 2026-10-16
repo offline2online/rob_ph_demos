@@ -72,7 +72,7 @@ const deliveredOf = async (ctx: Context, l: BuyersList): Promise<number> =>
 export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => async (app) => {
   /* An invited buyer must be a seat a connected DSP actually synced. */
   const partnersById = async () => new Map((await ctx.partners.list()).filter((p) => p.status === 'connected').map((p) => [p.id, p]))
-  const parse = (b: Body, partnerById: Map<string, PartnerRecord>, access: Record<string, Access>, defined: Record<string, VariableValues>, platformFloor: number, errors: { field: string; reason: string }[]): { name: string; description: string; dealType: BuyersListDealType; invitedBuyers: InvitedBuyer[]; invitedCategories: string[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays: number | null; floorCpm: number | null } => {
+  const parse = (b: Body, partnerById: Map<string, PartnerRecord>, access: Record<string, Access>, defined: Record<string, VariableValues>, platformFloor: number, errors: { field: string; reason: string }[], legacyAuctionCloses: string | null = null): { name: string; description: string; dealType: BuyersListDealType; invitedBuyers: InvitedBuyer[]; invitedCategories: string[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays: number | null; floorCpm: number | null } => {
     const name = typeof b.name === 'string' ? b.name.trim() : ''
     if (!name) errors.push({ field: 'name', reason: 'A name is required.' })
     const description = typeof b.description === 'string' ? b.description.trim() : ''
@@ -142,12 +142,14 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     const activeFrom = parseDate(b.activeFrom, 'activeFrom')
     const activeTo = parseDate(b.activeTo, 'activeTo')
     if (activeFrom && activeTo && Date.parse(activeFrom) > Date.parse(activeTo)) errors.push({ field: 'activeTo', reason: 'Must be on or after activeFrom.' })
-    /* auctionCloses (the two-period model's bidding deadline, 23 Sep 2026)
-       is independent of the delivery term above — it's fine for it to sit
-       before, inside or after activeFrom/activeTo (a deal can be set up to
-       award its term ahead of time). */
+    /* The two-period model is retired (Rob, 16 Oct 2026; industry-standard private auctions): invited buyers bid per slot for the whole flight, first price against the deal's CPM floor, with no auction window and no rate lock. A deal that already has an auctionCloses keeps it as a record (a locked deal honours its terms to flight end); no new one is accepted. */
     const auctionCloses = parseDate(b.auctionCloses, 'auctionCloses')
-    if (auctionCloses && dealType !== 'private_auction') errors.push({ field: 'auctionCloses', reason: 'Only a private auction has an auction window; a preferred or guaranteed deal is not bid for.' })
+    if (auctionCloses && auctionCloses !== legacyAuctionCloses) errors.push({ field: 'auctionCloses', reason: 'Private auctions no longer have an auction window: invited buyers bid on each slot throughout the flight. Leave auctionCloses empty.' })
+    /* A preferred deal is one named buyer at one fixed CPM, with first look at every slot (it may pass). */
+    if (dealType === 'preferred') {
+      if (invitedBuyers.length > 1) errors.push({ field: 'invitedBuyers', reason: 'A preferred deal is with one named buyer; use a private auction to invite several.' })
+      if (b.floorCpm === undefined || b.floorCpm === null) errors.push({ field: 'floorCpm', reason: 'A preferred deal has a fixed CPM: enter the price the buyer pays on every slot it takes.' })
+    }
     /* committedPlays: the volume this deal commits to over its term — a whole number of plays, or null for none. */
     let committedPlays: number | null = null
     if (b.committedPlays !== null && b.committedPlays !== undefined && dealType !== 'guaranteed') errors.push({ field: 'committedPlays', reason: 'Only a guaranteed deal commits volume; leave it empty for a private auction or preferred deal.' })
@@ -231,7 +233,7 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     if (!existing) throw notFound()
     const errors: { field: string; reason: string }[] = []
     const body: Body = { ...(req.body ?? {}), dealType: req.body?.dealType ?? existing.dealType }
-    const parsed = parse(body, await partnersById(), await ctx.company.variableAccess(), await ctx.company.variableValues(), (await ctx.company.get()).floorCpm, errors)
+    const parsed = parse(body, await partnersById(), await ctx.company.variableAccess(), await ctx.company.variableValues(), (await ctx.company.get()).floorCpm, errors, existing.auctionCloses)
     if (errors.length) throw validationFailed(errors)
     /* A different deal type mints a new deal: nothing on this one changes, so nobody re-accepts. */
     const changes = parsed.dealType !== existing.dealType || existing.status === 'draft' ? [] : termChanges(existing, parsed)
@@ -275,7 +277,7 @@ export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     if (req.body?.dealId !== undefined && req.body.dealId !== existing.dealId) errors.push({ field: 'dealId', reason: 'A deal ID cannot be changed.' })
     /* An omitted dealType means "as it is" on an edit, so an older client can never mint a new deal by accident. */
     const body: Body = { ...(req.body ?? {}), dealType: req.body?.dealType ?? existing.dealType }
-    const parsed = parse(body, await partnersById(), await ctx.company.variableAccess(), await ctx.company.variableValues(), (await ctx.company.get()).floorCpm, errors)
+    const parsed = parse(body, await partnersById(), await ctx.company.variableAccess(), await ctx.company.variableValues(), (await ctx.company.get()).floorCpm, errors, existing.auctionCloses)
     if (errors.length) throw validationFailed(errors)
     /* A different deal type is a different deal: insert a new list with a new ID and leave this one (and its slot assignments and campaigns) as it was until it ends. */
     if (parsed.dealType !== existing.dealType) {

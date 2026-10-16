@@ -1,6 +1,5 @@
 /* The scheduled jobs (API.md "Jobs with no API"): private-auction (deal)
-   windows are cleared one window ahead, and a deal with an auctionCloses
-   runs its one deciding auction when that deadline passes; windows that
+   windows are cleared one window ahead, each its own first-price auction; windows that
    have ended are billed; settled bids past their retention are deleted.
    Nothing else is auctioned on a schedule: every other position is sold in
    real time, per impression (Rob, 8 Oct 2026). No UI and no endpoint. */
@@ -9,7 +8,7 @@ import type { Context } from '../context'
 import { tx } from '../db/db'
 import { sweepRejectedCampaigns } from '../domain/campaignRetention'
 import { assignedOf, type BuyersList } from '@ph-dsp/types'
-import { isActiveAt, isTermLocked } from '../billing/term'
+import { isActiveAt } from '../billing/term'
 import { type PositionRef, allPositions, beyondPendingChange, assignmentOf, nextWindowFor, windowMsFor, windowStartOf } from '../domain/positions'
 import { releaseSettledSlotLocks } from '../domain/slotLock'
 import { sweepSettledReservations } from '../domain/reservationRetention'
@@ -107,7 +106,7 @@ export async function schedulerTick(ctx: Context, log: (msg: string) => void) {
     const due = await dueDealAuctions(ctx)
     const groups = new Map<string, DueDealAuction[]>()
     for (const d of due) {
-      const g = `${d.windowStart.toISOString()}|${d.deciding.length ? 'decide' : 'window'}`
+      const g = d.windowStart.toISOString()
       groups.set(g, [...(groups.get(g) ?? []), d])
     }
     for (const group of groups.values()) {
@@ -116,7 +115,7 @@ export async function schedulerTick(ctx: Context, log: (msg: string) => void) {
       if (!claimed.length) continue
       await job('Auction', async () => {
         try {
-          const res = await runAuction(ctx, claimed[0].windowStart, { positions: claimed.map((d) => d.position), deciding: new Set(claimed.flatMap((d) => d.deciding)) })
+          const res = await runAuction(ctx, claimed[0].windowStart, { positions: claimed.map((d) => d.position) })
           for (const d of claimed) await finishAuction(ctx, d.key)
           const failed = res.positions.filter((p) => p.skipped?.startsWith('Failed:')).length
           log(`Auction cleared ${res.windowStart}: ${res.positions.filter((p) => p.winner).length} of ${res.positions.length} positions won${failed ? `, ${failed} failed` : ''}.`)
@@ -130,27 +129,17 @@ export async function schedulerTick(ctx: Context, log: (msg: string) => void) {
   if (errors.length) throw new Error(`Scheduler tick: ${errors.join('; ')}`)
 }
 
-/* A deal window or deciding auction the scheduler owes: the position, the
-   window it clears, the claim key, and the buyers lists whose one
-   term-deciding auction this is (empty for an ordinary window). */
-export interface DueDealAuction { position: PositionRef; windowStart: Date; key: string; deciding: string[] }
-
-/* The first window of a position, of length `len`, that starts at or after `at`. */
-const windowAtOrAfter = (at: Date, len: number) => { const w = windowStartOf(at, len); return w.getTime() >= at.getTime() ? w : new Date(w.getTime() + len) }
+/* A deal window the scheduler owes: the position, the window it clears and the claim key. */
+export interface DueDealAuction { position: PositionRef; windowStart: Date; key: string }
 
 /* What the scheduler owes now (Rob, 8 Oct 2026): only deals are cleared by
-   a schedule. For each position assigned to buyers lists:
-   - its next window (the one after the window now running, each slot's own
-     billing unit long) is cleared once, when some list is in its delivery
-     term there (activeFrom/activeTo) and either has no auctionCloses (a
-     buyers list clears a fresh auction every play window), or has locked
-     its rate (the window is booked at it), or its deadline has passed (the
-     window is then told it is not sold under the deal);
-   - a list with an auctionCloses that has passed and that has not locked
-     runs ONE deciding auction, on the first window of its term not yet
-     started. A clear locks the winning CPM for the rest of the term
-     (billing/lockedTerm.ts); the claim, kept for good, is what makes it
-     once. Before auctionCloses nothing clears: bids wait for the deadline. */
+   a schedule. For each position assigned to shared buyers lists, its next
+   window (the one after the window now running, each slot's own billing unit
+   long) is cleared once when some list is in its flight there
+   (activeFrom/activeTo). Every window is its own auction: invited buyers
+   bid per slot throughout the flight (16 Oct 2026, industry-standard private
+   auction; no auction window, no deciding auction). A deal locked before
+   that keeps booking its rate until flight end (billing/lockedTerm.ts). */
 export async function dueDealAuctions(ctx: Context): Promise<DueDealAuction[]> {
   const now = ctx.clock()
   const out: DueDealAuction[] = []
@@ -162,17 +151,7 @@ export async function dueDealAuctions(ctx: Context): Promise<DueDealAuction[]> {
     const nextIso = next.toISOString()
     /* A window past a pending billing-unit change waits for it to take effect. */
     if (beyondPendingChange(p.def, next.getTime(), now.getTime())) continue
-    const closed = (l: BuyersList) => !!l.auctionCloses && now.getTime() > Date.parse(l.auctionCloses)
-    if (lists.some((l) => isActiveAt(l, nextIso) && (!l.auctionCloses || isTermLocked(l) || closed(l)))) {
-      out.push({ position: p, windowStart: next, key: `${nextIso}#${p.positionId}`, deciding: [] })
-    }
-    for (const l of lists) {
-      if (!l.auctionCloses || isTermLocked(l) || !closed(l)) continue
-      const first = l.activeFrom ? windowAtOrAfter(new Date(l.activeFrom), len) : next
-      const w = first.getTime() > next.getTime() ? first : next
-      if (l.activeTo && w.getTime() > Date.parse(l.activeTo)) continue
-      out.push({ position: p, windowStart: w, key: `decide:${l.id}:${p.positionId}`, deciding: [l.id] })
-    }
+    if (lists.some((l) => isActiveAt(l, nextIso))) out.push({ position: p, windowStart: next, key: `${nextIso}#${p.positionId}` })
   }
   return out.sort((a, b) => a.windowStart.getTime() - b.windowStart.getTime())
 }

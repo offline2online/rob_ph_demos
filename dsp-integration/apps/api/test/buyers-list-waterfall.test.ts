@@ -50,6 +50,33 @@ describe('buyers-list waterfall', () => {
     expect(out.positions[0].winner).toMatchObject({ advertiserId: 'nestle' })
   })
 
+  /* Industry-standard deal types (Rob, 16 Oct 2026). Waterfall: PG, preferred, private auction, open auction. */
+  it('gives a preferred deal first look ahead of a private auction, and clears it at its fixed CPM, not the bid', async () => {
+    const { ctx, assign, activate } = await setup()
+    await ctx.buyersLists.insert({ id: 'bl_pref', name: 'Preferred', ...base, dealType: 'preferred', floorCpm: 120, invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }] })
+    /* Listed last, but tried first: bl_b (private auction) would also clear Nestlé's bid. */
+    await assign(2, ['bl_b', 'bl_pref'])
+    await activate()
+    const out = await runAuction(ctx, W2)
+    expect(out.positions[0].bidRequests).toBe(1)
+    expect(out.positions[0].winner).toMatchObject({ advertiserId: 'nestle', clearingCpm: 120 })
+    const row = (await ctx.reservations.forWindow('menu_board.s2', W2.toISOString())).find((r) => r.status === 'won')!
+    expect(row).toMatchObject({ bidCpm: 150, clearingCpm: 120 })
+  })
+
+  it('lets a preferred buyer pass: the slot goes to the private auction, nothing held', async () => {
+    const { ctx, assign, activate } = await setup()
+    /* The preferred buyer's seat bids nothing, so it passes. */
+    await ctx.buyersLists.insert({ id: 'bl_pref', name: 'Preferred', ...base, dealType: 'preferred', floorCpm: 120, invitedBuyers: [{ partnerId: 'p_google', seatId: '5130002' }] })
+    await assign(2, ['bl_pref', 'bl_b'])
+    await activate()
+    const out = await runAuction(ctx, W2)
+    expect(out.positions[0].bidRequests).toBe(2)
+    expect(out.positions[0].winner).toMatchObject({ advertiserId: 'nestle', clearingCpm: 150 })
+    /* Only the winning private-auction row exists for the window: the preferred tier reserved nothing. */
+    expect((await ctx.reservations.forWindow('menu_board.s2', W2.toISOString())).filter((r) => r.status === 'reserved')).toEqual([])
+  })
+
   it('persists the order per slot, and one list ranks differently on two slots', async () => {
     const { ctx, app } = await setup()
     const ext = (await ctx.displayTypes.get('menu_board'))!.phExtensions!

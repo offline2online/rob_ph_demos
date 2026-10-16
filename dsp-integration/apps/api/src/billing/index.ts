@@ -73,7 +73,7 @@ export interface LineItem {
 }
 
 export { recordLatePlays, valueLatePlay } from './late'
-export { bookLockedTermWindow, lockTermOnClear } from './lockedTerm'
+export { bookLockedTermWindow } from './lockedTerm'
 export { auctionOpenAt, isActiveAt, isTermLocked, lockedTermSpan, termStateAt, type TermState } from './term'
 
 /* What a line item is billed on. Only proof of play exists: realised VAC-d

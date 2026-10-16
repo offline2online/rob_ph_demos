@@ -10,36 +10,35 @@
    per impression (realtime.ts), and has no window auction, no advance
    bidding and no company auction schedule. The scheduler
    (scheduler.ts dueDealAuctions) triggers this per deal window, one window
-   ahead, and once per deal when its auctionCloses passes.
+   ahead.
 
    Test-mode DSPs receive requests and their bids are cleared among
    themselves, but a Test-mode win never takes the window, is never billed
    and is never handed off (spec §7). The live winner is handed off
    (handoff.ts).
 
-   Private auctions using the two-period model (spec "…dynamic VAC-d
-   billing over the delivery term", 23 Sep 2026) are a third case, between
-   "reserved" and a real auction: a deal with auctionCloses set runs a real
-   auction same as any other deal until a bid clears within that deadline,
-   at which point the winning rate locks (BuyersListRepo.lockWin) and every
-   later play window in the delivery term is booked directly at that rate
-   — no re-auction, no fresh bids — by bookLockedTermWindow (billing/lockedTerm.ts). Dynamic
-   VAC-d billing is otherwise unchanged: each such window still gets its
-   own reservation, still billed on its own realised VAC-d
-   (exchange/billing.ts), just always at the same locked clearingCpm. A
-   deal with no auctionCloses set keeps clearing fresh every window,
-   exactly as before this model existed.
+   Private auctions are industry standard (16 Oct 2026): invited buyers bid
+   on each slot throughout the flight, first price, against the deal's CPM
+   floor. There is no auction window, no rate lock and nothing held between
+   windows; a window with no clearing bid falls through to the open auction
+   or default campaign. Only a deal locked under the retired two-period model
+   keeps booking its locked rate until flight end (bookLockedTermWindow,
+   billing/lockedTerm.ts), billed on each window's own realised VAC-d.
+
+   The waterfall is PG, preferred deal, private auction, open auction. A
+   preferred deal (one named buyer, a fixed CPM) gets first look at each
+   slot: if its buyer bids at or above the fixed CPM the window is sold to it
+   at that fixed CPM; otherwise (it passes) the slot goes to the next tier.
+   Nothing is reserved ahead of the window: PG is the only type that
+   reserves inventory.
 
    Reserve-price booking (open questions 45 and 52, decided by Rob on 29 Sep
    2026) needs nothing new here. A window a buyer reserved at the position's
    reserve price (POST /v1/reservations) already has its `reserved` row, so
    this position is skipped for that window. No bid request goes out, and
    migration 0021's one-live-winner index would refuse a second sale anyway.
-   A reserve commitment on a two-period deal locks the term like a clearing
-   bid (lockedWin.source `reserve`), and bookLockedTermWindow books each
-   later window as a `reserved` reservation at that rate. No locked rate,
-   from either source, books a window below the effective floor (deals
-   never bypass the floor, OQ45).
+   A legacy locked rate (either source) never books a window below the
+   effective floor (deals never bypass the floor, OQ45).
 
    Windows are per slot (OQ27, Rob 29 Sep 2026): each position's window is
    its own billing unit long (positions.ts windowMs(ctx, p)), all laid from
@@ -51,12 +50,12 @@
 import { randomUUID } from 'node:crypto'
 import type { Context } from '../context'
 import { TRANSACTING_CURRENCY } from '../domain/currency'
-import { bookLockedTermWindow, lockTermOnClear, termStateAt } from '../billing'
+import { bookLockedTermWindow, termStateAt } from '../billing'
 import { isLive } from '../domain/exchange'
 import { type PositionRef, allPositions, assignmentOf, inGlobalDeal, tierOf, effectivePartnerIds, fallsThroughToOpen, filterAsync, isRealtime, isSellable, nextWindow, positionView, windowMsFor, windowStartOf } from '../domain/positions'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 import { type ReservationRecord, TAKEN } from '../repos/ReservationRepo'
-import { advertiserSlug, assignedOf } from '@ph-dsp/types'
+import { advertiserSlug, assignedOf, type BuyersList } from '@ph-dsp/types'
 import { isUniqueViolation, tx } from '../db/db'
 import { queueCreative, verifiedCampaign } from './creatives'
 import { vetAtBidCreative } from './atBid'
@@ -104,13 +103,13 @@ export const receivesBidRequests = (p: PartnerRecord) => p.status === 'connected
      fetches it, up to the asset size limit); further unknown creatives in
      the same response are discarded with a reason and retried in a later
      window, so a response full of new crids can't stall the clearing. */
+/* Waterfall rank by deal type: lower is tried first. A guaranteed deal reserves its inventory and is not auctioned. */
+const TIER_RANK: Record<BuyersList['dealType'], number> = { guaranteed: 0, preferred: 1, private_auction: 2 }
 export const POSITION_CONCURRENCY = 16
 export const MAX_BIDS_PER_RESPONSE = 10
 
-/* Which positions to clear, and which buyers lists are having their one
-   term-deciding auction (exchange/scheduler.ts dueDealAuctions): a list in
-   `deciding` takes bids even though its auctionCloses has passed. */
-export interface AuctionOptions { positions?: readonly PositionRef[]; deciding?: ReadonlySet<string> }
+/* Which positions to clear (exchange/scheduler.ts dueDealAuctions). */
+export interface AuctionOptions { positions?: readonly PositionRef[] }
 
 /* Clears one window for private-auction (deal) positions only: every other
    position is sold in real time (realtime.ts), with no window auction. */
@@ -136,7 +135,7 @@ export async function runAuction(ctx: Context, at?: Date, opts: AuctionOptions =
       const i = next++
       const p = positions[i]
       try {
-        outcomes[i] = await clearPosition(ctx, p, start, bidders, opts.deciding)
+        outcomes[i] = await clearPosition(ctx, p, start, bidders)
       } catch (e) {
         /* One position's failure (a fault in a DSP's answer, a store that
            refused a write) is that position's outcome, not the auction's:
@@ -154,7 +153,7 @@ export async function runAuction(ctx: Context, at?: Date, opts: AuctionOptions =
   return { windowStart: start, positions: outcomes }
 }
 
-async function clearPosition(ctx: Context, p: PositionRef, start: string, bidders: PartnerRecord[], deciding?: ReadonlySet<string>): Promise<PositionOutcome> {
+async function clearPosition(ctx: Context, p: PositionRef, start: string, bidders: PartnerRecord[]): Promise<PositionOutcome> {
   const out: PositionOutcome = { positionId: p.positionId, bidRequests: 0, bids: 0, winner: null }
   if (isRealtime(p)) return { ...out, skipped: 'Sold in real time, per impression: no window auction.' }
   if (assignmentOf(p.def) === 'reserved') return { ...out, skipped: 'Held for a named advertiser: booked by reservation.' }
@@ -173,34 +172,21 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, bidder
      deal ID, the three-level floor, the term) is that list's own. A position
      with one list, or none, is a single tier and runs exactly as before. */
   const listIds = assignmentOf(p.def) === 'deal' ? assignedOf(p.def).buyersListIds : []
-  const tiers = listIds.length > 1 ? listIds.map((id) => tierOf(p, id)) : [p]
+  /* Waterfall order: PG, preferred deal, private auction (open auction is the real-time fall-through). The assigned order breaks ties within a type. */
+  const lists = await Promise.all(listIds.map((id) => ctx.buyersLists.get(id)))
+  const ordered = listIds.map((id, i) => ({ id, list: lists[i], i })).sort((a, b) => (TIER_RANK[a.list?.dealType ?? 'private_auction'] - TIER_RANK[b.list?.dealType ?? 'private_auction']) || a.i - b.i)
+  const tiers = listIds.length > 1 ? ordered.map((o) => tierOf(p, o.id)) : [p]
 
-  /* Two-period private auctions (spec "…dynamic VAC-d billing over the
-     delivery term"): once a deal's rate is locked, every window in its
-     delivery term books directly at that rate — no bidding. Before it
-     locks, a deal with auctionCloses set still runs the real auction
-     below like any other, until that deadline passes with nothing having
-     cleared, at which point it stops soliciting bids for the rest of the
-     term (falls through, same as an expired delivery term always has). A
-     deal with no auctionCloses set never hits either branch here and
-     keeps clearing fresh every window, exactly as before this model
-     existed. In a waterfall a tier whose auction has closed is passed over
-     and a tier whose rate is locked takes the window when reached. */
+  /* A deal locked under the retired two-period model (before 16 Oct 2026)
+     books every window of its flight at its locked rate, with no bidding,
+     until the flight ends. Every other deal takes bids on each window. */
   const open: PositionRef[] = []
-  let closedNote = ''
   for (const tp of tiers) {
     if (assignmentOf(tp.def) !== 'deal') { open.push(tp); continue }
     const list = await ctx.buyersLists.get(assignedOf(tp.def).buyersListId as string)
     const term = list ? termStateAt(list, start) : null
-    if (list && term?.active) {
-      if (term.locked) return bookLockedTermWindow(ctx, tp, start, list, out)
-      if (!term.auctionOpen && !deciding?.has(list.id)) { closedNote = list.name; continue }
-    }
+    if (list && term?.active && term.locked) return bookLockedTermWindow(ctx, tp, start, list, out)
     open.push(tp)
-  }
-  if (!open.length) {
-    await settlePending(ctx, p.positionId, start, `The private auction closed with no clearing bid (${closedNote}); this window is no longer sold under the deal.`)
-    return { ...out, skipped: `Private auction window closed with no clearing bid (${closedNote}).${fallsThroughToOpen(p.def, (await ctx.exchange.get()).globalDealEnabled === true) ? ' Plays fall through to the real-time Open auction.' : ''}` }
   }
 
   /* Locked against new sales (30 Sep 2026): windows already booked were
@@ -212,10 +198,9 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, bidder
   }
 
   let live: ReservationRecord | null = null
-  let won: PositionRef = p
   for (const [i, tp] of open.entries()) {
     live = await auctionTier(ctx, tp, start, bidders, out, i === open.length - 1)
-    if (live) { won = tp; break }
+    if (live) break
   }
   /* Anything still pending for this window now arrived between the read
      above and the clear (the checks above await), or was never a
@@ -226,8 +211,7 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, bidder
   if (!live && fallsThroughToOpen(p.def, (await ctx.exchange.get()).globalDealEnabled === true)) out.skipped = 'No deal won this window: plays fall through to the real-time Open auction.'
   if (live) {
     await handOff(ctx, live)
-    out.winner = { reservationId: live.id, partnerId: live.partnerId, advertiserId: live.advertiserId, clearingCpm: live.bidCpm as number }
-    await lockTermOnClear(ctx, won, live)
+    out.winner = { reservationId: live.id, partnerId: live.partnerId, advertiserId: live.advertiserId, clearingCpm: (live.clearingCpm ?? live.bidCpm) as number }
   }
   return out
 }
@@ -305,8 +289,11 @@ async function auctionTier(ctx: Context, p: PositionRef, start: string, bidders:
     else candidates.push(r)
   }
 
-  const winner = await clear(ctx, candidates.filter((c) => !c.testMode))
-  await clear(ctx, candidates.filter((c) => c.testMode))
+  /* A preferred deal clears at its fixed CPM, not at the buyer's bid: the buyer bids at or above it (anything lower was refused at the floor above) or passes, and a pass sends the slot to the next tier. */
+  const tierList = assignmentOf(p.def) === 'deal' ? await ctx.buyersLists.get(assignedOf(p.def).buyersListId as string) : null
+  const fixedCpm = tierList?.dealType === 'preferred' ? tierList.floorCpm : null
+  const winner = await clear(ctx, candidates.filter((c) => !c.testMode), fixedCpm)
+  await clear(ctx, candidates.filter((c) => c.testMode), fixedCpm)
   return winner
 }
 
@@ -316,19 +303,19 @@ async function auctionTier(ctx: Context, p: PositionRef, start: string, bidders:
    instance) already sold it; then nobody here wins, and every candidate is
    told why rather than being left pending. One transaction: the winner and
    every loser are marked together. */
-async function clear(ctx: Context, candidates: ReservationRecord[]): Promise<ReservationRecord | null> {
+async function clear(ctx: Context, candidates: ReservationRecord[], fixedCpm: number | null = null): Promise<ReservationRecord | null> {
   if (!candidates.length) return null
   const [winner, ...rest] = [...candidates].sort((a, b) => (b.bidCpm as number) - (a.bidCpm as number) || (a.createdAt ?? '').localeCompare(b.createdAt ?? ''))
-  const company = await ctx.company.get()
+  const price = fixedCpm ?? (winner.bidCpm as number)
   return tx(ctx.db, async () => {
     try {
-      await ctx.reservations.update(winner.id, { status: 'won', clearingCpm: winner.bidCpm, reason: null })
+      await ctx.reservations.update(winner.id, { status: 'won', clearingCpm: price, reason: fixedCpm === null ? null : `Preferred deal: first look taken at the fixed CPM of ${fixedCpm} ${winner.currency}.` })
     } catch (e) {
       if (!isUniqueViolation(e)) throw e
       for (const r of candidates) await ctx.reservations.update(r.id, { status: 'lost', reason: 'The window was sold by another clearing of the same auction.' })
       return null
     }
-    for (const r of rest) await ctx.reservations.update(r.id, { status: 'lost', reason: `Outbid: the window cleared at ${winner.bidCpm} ${winner.currency} CPM.` })
+    for (const r of rest) await ctx.reservations.update(r.id, { status: 'lost', reason: `Outbid: the window cleared at ${price} ${winner.currency} CPM.` })
     return ctx.reservations.get(winner.id)
   })
 }
