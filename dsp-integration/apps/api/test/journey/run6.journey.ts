@@ -342,7 +342,7 @@ async function main() {
   record('M1b', 'a guaranteed deal refuses an auction window (only a private auction has one)', refusedClose.status === 400 && /auctionCloses/.test(refusedClose.text), '400 on auctionCloses', `${refusedClose.status} ${refusedClose.text.slice(0, 160)}`)
 
   /* M2–M4 — preferred deal. */
-  const pref = await newList('preferred')
+  const pref = await newList('preferred', { floorCpm: RESERVE_PRICE })
   must('M2', 'preferred deal created on the buyers list', pref.status === 201 && pref.json?.dealType === 'preferred' && pref.json?.committedPlays == null, '201 dealType preferred, no committed plays', `${pref.status} ${pref.text.slice(0, 200)}`)
   const assignedPref = await assign(pref.json.id)
   must('M2b', 'slot assigned to the preferred deal', assignedPref.status === 200, '200', `${assignedPref.status} ${assignedPref.text.slice(0, 200)}`)
