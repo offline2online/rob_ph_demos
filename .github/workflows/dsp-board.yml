@@ -147,4 +147,4 @@ jobs:
         working-directory: dsp-integration
         env:
           BOARD_API_KEY: ${{ secrets.BOARD_API_KEY }}
-        run: node scripts/board-tickets.mjs
+        run: node scripts/board-tickets.mjs ${{ inputs.project != '' && format('--project "{0}"', inputs.project) || '' }} --inspect
