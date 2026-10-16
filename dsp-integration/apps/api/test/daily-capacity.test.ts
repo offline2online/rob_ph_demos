@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { playsInPeriod, playsForGroups, segmentsTargeted } from '../src/domain/dailyCapacity'
+import { operatingHours, playsInPeriod, playsForGroups, segmentsTargeted } from '../src/domain/dailyCapacity'
 import { buildApp } from '../src/http/app'
 import type { ReservationRecord } from '../src/repos/ReservationRepo'
 import { expectMatchesContract } from './contract'
@@ -28,6 +28,22 @@ describe('playsInPeriod: a day rolls up the windows in operating hours', () => {
   it('sums screens by trading hours', () => {
     const groups = [{ hours: { open: 0, close: 24 }, screens: 2 }, { hours: { open: 8, close: 16 }, screens: 3 }]
     expect(playsForGroups(groups, D, D + DAY, 8 * H, 60)).toBe(2 * 1440 + 3 * 480)
+  })
+})
+
+describe('operatingHours: resolved from the IAB store zone', () => {
+  const store = { openHour: 7, closeHour: 22 }
+  it('external zones run 24 hours whatever the store hours', () => {
+    expect(operatingHours('exterior', store)).toEqual({ open: 0, close: 24 })
+    expect(operatingHours('entrance', store)).toEqual({ open: 0, close: 24 })
+  })
+  it('internal zones, and an undefined zone, follow store trading hours', () => {
+    for (const z of ['aisles', 'checkout', 'other', null, undefined]) expect(operatingHours(z, store)).toEqual({ open: 7, close: 22 })
+  })
+  it('an exterior display counts 24h of plays, an aisle display trading hours only', () => {
+    const plays = (z: string) => playsInPeriod(D, D + DAY, 8 * H, 60, operatingHours(z, store))
+    expect(plays('exterior')).toBe(1440)
+    expect(plays('aisles')).toBe(15 * 60)
   })
 })
 

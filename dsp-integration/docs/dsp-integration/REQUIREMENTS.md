@@ -4204,6 +4204,18 @@ playback analytics.**
   are not additive to each other or to the estate figure. Day boundaries are
   UTC and store hours are hours of that day (no store time zones in this POC).
   Firm = reserve bookings only. Spec: §5, §6.
+- **Zone-based operating hours** (ticket 24VWhzDd4yv7CswOPrGX, decision Rob
+  16 Oct 2026; `operatingHours()` in `domain/dailyCapacity.ts`): a display's
+  operating hours are resolved from the IAB store zone of its display type
+  (`phExtensions.storeZone`), with no per-display setting. **Exterior** and
+  **Entrance & out of category** are external: 24 hours (window screens are
+  Entrance). **In aisles**, **Checkout** and **Other & connected store** are
+  internal: the store's trading hours, as before; a display type with no zone
+  defined also follows the store. Plays per day on the Booking schedule counts
+  each display at its resolved hours, not the store's for every display. Still
+  to build (follow-up tickets): no slots, bid requests or bookings outside a
+  display's hours and no unsold/missed-revenue accounting for them, publishing
+  per-screen hours to SSPs/DSPs, and the hour-of-week VAC-d profile.
 - **Play-window booked/available summary, wherever the page counts
   "windows"** (ticket "anytime you use the word Windows please show a
   representation of how many are booked versus … localised … personalised

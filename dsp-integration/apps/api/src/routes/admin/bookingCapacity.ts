@@ -12,7 +12,7 @@ import type { Context } from '../../context'
 import type { Guards } from '../../http/app'
 import { validationFailed } from '../../http/errors'
 import { allPositions, isRealtime, maxPlayLengthSecFor, windowMs, windowStartOf } from '../../domain/positions'
-import { playsForGroups, screensOf, segmentsTargeted, type ScreenGroup } from '../../domain/dailyCapacity'
+import { operatingHours, playsForGroups, screensOf, segmentsTargeted, type ScreenGroup } from '../../domain/dailyCapacity'
 import { rotationSizeOf } from '../../domain/slots'
 import { TAKEN } from '../../repos/ReservationRepo'
 import { advertiserSlug, directLabel } from '@ph-dsp/types'
@@ -34,7 +34,7 @@ export async function bookingCapacity(ctx: Context, days: Date[]): Promise<Booki
   for (const p of await allPositions(ctx)) {
     const len = await windowMs(ctx, p)
     const loopSec = maxPlayLengthSecFor(company.maxPlayLengthSec, p) * Math.max(1, rotationSizeOf(p.displayType, p.slot))
-    /* Displays grouped by store, then by trading hours, whole estate and per segment. */
+    /* Displays grouped by store, then by operating hours (zone-based: external zones 24h, internal follow the store), whole estate and per segment. */
     const perStore = new Map<string, number>()
     for (const d of await ctx.displays.listByDisplayType(p.displayType.id)) perStore.set(d.storeId, (perStore.get(d.storeId) ?? 0) + 1)
     const groupsOf = (keep: (segments: string[]) => boolean): ScreenGroup[] => {
@@ -42,7 +42,7 @@ export async function bookingCapacity(ctx: Context, days: Date[]): Promise<Booki
       for (const [storeId, screens] of perStore) {
         const s = stores.get(storeId)
         if (s && !keep(s.segments)) continue
-        const hours = { open: s?.openHour ?? 0, close: s?.closeHour ?? 24 }
+        const hours = operatingHours(p.displayType.phExtensions?.storeZone, s)
         const key = `${hours.open}-${hours.close}`
         const g = byHours.get(key) ?? { hours, screens: 0 }
         g.screens += screens
