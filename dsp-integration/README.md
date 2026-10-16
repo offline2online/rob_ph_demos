@@ -196,6 +196,7 @@ them. That is what this is for:
 
 ```bash
 npm run board:tickets                                          # what is where; writes nothing
+npm run board:tickets -- --inspect                             # + why a Backlog card isn't building (last Ready for Dev click, build state; dsp-board.yml prints this on every run)
 npm run board:tickets -- --from backlog --to published-live    # dry run: names what would move
 npm run board:tickets -- --from backlog --to published-live --yes
 npm run board:tickets -- --deploy-branch deploy/dsp-integration --yes

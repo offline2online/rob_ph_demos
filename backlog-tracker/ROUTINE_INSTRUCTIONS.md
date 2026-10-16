@@ -313,12 +313,18 @@ on the card. So, in a default build fire:
   build, re-title or comment on them.
 - **The ticket's comments are in the fire text and are binding.** A
   `DECIDED` note from a person settles the question — build to it.
-- **"Too large" is not a reason to park a ticket.** You have a whole session
-  for it. The one real ceiling is Firestore's 1 MiB document limit on
-  `patchFiles` (whole files, so roughly 900 KB of content). If a ticket truly
-  needs more than that, build the first coherent slice now and file the
-  rest as new Backlog tickets (same project, linked by id in each `desc`),
-  saying so on this card — never leave it unbuilt with only a note.
+- **"Too large" is not a reason to park or split a ticket.** You have a
+  whole session for it, and there is no size ceiling on a patch any more
+  (16 Oct 2026): what doesn't fit in the card's own `patchFiles` (Firestore's
+  1 MiB document limit, so keep the card under ~700 KB of content) goes in
+  **patch parts** — see step 4, "A patch bigger than ~700 KB". **Never file
+  the rest of a ticket as a new Backlog ticket because the patch was big.**
+  That is exactly what made one Display Types ticket keep reappearing in
+  Backlog after every Ready for Dev click on 16 Oct 2026 (24VWhzDd… split
+  into nPskZXYO…, which split again into pEbqIDwD… just to leave out
+  `openapi.yaml` and the regenerated `openapi.d.ts`). Split a ticket only
+  when it genuinely contains independent pieces of work that should be
+  tested separately — and then say why on the card.
 - **Record what you built on: `patchBaseSha`.** Before reading any file,
   resolve the train's head commit once —
   `git ls-remote https://github.com/offline2online/rob_ph_demos refs/heads/<deployBranch>`
@@ -483,6 +489,23 @@ ticket once automatically.
      such paths under the project's folder and says so on the card, but
      a path it cannot decide (a new top-level directory) still lands
      where you wrote it — get it right at source.
+   - **A patch bigger than ~700 KB** (e.g. it includes `openapi.yaml` and a
+     regenerated `openapi.d.ts`): the card is one Firestore document and
+     cannot hold more than 1 MiB, so put the overflow in **patch parts**.
+     BEFORE the card PATCH, write each part as its own document:
+     `PATCH $BOARD/backlogItems/<ITEM_ID>/patchParts/<n>` for n = 1..N,
+     body `{"fields":{"patchFiles":{"arrayValue":{"values":[…same
+     {path, content} shape…]}},"patchBaseSha":{"stringValue":"<same sha as
+     the card>"}}}`, keeping each part under ~700 KB. Then make the card
+     PATCH as usual with the remaining files in `patchFiles` (it may hold
+     just one small file) and add `patchPartCount` (integerValue N) to it
+     and its `updateMask`. Every build sets `patchPartCount` — `0` when
+     there are no parts — so a count from an earlier build of the same
+     ticket can't linger. The automation concatenates the card's files and
+     parts 1..N, refuses any part whose `patchBaseSha` differs from the
+     card's, and deletes the parts once the ticket ships. Read each part
+     back after writing it; a part that failed to write lands half a
+     patch otherwise.
    - `patchBranch`: no longer used. There is one branch per project, not
      one per ticket, so there is nothing for this to name. It is still
      accepted and ignored; don't bother setting it.
@@ -569,9 +592,9 @@ ticket once automatically.
    Example PATCH shape (add more `updateMask.fieldPaths` entries and
    fields as needed):
    ```
-   curl -sS -X PATCH "$BOARD/backlogItems/<ITEM_ID>?updateMask.fieldPaths=title&updateMask.fieldPaths=category&updateMask.fieldPaths=updatedAt&updateMask.fieldPaths=notes&updateMask.fieldPaths=patchFiles&updateMask.fieldPaths=patchCommitMessage&updateMask.fieldPaths=patchPrTitle&updateMask.fieldPaths=patchPrBody&updateMask.fieldPaths=patchBaseSha&updateMask.fieldPaths=patchReady" \
+   curl -sS -X PATCH "$BOARD/backlogItems/<ITEM_ID>?updateMask.fieldPaths=title&updateMask.fieldPaths=category&updateMask.fieldPaths=updatedAt&updateMask.fieldPaths=notes&updateMask.fieldPaths=patchFiles&updateMask.fieldPaths=patchCommitMessage&updateMask.fieldPaths=patchPrTitle&updateMask.fieldPaths=patchPrBody&updateMask.fieldPaths=patchBaseSha&updateMask.fieldPaths=patchPartCount&updateMask.fieldPaths=patchReady" \
      -H "Content-Type: application/json" \
-     -d '{"fields":{"title":{"stringValue":"<short clear subject>"},"category":{"stringValue":"<corrected category>"},"updatedAt":{"timestampValue":"<ISO8601 now>"},"notes":{"arrayValue":{"values":[<existing notes, unchanged>, {"mapValue":{"fields":{"author":{"stringValue":"claude"},"text":{"stringValue":"<your summary>"},"at":{"timestampValue":"<ISO8601 now>"}}}}]}},"patchFiles":{"arrayValue":{"values":[{"mapValue":{"fields":{"path":{"stringValue":"<relative/path>"},"content":{"stringValue":"<full new file content>"}}}}]}},"patchCommitMessage":{"stringValue":"<message>"},"patchPrTitle":{"stringValue":"<title>"},"patchPrBody":{"stringValue":"<body>"},"patchBaseSha":{"stringValue":"<40-char sha you read the files from>"},"patchReady":{"booleanValue":true}}}'
+     -d '{"fields":{"title":{"stringValue":"<short clear subject>"},"category":{"stringValue":"<corrected category>"},"updatedAt":{"timestampValue":"<ISO8601 now>"},"notes":{"arrayValue":{"values":[<existing notes, unchanged>, {"mapValue":{"fields":{"author":{"stringValue":"claude"},"text":{"stringValue":"<your summary>"},"at":{"timestampValue":"<ISO8601 now>"}}}}]}},"patchFiles":{"arrayValue":{"values":[{"mapValue":{"fields":{"path":{"stringValue":"<relative/path>"},"content":{"stringValue":"<full new file content>"}}}}]}},"patchCommitMessage":{"stringValue":"<message>"},"patchPrTitle":{"stringValue":"<title>"},"patchPrBody":{"stringValue":"<body>"},"patchBaseSha":{"stringValue":"<40-char sha you read the files from>"},"patchPartCount":{"integerValue":"0"},"patchReady":{"booleanValue":true}}}'
    ```
 
 **Fixes that edit a file under `.github/workflows/`** can be packaged like
