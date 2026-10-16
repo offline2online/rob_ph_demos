@@ -285,20 +285,23 @@ export interface paths {
          *     409. There is no company auction schedule (removed 8 Oct 2026): a
          *     window can be bid on or booked until it starts, or until its
          *     private auction has cleared it, and what governs a private auction
-         *     is the buyers list's own dates. A bid is taken while the list's
-         *     `auctionCloses` has not passed (never once the term is locked), a
-         *     window must fall inside its delivery term (`activeFrom` /
-         *     `activeTo`), and a reservation follows the same term.
+         *     is the buyers list's own dates. A private auction takes a
+         *     first-price bid per slot throughout its delivery term (`activeFrom` /
+         *     `activeTo`) against the deal's CPM floor; a window must fall inside
+         *     that term, and a reservation follows the same term. There is no
+         *     auction window and no rate lock (16 Oct 2026): `auctionCloses` is
+         *     retired, and only a deal locked before then books later windows of
+         *     its term at `lockedWin.cpm` until its flight ends.
          *
          *     Reserve-price booking (programmatic guaranteed; open questions 45 and
          *     52, decided by Rob on 29 Sep 2026): `type: reserve` on a position with
          *     a reservePrice commits the buyer to the window at that price. The
          *     window is held as Reserved (status `reserved`) and is not auctioned.
          *     It is booked and billed at the reserve price on the window's
-         *     realised VAC-d, with no guaranteed volume and no make-good. On a
-         *     private auction with auctionCloses set, the commitment also locks
-         *     the deal's term at the reserve price (BuyersList.lockedWin, source
-         *     `reserve`).
+         *     realised VAC-d, with no guaranteed volume and no make-good. A reserve
+         *     commitment no longer locks the deal's term (16 Oct 2026): no new
+         *     BuyersList.lockedWin is written, and a lock taken before then is
+         *     honoured until its flight ends.
          */
         post: operations["createReservation"];
         delete?: never;
@@ -2218,12 +2221,12 @@ export interface components {
             seatId: string;
         };
         /**
-         * @description The winning bid a private auction's rate has locked to, for the
+         * @description The winning bid a private auction's rate was locked to, for the
          *     rest of its delivery term (spec "…dynamic VAC-d billing over the
-         *     delivery term", 23 Sep 2026). Set once, by the exchange: the first
-         *     time a bid clears within the deal's auctionCloses deadline, or
-         *     when an invited buyer first commits at the position's reserve price
-         *     (see `source`). It is never overwritten, and an API caller never
+         *     delivery term", 23 Sep 2026). No new lock is written since 16 Oct
+         *     2026, when the auction window was retired: this is only present on a
+         *     deal locked before then, and it is honoured until that deal's
+         *     flight ends. It is never overwritten, and an API caller never
          *     sets it directly. Every later
          *     play window in the term is booked at `cpm` for this winner
          *     directly, without a fresh auction; each is still billed on its own
@@ -2588,9 +2591,12 @@ export interface components {
              *     set (Rob, 7 Oct 2026). It maps to the DSP's deal structure (deal
              *     ID + type) at bid time, and a reservation on a position assigned
              *     to this list takes its dealType from here. private_auction:
-             *     invited buyers bid, the two-period model applies. preferred:
-             *     fixed-price first look at the reserve price, no volume.
-             *     guaranteed: commits volume. The floor price CPM applies to all.
+             *     invited buyers bid per slot, first price against the CPM floor,
+             *     throughout the delivery term; no auction window, no rate lock.
+             *     preferred: one invited buyer at a fixed CPM (floorCpm), first
+             *     look at each slot ahead of private and open auction, may pass;
+             *     nothing reserved. guaranteed: commits volume, the only type that
+             *     reserves inventory.
              * @enum {string}
              */
             dealType: "private_auction" | "preferred" | "guaranteed";
@@ -2645,15 +2651,14 @@ export interface components {
             activeTo: string | null;
             /**
              * Format: date-time
-             * @description The deal's own one-time bidding deadline (the auction window):
-             *     invited brands may submit and revise bids until this time, at
-             *     or before which the auction clears once and locks the winning
-             *     rate (lockedWin) for the rest of the delivery term. null = this
-             *     deal isn't using the two-period model — it clears fresh every
-             *     play window, same as a buyers list before this field existed.
+             * @description Retired (16 Oct 2026). Private auctions no longer have an
+             *     auction window: invited buyers bid on each slot throughout the
+             *     delivery term. A deal created before then may still carry a
+             *     value; it is a record only and has no effect. New values are
+             *     refused (400).
              */
             auctionCloses: string | null;
-            /** @description null until the term's one-time auction has cleared (or when auctionCloses itself is null). See LockedWin. */
+            /** @description null, except on a deal whose rate was locked before 16 Oct 2026 (no new lock is written). See LockedWin. */
             lockedWin: components["schemas"]["LockedWin"] | null;
             /** Format: date-time */
             createdAt: string;
@@ -5009,16 +5014,14 @@ export interface operations {
                     activeTo: string | null;
                     /**
                      * Format: date-time
-                     * @description The deal's own one-time bidding deadline (the auction
-                     *     window), distinct from the delivery term above (spec
-                     *     "Private auctions: two-period model", 23 Sep 2026).
-                     *     null = this deal isn't using the two-period model — it
-                     *     clears fresh every play window, same as before this
-                     *     field existed.
+                     * @description Retired (16 Oct 2026): private auctions no longer have an
+                     *     auction window — invited buyers bid on each slot
+                     *     throughout the delivery term. A new value is refused
+                     *     (400); leave it null.
                      */
                     auctionCloses?: string | null;
                     /**
-                     * @description The deal type this list bids against (Rob, 7 Oct 2026): private_auction (invited buyers bid; auctionCloses / locked rate apply), preferred (fixed-price first look held at the reserve price; no volume, no auction window) or guaranteed (commits committedPlays). Omitted: guaranteed when committedPlays is set, else private_auction. committedPlays is refused unless guaranteed; auctionCloses is refused unless private_auction (400).
+                     * @description The deal type this list bids against (Rob, 7 Oct 2026): private_auction (invited buyers bid per slot, first price against the CPM floor, throughout the delivery term; no auction window, no rate lock), preferred (one invited buyer at a fixed CPM, floorCpm required: first look at each slot ahead of private and open auction, may pass; nothing reserved) or guaranteed (commits committedPlays; the only type that reserves inventory). Omitted: guaranteed when committedPlays is set, else private_auction. committedPlays is refused unless guaranteed; a new auctionCloses is refused on every type (400).
                      * @enum {string}
                      */
                     dealType?: "private_auction" | "preferred" | "guaranteed";
@@ -5244,11 +5247,11 @@ export interface operations {
                     activeTo: string | null;
                     /**
                      * Format: date-time
-                     * @description The deal's own one-time bidding deadline (the auction window); see POST's description. Editable even once locked — it no longer has any effect at that point.
+                     * @description Retired (16 Oct 2026); see POST's description. A new value is refused (400); a deal that already has one may send it back unchanged, and it has no effect.
                      */
                     auctionCloses?: string | null;
                     /**
-                     * @description The deal type this list bids against (Rob, 7 Oct 2026): private_auction (invited buyers bid; auctionCloses / locked rate apply), preferred (fixed-price first look held at the reserve price; no volume, no auction window) or guaranteed (commits committedPlays). Omitted: guaranteed when committedPlays is set, else private_auction. committedPlays is refused unless guaranteed; auctionCloses is refused unless private_auction (400).
+                     * @description The deal type this list bids against (Rob, 7 Oct 2026): private_auction (invited buyers bid per slot, first price against the CPM floor, throughout the delivery term; no auction window, no rate lock), preferred (one invited buyer at a fixed CPM, floorCpm required: first look at each slot ahead of private and open auction, may pass; nothing reserved) or guaranteed (commits committedPlays; the only type that reserves inventory). Omitted: guaranteed when committedPlays is set, else private_auction. committedPlays is refused unless guaranteed; a new auctionCloses is refused on every type (400).
                      * @enum {string}
                      */
                     dealType?: "private_auction" | "preferred" | "guaranteed";
