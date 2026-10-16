@@ -67,6 +67,7 @@ import { bidderTuning } from '../domain/partnerInput'
 import { providerOf } from '../dsp/registry'
 import { type Bid, type BidResponse, buildBidRequest } from './openrtb'
 import { GLOBAL_DEAL_ID } from '../domain/exchange'
+import { positionHourGroups, windowOpenFor } from '../domain/operatingGate'
 
 export interface PositionOutcome {
   positionId: string
@@ -158,6 +159,8 @@ async function clearPosition(ctx: Context, p: PositionRef, start: string, bidder
   if (isRealtime(p)) return { ...out, skipped: 'Sold in real time, per impression: no window auction.' }
   if (assignmentOf(p.def) === 'reserved') return { ...out, skipped: 'Held for a named advertiser: booked by reservation.' }
   if (!(await ctx.displays.summaryByDisplayType(p.displayType.id)).displays) return { ...out, skipped: 'No displays.' }
+  /* Zone-based operating hours: a window none of the position's displays is open for gets no bid request. */
+  if (!windowOpenFor(await positionHourGroups(ctx, p), new Date(start), windowMsFor(p))) return { ...out, skipped: 'Outside operating hours: no display is open in this window.' }
   const existing = await ctx.reservations.forWindow(p.positionId, start)
   const taken = existing.find((r) => !r.testMode && TAKEN.includes(r.status))
   if (taken) return { ...out, skipped: taken.status === 'reserved' ? 'Reserved: held outside the open auction.' : 'Already sold.' }

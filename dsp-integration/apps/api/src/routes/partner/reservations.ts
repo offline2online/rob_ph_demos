@@ -31,7 +31,8 @@ import { assignedOf, interactiveReservePriceOf, reservePriceOf } from '@ph-dsp/t
 import { guaranteedImpressions, personalisedShare } from '../../domain/guarantee'
 import { dspDealTerms } from '../../dsp/dealTerms'
 import { termStateAt } from '../../billing/term'
-import { assignmentOf, assumedViewsPerWindow, effectivePartnerIds, findPosition, heldFor, isRealtime, unsellableReason, windowHoursFor, windowStartOf } from '../../domain/positions'
+import { assignmentOf, assumedViewsPerWindow, effectivePartnerIds, findPosition, heldFor, isRealtime, unsellableReason, windowHoursFor, windowMsFor, windowStartOf } from '../../domain/positions'
+import { positionHourGroups, windowOpenFor } from '../../domain/operatingGate'
 import { checkAdvertiser, checkCampaign, checkFloor, checkTargeting, checkVersionCount, firstRefusal } from '../../exchange/enforcement'
 import { handOff } from '../../exchange/handoff'
 import { auctionClaimed } from '../../exchange/scheduler'
@@ -104,6 +105,7 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
     const unsellable = await unsellableReason(ctx, pos)
     if (unsellable) throw conflict(unsellable)
     if (!(await ctx.displays.summaryByDisplayType(pos.displayType.id)).displays) throw conflict('The position has no displays in that window.')
+    if (!windowOpenFor(await positionHourGroups(ctx, pos), start!, windowMsFor(pos))) throw conflict('That window is outside the operating hours of every display on this position.')
     if (pos.def.salesLocked) throw conflict('This position is locked against new sales: its existing bookings continue, but no further window can be bid on or reserved.')
     const assignment = assignmentOf(pos.def)
     /* A deal's bidding is open only until auctionCloses and never once its term

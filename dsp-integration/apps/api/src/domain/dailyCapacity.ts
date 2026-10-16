@@ -34,7 +34,7 @@ export function operatingHours(zone: string | null | undefined, store: { openHou
 }
 
 /* Milliseconds of [a, b) the store is open. */
-function openMs(a: number, b: number, h: Hours): number {
+export function openMsIn(a: number, b: number, h: Hours): number {
   let ms = 0
   for (let day = Math.floor(a / DAY) * DAY; day < b; day += DAY) {
     const from = Math.max(a, day + h.open * HOUR)
@@ -52,7 +52,7 @@ export function playsInPeriod(a: number, b: number, windowMs: number, loopSec: n
   if (!(loopSec > 0) || !(windowMs > 0) || b <= a || h.close <= h.open) return 0
   let plays = 0
   for (let ws = windowStartOf(new Date(a), windowMs).getTime(); ws < b; ws += windowMs) {
-    const ms = openMs(Math.max(a, ws), Math.min(b, ws + windowMs), h)
+    const ms = openMsIn(Math.max(a, ws), Math.min(b, ws + windowMs), h)
     plays += Math.floor(ms / 1000 / loopSec)
   }
   return plays

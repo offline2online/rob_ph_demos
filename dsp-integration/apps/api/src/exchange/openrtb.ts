@@ -17,6 +17,7 @@ import { baseFloorFor } from './enforcement'
 import { type Perm, standardBuyerBlocking } from '../dsp/DspProvider'
 import { providerOf } from '../dsp/registry'
 import type { PartnerRecord } from '../repos/PartnerRepo'
+import { type OperatingHoursExt, operatingHoursExt, positionHourGroups } from '../domain/operatingGate'
 
 export interface BidRequest {
   id: string
@@ -33,7 +34,7 @@ export interface BidRequest {
        An open position in the global deal carries the global deal ID with private_auction 0 and no wseat:
        it is open inventory behind a deal handle, not a PMP/PG deal. */
     pmp?: { private_auction: 0 | 1; deals: { id: string; at: 1; wseat?: string[] }[] }
-    ext: { ph: { orientation: string; slotDurationSec: number; loopLengthSec: number; maxPlayLengthSec: number; shareOfVoice: number; playsPerWindow: number; mode?: 'realtime' } }
+    ext: { ph: { orientation: string; slotDurationSec: number; loopLengthSec: number; maxPlayLengthSec: number; shareOfVoice: number; playsPerWindow: number; mode?: 'realtime'; operatingHours?: OperatingHoursExt } }
   }[]
   /* Exactly one of these, by the display type's touch point: dooh for
      Digital Signage and Kiosk, site for a Website, app for a Mobile App. */
@@ -83,6 +84,8 @@ export async function buildBidRequest(ctx: Context, p: PositionRef, partner: Par
   const lists = effectiveLists(partner)
   const categoryLists = effectiveCategoryLists(company)
   const { width: w, height: h } = view.screen
+  /* Resolved per-screen operating hours (zone-based), grouped by distinct hours: SSPs/DSPs read when each screen can play. */
+  const operatingHours = operatingHoursExt(p.displayType.phExtensions?.storeZone, await positionHourGroups(ctx, p))
   const inventory = openRtbInventoryOf(p.displayType.touchPoint)
   const publisher = { id: exchange.sellerId, name: exchange.organisation, domain: exchange.domain }
   const listId = assignmentOf(p.def) === 'deal' ? assignedOf(p.def).buyersListId : undefined
@@ -107,7 +110,7 @@ export async function buildBidRequest(ctx: Context, p: PositionRef, partner: Par
       ...(inventory === 'dooh' ? { qty: { multiplier: view.assumedViewsPerWindow, sourcetype: 2 as const } } : {}),
       exp: Math.round(windowMsFor(p) / 1000),
       ...(pmp ? { pmp } : {}),
-      ext: { ph: { orientation: view.screen.orientation, slotDurationSec: view.screen.slotDurationSec, loopLengthSec: view.screen.loopLengthSec, maxPlayLengthSec: view.screen.maxPlayLengthSec, shareOfVoice: view.screen.shareOfVoice, playsPerWindow: view.playsPerWindow } },
+      ext: { ph: { orientation: view.screen.orientation, slotDurationSec: view.screen.slotDurationSec, loopLengthSec: view.screen.loopLengthSec, maxPlayLengthSec: view.screen.maxPlayLengthSec, shareOfVoice: view.screen.shareOfVoice, playsPerWindow: view.playsPerWindow, operatingHours } },
     }],
     ...(inventory === 'dooh' ? {
       dooh: {

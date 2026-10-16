@@ -4212,10 +4212,22 @@ playback analytics.**
   Entrance). **In aisles**, **Checkout** and **Other & connected store** are
   internal: the store's trading hours, as before; a display type with no zone
   defined also follows the store. Plays per day on the Booking schedule counts
-  each display at its resolved hours, not the store's for every display. Still
-  to build (follow-up tickets): no slots, bid requests or bookings outside a
-  display's hours and no unsold/missed-revenue accounting for them, publishing
-  per-screen hours to SSPs/DSPs.
+  each display at its resolved hours, not the store's for every display.
+  **Enforced** (ticket 6a8L1QcfFUq5alWFgwnb, 16 Oct 2026;
+  `domain/operatingGate.ts`): outside a display's hours it is offered nothing.
+  A real-time signal is a no-fill "Unavailable — store closed" with no bid
+  request, and is **not** recorded as unsold (no missed revenue); the label is
+  only ever used for internal zones, since an external display is never
+  closed. A private-auction window none of the position's displays is open for
+  is skipped before any bid request. A window the same way reads `unavailable`
+  in inventory and `POST /v1/reservations` refuses it (409). Estimated volume
+  and guaranteed impressions on the deal sheet scale each display by its open
+  share of the day (Exterior/Entrance 24h; aisles etc. trading hours). Every
+  bid request publishes `imp[0].ext.ph.operatingHours` (`zone`, `external`,
+  `tz: "UTC"`, `screens[{open, close, days, count}]`, grouped by distinct hours
+  rather than one row per display). Hours and day boundaries are UTC as
+  elsewhere in the POC; there is no separate per-display SSP feed, the hours
+  ride on the bid request.
 - **Hour-of-week VAC-d** (ticket L0lA4mMgRdA7YTcQpGxg, 16 Oct 2026;
   `domain/vacdProfile.ts`, `displays.vacd_profile`, migration 0074): a display
   may carry 168 hourly assumed-view values (Monday 00:00 UTC first). With none
