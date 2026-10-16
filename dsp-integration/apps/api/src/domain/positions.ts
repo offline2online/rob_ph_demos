@@ -16,6 +16,8 @@ import { effectiveFloorCpm, resolveBaseFloor } from './pricing'
 import { rotationSizeOf, slotDurationSec } from './slots'
 import { audienceOf } from './displayTypes'
 import { playsPerWindowOf } from './plays'
+import { type ScreenGroup } from './dailyCapacity'
+import { positionHourGroups, windowOpenFor } from './operatingGate'
 
 export interface PositionRef {
   positionId: string
@@ -354,7 +356,7 @@ export type WindowStatus = 'available' | 'reserved' | 'sold' | 'unavailable'
    each such window to the status that took it, and `lockedTerm` is the
    delivery term of a deal this position is assigned to once its rate is
    locked, if it has one: both decide which windows read Reserved (OQ52). */
-export interface WindowFacts { next: number; now: number; hasDisplays: boolean; taken: Map<string, ReservationStatus>; lockedTerm?: { activeFrom: string | null; activeTo: string | null } | null }
+export interface WindowFacts { next: number; now: number; hasDisplays: boolean; hours: ScreenGroup[]; taken: Map<string, ReservationStatus>; lockedTerm?: { activeFrom: string | null; activeTo: string | null } | null }
 const NO_WINDOWS: ReadonlyMap<string, ReservationStatus> = new Map()
 /* Sync-first (db.ts andThen): the status filter asks it for every position. */
 export function windowFacts(ctx: Context, p: PositionRef, starts?: Date[], prefetched?: Map<string, Map<string, ReservationStatus>>): Awaitable<WindowFacts> {
@@ -365,10 +367,11 @@ export function windowFacts(ctx: Context, p: PositionRef, starts?: Date[], prefe
       ? andThen(ctx.reservations.inRange(p.positionId, starts[0].toISOString(), new Date(starts[starts.length - 1].getTime() + 1).toISOString()), (rows) =>
           new Map(rows.filter((r) => !r.testMode && TAKEN.includes(r.status)).map((r) => [r.windowStart, r.status])))
       : none
-  return andThen(allOf([ctx.displays.summaryByDisplayType(p.displayType.id), lockedTermOf(ctx, p), taken] as const), ([displays, lockedTerm, t]) => ({
+  return andThen(allOf([ctx.displays.summaryByDisplayType(p.displayType.id), lockedTermOf(ctx, p), taken, positionHourGroups(ctx, p)] as const), ([displays, lockedTerm, t, hours]) => ({
     next: nextWindowFor(ctx.clock(), windowMsFor(p)).getTime(),
     now: ctx.clock().getTime(),
     hasDisplays: displays.displays > 0,
+    hours,
     lockedTerm,
     taken: t,
   }))
@@ -402,6 +405,8 @@ export function windowStatus(p: PositionRef, c: Caller, start: Date, f: WindowFa
   if (took) return took === 'reserved' && upcoming && assignmentOf(p.def) !== 'reserved' ? 'reserved' : 'sold'
   if (!upcoming) return 'unavailable'
   if (!f.hasDisplays) return 'unavailable'
+  /* Zone-based operating hours: a window no display is open for (an aisle screen in a closed store) is not offered. */
+  if (!windowOpenFor(f.hours, start, windowMsFor(p))) return 'unavailable'
   if (beyondPendingChange(p.def, start.getTime(), f.now)) return 'unavailable'
   /* Inside a locked deal term: already spoken for, not open to bids. */
   if (f.lockedTerm && isActiveAt(f.lockedTerm, iso)) return 'reserved'
@@ -473,17 +478,20 @@ export function loopLengthSec(ctx: Context, dt: DisplayType): Awaitable<number> 
 }
 
 /* Sync-first (db.ts andThen): a page of inventory builds up to 200. */
-export function positionView(ctx: Context, p: PositionRef, c: Caller) {
+/* windowStart (ISO): quote the view for that play window, its assumed views the sum of the displays' hour-of-week VAC-d over it (vacdProfile.ts). Without it, the flat per-billing-unit figure. */
+export function positionView(ctx: Context, p: PositionRef, c: Caller, windowStart?: string) {
   const dt = p.displayType
+  const startMs = windowStart ? Date.parse(windowStart) : NaN
+  const window = Number.isFinite(startMs) ? { startMs, endMs: startMs + windowMsFor(p) } : undefined
   return andThen(
     allOf([
       /* Counts, never the display rows (review, 24 Sep 2026). */
       ctx.displays.summaryByDisplayType(dt.id),
       loopLengthSec(ctx, dt),
       ctx.company.get(),
-      audienceOf(ctx.audience, dt, p.slot),
+      audienceOf(ctx.audience, dt, p.slot, window),
     ] as const),
-    ([displays, loop, company, audience]) => viewOf(p, displays, loop, company, audience),
+    ([displays, loop, company, audience]) => viewOf(p, displays, loop, company, audience, !!window),
   )
 }
 function viewOf(
@@ -492,6 +500,7 @@ function viewOf(
   loop: number,
   company: Awaited<ReturnType<Context['company']['get']>>,
   audience: Awaited<ReturnType<Context['audience']['forSlot']>>,
+  forWindow = false,
 ) {
   const dt = p.displayType
   /* The rotation this slot plays in — its zone's own on a multi-zone
@@ -526,7 +535,8 @@ function viewOf(
     playsPerWindow: playsPerWindowOf(windowMsFor(p), maxPlayLengthSecFor(company.maxPlayLengthSec, p), n),
     /* The loop positions the maths counts: every slot of the rotation, HQ's included. */
     slotCount: Math.max(1, n),
-    assumedViewsPerWindow: assumedViewsFor(audience.assumedViewsPerWindow, p),
+    /* Already this window's own sum when a window was asked for; otherwise scaled from the default billing unit. */
+    assumedViewsPerWindow: forWindow ? audience.assumedViewsPerWindow : assumedViewsFor(audience.assumedViewsPerWindow, p),
     /* False when the slot has no audience score: only ever seen by a
        caller who is told so, since inventory excludes such positions. */
     scored: audience.scored,

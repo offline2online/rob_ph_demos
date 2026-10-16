@@ -145,17 +145,16 @@ describe('Run 3 — private auction: non-happy', () => {
     expect(inTerm.positions[0].winner, 'an in-term window was refused because the clock is before activeFrom').toMatchObject({ advertiserId: 'swisse' })
   })
 
-  /* Regression for backlog 6bln0UlpqE6xh7E8SGtX (found by the E2E v2 run, 29 Sep
-     2026; fixed on main since). */
-  it('P5 — a bid after auctionCloses is refused, never left pending', async () => {
+  /* 16 Oct 2026: the auction window is retired. This was backlog 6bln0UlpqE6xh7E8SGtX (a bid after auctionCloses left pending); now a deal that still carries an old auctionCloses simply takes the bid, and the auction clears it. */
+  it('P5 — no auction window: a bid after an old auctionCloses is accepted and cleared, never left pending', async () => {
     const h = await dealHarness({ auctionCloses: '2026-09-20T12:00:00.000Z' })
     const id = await h.readyApiCampaign('Swisse — P5 closes')
     h.setNow(new Date('2026-09-20T13:00:00.000Z'))
     const late = await h.partner.bid(id, day(2), 200)
-    expect(late.statusCode, 'an API bid placed after auctionCloses was accepted').toBeGreaterThanOrEqual(400)
+    expect(late.statusCode).toBe(201)
     const out = await runAuction(h.ctx, day(2))
-    expect(out.positions[0]).toMatchObject({ bidRequests: 0, winner: null })
-    expect((await h.rows(day(2))).filter((r) => r.status === 'pending'), 'a bid was left pending after the position was skipped').toEqual([])
+    expect(out.positions[0].winner).toMatchObject({ advertiserId: 'swisse', clearingCpm: 200 })
+    expect((await h.rows(day(2))).filter((r) => r.status === 'pending')).toEqual([])
   })
 
   it('P6 — an invited buyer below the slot floor doesn’t win (the deal doesn’t lower the floor)', async () => {

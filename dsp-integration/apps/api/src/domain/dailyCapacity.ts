@@ -19,8 +19,22 @@ const DAY = 24 * HOUR
 export interface Hours { open: number; close: number }
 export const ALWAYS_OPEN: Hours = { open: 0, close: 24 }
 
+/* Zone-based operating hours (ticket 24VWhzDd4yv7CswOPrGX, decision Rob 16 Oct
+   2026). A display's operating hours come from the IAB store zone of its
+   display type, never from a per-display setting: the external zones (Exterior,
+   Entrance & out of category — window screens are Entrance) still have passing
+   traffic when the store is shut, so they run 24 hours; the internal zones
+   (In aisles, Checkout, Other & connected store) follow the store's trading
+   hours. A display type with no zone defined follows the store, as before. */
+export const EXTERNAL_ZONES: readonly string[] = ['exterior', 'entrance']
+export const isExternalZone = (zone: string | null | undefined): boolean => !!zone && EXTERNAL_ZONES.includes(zone)
+export function operatingHours(zone: string | null | undefined, store: { openHour: number; closeHour: number } | null | undefined): Hours {
+  if (isExternalZone(zone)) return ALWAYS_OPEN
+  return { open: store?.openHour ?? 0, close: store?.closeHour ?? 24 }
+}
+
 /* Milliseconds of [a, b) the store is open. */
-function openMs(a: number, b: number, h: Hours): number {
+export function openMsIn(a: number, b: number, h: Hours): number {
   let ms = 0
   for (let day = Math.floor(a / DAY) * DAY; day < b; day += DAY) {
     const from = Math.max(a, day + h.open * HOUR)
@@ -38,7 +52,7 @@ export function playsInPeriod(a: number, b: number, windowMs: number, loopSec: n
   if (!(loopSec > 0) || !(windowMs > 0) || b <= a || h.close <= h.open) return 0
   let plays = 0
   for (let ws = windowStartOf(new Date(a), windowMs).getTime(); ws < b; ws += windowMs) {
-    const ms = openMs(Math.max(a, ws), Math.min(b, ws + windowMs), h)
+    const ms = openMsIn(Math.max(a, ws), Math.min(b, ws + windowMs), h)
     plays += Math.floor(ms / 1000 / loopSec)
   }
   return plays

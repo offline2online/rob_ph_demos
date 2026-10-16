@@ -234,64 +234,50 @@ describe('private auctions (deal mode; spec "Support private auctions")', () => 
   })
 })
 
-describe('private auctions: two-period model (locked rate over the delivery term, spec "…dynamic VAC-d billing over the delivery term")', () => {
+describe('private auctions: industry standard, one auction per slot (16 Oct 2026; the two-period model is retired)', () => {
   const W3 = new Date('2026-09-23T00:00:00.000Z')
 
-  it("locks the term's rate on its first clearing bid, then books every later window directly at that rate — no re-auction", async () => {
+  it('clears every window fresh and never writes a rate lock — even for a deal that still carries an old auctionCloses', async () => {
     const { ctx, setSlot, activate, queued, rows } = await setup()
     const list = await ctx.buyersLists.insert({
-      id: 'bl_term', name: 'Q4 term deal', description: '', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }],
+      id: 'bl_term', name: 'Q4 deal', description: '', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }],
       activeFrom: null, activeTo: null, auctionCloses: '2026-09-22T00:00:00.000Z',
     })
     await setSlot({ listMode: 'deal', buyersListId: list.id })
-    /* W1 and W2 clear exactly like an ordinary deal (auctionCloses hasn't
-       passed yet): a real auction, bid requests go out. */
     await runAuction(ctx, W1)
     await activate(await queued('Nestlé — crid-5130001'))
     const second = await runAuction(ctx, W2)
     expect(second.positions[0].winner).toMatchObject({ partnerId: 'p_google', advertiserId: 'nestle', clearingCpm: 150 })
-    expect((await ctx.buyersLists.get(list.id))?.lockedWin).toMatchObject({ cpm: 150, partnerId: 'p_google', advertiserId: 'nestle', channel: 'openrtb' })
-
-    /* W3: auctionCloses has now passed, but that no longer matters — the
-       term is locked, so this window is booked directly at the same rate,
-       with no bid requests at all. */
+    expect((await ctx.buyersLists.get(list.id))?.lockedWin).toBeNull()
+    /* W3 is past the old auctionCloses and still a real auction: bid requests go out, the buyer bids again, and it clears on its own bid. */
     const third = await runAuction(ctx, W3)
-    expect(third.positions[0]).toMatchObject({ bidRequests: 0, bids: 0, winner: { partnerId: 'p_google', advertiserId: 'nestle', clearingCpm: 150 } })
-    expect(third.positions[0].skipped).toMatch(/locked rate/)
-    expect((await rows(W3))[0]).toMatchObject({ status: 'won', channel: 'openrtb', clearingCpm: 150, campaignId: (await rows(W2))[0].campaignId })
-    expect((await rows(W3))[0].handedOffAt).not.toBeNull()
-
-    /* Re-running the same window a second time doesn't double-book it —
-       the generic "already sold" guard catches it before the locked-term
-       branch runs again. */
-    const again = await runAuction(ctx, W3)
-    expect(again.positions[0]).toMatchObject({ skipped: 'Already sold.', winner: null })
-    expect(await rows(W3)).toHaveLength(1)
+    expect(third.positions[0].bidRequests).toBe(1)
+    expect(third.positions[0].winner).toMatchObject({ advertiserId: 'nestle', clearingCpm: 150 })
+    expect((await rows(W3))[0]).toMatchObject({ status: 'won', channel: 'openrtb', clearingCpm: 150 })
+    expect((await ctx.buyersLists.get(list.id))?.lockedWin).toBeNull()
   })
 
-  it('keeps clearing fresh every window when auctionCloses is not set — unchanged from before this model existed', async () => {
+  it('keeps clearing fresh every window when auctionCloses is not set', async () => {
     const { ctx, setSlot, activate, queued } = await setup()
-    const list = await ctx.buyersLists.insert({ id: 'bl_legacy', name: 'Legacy deal', description: '', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }], activeFrom: null, activeTo: null, auctionCloses: null })
+    const list = await ctx.buyersLists.insert({ id: 'bl_legacy', name: 'Plain deal', description: '', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }], activeFrom: null, activeTo: null, auctionCloses: null })
     await setSlot({ listMode: 'deal', buyersListId: list.id })
     await runAuction(ctx, W1)
     await activate(await queued('Nestlé — crid-5130001'))
     const second = await runAuction(ctx, W2)
     expect(second.positions[0].bidRequests).toBe(1)
     expect((await ctx.buyersLists.get(list.id))?.lockedWin).toBeNull()
-    /* W3 still runs a real auction too — nothing ever locks without auctionCloses. */
     const third = await runAuction(ctx, W3)
     expect(third.positions[0].bidRequests).toBe(1)
   })
 
-  it('falls through once the auction window closes with nothing cleared — the term never got a rate to hold', async () => {
-    const { ctx, setSlot, rows } = await setup()
-    const list = await ctx.buyersLists.insert({ id: 'bl_missed', name: 'Missed deadline', description: '', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }], activeFrom: null, activeTo: null, auctionCloses: '2026-09-20T12:00:00.000Z' })
+  it('takes bids after an old auctionCloses has passed: there is no auction window to miss', async () => {
+    const { ctx, setSlot } = await setup()
+    const list = await ctx.buyersLists.insert({ id: 'bl_missed', name: 'Old deadline', description: '', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }], activeFrom: null, activeTo: null, auctionCloses: '2026-09-20T12:00:00.000Z' })
     await setSlot({ listMode: 'deal', buyersListId: list.id })
-    /* W1 starts 21 Sep — already past the 20 Sep auctionCloses deadline. */
+    /* W1 starts 21 Sep — past that deadline, and the buyers still get a bid request. */
     const out = await runAuction(ctx, W1)
-    expect(out.positions[0]).toMatchObject({ bidRequests: 0, bids: 0, winner: null })
-    expect(out.positions[0].skipped).toMatch(/window closed with no clearing bid/)
-    expect(await rows()).toEqual([])
+    expect(out.positions[0].bidRequests).toBe(1)
+    expect(out.positions[0].skipped ?? '').not.toMatch(/window closed/)
     expect((await ctx.buyersLists.get(list.id))?.lockedWin).toBeNull()
   })
 })

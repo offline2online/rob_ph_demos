@@ -1202,10 +1202,10 @@ describe('Advertisers / Inventory', () => {
     expect(within(dialog).getByRole('combobox', { name: 'Targeting criteria' })).toBeInTheDocument()
     expect(within(dialog).queryByText(/PH brand entity|identifier type/i)).toBeNull()
     expect(within(dialog).queryByRole('button', { name: /Add buyer/ })).toBeNull()
-    /* The deal type drives the fields: a new list is a private auction, so it captures the auction window but no committed plays. */
+    /* The deal type drives the fields: a new list is a private auction: no auction window any more (16 Oct 2026) and no committed plays. */
     expect(within(dialog).getByRole('combobox', { name: 'Deal type' })).toBeInTheDocument()
     expect(within(dialog).getByTestId('deal-type-note')).toHaveTextContent('no volume is committed')
-    expect(within(dialog).getByLabelText('Auction closes')).toBeInTheDocument()
+    expect(within(dialog).queryByLabelText('Auction closes')).toBeNull()
     expect(within(dialog).queryByLabelText('Guaranteed impressions')).toBeNull()
   }, slow(30000))
 

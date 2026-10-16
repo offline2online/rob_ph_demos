@@ -4,6 +4,7 @@
    the POC reads seeded numbers. Engineering swaps in the real source. */
 import { type Db, prepared, type Awaitable } from '../db/db'
 import type { Rules } from '../domain/targetingValidation'
+import { flatProfile, parseProfile, vacdInWindow } from '../domain/vacdProfile'
 
 export interface Audience {
   assumedViewsPerWindow: number
@@ -22,8 +23,12 @@ export interface AudienceSource {
      exchange through DisplayTypeSource and passed in (ticket
      DDOjJoYjraKROu4Ainj5, Rob 2 Oct 2026). The audience source owns only
      the per-slot score and each display's own counted/modelled override;
-     it never reads display_types. null: the type has no default. */
-  forSlot(displayTypeId: string, slot: number, defaultVacd: number | null, defaultCounted?: boolean): Awaitable<Audience>
+     it never reads display_types. null: the type has no default.
+     window: when given, a display-derived score is the sum of each display's
+     hour-of-week profile over that window (displays.vacd_profile, else the
+     default spread flat) instead of the per-default-billing-unit figure; a
+     slot's own audience_vacd score stays flat. */
+  forSlot(displayTypeId: string, slot: number, defaultVacd: number | null, defaultCounted?: boolean, window?: { startMs: number; endMs: number }): Awaitable<Audience>
   /* The share of a slot's assumed views a targeted campaign can reach
      (spec §5: "targeting changes it"). Only the platform that holds the
      store and visitor data can answer this; see BUILD-PLAN Q9. */
@@ -34,7 +39,7 @@ export interface AudienceSource {
 export const POC_SHARE_PER_AND_GROUP = 0.5
 
 export const sqliteAudienceSource = (db: Db): AudienceSource => ({
-  forSlot(displayTypeId, slot, dflt, dfltCounted = false) {
+  forSlot(displayTypeId, slot, dflt, dfltCounted = false, window) {
     const r = prepared(db, 'SELECT assumed_views_per_window AS v, counted FROM audience_vacd WHERE display_type_id = ? AND slot = ?').get(displayTypeId, slot) as { v: number; counted: number } | undefined
     if (r) return { assumedViewsPerWindow: r.v, counted: !!r.counted, scored: true }
     /* No slot score of its own: the slot inherits from its display type
@@ -43,6 +48,12 @@ export const sqliteAudienceSource = (db: Db): AudienceSource => ({
        its displays' scores — each display's own override where it has one,
        otherwise the default. A type with no displays yet counts as one. */
     if (dflt === null) return { assumedViewsPerWindow: 0, counted: false, scored: false }
+    if (window) {
+      const rows = prepared(db, 'SELECT vacd_override AS o, vacd_profile AS p FROM displays WHERE display_type_id = ?').all(displayTypeId) as { o: number | null; p: string | null }[]
+      const sumOf = (r: { o: number | null; p: string | null }) => vacdInWindow(parseProfile(r.p) ?? flatProfile(r.o ?? dflt), window.startMs, window.endMs)
+      const total = rows.length ? rows.reduce((n, r) => n + sumOf(r), 0) : sumOf({ o: null, p: null })
+      return { assumedViewsPerWindow: Math.round(total), counted: dfltCounted, scored: true }
+    }
     const d = prepared(db, 'SELECT COUNT(*) AS n, COALESCE(SUM(COALESCE(vacd_override, ?)), 0) AS total FROM displays WHERE display_type_id = ?').get(dflt, displayTypeId) as { n: number; total: number }
     return { assumedViewsPerWindow: d.n ? d.total : dflt, counted: dfltCounted, scored: true }
   },

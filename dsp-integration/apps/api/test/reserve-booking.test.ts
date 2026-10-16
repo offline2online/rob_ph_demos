@@ -131,23 +131,35 @@ describe('reserve-price booking (OQ52): commit, hold as Reserved, honour at the 
 
 describe('deals (OQ45): per DSP, on the existing buyers list, never under the floor', () => {
   const termDeal = async (ctx: Awaited<ReturnType<typeof setup>>['ctx'], invited: InvitedBuyer[] = [{ partnerId: 'p_google', seatId: '5130002' }]) =>
-    await ctx.buyersLists.insert({ id: 'bl_pg', name: 'Swisse PG', description: '', invitedBuyers: invited, activeFrom: null, activeTo: '2026-09-23T23:59:59.000Z', auctionCloses: '2026-09-21T18:00:00.000Z' })
+    await ctx.buyersLists.insert({ id: 'bl_pg', name: 'Swisse PG', description: '', invitedBuyers: invited, activeFrom: null, activeTo: '2026-09-23T23:59:59.000Z', auctionCloses: null })
+  /* Nothing locks a new deal any more (16 Oct 2026). A deal locked under the retired two-period model is stood in for by writing the lock directly. */
+  const legacyLock = (ctx: Awaited<ReturnType<typeof setup>>['ctx'], cid: string) =>
+    ctx.buyersLists.lockWin('bl_pg', { cpm: 150, partnerId: 'p_google', advertiserId: 'swisse', campaignId: cid, pricingType: null, channel: 'api', lockedAt: '2026-09-21T00:00:00.000Z', source: 'reserve' })
 
-  it('a reserve commitment on a two-period deal locks the term at the reserve price; every later window is held and booked as Reserved', async () => {
-    const { ctx, cid, post, RESERVE, NESTLE_BID, status, rows } = await setup({ listMode: 'deal', buyersListId: 'bl_pg' })
+  it('a reserve commitment on a private auction books that one window and no longer locks the term; later windows stay open to bids', async () => {
+    const { ctx, post, RESERVE, status } = await setup({ listMode: 'deal', buyersListId: 'bl_pg' })
     await termDeal(ctx)
     expect((await post(RESERVE)).json()).toMatchObject({ status: 'reserved', clearingCpm: 150 })
-    expect((await ctx.buyersLists.get('bl_pg'))!.lockedWin).toMatchObject({ cpm: 150, partnerId: 'p_google', advertiserId: 'swisse', channel: 'api', source: 'reserve' })
-    /* The whole term reads Reserved before any of it is booked. The day after the term is outside the lock. */
+    expect((await ctx.buyersLists.get('bl_pg'))!.lockedWin).toBeNull()
+    expect((await status('2026-09-21', '2026-09-22'))[0]).toBe('reserved')
+    expect((await status('2026-09-21', '2026-09-22'))[1]).not.toBe('reserved')
+    /* A bid for a later window of the flight is taken: no rate is decided for it. */
+    expect((await post({ ...RESERVE, type: 'bid', bidCpm: 160, windowStart: W2 })).statusCode).toBe(201)
+  })
+
+  it('a deal locked before the two-period model was retired still books every later window as Reserved at its rate', async () => {
+    const { ctx, cid, post, RESERVE, NESTLE_BID, status, rows } = await setup({ listMode: 'deal', buyersListId: 'bl_pg' })
+    await termDeal(ctx)
+    await post(RESERVE)
+    await legacyLock(ctx, cid)
+    /* The whole flight reads Reserved before any of it is booked. The day after is outside the lock. */
     expect(await status('2026-09-21', '2026-09-24')).toEqual(['reserved', 'reserved', 'reserved', 'available'])
-    /* A bid for a later window of the term is refused: its rate is decided. */
     const late = await post({ ...NESTLE_BID, windowStart: W2 })
     expect(late.statusCode).toBe(409)
     expect(late.json().error.message).toBe("This private auction's term is locked to a winning bid (Swisse PG); its windows take no further bids.")
     const out = await runAuction(ctx, new Date(W2))
     expect(out.positions.find((p) => p.positionId === 'portrait.s1')).toMatchObject({ bidRequests: 0, winner: { partnerId: 'p_google', advertiserId: 'swisse', clearingCpm: 150 } })
     expect(await rows(W2)).toMatchObject([{ type: 'reserve', status: 'reserved', clearingCpm: 150, campaignId: cid }])
-    expect((await rows(W2))[0].handedOffAt).not.toBeNull()
   })
 
   it("takes the reservation's deal type from the buyers list, and refuses a different one", async () => {
@@ -161,9 +173,10 @@ describe('deals (OQ45): per DSP, on the existing buyers list, never under the fl
   })
 
   it('never books a locked rate below the floor in force when the window is booked', async () => {
-    const { ctx, post, RESERVE, rows } = await setup({ listMode: 'deal', buyersListId: 'bl_pg' })
+    const { ctx, cid, post, RESERVE, rows } = await setup({ listMode: 'deal', buyersListId: 'bl_pg' })
     await termDeal(ctx)
     await post(RESERVE)
+    await legacyLock(ctx, cid)
     /* The floor rises to 200 during the term: the 150 commitment no longer clears it. */
     await ctx.company.save({ ...(await ctx.company.get()), floorCpm: 200 })
     const out = await runAuction(ctx, new Date(W2))
@@ -186,7 +199,7 @@ describe('deals (OQ45): per DSP, on the existing buyers list, never under the fl
   })
 
   it('is per DSP: a seat-ID deal reaches only that DSP, and a locked term binds one DSP’s buyer', async () => {
-    const { ctx, app, post, RESERVE, status } = await setup({ listMode: 'deal', buyersListId: 'bl_pg' })
+    const { ctx, cid, app, post, RESERVE, status } = await setup({ listMode: 'deal', buyersListId: 'bl_pg' })
     /* Swisse also buys through Amazon, connected and live for this test. */
     await ctx.partners.update('p_amazon', { status: 'connected', mode: 'live', bidder: { bidderEndpoint: 'https://amazon.example/bid', seatIds: ['a1'] }, seats: [{ id: '588104411', name: "L'Oréal", domain: 'loreal.com' }, { id: 'amz-swisse', name: 'Swisse', domain: 'swisse.com' }] })
     const p = (await findPosition(ctx, 'portrait.s1'))!
@@ -203,6 +216,7 @@ describe('deals (OQ45): per DSP, on the existing buyers list, never under the fl
     await termDeal(ctx, [{ partnerId: 'p_google', seatId: '5130002' }, { partnerId: 'p_amazon', seatId: 'amz-swisse' }])
     expect((await effectivePartnerIds(ctx, p.def))!.sort()).toEqual(['p_amazon', 'p_google'])
     expect((await post(RESERVE)).statusCode).toBe(201)
+    await legacyLock(ctx, cid)
     expect((await ctx.buyersLists.get('bl_pg'))!.lockedWin).toMatchObject({ partnerId: 'p_google' })
     expect(await status('2026-09-23', '2026-09-23', AMAZON)).toEqual(['reserved'])
     const out = await runAuction(ctx, new Date(W3))

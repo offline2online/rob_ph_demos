@@ -268,13 +268,11 @@ decided by Rob on 29 Sep 2026): a `type: reserve` on a position whose
   one-live-winner index (migration 0021) also counts a `reserved` row.
 - It is billed like every other booking: on the window's realised VAC-d
   at the reserve price. There is no guaranteed volume and no make-good.
-- On a private auction (deal) that has `auctionCloses` set, the invited
-  buyer must be entitled as for a bid (`not_invited`), and the deal must
-  still be open (`conflict` once it is locked or its bidding has closed).
-  The commitment then locks the deal's term at the reserve price
-  (`lockedWin.source: reserve`). Every later window of the term is held as
-  `reserved` and booked as a `reserved` reservation at that rate, with no
-  auction.
+- On a private auction (deal) a reserve commitment books that one window
+  and no longer locks the term (16 Oct 2026; the two-period model is
+  retired). The invited buyer must be entitled as for a bid
+  (`not_invited`), and the deal must not be locked under the old model
+  (`conflict`). Later windows stay open to bids.
 
 **Deals** are per DSP and bilateral. They are the buyers lists below:
 invited buyers resolved to DSP seats, the terms, and one locked winner
@@ -392,17 +390,20 @@ opens to is resolved live from a list's current `invitedBuyers` on every
 auction/bid — nothing here is cached on the slot, so editing a list here
 takes effect immediately everywhere it's attached.
 
-**The two-period model** (REQUIREMENTS §5 "Private auctions (buyers
-lists)" → "Locked rate", 23 Sep 2026): a deal with `auctionCloses` set
-still clears a real auction every play window until a bid clears at or
-before that deadline; that clear locks `lockedWin` (once — first clear
-wins) and every later play window in the delivery term (`activeFrom`/
-`activeTo`) is then booked directly at `lockedWin.cpm`, with no bid
-requests. A reserve-price commitment by an invited buyer locks it the same
-way, at the reserve price (*Reserve-price booking* above); those windows
-are booked `reserved` rather than `won`. No locked window is booked below
-the floor in force when it is booked. A deal with `auctionCloses` left `null` is unaffected — it keeps
-clearing fresh every window, exactly as before this field existed. Also
+**Private auctions and preferred deals** (REQUIREMENTS "Deal type on the
+buyers list", 16 Oct 2026). A private auction takes a first-price bid per
+slot throughout the delivery term (`activeFrom`/`activeTo`) against the
+deal's CPM floor; every window clears fresh and nothing is held or locked.
+`auctionCloses` is retired: a request that sets a new one is refused (400),
+and the value on a deal that already has one is inert. Only a deal locked
+before then still carries `lockedWin`, and every later window of its term is
+booked directly at `lockedWin.cpm` (`reserved` for a reserve-price lock) until
+the flight ends, never below the floor in force. A **preferred deal** is one
+named buyer (`invitedBuyers` of length 1) at a fixed CPM (`floorCpm`,
+required): it is tried first for each slot, ahead of private and open
+auction; a bid at or above the fixed CPM wins at the fixed CPM, and no bid is
+a pass. The waterfall is guaranteed, preferred, private auction, open
+auction. Also
 see `available-inventory`'s `billingUnitHours`/`billingUnitHoursOverride`/
 `displayTypeBillingUnitHours` (same override/default shape as
 `reservePrice`) — the granularity a CPM is quoted and charged against, and

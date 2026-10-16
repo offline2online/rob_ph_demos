@@ -52,6 +52,7 @@ import { uncachedRestricted } from '../domain/uncachedRestriction'
 import { rtbAuctionOpensAt } from '../domain/bidLookahead'
 import { mimeFromUrl, reviewAtBidCreative } from './atBid'
 import { recordUnsold } from '../domain/unsold'
+import { displayOpenAt } from '../domain/operatingGate'
 import type { UnsoldReason } from '../repos/UnsoldSlotRepo'
 
 export interface Fill {
@@ -98,6 +99,8 @@ export async function signalImpression(ctx: Context, input: { displayId: string;
     return fill
   }
 
+  /* Zone-based operating hours: outside them the screen plays house content. No bid request, and not an unsold opportunity (no missed revenue). */
+  if (!(await displayOpenAt(ctx, display, p.displayType.phExtensions?.storeZone, now))) return noFill('Unavailable — store closed')
   if (!isLive(await ctx.exchange.get())) return noFill('DSP integration is not live.')
   if (fallthrough) {
     const taken = (await ctx.reservations.forWindow(p.positionId, windowStart)).find((r) => !r.testMode && TAKEN.includes(r.status))
@@ -114,7 +117,7 @@ export async function signalImpression(ctx: Context, input: { displayId: string;
   if (!dsps.length) return unsold('No connected DSP can bid on this position.', 'no_bids')
 
   /* One request per DSP, all at once, each held to the impression's budget. */
-  const view = await positionView(ctx, p, { partner: dsps[0], advertiser: null, unknownAdvertiser: false })
+  const view = await positionView(ctx, p, { partner: dsps[0], advertiser: null, unknownAdvertiser: false }, windowStart)
   const sent: { dsp: PartnerRecord; reqId: string; res: Promise<BidResponse | null> }[] = []
   const timers: ReturnType<typeof setTimeout>[] = []
   for (const dsp of dsps) {

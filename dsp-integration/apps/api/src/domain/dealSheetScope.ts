@@ -11,6 +11,7 @@ import { guaranteedImpressions } from './guarantee'
 import { assumedViewsPerWindow, maxPlayLengthSecFor, windowMsFor, type PositionRef } from './positions'
 import { playsPerWindowOf } from './plays'
 import { rotationSizeOf } from './slots'
+import { hourGroups, openShareOfDay } from './operatingGate'
 import type { Rules } from './targetingValidation'
 
 /* DV360 Seller API TargetingType names (Product.targetingCriteria). */
@@ -148,13 +149,15 @@ export async function scopeAndVolumeOf(ctx: Context, list: BuyersList, positions
     }
     displays += kept.length
     displaysBefore += all.length
+    /* Zone-based operating hours: each display counts only its open share of the day (external zones 24h, internal the store's trading hours). */
+    const openShare = openShareOfDay(hourGroups(dt.phExtensions?.storeZone, kept, stores))
     const perDisplay = playsPerWindowOf(windowMsFor(p), maxPlayLengthSecFor(company.maxPlayLengthSec, p), rotationSizeOf(dt, p.slot))
     const slotViews = await assumedViewsPerWindow(ctx, p)
     const keep = all.length ? kept.length / all.length : 0
     const pShare = personalised.length ? await ctx.audience.targetedShare(dt.id, personalised) : 1
-    plays += perDisplay * kept.length
-    views += slotViews * keep * pShare
-    shareWeighted += slotViews * keep
+    plays += perDisplay * kept.length * openShare
+    views += slotViews * keep * pShare * openShare
+    shareWeighted += slotViews * keep * openShare
     playsAll += perDisplay * all.length
     viewsAll += slotViews
     windowMs = Math.max(windowMs, windowMsFor(p))

@@ -17,12 +17,7 @@
    what the open auction asks), not an amount added to the floor. The
    reserve price never undercuts the floor: below the buyer's effective
    floor, the booking is refused `below_floor`, like any other rate.
-   On a private auction (deal) using the two-period model, the same
-   commitment accepts the deal's terms for its whole delivery term: it
-   locks the term at the reserve price (BuyersListRepo.lockWin, source
-   `reserve`), and every later window of the term is then held and booked
-   by the existing locked-term path (billing/lockedTerm.ts bookLockedTermWindow), not a
-   parallel one. */
+   A reserve commitment no longer locks a private auction's term (the two-period model was retired on 16 Oct 2026). */
 import { randomUUID } from 'node:crypto'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
@@ -31,7 +26,8 @@ import { assignedOf, interactiveReservePriceOf, reservePriceOf } from '@ph-dsp/t
 import { guaranteedImpressions, personalisedShare } from '../../domain/guarantee'
 import { dspDealTerms } from '../../dsp/dealTerms'
 import { termStateAt } from '../../billing/term'
-import { assignmentOf, assumedViewsPerWindow, effectivePartnerIds, findPosition, heldFor, isRealtime, unsellableReason, windowHoursFor, windowStartOf } from '../../domain/positions'
+import { assignmentOf, assumedViewsPerWindow, effectivePartnerIds, findPosition, heldFor, isRealtime, unsellableReason, windowHoursFor, windowMsFor, windowStartOf } from '../../domain/positions'
+import { positionHourGroups, windowOpenFor } from '../../domain/operatingGate'
 import { checkAdvertiser, checkCampaign, checkFloor, checkTargeting, checkVersionCount, firstRefusal } from '../../exchange/enforcement'
 import { handOff } from '../../exchange/handoff'
 import { auctionClaimed } from '../../exchange/scheduler'
@@ -104,12 +100,10 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
     const unsellable = await unsellableReason(ctx, pos)
     if (unsellable) throw conflict(unsellable)
     if (!(await ctx.displays.summaryByDisplayType(pos.displayType.id)).displays) throw conflict('The position has no displays in that window.')
+    if (!windowOpenFor(await positionHourGroups(ctx, pos), start!, windowMsFor(pos))) throw conflict('That window is outside the operating hours of every display on this position.')
     if (pos.def.salesLocked) throw conflict('This position is locked against new sales: its existing bookings continue, but no further window can be bid on or reserved.')
     const assignment = assignmentOf(pos.def)
-    /* A deal's bidding is open only until auctionCloses and never once its term
-       is locked (auctionOpenAt): a bid then would be left pending on a window
-       the deal no longer sells. A reserve commitment on a deal is refused on
-       the same terms: the term's rate is already decided. */
+    /* A deal takes bids on every window of its flight (16 Oct 2026); only a deal locked under the retired two-period model refuses them (auctionOpenAt): a bid then would be left pending on a window the deal books at its locked rate. */
     /* A waterfall (7 Oct 2026) takes bids while any tier's auction is open;
        the refusal names the top tier's. */
     const deals = assignment === 'deal' ? await Promise.all(assignedOf(pos.def).buyersListIds.map((id) => ctx.buyersLists.get(id))) : []
@@ -119,7 +113,7 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
     const deal = deals[0] ?? null
     const term = deal ? termStateAt(deal, windowStart, nowIso) : null
     if (deal && term?.active && !term.auctionOpen && !stillOpen) {
-      throw conflict(term.locked ? `This private auction's term is locked to a winning bid (${deal.name}); its windows take no further bids.` : `Bidding on this private auction closed at ${deal.auctionCloses} (${deal.name}).`)
+      throw conflict(`This private auction's term is locked to a winning bid (${deal.name}); its windows take no further bids.`)
     }
     if (b.type === 'reserve' && assignment !== 'reserved' && reservePrice === null) throw conflict('Only a position held for this advertiser, or one with a reserve price, can be reserved; bid for it instead.')
     if (b.type === 'bid' && assignment === 'reserved') throw conflict('This position is held for this advertiser: reserve it instead of bidding.')
@@ -162,7 +156,7 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
     const rate = reserved && reservePrice !== null ? reservePrice : (b.bidCpm as number)
     /* The booking, the deal's lock and the settling of other bids are one
        transaction: written together or not at all. */
-    const booked = await tx(ctx.db, async (): Promise<{ r: ReservationRecord; withdrawn?: string }> => {
+    const booked = await tx(ctx.db, async (): Promise<{ r: ReservationRecord }> => {
       let r: ReservationRecord
       try {
         r = await ctx.reservations.insert({
@@ -184,21 +178,6 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
         const dup = (await ctx.reservations.forWindow(pos.positionId, windowStart)).some((x) => x.advertiserId === b.advertiserId && x.channel === 'api' && ['pending', 'reserved'].includes(x.status))
         throw conflict(dup ? 'This advertiser already has a reservation or bid for that window.' : 'That window is already sold.')
       }
-      /* On a two-period deal, a live commitment locks the term at that rate
-         (first commitment or clear wins; lockWin is idempotent). If a clear
-         locked it first, while this request awaited its checks, this booking
-         is withdrawn rather than left outside the deal's locked rate. */
-      if (reserved && live && deal?.auctionCloses && reservePrice !== null) {
-        const locked = await ctx.buyersLists.lockWin(deal.id, {
-          cpm: rate, partnerId: partner.id, advertiserId: c.advertiserId ?? null, campaignId: c.campaignId,
-          pricingType: c.pricingType ?? null, channel: 'api', lockedAt: ctx.clock().toISOString(), source: 'reserve',
-        })
-        if (!locked) {
-          const why = `This private auction's term is locked to a winning bid (${deal.name}); its windows take no further bids.`
-          await ctx.reservations.update(r.id, { status: 'lost', reason: why })
-          return { r, withdrawn: why }
-        }
-      }
       /* The window has left the open auction: any bid still waiting on it is
          told so now rather than left pending until the auction skips it. */
       if (reserved && live) {
@@ -208,7 +187,6 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
       }
       return { r }
     })
-    if (booked.withdrawn) throw conflict(booked.withdrawn)
     const r = booked.r
     /* A reservation is booked now, so it is handed off now. */
     return reply.status(201).send(reservationView(reserved ? await handOff(ctx, r) : r, partner.provider))

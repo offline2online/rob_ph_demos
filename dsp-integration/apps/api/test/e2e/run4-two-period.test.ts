@@ -1,8 +1,10 @@
-/* E2E spec v2 (board doc f34VQZCy2kkWJfBP6Iwp), Run 4 — two-period
-   private auction (auction window vs delivery term). Fixture: a deal inviting
-   Swisse, auctionCloses at the start of 22 Sep (day(1)), a delivery term to
-   27 Sep, billingUnitHours 24. Swisse's API bid for day(1) clears and locks
-   the rate; every later window in the term is booked at it, no re-auction. */
+/* E2E spec v2 (board doc f34VQZCy2kkWJfBP6Iwp), Run 4 — a private auction
+   locked under the retired two-period model (16 Oct 2026). New deals no
+   longer lock (see run7-deal-types D2); a deal locked before then must still
+   honour its terms to flight end. Fixture: a deal inviting Swisse, a flight to
+   27 Sep, billingUnitHours 24, rate locked at day(1) as the old model did
+   (written directly: nothing writes a lock any more). Every later window in
+   the flight is booked at it, no re-auction. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { runAuction } from '../../src/exchange/auction'
 import { lineItems, runBilling } from '../../src/exchange/billing'
@@ -19,7 +21,7 @@ async function termHarness(before?: (h: Awaited<ReturnType<typeof harness>>) => 
   await before?.(h)
   const list = await h.ctx.buyersLists.insert({
     id: 'bl_term', name: 'E2E term deal', description: 'Run 4 fixture', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130002' }],
-    activeFrom: null, activeTo: '2026-09-27T23:59:59.000Z', auctionCloses: day(1).toISOString(),
+    activeFrom: null, activeTo: '2026-09-27T23:59:59.000Z', auctionCloses: null,
   })
   await h.admin.slot({ listMode: 'deal', buyersListId: list.id, partnerIds: [], billingUnitHours: 24 })
   /* No DSP demand: the term is decided by the API bid alone. */
@@ -28,6 +30,9 @@ async function termHarness(before?: (h: Awaited<ReturnType<typeof harness>>) => 
   expect((await h.partner.bid(campaignId, day(1), LOCKED)).statusCode).toBe(201)
   const first = await runAuction(h.ctx, day(1))
   expect(first.positions[0].winner).toMatchObject({ clearingCpm: LOCKED })
+  /* A new deal does not lock on its first clear; this one stands in for a deal locked before the model was retired. */
+  expect((await h.ctx.buyersLists.get(list.id))!.lockedWin).toBeNull()
+  await h.ctx.buyersLists.lockWin(list.id, { cpm: LOCKED, partnerId: 'p_google', advertiserId: 'swisse', campaignId, pricingType: null, channel: 'api', lockedAt: day(1).toISOString(), source: 'auction' })
   return { ...h, list, campaignId }
 }
 const booked = (h: Awaited<ReturnType<typeof harness>>, w: Date) => h.campaigns.handoffs.filter((b) => b.windowStart === w.toISOString())

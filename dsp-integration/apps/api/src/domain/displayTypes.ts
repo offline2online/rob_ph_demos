@@ -31,7 +31,7 @@ export const defaultVacdOf = (dt: DisplayType): number | null => {
    `counted`. A manually set default is modelled. */
 export const defaultVacdCountedOf = (dt: DisplayType): boolean =>
   defaultVacdOf(dt) !== null && (dt.phExtensions as { defaultVacdSource?: unknown } | undefined)?.defaultVacdSource === 'computer_vision'
-export const audienceOf = (audience: AudienceSource, dt: DisplayType, slot: number) => audience.forSlot(dt.id, slot, defaultVacdOf(dt), defaultVacdCountedOf(dt))
+export const audienceOf = (audience: AudienceSource, dt: DisplayType, slot: number, window?: { startMs: number; endMs: number }) => audience.forSlot(dt.id, slot, defaultVacdOf(dt), defaultVacdCountedOf(dt), window)
 
 /* Where a flat slot (1-based, across every zone) sits on a multi-zone
    display type: its zone's name and its 1-based place within that zone —

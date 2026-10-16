@@ -50,7 +50,9 @@ describe('billing seam', () => {
   it('answers the term questions for one window at once', () => {
     const list = { activeFrom: '2026-09-01T00:00:00.000Z', activeTo: '2026-09-30T00:00:00.000Z', auctionCloses: '2026-09-10T00:00:00.000Z', lockedWin: null } as never
     expect(termStateAt(list, '2026-09-05T00:00:00.000Z')).toEqual({ active: true, locked: false, auctionOpen: true })
-    expect(termStateAt(list, '2026-09-15T00:00:00.000Z')).toEqual({ active: true, locked: false, auctionOpen: false })
+    /* The old auctionCloses no longer closes bidding (16 Oct 2026). */
+    expect(termStateAt(list, '2026-09-15T00:00:00.000Z')).toEqual({ active: true, locked: false, auctionOpen: true })
+    expect(termStateAt({ ...(list as object), lockedWin: { cpm: 1 } } as never, '2026-09-15T00:00:00.000Z')).toEqual({ active: true, locked: true, auctionOpen: false })
     expect(termStateAt(list, '2026-10-05T00:00:00.000Z').active).toBe(false)
   })
 })
