@@ -5,7 +5,7 @@
    position, three DSPs and two direct advertisers — a dozen between them, all real suppliers to a global convenience retailer (7-Eleven) — settings for
    each, campaigns in every approval state with briefs and creatives,
    localised / personalised bookings on every position so the
-   booking schedule's layer pills all have something to show, reserve prices
+   booking schedule's layer pills all have something to show, slot floors
    both inherited and overridden, and whitelist-only and held-for positions.
 
    `seed()` applies it after the base data unless told not to; the API tests
@@ -14,10 +14,10 @@
    is already running, and a second run changes nothing. */
 import { TRANSACTING_CURRENCY } from '../domain/currency'
 import { randomUUID } from 'node:crypto'
-import { advertiserSlug, reservePriceOf, type DisplayTypeExtensions, type Slot } from '@ph-dsp/types'
+import { advertiserSlug, type DisplayTypeExtensions, type Slot } from '@ph-dsp/types'
 import type { Context } from '../context'
 import { onFree, tx } from '../db/db'
-import { allPositions, nextWindow, windowMs } from '../domain/positions'
+import { allPositions, assignmentOf, nextWindow, windowMs } from '../domain/positions'
 import type { StoredTargeting } from '../domain/targetingSummary'
 import { CHECKS, bookablePositions, campaignFor } from './bookings'
 import { audienceOf } from '../domain/displayTypes'
@@ -53,19 +53,19 @@ const DEMO_DISPLAYS: [string, string, string, string][] = [
 ]
 
 const slot = (label: string, over: Partial<Slot> = {}): Slot => ({
-  label, owner: 'advertiser', partnerIds: [], advertisers: [], listMode: 'rtb', storeScope: null, quota: null, reservePrice: null, ...over,
+  label, owner: 'advertiser', partnerIds: [], advertisers: [], listMode: 'rtb', storeScope: null, quota: null, ...over,
 })
 
 const DEMO_DEAL_ID = 'bl_demo_private_auction'
 
 /* Four sellable positions on Landscape, three on Portrait. Each display type
-   carries a reserve price default that its slots inherit; one slot on each
-   overrides it (the hero slot is dearer). */
-const DEMO_SLOTS: Record<string, { cap: number; loopLengthSec: number; reservePrice: number | null; slots: Slot[] }> = {
+   inherits the platform floor; the hero slot on each carries a floor of its own
+   (the hero slot is dearer). */
+const DEMO_SLOTS: Record<string, { cap: number; loopLengthSec: number; slots: Slot[] }> = {
   landscape: {
-    cap: 4, loopLengthSec: 48, reservePrice: 150,
+    cap: 4, loopLengthSec: 48,
     slots: [
-      slot('Hero slot', { reservePrice: 220 }),
+      slot('Hero slot', { floorCpm: 220 }),
       /* Sold by window: the demo's private auction. Every other open slot is real time. */
       slot('Supplier slot', { partnerIds: ['p_google', 'p_ttd'], listMode: 'deal', buyersListId: DEMO_DEAL_ID }),
       slot('Whitelist slot', { listMode: 'whitelist_only' }),
@@ -73,9 +73,9 @@ const DEMO_SLOTS: Record<string, { cap: number; loopLengthSec: number; reservePr
     ],
   },
   portrait: {
-    cap: 3, loopLengthSec: 24, reservePrice: 90,
+    cap: 3, loopLengthSec: 24,
     slots: [
-      slot('Aisle hero', { reservePrice: 120 }),
+      slot('Aisle hero', { floorCpm: 120 }),
       slot('Health & beauty', { partnerIds: ['p_google', 'p_ttd'], }),
       slot('Held for Red Bull & Gatorade', { partnerIds: [], advertisers: ['Red Bull', 'Gatorade'], listMode: null }),
     ],
@@ -330,7 +330,6 @@ export async function seedDemo(ctx: Context) {
       const ext: DisplayTypeExtensions = {
         ...(dt.phExtensions ?? { slots: [] }),
         slots: spec.slots,
-        reservePrice: spec.reservePrice,
         venue: { ...(dt.phExtensions?.venue ?? {}), loopLengthSec: spec.loopLengthSec },
       }
       await ctx.displayTypes.saveExtensions(id, ext)
@@ -430,7 +429,9 @@ async function seedDemoBookings(ctx: Context) {
       const position = eligible[(b + n) % eligible.length]
       const dt = position.displayType
       const wanted = PRICING[(b + n) % PRICING.length]
-      const pricingType = wanted === 'personalised' && reservePriceOf(dt, position.def) === null ? 'localised' : wanted
+      const reserve = n % 3 === 0
+      /* Personalised versions are sold only in a reservation or on a deal, never the open auction. */
+      const pricingType = wanted === 'personalised' && !reserve && assignmentOf(position.def) !== 'deal' ? 'localised' : wanted
       const campaignId = (await campaignOf(brand.advertiserId, pricingType)) ??
         (await campaignFor(ctx, { ...brand, displayTypeId: dt.id }, '#37474f', dt.displayCanvasSize.width, dt.displayCanvasSize.height))
       /* Packed into the next three weeks, so the Daily view is busy rather
@@ -442,7 +443,6 @@ async function seedDemoBookings(ctx: Context) {
       if (await ctx.reservations.get(id)) continue
       if ((await ctx.reservations.forWindow(position.positionId, start)).some((r) => !r.testMode && ['won', 'reserved'].includes(r.status))) continue
       const cpm = Math.round(MONEY[(b + n) % MONEY.length] * (pricingType === 'localised' ? 1 : pricingType === 'personalised' ? 1.5 : 1.25))
-      const reserve = n % 3 === 0
       await ctx.reservations.insert({
         id, partnerId: brand.partnerId, advertiserId: brand.advertiserId, campaignId, positionId: position.positionId, windowStart: start,
         type: reserve ? 'reserve' : 'bid', channel: reserve ? 'api' : 'openrtb',

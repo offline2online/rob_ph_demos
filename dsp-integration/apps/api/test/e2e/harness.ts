@@ -249,10 +249,10 @@ export async function harness(opts: { dbFile?: string } = {}) {
     approve: (id: string, assetVersion = 'v1') => app.inject({ method: 'POST', url: `/api/admin/v1/campaigns/${id}/approve`, payload: { assetVersion } }),
     activate: (id: string, enabled = true) => app.inject({ method: 'PUT', url: `/api/admin/v1/campaigns/${id}/activation`, payload: { enabled } }),
     /* The Available Inventory save replaces a slot's assignment, so it is sent back as it stands. */
-    setReservePrice: async (reservePrice: number | null, displayTypeId = DT) => {
+    setFloorCpm: async (floorCpm: number | null, displayTypeId = DT) => {
       const def = (await ctx.displayTypes.get(displayTypeId))!.phExtensions!.slots[0]
       const a = assignedOf(def)
-      return app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId, slot: 1, reservePrice, assignedTo: { partnerIds: a.partnerIds, advertisers: a.advertisers, whitelistOnly: a.whitelistOnly, buyersListId: a.buyersListId, buyersListIds: a.buyersListIds } }] } })
+      return app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId, slot: 1, floorCpm, assignedTo: { partnerIds: a.partnerIds, advertisers: a.advertisers, whitelistOnly: a.whitelistOnly, buyersListId: a.buyersListId, buyersListIds: a.buyersListIds } }] } })
     },
     disconnect: (id = 'p_google') => app.inject({ method: 'POST', url: `/api/admin/v1/partners/${id}/disconnect` }),
     connect: (id = 'p_google') => app.inject({ method: 'POST', url: `/api/admin/v1/partners/${id}/connect` }),

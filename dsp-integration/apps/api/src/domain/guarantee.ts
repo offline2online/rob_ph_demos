@@ -1,8 +1,7 @@
 import type { Rules } from './targetingValidation'
 
 /* Guaranteed deal path (Rob, 7 Oct 2026). A reserve is either a PREFERRED deal
-   (the premium window held at the reserve price, no volume promised: the
-   existing reserve-price path, unchanged) or a GUARANTEED deal that also
+   (the window held at the deal's agreed rate, no volume promised) or a GUARANTEED deal that also
    commits a delivery volume. Both wrap the same slot inventory.
 
    The committed volume is the window's forecast impressions less a

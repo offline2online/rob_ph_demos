@@ -4,7 +4,7 @@
    win. Used by POST /v1/reservations and by the auction for DSP bids. */
 import type { Context } from '../context'
 import { TRANSACTING_CURRENCY } from '../domain/currency'
-import { INTERACTIVE_ENABLED, assignedOf, displayTypeFloorCpmOf, maxCampaignsOf } from '@ph-dsp/types'
+import { INTERACTIVE_ENABLED, assignedOf, displayTypeFloorCpmOf, maxCampaignsOf, slotFloorCpmOf } from '@ph-dsp/types'
 import { type PositionRef, assignmentOf } from '../domain/positions'
 import { isInvitedBuyer } from '../domain/buyersLists'
 import { isActiveAt } from '../billing/term'
@@ -119,16 +119,16 @@ export async function checkVersionCount(ctx: Context, p: PositionRef, campaignId
 export interface FloorScope { partner?: Pick<PartnerRecord, 'bidder'> | null; position?: PositionRef | null; buyersListId?: string | null }
 
 /* The base floor for a scope: the most specific floor set (buyers list, else
-   DSP, else platform), never below the platform floor. */
+   DSP, else platform), never below the platform floor or the slot's own floor. */
 export async function baseFloorFor(ctx: Context, scope: FloorScope = {}): Promise<number> {
   const company = await ctx.company.get()
   const listId = scope.buyersListId ?? (scope.position && assignmentOf(scope.position.def) === 'deal' ? assignedOf(scope.position.def).buyersListId : undefined)
   const list = listId ? await ctx.buyersLists.get(listId) : null
-  return resolveBaseFloor(company.floorCpm, scope.partner?.bidder.floorCpm, list?.floorCpm, scope.position ? displayTypeFloorCpmOf(scope.position.displayType) : null)
+  return resolveBaseFloor(company.floorCpm, scope.partner?.bidder.floorCpm, list?.floorCpm, scope.position ? displayTypeFloorCpmOf(scope.position.displayType) : null, scope.position ? slotFloorCpmOf(scope.position.def) : null)
 }
 
 /* The effective floor a bid must clear: the resolved base floor (platform,
-   DSP, buyers list, display type), whatever the campaign's type. There is no
+   slot, DSP, buyers list, display type), whatever the campaign's type. There is no
    advertiser-level multiplier (removed 15 Oct 2026). The personalised multiplier is not a floor (Rob, 30
    Sep 2026): it is charged on personalised plays at billing. An interactive
    campaign clears the ordinary floor for its plays and pays the engagement

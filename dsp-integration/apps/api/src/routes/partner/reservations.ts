@@ -4,25 +4,23 @@
    Approved campaigns only; every pre-auction check applies here, and again
    when the auction clears the window.
 
-   Reserve-price booking (open questions 45 and 52, decided by Rob on 29 Sep
-   2026, programmatic guaranteed): `type: reserve` on a position with a
-   reserve price (reservePriceOf: the slot's override, else its display
-   type's default) is a buyer's commitment to that window at the reserve
-   price. It may be made any time before the window starts. The
-   window is held as Reserved at once: a `reserved` row, which the auction
-   never clears (the one-live-winner-per-window index, migration 0021, counts
-   it). It is booked and billed at the reserve price itself on the window's
-   realised VAC-d (billing.ts): a floor commitment, not a guaranteed volume,
-   with no make-good. "Premium" names what the reservePrice is (a CPM above
-   what the open auction asks), not an amount added to the floor. The
-   reserve price never undercuts the floor: below the buyer's effective
-   floor, the booking is refused `below_floor`, like any other rate.
+   Reserving at a fixed price (reserve-price booking, open questions 45 and
+   52) was removed on 17 Oct 2026: a slot now carries a floor CPM, not a
+   reserve price, and a buyer who wants a window held at an agreed rate takes a
+   Programmatic guaranteed (or preferred) deal, which carries its own rate.
+   `type: reserve` is therefore taken only on a position held for this
+   advertiser or assigned to a buyers list (deal); the rate is the price agreed
+   through the DSP, which must clear the resolved floor (platform, slot, DSP,
+   buyers list). The window is held as Reserved at once: a `reserved` row,
+   which the auction never clears (the one-live-winner-per-window index,
+   migration 0021, counts it), billed at that rate on the window's realised
+   VAC-d (billing.ts).
    A reserve commitment no longer locks a private auction's term (the two-period model was retired on 16 Oct 2026). */
 import { randomUUID } from 'node:crypto'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { TRANSACTING_CURRENCY } from '../../domain/currency'
-import { assignedOf, interactiveReservePriceOf, reservePriceOf } from '@ph-dsp/types'
+import { assignedOf } from '@ph-dsp/types'
 import { guaranteedImpressions, personalisedShare } from '../../domain/guarantee'
 import { dspDealTerms } from '../../dsp/dealTerms'
 import { termStateAt } from '../../billing/term'
@@ -62,7 +60,7 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
     if (b.dealType !== undefined && b.dealType !== 'preferred' && b.dealType !== 'guaranteed') invalid.push({ field: 'dealType', reason: 'preferred or guaranteed.' })
     else if (b.dealType === 'guaranteed' && b.type !== 'reserve') invalid.push({ field: 'dealType', reason: 'Only a reserve can be guaranteed; a bid is not a commitment to a window.' })
     /* The bid, or the reservation price agreed through the DSP (Q11). */
-    if (!(typeof b.bidCpm === 'number' && Number.isFinite(b.bidCpm) && b.bidCpm > 0)) invalid.push({ field: 'bidCpm', reason: b.type === 'reserve' ? 'The agreed reservation price (CPM) is required.' : 'A CPM greater than 0 is required to bid.' })
+    if (!(typeof b.bidCpm === 'number' && Number.isFinite(b.bidCpm) && b.bidCpm > 0)) invalid.push({ field: 'bidCpm', reason: b.type === 'reserve' ? 'The agreed rate (CPM) is required.' : 'A CPM greater than 0 is required to bid.' })
     /* The same ceiling a DSP's bid gets (auction.ts): a price no real
        campaign pays must not win a window and be billed. */
     else if (b.bidCpm > ctx.config.maxBidCpm) invalid.push({ field: 'bidCpm', reason: `At most ${ctx.config.maxBidCpm} CPM.` })
@@ -84,12 +82,6 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
     const pos = p!
     if (isRealtime(pos)) throw conflict('This position sells in real time, per impression: it takes no window bids or reservations.')
     const windowStart = start!.toISOString()
-    const reservePrice = (campaign!.pricingType === 'interactive' ? interactiveReservePriceOf : reservePriceOf)(pos.displayType, pos.def)
-    /* A reserve-price commitment is at least the posted reserve price
-       (OQ52); it is booked at the reserve price itself, below. */
-    if (b.type === 'reserve' && reservePrice !== null && (b.bidCpm as number) < reservePrice) {
-      throw validationFailed([{ field: 'bidCpm', reason: `The reserve price for this position is ${reservePrice} ${TRANSACTING_CURRENCY} CPM; commit to at least that.` }])
-    }
     const now = ctx.clock().getTime()
     const nowIso = new Date(now).toISOString()
     /* No company auction schedule any more (Rob, 8 Oct 2026): a window can be
@@ -115,7 +107,7 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
     if (deal && term?.active && !term.auctionOpen && !stillOpen) {
       throw conflict(`This private auction's term is locked to a winning bid (${deal.name}); its windows take no further bids.`)
     }
-    if (b.type === 'reserve' && assignment !== 'reserved' && reservePrice === null) throw conflict('Only a position held for this advertiser, or one with a reserve price, can be reserved; bid for it instead.')
+    if (b.type === 'reserve' && assignment !== 'reserved' && assignment !== 'deal') throw conflict('Only a position held for this advertiser, or one assigned to a buyers list (a Programmatic guaranteed or preferred deal), can be reserved; reserving at a fixed price is handled by a deal. Bid for this position instead.')
     if (b.type === 'bid' && assignment === 'reserved') throw conflict('This position is held for this advertiser: reserve it instead of bidding.')
     const live = partner.mode === 'live'
     const forWindow = await ctx.reservations.forWindow(pos.positionId, windowStart)
@@ -131,9 +123,8 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
       () => checkAdvertiser(ctx, pos, partner, seat!.name, seat!.domain ? [seat!.domain] : [], seat!.id, windowStart),
       () => checkTargeting(pos, c.pricingType, b.type === 'reserve'),
       () => checkVersionCount(ctx, pos, c.campaignId),
-      /* A reserve-price booking is checked at the rate it is booked at:
-         the reserve price never clears below the floor (OQ45). */
-      () => checkFloor(ctx, b.type === 'reserve' && reservePrice !== null ? reservePrice : (b.bidCpm as number), c.advertiserId, { partner, position: pos }),
+      /* The rate is checked against the resolved floor (platform, slot, DSP, buyers list): a deal never clears below the slot floor. */
+      () => checkFloor(ctx, b.bidCpm as number, c.advertiserId, { partner, position: pos }),
     )
     if (refusal) throw new HttpError(422, refusal.code, refusal.reason)
 
@@ -151,9 +142,8 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
       ? Math.round((await assumedViewsPerWindow(ctx, pos)) * (await personalisedShare(c.targeting, (rules) => ctx.audience.targetedShare(pos.displayType.id, rules))))
       : null
     const committed = forecast === null ? null : guaranteedImpressions(forecast, company.guaranteeBufferPct)
-    /* Booked at the reserve price when the position has one (OQ52), else
-       at the price agreed through the DSP (Q11). */
-    const rate = reserved && reservePrice !== null ? reservePrice : (b.bidCpm as number)
+    /* Booked at the price agreed through the DSP (Q11). */
+    const rate = b.bidCpm as number
     /* The booking, the deal's lock and the settling of other bids are one
        transaction: written together or not at all. */
     const booked = await tx(ctx.db, async (): Promise<{ r: ReservationRecord }> => {
@@ -164,7 +154,7 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
         type: b.type as 'reserve' | 'bid', channel: 'api', bidCpm: b.bidCpm as number, currency: TRANSACTING_CURRENCY,
         /* A reservation is booked now at its rate; a bid waits for the auction. */
         status: reserved ? 'reserved' : 'pending', clearingCpm: reserved ? rate : null,
-        reason: reserved && reservePrice !== null ? `Reserved at the reserve price (${rate} ${TRANSACTING_CURRENCY} CPM), outside the open auction.` : null,
+        reason: reserved ? `Reserved at the agreed rate (${rate} ${TRANSACTING_CURRENCY} CPM), outside the open auction.` : null,
         testMode: !live, pricingType: c.pricingType ?? null, handedOffAt: null,
         dealType, forecastImpressions: forecast, guaranteedImpressions: committed,
         })

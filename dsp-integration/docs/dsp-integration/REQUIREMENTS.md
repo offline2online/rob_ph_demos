@@ -4,13 +4,36 @@ Source: *Real-Time Personalised Surface Architecture Specification v1.2*
 (Personalisation Hub, 3 Sept 2026), as rescoped 29–30 Sep 2026, plus the `Display Types & Playlist
 Management` prototype (`displaytypesandplaylists.jsx`).
 
-**Version:** 8 Oct 2026 (dated, not numbered). Scope follows the 29–30 Sep
+**Version:** 17 Oct 2026 (dated, not numbered). Scope follows the 29–30 Sep
 2026 rescope to "the exchange", recorded as E2E Test Spec v2.4 (30 Sep); this
 file never carried a version number of its own, and this changelog starts the
 record.
 
 **Changelog**
 
+- **17 Oct 2026** — Available Inventory's **Reserve price** is replaced by an
+  editable per-slot **Floor CPM** (Rob; ticket EEm4tA5fSB6RKlEjNhVu). Each
+  slot row shows the platform floor by default, marked inherited; the retail
+  media team can override it on one slot, and clearing the override reverts
+  it to the platform default. A slot floor below the platform floor is
+  refused, the same rule as a DSP's and a buyers list's floor. The floor
+  hierarchy becomes **platform floor → slot floor → DSP floor → buyers-list
+  floor**: the most specific level that is set applies, a blank level
+  inherits from the one above, the platform floor and the slot floor are
+  minimums (a lower DSP or list floor never undercuts them, so a deal never
+  clears below the resolved slot floor), and the result is `imp.bidfloor`
+  (USD) with VAC-d on top. `resolveBaseFloor` / `baseFloorFor` resolve it. The
+  per-position reserve price, the interactive reserve price, the display
+  type's reserve price default and the reserve-price booking path
+  (`POST /v1/reservations`, `type: reserve` priced at a position's reserve
+  price) are **removed**: reserving at a fixed price is handled only by a
+  Programmatic guaranteed deal, which carries its own rate. `type: reserve`
+  survives only on a position held for the calling advertiser or assigned to
+  a buyers list, booked at the rate the buyer agrees through the DSP, which
+  must clear the resolved floor. A reserve price saved earlier is dropped on
+  the next Available Inventory save. Every mention below of a reserve price,
+  a reserve-price booking or a reserve-priced slot is superseded by this
+  entry.
 - **8 Oct 2026** — the windowed auction is retired (decision Rob; ticket
   SNSgusJ3spY5ljqooiwa, code in f11bb1f, migration 0059). There is **no
   company auction schedule** (`auctionOpensHours`, `auctionCutoffTime`), **no
@@ -41,7 +64,7 @@ record.
   guaranteed** is unchanged and is the only type that reserves inventory.
   **Waterfall**: PG, preferred, private auction, open auction. The sections
   below that describe the auction window, the locked rate or a preferred
-  deal held at the reserve price are superseded, and kept only to explain
+  deal held at an agreed rate are superseded, and kept only to explain
   what a legacy locked deal does.
 - **7 Oct 2026** — bid floor becomes a three-level hierarchy (Rob; ticket
   kqsRTYmg1tAYww1vgHMs, build DIlKVuz9yiFANxKz23yP, lists
@@ -67,9 +90,9 @@ record.
   `packages/types` catalog), rather than deleted, so they can return. No
   Interactive cost per engagement field, tooltip or lever; no Interactive
   targeting option; no
-  interactive reserve price column or QR Control greying on Available
+  QR Control greying on Available
   Inventory; no interactive effective floor, `costPerEngagement` or
-  interactive reserve price on `GET /v1/inventory`; a campaign submission
+  interactive price on `GET /v1/inventory`; a campaign submission
   with an interactive layer, and any bid or reservation for one, is refused
   `targeting_not_supported`. QR Control stays a display-type feature in its
   own right. The stored `interactiveCpe` is kept untouched. Sections 4, 5,
@@ -92,7 +115,7 @@ record.
   slots (Rob; ticket Ba5QdLIzCbJGMHfawjAP): a personalised
   campaign is refused (`targeting_not_supported`) outside a `type: reserve`
   booking, and only a reserve-held window plays personalised versions
-  (migration 0045). Reserve price tooltip updated.
+  (migration 0045).
 - **2 Oct 2026** — seams and repositories awaitable, with a per-database
   transaction lock on SQLite, and the SQL made portable to Postgres
   (cUdX4dmT / gAi2mkcm; 9f51d91, 944fd91). Booking schedule numbers a
@@ -189,7 +212,7 @@ and are not changed by this project.
 
 **Deferred to a later release:** managing targeting variables (this release
 uses the default platform variables only, read-only), environmental
-attributes such as weather and stock. (Deals and reserve-price booking —
+attributes such as weather and stock. (Deals and reservations —
 programmatic guaranteed — are built: open questions 45 and 52.)
 
 **Navigation.** The HQ Admin navigation items for this project, in order
@@ -456,7 +479,7 @@ unreshaped; Digital Signage/Kiosk playback and analytics are untouched.
     stay on the owner list — shown, not hidden, so it's clear the option
     exists but doesn't apply here — greyed out with a tooltip saying
     advertising isn't available for this touch point; the API refuses
-    anything but Headquarters. No reserve price, billing unit, max
+    anything but Headquarters. No floor CPM, billing unit, max
     campaigns or venue metadata either, since none of those three apply to
     anything but an Advertiser-owned slot; the display type's `phExtensions`
     holds Headquarters slots only.
@@ -1419,14 +1442,14 @@ above all when an agent tunes per-display-type CPM — is never unexplained.
   CPM, bid lookahead, max play length, category lists, guarantee buffer, …);
   which DSPs may target each shared
   variable; every buyers list (deal); every display type's SSP extensions
-  (slots: owner, reserve prices and the per-display-type floor, billing unit,
+  (slots: owner, floor CPMs and the per-display-type floor, billing unit,
   assignment, deals, locks); and each DSP's bid settings (floor, committed
   plays, QPS, timeout, seats, lists). Anything changed outside the admin API
   (a seed script, a database edit) is not recorded.
 - **One entry per field changed**: actor (type `human` or `agent`, id, name,
   and the HQ session it went through), object (type, id, label), change type
   (`created` / `updated` / `deleted`), dotted field path
-  (`bidder.floorCpm`, `slots[2].reservePrice`; arrays of objects index from 1),
+  (`bidder.floorCpm`, `slots[2].floorCpm`; arrays of objects index from 1),
   old value, new value, time, the request, an optional reason, and a
   `changeId` shared by everything one save changed. A save that changes
   nothing, or is rejected, writes nothing.
@@ -1463,7 +1486,7 @@ on that DSP's page and a buyers and targeting list's floor on the list
 
 | Field | Tooltip |
 |---|---|
-| **Pricing** (section) | The floor a bid must clear is the resolved floor (platform, DSP or list; see the floor hierarchy), the same for every advertiser and campaign type. Bids below it never win. Every play bills at the committed CPM. |
+| **Pricing** (section) | The floor a bid must clear is the resolved floor (platform, slot, DSP or list; see the floor hierarchy), the same for every advertiser and campaign type. Bids below it never win. Every play bills at the committed CPM. |
 | **Currency** | Used for billing and every price shown. The bid floor signal on a request is in USD (§4, The floor hierarchy). |
 | **Platform floor price (CPM)** | Cost per thousand assumed views (VAC-d). The minimum floor for every DSP and every buyers and targeting list, which can raise it but never go below it. Bids below the resolved floor never win. |
 | **DSP floor price (CPM)** | Optional, per connected DSP. Blank inherits the platform floor; a value raises it for this DSP's bids and cannot go below the platform floor. |
@@ -1532,7 +1555,7 @@ played (Billing, below).
 - **The floor is a CPM: a cost per thousand assumed views.** This is the unit
   DSPs bid in, so the floor applies directly to their bids with no
   conversion.
-- **The floor is set at three levels, not one** (see "The floor hierarchy"
+- **The floor is set at four levels, not one** (see "The floor hierarchy"
   below), and is the same for all displays, irrespective of display type and
   playlist. The platform floor **defaults to 100**. Differentiation
   comes from each slot's VAC-d score (how many assumed views it delivers),
@@ -1542,18 +1565,23 @@ played (Billing, below).
 
 ### The floor hierarchy
 
-Rob, 7 Oct 2026. The floor a bid must clear is resolved from three levels:
+Rob, 7 Oct 2026; slot level added 17 Oct 2026. The floor a bid must clear is
+resolved from four levels:
 
 | Level | Set | Where |
 |---|---|---|
 | **Platform floor** | Once, company-wide | Advertiser settings (advanced) |
+| **Slot floor** | Per slot (optional) | Advertisers / Inventory → Available Inventory → Floor CPM |
 | **DSP floor** | Per connected DSP | That DSP's page |
 | **Buyers and targeting list floor** | Per buyers and targeting list | The list |
 
 - **Resolution.** The most specific floor that is set applies. A blank level
-  inherits from the level above it (list ← DSP ← platform). The platform
-  floor is the minimum: a DSP floor or a list floor can raise the floor but
-  can never set it below the platform floor.
+  inherits from the level above it (list ← DSP ← slot ← platform). The
+  platform floor and the slot floor are minimums: a DSP floor or a list floor
+  can raise the floor but can never set it below the platform floor or the
+  slot's own floor, so a deal never clears below the resolved slot floor. A
+  slot floor below the platform floor is refused on save, the same rule as a
+  DSP's and a list's. `resolveBaseFloor` / `baseFloorFor` resolve it.
 - **Units.** All floors are in USD. The resolved floor is sent on the bid
   request as `imp.bidfloor` with `bidfloorcur` `USD`, and a bid below it is
   rejected.
@@ -1568,6 +1596,7 @@ Rob, 7 Oct 2026. The floor a bid must clear is resolved from three levels:
 | Lever | Default | Where it is set | Applies to |
 |---|---|---|---|
 | Platform floor CPM (minimum) | 100 | Advertiser settings → Pricing (advanced) | Every campaign |
+| Slot floor CPM | blank (inherits the platform floor) | Available Inventory → Floor CPM | Bids and deals for that slot |
 | DSP floor CPM | blank (inherits) | The DSP's page | That DSP's bids |
 | Buyers and targeting list floor CPM | blank (inherits) | The list | Bids under that list |
 
@@ -1606,9 +1635,9 @@ Rob, 7 Oct 2026. The floor a bid must clear is resolved from three levels:
   none) is billed at that agreed CPM against the realised VAC-d for
   that unit. The term total is simply the sum of its billing units'
   settlements at the one agreed rate. This sits between the two other
-  risk profiles: **reserved** commits the brand to a premium rate (the
-  reserve price) and holds the window, billed on realised VAC-d at that
-  rate with no guaranteed volume and no make-good (§5 "Reserve price"); **open real-time** locks nothing, re-clearing price
+  risk profiles: **reserved** commits the brand to an agreed rate on a deal
+  and holds the window, billed on realised VAC-d at that
+  rate with no guaranteed volume and no make-good (§5 "Reservations"); **open real-time** locks nothing, re-clearing price
   on every play (one auction per play, 7 Oct 2026: a win buys that one play, never a block of plays — blocks and volumes belong to deals); a **private auction using the two-period model** locks
   the rate but leaves volume variable — the brand pays for actual views,
   not a guaranteed number, but never re-bids for the term. Mechanically
@@ -1742,7 +1771,7 @@ region, date range, status.
 | Status | Meaning |
 |---|---|
 | **Available** | Open for this partner/advertiser to reserve or bid on |
-| **Reserved** | Held for a named advertiser (shown as available only to that advertiser); or committed at the reserve price, or inside a locked private-auction term — in those two cases the window is not auctioned and takes no bids until it plays |
+| **Reserved** | Held for a named advertiser (shown as available only to that advertiser); or committed by a reservation on a deal, or inside a locked private-auction term — in those two cases the window is not auctioned and takes no bids until it plays |
 | **Sold** | Won or booked for that window, by the one advertiser holding it |
 | **Unavailable** | Store closed, display offline, or otherwise not playable |
 
@@ -1755,50 +1784,34 @@ this document).
 
 - **Pricing** for the requester, in the company currency: the platform floor CPM
   and the effective floor CPM (§4, the resolved floor for every campaign type).
-- **Reserve price** (decision, Rob, 22 Sep; real inheritance, 22 Sep): a CPM
-  premium at which this position can be reserved in advance of real-time
-  selling. A retailer lets an advertiser commit to a premium rate up front
-  to hold the slot for a window, which takes that window out of real-time selling. The reserve price is the CPM the booking clears and is billed
-  at — not an amount added to the floor — and it must itself clear the
-  buyer's effective floor (§4). A booking is billed on realised VAC-d at
-  that CPM, as a floor commitment: no guaranteed volume, no make-good (§4
-  Billing). `null` when no reserve is set. **Reserved slots are the only slots
-  that play personalised versions** (decision, Rob, 5 Oct 2026): once
-  committed, the advertiser submits the personalised variations their
-  creative needs alongside the mandatory default. Tooltip on the Reserve
-  price column and the display type's reserve price field: *"The premium CPM
-  an advertiser commits to up front to hold this slot for a window, out of the
-  open auction. Reserved slots are the only slots that play personalised
-  versions: once committed, the advertiser submits the personalised
-  variations their creative needs alongside the default."* Genuine §1 configuration inheritance, not a copy action: a display
-  type carries its own reserve price default, and a slot's own reserve
-  price overrides it whenever one is set — a slot with none simply follows
-  its display type, and setting the default reaches every slot on it
-  automatically, with no per-slot action needed. **One simplification, kept
-  deliberately narrow**: a slot's own value can only be a real premium, never
-  an explicit "no reserve" while its display type has a default — clearing a
-  slot's override always means "follow the default," the same reading
-  `null` already carries everywhere else in this inheritance. An earlier
-  design (a plain per-slot value with a "copy to every other slot" action,
-  no stored default) failed testing for not actually running the
-  inheritance the ticket asked for.
+- **Floor CPM** (Rob, 17 Oct 2026; replaced the reserve price): the
+  resolved floor this position sells at, in USD: the slot's own floor when it
+  has one, else the platform floor (Advertiser settings), published as
+  `pricing.effectiveFloorCpm`. Genuine §1 configuration inheritance, not a
+  copy action: a slot's own floor overrides the platform floor whenever it is
+  set, a slot with none simply follows the platform floor, and a later change
+  to the platform floor reaches every slot without an override. A slot floor
+  below the platform floor is refused on save (`400 validation_failed`). A DSP's
+  or buyers list's own floor can raise what a bid must clear, never lower it
+  below the platform or slot floor, so a deal never clears below the resolved
+  slot floor (§4 "The floor hierarchy"). **There is no reserve price any
+  more**: reserving a slot at a fixed price is handled only by a Programmatic
+  guaranteed deal, which carries its own rate.
 
-  **The booking flow** (Rob, 29 Sep 2026; open questions 45 and 52):
+  **Reservations** (open questions 45 and 52; the reserve-price path was
+  removed 17 Oct 2026):
   1. **Commit.** A buyer sends `POST /v1/reservations` with `type: reserve`
-     for a future window, any time before that window starts. Its
-     `bidCpm` must be at least the reserve price (`400 validation_failed`
-     otherwise); the booking is made at the reserve price, which must clear
-     the buyer's effective floor (`422 below_floor` otherwise).
+     for a future window, any time before that window starts, on a position
+     held for the calling advertiser or assigned to a buyers list (a deal).
+     `bidCpm` is the rate agreed through the DSP; it must clear the resolved
+     floor (`422 below_floor` otherwise). `type: reserve` on any other
+     position answers `409`.
   2. **Held as Reserved.** The window is booked and handed off at once. Its
      availability reads **Reserved**; no auction clears it, bids
      already waiting on it are settled lost, and new bids are refused.
-  3. **Honoured.** When the window plays, the booking stands at the reserve
-     price.
-  4. **Billed** on the window's realised VAC-d at the reserve price.
-
-  On a private auction using the two-period model, the commitment locks the
-  deal's whole delivery term at the reserve price (see "Private auctions
-  (buyers lists)" → locked rate).
+  3. **Honoured.** When the window plays, the booking stands at the agreed
+     rate.
+  4. **Billed** on the window's realised VAC-d at the agreed rate.
 
 ### Visibility rules
 
@@ -1854,15 +1867,12 @@ display exists to play them at all.
 Slots are made available by setting their owner to *Advertiser* on a playlist
 (explained in the section's tooltip); that part is not editable here.
 Two fields are: **Assigned to** (above), a multi-select that drops a pill
-per choice into the cell, and **Reserve price**, a CPM input (blank = following the display type's default, or no
-reserve if it has none either). Editing a slot that has no override of its
-own edits its display type's shared default instead, reaching every other
-slot on that display type at once; an **Override** action next to the input
-lets one slot diverge with its own value (shown alongside a **reset to
-default** action once it has), independent from then on (decision, Rob,
-22 Sep; real inheritance, 22 Sep — see *Reserve price* under *What each
-position returns*, above, for the currency, the billing note, the "override
-always wins, no explicit opt-out" simplification, and what's not built yet).
+per choice into the cell, and **Floor CPM**, a CPM input (blank = following
+the platform floor, shown as the placeholder and marked *inherited*). Typing a
+value overrides the floor for that one slot (never below the platform floor);
+a **reset** action next to it clears the override and returns the slot to
+following the platform floor (Rob, 17 Oct 2026; see *Floor CPM* under *What
+each position returns*, above).
 **Admin only**, same as the other two; a marketing user reads it as plain
 text — the resolved value, not which of the two levels it came from.
 **Targeting is not set per slot** (Rob, 7 Oct 2026; there was a per-slot setting
@@ -1882,7 +1892,7 @@ a slot that had it ticked reads as the remaining types (localised by
 default), the API drops it from a save instead of refusing it, and a
 submission, bid or reservation for an interactive campaign is refused
 `targeting_not_supported`. The earlier "Interactive needs QR Control"
-greying and the interactive reserve price column are hidden with it; the
+greying are hidden with it; the
 Playlist cell still flags a display type that has QR Control.
 
 ### Deal ID: generated and immutable (10 Oct 2026, ticket 5CCgGEYSkVoDTH9yNSYu)
@@ -1975,7 +1985,7 @@ It carries:
   `below_floor`, and a locked-term window whose rate has fallen below the
   floor in force when it is booked (the floor rose) is not
   sold and falls through to the default campaign. Programmatic guaranteed
-  is the reserve-price booking flow (§5 "Reserve price"), delivered with it
+  is the reservation booking flow (§5 "Reservations"), delivered with it
   (open question 52).
 - **Volume lives on the deal, never the open auction** (Rob, 7 Oct 2026;
   open question 45). A deal may carry `committedPlays` over its delivery
@@ -2048,13 +2058,13 @@ the flight ends, and every later play window is booked **directly** at that
 rate, with no bid requests and no fresh clearing (`exchange/auction.ts`'s
 `bookLockedTermWindow`), still below no floor in force. Each such window is
 its own reservation, billed on its own realised VAC-d for that window (§4
-"Billing"). A reserve-price commitment on a private auction no longer locks
+"Billing"). A reservation on a private auction no longer locks
 the term. A deal with no `lockedWin` clears a fresh first-price auction every
 window.
 
 **Billing unit** (`billingUnitHours` on a slot, with a display-type-level
-default — same override-always-wins inheritance as reserve price, §5
-"Reserve price" above; when neither is set the slot uses the platform
+default — same override-always-wins inheritance as the slot floor, §5
+"Floor CPM" above; when neither is set the slot uses the platform
 default of 24 hours/one day, a named constant rather than a setting — the
 company-wide play-window length setting was removed 8 Oct 2026): the granularity a CPM is
 quoted and charged against, surfaced in Available Inventory next to Reserve
@@ -2082,7 +2092,7 @@ company play-window length to change: `playWindowHours` and its
 pending-change bookkeeping were removed 8 Oct 2026.)
 
 **Max campaigns** (`maxCampaigns` on a slot, with a display-type-level
-default — same override-always-wins inheritance as reserve price and
+default — same override-always-wins inheritance as the slot floor and
 billing unit above; platform default 10 when neither is set; 1-25
 inclusive): the retailer-controlled maximum number of campaigns — the
 mandatory default layer plus optional targeted versions — an advertiser
@@ -2933,7 +2943,7 @@ A DSP's page holds only, in this order:
    required, plus two optional per-DSP overrides (open question 46): **QPS
    ceiling** and **bidder timeout (ms)**. Left empty, each uses the platform
    default (500 QPS, 300 ms); set, the DSP's value wins — the same
-   override-always-wins inheritance as reserve price, max campaigns and
+   override-always-wins inheritance as the slot floor, max campaigns and
    billing unit. The timeout is also sent as the bid request's `tmax`.
    Allowed ranges: 1–10,000 QPS, 50–2,000 ms; outside them the save is
    refused `400 validation_failed`.
@@ -3099,13 +3109,12 @@ fields. The canonical definition is `app/src/model/schema.js` and
   multiZone: { enabled, zones: [{ id, name, x, y, width, height, playlistId,
                                   maximumCampaignsPlayedInRotation }] },   // per zone (28 Sep 2026): null = Default (Unlimited, no slots); n = that zone's slot count
   phExtensions: {                  // THIS PROJECT's additions
-    reservePrice,                  // the display type's own reserve price default; CPM or null (real inheritance, 22 Sep — §5)
     billingUnitHours,               // the display type's own billing-unit default = play-window length, in whole hours; null = the platform default of 24 (§5 "Billing unit"; OQ27, 29 Sep 2026)
     maxCampaigns,                  // the display type's own max-campaigns default; null = platform default of 10, 1-25 inclusive (§5, ticket "Max campaigns column + slot playlist statement")
     maxPlayLengthSec,              // the display type's own max-play-length default, whole seconds 1-600; null = the company default (Advertiser settings), platform default 15 (§5 "Max play length")
     slots: [{ label, owner, zoneId,   // zoneId: the zone this slot belongs to on a multi-zone display type (one segment per zone, in zone order); absent on a single-zone one
               partnerId, advertiser, listMode, buyersListId, storeScope, quota,
-              reservePrice,         // this slot's own override; CPM, or null = inherit the display type's reservePrice above (§5)
+              floorCpm,             // this slot's own floor CPM (USD, 17 Oct 2026); null = follow the platform floor, never below it (§5 "Floor CPM")
               billingUnitHours,     // this slot's own override = its play-window length, in whole hours; null = inherit the display type's billingUnitHours above, else the platform default of 24 (§5; OQ27)
               maxCampaigns,         // this slot's own override; null = inherit the display type's maxCampaigns above, 1-25 inclusive when set (§5)
               maxPlayLengthSec }],  // this slot's own override = the fixed duration of one play, whole seconds 1-600; null = inherit the display type's maxPlayLengthSec above, else the company default (§5 "Max play length")
@@ -3932,7 +3941,7 @@ playback analytics.**
   HAmTUHQVj63NDiY4hLk8): the playlist's slot editor offers the same Maximum
   Campaigns Played In Rotation, the same owner list (Headquarters /
   Advertiser) and the same Advertiser assignment on Advertisers / Inventory
-  (reserve price, billing unit, max campaigns, named advertisers, buyers
+  (floor CPM, billing unit, max campaigns, named advertisers, buyers
   lists) as digital signage. There is no *Available for RTB* switch. The bid
   request still carries the OpenRTB `site` (Website) or `app` (Mobile App)
   object, never `dooh`, and no `imp.qty` (one impression per render,
@@ -3942,7 +3951,7 @@ playback analytics.**
   slots"). *(Display Types → Playlists → Slot assignment)*
 - **Website and Mobile App touch points** (ticket, 28 Sep 2026): offered
   alongside Digital Signage and Kiosk, HQ-only (no Advertiser/Stores slot,
-  no reserve price/billing unit/max campaigns/venue metadata, out of
+  no floor CPM/billing unit/max campaigns/venue metadata, out of
   Advertisers / Inventory, Available Inventory, the Inventory API and bid
   requests), their own canvas defaults (1920×1080 / 330×400) on a new
   display type, and Enabled Features/Multi-Zone Layout hidden except QR
@@ -4053,7 +4062,7 @@ playback analytics.**
   *(DSP Integration → Advertiser settings → Pricing)*
 - **Audience scoring framework** (MOVE/VAC-d) the retailer populates, automated
   where cameras are connected. *(spec only)*
-- **Floor hierarchy** (platform, DSP, buyers and targeting list; most specific set wins, blank inherits, platform is the minimum). *(Advertiser settings, DSP page, list)*
+- **Floor hierarchy** (platform, slot, DSP, buyers and targeting list; most specific set wins, blank inherits, platform and slot floors are minimums). *(Advertiser settings, DSP page, list)*
 - **Effective (resolved) floor CPM per pricing type**, applied
   pre-auction and sent as `imp.bidfloor` with `bidfloorcur` USD. *(spec only)*
 - **Dynamic VAC-d billing** from existing playback data. *(spec only)*
@@ -4066,17 +4075,15 @@ playback analytics.**
   that advertisers can buy, through connected DSPs (open or private auction)
   or assigned to Direct advertisers who sign in to HQ Admin to manage their
   campaigns (Display type, Playlist, Slot, Position,
-  Assigned to, Reserve price, Max campaigns, Plays per window, Max play length, Billing
+  Assigned to, Floor CPM, Max campaigns, Plays per window, Max play length, Billing
   unit, and an Open link), with no advertisers column and a filter on
   every column. *(Advertisers / Inventory → Available Inventory)*
-- **Reserve price, inherited from its display type** (decision, 22 Sep; real
-  inheritance, 22 Sep): a CPM premium to reserve the position in advance of
-  real-time selling, or no reserve, set once on the display type and
-  automatically reaching every slot on it — override just one slot to give
-  it its own value, independent from then on; published on the position,
-  resolved, and bookable: a buyer's reserve commitment holds the window as
-  Reserved, out of real-time selling, billed on realised VAC-d at the
-  reserve price (open questions 45 and 52, resolved 29 Sep 2026).
+- **Floor CPM per slot, inheriting the platform floor** (Rob, 17 Oct 2026;
+  replaced the reserve price): every slot shows the platform floor as
+  inherited; the retail media team may override it on one slot (never below
+  the platform floor), and clearing the override returns the slot to the
+  platform default. The resolved floor is what the exchange sends as
+  `imp.bidfloor` for that slot and what a bid or a deal rate must clear.
   *(Advertisers / Inventory → Available Inventory)*
 - **Billing unit = play-window length** (open question 27, decision Rob,
   29 Sep 2026): the slot's billing unit (slot override, else display type
@@ -4090,7 +4097,7 @@ playback analytics.**
   Inventory: Max campaigns column + slot playlist statement"): the
   retailer-controlled maximum number of campaigns (default + targeted
   versions) this advertiser may submit for the slot — same
-  override-always-wins inheritance as reserve price, default 10, 1-25
+  override-always-wins inheritance as the slot floor, default 10, 1-25
   inclusive — replacing the platform-wide 20-targeted-versions cap for
   that slot once a submission names it. Admin-editable, marketing
   read-only, filterable, with an info tooltip. Purely a submission cap —
@@ -4111,9 +4118,9 @@ playback analytics.**
   default, or named DSPs, named advertisers (reserved) or the whitelist —
   as a multi-select of pills, set by an admin and enforced on every bid.
   *(Advertisers / Inventory → Available Inventory)*
-- **Personalised on reserve bookings and deals, never open real-time**: a
-  personalised campaign is accepted in a `type: reserve` booking (on a slot
-  with a reserve price, own or inherited) and on a deal-held position
+- **Personalised on reservations and deals, never open real-time**: a
+  personalised campaign is accepted in a `type: reserve` booking (on a held
+  or deal position) and on a deal-held position
   (private auction, preferred, guaranteed; 8 Oct 2026); targeting is defined on the buyers and targeting list,
   not per slot (7 Oct 2026). *(Advertisers / Inventory → Available Inventory)*
 - **Campaign Approval supersedes the two-tab Campaign schedule below** (ticket
@@ -4593,11 +4600,11 @@ until that section is edited.
   billing granularity, for every slot. The company play-window length
   setting was removed 8 Oct 2026; the default is a platform constant (24
   hours).
-- **Deals and reserve-price booking (Q45, Q52; §4 "Billing", §5 "Reserve
-  price" and "Private auctions").** Deals are per DSP, built on the buyers
-  list, and priced on top of the same floor, never under it. A reserve-price
-  booking holds its window as Reserved, out of the auction, and bills on
-  realised VAC-d at the reserve price. The "reserved slots not wired to a
+- **Deals and reservations (Q45, Q52; §4 "Billing", §5 "Floor CPM"
+  and "Private auctions").** Deals are per DSP, built on the buyers
+  list, and priced on top of the same floor, never under it. A reservation
+  holds its window as Reserved, out of the auction, and bills on
+  realised VAC-d at the agreed rate (the reserve price was removed 17 Oct 2026). The "reserved slots not wired to a
   booking flow" gap is closed.
 - **Advertiser notification (Q41; §6 Partner API).** Campaign status is
   retrieved by polling `GET /v1/campaigns/{id}/status`. Webhook push is out
@@ -4719,8 +4726,8 @@ partner-contributed attributes have been removed with that scope.
     auctions (buyers lists)"). Company-wide deals are not modelled. *Cross-DSP lists (10 Oct 2026):* "a deal is per DSP" means the deal **identity** is per DSP — a list may invite seats on several DSPs and carries one deal ID for each; its terms are shared (§5 "Private auctions"). A deal
     is priced against the same score-driven floor; its negotiated rate is a
     commitment on top of the floor, never under it, and a deal never
-    bypasses the floor. Programmatic guaranteed is the reserve-price booking
-    flow (§5 "Reserve price"; open question 52). *Volume (7 Oct 2026,
+    bypasses the floor. Programmatic guaranteed is the reservation booking
+    flow (§5 "Reservations"; open question 52). *Volume (7 Oct 2026,
     Rob):* a committed number of plays over a term is carried by deals,
     never by the open auction, which stays per play and holds no block of
     plays. A buyers list carries an optional `committedPlays` (whole number
@@ -4732,7 +4739,7 @@ partner-contributed attributes have been removed with that scope.
 46. **Per-DSP bidder tuning.** *Resolved (decision, Rob, 29 Sep 2026):*
     per-DSP QPS ceiling and bidder timeout overrides on the DSP's connection
     settings (§7 "DSP setup"), override-wins over the platform defaults
-    (500 QPS, 300 ms) — the same inheritance as reserve price, max campaigns
+    (500 QPS, 300 ms) — the same inheritance as the slot floor, max campaigns
     and billing unit.
 47. **Deleting a display type with live advertiser positions.** *Resolved
     (decision, Rob, 29 Sep 2026):* hard block, `409 has_dependents`, on
@@ -4765,16 +4772,15 @@ partner-contributed attributes have been removed with that scope.
     more. Ordinary dynamic VAC-d billing against one advertiser's realised
     share (§4) already covers a booking that stacks default plus upsell
     layers, since it is still one advertiser, one CPM, one position.
-52. **Reserve price booking flow.** *Resolved (decision, Rob, 29 Sep 2026)
-    and built, delivered with open question 45:* a buyer commits to a
-    reserve-priced position for a future window (`POST /v1/reservations`,
-    `type: reserve`). The window is held as **Reserved**, out of the open
-    auction, honoured at the reserve price when it plays and billed on
-    realised VAC-d at that price — a floor commitment, not a flat guaranteed
-    volume, with no make-good. On a two-period private auction the
-    commitment locks the deal's term at the reserve price through the
-    existing locked-rate machinery. See §5 "Reserve price" and "Private
-    auctions (buyers lists)".
+52. **Reservation booking flow.** *Resolved (decision, Rob, 29 Sep 2026)
+    and built, delivered with open question 45; the reserve price itself was
+    removed on 17 Oct 2026:* a buyer commits to a held or deal position for
+    a future window (`POST /v1/reservations`, `type: reserve`) at the rate
+    agreed through the DSP, which must clear the resolved floor. The window
+    is held as **Reserved**, out of the open auction, honoured at that rate
+    when it plays and billed on realised VAC-d at that price — a floor
+    commitment, not a flat guaranteed volume, with no make-good. See §5
+    "Floor CPM" and "Private auctions (buyers lists)".
 53. **Canonical event schema.** *Resolved (decision, Rob, 29 Sep 2026):*
     analytics is owned by Personalisation Hub inside the PWA player and
     managed outside this project. This project defines only the API contract
@@ -4791,13 +4797,13 @@ partner-contributed attributes have been removed with that scope.
 
 ## Guaranteed deal path (Rob, 7 Oct 2026)
 
-A reserve is either a **preferred deal** (the premium window held at the reserve price, no volume promised — the existing reserve-price path, unchanged) or a **guaranteed deal** that also commits a delivery volume. Both wrap the same slot inventory. `POST /v1/reservations` takes `dealType: preferred | guaranteed` (default preferred; guaranteed only with `type: reserve`).
+A reserve is either a **preferred deal** (the window held at the deal's agreed rate, no volume promised) or a **guaranteed deal** that also commits a delivery volume. Both wrap the same slot inventory. `POST /v1/reservations` takes `dealType: preferred | guaranteed` (default preferred; guaranteed only with `type: reserve`).
 
 - **Forecast** for the window = plays × audience = the slot's VAC-d assumed views per window (`assumedViewsPerWindow`, the same figure billing realises against).
 - **Committed volume** = `floor(forecast × (1 − buffer%))`. Expected delivery therefore sits above the guarantee and make-goods are rare. Returned as `forecastImpressions` / `guaranteedImpressions` and stored on the reservation (migration 0046).
 - **Buffer**: `guaranteeBufferPct` on Advertiser settings (in the "Committed delivery volume" group, beside Default committed plays), default 10, 0–50, instance-wide. Omitted on save keeps the stored value.
 - **To the DSP**: the reservation response carries `dspDeal` — DV360 Programmatic Guaranteed / Amazon guaranteed deal with `unitCount` = the committed impressions; a preferred deal maps to a preferred deal with no volume (`dsp/dealTerms.ts`).
-- **Open (dependencies)**: the exact per-DSP guaranteed-deal field names are to be confirmed against each DSP's sandbox; make-good / under-delivery behaviour when delivery falls below the guarantee is not built — billing is unchanged (realised VAC-d at the reserve price).
+- **Open (dependencies)**: the exact per-DSP guaranteed-deal field names are to be confirmed against each DSP's sandbox; make-good / under-delivery behaviour when delivery falls below the guarantee is not built — billing is unchanged (realised VAC-d at the agreed rate).
 
 ## Bandwidth protection — restrict uncached creatives in defined hours (Rob, 7 Oct 2026)
 
@@ -4899,7 +4905,7 @@ keeps the won creative renderable; the lookahead sets how early the per-impressi
   DV360 `programmatic_guaranteed` / Amazon `guaranteed_deal`, `unitCount` =
   committed impressions). Every type asserts that the buyers list's
   `dealType` decides which fields are captured and that billing is realised
-  VAC-d at the cleared or reserve price, with no make-good.
+  VAC-d at the cleared or agreed price, with no make-good.
 - The Run 6 journey (`npm run e2e:journey`) adds Phase 5, cases M1–M8:
   preferred and guaranteed deals over the real API and tick processes.
 - **Run 8 — the AWS demo (10 Dec 2026; ticket ZHPV0Lj5N883RKGfYThw)**

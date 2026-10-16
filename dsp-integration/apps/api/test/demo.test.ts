@@ -21,11 +21,11 @@ describe('demo estate', () => {
     /* The rotation cap is the slot count, and the loop divides cleanly. */
     expect((await ctx.displayTypes.get('landscape'))!.playlistSettings).toMatchObject({ maximumCampaignsPlayedInRotation: 4 })
     expect((await ctx.displayTypes.get('portrait'))!.phExtensions?.venue?.loopLengthSec).toBe(24)
-    /* Reserve price: the hero slot overrides, the others inherit. */
+    /* Floor CPM: the hero slot carries its own, the others inherit the platform floor. */
     const landscape = (await ctx.displayTypes.get('landscape'))!.phExtensions!
-    expect(landscape.reservePrice).toBe(150)
-    expect(landscape.slots[0].reservePrice).toBe(220)
-    expect(landscape.slots[1].reservePrice).toBeNull()
+    expect(landscape.slots[0].floorCpm).toBe(220)
+    expect(landscape.slots[1].floorCpm).toBeUndefined()
+    expect(landscape).not.toHaveProperty('reservePrice')
 
     expect((await ctx.displays.list()).length).toBeGreaterThanOrEqual(30)
     expect((await ctx.displays.listByDisplayType('landscape')).length).toBeGreaterThan((await ctx.displays.listByDisplayType('portrait')).length)

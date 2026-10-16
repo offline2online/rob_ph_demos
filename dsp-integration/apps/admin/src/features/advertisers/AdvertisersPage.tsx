@@ -8,7 +8,7 @@ import { App, Button, Input, InputNumber, Modal, Select, Spin, Switch } from 'an
 import { Tip } from '../../shared/Tip'
 import { cpmKindHint, cpmSummary, sourceLabel } from './effectiveTerm'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
-import { INTERACTIVE_ENABLED, RESERVE_PRICE_TIP, PLATFORM_DEFAULT_BILLING_UNIT_HOURS, DEFAULT_MAX_CAMPAIGNS, MAX_MAX_CAMPAIGNS, MAX_MAX_PLAY_LENGTH_SEC, MIN_MAX_CAMPAIGNS, MIN_MAX_PLAY_LENGTH_SEC, SLOT_OWNERS, ALL_DSPS_LABEL, assignedLabels, directLabel, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type Session, storeZoneLabel, type StoreZone } from '@ph-dsp/types'
+import { INTERACTIVE_ENABLED, PLATFORM_DEFAULT_BILLING_UNIT_HOURS, DEFAULT_MAX_CAMPAIGNS, FLOOR_CPM_TIP, MAX_MAX_CAMPAIGNS, MAX_MAX_PLAY_LENGTH_SEC, MIN_MAX_CAMPAIGNS, MIN_MAX_PLAY_LENGTH_SEC, SLOT_OWNERS, ALL_DSPS_LABEL, assignedLabels, directLabel, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type Session, storeZoneLabel, type StoreZone } from '@ph-dsp/types'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, ApiRequestError } from '../../api/client'
@@ -113,24 +113,22 @@ const ActionsCell = ({ data, context }: P) =>
    display type (spec §5 "Available Inventory"). No advertisers column. */
 export const slotKey = (r: AvailableInventoryRow) => `${r.displayTypeId}:${r.slot}`
 /* What Save changes sends for a slot: the fields this table owns.
-   reservePrice is this slot's own override; null means it follows its
-   display type's shared default (below), not "no reserve" (Rob, 22 Sep;
-   spec §1 configuration inheritance — override always wins). */
-export interface SlotEdit { assignedTo: Omit<AssignedTo, 'partnerNames' | 'buyersListName' | 'buyersListNames'>; reservePrice: number | null; interactiveReservePrice: number | null; billingUnitHours: number | null; maxCampaigns: number | null; maxPlayLengthSec: number | null; inGlobalDeal: boolean }
+   floorCpm is this slot's own override; null means it follows the platform
+   floor (Rob, 17 Oct 2026; it replaced the reserve price — spec §1
+   configuration inheritance, override always wins). */
+export interface SlotEdit { assignedTo: Omit<AssignedTo, 'partnerNames' | 'buyersListName' | 'buyersListNames'>; floorCpm: number | null; billingUnitHours: number | null; maxCampaigns: number | null; maxPlayLengthSec: number | null; inGlobalDeal: boolean }
 type Edits = Record<string, SlotEdit>
-/* A display type's reserve price default, edited from any of its slot
-   rows — every row for the same displayTypeId shares one value. Also used
-   for the billing-unit default (spec "Private auctions: two-period model",
-   23 Sep 2026) and the max-campaigns default (ticket "Available Inventory:
-   Max campaigns column + slot playlist statement") — same inheritance
-   shape, separate maps/drafts. */
+/* A display type's billing-unit default (spec "Private auctions: two-period
+   model", 23 Sep 2026) and max-campaigns default (ticket "Available
+   Inventory: Max campaigns column + slot playlist statement"), edited from
+   any of its slot rows — every row for the same displayTypeId shares one
+   value; separate maps/drafts. */
 type Defaults = Record<string, number | null>
 type InvCtx = { current: {
   open: (displayTypeId: string) => void
   canEdit: boolean
   currency: string
   edits: Edits
-  defaults: Defaults
   billingUnitDefaults: Defaults
   maxCampaignsDefaults: Defaults
   maxPlayLengthDefaults: Defaults
@@ -139,7 +137,6 @@ type InvCtx = { current: {
   direct: string[]
   buyersLists: BuyersList[]
   set: (key: string, patch: Partial<SlotEdit>) => void
-  setDefault: (displayTypeId: string, v: number | null) => void
   setBillingUnitDefault: (displayTypeId: string, v: number | null) => void
   setMaxCampaignsDefault: (displayTypeId: string, v: number | null) => void
   setMaxPlayLengthDefault: (displayTypeId: string, v: number | null) => void
@@ -266,17 +263,14 @@ function Pills({ label, value, options, canEdit, placeholder, onChange }: {
 }
 
 const edited = (c: InvCtx['current'], r: AvailableInventoryRow): SlotEdit =>
-  c.edits[slotKey(r)] ?? { assignedTo: r.assignedTo, reservePrice: r.reservePriceOverride, interactiveReservePrice: r.interactiveReservePriceOverride ?? null, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride, maxPlayLengthSec: r.maxPlayLengthSecOverride, inGlobalDeal: r.inGlobalDeal }
-/* The value this slot actually resolves to right now, following the draft
-   default when it has no override of its own — the same "override wins"
-   read as reservePriceOf, but against unsaved edits. */
-const effectiveReservePrice = (c: InvCtx['current'], r: AvailableInventoryRow): number | null => {
-  const override = edited(c, r).reservePrice
-  return override ?? c.defaults[r.displayTypeId] ?? null
-}
+  c.edits[slotKey(r)] ?? { assignedTo: r.assignedTo, floorCpm: r.floorCpmOverride, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride, maxPlayLengthSec: r.maxPlayLengthSecOverride, inGlobalDeal: r.inGlobalDeal }
+/* The floor this slot actually resolves to right now: its own override when
+   it has one, else the platform floor (Advertiser settings) — the same
+   "override wins" read as the server's resolveBaseFloor, against unsaved edits. */
+const effectiveFloorCpm = (c: InvCtx['current'], r: AvailableInventoryRow): number => edited(c, r).floorCpm ?? r.platformFloorCpm
 /* Same "override wins" read, against unsaved edits, for the billing unit
    (spec "Private auctions: two-period model", 23 Sep 2026) — unlike
-   reserve price, there's no "none" state: the company-wide play window
+   floor CPM, there's no "none" state: the company-wide play window
    (Advertiser settings, platform default 24 hours) applies once neither
    the slot nor its display type sets one (OQ27, 29 Sep 2026). */
 /* The billing window is locked to the 24 h platform default (13 Oct 2026):
@@ -521,80 +515,34 @@ function AssignedCell({ data, context }: IP) {
   )
 }
 
-/* A CPM premium to reserve the slot in advance of delivery (Rob,
-   22 Sep; spec §1 configuration inheritance — real inheritance, not the
-   earlier "copy to every slot" design that failed testing). Following the
-   default (no override): the input edits every slot on this display type
-   at once, since they all read the same shared value. Override: this
-   slot's own input, independent from the others until reset. */
-function ReservePriceCell({ data, context }: IP) {
+/* The slot's floor CPM (Rob, 17 Oct 2026; replaced the reserve price). A slot
+   with no override of its own shows the platform floor, marked inherited;
+   typing a value overrides it for this slot only, and the reset button
+   returns it to following the platform floor. Below the platform floor is
+   refused by the input itself and, as a backstop, by the server. */
+function FloorCpmCell({ data, context }: IP) {
   if (!data) return null
   const c = context.current
-  const override = edited(c, data).reservePrice
+  const override = edited(c, data).floorCpm
   const overridden = override !== null
-  const value = overridden ? override : c.defaults[data.displayTypeId] ?? null
+  const resolved = effectiveFloorCpm(c, data)
   if (!c.canEdit) {
-    const resolved = effectiveReservePrice(c, data)
-    return <span style={{ color: resolved === null ? T.muted : T.text }}>{resolved === null ? 'No reserve' : `${TRANSACTING_CURRENCY} ${resolved}`}</span>
+    return <span style={{ color: T.text }}>{TRANSACTING_CURRENCY} {resolved}{!overridden && <span style={{ color: T.muted }}> (inherited)</span>}</span>
   }
   return (
-    <div className="flex w-full min-w-0 items-center gap-1" title={RESERVE_PRICE_TIP}>
+    <div className="flex w-full min-w-0 items-center gap-1" title={FLOOR_CPM_TIP}>
       <InputNumber
-        size="small" aria-label={`${data.displayTypeName} slot ${data.zoneSlot}: reserve price${overridden ? ' (override)' : ''}`} min={0} step={1} style={{ width: 92 }}
-        placeholder="None" prefix={TRANSACTING_CURRENCY} value={value ?? undefined}
-        onChange={(v) => {
-          const next = v === null || v === undefined ? null : Number(v)
-          if (overridden) c.set(slotKey(data), { reservePrice: next })
-          else c.setDefault(data.displayTypeId, next)
-        }}
+        size="small" aria-label={`${data.displayTypeName} slot ${data.zoneSlot}: floor CPM${overridden ? ' (override)' : ' (inherited from the platform floor)'}`} min={data.platformFloorCpm} step={1} style={{ width: 92 }}
+        placeholder={String(data.platformFloorCpm)} prefix={TRANSACTING_CURRENCY} value={override ?? undefined}
+        onChange={(v) => c.set(slotKey(data), { floorCpm: v === null || v === undefined ? null : Number(v) })}
       />
       {overridden ? (
-        <Tip title={`Reset to ${data.displayTypeName}'s reserve price default`}>
-          <Button type="text" size="small" className="px-1" aria-label={`${data.displayTypeName} slot ${data.zoneSlot}: reset reserve price to the display type's default`}
-            icon={<Icon name="settings_backup_restore" size={13} />} onClick={() => c.set(slotKey(data), { reservePrice: null })} />
+        <Tip title="Clear the override and follow the platform floor">
+          <Button type="text" size="small" className="px-1" aria-label={`${data.displayTypeName} slot ${data.zoneSlot}: reset floor CPM to the platform floor`}
+            icon={<Icon name="settings_backup_restore" size={13} />} onClick={() => c.set(slotKey(data), { floorCpm: null })} />
         </Tip>
-      ) : value !== null && (
-        /* Nothing to diverge from until the display type has a default: a
-           slot can't explicitly override to "no reserve" (Rob, 22 Sep) — an
-           override is always a real premium, never a way to opt one slot
-           out while its siblings have one. */
-        <Tip title={`Override just this slot, independent of ${data.displayTypeName}'s other slots`}>
-          <Button type="text" size="small" className="px-1" aria-label={`${data.displayTypeName} slot ${data.zoneSlot}: override the reserve price for just this slot`}
-            icon={<Icon name="edit" size={13} />} onClick={() => c.set(slotKey(data), { reservePrice: value })} />
-        </Tip>
-      )}
+      ) : <span style={{ color: T.muted, fontSize: 12 }}>inherited</span>}
     </div>
-  )
-}
-
-/* The reserve price for the interactive experience on this slot (ticket
-   5eLDRBqEGhNyJSHSIFFG): only offered while interactive campaigns are
-   enabled, on a display type with QR Control. Empty = interactive campaigns follow the slot's ordinary reserve
-   price, shown as the placeholder so the fallback is visible. Per slot —
-   there is no display-type default for it. */
-/* Gate (ticket L32gi3rXFAmwMCUqP1Dj): interaction happens through QR
-   Control, so the display type must have it. A price already assigned keeps showing even when
-   the gate closes later — prices are never silently hidden. */
-const interactiveGateOpen = (qrControl: boolean, e: SlotEdit) => qrControl
-const showsInteractiveReserve = (qrControl: boolean, e: SlotEdit) => interactiveGateOpen(qrControl, e) || e.interactiveReservePrice !== null
-const INTERACTIVE_RESERVE_HEADER = 'Interactive reserve price'
-
-function InteractiveReservePriceCell({ data, context }: IP) {
-  if (!data) return null
-  const c = context.current
-  const e = edited(c, data)
-  if (!showsInteractiveReserve(data.qrControl, e)) return <span style={{ color: T.muted }}>—</span>
-  const fallback = effectiveReservePrice(c, data)
-  if (!c.canEdit || !interactiveGateOpen(data.qrControl, e)) {
-    const resolved = e.interactiveReservePrice ?? fallback
-    return <span style={{ color: resolved === null ? T.muted : T.text }}>{resolved === null ? 'No reserve' : `${TRANSACTING_CURRENCY} ${resolved}`}</span>
-  }
-  return (
-    <InputNumber
-      size="small" aria-label={`${data.displayTypeName} slot ${data.zoneSlot}: interactive reserve price`} min={0} step={1} style={{ width: 112 }}
-      placeholder={fallback === null ? 'None' : String(fallback)} prefix={TRANSACTING_CURRENCY} value={e.interactiveReservePrice ?? undefined}
-      onChange={(v) => c.set(slotKey(data), { interactiveReservePrice: v === null || v === undefined ? null : Number(v) })}
-    />
   )
 }
 
@@ -610,7 +558,7 @@ const durationLabel = (hours: number) => {
 /* The slot's play-window length: the granularity it is booked
    and billed (dynamic VAC-d) against (spec "Private auctions: two-period
    model", 23 Sep 2026; the source of truth since OQ27, 29 Sep 2026).
-   Same override/default inheritance and editing UX as ReservePriceCell
+   Same override/default inheritance and editing UX as FloorCpmCell
    below, in whole hours rather than a CPM; with neither set it follows the
    platform default (PLATFORM_DEFAULT_BILLING_UNIT_HOURS, 24 hours: not a
    company setting since 8 Oct 2026). */
@@ -659,8 +607,8 @@ function BillingUnitCell({ data, context }: IP) {
    advertiser may submit for the slot (ticket "Available Inventory: Max
    campaigns column + slot playlist statement") — purely a submission cap,
    it does not feed the auction or billing. Same override/default
-   inheritance UX as ReservePriceCell/BillingUnitCell above, bounded
-   1-25 inclusive; unlike reserve price there's no "unlimited" state, so a
+   inheritance UX as FloorCpmCell/BillingUnitCell above, bounded
+   1-25 inclusive; there's no "unlimited" state, so a
    marketing user always reads a real number. */
 function MaxCampaignsCell({ data, context }: IP) {
   if (!data) return null
@@ -829,9 +777,9 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
       /* Narrowed to fit the input + reset/override control (ticket, 26 Sep
          2026: these three columns were wider than the fields inside them
          needed, crowding the table). */
-      headerName: 'Reserve price', width: 150, minWidth: 135, cellRenderer: ReservePriceCell,
-      headerComponent: header('Reserve price', `${RESERVE_PRICE_TIP} Set once for the display type and inherited by every slot on it — override just one slot to give it its own value, independent of the others. Empty = no reserve.`),
-      valueGetter: (p) => (p.data ? effectiveReservePrice((p.context as InvCtx).current, p.data) ?? -1 : -1),
+      headerName: 'Floor CPM', width: 170, minWidth: 150, cellRenderer: FloorCpmCell,
+      headerComponent: header('Floor CPM', FLOOR_CPM_TIP),
+      valueGetter: (p) => (p.data ? effectiveFloorCpm((p.context as InvCtx).current, p.data) : 0),
     },
     {
       headerName: MAX_CAMPAIGNS_HEADER, width: 140, minWidth: 125, cellRenderer: MaxCampaignsCell,
@@ -855,16 +803,6 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
             <span>{per.toLocaleString('en-US')} <span style={{ color: T.muted }}>({fleet.toLocaleString('en-US')})</span></span>
           </Tip>
         )
-      },
-    },
-    {
-      headerName: INTERACTIVE_RESERVE_HEADER, width: 170, minWidth: 150, cellRenderer: InteractiveReservePriceCell,
-      headerComponent: header('Interactive reserve price', "The reserve price (CPM) for the interactive experience on this slot, so it can be priced apart from the slot's ordinary reserve price. Only available while Interactive is selected in Targeting supported. Empty = interactive campaigns use the slot's reserve price."),
-      valueGetter: (p) => {
-        if (!p.data) return -1
-        const c = (p.context as InvCtx).current
-        const e = edited(c, p.data)
-        return showsInteractiveReserve(p.data.qrControl, e) ? e.interactiveReservePrice ?? effectiveReservePrice(c, p.data) ?? -1 : -1
       },
     },
     {
@@ -893,19 +831,13 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
   const { draft, setDraft, dirty, reset, commitNext } = useDraft(saved)
   const savedEdits = useMemo<Edits | undefined>(() => inventory.data && Object.fromEntries(invRows.map((r) => {
     const { partnerNames: _names, ...assignedTo } = r.assignedTo
-    return [slotKey(r), { assignedTo, reservePrice: r.reservePriceOverride, interactiveReservePrice: r.interactiveReservePriceOverride ?? null, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride, maxPlayLengthSec: r.maxPlayLengthSecOverride, inGlobalDeal: r.inGlobalDeal }]
+    return [slotKey(r), { assignedTo, floorCpm: r.floorCpmOverride, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride, maxPlayLengthSec: r.maxPlayLengthSecOverride, inGlobalDeal: r.inGlobalDeal }]
   })), [invRows, inventory.data])
   const inv = useDraft(savedEdits)
-  const savedEditsNow = (r: AvailableInventoryRow): SlotEdit => (inv.draft ?? {})[slotKey(r)] ?? { assignedTo: r.assignedTo, reservePrice: r.reservePriceOverride, interactiveReservePrice: r.interactiveReservePriceOverride ?? null, billingUnitHours: r.billingUnitHoursOverride, maxCampaigns: r.maxCampaignsOverride, maxPlayLengthSec: r.maxPlayLengthSecOverride, inGlobalDeal: r.inGlobalDeal }
-  const anyInteractiveReserve = INTERACTIVE_ENABLED && invRows.some((r) => showsInteractiveReserve(r.qrControl, savedEditsNow(r)))
   const visibleInventoryColumns = useMemo(
-    () => inventoryColumns.filter((col) => col.headerName !== BILLING_UNIT_HEADER && (anyInteractiveReserve || col.headerName !== INTERACTIVE_RESERVE_HEADER)),
-    [inventoryColumns, anyInteractiveReserve],
+    () => inventoryColumns.filter((col) => col.headerName !== BILLING_UNIT_HEADER),
+    [inventoryColumns],
   )
-  /* One reserve price default per display type, shared by every one of its
-     rows (Rob, 22 Sep) — a separate draft from the per-slot one above. */
-  const savedDefaults = useMemo<Defaults | undefined>(() => inventory.data && Object.fromEntries(invRows.map((r) => [r.displayTypeId, r.displayTypeReservePrice])), [invRows, inventory.data])
-  const defaults = useDraft(savedDefaults)
   /* Same one-per-display-type sharing, for the billing unit default (spec
      "Private auctions: two-period model", 23 Sep 2026). */
   const savedBillingUnitDefaults = useMemo<Defaults | undefined>(() => inventory.data && Object.fromEntries(invRows.map((r) => [r.displayTypeId, r.displayTypeBillingUnitHours])), [invRows, inventory.data])
@@ -917,7 +849,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
   const maxCampaignsDefaults = useDraft(savedMaxCampaignsDefaults)
   const savedMaxPlayLengthDefaults = useMemo<Defaults | undefined>(() => inventory.data && Object.fromEntries(invRows.map((r) => [r.displayTypeId, r.displayTypeMaxPlayLengthSec ?? null])), [invRows, inventory.data])
   const maxPlayLengthDefaults = useDraft(savedMaxPlayLengthDefaults)
-  useReportDirty(dirty || inv.dirty || defaults.dirty || billingUnitDefaults.dirty || maxCampaignsDefaults.dirty || maxPlayLengthDefaults.dirty)
+  useReportDirty(dirty || inv.dirty || billingUnitDefaults.dirty || maxCampaignsDefaults.dirty || maxPlayLengthDefaults.dirty)
   const [saving, setSaving] = useState(false)
   const [addingAdvertiser, setAddingAdvertiser] = useState(false)
   const [deleting, setDeleting] = useState<Advertiser | null>(null)
@@ -1019,26 +951,24 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
       if (dirty) await api('PUT', '/admin/v1/advertisers', { settings: draft })
       /* The inventory's own fields, saved by the same Save changes — only
          the slots that changed, plus every slot of a display type whose
-         reserve price default changed (Rob, 22 Sep), since that's a
-         display-type-level field an untouched slot's row still has to
-         carry so the server can apply it. */
-      if ((inv.dirty || defaults.dirty || billingUnitDefaults.dirty || maxCampaignsDefaults.dirty || maxPlayLengthDefaults.dirty) && inv.draft && defaults.draft && billingUnitDefaults.draft && maxCampaignsDefaults.draft && maxPlayLengthDefaults.draft) {
+         billing-unit, max-campaigns or max-play-length default changed,
+         since those are display-type-level fields an untouched slot's row
+         still has to carry so the server can apply them. */
+      if ((inv.dirty || billingUnitDefaults.dirty || maxCampaignsDefaults.dirty || maxPlayLengthDefaults.dirty) && inv.draft && billingUnitDefaults.draft && maxCampaignsDefaults.draft && maxPlayLengthDefaults.draft) {
         const changedSlots = new Set(Object.keys(inv.draft).filter((key) => !deepEqual(inv.draft![key], savedEdits?.[key])))
-        const changedTypes = new Set(Object.keys(defaults.draft).filter((id) => defaults.draft![id] !== savedDefaults?.[id]))
         const changedBillingUnitTypes = new Set(Object.keys(billingUnitDefaults.draft).filter((id) => billingUnitDefaults.draft![id] !== savedBillingUnitDefaults?.[id]))
         const changedMaxCampaignsTypes = new Set(Object.keys(maxCampaignsDefaults.draft).filter((id) => maxCampaignsDefaults.draft![id] !== savedMaxCampaignsDefaults?.[id]))
         const changedMaxPlayLengthTypes = new Set(Object.keys(maxPlayLengthDefaults.draft).filter((id) => maxPlayLengthDefaults.draft![id] !== savedMaxPlayLengthDefaults?.[id]))
         const items = invRows
-          .filter((r) => changedSlots.has(slotKey(r)) || changedTypes.has(r.displayTypeId) || changedBillingUnitTypes.has(r.displayTypeId) || changedMaxCampaignsTypes.has(r.displayTypeId) || changedMaxPlayLengthTypes.has(r.displayTypeId))
+          .filter((r) => changedSlots.has(slotKey(r)) || changedBillingUnitTypes.has(r.displayTypeId) || changedMaxCampaignsTypes.has(r.displayTypeId) || changedMaxPlayLengthTypes.has(r.displayTypeId))
           .map((r) => ({
             displayTypeId: r.displayTypeId, slot: r.slot, ...(inv.draft![slotKey(r)] ?? savedEdits![slotKey(r)]),
-            reservePriceDefault: defaults.draft![r.displayTypeId] ?? null, billingUnitHoursDefault: billingUnitDefaults.draft![r.displayTypeId] ?? null,
+            billingUnitHoursDefault: billingUnitDefaults.draft![r.displayTypeId] ?? null,
             maxCampaignsDefault: maxCampaignsDefaults.draft![r.displayTypeId] ?? null, maxPlayLengthSecDefault: maxPlayLengthDefaults.draft![r.displayTypeId] ?? null,
           }))
         sent = items
         await api('PUT', '/admin/v1/available-inventory', { items })
         inv.commitNext()
-        defaults.commitNext()
         billingUnitDefaults.commitNext()
         maxCampaignsDefaults.commitNext()
         maxPlayLengthDefaults.commitNext()
@@ -1061,10 +991,9 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
        type): the page finds that display type's default playlist and opens
        its settings. */
     open: (id: string) => navigate(`/playlists?displayTypeId=${encodeURIComponent(id)}`),
-    canEdit, currency: data.currency, edits: inv.draft ?? {}, defaults: defaults.draft ?? {}, billingUnitDefaults: billingUnitDefaults.draft ?? {}, maxCampaignsDefaults: maxCampaignsDefaults.draft ?? {}, maxPlayLengthDefaults: maxPlayLengthDefaults.draft ?? {}, dsps: inventory.data?.dsps ?? [], direct: data.items.filter((a) => a.direct).map((a) => a.name),
+    canEdit, currency: data.currency, edits: inv.draft ?? {}, billingUnitDefaults: billingUnitDefaults.draft ?? {}, maxCampaignsDefaults: maxCampaignsDefaults.draft ?? {}, maxPlayLengthDefaults: maxPlayLengthDefaults.draft ?? {}, dsps: inventory.data?.dsps ?? [], direct: data.items.filter((a) => a.direct).map((a) => a.name),
     buyersLists: buyersLists.data?.items ?? [],
     set: (key: string, patch: Partial<SlotEdit>) => inv.setDraft((cur) => (cur ? { ...cur, [key]: { ...cur[key], ...patch } } : cur)),
-    setDefault: (displayTypeId: string, v: number | null) => defaults.setDraft((cur) => (cur ? { ...cur, [displayTypeId]: v } : cur)),
     setBillingUnitDefault: (displayTypeId: string, v: number | null) => billingUnitDefaults.setDraft((cur) => (cur ? { ...cur, [displayTypeId]: v } : cur)),
     setMaxCampaignsDefault: (displayTypeId: string, v: number | null) => maxCampaignsDefaults.setDraft((cur) => (cur ? { ...cur, [displayTypeId]: v } : cur)),
     setMaxPlayLengthDefault: (displayTypeId: string, v: number | null) => maxPlayLengthDefaults.setDraft((cur) => (cur ? { ...cur, [displayTypeId]: v } : cur)),
@@ -1181,7 +1110,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
           />
         </>
       )}
-      {canEdit && <SaveBar dirty={dirty || inv.dirty || defaults.dirty || billingUnitDefaults.dirty || maxCampaignsDefaults.dirty || maxPlayLengthDefaults.dirty} saving={saving} onSave={onSave} onCancel={() => { reset(); inv.reset(); defaults.reset(); billingUnitDefaults.reset(); maxCampaignsDefaults.reset(); maxPlayLengthDefaults.reset() }} />}
+      {canEdit && <SaveBar dirty={dirty || inv.dirty || billingUnitDefaults.dirty || maxCampaignsDefaults.dirty || maxPlayLengthDefaults.dirty} saving={saving} onSave={onSave} onCancel={() => { reset(); inv.reset(); billingUnitDefaults.reset(); maxCampaignsDefaults.reset(); maxPlayLengthDefaults.reset() }} />}
 
       {/* Picked "+ Add new buyers list…" from a slot's Assigned to picker
           (Rob, 23 Sep): on save, assign the new list straight to that slot. */}

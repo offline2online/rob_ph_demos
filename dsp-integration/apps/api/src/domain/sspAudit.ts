@@ -12,7 +12,7 @@
    auction settings (floor CPM, lookahead, play length, category lists,
    guarantee buffer, …), the per-advertiser settings (floor multiplier), the
    shared-variable access per DSP, every buyers list (deal), every display
-   type's SSP extensions (slots: owner, reserve prices and the per-display-type
+   type's SSP extensions (slots: owner, floor CPMs and the per-display-type
    floor, billing unit, assignment, deals, locks), and each DSP's bid settings
    (floor, committed plays, QPS, timeout, seats). A value changed any other
    way than the admin API (a seed script, a database edit) is not recorded.

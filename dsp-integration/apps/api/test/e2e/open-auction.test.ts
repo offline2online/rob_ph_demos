@@ -215,8 +215,7 @@ describe('B. Auction / floor', () => {
     const place = (type: 'bid' | 'reserve', bidCpm: number, w = day(0)) => h.partner.reserve({ positionId: POS, windowStart: w.toISOString(), campaignId: pers, advertiserId: 'swisse', type, bidCpm })
     /* The fixture slot sits on an open deal, so a personalised bid is accepted (open real-time is refused: personalised-on-deals.test.ts). */
     expect((await place('bid', 200)).statusCode).toBe(201)
-    expect((await h.admin.setReservePrice(150)).statusCode).toBe(200)
-    /* A reserve booking is taken at the reserve price, no uplift, and its window is eligible for personalised plays. */
+    /* A reservation on the deal position is taken at the agreed rate, no uplift, and its window is eligible for personalised plays. */
     const held = await place('reserve', 150, day(1))
     expect(held.statusCode).toBe(201)
     expect(held.json()).toMatchObject({ status: 'reserved', clearingCpm: 150 })

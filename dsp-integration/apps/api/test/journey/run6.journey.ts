@@ -107,7 +107,7 @@ interface Handover {
   apiUrl: string; adminUrl: string; mocksUrl: string
   displayTypeId: string; canvas: string; slot: number; positionId: string
   floorCpm: number; currency: string
-  reservePrice: number | null; maxCampaigns: number | null; billingUnitHours: number | null
+  slotFloorCpm: number | null; maxCampaigns: number | null; billingUnitHours: number | null
   dsp: string; dspConnected: boolean; cvGenderEnabled: boolean
   displays: string[]; stores: string[]; audienceScore: number | null; slotDurationSec: number | null
 }
@@ -118,7 +118,7 @@ Display type id (new): ${h.displayTypeId}
 Canvas: ${h.canvas}
 Slot label / id: Slot ${h.slot} / ${h.positionId}
 Base floor CPM + currency (company-wide): ${h.floorCpm} ${h.currency}
-Effective reserve price: ${h.reservePrice ?? 'none'}
+Effective slot floor CPM: ${h.slotFloorCpm ?? 'none'}
 Effective max campaigns: ${h.maxCampaigns ?? 'default'}
 Effective billing unit hours: ${h.billingUnitHours ?? 'default'}
 Advertiser: ${ADVERTISER_NAME} / ${ADVERTISER}
@@ -197,7 +197,7 @@ async function main() {
     venue: { openOohVenueType: 'retail.convenience', orientation: 'landscape', loopLengthSec: 30 },
   })
   must('J4a', 'slot 1 owner = Advertiser; loop length set (assignment is Available Inventory\'s, below)', ext.status === 200 && ext.json?.slots?.[0]?.owner === 'advertiser' && ext.json?.venue?.loopLengthSec === 30, 'owner advertiser, loopLengthSec 30', `${ext.status} ${ext.text.slice(0, 300)}`)
-  const inv = await admin('PUT', '/available-inventory', { items: [{ displayTypeId: dtId, slot: 1, reservePrice: 50, assignedTo: { partnerIds: [PARTNER], advertisers: [], whitelistOnly: false } }] })
+  const inv = await admin('PUT', '/available-inventory', { items: [{ displayTypeId: dtId, slot: 1, assignedTo: { partnerIds: [PARTNER], advertisers: [], whitelistOnly: false } }] })
   const invRow = inv.json?.items?.find((i: any) => i.displayTypeId === dtId && i.slot === 1)
   must('J4b', 'assigned to Google DSP (open, not held)', inv.status === 200 && invRow?.assignedTo?.partnerIds?.includes(PARTNER) && !invRow?.assignedTo?.advertisers?.length, 'partnerIds [p_google], no held advertiser', `${inv.status} ${JSON.stringify({ assignedTo: invRow?.assignedTo })} ${inv.status !== 200 ? inv.text.slice(0, 300) : ''}`)
   const settings = await admin('GET', '/advertiser-settings')
@@ -211,7 +211,7 @@ async function main() {
   const handover: Handover = {
     apiUrl: apiUrl + '/v1', adminUrl: apiUrl + '/admin/v1', mocksUrl, displayTypeId: dtId, canvas: `${CANVAS.width}x${CANVAS.height}`, slot: 1, positionId: `${dtId}.s1`,
     floorCpm, currency,
-    reservePrice: row5?.reservePrice ?? null, maxCampaigns: row5?.maxCampaigns ?? null, billingUnitHours: row5?.billingUnitHours ?? null,
+    slotFloorCpm: row5?.floorCpm ?? null, maxCampaigns: row5?.maxCampaigns ?? null, billingUnitHours: row5?.billingUnitHours ?? null,
     dsp: PARTNER, dspConnected: google?.status === 'connected', cvGenderEnabled: true, displays: [], stores: [], audienceScore: null, slotDurationSec: null,
   }
 
@@ -318,22 +318,22 @@ async function main() {
   const w2 = new Date(START.getTime() + 3 * 86_400_000).toISOString().slice(0, 10) + 'T00:00:00.000Z' // Phase 5 windows start after this
 
   /* ---------- Phase 5 — deal types end to end (Run 7 cases M; ticket rFN7TfIXtValP5hfIq1o) ----------
-     The same slot, campaign and processes as L: the retailer makes the slot a reserve-priced
+     The same slot, campaign and processes as L: the retailer makes the slot a
      deal of each type from the buyers list (Admin API), the advertiser reserves a window over
      the Partner API, the tick hands it off, the test play reporter plays it and the tick bills it.
      Open RTB is L2–L6 above; private auction is the vitest Run 3/4/7 (it needs an auction window
      and a locked term, which this clock-driven journey does not exercise twice). */
   currentPhase = 5
   console.log('\nPhase 5 — deal types: preferred and programmatic guaranteed, CV gender (M1–M9)')
-  const RESERVE_PRICE = floorCpm + 50
-  const assign = (buyersListId: string | null) => admin('PUT', '/available-inventory', { items: [{ displayTypeId: dtId, slot: 1, reservePrice: RESERVE_PRICE, assignedTo: { partnerIds: buyersListId ? [] : [PARTNER], advertisers: [], whitelistOnly: false, buyersListId } }] })
+  const AGREED_RATE = floorCpm + 50
+  const assign = (buyersListId: string | null) => admin('PUT', '/available-inventory', { items: [{ displayTypeId: dtId, slot: 1, assignedTo: { partnerIds: buyersListId ? [] : [PARTNER], advertisers: [], whitelistOnly: false, buyersListId } }] })
   const newList = (dealType: string, extra: Record<string, unknown> = {}) => admin('POST', '/buyers-lists', { name: `Run 7 ${dealType}`, dealType, invitedBuyers: [{ partnerId: PARTNER, seatId: '5130005' }], ...extra })
   const viewsPerWindow = 1200 /* the audience score seeded in Phase 1b */
   const t0 = Date.parse(w2) + 24 * 3_600_000
   const winPreferred = new Date(t0 + 2 * 24 * 3_600_000).toISOString()
   const winGuaranteed = new Date(t0 + 3 * 24 * 3_600_000).toISOString()
   setClock(new Date(t0 + 60_000))
-  const reserveOn = (windowStart: string) => partner('POST', '/reservations', { positionId: handover.positionId, windowStart, campaignId, advertiserId: ADVERTISER, type: 'reserve', bidCpm: RESERVE_PRICE })
+  const reserveOn = (windowStart: string) => partner('POST', '/reservations', { positionId: handover.positionId, windowStart, campaignId, advertiserId: ADVERTISER, type: 'reserve', bidCpm: AGREED_RATE })
 
   /* M1 — deal type drives the fields the list captures. */
   const refusedVolume = await newList('preferred', { committedPlays: 500 })
@@ -342,13 +342,13 @@ async function main() {
   record('M1b', 'a guaranteed deal refuses an auction window (only a private auction has one)', refusedClose.status === 400 && /auctionCloses/.test(refusedClose.text), '400 on auctionCloses', `${refusedClose.status} ${refusedClose.text.slice(0, 160)}`)
 
   /* M2–M4 — preferred deal. */
-  const pref = await newList('preferred', { floorCpm: RESERVE_PRICE })
+  const pref = await newList('preferred', { floorCpm: AGREED_RATE })
   must('M2', 'preferred deal created on the buyers list', pref.status === 201 && pref.json?.dealType === 'preferred' && pref.json?.committedPlays == null, '201 dealType preferred, no committed plays', `${pref.status} ${pref.text.slice(0, 200)}`)
   const assignedPref = await assign(pref.json.id)
   must('M2b', 'slot assigned to the preferred deal', assignedPref.status === 200, '200', `${assignedPref.status} ${assignedPref.text.slice(0, 200)}`)
   const prefRes = await reserveOn(winPreferred)
-  must('M3', 'reserve at the reserve price: booked as a preferred deal, no committed volume, DSP told preferred_deal', prefRes.status === 201 && prefRes.json?.status === 'reserved' && prefRes.json?.dealType === 'preferred' && prefRes.json?.clearingCpm === RESERVE_PRICE && prefRes.json?.guaranteedImpressions == null && prefRes.json?.dspDeal?.dspDealKind === 'preferred_deal' && prefRes.json?.dspDeal?.unitCount == null, `reserved, preferred, ${RESERVE_PRICE}, no volume`, `${prefRes.status} ${prefRes.text.slice(0, 300)}`)
-  const clash = await partner('POST', '/reservations', { positionId: handover.positionId, windowStart: winGuaranteed, campaignId, advertiserId: ADVERTISER, type: 'reserve', bidCpm: RESERVE_PRICE, dealType: 'guaranteed' })
+  must('M3', 'reserve at the agreed rate: booked as a preferred deal, no committed volume, DSP told preferred_deal', prefRes.status === 201 && prefRes.json?.status === 'reserved' && prefRes.json?.dealType === 'preferred' && prefRes.json?.clearingCpm === AGREED_RATE && prefRes.json?.guaranteedImpressions == null && prefRes.json?.dspDeal?.dspDealKind === 'preferred_deal' && prefRes.json?.dspDeal?.unitCount == null, `reserved, preferred, ${AGREED_RATE}, no volume`, `${prefRes.status} ${prefRes.text.slice(0, 300)}`)
+  const clash = await partner('POST', '/reservations', { positionId: handover.positionId, windowStart: winGuaranteed, campaignId, advertiserId: ADVERTISER, type: 'reserve', bidCpm: AGREED_RATE, dealType: 'guaranteed' })
   record('M3b', 'the list is authoritative: a reservation naming guaranteed on a preferred list is refused 409', clash.status === 409, '409', `${clash.status} ${clash.text.slice(0, 200)}`)
   {
     const d = db()
@@ -375,7 +375,7 @@ async function main() {
     record('M7', 'hand-off: the guaranteed window is booked for the campaign at once, personalised versions eligible', !!bk && bk.campaign_id === campaignId && bk.personalised_eligible === 1, `booking for ${campaignId}`, JSON.stringify(bk ?? null))
     d.close()
   }
-  /* M8 — a short delivery is billed as played at the reserve price: realised VAC-d, no make-good. */
+  /* M8 — a short delivery is billed as played at the agreed rate: realised VAC-d, no make-good. */
   const pgPlays = await admin('POST', '/test/plays', { reservationId: pgRes.json.reservationId, plays: [{ tier: 'default', count: 6, durationSec: 15 }] })
   must('M8a', 'test-only play reporter writes 6 plays for the guaranteed window', pgPlays.status === 201 && pgPlays.json?.total === 6, '201, 6 plays', `${pgPlays.status} ${pgPlays.text.slice(0, 200)}`)
   setClock(new Date(Date.parse(winGuaranteed) + 24 * 3_600_000 + 60_000))
@@ -383,14 +383,14 @@ async function main() {
   {
     const d = db()
     const li = d.prepare('SELECT * FROM billing_line_items WHERE reservation_id = ?').get(pgRes.json.reservationId) as any
-    const ok = !!li && li.cpm === RESERVE_PRICE && li.plays === 6 && li.realised_views < committed && Math.abs(li.amount - Math.round((li.realised_views / 1000) * RESERVE_PRICE * 100) / 100) < 0.011
-    record('M8', 'billing: realised VAC-d at the reserve price; the shortfall against the committed volume is not made good', ok, `cpm ${RESERVE_PRICE}, 6 plays, amount = realised views × cpm, realised views below ${committed}`, li ? JSON.stringify({ plays: li.plays, cpm: li.cpm, amount: li.amount, realisedViews: li.realised_views }) : `no line item · tick: ${tick4.trim().split('\n').slice(-2).join(' | ')}`)
+    const ok = !!li && li.cpm === AGREED_RATE && li.plays === 6 && li.realised_views < committed && Math.abs(li.amount - Math.round((li.realised_views / 1000) * AGREED_RATE * 100) / 100) < 0.011
+    record('M8', 'billing: realised VAC-d at the agreed rate; the shortfall against the committed volume is not made good', ok, `cpm ${AGREED_RATE}, 6 plays, amount = realised views × cpm, realised views below ${committed}`, li ? JSON.stringify({ plays: li.plays, cpm: li.cpm, amount: li.amount, realisedViews: li.realised_views }) : `no line item · tick: ${tick4.trim().split('\n').slice(-2).join(' | ')}`)
     d.close()
   }
   /* M9 — an open real-time slot sells no window to a personalised (CV gender) campaign at all: the API refuses the booking outright (409), and nothing is booked. The targeting_not_supported refusal on the per-impression path is vitest's D5.2. */
   const openAgain = await assign(null)
   const winOpen = new Date(t0 + 5 * 24 * 3_600_000).toISOString()
-  const openTry = await partner('POST', '/reservations', { positionId: handover.positionId, windowStart: winOpen, campaignId, advertiserId: ADVERTISER, type: 'bid', bidCpm: RESERVE_PRICE + 100 })
+  const openTry = await partner('POST', '/reservations', { positionId: handover.positionId, windowStart: winOpen, campaignId, advertiserId: ADVERTISER, type: 'bid', bidCpm: AGREED_RATE + 100 })
   const openBk = db()
   const openBooked = openBk.prepare('SELECT 1 FROM campaign_slot_bookings WHERE display_type_id = ? AND slot = 1 AND window_start = ?').get(dtId, winOpen)
   openBk.close()

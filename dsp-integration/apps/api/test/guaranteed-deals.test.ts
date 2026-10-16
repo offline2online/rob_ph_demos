@@ -1,11 +1,11 @@
-/* Guaranteed deal path (Rob, 7 Oct 2026) beside the reserve-price booking (open questions 45 and 52, decided by Rob
+/* Guaranteed deal path (Rob, 7 Oct 2026) beside the reservation booking (open questions 45 and 52, decided by Rob
    on 29 Sep 2026).
    - OQ45: a deal is per DSP, bilateral, and built on the existing buyers
      list. Its rate is a commitment on top of the same score-driven floor.
      It is never under the floor, and a deal never bypasses the floor.
-   - OQ52: a buyer commits to a reserve-priced slot for a future window. The
+   - OQ52: a buyer commits to a held or deal slot for a future window. The
      window is held as Reserved, out of the open auction, and billed at the
-     reserve price on its realised VAC-d. There is no flat guaranteed
+     agreed rate on its realised VAC-d. There is no flat guaranteed
      volume and no make-good. */
 import type { InvitedBuyer, Slot } from '@ph-dsp/types'
 import { describe, expect, it } from 'vitest'
@@ -34,11 +34,11 @@ async function setup(slot: Partial<Slot> = {}, dealType: 'private_auction' | 'gu
     await ctx.buyersLists.update(open.id, { name: open.name, description: '', dealType: 'guaranteed', invitedBuyers: open.invitedBuyers, activeFrom: null, activeTo: null, auctionCloses: null })
   }
   const app = buildApp(ctx)
-  /* Portrait: one advertiser slot, reserve price 150 CPM (floor 100). */
+  /* Portrait: one advertiser slot, booked at 150 CPM (platform floor 100). */
   const ext = (await ctx.displayTypes.get('portrait'))!.phExtensions!
   await ctx.displayTypes.saveExtensions('portrait', {
     ...ext,
-    slots: [{ label: 'Ad', owner: 'advertiser', partnerIds: [], advertisers: [], listMode: 'deal', buyersListId: 'bl_test_open', storeScope: null, quota: null, zoneId: null, reservePrice: 150, ...slot } as Slot],
+    slots: [{ label: 'Ad', owner: 'advertiser', partnerIds: [], advertisers: [], listMode: 'deal', buyersListId: 'bl_test_open', storeScope: null, quota: null, zoneId: null, ...slot } as Slot],
   })
   ctx.db.prepare('INSERT INTO audience_vacd (display_type_id, slot, assumed_views_per_window, counted) VALUES (?, ?, ?, 1)').run('portrait', 1, 800)
   /* A Swisse campaign whose creative fits Portrait, approved and activated,

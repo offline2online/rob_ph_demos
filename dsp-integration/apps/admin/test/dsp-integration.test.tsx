@@ -24,10 +24,12 @@ const ADVERTISER_PAGE = {
       {
         displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', touchPoint: 'Digital Signage', playlistName: 'Menu Board Playlist', playlistId: 'pl_menu', unassigned: false, displayCount: 12, scored: true, unsellableReason: null, slot: 2, zoneSlot: 2, position: 'Supplier slot',
         assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false }, qrControl: true, visionAi: true,
+        floorCpm: 100, floorCpmOverride: null, platformFloorCpm: 100,
       },
       {
         displayTypeId: 'portrait', displayTypeName: 'Portrait', touchPoint: 'Digital Signage', playlistName: 'Portrait Playlist', playlistId: 'pl_portrait', unassigned: false, displayCount: 1, scored: true, unsellableReason: null, slot: 1, zoneSlot: 1, position: 'Slot 1',
         assignedTo: { partnerIds: [], partnerNames: [], advertisers: [], whitelistOnly: false }, qrControl: false, visionAi: false,
+        floorCpm: 100, floorCpmOverride: null, platformFloorCpm: 100,
       },
     ],
     dsps: [
@@ -695,13 +697,13 @@ describe('Booking schedule (not in the initial release)', () => {
 })
 
 describe('Advertisers / Inventory', () => {
-  /* Max campaigns is back without any flag (12 Oct 2026), between Reserve price and Plays per window. */
-  it('shows the Max campaigns column between Reserve price and Plays per window, with no flag needed', async () => {
+  /* Max campaigns is back without any flag (12 Oct 2026), between Floor CPM and Plays per window. */
+  it('shows the Max campaigns column between Floor CPM and Plays per window, with no flag needed', async () => {
     vi.stubGlobal('fetch', vi.fn(fakeFetch(ADVERTISER_PAGE)))
     renderAt('/advertisers')
     const inventory = await screen.findByLabelText('Available Inventory')
     expect([...inventory.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent))
-      .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Reserve price', 'Max campaigns', 'Plays per window', 'Max play length', 'Slots playing', ''])
+      .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Floor CPM', 'Max campaigns', 'Plays per window', 'Max play length', 'Slots playing', ''])
   })
 
   it('shows buyers list and campaign counts on the Advertisers table, in the specified column order', async () => {
@@ -769,7 +771,7 @@ describe('Advertisers / Inventory', () => {
        (ticket "Available Inventory: playlist-primary table (drop Display
        type column) with Unassigned indicator", 27 Sep 2026). */
     expect([...inventory.querySelectorAll('.ag-header-cell-text')].map((h) => h.textContent))
-      .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Reserve price', 'Max campaigns', 'Plays per window', 'Max play length', 'Slots playing', ''])
+      .toEqual(['Playlist', 'Slot', 'Position', 'Assigned to', 'Floor CPM', 'Max campaigns', 'Plays per window', 'Max play length', 'Slots playing', ''])
     /* No interactive-only column: interactive is deferred (5 Oct 2026). */
     expect(within(inventory).getByLabelText('Playlist search')).toBeInTheDocument()
     /* Targeting is defined on the buyers and targeting list, not per slot (Rob, 7 Oct 2026). */
@@ -1150,7 +1152,7 @@ describe('Advertisers / Inventory', () => {
     await waitFor(() => expect(saved()).toEqual({ items: [{
       displayTypeId: 'menu_board', slot: 2,
       assignedTo: { partnerIds: ['p_google'], advertisers: ['Nestlé'], whitelistOnly: false, buyersListId: null, buyersListIds: [], openAuction: false },
-      interactiveReservePrice: null, reservePriceDefault: null, billingUnitHoursDefault: null, maxCampaignsDefault: null, maxPlayLengthSecDefault: null,
+      floorCpm: null, billingUnitHoursDefault: null, maxCampaignsDefault: null, maxPlayLengthSecDefault: null,
     }] }))
     /* This test opens two AntD Selects, drives a save round-trip and waits
        on it with real timers — already the file's slowest, and, measured in
@@ -1158,6 +1160,35 @@ describe('Advertisers / Inventory', () => {
        the file's default 20s budget regardless of this change (Rob, 23
        Sep). A per-test override, not a global one, so a real hang elsewhere
        in the file still fails fast. */
+  }, slow(45000))
+
+  /* Floor CPM replaced Reserve price (Rob, 17 Oct 2026): every slot shows the
+     platform floor as inherited, a typed value overrides it for that slot and
+     is what gets saved, and the reset button clears it back to inherited. */
+  it('shows the platform floor on every slot, saves a slot override, and resets it to inherited', async () => {
+    const calls: { url: string; body: unknown }[] = []
+    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
+      if (init?.method === 'PUT') calls.push({ url, body: JSON.parse(String(init.body)) })
+      return fakeFetch(ADVERTISER_PAGE)(url)
+    }))
+    renderAt('/advertisers')
+    const inventory = await screen.findByLabelText('Available Inventory')
+    expect(within(inventory).queryByText('Reserve price')).not.toBeInTheDocument()
+    expect(within(inventory).queryByText('Interactive reserve price')).not.toBeInTheDocument()
+    const floor = () => within(inventory).getByLabelText('Menu Board — Long Format slot 2: floor CPM (inherited from the platform floor)') as HTMLInputElement
+    expect(floor().placeholder).toBe('100')
+    expect(floor().value).toBe('')
+    expect(within(inventory).getAllByText('inherited').length).toBe(2)
+
+    fireEvent.change(floor(), { target: { value: '150' } })
+    const overridden = await within(inventory).findByLabelText('Menu Board — Long Format slot 2: floor CPM (override)')
+    expect((overridden as HTMLInputElement).value).toBe('150')
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(calls.find((c) => c.url.includes('available-inventory'))?.body).toMatchObject({ items: [{ displayTypeId: 'menu_board', slot: 2, floorCpm: 150 }] }))
+
+    /* Reset returns the draft to inheriting the platform floor. */
+    fireEvent.click(await within(inventory).findByRole('button', { name: 'Menu Board — Long Format slot 2: reset floor CPM to the platform floor' }))
+    expect((await within(inventory).findByLabelText('Menu Board — Long Format slot 2: floor CPM (inherited from the platform floor)') as HTMLInputElement).value).toBe('')
   }, slow(45000))
 
   /* Round 2 (23 Sep) failed testing twice on this exact picker: once because
@@ -1285,7 +1316,7 @@ describe('Change history page', () => {
   const entry = (over: Record<string, unknown>) => ({
     id: 'aud_1', at: '2026-10-09T08:30:00.000Z', changeId: 'chg_1', request: 'PUT /api/admin/v1/available-inventory', reason: null,
     objectType: 'display_type', objectId: 'menu_board', objectLabel: 'Menu Board — Long Format', changeType: 'updated',
-    field: 'slots[2].reservePrice', oldValue: 10, newValue: 25,
+    field: 'slots[2].floorCpm', oldValue: 150, newValue: 250,
     actor: { type: 'agent', id: 'agent:cpm-tuner', name: 'CPM tuner', sessionUserId: 'u_hq_admin' }, ...over,
   })
 
@@ -1296,7 +1327,7 @@ describe('Change history page', () => {
     ], next: null } })))
     renderAt('/dsp-integration/change-history')
     expect(await screen.findByRole('heading', { name: /Change history/ })).toBeInTheDocument()
-    expect(await screen.findByText('slots[2].reservePrice')).toBeInTheDocument()
+    expect(await screen.findByText('slots[2].floorCpm')).toBeInTheDocument()
     expect(screen.getByText('CPM tuner')).toBeInTheDocument()
     expect(screen.getByText('Agent')).toBeInTheDocument()
     expect(screen.getByText('Person')).toBeInTheDocument()

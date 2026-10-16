@@ -80,7 +80,14 @@ provide one breaks something specific, named here.
     written by this build (the slot lock, REQUIREMENTS §1) and cleared by
     the scheduler once the slot has no live booking. An adapter that drops
     it silently re-opens a locked slot to new sales.
-  - `phExtensions` (slots, reserve price, default VAC-d, venue) round-trips
+  - `phExtensions.slots[].floorCpm` (17 Oct 2026, replacing the slot reserve
+    price) round-trips too: a slot's own floor CPM in USD, null/absent =
+    follow the platform floor. The exchange resolves it with the platform,
+    DSP and buyers-list floors (`resolveBaseFloor`) and sends the result as
+    `imp.bidfloor`; an adapter that drops it silently lets the slot sell at
+    the platform floor. A `reservePrice` on a slot or display type is legacy:
+    it is no longer read and is dropped on the next Available Inventory save.
+  - `phExtensions` (slots, slot floor CPM, default VAC-d, venue) round-trips
     unchanged. Nothing but this build reads or writes that field — except
     that `venue` there is only the POC stand-in for a PH Core value (Q35:
     PH Core owns venue and geo; see "Venue and geo metadata" below).
@@ -769,7 +776,7 @@ for the setting (the API and `PUT /advertiser-settings` carry it).
 A Website or Mobile App display type now uses the **same slot editor, fields
 and behaviour as Digital Signage**: Maximum Campaigns Played In Rotation, the
 owner list (Headquarters / Advertiser) and Advertiser assignment on
-Advertisers / Inventory (reserve price, billing unit, max campaigns, named
+Advertisers / Inventory (floor CPM, billing unit, max campaigns, named
 advertisers, deals). This supersedes the earlier "RTB only" switch
 (*Available for RTB*) and the 28 Sep "HQ-only" rule. A slot is sold in real time or by window
 as for any other touch point (no `bidMode`, removed 8 Oct 2026).

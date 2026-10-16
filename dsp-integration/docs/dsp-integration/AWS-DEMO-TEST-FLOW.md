@@ -94,10 +94,30 @@ DV360 connected and the exchange on.
 5. Bid with a third `crid` and **Reject…** it with a reason. **Expect** it
    never wins, and the reason on its status. *(S3)*
 
+## D. Floor CPM per slot (17 Oct 2026; replaced the reserve price)
+
+Advertisers / Inventory → Available Inventory.
+
+1. **Expect** no *Reserve price* column. The **Floor CPM** column shows the
+   platform floor (Advertiser settings) on every slot, marked *inherited*.
+2. Type a value above the platform floor on one slot and **Save changes**.
+   **Expect** the slot shows its own value with a reset button. A bid
+   request for that slot carries `imp.bidfloor` = the new value, and a bid
+   below it is rejected `below_floor`. *(`bid-floor-hierarchy.test.ts`)*
+3. Type a value below the platform floor. **Expect** it refused on save
+   ("A slot floor can't be below the platform floor…"). *(`advertiser-settings.test.ts`)*
+4. Press the reset button and save. **Expect** the slot reverts to
+   *inherited* at the platform floor.
+5. Change the platform floor in Advertiser settings. **Expect** every slot
+   without an override follows it; a slot with its own floor keeps it.
+6. A Programmatic guaranteed deal on a slot books at its own agreed rate and
+   never clears below the resolved slot floor. *(`reserve-booking.test.ts`,
+   `e2e/run5-reserved.test.ts`)*
+
 ## Acceptance for the demo
 
 - [ ] `CI=1 npm run e2e:quick` green (includes Run 8) and the admin suite green.
-- [ ] Sections A, B and C each pass once on the hosted prototype after a reset.
+- [ ] Sections A, B, C and D each pass once on the hosted prototype after a reset.
 - [ ] `prototype/build-info.json` names the commit under test.
 - [ ] Not covered by this build, so not demonstrable: a DSP bidding *on a
   creative ID* in the exchange, and assigning an ID from the campaign detail

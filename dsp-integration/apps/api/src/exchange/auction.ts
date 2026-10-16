@@ -32,9 +32,9 @@
    Nothing is reserved ahead of the window: PG is the only type that
    reserves inventory.
 
-   Reserve-price booking (open questions 45 and 52, decided by Rob on 29 Sep
-   2026) needs nothing new here. A window a buyer reserved at the position's
-   reserve price (POST /v1/reservations) already has its `reserved` row, so
+   Reservation booking needs nothing new here. A window a buyer reserved on a
+   held or deal position (POST /v1/reservations; the reserve price was removed
+   on 17 Oct 2026, a deal carries its own rate) already has its `reserved` row, so
    this position is skipped for that window. No bid request goes out, and
    migration 0021's one-live-winner index would refuse a second sale anyway.
    A legacy locked rate (either source) never books a window below the

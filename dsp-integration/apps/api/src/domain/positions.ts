@@ -8,7 +8,7 @@ import { TRANSACTING_CURRENCY } from './currency'
 import type { PartnerRecord } from '../repos/PartnerRepo'
 import { type Awaitable, allOf, andThen } from '../db/db'
 import { type ReservationStatus, TAKEN } from '../repos/ReservationRepo'
-import { INTERACTIVE_ENABLED, PLATFORM_DEFAULT_BILLING_UNIT_HOURS, advertiserSlug, assignedOf, billingUnitHoursOf, displayTypeFloorCpmOf, interactiveReservePriceOf, maxCampaignsOf, maxPlayLengthSecOf, openRtbInventoryOf, reservePriceOf, type Assigned } from '@ph-dsp/types'
+import { PLATFORM_DEFAULT_BILLING_UNIT_HOURS, advertiserSlug, assignedOf, billingUnitHoursOf, displayTypeFloorCpmOf, maxCampaignsOf, maxPlayLengthSecOf, openRtbInventoryOf, slotFloorCpmOf, type Assigned } from '@ph-dsp/types'
 import { invitedPartnerIds, isInvitedBuyer } from './buyersLists'
 import { isActiveAt, lockedTermSpan } from '../billing/term'
 import { effectiveLists, isBlocked, isOn } from './lists'
@@ -398,7 +398,7 @@ export function windowStatus(p: PositionRef, c: Caller, start: Date, f: WindowFa
   /* A Test-mode win never takes the window (spec §7: no real spend). */
   const took = f.taken.get(iso)
   const upcoming = start.getTime() >= f.next
-  /* Held at a reserve price (OQ52, Rob, 29 Sep 2026): a window a buyer
+  /* Held by a reservation (a deal booking): a window a buyer
      committed to ahead of the open auction reads Reserved until it plays.
      On a position held for a named advertiser, a reservation is how every
      window is booked, so it reads Sold as it always has. */
@@ -541,10 +541,8 @@ function viewOf(
        caller who is told so, since inventory excludes such positions. */
     scored: audience.scored,
     /* One floor for every campaign type; no personalised price (Rob, 5 Oct 2026). */
-    pricing: { currency: TRANSACTING_CURRENCY, floorCpm: company.floorCpm, effectiveFloorCpm: { localised: effectiveFloorCpm(company, resolveBaseFloor(company.floorCpm, null, null, displayTypeFloorCpmOf(dt))) } },
+    pricing: { currency: TRANSACTING_CURRENCY, floorCpm: company.floorCpm, effectiveFloorCpm: { localised: effectiveFloorCpm(company, resolveBaseFloor(company.floorCpm, null, null, displayTypeFloorCpmOf(dt), slotFloorCpmOf(p.def))) } },
     /* The most campaigns (default + targeted versions) a bid or reservation here may carry. */
     maxCampaigns: maxCampaignsOf(dt, p.def),
-    reservePrice: reservePriceOf(dt, p.def),
-    ...(INTERACTIVE_ENABLED ? { interactiveReservePrice: interactiveReservePriceOf(dt, p.def) } : {}),
   }
 }

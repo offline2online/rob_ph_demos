@@ -3,7 +3,7 @@
    driven setup → inventory → campaign/approval → bid or reserve → auction →
    hand-off booking → billing, once per type, with the buyers list's
    `dealType` as the single source for what is captured and what the DSP deal
-   carries (REQUIREMENTS §5 "Private auctions", "Reserve price", "Guaranteed
+   carries (REQUIREMENTS §5 "Private auctions", "Guaranteed
    deal path", "Deal type on the buyers list").
 
      D1 — open RTB (open auction, no buyers list)
@@ -14,7 +14,7 @@
           preferred and private-auction variants); never the open real-time slot
 
    Fixture: the harness's one Advertiser slot (floor 100, assumed views 800 per
-   window, two displays, a one-slot rotation). Reserve price 150 where the
+   window, two displays, a one-slot rotation). Agreed rate 150 where the
    type reserves. The guarantee buffer is Advertiser settings' default, 10%.
    Per-DSP guaranteed-deal field names (DV360 Programmatic Guaranteed, Amazon
    guaranteed deal) are the mapping in src/dsp/dealTerms.ts and are still to be
@@ -46,10 +46,9 @@ const booked = (h: H, w: Date) => h.campaigns.handoffs.filter((b) => b.windowSta
 const anyBooked = (h: H) => h.campaigns.handoffs.filter((b) => b.displayTypeId === DT)
 const rowsOf = async (h: H, w: Date) => (await h.rows(w)).filter((r) => !r.testMode)
 
-/* A buyers-list deal of one type on the fixture's slot, inviting Swisse on Google's seat, with a reserve price on the slot. */
+/* A buyers-list deal of one type on the fixture's slot, inviting Swisse on Google's seat. */
 async function dealHarness(dealType: BuyersListDealType, extra: Record<string, unknown> = {}) {
   const h = await harness()
-  await h.admin.slot({ reservePrice: RESERVE })
   const list = await h.ctx.buyersLists.insert({
     id: `bl_${dealType}`, name: `E2E ${dealType}`, description: 'Run 7 fixture', dealType, invitedBuyers: [{ partnerId: 'p_google', seatId: '5130002' }],
     activeFrom: null, activeTo: null, auctionCloses: null, committedPlays: dealType === 'guaranteed' ? 900 : null, ...extra,
@@ -109,7 +108,8 @@ describe('Run 7 — D1 open deal: per-window auction, first price, no volume', (
   it('D1.4 — an open window cannot be reserved as a deal (the open auction holds no block of plays)', async () => {
     const h = await harness()
     const id = await h.readyApiCampaign('Swisse — D1.4')
-    /* No reserve price on the slot and not held: only a bid is open to the buyer. */
+    /* Off its deal and not held, the slot is open real time: no window is reserved at any price (the reserve price is gone, 17 Oct 2026). */
+    await h.admin.slot({ listMode: 'rtb', buyersListId: null, buyersListIds: [] })
     const res = await reserve(h, id, day(1))
     expect(res.statusCode).toBe(409)
     /* A guaranteed deal type cannot ride on a bid either. */
@@ -211,7 +211,7 @@ describe('Run 7 — D3 preferred deal: one named buyer, fixed CPM, first look pe
     }
   })
 
-  it('D3.2 — approve → reserve at the reserve price: held outside the auction, committed plays NOT captured, handed off, billed realised VAC-d at the reserve price', async () => {
+  it('D3.2 — approve → reserve at the agreed rate: held outside the auction, committed plays NOT captured, handed off, billed realised VAC-d at that rate', async () => {
     const h = await dealHarness('preferred')
     const campaignId = await h.readyApiCampaign('Swisse — D3.2')
     const res = await reserve(h, campaignId, day(1))
@@ -225,7 +225,7 @@ describe('Run 7 — D3 preferred deal: one named buyer, fixed CPM, first look pe
     const before = h.bidder.log.bidRequests.length
     expect((await runAuction(h.ctx, day(1))).positions[0]).toMatchObject({ bidRequests: 0, winner: null })
     expect(h.bidder.log.bidRequests.length).toBe(before)
-    /* A quarter of the time played: billed on that, at the reserve price; the shortfall is not made good. */
+    /* A quarter of the time played: billed on that, at the agreed rate; the shortfall is not made good. */
     const [item] = await bill(h, campaignId, day(1), { plays: 1440, playedSec: EXPECTED_SEC / 4 })
     expect(item).toMatchObject({ cpm: RESERVE, realisedViews: ASSUMED_VIEWS / 4, amount: 30 })
     expect(await runBilling(h.ctx)).toEqual([])
@@ -245,13 +245,13 @@ describe('Run 7 — D3 preferred deal: one named buyer, fixed CPM, first look pe
     expect((await h.ctx.buyersLists.get(h.list.id))!.lockedWin).toBeNull()
   })
 
-  it('D3.3 — the list is authoritative: a reservation naming guaranteed is refused (409); a bid or one under the reserve price is refused', async () => {
+  it('D3.3 — the list is authoritative: a reservation naming guaranteed is refused (409); a bid or one under the floor is refused', async () => {
     const h = await dealHarness('preferred')
     const id = await h.readyApiCampaign('Swisse — D3.3')
     const clash = await reserve(h, id, day(1), { dealType: 'guaranteed' })
     expect(clash.statusCode).toBe(409)
     expect(clash.json().error.message).toContain('its buyers list sets the deal type')
-    expect((await h.partner.bid(id, day(1), RESERVE - 20, { type: 'reserve' })).statusCode).toBeGreaterThanOrEqual(400)
+    expect((await h.partner.bid(id, day(1), RESERVE - 60, { type: 'reserve' })).statusCode).toBe(422)
     expect(anyBooked(h)).toEqual([])
   })
 })
@@ -278,7 +278,7 @@ describe('Run 7 — D4 programmatic guaranteed: reserve with committed volume', 
     expect(await rowsOf(h, day(1))).toMatchObject([{ type: 'reserve', dealType: 'guaranteed', forecastImpressions: ASSUMED_VIEWS, guaranteedImpressions: COMMITTED }])
     expect(booked(h, day(1))).toMatchObject([{ campaignId }])
     expect((await runAuction(h.ctx, day(1))).positions[0]).toMatchObject({ bidRequests: 0, winner: null })
-    /* Only 600 of the 720 committed impressions' worth plays: billed on the realised 600 at the reserve price, nothing made good. */
+    /* Only 600 of the 720 committed impressions' worth plays: billed on the realised 600 at the agreed rate, nothing made good. */
     const [item] = await bill(h, campaignId, day(1), { plays: 4320, playedSec: EXPECTED_SEC * 0.75 })
     expect(item).toMatchObject({ cpm: RESERVE, realisedViews: ASSUMED_VIEWS * 0.75, amount: 90 })
     expect(await runBilling(h.ctx)).toEqual([])
@@ -377,7 +377,7 @@ describe('Run 7 — D5 Computer Vision gender on a deal: personalised, targeted 
     expect(anyBooked(h)).toEqual([])
   })
 
-  it('D5.3 — preferred variant: accepted, no committed volume, personalised-eligible, billed at the reserve price', async () => {
+  it('D5.3 — preferred variant: accepted, no committed volume, personalised-eligible, billed at the agreed rate', async () => {
     const h = await cvHarness('preferred')
     const campaignId = await cvCampaign(h, 'Swisse — D5.3')
     const res = await reserve(h, campaignId, day(1))

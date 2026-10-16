@@ -2,7 +2,7 @@
    screen, inventory, forecast and the auction.
 
    effective floor CPM = resolved base floor
-   (resolved base floor: see resolveBaseFloor — platform, DSP, buyers list)
+   (resolved base floor: see resolveBaseFloor — platform, slot, DSP, buyers list)
    A bid, and the auction, clear against that one floor whatever the
    campaign's type. There is no personalised multiplier (Rob, 5 Oct 2026):
    every play bills at the window's committed CPM whatever tier played.
@@ -15,17 +15,20 @@ export interface PricingInputs { floorCpm: number; interactiveCpe: number }
 
 const cents = (n: number) => Math.round(n * 100) / 100
 
-/* The bid floor hierarchy (Rob, 7 Oct 2026): platform floor (Advertiser
-   settings), then a per-DSP floor, then a per-buyers-list floor. The most
-   specific floor that is set applies; a blank level inherits from the one
-   above. A display type may also carry its own floor (null = inherit the
-   platform floor at read time; nothing in the product writes it yet), which
-   sits between the platform and the DSP. The platform floor is the minimum: a DSP or list floor can raise
-   it, never lower it (a stored value below it, because the platform floor
-   was raised later, is clamped up to it). All in USD. */
-export function resolveBaseFloor(platformCpm: number, dspCpm?: number | null, listCpm?: number | null, displayTypeCpm?: number | null): number {
+/* The bid floor hierarchy (Rob, 7 Oct 2026; slot level added 17 Oct 2026):
+   platform floor (Advertiser settings), then a per-slot floor (Available
+   Inventory, Floor CPM), then a per-DSP floor, then a per-buyers-list floor.
+   The most specific floor that is set applies; a blank level inherits from
+   the one above. A display type may also carry its own floor (null =
+   inherit; nothing in the product writes it yet), which sits between the
+   platform and the DSP. The platform floor and the slot's own floor are
+   minimums: a DSP or list floor can raise the result, never lower it below
+   them ("deals never clear below the resolved slot floor"), and a stored
+   value below the platform floor, because it was raised later, is clamped up
+   to it. All in USD. */
+export function resolveBaseFloor(platformCpm: number, dspCpm?: number | null, listCpm?: number | null, displayTypeCpm?: number | null, slotCpm?: number | null): number {
   const level = typeof listCpm === 'number' ? listCpm : typeof dspCpm === 'number' ? dspCpm : typeof displayTypeCpm === 'number' ? displayTypeCpm : platformCpm
-  return Math.max(platformCpm, level)
+  return Math.max(platformCpm, typeof slotCpm === 'number' ? slotCpm : 0, level)
 }
 
 /* A deal term resolved per invited DSP through platform default -> DSP -> buyers list (Rob, 7 Oct 2026), so

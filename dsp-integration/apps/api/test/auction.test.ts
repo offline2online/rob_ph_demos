@@ -328,7 +328,7 @@ describe('POST /v1/reservations and GET …/{id}', () => {
     await setSlot({ listMode: null, advertisers: ['Swisse'] })
     expect((await reserve(BID)).statusCode).toBe(409)
     const noPrice = await reserve({ ...BID, type: 'reserve', bidCpm: undefined })
-    expect(noPrice.json().error.details).toEqual([{ field: 'bidCpm', reason: 'The agreed reservation price (CPM) is required.' }])
+    expect(noPrice.json().error.details).toEqual([{ field: 'bidCpm', reason: 'The agreed rate (CPM) is required.' }])
     const cheap = await reserve({ ...BID, type: 'reserve', bidCpm: 90 })
     expect(cheap.json().error).toMatchObject({ code: 'below_floor', message: '90 is below the effective floor of 100 USD CPM.' })
     const res = await reserve({ ...BID, type: 'reserve', bidCpm: 175 })
