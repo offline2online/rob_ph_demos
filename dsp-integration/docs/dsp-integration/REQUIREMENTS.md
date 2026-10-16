@@ -1641,6 +1641,23 @@ Rob, 7 Oct 2026. The floor a bid must clear is resolved from three levels:
   (per currency, by when the play played). Not built: an HQ Admin screen for
   it (the endpoint is the contract), and an advertiser-facing view, which
   rule 3 forbids.
+- **Unsold real-time slots are recorded as missed revenue** (ticket
+  3BXfWxs2jkN6S7awLXhQ, 16 Oct 2026). % sold excludes real-time positions, so
+  every real-time impression opportunity that goes unsold at the bidding stage
+  is added to an **hourly aggregate** (`unsold_slots`, migration 0073) per
+  display x position x reason, never one row per impression, so it is bounded
+  by estate size and retention (`PH_UNSOLD_RETENTION_DAYS`, default 400; the
+  scheduler's Retention job deletes older hours). Reasons: `no_bids`,
+  `below_floor` (every bid refused for the floor), `uncached` (bandwidth
+  restriction), `no_creative`, `other`. Each opportunity is valued at the
+  resolved floor CPM (platform / display type) x its share of the assumed views
+  (assumed views x max play length / expected seconds, billing's arithmetic):
+  indicative, never billed or shown to an advertiser. Test-mode outcomes and
+  windows not sold in real time (deal-won, locked, unscored) are not recorded.
+  The report is `GET /admin/v1/reports/unsold?from&to&by=store|display|display_type|hour|day`
+  (optional `storeId`, `displayId`, `displayTypeId`; per currency, with the
+  reason counts; `hour` is the UTC hour of day). No HQ Admin screen yet; the
+  endpoint is the contract for the Retail Media Insights dashboards.
 - **Pre-auction enforcement uses the effective floor CPM**, which is the
   resolved floor (platform, DSP or list); there is no personalised price
   (5 Oct 2026).

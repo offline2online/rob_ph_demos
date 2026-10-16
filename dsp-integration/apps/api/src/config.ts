@@ -36,6 +36,8 @@ export interface Config {
      their window (PH_RESERVATION_RETENTION_DAYS); won and reserved windows
      are kept. */
   reservationRetentionDays: number
+  /* Hourly unsold-slot aggregates are deleted this many days after their hour (PH_UNSOLD_RETENTION_DAYS, default 400). */
+  unsoldRetentionDays: number
   dbFile: string
   /* AssetStore folder (git-ignored). */
   assetsDir: string
@@ -132,6 +134,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     auctionConcurrency: Math.max(1, Number(env.PH_AUCTION_CONCURRENCY ?? 16) || 16),
     maxConcurrentUploads: Math.max(1, Number(env.PH_MAX_UPLOADS_IN_FLIGHT ?? 4) || 4),
     reservationRetentionDays: Math.max(1, Number(env.PH_RESERVATION_RETENTION_DAYS ?? 90) || 90),
+    unsoldRetentionDays: Math.max(1, Number(env.PH_UNSOLD_RETENTION_DAYS ?? 400) || 400),
     dbFile: fromRoot(env.PH_DB_FILE ?? 'data/poc.sqlite'),
     assetsDir: fromRoot(env.PH_ASSETS_DIR ?? 'data/assets'),
     publicUrl: (env.PH_PUBLIC_URL ?? '').replace(/\/$/, ''),
