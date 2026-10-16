@@ -2863,7 +2863,9 @@ export interface components {
             slotCount: number;
             /** @description The devices registered to this slot's display type in PH Core (Displays & Devices), the same count the booking schedule shows. Available Inventory shows it in brackets after the playlist name, and multiplies playsPerWindow by it for the bracketed fleet total. Per display type, so the same on every row sharing a displayTypeId; not an orientation roll-up. Read-only. */
             displayCount: number;
-            /** @description Derived, read-only — floor(billing unit / (maxPlayLengthSec x slotCount)). The admin screen recalculates it from the draft as the inputs change. */
+            /** @description Hours per day the display type's displays are open for plays (zone-based operating hours). 24 for an external zone (Exterior, Entrance & out of category); for an internal zone, or a display type with no zone, the average trading hours of the stores with displays on the display type (24 when it has none). Read-only. */
+            openHoursPerDay: number;
+            /** @description Derived, read-only — floor(open hours within the billing unit / (maxPlayLengthSec x slotCount)), where the open share of the unit is openHoursPerDay / 24. Matches the Estimated volume on the Deals and buyers lists and the deal sheet. The admin screen recalculates it from the draft as the inputs change. */
             playsPerWindow: number;
         };
         BookingCapacity: {

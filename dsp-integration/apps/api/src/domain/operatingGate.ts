@@ -47,6 +47,9 @@ export function openShareOfDay(groups: readonly ScreenGroup[]): number {
   return groups.reduce((n, g) => n + g.screens * Math.max(0, g.hours.close - g.hours.open), 0) / (screens * 24)
 }
 
+/* Open hours per day a display type counts for plays (24 for an external zone; the average trading hours across its displays' stores otherwise, 24 when it has no displays to average). */
+export const openHoursPerDayOf = (groups: readonly ScreenGroup[]): number => (groups.some((g) => g.screens > 0) ? openShareOfDay(groups) * 24 : 24)
+
 /* imp.ext.ph.operatingHours: the standard per-screen form, grouped by distinct hours so a 15,000-display estate stays one short list. */
 export interface OperatingHoursExt {
   zone: string | null

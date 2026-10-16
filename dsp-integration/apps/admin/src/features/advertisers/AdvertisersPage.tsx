@@ -297,13 +297,17 @@ const effectiveMaxCampaigns = (c: InvCtx['current'], r: AvailableInventoryRow): 
 const effectiveMaxPlayLength = (c: InvCtx['current'], r: AvailableInventoryRow): number =>
   edited(c, r).maxPlayLengthSec ?? c.maxPlayLengthDefaults[r.displayTypeId] ?? r.companyMaxPlayLengthSec
 
-/* Plays per window (8 Oct 2026): derived, never typed — floor(billing unit /
-   (max slot length x slots playing)), from the draft's own values so any
-   change to either input recalculates before save. Slots playing counts
-   every loop position, HQ's too. */
+/* Plays per window (8 Oct 2026): derived, never typed — floor(open hours in
+   the billing unit / (max slot length x slots playing)), from the draft's own
+   values so any change to either input recalculates before save. Slots
+   playing counts every loop position, HQ's too. Open hours follow the zone
+   (17 Oct 2026): 24 for external displays, the average store hours for
+   internal ones — the API's row carries them as openHoursPerDay and the
+   formula is the same one behind Estimated volume (plays.ts). */
 const effectivePlaysPerWindow = (c: InvCtx['current'], r: AvailableInventoryRow): number => {
   const loopSec = effectiveMaxPlayLength(c, r) * Math.max(1, r.slotCount)
-  return loopSec > 0 ? Math.floor((effectiveBillingUnitHours(c, r) * 3600) / loopSec) : 0
+  const openShare = Math.min(24, Math.max(0, r.openHoursPerDay ?? 24)) / 24
+  return loopSec > 0 ? Math.floor((effectiveBillingUnitHours(c, r) * 3600 * openShare) / loopSec) : 0
 }
 
 /* Who may buy this position (Rob, 20 Sep; buyers lists/private auctions
@@ -793,7 +797,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
     },
     {
       headerName: 'Plays per window', width: 150, minWidth: 135,
-      headerComponent: header('Plays per window', 'How many plays this slot gets in one billing unit on ONE display: billing unit ÷ (max slot length × slots playing). The figure in brackets is the fleet total: that per-display figure × the displays registered to this display type in PH Core (the count in brackets after the playlist name). Max slot length applies to every campaign on the loop, HQ campaigns included, and HQ slots fill part of the loop even though they are not listed here. Calculated, never typed: it updates as you change the max slot length or billing unit.'),
+      headerComponent: header('Plays per window', 'How many plays this slot gets in one billing unit on ONE display: open hours in the billing unit ÷ (max slot length × slots playing). External displays (Exterior, Entrance) count 24 hours; internal displays (In aisles, Checkout, Other & connected store, or no zone) count the average store trading hours of the stores with displays on this display type. The figure in brackets is the fleet total: that per-display figure × the displays registered to this display type in PH Core (the count in brackets after the playlist name). Max slot length applies to every campaign on the loop, HQ campaigns included, and HQ slots fill part of the loop even though they are not listed here. Calculated, never typed: it updates as you change the max slot length or billing unit.'),
       valueGetter: (p) => (p.data ? effectivePlaysPerWindow((p.context as InvCtx).current, p.data) : 0),
       cellRenderer: ({ value, data }: ICellRendererParams<AvailableInventoryRow>) => {
         const per = Number(value)

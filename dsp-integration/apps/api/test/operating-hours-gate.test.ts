@@ -84,3 +84,25 @@ describe('bid request carries the resolved hours', () => {
     expect(oh.screens.every((s) => s.open === '07:00' && s.close === '22:00')).toBe(true)
   })
 })
+
+describe('Available Inventory: plays per window follows operating hours', () => {
+  const rowFor = async (zone: 'aisles' | 'entrance') => {
+    const ctx = await testContext()
+    const app = buildApp(ctx)
+    const ext = (await ctx.displayTypes.get('menu_board'))!.phExtensions!
+    await ctx.displayTypes.saveExtensions('menu_board', { ...ext, storeZone: zone })
+    ctx.db.prepare('UPDATE stores SET open_hour = 8, close_hour = 20').run()
+    const items = (await app.inject({ method: 'GET', url: '/api/admin/v1/available-inventory' })).json().items as { displayTypeId: string; slot: number; openHoursPerDay: number; playsPerWindow: number; billingUnitHours: number; maxPlayLengthSec: number; slotCount: number }[]
+    return items.find((i) => i.displayTypeId === 'menu_board')!
+  }
+  it('an entrance display counts 24 hours', async () => {
+    const r = await rowFor('entrance')
+    expect(r.openHoursPerDay).toBe(24)
+    expect(r.playsPerWindow).toBe(Math.floor((r.billingUnitHours * 3600) / (r.maxPlayLengthSec * r.slotCount)))
+  })
+  it('an in-aisles display counts the average store hours (8:00-20:00 = 12)', async () => {
+    const r = await rowFor('aisles')
+    expect(r.openHoursPerDay).toBe(12)
+    expect(r.playsPerWindow).toBe(Math.floor((r.billingUnitHours * 3600 * 12) / 24 / (r.maxPlayLengthSec * r.slotCount)))
+  })
+})

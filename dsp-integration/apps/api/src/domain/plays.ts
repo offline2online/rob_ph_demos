@@ -36,6 +36,19 @@ export const playsPerWindowOf = (windowMs: number, maxPlayLengthSec: number, slo
   return loop > 0 && windowMs > 0 ? Math.floor(windowMs / 1000 / loop) : 0
 }
 
+/* Zone-based operating hours (ticket "Plays per window follows zone-based
+   operating hours", decision Rob 17 Oct 2026). Only the hours a display is open
+   play: `openHoursPerDay` is 24 for an external zone and the average trading
+   hours of the stores with displays on the display type otherwise. Plays per
+   window = floor(open hours within the window / loop length), the one
+   calculation behind Available Inventory, the editor's live recalculation and
+   the Estimated volume on the Deals and buyers lists and the deal sheet. */
+export const playsPerWindowOpenOf = (windowMs: number, maxPlayLengthSec: number, slots: number, openHoursPerDay = 24): number => {
+  const loop = loopLengthSecOf(maxPlayLengthSec, slots)
+  const hours = Math.min(24, Math.max(0, openHoursPerDay))
+  return loop > 0 && windowMs > 0 ? Math.floor((windowMs / 1000 * hours) / 24 / loop) : 0
+}
+
 /* The inverse, for a window set as a play count: how long it lasts. */
 export const windowMsForPlays = (plays: number, maxPlayLengthSec: number, slots: number): number =>
   plays > 0 && maxPlayLengthSec > 0 ? plays * loopLengthSecOf(maxPlayLengthSec, slots) * 1000 : 0

@@ -2129,8 +2129,26 @@ how many plays one slot gets on one display in one window.
 
 ```
 loop length      = max slot length x slots in rotation
-plays per window = floor(billing unit / loop length)
+plays per window = floor(open hours within the billing unit / loop length)
 ```
+
+- **Open hours follow the zone** (ticket "Plays per window follows zone-based
+  operating hours", decision Rob 17 Oct 2026; `operatingHours()` in
+  `domain/dailyCapacity.ts`, §5 "Zone-based operating hours"). **External
+  zones** (Exterior; Entrance & out of category) count 24 hours. **Internal
+  zones** (In aisles; Checkout; Other & connected store) and a display type
+  with no zone count store trading hours: for Available Inventory, an assumed
+  trading day equal to the **average** opening and closing hours across the
+  stores with active displays on the display type (`openHoursPerDay` on the
+  row; 24 when it has no displays). So a 24 h billing unit on an Entrance
+  display type holds 24 h / loop length plays, and on an In-aisles display
+  type with stores open 08:00-20:00 on average, 12 h / loop length.
+- **One calculation**: `playsPerWindowOpenOf()` in `domain/plays.ts` feeds
+  the Available Inventory column, the editor's live recalculation and the
+  Estimated volume on the Deals and buyers lists and the deal sheet (fleet
+  figure = per-display plays x displays), so they cannot drift apart. A
+  deal's Estimated volume is the sum of Plays per window over its assigned
+  slots, over the displays the deal's targeting reaches.
 
 - **Billing unit** is the slot's play-window length (§5 "Billing unit").
 - **Max slot length** is the resolved Max play length (§5 "Max play length":
@@ -2146,8 +2164,8 @@ plays per window = floor(billing unit / loop length)
   slot in a rotation.
 
 Available Inventory shows two read-only columns for it: **Slots playing** (the
-loop's slot count, HQ included) and **Plays per window** (the formula above,
-recalculated in the editor as the max slot length or billing unit is changed
+loop's slot count, HQ included) and **Plays per window** (the formula above, counting
+open hours only; recalculated in the editor as the max slot length or billing unit is changed
 before saving). *PH Core seam:* the loop PH Core builds must use the same
 resolved max slot length and slot count so a play really lasts that long —
 see `api/PH-CORE-BOUNDARIES.md`.

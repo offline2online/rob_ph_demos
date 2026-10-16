@@ -122,7 +122,7 @@ describe('Advertiser settings (spec §4, §6)', () => {
       floorCpm: 100, floorCpmOverride: null, platformFloorCpm: 100,
       billingUnitHours: 24, billingUnitHoursOverride: null, billingUnitPending: null, displayTypeBillingUnitHours: null,
       maxCampaigns: 10, maxCampaignsOverride: null, displayTypeMaxCampaigns: null,
-      maxPlayLengthSec: 15, maxPlayLengthSecOverride: null, displayTypeMaxPlayLengthSec: null, companyMaxPlayLengthSec: 15, slotCount: 3, displayCount: 3, playsPerWindow: 1920,
+      maxPlayLengthSec: 15, maxPlayLengthSecOverride: null, displayTypeMaxPlayLengthSec: null, companyMaxPlayLengthSec: 15, slotCount: 3, displayCount: 3, openHoursPerDay: 24, playsPerWindow: 1920,
     }])
     /* The picker behind Assigned to: every DSP and the advertisers it brings. */
     expect(res.json().dsps[0]).toMatchObject({ partnerId: 'p_google', name: 'Google DSP', advertisers: [{ advertiserId: 'nestle', name: 'Nestlé' }, { advertiserId: 'swisse', name: 'Swisse' }] })
