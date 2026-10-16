@@ -157,7 +157,11 @@ if (flag('--inspect')) {
   const pres = await fetch(`${BOARD}/projects/${PROJECT_ID}`, { headers: AUTH })
   if (pres.ok) {
     const p = await pres.json()
-    console.log('\nproject:', JSON.stringify(pick(p.fields, /^(notify(RequestedAt|ItemIds|Routine)|train[A-Z]\w*|deployBranch|deployRoutine|deployNotifyRequestedAt)$/), null, 2))
+    console.log('\nproject:', JSON.stringify(pick(p.fields, /^(notify(RequestedAt|ItemIds|Routine|RequestedByEmail)|train[A-Z]\w*|deployBranch|deployRoutine|deployNotifyRequestedAt|artifactUrl|releaseId|programId)$/), null, 2))
+    // Every browser write to a project re-validates the WHOLE document
+    // (firestore.rules → projectDocsBounded), so an oversized field blocks
+    // every click on that project's header. Print each field's type/size.
+    console.log('project field sizes:', JSON.stringify(Object.fromEntries(Object.entries(p.fields ?? {}).map(([k, v]) => [k, `${Object.keys(v)[0]}:${JSON.stringify(v).length}`]))))
   }
   for (const t of all.filter((x) => x.status === 'backlog')) {
     const res = await fetch(`${BOARD}/backlogItems/${t.id}`, { headers: AUTH })
