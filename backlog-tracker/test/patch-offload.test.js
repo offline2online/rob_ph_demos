@@ -146,6 +146,11 @@ async function test(name, fn) {
     calls.push(`${o.method || "GET"} ${p}`);
     if (o.method === "DELETE") { const had = rest.delete(p); return reply(had ? 200 : 404); }
     if (o.method === "PATCH") return reply(200);
+    // A collection list (dropPatchFiles listing patchParts).
+    if (p.endsWith("/patchParts")) {
+      const docs = [...rest.keys()].filter((k) => k.startsWith(`${p}/`)).map((k) => ({ name: `projects/x/databases/(default)/documents/${k}` }));
+      return reply(200, docs.length ? { documents: docs } : {});
+    }
     return rest.has(p) ? reply(200, { fields: Object.fromEntries(Object.entries(rest.get(p)).map(([k, v]) => [k, enc(v)])) }) : reply(404);
   };
   const auto = require("../scripts/run-backlog-automation.js");
@@ -165,11 +170,43 @@ async function test(name, fn) {
     assert.deepStrictEqual(await auto.patchFilesFor({ id: "C" }), []);
   });
 
+  const MORE = [{ path: "dsp-integration/packages/types/src/openapi.d.ts", content: "big" }];
+  const EVEN_MORE = [{ path: "dsp-integration/docs/dsp-integration/api/openapi.yaml", content: "bigger" }];
+
+  await test("patchFilesFor appends parts 1..patchPartCount after the card's own files, in order", async () => {
+    rest.set("backlogItems/P/patchParts/1", { patchFiles: MORE, patchBaseSha: "s1" });
+    rest.set("backlogItems/P/patchParts/2", { patchFiles: EVEN_MORE, patchBaseSha: "s1" });
+    assert.deepStrictEqual(await auto.patchFilesFor({ id: "P", patchFiles: FILES, patchBaseSha: "s1", patchPartCount: 2 }), [...FILES, ...MORE, ...EVEN_MORE]);
+  });
+
+  await test("patchFilesFor reads parts even after the card's own files moved to pipeline/patch", async () => {
+    rest.set("backlogItems/P/pipeline/patch", { patchFiles: FILES });
+    assert.deepStrictEqual(await auto.patchFilesFor({ id: "P", patchBaseSha: "s1", patchPartCount: 1 }), [...FILES, ...MORE]);
+  });
+
+  await test("a stale patchPartCount (part 1 from another build, or gone) is ignored, not applied", async () => {
+    assert.deepStrictEqual(await auto.patchFilesFor({ id: "P", patchFiles: FILES, patchBaseSha: "s2", patchPartCount: 2 }), FILES);
+    assert.deepStrictEqual(await auto.patchFilesFor({ id: "Q", patchFiles: FILES, patchBaseSha: "s2", patchPartCount: 1 }), FILES);
+  });
+
+  await test("a missing or foreign later part throws rather than landing half a patch", async () => {
+    await assert.rejects(auto.patchFilesFor({ id: "P", patchFiles: FILES, patchBaseSha: "s1", patchPartCount: 3 }), /part 3 of 3/);
+    rest.set("backlogItems/P/patchParts/2", { patchFiles: EVEN_MORE, patchBaseSha: "old" });
+    await assert.rejects(auto.patchFilesFor({ id: "P", patchFiles: FILES, patchBaseSha: "s1", patchPartCount: 2 }), /left over from another build/);
+  });
+
+  await test("dropPatchFiles also deletes every patch part", async () => {
+    calls.length = 0;
+    await auto.dropPatchFiles("P");
+    assert.ok(!rest.has("backlogItems/P/patchParts/1") && !rest.has("backlogItems/P/patchParts/2"));
+    assert.ok(calls.includes("DELETE backlogItems/P/patchParts/1") && calls.includes("DELETE backlogItems/P/patchParts/2"));
+  });
+
   await test("dropPatchFiles clears the field and deletes the sub-document", async () => {
     calls.length = 0;
     rest.set("backlogItems/B/pipeline/patch", { patchFiles: FILES });
     await auto.dropPatchFiles("B");
-    assert.deepStrictEqual(calls, ["PATCH backlogItems/B", "DELETE backlogItems/B/pipeline/patch"]);
+    assert.deepStrictEqual(calls, ["PATCH backlogItems/B", "DELETE backlogItems/B/pipeline/patch", "GET backlogItems/B/patchParts"]);
     assert.ok(!rest.has("backlogItems/B/pipeline/patch"));
   });
 

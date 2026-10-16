@@ -136,6 +136,42 @@ const counts = all.reduce((acc, t) => ({ ...acc, [t.status]: (acc[t.status] ?? 0
 console.log(`${all.length} tickets on Display Types & DSP Integration:`)
 for (const [s, label] of Object.entries(STATUSES)) if (counts[s]) console.log(`  ${String(counts[s]).padStart(3)}  ${label}`)
 
+/* --inspect: why a Backlog card isn't building. Prints the project's last
+   Ready for Dev click (notifyRequestedAt / notifyItemIds / notifyRoutine)
+   and each Backlog card's build state — status fields only, never ticket
+   text, since a public repo's Actions logs are public. Read-only. */
+if (flag('--inspect')) {
+  const plain = (v) => {
+    if (!v || typeof v !== 'object') return v
+    if ('stringValue' in v) return v.stringValue
+    if ('timestampValue' in v) return v.timestampValue
+    if ('booleanValue' in v) return v.booleanValue
+    if ('integerValue' in v) return Number(v.integerValue)
+    if ('doubleValue' in v) return v.doubleValue
+    if ('nullValue' in v) return null
+    if ('arrayValue' in v) return (v.arrayValue.values ?? []).map(plain)
+    if ('mapValue' in v) return Object.fromEntries(Object.entries(v.mapValue.fields ?? {}).map(([k, x]) => [k, plain(x)]))
+    return v
+  }
+  const pick = (fields, keep) => Object.fromEntries(Object.entries(fields ?? {}).filter(([k]) => keep.test(k)).map(([k, v]) => [k, plain(v)]))
+  const pres = await fetch(`${BOARD}/projects/${PROJECT_ID}`, { headers: AUTH })
+  if (pres.ok) {
+    const p = await pres.json()
+    console.log('\nproject:', JSON.stringify(pick(p.fields, /^(notify(RequestedAt|ItemIds|Routine|RequestedByEmail)|train[A-Z]\w*|deployBranch|deployRoutine|deployNotifyRequestedAt|artifactUrl|releaseId|programId)$/), null, 2))
+    // Every browser write to a project re-validates the WHOLE document
+    // (firestore.rules → projectDocsBounded), so an oversized field blocks
+    // every click on that project's header. Print each field's type/size.
+    console.log('project field sizes:', JSON.stringify(Object.fromEntries(Object.entries(p.fields ?? {}).map(([k, v]) => [k, `${Object.keys(v)[0]}:${JSON.stringify(v).length}`]))))
+  }
+  for (const t of all.filter((x) => x.status === 'backlog')) {
+    const res = await fetch(`${BOARD}/backlogItems/${t.id}`, { headers: AUTH })
+    if (!res.ok) continue
+    const d = await res.json()
+    console.log(`\nbacklog ${t.id}:`, JSON.stringify(pick(d.fields, /^(status|blocked|dependsOnItemIds|buildSession|patch(Ready|BaseSha|Attempts|Error)|patchFailures|deployCommit|revertRequested|revertBlockedBy|intake\w*|updatedAt|createdAt)$/), null, 2))
+    console.log(`  ${(plain(d.fields?.notes) ?? []).length} comment(s)`)
+  }
+}
+
 /* ------------------------------------------------------- the project's train */
 
 const branch = value('--deploy-branch')
