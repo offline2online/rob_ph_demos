@@ -1965,9 +1965,9 @@ duplicating it per deal would let one drift from the other:
 - **Deals and buyers lists table column order** (Rob, 9 Oct 2026; ticket
   NaIaKMgfutxgGaN84SDi; the table was called "Buyers and targeting" until
   12 Oct 2026, ticket QG40V1vVwqp9NtFmlC9H, which renamed it and its
-  "+ New deal and buyers list" button, copy only): Deals and buyers lists, CPM (agreed/committed rate, always
-  second), Deal type, Invited buyers, Committed volume, Estimated volume,
-  Targeting, Delivery term. *Estimated volume* (was "Capacity") is an estimate
+  "+ New deal and buyers list" button, copy only): Deals and buyers lists, Rate (agreed/committed rate, always
+  second), Deal type, Buyers, Guaranteed impressions, Estimated volume,
+  Targeting, Flight dates (15 Oct 2026, ticket DbSVEGXNIWlYW68UQnY3). *Estimated volume* (was "Capacity") is an estimate
   of the plays per window available to the list from the criteria set on it,
   summed over its assigned positions; its tooltip says it is not a hard figure.
 - **Auction resolution rule** (first- vs second-price) is a platform-wide
@@ -2249,6 +2249,32 @@ private contract with our deal ID). **The deal ID is the handshake; the buyer ke
   `GET /admin/v1/buyers-lists/{id}/deal-sheet` returns it as JSON, or as a downloadable CSV with `?format=csv` (one row per
   DSP deal ID and creative format). It is read-only and stores nothing. The Deals and buyers lists table has a **Deal
   sheet** action that shows it on screen with **Copy** (plain text for an email or chat) and **Download CSV**.
+- **The deal sheet is DV360-aligned (15 Oct 2026, ticket DbSVEGXNIWlYW68UQnY3).** It follows the DV360 Seller API deal
+  model in three parts: `order` (name and status `DRAFT` / `PENDING_ACCEPTANCE` / `ACCEPTED`), `product` (name, display
+  name, `transactionType` `PRIVATE_AUCTION` / `PREFERRED_DEAL` / `PROGRAMMATIC_GUARANTEED`, pricing type CPM, start and
+  end time, creative config) and `entries[].inventorySource` (the per-DSP deal ID as `externalDealId`, `rateDetails`
+  of rate, rate type and currency, and the buyer and seller statuses). The CSV carries the same keys.
+  - **Targeting** is grouped by DV360 targeting type, each with a plain-language line. Criteria DV360 has no type for
+    are listed as **seller-side only** (PH still applies them at bid time) and are flagged so on the sheet. A list with
+    none reads "No additional targeting (all attached positions)".
+  - **Inventory scope** lists venue types, geography, stores, displays and screen formats. **Localisation criteria
+    narrow it; personalisation criteria do not.** Today only Fixed Store Segments narrow the store and display counts
+    (the store record carries nothing else); other localisation criteria are listed as applied at bid time, not
+    reflected in the counts.
+  - **Estimated volume** is plays per window, assumed views per window and the targeted share. **Guaranteed
+    impressions** (Programmatic guaranteed only) is the forecast x (1 - buffer%), the buffer being the company's
+    guarantee buffer; it is derived from the committed plays, which stay the stored input.
+  - **Status mapping**: seller status is `ACTIVE` once PH has shared the list, `PENDING` while it is a draft; buyer
+    status is `ACTIVE` once a seat on that DSP holds the current terms, else `PENDING`. The order is `DRAFT` until shared,
+    `PENDING_ACCEPTANCE` once shared, and `ACCEPTED` when every DSP entry is buyer-`ACTIVE`.
+  - **Description**: a short plain-language paragraph, built from the terms, to paste into a DSP's description field.
+  - DV360's enum values and wording (order status, transaction type) are still to be confirmed against the DV360
+    sandbox.
+- **Label renames (15 Oct 2026, same ticket; copy only, nothing stored changes).** *Delivery term* is now **Flight
+  dates**. *CPM* / *Floor price (CPM)* is now **Rate**, with a **Rate type**: *CPM floor* for Private auction, *CPM
+  fixed* for Preferred deal and Programmatic guaranteed. *Committed volume* / *plays* is now **Guaranteed
+  impressions** (the plays stay stored and are entered as plays; impressions are derived on the sheet and the Finalise
+  modal). *Invited buyers* is now **Buyers**, and **Pending** / **Active** show beside **Shared**.
 - **A list that invites only IAB categories has no named seat**, so its sheet has no entries: invite a buyer first.
 - **The API push (later, not built).** A seller-initiated push where the SSP sends a deal proposal straight into the DSP so
   it appears in the buyer's platform ready to accept (DV360 Marketplace / deal proposal; TTD supply-partner deal push).
