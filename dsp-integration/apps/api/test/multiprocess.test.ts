@@ -85,7 +85,7 @@ describe.skipIf(nearMidnight)('two API processes and three ticks on one database
     const list = await api(ports[0], 'POST', '/api/admin/v1/buyers-lists', { name: 'Multiprocess open deal', dealType: 'private_auction', invitedBuyers: [{ partnerId: 'p_google', seatId: '5130001' }, { partnerId: 'p_google', seatId: '5130005' }] }, json)
     expect(list.status, await list.clone().text()).toBe(201)
     const listId = (await list.json()).id as string
-    const assign = await api(ports[0], 'PUT', '/api/admin/v1/available-inventory', { items: [{ displayTypeId: 'menu_board', slot: 2, reservePrice: null, assignedTo: { partnerIds: ['p_google'], advertisers: [], whitelistOnly: false, buyersListId: listId, buyersListIds: [listId] } }] }, json)
+    const assign = await api(ports[0], 'PUT', '/api/admin/v1/available-inventory', { items: [{ displayTypeId: 'menu_board', slot: 2, assignedTo: { partnerIds: ['p_google'], advertisers: [], whitelistOnly: false, buyersListId: listId, buyersListIds: [listId] } }] }, json)
     expect(assign.status, await assign.clone().text()).toBe(200)
     await new Promise((r) => setTimeout(r, 1200))
     /* A fresh database carries the sample bookings, which may hold this

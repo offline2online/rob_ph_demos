@@ -23,7 +23,7 @@ async function setup(dealType: 'private_auction' | 'preferred' | 'guaranteed' | 
   const deal = dealType !== 'open'
   await ctx.displayTypes.saveExtensions('portrait', {
     ...ext,
-    slots: [{ label: 'Ad', owner: 'advertiser', partnerIds: [], advertisers: [], listMode: deal ? 'deal' : 'open', buyersListId: deal ? 'bl_test_open' : undefined, storeScope: null, quota: null, zoneId: null, reservePrice: 150 } as unknown as Slot],
+    slots: [{ label: 'Ad', owner: 'advertiser', partnerIds: [], advertisers: [], listMode: deal ? 'deal' : 'open', buyersListId: deal ? 'bl_test_open' : undefined, storeScope: null, quota: null, zoneId: null } as unknown as Slot],
   })
   ctx.db.prepare('INSERT INTO audience_vacd (display_type_id, slot, assumed_views_per_window, counted) VALUES (?, ?, ?, 1)').run('portrait', 1, 800)
   const created = await app.inject({ method: 'POST', url: '/api/v1/campaigns', headers: GOOGLE, payload: { advertiserId: 'swisse', name: 'Swisse — personalised', displayTypeId: 'portrait', default: { pricingType: 'personalised' }, targeted: [{ id: 'women', priority: 1, pricingType: 'personalised', rules: GENDER }] } })

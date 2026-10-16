@@ -119,10 +119,10 @@ describe('Advertiser settings (spec §4, §6)', () => {
     expect(res.json().items).toEqual([{
       displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', displayTypeDescription: null, displayTypeStoreZone: null, zoneName: 'Zone 1', touchPoint: 'Digital Signage', playlistName: 'Menu Board — Long Format / Zone 1', playlistId: 'pl_zone_menu_board_1', playlistDisplayTypes: [{ id: 'menu_board', name: 'Menu Board — Long Format', description: null, storeZone: null }], unassigned: false, scored: true, unsellableReason: null, salesLocked: false, inGlobalDeal: true, globalDealSuppressedBy: null, salesLockedUntil: null, slot: 2, zoneSlot: 2, position: 'Supplier slot',
       assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false, buyersListId: null, buyersListName: null, buyersListIds: [], buyersListNames: [], openAuction: false }, qrControl: true, visionAi: true,
-      reservePrice: null, reservePriceOverride: null, displayTypeReservePrice: null, interactiveReservePrice: null, interactiveReservePriceOverride: null,
+      floorCpm: 100, floorCpmOverride: null, platformFloorCpm: 100,
       billingUnitHours: 24, billingUnitHoursOverride: null, billingUnitPending: null, displayTypeBillingUnitHours: null,
       maxCampaigns: 10, maxCampaignsOverride: null, displayTypeMaxCampaigns: null,
-      maxPlayLengthSec: 15, maxPlayLengthSecOverride: null, displayTypeMaxPlayLengthSec: null, companyMaxPlayLengthSec: 15, slotCount: 3, displayCount: 3, playsPerWindow: 1920,
+      maxPlayLengthSec: 15, maxPlayLengthSecOverride: null, displayTypeMaxPlayLengthSec: null, companyMaxPlayLengthSec: 15, slotCount: 3, displayCount: 3, openHoursPerDay: 24, playsPerWindow: 1920,
     }])
     /* The picker behind Assigned to: every DSP and the advertisers it brings. */
     expect(res.json().dsps[0]).toMatchObject({ partnerId: 'p_google', name: 'Google DSP', advertisers: [{ advertiserId: 'nestle', name: 'Nestlé' }, { advertiserId: 'swisse', name: 'Swisse' }] })
@@ -197,66 +197,68 @@ describe('Advertiser settings (spec §4, §6)', () => {
     expect(res.json().items.find((i: { slot: number }) => i.slot === 2)).toMatchObject({ unassigned: true })
   })
 
-  /* Reserve price: real inheritance (Rob, 22 Sep; spec §1 configuration
-     inheritance), replacing an earlier "copy to every slot" design that
-     failed testing for not actually running the inheritance. A display
-     type's own default reaches every slot that has no override of its
-     own; an override always wins. */
-  it('inherits a reserve price from its display type, lets a slot override it, and publishes the resolved value', async () => {
+  /* Floor CPM per slot (Rob, 17 Oct 2026; replaced the reserve price): a slot
+     follows the platform floor until it carries a floor of its own; an
+     override above the platform floor wins, one below it is refused, and
+     clearing it returns the slot to following the platform floor. */
+  it('shows the platform floor on every slot, lets a slot override it, refuses a value below it, and follows the platform floor when cleared', async () => {
     const ctx = await testContext()
     const app = buildApp(ctx)
-    /* A second Advertiser slot on the same display type, so the default
-       has more than one slot to reach. */
     const ext = (await ctx.displayTypes.get('menu_board'))!.phExtensions!
     await ctx.displayTypes.saveExtensions('menu_board', { ...ext, slots: [...ext.slots, { label: 'Supplier slot 2', owner: 'advertiser' as const, partnerIds: ['p_google'], advertisers: [], listMode: 'rtb' as const }] })
-    const row = (slot: number, reservePrice: number | null, reservePriceDefault: number | null) =>
-      ({ displayTypeId: 'menu_board', slot, assignedTo: KEEP, reservePrice, reservePriceDefault })
+    const row = (slot: number, floorCpm?: number | null) => ({ displayTypeId: 'menu_board', slot, assignedTo: KEEP, ...(floorCpm === undefined ? {} : { floorCpm }) })
     const save = (items: ReturnType<typeof row>[]) => app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items } })
     const at = (json: { items: { slot: number }[] }, slot: number) => json.items.find((i) => i.slot === slot)
+    const list = async () => (await app.inject({ method: 'GET', url: '/api/admin/v1/available-inventory' })).json()
 
-    /* Neither slot overrides: setting the default on both rows reaches both. */
-    const set = await save([row(2, null, 5), row(4, null, 5)])
+    /* Every slot shows the platform floor (100), inherited. */
+    expect(at(await list(), 2)).toMatchObject({ floorCpm: 100, floorCpmOverride: null, platformFloorCpm: 100 })
+    expect(at(await list(), 4)).toMatchObject({ floorCpm: 100, floorCpmOverride: null, platformFloorCpm: 100 })
+
+    /* Override slot 2 above the platform floor: it wins there; slot 4 keeps following. */
+    const set = await save([row(2, 150), row(4, null)])
     expect(set.statusCode).toBe(200)
     expectMatchesContract('PUT', '/admin/v1/available-inventory', 200, set.json())
-    expect(at(set.json(), 2)).toMatchObject({ reservePrice: 5, reservePriceOverride: null, displayTypeReservePrice: 5 })
-    expect(at(set.json(), 4)).toMatchObject({ reservePrice: 5, reservePriceOverride: null, displayTypeReservePrice: 5 })
-    expect((await ctx.displayTypes.get('menu_board'))!.phExtensions!.reservePrice).toBe(5)
+    expect(at(set.json(), 2)).toMatchObject({ floorCpm: 150, floorCpmOverride: 150 })
+    expect(at(set.json(), 4)).toMatchObject({ floorCpm: 100, floorCpmOverride: null })
 
-    /* Override slot 2 only: it wins there; slot 4 keeps following the default. */
-    const overridden = await save([row(2, 8, 5), row(4, null, 5)])
-    expect(at(overridden.json(), 2)).toMatchObject({ reservePrice: 8, reservePriceOverride: 8, displayTypeReservePrice: 5 })
-    expect(at(overridden.json(), 4)).toMatchObject({ reservePrice: 5, reservePriceOverride: null, displayTypeReservePrice: 5 })
-
-    /* Published on the position — the resolved value, not the raw override. */
+    /* Published on the position: the resolved effective floor. */
     const positions = await app.inject({ method: 'GET', url: '/api/v1/inventory', headers: { authorization: 'Bearer poc-token-google-dv360' } })
-    expect(positions.json().items.find((p: { positionId: string }) => p.positionId === 'menu_board.s2').reservePrice).toBe(8)
+    const priced = (id: string) => positions.json().items.find((p: { positionId: string }) => p.positionId === id).pricing
+    expect(priced('menu_board.s2')).toMatchObject({ floorCpm: 100, effectiveFloorCpm: { localised: 150 } })
 
-    /* Clearing the override returns the slot to following the default. */
-    const cleared = await save([row(2, null, 5), row(4, null, 5)])
-    expect(at(cleared.json(), 2)).toMatchObject({ reservePrice: 5, reservePriceOverride: null })
+    /* Omitted keeps the slot's floor. */
+    expect(at((await save([row(2)])).json(), 2)).toMatchObject({ floorCpmOverride: 150 })
 
-    /* Rejected: a negative value, and rows for one display type disagreeing on its default. */
-    const bad = await save([row(2, -1, 5), row(4, null, 6)])
+    /* The platform floor changing reaches slots without an override, not the one with. */
+    await ctx.company.save({ ...(await ctx.company.get()), floorCpm: 120 })
+    expect(at(await list(), 4)).toMatchObject({ floorCpm: 120, floorCpmOverride: null, platformFloorCpm: 120 })
+    expect(at(await list(), 2)).toMatchObject({ floorCpm: 150, floorCpmOverride: 150 })
+
+    /* Below the platform floor is refused, and so is a non-number. */
+    const bad = await save([row(2, 119), row(4, -1)])
     expect(bad.statusCode).toBe(400)
     expect(bad.json().error.details).toEqual([
-      { field: 'items[0].reservePrice', reason: 'A CPM of 0 or more, or null for no reserve.' },
-      { field: 'items[1].reservePriceDefault', reason: 'All slots on a display type must submit the same reserve price default.' },
+      { field: 'items[0].floorCpm', reason: "A slot floor can't be below the platform floor (120 USD CPM); raise it, or clear it to follow the platform floor." },
+      { field: 'items[1].floorCpm', reason: 'A floor CPM greater than 0 and at most 10000, or null to follow the platform floor.' },
     ])
+
+    /* Clearing the override reverts the slot to the platform default. */
+    expect(at((await save([row(2, null), row(4, null)])).json(), 2)).toMatchObject({ floorCpm: 120, floorCpmOverride: null })
   })
 
-  /* Interactive is deferred (Rob, 5 Oct 2026): a save that still sends an interactive reserve price clears it instead of refusing. */
-  it('clears the interactive reserve price instead of refusing', async () => {
+  /* The reserve price is gone: a saved one is dropped and the old fields are not published. */
+  it('drops a reserve price saved before it was removed', async () => {
     const ctx = await testContext()
     const app = buildApp(ctx)
-    const save = (interactiveReservePrice?: number | null) => app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [
-      { displayTypeId: 'menu_board', slot: 2, assignedTo: KEEP, reservePrice: 5, reservePriceDefault: null, ...(interactiveReservePrice === undefined ? {} : { interactiveReservePrice }) },
-    ] } })
-    const at = (json: { items: { slot: number }[] }) => json.items.find((i) => i.slot === 2)
-    const res = await save(9)
+    const ext = (await ctx.displayTypes.get('menu_board'))!.phExtensions!
+    await ctx.displayTypes.saveExtensions('menu_board', { ...ext, reservePrice: 5, slots: ext.slots.map((s, i) => (i === 1 ? { ...s, reservePrice: 7 } : s)) } as typeof ext)
+    const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, assignedTo: KEEP }] } })
     expect(res.statusCode).toBe(200)
-    expectMatchesContract('PUT', '/admin/v1/available-inventory', 200, res.json())
-    expect(at(res.json())).toMatchObject({ reservePrice: 5, interactiveReservePriceOverride: null })
-    expect((await save(-1)).statusCode).toBe(400)
+    expect(res.json().items[0]).not.toHaveProperty('reservePrice')
+    const saved = (await ctx.displayTypes.get('menu_board'))!.phExtensions as { reservePrice?: unknown; slots: { reservePrice?: unknown }[] }
+    expect(saved.reservePrice).toBeUndefined()
+    expect(saved.slots[1].reservePrice).toBeUndefined()
   })
 
   /* Max campaigns (ticket "Available Inventory: Max campaigns column + slot

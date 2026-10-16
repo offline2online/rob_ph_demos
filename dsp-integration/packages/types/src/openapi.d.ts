@@ -276,7 +276,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Reserve (at a reserve price, or for a named advertiser) or bid (CPM) for a play window
+         * Reserve (a held position or a deal) or bid (CPM) for a play window
          * @description Approved and activated campaigns only. Pre-auction checks apply
          *     (floor, lists, categories, approval, activation). Only a position
          *     sold by play window takes a booking: one held for named advertisers
@@ -293,15 +293,18 @@ export interface paths {
          *     retired, and only a deal locked before then books later windows of
          *     its term at `lockedWin.cpm` until its flight ends.
          *
-         *     Reserve-price booking (programmatic guaranteed; open questions 45 and
-         *     52, decided by Rob on 29 Sep 2026): `type: reserve` on a position with
-         *     a reservePrice commits the buyer to the window at that price. The
-         *     window is held as Reserved (status `reserved`) and is not auctioned.
-         *     It is booked and billed at the reserve price on the window's
-         *     realised VAC-d, with no guaranteed volume and no make-good. A reserve
-         *     commitment no longer locks the deal's term (16 Oct 2026): no new
-         *     BuyersList.lockedWin is written, and a lock taken before then is
-         *     honoured until its flight ends.
+         *     Reserving at a fixed price is no longer a booking path (17 Oct
+         *     2026): the per-position reserve price was removed, and a position
+         *     carries a floor CPM instead. `type: reserve` on a position that is
+         *     neither held for the calling advertiser nor assigned to a buyers
+         *     list (a Programmatic guaranteed or preferred deal, which carries its
+         *     own rate) answers 409. Where it is taken, the window is held as
+         *     Reserved (status `reserved`) and is not auctioned; it is booked at
+         *     the rate the buyer sends (`bidCpm`, the price agreed through the
+         *     DSP), which must clear the resolved floor, and billed on the window's
+         *     realised VAC-d. A reserve commitment does not lock the deal's term
+         *     (16 Oct 2026): no new BuyersList.lockedWin is written, and a lock
+         *     taken before then is honoured until its flight ends.
          */
         post: operations["createReservation"];
         delete?: never;
@@ -436,7 +439,7 @@ export interface paths {
          *     and `from`/`to`; `changeId` returns every field one save changed.
          *     Newest first unless `order=asc`; follow `next` as `cursor` for more.
          *     Field paths are dotted (`bidder.floorCpm`); an array of objects is
-         *     indexed from 1 (`slots[2].reservePrice`).
+         *     indexed from 1 (`slots[2].floorCpm`).
          */
         get: operations["listSspAuditLog"];
         put?: never;
@@ -529,7 +532,7 @@ export interface paths {
         /** Advertiser-owned slots (no advertisers column) */
         get: operations["listAvailableInventory"];
         /**
-         * Save changes — who a slot is assigned to, what targeting it supports, its reserve price and its max campaigns
+         * Save changes — who a slot is assigned to, what targeting it supports, its floor CPM and its max campaigns
          * @description The editable fields of a sellable slot. Everything else about it —
          *     its label and owner — is set on its display type. Admin only:
          *     marketing users read this table.
@@ -552,28 +555,23 @@ export interface paths {
          *     no live booking left on it the lock releases by itself and the
          *     advertiser can be removed.
          *
-         *     reservePrice: a CPM premium at which this slot can be reserved in
-         *     advance of delivery (decision, 22 Sep). Real inheritance
-         *     (spec §1 configuration inheritance), not a copy action: a display
-         *     type carries its own reserve price default (reservePriceDefault,
-         *     below), and a slot's own reservePrice is null until explicitly
-         *     overridden, in which case it always wins. Clear a slot's override
-         *     back to null to return it to following the display type's default.
-         *     Published — resolved, override-or-default — on the position in
-         *     `GET /v1/inventory` and `/v1/inventory/{positionId}`. It is the
-         *     rate of a reserve-price booking (`POST /v1/reservations`,
-         *     `type: reserve`; open questions 45 and 52, decided by Rob on 29 Sep
-         *     2026).
-         *
-         *     reservePriceDefault: the display type's own reserve price default
-         *     that a slot with no override inherits; null means no default is
-         *     set. Sent once per slot row for simplicity (omission is not
-         *     supported, same as reservePrice), but it describes the display
-         *     type, not the slot — every row sharing a displayTypeId must submit
-         *     the same value in one request.
+         *     floorCpm: this slot's own floor CPM (USD), which replaced the reserve
+         *     price on 17 Oct 2026. Real inheritance, not a copy action: null (or
+         *     a value the slot has never been given) follows the platform floor
+         *     (Advertiser settings), and a later change to the platform floor
+         *     reaches every slot without an override. A value below the platform
+         *     floor is refused (`validation_failed`), the same rule as a DSP's and a
+         *     buyers list's floor. The floor hierarchy is platform floor, slot
+         *     floor, DSP floor, buyers-list floor: the most specific level that is
+         *     set applies, a blank level inherits from the one above, and neither
+         *     the platform floor nor the slot floor is ever undercut by a DSP or
+         *     list floor, so a deal never clears below the resolved slot floor. The
+         *     result is sent as `imp.bidfloor` (USD) and VAC-d still applies on top.
+         *     Omitted keeps the slot's current value. Published, resolved, as
+         *     `pricing.effectiveFloorCpm` on the position in `GET /v1/inventory`.
          *
          *     billingUnitHours / billingUnitHoursDefault: the same override/
-         *     default pattern as reservePrice/reservePriceDefault, for the
+         *     default pattern as the other slot settings, for the
          *     granularity a CPM is quoted and charged against (spec "Private
          *     auctions: two-period model", 23 Sep 2026). Since OQ27 (29 Sep 2026)
          *     it is the slot's play-window length — the windows it is auctioned,
@@ -1714,7 +1712,7 @@ export interface components {
         };
         /**
          * @description reserved: held for a named advertiser (and shown as available to that
-         *     advertiser), committed at the reserve price, or inside a locked
+         *     advertiser), committed by a reservation on a deal, or inside a locked
          *     private-auction term. A window in either of the last two cases is not
          *     auctioned and takes no bids until it plays.
          * @enum {string}
@@ -1786,28 +1784,6 @@ export interface components {
              */
             maxCampaigns?: number;
             pricing: components["schemas"]["Pricing"];
-            /**
-             * @description A CPM premium at which this position can be reserved in advance
-             *     of the open auction (decision, 22 Sep); null when no reserve is
-             *     set. The resolved value: the slot's own override when it has
-             *     one, else its display type's reserve price default, else null
-             *     (spec §1 configuration inheritance). Set on Advertisers /
-             *     Inventory. A buyer books the position at this price with
-             *     `POST /v1/reservations`, `type: reserve` (open questions 45 and 52,
-             *     decided by Rob on 29 Sep 2026). The window is then held as
-             *     Reserved, out of the open auction, and billed at this CPM on its
-             *     realised VAC-d. It is the CPM itself, not an amount added to the
-             *     floor, and it must clear the buyer's effective floor.
-             */
-            reservePrice?: number | null;
-            /**
-             * @description The reserve price for a reservation whose campaign is
-             *     interactive (ticket 5eLDRBqEGhNyJSHSIFFG, 4 Oct 2026): the
-             *     slot's own interactive reserve price when set, else
-             *     `reservePrice`. Only offered while the slot supports
-             *     interactive targeting. Same booking rules as `reservePrice`.
-             */
-            interactiveReservePrice?: number | null;
         };
         Pricing: {
             currency: string;
@@ -2004,12 +1980,12 @@ export interface components {
             /** @enum {string} */
             type: "reserve" | "bid";
             /**
-             * @description Only for type reserve. preferred (the default, unchanged) holds the premium window at the reserve price with no volume promised. guaranteed also commits a delivery volume: the window's forecast impressions (plays x VAC-d) less the retailer's contingency buffer, returned as guaranteedImpressions and sent to the DSP as the guaranteed unit count in dspDeal. Refused (validation_failed) with type bid. On a position assigned to a buyers list the list's dealType is authoritative: omit this, or send the matching value (a private_auction list books as preferred); a different value is refused with 409 conflict.
+             * @description Only for type reserve. preferred (the default, unchanged) holds the window at the agreed rate with no volume promised. guaranteed also commits a delivery volume: the window's forecast impressions (plays x VAC-d) less the retailer's contingency buffer, returned as guaranteedImpressions and sent to the DSP as the guaranteed unit count in dspDeal. Refused (validation_failed) with type bid. On a position assigned to a buyers list the list's dealType is authoritative: omit this, or send the matching value (a private_auction list books as preferred); a different value is refused with 409 conflict.
              * @default preferred
              * @enum {string}
              */
             dealType: "preferred" | "guaranteed";
-            /** @description The CPM, in the company currency, at most 10,000. For type bid, the bid, which must clear the effective floor. For type reserve on a position with a reservePrice, the buyer's commitment: it must be at least the reservePrice (validation_failed otherwise), and the booking is made at the reservePrice itself, which must clear the effective floor. For type reserve on a named-advertiser position with no reservePrice, the price agreed through the DSP: it must clear the effective floor, and the booking is made at it. */
+            /** @description The CPM, in the company currency, at most 10,000. For type bid, the bid, which must clear the effective floor. For type reserve (a named-advertiser position or a deal position only), the price agreed through the DSP: it must clear the effective floor (platform, slot, DSP, buyers list), and the booking is made at it. */
             bidCpm: number;
         };
         Reservation: {
@@ -2252,7 +2228,7 @@ export interface components {
             /**
              * @description What locked the term (open questions 45 and 52, decided by Rob on
              *     29 Sep 2026). `auction`: a bid cleared within auctionCloses.
-             *     `reserve`: an invited buyer committed to the position's reserve price
+             *     `reserve`: an invited buyer committed to a window at an agreed rate
              *     (`POST /v1/reservations`, `type: reserve`) before any bid cleared.
              *     That is a programmatic-guaranteed commitment, so every later window
              *     in the term is held as Reserved and booked as a `reserved`
@@ -2788,25 +2764,23 @@ export interface components {
              */
             visionAi: boolean;
             /**
-             * @description The resolved CPM premium at which this slot can be reserved in
-             *     advance of delivery: reservePriceOverride when set,
-             *     else displayTypeReservePrice, else null. Company currency;
-             *     this is what is published on the position in `GET /v1/inventory`.
+             * @description The resolved floor CPM of this slot (USD), shown in the Floor CPM
+             *     column: floorCpmOverride when set, else the platform floor
+             *     (platformFloorCpm). A DSP's or buyers list's own floor can raise
+             *     what a bid must clear, never lower it below this.
              */
-            reservePrice: number | null;
+            floorCpm: number;
             /**
-             * @description This slot's own reserve price, admin-editable here; null means
-             *     it has none and follows displayTypeReservePrice (spec §1
-             *     configuration inheritance — override always wins).
+             * @description This slot's own floor CPM, admin-editable here; null means it has
+             *     none and follows the platform floor (override always wins; never
+             *     below the platform floor).
              */
-            reservePriceOverride: number | null;
+            floorCpmOverride: number | null;
             /**
-             * @description The reserve price default set on this slot's display type; null
-             *     means the display type has none either. The same value on every
-             *     row sharing a displayTypeId. Editable from any of those rows —
-             *     see `PUT`'s reservePriceDefault.
+             * @description The platform floor (Advertiser settings), shown beside an
+             *     inherited slot and the lowest value a slot floor may take.
              */
-            displayTypeReservePrice: number | null;
+            platformFloorCpm: number;
             /**
              * @description The resolved billing-unit granularity, in hours (spec "Private
              *     auctions: two-period model", 23 Sep 2026): billingUnitHoursOverride
@@ -2845,18 +2819,6 @@ export interface components {
              *     rows — see `PUT`'s billingUnitHoursDefault.
              */
             displayTypeBillingUnitHours: number | null;
-            /**
-             * @description The resolved reserve price (CPM) for an interactive campaign on
-             *     this slot: interactiveReservePriceOverride when set, else
-             *     `reservePrice`. Null when neither exists.
-             */
-            interactiveReservePrice: number | null;
-            /**
-             * @description This slot's own interactive reserve price, admin-editable here
-             *     while the slot supports interactive targeting; null means
-             *     interactive campaigns follow `reservePrice`.
-             */
-            interactiveReservePriceOverride: number | null;
             /**
              * @description The resolved maximum number of campaigns (the mandatory default
              *     layer plus optional targeted versions) this advertiser may
@@ -2901,7 +2863,9 @@ export interface components {
             slotCount: number;
             /** @description The devices registered to this slot's display type in PH Core (Displays & Devices), the same count the booking schedule shows. Available Inventory shows it in brackets after the playlist name, and multiplies playsPerWindow by it for the bracketed fleet total. Per display type, so the same on every row sharing a displayTypeId; not an orientation roll-up. Read-only. */
             displayCount: number;
-            /** @description Derived, read-only — floor(billing unit / (maxPlayLengthSec x slotCount)). The admin screen recalculates it from the draft as the inputs change. */
+            /** @description Hours per day the display type's displays are open for plays (zone-based operating hours). 24 for an external zone (Exterior, Entrance & out of category); for an internal zone, or a display type with no zone, the average trading hours of the stores with displays on the display type (24 when it has none). Read-only. */
+            openHoursPerDay: number;
+            /** @description Derived, read-only — floor(open hours within the billing unit / (maxPlayLengthSec x slotCount)), where the open share of the unit is openHoursPerDay / 24. Matches the Estimated volume on the Deals and buyers lists and the deal sheet. The admin screen recalculates it from the draft as the inputs change. */
             playsPerWindow: number;
         };
         BookingCapacity: {
@@ -3432,20 +3396,19 @@ export interface components {
                  */
                 inGlobalDeal?: boolean;
                 /**
-                 * @description This slot's own override of the display type's reserve
-                 *     price (decision, 22 Sep; real inheritance, 22 Sep — spec
-                 *     §1 configuration inheritance, not a copy action). Absent
-                 *     or null means it has none and follows the display type's
-                 *     own `reservePrice` (below); an override always wins. Set
-                 *     from Advertisers / Inventory, not the slot editor.
+                 * @description This slot's own floor CPM (USD; 17 Oct 2026, replacing the
+                 *     reserve price). Absent or null follows the platform floor;
+                 *     an override always wins and is never below the platform
+                 *     floor. Set from Advertisers / Inventory, not the slot
+                 *     editor.
                  */
-                reservePrice?: number | null;
+                floorCpm?: number | null;
                 /**
                  * @description This slot's own override of the display type's billing
                  *     unit (spec "Private auctions: two-period model", 23 Sep
                  *     2026): the granularity a CPM is quoted and charged
                  *     against — default one day (24 hours). Same inheritance as
-                 *     reservePrice: absent or null follows the display type's
+                 *     floorCpm: absent or null follows the display type's
                  *     own `billingUnitHours` (below), else the platform default
                  *     (24 hours, a named constant, not a setting). Set from Advertisers / Inventory,
                  *     not the slot editor. The source of truth for this slot's
@@ -3475,18 +3438,6 @@ export interface components {
                     effectiveFrom: string;
                 } | null;
                 /**
-                 * @description This slot's own reserve price (CPM) for interactive
-                 *     campaigns (ticket 5eLDRBqEGhNyJSHSIFFG, 4 Oct 2026):
-                 *     what a buyer commits to for a window when the campaign's
-                 *     type is interactive. Absent or null means interactive
-                 *     campaigns follow the slot's ordinary reserve price
-                 *     (override, else the display type's default). Only used
-                 *     while the slot supports interactive targeting. There is no
-                 *     display-type default for it. Set from Advertisers /
-                 *     Inventory, not the slot editor.
-                 */
-                interactiveReservePrice?: number | null;
-                /**
                  * @description This slot's own override of the display type's maximum
                  *     campaigns (spec §1 configuration inheritance — override
                  *     always wins). Absent or null means it has none and
@@ -3508,15 +3459,6 @@ export interface components {
                  */
                 maxPlayLengthSec?: number | null;
             }[];
-            /**
-             * @description The display type's own reserve price default (decision, 22 Sep),
-             *     inherited by every slot on it that has no override of its own.
-             *     Absent or null means the display type has no default, so an
-             *     un-overridden slot has no reserve either. Set from Advertisers /
-             *     Inventory (every row for this display type edits the same
-             *     value), not the slot editor.
-             */
-            reservePrice?: number | null;
             /**
              * @description The display type's own billing-unit default (spec "Private
              *     auctions: two-period model", 23 Sep 2026), inherited by every
@@ -4330,7 +4272,7 @@ export interface operations {
                 objectId?: string;
                 /** @description Exact field path */
                 field?: string;
-                /** @description A field and everything under it (`slots[2]` matches `slots[2].reservePrice`) */
+                /** @description A field and everything under it (`slots[2]` matches `slots[2].floorCpm`) */
                 fieldPrefix?: string;
                 actorType?: "human" | "agent";
                 actorId?: string;
@@ -4539,16 +4481,12 @@ export interface operations {
                             advertisers: string[];
                             whitelistOnly: boolean;
                         };
-                        /** @description This slot's own override; null = inherit reservePriceDefault. Omitted = unchanged is not supported — always send the slot's current value. */
-                        reservePrice?: number | null;
-                        /** @description The display type's reserve price default; null = none. Must be the same value on every row for a given displayTypeId in one request. */
-                        reservePriceDefault?: number | null;
+                        /** @description This slot's own floor CPM (USD); null = follow the platform floor. A value below the platform floor is refused. Omitted keeps the slot's current value. */
+                        floorCpm?: number | null;
                         /** @description This slot's own billing-unit override (its play-window length), in whole hours; null = inherit billingUnitHoursDefault. Omitted = unchanged is not supported — always send the slot's current value. */
                         billingUnitHours?: number | null;
                         /** @description The display type's billing-unit default, in whole hours; null = none (the platform default of 24 hours applies). Must be the same value on every row for a given displayTypeId in one request. */
                         billingUnitHoursDefault?: number | null;
-                        /** @description This slot's own reserve price (CPM) for interactive campaigns only; null = interactive campaigns follow the slot's ordinary reserve price. Only meaningful while interactive campaigns are enabled. Omitted = unchanged is not supported — always send the slot's current value. */
-                        interactiveReservePrice?: number | null;
                         /** @description This slot's own maximum-campaigns override; null = inherit maxCampaignsDefault. Omitted = unchanged is not supported — always send the slot's current value. */
                         maxCampaigns?: number | null;
                         /** @description The display type's maximum-campaigns default; null = none (the platform default of 10 applies). Must be the same value on every row for a given displayTypeId in one request. */

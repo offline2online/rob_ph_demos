@@ -6,7 +6,7 @@ import { testContext } from './helpers'
 const BASE = '/api/admin/v1'
 const AGENT = { 'x-actor-type': 'agent', 'x-actor-id': 'agent:cpm-tuner', 'x-actor-name': 'CPM tuner', 'x-change-reason': 'Weekend uplift' }
 const pricing = { currency: 'NZD', floorCpm: 120, interactiveCpe: 1.25, categoryWhitelist: ['Food & Drink'], categoryBlacklist: ['Finance'] }
-const slotRow = (reservePrice: number | null) => ({ displayTypeId: 'menu_board', slot: 2, assignedTo: { partnerIds: ['p_google'], advertisers: [], whitelistOnly: false }, reservePrice, reservePriceDefault: null, billingUnitHours: null, maxCampaigns: null })
+const slotRow = (floorCpm: number | null) => ({ displayTypeId: 'menu_board', slot: 2, assignedTo: { partnerIds: ['p_google'], advertisers: [], whitelistOnly: false }, floorCpm, billingUnitHours: null, maxCampaigns: null })
 
 async function setup() {
   const app = buildApp(await testContext())
@@ -44,23 +44,23 @@ describe('SSP settings audit log', () => {
 
   it('records an agent change, distinguishable from a human one, and filters by actor, field, object and time', async () => {
     const { app, log } = await setup()
-    await app.inject({ method: 'PUT', url: `${BASE}/available-inventory`, payload: { items: [slotRow(10)] } })
+    await app.inject({ method: 'PUT', url: `${BASE}/available-inventory`, payload: { items: [slotRow(150)] } })
     /* Timestamps are millisecond-precise and `from` is inclusive: keep the first write off the boundary. */
     await new Promise((r) => setTimeout(r, 5))
     const between = new Date().toISOString()
     await new Promise((r) => setTimeout(r, 5))
-    const res = await app.inject({ method: 'PUT', url: `${BASE}/available-inventory`, headers: AGENT, payload: { items: [slotRow(25)] } })
+    const res = await app.inject({ method: 'PUT', url: `${BASE}/available-inventory`, headers: AGENT, payload: { items: [slotRow(250)] } })
     expect(res.statusCode).toBe(200)
 
     const all = (await log()).items
     expect(all.map((e) => e.actor.type)).toEqual(expect.arrayContaining(['human', 'agent']))
     const agentChange = (await log('?actorType=agent')).items
     expect(agentChange).toHaveLength(1)
-    expect(agentChange[0]).toMatchObject({ objectType: 'display_type', objectId: 'menu_board', field: 'slots[2].reservePrice', oldValue: 10, newValue: 25, reason: 'Weekend uplift', actor: { type: 'agent', id: 'agent:cpm-tuner', name: 'CPM tuner' } })
+    expect(agentChange[0]).toMatchObject({ objectType: 'display_type', objectId: 'menu_board', field: 'slots[2].floorCpm', oldValue: 150, newValue: 250, reason: 'Weekend uplift', actor: { type: 'agent', id: 'agent:cpm-tuner', name: 'CPM tuner' } })
 
     /* When was that specific value set, and by whom? */
-    const who = await log('?objectType=display_type&objectId=menu_board&field=slots%5B2%5D.reservePrice&order=asc')
-    expect(who.items.map((e) => [e.actor.type, e.newValue])).toEqual([['human', 10], ['agent', 25]])
+    const who = await log('?objectType=display_type&objectId=menu_board&field=slots%5B2%5D.floorCpm&order=asc')
+    expect(who.items.map((e) => [e.actor.type, e.newValue])).toEqual([['human', 150], ['agent', 250]])
     expect((await log(`?from=${encodeURIComponent(between)}`)).items.map((e) => e.actor.id)).toEqual(['agent:cpm-tuner'])
     const early = (await log(`?to=${encodeURIComponent(between)}&fieldPrefix=slots%5B2%5D`)).items
     expect(early.length).toBeGreaterThan(0)

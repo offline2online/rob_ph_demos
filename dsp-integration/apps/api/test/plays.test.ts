@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { loopLengthSecOf, playsPerWindowOf, totalPlaysOf, windowMsForPlays } from '../src/domain/plays'
+import { loopLengthSecOf, playsPerWindowOf, playsPerWindowOpenOf, totalPlaysOf, windowMsForPlays } from '../src/domain/plays'
 
 const HOUR = 3_600_000
 describe('plays are the transacting unit', () => {
@@ -24,5 +24,12 @@ describe('plays are the transacting unit', () => {
   })
   it('scales by display count', () => {
     expect(totalPlaysOf(1920, 3)).toBe(5760)
+  })
+  it('counts only open hours: external 24h, internal the average store hours', () => {
+    expect(playsPerWindowOpenOf(24 * HOUR, 15, 3, 24)).toBe(1920)
+    expect(playsPerWindowOpenOf(24 * HOUR, 15, 3, 12)).toBe(960)
+    expect(playsPerWindowOpenOf(24 * HOUR, 15, 3)).toBe(1920)
+    expect(playsPerWindowOpenOf(8 * HOUR, 15, 3, 12)).toBe(320)
+    expect(playsPerWindowOpenOf(24 * HOUR, 15, 3, 0)).toBe(0)
   })
 })

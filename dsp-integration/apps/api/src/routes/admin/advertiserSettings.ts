@@ -1,13 +1,16 @@
 /* Advertiser settings (spec §4, §5, §6): pricing and the company lists, plus
    the read-only Where these apply and Available Inventory. */
-import { INTERACTIVE_ENABLED, PLATFORM_DEFAULT_BILLING_UNIT_HOURS, MAX_MAX_CAMPAIGNS, MAX_MAX_PLAY_LENGTH_SEC, MIN_MAX_CAMPAIGNS, MIN_MAX_PLAY_LENGTH_SEC, maxPlayLengthSecOf, advertiserSlug, assignedOf, billingUnitHoursOf, maxCampaignsOf, interactiveReservePriceOf, reservePriceOf, type AdvertiserSettings, type AdvertiserSettingsInput, type Assigned, type AvailableInventoryRow, type DisplayType, type DspAdvertisers, type Slot } from '@ph-dsp/types'
+import { INTERACTIVE_ENABLED, PLATFORM_DEFAULT_BILLING_UNIT_HOURS, MAX_MAX_CAMPAIGNS, MAX_MAX_PLAY_LENGTH_SEC, MIN_MAX_CAMPAIGNS, MIN_MAX_PLAY_LENGTH_SEC, maxPlayLengthSecOf, advertiserSlug, assignedOf, billingUnitHoursOf, displayTypeFloorCpmOf, maxCampaignsOf, slotFloorCpmOf, type AdvertiserSettings, type AdvertiserSettingsInput, type Assigned, type AvailableInventoryRow, type DisplayType, type DspAdvertisers, type Slot } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { cleanCategoryList, validateAdvertiserSettings } from '../../domain/advertiserSettings'
 import { tx } from '../../db/db'
+import { TRANSACTING_CURRENCY } from '../../domain/currency'
+import { resolveBaseFloor } from '../../domain/pricing'
 import { billingChangeApplied, changePending, globalDealSuppressedBy, nextWindowFor, positionIdOf, slotInGlobalDeal, slotWindowCommitments, unsellableReason } from '../../domain/positions'
 import { audienceOf, zonesOf } from '../../domain/displayTypes'
-import { playsPerWindowOf } from '../../domain/plays'
+import { playsPerWindowOpenOf } from '../../domain/plays'
+import { hourGroups, openHoursPerDayOf } from '../../domain/operatingGate'
 import { assignedToSlot, rotationSizeOf, validateAssigned } from '../../domain/slots'
 import type { Guards } from '../../http/app'
 import { conflict, hasDependents, notFound, validationFailed } from '../../http/errors'
@@ -63,6 +66,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
     /* A lock whose bookings have all played is released before it is shown. */
     await releaseSettledSlotLocks(ctx)
     const partners = await ctx.partners.list()
+    const stores = new Map((await ctx.stores.list()).map((s) => [s.id, s]))
     const buyersLists = await ctx.buyersLists.list()
     const items: AvailableInventoryRow[] = []
     const company = await ctx.company.get()
@@ -79,7 +83,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
       /* A position's playlist, per slot: the zone playlist it's tagged to
          (Slot.zoneId) when this is a multi-zone display type and the slot
          names one, else the display type's own default playlist — same
-         "override always wins" shape as reserve price/billing unit/max
+         "override always wins" shape as floor CPM/billing unit/max
          campaigns above, just a lookup instead of a number (ticket
          "Available Inventory: playlist-primary table (drop Display type
          column) with Unassigned indicator", 27 Sep 2026). This is what
@@ -103,6 +107,8 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
          — this build has no such concept). Per display type, since a
          multi-zone display type's zones all share the one physical screen. */
       const displayCount = (await ctx.displays.summaryByDisplayType(t.id)).displays
+      /* Zone-based operating hours (17 Oct 2026): external zones count 24 hours, internal ones the average trading hours of the stores with displays on this display type. */
+      const openHoursPerDay = openHoursPerDayOf(hourGroups(t.phExtensions?.storeZone, await ctx.displays.listByDisplayType(t.id), stores))
       const unassigned = displayCount === 0
       /* zoneSlot: this slot's 1-based position within its own zone's segment
          of the list, rather than `slot`'s flat position across every zone
@@ -139,11 +145,11 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
           },
           qrControl: hasQrControl(t),
           visionAi: hasVisionAi(t),
-          reservePrice: reservePriceOf(t, s),
-          reservePriceOverride: s.reservePrice ?? null,
-          interactiveReservePrice: interactiveReservePriceOf(t, s),
-          interactiveReservePriceOverride: s.interactiveReservePrice ?? null,
-          displayTypeReservePrice: t.phExtensions?.reservePrice ?? null,
+          /* Floor CPM (17 Oct 2026): the resolved floor this slot sells at before any DSP or buyers-list floor
+             raises it; the slot's own override, if any, is floorCpmOverride (null = follows the platform floor). */
+          floorCpm: resolveBaseFloor(company.floorCpm, null, null, displayTypeFloorCpmOf(t), slotFloorCpmOf(s)),
+          floorCpmOverride: slotFloorCpmOf(s),
+          platformFloorCpm: company.floorCpm,
           billingUnitHours: billingUnitHoursOf(t, s),
           /* While a change is pending this is the value it will become, so a row sent back unchanged keeps it. */
           billingUnitHoursOverride: pending ? pending.override : s.billingUnitHours ?? null,
@@ -158,7 +164,8 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
           companyMaxPlayLengthSec: company.maxPlayLengthSec,
           slotCount,
           displayCount,
-          playsPerWindow: playsPerWindowOf(billingUnitHoursOf(t, s) * 3_600_000, maxPlayLengthSecOf(t, s, company.maxPlayLengthSec), slotCount),
+          openHoursPerDay,
+          playsPerWindow: playsPerWindowOpenOf(billingUnitHoursOf(t, s) * 3_600_000, maxPlayLengthSecOf(t, s, company.maxPlayLengthSec), slotCount, openHoursPerDay),
         })
       }
     }
@@ -196,13 +203,18 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
     return inventory()
   })
 
-  /* A CPM of 0 or more, or null for no reserve (Rob, 22 Sep) — shared by
-     reservePrice (a slot's own override) and reservePriceDefault (its
-     display type's). */
-  const parseReservePrice = (v: unknown, field: string, errors: { field: string; reason: string }[]): number | null => {
-    if (v === null || v === undefined) return null
-    if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) {
-      errors.push({ field, reason: 'A CPM of 0 or more, or null for no reserve.' })
+  /* A slot's own floor CPM, or null to inherit the platform floor (Rob, 17 Oct
+     2026). Omitted keeps what the slot has. Below the platform floor is refused,
+     the same rule as a DSP's and a buyers list's floor. */
+  const parseSlotFloor = (v: unknown, kept: number | null, platformFloor: number, field: string, errors: { field: string; reason: string }[]): number | null => {
+    if (v === undefined) return kept
+    if (v === null) return null
+    if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0 || v > ctx.config.maxBidCpm) {
+      errors.push({ field, reason: `A floor CPM greater than 0 and at most ${ctx.config.maxBidCpm}, or null to follow the platform floor.` })
+      return null
+    }
+    if (v < platformFloor) {
+      errors.push({ field, reason: `A slot floor can't be below the platform floor (${platformFloor} ${TRANSACTING_CURRENCY} CPM); raise it, or clear it to follow the platform floor.` })
       return null
     }
     return v
@@ -210,7 +222,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
 
   /* A billing unit of at least one hour, or null to inherit (spec "Private
      auctions: two-period model", 23 Sep 2026) — the same override/default
-     pair as reservePrice/reservePriceDefault above. Whole hours, up to a
+     pair as the other slot settings. Whole hours, up to a
      year, since OQ27 made it the slot's play-window length: the same
      bounds the company play window had before it was removed. */
   const parseBillingUnitHours = (v: unknown, field: string, errors: { field: string; reason: string }[]): number | null => {
@@ -224,8 +236,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
 
   /* An integer 1-25 inclusive, or null to inherit (ticket "Available
      Inventory: Max campaigns column + slot playlist statement") — the
-     same override/default pair as reservePrice/reservePriceDefault and
-     billingUnitHours/billingUnitHoursDefault above. */
+     same override/default pair as the billing unit above. */
   const parseMaxCampaigns = (v: unknown, field: string, errors: { field: string; reason: string }[]): number | null => {
     if (v === null || v === undefined) return null
     if (typeof v !== 'number' || !Number.isInteger(v) || v < MIN_MAX_CAMPAIGNS || v > MAX_MAX_CAMPAIGNS) {
@@ -245,16 +256,15 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
     return v
   }
 
-  /* Who a slot is assigned to and its reserve
-     price override (Rob, 22 Sep): the fields of a sellable slot that live
-     here. Everything else about it is set on its display type — including
-     the reserve price *default*, which every row for that display type
-     edits together (spec §1 configuration inheritance: override always
+  /* Who a slot is assigned to and its floor CPM
+     override (Rob, 17 Oct 2026; it replaced the reserve price): the fields
+     of a sellable slot that live here. Everything else about it is set on
+     its display type (spec §1 configuration inheritance: override always
      wins; a slot with no override of its own simply follows it). */
   app.put<{ Body: { items?: unknown } }>('/available-inventory', async (req) => {
     guards.flagged()
     guards.requireScope(req, 'admin')
-    const rows = Array.isArray(req.body?.items) ? (req.body.items as { displayTypeId?: unknown; slot?: unknown; assignedTo?: unknown; reservePrice?: unknown; reservePriceDefault?: unknown; interactiveReservePrice?: unknown; billingUnitHours?: unknown; billingUnitHoursDefault?: unknown; maxCampaigns?: unknown; maxCampaignsDefault?: unknown; maxPlayLengthSec?: unknown; maxPlayLengthSecDefault?: unknown; inGlobalDeal?: unknown }[]) : null
+    const rows = Array.isArray(req.body?.items) ? (req.body.items as { displayTypeId?: unknown; slot?: unknown; assignedTo?: unknown; floorCpm?: unknown; billingUnitHours?: unknown; billingUnitHoursDefault?: unknown; maxCampaigns?: unknown; maxCampaignsDefault?: unknown; maxPlayLengthSec?: unknown; maxPlayLengthSecDefault?: unknown; inGlobalDeal?: unknown }[]) : null
     if (!rows) throw validationFailed([{ field: 'items', reason: 'An array of slots is required.' }])
     /* Validation, the sold and resize checks and the save are one
        transaction: nothing can be sold, or the slot edited, in between. */
@@ -262,9 +272,8 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
       const partners = await ctx.partners.list()
       const company = await ctx.company.get()
       const errors: { field: string; reason: string }[] = []
-      type Patch = { inGlobalDeal: boolean; assigned: Assigned; reservePrice: number | null; interactiveReservePrice: number | null; billingUnitHours: number | null; maxCampaigns: number | null; maxPlayLengthSec: number | null }
+      type Patch = { inGlobalDeal: boolean; assigned: Assigned; floorCpm: number | null; billingUnitHours: number | null; maxCampaigns: number | null; maxPlayLengthSec: number | null }
       const wanted = new Map<string, Map<number, Patch>>()
-      const defaults = new Map<string, number | null>()
       const billingUnitDefaults = new Map<string, number | null>()
       const maxCampaignsDefaults = new Map<string, number | null>()
       const maxPlayLengthDefaults = new Map<string, number | null>()
@@ -294,16 +303,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         const becomesDeal = !assigned.advertisers.length && assigned.buyersListIds.length > 0
         const inGlobalDealNow = typeof r.inGlobalDeal === 'boolean' ? r.inGlobalDeal : def ? (becomesDeal ? def.inGlobalDeal === true : def.inGlobalDeal !== false) : !becomesDeal
 
-        const reservePrice = parseReservePrice(r.reservePrice, f('reservePrice'), errors)
-        /* Omitted keeps what the slot has (older clients never send it); it
-           only means anything while the slot supports interactive, so a slot
-           that stops supporting it drops the price too. */
-        const interactiveReservePrice = r.interactiveReservePrice === undefined ? (def?.interactiveReservePrice ?? null) : parseReservePrice(r.interactiveReservePrice, f('interactiveReservePrice'), errors)
-        const reservePriceDefault = parseReservePrice(r.reservePriceDefault, f('reservePriceDefault'), errors)
-        if (dt) {
-          if (defaults.has(dt.id) && defaults.get(dt.id) !== reservePriceDefault) errors.push({ field: f('reservePriceDefault'), reason: 'All slots on a display type must submit the same reserve price default.' })
-          else defaults.set(dt.id, reservePriceDefault)
-        }
+        const floorCpm = parseSlotFloor(r.floorCpm, def ? slotFloorCpmOf(def) : null, company.floorCpm, f('floorCpm'), errors)
         const billingUnitHours = parseBillingUnitHours(r.billingUnitHours, f('billingUnitHours'), errors)
         const billingUnitHoursDefault = parseBillingUnitHours(r.billingUnitHoursDefault, f('billingUnitHoursDefault'), errors)
         if (dt) {
@@ -326,7 +326,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
 
         if (dt && def && !bad.length) {
           const byType = wanted.get(dt.id) ?? new Map<number, Patch>()
-          byType.set(slot, { inGlobalDeal: inGlobalDealNow, assigned, reservePrice, interactiveReservePrice: INTERACTIVE_ENABLED ? interactiveReservePrice : null, billingUnitHours, maxCampaigns, maxPlayLengthSec })
+          byType.set(slot, { inGlobalDeal: inGlobalDealNow, assigned, floorCpm, billingUnitHours, maxCampaigns, maxPlayLengthSec })
           wanted.set(dt.id, byType)
         }
       }
@@ -406,11 +406,12 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
           const patch = slots.get(i + 1)
           const plan = plans.get(displayTypeId)?.get(i + 1)
           /* A slot no longer carries a targeting capability (Rob, 7 Oct 2026): drop any saved one. */
-          const { supportedTargeting: _legacy, ...slotNow } = s as typeof s & { supportedTargeting?: unknown }
+          /* The reserve price is gone (17 Oct 2026): drop any saved one. */
+          const { supportedTargeting: _legacy, reservePrice: _reserve, interactiveReservePrice: _ireserve, ...slotNow } = s as typeof s & { supportedTargeting?: unknown; reservePrice?: unknown; interactiveReservePrice?: unknown }
           const { inGlobalDeal: _flag, billingUnitChange: keptChange, ...slotBase } = slotNow
-          return patch ? { ...slotBase, ...(patch.inGlobalDeal ? (!patch.assigned.advertisers.length && patch.assigned.buyersListIds.length ? { inGlobalDeal: true } : {}) : { inGlobalDeal: false }), ...assignedToSlot(patch.assigned, partners), reservePrice: patch.reservePrice, interactiveReservePrice: patch.interactiveReservePrice, billingUnitHours: plan ? plan.billingUnitHours : patch.billingUnitHours, ...((plan ? plan.billingUnitChange : keptChange) ? { billingUnitChange: plan ? plan.billingUnitChange : keptChange } : {}), maxCampaigns: patch.maxCampaigns, maxPlayLengthSec: patch.maxPlayLengthSec } : slotNow
+          return patch ? { ...slotBase, ...(patch.inGlobalDeal ? (!patch.assigned.advertisers.length && patch.assigned.buyersListIds.length ? { inGlobalDeal: true } : {}) : { inGlobalDeal: false }), ...assignedToSlot(patch.assigned, partners), floorCpm: patch.floorCpm, billingUnitHours: plan ? plan.billingUnitHours : patch.billingUnitHours, ...((plan ? plan.billingUnitChange : keptChange) ? { billingUnitChange: plan ? plan.billingUnitChange : keptChange } : {}), maxCampaigns: patch.maxCampaigns, maxPlayLengthSec: patch.maxPlayLengthSec } : slotNow
         })
-        if (defaults.has(displayTypeId)) ext.reservePrice = defaults.get(displayTypeId) ?? null
+        delete (ext as { reservePrice?: unknown }).reservePrice
         if (billingUnitDefaults.has(displayTypeId)) ext.billingUnitHours = billingUnitDefaults.get(displayTypeId) ?? null
         if (maxCampaignsDefaults.has(displayTypeId)) ext.maxCampaigns = maxCampaignsDefaults.get(displayTypeId) ?? null
         if (maxPlayLengthDefaults.has(displayTypeId)) ext.maxPlayLengthSec = maxPlayLengthDefaults.get(displayTypeId) ?? null

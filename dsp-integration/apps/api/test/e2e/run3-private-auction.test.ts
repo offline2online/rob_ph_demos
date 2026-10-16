@@ -200,7 +200,7 @@ describe('Run 3 — private auction: non-happy', () => {
 const globalDeal = async (h: Awaited<ReturnType<typeof harness>>, on = true) => h.ctx.exchange.save({ ...(await h.ctx.exchange.get()), globalDealEnabled: on })
 const lastImp = (h: Awaited<ReturnType<typeof harness>>) => h.bidder.log.bidRequests.at(-1)!.body.imp[0]
 const setInGlobalDeal = async (h: Awaited<ReturnType<typeof harness>>, inGlobalDeal?: boolean) =>
-  h.app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: DT, slot: 1, reservePrice: null, ...(inGlobalDeal === undefined ? {} : { inGlobalDeal }) }] } })
+  h.app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: DT, slot: 1, ...(inGlobalDeal === undefined ? {} : { inGlobalDeal }) }] } })
 
 describe('Run 3 — global deal (P9–P11)', () => {
   /* The creative is introduced under the fixture's deal, then the slot goes open: sold in real time. */

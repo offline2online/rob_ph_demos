@@ -180,7 +180,7 @@ describe('a slot’s billing unit sets its play-window length (OQ27)', () => {
     let now = NOW
     const { ctx, app } = await setup(() => now)
     const row = (billingUnitHours: number | null, billingUnitHoursDefault: number | null = null) =>
-      ({ displayTypeId: 'menu_board', slot: 2, assignedTo: { partnerIds: ['p_google'], advertisers: [], whitelistOnly: false }, reservePrice: null, reservePriceDefault: null, billingUnitHours, billingUnitHoursDefault })
+      ({ displayTypeId: 'menu_board', slot: 2, assignedTo: { partnerIds: ['p_google'], advertisers: [], whitelistOnly: false }, billingUnitHours, billingUnitHoursDefault })
     const save = (...items: ReturnType<typeof row>[]) => app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items } })
     /* Whole hours only, now that it lays out windows. */
     expect((await save(row(1.5))).statusCode).toBe(400)
@@ -215,7 +215,7 @@ describe('a slot’s billing unit sets its play-window length (OQ27)', () => {
   it('changes a billing unit at once on a slot with nothing committed', async () => {
     const { ctx, app } = await setup()
     await runBilling(ctx)
-    const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, assignedTo: { partnerIds: ['p_google'], advertisers: [], whitelistOnly: false }, reservePrice: null, reservePriceDefault: null, billingUnitHours: 8, billingUnitHoursDefault: null }] } })
+    const res = await app.inject({ method: 'PUT', url: '/api/admin/v1/available-inventory', payload: { items: [{ displayTypeId: 'menu_board', slot: 2, assignedTo: { partnerIds: ['p_google'], advertisers: [], whitelistOnly: false }, billingUnitHours: 8, billingUnitHoursDefault: null }] } })
     expect(res.statusCode).toBe(200)
     expect(res.json().items[0]).toMatchObject({ billingUnitHours: 8, billingUnitPending: null })
     expect(await windowMs(ctx, await findPosition(ctx, 'menu_board.s2'))).toBe(8 * HOUR)

@@ -1,6 +1,6 @@
 # End-to-End Test Spec — DSP Demand Paths (v2)
 
-**v1:** 29 Sep 2026 (open auction, floor price) · **v2:** 29 Sep 2026 (Rob) — adds run history, a non-happy hardening run, and the private-auction, two-period and reserved runs.
+**v1:** 29 Sep 2026 (open auction, floor price) · **v2:** 29 Sep 2026 (Rob) — adds run history, a non-happy hardening run, and the private-auction, two-period and reserved runs. (17 Oct 2026: the reserve price is replaced by a per-slot Floor CPM; Run 5 follows it.)
 **v2.1:** 29 Sep 2026 (Rob) — adds **Run 6 — Full user journey (real-world customer flows)**.
 **v2.2:** 30 Sep 2026 (Rob) — Run 6 split by actor and surface (retailer in Chrome, advertiser via the Partner API); creative package; browser→API handover.
 **v2.3:** 30 Sep 2026 (Rob) — Run 6 execution moved to the Run 6 Runbook.
@@ -18,7 +18,7 @@
 These are **three distinct things; never conflate them**:
 
 1. **Direct advertiser relationship (AWS demo Flow 3).** A brand pays the retailer a retainer **directly, outside PH billing entirely**. The slot is **owned** by that brand/advertiser: no DSP, no bidding, **no billing through the platform**. PH assigns the slot and the advertiser runs their creative — including localised and personalised, driven by the targeting elements the retailer has enabled. Their campaigns carry **no deal ID**.
-2. **Reserve booking (Run 5).** A reserve-priced booking that still **clears and bills through the platform**. It is **not** the direct advertiser relationship and is not renamed or removed; it stays its own mechanism.
+2. **Reserve booking (Run 5).** A reservation (`type: reserve`, on a held or deal position, at the agreed rate; the per-position reserve price was removed 17 Oct 2026) that still **clears and bills through the platform**. It is **not** the direct advertiser relationship and is not renamed or removed; it stays its own mechanism.
 3. **Programmatic guaranteed and preferred deals** run through a DSP. Tested here (Run 7 D3–D5) as built, but their support in the AWS demo is **future releases**.
 
 **Personalised (and localised) targeting is supported on two paths:** the **private deal** (buyers list / private auction) and the **direct advertiser relationship**. It is **not** supported on **open real-time bidding** (the creative arrives with the bid, so there is nothing to personalise). Which localised/personalised targeting is available follows the **targeting elements (criteria) the retailer has enabled for advertising** — the shared targeting variables and their defined values — not a fixed capability.
@@ -111,9 +111,9 @@ T1 first clear locks CPM; `bookLockedTermWindow` books later windows at the lock
 
 *This is **not** the direct advertiser relationship (Flow 3, Run 10): a reserve booking still clears and bills through the platform. Do not conflate or rename them.*
 
-Fixtures: reserve-price CPM premium on the display type, overridden on one slot.
+Fixtures: the platform floor on every slot, overridden by a slot floor (Floor CPM) on one slot.
 
-R1 slot override wins over inherited reserve price. R2 reserved slot excluded from the open auction. R3 reservation below reserve → 400; at/above → booked **at the reserve price**; reserve under the buyer's effective floor → 422 `below_floor` (OQ52). R4 `type: reserve` → booked and handed off at once, window out of the open auction; a reserve-priced window nobody committed to is auctioned as usual — reserve is not a floor (OQ52).
+R1 a slot's own floor wins over the inherited platform floor; a platform floor change reaches only slots without an override. R2 reserved slot excluded from the open auction. R3 reservation below the resolved floor (platform, slot, DSP, buyers list) → 422 `below_floor`; at/above → booked **at the agreed rate** (OQ52). R4 `type: reserve` → booked and handed off at once, window out of the open auction; a window nobody committed to is auctioned as usual (OQ52). A slot floor below the platform floor is refused on save (`advertiser-settings.test.ts`); `imp.bidfloor` carries the slot floor and a bid below it is rejected (`bid-floor-hierarchy.test.ts`).
 
 ## Run 7 — Deal types D1–D5 (`e2e/run7-deal-types.test.ts`; written into the spec in v2.9)
 
@@ -121,7 +121,7 @@ Passes in `e2e:quick`; documented here so the spec no longer trails the build. E
 
 - **D1 Open deal (open RTB, real-time).** D1.1 set up → approve → bid above floor wins at its own price, handed off, billed on realised VAC-d. D1.2 below floor → default, nothing booked. D1.3 highest of several clears first price. D1.4 an open window cannot be reserved as a deal. D1.5 real-time per impression: the player signals, the request is cut to the impression, a bid above the floor fills first price, proof of play logged.
 - **D2 Private auction.** D2.1 deal type drives fields (`auctionCloses` captured, committed plays not). D2.2 invited buyer: approve → bid carrying the deal ID wins, handed off, billed at the cleared rate. D2.3 uninvited buyer, a bid without the deal ID, and a bid under the floor are refused. D2.4 two-period: first clear locks the rate; later windows book at it; outside-term bids refused.
-- **D3 Preferred deal.** D3.1 no committed plays/auction window. D3.2 reserve at the reserve price, held outside the auction, billed realised VAC-d at the reserve price. D3.3 the list is authoritative: a reservation naming guaranteed → 409; a bid, or one under the reserve → refused.
+- **D3 Preferred deal.** D3.1 no committed plays/auction window. D3.2 reserve at the agreed rate, held outside the auction, billed realised VAC-d at that rate. D3.3 the list is authoritative: a reservation naming guaranteed → 409; a bid, or one under the floor → refused.
 - **D4 Programmatic guaranteed.** D4.1 committed plays captured. D4.2 committed volume = floor(forecast × (1 − buffer%)), carried to DV360 as PG, billed realised (no make-good). D4.3 the buffer is the retailer's. D4.4 same figure in each DSP's own deal shape. D4.5 a reserved window cannot be sold again.
 - **D5 Computer Vision gender on a deal (personalised).** D5.1 guaranteed: Male targeting accepted, volume from the gendered forecast, personalised-eligible. D5.2 the same targeting on **open real-time** → `targeting_not_supported` (consistent with the v2.9 decision). D5.3 preferred variant personalised-eligible. D5.4 private-auction variant: gendered bid clears, first win locks the rate, later windows book at it, personalised-eligible.
 
@@ -212,7 +212,7 @@ On-screen playback is **PH Core's** and is never covered by this suite: the crea
 ### J. Retailer setup (BROWSER)
 - **J0** Google DSP connected and Live; advertiser Swisse exists; `store.cv_gender` enabled for `p_google`.
 - **J1** Create a display type (canvas 1920×1080); verify it saves and its playlist auto-creates.
-- **J4** Expose a slot as **Advertiser** inventory for Google DSP. Record the effective reserve, max campaigns, billing unit and base floor.
+- **J4** Expose a slot as **Advertiser** inventory for Google DSP. Record the slot's Floor CPM (inherited or overridden), max campaigns, billing unit and base floor.
 - **J5** Confirm the slot in Available Inventory, and no longer Unassigned once displays are seeded.
 
 ### K. Advertiser demand (CLAUDE CODE, Partner API)

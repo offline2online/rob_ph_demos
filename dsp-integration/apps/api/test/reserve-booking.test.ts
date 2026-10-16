@@ -1,11 +1,13 @@
-/* Deals and reserve-price booking (open questions 45 and 52, decided by Rob
-   on 29 Sep 2026).
+/* Deals and reservation booking (open questions 45 and 52, decided by Rob
+   on 29 Sep 2026; the reserve price was removed on 17 Oct 2026 and
+   replaced by a per-slot floor CPM, so a reservation books at the rate the
+   buyer agrees through the DSP, not at a posted reserve price).
    - OQ45: a deal is per DSP, bilateral, and built on the existing buyers
      list. Its rate is a commitment on top of the same score-driven floor.
      It is never under the floor, and a deal never bypasses the floor.
-   - OQ52: a buyer commits to a reserve-priced slot for a future window. The
+   - OQ52: a buyer commits to a held or deal slot for a future window. The
      window is held as Reserved, out of the open auction, and billed at the
-     reserve price on its realised VAC-d. There is no flat guaranteed
+     agreed rate on its realised VAC-d. There is no flat guaranteed
      volume and no make-good. */
 import type { InvitedBuyer, Slot } from '@ph-dsp/types'
 import { describe, expect, it } from 'vitest'
@@ -27,11 +29,11 @@ async function setup(slot: Partial<Slot> = {}) {
   let now = NOW
   const ctx = await testContext({ byWindow: true, clock: () => now })
   const app = buildApp(ctx)
-  /* Portrait: one advertiser slot, reserve price 150 CPM (floor 100). */
+  /* Portrait: one advertiser slot on a deal, booked at 150 CPM (platform floor 100). */
   const ext = (await ctx.displayTypes.get('portrait'))!.phExtensions!
   await ctx.displayTypes.saveExtensions('portrait', {
     ...ext,
-    slots: [{ label: 'Ad', owner: 'advertiser', partnerIds: [], advertisers: [], listMode: 'deal', buyersListId: 'bl_test_open', storeScope: null, quota: null, zoneId: null, reservePrice: 150, ...slot } as Slot],
+    slots: [{ label: 'Ad', owner: 'advertiser', partnerIds: [], advertisers: [], listMode: 'deal', buyersListId: 'bl_test_open', storeScope: null, quota: null, zoneId: null, ...slot } as Slot],
   })
   ctx.db.prepare('INSERT INTO audience_vacd (display_type_id, slot, assumed_views_per_window, counted) VALUES (?, ?, ?, 1)').run('portrait', 1, 800)
   /* A Swisse campaign whose creative fits Portrait, approved and activated,
@@ -52,8 +54,8 @@ async function setup(slot: Partial<Slot> = {}) {
   return { ctx, app, cid, post, RESERVE, NESTLE_BID, status, rows, setNow: (d: Date) => { now = d } }
 }
 
-describe('reserve-price booking (OQ52): commit, hold as Reserved, honour at the reserve price', () => {
-  it('holds the window as Reserved at the reserve price, and hands it off at once', async () => {
+describe('reservation booking (OQ52): commit, hold as Reserved, honour at the agreed rate', () => {
+  it('holds the window as Reserved at the agreed rate, and hands it off at once', async () => {
     const { post, RESERVE, status, rows } = await setup()
     expect(await status('2026-09-21', '2026-09-21')).toEqual(['available'])
     const res = await post(RESERVE)
@@ -66,14 +68,13 @@ describe('reserve-price booking (OQ52): commit, hold as Reserved, honour at the 
     expect(await status('2026-09-21', '2026-09-22')).toEqual(['reserved', 'available'])
   })
 
-  it('books at the reserve price itself, not above it, and never below it', async () => {
+  it('books at the agreed rate itself, and never below the resolved floor', async () => {
     const { post, RESERVE } = await setup()
-    const low = await post({ ...RESERVE, bidCpm: 149 })
-    expect(low.statusCode).toBe(400)
-    expectMatchesContract('POST', '/v1/reservations', 400, low.json())
-    expect(low.json().error).toMatchObject({ code: 'validation_failed', details: [{ field: 'bidCpm', reason: 'The reserve price for this position is 150 USD CPM; commit to at least that.' }] })
+    const low = await post({ ...RESERVE, bidCpm: 99 })
+    expect(low.statusCode).toBe(422)
+    expect(low.json().error).toMatchObject({ code: 'below_floor', message: '99 is below the effective floor of 100 USD CPM.' })
     const res = await post({ ...RESERVE, bidCpm: 200 })
-    expect(res.json()).toMatchObject({ status: 'reserved', clearingCpm: 150 })
+    expect(res.json()).toMatchObject({ status: 'reserved', clearingCpm: 200 })
   })
 
   it('can be made any time ahead of the window, but not once it has started', async () => {
@@ -103,19 +104,21 @@ describe('reserve-price booking (OQ52): commit, hold as Reserved, honour at the 
     expect((await rows()).filter((r) => ['won', 'reserved'].includes(r.status))).toEqual([expect.objectContaining({ advertiserId: 'swisse', clearingCpm: 150 })])
   })
 
-  it('is refused where there is no reserve price, and below the buyer’s effective floor', async () => {
-    const none = await setup({ reservePrice: null })
-    const refused = await none.post(none.RESERVE)
+  it('is refused on a position that is neither held for the advertiser nor on a deal, and never clears below the slot floor', async () => {
+    const open = await setup({ listMode: 'rtb', buyersListId: undefined })
+    const refused = await open.post(open.RESERVE)
     expect(refused.statusCode).toBe(409)
-    expect(refused.json().error.message).toBe('Only a position held for this advertiser, or one with a reserve price, can be reserved; bid for it instead.')
-    /* A reserve price of 90 undercuts Swisse's floor of 100: the floor wins. */
-    const cheap = await setup({ reservePrice: 90 })
-    const res = await cheap.post({ ...cheap.RESERVE, bidCpm: 90 })
+    /* A position that is neither held nor on a deal is sold in real time, per impression: no reservation at any price (the reserve-price path is gone). */
+    expect(refused.json().error.message).toBe('This position sells in real time, per impression: it takes no window bids or reservations.')
+    /* A slot floor of 180 sits above the platform floor of 100: a commitment of 150 undercuts it. */
+    const dear = await setup({ floorCpm: 180 })
+    const res = await dear.post({ ...dear.RESERVE, bidCpm: 150 })
     expect(res.statusCode).toBe(422)
-    expect(res.json().error).toMatchObject({ code: 'below_floor', message: '90 is below the effective floor of 100 USD CPM.' })
+    expect(res.json().error).toMatchObject({ code: 'below_floor', message: '150 is below the effective floor of 180 USD CPM.' })
+    expect((await dear.post({ ...dear.RESERVE, bidCpm: 180 })).statusCode).toBe(201)
   })
 
-  it('bills on realised VAC-d at the reserve price: a floor commitment, not a guaranteed volume', async () => {
+  it('bills on realised VAC-d at the agreed rate: a floor commitment, not a guaranteed volume', async () => {
     const { ctx, cid, post, RESERVE, setNow } = await setup()
     const r = await post(RESERVE)
     /* A quarter of the slot's time actually played in the window. */
@@ -187,14 +190,14 @@ describe('deals (OQ45): per DSP, on the existing buyers list, never under the fl
   })
 
   it('refuses a deal rate below the effective floor at intake, bid or reserve', async () => {
-    const { ctx, post, RESERVE } = await setup({ listMode: 'deal', buyersListId: 'bl_pg', reservePrice: 120 })
+    const { ctx, post, RESERVE } = await setup({ listMode: 'deal', buyersListId: 'bl_pg' })
     await termDeal(ctx)
     await ctx.company.save({ ...(await ctx.company.get()), floorCpm: 150 })
     const bid = await post({ ...RESERVE, type: 'bid', bidCpm: 140 })
     expect(bid.json().error).toMatchObject({ code: 'below_floor', message: '140 is below the effective floor of 150 USD CPM.' })
     const reserve = await post({ ...RESERVE, bidCpm: 140 })
     expect(reserve.statusCode).toBe(422)
-    expect(reserve.json().error).toMatchObject({ code: 'below_floor', message: '120 is below the effective floor of 150 USD CPM.' })
+    expect(reserve.json().error).toMatchObject({ code: 'below_floor', message: '140 is below the effective floor of 150 USD CPM.' })
     expect((await ctx.buyersLists.get('bl_pg'))!.lockedWin).toBeNull()
   })
 
@@ -224,9 +227,9 @@ describe('deals (OQ45): per DSP, on the existing buyers list, never under the fl
   })
 })
 
-/* OQ27 (Rob, 29 Sep 2026): a reserve-price commitment is for one of the
+/* OQ27 (Rob, 29 Sep 2026): a reservation is for one of the
    position's own windows, its billing unit long. */
-describe('reserve-price booking on a slot with its own billing unit (OQ27)', () => {
+describe('reservation booking on a slot with its own billing unit (OQ27)', () => {
   it('reserves a whole week on a 168-hour slot, starting on its Monday, and hands off the week', async () => {
     const { ctx, cid, post, RESERVE, status, rows } = await setup({ billingUnitHours: 168 })
     const tuesday = await post({ ...RESERVE, windowStart: W2 })

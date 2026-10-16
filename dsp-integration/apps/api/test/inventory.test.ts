@@ -32,7 +32,6 @@ describe('GET /v1/inventory', () => {
         screen: { width: 5760, height: 1080, orientation: 'landscape', slotDurationSec: 15, loopLengthSec: 45, maxPlayLengthSec: 15, shareOfVoice: 0.333, openOohVenueType: 'retail.grocery' },
         assignment: 'deal', billingUnitHours: 24, playsPerWindow: 1920, slotCount: 3, assumedViewsPerWindow: 1236, scored: true, maxCampaigns: 10,
         pricing: { currency: 'USD', floorCpm: 100, effectiveFloorCpm: { localised: 100 } },
-        reservePrice: null,
       }],
       nextCursor: null,
     })
@@ -45,6 +44,7 @@ describe('GET /v1/inventory', () => {
     /* Interactive campaigns are deferred (5 Oct 2026): no engagement fee or interactive price is published. */
     expect(item.pricing).not.toHaveProperty('costPerEngagement')
     expect(item).not.toHaveProperty('interactiveReservePrice')
+    expect(item).not.toHaveProperty('reservePrice')
   })
 
   it('shows a DSP that is not connected nothing, rather than an error', async () => {

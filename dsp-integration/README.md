@@ -397,22 +397,30 @@ npm test
   `Config.rejectedCampaignRetentionDays` (default 30) — never its audit
   trail. See `apps/api/src/domain/campaignRetention.ts` and REQUIREMENTS.md
   §3 *Enforcement and audit*.
-- **Reserve-price booking** (open questions 45 and 52, 29 Sep 2026): a
-  buyer's `POST /v1/reservations` with `type: reserve` on a position with a
-  reserve price holds that window as Reserved, out of the open auction, at
-  the reserve price. A private auction takes bids per slot throughout the flight
-  (first price, no auction window, no rate lock; 16 Oct 2026), and a preferred
-  deal gives its one buyer first look at each slot at a fixed CPM. Deals are per DSP and never clear below the
+- **Reservations** (open questions 45 and 52, 29 Sep 2026; the reserve price
+  was removed 17 Oct 2026): a buyer's `POST /v1/reservations` with
+  `type: reserve` on a position held for it or assigned to a buyers list
+  holds that window as Reserved, out of the open auction, at the rate the
+  buyer agrees through the DSP, which must clear the resolved floor.
+  Reserving at a fixed price is otherwise handled by a Programmatic
+  guaranteed deal, which carries its own rate. A private auction takes bids
+  per slot throughout the flight (first price, no auction window, no rate
+  lock; 16 Oct 2026), and a preferred deal gives its one buyer first look at
+  each slot at a fixed CPM. Deals are per DSP and never clear below the
   floor. See `apps/api/src/routes/partner/reservations.ts`,
   `apps/api/test/reserve-booking.test.ts` and `docs/dsp-integration/api/API.md`
   → *Reservations and bids*.
-- **Bid floor hierarchy** (Rob, 7 Oct 2026): three levels, all USD. The
-  platform floor (Advertiser settings) is the minimum; a DSP can set its own
-  floor (`bidder.floorCpm`, on its DSP page) and a buyers list its own
-  (`floorCpm`, migration 0051). The most specific level that is set applies,
-  a blank level inherits from the one above, and a DSP or list floor below
-  the platform floor is refused. The resolved floor is `imp.bidfloor`
-  (`bidfloorcur` USD) and bids below it are rejected; VAC-d and the personalised premium apply on top as before. See
+- **Bid floor hierarchy** (Rob, 7 Oct 2026; slot level added 17 Oct 2026): four
+  levels, all USD. The platform floor (Advertiser settings) is the minimum; a
+  slot can carry its own **Floor CPM** (Available Inventory, `floorCpm` on the
+  slot; blank follows the platform floor, and a value below it is refused), a
+  DSP can set its own floor (`bidder.floorCpm`, on its DSP page) and a buyers
+  list its own (`floorCpm`, migration 0051). The most specific level that is
+  set applies, a blank level inherits from the one above, the platform and
+  slot floors are never undercut by a lower DSP or list floor (a deal never
+  clears below the resolved slot floor), and a DSP or list floor below the
+  platform floor is refused. The resolved floor is `imp.bidfloor`
+  (`bidfloorcur` USD) and bids below it are rejected; VAC-d applies on top as before. See
   `resolveBaseFloor` in `apps/api/src/domain/pricing.ts`, `baseFloorFor` in
   `apps/api/src/exchange/enforcement.ts` and
   `apps/api/test/bid-floor-hierarchy.test.ts`.

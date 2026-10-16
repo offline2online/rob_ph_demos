@@ -21,7 +21,7 @@ export const touchPointIcon = (name: string) => (TOUCH_POINTS.find((t) => t.name
 
 /* Website and Mobile App slots are set up exactly like Digital Signage (ticket
    0jviesctpWGyOYtK20tg, decision Rob 7 Oct 2026): the same slot editor, owner
-   list, max slot rotation, Advertiser assignment, reserve, billing unit and
+   list, max slot rotation, Advertiser assignment, floor, billing unit and
    campaign cap. This supersedes the 28 Sep "HQ-only" rule and the 7 Oct
    "RTB-only" switch (HAmTUHQVj63NDiY4hLk8), so no touch point is excluded
    from advertising any more. The lists are kept (empty) so a touch point can
@@ -125,25 +125,21 @@ export const ALL_DSPS_LABEL = 'All DSPs'
 export const assignedLabels = (a: { advertisers: readonly string[]; partnerNames?: readonly string[]; whitelistOnly?: boolean; buyersListName?: string | null; buyersListNames?: readonly string[]; openAuction?: boolean; partnerIds?: readonly string[] }): string[] =>
   [...a.advertisers, ...(a.whitelistOnly ? ['Whitelist only'] : []), ...(a.buyersListNames?.length ? a.buyersListNames.map((n, i) => `Buyers list${a.buyersListNames!.length > 1 ? ` ${i + 1}` : ''}: ${n}`) : a.buyersListName ? [`Buyers list: ${a.buyersListName}`] : []), ...(a.partnerNames ?? []), ...(a.openAuction && !a.partnerIds?.length ? [ALL_DSPS_LABEL] : [])]
 
-/* Reserve price inheritance (Rob, 22 Sep; spec §1 configuration
-   inheritance): a display type carries its own reserve price default, and
-   a slot's own reservePrice overrides it whenever it is set — null always
-   means inherit, never "explicitly no reserve" while a default exists. */
-export const reservePriceOf = (dt: { phExtensions?: { reservePrice?: number | null } | null }, slot: { reservePrice?: number | null }): number | null =>
-  slot.reservePrice ?? dt.phExtensions?.reservePrice ?? null
-
-/* Interactive reserve price (ticket 5eLDRBqEGhNyJSHSIFFG, 4 Oct 2026): a
-   slot may carry its own reserve price for interactive campaigns, so an
-   interactive experience can be priced apart from the ordinary slot. null
-   means interactive campaigns follow reservePriceOf. Slot-level only — a
-   display type has no interactive default. */
-export const interactiveReservePriceOf = (dt: { phExtensions?: { reservePrice?: number | null } | null }, slot: { reservePrice?: number | null; interactiveReservePrice?: number | null }): number | null =>
-  slot.interactiveReservePrice ?? reservePriceOf(dt, slot)
+/* Slot floor (ticket EEm4tA5fSB6RKlEjNhVu, Rob, 17 Oct 2026): a slot may carry
+   its own floor CPM (USD), which replaced the reserve price on Available
+   Inventory. null/absent inherits (display type floor, else the platform floor
+   from Advertiser settings) at read time — never a copy of that value, so a
+   later change to the platform floor reaches every inheriting slot. An
+   override below the platform floor is refused on save. */
+export const slotFloorCpmOf = (slot: { floorCpm?: number | null }): number | null => {
+  const v = slot.floorCpm
+  return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null
+}
 
 /* Billing-unit inheritance (spec "Private auctions: two-period model", 23
    Sep 2026): the granularity a CPM is quoted and charged against — same
-   override-always-wins inheritance as reservePriceOf, but always resolves
-   to a real number — unlike a reserve price, there is no "no billing unit"
+   override-always-wins inheritance, but always resolves
+   to a real number — there is no "no billing unit"
    state. Since OQ27 (Rob, 29 Sep 2026) it is also the slot's play-window
    length — the source of truth for how it is booked and billed. The chain
    is slot, then display type, then PLATFORM_DEFAULT_BILLING_UNIT_HOURS.
@@ -162,7 +158,7 @@ export const billingUnitHoursOf = (dt: { phExtensions?: { billingUnitHours?: num
    advertiser may submit for a slot — replacing the former blanket
    20-targeted-versions submission cap for that slot. Purely a submission
    cap: it does not feed the auction or billing. Same override-always-wins
-   inheritance as reservePriceOf/billingUnitHoursOf, but always resolves to
+   inheritance as billingUnitHoursOf, but always resolves to
    a real integer (the platform default of 10 when neither the slot nor its
    display type sets one) — like billing unit, there is no "unlimited"
    state, and it is bounded 1-25 inclusive whenever a real value is set. */
@@ -187,7 +183,7 @@ export const maxCampaignsOf = (dt: { phExtensions?: { maxCampaigns?: number | nu
    length (pDOOH practice: Broadsign builds the loop from a fixed slot length in
    loop policy). It is also the longest creative the slot accepts: longer is
    rejected at upload, never truncated. Same override-always-wins inheritance as
-   reservePriceOf/billingUnitHoursOf: slot, else display type, else the
+   billingUnitHoursOf: slot, else display type, else the
    company-wide default (Advertiser settings → maxPlayLengthSec, whose own
    platform default is 15 s). Whole seconds, 1-600 inclusive. */
 export const DEFAULT_MAX_PLAY_LENGTH_SEC = 15
@@ -208,19 +204,12 @@ export type TargetingMode = 'localised' | 'personalised' | 'interactive'
 export const INTERACTIVE_ENABLED = false
 const ALL_TARGETING_MODES: { key: TargetingMode; label: string; tip: string }[] = [
   { key: 'localised', label: 'Localised', tip: 'Store-level targeting only: the campaign varies by store, not by who is in front of the screen.' },
-  { key: 'personalised', label: 'Personalised', tip: 'The campaign may use Personalisation Variables about the visitor. Personalised versions play in a window held by a reserve booking or sold as a deal (private auction, preferred or guaranteed), never in the open real-time auction.' },
+  { key: 'personalised', label: 'Personalised', tip: 'The campaign may use Personalisation Variables about the visitor. Personalised versions play in a window sold as a deal (private auction, preferred or guaranteed), never in the open real-time auction.' },
   { key: 'interactive', label: 'Interactive', tip: 'The campaign may respond to the visitor on screen. Pays the interactive cost per engagement on top of the CPM.' },
 ]
 export const TARGETING_MODES = ALL_TARGETING_MODES.filter((m) => INTERACTIVE_ENABLED || m.key !== 'interactive')
-/* The reserve price tooltip (Rob, 5 Oct 2026), shared by the Available
-   Inventory column and the display type's reserve price field. */
-export const RESERVE_PRICE_TIP = 'The premium CPM an advertiser commits to up front to hold this slot for a window, out of the open auction. Reserved and deal-held slots play personalised versions (the open real-time auction never does): once committed, the advertiser submits the personalised variations their creative needs alongside the default.'
-/* Personalised versions are sold through reserve bookings (Rob, 5 Oct 2026)
-   and, since 8 Oct 2026, on deals too (never the open real-time auction).
-   This reports only the reserve-price route; a deal-held slot is also
-   eligible (enforcement.checkTargeting). */
-export const personalisedAllowedOn = (dt: { phExtensions?: { reservePrice?: number | null } | null }, slot: { reservePrice?: number | null }): boolean =>
-  reservePriceOf(dt, slot) !== null
+/* The Floor CPM tooltip (Rob, 17 Oct 2026), on the Available Inventory column. */
+export const FLOOR_CPM_TIP = 'The lowest CPM (USD) a bid or deal can clear for this slot. A slot follows the platform floor (Advertiser settings) until you give it a floor of its own; clear that override to follow the platform floor again. It can\'t be below the platform floor. A DSP\'s or buyers list\'s own floor can raise it further, never lower it. Reserving a slot at a fixed price is done with a Programmatic guaranteed deal, which carries its own rate.'
 export const targetingLabel = (modes: readonly string[]) =>
   TARGETING_MODES.filter((m) => modes.includes(m.key)).map((m) => m.label).join(', ')
 
