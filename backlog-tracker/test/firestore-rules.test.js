@@ -364,6 +364,15 @@ async function main() {
     setDoc(doc(as(MEMBER), "backlogItems/i1"), { status: "backlog", revertRequested: true, lastFailureReason: { category: "bug" } }, { merge: true }));
   await check("The Routine (automation user) can still write patchFiles/patchReady", "allow", () =>
     setDoc(doc(as(BOT), "backlogItems/i1"), { patchReady: true, patchFiles: [{ path: "a", content: "b" }] }, { merge: true }));
+  // Large patches (16 Oct 2026): the overflow lives in patchParts/{n}.
+  await check("The Routine (automation user) can write a patch part", "allow", () =>
+    setDoc(doc(as(BOT), "backlogItems/i1/patchParts/1"), { patchFiles: [{ path: "a", content: "b" }], patchBaseSha: "s" }));
+  await check("The Routine can set patchPartCount on the card", "allow", () =>
+    setDoc(doc(as(BOT), "backlogItems/i1"), { patchPartCount: 1 }, { merge: true }));
+  await check("A human editor CANNOT write a patch part", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1/patchParts/2"), { patchFiles: [{ path: "x.js", content: "evil" }] }));
+  await check("A human editor CANNOT change patchPartCount", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { patchPartCount: 2 }, { merge: true }));
   await check("The Routine can still stamp deployCommit", "allow", () =>
     setDoc(doc(as(BOT), "backlogItems/i1"), { deployCommit: "abc" }, { merge: true }));
   await check("A human editor can set an https test link", "allow", () =>

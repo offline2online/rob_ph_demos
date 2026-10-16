@@ -172,6 +172,15 @@ async function dropPatchFiles(itemId) {
     // And the copy functions/patch-offload.js moved off the card.
     const sub = await fetch(`${FIRESTORE_BASE}/${patchDocPath(itemId)}`, { method: "DELETE", headers: await firestoreHeaders() });
     if (!sub.ok && sub.status !== 404) console.log(`[patch-files] couldn't drop ${patchDocPath(itemId)}: ${sub.status} ${await sub.text()}`);
+    // And any overflow parts (patchPartPath) a large patch was written in.
+    const list = await fetch(`${FIRESTORE_BASE}/backlogItems/${itemId}/${PATCH_PARTS_COLLECTION}?pageSize=100&mask.fieldPaths=__name__`, { headers: await firestoreHeaders() });
+    if (list.ok) {
+      for (const d of (await list.json()).documents || []) {
+        const partPath = d.name.split("/documents/")[1];
+        const del = await fetch(`${FIRESTORE_BASE}/${partPath}`, { method: "DELETE", headers: await firestoreHeaders() });
+        if (!del.ok && del.status !== 404) console.log(`[patch-files] couldn't drop ${partPath}: ${del.status} ${await del.text()}`);
+      }
+    }
   } catch (err) {
     console.log(`[patch-files] couldn't drop patchFiles from ${itemId}: ${err.message}`);
   }
@@ -187,12 +196,66 @@ function patchDocPath(itemId) {
   return `backlogItems/${itemId}/pipeline/patch`;
 }
 async function patchFilesFor(item) {
+  const base = await basePatchFilesFor(item);
+  return base.concat(await patchPartFilesFor(item));
+}
+async function basePatchFilesFor(item) {
   if (Array.isArray(item.patchFiles) && item.patchFiles.length) return item.patchFiles;
   const res = await fetch(`${FIRESTORE_BASE}/${patchDocPath(item.id)}`, { headers: await firestoreHeaders() });
   if (res.status === 404) return [];
   if (!res.ok) throw new Error(`GET ${patchDocPath(item.id)} failed: ${res.status} ${await res.text()}`);
   const files = fdoc((await res.json()).fields || {}).patchFiles;
   return Array.isArray(files) ? files : [];
+}
+
+// A patch bigger than one Firestore document (1 MiB). Until 16 Oct 2026 that
+// was a hard ceiling on what one ticket could change: a build session that
+// hit it built a slice and filed the remainder as a NEW Backlog ticket — so
+// one Display Types ticket filed at 05:56 came back to Backlog as a
+// follow-on twice in an hour (24VWhzDd… → nPskZXYO… → pEbqIDwD…), and to
+// the person clicking Ready for Dev it looked like the ticket kept bouncing
+// back. Now the Routine writes whatever doesn't fit on the card into
+// backlogItems/{id}/patchParts/1..N (each {patchFiles, patchBaseSha}) and
+// sets patchPartCount = N on the card in the same PATCH as patchReady.
+// Only parts 1..patchPartCount are read, and each must carry the card's own
+// patchBaseSha, so a part left over from an earlier, bigger build of the
+// same ticket can never ride along: if part 1 is from another build, the
+// count itself is stale (a rebuild that didn't need parts and left the old
+// patchPartCount alone) and no part is used. Past part 1, a missing or
+// mismatched part throws: the attempt is retried (MAX_PATCH_ATTEMPTS) rather
+// than landing half a patch.
+const PATCH_PARTS_COLLECTION = "patchParts";
+const MAX_PATCH_PARTS = 20;
+function patchPartPath(itemId, n) {
+  return `backlogItems/${itemId}/${PATCH_PARTS_COLLECTION}/${n}`;
+}
+async function patchPartFilesFor(item) {
+  const count = Number(item.patchPartCount) || 0;
+  if (count <= 0) return [];
+  if (count > MAX_PATCH_PARTS) throw new Error(`patchPartCount ${count} is more than the ${MAX_PATCH_PARTS} parts a patch may have`);
+  const files = [];
+  for (let n = 1; n <= count; n++) {
+    const res = await fetch(`${FIRESTORE_BASE}/${patchPartPath(item.id, n)}`, { headers: await firestoreHeaders() });
+    // The Routine writes its parts BEFORE the card's patchReady, so a part 1
+    // that doesn't exist means the count outlived its parts (they are
+    // deleted when a ticket ships) — same stale-count case as below.
+    if (n === 1 && res.status === 404) {
+      console.log(`[apply-patch] ${item.id}: patchPartCount ${count} but no part 1 — a stale count, using the card's own files only`);
+      return [];
+    }
+    if (!res.ok) throw new Error(`patch part ${n} of ${count} (${patchPartPath(item.id, n)}) couldn't be read: ${res.status}${res.status === 404 ? " — not written yet" : ` ${await res.text()}`}`);
+    const part = fdoc((await res.json()).fields || {});
+    if (n === 1 && item.patchBaseSha && part.patchBaseSha !== item.patchBaseSha) {
+      console.log(`[apply-patch] ${item.id}: patchPartCount ${count} is left over from an earlier build (part 1 is from ${part.patchBaseSha || "no base sha"}, this patch is from ${item.patchBaseSha}) — using the card's own files only`);
+      return [];
+    }
+    if (item.patchBaseSha && part.patchBaseSha !== item.patchBaseSha) {
+      throw new Error(`patch part ${n} of ${count} was written against ${part.patchBaseSha || "no base sha"}, not this patch's ${item.patchBaseSha} — it is left over from another build`);
+    }
+    if (!Array.isArray(part.patchFiles)) throw new Error(`patch part ${n} of ${count} has no patchFiles array`);
+    files.push(...part.patchFiles);
+  }
+  return files;
 }
 
 const PATCH_FILES_SWEEP_EVERY_MS = 60 * 60 * 1000;
@@ -4230,7 +4293,7 @@ module.exports = {
   // test/patch-paths.test.js
   normalisePatchPaths, projectFolderOf, patchFilesLookFolderRelative,
   // test/patch-offload.test.js — patchFiles read from the card or its sub-document
-  patchFilesFor, dropPatchFiles,
+  patchFilesFor, dropPatchFiles, patchPartPath,
   // test/preview-url-pin.test.js
   guessPreviewUrl, isAutoGeneratedPreviewUrl, repointPreviewUrlRef,
   // test/ready-for-testing-trigger.test.js
