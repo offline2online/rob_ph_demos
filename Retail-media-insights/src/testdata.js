@@ -91,6 +91,12 @@ const DEAL_CATALOG = {
   },
   d4: { name: 'Open auction', description: 'The open exchange.', dealType: 'Open auction', phId: 'PH-D4', cpm: 11, buyers: [], slots: [] },
 };
+// Shared Targeting Variables shared with each DSP (README: the mockup's assumption).
+const SHARED_VARIABLES = Object.fromEntries(['DV360', 'The Trade Desk', 'Amazon DSP'].map((dsp) => [dsp, [
+  'Store Open / Closed', 'Fixed Store Segments', 'Variable Store Segments', 'Display Tag(s)', 'Suburb', 'State',
+  'Gender (Computer Vision)', 'Estimated Age (Computer Vision)', 'Reason for Visit (Aggregate)', 'Device Type (Aggregate)',
+  'Purchase Intent', 'Purchase History', 'SKUs', 'Events', 'Visitor Segments',
+]]));
 const ADVERTISERS = ['adv-blackmores', 'adv-acme', 'adv-nova'];
 const SLOTS_PER_HOUR = 6;
 const ADVERTISER_META = {
@@ -118,6 +124,7 @@ function generateTestRetailer({ days = 90, endDate = '2026-10-11', stores = 5, s
     stores: Object.fromEntries(storeIds.map((id) => [id, { open: 8, close: 20 }])),
     deals: DEALS,
     dealCatalog: DEAL_CATALOG,
+    sharedVariables: SHARED_VARIABLES,
     displays: storeIds.flatMap((storeId, i) => Object.entries(DISPLAY_TYPES).flatMap(([displayTypeId, type]) => (
       Array.from({ length: type.displaysPerStore }, (_, k) => ({
         id: `${displayTypeId}-${storeId}-${k + 1}`, displayTypeId, storeId,
@@ -157,7 +164,7 @@ function generateTestRetailer({ days = 90, endDate = '2026-10-11', stores = 5, s
           billing.push({
             date, storeId, displayTypeId: typeId, dealId, dsp: DEAL_DSP[dealId],
             advertiserId: ADVERTISERS[(dealIds.indexOf(dealId) + storeIds.indexOf(storeId)) % ADVERTISERS.length],
-            revenue: calc.revenueAtCpm(DEALS[dealId].cpm, views), views, slots, settled,
+            revenue: calc.revenueAtCpm(Math.max(DEALS[dealId].cpm, DEALS[dealId].dealType === 'Open auction' ? type.floorCpm : 0), views), views, slots, settled,
           });
         }
       }

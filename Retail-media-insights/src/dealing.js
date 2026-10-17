@@ -4,6 +4,7 @@
 // adapter will fill from DSP Integration; today it comes from the test catalog.
 
 const calc = require('./calc');
+const { DSPS } = require('./constants');
 const { days } = require('./filters');
 
 const RETENTION_DAYS = 90; // settled-bid retention (README open question 3)
@@ -11,6 +12,13 @@ const DAY = 86400000;
 const toMs = (d) => Date.parse(`${d}T00:00:00Z`);
 const dayDiff = (a, b) => Math.round((toMs(b) - toMs(a)) / DAY);
 const cents = (n) => Math.round(n * 100) / 100;
+
+const addDays = (d, n) => new Date(toMs(d) + n * DAY).toISOString().slice(0, 10);
+const eachDay = (from, to) => { const out = []; for (let d = from; d <= to; d = addDays(d, 1)) out.push(d); return out; };
+
+/** One PH- deal ID per DSP that has one of the given buyers, in the standard DSP order. */
+const dealIdsFor = (deal, buyers) => DSPS.filter((d) => buyers.some((b) => b.dsp === d))
+  .map((d) => ({ dsp: d, dealId: `${deal.phId}-${d.replace(/[^A-Za-z0-9]/g, '').toUpperCase()}` }));
 
 const dealsOf = (store) => Object.entries((store.catalog && store.catalog.deals) || {}).map(([id, d]) => ({ id, ...d }));
 const slotKey = (s) => `${s.displayTypeId}#${s.position}`;
@@ -73,4 +81,4 @@ function pacingOf(deal, store, filters) {
 /** Slots won comes from settled bids, kept for 90 days only: a longer range is flagged incomplete. */
 const slotsWonComplete = (filters) => days(filters) <= RETENTION_DAYS;
 
-module.exports = { dealsOf, slotKey, rollUp, opportunities, pacingOf, slotsWonComplete, RETENTION_DAYS, cents };
+module.exports = { addDays, eachDay, dayDiff, dealIdsFor, dealsOf, slotKey, rollUp, opportunities, pacingOf, slotsWonComplete, RETENTION_DAYS, cents };

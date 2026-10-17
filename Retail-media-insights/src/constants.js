@@ -37,7 +37,12 @@ const PERSONALISATION_VARIABLES = {
   'Plan Value': 'Identified visitor',
 };
 
+// Advertiser view (ticket ekKWkuP6z9scE5UfjeE8, README open question 4, decided 17 Oct 2026): the Winning CPM
+// row (average and highest across winning buyers) is shown on a private or open auction day block only when
+// at least this many OTHER buyers won plays on it that day; otherwise the row is omitted.
+const MIN_OTHER_BUYERS_FOR_WINNING_CPM = 2;
+
 // Operating-hours windows are whole hours [open, close).
 const ALWAYS_OPEN = Object.freeze({ open: 0, close: 24 });
 
-module.exports = { DEAL_TYPES, normaliseDealType, DSPS, ZONES, MATURITY_LEVELS, ALWAYS_OPEN, LOCALISATION_VARIABLES, PERSONALISATION_VARIABLES };
+module.exports = { DEAL_TYPES, normaliseDealType, DSPS, ZONES, MATURITY_LEVELS, ALWAYS_OPEN, MIN_OTHER_BUYERS_FOR_WINNING_CPM, LOCALISATION_VARIABLES, PERSONALISATION_VARIABLES };

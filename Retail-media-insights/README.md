@@ -292,7 +292,7 @@ Purpose: dial in on the advertiser's own deals — an overview of **every displa
 1. With an advertiser filter on, is unsold inventory left unfiltered?
 2. Is "estimated revenue" correctly the value forecast at booking?
 3. Is "Slots won" derivable within the 90-day settled-bid retention, or does it need longer retention?
-4. Is showing an advertiser the aggregate winning CPM (average and highest) on a private auction acceptable to the retailer and to the other buyers on that deal, when the deal has very few buyers (e.g. two)? A minimum number of other buyers may be needed before the highest winning CPM is shown.
+4. Is showing an advertiser the aggregate winning CPM (average and highest) on a private auction acceptable to the retailer and to the other buyers on that deal, when the deal has very few buyers (e.g. two)? A minimum number of other buyers may be needed before the highest winning CPM is shown. **Decided 17 Oct 2026 (Rob's agent, with Rob's authority):** the Winning CPM row (average and highest across winning buyers) appears on a private or open auction day block only when at least 2 other buyers won plays on it that day, otherwise it is omitted. The threshold is the named constant `MIN_OTHER_BUYERS_FOR_WINNING_CPM` in the back end (`src/constants.js`).
 5. Should "connected displays" count only displays online now, or every display that was connected at any point in the date range (so the count matches the period the totals cover)?
 6. An advertiser that buys through more than one DSP: list every DSP in the brackets (e.g. "Haleon (The Trade Desk, DV360)"), or one entry per DSP seat?
 

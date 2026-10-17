@@ -21,6 +21,8 @@ const tok = (principalType, principalId, extra = {}) => mintToken({ secret: SECR
 const routeFiles = fs.readdirSync(path.join(__dirname, '../src/routes')).filter((f) => f.endsWith('.js'));
 const ROUTES = routeFiles.map((f) => require(`../src/routes/${f}`)).filter((r) => r.path); // params.js is a helper, not a route
 const GUARDED = ROUTES.filter((r) => !r.public);
+// The advertiser view endpoints are per advertiser: a retailer user has to name exactly one (400 otherwise).
+const PER_ADVERTISER = new Set(['/delivery', '/deals-by-display-type', '/audience', '/my-targeting']);
 const RETAILER_ONLY = GUARDED.filter((r) => !r.advertiserAccess);
 
 async function call(p, token, { routes, method = 'GET' } = {}) {
@@ -71,7 +73,7 @@ test('an authenticate that throws or returns a malformed principal is a 401', as
 test('a retailer (admin) token reads every route, with or without an advertiserIds filter', async () => {
   const t = tok('admin', 'retailer');
   for (const r of GUARDED) {
-    assert.equal((await call(`${r.path}?${Q}`, t)).status, 200, r.path);
+    assert.equal((await call(`${r.path}?${Q}`, t)).status, PER_ADVERTISER.has(r.path) ? 400 : 200, r.path);
     assert.equal((await call(`${r.path}?${Q}&advertiserIds=adv-nova`, t)).status, 200, r.path);
   }
   const all = (await call(`/advertisers?${Q}`, t)).body.all;

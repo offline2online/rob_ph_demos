@@ -1,9 +1,9 @@
 'use strict';
 const calc = require('../calc');
 const { FilterError } = require('../filters');
-const { DEAL_TYPES, DSPS, normaliseDealType } = require('../constants');
+const { DEAL_TYPES, normaliseDealType } = require('../constants');
 const { listParam } = require('./params');
-const { dealsOf, slotKey, rollUp, opportunities, pacingOf, cents } = require('../dealing');
+const { dealIdsFor, dealsOf, slotKey, rollUp, opportunities, pacingOf, cents } = require('../dealing');
 
 // One row per named deal (Open auction is not a deal). An advertiser login sees only the deals it is
 // invited to, with only its own buyer and the deal ID for its own DSP.
@@ -24,7 +24,7 @@ module.exports = {
       if (deal.dealType === 'Open auction' || (dealType && deal.dealType !== dealType)) continue;
       const buyers = (deal.buyers || []).filter((b) => !scope || scope.has(b.advertiserId));
       if (scope && !buyers.length) continue;
-      const dealIds = DSPS.filter((d) => buyers.some((b) => b.dsp === d)).map((d) => ({ dsp: d, dealId: `${deal.phId}-${d.replace(/[^A-Za-z0-9]/g, '').toUpperCase()}` }));
+      const dealIds = dealIdsFor(deal, buyers);
       const slots = (deal.slots || []).map((s) => ({
         displayTypeId: s.displayTypeId, displayType: (types2[s.displayTypeId] || {}).name || s.displayTypeId,
         playlist: s.playlist, zone: s.zone, playlistZone: `${s.playlist} · ${s.zone}`,
