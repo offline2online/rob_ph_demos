@@ -163,15 +163,16 @@ Purpose: show the **value of each screen along the shopper journey**, and help t
 - Page filters only.
 - Data: display type definitions (description, IAB store zone, operating hours, Touch Point, display canvas size, display orientation, creative formats, floor CPM), **connected displays per display type and store (PH Core)**, display type slot configuration (slot counts, slot durations, loop length), VAC-d inputs and realised assumed views averaged across the display type's connected displays, booking schedule fill, unsold real-time slot records, billing line items.
 
-### 4. Missed revenue / fill — bar chart (left, beside Yield)
-- **One bar per display type only** showing **fill % across all advertiser slots inside operating hours (all deal types)**, plus a final **All display types** total row (bold, below a divider) when more than one display type is shown. **No group-by-store switch** — to see one store, use the page's Store filter (a per-store list would be too long).
-- **Each row shows the display type name with its number of connected displays in brackets** (e.g. "Window Portrait (10)", "All display types (50)") — connected displays across the selected stores, from PH Core.
-- **Missed revenue shown as two segments, in USD:**
-  - **Unsold slots** — advertiser slots inside operating hours that went unsold, valued at the display type's **floor CPM** × their assumed views (VAC-d) ÷ 1,000 (amber).
-  - **Display downtime** — lost revenue from displays being offline (red). Retailer view only.
+### 4. Missed revenue & fill — stacked bar chart (left, beside Yield)
+- **One 100%-wide stacked bar per display type** of all advertiser slots inside operating hours (all deal types): **filled** (teal) = sold ÷ all, **unsold** (amber) = unsold ÷ all, **display downtime** (red) = offline ÷ all, using the back end's counts; the three widths add to 100%. Legend under the title: Filled, Unsold slots (at floor CPM), Display downtime. A final **All display types** total row (bold, below a divider) when more than one display type is shown. **No group-by-store switch** — to see one store, use the page's Store filter.
+- **Sort order:** display type rows by total missed revenue, highest first; All display types last.
+- **Each row shows the display type name with its number of connected displays in brackets** (e.g. "Window Portrait (10)", "All display types (50)"), and on the right "**89%** filled · $633 + $159 missed" ($633 unsold in #ad6800, $159 downtime in #cf1322 — the back end's rounded parts).
+- **Missed revenue in USD:**
+  - **Unsold slots** — advertiser slots inside operating hours that went unsold, valued at the display type's **floor CPM** × their assumed views (VAC-d) ÷ 1,000.
+  - **Display downtime** — lost revenue from displays being offline. Retailer view only.
 - **Bar hover shows every value with its total**, across all the type's connected displays (or all display types on the total row) for the date range:
   - **Connected displays** — e.g. "10 across 5 stores".
-  - **Floor CPM** — the display type's floor (the total row shows the range, e.g. "$5.50–$7.50 by display type").
+  - **Floor CPM** — the display type's floor, e.g. "$7.50 per 1,000 assumed views (VAC-d)" (the total row shows the range, e.g. "$5.50–$7.50 by display type").
   - **Fill** — % with the total behind it, e.g. "61% (total 7,629 of 12,425 advertiser slots sold)".
   - **Unsold slots** — count with its total value, e.g. "4,424 (total $1,224 at floor CPM)".
   - **Display downtime** — lost revenue with the slots it covered, e.g. "$131 (total lost revenue; 372 slots offline)".
@@ -183,8 +184,9 @@ Purpose: show the **value of each screen along the shopper journey**, and help t
 - Data: booking schedule, display operating hours (per display type: 24 hours or store opening hours), unsold real-time slot records, floor CPM and VAC-d per display type, **connected displays per display type and store (PH Core)**, lost-revenue report (GET /admin/v1/reports/lost-revenue).
 
 ### 5. Yield — bar chart (right, last of the four charts)
-- One bar per connected DSP showing **effective CPM** (per thousand assumed views, VAC-d; no Direct bar).
-- Chart filter: **Deal type** (the four types).
+- One bar per connected DSP **with delivery**, sorted by **effective CPM**, highest first (per thousand assumed views, VAC-d; no Direct bar). A DSP with no delivery for the chosen deal type is left out; if none has delivery the chart shows "Nothing cleared on this deal type in scope."
+- Bar colour is the DSP's Preferred shade, the same as the Revenue chart: DV360 #eb6834, The Trade Desk #2a78d6, Amazon DSP #1baf7a. Label: "**$8.69** eCPM".
+- Chart filter: **Deal type** — **All deal types** (default) then the four types.
 - Data: billing line items / reservations (cleared or fixed CPM).
 
 ### 6. Demand health — advertisers

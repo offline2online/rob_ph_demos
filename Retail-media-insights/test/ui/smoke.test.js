@@ -12,7 +12,7 @@ const { chromium } = require('playwright');
 const ROOT = path.join(__dirname, '..', '..');
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json' };
 const HOSTILE = '<img src=x onerror=alert(1)>';
-const SECTIONS = ['Revenue', 'Deals', 'Slot value', 'Slot allocation', 'Missed revenue / fill', 'Yield', 'Demand health', 'Advertisers', 'Targeting & scheduling maturity'];
+const SECTIONS = ['Revenue', 'Deals', 'Slot value', 'Slot allocation', 'Missed revenue & fill', 'Yield', 'Demand health', 'Advertisers', 'Targeting & scheduling maturity'];
 
 let server; let base; let browser;
 test.before(async () => {
