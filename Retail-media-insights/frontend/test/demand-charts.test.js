@@ -16,6 +16,7 @@ test('advertiser table: shares are whole numbers adding to 100, the total is the
   const r = DC.advertiserRows(adv, true)[0];
   assert.deepStrictEqual([r.label, r.dsp], [adv.all[0].name, adv.all[0].dsp]);
   assert.strictEqual(r.revenue, DC.fmtMoney(adv.all[0].revenue));
+  assert.match(r.dealsText, /^\d+ deals?$/);
   const summary = await get('/summary');
   assert.strictEqual(Math.round(DC.revenueTotal(adv.all)), Math.round(summary.earnedRevenue));
 });
@@ -31,6 +32,14 @@ test('deals on hover is headed "Name (DSP): deals on" and lists deal name with t
   const m = DC.dealsOnHover(a);
   assert.strictEqual(m.title, 'Blackmores (DV360): deals on');
   assert.deepStrictEqual(m.sections[0].rows, [['Immune — winter launch', 'Programmatic guaranteed'], ['Dispensary screens', 'Private auction'], ['Health & wellness windows', 'Private auction']]);
+});
+
+test('deals on reads "n deal(s)", "0 deals" has no hover model rows', () => {
+  const rows = DC.advertiserRows({ all: [
+    { advertiserId: 'a', name: 'A', dsp: 'X', revenue: 1, share: 50, dealsOn: [{ name: 'd', dealType: 'Preferred deal' }] },
+    { advertiserId: 'b', name: 'B', dsp: 'X', revenue: 1, share: 50, dealsOn: [] }] }, true);
+  assert.deepStrictEqual(rows.map((r) => r.dealsText), ['1 deal', '0 deals']);
+  assert.deepStrictEqual(rows.map((r) => r.label), ['A', 'B'], 'the cell is the name only; the DSP is in the hover');
 });
 
 test('slots won hover notes the retention only when the range is longer', async () => {
@@ -54,7 +63,7 @@ test('maturity ladder: three levels, counts match lists, every hover name carrie
 test('scheduling hover shows scheduled campaigns for "uses", names only for "none"', async () => {
   const mat = await get('/maturity');
   const uses = DC.schedulingHover(mat.scheduling[0]);
-  assert.deepStrictEqual(uses.names[0], ['Blackmores (DV360)', '3 of 4 campaigns scheduled · 5 schedules']);
+  assert.deepStrictEqual(uses.names[0], ['Blackmores (DV360)', '3 of 4 campaigns, 5 schedules']);
   const none = DC.schedulingHover(mat.scheduling[1]);
   assert.deepStrictEqual(names(none), ['Bayer Consumer Health (Amazon DSP)', 'Kenvue (DV360)', 'Perrigo (The Trade Desk)', 'Reckitt (Amazon DSP)', 'Unilever (Amazon DSP)', 'Vitabiotics (The Trade Desk)']);
   assert.ok(none.names.every((r) => r[1] === ''));
@@ -95,7 +104,9 @@ test('progress over time: three bands that add to 100 per period, week and month
   }
   const m = DC.progressHover((await get('/maturity')).overTime[0], 'month');
   assert.strictEqual(m.title.split(' · ')[0], 'Jun 2026', 'Progress over time starts at the first campaign, whatever the date range');
-  assert.strictEqual(m.sections[0].rows.length, 3);
+  assert.deepStrictEqual(m.sections[0].rows.map((r) => r[0]), DC.LEVELS);
+  assert.ok(m.sections[0].rows.every((r) => /^\d+%$/.test(r[1])), 'the period, then each level’s %');
+  assert.strictEqual(m.title, 'Jun 2026');
 });
 
 test('table filters: level, variable, scheduling combine; Personalised first, then revenue', async () => {
@@ -114,6 +125,7 @@ test('table cells: scheduling reads "Dayparted · n of m campaigns" or "Not used
   const rows = DC.tableRows(await get('/maturity'));
   assert.strictEqual(rows[0].scheduling, 'Dayparted · 3 of 4 campaigns');
   assert.strictEqual(rows[2].scheduling, 'Not used');
+  assert.strictEqual(rows[0].name, 'Blackmores', 'the Advertiser cell is the name only');
   assert.ok(rows.find((r) => r.label.startsWith('L')).chips.some((c) => c.text === 'Purchase History · Identified visitor'));
   assert.ok(rows[0].chips.some((c) => c.text === 'Gender (Computer Vision)'));
   assert.strictEqual(DC.chipText({ label: 'Computer Vision audience', kind: 'Personalised', personalisationType: 'Computer Vision' }), 'Computer Vision audience');

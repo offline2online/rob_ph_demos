@@ -195,9 +195,11 @@ Purpose: show the **value of each screen along the shopper journey**, and help t
 ### 6. Demand health — advertisers
 Purpose: which advertisers are on which deals and over which slots. (The Deals table that used to sit in this section is now section 2, directly under Revenue.) No suggested additions in this release. **No warning chips or amber rows.**
 
-**Advertiser table** (top 10 by revenue; "show all" expands). Columns:
+Section header: 18px/600 teal "handshake" icon, title, ⓘ, 1px divider.
+
+**Advertiser table** (top 10 by revenue; a link-style button under the table reads "Show all 11 advertisers" (the real count) and, expanded, "Show top 10"; it appears only above 10). The Advertiser cell is the **name only, in bold** — the DSP shows in the Deals on hover, never in the cell. Numbers are right-aligned. Columns:
 | Advertiser | Revenue | Share of total revenue | Deals on | Slots covered | Slots won | Effective CPM |
-- **Deals on** = number of deals (any of the three deal types) the advertiser is on, via buyers lists; hover is headed with the advertiser and its DSP in brackets (e.g. "Blackmores (DV360): deals on") and lists the deals by deal name with deal type.
+- **Deals on** reads "3 deals" / "1 deal" with a dotted underline (or "0 deals" with no hover) = number of deals (any of the three deal types) the advertiser is on, via buyers lists; hover is headed with the advertiser and its DSP in brackets (e.g. "Blackmores (DV360): deals on") and lists the deals by deal name with deal type.
 - **Slots covered** = number of slots assigned to those deals (as in the Deals table's Slots column).
 - **Slots won** = % of covered slot opportunities the advertiser actually won, whole number.
 - **Share of total revenue** is a plain whole-number percentage. No concentration warning, chip or highlight — the retailer can read the % directly.
@@ -213,18 +215,20 @@ Purpose: show how advertisers actually use **targeting** and **scheduling** on d
 
 **Maturity ladder (three levels, lowest to highest):** **Default only** → **Localised** (uses Localisation Variables) → **Personalised** (uses any personalisation variable). An advertiser's level is the highest level used by any of its campaigns in the date range.
 
+Section header: 18px/600 teal "stairs" icon, title, ⓘ, 1px divider. **Layout, top to bottom:** Maturity ladder · Scheduling side by side (stacking at narrow widths); Variables in use, full width; the Advertiser targeting & scheduling table, full width; Progress over time, full width, last.
+
 Charts (every advertiser named in their hovers shows its DSP in brackets, e.g. "Perrigo (The Trade Desk)"):
-1. **Maturity ladder — horizontal bar, three bars.** Each bar shows only its level and count, e.g. "2 advertisers", "5 advertisers". **Advertiser names are not shown on, beside or under the chart.** **Hovering a bar lists the advertisers' names** (with DSP) at that level (and, for Personalised, which personalisation type each uses); **clicking a bar filters the Advertiser targeting & scheduling table (7.5) to that level**.
+1. **Maturity ladder — horizontal bar, three bars, top to bottom Default only → Localised → Personalised** (#d9d9d9, #6aa7e0, #174a8c). Each bar shows only its level and count, e.g. "**5** advertisers". **Advertiser names are not shown on, beside or under the chart.** **Hovering a bar lists the advertisers' names** (with DSP) at that level (and, for Personalised, which personalisation type each uses); **clicking a bar filters the Advertiser targeting & scheduling table (7.5) to that level**.
 2. **Scheduling — horizontal bar, two bars: Uses scheduling / No scheduling.** Number of advertisers whose campaigns in the date range use scheduling (dayparting or schedules from the Scheduling tab) vs none. Each bar shows only its count; **hovering lists the advertisers' names** (with DSP; for Uses scheduling, how many of their campaigns are scheduled and how many schedules); **clicking filters the table (7.5)**. Sits beside the Maturity ladder.
-3. **Progress over time — stacked area by month, three bands only: Default only, Localised, Personalised.** Share of campaigns at each level per month. Same three colours as the ladder. Chart control: Week / Month.
-4. **Variables in use — ranked bar.** One bar per Shared Targeting Variable in use (Daypart excluded — it's scheduling), ranked by number of advertisers using it, coloured Localised or Personalised. Each bar shows only the variable and its count, e.g. "7 advertisers". **Advertiser names are not shown on, beside or under the chart.** **Hovering a bar lists the names of the advertisers using that variable** (with DSP); **clicking a bar filters the table (7.5) to advertisers using it**. No list of unused / untapped variables. Chart filter: **Localised / Personalised**.
+3. **Progress over time — stacked area, three bands only: Default only, Localised, Personalised.** Share of campaigns at each level by when they were running. **It shows the whole history (Jun–Oct) and ignores the date range.** Same three colours as the ladder. Chart control: Week / Month, defaulting to Month (labels read "Jun"). Hover: the period, then each level's %.
+4. **Variables in use — ranked bar.** One bar per Shared Targeting Variable in use (Daypart excluded — it's scheduling), ranked by number of advertisers using it, coloured Localised or Personalised. Each bar shows only the variable and its count, e.g. "7 advertisers". **Advertiser names are not shown on, beside or under the chart.** **Hovering a bar lists the names of the advertisers using that variable** (with DSP); **clicking a bar filters the table (7.5) to advertisers using it**. No list of unused / untapped variables. Full width. Chart control: **Localised / Personalised** only, defaulting to Localised (no "All"); each bar uses that level's colour. Empty state: "No advertiser uses these variables in range."
 5. **Advertiser targeting & scheduling table** — the main view of who is most sophisticated. One row per advertiser, **sorted by maturity level (Personalised first), then revenue**. Columns:
 | Advertiser | Maturity level | Variables used (chips) | Scheduling | Targeted versions | Revenue |
-   - **Maturity level** is one of the three levels only.
-   - **Variables used** lists every Shared Targeting Variable the advertiser's campaigns use, as chips (personalisation sub-type visible on the chip where the label doesn't already say it).
-   - **Scheduling** = whether the advertiser schedules campaigns, as a separate field, e.g. "Dayparted · 3 of 4 campaigns", or "Not used".
+   - **Advertiser** is the name only, in bold. **Maturity level** is one of the three levels only, as a chip with its level swatch.
+   - **Variables used** lists every Shared Targeting Variable the advertiser's campaigns use, as chips (personalisation sub-type visible on the chip where the label doesn't already say it), or a muted "None".
+   - **Scheduling** = whether the advertiser schedules campaigns, as a separate field, as a chip, e.g. "Dayparted · 3 of 4 campaigns", or a muted "Not used".
    - **No "Next step" column** — not relevant to the retailer.
-   - Table filters: **Maturity level**, **Variable** and **Scheduling** (all also set by clicking the charts above); "Clear filter" chip when active.
+   - Table filters: **Maturity level**, **Variable** and **Scheduling** (unlabelled selects — "All levels", "All variables", "All scheduling" — also set by clicking the charts above); a "Clear filter ✕" chip comes first while any filter is active. Empty state: "No advertisers match this filter."
 
 Data: campaign targeting rules (default + targeted versions, variables, pricingType) from campaign submissions, per advertiser; campaign scheduling (dayparts and schedules from the Scheduling tab), per campaign; Shared Targeting Variables and per-DSP access; per-play tier from PH Core playback data; DSP seat per advertiser.
 

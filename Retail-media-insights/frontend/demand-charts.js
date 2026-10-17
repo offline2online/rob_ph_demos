@@ -15,13 +15,19 @@
   var TOP_N = 10;
 
   var TIPS = {
-    advertisers: 'Which advertisers are on which deals and over which slots, top ten by revenue. Deals on: deals the advertiser is on via buyers lists. Slots covered: slots assigned to those deals. ' +
-      'Slots won: share of covered slot opportunities the advertiser won. Effective CPM: revenue per thousand assumed views (VAC-d) from settled billing.',
-    ladder: 'Default only → Localised (uses Localisation Variables) → Personalised (uses any personalisation variable). An advertiser’s level is the highest level used by any of its campaigns in the date range. Select a bar to filter the table.',
-    scheduling: 'Advertisers whose campaigns in the date range use scheduling (dayparting or schedules from the Scheduling tab) compared with those that do not. Select a bar to filter the table.',
-    progress: 'Share of campaigns at each targeting level, per week or month. A campaign counts in every period it is live.',
-    variables: 'Shared Targeting Variables in use, ranked by number of advertisers using them. Daypart is scheduling, not a targeting variable. Select a bar to filter the table.',
-    table: 'One row per advertiser, most sophisticated first (Personalised first, then revenue). Select a bar in any chart above, or use the filters, to narrow the rows.'
+    demand: 'Which advertisers are on which deals (programmatic guaranteed, preferred, private auction) and over which slots, plus pacing for programmatic guaranteed. ' +
+      'Data: deals and buyers lists (deal type, guaranteed volume, buffer), billing line items, reservations (won impressions), unsold slot records, display type slot configuration, display operating hours.',
+    maturity: 'How advertisers use targeting and scheduling on your displays, and exactly who sits where, so you can coach them from Default only to Localised to Personalised, and to schedule their campaigns. ' +
+      'Better targeting and scheduling mean better campaigns, more spend and more inventory sold.',
+    advertisers: 'Top 10 by revenue. Deals on = deals the advertiser is on (buyers lists), any deal type; hover to list them. Slots covered = slots across those deals. ' +
+      'Slots won = share of covered slot opportunities the advertiser won. Effective CPM is per 1,000 assumed views (VAC-d).',
+    ladder: 'Advertisers at each level. An advertiser’s level is the highest level used by any of its campaigns in the date range. Hover a bar to see every advertiser at that level; click it to filter the Advertiser targeting & scheduling table.',
+    scheduling: 'Advertisers whose campaigns in the date range use scheduling (dayparting or schedules from the Scheduling tab) compared with those that do not. Hover a bar to see who; click it to filter the table.',
+    progress: 'Share of campaigns at each level, by when they were running. Shows the whole history, so the date filter doesn’t apply.',
+    variables: 'Shared Targeting Variables ranked by the number of advertisers using them in the date range. Hover a bar to see who uses it; click it to filter the Advertiser targeting & scheduling table. ' +
+      'Daypart is not a targeting variable: it is a campaign scheduling feature, shown in Scheduling.',
+    table: 'Who is most sophisticated: sorted by maturity level (Personalised first), then revenue. Scheduling = campaigns using dayparting or schedules from the campaign’s Scheduling tab, separate from targeting variables. ' +
+      'Targeted versions = targeted versions submitted in the date range, beyond the default.'
   };
 
   // ---------- formatting ----------
@@ -70,6 +76,7 @@
         revenue: fmtMoney(a.revenue),
         share: pct(a.share),
         dealsOn: a.dealsOn ? a.dealsOn.length : 0,
+        dealsText: plural(a.dealsOn ? a.dealsOn.length : 0, 'deal'),
         slotsCovered: has(a.slotsCovered) ? fmtInt(a.slotsCovered) : '–',
         slotsWon: has(a.slotsWonPercent) ? pct(a.slotsWonPercent) : '–',
         effectiveCpm: has(a.effectiveCpm) ? fmtMoney(a.effectiveCpm, 2) : '–',
@@ -99,7 +106,7 @@
   function schedulingHover(entry) {
     var rows = (entry.list || []).map(function (a) {
       var detail = entry.key === 'uses' && has(a.campaigns)
-        ? a.scheduledCampaigns + ' of ' + plural(a.campaigns, 'campaign') + ' scheduled · ' + plural(a.schedules || 0, 'schedule') : '';
+        ? a.scheduledCampaigns + ' of ' + plural(a.campaigns, 'campaign') + ', ' + plural(a.schedules || 0, 'schedule') : '';
       return [advName(a), detail];
     });
     return { title: entry.label + ' · ' + plural(entry.advertisers, 'advertiser'), names: rows };
@@ -113,10 +120,10 @@
   }
   function progressHover(row, granularity) {
     return {
-      title: periodLabel(row.period, granularity) + ' · ' + plural(row.campaigns, 'campaign'),
+      title: periodLabel(row.period, granularity),
       sections: [{ rows: LEVELS.map(function (l) {
         var x = (row.levels || []).filter(function (y) { return y.level === l; })[0] || { campaigns: 0, percent: 0 };
-        return [l, pct(x.percent) + ' · ' + plural(x.campaigns, 'campaign')];
+        return [l, pct(x.percent)];
       }) }]
     };
   }
@@ -126,14 +133,15 @@
     if (v.kind === 'Personalised' && has(v.personalisationType) && v.label.toLowerCase().indexOf(v.personalisationType.toLowerCase()) < 0) return v.label + ' · ' + v.personalisationType;
     return v.label;
   }
+  var NOT_USED = 'Not used';
   function schedulingText(s) {
-    if (!s || !s.uses) return 'Not used';
+    if (!s || !s.uses) return NOT_USED;
     return 'Dayparted · ' + s.scheduledCampaigns + ' of ' + plural(s.campaigns, 'campaign');
   }
   function tableRows(data) {
     return ((data && data.table) || []).map(function (r) {
       return {
-        advertiserId: r.advertiserId, label: advName(r), level: r.level,
+        advertiserId: r.advertiserId, label: advName(r), name: r.name, level: r.level,
         chips: targetingVars(r.variables).map(function (v) { return { text: chipText(v), kind: v.kind }; }),
         scheduling: schedulingText(r.scheduling), versions: has(r.targetedVersions) ? fmtInt(r.targetedVersions) : '–',
         revenue: fmtMoney(r.revenue || 0)
@@ -166,9 +174,9 @@
     if (typeof document === 'undefined') throw new Error('DemandCharts.mount needs a DOM');
     var fetchJson = opts.fetchJson;
     var filters = opts.filters || {};
-    var state = { showAll: false, granularity: 'month', kind: 'all', table: { level: '', variable: '', scheduling: '' } };
+    var state = { showAll: false, granularity: 'month', kind: 'Localised', table: { level: '', variable: '', scheduling: '' } };
     var gen = { adv: 0, mat: 0 };
-    var advData = null, matData = null, knownVars = [];
+    var advData = null, matData = null, knownVars = [], resizeTimer = null;
     var alive = true;
     var NS = 'http://www.w3.org/2000/svg';
 
@@ -201,7 +209,7 @@
       if (m.desc) tip.appendChild(h('div', { class: 'dc-tip-desc', text: m.desc }));
       if (m.names) {
         var ul = h('ul', { class: 'dc-tip-names' });
-        m.names.forEach(function (r) { ul.appendChild(h('li', {}, [h('span', { text: r[0] }), r[1] ? h('span', { class: 'dc-tip-detail', text: r[1] }) : null])); });
+        m.names.forEach(function (r) { ul.appendChild(h('li', {}, [h('span', { text: r[0] }), r[1] ? h('span', { class: 'dc-tip-detail', text: ' · ' + r[1] }) : null])); });
         tip.appendChild(ul);
       }
       (m.sections || []).forEach(function (sec) {
@@ -257,8 +265,14 @@
       var head = h('div', { class: 'dc-head' }, [h('div', { class: 'dc-title' }, [h('h3', { text: title }), info(tipText)]), controlEl]);
       return { el: h('section', { class: 'dc-panel' + (extra ? ' ' + extra : ''), 'aria-label': title }, [head, body]), body: body };
     }
-    function section(title, kids) {
-      return h('section', { class: 'dc-section', 'aria-label': title }, [h('h2', { class: 'dc-h2', text: title })].concat(kids));
+    function section(title, iconName, tipText, kids) {
+      var head = h('div', { class: 'dc-sechead' }, [h('span', { class: 'material-symbols-outlined dc-icon dc-sec-icon', 'aria-hidden': 'true', text: iconName }), h('h2', { class: 'dc-h2', text: title }), info(tipText)]);
+      return h('section', { class: 'dc-section', 'aria-label': title }, [head].concat(kids));
+    }
+    function emptyState(p, iconName, text) {
+      p.body.removeAttribute('aria-busy');
+      p.body.innerHTML = '';
+      p.body.appendChild(h('div', { class: 'dc-state' }, [icon(iconName), h('div', { text: text })]));
     }
     function setState(p, kind, retry) {
       p.body.innerHTML = '';
@@ -292,16 +306,16 @@
       return wrap;
     }
     var granSeg = segmented('Progress period', [['week', 'Week'], ['month', 'Month']], function () { return state.granularity; }, function (v) { state.granularity = v; loadMaturity(false); });
-    var kindSeg = segmented('Variable type', [['all', 'All'], ['Localised', 'Localised'], ['Personalised', 'Personalised']], function () { return state.kind; }, function (v) { state.kind = v; loadMaturity(false); });
+    var kindSeg = segmented('Variable type', [['Localised', 'Localised'], ['Personalised', 'Personalised']], function () { return state.kind; }, function (v) { state.kind = v; loadMaturity(false); });
 
-    var showBtn = h('button', { type: 'button', class: 'dc-btn', text: 'Show all', hidden: '' });
+    var showBtn = h('button', { type: 'button', class: 'dc-btn dc-link', text: 'Show all', hidden: '' });
     showBtn.addEventListener('click', function () { state.showAll = !state.showAll; if (advData) drawAdvertisers(); });
 
-    var pAdv = panel('Advertisers', TIPS.advertisers, showBtn);
+    var pAdv = panel('Advertisers', TIPS.advertisers, null);
     var pLad = panel('Maturity ladder', TIPS.ladder, null);
     var pSch = panel('Scheduling', TIPS.scheduling, null);
-    var pPro = panel('Progress over time', TIPS.progress, granSeg);
-    var pVar = panel('Variables in use', TIPS.variables, kindSeg);
+    var pPro = panel('Progress over time', TIPS.progress, granSeg, 'dc-wide');
+    var pVar = panel('Variables in use', TIPS.variables, kindSeg, 'dc-wide');
 
     // table panel with its own filters
     function select(label, key, getOptions) {
@@ -311,21 +325,22 @@
         sel.innerHTML = '';
         getOptions().forEach(function (o) { sel.appendChild(h('option', { value: o[0], text: o[1] })); });
         sel.value = state.table[key];
-      }, el: h('label', { class: 'dc-field' }, [h('span', { text: label }), sel]) };
+      }, el: h('span', { class: 'dc-selwrap' }, [sel, icon('expand_more')]) };
     }
-    var fLevel = select('Maturity level', 'level', function () { return [['', 'All levels']].concat(LEVELS.slice().reverse().map(function (l) { return [l, l]; })); });
+    var fLevel = select('Maturity level', 'level', function () { return [['', 'All levels']].concat(LEVELS.map(function (l) { return [l, l]; })); });
     var fVar = select('Variable', 'variable', function () { return [['', 'All variables']].concat(knownVars.map(function (v) { return [v, v]; })); });
-    var fSch = select('Scheduling', 'scheduling', function () { return [['', 'All'], ['uses', 'Uses scheduling'], ['none', 'No scheduling']]; });
+    var fSch = select('Scheduling', 'scheduling', function () { return [['', 'All scheduling'], ['uses', 'Uses scheduling'], ['none', 'No scheduling']]; });
     var clearChip = h('button', { type: 'button', class: 'dc-chip dc-clear', hidden: '' }, [h('span', { text: 'Clear filter' }), icon('close')]);
     clearChip.addEventListener('click', function () { state.table = { level: '', variable: '', scheduling: '' }; loadMaturity(false); });
-    var tableControls = h('div', { class: 'dc-filters' }, [fLevel.el, fVar.el, fSch.el, clearChip]);
+    var tableControls = h('div', { class: 'dc-filters' }, [clearChip, fLevel.el, fVar.el, fSch.el]);
     var pTab = panel('Advertiser targeting & scheduling', TIPS.table, tableControls, 'dc-wide');
 
-    container.appendChild(section('Demand health', [pAdv.el]));
-    container.appendChild(section('Targeting & scheduling maturity', [
+    container.appendChild(section('Demand health', 'handshake', TIPS.demand, [pAdv.el]));
+    container.appendChild(section('Targeting & scheduling maturity', 'stairs', TIPS.maturity, [
       h('div', { class: 'dc-grid' }, [pLad.el, pSch.el]),
-      h('div', { class: 'dc-grid' }, [pPro.el, pVar.el]),
-      pTab.el
+      pVar.el,
+      pTab.el,
+      pPro.el
     ]));
     container.appendChild(tip);
 
@@ -345,19 +360,19 @@
       var rows = advertiserRows(d, state.showAll);
       var more = (d.all || []).length > TOP_N;
       showBtn.hidden = !more;
-      showBtn.textContent = state.showAll ? 'Show top ' + TOP_N : 'Show all';
+      showBtn.textContent = state.showAll ? 'Show top ' + TOP_N : 'Show all ' + fmtInt((d.all || []).length) + ' advertisers';
       showBtn.setAttribute('aria-pressed', String(state.showAll));
       var cols = ['Advertiser', 'Revenue', 'Share of total revenue', 'Deals on', 'Slots covered', 'Slots won', 'Effective CPM'];
       var table = h('table', { class: 'dc-table dc-adv' }, [
         h('thead', {}, [h('tr', {}, cols.map(function (c) { return h('th', { scope: 'col', text: c }); }))]),
         h('tbody', {}, rows.map(function (r) {
           var a = r.src;
-          var dealsTd = h('td', { class: 'dc-num', text: String(r.dealsOn) });
-          if (r.dealsOn) hoverable(dealsTd, function () { return dealsOnHover(a); });
+          var dealsTd = h('td', { class: 'dc-num', text: r.dealsText });
+          if (r.dealsOn) { dealsTd.classList.add('dc-dotted'); hoverable(dealsTd, function () { return dealsOnHover(a); }); }
           var wonTd = h('td', { class: 'dc-num', text: r.slotsWon });
           if (d.slotsWon && d.slotsWon.complete === false) hoverable(wonTd, function () { return slotsWonHover(a, d.slotsWon); });
           return h('tr', {}, [
-            h('th', { scope: 'row', class: 'dc-name' }, [r.label, has(r.dsp) ? h('span', { class: 'dc-dsp', text: ' (' + r.dsp + ')' }) : null]),
+            h('th', { scope: 'row', class: 'dc-name', text: r.label }),
             h('td', { class: 'dc-num', text: r.revenue }), h('td', { class: 'dc-num', text: r.share }),
             dealsTd, h('td', { class: 'dc-num', text: r.slotsCovered }), wonTd, h('td', { class: 'dc-num', text: r.effectiveCpm })
           ]);
@@ -367,6 +382,7 @@
       pAdv.body.removeAttribute('aria-busy');
       pAdv.body.innerHTML = '';
       pAdv.body.appendChild(h('div', { class: 'dc-scroll' }, [table]));
+      pAdv.body.appendChild(showBtn);
     }
 
     // ----- Maturity: horizontal count bars (ladder, scheduling, variables) -----
@@ -383,7 +399,7 @@
         var row = h('div', { class: 'dc-row' + (on ? ' on' : ''), 'aria-pressed': String(on) }, [
           h('span', { class: 'dc-label', text: spec.label(e) }),
           h('span', { class: 'dc-track' }, [bar]),
-          h('span', { class: 'dc-value', text: spec.value(e) })
+          h('span', { class: 'dc-value' }, [h('b', { text: fmtInt(e.advertisers) }), e.advertisers === 1 ? ' advertiser' : ' advertisers'])
         ]);
         row.setAttribute('role', 'button');
         hoverable(row, function () { return spec.hover(e); }, function () {
@@ -397,8 +413,8 @@
     var LEVEL_CLS = { 'Default only': 'dc-l0', Localised: 'dc-l1', Personalised: 'dc-l2' };
 
     function drawLadder(d) {
-      // Highest level on top, as a ladder reads.
-      var entries = (d.ladder || []).slice().sort(function (a, b) { return LEVELS.indexOf(b.level) - LEVELS.indexOf(a.level); });
+      // Default only on top, Personalised at the bottom.
+      var entries = (d.ladder || []).slice().sort(function (a, b) { return LEVELS.indexOf(a.level) - LEVELS.indexOf(b.level); });
       barRows(pLad, entries, {
         filter: 'level', key: function (e) { return e.level; }, cls: function (e) { return LEVEL_CLS[e.level]; },
         label: function (e) { return e.level; }, value: function (e) { return plural(e.advertisers, 'advertiser'); }, hover: ladderHover
@@ -412,16 +428,12 @@
     }
     function drawVariables(d) {
       var bars = variableBars(d);
-      if (!bars.length) return setState(pVar, 'empty');
+      if (!bars.length) return emptyState(pVar, 'filter_alt_off', 'No advertiser uses these variables in range.');
       pVar.body.removeAttribute('aria-busy');
       barRows(pVar, bars, {
         filter: 'variable', key: function (e) { return e.variable; }, cls: function (e) { return e.kind === 'Personalised' ? 'dc-l2' : 'dc-l1'; },
         label: function (e) { return e.variable; }, value: function (e) { return plural(e.advertisers, 'advertiser'); }, hover: variableHover
       });
-      pVar.body.insertBefore(h('div', { class: 'dc-legend' }, [
-        h('span', { class: 'dc-legend-item' }, [h('i', { class: 'dc-swatch dc-l1' }), 'Localised']),
-        h('span', { class: 'dc-legend-item' }, [h('i', { class: 'dc-swatch dc-l2' }), 'Personalised'])
-      ]), pVar.body.firstChild);
     }
 
     // ----- Progress over time: stacked area, three bands -----
@@ -430,12 +442,13 @@
       pPro.body.removeAttribute('aria-busy');
       pPro.body.innerHTML = '';
       if (!rows.length) return setState(pPro, 'empty');
-      var W = 560, H = 220, L = 36, R = 12, T = 8, B = 28;
+      var W = Math.max(300, Math.min(1400, Math.round(pPro.body.clientWidth || 560))), H = W < 500 ? 200 : 240, L = 36, R = 12, T = 8, B = 28;
       var iw = W - L - R, ih = H - T - B;
       var n = rows.length;
       var x = function (i) { return L + (n === 1 ? iw / 2 : iw * i / (n - 1)); };
       var y = function (v) { return T + ih * (1 - v / 100); };
       var svg = s('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'dc-svg', role: 'img', 'aria-label': 'Share of campaigns at each targeting level over time', preserveAspectRatio: 'none' });
+      svg.style.aspectRatio = W + ' / ' + H;
       [0, 25, 50, 75, 100].forEach(function (g) {
         svg.appendChild(s('line', { x1: L, x2: W - R, y1: y(g), y2: y(g), class: 'dc-grid-line' }));
         var t = s('text', { x: L - 6, y: y(g) + 4, class: 'dc-axis', 'text-anchor': 'end' }); t.textContent = g + '%'; svg.appendChild(t);
@@ -480,18 +493,19 @@
       pTab.body.removeAttribute('aria-busy');
       pTab.body.innerHTML = '';
       if (!rows.length) {
-        pTab.body.appendChild(h('div', { class: 'dc-state' }, [icon('table_rows'), h('div', { text: activeFilters(state.table) ? 'No advertisers match this filter' : 'No data for the selected filters' })]));
-        return;
+        return emptyState(pTab, 'table_rows', activeFilters(state.table) ? 'No advertisers match this filter.' : 'No data for the selected filters');
       }
       var cols = ['Advertiser', 'Maturity level', 'Variables used', 'Scheduling', 'Targeted versions', 'Revenue'];
       var table = h('table', { class: 'dc-table dc-mat' }, [
         h('thead', {}, [h('tr', {}, cols.map(function (c) { return h('th', { scope: 'col', text: c }); }))]),
         h('tbody', {}, rows.map(function (r) {
           return h('tr', {}, [
-            h('th', { scope: 'row', class: 'dc-name', text: r.label }),
-            h('td', {}, [h('span', { class: 'dc-level' }, [h('i', { class: 'dc-swatch ' + LEVEL_CLS[r.level] }), r.level])]),
-            h('td', {}, [h('div', { class: 'dc-chips' }, r.chips.map(function (c) { return h('span', { class: 'dc-chip ' + (c.kind === 'Personalised' ? 'dc-p' : 'dc-loc'), text: c.text }); }))]),
-            h('td', { text: r.scheduling }),
+            h('th', { scope: 'row', class: 'dc-name', text: r.name }),
+            h('td', {}, [h('span', { class: 'dc-chip dc-level' }, [h('i', { class: 'dc-swatch ' + LEVEL_CLS[r.level] }), r.level])]),
+            h('td', {}, [r.chips.length
+              ? h('div', { class: 'dc-chips' }, r.chips.map(function (c) { return h('span', { class: 'dc-chip ' + (c.kind === 'Personalised' ? 'dc-p' : 'dc-loc'), text: c.text }); }))
+              : h('span', { class: 'dc-none', text: 'None' })]),
+            h('td', {}, [r.scheduling === NOT_USED ? h('span', { class: 'dc-none', text: NOT_USED }) : h('span', { class: 'dc-chip dc-sched', text: r.scheduling })]),
             h('td', { class: 'dc-num', text: r.versions }),
             h('td', { class: 'dc-num', text: r.revenue })
           ]);
@@ -507,7 +521,7 @@
     // ----- loading -----
     function matParams() {
       var p = Object.assign({}, filters, { granularity: state.granularity });
-      if (state.kind !== 'all') p.kind = state.kind;
+      p.kind = state.kind;
       ['level', 'variable', 'scheduling'].forEach(function (k) { if (state.table[k]) p[k] = state.table[k]; });
       return p;
     }
@@ -549,12 +563,18 @@
     }
     function loadAll() { loadAdvertisers(); loadMaturity(true); }
 
+    function onResize() {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(function () { if (alive && matData && (matData.overTime || []).length) drawProgress(matData); }, 150);
+    }
+    window.addEventListener('resize', onResize);
+
     syncTableFilters();
     loadAll();
     return {
       setFilters: function (f) { filters = f || {}; hideTip(); loadAll(); },
       refresh: function () { hideTip(); loadAll(); },
-      destroy: function () { alive = false; container.innerHTML = ''; container.classList.remove('dc-root'); }
+      destroy: function () { alive = false; clearTimeout(resizeTimer); window.removeEventListener('resize', onResize); container.innerHTML = ''; container.classList.remove('dc-root'); }
     };
   }
 
