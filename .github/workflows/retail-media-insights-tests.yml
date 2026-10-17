@@ -1,0 +1,78 @@
+name: Retail Media Insights tests
+
+# Runs Retail-media-insights/'s own suites: the service's unit, reconciliation,
+# auth and security tests, the front-end module tests, and the Playwright smoke
+# test that loads index.html as a retailer and as an advertiser. Nothing else in
+# CI covers this folder: e2e-quick is a passing no-op for any PR that doesn't
+# touch dsp-integration/.
+#
+# On a pull request this is a status check, which processDeployTrain in
+# backlog-tracker/scripts/run-backlog-automation.js waits on before it merges a
+# train. A red suite therefore holds the Retail Media Insights deploy PR
+# instead of shipping it.
+#
+# The benchmark runs for the record and doesn't fail the job. Shared runners
+# aren't the retailer's hardware, so REQUIREMENTS.md §3.4's p95 target is
+# checked with `npm run bench` on representative machines.
+on:
+  pull_request:
+    paths:
+      - 'Retail-media-insights/**'
+      - '.github/workflows/retail-media-insights-tests.yml'
+  push:
+    branches: [deploy/retail-media-insights]
+    paths:
+      - 'Retail-media-insights/**'
+  workflow_dispatch:
+
+concurrency:
+  group: retail-media-insights-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: retail-media-insights-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: Retail-media-insights
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # main held only REQUIREMENTS.md here until the first train merged, so a
+      # checkout with no package.json has nothing to test yet.
+      - name: Is there a service to test?
+        id: scope
+        working-directory: .
+        run: |
+          if [ -f Retail-media-insights/package.json ]; then echo "run=true" >> "$GITHUB_OUTPUT"
+          else echo "run=false" >> "$GITHUB_OUTPUT"; echo "No Retail-media-insights/package.json on this ref: nothing to test."; fi
+
+      - name: Unit, reconciliation, auth and security tests
+        if: steps.scope.outputs.run == 'true'
+        run: npm test
+
+      - name: Install Playwright and Chromium for the smoke test
+        if: steps.scope.outputs.run == 'true'
+        # Pinned: the folder has no lockfile, and "^1.56.1" would float to
+        # whatever Playwright released last.
+        run: |
+          npm install --no-save --no-audit --no-fund playwright@1.56.1
+          npx playwright install --with-deps chromium
+
+      - name: UI smoke test (index.html as retailer and advertiser)
+        if: steps.scope.outputs.run == 'true'
+        run: npm run test:ui
+
+      - name: Benchmark (for the record)
+        if: steps.scope.outputs.run == 'true'
+        continue-on-error: true
+        run: npm run bench
