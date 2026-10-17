@@ -12,15 +12,15 @@ const SERVER = `
   const { createServer } = require(${JSON.stringify(path.join(__dirname, '..', 'src', 'server'))});
   const { AggregateStore } = require(${JSON.stringify(path.join(__dirname, '..', 'src', 'store'))});
   const busy = (ms) => { const end = Date.now() + ms; while (Date.now() < end); };
-  const slow = { path: '/slow', advertiserAccess: true, handler: () => { busy(40); return { ok: true }; } };
+  const slow = { path: '/slow', advertiserAccess: true, handler: () => { busy(Number(process.env.SLOW_MS)); return { ok: true }; } };
   const health = require(${JSON.stringify(path.join(__dirname, '..', 'src', 'routes', 'health'))});
   const server = createServer({ store: new AggregateStore({ delivery: [], inventory: [] }), routes: [slow, health],
     authenticate: () => ({ principalType: 'admin', principalId: 'r', scopes: ['insights:read'] }), limits: { maxQueue: Number(process.env.MAX_QUEUE) } });
   server.listen(0, '127.0.0.1', () => console.log(server.address().port));
 `;
 
-async function withServer(fn, maxQueue = 512) {
-  const child = spawn(process.execPath, ['-e', SERVER], { env: { ...process.env, MAX_QUEUE: String(maxQueue) }, stdio: ['ignore', 'pipe', 'inherit'] });
+async function withServer(fn, maxQueue = 512, slowMs = 40) {
+  const child = spawn(process.execPath, ['-e', SERVER], { env: { ...process.env, MAX_QUEUE: String(maxQueue), SLOW_MS: String(slowMs) }, stdio: ['ignore', 'pipe', 'inherit'] });
   const port = await new Promise((resolve, reject) => { child.stdout.once('data', (d) => resolve(Number(d.toString().trim()))); child.once('exit', reject); });
   try { await fn(port); } finally { child.kill(); }
 }
@@ -35,16 +35,21 @@ async function burst(port, n) {
 }
 const status = (text) => Number(/^HTTP\/1\.1 (\d+)/.exec(text)[1]);
 
+// 10 x 150 ms of queued work, and /health must answer in under 600 ms: well before the queue drains (1.5 s) and far above scheduling noise
+// from other suites running in parallel. The ordering check does not depend on timing at all.
 test('/health is answered between queued handlers, not after all of them', () => withServer(async (port) => {
-  const queued = burst(port, 10); // 10 x 40 ms of handler work
+  const queued = burst(port, 10).then((replies) => ({ replies, drainedAt: Date.now() }));
   await new Promise((r) => setTimeout(r, 160)); // the burst is written at about 100 ms
   const started = Date.now();
   const res = await fetch(`http://127.0.0.1:${port}${BASE}/health`);
-  const waited = Date.now() - started;
+  const answeredAt = Date.now();
+  const waited = answeredAt - started;
   assert.equal(res.status, 200);
-  assert.ok(waited < 150, `/health waited ${waited} ms behind 10 x 40 ms of handlers`);
-  assert.deepEqual((await queued).map(status), Array(10).fill(200));
-}));
+  assert.ok(waited < 600, `/health waited ${waited} ms behind 10 x 150 ms of handlers`);
+  const { replies, drainedAt } = await queued;
+  assert.ok(answeredAt < drainedAt, '/health answered only after the queue drained');
+  assert.deepEqual(replies.map(status), Array(10).fill(200));
+}, 512, 150));
 
 test('a full queue answers 503 with Retry-After and the rest are still served', () => withServer(async (port) => {
   const texts = await burst(port, 8);
