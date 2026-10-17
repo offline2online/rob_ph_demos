@@ -132,3 +132,26 @@ test('phone width: no sideways scroll and the date panel stays on screen', async
     } finally { await context.close(); }
   }
 });
+
+test('a filter selection keeps the scroll position while the page redraws', async () => {
+  const { page, context, problems } = await open('/index.html', 1280);
+  await page.waitForSelector('#strip .tile, #strip *');
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight)); // the bottom: any shrink clamps it
+  const before = await page.evaluate(() => window.pageYOffset);
+  assert.ok(before > 100, 'page is scrolled');
+  // Redraw a panel the way a filter change does: skeleton first, then content again.
+  await page.evaluate(() => {
+    const rd = document.getElementById('rd');
+    const kids = Array.from(rd.childNodes);
+    document.getElementById('frame').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    kids.forEach((k) => rd.removeChild(k));
+    const sk = document.createElement('div'); sk.className = 'rd-skel'; rd.appendChild(sk);
+    setTimeout(() => { rd.removeChild(sk); kids.forEach((k) => rd.appendChild(k)); }, 150);
+  });
+  await page.waitForTimeout(100);
+  assert.equal(await page.evaluate(() => window.pageYOffset), before, 'no jump while loading');
+  await page.waitForTimeout(900);
+  assert.equal(await page.evaluate(() => window.pageYOffset), before, 'no jump after loading');
+  assert.deepEqual(problems, []);
+  await context.close();
+});
