@@ -44,7 +44,7 @@ module.exports = {
       let opportunity = 0; const seen = new Set();
       for (const s of assigned) { if (!seen.has(slotKey(s))) { seen.add(slotKey(s)); opportunity += opp.perPosition(s.displayTypeId); } }
       let won = 0;
-      for (const t of new Set(assigned.map((s) => s.displayTypeId))) won += roll.slotsByDealType.get(`${deal.id}#${t}`) || 0;
+      for (const t of new Set(assigned.map((s) => s.displayTypeId))) won += roll.slotsOnDealType(deal.id, t);
       const d = roll.byDeal.get(deal.id) || { revenue: 0, earned: 0, earnedViews: 0 };
       const cpm = deal.dealType === 'Private auction'
         ? { value: deal.floorCpm, kind: 'floor' }

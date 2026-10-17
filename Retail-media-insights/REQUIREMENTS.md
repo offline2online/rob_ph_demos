@@ -46,6 +46,7 @@ Page filters on every endpoint: `dateFrom`, `dateTo`, `storeIds[]`, `displayType
 
 ### 3.4 Performance
 - Network scale: thousands of displays across many stores. Pre-aggregate daily by display type × store × deal × DSP × advertiser; target p95 under 2s per endpoint for a 90-day range.
+- The target holds with concurrent users, not one: at network scale (864k aggregate rows) p95 under 2 s per request and per page load for 20 users sharing a view and for 10 users each filtering their own store, `/health` p95 under 100 ms, and every endpoint handler under 250 ms at p95 with the response cache off. Delivered with rollups, per-store partitions, a bounded response cache and a request queue; see SERVICE.md → "Performance and concurrency". Responses are unchanged.
 - Respect the 90-day settled-bid retention (see open question on Slots won).
 
 ## 4. Front-end requirements

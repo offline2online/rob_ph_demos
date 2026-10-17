@@ -15,12 +15,13 @@ function normalisePrincipal(p) {
 }
 
 /**
- * dispatch({store, routes, url, principal, today, method}) -> {status, body, headers}
+ * dispatch({store, routes, url, principal, today, method, cache}) -> {status, body, headers}
+ *  - cache: an optional ResponseCache; a 200 body then may be {[SERIALISED]: jsonText} instead of the parsed object.
  *  - routes: the route objects ({path, handler, public?, advertiserAccess?}); url: BASE + route path + query string.
  *  - principal: the resolved principal, or a function returning it (called only for a non-public route, and a
  *    throw is a 401). Anything null or malformed is a 401: there is no default caller.
  */
-function dispatch({ store, routes, url, principal, today, method = 'GET' }) {
+function dispatch({ store, routes, url, principal, today, method = 'GET', cache }) {
   const list = Array.isArray(routes) ? routes : [...routes.values()];
   const u = new URL(url, 'http://localhost');
   const route = list.find((r) => `${BASE}${r.path}` === u.pathname);
@@ -37,7 +38,7 @@ function dispatch({ store, routes, url, principal, today, method = 'GET' }) {
   try {
     const body = route.public
       ? route.handler({ store, filters: null, params: u.searchParams, principal: who })
-      : runRoute(route, { store, principal: who, params: u.searchParams, today, routes: byPath });
+      : runRoute(route, { store, principal: who, params: u.searchParams, today, routes: byPath, cache });
     return { status: 200, body };
   } catch (e) {
     if (e instanceof FilterError) return { status: 400, body: { error: e.message } };

@@ -352,7 +352,7 @@
         p.body.appendChild(sk);
         return;
       }
-      p.body.removeAttribute('aria-busy');
+      p.body.setAttribute('aria-busy', 'false'); // empty and error are results too: a screen reader must stop announcing "busy"
       if (kind === 'empty') {
         p.body.appendChild(h('div', { class: 'sc-state' }, [icon('bar_chart'), h('div', { text: 'No data for the selected filters' })]));
       } else if (kind === 'error') {
@@ -384,7 +384,7 @@
         hoverable(row, function () { return slotValueHover(r, filters); });
         list.appendChild(row);
       });
-      pSV.body.innerHTML = ''; pSV.body.appendChild(list);
+      pSV.body.innerHTML = ''; pSV.body.setAttribute('aria-busy', 'false'); pSV.body.appendChild(list);
     }
 
     // ----- slot allocation -----
@@ -409,7 +409,7 @@
         ]);
         tbody.appendChild(h('tr', { class: amber ? 'sc-hot' : '', 'data-amber': amber ? 'true' : 'false' }, [nameTd, numTd(r.slotsPerLoop, 'loop'), numTd(r.advertiserSlots.count, 'advertiser'), numTd(r.ownContentSlots.count, 'own'), soldTd]));
       });
-      pSA.body.innerHTML = '';
+      pSA.body.innerHTML = ''; pSA.body.setAttribute('aria-busy', 'false');
       pSA.body.appendChild(h('div', { class: 'sc-scroll' }, [h('table', { class: 'sc-table' }, [thead, tbody])]));
     }
 
@@ -438,7 +438,7 @@
         hoverable(row, function () { return missedHover(r, dt, filters, isTotal); });
         list.appendChild(row);
       });
-      pMR.body.innerHTML = ''; pMR.body.appendChild(list);
+      pMR.body.innerHTML = ''; pMR.body.setAttribute('aria-busy', 'false'); pMR.body.appendChild(list);
     }
 
     // ----- yield -----
@@ -456,7 +456,7 @@
         hoverable(row, function () { return yieldHover(r, d.dealType || state.dealType, filters); });
         list.appendChild(row);
       });
-      pY.body.innerHTML = ''; pY.body.appendChild(list);
+      pY.body.innerHTML = ''; pY.body.setAttribute('aria-busy', 'false'); pY.body.appendChild(list);
     }
 
     // ----- loading -----

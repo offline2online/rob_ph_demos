@@ -17,11 +17,17 @@ function ownAdvertiser(filters) {
 const isOpenAuction = (r) => r.dealType === 'Open auction';
 const cents = (n) => Math.round(n * 100) / 100;
 
-/** Deals (not the open auction) the advertiser buys, or has delivery on in `rows`. Catalog objects, never serialised as is. */
-function dealsInScope(store, advertiserId, ownRows) {
-  const delivered = new Set(ownRows.filter((r) => !isOpenAuction(r)).map((r) => r.dealId));
+/** Deals (not the open auction) the advertiser buys, or has delivery on (`delivered`: a Set of deal ids). Catalog objects, never serialised as is. */
+function dealsDelivered(store, advertiserId, delivered) {
   return dealsOf(store).filter((d) => d.dealType !== 'Open auction'
     && (delivered.has(d.id) || (d.buyers || []).some((b) => b.advertiserId === advertiserId)));
 }
 
-module.exports = { OPEN_AUCTION, ownAdvertiser, isOpenAuction, dealsInScope, cents };
+/** dealsDelivered for the deals that `ownRows` (the advertiser's delivery rows) are on. */
+function dealsInScope(store, advertiserId, ownRows) {
+  const delivered = new Set(); const seen = new Uint8Array(store.dealIds.length);
+  for (const r of ownRows) if (!seen[r.dealIx] && !isOpenAuction(r)) { seen[r.dealIx] = 1; delivered.add(r.dealId); }
+  return dealsDelivered(store, advertiserId, delivered);
+}
+
+module.exports = { OPEN_AUCTION, ownAdvertiser, isOpenAuction, dealsInScope, dealsDelivered, cents };

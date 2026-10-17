@@ -54,6 +54,9 @@ async function settle(page, ctx) {
   await page.waitForSelector('.dc-adv');
   await page.waitForSelector('.dc-mat');
   await page.waitForSelector('[data-tile="sold"]');
+  // Once a slot chart panel has rendered (data, empty or error) a screen reader must not hear "busy" any more.
+  await page.waitForFunction(() => [...document.querySelectorAll('.sc-body')].every((b) => b.getAttribute('aria-busy') !== 'true'));
+  assert.deepEqual(await page.$$eval('.sc-body', (b) => b.map((x) => x.getAttribute('aria-busy'))), ['false', 'false', 'false', 'false'], `${ctx}: slot chart panels aria-busy`);
   assert.deepEqual(await page.evaluate(() => window.__csp || []), [], `${ctx}: CSP violations`);
 }
 
