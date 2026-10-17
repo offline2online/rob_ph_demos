@@ -30,3 +30,4 @@ select:focus,.btn:focus-visible,.tab:focus-visible{outline:2px solid var(--prima
 .msg.err{color:var(--error)}
 @media(max-width:1024px){.strip{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:600px){.strip{grid-template-columns:1fr}.filters{flex-direction:column;align-items:stretch}.field{min-width:0}.actions{flex-wrap:wrap}}
+.rd-host{margin-top:16px}
