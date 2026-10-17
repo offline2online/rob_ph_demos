@@ -5,6 +5,7 @@ const { generateTestRetailer } = require('../src/testdata');
 const { buildAggregates } = require('../src/aggregate');
 const { AggregateStore } = require('../src/store');
 const { createServer, BASE } = require('../src/server');
+const { admin, advertiser, optIn } = require('./helpers');
 const calc = require('../src/calc');
 
 const { raw, ctx } = generateTestRetailer({ days: 90 });
@@ -12,7 +13,7 @@ const store = new AggregateStore(buildAggregates(raw, ctx));
 const Q = 'dateFrom=2026-08-13&dateTo=2026-10-11';
 
 async function get(path, opts = {}) {
-  const server = createServer({ store, today: '2026-10-11', ...opts });
+  const server = createServer({ store, today: '2026-10-11', authenticate: admin, ...opts });
   await new Promise((r) => server.listen(0, r));
   try {
     const res = await fetch(`http://127.0.0.1:${server.address().port}${BASE}${path}`);
@@ -77,7 +78,7 @@ test('over time: share of campaigns by level adds to 100 per period; week and mo
 });
 
 test('advertiser logins only ever see themselves', async () => {
-  const { body } = await get(`/maturity?${Q}&advertiserIds=adv-nova`, { authenticate: () => ({ advertiserId: 'adv-acme' }) });
+  const { body } = await get(`/maturity?${Q}&advertiserIds=adv-nova`, { authenticate: advertiser('adv-acme'), routes: optIn('maturity') });
   assert.deepEqual(body.table.map((r) => r.name), ['Acme']);
   assert.ok(!JSON.stringify(body).includes('Blackmores'));
 });

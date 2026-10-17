@@ -5,12 +5,13 @@ const { generateTestRetailer } = require('../src/testdata');
 const { buildAggregates } = require('../src/aggregate');
 const { AggregateStore } = require('../src/store');
 const { createServer, BASE } = require('../src/server');
+const { admin, advertiser, optIn } = require('./helpers');
 
 const { raw, ctx } = generateTestRetailer({ days: 90 });
 const store = new AggregateStore(buildAggregates(raw, ctx));
 
 async function get(path, opts = {}) {
-  const server = createServer({ store, today: '2026-10-11', ...opts });
+  const server = createServer({ store, today: '2026-10-11', authenticate: admin, ...opts });
   await new Promise((r) => server.listen(0, r));
   try {
     const res = await fetch(`http://127.0.0.1:${server.address().port}${BASE}${path}`);
@@ -73,12 +74,12 @@ test('advertisers: slotsWon incomplete beyond 90 days of retention', async () =>
 });
 
 test('advertiser login sees only its own deals, buyer, DSP deal ID and row', async () => {
-  const auth = () => ({ advertiserId: 'adv-nova' });
-  const deals = (await get('/deals', { authenticate: auth })).body.rows;
+  const opts = { authenticate: advertiser('adv-nova'), routes: optIn('deals', 'advertisers') };
+  const deals = (await get('/deals', opts)).body.rows;
   assert.deepEqual(deals.map((r) => r.dealType), ['Private auction']);
   assert.deepEqual(deals[0].advertisers.map((a) => a.advertiserId), ['adv-nova']);
   assert.deepEqual(deals[0].dealIds.map((x) => x.dsp), ['Amazon DSP']);
-  const adv = (await get('/advertisers', { authenticate: auth })).body;
+  const adv = (await get('/advertisers', opts)).body;
   assert.deepEqual(adv.all.map((r) => r.advertiserId), ['adv-nova']);
   assert.equal(adv.all[0].share, 100);
   assert.ok(!JSON.stringify(adv).includes('Acme'));

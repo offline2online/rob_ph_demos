@@ -10,7 +10,7 @@ const zero = () => ({ sold: 0, unsold: 0, offline: 0, unsoldViews: 0, lostRevenu
 module.exports = {
   path: '/missed-revenue',
   handler({ store, filters, principal }) {
-    if (principal && principal.advertiserId) throw new ForbiddenError('missed revenue is a retailer view');
+    if (principal.principalType === 'advertiser') throw new ForbiddenError('missed revenue is a retailer view'); // also denied by default in the server
     const inv = new Map();
     store.scanInventory(filters, (r) => {
       const a = inv.get(r.displayTypeId) || zero();

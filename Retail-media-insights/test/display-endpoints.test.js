@@ -5,13 +5,14 @@ const { generateTestRetailer } = require('../src/testdata');
 const { buildAggregates } = require('../src/aggregate');
 const { AggregateStore } = require('../src/store');
 const { createServer, BASE } = require('../src/server');
+const { admin, advertiser } = require('./helpers');
 
 const { raw, ctx } = generateTestRetailer({ days: 10 });
 const store = new AggregateStore(buildAggregates(raw, ctx));
 const Q = 'dateFrom=2026-10-02&dateTo=2026-10-11';
 
 async function get(path, opts = {}) {
-  const server = createServer({ store, today: '2026-10-11', ...opts });
+  const server = createServer({ store, today: '2026-10-11', authenticate: admin, ...opts });
   await new Promise((r) => server.listen(0, r));
   try {
     const res = await fetch(`http://127.0.0.1:${server.address().port}${BASE}${path}`);
@@ -39,7 +40,7 @@ test('display-types: a field that is not stored is omitted; store and type filte
   const bare = new AggregateStore({ delivery: [], inventory: [], catalog: {
     displayTypes: { x: { name: 'Bare', zone: 'Checkout' } }, displays: [{ id: 'd', displayTypeId: 'x', storeId: 's' }],
   } });
-  const server = createServer({ store: bare, today: '2026-10-11' });
+  const server = createServer({ store: bare, today: '2026-10-11', authenticate: admin });
   await new Promise((r) => server.listen(0, r));
   const res = await (await fetch(`http://127.0.0.1:${server.address().port}${BASE}/display-types`)).json();
   server.close();
@@ -90,6 +91,6 @@ test('missed-revenue: parts add to totals, including the all-types row', async (
 });
 
 test('missed-revenue is refused for advertiser logins', async () => {
-  const { status } = await get(`/missed-revenue?${Q}`, { authenticate: () => ({ advertiserId: 'adv-acme' }) });
+  const { status } = await get(`/missed-revenue?${Q}`, { authenticate: advertiser('adv-acme') });
   assert.equal(status, 403);
 });

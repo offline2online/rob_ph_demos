@@ -84,7 +84,7 @@ test('unsold inventory ignores the advertiser filter', () => {
 });
 
 test('an advertiser principal is pinned to its own advertiser server-side', () => {
-  const scoped = scopeFilters({ ...ALL, advertiserIds: ['adv-nova'] }, { advertiserId: 'adv-acme' });
+  const scoped = scopeFilters({ ...ALL, advertiserIds: ['adv-nova'] }, { principalType: 'advertiser', principalId: 'adv-acme' });
   assert.deepEqual(scoped.advertiserIds, ['adv-acme']);
-  assert.deepEqual(scopeFilters(ALL, {}).advertiserIds, null);
+  assert.deepEqual(scopeFilters(ALL, { principalType: 'admin', principalId: 'r' }).advertiserIds, null);
 });

@@ -4,7 +4,8 @@ The back end of Retail Media Insights & Analytics Dashboards: a read-only servic
 
 ## Layout
 - `src/calc/` — the calculation library (REQUIREMENTS §3.2): VAC-d assumed views, CPM / effective CPM, per slot per day, operating hours, fill, missed revenue, PG pacing, maturity, rounding, USD, standard orderings.
-- `src/filters.js` — page filters `dateFrom`, `dateTo`, `storeIds[]`, `displayTypeIds[]`, `advertiserIds[]`, plus server-side advertiser scoping.
+- `src/filters.js` — page filters `dateFrom`, `dateTo`, `storeIds[]`, `displayTypeIds[]`, `advertiserIds[]` (range capped at 366 days, years 2000–2100).
+- `src/auth.js`, `src/scope.js`, `src/mint-token.js` — token resolver, server-side advertiser scoping and a dev token minter.
 - `src/aggregate.js` — builds the daily aggregates from raw billing line items and slot records: delivery (display type × store × deal × DSP × advertiser) and inventory (display type × store).
 - `src/display-types.js` — display type facts shared by the display endpoints: connected displays, loop from the slot configuration, VAC-d averages, hover card, shopper-journey (IAB zone) order.
 - `src/store.js` — date-indexed in-memory aggregate store.
@@ -23,8 +24,17 @@ npm start        # serves the test retailer on :8080 (PORT to change)
 ## Decisions and limits
 - DSP Integration and PH Core are read **via their APIs behind a source adapter**, not their data stores directly. The adapter is a follow-up; today the service runs on generated test data.
 - Unsold inventory ignores the advertiser filter (slot records belong to no advertiser — README open question 1 default).
-- `authenticate()` defaults to "retailer user"; the real identity provider and advertiser principal (DSP Integration §9.5) are follow-ups, so do not expose the server beyond the VPC as is.
+- Authentication fails closed (see **Authentication and scoping** below). The real identity provider is a follow-up; until then a stand-in HMAC token resolver (`src/auth.js`) serves the test retailer.
 - Slots outside a display type's operating hours are classified `outsideHours` and are never unsold; specific opening times are never returned.
+
+## Authentication and scoping
+- `createServer({ store, authenticate })` **requires** `authenticate(req)`; there is no default. It returns `{principalType: 'admin'|'advertiser', principalId, scopes}` (DSP Integration §9.5) or `null`; `null`, a malformed principal or a throw is **401**. Only `/health` (`public: true`) is open.
+- Stand-in resolver: `src/auth.js` verifies `Authorization: Bearer <token>`, an HMAC-SHA256 signed, expiring token. The secret is `RMI_AUTH_SECRET` (32+ characters, no default; `npm start` refuses to run without it). Mint one with `RMI_AUTH_SECRET=… node src/mint-token.js admin retailer` or `… advertiser adv-acme`. Tokens in a query string are never read.
+- **Deny by default, per route.** A route module declares who may call it: no declaration means retailer (`admin`) only and an advertiser gets **403**. To open a route to advertisers, export `advertiserAccess: true` and read data only through the `filters` the server passes in (never `params`). `public: true` skips authentication.
+- Today only `display-types` and `filter-options` are advertiser-callable. `summary`, `revenue`, `yield`, `deals`, `advertisers`, `slot-value`, `slot-allocation`, `maturity` (network-wide figures or other advertisers' data) and `missed-revenue` (downtime, lost revenue, offline displays) are 403 for advertisers. The advertiser view endpoints (ticket ekKWkuP6z9scE5UfjeE8) opt in with `advertiserAccess: true` on top of this layer.
+- `scopeFilters(filters, principal, store)` pins an advertiser to `advertiserIds: [principalId]`, ignoring any client value, and limits `displayTypeIds` to the advertiser's allowed display types.
+- `GET /filter-options` — `displayTypes` `[{id, name}]` for the Display type filter: all for a retailer; for an advertiser, the display types in its deals' slot assignments plus those its campaigns target. **Decision:** a campaign with no display types contributes nothing (fail closed), unlike the store's "targets all" reading for campaign counts.
+- Page filters are capped: a range over 366 days, or a year outside 2000–2100, is 400 (an unbounded `/maturity` range blocked the single-threaded server for minutes).
 
 ## Endpoints: summary, revenue, yield
 All take the page filters (`dateFrom`, `dateTo`, `storeIds[]`, `displayTypeIds[]`, `advertiserIds[]`).

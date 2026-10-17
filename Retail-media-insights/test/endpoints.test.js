@@ -5,6 +5,7 @@ const { generateTestRetailer } = require('../src/testdata');
 const { buildAggregates } = require('../src/aggregate');
 const { AggregateStore } = require('../src/store');
 const { createServer, BASE } = require('../src/server');
+const { admin, advertiser } = require('./helpers');
 const { DEAL_TYPES, DSPS } = require('../src/constants');
 
 const { raw, ctx } = generateTestRetailer({ days: 30 });
@@ -12,7 +13,7 @@ const store = new AggregateStore(buildAggregates(raw, ctx));
 const Q = 'dateFrom=2026-09-12&dateTo=2026-10-11';
 
 async function withServer(fn) {
-  const server = createServer({ store, today: '2026-10-11' });
+  const server = createServer({ store, today: '2026-10-11', authenticate: admin });
   await new Promise((r) => server.listen(0, r));
   try { await fn(async (p) => (await fetch(`http://127.0.0.1:${server.address().port}${BASE}${p}`)).json()); } finally { server.close(); }
 }
@@ -89,7 +90,7 @@ test('yield: one row per connected DSP in standard order; CPM reconciles to bill
 }));
 
 test('yield rejects unknown or multiple deal types', async () => {
-  const server = createServer({ store, today: '2026-10-11' });
+  const server = createServer({ store, today: '2026-10-11', authenticate: admin });
   await new Promise((r) => server.listen(0, r));
   try {
     const base = `http://127.0.0.1:${server.address().port}${BASE}`;

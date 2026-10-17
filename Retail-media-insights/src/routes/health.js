@@ -1,3 +1,4 @@
 'use strict';
 
-module.exports = { path: '/health', handler: () => ({ status: 'ok' }) };
+// The only unauthenticated route.
+module.exports = { path: '/health', public: true, handler: () => ({ status: 'ok' }) };
