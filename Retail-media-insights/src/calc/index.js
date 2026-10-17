@@ -2,7 +2,7 @@
 // The one shared calculation library: every rule in REQUIREMENTS.md section 3.2.
 // Pure functions, no I/O. Money is USD; percentages are whole numbers.
 
-const { DEAL_TYPES, DSPS, ZONES, MATURITY_LEVELS, ALWAYS_OPEN } = require('../constants');
+const { DEAL_TYPES, DSPS, ZONES, MATURITY_LEVELS, ALWAYS_OPEN, LOCALISATION_VARIABLES, PERSONALISATION_VARIABLES } = require('../constants');
 
 const sum = (xs) => xs.reduce((a, b) => a + b, 0);
 
@@ -127,6 +127,26 @@ function maturityLevel(levels) {
   return best < 0 ? null : MATURITY_LEVELS[best];
 }
 
+/**
+ * Keep only Shared Targeting Variable labels, each tagged with its group. Anything else
+ * (Daypart, a free-form label) is dropped: scheduling is never a variable.
+ */
+function sharedVariables(labels) {
+  const out = [];
+  for (const label of new Set(labels || [])) {
+    if (LOCALISATION_VARIABLES.includes(label)) out.push({ label, kind: 'Localised', personalisationType: null });
+    else if (Object.hasOwn(PERSONALISATION_VARIABLES, label)) out.push({ label, kind: 'Personalised', personalisationType: PERSONALISATION_VARIABLES[label] });
+  }
+  return out;
+}
+
+/** One campaign's level from its variables: any personalisation variable, else any localisation, else default. */
+function campaignLevel(labels) {
+  const vars = sharedVariables(labels);
+  if (vars.some((v) => v.kind === 'Personalised')) return 'Personalised';
+  return vars.length ? 'Localised' : 'Default only';
+}
+
 // ---- Rounding and formatting -------------------------------------------------------
 
 /** Whole-number percentage of part / whole. */
@@ -172,7 +192,7 @@ module.exports = {
   revenueAtCpm, effectiveCpm, perSlotPerDay, perSlotPerDayPerDisplay,
   operatingWindow, insideOperatingHours, classifySlot, fillPercent,
   unsoldValueAtFloor, missedRevenue,
-  guaranteedVolume, pgPacing, maturityLevel,
+  guaranteedVolume, pgPacing, maturityLevel, sharedVariables, campaignLevel,
   wholePercent, roundParts, percentSplit, formatUsd,
   compareDealTypes, compareDsps, compareZones,
 };

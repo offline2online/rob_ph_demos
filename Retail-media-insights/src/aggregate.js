@@ -9,6 +9,9 @@ const calc = require('./calc');
  * raw.billing:     {date, displayTypeId, storeId, dealId, dsp, advertiserId, revenue, views, slots, settled}
  * raw.slotRecords: {date, storeId, displayTypeId, hour, status: sold|unsold|offline, count, views}
  *                  `views` is the expected VAC-d of one slot of that record.
+ * raw.campaigns:    {id, advertiserId, start, end|null, displayTypeIds[]|null, variables[], scheduled, schedules, targetedVersions}
+ *                  (campaign submissions: targeting rules, scheduling) - optional
+ * ctx.advertisers: {[id]: {name, dsp}} - optional
  * ctx.displayTypes: {[id]: {is24Hour}}, ctx.stores: {[id]: {open, close}}, ctx.deals: {[id]: {dealType}}
  */
 function buildAggregates(raw, ctx) {
@@ -47,7 +50,22 @@ function buildAggregates(raw, ctx) {
     row[kind] += r.count;
     if (kind === 'unsold') row.unsoldViews += r.count * (r.views || 0);
   }
-  return { delivery: [...delivery.values()], inventory: [...inventory.values()] };
+  const campaigns = (raw.campaigns || []).map((c) => ({
+    id: c.id,
+    advertiserId: c.advertiserId,
+    start: c.start,
+    end: c.end || null,
+    displayTypeIds: c.displayTypeIds || null,
+    // Only Shared Targeting Variables survive; Daypart and unknown labels never count as targeting.
+    variables: calc.sharedVariables(c.variables),
+    level: calc.campaignLevel(c.variables),
+    scheduled: Boolean(c.scheduled),
+    schedules: c.scheduled ? Math.max(c.schedules || 1, 1) : 0,
+    targetedVersions: c.targetedVersions || 0,
+  }));
+  return {
+    delivery: [...delivery.values()], inventory: [...inventory.values()], campaigns, advertisers: ctx.advertisers || {},
+  };
 }
 
 module.exports = { buildAggregates };

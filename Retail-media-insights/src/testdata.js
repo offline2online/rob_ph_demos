@@ -31,6 +31,22 @@ const DEALS = {
 const DEAL_DSP = { d1: 'DV360', d2: 'The Trade Desk', d3: 'Amazon DSP', d4: 'DV360' };
 const ADVERTISERS = ['adv-blackmores', 'adv-acme', 'adv-nova'];
 const SLOTS_PER_HOUR = 6;
+const ADVERTISER_META = {
+  'adv-blackmores': { name: 'Blackmores', dsp: 'DV360' },
+  'adv-acme': { name: 'Acme', dsp: 'The Trade Desk' },
+  'adv-nova': { name: 'Nova', dsp: 'Amazon DSP' },
+};
+
+// Campaign submissions, as day offsets back from endDate (start, end; null = still live).
+// Blackmores is Personalised (a Daypart entry is scheduling, not a variable and is dropped);
+// Acme is Localised; Nova has only default targeting and no scheduling.
+const CAMPAIGNS = [
+  { id: 'c1', advertiserId: 'adv-blackmores', startAgo: 80, endAgo: null, variables: ['Visitor Segments', 'State', 'Daypart'], scheduled: true, schedules: 2, targetedVersions: 3 },
+  { id: 'c2', advertiserId: 'adv-blackmores', startAgo: 30, endAgo: null, variables: ['State'], scheduled: false, targetedVersions: 1 },
+  { id: 'c3', advertiserId: 'adv-acme', startAgo: 60, endAgo: null, variables: ['State', 'Postcode', 'Suburb'], scheduled: true, schedules: 1, targetedVersions: 2 },
+  { id: 'c4', advertiserId: 'adv-acme', startAgo: 20, endAgo: null, variables: [], scheduled: false, targetedVersions: 0 },
+  { id: 'c5', advertiserId: 'adv-nova', startAgo: 45, endAgo: null, variables: [], scheduled: false, targetedVersions: 0 },
+];
 
 function generateTestRetailer({ days = 90, endDate = '2026-10-11', stores = 5, seed = 7, settledThroughDaysAgo = 3 } = {}) {
   const rand = rng(seed);
@@ -74,7 +90,10 @@ function generateTestRetailer({ days = 90, endDate = '2026-10-11', stores = 5, s
       }
     }
   }
-  return { raw: { billing, slotRecords }, ctx };
+  const dayOf = (ago) => (ago === null ? null : new Date(Date.parse(`${endDate}T00:00:00Z`) - ago * 86400000).toISOString().slice(0, 10));
+  const campaigns = CAMPAIGNS.map(({ startAgo, endAgo, ...c }) => ({ ...c, start: dayOf(startAgo), end: dayOf(endAgo) }));
+  ctx.advertisers = ADVERTISER_META;
+  return { raw: { billing, slotRecords, campaigns }, ctx };
 }
 
 module.exports = { generateTestRetailer, rng, DISPLAY_TYPES, DEALS, ADVERTISERS, SLOTS_PER_HOUR };

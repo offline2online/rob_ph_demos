@@ -7,7 +7,7 @@ The back end of Retail Media Insights & Analytics Dashboards: a read-only servic
 - `src/filters.js` — page filters `dateFrom`, `dateTo`, `storeIds[]`, `displayTypeIds[]`, `advertiserIds[]`, plus server-side advertiser scoping.
 - `src/aggregate.js` — builds the daily aggregates from raw billing line items and slot records: delivery (display type × store × deal × DSP × advertiser) and inventory (display type × store).
 - `src/store.js` — date-indexed in-memory aggregate store.
-- `src/routes/` — one file per endpoint, auto-discovered by `src/server.js`. Today: `health`, `summary`, `revenue`, `yield`.
+- `src/routes/` — one file per endpoint, auto-discovered by `src/server.js`. Today: `health`, `summary`, `revenue`, `yield`, `maturity` (ladder, scheduling, share by level over time, variables in use, advertiser table; `granularity`, `level`, `variable`, `scheduling`, `kind` params).
 - `src/testdata.js` — deterministic 5-store test retailer (Window Portrait, Endcap Shelf-edge, Queue Screen, Dispensary Screen).
 - `bench/bench.js` — 90-day query over ~865k aggregate rows.
 

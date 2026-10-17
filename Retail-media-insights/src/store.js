@@ -14,7 +14,9 @@ function lowerBound(rows, date) {
 const asSet = (list) => (list ? new Set(list) : null);
 
 class AggregateStore {
-  constructor({ delivery, inventory }) {
+  constructor({ delivery, inventory, campaigns = [], advertisers = {} }) {
+    this.campaigns = campaigns;
+    this.advertisers = advertisers;
     this.delivery = [...delivery].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
     this.inventory = [...inventory].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   }
@@ -34,6 +36,21 @@ class AggregateStore {
   }
 
   scanDelivery(filters, fn) { AggregateStore.#scan(this.delivery, filters, fn, true); }
+
+  /**
+   * Campaigns live in the date range (start/end overlap it) for the advertiser and display type
+   * filters. A campaign with no display types targets all of them; stores are not a campaign property.
+   */
+  scanCampaigns(f, fn) {
+    const advs = asSet(f.advertiserIds);
+    const types = asSet(f.displayTypeIds);
+    for (const c of this.campaigns) {
+      if (c.start > f.dateTo || (c.end && c.end < f.dateFrom)) continue;
+      if (advs && !advs.has(c.advertiserId)) continue;
+      if (types && c.displayTypeIds && !c.displayTypeIds.some((t) => types.has(t))) continue;
+      fn(c);
+    }
+  }
 
   /** Unsold inventory ignores the advertiser filter: slot records belong to no advertiser (README open question 1 default). */
   scanInventory(filters, fn) { AggregateStore.#scan(this.inventory, filters, fn, false); }
