@@ -1,7 +1,7 @@
 /* Slot charts — PH tokens (ph-designer): Roboto, #169bc2 primary, #333333 text, 8px cards. */
 .sc-root {
   --sc-primary: #169bc2; --sc-text: #333333; --sc-muted: rgba(0,0,0,0.45); --sc-border: #f0f0f0;
-  --sc-warn: #faad14; --sc-err: #ff4d4f; --sc-warn-tint: rgba(250,173,20,0.14);
+  --sc-warn: #faad14; --sc-err: #ff4d4f; --sc-floor: #eda100; --sc-m-unsold: #ad6800; --sc-m-down: #cf1322; --sc-warn-tint: rgba(250,173,20,0.14);
   position: relative; font-family: Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 14px; color: var(--sc-text);
 }
 .sc-root *, .sc-root *::before, .sc-root *::after { box-sizing: border-box; }
@@ -30,7 +30,8 @@
 .sc-swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
 .sc-swatch.sc-unsold { background: var(--sc-warn); }
 .sc-swatch.sc-down { background: var(--sc-err); }
-.sc-swatch.sc-floor { width: 0; height: 12px; border-radius: 0; border-left: 2px dashed var(--sc-text); }
+.sc-swatch.sc-primary { background: var(--sc-primary); }
+.sc-swatch.sc-floor { width: 0; height: 12px; border-radius: 0; border-left: 2px dashed var(--sc-floor); }
 
 .sc-rows { display: flex; flex-direction: column; gap: 2px; }
 .sc-row { display: grid; grid-template-columns: minmax(110px, 34%) minmax(0, 1fr) auto; align-items: center; column-gap: 10px; padding: 7px 6px; border-radius: 6px; cursor: default; }
@@ -41,10 +42,15 @@
 .sc-bar { height: 100%; border-radius: 3px; min-width: 2px; }
 .sc-primary { background: var(--sc-primary); }
 .sc-amber { background: var(--sc-warn); }
-.sc-floor-mark { position: absolute; top: -3px; bottom: -3px; width: 0; border-left: 2px dashed var(--sc-text); }
+.sc-floor-mark { position: absolute; top: -3px; bottom: -3px; width: 0; border-left: 2px dashed var(--sc-floor); }
 .sc-value { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; min-width: 92px; }
 .sc-sub { display: block; font-size: 12px; color: var(--sc-muted); }
-.sc-stack { display: flex; height: 100%; border-radius: 3px; overflow: hidden; min-width: 2px; }
+.sc-stack { display: flex; width: 100%; height: 100%; border-radius: 3px; overflow: hidden; }
+.sc-stack i { display: block; height: 100%; }
+.sc-m-unsold { color: var(--sc-m-unsold); }
+.sc-m-down { color: var(--sc-m-down); }
+.sc-row-missed { grid-template-columns: minmax(110px, 28%) minmax(0, 1fr) auto; }
+.sc-tip-rows dd strong { font-weight: 700; }
 .sc-stack i.sc-unsold { background: var(--sc-warn); }
 .sc-stack i.sc-down { background: var(--sc-err); }
 .sc-total { font-weight: 700; }
@@ -62,7 +68,7 @@
 .sc-table tr.sc-hot td:hover { background: rgba(250,173,20,0.26); }
 .sc-sold { white-space: nowrap; }
 .sc-sold-n { display: inline-block; min-width: 38px; font-variant-numeric: tabular-nums; }
-.sc-mini { display: inline-block; width: 32px; height: 6px; border-radius: 3px; background: rgba(0,0,0,0.08); vertical-align: middle; overflow: hidden; margin-left: 6px; }
+.sc-mini { display: inline-block; width: 90px; height: 6px; border-radius: 9999px; background: rgba(0,0,0,0.08); vertical-align: middle; overflow: hidden; margin-left: 6px; }
 .sc-mini-fill { display: block; height: 100%; }
 
 .sc-skel-row { height: 16px; border-radius: 3px; background: linear-gradient(90deg, #f0f0f0, #fafafa, #f0f0f0); background-size: 200% 100%; animation: sc-shim 1.2s linear infinite; margin: 14px 0; }
@@ -86,12 +92,16 @@
 .sc-tip-text { margin: 0; line-height: 1.45; }
 
 @media (max-width: 899px) { .sc-grid { grid-template-columns: minmax(0, 1fr); } }
-@media (max-width: 600px) {
-  .sc-panel { padding: 12px; }
-  .sc-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px; }
+@media (max-width: 520px) {
+  .sc-row, .sc-row-missed { grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px; }
   .sc-row .sc-label { grid-column: 1 / -1; }
   .sc-row .sc-track { grid-column: 1; grid-row: 2; }
   .sc-row .sc-value { grid-column: 2; grid-row: 2; }
+  .sc-row-missed .sc-track { grid-column: 1 / -1; }
+  .sc-row-missed .sc-value { grid-column: 1 / -1; grid-row: 3; text-align: left; white-space: normal; }
+}
+@media (max-width: 600px) {
+  .sc-panel { padding: 12px; }
   .sc-table th, .sc-table td { padding-left: 3px; padding-right: 3px; font-size: 12px; }
   .sc-sold { white-space: normal; }
   .sc-sold-n { display: block; }

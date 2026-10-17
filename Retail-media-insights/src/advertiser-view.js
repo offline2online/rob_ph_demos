@@ -15,7 +15,8 @@ function ownAdvertiser(filters) {
 }
 
 const isOpenAuction = (r) => r.dealType === 'Open auction';
-const cents = (n) => Math.round(n * 100) / 100;
+// Rounded to the cent after settling float noise (1e-6), so the order a sum was added in never decides a half cent.
+const cents = (n) => Math.round(Math.round(n * 1e6) / 1e4) / 100;
 
 /** Deals (not the open auction) the advertiser buys, or has delivery on (`delivered`: a Set of deal ids). Catalog objects, never serialised as is. */
 function dealsDelivered(store, advertiserId, delivered) {

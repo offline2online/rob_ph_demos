@@ -50,7 +50,7 @@ Page filters on every endpoint: `dateFrom`, `dateTo`, `storeIds[]`, `displayType
 - Respect the 90-day settled-bid retention (see open question on Slots won).
 
 ## 4. Front-end requirements
-- Tab, breadcrumb, page order and layout exactly as the README (Revenue full width; Deals under it; Slot value · Slot allocation; Missed revenue / fill · Yield; Advertisers; Targeting & scheduling maturity).
+- Tab, breadcrumb, page order and layout exactly as the README (Revenue full width; Deals under it; Slot value · Slot allocation; Missed revenue & fill · Yield; Advertisers; Targeting & scheduling maturity).
 - Filters stay pending until **Apply**; **Cancel** reverts; **Reset Filters** only once a filter differs from default; no CTA otherwise. Advertiser filter is a locked chip for advertiser logins.
 - Display-type charts are horizontal rows in shopper-journey order, with connected-display counts in brackets where specified.
 - Every README hover implemented as facts only (no advice, no warning chips); long hovers float above the page and stay on-screen on mobile. Missing fields are omitted, never "not set".

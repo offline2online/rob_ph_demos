@@ -46,6 +46,8 @@ module.exports = {
 
     const groups = ordered.map((typeId) => {
       const slotsHere = new Set();
+      const tf = facts.get(typeId);
+      const loopSlotCount = tf && tf.loop ? tf.loop.slotsPerLoop : null; // a display type fact, safe for an advertiser
       const rows = [];
       for (const deal of deals) {
         const slots = (deal.slots || []).filter((s) => s.displayTypeId === typeId);
@@ -64,7 +66,7 @@ module.exports = {
             count: new Set(slots.map(slotKey)).size,
             assigned: slots.map((s) => ({
               playlist: s.playlist, zone: s.zone, playlistZone: `${s.playlist} · ${s.zone}`,
-              advertiserSlot: s.position, loopSlot: s.loopSlot, label: `Advertiser slot ${s.position} (loop slot ${s.loopSlot})`, playsPerWindow: s.playsPerWindow,
+              advertiserSlot: s.position, loopSlot: s.loopSlot, loopSlotCount, label: `Advertiser slot ${s.position} (loop slot ${s.loopSlot})`, playsPerWindow: s.playsPerWindow,
             })),
           },
           playsWon: own.plays, assumedViews: Math.round(own.views), spend: cents(own.rev),

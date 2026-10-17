@@ -1,4 +1,4 @@
-// Slot value, Slot allocation, Missed revenue / fill and Yield — the four
+// Slot value, Slot allocation, Missed revenue & fill and Yield — the four
 // display-type charts of the Retail Media Performance tab. A content-frame
 // module (no header, sidebar or position:fixed): the tab shell calls
 //   var charts = SlotCharts.mount(el, { fetchJson: function (endpoint, params) { return Promise } });
@@ -14,6 +14,9 @@
   var ZONE_ORDER = ['Exterior', 'Entrance & out of category', 'In aisles', 'Checkout', 'Other & connected store'];
   var DEAL_TYPES = ['Programmatic guaranteed', 'Preferred deal', 'Private auction', 'Open auction'];
   var DSP_ORDER = ['DV360', 'The Trade Desk', 'Amazon DSP'];
+  // Each DSP's Preferred shade, the same families as the Revenue chart.
+  var DSP_COLOURS = { 'DV360': '#eb6834', 'The Trade Desk': '#2a78d6', 'Amazon DSP': '#1baf7a' };
+  var ALL_DEAL_TYPES = 'All deal types';
   var AMBER_AT = 85;
   var ORIENTATIONS = ['Not set', '90°', '180°', '270°'];
 
@@ -26,9 +29,12 @@
     slotValue: VAC_TEXT + ' The number in brackets is the display type’s connected displays across the selected stores (PH Core).',
     slotAllocation: 'Slots per loop: total slots in the display type’s loop. Advertiser slots + Own-content slots = Slots per loop. ' +
       'Advertiser slots sold: share of advertiser slot capacity inside operating hours sold over the date range; rows at ' + AMBER_AT + '% or more are highlighted amber.',
-    missed: 'Unsold value is an estimate at floor CPM, i.e. the minimum those slots could have earned: unsold slots × average assumed views per slot × floor CPM ÷ 1,000. Slots outside operating hours are not counted. ' +
-      'Display downtime is the revenue lost while a display was offline. The number in brackets is connected displays (PH Core). The last row totals all display types. ' + VAC_TEXT,
-    yield: 'Effective CPM per connected DSP: earned revenue per thousand assumed views (VAC-d). Use the Deal type filter to compare deal types. ' + VAC_TEXT
+    missed: 'Fill = advertiser slots sold ÷ all advertiser slots, across all deal types (booking schedule and unsold real-time slot records). ' +
+      'Only slots inside each display’s operating hours count: screens outside the store, or at the entrance and visible from outside it, run 24 hours; screens inside the store, including endcaps, follow store opening hours. ' +
+      'Slots outside operating hours play house content and are never unsold or missed revenue. ' +
+      'Amber = unsold slots valued at the display type’s floor CPM × their assumed views (VAC-d) ÷ 1,000. It’s an estimate at floor CPM, so the minimum those slots could have earned. ' +
+      'Red = revenue lost while displays were offline. The number in brackets is connected displays (PH Core); the last row totals all display types. ' + VAC_TEXT,
+    yield: 'Effective CPM for each connected DSP: cleared revenue per 1,000 assumed views (VAC-d), from billing line items and reservations. ' + VAC_TEXT
   };
   // Column definitions for the Slot allocation table (an ⓘ beside each heading).
   var COLUMN_TIPS = {
@@ -116,9 +122,9 @@
     if (has(cf)) rows.push(['Creative formats', cf]);
     var vac = [];
     var a = dt.averages || {};
-    if (has(a.averageAssumedViewsPerSlotPerDay)) vac.push(['Average assumed views (VAC-d) per slot per day', fmtNum(a.averageAssumedViewsPerSlotPerDay)]);
+    if (has(a.averageAssumedViewsPerSlotPerDay)) vac.push(['Average assumed views (VAC-d) per slot per day', fmtInt(a.averageAssumedViewsPerSlotPerDay)]);
     if (has(a.averageFootfallPerDay)) vac.push(['Average footfall past a display per day', fmtInt(a.averageFootfallPerDay)]);
-    if (has(a.averageVisibility)) vac.push(['Average visibility adjustment', fmtNum(a.averageVisibility)]);
+    if (has(a.averageVisibility)) vac.push(['Average visibility adjustment', Number(a.averageVisibility).toFixed(2)]);
     var s = a.shareOfLoopTime;
     if (s && has(s.advertiserSlotSeconds) && has(s.loopSeconds) && has(s.percent)) {
       vac.push(['Share of loop time', s.advertiserSlotSeconds + 's advertiser slot ÷ ' + s.loopSeconds + 's loop = ' + pct(s.percent)]);
@@ -159,21 +165,40 @@
     return part.count + ' × ' + part.avgSeconds + 's = ' + part.totalSeconds + 's (' + pct(part.percentOfLoop) + ' of the loop)';
   }
   // kind: 'loop' | 'advertiser' | 'own'. row is a /slot-allocation row; every percentage is the back end's.
+  // A row's third element marks the value as emphasised.
   function allocationHover(row, kind) {
     var rows = [];
+    var title = row.name ? row.name + ': ' + (kind === 'loop' ? 'loop' : kind === 'advertiser' ? 'advertiser slots' : 'own-content slots') : null;
     if (kind === 'loop') {
-      rows.push(['Total loop length', row.loopSeconds + 's']);
-      rows.push(['Average slot duration', fmtNum(row.averageSlotSeconds) + 's']);
+      rows.push(['Total loop length', row.loopSeconds + 's', true]);
+      rows.push(['Slots per loop', fmtInt(row.slotsPerLoop)]);
+      rows.push(['Average slot duration', (Math.round(row.averageSlotSeconds * 10) / 10).toFixed(1) + 's']);
       rows.push(['Advertiser slots', loopLine(row.advertiserSlots)]);
       if (row.ownContentSlots.count > 0) rows.push(['Own-content slots', loopLine(row.ownContentSlots)]);
     } else {
       var part = kind === 'advertiser' ? row.advertiserSlots : row.ownContentSlots;
-      var label = kind === 'advertiser' ? 'advertiser' : 'own-content';
-      rows.push(['Average ' + label + ' slot duration', part.avgSeconds + 's']);
-      rows.push(['Time in the loop', loopLine(part)]);
-      rows.push(['Share of the loop per slot', part.avgSeconds + 's ÷ ' + row.loopSeconds + 's = ' + pct(part.slotShareOfLoopPercent)]);
+      rows.push([kind === 'advertiser' ? 'Advertiser slots' : 'Own-content slots', fmtInt(part.count)]);
+      rows.push(['Average slot duration', fmtNum(part.avgSeconds) + 's', true]);
+      rows.push(['Time in the loop', part.count + ' × ' + part.avgSeconds + 's = ' + part.totalSeconds + 's of the ' + row.loopSeconds + 's loop (' + pct(part.percentOfLoop) + ')']);
+      rows.push(['Share of loop per slot', part.avgSeconds + 's ÷ ' + row.loopSeconds + 's = ' + pct(part.slotShareOfLoopPercent)]);
     }
-    return { title: null, desc: null, sections: [{ rows: rows }] };
+    return { title: title, desc: null, sections: [{ rows: rows }] };
+  }
+
+  // Display type rows by total missed revenue, highest first; ties keep input order.
+  function missedOrder(rows) {
+    return rows.map(function (r, i) { return { r: r, i: i }; })
+      .sort(function (a, b) { return missedParts(b.r).total - missedParts(a.r).total || a.i - b.i; }).map(function (x) { return x.r; });
+  }
+  // One 100%-wide stack: sold, unsold and offline shares of all advertiser slots, from the back end's counts.
+  function missedShares(r) {
+    var t = r.slotsTotal || 0;
+    function share(n) { return t > 0 ? 100 * n / t : 0; }
+    return { filled: share(r.slotsSold), unsold: share(r.slotsUnsold), down: share(r.slotsOffline) };
+  }
+  function missedAria(name, r) {
+    var p = missedParts(r);
+    return name + ': ' + pct(r.fillPercent) + ' filled, ' + fmtMoney(p.unsold) + ' unsold, ' + fmtMoney(p.downtime) + ' lost to downtime';
   }
 
   // The back end rounds the parts once; they are shown and added as returned.
@@ -193,7 +218,7 @@
     var cd = row.connectedDisplays || {};
     var rows = [];
     rows.push(['Connected displays', fmtInt(cd.displays) + (has(cd.stores) ? ' across ' + plural(cd.stores, 'store') : '')]);
-    var floor = isTotal ? floorText(row.floorCpm) : (has(row.floorCpm) ? fmtMoney(row.floorCpm, 2) : null);
+    var floor = isTotal ? floorText(row.floorCpm) : (has(row.floorCpm) ? fmtMoney(row.floorCpm, 2) + ' per 1,000 assumed views (VAC-d)' : null);
     if (floor) rows.push(['Floor CPM', floor]);
     rows.push(['Fill', pct(row.fillPercent) + ' (total ' + fmtInt(row.slotsSold) + ' of ' + fmtInt(row.slotsTotal) + ' advertiser slots sold)']);
     rows.push(['Unsold slots', fmtInt(row.slotsUnsold) + ' (total ' + fmtMoney(p.unsold) + ' at floor CPM)']);
@@ -204,6 +229,13 @@
     var sec = { rows: rows, note: note };
     if (isTotal || !dt) return { title: isTotal ? 'All display types' : null, desc: null, sections: [sec] };
     return cardPlus(dt, meta, [sec], { omitConnected: true });
+  }
+
+  // Only DSPs with delivery, highest effective CPM first (ties keep the DSP order).
+  function yieldRows(rows) {
+    return dspOrder(rows.filter(function (r) { return r.effectiveCpm !== null && r.effectiveCpm !== undefined; }))
+      .map(function (r, i) { return { r: r, i: i }; })
+      .sort(function (a, b) { return b.r.effectiveCpm - a.r.effectiveCpm || a.i - b.i; }).map(function (x) { return x.r; });
   }
 
   function yieldHover(row, dealType, meta) {
@@ -220,7 +252,8 @@
   var pure = {
     ZONE_ORDER: ZONE_ORDER, DEAL_TYPES: DEAL_TYPES, DSP_ORDER: DSP_ORDER, AMBER_AT: AMBER_AT, TIPS: TIPS, COLUMN_TIPS: COLUMN_TIPS,
     fmtMoney: fmtMoney, fmtLabelMoney: fmtLabelMoney, fmtCompact: fmtCompact, dateRange: dateRange, pct: pct, orientationText: orientationText,
-    journeyOrder: journeyOrder, dspOrder: dspOrder, typesById: typesById, missedParts: missedParts,
+    journeyOrder: journeyOrder, dspOrder: dspOrder, yieldRows: yieldRows, missedOrder: missedOrder, missedShares: missedShares, missedAria: missedAria,
+    DSP_COLOURS: DSP_COLOURS, ALL_DEAL_TYPES: ALL_DEAL_TYPES, typesById: typesById, missedParts: missedParts,
     displayTypeCard: displayTypeCard, slotValueHover: slotValueHover, allocationHover: allocationHover,
     missedHover: missedHover, yieldHover: yieldHover
   };
@@ -230,7 +263,7 @@
     if (typeof document === 'undefined') throw new Error('SlotCharts.mount needs a DOM');
     var fetchJson = opts.fetchJson;
     var filters = opts.filters || {};
-    var state = { mode: 'cpm', dealType: DEAL_TYPES[0] };
+    var state = { mode: 'cpm', dealType: '' };
     var gen = { all: 0, yield: 0 };
     var cache = { types: null, typeMap: {} };
     var alive = true;
@@ -260,7 +293,7 @@
       if (m.desc) tip.appendChild(h('div', { class: 'sc-tip-desc', text: m.desc }));
       (m.sections || []).forEach(function (s) {
         var dl = h('dl', { class: 'sc-tip-rows' });
-        s.rows.forEach(function (r) { dl.appendChild(h('dt', { text: r[0] })); dl.appendChild(h('dd', { text: r[1] })); });
+        s.rows.forEach(function (r) { dl.appendChild(h('dt', { text: r[0] })); dl.appendChild(h('dd', {}, [r[2] ? h('strong', { text: r[1] }) : r[1]])); });
         var sec = h('div', { class: 'sc-tip-sec' }, [dl]);
         if (s.note) sec.appendChild(h('div', { class: 'sc-tip-note', text: s.note }));
         tip.appendChild(sec);
@@ -328,15 +361,17 @@
         segBtns[k].setAttribute('aria-checked', String(state.mode === k));
         segBtns[k].classList.toggle('on', state.mode === k);
       });
-      svLegend.hidden = state.mode !== 'cpm';
+      svLegend.innerHTML = '';
+      svLegend.appendChild(legendItem('sc-primary', state.mode === 'cpm' ? 'Effective CPM' : 'Earned revenue per advertiser slot per day'));
+      if (state.mode === 'cpm') svLegend.appendChild(legendItem('sc-floor', 'Floor CPM'));
     }
-    var svLegend = h('div', { class: 'sc-legend' }, [legendItem('sc-floor', 'Floor CPM')]);
+    var svLegend = h('div', { class: 'sc-legend' });
     var pSV = panel('Slot value', TIPS.slotValue, seg, svLegend);
     var pSA = panel('Slot allocation', TIPS.slotAllocation, null, null);
-    var pMR = panel('Missed revenue / fill', TIPS.missed, null, h('div', { class: 'sc-legend' }, [legendItem('sc-unsold', 'Unsold slots'), legendItem('sc-down', 'Display downtime')]));
+    var pMR = panel('Missed revenue & fill', TIPS.missed, null, h('div', { class: 'sc-legend' }, [legendItem('sc-primary', 'Filled'), legendItem('sc-unsold', 'Unsold slots (at floor CPM)'), legendItem('sc-down', 'Display downtime')]));
 
     var sel = h('select', { class: 'sc-select', 'aria-label': 'Deal type' });
-    DEAL_TYPES.forEach(function (d) { sel.appendChild(h('option', { value: d, text: d })); });
+    [ALL_DEAL_TYPES].concat(DEAL_TYPES).forEach(function (d) { sel.appendChild(h('option', { value: d === ALL_DEAL_TYPES ? '' : d, text: d })); });
     sel.addEventListener('change', function () { state.dealType = sel.value; loadYield(); });
     var pY = panel('Yield', TIPS.yield, h('label', { class: 'sc-field' }, [h('span', { text: 'Deal type' }), sel]), null);
 
@@ -375,11 +410,10 @@
         var bar = h('div', { class: 'sc-bar sc-primary', style: 'width:' + (100 * vals[i] / max).toFixed(2) + '%' });
         var track = h('div', { class: 'sc-track-in' }, [bar]);
         if (cpm && has(r.floorCpm)) track.appendChild(h('i', { class: 'sc-floor-mark', style: 'left:' + (100 * r.floorCpm / max).toFixed(2) + '%' }));
-        var valueText = cpm ? fmtLabelMoney(vals[i]) + ' CPM' : fmtLabelMoney(vals[i]) + ' per slot per day';
         var row = h('div', { class: 'sc-row', role: 'listitem' }, [
           h('div', { class: 'sc-label', text: bracketed(r.name, displaysOf(r)) }),
           h('div', { class: 'sc-track' }, [track]),
-          h('div', { class: 'sc-value', text: valueText })
+          h('div', { class: 'sc-value' }, [h('strong', { text: fmtLabelMoney(vals[i]) }), cpm ? ' CPM' : ' per slot per day'])
         ]);
         hoverable(row, function () { return slotValueHover(r, filters); });
         list.appendChild(row);
@@ -415,25 +449,31 @@
 
     // ----- missed revenue / fill -----
     function drawMissed(d) {
-      var rows = journeyOrder(d.rows, function (r) { return cache.typeMap[r.id]; });
+      var rows = missedOrder(d.rows);
       var all = rows.concat(rows.length > 1 && d.total ? [d.total] : []);
-      var max = Math.max.apply(null, all.map(function (r) { return missedParts(r).total; })) * 1.04 || 1;
       var list = h('div', { class: 'sc-rows', role: 'list' });
       all.forEach(function (r) {
         var isTotal = r === d.total;
         var dt = isTotal ? null : cache.typeMap[r.id];
         var p = missedParts(r);
+        var sh = missedShares(r);
+        var name = isTotal ? 'All display types' : r.name;
         if (isTotal) list.appendChild(h('hr', { class: 'sc-divider' }));
         var track = h('div', { class: 'sc-track-in' }, [
-          h('div', { class: 'sc-stack', style: 'width:' + (100 * p.total / max).toFixed(2) + '%' }, [
-            h('i', { class: 'sc-unsold', style: 'flex:' + p.unsold }), h('i', { class: 'sc-down', style: 'flex:' + p.downtime })
+          h('div', { class: 'sc-stack', role: 'img', 'aria-label': missedAria(name, r) }, [
+            h('i', { class: 'sc-primary', style: 'width:' + sh.filled.toFixed(2) + '%' }),
+            h('i', { class: 'sc-unsold', style: 'width:' + sh.unsold.toFixed(2) + '%' }),
+            h('i', { class: 'sc-down', style: 'width:' + sh.down.toFixed(2) + '%' })
           ])
         ]);
-        var name = bracketed(isTotal ? 'All display types' : r.name, displaysOf(r));
-        var row = h('div', { class: 'sc-row' + (isTotal ? ' sc-total' : ''), role: 'listitem', 'data-fill': String(r.fillPercent) }, [
-          h('div', { class: 'sc-label', text: name }),
+        var row = h('div', { class: 'sc-row sc-row-missed' + (isTotal ? ' sc-total' : ''), role: 'listitem', 'data-fill': String(r.fillPercent) }, [
+          h('div', { class: 'sc-label', text: bracketed(name, displaysOf(r)) }),
           h('div', { class: 'sc-track' }, [track]),
-          h('div', { class: 'sc-value' }, [fmtMoney(p.total) + ' missed', h('span', { class: 'sc-sub', text: pct(r.fillPercent) + ' fill' })])
+          h('div', { class: 'sc-value' }, [
+            h('strong', { text: pct(r.fillPercent) }), ' filled · ',
+            h('span', { class: 'sc-m-unsold', text: fmtMoney(p.unsold) }), ' + ',
+            h('span', { class: 'sc-m-down', text: fmtMoney(p.downtime) }), ' missed'
+          ])
         ]);
         hoverable(row, function () { return missedHover(r, dt, filters, isTotal); });
         list.appendChild(row);
@@ -443,29 +483,34 @@
 
     // ----- yield -----
     function drawYield(d) {
-      var rows = dspOrder(d.rows);
-      var max = Math.max.apply(null, rows.map(function (r) { return r.effectiveCpm || 0; })) * 1.08 || 1;
+      var rows = yieldRows(d.rows);
+      pY.body.innerHTML = ''; pY.body.setAttribute('aria-busy', 'false');
+      if (!rows.length) {
+        pY.body.appendChild(h('div', { class: 'sc-state' }, [icon('bar_chart_off'), h('div', { text: 'Nothing cleared on this deal type in scope.' })]));
+        return;
+      }
+      var max = Math.max.apply(null, rows.map(function (r) { return r.effectiveCpm; })) * 1.08 || 1;
       var list = h('div', { class: 'sc-rows', role: 'list' });
       rows.forEach(function (r) {
-        var none = r.effectiveCpm === null || r.effectiveCpm === undefined;
+        var bar = h('div', { class: 'sc-bar sc-primary', style: 'width:' + (100 * r.effectiveCpm / max).toFixed(2) + '%' + (DSP_COLOURS[r.dsp] ? ';background:' + DSP_COLOURS[r.dsp] : '') });
         var row = h('div', { class: 'sc-row', role: 'listitem' }, [
           h('div', { class: 'sc-label', text: r.dsp }),
-          h('div', { class: 'sc-track' }, [h('div', { class: 'sc-track-in' }, none ? [] : [h('div', { class: 'sc-bar sc-primary', style: 'width:' + (100 * r.effectiveCpm / max).toFixed(2) + '%' })])]),
-          h('div', { class: 'sc-value', text: none ? 'No delivery' : fmtLabelMoney(r.effectiveCpm) + ' CPM' })
+          h('div', { class: 'sc-track' }, [h('div', { class: 'sc-track-in' }, [bar])]),
+          h('div', { class: 'sc-value' }, [h('strong', { text: fmtLabelMoney(r.effectiveCpm) }), ' eCPM'])
         ]);
-        hoverable(row, function () { return yieldHover(r, d.dealType || state.dealType, filters); });
+        hoverable(row, function () { return yieldHover(r, d.dealType || ALL_DEAL_TYPES, filters); });
         list.appendChild(row);
       });
-      pY.body.innerHTML = ''; pY.body.setAttribute('aria-busy', 'false'); pY.body.appendChild(list);
+      pY.body.appendChild(list);
     }
 
     // ----- loading -----
     function loadYield() {
       var g = ++gen.yield;
       setState(pY, 'loading');
-      fetchJson('yield', Object.assign({}, filters, { dealType: state.dealType })).then(function (d) {
+      fetchJson('yield', state.dealType ? Object.assign({}, filters, { dealType: state.dealType }) : filters).then(function (d) {
         if (!alive || g !== gen.yield) return;
-        if (!d || !d.rows || !d.rows.length) return setState(pY, 'empty');
+        if (!d || !d.rows) return setState(pY, 'empty');
         drawYield(d);
       }, function () { if (alive && g === gen.yield) setState(pY, 'error', loadYield); });
     }

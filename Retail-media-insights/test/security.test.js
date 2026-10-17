@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const net = require('node:net');
-const { generateTestRetailer, ADVERTISERS } = require('../src/testdata');
+const { generateTestRetailer, ADVERTISERS, OPEN_AUCTION_DEAL } = require('../src/testdata');
 const { buildAggregates } = require('../src/aggregate');
 const { AggregateStore } = require('../src/store');
 const { createServer, BASE, MCP_PATH } = require('../src/server');
@@ -34,7 +34,7 @@ const rawRequest = (port, text) => new Promise((resolve) => {
 });
 const statusOf = (reply) => Number((/^HTTP\/1\.1 (\d{3})/.exec(reply) || [])[1]);
 const mcp = (port, body, headers = {}) => fetch(`http://127.0.0.1:${port}${MCP_PATH}`, {
-  method: 'POST', headers: { authorization: `Bearer ${tok('adv-nova')}`, 'content-type': 'application/json', ...headers }, body: typeof body === 'string' ? body : JSON.stringify(body),
+  method: 'POST', headers: { authorization: `Bearer ${tok('adv-unilever')}`, 'content-type': 'application/json', ...headers }, body: typeof body === 'string' ? body : JSON.stringify(body),
 });
 
 // ---- 1. malformed request targets never crash the process
@@ -79,7 +79,7 @@ test('2: a batch over the cap is refused, a small batch works', () => withServer
 
 test('2: a result over the response cap is a tool error, not a crash', () => {
   const call = (budget) => handleMessage({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'retail_media_delivery', arguments: { dateFrom: '2026-10-01', dateTo: '2026-10-11' } } },
-    { store, routes: new Map(require('fs').readdirSync(require('path').join(__dirname, '../src/routes')).map((f) => require(`../src/routes/${f}`)).filter((r) => r.path).map((r) => [r.path, r])), principal: { principalType: 'advertiser', principalId: 'adv-nova', scopes: ['insights:read'] }, today: '2026-10-11', budget });
+    { store, routes: new Map(require('fs').readdirSync(require('path').join(__dirname, '../src/routes')).map((f) => require(`../src/routes/${f}`)).filter((r) => r.path).map((r) => [r.path, r])), principal: { principalType: 'advertiser', principalId: 'adv-unilever', scopes: ['insights:read'] }, today: '2026-10-11', budget });
   const small = call({ left: 1000 });
   assert.equal(small.result.isError, true);
   assert.match(small.result.content[0].text, /narrower/);
@@ -106,7 +106,7 @@ test('2: an oversize body is 413', () => withServer(async (port) => {
   const res = await mcp(port, JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping', pad: 'x'.repeat(70 * 1024) }));
   assert.equal(res.status, 413);
   // Without a Content-Length (chunked) the stream is cut off at the cap and still answered.
-  const reply = await rawRequest(port, `POST ${MCP_PATH} HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer ${tok('adv-nova')}\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n${(70 * 1024).toString(16)}\r\n${'x'.repeat(70 * 1024)}\r\n0\r\n\r\n`);
+  const reply = await rawRequest(port, `POST ${MCP_PATH} HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer ${tok('adv-unilever')}\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n${(70 * 1024).toString(16)}\r\n${'x'.repeat(70 * 1024)}\r\n0\r\n\r\n`);
   assert.equal(statusOf(reply), 413);
   assert.equal((await fetch(`http://127.0.0.1:${port}${BASE}/health`)).status, 200);
 }));
@@ -128,16 +128,16 @@ const path = require('path');
 const ROUTES = fs.readdirSync(path.join(__dirname, '../src/routes')).map((f) => require(`../src/routes/${f}`)).filter((r) => r.path);
 const ask = (me, url, st = store) => dispatch({ store: st, routes: ROUTES, url: `${BASE}${url}`, principal: { principalType: 'advertiser', principalId: me, scopes: ['insights:read'] }, today: '2026-10-11' });
 
-test('3: d3 with exactly one other buyer: no allPlays and no share, for every day', () => {
-  const out = ask('adv-blackmores', `/delivery?${Q}&dealId=d3`);
+test('3: d7 (Beauty endcaps) with exactly one other buyer: no allPlays and no share, for every day', () => {
+  const out = ask('adv-loreal-paris', `/delivery?${Q}&dealId=d7`);
   assert.equal(out.status, 200);
-  const others = othersByBlock('adv-blackmores');
+  const others = othersByBlock('adv-loreal-paris');
   let withOne = 0;
   for (const d of out.body.days) for (const b of d.deals) {
-    const n = (others.get(`${d.date}#d3`) || new Set()).size;
+    const n = (others.get(`${d.date}#d7`) || new Set()).size;
     if (n === 1) { withOne += 1; assert.ok(!('allPlays' in b) && !('sharePercent' in b) && !('winningCpm' in b), d.date); }
   }
-  assert.ok(withOne > 0, 'the sample data has d3 days with one other buyer');
+  assert.ok(withOne > 0, 'the sample data has d7 days with one other buyer');
 });
 
 test('3: for every advertiser, no delivery block or deal row lets you subtract out one other buyer', () => {
@@ -166,20 +166,20 @@ test('3: the open auction with one other buyer on a slice omits the share; with 
   // Reuses the fixture shape of advertiser-view.test.js: one open-auction day, 10 plays each.
   const calc = require('../src/calc');
   const fixture = (winners) => {
-    const billing = winners.map((w) => ({ date: '2026-10-10', storeId: 'store-1', displayTypeId: 'window', dealId: 'd4', dsp: 'DV360', advertiserId: w, revenue: calc.revenueAtCpm(20, 2000), views: 2000, slots: 10, settled: true }));
+    const billing = winners.map((w) => ({ date: '2026-10-10', storeId: 'store-1', displayTypeId: 'window', dealId: OPEN_AUCTION_DEAL, dsp: 'DV360', advertiserId: w, revenue: calc.revenueAtCpm(20, 2000), views: 2000, slots: 10, settled: true }));
     const f = generateTestRetailer({ days: 1 });
-    return new AggregateStore(buildAggregates({ billing, slotRecords: [], campaigns: [{ id: 'cx', advertiserId: 'adv-nova', start: '2026-09-01', end: null, displayTypeIds: ['window'], variables: [], scheduled: false }] }, f.ctx));
+    return new AggregateStore(buildAggregates({ billing, slotRecords: [], campaigns: [{ id: 'cx', advertiserId: 'adv-unilever', start: '2026-09-01', end: null, displayTypeIds: ['window'], variables: [], scheduled: false }] }, f.ctx));
   };
-  const block = (st) => ask('adv-nova', '/delivery?dateFrom=2026-10-10&dateTo=2026-10-10', st).body.days[0].deals.find((b) => b.dealId === 'open-auction');
-  assert.ok(!('allPlays' in block(fixture(['adv-nova', 'adv-acme']))));
-  assert.ok(!('allPlays' in block(fixture(['adv-acme']))), 'not even when the advertiser itself won nothing');
-  assert.equal(block(fixture(['adv-nova'])).sharePercent, 100);
-  assert.equal(block(fixture(['adv-nova', 'adv-acme', 'adv-blackmores'])).allPlays, 30);
+  const block = (st) => ask('adv-unilever', '/delivery?dateFrom=2026-10-10&dateTo=2026-10-10', st).body.days[0].deals.find((b) => b.dealId === 'open-auction');
+  assert.ok(!('allPlays' in block(fixture(['adv-unilever', 'adv-haleon']))));
+  assert.ok(!('allPlays' in block(fixture(['adv-haleon']))), 'not even when the advertiser itself won nothing');
+  assert.equal(block(fixture(['adv-unilever'])).sharePercent, 100);
+  assert.equal(block(fixture(['adv-unilever', 'adv-haleon', 'adv-blackmores'])).allPlays, 30);
 });
 
 // ---- 4. tokens
 test('4: signatures are canonical base64url, bodies are bounded, and no token lives over 24 hours', () => {
-  const good = tok('adv-nova');
+  const good = tok('adv-unilever');
   const [body, sig] = good.split('.');
   assert.ok(verifyToken(SECRET, good));
   const variants = [`${good}=`, `${good}!!`, `${body}.${sig.slice(0, 20)}!${sig.slice(21)}`, `${body}.${sig.replace(/-/g, '+').replace(/_/g, '/')}x`, `${body}.${sig}A`, `${body}.${sig.slice(0, 42)}`, `${body}=.${sig}`, ` ${good}`];
@@ -191,9 +191,9 @@ test('4: signatures are canonical base64url, bodies are bounded, and no token li
   assert.equal(verifyToken(SECRET, forge({ ...base, exp: 1e300 })), null);
   assert.equal(verifyToken(SECRET, forge({ ...base, exp: Math.floor(Date.now() / 1000) + MAX_TTL_SECONDS + 60 })), null);
   assert.equal(verifyToken(SECRET, forge({ ...base, pad: 'x'.repeat(2100) , exp: Math.floor(Date.now() / 1000) + 60 })), null, 'body over 2048 characters');
-  assert.ok(verifyToken(SECRET, tok('adv-nova', 'advertiser', { ttlSeconds: MAX_TTL_SECONDS })));
-  assert.throws(() => tok('adv-nova', 'advertiser', { ttlSeconds: MAX_TTL_SECONDS + 1 }), /ttlSeconds/);
-  assert.throws(() => tok('adv-nova', 'advertiser', { ttlSeconds: Infinity }), /ttlSeconds/);
+  assert.ok(verifyToken(SECRET, tok('adv-unilever', 'advertiser', { ttlSeconds: MAX_TTL_SECONDS })));
+  assert.throws(() => tok('adv-unilever', 'advertiser', { ttlSeconds: MAX_TTL_SECONDS + 1 }), /ttlSeconds/);
+  assert.throws(() => tok('adv-unilever', 'advertiser', { ttlSeconds: Infinity }), /ttlSeconds/);
 });
 
 // ---- 5. headers and route enumeration
@@ -224,11 +224,11 @@ test('6: MCP arguments follow own properties only, and a dataset takes only its 
   }
   const ok = await call('retail_media_dataset', { name: 'audience', dateFrom: '2026-10-01', dateTo: '2026-10-11' });
   assert.ok(!ok.isError && ok.structuredContent.name === 'audience');
-  for (const args of [{ name: 'audience', bogus: 1 }, { name: 'audience', granularity: 'day' }, { name: 'audience', dealId: 'd3' }, { name: 'summary', dealType: 'Preferred deal' }, { bogus: 1 }, { name: 'audience', constructor: 'x' }]) {
+  for (const args of [{ name: 'audience', bogus: 1 }, { name: 'audience', granularity: 'day' }, { name: 'audience', dealId: 'd8' }, { name: 'summary', dealType: 'Preferred deal' }, { bogus: 1 }, { name: 'audience', constructor: 'x' }]) {
     const r = await call('retail_media_dataset', args);
     assert.equal(r.isError, true, JSON.stringify(args));
   }
-  assert.ok(!(await call('retail_media_dataset', { name: 'delivery-deals', dealId: 'd3', dateFrom: '2026-10-01', dateTo: '2026-10-11' })).isError);
+  assert.ok(!(await call('retail_media_dataset', { name: 'delivery-deals', dealId: 'd8', dateFrom: '2026-10-01', dateTo: '2026-10-11' })).isError);
   assert.ok(!(await call('retail_media_dataset', {})).isError, 'the catalog');
   assert.equal((await call('retail_media_dataset', { name: 'audience', arguments: 1 })).isError, true);
   assert.equal((await call('retail_media_summary', 'oops')).isError, true);
@@ -240,6 +240,7 @@ test('7: PG pacing skips flights that ended before dateFrom or start after dateT
   st.catalog = JSON.parse(JSON.stringify(st.catalog));
   const d1 = st.catalog.deals.d1;
   d1.flight = { start: '2026-08-01', end: '2026-08-31' }; // ended long before the range
+  st.catalog.deals.d2.flight = { start: '2026-08-01', end: '2026-08-31' }; // so has the other Programmatic guaranteed deal
   const scans = [];
   const orig = st.scanDelivery.bind(st);
   st.scanDelivery = (f, fn) => { scans.push({ ...f }); return orig(f, fn); };

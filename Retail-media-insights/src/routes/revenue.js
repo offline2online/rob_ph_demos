@@ -2,6 +2,7 @@
 const calc = require('../calc');
 const { FilterError } = require('../filters');
 const { chartFilter, cents } = require('./params');
+const { addDays } = require('../dealing');
 
 const GRANULARITIES = ['day', 'week', 'month'];
 
@@ -13,13 +14,20 @@ function periodStart(date, granularity) {
   return d.toISOString().slice(0, 10);
 }
 
-// Revenue per day/week/month x DSP x deal type, earned and estimated.
+const MAX_AHEAD_DAYS = 120;
+
+// Revenue per day/week/month x DSP x deal type, earned and estimated. `aheadDays` (0-120, default 0) adds the booked-ahead
+// periods after the last played day (earned 0, estimated > 0, `ahead: true`); the response carries `lastDataDay`.
 module.exports = {
   path: '/revenue',
   handler({ store, filters, params }) {
     const granularity = params.get('granularity') || 'day';
     if (!GRANULARITIES.includes(granularity)) throw new FilterError(`granularity must be one of ${GRANULARITIES.join(', ')}`);
+    const aheadText = params.get('aheadDays');
+    const aheadDays = aheadText === null || aheadText === '' ? 0 : Number(aheadText);
+    if (!Number.isInteger(aheadDays) || aheadDays < 0 || aheadDays > MAX_AHEAD_DAYS) throw new FilterError(`aheadDays must be a whole number from 0 to ${MAX_AHEAD_DAYS}`);
     const keep = chartFilter(params);
+    const lastDataDay = store.lastPlayedDay;
     // Accumulate per date into small numeric-indexed arrays (cheap per row), then fold dates into periods.
     const dspIdx = new Map(); const typeIdx = new Map();
     const dspNames = []; const typeNames = [];
@@ -37,6 +45,25 @@ module.exports = {
       const b = cur[k] || (cur[k] = [0, 0]);
       b[0] += r.earned; b[1] += r.estimated;
     });
+    // Booked-ahead days beyond the range's own end, from the day after the last played day.
+    if (aheadDays > 0 && lastDataDay) {
+      const from = filters.dateTo > lastDataDay ? addDays(filters.dateTo, 1) : addDays(lastDataDay, 1);
+      const to = addDays(lastDataDay, aheadDays);
+      if (from <= to) {
+        curDate = null;
+        store.scanDelivery({ ...filters, dateFrom: from, dateTo: to }, (r) => {
+          if (keep && !keep(r)) return;
+          if (r.date !== curDate) {
+            curDate = r.date;
+            cur = perDate.get(curDate);
+            if (!cur) { cur = []; perDate.set(curDate, cur); }
+          }
+          const k = idxOf(dspIdx, dspNames, r.dsp) * 16 + idxOf(typeIdx, typeNames, r.dealType);
+          const b = cur[k] || (cur[k] = [0, 0]);
+          b[0] += r.earned; b[1] += r.estimated;
+        });
+      }
+    }
     const buckets = new Map();
     for (const [date, arr] of perDate) {
       const period = periodStart(date, granularity);
@@ -51,6 +78,8 @@ module.exports = {
     }
     const rows = [...buckets.values()].sort((a, b) => (a.period < b.period ? -1 : a.period > b.period ? 1 : 0)
       || calc.compareDsps(a.dsp, b.dsp) || calc.compareDealTypes(a.dealType, b.dealType));
-    return { granularity, rows: rows.map((b) => ({ ...b, earned: cents(b.earned), estimated: cents(b.estimated) })) };
+    const out = rows.map((b) => ({ ...b, earned: cents(b.earned), estimated: cents(b.estimated) }));
+    for (const b of out) if (lastDataDay && b.period > lastDataDay) b.ahead = true;
+    return { granularity, lastDataDay, rows: out };
   },
 };

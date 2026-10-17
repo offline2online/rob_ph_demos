@@ -2,6 +2,7 @@
 const calc = require('../calc');
 const { FilterError } = require('../filters');
 const { MATURITY_LEVELS } = require('../constants');
+const { cents } = require('./params');
 
 const GRANULARITIES = ['week', 'month'];
 const SCHEDULING = ['uses', 'none'];
@@ -27,7 +28,7 @@ const enumParam = (params, name, allowed) => {
 };
 
 // Targeting & scheduling maturity: the ladder, scheduling, share by level over time, variables in
-// use and the advertiser table. Page filters scope every block; `level`, `variable` and
+// use and the advertiser table. Page filters scope every block, except that Progress over time ignores the date range; `level`, `variable` and
 // `scheduling` filter the table only; `kind` filters the variables ranking only.
 module.exports = {
   path: '/maturity',
@@ -72,7 +73,7 @@ module.exports = {
         personalisationTypes: [...new Set(vars.map((v) => v.personalisationType).filter(Boolean))].sort(),
         scheduling: { uses: a.scheduledCampaigns > 0, scheduledCampaigns: a.scheduledCampaigns, campaigns: a.campaigns, schedules: a.schedules },
         targetedVersions: a.targetedVersions,
-        revenue: Math.round((revenue.get(a.advertiserId) || 0) * 100) / 100, // earned revenue, to the cent
+        revenue: cents(revenue.get(a.advertiserId) || 0), // earned revenue, to the cent
       };
     });
     const who = (r, extra = {}) => ({ advertiserId: r.advertiserId, name: r.name, dsp: r.dsp, ...extra });
@@ -94,11 +95,16 @@ module.exports = {
       { key: 'none', label: 'No scheduling', advertisers: not.length, list: not.map((r) => who(r)) },
     ];
 
-    // Share of campaigns at each level per period: a campaign counts in every period it is live in.
+    // Share of campaigns at each level per period: a campaign counts in every period it is live in. Progress over time covers
+    // the whole history, from the first campaign to the last played day, whatever the date range; the store (none), display type
+    // and advertiser filters still apply.
     const counts = new Map();
-    for (const c of campaigns) {
-      const from = c.start > filters.dateFrom ? c.start : filters.dateFrom;
-      const to = c.end && c.end < filters.dateTo ? c.end : filters.dateTo;
+    const historyEnd = store.lastPlayedDay || filters.dateTo;
+    const history = [];
+    store.scanCampaigns({ ...filters, dateFrom: '0000-01-01', dateTo: historyEnd }, (c) => history.push(c));
+    for (const c of history) {
+      const from = c.start;
+      const to = c.end && c.end < historyEnd ? c.end : historyEnd;
       for (let p = periodStart(from, granularity); p <= to; p = nextPeriod(p, granularity)) {
         const row = counts.get(p) || { period: p, counts: [0, 0, 0] };
         row.counts[MATURITY_LEVELS.indexOf(c.level)] += 1;

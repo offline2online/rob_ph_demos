@@ -12,15 +12,24 @@
 
   var DSP_ORDER = ['DV360', 'The Trade Desk', 'Amazon DSP'];
   var DEAL_TYPES = ['Programmatic guaranteed', 'Preferred deal', 'Private auction', 'Open auction'];
-  var DSP_COLOURS = { 'DV360': '#169bc2', 'The Trade Desk': '#7b61c4', 'Amazon DSP': '#e08a1e' };
-  var SHADES = [1, 0.7, 0.45, 0.25]; // darkest = Programmatic guaranteed, lightest = Open auction
+  // One colour family per DSP, four shades each: darkest = Programmatic guaranteed, lightest = Open auction.
+  var DSP_SHADES = {
+    'DV360': ['#9c3d14', '#eb6834', '#f29a74', '#f9cfbb'],
+    'The Trade Desk': ['#174a8c', '#2a78d6', '#6aa7e0', '#b3d1f2'],
+    'Amazon DSP': ['#0d6b49', '#1baf7a', '#5fcaa3', '#b0e6d1']
+  };
+  var AHEAD_LABEL = 'Estimated (booked ahead, not yet played)';
+  var AHEAD_DAYS = { day: 14, week: 42 };
   var GRANULARITIES = [['day', 'Day'], ['week', 'Week'], ['month', 'Month']];
 
   var TIPS = {
-    revenue: 'Earned revenue per day, stacked by connected DSP and, within each DSP, by deal type (darkest = Programmatic guaranteed, lightest = Open auction). ' +
-      'The outlined segment on top is estimated revenue: booked ahead, not yet played.',
-    deals: 'One row per deal, as on DSP Integration’s Deals & buyers lists. Fill = slots sold ÷ all slots on the deal inside operating hours. ' +
-      'CPM is cost per thousand assumed views (VAC-d): floor CPM for Private auction, fixed CPM for Preferred deal and Programmatic guaranteed.',
+    revenue: 'Earned revenue from billing line items, stacked by connected DSP and deal type. Each DSP has four shades: darkest = programmatic guaranteed, then preferred deal, private auction, and lightest = open auction. ' +
+      'Estimated = reservations booked ahead that have not played yet, mainly programmatic guaranteed.',
+    deals: 'One row per deal. Hover a deal name for its description and its deal ID on each DSP (as on Deals & buyers lists). ' +
+      'Slots = the slots the deal is assigned to (Available Inventory’s Assigned to column); hover for each slot’s display type, playlist, IAB zone, position and plays per window. ' +
+      'Hover an advertiser count to see who is on the deal. Fill = slots sold ÷ all slots on the deal inside operating hours (unsold slot records). ' +
+      'Pacing (programmatic guaranteed only) = assumed views (VAC-d) delivered ÷ guaranteed to date. Guaranteed volume = forecast × (1 − buffer). Hover the bar for the numbers. ' +
+      'CPM = floor CPM for private auctions; fixed CPM for preferred deals and programmatic guaranteed.',
     pacing: 'Pacing = assumed views (VAC-d) delivered ÷ guaranteed to date. Guaranteed volume = forecast × (1 − buffer).'
   };
 
@@ -37,8 +46,8 @@
   }
   function plural(n, word) { return fmtInt(n) + ' ' + word + (n === 1 ? '' : 's'); }
   function periodLabel(period, granularity) {
-    if (granularity === 'month') { var m = /^(\d{4})-(\d{2})/.exec(period); return MONTHS[+m[2] - 1] + ' ' + m[1]; }
-    if (granularity === 'week') return 'Week of ' + fmtDay(period);
+    if (granularity === 'month') { var m = /^(\d{4})-(\d{2})/.exec(period); return MONTHS[+m[2] - 1]; }
+    if (granularity === 'week') return 'w/c ' + fmtDay(period);
     return fmtDay(period);
   }
   // The API names the type "Programmatic Guaranteed"; the page says "Programmatic guaranteed".
@@ -56,11 +65,13 @@
     var by = {}; var order = [];
     ((data && data.rows) || []).forEach(function (r) {
       var b = by[r.period];
-      if (!b) { b = by[r.period] = { period: r.period, stacks: [], earned: 0, estimated: 0 }; order.push(r.period); }
+      if (!b) { b = by[r.period] = { period: r.period, stacks: [], earned: 0, estimated: 0, ahead: false }; order.push(r.period); }
+      if (r.ahead) b.ahead = true;
       if (r.earned) b.stacks.push({ dsp: r.dsp, dealType: typeName(r.dealType), amount: r.earned });
       b.earned += r.earned; b.estimated += r.estimated;
     });
-    return order.sort().map(function (p) {
+    var lastYear = data && data.lastDataDay ? data.lastDataDay.slice(0, 4) : null;
+    return order.sort().filter(function (p) { return !lastYear || p.slice(0, 4) <= lastYear; }).map(function (p) {
       var b = by[p];
       b.stacks.sort(function (x, y) { return dspRank(x.dsp) - dspRank(y.dsp) || typeRank(x.dealType) - typeRank(y.dealType); });
       return b;
@@ -70,7 +81,7 @@
   function sumCents(list, pick) { return list.reduce(function (n, x) { return n + Math.round(pick(x) * 100); }, 0) / 100; }
   function revenueTotals(data) {
     var rows = (data && data.rows) || [];
-    return { earned: sumCents(rows, function (r) { return r.earned; }), estimated: sumCents(rows, function (r) { return r.estimated; }) };
+    return { earned: sumCents(rows, function (r) { return r.earned; }) }; // estimated bars never count toward the total
   }
   // How many x-axis labels fit: one per `perLabel` px of plot width, never more than the bars.
   function labelStep(bars, width, perLabel) {
@@ -79,43 +90,63 @@
   }
   // Tooltip per bar: total for the period, then each DSP × deal type amount.
   function barTooltip(bar, granularity) {
+    if (bar.ahead) return { title: 'Estimated (booked ahead)', rows: [[periodLabel(bar.period, granularity), fmtMoney(bar.estimated)]] };
     var lines = [[periodLabel(bar.period, granularity), fmtMoney(bar.earned)]];
     bar.stacks.forEach(function (s) { lines.push([s.dsp + ' · ' + s.dealType, fmtMoney(s.amount)]); });
-    if (bar.estimated) lines.push(['Estimated revenue', fmtMoney(bar.estimated)]);
+    if (bar.estimated) lines.push(['Estimated (booked ahead)', fmtMoney(bar.estimated)]);
     return { title: 'Earned revenue', rows: lines };
   }
   function shadeColour(dsp, dealType) {
-    var hex = DSP_COLOURS[dsp] || '#8c8c8c';
-    var a = SHADES[Math.max(0, DEAL_TYPES.indexOf(typeName(dealType)))];
-    var n = parseInt(hex.slice(1), 16);
-    return 'rgba(' + (n >> 16) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
+    var shades = DSP_SHADES[dsp];
+    if (!shades) return '#8c8c8c';
+    return shades[Math.max(0, DEAL_TYPES.indexOf(typeName(dealType)))];
+  }
+  // Days from `iso` to 31 Dec of its year (a month chart runs through December), within the API's 120-day ceiling.
+  function daysToYearEnd(iso) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
+    if (!m) return 120;
+    var d = Math.round((Date.UTC(+m[1], 11, 31) - Date.UTC(+m[1], +m[2] - 1, +m[3])) / 86400000);
+    return Math.max(1, Math.min(120, d));
+  }
+  function aheadDaysFor(granularity, dateTo) { return granularity === 'month' ? daysToYearEnd(dateTo) : AHEAD_DAYS[granularity]; }
+  // Legend entries: one per selected DSP × deal type (narrowed by the deal type filter), then the estimated entry.
+  function legendEntries(dsps, dealType) {
+    var out = [];
+    sortDsps(dsps).forEach(function (d) {
+      DEAL_TYPES.forEach(function (t) { if (!dealType || dealType === t) out.push({ label: d + ' · ' + t, colour: shadeColour(d, t) }); });
+    });
+    return out;
   }
 
   // ---------- Deals model ----------
   function slotsLabel(deal) { return deal.slots && deal.slots.length ? plural(deal.slots.length, 'slot') : 'Not assigned'; }
   function nameTooltip(deal) {
     var rows = [];
-    if (deal.description) rows.push(['Description', deal.description]);
-    (deal.dealIds || []).forEach(function (d) { rows.push([(d.dspLabel || d.dsp) + ': ' + d.dealId, '']); });
+    if (deal.description) rows.push([deal.description, '']);
+    if ((deal.dealIds || []).length) rows.push(['Deal IDs', '', 'rd-tip-h']);
+    (deal.dealIds || []).forEach(function (d) { rows.push([d.dspLabel || d.dsp, d.dealId, 'rd-tip-mono']); });
     return { title: deal.name, rows: rows };
   }
-  function slotsTooltip(deal) {
+  // loopSizes: optional { displayTypeId: slots per loop } from slot-allocation, for "slot 1 of 12".
+  function slotsTooltip(deal, loopSizes) {
     var rows = [];
     (deal.slots || []).forEach(function (s) {
-      var pos = 'Advertiser slot ' + s.advertiserSlot + (s.loopSlot ? ' (slot ' + s.loopSlot + ' of the loop)' : '');
+      var of = loopSizes && loopSizes[s.displayTypeId] ? 'slot ' + s.loopSlot + ' of ' + loopSizes[s.displayTypeId] : 'slot ' + s.loopSlot + ' of the loop';
+      var pos = 'Advertiser slot ' + s.advertiserSlot + (s.loopSlot ? ' (' + of + ')' : '');
       if (s.playsPerWindow != null) pos += ' · ' + fmtInt(s.playsPerWindow) + ' plays per window';
-      rows.push([s.displayType, [s.displayTypeDescription || '', s.playlistZone || '', s.iabZone ? 'IAB zone: ' + s.iabZone : '', pos].filter(Boolean).join('\n')]);
+      var desc = (s.displayTypeDescription || '').replace(/\.$/, '');
+      rows.push([s.displayType + (desc ? ' (' + desc + ')' : ''), [s.playlistZone || '', s.iabZone ? 'IAB zone: ' + s.iabZone : '', pos].filter(Boolean).join('\n')]);
     });
     return { title: 'Assigned slots', rows: rows };
   }
   function advertisersTooltip(deal) {
-    return { title: 'Advertisers on deal', rows: (deal.advertisers || []).map(function (a) { return [a.name + ' (' + a.dsp + ')', '']; }) };
+    return { title: deal.name, rows: (deal.advertisers || []).map(function (a) { return [a.name + ' (' + a.dsp + ')', '']; }) };
   }
   function pacingTooltip(p) {
     var rows = [];
     if (p.delivered != null) rows.push(['Delivered', fmtInt(p.delivered) + ' assumed views']);
     if (p.guaranteedToDate != null) rows.push(['Guaranteed to date', fmtInt(p.guaranteedToDate)]);
-    if (p.guaranteedForFlight != null) rows.push(['Guaranteed for flight', fmtInt(p.guaranteedForFlight)]);
+    if (p.guaranteedForFlight != null) rows.push(['Guaranteed, whole flight', fmtInt(p.guaranteedForFlight)]);
     if (p.forecast != null) rows.push(['Forecast', fmtInt(p.forecast)]);
     if (p.buffer != null) rows.push(['Buffer', Math.round(p.buffer * (p.buffer <= 1 ? 100 : 1)) + '%']);
     if (p.flightStart) rows.push(['Flight', fmtDay(p.flightStart) + ' – ' + fmtDay(p.flightEnd) + ' (' + plural(p.flightDays, 'day') + ')']);
@@ -130,6 +161,8 @@
     if (!c || c.value == null) return '';
     return fmtMoney(c.value, 2);
   }
+  function cpmNote(c) { return !c || c.value == null ? '' : c.kind === 'floor' ? 'floor' : 'fixed'; }
+  function advertisersLabel(deal) { return plural((deal.advertisers || []).length, 'advertiser'); }
   function cpmTooltip(c) { return c && c.value != null ? { title: 'CPM', rows: [[c.kind === 'floor' ? 'Floor CPM' : 'Fixed CPM', fmtMoney(c.value, 2)]] } : null; }
 
   // ---------- DOM ----------
@@ -160,7 +193,7 @@
       tip.textContent = '';
       tip.appendChild(h('div', { class: 'rd-tip-title', text: model.title }));
       model.rows.forEach(function (r) {
-        tip.appendChild(h('div', { class: 'rd-tip-row' }, [h('span', { class: 'rd-tip-k', text: r[0] }), r[1] ? h('span', { class: 'rd-tip-v', text: r[1] }) : null]));
+        tip.appendChild(h('div', { class: 'rd-tip-row' + (r[2] ? ' ' + r[2] : '') }, [h('span', { class: 'rd-tip-k', text: r[0] }), r[1] ? h('span', { class: 'rd-tip-v', text: r[1] }) : null]));
       });
       tip.hidden = false;
       var rr = root.getBoundingClientRect(), ar = anchor.getBoundingClientRect();
@@ -208,16 +241,17 @@
 
     // ----- Revenue -----
     var chips = h('div', { class: 'rd-chips', role: 'group', 'aria-label': 'DSP' });
+    var chipsRow = h('div', { class: 'rd-chips-row' }, [h('span', { class: 'rd-chips-label', text: 'DSP' }), chips]);
     var seg = h('div', { class: 'rd-seg', role: 'group', 'aria-label': 'Granularity' });
     var revType = h('span', { class: 'rd-ctl' });
-    var revControls = h('div', { class: 'rd-controls' }, [chips, revType, seg]);
+    var revControls = h('div', { class: 'rd-controls' }, [chipsRow, revType, seg]);
     var rev = panel('Revenue', TIPS.revenue, revControls);
     var legend = h('div', { class: 'rd-legend' });
     function drawControls() {
       chips.textContent = '';
       DSP_ORDER.forEach(function (d) {
         var on = sel.dsps.indexOf(d) >= 0;
-        var b = h('button', { type: 'button', class: 'rd-chip' + (on ? ' on' : ''), 'aria-pressed': on ? 'true' : 'false', text: d });
+        var b = h('button', { type: 'button', class: 'rd-chip' + (on ? ' on' : ''), 'aria-pressed': on ? 'true' : 'false' }, [h('span', { class: 'rd-swatch', style: 'background:' + shadeColour(d, 'Preferred deal') }), document.createTextNode(d)]);
         b.onclick = function () {
           sel.dsps = on ? sel.dsps.filter(function (x) { return x !== d; }) : sel.dsps.concat(d);
           drawControls(); loadRevenue();
@@ -235,11 +269,10 @@
     }
     function drawLegend() {
       legend.textContent = '';
-      DEAL_TYPES.forEach(function (t) {
-        var dsp = sortDsps(sel.dsps)[0] || 'DV360';
-        legend.appendChild(h('span', { class: 'rd-legend-item' }, [h('span', { class: 'rd-swatch', style: 'background:' + shadeColour(dsp, t) }), document.createTextNode(t)]));
+      legendEntries(sel.dsps, sel.dealType).forEach(function (e) {
+        legend.appendChild(h('span', { class: 'rd-legend-item' }, [h('span', { class: 'rd-swatch', style: 'background:' + e.colour }), document.createTextNode(e.label)]));
       });
-      legend.appendChild(h('span', { class: 'rd-legend-item' }, [h('span', { class: 'rd-swatch rd-est' }), document.createTextNode('Estimated revenue')]));
+      legend.appendChild(h('span', { class: 'rd-legend-item' }, [h('span', { class: 'rd-swatch rd-est' }), document.createTextNode(AHEAD_LABEL)]));
     }
     function niceMax(v) {
       if (v <= 0) return 1;
@@ -258,7 +291,12 @@
       var cols = h('div', { class: 'rd-cols' });
       rev.body.appendChild(plot);
       var every = labelStep(bars.length, plot.clientWidth - 60, data.granularity === 'week' ? 92 : data.granularity === 'month' ? 72 : 52);
+      var markerDone = false;
       bars.forEach(function (b, i) {
+        if (b.ahead && !markerDone && i > 0) {
+          markerDone = true;
+          cols.appendChild(h('div', { class: 'rd-today', 'aria-hidden': 'true' }, [h('span', { class: 'rd-today-label', text: 'Today' })]));
+        }
         var stack = h('div', { class: 'rd-stack' });
         // Stack is column-reverse: first child is the bottom, so estimated goes last (on top).
         b.stacks.forEach(function (s) {
@@ -274,7 +312,7 @@
       plot.appendChild(axis); plot.appendChild(cols);
       drawLegend();
       var totals = revenueTotals(data);
-      var line = h('div', { class: 'rd-total', 'data-earned': String(totals.earned), text: 'Total earned ' + fmtMoney(totals.earned) + (totals.estimated ? ' · estimated ' + fmtMoney(totals.estimated) : '') });
+      var line = h('div', { class: 'rd-total', 'data-earned': String(totals.earned), text: 'Total earned ' + fmtMoney(totals.earned) });
       rev.body.insertBefore(line, plot);
       rev.body.appendChild(legend);
       lastRevenue = data;
@@ -284,7 +322,7 @@
       hideTip();
       rev.body.textContent = ''; rev.body.appendChild(h('div', { class: 'rd-skel' }));
       if (!sel.dsps.length) { rev.body.textContent = ''; return rev.body.appendChild(stateBox('empty', 'Select a DSP to see revenue.')); }
-      var extra = { dsps: sortDsps(sel.dsps), granularity: sel.granularity };
+      var extra = { dsps: sortDsps(sel.dsps), granularity: sel.granularity, aheadDays: aheadDaysFor(sel.granularity, filters.dateTo) };
       if (sel.dealType) extra.dealTypes = [sel.dealType];
       fetchJson('revenue', params(extra)).then(function (d) { if (my === seq.revenue) drawRevenue(d); })
         .catch(function () { if (my === seq.revenue) { rev.body.textContent = ''; rev.body.appendChild(stateBox('error', 'We couldn’t load revenue. Try again shortly.', loadRevenue)); } });
@@ -293,10 +331,22 @@
     // ----- Deals -----
     var dealsTypeWrap = h('span', { class: 'rd-ctl' });
     var deals = panel('Deals', TIPS.deals, dealsTypeWrap);
+    var loopSizes = null;
+    function loadLoopSizes() {
+      var p = params({}); delete p.displayTypeIds;
+      fetchJson('slot-allocation', p).then(function (d) {
+        loopSizes = {};
+        ((d && d.rows) || []).forEach(function (r) { if (r.slotsPerLoop) loopSizes[r.id] = r.slotsPerLoop; });
+      }).catch(function () { loopSizes = null; });
+    }
+    function barWithPercent(pct, cls, tail) {
+      return [h('span', { class: 'rd-bar ' + cls }, [h('i', { style: 'width:' + Math.max(0, Math.min(pct || 0, 100)) + '%' })]),
+        h('span', { class: 'rd-bar-val', text: pct == null ? '' : Math.round(pct) + '%' })].concat(tail || []);
+    }
     function drawDeals(data) {
       deals.body.textContent = '';
       var rows = (data && data.rows) || [];
-      if (!rows.length) return deals.body.appendChild(stateBox('empty', 'No deals for these filters.'));
+      if (!rows.length) return deals.body.appendChild(stateBox('empty', 'No deals match this filter.'));
       var cols = ['Deal', 'Deal type', 'Slots', 'Advertisers on deal', 'Fill', 'Pacing', 'Revenue', 'CPM'];
       var thead = h('thead', {}, [h('tr', {}, cols.map(function (c) {
         var th = h('th', { scope: 'col', class: c === 'Revenue' || c === 'CPM' ? 'rd-num' : '' }, [document.createTextNode(c)]);
@@ -310,18 +360,18 @@
         tr.appendChild(h('td', {}, [nameBtn]));
         tr.appendChild(h('td', { text: typeName(d.dealType) }));
         var slots = h('span', { class: 'rd-hov', text: slotsLabel(d) });
-        if (d.slots && d.slots.length) hover(slots, function () { return slotsTooltip(d); });
+        if (d.slots && d.slots.length) hover(slots, function () { return slotsTooltip(d, loopSizes); });
         tr.appendChild(h('td', {}, [slots]));
-        var adv = h('span', { class: 'rd-hov', text: String((d.advertisers || []).length) });
+        var adv = h('span', { class: 'rd-hov', text: advertisersLabel(d) });
         if ((d.advertisers || []).length) hover(adv, function () { return advertisersTooltip(d); });
         tr.appendChild(h('td', {}, [adv]));
-        tr.appendChild(h('td', { text: d.fill ? d.fill.percent + '%' : '' }));
+        var fillTd = h('td');
+        if (d.fill && d.fill.percent != null) fillTd.appendChild(h('span', { class: 'rd-barcell' }, barWithPercent(d.fill.percent, 'rd-fill-bar')));
+        tr.appendChild(fillTd);
         var pc = h('td');
         if (isPg(d.dealType) && d.pacing) {
-          var pctVal = d.pacing.percent;
-          var cell = h('span', { class: 'rd-pace' }, [
-            h('span', { class: 'rd-pace-bar' }, [h('i', { style: 'width:' + Math.min(pctVal || 0, 100) + '%' })]),
-            h('span', { class: 'rd-pace-val', text: pctVal == null ? '' : pctVal + '%' })]);
+          var cell = h('span', { class: 'rd-barcell rd-pace' }, barWithPercent(d.pacing.percent, 'rd-pace-bar',
+            d.pacing.percent == null ? [] : [h('span', { class: 'rd-sub', text: 'of guaranteed' })]));
           hover(cell, function () { return pacingTooltip(d.pacing); });
           pc.appendChild(cell);
         }
@@ -329,7 +379,9 @@
         tr.appendChild(h('td', { class: 'rd-num', text: fmtMoney(d.revenue) }));
         var cpm = h('td', { class: 'rd-num' }); var cm = cpmTooltip(d.cpm);
         var cs = h('span', { class: 'rd-hov', text: cpmText(d.cpm) }); if (cm) hover(cs, function () { return cm; });
-        cpm.appendChild(cs); tr.appendChild(cpm);
+        cpm.appendChild(cs);
+        if (cpmNote(d.cpm)) cpm.appendChild(h('div', { class: 'rd-sub', text: cpmNote(d.cpm) }));
+        tr.appendChild(cpm);
         tbody.appendChild(tr);
       });
       deals.body.appendChild(h('div', { class: 'rd-scroll' }, [h('table', { class: 'rd-table' }, [thead, tbody])]));
@@ -357,14 +409,14 @@
     });
 
     return {
-      setFilters: function (f) { filters = f || {}; loadRevenue(); loadDeals(); },
+      setFilters: function (f) { filters = f || {}; loadLoopSizes(); loadRevenue(); loadDeals(); },
       destroy: function () { container.removeChild(root); }
     };
   }
 
   return {
     mount: mount, DSP_ORDER: DSP_ORDER, DEAL_TYPES: DEAL_TYPES,
-    revenueBars: revenueBars, revenueTotals: revenueTotals, labelStep: labelStep, barTooltip: barTooltip, shadeColour: shadeColour, periodLabel: periodLabel, typeName: typeName,
+    revenueBars: revenueBars, revenueTotals: revenueTotals, labelStep: labelStep, barTooltip: barTooltip, shadeColour: shadeColour, periodLabel: periodLabel, typeName: typeName, legendEntries: legendEntries, aheadDaysFor: aheadDaysFor, advertisersLabel: advertisersLabel, cpmNote: cpmNote, DSP_SHADES: DSP_SHADES,
     nameTooltip: nameTooltip, slotsTooltip: slotsTooltip, slotsLabel: slotsLabel, advertisersTooltip: advertisersTooltip,
     pacingTooltip: pacingTooltip, cpmTooltip: cpmTooltip, fmtMoney: fmtMoney
   };

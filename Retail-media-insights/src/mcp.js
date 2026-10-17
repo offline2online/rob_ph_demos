@@ -27,7 +27,7 @@ const CHART = { dsps: strs('Limit the money figures to these DSPs.'), dealTypes:
 // route -> [tool name, description, extra arguments]
 const TOOLS = {
   summary: ['retail_media_summary', 'Earned revenue, estimated revenue and Inventory sold for the filters.', CHART],
-  revenue: ['retail_media_revenue', 'Revenue per period x DSP x deal type, earned and estimated.', { granularity: GRANULARITY, ...CHART }],
+  revenue: ['retail_media_revenue', 'Revenue per period x DSP x deal type, earned and estimated.', { granularity: GRANULARITY, aheadDays: str('Booked-ahead days after the last played day to add, a whole number from 0 to 120. Default 0.'), ...CHART }],
   yield: ['retail_media_yield', 'Effective CPM, earned revenue and assumed views (VAC-d) per DSP.', { dealType: str('One deal type.') }],
   'display-types': ['retail_media_display_types', 'Display types with their facts and VAC-d averages.', {}],
   'slot-value': ['retail_media_slot_value', 'Floor and effective CPM and value per slot per day, by display type.', {}],
@@ -40,6 +40,7 @@ const TOOLS = {
   delivery: ['retail_media_delivery', "An advertiser's plays won and spend per day, per-deal blocks and Programmatic guaranteed pacing. A retailer must pass exactly one advertiserIds.", { dealId: str('A deal id or open-auction.') }],
   'deals-by-display-type': ['retail_media_deals_by_display_type', "An advertiser's deals grouped by display type. A retailer must pass exactly one advertiserIds.", {}],
   audience: ['retail_media_audience', "An advertiser's assumed views (VAC-d) delivered, with a daily trend. A retailer must pass exactly one advertiserIds.", {}],
+  'my-summary': ['retail_media_my_summary', "An advertiser's spend, plays won and number of live deals (spend and plays equal Delivery's totals). A retailer must pass exactly one advertiserIds.", {}],
   'my-targeting': ['retail_media_my_targeting', "An advertiser's targeting level, variables used and scheduling. A retailer must pass exactly one advertiserIds.", {}],
 };
 

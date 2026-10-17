@@ -9,7 +9,7 @@ const { scopeFilters } = require('../src/filters');
 const { raw, ctx } = generateTestRetailer();
 const aggregates = buildAggregates(raw, ctx);
 const store = new AggregateStore(aggregates);
-const ALL = { dateFrom: '2026-07-14', dateTo: '2026-10-11', storeIds: null, displayTypeIds: null, advertiserIds: null };
+const ALL = { dateFrom: '2026-06-14', dateTo: '2026-10-11', storeIds: null, displayTypeIds: null, advertiserIds: null };
 
 function deliveryTotals(f) {
   const t = { revenue: 0, views: 0, slots: 0 };
@@ -34,9 +34,9 @@ function assertReconciles(f) {
   assert.equal(a.slots, r.slots);
 }
 
-test('test retailer has 5 stores and covers 90 days', () => {
+test('test retailer has 5 stores and covers 120 days', () => {
   assert.equal(new Set(raw.billing.map((b) => b.storeId)).size, 5);
-  assert.equal(new Set(raw.billing.map((b) => b.date)).size, 90);
+  assert.equal(new Set(raw.billing.filter((b) => b.settled).map((b) => b.date)).size, 120);
 });
 
 test('delivery aggregates equal raw billing, unfiltered', () => assertReconciles(ALL));
@@ -44,8 +44,8 @@ test('delivery aggregates equal raw billing, unfiltered', () => assertReconciles
 test('delivery aggregates equal raw billing under store, display type, advertiser and date filters', () => {
   assertReconciles({ ...ALL, storeIds: ['store-1', 'store-3'] });
   assertReconciles({ ...ALL, displayTypeIds: ['queue'] });
-  assertReconciles({ ...ALL, advertiserIds: ['adv-acme'] });
-  assertReconciles({ dateFrom: '2026-09-01', dateTo: '2026-09-15', storeIds: ['store-2'], displayTypeIds: ['window', 'endcap'], advertiserIds: ['adv-nova'] });
+  assertReconciles({ ...ALL, advertiserIds: ['adv-haleon'] });
+  assertReconciles({ dateFrom: '2026-09-01', dateTo: '2026-09-15', storeIds: ['store-2'], displayTypeIds: ['window', 'endcap'], advertiserIds: ['adv-unilever'] });
 });
 
 test('sold slots in inventory equal slots billed', () => {
@@ -80,11 +80,11 @@ test('window screens (24h) never have outside-hours slots; other types never cou
 
 test('unsold inventory ignores the advertiser filter', () => {
   const sum = (f) => { let u = 0; store.scanInventory(f, (r) => { u += r.unsold; }); return u; };
-  assert.equal(sum({ ...ALL, advertiserIds: ['adv-acme'] }), sum(ALL));
+  assert.equal(sum({ ...ALL, advertiserIds: ['adv-haleon'] }), sum(ALL));
 });
 
 test('an advertiser principal is pinned to its own advertiser server-side', () => {
-  const scoped = scopeFilters({ ...ALL, advertiserIds: ['adv-nova'] }, { principalType: 'advertiser', principalId: 'adv-acme' });
-  assert.deepEqual(scoped.advertiserIds, ['adv-acme']);
+  const scoped = scopeFilters({ ...ALL, advertiserIds: ['adv-unilever'] }, { principalType: 'advertiser', principalId: 'adv-haleon' });
+  assert.deepEqual(scoped.advertiserIds, ['adv-haleon']);
   assert.deepEqual(scopeFilters(ALL, { principalType: 'admin', principalId: 'r' }).advertiserIds, null);
 });

@@ -16,7 +16,7 @@ const ENDPOINTS = [
   ['slot-value', ''], ['slot-allocation', ''], ['missed-revenue', ''], ['maturity', ''],
   // Per advertiser (the advertiser view): pinned to one advertiser, as the server does for an advertiser login.
   ['delivery', 'advertiserIds=adv-blackmores'], ['deals-by-display-type', 'advertiserIds=adv-blackmores'],
-  ['audience', 'advertiserIds=adv-blackmores'], ['my-targeting', 'advertiserIds=adv-blackmores'],
+  ['audience', 'advertiserIds=adv-blackmores'], ['my-targeting', 'advertiserIds=adv-blackmores'], ['my-summary', 'advertiserIds=adv-blackmores'], ['revenue', 'granularity=month&aheadDays=81'],
 ];
 
 let worst = 0;

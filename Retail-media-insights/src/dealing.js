@@ -15,7 +15,8 @@ const toMs = (d) => { let ms = msCache.get(d); if (ms === undefined) { if (msCac
 const isoOf = (ms) => { let d = isoCache.get(ms); if (d === undefined) { if (isoCache.size > 50000) isoCache.clear(); d = new Date(ms).toISOString().slice(0, 10); isoCache.set(ms, d); } return d; };
 const dayNumber = (d) => Math.round(toMs(d) / DAY);
 const dayDiff = (a, b) => Math.round((toMs(b) - toMs(a)) / DAY);
-const cents = (n) => Math.round(n * 100) / 100;
+// Rounded to the cent after settling float noise (1e-6), so the order a sum was added in never decides a half cent.
+const cents = (n) => Math.round(Math.round(n * 1e6) / 1e4) / 100;
 
 const addDays = (d, n) => isoOf(toMs(d) + n * DAY);
 const eachDay = (from, to) => { const out = []; for (let d = from; d <= to; d = addDays(d, 1)) out.push(d); return out; };

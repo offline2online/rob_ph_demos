@@ -29,6 +29,7 @@ function chartFilter(params) {
   return (r) => (!dsp || dsp(r)) && (!types || types.has(r.dealType));
 }
 
-const cents = (n) => Math.round(n * 100) / 100;
+// Rounded to the cent after settling float noise (1e-6), so the order a sum was added in never decides a half cent.
+const cents = (n) => Math.round(Math.round(n * 1e6) / 1e4) / 100;
 
 module.exports = { chartFilter, listParam, cents, DSPS };

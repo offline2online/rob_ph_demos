@@ -16,7 +16,7 @@ const MODULES = [
 ];
 const ROUTES = [
   'advertisers', 'audience', 'deals-by-display-type', 'deals', 'delivery', 'display-types', 'filter-options', 'health', 'maturity',
-  'missed-revenue', 'my-targeting', 'params', 'revenue', 'slot-allocation', 'slot-value', 'summary', 'yield',
+  'missed-revenue', 'my-summary', 'my-targeting', 'params', 'revenue', 'slot-allocation', 'slot-value', 'summary', 'yield',
 ].map((r) => `src/routes/${r}.js`);
 const ROUTE_PATHS = ROUTES.filter((r) => !r.endsWith('/params.js'));
 

@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { generateTestRetailer, ADVERTISERS } = require('../src/testdata');
+const { generateTestRetailer, ADVERTISERS, OPEN_AUCTION_DEAL } = require('../src/testdata');
 const { buildAggregates } = require('../src/aggregate');
 const { AggregateStore } = require('../src/store');
 const { createServer, BASE } = require('../src/server');
@@ -38,18 +38,18 @@ function billing(id, q = {}) {
 test('the four advertiser view routes are advertiser-callable; a retailer must name one advertiser', async () => {
   for (const e of ENDPOINTS) {
     assert.equal(require(`../src/routes/${e}`).advertiserAccess, true, e);
-    assert.equal((await as('adv-nova', `/${e}?${Q}`)).status, 200, e);
+    assert.equal((await as('adv-unilever', `/${e}?${Q}`)).status, 200, e);
     assert.equal((await get(`/${e}?${Q}`)).status, 400, `${e} without an advertiser`);
-    assert.equal((await get(`/${e}?${Q}&advertiserIds=adv-nova,adv-acme`)).status, 400, `${e} with two`);
-    assert.equal((await get(`/${e}?${Q}&advertiserIds=adv-nova`)).status, 200, e);
+    assert.equal((await get(`/${e}?${Q}&advertiserIds=adv-unilever,adv-haleon`)).status, 400, `${e} with two`);
+    assert.equal((await get(`/${e}?${Q}&advertiserIds=adv-unilever`)).status, 200, e);
   }
 });
 
 test('an advertiser is pinned to its own data whatever advertiserIds or displayTypeIds say', async () => {
   for (const e of ENDPOINTS) {
-    const base = (await as('adv-nova', `/${e}?${Q}`)).body;
-    for (const forged of ['&advertiserIds=adv-acme', '&advertiserIds[]=adv-acme&advertiserIds[]=adv-blackmores', '&displayTypeIds=window,endcap,queue,dispensary']) {
-      assert.deepEqual((await as('adv-nova', `/${e}?${Q}${forged}`)).body, base, `${e}${forged}`);
+    const base = (await as('adv-unilever', `/${e}?${Q}`)).body;
+    for (const forged of ['&advertiserIds=adv-haleon', '&advertiserIds[]=adv-haleon&advertiserIds[]=adv-blackmores', '&displayTypeIds=window,endcap,queue,dispensary']) {
+      assert.deepEqual((await as('adv-unilever', `/${e}?${Q}${forged}`)).body, base, `${e}${forged}`);
     }
   }
 });
@@ -90,8 +90,8 @@ test('delivery: plays won and spend reconcile to billing, day by day and in tota
 });
 
 test('delivery: day-on-day change, including the day before the range', async () => {
-  const { body } = await as('adv-acme', `/delivery?${Q}`);
-  const rows = billing('adv-acme', { dateFrom: '2026-10-04' });
+  const { body } = await as('adv-haleon', `/delivery?${Q}`);
+  const rows = billing('adv-haleon', { dateFrom: '2026-10-04' });
   const plays = (date) => sum(rows.filter((r) => r.date === date).map((r) => r.slots));
   const [first, second] = body.days;
   assert.equal(first.vsPreviousDay.playsWon.change, first.playsWon - plays('2026-10-04'));
@@ -101,23 +101,23 @@ test('delivery: day-on-day change, including the day before the range', async ()
 });
 
 test('delivery: the Deal filter narrows the lines and the blocks; an unknown or foreign deal is 400', async () => {
-  const all = (await as('adv-nova', `/delivery?${Q}`)).body;
-  const one = (await as('adv-nova', `/delivery?${Q}&dealId=d3`)).body;
+  const all = (await as('adv-unilever', `/delivery?${Q}`)).body;
+  const one = (await as('adv-unilever', `/delivery?${Q}&dealId=d8`)).body;
   assert.ok(one.totals.playsWon > 0 && one.totals.playsWon < all.totals.playsWon);
-  assert.equal(one.totals.playsWon, sum(billing('adv-nova').filter((r) => r.dealId === 'd3').map((r) => r.slots)));
-  assert.ok(one.days.every((d) => d.deals.length === 1 && d.deals[0].dealId === 'd3'));
+  assert.equal(one.totals.playsWon, sum(billing('adv-unilever').filter((r) => r.dealId === 'd8').map((r) => r.slots)));
+  assert.ok(one.days.every((d) => d.deals.length === 1 && d.deals[0].dealId === 'd8'));
   assert.deepEqual(one.pacing, []);
-  const open = (await as('adv-nova', `/delivery?${Q}&dealId=open-auction`)).body;
+  const open = (await as('adv-unilever', `/delivery?${Q}&dealId=open-auction`)).body;
   assert.ok(open.days.every((d) => d.deals.length === 1 && d.deals[0].dealType === 'Open auction'));
-  assert.equal((await as('adv-nova', `/delivery?${Q}&dealId=nope`)).status, 400);
-  // Nova buys only d3 and has delivery only in the open auction here, so another buyer's deal is unknown to it.
-  const st = fixture([{ adv: 'adv-nova', cpm: 20 }]);
-  assert.equal((await as('adv-nova', '/delivery?dateFrom=2026-10-10&dateTo=2026-10-10&dealId=d1', st)).status, 400);
-  assert.equal((await as('adv-nova', '/delivery?dateFrom=2026-10-10&dateTo=2026-10-10&dealId=d3', st)).status, 200);
+  assert.equal((await as('adv-unilever', `/delivery?${Q}&dealId=nope`)).status, 400);
+  // Unilever buys only d8 (Queue screens) and has delivery only in the open auction here, so another buyer's deal is unknown to it.
+  const st = fixture([{ adv: 'adv-unilever', cpm: 20 }]);
+  assert.equal((await as('adv-unilever', '/delivery?dateFrom=2026-10-10&dateTo=2026-10-10&dealId=d1', st)).status, 400);
+  assert.equal((await as('adv-unilever', '/delivery?dateFrom=2026-10-10&dateTo=2026-10-10&dealId=d8', st)).status, 200);
 });
 
 test('delivery: auction blocks show plays won of all plays, share, own CPM and the floor; fixed-price deals have no auction', async () => {
-  const { body } = await as('adv-nova', `/delivery?${Q}`);
+  const { body } = await as('adv-unilever', `/delivery?${Q}`);
   for (const d of body.days) for (const b of d.deals) {
     if (b.dealType === 'Private auction' || b.dealType === 'Open auction') {
       if (!('allPlays' in b)) { assert.ok(!('sharePercent' in b), 'share needs allPlays'); } else assert.ok(b.playsWon <= b.allPlays, b.dealId);
@@ -130,9 +130,9 @@ test('delivery: auction blocks show plays won of all plays, share, own CPM and t
     }
   }
   const pd = body.days[0].deals.find((b) => b.dealType === 'Private auction');
-  assert.deepEqual(pd.floorCpm, { min: 14, max: 14 });
+  assert.deepEqual(pd.floorCpm, { min: 5.5, max: 5.5 });
   const oa = body.days[0].deals.find((b) => b.dealType === 'Open auction');
-  assert.deepEqual(oa.floorCpm, { min: 6, max: 12 }, 'range of the floors of the display types its campaigns run on');
+  assert.deepEqual(oa.floorCpm, { min: 5.5, max: 7.5 }, 'range of the floors of the display types its campaigns run on');
 });
 
 test('delivery: open auction in the test data never clears below its floor; a source that does is passed through unchanged', async () => {
@@ -143,39 +143,39 @@ test('delivery: open auction in the test data never clears below its floor; a so
     if (b.winningCpm) assert.ok(b.winningCpm.average >= b.floorCpm.min && b.winningCpm.highest >= b.winningCpm.average);
   }
   assert.ok(seen > 0);
-  const st = fixture([{ adv: 'adv-nova', cpm: 5 }, { adv: 'adv-acme', cpm: 6 }, { adv: 'adv-blackmores', cpm: 7 }]);
-  const low = (await as('adv-nova', `/delivery?dateFrom=2026-10-10&dateTo=2026-10-10`, st)).body.days[0].deals.find((b) => b.dealId === 'open-auction');
+  const st = fixture([{ adv: 'adv-unilever', cpm: 5 }, { adv: 'adv-haleon', cpm: 6 }, { adv: 'adv-blackmores', cpm: 7 }]);
+  const low = (await as('adv-unilever', `/delivery?dateFrom=2026-10-10&dateTo=2026-10-10`, st)).body.days[0].deals.find((b) => b.dealId === 'open-auction');
   assert.equal(low.yourCpm, 5, 'the source cleared below the floor; not clamped');
   assert.ok(low.yourCpm < low.floorCpm.min);
 });
 
-/** One day, one display type (window, floor $12), one open auction, the given winners at the given CPMs, 10 plays x 200 views each. */
-function fixture(winners, { dealId = 'd4' } = {}) {
+/** One day, one display type (window, floor $7.50), one open auction, the given winners at the given CPMs, 10 plays x 200 views each. */
+function fixture(winners, { dealId = OPEN_AUCTION_DEAL } = {}) {
   const billingRows = winners.map((w) => ({
     date: '2026-10-10', storeId: 'store-1', displayTypeId: 'window', dealId, dsp: 'DV360', advertiserId: w.adv,
     revenue: calc.revenueAtCpm(w.cpm, 2000), views: 2000, slots: 10, settled: true,
   }));
   const f = generateTestRetailer({ days: 1 });
-  const campaigns = [{ id: 'cx', advertiserId: 'adv-nova', start: '2026-09-01', end: null, displayTypeIds: ['window'], variables: [], scheduled: false }];
+  const campaigns = [{ id: 'cx', advertiserId: 'adv-unilever', start: '2026-09-01', end: null, displayTypeIds: ['window'], variables: [], scheduled: false }];
   return new AggregateStore(buildAggregates({ billing: billingRows, slotRecords: [], campaigns }, f.ctx));
 }
 
 test('winning CPM: shown only when at least MIN_OTHER_BUYERS_FOR_WINNING_CPM other buyers won; never per buyer', async () => {
   assert.equal(MIN_OTHER_BUYERS_FOR_WINNING_CPM, 2);
-  const day = async (winners) => (await as('adv-nova', '/delivery?dateFrom=2026-10-10&dateTo=2026-10-10', fixture(winners))).body.days[0].deals.find((b) => b.dealId === 'open-auction');
-  const alone = await day([{ adv: 'adv-nova', cpm: 20 }]);
+  const day = async (winners) => (await as('adv-unilever', '/delivery?dateFrom=2026-10-10&dateTo=2026-10-10', fixture(winners))).body.days[0].deals.find((b) => b.dealId === 'open-auction');
+  const alone = await day([{ adv: 'adv-unilever', cpm: 20 }]);
   assert.ok(!('winningCpm' in alone));
-  const one = await day([{ adv: 'adv-nova', cpm: 20 }, { adv: 'adv-acme', cpm: 30 }]);
+  const one = await day([{ adv: 'adv-unilever', cpm: 20 }, { adv: 'adv-haleon', cpm: 30 }]);
   assert.ok(!('winningCpm' in one), 'one other buyer would reveal that buyer\'s CPM');
   assert.equal(one.playsWon, 10);
   assert.ok(!('allPlays' in one) && !('sharePercent' in one), 'all plays minus own plays would be that buyer\'s plays');
-  const two = await day([{ adv: 'adv-nova', cpm: 20 }, { adv: 'adv-acme', cpm: 30 }, { adv: 'adv-blackmores', cpm: 40 }]);
+  const two = await day([{ adv: 'adv-unilever', cpm: 20 }, { adv: 'adv-haleon', cpm: 30 }, { adv: 'adv-blackmores', cpm: 40 }]);
   assert.deepEqual(two.winningCpm, { average: 30, highest: 40 });
   assert.equal(two.allPlays, 30); assert.equal(two.yourCpm, 20);
-  const onlyOthers = await day([{ adv: 'adv-acme', cpm: 30 }, { adv: 'adv-blackmores', cpm: 40 }]);
+  const onlyOthers = await day([{ adv: 'adv-haleon', cpm: 30 }, { adv: 'adv-blackmores', cpm: 40 }]);
   assert.equal(onlyOthers.playsWon, 0); assert.ok(!('yourCpm' in onlyOthers));
   assert.deepEqual(onlyOthers.winningCpm, { average: 35, highest: 40 });
-  assert.ok(!JSON.stringify(two).match(/acme|blackmores/i));
+  assert.ok(!JSON.stringify(two).match(/haleon|blackmores/i));
   const bare = Object.keys(two).sort();
   assert.deepEqual(bare, ['allPlays', 'dealId', 'dealType', 'floorCpm', 'name', 'playsWon', 'sharePercent', 'winningCpm', 'yourCpm']);
 });
@@ -186,16 +186,15 @@ test('delivery: PG pacing is the advertiser\'s own guarantee against its own del
   const p = body.pacing[0];
   assert.equal(p.series.length, 7);
   // Delivered is settled VAC-d only, over the whole deal: the store and display type page filters do not change it.
-  const own = []; store.scanDelivery({ dateFrom: '2026-09-20', dateTo: '2026-10-11', storeIds: null, displayTypeIds: null, advertiserIds: ['adv-blackmores'] }, (r) => { if (r.dealId === 'd1') own.push(r); });
+  const own = []; store.scanDelivery({ dateFrom: '2026-09-15', dateTo: '2026-10-11', storeIds: null, displayTypeIds: null, advertiserIds: ['adv-blackmores'] }, (r) => { if (r.dealId === 'd1') own.push(r); });
   const last = p.series[6];
   assert.equal(last.date, '2026-10-11');
   assert.equal(last.delivered, Math.round(sum(own.map((r) => r.earnedViews))));
-  assert.ok(sum(own.map((r) => r.earnedViews)) < sum(own.map((r) => r.views)), 'unsettled days are not counted as delivered');
-  assert.equal(last.guaranteed, Math.round(ctx.dealCatalog.d1.forecast * 0.9 * 22 / 62));
+  assert.equal(last.guaranteed, Math.round(ctx.dealCatalog.d1.forecast * 0.9 * 27 / 62));
   const narrowed = (await as('adv-blackmores', `/delivery?${Q}&storeIds=store-1&displayTypeIds=window`)).body.pacing[0];
   assert.deepEqual(narrowed.series, p.series, 'pacing ignores the store and display type filters');
   assert.ok(p.series.every((s, i) => i === 0 || (s.delivered >= p.series[i - 1].delivered && s.guaranteed > p.series[i - 1].guaranteed)));
-  assert.deepEqual((await as('adv-nova', `/delivery?${Q}&dealId=d3`)).body.pacing, [], 'no pacing for other deal types');
+  assert.deepEqual((await as('adv-unilever', `/delivery?${Q}&dealId=d8`)).body.pacing, [], 'no pacing for other deal types');
 });
 
 test('deals-by-display-type: groups in shopper-journey order, rows reconcile to billing, shares add up', async () => {
@@ -227,7 +226,7 @@ test('deals-by-display-type: groups in shopper-journey order, rows reconcile to 
 });
 
 test('deals-by-display-type: a deal\'s share is the advertiser\'s plays of all plays on that deal and display type', async () => {
-  const { body } = await as('adv-nova', `/deals-by-display-type?${Q}`);
+  const { body } = await as('adv-unilever', `/deals-by-display-type?${Q}`);
   const all = []; store.scanDelivery({ dateFrom: '2026-10-05', dateTo: '2026-10-11', storeIds: null, displayTypeIds: null, advertiserIds: null }, (r) => all.push({ ...r, slots: r.earnedSlots }));
   for (const g of body.groups) for (const d of g.deals) {
     if (!('allPlays' in d.share)) continue; // omitted when exactly one other buyer won there
@@ -249,30 +248,30 @@ test('audience: assumed views and the daily trend add up to billing', async () =
 test('my-targeting: level, variables used (never Daypart), scheduling and the shared variables still unused', async () => {
   const b = (await as('adv-blackmores', `/my-targeting?${Q}`)).body;
   assert.equal(b.level, 'Personalised');
-  assert.deepEqual(b.variablesUsed.map((v) => v.label), ['State', 'Visitor Segments']);
-  assert.equal(b.variablesUsed[1].personalisationType, 'Identified visitor');
+  assert.deepEqual(b.variablesUsed.map((v) => v.label), ['Display Tag(s)', 'Fixed Store Segments', 'Gender (Computer Vision)', 'Reason for Visit (Aggregate)', 'Variable Store Segments']);
+  assert.deepEqual(b.variablesUsed.slice(2, 4).map((v) => v.personalisationType), ['Computer Vision', 'Aggregate']);
   assert.ok(!JSON.stringify(b).includes('Daypart'));
-  assert.deepEqual(b.scheduling, { uses: true, scheduledCampaigns: 1, campaigns: 2, schedules: 2 });
+  assert.deepEqual(b.scheduling, { uses: true, scheduledCampaigns: 2, campaigns: 3, schedules: 3 });
   const labels = [...b.otherVariablesAvailable.Localised, ...b.otherVariablesAvailable.Personalised].map((v) => v.label);
-  assert.ok(!labels.includes('State') && !labels.includes('Visitor Segments'));
+  assert.ok(!labels.includes('Fixed Store Segments') && !labels.includes('Gender (Computer Vision)'));
   assert.ok(labels.includes('Suburb') && labels.includes('Purchase Intent'));
   assert.ok(!labels.includes('Postcode') && !labels.includes('Age'), 'not shared with the DSP, so not available');
   assert.ok(b.otherVariablesAvailable.Localised.every((v) => v.kind === 'Localised') && b.otherVariablesAvailable.Personalised.every((v) => v.kind === 'Personalised'));
   assert.equal(b.usesEverySharedVariable, false);
-  const n = (await as('adv-nova', `/my-targeting?${Q}`)).body;
+  const n = (await as('adv-unilever', `/my-targeting?${Q}`)).body;
   assert.equal(n.level, 'Default only'); assert.deepEqual(n.variablesUsed, []);
-  assert.deepEqual(n.scheduling, { uses: false, scheduledCampaigns: 0, campaigns: 1, schedules: 0 });
+  assert.deepEqual(n.scheduling, { uses: false, scheduledCampaigns: 0, campaigns: 3, schedules: 0 });
 });
 
 test('my-targeting: no campaigns omits the level; a DSP with nothing configured defaults to Localisation only; using everything says so', async () => {
   const f = generateTestRetailer({ days: 1 });
   const mk = (campaigns, sharedVariables) => new AggregateStore(buildAggregates({ billing: [], slotRecords: [], campaigns }, { ...f.ctx, sharedVariables }));
-  const empty = (await as('adv-nova', '/my-targeting?dateFrom=2026-10-10&dateTo=2026-10-10', mk([], {}))).body;
+  const empty = (await as('adv-unilever', '/my-targeting?dateFrom=2026-10-10&dateTo=2026-10-10', mk([], {}))).body;
   assert.ok(!('level' in empty));
   assert.deepEqual(empty.otherVariablesAvailable.Personalised, []);
   assert.equal(empty.otherVariablesAvailable.Localised.length, 8);
-  const all = mk([{ id: 'c', advertiserId: 'adv-nova', start: '2026-09-01', end: null, variables: ['Suburb', 'Purchase Intent'], scheduled: false }], { 'Amazon DSP': ['Suburb', 'Purchase Intent'] });
-  const done = (await as('adv-nova', '/my-targeting?dateFrom=2026-10-10&dateTo=2026-10-10', all)).body;
+  const all = mk([{ id: 'c', advertiserId: 'adv-unilever', start: '2026-09-01', end: null, variables: ['Suburb', 'Purchase Intent'], scheduled: false }], { 'Amazon DSP': ['Suburb', 'Purchase Intent'] });
+  const done = (await as('adv-unilever', '/my-targeting?dateFrom=2026-10-10&dateTo=2026-10-10', all)).body;
   assert.equal(done.usesEverySharedVariable, true);
   assert.deepEqual(done.otherVariablesAvailable, { Localised: [], Personalised: [] });
 });

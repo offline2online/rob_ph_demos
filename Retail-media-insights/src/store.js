@@ -109,6 +109,12 @@ class AggregateStore {
     stampDays(this.delivery); stampDays(this.inventory);
     for (const r of this.delivery) { r.dealIx = deals.code(r.dealId); r.typeIx = types.code(r.displayTypeId); r.advIx = advs.code(r.advertiserId); }
     for (const r of this.inventory) r.typeIx = types.code(r.displayTypeId);
+    // The first and last played day: days with inventory or earned delivery. Reservations (estimated rows booked ahead) are not played days.
+    let first = null; let last = null;
+    const played = (date) => { if (first === null || date < first) first = date; if (last === null || date > last) last = date; };
+    for (const r of this.inventory) played(r.date);
+    for (const r of this.delivery) if (r.earnedSlots > 0 || r.earned > 0) played(r.date);
+    this.firstPlayedDay = first; this.lastPlayedDay = last;
     this.dealIds = deals.ids; this.typeIds = types.ids; this.advIds = advs.ids;
     this.dealCode = new Map(deals.ids.map((v, i) => [v, i])); this.typeCode = new Map(types.ids.map((v, i) => [v, i])); this.advCode = new Map(advs.ids.map((v, i) => [v, i]));
 

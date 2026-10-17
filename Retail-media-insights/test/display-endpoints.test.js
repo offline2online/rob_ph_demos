@@ -29,8 +29,8 @@ test('display-types: hover cards in shopper-journey order with stored fields onl
   assert.equal(body.rows.find((r) => r.name === 'Queue Screen').operatingHours, 'Store opening hours');
   assert.equal(w.canvas.label, '1080 × 1920 px');
   assert.equal(w.displayOrientation, '90°');
-  assert.equal(w.averages.averageAssumedViewsPerSlotPerDay, 200);
-  assert.equal(w.averages.averageFootfallPerDay, 4000);
+  assert.equal(w.averages.averageAssumedViewsPerSlotPerDay, 338.2);
+  assert.equal(w.averages.averageFootfallPerDay, 6149);
   assert.equal(w.averages.shareOfLoopTime.percent, 10);
   assert.equal(w.averages.averagesCover.label, 'Averages across all 10 connected Window Portrait displays in 5 stores, 2 Oct – 11 Oct.');
   assert.ok(!JSON.stringify(body).includes('"open"'), 'no specific opening times');
@@ -48,7 +48,7 @@ test('display-types: a field that is not stored is omitted; store and type filte
   const { body } = await get(`/display-types?${Q}&storeIds[]=store-1&displayTypeIds=window`);
   assert.equal(body.rows.length, 1);
   assert.deepEqual(body.rows[0].connectedDisplays, { displays: 2, stores: 1 });
-  assert.equal(body.rows[0].averages.averageFootfallPerDay, 3600);
+  assert.equal(body.rows[0].averages.averageFootfallPerDay, 8944);
 });
 
 test('slot-value: per slot per day and network totals reconcile', async () => {
@@ -85,12 +85,12 @@ test('missed-revenue: parts add to totals, including the all-types row', async (
   for (const k of ['slotsTotal', 'unsoldValueAtFloor', 'downtimeLostRevenue', 'totalMissed']) {
     assert.equal(body.rows.reduce((n, r) => n + r[k], 0), body.total[k]);
   }
-  assert.deepEqual(body.total.floorCpm, { min: 6, max: 12 });
+  assert.deepEqual(body.total.floorCpm, { min: 5.5, max: 7.5 });
   assert.equal(body.total.connectedDisplays.displays, 50);
   assert.ok(body.total.downtimeLostRevenue > 0 && body.total.slotsOffline > 0);
 });
 
 test('missed-revenue is refused for advertiser logins', async () => {
-  const { status } = await get(`/missed-revenue?${Q}`, { authenticate: advertiser('adv-acme') });
+  const { status } = await get(`/missed-revenue?${Q}`, { authenticate: advertiser('adv-haleon') });
   assert.equal(status, 403);
 });
