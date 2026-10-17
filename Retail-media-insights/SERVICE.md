@@ -8,7 +8,7 @@ The back end of Retail Media Insights & Analytics Dashboards: a read-only servic
 - `src/aggregate.js` — builds the daily aggregates from raw billing line items and slot records: delivery (display type × store × deal × DSP × advertiser) and inventory (display type × store).
 - `src/display-types.js` — display type facts shared by the display endpoints: connected displays, loop from the slot configuration, VAC-d averages, hover card, shopper-journey (IAB zone) order.
 - `src/store.js` — date-indexed in-memory aggregate store.
-- `src/routes/` — one file per endpoint, auto-discovered by `src/server.js`. Today: `health`, `summary`, `revenue`, `yield`, `display-types`, `slot-value`, `slot-allocation`, `missed-revenue`, `maturity` (ladder, scheduling, share by level over time, variables in use, advertiser table; `granularity`, `level`, `variable`, `scheduling`, `kind` params).
+- `src/routes/` — one file per endpoint, auto-discovered by `src/server.js`. Today: `health`, `summary`, `revenue`, `yield`, `display-types`, `slot-value`, `slot-allocation`, `missed-revenue`, `deals`, `advertisers`, `maturity` (ladder, scheduling, share by level over time, variables in use, advertiser table; `granularity`, `level`, `variable`, `scheduling`, `kind` params).
 - `src/testdata.js` — deterministic 5-store test retailer (Window Portrait, Endcap Shelf-edge, Queue Screen, Dispensary Screen).
 - `bench/bench.js` — 90-day query over ~865k aggregate rows.
 
@@ -40,3 +40,11 @@ All take the page filters; rows come in shopper-journey zone order.
 - **Connected displays (README open question 5, undecided):** a display counts if it was connected at any point in the date range (`connectedFrom` / `connectedTo` on the display; none set means always connected). Switching to "online now" is a one-line change in `connectedIn()` in `src/display-types.js`.
 - Fill on `missed-revenue` and `slot-allocation` is sold ÷ (sold + unsold), the same as the Inventory sold tile; offline slots are returned separately so sold + unsold + offline = all advertiser slots inside operating hours.
 - `missed-revenue` returns 403 to an advertiser login (downtime and lost revenue are retailer-only). Downtime lost revenue comes from the lost-revenue report values carried on offline slot records.
+
+## Endpoints: deals, advertisers
+Both take the page filters. Reference data (deals, buyers, slot assignments) comes from `store.catalog.deals`, filled by the source adapter from DSP Integration; today it is the test catalog in `src/testdata.js`.
+- `GET /deals?dealType=` — one row per named deal (Open auction is not a deal) in the standard deal-type order: name, description, `dealIds` (one `PH-` ID per DSP that has an invited buyer), `slots` (display type, playlist · zone, IAB zone, advertiser slot n / loop slot n, plays per window), `advertisers` with their DSP, `fill`, `pacing` (Programmatic Guaranteed only, else `null`), `revenue` and `cpm` (`kind` is `floor` for Private auction, `fixed` otherwise). An unknown `dealType` returns 400.
+- PG `pacing` is as at `dateTo`: before the flight `startsInDays` is set and `percent` is `null`; during it `daysElapsed` / `daysRemaining` count from the flight start; after it `daysRemaining` is 0, `flightEnded` is true and `guaranteedToDate` equals the whole-flight guarantee. `guaranteedToDate` = forecast × (1 − buffer) × days elapsed / flight days.
+- `GET /advertisers` — `top` (10 by revenue) and `all`: revenue, `share` (whole numbers adding to 100), `dealsOn` (names and types), `slotsCovered`, `slotsWonPercent`, `effectiveCpm` (settled billing) and `dsp`. `slotsWon.complete` is false when the range is longer than the 90-day settled-bid retention (README open question 3).
+- **Decision:** slot records carry no position, so a display type's sold + unsold slots inside operating hours are split equally across its advertiser positions. Deal `fill` = slots delivered on the deal ÷ the opportunities of its assigned slots; `slotsWonPercent` is the same for an advertiser's covered slots.
+- An advertiser login sees only the deals it is invited to, with only its own buyer and the deal ID for its own DSP, and only its own advertiser row.

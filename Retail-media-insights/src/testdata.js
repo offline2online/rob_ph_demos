@@ -62,6 +62,35 @@ const DEALS = {
   d4: { dealType: 'Open auction', cpm: 11 },
 };
 const DEAL_DSP = { d1: 'DV360', d2: 'The Trade Desk', d3: 'Amazon DSP', d4: 'DV360' };
+// Deal reference data as DSP Integration will serve it (Deals & buyers lists, slot assignments).
+const DEAL_CATALOG = {
+  d1: {
+    name: 'Wellness PG', description: 'Guaranteed wellness reach on windows and queue screens.', dealType: 'Programmatic Guaranteed', phId: 'PH-D1', cpm: 22,
+    buyers: [{ advertiserId: 'adv-blackmores', dsp: 'DV360' }, { advertiserId: 'adv-acme', dsp: 'The Trade Desk' }],
+    slots: [
+      { displayTypeId: 'window', playlist: 'Window loop', zone: 'Zone A', position: 1, loopSlot: 2, playsPerWindow: 12 },
+      { displayTypeId: 'queue', playlist: 'Queue loop', zone: 'Zone A', position: 1, loopSlot: 1, playsPerWindow: 10 },
+    ],
+    flight: { start: '2026-09-20', end: '2026-11-20' }, forecast: 4000000, buffer: 0.1,
+  },
+  d2: {
+    name: 'Everyday Preferred', description: 'Preferred access to endcap and queue slots at a fixed rate.', dealType: 'Preferred deal', phId: 'PH-D2', cpm: 18,
+    buyers: [{ advertiserId: 'adv-acme', dsp: 'The Trade Desk' }],
+    slots: [
+      { displayTypeId: 'endcap', playlist: 'Endcap loop', zone: 'Zone A', position: 2, loopSlot: 3, playsPerWindow: 8 },
+      { displayTypeId: 'queue', playlist: 'Queue loop', zone: 'Zone A', position: 2, loopSlot: 3, playsPerWindow: 10 },
+    ],
+  },
+  d3: {
+    name: 'Pharmacy Private', description: 'Invited private auction on dispensary and window screens.', dealType: 'Private auction', phId: 'PH-D3', cpm: 15, floorCpm: 14,
+    buyers: [{ advertiserId: 'adv-nova', dsp: 'Amazon DSP' }, { advertiserId: 'adv-blackmores', dsp: 'DV360' }],
+    slots: [
+      { displayTypeId: 'dispensary', playlist: 'Dispensary loop', zone: 'Zone B', position: 1, loopSlot: 1, playsPerWindow: 6 },
+      { displayTypeId: 'window', playlist: 'Window loop', zone: 'Zone A', position: 3, loopSlot: 5, playsPerWindow: 12 },
+    ],
+  },
+  d4: { name: 'Open auction', description: 'The open exchange.', dealType: 'Open auction', phId: 'PH-D4', cpm: 11, buyers: [], slots: [] },
+};
 const ADVERTISERS = ['adv-blackmores', 'adv-acme', 'adv-nova'];
 const SLOTS_PER_HOUR = 6;
 const ADVERTISER_META = {
@@ -88,6 +117,7 @@ function generateTestRetailer({ days = 90, endDate = '2026-10-11', stores = 5, s
     displayTypes: DISPLAY_TYPES,
     stores: Object.fromEntries(storeIds.map((id) => [id, { open: 8, close: 20 }])),
     deals: DEALS,
+    dealCatalog: DEAL_CATALOG,
     displays: storeIds.flatMap((storeId, i) => Object.entries(DISPLAY_TYPES).flatMap(([displayTypeId, type]) => (
       Array.from({ length: type.displaysPerStore }, (_, k) => ({
         id: `${displayTypeId}-${storeId}-${k + 1}`, displayTypeId, storeId,

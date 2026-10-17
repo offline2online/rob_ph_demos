@@ -13,6 +13,8 @@ const calc = require('./calc');
  *                  (campaign submissions: targeting rules, scheduling) - optional
  * ctx.advertisers: {[id]: {name, dsp}} - optional
  * raw.slotRecords[].lostRevenue: lost-revenue report value for an offline record (optional)
+ * ctx.dealCatalog: {[dealId]: {name, description, dealType, phId, buyers[{advertiserId, dsp}], slots[{displayTypeId, playlist, zone, position,
+ *   loopSlot, playsPerWindow}], cpm|floorCpm, flight{start,end}, forecast, buffer (PG)}} - optional
  * ctx.displayTypes: {[id]: {is24Hour, name, zone, floorCpm, description, touchPoint, canvas, orientation,
  *   creativeFormats, slots: {advertiser, ownContent: {count, avgSeconds}}}}, ctx.displays: [{id, displayTypeId, storeId,
  *   footfall, visibility, connectedFrom?, connectedTo?}], ctx.stores: {[id]: {open, close}}, ctx.deals: {[id]: {dealType}}
@@ -69,7 +71,7 @@ function buildAggregates(raw, ctx) {
   }));
   return {
     delivery: [...delivery.values()], inventory: [...inventory.values()], campaigns, advertisers: ctx.advertisers || {},
-    catalog: { displayTypes: ctx.displayTypes, displays: ctx.displays || [] },
+    catalog: { displayTypes: ctx.displayTypes, displays: ctx.displays || [], deals: ctx.dealCatalog || {} },
   };
 }
 
