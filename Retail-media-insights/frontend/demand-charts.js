@@ -59,6 +59,9 @@
 
   function dealRank(t) { var i = DEAL_TYPES.indexOf(t); return i < 0 ? DEAL_TYPES.length : i; }
 
+  // Sum of the back end's rounded revenue figures, in whole cents, so the total never drifts from the rows above it.
+  function revenueTotal(rows) { return rows.reduce(function (n, a) { return n + Math.round(a.revenue * 100); }, 0) / 100; }
+
   function advertiserRows(data, showAll) {
     var rows = (showAll ? data.all : data.top) || [];
     return rows.map(function (a) {
@@ -125,7 +128,7 @@
   }
   function schedulingText(s) {
     if (!s || !s.uses) return 'Not used';
-    return 'Scheduled · ' + s.scheduledCampaigns + ' of ' + plural(s.campaigns, 'campaign');
+    return 'Dayparted · ' + s.scheduledCampaigns + ' of ' + plural(s.campaigns, 'campaign');
   }
   function tableRows(data) {
     return ((data && data.table) || []).map(function (r) {
@@ -155,7 +158,7 @@
     advertiserRows: advertiserRows, dealsOnHover: dealsOnHover, slotsWonHover: slotsWonHover, ladderHover: ladderHover,
     schedulingHover: schedulingHover, variableHover: variableHover, progressHover: progressHover, chipText: chipText,
     schedulingText: schedulingText, tableRows: tableRows, variableOptions: variableOptions, variableBars: variableBars,
-    activeFilters: activeFilters, periodLabel: periodLabel, fmtMoney: fmtMoney, pct: pct
+    activeFilters: activeFilters, revenueTotal: revenueTotal, periodLabel: periodLabel, fmtMoney: fmtMoney, pct: pct
   };
 
   // ---------- DOM ----------
@@ -327,6 +330,16 @@
     container.appendChild(tip);
 
     // ----- Advertisers -----
+    function totalRow(d, rows) {
+      var shown = rows.map(function (r) { return r.src; });
+      var partial = !state.showAll && (d.all || []).length > TOP_N;
+      var total = revenueTotal(shown);
+      return h('tr', { class: 'dc-total', 'data-total': String(total) }, [
+        h('th', { scope: 'row', class: 'dc-name', text: partial ? 'Total (top ' + TOP_N + ')' : 'Total' }),
+        h('td', { class: 'dc-num', text: fmtMoney(total) }),
+        h('td', { class: 'dc-num', text: partial ? '' : '100%' }), h('td'), h('td'), h('td'), h('td')
+      ]);
+    }
     function drawAdvertisers() {
       var d = advData;
       var rows = advertiserRows(d, state.showAll);
@@ -348,7 +361,8 @@
             h('td', { class: 'dc-num', text: r.revenue }), h('td', { class: 'dc-num', text: r.share }),
             dealsTd, h('td', { class: 'dc-num', text: r.slotsCovered }), wonTd, h('td', { class: 'dc-num', text: r.effectiveCpm })
           ]);
-        }))
+        })),
+        h('tfoot', {}, [totalRow(d, rows)])
       ]);
       pAdv.body.removeAttribute('aria-busy');
       pAdv.body.innerHTML = '';

@@ -64,3 +64,5 @@
 .rd-tip-k { color: var(--rd-text); white-space: pre-line; }
 .rd-tip-v { white-space: pre-line; text-align: right; font-weight: 500; }
 @media (max-width: 600px) { .rd-plot { height: 220px; } .rd-pace-bar { width: 56px; } }
+.rd-total { margin: 0 0 8px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.rd-xlabel { overflow: visible; }

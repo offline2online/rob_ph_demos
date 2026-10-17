@@ -2,49 +2,40 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; object-src 'none'; base-uri 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Retail Media Performance</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
 <link rel="stylesheet" href="css/insights.css">
 <link rel="stylesheet" href="frontend/revenue-deals.css">
+<link rel="stylesheet" href="frontend/slot-charts.css">
+<link rel="stylesheet" href="frontend/demand-charts.css">
 <link rel="stylesheet" href="frontend/advertiser-view.css">
 </head>
 <body>
-<main class="frame">
-  <nav class="crumb" aria-label="Breadcrumb">Home <span class="sep">&gt;</span> Insights / Analytics <span class="sep">&gt;</span> <span>Retail Media Performance</span></nav>
+<!-- Content frame only: the platform shell owns the header, sidebar and the outer breadcrumb. -->
+<main class="frame" id="frame">
+  <nav class="crumb" id="crumb" aria-label="Breadcrumb"></nav>
   <h1 class="title">Insights / Analytics</h1>
 
-  <div class="tabs" role="tablist">
-    <button class="tab active" role="tab" aria-selected="true">Retail Media Performance</button>
-    <button class="tab" role="tab" aria-selected="false">Campaign Performance</button>
-    <button class="tab" role="tab" aria-selected="false">Engagement</button>
+  <section class="filters" id="filters" aria-label="Page filters"></section>
+  <div class="tabs" id="tabs" role="tablist"></div>
+
+  <div id="tab-rmp">
+    <div id="msg" class="msg" hidden></div>
+    <section id="strip" class="strip" aria-label="Summary" aria-live="polite"></section>
+    <div id="rd" class="rd-host"></div>
+    <div id="sc" class="rd-host"></div>
+    <div id="dc" class="rd-host"></div>
+    <div id="av" class="rd-host" hidden></div>
   </div>
-
-  <section class="filters" aria-label="Page filters">
-    <label class="field"><span>Date range</span>
-      <select id="f-date"><option value="30">Last 30 days</option><option value="7">Last 7 days</option><option value="90">Last 90 days</option></select></label>
-    <label class="field"><span>Store</span>
-      <select id="f-store"><option value="all">All Stores</option><option value="s2">Store 2</option><option value="s1">Store 1</option></select></label>
-    <label class="field"><span>Display type</span>
-      <select id="f-display"><option value="all">All display types</option><option value="menu">Menu board</option><option value="kiosk">Kiosk</option></select></label>
-    <div class="field" id="adv-field"><span>Advertiser</span>
-      <select id="f-adv"><option value="all">All advertisers</option><option value="a1">Advertiser A</option><option value="a2">Advertiser B</option></select>
-      <span class="chip" id="adv-chip" hidden><span class="material-symbols-outlined">lock</span>Advertiser A</span></div>
-    <div class="actions">
-      <button class="btn primary" id="apply" hidden>Apply</button>
-      <button class="btn" id="cancel" hidden>Cancel</button>
-      <button class="btn text" id="reset" hidden>Reset Filters</button>
-    </div>
-  </section>
-
-  <section id="strip" class="strip" aria-live="polite"></section>
-  <div id="rd" class="rd-host"></div>
-  <div id="av" class="rd-host" hidden></div>
+  <div id="tab-other" class="msg" hidden></div>
 </main>
-<script src="frontend/rd-fixtures.js"></script>
+<script src="frontend/local-api.js"></script>
 <script src="frontend/revenue-deals.js"></script>
-<script src="frontend/av-fixtures.js"></script>
+<script src="frontend/slot-charts.js"></script>
+<script src="frontend/demand-charts.js"></script>
 <script src="frontend/advertiser-view.js"></script>
 <script src="js/insights.js"></script>
 </body>

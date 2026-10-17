@@ -10,10 +10,8 @@ Demand health and Targeting & scheduling maturity of the Retail Media Performanc
 | Advertiser targeting & scheduling table | full width | `maturity` (`table`) |
 
 ## Files
-- `demand-charts.js` / `demand-charts.css` — `DemandCharts.mount(el, { fetchJson })` returns `{ setFilters, refresh, destroy }`; the shell calls `setFilters()` on Apply. Pure model builders are exported for the tests.
-- `demand-fixtures.js` — twelve fixture advertisers in the endpoint shapes, plus a `fetchJson` that supports `state: 'empty' | 'error'`. The maturity fixture applies the same table filters and ordering as `src/routes/maturity.js`.
-- `demand-charts-demo.html` — test page; `?state=loading|empty|error` previews the other states.
-- `test/demand-charts.test.js` — `node --test Retail-media-insights/frontend/test/*.test.js` (offline, no dependencies).
+- `demand-charts.js` / `demand-charts.css` — `DemandCharts.mount(el, { fetchJson, filters })` returns `{ setFilters, refresh, destroy }`; the shell calls `setFilters()` on Apply. Pure model builders are exported for the tests.
+- `test/demand-charts.test.js` — `npm test` in `Retail-media-insights` (offline). It runs on the real route handlers through `local-api.js`; there are no fixtures.
 
 ## Behaviour
 - **Advertisers**: Deals on hover is headed "Name (DSP): deals on" and lists deals with type. No warning chips, no highlighted rows. When the range exceeds the settled-bid retention, Slots won hovers state the retention.

@@ -102,3 +102,4 @@ button.dc-clear { cursor: pointer; background: rgba(22,155,194,0.1); border-colo
   .dc-table th, .dc-table td { padding-left: 4px; padding-right: 4px; font-size: 12px; }
   .dc-tip-rows { grid-template-columns: minmax(0, 1fr); gap: 0; } .dc-tip-rows dd { margin-bottom: 4px; }
 }
+.dc-table tfoot th, .dc-table tfoot td { font-weight: 700; border-top: 1px solid #d9d9d9; }

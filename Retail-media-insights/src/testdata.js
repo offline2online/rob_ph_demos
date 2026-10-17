@@ -63,6 +63,13 @@ const DISPLAY_TYPES = {
 };
 // Per-store footfall factor; averages to 1 over the default 5 stores.
 const FOOTFALL_FACTORS = [0.9, 1.1, 1.0, 0.8, 1.2];
+// Sell-through (share of non-offline slots sold) is deterministic by display type, store and day, so the page has a
+// spread to read: Queue Screen sells out (amber at 85%+), Dispensary Screen sits half empty. Type base, +/-1 point by
+// store, +/-0.8 point by day-of-week, plus a little noise; every figure stays inside the type's stated band.
+const SELL_THROUGH = { queue: 0.9, endcap: 0.8, window: 0.7, dispensary: 0.585 };
+const sellThrough = (typeId, storeIndex, dayIndex, noise) => (
+  (SELL_THROUGH[typeId] || 0.67) + (storeIndex - 2) * 0.005 + ((dayIndex % 7) - 3) * 0.0025 + (noise - 0.5) * 0.01
+);
 const DEALS = {
   d1: { dealType: 'Programmatic guaranteed', cpm: 22 },
   d2: { dealType: 'Preferred deal', cpm: 18 },
@@ -131,7 +138,7 @@ function generateTestRetailer({ days = 90, endDate = '2026-10-11', stores = 5, s
   const storeIds = Array.from({ length: stores }, (_, i) => `store-${i + 1}`);
   const ctx = {
     displayTypes: DISPLAY_TYPES,
-    stores: Object.fromEntries(storeIds.map((id) => [id, { open: 8, close: 20 }])),
+    stores: Object.fromEntries(storeIds.map((id, i) => [id, { name: `Store ${i + 1}`, open: 8, close: 20 }])),
     deals: DEALS,
     dealCatalog: DEAL_CATALOG,
     sharedVariables: SHARED_VARIABLES,
@@ -182,7 +189,7 @@ function generateTestRetailer({ days = 90, endDate = '2026-10-11', stores = 5, s
           const totals = { sold: 0, unsold: 0, offline: 0 };
           for (let position = 1; position <= advertiser.count; position += 1) {
             const offline = rand() < 0.03 ? Math.round(capacity * 0.15) : 0;
-            const sold = Math.round((capacity - offline) * (0.45 + rand() * 0.45));
+            const sold = Math.round((capacity - offline) * sellThrough(typeId, storeIndex, d, rand()));
             totals.sold += sold; totals.offline += offline; totals.unsold += capacity - offline - sold;
             const dealId = ownerOf(typeId, position);
             const buyers = buyersOf(dealId);

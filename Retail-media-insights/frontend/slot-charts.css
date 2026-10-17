@@ -62,7 +62,7 @@
 .sc-table tr.sc-hot td:hover { background: rgba(250,173,20,0.26); }
 .sc-sold { white-space: nowrap; }
 .sc-sold-n { display: inline-block; min-width: 38px; font-variant-numeric: tabular-nums; }
-.sc-mini { display: inline-block; width: 48px; height: 6px; border-radius: 3px; background: rgba(0,0,0,0.08); vertical-align: middle; overflow: hidden; margin-left: 6px; }
+.sc-mini { display: inline-block; width: 32px; height: 6px; border-radius: 3px; background: rgba(0,0,0,0.08); vertical-align: middle; overflow: hidden; margin-left: 6px; }
 .sc-mini-fill { display: block; height: 100%; }
 
 .sc-skel-row { height: 16px; border-radius: 3px; background: linear-gradient(90deg, #f0f0f0, #fafafa, #f0f0f0); background-size: 200% 100%; animation: sc-shim 1.2s linear infinite; margin: 14px 0; }
@@ -75,7 +75,7 @@
 
 /* Hover card: absolute inside the frame (never fixed), clamped to the viewport by the script. */
 .sc-tip { position: absolute; z-index: 20; top: 0; left: 0; background: #fff; color: var(--sc-text); border: 1px solid #d9d9d9; border-radius: 8px;
-  box-shadow: 0 6px 16px rgba(0,0,0,0.12); padding: 12px; font-size: 13px; pointer-events: none; max-width: calc(100vw - 16px); }
+  box-shadow: 0 6px 16px rgba(0,0,0,0.12); padding: 12px; font-size: 13px; pointer-events: none; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow: hidden; }
 .sc-tip[hidden] { display: none; }
 .sc-tip-title { font-weight: 700; font-size: 14px; }
 .sc-tip-desc { color: var(--sc-muted); margin: 2px 0 6px; }
@@ -98,3 +98,5 @@
   .sc-mini { display: block; width: 100%; margin: 4px 0 0; }
   .sc-tip-rows { grid-template-columns: minmax(0, 1fr); gap: 0; } .sc-tip-rows dd { margin-bottom: 4px; }
 }
+.sc-scroll { overflow-x: auto; }
+.sc-table th .sc-info { margin-left: 4px; vertical-align: middle; }

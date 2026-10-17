@@ -72,7 +72,7 @@ function buildAggregates(raw, ctx) {
   }));
   return {
     delivery: [...delivery.values()], inventory: [...inventory.values()], campaigns, advertisers: ctx.advertisers || {},
-    catalog: { displayTypes: ctx.displayTypes, displays: ctx.displays || [], deals: ctx.dealCatalog || {}, sharedVariables: ctx.sharedVariables || {} },
+    catalog: { displayTypes: ctx.displayTypes, displays: ctx.displays || [], stores: ctx.stores || {}, deals: ctx.dealCatalog || {}, sharedVariables: ctx.sharedVariables || {} },
   };
 }
 

@@ -15,6 +15,7 @@
   var DEAL_TYPES = ['Programmatic guaranteed', 'Preferred deal', 'Private auction', 'Open auction'];
   var DSP_ORDER = ['DV360', 'The Trade Desk', 'Amazon DSP'];
   var AMBER_AT = 85;
+  var ORIENTATIONS = ['Not set', '90°', '180°', '270°'];
 
   var VAC_TEXT = 'Assumed views is the VAC-d (Visibility Adjusted Contacts, digital) score from the OMA MOVE out-of-home standard, and CPM is cost per thousand assumed views. ' +
     'Average assumed views per slot per day = average footfall past a display per day × average visibility adjustment × the slot’s share of loop time (slot length ÷ loop length), averaged across the display type’s connected displays. ' +
@@ -25,9 +26,17 @@
     slotValue: VAC_TEXT + ' The number in brackets is the display type’s connected displays across the selected stores (PH Core).',
     slotAllocation: 'Slots per loop: total slots in the display type’s loop. Advertiser slots + Own-content slots = Slots per loop. ' +
       'Advertiser slots sold: share of advertiser slot capacity inside operating hours sold over the date range; rows at ' + AMBER_AT + '% or more are highlighted amber.',
-    missed: 'Unsold value is an estimate at floor CPM, i.e. the minimum those slots could have earned. Slots outside operating hours are not counted. ' +
-      'The number in brackets is connected displays (PH Core). The last row totals all display types.',
-    yield: 'Effective CPM per connected DSP: revenue per thousand assumed views (VAC-d). Use the Deal type filter to compare deal types.'
+    missed: 'Unsold value is an estimate at floor CPM, i.e. the minimum those slots could have earned: unsold slots × average assumed views per slot × floor CPM ÷ 1,000. Slots outside operating hours are not counted. ' +
+      'Display downtime is the revenue lost while a display was offline. The number in brackets is connected displays (PH Core). The last row totals all display types. ' + VAC_TEXT,
+    yield: 'Effective CPM per connected DSP: earned revenue per thousand assumed views (VAC-d). Use the Deal type filter to compare deal types. ' + VAC_TEXT
+  };
+  // Column definitions for the Slot allocation table (an ⓘ beside each heading).
+  var COLUMN_TIPS = {
+    'Display type': 'The kind of screen, in shopper-journey order. Hover the name for its facts.',
+    'Slots per loop': 'All slots in one pass of the display type’s playlist loop: advertiser slots plus own-content slots.',
+    'Advertiser slots': 'Slots in the loop that advertisers can buy. Hover for their duration and share of the loop.',
+    'Own-content slots': 'Slots in the loop the retailer keeps for its own content. They are never sold to advertisers.',
+    'Advertiser slots sold': 'Share of advertiser slots, inside operating hours, that were sold in the selected period. ' + AMBER_AT + '% or more is highlighted amber.'
   };
 
   // ---------- formatting ----------
@@ -37,8 +46,8 @@
     dp = dp == null ? 0 : dp;
     return '$' + n.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp });
   }
-  // Labels on bars: "$18", "$3.60" — whole dollars once past $10.
-  function fmtLabelMoney(n) { return n >= 10 ? fmtMoney(n, 0) : fmtMoney(n, 2); }
+  // CPM labels are always to the cent.
+  function fmtLabelMoney(n) { return fmtMoney(n, 2); }
   function fmtCompact(n) {
     if (n >= 1e6) return (Math.round(n / 1e5) / 10) + 'M';
     if (n >= 1e3) return (Math.round(n / 100) / 10) + 'k';
@@ -52,15 +61,19 @@
     var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
     return m ? (+m[3]) + ' ' + MONTHS[+m[2] - 1] : '';
   }
+  // meta is the page's date filter: { dateFrom, dateTo }.
   function dateRange(meta) {
     return meta && meta.dateFrom && meta.dateTo ? fmtDay(meta.dateFrom) + ' – ' + fmtDay(meta.dateTo) : '';
   }
+  function orientationText(v) { return ORIENTATIONS.indexOf(String(v)) >= 0 ? String(v) : 'Not set'; }
+  function displaysOf(dt) { return dt && dt.connectedDisplays ? dt.connectedDisplays.displays : null; }
+  function storesOf(dt) { return dt && dt.connectedDisplays ? dt.connectedDisplays.stores : null; }
 
   // ---------- ordering ----------
   function zoneRank(zone) { var i = ZONE_ORDER.indexOf(zone); return i < 0 ? ZONE_ORDER.length : i; }
   // Shopper-journey order; a type with no zone goes last; ties keep input order.
   function journeyOrder(rows, typeOf) {
-    return rows.map(function (r, i) { return { r: r, i: i, z: zoneRank((typeOf(r) || {}).zone) }; })
+    return rows.map(function (r, i) { return { r: r, i: i, z: zoneRank((typeOf(r) || {}).iabZone) }; })
       .sort(function (a, b) { return a.z - b.z || a.i - b.i; })
       .map(function (x) { return x.r; });
   }
@@ -74,7 +87,6 @@
     ((payload && payload.rows) || []).forEach(function (t) { m[t.id] = t; });
     return m;
   }
-  function typeName(t, id) { return (t && t.name) || id; }
   function bracketed(name, n) { return has(n) ? name + ' (' + fmtInt(n) + ')' : name; }
 
   // ---------- hover models: { title, desc, sections: [{ rows: [[label, value]], note }], text } ----------
@@ -84,40 +96,35 @@
     return null; // anything else could be a specific time — never shown
   }
 
-  // The shared display type card: facts only, and only fields that are stored.
+  // The shared display type card (the back end's hover card): facts only, and only fields that are stored.
   function displayTypeCard(dt, meta, opts) {
     opts = opts || {};
     var rows = [];
-    if (!opts.omitConnected && has(dt.connectedDisplays)) {
-      rows.push(['Connected displays', fmtInt(dt.connectedDisplays) + (has(dt.storeCount) ? ' across ' + plural(dt.storeCount, 'store') : '')]);
+    var cd = dt.connectedDisplays;
+    if (!opts.omitConnected && cd && has(cd.displays)) {
+      rows.push(['Connected displays', fmtInt(cd.displays) + (has(cd.stores) ? ' across ' + plural(cd.stores, 'store') : '')]);
     }
-    if (has(dt.zone)) rows.push(['IAB store zone', dt.zone]);
+    if (has(dt.iabZone)) rows.push(['IAB store zone', dt.iabZone]);
     var hrs = hoursText(dt.operatingHours);
     if (hrs) rows.push(['Operating hours', hrs]);
     if (has(dt.touchPoint)) rows.push(['Touch Point', dt.touchPoint]);
-    if (dt.resolution && has(dt.resolution.width) && has(dt.resolution.height)) {
-      rows.push(['Display canvas size', dt.resolution.width + ' × ' + dt.resolution.height + ' px']);
+    if (dt.canvas && has(dt.canvas.width) && has(dt.canvas.height)) {
+      rows.push(['Display canvas size (resolution)', dt.canvas.width + ' × ' + dt.canvas.height + ' px']);
     }
-    if (has(dt.orientation)) rows.push(['Display orientation', String(dt.orientation)]);
+    if (has(dt.displayOrientation)) rows.push(['Display orientation', orientationText(dt.displayOrientation)]);
     var cf = Array.isArray(dt.creativeFormats) ? dt.creativeFormats.filter(has).join('; ') : dt.creativeFormats;
     if (has(cf)) rows.push(['Creative formats', cf]);
     var vac = [];
-    if (has(dt.avgAssumedViewsPerSlotPerDay)) vac.push(['Average assumed views (VAC-d) per slot per day', fmtNum(dt.avgAssumedViewsPerSlotPerDay)]);
-    if (has(dt.avgFootfallPerDay)) vac.push(['Average footfall past a display per day', fmtInt(dt.avgFootfallPerDay)]);
-    if (has(dt.avgVisibilityAdjustment)) vac.push(['Average visibility adjustment', fmtNum(dt.avgVisibilityAdjustment)]);
-    var s = dt.shareOfLoopTime;
-    if (s && has(s.slotSeconds) && has(s.loopSeconds) && s.loopSeconds > 0) {
-      vac.push(['Share of loop time', s.slotSeconds + 's advertiser slot ÷ ' + s.loopSeconds + 's loop = ' + pct(100 * s.slotSeconds / s.loopSeconds)]);
+    var a = dt.averages || {};
+    if (has(a.averageAssumedViewsPerSlotPerDay)) vac.push(['Average assumed views (VAC-d) per slot per day', fmtNum(a.averageAssumedViewsPerSlotPerDay)]);
+    if (has(a.averageFootfallPerDay)) vac.push(['Average footfall past a display per day', fmtInt(a.averageFootfallPerDay)]);
+    if (has(a.averageVisibility)) vac.push(['Average visibility adjustment', fmtNum(a.averageVisibility)]);
+    var s = a.shareOfLoopTime;
+    if (s && has(s.advertiserSlotSeconds) && has(s.loopSeconds) && has(s.percent)) {
+      vac.push(['Share of loop time', s.advertiserSlotSeconds + 's advertiser slot ÷ ' + s.loopSeconds + 's loop = ' + pct(s.percent)]);
     }
     var sections = [{ rows: rows }];
-    if (vac.length) {
-      var note = null;
-      if (has(dt.connectedDisplays)) {
-        note = 'Averages across all ' + fmtInt(dt.connectedDisplays) + ' connected ' + dt.name + ' displays' +
-          (has(dt.storeCount) ? ' in ' + plural(dt.storeCount, 'store') : '') + (dateRange(meta) ? ', ' + dateRange(meta) : '') + '.';
-      }
-      sections.push({ rows: vac, note: note });
-    }
+    if (vac.length) sections.push({ rows: vac, note: a.averagesCover && a.averagesCover.label ? a.averagesCover.label : null });
     return { title: dt.name, desc: has(dt.description) ? dt.description : null, sections: sections.filter(function (x) { return x.rows.length; }) };
   }
 
@@ -127,78 +134,87 @@
     return m;
   }
 
-  function slotValueHover(row, dt, meta) {
+  // row is a /slot-value row: the card facts plus effectiveCpm, floorCpm, perSlotPerDay, totals{…}, advertiserSlotsSoldShare.
+  function slotValueHover(row, meta) {
+    var t = row.totals || {};
     var range = dateRange(meta);
-    var rows = [['Effective CPM', fmtMoney(row.effectiveCpm, 2) + ' (total ' + fmtMoney(row.earnedRevenue) + ' earned on ' + fmtCompact(row.assumedViews) + ' assumed views' + (range ? ', ' + range : '') + ')']];
+    var rows = [['Effective CPM', fmtMoney(row.effectiveCpm, 2) + ' (total ' + fmtMoney(t.earnedRevenue, 2) + ' earned on ' + fmtCompact(t.assumedViews) + ' assumed views' + (range ? ', ' + range : '') + ')']];
     if (has(row.floorCpm)) rows.push(['Floor CPM', fmtMoney(row.floorCpm, 2)]);
-    var totalPerDay = row.perSlotPerDay * row.advertiserSlots;
-    rows.push(['Per slot per day', fmtMoney(row.perSlotPerDay, 2) + ' (total ' + fmtMoney(totalPerDay) + ' per day across ' + plural(row.advertiserSlots, 'advertiser slot') + ' on ' + plural(row.connectedDisplays, 'display') + ')']);
-    var sec = { rows: rows, note: 'Per slot per day = Effective CPM × average assumed views per slot per day ÷ 1,000.' };
-    var m = cardPlus(dt || { name: row.displayTypeId }, meta, [sec], { omitConnected: false });
-    return m;
+    rows.push(['Per slot per day', fmtMoney(row.perSlotPerDay, 2) + ' (total ' + fmtMoney(t.perDay, 0) + ' per day across ' + plural(t.advertiserSlots, 'advertiser slot') + ' on ' + plural(displaysOf(row), 'display') + ')']);
+    if (has(row.averageAssumedViewsPerSlotPerDay) && has(row.advertiserSlotsSoldShare)) {
+      rows.push(['How it adds up', fmtMoney(row.effectiveCpm, 2) + ' CPM × ' + fmtNum(row.averageAssumedViewsPerSlotPerDay) + ' average assumed views ÷ 1,000 × ' +
+        fmtNum(row.advertiserSlotsSoldShare * 100) + '% of advertiser slots sold = ' + fmtMoney(row.perSlotPerDay, 2)]);
+    }
+    var sec = { rows: rows, note: 'Per slot per day = Effective CPM × average assumed views per slot per day ÷ 1,000 × the share of advertiser slots sold.' };
+    return cardPlus(row, meta, [sec], { omitConnected: false });
   }
 
-  function loopLine(count, secs, loop) {
-    var t = count * secs;
-    return count + ' × ' + secs + 's = ' + t + 's (' + pct(100 * t / loop) + ' of the loop)';
+  function loopLine(part) {
+    return part.count + ' × ' + part.avgSeconds + 's = ' + part.totalSeconds + 's (' + pct(part.percentOfLoop) + ' of the loop)';
   }
-  // kind: 'loop' | 'advertiser' | 'own'
+  // kind: 'loop' | 'advertiser' | 'own'. row is a /slot-allocation row; every percentage is the back end's.
   function allocationHover(row, kind) {
-    var loop = row.loopSeconds;
     var rows = [];
     if (kind === 'loop') {
-      rows.push(['Total loop length', loop + 's']);
-      if (row.slotsPerLoop > 0) rows.push(['Average slot duration', fmtNum(loop / row.slotsPerLoop) + 's']);
-      rows.push(['Advertiser slots', loopLine(row.advertiserSlots, row.advertiserSlotSeconds, loop)]);
-      if (row.ownContentSlots > 0) rows.push(['Own-content slots', loopLine(row.ownContentSlots, row.ownContentSlotSeconds, loop)]);
+      rows.push(['Total loop length', row.loopSeconds + 's']);
+      rows.push(['Average slot duration', fmtNum(row.averageSlotSeconds) + 's']);
+      rows.push(['Advertiser slots', loopLine(row.advertiserSlots)]);
+      if (row.ownContentSlots.count > 0) rows.push(['Own-content slots', loopLine(row.ownContentSlots)]);
     } else {
-      var n = kind === 'advertiser' ? row.advertiserSlots : row.ownContentSlots;
-      var d = kind === 'advertiser' ? row.advertiserSlotSeconds : row.ownContentSlotSeconds;
+      var part = kind === 'advertiser' ? row.advertiserSlots : row.ownContentSlots;
       var label = kind === 'advertiser' ? 'advertiser' : 'own-content';
-      rows.push(['Average ' + label + ' slot duration', d + 's']);
-      rows.push(['Time in the loop', loopLine(n, d, loop)]);
-      rows.push(['Share of the loop per slot', d + 's ÷ ' + loop + 's = ' + pct(100 * d / loop)]);
+      rows.push(['Average ' + label + ' slot duration', part.avgSeconds + 's']);
+      rows.push(['Time in the loop', loopLine(part)]);
+      rows.push(['Share of the loop per slot', part.avgSeconds + 's ÷ ' + row.loopSeconds + 's = ' + pct(part.slotShareOfLoopPercent)]);
     }
     return { title: null, desc: null, sections: [{ rows: rows }] };
   }
 
+  // The back end rounds the parts once; they are shown and added as returned.
   function missedParts(r) {
-    // Parts are added as shown, never re-rounded from a fresh sum.
-    return { unsold: r.unsoldValue, downtime: r.downtimeLostRevenue, total: r.unsoldValue + r.downtimeLostRevenue };
+    return { unsold: r.unsoldValueAtFloor, downtime: r.downtimeLostRevenue, total: r.totalMissed };
   }
-  function fillPct(r) { return r.slotsTotal > 0 ? 100 * r.slotsSold / r.slotsTotal : 0; }
 
-  function missedHover(row, dt, meta, isTotal, allDisplays) {
+  function floorText(f) {
+    if (!f || !has(f.min) || !has(f.max)) return null;
+    return f.min === f.max ? fmtMoney(f.min, 2) : fmtMoney(f.min, 2) + '–' + fmtMoney(f.max, 2) + ' by display type';
+  }
+
+  // row is a /missed-revenue row or its `total`; dt is the display type's card (rows only). Store counts come from the row itself.
+  function missedHover(row, dt, meta, isTotal) {
     var range = dateRange(meta);
     var p = missedParts(row);
+    var cd = row.connectedDisplays || {};
     var rows = [];
-    rows.push(['Connected displays', fmtInt(row.connectedDisplays) + (has(meta && meta.storeCount) ? ' across ' + plural(meta.storeCount, 'store') : '')]);
-    if (isTotal) {
-      if (has(row.floorCpmMin) && has(row.floorCpmMax)) rows.push(['Floor CPM', row.floorCpmMin === row.floorCpmMax ? fmtMoney(row.floorCpmMin, 2) : fmtMoney(row.floorCpmMin, 2) + '–' + fmtMoney(row.floorCpmMax, 2) + ' by display type']);
-    } else if (has(row.floorCpm)) rows.push(['Floor CPM', fmtMoney(row.floorCpm, 2)]);
-    rows.push(['Fill', pct(fillPct(row)) + ' (total ' + fmtInt(row.slotsSold) + ' of ' + fmtInt(row.slotsTotal) + ' advertiser slots sold)']);
+    rows.push(['Connected displays', fmtInt(cd.displays) + (has(cd.stores) ? ' across ' + plural(cd.stores, 'store') : '')]);
+    var floor = isTotal ? floorText(row.floorCpm) : (has(row.floorCpm) ? fmtMoney(row.floorCpm, 2) : null);
+    if (floor) rows.push(['Floor CPM', floor]);
+    rows.push(['Fill', pct(row.fillPercent) + ' (total ' + fmtInt(row.slotsSold) + ' of ' + fmtInt(row.slotsTotal) + ' advertiser slots sold)']);
     rows.push(['Unsold slots', fmtInt(row.slotsUnsold) + ' (total ' + fmtMoney(p.unsold) + ' at floor CPM)']);
     rows.push(['Display downtime', fmtMoney(p.downtime) + ' (total lost revenue; ' + fmtInt(row.slotsOffline) + ' slots offline)']);
     rows.push(['Total missed revenue', fmtMoney(p.total) + ' (' + fmtMoney(p.unsold) + ' unsold + ' + fmtMoney(p.downtime) + ' downtime)']);
-    var note = 'Totals across all ' + fmtInt(row.connectedDisplays) + ' connected ' + (isTotal ? '' : (dt ? dt.name : '') + ' ') + 'displays' +
-      (has(meta && meta.storeCount) ? ' in ' + plural(meta.storeCount, 'store') : '') + (range ? ', ' + range : '') + '.';
-    var sec = { rows: rows, note: note.replace('connected  displays', 'connected displays') };
+    var note = 'Totals across all ' + fmtInt(cd.displays) + ' connected ' + (isTotal ? '' : (dt ? dt.name + ' ' : '')) + 'displays' +
+      (has(cd.stores) ? ' in ' + plural(cd.stores, 'store') : '') + (range ? ', ' + range : '') + '.';
+    var sec = { rows: rows, note: note };
     if (isTotal || !dt) return { title: isTotal ? 'All display types' : null, desc: null, sections: [sec] };
     return cardPlus(dt, meta, [sec], { omitConnected: true });
   }
 
   function yieldHover(row, dealType, meta) {
+    if (row.effectiveCpm === null || row.effectiveCpm === undefined) {
+      return { title: row.dsp, desc: null, sections: [{ rows: [['Deal type', dealType], ['Effective CPM', 'No delivery']], note: 'No settled billing for this DSP and deal type in the selected period.' }] };
+    }
     var rows = [['Deal type', dealType], ['Effective CPM', fmtMoney(row.effectiveCpm, 2)]];
     if (has(row.earnedRevenue) && has(row.assumedViews)) {
-      rows.push(['Earned', fmtMoney(row.earnedRevenue) + ' on ' + fmtCompact(row.assumedViews) + ' assumed views' + (dateRange(meta) ? ', ' + dateRange(meta) : '')]);
+      rows.push(['Earned', fmtMoney(row.earnedRevenue, 2) + ' on ' + fmtCompact(row.assumedViews) + ' assumed views' + (dateRange(meta) ? ', ' + dateRange(meta) : '')]);
     }
     return { title: row.dsp, desc: null, sections: [{ rows: rows }] };
   }
 
   var pure = {
-    ZONE_ORDER: ZONE_ORDER, DEAL_TYPES: DEAL_TYPES, DSP_ORDER: DSP_ORDER, AMBER_AT: AMBER_AT, TIPS: TIPS,
-    fmtMoney: fmtMoney, fmtLabelMoney: fmtLabelMoney, fmtCompact: fmtCompact, dateRange: dateRange, pct: pct,
-    journeyOrder: journeyOrder, dspOrder: dspOrder, typesById: typesById, missedParts: missedParts, fillPct: fillPct,
+    ZONE_ORDER: ZONE_ORDER, DEAL_TYPES: DEAL_TYPES, DSP_ORDER: DSP_ORDER, AMBER_AT: AMBER_AT, TIPS: TIPS, COLUMN_TIPS: COLUMN_TIPS,
+    fmtMoney: fmtMoney, fmtLabelMoney: fmtLabelMoney, fmtCompact: fmtCompact, dateRange: dateRange, pct: pct, orientationText: orientationText,
+    journeyOrder: journeyOrder, dspOrder: dspOrder, typesById: typesById, missedParts: missedParts,
     displayTypeCard: displayTypeCard, slotValueHover: slotValueHover, allocationHover: allocationHover,
     missedHover: missedHover, yieldHover: yieldHover
   };
@@ -218,6 +234,7 @@
       Object.keys(attrs || {}).forEach(function (k) {
         if (k === 'class') e.className = attrs[k];
         else if (k === 'text') e.textContent = attrs[k];
+        else if (k === 'style') e.style.cssText = attrs[k]; // CSSOM, not a style attribute: allowed under style-src 'self'
         else if (attrs[k] !== null && attrs[k] !== undefined) e.setAttribute(k, attrs[k]);
       });
       (kids || []).forEach(function (c) { if (c) e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
@@ -248,7 +265,7 @@
       var w = Math.min(340, vw - 16);
       tip.style.width = w + 'px';
       var rr = container.getBoundingClientRect();
-      var hgt = tip.offsetHeight;
+      var hgt = Math.min(tip.offsetHeight, vh - 16);
       var left = Math.max(8, Math.min(x + 12, vw - w - 8));
       var top = y + 14;
       if (top + hgt > vh - 8) top = y - hgt - 10;
@@ -342,24 +359,23 @@
     // ----- slot value -----
     var svData = null;
     function drawSlotValue() {
-      var d = svData, meta = d.meta;
-      var rows = journeyOrder(d.rows, function (r) { return cache.typeMap[r.displayTypeId]; });
+      var d = svData;
+      var rows = journeyOrder(d.rows, function (r) { return r; });
       var cpm = state.mode === 'cpm';
       var vals = rows.map(function (r) { return cpm ? r.effectiveCpm : r.perSlotPerDay; });
       var max = Math.max.apply(null, vals.concat(cpm ? rows.map(function (r) { return r.floorCpm || 0; }) : [0])) * 1.08 || 1;
       var list = h('div', { class: 'sc-rows', role: 'list' });
       rows.forEach(function (r, i) {
-        var dt = cache.typeMap[r.displayTypeId];
         var bar = h('div', { class: 'sc-bar sc-primary', style: 'width:' + (100 * vals[i] / max).toFixed(2) + '%' });
         var track = h('div', { class: 'sc-track-in' }, [bar]);
         if (cpm && has(r.floorCpm)) track.appendChild(h('i', { class: 'sc-floor-mark', style: 'left:' + (100 * r.floorCpm / max).toFixed(2) + '%' }));
         var valueText = cpm ? fmtLabelMoney(vals[i]) + ' CPM' : fmtLabelMoney(vals[i]) + ' per slot per day';
         var row = h('div', { class: 'sc-row', role: 'listitem' }, [
-          h('div', { class: 'sc-label', text: bracketed(typeName(dt, r.displayTypeId), r.connectedDisplays) }),
+          h('div', { class: 'sc-label', text: bracketed(r.name, displaysOf(r)) }),
           h('div', { class: 'sc-track' }, [track]),
           h('div', { class: 'sc-value', text: valueText })
         ]);
-        hoverable(row, function () { return slotValueHover(r, dt, meta); });
+        hoverable(row, function () { return slotValueHover(r, filters); });
         list.appendChild(row);
       });
       pSV.body.innerHTML = ''; pSV.body.appendChild(list);
@@ -367,37 +383,39 @@
 
     // ----- slot allocation -----
     function drawAllocation(d) {
-      var rows = journeyOrder(d.rows, function (r) { return cache.typeMap[r.displayTypeId]; });
-      var thead = h('thead', {}, [h('tr', {}, ['Display type', 'Slots per loop', 'Advertiser slots', 'Own-content slots', 'Advertiser slots sold'].map(function (t) { return h('th', { scope: 'col', text: t }); }))]);
+      var rows = journeyOrder(d.rows, function (r) { return cache.typeMap[r.id]; });
+      var heads = ['Display type', 'Slots per loop', 'Advertiser slots', 'Own-content slots', 'Advertiser slots sold'];
+      var thead = h('thead', {}, [h('tr', {}, heads.map(function (t) { return h('th', { scope: 'col' }, [h('span', { text: t }), info(COLUMN_TIPS[t])]); }))]);
       var tbody = h('tbody');
       rows.forEach(function (r) {
-        var dt = cache.typeMap[r.displayTypeId];
-        var amber = r.advertiserSlotsSoldPct >= AMBER_AT;
-        var nameTd = h('td', { class: 'sc-name', text: typeName(dt, r.displayTypeId) });
-        hoverable(nameTd, function () { return displayTypeCard(dt || { name: r.displayTypeId }, d.meta); });
+        var dt = cache.typeMap[r.id];
+        var sold = r.advertiserSlotsSoldPercent;
+        var amber = sold >= AMBER_AT;
+        var nameTd = h('td', { class: 'sc-name', text: r.name });
+        if (dt) hoverable(nameTd, function () { return displayTypeCard(dt, filters); });
         function numTd(v, kind) {
           var td = h('td', { class: 'sc-num', text: String(v) });
           return hoverable(td, function () { return allocationHover(r, kind); });
         }
-        var sold = h('td', { class: 'sc-sold' }, [
-          h('span', { class: 'sc-sold-n', text: pct(r.advertiserSlotsSoldPct) }),
-          h('span', { class: 'sc-mini' }, [h('i', { class: 'sc-mini-fill ' + (amber ? 'sc-amber' : 'sc-primary'), style: 'width:' + Math.min(100, r.advertiserSlotsSoldPct) + '%' })])
+        var soldTd = h('td', { class: 'sc-sold' }, [
+          h('span', { class: 'sc-sold-n', text: pct(sold) }),
+          h('span', { class: 'sc-mini' }, [h('i', { class: 'sc-mini-fill ' + (amber ? 'sc-amber' : 'sc-primary'), style: 'width:' + Math.min(100, sold) + '%' })])
         ]);
-        tbody.appendChild(h('tr', { class: amber ? 'sc-hot' : '' }, [nameTd, numTd(r.slotsPerLoop, 'loop'), numTd(r.advertiserSlots, 'advertiser'), numTd(r.ownContentSlots, 'own'), sold]));
+        tbody.appendChild(h('tr', { class: amber ? 'sc-hot' : '', 'data-amber': amber ? 'true' : 'false' }, [nameTd, numTd(r.slotsPerLoop, 'loop'), numTd(r.advertiserSlots.count, 'advertiser'), numTd(r.ownContentSlots.count, 'own'), soldTd]));
       });
       pSA.body.innerHTML = '';
-      pSA.body.appendChild(h('table', { class: 'sc-table' }, [thead, tbody]));
+      pSA.body.appendChild(h('div', { class: 'sc-scroll' }, [h('table', { class: 'sc-table' }, [thead, tbody])]));
     }
 
     // ----- missed revenue / fill -----
     function drawMissed(d) {
-      var rows = journeyOrder(d.rows, function (r) { return cache.typeMap[r.displayTypeId]; });
+      var rows = journeyOrder(d.rows, function (r) { return cache.typeMap[r.id]; });
       var all = rows.concat(rows.length > 1 && d.total ? [d.total] : []);
       var max = Math.max.apply(null, all.map(function (r) { return missedParts(r).total; })) * 1.04 || 1;
       var list = h('div', { class: 'sc-rows', role: 'list' });
       all.forEach(function (r) {
         var isTotal = r === d.total;
-        var dt = isTotal ? null : cache.typeMap[r.displayTypeId];
+        var dt = isTotal ? null : cache.typeMap[r.id];
         var p = missedParts(r);
         if (isTotal) list.appendChild(h('hr', { class: 'sc-divider' }));
         var track = h('div', { class: 'sc-track-in' }, [
@@ -405,13 +423,13 @@
             h('i', { class: 'sc-unsold', style: 'flex:' + p.unsold }), h('i', { class: 'sc-down', style: 'flex:' + p.downtime })
           ])
         ]);
-        var name = isTotal ? bracketed('All display types', r.connectedDisplays) : bracketed(typeName(dt, r.displayTypeId), r.connectedDisplays);
-        var row = h('div', { class: 'sc-row' + (isTotal ? ' sc-total' : ''), role: 'listitem' }, [
+        var name = bracketed(isTotal ? 'All display types' : r.name, displaysOf(r));
+        var row = h('div', { class: 'sc-row' + (isTotal ? ' sc-total' : ''), role: 'listitem', 'data-fill': String(r.fillPercent) }, [
           h('div', { class: 'sc-label', text: name }),
           h('div', { class: 'sc-track' }, [track]),
-          h('div', { class: 'sc-value' }, [fmtMoney(p.total) + ' missed', h('span', { class: 'sc-sub', text: pct(fillPct(r)) + ' fill' })])
+          h('div', { class: 'sc-value' }, [fmtMoney(p.total) + ' missed', h('span', { class: 'sc-sub', text: pct(r.fillPercent) + ' fill' })])
         ]);
-        hoverable(row, function () { return missedHover(r, dt, d.meta, isTotal); });
+        hoverable(row, function () { return missedHover(r, dt, filters, isTotal); });
         list.appendChild(row);
       });
       pMR.body.innerHTML = ''; pMR.body.appendChild(list);
@@ -420,15 +438,16 @@
     // ----- yield -----
     function drawYield(d) {
       var rows = dspOrder(d.rows);
-      var max = Math.max.apply(null, rows.map(function (r) { return r.effectiveCpm; })) * 1.08 || 1;
+      var max = Math.max.apply(null, rows.map(function (r) { return r.effectiveCpm || 0; })) * 1.08 || 1;
       var list = h('div', { class: 'sc-rows', role: 'list' });
       rows.forEach(function (r) {
+        var none = r.effectiveCpm === null || r.effectiveCpm === undefined;
         var row = h('div', { class: 'sc-row', role: 'listitem' }, [
           h('div', { class: 'sc-label', text: r.dsp }),
-          h('div', { class: 'sc-track' }, [h('div', { class: 'sc-track-in' }, [h('div', { class: 'sc-bar sc-primary', style: 'width:' + (100 * r.effectiveCpm / max).toFixed(2) + '%' })])]),
-          h('div', { class: 'sc-value', text: fmtLabelMoney(r.effectiveCpm) + ' CPM' })
+          h('div', { class: 'sc-track' }, [h('div', { class: 'sc-track-in' }, [h('div', { class: 'sc-bar sc-primary', style: 'width:' + (none ? 0 : 100 * r.effectiveCpm / max).toFixed(2) + '%' })])]),
+          h('div', { class: 'sc-value', text: none ? 'No delivery' : fmtLabelMoney(r.effectiveCpm) + ' CPM' })
         ]);
-        hoverable(row, function () { return yieldHover(r, d.dealType || state.dealType, d.meta); });
+        hoverable(row, function () { return yieldHover(r, d.dealType || state.dealType, filters); });
         list.appendChild(row);
       });
       pY.body.innerHTML = ''; pY.body.appendChild(list);
@@ -451,7 +470,7 @@
       var current = function () { return alive && g === gen.all; };
       var typesP = fetchJson('display-types', filters).then(function (t) {
         cache.types = t; cache.typeMap = typesById(t); return t;
-      }, function () { cache.types = null; cache.typeMap = {}; return null; }); // charts still draw, names fall back to ids
+      }, function () { cache.types = null; cache.typeMap = {}; return null; }); // charts still draw, without the display type cards
       function run(p, endpoint, draw, onData) {
         Promise.all([fetchJson(endpoint, filters), typesP]).then(function (res) {
           if (!current()) return;
@@ -461,7 +480,7 @@
           draw(d);
         }, function () { if (current()) setState(p, 'error', loadAll); });
       }
-      run(pSV, 'slot-value', function (d) { drawSlotValue(); }, function (d) { svData = d; });
+      run(pSV, 'slot-value', function () { drawSlotValue(); }, function (d) { svData = d; });
       run(pSA, 'slot-allocation', drawAllocation);
       run(pMR, 'missed-revenue', drawMissed);
       loadYield();

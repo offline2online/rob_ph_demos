@@ -191,7 +191,7 @@
   }
   function schedulingText(s) {
     if (!s || !s.uses) return 'Not used yet. Set dayparts and schedules on a campaign’s Scheduling tab.';
-    return 'Dayparted · ' + s.scheduledCampaigns + ' of ' + plural(s.campaigns, 'campaign') + ' · ' + plural(s.schedules, 'schedule');
+    return 'Dayparted · ' + s.scheduledCampaigns + ' of ' + plural(s.campaigns, 'campaign');
   }
 
   // ---------- DOM ----------

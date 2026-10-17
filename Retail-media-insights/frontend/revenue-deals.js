@@ -66,6 +66,17 @@
       return b;
     });
   }
+  // Totals are the sum of the back end's rounded parts, added in whole cents so they never drift.
+  function sumCents(list, pick) { return list.reduce(function (n, x) { return n + Math.round(pick(x) * 100); }, 0) / 100; }
+  function revenueTotals(data) {
+    var rows = (data && data.rows) || [];
+    return { earned: sumCents(rows, function (r) { return r.earned; }), estimated: sumCents(rows, function (r) { return r.estimated; }) };
+  }
+  // How many x-axis labels fit: one per `perLabel` px of plot width, never more than the bars.
+  function labelStep(bars, width, perLabel) {
+    var fit = Math.max(1, Math.floor((width || 600) / perLabel));
+    return Math.max(1, Math.ceil(bars / fit));
+  }
   // Tooltip per bar: total for the period, then each DSP × deal type amount.
   function barTooltip(bar, granularity) {
     var lines = [[periodLabel(bar.period, granularity), fmtMoney(bar.earned)]];
@@ -235,6 +246,7 @@
       var p = Math.pow(10, Math.floor(Math.log(v) / Math.LN10)); var n = v / p;
       return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p;
     }
+    var lastRevenue = null;
     function drawRevenue(data) {
       rev.body.textContent = '';
       var bars = revenueBars(data);
@@ -244,7 +256,8 @@
       var axis = h('div', { class: 'rd-axis' });
       [1, 0.75, 0.5, 0.25, 0].forEach(function (f) { axis.appendChild(h('span', { text: fmtMoney(max * f) })); });
       var cols = h('div', { class: 'rd-cols' });
-      var every = Math.ceil(bars.length / 12);
+      rev.body.appendChild(plot);
+      var every = labelStep(bars.length, plot.clientWidth - 60, data.granularity === 'week' ? 92 : data.granularity === 'month' ? 72 : 52);
       bars.forEach(function (b, i) {
         var stack = h('div', { class: 'rd-stack' });
         // Stack is column-reverse: first child is the bottom, so estimated goes last (on top).
@@ -260,7 +273,11 @@
       });
       plot.appendChild(axis); plot.appendChild(cols);
       drawLegend();
-      rev.body.appendChild(plot); rev.body.appendChild(legend);
+      var totals = revenueTotals(data);
+      var line = h('div', { class: 'rd-total', 'data-earned': String(totals.earned), text: 'Total earned ' + fmtMoney(totals.earned) + (totals.estimated ? ' · estimated ' + fmtMoney(totals.estimated) : '') });
+      rev.body.insertBefore(line, plot);
+      rev.body.appendChild(legend);
+      lastRevenue = data;
     }
     function loadRevenue() {
       var my = ++seq.revenue;
@@ -333,6 +350,11 @@
     root.appendChild(rev.el); root.appendChild(deals.el);
     drawControls(); drawDealsFilter();
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape') hideTip(); });
+    var resizeTimer = null, lastWidth = root.clientWidth;
+    window.addEventListener('resize', function () {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(function () { if (lastRevenue && root.clientWidth !== lastWidth) { lastWidth = root.clientWidth; drawRevenue(lastRevenue); } }, 150);
+    });
 
     return {
       setFilters: function (f) { filters = f || {}; loadRevenue(); loadDeals(); },
@@ -342,7 +364,7 @@
 
   return {
     mount: mount, DSP_ORDER: DSP_ORDER, DEAL_TYPES: DEAL_TYPES,
-    revenueBars: revenueBars, barTooltip: barTooltip, shadeColour: shadeColour, periodLabel: periodLabel, typeName: typeName,
+    revenueBars: revenueBars, revenueTotals: revenueTotals, labelStep: labelStep, barTooltip: barTooltip, shadeColour: shadeColour, periodLabel: periodLabel, typeName: typeName,
     nameTooltip: nameTooltip, slotsTooltip: slotsTooltip, slotsLabel: slotsLabel, advertisersTooltip: advertisersTooltip,
     pacingTooltip: pacingTooltip, cpmTooltip: cpmTooltip, fmtMoney: fmtMoney
   };

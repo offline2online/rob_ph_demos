@@ -2,122 +2,150 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const SC = require('../slot-charts.js');
-const F = require('../fixtures.js');
+const { get, RANGE } = require('./api.js');
 
-const types = SC.typesById(F.displayTypes);
-const typeOf = (r) => types[r.displayTypeId];
-const flat = (m) => m.sections.flatMap((s) => s.rows.map((r) => r.join(': ') + (s.note ? '' : '')));
-const text = (m) => JSON.stringify(m);
 const val = (m, label) => { for (const s of m.sections) for (const r of s.rows) if (r[0] === label) return r[1]; };
+const text = (m) => JSON.stringify(m);
+const typesP = get('/display-types').then(SC.typesById);
 
-test('display types read in shopper-journey order', () => {
-  const names = SC.journeyOrder(F.slotValue.rows, typeOf).map((r) => types[r.displayTypeId].name);
+test('display types read in shopper-journey order from the back end’s iabZone', async () => {
+  const types = await typesP;
+  const names = SC.journeyOrder((await get('/slot-value')).rows.slice().reverse(), (r) => types[r.id]).map((r) => r.name);
   assert.deepStrictEqual(names, ['Window Portrait', 'Endcap Shelf-edge', 'Queue Screen', 'Dispensary Screen']);
+  assert.deepStrictEqual(SC.journeyOrder([{ id: 'x' }, { id: 'window' }], (r) => ({ x: { iabZone: undefined }, window: types.window })[r.id]).map((r) => r.id), ['window', 'x']);
 });
 
-test('a type with no zone sorts last', () => {
-  const rows = [{ displayTypeId: 'x' }, { displayTypeId: 'window' }];
-  const t = Object.assign({}, types, { x: { id: 'x', name: 'X' } });
-  assert.deepStrictEqual(SC.journeyOrder(rows, (r) => t[r.displayTypeId]).map((r) => r.displayTypeId), ['window', 'x']);
-});
-
-test('display type card shows stored fields only, never opening times or IAB classification', () => {
-  const full = SC.displayTypeCard(types.window, F.META);
+test('display type card shows stored fields only, never opening times; canvas and orientation are labelled and constrained', async () => {
+  const types = await typesP;
+  const full = SC.displayTypeCard(types.window, RANGE);
   assert.strictEqual(val(full, 'Operating hours'), '24 hours');
-  assert.strictEqual(val(full, 'Display canvas size'), '1080 × 1920 px');
+  assert.strictEqual(val(full, 'Display canvas size (resolution)'), '1080 × 1920 px');
+  assert.strictEqual(val(full, 'Display orientation'), '90°');
   assert.strictEqual(val(full, 'Share of loop time'), '6s advertiser slot ÷ 60s loop = 10%');
+  assert.strictEqual(val(full, 'Connected displays'), '10 across 5 stores');
   assert.match(text(full), /Averages across all 10 connected Window Portrait displays in 5 stores, 12 Sep – 11 Oct\./);
-  const sparse = SC.displayTypeCard({ id: 's', name: 'Sparse', zone: 'Checkout', operatingHours: '08:00-22:00' }, F.META);
-  assert.deepStrictEqual(flat(sparse), ['IAB store zone: Checkout']);
-  assert.ok(!/08:00|Not set|Touch Point|VAC-d/.test(text(sparse)));
+  const sparse = SC.displayTypeCard({ id: 's', name: 'Sparse', iabZone: 'Checkout', operatingHours: '08:00-22:00' }, RANGE);
+  assert.deepStrictEqual(sparse.sections[0].rows, [['IAB store zone', 'Checkout']]);
+  assert.ok(!/08:00/.test(text(sparse)));
+  ['Not set', '90°', '180°', '270°'].forEach((o) => assert.strictEqual(SC.orientationText(o), o));
+  assert.strictEqual(SC.orientationText('45°'), 'Not set');
 });
 
-test('slot value hover: per slot per day = CPM x average views / 1000, totals add up', () => {
-  F.slotValue.rows.forEach((r) => {
-    const dt = types[r.displayTypeId];
-    assert.ok(Math.abs(r.perSlotPerDay - r.effectiveCpm * dt.avgAssumedViewsPerSlotPerDay / 1000) < 0.005, r.displayTypeId);
-    assert.ok(Math.abs(r.effectiveCpm - r.earnedRevenue / (r.assumedViews / 1000)) < 0.01, r.displayTypeId);
-    assert.strictEqual(r.advertiserSlots, r.advertiserSlotsPerLoop * r.connectedDisplays);
+test('slot value: the hover shows the back end’s link, CPM × average views ÷ 1,000 × sold share', async () => {
+  const data = await get('/slot-value');
+  data.rows.forEach((r) => {
+    const link = r.effectiveCpm * r.averageAssumedViewsPerSlotPerDay / 1000 * r.advertiserSlotsSoldShare;
+    assert.ok(Math.abs(link - r.perSlotPerDay) < 0.01, `${r.id}: ${link} vs ${r.perSlotPerDay}`);
   });
-  const w = F.slotValue.rows.find((r) => r.displayTypeId === 'window');
-  const m = SC.slotValueHover(w, types.window, F.META);
-  assert.strictEqual(val(m, 'Effective CPM'), '$18.00 (total $8,640 earned on 480k assumed views, 12 Sep – 11 Oct)');
-  assert.strictEqual(val(m, 'Floor CPM'), '$8.00');
-  assert.strictEqual(val(m, 'Per slot per day'), '$3.60 (total $288 per day across 80 advertiser slots on 10 displays)');
+  const w = data.rows.find((r) => r.id === 'window');
+  const m = SC.slotValueHover(w, RANGE);
   assert.strictEqual(m.title, 'Window Portrait');
+  assert.strictEqual(val(m, 'Effective CPM'), `$${w.effectiveCpm.toFixed(2)} (total $${w.totals.earnedRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })} earned on ${SC.fmtCompact(w.totals.assumedViews)} assumed views, 12 Sep – 11 Oct)`);
+  assert.strictEqual(val(m, 'Floor CPM'), '$12.00');
+  assert.match(val(m, 'Per slot per day'), /^\$\d+\.\d\d \(total \$\d+ per day across 80 advertiser slots on 10 displays\)$/);
+  assert.match(val(m, 'How it adds up'), /^\$15\.55 CPM × 200 average assumed views ÷ 1,000 × \d+(\.\d+)?% of advertiser slots sold = \$1\.95$/);
+  assert.match(text(m), /× the share of advertiser slots sold/);
 });
 
-test('slot allocation: advertiser + own = slots per loop and the loop adds up', () => {
-  F.slotAllocation.rows.forEach((r) => {
-    assert.strictEqual(r.advertiserSlots + r.ownContentSlots, r.slotsPerLoop);
-    assert.strictEqual(r.advertiserSlots * r.advertiserSlotSeconds + r.ownContentSlots * r.ownContentSlotSeconds, r.loopSeconds);
+test('CPM labels are always to the cent', () => {
+  assert.strictEqual(SC.fmtLabelMoney(18), '$18.00');
+  assert.strictEqual(SC.fmtLabelMoney(3.6), '$3.60');
+  assert.strictEqual(SC.fmtLabelMoney(15.555), '$15.56');
+});
+
+test('slot allocation: advertiser + own = slots per loop; loop shares are the back end’s and never re-rounded', async () => {
+  const rows = (await get('/slot-allocation')).rows;
+  rows.forEach((r) => {
+    assert.strictEqual(r.advertiserSlots.count + r.ownContentSlots.count, r.slotsPerLoop);
+    assert.strictEqual(r.advertiserSlots.totalSeconds + r.ownContentSlots.totalSeconds, r.loopSeconds);
+    assert.strictEqual(r.advertiserSlots.percentOfLoop + r.ownContentSlots.percentOfLoop, 100);
   });
+  const q = rows.find((r) => r.id === 'queue'); // 60s + 30s of a 90s loop: 67% + 33%, not 66.7 / 33.3 recomputed
+  const loop = SC.allocationHover(q, 'loop');
+  assert.strictEqual(val(loop, 'Advertiser slots'), '6 × 10s = 60s (67% of the loop)');
+  assert.strictEqual(val(loop, 'Own-content slots'), '2 × 15s = 30s (33% of the loop)');
+  assert.strictEqual(val(loop, 'Total loop length'), '90s');
+  assert.strictEqual(val(loop, 'Average slot duration'), '11.3s');
+  assert.strictEqual(val(SC.allocationHover(q, 'advertiser'), 'Share of the loop per slot'), '10s ÷ 90s = 11%');
+  assert.strictEqual(val(SC.allocationHover(q, 'own'), 'Time in the loop'), '2 × 15s = 30s (33% of the loop)');
 });
 
-test('loop hovers read "8 x 6s = 48s (80% of the loop)"', () => {
-  const w = F.slotAllocation.rows.find((r) => r.displayTypeId === 'window');
-  const loop = SC.allocationHover(w, 'loop');
-  assert.strictEqual(val(loop, 'Advertiser slots'), '8 × 6s = 48s (80% of the loop)');
-  assert.strictEqual(val(loop, 'Own-content slots'), '4 × 3s = 12s (20% of the loop)');
-  assert.strictEqual(val(loop, 'Total loop length'), '60s');
-  assert.strictEqual(val(SC.allocationHover(w, 'advertiser'), 'Share of the loop per slot'), '6s ÷ 60s = 10%');
-  assert.strictEqual(val(SC.allocationHover(w, 'own'), 'Time in the loop'), '4 × 3s = 12s (20% of the loop)');
+test('column definitions exist for every Slot allocation heading', () => {
+  ['Display type', 'Slots per loop', 'Advertiser slots', 'Own-content slots', 'Advertiser slots sold'].forEach((c) => assert.ok(SC.COLUMN_TIPS[c].length > 20, c));
 });
 
-test('amber threshold is 85% and no other rows qualify', () => {
-  const hot = F.slotAllocation.rows.filter((r) => r.advertiserSlotsSoldPct >= SC.AMBER_AT).map((r) => r.displayTypeId).sort();
-  assert.deepStrictEqual(hot, ['endcap', 'queue']);
+test('amber threshold is 85%: Queue Screen is amber and the others are not', async () => {
+  const hot = (await get('/slot-allocation')).rows.filter((r) => r.advertiserSlotsSoldPercent >= SC.AMBER_AT).map((r) => r.id);
+  assert.deepStrictEqual(hot, ['queue']);
 });
 
-test('missed revenue: sold + unsold + offline = all slots, unsold + downtime = total, rows sum to the total row', () => {
-  const rows = F.missedRevenue.rows.concat([F.missedRevenue.total]);
-  rows.forEach((r) => assert.strictEqual(r.slotsSold + r.slotsUnsold + r.slotsOffline, r.slotsTotal));
-  ['slotsTotal', 'slotsSold', 'slotsUnsold', 'slotsOffline', 'unsoldValue', 'downtimeLostRevenue', 'connectedDisplays'].forEach((k) => {
-    assert.strictEqual(F.missedRevenue.rows.reduce((a, r) => a + r[k], 0), F.missedRevenue.total[k], k);
+test('missed revenue: sold + unsold + offline = all slots, unsold + downtime = total, rows sum to the total row', async () => {
+  const d = await get('/missed-revenue');
+  d.rows.concat([d.total]).forEach((r) => {
+    assert.strictEqual(r.slotsSold + r.slotsUnsold + r.slotsOffline, r.slotsTotal);
+    assert.strictEqual(r.unsoldValueAtFloor + r.downtimeLostRevenue, r.totalMissed);
   });
-});
-
-test('missed hover shows every value with its total and parts as displayed', () => {
-  const t = F.missedRevenue.total;
-  const m = SC.missedHover(t, null, F.META, true);
-  const p = SC.missedParts(t);
-  assert.strictEqual(p.total, t.unsoldValue + t.downtimeLostRevenue);
-  assert.strictEqual(val(m, 'Total missed revenue'), `$${p.total.toLocaleString('en-US')} ($${p.unsold.toLocaleString('en-US')} unsold + $${p.downtime.toLocaleString('en-US')} downtime)`);
-  assert.strictEqual(val(m, 'Floor CPM'), '$5.50–$9.00 by display type');
-  assert.match(val(m, 'Fill'), /^76% \(total 8,484 of 11,100 advertiser slots sold\)$/);
-  assert.match(text(m), /Totals across all 50 connected displays in 5 stores, 12 Sep – 11 Oct\./);
-  const row = F.missedRevenue.rows.find((r) => r.displayTypeId === 'dispensary');
-  const d = SC.missedHover(row, types.dispensary, F.META, false);
-  assert.match(text(d), /Totals across all 5 connected Dispensary Screen displays in 5 stores/);
-  assert.strictEqual(d.sections[0].rows.filter((r) => r[0] === 'Connected displays').length, 0); // not repeated under the card
-});
-
-test('yield DSPs always read DV360, The Trade Desk, Amazon DSP and never Direct', () => {
-  SC.DEAL_TYPES.forEach((dt) => {
-    const names = SC.dspOrder(F.yieldFor(dt).rows).map((r) => r.dsp);
-    assert.deepStrictEqual(names, ['DV360', 'The Trade Desk', 'Amazon DSP']);
+  ['slotsTotal', 'slotsSold', 'slotsUnsold', 'slotsOffline', 'unsoldValueAtFloor', 'downtimeLostRevenue', 'totalMissed'].forEach((k) => {
+    assert.strictEqual(d.rows.reduce((a, r) => a + r[k], 0), d.total[k], k);
   });
+  assert.strictEqual(d.total.connectedDisplays.displays, d.rows.reduce((a, r) => a + r.connectedDisplays.displays, 0));
+  assert.strictEqual(SC.missedParts(d.total).total, d.total.totalMissed);
+});
+
+test('missed hover shows every value as the back end returned it, with the store count per display type', async () => {
+  const types = await typesP;
+  const d = await get('/missed-revenue', { storeIds: ['store-1'] });
+  const t = SC.missedHover(d.total, null, RANGE, true);
+  const p = SC.missedParts(d.total);
+  assert.strictEqual(val(t, 'Total missed revenue'), `$${p.total.toLocaleString('en-US')} ($${p.unsold.toLocaleString('en-US')} unsold + $${p.downtime.toLocaleString('en-US')} downtime)`);
+  assert.strictEqual(val(t, 'Floor CPM'), '$6.00–$12.00 by display type');
+  assert.match(val(t, 'Fill'), new RegExp(`^${d.total.fillPercent}% \\(total [\\d,]+ of [\\d,]+ advertiser slots sold\\)$`));
+  assert.match(text(t), /Totals across all 10 connected displays in 1 store, 12 Sep – 11 Oct\./);
+  const row = d.rows.find((r) => r.id === 'dispensary');
+  const m = SC.missedHover(row, types.dispensary, RANGE, false);
+  assert.match(text(m), /Totals across all 1 connected Dispensary Screen displays in 1 store/);
+  assert.strictEqual(m.sections.flatMap((s) => s.rows).filter((r) => r[0] === 'Connected displays').length, 1, 'shown once, not repeated under the card');
+});
+
+test('missed revenue hover store count is per display type, not the page total', async () => {
+  const d = await get('/missed-revenue');
+  const rows = d.rows.map((r) => r.connectedDisplays.stores);
+  assert.ok(rows.every((s) => s === 5));
+  const filtered = await get('/missed-revenue', { storeIds: ['store-1', 'store-2'] });
+  assert.ok(filtered.rows.every((r) => r.connectedDisplays.stores === 2));
+});
+
+test('yield: DSPs read DV360, The Trade Desk, Amazon DSP; a DSP with no delivery shows "No delivery", never NaN', async () => {
+  const d = await get('/yield', { dealType: 'Programmatic guaranteed' });
+  assert.deepStrictEqual(SC.dspOrder(d.rows.slice().reverse()).map((r) => r.dsp), ['DV360', 'The Trade Desk', 'Amazon DSP']);
+  const none = d.rows.find((r) => r.effectiveCpm === null);
+  assert.ok(none, 'the test retailer has a DSP with no Programmatic guaranteed delivery');
+  const m = SC.yieldHover(none, 'Programmatic guaranteed', RANGE);
+  assert.strictEqual(val(m, 'Effective CPM'), 'No delivery');
+  assert.ok(!/NaN|null|undefined/.test(JSON.stringify(m.sections)));
+  const live = SC.yieldHover(d.rows.find((r) => r.effectiveCpm !== null), 'Programmatic guaranteed', RANGE);
+  assert.match(val(live, 'Effective CPM'), /^\$22\.00$/);
   assert.deepStrictEqual(SC.DEAL_TYPES, ['Programmatic guaranteed', 'Preferred deal', 'Private auction', 'Open auction']);
 });
 
-test('no hover or tooltip names a specific opening time or an IAB zone on chart faces', () => {
+test('the Yield and Missed revenue ⓘ carry the VAC-d explanation and the worked example', () => {
+  for (const k of ['slotValue', 'missed', 'yield']) {
+    assert.match(SC.TIPS[k], /VAC-d/);
+    assert.match(SC.TIPS[k], /Example: 4,000 footfall × 0\.5 visibility × 1\/10 of the loop = 200/);
+  }
+});
+
+test('no hover names a specific opening time', async () => {
+  const types = await typesP;
   const all = [
-    ...F.slotValue.rows.map((r) => SC.slotValueHover(r, typeOf(r), F.META)),
-    ...F.missedRevenue.rows.map((r) => SC.missedHover(r, typeOf(r), F.META, false)),
-    ...Object.values(types).map((t) => SC.displayTypeCard(t, F.META)),
+    ...(await get('/slot-value')).rows.map((r) => SC.slotValueHover(r, RANGE)),
+    ...Object.values(types).map((t) => SC.displayTypeCard(t, RANGE)),
   ].map(text).join('');
   assert.ok(!/\b\d{1,2}:\d{2}\b|\b(am|pm)\b/i.test(all));
   assert.ok(/24 hours/.test(all) && /Store opening hours/.test(all));
 });
 
 test('formatting helpers', () => {
-  assert.strictEqual(SC.fmtLabelMoney(18), '$18');
-  assert.strictEqual(SC.fmtLabelMoney(3.6), '$3.60');
   assert.strictEqual(SC.fmtCompact(812600), '812.6k');
-  assert.strictEqual(SC.dateRange(F.META), '12 Sep – 11 Oct');
-});
-
-test('fixture fetch supports empty and error states', async () => {
-  assert.deepStrictEqual((await F.fetchJson('slot-value', {}, { delay: 0, state: 'empty' })).rows, []);
-  await assert.rejects(F.fetchJson('yield', {}, { delay: 0, state: 'error' }));
+  assert.strictEqual(SC.dateRange(RANGE), '12 Sep – 11 Oct');
 });

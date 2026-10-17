@@ -5,13 +5,12 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { FilterError, ForbiddenError } = require('./filters');
-const { runRoute, RAW } = require('./query');
+const { RAW } = require('./query');
+const { dispatch, normalisePrincipal, BASE } = require('./dispatch');
 const { handleMessage } = require('./mcp');
-const { createTokenAuthenticator, PRINCIPAL_TYPES } = require('./auth');
+const { createTokenAuthenticator } = require('./auth');
 const { READ_SCOPE } = require('./constants');
 
-const BASE = '/insights/v1/retail-media';
 const MCP_PATH = `${BASE}/mcp`;
 const MAX_MCP_BODY = 64 * 1024;
 
@@ -33,7 +32,6 @@ function loadRoutes(dir = path.join(__dirname, 'routes')) {
 function createServer({ store, authenticate, today, routes: routeList } = {}) {
   if (typeof authenticate !== 'function') throw new TypeError('createServer requires an authenticate(req) function');
   const all = routeList || loadRoutes();
-  const routes = new Map(all.map((r) => [`${BASE}${r.path}`, r]));
   const byPath = new Map(all.map((r) => [r.path, r])); // for datasets and MCP tools, which address routes by path
   // POST /mcp: JSON-RPC 2.0 over HTTP, authenticated like every other route, read-only tools only.
   function serveMcp(req, res, send) {
@@ -63,31 +61,10 @@ function createServer({ store, authenticate, today, routes: routeList } = {}) {
     };
     const url = new URL(req.url, 'http://localhost');
     if (url.pathname === MCP_PATH) return serveMcp(req, res, send);
-    const route = routes.get(url.pathname);
-    if (!route) return send(404, { error: 'not found' });
-    let principal = null;
-    if (!route.public) {
-      try { principal = normalisePrincipal(authenticate(req)); } catch { principal = null; }
-      if (!principal) return send(401, { error: 'authentication required' }, { 'www-authenticate': 'Bearer' });
-    }
-    if (req.method !== 'GET') return send(405, { error: 'read-only service' }, { allow: 'GET' });
-    try {
-      const out = route.public
-        ? route.handler({ store, filters: null, params: url.searchParams, principal })
-        : runRoute(route, { store, principal, params: url.searchParams, today, routes: byPath });
-      if (out && out[RAW]) { res.writeHead(200, { 'content-type': out[RAW].contentType }); return res.end(out[RAW].body); }
-      return send(200, out);
-    } catch (e) {
-      if (e instanceof FilterError) return send(400, { error: e.message });
-      if (e instanceof ForbiddenError) return send(403, { error: e.message });
-      return send(500, { error: 'internal error' });
-    }
+    const out = dispatch({ store, routes: all, url: req.url, principal: () => authenticate(req), today, method: req.method });
+    if (out.body && out.body[RAW]) { res.writeHead(200, { 'content-type': out.body[RAW].contentType }); return res.end(out.body[RAW].body); }
+    return send(out.status, out.body, out.headers);
   });
-}
-
-function normalisePrincipal(p) {
-  if (!p || !PRINCIPAL_TYPES.includes(p.principalType) || typeof p.principalId !== 'string' || !p.principalId) return null;
-  return { principalType: p.principalType, principalId: p.principalId, scopes: Array.isArray(p.scopes) ? p.scopes : [] };
 }
 
 if (require.main === module) {

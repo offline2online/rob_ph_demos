@@ -6,7 +6,7 @@
 
 const crypto = require('crypto');
 
-const PRINCIPAL_TYPES = ['admin', 'advertiser'];
+const { PRINCIPAL_TYPES } = require('./auth-types');
 const MIN_SECRET_LENGTH = 32;
 
 const b64 = (buf) => Buffer.from(buf).toString('base64url');

@@ -4,9 +4,16 @@
   "private": true,
   "description": "Read-only Retail Media Insights service: daily aggregates, page filters and the shared calculation library.",
   "scripts": {
-    "test": "node --test test/*.test.js",
+    "test": "node --test test/*.test.js frontend/test/*.test.js",
     "bench": "node bench/bench.js",
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "build:local-api": "node scripts/build-local-api.js",
+    "test:ui": "node --test test/ui/*.test.js"
   },
-  "engines": { "node": ">=18" }
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "playwright": "^1.56.1"
+  }
 }

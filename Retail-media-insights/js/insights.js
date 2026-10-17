@@ -1,90 +1,242 @@
+// The Retail Media Performance tab: page filters, tabs, summary strip, and the four modules, all on LocalApi (the real
+// route handlers, in the browser, over the one test retailer). Prototype stand-in for the real login: the principal is chosen
+// here, from the URL (?role=advertiser&advertiser=<id>), and no token is ever read from or put in a URL.
+// Every data-bearing node is built with createElement/textContent; there is no innerHTML.
 (function () {
+  'use strict';
   var q = new URLSearchParams(location.search);
-  var advertiser = q.get("role") === "advertiser";
-  var state = q.get("state");
+  var state = q.get('state'); // loading | error: preview those states
   var $ = function (id) { return document.getElementById(id); };
-  var ids = ["f-date", "f-store", "f-display", "f-adv"];
-  var DEFAULTS = { "f-date": "30", "f-store": "all", "f-display": "all", "f-adv": "all" };
-  var applied = Object.assign({}, DEFAULTS);
-  var isApplied = false;
-
-  // Sample data until the summary endpoint (Qp4J0XfMbspHUd2uEtLh) lands.
-  var SAMPLE = {
-    all: { earned: 48210, estimated: 55900, sold: 912, available: 144 },
-    s2: { earned: 36864, estimated: 42580, sold: 824, available: 232 },
-    s1: { earned: 29415, estimated: 34120, sold: 701, available: 355 }
+  var NS_SCOPES = ['insights:read'];
+  var TABS = ['Retail Media Performance', 'Campaign Performance', 'Visitor Insights', 'Store Insights'];
+  var DAY_OPTIONS = [[30, 'Last 30 days'], [7, 'Last 7 days'], [90, 'Last 90 days']];
+  var DEFAULTS = { days: '30', store: 'all', type: 'all', adv: 'all' };
+  var SUMMARY_TIPS = {
+    earned: 'Delivered and billed.',
+    estimated: 'Including booked, not yet delivered.',
+    sold: 'Share of all advertiser slots across your displays that were sold in the selected period.'
   };
-  var fmt = function (n) { return "$" + n.toLocaleString("en-US"); };
 
-  function tile(label, val, sub, extra) {
-    return '<div class="tile"><div class="lbl">' + label + '</div><div class="val">' + val + '</div>' + (extra || "") + '<div class="sub">' + sub + '</div></div>';
-  }
-  function render() {
-    var el = $("strip");
-    if (state === "loading") { el.innerHTML = '<div class="skel"></div><div class="skel"></div><div class="skel"></div>'; return; }
-    if (state === "error") { el.innerHTML = '<div class="msg err"><span class="material-symbols-outlined">error</span><p>We couldn\'t load retail media performance. Try again shortly.</p></div>'; return; }
-    if (state === "empty") { el.innerHTML = '<div class="msg"><span class="material-symbols-outlined">monitoring</span><p>No retail media activity for these filters.</p></div>'; return; }
-    var d = SAMPLE[applied["f-store"]] || SAMPLE.all;
-    var pct = Math.round(d.sold / (d.sold + d.available) * 100);
-    el.innerHTML =
-      tile("Earned revenue", fmt(d.earned), "Delivered and billed") +
-      tile("Estimated revenue", fmt(d.estimated), "Including booked, not yet delivered") +
-      tile("Inventory sold", pct + "%", d.sold.toLocaleString("en-US") + " sold · " + d.available.toLocaleString("en-US") + " available",
-        '<div class="bar"><i style="width:' + pct + '%"></i></div>');
-  }
-  // Revenue and Deals read the revenue / deals endpoints (?api=<base>/insights/v1/retail-media);
-  // without ?api they read the offline fixtures, and ?state=empty|error previews those states.
-  var api = q.get("api");
-  function fetchJson(endpoint, params) {
-    if (!api) return RDFixtures.fetchJson(endpoint, params, { state: state === "empty" || state === "error" ? state : null, delay: state === "loading" ? 3600000 : 120 });
-    var qs = new URLSearchParams();
-    Object.keys(params).forEach(function (k) {
-      [].concat(params[k]).forEach(function (v) { qs.append(Array.isArray(params[k]) ? k + "[]" : k, v); });
+  function h(tag, attrs, kids) {
+    var el = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (k) {
+      if (k === 'text') el.textContent = attrs[k]; else if (k === 'class') el.className = attrs[k]; else if (k === 'style') el.style.cssText = attrs[k]; else el.setAttribute(k, attrs[k]);
     });
-    return fetch(api + "/" + endpoint + "?" + qs).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); });
+    (kids || []).forEach(function (c) { if (c) el.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
+    return el;
   }
-  // The advertiser view (?role=advertiser) replaces the retailer charts; the server pins every response to the
-  // signed-in advertiser, so the page never sends advertiserIds and its Display type filter is only their own.
-  function avFetchJson(endpoint, params) {
-    if (!api) return AVFixtures.fetchJson(endpoint, params, { state: state === "empty" || state === "error" ? state : null, delay: state === "loading" ? 3600000 : 120 });
-    return fetchJson(endpoint, params);
+  function icon(name) { return h('span', { class: 'material-symbols-outlined', 'aria-hidden': 'true', text: name }); }
+  function fmtMoney(n) { return '$' + Math.round(n).toLocaleString('en-US'); }
+  function fmtInt(n) { return Math.round(n).toLocaleString('en-US'); }
+  function clear(el) { while (el.firstChild) el.removeChild(el.firstChild); }
+
+  // ---------- hover for the ⓘ icons: absolute in the frame, clamped to the viewport ----------
+  var tip = h('div', { class: 'pg-tip', role: 'tooltip', hidden: '' });
+  $('frame').appendChild(tip);
+  function showTip(text, anchor) {
+    tip.textContent = text; tip.hidden = false;
+    var fr = $('frame').getBoundingClientRect(), ar = anchor.getBoundingClientRect();
+    var vw = document.documentElement.clientWidth;
+    var w = Math.min(320, vw - 16);
+    tip.style.width = w + 'px';
+    var left = Math.max(8, Math.min(ar.left, vw - w - 8));
+    var top = ar.bottom + 6;
+    if (top + tip.offsetHeight > window.innerHeight - 8) top = Math.max(8, ar.top - tip.offsetHeight - 6);
+    tip.style.left = (left - fr.left) + 'px'; tip.style.top = (top - fr.top) + 'px';
   }
-  var rd = advertiser ? null : RevenueDeals.mount($("rd"), { fetchJson: fetchJson });
-  var av = advertiser ? AdvertiserView.mount($("av"), { fetchJson: avFetchJson }) : null;
-  if (advertiser) {
-    // The summary strip is retailer revenue and inventory; an advertiser login never sees it.
-    $("rd").hidden = true; $("av").hidden = false; $("strip").hidden = true;
-    avFetchJson("filter-options", {}).then(function (o) {
-      var sel = $("f-display"), cur = sel.value;
-      sel.innerHTML = '<option value="all">All display types</option>' + o.displayTypes.map(function (t) { return '<option value="' + t.id + '">' + t.name + '</option>'; }).join("");
-      sel.value = cur;
-    }, function () {});
+  function info(text, label) {
+    var el = h('span', { class: 'pg-info', tabindex: '0', role: 'img', 'aria-label': label || text }, [icon('info')]);
+    el.addEventListener('mouseenter', function () { showTip(text, el); });
+    el.addEventListener('focus', function () { showTip(text, el); });
+    el.addEventListener('click', function () { showTip(text, el); });
+    el.addEventListener('mouseleave', function () { tip.hidden = true; });
+    el.addEventListener('blur', function () { tip.hidden = true; });
+    return el;
   }
-  function setFilters(f) { if (advertiser) av.setFilters(f); else rd.setFilters(f); }
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') tip.hidden = true; });
+
+  // ---------- who is asking (prototype stand-in for the login) ----------
+  var isAdvertiser = q.get('role') === 'advertiser';
+  var ADMIN = { principalType: 'admin', principalId: 'hq', scopes: NS_SCOPES };
+  var principal = ADMIN;
+  function api(endpoint, params) {
+    if (state === 'error') return Promise.reject({ status: 500, error: 'preview' });
+    if (state === 'loading') return new Promise(function () {});
+    return LocalApi.get('/' + endpoint, params || {}, principal);
+  }
+
+  var options = null;
+  var staged = Object.assign({}, DEFAULTS);
+  var applied = Object.assign({}, DEFAULTS);
+  var modules = {};
+  var els = {};
+
+  function option(value, label, selected) { var o = h('option', { value: String(value), text: label }); if (selected) o.selected = true; return o; }
+  function field(label, control) { return h('label', { class: 'field' }, [h('span', { text: label }), control]); }
+
+  function buildFilters() {
+    var f = $('filters');
+    clear(f);
+    els.days = h('select', { id: 'f-date' }, DAY_OPTIONS.map(function (d) { return option(d[0], d[1]); }));
+    els.store = h('select', { id: 'f-store' }, [option('all', 'All Stores')].concat((options.stores || []).map(function (s) { return option(s.id, s.name); })));
+    els.type = h('select', { id: 'f-display' }, [option('all', 'All Display Types (' + options.displayTypes.length + ')')].concat(options.displayTypes.map(function (t) { return option(t.id, t.name); })));
+    var advControl;
+    if (isAdvertiser) {
+      var me = options.advertiser;
+      advControl = h('span', { class: 'chip', id: 'adv-chip' }, [icon('lock'), h('span', { text: me.dsp ? me.name + ' (' + me.dsp + ')' : me.name })]);
+    } else {
+      els.adv = h('select', { id: 'f-adv' }, [option('all', 'All Advertisers')].concat((options.advertisers || []).map(function (a) { return option(a.id, a.dsp ? a.name + ' (' + a.dsp + ')' : a.name); })));
+      advControl = els.adv;
+    }
+    els.apply = h('button', { class: 'btn primary', id: 'apply', type: 'button', text: 'Apply', hidden: '' });
+    els.cancel = h('button', { class: 'btn', id: 'cancel', type: 'button', text: 'Cancel', hidden: '' });
+    els.reset = h('button', { class: 'btn primary', id: 'reset', type: 'button', text: 'Reset Filters', hidden: '' });
+    f.appendChild(field('Date range', els.days));
+    f.appendChild(field('Store', els.store));
+    f.appendChild(field('Display type', els.type));
+    f.appendChild(h('div', { class: 'field' }, [h('span', { text: 'Advertiser' }), advControl]));
+    f.appendChild(h('div', { class: 'actions' }, [els.apply, els.cancel, els.reset]));
+    [['days', els.days], ['store', els.store], ['type', els.type], ['adv', els.adv]].forEach(function (p) {
+      if (p[1]) p[1].addEventListener('change', function () { staged[p[0]] = p[1].value; syncButtons(); });
+    });
+    els.apply.addEventListener('click', function () { applied = Object.assign({}, staged); applyFilters(); });
+    els.cancel.addEventListener('click', function () { staged = Object.assign({}, applied); syncControls(); syncButtons(); });
+    els.reset.addEventListener('click', function () { staged = Object.assign({}, DEFAULTS); applied = Object.assign({}, DEFAULTS); syncControls(); applyFilters(); });
+  }
+  function differs(a, b) { return Object.keys(DEFAULTS).some(function (k) { return a[k] !== b[k]; }); }
+  function syncControls() {
+    els.days.value = staged.days; els.store.value = staged.store; els.type.value = staged.type; if (els.adv) els.adv.value = staged.adv;
+  }
+  // Apply/Cancel only while the staged choice differs from what is applied; Reset Filters only while what is APPLIED differs from the defaults.
+  function syncButtons() {
+    var dirty = differs(staged, applied);
+    els.apply.hidden = !dirty; els.cancel.hidden = !dirty;
+    els.reset.hidden = !differs(applied, DEFAULTS);
+  }
+
   function pageFilters() {
-    var days = +applied["f-date"], to = new Date(Date.UTC(2026, 9, 11)), from = new Date(to.getTime() - (days - 1) * 864e5);
-    var f = { dateFrom: from.toISOString().slice(0, 10), dateTo: to.toISOString().slice(0, 10) };
-    if (applied["f-store"] !== "all") f.storeIds = [applied["f-store"]];
-    if (applied["f-display"] !== "all") f.displayTypeIds = [applied["f-display"]];
-    if (!advertiser && applied["f-adv"] !== "all") f.advertiserIds = [applied["f-adv"]];
+    var to = new Date(options.lastDataDay + 'T00:00:00Z');
+    var from = new Date(to.getTime() - (+applied.days - 1) * 864e5);
+    var f = { dateFrom: from.toISOString().slice(0, 10), dateTo: options.lastDataDay };
+    if (applied.store !== 'all') f.storeIds = [applied.store];
+    if (applied.type !== 'all') f.displayTypeIds = [applied.type];
+    if (!isAdvertiser && applied.adv !== 'all') f.advertiserIds = [applied.adv];
     return f;
   }
-  function dirty() { return ids.some(function (i) { return $(i).value !== applied[i]; }); }
-  function sync() {
-    var d = dirty();
-    $("apply").hidden = !d; $("cancel").hidden = !d;
-    $("reset").hidden = !isApplied || d;
+
+  function applyFilters() {
+    syncButtons();
+    var f = pageFilters();
+    tip.hidden = true;
+    loadSummary(f);
+    Object.keys(modules).forEach(function (k) { modules[k].setFilters(f); });
   }
-  if (advertiser) { $("f-adv").hidden = true; $("adv-chip").hidden = false; }
-  ids.forEach(function (i) { $(i).addEventListener("change", sync); });
-  $("apply").onclick = function () {
-    ids.forEach(function (i) { applied[i] = $(i).value; });
-    isApplied = true; render(); sync(); setFilters(pageFilters());
-  };
-  $("cancel").onclick = function () { ids.forEach(function (i) { $(i).value = applied[i]; }); sync(); };
-  $("reset").onclick = function () {
-    ids.forEach(function (i) { $(i).value = DEFAULTS[i]; applied[i] = DEFAULTS[i]; });
-    isApplied = false; render(); sync(); setFilters(pageFilters());
-  };
-  render(); sync(); setFilters(pageFilters());
+
+  // ---------- summary strip ----------
+  function tile(key, label, tipText, value, sub, extra) {
+    return h('div', { class: 'tile', 'data-tile': key }, [
+      h('div', { class: 'lbl' }, [h('span', { text: label }), info(tipText, label + ': ' + tipText)]),
+      h('div', { class: 'val', 'data-value': String(value.raw) }, [h('span', { text: value.text }), value.after ? h('span', { class: 'val-after', text: value.after }) : null]),
+      extra || null,
+      sub ? h('div', { class: 'sub', text: sub }) : null
+    ]);
+  }
+  var summarySeq = 0;
+  function loadSummary(f) {
+    var strip = $('strip'), my = ++summarySeq;
+    clear(strip);
+    strip.appendChild(h('div', { class: 'skel' })); strip.appendChild(h('div', { class: 'skel' })); strip.appendChild(h('div', { class: 'skel' }));
+    api('summary', f).then(function (d) {
+      if (my !== summarySeq) return;
+      clear(strip);
+      var s = d.inventorySold;
+      if (!d.earnedRevenue && !d.estimatedRevenue && !s.slotsSold && !s.slotsAvailable) {
+        strip.appendChild(h('div', { class: 'msg wide' }, [icon('monitoring'), h('p', { text: 'No retail media activity for these filters.' })]));
+        return;
+      }
+      strip.appendChild(tile('earned', 'Earned revenue', SUMMARY_TIPS.earned, { raw: d.earnedRevenue, text: fmtMoney(d.earnedRevenue) }));
+      strip.appendChild(tile('estimated', 'Estimated revenue', SUMMARY_TIPS.estimated, { raw: d.estimatedRevenue, text: fmtMoney(d.estimatedRevenue) }));
+      var bar = h('div', { class: 'bar' }, [h('i', { style: 'width:' + Math.min(100, s.percent) + '%' })]);
+      strip.appendChild(tile('sold', 'Inventory sold', SUMMARY_TIPS.sold, { raw: s.percent, text: s.percent + '%', after: ' sold — ' + fmtInt(s.slotsSold) + ' sold · ' + fmtInt(s.slotsAvailable) + ' available' }, null, bar));
+    }, function () {
+      if (my !== summarySeq) return;
+      clear(strip);
+      var retry = h('button', { class: 'btn', type: 'button', text: 'Try again' });
+      retry.addEventListener('click', function () { loadSummary(pageFilters()); });
+      strip.appendChild(h('div', { class: 'msg wide err', role: 'alert' }, [icon('error'), h('p', { text: 'We couldn’t load retail media performance. Try again shortly.' }), retry]));
+    });
+  }
+
+  // ---------- tabs ----------
+  var selectedTab = 0;
+  function buildTabs() {
+    var tabs = $('tabs');
+    clear(tabs);
+    TABS.forEach(function (name, i) {
+      var b = h('button', { class: 'tab' + (i === 0 ? ' active' : ''), role: 'tab', type: 'button', 'aria-selected': i === 0 ? 'true' : 'false', text: name });
+      b.addEventListener('click', function () { selectTab(i); });
+      tabs.appendChild(b);
+    });
+    drawCrumb();
+  }
+  function drawCrumb() {
+    var c = $('crumb');
+    clear(c);
+    c.appendChild(document.createTextNode('Home'));
+    c.appendChild(h('span', { class: 'sep', text: '>' }));
+    c.appendChild(document.createTextNode('Insights / Analytics'));
+    c.appendChild(h('span', { class: 'sep', text: '>' }));
+    c.appendChild(h('span', { class: 'current', text: TABS[selectedTab] }));
+  }
+  function selectTab(i) {
+    selectedTab = i;
+    Array.prototype.forEach.call($('tabs').children, function (b, k) { b.classList.toggle('active', k === i); b.setAttribute('aria-selected', k === i ? 'true' : 'false'); });
+    $('tab-rmp').hidden = i !== 0;
+    var other = $('tab-other');
+    other.hidden = i === 0;
+    clear(other);
+    if (i !== 0) other.appendChild(h('p', { text: TABS[i] + ' is part of the platform’s Insights page and is not in this prototype.' }));
+    drawCrumb();
+  }
+
+  // ---------- start ----------
+  function fail(message) {
+    var m = $('msg');
+    m.hidden = false; m.classList.add('err');
+    clear(m); m.appendChild(icon('error')); m.appendChild(h('p', { text: message }));
+    $('strip').hidden = true;
+  }
+
+  function start() {
+    buildTabs();
+    var first = LocalApi.firstAdvertiserId();
+    if (isAdvertiser) {
+      var wanted = q.get('advertiser') || first;
+      // The advertiser must be one of the test advertisers; anything else falls back to the first.
+      return LocalApi.get('/filter-options', {}, ADMIN).then(function (o) {
+        var ids = o.advertisers.map(function (a) { return a.id; });
+        principal = { principalType: 'advertiser', principalId: ids.indexOf(wanted) >= 0 ? wanted : first, scopes: NS_SCOPES };
+      });
+    }
+    return Promise.resolve();
+  }
+
+  function fetchJson(endpoint, params) { return api(endpoint, params); }
+
+  start().then(function () { return api('filter-options'); }).then(function (o) {
+    options = o;
+    buildFilters(); syncControls(); syncButtons();
+    var f = pageFilters();
+    if (isAdvertiser) {
+      $('strip').hidden = true; $('rd').hidden = true; $('sc').hidden = true; $('dc').hidden = true; $('av').hidden = false;
+      modules.av = AdvertiserView.mount($('av'), { fetchJson: fetchJson });
+      modules.av.setFilters(f);
+    } else {
+      loadSummary(f);
+      modules.rd = RevenueDeals.mount($('rd'), { fetchJson: fetchJson });
+      modules.rd.setFilters(f);
+      modules.sc = SlotCharts.mount($('sc'), { fetchJson: fetchJson, filters: f });
+      modules.dc = DemandCharts.mount($('dc'), { fetchJson: fetchJson, filters: f });
+    }
+  }, function () { fail('We couldn’t load the page filters. Try again shortly.'); });
 })();

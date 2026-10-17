@@ -13,33 +13,30 @@ All four also read `display-types` (the shared hover card). Spec: project README
 
 ## Files
 
-- `slot-charts.js` / `slot-charts.css` — the module. `SlotCharts.mount(el, { fetchJson })` returns `{ setFilters, refresh, destroy }`; the shell calls `setFilters()` on Apply. Pure helpers (ordering, hover models, formatting) are exported for the tests.
-- `fixtures.js` — fixture responses in the shapes below, plus a `fetchJson` that supports `state: 'empty' | 'error'`.
-- `slot-charts-demo.html` — the test page. `?state=loading|empty|error` previews the non-data states.
-- `test/slot-charts.test.js` — offline tests: `node --test Retail-media-insights/frontend/test/slot-charts.test.js` (no network, no dependencies).
+- `slot-charts.js` / `slot-charts.css` — the module. `SlotCharts.mount(el, { fetchJson, filters })` returns `{ setFilters, refresh, destroy }`; the shell calls `setFilters()` on Apply. Pure helpers (ordering, hover models, formatting) are exported for the tests. Every data-bearing node is built with `createElement`/`textContent`, and styles are set through the CSSOM, so it runs under a `style-src 'self'` policy.
+- `test/slot-charts.test.js` — `npm test` in `Retail-media-insights` (offline). The tests run on what the real route handlers return, through `local-api.js`; there are no fixtures.
 
-`fetchJson(endpoint, params)` receives the page filters (`dateFrom`, `dateTo`, `storeIds`, `displayTypeIds`, `advertiserIds`) and, for `yield`, `dealType`. Every response carries `meta: { dateFrom, dateTo, days, storeCount }`. The component sorts display types into shopper-journey order and DSPs into DV360, The Trade Desk, Amazon DSP itself, so the back end may return any order.
+`fetchJson(endpoint, params)` receives the page filters (`dateFrom`, `dateTo`, `storeIds`, `displayTypeIds`, `advertiserIds`) and, for `yield`, `dealType`. The responses carry no `meta`; the date range in the hovers is the page's own filter. The component sorts display types into shopper-journey order (by `iabZone`) and DSPs into DV360, The Trade Desk, Amazon DSP itself.
 
-## Response shapes (assumed — confirm when the back-end tickets land)
-
-Fields marked `?` are optional; a field that is absent is omitted from the hover card, never shown as "not set".
+## Response shapes (read from `src/routes/` and `src/display-types.js`)
 
 ```
-display-types    { meta, rows: [{ id, name, description?, connectedDisplays, storeCount, zone?, operatingHours? ("24 hours" | "Store opening hours"),
-                   touchPoint?, resolution?: {width,height}, orientation?, creativeFormats?: string[],
-                   avgAssumedViewsPerSlotPerDay?, avgFootfallPerDay?, avgVisibilityAdjustment?,
-                   shareOfLoopTime?: {slotSeconds, loopSeconds} }] }
-slot-value       { meta, rows: [{ displayTypeId, connectedDisplays, effectiveCpm, floorCpm?, perSlotPerDay, earnedRevenue, assumedViews,
-                   advertiserSlotsPerLoop, advertiserSlots /* per loop × connected displays */ }] }
-slot-allocation  { meta, rows: [{ displayTypeId, slotsPerLoop, advertiserSlots, ownContentSlots, loopSeconds,
-                   advertiserSlotSeconds, ownContentSlotSeconds, advertiserSlotsSoldPct }] }
-missed-revenue   { meta, rows: [{ displayTypeId, connectedDisplays, floorCpm, slotsTotal, slotsSold, slotsUnsold, slotsOffline,
-                   unsoldValue, downtimeLostRevenue }],
-                   total: { connectedDisplays, floorCpmMin, floorCpmMax, …same counts and values, summed } }
-yield            { meta, dealType, rows: [{ dsp, effectiveCpm, earnedRevenue?, assumedViews? }] }
+display-types    { rows: [{ id, name, description?, connectedDisplays: {displays, stores}, iabZone?, operatingHours? ("24 hours" | "Store opening hours"),
+                   touchPoint?, canvas?: {width, height, label}, displayOrientation?, creativeFormats?: string[],
+                   averages?: { averageFootfallPerDay?, averageVisibility?, shareOfLoopTime?: {percent, advertiserSlotSeconds, loopSeconds},
+                                averageAssumedViewsPerSlotPerDay?, averagesCover: {displays, stores, dateFrom, dateTo, label} } }] }
+slot-value       { rows: [{ …the display-types card…, floorCpm, effectiveCpm, perSlotPerDay, averageAssumedViewsPerSlotPerDay?, advertiserSlotsSoldShare?,
+                   totals: { earnedRevenue, assumedViews, days, perDay, advertiserSlots } }], network }
+slot-allocation  { rows: [{ id, name, connectedDisplays, slotsPerLoop, loopSeconds, averageSlotSeconds,
+                   advertiserSlots: {count, avgSeconds, totalSeconds, percentOfLoop, slotShareOfLoopPercent}, ownContentSlots: {…same…},
+                   advertiserSlotsSoldPercent }] }
+missed-revenue   { rows: [{ id, name, connectedDisplays: {displays, stores}, floorCpm, fillPercent, slotsSold, slotsUnsold, slotsOffline, slotsTotal,
+                   unsoldValueAtFloor, downtimeLostRevenue, slotsOfflineLost, totalMissed }],
+                   total: { name, connectedDisplays, floorCpm: {min, max}, …same counts and values, summed } }
+yield            { dealType, rows: [{ dsp, effectiveCpm /* null: no delivery */, earnedRevenue, assumedViews }] }
 ```
 
-Rules the component relies on (and the tests check on the fixtures): `sold + unsold + offline = slotsTotal`; parts are rounded before they are summed, so `unsoldValue + downtimeLostRevenue` is exactly the total missed revenue shown; `perSlotPerDay = effectiveCpm × avgAssumedViewsPerSlotPerDay ÷ 1,000`; `advertiserSlots + ownContentSlots = slotsPerLoop`.
+Rules the component relies on (and the tests check on the real output): `sold + unsold + offline = slotsTotal`; the parts are rounded once by the back end, so `unsoldValueAtFloor + downtimeLostRevenue = totalMissed` and the front end never re-rounds them; loop percentages are the back end's `percentOfLoop` / `slotShareOfLoopPercent`; `perSlotPerDay = effectiveCpm × averageAssumedViewsPerSlotPerDay ÷ 1,000 × advertiserSlotsSoldShare` (the hover shows that line); `advertiserSlots.count + ownContentSlots.count = slotsPerLoop`. A DSP with no delivery has `effectiveCpm: null` and reads "No delivery".
 
 ## Behaviour notes
 
