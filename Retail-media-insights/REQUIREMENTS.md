@@ -15,7 +15,7 @@ The README is the functional spec (every chart, hover, rule and sample-data cons
 ## 3. Back-end requirements
 ### 3.1 Endpoints (one per page element; all take the page filters)
 Page filters on every endpoint: `dateFrom`, `dateTo`, `storeIds[]`, `displayTypeIds[]`, `advertiserIds[]`. Chart-level filters are extra params.
-1. `summary` — earned revenue, estimated revenue, Inventory sold (% + slots sold + available).
+1. `summary` — earned revenue, estimated revenue, Inventory sold (% + slots sold + available + offline).
 2. `revenue` — per day/week/month × DSP × deal type, earned and estimated; params `dsps[]`, `dealTypes[]`, `granularity`.
 3. `deals` — name, description, type, per-DSP deal IDs, assigned slots (with slot detail), advertisers (with DSP), fill, pacing (PG only: flight, days elapsed/remaining, forecast, buffer), revenue, CPM; param `dealType`.
 4. `slot-value` — per display type: connected displays, effective CPM, floor CPM, per slot per day, network totals, VAC-d averages and inputs.
@@ -32,7 +32,7 @@ Page filters on every endpoint: `dateFrom`, `dateTo`, `storeIds[]`, `displayType
 - **Average assumed views per slot per day** = average footfall × average visibility × share of loop time (slot duration ÷ loop length), averaged across all connected displays of the type in the filtered stores and dates; return the display and store counts with it. Billing uses realised VAC-d.
 - **Per slot per day** = revenue ÷ (advertiser slots × connected displays × days).
 - **Operating hours:** only slots inside each display type's operating hours are inventory (24 hours for Exterior and window screens visible from outside; store opening hours otherwise). Never return specific opening times.
-- **Fill / Inventory sold** = sold ÷ advertiser slots inside operating hours, using unsold real-time slot records.
+- **Fill / Inventory sold** = sold ÷ (sold + unsold + offline), i.e. all advertiser slots inside operating hours, using unsold real-time slot records.
 - **Missed revenue** = unsold slots × floor CPM × VAC-d ÷ 1,000, plus downtime lost revenue.
 - **Pacing** (PG only) = delivered VAC-d ÷ guaranteed to date; guaranteed = forecast × (1 − buffer).
 - **Maturity level** = highest of Default only / Localised / Personalised across an advertiser's campaigns in range. Daypart is scheduling, never a variable.

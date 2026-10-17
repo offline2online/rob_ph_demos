@@ -1,0 +1,314 @@
+# Retail Media Insights & Analytics Dashboards
+
+Retailer-facing (and advertiser self-service) insights for the retail media business run by the Display Types & DSP Integration project. It answers: **what am I earning**, **what am I leaving on the table**, **how should I allocate my slots**, **which advertisers are on which deals**, and **how sophisticated is my advertisers' targeting and scheduling**.
+
+## Placement and naming
+- One tab named **Retail Media Performance**, placed **first** in the Insights & Analytics tab list, ahead of Campaign Performance, Visitor Insights and Store Insights.
+- **No "NEW" badge on the tab.** Every tab is new to a retailer when they install the platform, so the label adds nothing.
+- **Breadcrumb at the top of the page:** Home > Insights / Analytics > *current tab* (e.g. Retail Media Performance; it follows the selected tab). PH breadcrumb type size: 14px / 400 — earlier steps muted (rgba(0,0,0,0.45)), current page #333333, ">" separators.
+- House style mirrors existing Insights: one summary strip of headline cards (shown once, no duplicated summary), then the charts below.
+- **Summary strip covers money and inventory sold.** It includes an **Inventory sold** tile: the % of advertiser slot inventory sold over the date range (whole number), with the count of slots sold and slots still available beneath it (e.g. "78% sold — 4,120 sold · 1,160 available"). It counts every advertiser slot across all deal types, using the unsold real-time slot records now logged. ⓘ tooltip: "Share of all advertiser slots across your displays that were sold in the selected period." No "Lost to display downtime" tile (shown only in the Missed revenue / fill chart) and no "Advertisers using targeting beyond default" tile (shown only in the Targeting & scheduling maturity section's ladder chart).
+- **No explanatory copy under or around charts and tables.** Any descriptive, explanatory or footnote text for a chart or table goes in an info (ⓘ) tooltip next to its title instead. Only titles, legends, axis labels and data appear on the page.
+- **Don't repeat in a chart or table what its hover already shows.** Display types are shown by **name only** everywhere — the Slot value chart, the Missed revenue & fill chart, the Slot allocation table and the advertiser's Your deals by display type table; the IAB store zone and other details are in the display type hover card. (The one addition is the **connected-display count in brackets** on the Slot value and Missed revenue & fill charts — see 3a and 4.)
+- **Only show what is actually known.** Nothing that isn't stored today appears in a chart, table or hover — e.g. **no IAB classification** of the display or store (such as "Retail › Health & beauty store") anywhere, as it isn't currently held.
+- **Per-display measures are always averages, and labelled as such.** A retail media network has thousands of displays, so any VAC-d / assumed views, footfall or visibility figure for a display type is the **average across every connected display of that type** in the selected stores and date range — never a single display. Label it "Average …" wherever it appears (hovers, ⓘ tooltips, worked examples), and state how many displays it averages over.
+- **Network totals are shown alongside.** Where a hover shows a rate or average for a display type (Slot value) or a value for a display type (Missed revenue & fill), it also shows the **total across all the type's connected displays** for the date range, in brackets, and says how many displays and stores it covers.
+- **Every advertiser named in a hover shows its DSP in brackets** — the DSP it buys through, e.g. "Blackmores (DV360)", "Haleon (The Trade Desk)", "Bayer Consumer Health (Amazon DSP)". Applies to the Deals table's Advertisers on deal hover, the Advertisers table's Deals on hover, and the Maturity ladder, Scheduling and Variables in use hovers.
+- **No warning chips or advice anywhere — in tables or in hovers.** No "Near full", "Behind pace", "Needs more demand" or "Concentrated" chips, and no advice lines such as "Running near full — consider assigning more slots to advertisers". Hovers show facts only; the numbers themselves (sold %, share of revenue, fill, pacing) are enough and the retailer reads them directly.
+- **No "next step" recommendations in the retailer's tables.** The retailer reads levels, variables and scheduling directly.
+- **No per-store breakdowns inside charts.** Store-level views come from the page's Store filter; a per-store list would be too long for a retailer with many stores.
+- **Charts that list display types are horizontal rows, not vertical columns**, so they scale to many display types without taking over the page.
+- **Never show specific store opening times.** Every store's opening hours differ, so the tab only ever says "Store opening hours" (or "24 hours").
+- **Display downtime is retailer-only.** It appears only in the retailer's Missed revenue / fill chart. An advertiser login never sees display downtime, offline displays or lost revenue anywhere — not in charts, tables or hovers.
+- **Currency: show every monetary value in US dollars (USD, "$")** — revenue, CPMs, lost revenue, spend, tables and tooltips. No pounds (£) anywhere in the artifact.
+- **DSP names in sample data:** do not use Hivestack anywhere. Replace it with **Amazon DSP** (Amazon Ads). Only show DSPs that have been part of the DSP Integration project. Order everywhere a DSP list is shown: **DV360, The Trade Desk, Amazon DSP**. Where a deal ID is shown, the DSP is named as on DSP Integration's Deals & buyers lists: **Google DSP (DV360)**, **The Trade Desk**, **Amazon Ads DSP**.
+- **Deal types: the four industry-standard types, as aligned in the DSP Integration project.**
+  - **Open auction** — any buyer bids per slot against the floor.
+  - **Private auction** — invited buyers bid per slot on a deal ID against the deal floor; no rate lock, nothing reserved.
+  - **Preferred deal** — one named buyer, fixed CPM, first look per slot; nothing reserved.
+  - **Programmatic guaranteed** — one buyer, fixed CPM, guaranteed volume over a flight; the only deal type that reserves inventory.
+  - Order everywhere (legends, filters, tables): Programmatic guaranteed → Preferred deal → Private auction → Open auction (the delivery priority).
+- **Deals are named, not coded.** Wherever a deal appears (deal table, hovers, the advertiser's deal filter and deals by display type), show the **deal name** only; the deal's description and its **deal IDs** are on hover. Deal IDs follow DSP Integration's Deals & buyers lists: **one deal ID per DSP that has an invited buyer**, in the format **PH-** plus 10 characters (e.g. PH-A595WKW5P3). An advertiser login sees only the deal ID for its own DSP.
+- **Pacing applies to Programmatic guaranteed only** (the only type with committed volume): delivered vs guaranteed assumed views (VAC-d), always read alongside how far through the flight the deal is (days elapsed vs days remaining). No pacing, commitment or "booked vs delivered" for the other three types.
+- **Auctions clear at or above the floor.** Sample data must never show a cleared or winning CPM below the relevant floor CPM (the deal floor for a private auction, the display type's floor for the open auction).
+- **Figures that are shown as parts of a total must add up to it** as displayed (e.g. unsold + downtime = total missed revenue, sold + unsold + offline = all advertiser slots) — round the parts first.
+- **Inventory counts only slots inside each display's operating hours.** Screens outside the store (Exterior), or at the entrance and visible from outside the store (e.g. window screens), run 24 hours. Screens inside the store follow store opening hours — including in-store screens in the Entrance & out of category zone such as endcaps / gondola ends and power aisles — as do In aisles, Checkout and Other & connected store displays. Operating hours are held per display type (defaulted from the zone, overridable). Slots outside operating hours play house content, are not inventory, and never count as unsold or missed revenue. Applies to the Inventory sold tile, Missed revenue / fill, Slot allocation and deal Fill.
+- **No duplication with Campaign Performance.** Anything Campaign Performance already shows (what played, where, when, stores/screens that played, plays per campaign) is not repeated here.
+- Passer-by data is removed from this tab.
+- Every chart must be backed by data that exists in Personalisation Hub or the DSP Integration project today. Gaps are listed under Future work, not mocked.
+- **Simplest possible charts: one chart per insight.**
+- **No pricing premiums are shown anywhere** (localised and personalised bill at the same CPM).
+- **No direct revenue.** All revenue comes via connected DSPs today; remove every "direct" / "DSP vs direct" split from the artifact.
+- **Never show unlabelled numbers or ratios like "8/4".** Every number carries its label; percentages are whole numbers.
+- **Counts of advertisers are never anonymous to the retailer.** Wherever a chart or table shows a number of advertisers (e.g. "7 advertisers"), **hovering it lists the advertisers' names, each with its DSP in brackets** (and clicking filters the table below). Names are **not** printed on or under the chart itself. This applies to every advertiser count on the tab, including the Maturity ladder, Scheduling, Variables in use, and the Deal table's "Advertisers on deal".
+- **Slots mean the same thing as in DSP Integration's Deals & buyers lists:** the advertiser slot positions a deal is assigned to (Available Inventory's Assigned to column), shown as a count ("3 slots") whose hover lists each slot's details in the same format.
+- **Display type format matches DSP Integration's display types:** Touch Point, **Display Canvas Size (Resolution) in pixels** (width × height px) and the supported creative formats (image + video at the canvas size, with max play length) — never physical screen sizes in inches.
+- **Display orientation matches PH Core:** labelled **"Display orientation"**, with PH Core's values only — **Not set, 90°, 180°, 270°**. A portrait screen is 90° or 270° (never "Portrait" / "Landscape" words).
+- **Targeting variables are only DSP Integration's Shared Targeting Variables**, with the same labels (DSP Integration → Shared Targeting Variables; the platform's default set). Applies everywhere a variable appears: Variables in use, the Advertiser targeting & scheduling table and its filter, and the advertiser's Variables you use / Other variables available to use. No invented variables (e.g. no Weather, Pollen count, Stock level, Local events, Loyalty tier, Check-in history).
+  - **Localisation:** Store Open / Closed, Fixed Store Segments, Variable Store Segments, Display Tag(s), Suburb, Postcode, State, Country.
+  - **Personalisation:** Gender (Computer Vision), Estimated Age (Computer Vision), Reason for Visit (Aggregate), Device Type (Aggregate), Purchase Intent, Purchase History, SKUs, Events, Age, Gender, Visitor Segments, Reason for Visit, Device Type, Product Holdings, Product Type, Plan Type, Plan Value.
+  - "Available to use" means **shared with the advertiser's DSP** on Shared Targeting Variables (Localisation defaults to all connected DSPs; Personalisation defaults to none until the retailer shares it). The mockup assumes the retailer has shared Store Open / Closed, Fixed Store Segments, Variable Store Segments, Display Tag(s), Suburb, State, both Computer Vision variables, both aggregates, Purchase Intent, Purchase History, SKUs, Events and Visitor Segments.
+  - Personalisation sub-type (Computer Vision, Aggregate, Identified visitor) is shown on the chip only where the label doesn't already say it (e.g. "Purchase Intent · Identified visitor", but "Gender (Computer Vision)" as is).
+
+## Assumed views and VAC-d (applies everywhere)
+- **Assumed views** is the on-page label; it is the **VAC-d (Visibility Adjusted Contacts, digital) score** from the OMA MOVE out-of-home standard. They are the same number — every use of "assumed views" must reference VAC-d.
+- **CPM = cost per thousand assumed views (VAC-d).** All CPMs on the tab (effective CPM, floor CPM, fixed deal CPM) are on this basis.
+- **Per display type, VAC-d inputs and results are averages** across every connected display of that type in the selected stores and date range (there are thousands of displays across the network, so it is never a single display's value): average assumed views per slot per day, average footfall past a display per day, average visibility adjustment.
+- Every chart or card that shows assumed views or a CPM carries an ⓘ tooltip explaining how average assumed views per day are calculated from VAC-d:
+  - **Average assumed views per slot per day = average footfall past a display per day × average visibility adjustment × the slot's share of loop time.**
+  - Footfall and visibility come from the retailer's own insights (or are automated by Personalisation Hub where cameras are connected to the display); share of loop time = slot length ÷ loop length.
+  - VAC-d is **dynamic**: billing uses the VAC-d actually realised over the billing window, because loop length can change.
+  - Worked example: an average of 4,000 footfall past a display × 0.5 average visibility × 1/10 share of loop = 200 average assumed views per slot per day; at a $20 CPM that slot earns $4 per day on average.
+- Where a display type's VAC-d inputs are shown in a hover card, they are labelled **Average assumed views (VAC-d) per slot per day**, **Average footfall past a display per day** and **Average visibility adjustment**, followed by a line saying what they average over (e.g. "Averages across all 10 connected Window Portrait displays in 5 stores, 12 Sep – 11 Oct."); omit any that aren't stored. **Share of loop time** = the average advertiser slot duration ÷ total loop length (e.g. "6s advertiser slot ÷ 60s loop = 10%").
+
+## Store zones (IAB In-Store Retail Media Standards)
+- Zones use **only the five IAB / IAB Europe In-Store Retail Media Standards store zones** — no other zone names (no "Mall", "Point of sale" or "Car park" as zones):
+  1. **Exterior** — outside the store: building walls, standalone displays, car park. Runs 24 hours.
+  2. **Entrance & out of category** — entry area including window screens, plus promotional space such as power aisles and gondola ends. Screens visible from outside the store (window screens) run 24 hours; in-store screens in this zone (endcaps / gondola ends, power aisles) follow store opening hours.
+  3. **Checkout** — belt/surface, in-queue, shopper-facing screens at the till, self-checkout, post-checkout / store exit. Store opening hours.
+  4. **In aisles** — in-category screens at the shelf. Store opening hours.
+  5. **Other & connected store** — anything else. Store opening hours.
+- Sample data: **Window Portrait** = Entrance & out of category, 24 hours (visible from outside the store), 1080 × 1920 px, display orientation 90°, 2 connected displays per store. **Endcap Shelf-edge** = Entrance & out of category, store opening hours (inside the store), 1920 × 360 px, Not set, 4 per store. **Queue Screen** = Checkout, 1920 × 1080 px, Not set, 3 per store. **Dispensary Screen** = Other & connected store, 1920 × 1080 px, Not set, 1 per store. (5 sample stores, so 10 / 20 / 15 / 5 connected displays, 50 in all, across the network.)
+
+## Page filters (apply to every chart)
+Date range, Store, Display type, Advertiser (free filter for retailer users; locked chip for advertiser logins). Only a few charts add a filter of their own (listed per chart). Charts never repeat a page filter as a chart-level switch (e.g. no "group by store").
+
+**Display type filter for an advertiser login:** lists **only the display types the advertiser has deals assigned to or campaigns running on** — "All Display Types (n)" counts just those. Display types they have nothing on never appear. (Sample: Blackmores sees Window Portrait and Dispensary Screen from its deals, plus Queue Screen from its open auction campaigns — 3, not Endcap Shelf-edge.) A retailer user sees every display type.
+
+**Filter actions (same pattern as Campaign Performance):**
+- Changing a filter does **not** update the page. **Apply** (primary) and **Cancel** (default) appear beside the filters; nothing changes until Apply is pressed. Cancel reverts the filters to the last applied values.
+- Once a filter has been applied (any filter differs from its default), **Reset Filters** (primary) is shown; it returns every filter to its default and updates the page.
+- With no filters set and nothing pending, **no CTA is shown**.
+- **No "Open in QuickSight" or "Ask the Insights agent" CTAs** on the page. (The same data remains available to QuickSight and to agents over MCP outside this tab.)
+
+## Retailer view — charts in priority order
+**Page order (top to bottom, left to right):**
+1. Summary strip
+2. **Revenue** (full width)
+3. **Deals** (full width, directly under Revenue)
+4. **Slot value** (left) · **Slot allocation** (right)
+5. **Missed revenue / fill** (left) · **Yield** (right, last of the four charts)
+6. **Demand health** — Advertisers table
+7. **Targeting & scheduling maturity**
+
+The numbered sections below describe each chart; their numbers follow the order above.
+
+### 1. Revenue — daily stacked bar by DSP and deal type
+- One bar per day of **earned revenue**, stacked by **each connected DSP** (one colour per DSP, named as connected).
+- Within each DSP, split by the four deal types (shades of the DSP colour, darkest = Programmatic guaranteed, lightest = Open auction; legend shows all four).
+- **Estimated revenue** (booked-ahead, not yet played — mainly Programmatic guaranteed) as an outlined/lighter segment on top.
+- Chart filters: **DSP** (multi-select) and **Deal type** (the four types). Granularity: **Day** default, with Week / Month toggle.
+- **DSP list order: DV360, The Trade Desk, Amazon DSP.** By default **only DV360 is selected**; the others stay unselected until clicked. A selected DSP chip is highlighted (teal outline, light teal fill, bold label).
+- Tooltip per bar: total for the day, then each DSP × deal type amount.
+- Data: billing_line_items and reservations (DSP seat, deal type, cleared or fixed CPM).
+
+### 2. Deals — table, directly under Revenue
+One row per deal — aligned with DSP Integration's **Deals & buyers lists**. Placed straight after Revenue so the retailer reads the money, then the deals that earned it. Columns:
+| Deal | Deal type | Slots | Advertisers on deal | Fill | Pacing | Revenue | CPM |
+- **Deal** shows the **deal name only** (no internal code beneath). **Hovering the name shows** the deal name, its **description**, and its **Deal IDs** — one per DSP that has an invited buyer, named as on Deals & buyers lists, e.g. "Google DSP (DV360): PH-A595WKW5P3", "The Trade Desk: PH-9ANQZ5XWMD", "Amazon Ads DSP: PH-WPCHN2JC8Q".
+- **Deal type** = Programmatic guaranteed, Preferred deal or Private auction.
+- **Slots** = the number of slots the deal is assigned to (Available Inventory's Assigned to column), e.g. "3 slots"; "Not assigned" if none. **Hovering shows "Assigned slots"**, the same details as the Deals & buyers lists hover, for each slot:
+  - display type name (and its description)
+  - playlist · zone name
+  - **IAB zone**
+  - position: advertiser slot n (slot n of the loop) · **plays per window**
+- **Advertisers on deal** shows the count; hovering it lists the advertisers' names, **each with the DSP it buys through in brackets**, e.g. "Blackmores (DV360)", "Haleon (The Trade Desk)", "Bayer Consumer Health (Amazon DSP)".
+- **Fill** = slots sold ÷ all slots on the deal inside operating hours, using the unsold slot records.
+- **Pacing** (Programmatic guaranteed rows only; empty for other types) = assumed views (VAC-d) delivered ÷ guaranteed to date, whole number, with an inline bar. **Hover shows** delivered, guaranteed to date, guaranteed for the whole flight, forecast, buffer, the **flight dates with its length in days**, and **where the deal is in its flight**: **days elapsed** (e.g. "27 of 62 (44%)") and **days remaining** (e.g. "35"); before the flight starts, **"Starts in N days"**; after it ends, days remaining 0 · flight ended. ⓘ tooltip: guaranteed volume = forecast × (1 − buffer).
+- **CPM** = floor CPM for Private auction; fixed CPM for Preferred deal and Programmatic guaranteed.
+- **No warnings** — no "Behind pace" or "Needs more demand" chips and no amber rows. Low fill, few advertisers or pacing below 100% are visible in the table's own columns.
+- Table filter: **Deal type**. Page filters apply.
+- Data: deals and buyers lists (name, description, deal type, per-DSP deal IDs, flight dates, guaranteed volume, buffer, assigned slots, each buyer's DSP seat), Available Inventory slot assignments (display type, playlist, zone, position, plays per window), billing line items, reservations (won impressions), unsold slot records, display type slot configuration, display operating hours.
+
+### 3. Display type slot value & slot allocation (side by side: Slot value left, Slot allocation right)
+Purpose: show the **value of each screen along the shopper journey**, and help the retailer decide how many slots per display type to give to advertisers vs keep for their own content, seeing **how long each kind of slot is and how much of the loop it takes**.
+
+**Shopper-journey order (applies to 3a and 3b):** display types are ordered by IAB store zone along the path to purchase, not by value — **Exterior → Entrance & out of category → In aisles → Checkout → Other & connected store**, read top to bottom. Both show the **display type name** — no IAB store zone label on the chart or in the table; the zone is in the hover card.
+
+**Display type hover (applies to every row in 3a and every display type name in 3b, and to every display type hover on the tab):** hovering shows a display type detail card with facts only (no advice or commentary), and only fields that are actually stored:
+- Display type name and **description** (from the display type definition)
+- **Connected displays** — the number of connected displays of this type across the selected stores, from PH Core (e.g. "10 across 5 stores")
+- **IAB store zone** (one of the five zones above) and its **operating hours** — "24 hours" or "Store opening hours" only, never specific times
+- **Format, as held on DSP Integration's display types:** **Touch Point** (e.g. Digital Signage), **Display canvas size (resolution)** in pixels (e.g. 1080 × 1920 px), **Display orientation** as in PH Core (Not set / 90° / 180° / 270°), and **Creative formats** (e.g. "Image + video, 1080×1920, max play 6s"). **No loop length here** — it's on the Slots per loop hover.
+- **Average assumed views (VAC-d) per slot per day** with its inputs: **average footfall past a display per day**, **average visibility adjustment**, and **share of loop time** (average advertiser slot duration ÷ total loop length) — then a line stating what the averages cover, e.g. "Averages across all 10 connected Window Portrait displays in 5 stores, 12 Sep – 11 Oct." (follows the Store and Date range filters).
+- **No IAB classification** of the display or store — it isn't currently known.
+- **If any of these fields isn't stored on the display type, it is simply omitted from the card** — no placeholder, no "not set". A display type with no zone sits at the end of the journey order.
+
+**3a. Slot value — horizontal bar chart, one row per display type, with a metric toggle (left).** Rows (not vertical columns) so it scales to many display types without taking over the page. Each row: **display type name with its number of connected displays in brackets** (e.g. "Window Portrait (10)" — connected displays of that type across the selected stores, from PH Core; zone in the hover), a horizontal bar, and the value; in shopper-journey order, in USD. Chart control toggles the metric:
+- **Effective CPM (default)** — earned revenue ÷ (assumed views (VAC-d) ÷ 1,000) for that display type; matches how advertisers are charged. Labelled e.g. "$18 CPM". The display type's **floor CPM** shown as a dashed vertical marker on each row's bar.
+- **Per slot per day** — earned revenue ÷ (advertiser slots × connected displays × days), i.e. the average per advertiser slot on one display. Labelled e.g. "$42 per slot per day".
+- **Row hover** shows the display type hover card (connected displays, IAB store zone, averages) plus:
+  - **Effective CPM** with the **network total in brackets** — total earned revenue and total assumed views across all the type's connected displays for the date range, e.g. "$9.01 (total $7,321 earned on 812.6k assumed views, 12 Sep – 11 Oct)".
+  - **Floor CPM**.
+  - **Per slot per day** with the **network total in brackets** — per slot per day × advertiser slots × connected displays, e.g. "$3.05 (total $244 per day across 80 advertiser slots on 10 displays)".
+  - The link: per slot per day = CPM × **average** assumed views per slot per day ÷ 1,000.
+- Title ⓘ tooltip carries the VAC-d explanation and worked example from "Assumed views and VAC-d" (averages), and says the number in brackets is the display type's connected displays across the selected stores (PH Core).
+- Future (not shown yet): an **own-content value** bar beside it.
+
+**3b. Slot allocation — simple table, one row per display type (right).** Columns:
+
+| Display type | Slots per loop | Advertiser slots | Own-content slots | Advertiser slots sold |
+|---|---|---|---|---|
+| e.g. Checkout screen | 12 | 8 | 4 | 87% (bar) |
+
+- **Display type** shows the name only (no IAB store zone label beneath it); hover for the zone, connected displays and other details.
+- **Slots per loop** = total slots in the display type's loop; Advertiser slots + Own-content slots = Slots per loop (sample data must add up). **Hover shows the loop:** total loop length, average slot duration, and the advertiser and own-content slots each as count × average duration = seconds and % of the loop (e.g. "8 × 6s = 48s (80% of the loop)", "4 × 3s = 12s (20% of the loop)").
+- **Advertiser slots** — **hover shows** the average advertiser slot duration, their time in the loop (count × duration = seconds of the loop length, %), and each slot's share of the loop (duration ÷ loop length).
+- **Own-content slots** — **hover shows** the same for own-content slots.
+- So a user can quickly see the average slot length per display type and its impact on the total loop length, which feeds the share of loop time in the display type hover.
+- Sample data must add up: advertiser slots × their average duration + own-content slots × theirs = total loop length.
+- **Advertiser slots sold** = % of advertiser slot capacity inside operating hours sold over the date range, whole number with a small inline bar — **no chip, hover or commentary on it**. Rows at 85% or more are highlighted amber (the only signal).
+- Column definitions go in the ⓘ tooltip, not on the page.
+
+- Page filters only.
+- Data: display type definitions (description, IAB store zone, operating hours, Touch Point, display canvas size, display orientation, creative formats, floor CPM), **connected displays per display type and store (PH Core)**, display type slot configuration (slot counts, slot durations, loop length), VAC-d inputs and realised assumed views averaged across the display type's connected displays, booking schedule fill, unsold real-time slot records, billing line items.
+
+### 4. Missed revenue / fill — bar chart (left, beside Yield)
+- **One bar per display type only** showing **fill % across all advertiser slots inside operating hours (all deal types)**, plus a final **All display types** total row (bold, below a divider) when more than one display type is shown. **No group-by-store switch** — to see one store, use the page's Store filter (a per-store list would be too long).
+- **Each row shows the display type name with its number of connected displays in brackets** (e.g. "Window Portrait (10)", "All display types (50)") — connected displays across the selected stores, from PH Core.
+- **Missed revenue shown as two segments, in USD:**
+  - **Unsold slots** — advertiser slots inside operating hours that went unsold, valued at the display type's **floor CPM** × their assumed views (VAC-d) ÷ 1,000 (amber).
+  - **Display downtime** — lost revenue from displays being offline (red). Retailer view only.
+- **Bar hover shows every value with its total**, across all the type's connected displays (or all display types on the total row) for the date range:
+  - **Connected displays** — e.g. "10 across 5 stores".
+  - **Floor CPM** — the display type's floor (the total row shows the range, e.g. "$5.50–$7.50 by display type").
+  - **Fill** — % with the total behind it, e.g. "61% (total 7,629 of 12,425 advertiser slots sold)".
+  - **Unsold slots** — count with its total value, e.g. "4,424 (total $1,224 at floor CPM)".
+  - **Display downtime** — lost revenue with the slots it covered, e.g. "$131 (total lost revenue; 372 slots offline)".
+  - **Total missed revenue** — with its parts, e.g. "$1,355 ($1,224 unsold + $131 downtime)".
+  - A closing line: "Totals across all 5 connected Dispensary Screen displays in 5 stores, 12 Sep – 11 Oct."
+  - Parts add up as shown: sold + unsold + offline = all advertiser slots; unsold + downtime = total missed revenue.
+- Title ⓘ tooltip: unsold value is an estimate at floor CPM, i.e. the minimum those slots could have earned; slots outside operating hours are not counted; the number in brackets is connected displays (PH Core); the last row totals all display types.
+- No chart filter; page filters only.
+- Data: booking schedule, display operating hours (per display type: 24 hours or store opening hours), unsold real-time slot records, floor CPM and VAC-d per display type, **connected displays per display type and store (PH Core)**, lost-revenue report (GET /admin/v1/reports/lost-revenue).
+
+### 5. Yield — bar chart (right, last of the four charts)
+- One bar per connected DSP showing **effective CPM** (per thousand assumed views, VAC-d; no Direct bar).
+- Chart filter: **Deal type** (the four types).
+- Data: billing line items / reservations (cleared or fixed CPM).
+
+### 6. Demand health — advertisers
+Purpose: which advertisers are on which deals and over which slots. (The Deals table that used to sit in this section is now section 2, directly under Revenue.) No suggested additions in this release. **No warning chips or amber rows.**
+
+**Advertiser table** (top 10 by revenue; "show all" expands). Columns:
+| Advertiser | Revenue | Share of total revenue | Deals on | Slots covered | Slots won | Effective CPM |
+- **Deals on** = number of deals (any of the three deal types) the advertiser is on, via buyers lists; hover is headed with the advertiser and its DSP in brackets (e.g. "Blackmores (DV360): deals on") and lists the deals by deal name with deal type.
+- **Slots covered** = number of slots assigned to those deals (as in the Deals table's Slots column).
+- **Slots won** = % of covered slot opportunities the advertiser actually won, whole number.
+- **Share of total revenue** is a plain whole-number percentage. No concentration warning, chip or highlight — the retailer can read the % directly.
+- Page filters only.
+- Data: buyers lists, billing line items, reservations (won impressions), slot assignments, DSP seat per advertiser.
+
+### 7. Targeting & scheduling maturity — growing advertiser sophistication
+Purpose: show how advertisers actually use **targeting** and **scheduling** on displays, and **exactly which advertisers** sit where, so the retailer can coach them up the ladder and to schedule their campaigns. More sophisticated targeting and scheduling mean better campaigns, more spend and more inventory sold.
+
+**Targeting and scheduling are separate.** Targeting rules (Localisation and Personalisation variables — DSP Integration's Shared Targeting Variables only) are set on a campaign's targeting; **scheduling — dayparting and managing multiple schedules — is a separate campaign feature on its own Scheduling tab**. So **Daypart is not a targeting variable** and never appears in Variables used, Variables in use or the variable filter; scheduling is shown as its own element.
+
+**Strategy: the primary targeting differentiator is Default → Localised → Personalised (three levels).** Personalised sub-types (Computer Vision, Aggregate, Identified visitor) are detail only — shown as variable chips and in tooltips, never as separate levels, bands or series in any chart.
+
+**Maturity ladder (three levels, lowest to highest):** **Default only** → **Localised** (uses Localisation Variables) → **Personalised** (uses any personalisation variable). An advertiser's level is the highest level used by any of its campaigns in the date range.
+
+Charts (every advertiser named in their hovers shows its DSP in brackets, e.g. "Perrigo (The Trade Desk)"):
+1. **Maturity ladder — horizontal bar, three bars.** Each bar shows only its level and count, e.g. "2 advertisers", "5 advertisers". **Advertiser names are not shown on, beside or under the chart.** **Hovering a bar lists the advertisers' names** (with DSP) at that level (and, for Personalised, which personalisation type each uses); **clicking a bar filters the Advertiser targeting & scheduling table (7.5) to that level**.
+2. **Scheduling — horizontal bar, two bars: Uses scheduling / No scheduling.** Number of advertisers whose campaigns in the date range use scheduling (dayparting or schedules from the Scheduling tab) vs none. Each bar shows only its count; **hovering lists the advertisers' names** (with DSP; for Uses scheduling, how many of their campaigns are scheduled and how many schedules); **clicking filters the table (7.5)**. Sits beside the Maturity ladder.
+3. **Progress over time — stacked area by month, three bands only: Default only, Localised, Personalised.** Share of campaigns at each level per month. Same three colours as the ladder. Chart control: Week / Month.
+4. **Variables in use — ranked bar.** One bar per Shared Targeting Variable in use (Daypart excluded — it's scheduling), ranked by number of advertisers using it, coloured Localised or Personalised. Each bar shows only the variable and its count, e.g. "7 advertisers". **Advertiser names are not shown on, beside or under the chart.** **Hovering a bar lists the names of the advertisers using that variable** (with DSP); **clicking a bar filters the table (7.5) to advertisers using it**. No list of unused / untapped variables. Chart filter: **Localised / Personalised**.
+5. **Advertiser targeting & scheduling table** — the main view of who is most sophisticated. One row per advertiser, **sorted by maturity level (Personalised first), then revenue**. Columns:
+| Advertiser | Maturity level | Variables used (chips) | Scheduling | Targeted versions | Revenue |
+   - **Maturity level** is one of the three levels only.
+   - **Variables used** lists every Shared Targeting Variable the advertiser's campaigns use, as chips (personalisation sub-type visible on the chip where the label doesn't already say it).
+   - **Scheduling** = whether the advertiser schedules campaigns, as a separate field, e.g. "Dayparted · 3 of 4 campaigns", or "Not used".
+   - **No "Next step" column** — not relevant to the retailer.
+   - Table filters: **Maturity level**, **Variable** and **Scheduling** (all also set by clicking the charts above); "Clear filter" chip when active.
+
+Data: campaign targeting rules (default + targeted versions, variables, pricingType) from campaign submissions, per advertiser; campaign scheduling (dayparts and schedules from the Scheduling tab), per campaign; Shared Targeting Variables and per-DSP access; per-play tier from PH Core playback data; DSP seat per advertiser.
+
+## Advertiser view — charts in priority order
+Scoped (locked) to the signed-in advertiser via the advertiser principal and isolation rule (DSP project §9.5). The page's Display type filter lists only the display types the advertiser has deals or campaigns on (see Page filters). **No display downtime anywhere in the advertiser view** — that is retailer-only. Other advertisers are never named to an advertiser login, so the DSP-in-brackets rule applies to the retailer view's advertiser lists.
+
+### 1. Delivery — line chart
+- **Plays won** and **spend** per day, **both shown at once by default** as two lines on one chart, each on its own scale: plays won on the left axis, spend (USD) on the right axis.
+- **The totals are the toggles — one consolidated element, top left of the card.** Two selectable metric tiles, **Plays won** (e.g. 6,780) and **Spend** (e.g. $3,751), each showing its total for the period with a checkbox icon and a colour bar matching its line. Clicking a tile turns its line off or on. Both are **on by default**; at least one stays on. An off tile is greyed with an empty checkbox. No separate toggle chips and no duplicate totals elsewhere on the card.
+- The **Deal** drop-down sits at the top right of the card (listed by deal name and type, plus Open auction).
+- **Day hover explains what drove that day's delivery — why plays were won or lost.** Facts only, no advice. Below the day's plays won and spend, one block per deal in scope (all the advertiser's deals, or the one chosen in the Deal filter), then the open auction:
+  - **Private auction deal** (deal name · Private auction): **Plays won** — the advertiser's plays out of all plays on that deal that day, with their share (e.g. "32 of 114 (28%)"); **Your CPM** (their cleared CPM, or "No plays won"); **Winning CPM** — the average and highest cleared CPM across all winning buyers on that deal (e.g. "$9.18 avg · $10.11 high"), never naming the other buyers; **Floor CPM** (the deal floor).
+  - **Open auction** (when the Deal filter is All deals or Open auction): the same four rows across the open auction on the display types the advertiser's campaigns run on; Floor CPM shows the range of those display types' floors (e.g. "$5.50–$7.50").
+  - **Programmatic guaranteed / Preferred deal**: Plays won, Fixed CPM, Other buyers: None (no auction to lose).
+  - **Plays won vs previous day** and **Spend vs previous day** (▲/▼ and %).
+  - **No display downtime** (retailer-only).
+  - Because the hover is long, it floats above the page (it is never clipped by the card) and stays within the screen on mobile.
+- For Programmatic guaranteed deals only: a **Plays won & spend / Pacing** switch. Pacing shows a **guaranteed** line (assumed views, VAC-d) against **delivered**, so the advertiser sees pacing on their own guarantee. No committed line or Pacing switch for other deal types.
+- (Stores/screens that played are in Campaign Performance, not here.)
+- Data: billing line items (cleared CPM, plays, assumed views per buyer, deal and display type — other buyers aggregated and unnamed), deal floors, display type floor CPMs. The advertiser's own losing bids are not shown (see Future work).
+
+### 2. Your deals by display type — grouped table
+Purpose: dial in on the advertiser's own deals — an overview of **every display type their deals are active on** and **how each deal performs on each display type**. (Replaces the Efficiency vs category average card: there aren't yet enough advertisers per category for a meaningful anonymised average.)
+- **One group per display type** the advertiser's deals are assigned to, in shopper-journey order, then **one row per deal** on that display type, indented beneath it. The display type row shows the **display type name only** — its IAB store zone is in the hover card, not in the column.
+- Columns:
+| Display type / deal | Deal type | Slots | Plays won | Assumed views (VAC-d) | Spend | Effective CPM | Share |
+- **Display type row** = totals across the advertiser's deals on that display type: number of deals, slots assigned, plays won, assumed views, spend, effective CPM, and **Share** = that display type's share of the advertiser's deal spend (whole-number % with inline bar). Hovering the name shows the same display type hover card as the retailer view (facts only, including connected displays, the IAB store zone and the labelled averages; no IAB classification).
+- **Deal row** = that deal's performance on that display type. Deal name only; hovering shows the description and **only the advertiser's own DSP deal ID** (e.g. "Google DSP (DV360): PH-…"). **Slots** hover shows the deal's assigned slots on that display type, in the Deals & buyers lists format. **Share** = the share of the deal's plays on that display type the advertiser won (100% when they are the only buyer, e.g. Programmatic guaranteed or Preferred); hover shows plays won, all plays on the deal there, and the number of advertisers on the deal — never their names.
+- Open auction plays are not included (they aren't on a deal); they remain in Delivery under "Open auction".
+- Page filters apply (date range, store, display type). No warnings or commentary.
+- Data: buyers lists and slot assignments for the advertiser's deals, billing line items / reservations (plays, VAC-d, spend), display type definitions, connected displays (PH Core).
+
+### 3. Audience — headline card with sparkline
+- **Assumed views (VAC-d) delivered** (the advertiser's total), with a small trend line underneath; ⓘ tooltip carries the VAC-d explanation and worked example (averages).
+
+### 4. Your targeting & scheduling
+- The advertiser's own targeting level (Default only / Localised / Personalised) and **Variables you use** (chips) — Shared Targeting Variables only.
+- **Scheduling** as a separate field: e.g. "Dayparted · 3 of 4 campaigns · 5 schedules", or "Not used yet. Set dayparts and schedules on a campaign's Scheduling tab."
+- **Other variables available to use** (no "Next step"): the Shared Targeting Variables the retailer has shared with the advertiser's DSP that their campaigns don't use yet, grouped Localised and Personalised, as chips (personalisation sub-type visible on the chip where the label doesn't already say it). If they already use every variable, say so.
+- No other advertiser's names or data are shown to an advertiser login.
+
+## Future work (not shown until the data exists)
+- **Suggested deal additions** — "Add [Advertiser] to [Deal]" suggestions for under-filled Private auction and Preferred deals (reason: wins similar slots in open auction, same IAB category as current buyers, effective CPM at or above floor), with indicative potential added revenue and an "Add to deal" action. Removed for this release.
+- **Variable requests** — advertisers request new targeting variables they believe drive their sales (name, type, driver, reason); retailer reviews a requested-variables queue (requested by, number of requests, data available, status New → Under review → Approved → Added / Declined); added variables become Shared Targeting Variables. Not in this release; likely belongs with the DSP Integration project.
+- **Advertiser efficiency vs category average** — the advertiser's effective CPM next to the anonymised average for their category (Seat.category). Returns once enough advertisers per category (at least 3 others) are on the platform for the average to be meaningful and anonymous.
+- **IAB classification of displays / stores** — e.g. "Retail › Health & beauty store" in the display type hover, once it is captured on the display type or store.
+- **Assumed views by hour of week** — once the hourly impression multiplier ships in DSP Integration.
+- **Own-content value** — compare promoting the retailer's own product vs selling the slot. Needs closed-loop sales attribution.
+- **Empty slots by time of day** — unsold real-time slots are now recorded (delivered via the DSP Integration backlog); a time-of-day view is a candidate for a later release.
+- **Revenue vs target** — no revenue target is stored; needs a new setting.
+- **Win rate, losing bids and bids below floor** — the advertiser's own losing bid prices, the number of auctions they bid in and lost, and bids rejected below floor. Rejected and losing bids aren't stored and settled bids are deleted after 90 days, so the Delivery hover shows plays won vs all plays and winning CPMs (from billing) instead.
+- **Outcomes (sales lift vs control stores, ROAS, new vs repeat buyers)** — depends on closed-loop attribution (DSP project open question 55, deferred).
+- **Frequency and measured audience (opportunity-to-see, dwell, attention)** — depends on CV as a measurement source (§9.2, spec only).
+- Dropped: direct revenue (none today); DSP fee share; any localised/personalised price premium; advertiser sector breakdown; downtime and targeting summary tiles; untapped variables list; concentration, deal and "Near full" warnings; "Running near full — consider assigning more slots to advertisers" hover advice; on-page QuickSight and Insights agent CTAs; "NEW" tab badge; Daypart as a targeting variable (it is scheduling); "Next step" column in the advertiser targeting & scheduling table; "Display types / slots" column in the deal table (replaced by Slots); internal deal codes under deal names (replaced by per-DSP deal IDs on hover); group-by-store switch on Missed revenue / fill (use the page's Store filter); specific store opening times; physical screen sizes in inches (replaced by canvas size in pixels); IAB store zone label under display type names in the Slot value chart, the Slot allocation table and the advertiser's Your deals by display type table (it's in the hover); IAB classification in the display type hover (not currently known); unlabelled per-display VAC-d / footfall / visibility figures (now always labelled "Average …"); per slot per day calculated per store (now per connected display); Missed revenue & fill hover values without totals (now each shows its total and what it covers); advertiser names in hovers without their DSP (now "Name (DSP)"); "Orientation: Portrait / Landscape" (replaced by PH Core's Display orientation); loop length in the display type hover (moved to the Slots per loop hover); vertical-column layout for Slot value (replaced by horizontal rows); advertiser Efficiency vs category average card (replaced by Your deals by display type; moved to Future work); variables not in DSP Integration's Shared Targeting Variables (Weather, Stock level, Pollen count, Local events, CV age band, CV gender, Store-wide audience mix, Loyalty tier, Check-in history, Purchase category); every display type in an advertiser's Display type filter (now only the ones they have deals or campaigns on); the Delivery chart's one-at-a-time Plays won / Spend switch and its separate toggle chips (now two lines shown together, toggled by clicking the totals); open auction sample CPMs below the floor (now always at or above it); display downtime in the advertiser view (retailer-only); the Deals table's old place in Demand health (now directly under Revenue); the old chart order under Deals (Missed revenue / fill and Slot allocation, then Slot value and Yield).
+
+## Dependencies / boundaries
+- Reads PH Core playback/analytics and the exchange's billing data, including the unsold real-time slot records; builds no new pipeline.
+- **Connected displays per display type and store** are read from PH Core's device registry (connected displays only); they drive the bracketed counts on the Slot value and Missed revenue & fill charts, the hovers' Connected displays rows, the per-slot-per-day denominator and the network totals.
+- **Each advertiser's DSP** (the DSP seat it buys through) is read from DSP Integration's advertisers / buyers lists and shown in brackets after the advertiser's name in every hover that lists advertisers.
+- Deal-type behaviour and operating hours follow the DSP Integration ticket aligning private auction and preferred deals to the standard and adding the 24-hour rule for screens outside the store or visible from outside it at the entrance.
+- The Deals table's Deal and Slots hovers, and the advertiser's deals by display type, read the same buyers lists, per-DSP deal IDs and slot assignments, and use the same format, as DSP Integration's Deals & buyers lists.
+- The advertiser's Delivery hover reads other buyers' cleared CPMs and plays from billing in aggregate only (average, highest, total plays) — never per buyer or by name — consistent with the advertiser isolation rule. Display downtime and the lost-revenue report are never read for an advertiser login.
+- Display type VAC-d inputs (footfall, visibility) and realised assumed views are aggregated across all connected displays of the type in the selected stores and dates; the per-display values stay in PH Core playback analytics.
+- An advertiser's Display type filter is built from the slot assignments of the deals they are on plus the display types their campaigns target.
+- Targeting variables and which DSPs may use them are read from DSP Integration's Shared Targeting Variables (its default variable set and per-DSP access).
+- Display type formats (Touch Point, Display Canvas Size in pixels, creative formats) are read from DSP Integration's display type definitions; Display orientation is read from PH Core (Not set / 90° / 180° / 270°); slot counts, average slot durations and loop length from the display type slot configuration.
+- Advertiser self-service depends on the auth seams (spec only today).
+
+## Open questions
+1. With an advertiser filter on, is unsold inventory left unfiltered?
+2. Is "estimated revenue" correctly the value forecast at booking?
+3. Is "Slots won" derivable within the 90-day settled-bid retention, or does it need longer retention?
+4. Is showing an advertiser the aggregate winning CPM (average and highest) on a private auction acceptable to the retailer and to the other buyers on that deal, when the deal has very few buyers (e.g. two)? A minimum number of other buyers may be needed before the highest winning CPM is shown. **Decided 17 Oct 2026 (Rob's agent, with Rob's authority):** the Winning CPM row (average and highest across winning buyers) appears on a private or open auction day block only when at least 2 other buyers won plays on it that day, otherwise it is omitted. The threshold is the named constant `MIN_OTHER_BUYERS_FOR_WINNING_CPM` in the back end (`src/constants.js`).
+5. Should "connected displays" count only displays online now, or every display that was connected at any point in the date range (so the count matches the period the totals cover)?
+6. An advertiser that buys through more than one DSP: list every DSP in the brackets (e.g. "Haleon (The Trade Desk, DV360)"), or one entry per DSP seat?
+
+## The page (`index.html`) and how it runs
+
+`index.html` is the whole Retail Media Performance tab, working end to end, and every figure on it comes from the **real back-end route handlers** over the one test retailer, so the numbers reconcile across the page. It is a content frame for HQ Admin (no header, sidebar or `position: fixed`).
+
+- **One request path.** `src/dispatch.js` (`dispatch({store, routes, url, principal, today})` → `{status, body}`) is shared by the HTTP server and the browser, so the 401/403/400 rules, `insights:read` and server-side advertiser scoping are identical in both. `npm run build:local-api` bundles `src/` (not http, fs or the token code) into `frontend/local-api.js`, which exposes `LocalApi.get(path, params, principal)`. `test/local-api.test.js` rebuilds the bundle in memory and fails if the committed file differs, and checks that LocalApi answers deep-equal the HTTP server's on every route, as admin and as advertiser. **Commit `frontend/local-api.js` whenever `src/` changes.**
+- **Who is asking.** On GitHub Pages the page uses the principal `{principalType: 'admin', principalId: 'hq', scopes: ['insights:read']}`. `?role=advertiser&advertiser=<id>` (default: the first test advertiser) uses an advertiser principal. **This is a prototype stand-in for the real login**, not an authentication mechanism, and a token is never put in a URL. The real service authenticates with signed bearer tokens (`src/auth.js`).
+- **Page order.** Breadcrumb, title, page filter bar, tabs (Retail Media Performance, Campaign Performance, Visitor Insights, Store Insights; the last three are inert), then: summary strip, Revenue, Deals, Slot value · Slot allocation, Missed revenue / fill · Yield, Demand health: Advertisers, Targeting & scheduling maturity. `?role=advertiser` shows only the advertiser view (Delivery, Your deals by display type, Audience, Your targeting & scheduling).
+- **Filters** come from `/filter-options` (stores, display types, advertisers, and `lastDataDay`, which "Last n days" ends on). Apply calls `setFilters()` on every module; Cancel reverts; Reset Filters shows only while the applied filters differ from the defaults.
+- **Security.** A CSP `<meta>` allows only `'self'` scripts and styles (plus Google Fonts), and all data-bearing DOM is built with `createElement`/`textContent`; there is no inline script or style.
+- **Tests.** `npm test` (back end, bundle, and the front-end modules on LocalApi output); `npm run test:ui` (Playwright smoke test of `index.html` as retailer and advertiser at 1163px and 390px, including reconciliation, CSP, hover placement and a hostile-name check; needs `npm install` for `playwright` and Chromium, `/opt/pw-browsers` in the cloud sandbox).
+- **Sample data** (`src/testdata.js`) varies sell-through deterministically by display type, store and day (Queue Screen about 90%, Endcap about 80%, Window about 70%, Dispensary about 58%), so the amber Slot allocation signal (85%+) appears.
+
+## Status
+Refined 16 Oct 2026: renamed, moved first, de-duplicated, re-prioritised, trimmed to data-backed insights, simple charts with per-chart filters, Targeting maturity added (three-level strategy; advertiser names on hover only for every advertiser count; untapped variables removed), USD, no direct revenue, revenue by DSP and deal type, slot allocation table and slot value, Hivestack replaced by Amazon DSP, copy moved into tooltips, Demand health rebuilt (advertiser and deal tables; suggested additions moved to Future work; deal fill uses unsold slot records), variable requests moved to Future work, summary strip covers money plus an Inventory sold tile (all advertiser slots), Missed revenue split into unsold slots at floor CPM and display downtime, zones switched to the five IAB In-Store Retail Media Standards store zones (window portrait = Entrance & out of category), display types ordered by IAB zone along the shopper journey with hover detail (description, IAB store zone, VAC-d; missing fields omitted), slot value toggles Effective CPM (default) / Per slot per day, assumed views = VAC-d explained wherever views or CPMs appear.
+
+Updated 17 Oct 2026: all four industry-standard deal types (Programmatic guaranteed, Preferred deal, Private auction, Open auction) in Revenue, Yield and Demand health; pacing for Programmatic guaranteed only (deal table and advertiser Delivery); inventory, fill and missed revenue count only slots inside display operating hours (screens outside the store or visible from outside it at the entrance run 24 hours; in-store screens, including endcaps, follow store opening hours); breadcrumb added at PH size (14px); "NEW" tab badge removed; filters use Apply / Cancel, with Reset Filters shown only once a filter is applied and no CTA otherwise; QuickSight and Insights agent CTAs removed; Revenue DSP list ordered DV360, The Trade Desk, Amazon DSP with only DV360 selected (and highlighted) by default; floor CPM added to the Missed revenue hover; concentration warning removed from the Advertisers table; all warnings removed from the Deals table; advertiser card shows Other variables available to use instead of a next step; section renamed **Targeting & scheduling maturity**, with campaign scheduling (dayparting and schedules from the Scheduling tab) added as its own chart, table column and filter, and on the advertiser's own card; Daypart removed from targeting variables; "Next step" column removed from the Advertiser targeting & scheduling table; deal table's "Display types / slots" replaced by a **Slots** column aligned with DSP Integration's Deals & buyers lists (count of assigned slots, hover shows each slot's display type, playlist and zone, IAB zone, position and plays per window); deals shown by **name only**, with hover showing the description and the per-DSP **deal IDs** (PH- format, one per DSP with an invited buyer, as on Deals & buyers lists); Missed revenue / fill shows display types only, with its group-by-store switch removed (store views come from the page's Store filter); "Near full" chips removed from Slot allocation; specific store opening times removed (only "Store opening hours" is shown, as every store differs); display type format aligned with DSP Integration's display types (Touch Point, Display canvas size in pixels, creative formats); IAB store zone label removed from the Slot allocation table (shown in its hover); **Display orientation** uses PH Core's values (Not set / 90° / 180° / 270°; portrait = 90° or 270°); loop length removed from the display type hover; Slots per loop, Advertiser slots and Own-content slots now hover with the total loop length and each kind of slot's average duration and share of the loop, which feeds the share of loop time in the display type hover; all advice/commentary removed from hovers (e.g. "Running near full — consider assigning more slots to advertisers") — hovers show facts only; deal table pacing hover now shows the flight length and days elapsed vs days remaining (or "Starts in N days" before the flight); **Slot value** redrawn as horizontal rows (one per display type, floor CPM as a dashed vertical marker) instead of vertical columns, so it scales to many display types; advertiser view's Efficiency vs category average replaced by **Your deals by display type** (every display type the advertiser's deals are active on, with each deal's plays, assumed views, spend, effective CPM and share on it; display type name only, zone in the hover), efficiency moved to Future work; **targeting variables limited to DSP Integration's Shared Targeting Variables** with their exact labels, throughout the retailer and advertiser views; an advertiser's **Display type filter lists only the display types they have deals or campaigns on**; advertiser **Delivery shows Plays won and Spend together** as two lines (left and right axes), and the **Plays won and Spend totals are themselves the on/off toggles** (one consolidated element at the top left, both on by default); **Delivery day hover now explains wins and losses** — per private auction and the open auction, plays won of all plays, your CPM vs the winning CPM (average and highest, unnamed) and the floor; fixed-price deals; change vs the previous day; open auction sample data now always clears at or above the floor; **display downtime is retailer-only** and never shown in the advertiser view; retailer **Deals table moved directly under Revenue** (Demand health keeps the Advertisers table); under Deals the four charts now run **Slot value · Slot allocation**, then **Missed revenue / fill · Yield** (Yield last); **IAB zone label removed from the Slot value chart** (display type name only; zone in the hover); **IAB classification removed from every display type hover** (not currently known; moved to Future work); **VAC-d, footfall and visibility are labelled as averages** across all displays of the type (hovers, ⓘ tooltips and worked example), with a line in each display type hover stating which displays, stores and dates they average over; **Slot value rows show the number of connected displays in brackets** (PH Core), every display type hover adds a **Connected displays** row, and the Slot value hover shows **network totals in brackets** for Effective CPM (total earned and total assumed views) and Per slot per day (total per day across all advertiser slots on all connected displays); per slot per day is now per connected display; **Missed revenue & fill rows also show connected displays in brackets**, gain an **All display types** total row, and every hover value shows its **total** (fill as slots sold of all advertiser slots, unsold slots with their value, downtime with slots offline, total missed revenue with its parts) and states which displays, stores and dates it covers; **every advertiser named in a hover now shows its DSP in brackets** (Deals table's Advertisers on deal, Advertisers table's Deals on, Maturity ladder, Scheduling, Variables in use). Artifact updated to match.
