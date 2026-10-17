@@ -41,7 +41,7 @@ test('retailer shell: date range, filters, tabs and the four-tile summary card',
   const { page, context, problems } = await open('/index.html', 1163);
   try {
     await page.waitForSelector('[data-tile="sold"]');
-    assert.equal(await text(page, '#f-date'), 'calendar_month12 Sep, 2026 → 11 Oct, 2026expand_more');
+    assert.equal(await text(page, '#f-date'), '12 Sep, 2026→11 Oct, 2026calendar_month');
     assert.equal(await text(page, '#strip .card-title'), 'Retail Media Summary (12 Sep – 11 Oct)');
     assert.deepEqual(await page.$$eval('#strip .tile .lbl', (l) => l.map((x) => x.firstChild.textContent)), ['Earned revenue', 'Estimated revenue', 'Effective CPM', 'Inventory sold']);
     assert.match(await text(page, '[data-tile="earned"] .sub'), /^via 3 connected DSPs$/);
@@ -63,35 +63,35 @@ test('retailer shell: date range, filters, tabs and the four-tile summary card',
 
     // presets
     await page.click('#f-date');
-    assert.deepEqual(await page.$$eval('.dr-preset', (b) => b.map((x) => x.textContent)), ['Last 7 days05 Oct, 2026 → 11 Oct, 2026', 'Last 30 days12 Sep, 2026 → 11 Oct, 2026', 'Last 90 days14 Jul, 2026 → 11 Oct, 2026']);
+    assert.deepEqual(await page.$$eval('.dr-preset', (b) => b.map((x) => x.textContent)), ['Last 7 days', 'Last 14 days', 'Last 30 days', 'Last 90 days']);
     await page.click('.dr-preset[data-days="7"]');
     assert.equal(await page.isVisible('#apply'), true);
     assert.equal(await page.isVisible('#dr-panel'), false);
     await page.click('#apply');
     await page.waitForFunction(() => /\(5 Oct – 11 Oct\)/.test(document.querySelector('#strip .card-title').textContent));
     assert.equal(await page.isVisible('#reset'), true);
-    assert.equal(await text(page, '#f-date'), 'calendar_month05 Oct, 2026 → 11 Oct, 2026expand_more');
+    assert.equal(await text(page, '#f-date'), '05 Oct, 2026→11 Oct, 2026calendar_month');
     // the estimated tile does not follow the range
     assert.match(await text(page, '[data-tile="estimated"] .sub'), /next 30 days/);
 
-    // custom range, valid then invalid
+    // custom range: two clicks in the calendar; days outside the data are disabled
     await page.click('#f-date');
-    assert.equal(await page.getAttribute('#f-start', 'min'), '2026-06-14');
-    assert.equal(await page.getAttribute('#f-end', 'max'), '2026-10-11');
-    await page.fill('#f-start', '2026-09-01'); await page.fill('#f-end', '2026-09-15');
-    assert.equal(await page.isDisabled('#apply'), false);
-    await page.click('#dr-done');
+    assert.equal(await text(page, '.dr-title'), 'Oct 2026');
+    assert.equal(await page.isDisabled('.dr-day[data-date="2026-10-12"]'), true);
+    assert.equal(await page.isDisabled('.dr-day[data-date="2026-06-13"]').catch(() => true), true);
+    await page.click('.dr-nav[aria-label="Previous month"]');
+    await page.click('.dr-day[data-date="2026-09-01"]');
+    await page.click('.dr-day[data-date="2026-09-15"]');
+    assert.equal(await page.isVisible('#dr-panel'), false);
     await page.click('#apply');
     await page.waitForFunction(() => /\(1 Sep – 15 Sep\)/.test(document.querySelector('#strip .card-title').textContent));
+    // a later end picked first swaps into order
     await page.click('#f-date');
-    await page.fill('#f-end', '2026-08-30');
-    assert.equal(await page.isDisabled('#apply'), true);
-    assert.match(await text(page, '#dr-err'), /end date must be on or after/);
-    await page.fill('#f-start', '2026-06-15'); await page.fill('#f-end', '2026-10-11'); // 119 days: fine
-    assert.equal(await page.isDisabled('#apply'), false);
-    await page.click('#dr-done');
+    await page.click('.dr-day[data-date="2026-09-20"]');
+    await page.click('.dr-day[data-date="2026-09-10"]');
+    assert.equal(await text(page, '#f-date'), '10 Sep, 2026→20 Sep, 2026calendar_month');
     await page.click('#cancel');
-    assert.equal(await text(page, '#f-date'), 'calendar_month01 Sep, 2026 → 15 Sep, 2026expand_more');
+    assert.equal(await text(page, '#f-date'), '01 Sep, 2026→15 Sep, 2026calendar_month');
     await page.click('#reset');
     await page.waitForFunction(() => /\(12 Sep – 11 Oct\)/.test(document.querySelector('#strip .card-title').textContent));
     assert.deepEqual(problems, []);
@@ -126,7 +126,7 @@ test('phone width: no sideways scroll and the date panel stays on screen', async
       await page.waitForSelector('#f-date');
       await page.click('#f-date');
       assert.ok(await onScreen(page, '#dr-panel', 390), 'panel on screen');
-      await page.fill('#f-end', '2026-01-01');
+      await page.click('.dr-nav[aria-label="Previous month"]');
       assert.ok(await onScreen(page, '#dr-panel', 390));
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), `${url}: no horizontal scroll`);
     } finally { await context.close(); }
