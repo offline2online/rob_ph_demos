@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Retail Media Performance</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+<link rel="stylesheet" href="css/insights.css">
+</head>
+<body>
+<main class="frame">
+  <nav class="crumb" aria-label="Breadcrumb">Home <span class="sep">&gt;</span> Insights / Analytics <span class="sep">&gt;</span> <span>Retail Media Performance</span></nav>
+  <h1 class="title">Insights / Analytics</h1>
+
+  <div class="tabs" role="tablist">
+    <button class="tab active" role="tab" aria-selected="true">Retail Media Performance</button>
+    <button class="tab" role="tab" aria-selected="false">Campaign Performance</button>
+    <button class="tab" role="tab" aria-selected="false">Engagement</button>
+  </div>
+
+  <section class="filters" aria-label="Page filters">
+    <label class="field"><span>Date range</span>
+      <select id="f-date"><option value="30">Last 30 days</option><option value="7">Last 7 days</option><option value="90">Last 90 days</option></select></label>
+    <label class="field"><span>Store</span>
+      <select id="f-store"><option value="all">All Stores</option><option value="s2">Store 2</option><option value="s1">Store 1</option></select></label>
+    <label class="field"><span>Display type</span>
+      <select id="f-display"><option value="all">All display types</option><option value="menu">Menu board</option><option value="kiosk">Kiosk</option></select></label>
+    <div class="field" id="adv-field"><span>Advertiser</span>
+      <select id="f-adv"><option value="all">All advertisers</option><option value="a1">Advertiser A</option><option value="a2">Advertiser B</option></select>
+      <span class="chip" id="adv-chip" hidden><span class="material-symbols-outlined">lock</span>Advertiser A</span></div>
+    <div class="actions">
+      <button class="btn primary" id="apply" hidden>Apply</button>
+      <button class="btn" id="cancel" hidden>Cancel</button>
+      <button class="btn text" id="reset" hidden>Reset Filters</button>
+    </div>
+  </section>
+
+  <section id="strip" class="strip" aria-live="polite"></section>
+</main>
+<script src="js/insights.js"></script>
+</body>
+</html>
