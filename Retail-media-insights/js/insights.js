@@ -48,7 +48,9 @@
     tip.style.width = w + 'px';
     var left = Math.max(8, Math.min(ar.left, vw - w - 8));
     var top = ar.bottom + 6;
-    if (top + tip.offsetHeight > window.innerHeight - 8) top = Math.max(8, ar.top - tip.offsetHeight - 6);
+    var th = Math.min(tip.offsetHeight, window.innerHeight - 16);
+    if (top + th > window.innerHeight - 8) top = Math.max(8, ar.top - th - 6);
+    top = Math.max(8, Math.min(top, window.innerHeight - th - 8));
     tip.style.left = (left - fr.left) + 'px'; tip.style.top = (top - fr.top) + 'px';
   }
   function info(text, label) {

@@ -65,7 +65,7 @@
 .rd-skel { height: 200px; border-radius: 8px; background: linear-gradient(90deg, #f0f0f0, #fafafa, #f0f0f0); background-size: 200% 100%; animation: rd-sh 1.2s infinite; }
 @keyframes rd-sh { to { background-position: -200% 0; } }
 
-.rd-tip { position: absolute; z-index: 10; max-width: min(380px, 100%); background: #fff; border: 1px solid #d9d9d9; border-radius: 8px; box-shadow: 0 6px 16px rgba(0,0,0,0.12); padding: 10px 12px; pointer-events: none; font-size: 13px; }
+.rd-tip { position: absolute; z-index: 10; max-width: min(380px, 100%); background: #fff; border: 1px solid #d9d9d9; border-radius: 8px; box-shadow: 0 6px 16px rgba(0,0,0,0.12); padding: 10px 12px; pointer-events: none; font-size: 13px; max-height: calc(100vh - 16px); overflow: hidden; overflow-wrap: anywhere; }
 .rd-tip[hidden] { display: none; }
 .rd-tip-title { font-weight: 500; margin-bottom: 4px; }
 .rd-tip-title:empty { display: none; }

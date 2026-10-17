@@ -20,7 +20,7 @@ select:focus,.btn:focus-visible,.tab:focus-visible{outline:2px solid var(--prima
 .material-symbols-outlined{display:inline-block;width:1em;overflow:hidden;white-space:nowrap;font-variation-settings:'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 24;font-size:20px;vertical-align:middle}
 .pg-info{display:inline-flex;color:var(--muted);cursor:help;border-radius:50%}.pg-info .material-symbols-outlined{font-size:16px}.pg-info:hover,.pg-info:focus-visible{color:var(--primary)}
 .frame{position:relative}
-.pg-tip{position:absolute;z-index:20;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 6px 16px rgba(0,0,0,.12);padding:10px 12px;font-size:13px;pointer-events:none}
+.pg-tip{position:absolute;z-index:20;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 6px 16px rgba(0,0,0,.12);padding:10px 12px;font-size:13px;pointer-events:none;max-height:calc(100vh - 16px);overflow:hidden;overflow-wrap:anywhere}
 .skel{height:112px;border-radius:8px;background:linear-gradient(90deg,#f0f0f0,#fafafa,#f0f0f0);background-size:200% 100%;animation:sh 1.2s infinite}
 @keyframes sh{to{background-position:-200% 0}}
 .msg.wide{grid-column:1/-1}
