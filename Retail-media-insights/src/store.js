@@ -14,7 +14,8 @@ function lowerBound(rows, date) {
 const asSet = (list) => (list ? new Set(list) : null);
 
 class AggregateStore {
-  constructor({ delivery, inventory, campaigns = [], advertisers = {} }) {
+  constructor({ delivery, inventory, campaigns = [], advertisers = {}, catalog = { displayTypes: {}, displays: [] } }) {
+    this.catalog = catalog;
     this.campaigns = campaigns;
     this.advertisers = advertisers;
     this.delivery = [...delivery].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));

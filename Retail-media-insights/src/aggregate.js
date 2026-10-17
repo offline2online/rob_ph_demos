@@ -12,7 +12,10 @@ const calc = require('./calc');
  * raw.campaigns:    {id, advertiserId, start, end|null, displayTypeIds[]|null, variables[], scheduled, schedules, targetedVersions}
  *                  (campaign submissions: targeting rules, scheduling) - optional
  * ctx.advertisers: {[id]: {name, dsp}} - optional
- * ctx.displayTypes: {[id]: {is24Hour}}, ctx.stores: {[id]: {open, close}}, ctx.deals: {[id]: {dealType}}
+ * raw.slotRecords[].lostRevenue: lost-revenue report value for an offline record (optional)
+ * ctx.displayTypes: {[id]: {is24Hour, name, zone, floorCpm, description, touchPoint, canvas, orientation,
+ *   creativeFormats, slots: {advertiser, ownContent: {count, avgSeconds}}}}, ctx.displays: [{id, displayTypeId, storeId,
+ *   footfall, visibility, connectedFrom?, connectedTo?}], ctx.stores: {[id]: {open, close}}, ctx.deals: {[id]: {dealType}}
  */
 function buildAggregates(raw, ctx) {
   const delivery = new Map();
@@ -41,13 +44,14 @@ function buildAggregates(raw, ctx) {
     if (!row) {
       row = {
         date: r.date, displayTypeId: r.displayTypeId, storeId: r.storeId,
-        sold: 0, unsold: 0, offline: 0, outsideHours: 0, unsoldViews: 0,
+        sold: 0, unsold: 0, offline: 0, outsideHours: 0, unsoldViews: 0, lostRevenue: 0,
       };
       inventory.set(key, row);
     }
     const window = calc.operatingWindow(ctx.displayTypes[r.displayTypeId] || {}, ctx.stores[r.storeId]);
     const kind = calc.classifySlot(r, window);
     row[kind] += r.count;
+    if (kind === 'offline') row.lostRevenue += r.lostRevenue || 0;
     if (kind === 'unsold') row.unsoldViews += r.count * (r.views || 0);
   }
   const campaigns = (raw.campaigns || []).map((c) => ({
@@ -65,6 +69,7 @@ function buildAggregates(raw, ctx) {
   }));
   return {
     delivery: [...delivery.values()], inventory: [...inventory.values()], campaigns, advertisers: ctx.advertisers || {},
+    catalog: { displayTypes: ctx.displayTypes, displays: ctx.displays || [] },
   };
 }
 

@@ -5,7 +5,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { parseFilters, scopeFilters, FilterError } = require('./filters');
+const { parseFilters, scopeFilters, FilterError, ForbiddenError } = require('./filters');
 
 const BASE = '/insights/v1/retail-media';
 
@@ -30,10 +30,12 @@ function createServer({ store, authenticate = () => ({}), today } = {}) {
     if (!route) return send(404, { error: 'not found' });
     if (req.method !== 'GET') return send(405, { error: 'read-only service' }, { allow: 'GET' });
     try {
-      const filters = scopeFilters(parseFilters(url.searchParams, { today }), authenticate(req));
-      return send(200, route.handler({ store, filters, params: url.searchParams }));
+      const principal = authenticate(req);
+      const filters = scopeFilters(parseFilters(url.searchParams, { today }), principal);
+      return send(200, route.handler({ store, filters, params: url.searchParams, principal }));
     } catch (e) {
       if (e instanceof FilterError) return send(400, { error: e.message });
+      if (e instanceof ForbiddenError) return send(403, { error: e.message });
       return send(500, { error: 'internal error' });
     }
   });

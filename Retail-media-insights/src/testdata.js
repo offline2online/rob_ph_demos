@@ -16,12 +16,45 @@ function rng(seed) {
   };
 }
 
+// Per type: PH Core / DSP Integration facts (description, Touch Point, canvas, orientation, creative formats),
+// slot configuration (counts and average durations, so loop length = sum of count x duration) and the
+// average VAC-d inputs (footfall x visibility x share of loop = viewsPerSlot).
 const DISPLAY_TYPES = {
-  window: { name: 'Window Portrait', zone: 'Entrance & out of category', is24Hour: true, floorCpm: 12, displaysPerStore: 2, viewsPerSlot: 200 },
-  endcap: { name: 'Endcap Shelf-edge', zone: 'Entrance & out of category', is24Hour: false, floorCpm: 8, displaysPerStore: 4, viewsPerSlot: 120 },
-  queue: { name: 'Queue Screen', zone: 'Checkout', is24Hour: false, floorCpm: 10, displaysPerStore: 3, viewsPerSlot: 90 },
-  dispensary: { name: 'Dispensary Screen', zone: 'Other & connected store', is24Hour: false, floorCpm: 6, displaysPerStore: 1, viewsPerSlot: 60 },
+  window: {
+    name: 'Window Portrait', zone: 'Entrance & out of category', is24Hour: true, floorCpm: 12, displaysPerStore: 2, viewsPerSlot: 200,
+    description: 'Portrait screen in the shop window, visible from outside the store.',
+    touchPoint: 'Digital Signage', canvas: { width: 1080, height: 1920 }, orientation: '90°',
+    creativeFormats: ['Image + video, 1080×1920, max play 6s'],
+    slots: { advertiser: { count: 8, avgSeconds: 6 }, ownContent: { count: 4, avgSeconds: 3 } },
+    footfall: 4000, visibility: 0.5,
+  },
+  endcap: {
+    name: 'Endcap Shelf-edge', zone: 'Entrance & out of category', is24Hour: false, floorCpm: 8, displaysPerStore: 4, viewsPerSlot: 120,
+    description: 'Shelf-edge strip screen on a gondola end.',
+    touchPoint: 'Digital Signage', canvas: { width: 1920, height: 360 }, orientation: 'Not set',
+    creativeFormats: ['Image + video, 1920×360, max play 6s'],
+    slots: { advertiser: { count: 5, avgSeconds: 6 }, ownContent: { count: 5, avgSeconds: 6 } },
+    footfall: 3000, visibility: 0.4,
+  },
+  queue: {
+    name: 'Queue Screen', zone: 'Checkout', is24Hour: false, floorCpm: 10, displaysPerStore: 3, viewsPerSlot: 90,
+    description: 'Shopper-facing screen in the checkout queue.',
+    touchPoint: 'Digital Signage', canvas: { width: 1920, height: 1080 }, orientation: 'Not set',
+    creativeFormats: ['Image + video, 1920×1080, max play 10s'],
+    slots: { advertiser: { count: 6, avgSeconds: 10 }, ownContent: { count: 2, avgSeconds: 15 } },
+    footfall: 1800, visibility: 0.45,
+  },
+  dispensary: {
+    name: 'Dispensary Screen', zone: 'Other & connected store', is24Hour: false, floorCpm: 6, displaysPerStore: 1, viewsPerSlot: 60,
+    description: 'Screen at the pharmacy dispensary.',
+    touchPoint: 'Digital Signage', canvas: { width: 1920, height: 1080 }, orientation: 'Not set',
+    creativeFormats: ['Image + video, 1920×1080, max play 15s'],
+    slots: { advertiser: { count: 4, avgSeconds: 15 }, ownContent: { count: 2, avgSeconds: 15 } },
+    footfall: 900, visibility: 0.4,
+  },
 };
+// Per-store footfall factor; averages to 1 over the default 5 stores.
+const FOOTFALL_FACTORS = [0.9, 1.1, 1.0, 0.8, 1.2];
 const DEALS = {
   d1: { dealType: 'Programmatic Guaranteed', cpm: 22 },
   d2: { dealType: 'Preferred deal', cpm: 18 },
@@ -55,6 +88,12 @@ function generateTestRetailer({ days = 90, endDate = '2026-10-11', stores = 5, s
     displayTypes: DISPLAY_TYPES,
     stores: Object.fromEntries(storeIds.map((id) => [id, { open: 8, close: 20 }])),
     deals: DEALS,
+    displays: storeIds.flatMap((storeId, i) => Object.entries(DISPLAY_TYPES).flatMap(([displayTypeId, type]) => (
+      Array.from({ length: type.displaysPerStore }, (_, k) => ({
+        id: `${displayTypeId}-${storeId}-${k + 1}`, displayTypeId, storeId,
+        footfall: Math.round(type.footfall * FOOTFALL_FACTORS[i % FOOTFALL_FACTORS.length]), visibility: type.visibility,
+      }))
+    ))),
   };
   const billing = [];
   const slotRecords = [];
@@ -72,7 +111,11 @@ function generateTestRetailer({ days = 90, endDate = '2026-10-11', stores = 5, s
           const sold = inside ? Math.min(SLOTS_PER_HOUR - offline, Math.round(SLOTS_PER_HOUR * (0.45 + rand() * 0.45))) : 0;
           const unsold = SLOTS_PER_HOUR - offline - sold;
           for (const [status, count] of [['sold', sold], ['unsold', unsold], ['offline', offline]]) {
-            if (count > 0) slotRecords.push({ date, storeId, displayTypeId: typeId, hour, status, count, views: type.viewsPerSlot });
+            if (count <= 0) continue;
+            const rec = { date, storeId, displayTypeId: typeId, hour, status, count, views: type.viewsPerSlot };
+            // Lost-revenue report: an offline slot loses what it would have earned at the average deal CPM.
+            if (status === 'offline') rec.lostRevenue = calc.revenueAtCpm(15, type.viewsPerSlot) * count;
+            slotRecords.push(rec);
           }
           for (let s = 0; s < sold; s += 1) {
             const dealId = dealIds[Math.floor(rand() * dealIds.length)];

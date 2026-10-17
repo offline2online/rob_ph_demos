@@ -4,6 +4,7 @@
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 class FilterError extends Error {}
+class ForbiddenError extends Error {}
 
 function parseDate(name, value) {
   if (!DATE_RE.test(value) || Number.isNaN(Date.parse(`${value}T00:00:00Z`))
@@ -47,4 +48,4 @@ function scopeFilters(filters, principal) {
 
 const days = (f) => Math.round((Date.parse(`${f.dateTo}T00:00:00Z`) - Date.parse(`${f.dateFrom}T00:00:00Z`)) / 86400000) + 1;
 
-module.exports = { parseFilters, scopeFilters, FilterError, days };
+module.exports = { parseFilters, scopeFilters, FilterError, ForbiddenError, days };
