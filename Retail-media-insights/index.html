@@ -19,15 +19,17 @@
   <nav class="crumb" id="crumb" aria-label="Breadcrumb"></nav>
   <h1 class="title">Insights / Analytics</h1>
 
+  <div class="alert info" id="scope" role="note" hidden></div>
   <section class="filters" id="filters" aria-label="Page filters"></section>
   <div class="tabs" id="tabs" role="tablist"></div>
 
   <div id="tab-rmp">
     <div id="msg" class="msg" hidden></div>
-    <section id="strip" class="strip" aria-label="Summary" aria-live="polite"></section>
+    <section id="strip" class="card" aria-label="Summary" aria-live="polite"></section>
     <div id="rd" class="rd-host"></div>
     <div id="sc" class="rd-host"></div>
     <div id="dc" class="rd-host"></div>
+    <section id="mysum" class="card" aria-label="Your summary" aria-live="polite" hidden></section>
     <div id="av" class="rd-host" hidden></div>
   </div>
   <div id="tab-other" class="msg" hidden></div>

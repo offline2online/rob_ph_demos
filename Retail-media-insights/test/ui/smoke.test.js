@@ -46,6 +46,8 @@ async function open(url, width, { patchApi } = {}) {
 }
 const noHorizontalScroll = (page) => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
 const money = (text) => Number(/\$([\d,]+(?:\.\d+)?)/.exec(text)[1].replace(/,/g, ''));
+// The summary tile shows $10,000 and over as one-decimal thousands; compare it with the full figure the same way.
+const asTile = (n) => (n < 10000 ? '$' + Math.round(n).toLocaleString('en-US') : '$' + (Math.round(n / 100) / 10).toFixed(1) + 'k');
 async function settle(page, ctx) {
   await page.waitForSelector('.rd-total');
   await page.waitForSelector('.rd-table');
@@ -69,28 +71,29 @@ for (const width of [1163, 390]) {
       const order = SECTIONS.map((s) => headings.indexOf(s));
       assert.ok(order.every((i) => i >= 0), `all sections present: ${headings}`);
       assert.deepEqual([...order].sort((a, b) => a - b), order, 'sections in README order');
-      assert.deepEqual(await page.$$eval('.tab', (t) => t.map((x) => x.textContent)), ['Retail Media Performance', 'Campaign Performance', 'Visitor Insights', 'Store Insights']);
+      assert.deepEqual(await page.$$eval('.tab', (t) => t.map((x) => x.textContent)), ['Retail Media Performance', 'Campaign Performance', 'Visitor Insights', 'Store Insights', 'Upcoming Appointments', 'Downloads']);
       assert.ok(await noHorizontalScroll(page), 'no horizontal scroll');
 
       // earned (summary) = Revenue chart total with every DSP on = Advertisers table total, as displayed
       for (const name of ['The Trade Desk', 'Amazon DSP']) await page.click(`.rd-chip:has-text("${name}")`);
       await page.waitForFunction(() => document.querySelectorAll('.rd-chip.on').length === 3);
       await page.waitForFunction(() => /Total earned/.test((document.querySelector('.rd-total') || {}).textContent || ''));
-      const earned = money(await page.textContent('[data-tile="earned"] .val'));
+      const earned = Number(await page.getAttribute('[data-tile="earned"] .val', 'data-value'));
+      assert.equal((await page.textContent('[data-tile="earned"] .val')).trim(), asTile(earned), 'tile money format');
       const chart = money(await page.textContent('.rd-total'));
       assert.match(await page.textContent('.dc-total th'), /^Total \(top 10\)$/, 'ten of the eleven advertisers by default');
       await page.click('.dc-btn:has-text("Show all")');
       await page.waitForFunction(() => /^Total$/.test((document.querySelector('.dc-total th') || {}).textContent || ''));
       const adv = money(await page.textContent('.dc-total td'));
-      assert.equal(chart, earned, 'Revenue chart total = summary earned');
-      assert.equal(adv, earned, 'Advertisers total = summary earned');
+      assert.equal(Math.round(chart), Math.round(earned), 'Revenue chart total = summary earned');
+      assert.equal(Math.round(adv), Math.round(earned), 'Advertisers total = summary earned');
 
       // Inventory sold % = Missed revenue "All display types" fill
       const sold = /^(\d+)%/.exec(await page.textContent('[data-tile="sold"] .val'))[1];
       const fill = /(\d+)% fill/.exec(await page.textContent('.sc-row.sc-total'))[1];
       assert.equal(sold, fill);
-      assert.match(await page.textContent('[data-tile="sold"] .val'), /^\d+% sold$/);
-      assert.deepEqual(await page.$$eval('#strip .sub', (e) => e.map((x) => x.textContent)).then((t) => t.map((x) => /^[\d,]+ sold · [\d,]+ available$/.test(x))), [true], 'only Inventory sold has a detail line, on its own line beneath the value');
+      assert.match(await page.textContent('[data-tile="sold"] .val'), /^\d+%$/);
+      assert.match(await page.textContent('[data-tile="sold"] .sub'), /^[\d,]+ sold · [\d,]+ available$/);
 
       // at least one amber Slot allocation row, and it is Queue Screen
       const amber = await page.$$eval('.sc-table tr[data-amber="true"] .sc-name', (r) => r.map((x) => x.textContent));
@@ -123,7 +126,7 @@ for (const width of [1163, 390]) {
       assert.equal(await page.$('.sc-root .sc-panel') !== null && await page.isVisible('.sc-panel'), false);
       const titles = await page.$$eval('.av-title h2', (h) => h.map((x) => x.textContent));
       assert.deepEqual(titles, ['Delivery', 'Your deals by display type', 'Audience', 'Your targeting & scheduling']);
-      assert.match(await page.textContent('#adv-chip'), /Blackmores \(DV360\)/);
+      assert.match(await page.textContent('#adv-chip'), /^\s*lock\s*Blackmores\s*$/);
       assert.equal(await page.$('#f-adv'), null);
       const text = await page.innerText('body');
       for (const other of ['Haleon', 'Unilever', 'Advertiser A']) assert.ok(!text.includes(other), `shows ${other}`);
@@ -142,7 +145,7 @@ test('changing the Store and applying updates every module; resetting hides Rese
     await settle(page, 'filters');
     assert.equal(await page.isVisible('#reset'), false);
     assert.equal(await page.isVisible('#apply'), false);
-    const before = await page.textContent('[data-tile="earned"] .val');
+    const before = await page.getAttribute('[data-tile="earned"] .val', 'data-value');
     const beforeAdv = await page.textContent('.dc-total td');
     await page.selectOption('#f-store', 'store-1');
     assert.equal(await page.isVisible('#apply'), true);
@@ -151,7 +154,7 @@ test('changing the Store and applying updates every module; resetting hides Rese
     assert.equal(await page.inputValue('#f-store'), 'all');
     await page.selectOption('#f-store', 'store-1');
     await page.click('#apply');
-    await page.waitForFunction((b) => (document.querySelector('[data-tile="earned"] .val') || {}).textContent !== b, before);
+    await page.waitForFunction((b) => (document.querySelector('[data-tile="earned"] .val') || { getAttribute() {} }).getAttribute('data-value') !== b, before);
     await page.waitForFunction((b) => (document.querySelector('.dc-total td') || {}).textContent !== b, beforeAdv);
     await page.waitForSelector('.rd-total');
     assert.equal(await page.isVisible('#reset'), true);
@@ -175,10 +178,9 @@ test('filter options come from the back end, with no placeholder names', async (
   const { page, context } = await open('/index.html', 1163);
   try {
     await settle(page, 'options');
-    assert.deepEqual(await page.$$eval('#f-store option', (o) => o.map((x) => x.textContent)), ['All Stores', 'Bristol Cabot Circus', 'Glasgow Buchanan St', 'Leeds Trinity', 'London Oxford St', 'Manchester Arndale']);
-    assert.deepEqual(await page.$$eval('#f-adv option', (o) => o.map((x) => x.textContent)), ['All Advertisers', 'Bayer Consumer Health (Amazon DSP)', 'Blackmores (DV360)', 'Haleon (The Trade Desk)', 'Kenvue (DV360)', "L'Oréal Paris (DV360)", 'Nestlé Health Science (DV360)', 'Perrigo (The Trade Desk)', 'Procter & Gamble (The Trade Desk)', 'Reckitt (Amazon DSP)', 'Unilever (Amazon DSP)', 'Vitabiotics (The Trade Desk)']);
+    assert.deepEqual(await page.$$eval('#f-store option', (o) => o.map((x) => x.textContent)), ['All Stores (5)', 'Bristol Cabot Circus', 'Glasgow Buchanan St', 'Leeds Trinity', 'London Oxford St', 'Manchester Arndale']);
+    assert.deepEqual(await page.$$eval('#f-adv option', (o) => o.map((x) => x.textContent)), ['All Advertisers (11)', 'Bayer Consumer Health', 'Blackmores', 'Haleon', 'Kenvue', "L'Oréal Paris", 'Nestlé Health Science', 'Perrigo', 'Procter & Gamble', 'Reckitt', 'Unilever', 'Vitabiotics']);
     assert.equal((await page.$$eval('#f-display option', (o) => o.map((x) => x.textContent)))[0], 'All Display Types (4)');
-    assert.deepEqual(await page.$$eval('#f-date option', (o) => o.map((x) => x.textContent)), ['Last 30 days', 'Last 7 days', 'Last 90 days']);
     const body = await page.innerText('body');
     for (const bad of ['Menu board', 'Kiosk', 'Advertiser A', 'QuickSight', 'Engagement']) assert.ok(!body.includes(bad), bad);
     // the breadcrumb follows the selected tab

@@ -8,14 +8,17 @@
   var state = q.get('state'); // loading | error: preview those states
   var $ = function (id) { return document.getElementById(id); };
   var NS_SCOPES = ['insights:read'];
-  var TABS = ['Retail Media Performance', 'Campaign Performance', 'Visitor Insights', 'Store Insights'];
-  var DAY_OPTIONS = [[30, 'Last 30 days'], [7, 'Last 7 days'], [90, 'Last 90 days']];
-  var DEFAULTS = { days: '30', store: 'all', type: 'all', adv: 'all' };
-  var SUMMARY_TIPS = {
-    earned: 'Delivered and billed.',
-    estimated: 'Including booked, not yet delivered.',
-    sold: 'Share of all advertiser slots across your displays that were sold in the selected period.'
-  };
+  var RETAIL_TABS = ['Retail Media Performance', 'Campaign Performance', 'Visitor Insights', 'Store Insights', 'Upcoming Appointments', 'Downloads'];
+  var PRESETS = [[7, 'Last 7 days'], [30, 'Last 30 days'], [90, 'Last 90 days']];
+  var DEFAULT_DAYS = 30;
+  var MAX_RANGE_DAYS = 366; // the API's cap
+  var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  var VACD_TIP = 'Assumed views (VAC-d, Visibility Adjusted Contacts) are what billing is based on. Average assumed views per slot per day = average footfall past a display per day × average visibility adjustment × the slot’s share of loop time. ' +
+    'Example: 4,000 footfall × 0.5 visibility × 1/10 share of loop = 200 assumed views per slot per day; at a $20 CPM that slot earns $4 per day.';
+  var SUMMARY_TIP = 'Earned revenue = cleared and billed. Estimated revenue = reservations booked ahead that have not played yet, mainly programmatic guaranteed. ' + VACD_TIP;
+  var SOLD_TIP = 'Share of all advertiser slots across your displays that were sold in the selected period. Only slots inside each display’s operating hours count: screens outside the store, or at the entrance and visible from outside it, run 24 hours; screens inside the store, including endcaps, follow store opening hours. Slots outside operating hours play house content and are never unsold or missed revenue.';
+  var SCOPE_TITLE = 'Scoped to your advertiser account. You only ever see your own data.';
+  var TABS = RETAIL_TABS;
 
   function h(tag, attrs, kids) {
     var el = document.createElement(tag);
@@ -27,6 +30,8 @@
   }
   function icon(name) { return h('span', { class: 'material-symbols-outlined', 'aria-hidden': 'true', text: name }); }
   function fmtMoney(n) { return '$' + Math.round(n).toLocaleString('en-US'); }
+  // Under $10,000 whole dollars; from $10,000 one-decimal thousands.
+  function fmtMoneyK(n) { return n < 10000 ? fmtMoney(n) : '$' + (Math.round(n / 100) / 10).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + 'k'; }
   function fmtInt(n) { return Math.round(n).toLocaleString('en-US'); }
   function clear(el) { while (el.firstChild) el.removeChild(el.firstChild); }
 
@@ -66,58 +71,131 @@
   }
 
   var options = null;
-  var staged = Object.assign({}, DEFAULTS);
-  var applied = Object.assign({}, DEFAULTS);
+  var DEFAULTS = null; // { from, to, store, type, adv }, once /filter-options is known
+  var staged = null;
+  var applied = null;
   var modules = {};
   var els = {};
 
+  // ---------- dates ----------
+  var DAY = 864e5;
+  function toUtc(iso) { return new Date(iso + 'T00:00:00Z'); }
+  function isoOf(d) { return d.toISOString().slice(0, 10); }
+  function addDays(iso, n) { return isoOf(new Date(toUtc(iso).getTime() + n * DAY)); }
+  function dayCount(from, to) { return Math.round((toUtc(to) - toUtc(from)) / DAY) + 1; }
+  function fmtShort(iso) { var d = toUtc(iso); return d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()]; }
+  function fmtFull(iso) { var d = toUtc(iso); return ('0' + d.getUTCDate()).slice(-2) + ' ' + MONTHS[d.getUTCMonth()] + ', ' + d.getUTCFullYear(); }
+  function rangeFull(r) { return fmtFull(r.from) + ' → ' + fmtFull(r.to); }
+  function rangeShort(r) { return fmtShort(r.from) + ' – ' + fmtShort(r.to); }
+  function presetRange(days) {
+    var to = options.lastDataDay, from = addDays(to, -(days - 1));
+    if (options.firstDataDay && from < options.firstDataDay) from = options.firstDataDay;
+    return { from: from, to: to };
+  }
+  // '' when the staged range can be applied, otherwise why not.
+  function rangeError(r) {
+    if (!r.from || !r.to) return 'Choose a start and an end date.';
+    if (r.to < r.from) return 'The end date must be on or after the start date.';
+    if (dayCount(r.from, r.to) > MAX_RANGE_DAYS) return 'The range can be at most ' + MAX_RANGE_DAYS + ' days.';
+    if (options.firstDataDay && r.from < options.firstDataDay) return 'Data starts on ' + fmtFull(options.firstDataDay) + '.';
+    if (r.to > options.lastDataDay) return 'Data ends on ' + fmtFull(options.lastDataDay) + '.';
+    return '';
+  }
+
   function option(value, label, selected) { var o = h('option', { value: String(value), text: label }); if (selected) o.selected = true; return o; }
-  function field(label, control) { return h('label', { class: 'field' }, [h('span', { text: label }), control]); }
+  // An unlabelled select with a trailing chevron.
+  function selectBox(id, label, opts) {
+    var sel = h('select', { id: id, 'aria-label': label }, opts);
+    return { select: sel, wrap: h('span', { class: 'sel' }, [sel, icon('expand_more')]) };
+  }
+
+  function buildDatePicker() {
+    var label = h('span', { class: 'dr-text' });
+    var btn = h('button', { class: 'dr-btn', id: 'f-date', type: 'button', 'aria-haspopup': 'dialog', 'aria-expanded': 'false', 'aria-label': 'Date range' }, [icon('calendar_month'), label, icon('expand_more')]);
+    var presetList = h('div', { class: 'dr-presets' });
+    var start = h('input', { type: 'date', id: 'f-start', 'aria-label': 'Start date' });
+    var end = h('input', { type: 'date', id: 'f-end', 'aria-label': 'End date' });
+    var err = h('p', { class: 'dr-err', id: 'dr-err', role: 'alert', hidden: '' });
+    var done = h('button', { class: 'btn', id: 'dr-done', type: 'button', text: 'Done' });
+    var panel = h('div', { class: 'dr-panel', id: 'dr-panel', role: 'dialog', 'aria-label': 'Date range', hidden: '' }, [
+      presetList,
+      h('div', { class: 'dr-custom' }, [
+        h('label', { class: 'dr-field' }, [h('span', { text: 'Start date' }), start]),
+        h('label', { class: 'dr-field' }, [h('span', { text: 'End date' }), end])
+      ]),
+      err,
+      h('div', { class: 'dr-foot' }, [done])
+    ]);
+    [start, end].forEach(function (i) { i.min = options.firstDataDay || ''; i.max = options.lastDataDay; });
+    var wrap = h('div', { class: 'dr' }, [btn, panel]);
+    function setOpen(open) { panel.hidden = !open; btn.setAttribute('aria-expanded', open ? 'true' : 'false'); }
+    btn.addEventListener('click', function () { setOpen(panel.hidden); });
+    done.addEventListener('click', function () { setOpen(false); btn.focus(); });
+    document.addEventListener('click', function (e) { if (!panel.hidden && !wrap.contains(e.target)) setOpen(false); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !panel.hidden) { setOpen(false); btn.focus(); } });
+    PRESETS.forEach(function (p) {
+      var r = presetRange(p[0]);
+      var b = h('button', { class: 'dr-preset', type: 'button', 'data-days': String(p[0]) }, [h('span', { text: p[1] }), h('span', { class: 'dr-dates', text: rangeFull(r) })]);
+      b.addEventListener('click', function () { staged.from = r.from; staged.to = r.to; syncControls(); syncButtons(); setOpen(false); });
+      presetList.appendChild(b);
+    });
+    function onCustom() { staged.from = start.value; staged.to = end.value; syncControls(true); syncButtons(); }
+    start.addEventListener('input', onCustom); end.addEventListener('input', onCustom);
+    els.dateBtn = btn; els.dateText = label; els.start = start; els.end = end; els.dateErr = err; els.presets = presetList;
+    return wrap;
+  }
 
   function buildFilters() {
     var f = $('filters');
     clear(f);
-    els.days = h('select', { id: 'f-date' }, DAY_OPTIONS.map(function (d) { return option(d[0], d[1]); }));
-    els.store = h('select', { id: 'f-store' }, [option('all', 'All Stores')].concat((options.stores || []).map(function (s) { return option(s.id, s.name); })));
-    els.type = h('select', { id: 'f-display' }, [option('all', 'All Display Types (' + options.displayTypes.length + ')')].concat(options.displayTypes.map(function (t) { return option(t.id, t.name); })));
+    var storeBox = selectBox('f-store', 'Store', [option('all', 'All Stores (' + (options.stores || []).length + ')')].concat((options.stores || []).map(function (s) { return option(s.id, s.name); })));
+    var typeBox = selectBox('f-display', 'Display type', [option('all', 'All Display Types (' + options.displayTypes.length + ')')].concat(options.displayTypes.map(function (t) { return option(t.id, t.name); })));
+    els.store = storeBox.select; els.type = typeBox.select;
     var advControl;
     if (isAdvertiser) {
-      var me = options.advertiser;
-      advControl = h('span', { class: 'chip', id: 'adv-chip' }, [icon('lock'), h('span', { text: me.dsp ? me.name + ' (' + me.dsp + ')' : me.name })]);
+      advControl = h('span', { class: 'chip', id: 'adv-chip', title: SCOPE_TITLE }, [icon('lock'), h('span', { text: options.advertiser.name })]);
     } else {
-      els.adv = h('select', { id: 'f-adv' }, [option('all', 'All Advertisers')].concat((options.advertisers || []).map(function (a) { return option(a.id, a.dsp ? a.name + ' (' + a.dsp + ')' : a.name); })));
-      advControl = els.adv;
+      var advBox = selectBox('f-adv', 'Advertiser', [option('all', 'All Advertisers (' + (options.advertisers || []).length + ')')].concat((options.advertisers || []).map(function (a) { return option(a.id, a.name); })));
+      els.adv = advBox.select; advControl = advBox.wrap;
     }
     els.apply = h('button', { class: 'btn primary', id: 'apply', type: 'button', text: 'Apply', hidden: '' });
     els.cancel = h('button', { class: 'btn', id: 'cancel', type: 'button', text: 'Cancel', hidden: '' });
     els.reset = h('button', { class: 'btn primary', id: 'reset', type: 'button', text: 'Reset Filters', hidden: '' });
-    f.appendChild(field('Date range', els.days));
-    f.appendChild(field('Store', els.store));
-    f.appendChild(field('Display type', els.type));
-    f.appendChild(h('div', { class: 'field' }, [h('span', { text: 'Advertiser' }), advControl]));
+    f.appendChild(buildDatePicker());
+    f.appendChild(storeBox.wrap);
+    f.appendChild(typeBox.wrap);
+    f.appendChild(advControl);
     f.appendChild(h('div', { class: 'actions' }, [els.apply, els.cancel, els.reset]));
-    [['days', els.days], ['store', els.store], ['type', els.type], ['adv', els.adv]].forEach(function (p) {
+    [['store', els.store], ['type', els.type], ['adv', els.adv]].forEach(function (p) {
       if (p[1]) p[1].addEventListener('change', function () { staged[p[0]] = p[1].value; syncButtons(); });
     });
-    els.apply.addEventListener('click', function () { applied = Object.assign({}, staged); applyFilters(); });
+    els.apply.addEventListener('click', function () { if (rangeError(staged)) return; applied = Object.assign({}, staged); applyFilters(); });
     els.cancel.addEventListener('click', function () { staged = Object.assign({}, applied); syncControls(); syncButtons(); });
     els.reset.addEventListener('click', function () { staged = Object.assign({}, DEFAULTS); applied = Object.assign({}, DEFAULTS); syncControls(); applyFilters(); });
   }
   function differs(a, b) { return Object.keys(DEFAULTS).some(function (k) { return a[k] !== b[k]; }); }
-  function syncControls() {
-    els.days.value = staged.days; els.store.value = staged.store; els.type.value = staged.type; if (els.adv) els.adv.value = staged.adv;
+  function syncControls(fromInputs) {
+    var err = rangeError(staged);
+    els.dateText.textContent = staged.from && staged.to && !err ? rangeFull(staged) : 'Select dates';
+    if (!fromInputs) { els.start.value = staged.from; els.end.value = staged.to; }
+    els.dateErr.hidden = !err; els.dateErr.textContent = err;
+    Array.prototype.forEach.call(els.presets.children, function (b) {
+      var r = presetRange(+b.getAttribute('data-days'));
+      b.classList.toggle('on', r.from === staged.from && r.to === staged.to);
+    });
+    els.store.value = staged.store; els.type.value = staged.type; if (els.adv) els.adv.value = staged.adv;
   }
   // Apply/Cancel only while the staged choice differs from what is applied; Reset Filters only while what is APPLIED differs from the defaults.
+  // An unusable range keeps Apply visible but disabled.
   function syncButtons() {
     var dirty = differs(staged, applied);
     els.apply.hidden = !dirty; els.cancel.hidden = !dirty;
+    els.apply.disabled = !!rangeError(staged);
     els.reset.hidden = !differs(applied, DEFAULTS);
   }
 
   function pageFilters() {
-    var to = new Date(options.lastDataDay + 'T00:00:00Z');
-    var from = new Date(to.getTime() - (+applied.days - 1) * 864e5);
-    var f = { dateFrom: from.toISOString().slice(0, 10), dateTo: options.lastDataDay };
+    var f = { dateFrom: applied.from, dateTo: applied.to };
     if (applied.store !== 'all') f.storeIds = [applied.store];
     if (applied.type !== 'all') f.displayTypeIds = [applied.type];
     if (!isAdvertiser && applied.adv !== 'all') f.advertiserIds = [applied.adv];
@@ -128,42 +206,71 @@
     syncButtons();
     var f = pageFilters();
     tip.hidden = true;
-    loadSummary(f);
+    if (isAdvertiser) loadMySummary(f); else loadSummary(f);
     Object.keys(modules).forEach(function (k) { modules[k].setFilters(f); });
   }
 
-  // ---------- summary strip ----------
-  function tile(key, label, tipText, value, sub, extra) {
+  // ---------- summary cards: a bordered card, a title (with an ⓘ on the retailer's) and grey tiles ----------
+  function card(host, title, tipText) {
+    clear(host);
+    var head = h('div', { class: 'card-head' }, [h('h2', { class: 'card-title', text: title }), tipText ? info(tipText, 'Retail Media Summary') : null]);
+    var grid = h('div', { class: 'tiles' });
+    host.appendChild(head); host.appendChild(grid);
+    return grid;
+  }
+  function tile(key, label, value, sub, tipText) {
     return h('div', { class: 'tile', 'data-tile': key }, [
-      h('div', { class: 'lbl' }, [h('span', { text: label }), info(tipText, label + ': ' + tipText)]),
-      h('div', { class: 'val', 'data-value': String(value.raw) }, [h('span', { text: value.text }), value.after ? h('span', { class: 'val-after', text: value.after }) : null]),
-      extra || null,
+      h('div', { class: 'val', 'data-value': String(value.raw) }, [h('span', { text: value.text })]),
+      h('div', { class: 'lbl' }, [h('span', { text: label }), tipText ? info(tipText, label + ': ' + tipText) : null]),
       sub ? h('div', { class: 'sub', text: sub }) : null
     ]);
   }
+  function skeletons(grid, n) { for (var i = 0; i < n; i++) grid.appendChild(h('div', { class: 'skel' })); }
   var summarySeq = 0;
   function loadSummary(f) {
     var strip = $('strip'), my = ++summarySeq;
-    clear(strip);
-    strip.appendChild(h('div', { class: 'skel' })); strip.appendChild(h('div', { class: 'skel' })); strip.appendChild(h('div', { class: 'skel' }));
+    var grid = card(strip, 'Retail Media Summary (' + rangeShort(applied) + ')', SUMMARY_TIP);
+    skeletons(grid, 4);
     api('summary', f).then(function (d) {
       if (my !== summarySeq) return;
-      clear(strip);
       var s = d.inventorySold;
+      clear(grid);
       if (!d.earnedRevenue && !d.estimatedRevenue && !s.slotsSold && !s.slotsAvailable) {
-        strip.appendChild(h('div', { class: 'msg wide' }, [icon('monitoring'), h('p', { text: 'No retail media activity for these filters.' })]));
+        grid.appendChild(h('div', { class: 'msg wide' }, [icon('monitoring'), h('p', { text: 'No retail media activity for these filters.' })]));
         return;
       }
-      strip.appendChild(tile('earned', 'Earned revenue', SUMMARY_TIPS.earned, { raw: d.earnedRevenue, text: fmtMoney(d.earnedRevenue) }));
-      strip.appendChild(tile('estimated', 'Estimated revenue', SUMMARY_TIPS.estimated, { raw: d.estimatedRevenue, text: fmtMoney(d.estimatedRevenue) }));
-      var bar = h('div', { class: 'bar' }, [h('i', { style: 'width:' + Math.min(100, s.percent) + '%' })]);
-      strip.appendChild(tile('sold', 'Inventory sold', SUMMARY_TIPS.sold, { raw: s.percent, text: s.percent + '% sold' }, fmtInt(s.slotsSold) + ' sold · ' + fmtInt(s.slotsAvailable) + ' available', bar));
+      var w = d.estimatedWindow || {};
+      var days = w.dateFrom && w.dateTo ? dayCount(w.dateFrom, w.dateTo) : 30;
+      var dsps = d.connectedDsps;
+      grid.appendChild(tile('earned', 'Earned revenue', { raw: d.earnedRevenue, text: fmtMoneyK(d.earnedRevenue) }, 'via ' + dsps + ' connected DSP' + (dsps === 1 ? '' : 's')));
+      grid.appendChild(tile('estimated', 'Estimated revenue', { raw: d.estimatedRevenue, text: fmtMoneyK(d.estimatedRevenue) }, 'booked for the next ' + days + ' days'));
+      grid.appendChild(tile('cpm', 'Effective CPM', { raw: d.effectiveCpm, text: d.effectiveCpm == null ? '–' : '$' + d.effectiveCpm.toFixed(2) }, d.effectiveCpm == null ? 'No delivery' : 'per 1,000 assumed views (VAC-d)'));
+      grid.appendChild(tile('sold', 'Inventory sold', { raw: s.percent, text: s.percent + '%' }, fmtInt(s.slotsSold) + ' sold · ' + fmtInt(s.slotsAvailable) + ' available', SOLD_TIP));
     }, function () {
       if (my !== summarySeq) return;
-      clear(strip);
+      clear(grid);
       var retry = h('button', { class: 'btn', type: 'button', text: 'Try again' });
       retry.addEventListener('click', function () { loadSummary(pageFilters()); });
-      strip.appendChild(h('div', { class: 'msg wide err', role: 'alert' }, [icon('error'), h('p', { text: 'We couldn’t load retail media performance. Try again shortly.' }), retry]));
+      grid.appendChild(h('div', { class: 'msg wide err', role: 'alert' }, [icon('error'), h('p', { text: 'We couldn’t load retail media performance. Try again shortly.' }), retry]));
+    });
+  }
+  var mySeq = 0;
+  function loadMySummary(f) {
+    var host = $('mysum'), my = ++mySeq;
+    var grid = card(host, 'Retail Media Summary · ' + options.advertiser.name + ' (' + rangeShort(applied) + ')');
+    skeletons(grid, 3);
+    api('my-summary', f).then(function (d) {
+      if (my !== mySeq) return;
+      clear(grid);
+      grid.appendChild(tile('spend', 'Spend', { raw: d.spend, text: fmtMoneyK(d.spend) }));
+      grid.appendChild(tile('plays', 'Plays won', { raw: d.playsWon, text: fmtInt(d.playsWon) }));
+      grid.appendChild(tile('deals', 'Deals you’re on', { raw: d.dealsOn, text: fmtInt(d.dealsOn) }));
+    }, function () {
+      if (my !== mySeq) return;
+      clear(grid);
+      var retry = h('button', { class: 'btn', type: 'button', text: 'Try again' });
+      retry.addEventListener('click', function () { loadMySummary(pageFilters()); });
+      grid.appendChild(h('div', { class: 'msg wide err', role: 'alert' }, [icon('error'), h('p', { text: 'We couldn’t load your summary. Try again shortly.' }), retry]));
     });
   }
 
@@ -172,8 +279,10 @@
   function buildTabs() {
     var tabs = $('tabs');
     clear(tabs);
-    TABS.forEach(function (name, i) {
-      var b = h('button', { class: 'tab' + (i === 0 ? ' active' : ''), role: 'tab', type: 'button', 'aria-selected': i === 0 ? 'true' : 'false', text: name });
+    // An advertiser login has only the Retail Media Performance tab.
+    TABS.slice(0, isAdvertiser ? 1 : TABS.length).forEach(function (name, i) {
+      if (name === 'Downloads') tabs.appendChild(h('span', { class: 'tab-sep', role: 'separator', 'aria-orientation': 'vertical' }));
+      var b = h('button', { class: 'tab' + (i === 0 ? ' active' : ''), role: 'tab', type: 'button', 'aria-selected': i === 0 ? 'true' : 'false', 'data-i': String(i), text: name });
       b.addEventListener('click', function () { selectTab(i); });
       tabs.appendChild(b);
     });
@@ -190,13 +299,22 @@
   }
   function selectTab(i) {
     selectedTab = i;
-    Array.prototype.forEach.call($('tabs').children, function (b, k) { b.classList.toggle('active', k === i); b.setAttribute('aria-selected', k === i ? 'true' : 'false'); });
+    Array.prototype.forEach.call($('tabs').querySelectorAll('.tab'), function (b) { var on = +b.getAttribute('data-i') === i; b.classList.toggle('active', on); b.setAttribute('aria-selected', on ? 'true' : 'false'); });
     $('tab-rmp').hidden = i !== 0;
     var other = $('tab-other');
     other.hidden = i === 0;
     clear(other);
     if (i !== 0) other.appendChild(h('p', { text: TABS[i] + ' is part of the platform’s Insights page and is not in this prototype.' }));
     drawCrumb();
+  }
+
+  // ---------- scope banner (advertiser login only) ----------
+  function buildScopeBanner() {
+    var b = $('scope');
+    clear(b);
+    b.hidden = false;
+    b.appendChild(icon('lock'));
+    b.appendChild(h('p', {}, [h('strong', { text: 'Signed in as ' + options.advertiser.name + '.' }), document.createTextNode(' Everything on this page is scoped to your advertiser account. Other advertisers’ data and the retailer’s inventory aren’t shown.')]));
   }
 
   // ---------- start ----------
@@ -208,7 +326,6 @@
   }
 
   function start() {
-    buildTabs();
     var first = LocalApi.firstAdvertiserId();
     if (isAdvertiser) {
       var wanted = q.get('advertiser') || first;
@@ -223,12 +340,18 @@
 
   function fetchJson(endpoint, params) { return api(endpoint, params); }
 
+  buildTabs();
   start().then(function () { return api('filter-options'); }).then(function (o) {
     options = o;
+    var range = presetRange(DEFAULT_DAYS);
+    DEFAULTS = { from: range.from, to: range.to, store: 'all', type: 'all', adv: 'all' };
+    staged = Object.assign({}, DEFAULTS); applied = Object.assign({}, DEFAULTS);
     buildFilters(); syncControls(); syncButtons();
     var f = pageFilters();
     if (isAdvertiser) {
-      $('strip').hidden = true; $('rd').hidden = true; $('sc').hidden = true; $('dc').hidden = true; $('av').hidden = false;
+      buildScopeBanner();
+      $('strip').hidden = true; $('rd').hidden = true; $('sc').hidden = true; $('dc').hidden = true; $('av').hidden = false; $('mysum').hidden = false;
+      loadMySummary(f);
       modules.av = AdvertiserView.mount($('av'), { fetchJson: fetchJson });
       modules.av.setFilters(f);
     } else {
