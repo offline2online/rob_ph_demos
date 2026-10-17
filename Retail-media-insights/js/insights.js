@@ -9,7 +9,7 @@
   var $ = function (id) { return document.getElementById(id); };
   var NS_SCOPES = ['insights:read'];
   var RETAIL_TABS = ['Retail Media Performance', 'Campaign Performance', 'Visitor Insights', 'Store Insights', 'Upcoming Appointments', 'Downloads'];
-  var PRESETS = [[7, 'Last 7 days'], [30, 'Last 30 days'], [90, 'Last 90 days']];
+  var PRESETS = [[7, 'Last 7 days'], [14, 'Last 14 days'], [30, 'Last 30 days'], [90, 'Last 90 days']];
   var DEFAULT_DAYS = 30;
   var MAX_RANGE_DAYS = 366; // the API's cap
   var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -48,7 +48,9 @@
     tip.style.width = w + 'px';
     var left = Math.max(8, Math.min(ar.left, vw - w - 8));
     var top = ar.bottom + 6;
-    if (top + tip.offsetHeight > window.innerHeight - 8) top = Math.max(8, ar.top - tip.offsetHeight - 6);
+    var th = Math.min(tip.offsetHeight, window.innerHeight - 16);
+    if (top + th > window.innerHeight - 8) top = Math.max(8, ar.top - th - 6);
+    top = Math.max(8, Math.min(top, window.innerHeight - th - 8));
     tip.style.left = (left - fr.left) + 'px'; tip.style.top = (top - fr.top) + 'px';
   }
   function info(text, label) {
@@ -111,39 +113,80 @@
     return { select: sel, wrap: h('span', { class: 'sel' }, [sel, icon('expand_more')]) };
   }
 
+  var WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+  var FULL_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  // First day of the month `n` months from the month of `iso`.
+  function monthShift(iso, n) { var d = toUtc(iso); return isoOf(new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + n, 1))); }
+  function inData(iso) { return iso <= options.lastDataDay && (!options.firstDataDay || iso >= options.firstDataDay); }
+
+  // The platform's range picker: presets down the left, two months side by side, start and end picked with two clicks.
   function buildDatePicker() {
     var label = h('span', { class: 'dr-text' });
-    var btn = h('button', { class: 'dr-btn', id: 'f-date', type: 'button', 'aria-haspopup': 'dialog', 'aria-expanded': 'false', 'aria-label': 'Date range' }, [icon('calendar_month'), label, icon('expand_more')]);
+    var sep = h('span', { class: 'dr-arrow', text: '→' });
+    var label2 = h('span', { class: 'dr-text' });
+    var btn = h('button', { class: 'dr-btn', id: 'f-date', type: 'button', 'aria-haspopup': 'dialog', 'aria-expanded': 'false', 'aria-label': 'Date range' }, [label, sep, label2, icon('calendar_month')]);
     var presetList = h('div', { class: 'dr-presets' });
-    var start = h('input', { type: 'date', id: 'f-start', 'aria-label': 'Start date' });
-    var end = h('input', { type: 'date', id: 'f-end', 'aria-label': 'End date' });
+    var months = h('div', { class: 'dr-months' });
     var err = h('p', { class: 'dr-err', id: 'dr-err', role: 'alert', hidden: '' });
-    var done = h('button', { class: 'btn', id: 'dr-done', type: 'button', text: 'Done' });
     var panel = h('div', { class: 'dr-panel', id: 'dr-panel', role: 'dialog', 'aria-label': 'Date range', hidden: '' }, [
-      presetList,
-      h('div', { class: 'dr-custom' }, [
-        h('label', { class: 'dr-field' }, [h('span', { text: 'Start date' }), start]),
-        h('label', { class: 'dr-field' }, [h('span', { text: 'End date' }), end])
-      ]),
-      err,
-      h('div', { class: 'dr-foot' }, [done])
+      presetList, h('div', { class: 'dr-cal' }, [months, err])
     ]);
-    [start, end].forEach(function (i) { i.min = options.firstDataDay || ''; i.max = options.lastDataDay; });
     var wrap = h('div', { class: 'dr' }, [btn, panel]);
-    function setOpen(open) { panel.hidden = !open; btn.setAttribute('aria-expanded', open ? 'true' : 'false'); }
+    var view = null; // first of the left-hand month
+    var anchor = null; // a start picked and waiting for its end
+    function setOpen(open) { panel.hidden = !open; btn.setAttribute('aria-expanded', open ? 'true' : 'false'); if (open) { anchor = null; showStaged(); } }
+    function showStaged() { view = monthShift(staged.from || options.lastDataDay, 0); renderMonths(); }
     btn.addEventListener('click', function () { setOpen(panel.hidden); });
-    done.addEventListener('click', function () { setOpen(false); btn.focus(); });
-    document.addEventListener('click', function (e) { if (!panel.hidden && !wrap.contains(e.target)) setOpen(false); });
+    document.addEventListener('click', function (e) { if (!panel.hidden && !wrap.contains(e.target) && document.body.contains(e.target)) setOpen(false); });
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !panel.hidden) { setOpen(false); btn.focus(); } });
     PRESETS.forEach(function (p) {
       var r = presetRange(p[0]);
-      var b = h('button', { class: 'dr-preset', type: 'button', 'data-days': String(p[0]) }, [h('span', { text: p[1] }), h('span', { class: 'dr-dates', text: rangeFull(r) })]);
+      var b = h('button', { class: 'dr-preset', type: 'button', 'data-days': String(p[0]), text: p[1] });
       b.addEventListener('click', function () { staged.from = r.from; staged.to = r.to; syncControls(); syncButtons(); setOpen(false); });
       presetList.appendChild(b);
     });
-    function onCustom() { staged.from = start.value; staged.to = end.value; syncControls(true); syncButtons(); }
-    start.addEventListener('input', onCustom); end.addEventListener('input', onCustom);
-    els.dateBtn = btn; els.dateText = label; els.start = start; els.end = end; els.dateErr = err; els.presets = presetList;
+    function navBtn(name, aria, n) {
+      var b = h('button', { class: 'dr-nav', type: 'button', 'aria-label': aria }, [icon(name)]);
+      b.addEventListener('click', function () { view = monthShift(view, n); renderMonths(); });
+      return b;
+    }
+    function monthGrid(first) {
+      var d = toUtc(first), dow = d.getUTCDay(), grid = h('div', { class: 'dr-grid', role: 'grid' });
+      WEEKDAYS.forEach(function (w) { grid.appendChild(h('span', { class: 'dr-wd', text: w })); });
+      for (var i = 0; i < 42; i++) {
+        var iso = addDays(first, i - dow), inMonth = iso.slice(0, 7) === first.slice(0, 7);
+        var lo = staged.from, hi = staged.to;
+        var cls = 'dr-day' + (inMonth ? '' : ' out') + (!inData(iso) ? ' off' : '');
+        if (lo && hi && iso >= lo && iso <= hi) cls += ' in' + (iso === lo ? ' start' : '') + (iso === hi ? ' end' : '');
+        if (iso === options.lastDataDay) cls += ' last';
+        var b = h('button', { class: cls, type: 'button', 'data-date': iso, text: String(toUtc(iso).getUTCDate()) });
+        if (!inData(iso) || !inMonth) b.disabled = true;
+        if (iso === staged.from || iso === staged.to) b.setAttribute('aria-pressed', 'true');
+        grid.appendChild(b);
+      }
+      return grid;
+    }
+    function renderMonths() {
+      clear(months);
+      [0, 1].forEach(function (n) {
+        var first = monthShift(view, n), d = toUtc(first);
+        var head = h('div', { class: 'dr-head' }, [
+          n === 0 ? navBtn('keyboard_double_arrow_left', 'Previous year', -12) : null, n === 0 ? navBtn('chevron_left', 'Previous month', -1) : null,
+          h('span', { class: 'dr-title', text: FULL_MONTHS[d.getUTCMonth()] + ' ' + d.getUTCFullYear() }),
+          n === 1 ? navBtn('chevron_right', 'Next month', 1) : null, n === 1 ? navBtn('keyboard_double_arrow_right', 'Next year', 12) : null
+        ]);
+        months.appendChild(h('div', { class: 'dr-month' }, [head, monthGrid(first)]));
+      });
+    }
+    months.addEventListener('click', function (e) {
+      var t = e.target.closest ? e.target.closest('.dr-day') : null;
+      if (!t || t.disabled) return;
+      var iso = t.getAttribute('data-date');
+      if (!anchor) { anchor = iso; staged.from = iso; staged.to = iso; syncControls(true); syncButtons(); renderMonths(); return; }
+      staged.from = iso < anchor ? iso : anchor; staged.to = iso < anchor ? anchor : iso; anchor = null;
+      syncControls(); syncButtons(); setOpen(false); btn.focus();
+    });
+    els.dateBtn = btn; els.dateText = label; els.dateText2 = label2; els.dateErr = err; els.presets = presetList; els.renderCal = renderMonths;
     return wrap;
   }
 
@@ -178,8 +221,9 @@
   function differs(a, b) { return Object.keys(DEFAULTS).some(function (k) { return a[k] !== b[k]; }); }
   function syncControls(fromInputs) {
     var err = rangeError(staged);
-    els.dateText.textContent = staged.from && staged.to && !err ? rangeFull(staged) : 'Select dates';
-    if (!fromInputs) { els.start.value = staged.from; els.end.value = staged.to; }
+    var ok = staged.from && staged.to && !err;
+    els.dateText.textContent = ok ? fmtFull(staged.from) : 'Select dates'; els.dateText2.textContent = ok ? fmtFull(staged.to) : '';
+    if (!els.dateBtn.nextElementSibling.hidden) els.renderCal();
     els.dateErr.hidden = !err; els.dateErr.textContent = err;
     Array.prototype.forEach.call(els.presets.children, function (b) {
       var r = presetRange(+b.getAttribute('data-days'));

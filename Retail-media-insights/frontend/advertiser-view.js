@@ -16,15 +16,14 @@
 
   // The shared VAC-d explanation and worked example, appended to every ⓘ that mentions assumed views.
   var VACD = [
-    'Assumed views is the VAC-d (Visibility Adjusted Contacts, digital) score from the OMA MOVE out-of-home standard, and CPM is cost per thousand assumed views. ' +
-    'Average assumed views per slot per day = average footfall past a display per day × average visibility adjustment × the slot’s share of loop time (slot length ÷ loop length), averaged across the display type’s connected displays. ' +
-    'Billing uses the VAC-d actually realised over the billing window. ' +
-    'Example: 4,000 footfall × 0.5 visibility × 1/10 of the loop = 200 average assumed views; at a $20 CPM that slot earns $4 per day on average.'
+    'Assumed views is the VAC-d (Visibility Adjusted Contacts, digital) score from the OMA MOVE standard; CPM is cost per thousand assumed views. ' +
+    'Per slot per day = footfall past a display × visibility adjustment × the slot’s share of the loop, averaged across connected displays. ' +
+    'Example: 4,000 footfall × 0.5 visibility × 1/10 of the loop = 200 average assumed views; at a $20 CPM that slot earns $4 per day.'
   ];
   var TIPS = {
-    delivery: ['Plays you won (left axis) and what you spent (right axis) per day, both shown by default. Click the Plays won or Spend total to turn its line off or on. Hover a day to see what drove it: for each private auction and the open auction, the plays you won out of all plays, your CPM against the winning CPM (average and highest across all winning buyers, never named) and the floor CPM; plays on fixed-price deals; and the change on the previous day. Stores and screens that played are in Campaign Performance. For a programmatic guaranteed deal, Pacing shows assumed views (VAC-d) delivered against the guaranteed line over the flight. Other deal types carry no commitment, so they have no guaranteed line.'].concat(VACD),
+    delivery: ['Plays you won (left axis) and what you spent (right axis) per day. Click the Plays won or Spend total to turn its line off or on. Hover a day to see, per deal, your plays won, your CPM against the winning and floor CPM (never naming other buyers), and the change on the previous day. For a programmatic guaranteed deal, Pacing shows assumed views (VAC-d) delivered against the guaranteed line over the flight; other deal types have no guaranteed line.'],
     deals: function (range) {
-      return ['Every display type your deals are active on, in shopper-journey order, with each deal’s performance on it in ' + (range || 'the selected range') + '. Open auction plays are not included. Hover a display type for its details, a deal for its description and your deal ID, and Slots for the slots the deal is assigned to. Share: on a display type row, its share of your deal spend; on a deal row, the share of the deal’s plays on that display type that you won (100% when you are the only buyer).'].concat(VACD);
+      return ['Every display type your deals are active on, in shopper-journey order, with each deal’s performance in ' + (range || 'the selected range') + ' (open auction plays excluded). Hover a display type for its details, a deal for its description and deal ID, and Slots for its assigned slots. Share: on a display type row, its share of your deal spend; on a deal row, the share of the deal’s plays there that you won.'];
     },
     targeting: ['Your highest targeting level across your campaigns in the date range: Default only, Localised or Personalised. Scheduling = campaigns you schedule (dayparting and multiple schedules) from the campaign’s Scheduling tab, separately from targeting. Other variables available to use = the Shared Targeting Variables the retailer has made available to your DSP seat that your campaigns don’t use yet.']
   };

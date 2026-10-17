@@ -72,7 +72,7 @@
 @keyframes av-sh { to { background-position: -200% 0; } }
 
 /* The hover floats above the page (absolute within the root, never clipped by a card) and is clamped on-screen. */
-.av-tip { position: absolute; z-index: 10; width: max-content; max-width: min(380px, 100%); max-height: calc(100vh - 16px); overflow-y: auto; background: #fff; border: 1px solid #d9d9d9;
+.av-tip { position: absolute; z-index: 10; width: max-content; max-width: min(380px, 100%); max-height: calc(100vh - 16px); overflow: hidden; overflow-wrap: anywhere; background: #fff; border: 1px solid #d9d9d9;
   border-radius: 8px; box-shadow: 0 6px 16px rgba(0,0,0,0.12); padding: 10px 12px; pointer-events: none; font-size: 13px; }
 .av-tip[hidden] { display: none; }
 .av-tip-title { font-weight: 500; margin-bottom: 4px; }

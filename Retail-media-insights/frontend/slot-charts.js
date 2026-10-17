@@ -20,20 +20,18 @@
   var AMBER_AT = 85;
   var ORIENTATIONS = ['Not set', '90°', '180°', '270°'];
 
-  var VAC_TEXT = 'Assumed views is the VAC-d (Visibility Adjusted Contacts, digital) score from the OMA MOVE out-of-home standard, and CPM is cost per thousand assumed views. ' +
-    'Average assumed views per slot per day = average footfall past a display per day × average visibility adjustment × the slot’s share of loop time (slot length ÷ loop length), averaged across the display type’s connected displays. ' +
-    'Billing uses the VAC-d actually realised over the billing window. ' +
-    'Example: 4,000 footfall × 0.5 visibility × 1/10 of the loop = 200 average assumed views; at a $20 CPM that slot earns $4 per day on average.';
+  var VAC_TEXT = 'Assumed views is the VAC-d (Visibility Adjusted Contacts, digital) score from the OMA MOVE standard; CPM is cost per thousand assumed views. ' +
+    'Per slot per day = footfall past a display × visibility adjustment × the slot’s share of the loop, averaged across connected displays. ' +
+    'Example: 4,000 footfall × 0.5 visibility × 1/10 of the loop = 200 average assumed views; at a $20 CPM that slot earns $4 per day.';
 
   var TIPS = {
     slotValue: VAC_TEXT + ' The number in brackets is the display type’s connected displays across the selected stores (PH Core).',
     slotAllocation: 'Slots per loop: total slots in the display type’s loop. Advertiser slots + Own-content slots = Slots per loop. ' +
       'Advertiser slots sold: share of advertiser slot capacity inside operating hours sold over the date range; rows at ' + AMBER_AT + '% or more are highlighted amber.',
     missed: 'Fill = advertiser slots sold ÷ all advertiser slots, across all deal types (booking schedule and unsold real-time slot records). ' +
-      'Only slots inside each display’s operating hours count: screens outside the store, or at the entrance and visible from outside it, run 24 hours; screens inside the store, including endcaps, follow store opening hours. ' +
-      'Slots outside operating hours play house content and are never unsold or missed revenue. ' +
-      'Amber = unsold slots valued at the display type’s floor CPM × their assumed views (VAC-d) ÷ 1,000. It’s an estimate at floor CPM, so the minimum those slots could have earned. ' +
-      'Red = revenue lost while displays were offline. The number in brackets is connected displays (PH Core); the last row totals all display types. ' + VAC_TEXT,
+      'Only slots inside each display’s operating hours count (outside screens run 24 hours; in-store screens follow store opening hours); slots outside them play house content. ' +
+      'Amber = unsold slots valued at floor CPM × their assumed views ÷ 1,000 (a minimum estimate). ' +
+      'Red = revenue lost while displays were offline. The number in brackets is connected displays (PH Core). ' + VAC_TEXT,
     yield: 'Effective CPM for each connected DSP: cleared revenue per 1,000 assumed views (VAC-d), from billing line items and reservations. ' + VAC_TEXT
   };
   // Column definitions for the Slot allocation table (an ⓘ beside each heading).
