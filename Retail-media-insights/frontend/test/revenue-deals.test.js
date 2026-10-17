@@ -27,13 +27,13 @@ test('bar hover: period total first, then each DSP × deal type, then estimated'
   const bar = bars[bars.length - 1];
   const last = RD.barTooltip(bar, 'day').rows.map((r) => r[0]);
   assert.strictEqual(last[0], '11 Oct');
-  assert.ok(last.length > 1 && !last.includes('Estimated revenue'), 'every played day is earned: nothing is estimated on the last one');
+  assert.ok(last.length > 1 && !last.includes('Estimated (booked ahead)'), 'every played day is earned: nothing is estimated on the last one');
   const settled = bars[bars.length - 5];
   settled.estimated = 1; // an estimated part is listed last
   const t = RD.barTooltip(settled, 'day');
   assert.strictEqual(t.rows[0][1], RD.fmtMoney(settled.earned));
   assert.match(t.rows[1][0], /^DV360 · /);
-  assert.strictEqual(t.rows[t.rows.length - 1][0], 'Estimated revenue');
+  assert.strictEqual(t.rows[t.rows.length - 1][0], 'Estimated (booked ahead)');
 });
 
 test('week and month regroup, and the x-axis thins to what fits', async () => {
@@ -52,8 +52,10 @@ test('deal type filter narrows revenue', async () => {
 test('deal name hover: description and per-DSP deal IDs from {dsp, dspLabel, dealId}', async () => {
   const deal = (await get('/deals')).rows.find((d) => d.dealIds.length === 2);
   const t = RD.nameTooltip(deal);
-  assert.deepStrictEqual(t.rows.map((r) => r[0]), ['Description'].concat(deal.dealIds.map((d) => `${d.dspLabel}: ${d.dealId}`)));
-  assert.match(t.rows[1][0], /^(Google DSP \(DV360\)|The Trade Desk|Amazon Ads DSP): PH-[A-Z0-9]{10}$/);
+  assert.deepStrictEqual(t.rows.map((r) => r[0]), [deal.description, 'Deal IDs'].concat(deal.dealIds.map((d) => d.dspLabel)));
+  assert.match(t.rows[2][0], /^(Google DSP \(DV360\)|The Trade Desk|Amazon Ads DSP)$/);
+  assert.match(t.rows[2][1], /^PH-[A-Z0-9]{10}$/);
+  assert.strictEqual(t.rows[2][2], 'rd-tip-mono');
 });
 
 test('slots label and Assigned slots hover', async () => {
@@ -64,13 +66,17 @@ test('slots label and Assigned slots hover', async () => {
   const t = RD.slotsTooltip(pg);
   assert.strictEqual(t.title, 'Assigned slots');
   assert.match(t.rows[0][1], /IAB zone: Entrance & out of category/);
-  assert.strictEqual(t.rows[0][1].split('\n')[0], pg.slots[0].displayTypeDescription, 'the display type description sits under its name');
-  assert.ok(pg.slots.every((s) => s.displayTypeDescription));
+  assert.strictEqual(t.rows[0][0], 'Window Portrait (Portrait screen in the store window at the entrance)');
+  assert.strictEqual(t.rows[0][1].split('\n')[0], pg.slots[0].playlistZone);
+  assert.match(RD.slotsTooltip(pg, { window: 12 }).rows[0][1], /Advertiser slot 1 \(slot 1 of 12\) · 60 plays per window/);
   assert.match(t.rows[0][1], /Advertiser slot 1 \(slot 1 of the loop\) · 60 plays per window/);
 });
 
 test('advertisers hover lists "Name (DSP)"', async () => {
   const deal = (await get('/deals')).rows.find((d) => d.dealType === 'Private auction');
+  assert.strictEqual(RD.advertisersTooltip(deal).title, deal.name);
+  assert.strictEqual(RD.advertisersLabel(deal), '2 advertisers');
+  assert.strictEqual(RD.advertisersLabel({ advertisers: [1] }), '1 advertiser');
   assert.deepStrictEqual(RD.advertisersTooltip(deal).rows.map((r) => r[0]), ['Kenvue (DV360)', "L'Oréal Paris (DV360)"]);
 });
 
@@ -88,4 +94,44 @@ test('CPM hover names floor vs fixed', async () => {
   const rows = (await get('/deals')).rows;
   assert.strictEqual(RD.cpmTooltip(rows.find((d) => d.dealType === 'Private auction').cpm).rows[0][0], 'Floor CPM');
   assert.strictEqual(RD.cpmTooltip(rows.find((d) => d.dealType === 'Programmatic guaranteed').cpm).rows[0][0], 'Fixed CPM');
+});
+
+test('booked-ahead bars follow the last played day, are not part of the earned total, and carry the ahead hover', async () => {
+  const data = await get('/revenue', { dsps: ['DV360'], aheadDays: 14 });
+  const bars = RD.revenueBars(data);
+  assert.strictEqual(bars.filter((b) => b.ahead).length, 14);
+  assert.strictEqual(bars.length, 44);
+  assert.ok(bars.filter((b) => b.ahead).every((b) => b.earned === 0 && b.estimated > 0 && b.period > data.lastDataDay));
+  assert.strictEqual(RD.revenueTotals(data).earned, RD.revenueTotals(await get('/revenue', { dsps: ['DV360'] })).earned);
+  const t = RD.barTooltip(bars[bars.length - 1], 'day');
+  assert.strictEqual(t.title, 'Estimated (booked ahead)');
+});
+
+test('ahead days per granularity, labels, and the year end cap', async () => {
+  assert.strictEqual(RD.aheadDaysFor('day', '2026-10-11'), 14);
+  assert.strictEqual(RD.aheadDaysFor('week', '2026-10-11'), 42);
+  assert.strictEqual(RD.aheadDaysFor('month', '2026-10-11'), 81);
+  const wk = RD.revenueBars(await get('/revenue', { granularity: 'week', aheadDays: 42 }));
+  assert.strictEqual(wk.filter((b) => b.ahead).length, 6);
+  assert.strictEqual(RD.periodLabel('2026-09-14', 'week'), 'w/c 14 Sep');
+  assert.strictEqual(RD.periodLabel('2026-09-01', 'month'), 'Sep');
+  const mo = RD.revenueBars(await get('/revenue', { granularity: 'month', aheadDays: 81 }));
+  assert.strictEqual(mo[mo.length - 1].period, '2026-12-01');
+});
+
+test('colour families: four shades per DSP, legend per DSP × deal type', () => {
+  assert.strictEqual(RD.shadeColour('DV360', 'Programmatic guaranteed'), '#9c3d14');
+  assert.strictEqual(RD.shadeColour('The Trade Desk', 'Preferred deal'), '#2a78d6');
+  assert.strictEqual(RD.shadeColour('Amazon DSP', 'Open auction'), '#b0e6d1');
+  const all = RD.legendEntries(['Amazon DSP', 'DV360'], '');
+  assert.strictEqual(all.length, 8);
+  assert.strictEqual(all[0].label, 'DV360 · Programmatic guaranteed');
+  assert.deepStrictEqual(RD.legendEntries(['DV360'], 'Private auction').map((e) => e.label), ['DV360 · Private auction']);
+});
+
+test('CPM note and deal columns', async () => {
+  assert.strictEqual(RD.cpmNote({ value: 9.5, kind: 'fixed' }), 'fixed');
+  assert.strictEqual(RD.cpmNote({ value: 9.5, kind: 'floor' }), 'floor');
+  const pg = (await get('/deals')).rows[0];
+  assert.ok(Object.fromEntries(RD.pacingTooltip(pg.pacing).rows)['Guaranteed, whole flight']);
 });

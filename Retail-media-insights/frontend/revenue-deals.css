@@ -13,7 +13,10 @@
 .rd-info:hover, .rd-info:focus-visible { color: var(--rd-primary); }
 .rd-root :focus-visible { outline: 2px solid var(--rd-primary); outline-offset: 2px; border-radius: 4px; }
 .rd-controls { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; }
+.rd-chips-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rd-chips-label { color: var(--rd-muted); }
 .rd-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.rd-chip { display: inline-flex; align-items: center; gap: 6px; }
 .rd-chip { font: inherit; height: 32px; padding: 0 12px; border: 1px solid #d9d9d9; border-radius: 9999px; background: #fff; color: var(--rd-text); cursor: pointer; }
 .rd-chip.on { border-color: var(--rd-primary); background: rgba(22,155,194,0.1); color: var(--rd-primary); font-weight: 700; }
 .rd-seg { display: inline-flex; background: rgba(0,0,0,0.04); border-radius: 6px; padding: 2px; }
@@ -29,13 +32,15 @@
 .rd-col:hover, .rd-col:focus-visible { background: #e8fdff; }
 .rd-stack-wrap { flex: 1; display: flex; align-items: flex-end; }
 .rd-stack { width: 100%; max-width: 40px; margin: 0 auto; height: 100%; display: flex; flex-direction: column-reverse; justify-content: flex-start; }
-.rd-seg-fill { width: 100%; }
-.rd-seg-est { width: 100%; border: 1px dashed var(--rd-primary); background: rgba(22,155,194,0.08); }
+.rd-seg-fill { width: 100%; box-shadow: inset 0 1px 0 #fff; } /* a white hairline keeps adjacent shades apart */
+.rd-seg-est { width: 100%; border: 1px solid #7aa7d6; background: #eef4fa; }
+.rd-today { position: relative; flex: 0 0 0; border-left: 1px dashed #8c8c8c; margin: 0 1px; padding-bottom: 20px; }
+.rd-today-label { position: absolute; top: 0; left: 4px; font-size: 12px; color: #8c8c8c; white-space: nowrap; }
 .rd-xlabel { height: 20px; font-size: 11px; color: var(--rd-muted); white-space: nowrap; overflow: visible; text-align: center; }
 .rd-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 12px; font-size: 12px; color: var(--rd-muted); }
 .rd-legend-item { display: inline-flex; align-items: center; gap: 6px; }
 .rd-swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
-.rd-swatch.rd-est { border: 1px dashed var(--rd-primary); background: rgba(22,155,194,0.08); }
+.rd-swatch.rd-est { border: 1px solid #7aa7d6; background: #eef4fa; }
 
 .rd-scroll { overflow-x: auto; }
 .rd-table { width: 100%; border-collapse: collapse; }
@@ -45,10 +50,14 @@
 .rd-num { text-align: right !important; font-variant-numeric: tabular-nums; }
 .rd-name { font-weight: 500; cursor: help; }
 .rd-hov { cursor: help; border-bottom: 1px dotted var(--rd-muted); }
-.rd-pace { display: inline-flex; align-items: center; gap: 8px; cursor: help; }
-.rd-pace-bar { width: 80px; height: 6px; border-radius: 9999px; background: rgba(5,5,5,0.06); overflow: hidden; }
-.rd-pace-bar i { display: block; height: 100%; background: var(--rd-primary); }
-.rd-pace-val { min-width: 40px; }
+.rd-barcell { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+.rd-pace { cursor: help; }
+.rd-bar { width: 90px; height: 6px; border-radius: 9999px; background: #f0f0f0; overflow: hidden; flex: none; }
+.rd-bar i { display: block; height: 100%; background: var(--rd-primary); }
+.rd-sub { font-size: 12px; color: var(--rd-muted); }
+.rd-num .rd-sub { line-height: 1.2; }
+.rd-tip-h { font-weight: 500; margin-top: 4px; }
+.rd-tip-mono .rd-tip-v { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 
 .rd-state { text-align: center; padding: 40px 16px; border: 1px dashed #d9d9d9; border-radius: 8px; color: var(--rd-muted); }
 .rd-state.error { color: #ff4d4f; }
@@ -63,6 +72,6 @@
 .rd-tip-row { display: flex; justify-content: space-between; gap: 16px; padding: 1px 0; }
 .rd-tip-k { color: var(--rd-text); white-space: pre-line; }
 .rd-tip-v { white-space: pre-line; text-align: right; font-weight: 500; }
-@media (max-width: 600px) { .rd-plot { height: 220px; } .rd-pace-bar { width: 56px; } }
+@media (max-width: 600px) { .rd-plot { height: 220px; } .rd-bar { width: 56px; } }
 .rd-total { margin: 0 0 8px; font-weight: 500; font-variant-numeric: tabular-nums; }
 .rd-xlabel { overflow: visible; }
