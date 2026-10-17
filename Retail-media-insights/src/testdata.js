@@ -122,15 +122,15 @@ const ADVERTISER_META = {
   'adv-nova': { name: 'Nova', dsp: 'Amazon DSP' },
 };
 
-// Campaign submissions, as day offsets back from endDate (start, end; null = still live).
+// Campaign submissions (displayTypeIds: where an open auction campaign runs), as day offsets back from endDate (start, end; null = still live).
 // Blackmores is Personalised (a Daypart entry is scheduling, not a variable and is dropped);
 // Acme is Localised; Nova has only default targeting and no scheduling.
 const CAMPAIGNS = [
-  { id: 'c1', advertiserId: 'adv-blackmores', startAgo: 80, endAgo: null, variables: ['Visitor Segments', 'State', 'Daypart'], scheduled: true, schedules: 2, targetedVersions: 3 },
-  { id: 'c2', advertiserId: 'adv-blackmores', startAgo: 30, endAgo: null, variables: ['State'], scheduled: false, targetedVersions: 1 },
-  { id: 'c3', advertiserId: 'adv-acme', startAgo: 60, endAgo: null, variables: ['State', 'Postcode', 'Suburb'], scheduled: true, schedules: 1, targetedVersions: 2 },
-  { id: 'c4', advertiserId: 'adv-acme', startAgo: 20, endAgo: null, variables: [], scheduled: false, targetedVersions: 0 },
-  { id: 'c5', advertiserId: 'adv-nova', startAgo: 45, endAgo: null, variables: [], scheduled: false, targetedVersions: 0 },
+  { id: 'c1', advertiserId: 'adv-blackmores', startAgo: 80, endAgo: null, displayTypeIds: ['queue'], variables: ['Visitor Segments', 'State', 'Daypart'], scheduled: true, schedules: 2, targetedVersions: 3 },
+  { id: 'c2', advertiserId: 'adv-blackmores', startAgo: 30, endAgo: null, displayTypeIds: ['queue'], variables: ['State'], scheduled: false, targetedVersions: 1 },
+  { id: 'c3', advertiserId: 'adv-acme', startAgo: 60, endAgo: null, displayTypeIds: ['endcap', 'queue'], variables: ['State', 'Postcode', 'Suburb'], scheduled: true, schedules: 1, targetedVersions: 2 },
+  { id: 'c4', advertiserId: 'adv-acme', startAgo: 20, endAgo: null, displayTypeIds: ['queue'], variables: [], scheduled: false, targetedVersions: 0 },
+  { id: 'c5', advertiserId: 'adv-nova', startAgo: 45, endAgo: null, displayTypeIds: ['window', 'dispensary'], variables: [], scheduled: false, targetedVersions: 0 },
 ];
 
 function generateTestRetailer({ days = 90, endDate = '2026-10-11', stores = 5, seed = 7, settledThroughDaysAgo = 3 } = {}) {
@@ -154,8 +154,10 @@ function generateTestRetailer({ days = 90, endDate = '2026-10-11', stores = 5, s
   // Who owns each advertiser slot position: the deal that assigns it, else the open auction.
   const ownerOf = (typeId, position) => (Object.entries(DEAL_CATALOG).find(([, d]) => d.slots.some((x) => x.displayTypeId === typeId && x.position === position)) || [OPEN_AUCTION_DEAL])[0];
   // Billed buyers of a deal (its buyers list, each on its own DSP seat); the open auction is open to everyone.
-  const buyersOf = (dealId) => (dealId === OPEN_AUCTION_DEAL
-    ? ADVERTISERS.map((advertiserId) => ({ advertiserId, dsp: ADVERTISER_META[advertiserId].dsp }))
+  // The open auction bills an advertiser only on the display types its campaigns target.
+  const buyersOf = (dealId, typeId) => (dealId === OPEN_AUCTION_DEAL
+    ? ADVERTISERS.filter((advertiserId) => CAMPAIGNS.some((c) => c.advertiserId === advertiserId && (c.displayTypeIds || []).includes(typeId)))
+      .map((advertiserId) => ({ advertiserId, dsp: ADVERTISER_META[advertiserId].dsp }))
     : DEAL_CATALOG[dealId].buyers);
   // Cleared price: fixed deals bill their CPM; auctions clear above their floor (strictly, so rounding never lands below it).
   const clearedCpm = (dealId, type) => {
@@ -192,7 +194,7 @@ function generateTestRetailer({ days = 90, endDate = '2026-10-11', stores = 5, s
             const sold = Math.round((capacity - offline) * sellThrough(typeId, storeIndex, d, rand()));
             totals.sold += sold; totals.offline += offline; totals.unsold += capacity - offline - sold;
             const dealId = ownerOf(typeId, position);
-            const buyers = buyersOf(dealId);
+            const buyers = buyersOf(dealId, typeId);
             const weights = buyers.map(() => 0.5 + rand());
             const weightSum = weights.reduce((a, b) => a + b, 0);
             let left = sold;
@@ -213,7 +215,7 @@ function generateTestRetailer({ days = 90, endDate = '2026-10-11', stores = 5, s
         for (const [key, slots] of soldBy) {
           if (slots <= 0) continue;
           const [dealId, advertiserId] = key.split('|');
-          const buyer = buyersOf(dealId).find((b) => b.advertiserId === advertiserId);
+          const buyer = buyersOf(dealId, typeId).find((b) => b.advertiserId === advertiserId);
           const views = Math.round(slots * viewsPerPlay); // VAC-d views are whole numbers
           billing.push({
             date, storeId, displayTypeId: typeId, dealId, dsp: buyer.dsp, advertiserId,

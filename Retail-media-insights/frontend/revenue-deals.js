@@ -96,7 +96,7 @@
   function nameTooltip(deal) {
     var rows = [];
     if (deal.description) rows.push(['Description', deal.description]);
-    (deal.dealIds || []).forEach(function (d) { rows.push([d.dsp, d.dealId]); });
+    (deal.dealIds || []).forEach(function (d) { rows.push([(d.dspLabel || d.dsp) + ': ' + d.dealId, '']); });
     return { title: deal.name, rows: rows };
   }
   function slotsTooltip(deal) {
@@ -104,7 +104,7 @@
     (deal.slots || []).forEach(function (s) {
       var pos = 'Advertiser slot ' + s.advertiserSlot + (s.loopSlot ? ' (slot ' + s.loopSlot + ' of the loop)' : '');
       if (s.playsPerWindow != null) pos += ' · ' + fmtInt(s.playsPerWindow) + ' plays per window';
-      rows.push([s.displayType, [s.playlistZone || '', s.iabZone ? 'IAB zone: ' + s.iabZone : '', pos].filter(Boolean).join('\n')]);
+      rows.push([s.displayType, [s.displayTypeDescription || '', s.playlistZone || '', s.iabZone ? 'IAB zone: ' + s.iabZone : '', pos].filter(Boolean).join('\n')]);
     });
     return { title: 'Assigned slots', rows: rows };
   }

@@ -13,7 +13,7 @@ test('advertiser table: shares are whole numbers adding to 100, the total is the
   assert.ok(adv.all.every((a) => Number.isInteger(a.share)));
   assert.strictEqual(adv.all.reduce((n, a) => n + a.share, 0), 100);
   const r = DC.advertiserRows(adv, true)[0];
-  assert.deepStrictEqual([r.label, r.dsp], ['Blackmores', 'DV360']);
+  assert.deepStrictEqual([r.label, r.dsp], [adv.all[0].name, adv.all[0].dsp]);
   assert.strictEqual(r.revenue, DC.fmtMoney(adv.all[0].revenue));
   const summary = await get('/summary');
   assert.strictEqual(Math.round(DC.revenueTotal(adv.all)), Math.round(summary.earnedRevenue));

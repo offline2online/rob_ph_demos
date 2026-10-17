@@ -142,10 +142,16 @@
     if (has(row.floorCpm)) rows.push(['Floor CPM', fmtMoney(row.floorCpm, 2)]);
     rows.push(['Per slot per day', fmtMoney(row.perSlotPerDay, 2) + ' (total ' + fmtMoney(t.perDay, 0) + ' per day across ' + plural(t.advertiserSlots, 'advertiser slot') + ' on ' + plural(displaysOf(row), 'display') + ')']);
     if (has(row.averageAssumedViewsPerSlotPerDay) && has(row.advertiserSlotsSoldShare)) {
-      rows.push(['How it adds up', fmtMoney(row.effectiveCpm, 2) + ' CPM × ' + fmtNum(row.averageAssumedViewsPerSlotPerDay) + ' average assumed views ÷ 1,000 × ' +
-        fmtNum(row.advertiserSlotsSoldShare * 100) + '% of advertiser slots sold = ' + fmtMoney(row.perSlotPerDay, 2)]);
+      // The share is the settled (earned) VAC-d over the range as a share of slot capacity, not the Slot allocation "sold" figure
+      // (booked-ahead days are not settled), so it is labelled as what it is. Whole-number percentage, and the result is
+      // computed from the displayed factors so the line adds up as shown.
+      var cpm = Math.round(row.effectiveCpm * 100) / 100;
+      var views = Math.round(row.averageAssumedViewsPerSlotPerDay * 100) / 100;
+      var share = Math.round(row.advertiserSlotsSoldShare * 100);
+      rows.push(['How it adds up', fmtMoney(cpm, 2) + ' CPM × ' + fmtNum(views) + ' average assumed views ÷ 1,000 × ' +
+        share + '% of advertiser slot capacity earned (settled billing) = ' + fmtMoney(cpm * views / 1000 * share / 100, 2)]);
     }
-    var sec = { rows: rows, note: 'Per slot per day = Effective CPM × average assumed views per slot per day ÷ 1,000 × the share of advertiser slots sold.' };
+    var sec = { rows: rows, note: 'Per slot per day = Effective CPM × average assumed views per slot per day ÷ 1,000 × the share of advertiser slot capacity earned (settled billing).' };
     return cardPlus(row, meta, [sec], { omitConnected: false });
   }
 
@@ -444,7 +450,7 @@
         var none = r.effectiveCpm === null || r.effectiveCpm === undefined;
         var row = h('div', { class: 'sc-row', role: 'listitem' }, [
           h('div', { class: 'sc-label', text: r.dsp }),
-          h('div', { class: 'sc-track' }, [h('div', { class: 'sc-track-in' }, [h('div', { class: 'sc-bar sc-primary', style: 'width:' + (none ? 0 : 100 * r.effectiveCpm / max).toFixed(2) + '%' })])]),
+          h('div', { class: 'sc-track' }, [h('div', { class: 'sc-track-in' }, none ? [] : [h('div', { class: 'sc-bar sc-primary', style: 'width:' + (100 * r.effectiveCpm / max).toFixed(2) + '%' })])]),
           h('div', { class: 'sc-value', text: none ? 'No delivery' : fmtLabelMoney(r.effectiveCpm) + ' CPM' })
         ]);
         hoverable(row, function () { return yieldHover(r, d.dealType || state.dealType, filters); });

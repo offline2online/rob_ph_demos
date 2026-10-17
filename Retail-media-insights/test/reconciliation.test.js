@@ -241,3 +241,59 @@ test('PG pacing: delivered is settled VAC-d and the page filters do not change i
   assert.ok(all > settled);
   assert.ok(base.percent > 50 && base.percent < 150);
 });
+
+// ---- the advertiser view reconciles with the retailer view
+const { allowedDisplayTypeIds, scopeFilters } = require('../src/scope');
+const principalOf = (id) => ({ principalType: 'advertiser', principalId: id, scopes: ['insights:read'] });
+const asAdv = (name, id, q = '') => {
+  const route = require(`../src/routes/${name}`);
+  const params = new URLSearchParams(q);
+  const filters = scopeFilters(parseFilters(new URLSearchParams(`advertiserIds=${id}&${q}`), { today: TODAY }), principalOf(id), store);
+  return route.handler({ store, filters, params, principal: principalOf(id) });
+};
+const RANGE = `dateFrom=2026-09-12&dateTo=${TODAY}`;
+
+test('advertiser view: own spend = the retailer Advertisers revenue, in total and per display type', () => {
+  for (const id of ADVERTISERS) {
+    const mine = run('advertisers', `advertiserIds=${id}`).all.find((a) => a.advertiserId === id);
+    const delivery = asAdv('delivery', id, RANGE);
+    near(delivery.totals.spend, mine.revenue, 0.01 * 31, `${id} spend vs retailer revenue`);
+    for (const t of Object.keys(ctx.displayTypes)) {
+      const retailer = run('advertisers', `advertiserIds=${id}&displayTypeIds=${t}`).all.find((a) => a.advertiserId === id);
+      const view = asAdv('delivery', id, `${RANGE}&displayTypeIds=${t}`);
+      near(view.totals.spend, retailer ? retailer.revenue : 0, 0.01 * 31, `${id} on ${t}`);
+    }
+  }
+});
+
+test('advertiser view: deals-by-display-type spend + open auction spend = Delivery spend; Audience = earned views', () => {
+  for (const id of ADVERTISERS) {
+    const delivery = asAdv('delivery', id, RANGE);
+    const deals = asAdv('deals-by-display-type', id, RANGE);
+    const open = asAdv('delivery', id, `${RANGE}&dealId=open-auction`);
+    near(deals.totals.spend + open.totals.spend, delivery.totals.spend, 0.01 * 120, `${id} deals + open auction vs Delivery`);
+    let earnedViews = 0;
+    store.scanDelivery(scopeFilters(parseFilters(new URLSearchParams(`${RANGE}&advertiserIds=${id}`), { today: TODAY }), principalOf(id), store), (r) => { earnedViews += r.earnedViews; });
+    near(asAdv('audience', id, RANGE).assumedViews, earnedViews, 31, `${id} Audience vs earned views`);
+  }
+});
+
+test('advertiser view: every display type an advertiser is billed on is one it is allowed to see', () => {
+  for (const id of ADVERTISERS) {
+    const allowed = allowedDisplayTypeIds(store, id);
+    const billed = new Set(raw.billing.filter((b) => b.advertiserId === id).map((b) => b.displayTypeId));
+    for (const t of billed) assert.ok(allowed.includes(t), `${id} is billed on ${t}, which is outside ${allowed}`);
+  }
+  // README sample: Blackmores sees Window Portrait, Queue Screen and Dispensary Screen, not Endcap Shelf-edge.
+  assert.deepEqual(allowedDisplayTypeIds(store, 'adv-blackmores').sort(), ['dispensary', 'queue', 'window']);
+});
+
+test('advertiser view: booked-ahead (not yet settled) rows are not delivery', () => {
+  const booked = `dateFrom=2026-10-09&dateTo=${TODAY}`; // the last 3 days are not settled
+  for (const id of ADVERTISERS) {
+    const d = asAdv('delivery', id, booked);
+    assert.equal(d.totals.playsWon, 0, id); assert.equal(d.totals.spend, 0, id);
+    assert.equal(asAdv('audience', id, booked).assumedViews, 0, id);
+    assert.equal(asAdv('deals-by-display-type', id, booked).totals.playsWon, 0, id);
+  }
+});

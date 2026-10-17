@@ -24,7 +24,7 @@ test.before(async () => {
   });
   await new Promise((r) => server.listen(0, r));
   base = `http://127.0.0.1:${server.address().port}`;
-  browser = await chromium.launch();
+  browser = await chromium.launch(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {});
 });
 test.after(async () => { if (browser) await browser.close(); if (server) server.close(); });
 
@@ -83,8 +83,8 @@ for (const width of [1163, 390]) {
       const sold = /^(\d+)%/.exec(await page.textContent('[data-tile="sold"] .val'))[1];
       const fill = /(\d+)% fill/.exec(await page.textContent('.sc-row.sc-total'))[1];
       assert.equal(sold, fill);
-      assert.match(await page.textContent('[data-tile="sold"] .val'), /^\d+% sold — [\d,]+ sold · [\d,]+ available$/);
-      assert.equal(await page.$('#strip .sub'), null, 'no explanatory copy under the tiles');
+      assert.match(await page.textContent('[data-tile="sold"] .val'), /^\d+% sold$/);
+      assert.deepEqual(await page.$$eval('#strip .sub', (e) => e.map((x) => x.textContent)).then((t) => t.map((x) => /^[\d,]+ sold · [\d,]+ available$/.test(x))), [true], 'only Inventory sold has a detail line, on its own line beneath the value');
 
       // at least one amber Slot allocation row, and it is Queue Screen
       const amber = await page.$$eval('.sc-table tr[data-amber="true"] .sc-name', (r) => r.map((x) => x.textContent));

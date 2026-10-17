@@ -115,7 +115,7 @@ test('2: an oversize body is 413', () => withServer(async (port) => {
 function othersByBlock(me) {
   const m = new Map(); // `${date}#${dealKey}` -> Set of other advertisers with plays
   store.scanDelivery({ dateFrom: '2026-09-01', dateTo: '2026-10-11', storeIds: null, displayTypeIds: null, advertiserIds: null }, (r) => {
-    if (r.advertiserId === me || r.slots <= 0) return;
+    if (r.advertiserId === me || r.earnedSlots <= 0) return;
     const k = `${r.date}#${r.dealType === 'Open auction' ? 'open-auction' : r.dealId}`;
     (m.get(k) || m.set(k, new Set()).get(k)).add(r.advertiserId);
   });
@@ -154,7 +154,7 @@ test('3: for every advertiser, no delivery block or deal row lets you subtract o
     const allRows = [];
     store.scanDelivery({ dateFrom: '2026-09-12', dateTo: '2026-10-11', storeIds: null, displayTypeIds: null, advertiserIds: null }, (r) => allRows.push(r));
     for (const g of groups) for (const deal of g.deals) {
-      const winners = new Set(allRows.filter((r) => r.dealId === deal.id && r.displayTypeId === g.displayType.id && r.advertiserId !== me && r.slots > 0).map((r) => r.advertiserId));
+      const winners = new Set(allRows.filter((r) => r.dealId === deal.id && r.displayTypeId === g.displayType.id && r.advertiserId !== me && r.earnedSlots > 0).map((r) => r.advertiserId));
       if (winners.size >= 1 && winners.size < MIN_OTHER_BUYERS_FOR_WINNING_CPM) assert.ok(!('allPlays' in deal.share) && !('percent' in deal.share), `${me} ${deal.id}`);
       else if (winners.size === 0) assert.equal(deal.share.percent, 100);
     }

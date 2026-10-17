@@ -75,7 +75,9 @@ test('deal hover: description and only the advertiser’s own DSP deal ID', asyn
   const groups = (await mine('/deals-by-display-type')).groups;
   groups.forEach((g) => g.deals.forEach((d) => assert.strictEqual(d.dealIds.length, 1)));
   const t = AV.dealNameTooltip(groups[0].deals[0]);
-  assert.deepStrictEqual(t.rows.map((r) => r[0]), ['Description', 'DV360']);
+  assert.strictEqual(t.rows.length, 2);
+  assert.strictEqual(t.rows[0][0], 'Description');
+  assert.match(t.rows[1][0], /^Google DSP \(DV360\): PH-[A-Z0-9]{10}$/);
 });
 
 test('share hover: plays won, all plays, advertiser count — never names', async () => {

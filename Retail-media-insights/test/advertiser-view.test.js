@@ -28,10 +28,10 @@ const as = (id, path, st) => get(path, { authenticate: advertiser(id), st });
 const sum = (xs) => xs.reduce((a, b) => a + b, 0);
 const cents = (n) => Math.round(n * 100) / 100;
 
-/** What billing says for an advertiser, under the same scoping the server applies. */
+/** What billing says for an advertiser (settled rows only), under the same scoping the server applies. */
 function billing(id, q = {}) {
   const f = scopeFilters({ dateFrom: '2026-10-05', dateTo: '2026-10-11', storeIds: null, displayTypeIds: null, advertiserIds: [id], ...q }, { principalType: 'advertiser', principalId: id }, store);
-  const rows = []; store.scanDelivery(f, (r) => rows.push(r));
+  const rows = []; store.scanDelivery(f, (r) => rows.push({ ...r, revenue: r.earned, views: r.earnedViews, slots: r.earnedSlots }));
   return rows;
 }
 
@@ -97,7 +97,7 @@ test('delivery: day-on-day change, including the day before the range', async ()
   assert.equal(first.vsPreviousDay.playsWon.change, first.playsWon - plays('2026-10-04'));
   assert.equal(second.vsPreviousDay.playsWon.change, second.playsWon - first.playsWon);
   assert.equal(second.vsPreviousDay.spend.change, cents(second.spend - first.spend));
-  assert.equal(second.vsPreviousDay.playsWon.percent, Math.round(((second.playsWon - first.playsWon) / first.playsWon) * 100));
+  assert.equal(second.vsPreviousDay.playsWon.percent, Math.round(((second.playsWon - first.playsWon) / first.playsWon) * 100) + 0); // + 0: JSON has no -0
 });
 
 test('delivery: the Deal filter narrows the lines and the blocks; an unknown or foreign deal is 400', async () => {
@@ -220,7 +220,7 @@ test('deals-by-display-type: groups in shopper-journey order, rows reconcile to 
         assert.ok(d.share.advertisersOnDeal >= 1);
         assert.ok(d.dealType !== 'Open auction');
         for (const id of d.dealIds) assert.equal(id.dsp, ctx.advertisers[me].dsp, 'only the advertiser\'s own DSP deal ID');
-        if (d.assumedViews > 0) assert.ok(Math.abs(d.effectiveCpm - calc.effectiveCpm(d.spend, d.assumedViews)) < 0.01);
+        if (d.assumedViews > 0) assert.ok(Math.abs(d.effectiveCpm - calc.effectiveCpm(d.spend, d.assumedViews)) < 0.01 + 5 / d.assumedViews, 'within the rounding of spend (cents) and views');
       }
     }
   }
@@ -228,7 +228,7 @@ test('deals-by-display-type: groups in shopper-journey order, rows reconcile to 
 
 test('deals-by-display-type: a deal\'s share is the advertiser\'s plays of all plays on that deal and display type', async () => {
   const { body } = await as('adv-nova', `/deals-by-display-type?${Q}`);
-  const all = []; store.scanDelivery({ dateFrom: '2026-10-05', dateTo: '2026-10-11', storeIds: null, displayTypeIds: null, advertiserIds: null }, (r) => all.push(r));
+  const all = []; store.scanDelivery({ dateFrom: '2026-10-05', dateTo: '2026-10-11', storeIds: null, displayTypeIds: null, advertiserIds: null }, (r) => all.push({ ...r, slots: r.earnedSlots }));
   for (const g of body.groups) for (const d of g.deals) {
     if (!('allPlays' in d.share)) continue; // omitted when exactly one other buyer won there
     assert.equal(d.share.allPlays, sum(all.filter((r) => r.dealId === d.id && r.displayTypeId === g.displayType.id).map((r) => r.slots)), `${d.id} ${g.displayType.id}`);

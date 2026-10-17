@@ -590,7 +590,7 @@ function buildAggregates(raw, ctx) {
       row = {
         date: b.date, displayTypeId: b.displayTypeId, storeId: b.storeId, dealId: b.dealId,
         dealType: (ctx.deals[b.dealId] || {}).dealType || 'Open auction',
-        dsp: b.dsp, advertiserId: b.advertiserId, revenue: 0, earned: 0, estimated: 0, views: 0, earnedViews: 0, slots: 0,
+        dsp: b.dsp, advertiserId: b.advertiserId, revenue: 0, earned: 0, estimated: 0, views: 0, earnedViews: 0, slots: 0, earnedSlots: 0,
       };
       delivery.set(key, row);
     }
@@ -599,6 +599,7 @@ function buildAggregates(raw, ctx) {
     row.views += b.views;
     if (b.settled) row.earnedViews += b.views;
     row.slots += b.slots;
+    if (b.settled) row.earnedSlots += b.slots;
   }
 
   const inventory = new Map();
@@ -763,15 +764,15 @@ const ADVERTISER_META = {
   'adv-nova': { name: 'Nova', dsp: 'Amazon DSP' },
 };
 
-// Campaign submissions, as day offsets back from endDate (start, end; null = still live).
+// Campaign submissions (displayTypeIds: where an open auction campaign runs), as day offsets back from endDate (start, end; null = still live).
 // Blackmores is Personalised (a Daypart entry is scheduling, not a variable and is dropped);
 // Acme is Localised; Nova has only default targeting and no scheduling.
 const CAMPAIGNS = [
-  { id: 'c1', advertiserId: 'adv-blackmores', startAgo: 80, endAgo: null, variables: ['Visitor Segments', 'State', 'Daypart'], scheduled: true, schedules: 2, targetedVersions: 3 },
-  { id: 'c2', advertiserId: 'adv-blackmores', startAgo: 30, endAgo: null, variables: ['State'], scheduled: false, targetedVersions: 1 },
-  { id: 'c3', advertiserId: 'adv-acme', startAgo: 60, endAgo: null, variables: ['State', 'Postcode', 'Suburb'], scheduled: true, schedules: 1, targetedVersions: 2 },
-  { id: 'c4', advertiserId: 'adv-acme', startAgo: 20, endAgo: null, variables: [], scheduled: false, targetedVersions: 0 },
-  { id: 'c5', advertiserId: 'adv-nova', startAgo: 45, endAgo: null, variables: [], scheduled: false, targetedVersions: 0 },
+  { id: 'c1', advertiserId: 'adv-blackmores', startAgo: 80, endAgo: null, displayTypeIds: ['queue'], variables: ['Visitor Segments', 'State', 'Daypart'], scheduled: true, schedules: 2, targetedVersions: 3 },
+  { id: 'c2', advertiserId: 'adv-blackmores', startAgo: 30, endAgo: null, displayTypeIds: ['queue'], variables: ['State'], scheduled: false, targetedVersions: 1 },
+  { id: 'c3', advertiserId: 'adv-acme', startAgo: 60, endAgo: null, displayTypeIds: ['endcap', 'queue'], variables: ['State', 'Postcode', 'Suburb'], scheduled: true, schedules: 1, targetedVersions: 2 },
+  { id: 'c4', advertiserId: 'adv-acme', startAgo: 20, endAgo: null, displayTypeIds: ['queue'], variables: [], scheduled: false, targetedVersions: 0 },
+  { id: 'c5', advertiserId: 'adv-nova', startAgo: 45, endAgo: null, displayTypeIds: ['window', 'dispensary'], variables: [], scheduled: false, targetedVersions: 0 },
 ];
 
 function generateTestRetailer({ days = 90, endDate = '2026-10-11', stores = 5, seed = 7, settledThroughDaysAgo = 3 } = {}) {
@@ -795,8 +796,10 @@ function generateTestRetailer({ days = 90, endDate = '2026-10-11', stores = 5, s
   // Who owns each advertiser slot position: the deal that assigns it, else the open auction.
   const ownerOf = (typeId, position) => (Object.entries(DEAL_CATALOG).find(([, d]) => d.slots.some((x) => x.displayTypeId === typeId && x.position === position)) || [OPEN_AUCTION_DEAL])[0];
   // Billed buyers of a deal (its buyers list, each on its own DSP seat); the open auction is open to everyone.
-  const buyersOf = (dealId) => (dealId === OPEN_AUCTION_DEAL
-    ? ADVERTISERS.map((advertiserId) => ({ advertiserId, dsp: ADVERTISER_META[advertiserId].dsp }))
+  // The open auction bills an advertiser only on the display types its campaigns target.
+  const buyersOf = (dealId, typeId) => (dealId === OPEN_AUCTION_DEAL
+    ? ADVERTISERS.filter((advertiserId) => CAMPAIGNS.some((c) => c.advertiserId === advertiserId && (c.displayTypeIds || []).includes(typeId)))
+      .map((advertiserId) => ({ advertiserId, dsp: ADVERTISER_META[advertiserId].dsp }))
     : DEAL_CATALOG[dealId].buyers);
   // Cleared price: fixed deals bill their CPM; auctions clear above their floor (strictly, so rounding never lands below it).
   const clearedCpm = (dealId, type) => {
@@ -833,7 +836,7 @@ function generateTestRetailer({ days = 90, endDate = '2026-10-11', stores = 5, s
             const sold = Math.round((capacity - offline) * sellThrough(typeId, storeIndex, d, rand()));
             totals.sold += sold; totals.offline += offline; totals.unsold += capacity - offline - sold;
             const dealId = ownerOf(typeId, position);
-            const buyers = buyersOf(dealId);
+            const buyers = buyersOf(dealId, typeId);
             const weights = buyers.map(() => 0.5 + rand());
             const weightSum = weights.reduce((a, b) => a + b, 0);
             let left = sold;
@@ -854,7 +857,7 @@ function generateTestRetailer({ days = 90, endDate = '2026-10-11', stores = 5, s
         for (const [key, slots] of soldBy) {
           if (slots <= 0) continue;
           const [dealId, advertiserId] = key.split('|');
-          const buyer = buyersOf(dealId).find((b) => b.advertiserId === advertiserId);
+          const buyer = buyersOf(dealId, typeId).find((b) => b.advertiserId === advertiserId);
           const views = Math.round(slots * viewsPerPlay); // VAC-d views are whole numbers
           billing.push({
             date, storeId, displayTypeId: typeId, dealId, dsp: buyer.dsp, advertiserId,
@@ -1122,7 +1125,7 @@ module.exports = {
 const { eachDay } = require('../dealing');
 const { ownAdvertiser } = require('../advertiser-view');
 
-// Advertiser Audience: assumed views (VAC-d) delivered to this advertiser, with a daily trend. Days are
+// Advertiser Audience: settled (earned) assumed views (VAC-d) delivered to this advertiser, with a daily trend. Days are
 // rounded first and the total is their sum, so the trend always adds to the headline.
 module.exports = {
   path: '/audience',
@@ -1130,7 +1133,7 @@ module.exports = {
   handler({ store, filters }) {
     ownAdvertiser(filters);
     const byDay = new Map();
-    store.scanDelivery(filters, (r) => byDay.set(r.date, (byDay.get(r.date) || 0) + r.views));
+    store.scanDelivery(filters, (r) => byDay.set(r.date, (byDay.get(r.date) || 0) + r.earnedViews));
     const trend = eachDay(filters.dateFrom, filters.dateTo).map((date) => ({ date, assumedViews: Math.round(byDay.get(date) || 0) }));
     return { assumedViews: trend.reduce((s, x) => s + x.assumedViews, 0), trend };
   },
@@ -1146,7 +1149,7 @@ const { ownAdvertiser, isOpenAuction, dealsInScope, cents } = require('../advert
 // Advertiser "Your deals by display type": one group per display type the advertiser's deals are on (shopper-journey
 // order), one row per deal beneath it. Open auction plays are not on a deal and are not included. A deal row's Share is
 // the advertiser's plays won of all plays on that deal there (other buyers only as a count, never named); a group's
-// Share is its share of the advertiser's deal spend (whole numbers adding to 100). Parts are rounded first.
+// Share is its share of the advertiser's deal spend (whole numbers adding to 100). Parts are rounded first. Settled (earned) rows only, like every retailer figure.
 module.exports = {
   path: '/deals-by-display-type',
   advertiserAccess: true,
@@ -1156,10 +1159,10 @@ module.exports = {
     store.scanDelivery({ ...filters, advertiserIds: null }, (r) => {
       if (isOpenAuction(r)) return;
       const k = `${r.dealId}#${r.displayTypeId}`;
-      all.set(k, (all.get(k) || 0) + r.slots);
-      if (r.advertiserId !== me) { if (r.slots > 0) (others.get(k) || others.set(k, new Set()).get(k)).add(r.advertiserId); return; }
+      all.set(k, (all.get(k) || 0) + r.earnedSlots);
+      if (r.advertiserId !== me) { if (r.earnedSlots > 0) (others.get(k) || others.set(k, new Set()).get(k)).add(r.advertiserId); return; }
       const m = mine.get(k) || mine.set(k, { plays: 0, views: 0, rev: 0 }).get(k);
-      m.plays += r.slots; m.views += r.views; m.rev += r.revenue;
+      m.plays += r.earnedSlots; m.views += r.earnedViews; m.rev += r.earned;
       ownRows.push(r);
     });
     const deals = dealsInScope(store, me, ownRows);
@@ -1267,6 +1270,7 @@ module.exports = {
       const slots = assigned.map((s) => ({
         displayTypeId: s.displayTypeId, displayType: (types2[s.displayTypeId] || {}).name || s.displayTypeId,
         playlist: s.playlist, zone: s.zone, playlistZone: `${s.playlist} · ${s.zone}`,
+        displayTypeDescription: (types2[s.displayTypeId] || {}).description || null,
         iabZone: (types2[s.displayTypeId] || {}).zone || null,
         advertiserSlot: s.position, loopSlot: s.loopSlot, label: `Advertiser slot ${s.position} (loop slot ${s.loopSlot})`,
         playsPerWindow: s.playsPerWindow,
@@ -1325,7 +1329,8 @@ module.exports = {
   handler({ store, filters, params }) {
     const me = ownAdvertiser(filters);
     const rows = [];
-    store.scanDelivery({ ...filters, dateFrom: addDays(filters.dateFrom, -1), advertiserIds: null }, (r) => rows.push(r));
+    // Settled (earned) rows only, like every retailer figure: booked-ahead plays are not delivery yet.
+    store.scanDelivery({ ...filters, dateFrom: addDays(filters.dateFrom, -1), advertiserIds: null }, (r) => { if (r.earnedSlots > 0 || r.earned > 0) rows.push(r); });
     const mine = rows.filter((r) => r.advertiserId === me);
 
     const deals = dealsInScope(store, me, mine);
@@ -1349,12 +1354,12 @@ module.exports = {
     for (const r of rows) {
       const key = keyOf(r);
       if (key === OPEN_AUCTION && !openTypes.has(r.displayTypeId)) continue;
-      if (r.slots <= 0 && r.revenue <= 0) continue;
+      if (r.earnedSlots <= 0 && r.earned <= 0) continue;
       const day = perDay.get(r.date) || perDay.set(r.date, new Map()).get(r.date);
       const a = day.get(key) || day.set(key, { all: 0, rev: 0, views: 0, high: 0, others: new Set(), own: { plays: 0, rev: 0, views: 0 } }).get(key);
-      a.all += r.slots; a.rev += r.revenue; a.views += r.views;
-      if (r.views > 0) a.high = Math.max(a.high, calc.effectiveCpm(r.revenue, r.views));
-      if (r.advertiserId === me) { a.own.plays += r.slots; a.own.rev += r.revenue; a.own.views += r.views; } else if (r.slots > 0) a.others.add(r.advertiserId);
+      a.all += r.earnedSlots; a.rev += r.earned; a.views += r.earnedViews;
+      if (r.earnedViews > 0) a.high = Math.max(a.high, calc.effectiveCpm(r.earned, r.earnedViews));
+      if (r.advertiserId === me) { a.own.plays += r.earnedSlots; a.own.rev += r.earned; a.own.views += r.earnedViews; } else if (r.earnedSlots > 0) a.others.add(r.advertiserId);
     }
 
     const block = ({ key, deal }, a) => {
@@ -1388,7 +1393,7 @@ module.exports = {
     for (const r of mine) {
       if (!wanted(keyOf(r))) continue;
       const o = own.get(r.date) || own.set(r.date, { plays: 0, spend: 0 }).get(r.date);
-      o.plays += r.slots; o.spend += r.revenue;
+      o.plays += r.earnedSlots; o.spend += r.earned;
     }
     const daily = (date) => { const o = own.get(date); return { playsWon: o ? o.plays : 0, spend: o ? cents(o.spend) : 0 }; };
 

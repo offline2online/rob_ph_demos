@@ -143,7 +143,7 @@
   function dealNameTooltip(deal) {
     var rows = [];
     if (deal.description) rows.push(['Description', deal.description]);
-    (deal.dealIds || []).forEach(function (d) { rows.push([d.dsp, d.dealId]); });
+    (deal.dealIds || []).forEach(function (d) { rows.push([(d.dspLabel || d.dsp) + ': ' + d.dealId, '']); });
     return { title: deal.name, rows: rows };
   }
   function slotsLabel(deal) { return deal.slots && deal.slots.count ? plural(deal.slots.count, 'slot') : 'Not assigned'; }

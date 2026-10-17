@@ -50,8 +50,8 @@ test('deal type filter narrows revenue', async () => {
 test('deal name hover: description and per-DSP deal IDs from {dsp, dspLabel, dealId}', async () => {
   const deal = (await get('/deals')).rows.find((d) => d.dealIds.length === 2);
   const t = RD.nameTooltip(deal);
-  assert.deepStrictEqual(t.rows.map((r) => r[0]), ['Description'].concat(deal.dealIds.map((d) => d.dsp)));
-  assert.strictEqual(t.rows[1][1], deal.dealIds[0].dealId);
+  assert.deepStrictEqual(t.rows.map((r) => r[0]), ['Description'].concat(deal.dealIds.map((d) => `${d.dspLabel}: ${d.dealId}`)));
+  assert.match(t.rows[1][0], /^(Google DSP \(DV360\)|The Trade Desk|Amazon Ads DSP): PH-[A-Z0-9]{10}$/);
 });
 
 test('slots label and Assigned slots hover', async () => {
@@ -62,6 +62,8 @@ test('slots label and Assigned slots hover', async () => {
   const t = RD.slotsTooltip(pg);
   assert.strictEqual(t.title, 'Assigned slots');
   assert.match(t.rows[0][1], /IAB zone: Entrance & out of category/);
+  assert.strictEqual(t.rows[0][1].split('\n')[0], pg.slots[0].displayTypeDescription, 'the display type description sits under its name');
+  assert.ok(pg.slots.every((s) => s.displayTypeDescription));
   assert.match(t.rows[0][1], /Advertiser slot 1 \(slot 2 of the loop\) · 12 plays per window/);
 });
 

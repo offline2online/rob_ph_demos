@@ -35,6 +35,7 @@ module.exports = {
       const slots = assigned.map((s) => ({
         displayTypeId: s.displayTypeId, displayType: (types2[s.displayTypeId] || {}).name || s.displayTypeId,
         playlist: s.playlist, zone: s.zone, playlistZone: `${s.playlist} · ${s.zone}`,
+        displayTypeDescription: (types2[s.displayTypeId] || {}).description || null,
         iabZone: (types2[s.displayTypeId] || {}).zone || null,
         advertiserSlot: s.position, loopSlot: s.loopSlot, label: `Advertiser slot ${s.position} (loop slot ${s.loopSlot})`,
         playsPerWindow: s.playsPerWindow,

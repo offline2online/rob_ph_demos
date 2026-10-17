@@ -22,7 +22,8 @@ module.exports = {
   handler({ store, filters, params }) {
     const me = ownAdvertiser(filters);
     const rows = [];
-    store.scanDelivery({ ...filters, dateFrom: addDays(filters.dateFrom, -1), advertiserIds: null }, (r) => rows.push(r));
+    // Settled (earned) rows only, like every retailer figure: booked-ahead plays are not delivery yet.
+    store.scanDelivery({ ...filters, dateFrom: addDays(filters.dateFrom, -1), advertiserIds: null }, (r) => { if (r.earnedSlots > 0 || r.earned > 0) rows.push(r); });
     const mine = rows.filter((r) => r.advertiserId === me);
 
     const deals = dealsInScope(store, me, mine);
@@ -46,12 +47,12 @@ module.exports = {
     for (const r of rows) {
       const key = keyOf(r);
       if (key === OPEN_AUCTION && !openTypes.has(r.displayTypeId)) continue;
-      if (r.slots <= 0 && r.revenue <= 0) continue;
+      if (r.earnedSlots <= 0 && r.earned <= 0) continue;
       const day = perDay.get(r.date) || perDay.set(r.date, new Map()).get(r.date);
       const a = day.get(key) || day.set(key, { all: 0, rev: 0, views: 0, high: 0, others: new Set(), own: { plays: 0, rev: 0, views: 0 } }).get(key);
-      a.all += r.slots; a.rev += r.revenue; a.views += r.views;
-      if (r.views > 0) a.high = Math.max(a.high, calc.effectiveCpm(r.revenue, r.views));
-      if (r.advertiserId === me) { a.own.plays += r.slots; a.own.rev += r.revenue; a.own.views += r.views; } else if (r.slots > 0) a.others.add(r.advertiserId);
+      a.all += r.earnedSlots; a.rev += r.earned; a.views += r.earnedViews;
+      if (r.earnedViews > 0) a.high = Math.max(a.high, calc.effectiveCpm(r.earned, r.earnedViews));
+      if (r.advertiserId === me) { a.own.plays += r.earnedSlots; a.own.rev += r.earned; a.own.views += r.earnedViews; } else if (r.earnedSlots > 0) a.others.add(r.advertiserId);
     }
 
     const block = ({ key, deal }, a) => {
@@ -85,7 +86,7 @@ module.exports = {
     for (const r of mine) {
       if (!wanted(keyOf(r))) continue;
       const o = own.get(r.date) || own.set(r.date, { plays: 0, spend: 0 }).get(r.date);
-      o.plays += r.slots; o.spend += r.revenue;
+      o.plays += r.earnedSlots; o.spend += r.earned;
     }
     const daily = (date) => { const o = own.get(date); return { playsWon: o ? o.plays : 0, spend: o ? cents(o.spend) : 0 }; };
 

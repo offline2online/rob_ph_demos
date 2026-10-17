@@ -157,7 +157,7 @@
       strip.appendChild(tile('earned', 'Earned revenue', SUMMARY_TIPS.earned, { raw: d.earnedRevenue, text: fmtMoney(d.earnedRevenue) }));
       strip.appendChild(tile('estimated', 'Estimated revenue', SUMMARY_TIPS.estimated, { raw: d.estimatedRevenue, text: fmtMoney(d.estimatedRevenue) }));
       var bar = h('div', { class: 'bar' }, [h('i', { style: 'width:' + Math.min(100, s.percent) + '%' })]);
-      strip.appendChild(tile('sold', 'Inventory sold', SUMMARY_TIPS.sold, { raw: s.percent, text: s.percent + '%', after: ' sold — ' + fmtInt(s.slotsSold) + ' sold · ' + fmtInt(s.slotsAvailable) + ' available' }, null, bar));
+      strip.appendChild(tile('sold', 'Inventory sold', SUMMARY_TIPS.sold, { raw: s.percent, text: s.percent + '% sold' }, fmtInt(s.slotsSold) + ' sold · ' + fmtInt(s.slotsAvailable) + ' available', bar));
     }, function () {
       if (my !== summarySeq) return;
       clear(strip);

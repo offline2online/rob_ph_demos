@@ -8,7 +8,7 @@ const { ownAdvertiser, isOpenAuction, dealsInScope, cents } = require('../advert
 // Advertiser "Your deals by display type": one group per display type the advertiser's deals are on (shopper-journey
 // order), one row per deal beneath it. Open auction plays are not on a deal and are not included. A deal row's Share is
 // the advertiser's plays won of all plays on that deal there (other buyers only as a count, never named); a group's
-// Share is its share of the advertiser's deal spend (whole numbers adding to 100). Parts are rounded first.
+// Share is its share of the advertiser's deal spend (whole numbers adding to 100). Parts are rounded first. Settled (earned) rows only, like every retailer figure.
 module.exports = {
   path: '/deals-by-display-type',
   advertiserAccess: true,
@@ -18,10 +18,10 @@ module.exports = {
     store.scanDelivery({ ...filters, advertiserIds: null }, (r) => {
       if (isOpenAuction(r)) return;
       const k = `${r.dealId}#${r.displayTypeId}`;
-      all.set(k, (all.get(k) || 0) + r.slots);
-      if (r.advertiserId !== me) { if (r.slots > 0) (others.get(k) || others.set(k, new Set()).get(k)).add(r.advertiserId); return; }
+      all.set(k, (all.get(k) || 0) + r.earnedSlots);
+      if (r.advertiserId !== me) { if (r.earnedSlots > 0) (others.get(k) || others.set(k, new Set()).get(k)).add(r.advertiserId); return; }
       const m = mine.get(k) || mine.set(k, { plays: 0, views: 0, rev: 0 }).get(k);
-      m.plays += r.slots; m.views += r.views; m.rev += r.revenue;
+      m.plays += r.earnedSlots; m.views += r.earnedViews; m.rev += r.earned;
       ownRows.push(r);
     });
     const deals = dealsInScope(store, me, ownRows);

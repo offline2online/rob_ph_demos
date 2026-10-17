@@ -38,7 +38,7 @@ for (let d = 0; d < DAYS; d += 1) {
     const views = revenueUsd * 50;
     delivery.push({ date, displayTypeId: pick(types), storeId: pick(stores), dealId, dealType: deals[dealId].dealType,
       dsp: pick(DSPS), advertiserId: pick(ADVERTISERS), revenue: revenueUsd, earned: settled ? revenueUsd : 0, estimated: settled ? 0 : revenueUsd,
-      views, earnedViews: settled ? views : 0, slots: 3 });
+      views, earnedViews: settled ? views : 0, slots: 3, earnedSlots: settled ? 3 : 0 });
   }
   for (const storeId of stores) for (const displayTypeId of types) {
     inventory.push({ date, storeId, displayTypeId, sold: 40, unsold: 20, offline: 2, outsideHours: 0, unsoldViews: 2000, lostRevenue: 5 });
