@@ -27,7 +27,7 @@ test('deals: one row per named deal in standard order, Open auction excluded', a
   const d = body.rows[0];
   assert.ok(d.name && d.description && d.revenue > 0);
   assert.deepEqual(d.dealIds, [{ dsp: 'DV360', dspLabel: 'Google DSP (DV360)', dealId: ctx.dealCatalog.d1.dealIds.DV360 }]);
-  assert.ok(d.dealIds.every((x) => /^PH-[A-Z0-9]{10}$/.test(x.dealId)));
+  assert.ok(d.dealIds.every((x) => /^PH-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{10}$/.test(x.dealId)));
   assert.equal(d.advertisers.length, 1, 'Programmatic guaranteed has exactly one buyer');
   assert.equal(d.name, 'Immune — winter launch');
   assert.equal(d.slots[0].label, 'Advertiser slot 1 (loop slot 1)');
@@ -103,7 +103,7 @@ test('deals: the nine named deals — fill, pacing, CPM, buyers and deal IDs fol
   // One deal ID per DSP with an invited buyer, PH- plus 10 characters.
   for (const r of body.rows) {
     assert.deepEqual(r.dealIds.map((x) => x.dsp), [...new Set(r.advertisers.map((a) => a.dsp))].sort((x, y) => ['DV360', 'The Trade Desk', 'Amazon DSP'].indexOf(x) - ['DV360', 'The Trade Desk', 'Amazon DSP'].indexOf(y)), r.name);
-    assert.ok(r.dealIds.every((x) => /^PH-[A-Z0-9]{10}$/.test(x.dealId)));
+    assert.ok(r.dealIds.every((x) => /^PH-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{10}$/.test(x.dealId)));
   }
   assert.deepEqual(by['Store-wide wellness'].slots.map((s) => `${s.displayTypeId}#${s.advertiserSlot}`), ['dispensary#5', 'endcap#5']);
 });

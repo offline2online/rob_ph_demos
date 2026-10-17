@@ -60,8 +60,11 @@ test('deals: PG deals have flights and buffers; the rest are fixed or floor pric
   assert.equal(d.d4.description, 'First look for Kenvue on Dispensary Screen slots at a fixed CPM.');
   for (const deal of Object.values(d).filter((x) => x.dealType !== 'Open auction')) {
     assert.deepEqual(Object.keys(deal.dealIds).sort(), [...new Set(deal.buyers.map((b) => b.dsp))].sort(), deal.name);
-    for (const id of Object.values(deal.dealIds)) assert.match(id, /^PH-[A-Z0-9]{10}$/);
+    for (const id of Object.values(deal.dealIds)) assert.match(id, /^PH-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{10}$/);
   }
+  const allDealIds = Object.values(d).flatMap((deal) => Object.values(deal.dealIds || {}));
+  assert.ok(allDealIds.length > 0);
+  assert.equal(new Set(allDealIds).size, allDealIds.length, 'deal IDs are unique across all deals and DSPs');
   // Only buyers on a deal are billed on its assigned positions; Blackmores' campaigns target only Window, Dispensary and Queue.
   for (const b of raw.billing) {
     if (b.reservation || ctx.dealCatalog[b.dealId].dealType === 'Open auction') continue;

@@ -992,10 +992,18 @@ const OPEN_FILL = { window: 0.82, queue: 0.82, dispensary: 0.05, endcap: 0.32 };
 const FLIGHTS = { d1: { start: '2026-09-15', end: '2026-11-15', pacing: 0.93 }, d2: { start: '2026-08-01', end: '2026-12-31', pacing: 1.01 } };
 const RESERVE_UNTIL = '2026-12-31';
 
-// One deal ID per DSP with an invited buyer: PH- plus 10 characters (A-Z, 0-9), minted deterministically.
+// One deal ID per DSP with an invited buyer: PH- plus 10 characters, minted deterministically from the unambiguous
+// alphabet DSP Integration uses (DEAL_ID_ALPHABET in BuyersListRepo.ts: never 0, 1, I, L or O) and unique across all deals.
+const DEAL_ID_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
+const mintedDealIds = new Set();
+function mintDealId(rand) {
+  for (;;) {
+    const id = `PH-${Array.from({ length: 10 }, () => DEAL_ID_ALPHABET[Math.floor(rand() * DEAL_ID_ALPHABET.length)]).join('')}`;
+    if (!mintedDealIds.has(id)) { mintedDealIds.add(id); return id; }
+  }
+}
 function mintDealIds(dsps, rand) {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ0123456789';
-  return Object.fromEntries(dsps.map((dsp) => [dsp, `PH-${Array.from({ length: 10 }, () => chars[Math.floor(rand() * chars.length)]).join('')}`]));
+  return Object.fromEntries(dsps.map((dsp) => [dsp, mintDealId(rand)]));
 }
 const mintRand = rng(2026);
 const DEAL_CATALOG = Object.fromEntries(DEAL_SPECS.map(([id, name, dealType, cpm, buyers, slots, , description], i) => {
