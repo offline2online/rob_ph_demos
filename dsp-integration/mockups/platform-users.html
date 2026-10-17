@@ -69,6 +69,18 @@ input:focus,select:focus{outline:0;border-color:var(--primary);box-shadow:0 0 0 
 .toast.show{display:block}
 .blockerr{display:none;margin-bottom:8px;padding:8px 12px;border-radius:6px;background:#fff2f0;border:1px solid #ffccc7;color:#a8071a}
 .blockerr.show{display:block}
+.th-filter{position:relative}
+.fbtn{font:inherit;display:inline-flex;align-items:center;margin-left:4px;padding:0 2px;border:0;background:none;color:var(--muted);cursor:pointer;border-radius:4px;vertical-align:middle}
+.fbtn:hover,.fbtn.on{color:var(--primary)}
+.fbtn.on{background:var(--tint)}
+.fbtn .material-symbols-outlined{font-size:18px}
+.fpanel{display:none;position:absolute;left:0;top:100%;margin-top:4px;width:280px;padding:12px;background:#fff;border:1px solid var(--divider);border-radius:8px;box-shadow:0 6px 16px rgba(0,0,0,.12);z-index:6;font-weight:400}
+.fpanel.open{display:block}
+.fpanel .ftitle{font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin:0 0 6px}
+.fpanel label.chk{display:flex;align-items:center;gap:8px;margin:0 0 4px;cursor:pointer}
+.fpanel .fsec+.fsec{margin-top:12px;padding-top:12px;border-top:1px solid var(--divider)}
+.fpanel .fact{display:flex;justify-content:space-between;margin-top:12px}
+.fnone{padding:24px 16px;text-align:center;color:var(--muted)}
 @media(max-width:700px){.snav{display:none}}
 </style>
 </head>
@@ -84,14 +96,14 @@ input:focus,select:focus{outline:0;border-color:var(--primary);box-shadow:0 0 0 
     <div class="rule"></div>
 
     <div class="bar">
-      <div><b id="count">0</b> Users</div>
+      <div><b id="count">0</b> <span id="countOf">Users</span></div>
       <button class="btn primary" id="addBtn"><span class="material-symbols-outlined">add</span>Add New Platform User</button>
     </div>
     <div class="toast" id="toast" role="status"></div>
     <div class="blockerr" id="blockerr" role="alert"></div>
 
     <table>
-      <thead><tr><th>First name</th><th>Last name</th><th>Email address</th><th>Role</th><th>Last login</th><th></th></tr></thead>
+      <thead><tr><th>First name</th><th>Last name</th><th>Email address</th><th class="th-filter">Role<button type="button" class="fbtn" id="roleFilterBtn" aria-haspopup="true" aria-expanded="false" aria-label="Filter by role or advertiser"><span class="material-symbols-outlined">filter_alt</span></button><div class="fpanel" id="roleFilter" role="dialog" aria-label="Filter by role or advertiser"><div class="fsec"><p class="ftitle">Role</p><label class="chk"><input type="checkbox" name="frole" value="Admin"> Admin</label><label class="chk"><input type="checkbox" name="frole" value="Marketing"> Marketing</label><label class="chk"><input type="checkbox" name="frole" value="Help Desk"> Help Desk</label><label class="chk"><input type="checkbox" name="frole" value="Advertiser"> Advertiser</label></div><div class="fsec"><p class="ftitle"><label for="fadv" style="margin:0">Advertiser</label></p><input type="text" id="fadv" list="fadvList" placeholder="Search or pick an advertiser" autocomplete="off"><datalist id="fadvList"></datalist><div class="sub" style="margin-top:4px">Shows the Advertiser users for matching advertisers. Leave empty to include every advertiser.</div></div><div class="fact"><button type="button" class="btn text" id="fclear">Clear filters</button><button type="button" class="btn primary" id="fdone">Done</button></div></div></th><th>Last login</th><th></th></tr></thead>
       <tbody id="rows"></tbody>
     </table>
   </main>
@@ -160,9 +172,40 @@ function loadAll(){
   return Promise.all([call("GET","/users"),call("GET","/advertisers")]).then(function(r){users=r[0].items;advertisers=r[1].items;render()});
 }
 function when(ts){if(!ts)return"";var d=new Date(ts);return isNaN(d)?"":d.toLocaleString()}
+/* Role column filter: tick roles and/or search an advertiser (name, matched as you type). Both narrow the list together. */
+var fRoles=[],fAdv="";
+function matches(u){
+  if(fRoles.length&&fRoles.indexOf(u.role)<0)return false;
+  if(fAdv){if(u.role!=="Advertiser")return false;var n=(u.advertiserName||u.advertiserId||"").toLowerCase();if(n.indexOf(fAdv.toLowerCase())<0)return false}
+  return true;
+}
+function syncFilterUi(){
+  var on=fRoles.length>0||fAdv!=="";
+  $("roleFilterBtn").classList.toggle("on",on);
+  $("roleFilterBtn").setAttribute("aria-label",on?"Filter by role or advertiser (active)":"Filter by role or advertiser");
+  $("fadvList").innerHTML=advertisers.map(function(a){return'<option value="'+esc(a.name)+'">'}).join("");
+}
+function applyFilter(){
+  fRoles=[].slice.call(document.querySelectorAll('input[name=frole]:checked')).map(function(c){return c.value});
+  fAdv=$("fadv").value.trim();
+  render();
+}
+function setFilterOpen(o){$("roleFilter").classList.toggle("open",o);$("roleFilterBtn").setAttribute("aria-expanded",o?"true":"false")}
+$("roleFilterBtn").onclick=function(e){e.stopPropagation();setFilterOpen(!$("roleFilter").classList.contains("open"))};
+$("roleFilter").onclick=function(e){e.stopPropagation()};
+$("fdone").onclick=function(){setFilterOpen(false);$("roleFilterBtn").focus()};
+$("fclear").onclick=function(){document.querySelectorAll('input[name=frole]').forEach(function(c){c.checked=false});$("fadv").value="";applyFilter()};
+document.querySelectorAll('input[name=frole]').forEach(function(c){c.onchange=applyFilter});
+$("fadv").oninput=applyFilter;
+document.addEventListener("click",function(){setFilterOpen(false)});
+document.addEventListener("keydown",function(e){if(e.key==="Escape"&&$("roleFilter").classList.contains("open")){setFilterOpen(false);$("roleFilterBtn").focus()}});
 function render(){
-  $("count").textContent=users.length;
-  $("rows").innerHTML=users.map(function(u,i){
+  syncFilterUi();
+  var shown=users.map(function(u,i){return{u:u,i:i}}).filter(function(x){return matches(x.u)});
+  $("count").textContent=shown.length===users.length?users.length:shown.length+" of "+users.length;
+  $("countOf").textContent=users.length===1&&shown.length===1?"User":"Users";
+  if(users.length&&!shown.length){$("rows").innerHTML='<tr><td colspan="6" class="fnone" style="cursor:default">No users match these filters.</td></tr>';return}
+  $("rows").innerHTML=shown.map(function(x){var u=x.u,i=x.i;
     var role=u.role==="Advertiser"
       ?'<span class="pill adv">Advertiser</span><div class="sub">'+esc(u.advertiserDirect?u.advertiserName+" (Direct)":(u.advertiserName||u.advertiserId))+(u.advertiserDirect?" · Direct":" · DSP")+'</div>'
       :'<span class="pill">'+esc(u.role)+'</span>';
