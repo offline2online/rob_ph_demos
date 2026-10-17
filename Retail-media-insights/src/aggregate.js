@@ -20,13 +20,14 @@ function buildAggregates(raw, ctx) {
       row = {
         date: b.date, displayTypeId: b.displayTypeId, storeId: b.storeId, dealId: b.dealId,
         dealType: (ctx.deals[b.dealId] || {}).dealType || 'Open auction',
-        dsp: b.dsp, advertiserId: b.advertiserId, revenue: 0, earned: 0, estimated: 0, views: 0, slots: 0,
+        dsp: b.dsp, advertiserId: b.advertiserId, revenue: 0, earned: 0, estimated: 0, views: 0, earnedViews: 0, slots: 0,
       };
       delivery.set(key, row);
     }
     row.revenue += b.revenue;
     if (b.settled) row.earned += b.revenue; else row.estimated += b.revenue;
     row.views += b.views;
+    if (b.settled) row.earnedViews += b.views;
     row.slots += b.slots;
   }
 

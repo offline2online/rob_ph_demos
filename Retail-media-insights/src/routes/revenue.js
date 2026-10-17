@@ -1,6 +1,7 @@
 'use strict';
 const calc = require('../calc');
 const { FilterError } = require('../filters');
+const { chartFilter, cents } = require('./params');
 
 const GRANULARITIES = ['day', 'week', 'month'];
 
@@ -18,8 +19,7 @@ module.exports = {
   handler({ store, filters, params }) {
     const granularity = params.get('granularity') || 'day';
     if (!GRANULARITIES.includes(granularity)) throw new FilterError(`granularity must be one of ${GRANULARITIES.join(', ')}`);
-    const dsps = params.get('dsps') ? new Set(params.get('dsps').split(',')) : null;
-    const dealTypes = params.get('dealTypes') ? new Set(params.get('dealTypes').split(',')) : null;
+    const keep = chartFilter(params);
     // Accumulate per date into small numeric-indexed arrays (cheap per row), then fold dates into periods.
     const dspIdx = new Map(); const typeIdx = new Map();
     const dspNames = []; const typeNames = [];
@@ -27,8 +27,7 @@ module.exports = {
     const perDate = new Map();
     let curDate = null; let cur = null;
     store.scanDelivery(filters, (r) => {
-      if (dsps && !dsps.has(r.dsp)) return;
-      if (dealTypes && !dealTypes.has(r.dealType)) return;
+      if (keep && !keep(r)) return;
       if (r.date !== curDate) {
         curDate = r.date;
         cur = perDate.get(curDate);
@@ -52,6 +51,6 @@ module.exports = {
     }
     const rows = [...buckets.values()].sort((a, b) => (a.period < b.period ? -1 : a.period > b.period ? 1 : 0)
       || calc.compareDsps(a.dsp, b.dsp) || calc.compareDealTypes(a.dealType, b.dealType));
-    return { granularity, rows: rows.map((b) => ({ ...b, earned: Math.round(b.earned), estimated: Math.round(b.estimated) })) };
+    return { granularity, rows: rows.map((b) => ({ ...b, earned: cents(b.earned), estimated: cents(b.estimated) })) };
   },
 };
