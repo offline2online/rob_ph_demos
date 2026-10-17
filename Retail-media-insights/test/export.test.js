@@ -27,7 +27,7 @@ const sum = (xs) => xs.reduce((a, b) => a + b, 0);
 
 test('every retailer dataset builds, with typed columns and a row per grain', () => withServer(admin, async ({ json }) => {
   const { datasets } = await json(`/datasets`);
-  const adv = new Set(['delivery', 'delivery-deals', 'deals-by-display-type', 'audience', 'my-targeting']);
+  const adv = new Set(['delivery', 'delivery-deals', 'deals-by-display-type', 'audience', 'my-targeting', 'my-summary']);
   assert.deepEqual(datasets.map((d) => d.name).sort(), DATASETS.map((d) => d.name).sort());
   for (const d of DATASETS) {
     const ds = await json(`/dataset?name=${d.name}&${Q}${adv.has(d.name) ? `&advertiserIds=${ME}` : ''}`);
@@ -70,7 +70,7 @@ test('dataset csv has a header row, escapes cells and neutralises formulas', () 
 
 test('an advertiser reads only its own advertiser datasets, scoped to itself', () => withServer(advertiser(ME), async ({ api, json }) => {
   const { datasets } = await json('/datasets');
-  assert.deepEqual(datasets.map((d) => d.name).sort(), ['audience', 'deals-by-display-type', 'delivery', 'delivery-deals', 'display-types', 'my-targeting']);
+  assert.deepEqual(datasets.map((d) => d.name).sort(), ['audience', 'deals-by-display-type', 'delivery', 'delivery-deals', 'display-types', 'my-summary', 'my-targeting']);
   for (const retailerOnly of ['summary', 'revenue', 'yield', 'deals', 'advertisers', 'missed-revenue', 'slot-value', 'maturity-ladder']) {
     assert.equal((await api(`/dataset?name=${retailerOnly}&${Q}`)).status, 403, retailerOnly);
   }
@@ -152,5 +152,5 @@ test('MCP: an advertiser sees and can call only advertiser tools, pinned to itse
   const blocked = await call(api, 'retail_media_dataset', { name: 'missed-revenue', dateFrom: '2026-10-05', dateTo: '2026-10-11' });
   assert.equal(blocked.result.isError, true);
   const cat = await call(api, 'retail_media_dataset', {});
-  assert.equal(cat.result.structuredContent.datasets.length, 6);
+  assert.equal(cat.result.structuredContent.datasets.length, 7);
 }));

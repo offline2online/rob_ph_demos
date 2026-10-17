@@ -82,6 +82,7 @@ test('no clearing price is below its floor (every billing row)', () => {
   for (const b of raw.billing) {
     const deal = ctx.dealCatalog[b.dealId];
     if (deal.dealType !== 'Open auction' && deal.dealType !== 'Private auction') continue;
+    if (b.views === 0) continue; // a play too small to carry a whole view bills nothing
     const floor = deal.dealType === 'Open auction' ? ctx.displayTypes[b.displayTypeId].floorCpm : deal.floorCpm;
     assert.ok(calc.effectiveCpm(b.revenue, b.views) >= floor, `${b.dealId} ${b.displayTypeId} ${b.date}: ${calc.effectiveCpm(b.revenue, b.views)} < ${floor}`);
     auctions += 1;
@@ -189,11 +190,11 @@ test('hover operating hours follow the same default', () => {
 test('deals: the display type filter applies to every part of a row, and a deal with none of those types drops out', () => {
   const all = run('deals').rows;
   const queue = run('deals', 'displayTypeIds=queue').rows;
-  assert.deepEqual(queue.map((d) => d.name).sort(), ['Everyday Preferred', 'Wellness PG']);
+  assert.deepEqual(queue.map((d) => d.name).sort(), ['Queue screens', 'Sensodyne always-on']);
   for (const d of queue) {
     assert.ok(d.slots.length > 0 && d.slots.every((s) => s.displayTypeId === 'queue'));
     const full = all.find((x) => x.id === d.id);
-    assert.ok(d.fill.slotsAvailable < full.fill.slotsAvailable, `${d.name} fill covers only the filtered type`);
+    assert.ok(d.fill.slotsAvailable <= full.fill.slotsAvailable, `${d.name} fill covers only the filtered type`);
   }
   const noOpp = run('deals', 'displayTypeIds=queue&dateFrom=2000-01-01&dateTo=2000-01-02').rows;
   for (const d of noOpp) assert.equal(d.fill.percent, null);
@@ -201,10 +202,10 @@ test('deals: the display type filter applies to every part of a row, and a deal 
 
 test('advertisers: Slots covered counts only covered slots on the filtered types; Slots won only own wins on those deals', () => {
   const full = run('advertisers').all.find((a) => a.advertiserId === 'adv-blackmores');
-  const queue = run('advertisers', 'displayTypeIds=queue').all.find((a) => a.advertiserId === 'adv-blackmores');
-  assert.equal(full.slotsCovered, 4);
-  assert.equal(queue.slotsCovered, 1);
-  assert.deepEqual(queue.dealsOn.map((d) => d.id), full.dealsOn.map((d) => d.id));
+  const window = run('advertisers', 'displayTypeIds=window').all.find((a) => a.advertiserId === 'adv-blackmores');
+  assert.equal(full.slotsCovered, 8); // Window 1-5 (Immune, Health & wellness windows) and Dispensary 2-4 (Dispensary screens)
+  assert.equal(window.slotsCovered, 5);
+  assert.deepEqual(window.dealsOn.map((d) => d.id), full.dealsOn.map((d) => d.id));
   // Blackmores also buys the open auction on every type; none of that may count as a win on its deal positions.
   let ownDealWins = 0; let allWins = 0;
   store.scanDelivery(parseFilters(new URLSearchParams(''), { today: TODAY }), (r) => {
@@ -217,8 +218,8 @@ test('advertisers: Slots covered counts only covered slots on the filtered types
 });
 
 test('deals: Advertisers on deal are ordered by DSP, then name', () => {
-  const priv = run('deals', 'dealType=Private auction').rows[0];
-  assert.deepEqual(priv.advertisers.map((a) => a.dsp), ['DV360', 'Amazon DSP']);
+  const priv = run('deals', 'dealType=Private auction').rows.find((r) => r.name === 'Dispensary screens');
+  assert.deepEqual(priv.advertisers.map((a) => [a.dsp, a.name]), [['DV360', 'Blackmores'], ['The Trade Desk', 'Haleon'], ['Amazon DSP', 'Bayer Consumer Health'], ['Amazon DSP', 'Reckitt']]);
 });
 
 test('Revenue is earned and to the cent in the maturity table', () => {
@@ -229,16 +230,17 @@ test('Revenue is earned and to the cent in the maturity table', () => {
 });
 
 test('PG pacing: delivered is settled VAC-d and the page filters do not change it', () => {
-  const base = run('deals', 'dealType=Programmatic guaranteed').rows[0].pacing;
-  for (const q of ['storeIds=store-1', 'displayTypeIds=queue', 'storeIds=store-1&displayTypeIds=window']) {
-    const p = run('deals', `dealType=Programmatic guaranteed&${q}`).rows[0].pacing;
+  const immune = (q) => run('deals', `dealType=Programmatic guaranteed${q}`).rows.find((r) => r.name === 'Immune — winter launch').pacing;
+  const base = immune('');
+  for (const q of ['storeIds=store-1', 'displayTypeIds=window', 'storeIds=store-1&displayTypeIds=window']) {
+    const p = immune(`&${q}`);
     assert.equal(p.delivered, base.delivered, q);
     assert.equal(p.percent, base.percent, q);
   }
   let settled = 0; let all = 0;
-  store.scanDelivery({ dateFrom: '2026-09-20', dateTo: TODAY, storeIds: null, displayTypeIds: null, advertiserIds: null }, (r) => { if (r.dealId === 'd1') { settled += r.earnedViews; all += r.views; } });
+  store.scanDelivery({ dateFrom: '2026-09-15', dateTo: TODAY, storeIds: null, displayTypeIds: null, advertiserIds: null }, (r) => { if (r.dealId === 'd1') { settled += r.earnedViews; all += r.views; } });
   assert.equal(base.delivered, Math.round(settled));
-  assert.ok(all > settled);
+  assert.equal(all, settled, 'reservations carry no views, and every played day is settled');
   assert.ok(base.percent > 50 && base.percent < 150);
 });
 
@@ -288,8 +290,8 @@ test('advertiser view: every display type an advertiser is billed on is one it i
   assert.deepEqual(allowedDisplayTypeIds(store, 'adv-blackmores').sort(), ['dispensary', 'queue', 'window']);
 });
 
-test('advertiser view: booked-ahead (not yet settled) rows are not delivery', () => {
-  const booked = `dateFrom=2026-10-09&dateTo=${TODAY}`; // the last 3 days are not settled
+test('advertiser view: booked-ahead (reservation) rows are not delivery', () => {
+  const booked = 'dateFrom=2026-10-12&dateTo=2026-11-10'; // the days after the last played day hold only reservations
   for (const id of ADVERTISERS) {
     const d = asAdv('delivery', id, booked);
     assert.equal(d.totals.playsWon, 0, id); assert.equal(d.totals.spend, 0, id);

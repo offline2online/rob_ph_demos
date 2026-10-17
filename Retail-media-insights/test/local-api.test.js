@@ -60,7 +60,7 @@ test('LocalApi rejects a missing principal with 401 and an advertiser on a retai
 
 test('an advertiser principal is pinned to itself even when the page asks for another advertiser', async () => {
   const plain = await LocalApi.get('/deals-by-display-type', {}, ADVERTISER);
-  const pushed = await LocalApi.get('/deals-by-display-type', { advertiserIds: ['adv-acme'] }, ADVERTISER);
+  const pushed = await LocalApi.get('/deals-by-display-type', { advertiserIds: ['adv-haleon'] }, ADVERTISER);
   assert.ok(plain.groups.length > 0);
   assert.deepEqual(pushed, plain);
 });
@@ -68,7 +68,9 @@ test('an advertiser principal is pinned to itself even when the page asks for an
 test('filter-options lists the 5 test stores and advertisers for a retailer, and only own display types for an advertiser', async () => {
   const r = await LocalApi.get('/filter-options', {}, ADMIN);
   assert.equal(r.stores.length, 5);
-  assert.deepEqual(r.advertisers.map((a) => a.name), ['Acme', 'Blackmores', 'Nova']);
+  assert.deepEqual(r.stores.map((s) => s.name), ['Bristol Cabot Circus', 'Glasgow Buchanan St', 'Leeds Trinity', 'London Oxford St', 'Manchester Arndale']);
+  assert.equal(r.advertisers.length, 11);
+  assert.equal(r.firstDataDay, '2026-06-14');
   assert.equal(r.lastDataDay, '2026-10-11');
   const a = await LocalApi.get('/filter-options', {}, ADVERTISER);
   assert.equal(a.stores.length, 5);

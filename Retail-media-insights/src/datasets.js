@@ -63,6 +63,8 @@ const DATASETS = [
       dealIds: d.dealIds.map((x) => x.dealId || x).join('; '), slotCount: d.slots && typeof d.slots === 'object' ? d.slots.count : d.slots }))) },
   { name: 'audience', route: 'audience', grain: 'day', description: 'Assumed views (VAC-d) delivered per day.',
     rows: (r) => r.trend.map((t) => ({ date: t.date, assumedViews: t.assumedViews })) },
+  { name: 'my-summary', route: 'my-summary', grain: 'one row for the advertiser', description: "The advertiser's spend, plays won and live deals for the range.",
+    rows: (r) => [flat(r)] },
   { name: 'my-targeting', route: 'my-targeting', grain: 'one row for the advertiser', description: "The advertiser's targeting level, variables used and scheduling.",
     rows: (r) => [{ level: r.level || null, variablesUsed: r.variablesUsed.map((v) => v.label).join('; '), ...flat({ scheduling: r.scheduling }),
       usesEverySharedVariable: r.usesEverySharedVariable }] },

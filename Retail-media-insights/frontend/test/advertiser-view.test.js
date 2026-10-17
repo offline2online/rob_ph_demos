@@ -17,7 +17,7 @@ test('both metric tiles start on and the last one on cannot be switched off', ()
 
 test('Deal drop-down: All deals, each deal by name and type, Open auction last', async () => {
   const o = AV.dealOptions(await mine('/delivery'));
-  assert.deepStrictEqual(o.map((x) => x.label), ['All deals', 'Wellness PG · Programmatic guaranteed', 'Pharmacy Private · Private auction', 'Open auction']);
+  assert.deepStrictEqual(o.map((x) => x.label), ['All deals', 'Immune — winter launch · Programmatic guaranteed', 'Health & wellness windows · Private auction', 'Dispensary screens · Private auction', 'Open auction']);
   assert.strictEqual(o[0].value, '');
 });
 
@@ -25,7 +25,7 @@ test('Pacing switch only for a Programmatic guaranteed deal with pacing data', a
   const d = await mine('/delivery');
   assert.strictEqual(AV.showPacingSwitch(d, 'd1'), true);
   assert.strictEqual(AV.showPacingSwitch(d, ''), false);
-  assert.strictEqual(AV.showPacingSwitch(d, 'd3'), false);
+  assert.strictEqual(AV.showPacingSwitch(d, 'd5'), false);
   assert.strictEqual(AV.showPacingSwitch(d, 'open-auction'), false);
 });
 
@@ -35,7 +35,7 @@ test('day hover: totals, a block per deal, then change vs previous day', async (
   const keys = t.rows.map((r) => r[0]);
   assert.strictEqual(keys[0], 'Plays won'); assert.strictEqual(keys[1], 'Spend');
   assert.deepStrictEqual(t.rows.filter((r) => r[2] === 'head').map((r) => r[0]),
-    ['Wellness PG · Programmatic guaranteed', 'Pharmacy Private · Private auction', 'Open auction · Open auction']);
+    ['Immune — winter launch · Programmatic guaranteed', 'Health & wellness windows · Private auction', 'Dispensary screens · Private auction', 'Open auction · Open auction']);
   assert.deepStrictEqual(keys.slice(-2), ['Plays won vs previous day', 'Spend vs previous day']);
 });
 
@@ -51,7 +51,7 @@ test('no plays won, no winning CPM, floor range for the open auction', () => {
 
 test('PG and Preferred blocks: plays won, fixed CPM, no other buyers', async () => {
   const pg = (await mine('/delivery')).days[0].deals.find((d) => d.dealType === 'Programmatic guaranteed');
-  assert.deepStrictEqual(AV.dealBlockRows(pg).slice(1), [['Plays won', AV.fmtInt(pg.playsWon)], ['Fixed CPM', '$22.00'], ['Other buyers', 'None']]);
+  assert.deepStrictEqual(AV.dealBlockRows(pg).slice(1), [['Plays won', AV.fmtInt(pg.playsWon)], ['Fixed CPM', '$9.50'], ['Other buyers', 'None']]);
 });
 
 test('change vs previous day uses arrows and percent', () => {
@@ -65,9 +65,9 @@ test('deals table: display type row, then its deals; Share on each', async () =>
   assert.strictEqual(rows[0].kind, 'type');
   assert.strictEqual(rows[0].name, 'Window Portrait');
   assert.ok(rows.filter((r) => r.kind === 'type').every((r, i, all) => i === 0 || r.name !== all[i - 1].name));
-  const wellness = rows.find((r) => r.name === 'Wellness PG');
+  const wellness = rows.find((r) => r.name === 'Immune — winter launch');
   assert.strictEqual(wellness.dealType, 'Programmatic guaranteed');
-  assert.strictEqual(wellness.slotsText, '1 slot');
+  assert.strictEqual(wellness.slotsText, '2 slots');
   assert.strictEqual(wellness.share, 100);
 });
 
@@ -95,8 +95,8 @@ test('share hover: plays won, all plays, advertiser count — never names', asyn
 
 test('slots hover lists each assigned slot', async () => {
   const t = AV.slotsTooltip((await mine('/deals-by-display-type')).groups[0].deals[0]);
-  assert.strictEqual(t.rows[0][0], 'Window loop · Zone A');
-  assert.strictEqual(t.rows[0][1], 'Advertiser slot 1 (loop slot 2) · 12 plays per window');
+  assert.strictEqual(t.rows[0][0], 'Window loop · Store front');
+  assert.strictEqual(t.rows[0][1], 'Advertiser slot 1 (loop slot 1) · 60 plays per window');
 });
 
 test('display type hover is facts only and omits what is not stored', async () => {
@@ -112,15 +112,15 @@ test('sparkline covers the trend; scheduling text; variable chips', async () => 
   assert.match(AV.sparkline((await mine('/audience')).trend, 240, 48), /^M0\.0 /);
   assert.strictEqual(AV.sparkline([{ assumedViews: 1 }], 240, 48), '');
   const targeting = await mine('/my-targeting');
-  assert.strictEqual(AV.schedulingText(targeting.scheduling), 'Dayparted · 1 of 2 campaigns');
+  assert.strictEqual(AV.schedulingText(targeting.scheduling), 'Dayparted · 3 of 4 campaigns');
   assert.match(AV.schedulingText({ uses: false }), /^Not used yet\. Set dayparts and schedules/);
-  assert.deepStrictEqual(targeting.variablesUsed.map((v) => AV.variableLabel(v)), ['State', 'Visitor Segments · Identified visitor']);
+  assert.deepStrictEqual(targeting.variablesUsed.map((v) => AV.variableLabel(v)), ['Display Tag(s)', 'Fixed Store Segments', 'Gender (Computer Vision)', 'Reason for Visit (Aggregate)', 'Store Open / Closed', 'Variable Store Segments']);
   assert.strictEqual(AV.variableLabel({ label: 'Audience segment', kind: 'Personalised', personalisationType: 'Audience' }), 'Audience segment');
 });
 
 test('the advertiser’s responses never carry another advertiser, downtime or a second DSP’s deal ID', async () => {
   const all = JSON.stringify([await mine('/delivery'), await mine('/deals-by-display-type'), await mine('/audience'), await mine('/my-targeting')]);
-  assert.ok(!/advertiserId|downtime|lostRevenue|offline|Acme|Nova/i.test(all));
+  assert.ok(!/advertiserId|downtime|lostRevenue|offline|Haleon|Unilever/i.test(all));
 });
 
 test('nice axis maxima', () => {

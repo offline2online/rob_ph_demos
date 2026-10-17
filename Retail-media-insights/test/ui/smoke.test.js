@@ -78,6 +78,9 @@ for (const width of [1163, 390]) {
       await page.waitForFunction(() => /Total earned/.test((document.querySelector('.rd-total') || {}).textContent || ''));
       const earned = money(await page.textContent('[data-tile="earned"] .val'));
       const chart = money(await page.textContent('.rd-total'));
+      assert.match(await page.textContent('.dc-total th'), /^Total \(top 10\)$/, 'ten of the eleven advertisers by default');
+      await page.click('.dc-btn:has-text("Show all")');
+      await page.waitForFunction(() => /^Total$/.test((document.querySelector('.dc-total th') || {}).textContent || ''));
       const adv = money(await page.textContent('.dc-total td'));
       assert.equal(chart, earned, 'Revenue chart total = summary earned');
       assert.equal(adv, earned, 'Advertisers total = summary earned');
@@ -91,7 +94,7 @@ for (const width of [1163, 390]) {
 
       // at least one amber Slot allocation row, and it is Queue Screen
       const amber = await page.$$eval('.sc-table tr[data-amber="true"] .sc-name', (r) => r.map((x) => x.textContent));
-      assert.ok(amber.includes('Queue Screen'), `amber rows: ${amber}`);
+      assert.deepEqual(amber.slice().sort(), ['Queue Screen', 'Window Portrait'], `amber rows: ${amber}`);
 
       // hovers stay on screen
       for (const sel of ['.sc-row[data-fill]', '.sc-info', '.dc-adv td[tabindex]', '.pg-info']) {
@@ -123,7 +126,7 @@ for (const width of [1163, 390]) {
       assert.match(await page.textContent('#adv-chip'), /Blackmores \(DV360\)/);
       assert.equal(await page.$('#f-adv'), null);
       const text = await page.innerText('body');
-      for (const other of ['Acme', 'Nova', 'Advertiser A']) assert.ok(!text.includes(other), `shows ${other}`);
+      for (const other of ['Haleon', 'Unilever', 'Advertiser A']) assert.ok(!text.includes(other), `shows ${other}`);
       const types = await page.$$eval('#f-display option', (o) => o.map((x) => x.textContent));
       assert.ok(types[0].startsWith('All Display Types (') && types.length < 5, `only its own display types: ${types}`);
       assert.ok(await noHorizontalScroll(page));
@@ -172,8 +175,8 @@ test('filter options come from the back end, with no placeholder names', async (
   const { page, context } = await open('/index.html', 1163);
   try {
     await settle(page, 'options');
-    assert.deepEqual(await page.$$eval('#f-store option', (o) => o.map((x) => x.textContent)), ['All Stores', 'Store 1', 'Store 2', 'Store 3', 'Store 4', 'Store 5']);
-    assert.deepEqual(await page.$$eval('#f-adv option', (o) => o.map((x) => x.textContent)), ['All Advertisers', 'Acme (The Trade Desk)', 'Blackmores (DV360)', 'Nova (Amazon DSP)']);
+    assert.deepEqual(await page.$$eval('#f-store option', (o) => o.map((x) => x.textContent)), ['All Stores', 'Bristol Cabot Circus', 'Glasgow Buchanan St', 'Leeds Trinity', 'London Oxford St', 'Manchester Arndale']);
+    assert.deepEqual(await page.$$eval('#f-adv option', (o) => o.map((x) => x.textContent)), ['All Advertisers', 'Bayer Consumer Health (Amazon DSP)', 'Blackmores (DV360)', 'Haleon (The Trade Desk)', 'Kenvue (DV360)', "L'Oréal Paris (DV360)", 'Nestlé Health Science (DV360)', 'Perrigo (The Trade Desk)', 'Procter & Gamble (The Trade Desk)', 'Reckitt (Amazon DSP)', 'Unilever (Amazon DSP)', 'Vitabiotics (The Trade Desk)']);
     assert.equal((await page.$$eval('#f-display option', (o) => o.map((x) => x.textContent)))[0], 'All Display Types (4)');
     assert.deepEqual(await page.$$eval('#f-date option', (o) => o.map((x) => x.textContent)), ['Last 30 days', 'Last 7 days', 'Last 90 days']);
     const body = await page.innerText('body');

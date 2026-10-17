@@ -25,8 +25,11 @@ test('summary money equals the sum of revenue for the same filters, at every gra
     for (const g of ['day', 'week', 'month']) {
       const r = await get(`/revenue?${Q}&granularity=${g}${extra}`);
       assert.ok(Math.abs(s.earnedRevenue - sum(r.rows, 'earned')) < 0.01 * r.rows.length, `earned ${g} ${extra}`);
-      assert.ok(Math.abs(s.estimatedRevenue - sum(r.rows, 'estimated')) < 0.01 * r.rows.length, `estimated ${g} ${extra}`);
     }
+    // Estimated revenue is the reservations in its own window, whatever the range: the same chart filters on /revenue over that window.
+    const w = s.estimatedWindow;
+    const ahead = await get(`/revenue?dateFrom=${w.dateFrom}&dateTo=${w.dateTo}&granularity=day${extra}`);
+    assert.ok(Math.abs(s.estimatedRevenue - sum(ahead.rows, "estimated")) <= 0.01 * ahead.rows.length, `estimated ${extra}`);
   }
 }));
 
@@ -84,9 +87,10 @@ test('yield: one row per connected DSP in standard order; CPM reconciles to bill
   }
   const one = await get(`/yield?${Q}&dealType=Preferred deal`);
   assert.equal(one.dealType, 'Preferred deal');
-  // d2 (Preferred deal) is sold only through The Trade Desk at $18 CPM.
-  assert.equal(one.rows.find((r) => r.dsp === 'The Trade Desk').effectiveCpm, 18);
-  assert.equal(one.rows.find((r) => r.dsp === 'DV360').effectiveCpm, null);
+  // The Preferred deals (d3 $8.80, d4 $8.20) are both bought through DV360, at their fixed CPMs.
+  const dv = one.rows.find((r) => r.dsp === 'DV360').effectiveCpm;
+  assert.ok(dv > 8.2 && dv < 8.8, `blended ${dv}`);
+  assert.equal(one.rows.find((r) => r.dsp === 'The Trade Desk').effectiveCpm, null);
 }));
 
 test('yield rejects unknown or multiple deal types', async () => {

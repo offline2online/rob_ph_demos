@@ -41,7 +41,7 @@ test('slot value: the hover shows the back end’s link, CPM × average views ÷
   const m = SC.slotValueHover(w, RANGE);
   assert.strictEqual(m.title, 'Window Portrait');
   assert.strictEqual(val(m, 'Effective CPM'), `$${w.effectiveCpm.toFixed(2)} (total $${w.totals.earnedRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })} earned on ${SC.fmtCompact(w.totals.assumedViews)} assumed views, 12 Sep – 11 Oct)`);
-  assert.strictEqual(val(m, 'Floor CPM'), '$12.00');
+  assert.strictEqual(val(m, 'Floor CPM'), '$7.50');
   assert.match(val(m, 'Per slot per day'), /^\$\d+\.\d\d \(total \$\d+ per day across 80 advertiser slots on 10 displays\)$/);
   const line = /^\$(\d+\.\d\d) CPM × ([\d,.]+) average assumed views ÷ 1,000 × (\d+)% of advertiser slot capacity earned \(settled billing\) = \$(\d+\.\d\d)$/.exec(val(m, 'How it adds up'));
   assert.ok(line, val(m, 'How it adds up'));
@@ -63,23 +63,23 @@ test('slot allocation: advertiser + own = slots per loop; loop shares are the ba
     assert.strictEqual(r.advertiserSlots.totalSeconds + r.ownContentSlots.totalSeconds, r.loopSeconds);
     assert.strictEqual(r.advertiserSlots.percentOfLoop + r.ownContentSlots.percentOfLoop, 100);
   });
-  const q = rows.find((r) => r.id === 'queue'); // 60s + 30s of a 90s loop: 67% + 33%, not 66.7 / 33.3 recomputed
+  const q = rows.find((r) => r.id === 'queue'); // 18s + 12s of a 30s loop: 60% + 40%
   const loop = SC.allocationHover(q, 'loop');
-  assert.strictEqual(val(loop, 'Advertiser slots'), '6 × 10s = 60s (67% of the loop)');
-  assert.strictEqual(val(loop, 'Own-content slots'), '2 × 15s = 30s (33% of the loop)');
-  assert.strictEqual(val(loop, 'Total loop length'), '90s');
-  assert.strictEqual(val(loop, 'Average slot duration'), '11.3s');
-  assert.strictEqual(val(SC.allocationHover(q, 'advertiser'), 'Share of the loop per slot'), '10s ÷ 90s = 11%');
-  assert.strictEqual(val(SC.allocationHover(q, 'own'), 'Time in the loop'), '2 × 15s = 30s (33% of the loop)');
+  assert.strictEqual(val(loop, 'Advertiser slots'), '3 × 6s = 18s (60% of the loop)');
+  assert.strictEqual(val(loop, 'Own-content slots'), '3 × 4s = 12s (40% of the loop)');
+  assert.strictEqual(val(loop, 'Total loop length'), '30s');
+  assert.strictEqual(val(loop, 'Average slot duration'), '5s');
+  assert.strictEqual(val(SC.allocationHover(q, 'advertiser'), 'Share of the loop per slot'), '6s ÷ 30s = 20%');
+  assert.strictEqual(val(SC.allocationHover(q, 'own'), 'Time in the loop'), '3 × 4s = 12s (40% of the loop)');
 });
 
 test('column definitions exist for every Slot allocation heading', () => {
   ['Display type', 'Slots per loop', 'Advertiser slots', 'Own-content slots', 'Advertiser slots sold'].forEach((c) => assert.ok(SC.COLUMN_TIPS[c].length > 20, c));
 });
 
-test('amber threshold is 85%: Queue Screen is amber and the others are not', async () => {
+test('amber threshold is 85%: Window Portrait and Queue Screen are amber and the others are not', async () => {
   const hot = (await get('/slot-allocation')).rows.filter((r) => r.advertiserSlotsSoldPercent >= SC.AMBER_AT).map((r) => r.id);
-  assert.deepStrictEqual(hot, ['queue']);
+  assert.deepStrictEqual(hot.sort(), ['queue', 'window']);
 });
 
 test('missed revenue: sold + unsold + offline = all slots, unsold + downtime = total, rows sum to the total row', async () => {
@@ -101,7 +101,7 @@ test('missed hover shows every value as the back end returned it, with the store
   const t = SC.missedHover(d.total, null, RANGE, true);
   const p = SC.missedParts(d.total);
   assert.strictEqual(val(t, 'Total missed revenue'), `$${p.total.toLocaleString('en-US')} ($${p.unsold.toLocaleString('en-US')} unsold + $${p.downtime.toLocaleString('en-US')} downtime)`);
-  assert.strictEqual(val(t, 'Floor CPM'), '$6.00–$12.00 by display type');
+  assert.strictEqual(val(t, 'Floor CPM'), '$5.50–$7.50 by display type');
   assert.match(val(t, 'Fill'), new RegExp(`^${d.total.fillPercent}% \\(total [\\d,]+ of [\\d,]+ advertiser slots sold\\)$`));
   assert.match(text(t), /Totals across all 10 connected displays in 1 store, 12 Sep – 11 Oct\./);
   const row = d.rows.find((r) => r.id === 'dispensary');
@@ -127,7 +127,7 @@ test('yield: DSPs read DV360, The Trade Desk, Amazon DSP; a DSP with no delivery
   assert.strictEqual(val(m, 'Effective CPM'), 'No delivery');
   assert.ok(!/NaN|null|undefined/.test(JSON.stringify(m.sections)));
   const live = SC.yieldHover(d.rows.find((r) => r.effectiveCpm !== null), 'Programmatic guaranteed', RANGE);
-  assert.match(val(live, 'Effective CPM'), /^\$22\.00$/);
+  assert.match(val(live, 'Effective CPM'), /^\$9\.50$/);
   assert.deepStrictEqual(SC.DEAL_TYPES, ['Programmatic guaranteed', 'Preferred deal', 'Private auction', 'Open auction']);
 });
 

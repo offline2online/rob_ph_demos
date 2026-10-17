@@ -12,8 +12,10 @@
 .av-info { color: var(--av-muted); cursor: help; display: inline-flex; border-radius: 50%; margin-left: 4px; }
 .av-info:hover, .av-info:focus-visible { color: var(--av-primary); }
 .av-root :focus-visible { outline: 2px solid var(--av-primary); outline-offset: 2px; border-radius: 4px; }
-.av-controls { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; justify-content: flex-end; }
+.av-controls { max-width: 100%; display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; justify-content: flex-end; }
 .av-select { font: inherit; height: 32px; color: var(--av-text); border: 1px solid #d9d9d9; border-radius: 6px; padding: 0 8px; background: #fff; max-width: 100%; }
+.av-ctl { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0; }
+.av-ctl .av-select { min-width: 0; flex: 0 1 auto; }
 .av-btn { font: inherit; height: 32px; border: 1px solid #d9d9d9; background: #fff; border-radius: 6px; padding: 0 14px; cursor: pointer; color: var(--av-text); }
 .av-seg { display: inline-flex; background: rgba(0,0,0,0.04); border-radius: 6px; padding: 2px; }
 .av-seg-btn { font: inherit; font-size: 13px; border: 0; background: transparent; color: var(--av-text); padding: 3px 10px; border-radius: 4px; cursor: pointer; }

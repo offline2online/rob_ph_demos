@@ -25,7 +25,9 @@ test('Revenue total with every DSP on equals the summary’s earned revenue', as
 test('bar hover: period total first, then each DSP × deal type, then estimated', async () => {
   const bars = RD.revenueBars(await get('/revenue', { dsps: ['DV360'] }));
   const bar = bars[bars.length - 1];
-  assert.deepStrictEqual(RD.barTooltip(bar, 'day').rows.map((r) => r[0]), ['11 Oct', 'Estimated revenue'], 'the last days are booked, not yet settled');
+  const last = RD.barTooltip(bar, 'day').rows.map((r) => r[0]);
+  assert.strictEqual(last[0], '11 Oct');
+  assert.ok(last.length > 1 && !last.includes('Estimated revenue'), 'every played day is earned: nothing is estimated on the last one');
   const settled = bars[bars.length - 5];
   settled.estimated = 1; // an estimated part is listed last
   const t = RD.barTooltip(settled, 'day');
@@ -64,12 +66,12 @@ test('slots label and Assigned slots hover', async () => {
   assert.match(t.rows[0][1], /IAB zone: Entrance & out of category/);
   assert.strictEqual(t.rows[0][1].split('\n')[0], pg.slots[0].displayTypeDescription, 'the display type description sits under its name');
   assert.ok(pg.slots.every((s) => s.displayTypeDescription));
-  assert.match(t.rows[0][1], /Advertiser slot 1 \(slot 2 of the loop\) · 12 plays per window/);
+  assert.match(t.rows[0][1], /Advertiser slot 1 \(slot 1 of the loop\) · 60 plays per window/);
 });
 
 test('advertisers hover lists "Name (DSP)"', async () => {
   const deal = (await get('/deals')).rows.find((d) => d.dealType === 'Private auction');
-  assert.deepStrictEqual(RD.advertisersTooltip(deal).rows.map((r) => r[0]), ['Blackmores (DV360)', 'Nova (Amazon DSP)']);
+  assert.deepStrictEqual(RD.advertisersTooltip(deal).rows.map((r) => r[0]), ['Kenvue (DV360)', "L'Oréal Paris (DV360)"]);
 });
 
 test('pacing hover: in flight', async () => {
