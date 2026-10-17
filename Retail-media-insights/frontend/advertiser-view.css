@@ -56,15 +56,10 @@
 .av-share-bar { display: inline-block; width: 56px; height: 6px; border-radius: 9999px; background: rgba(5,5,5,0.06); margin-right: 8px; overflow: hidden; vertical-align: middle; }
 .av-share-bar i { display: block; height: 100%; background: var(--av-primary); }
 
-.av-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 16px; align-items: start; }
-.av-metric-lbl { color: var(--av-muted); }
-.av-metric-val { font-size: 28px; font-weight: 700; margin: 4px 0 8px; }
-.av-spark { width: 100%; max-width: 280px; height: 48px; display: block; }
-.av-field { padding: 8px 0; border-bottom: 1px solid var(--av-border); }
-.av-field:last-child { border-bottom: 0; }
-.av-field-lbl { color: var(--av-muted); margin-bottom: 4px; }
+.av-metric-lbl { color: var(--av-muted); font-size: 13px; }
+.av-metric-val { font-size: 32px; font-weight: 700; line-height: 1.25; }
+.av-spark { width: 100%; height: 56px; display: block; margin-top: 12px; }
 .av-group { margin-top: 6px; }
-.av-group-lbl { font-size: 12px; color: var(--av-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
 .av-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .av-var { display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: 9999px; border: 1px solid #d9d9d9; background: #fff; font-size: 13px; }
 .av-var.localised { background: rgba(22,155,194,0.1); border-color: rgba(22,155,194,0.4); }
@@ -85,5 +80,35 @@
 .av-tip-row.head { font-weight: 500; margin-top: 8px; padding-top: 6px; border-top: 1px solid #f0f0f0; }
 .av-tip-k { white-space: pre-line; }
 .av-tip-v { white-space: pre-line; text-align: right; font-weight: 500; }
-@media (max-width: 900px) { .av-pair { grid-template-columns: 1fr; } }
 @media (max-width: 600px) { .av-svg, .av-hits { height: 220px; } .av-tile { flex: 1 1 140px; } .av-controls { justify-content: flex-start; } }
+
+.av-muted { color: var(--av-muted); }
+.av-small { color: var(--av-muted); font-size: 12px; }
+.av-name-in { text-decoration: underline dotted #bfbfbf; text-underline-offset: 3px; border-bottom: 0; }
+.av-table tr.av-type td.num { font-weight: 700; }
+.av-kpi { display: flex; flex-direction: column; gap: 2px; min-width: 150px; padding: 10px 12px; border: 1px solid #d9d9d9; border-radius: 8px; background: #fff; }
+.av-key.dashed::before { height: 0; background: none; border-top: 2px dashed var(--av-line); }
+.av-today { stroke: #8c8c8c; stroke-width: 1; stroke-dasharray: 4 3; }
+.av-tip-para { white-space: pre-line; padding: 1px 0; }
+.av-tip-para + .av-tip-para { margin-top: 6px; }
+.av-tip-note { color: var(--av-muted); font-size: 12px; margin-top: 6px; }
+.av-tip-line { padding: 1px 0; }
+.av-tip-row.sect { margin-top: 8px; padding-top: 6px; border-top: 1px solid #f0f0f0; }
+
+/* Targeting & scheduling: the ladder on the left, three labelled blocks on the right (stacked on a narrow screen). */
+.av-target { display: grid; grid-template-columns: minmax(200px, 1fr) minmax(0, 2fr); gap: 24px; align-items: start; }
+.av-ladder { display: flex; flex-direction: column; gap: 8px; }
+.av-rung { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 6px 12px; border: 1px solid var(--av-border); border-radius: 8px; flex-wrap: wrap; }
+.av-rung.above { color: var(--av-muted); }
+.av-rung.here { background: rgba(22,155,194,0.1); border-color: var(--av-primary); font-weight: 600; }
+.av-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; flex: none; }
+.av-rung-name { flex: 1 1 auto; }
+.av-tag { font-size: 12px; font-weight: 400; padding: 0 8px; border-radius: 9999px; line-height: 20px; white-space: nowrap; }
+.av-tag.here { background: var(--av-primary); color: #fff; font-weight: 500; }
+.av-tag.next { background: rgba(0,0,0,0.04); color: var(--av-muted); }
+.av-blocks { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.av-block-lbl { font-size: 12px; font-weight: 500; color: var(--av-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
+.av-avail { display: flex; flex-direction: column; gap: 10px; }
+.av-lvl { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; margin-bottom: 6px; border-radius: 9999px; background: rgba(0,0,0,0.04); font-size: 13px; font-weight: 500; }
+
+@media (max-width: 700px) { .av-target { grid-template-columns: 1fr; } }
