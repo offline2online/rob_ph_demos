@@ -64,8 +64,13 @@ module.exports = {
         return out;
       }
       const all = a ? a.all : 0;
-      out.allPlays = all;
-      if (all > 0) out.sharePercent = calc.wholePercent(own.plays, all);
+      // With exactly one other buyer (1 <= others < MIN) all plays minus the advertiser's own is that buyer's plays, so
+      // allPlays and the share are omitted. With none, the advertiser has the block to itself and the share is 100%.
+      const others = a ? a.others.size : 0;
+      if (!(others >= 1 && others < MIN_OTHER_BUYERS_FOR_WINNING_CPM)) {
+        out.allPlays = all;
+        if (all > 0) out.sharePercent = calc.wholePercent(own.plays, all);
+      }
       if (own.plays > 0 && own.views > 0) out.yourCpm = cents(calc.effectiveCpm(own.rev, own.views));
       if (a && a.others.size >= MIN_OTHER_BUYERS_FOR_WINNING_CPM && a.views > 0) {
         out.winningCpm = { average: cents(calc.effectiveCpm(a.rev, a.views)), highest: cents(a.high) };
@@ -99,7 +104,7 @@ module.exports = {
     // fact, so the store and display type page filters are ignored (the guarantee covers the whole deal); only the
     // advertiser's own rows are read, and a PG deal has exactly one buyer.
     const pacing = [];
-    const pgDeals = deals.filter((x) => x.dealType === 'Programmatic guaranteed' && x.flight && wanted(x.id) && filters.dateTo >= x.flight.start);
+    const pgDeals = deals.filter((x) => x.dealType === 'Programmatic guaranteed' && x.flight && wanted(x.id) && filters.dateTo >= x.flight.start && x.flight.end >= filters.dateFrom);
     // One pass over the advertiser's rows for every PG deal (a scan per deal would cost one full delivery scan each).
     const viewsByDeal = new Map(pgDeals.map((d) => [d.id, new Map()]));
     if (pgDeals.length) {
@@ -116,7 +121,9 @@ module.exports = {
       const views = viewsByDeal.get(d.id) || new Map();
       let delivered = 0;
       const series = [];
-      for (const date of eachDay(start, upTo < start ? addDays(start, -1) : upTo)) {
+      // A flight that starts after dateTo or ended before dateFrom has nothing in the range, and is not scanned.
+      const inRange = filters.dateTo >= start && end >= filters.dateFrom;
+      for (const date of inRange ? eachDay(start, upTo) : []) {
         delivered += views.get(date) || 0;
         if (date < filters.dateFrom) continue;
         const p = calc.pgPacing({ delivered, forecast: d.forecast, buffer: d.buffer, daysElapsed: dayDiff(start, date) + 1, totalDays: flightDays });

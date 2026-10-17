@@ -15,6 +15,6 @@ module.exports = {
     if (!['json', 'csv'].includes(format)) throw new FilterError('format must be json or csv');
     if (!params.get('name')) return catalog.handler({ routes, principal }); // no name: the list of datasets
     const ds = buildDataset(params.get('name') || '', { routes, store, principal, params, today });
-    return format === 'csv' ? { [RAW]: { contentType: 'text/csv; charset=utf-8', body: toCsv(ds) } } : ds;
+    return format === 'csv' ? { [RAW]: { contentType: 'text/csv; charset=utf-8', body: toCsv(ds), filename: `${ds.name}.csv` } } : ds;
   },
 };

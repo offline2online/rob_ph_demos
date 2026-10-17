@@ -2,6 +2,7 @@
 const calc = require('../calc');
 const { displayTypeFacts, hoverCard } = require('../display-types');
 const { dealIdsFor, slotKey, slotsWonComplete, RETENTION_DAYS } = require('../dealing');
+const { MIN_OTHER_BUYERS_FOR_WINNING_CPM } = require('../constants');
 const { ownAdvertiser, isOpenAuction, dealsInScope, cents } = require('../advertiser-view');
 
 // Advertiser "Your deals by display type": one group per display type the advertiser's deals are on (shopper-journey
@@ -13,12 +14,12 @@ module.exports = {
   advertiserAccess: true,
   handler({ store, filters }) {
     const me = ownAdvertiser(filters);
-    const all = new Map(); const mine = new Map(); const ownRows = [];
+    const all = new Map(); const others = new Map(); const mine = new Map(); const ownRows = [];
     store.scanDelivery({ ...filters, advertiserIds: null }, (r) => {
       if (isOpenAuction(r)) return;
       const k = `${r.dealId}#${r.displayTypeId}`;
       all.set(k, (all.get(k) || 0) + r.slots);
-      if (r.advertiserId !== me) return;
+      if (r.advertiserId !== me) { if (r.slots > 0) (others.get(k) || others.set(k, new Set()).get(k)).add(r.advertiserId); return; }
       const m = mine.get(k) || mine.set(k, { plays: 0, views: 0, rev: 0 }).get(k);
       m.plays += r.slots; m.views += r.views; m.rev += r.revenue;
       ownRows.push(r);
@@ -58,10 +59,14 @@ module.exports = {
             })),
           },
           playsWon: own.plays, assumedViews: Math.round(own.views), spend: cents(own.rev),
-          share: { playsWon: own.plays, allPlays, advertisersOnDeal },
+          share: { playsWon: own.plays, advertisersOnDeal },
         };
+        // One other buyer winning here would make allPlays minus playsWon that buyer's plays: omit allPlays and the percent.
+        const winners = (others.get(key) || { size: 0 }).size;
+        const hideShare = winners >= 1 && winners < MIN_OTHER_BUYERS_FOR_WINNING_CPM;
+        if (!hideShare) row.share.allPlays = allPlays;
         if (own.views > 0) row.effectiveCpm = cents(calc.effectiveCpm(own.rev, own.views));
-        if (allPlays > 0) row.share.percent = calc.wholePercent(own.plays, allPlays);
+        if (!hideShare && allPlays > 0) row.share.percent = calc.wholePercent(own.plays, allPlays);
         rows.push(row);
       }
       rows.sort((a, b) => calc.compareDealTypes(a.dealType, b.dealType) || a.name.localeCompare(b.name));

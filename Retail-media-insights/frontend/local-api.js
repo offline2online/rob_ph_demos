@@ -437,7 +437,7 @@ function deliveredByDeal(store, filters, pgDeals) {
   const windows = new Map();
   let from = null;
   for (const d of pgDeals) {
-    if (!d.flight || filters.dateTo < d.flight.start) continue;
+    if (!d.flight || filters.dateTo < d.flight.start || d.flight.end < filters.dateFrom) continue; // not started by dateTo, or ended before the range: cost must not grow with history
     windows.set(d.id, { start: d.flight.start, end: filters.dateTo < d.flight.end ? filters.dateTo : d.flight.end });
     delivered.set(d.id, 0);
     if (from === null || d.flight.start < from) from = d.flight.start;
@@ -457,6 +457,7 @@ function pacingOf(deal, deliveredViews, filters) {
   const started = filters.dateTo >= flight.start;
   const daysElapsed = started ? Math.min(dayDiff(flight.start, filters.dateTo) + 1, flightDays) : 0;
   const delivered = started ? deliveredViews || 0 : 0;
+  const unknown = started && deliveredViews === undefined; // flight ended before the range: delivered is not scanned
   const p = calc.pgPacing({ delivered, forecast: deal.forecast, buffer: deal.buffer, daysElapsed, totalDays: flightDays });
   return {
     flightStart: flight.start, flightEnd: flight.end, flightDays, daysElapsed,
@@ -466,8 +467,8 @@ function pacingOf(deal, deliveredViews, filters) {
     forecast: deal.forecast, buffer: deal.buffer,
     guaranteedForFlight: Math.round(calc.guaranteedVolume(deal.forecast, deal.buffer)),
     guaranteedToDate: Math.round(p.guaranteedToDate),
-    delivered: Math.round(delivered),
-    percent: started && p.guaranteedToDate > 0 ? Math.round(p.pacing * 100) : null,
+    delivered: unknown ? null : Math.round(delivered),
+    percent: started && !unknown && p.guaranteedToDate > 0 ? Math.round(p.pacing * 100) : null,
     scope: 'deal',
   };
 }
@@ -1045,12 +1046,14 @@ function dispatch({ store, routes, url, principal, today, method = 'GET' }) {
   const list = Array.isArray(routes) ? routes : [...routes.values()];
   const u = new URL(url, 'http://localhost');
   const route = list.find((r) => `${BASE}${r.path}` === u.pathname);
-  if (!route) return { status: 404, body: { error: 'not found' } };
   let who = null;
-  if (!route.public) {
+  // Authenticate before the route lookup: an unauthenticated caller gets 401 for every path but a public one, so
+  // 404 versus 401 cannot be used to enumerate routes.
+  if (!route || !route.public) {
     try { who = normalisePrincipal(typeof principal === 'function' ? principal() : principal); } catch { who = null; }
     if (!who) return { status: 401, body: { error: 'authentication required' }, headers: { 'www-authenticate': 'Bearer' } };
   }
+  if (!route) return { status: 404, body: { error: 'not found' } };
   if (method !== 'GET') return { status: 405, body: { error: 'read-only service' }, headers: { allow: 'GET' } };
   const byPath = new Map(list.map((r) => [r.path, r]));
   try {
@@ -1137,6 +1140,7 @@ module.exports = {
 const calc = require('../calc');
 const { displayTypeFacts, hoverCard } = require('../display-types');
 const { dealIdsFor, slotKey, slotsWonComplete, RETENTION_DAYS } = require('../dealing');
+const { MIN_OTHER_BUYERS_FOR_WINNING_CPM } = require('../constants');
 const { ownAdvertiser, isOpenAuction, dealsInScope, cents } = require('../advertiser-view');
 
 // Advertiser "Your deals by display type": one group per display type the advertiser's deals are on (shopper-journey
@@ -1148,12 +1152,12 @@ module.exports = {
   advertiserAccess: true,
   handler({ store, filters }) {
     const me = ownAdvertiser(filters);
-    const all = new Map(); const mine = new Map(); const ownRows = [];
+    const all = new Map(); const others = new Map(); const mine = new Map(); const ownRows = [];
     store.scanDelivery({ ...filters, advertiserIds: null }, (r) => {
       if (isOpenAuction(r)) return;
       const k = `${r.dealId}#${r.displayTypeId}`;
       all.set(k, (all.get(k) || 0) + r.slots);
-      if (r.advertiserId !== me) return;
+      if (r.advertiserId !== me) { if (r.slots > 0) (others.get(k) || others.set(k, new Set()).get(k)).add(r.advertiserId); return; }
       const m = mine.get(k) || mine.set(k, { plays: 0, views: 0, rev: 0 }).get(k);
       m.plays += r.slots; m.views += r.views; m.rev += r.revenue;
       ownRows.push(r);
@@ -1193,10 +1197,14 @@ module.exports = {
             })),
           },
           playsWon: own.plays, assumedViews: Math.round(own.views), spend: cents(own.rev),
-          share: { playsWon: own.plays, allPlays, advertisersOnDeal },
+          share: { playsWon: own.plays, advertisersOnDeal },
         };
+        // One other buyer winning here would make allPlays minus playsWon that buyer's plays: omit allPlays and the percent.
+        const winners = (others.get(key) || { size: 0 }).size;
+        const hideShare = winners >= 1 && winners < MIN_OTHER_BUYERS_FOR_WINNING_CPM;
+        if (!hideShare) row.share.allPlays = allPlays;
         if (own.views > 0) row.effectiveCpm = cents(calc.effectiveCpm(own.rev, own.views));
-        if (allPlays > 0) row.share.percent = calc.wholePercent(own.plays, allPlays);
+        if (!hideShare && allPlays > 0) row.share.percent = calc.wholePercent(own.plays, allPlays);
         rows.push(row);
       }
       rows.sort((a, b) => calc.compareDealTypes(a.dealType, b.dealType) || a.name.localeCompare(b.name));
@@ -1359,8 +1367,13 @@ module.exports = {
         return out;
       }
       const all = a ? a.all : 0;
-      out.allPlays = all;
-      if (all > 0) out.sharePercent = calc.wholePercent(own.plays, all);
+      // With exactly one other buyer (1 <= others < MIN) all plays minus the advertiser's own is that buyer's plays, so
+      // allPlays and the share are omitted. With none, the advertiser has the block to itself and the share is 100%.
+      const others = a ? a.others.size : 0;
+      if (!(others >= 1 && others < MIN_OTHER_BUYERS_FOR_WINNING_CPM)) {
+        out.allPlays = all;
+        if (all > 0) out.sharePercent = calc.wholePercent(own.plays, all);
+      }
       if (own.plays > 0 && own.views > 0) out.yourCpm = cents(calc.effectiveCpm(own.rev, own.views));
       if (a && a.others.size >= MIN_OTHER_BUYERS_FOR_WINNING_CPM && a.views > 0) {
         out.winningCpm = { average: cents(calc.effectiveCpm(a.rev, a.views)), highest: cents(a.high) };
@@ -1394,7 +1407,7 @@ module.exports = {
     // fact, so the store and display type page filters are ignored (the guarantee covers the whole deal); only the
     // advertiser's own rows are read, and a PG deal has exactly one buyer.
     const pacing = [];
-    const pgDeals = deals.filter((x) => x.dealType === 'Programmatic guaranteed' && x.flight && wanted(x.id) && filters.dateTo >= x.flight.start);
+    const pgDeals = deals.filter((x) => x.dealType === 'Programmatic guaranteed' && x.flight && wanted(x.id) && filters.dateTo >= x.flight.start && x.flight.end >= filters.dateFrom);
     // One pass over the advertiser's rows for every PG deal (a scan per deal would cost one full delivery scan each).
     const viewsByDeal = new Map(pgDeals.map((d) => [d.id, new Map()]));
     if (pgDeals.length) {
@@ -1411,7 +1424,9 @@ module.exports = {
       const views = viewsByDeal.get(d.id) || new Map();
       let delivered = 0;
       const series = [];
-      for (const date of eachDay(start, upTo < start ? addDays(start, -1) : upTo)) {
+      // A flight that starts after dateTo or ended before dateFrom has nothing in the range, and is not scanned.
+      const inRange = filters.dateTo >= start && end >= filters.dateFrom;
+      for (const date of inRange ? eachDay(start, upTo) : []) {
         delivered += views.get(date) || 0;
         if (date < filters.dateFrom) continue;
         const p = calc.pgPacing({ delivered, forecast: d.forecast, buffer: d.buffer, daysElapsed: dayDiff(start, date) + 1, totalDays: flightDays });

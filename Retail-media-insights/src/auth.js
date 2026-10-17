@@ -8,6 +8,10 @@ const crypto = require('crypto');
 
 const { PRINCIPAL_TYPES } = require('./auth-types');
 const MIN_SECRET_LENGTH = 32;
+const MAX_TTL_SECONDS = 24 * 60 * 60; // no token lives longer than a day, whoever mints it
+const MAX_BODY_LENGTH = 2048;
+const BODY_RE = /^[A-Za-z0-9_-]+$/;
+const SIG_RE = /^[A-Za-z0-9_-]{43}$/; // exactly the unpadded base64url of 32 bytes: nothing lenient to malleate
 
 const b64 = (buf) => Buffer.from(buf).toString('base64url');
 const sign = (secret, body) => crypto.createHmac('sha256', secret).update(body).digest();
@@ -22,6 +26,7 @@ function requireSecret(secret) {
 function mintToken({ secret, principalType, principalId, scopes = ['insights:read'], ttlSeconds = 3600, now = Date.now() }) {
   requireSecret(secret);
   if (!PRINCIPAL_TYPES.includes(principalType)) throw new Error('principalType must be admin or advertiser');
+  if (!Number.isFinite(ttlSeconds) || ttlSeconds > MAX_TTL_SECONDS) throw new Error(`ttlSeconds must be at most ${MAX_TTL_SECONDS} (24 hours)`);
   if (typeof principalId !== 'string' || !principalId) throw new Error('principalId is required');
   const body = b64(JSON.stringify({ principalType, principalId, scopes, exp: Math.floor(now / 1000) + ttlSeconds }));
   return `${body}.${b64(sign(secret, body))}`;
@@ -33,13 +38,14 @@ function verifyToken(secret, token, now = Date.now()) {
   const parts = token.split('.');
   if (parts.length !== 2) return null;
   const [body, sig] = parts;
+  if (!SIG_RE.test(sig) || !BODY_RE.test(body) || body.length > MAX_BODY_LENGTH) return null;
   const given = Buffer.from(sig, 'base64url');
   const want = sign(secret, body);
   if (given.length !== want.length || !crypto.timingSafeEqual(given, want)) return null;
   let p;
   try { p = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')); } catch { return null; }
   if (!p || !PRINCIPAL_TYPES.includes(p.principalType) || typeof p.principalId !== 'string' || !p.principalId) return null;
-  if (!Number.isFinite(p.exp) || p.exp * 1000 <= now) return null;
+  if (!Number.isFinite(p.exp) || p.exp * 1000 <= now || p.exp - now / 1000 > MAX_TTL_SECONDS) return null;
   return { principalType: p.principalType, principalId: p.principalId, scopes: Array.isArray(p.scopes) ? p.scopes.filter((s) => typeof s === 'string') : [] };
 }
 
@@ -52,4 +58,4 @@ function createTokenAuthenticator({ secret, now = () => Date.now() }) {
   };
 }
 
-module.exports = { mintToken, verifyToken, createTokenAuthenticator, PRINCIPAL_TYPES, MIN_SECRET_LENGTH };
+module.exports = { MAX_TTL_SECONDS, mintToken, verifyToken, createTokenAuthenticator, PRINCIPAL_TYPES, MIN_SECRET_LENGTH };

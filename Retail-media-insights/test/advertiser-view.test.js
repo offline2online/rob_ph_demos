@@ -120,7 +120,7 @@ test('delivery: auction blocks show plays won of all plays, share, own CPM and t
   const { body } = await as('adv-nova', `/delivery?${Q}`);
   for (const d of body.days) for (const b of d.deals) {
     if (b.dealType === 'Private auction' || b.dealType === 'Open auction') {
-      assert.ok(b.playsWon <= b.allPlays, b.dealId);
+      if (!('allPlays' in b)) { assert.ok(!('sharePercent' in b), 'share needs allPlays'); } else assert.ok(b.playsWon <= b.allPlays, b.dealId);
       if (b.allPlays > 0) assert.equal(b.sharePercent, calc.wholePercent(b.playsWon, b.allPlays));
       assert.equal('yourCpm' in b, b.playsWon > 0);
       assert.ok(b.floorCpm.min <= b.floorCpm.max);
@@ -167,7 +167,8 @@ test('winning CPM: shown only when at least MIN_OTHER_BUYERS_FOR_WINNING_CPM oth
   assert.ok(!('winningCpm' in alone));
   const one = await day([{ adv: 'adv-nova', cpm: 20 }, { adv: 'adv-acme', cpm: 30 }]);
   assert.ok(!('winningCpm' in one), 'one other buyer would reveal that buyer\'s CPM');
-  assert.equal(one.playsWon, 10); assert.equal(one.allPlays, 20); assert.equal(one.sharePercent, 50);
+  assert.equal(one.playsWon, 10);
+  assert.ok(!('allPlays' in one) && !('sharePercent' in one), 'all plays minus own plays would be that buyer\'s plays');
   const two = await day([{ adv: 'adv-nova', cpm: 20 }, { adv: 'adv-acme', cpm: 30 }, { adv: 'adv-blackmores', cpm: 40 }]);
   assert.deepEqual(two.winningCpm, { average: 30, highest: 40 });
   assert.equal(two.allPlays, 30); assert.equal(two.yourCpm, 20);
@@ -214,7 +215,7 @@ test('deals-by-display-type: groups in shopper-journey order, rows reconcile to 
       assert.equal(g.assumedViews, sum(g.deals.map((d) => d.assumedViews)));
       assert.equal(g.dealCount, g.deals.length);
       for (const d of g.deals) {
-        assert.ok(d.share.playsWon <= d.share.allPlays);
+        if ('allPlays' in d.share) assert.ok(d.share.playsWon <= d.share.allPlays); else assert.ok(!('percent' in d.share));
         if (d.share.allPlays > 0) assert.equal(d.share.percent, calc.wholePercent(d.share.playsWon, d.share.allPlays));
         assert.ok(d.share.advertisersOnDeal >= 1);
         assert.ok(d.dealType !== 'Open auction');
@@ -229,6 +230,7 @@ test('deals-by-display-type: a deal\'s share is the advertiser\'s plays of all p
   const { body } = await as('adv-nova', `/deals-by-display-type?${Q}`);
   const all = []; store.scanDelivery({ dateFrom: '2026-10-05', dateTo: '2026-10-11', storeIds: null, displayTypeIds: null, advertiserIds: null }, (r) => all.push(r));
   for (const g of body.groups) for (const d of g.deals) {
+    if (!('allPlays' in d.share)) continue; // omitted when exactly one other buyer won there
     assert.equal(d.share.allPlays, sum(all.filter((r) => r.dealId === d.id && r.displayTypeId === g.displayType.id).map((r) => r.slots)), `${d.id} ${g.displayType.id}`);
   }
   assert.ok(!JSON.stringify(body).match(/acme|blackmores/i));

@@ -7,9 +7,11 @@
 
 const { FilterError, ForbiddenError } = require('./filters');
 const { runRoute } = require('./query');
-const { availableDatasets, buildDataset } = require('./datasets');
+const { availableDatasets, buildDataset, DATASETS } = require('./datasets');
 
 const PROTOCOL_VERSION = '2025-03-26';
+const MAX_RESPONSE_BYTES = 8 * 1024 * 1024; // the serialised response to one HTTP request, text plus structuredContent
+const MAX_ID_LENGTH = 200;
 const str = (description) => ({ type: 'string', description });
 const strs = (description) => ({ type: 'array', items: { type: 'string' }, description });
 const PAGE_FILTERS = {
@@ -70,24 +72,40 @@ function toParams(args) {
   return p;
 }
 
+// Arguments are checked with Object.hasOwn: `k in obj` also follows the prototype chain ("constructor", "__proto__").
+const has = (obj, k) => Object.hasOwn(obj, k);
+
 function callTool(name, args, { store, routes, principal, today }) {
+  if (args !== undefined && args !== null && (typeof args !== 'object' || Array.isArray(args))) throw new FilterError('arguments must be an object');
   const params = toParams(args);
   if (name === 'retail_media_dataset') {
+    const ds = params.get('name') && DATASETS.find((d) => d.name === params.get('name'));
+    // A dataset takes the page filters plus the extra arguments of the route it is built from, nothing else.
+    const extra = ds ? (TOOLS[ds.route] || [, , {}])[2] : {};
+    for (const k of params.keys()) if (k !== 'name' && !(ds && (has(PAGE_FILTERS, k) || has(extra, k)))) throw new FilterError(`unknown argument ${k}`);
     if (!params.get('name')) return { datasets: availableDatasets(principal, routes).map((d) => ({ name: d.name, description: d.description, grain: d.grain })) };
     return buildDataset(params.get('name'), { routes, store, principal, params, today });
   }
   const entry = Object.entries(TOOLS).find(([, t]) => t[0] === name);
   if (!entry) throw new FilterError(`unknown tool ${name}`);
   const extra = entry[1][2];
-  for (const k of params.keys()) if (!(k in PAGE_FILTERS) && !(k in extra)) throw new FilterError(`unknown argument ${k}`);
+  for (const k of params.keys()) if (!has(PAGE_FILTERS, k) && !has(extra, k)) throw new FilterError(`unknown argument ${k}`);
   return runRoute(routes.get(`/${entry[0]}`), { store, principal, params, today });
 }
 
 const rpcError = (id, code, message) => ({ jsonrpc: '2.0', id: id ?? null, error: { code, message } });
 
-/** Handle one parsed JSON-RPC message. Returns the response object, or null for a notification. */
+// A JSON-RPC id is a string (at most 200 characters), a finite number or null; anything else (an object or a deeply
+// nested array, which would also blow the stack in JSON.stringify) is an invalid request answered with id null.
+const validId = (id) => id === null || (typeof id === 'string' && id.length <= MAX_ID_LENGTH) || (typeof id === 'number' && Number.isFinite(id));
+
+/**
+ * Handle one parsed JSON-RPC message. Returns the response object, or null for a notification.
+ * `ctx.budget.left` (bytes) is shared by every message of one HTTP request, so a batch cannot exceed the response cap.
+ */
 function handleMessage(msg, ctx) {
-  if (!msg || msg.jsonrpc !== '2.0' || typeof msg.method !== 'string') return rpcError(msg && msg.id, -32600, 'invalid request');
+  if (!msg || typeof msg !== 'object' || Array.isArray(msg) || (msg.id !== undefined && !validId(msg.id))) return rpcError(null, -32600, 'invalid request');
+  if (msg.jsonrpc !== '2.0' || typeof msg.method !== 'string') return rpcError(msg.id, -32600, 'invalid request');
   const isNotification = msg.id === undefined;
   if (isNotification) return null;
   switch (msg.method) {
@@ -104,7 +122,12 @@ function handleMessage(msg, ctx) {
       if (typeof name !== 'string') return rpcError(msg.id, -32602, 'name is required');
       try {
         const data = callTool(name, args, ctx);
-        return { jsonrpc: '2.0', id: msg.id, result: { content: [{ type: 'text', text: JSON.stringify(data) }], structuredContent: data } };
+        const text = JSON.stringify(data);
+        const size = Buffer.byteLength(text) * 2; // sent twice: as text and as structuredContent
+        const budget = ctx.budget || { left: MAX_RESPONSE_BYTES };
+        if (size > budget.left) return { jsonrpc: '2.0', id: msg.id, result: { isError: true, content: [{ type: 'text', text: 'the result is too large: ask for a narrower date range or fewer stores, display types or advertisers' }] } };
+        budget.left -= size;
+        return { jsonrpc: '2.0', id: msg.id, result: { content: [{ type: 'text', text }], structuredContent: data } };
       } catch (e) {
         if (e instanceof FilterError || e instanceof ForbiddenError) return { jsonrpc: '2.0', id: msg.id, result: { isError: true, content: [{ type: 'text', text: e.message }] } };
         return { jsonrpc: '2.0', id: msg.id, result: { isError: true, content: [{ type: 'text', text: 'internal error' }] } };
@@ -115,4 +138,4 @@ function handleMessage(msg, ctx) {
   }
 }
 
-module.exports = { handleMessage, toolList, TOOLS, PROTOCOL_VERSION };
+module.exports = { handleMessage, toolList, TOOLS, PROTOCOL_VERSION, MAX_RESPONSE_BYTES };

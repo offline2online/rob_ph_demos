@@ -80,9 +80,15 @@ test('deal hover: description and only the advertiser’s own DSP deal ID', asyn
 
 test('share hover: plays won, all plays, advertiser count — never names', async () => {
   const deal = (await mine('/deals-by-display-type')).groups[0].deals.find((d) => d.dealType === 'Private auction');
-  const t = AV.shareTooltip(deal);
+  const t = AV.shareTooltip({ ...deal, share: { playsWon: 5, allPlays: 20, advertisersOnDeal: 3 } });
   assert.deepStrictEqual(t.rows.map((r) => r[0]), ['Plays won', 'All plays on the deal', 'Advertisers on the deal']);
   assert.match(t.rows[2][1], /^\d+$/);
+  // The back end omits allPlays and percent when exactly one other buyer won: the hover and the row still render.
+  const bare = AV.shareTooltip({ ...deal, share: { playsWon: 5, advertisersOnDeal: 2 } });
+  assert.deepStrictEqual(bare.rows.map((r) => r[0]), ['Plays won', 'Advertisers on the deal']);
+  assert.ok(!JSON.stringify(bare).match(/NaN|undefined|not set/));
+  const row = AV.tableRows({ groups: [{ displayType: { name: 'T' }, dealCount: 1, slots: 1, playsWon: 5, assumedViews: 1, spend: 1, deals: [{ ...deal, share: { playsWon: 5, advertisersOnDeal: 2 } }] }] })[1];
+  assert.equal(row.share, undefined);
 });
 
 test('slots hover lists each assigned slot', async () => {

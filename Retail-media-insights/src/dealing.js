@@ -71,7 +71,7 @@ function deliveredByDeal(store, filters, pgDeals) {
   const windows = new Map();
   let from = null;
   for (const d of pgDeals) {
-    if (!d.flight || filters.dateTo < d.flight.start) continue;
+    if (!d.flight || filters.dateTo < d.flight.start || d.flight.end < filters.dateFrom) continue; // not started by dateTo, or ended before the range: cost must not grow with history
     windows.set(d.id, { start: d.flight.start, end: filters.dateTo < d.flight.end ? filters.dateTo : d.flight.end });
     delivered.set(d.id, 0);
     if (from === null || d.flight.start < from) from = d.flight.start;
@@ -91,6 +91,7 @@ function pacingOf(deal, deliveredViews, filters) {
   const started = filters.dateTo >= flight.start;
   const daysElapsed = started ? Math.min(dayDiff(flight.start, filters.dateTo) + 1, flightDays) : 0;
   const delivered = started ? deliveredViews || 0 : 0;
+  const unknown = started && deliveredViews === undefined; // flight ended before the range: delivered is not scanned
   const p = calc.pgPacing({ delivered, forecast: deal.forecast, buffer: deal.buffer, daysElapsed, totalDays: flightDays });
   return {
     flightStart: flight.start, flightEnd: flight.end, flightDays, daysElapsed,
@@ -100,8 +101,8 @@ function pacingOf(deal, deliveredViews, filters) {
     forecast: deal.forecast, buffer: deal.buffer,
     guaranteedForFlight: Math.round(calc.guaranteedVolume(deal.forecast, deal.buffer)),
     guaranteedToDate: Math.round(p.guaranteedToDate),
-    delivered: Math.round(delivered),
-    percent: started && p.guaranteedToDate > 0 ? Math.round(p.pacing * 100) : null,
+    delivered: unknown ? null : Math.round(delivered),
+    percent: started && !unknown && p.guaranteedToDate > 0 ? Math.round(p.pacing * 100) : null,
     scope: 'deal',
   };
 }

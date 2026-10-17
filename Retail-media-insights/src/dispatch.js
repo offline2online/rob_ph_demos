@@ -24,12 +24,14 @@ function dispatch({ store, routes, url, principal, today, method = 'GET' }) {
   const list = Array.isArray(routes) ? routes : [...routes.values()];
   const u = new URL(url, 'http://localhost');
   const route = list.find((r) => `${BASE}${r.path}` === u.pathname);
-  if (!route) return { status: 404, body: { error: 'not found' } };
   let who = null;
-  if (!route.public) {
+  // Authenticate before the route lookup: an unauthenticated caller gets 401 for every path but a public one, so
+  // 404 versus 401 cannot be used to enumerate routes.
+  if (!route || !route.public) {
     try { who = normalisePrincipal(typeof principal === 'function' ? principal() : principal); } catch { who = null; }
     if (!who) return { status: 401, body: { error: 'authentication required' }, headers: { 'www-authenticate': 'Bearer' } };
   }
+  if (!route) return { status: 404, body: { error: 'not found' } };
   if (method !== 'GET') return { status: 405, body: { error: 'read-only service' }, headers: { allow: 'GET' } };
   const byPath = new Map(list.map((r) => [r.path, r]));
   try {
