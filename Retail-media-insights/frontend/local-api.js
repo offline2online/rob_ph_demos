@@ -375,11 +375,15 @@ const { days } = require('./filters');
 
 const RETENTION_DAYS = 90; // settled-bid retention (README open question 3)
 const DAY = 86400000;
-const toMs = (d) => Date.parse(`${d}T00:00:00Z`);
+// Date arithmetic runs thousands of times per request (a day loop per deal): memoised, cleared if it ever grows large.
+const msCache = new Map(); const isoCache = new Map();
+const toMs = (d) => { let ms = msCache.get(d); if (ms === undefined) { if (msCache.size > 50000) msCache.clear(); ms = Date.parse(`${d}T00:00:00Z`); msCache.set(d, ms); } return ms; };
+const isoOf = (ms) => { let d = isoCache.get(ms); if (d === undefined) { if (isoCache.size > 50000) isoCache.clear(); d = new Date(ms).toISOString().slice(0, 10); isoCache.set(ms, d); } return d; };
+const dayNumber = (d) => Math.round(toMs(d) / DAY);
 const dayDiff = (a, b) => Math.round((toMs(b) - toMs(a)) / DAY);
 const cents = (n) => Math.round(n * 100) / 100;
 
-const addDays = (d, n) => new Date(toMs(d) + n * DAY).toISOString().slice(0, 10);
+const addDays = (d, n) => isoOf(toMs(d) + n * DAY);
 const eachDay = (from, to) => { const out = []; for (let d = from; d <= to; d = addDays(d, 1)) out.push(d); return out; };
 
 /**
@@ -394,22 +398,44 @@ const slotKey = (s) => `${s.displayTypeId}#${s.position}`;
 
 /**
  * Delivery grouped by deal and by advertiser, plus slots won by deal x display type and, for an advertiser,
- * by deal x display type (`slotsByAdvDealType`, so wins can be limited to the positions of the deals it is on).
+ * by deal x display type (`slotsOnAdvDealType`, so wins can be limited to the positions of the deals it is on).
  */
 function rollUp(store, filters) {
-  const byDeal = new Map(); const byAdv = new Map(); const slotsByDealType = new Map(); const slotsByAdvDealType = new Map();
-  const add = (m, k, r) => {
-    const b = m.get(k) || { revenue: 0, earned: 0, earnedViews: 0, views: 0, slots: 0 };
-    b.revenue += r.revenue; b.earned += r.earned; b.earnedViews += r.earnedViews; b.views += r.views; b.slots += r.slots;
-    m.set(k, b);
-  };
+  const nD = store.dealIds.length; const nT = store.typeIds.length; const nA = store.advIds.length;
+  // Dense accumulators indexed by the store's integer codes; rows arrive in the same order as before, so every sum is the same float.
+  const deal = { revenue: new Float64Array(nD), earned: new Float64Array(nD), earnedViews: new Float64Array(nD), views: new Float64Array(nD), slots: new Float64Array(nD) };
+  const adv = { revenue: new Float64Array(nA), earned: new Float64Array(nA), earnedViews: new Float64Array(nA), views: new Float64Array(nA), slots: new Float64Array(nA) };
+  const dealSeen = new Uint8Array(nD); const advSeen = new Uint8Array(nA);
+  const dealOrder = []; const advOrder = [];
+  const dealType = new Float64Array(nD * nT);
+  // adv x deal x type is dense up to 4M cells (32 MB); an estate bigger than that falls back to a sparse map on the same numeric key.
+  const adSize = nA * nD * nT;
+  const advDealType = adSize <= 4194304 ? new Float64Array(adSize) : new Map();
+  const dense = advDealType instanceof Float64Array;
   store.scanDelivery(filters, (r) => {
-    add(byDeal, r.dealId, r); add(byAdv, r.advertiserId, r);
-    const dk = `${r.dealId}#${r.displayTypeId}`; const ak = `${r.advertiserId}#${dk}`;
-    slotsByDealType.set(dk, (slotsByDealType.get(dk) || 0) + r.slots);
-    slotsByAdvDealType.set(ak, (slotsByAdvDealType.get(ak) || 0) + r.slots);
+    const d = r.dealIx; const a = r.advIx;
+    if (!dealSeen[d]) { dealSeen[d] = 1; dealOrder.push(d); }
+    if (!advSeen[a]) { advSeen[a] = 1; advOrder.push(a); }
+    deal.revenue[d] += r.revenue; deal.earned[d] += r.earned; deal.earnedViews[d] += r.earnedViews; deal.views[d] += r.views; deal.slots[d] += r.slots;
+    adv.revenue[a] += r.revenue; adv.earned[a] += r.earned; adv.earnedViews[a] += r.earnedViews; adv.views[a] += r.views; adv.slots[a] += r.slots;
+    const dk = d * nT + r.typeIx;
+    dealType[dk] += r.slots;
+    const ak = a * nD * nT + dk;
+    if (dense) advDealType[ak] += r.slots; else advDealType.set(ak, (advDealType.get(ak) || 0) + r.slots);
   });
-  return { byDeal, byAdv, slotsByDealType, slotsByAdvDealType };
+  const bucket = (g, i) => ({ revenue: g.revenue[i], earned: g.earned[i], earnedViews: g.earnedViews[i], views: g.views[i], slots: g.slots[i] });
+  const byDeal = new Map(dealOrder.map((d) => [store.dealIds[d], bucket(deal, d)]));
+  const byAdv = new Map(advOrder.map((a) => [store.advIds[a], bucket(adv, a)]));
+  // Slots won by deal x display type and by advertiser x deal x display type, read by id (0 when there are none).
+  const slotsOnDealType = (dealId, typeId) => {
+    const d = store.dealCode.get(dealId); const t = store.typeCode.get(typeId);
+    return d === undefined || t === undefined ? 0 : dealType[d * nT + t];
+  };
+  const slotsOnAdvDealType = (advId, dealId, typeId) => {
+    const a = store.advCode.get(advId); const d = store.dealCode.get(dealId); const t = store.typeCode.get(typeId);
+    return a === undefined || d === undefined || t === undefined ? 0 : (dense ? advDealType[a * nD * nT + d * nT + t] : advDealType.get(a * nD * nT + d * nT + t) || 0);
+  };
+  return { byDeal, byAdv, slotsOnDealType, slotsOnAdvDealType };
 }
 
 /**
@@ -434,19 +460,26 @@ function opportunities(store, filters) {
  */
 function deliveredByDeal(store, filters, pgDeals) {
   const delivered = new Map();
-  const windows = new Map();
+  const nD = store.dealIds.length;
+  const start = new Float64Array(nD).fill(Infinity); const end = new Float64Array(nD).fill(-Infinity); const total = new Float64Array(nD);
   let from = null;
   for (const d of pgDeals) {
     if (!d.flight || filters.dateTo < d.flight.start || d.flight.end < filters.dateFrom) continue; // not started by dateTo, or ended before the range: cost must not grow with history
-    windows.set(d.id, { start: d.flight.start, end: filters.dateTo < d.flight.end ? filters.dateTo : d.flight.end });
     delivered.set(d.id, 0);
+    const ix = store.dealCode.get(d.id);
+    if (ix !== undefined) { start[ix] = dayNumber(d.flight.start); end[ix] = dayNumber(filters.dateTo < d.flight.end ? filters.dateTo : d.flight.end); }
     if (from === null || d.flight.start < from) from = d.flight.start;
   }
   if (from === null) return delivered;
   store.scanDelivery({ dateFrom: from, dateTo: filters.dateTo, storeIds: null, displayTypeIds: null, advertiserIds: null }, (r) => {
-    const w = windows.get(r.dealId);
-    if (w && r.date >= w.start && r.date <= w.end) delivered.set(r.dealId, delivered.get(r.dealId) + r.earnedViews);
+    const x = r.dealIx;
+    if (r.dayIx >= start[x] && r.dayIx <= end[x]) total[x] += r.earnedViews;
   });
+  for (const d of pgDeals) {
+    const ix = store.dealCode.get(d.id);
+    // `delivered` starts at 0 and adds in row order, as before; a deal with no rows in the store keeps 0.
+    if (delivered.has(d.id) && ix !== undefined) delivered.set(d.id, total[ix]);
+  }
   return delivered;
 }
 
@@ -476,7 +509,7 @@ function pacingOf(deal, deliveredViews, filters) {
 /** Slots won comes from settled bids, kept for 90 days only: a longer range is flagged incomplete. */
 const slotsWonComplete = (filters) => days(filters) <= RETENTION_DAYS;
 
-module.exports = { addDays, eachDay, dayDiff, dealIdsFor, dealsOf, slotKey, rollUp, opportunities, deliveredByDeal, pacingOf, slotsWonComplete, RETENTION_DAYS, cents };
+module.exports = { addDays, eachDay, dayDiff, dayNumber, dealIdsFor, dealsOf, slotKey, rollUp, opportunities, deliveredByDeal, pacingOf, slotsWonComplete, RETENTION_DAYS, cents };
   },
   "src/query.js": function (module, exports, require) {
 // The one place a request becomes an answer: HTTP routes, QuickSight datasets and MCP tools all go through
@@ -485,22 +518,51 @@ module.exports = { addDays, eachDay, dayDiff, dealIdsFor, dealsOf, slotKey, roll
 const { parseFilters, scopeFilters, ForbiddenError } = require('./filters');
 const { READ_SCOPE } = require('./constants');
 
-function runRoute(route, { store, principal, params, today, routes }) {
+/**
+ * `cache` (optional, the HTTP server's ResponseCache) is consulted after the scope and role checks and the server-side scoping, so a
+ * hit can never skip a check or cross principals. With one, a successful JSON result comes back as {[SERIALISED]: json}, the
+ * response text itself, whether it was cached or just computed.
+ */
+function runRoute(route, { store, principal, params, today, routes, cache }) {
   // An authenticated caller lacking the scope is 403 (DSP Integration section 9.5).
   if (principal && !(principal.scopes || []).includes(READ_SCOPE)) throw new ForbiddenError(`the ${READ_SCOPE} scope is required`);
   if (principal && principal.principalType === 'advertiser' && !route.advertiserAccess) throw new ForbiddenError('not available to advertiser logins');
   const filters = principal ? scopeFilters(parseFilters(params, { today }), principal, store) : null;
-  return route.handler({ store, filters, params, principal, routes, today });
+  const key = cache && principal ? cache.keyFor({ route, principal, filters, params }) : null;
+  if (key !== null) {
+    const hit = cache.get(key);
+    if (hit !== undefined) return { [SERIALISED]: hit };
+  }
+  const body = route.handler({ store, filters, params, principal, routes, today });
+  if (key === null || (body && body[RAW])) return body;
+  let json;
+  try { json = JSON.stringify(body); } catch { return body; } // the caller reports what cannot be serialised
+  cache.set(key, json);
+  return { [SERIALISED]: json };
 }
 
 // A handler returns {[RAW]: {contentType, body}} to send something other than JSON (the CSV form of a dataset).
 const RAW = Symbol('raw');
+// A result that is already JSON text (see runRoute's cache).
+const SERIALISED = Symbol('serialised');
 
-module.exports = { runRoute, RAW };
+module.exports = { runRoute, RAW, SERIALISED };
   },
   "src/store.js": function (module, exports, require) {
 // In-memory, date-indexed aggregate store. Rows are sorted by date once; a query binary-searches
 // the date range and then applies the remaining page filters with Set lookups.
+//
+// Beside the fine cube (date x display type x store x deal x DSP x advertiser) the store builds, once at load:
+//   - a store-less daily rollup (date x display type x deal x DSP x advertiser), read by every query with no store filter;
+//   - a per-store partition of the fine cube (indices into it, in the same order), read by a query with a store filter;
+//   - the same two for inventory (rollup: date x display type).
+// A query therefore never scans the rows of stores it did not ask for, and never scans the store dimension it did not
+// ask about. `new AggregateStore(data, { indexed: false })` keeps the straight scan of the fine cube: the reference
+// implementation the equivalence test compares every endpoint against.
+//
+// A rollup row carries `maxCpm` too (see below). Every row also carries small integers (dayIx, the day number since 1970; dealIx, typeIx, advIx; no dealIx or advIx on
+// inventory) so the hot handlers can accumulate into dense arrays instead of building a string key per row. The codes are
+// indexes into dealIds/typeIds/advIds, and dealCode/typeCode/advCode map an id back to its code.
 
 function lowerBound(rows, date) {
   let lo = 0; let hi = rows.length;
@@ -511,32 +573,189 @@ function lowerBound(rows, date) {
   return lo;
 }
 
+const { effectiveCpm } = require('./calc');
+
+const byDate = (a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
 const asSet = (list) => (list ? new Set(list) : null);
 
+const DELIVERY_MEASURES = ['revenue', 'earned', 'estimated', 'views', 'earnedViews', 'slots', 'earnedSlots'];
+const INVENTORY_MEASURES = ['sold', 'unsold', 'offline', 'outsideHours', 'unsoldViews', 'lostRevenue'];
+
+/** Dense integer codes for a dimension: code(value) assigns the next free one. */
+function dictionary() {
+  const ids = []; const map = new Map();
+  return { ids, code(v) { let i = map.get(v); if (i === undefined) { i = ids.length; ids.push(v); map.set(v, i); } return i; } };
+}
+
+/**
+ * Sum rows that agree on everything `keyOf` looks at, per date (rows are sorted by date, so one date's groups are built
+ * and flushed together). `make(first)` creates the group row from its first member; the measures are added in row order.
+ */
+function rollup(rows, keyOf, make, measures, each) {
+  const out = [];
+  let groups = new Map(); let day = null;
+  for (const r of rows) {
+    if (r.date !== day) { groups = new Map(); day = r.date; }
+    const k = keyOf(r);
+    let g = groups.get(k);
+    if (!g) { g = make(r); groups.set(k, g); out.push(g); }
+    for (const m of measures) g[m] += r[m];
+    if (each) each(g, r);
+  }
+  return out;
+}
+
+/** value of `field` -> Int32Array of positions in `rows` (ascending, so date order and tie order are those of `rows`). */
+function partition(rows, field) {
+  const lists = new Map();
+  rows.forEach((r, i) => { let l = lists.get(r[field]); if (!l) { l = []; lists.set(r[field], l); } l.push(i); });
+  return new Map([...lists].map(([k, l]) => [k, Int32Array.from(l)]));
+}
+
+const DAY_MS = 86400000;
+/** Stamp dayIx on date-sorted rows (one Date.parse per distinct day). */
+function stampDays(rows) {
+  let day = null; let ix = 0;
+  for (const r of rows) { if (r.date !== day) { day = r.date; ix = Math.round(Date.parse(`${day}T00:00:00Z`) / DAY_MS); } r.dayIx = ix; }
+}
+
+const OPEN_AUCTION_DEAL_TYPE = 'Open auction';
+
+/**
+ * The settled (earned) delivery of every advertiser together, per day x display type x deal (block `nDeals` is the open auction):
+ * plays, revenue, views, the highest CPM of any row and which advertisers won plays. What advertiser Delivery shows about the
+ * other buyers on a deal ("all plays", the aggregate winning CPM, how many others won) is a function of these cells alone.
+ * `rows` are date-ordered rows (the rollup or, for a store filter, fine rows); `cell.dealIx` is -1 for the open auction.
+ */
+function buildCells(rows, nDeals, out = [], index = new Map()) {
+  let day = null;
+  for (const r of rows) {
+    if (r.date !== day) { day = r.date; index.clear(); }
+    if (r.earnedSlots <= 0 && r.earned <= 0) continue;
+    const open = r.dealType === OPEN_AUCTION_DEAL_TYPE;
+    const key = r.typeIx * (nDeals + 1) + (open ? nDeals : r.dealIx);
+    let c = index.get(key);
+    if (!c) {
+      c = { date: r.date, dayIx: r.dayIx, displayTypeId: r.displayTypeId, dealIx: open ? -1 : r.dealIx, all: 0, rev: 0, views: 0, high: 0, advs: [] };
+      index.set(key, c); out.push(c);
+    }
+    c.all += r.earnedSlots; c.rev += r.earned; c.views += r.earnedViews;
+    if (r.earnedViews > 0) { const cpm = r.maxCpm !== undefined ? r.maxCpm : effectiveCpm(r.earned, r.earnedViews); if (cpm > c.high) c.high = cpm; }
+    if (r.earnedSlots > 0 && !c.advs.includes(r.advIx)) c.advs.push(r.advIx);
+  }
+  return out;
+}
+
 class AggregateStore {
-  constructor({ delivery, inventory, campaigns = [], advertisers = {}, catalog = { displayTypes: {}, displays: [] } }) {
+  constructor({ delivery, inventory, campaigns = [], advertisers = {}, catalog = { displayTypes: {}, displays: [] } }, { indexed = true } = {}) {
     this.catalog = catalog;
     this.campaigns = campaigns;
     this.advertisers = advertisers;
-    this.delivery = [...delivery].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-    this.inventory = [...inventory].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-  }
+    this.indexed = indexed;
+    this.delivery = [...delivery].sort(byDate);
+    this.inventory = [...inventory].sort(byDate);
 
-  static #scan(rows, f, fn, useAdvertiser) {
-    const stores = asSet(f.storeIds);
-    const types = asSet(f.displayTypeIds);
-    const advs = useAdvertiser ? asSet(f.advertiserIds) : null;
-    const end = lowerBound(rows, `${f.dateTo}￿`);
-    for (let i = lowerBound(rows, f.dateFrom); i < end; i += 1) {
-      const r = rows[i];
-      if (stores && !stores.has(r.storeId)) continue;
-      if (types && !types.has(r.displayTypeId)) continue;
-      if (advs && !advs.has(r.advertiserId)) continue;
-      fn(r);
+    const deals = dictionary(); const types = dictionary(); const advs = dictionary();
+    stampDays(this.delivery); stampDays(this.inventory);
+    for (const r of this.delivery) { r.dealIx = deals.code(r.dealId); r.typeIx = types.code(r.displayTypeId); r.advIx = advs.code(r.advertiserId); }
+    for (const r of this.inventory) r.typeIx = types.code(r.displayTypeId);
+    this.dealIds = deals.ids; this.typeIds = types.ids; this.advIds = advs.ids;
+    this.dealCode = new Map(deals.ids.map((v, i) => [v, i])); this.typeCode = new Map(types.ids.map((v, i) => [v, i])); this.advCode = new Map(advs.ids.map((v, i) => [v, i]));
+
+    if (indexed) {
+      const dsps = dictionary(); const dealTypes = dictionary();
+      for (const r of this.delivery) { dsps.code(r.dsp); dealTypes.code(r.dealType); }
+      const T = types.ids.length; const A = advs.ids.length; const D = dsps.ids.length; const K = dealTypes.ids.length;
+      this.deliveryRollup = rollup(this.delivery,
+        (r) => (((r.dealIx * T + r.typeIx) * D + dsps.code(r.dsp)) * A + r.advIx) * K + dealTypes.code(r.dealType),
+        (r) => ({ date: r.date, displayTypeId: r.displayTypeId, storeId: null, dealId: r.dealId, dealType: r.dealType, dsp: r.dsp, advertiserId: r.advertiserId,
+          dayIx: r.dayIx, dealIx: r.dealIx, typeIx: r.typeIx, advIx: r.advIx, revenue: 0, earned: 0, estimated: 0, views: 0, earnedViews: 0, slots: 0, earnedSlots: 0 }),
+        DELIVERY_MEASURES,
+        // The one per-row (not additive) figure an endpoint reads: the highest effective CPM of any fine row (advertiser Delivery's
+        // "highest winning CPM"). A rollup row carries the highest of the rows it merged, so merging stores does not change it.
+        (g, r) => { if (r.earnedViews > 0) { const c = effectiveCpm(r.earned, r.earnedViews); if (g.maxCpm === undefined || c > g.maxCpm) g.maxCpm = c; } });
+      this.inventoryRollup = rollup(this.inventory, (r) => r.typeIx,
+        (r) => ({ date: r.date, displayTypeId: r.displayTypeId, storeId: null, dayIx: r.dayIx, typeIx: r.typeIx, sold: 0, unsold: 0, offline: 0, outsideHours: 0, unsoldViews: 0, lostRevenue: 0 }),
+        INVENTORY_MEASURES);
+      this.deliveryCells = buildCells(this.deliveryRollup, deals.ids.length);
+      this.deliveryByStore = partition(this.delivery, 'storeId');
+      this.inventoryByStore = partition(this.inventory, 'storeId');
+      this.rollupByAdvertiser = partition(this.deliveryRollup, 'advertiserId');
     }
   }
 
-  scanDelivery(filters, fn) { AggregateStore.#scan(this.delivery, filters, fn, true); }
+  /** Visit the rows of `rows` in [dateFrom, dateTo] that pass the Set filters; `pos` (optional) lists the candidate positions. */
+  static #visit(rows, f, fn, useAdvertiser, pos, rolled) {
+    const types = asSet(f.displayTypeIds);
+    const advs = useAdvertiser ? asSet(f.advertiserIds) : null;
+    // The straight scan of the fine cube (the reference) checks the stores itself; a partition has already chosen them.
+    const stores = !pos && f.storeIds && !rolled ? asSet(f.storeIds) : null;
+    if (pos) {
+      for (let i = 0; i < pos.length; i += 1) {
+        const r = rows[pos[i]];
+        if ((!types || types.has(r.displayTypeId)) && (!advs || advs.has(r.advertiserId))) fn(r);
+      }
+      return;
+    }
+    const end = lowerBound(rows, `${f.dateTo}￿`);
+    const start = lowerBound(rows, f.dateFrom);
+    if (!types && !advs && !stores) { for (let i = start; i < end; i += 1) fn(rows[i]); return; }
+    for (let i = start; i < end; i += 1) {
+      const r = rows[i];
+      if ((!stores || stores.has(r.storeId)) && (!types || types.has(r.displayTypeId)) && (!advs || advs.has(r.advertiserId))) fn(r);
+    }
+  }
+
+  /** The positions, in `rows` order, of the date range's rows under the given keys of a partition. */
+  static #inParts(rows, parts, keys, f) {
+    const ranges = [];
+    let total = 0;
+    const stop = `${f.dateTo}￿`;
+    for (const k of new Set(keys)) {
+      const p = parts.get(k);
+      if (!p) continue;
+      let lo = 0; let hi = p.length;
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (rows[p[mid]].date < f.dateFrom) lo = mid + 1; else hi = mid; }
+      let end = lo; hi = p.length;
+      while (end < hi) { const mid = (end + hi) >> 1; if (rows[p[mid]].date < stop) end = mid + 1; else hi = mid; }
+      if (end > lo) { ranges.push(p.subarray(lo, end)); total += end - lo; }
+    }
+    if (ranges.length === 1) return ranges[0];
+    const out = new Int32Array(total); let at = 0;
+    for (const r of ranges) { out.set(r, at); at += r.length; }
+    return out.sort(); // typed arrays sort numerically: restores the order of `rows` across the keys
+  }
+
+  #scan(fine, rolled, parts, f, fn, useAdvertiser) {
+    if (!this.indexed) return AggregateStore.#visit(fine, f, fn, useAdvertiser, undefined, false);
+    if (f.storeIds) return AggregateStore.#visit(fine, f, fn, useAdvertiser, AggregateStore.#inParts(fine, parts, f.storeIds, f));
+    // No store filter: the rollup, through the advertiser partition when only some advertisers are asked for.
+    if (useAdvertiser && f.advertiserIds && rolled === this.deliveryRollup) {
+      return AggregateStore.#visit(rolled, f, fn, useAdvertiser, AggregateStore.#inParts(rolled, this.rollupByAdvertiser, f.advertiserIds, f));
+    }
+    return AggregateStore.#visit(rolled, f, fn, useAdvertiser, undefined, true);
+  }
+
+  /**
+   * The cells (see buildCells) of every advertiser for the filters' date range and display types, in no particular order.
+   * With no store filter they are the precomputed ones; with a store filter (or no indexes) they are built from the fine rows.
+   */
+  scanDeliveryCells(filters, fn) {
+    const types = asSet(filters.displayTypeIds);
+    if (this.indexed && !filters.storeIds) {
+      const end = lowerBound(this.deliveryCells, `${filters.dateTo}\uffff`);
+      for (let i = lowerBound(this.deliveryCells, filters.dateFrom); i < end; i += 1) {
+        const c = this.deliveryCells[i];
+        if (!types || types.has(c.displayTypeId)) fn(c);
+      }
+      return;
+    }
+    const rows = [];
+    this.scanDelivery({ ...filters, advertiserIds: null }, (r) => rows.push(r));
+    for (const c of buildCells(rows, this.dealIds.length)) fn(c);
+  }
+
+  scanDelivery(filters, fn) { this.#scan(this.delivery, this.deliveryRollup, this.deliveryByStore, filters, fn, true); }
 
   /**
    * Campaigns live in the date range (start/end overlap it) for the advertiser and display type
@@ -554,7 +773,7 @@ class AggregateStore {
   }
 
   /** Unsold inventory ignores the advertiser filter: slot records belong to no advertiser (README open question 1 default). */
-  scanInventory(filters, fn) { AggregateStore.#scan(this.inventory, filters, fn, false); }
+  scanInventory(filters, fn) { this.#scan(this.inventory, this.inventoryRollup, this.inventoryByStore, filters, fn, false); }
 }
 
 module.exports = { AggregateStore };
@@ -894,14 +1113,20 @@ function ownAdvertiser(filters) {
 const isOpenAuction = (r) => r.dealType === 'Open auction';
 const cents = (n) => Math.round(n * 100) / 100;
 
-/** Deals (not the open auction) the advertiser buys, or has delivery on in `rows`. Catalog objects, never serialised as is. */
-function dealsInScope(store, advertiserId, ownRows) {
-  const delivered = new Set(ownRows.filter((r) => !isOpenAuction(r)).map((r) => r.dealId));
+/** Deals (not the open auction) the advertiser buys, or has delivery on (`delivered`: a Set of deal ids). Catalog objects, never serialised as is. */
+function dealsDelivered(store, advertiserId, delivered) {
   return dealsOf(store).filter((d) => d.dealType !== 'Open auction'
     && (delivered.has(d.id) || (d.buyers || []).some((b) => b.advertiserId === advertiserId)));
 }
 
-module.exports = { OPEN_AUCTION, ownAdvertiser, isOpenAuction, dealsInScope, cents };
+/** dealsDelivered for the deals that `ownRows` (the advertiser's delivery rows) are on. */
+function dealsInScope(store, advertiserId, ownRows) {
+  const delivered = new Set(); const seen = new Uint8Array(store.dealIds.length);
+  for (const r of ownRows) if (!seen[r.dealIx] && !isOpenAuction(r)) { seen[r.dealIx] = 1; delivered.add(r.dealId); }
+  return dealsDelivered(store, advertiserId, delivered);
+}
+
+module.exports = { OPEN_AUCTION, ownAdvertiser, isOpenAuction, dealsInScope, dealsDelivered, cents };
   },
   "src/display-types.js": function (module, exports, require) {
 // Display type facts shared by the display-types, slot-value, slot-allocation and missed-revenue
@@ -1040,12 +1265,13 @@ function normalisePrincipal(p) {
 }
 
 /**
- * dispatch({store, routes, url, principal, today, method}) -> {status, body, headers}
+ * dispatch({store, routes, url, principal, today, method, cache}) -> {status, body, headers}
+ *  - cache: an optional ResponseCache; a 200 body then may be {[SERIALISED]: jsonText} instead of the parsed object.
  *  - routes: the route objects ({path, handler, public?, advertiserAccess?}); url: BASE + route path + query string.
  *  - principal: the resolved principal, or a function returning it (called only for a non-public route, and a
  *    throw is a 401). Anything null or malformed is a 401: there is no default caller.
  */
-function dispatch({ store, routes, url, principal, today, method = 'GET' }) {
+function dispatch({ store, routes, url, principal, today, method = 'GET', cache }) {
   const list = Array.isArray(routes) ? routes : [...routes.values()];
   const u = new URL(url, 'http://localhost');
   const route = list.find((r) => `${BASE}${r.path}` === u.pathname);
@@ -1062,7 +1288,7 @@ function dispatch({ store, routes, url, principal, today, method = 'GET' }) {
   try {
     const body = route.public
       ? route.handler({ store, filters: null, params: u.searchParams, principal: who })
-      : runRoute(route, { store, principal: who, params: u.searchParams, today, routes: byPath });
+      : runRoute(route, { store, principal: who, params: u.searchParams, today, routes: byPath, cache });
     return { status: 200, body };
   } catch (e) {
     if (e instanceof FilterError) return { status: 400, body: { error: e.message } };
@@ -1100,7 +1326,7 @@ module.exports = {
       for (const d of mine) {
         const assigned = (d.slots || []).filter((s) => !wantedTypes || wantedTypes.has(s.displayTypeId));
         for (const s of assigned) slots.set(slotKey(s), s.displayTypeId);
-        for (const t of new Set(assigned.map((s) => s.displayTypeId))) won += roll.slotsByAdvDealType.get(`${id}#${d.id}#${t}`) || 0;
+        for (const t of new Set(assigned.map((s) => s.displayTypeId))) won += roll.slotsOnAdvDealType(id, d.id, t);
       }
       let opportunity = 0; for (const k of slots.keys()) opportunity += opp.perPosition(slots.get(k));
       const a = roll.byAdv.get(id) || { revenue: 0, earned: 0, earnedViews: 0 };
@@ -1155,16 +1381,25 @@ module.exports = {
   advertiserAccess: true,
   handler({ store, filters }) {
     const me = ownAdvertiser(filters);
-    const all = new Map(); const others = new Map(); const mine = new Map(); const ownRows = [];
+    // Dense tables over (deal x display type), filled in row order so every sum is the same float as a keyed map would give.
+    const nD = store.dealIds.length; const nT = store.typeIds.length; const nA = store.advIds.length;
+    const meIx = store.advCode.get(me);
+    const all = new Float64Array(nD * nT); const minePlays = new Float64Array(nD * nT); const mineViews = new Float64Array(nD * nT); const mineRev = new Float64Array(nD * nT);
+    const mineSeen = new Uint8Array(nD * nT);
+    const otherFlag = new Uint8Array(nD * nT * nA); const otherCount = new Int32Array(nD * nT); // distinct other advertisers with plays won
+    const ownRows = [];
     store.scanDelivery({ ...filters, advertiserIds: null }, (r) => {
       if (isOpenAuction(r)) return;
-      const k = `${r.dealId}#${r.displayTypeId}`;
-      all.set(k, (all.get(k) || 0) + r.earnedSlots);
-      if (r.advertiserId !== me) { if (r.earnedSlots > 0) (others.get(k) || others.set(k, new Set()).get(k)).add(r.advertiserId); return; }
-      const m = mine.get(k) || mine.set(k, { plays: 0, views: 0, rev: 0 }).get(k);
-      m.plays += r.earnedSlots; m.views += r.earnedViews; m.rev += r.earned;
+      const k = r.dealIx * nT + r.typeIx;
+      all[k] += r.earnedSlots;
+      if (r.advIx !== meIx) {
+        if (r.earnedSlots > 0) { const f = k * nA + r.advIx; if (!otherFlag[f]) { otherFlag[f] = 1; otherCount[k] += 1; } }
+        return;
+      }
+      mineSeen[k] = 1; minePlays[k] += r.earnedSlots; mineViews[k] += r.earnedViews; mineRev[k] += r.earned;
       ownRows.push(r);
     });
+    const cell = (dealId, typeId) => { const d = store.dealCode.get(dealId); const t = store.typeCode.get(typeId); return d === undefined || t === undefined ? -1 : d * nT + t; };
     const deals = dealsInScope(store, me, ownRows);
     const inScope = filters.displayTypeIds ? new Set(filters.displayTypeIds) : null;
     const known = store.catalog.displayTypes || {};
@@ -1181,12 +1416,12 @@ module.exports = {
       const rows = [];
       for (const deal of deals) {
         const slots = (deal.slots || []).filter((s) => s.displayTypeId === typeId);
-        const key = `${deal.id}#${typeId}`;
-        const m = mine.get(key);
+        const k = cell(deal.id, typeId);
+        const m = k >= 0 && mineSeen[k] ? { plays: minePlays[k], views: mineViews[k], rev: mineRev[k] } : undefined;
         if (!slots.length && !m) continue;
         for (const s of slots) slotsHere.add(slotKey(s));
         const own = m || { plays: 0, views: 0, rev: 0 };
-        const allPlays = all.get(key) || 0;
+        const allPlays = k >= 0 ? all[k] : 0;
         const buyers = (deal.buyers || []).filter((b) => b.advertiserId === me);
         const advertisersOnDeal = new Set([me, ...(deal.buyers || []).map((b) => b.advertiserId)]).size;
         const row = {
@@ -1203,7 +1438,7 @@ module.exports = {
           share: { playsWon: own.plays, advertisersOnDeal },
         };
         // One other buyer winning here would make allPlays minus playsWon that buyer's plays: omit allPlays and the percent.
-        const winners = (others.get(key) || { size: 0 }).size;
+        const winners = k >= 0 ? otherCount[k] : 0;
         const hideShare = winners >= 1 && winners < MIN_OTHER_BUYERS_FOR_WINNING_CPM;
         if (!hideShare) row.share.allPlays = allPlays;
         if (own.views > 0) row.effectiveCpm = cents(calc.effectiveCpm(own.rev, own.views));
@@ -1279,7 +1514,7 @@ module.exports = {
       let opportunity = 0; const seen = new Set();
       for (const s of assigned) { if (!seen.has(slotKey(s))) { seen.add(slotKey(s)); opportunity += opp.perPosition(s.displayTypeId); } }
       let won = 0;
-      for (const t of new Set(assigned.map((s) => s.displayTypeId))) won += roll.slotsByDealType.get(`${deal.id}#${t}`) || 0;
+      for (const t of new Set(assigned.map((s) => s.displayTypeId))) won += roll.slotsOnDealType(deal.id, t);
       const d = roll.byDeal.get(deal.id) || { revenue: 0, earned: 0, earnedViews: 0 };
       const cpm = deal.dealType === 'Private auction'
         ? { value: deal.floorCpm, kind: 'floor' }
@@ -1309,8 +1544,8 @@ module.exports = {
 const calc = require('../calc');
 const { FilterError } = require('../filters');
 const { MIN_OTHER_BUYERS_FOR_WINNING_CPM } = require('../constants');
-const { addDays, eachDay, dayDiff } = require('../dealing');
-const { OPEN_AUCTION, ownAdvertiser, isOpenAuction, dealsInScope, cents } = require('../advertiser-view');
+const { addDays, eachDay, dayDiff, dayNumber, dealsOf } = require('../dealing');
+const { OPEN_AUCTION, ownAdvertiser, isOpenAuction, dealsDelivered, cents } = require('../advertiser-view');
 
 const change = (now, before, round) => {
   const out = { change: round(now - before) };
@@ -1328,20 +1563,50 @@ module.exports = {
   advertiserAccess: true,
   handler({ store, filters, params }) {
     const me = ownAdvertiser(filters);
-    const rows = [];
-    // Settled (earned) rows only, like every retailer figure: booked-ahead plays are not delivery yet.
-    store.scanDelivery({ ...filters, dateFrom: addDays(filters.dateFrom, -1), advertiserIds: null }, (r) => { if (r.earnedSlots > 0 || r.earned > 0) rows.push(r); });
-    const mine = rows.filter((r) => r.advertiserId === me);
-
-    const deals = dealsInScope(store, me, mine);
+    // Settled (earned) rows only, like every retailer figure: booked-ahead plays are not delivery yet. `mine` is this
+    // advertiser's rows; the aggregates below also read every other buyer's rows, in a second pass over all advertisers.
+    const scanFilters = { ...filters, dateFrom: addDays(filters.dateFrom, -1), advertiserIds: null };
     const dealFilter = params.get('dealId') || null;
-    if (dealFilter && dealFilter !== OPEN_AUCTION && !deals.some((d) => d.id === dealFilter)) throw new FilterError('unknown dealId');
-    const keyOf = (r) => (isOpenAuction(r) ? OPEN_AUCTION : r.dealId);
     const wanted = (key) => !dealFilter || dealFilter === key;
+    // One pass over the advertiser's rows keeps them and collects what the rest needs: the deals and open-auction display types it
+    // has delivery on, and its plays and spend per day (arrays indexed by day; firstDay is the day before dateFrom).
+    const firstDay = dayNumber(scanFilters.dateFrom);
+    const spanDays = dayNumber(filters.dateTo) - firstDay + 1;
+    const ownPlays = new Float64Array(spanDays); const ownSpend = new Float64Array(spanDays);
+    const mine = []; const delivered = new Set(); const dealSeen = new Uint8Array(store.dealIds.length);
+    const openTypes = new Set(); const typeSeen = new Uint8Array(store.typeIds.length);
+    // Pacing (below) reads this advertiser's views per Programmatic guaranteed deal per day from the flight start, ignoring the store
+    // and display type page filters. With neither filter set it is the same rows as this pass but from an earlier day, so one pass
+    // does both; otherwise pacing has its own pass.
+    const sharedPass = !filters.storeIds && !filters.displayTypeIds;
+    let pgFrom = null; const isPg = new Uint8Array(store.dealIds.length);
+    for (const d of dealsOf(store)) {
+      if (d.dealType !== 'Programmatic guaranteed' || !d.flight || filters.dateTo < d.flight.start || d.flight.end < filters.dateFrom) continue;
+      const ix = store.dealCode.get(d.id);
+      if (ix !== undefined) isPg[ix] = 1;
+      if (pgFrom === null || d.flight.start < pgFrom) pgFrom = d.flight.start;
+    }
+    const sharedFrom = sharedPass && pgFrom !== null && pgFrom < scanFilters.dateFrom ? pgFrom : scanFilters.dateFrom;
+    const sharedBase = dayNumber(sharedFrom);
+    const sharedViews = new Map(); // deal code -> views per day since sharedBase
+    store.scanDelivery({ ...scanFilters, dateFrom: sharedPass ? sharedFrom : scanFilters.dateFrom, advertiserIds: [me] }, (r) => {
+      if (sharedPass && isPg[r.dealIx]) {
+        let v = sharedViews.get(r.dealIx);
+        if (!v) { v = new Float64Array(spanDays + (firstDay - sharedBase)); sharedViews.set(r.dealIx, v); }
+        v[r.dayIx - sharedBase] += r.earnedViews;
+      }
+      if (r.dayIx < firstDay || (r.earnedSlots <= 0 && r.earned <= 0)) return;
+      mine.push(r);
+      const open = isOpenAuction(r);
+      if (open) { if (!typeSeen[r.typeIx]) { typeSeen[r.typeIx] = 1; openTypes.add(r.displayTypeId); } } else if (!dealSeen[r.dealIx]) { dealSeen[r.dealIx] = 1; delivered.add(r.dealId); }
+      if (wanted(open ? OPEN_AUCTION : r.dealId)) { ownPlays[r.dayIx - firstDay] += r.earnedSlots; ownSpend[r.dayIx - firstDay] += r.earned; }
+    });
+
+    const deals = dealsDelivered(store, me, delivered);
+    if (dealFilter && dealFilter !== OPEN_AUCTION && !deals.some((d) => d.id === dealFilter)) throw new FilterError('unknown dealId');
 
     // Open auction: the display types the advertiser's campaigns run on (within its scope), plus any it has won on.
     const inScope = filters.displayTypeIds ? new Set(filters.displayTypeIds) : null;
-    const openTypes = new Set(mine.filter(isOpenAuction).map((r) => r.displayTypeId));
     store.scanCampaigns(filters, (c) => { for (const t of c.displayTypeIds || []) openTypes.add(t); });
     for (const t of [...openTypes]) if ((inScope && !inScope.has(t)) || !store.catalog.displayTypes[t]) openTypes.delete(t);
     const floors = [...openTypes].map((t) => store.catalog.displayTypes[t].floorCpm).filter((v) => v != null);
@@ -1349,18 +1614,40 @@ module.exports = {
     const blocks = [...deals.map((d) => ({ key: d.id, deal: d })), ...(openTypes.size ? [{ key: OPEN_AUCTION, deal: null }] : [])]
       .filter((b) => wanted(b.key));
 
-    // date -> key -> { all plays, winners' revenue/views/highest CPM, other buyer ids, own plays/revenue/views }
-    const perDay = new Map();
-    for (const r of rows) {
-      const key = keyOf(r);
-      if (key === OPEN_AUCTION && !openTypes.has(r.displayTypeId)) continue;
-      if (r.earnedSlots <= 0 && r.earned <= 0) continue;
-      const day = perDay.get(r.date) || perDay.set(r.date, new Map()).get(r.date);
-      const a = day.get(key) || day.set(key, { all: 0, rev: 0, views: 0, high: 0, others: new Set(), own: { plays: 0, rev: 0, views: 0 } }).get(key);
-      a.all += r.earnedSlots; a.rev += r.earned; a.views += r.earnedViews;
-      if (r.earnedViews > 0) a.high = Math.max(a.high, calc.effectiveCpm(r.earned, r.earnedViews));
-      if (r.advertiserId === me) { a.own.plays += r.earnedSlots; a.own.rev += r.earned; a.own.views += r.earnedViews; } else if (r.earnedSlots > 0) a.others.add(r.advertiserId);
+    // (date x block) -> { all plays, winners' revenue/views/highest CPM, other buyers, own plays/revenue/views }, where a block is
+    // a deal the advertiser is on, or the open auction. A second pass over the same rows, now that the open-auction display types
+    // are known and with every advertiser in (other buyers only feed these aggregates); rows of no block are skipped.
+    const blockOf = new Int32Array(store.dealIds.length).fill(-1); let openBlock = -1;
+    const blockIx = new Map(blocks.map((b, i) => [b.key, i]));
+    blocks.forEach((b, i) => { if (b.key === OPEN_AUCTION) openBlock = i; else { const d = store.dealCode.get(b.key); if (d !== undefined) blockOf[d] = i; } });
+    const nBlocks = blocks.length;
+    const cells = [];
+    const meIx = store.advCode.get(me);
+    const cellAt = (dayIx, b) => {
+      const at = (dayIx - firstDay) * nBlocks + b;
+      return cells[at] || (cells[at] = { all: 0, rev: 0, views: 0, high: 0, others: [], own: { plays: 0, rev: 0, views: 0 } });
+    };
+    const blockFor = (isOpen, dealIx, typeId) => {
+      if (isOpen) return openBlock >= 0 && openTypes.has(typeId) ? openBlock : -1;
+      return blockOf[dealIx];
+    };
+    // Everyone's plays, revenue, views, highest CPM and the other buyers, from the store's precomputed day x type x deal cells.
+    store.scanDeliveryCells(scanFilters, (c) => {
+      const b = blockFor(c.dealIx < 0, c.dealIx, c.displayTypeId);
+      if (b < 0) return;
+      const a = cellAt(c.dayIx, b);
+      a.all += c.all; a.rev += c.rev; a.views += c.views;
+      if (c.high > a.high) a.high = c.high;
+      for (const x of c.advs) if (x !== meIx && !a.others.includes(x)) a.others.push(x);
+    });
+    // The advertiser's own plays, from its own rows (already settled-only).
+    for (const r of mine) {
+      const b = blockFor(isOpenAuction(r), r.dealIx, r.displayTypeId);
+      if (b < 0) continue;
+      const own = cellAt(r.dayIx, b).own;
+      own.plays += r.earnedSlots; own.rev += r.earned; own.views += r.earnedViews;
     }
+    const cellOf = (date, key) => cells[(dayNumber(date) - firstDay) * nBlocks + blockIx.get(key)];
 
     const block = ({ key, deal }, a) => {
       const own = a ? a.own : { plays: 0, rev: 0, views: 0 };
@@ -1374,13 +1661,13 @@ module.exports = {
       const all = a ? a.all : 0;
       // With exactly one other buyer (1 <= others < MIN) all plays minus the advertiser's own is that buyer's plays, so
       // allPlays and the share are omitted. With none, the advertiser has the block to itself and the share is 100%.
-      const others = a ? a.others.size : 0;
+      const others = a ? a.others.length : 0;
       if (!(others >= 1 && others < MIN_OTHER_BUYERS_FOR_WINNING_CPM)) {
         out.allPlays = all;
         if (all > 0) out.sharePercent = calc.wholePercent(own.plays, all);
       }
       if (own.plays > 0 && own.views > 0) out.yourCpm = cents(calc.effectiveCpm(own.rev, own.views));
-      if (a && a.others.size >= MIN_OTHER_BUYERS_FOR_WINNING_CPM && a.views > 0) {
+      if (a && a.others.length >= MIN_OTHER_BUYERS_FOR_WINNING_CPM && a.views > 0) {
         out.winningCpm = { average: cents(calc.effectiveCpm(a.rev, a.views)), highest: cents(a.high) };
       }
       const lo = key === OPEN_AUCTION ? Math.min(...floors) : deal.floorCpm;
@@ -1389,22 +1676,15 @@ module.exports = {
       return out;
     };
 
-    const own = new Map(); // date -> { plays, spend }
-    for (const r of mine) {
-      if (!wanted(keyOf(r))) continue;
-      const o = own.get(r.date) || own.set(r.date, { plays: 0, spend: 0 }).get(r.date);
-      o.plays += r.earnedSlots; o.spend += r.earned;
-    }
-    const daily = (date) => { const o = own.get(date); return { playsWon: o ? o.plays : 0, spend: o ? cents(o.spend) : 0 }; };
+    const daily = (date) => { const i = dayNumber(date) - firstDay; return { playsWon: ownPlays[i], spend: cents(ownSpend[i]) }; };
 
     const dates = eachDay(filters.dateFrom, filters.dateTo);
     const days = dates.map((date) => {
       const now = daily(date); const before = daily(addDays(date, -1));
-      const day = perDay.get(date);
       return {
         date, ...now,
         vsPreviousDay: { playsWon: change(now.playsWon, before.playsWon, whole), spend: change(now.spend, before.spend, cents) },
-        deals: blocks.map((b) => block(b, day && day.get(b.key))),
+        deals: blocks.map((b) => block(b, cellOf(date, b.key))),
       };
     });
 
@@ -1413,26 +1693,32 @@ module.exports = {
     // advertiser's own rows are read, and a PG deal has exactly one buyer.
     const pacing = [];
     const pgDeals = deals.filter((x) => x.dealType === 'Programmatic guaranteed' && x.flight && wanted(x.id) && filters.dateTo >= x.flight.start && x.flight.end >= filters.dateFrom);
-    // One pass over the advertiser's rows for every PG deal (a scan per deal would cost one full delivery scan each).
-    const viewsByDeal = new Map(pgDeals.map((d) => [d.id, new Map()]));
-    if (pgDeals.length) {
+    // Settled views per deal per day in dense arrays (the shared pass above, or a pass of their own when a page filter applies).
+    let viewsOfDeal = sharedViews; let viewsBase = sharedBase;
+    if (!sharedPass && pgDeals.length) {
       const from = pgDeals.reduce((m, d) => (d.flight.start < m ? d.flight.start : m), pgDeals[0].flight.start);
+      viewsBase = dayNumber(from);
+      viewsOfDeal = new Map();
+      const wantedIx = new Set(pgDeals.map((d) => store.dealCode.get(d.id)));
       store.scanDelivery({ dateFrom: from, dateTo: filters.dateTo, storeIds: null, displayTypeIds: null, advertiserIds: [me] }, (r) => {
-        const byDate = viewsByDeal.get(r.dealId);
-        if (byDate) byDate.set(r.date, (byDate.get(r.date) || 0) + r.earnedViews);
+        if (!wantedIx.has(r.dealIx)) return;
+        let v = viewsOfDeal.get(r.dealIx);
+        if (!v) { v = new Float64Array(dayNumber(filters.dateTo) - viewsBase + 1); viewsOfDeal.set(r.dealIx, v); }
+        v[r.dayIx - viewsBase] += r.earnedViews;
       });
     }
     for (const d of deals.filter((x) => x.dealType === 'Programmatic guaranteed' && x.flight && wanted(x.id))) {
       const { start, end } = d.flight;
       const flightDays = dayDiff(start, end) + 1;
       const upTo = filters.dateTo < end ? filters.dateTo : end;
-      const views = viewsByDeal.get(d.id) || new Map();
+      const views = viewsOfDeal.get(store.dealCode.get(d.id));
+      const viewsOn = (date) => (views ? views[dayNumber(date) - viewsBase] || 0 : 0);
       let delivered = 0;
       const series = [];
       // A flight that starts after dateTo or ended before dateFrom has nothing in the range, and is not scanned.
       const inRange = filters.dateTo >= start && end >= filters.dateFrom;
       for (const date of inRange ? eachDay(start, upTo) : []) {
-        delivered += views.get(date) || 0;
+        delivered += viewsOn(date);
         if (date < filters.dateFrom) continue;
         const p = calc.pgPacing({ delivered, forecast: d.forecast, buffer: d.buffer, daysElapsed: dayDiff(start, date) + 1, totalDays: flightDays });
         series.push({ date, guaranteed: Math.round(p.guaranteedToDate), delivered: Math.round(delivered) });

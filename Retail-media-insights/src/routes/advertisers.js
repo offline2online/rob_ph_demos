@@ -25,7 +25,7 @@ module.exports = {
       for (const d of mine) {
         const assigned = (d.slots || []).filter((s) => !wantedTypes || wantedTypes.has(s.displayTypeId));
         for (const s of assigned) slots.set(slotKey(s), s.displayTypeId);
-        for (const t of new Set(assigned.map((s) => s.displayTypeId))) won += roll.slotsByAdvDealType.get(`${id}#${d.id}#${t}`) || 0;
+        for (const t of new Set(assigned.map((s) => s.displayTypeId))) won += roll.slotsOnAdvDealType(id, d.id, t);
       }
       let opportunity = 0; for (const k of slots.keys()) opportunity += opp.perPosition(slots.get(k));
       const a = roll.byAdv.get(id) || { revenue: 0, earned: 0, earnedViews: 0 };

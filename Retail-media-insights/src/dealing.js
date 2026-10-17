@@ -9,11 +9,15 @@ const { days } = require('./filters');
 
 const RETENTION_DAYS = 90; // settled-bid retention (README open question 3)
 const DAY = 86400000;
-const toMs = (d) => Date.parse(`${d}T00:00:00Z`);
+// Date arithmetic runs thousands of times per request (a day loop per deal): memoised, cleared if it ever grows large.
+const msCache = new Map(); const isoCache = new Map();
+const toMs = (d) => { let ms = msCache.get(d); if (ms === undefined) { if (msCache.size > 50000) msCache.clear(); ms = Date.parse(`${d}T00:00:00Z`); msCache.set(d, ms); } return ms; };
+const isoOf = (ms) => { let d = isoCache.get(ms); if (d === undefined) { if (isoCache.size > 50000) isoCache.clear(); d = new Date(ms).toISOString().slice(0, 10); isoCache.set(ms, d); } return d; };
+const dayNumber = (d) => Math.round(toMs(d) / DAY);
 const dayDiff = (a, b) => Math.round((toMs(b) - toMs(a)) / DAY);
 const cents = (n) => Math.round(n * 100) / 100;
 
-const addDays = (d, n) => new Date(toMs(d) + n * DAY).toISOString().slice(0, 10);
+const addDays = (d, n) => isoOf(toMs(d) + n * DAY);
 const eachDay = (from, to) => { const out = []; for (let d = from; d <= to; d = addDays(d, 1)) out.push(d); return out; };
 
 /**
@@ -28,22 +32,44 @@ const slotKey = (s) => `${s.displayTypeId}#${s.position}`;
 
 /**
  * Delivery grouped by deal and by advertiser, plus slots won by deal x display type and, for an advertiser,
- * by deal x display type (`slotsByAdvDealType`, so wins can be limited to the positions of the deals it is on).
+ * by deal x display type (`slotsOnAdvDealType`, so wins can be limited to the positions of the deals it is on).
  */
 function rollUp(store, filters) {
-  const byDeal = new Map(); const byAdv = new Map(); const slotsByDealType = new Map(); const slotsByAdvDealType = new Map();
-  const add = (m, k, r) => {
-    const b = m.get(k) || { revenue: 0, earned: 0, earnedViews: 0, views: 0, slots: 0 };
-    b.revenue += r.revenue; b.earned += r.earned; b.earnedViews += r.earnedViews; b.views += r.views; b.slots += r.slots;
-    m.set(k, b);
-  };
+  const nD = store.dealIds.length; const nT = store.typeIds.length; const nA = store.advIds.length;
+  // Dense accumulators indexed by the store's integer codes; rows arrive in the same order as before, so every sum is the same float.
+  const deal = { revenue: new Float64Array(nD), earned: new Float64Array(nD), earnedViews: new Float64Array(nD), views: new Float64Array(nD), slots: new Float64Array(nD) };
+  const adv = { revenue: new Float64Array(nA), earned: new Float64Array(nA), earnedViews: new Float64Array(nA), views: new Float64Array(nA), slots: new Float64Array(nA) };
+  const dealSeen = new Uint8Array(nD); const advSeen = new Uint8Array(nA);
+  const dealOrder = []; const advOrder = [];
+  const dealType = new Float64Array(nD * nT);
+  // adv x deal x type is dense up to 4M cells (32 MB); an estate bigger than that falls back to a sparse map on the same numeric key.
+  const adSize = nA * nD * nT;
+  const advDealType = adSize <= 4194304 ? new Float64Array(adSize) : new Map();
+  const dense = advDealType instanceof Float64Array;
   store.scanDelivery(filters, (r) => {
-    add(byDeal, r.dealId, r); add(byAdv, r.advertiserId, r);
-    const dk = `${r.dealId}#${r.displayTypeId}`; const ak = `${r.advertiserId}#${dk}`;
-    slotsByDealType.set(dk, (slotsByDealType.get(dk) || 0) + r.slots);
-    slotsByAdvDealType.set(ak, (slotsByAdvDealType.get(ak) || 0) + r.slots);
+    const d = r.dealIx; const a = r.advIx;
+    if (!dealSeen[d]) { dealSeen[d] = 1; dealOrder.push(d); }
+    if (!advSeen[a]) { advSeen[a] = 1; advOrder.push(a); }
+    deal.revenue[d] += r.revenue; deal.earned[d] += r.earned; deal.earnedViews[d] += r.earnedViews; deal.views[d] += r.views; deal.slots[d] += r.slots;
+    adv.revenue[a] += r.revenue; adv.earned[a] += r.earned; adv.earnedViews[a] += r.earnedViews; adv.views[a] += r.views; adv.slots[a] += r.slots;
+    const dk = d * nT + r.typeIx;
+    dealType[dk] += r.slots;
+    const ak = a * nD * nT + dk;
+    if (dense) advDealType[ak] += r.slots; else advDealType.set(ak, (advDealType.get(ak) || 0) + r.slots);
   });
-  return { byDeal, byAdv, slotsByDealType, slotsByAdvDealType };
+  const bucket = (g, i) => ({ revenue: g.revenue[i], earned: g.earned[i], earnedViews: g.earnedViews[i], views: g.views[i], slots: g.slots[i] });
+  const byDeal = new Map(dealOrder.map((d) => [store.dealIds[d], bucket(deal, d)]));
+  const byAdv = new Map(advOrder.map((a) => [store.advIds[a], bucket(adv, a)]));
+  // Slots won by deal x display type and by advertiser x deal x display type, read by id (0 when there are none).
+  const slotsOnDealType = (dealId, typeId) => {
+    const d = store.dealCode.get(dealId); const t = store.typeCode.get(typeId);
+    return d === undefined || t === undefined ? 0 : dealType[d * nT + t];
+  };
+  const slotsOnAdvDealType = (advId, dealId, typeId) => {
+    const a = store.advCode.get(advId); const d = store.dealCode.get(dealId); const t = store.typeCode.get(typeId);
+    return a === undefined || d === undefined || t === undefined ? 0 : (dense ? advDealType[a * nD * nT + d * nT + t] : advDealType.get(a * nD * nT + d * nT + t) || 0);
+  };
+  return { byDeal, byAdv, slotsOnDealType, slotsOnAdvDealType };
 }
 
 /**
@@ -68,19 +94,26 @@ function opportunities(store, filters) {
  */
 function deliveredByDeal(store, filters, pgDeals) {
   const delivered = new Map();
-  const windows = new Map();
+  const nD = store.dealIds.length;
+  const start = new Float64Array(nD).fill(Infinity); const end = new Float64Array(nD).fill(-Infinity); const total = new Float64Array(nD);
   let from = null;
   for (const d of pgDeals) {
     if (!d.flight || filters.dateTo < d.flight.start || d.flight.end < filters.dateFrom) continue; // not started by dateTo, or ended before the range: cost must not grow with history
-    windows.set(d.id, { start: d.flight.start, end: filters.dateTo < d.flight.end ? filters.dateTo : d.flight.end });
     delivered.set(d.id, 0);
+    const ix = store.dealCode.get(d.id);
+    if (ix !== undefined) { start[ix] = dayNumber(d.flight.start); end[ix] = dayNumber(filters.dateTo < d.flight.end ? filters.dateTo : d.flight.end); }
     if (from === null || d.flight.start < from) from = d.flight.start;
   }
   if (from === null) return delivered;
   store.scanDelivery({ dateFrom: from, dateTo: filters.dateTo, storeIds: null, displayTypeIds: null, advertiserIds: null }, (r) => {
-    const w = windows.get(r.dealId);
-    if (w && r.date >= w.start && r.date <= w.end) delivered.set(r.dealId, delivered.get(r.dealId) + r.earnedViews);
+    const x = r.dealIx;
+    if (r.dayIx >= start[x] && r.dayIx <= end[x]) total[x] += r.earnedViews;
   });
+  for (const d of pgDeals) {
+    const ix = store.dealCode.get(d.id);
+    // `delivered` starts at 0 and adds in row order, as before; a deal with no rows in the store keeps 0.
+    if (delivered.has(d.id) && ix !== undefined) delivered.set(d.id, total[ix]);
+  }
   return delivered;
 }
 
@@ -110,4 +143,4 @@ function pacingOf(deal, deliveredViews, filters) {
 /** Slots won comes from settled bids, kept for 90 days only: a longer range is flagged incomplete. */
 const slotsWonComplete = (filters) => days(filters) <= RETENTION_DAYS;
 
-module.exports = { addDays, eachDay, dayDiff, dealIdsFor, dealsOf, slotKey, rollUp, opportunities, deliveredByDeal, pacingOf, slotsWonComplete, RETENTION_DAYS, cents };
+module.exports = { addDays, eachDay, dayDiff, dayNumber, dealIdsFor, dealsOf, slotKey, rollUp, opportunities, deliveredByDeal, pacingOf, slotsWonComplete, RETENTION_DAYS, cents };
