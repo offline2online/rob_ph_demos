@@ -47,17 +47,30 @@ jobs:
         with:
           node-version: 22
 
+      # main held only REQUIREMENTS.md here until the first train merged, so a
+      # checkout with no package.json has nothing to test yet.
+      - name: Is there a service to test?
+        id: scope
+        working-directory: .
+        run: |
+          if [ -f Retail-media-insights/package.json ]; then echo "run=true" >> "$GITHUB_OUTPUT"
+          else echo "run=false" >> "$GITHUB_OUTPUT"; echo "No Retail-media-insights/package.json on this ref: nothing to test."; fi
+
       - name: Unit, reconciliation, auth and security tests
+        if: steps.scope.outputs.run == 'true'
         run: npm test
 
       - name: Install Playwright and Chromium for the smoke test
+        if: steps.scope.outputs.run == 'true'
         run: |
           npm install --no-save --no-audit --no-fund
           npx playwright install --with-deps chromium
 
       - name: UI smoke test (index.html as retailer and advertiser)
+        if: steps.scope.outputs.run == 'true'
         run: npm run test:ui
 
       - name: Benchmark (for the record)
+        if: steps.scope.outputs.run == 'true'
         continue-on-error: true
         run: npm run bench
