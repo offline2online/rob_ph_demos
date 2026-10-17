@@ -1,0 +1,12 @@
+{
+  "name": "retail-media-insights",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Read-only Retail Media Insights service: daily aggregates, page filters and the shared calculation library.",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "bench": "node bench/bench.js",
+    "start": "node src/server.js"
+  },
+  "engines": { "node": ">=18" }
+}

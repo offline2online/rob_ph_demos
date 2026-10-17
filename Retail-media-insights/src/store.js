@@ -1,0 +1,42 @@
+'use strict';
+// In-memory, date-indexed aggregate store. Rows are sorted by date once; a query binary-searches
+// the date range and then applies the remaining page filters with Set lookups.
+
+function lowerBound(rows, date) {
+  let lo = 0; let hi = rows.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (rows[mid].date < date) lo = mid + 1; else hi = mid;
+  }
+  return lo;
+}
+
+const asSet = (list) => (list ? new Set(list) : null);
+
+class AggregateStore {
+  constructor({ delivery, inventory }) {
+    this.delivery = [...delivery].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    this.inventory = [...inventory].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  }
+
+  static #scan(rows, f, fn, useAdvertiser) {
+    const stores = asSet(f.storeIds);
+    const types = asSet(f.displayTypeIds);
+    const advs = useAdvertiser ? asSet(f.advertiserIds) : null;
+    const end = lowerBound(rows, `${f.dateTo}￿`);
+    for (let i = lowerBound(rows, f.dateFrom); i < end; i += 1) {
+      const r = rows[i];
+      if (stores && !stores.has(r.storeId)) continue;
+      if (types && !types.has(r.displayTypeId)) continue;
+      if (advs && !advs.has(r.advertiserId)) continue;
+      fn(r);
+    }
+  }
+
+  scanDelivery(filters, fn) { AggregateStore.#scan(this.delivery, filters, fn, true); }
+
+  /** Unsold inventory ignores the advertiser filter: slot records belong to no advertiser (README open question 1 default). */
+  scanInventory(filters, fn) { AggregateStore.#scan(this.inventory, filters, fn, false); }
+}
+
+module.exports = { AggregateStore };
