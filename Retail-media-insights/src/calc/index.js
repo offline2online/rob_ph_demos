@@ -86,9 +86,9 @@ function classifySlot(record, window) {
   return 'unsold';
 }
 
-/** Whole-number fill: sold / (sold + unsold), both inside operating hours. */
-function fillPercent(sold, unsold) {
-  const total = sold + unsold;
+/** Whole-number fill: sold / (sold + unsold + offline), every advertiser slot inside operating hours. */
+function fillPercent(sold, unsold, offline = 0) {
+  const total = sold + unsold + offline;
   return total > 0 ? Math.round((sold / total) * 100) : 0;
 }
 

@@ -1,7 +1,7 @@
 'use strict';
 const calc = require('../calc');
 const { FilterError } = require('../filters');
-const { DEAL_TYPES, DSPS } = require('../constants');
+const { DEAL_TYPES, DSPS, normaliseDealType } = require('../constants');
 const { listParam } = require('./params');
 const { dealsOf, slotKey, rollUp, opportunities, pacingOf, cents } = require('../dealing');
 
@@ -12,7 +12,7 @@ module.exports = {
   handler({ store, filters, params }) {
     const types = listParam(params, 'dealType');
     if (types && types.size > 1) throw new FilterError('dealType takes a single deal type');
-    const dealType = types ? [...types][0] : null;
+    const dealType = types ? normaliseDealType([...types][0]) : null;
     if (dealType && !DEAL_TYPES.includes(dealType)) throw new FilterError(`dealType must be one of ${DEAL_TYPES.join(', ')}`);
     const scope = filters.advertiserIds ? new Set(filters.advertiserIds) : null;
     const advertisers = store.advertisers || {};
@@ -45,7 +45,7 @@ module.exports = {
         id: deal.id, name: deal.name, description: deal.description, dealType: deal.dealType, dealIds, slots,
         advertisers: buyers.map((b) => ({ advertiserId: b.advertiserId, name: (advertisers[b.advertiserId] || {}).name || b.advertiserId, dsp: b.dsp })),
         fill: { percent: opportunity > 0 ? Math.min(calc.wholePercent(won, opportunity), 100) : 0, slotsWon: won, slotsAvailable: Math.round(opportunity) },
-        pacing: deal.dealType === 'Programmatic Guaranteed' && deal.flight ? pacingOf(deal, store, filters) : null,
+        pacing: deal.dealType === 'Programmatic guaranteed' && deal.flight ? pacingOf(deal, store, filters) : null,
         revenue: cents(d.revenue), cpm: { value: cpm.value == null ? null : cents(cpm.value), kind: cpm.kind },
       });
     }

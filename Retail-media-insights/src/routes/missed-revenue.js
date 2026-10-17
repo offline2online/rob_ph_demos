@@ -28,7 +28,7 @@ module.exports = {
         id: t.id, name: t.def.name,
         connectedDisplays: { displays: t.displays.length, stores: t.storeCount },
         floorCpm,
-        fillPercent: calc.fillPercent(a.sold, a.unsold),
+        fillPercent: calc.fillPercent(a.sold, a.unsold, a.offline),
         slotsSold: a.sold, slotsUnsold: a.unsold, slotsOffline: a.offline, slotsTotal: a.sold + a.unsold + a.offline,
         unsoldValueAtFloor: parts[0],
         downtimeLostRevenue: parts[1], slotsOfflineLost: a.offline,
@@ -38,13 +38,13 @@ module.exports = {
     const sum = (k) => rows.reduce((n, r) => n + r[k], 0);
     const cpms = rows.map((r) => r.floorCpm);
     const stores = new Set(facts.flatMap((t) => t.displays.map((d) => d.storeId))).size;
-    const slotsSold = sum('slotsSold'); const slotsUnsold = sum('slotsUnsold');
+    const slotsSold = sum('slotsSold'); const slotsUnsold = sum('slotsUnsold'); const slotsOffline = sum('slotsOffline');
     const total = {
       name: 'All display types',
       connectedDisplays: { displays: rows.reduce((n, r) => n + r.connectedDisplays.displays, 0), stores },
       floorCpm: cpms.length ? { min: Math.min(...cpms), max: Math.max(...cpms) } : null,
-      fillPercent: calc.fillPercent(slotsSold, slotsUnsold),
-      slotsSold, slotsUnsold, slotsOffline: sum('slotsOffline'), slotsTotal: sum('slotsTotal'),
+      fillPercent: calc.fillPercent(slotsSold, slotsUnsold, slotsOffline),
+      slotsSold, slotsUnsold, slotsOffline, slotsTotal: sum('slotsTotal'),
       unsoldValueAtFloor: sum('unsoldValueAtFloor'),
       downtimeLostRevenue: sum('downtimeLostRevenue'), slotsOfflineLost: sum('slotsOfflineLost'),
       totalMissed: sum('totalMissed'),

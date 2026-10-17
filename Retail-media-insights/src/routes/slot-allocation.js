@@ -23,7 +23,7 @@ module.exports = {
         averageSlotSeconds: Math.round((loop.loopSeconds / loop.slotsPerLoop) * 10) / 10,
         advertiserSlots: loop.advertiser,
         ownContentSlots: loop.ownContent,
-        advertiserSlotsSoldPercent: calc.fillPercent(a.sold, a.unsold),
+        advertiserSlotsSoldPercent: calc.fillPercent(a.sold, a.unsold, a.offline),
       };
     });
     return { rows };

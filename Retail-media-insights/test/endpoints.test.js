@@ -31,8 +31,32 @@ test('summary money equals the sum of revenue for the same filters, at every gra
 
 test('summary inventory parts add up and match the raw slot records', () => withServer(async (get) => {
   const s = (await get(`/summary?${Q}`)).inventorySold;
-  assert.equal(s.percent, Math.round((s.slotsSold / (s.slotsSold + s.slotsAvailable)) * 100));
+  assert.equal(s.percent, Math.round((s.slotsSold / (s.slotsSold + s.slotsAvailable + s.slotsOffline)) * 100));
   assert.ok(s.slotsSold > 0 && s.slotsAvailable > 0);
+}));
+
+test('summary Inventory sold equals Missed revenue fill, and every row reads its own x of y', () => withServer(async (get) => {
+  for (const extra of ['', '&storeIds=store-2']) {
+    const s = (await get(`/summary?${Q}${extra}`)).inventorySold;
+    const { rows, total } = await get(`/missed-revenue?${Q}${extra}`);
+    assert.equal(s.percent, total.fillPercent, `summary vs total ${extra}`);
+    assert.equal(s.slotsSold + s.slotsAvailable + s.slotsOffline, total.slotsTotal);
+    for (const r of [...rows, total]) {
+      if (r.slotsTotal) assert.equal(r.fillPercent, Math.round((r.slotsSold / r.slotsTotal) * 100), r.name);
+    }
+  }
+}));
+
+test('deal type labels use the README casing; the old casing is accepted on input only', () => withServer(async (get) => {
+  assert.equal(DEAL_TYPES[0], 'Programmatic guaranteed');
+  const types = (await get(`/deals?${Q}`)).rows.map((r) => r.dealType);
+  assert.ok(types.includes('Programmatic guaranteed') && !types.includes('Programmatic Guaranteed'));
+  const old = await get(`/deals?${Q}&dealType=Programmatic Guaranteed`);
+  assert.equal(old.dealType, 'Programmatic guaranteed');
+  assert.ok(old.rows.length && old.rows.every((r) => r.dealType === 'Programmatic guaranteed'));
+  const a = await get(`/summary?${Q}&dealTypes=Programmatic Guaranteed`);
+  const b = await get(`/summary?${Q}&dealTypes=Programmatic guaranteed`);
+  assert.deepEqual(a, b);
 }));
 
 test('revenue rows are ordered by period, DSP then deal type', () => withServer(async (get) => {

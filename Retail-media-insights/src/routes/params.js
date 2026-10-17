@@ -1,5 +1,5 @@
 'use strict';
-const { DEAL_TYPES, DSPS } = require('../constants');
+const { DEAL_TYPES, DSPS, normaliseDealType } = require('../constants');
 const { FilterError } = require('../filters');
 
 // Chart-level filters shared by summary, revenue and yield. Accepts `dsps=a,b`, `dsps=a&dsps=b` and `dsps[]=a`.
@@ -15,7 +15,8 @@ function dspFilter(params) {
 }
 
 function dealTypeSet(params) {
-  const set = listParam(params, 'dealTypes');
+  const raw = listParam(params, 'dealTypes');
+  const set = raw && new Set([...raw].map(normaliseDealType));
   if (set) for (const t of set) if (!DEAL_TYPES.includes(t)) throw new FilterError(`dealTypes must be among ${DEAL_TYPES.join(', ')}`);
   return set;
 }

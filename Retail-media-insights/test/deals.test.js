@@ -17,12 +17,12 @@ async function get(path, opts = {}) {
     return { status: res.status, body: await res.json() };
   } finally { server.close(); }
 }
-const pg = async (q) => (await get(`/deals?${q}`)).body.rows.find((r) => r.dealType === 'Programmatic Guaranteed');
+const pg = async (q) => (await get(`/deals?${q}`)).body.rows.find((r) => r.dealType === 'Programmatic guaranteed');
 
 test('deals: one row per named deal in standard order, Open auction excluded', async () => {
   const { status, body } = await get('/deals');
   assert.equal(status, 200);
-  assert.deepEqual(body.rows.map((r) => r.dealType), ['Programmatic Guaranteed', 'Preferred deal', 'Private auction']);
+  assert.deepEqual(body.rows.map((r) => r.dealType), ['Programmatic guaranteed', 'Preferred deal', 'Private auction']);
   const d = body.rows[0];
   assert.ok(d.name && d.description && d.revenue > 0);
   assert.deepEqual(d.dealIds.map((x) => x.dsp), ['DV360', 'The Trade Desk']);
@@ -43,7 +43,7 @@ test('deals: PG pacing before, during and after the flight', async () => {
   const after = (await pg('dateFrom=2026-11-01&dateTo=2026-12-01')).pacing;
   assert.equal(after.daysRemaining, 0); assert.equal(after.flightEnded, true);
   assert.equal(after.guaranteedToDate, after.guaranteedForFlight);
-  const others = (await get('/deals')).body.rows.filter((r) => r.dealType !== 'Programmatic Guaranteed');
+  const others = (await get('/deals')).body.rows.filter((r) => r.dealType !== 'Programmatic guaranteed');
   assert.ok(others.every((r) => r.pacing === null));
 });
 
@@ -63,7 +63,7 @@ test('advertisers: shares add to 100, revenue equals billing, top 10 and all', a
   const billed = raw.billing.filter((b) => b.date >= '2026-09-12').reduce((a, b) => a + b.revenue, 0);
   assert.ok(Math.abs(body.all.reduce((a, r) => a + r.revenue, 0) - billed) < 0.5 * body.all.length);
   const a = body.all.find((r) => r.advertiserId === 'adv-acme');
-  assert.deepEqual(a.dealsOn.map((d) => d.dealType), ['Programmatic Guaranteed', 'Preferred deal']);
+  assert.deepEqual(a.dealsOn.map((d) => d.dealType), ['Programmatic guaranteed', 'Preferred deal']);
   assert.ok(a.slotsCovered === 4 && a.slotsWonPercent > 0 && a.effectiveCpm > 0 && a.dsp);
   assert.equal(body.slotsWon.complete, true);
 });

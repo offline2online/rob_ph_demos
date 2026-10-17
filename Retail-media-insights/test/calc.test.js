@@ -47,9 +47,15 @@ test('slots outside operating hours are never unsold', () => {
   assert.equal(calc.classifySlot({ hour: 9, status: 'offline' }, w), 'offline');
 });
 
-test('fill is whole-number sold / (sold + unsold)', () => {
+test('fill is whole-number sold / (sold + unsold + offline)', () => {
   assert.equal(calc.fillPercent(2, 1), 67);
   assert.equal(calc.fillPercent(0, 0), 0);
+  assert.equal(calc.fillPercent(1, 1, 2), 25);
+});
+
+test('fill matches the README worked example: 7,629 of 12,425 advertiser slots is 61%', () => {
+  assert.equal(7629 + 4424 + 372, 12425);
+  assert.equal(calc.fillPercent(7629, 4424, 372), 61);
 });
 
 test('missed revenue = unsold at floor CPM + downtime', () => {
@@ -87,8 +93,8 @@ test('USD formatting', () => {
 });
 
 test('standard orderings: deal types, DSPs, shopper-journey zones', () => {
-  const dt = ['Open auction', 'Private auction', 'Programmatic Guaranteed', 'Preferred deal'].sort(calc.compareDealTypes);
-  assert.deepEqual(dt, ['Programmatic Guaranteed', 'Preferred deal', 'Private auction', 'Open auction']);
+  const dt = ['Open auction', 'Private auction', 'Programmatic guaranteed', 'Preferred deal'].sort(calc.compareDealTypes);
+  assert.deepEqual(dt, ['Programmatic guaranteed', 'Preferred deal', 'Private auction', 'Open auction']);
   assert.deepEqual(['Amazon DSP', 'DV360', 'The Trade Desk'].sort(calc.compareDsps), ['DV360', 'The Trade Desk', 'Amazon DSP']);
   const z = ['Checkout', 'Exterior', 'In aisles', 'Entrance & out of category'].sort(calc.compareZones);
   assert.deepEqual(z, ['Exterior', 'Entrance & out of category', 'In aisles', 'Checkout']);

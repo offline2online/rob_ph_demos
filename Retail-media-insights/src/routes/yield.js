@@ -2,7 +2,7 @@
 const calc = require('../calc');
 const { FilterError } = require('../filters');
 const { listParam, cents, DSPS } = require('./params');
-const { DEAL_TYPES } = require('../constants');
+const { DEAL_TYPES, normaliseDealType } = require('../constants');
 
 // Effective CPM per connected DSP: earned revenue / (assumed views / 1000), from settled billing
 // only, so it reconciles to what advertisers were charged. Optional single `dealType` filter.
@@ -12,7 +12,7 @@ module.exports = {
   handler({ store, filters, params }) {
     const types = listParam(params, 'dealType');
     if (types && types.size > 1) throw new FilterError('dealType takes a single deal type');
-    const dealType = types ? [...types][0] : null;
+    const dealType = types ? normaliseDealType([...types][0]) : null;
     if (dealType && !DEAL_TYPES.includes(dealType)) throw new FilterError(`dealType must be one of ${DEAL_TYPES.join(', ')}`);
     const byDsp = new Map(DSPS.map((d) => [d, { dsp: d, earned: 0, views: 0 }]));
     store.scanDelivery(filters, (r) => {

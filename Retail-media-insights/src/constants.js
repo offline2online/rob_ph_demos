@@ -1,7 +1,10 @@
 'use strict';
 
 // Standard orderings (REQUIREMENTS.md section 3.2).
-const DEAL_TYPES = ['Programmatic Guaranteed', 'Preferred deal', 'Private auction', 'Open auction'];
+const DEAL_TYPES = ['Programmatic guaranteed', 'Preferred deal', 'Private auction', 'Open auction'];
+// The old label's casing, accepted on input for one release only; every response uses DEAL_TYPES.
+const LEGACY_DEAL_TYPES = { 'Programmatic Guaranteed': 'Programmatic guaranteed' };
+const normaliseDealType = (t) => LEGACY_DEAL_TYPES[t] || t;
 const DSPS = ['DV360', 'The Trade Desk', 'Amazon DSP'];
 // The five IAB / IAB Europe In-Store Retail Media Standards zones, in shopper-journey order.
 const ZONES = ['Exterior', 'Entrance & out of category', 'In aisles', 'Checkout', 'Other & connected store'];
@@ -37,4 +40,4 @@ const PERSONALISATION_VARIABLES = {
 // Operating-hours windows are whole hours [open, close).
 const ALWAYS_OPEN = Object.freeze({ open: 0, close: 24 });
 
-module.exports = { DEAL_TYPES, DSPS, ZONES, MATURITY_LEVELS, ALWAYS_OPEN, LOCALISATION_VARIABLES, PERSONALISATION_VARIABLES };
+module.exports = { DEAL_TYPES, normaliseDealType, DSPS, ZONES, MATURITY_LEVELS, ALWAYS_OPEN, LOCALISATION_VARIABLES, PERSONALISATION_VARIABLES };

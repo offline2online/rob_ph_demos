@@ -56,7 +56,7 @@ const DISPLAY_TYPES = {
 // Per-store footfall factor; averages to 1 over the default 5 stores.
 const FOOTFALL_FACTORS = [0.9, 1.1, 1.0, 0.8, 1.2];
 const DEALS = {
-  d1: { dealType: 'Programmatic Guaranteed', cpm: 22 },
+  d1: { dealType: 'Programmatic guaranteed', cpm: 22 },
   d2: { dealType: 'Preferred deal', cpm: 18 },
   d3: { dealType: 'Private auction', cpm: 15 },
   d4: { dealType: 'Open auction', cpm: 11 },
@@ -65,7 +65,7 @@ const DEAL_DSP = { d1: 'DV360', d2: 'The Trade Desk', d3: 'Amazon DSP', d4: 'DV3
 // Deal reference data as DSP Integration will serve it (Deals & buyers lists, slot assignments).
 const DEAL_CATALOG = {
   d1: {
-    name: 'Wellness PG', description: 'Guaranteed wellness reach on windows and queue screens.', dealType: 'Programmatic Guaranteed', phId: 'PH-D1', cpm: 22,
+    name: 'Wellness PG', description: 'Guaranteed wellness reach on windows and queue screens.', dealType: 'Programmatic guaranteed', phId: 'PH-D1', cpm: 22,
     buyers: [{ advertiserId: 'adv-blackmores', dsp: 'DV360' }, { advertiserId: 'adv-acme', dsp: 'The Trade Desk' }],
     slots: [
       { displayTypeId: 'window', playlist: 'Window loop', zone: 'Zone A', position: 1, loopSlot: 2, playsPerWindow: 12 },
