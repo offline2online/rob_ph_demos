@@ -104,7 +104,7 @@ test('slots hover: display type (description), playlist · zone, IAB zone, slot 
   const g = (await mine('/deals-by-display-type')).groups[0];
   const t = AV.slotsTooltip(g.deals[0], g.displayType);
   assert.strictEqual(t.title, 'Assigned slots');
-  assert.deepStrictEqual(t.rows.slice(0, 4).map((r) => r[0]), ['Window Portrait (Portrait screen in the store window at the entrance)', 'Window loop · Store front', 'IAB zone: Entrance & out of category', 'Advertiser slot 1 (slot 1 of the loop) · 60 plays per window']);
+  assert.deepStrictEqual(t.rows.slice(0, 4).map((r) => r[0]), ['Window Portrait (Portrait screen in the store window at the entrance)', 'Window loop · Store front', 'IAB zone: Entrance & out of category', 'Advertiser slot 1 (slot 1 of 12) · 60 plays per window']);
   // When the back end supplies the loop's slot count the hover reads "slot n of N".
   const withN = AV.slotsTooltip({ slots: { assigned: [{ playlistZone: 'Window loop · Store front', advertiserSlot: 3, loopSlot: 3, loopSlotCount: 12, playsPerWindow: 10 }] } }, g.displayType);
   assert.strictEqual(withN.rows[3][0], 'Advertiser slot 3 (slot 3 of 12) · 10 plays per window');
@@ -128,9 +128,9 @@ test('pacing KPIs, targeting ladder and Audience model', async () => {
   const a = await mine('/audience');
   const m = AV.audienceModel(a, { dateFrom: '2026-09-12', dateTo: '2026-10-11' });
   assert.strictEqual(m.caption, 'Assumed views (VAC-d) delivered, 12 Sep – 11 Oct');
-  assert.strictEqual(m.hero, AV.fmtCompact(a.assumedViews));
+  assert.strictEqual(m.hero, AV.fmtBig(a.assumedViews));
   const peak = AV.peakOf(a.trend);
-  assert.ok(m.tip[0].includes(`the peak was ${AV.fmtCompact(peak.assumedViews)} on `));
+  assert.ok(m.tip[0].includes(`the peak was ${AV.fmtBig(peak.assumedViews)} on `));
   assert.strictEqual(AV.fmtCompact(551234), '551k'); assert.strictEqual(AV.fmtCompact(17712), '17.7k');
 });
 

@@ -122,9 +122,9 @@
     if (has(cf)) rows.push(['Creative formats', cf]);
     var vac = [];
     var a = dt.averages || {};
-    if (has(a.averageAssumedViewsPerSlotPerDay)) vac.push(['Average assumed views (VAC-d) per slot per day', fmtNum(a.averageAssumedViewsPerSlotPerDay)]);
+    if (has(a.averageAssumedViewsPerSlotPerDay)) vac.push(['Average assumed views (VAC-d) per slot per day', fmtInt(a.averageAssumedViewsPerSlotPerDay)]);
     if (has(a.averageFootfallPerDay)) vac.push(['Average footfall past a display per day', fmtInt(a.averageFootfallPerDay)]);
-    if (has(a.averageVisibility)) vac.push(['Average visibility adjustment', fmtNum(a.averageVisibility)]);
+    if (has(a.averageVisibility)) vac.push(['Average visibility adjustment', Number(a.averageVisibility).toFixed(2)]);
     var s = a.shareOfLoopTime;
     if (s && has(s.advertiserSlotSeconds) && has(s.loopSeconds) && has(s.percent)) {
       vac.push(['Share of loop time', s.advertiserSlotSeconds + 's advertiser slot ÷ ' + s.loopSeconds + 's loop = ' + pct(s.percent)]);

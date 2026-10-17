@@ -13,8 +13,10 @@
   var DEFAULT_DAYS = 30;
   var MAX_RANGE_DAYS = 366; // the API's cap
   var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  var VACD_TIP = 'Assumed views (VAC-d, Visibility Adjusted Contacts) are what billing is based on. Average assumed views per slot per day = average footfall past a display per day × average visibility adjustment × the slot’s share of loop time. ' +
-    'Example: 4,000 footfall × 0.5 visibility × 1/10 share of loop = 200 assumed views per slot per day; at a $20 CPM that slot earns $4 per day.';
+  var VACD_TIP = 'Assumed views is the VAC-d (Visibility Adjusted Contacts, digital) score from the OMA MOVE out-of-home standard, and CPM is cost per thousand assumed views. ' +
+    'Average assumed views per slot per day = average footfall past a display per day × average visibility adjustment × the slot’s share of loop time (slot length ÷ loop length), averaged across the display type’s connected displays. ' +
+    'Billing uses the VAC-d actually realised over the billing window. ' +
+    'Example: 4,000 footfall × 0.5 visibility × 1/10 of the loop = 200 average assumed views; at a $20 CPM that slot earns $4 per day on average.';
   var SUMMARY_TIP = 'Earned revenue = cleared and billed. Estimated revenue = reservations booked ahead that have not played yet, mainly programmatic guaranteed. ' + VACD_TIP;
   var SOLD_TIP = 'Share of all advertiser slots across your displays that were sold in the selected period. Only slots inside each display’s operating hours count: screens outside the store, or at the entrance and visible from outside it, run 24 hours; screens inside the store, including endcaps, follow store opening hours. Slots outside operating hours play house content and are never unsold or missed revenue.';
   var SCOPE_TITLE = 'Scoped to your advertiser account. You only ever see your own data.';

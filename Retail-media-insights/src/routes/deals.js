@@ -3,12 +3,15 @@ const calc = require('../calc');
 const { FilterError } = require('../filters');
 const { DEAL_TYPES, normaliseDealType } = require('../constants');
 const { listParam } = require('./params');
+const { loopOf } = require('../display-types');
 const { dealIdsFor, dealsOf, slotKey, rollUp, opportunities, deliveredByDeal, pacingOf, cents } = require('../dealing');
 
 // One row per named deal (Open auction is not a deal). An advertiser login sees only the deals it is
 // invited to, with only its own buyer and the deal ID for its own DSP. The display type page filter applies to
 // every part of a row (slots list, Slots, Fill), and a deal with no slot on the filtered types drops out.
 // Revenue is earned revenue. Pacing is deal-wide: the store and display type filters do not change it.
+const loopSlotCountOf = (slots) => { const l = loopOf(slots); return l ? l.slotsPerLoop : null; };
+
 module.exports = {
   path: '/deals',
   handler({ store, filters, params }) {
@@ -37,7 +40,7 @@ module.exports = {
         playlist: s.playlist, zone: s.zone, playlistZone: `${s.playlist} · ${s.zone}`,
         displayTypeDescription: (types2[s.displayTypeId] || {}).description || null,
         iabZone: (types2[s.displayTypeId] || {}).zone || null,
-        advertiserSlot: s.position, loopSlot: s.loopSlot, label: `Advertiser slot ${s.position} (loop slot ${s.loopSlot})`,
+        advertiserSlot: s.position, loopSlot: s.loopSlot, loopSlotCount: loopSlotCountOf((types2[s.displayTypeId] || {}).slots), label: `Advertiser slot ${s.position} (loop slot ${s.loopSlot})`,
         playsPerWindow: s.playsPerWindow,
       }));
       // Fill: slots won on the deal / slot opportunities inside operating hours (sold + unsold + offline records).

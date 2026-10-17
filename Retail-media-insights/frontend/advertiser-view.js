@@ -16,8 +16,10 @@
 
   // The shared VAC-d explanation and worked example, appended to every ⓘ that mentions assumed views.
   var VACD = [
-    'Assumed views (VAC-d, Visibility Adjusted Contacts). Average assumed views per slot per day = average footfall past a display per day × average visibility adjustment × the slot’s share of loop time.',
-    'Example: 4,000 footfall × 0.5 visibility × 1/10 share of loop = 200 assumed views per slot per day; at a $20 CPM that slot earns $4 per day. Billing uses the VAC-d realised over the billing window.'
+    'Assumed views is the VAC-d (Visibility Adjusted Contacts, digital) score from the OMA MOVE out-of-home standard, and CPM is cost per thousand assumed views. ' +
+    'Average assumed views per slot per day = average footfall past a display per day × average visibility adjustment × the slot’s share of loop time (slot length ÷ loop length), averaged across the display type’s connected displays. ' +
+    'Billing uses the VAC-d actually realised over the billing window. ' +
+    'Example: 4,000 footfall × 0.5 visibility × 1/10 of the loop = 200 average assumed views; at a $20 CPM that slot earns $4 per day on average.'
   ];
   var TIPS = {
     delivery: ['Plays you won (left axis) and what you spent (right axis) per day, both shown by default. Click the Plays won or Spend total to turn its line off or on. Hover a day to see what drove it: for each private auction and the open auction, the plays you won out of all plays, your CPM against the winning CPM (average and highest across all winning buyers, never named) and the floor CPM; plays on fixed-price deals; and the change on the previous day. Stores and screens that played are in Campaign Performance. For a programmatic guaranteed deal, Pacing shows assumed views (VAC-d) delivered against the guaranteed line over the flight. Other deal types carry no commitment, so they have no guaranteed line.'].concat(VACD),
@@ -46,6 +48,12 @@
   function fmtCompact(n) {
     if (n >= 1e6) return (Math.round(n / 1e5) / 10) + 'M';
     if (n >= 1e5) return Math.round(n / 1e3) + 'k';
+    if (n >= 1e3) return (Math.round(n / 100) / 10) + 'k';
+    return fmtInt(n);
+  }
+  // The artifact's big(): one decimal for thousands (322.8k), two for millions (1.31m).
+  function fmtBig(n) {
+    if (n >= 1e6) return (Math.round(n / 1e4) / 100) + 'm';
     if (n >= 1e3) return (Math.round(n / 100) / 10) + 'k';
     return fmtInt(n);
   }
@@ -163,9 +171,9 @@
     var cf = Array.isArray(t.creativeFormats) ? t.creativeFormats.filter(has).join('; ') : t.creativeFormats;
     if (has(cf)) rows.push(['Creative formats', cf]);
     var a = t.averages || {}, vac = [];
-    if (has(a.averageAssumedViewsPerSlotPerDay)) vac.push(['Average assumed views (VAC-d) per slot per day', fmtNum(a.averageAssumedViewsPerSlotPerDay)]);
+    if (has(a.averageAssumedViewsPerSlotPerDay)) vac.push(['Average assumed views (VAC-d) per slot per day', fmtInt(a.averageAssumedViewsPerSlotPerDay)]);
     if (has(a.averageFootfallPerDay)) vac.push(['Average footfall past a display per day', fmtInt(a.averageFootfallPerDay)]);
-    if (has(a.averageVisibility)) vac.push(['Average visibility adjustment', fmtNum(a.averageVisibility)]);
+    if (has(a.averageVisibility)) vac.push(['Average visibility adjustment', Number(a.averageVisibility).toFixed(2)]);
     var sl = a.shareOfLoopTime;
     if (sl && has(sl.advertiserSlotSeconds) && has(sl.loopSeconds) && has(sl.percent)) vac.push(['Share of loop time', sl.advertiserSlotSeconds + 's advertiser slot ÷ ' + sl.loopSeconds + 's loop = ' + Math.round(sl.percent) + '%']);
     if (vac.length) {
@@ -258,8 +266,8 @@
     var tr = (data && data.trend) || [];
     var from = (filters && filters.dateFrom) || (tr[0] && tr[0].date), to = (filters && filters.dateTo) || (tr.length && tr[tr.length - 1].date);
     var peak = peakOf(tr);
-    var tip = ['Assumed views (VAC-d) delivered to you, from PH Core playback analytics. The line is the daily trend' + (peak ? '; the peak was ' + fmtCompact(peak.assumedViews) + ' on ' + fmtDay(peak.date) : '') + '.'].concat(VACD);
-    return { hero: fmtCompact(data.assumedViews), caption: 'Assumed views (VAC-d) delivered' + (from && to ? ', ' + rangeText(from, to) : ''), tip: tip };
+    var tip = ['Assumed views (VAC-d) delivered to you, from PH Core playback analytics. The line is the daily trend' + (peak ? '; the peak was ' + fmtBig(peak.assumedViews) + ' on ' + fmtDay(peak.date) : '') + '.'].concat(VACD);
+    return { hero: fmtBig(data.assumedViews), caption: 'Assumed views (VAC-d) delivered' + (from && to ? ', ' + rangeText(from, to) : ''), tip: tip };
   }
   function sparkArea(trend, w, h) {
     var line = sparkline(trend, w, h);
@@ -589,7 +597,7 @@
     mount: mount, OPEN_AUCTION: OPEN_AUCTION,
     initialMetrics: initialMetrics, toggleMetric: toggleMetric, dealOptions: dealOptions, pacingFor: pacingFor, showPacingSwitch: showPacingSwitch,
     dayTooltip: dayTooltip, dealBlockRows: dealBlockRows, pacingTooltip: pacingTooltip, cpmRange: cpmRange, changeText: changeText,
-    displayTypeTooltip: displayTypeTooltip, pacingKpis: pacingKpis, ladderRungs: ladderRungs, audienceModel: audienceModel, sparkArea: sparkArea, fmtCompact: fmtCompact, peakOf: peakOf, NO_SCHEDULING: NO_SCHEDULING, dealNameTooltip: dealNameTooltip, slotsLabel: slotsLabel, slotsTooltip: slotsTooltip, shareTooltip: shareTooltip,
+    displayTypeTooltip: displayTypeTooltip, pacingKpis: pacingKpis, ladderRungs: ladderRungs, audienceModel: audienceModel, sparkArea: sparkArea, fmtCompact: fmtCompact, fmtBig: fmtBig, peakOf: peakOf, NO_SCHEDULING: NO_SCHEDULING, dealNameTooltip: dealNameTooltip, slotsLabel: slotsLabel, slotsTooltip: slotsTooltip, shareTooltip: shareTooltip,
     tableRows: tableRows, sparkline: sparkline, variableLabel: variableLabel, schedulingText: schedulingText, seriesPoints: seriesPoints, fmtMoney: fmtMoney, fmtInt: fmtInt, niceMax: niceMax
   };
 });
