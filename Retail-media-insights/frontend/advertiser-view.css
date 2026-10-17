@@ -1,0 +1,87 @@
+/* Advertiser view — PH tokens (ph-designer): Roboto, #169bc2 primary, #333333 text, 8px cards. Content frame only. */
+.av-root { --av-primary: #169bc2; --av-text: #333333; --av-muted: rgba(0,0,0,0.45); --av-border: #f0f0f0;
+  position: relative; font-family: Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 14px; color: var(--av-text);
+  display: flex; flex-direction: column; gap: 16px; }
+.av-root *, .av-root *::before, .av-root *::after { box-sizing: border-box; }
+.av-icon { font-family: 'Material Symbols Outlined'; font-weight: 400; font-style: normal; font-size: 18px; line-height: 1; vertical-align: middle;
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+.av-panel { border: 1px solid var(--av-border); border-radius: 8px; padding: 16px; min-width: 0; background: #fff; }
+.av-head { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.av-title { display: flex; align-items: center; gap: 6px; }
+.av-title h2 { margin: 0; font-size: 16px; font-weight: 500; }
+.av-info { color: var(--av-muted); cursor: help; display: inline-flex; border-radius: 50%; margin-left: 4px; }
+.av-info:hover, .av-info:focus-visible { color: var(--av-primary); }
+.av-root :focus-visible { outline: 2px solid var(--av-primary); outline-offset: 2px; border-radius: 4px; }
+.av-controls { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; justify-content: flex-end; }
+.av-select { font: inherit; height: 32px; color: var(--av-text); border: 1px solid #d9d9d9; border-radius: 6px; padding: 0 8px; background: #fff; max-width: 100%; }
+.av-btn { font: inherit; height: 32px; border: 1px solid #d9d9d9; background: #fff; border-radius: 6px; padding: 0 14px; cursor: pointer; color: var(--av-text); }
+.av-seg { display: inline-flex; background: rgba(0,0,0,0.04); border-radius: 6px; padding: 2px; }
+.av-seg-btn { font: inherit; font-size: 13px; border: 0; background: transparent; color: var(--av-text); padding: 3px 10px; border-radius: 4px; cursor: pointer; }
+.av-seg-btn.on { background: #fff; color: var(--av-primary); box-shadow: 0 1px 2px rgba(0,0,0,0.12); }
+
+/* The totals are the toggles: top left of the card, a colour bar matching each line. */
+.av-tiles { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.av-tile { font: inherit; text-align: left; display: flex; flex-direction: column; gap: 2px; min-width: 150px; padding: 10px 12px 0; border: 1px solid #d9d9d9; border-radius: 8px;
+  background: #fff; color: var(--av-text); cursor: pointer; overflow: hidden; }
+.av-tile:not(.on) { background: #fafafa; color: var(--av-muted); }
+.av-tile:not(.on) .av-tile-bar { background: #d9d9d9; }
+.av-tile-top { display: flex; align-items: center; gap: 4px; }
+.av-tile.on .av-tile-top .av-icon { color: var(--av-line); }
+.av-tile-lbl { color: var(--av-muted); }
+.av-tile-val { font-size: 24px; font-weight: 600; line-height: 1.3; }
+.av-tile-bar { display: block; height: 4px; margin: 8px -12px 0; background: var(--av-line); }
+
+.av-plot { position: relative; }
+.av-svg { width: 100%; height: 260px; display: block; }
+.av-grid { stroke: #f0f0f0; stroke-width: 1; }
+.av-axis { font-size: 11px; fill: rgba(0,0,0,0.45); }
+.av-cursor { stroke: #bfbfbf; stroke-width: 1; stroke-dasharray: 3 3; }
+.av-hits { position: absolute; top: 0; height: 260px; display: flex; }
+.av-hit { flex: 1 1 0; min-width: 0; cursor: crosshair; }
+.av-hit:focus-visible { background: rgba(22,155,194,0.08); }
+.av-legend { display: flex; gap: 16px; margin-top: 8px; }
+.av-key::before { content: ''; display: inline-block; width: 16px; height: 3px; background: var(--av-line); margin-right: 6px; vertical-align: middle; }
+
+.av-scroll { overflow-x: auto; }
+.av-table { width: 100%; border-collapse: collapse; min-width: 760px; }
+.av-table th { text-align: left; font-weight: 600; background: #fafafa; padding: 10px 12px; border-bottom: 1px solid var(--av-border); white-space: nowrap; }
+.av-table td { padding: 10px 12px; border-bottom: 1px solid var(--av-border); }
+.av-table .num { text-align: right; white-space: nowrap; }
+.av-table tr.av-type td { font-weight: 500; background: #fafafa; }
+.av-table tr.av-deal td.av-name { padding-left: 36px; }
+.av-table tbody tr:hover td { background: #e8fdff; }
+.av-name-in { cursor: help; border-bottom: 1px dotted #bfbfbf; }
+.av-share-bar { display: inline-block; width: 56px; height: 6px; border-radius: 9999px; background: rgba(5,5,5,0.06); margin-right: 8px; overflow: hidden; vertical-align: middle; }
+.av-share-bar i { display: block; height: 100%; background: var(--av-primary); }
+
+.av-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 16px; align-items: start; }
+.av-metric-lbl { color: var(--av-muted); }
+.av-metric-val { font-size: 28px; font-weight: 700; margin: 4px 0 8px; }
+.av-spark { width: 100%; max-width: 280px; height: 48px; display: block; }
+.av-field { padding: 8px 0; border-bottom: 1px solid var(--av-border); }
+.av-field:last-child { border-bottom: 0; }
+.av-field-lbl { color: var(--av-muted); margin-bottom: 4px; }
+.av-group { margin-top: 6px; }
+.av-group-lbl { font-size: 12px; color: var(--av-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
+.av-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.av-var { display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: 9999px; border: 1px solid #d9d9d9; background: #fff; font-size: 13px; }
+.av-var.localised { background: rgba(22,155,194,0.1); border-color: rgba(22,155,194,0.4); }
+.av-var.personalised { background: #f3f0ff; border-color: #d3adf7; }
+
+.av-state { text-align: center; padding: 32px 16px; border: 1px dashed #d9d9d9; border-radius: 8px; color: var(--av-muted); }
+.av-state.error { color: #ff4d4f; }
+.av-state p { margin: 4px 0 8px; }
+.av-skel { height: 200px; border-radius: 8px; background: linear-gradient(90deg, #f0f0f0, #fafafa, #f0f0f0); background-size: 200% 100%; animation: av-sh 1.2s infinite; }
+@keyframes av-sh { to { background-position: -200% 0; } }
+
+/* The hover floats above the page (absolute within the root, never clipped by a card) and is clamped on-screen. */
+.av-tip { position: absolute; z-index: 10; width: max-content; max-width: min(380px, 100%); max-height: calc(100vh - 16px); overflow-y: auto; background: #fff; border: 1px solid #d9d9d9;
+  border-radius: 8px; box-shadow: 0 6px 16px rgba(0,0,0,0.12); padding: 10px 12px; pointer-events: none; font-size: 13px; }
+.av-tip[hidden] { display: none; }
+.av-tip-title { font-weight: 500; margin-bottom: 4px; }
+.av-tip-row { display: flex; justify-content: space-between; gap: 16px; padding: 1px 0; }
+.av-tip-row.head { font-weight: 500; margin-top: 8px; padding-top: 6px; border-top: 1px solid #f0f0f0; }
+.av-tip-k { white-space: pre-line; }
+.av-tip-v { white-space: pre-line; text-align: right; font-weight: 500; }
+@media (max-width: 900px) { .av-pair { grid-template-columns: 1fr; } }
+@media (max-width: 600px) { .av-svg, .av-hits { height: 220px; } .av-tile { flex: 1 1 140px; } .av-controls { justify-content: flex-start; } }

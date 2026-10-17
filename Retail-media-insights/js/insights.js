@@ -43,7 +43,24 @@
     });
     return fetch(api + "/" + endpoint + "?" + qs).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); });
   }
-  var rd = RevenueDeals.mount($("rd"), { fetchJson: fetchJson });
+  // The advertiser view (?role=advertiser) replaces the retailer charts; the server pins every response to the
+  // signed-in advertiser, so the page never sends advertiserIds and its Display type filter is only their own.
+  function avFetchJson(endpoint, params) {
+    if (!api) return AVFixtures.fetchJson(endpoint, params, { state: state === "empty" || state === "error" ? state : null, delay: state === "loading" ? 3600000 : 120 });
+    return fetchJson(endpoint, params);
+  }
+  var rd = advertiser ? null : RevenueDeals.mount($("rd"), { fetchJson: fetchJson });
+  var av = advertiser ? AdvertiserView.mount($("av"), { fetchJson: avFetchJson }) : null;
+  if (advertiser) {
+    // The summary strip is retailer revenue and inventory; an advertiser login never sees it.
+    $("rd").hidden = true; $("av").hidden = false; $("strip").hidden = true;
+    avFetchJson("filter-options", {}).then(function (o) {
+      var sel = $("f-display"), cur = sel.value;
+      sel.innerHTML = '<option value="all">All display types</option>' + o.displayTypes.map(function (t) { return '<option value="' + t.id + '">' + t.name + '</option>'; }).join("");
+      sel.value = cur;
+    }, function () {});
+  }
+  function setFilters(f) { if (advertiser) av.setFilters(f); else rd.setFilters(f); }
   function pageFilters() {
     var days = +applied["f-date"], to = new Date(Date.UTC(2026, 9, 11)), from = new Date(to.getTime() - (days - 1) * 864e5);
     var f = { dateFrom: from.toISOString().slice(0, 10), dateTo: to.toISOString().slice(0, 10) };
@@ -62,12 +79,12 @@
   ids.forEach(function (i) { $(i).addEventListener("change", sync); });
   $("apply").onclick = function () {
     ids.forEach(function (i) { applied[i] = $(i).value; });
-    isApplied = true; render(); sync(); rd.setFilters(pageFilters());
+    isApplied = true; render(); sync(); setFilters(pageFilters());
   };
   $("cancel").onclick = function () { ids.forEach(function (i) { $(i).value = applied[i]; }); sync(); };
   $("reset").onclick = function () {
     ids.forEach(function (i) { $(i).value = DEFAULTS[i]; applied[i] = DEFAULTS[i]; });
-    isApplied = false; render(); sync(); rd.setFilters(pageFilters());
+    isApplied = false; render(); sync(); setFilters(pageFilters());
   };
-  render(); sync(); rd.setFilters(pageFilters());
+  render(); sync(); setFilters(pageFilters());
 })();
