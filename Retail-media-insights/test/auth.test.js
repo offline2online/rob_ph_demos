@@ -90,6 +90,25 @@ test('advertiser tokens get 403 on every route that is not declared advertiser-c
   }
 });
 
+test('an authenticated token without the insights:read scope is 403 on every non-public route', async () => {
+  for (const scopes of [[], ['insights:write'], ['insights']]) {
+    for (const principal of [['admin', 'retailer'], ['advertiser', 'adv-acme']]) {
+      const t = tok(...principal, { scopes });
+      for (const r of GUARDED) assert.equal((await call(`${r.path}?${Q}`, t)).status, 403, `${r.path} ${principal[0]} scopes=${JSON.stringify(scopes)}`);
+    }
+  }
+  assert.equal((await call('/health', tok('admin', 'retailer', { scopes: [] }))).status, 200, 'public route needs no scope');
+  const server = createServer({ store, today: '2026-10-11', authenticate });
+  await new Promise((r) => server.listen(0, r));
+  try {
+    const mcp = (t) => fetch(`http://127.0.0.1:${server.address().port}${BASE}/mcp`, { method: 'POST', headers: { authorization: `Bearer ${t}`, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) });
+    assert.equal((await mcp(tok('admin', 'retailer', { scopes: [] }))).status, 403, 'MCP needs the scope too');
+    assert.equal((await mcp(tok('admin', 'retailer'))).status, 200);
+  } finally { server.close(); }
+  assert.equal((await call(`/summary?${Q}`, tok('admin', 'retailer', { scopes: ['insights:read'] }))).status, 200);
+  assert.equal((await call(`/summary?${Q}`, tok('admin', 'retailer', { scopes: ['other', 'insights:read'] }))).status, 200);
+});
+
 test('a route with no declaration is retailer-only', async () => {
   const route = { path: '/new-thing', handler: () => ({ ok: true }) };
   assert.equal((await call('/new-thing', tok('advertiser', 'adv-acme'), { routes: [route] })).status, 403);

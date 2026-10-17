@@ -6,6 +6,8 @@ const DEAL_TYPES = ['Programmatic guaranteed', 'Preferred deal', 'Private auctio
 const LEGACY_DEAL_TYPES = { 'Programmatic Guaranteed': 'Programmatic guaranteed' };
 const normaliseDealType = (t) => LEGACY_DEAL_TYPES[t] || t;
 const DSPS = ['DV360', 'The Trade Desk', 'Amazon DSP'];
+// How each DSP is named on DSP Integration's Deals & buyers lists (README "Deals are named, not coded").
+const DSP_LABELS = { DV360: 'Google DSP (DV360)', 'The Trade Desk': 'The Trade Desk', 'Amazon DSP': 'Amazon Ads DSP' };
 // The five IAB / IAB Europe In-Store Retail Media Standards zones, in shopper-journey order.
 const ZONES = ['Exterior', 'Entrance & out of category', 'In aisles', 'Checkout', 'Other & connected store'];
 const MATURITY_LEVELS = ['Default only', 'Localised', 'Personalised'];
@@ -44,5 +46,9 @@ const MIN_OTHER_BUYERS_FOR_WINNING_CPM = 2;
 
 // Operating-hours windows are whole hours [open, close).
 const ALWAYS_OPEN = Object.freeze({ open: 0, close: 24 });
+// No opening hours on record for an in-store type: nothing is inventory (fail closed, never ALWAYS_OPEN).
+const NEVER_OPEN = Object.freeze({ open: 0, close: 0 });
+// The scope every non-public route needs (DSP Integration section 9.5).
+const READ_SCOPE = 'insights:read';
 
-module.exports = { DEAL_TYPES, normaliseDealType, DSPS, ZONES, MATURITY_LEVELS, ALWAYS_OPEN, MIN_OTHER_BUYERS_FOR_WINNING_CPM, LOCALISATION_VARIABLES, PERSONALISATION_VARIABLES };
+module.exports = { DEAL_TYPES, normaliseDealType, DSPS, DSP_LABELS, ZONES, MATURITY_LEVELS, ALWAYS_OPEN, NEVER_OPEN, READ_SCOPE, MIN_OTHER_BUYERS_FOR_WINNING_CPM, LOCALISATION_VARIABLES, PERSONALISATION_VARIABLES };

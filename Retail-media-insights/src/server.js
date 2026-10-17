@@ -9,6 +9,7 @@ const { FilterError, ForbiddenError } = require('./filters');
 const { runRoute, RAW } = require('./query');
 const { handleMessage } = require('./mcp');
 const { createTokenAuthenticator, PRINCIPAL_TYPES } = require('./auth');
+const { READ_SCOPE } = require('./constants');
 
 const BASE = '/insights/v1/retail-media';
 const MCP_PATH = `${BASE}/mcp`;
@@ -23,7 +24,8 @@ function loadRoutes(dir = path.join(__dirname, 'routes')) {
  * principalId, scopes}, or null; anything else (null, a malformed principal, a throw) is a 401. There is
  * no default: an unauthenticated caller is never a retailer user (DSP Integration section 9.5).
  *
- * Each route declares who may call it. Only `public: true` skips authentication (/health). A route
+ * Each route declares who may call it. Only `public: true` skips authentication (/health); every other
+ * route also needs the `insights:read` scope (an authenticated caller without it gets 403). A route
  * without `advertiserAccess: true` is retailer (admin) only and an advertiser gets 403. A route that
  * sets `advertiserAccess: true` must read its data through the already-scoped `filters`, never through
  * `params`. `routes` overrides the auto-discovered list (tests).
@@ -38,6 +40,7 @@ function createServer({ store, authenticate, today, routes: routeList } = {}) {
     let principal = null;
     try { principal = normalisePrincipal(authenticate(req)); } catch { principal = null; }
     if (!principal) return send(401, { error: 'authentication required' }, { 'www-authenticate': 'Bearer' });
+    if (!principal.scopes.includes(READ_SCOPE)) return send(403, { error: `the ${READ_SCOPE} scope is required` });
     if (req.method !== 'POST') return send(405, { error: 'POST JSON-RPC to this endpoint' }, { allow: 'POST' });
     let size = 0; const chunks = [];
     req.on('data', (c) => { size += c.length; if (size > MAX_MCP_BODY) { req.destroy(); } else chunks.push(c); });

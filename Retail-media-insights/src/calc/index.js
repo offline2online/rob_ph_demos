@@ -2,7 +2,7 @@
 // The one shared calculation library: every rule in REQUIREMENTS.md section 3.2.
 // Pure functions, no I/O. Money is USD; percentages are whole numbers.
 
-const { DEAL_TYPES, DSPS, ZONES, MATURITY_LEVELS, ALWAYS_OPEN, LOCALISATION_VARIABLES, PERSONALISATION_VARIABLES } = require('../constants');
+const { DEAL_TYPES, DSPS, ZONES, MATURITY_LEVELS, ALWAYS_OPEN, NEVER_OPEN, LOCALISATION_VARIABLES, PERSONALISATION_VARIABLES } = require('../constants');
 
 const sum = (xs) => xs.reduce((a, b) => a + b, 0);
 
@@ -62,13 +62,22 @@ function perSlotPerDay(revenue, slots, days) {
 // ---- Operating hours --------------------------------------------------------
 
 /**
- * Window screens visible from outside run 24 hours; every other type follows store opening
- * hours. `storeHours` is {open, close}. The window is returned only for internal use; the API
- * never exposes specific opening times.
+ * Operating hours are held per display type, defaulted from the zone: an explicit `is24Hour` wins (window
+ * screens visible from outside are true); with no flag an Exterior type runs 24 hours; everything else
+ * follows store opening hours. A store with no opening hours on record fails closed (NEVER_OPEN), so an
+ * in-store type's inventory there is not counted. `storeHours` is {open, close}. The window is for internal
+ * use only: the API never exposes specific opening times.
  */
 function operatingWindow(displayType, storeHours) {
-  if (displayType.is24Hour) return ALWAYS_OPEN;
-  return storeHours || ALWAYS_OPEN;
+  if (runsAllDay(displayType)) return ALWAYS_OPEN;
+  return storeHours || NEVER_OPEN;
+}
+
+/** True when the type runs 24 hours: its flag if set, else the zone default (Exterior). */
+function runsAllDay(displayType) {
+  if (displayType.is24Hour === true) return true;
+  if (displayType.is24Hour === false) return false;
+  return displayType.zone === 'Exterior';
 }
 
 /** True when `hour` (0-23) falls inside [open, close). A close of 24 means end of day. */
@@ -190,7 +199,7 @@ const compareZones = orderBy(ZONES);
 module.exports = {
   assumedViewsPerSlotPerDay, averageAssumedViews, shareOfLoop,
   revenueAtCpm, effectiveCpm, perSlotPerDay, perSlotPerDayPerDisplay,
-  operatingWindow, insideOperatingHours, classifySlot, fillPercent,
+  operatingWindow, runsAllDay, insideOperatingHours, classifySlot, fillPercent,
   unsoldValueAtFloor, missedRevenue,
   guaranteedVolume, pgPacing, maturityLevel, sharedVariables, campaignLevel,
   wholePercent, roundParts, percentSplit, formatUsd,

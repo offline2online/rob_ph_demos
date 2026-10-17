@@ -34,6 +34,8 @@ test('24-hour display types ignore store hours; others follow them', () => {
   const store = { open: 8, close: 20 };
   assert.deepEqual(calc.operatingWindow({ is24Hour: true }, store), { open: 0, close: 24 });
   assert.deepEqual(calc.operatingWindow({ is24Hour: false }, store), store);
+  assert.deepEqual(calc.operatingWindow({ zone: 'Exterior' }, store), { open: 0, close: 24 }, 'Exterior defaults to 24 hours');
+  assert.deepEqual(calc.operatingWindow({ is24Hour: false }, undefined), { open: 0, close: 0 }, 'no store hours: fail closed');
   assert.equal(calc.insideOperatingHours(7, store), false);
   assert.equal(calc.insideOperatingHours(8, store), true);
   assert.equal(calc.insideOperatingHours(20, store), false);

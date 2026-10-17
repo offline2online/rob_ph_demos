@@ -41,7 +41,7 @@ module.exports = {
     const campaigns = [];
     store.scanCampaigns(filters, (c) => campaigns.push(c));
     const revenue = new Map();
-    store.scanDelivery(filters, (r) => revenue.set(r.advertiserId, (revenue.get(r.advertiserId) || 0) + r.revenue));
+    store.scanDelivery(filters, (r) => revenue.set(r.advertiserId, (revenue.get(r.advertiserId) || 0) + r.earned));
 
     // One record per advertiser: highest campaign level, variables, scheduling.
     const advs = new Map();
@@ -72,7 +72,7 @@ module.exports = {
         personalisationTypes: [...new Set(vars.map((v) => v.personalisationType).filter(Boolean))].sort(),
         scheduling: { uses: a.scheduledCampaigns > 0, scheduledCampaigns: a.scheduledCampaigns, campaigns: a.campaigns, schedules: a.schedules },
         targetedVersions: a.targetedVersions,
-        revenue: Math.round(revenue.get(a.advertiserId) || 0),
+        revenue: Math.round((revenue.get(a.advertiserId) || 0) * 100) / 100, // earned revenue, to the cent
       };
     });
     const who = (r, extra = {}) => ({ advertiserId: r.advertiserId, name: r.name, dsp: r.dsp, ...extra });

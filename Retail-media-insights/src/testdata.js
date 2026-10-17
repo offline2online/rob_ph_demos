@@ -1,7 +1,15 @@
 'use strict';
 // A deterministic 5-store test retailer (README "Store zones" sample data): Window Portrait (24h,
 // 2 displays per store), Endcap Shelf-edge (4), Queue Screen (3), Dispensary Screen (1). Stores
-// open 08:00-20:00. Each slot record is one advertiser slot in one hour of one day.
+// open 08:00-20:00. Each slot record counts advertiser slot plays in one hour of one day.
+//
+// The data follows its own configuration (README sample-data rules):
+//  - inventory scales with the estate: plays per hour = connected displays x advertiser slots x loops per hour;
+//  - one sold slot-day (one advertiser slot on one display for a day) delivers the type's average assumed
+//    views per slot per day (footfall x visibility x slot seconds / loop seconds), spread over its plays;
+//  - an advertiser slot position belongs to the deal that assigns it, else to the open auction; only that
+//    deal's buyers are billed there, through their own DSP seat, so sold plays never exceed a deal's opportunities;
+//  - auctions clear at or above the floor (deal floor for a private auction, display type floor for open).
 
 const calc = require('./calc');
 
@@ -18,10 +26,10 @@ function rng(seed) {
 
 // Per type: PH Core / DSP Integration facts (description, Touch Point, canvas, orientation, creative formats),
 // slot configuration (counts and average durations, so loop length = sum of count x duration) and the
-// average VAC-d inputs (footfall x visibility x share of loop = viewsPerSlot).
+// VAC-d inputs (footfall x visibility; views per slot per day = footfall x visibility x share of loop).
 const DISPLAY_TYPES = {
   window: {
-    name: 'Window Portrait', zone: 'Entrance & out of category', is24Hour: true, floorCpm: 12, displaysPerStore: 2, viewsPerSlot: 200,
+    name: 'Window Portrait', zone: 'Entrance & out of category', is24Hour: true, floorCpm: 12, displaysPerStore: 2,
     description: 'Portrait screen in the shop window, visible from outside the store.',
     touchPoint: 'Digital Signage', canvas: { width: 1080, height: 1920 }, orientation: '90°',
     creativeFormats: ['Image + video, 1080×1920, max play 6s'],
@@ -29,7 +37,7 @@ const DISPLAY_TYPES = {
     footfall: 4000, visibility: 0.5,
   },
   endcap: {
-    name: 'Endcap Shelf-edge', zone: 'Entrance & out of category', is24Hour: false, floorCpm: 8, displaysPerStore: 4, viewsPerSlot: 120,
+    name: 'Endcap Shelf-edge', zone: 'Entrance & out of category', is24Hour: false, floorCpm: 8, displaysPerStore: 4,
     description: 'Shelf-edge strip screen on a gondola end.',
     touchPoint: 'Digital Signage', canvas: { width: 1920, height: 360 }, orientation: 'Not set',
     creativeFormats: ['Image + video, 1920×360, max play 6s'],
@@ -37,7 +45,7 @@ const DISPLAY_TYPES = {
     footfall: 3000, visibility: 0.4,
   },
   queue: {
-    name: 'Queue Screen', zone: 'Checkout', is24Hour: false, floorCpm: 10, displaysPerStore: 3, viewsPerSlot: 90,
+    name: 'Queue Screen', zone: 'Checkout', is24Hour: false, floorCpm: 10, displaysPerStore: 3,
     description: 'Shopper-facing screen in the checkout queue.',
     touchPoint: 'Digital Signage', canvas: { width: 1920, height: 1080 }, orientation: 'Not set',
     creativeFormats: ['Image + video, 1920×1080, max play 10s'],
@@ -45,7 +53,7 @@ const DISPLAY_TYPES = {
     footfall: 1800, visibility: 0.45,
   },
   dispensary: {
-    name: 'Dispensary Screen', zone: 'Other & connected store', is24Hour: false, floorCpm: 6, displaysPerStore: 1, viewsPerSlot: 60,
+    name: 'Dispensary Screen', zone: 'Other & connected store', is24Hour: false, floorCpm: 6, displaysPerStore: 1,
     description: 'Screen at the pharmacy dispensary.',
     touchPoint: 'Digital Signage', canvas: { width: 1920, height: 1080 }, orientation: 'Not set',
     creativeFormats: ['Image + video, 1920×1080, max play 15s'],
@@ -58,24 +66,25 @@ const FOOTFALL_FACTORS = [0.9, 1.1, 1.0, 0.8, 1.2];
 const DEALS = {
   d1: { dealType: 'Programmatic guaranteed', cpm: 22 },
   d2: { dealType: 'Preferred deal', cpm: 18 },
-  d3: { dealType: 'Private auction', cpm: 15 },
+  d3: { dealType: 'Private auction', cpm: 15, floorCpm: 14 },
   d4: { dealType: 'Open auction', cpm: 11 },
 };
-const DEAL_DSP = { d1: 'DV360', d2: 'The Trade Desk', d3: 'Amazon DSP', d4: 'DV360' };
 // Deal reference data as DSP Integration will serve it (Deals & buyers lists, slot assignments).
 const DEAL_CATALOG = {
   d1: {
     name: 'Wellness PG', description: 'Guaranteed wellness reach on windows and queue screens.', dealType: 'Programmatic guaranteed', phId: 'PH-D1', cpm: 22,
-    buyers: [{ advertiserId: 'adv-blackmores', dsp: 'DV360' }, { advertiserId: 'adv-acme', dsp: 'The Trade Desk' }],
+    dealIds: { DV360: 'PH-A595WKW5P3' },
+    buyers: [{ advertiserId: 'adv-blackmores', dsp: 'DV360' }], // Programmatic guaranteed: exactly one buyer
     slots: [
       { displayTypeId: 'window', playlist: 'Window loop', zone: 'Zone A', position: 1, loopSlot: 2, playsPerWindow: 12 },
       { displayTypeId: 'queue', playlist: 'Queue loop', zone: 'Zone A', position: 1, loopSlot: 1, playsPerWindow: 10 },
     ],
-    flight: { start: '2026-09-20', end: '2026-11-20' }, forecast: 4000000, buffer: 0.1,
+    flight: { start: '2026-09-20', end: '2026-11-20' }, forecast: 130000, buffer: 0.1,
   },
   d2: {
     name: 'Everyday Preferred', description: 'Preferred access to endcap and queue slots at a fixed rate.', dealType: 'Preferred deal', phId: 'PH-D2', cpm: 18,
-    buyers: [{ advertiserId: 'adv-acme', dsp: 'The Trade Desk' }],
+    dealIds: { 'The Trade Desk': 'PH-9ANQZ5XWMD' },
+    buyers: [{ advertiserId: 'adv-acme', dsp: 'The Trade Desk' }], // Preferred deal: exactly one buyer
     slots: [
       { displayTypeId: 'endcap', playlist: 'Endcap loop', zone: 'Zone A', position: 2, loopSlot: 3, playsPerWindow: 8 },
       { displayTypeId: 'queue', playlist: 'Queue loop', zone: 'Zone A', position: 2, loopSlot: 3, playsPerWindow: 10 },
@@ -83,6 +92,7 @@ const DEAL_CATALOG = {
   },
   d3: {
     name: 'Pharmacy Private', description: 'Invited private auction on dispensary and window screens.', dealType: 'Private auction', phId: 'PH-D3', cpm: 15, floorCpm: 14,
+    dealIds: { 'Amazon DSP': 'PH-WPCHN2JC8Q', DV360: 'PH-6KT3B8QD2F' },
     buyers: [{ advertiserId: 'adv-nova', dsp: 'Amazon DSP' }, { advertiserId: 'adv-blackmores', dsp: 'DV360' }],
     slots: [
       { displayTypeId: 'dispensary', playlist: 'Dispensary loop', zone: 'Zone B', position: 1, loopSlot: 1, playsPerWindow: 6 },
@@ -98,7 +108,7 @@ const SHARED_VARIABLES = Object.fromEntries(['DV360', 'The Trade Desk', 'Amazon 
   'Purchase Intent', 'Purchase History', 'SKUs', 'Events', 'Visitor Segments',
 ]]));
 const ADVERTISERS = ['adv-blackmores', 'adv-acme', 'adv-nova'];
-const SLOTS_PER_HOUR = 6;
+const OPEN_AUCTION_DEAL = 'd4';
 const ADVERTISER_META = {
   'adv-blackmores': { name: 'Blackmores', dsp: 'DV360' },
   'adv-acme': { name: 'Acme', dsp: 'The Trade Desk' },
@@ -134,41 +144,77 @@ function generateTestRetailer({ days = 90, endDate = '2026-10-11', stores = 5, s
   };
   const billing = [];
   const slotRecords = [];
-  const dealIds = Object.keys(DEALS);
+  // Who owns each advertiser slot position: the deal that assigns it, else the open auction.
+  const ownerOf = (typeId, position) => (Object.entries(DEAL_CATALOG).find(([, d]) => d.slots.some((x) => x.displayTypeId === typeId && x.position === position)) || [OPEN_AUCTION_DEAL])[0];
+  // Billed buyers of a deal (its buyers list, each on its own DSP seat); the open auction is open to everyone.
+  const buyersOf = (dealId) => (dealId === OPEN_AUCTION_DEAL
+    ? ADVERTISERS.map((advertiserId) => ({ advertiserId, dsp: ADVERTISER_META[advertiserId].dsp }))
+    : DEAL_CATALOG[dealId].buyers);
+  // Cleared price: fixed deals bill their CPM; auctions clear above their floor (strictly, so rounding never lands below it).
+  const clearedCpm = (dealId, type) => {
+    const deal = DEAL_CATALOG[dealId];
+    if (deal.dealType === 'Open auction') return Math.round(type.floorCpm * (1.02 + rand() * 0.35) * 100) / 100;
+    if (deal.dealType === 'Private auction') return Math.round(deal.floorCpm * (1.02 + rand() * 0.3) * 100) / 100;
+    return deal.cpm;
+  };
   for (let d = 0; d < days; d += 1) {
     const date = new Date(Date.parse(`${endDate}T00:00:00Z`) - d * 86400000).toISOString().slice(0, 10);
     const settled = d >= settledThroughDaysAgo;
-    for (const storeId of storeIds) {
+    storeIds.forEach((storeId, storeIndex) => {
       for (const [typeId, type] of Object.entries(DISPLAY_TYPES)) {
-        const soldByDeal = {};
+        const { advertiser, ownContent } = type.slots;
+        const loopSeconds = advertiser.count * advertiser.avgSeconds + ownContent.count * ownContent.avgSeconds;
+        const loopsPerHour = Math.round(3600 / loopSeconds);
+        const window = calc.operatingWindow(type, ctx.stores[storeId]);
+        const hoursOpen = window.close - window.open;
+        // Plays one advertiser slot position makes per hour, across the type's displays in this store.
+        const capacity = type.displaysPerStore * loopsPerHour;
+        // One sold slot-day (one position, one display, all operating hours) delivers the average assumed views.
+        const footfall = Math.round(type.footfall * FOOTFALL_FACTORS[storeIndex % FOOTFALL_FACTORS.length]);
+        const viewsPerPlay = hoursOpen > 0 ? calc.assumedViewsPerSlotPerDay(footfall, type.visibility, advertiser.avgSeconds, loopSeconds) / (loopsPerHour * hoursOpen) : 0;
+        const soldBy = new Map(); // `${dealId}|${advertiserId}` -> plays
         for (let hour = 0; hour < 24; hour += 1) {
-          const inside = calc.insideOperatingHours(hour, calc.operatingWindow(type, ctx.stores[storeId]));
-          // Raw records exist for every hour, so outside-hours slots must be excluded downstream.
-          const offline = rand() < 0.03 ? 1 : 0;
-          const sold = inside ? Math.min(SLOTS_PER_HOUR - offline, Math.round(SLOTS_PER_HOUR * (0.45 + rand() * 0.45))) : 0;
-          const unsold = SLOTS_PER_HOUR - offline - sold;
-          for (const [status, count] of [['sold', sold], ['unsold', unsold], ['offline', offline]]) {
-            if (count <= 0) continue;
-            const rec = { date, storeId, displayTypeId: typeId, hour, status, count, views: type.viewsPerSlot };
+          if (!calc.insideOperatingHours(hour, window)) {
+            // Raw records exist for every hour, so outside-hours slots must be excluded downstream.
+            slotRecords.push({ date, storeId, displayTypeId: typeId, hour, status: 'unsold', count: capacity * advertiser.count, views: viewsPerPlay });
+            continue;
+          }
+          const totals = { sold: 0, unsold: 0, offline: 0 };
+          for (let position = 1; position <= advertiser.count; position += 1) {
+            const offline = rand() < 0.03 ? Math.round(capacity * 0.15) : 0;
+            const sold = Math.round((capacity - offline) * (0.45 + rand() * 0.45));
+            totals.sold += sold; totals.offline += offline; totals.unsold += capacity - offline - sold;
+            const dealId = ownerOf(typeId, position);
+            const buyers = buyersOf(dealId);
+            const weights = buyers.map(() => 0.5 + rand());
+            const weightSum = weights.reduce((a, b) => a + b, 0);
+            let left = sold;
+            buyers.forEach((b, i) => {
+              const n = i === buyers.length - 1 ? left : Math.min(left, Math.floor((sold * weights[i]) / weightSum));
+              left -= n;
+              soldBy.set(`${dealId}|${b.advertiserId}`, (soldBy.get(`${dealId}|${b.advertiserId}`) || 0) + n);
+            });
+          }
+          for (const status of ['sold', 'unsold', 'offline']) {
+            if (totals[status] <= 0) continue;
+            const rec = { date, storeId, displayTypeId: typeId, hour, status, count: totals[status], views: viewsPerPlay };
             // Lost-revenue report: an offline slot loses what it would have earned at the average deal CPM.
-            if (status === 'offline') rec.lostRevenue = calc.revenueAtCpm(15, type.viewsPerSlot) * count;
+            if (status === 'offline') rec.lostRevenue = calc.revenueAtCpm(15, viewsPerPlay) * rec.count;
             slotRecords.push(rec);
           }
-          for (let s = 0; s < sold; s += 1) {
-            const dealId = dealIds[Math.floor(rand() * dealIds.length)];
-            soldByDeal[dealId] = (soldByDeal[dealId] || 0) + 1;
-          }
         }
-        for (const [dealId, slots] of Object.entries(soldByDeal)) {
-          const views = slots * type.viewsPerSlot;
+        for (const [key, slots] of soldBy) {
+          if (slots <= 0) continue;
+          const [dealId, advertiserId] = key.split('|');
+          const buyer = buyersOf(dealId).find((b) => b.advertiserId === advertiserId);
+          const views = Math.round(slots * viewsPerPlay); // VAC-d views are whole numbers
           billing.push({
-            date, storeId, displayTypeId: typeId, dealId, dsp: DEAL_DSP[dealId],
-            advertiserId: ADVERTISERS[(dealIds.indexOf(dealId) + storeIds.indexOf(storeId)) % ADVERTISERS.length],
-            revenue: calc.revenueAtCpm(Math.max(DEALS[dealId].cpm, DEALS[dealId].dealType === 'Open auction' ? type.floorCpm : 0), views), views, slots, settled,
+            date, storeId, displayTypeId: typeId, dealId, dsp: buyer.dsp, advertiserId,
+            revenue: calc.revenueAtCpm(clearedCpm(dealId, type), views), views, slots, settled,
           });
         }
       }
-    }
+    });
   }
   const dayOf = (ago) => (ago === null ? null : new Date(Date.parse(`${endDate}T00:00:00Z`) - ago * 86400000).toISOString().slice(0, 10));
   const campaigns = CAMPAIGNS.map(({ startAgo, endAgo, ...c }) => ({ ...c, start: dayOf(startAgo), end: dayOf(endAgo) }));
@@ -176,4 +222,4 @@ function generateTestRetailer({ days = 90, endDate = '2026-10-11', stores = 5, s
   return { raw: { billing, slotRecords, campaigns }, ctx };
 }
 
-module.exports = { generateTestRetailer, rng, DISPLAY_TYPES, DEALS, ADVERTISERS, SLOTS_PER_HOUR };
+module.exports = { generateTestRetailer, rng, DISPLAY_TYPES, DEALS, DEAL_CATALOG, ADVERTISERS, ADVERTISER_META, OPEN_AUCTION_DEAL };

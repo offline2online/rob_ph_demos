@@ -184,11 +184,15 @@ test('delivery: PG pacing is the advertiser\'s own guarantee against its own del
   assert.deepEqual(body.pacing.map((p) => p.dealId), ['d1']);
   const p = body.pacing[0];
   assert.equal(p.series.length, 7);
-  const own = []; store.scanDelivery({ dateFrom: '2026-09-20', dateTo: '2026-10-11', storeIds: null, displayTypeIds: scopeFilters({ dateFrom: 'x', dateTo: 'y' }, { principalType: 'advertiser', principalId: 'adv-blackmores' }, store).displayTypeIds, advertiserIds: ['adv-blackmores'] }, (r) => { if (r.dealId === 'd1') own.push(r); });
+  // Delivered is settled VAC-d only, over the whole deal: the store and display type page filters do not change it.
+  const own = []; store.scanDelivery({ dateFrom: '2026-09-20', dateTo: '2026-10-11', storeIds: null, displayTypeIds: null, advertiserIds: ['adv-blackmores'] }, (r) => { if (r.dealId === 'd1') own.push(r); });
   const last = p.series[6];
   assert.equal(last.date, '2026-10-11');
-  assert.equal(last.delivered, Math.round(sum(own.map((r) => r.views))));
-  assert.equal(last.guaranteed, Math.round(4000000 * 0.9 * 22 / 62));
+  assert.equal(last.delivered, Math.round(sum(own.map((r) => r.earnedViews))));
+  assert.ok(sum(own.map((r) => r.earnedViews)) < sum(own.map((r) => r.views)), 'unsettled days are not counted as delivered');
+  assert.equal(last.guaranteed, Math.round(ctx.dealCatalog.d1.forecast * 0.9 * 22 / 62));
+  const narrowed = (await as('adv-blackmores', `/delivery?${Q}&storeIds=store-1&displayTypeIds=window`)).body.pacing[0];
+  assert.deepEqual(narrowed.series, p.series, 'pacing ignores the store and display type filters');
   assert.ok(p.series.every((s, i) => i === 0 || (s.delivered >= p.series[i - 1].delivered && s.guaranteed > p.series[i - 1].guaranteed)));
   assert.deepEqual((await as('adv-nova', `/delivery?${Q}&dealId=d3`)).body.pacing, [], 'no pacing for other deal types');
 });

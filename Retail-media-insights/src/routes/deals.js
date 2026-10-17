@@ -3,10 +3,12 @@ const calc = require('../calc');
 const { FilterError } = require('../filters');
 const { DEAL_TYPES, normaliseDealType } = require('../constants');
 const { listParam } = require('./params');
-const { dealIdsFor, dealsOf, slotKey, rollUp, opportunities, pacingOf, cents } = require('../dealing');
+const { dealIdsFor, dealsOf, slotKey, rollUp, opportunities, deliveredByDeal, pacingOf, cents } = require('../dealing');
 
 // One row per named deal (Open auction is not a deal). An advertiser login sees only the deals it is
-// invited to, with only its own buyer and the deal ID for its own DSP.
+// invited to, with only its own buyer and the deal ID for its own DSP. The display type page filter applies to
+// every part of a row (slots list, Slots, Fill), and a deal with no slot on the filtered types drops out.
+// Revenue is earned revenue. Pacing is deal-wide: the store and display type filters do not change it.
 module.exports = {
   path: '/deals',
   handler({ store, filters, params }) {
@@ -19,35 +21,48 @@ module.exports = {
     const roll = rollUp(store, filters);
     const opp = opportunities(store, filters);
     const types2 = store.catalog.displayTypes || {};
+    const wantedTypes = filters.displayTypeIds ? new Set(filters.displayTypeIds) : null;
     const rows = [];
+    const included = [];
     for (const deal of dealsOf(store)) {
       if (deal.dealType === 'Open auction' || (dealType && deal.dealType !== dealType)) continue;
       const buyers = (deal.buyers || []).filter((b) => !scope || scope.has(b.advertiserId));
       if (scope && !buyers.length) continue;
       const dealIds = dealIdsFor(deal, buyers);
-      const slots = (deal.slots || []).map((s) => ({
+      const assigned = (deal.slots || []).filter((s) => !wantedTypes || wantedTypes.has(s.displayTypeId));
+      if (wantedTypes && !assigned.length) continue;
+      included.push(deal);
+      const slots = assigned.map((s) => ({
         displayTypeId: s.displayTypeId, displayType: (types2[s.displayTypeId] || {}).name || s.displayTypeId,
         playlist: s.playlist, zone: s.zone, playlistZone: `${s.playlist} · ${s.zone}`,
         iabZone: (types2[s.displayTypeId] || {}).zone || null,
         advertiserSlot: s.position, loopSlot: s.loopSlot, label: `Advertiser slot ${s.position} (loop slot ${s.loopSlot})`,
         playsPerWindow: s.playsPerWindow,
       }));
-      // Fill: slots delivered on the deal / slot opportunities inside operating hours (sold + unsold records).
+      // Fill: slots won on the deal / slot opportunities inside operating hours (sold + unsold + offline records).
       let opportunity = 0; const seen = new Set();
-      for (const s of deal.slots || []) { if (!seen.has(slotKey(s))) { seen.add(slotKey(s)); opportunity += opp.perPosition(s.displayTypeId); } }
+      for (const s of assigned) { if (!seen.has(slotKey(s))) { seen.add(slotKey(s)); opportunity += opp.perPosition(s.displayTypeId); } }
       let won = 0;
-      for (const t of new Set((deal.slots || []).map((s) => s.displayTypeId))) won += roll.slotsByDealType.get(`${deal.id}#${t}`) || 0;
+      for (const t of new Set(assigned.map((s) => s.displayTypeId))) won += roll.slotsByDealType.get(`${deal.id}#${t}`) || 0;
       const d = roll.byDeal.get(deal.id) || { revenue: 0, earned: 0, earnedViews: 0 };
       const cpm = deal.dealType === 'Private auction'
         ? { value: deal.floorCpm, kind: 'floor' }
         : { value: deal.cpm, kind: 'fixed' };
       rows.push({
         id: deal.id, name: deal.name, description: deal.description, dealType: deal.dealType, dealIds, slots,
-        advertisers: buyers.map((b) => ({ advertiserId: b.advertiserId, name: (advertisers[b.advertiserId] || {}).name || b.advertiserId, dsp: b.dsp })),
-        fill: { percent: opportunity > 0 ? Math.min(calc.wholePercent(won, opportunity), 100) : 0, slotsWon: won, slotsAvailable: Math.round(opportunity) },
-        pacing: deal.dealType === 'Programmatic guaranteed' && deal.flight ? pacingOf(deal, store, filters) : null,
-        revenue: cents(d.revenue), cpm: { value: cpm.value == null ? null : cents(cpm.value), kind: cpm.kind },
+        advertisers: buyers.map((b) => ({ advertiserId: b.advertiserId, name: (advertisers[b.advertiserId] || {}).name || b.advertiserId, dsp: b.dsp }))
+          .sort((x, y) => calc.compareDsps(x.dsp, y.dsp) || x.name.localeCompare(y.name)),
+        fill: { percent: opportunity > 0 ? calc.wholePercent(won, opportunity) : null, slotsWon: won, slotsAvailable: Math.round(opportunity) },
+        pacing: null,
+        revenue: cents(d.earned), cpm: { value: cpm.value == null ? null : cents(cpm.value), kind: cpm.kind },
       });
+    }
+    const pg = included.filter((d) => d.dealType === 'Programmatic guaranteed' && d.flight);
+    const delivered = deliveredByDeal(store, filters, pg);
+    const pgById = new Map(pg.map((d) => [d.id, d]));
+    for (const row of rows) {
+      const deal = pgById.get(row.id);
+      if (deal) row.pacing = pacingOf(deal, delivered.get(deal.id), filters);
     }
     rows.sort((a, b) => calc.compareDealTypes(a.dealType, b.dealType) || a.name.localeCompare(b.name));
     return { dealType, rows };

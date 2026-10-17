@@ -44,7 +44,7 @@ test('display-types: a field that is not stored is omitted; store and type filte
   await new Promise((r) => server.listen(0, r));
   const res = await (await fetch(`http://127.0.0.1:${server.address().port}${BASE}/display-types`)).json();
   server.close();
-  assert.deepEqual(Object.keys(res.rows[0]).sort(), ['connectedDisplays', 'iabZone', 'id', 'name']);
+  assert.deepEqual(Object.keys(res.rows[0]).sort(), ['connectedDisplays', 'iabZone', 'id', 'name', 'operatingHours']);
   const { body } = await get(`/display-types?${Q}&storeIds[]=store-1&displayTypeIds=window`);
   assert.equal(body.rows.length, 1);
   assert.deepEqual(body.rows[0].connectedDisplays, { displays: 2, stores: 1 });
@@ -58,7 +58,7 @@ test('slot-value: per slot per day and network totals reconcile', async () => {
     assert.ok(r.effectiveCpm > 0 && r.floorCpm > 0);
     assert.ok(Math.abs(r.perSlotPerDay * r.totals.advertiserSlots * r.totals.days - r.totals.earnedRevenue) <= r.totals.advertiserSlots * r.totals.days * 0.01 + 1);
   }
-  assert.equal(body.network.earnedRevenue, Math.round(body.rows.reduce((n, r) => n + r.totals.earnedRevenue, 0)) );
+  assert.ok(Math.abs(body.network.earnedRevenue - body.rows.reduce((n, r) => n + r.totals.earnedRevenue, 0)) < 0.005, 'earned revenue is to the cent');
   const w = body.rows.find((r) => r.name === 'Window Portrait');
   assert.equal(w.totals.advertiserSlots, 80);
 });

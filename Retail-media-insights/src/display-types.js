@@ -37,6 +37,15 @@ function loopOf(slots) {
   };
 }
 
+/** Average assumed views per slot per day (unrounded) across the displays, or null when any input is not stored. */
+function averageViewsOf(displays, loop) {
+  if (!loop || !displays.length || displays.some((d) => d.footfall == null || d.visibility == null)) return null;
+  return calc.averageAssumedViews(displays.map((d) => ({
+    storeId: d.storeId, footfall: d.footfall, visibility: d.visibility,
+    slotSeconds: loop.advertiser.avgSeconds, loopSeconds: loop.loopSeconds,
+  }))).value;
+}
+
 /** The hover-card averages. Anything not stored is left out. */
 function averagesOf(def, displays, loop, f) {
   const out = {};
@@ -49,13 +58,8 @@ function averagesOf(def, displays, loop, f) {
       percent: calc.wholePercent(loop.advertiser.avgSeconds, loop.loopSeconds),
       advertiserSlotSeconds: loop.advertiser.avgSeconds, loopSeconds: loop.loopSeconds,
     };
-    if (footfalls.length === displays.length && visibilities.length === displays.length) {
-      const avg = calc.averageAssumedViews(displays.map((d) => ({
-        storeId: d.storeId, footfall: d.footfall, visibility: d.visibility,
-        slotSeconds: loop.advertiser.avgSeconds, loopSeconds: loop.loopSeconds,
-      })));
-      out.averageAssumedViewsPerSlotPerDay = round(avg.value, 1);
-    }
+    const avgViews = averageViewsOf(displays, loop);
+    if (avgViews !== null) out.averageAssumedViewsPerSlotPerDay = round(avgViews, 1);
   }
   if (!Object.keys(out).length) return undefined;
   const stores = new Set(displays.map((d) => d.storeId)).size;
@@ -87,6 +91,7 @@ function displayTypeFacts(store, f) {
     return {
       id, def, displays: list, loop, storeCount: new Set(list.map((d) => d.storeId)).size,
       averages: averagesOf(def, list, loop, f),
+      averageViewsRaw: averageViewsOf(list, loop),
     };
   }).sort((a, b) => calc.compareZones(a.def.zone, b.def.zone) || String(a.def.name).localeCompare(String(b.def.name)));
 }
@@ -98,7 +103,7 @@ function hoverCard(t) {
     id: t.id, name: d.name, description: d.description,
     connectedDisplays: { displays: t.displays.length, stores: t.storeCount },
     iabZone: d.zone,
-    operatingHours: d.is24Hour === undefined ? undefined : (d.is24Hour ? '24 hours' : 'Store opening hours'),
+    operatingHours: calc.runsAllDay(d) ? '24 hours' : 'Store opening hours',
     touchPoint: d.touchPoint,
     canvas: d.canvas && { width: d.canvas.width, height: d.canvas.height, label: `${d.canvas.width} × ${d.canvas.height} px` },
     displayOrientation: d.orientation,

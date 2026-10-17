@@ -8,12 +8,12 @@ module.exports = {
   handler({ store, filters }) {
     const inv = new Map();
     store.scanInventory(filters, (r) => {
-      const a = inv.get(r.displayTypeId) || { sold: 0, unsold: 0 };
-      a.sold += r.sold; a.unsold += r.unsold;
+      const a = inv.get(r.displayTypeId) || { sold: 0, unsold: 0, offline: 0 };
+      a.sold += r.sold; a.unsold += r.unsold; a.offline += r.offline;
       inv.set(r.displayTypeId, a);
     });
     const rows = displayTypeFacts(store, filters).filter((t) => t.loop).map((t) => {
-      const a = inv.get(t.id) || { sold: 0, unsold: 0 };
+      const a = inv.get(t.id) || { sold: 0, unsold: 0, offline: 0 };
       const { loop } = t;
       return {
         id: t.id, name: t.def.name,

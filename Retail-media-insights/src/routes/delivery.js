@@ -95,14 +95,25 @@ module.exports = {
       };
     });
 
-    // Programmatic guaranteed pacing: guaranteed vs delivered VAC-d, the advertiser's own rows only, from the flight start.
+    // Programmatic guaranteed pacing: guaranteed vs delivered (settled) VAC-d from the flight start. Pacing is a deal-level
+    // fact, so the store and display type page filters are ignored (the guarantee covers the whole deal); only the
+    // advertiser's own rows are read, and a PG deal has exactly one buyer.
     const pacing = [];
+    const pgDeals = deals.filter((x) => x.dealType === 'Programmatic guaranteed' && x.flight && wanted(x.id) && filters.dateTo >= x.flight.start);
+    // One pass over the advertiser's rows for every PG deal (a scan per deal would cost one full delivery scan each).
+    const viewsByDeal = new Map(pgDeals.map((d) => [d.id, new Map()]));
+    if (pgDeals.length) {
+      const from = pgDeals.reduce((m, d) => (d.flight.start < m ? d.flight.start : m), pgDeals[0].flight.start);
+      store.scanDelivery({ dateFrom: from, dateTo: filters.dateTo, storeIds: null, displayTypeIds: null, advertiserIds: [me] }, (r) => {
+        const byDate = viewsByDeal.get(r.dealId);
+        if (byDate) byDate.set(r.date, (byDate.get(r.date) || 0) + r.earnedViews);
+      });
+    }
     for (const d of deals.filter((x) => x.dealType === 'Programmatic guaranteed' && x.flight && wanted(x.id))) {
       const { start, end } = d.flight;
       const flightDays = dayDiff(start, end) + 1;
       const upTo = filters.dateTo < end ? filters.dateTo : end;
-      const views = new Map();
-      if (filters.dateTo >= start) store.scanDelivery({ ...filters, dateFrom: start, dateTo: upTo }, (r) => { if (r.dealId === d.id) views.set(r.date, (views.get(r.date) || 0) + r.views); });
+      const views = viewsByDeal.get(d.id) || new Map();
       let delivered = 0;
       const series = [];
       for (const date of eachDay(start, upTo < start ? addDays(start, -1) : upTo)) {
@@ -111,7 +122,7 @@ module.exports = {
         const p = calc.pgPacing({ delivered, forecast: d.forecast, buffer: d.buffer, daysElapsed: dayDiff(start, date) + 1, totalDays: flightDays });
         series.push({ date, guaranteed: Math.round(p.guaranteedToDate), delivered: Math.round(delivered) });
       }
-      pacing.push({ dealId: d.id, name: d.name, flightStart: start, flightEnd: end, flightDays, guaranteedForFlight: Math.round(calc.guaranteedVolume(d.forecast, d.buffer)), series });
+      pacing.push({ dealId: d.id, name: d.name, flightStart: start, flightEnd: end, flightDays, guaranteedForFlight: Math.round(calc.guaranteedVolume(d.forecast, d.buffer)), scope: 'deal', series });
     }
 
     return {

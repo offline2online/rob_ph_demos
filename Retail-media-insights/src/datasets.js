@@ -42,7 +42,7 @@ const DATASETS = [
     rows: rowsOf('rows') },
   { name: 'deals', route: 'deals', grain: 'deal', description: 'Deal fill, pacing (Programmatic guaranteed), revenue and CPM; advertisers with their DSP.',
     rows: (r) => r.rows.map((d) => ({ ...flat({ ...d, dealIds: undefined, slots: undefined, advertisers: undefined }),
-      dealIds: d.dealIds.map((x) => `${x.dsp}: ${x.dealId}`).join('; '), slotCount: d.slots.length, advertisers: names(d.advertisers) })) },
+      dealIds: d.dealIds.map((x) => `${x.dspLabel || x.dsp}: ${x.dealId}`).join('; '), slotCount: d.slots.length, advertisers: names(d.advertisers) })) },
   { name: 'advertisers', route: 'advertisers', grain: 'advertiser', description: 'Revenue, share, deals, slots covered and effective CPM per advertiser.',
     rows: (r) => r.all.map((a) => ({ ...flat({ ...a, dealsOn: undefined }), dealsOn: (a.dealsOn || []).map((d) => d.name).join('; '), slotsWonComplete: r.slotsWon.complete })) },
   { name: 'maturity-ladder', route: 'maturity', grain: 'maturity level', description: 'Advertisers per targeting maturity level.',

@@ -26,12 +26,13 @@ test('deals: one row per named deal in standard order, Open auction excluded', a
   assert.deepEqual(body.rows.map((r) => r.dealType), ['Programmatic guaranteed', 'Preferred deal', 'Private auction']);
   const d = body.rows[0];
   assert.ok(d.name && d.description && d.revenue > 0);
-  assert.deepEqual(d.dealIds.map((x) => x.dsp), ['DV360', 'The Trade Desk']);
-  assert.ok(d.dealIds.every((x) => x.dealId.startsWith('PH-')));
+  assert.deepEqual(d.dealIds, [{ dsp: 'DV360', dspLabel: 'Google DSP (DV360)', dealId: ctx.dealCatalog.d1.dealIds.DV360 }]);
+  assert.ok(d.dealIds.every((x) => /^PH-[A-Z0-9]{10}$/.test(x.dealId)));
+  assert.equal(d.advertisers.length, 1, 'Programmatic guaranteed has exactly one buyer');
   assert.equal(d.slots[0].label, 'Advertiser slot 1 (loop slot 2)');
   assert.equal(d.slots[0].playlistZone, 'Window loop · Zone A');
   assert.equal(d.slots[0].iabZone, 'Entrance & out of category');
-  assert.ok(d.fill.percent > 0 && d.fill.percent <= 100);
+  assert.ok(d.fill.percent > 0 && d.fill.percent <= 100 && d.fill.slotsWon <= d.fill.slotsAvailable);
 });
 
 test('deals: PG pacing before, during and after the flight', async () => {
@@ -40,7 +41,7 @@ test('deals: PG pacing before, during and after the flight', async () => {
   const during = (await pg('dateFrom=2026-09-01&dateTo=2026-10-16')).pacing;
   assert.equal(during.daysElapsed, 27); assert.equal(during.flightDays, 62); assert.equal(during.daysRemaining, 35);
   assert.equal(during.startsInDays, null); assert.equal(during.flightEnded, false);
-  assert.equal(during.guaranteedToDate, Math.round(4000000 * 0.9 * 27 / 62));
+  assert.equal(during.guaranteedToDate, Math.round(ctx.dealCatalog.d1.forecast * 0.9 * 27 / 62));
   const after = (await pg('dateFrom=2026-11-01&dateTo=2026-12-01')).pacing;
   assert.equal(after.daysRemaining, 0); assert.equal(after.flightEnded, true);
   assert.equal(after.guaranteedToDate, after.guaranteedForFlight);
@@ -61,11 +62,11 @@ test('advertisers: shares add to 100, revenue equals billing, top 10 and all', a
   const { body } = await get(`/advertisers?${q}`);
   assert.equal(body.all.reduce((a, r) => a + r.share, 0), 100);
   assert.ok(body.top.length <= 10 && body.top.length === body.all.length);
-  const billed = raw.billing.filter((b) => b.date >= '2026-09-12').reduce((a, b) => a + b.revenue, 0);
-  assert.ok(Math.abs(body.all.reduce((a, r) => a + r.revenue, 0) - billed) < 0.5 * body.all.length);
+  const billed = raw.billing.filter((b) => b.date >= '2026-09-12' && b.settled).reduce((a, b) => a + b.revenue, 0); // Revenue is earned (settled) revenue
+  assert.ok(Math.abs(body.all.reduce((a, r) => a + r.revenue, 0) - billed) < 0.01 * body.all.length);
   const a = body.all.find((r) => r.advertiserId === 'adv-acme');
-  assert.deepEqual(a.dealsOn.map((d) => d.dealType), ['Programmatic guaranteed', 'Preferred deal']);
-  assert.ok(a.slotsCovered === 4 && a.slotsWonPercent > 0 && a.effectiveCpm > 0 && a.dsp);
+  assert.deepEqual(a.dealsOn.map((d) => d.dealType), ['Preferred deal']);
+  assert.ok(a.slotsCovered === 2 && a.slotsWonPercent > 0 && a.effectiveCpm > 0 && a.dsp);
   assert.equal(body.slotsWon.complete, true);
 });
 
