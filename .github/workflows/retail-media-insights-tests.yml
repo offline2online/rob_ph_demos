@@ -62,8 +62,10 @@ jobs:
 
       - name: Install Playwright and Chromium for the smoke test
         if: steps.scope.outputs.run == 'true'
+        # Pinned: the folder has no lockfile, and "^1.56.1" would float to
+        # whatever Playwright released last.
         run: |
-          npm install --no-save --no-audit --no-fund
+          npm install --no-save --no-audit --no-fund playwright@1.56.1
           npx playwright install --with-deps chromium
 
       - name: UI smoke test (index.html as retailer and advertiser)
