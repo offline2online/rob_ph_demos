@@ -348,9 +348,22 @@ service cloud.firestore {
     }
 
     // An interface is a maintained contract document shared between exactly
-    // two projects (e.g. "Live Visitor Profile" <-> "Experience Templates")
+    // two endpoints (e.g. "Live Visitor Profile" <-> "Experience Templates")
     // — the backlog-tracker-native equivalent of a shared markdown file in
-    // the repo, editable by whoever is driving either project's board.
+    // the repo, editable by whoever is driving either end's board. Each
+    // endpoint is a project or a Concept Incubator concept: `projectIds`
+    // keeps the two ids (what the boards query on), `endpoints` types them,
+    // and `history` records every promote/demote re-point. A document with
+    // no `endpoints` is two projects.
+    function endpointOk(e) {
+      return e is map && e.type in ["project", "concept"] && isNonEmptyBoundedString(e.id, 100);
+    }
+    function interfaceEndpointsOk() {
+      return (!("endpoints" in incoming()) || (incoming().endpoints is list && incoming().endpoints.size() == 2
+          && endpointOk(incoming().endpoints[0]) && endpointOk(incoming().endpoints[1])
+          && incoming().endpoints[0].id == incoming().projectIds[0] && incoming().endpoints[1].id == incoming().projectIds[1]))
+        && (!("history" in incoming()) || (incoming().history is list && incoming().history.size() <= 200));
+    }
     match /interfaces/{interfaceId} {
       allow read: if isBoardReader();
 
@@ -360,6 +373,8 @@ service cloud.firestore {
         incoming().projectIds.size() == 2 &&
         isNonEmptyBoundedString(incoming().projectIds[0], 100) &&
         isNonEmptyBoundedString(incoming().projectIds[1], 100) &&
+        incoming().projectIds[0] != incoming().projectIds[1] &&
+        interfaceEndpointsOk() &&
         incoming().contentMd is string &&
         incoming().contentMd.size() <= 20000;
 
@@ -434,6 +449,13 @@ service cloud.firestore {
     function conceptStatusOnlyPromotes() {
       return !(resource.data.status == "promoted" && incoming().status == "active");
     }
+    // A concept made by demoting a project carries the project's additional
+    // documents as `documents` ([{name, contentMd}]) and points back at the
+    // archived project with `demotedFromProjectId`.
+    function conceptDemotionFieldsOk() {
+      return (!("documents" in incoming()) || (incoming().documents is list && incoming().documents.size() <= 200))
+        && (!("demotedFromProjectId" in incoming()) || incoming().demotedFromProjectId == null || isNonEmptyBoundedString(incoming().demotedFromProjectId, 100));
+    }
     match /concepts/{conceptId} {
       allow read: if isBoardReader();
 
@@ -443,7 +465,8 @@ service cloud.firestore {
         (!("readmeMd" in incoming()) || (incoming().readmeMd is string && incoming().readmeMd.size() <= 800000)) &&
         (!("requirementsMd" in incoming()) || (incoming().requirementsMd is string && incoming().requirementsMd.size() <= 800000)) &&
         (!("artifactUrl" in incoming()) || incoming().artifactUrl == null || (incoming().artifactUrl is string && incoming().artifactUrl.size() <= 2000 && incoming().artifactUrl.matches("^https://.*"))) &&
-        (!("comments" in incoming()) || incoming().comments is list);
+        (!("comments" in incoming()) || incoming().comments is list) &&
+        conceptDemotionFieldsOk();
 
       allow update: if isEditor() &&
         isNonEmptyBoundedString(incoming().name, 120) &&
@@ -453,7 +476,8 @@ service cloud.firestore {
         (!("requirementsMd" in incoming()) || (incoming().requirementsMd is string && incoming().requirementsMd.size() <= 800000)) &&
         (!("artifactUrl" in incoming()) || incoming().artifactUrl == null || (incoming().artifactUrl is string && incoming().artifactUrl.size() <= 2000 && incoming().artifactUrl.matches("^https://.*"))) &&
         (!("comments" in incoming()) || incoming().comments is list) &&
-        (!("promotedProjectId" in incoming()) || incoming().promotedProjectId == null || isNonEmptyBoundedString(incoming().promotedProjectId, 100));
+        (!("promotedProjectId" in incoming()) || incoming().promotedProjectId == null || isNonEmptyBoundedString(incoming().promotedProjectId, 100)) &&
+        conceptDemotionFieldsOk();
 
       // Deletion only while still active — once promoted, a concept is the
       // provenance record for a real project's README/requirements and

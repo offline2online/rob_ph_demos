@@ -160,7 +160,7 @@ await test("tools/list returns the whole surface", async () => {
   assert.deepStrictEqual(names, [
     "add_concept_comment", "add_item_comment", "approve_deploy_to_main", "clear_blocked", "comment_on_faq_revision", "create_backlog_item", "create_concept",
     "create_faq_article", "create_interface", "create_project_document", "delete_interface",
-    "delete_project_document", "delete_skill", "get_approved_for_deployment_board", "get_backlog_item",
+    "delete_project_document", "delete_skill", "demote_project", "get_approved_for_deployment_board", "get_backlog_item",
     "get_concept", "get_doc_revision", "get_faq_article", "get_faq_revision", "get_project_docs",
     "get_ready_for_testing_board", "get_routine_setup_instructions", "get_skill", "list_backlog_items",
     "list_concepts", "list_doc_revisions", "list_pending_faq_revisions", "list_projects", "list_skill_misses",

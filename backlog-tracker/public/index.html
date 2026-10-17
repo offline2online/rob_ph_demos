@@ -297,7 +297,7 @@
           <h2 id="if-title">New interface</h2>
           <button type="button" class="modal-close" id="if-close" aria-label="Close">&times;</button>
         </div>
-        <label class="field-label" for="if-other-project">Interfaces with</label>
+        <label class="field-label" for="if-other-project">Interfaces with (project or concept)</label>
         <select id="if-other-project"></select>
         <label class="field-label" for="if-name-input">Interface name</label>
         <input type="text" id="if-name-input" maxlength="120" placeholder="e.g. Live Visitor Profile ↔ Experience Templates">
@@ -691,11 +691,17 @@
 
       <div class="docs-block">
         <div class="docs-block-header">
-          <h3>Interfaces with other projects</h3>
+          <h3>Interfaces with other projects or concepts</h3>
           <button type="button" class="btn-ghost" id="docs-add-interface-btn">+ New interface</button>
         </div>
-        <p class="field-hint">A shared contract document with another project.</p>
+        <p class="field-hint">A shared contract document with another project or concept — it follows this project if it is ever demoted to a concept.</p>
         <div id="docs-interfaces-list"></div>
+      </div>
+
+      <div class="docs-block" data-editor-only>
+        <h3>Demote to concept</h3>
+        <p class="field-hint">Creates a concept in the Concept Incubator with this project's README, Requirements and additional documents, re-points every interface here to that concept, then archives this project. Nothing is deleted: the archived project keeps its tickets and revision history.</p>
+        <button type="button" class="btn-outline" id="docs-demote-btn">Demote to concept&hellip;</button>
       </div>
     </section>
 
@@ -1194,6 +1200,21 @@
         <div class="form-row" style="justify-content:flex-end;">
           <button type="button" class="btn-primary" id="concept-requirements-save" data-editor-only>Save requirements</button>
         </div>
+      </div>
+
+      <div class="docs-block" id="concept-docs-block" hidden>
+        <h3>Documents carried from the project</h3>
+        <p class="field-hint">Additional documents this concept had as a project. They go back onto the project if it is promoted again.</p>
+        <div id="concept-docs-list"></div>
+      </div>
+
+      <div class="docs-block">
+        <div class="docs-block-header">
+          <h3>Interfaces</h3>
+          <button type="button" class="btn-ghost" id="concept-add-interface-btn" data-editor-only>+ New interface</button>
+        </div>
+        <p class="field-hint">Dependencies on projects or other concepts. They are kept when this concept is promoted to a project (they re-point to it) and when a project is demoted to a concept.</p>
+        <div id="concept-interfaces-list"></div>
       </div>
 
       <div class="docs-block">
