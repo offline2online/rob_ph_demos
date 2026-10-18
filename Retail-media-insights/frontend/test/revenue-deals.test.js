@@ -135,3 +135,29 @@ test('CPM note and deal columns', async () => {
   const pg = (await get('/deals')).rows[0];
   assert.ok(Object.fromEntries(RD.pacingTooltip(pg.pacing).rows)['Guaranteed, whole flight']);
 });
+
+test('deals default to Revenue highest first, and every column sorts both ways with empty values last', async () => {
+  const rows = (await get('/deals')).rows;
+  const rev = RD.sortDeals(rows, null).map((d) => d.revenue);
+  assert.deepStrictEqual(rev, rev.slice().sort((a, b) => b - a));
+  const asc = RD.sortDeals(rows, { key: 'revenue', dir: 'asc' }).map((d) => d.revenue);
+  assert.deepStrictEqual(asc, asc.slice().sort((a, b) => a - b));
+  const names = RD.sortDeals(rows, { key: 'name', dir: 'asc' }).map((d) => d.name.toLowerCase());
+  assert.deepStrictEqual(names, names.slice().sort());
+  RD.DEAL_COLS.forEach((c) => ['asc', 'desc'].forEach((dir) => {
+    const out = RD.sortDeals(rows, { key: c.key, dir });
+    assert.strictEqual(out.length, rows.length);
+    const vals = out.map((d) => c.value(d));
+    const firstNull = vals.indexOf(null);
+    assert.ok(firstNull < 0 || vals.slice(firstNull).every((v) => v === null), c.key + ' keeps empty values last');
+  }));
+});
+
+test('a column header cycles highest first → lowest first → default; Revenue starts from the default', () => {
+  assert.deepStrictEqual(RD.nextDealSort(null, 'fill'), { key: 'fill', dir: 'desc' });
+  assert.deepStrictEqual(RD.nextDealSort({ key: 'fill', dir: 'desc' }, 'fill'), { key: 'fill', dir: 'asc' });
+  assert.strictEqual(RD.nextDealSort({ key: 'fill', dir: 'asc' }, 'fill'), null);
+  assert.deepStrictEqual(RD.nextDealSort({ key: 'fill', dir: 'asc' }, 'cpm'), { key: 'cpm', dir: 'desc' });
+  assert.deepStrictEqual(RD.nextDealSort(null, 'revenue'), { key: 'revenue', dir: 'asc' });
+  assert.strictEqual(RD.nextDealSort({ key: 'revenue', dir: 'asc' }, 'revenue'), null);
+});
