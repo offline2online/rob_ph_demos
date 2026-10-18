@@ -190,3 +190,15 @@ test('formatting helpers', () => {
   assert.strictEqual(SC.fmtCompact(812600), '812.6k');
   assert.strictEqual(SC.dateRange(RANGE), '12 Sep – 11 Oct');
 });
+
+test('slot value sorts by the selected metric and slot allocation follows it', async () => {
+  const sv = (await get('/slot-value')).rows;
+  const sa = (await get('/slot-allocation')).rows;
+  for (const mode of ['cpm', 'per']) {
+    const key = mode === 'cpm' ? 'effectiveCpm' : 'perSlotPerDay';
+    const order = SC.metricOrder(sv, mode);
+    for (let i = 1; i < order.length; i++) assert.ok(order[i - 1][key] >= order[i][key]);
+    const types = await typesP;
+    assert.deepStrictEqual(SC.followOrder(sa.slice().reverse(), order, (r) => types[r.id]).map((r) => r.id), order.map((r) => r.id).filter((id) => sa.some((a) => a.id === id)));
+  }
+});
