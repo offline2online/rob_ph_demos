@@ -26,7 +26,7 @@
     progress: 'Share of campaigns at each level, by when they were running. Shows the whole history, so the date filter doesn’t apply.',
     variables: 'Shared Targeting Variables ranked by the number of advertisers using them in the date range. Hover a bar to see who uses it; click it to filter the Advertiser targeting & scheduling table. ' +
       'Daypart is not a targeting variable: it is a campaign scheduling feature, shown in Scheduling.',
-    table: 'Who is most sophisticated: sorted by maturity level (Personalised first), then revenue. Scheduling = campaigns using dayparting or schedules from the campaign’s Scheduling tab, separate from targeting variables. ' +
+    table: 'Who is most sophisticated: sorted by Revenue, highest first; click any heading to sort by it. Scheduling = campaigns using dayparting or schedules from the campaign’s Scheduling tab, separate from targeting variables. ' +
       'Targeted versions = targeted versions submitted in the date range, beyond the default.'
   };
 
@@ -107,8 +107,8 @@
     { key: 'effectiveCpm', label: 'Effective CPM', first: 'desc', value: function (r) { return r.src.effectiveCpm; } }
   ];
   // Rows ordered by one column ('asc' = A–Z / lowest first); no key keeps the back end's order. Blank values always sit last.
-  function sortAdvertiserRows(rows, key, dir) {
-    var col = ADV_COLS.filter(function (c) { return c.key === key; })[0];
+  function sortAdvertiserRows(rows, key, dir, cols) {
+    var col = (cols || ADV_COLS).filter(function (c) { return c.key === key; })[0];
     if (!col) return rows;
     var sign = dir === 'asc' ? 1 : -1;
     return rows.map(function (r, i) { return { r: r, i: i, v: col.value(r) }; }).sort(function (a, b) {
@@ -168,6 +168,15 @@
     return v.label;
   }
   var NOT_USED = 'Not used';
+  // Targeting & scheduling table columns, sorted the same way as the Advertisers table.
+  var MAT_COLS = [
+    { key: 'name', label: 'Advertiser', first: 'asc', value: function (r) { return r.name; } },
+    { key: 'level', label: 'Maturity level', first: 'desc', value: function (r) { return LEVELS.indexOf(r.level); } },
+    { key: 'variables', label: 'Variables used', first: 'desc', value: function (r) { return r.chips.length; } },
+    { key: 'scheduling', label: 'Scheduling', first: 'desc', value: function (r) { return r.scheduledCampaigns; } },
+    { key: 'versions', label: 'Targeted versions', first: 'desc', value: function (r) { return r.versionsRaw; } },
+    { key: 'revenue', label: 'Revenue', first: 'desc', value: function (r) { return r.revenueRaw; } }
+  ];
   function schedulingText(s) {
     if (!s || !s.uses) return NOT_USED;
     return 'Dayparted · ' + s.scheduledCampaigns + ' of ' + plural(s.campaigns, 'campaign');
@@ -178,6 +187,8 @@
         advertiserId: r.advertiserId, label: advName(r), name: r.name, level: r.level,
         chips: targetingVars(r.variables).map(function (v) { return { text: chipText(v), kind: v.kind }; }),
         scheduling: schedulingText(r.scheduling), versions: has(r.targetedVersions) ? fmtInt(r.targetedVersions) : '–',
+        scheduledCampaigns: r.scheduling && r.scheduling.uses ? r.scheduling.scheduledCampaigns : 0,
+        versionsRaw: has(r.targetedVersions) ? r.targetedVersions : null, revenueRaw: r.revenue || 0,
         revenue: fmtMoney(r.revenue || 0)
       };
     });
@@ -200,7 +211,7 @@
     advertiserRows: advertiserRows, dealsOnHover: dealsOnHover, slotsWonHover: slotsWonHover, ladderHover: ladderHover,
     schedulingHover: schedulingHover, variableHover: variableHover, progressHover: progressHover, progressPeriodText: progressPeriodText, chipText: chipText,
     schedulingText: schedulingText, tableRows: tableRows, variableOptions: variableOptions, variableBars: variableBars,
-    activeFilters: activeFilters, ADV_COLS: ADV_COLS, sortAdvertiserRows: sortAdvertiserRows, revenueTotal: revenueTotal, periodLabel: periodLabel, fmtMoney: fmtMoney, pct: pct
+    activeFilters: activeFilters, ADV_COLS: ADV_COLS, MAT_COLS: MAT_COLS, sortAdvertiserRows: sortAdvertiserRows, revenueTotal: revenueTotal, periodLabel: periodLabel, fmtMoney: fmtMoney, pct: pct
   };
 
   // ---------- DOM ----------
@@ -208,7 +219,7 @@
     if (typeof document === 'undefined') throw new Error('DemandCharts.mount needs a DOM');
     var fetchJson = opts.fetchJson;
     var filters = opts.filters || {};
-    var state = { showAll: false, advSort: { key: '', dir: 'desc' }, granularity: 'month', kind: 'Localised', table: { level: '', variable: '', scheduling: '' } };
+    var state = { showAll: false, advSort: { key: '', dir: 'desc' }, matSort: { key: 'revenue', dir: 'desc' }, granularity: 'month', kind: 'Localised', table: { level: '', variable: '', scheduling: '' } };
     var gen = { adv: 0, mat: 0 };
     var advData = null, matData = null, knownVars = [], resizeTimer = null;
     var alive = true;
@@ -534,15 +545,25 @@
 
     // ----- Advertiser targeting & scheduling table -----
     function drawTable(d) {
-      var rows = tableRows(d);
+      var rows = sortAdvertiserRows(tableRows(d), state.matSort.key, state.matSort.dir, MAT_COLS);
       pTab.body.removeAttribute('aria-busy');
       pTab.body.innerHTML = '';
       if (!rows.length) {
         return emptyState(pTab, 'table_rows', activeFilters(state.table) ? 'No advertisers match this filter.' : 'No data for the selected filters');
       }
-      var cols = ['Advertiser', 'Maturity level', 'Variables used', 'Scheduling', 'Targeted versions', 'Revenue'];
+      function sortHead(c) {
+        var on = state.matSort.key === c.key, dir = state.matSort.dir;
+        var btn = h('button', { type: 'button', class: 'dc-sort' + (on ? ' on' : ''), title: 'Sort by ' + c.label }, [
+          h('span', { text: c.label }), icon(on ? (dir === 'asc' ? 'arrow_upward' : 'arrow_downward') : 'unfold_more')
+        ]);
+        btn.addEventListener('click', function () {
+          state.matSort = on ? { key: c.key, dir: dir === 'asc' ? 'desc' : 'asc' } : { key: c.key, dir: c.first };
+          drawTable(d);
+        });
+        return h('th', { scope: 'col', 'aria-sort': on ? (dir === 'asc' ? 'ascending' : 'descending') : 'none' }, [btn]);
+      }
       var table = h('table', { class: 'dc-table dc-mat' }, [
-        h('thead', {}, [h('tr', {}, cols.map(function (c) { return h('th', { scope: 'col', text: c }); }))]),
+        h('thead', {}, [h('tr', {}, MAT_COLS.map(sortHead))]),
         h('tbody', {}, rows.map(function (r) {
           return h('tr', {}, [
             h('th', { scope: 'row', class: 'dc-name', text: r.name }),

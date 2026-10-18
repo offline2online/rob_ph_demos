@@ -162,3 +162,16 @@ test('advertiser table: every column sorts both ways, blanks last, no key keeps 
     }
   }
 });
+
+test('targeting table: sorts by Revenue by default and every column sorts both ways', async () => {
+  const rows = DC.tableRows(await get('/maturity'));
+  const rev = (key, dir) => DC.sortAdvertiserRows(rows, key, dir, DC.MAT_COLS).map((r) => r.revenueRaw);
+  const desc = rev('revenue', 'desc');
+  assert.deepStrictEqual(desc, desc.slice().sort((a, b) => b - a));
+  assert.deepStrictEqual(rev('revenue', 'asc'), desc.slice().reverse());
+  DC.MAT_COLS.forEach((c) => {
+    ['asc', 'desc'].forEach((dir) => assert.strictEqual(DC.sortAdvertiserRows(rows, c.key, dir, DC.MAT_COLS).length, rows.length));
+  });
+  const names = DC.sortAdvertiserRows(rows, 'name', 'asc', DC.MAT_COLS).map((r) => r.name);
+  assert.deepStrictEqual(names, names.slice().sort((a, b) => a.localeCompare(b)));
+});
