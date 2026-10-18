@@ -53,8 +53,8 @@ test('Missed revenue & fill: title, legend, stacked bars, label, order, total ro
       assert.ok(Math.abs(widths.reduce((a, b) => a + b, 0) - total) < 1, 'three widths fill the bar');
       assert.match(await row.locator('.sc-stack').getAttribute('aria-label'), /^.+: \d+% filled, \$[\d,]+ unsold, \$[\d,]+ lost to downtime$/);
     }
-    const missed = await p.locator('.sc-row:not(.sc-total) .sc-value').evaluateAll((v) => v.map((x) => x.querySelectorAll('span')).map((s) => +s[0].textContent.replace(/\D/g, '') + +s[1].textContent.replace(/\D/g, '')));
-    assert.deepEqual(missed, missed.slice().sort((a, b) => b - a), 'highest missed first');
+    const missed = await p.locator('.sc-row:not(.sc-total) .sc-value').evaluateAll((v) => v.map((x) => x.querySelectorAll('span')).map((s) => +s[0].textContent.replace(/\D/g, '')));
+    assert.deepEqual(missed, missed.slice().sort((a, b) => b - a), 'highest unsold value first');
     assert.match(await p.locator('.sc-row').last().textContent(), /^All display types \(\d+\)/);
     assert.equal(await p.locator('.sc-row.sc-total').count(), 1);
     assert.equal(await p.locator('.sc-m-unsold').first().evaluate((e) => getComputedStyle(e).color), 'rgb(173, 104, 0)');

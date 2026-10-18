@@ -183,10 +183,10 @@
     return { title: title, desc: null, sections: [{ rows: rows }] };
   }
 
-  // Display type rows by total missed revenue, highest first; ties keep input order.
+  // Display type rows by unsold value (unsold slots at floor CPM), highest first; ties by total missed, then input order.
   function missedOrder(rows) {
     return rows.map(function (r, i) { return { r: r, i: i }; })
-      .sort(function (a, b) { return missedParts(b.r).total - missedParts(a.r).total || a.i - b.i; }).map(function (x) { return x.r; });
+      .sort(function (a, b) { var pa = missedParts(a.r), pb = missedParts(b.r); return pb.unsold - pa.unsold || pb.total - pa.total || a.i - b.i; }).map(function (x) { return x.r; });
   }
   // One 100%-wide stack: sold, unsold and offline shares of all advertiser slots, from the back end's counts.
   function missedShares(r) {

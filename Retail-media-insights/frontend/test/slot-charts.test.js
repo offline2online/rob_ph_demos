@@ -118,9 +118,9 @@ test('missed hover shows every value as the back end returned it, with the store
   assert.strictEqual(m.sections.flatMap((s) => s.rows).filter((r) => r[0] === 'Connected displays').length, 1, 'shown once, not repeated under the card');
 });
 
-test('missed revenue & fill: rows sort by total missed, highest first; the stack is the back end’s counts and adds to 100%', async () => {
+test('missed revenue & fill: rows sort by unsold value, highest first; the stack is the back end’s counts and adds to 100%', async () => {
   const d = await get('/missed-revenue');
-  const totals = SC.missedOrder(d.rows.slice().reverse()).map((r) => r.totalMissed);
+  const totals = SC.missedOrder(d.rows.slice().reverse()).map((r) => r.unsoldValueAtFloor);
   assert.deepStrictEqual(totals, totals.slice().sort((a, b) => b - a));
   d.rows.concat([d.total]).forEach((r) => {
     const s = SC.missedShares(r);
