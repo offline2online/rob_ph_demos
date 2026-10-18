@@ -457,8 +457,8 @@
     var LEVEL_CLS = { 'Default only': 'dc-l0', Localised: 'dc-l1', Personalised: 'dc-l2' };
 
     function drawLadder(d) {
-      // Default only on top, Personalised at the bottom.
-      var entries = (d.ladder || []).slice().sort(function (a, b) { return LEVELS.indexOf(a.level) - LEVELS.indexOf(b.level); });
+      // Personalised on top, Default only at the bottom (the ladder reads upwards).
+      var entries = (d.ladder || []).slice().sort(function (a, b) { return LEVELS.indexOf(b.level) - LEVELS.indexOf(a.level); });
       barRows(pLad, entries, {
         filter: 'level', key: function (e) { return e.level; }, cls: function (e) { return LEVEL_CLS[e.level]; },
         label: function (e) { return e.level; }, value: function (e) { return plural(e.advertisers, 'advertiser'); }, hover: ladderHover
