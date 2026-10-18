@@ -55,6 +55,17 @@
     return granularity === 'week' ? fmtDay(iso) : MONTHS[+m[2] - 1];
   }
 
+  // "Jun 2026 – Oct 2026 · by month" — the span the Progress over time chart covers, so it is clear what period it shows.
+  function progressPeriodText(rows, granularity) {
+    if (!rows || !rows.length) return '';
+    var fmt = function (iso) {
+      var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
+      return !m ? '' : granularity === 'week' ? (+m[3]) + ' ' + MONTHS[+m[2] - 1] + ' ' + m[1] : MONTHS[+m[2] - 1] + ' ' + m[1];
+    };
+    var a = fmt(rows[0].period), b = fmt(rows[rows.length - 1].period);
+    return (a === b ? a : a + ' – ' + b) + ' · by ' + (granularity === 'week' ? 'week' : 'month') + (granularity === 'week' ? ' (week starting)' : '') + ' · whole history';
+  }
+
   // ---------- models ----------
   // "Perrigo (The Trade Desk)" — every advertiser named anywhere shows its DSP.
   function advName(a) { return has(a.dsp) ? a.name + ' (' + a.dsp + ')' : a.name; }
@@ -164,7 +175,7 @@
   var pure = {
     LEVELS: LEVELS, TOP_N: TOP_N, TIPS: TIPS, advName: advName, isDaypart: isDaypart, targetingVars: targetingVars,
     advertiserRows: advertiserRows, dealsOnHover: dealsOnHover, slotsWonHover: slotsWonHover, ladderHover: ladderHover,
-    schedulingHover: schedulingHover, variableHover: variableHover, progressHover: progressHover, chipText: chipText,
+    schedulingHover: schedulingHover, variableHover: variableHover, progressHover: progressHover, progressPeriodText: progressPeriodText, chipText: chipText,
     schedulingText: schedulingText, tableRows: tableRows, variableOptions: variableOptions, variableBars: variableBars,
     activeFilters: activeFilters, revenueTotal: revenueTotal, periodLabel: periodLabel, fmtMoney: fmtMoney, pct: pct
   };
@@ -483,6 +494,7 @@
         hits.appendChild(hit);
       });
       var legend = h('div', { class: 'dc-legend' }, LEVELS.map(function (l) { return h('span', { class: 'dc-legend-item' }, [h('i', { class: 'dc-swatch ' + LEVEL_CLS[l] }), l]); }));
+      pPro.body.appendChild(h('div', { class: 'dc-period', text: 'Showing ' + progressPeriodText(rows, d.granularity || state.granularity) }));
       pPro.body.appendChild(legend);
       pPro.body.appendChild(h('div', { class: 'dc-chart' }, [svg, hits]));
     }

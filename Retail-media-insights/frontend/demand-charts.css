@@ -40,6 +40,7 @@
 .dc-selwrap .dc-icon { position: absolute; right: 6px; pointer-events: none; color: var(--dc-muted); }
 .dc-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
 
+.dc-period { margin: 0 0 4px; font-size: 13px; font-weight: 500; color: var(--dc-text); }
 .dc-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0 0 12px; font-size: 12px; color: var(--dc-muted); }
 .dc-legend-item { display: inline-flex; align-items: center; gap: 6px; }
 

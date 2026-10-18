@@ -107,6 +107,11 @@ test('progress over time: three bands that add to 100 per period, week and month
   assert.deepStrictEqual(m.sections[0].rows.map((r) => r[0]), DC.LEVELS);
   assert.ok(m.sections[0].rows.every((r) => /^\d+%$/.test(r[1])), 'the period, then each level’s %');
   assert.strictEqual(m.title, 'Jun 2026');
+  const ot = (await get('/maturity')).overTime;
+  const txt = DC.progressPeriodText(ot, 'month');
+  assert.ok(/^Jun 2026 – \w{3} 2026 · by month · whole history$/.test(txt), txt);
+  assert.ok(/by week \(week starting\)/.test(DC.progressPeriodText(ot, 'week')));
+  assert.strictEqual(DC.progressPeriodText([], 'month'), '');
 });
 
 test('table filters: level, variable, scheduling combine; Personalised first, then revenue', async () => {
