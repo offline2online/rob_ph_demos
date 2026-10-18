@@ -1,0 +1,541 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Visitor Profile</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+<style>
+:root{
+  --primary:#169bc2;--accent:#38b0cf;--tint:rgba(22,155,194,.10);--soft:#e8fdff;
+  --text:#333;--muted:rgba(0,0,0,.45);--border:#d9d9d9;--subtle:#f0f0f0;--divider:rgba(5,5,5,.06);
+  --grid:#181d1f;--gridb:rgba(24,29,31,.15);--ok:#52c41a;--warn:#faad14;--err:#ff4d4f;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:#fff;color:var(--text);font:14px/1.5715 Roboto,"Helvetica Neue",Helvetica,Arial,sans-serif}
+.material-symbols-outlined{font-variation-settings:'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 24;font-size:20px;vertical-align:middle;line-height:1;user-select:none}
+.material-symbols-outlined.sm{font-size:16px}
+#app{min-height:100vh;padding:20px}
+h1{font-size:20px;font-weight:700;margin:0}
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.rule{height:1px;background:var(--divider);margin:16px 0}
+.row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.grow{flex:1}
+.muted{color:var(--muted)}
+.count{margin:0 0 12px}
+/* buttons */
+.btn{height:32px;padding:0 15px;border-radius:6px;border:1px solid var(--border);background:#fff;color:var(--text);font:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.btn:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+.btn.primary:hover:not(:disabled){background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.text{border-color:transparent;background:transparent}
+.btn.text:hover:not(:disabled){background:rgba(0,0,0,.04);border-color:transparent;color:var(--text)}
+.btn.outline{border-color:var(--primary);color:var(--primary)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.icon{padding:0;width:28px;height:28px;justify-content:center}
+.ai{border:none;background:linear-gradient(135deg,rgba(22,155,194,.2),rgba(151,71,255,.2))}
+.ai span.t{background:linear-gradient(135deg,#169bc2,#9747ff);-webkit-background-clip:text;background-clip:text;color:transparent}
+/* tabs */
+.tabs{display:flex;border-bottom:1px solid var(--subtle);margin-bottom:16px}
+.tab{height:46px;padding:12px 16px;border:0;background:none;font:inherit;color:var(--text);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tab.on{color:var(--primary);font-weight:500;background:var(--tint);border-bottom-color:var(--primary)}
+/* controls */
+input,select,textarea{font:inherit;color:var(--text);border:1px solid var(--border);border-radius:6px;height:32px;padding:0 10px;background:#fff;min-width:0}
+textarea{height:auto;padding:8px 10px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;width:100%}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 2px var(--tint)}
+input:disabled{background:#fafafa;color:var(--muted)}
+input[type=number]{width:96px}
+input[type=checkbox]{height:auto;accent-color:var(--primary)}
+input[type=range]{height:auto;padding:0;accent-color:var(--primary);border:0}
+label.f{display:block;margin-bottom:12px}
+label.f>span.l{display:flex;align-items:center;gap:4px;color:var(--muted);font-size:12px;margin-bottom:4px}
+label.f input:not([type=checkbox]),label.f select{width:100%}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:6px;overflow:hidden}
+.seg button{height:30px;padding:0 12px;border:0;background:#fff;font:inherit;cursor:pointer;color:var(--text)}
+.seg button+button{border-left:1px solid var(--border)}
+.seg button.on{background:var(--tint);color:var(--primary);font-weight:500}
+.sw{position:relative;width:36px;height:20px;border-radius:10px;background:#bfbfbf;border:0;cursor:pointer;padding:0;flex:none}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:left .15s}
+.sw.on{background:var(--primary)}.sw.on::after{left:18px}
+/* grid table */
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 440px;gap:20px;align-items:start}
+@media(max-width:1060px){.layout{grid-template-columns:1fr}}
+.tw{overflow-x:auto;border:1px solid var(--gridb);border-radius:4px}
+table.g{width:100%;border-collapse:collapse;font-size:13px;color:var(--grid)}
+table.g th{background:#fafafa;text-align:left;font-weight:700;padding:0 15px;height:40px;white-space:nowrap;border-bottom:1px solid var(--gridb)}
+table.g tr.flt th{background:#fff;font-weight:400;height:40px}
+table.g td{padding:0 15px;height:42px;border-bottom:1px solid var(--gridb);white-space:nowrap}
+table.g tbody tr{cursor:pointer}
+table.g tbody tr:hover{background:var(--soft)}
+table.g tbody tr.sel{background:var(--tint)}
+table.g tbody tr.nc{cursor:default}
+.pill{display:inline-flex;align-items:center;height:22px;padding:0 10px;border-radius:9999px;border:1px solid #d1d5db;font-size:12px}
+.pill.cust{border-color:#9747ff;color:#9747ff}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:8px;vertical-align:middle}
+.mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
+.fam td{background:#fafafa;font-weight:700;height:32px;cursor:default}
+.funnel{background:none;border:0;cursor:pointer;color:#9ca3af;padding:0;display:inline-flex}
+.funnel.on{color:var(--primary)}
+.popwrap{position:relative;display:inline-block}
+.popup{position:absolute;top:28px;left:-8px;z-index:20;background:#fff;border-radius:6px;box-shadow:0 6px 16px rgba(0,0,0,.18);min-width:200px;padding:8px;text-align:left}
+.popup label{display:flex;gap:8px;align-items:center;padding:4px 6px;cursor:pointer;font-weight:400}
+.popup .foot{display:flex;justify-content:flex-end;margin-top:6px}
+.sbox{position:relative}
+.sbox input{width:100%;padding-right:26px}
+.sbox button{position:absolute;right:6px;top:7px;width:18px;height:18px;border-radius:50%;border:0;background:#d9d9d9;color:#fff;cursor:pointer;font-size:11px;line-height:18px;padding:0}
+/* tooltip */
+.info{position:relative;display:inline-flex;vertical-align:middle;margin-left:4px;color:#9ca3af;cursor:help;outline:none}
+.info:hover,.info:focus{color:var(--primary)}
+.info .tip{display:none;position:absolute;top:22px;left:-8px;z-index:30;width:250px;background:#333;color:#fff;font-size:12px;font-weight:400;line-height:1.45;padding:8px 10px;border-radius:6px;white-space:normal;text-align:left;text-transform:none;letter-spacing:0}
+.info.r .tip{left:auto;right:-8px}
+.info:hover .tip,.info:focus .tip{display:block}
+/* panel */
+.panel{border:1px solid var(--subtle);border-radius:8px;padding:16px;background:#fff}
+.panel h2{font-size:16px;font-weight:700;margin:0 0 4px}
+.panel h3{font-size:13px;font-weight:700;margin:16px 0 8px;display:flex;align-items:center}
+.empty{color:var(--muted);text-align:center;padding:32px 8px}
+.chain{display:flex;flex-direction:column;gap:8px}
+.link{border:1px solid var(--border);border-radius:8px;padding:10px;background:#fff}
+.link.off{background:#fafafa}
+.link .hd{display:flex;align-items:center;gap:8px}
+.link .rank{width:22px;height:22px;border-radius:50%;background:var(--tint);color:var(--primary);display:flex;align-items:center;justify-content:center;font-weight:500;font-size:12px;flex:none}
+.link .flds{display:flex;gap:12px;margin-top:8px;flex-wrap:wrap}
+.link .flds label{font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:2px}
+.out{font-size:12px;display:inline-flex;align-items:center;gap:4px}
+.badge{display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 8px;border-radius:6px;font-size:12px;font-weight:500}
+.b-ok{background:#f6ffed;color:#389e0d}.b-warn{background:#fffbe6;color:#ad6800}.b-err{background:#fff1f0;color:#cf1322}.b-mute{background:#f5f5f5;color:#666}.b-info{background:var(--tint);color:#0b7a9c}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:16px}
+.kpi{display:flex;align-items:center;gap:12px;border:1px solid rgba(0,0,0,.05);border-radius:8px;padding:12px 16px}
+.kpi .ic{width:40px;height:40px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex:none}
+.kpi .lb{font-size:10px;font-weight:500;letter-spacing:.5px;text-transform:uppercase;color:#9ca3af}
+.kpi .v{font-size:18px;font-weight:600}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.chips{display:flex;gap:4px;flex-wrap:wrap;padding:6px 0}
+.chip{display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 8px;border-radius:9999px;font-size:12px;border:1px solid transparent}
+.chip.in{background:#f6ffed;color:#389e0d;border-color:#b7eb8f}
+.chip.late{background:#fff1f0;color:#cf1322;border-color:#ffa39e;text-decoration:line-through}
+.chip.win{background:var(--primary);color:#fff;border-color:var(--primary)}
+.bars{position:relative;padding:4px 0}
+.bar{display:flex;align-items:center;gap:8px;height:24px;font-size:12px}
+.bar .nm{width:190px;flex:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar .tr{position:relative;flex:1;height:10px;background:#f5f5f5;border-radius:5px}
+.bar .fl{position:absolute;left:0;top:0;bottom:0;border-radius:5px}
+.mk{position:absolute;top:0;bottom:0;width:0;border-left:2px dashed #9747ff;pointer-events:none}
+.mk b{position:absolute;top:-18px;left:-10px;font-size:11px;font-weight:500;color:#9747ff;background:#fff;padding:0 2px}
+.axis{display:flex;margin-left:198px;justify-content:space-between;font-size:11px;color:#9ca3af}
+.mapnote{display:flex;gap:8px;align-items:center}
+.inv{color:#9747ff}
+.hint{display:flex;gap:8px;align-items:center;color:var(--muted)}
+.flexcol{display:flex;flex-direction:column;gap:12px}
+.toast{position:absolute;right:20px;top:72px;background:#333;color:#fff;border-radius:6px;padding:8px 14px;font-size:13px;z-index:50}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+/* ---------- data ---------- */
+const AUTH = {crm:5,loyalty:5,pos:5,idp:5,cdp:4,decisioning:4,queue:3,session:3,agent:2,vision:1};
+const SYSTEM_TYPES = ['Digital identity provider','CRM','Customer data platform','Decisioning engine','Loyalty system','Point of sale','Partner feed'];
+const TRANSPORTS = ['REST','gRPC','Webhook','Streaming'];
+const SOURCES = [
+  {id:'vision',name:'Vision (on-device)',built:true,type:'Camera estimation',transport:'On-device',conf:true,needsId:false,p50:38,p95:96,err:0.4,last:'2 s ago',h:[40,38,44,52,40,38,36,42]},
+  {id:'agent',name:'Consumer agent / device',built:true,type:'Paired personal agent',transport:'Paired connection',conf:false,needsId:false,p50:120,p95:310,err:1.1,last:'9 s ago',h:[110,130,150,140,120,118,125,130]},
+  {id:'queue',name:'Virtual queue & appointments',built:true,type:'Platform service',transport:'Internal',conf:false,needsId:false,p50:45,p95:110,err:0.2,last:'4 s ago',h:[40,42,44,45,43,46,47,45]},
+  {id:'session',name:'Session / player',built:true,type:'Platform service',transport:'Internal',conf:false,needsId:false,p50:4,p95:12,err:0,last:'1 s ago',h:[4,5,4,4,6,4,4,5]},
+  {id:'idp',name:'Identity provider',type:'Digital identity provider',transport:'REST',url:'https://id.example-retail.com/v2/resolve',conf:false,needsId:true,sends:'device_udid',resolves:'customer_ref',timeout:800,ttl:300,p50:210,p95:420,err:0.8,last:'6 s ago',h:[200,210,230,215,205,220,212,208]},
+  {id:'crm',name:'Customer CRM',type:'CRM',transport:'REST',url:'https://crm.example-retail.com/api/contact',conf:false,needsId:true,sends:'customer_ref',resolves:'contact_id',timeout:1000,ttl:3600,p50:310,p95:640,err:1.4,last:'11 s ago',h:[300,320,330,310,305,340,315,312]},
+  {id:'cdp',name:'Customer data platform',type:'Customer data platform',transport:'gRPC',url:'grpcs://cdp.example-retail.com:443',conf:true,needsId:true,sends:'customer_ref',resolves:'profile_id',timeout:1200,ttl:900,p50:380,p95:780,err:6.2,last:'14 min ago',h:[360,380,420,610,820,780,900,880]},
+  {id:'decisioning',name:'Decisioning engine',type:'Decisioning engine',transport:'REST',url:'https://nba.example-retail.com/decide',conf:true,needsId:true,sends:'customer_ref',resolves:'decision_id',timeout:2000,ttl:60,p50:820,p95:1750,err:2.6,last:'31 s ago',h:[800,820,900,1100,1500,1700,1600,1650]},
+  {id:'loyalty',name:'Loyalty system',type:'Loyalty system',transport:'REST',url:'https://loyalty.example-retail.com/members',conf:false,needsId:true,sends:'customer_ref',resolves:'member_no',timeout:800,ttl:600,p50:260,p95:520,err:0.5,last:'8 s ago',h:[250,260,270,255,262,258,265,260]},
+  {id:'pos',name:'Point of sale',type:'Point of sale',transport:'Webhook',url:'https://pos.example-retail.com/hooks/ph',conf:false,needsId:true,sends:'customer_ref',resolves:'till_basket',timeout:1200,ttl:120,p50:440,p95:900,err:1.9,last:'52 s ago',h:[420,440,460,470,455,445,450,448]},
+];
+const FAM_NAME = {device:'Device & display context',interaction:'Interaction & campaign data',visitor:'Visitor & customer data'};
+const A = (n,fam,wr,type,vol,def,chain=[]) => ({n,fam,wr,type,vol,def,chain:chain.map(([s,a,c])=>({s,max_age:a,min_conf:c,on:true}))});
+const Y=31536000,D=86400;
+const ATTRS = [
+  A('device_udid','device','platform','string','static','—'),A('display_name','device','platform','string','static','—'),
+  A('mist_site_id','device','platform','string','static','—'),A('display_ids','device','platform','array','static','[]'),
+  A('active_campaign','interaction','derived','string','live','—'),A('touch_point','interaction','platform','string','session','—'),
+  A('matched_intent_campaign','interaction','derived','string','live','—'),A('interaction_entities','interaction','derived','array','live','[]'),
+  A('interaction_attributes','interaction','derived','lookup','live','{}'),
+  A('first_name','visitor','inbound','string','static','',[['crm',Y,0],['loyalty',Y,0],['agent',3600,0]]),
+  A('company_name','visitor','inbound','string','static','',[['crm',Y,0]]),
+  A('gender','visitor','inbound','string','static','unknown',[['crm',Y,0],['vision',30,0.9]]),
+  A('Age','visitor','inbound','number','static','',[['crm',Y,0],['vision',30,0.75]]),
+  A('loyalty_tier','visitor','inbound','string','static','none',[['loyalty',D,0],['crm',2592000,0]]),
+  A('visitor_type_id','visitor','inbound','lookup','session','1',[['crm',Y,0],['session',1800,0]]),
+  A('reason_for_visit_id','visitor','inbound','lookup','session','0',[['queue',3600,0],['agent',1800,0],['session',1800,0]]),
+  A('visitor_segments','visitor','inbound','array','session','[]',[['cdp',21600,0.6],['decisioning',21600,0.7]]),
+  A('purchase_history','visitor','inbound','array','static','[]',[['pos',Y,0],['crm',Y,0]]),
+  A('product_holdings','visitor','inbound','array','static','[]',[['crm',Y,0],['cdp',D,0.6]]),
+  A('plan_types','visitor','inbound','array','static','[]',[['crm',Y,0]]),
+  A('plan_values','visitor','inbound','array','static','[]',[['crm',Y,0]]),
+  A('product_type','visitor','inbound','string','session','',[['agent',3600,0],['session',1800,0]]),
+  A('purchase_intent','visitor','inbound','string','session','none',[['agent',1800,0],['decisioning',21600,0.7]]),
+  A('SKUs','visitor','inbound','array','live','[]',[['agent',300,0],['session',300,0]]),
+  A('events','visitor','inbound','array','live','[]',[['session',600,0],['agent',600,0]]),
+  A('page_view','visitor','inbound','string','live','',[['session',60,0]]),
+  A('device_type','visitor','inbound','string','session','',[['session',60,0],['agent',60,0]]),
+];
+/* sample values: attr -> source -> [value, age_s, confidence] */
+const VALUES = {
+  first_name:{crm:['Maya',2592000],loyalty:['Maya',D]},
+  Age:{crm:[34,2592000],vision:[31,2,0.78]},
+  gender:{crm:['female',2592000],vision:['female',2,0.82]},
+  loyalty_tier:{loyalty:['Gold',3600],crm:['Silver',2592000]},
+  visitor_type_id:{crm:['Returning customer (2)',2592000],session:['Walk-in (1)',20]},
+  reason_for_visit_id:{queue:['Collect order (3)',120],agent:['Browse (1)',60]},
+  visitor_segments:{cdp:['High value, Lapsed 90d',7200,0.82],decisioning:['Handset upgrade',3600,0.9]},
+  purchase_history:{pos:['3 orders',D*3],crm:['3 orders',D*3]},
+  product_holdings:{crm:['2 mobile lines',D*30]},
+  plan_types:{crm:['Postpaid']},plan_values:{crm:['£42 / month']},
+  product_type:{agent:['Smartphone',600]},
+  purchase_intent:{agent:['Upgrade handset',90],decisioning:['Accessories',14400,0.88]},
+  SKUs:{agent:['SKU-1042, SKU-2210',45]},
+  events:{session:['entered_store, viewed_wall',5]},
+  page_view:{session:['/handsets',12]},
+  device_type:{session:['tablet',5]},
+};
+const NONINBOUND_POP = new Set(['device_udid','display_name','mist_site_id','touch_point','active_campaign']);
+const SLOTS = [['Hero banner','Full-width media'],['Offer strip','Headline + price'],['Recommendations','Product carousel'],['Closing prompt','Call to action']];
+
+const S = {tab:'attributes',visitor:'known',sel:'Age',q:'',fam:new Set(),wr:new Set(),pop:null,draft:null,mode:null,
+  conn:null,cdraft:null,sugg:null,toast:null,
+  t:{budget:600,dur:1,basis:'p95',attr:'purchase_intent'},addPick:''};
+const src = id => SOURCES.find(s=>s.id===id);
+const attr = n => ATTRS.find(a=>a.n===n);
+const clone = o => JSON.parse(JSON.stringify(o));
+const esc = s => String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmtAge = s => s>=Y?`${Math.round(s/Y)} y`:s>=D?`${Math.round(s/D)} d`:s>=3600?`${Math.round(s/3600)} h`:s>=60?`${Math.round(s/60)} min`:`${s} s`;
+const info = (t,r) => `<span class="info${r?' r':''}" tabindex="0" aria-label="${esc(t)}"><span class="material-symbols-outlined sm">info</span><span class="tip" role="tooltip">${esc(t)}</span></span>`;
+const ms = n => n>=1000?(n/1000).toFixed(n%100?2:1)+' s':n+' ms';
+
+/* ---------- resolver ---------- */
+function resolve(chain, name, opt={}){
+  const trace=[]; let win=null;
+  for(const l of chain){
+    const s=src(l.s); let st,detail='';
+    const v=(VALUES[name]||{})[l.s];
+    const has = v && !(s.needsId && S.visitor==='anon');
+    if(!l.on) st='off';
+    else if(!has) st='blank';
+    else if(opt.deadline!=null && s[S.t.basis]>opt.deadline){st='late';detail=`${ms(s[S.t.basis])} > ${ms(opt.deadline)}`}
+    else if(v[1]>l.max_age){st='stale';detail=`${fmtAge(v[1])} > ${fmtAge(l.max_age)}`}
+    else if(s.conf && l.min_conf>0 && (v[2]??1)<l.min_conf){st='lowconf';detail=`${(v[2]??0).toFixed(2)} < ${l.min_conf.toFixed(2)}`}
+    else if(!win){st='won';win={s:l.s,v:v[0]}}
+    else st='behind';
+    trace.push({s:l.s,st,detail,v});
+  }
+  return {win,trace};
+}
+const OUT = {won:['b-ok','check_circle','Wins'],behind:['b-mute','arrow_downward','Qualifies, outranked'],blank:['b-mute','remove','No value'],off:['b-mute','block','Disabled'],
+  stale:['b-warn','schedule','Too old'],lowconf:['b-warn','speed','Below confidence'],late:['b-err','timer_off','Missed deadline']};
+const outBadge = t => { const [c,i,l]=OUT[t.st]; return `<span class="out badge ${c}"><span class="material-symbols-outlined sm">${i}</span>${l}${t.detail?` · ${esc(t.detail)}`:''}</span>`; };
+const inverted = chain => { let prev=99; for(const l of chain){ if(AUTH[l.s]>prev) return true; prev=AUTH[l.s]; } return false; };
+function winnerOf(a){
+  if(a.wr!=='inbound') return {label:a.wr==='derived'?'Computed by the platform':'Platform',pop:NONINBOUND_POP.has(a.n)};
+  const r=resolve(a.chain,a.n); return r.win?{label:src(r.win.s).name,pop:true,val:r.win.v}:{label:'—',pop:false,def:a.def};
+}
+
+/* ---------- views ---------- */
+function head(){
+  const t=[['attributes','Attributes'],['connectors','Connectors'],['timing','Resolution timing'],['health','Health & diagnostics']];
+  return `<div class="top"><h1>Visitor profile</h1>
+    <div class="row"><span class="muted">Sample visitor</span>${info('Switches which sources have data for the preview. An anonymous prospect has no identity, so only on-device and platform sources can answer.',true)}
+    <div class="seg"><button data-act="visitor" data-v="known" class="${S.visitor==='known'?'on':''}">Known customer</button><button data-act="visitor" data-v="anon" class="${S.visitor==='anon'?'on':''}">Anonymous prospect</button></div></div></div>
+    <div class="rule"></div>
+    <div class="tabs">${t.map(([k,l])=>`<button class="tab ${S.tab===k?'on':''}" data-act="tab" data-v="${k}">${l}</button>`).join('')}</div>`;
+}
+function filtered(){
+  const q=S.q.toLowerCase();
+  return ATTRS.filter(a=>(!q||a.n.toLowerCase().includes(q))&&(!S.fam.size||S.fam.has(a.fam))&&(!S.wr.size||S.wr.has(a.wr)));
+}
+const WR = {inbound:'Inbound',derived:'Derived',platform:'Platform'};
+function rowsHtml(){
+  const list=filtered(); let out='',lastFam='';
+  for(const a of list){
+    if(a.fam!==lastFam){lastFam=a.fam;out+=`<tr class="fam"><td colspan="5">${FAM_NAME[a.fam]}</td></tr>`}
+    const w=winnerOf(a);
+    out+=`<tr data-act="pick" data-v="${esc(a.n)}" class="${S.sel===a.n&&!S.mode?'sel':''}">
+      <td><b>${esc(a.n)}</b> <span class="muted">${a.type}</span>${a.custom?' <span class="pill cust">Custom</span>':''}</td>
+      <td>${WR[a.wr]}</td><td>${a.vol[0].toUpperCase()+a.vol.slice(1)}</td>
+      <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis">${esc(w.label)}${w.val!=null?` <span class="muted">· ${esc(w.val)}</span>`:''}</td>
+      <td><span class="dot" style="background:${w.pop?'var(--ok)':'#d9d9d9'}"></span>${w.pop?'Populated':'Blank'}</td>
+</tr>`;
+  }
+  return out||`<tr class="nc"><td colspan="5" class="empty">No attributes match</td></tr>`;
+}
+function funnel(key,opts,set){
+  const on=set.size>0;
+  return `<span class="popwrap"><button class="funnel ${on?'on':''}" data-act="pop" data-v="${key}" aria-label="Filter"><span class="material-symbols-outlined">filter_alt</span></button>
+  ${S.pop===key?`<div class="popup" data-keep>${opts.map(([v,l])=>`<label><input type="checkbox" data-act="flt" data-k="${key}" data-v="${v}" ${set.has(v)?'checked':''}>${l}</label>`).join('')}
+  <div class="foot"><button class="btn primary" data-act="clr" data-k="${key}" ${on?'':'disabled'}>Clear Filter</button></div></div>`:''}</span>`;
+}
+function attrsTab(){
+  const list=filtered(), shown=list.length!==ATTRS.length;
+  return `<div class="layout"><div>
+    <div class="row" style="margin-bottom:8px"><div class="count grow" style="margin:0" id="cnt">${cnt()}</div>
+      <button class="btn outline" data-act="newattr"><span class="material-symbols-outlined sm">add</span>Add custom attribute</button></div>
+    <div class="tw" style="overflow:visible"><table class="g"><thead>
+      <tr><th>Attribute</th><th>Writability${info('Inbound attributes are filled by connected sources and have a precedence chain. Derived attributes are computed by the platform. Platform attributes describe the display and site.')}</th>
+      <th>Volatility${info('How quickly the value goes out of date: static changes rarely, session lasts a visit, live changes moment to moment.')}</th>
+      <th>Winning source${info('The first source in the chain that is enabled, has a value, is fresh enough and confident enough for the sample visitor.')}</th><th>State</th></tr>
+      <tr class="flt"><th><div class="row" style="flex-wrap:nowrap"><div class="sbox grow"><input id="q" value="${esc(S.q)}" aria-label="Search attributes">${S.q?`<button data-act="clrq">✕</button>`:''}</div>${funnel('fam',Object.entries({device:'Device & display',interaction:'Interaction & campaign',visitor:'Visitor & customer'}),S.fam)}</div></th>
+      <th>${funnel('wr',Object.entries(WR),S.wr)}</th><th></th><th></th><th></th></tr>
+    </thead><tbody id="rows">${rowsHtml()}</tbody></table></div></div>
+    <div>${S.mode==='new'?newAttrForm():editor()}</div></div>`;
+}
+const cnt = () => { const n=filtered().length; return n===ATTRS.length?`<b>${n}</b> Attributes`:`Showing <b>${n}</b> of ${ATTRS.length} Attributes`; };
+
+function editor(){
+  const a=attr(S.sel); if(!a) return `<div class="panel empty">Select an attribute</div>`;
+  if(a.wr!=='inbound') return `<div class="panel"><h2>${esc(a.n)}</h2><div class="row muted"><span class="pill">${WR[a.wr]}</span><span class="pill">${a.type}</span></div>
+    <div class="empty"><span class="material-symbols-outlined" style="font-size:32px">link_off</span><div>No source chain</div>
+    ${info(a.wr==='derived'?'This value is computed by the platform from campaign and interaction state, so there is nothing to rank.':'The platform supplies this value for the display, so there is nothing to rank.')}</div>
+    <div class="muted">Available as a targeting variable</div></div>`;
+  const d=S.draft, dirty=JSON.stringify(d)!==JSON.stringify(pick(a)), r=resolve(d.chain,a.n);
+  const avail=SOURCES.filter(s=>!d.chain.some(l=>l.s===s.id));
+  const wk = a.n==='Age'||a.n==='gender', inv = inverted(d.chain);
+  return `<div class="panel"><div class="row"><h2 class="grow">${esc(a.n)}</h2>${inv?`<span class="badge b-info inv" ><span class="material-symbols-outlined sm">swap_vert</span>Custom order${info('A less authoritative source is ranked above a more authoritative one for this attribute. That is valid: ranking is set per attribute, never globally per source.',true)}</span>`:''}</div>
+    <div class="row muted"><span class="pill">${WR[a.wr]}</span><span class="pill">${a.type}</span>${wk?`<span class="pill">Confidence example</span>${info('The CRM value is authoritative and carries no confidence score. Vision estimates are probabilistic, so a link below its minimum confidence is skipped, not just flagged.',true)}`:''}${a.n==='purchase_intent'?`<span class="pill">Order example</span>${info('The on-device agent profile is ranked above the decisioning engine because it is fresher, even though it is less authoritative.',true)}`:''}</div>
+    <h3>Source precedence${info('Sources are tried top to bottom. The first one that is enabled, has a value, is recent enough and meets its confidence threshold wins. If none qualify the default is used.')}</h3>
+    <div class="chain">${d.chain.length?d.chain.map((l,i)=>linkHtml(l,i,d.chain.length,r.trace[i])).join(''):`<div class="empty" style="padding:16px">No sources yet</div>`}</div>
+    <div class="row" style="margin-top:8px"><select id="addsrc" ${avail.length?'':'disabled'}>${avail.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')||'<option>All sources added</option>'}</select>
+      <button class="btn" data-act="addlink" ${avail.length?'':'disabled'}><span class="material-symbols-outlined sm">add</span>Add source</button></div>
+    <h3>Fallback</h3>
+    <div class="two"><label class="f"><span class="l">Volatility</span><select data-bind="vol">${['static','session','live'].map(v=>`<option ${d.vol===v?'selected':''}>${v}</option>`).join('')}</select></label>
+      <label class="f"><span class="l">Default${info('Used when no source in the chain qualifies. A blank value is normal and is not an error.',true)}</span><input data-bind="def" value="${esc(d.def)}"></label></div>
+    <div class="row" style="margin-top:4px"><span class="muted">Resolves to</span> <b>${r.win?esc(r.win.v)+' <span class="muted" style="font-weight:400">from '+esc(src(r.win.s).name)+'</span>':esc(d.def||'(blank)')+' <span class="muted" style="font-weight:400">default</span>'}</b></div>
+    <div class="row" style="margin-top:16px"><button class="btn primary" data-act="save" ${dirty?'':'disabled'}>Save Changes</button><button class="btn" data-act="cancel" ${dirty?'':'disabled'}>Cancel</button></div></div>`;
+}
+const pick = a => ({chain:a.chain,vol:a.vol,def:a.def});
+function linkHtml(l,i,n,t){
+  const s=src(l.s);
+  return `<div class="link ${l.on?'':'off'}"><div class="hd"><span class="rank">${i+1}</span><b class="grow">${esc(s.name)}</b>${s.built?'<span class="pill">Built in</span>':''}</div><div style="margin:6px 0 0 30px">${outBadge(t)}</div>
+  <div class="flds"><label><span style="white-space:nowrap">Max age (s)${info('Freshness bound in seconds. A value older than this is ignored.')}</span><input type="number" min="0" data-ci="${i}" data-f="max_age" value="${l.max_age}"></label>
+  <label><span style="white-space:nowrap">Min confidence${info(s.conf?'Values scored below this are skipped.':'This source does not emit a confidence score.')}</span><input type="number" min="0" max="1" step="0.05" data-ci="${i}" data-f="min_conf" value="${s.conf?l.min_conf:''}" ${s.conf?'':'disabled placeholder="—"'}></label>
+  <div class="row" style="margin-left:auto;align-self:flex-end"><button class="sw ${l.on?'on':''}" data-act="lon" data-i="${i}" aria-label="Enabled"></button>
+  <button class="btn icon text" data-act="up" data-i="${i}" ${i?'':'disabled'} aria-label="Move up"><span class="material-symbols-outlined">arrow_upward</span></button>
+  <button class="btn icon text" data-act="down" data-i="${i}" ${i<n-1?'':'disabled'} aria-label="Move down"><span class="material-symbols-outlined">arrow_downward</span></button>
+  <button class="btn icon text" data-act="rm" data-i="${i}" aria-label="Remove"><span class="material-symbols-outlined">close</span></button></div></div></div>`;
+}
+function newAttrForm(){
+  return `<div class="panel"><h2>Add custom attribute</h2><div class="muted" style="margin-bottom:12px">Joins the schema as a targeting variable</div>
+  <label class="f"><span class="l">Name${info('Lower snake_case, for example preferred_store. It cannot match an existing attribute.')}</span><input id="na-n" placeholder="preferred_store"></label>
+  <div class="two"><label class="f"><span class="l">Type</span><select id="na-t">${['string','number','array','lookup','boolean'].map(x=>`<option>${x}</option>`).join('')}</select></label>
+  <label class="f"><span class="l">Volatility</span><select id="na-v"><option>static</option><option>session</option><option>live</option></select></label></div>
+  <label class="f"><span class="l">Default</span><input id="na-d"></label><div id="na-e" style="color:#cf1322;min-height:20px"></div>
+  <div class="row"><button class="btn primary" data-act="na-save">Add attribute</button><button class="btn" data-act="na-cancel">Cancel</button></div></div>`;
+}
+
+/* connectors */
+function connRow(s){
+  const h = s.err>5?'var(--err)':s.err>2?'var(--warn)':'var(--ok)';
+  return `<tr data-act="cpick" data-v="${s.id}" class="${S.conn===s.id?'sel':''}"><td><span class="dot" style="background:${h}"></span><b>${esc(s.name)}</b></td><td>${esc(s.type)}</td><td>${s.transport}</td><td>${s.conf?'Yes':'No'}</td><td>${ms(s.p95)}</td></tr>`;
+}
+function connTable(title,list,tip){
+  return `<div style="margin-bottom:20px"><div class="row" style="margin-bottom:8px"><b>${title}</b>${info(tip)}<span class="muted">${list.length}</span></div>
+  <div class="tw"><table class="g"><thead><tr><th>Connector</th><th>System</th><th>Transport</th><th>Confidence${info('Whether the source sends a confidence score with each value.')}</th><th>p95</th></tr></thead><tbody>${list.map(connRow).join('')}</tbody></table></div></div>`;
+}
+function connectorsTab(){
+  return `<div class="layout"><div>
+    <div class="row" style="margin-bottom:12px"><div class="count grow" style="margin:0"><b>${SOURCES.length}</b> Connectors</div>
+    <button class="btn outline" data-act="cnew"><span class="material-symbols-outlined sm">add</span>Add connector</button></div>
+    ${connTable('Built in',SOURCES.filter(s=>s.built),'Always available and not configurable. They can be ranked in any precedence chain.')}
+    ${connTable('Configured',SOURCES.filter(s=>!s.built),'Systems your organisation connects. Each has its own endpoint, credentials and identity mapping.')}</div>
+    <div>${connPanel()}</div></div>`;
+}
+function connPanel(){
+  if(!S.cdraft && !S.conn) return `<div class="panel empty">Select a connector</div>`;
+  const c=S.cdraft;
+  if(!c){ const s=src(S.conn); return `<div class="panel"><h2>${esc(s.name)}</h2><div class="row muted"><span class="pill">Built in</span><span class="pill">${esc(s.type)}</span></div>
+    <div class="empty"><span class="material-symbols-outlined" style="font-size:32px">lock</span><div>Not configurable</div></div>
+    <div class="two"><div class="kpi"><div><div class="lb">p50</div><div class="v">${ms(s.p50)}</div></div></div><div class="kpi"><div><div class="lb">p95</div><div class="v">${ms(s.p95)}</div></div></div></div></div>`; }
+  const used = ATTRS.filter(a=>a.chain.some(l=>l.s===c.id)).map(a=>a.n);
+  return `<div class="panel"><h2>${c.isNew?'Add connector':esc(c.name)}</h2>
+  <label class="f"><span class="l">Name</span><input data-cb="name" value="${esc(c.name)}"></label>
+  <div class="two"><label class="f"><span class="l">System type</span><select data-cb="type">${SYSTEM_TYPES.map(t=>`<option ${c.type===t?'selected':''}>${t}</option>`).join('')}</select></label>
+  <label class="f"><span class="l">Transport</span><select data-cb="transport">${TRANSPORTS.map(t=>`<option ${c.transport===t?'selected':''}>${t}</option>`).join('')}</select></label></div>
+  <label class="f"><span class="l">Endpoint URL</span><input data-cb="url" value="${esc(c.url)}" placeholder="https://"></label>
+  <label class="f"><span class="l">API token${info('Generated by the platform and presented by the connector on every call. It is shown once.')}</span><div class="row"><input data-cb="token" class="grow" value="${esc(c.token||'')}" placeholder="Not generated" readonly><button class="btn" data-act="gentoken">Generate</button></div></label>
+  <div class="two"><label class="f"><span class="l">Sends${info('The identifier the platform sends to this system to look the visitor up.',false)}</span><input data-cb="sends" value="${esc(c.sends)}"></label>
+  <label class="f"><span class="l">Resolves from${info('The identifier this system returns, which other connectors can be queried against.',true)}</span><input data-cb="resolves" value="${esc(c.resolves)}"></label></div>
+  <div class="two"><label class="f"><span class="l">Timeout (ms)</span><input type="number" data-cb="timeout" value="${c.timeout}"></label><label class="f"><span class="l">Cache TTL (s)</span><input type="number" data-cb="ttl" value="${c.ttl}"></label></div>
+  <label class="row" style="margin-bottom:12px"><input type="checkbox" data-cb="conf" ${c.conf?'checked':''}>Emits a confidence score</label>
+  <h3>Sample response${info('Paste a response from this system. Suggested mappings from its fields to attributes appear below.')}</h3>
+  <textarea id="sample" rows="7" spellcheck="false">${esc(c.sample)}</textarea>
+  <div class="row" style="margin-top:8px"><button class="btn ai" data-act="suggest"><span class="material-symbols-outlined sm" style="color:#9747ff">auto_awesome</span><span class="t">Suggest mappings</span></button></div>
+  ${S.sugg?suggHtml():''}
+  ${used.length?`<div class="muted" style="margin-top:12px">Ranked in ${used.length} chains${info(used.join(', '))}</div>`:''}
+  <div class="row" style="margin-top:16px"><button class="btn primary" data-act="csave" ${c.name.trim()&&c.url.trim()?'':'disabled'}>Save Changes</button><button class="btn" data-act="ccancel">Cancel</button></div></div>`;
+}
+function suggHtml(){
+  const g=S.sugg;
+  if(g.error) return `<div class="badge b-err" style="margin-top:8px;height:auto;padding:6px 8px">${esc(g.error)}</div>`;
+  return `<div class="tw" style="margin-top:8px"><table class="g"><thead><tr><th></th><th>Field</th><th>Sample</th><th>Attribute</th></tr></thead><tbody>${g.rows.map((r,i)=>`<tr class="nc">
+  <td><input type="checkbox" data-sg="${i}" data-f="on" ${r.on?'checked':''} ${r.attr?'':'disabled'}></td><td class="mono">${esc(r.path)}</td><td class="muted">${esc(String(r.val).slice(0,24))}</td>
+  <td><select style="width:140px" data-sg="${i}" data-f="attr"><option value="">No match</option>${ATTRS.filter(a=>a.wr==='inbound').map(a=>`<option ${r.attr===a.n?'selected':''}>${esc(a.n)}</option>`).join('')}</select></td></tr>`).join('')}</tbody></table></div>
+  <div class="row" style="margin-top:8px"><button class="btn primary" data-act="applymap" ${g.rows.some(r=>r.on&&r.attr)?'':'disabled'}>Apply ${g.rows.filter(r=>r.on&&r.attr).length} mappings</button>${g.conf?`<span class="badge b-info">Confidence field found</span>`:''}</div>`;
+}
+const ALIAS = {firstname:'first_name',givenname:'first_name',fname:'first_name',company:'company_name',organisation:'company_name',organization:'company_name',age:'Age',sex:'gender',gender:'gender',
+  tier:'loyalty_tier',loyaltytier:'loyalty_tier',membershiptier:'loyalty_tier',segments:'visitor_segments',segment:'visitor_segments',intent:'purchase_intent',nextbestaction:'purchase_intent',
+  skus:'SKUs',products:'product_holdings',holdings:'product_holdings',plan:'plan_types',plantype:'plan_types',planvalue:'plan_values',orders:'purchase_history',history:'purchase_history',
+  producttype:'product_type',pageview:'page_view',devicetype:'device_type',events:'events',visitreason:'reason_for_visit_id',reason:'reason_for_visit_id',visitortype:'visitor_type_id'};
+const norm = s => s.toLowerCase().replace(/[^a-z0-9]/g,'');
+function flat(o,p=''){ const out=[]; for(const [k,v] of Object.entries(o)){ const path=p?`${p}.${k}`:k;
+  if(v&&typeof v==='object'&&!Array.isArray(v)) out.push(...flat(v,path)); else out.push([path,Array.isArray(v)?v.join(', '):v]); } return out; }
+function suggest(text){
+  let j; try{ j=JSON.parse(text) }catch(e){ return {error:'That is not valid JSON: '+e.message} }
+  const rows=[]; let conf=false;
+  for(const [path,val] of flat(j)){
+    const last=norm(path.split('.').pop());
+    if(last==='confidence'||last==='score'||last==='conf'){conf=true;continue}
+    let m=ALIAS[last]||ATTRS.find(a=>a.wr==='inbound'&&norm(a.n)===last)?.n||ALIAS[norm(path)];
+    if(!m) m=ATTRS.find(a=>a.wr==='inbound'&&last.length>3&&(norm(a.n).includes(last)||last.includes(norm(a.n))))?.n;
+    rows.push({path,val,attr:m||'',on:!!m});
+  }
+  return {rows,conf};
+}
+
+/* timing */
+const deadlines = () => SLOTS.map((_,k)=>S.t.budget+Math.round(k*S.t.dur*1000));
+function timingTab(){
+  const dl=deadlines(), basis=S.t.basis, a=attr(S.t.attr)||ATTRS.find(a=>a.wr==='inbound');
+  const inb=ATTRS.filter(x=>x.wr==='inbound');
+  const maxL=Math.max(...SOURCES.map(s=>s[basis])), scale=Math.max(maxL*1.15,dl[0]*1.4);
+  const px = v => Math.min(100,v/scale*100);
+  const ticks=[0,.25,.5,.75,1].map(f=>ms(Math.round(scale*f/50)*50));
+  return `<div class="layout" style="grid-template-columns:minmax(0,320px) minmax(0,1fr)"><div class="panel">
+    <h2>Timing</h2>
+    <label class="f"><span class="l">First-paint budget${info('How long the first slot may wait for sources before it is decided without them.')}</span><div class="row"><input type="range" min="100" max="3000" step="50" data-tb="budget" value="${S.t.budget}" class="grow"><b style="min-width:60px;text-align:right">${ms(S.t.budget)}</b></div></label>
+    <label class="f"><span class="l">Slot playback duration${info('Each later slot becomes visible one playback duration after the previous one, which gives slow sources more time.')}</span><div class="row"><input type="range" min="0.5" max="15" step="0.5" data-tb="dur" value="${S.t.dur}" class="grow"><b style="min-width:60px;text-align:right">${S.t.dur} s</b></div></label>
+    <div class="f"><span class="l" style="display:flex;color:var(--muted);font-size:12px;margin-bottom:4px">Latency basis${info('Which measured latency decides whether a source arrived in time.')}</span><div class="seg"><button data-act="basis" data-v="p50" class="${basis==='p50'?'on':''}">Typical (p50)</button><button data-act="basis" data-v="p95" class="${basis==='p95'?'on':''}">Slow (p95)</button></div></div>
+    <label class="f"><span class="l">Preview attribute</span><select data-tb="attr">${inb.map(x=>`<option ${x.n===a.n?'selected':''}>${esc(x.n)}</option>`).join('')}</select></label>
+    <div class="row"><button class="btn primary" data-act="tsave">Save Changes</button><button class="btn" data-act="treset">Reset</button></div></div>
+  <div class="flexcol">
+    <div class="panel"><h3 style="margin-top:0">Connector latency against slot deadlines${info('Bars show each connector’s latency. Dashed lines mark when each slot must be decided.',true)}</h3>
+      <div class="bars" style="padding-top:20px">${SOURCES.map(s=>{const v=s[basis];return `<div class="bar"><span class="nm">${esc(s.name)}</span><div class="tr"><div class="fl" style="width:${px(v)}%;background:${v<=dl[0]?'var(--accent)':'#ffa39e'}"></div></div><span style="width:56px;text-align:right">${ms(v)}</span></div>`}).join('')}
+      <div style="position:absolute;left:198px;right:64px;top:0;bottom:0;pointer-events:none">${dl.map((d,k)=>d<=scale?`<span class="mk" style="left:${px(d)}%"><b>S${k+1}</b></span>`:'').join('')}</div></div>
+      <div class="axis" style="margin-right:64px">${ticks.map(t=>`<span>${t}</span>`).join('')}</div></div>
+    <div class="tw"><table class="g"><thead><tr><th>Slot</th><th>Deadline${info('Time from the start of the interaction by which the slot’s decision must be made.')}</th><th>Arrived in time</th><th>Missed</th><th>${esc(a.n)} resolves to${info('The same attribute can resolve differently across slots in one interaction.',true)}</th></tr></thead><tbody>
+    ${SLOTS.map(([nm,el],k)=>{
+      const inT=SOURCES.filter(s=>s[basis]<=dl[k]), late=SOURCES.filter(s=>s[basis]>dl[k]);
+      const r=resolve(a.chain,a.n,{deadline:dl[k]});
+      return `<tr class="nc" style="height:auto"><td style="vertical-align:top;padding-top:10px"><b>S${k+1} · ${nm}</b><div class="muted">${el}</div></td><td style="vertical-align:top;padding-top:10px">${ms(dl[k])}</td>
+      <td style="white-space:normal;min-width:180px"><div class="chips">${inT.map(s=>`<span class="chip in">${esc(s.name)}</span>`).join('')||'<span class="muted">None</span>'}</div></td>
+      <td style="white-space:normal;min-width:140px"><div class="chips">${late.map(s=>`<span class="chip late">${esc(s.name)}</span>`).join('')||'<span class="muted">None</span>'}</div></td>
+      <td style="vertical-align:top;padding-top:10px">${r.win?`<b>${esc(r.win.v)}</b><div class="muted">${esc(src(r.win.s).name)}</div>`:`<b>${esc(a.def||'(blank)')}</b><div class="muted">Default</div>`}</td></tr>`}).join('')}
+    </tbody></table></div></div></div>`;
+}
+
+/* health */
+function spark(h,color){
+  const mx=Math.max(...h),mn=Math.min(...h),w=96,ht=24;
+  const pts=h.map((v,i)=>`${(i/(h.length-1)*w).toFixed(1)},${(ht-2-((v-mn)/(mx-mn||1))*(ht-4)).toFixed(1)}`).join(' ');
+  return `<svg width="${w}" height="${ht}" viewBox="0 0 ${w} ${ht}" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.6"/></svg>`;
+}
+function healthTab(){
+  const bad=SOURCES.filter(s=>s.err>5), warn=SOURCES.filter(s=>s.err>2&&s.err<=5);
+  const worst=[...SOURCES].sort((a,b)=>b.p95-a.p95)[0], avg=(SOURCES.reduce((t,s)=>t+s.err,0)/SOURCES.length);
+  const kp=(ic,tint,l,v)=>`<div class="kpi"><div class="ic" style="background:${tint}"><span class="material-symbols-outlined">${ic}</span></div><div><div class="lb">${l}</div><div class="v">${v}</div></div></div>`;
+  return `<div class="kpis">${kp('check_circle','#ecfdf5','Healthy',SOURCES.length-bad.length-warn.length+' of '+SOURCES.length)}${kp('error','#fef2f2','Failing',bad.length)}${kp('timer','#fff8e1','Slowest p95',ms(worst.p95))}${kp('percent','#f3f0ff','Mean error rate',avg.toFixed(1)+'%')}</div>
+  <div class="count"><b>${SOURCES.length}</b> Connectors</div>
+  <div class="tw"><table class="g"><thead><tr><th>Connector</th><th>Kind</th><th>p50</th><th>p95</th><th>Error rate${info('Share of calls in the last 24 hours that failed or timed out. Amber above 2%, red above 5%.')}</th><th>Last successful call</th><th>p95, 24 h</th></tr></thead><tbody>
+  ${SOURCES.map(s=>{const c=s.err>5?'var(--err)':s.err>2?'var(--warn)':'var(--ok)';return `<tr class="nc"><td><span class="dot" style="background:${c}"></span><b>${esc(s.name)}</b></td><td>${s.built?'Built in':'Configured'}</td><td>${ms(s.p50)}</td><td>${ms(s.p95)}</td>
+  <td><span class="badge ${s.err>5?'b-err':s.err>2?'b-warn':'b-ok'}">${s.err.toFixed(1)}%</span></td><td ${s.err>5?'style="color:#cf1322;font-weight:500"':''}>${s.last}</td><td>${spark(s.h,c)}</td></tr>`}).join('')}
+  </tbody></table></div>`;
+}
+
+/* ---------- render + events ---------- */
+function render(){
+  const y=window.scrollY;
+  const body = S.tab==='attributes'?attrsTab():S.tab==='connectors'?connectorsTab():S.tab==='timing'?timingTab():healthTab();
+  document.getElementById('app').innerHTML = head()+body+(S.toast?`<div class="toast">${esc(S.toast)}</div>`:'');
+  window.scrollTo(0,y);
+  const q=document.getElementById('q'); if(q) q.addEventListener('input',e=>{S.q=e.target.value;document.getElementById('rows').innerHTML=rowsHtml();document.getElementById('cnt').innerHTML=cnt();
+    const b=q.parentNode.querySelector('button'); if(S.q&&!b){render();const n=document.getElementById('q');n.focus();n.setSelectionRange(S.q.length,S.q.length)}});
+}
+function toast(t){S.toast=t;render();setTimeout(()=>{S.toast=null;render()},1800)}
+function openAttr(n){S.sel=n;S.mode=null;const a=attr(n);S.draft=a&&a.wr==='inbound'?clone(pick(a)):null}
+function newConn(){return {isNew:true,id:'c'+Date.now(),name:'',type:SYSTEM_TYPES[0],transport:'REST',url:'',token:'',sends:'customer_ref',resolves:'',timeout:1000,ttl:300,conf:false,sample:'{\n  "customer": {\n    "firstName": "Maya",\n    "age": 34,\n    "tier": "Gold"\n  },\n  "segments": ["High value"],\n  "confidence": 0.92\n}'}}
+function openConn(id){S.conn=id;S.sugg=null;const s=src(id);S.cdraft=s.built?null:Object.assign({token:'',sample:newConn().sample},clone(s))}
+
+document.addEventListener('click',e=>{
+  const pop=e.target.closest('[data-keep]'), t=e.target.closest('[data-act]');
+  if(S.pop&&!pop&&!(t&&t.dataset.act==='pop')){S.pop=null;render();if(!t)return}
+  if(!t) return; const a=t.dataset.act,v=t.dataset.v,i=+t.dataset.i;
+  const d=S.draft;
+  switch(a){
+    case 'tab':S.tab=v;break;
+    case 'visitor':S.visitor=v;break;
+    case 'pick':openAttr(v);break;
+    case 'pop':S.pop=S.pop===v?null:v;break;
+    case 'flt':return;
+    case 'clr':S[t.dataset.k].clear();break;
+    case 'clrq':S.q='';break;
+    case 'newattr':S.mode='new';break;
+    case 'na-cancel':S.mode=null;break;
+    case 'na-save':{const n=document.getElementById('na-n').value.trim(),er=document.getElementById('na-e');
+      if(!/^[a-z][a-z0-9_]*$/.test(n)){er.textContent='Use lower snake_case, starting with a letter';return}
+      if(attr(n)){er.textContent='An attribute with that name already exists';return}
+      ATTRS.push({n,fam:'visitor',wr:'inbound',type:document.getElementById('na-t').value,vol:document.getElementById('na-v').value,def:document.getElementById('na-d').value,chain:[],custom:true});
+      openAttr(n);toast('Attribute added');return}
+    case 'lon':d.chain[i].on=!d.chain[i].on;break;
+    case 'up':[d.chain[i-1],d.chain[i]]=[d.chain[i],d.chain[i-1]];break;
+    case 'down':[d.chain[i+1],d.chain[i]]=[d.chain[i],d.chain[i+1]];break;
+    case 'rm':d.chain.splice(i,1);break;
+    case 'addlink':{const id=document.getElementById('addsrc').value;d.chain.push({s:id,max_age:3600,min_conf:src(id).conf?0.7:0,on:true});break}
+    case 'save':Object.assign(attr(S.sel),clone(d));S.draft=clone(pick(attr(S.sel)));toast('Changes saved');return;
+    case 'cancel':S.draft=clone(pick(attr(S.sel)));break;
+    case 'cpick':openConn(v);break;
+    case 'cnew':S.conn='__new';S.sugg=null;S.cdraft=newConn();break;
+    case 'gentoken':S.cdraft.token='phk_'+Array.from({length:24},()=>'abcdef0123456789'[Math.random()*16|0]).join('');break;
+    case 'suggest':S.cdraft.sample=document.getElementById('sample').value;S.sugg=suggest(S.cdraft.sample);if(S.sugg.conf)S.cdraft.conf=true;break;
+    case 'applymap':{const c=S.cdraft;let n=0;
+      if(c.isNew){toast('Save the connector first');return}
+      for(const r of S.sugg.rows.filter(r=>r.on&&r.attr)){const at=attr(r.attr);if(!at.chain.some(l=>l.s===c.id)){at.chain.push({s:c.id,max_age:3600,min_conf:c.conf?0.7:0,on:true});n++}}
+      S.sugg=null;toast(`Added to ${n} precedence chain${n===1?'':'s'}`);return}
+    case 'csave':{const c=S.cdraft;delete c.sample;
+      if(c.isNew){delete c.isNew;Object.assign(c,{needsId:true,p50:0,p95:0,err:0,last:'Never',h:[0,0,0,0,0,0,0,0]});SOURCES.push(c);S.conn=c.id;S.cdraft=Object.assign({sample:newConn().sample},clone(c))}
+      else{Object.assign(src(c.id),c);}
+      toast('Connector saved');return}
+    case 'ccancel':S.cdraft=null;S.conn=null;S.sugg=null;break;
+    case 'basis':S.t.basis=v;break;
+    case 'treset':S.t.budget=600;S.t.dur=1;S.t.basis='p95';break;
+    case 'tsave':toast('Timing saved');return;
+  }
+  render();
+});
+let down=false,pend=false;
+let curT=null;
+const soft=()=>{ const t=curT; if(down){pend=true;return}
+  if(t&&t.tagName==='INPUT'&&(t.type==='text'||t.type==='number'||t.type==='range'))
+    setTimeout(()=>{ if(down){pend=true;return} const ae=document.activeElement; if(ae&&ae!==document.body&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)&&ae.type!=='checkbox')return; render() },0);
+  else render(); };
+document.addEventListener('pointerdown',()=>{down=true});
+document.addEventListener('pointerup',()=>{down=false;setTimeout(()=>{if(pend){pend=false;render()}},0)});
+document.addEventListener('change',e=>{
+  const t=e.target;curT=t;
+  if(t.dataset.act==='flt'){const set=S[t.dataset.k];t.checked?set.add(t.dataset.v):set.delete(t.dataset.v);soft();return}
+  if(t.dataset.bind){S.draft[t.dataset.bind]=t.value;soft();return}
+  if(t.dataset.ci!==undefined){const l=S.draft.chain[+t.dataset.ci];l[t.dataset.f]=Math.max(0,parseFloat(t.value)||0);if(t.dataset.f==='min_conf')l.min_conf=Math.min(1,l.min_conf);soft();return}
+  if(t.dataset.cb){const c=S.cdraft;if(c){c[t.dataset.cb]=t.type==='checkbox'?t.checked:t.type==='number'?+t.value:t.value;if(c.sample!==undefined&&document.getElementById('sample'))c.sample=document.getElementById('sample').value;soft()}return}
+  if(t.dataset.sg!==undefined){const r=S.sugg.rows[+t.dataset.sg];if(t.dataset.f==='on')r.on=t.checked;else{r.attr=t.value;r.on=!!t.value}soft();return}
+  if(t.dataset.tb){S.t[t.dataset.tb]=t.dataset.tb==='attr'?t.value:parseFloat(t.value);soft()}
+});
+function syncButtons(){
+  const a=attr(S.sel),sv=document.querySelector('[data-act="save"]'),cn=document.querySelector('[data-act="cancel"]');
+  if(sv&&a&&S.draft){const dirty=JSON.stringify(S.draft)!==JSON.stringify(pick(a));sv.disabled=cn.disabled=!dirty}
+  const cs=document.querySelector('[data-act="csave"]'); if(cs&&S.cdraft) cs.disabled=!(S.cdraft.name.trim()&&S.cdraft.url.trim());
+}
+document.addEventListener('input',e=>{ const t=e.target;
+  if(t.dataset.bind&&t.tagName==='INPUT'){S.draft[t.dataset.bind]=t.value;syncButtons();return}
+  if(t.dataset.cb&&t.type==='text'&&S.cdraft){S.cdraft[t.dataset.cb]=t.value;syncButtons();return}
+  if(t.dataset.ci!==undefined&&S.draft){const l=S.draft.chain[+t.dataset.ci];l[t.dataset.f]=Math.max(0,parseFloat(t.value)||0);syncButtons();return} if(t.dataset.tb&&t.type==='range'){const v=parseFloat(t.value);S.t[t.dataset.tb]=v;t.nextElementSibling.textContent=t.dataset.tb==='budget'?ms(v):v+' s'} });
+openAttr('Age');
+render();
+</script>
+</body>
+</html>
