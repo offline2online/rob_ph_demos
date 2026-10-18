@@ -96,6 +96,29 @@
     });
   }
 
+  // Advertisers table columns: header text, the raw value each sorts by, and the direction a first click uses.
+  var ADV_COLS = [
+    { key: 'name', label: 'Advertiser', first: 'asc', value: function (r) { return r.name; } },
+    { key: 'revenue', label: 'Revenue', first: 'desc', value: function (r) { return r.src.revenue; } },
+    { key: 'share', label: 'Share of total revenue', first: 'desc', value: function (r) { return r.src.share; } },
+    { key: 'dealsOn', label: 'Deals on', first: 'desc', value: function (r) { return r.dealsOn; } },
+    { key: 'slotsCovered', label: 'Slots covered', first: 'desc', value: function (r) { return r.src.slotsCovered; } },
+    { key: 'slotsWon', label: 'Slots won', first: 'desc', value: function (r) { return r.src.slotsWonPercent; } },
+    { key: 'effectiveCpm', label: 'Effective CPM', first: 'desc', value: function (r) { return r.src.effectiveCpm; } }
+  ];
+  // Rows ordered by one column ('asc' = A–Z / lowest first); no key keeps the back end's order. Blank values always sit last.
+  function sortAdvertiserRows(rows, key, dir) {
+    var col = ADV_COLS.filter(function (c) { return c.key === key; })[0];
+    if (!col) return rows;
+    var sign = dir === 'asc' ? 1 : -1;
+    return rows.map(function (r, i) { return { r: r, i: i, v: col.value(r) }; }).sort(function (a, b) {
+      var an = !has(a.v), bn = !has(b.v);
+      if (an || bn) return an && bn ? a.i - b.i : an ? 1 : -1;
+      var c = typeof a.v === 'string' ? a.v.localeCompare(b.v) : a.v - b.v;
+      return c ? c * sign : a.i - b.i;
+    }).map(function (x) { return x.r; });
+  }
+
   // Hover headed "Blackmores (DV360): deals on", listing each deal with its type.
   function dealsOnHover(a) {
     var deals = (a.dealsOn || []).slice().sort(function (x, y) { return dealRank(x.dealType) - dealRank(y.dealType) || x.name.localeCompare(y.name); });
@@ -177,7 +200,7 @@
     advertiserRows: advertiserRows, dealsOnHover: dealsOnHover, slotsWonHover: slotsWonHover, ladderHover: ladderHover,
     schedulingHover: schedulingHover, variableHover: variableHover, progressHover: progressHover, progressPeriodText: progressPeriodText, chipText: chipText,
     schedulingText: schedulingText, tableRows: tableRows, variableOptions: variableOptions, variableBars: variableBars,
-    activeFilters: activeFilters, revenueTotal: revenueTotal, periodLabel: periodLabel, fmtMoney: fmtMoney, pct: pct
+    activeFilters: activeFilters, ADV_COLS: ADV_COLS, sortAdvertiserRows: sortAdvertiserRows, revenueTotal: revenueTotal, periodLabel: periodLabel, fmtMoney: fmtMoney, pct: pct
   };
 
   // ---------- DOM ----------
@@ -185,7 +208,7 @@
     if (typeof document === 'undefined') throw new Error('DemandCharts.mount needs a DOM');
     var fetchJson = opts.fetchJson;
     var filters = opts.filters || {};
-    var state = { showAll: false, granularity: 'month', kind: 'Localised', table: { level: '', variable: '', scheduling: '' } };
+    var state = { showAll: false, advSort: { key: '', dir: 'desc' }, granularity: 'month', kind: 'Localised', table: { level: '', variable: '', scheduling: '' } };
     var gen = { adv: 0, mat: 0 };
     var advData = null, matData = null, knownVars = [], resizeTimer = null;
     var alive = true;
@@ -368,14 +391,24 @@
     }
     function drawAdvertisers() {
       var d = advData;
-      var rows = advertiserRows(d, state.showAll);
+      var rows = sortAdvertiserRows(advertiserRows(d, state.showAll), state.advSort.key, state.advSort.dir);
       var more = (d.all || []).length > TOP_N;
       showBtn.hidden = !more;
       showBtn.textContent = state.showAll ? 'Show top ' + TOP_N : 'Show all ' + fmtInt((d.all || []).length) + ' advertisers';
       showBtn.setAttribute('aria-pressed', String(state.showAll));
-      var cols = ['Advertiser', 'Revenue', 'Share of total revenue', 'Deals on', 'Slots covered', 'Slots won', 'Effective CPM'];
+      function sortHead(c) {
+        var on = state.advSort.key === c.key, dir = state.advSort.dir;
+        var btn = h('button', { type: 'button', class: 'dc-sort' + (on ? ' on' : ''), title: 'Sort by ' + c.label }, [
+          h('span', { text: c.label }), icon(on ? (dir === 'asc' ? 'arrow_upward' : 'arrow_downward') : 'unfold_more')
+        ]);
+        btn.addEventListener('click', function () {
+          state.advSort = on ? { key: c.key, dir: dir === 'asc' ? 'desc' : 'asc' } : { key: c.key, dir: c.first };
+          drawAdvertisers();
+        });
+        return h('th', { scope: 'col', 'aria-sort': on ? (dir === 'asc' ? 'ascending' : 'descending') : 'none' }, [btn]);
+      }
       var table = h('table', { class: 'dc-table dc-adv' }, [
-        h('thead', {}, [h('tr', {}, cols.map(function (c) { return h('th', { scope: 'col', text: c }); }))]),
+        h('thead', {}, [h('tr', {}, ADV_COLS.map(sortHead))]),
         h('tbody', {}, rows.map(function (r) {
           var a = r.src;
           var dealsTd = h('td', { class: 'dc-num', text: r.dealsText });

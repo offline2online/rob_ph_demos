@@ -143,3 +143,22 @@ test('ladder, scheduling and variable counts are consistent with the table', asy
   const seg = mat.variablesInUse.find((v) => v.variable === 'Fixed Store Segments');
   assert.strictEqual(seg.advertisers, (await get('/maturity', { variable: 'Fixed Store Segments' })).table.length);
 });
+
+test('advertiser table: every column sorts both ways, blanks last, no key keeps the back end order', async () => {
+  const rows = DC.advertiserRows(await get('/advertisers'), true);
+  const names = (rs) => rs.map((r) => r.name);
+  assert.deepStrictEqual(names(DC.sortAdvertiserRows(rows, '', 'asc')), names(rows));
+  for (const c of DC.ADV_COLS) {
+    for (const dir of ['asc', 'desc']) {
+      const out = DC.sortAdvertiserRows(rows, c.key, dir);
+      assert.strictEqual(out.length, rows.length);
+      const vals = out.map(c.value).filter((v) => v !== null && v !== undefined);
+      for (let i = 1; i < vals.length; i++) {
+        const cmp = typeof vals[i] === 'string' ? vals[i - 1].localeCompare(vals[i]) : vals[i - 1] - vals[i];
+        assert.ok(dir === 'asc' ? cmp <= 0 : cmp >= 0, c.key + ' ' + dir);
+      }
+      const blanks = out.map(c.value).map((v) => v === null || v === undefined);
+      assert.deepStrictEqual(blanks, blanks.slice().sort((a, b) => a - b), c.key + ': blanks last');
+    }
+  }
+});

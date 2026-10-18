@@ -114,3 +114,8 @@ button.dc-clear { cursor: pointer; background: rgba(22,155,194,0.1); border-colo
   .dc-tip-rows { grid-template-columns: minmax(0, 1fr); gap: 0; } .dc-tip-rows dd { margin-bottom: 4px; }
 }
 .dc-table tfoot th, .dc-table tfoot td { font-weight: 700; border-top: 1px solid #d9d9d9; }
+
+.dc-sort { display: inline-flex; align-items: center; gap: 2px; padding: 0; border: 0; background: none; font: inherit; color: inherit; cursor: pointer; text-align: left; }
+.dc-sort .dc-icon { font-size: 16px; opacity: .45; }
+.dc-sort.on, .dc-sort.on .dc-icon { color: var(--dc-text); opacity: 1; }
+.dc-sort:focus-visible { outline: 2px solid #1677ff; outline-offset: 2px; }
