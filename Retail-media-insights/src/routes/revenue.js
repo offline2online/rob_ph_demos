@@ -42,8 +42,9 @@ module.exports = {
         if (!cur) { cur = []; perDate.set(curDate, cur); }
       }
       const k = idxOf(dspIdx, dspNames, r.dsp) * 16 + idxOf(typeIdx, typeNames, r.dealType);
-      const b = cur[k] || (cur[k] = [0, 0]);
+      const b = cur[k] || (cur[k] = [0, 0, new Set()]);
       b[0] += r.earned; b[1] += r.estimated;
+      if (r.earned > 0) b[2].add(r.advertiserId);
     });
     // Booked-ahead days beyond the range's own end, from the day after the last played day.
     if (aheadDays > 0 && lastDataDay) {
@@ -59,8 +60,9 @@ module.exports = {
             if (!cur) { cur = []; perDate.set(curDate, cur); }
           }
           const k = idxOf(dspIdx, dspNames, r.dsp) * 16 + idxOf(typeIdx, typeNames, r.dealType);
-          const b = cur[k] || (cur[k] = [0, 0]);
+          const b = cur[k] || (cur[k] = [0, 0, new Set()]);
           b[0] += r.earned; b[1] += r.estimated;
+          if (r.earned > 0) b[2].add(r.advertiserId);
         });
       }
     }
@@ -71,14 +73,15 @@ module.exports = {
         if (!v) return;
         const dsp = dspNames[Math.floor(k / 16)]; const dealType = typeNames[k % 16];
         const key = `${period}|${dsp}|${dealType}`;
-        const b = buckets.get(key) || { period, dsp, dealType, earned: 0, estimated: 0 };
+        const b = buckets.get(key) || { period, dsp, dealType, earned: 0, estimated: 0, advs: new Set() };
         b.earned += v[0]; b.estimated += v[1];
+        for (const a of v[2]) b.advs.add(a);
         buckets.set(key, b);
       });
     }
     const rows = [...buckets.values()].sort((a, b) => (a.period < b.period ? -1 : a.period > b.period ? 1 : 0)
       || calc.compareDsps(a.dsp, b.dsp) || calc.compareDealTypes(a.dealType, b.dealType));
-    const out = rows.map((b) => ({ ...b, earned: cents(b.earned), estimated: cents(b.estimated) }));
+    const out = rows.map(({ advs, ...b }) => ({ ...b, earned: cents(b.earned), estimated: cents(b.estimated), advertisers: advs.size }));
     for (const b of out) if (lastDataDay && b.period > lastDataDay) b.ahead = true;
     return { granularity, lastDataDay, rows: out };
   },

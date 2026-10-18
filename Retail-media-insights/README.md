@@ -102,7 +102,7 @@ The numbered sections below describe each chart; their numbers follow the order 
 - **Earned revenue** is every played day (settled): there is no unsettled lag. **Estimated revenue** is Programmatic guaranteed reservations booked ahead — a reservation row for each day after the last played day until the deal's flight ends (up to 31 Dec), at the deal's fixed CPM and expected daily delivery. Programmatic guaranteed is the only deal type that reserves inventory, and reservations add no inventory or slot records. The summary tile covers the 30 days after the last played day, whatever the date range; the chart shows booked-ahead periods after the last played day as an outlined/lighter segment.
 - Chart filters: **DSP** (multi-select) and **Deal type** (the four types). Granularity: **Day** default, with Week / Month toggle.
 - **DSP list order: DV360, The Trade Desk, Amazon DSP.** By default **only DV360 is selected**; the others stay unselected until clicked. A selected DSP chip is highlighted (teal outline, light teal fill, bold label).
-- Tooltip per bar: total for the day, then each DSP × deal type amount.
+- Tooltip per bar: total for the day, week or month, then each DSP × deal type amount with the **number of advertisers** earning it in brackets, e.g. `$1,240 (3)`.
 - Data: billing_line_items and reservations (DSP seat, deal type, cleared or fixed CPM).
 
 ### 2. Deals — table, directly under Revenue

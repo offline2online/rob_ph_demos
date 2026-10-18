@@ -60,7 +60,7 @@ test('dataset csv has a header row, escapes cells and neutralises formulas', () 
   assert.equal(res.status, 200);
   assert.match(res.headers.get('content-type'), /text\/csv/);
   const lines = (await res.text()).split('\n');
-  assert.equal(lines[0], 'period,dsp,dealType,earned,estimated');
+  assert.equal(lines[0], 'period,dsp,dealType,earned,estimated,advertisers');
   assert.ok(lines.length > 1);
   const { toCsv } = require('../src/datasets');
   assert.equal(toCsv({ columns: [{ name: 'a' }, { name: 'b' }], rows: [{ a: '=SUM(A1)', b: 'x,"y"' }] }), 'a,b\n\'=SUM(A1),"x,""y"""');

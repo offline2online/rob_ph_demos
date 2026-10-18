@@ -67,7 +67,7 @@
       var b = by[r.period];
       if (!b) { b = by[r.period] = { period: r.period, stacks: [], earned: 0, estimated: 0, ahead: false }; order.push(r.period); }
       if (r.ahead) b.ahead = true;
-      if (r.earned) b.stacks.push({ dsp: r.dsp, dealType: typeName(r.dealType), amount: r.earned });
+      if (r.earned) b.stacks.push({ dsp: r.dsp, dealType: typeName(r.dealType), amount: r.earned, advertisers: r.advertisers });
       b.earned += r.earned; b.estimated += r.estimated;
     });
     var lastYear = data && data.lastDataDay ? data.lastDataDay.slice(0, 4) : null;
@@ -88,11 +88,13 @@
     var fit = Math.max(1, Math.floor((width || 600) / perLabel));
     return Math.max(1, Math.ceil(bars / fit));
   }
-  // Tooltip per bar: total for the period, then each DSP × deal type amount.
+  // Tooltip per bar: total for the period, then each DSP × deal type amount with its number of advertisers in brackets.
   function barTooltip(bar, granularity) {
     if (bar.ahead) return { title: 'Estimated (booked ahead)', rows: [[periodLabel(bar.period, granularity), fmtMoney(bar.estimated)]] };
     var lines = [[periodLabel(bar.period, granularity), fmtMoney(bar.earned)]];
-    bar.stacks.forEach(function (s) { lines.push([s.dsp + ' · ' + s.dealType, fmtMoney(s.amount)]); });
+    bar.stacks.forEach(function (s) {
+      lines.push([s.dsp + ' · ' + s.dealType, fmtMoney(s.amount) + (s.advertisers != null ? ' (' + fmtInt(s.advertisers) + ')' : '')]);
+    });
     if (bar.estimated) lines.push(['Estimated (booked ahead)', fmtMoney(bar.estimated)]);
     return { title: 'Earned revenue', rows: lines };
   }

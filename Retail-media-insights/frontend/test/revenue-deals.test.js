@@ -161,3 +161,14 @@ test('a column header cycles highest first → lowest first → default; Revenue
   assert.deepStrictEqual(RD.nextDealSort(null, 'revenue'), { key: 'revenue', dir: 'asc' });
   assert.strictEqual(RD.nextDealSort({ key: 'revenue', dir: 'asc' }, 'revenue'), null);
 });
+
+test('bar hover shows the number of advertisers in brackets beside each DSP × deal type amount', async () => {
+  const data = await get('/revenue', { dsps: ['DV360'] });
+  assert.ok(data.rows.every((r) => Number.isInteger(r.advertisers) && r.advertisers >= 0));
+  const bar = RD.revenueBars(data)[10];
+  const t = RD.barTooltip(bar, 'day');
+  assert.strictEqual(t.rows[0][1], RD.fmtMoney(bar.earned), 'the period total carries no count');
+  bar.stacks.forEach((s, i) => assert.strictEqual(t.rows[i + 1][1], RD.fmtMoney(s.amount) + ' (' + s.advertisers + ')'));
+  const week = RD.revenueBars(await get('/revenue', { dsps: ['DV360'], granularity: 'week' }))[1];
+  assert.ok(week.stacks.every((s) => s.advertisers >= 1), 'a week counts distinct advertisers across its days');
+});
