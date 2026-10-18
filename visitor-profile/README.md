@@ -11,8 +11,9 @@ merged to `main` on its own schedule, not tied to
 "Live Visitor Profile and Display Types & DSP Integration" for the full
 split rationale.
 
-See [`REQUIREMENTS.md`](./REQUIREMENTS.md) for the actual functional spec —
-this project is still spec-only (no implementation files yet). See
+See [`REQUIREMENTS.md`](./REQUIREMENTS.md) for the actual functional spec.
+The only implementation so far is the clickable concept prototype in
+[`prototype/`](./prototype/index.html) (below). See
 [`../shared/interface-contract.md`](../shared/interface-contract.md) for the
 maintained boundary with `dsp-integration/`.
 
@@ -26,3 +27,23 @@ The board's `requirementsMd` for this project is in sync with
 `REQUIREMENTS.md` (spot-checked 1 Oct 2026), and the board's interface
 record (`EIIhnzWmieAnEyXffudb`) carries contract v3 — see
 [`../shared/interface-contract.md`](../shared/interface-contract.md).
+
+## `prototype/` — clickable concept prototype
+
+`prototype/index.html` is one self-contained static page (no build step),
+published at <https://offline2online.github.io/rob_ph_demos/visitor-profile/prototype/>.
+It is the content frame only, sized to be iframed into HQ Admin, and uses
+in-memory sample data — nothing is saved or sent anywhere. It covers:
+
+- **Attributes** — schema browser across the three families (writability,
+  volatility, winning source, populated/blank) and, for inbound attributes,
+  the per-field precedence editor (reorder, enable, `max_age_s`,
+  `min_confidence`, volatility, default). `Age`/`gender` is the confidence
+  example and `purchase_intent` the precedence-inversion example. A sample
+  visitor toggle (known customer / anonymous prospect) changes which
+  sources have data. Includes **Add custom attribute**.
+- **Connectors** — built-in and configured lists, an add/edit form, and a
+  sample-response → attribute mapping suggester.
+- **Resolution timing** — first-paint budget and slot playback duration,
+  with a per-slot deadline preview against connector latency.
+- **Health & diagnostics** — p50/p95, error rate and last successful call.
