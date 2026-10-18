@@ -292,6 +292,18 @@ async function main() {
   // ── Concept Incubator ──────────────────────────────────────────────────
   // An early-stage idea, held separately from projects/backlogItems until
   // promoteConceptToProject() (app.js) flips status active -> promoted.
+  await check("A member may create an interface between a concept and a project", "allow", () =>
+    setDoc(doc(as(MEMBER), "interfaces/ifCP"), { name: "C <-> P", projectIds: ["cActive", "p1"], endpoints: [{ type: "concept", id: "cActive" }, { type: "project", id: "p1" }], contentMd: "", history: [] }));
+  await check("An interface endpoint with an unknown type is refused", "deny", () =>
+    setDoc(doc(as(MEMBER), "interfaces/ifBad"), { name: "C <-> P", projectIds: ["cActive", "p1"], endpoints: [{ type: "widget", id: "cActive" }, { type: "project", id: "p1" }], contentMd: "" }));
+  await check("Interface endpoints must match projectIds", "deny", () =>
+    setDoc(doc(as(MEMBER), "interfaces/ifBad"), { name: "C <-> P", projectIds: ["cActive", "p1"], endpoints: [{ type: "project", id: "p1" }, { type: "concept", id: "cActive" }], contentMd: "" }));
+  await check("An interface cannot join an endpoint to itself", "deny", () =>
+    setDoc(doc(as(MEMBER), "interfaces/ifBad"), { name: "C <-> C", projectIds: ["p1", "p1"], contentMd: "" }));
+  await check("A legacy two-project interface (no endpoints) is still valid", "allow", () =>
+    setDoc(doc(as(MEMBER), "interfaces/ifLegacy"), { name: "P <-> Q", projectIds: ["p1", "p2"], contentMd: "" }));
+  await check("A concept may carry demoted documents", "allow", () =>
+    setDoc(doc(as(MEMBER), "concepts/cDemoted"), { name: "Demoted", status: "active", demotedFromProjectId: "p1", documents: [{ name: "Spec", contentMd: "x" }], comments: [] }));
   await check("A member may read a concept", "allow", () => getDoc(doc(as(MEMBER), "concepts/cActive")));
   await check("A stranger cannot read a concept", "deny", () => getDoc(doc(as(STRANGER), "concepts/cActive")));
   await check("An editor can create a concept", "allow", () =>

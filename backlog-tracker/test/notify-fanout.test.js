@@ -184,6 +184,48 @@ async function click(db, mod, extra = {}) {
     assert.ok(block.includes("n8") && block.includes("…"));
   });
 
+  await test("deploy request: 50 items with 10 KB descriptions stay under 60 KiB and list every id, title and commit", async () => {
+    const mod = loadIndex(makeFakeDb(seed()), secrets);
+    const items = Array.from({ length: 50 }, (_, i) => ({ id: `id${i}`, type: "feature", title: `Title ${i}`, desc: "d".repeat(10240), deployCommit: `sha${i}` }));
+    const out = mod.__test.buildDeployFireText(items, (lines) => `HEAD\n${lines}\nTAIL`);
+    assert.ok(!out.error, out.error);
+    assert.ok(Buffer.byteLength(out.text) < 60 * 1024);
+    items.forEach((i) => assert.ok(out.text.includes(i.id) && out.text.includes(i.title) && out.text.includes(i.deployCommit)));
+    assert.ok(!out.text.includes("ddddd"), "descriptions are not sent");
+  });
+
+  await test("deploy request: a text that cannot fit names its size instead of firing", async () => {
+    const mod = loadIndex(makeFakeDb(seed()), secrets);
+    const out = mod.__test.buildDeployFireText([{ id: "a", type: "bug", title: "t" }], (lines) => `${"x".repeat(70000)}${lines}`);
+    assert.match(out.error, /bytes for 1 items, over the 61440-byte limit/);
+  });
+
+  await test("deploy click: 18 long tickets fire once, body within 64 KiB; a 400 surfaces its body", async () => {
+    const s = seed();
+    s.projects[PID].deployBranch = "deploy/x";
+    for (let i = 0; i < 18; i++) s.backlogItems[`t${i}`] = { projectId: PID, status: "ready-to-publish", type: "feature", title: `Long ${i}`, desc: "z".repeat(4000), deployCommit: `c${i}` };
+    for (const reject of [false, true]) {
+      const db = makeFakeDb(s);
+      const mod = loadIndex(db, secrets);
+      const bodies = [];
+      const realFetch = global.fetch;
+      global.fetch = async (url, opts) => {
+        bodies.push(Buffer.byteLength(opts.body));
+        return reject ? { ok: false, status: 400, text: async () => "bad payload" } : { ok: true, json: async () => ({ claude_code_session_id: "s1" }) };
+      };
+      try {
+        const before = { name: "Display Types" };
+        const after = { name: "Display Types", deployBranch: "deploy/x", deployNotifyRequestedAt: ts(Date.now()) };
+        await mod.notifyOnProjectReadyToDeploy({ params: { projectId: PID }, data: { before: { data: () => before }, after: { data: () => after } } });
+      } finally { global.fetch = realFetch; }
+      assert.strictEqual(bodies.length, 1);
+      assert.ok(bodies[0] <= 64 * 1024, `body ${bodies[0]}`);
+      const r = db.__state.projects[PID].deployRoutine;
+      if (reject) { assert.strictEqual(r.status, "error"); assert.match(r.errorMessage, /status 400.*bad payload/); }
+      else assert.strictEqual(r.status, "in-progress");
+    }
+  });
+
   console.log(`\n${passed} passed, ${failures.length} failed`);
   process.exit(failures.length ? 1 : 0);
 })();

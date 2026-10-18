@@ -848,14 +848,24 @@ with `status == "live"`.
 ```
 {
   name: string,
-  projectIds: [string, string],   // exactly two
+  projectIds: [string, string],   // the two endpoint ids (project OR concept ids; unique across both)
+  endpoints: [{type: "project"|"concept", id}, {type, id}],  // absent on older docs = two projects
+  history: [{at, reason, from, to, byEmail}],  // every re-point (promote, demote, by hand), append-only
   contentMd: string,
   createdAt: timestamp,
   updatedAt: timestamp,
 }
 ```
-A maintained contract document between exactly two projects, visible and
-editable from either project's Docs page — the live, board-native
+A maintained contract document between exactly two endpoints, each a project
+or a Concept Incubator concept, visible and editable from either end's page
+(a project's Docs page, a concept's detail page). **Dependencies follow the
+item through its life** (ticket 30aL4C1YLrRKYuxPyl8d): promoting a concept
+re-points its interfaces to the new project, and **Demote to concept** (a
+project's Docs page, or MCP `demote_project`) creates a concept carrying the
+project's README, Requirements and additional documents (`concepts.documents`,
+`concepts.demotedFromProjectId`), re-points the project's interfaces to it,
+then archives the project (never deletes it; its tickets and `docRevisions`
+stay). Each move is appended to the interface's `history`. The live, board-native
 counterpart to a shared markdown file in the repo (e.g.
 `shared/interface-contract.md` between Live Visitor Profile and Experience
 Templates). Keep both in sync; treat a divergence as a bug in whichever is

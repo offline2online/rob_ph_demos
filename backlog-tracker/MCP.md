@@ -138,7 +138,8 @@ as text until Anthropic switches on its MCP Apps host.
 | `update_backlog_item` (title, description, type, area) | `set_project_readme` | `update_faq_article` (always a pending revision) | `update_skill` (rename/re-version/replace files) | | |
 | `add_item_comment` | `set_project_artifact`, `set_project_description` | `comment_on_faq_revision` | `delete_skill` | | |
 | | `create_project_document` / `update_project_document` / `delete_project_document` | | `report_skill_miss` (tags a real gap, never edits the skill's own content) | | |
-| | `create_interface` / `update_interface` / `delete_interface` | | | | |
+| | `create_interface` / `update_interface` / `delete_interface` (an interface joins any two projects or concepts: pass `endpoints` `[{type, id}, {type, id}]`, or `projectIds` for two projects; `update_interface` can re-point with `endpoints`) | | | | |
+| | `demote_project` (project → new concept carrying its docs; re-points its interfaces; archives the project; refused with open tickets unless `acknowledgeOpenTickets`) | | | | |
 | | `create_concept` / `add_concept_comment` / `set_concept_readme` / `set_concept_requirements` / `set_concept_artifact` (Concept Incubator; the last three refused once a concept is promoted, except comments) | | | | |
 
 **Setting up your own personal Notify Claude Routine** (so board clicks you

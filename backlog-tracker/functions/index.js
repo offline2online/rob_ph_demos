@@ -462,6 +462,36 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
 // backlog-tracker/README.md for why the fire `text` says so explicitly
 // rather than relying on the Routine's own shared prompt (which is written
 // for a Backlog-shaped request) to infer that on its own.
+// The fire endpoint rejects a body over 64 KiB with a bare 400. On 17 Oct 2026
+// an 18-ticket train put every ticket's full `desc` in the DEPLOY REQUEST
+// (~69 KB of item text) and no session started. The Deploy flow is told not
+// to re-investigate items, so a line is id, type, title, commit and the
+// carried-by note only; the session can read any card from Firestore.
+const FIRE_TEXT_MAX_BYTES = 60 * 1024; // headroom under the endpoint's 64 KiB
+const clip = (str, n) => (str.length > n ? `${str.slice(0, n)}…` : str);
+
+function deployItemLine(i, idx, { compact = false } = {}) {
+  const commit = i.deployCommit
+    ? ` (commit ${i.deployCommit}${i.carriedByCommit ? `; no commit of its own — rides on ${i.carriedByItem ? `ticket ${i.carriedByItem}'s` : "a sibling's"} commit` : ""})`
+    : "";
+  const title = compact ? "" : ` ${clip(String(i.title || ""), 200)}`;
+  return `${idx + 1}. [id: ${i.id}] [${i.type === "bug" ? "Bug" : "Feature"}]${title}${commit}`;
+}
+
+// Returns {text} or {error} (an error names the size instead of letting the
+// endpoint answer a bare 400). `build(itemLines)` assembles the full text.
+function buildDeployFireText(items, build) {
+  let text = build(items.map((i, idx) => deployItemLine(i, idx)).join("\n"));
+  if (Buffer.byteLength(text) > FIRE_TEXT_MAX_BYTES) {
+    text = build(items.map((i, idx) => deployItemLine(i, idx, { compact: true })).join("\n"));
+  }
+  const bytes = Buffer.byteLength(text);
+  if (bytes > FIRE_TEXT_MAX_BYTES) {
+    return { error: `Deploy request is ${bytes} bytes for ${items.length} items, over the ${FIRE_TEXT_MAX_BYTES}-byte limit for the Routine fire endpoint (64 KiB) — the project's routinePromptMd or the train itself is too large` };
+  }
+  return { text };
+}
+
 exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
   { document: "projects/{projectId}", secrets: [NOTIFY_WEBHOOK_URL, CLAUDE_ROUTINE_FIRE_URL, CLAUDE_ROUTINE_TOKEN, BOARD_API_KEY] },
   async (event) => {
@@ -519,15 +549,6 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
       // only job is "what" (which project, which items) and the `=== DEPLOY
       // REQUEST ===` marker ROUTINE_INSTRUCTIONS.md's own Deploy flow section
       // keys off of.
-      const itemLines = items
-        // A card riding on a sibling's commit (carriedByCommit — see
-        // run-backlog-automation.js's carryingCommitOnTrain) says so here,
-        // because its deployCommit is that sibling's sha and no commit
-        // carries its own `Backlog item:` trailer — ROUTINE_INSTRUCTIONS.md's
-        // Deploy flow step 1 tells the session what to verify instead.
-        .map((i, idx) => `${idx + 1}. [id: ${i.id}] [${i.type === "bug" ? "Bug" : "Feature"}] ${i.title} — ${i.desc}${i.deployCommit ? ` (commit ${i.deployCommit}${i.carriedByCommit ? `; no commit of its own — rides on ${i.carriedByItem ? `ticket ${i.carriedByItem}'s` : "a sibling's"} commit` : ""})` : ""}`)
-        .join("\n");
-
       // Since the deployment train there is no per-item branch or PR to
       // find: every ticket this project has built is a commit on ONE
       // integration branch, and deploying means merging that branch once.
@@ -561,13 +582,20 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
 
       const skillsBlock = await phaseSkillsBlock(getFirestore(), "deploy", "DEPLOY");
 
-      const text = `${projectPromptBlock}${skillsBlock}=== DEPLOY REQUEST for "${projectName}" (projectId: ${event.params.projectId}) on the Backlog Tracker & FAQs board ===\n` +
+      const built = buildDeployFireText(items, (itemLines) =>
+        `${projectPromptBlock}${skillsBlock}=== DEPLOY REQUEST for "${projectName}" (projectId: ${event.params.projectId}) on the Backlog Tracker & FAQs board ===\n` +
         trainLine +
         programLine +
-        `These ${items.length} item${items.length === 1 ? "" : "s"} are already implemented, tested, and confirmed "Approved for Deployment" (ready-to-publish). Do NOT investigate, re-implement, or re-test them — follow ROUTINE_INSTRUCTIONS.md's "Notify Claude — Deploy" flow section for exactly what to do with each one, including its FAQ impact review step (3b), which proposes help-centre updates for a human to approve.\n\n` +
-        `Items:\n${itemLines}${selfReportHint}${boardAccessBlock()}`;
+        `These ${items.length} item${items.length === 1 ? "" : "s"} are already implemented, tested, and confirmed "Approved for Deployment" (ready-to-publish). Do NOT investigate, re-implement, or re-test them — follow ROUTINE_INSTRUCTIONS.md's "Notify Claude — Deploy" flow section for exactly what to do with each one, including its FAQ impact review step (3b), which proposes help-centre updates for a human to approve. Item descriptions are not included; read any card from Firestore (backlogItems/<id>) if you need it.\n\n` +
+        `Items:\n${itemLines}${selfReportHint}${boardAccessBlock()}`);
+      const text = built.text;
+      if (built.error) {
+        fireError = built.error;
+        logger.error("Deploy request too large for the Routine fire endpoint", { projectId: event.params.projectId, error: built.error });
+      }
 
       try {
+        if (fireError) throw new Error(fireError);
         const res = await fetch(fireUrl, {
           method: "POST",
           headers: {
@@ -579,11 +607,12 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
           body: JSON.stringify({ text }),
         });
         if (!res.ok) {
-          fireError = `Routine fire endpoint responded with status ${res.status}`;
+          const resBody = await res.text().catch(() => "<unreadable>");
+          fireError = `Routine fire endpoint responded with status ${res.status} (request ${Buffer.byteLength(text)} bytes): ${clip(resBody, 300)}`;
           logger.error("Routine fire endpoint responded with a non-2xx status for deploy request", {
             projectId: event.params.projectId,
             status: res.status,
-            body: await res.text().catch(() => "<unreadable>"),
+            body: resBody,
           });
         } else {
           // Same response shape as notifyOnProjectReadyForReview's own fire
@@ -2076,4 +2105,4 @@ exports.syncConsoleUserClaims = mcp.syncConsoleUserClaims;
 // test/routine-binding-trigger.test.js exercise resolveRoutineCredentials
 // directly instead of standing up a full onDocumentUpdated + fetch-mocking
 // harness for something that's pure db-read-then-fallback logic.
-exports.__test = { runTicketIntake, resolveRoutineCredentials, stampMs, itemNotesBlock, perItemFireText, fireBuildSessionsPerItem };
+exports.__test = { buildDeployFireText, runTicketIntake, resolveRoutineCredentials, stampMs, itemNotesBlock, perItemFireText, fireBuildSessionsPerItem };

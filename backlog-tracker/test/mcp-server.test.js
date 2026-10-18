@@ -512,7 +512,7 @@ async function rpc(token, method, params, id = 1) {
     for (const expected of [
       "set_project_requirements", "set_project_readme", "set_project_artifact", "set_project_description",
       "create_project_document", "update_project_document", "delete_project_document",
-      "create_interface", "update_interface", "delete_interface",
+      "create_interface", "update_interface", "delete_interface", "demote_project",
       "list_doc_revisions", "get_doc_revision",
     ]) assert.ok(names.includes(expected), `missing tool ${expected}`);
   });
@@ -621,6 +621,42 @@ async function rpc(token, method, params, id = 1) {
       const res = await rpc(tokens.access_token, "tools/call", { name: "create_interface", arguments: { projectIds, name: "n", contentMd: "c" } });
       assert.strictEqual(res.body.result.isError, true, `should refuse projectIds ${JSON.stringify(projectIds)}`);
     }
+  });
+
+  await test("an interface can join a concept and a project, and get_concept lists it", async () => {
+    env.store.col("concepts").set("conceptX", { name: "Idea X", status: "active", readmeMd: "r" });
+    const made = JSON.parse((await rpc(tokens.access_token, "tools/call", {
+      name: "create_interface", arguments: { endpoints: [{ type: "concept", id: "conceptX" }, { type: "project", id: "proj1" }], name: "X <-> P1", contentMd: "c" },
+    })).body.result.content[0].text);
+    assert.strictEqual(made.created, true);
+    const c = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "get_concept", arguments: { conceptId: "conceptX" } })).body.result.content[0].text);
+    assert.strictEqual(c.interfaces.length, 1);
+    assert.deepStrictEqual(c.interfaces[0].endpoints, [{ type: "concept", id: "conceptX" }, { type: "project", id: "proj1" }]);
+    const bad = await rpc(tokens.access_token, "tools/call", { name: "create_interface", arguments: { endpoints: [{ type: "concept", id: "nope" }, { type: "project", id: "proj1" }], name: "n", contentMd: "c" } });
+    assert.strictEqual(bad.body.result.isError, true, "a missing endpoint must be refused");
+    env.store.col("concepts").delete("conceptX");
+  });
+
+  await test("demote_project creates a concept with the docs, re-points interfaces and archives the project", async () => {
+    env.store.col("projects").set("demoP", { name: "Demo P" });
+    env.store.col("projects").set("otherP", { name: "Other P" });
+    env.store.col("projectDocs").set("dd1", { projectId: "demoP", name: "Extra", contentMd: "extra body" });
+    const made = JSON.parse((await rpc(tokens.access_token, "tools/call", {
+      name: "create_interface", arguments: { projectIds: ["demoP", "otherP"], name: "Demo <-> Other", contentMd: "c" },
+    })).body.result.content[0].text);
+    const res = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "demote_project", arguments: { projectId: "demoP" } })).body.result.content[0].text);
+    assert.strictEqual(res.demoted, true);
+    const concept = env.store.col("concepts").get(res.conceptId);
+    assert.strictEqual(concept.demotedFromProjectId, "demoP");
+    assert.deepStrictEqual(concept.documents, [{ name: "Extra", contentMd: "extra body" }]);
+    const iface = env.store.col("interfaces").get(made.interfaceId);
+    assert.deepStrictEqual(iface.endpoints, [{ type: "concept", id: res.conceptId }, { type: "project", id: "otherP" }]);
+    assert.deepStrictEqual(iface.projectIds, [res.conceptId, "otherP"]);
+    assert.strictEqual(iface.history.length, 1);
+    assert.strictEqual(env.store.col("projects").get("demoP").archived, true);
+    const again = await rpc(tokens.access_token, "tools/call", { name: "demote_project", arguments: { projectId: "demoP" } });
+    assert.strictEqual(again.body.result.isError, true, "an archived project can't be demoted again");
+    env.store.col("concepts").delete(res.conceptId);
   });
 
   await test("sets and clears a project's Artifact link, https only", async () => {
@@ -1084,7 +1120,7 @@ async function rpc(token, method, params, id = 1) {
     // with the scope left off, which a per-tool test would not.
     const writeNames = ["set_project_requirements", "set_project_readme", "set_project_artifact", "set_project_description",
       "create_project_document", "update_project_document", "delete_project_document",
-      "create_interface", "update_interface", "delete_interface"];
+      "create_interface", "update_interface", "delete_interface", "demote_project"];
     for (const name of writeNames) {
       assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === name).scope, "board.write", `${name} must require board.write`);
     }

@@ -1095,8 +1095,30 @@ function legacyDeployItemsForProject(pid) {
   );
 }
 
+// An interface joins two endpoints, each a project or a concept
+// (firestore.rules `match /interfaces`). `projectIds` holds the two ids and
+// is what the boards query on; `endpoints` types them. A document saved
+// before concepts could be an end has no `endpoints` and is two projects.
+function interfaceEndpoints(f) {
+  if (Array.isArray(f.endpoints) && f.endpoints.length === 2) return f.endpoints;
+  return (Array.isArray(f.projectIds) ? f.projectIds : []).map((id) => ({ type: "project", id }));
+}
 function interfacesForProject(pid) {
   return interfaces.filter((f) => Array.isArray(f.projectIds) && f.projectIds.includes(pid));
+}
+// The id of an endpoint is unique across projects and concepts (Firestore
+// auto-ids), so "interfaces for X" is the same lookup for either type.
+const interfacesForEndpoint = interfacesForProject;
+function endpointName(ep) {
+  if (!ep) return "";
+  if (ep.type === "concept") {
+    const c = concepts.find((x) => x.id === ep.id);
+    return c ? c.name : ep.id;
+  }
+  return projectName(ep.id);
+}
+function endpointOther(f, anchorId) {
+  return interfaceEndpoints(f).find((e) => e.id !== anchorId) || null;
 }
 
 // The "⋮" options menu is the one place Archived/Requirements/Interfaces
@@ -1135,10 +1157,10 @@ function optionsMenuHTML(project) {
 
   if (ifaces.length) {
     html += ifaces.map((f) => {
-      const otherId = f.projectIds.find((id) => id !== pid);
-      return `<button type="button" class="options-menu-item interface-open-btn" data-interface-id="${escapeHTML(f.id)}">
+      const other = endpointOther(f, pid);
+      return `<button type="button" class="options-menu-item interface-open-btn" data-interface-id="${escapeHTML(f.id)}" data-anchor-id="${escapeHTML(pid)}">
         ${escapeHTML(f.name)}
-        <span class="options-menu-sub">interface with ${escapeHTML(projectName(otherId))}</span>
+        <span class="options-menu-sub">interface with ${escapeHTML(endpointName(other))}${other && other.type === "concept" ? " (concept)" : ""}</span>
       </button>`;
     }).join("");
   } else {
@@ -2702,6 +2724,7 @@ onSnapshot(interfacesRef, (snap) => {
   interfaces = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
   render();
   if (docsProjectId) renderDocsPage();
+  if (conceptDetailId) renderConceptDetailPage();
 }, onListenerError("interfaces"));
 
 onSnapshot(programsRef, (snap) => {
@@ -3661,20 +3684,47 @@ function populateReleaseSelect(selectEl, selectedId, { emptyLabel = "No release"
 }
 
 // An interface is a maintained contract document shared between exactly
-// two projects — the backlog-tracker-native equivalent of a shared
-// markdown file, so it survives independently of either project's repo
-// folder and is editable from either side.
-async function addInterface(name, projectIds, contentMd) {
+// two endpoints (each a project or a concept) — the backlog-tracker-native
+// equivalent of a shared markdown file, so it survives independently of
+// either side's repo folder and is editable from either end.
+async function addInterface(name, endpoints, contentMd) {
   await addDoc(interfacesRef, {
-    name: name.trim(), projectIds, contentMd: contentMd || "",
+    name: name.trim(), endpoints, projectIds: endpoints.map((e) => e.id), contentMd: contentMd || "",
+    history: [],
     createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
   });
 }
 
-async function updateInterface(id, name, contentMd) {
-  await setDoc(doc(db, "interfaces", id), {
-    name: name.trim(), contentMd: contentMd || "", updatedAt: serverTimestamp(),
-  }, { merge: true });
+// `newEndpoints`, when given, re-points the interface by hand; the move is
+// appended to its history like a promote or demote.
+async function updateInterface(id, name, contentMd, newEndpoints) {
+  const data = { name: name.trim(), contentMd: contentMd || "", updatedAt: serverTimestamp() };
+  if (newEndpoints) {
+    const f = interfaces.find((x) => x.id === id);
+    data.endpoints = newEndpoints;
+    data.projectIds = newEndpoints.map((e) => e.id);
+    data.history = [...((f && f.history) || []), {
+      at: new Date(), reason: "re-pointed by hand", from: f ? interfaceEndpoints(f) : [], to: newEndpoints,
+      byEmail: (auth && auth.currentUser && auth.currentUser.email) || null,
+    }];
+  }
+  await setDoc(doc(db, "interfaces", id), data, { merge: true });
+}
+
+// Moves every interface that touches `from` onto `to`, keeping the other
+// end and appending to each interface's history. Used by promote (concept ->
+// project) and demote (project -> concept). A failure part-way leaves the
+// remaining interfaces on the old id, which a retry picks up.
+async function repointInterfaces(from, to, reason) {
+  const byEmail = (auth && auth.currentUser && auth.currentUser.email) || null;
+  for (const f of interfacesForEndpoint(from.id)) {
+    const eps = interfaceEndpoints(f).map((e) => (e.id === from.id ? { type: to.type, id: to.id } : e));
+    await setDoc(doc(db, "interfaces", f.id), {
+      endpoints: eps, projectIds: eps.map((e) => e.id),
+      history: [...(f.history || []), { at: new Date(), reason, from: { type: from.type, id: from.id }, to: { type: to.type, id: to.id }, byEmail }],
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+  }
 }
 
 async function deleteInterface(id) {
@@ -3842,7 +3892,7 @@ projectsRoot.addEventListener("click", async (e) => {
   const feedBtn = e.target.closest(".feed-requirements-btn");
   if (feedBtn) { closeAllOptionMenus(); openFeedModal(feedBtn.dataset.projectId); return; }
   const ifaceOpenBtn = e.target.closest(".interface-open-btn");
-  if (ifaceOpenBtn) { closeAllOptionMenus(); openInterfaceModal(ifaceOpenBtn.dataset.interfaceId); return; }
+  if (ifaceOpenBtn) { closeAllOptionMenus(); openInterfaceModal(ifaceOpenBtn.dataset.interfaceId, ifaceOpenBtn.dataset.anchorId); return; }
   const ifaceAddBtn = e.target.closest(".interface-add-btn");
   if (ifaceAddBtn) { closeAllOptionMenus(); openInterfaceModal(null, ifaceAddBtn.dataset.projectId); return; }
   const archiveProjectBtn = e.target.closest(".project-archive-project-btn");
@@ -5171,6 +5221,7 @@ document.getElementById("docs-open-releases-btn").addEventListener("click", () =
 function openDocsPage(pid) {
   closeAllSubPages();
   ensureLazy("projectDocs");
+  ensureLazy("concepts");
   docsProjectId = pid;
   document.getElementById("projects-root").hidden = true;
   document.getElementById("board-page-header").hidden = true;
@@ -5186,20 +5237,21 @@ function closeDocsPage() {
   document.getElementById("board-page-header").hidden = false;
 }
 
-function interfaceRowHTML(f) {
-  const otherId = f.projectIds.find((id) => id !== docsProjectId);
+function interfaceRowHTML(f, anchorId) {
+  const other = endpointOther(f, anchorId);
   const contentPreview = f.contentMd
     ? `<div class="interface-row-content">${escapeHTML(f.contentMd)}</div>`
     : `<p class="interface-row-empty" style="margin:8px 0 0;">No contract written yet.</p>`;
+  const moves = (f.history || []).length;
   return `
-    <div class="interface-row" data-id="${f.id}">
+    <div class="interface-row" data-id="${f.id}" data-anchor-id="${escapeHTML(anchorId)}">
       <div class="interface-row-top">
         <div>
           <div class="interface-row-title">${escapeHTML(f.name)}</div>
-          <div class="interface-row-with">with <b>${escapeHTML(projectName(otherId))}</b></div>
+          <div class="interface-row-with">with <b>${escapeHTML(endpointName(other))}</b>${other && other.type === "concept" ? " (concept)" : ""}${moves ? ` &middot; re-pointed ${moves}&times;` : ""}</div>
         </div>
         <div class="interface-row-actions">
-          <button type="button" class="icon-btn interface-edit-btn" data-id="${f.id}" title="Edit">&#9998;</button>
+          <button type="button" class="icon-btn interface-edit-btn" data-id="${f.id}" data-anchor-id="${escapeHTML(anchorId)}" title="Edit">&#9998;</button>
           <button type="button" class="icon-btn interface-delete-btn" data-id="${f.id}" title="Remove">&times;</button>
         </div>
       </div>
@@ -5281,8 +5333,8 @@ function renderDocsPage() {
   }
   const rows = interfacesForProject(docsProjectId);
   document.getElementById("docs-interfaces-list").innerHTML = rows.length
-    ? rows.map(interfaceRowHTML).join("")
-    : '<p class="interface-row-empty">No interfaces defined with another project yet.</p>';
+    ? rows.map((f) => interfaceRowHTML(f, docsProjectId)).join("")
+    : '<p class="interface-row-empty">No interfaces defined with another project or concept yet.</p>';
   const docRows = docsForProject(docsProjectId);
   document.getElementById("docs-extra-docs-list").innerHTML = docRows.length
     ? docRows.map(projectDocRowHTML).join("")
@@ -5350,7 +5402,7 @@ docsFaqAutoFlagInput.addEventListener("change", () => {
 });
 document.getElementById("docs-interfaces-list").addEventListener("click", (e) => {
   const editBtn = e.target.closest(".interface-edit-btn");
-  if (editBtn) { openInterfaceModal(editBtn.dataset.id); return; }
+  if (editBtn) { openInterfaceModal(editBtn.dataset.id, editBtn.dataset.anchorId); return; }
   const delBtn = e.target.closest(".interface-delete-btn");
   if (delBtn) { deleteInterface(delBtn.dataset.id); return; }
 });
@@ -5430,22 +5482,56 @@ const updateIfContentCount = wireCharCount(ifContentInput, document.getElementBy
 // has to first open (or silently mutate the state of) the Docs page.
 let ifAnchorProjectId = null;
 
-function openInterfaceModal(interfaceId, anchorProjectId) {
+// Every project (except archived ones) and every active concept, apart from
+// the anchor itself, grouped; values are "project:<id>" / "concept:<id>".
+function populateEndpointSelect(selectEl, excludeId, selected, { offerCreate = false } = {}) {
+  const ps = projects.filter((p) => p.id !== excludeId && (!p.archived || selected === `project:${p.id}`));
+  const cs = concepts.filter((c) => c.id !== excludeId && (c.status !== "promoted" || selected === `concept:${c.id}`));
+  const opt = (v, label) => `<option value="${escapeHTML(v)}"${v === selected ? " selected" : ""}>${escapeHTML(label)}</option>`;
+  selectEl.innerHTML =
+    (ps.length ? `<optgroup label="Projects">${ps.map((p) => opt(`project:${p.id}`, p.name)).join("")}</optgroup>` : "") +
+    (cs.length ? `<optgroup label="Concepts">${cs.map((c) => opt(`concept:${c.id}`, c.name)).join("")}</optgroup>` : "") +
+    (offerCreate ? '<option value="__new_project__">+ New project…</option>' : "");
+}
+// The typed endpoint for a bare id: a concept if one has it, else a project.
+function endpointRef(id) {
+  return { type: concepts.some((c) => c.id === id) ? "concept" : "project", id };
+}
+function parseEndpointValue(v) {
+  const i = (v || "").indexOf(":");
+  return i < 0 ? null : { type: v.slice(0, i), id: v.slice(i + 1) };
+}
+ifOtherProject.addEventListener("change", () => {
+  if (ifOtherProject.value !== "__new_project__") return;
+  const fallback = [...ifOtherProject.options].find((o) => o.value && o.value !== "__new_project__");
+  ifOtherProject.value = fallback ? fallback.value : "";
+  openProjectModal((newId) => {
+    populateEndpointSelect(ifOtherProject, ifAnchorProjectId, `project:${newId}`, { offerCreate: true });
+  });
+});
+
+// `anchorId` is the project or concept whose page the modal was launched
+// from (its id is unique across both). It is the fixed end; the select
+// picks the other. In edit mode the select re-points the other end.
+function openInterfaceModal(interfaceId, anchorId) {
   editingInterfaceId = interfaceId || null;
-  ifAnchorProjectId = anchorProjectId || null;
+  ensureLazy("concepts");
   ifBackdrop.hidden = false;
+  document.querySelector("label[for='if-other-project']").hidden = false;
+  ifOtherProject.hidden = false;
   if (editingInterfaceId) {
     const f = interfaces.find((x) => x.id === editingInterfaceId);
+    const anchor = anchorId || (f ? interfaceEndpoints(f)[0].id : null);
+    ifAnchorProjectId = anchor;
     document.getElementById("if-title").textContent = "Edit interface";
-    document.querySelector("label[for='if-other-project']").hidden = true;
-    ifOtherProject.hidden = true;
+    const other = f ? endpointOther(f, anchor) : null;
+    populateEndpointSelect(ifOtherProject, anchor, other ? `${other.type}:${other.id}` : "");
     ifNameInput.value = f ? f.name : "";
     ifContentInput.value = f ? f.contentMd || "" : "";
   } else {
+    ifAnchorProjectId = anchorId || null;
     document.getElementById("if-title").textContent = "New interface";
-    document.querySelector("label[for='if-other-project']").hidden = false;
-    ifOtherProject.hidden = false;
-    populateProjectSelect(ifOtherProject, ifAnchorProjectId, { offerCreate: true });
+    populateEndpointSelect(ifOtherProject, ifAnchorProjectId, "", { offerCreate: true });
     ifNameInput.value = "";
     ifContentInput.value = "";
   }
@@ -5453,9 +5539,9 @@ function openInterfaceModal(interfaceId, anchorProjectId) {
   ifNameInput.focus();
 }
 function closeInterfaceModal() { ifBackdrop.hidden = true; editingInterfaceId = null; ifAnchorProjectId = null; }
-wireProjectSelectCreate(ifOtherProject, () => ifAnchorProjectId);
 
 document.getElementById("docs-add-interface-btn").addEventListener("click", () => openInterfaceModal(null, docsProjectId));
+document.getElementById("concept-add-interface-btn").addEventListener("click", () => { if (conceptDetailId) openInterfaceModal(null, conceptDetailId); });
 document.getElementById("if-cancel").addEventListener("click", closeInterfaceModal);
 document.getElementById("if-close").addEventListener("click", closeInterfaceModal);
 ifBackdrop.addEventListener("click", (e) => { if (e.target === ifBackdrop) closeInterfaceModal(); });
@@ -5467,12 +5553,19 @@ document.getElementById("if-submit").addEventListener("click", async () => {
   if (!name) { ifNameInput.focus(); return; }
   const content = ifContentInput.value;
   try {
+    const other = parseEndpointValue(ifOtherProject.value);
+    const anchorEp = ifAnchorProjectId ? endpointRef(ifAnchorProjectId) : null;
     if (editingInterfaceId) {
-      await updateInterface(editingInterfaceId, name, content);
+      const f = interfaces.find((x) => x.id === editingInterfaceId);
+      let eps = null;
+      if (f && other && anchorEp) {
+        const cur = endpointOther(f, ifAnchorProjectId);
+        if (!cur || cur.id !== other.id) eps = [anchorEp, other];
+      }
+      await updateInterface(editingInterfaceId, name, content, eps);
     } else {
-      const otherId = ifOtherProject.value;
-      if (!otherId || !ifAnchorProjectId) return;
-      await addInterface(name, [ifAnchorProjectId, otherId], content);
+      if (!other || !anchorEp) return;
+      await addInterface(name, [anchorEp, other], content);
     }
   } catch (err) {
     await showAlert(describeSaveError(err, [
@@ -5585,6 +5678,13 @@ async function promoteConceptToProject(conceptId, name, programId, releaseId, re
   // projects/{id}/docs/* (not fields on the project doc).
   if (concept.requirementsMd) await setProjectRequirements(ref.id, concept.requirementsMd);
   if (concept.readmeMd) await setProjectReadme(ref.id, concept.readmeMd);
+  // Additional documents a demote carried onto the concept go back on.
+  for (const d of Array.isArray(concept.documents) ? concept.documents : []) {
+    await addProjectDoc(ref.id, d.name || "Untitled", d.contentMd || "");
+  }
+  // Every interface the concept had now joins the new project, with the
+  // move recorded on the interface.
+  await repointInterfaces({ type: "concept", id: conceptId }, { type: "project", id: ref.id }, "concept promoted to project");
   await setDoc(doc(db, "concepts", conceptId), {
     status: "promoted",
     promotedProjectId: ref.id,
@@ -5593,6 +5693,53 @@ async function promoteConceptToProject(conceptId, name, programId, releaseId, re
   }, { merge: true });
   return ref.id;
 }
+
+// Demote a project back to a concept: the concept takes the project's README,
+// Requirements and additional documents, every interface re-points to it,
+// then the project is archived (never deleted — its tickets and revision
+// history stay with it). Order matters for recovery: the concept exists
+// before anything is moved, and the project is archived last, so a failure
+// part-way leaves a live project and a harmless extra concept.
+async function demoteProjectToConcept(projectId) {
+  const project = projects.find((p) => p.id === projectId);
+  if (!project) return null;
+  await loadProjectDocs(projectId);
+  if (projectDocLoadError.get(projectId)) throw new Error(`Couldn't read the project's documents: ${projectDocLoadError.get(projectId)}`);
+  const readmeMd = projectDocText.get(`${projectId}/readme`) || "";
+  const requirementsMd = projectDocText.get(`${projectId}/requirements`) || "";
+  const documents = docsForProject(projectId).map((d) => ({ name: d.name || "", contentMd: d.contentMd || "" }));
+  const total = readmeMd.length + requirementsMd.length + documents.reduce((n, d) => n + d.name.length + d.contentMd.length, 0);
+  if (total > 700000) throw new Error(`The project's documents total ${total} characters, too many to carry in one concept (limit about 700000). Trim them first.`);
+  const email = (auth && auth.currentUser && auth.currentUser.email) || null;
+  const ref = await addDoc(conceptsRef, {
+    name: project.name, status: "active", readmeMd, requirementsMd, documents,
+    comments: [{ author: "viewer", text: `Demoted from project "${project.name}" (${projectId}). Its interfaces now point here; the archived project keeps its tickets and revision history.`, at: new Date() }],
+    demotedFromProjectId: projectId, createdByEmail: email,
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  });
+  await repointInterfaces({ type: "project", id: projectId }, { type: "concept", id: ref.id }, "project demoted to concept");
+  await setDoc(doc(db, "projects", projectId), {
+    archived: true, archivedAt: serverTimestamp(), demotedToConceptId: ref.id, updatedAt: serverTimestamp(),
+  }, { merge: true });
+  return ref.id;
+}
+
+document.getElementById("docs-demote-btn").addEventListener("click", async () => {
+  if (!docsProjectId) return;
+  if (!(await requireConceptEditor())) return;
+  const pid = docsProjectId;
+  const open = activeItemCountForProject(pid);
+  const msg = `Demote "${projectName(pid)}" to a concept? Its README, Requirements and documents are copied to a new concept, its interfaces re-point to that concept, and the project is archived (nothing is deleted).` +
+    (open ? `\n\nIt still has ${open} open ticket${open === 1 ? "" : "s"}; they stay on the archived project.` : "");
+  if (!(await showConfirmDialog(msg, { title: "Demote to concept", okLabel: "Demote" }))) return;
+  try {
+    const conceptId = await demoteProjectToConcept(pid);
+    closeDocsPage();
+    if (conceptId) openConceptDetailPage(conceptId);
+  } catch (err) {
+    await showAlert(describeSaveError(err, []));
+  }
+});
 
 function openConceptIncubatorPage() {
   closeAllSubPages();
@@ -5708,6 +5855,16 @@ function renderConceptDetailPage() {
   document.getElementById("concept-comment-submit").hidden = readonly;
   document.getElementById("concept-delete-btn").hidden = readonly;
 
+  const cIfaces = interfacesForEndpoint(c.id);
+  document.getElementById("concept-interfaces-list").innerHTML = cIfaces.length
+    ? cIfaces.map((f) => interfaceRowHTML(f, c.id)).join("")
+    : '<p class="interface-row-empty">No interfaces yet.</p>';
+  const carried = Array.isArray(c.documents) ? c.documents : [];
+  document.getElementById("concept-docs-block").hidden = !carried.length;
+  document.getElementById("concept-docs-list").innerHTML = carried.map((d) => `
+    <div class="interface-row"><div class="interface-row-top"><div class="interface-row-title">${escapeHTML(d.name || "")}</div></div>
+    <div class="interface-row-content">${escapeHTML(d.contentMd || "")}</div></div>`).join("");
+
   const notes = (c.comments || []).slice().reverse();
   document.getElementById("concept-notes-list").innerHTML = notes.length
     ? notes.map(eiNoteRowHTML).join("")
@@ -5738,6 +5895,12 @@ document.getElementById("concept-incubator-list").addEventListener("click", asyn
   else openConceptDetailPage(card.dataset.id);
 });
 
+document.getElementById("concept-interfaces-list").addEventListener("click", (e) => {
+  const editBtn = e.target.closest(".interface-edit-btn");
+  if (editBtn) { openInterfaceModal(editBtn.dataset.id, editBtn.dataset.anchorId); return; }
+  const delBtn = e.target.closest(".interface-delete-btn");
+  if (delBtn) { deleteInterface(delBtn.dataset.id); return; }
+});
 document.getElementById("concept-readme-save").addEventListener("click", async () => {
   if (!conceptDetailId) return;
   if (!(await requireConceptEditor())) return;

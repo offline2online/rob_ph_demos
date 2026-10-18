@@ -1156,6 +1156,72 @@ const PROJECT_WRITABLE_FIELDS = new Set([
 // Kept in step with the 300-char bound in firestore.rules.
 const PROJECT_DESCRIPTION_MAX = 300;
 
+// ── Interface endpoints ──────────────────────────────────────────────────
+// An interface joins exactly two endpoints, each a project or a Concept
+// Incubator concept. `projectIds` (the two ids, array-contains-queryable)
+// is kept alongside the typed `endpoints` so older readers keep working;
+// a document with no `endpoints` is read as two projects. Re-pointing (a
+// promote or a demote) appends to `history` and never rewrites the past.
+const ENDPOINT_TYPES = ["project", "concept"];
+const ENDPOINT_COLLECTION = { project: "projects", concept: "concepts" };
+
+function endpointsOf(i) {
+  const v = i || {};
+  if (Array.isArray(v.endpoints) && v.endpoints.length === 2) {
+    return v.endpoints.map((e) => ({ type: e && e.type === "concept" ? "concept" : "project", id: String((e && e.id) || "") }));
+  }
+  return (Array.isArray(v.projectIds) ? v.projectIds : []).map((id) => ({ type: "project", id: String(id) }));
+}
+
+// Validates a caller-supplied pair and checks both ends exist. Returns
+// {endpoints} or {error}.
+async function resolveEndpoints(args) {
+  let eps;
+  if (Array.isArray(args.endpoints)) {
+    eps = args.endpoints.map((e) => ({ type: String((e && e.type) || ""), id: String((e && e.id) || "") }));
+  } else if (Array.isArray(args.projectIds)) {
+    eps = args.projectIds.map((id) => ({ type: "project", id: String(id) }));
+  } else {
+    return { error: "Pass endpoints (two {type, id} objects, type project or concept) or projectIds (two project ids)." };
+  }
+  if (eps.length !== 2) return { error: "An interface is a contract between exactly two endpoints." };
+  for (const e of eps) {
+    if (!ENDPOINT_TYPES.includes(e.type)) return { error: `Endpoint type must be "project" or "concept"; got "${e.type}".` };
+    if (!e.id) return { error: "Every endpoint needs an id." };
+  }
+  if (eps[0].id === eps[1].id) return { error: "An interface spans two different endpoints." };
+  for (const e of eps) {
+    const snap = await db().collection(ENDPOINT_COLLECTION[e.type]).doc(e.id).get();
+    if (!snap.exists) return { error: `No ${e.type} with id ${e.id}.` };
+  }
+  return { endpoints: eps };
+}
+
+function describeInterface(id, i) {
+  const v = i || {};
+  return { id, name: v.name || "", endpoints: endpointsOf(v), projectIds: v.projectIds || [], contentMd: v.contentMd || "", history: (Array.isArray(v.history) ? v.history : []).map((h) => ({ at: tsToISO(h.at), reason: h.reason || "", from: h.from || null, to: h.to || null })), updatedAt: tsToISO(v.updatedAt), updatedByEmail: v.updatedByEmail || null };
+}
+
+// Moves every interface that touches `from` onto `to`, keeping the other
+// end, and records the move in the interface's own history.
+async function repointInterfaces(from, to, reason, session) {
+  const snap = await db().collection("interfaces").where("projectIds", "array-contains", from.id).get();
+  const moved = [];
+  for (const d of snap.docs) {
+    const v = d.data() || {};
+    const eps = endpointsOf(v).map((e) => (e.id === from.id ? { type: to.type, id: to.id } : e));
+    await d.ref.update({
+      endpoints: eps,
+      projectIds: eps.map((e) => e.id),
+      history: FieldValue.arrayUnion({ at: new Date(), reason, from: { type: from.type, id: from.id }, to: { type: to.type, id: to.id }, byEmail: session.email }),
+      updatedAt: FieldValue.serverTimestamp(),
+      updatedByEmail: session.email,
+    });
+    moved.push(d.id);
+  }
+  return moved;
+}
+
 async function updateProjectFields(projectId, fields) {
   for (const key of Object.keys(fields)) {
     if (!PROJECT_WRITABLE_FIELDS.has(key)) {
@@ -2149,10 +2215,7 @@ const TOOLS = [
       if (want.includes("interfaces")) {
         out.interfaces = [];
         (await db().collection("interfaces").where("projectIds", "array-contains", projectId).get())
-          .forEach((d) => {
-            const i = d.data() || {};
-            out.interfaces.push({ id: d.id, name: i.name || "", projectIds: i.projectIds || [], contentMd: i.contentMd || "", updatedAt: tsToISO(i.updatedAt), updatedByEmail: i.updatedByEmail || null });
-          });
+          .forEach((d) => { out.interfaces.push(describeInterface(d.id, d.data())); });
       }
       return textResult(out);
     },
@@ -2364,32 +2427,33 @@ const TOOLS = [
   },
   {
     name: "create_interface",
-    description: "Create a maintained contract document between exactly two projects — the board-native counterpart of a shared markdown file like shared/interface-contract.md. Visible and editable from either project's Docs page.",
+    description: "Create a maintained contract document between exactly two endpoints — the board-native counterpart of a shared markdown file like shared/interface-contract.md. Each endpoint is a project or a Concept Incubator concept, so a dependency can be recorded at any stage of an idea. Pass endpoints ([{type:'project'|'concept', id}, ...]) or, for two projects, projectIds. Visible and editable from both ends' pages, and it follows an endpoint through promote and demote.",
     scope: "board.write",
     inputSchema: {
       type: "object",
       properties: {
-        projectIds: { type: "array", items: { type: "string" }, minItems: 2, maxItems: 2, description: "Exactly two project ids." },
+        endpoints: {
+          type: "array", minItems: 2, maxItems: 2,
+          items: { type: "object", properties: { type: { type: "string", enum: ENDPOINT_TYPES }, id: { type: "string" } }, required: ["type", "id"], additionalProperties: false },
+          description: "Exactly two endpoints, each a project or a concept.",
+        },
+        projectIds: { type: "array", items: { type: "string" }, minItems: 2, maxItems: 2, description: "Shorthand for two project endpoints. Ignored when endpoints is given." },
         name: { type: "string", description: 'e.g. "Live Visitor Profile ↔ Experience Templates".' },
         contentMd: { type: "string", description: `Markdown. Up to ${DOC_MD_MAX} characters.` },
       },
-      required: ["projectIds", "name", "contentMd"], additionalProperties: false,
+      required: ["name", "contentMd"], additionalProperties: false,
     },
     async run(args, session) {
-      const ids = Array.isArray(args.projectIds) ? args.projectIds.map(String) : [];
-      if (ids.length !== 2) return toolError("projectIds must name exactly two projects — an interface is a contract between two.");
-      if (ids[0] === ids[1]) return toolError("An interface spans two different projects.");
       const name = String(args.name || "").trim();
       const md = String(args.contentMd == null ? "" : args.contentMd);
       if (!name) return toolError("name is required.");
       if (name.length > DOC_NAME_MAX) return toolError(`name is limited to ${DOC_NAME_MAX} characters.`);
       if (md.length > DOC_MD_MAX) return toolError(`An interface document is limited to ${DOC_MD_MAX} characters; that was ${md.length}.`);
-      for (const id of ids) {
-        const snap = await db().collection("projects").doc(id).get();
-        if (!snap.exists) return toolError(`No project with id ${id}.`);
-      }
+      const r = await resolveEndpoints(args);
+      if (r.error) return toolError(r.error);
+      const ids = r.endpoints.map((e) => e.id);
       const ref = await db().collection("interfaces").add({
-        name, projectIds: ids, contentMd: md,
+        name, endpoints: r.endpoints, projectIds: ids, contentMd: md, history: [],
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
         createdByEmail: session.email,
@@ -2397,19 +2461,24 @@ const TOOLS = [
         createdVia: "mcp",
       });
       await audit(session, "create_interface", { interfaceId: ref.id, projectIds: ids, name, chars: md.length });
-      return textResult({ created: true, interfaceId: ref.id, projectIds: ids, name, chars: md.length });
+      return textResult({ created: true, interfaceId: ref.id, endpoints: r.endpoints, projectIds: ids, name, chars: md.length });
     },
   },
   {
     name: "update_interface",
-    description: "Rename an interface contract, replace its contents, or both. Sending contentMd overwrites the whole document; the previous version is kept in the revision history. Changing a contract affects BOTH projects — say so in the change.",
+    description: "Rename an interface contract, replace its contents, re-point it to different endpoints, or any of these. Sending contentMd overwrites the whole document; the previous version is kept in the revision history. A re-point (endpoints) is appended to the interface's own history. Changing a contract affects BOTH ends — say so in the change.",
     scope: "board.write",
     inputSchema: {
       type: "object",
       properties: {
-        interfaceId: { type: "string", description: "From get_project_docs." },
+        interfaceId: { type: "string", description: "From get_project_docs or get_concept." },
         name: { type: "string" },
         contentMd: { type: "string", description: `The whole document. Up to ${DOC_MD_MAX} characters.` },
+        endpoints: {
+          type: "array", minItems: 2, maxItems: 2,
+          items: { type: "object", properties: { type: { type: "string", enum: ENDPOINT_TYPES }, id: { type: "string" } }, required: ["type", "id"], additionalProperties: false },
+          description: "Re-point the interface: the complete new pair of endpoints.",
+        },
       },
       required: ["interfaceId"], additionalProperties: false,
     },
@@ -2426,16 +2495,24 @@ const TOOLS = [
         if (name.length > DOC_NAME_MAX) return toolError(`name is limited to ${DOC_NAME_MAX} characters.`);
         fields.name = name;
       }
+      if (args.endpoints != null) {
+        const r = await resolveEndpoints({ endpoints: args.endpoints });
+        if (r.error) return toolError(r.error);
+        fields.endpoints = r.endpoints;
+        fields.projectIds = r.endpoints.map((e) => e.id);
+        fields.history = FieldValue.arrayUnion({ at: new Date(), reason: "re-pointed by hand", from: endpointsOf(current), to: r.endpoints, byEmail: session.email });
+      }
       if (args.contentMd != null) {
         const md = String(args.contentMd);
         if (md.length > DOC_MD_MAX) return toolError(`An interface document is limited to ${DOC_MD_MAX} characters; that was ${md.length}.`);
         revisionId = await recordDocRevision(session, "interface", { interfaceId: snap.id, projectIds: current.projectIds || [], name: current.name || "" }, current.contentMd || "");
         fields.contentMd = md;
       }
-      if (!("name" in fields) && !("contentMd" in fields)) return toolError("Nothing to change — pass name, contentMd, or both.");
+      if (!("name" in fields) && !("contentMd" in fields) && !("endpoints" in fields)) return toolError("Nothing to change — pass name, contentMd, endpoints, or any of them.");
       await ref.update(fields);
-      await audit(session, "update_interface", { interfaceId: snap.id, projectIds: current.projectIds || [], changed: Object.keys(fields), revisionId });
-      return textResult({ updated: true, interfaceId: snap.id, projectIds: current.projectIds || [], changed: Object.keys(fields), revisionId });
+      const projectIds = fields.projectIds || current.projectIds || [];
+      await audit(session, "update_interface", { interfaceId: snap.id, projectIds, changed: Object.keys(fields), revisionId });
+      return textResult({ updated: true, interfaceId: snap.id, projectIds, changed: Object.keys(fields), revisionId });
     },
   },
   {
@@ -2624,7 +2701,7 @@ const TOOLS = [
   },
   {
     name: "get_concept",
-    description: "One concept in full — README, Requirements, every discussion comment, its docsUrl (the deep link to the same README/Requirements/discussion page on the board), and, if it's been promoted, the projectId it became (switch to get_project_docs/list_projects for that project from then on).",
+    description: "One concept in full — README, Requirements, every discussion comment, its interfaces (dependencies on projects or other concepts), its docsUrl (the deep link to the same README/Requirements/discussion page on the board), and, if it's been promoted, the projectId it became (switch to get_project_docs/list_projects for that project from then on).",
     scope: "board.read",
     inputSchema: {
       type: "object",
@@ -2635,10 +2712,16 @@ const TOOLS = [
       const snap = await db().collection("concepts").doc(String(args.conceptId)).get();
       if (!snap.exists) return toolError(`No concept with id ${args.conceptId}. Call list_concepts first.`);
       const v = snap.data() || {};
+      const interfaces = [];
+      (await db().collection("interfaces").where("projectIds", "array-contains", snap.id).get())
+        .forEach((d) => { interfaces.push(describeInterface(d.id, d.data())); });
       return textResult({
         id: snap.id,
         name: v.name || "",
         status: v.status || "active",
+        interfaces,
+        demotedFromProjectId: v.demotedFromProjectId || null,
+        documents: (Array.isArray(v.documents) ? v.documents : []).map((x) => ({ name: x.name || "", contentMd: x.contentMd || "" })),
         readmeMd: v.readmeMd || "",
         requirementsMd: v.requirementsMd || "",
         docsUrl: `${PUBLIC_ORIGIN}/#concept-${snap.id}`,
@@ -2653,6 +2736,55 @@ const TOOLS = [
         createdAt: tsToISO(v.createdAt),
         updatedAt: tsToISO(v.updatedAt),
       });
+    },
+  },
+  {
+    name: "demote_project",
+    description: "Demote a project back to a concept: creates a new Concept Incubator concept carrying the project's README, Requirements and additional documents, re-points every interface the project had to that concept (each move is recorded in the interface's history), then archives the project. Nothing is deleted — the archived project keeps its tickets and revision history, and the concept's demotedFromProjectId points back at it. Refused while the project has open tickets unless acknowledgeOpenTickets is true.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string", description: "From list_projects." },
+        conceptName: { type: "string", description: "Name for the new concept. Defaults to the project's name." },
+        acknowledgeOpenTickets: { type: "boolean", description: "Set true to demote a project that still has open tickets; they stay on the archived project." },
+      },
+      required: ["projectId"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const projectId = String(args.projectId);
+      const pref = db().collection("projects").doc(projectId);
+      const psnap = await pref.get();
+      if (!psnap.exists) return toolError(`No project with id ${projectId}. Call list_projects first.`);
+      const project = psnap.data() || {};
+      if (project.archived) return toolError("That project is already archived.");
+      const open = (await db().collection("backlogItems").where("projectId", "==", projectId).get())
+        .docs.filter((d) => (d.data() || {}).status !== "archived").length;
+      if (open && args.acknowledgeOpenTickets !== true) {
+        return toolError(`That project has ${open} open ticket${open === 1 ? "" : "s"}. Archive them first, or pass acknowledgeOpenTickets: true to leave them on the archived project.`);
+      }
+      const name = String(args.conceptName || project.name || "").trim();
+      if (!name) return toolError("The project has no name; pass conceptName.");
+      if (name.length > 120) return toolError("A concept name is limited to 120 characters.");
+      const readmeMd = await readProjectDoc(projectId, "readme", project);
+      const requirementsMd = await readProjectDoc(projectId, "requirements", project);
+      const documents = (await db().collection("projectDocs").where("projectId", "==", projectId).get())
+        .docs.map((d) => { const v = d.data() || {}; return { name: v.name || "", contentMd: v.contentMd || "" }; });
+      const total = readmeMd.length + requirementsMd.length + documents.reduce((n, x) => n + x.name.length + x.contentMd.length, 0);
+      if (total > 700000) return toolError(`Together the project's documents are ${total} characters, too large to carry in one concept document (limit about 700000). Trim them first.`);
+      const cref = await db().collection("concepts").add({
+        name, readmeMd, requirementsMd, documents,
+        comments: [{ author: session.email, text: `Demoted from project "${project.name || projectId}" (${projectId}). Its interfaces now point here; the archived project keeps its tickets and revision history.`, at: new Date() }],
+        status: "active", promotedProjectId: null, promotedAt: null,
+        demotedFromProjectId: projectId,
+        createdByEmail: session.email,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      const moved = await repointInterfaces({ type: "project", id: projectId }, { type: "concept", id: cref.id }, "project demoted to concept", session);
+      await pref.set({ archived: true, archivedAt: FieldValue.serverTimestamp(), demotedToConceptId: cref.id, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      await audit(session, "demote_project", { projectId, conceptId: cref.id, interfaces: moved.length, documents: documents.length });
+      return textResult({ demoted: true, projectId, conceptId: cref.id, name, interfacesRepointed: moved, documentsCarried: documents.length, projectArchived: true, docsUrl: `${PUBLIC_ORIGIN}/#concept-${cref.id}` });
     },
   },
   {
@@ -3532,7 +3664,7 @@ const SERVER_INSTRUCTIONS = [
   "You have full read/write access to project DOCUMENTATION and are expected to keep it current as you work: get_project_docs to read a project's Requirements, README, additional documents and interface contracts, then set_project_requirements / set_project_readme / create_project_document / update_project_document / create_interface / update_interface to update them.",
   "Documentation writes REPLACE the whole document, so read it first and send back the complete revised text — never a fragment. The version you replace is kept, and list_doc_revisions / get_doc_revision can recover it.",
   "Where a project's documentation also exists as a file in the repo (REQUIREMENTS.md, README.md, shared/interface-contract.md), the two are meant to match: update both, and treat a divergence as a bug in whichever is stale.",
-  "The Concept Incubator holds pre-project ideas that haven't been promoted to a tracked project yet — create_concept makes a new one, list_concepts / get_concept read them, and add_concept_comment / set_concept_readme / set_concept_requirements / set_concept_artifact write to them, same read/write split as project documentation. A concept has no backlog of its own until it's promoted; once promoted, use list_projects/get_project_docs on the project it became instead.",
+  "The Concept Incubator holds pre-project ideas that haven't been promoted to a tracked project yet — create_concept makes a new one, list_concepts / get_concept read them, and add_concept_comment / set_concept_readme / set_concept_requirements / set_concept_artifact write to them, same read/write split as project documentation. demote_project turns a project back into a concept (carrying its docs, re-pointing its interfaces, archiving it). Interfaces (create_interface / update_interface) can join any two projects or concepts and follow them through promote and demote. A concept has no backlog of its own until it's promoted; once promoted, use list_projects/get_project_docs on the project it became instead.",
   "To show what is waiting on a person in the release pipeline, call get_ready_for_testing_board (the Ready for Testing column) or get_approved_for_deployment_board (the Approved for Deployment column) rather than list_backlog_items: both are MCP Apps, so a host that supports them renders the tickets as cards inline in the conversation, and every host gets the same data as text.",
   "Use search_faq / get_faq_article to answer Personalisation Hub product questions from the published help centre instead of guessing.",
   "You can also write to the help centre: create_faq_article files a brand-new draft, and update_faq_article proposes a change to an existing one as a pendingRevision — never live. Either way a person still reviews and approves it in FAQ Management before anything publishes; list_pending_faq_revisions and get_faq_revision let you check on a proposal's status.",
