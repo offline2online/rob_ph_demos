@@ -219,3 +219,44 @@ esac
     expect(existsSync(log)).toBe(false)
   })
 })
+
+describe('relinkPlan', () => {
+  const SHA = 'b'.repeat(40)
+  const OLD = 'c'.repeat(40)
+  const link = (ref: string, rest = 'index.html') => `https://rawcdn.githack.com/offline2online/rob_ph_demos/${ref}/dsp-integration/prototype/${rest}`
+  const NOW = '2026-10-19T05:00:00.000Z'
+  const card = (o: Record<string, unknown>) => ({ id: 'x', title: 't', status: 'ready-for-testing', deployBranch: 'deploy/dsp-integration', previewUrl: link(OLD), ...o })
+
+  it('writes previewUrl, previewSha, previewUpdatedAt and updatedAt, and no notes', () => {
+    const [p] = rules.relinkPlan([card({ id: 'a', previewUrl: link(OLD, 'demo/x.json') })], SHA, 'deploy/dsp-integration', NOW)
+    expect(p.fields).toEqual({
+      previewUrl: link(SHA, 'demo/x.json'), previewSha: SHA,
+      previewUpdatedAt: { timestamp: NOW }, updatedAt: { timestamp: NOW },
+    })
+    expect('notes' in p.fields || 'notes' in p).toBe(false)
+  })
+
+  it('keeps only testing cards on the branch (by deployBranch or by a link to the branch)', () => {
+    const plan = rules.relinkPlan([
+      card({ id: 'rft' }),
+      card({ id: 'rtp', status: 'ready-to-publish' }),
+      card({ id: 'backlog', status: 'backlog' }),
+      card({ id: 'live', status: 'published-live' }),
+      card({ id: 'other', deployBranch: 'deploy/other' }),
+      card({ id: 'hand', deployBranch: undefined, previewUrl: link('deploy/dsp-integration') }),
+      card({ id: 'nolink', previewUrl: 'https://example.com/' }),
+    ], SHA, 'deploy/dsp-integration', NOW)
+    expect(plan.map((p: { id: string }) => p.id)).toEqual(['rft', 'rtp', 'hand'])
+  })
+
+  it('skips a card already at the sha', () => {
+    expect(rules.relinkPlan([card({ previewUrl: link(SHA) })], SHA, 'deploy/dsp-integration', NOW)).toEqual([])
+  })
+
+  it('board-tickets.mjs posts no relink note', () => {
+    const src = readFileSync(join(ROOT, 'scripts/board-tickets.mjs'), 'utf8')
+    expect(src).not.toContain('Test link updated')
+    const block = src.slice(src.indexOf("const relinkSha = value('--relink-prototype')"), src.indexOf('several tickets, one run'))
+    expect(block).not.toContain('appendNote')
+  })
+})

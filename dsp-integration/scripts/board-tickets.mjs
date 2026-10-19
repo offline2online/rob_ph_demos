@@ -35,7 +35,10 @@
    capture a day later — a fresh bundle over a day-old snapshot, which is
    what three "Failed testing" rounds were looking at. A commit URL is
    immutable, so caching it is correct. dsp-prototype.yml runs this after
-   it pushes a rebuild; --branch limits it to cards on that train.
+   it pushes a rebuild; --branch limits it to cards on that train. It writes
+   previewUrl, previewSha, previewUpdatedAt and updatedAt in one PATCH per
+   card and posts no note: the card shows the link's commit and update time
+   itself (relinkPlan in scripts/lib/board-rules.mjs chooses the cards).
 
    Moves follow the board's own rules (scripts/lib/board-rules.mjs, tested in
    apps/api/test/board-tickets-guards.test.ts). Every card is checked first;
@@ -62,7 +65,7 @@
 import { readFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { parseTicketBatch } from './lib/ticket-batch.mjs'
-import { cardWrite, checkMove, checkNotify, noteAppendWrite, toFields } from './lib/board-rules.mjs'
+import { cardWrite, checkMove, checkNotify, noteAppendWrite, relinkPlan, toFields } from './lib/board-rules.mjs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -135,7 +138,7 @@ async function tickets() {
     .filter((d) => field(d, 'projectId') === PROJECT_ID)
     .map((d) => ({
       id: d.name.split('/').pop(), name: d.name, title: field(d, 'title') ?? '(untitled)', status: field(d, 'status') ?? 'backlog',
-      previewUrl: field(d, 'previewUrl'), deployCommit: field(d, 'deployCommit'), deployBranch: field(d, 'deployBranch'),
+      previewUrl: field(d, 'previewUrl'), previewSha: field(d, 'previewSha'), deployCommit: field(d, 'deployCommit'), deployBranch: field(d, 'deployBranch'),
       createdAt: d.fields?.createdAt?.timestampValue ?? null,
       blockedReason: d.fields?.blocked?.mapValue?.fields?.reason?.stringValue ?? null,
       blockedNote: d.fields?.blocked?.mapValue?.fields?.note?.stringValue ?? null,
@@ -352,7 +355,6 @@ if (flag('--train-ready')) {
 
 /* ------------------------------------------- test links → an immutable commit */
 
-const PROTOTYPE_LINK = /^https:\/\/(?:rawcdn|raw)\.githack\.com\/offline2online\/rob_ph_demos\/(.+?)\/dsp-integration\/prototype\/(.*)$/
 const relinkSha = value('--relink-prototype')
 if (relinkSha) {
   if (!/^[0-9a-f]{40}$/.test(relinkSha)) {
@@ -360,40 +362,26 @@ if (relinkSha) {
     process.exit(2)
   }
   const onBranch = value('--branch')
-  const candidates = all.filter((t) => ['ready-for-testing', 'ready-to-publish'].includes(t.status))
-  const changes = candidates.flatMap((t) => {
-    const m = t.previewUrl?.match(PROTOTYPE_LINK)
-    if (!m) return []
-    const [, ref, rest] = m
-    if (ref === relinkSha) return []
-    /* A card is on this train if the automation stamped it so, or if its
-       link already points at the branch (a hand-filed card has no
-       deployBranch — wVhGSCVDsMotrATnADZ8 was skipped for exactly that). */
-    if (onBranch && t.deployBranch !== onBranch && ref !== onBranch) return []
-    const next = `https://rawcdn.githack.com/offline2online/rob_ph_demos/${relinkSha}/dsp-integration/prototype/${rest || 'index.html'}`
-    return [{ t, ref, next }]
-  })
+  const changes = relinkPlan(all, relinkSha, onBranch)
   console.log(`\nTest links → ${relinkSha.slice(0, 7)}${onBranch ? ` (cards on ${onBranch})` : ''}: ${changes.length} to re-point`)
-  for (const { t, ref, next } of changes) console.log(`  ${t.title.slice(0, 60)}\n    ${ref} → ${next}`)
+  for (const { title, ref, next } of changes) console.log(`  ${title.slice(0, 60)}\n    ${ref} → ${next}`)
   if (changes.length && !flag('--yes')) console.log('  (dry run: pass --yes to write)')
   if (changes.length && flag('--yes')) {
-    for (const { t, ref, next } of changes) {
-      const res = await fetch(`${BOARD}/backlogItems/${t.id}?updateMask.fieldPaths=previewUrl&updateMask.fieldPaths=updatedAt`, {
+    for (const { id, fields } of changes) {
+      const names = Object.keys(fields)
+      const res = await fetch(`${BOARD}/backlogItems/${id}?${names.map((n) => `updateMask.fieldPaths=${n}`).join('&')}`, {
         method: 'PATCH', headers: { ...AUTH, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fields: { previewUrl: { stringValue: next }, updatedAt: { timestampValue: new Date().toISOString() } } }),
+        body: JSON.stringify({ fields: toFields(fields) }),
       })
-      if (!res.ok) throw new Error(`Re-pointing ${t.id} failed (${res.status}): ${await res.text()}`)
-      await appendNote(
-        t.id,
-        `Test link updated: the hosted prototype was rebuilt from ${relinkSha.slice(0, 7)} and the link now points at that commit — ${next} — ` +
-        `rather than at ${ref}. (A branch URL on githack is cached: its data snapshot can stay a day stale under a fresh-looking bundle. ` +
-        `A commit URL cannot change.) If you tested on the old link, please look again.`,
-      )
+      if (!res.ok) throw new Error(`Re-pointing ${id} failed (${res.status}): ${await res.text()}`)
     }
     const after = await tickets()
-    const wrong = changes.filter(({ t, next }) => after.find((a) => a.id === t.id)?.previewUrl !== next)
+    const wrong = changes.filter(({ id, fields }) => {
+      const a = after.find((x) => x.id === id)
+      return a?.previewUrl !== fields.previewUrl || a?.previewSha !== fields.previewSha
+    })
     if (wrong.length) {
-      console.error(`\nWrote, but ${wrong.length} link(s) did not land: ${wrong.map(({ t }) => t.id).join(', ')}`)
+      console.error(`\nWrote, but ${wrong.length} link(s) did not land: ${wrong.map(({ id }) => id).join(', ')}`)
       process.exit(1)
     }
     console.log(`\nRe-pointed ${changes.length} — verified.`)

@@ -144,7 +144,7 @@ immutable, so caching it is correct. After the workflow pushes a rebuild
 of a train it runs `npm run board:tickets -- --relink-prototype <sha>
 --branch <train>`, which re-points every testing card on that train at
 `https://rawcdn.githack.com/offline2online/rob_ph_demos/<sha>/dsp-integration/prototype/…`
-and says so on the card.
+and updates the card's link, commit and update time (no note is posted — the card shows the update).
 
 To rebuild by hand (no `.env` needed — it starts the API on a spare port
 against a throwaway database, seeds it, captures the snapshot, builds, and

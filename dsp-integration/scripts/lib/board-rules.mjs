@@ -202,6 +202,34 @@ export function checkMove({ card, to, deployCommit, git, project, actor, now = n
 /* A hand-stamp with no status change (--deploy-commit alone, or `@sha`). */
 export const checkStamp = ({ card, deployCommit, git, project }) => checkMove({ card, to: undefined, deployCommit, git, project })
 
+/* ------------------------------------------- test links → an immutable commit */
+
+const PROTOTYPE_LINK = /^https:\/\/(?:rawcdn|raw)\.githack\.com\/offline2online\/rob_ph_demos\/(.+?)\/dsp-integration\/prototype\/(.*)$/
+
+/* What --relink-prototype writes: one entry per card whose link should move
+   to `sha`. Only testing cards (ready-for-testing / ready-to-publish) on
+   `branch` are considered — on it by deployBranch, or by a link that already
+   points at the branch (a hand-filed card has no deployBranch;
+   wVhGSCVDsMotrATnADZ8 was skipped for exactly that) — and a card already at
+   the sha is skipped. The write is previewUrl, previewSha,
+   previewUpdatedAt and updatedAt in one PATCH, and never a note: the card
+   shows the link's commit and time itself. */
+export function relinkPlan(cards, sha, branch, now = new Date().toISOString()) {
+  return cards.flatMap((t) => {
+    if (!TRAIN_STATUSES.includes(t.status)) return []
+    const m = t.previewUrl?.match(PROTOTYPE_LINK)
+    if (!m) return []
+    const [, ref, rest] = m
+    if (ref === sha) return []
+    if (branch && t.deployBranch !== branch && ref !== branch) return []
+    const next = `https://rawcdn.githack.com/offline2online/rob_ph_demos/${sha}/dsp-integration/prototype/${rest || 'index.html'}`
+    return [{
+      id: t.id, title: t.title, ref, next,
+      fields: { previewUrl: next, previewSha: sha, previewUpdatedAt: { timestamp: now }, updatedAt: { timestamp: now } },
+    }]
+  })
+}
+
 /* ------------------------------------------------------- Firestore values */
 
 export function toValue(v) {
