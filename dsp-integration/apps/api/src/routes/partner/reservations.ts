@@ -26,7 +26,7 @@ import { dspDealTerms } from '../../dsp/dealTerms'
 import { termStateAt } from '../../billing/term'
 import { assignmentOf, assumedViewsPerWindow, effectivePartnerIds, findPosition, heldFor, isRealtime, unsellableReason, windowHoursFor, windowMsFor, windowStartOf } from '../../domain/positions'
 import { positionHourGroups, windowOpenFor } from '../../domain/operatingGate'
-import { checkAdvertiser, checkCampaign, checkFloor, checkTargeting, checkVersionCount, firstRefusal } from '../../exchange/enforcement'
+import { checkAdvertiser, checkAudiences, checkCampaign, checkFloor, checkTargeting, checkVersionCount, firstRefusal } from '../../exchange/enforcement'
 import { handOff } from '../../exchange/handoff'
 import { auctionClaimed } from '../../exchange/scheduler'
 import { HttpError, conflict, notFound, validationFailed } from '../../http/errors'
@@ -138,6 +138,7 @@ export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (ap
       () => checkCampaign(ctx, c.campaignId),
       () => checkAdvertiser(ctx, pos, partner, seat!.name, seat!.domain ? [seat!.domain] : [], seat!.id, windowStart),
       () => checkTargeting(pos, c.pricingType, b.type === 'reserve'),
+      () => checkAudiences(ctx, c.campaignId, { partnerId: partner.id, seatId: seat!.id }),
       () => checkVersionCount(ctx, pos, c.campaignId),
       /* The rate is checked against the resolved floor (platform, slot, DSP, buyers list): a deal never clears below the slot floor. */
       () => checkFloor(ctx, b.bidCpm as number, c.advertiserId, { partner, position: pos }),

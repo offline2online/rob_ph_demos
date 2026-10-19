@@ -86,7 +86,10 @@ export interface paths {
         };
         /**
          * The shared targeting variables this partner may use
-         * @description Only variables enabled for the calling DSP. Values are never returned.
+         * @description Only variables enabled for the calling DSP. Values are never returned, except for audiences shared with one advertiser only:
+         *     with `seatId`, Visitor Segments lists as `audiences` the values shared with the advertiser that seat is mapped to. Another
+         *     seat's response omits them, and a campaign, reservation or deal from a seat that is not mapped to the advertiser using one is
+         *     refused `targeting_not_supported`, naming the segment.
          */
         get: operations["listTargetingAttributes"];
         put?: never;
@@ -1035,6 +1038,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/advertisers/{advertiserId}/audiences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Share Visitor Segments values with this advertiser only (replaces its audiences)
+         * @description Audiences (ticket OanRebXyEryAXBQrBsVe): Visitor Segments values the retailer shares with one advertiser only,
+         *     such as "Blackmores · new to brand". The retailer's own systems decide who is in each audience and publish it as a
+         *     visitor segment; PH never receives purchase history. A value is private once any advertiser holds it: it leaves the
+         *     general Visitor Segments vocabulary, and only the advertisers that hold it can target it (a value can be held by more
+         *     than one advertiser only if the retailer adds it to each). Works the same for a DSP and a direct advertiser. Each value
+         *     must be defined for Visitor Segments in Shared Targeting Variables (or already private to another advertiser), unless
+         *     that variable takes free text. Removing a value is refused `has_dependents` while a live (shared) deal inviting a seat
+         *     of the advertiser, or an approved campaign of the advertiser, targets it; the details name each. Admin only; a
+         *     Marketing user reads `audiences` on `GET /admin/v1/advertisers`.
+         */
+        put: operations["saveAdvertiserAudiences"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/advertisers/{advertiserId}/deals": {
         parameters: {
             query?: never;
@@ -1886,6 +1917,8 @@ export interface components {
             /** @enum {string} */
             group: "localisation" | "personalisation";
             operators: string[];
+            /** @description Visitor Segments only, and only when the request names a `seatId`: the audiences shared with the advertiser that seat is mapped to. */
+            audiences?: string[];
         };
         Condition: {
             source: string;
@@ -3175,6 +3208,8 @@ export interface components {
             freeText: boolean;
             /** @description The platform fixes the values (age: the IAB brackets 18–24 … 65+); they are not editable and never free text. */
             fixed?: boolean;
+            /** @description Visitor Segments only: the values shared with one advertiser only. They are left out of `values` (the vocabulary offered to everyone else) and listed here for the advertiser form. */
+            privateValues?: string[];
         };
         /** @enum {string} */
         Provider: "google_dv360" | "amazon_dsp" | "the_trade_desk";
@@ -3301,6 +3336,8 @@ export interface components {
                 seatName: string | null;
                 synced: boolean;
             }[];
+            /** @description Visitor Segments values shared with this advertiser only (private audiences). Empty for an advertiser with none. */
+            audiences: string[];
             /**
              * @description Play windows this advertiser holds from the current window on.
              *     0 means it has nothing on the booking schedule, so there is
@@ -3985,7 +4022,10 @@ export interface operations {
     };
     listTargetingAttributes: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description One of the calling DSP's synced seats (400 otherwise). */
+                seatId?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5517,6 +5557,39 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    saveAdvertiserAudiences: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                advertiserId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    audiences: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description The advertiser with its audiences */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Advertiser"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorised"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["HasDependents"];
+        };
+    };
     listAdvertiserDeals: {
         parameters: {
             query?: {
@@ -5570,6 +5643,8 @@ export interface operations {
             content: {
                 "application/json": {
                     name: string;
+                    /** @description Visitor Segments values shared with this advertiser only; see PUT /admin/v1/advertisers/{advertiserId}/audiences. */
+                    audiences?: string[];
                 };
             };
         };
@@ -5583,6 +5658,7 @@ export interface operations {
                     "application/json": {
                         advertiserId: string;
                         name: string;
+                        audiences: string[];
                     };
                 };
             };

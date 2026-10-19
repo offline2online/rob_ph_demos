@@ -881,6 +881,48 @@ place of *Admin only* and no Save changes bar.
   campaigns come through); *Campaign approval* (what Required and Not
   required do).
 
+#### Advertiser audiences — segments shared with one advertiser only
+
+(Ticket OanRebXyEryAXBQrBsVe, 19 Oct 2026.) The retailer can share specific audiences (Visitor Segments
+values) with **one advertiser only**, such as "Blackmores · new to brand", "Blackmores · lapsed",
+"Blackmores · existing buyer". The retailer works out brand status in its own systems (CRM, CDP, loyalty)
+and publishes it as visitor segments when a visitor is identified; PH never receives purchase history. The
+advertiser can then target, and bid up or down on, its own audiences. Amazon Ads and Kroger Precision
+Marketing share brand-specific (new-to-brand) audiences privately with one advertiser in the same way.
+
+- **Add / Edit advertiser** (Advertisers / Inventory) has an **Audiences** multi-select. It works the same for
+  a DSP and a direct advertiser: "Add new Advertiser" gains the section, and every advertiser row has an Edit
+  action opening the same form (Admin; Marketing sees the Audiences column read-only; Help desk has no page).
+  A column shows how many each advertiser has.
+- Options are the Visitor Segments values defined in Shared Targeting Variables (§6) and any already private to
+  another advertiser. A selected segment is **private to that advertiser**; it is private to more than one
+  advertiser only if the retailer adds it to each. Stored in `advertiser_audiences` (migration 0078).
+- A private segment is **removed from the general Visitor Segments vocabulary** offered to everyone else
+  (`values`); the Shared Targeting Variables screen lists it apart as `privateValues`, and saving that screen
+  never drops it from the stored vocabulary.
+- **Where the advertiser sees it**: a DSP's `GET /v1/targeting/attributes?seatId=` lists it as `audiences` on
+  Visitor Segments only for a seat mapped to the advertiser (`advertiser_seats`). A campaign (create and
+  submit), reservation or bid from any other advertiser or seat using it is refused `targeting_not_supported`
+  naming the segment. A deal that targets it may invite only seats mapped to an advertiser holding it (named
+  buyers only, no IAB-category invites). It is listed on the deal sheet as seller-side targeting.
+- **Personalisation rules are unchanged**: Visitor Segments is a Personalisation Variable, so private audiences
+  work on deals (private auction, preferred, guaranteed) and reserve bookings, never the open real-time auction
+  (`targeting_not_supported`). The variable must still be enabled for the advertiser's DSP in Shared Targeting
+  Variables; a direct advertiser needs no DSP permission.
+- **Removing** a segment from an advertiser is refused `409 has_dependents`, naming each, while a shared (live)
+  deal inviting one of its seats, or an approved campaign of the advertiser, targets it.
+- API: `PUT /admin/v1/advertisers/{advertiserId}/audiences` (admin), `audiences` on
+  `GET /admin/v1/advertisers` and in `POST /admin/v1/advertisers/direct`. Changes are recorded in the SSP change
+  history. Tooltips: the Audiences heading and the segment picker explain that the retailer's own systems decide
+  membership and that only this advertiser can target it, on deals and reserved slots.
+- Not yet: the HQ Admin campaign Targeting tab for a signed-in direct advertiser, and the deal editor's value
+  picker, do not filter private values by advertiser (the API enforces it at campaign, reservation and bid);
+  segments published by connectors are not read automatically (values come from the Shared Targeting
+  Variables vocabulary).
+- Dependencies: Live Visitor Profile connectors publish brand-status values into `visitor_segments`; PH Core
+  evaluates Visitor Segments at play time (existing). See the Retail Media Insights competitive analysis, row
+  "New-to-brand".
+
 ### Submission
 
 Advertisers submit campaigns (content packages) and assets through the API

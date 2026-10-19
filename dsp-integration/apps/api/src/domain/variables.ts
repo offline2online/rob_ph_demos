@@ -4,15 +4,19 @@
 import { ALL_DSPS, TARGETING_VARIABLES, isAggregateVariable, parseAggregateValue, type SharedVariable } from '@ph-dsp/types'
 import type { Access, VariableValues } from '../repos/CompanySettingsRepo'
 import type { PartnerRecord } from '../repos/PartnerRepo'
+import { SEGMENT_VARIABLE } from './audiences'
 
 /* A variable is shared once at least one DSP may target it. */
 export const isShared = (a: Access | undefined) => a === ALL_DSPS || (Array.isArray(a) && a.length > 0)
 
-export const sharedVariables = (access: Record<string, Access>, values: Record<string, VariableValues> = {}): SharedVariable[] =>
+/* `privateValues` are the Visitor Segments values shared with one advertiser only: they leave the vocabulary offered to everyone else
+   (advertiser audiences, 19 Oct 2026) and are listed apart for the advertiser form and the deal editor. */
+export const sharedVariables = (access: Record<string, Access>, values: Record<string, VariableValues> = {}, privateValues: string[] = []): SharedVariable[] =>
   TARGETING_VARIABLES.map((v) => ({
     key: v.key, label: v.label, group: v.group, exampleValues: v.tip ?? `e.g. ${v.values}`, access: access[v.key],
     /* Values only exist for a shared variable. A closed vocabulary (age brackets) is fixed by the platform, never free text. */
-    values: !isShared(access[v.key]) ? [] : v.fixedValues ? [...v.fixedValues] : values[v.key]?.values ?? [],
+    values: !isShared(access[v.key]) ? [] : v.fixedValues ? [...v.fixedValues] : (values[v.key]?.values ?? []).filter((x) => v.key !== SEGMENT_VARIABLE || !privateValues.includes(x)),
+    ...(v.key === SEGMENT_VARIABLE ? { privateValues } : {}),
     freeText: isShared(access[v.key]) && !v.fixedValues && !!values[v.key]?.freeText,
     ...(v.fixedValues ? { fixed: true } : {}),
   }))
