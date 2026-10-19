@@ -1163,6 +1163,11 @@
         <div class="sysmap-toolbar">
           <label class="field-label" for="system-map-release">Release</label>
           <select id="system-map-release"><option value="">All releases</option></select>
+          <span class="sysmap-zoom" role="group" aria-label="Zoom the map">
+            <button type="button" class="icon-btn" id="system-map-zoom-out" title="Zoom out" aria-label="Zoom out"><span class="material-symbols-outlined">remove</span></button>
+            <button type="button" class="icon-btn" id="system-map-zoom-in" title="Zoom in (Ctrl + scroll also zooms, drag pans)" aria-label="Zoom in"><span class="material-symbols-outlined">add</span></button>
+            <button type="button" class="icon-btn" id="system-map-fit" title="Fit the whole map" aria-label="Fit the whole map"><span class="material-symbols-outlined">fit_screen</span></button>
+          </span>
           <div class="sysmap-legend" id="system-map-legend"></div>
         </div>
         <div class="sysmap-scroll" id="system-map-canvas"></div>
@@ -1270,7 +1275,7 @@
         <h2>Releases</h2>
         <span class="page-header-count" id="releases-count">0 releases</span>
       </div>
-      <p class="field-hint">A release bundles projects so their approved FAQ updates go live on the help centre together, the moment the release is marked live. Marking a release live can't be undone.</p>
+      <p class="field-hint">A release bundles projects (and roadmap concepts) so their approved FAQ updates go live on the help centre together, the moment the release is marked live. Marking a release live can't be undone.</p>
       <div class="form-row" style="justify-content:flex-end;margin-bottom:12px;">
         <button type="button" class="btn-primary" id="releases-add-btn" data-editor-only>+ New release</button>
       </div>
@@ -1315,6 +1320,31 @@
     <div class="health-strip" id="health-strip" hidden></div>
 
     <footer class="app-footer"><button type="button" class="logo-link footer-logo-btn" id="footer-logo-btn" title="Back to Agent Console home"><img src="img/ph-agent-console-logo.svg" alt="PH Agent Console" class="footer-logo-img"></button> <span id="app-version"></span></footer>
+  </div>
+
+  <!-- Release editor (app.js openReleaseEditor) — add or edit a release and
+       assign projects and Concept Incubator concepts to it. -->
+  <div class="modal-backdrop" id="release-editor-backdrop" hidden>
+    <div class="modal-panel dialog-panel" role="dialog" aria-modal="true" aria-labelledby="release-editor-title">
+      <div class="modal-header">
+        <h2 id="release-editor-title">Edit release</h2>
+        <button type="button" class="modal-close" id="release-editor-close" aria-label="Close">&times;</button>
+      </div>
+      <div class="dialog-fields">
+        <div><label class="dialog-field-label" for="release-editor-name">Name</label>
+          <input id="release-editor-name" class="dialog-field-input" type="text" maxlength="120" placeholder="e.g. October 2026"></div>
+        <div><label class="dialog-field-label" for="release-editor-version">Release number / version (optional)</label>
+          <input id="release-editor-version" class="dialog-field-input" type="text" maxlength="40" placeholder="e.g. 2.4.0"></div>
+        <div><span class="dialog-field-label">Projects</span><div class="release-check-list" id="release-editor-projects"></div></div>
+        <div><span class="dialog-field-label">Concepts (roadmap items)</span><div class="release-check-list" id="release-editor-concepts"></div></div>
+      </div>
+      <div class="form-row" style="justify-content:flex-end;">
+        <div class="form-actions">
+          <button type="button" class="btn-ghost" id="release-editor-cancel">Cancel</button>
+          <button type="button" class="btn-primary" id="release-editor-save">Save changes</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Generic in-app dialog — replaces window.confirm/prompt/alert

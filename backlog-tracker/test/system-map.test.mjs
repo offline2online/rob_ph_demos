@@ -18,7 +18,7 @@ const base = { projects, concepts, interfaces: [], releases };
 const m = buildSystemMap(base);
 const core = m.nodes.filter((n) => n.kind === "core");
 assert.deepEqual(core.map((n) => n.name).slice(0, 7), ["Campaigns & Experiences", "Agent Harness", "MCP Access", "Vector Database", "Devices & Touchpoints", "Live Visitor Profile", "Store Data"]);
-assert.ok(core.every((n) => n.status === "Live" || n.name === "PH Team"));
+assert.ok(core.every((n) => n.status === "Live"));
 assert.equal(m.byId.dsp.status, "Project");
 assert.equal(m.byId.dsp.release, "Release 5.0");
 assert.equal(m.byId.old.status, "Live", "a project in a live release is Live");
@@ -68,3 +68,37 @@ console.log("system-map: ok");
   assert.ok(mc.edges.some((e) => e.from === "c9" && e.to === "core:profile"));
 }
 console.log("system-map (new concepts): ok");
+
+// Clean-up: internal items out, Live Visitor Profile once, clean room in, fits the page
+{
+  const { zoomViewBox, FIT_VIEWBOX } = await import("../public/js/system-map.js");
+  const mm = buildSystemMap({
+    projects: [...projects, { id: "bt", name: "Backlog Tracker & FAQs" }, { id: "vp", name: "Live Visitor Profile & Personas" }, { id: "cs", name: "Customer Success" }],
+    concepts: [...concepts, { id: "brand", name: "PH Brand", status: "active" }, { id: "sup", name: "Customer Support", status: "active" }],
+    interfaces: [], releases,
+  });
+  ["bt", "brand", "cs", "sup"].forEach((id) => assert.ok(!mm.byId[id], `${id} is internal and not drawn`));
+  assert.ok(!mm.nodes.some((n) => /PH Team|Customer (Support|Success)/.test(n.name)), "no support/success/PH Team nodes");
+  const vp = mm.nodes.filter((n) => /live visitor profile/i.test(n.name));
+  assert.equal(vp.length, 1, "Live Visitor Profile appears once");
+  assert.equal(vp[0].kind, "concept");
+  assert.equal(vp[0].status, "Concept");
+  assert.ok(mm.edges.some((e) => e.from === "core:profile" && mm.byId[e.from] === vp[0]), "platform lines still reach it");
+  const cr = mm.nodes.find((n) => n.name === "Data Clean Room");
+  assert.equal(cr.status, "External");
+  assert.match(cr.sub, /AWS Clean Rooms.*Snowflake.*LiveRamp.*Google Ads Data Hub/);
+  const crEdges = mm.edges.filter((e) => e.from === cr.id || e.to === cr.id);
+  assert.ok(crEdges.some((e) => e.both && e.to === cr.id && mm.byId[e.from].name === "Retailer PH instance"));
+  assert.ok(crEdges.some((e) => e.both && e.from === cr.id && mm.byId[e.to].name === "Advertiser PH instance"));
+  assert.ok(crEdges.some((e) => e.from === "ext:identity" && /pseudonymous/.test(e.label)), "fed by Digital Identity");
+  assert.ok(crEdges.filter((e) => e.both).every((e) => /aggregated, no raw data/.test(e.label)));
+  assert.ok(cr.y === 860, "sits on the PII boundary line");
+  const h = systemMapHTML(mm);
+  assert.ok(!/min-width/.test(h) && h.includes('viewBox="0 0 1600 1040"'));
+  // every node inside the drawing area
+  assert.ok(mm.nodes.every((n) => n.x >= 95 && n.x <= 1505 && n.y >= 50 && n.y <= 1010), "all nodes within the viewBox");
+  const z = zoomViewBox(FIT_VIEWBOX, 2, 800, 520);
+  assert.ok(z.w === 800 && z.x >= 0 && z.x + z.w <= 1600);
+  assert.deepEqual(zoomViewBox(FIT_VIEWBOX, 0.5, 800, 520), FIT_VIEWBOX, "cannot zoom out past fit");
+}
+console.log("system-map (clean-up): ok");

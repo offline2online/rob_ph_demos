@@ -28,7 +28,7 @@ import { INTAKE_SECTIONS, missingSections, applyAnswers } from "./ticket-intake.
 import { FAILED_TESTING_CHOICES, DEFAULT_FAILED_TESTING_CHOICE, sendBackFields, followUpWrites } from "./follow-up.js";
 import { trainTestChipHTML, approvalWarningLines, APPROVAL_WARNING_TITLE, APPROVAL_WARNING_FOOTER, approvalFields, approvedByLine } from "./card-test-status.js";
 import { isMirror, orderProjectDocs, mirrorEditRefusal, mirrorDeleteWarning, mirrorChipHTML, openInGithubHTML, startHereChipHTML, projectDocRowHTML, interfaceActionsHTML } from "./docs-view.js";
-import { buildSystemMap, systemMapHTML, systemMapLegendHTML } from "./system-map.js";
+import { buildSystemMap, systemMapHTML, systemMapLegendHTML, zoomViewBox, clampViewBox, FIT_VIEWBOX } from "./system-map.js";
 import { clusterBacklogItems, estimateEffort, estimatePriority, splitRequirementsText } from "./build-batches.js";
 
 // auth-gate.js has already initialised the app (and signed the user in)
@@ -6123,10 +6123,13 @@ function conceptCardHTML(c) {
   const artifactLink = artifactHref
     ? `<a class="concept-artifact-card-link concept-readme-card-link" href="#" role="button">View README documentation</a>`
     : "";
+  const rel = conceptRelease(c.id);
+  const relNum = rel ? `<div class="concept-release-num" title="Release ${escapeHTML(releaseLabel(rel))}">${escapeHTML(rel.version || rel.name || "")}</div>` : "";
   return `
-    <div class="skill-card concept-card" data-id="${c.id}" data-artifact-href="${escapeHTML(artifactHref)}" style="cursor:pointer;">
+    <div class="skill-card concept-card${rel ? " has-release" : ""}" data-id="${c.id}" data-artifact-href="${escapeHTML(artifactHref)}" style="cursor:pointer;">
       <div class="skill-card-top">
-        <div>
+        ${relNum}
+        <div class="concept-card-main">
           <div class="skill-card-name">${escapeHTML(c.name || "")}</div>
           <div class="skill-card-meta">${escapeHTML(meta.join(" · "))}</div>
           ${artifactLink}
@@ -6141,6 +6144,15 @@ function conceptCardHTML(c) {
 // The hero system map: rebuilt whenever projects, concepts, interfaces or
 // releases change, so a new interface contract adds a line with no code change.
 let systemMapModel = null;
+// The visible window of the map. Default is the whole map, which the SVG's
+// viewBox scales to the container width on load and on every resize, so the
+// page never scrolls sideways; zoom and pan only move this window.
+let systemMapView = { ...FIT_VIEWBOX };
+function setSystemMapView(vb) {
+  systemMapView = vb;
+  const svg = document.querySelector("#system-map-canvas svg");
+  if (svg) svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+}
 function renderSystemMap() {
   const canvas = document.getElementById("system-map-canvas");
   const page = document.getElementById("concept-incubator-page");
@@ -6153,10 +6165,50 @@ function renderSystemMap() {
   if (sel.dataset.sig !== html) { sel.innerHTML = html; sel.dataset.sig = html; sel.value = chosen; }
   document.getElementById("system-map-legend").innerHTML = systemMapLegendHTML();
   systemMapModel = buildSystemMap({ projects, concepts, interfaces, releases });
-  canvas.innerHTML = systemMapHTML(systemMapModel, { release: sel.value });
+  canvas.innerHTML = systemMapHTML(systemMapModel, { release: sel.value, viewBox: systemMapView });
 }
 document.getElementById("system-map-release").addEventListener("change", renderSystemMap);
+function zoomSystemMap(factor, fx = 0.5, fy = 0.5) {
+  const v = systemMapView;
+  setSystemMapView(zoomViewBox(v, factor, v.x + v.w * fx, v.y + v.h * fy));
+}
+document.getElementById("system-map-zoom-in").addEventListener("click", () => zoomSystemMap(1.4));
+document.getElementById("system-map-zoom-out").addEventListener("click", () => zoomSystemMap(1 / 1.4));
+document.getElementById("system-map-fit").addEventListener("click", () => setSystemMapView({ ...FIT_VIEWBOX }));
+document.getElementById("system-map-canvas").addEventListener("wheel", (e) => {
+  if (!e.ctrlKey && !e.metaKey) return; // plain scrolling still scrolls the page
+  const svg = e.target.closest("svg");
+  if (!svg) return;
+  e.preventDefault();
+  const r = svg.getBoundingClientRect();
+  zoomSystemMap(e.deltaY < 0 ? 1.2 : 1 / 1.2, (e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
+}, { passive: false });
+// Drag to pan (only moves anything once zoomed in).
+{
+  let drag = null;
+  const canvasEl = document.getElementById("system-map-canvas");
+  canvasEl.addEventListener("pointerdown", (e) => {
+    const svg = e.target.closest("svg");
+    if (!svg || e.button !== 0) return;
+    drag = { sx: e.clientX, sy: e.clientY, view: systemMapView, w: svg.getBoundingClientRect().width, moved: false };
+  });
+  window.addEventListener("pointermove", (e) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.sx;
+    const dy = e.clientY - drag.sy;
+    if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
+    if (!drag.moved) return;
+    const k = drag.view.w / drag.w;
+    setSystemMapView(clampViewBox({ ...drag.view, x: drag.view.x - dx * k, y: drag.view.y - dy * k }));
+  });
+  window.addEventListener("pointerup", () => {
+    if (drag && drag.moved) canvasEl.dataset.justPanned = "1";
+    drag = null;
+  });
+}
 function systemMapActivate(target) {
+  const canvasEl = document.getElementById("system-map-canvas");
+  if (canvasEl.dataset.justPanned) { delete canvasEl.dataset.justPanned; return; }
   const edge = target.closest("[data-interface-id]");
   if (edge) { openInterfaceModal(edge.dataset.interfaceId, edge.dataset.anchorId); return; }
   const node = target.closest("[data-node-id]");
@@ -6165,7 +6217,7 @@ function systemMapActivate(target) {
   if (!n) return;
   const href = n.href ? safeHttpUrl(n.href) : "";
   if (href) window.open(href, "_blank", "noopener");
-  else if (n.kind === "concept") openConceptDetailPage(n.id);
+  else if (n.kind === "concept" && !n.isProject) openConceptDetailPage(n.id);
   else openDocsPage(n.id);
 }
 document.getElementById("system-map-canvas").addEventListener("click", (e) => systemMapActivate(e.target));
@@ -6175,7 +6227,13 @@ document.getElementById("system-map-canvas").addEventListener("keydown", (e) => 
 
 function renderConceptIncubatorPage() {
   renderSystemMap();
-  const sorted = concepts; // already ordered by updatedAt desc from the query
+  // Earliest release first; concepts with no release come after, keeping the
+  // query's updatedAt-desc order within each group (Array.sort is stable).
+  const orderOf = (c) => { const r = conceptRelease(c.id); return r ? Number(r.order) || 0 : Infinity; };
+  const sorted = concepts.slice().sort((a, b) => {
+    const oa = orderOf(a), ob = orderOf(b);
+    return oa === ob ? 0 : oa < ob ? -1 : 1;
+  });
   document.getElementById("concept-incubator-count").textContent = `${sorted.length} concept${sorted.length === 1 ? "" : "s"}`;
   document.getElementById("concept-incubator-list").innerHTML = sorted.map(conceptCardHTML).join("");
   document.getElementById("concept-incubator-empty").hidden = sorted.length > 0;
@@ -6448,6 +6506,7 @@ document.getElementById("pc-submit").addEventListener("click", async () => {
 const releasesPage = document.getElementById("releases-page");
 
 function openReleasesPage() {
+  ensureLazy("concepts");
   closeAllSubPages();
   document.getElementById("projects-root").hidden = true;
   document.getElementById("board-page-header").hidden = true;
@@ -6478,12 +6537,13 @@ function releaseRowHTML(r) {
   const current = currentLiveRelease();
   const isCurrent = !!(current && current.id === r.id);
   const projectCount = projects.filter((p) => p.releaseId === r.id && !p.archived).length;
+  const conceptCount = releaseConceptIds(r).length;
   return `
     <tr data-release-id="${escapeHTML(r.id)}">
-      <td>${escapeHTML(r.name || "")}</td>
+      <td><a href="#" class="release-edit-link" data-release-id="${escapeHTML(r.id)}">${escapeHTML(r.name || "")}</a></td>
       <td>${r.version ? escapeHTML(r.version) : "—"}</td>
       <td><span class="badge ${isLive ? "badge-status-published" : "badge-status-draft"}">${escapeHTML(RELEASE_STATUS_LABELS[r.status] || r.status || "")}</span>${liveOn ? ` <span class="field-hint">${escapeHTML(isCurrent ? `current · ${liveOn}` : liveOn)}</span>` : ""}</td>
-      <td>${projectCount} project${projectCount === 1 ? "" : "s"}</td>
+      <td>${projectCount} project${projectCount === 1 ? "" : "s"}${conceptCount ? `, ${conceptCount} concept${conceptCount === 1 ? "" : "s"}` : ""}</td>
       <td>${escapeHTML(created)}</td>
       <td>${isLive ? "" : `<button type="button" class="restore-btn release-mark-live-btn" data-release-id="${escapeHTML(r.id)}" data-editor-only>Mark live</button>`}</td>
     </tr>`;
@@ -6504,6 +6564,7 @@ function onReleasesChanged() {
   render();
   renderSystemMap();
   if (releasesPage && !releasesPage.hidden) renderReleasesPage();
+  if (conceptIncubatorPage && !conceptIncubatorPage.hidden) renderConceptIncubatorPage();
   if (docsProjectId) renderDocsPage();
   if (faqArticleEditorPage && !faqArticleEditorPage.hidden) {
     [faIntroducedReleaseSelect, faRemovedReleaseSelect].forEach((sel) => {
@@ -6512,34 +6573,108 @@ function onReleasesChanged() {
   }
 }
 
-document.getElementById("releases-add-btn").addEventListener("click", async () => {
-  if (!(await requireReleaseEditor())) return;
-  const result = await showFieldDialog({
-    title: "New release",
-    message: "Releases are numbered in the order they're created, and start as a draft.",
-    fields: [
-      { id: "name", label: "Name", placeholder: "e.g. October 2026" },
-      { id: "version", label: "Version (optional)", placeholder: "e.g. 2.4.0" },
-    ],
-    okLabel: "Create release",
-  });
-  if (!result) return;
-  const name = (result.name || "").trim();
-  const version = (result.version || "").trim();
+// ── Release editor — one modal for both "+ New release" and clicking a
+// release's name. Projects are assigned through projects/{id}.releaseId (a
+// project is in one release); concepts (roadmap items) through the release's
+// own `conceptIds` list, and a concept sits in one release at a time, so
+// ticking it here takes it out of any other release that held it.
+function releaseConceptIds(r) { return Array.isArray(r && r.conceptIds) ? r.conceptIds : []; }
+function conceptRelease(conceptId) {
+  return releases.find((r) => releaseConceptIds(r).includes(conceptId)) || null;
+}
+const releaseEditorBackdrop = document.getElementById("release-editor-backdrop");
+let releaseEditingId = null;
+function releaseCheckListHTML(rows, checkedFn, kind, otherLabelFn) {
+  if (!rows.length) return `<p class="field-hint">None yet.</p>`;
+  return rows.map((x) => {
+    const other = otherLabelFn(x);
+    return `<label class="release-check"><input type="checkbox" data-kind="${kind}" value="${escapeHTML(x.id)}"${checkedFn(x) ? " checked" : ""}> <span>${escapeHTML(x.name || "")}</span>${other ? ` <span class="field-hint">${escapeHTML(other)}</span>` : ""}</label>`;
+  }).join("");
+}
+function openReleaseEditor(id) {
+  ensureLazy("concepts");
+  const r = id ? releases.find((x) => x.id === id) : null;
+  if (id && !r) return;
+  releaseEditingId = id || null;
+  document.getElementById("release-editor-title").textContent = r ? "Edit release" : "New release";
+  document.getElementById("release-editor-name").value = r ? r.name || "" : "";
+  document.getElementById("release-editor-version").value = r ? r.version || "" : "";
+  document.getElementById("release-editor-save").textContent = r ? "Save changes" : "Create release";
+  const relName = (rid) => { const o = releases.find((x) => x.id === rid); return o ? `in ${releaseLabel(o)}` : ""; };
+  const ps = projects.filter((p) => !p.archived).slice().sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  document.getElementById("release-editor-projects").innerHTML = releaseCheckListHTML(
+    ps, (p) => !!r && p.releaseId === r.id, "project",
+    (p) => (p.releaseId && (!r || p.releaseId !== r.id) ? relName(p.releaseId) : ""));
+  const cs = concepts.filter((c) => c.status !== "promoted");
+  document.getElementById("release-editor-concepts").innerHTML = releaseCheckListHTML(
+    cs, (c) => !!r && releaseConceptIds(r).includes(c.id), "concept",
+    (c) => { const o = conceptRelease(c.id); return o && (!r || o.id !== r.id) ? relName(o.id) : ""; });
+  releaseEditorBackdrop.hidden = false;
+  document.getElementById("release-editor-name").focus();
+}
+function closeReleaseEditor() { releaseEditorBackdrop.hidden = true; releaseEditingId = null; }
+document.getElementById("release-editor-close").addEventListener("click", closeReleaseEditor);
+document.getElementById("release-editor-cancel").addEventListener("click", closeReleaseEditor);
+releaseEditorBackdrop.addEventListener("click", (e) => { if (e.target === releaseEditorBackdrop) closeReleaseEditor(); });
+
+async function saveReleaseEditor() {
+  const name = document.getElementById("release-editor-name").value.trim();
+  const version = document.getElementById("release-editor-version").value.trim();
   if (!name) { await showAlert("A release needs a name."); return; }
   if (name.length > 120 || version.length > 40) {
     await showAlert("Keep the name to 120 characters and the version to 40.");
     return;
   }
+  const checked = (kind) => Array.from(releaseEditorBackdrop.querySelectorAll(`input[data-kind="${kind}"]:checked`)).map((el) => el.value);
+  const projectIds = checked("project");
+  const conceptIds = checked("concept");
+  const saveBtn = document.getElementById("release-editor-save");
+  saveBtn.disabled = true;
   try {
-    await createRelease(name, version);
+    const email = (auth.currentUser && auth.currentUser.email) || null;
+    let id = releaseEditingId;
+    if (id) {
+      await updateDoc(doc(db, "releases", id), {
+        name, version: version || null, conceptIds,
+        updatedAt: serverTimestamp(), ...(email ? { updatedByEmail: email } : {}),
+      });
+    } else {
+      id = await createRelease(name, version);
+      await updateDoc(doc(db, "releases", id), { conceptIds });
+    }
+    // A concept belongs to one release: take the ticked ones out of any other.
+    for (const other of releases) {
+      if (other.id === id) continue;
+      const kept = releaseConceptIds(other).filter((cid) => !conceptIds.includes(cid));
+      if (kept.length !== releaseConceptIds(other).length) await updateDoc(doc(db, "releases", other.id), { conceptIds: kept });
+    }
+    for (const p of projects) {
+      const inRelease = p.releaseId === id;
+      if (projectIds.includes(p.id) && !inRelease) await setProjectRelease(p.id, id);
+      else if (!projectIds.includes(p.id) && inRelease) await setProjectRelease(p.id, null);
+    }
+    closeReleaseEditor();
   } catch (err) {
-    console.error("backlog-tracker: couldn't create release", err);
-    await showAlert(`Couldn't create the release: ${err && err.code ? err.code : err}`);
+    console.error("backlog-tracker: couldn't save release", err);
+    await showAlert(`Couldn't save the release: ${err && err.code ? err.code : err}`);
+  } finally {
+    saveBtn.disabled = false;
   }
+}
+document.getElementById("release-editor-save").addEventListener("click", saveReleaseEditor);
+
+document.getElementById("releases-add-btn").addEventListener("click", async () => {
+  if (!(await requireReleaseEditor())) return;
+  openReleaseEditor(null);
 });
 
 document.getElementById("releases-table-body").addEventListener("click", async (e) => {
+  const link = e.target.closest(".release-edit-link");
+  if (link) {
+    e.preventDefault();
+    if (await requireReleaseEditor()) openReleaseEditor(link.dataset.releaseId);
+    return;
+  }
   const btn = e.target.closest(".release-mark-live-btn");
   if (!btn) return;
   const r = releases.find((x) => x.id === btn.dataset.releaseId);

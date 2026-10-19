@@ -11,6 +11,10 @@
 //            its release is marked live
 //   concept  every un-promoted Concept Incubator concept — "Concept"
 // A promoted concept is drawn as its project, never twice.
+// Only PH product projects, product concepts and PH Core areas are drawn:
+// INTERNAL_RE names the board entries that are not part of the product
+// (the console itself, PH Brand, support/success) and are left out.
+// Live Visitor Profile is drawn once, as a concept, in the PH Core slot.
 //
 // Lines come from two places:
 //   * the board's interface contracts — one line per contract, so adding an
@@ -21,53 +25,58 @@
 // one the line is labelled with the contract's name.
 
 export const SYSTEM_MAP_CORE = [
-  { key: "campaigns", name: "Campaigns & Experiences", sub: "Personalised, real-time experiences", x: 760, y: 480 },
-  { key: "harness", name: "Agent Harness", sub: "LangChain — creates, drives, optimises", x: 760, y: 300 },
-  { key: "mcp", name: "MCP Access", sub: "Agents connect via MCP", x: 760, y: 160 },
-  { key: "vector", name: "Vector Database", sub: "Insights store", x: 1080, y: 300 },
-  { key: "devices", name: "Devices & Touchpoints", sub: "Displays, mobile, kiosks", x: 1080, y: 480 },
-  { key: "profile", name: "Live Visitor Profile", sub: "Personalised campaigns", x: 470, y: 400 },
-  { key: "store", name: "Store Data", sub: "Localised campaigns", x: 470, y: 560 },
-  { key: "checkin", name: "Check-in", sub: "PH Core", x: 1080, y: 640 },
-  { key: "brand", name: "Brand Guidelines", sub: "PH Core — retailer, advertiser & partnership rules", x: 1080, y: 160 },
+  { key: "campaigns", name: "Campaigns & Experiences", sub: "Personalised, real-time experiences", x: 580, y: 400 },
+  { key: "harness", name: "Agent Harness", sub: "LangChain — creates, drives, optimises", x: 580, y: 250 },
+  { key: "mcp", name: "MCP Access", sub: "Agents connect via MCP", x: 580, y: 110 },
+  { key: "vector", name: "Vector Database", sub: "Insights store", x: 830, y: 250 },
+  { key: "devices", name: "Devices & Touchpoints", sub: "Displays, mobile, kiosks", x: 830, y: 400 },
+  { key: "profile", name: "Live Visitor Profile", sub: "Personalised campaigns", x: 330, y: 330 },
+  { key: "store", name: "Store Data", sub: "Localised campaigns", x: 330, y: 470 },
+  { key: "checkin", name: "Check-in", sub: "PH Core", x: 830, y: 540 },
+  { key: "brand", name: "Brand Guidelines", sub: "PH Core — retailer, advertiser & partnership rules", x: 830, y: 110 },
 ];
+
+// Board entries that are not part of the product map.
+export const INTERNAL_RE = /backlog tracker|\bph brand\b|customer (support|success)|\bph team\b/i;
 
 // Where the Chinese wall sits: everything inside this box is on the PII
 // side; everything else on the map is non-PII. Agents never cross it.
-export const PII_ZONE = { x: 20, y: 960, w: 980, h: 380 };
+export const PII_ZONE = { x: 20, y: 860, w: 1560, h: 150 };
 
 // Concepts that are part of the picture whether or not anyone has filed a
 // Concept Incubator entry for them. If a board project/concept whose name
 // matches `match` exists, that one is drawn (at this position) instead.
 export const SYSTEM_MAP_CONCEPTS = [
   { key: "custom", match: /custom.*edge models?/i, name: "Custom & Edge Models", full: "Custom & Edge Models",
-    sub: "PH-optimised open-weights models + edge model shop (vision, lift & learn, plates)", x: 1340, y: 600 },
+    sub: "PH-optimised open-weights models + edge model shop (vision, lift & learn, plates)", x: 1060, y: 570 },
   { key: "identity", match: /digital identity/i, name: "Digital Identity & Resolution", full: "Digital Identity Management & Resolution",
-    sub: "Identity vault + resolution service + identity graph", x: 600, y: 1160 },
+    sub: "Identity vault + resolution service + identity graph", x: 440, y: 940 },
   { key: "offsite", match: /offsite retail media/i, name: "Offsite Retail Media & Social", full: "Offsite Retail Media & Social Activation",
-    sub: "Hashed audiences to Meta, TikTok, Google, YouTube", x: 1000, y: 1160 },
+    sub: "Hashed audiences to Meta, TikTok, Google, YouTube", x: 1060, y: 330 },
   { key: "federation", match: /federated retail media/i, name: "Federated Retail Media (PH-to-PH)", full: "Federated Retail Media (PH-to-PH)",
-    sub: "Peer-to-peer partnerships, no central hub", x: 1800, y: 120 },
+    sub: "Peer-to-peer partnerships, no central hub", x: 1365, y: 600 },
 ];
 
 // External systems and actors (C4 external style).
 export const SYSTEM_MAP_EXTERNALS = [
-  { key: "salesforce", name: "Salesforce CRM", sub: "PII side — consent checked here", x: 190, y: 1090 },
-  { key: "amazon", name: "Amazon Connect", sub: "Customer Profiles — PII side, consent checked here", x: 190, y: 1230 },
-  { key: "meta", name: "Meta", sub: "Offsite platform", x: 1490, y: 1000 },
-  { key: "tiktok", name: "TikTok", sub: "Offsite platform", x: 1490, y: 1090 },
-  { key: "gdisplay", name: "Google Display", sub: "Offsite platform", x: 1490, y: 1180 },
-  { key: "youtube", name: "YouTube", sub: "Offsite platform", x: 1490, y: 1270 },
-  { key: "retailerph", name: "Retailer PH instance", sub: "This retailer's Personalisation Hub", x: 1800, y: 320 },
-  { key: "otherph", name: "Partner retailer PH instance", sub: "Another retailer's Personalisation Hub", x: 2150, y: 320 },
-  { key: "advph", name: "Advertiser PH instance", sub: "Phase 3: advertiser runs their own PH", x: 1800, y: 520 },
-  { key: "advertiser", name: "Advertiser", sub: "Phase 2: logs into the retailer's PH", x: 2150, y: 520 },
+  { key: "salesforce", name: "Salesforce CRM", sub: "PII side — consent checked here", x: 130, y: 922 },
+  { key: "amazon", name: "Amazon Connect", sub: "Customer Profiles — PII side, consent checked here", x: 130, y: 982 },
+  { key: "meta", name: "Meta", sub: "Offsite platform", x: 1260, y: 190 },
+  { key: "tiktok", name: "TikTok", sub: "Offsite platform", x: 1470, y: 190 },
+  { key: "gdisplay", name: "Google Display", sub: "Offsite platform", x: 1260, y: 260 },
+  { key: "youtube", name: "YouTube", sub: "Offsite platform", x: 1470, y: 260 },
+  { key: "retailerph", name: "Retailer PH instance", sub: "This retailer's Personalisation Hub", x: 1160, y: 700 },
+  { key: "otherph", name: "Partner retailer PH instance", sub: "Another retailer's Personalisation Hub", x: 1470, y: 700 },
+  { key: "advph", name: "Advertiser PH instance", sub: "Phase 3: advertiser runs their own PH", x: 1160, y: 800 },
+  { key: "advertiser", name: "Advertiser", sub: "Phase 2: logs into the retailer's PH", x: 1470, y: 800 },
+  { key: "cleanroom", name: "Data Clean Room", sub: "AWS Clean Rooms (primary); alternatives: Snowflake, LiveRamp, Google Ads Data Hub", x: 1315, y: 860 },
 ];
 
 // Lines for the nodes above. Ends are a core key, a SYSTEM_MAP_CONCEPTS /
 // SYSTEM_MAP_EXTERNALS key, or { name: regex } for a board node (skipped
 // when no such node exists). `both` draws arrows at each end; `bow` curves it.
 const AUTH = "authenticated partnership (mTLS + scoped OAuth)";
+const CLEAN = "audience matching & measurement (aggregated, no raw data)";
 const EXTRA_LINKS = [
   { from: "custom", to: "identity", label: "HMAC-hashed edge identifiers (e.g. plates)", bow: 0.12 },
   { from: "devices", to: "custom", label: "edge model deployment" },
@@ -80,17 +89,20 @@ const EXTRA_LINKS = [
   { from: "campaigns", to: "offsite", label: "offsite experiences (retailer and advertiser)", bow: 0.1 },
   { from: { name: /experience templates/i }, to: "offsite", label: "offsite creative", bow: 0.12 },
   { from: { name: /display types|dsp integration/i }, to: "offsite", label: "advertiser offsite buys", bow: -0.12 },
-  { from: "identity", to: "offsite", label: "hashed audiences (SHA-256 email)" },
-  { from: "offsite", to: "meta", label: "hashed audiences (SHA-256 email)" },
-  { from: "offsite", to: "tiktok", label: "hashed audiences (SHA-256 email)" },
-  { from: "offsite", to: "gdisplay", label: "hashed audiences (SHA-256 email)" },
-  { from: "offsite", to: "youtube", label: "hashed audiences (SHA-256 email)" },
+  { from: "identity", to: "offsite", label: "hashed audiences (SHA-256 email)", short: "hashed audiences" },
+  { from: "identity", to: "cleanroom", label: "pseudonymous IDs for clean-room matching", short: "pseudonymous IDs", bow: -0.08 },
+  { from: "retailerph", to: "cleanroom", label: CLEAN, short: "audience matching (aggregated)", both: true },
+  { from: "cleanroom", to: "advph", label: CLEAN, short: "audience matching (aggregated)", both: true },
+  { from: "offsite", to: "meta", label: "hashed audiences (SHA-256 email)", short: "hashed audiences" },
+  { from: "offsite", to: "tiktok", label: "hashed audiences (SHA-256 email)", short: "" },
+  { from: "offsite", to: "gdisplay", label: "hashed audiences (SHA-256 email)", short: "" },
+  { from: "offsite", to: "youtube", label: "hashed audiences (SHA-256 email)", short: "" },
   { from: "meta", to: "vector", label: "offsite exposure for closed-loop measurement", bow: 0.1 },
   { from: "tiktok", to: "vector", label: "", bow: 0.1 },
   { from: "gdisplay", to: "vector", label: "", bow: 0.1 },
   { from: "youtube", to: "vector", label: "", bow: 0.1 },
   { from: "federation", to: "retailerph", label: "extends", dotted: true },
-  { from: "retailerph", to: "otherph", label: AUTH, both: true },
+  { from: "retailerph", to: "otherph", label: AUTH, short: "authenticated partnership", both: true },
   { from: "advph", to: "retailerph", label: AUTH, both: true, bow: -0.1 },
   { from: "retailerph", to: "advph", label: "campaign & data export (advertiser-tagged)", bow: 0.2 },
   { from: "retailerph", to: "advph", label: "advertiser results (closed loop, retailer can switch off per advertiser)", bow: -0.25 },
@@ -132,29 +144,19 @@ export const SYSTEM_MAP_LINKS = [
   { match: /retail media insights/i, anchor: "vector", links: [
     { from: "vector", to: "self", label: "reads insights" },
   ] },
-  { match: /live visitor profile/i, anchor: "profile", links: [
-    { from: "self", to: "profile", label: "extends", dotted: true },
-  ] },
   { match: /rtb|bidding/i, anchor: "devices", links: [
     { from: "self", to: { name: /display types|dsp integration/i }, label: "bidding support" },
   ] },
-  { match: /mcp release|backlog tracker/i, anchor: "mcp", links: [
+  { match: /mcp release/i, anchor: "mcp", links: [
     { from: "self", to: "mcp", label: "extends", dotted: true },
-  ] },
-  { match: /customer support/i, anchor: "team", links: [
-    { from: "self", to: "team", label: "support" },
   ] },
 ];
 
-const TEAM_NODE = {
-  key: "team", kind: "external", name: "PH Team", sub: "Help / FAQ, support, feature requests, Customer Success",
-  x: 1490, y: 690, status: "External",
-};
-
-const W = 2300;
-const H = 1380;
-const NODE_W = 220;
-const NODE_H = 56;
+const W = 1600;
+const H = 1040;
+const NODE_W = 190;
+const NODE_H = 52;
+export const SYSTEM_MAP_SIZE = { w: W, h: H };
 
 export function releaseLabel(r) {
   if (!r) return "";
@@ -169,9 +171,8 @@ export function buildSystemMap({ projects = [], concepts = [], interfaces = [], 
   const add = (n) => { nodes.push(n); if (n.id) byId[n.id] = n; return n; };
 
   SYSTEM_MAP_CORE.forEach((c) => add({ ...c, id: `core:${c.key}`, kind: "core", status: "Live" }));
-  add({ ...TEAM_NODE, id: "core:team" });
 
-  const live = projects.filter((p) => !p.archived && p.id !== "general");
+  const live = projects.filter((p) => !p.archived && p.id !== "general" && !INTERNAL_RE.test(p.name || ""));
   live.forEach((p) => {
     const rel = relById[p.releaseId] || null;
     add({
@@ -181,12 +182,23 @@ export function buildSystemMap({ projects = [], concepts = [], interfaces = [], 
       href: p.artifactUrl || "",
     });
   });
-  concepts.filter((c) => c.status !== "promoted").forEach((c) => {
+  concepts.filter((c) => c.status !== "promoted" && !INTERNAL_RE.test(c.name || "")).forEach((c) => {
     add({ id: c.id, kind: "concept", name: c.name || c.id, status: "Concept", href: c.artifactUrl || "" });
   });
+  // Live Visitor Profile: one node, a concept, in the PH Core slot.
+  const placed = []; // [node, x, y] board nodes pinned to a fixed position
+  const vp = nodes.find((n) => (n.kind === "project" || n.kind === "concept") && /live visitor profile/i.test(n.name));
+  if (vp) {
+    const slot = nodes.find((n) => n.id === "core:profile");
+    nodes.splice(nodes.indexOf(slot), 1);
+    byId["core:profile"] = vp;
+    if (vp.kind === "project") { vp.kind = "concept"; vp.status = "Concept"; vp.release = ""; vp.releaseId = null; vp.isProject = true; }
+    vp.sub = slot.sub;
+    vp.pinned = true;
+    placed.push([vp, slot.x, slot.y]);
+  }
   // Fixed concepts and external systems. A board entry of the same name wins.
   const keyed = {}; // extra key -> node
-  const placed = []; // [node, x, y] board nodes pinned to a fixed position
   SYSTEM_MAP_CONCEPTS.forEach((c) => {
     const hit = nodes.find((n) => (n.kind === "concept" || n.kind === "project") && c.match.test(n.name));
     if (hit) { keyed[c.key] = hit; placed.push([hit, c.x, c.y]); return; }
@@ -216,7 +228,7 @@ export function buildSystemMap({ projects = [], concepts = [], interfaces = [], 
       cfg.links.forEach((l) => {
         const a = resolve(l.from, n);
         const b = resolve(l.to, n);
-        if (a && b) edges.push({ from: a.id, to: b.id, label: l.label, kind: l.kind, dotted: l.dotted, source: "platform" });
+        if (a && b && a !== b) edges.push({ from: a.id, to: b.id, label: l.label, kind: l.kind, dotted: l.dotted, source: "platform" });
       });
     }
   });
@@ -240,7 +252,7 @@ export function buildSystemMap({ projects = [], concepts = [], interfaces = [], 
   EXTRA_LINKS.forEach((l) => {
     const a = endOf(l.from);
     const b = endOf(l.to);
-    if (a && b && a !== b) edges.push({ from: a.id, to: b.id, label: l.label, dotted: l.dotted, both: l.both, bow: l.bow, source: "platform" });
+    if (a && b && a !== b) edges.push({ from: a.id, to: b.id, label: l.label, short: l.short, dotted: l.dotted, both: l.both, bow: l.bow, source: "platform" });
   });
   return { nodes, edges, byId };
 }
@@ -249,19 +261,18 @@ export function buildSystemMap({ projects = [], concepts = [], interfaces = [], 
 // so nothing overlaps and the picture stays readable as the board grows.
 // Past the listed slots a node steps further out along the last slot's axis.
 const SLOTS = {
-  mcp: [[470, 140], [470, 230]],
-  profile: [[135, 330], [135, 430]],
-  store: [[135, 560], [135, 660]],
-  campaigns: [[760, 750], [520, 750], [1000, 750]],
-  vector: [[1490, 250], [1490, 160]],
-  devices: [[1490, 430], [1490, 530]],
-  team: [[1490, 810]],
+  mcp: [[330, 150], [330, 215]],
+  profile: [[100, 290], [100, 370]],
+  store: [[100, 470], [100, 560]],
+  campaigns: [[580, 670], [380, 670], [780, 670]],
+  vector: [[1060, 250], [1060, 170]],
+  devices: [[1060, 400], [1060, 480]],
 };
 function layoutSatellites(nodes, anchors) {
   const used = {};
   const loose = [];
   nodes.forEach((n) => {
-    if ((n.kind !== "project" && n.kind !== "concept") || n.fixed) return;
+    if ((n.kind !== "project" && n.kind !== "concept") || n.fixed || n.pinned) return;
     const a = anchors[n.id];
     if (!a) { loose.push(n); return; }
     const slots = SLOTS[a];
@@ -270,7 +281,7 @@ function layoutSatellites(nodes, anchors) {
     const extra = Math.max(0, i - slots.length);
     n.x = sx; n.y = sy + extra * 100;
   });
-  loose.forEach((n, i) => { n.x = 135 + i * 250; n.y = 860; });
+  loose.forEach((n, i) => { n.x = 110 + (i % 7) * 215; n.y = 760 + Math.floor(i / 7) * 58; });
 }
 
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -297,6 +308,30 @@ function wrap(text, max) {
   return lines;
 }
 
+// At most `max` lines of `width` characters; the last gets an ellipsis when
+// text was cut. Full text stays in the element's <title> tooltip.
+function shortLines(text, width, max) {
+  if (!text) return [];
+  const all = wrap(text, width);
+  if (all.length <= max) return all;
+  const out = all.slice(0, max);
+  const last = out[max - 1];
+  out[max - 1] = (last.length > width - 1 ? last.slice(0, width - 1) : last) + "…";
+  return out;
+}
+
+// Zoom the visible window by `factor` around (cx, cy), staying inside the
+// full map; the default window is the whole map ("fit").
+export function zoomViewBox(vb, factor, cx, cy) {
+  const w = Math.min(W, Math.max(W / 6, vb.w / factor));
+  const h = w * (H / W);
+  return clampViewBox({ x: cx - (cx - vb.x) * (w / vb.w), y: cy - (cy - vb.y) * (h / vb.h), w, h });
+}
+export function clampViewBox(vb) {
+  return { x: Math.min(Math.max(0, vb.x), W - vb.w), y: Math.min(Math.max(0, vb.y), H - vb.h), w: vb.w, h: vb.h };
+}
+export const FIT_VIEWBOX = { x: 0, y: 0, w: W, h: H };
+
 export function highlightedIds(model, releaseId) {
   if (!releaseId) return null;
   const inRelease = new Set(model.nodes.filter((n) => n.releaseId === releaseId).map((n) => n.id));
@@ -308,20 +343,21 @@ export function highlightedIds(model, releaseId) {
   return { nodes, edges: touching };
 }
 
-export function systemMapHTML(model, { release = "" } = {}) {
+export function systemMapHTML(model, { release = "", viewBox = null } = {}) {
+  const vb = viewBox;
   const hi = highlightedIds(model, release);
   const nodeDim = (n) => (hi && !hi.nodes.has(n.id) ? " dim" : "");
   const edgeDim = (i) => (hi && !hi.edges.has(i) ? " dim" : "");
   const byId = model.byId;
-  let svg = `<svg class="sysmap-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Personalisation Hub system map">
+  let svg = `<svg class="sysmap-svg" viewBox="${vb ? `${vb.x} ${vb.y} ${vb.w} ${vb.h}` : `0 0 ${W} ${H}`}" role="img" aria-label="Personalisation Hub system map">
     <defs>
       <marker id="sm-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="context-stroke"/></marker>
     </defs>
-    <rect class="sysmap-boundary" x="320" y="70" width="880" height="770" rx="8"/>
-    <text class="sysmap-boundary-label" x="336" y="94">Personalisation Hub platform</text>
+    <rect class="sysmap-boundary" x="230" y="60" width="700" height="550" rx="8"/>
+    <text class="sysmap-boundary-label" x="246" y="82">Personalisation Hub platform</text>
     <rect class="sysmap-pii" x="${PII_ZONE.x}" y="${PII_ZONE.y}" width="${PII_ZONE.w}" height="${PII_ZONE.h}" rx="8"/>
     <text class="sysmap-pii-label" x="${PII_ZONE.x + 14}" y="${PII_ZONE.y + 24}">PII side — identity vault, Salesforce, Amazon Connect</text>
-    <text class="sysmap-pii-wall" x="${PII_ZONE.x + PII_ZONE.w / 2}" y="${PII_ZONE.y - 8}" text-anchor="middle">▲ Non-PII: Live Visitor Profile, Agent Harness, agents, Campaigns &amp; Experiences — PII boundary (Chinese wall): agents never cross it ▲</text>`;
+    <text class="sysmap-pii-wall" x="${PII_ZONE.x + 14}" y="${PII_ZONE.y - 8}"><title>Non-PII: Live Visitor Profile, Agent Harness, agents, Campaigns &amp; Experiences. PII boundary (Chinese wall): agents never cross it.</title>▲ Non-PII above — agents never cross it ▲</text>`;
 
   model.edges.forEach((e, i) => {
     const a = byId[e.from];
@@ -332,7 +368,7 @@ export function systemMapHTML(model, { release = "" } = {}) {
     const cls = ["sysmap-edge", e.kind || "", e.loop ? "loop" : "", e.dotted ? "dotted" : "", e.interfaceId ? "clickable" : "", edgeDim(i)].filter(Boolean).join(" ");
     const mx = (p.x + q.x) / 2;
     const my = (p.y + q.y) / 2;
-    const lines = e.label ? wrap(e.label, 22) : [];
+    const lines = shortLines(e.short != null ? e.short : e.label, 20, 2);
     const attrs = e.interfaceId ? ` data-interface-id="${esc(e.interfaceId)}" data-anchor-id="${esc(e.anchorId)}" tabindex="0" role="button"` : "";
     // Contract lines bow sideways so they don't run straight through other boxes.
     const bow = e.bow != null ? e.bow : e.interfaceId ? 0.18 : e.kind ? 0.14 : 0;
@@ -343,7 +379,7 @@ export function systemMapHTML(model, { release = "" } = {}) {
     const ly = curved ? (p.y + 2 * cyp + q.y) / 4 : my;
     const d = `M${p.x} ${p.y} Q${cxp} ${cyp} ${q.x} ${q.y}`;
     const lbl = lines.map((t, k) => `<text class="sysmap-edge-label" x="${lx}" y="${ly + (k - (lines.length - 1) / 2) * 12 + 4}" text-anchor="middle">${esc(t)}</text>`).join("");
-    const w = Math.max(0, ...lines.map((t) => t.length)) * 5.6 + 10;
+    const w = Math.max(0, ...lines.map((t) => t.length)) * 6.1 + 10;
     svg += `<g class="${cls}"${attrs}><title>${esc(e.label)}${e.interfaceId ? " — open interface contract" : ""}</title>
       <path class="sysmap-hit" d="${d}"/>
       <path class="sysmap-line" d="${d}" marker-end="url(#sm-arrow)"${e.both ? ' marker-start="url(#sm-arrow)"' : ""}/>
@@ -356,11 +392,11 @@ export function systemMapHTML(model, { release = "" } = {}) {
     const clickable = (n.kind === "project" || n.kind === "concept") && !n.fixed;
     const cls = `sysmap-node ${n.kind} s-${String(n.status).toLowerCase()}${clickable ? " clickable" : ""}${nodeDim(n)}`;
     const attrs = clickable ? ` data-node-id="${esc(n.id)}" data-node-kind="${n.kind}" tabindex="0" role="link"` : "";
-    const sub = wrap(n.sub || "", 30).slice(0, 2);
-    svg += `<g class="${cls}"${attrs}><title>${esc(n.full || n.name)} — ${esc(n.status)}${n.release ? ` — ${esc(n.release)}` : ""}</title>
+    const sub = shortLines(n.sub, 29, 2);
+    svg += `<g class="${cls}"${attrs}><title>${esc(n.full || n.name)} — ${esc(n.status)}${n.release ? ` — ${esc(n.release)}` : ""}${n.sub ? `\n${esc(n.sub)}` : ""}</title>
       <rect x="${x}" y="${y}" width="${NODE_W}" height="${NODE_H}" rx="8"/>
-      <text class="sysmap-node-name" x="${n.x}" y="${y + 20}" text-anchor="middle">${esc(n.name.length > 34 ? n.name.slice(0, 33) + "…" : n.name)}</text>
-      ${sub.map((t, k) => `<text class="sysmap-node-sub" x="${n.x}" y="${y + 34 + k * 11}" text-anchor="middle">${esc(t)}</text>`).join("")}
+      <text class="sysmap-node-name" x="${n.x}" y="${y + 19}" text-anchor="middle">${esc(n.name.length > 25 ? n.name.slice(0, 24) + "…" : n.name)}</text>
+      ${sub.map((t, k) => `<text class="sysmap-node-sub" x="${n.x}" y="${y + 32 + k * 11}" text-anchor="middle">${esc(t)}</text>`).join("")}
       <text class="sysmap-node-status" x="${x + 8}" y="${y - 5}">${esc(n.status)}</text>
       ${n.release ? `<text class="sysmap-node-release" x="${x + NODE_W}" y="${y - 5}" text-anchor="end">${esc(n.release)}</text>` : ""}</g>`;
   });
