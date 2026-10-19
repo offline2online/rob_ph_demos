@@ -1845,8 +1845,19 @@ async function syncedDocRefusal(projectId, projectData, kind) {
 
 const mirrorUpdateRefusal = (name, sourcePath) =>
   `"${name}" mirrors ${sourcePath}, so it is read-only here. The next sync after a merge to main rewrites it from that file. Edit the file on a branch; the board copy follows when it merges.`;
-const mirrorDeleteRefusal = (name, sourcePath) =>
-  `${mirrorUpdateRefusal(name, sourcePath)} To retire it, remove it from the repo's mirror list first (dsp-integration/scripts/sync-board-docs.mjs MIRRORS today); a person can then delete it on the Docs page.`;
+// The manifest that declares a project's mirrors: its docsSync.manifestPath
+// once the sync has run, else the generic name.
+async function mirrorManifestFor(projectIds) {
+  for (const id of projectIds || []) {
+    if (!id) continue;
+    const snap = await db().collection("projects").doc(String(id)).get();
+    const ds = snap.exists ? (snap.data() || {}).docsSync : null;
+    if (ds && typeof ds.manifestPath === "string" && ds.manifestPath.trim()) return ds.manifestPath.trim();
+  }
+  return "the project's board-docs.json";
+}
+const mirrorDeleteRefusal = (name, sourcePath, manifestPath) =>
+  `"${name}" mirrors ${sourcePath}; it is written by the docs sync from ${manifestPath || "the project's board-docs.json"}. Remove its entry there (and the file, if it is going) and the next sync marks it superseded. It can't be deleted over MCP.`;
 
 const TOOLS = [
   {
@@ -2978,7 +2989,7 @@ const TOOLS = [
       const snap = await ref.get();
       if (!snap.exists) return toolError(`No project document with id ${args.docId}.`);
       const current = snap.data() || {};
-      if (current.sourcePath) return toolError(mirrorDeleteRefusal(current.name || snap.id, current.sourcePath));
+      if (current.sourcePath) return toolError(mirrorDeleteRefusal(current.name || snap.id, current.sourcePath, await mirrorManifestFor([current.projectId])));
       const revisionId = await recordDocRevision(session, "projectDoc.deleted", { projectId: current.projectId || null, docId: snap.id, name: current.name || "" }, current.contentMd || "");
       await ref.delete();
       await audit(session, "delete_project_document", { docId: snap.id, projectId: current.projectId || null, name: current.name || "", revisionId });
@@ -3091,7 +3102,7 @@ const TOOLS = [
       const snap = await ref.get();
       if (!snap.exists) return toolError(`No interface with id ${args.interfaceId}.`);
       const current = snap.data() || {};
-      if (current.sourcePath) return toolError(mirrorDeleteRefusal(current.name || snap.id, current.sourcePath));
+      if (current.sourcePath) return toolError(mirrorDeleteRefusal(current.name || snap.id, current.sourcePath, await mirrorManifestFor(current.projectIds)));
       const revisionId = await recordDocRevision(session, "interface.deleted", { interfaceId: snap.id, projectIds: current.projectIds || [], name: current.name || "" }, current.contentMd || "");
       await ref.delete();
       await audit(session, "delete_interface", { interfaceId: snap.id, projectIds: current.projectIds || [], name: current.name || "", revisionId });

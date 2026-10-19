@@ -354,8 +354,8 @@ interface record with a `sourcePath` are read-only over MCP:
 `set_project_requirements`, `set_project_readme`, `update_interface` and
 `delete_interface` refuse them, write nothing and record no revision, and
 the error names the repo file. To change one, edit the file on a branch; the
-board copy follows when it merges. To retire a mirror, remove it from the
-repo's mirror list first. A project with no synced copy (Backlog Tracker &
+board copy follows when it merges. To retire a mirror, remove its entry from the
+project's `board-docs.json` first. A project with no synced copy (Backlog Tracker &
 FAQs' Requirements and README today) is written as before.
 
 Every change to a mirror, by the sync or by a person on the Docs page, is

@@ -627,7 +627,8 @@ async function rpc(token, method, params, id = 1) {
     const del = await callText("delete_project_document", { docId: "mir1" });
     assert.strictEqual(del.isError, true);
     assert.match(del.content[0].text, /p\/docs\/A\.md/);
-    assert.match(del.content[0].text, /remove it from the repo's mirror list first/);
+    assert.match(del.content[0].text, /written by the docs sync from the project's board-docs\.json\. Remove its entry there/);
+    assert.ok(!/MIRRORS/.test(del.content[0].text), "the old MIRRORS list no longer exists");
     assert.ok(env.store.col("projectDocs").get("mir1"), "the mirror remains");
     assert.strictEqual(revisionCount(), revs, "a refusal records no revision");
   });
