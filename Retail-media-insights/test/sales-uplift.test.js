@@ -102,6 +102,17 @@ test('Advertisers iROAS rolls up measured campaigns only and reconciles with the
   assert.notEqual((await get(`/advertisers${f}`, advertiser('adv-blackmores'))).status, 200);
 });
 
+test('the tier mix lists each variation under its tier and the shares add up to 100%', async () => {
+  const d = campaignWhere((c) => c.hasPos && c.excludesControl && c.level === 'Personalised' && c.advertiserId === 'adv-blackmores');
+  const { body } = await get(`/sales-uplift?campaignId=${d.id}`);
+  const personalised = body.tierMix.find((t) => t.tier === 'personalised');
+  assert.deepEqual(personalised.variations.map((v) => [v.name, v.percent]), [['New to brand', 3], ['Existing buyer', 2]]);
+  assert.equal(body.tierMix.reduce((n, t) => n + t.variations.reduce((m, v) => m + v.percent, 0), 0), 100);
+  for (const t of body.tierMix) assert.equal(t.variations.reduce((n, v) => n + v.percent, 0), t.percent);
+  assert.equal(body.tierMix.find((t) => t.tier === 'default').variations[0].name, 'Default');
+  assert.equal(personalised.variations[0].audienceNote, 'Audience shared only with this advertiser');
+});
+
 test('By product: SKU rows add up to the incremental sales tile, shares cover positive contribution only, thin SKUs are flagged', async () => {
   const multi = campaignWhere((c) => c.hasPos && c.excludesControl && c.products.length === 3 && c.advertiserId === 'adv-blackmores')
     || campaignWhere((c) => c.hasPos && c.excludesControl && c.products.length === 3);

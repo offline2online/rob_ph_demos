@@ -102,7 +102,9 @@ test('campaign drop-down follows the Advertiser filter; a campaign with no Contr
     await page.selectOption('select[aria-label="Campaign"]', kenvue);
     await page.waitForSelector('.sr-legend-item.sr-off');
     assert.equal(await page.locator('.sr-legend-item.sr-off').textContent(), 'Control stores — none set for this campaign.');
-    assert.equal(await page.locator('.sr-svg polyline').count(), 2);
+    // A campaign is chosen: the localised line plus one line per personalised variation (no control line).
+    assert.equal(await page.locator('.sr-svg polyline').count(), await page.locator('.sr-legend-btn').count());
+    assert.ok((await page.locator('.sr-svg polyline').count()) >= 2);
     assert.equal(await page.locator('.sr-flag').textContent(), 'Matched on product name');
     assert.deepEqual(problems, []);
   } finally { await context.close(); }
@@ -115,6 +117,24 @@ test('advertiser login: the chart sits with Your targeting & scheduling, own cam
     const options = await page.$$eval('select[aria-label="Campaign"] option', (o) => o.map((x) => x.textContent));
     assert.ok(options.length > 0 && options.every((t) => !/Haleon|L’Oréal|Kenvue|—/.test(t)), options.join('|'));
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), 'no horizontal scroll at 390px');
+    assert.deepEqual(problems, []);
+  } finally { await context.close(); }
+});
+
+test('choosing a campaign names its variations with their targeting on hover; clearing it returns to tier level', async () => {
+  const { page, context, problems } = await open('', 1163);
+  try {
+    assert.deepEqual(await page.locator('.sr-legend-btn').allTextContents(), ['After a personalised play', 'After a localised play', 'Control stores, same clock time']);
+    const blackmores = await page.locator('select[aria-label="Campaign"] option', { hasText: 'Blackmores' }).first().getAttribute('value');
+    await page.selectOption('select[aria-label="Campaign"]', blackmores);
+    await page.waitForFunction(() => document.querySelectorAll('.sr-legend-btn').length === 4);
+    assert.deepEqual(await page.locator('.sr-legend-btn').allTextContents(), ['New to brand', 'Existing buyer', 'After a localised play', 'Control stores, same clock time']);
+    await page.locator('.sr-legend-btn').first().hover();
+    const tip = await page.innerText('.sr-tip');
+    for (const want of ['New to brand', 'Personalised', 'Visitor segments is one of: Blackmores · new to brand', 'Audience shared only with this advertiser']) assert.ok(tip.includes(want), want);
+    await page.selectOption('select[aria-label="Campaign"]', '');
+    await page.waitForFunction(() => document.querySelectorAll('.sr-legend-btn').length === 3);
+    assert.deepEqual(await page.locator('.sr-legend-btn').allTextContents(), ['After a personalised play', 'After a localised play', 'Control stores, same clock time']);
     assert.deepEqual(problems, []);
   } finally { await context.close(); }
 });

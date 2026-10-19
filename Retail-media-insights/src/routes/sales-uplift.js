@@ -1,6 +1,7 @@
 'use strict';
 const { FilterError } = require('../filters');
-const { describeCampaign, upliftFor, tierMix, CONTROL_SEGMENT, PRE_DAYS, POST_DAYS } = require('../uplift');
+const { describeCampaign, upliftFor, variationMix, CONTROL_SEGMENT, PRE_DAYS, POST_DAYS } = require('../uplift');
+const { variationsOf } = require('../variations');
 const { addDays } = require('../dealing');
 
 // Sales uplift vs control stores: one outcome chart for one campaign. Sales of the campaign's product in the stores it
@@ -33,7 +34,7 @@ module.exports = {
       windows: { before: { from: addDays(pick.start, -PRE_DAYS), to: addDays(pick.start, -1) }, during: { from: pick.start, to: pick.flightEnd }, afterDays: POST_DAYS },
       campaignStores: { count: pick.campaignStores.length, names: names(pick.campaignStores) },
       controlStores: { count: pick.controlStores.length, names: names(pick.controlStores) },
-      tierMix: tierMix(pick.level),
+      tierMix: variationMix(pick.level, variationsOf(store.campaigns.find((c) => c.id === pick.id), store)),
     });
     const result = upliftFor(store, pick, all.filter((c) => c.advertiserId === pick.advertiserId));
     if (!result.transactions) return { ...out, state: 'no-pos' };

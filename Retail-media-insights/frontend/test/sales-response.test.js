@@ -31,3 +31,19 @@ test('advertiser drop-down labels carry no other advertiser', async () => {
   const d = await get('/sales-response', {}, ADVERTISER);
   for (const c of d.campaigns) assert.ok(!SR.campaignLabel(c).includes('—'));
 });
+
+test('legend toggles follow the lines: new variation lines start on, vanished ones drop out, one always stays on', () => {
+  const seen = [];
+  let on = SR.syncOn([], seen, [{ key: 'personalised', available: true }, { key: 'localised', available: true }]);
+  assert.deepEqual(on, ['personalised', 'localised']);
+  on = SR.toggleLine(on, 'localised');
+  on = SR.syncOn(on, seen, [{ key: 'personalised:a', available: true }, { key: 'personalised:b', available: false }, { key: 'localised', available: true }]);
+  assert.deepEqual(on, ['personalised:a']);
+});
+
+test('a variation’s hover names its tier, rules, plays, stores and private audience', () => {
+  const m = SR.variationHover({ label: 'New to brand', tier: 'personalised', rules: ['Visitor segments is one of: Blackmores · new to brand'], plays: 120, stores: { count: 2, names: ['A', 'B'] }, audienceNote: 'Audience shared only with this advertiser' });
+  assert.equal(m.title, 'New to brand');
+  const text = JSON.stringify(m.rows);
+  for (const want of ['Personalised', 'Visitor segments is one of', '"120"', '"2"', 'A, B', 'Audience shared only with this advertiser']) assert.ok(text.includes(want), want);
+});

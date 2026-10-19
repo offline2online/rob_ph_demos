@@ -12,6 +12,7 @@
 // stores never see that lift, so uplift is measurable.
 
 const { addDays, eachDay, dayDiff } = require('./dealing');
+const { rulesText, splitTotal, PRIVATE_AUDIENCE } = require('./variations');
 
 const PRE_DAYS = 30;
 const POST_DAYS = 30;
@@ -199,4 +200,13 @@ function bySkuRows(skus, total) {
 
 const tierMix = (level) => Object.entries(TIER_MIX[level] || TIER_MIX['Default only']).map(([tier, percent]) => ({ tier, percent }));
 
-module.exports = { describeCampaign, upliftFor, tierMix, transactionsFor, controlStoreIds, CONTROL_SEGMENT, PRE_DAYS, POST_DAYS };
+/** The tier mix with each tier's share split across the campaign's variations (shares are whole numbers adding up to 100). */
+function variationMix(level, variations) {
+  return tierMix(level).map(({ tier, percent }) => {
+    const of = variations.filter((v) => v.tier === tier);
+    const shares = splitTotal(percent, of.map((v) => v.weight));
+    return { tier, percent, variations: of.map((v, i) => ({ id: v.id, name: v.name, percent: shares[i], rules: rulesText(v.rules), ...(v.private ? { audienceNote: PRIVATE_AUDIENCE } : {}) })) };
+  });
+}
+
+module.exports = { describeCampaign, upliftFor, tierMix, variationMix, transactionsFor, controlStoreIds, CONTROL_SEGMENT, PRE_DAYS, POST_DAYS };

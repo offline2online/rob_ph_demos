@@ -916,6 +916,81 @@ function buildAggregates(raw, ctx) {
 
 module.exports = { buildAggregates };
   },
+  "src/variations.js": function (module, exports, require) {
+// Campaign variations (the targeted versions of a campaign) for the outcome charts: the name as authored, the tier it plays in,
+// its targeting rules in plain language, and the audience label for an advertiser-private audience.
+//
+// Inputs, as production will hold them: the targeted versions and their rules from the stored campaign (GET /v1/campaigns/{id})
+// and the version id recorded on each play in campaign playback analytics. The test retailer has neither as rows, so they are
+// derived deterministically from the campaign here; the charts read only {id, name, tier, rules, private} and a play's version id.
+
+const PRIVATE_AUDIENCE = 'Audience shared only with this advertiser';
+// Advertisers with an advertiser-private audience in the test retailer (DSP Integration: "Advertiser audiences").
+const PRIVATE_AUDIENCE_ADVERTISERS = new Set(['adv-blackmores', 'adv-haleon']);
+const PERSONALISED_VERSIONS = [
+  { name: 'New to brand', segment: 'new to brand', weight: 3 },
+  { name: 'Existing buyer', segment: 'existing buyer', weight: 2 },
+  { name: 'Lapsed buyer', segment: 'lapsed buyer', weight: 1 },
+];
+const LOCALISED_RULES = {
+  'Store Open / Closed': { operator: 'is', values: ['Open'] },
+  'Fixed Store Segments': { operator: 'includes', values: ['Metro'] },
+  'Variable Store Segments': { operator: 'includes', values: ['Busy'] },
+  'Display Tag(s)': { operator: 'includes', values: ['Window'] },
+};
+const TIERS = ['default', 'localised', 'personalised'];
+
+const sentence = (text) => text.charAt(0).toUpperCase() + text.slice(1).toLowerCase().replace(/\bcomputer vision\b/, 'Computer Vision');
+
+/** One campaign's variations, default first: [{id, name, tier, rules: [{variable, operator, values}], private, weight}]. */
+function variationsOf(campaign, store) {
+  const brand = ((store.advertisers || {})[campaign.advertiserId] || {}).name || campaign.advertiserId;
+  const out = [{ id: `${campaign.id}-default`, name: 'Default', tier: 'default', rules: [], private: false, weight: 1 }];
+  if (campaign.level === 'Default only') return out;
+  const localVariable = (campaign.variables || []).find((v) => LOCALISED_RULES[v]) || 'Fixed Store Segments';
+  out.push({ id: `${campaign.id}-localised`, name: 'Local stores', tier: 'localised', rules: [{ variable: localVariable, ...LOCALISED_RULES[localVariable] }], private: false, weight: 1 });
+  if (campaign.level !== 'Personalised') return out;
+  const n = Math.min(campaign.targetedVersions || 2, PERSONALISED_VERSIONS.length);
+  PERSONALISED_VERSIONS.slice(0, n).forEach((v, i) => out.push({
+    id: `${campaign.id}-p${i + 1}`, name: v.name, tier: 'personalised',
+    rules: [{ variable: 'Visitor Segments', operator: 'is one of', values: [`${brand} · ${v.segment}`] }],
+    private: i === 0 && PRIVATE_AUDIENCE_ADVERTISERS.has(campaign.advertiserId), weight: v.weight,
+  }));
+  return out;
+}
+
+/** Targeting rules in plain language, one line per variable and operator: "Visitor segments is one of: Blackmores · new to brand". */
+function rulesText(rules) {
+  const merged = new Map();
+  for (const r of rules) {
+    const key = `${r.variable}|${r.operator}`;
+    if (!merged.has(key)) merged.set(key, { ...r, values: [] });
+    for (const v of r.values) if (!merged.get(key).values.includes(v)) merged.get(key).values.push(v);
+  }
+  return [...merged.values()].map((r) => `${sentence(r.variable)} ${r.operator}: ${r.values.join(' · ')}`);
+}
+
+/** Split a whole-number total across weights so the parts add up to it (largest remainder). */
+function splitTotal(total, weights) {
+  const sum = weights.reduce((a, b) => a + b, 0);
+  const raw = weights.map((w) => (total * w) / sum);
+  const parts = raw.map(Math.floor);
+  let left = total - parts.reduce((a, b) => a + b, 0);
+  raw.map((x, i) => [x - Math.floor(x), i]).sort((a, b) => b[0] - a[0] || a[1] - b[1]).forEach(([, i]) => { if (left > 0) { parts[i] += 1; left -= 1; } });
+  return parts;
+}
+
+/** The version a play ran, picked among its tier's variations by `unit` (0 to under 1) in proportion to their weights. */
+function pickVersion(variations, tier, unit) {
+  const of = variations.filter((v) => v.tier === tier);
+  const total = of.reduce((n, v) => n + v.weight, 0);
+  let at = unit * total;
+  for (const v of of) { at -= v.weight; if (at < 0) return v; }
+  return of[of.length - 1];
+}
+
+module.exports = { variationsOf, rulesText, splitTotal, pickVersion, PRIVATE_AUDIENCE, TIERS };
+  },
   "src/sales-response.js": function (module, exports, require) {
 // Sales response after personalised plays: sales of a campaign's product in the minutes after a play, per 1,000 transactions
 // in the same store and minutes (basket penetration), after personalised plays, after localised plays, and in Control stores
@@ -932,6 +1007,7 @@ module.exports = { buildAggregates };
 // {plays, sales, transactions}, so replacing `dayEvents` with the three feeds changes nothing downstream.
 
 const calc = require('./calc');
+const { variationsOf, pickVersion } = require('./variations');
 
 const WINDOWS = [5, 10, 15, 30, 60];
 const DEFAULT_WINDOW = 10;
@@ -945,6 +1021,7 @@ const LIFT = { personalised: 4, localised: 1.2 }; // extra multiples of the base
 const DECAY_MINUTES = 4;
 const REACH_MINUTES = 30; // a play no longer lifts sales after this
 const MAX_MULTIPLE = 8;
+const MIN_PLAYS = 30; // a variation with fewer plays than this shows no rate
 
 function hashSeed(text) {
   let h = 2166136261;
@@ -994,6 +1071,12 @@ function addTransactions(target, byHour, t, window, step) {
  * One store-day of the campaign, in seconds from midnight: every play of the campaign (any tier, any display type) and every sale
  * of its product. `control` days have no plays: Control stores don't run the campaign.
  */
+function variationsFor(store, campaign) {
+  const cache = store.__salesResponse.variations;
+  if (!cache.has(campaign.id)) cache.set(campaign.id, variationsOf(campaign, store));
+  return cache.get(campaign.id);
+}
+
 function dayEvents(store, campaign, storeId, date, control) {
   const cache = store.__salesResponse.days;
   const key = `${campaign.id}|${storeId}|${date}|${control ? 1 : 0}`;
@@ -1002,6 +1085,7 @@ function dayEvents(store, campaign, storeId, date, control) {
   const hours = store.catalog.stores[storeId];
   const rand = rng(hashSeed(key));
   const plays = [];
+  const variations = variationsFor(store, campaign);
   if (!control) {
     const types = (campaign.displayTypeIds || Object.keys(store.catalog.displayTypes)).filter((t) => store.catalog.displayTypes[t]);
     for (let hour = hours.open; hour < hours.close; hour += 1) {
@@ -1009,7 +1093,14 @@ function dayEvents(store, campaign, storeId, date, control) {
         if (!calc.insideOperatingHours(hour, calc.operatingWindow(store.catalog.displayTypes[displayTypeId], hours))) continue;
         const tiers = [['localised', 1 + Math.floor(rand() * 2)]];
         if (campaign.level === 'Personalised') tiers.push(['personalised', 1 + Math.floor(rand() * 2)]);
-        for (const [tier, n] of tiers) for (let k = 0; k < n; k += 1) plays.push({ t: hour * 3600 + Math.floor(rand() * 3600), tier, displayTypeId });
+        for (const [tier, n] of tiers) {
+          for (let k = 0; k < n; k += 1) {
+            const t = hour * 3600 + Math.floor(rand() * 3600);
+            // The version id recorded on the play; picked by a hash of the play so the stream of random numbers above is unchanged.
+            const versionId = pickVersion(variations, tier, hashSeed(`${key}|${t}|${displayTypeId}|v`) / 4294967296).id;
+            plays.push({ t, tier, displayTypeId, versionId });
+          }
+        }
       }
     }
     plays.sort((a, b) => a.t - b.t);
@@ -1074,7 +1165,7 @@ function operatingHours(store, storeIds, types) {
 }
 
 function salesResponse(store, campaign, filters, { window, step, view, hourFrom, hourTo, hoursError }) {
-  if (!store.__salesResponse) Object.defineProperty(store, '__salesResponse', { value: { days: new Map(), transactions: new Map() }, enumerable: false });
+  if (!store.__salesResponse) Object.defineProperty(store, '__salesResponse', { value: { days: new Map(), transactions: new Map(), variations: new Map() }, enumerable: false });
   const scope = scopeOf(store, campaign, filters);
   const hours = operatingHours(store, scope.treated.length ? scope.treated : scope.control, scope.types);
   const band = hourFrom == null ? null : { from: hourFrom, to: hourTo };
@@ -1088,6 +1179,9 @@ function salesResponse(store, campaign, filters, { window, step, view, hourFrom,
   const n = Math.ceil(window / step);
   const empty = (kind) => ({ plays: 0, sales: new Array(n).fill(0), transactions: new Array(n).fill(0), kind });
   const lines = { personalised: empty('personalised'), localised: empty('localised'), control: empty('control') };
+  // Personalised plays by the version they ran: the same counting as the personalised line, kept apart per variation.
+  const byVersion = {};
+  for (const v of variationsFor(store, campaign)) if (v.tier === 'personalised') byVersion[v.id] = { ...empty('personalised'), stores: new Set() };
 
   for (const date of dates) {
     for (const storeId of scope.treated) {
@@ -1102,12 +1196,19 @@ function salesResponse(store, campaign, filters, { window, step, view, hourFrom,
         if (dt >= window * 60) continue;
         const bucket = Math.floor(Math.floor(dt / 60) / step);
         const p = counted[last];
-        if (inBand(Math.floor(p.t / 3600))) lines[p.tier].sales[bucket] += 1;
+        if (inBand(Math.floor(p.t / 3600))) {
+          lines[p.tier].sales[bucket] += 1;
+          if (p.tier === 'personalised' && byVersion[p.versionId]) byVersion[p.versionId].sales[bucket] += 1;
+        }
       }
       counted.forEach((p) => {
         const hour = Math.floor(p.t / 3600);
         if (!inBand(hour)) return;
         lines[p.tier].plays += 1; addTransactions(lines[p.tier].transactions, txns, p.t, window, step);
+        const v = p.tier === 'personalised' ? byVersion[p.versionId] : null;
+        if (v) {
+          v.plays += 1; v.stores.add(storeId); addTransactions(v.transactions, txns, p.t, window, step);
+        }
       });
       // Control stores, same clock time: each personalised play opens the same clock window in every Control store.
       if (scope.control.length) {
@@ -1129,11 +1230,11 @@ function salesResponse(store, campaign, filters, { window, step, view, hourFrom,
       }
     }
   }
-  return { scope, hours, band, dates, lines, n };
+  return { scope, hours, band, dates, lines, n, byVersion };
 }
 
 module.exports = {
-  WINDOWS, DEFAULT_WINDOW, MAX_WINDOW, STEPS, VIEWS, salesResponse, personalisedCampaigns, scopeOf, operatingHours, labelOf, rate, transactionsByHour, dayEvents,
+  WINDOWS, DEFAULT_WINDOW, MAX_WINDOW, STEPS, VIEWS, MIN_PLAYS, variationsFor, salesResponse, personalisedCampaigns, scopeOf, operatingHours, labelOf, rate, transactionsByHour, dayEvents,
 };
   },
   "src/testdata.js": function (module, exports, require) {
@@ -1616,6 +1717,7 @@ module.exports = { OPEN_AUCTION, ownAdvertiser, isOpenAuction, dealsInScope, dea
 // stores never see that lift, so uplift is measurable.
 
 const { addDays, eachDay, dayDiff } = require('./dealing');
+const { rulesText, splitTotal, PRIVATE_AUDIENCE } = require('./variations');
 
 const PRE_DAYS = 30;
 const POST_DAYS = 30;
@@ -1803,7 +1905,16 @@ function bySkuRows(skus, total) {
 
 const tierMix = (level) => Object.entries(TIER_MIX[level] || TIER_MIX['Default only']).map(([tier, percent]) => ({ tier, percent }));
 
-module.exports = { describeCampaign, upliftFor, tierMix, transactionsFor, controlStoreIds, CONTROL_SEGMENT, PRE_DAYS, POST_DAYS };
+/** The tier mix with each tier's share split across the campaign's variations (shares are whole numbers adding up to 100). */
+function variationMix(level, variations) {
+  return tierMix(level).map(({ tier, percent }) => {
+    const of = variations.filter((v) => v.tier === tier);
+    const shares = splitTotal(percent, of.map((v) => v.weight));
+    return { tier, percent, variations: of.map((v, i) => ({ id: v.id, name: v.name, percent: shares[i], rules: rulesText(v.rules), ...(v.private ? { audienceNote: PRIVATE_AUDIENCE } : {}) })) };
+  });
+}
+
+module.exports = { describeCampaign, upliftFor, tierMix, variationMix, transactionsFor, controlStoreIds, CONTROL_SEGMENT, PRE_DAYS, POST_DAYS };
   },
   "src/display-types.js": function (module, exports, require) {
 // Display type facts shared by the display-types, slot-value, slot-allocation and missed-revenue
@@ -3115,6 +3226,7 @@ module.exports = {
   "src/routes/sales-response.js": function (module, exports, require) {
 const sr = require('../sales-response');
 const { FilterError } = require('../filters');
+const { rulesText, PRIVATE_AUDIENCE } = require('../variations');
 
 const intParam = (params, name, { min, max }) => {
   const raw = params.get(name);
@@ -3129,6 +3241,7 @@ const EMPTY_TEXT = {
   'no-campaigns': 'No campaigns with personalised variants in the selected period.',
 };
 const NO_CONTROL = 'Control stores — none set for this campaign.';
+const TOO_FEW = 'Too few plays to show a rate';
 
 // Sales response after personalised plays (Targeting & scheduling maturity; the advertiser's Your targeting & scheduling).
 // The page filters scope it (store, display type, date range, advertiser); an advertiser login is pinned to its own campaigns
@@ -3155,7 +3268,8 @@ module.exports = {
       const base = { id: c.id, name: c.name || c.id, product: c.product || null, start: c.start, end: c.end };
       return own ? base : { ...base, advertiserId: c.advertiserId, advertiserName: a.name || c.advertiserId, dsp: a.dsp || null };
     });
-    const out = { window, step, view, hourBand: hourFrom === null ? null : { from: hourFrom, to: hourTo }, campaigns, campaignId: null, hours: [], emptyReason: null, emptyText: null, lines: [], coverage: null };
+    const explicit = Boolean(params.get('campaignId'));
+    const out = { variationsShown: false, window, step, view, hourBand: hourFrom === null ? null : { from: hourFrom, to: hourTo }, campaigns, campaignId: null, hours: [], emptyReason: null, emptyText: null, lines: [], coverage: null };
     const empty = (reason) => { out.emptyReason = reason; out.emptyText = EMPTY_TEXT[reason]; return out; };
 
     const wanted = params.get('campaignId');
@@ -3174,15 +3288,15 @@ module.exports = {
     out.coverage = { stores: stores.length, storeNames: stores, controlStores: r.scope.control.length, dateFrom: r.dates[0] || null, dateTo: r.dates[r.dates.length - 1] || null };
     if (!personalised.plays) return empty('no-personalised-plays');
 
+    const variations = sr.variationsFor(store, campaign);
     const spec = [
       ['personalised', 'After a personalised play', r.lines.personalised],
       ['localised', 'After a localised play', r.lines.localised],
       ['control', 'Control stores, same clock time', control],
     ];
-    out.lines = spec.map(([key, label, line]) => {
-      if (key === 'control' && !r.scope.control.length) return { key, label, available: false, note: NO_CONTROL, points: [] };
+    const pointsOf = (line) => {
       let running = 0; const windowTransactions = line.transactions.reduce((a, b) => a + b, 0); // running view: the whole window's transactions, so the total builds up
-      const points = line.sales.map((sales, i) => {
+      return line.sales.map((sales, i) => {
         const from = i * step; const to = Math.min((i + 1) * step, window);
         running += sales;
         const transactions = view === 'running' ? windowTransactions : line.transactions[i];
@@ -3192,7 +3306,25 @@ module.exports = {
           sales: view === 'running' ? running : sales, plays: line.plays, transactions,
         };
       });
-      return { key, label, available: true, plays: line.plays, points };
+    };
+    out.lines = spec.flatMap(([key, label, line]) => {
+      if (key === 'control' && !r.scope.control.length) return [{ key, label, available: false, note: NO_CONTROL, points: [] }];
+      // With a campaign chosen, the personalised line splits into one line per personalised variation.
+      if (key === 'personalised' && explicit) {
+        out.variationsShown = true;
+        return variations.filter((v) => v.tier === 'personalised').map((v) => {
+          const vl = r.byVersion[v.id];
+          const storeNames = [...vl.stores].map((s) => store.catalog.stores[s].name || s).sort();
+          const detail = {
+            variationId: v.id, tier: v.tier, rules: rulesText(v.rules), plays: vl.plays, stores: { count: storeNames.length, names: storeNames },
+            ...(v.private ? { audienceNote: PRIVATE_AUDIENCE } : {}),
+          };
+          const k = `personalised:${v.id}`;
+          if (vl.plays < sr.MIN_PLAYS) return { key: k, label: v.name, ...detail, available: false, note: TOO_FEW, points: [] };
+          return { key: k, label: v.name, ...detail, available: true, points: pointsOf(vl) };
+        });
+      }
+      return [{ key, label, available: true, plays: line.plays, points: pointsOf(line) }];
     });
     return out;
   },
@@ -3200,7 +3332,8 @@ module.exports = {
   },
   "src/routes/sales-uplift.js": function (module, exports, require) {
 const { FilterError } = require('../filters');
-const { describeCampaign, upliftFor, tierMix, CONTROL_SEGMENT, PRE_DAYS, POST_DAYS } = require('../uplift');
+const { describeCampaign, upliftFor, variationMix, CONTROL_SEGMENT, PRE_DAYS, POST_DAYS } = require('../uplift');
+const { variationsOf } = require('../variations');
 const { addDays } = require('../dealing');
 
 // Sales uplift vs control stores: one outcome chart for one campaign. Sales of the campaign's product in the stores it
@@ -3233,7 +3366,7 @@ module.exports = {
       windows: { before: { from: addDays(pick.start, -PRE_DAYS), to: addDays(pick.start, -1) }, during: { from: pick.start, to: pick.flightEnd }, afterDays: POST_DAYS },
       campaignStores: { count: pick.campaignStores.length, names: names(pick.campaignStores) },
       controlStores: { count: pick.controlStores.length, names: names(pick.controlStores) },
-      tierMix: tierMix(pick.level),
+      tierMix: variationMix(pick.level, variationsOf(store.campaigns.find((c) => c.id === pick.id), store)),
     });
     const result = upliftFor(store, pick, all.filter((c) => c.advertiserId === pick.advertiserId));
     if (!result.transactions) return { ...out, state: 'no-pos' };

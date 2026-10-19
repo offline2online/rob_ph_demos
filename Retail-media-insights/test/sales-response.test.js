@@ -133,3 +133,41 @@ test('empty states: no POS, no personalised plays, no Control stores; product-na
   const none = (await get(`/sales-response?${Q}&advertiserIds=adv-unilever`)).body;
   assert.equal(none.emptyReason, 'no-campaigns');
 });
+
+test('with a campaign chosen the personalised line splits into one line per variation; without one the lines stay at tier level', async () => {
+  const tier = (await get(`/sales-response?${Q}&advertiserIds=adv-blackmores`)).body;
+  assert.equal(tier.variationsShown, false);
+  const { body } = await get(`/sales-response?${Q}&advertiserIds=adv-blackmores&campaignId=${tier.campaignId}`);
+  assert.equal(body.variationsShown, true);
+  const names = body.lines.filter((l) => l.key.startsWith('personalised:')).map((l) => l.label);
+  assert.deepEqual(names, ['New to brand', 'Existing buyer']);
+  assert.deepEqual(body.lines.map((l) => l.key).filter((k) => !k.startsWith('personalised:')), ['localised', 'control']);
+  // The variations are the personalised line, split: plays and sales add up to it.
+  const parts = body.lines.filter((l) => l.key.startsWith('personalised:'));
+  assert.equal(parts.reduce((n, l) => n + l.plays, 0), line(tier, 'personalised').plays);
+  for (let i = 0; i < 10; i += 1) assert.equal(parts.reduce((n, l) => n + l.points[i].sales, 0), line(tier, 'personalised').points[i].sales);
+  const first = parts[0];
+  assert.deepEqual(first.rules, ['Visitor segments is one of: Blackmores · new to brand']);
+  assert.equal(first.tier, 'personalised');
+  assert.ok(first.stores.count > 0 && first.stores.names.length === first.stores.count);
+  assert.equal(first.audienceNote, 'Audience shared only with this advertiser');
+  assert.equal(parts[1].audienceNote, undefined);
+});
+
+test('a variation with too few plays shows a message in place of its line', async () => {
+  const tier = (await get(`/sales-response?${Q}&advertiserIds=adv-blackmores`)).body;
+  const { body } = await get(`/sales-response?dateFrom=2026-10-10&dateTo=2026-10-10&storeIds=store-1&hourFrom=9&hourTo=9&advertiserIds=adv-blackmores&campaignId=${tier.campaignId}`);
+  const parts = body.lines.filter((l) => l.key.startsWith('personalised:'));
+  assert.ok(parts.length);
+  for (const l of parts) { assert.equal(l.available, false); assert.equal(l.note, 'Too few plays to show a rate'); assert.deepEqual(l.points, []); }
+});
+
+test('an advertiser sees the variations of its own campaigns only; another advertiser’s audiences never appear', async () => {
+  const { body: list } = await get('/sales-response', { authenticate: advertiser('adv-blackmores') });
+  const { body } = await get(`/sales-response?campaignId=${list.campaignId}`, { authenticate: advertiser('adv-blackmores') });
+  const text = JSON.stringify(body);
+  assert.ok(body.lines.some((l) => l.key.startsWith('personalised:')));
+  for (const other of ['Haleon', 'Loreal', 'Vitabiotics', 'Kenvue']) assert.ok(!text.includes(`${other} ·`), other);
+  const res = await get(`/sales-response?campaignId=c-haleon-1`, { authenticate: advertiser('adv-blackmores') });
+  assert.equal(res.status, 400);
+});
