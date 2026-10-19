@@ -101,3 +101,33 @@ test('Advertisers iROAS rolls up measured campaigns only and reconciles with the
   assert.equal(body.all.find((a) => a.name === 'Perrigo').iroas.value, null);
   assert.notEqual((await get(`/advertisers${f}`, advertiser('adv-blackmores'))).status, 200);
 });
+
+test('By product: SKU rows add up to the incremental sales tile, shares cover positive contribution only, thin SKUs are flagged', async () => {
+  const multi = campaignWhere((c) => c.hasPos && c.excludesControl && c.products.length === 3 && c.advertiserId === 'adv-blackmores')
+    || campaignWhere((c) => c.hasPos && c.excludesControl && c.products.length === 3);
+  const { body } = await get(`/sales-uplift?campaignId=${multi.id}`);
+  assert.equal(body.state, 'ok');
+  const rows = body.bySku;
+  assert.equal(rows.length, 3);
+  const measured = rows.filter((r) => r.measurable);
+  assert.ok(Math.abs(measured.reduce((n, r) => n + r.incrementalSales, 0) - body.tiles.incrementalSales) < 0.011);
+  assert.deepEqual(measured.map((r) => r.incrementalSales), [...measured.map((r) => r.incrementalSales)].sort((a, b) => b - a));
+  const pos = measured.filter((r) => r.incrementalSales > 0);
+  assert.ok(Math.abs(pos.reduce((n, r) => n + r.sharePercent, 0) - 100) < 0.05);
+  for (const r of measured.filter((x) => x.incrementalSales <= 0)) assert.equal(r.sharePercent, null);
+  assert.ok(measured.some((r) => r.incrementalSales < 0), 'the sample has a cannibalised SKU');
+  const thin = rows.filter((r) => !r.measurable);
+  for (const r of thin) assert.equal(r.incrementalSales, undefined);
+});
+
+test('By product: a product-name-only campaign has one row matched on product name; an advertiser cannot reach another advertiser\'s', async () => {
+  const byName = campaignWhere((c) => c.hasPos && c.excludesControl && c.matchedOn === 'product name');
+  const rows = (await get(`/sales-uplift?campaignId=${byName.id}`)).body.bySku;
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].matchedOn, 'product name');
+  assert.equal(rows[0].sku, undefined);
+  const other = campaignWhere((c) => c.advertiserId === 'adv-blackmores');
+  assert.equal((await get(`/sales-uplift?campaignId=${other.id}`, advertiser('adv-haleon'))).status, 400);
+  const noPos = campaignWhere((c) => !c.hasPos);
+  assert.equal((await get(`/sales-uplift?campaignId=${noPos.id}`)).body.bySku, undefined);
+});

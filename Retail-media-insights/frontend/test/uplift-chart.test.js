@@ -48,3 +48,19 @@ test('an advertiser login gets only its own campaigns; empty states carry the ex
   assert.strictEqual(UP.MESSAGES['no-control'], 'No control stores set for this campaign.');
   assert.match(UP.TITLE_TIP, /^Compares sales of this campaign’s products in stores where it played with sales in your Control stores segment\./);
 });
+
+test('By product: sorted rows, top ten with "+ n more", thin SKUs say too few sales, product-name-only rows are flagged', () => {
+  const sale = { before: { campaign: 900, control: 800 }, during: { campaign: 1500, control: 900 } };
+  const rows = Array.from({ length: 12 }, (_, i) => ({ name: 'P' + i, sku: 'S' + i, measurable: true, incrementalSales: 100 - i, sharePercent: 8.3, upliftPercent: 12, transactions: 90, sales: sale }));
+  rows.push({ name: 'Thin', measurable: false, transactions: 4, sales: sale });
+  const m = UP.bySkuModel({ bySku: rows }, false);
+  assert.strictEqual(m.rows.length, 10);
+  assert.strictEqual(m.more, 3);
+  assert.strictEqual(m.rows[0].figures, '$100 · 8.3% · 12%');
+  assert.strictEqual(UP.bySkuModel({ bySku: rows }, true).rows.length, 13);
+  const last = UP.bySkuModel({ bySku: rows }, true).rows[12];
+  assert.strictEqual(last.figures, 'Too few sales to measure');
+  assert.strictEqual(last.id, 'Matched on product name');
+  const neg = UP.bySkuModel({ bySku: [{ name: 'N', sku: 'N1', measurable: true, incrementalSales: -250, sharePercent: null, upliftPercent: -4, transactions: 80, sales: sale }] }, false);
+  assert.strictEqual(neg.rows[0].figures, '-$250 · no share · -4%');
+});
