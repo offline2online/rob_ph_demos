@@ -2946,3 +2946,26 @@ Two surfaces sharing this same Firestore project:
 4. The FAQ site's brand palette has never been checked against the real
    WordPress theme (network-blocked from this sandbox) — screenshots or
    the theme's actual token values would let it be tightened.
+
+## Blocked tickets: answering from the card
+
+A Backlog ticket a build session blocked with a question (`blocked.reason`
+`waiting-on-input` or `needs-decision`, with a `blocked.note`) is answered on
+the board in one step.
+
+- The card's blocked flag shows an **Answer** button (Material Symbols
+  `forum`), whether or not intake sections are missing. It opens the Resolve
+  modal, which shows `blocked.note`, then takes the answer (typed or dictated).
+- Send appends a note "Answer to the build's question: <answer>" from the
+  signed-in member, clears `blocked`, and, if the project's train is not
+  locked, requests a build of that card alone (`notifyRequestedAt` +
+  `notifyItemIds: [id]`). Any missing intake sections are asked next.
+- **Ready for Dev counts only buildable cards**: not blocked, not `patchReady`.
+  When the only Backlog cards are blocked, the header shows a non-clickable
+  "N waiting on your answer" chip instead; the "needs your decision" chip is
+  unchanged. A selection of only blocked cards writes no notify request.
+- When a notify request finds only blocked cards, `notifyOnProjectReadyForReview`
+  writes `notifyRoutine: {status: "error", errorMessage: "Every selected ticket
+  is waiting on your answer — answer it on the card", firedAt}`.
+- Build sessions end a waiting-on-input note with "Answer on the card (Answer
+  button)" (`ROUTINE_INSTRUCTIONS.md`).

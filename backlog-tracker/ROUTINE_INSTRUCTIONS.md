@@ -677,9 +677,11 @@ path:
 - **Needs a person's decision**: set
   `blocked: {reason: "waiting-on-input", note: "<the question, with the options>"}`,
   as for a dependency above, so the card shows as waiting on someone
-  rather than as an ordinary Backlog card. Once they answer (on the card,
-  or by editing its description), clearing the flag and clicking Ready for
-  Dev builds it.
+  rather than as an ordinary Backlog card. End a waiting-on-input note with
+  "Answer on the card (Answer button)" — never "reply and click Ready for
+  Dev": the Answer button on the card saves the answer as a comment, clears
+  the flag and starts that ticket's rebuild itself, whereas Ready for Dev
+  skips blocked cards.
 
 ## Cards that ship together are already grouped — don't stamp a deploymentId
 

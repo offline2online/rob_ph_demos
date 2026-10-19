@@ -1561,6 +1561,7 @@ a.review-flag { text-decoration: none; cursor: pointer; }
 .blocked-flag .material-symbols-outlined { font-size: 14px; }
 .blocked-flag-needs-decision { color: #cf1322; background: #fff1f0; border-color: #ffa39e; }
 .blocked-flag-waiting-on-input { color: #ad6800; background: #fffbe6; border-color: #ffe58f; }
+.waiting-answer-chip { cursor: default; padding-right: 8px; }
 .needs-decision-chip { margin-right: 6px; padding-right: 8px; }
 .blocked-clear-btn { border: 0; background: none; color: inherit; cursor: pointer; font-size: 14px; line-height: 1; padding: 0 3px; }
 

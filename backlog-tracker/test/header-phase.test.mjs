@@ -50,6 +50,8 @@ function board(project, cards) {
     escapeHTML: (s) => String(s), safeHttpUrl: (s) => s,
     backlogCountForProject: (pid) => cards.filter((c) => c.projectId === pid && c.status === "backlog").length,
     getSelectedSet: () => new Set(),
+    isBuildableBacklogItem: (i) => i.status === "backlog" && !(i.blocked && i.blocked.reason) && !i.patchReady,
+    waitingOnAnswerChipHTML: () => "",
     Date,
   };
   vm.createContext(ctx);
