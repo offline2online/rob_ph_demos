@@ -215,3 +215,14 @@ test('hourly: cell text, shading and hover facts', async () => {
   assert.match(val(m, 'Fill'), /advertiser slots sold; .* unsold, .* offline\)$/);
   assert.match(text(m), /Totals across all/);
 });
+
+test('value hovers carry the figures only; the description and averages sit on the display type name', async () => {
+  const types = await typesP;
+  const w = (await get('/slot-value')).rows.find((r) => r.id === 'window');
+  const m = SC.slotValueHover(w, RANGE);
+  assert.strictEqual(m.desc, null);
+  assert.ok(!/Average assumed views \(VAC-d\)/.test(text(m)));
+  assert.match(text(SC.displayTypeCard(types.window, RANGE)), /Average assumed views \(VAC-d\) per slot per day/);
+  const row = (await get('/missed-revenue')).rows.find((r) => r.id === 'dispensary');
+  assert.strictEqual(SC.missedHover(row, types.dispensary, RANGE, false).desc, null);
+});
