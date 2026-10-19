@@ -115,10 +115,12 @@ test('missed hover shows every value as the back end returned it, with the store
   assert.strictEqual(m.sections.flatMap((s) => s.rows).filter((r) => r[0] === 'Connected displays').length, 0, 'not shown in the missed revenue hover');
 });
 
-test('missed revenue & fill: rows sort by unsold value, highest first; the stack is the back end’s counts and adds to 100%', async () => {
+test('missed revenue & fill: rows follow the Slot value order; the stack is the back end’s counts and adds to 100%', async () => {
   const d = await get('/missed-revenue');
-  const totals = SC.missedOrder(d.rows.slice().reverse()).map((r) => r.unsoldValueAtFloor);
-  assert.deepStrictEqual(totals, totals.slice().sort((a, b) => b - a));
+  const sv = await get('/slot-value');
+  const leaders = SC.metricOrder(sv.rows, 'cpm');
+  const ids = SC.missedOrder(d.rows.slice().reverse(), leaders, () => null).map((r) => r.id);
+  assert.deepStrictEqual(ids, leaders.map((r) => r.id).filter((id) => ids.includes(id)));
   d.rows.concat([d.total]).forEach((r) => {
     const s = SC.missedShares(r);
     assert.ok(Math.abs(s.filled + s.unsold + s.down - 100) < 1e-9, r.name || 'total');

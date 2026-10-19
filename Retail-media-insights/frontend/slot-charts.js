@@ -183,11 +183,8 @@
     return { title: title, desc: null, sections: [{ rows: rows }] };
   }
 
-  // Display type rows by unsold value (unsold slots at floor CPM), highest first; ties by total missed, then input order.
-  function missedOrder(rows) {
-    return rows.map(function (r, i) { return { r: r, i: i }; })
-      .sort(function (a, b) { var pa = missedParts(a.r), pb = missedParts(b.r); return pb.unsold - pa.unsold || pb.total - pa.total || a.i - b.i; }).map(function (x) { return x.r; });
-  }
+  // Missed revenue & fill follows the Slot value order (like Slot allocation) so the charts compare row for row.
+  function missedOrder(rows, leaders, typeOf) { return followOrder(rows, leaders, typeOf); }
   // One 100%-wide stack: sold, unsold and offline shares of all advertiser slots, from the back end's counts.
   function missedShares(r) {
     var t = r.slotsTotal || 0;
@@ -386,7 +383,7 @@
     var seg = h('div', { class: 'sc-seg', role: 'radiogroup', 'aria-label': 'Slot value metric' });
     [['cpm', 'Effective CPM'], ['per', 'Revenue per available slot']].forEach(function (o) {
       var b = h('button', { type: 'button', class: 'sc-seg-btn', role: 'radio', 'data-mode': o[0], text: o[1] });
-      b.addEventListener('click', function () { state.mode = o[0]; syncSeg(); if (svData) drawSlotValue(); if (saData) drawAllocation(saData); });
+      b.addEventListener('click', function () { state.mode = o[0]; syncSeg(); if (svData) drawSlotValue(); if (saData) drawAllocation(saData); if (mrData) drawMissed(mrData); });
       segBtns[o[0]] = b; seg.appendChild(b);
     });
     function syncSeg() {
@@ -507,8 +504,10 @@
     }
 
     // ----- missed revenue / fill -----
+    var mrData = null;
     function drawMissed(d) {
-      var rows = missedOrder(d.rows);
+      mrData = d;
+      var rows = missedOrder(d.rows, svData && metricOrder(svData.rows, state.mode), function (r) { return cache.typeMap[r.id]; });
       var all = rows.concat(rows.length > 1 && d.total ? [d.total] : []);
       var list = h('div', { class: 'sc-rows', role: 'list' });
       all.forEach(function (r) {
@@ -604,13 +603,15 @@
     function loadAll() {
       var g = ++gen.all;
       [pSV, pSA, pMR, pH].forEach(function (p) { setState(p, 'loading'); });
-      svData = null; saData = null; hData = null;
+      svData = null; saData = null; mrData = null; hData = null;
       var current = function () { return alive && g === gen.all; };
       var typesP = fetchJson('display-types', filters).then(function (t) {
         cache.types = t; cache.typeMap = typesById(t); return t;
       }, function () { cache.types = null; cache.typeMap = {}; return null; }); // charts still draw, without the display type cards
-      function run(p, endpoint, draw, onData) {
-        Promise.all([fetchJson(endpoint, filters), typesP]).then(function (res) {
+      var svP = fetchJson('slot-value', filters);
+      // waitFor: a request this chart's order depends on (settled either way), so it draws once, already in its final order.
+      function run(p, endpoint, draw, onData, waitFor) {
+        Promise.all([endpoint === 'slot-value' ? svP : fetchJson(endpoint, filters), typesP, waitFor ? waitFor.then(function (d) { if (d && d.rows) svData = d; }, function () {}) : null]).then(function (res) {
           if (!current()) return;
           var d = res[0];
           if (!d || !d.rows || !d.rows.length) return setState(p, 'empty');
@@ -620,7 +621,7 @@
       }
       run(pSV, 'slot-value', function () { drawSlotValue(); if (saData) drawAllocation(saData); }, function (d) { svData = d; });
       run(pSA, 'slot-allocation', drawAllocation);
-      run(pMR, 'missed-revenue', drawMissed);
+      run(pMR, 'missed-revenue', drawMissed, null, svP);
       run(pH, 'hourly', drawHourly, function (d) { hData = d; });
       loadYield();
     }
