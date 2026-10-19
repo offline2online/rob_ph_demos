@@ -847,6 +847,11 @@ function buildAggregates(raw, ctx) {
   }
   const campaigns = (raw.campaigns || []).map((c) => ({
     id: c.id,
+    name: c.name || null,
+    // The product whose sales are matched to the campaign: by SKU, or by product name where the campaign has no SKU.
+    product: c.product ? { name: c.product.name, ...(c.product.sku ? { sku: c.product.sku } : {}) } : null,
+    // Whether the campaign excludes the Control stores Fixed Store Segment (exclusion targeting).
+    controlStores: Boolean(c.controlStores),
     advertiserId: c.advertiserId,
     start: c.start,
     end: c.end || null,
@@ -860,11 +865,225 @@ function buildAggregates(raw, ctx) {
   }));
   return {
     delivery: [...delivery.values()], inventory: [...inventory.values()], campaigns, advertisers: ctx.advertisers || {},
-    catalog: { displayTypes: ctx.displayTypes, displays: ctx.displays || [], stores: ctx.stores || {}, deals: ctx.dealCatalog || {}, sharedVariables: ctx.sharedVariables || {}, connectedDsps: ctx.connectedDsps || Object.keys(ctx.sharedVariables || {}) },
+    catalog: { displayTypes: ctx.displayTypes, displays: ctx.displays || [], stores: ctx.stores || {}, deals: ctx.dealCatalog || {}, sharedVariables: ctx.sharedVariables || {}, connectedDsps: ctx.connectedDsps || Object.keys(ctx.sharedVariables || {}),
+      controlStores: ctx.controlStores || { name: 'Control stores', storeIds: [] }, transactionApi: Boolean(ctx.transactionApi) },
   };
 }
 
 module.exports = { buildAggregates };
+  },
+  "src/sales-response.js": function (module, exports, require) {
+// Sales response after personalised plays: sales of a campaign's product in the minutes after a play, per 1,000 shoppers in
+// the store, after personalised plays, after localised plays, and in Control stores at the same clock time.
+//
+// Inputs, as the production data will arrive (README "Sales response after personalised plays"):
+//  - play timestamps, tier and display from campaign playback analytics (PH Core);
+//  - sale timestamps, store and SKU / product name from the Transaction API (a custom POS integration per retailer);
+//  - footfall by store and hour from PH Core store insights;
+//  - the Control stores Fixed Store Segment, used as exclusion targeting on the campaign.
+// The test retailer has none of these as rows, so `dayEvents` stands in for them: a deterministic day of plays and sales
+// per campaign and store, in which a personalised play lifts sales of the product for a few minutes (a localised play
+// less so). Everything after it (the counting rules, the rates, the controls) is the real calculation and reads only
+// {plays, sales, footfall}, so replacing `dayEvents` with the three feeds changes nothing downstream.
+
+const calc = require('./calc');
+
+const WINDOWS = [5, 10, 15, 30, 60];
+const DEFAULT_WINDOW = 10;
+const MAX_WINDOW = 120;
+const STEPS = [1, 5, 15];
+const VIEWS = ['step', 'running'];
+
+const BASE_CONVERSION = 0.01; // sales of the product per shopper-minute in the store with no recent play
+const LIFT = { personalised: 4, localised: 1.2 }; // extra multiples of the baseline right after a play
+const DECAY_MINUTES = 4;
+const REACH_MINUTES = 30; // a play no longer lifts sales after this
+const MAX_MULTIPLE = 8;
+
+function hashSeed(text) {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i += 1) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+function rng(seed) {
+  let s = seed >>> 0;
+  return () => {
+    s = (s + 0x6d2b79f5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function poisson(lambda, rand) {
+  const limit = Math.exp(-lambda);
+  let n = 0; let p = rand();
+  while (p > limit) { n += 1; p *= rand(); }
+  return n;
+}
+
+/** Share of a day's footfall in each hour: a lunchtime and an after-work peak. */
+const hourShape = (h) => 0.5 + 0.9 * Math.exp(-(((h + 0.5 - 12.5) / 3) ** 2)) + 0.6 * Math.exp(-(((h + 0.5 - 17.5) / 2.2) ** 2));
+
+/** Footfall in each hour of a store's opening hours: {hour: shoppers}. The store's daily footfall is its busiest display's. */
+function footfallByHour(store, storeId) {
+  const cache = store.__salesResponse.footfall;
+  if (cache.has(storeId)) return cache.get(storeId);
+  const hours = (store.catalog.stores || {})[storeId] || { open: 0, close: 0 };
+  const daily = Math.max(0, ...(store.catalog.displays || []).filter((d) => d.storeId === storeId).map((d) => d.footfall || 0));
+  const shapes = [];
+  for (let h = hours.open; h < hours.close; h += 1) shapes.push([h, hourShape(h)]);
+  const total = shapes.reduce((s, [, w]) => s + w, 0);
+  const out = new Map(shapes.map(([h, w]) => [h, total > 0 ? Math.round((daily * w) / total) : 0]));
+  cache.set(storeId, out);
+  return out;
+}
+
+/**
+ * One store-day of the campaign, in seconds from midnight: every play of the campaign (any tier, any display type) and every sale
+ * of its product. `control` days have no plays: Control stores don't run the campaign.
+ */
+function dayEvents(store, campaign, storeId, date, control) {
+  const cache = store.__salesResponse.days;
+  const key = `${campaign.id}|${storeId}|${date}|${control ? 1 : 0}`;
+  if (cache.has(key)) return cache.get(key);
+  if (cache.size > 4000) cache.clear();
+  const hours = store.catalog.stores[storeId];
+  const rand = rng(hashSeed(key));
+  const plays = [];
+  if (!control) {
+    const types = (campaign.displayTypeIds || Object.keys(store.catalog.displayTypes)).filter((t) => store.catalog.displayTypes[t]);
+    for (let hour = hours.open; hour < hours.close; hour += 1) {
+      for (const displayTypeId of types) {
+        if (!calc.insideOperatingHours(hour, calc.operatingWindow(store.catalog.displayTypes[displayTypeId], hours))) continue;
+        const tiers = [['localised', 1 + Math.floor(rand() * 2)]];
+        if (campaign.level === 'Personalised') tiers.push(['personalised', 1 + Math.floor(rand() * 2)]);
+        for (const [tier, n] of tiers) for (let k = 0; k < n; k += 1) plays.push({ t: hour * 3600 + Math.floor(rand() * 3600), tier, displayTypeId });
+      }
+    }
+    plays.sort((a, b) => a.t - b.t);
+  }
+  const footfall = footfallByHour(store, storeId);
+  const minutes = (hours.close - hours.open) * 60;
+  const extra = new Array(minutes).fill(0);
+  for (const p of plays) {
+    const from = Math.floor(p.t / 60) - hours.open * 60;
+    for (let m = Math.max(from, 0); m < Math.min(from + REACH_MINUTES, minutes); m += 1) extra[m] += LIFT[p.tier] * Math.exp(-(m - from) / DECAY_MINUTES);
+  }
+  const sales = [];
+  for (let m = 0; m < minutes; m += 1) {
+    const hour = hours.open + Math.floor(m / 60);
+    const lambda = ((footfall.get(hour) || 0) / 60) * BASE_CONVERSION * (1 + Math.min(extra[m], MAX_MULTIPLE - 1));
+    for (let n = poisson(lambda, rand); n > 0; n -= 1) sales.push((hours.open * 60 + m) * 60 + Math.floor(rand() * 60));
+  }
+  sales.sort((a, b) => a - b);
+  const out = { plays, sales };
+  cache.set(key, out);
+  return out;
+}
+
+const days = (from, to) => {
+  const out = [];
+  for (let at = Date.parse(`${from}T00:00:00Z`); at <= Date.parse(`${to}T00:00:00Z`); at += 86400000) out.push(new Date(at).toISOString().slice(0, 10));
+  return out;
+};
+const rate = (sales, shoppers) => (shoppers > 0 ? Math.round((sales / shoppers) * 100000) / 100 : 0); // per 1,000 shoppers, two decimals
+const labelOf = (from, to, step) => (step === 1 ? `Minute ${from} after play` : `Minutes ${from}–${to - 1} after play`);
+
+/** Campaigns with personalised variants in scope: the chart's drop-down. */
+function personalisedCampaigns(store, filters) {
+  const out = [];
+  store.scanCampaigns(filters, (c) => { if (c.level === 'Personalised') out.push(c); });
+  return out.sort((a, b) => {
+    const an = (store.advertisers[a.advertiserId] || {}).name || a.advertiserId; const bn = (store.advertisers[b.advertiserId] || {}).name || b.advertiserId;
+    return an.localeCompare(bn) || (a.start < b.start ? 1 : a.start > b.start ? -1 : 0);
+  });
+}
+
+/** The scope the chart reads: treated stores, Control stores and the display types whose plays count. */
+function scopeOf(store, campaign, filters) {
+  const all = Object.keys(store.catalog.stores || {});
+  const control = campaign.controlStores ? ((store.catalog.controlStores || {}).storeIds || []).filter((s) => all.includes(s)) : [];
+  const selected = filters.storeIds ? all.filter((s) => filters.storeIds.includes(s)) : all;
+  const campaignTypes = (campaign.displayTypeIds || Object.keys(store.catalog.displayTypes)).filter((t) => store.catalog.displayTypes[t]);
+  const types = filters.displayTypeIds ? campaignTypes.filter((t) => filters.displayTypeIds.includes(t)) : campaignTypes;
+  return { treated: selected.filter((s) => !control.includes(s)), control, types };
+}
+
+/** Hours (0-23) in which a purchase can follow a play: the store is open and one of the display types is operating. */
+function operatingHours(store, storeIds, types) {
+  const out = new Set();
+  for (const s of storeIds) {
+    const hours = store.catalog.stores[s];
+    for (let h = hours.open; h < hours.close; h += 1) {
+      if (types.some((t) => calc.insideOperatingHours(h, calc.operatingWindow(store.catalog.displayTypes[t], hours)))) out.add(h);
+    }
+  }
+  return [...out].sort((a, b) => a - b);
+}
+
+function salesResponse(store, campaign, filters, { window, step, view, hourFrom, hourTo, hoursError }) {
+  if (!store.__salesResponse) Object.defineProperty(store, '__salesResponse', { value: { days: new Map(), footfall: new Map() }, enumerable: false });
+  const scope = scopeOf(store, campaign, filters);
+  const hours = operatingHours(store, scope.treated.length ? scope.treated : scope.control, scope.types);
+  const band = hourFrom == null ? null : { from: hourFrom, to: hourTo };
+  if (band && !hours.some((h) => h >= band.from && h <= band.to)) throw hoursError('the hour band is outside the display types’ operating hours');
+  const inBand = (h) => !band || (h >= band.from && h <= band.to);
+
+  const from = [filters.dateFrom, campaign.start, store.firstPlayedDay].filter(Boolean).reduce((a, b) => (a > b ? a : b));
+  const lastDay = [filters.dateTo, campaign.end, store.lastPlayedDay].filter(Boolean).reduce((a, b) => (a < b ? a : b));
+  const dates = from <= lastDay ? days(from, lastDay) : [];
+  const typeSet = new Set(scope.types);
+  const n = Math.ceil(window / step);
+  const empty = (kind) => ({ plays: 0, shoppers: 0, sales: new Array(n).fill(0), kind });
+  const lines = { personalised: empty('personalised'), localised: empty('localised'), control: empty('control') };
+
+  for (const date of dates) {
+    for (const storeId of scope.treated) {
+      const { plays, sales } = dayEvents(store, campaign, storeId, date, false);
+      const counted = plays.filter((p) => typeSet.has(p.displayTypeId));
+      const footfall = footfallByHour(store, storeId);
+      let last = -1; // the nearest preceding play, by pointer: both lists are time-ordered
+      for (const sale of sales) {
+        while (last + 1 < counted.length && counted[last + 1].t <= sale) last += 1;
+        if (last < 0) continue;
+        const dt = sale - counted[last].t;
+        if (dt >= window * 60) continue;
+        const bucket = Math.floor(Math.floor(dt / 60) / step);
+        const p = counted[last];
+        if (inBand(Math.floor(p.t / 3600))) lines[p.tier].sales[bucket] += 1;
+      }
+      counted.forEach((p) => {
+        const hour = Math.floor(p.t / 3600);
+        if (!inBand(hour)) return;
+        lines[p.tier].plays += 1; lines[p.tier].shoppers += footfall.get(hour) || 0;
+      });
+      // Control stores, same clock time: each personalised play opens the same clock window in every Control store.
+      if (scope.control.length) {
+        const controlDays = scope.control.map((c) => ({ footfall: footfallByHour(store, c), sales: dayEvents(store, campaign, c, date, true).sales }));
+        for (const p of counted) {
+          if (p.tier !== 'personalised') continue;
+          const hour = Math.floor(p.t / 3600);
+          if (!inBand(hour)) continue;
+          lines.control.plays += 1;
+          for (const cd of controlDays) {
+            lines.control.shoppers += cd.footfall.get(hour) || 0;
+            for (const sale of cd.sales) {
+              if (sale < p.t) continue;
+              if (sale >= p.t + window * 60) break;
+              lines.control.sales[Math.floor(Math.floor((sale - p.t) / 60) / step)] += 1;
+            }
+          }
+        }
+      }
+    }
+  }
+  return { scope, hours, band, dates, lines, n };
+}
+
+module.exports = {
+  WINDOWS, DEFAULT_WINDOW, MAX_WINDOW, STEPS, VIEWS, salesResponse, personalisedCampaigns, scopeOf, operatingHours, labelOf, rate, footfallByHour, dayEvents,
+};
   },
   "src/testdata.js": function (module, exports, require) {
 // A deterministic 5-store test retailer, the approved artifact's example retailer (README "Store zones" sample data):
@@ -1046,6 +1265,25 @@ const CAMPAIGN_PLAN = {
   'adv-perrigo': { cadence: 14, anchorAgo: 11, final: 'Default only', types: ['window', 'endcap', 'queue', 'dispensary'] },
 };
 
+// What each advertiser's campaigns promote: sales are matched on the SKU, or on the product name where there is none (Kenvue).
+// Kenvue's campaigns do not exclude the Control stores segment, so the Sales response chart has no control line for them.
+const PRODUCTS = {
+  'adv-blackmores': { name: 'Fish Oil 1000mg', sku: 'BLK-FO-1000' },
+  'adv-haleon': { name: 'Sensodyne Repair & Protect', sku: 'HLN-SENS-RP' },
+  'adv-loreal-paris': { name: 'Revitalift Serum', sku: 'LOR-REV-SER' },
+  'adv-vitabiotics': { name: 'Wellwoman Original', sku: 'VIT-WW-ORIG' },
+  'adv-bayer-consumer-health': { name: 'Berocca Boost', sku: 'BAY-BER-BST' },
+  'adv-reckitt': { name: 'Nurofen Express', sku: 'REC-NUR-EXP' },
+  'adv-kenvue': { name: 'Neutrogena Hydro Boost' },
+  'adv-procter-gamble': { name: 'Oral-B iO Series', sku: 'PG-ORB-IO' },
+  'adv-unilever': { name: 'Dove Body Wash', sku: 'UNI-DOV-BW' },
+  'adv-nestle-health-science': { name: 'Boost Nutritional Drink', sku: 'NHS-BST-ND' },
+  'adv-perrigo': { name: 'Care Allergy Relief', sku: 'PER-CAR-AR' },
+};
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const NO_CONTROL_STORES = new Set(['adv-kenvue']);
+const CONTROL_STORE_IDS = ['store-5'];
+
 function buildCampaigns(endDate) {
   const dayOf = (ago) => new Date(Date.parse(`${endDate}T00:00:00Z`) - ago * 86400000).toISOString().slice(0, 10);
   const out = [];
@@ -1059,8 +1297,10 @@ function buildCampaigns(endDate) {
       if (personalised) variables.push(plan.pers[j % plan.pers.length], LOCALISED_VARIABLES[(j + 1) % LOCALISED_VARIABLES.length]);
       else if (localised) variables.push(LOCALISED_VARIABLES[j % LOCALISED_VARIABLES.length], ...(j % 2 ? [LOCALISED_VARIABLES[(j + 2) % LOCALISED_VARIABLES.length]] : []));
       const schedules = (plan.schedules || [])[j] || 0;
+      const product = PRODUCTS[advertiserId];
       out.push({
-        id: `c-${slug}-${j + 1}`, advertiserId, startAgo: ago, endAgo: ago - (CAMPAIGN_LIVE_DAYS - 1) > 0 ? ago - (CAMPAIGN_LIVE_DAYS - 1) : null,
+        id: `c-${slug}-${j + 1}`, advertiserId, product, controlStores: !NO_CONTROL_STORES.has(advertiserId),
+        name: `${product.name} · from ${Number(dayOf(ago).slice(8))} ${MONTHS[Number(dayOf(ago).slice(5, 7)) - 1]}`, startAgo: ago, endAgo: ago - (CAMPAIGN_LIVE_DAYS - 1) > 0 ? ago - (CAMPAIGN_LIVE_DAYS - 1) : null,
         displayTypeIds: plan.types, variables, scheduled: schedules > 0, schedules, targetedVersions: personalised ? 2 + (j % 2) : localised ? 1 : 0,
         start: dayOf(ago), end: ago - (CAMPAIGN_LIVE_DAYS - 1) > 0 ? dayOf(ago - (CAMPAIGN_LIVE_DAYS - 1)) : null,
       });
@@ -1079,6 +1319,9 @@ function generateTestRetailer({ days = HISTORY_DAYS, endDate = '2026-10-11', sto
     stores: Object.fromEntries(storeIds.map((id, i) => [id, { name: STORE_NAMES[i] || `Store ${i + 1}`, open: 8, close: 20 }])),
     deals: DEALS,
     dealCatalog,
+    // The Control stores Fixed Store Segment, and whether the retailer has the custom POS integration into the Transaction API.
+    controlStores: { name: 'Control stores', storeIds: CONTROL_STORE_IDS.filter((id) => storeIds.includes(id)) },
+    transactionApi: true,
     sharedVariables: SHARED_VARIABLES,
     connectedDsps: DSPS_ORDER,
     displays: storeIds.flatMap((storeId, i) => Object.entries(DISPLAY_TYPES).flatMap(([displayTypeId, type]) => (
@@ -2460,6 +2703,91 @@ module.exports = {
   },
 };
   },
+  "src/routes/sales-response.js": function (module, exports, require) {
+const sr = require('../sales-response');
+const { FilterError } = require('../filters');
+
+const intParam = (params, name, { min, max }) => {
+  const raw = params.get(name);
+  if (raw === null || raw === '') return null;
+  if (!/^\d+$/.test(raw) || Number(raw) < min || Number(raw) > max) throw new FilterError(`${name} must be a whole number from ${min} to ${max}`);
+  return Number(raw);
+};
+
+const EMPTY_TEXT = {
+  'no-pos': 'Requires a POS integration into the Personalisation Hub Transaction API.',
+  'no-personalised-plays': 'No personalised plays for this campaign in the selected period.',
+  'no-campaigns': 'No campaigns with personalised variants in the selected period.',
+};
+const NO_CONTROL = 'Control stores — none set for this campaign.';
+
+// Sales response after personalised plays (Targeting & scheduling maturity; the advertiser's Your targeting & scheduling).
+// The page filters scope it (store, display type, date range, advertiser); an advertiser login is pinned to its own campaigns
+// by the filters themselves, so another advertiser's campaign id is simply not in the list and is refused as unknown.
+module.exports = {
+  path: '/sales-response',
+  advertiserAccess: true,
+  handler({ store, filters, params, principal }) {
+    const own = principal && principal.principalType === 'advertiser';
+    const window = intParam(params, 'window', { min: 1, max: sr.MAX_WINDOW }) || sr.DEFAULT_WINDOW;
+    const step = intParam(params, 'step', { min: 1, max: sr.MAX_WINDOW }) || 1;
+    if (!sr.STEPS.includes(step)) throw new FilterError(`step must be one of ${sr.STEPS.join(', ')}`);
+    if (step > window) throw new FilterError('step must not be larger than the window');
+    const view = params.get('view') || 'step';
+    if (!sr.VIEWS.includes(view)) throw new FilterError(`view must be one of ${sr.VIEWS.join(', ')}`);
+    const hourFrom = intParam(params, 'hourFrom', { min: 0, max: 23 });
+    const hourTo = intParam(params, 'hourTo', { min: 0, max: 23 });
+    if ((hourFrom === null) !== (hourTo === null)) throw new FilterError('hourFrom and hourTo go together');
+    if (hourFrom !== null && hourFrom > hourTo) throw new FilterError('hourFrom must not be after hourTo');
+
+    const list = sr.personalisedCampaigns(store, filters);
+    const campaigns = list.map((c) => {
+      const a = store.advertisers[c.advertiserId] || {};
+      const base = { id: c.id, name: c.name || c.id, product: c.product || null, start: c.start, end: c.end };
+      return own ? base : { ...base, advertiserId: c.advertiserId, advertiserName: a.name || c.advertiserId, dsp: a.dsp || null };
+    });
+    const out = { window, step, view, hourBand: hourFrom === null ? null : { from: hourFrom, to: hourTo }, campaigns, campaignId: null, hours: [], emptyReason: null, emptyText: null, lines: [], coverage: null };
+    const empty = (reason) => { out.emptyReason = reason; out.emptyText = EMPTY_TEXT[reason]; return out; };
+
+    const wanted = params.get('campaignId');
+    if (wanted && !list.some((c) => c.id === wanted)) throw new FilterError('campaignId is not one of the campaigns listed');
+    const campaign = list.find((c) => c.id === wanted) || list[0];
+    if (!campaign) return empty('no-campaigns');
+    out.campaignId = campaign.id;
+    out.matchedOnProductName = !(campaign.product && campaign.product.sku);
+    if (!store.catalog.transactionApi) return empty('no-pos');
+
+    const r = sr.salesResponse(store, campaign, filters, { window, step, view, hourFrom, hourTo, hoursError: (m) => new FilterError(m) });
+    out.hours = r.hours;
+    const personalised = r.lines.personalised;
+    const control = r.lines.control;
+    const stores = r.scope.treated.map((s) => store.catalog.stores[s].name || s).sort();
+    out.coverage = { stores: stores.length, storeNames: stores, controlStores: r.scope.control.length, dateFrom: r.dates[0] || null, dateTo: r.dates[r.dates.length - 1] || null };
+    if (!personalised.plays) return empty('no-personalised-plays');
+
+    const spec = [
+      ['personalised', 'After a personalised play', r.lines.personalised],
+      ['localised', 'After a localised play', r.lines.localised],
+      ['control', 'Control stores, same clock time', control],
+    ];
+    out.lines = spec.map(([key, label, line]) => {
+      if (key === 'control' && !r.scope.control.length) return { key, label, available: false, note: NO_CONTROL, points: [] };
+      let running = 0;
+      const points = line.sales.map((sales, i) => {
+        const from = i * step; const to = Math.min((i + 1) * step, window);
+        running += sales;
+        return {
+          from, to, label: sr.labelOf(from, to, step),
+          value: sr.rate(view === 'running' ? running : sales, line.shoppers),
+          sales: view === 'running' ? running : sales, plays: line.plays, shoppers: line.shoppers,
+        };
+      });
+      return { key, label, available: true, plays: line.plays, shoppers: line.shoppers, points };
+    });
+    return out;
+  },
+};
+  },
   "src/routes/sales-uplift.js": function (module, exports, require) {
 const { FilterError } = require('../filters');
 const { describeCampaign, upliftFor, tierMix, CONTROL_SEGMENT, PRE_DAYS, POST_DAYS } = require('../uplift');
@@ -2723,7 +3051,7 @@ module.exports = {
     });
     return module.exports;
   }
-  var ROUTE_FILES = ["src/routes/advertisers.js","src/routes/audience.js","src/routes/deals-by-display-type.js","src/routes/deals.js","src/routes/delivery.js","src/routes/display-types.js","src/routes/filter-options.js","src/routes/health.js","src/routes/maturity.js","src/routes/missed-revenue.js","src/routes/my-summary.js","src/routes/my-targeting.js","src/routes/revenue.js","src/routes/sales-uplift.js","src/routes/slot-allocation.js","src/routes/slot-value.js","src/routes/summary.js","src/routes/yield.js"];
+  var ROUTE_FILES = ["src/routes/advertisers.js","src/routes/audience.js","src/routes/deals-by-display-type.js","src/routes/deals.js","src/routes/delivery.js","src/routes/display-types.js","src/routes/filter-options.js","src/routes/health.js","src/routes/maturity.js","src/routes/missed-revenue.js","src/routes/my-summary.js","src/routes/my-targeting.js","src/routes/revenue.js","src/routes/sales-response.js","src/routes/sales-uplift.js","src/routes/slot-allocation.js","src/routes/slot-value.js","src/routes/summary.js","src/routes/yield.js"];
   var state = null;
   function init() {
     if (state) return state;

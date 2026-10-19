@@ -60,6 +60,11 @@ function buildAggregates(raw, ctx) {
   }
   const campaigns = (raw.campaigns || []).map((c) => ({
     id: c.id,
+    name: c.name || null,
+    // The product whose sales are matched to the campaign: by SKU, or by product name where the campaign has no SKU.
+    product: c.product ? { name: c.product.name, ...(c.product.sku ? { sku: c.product.sku } : {}) } : null,
+    // Whether the campaign excludes the Control stores Fixed Store Segment (exclusion targeting).
+    controlStores: Boolean(c.controlStores),
     advertiserId: c.advertiserId,
     start: c.start,
     end: c.end || null,
@@ -73,7 +78,8 @@ function buildAggregates(raw, ctx) {
   }));
   return {
     delivery: [...delivery.values()], inventory: [...inventory.values()], campaigns, advertisers: ctx.advertisers || {},
-    catalog: { displayTypes: ctx.displayTypes, displays: ctx.displays || [], stores: ctx.stores || {}, deals: ctx.dealCatalog || {}, sharedVariables: ctx.sharedVariables || {}, connectedDsps: ctx.connectedDsps || Object.keys(ctx.sharedVariables || {}) },
+    catalog: { displayTypes: ctx.displayTypes, displays: ctx.displays || [], stores: ctx.stores || {}, deals: ctx.dealCatalog || {}, sharedVariables: ctx.sharedVariables || {}, connectedDsps: ctx.connectedDsps || Object.keys(ctx.sharedVariables || {}),
+      controlStores: ctx.controlStores || { name: 'Control stores', storeIds: [] }, transactionApi: Boolean(ctx.transactionApi) },
   };
 }
 

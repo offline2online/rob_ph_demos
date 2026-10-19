@@ -577,18 +577,23 @@
       tg.body.appendChild(h('div', { class: 'av-target' }, [ladder, h('div', { class: 'av-blocks' }, [block('Variables you use', used), block('Scheduling', schedEl), block('Other variables available to use', avail)])]));
     }
 
-    root.appendChild(del.el); root.appendChild(dl.el); root.appendChild(aud.el); root.appendChild(tg.el);
+    // Sales response after personalised plays sits with Your targeting & scheduling: own campaigns only (the server pins the advertiser).
+    var srHost = h('div', { class: 'av-sr' });
+    var sales = null;
+    root.appendChild(del.el); root.appendChild(dl.el); root.appendChild(aud.el); root.appendChild(tg.el); root.appendChild(srHost);
+    if (typeof SalesResponse !== 'undefined') sales = SalesResponse.mount(srHost, { fetchJson: fetchJson, filters: params({}) });
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape') hideTip(); });
 
     return {
       setFilters: function (f) {
         filters = f || {};
+        if (sales) sales.setFilters(params({}));
         loadDelivery();
         load('deals', 'deals-by-display-type', {}, dl.body, drawDeals, 'None of your deals run on this display type.', function (d) { return !d.groups || !d.groups.length; });
         load('audience', 'audience', {}, aud.body, drawAudience, 'No audience delivered for these filters.', function () { return false; });
         load('targeting', 'my-targeting', {}, tg.body, drawTargeting, 'No campaigns in range.', function () { return false; });
       },
-      destroy: function () { container.removeChild(root); }
+      destroy: function () { if (sales) sales.destroy(); container.removeChild(root); }
     };
   }
 

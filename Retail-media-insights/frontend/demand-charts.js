@@ -379,11 +379,14 @@
     clearChip.addEventListener('click', function () { state.table = { level: '', variable: '', scheduling: '' }; loadMaturity(false); });
     var tableControls = h('div', { class: 'dc-filters' }, [clearChip, fLevel.el, fVar.el, fSch.el]);
     var pTab = panel('Advertiser targeting & scheduling', TIPS.table, tableControls, 'dc-wide');
+    var srHost = h('div', { class: 'dc-sr' });
+    var sales = null;
 
     container.appendChild(section('Demand health', 'handshake', TIPS.demand, [pAdv.el]));
     container.appendChild(section('Targeting & scheduling maturity', 'stairs', TIPS.maturity, [
       h('div', { class: 'dc-grid' }, [pLad.el, pSch.el]),
       pVar.el,
+      srHost,
       pTab.el,
       pPro.el
     ]));
@@ -637,10 +640,12 @@
 
     syncTableFilters();
     loadAll();
+    // Sales response after personalised plays: its own module (also used in the advertiser view), mounted here in the maturity section.
+    if (typeof SalesResponse !== 'undefined') sales = SalesResponse.mount(srHost, { fetchJson: fetchJson, filters: filters });
     return {
-      setFilters: function (f) { filters = f || {}; hideTip(); loadAll(); },
-      refresh: function () { hideTip(); loadAll(); },
-      destroy: function () { alive = false; clearTimeout(resizeTimer); window.removeEventListener('resize', onResize); container.innerHTML = ''; container.classList.remove('dc-root'); }
+      setFilters: function (f) { filters = f || {}; hideTip(); loadAll(); if (sales) sales.setFilters(filters); },
+      refresh: function () { hideTip(); loadAll(); if (sales) sales.setFilters(filters); },
+      destroy: function () { alive = false; if (sales) sales.destroy(); clearTimeout(resizeTimer); window.removeEventListener('resize', onResize); container.innerHTML = ''; container.classList.remove('dc-root'); }
     };
   }
 

@@ -178,6 +178,25 @@ const CAMPAIGN_PLAN = {
   'adv-perrigo': { cadence: 14, anchorAgo: 11, final: 'Default only', types: ['window', 'endcap', 'queue', 'dispensary'] },
 };
 
+// What each advertiser's campaigns promote: sales are matched on the SKU, or on the product name where there is none (Kenvue).
+// Kenvue's campaigns do not exclude the Control stores segment, so the Sales response chart has no control line for them.
+const PRODUCTS = {
+  'adv-blackmores': { name: 'Fish Oil 1000mg', sku: 'BLK-FO-1000' },
+  'adv-haleon': { name: 'Sensodyne Repair & Protect', sku: 'HLN-SENS-RP' },
+  'adv-loreal-paris': { name: 'Revitalift Serum', sku: 'LOR-REV-SER' },
+  'adv-vitabiotics': { name: 'Wellwoman Original', sku: 'VIT-WW-ORIG' },
+  'adv-bayer-consumer-health': { name: 'Berocca Boost', sku: 'BAY-BER-BST' },
+  'adv-reckitt': { name: 'Nurofen Express', sku: 'REC-NUR-EXP' },
+  'adv-kenvue': { name: 'Neutrogena Hydro Boost' },
+  'adv-procter-gamble': { name: 'Oral-B iO Series', sku: 'PG-ORB-IO' },
+  'adv-unilever': { name: 'Dove Body Wash', sku: 'UNI-DOV-BW' },
+  'adv-nestle-health-science': { name: 'Boost Nutritional Drink', sku: 'NHS-BST-ND' },
+  'adv-perrigo': { name: 'Care Allergy Relief', sku: 'PER-CAR-AR' },
+};
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const NO_CONTROL_STORES = new Set(['adv-kenvue']);
+const CONTROL_STORE_IDS = ['store-5'];
+
 function buildCampaigns(endDate) {
   const dayOf = (ago) => new Date(Date.parse(`${endDate}T00:00:00Z`) - ago * 86400000).toISOString().slice(0, 10);
   const out = [];
@@ -191,8 +210,10 @@ function buildCampaigns(endDate) {
       if (personalised) variables.push(plan.pers[j % plan.pers.length], LOCALISED_VARIABLES[(j + 1) % LOCALISED_VARIABLES.length]);
       else if (localised) variables.push(LOCALISED_VARIABLES[j % LOCALISED_VARIABLES.length], ...(j % 2 ? [LOCALISED_VARIABLES[(j + 2) % LOCALISED_VARIABLES.length]] : []));
       const schedules = (plan.schedules || [])[j] || 0;
+      const product = PRODUCTS[advertiserId];
       out.push({
-        id: `c-${slug}-${j + 1}`, advertiserId, startAgo: ago, endAgo: ago - (CAMPAIGN_LIVE_DAYS - 1) > 0 ? ago - (CAMPAIGN_LIVE_DAYS - 1) : null,
+        id: `c-${slug}-${j + 1}`, advertiserId, product, controlStores: !NO_CONTROL_STORES.has(advertiserId),
+        name: `${product.name} · from ${Number(dayOf(ago).slice(8))} ${MONTHS[Number(dayOf(ago).slice(5, 7)) - 1]}`, startAgo: ago, endAgo: ago - (CAMPAIGN_LIVE_DAYS - 1) > 0 ? ago - (CAMPAIGN_LIVE_DAYS - 1) : null,
         displayTypeIds: plan.types, variables, scheduled: schedules > 0, schedules, targetedVersions: personalised ? 2 + (j % 2) : localised ? 1 : 0,
         start: dayOf(ago), end: ago - (CAMPAIGN_LIVE_DAYS - 1) > 0 ? dayOf(ago - (CAMPAIGN_LIVE_DAYS - 1)) : null,
       });
@@ -211,6 +232,9 @@ function generateTestRetailer({ days = HISTORY_DAYS, endDate = '2026-10-11', sto
     stores: Object.fromEntries(storeIds.map((id, i) => [id, { name: STORE_NAMES[i] || `Store ${i + 1}`, open: 8, close: 20 }])),
     deals: DEALS,
     dealCatalog,
+    // The Control stores Fixed Store Segment, and whether the retailer has the custom POS integration into the Transaction API.
+    controlStores: { name: 'Control stores', storeIds: CONTROL_STORE_IDS.filter((id) => storeIds.includes(id)) },
+    transactionApi: true,
     sharedVariables: SHARED_VARIABLES,
     connectedDsps: DSPS_ORDER,
     displays: storeIds.flatMap((storeId, i) => Object.entries(DISPLAY_TYPES).flatMap(([displayTypeId, type]) => (
