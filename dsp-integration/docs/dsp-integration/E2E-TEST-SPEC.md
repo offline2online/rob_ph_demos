@@ -262,4 +262,4 @@ For each distinct failing case, `create_backlog_item` on projectId `mIPdOCAWevhr
 - **Title:** `E2E <run>: <case id> — <one-line symptom>`.
 - **Description:** case id and intent, expected vs actual, stub inputs (or browser/API steps for Run 6), repro command, and the REQUIREMENTS section (§3 approval, §4 pricing/billing, §5 inventory, §6 submission, §7 exchange).
 - **Area:** best fit (Backend / Infrastructure, Pricing & Offers, Product Assets).
-- Before filing, `list_backlog_items` with the case id to avoid re-filing a still-open ticket; if one exists, comment instead. If two cases share a root cause, file both and cross-reference. Keep case ids stable across runs.
+- Before filing, `list_backlog_items` with the case id (search covers archived tickets too; if the tool has `includeArchived`, pass `false`, otherwise read each match's `status`). Comment only on a match in Backlog, Ready for Testing or Approved for Deployment. A match that is archived or already Deployed means the bug came back: file a new ticket that names the old id. If two cases share a root cause, file both and cross-reference. Keep case ids stable across runs.
