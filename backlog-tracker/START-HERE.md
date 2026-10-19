@@ -181,7 +181,7 @@ how to confirm it is live. A merge alone is never proof: look at the run.
 | `menu-board-demo/` | GitHub Pages for the pages; `menu-board-demo/functions` is **manual only**: `firebase deploy --only functions` | Pages on merge; functions never by merge | Pages: the URL. Functions: whoever holds Firebase access must deploy; ask |
 | `Retail-media-insights/` | GitHub Pages; tests in `.github/workflows/retail-media-insights-tests.yml` | On merge | The URL; the tests run on the train PR |
 | `visitor-profile/` | GitHub Pages | On merge | The URL |
-| `Brands-Suppliers-Assets/` | GitHub Pages | On merge | The URL |
+| `Brands-Suppliers-Assets/` (legacy, superseded by `menu-board-demo/`) | GitHub Pages | On merge | The URL |
 | `space-invaders/` | GitHub Pages for the static pages; `space-invaders/session-server.js` runs where `space-invaders/railway.json` points, not from a workflow here | Pages on merge | The URL |
 | `shared/`, `docs/` | Not deployed: documents only | | |
 

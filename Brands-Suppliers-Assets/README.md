@@ -13,11 +13,23 @@ product/pricing catalogue that HQ and retail admins work with.
 - `retail-product-catalogue.html` — the store-level (Retail Admin) view of
   the product catalogue.
 
-Same iframed-inside-the-real-platform caveat as `menu-board-demo/` applies
-here — see root `CLAUDE.md` → "These prototypes run iframed inside the
-real Personalisation Hub platform" before debugging a screenshot as if it
-were this repo's own chrome.
+**Legacy prototype (April 2026), superseded by `menu-board-demo/`.** Feature
+work stopped on 15 Apr 2026; the current Products, Pricing & Assets
+prototype is `menu-board-demo/` (`hq-admin.html`, the `product/` editor,
+`retail-admin.html`), tracked on the PH Agent Console as **Products and
+Pricing Prototype** (`products-and-pricing`) — see
+`menu-board-demo/README.md` and `menu-board-demo/REVIEW-2026-10.md`.
 
-Not yet tracked as its own project on the Prototype Backlog board
-(`backlog-tracker/` — see root `CLAUDE.md` → "Prototype Backlog"); add one
-there if/when this project starts taking its own backlog items.
+- **It shares no data with `menu-board-demo/`.** Everything is kept in the
+  viewer's own browser (`localStorage` keys `ph_brands`, `ph_brands_list`,
+  `ph_products`, `ph_discount_touchpoints`, `ph_custom_templates`), so each
+  visitor sees a private copy and nothing is saved for anyone else.
+- What exists only here: the label-template designer, discount
+  "touchpoints", the Manage Offers modal and store-map pins.
+- Nothing outside this folder links to it; reach it by URL
+  (<https://offline2online.github.io/rob_ph_demos/Brands-Suppliers-Assets/>).
+- It predates the `ph-designer` skill: system font stack, Google Material
+  Icons (not Material Symbols), emoji navigation and its own sidebar/topbar.
+  Don't extend it — build in `menu-board-demo/` instead.
+- The landing page still advertises "Stock warnings" / "Suppress Low-Stock
+  Campaigns", whose UI was removed on 28 Aug 2026 (`34c65fa8`).

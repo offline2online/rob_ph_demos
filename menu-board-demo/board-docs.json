@@ -1,0 +1,12 @@
+{
+  "projectId": "products-and-pricing",
+  "startHere": "readme",
+  "mirrors": [
+    {
+      "key": "review-2026-10",
+      "path": "menu-board-demo/REVIEW-2026-10.md",
+      "name": "Code review — 19 Oct 2026 (security, pricing, data integrity, design system)"
+    }
+  ],
+  "boardDocs": []
+}
