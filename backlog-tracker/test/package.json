@@ -1,16 +1,16 @@
 {
   "name": "backlog-tracker-rules-tests",
   "private": true,
-  "description": "Tests for backlog-tracker's access-control layer (Firestore security rules, the MCP server's logic, the MCP server over real HTTP driven by the official MCP client SDK), for scripts/ helpers that are easiest to verify against a real disposable git repo (the faq/data/index.json merge-conflict resolver, and the deployment train's lock-recompute logic — pure predicate, the real Cloud Function trigger under stubbed SDKs, and the real branch-archive/reset git logic), and for the FAQ editor's content round-trip in a real browser (opt-in, needs Chromium).",
+  "description": "Tests for backlog-tracker's access-control layer (Firestore security rules, the MCP server's logic, the MCP server over real HTTP driven by the official MCP client SDK), for scripts/ helpers that are easiest to verify against a real disposable git repo (the faq/data/index.json merge-conflict resolver, and the deployment train's lock-recompute logic \u2014 pure predicate, the real Cloud Function trigger under stubbed SDKs, and the real branch-archive/reset git logic), and for the FAQ editor's content round-trip in a real browser (needs Chromium).",
   "scripts": {
-    "test": "npm run test:mcp && npm run test:client && npm run test:mcp-app && npm run test:app-boots && npm run test:auth-gate && npm run test:train-lock && npm run test:skill-history && npm run test:ready-for-testing && npm run test:build-batches && npm run test:faq-index && npm run test:rules && npm run test:preview-url && npm run test:preview-url-pin && npm run test:generated-builds && npm run test:e2e-run",
-    "test:app-boots": "node app-boots.test.mjs && node header-phase.test.mjs",
+    "test": "npm run test:mcp && npm run test:client && npm run test:mcp-app && npm run test:app-boots && npm run test:auth-gate && npm run test:routine-binding && npm run test:ready-for-testing && npm run test:train-lock && npm run test:rules",
+    "test:app-boots": "node app-boots.test.mjs && node header-phase.test.mjs && npm run test:build-batches",
     "test:e2e-run": "node e2e-run.test.mjs",
     "test:generated-builds": "node generated-builds.test.js && node patch-paths.test.js",
     "test:mcp": "node mcp-server.test.js && node intake.test.js",
     "test:client": "node mcp-client.test.mjs",
-    "test:mcp-app": "node mcp-app-view.test.mjs",
-    "test:train-lock": "node train-lock.test.js && node train-lock-trigger.test.js && node train-lock-branch-archive.test.js && node train-carried.test.js && node train-sync.test.js && node docs-sync.test.js && node migrate-project-docs.test.js && node train-checks.test.js && node train-tests.test.js && node parallel-builds.test.js && node train-follow-up.test.js && node patch-offload.test.js && node train-resume.test.js && node deploy-heal.test.js",
+    "test:mcp-app": "node mcp-app-view.test.mjs && npm run test:editor",
+    "test:train-lock": "node train-lock.test.js && node train-lock-trigger.test.js && node train-lock-branch-archive.test.js && node train-carried.test.js && node train-sync.test.js && node docs-sync.test.js && node migrate-project-docs.test.js && node train-checks.test.js && node train-tests.test.js && node parallel-builds.test.js && node train-follow-up.test.js && node patch-offload.test.js && node train-resume.test.js && node deploy-heal.test.js && npm run test:generated-builds && npm run test:preview-url && npm run test:preview-url-pin && npm run test:faq-index && npm run test:e2e-run && node ci-coverage.test.js",
     "test:skill-history": "node skill-history-trigger.test.js",
     "test:ready-for-testing": "node ready-for-testing-trigger.test.js && node notify-fanout.test.js",
     "test:build-batches": "node build-batches.test.mjs && node ticket-intake.test.mjs",
@@ -20,7 +20,7 @@
     "test:preview-url": "node preview-url-page.test.js",
     "test:preview-url-pin": "node preview-url-pin.test.js",
     "test:auth-gate": "node auth-gate.test.mjs",
-    "test:routine-binding": "node routine-binding-trigger.test.js"
+    "test:routine-binding": "node routine-binding-trigger.test.js && npm run test:skill-history"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^5.0.2",

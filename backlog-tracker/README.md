@@ -1708,7 +1708,7 @@ default.
   can represent before Quill sees it, loads it through Quill's own
   Delta path, and warns above the body if any characters didn't survive
   (`faqHtmlForQuill`/`faqSetEditorHtml` in `app.js`; regression test
-  `test/faq-editor-load.test.mjs`, opt-in `npm run test:editor`) — the
+  `test/faq-editor-load.test.mjs`, `npm run test:editor`, run in CI by `test:mcp-app`) — the
   two naive load paths before it each silently lost whole lists, see
   `REQUIREMENTS.md` → "Loading an article into Quill is a rewrite".
   See `REQUIREMENTS.md` → "Rich-text article body" for the
