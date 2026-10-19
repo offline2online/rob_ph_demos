@@ -1791,12 +1791,26 @@ doc lands with `status: "in-progress"` but no `sessionUrl` yet, it reads
 session link (copy flips to "Deving…", `target="_blank"` to
 `sessionUrl`) — there's no separate "View session" link anymore.
 
+**Per-item builds and the trusted finish time (19 Oct 2026).** A per-item
+session reports on its card (`buildSession.status` `done`/`error`);
+`onBacklogItemBuildReported` stamps `buildSession.reportedAt` from the
+server's clock, which the board trusts over the session's own `finishedAt`
+(display only; sessions are told to take it from `date -u`). Every
+automation sweep runs `closeNotifyRoutines` (rules in
+`functions/notify-routine.js`, test `test/notify-routine.test.js`): it
+closes an `in-progress` record as `done` + `closedAt` once every sent card
+has settled, and after 25 minutes notes each card whose session never
+reported ("…never reported back…"), then closes the record with
+`stalledItemIds`. While building, the button reads "Deving… · N min" and
+its tooltip lists each ticket (building / reported / landed); a stalled
+record shows a non-spinning "Build didn't report back" chip.
+
 The Routine is asked, in the fire request's own `text`, to PATCH
 `notifyRoutine.status` to `"done"`/`"error"` (with `finishedAt`) when it
 stops — but nothing enforces that a fired session actually does this
 (an older Routine prompt won't know to, and a crashed session can't). The
-frontend's own fallback — treating any `"in-progress"` older than 20
-minutes as done — is what actually keeps the button from getting stuck
+frontend's own fallback — treating any `"in-progress"` older than 25
+minutes as over — is what actually keeps the button from getting stuck
 forever, not the self-report; treat the self-report as a nice-to-have for
 faster feedback, not the safety mechanism.
 
