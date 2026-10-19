@@ -1952,6 +1952,49 @@ per skill for the page's lifetime, not re-fetched every time
 `renderSkillsPage()` redraws the list (which happens on every Firestore
 update to any skill).
 
+### Concept Incubator hero — the live system map
+
+The top of the Concept Incubator page is ONE shared system map (C4-style
+system context; `public/js/system-map.js`, test `test/system-map.test.mjs`),
+not one diagram per concept or project. It is rebuilt on every change to
+`projects`, `concepts`, `interfaces` and `releases`.
+
+- **Nodes**: the PH core backbone (Campaigns & Experiences, Agent Harness
+  (LangChain), MCP Access, Vector Database, Devices & Touchpoints, Store
+  Data, Live Visitor Profile — fixed in `SYSTEM_MAP_CORE`, not board
+  entries), the external **PH Team** box (Help/FAQ, support, feature
+  requests, Customer Success), every non-archived project and every
+  un-promoted concept. Status styling: **Live** (core, or a project whose
+  release is live), **Project**, **Concept**, **External**. A project shows
+  its release ("Release 5.0") beside its name.
+- **Lines**: one per interface contract (`interfaces`), labelled with the
+  contract's optional `flowLabel`, else its name; clicking opens the
+  contract. A new contract adds a line with no code change. The platform's
+  own structure and how a named project/concept plugs into it live in
+  `SYSTEM_MAP_LINKS` (decided on ticket YyZwqyUOvEmkivV31jzo): Profile →
+  Campaigns (personalised), Store Data → Campaigns (localised), Harness
+  creates/optimises Campaigns, Campaigns → Devices, Devices → Vector DB →
+  Harness (the closed insights loop, drawn heavy), DSP demand (Campaigns,
+  orange) and supply (Devices → DSP, green), Experience Templates fed by
+  Profile, Store Data and Products & Pricing, Retail Media Insights reading
+  the Vector DB, Customer Support → PH Team.
+- **Concepts and externals drawn by the map itself** (ticket
+  M3SX6sWxRuNpr6jp5Pam): Concept nodes Custom & Edge Models, Digital
+  Identity & Resolution, Offsite Retail Media & Social, Federated Retail
+  Media (PH-to-PH) (`SYSTEM_MAP_CONCEPTS`; a board project/concept of the
+  same name replaces the built-in one), PH Core nodes Check-in and Brand
+  Guidelines, and External nodes Salesforce CRM, Amazon Connect, Meta,
+  TikTok, Google Display, YouTube, Advertiser and the retailer / partner /
+  advertiser PH instances (`SYSTEM_MAP_EXTERNALS`). Their labelled lines
+  are `EXTRA_LINKS`. A red dashed **PII boundary** (`PII_ZONE`) encloses
+  the identity vault, Salesforce and Amazon Connect; Live Visitor Profile,
+  Agent Harness, agents and Campaigns stay outside it — agents never
+  cross it. Federation lines are peer-to-peer, no central hub.
+- **Release filter**: picking a release dims everything except its
+  projects, the lines touching them and their other ends.
+- **Clicking a node** opens its landing page (`artifactUrl`), else the
+  project's Docs page / the concept's detail page.
+
 ### Concept Incubator page
 
 Two pages, mirroring the Skills list/Docs-page split above: **Concept

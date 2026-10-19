@@ -1157,6 +1157,16 @@
         <h2>Concept Incubator</h2>
         <span class="page-header-count" id="concept-incubator-count">0 concepts</span>
       </div>
+      <!-- Hero: ONE live system map (js/system-map.js), built from the
+           board's projects, concepts, interface contracts and releases. -->
+      <section class="sysmap-hero" id="system-map-hero" aria-label="Personalisation Hub system map">
+        <div class="sysmap-toolbar">
+          <label class="field-label" for="system-map-release">Release</label>
+          <select id="system-map-release"><option value="">All releases</option></select>
+          <div class="sysmap-legend" id="system-map-legend"></div>
+        </div>
+        <div class="sysmap-scroll" id="system-map-canvas"></div>
+      </section>
       <p class="field-hint">Early-stage ideas that need more shape before they become an official project on the board. Each concept keeps its own README, requirements and discussion thread — pick up the conversation any time, then promote it to a real project once its structure is agreed.</p>
       <div class="form-row" style="justify-content:flex-end;margin-bottom:12px;">
         <button type="button" class="btn-primary" id="concept-add-btn" data-editor-only>+ New concept</button>

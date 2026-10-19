@@ -28,6 +28,7 @@ import { INTAKE_SECTIONS, missingSections, applyAnswers } from "./ticket-intake.
 import { FAILED_TESTING_CHOICES, DEFAULT_FAILED_TESTING_CHOICE, sendBackFields, followUpWrites } from "./follow-up.js";
 import { trainTestChipHTML, approvalWarningLines, APPROVAL_WARNING_TITLE, APPROVAL_WARNING_FOOTER, approvalFields, approvedByLine } from "./card-test-status.js";
 import { isMirror, orderProjectDocs, mirrorEditRefusal, mirrorDeleteWarning, mirrorChipHTML, openInGithubHTML, startHereChipHTML, projectDocRowHTML, interfaceActionsHTML } from "./docs-view.js";
+import { buildSystemMap, systemMapHTML, systemMapLegendHTML } from "./system-map.js";
 import { clusterBacklogItems, estimateEffort, estimatePriority, splitRequirementsText } from "./build-batches.js";
 
 // auth-gate.js has already initialised the app (and signed the user in)
@@ -2070,7 +2071,7 @@ function projectSectionHTML(project) {
     ? `<div class="project-name-row"><input type="text" class="project-name-input" id="pname-input-${escapeHTML(project.id)}" data-project-id="${escapeHTML(project.id)}" value="${escapeHTML(project.name)}" maxlength="80"></div>`
     : `<div class="project-name-row"><button type="button" class="project-star-btn${isProjectStarred(project.id) ? " starred" : ""}" data-project-id="${escapeHTML(project.id)}" aria-pressed="${isProjectStarred(project.id)}" title="${isProjectStarred(project.id) ? "Unstar project (unpin from top)" : "Star project (pin to top)"}">${isProjectStarred(project.id) ? "&#9733;" : "&#9734;"}</button><h2 class="project-name">${escapeHTML(project.name)} <span class="project-item-count">(${total})</span></h2>
          <button type="button" class="project-rename-btn" data-project-id="${escapeHTML(project.id)}" title="Rename project">&#9998;</button>
-         <span class="project-version-badge" title="backlog-tracker release currently running">v${escapeHTML(APP_VERSION)}</span>
+         ${projectReleaseBadgeHTML(project)}
        </div>`;
 
   return `
@@ -2883,6 +2884,7 @@ onSnapshot(query(projectsRef, orderBy("createdAt", "asc")), (snap) => {
   if (archivedProjectsPage && !archivedProjectsPage.hidden) renderArchivedProjectsPage();
   // The Releases page counts each release's assigned projects.
   if (releasesPage && !releasesPage.hidden) renderReleasesPage();
+  renderSystemMap();
 }, onListenerError("projects"));
 
 onSnapshot(interfacesRef, (snap) => {
@@ -2891,6 +2893,7 @@ onSnapshot(interfacesRef, (snap) => {
   render();
   if (docsProjectId) renderDocsPage();
   if (conceptDetailId) renderConceptDetailPage();
+  renderSystemMap();
 }, onListenerError("interfaces"));
 
 onSnapshot(programsRef, (snap) => {
@@ -3816,6 +3819,15 @@ function populateProgramSelect(selectEl, selectedId) {
   selectEl.innerHTML = '<option value="">No program</option>' +
     opts.map((p) => `<option value="${escapeHTML(p.id)}"${p.id === selectedId ? " selected" : ""}>${escapeHTML(p.name)}</option>`).join("") +
     '<option value="__new__">+ New program…</option>';
+}
+
+// The header badge: the release this project is assigned to on the
+// Releases page (projects/{id}.releaseId) — nothing when it has none, or
+// when the release is no longer in the list.
+function projectReleaseBadgeHTML(project) {
+  const rel = project.releaseId ? releases.find((r) => r.id === project.releaseId) : null;
+  if (!rel) return "";
+  return `<span class="project-version-badge" title="Release this project is assigned to">${escapeHTML(releaseLabel(rel))}</span>`;
 }
 
 // ── Releases — a named, ordered product release (see releasesRef above).
@@ -6126,7 +6138,43 @@ function conceptCardHTML(c) {
     </div>`;
 }
 
+// The hero system map: rebuilt whenever projects, concepts, interfaces or
+// releases change, so a new interface contract adds a line with no code change.
+let systemMapModel = null;
+function renderSystemMap() {
+  const canvas = document.getElementById("system-map-canvas");
+  const page = document.getElementById("concept-incubator-page");
+  if (!canvas || !page || page.hidden) return;
+  const sel = document.getElementById("system-map-release");
+  const chosen = sel.value;
+  const opts = ['<option value="">All releases</option>'].concat(
+    releases.map((r) => `<option value="${escapeHTML(r.id)}">${escapeHTML(`Release ${r.version || r.name}${r.name && r.version ? ` — ${r.name}` : ""}`)}</option>`));
+  const html = opts.join("");
+  if (sel.dataset.sig !== html) { sel.innerHTML = html; sel.dataset.sig = html; sel.value = chosen; }
+  document.getElementById("system-map-legend").innerHTML = systemMapLegendHTML();
+  systemMapModel = buildSystemMap({ projects, concepts, interfaces, releases });
+  canvas.innerHTML = systemMapHTML(systemMapModel, { release: sel.value });
+}
+document.getElementById("system-map-release").addEventListener("change", renderSystemMap);
+function systemMapActivate(target) {
+  const edge = target.closest("[data-interface-id]");
+  if (edge) { openInterfaceModal(edge.dataset.interfaceId, edge.dataset.anchorId); return; }
+  const node = target.closest("[data-node-id]");
+  if (!node) return;
+  const n = systemMapModel && systemMapModel.byId[node.dataset.nodeId];
+  if (!n) return;
+  const href = n.href ? safeHttpUrl(n.href) : "";
+  if (href) window.open(href, "_blank", "noopener");
+  else if (n.kind === "concept") openConceptDetailPage(n.id);
+  else openDocsPage(n.id);
+}
+document.getElementById("system-map-canvas").addEventListener("click", (e) => systemMapActivate(e.target));
+document.getElementById("system-map-canvas").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); systemMapActivate(e.target); }
+});
+
 function renderConceptIncubatorPage() {
+  renderSystemMap();
   const sorted = concepts; // already ordered by updatedAt desc from the query
   document.getElementById("concept-incubator-count").textContent = `${sorted.length} concept${sorted.length === 1 ? "" : "s"}`;
   document.getElementById("concept-incubator-list").innerHTML = sorted.map(conceptCardHTML).join("");
@@ -6453,6 +6501,8 @@ function renderReleasesPage() {
 // picker, and the article editor's two binding pickers (re-populated with
 // their CURRENT value, so an unsaved choice survives a live update).
 function onReleasesChanged() {
+  render();
+  renderSystemMap();
   if (releasesPage && !releasesPage.hidden) renderReleasesPage();
   if (docsProjectId) renderDocsPage();
   if (faqArticleEditorPage && !faqArticleEditorPage.hidden) {

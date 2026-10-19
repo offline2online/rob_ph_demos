@@ -2197,6 +2197,7 @@ entry, directly under Agent Console.
   back — the rule refuses that write outright, and deleting a promoted
   concept is refused too, since it's the provenance record for where a
   real project's README/requirements came from.
+- **System map hero**: the page opens with one live system map of PH core, every project and every concept (`public/js/system-map.js`; lines come from interface contracts, release filter, click-through). See `REQUIREMENTS.md` → "Concept Incubator hero".
 - **Console UI**: the Concept Incubator page lists every concept as a card
   (name, Active/Promoted status, last updated) — **+ New concept** asks
   only for a name, the same "one quick step" shape as New Project.
