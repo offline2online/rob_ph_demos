@@ -56,6 +56,7 @@ const { buildIndexFromArticleFiles, validateIndexAgainstArticleFiles, serializeI
 const { trainLockShouldClear, trainHandoverReason } = require("../functions/train-lock");
 const { syncProjectDocs, syncAllProjectDocs, resolveRepoFolder } = require("./docs-sync-lib");
 const { hasIntakePlaceholder } = require("../functions/intake");
+const { loadDocsImpactRules, docsImpactCheck, refusalNote: docsImpactRefusalNote, waiverNote: docsImpactWaiverNote } = require("./docs-impact");
 
 const PROJECT_ID = "backlog-tracker-e4ed2";
 const REPO = "offline2online/rob_ph_demos";
@@ -2807,6 +2808,7 @@ async function processApplyPatch(item) {
   let sha = null;
   let changedPaths = [];
   let testVersion = null;
+  let docsImpactWaivers = [];
   let attempt = 0;
   let patchedFiles = item.patchFiles;
   let movedPaths = [];
@@ -2877,6 +2879,31 @@ async function processApplyPatch(item) {
       if (autoRebuild) queueBuildRequest(project, item.id);
       return;
     }
+
+    // A change to an API or schema without its spec (docsImpact rules in a
+    // board-docs.json, scripts/docs-impact.js), unless the build says why.
+    // Checked against the staged diff, so an unchanged copy of the document in
+    // patchFiles does not count; the rules are read from the patched tree.
+    const docsLoaded = loadDocsImpactRules(process.cwd());
+    docsLoaded.problems.forEach((p) => console.log(`[apply-patch] ${item.id}: docsImpact — ${p}`));
+    docsImpactWaivers = [];
+    const docsUnmet = docsImpactCheck(changedPaths, docsLoaded.rules);
+    const docsReason = typeof item.patchDocsImpact === "string" ? item.patchDocsImpact.trim() : "";
+    if (docsUnmet.length && !docsReason) {
+      discardWorkingTree();
+      const autoRebuild = (Number(item.autoRebuilds) || 0) < 1 && !project.trainLocked;
+      console.log(`[apply-patch] ${item.id}: docsImpact — ${docsUnmet.length} unmet rule(s)`);
+      const notes = await appendNote(item,
+        docsUnmet.map(docsImpactRefusalNote).join(" ") + " " +
+        (autoRebuild ? `A rebuild was started automatically.` : `Click Ready for Dev again so it is rebuilt.`));
+      await patchItem(item.id, {
+        patchReady: false, patchAttempts: 0, updatedAt: new Date().toISOString(), notes,
+        ...(autoRebuild ? { autoRebuilds: (Number(item.autoRebuilds) || 0) + 1 } : {}),
+      });
+      if (autoRebuild) queueBuildRequest(project, item.id);
+      return;
+    }
+    if (docsUnmet.length) docsImpactWaivers = docsUnmet.map((u) => docsImpactWaiverNote(u, docsReason));
 
     if (!changedPaths.length) {
       // Same "stuck forever with no record of why" class of bug the old
@@ -2991,6 +3018,7 @@ async function processApplyPatch(item) {
       ? ` Note: ${movedPaths.length} of this patch's paths were relative to the project's folder rather than the repo root (${movedPaths.map((m) => m.from).join(", ")}) and were placed under ${projectFolderOf(project)}/ — patchFiles paths must start at the repo root.`
       : "") +
     rebuildNote(rebuilds, sha) +
+    (docsImpactWaivers.length ? ` ${docsImpactWaivers.join(" ")}` : "") +
     (testsStarted.length ? ` The ${testsStarted.map((t) => `${t.label} (${t.workflow})`).join(" and ")} ${testsStarted.length === 1 ? "was" : "were"} started on the train; a failure will be noted here.` : "") +
     (workflowPaths.length
       ? ` This ticket changes ${workflowPaths.join(", ")}, so it was pushed with the workflow-push App token and the train's deploy PR will NOT be merged by the pipeline — a person has to review and merge it on GitHub.`
@@ -3012,6 +3040,8 @@ async function processApplyPatch(item) {
     // carryingCommitOnTrain), if it ever was.
     carriedByCommit: null,
     carriedByItem: null,
+    // A re-patch after Failed testing needs its own reason.
+    patchDocsImpact: null,
     previewUrl,
     // "Rebuilding test link…" until the checked-in bundle includes this
     // commit (see refreshPreviewBuildStates); null for any link that does

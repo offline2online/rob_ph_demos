@@ -740,6 +740,28 @@ that correctly has no single folder) always has at least one path whose
 top segment already exists there, so it's never caught by this check — see
 `test/patch-paths.test.js` for the exact cases.
 
+**A change to an API or schema without its spec is refused too**
+(`docsImpact`). A project's `board-docs.json` may carry
+`"docsImpact": [{"when": ["<glob>"], "require": ["<repo path>"], "why": "<optional, max 200 chars>"}]`.
+Globs and paths are repo-root-relative (`*` stays inside one path segment,
+`**` spans any number, including none); a rule fires when a changed path
+matches a `when` glob and is met when at least one `require` file also
+changed in the same commit. Rules apply by path, from every
+`board-docs.json` in the tree, whatever project the card is in. After the
+migration-number check, `processApplyPatch` tests the real staged diff (an
+unchanged copy of the document in `patchFiles` doesn't count) against the
+rules read from the patched tree. An unmet rule discards the working tree,
+clears `patchReady`, notes "Not built: this patch changes … but not …" and
+starts one automatic rebuild (otherwise "click Ready for Dev again"). It is
+not a hard block: if the card carries `patchDocsImpact` (one sentence on why
+the spec genuinely doesn't change) the patch lands, the landing note says
+"Spec not updated: … The build says: …" (reason cut at 500 chars), and the
+landing write clears `patchDocsImpact`, so a re-patch needs its own reason.
+`scripts/docs-impact.js` is the pure module and a CLI
+(`node backlog-tracker/scripts/docs-impact.js [--base <sha>]`, exit 1 on an
+unmet rule); `test/docs-impact.test.js` covers it. No project declares rules
+yet.
+
 ## Retiring a project — archive keeps it, delete does not
 
 The board's own control is **archive** (`archiveProject()` in

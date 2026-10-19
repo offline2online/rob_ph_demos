@@ -182,6 +182,7 @@ deleted by hand).
   // no AI involved) does the actual push/PR/merge and clears these flags.
   patchFiles?: [{ path: string, content: string | null }],  // null content = delete that path
   patchCommitMessage?: string,
+  patchDocsImpact?: string,     // build's one-sentence reason a docsImpact rule (board-docs.json) does not apply; lands the patch with a "Spec not updated" note, then cleared (not in itemPipelineFields)
   patchReady?: boolean,         // set true once patchFiles etc. are ready; cleared to false once the commit lands on the train
   patchBranch?: string,         // DEPRECATED — there is one branch per project now, not one per ticket. Still accepted from the Routine, ignored
   patchPrTitle?: string,        // DEPRECATED — a ticket has no PR of its own; the train's PR title is generated

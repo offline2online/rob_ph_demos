@@ -530,8 +530,19 @@ ticket once automatically.
    - `patchBranch`: no longer used. There is one branch per project, not
      one per ticket, so there is nothing for this to name. It is still
      accepted and ignored; don't bother setting it.
+   - `patchDocsImpact` (optional, string): only when a `docsImpact` rule in a
+     `board-docs.json` fires for your change and what the spec says genuinely
+     doesn't change — one sentence saying why. Without it, a patch that
+     changes files matching a rule but not its required document is refused
+     ("Not built: …") and rebuilt once. Run the check first (below); prefer
+     updating the document. It lands the patch with a "Spec not updated" note
+     and is cleared on landing, so a re-patch needs its own.
    - `patchCommitMessage`, `patchPrTitle`, `patchPrBody`: plain text for
      the eventual commit and PR.
+   - **Before setting `patchReady`, check docsImpact**: with your changes in
+     your checkout, run `node backlog-tracker/scripts/docs-impact.js` (add
+     `--base <patchBaseSha>` if you committed). Exit 1 lists the unmet rules:
+     update the named document in the same patch, or set `patchDocsImpact`.
    - **Before setting `patchReady`, run the console's offline tests** if
      the patch touches `backlog-tracker/` (no credentials or network
      needed): `cd backlog-tracker/test && npm ci && npm run test:app-boots
@@ -614,9 +625,9 @@ ticket once automatically.
    Example PATCH shape, sent after the note (add more `updateMask.fieldPaths` entries and
    fields as needed):
    ```
-   curl -sS -X PATCH "$BOARD/backlogItems/<ITEM_ID>?updateMask.fieldPaths=title&updateMask.fieldPaths=category&updateMask.fieldPaths=updatedAt&updateMask.fieldPaths=patchFiles&updateMask.fieldPaths=patchCommitMessage&updateMask.fieldPaths=patchPrTitle&updateMask.fieldPaths=patchPrBody&updateMask.fieldPaths=patchBaseSha&updateMask.fieldPaths=patchPartCount&updateMask.fieldPaths=patchReady" \
+   curl -sS -X PATCH "$BOARD/backlogItems/<ITEM_ID>?updateMask.fieldPaths=title&updateMask.fieldPaths=category&updateMask.fieldPaths=updatedAt&updateMask.fieldPaths=patchFiles&updateMask.fieldPaths=patchCommitMessage&updateMask.fieldPaths=patchDocsImpact&updateMask.fieldPaths=patchPrTitle&updateMask.fieldPaths=patchPrBody&updateMask.fieldPaths=patchBaseSha&updateMask.fieldPaths=patchPartCount&updateMask.fieldPaths=patchReady" \
      -H "Content-Type: application/json" \
-     -d '{"fields":{"title":{"stringValue":"<short clear subject>"},"category":{"stringValue":"<corrected category>"},"updatedAt":{"timestampValue":"<ISO8601 now>"},"patchFiles":{"arrayValue":{"values":[{"mapValue":{"fields":{"path":{"stringValue":"<relative/path>"},"content":{"stringValue":"<full new file content>"}}}}]}},"patchCommitMessage":{"stringValue":"<message>"},"patchPrTitle":{"stringValue":"<title>"},"patchPrBody":{"stringValue":"<body>"},"patchBaseSha":{"stringValue":"<40-char sha you read the files from>"},"patchPartCount":{"integerValue":"0"},"patchReady":{"booleanValue":true}}}'
+     -d '{"fields":{"title":{"stringValue":"<short clear subject>"},"category":{"stringValue":"<corrected category>"},"updatedAt":{"timestampValue":"<ISO8601 now>"},"patchFiles":{"arrayValue":{"values":[{"mapValue":{"fields":{"path":{"stringValue":"<relative/path>"},"content":{"stringValue":"<full new file content>"}}}}]}},"patchCommitMessage":{"stringValue":"<message>"},"patchDocsImpact":{"stringValue":"<only if a docsImpact rule fires and the spec does not change: one sentence why; otherwise omit this field and its mask entry>"},"patchPrTitle":{"stringValue":"<title>"},"patchPrBody":{"stringValue":"<body>"},"patchBaseSha":{"stringValue":"<40-char sha you read the files from>"},"patchPartCount":{"integerValue":"0"},"patchReady":{"booleanValue":true}}}'
    ```
 
 **Fixes that edit a file under `.github/workflows/`** can be packaged like
@@ -895,6 +906,10 @@ own `readyToDeploy` is information, not permission.
    which test failed. Still running is fine: the pipeline holds the deploy
    until they pass (`trainTestGate`, "Waiting for tests…" on the board), so
    set `trainReady` and let it wait rather than waiting yourself.
+2b. **List waived spec updates (information only, never blocks).** For each
+   card on the train whose notes contain "Spec not updated", name it with the
+   reason after "The build says:" in your report, so a person can judge
+   whether the document should have moved. Do not hold `trainReady` for it.
 3b. **FAQ impact review — do this whether or not steps 1-2 cleared the
    train.** The tickets in a DEPLOY REQUEST are about to change what the
    product does, and the public help centre (`faq/`, edited from the
