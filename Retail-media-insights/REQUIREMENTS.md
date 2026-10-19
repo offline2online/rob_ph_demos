@@ -21,6 +21,7 @@ Page filters on every endpoint: `dateFrom`, `dateTo`, `storeIds[]`, `displayType
 4. `slot-value` — per display type: connected displays, effective CPM, floor CPM, revenue per available slot, network totals, VAC-d averages and inputs.
 5. `slot-allocation` — per display type: slots per loop, advertiser / own-content counts and average durations, loop length, advertiser slots sold %.
 6. `missed-revenue` — per display type + all-types total: connected displays, floor CPM (or range), fill, unsold slots and value at floor, downtime lost revenue and slots offline, total missed.
+6a. `hourly` — (endpoint 10a in the ticket) per display type: connected displays and, for each hour inside operating hours, fill, sold / unsold / offline slots, revenue, assumed views and effective CPM. Retailer only (403 for an advertiser). `viewsBasis` names the interim spreading rule.
 7. `yield` — effective CPM per DSP; param `dealType`.
 8. `advertisers` — revenue, share, deals on, slots covered, slots won %, effective CPM, DSP.
 9. `maturity` — ladder counts + advertiser lists, scheduling counts + lists, share by level over time, variables-in-use ranking, advertiser targeting & scheduling table.
@@ -34,6 +35,7 @@ Page filters on every endpoint: `dateFrom`, `dateTo`, `storeIds[]`, `displayType
 - **Revenue per available slot** (per day) = revenue ÷ (advertiser slots × connected displays × days) = effective CPM × average assumed views per slot per day ÷ 1,000 × fill. Counts every advertiser slot, sold or unsold.
 - **Operating hours:** only slots inside each display type's operating hours are inventory (24 hours for Exterior and window screens visible from outside; store opening hours otherwise). Never return specific opening times.
 - **Fill / Inventory sold** = sold ÷ (sold + unsold + offline), i.e. all advertiser slots inside operating hours, using unsold real-time slot records.
+- **Hourly fill and effective CPM:** fill uses the rule above per hour; effective CPM = revenue ÷ (VAC-d ÷ 1,000) per hour. Until the hourly impression multiplier ships (DSP Integration), and while billing carries no play timestamp, a day's earned revenue and assumed views are spread over its hours by the share of that day's sold slots in each hour. Hourly parts add to the day totals (revenue to the cent, views to the whole number); an hour with no delivery has no CPM.
 - **Missed revenue** = unsold slots × floor CPM × VAC-d ÷ 1,000, plus downtime lost revenue.
 - **Pacing** (PG only) = delivered VAC-d ÷ guaranteed to date; guaranteed = forecast × (1 − buffer).
 - **Maturity level** = highest of Default only / Localised / Personalised across an advertiser's campaigns in range. Daypart is scheduling, never a variable.

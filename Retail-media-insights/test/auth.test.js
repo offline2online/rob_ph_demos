@@ -83,7 +83,7 @@ test('a retailer (admin) token reads every route, with or without an advertiserI
 
 test('advertiser tokens get 403 on every route that is not declared advertiser-callable', async () => {
   const t = tok('advertiser', 'adv-haleon');
-  assert.deepEqual(RETAILER_ONLY.map((r) => r.path).sort(), ['/advertisers', '/deals', '/maturity', '/missed-revenue', '/revenue', '/slot-allocation', '/slot-value', '/summary', '/yield']);
+  assert.deepEqual(RETAILER_ONLY.map((r) => r.path).sort(), ['/advertisers', '/deals', '/hourly', '/maturity', '/missed-revenue', '/revenue', '/slot-allocation', '/slot-value', '/summary', '/yield']);
   for (const r of RETAILER_ONLY) {
     assert.equal((await call(`${r.path}?${Q}`, t)).status, 403, r.path);
     assert.equal((await call(`${r.path}?${Q}&advertiserIds=adv-unilever`, t)).status, 403, r.path);

@@ -203,3 +203,18 @@ test('slot value sorts by the selected metric and slot allocation follows it', a
     assert.deepStrictEqual(SC.followOrder(sa.slice().reverse(), order, (r) => types[r.id]).map((r) => r.id), order.map((r) => r.id).filter((id) => sa.some((a) => a.id === id)));
   }
 });
+
+test('hourly: cell text, shading and hover facts', async () => {
+  const body = await get('/hourly');
+  const row = body.rows.find((r) => r.name === 'Window Portrait');
+  assert.equal(row.hours.length, 24);
+  const cell = row.hours[9];
+  assert.match(SC.hourlyCellText(cell, 'fill'), /^\d+%$/);
+  assert.equal(SC.hourlyCellText({ fillPercent: 50, effectiveCpm: null }, 'cpm'), '–');
+  assert.equal(SC.hourlyShade(null, 10).bg, 'transparent');
+  assert.equal(SC.hourlyMax(body.rows, 'fill') >= cell.fillPercent, true);
+  const m = SC.hourlyHover(row, cell, (await typesP)[row.id], RANGE);
+  assert.equal(val(m, 'Hour'), '09:00–10:00');
+  assert.match(val(m, 'Fill'), /advertiser slots sold; .* unsold, .* offline\)$/);
+  assert.match(text(m), /Totals across all/);
+});

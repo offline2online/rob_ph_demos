@@ -104,18 +104,20 @@ function buildCells(rows, nDeals, out = [], index = new Map()) {
 }
 
 class AggregateStore {
-  constructor({ delivery, inventory, campaigns = [], advertisers = {}, catalog = { displayTypes: {}, displays: [] } }, { indexed = true } = {}) {
+  constructor({ delivery, inventory, hourlyInventory = [], campaigns = [], advertisers = {}, catalog = { displayTypes: {}, displays: [] } }, { indexed = true } = {}) {
     this.catalog = catalog;
     this.campaigns = campaigns;
     this.advertisers = advertisers;
     this.indexed = indexed;
     this.delivery = [...delivery].sort(byDate);
     this.inventory = [...inventory].sort(byDate);
+    this.hourlyInventory = [...hourlyInventory].sort(byDate);
 
     const deals = dictionary(); const types = dictionary(); const advs = dictionary();
-    stampDays(this.delivery); stampDays(this.inventory);
+    stampDays(this.delivery); stampDays(this.inventory); stampDays(this.hourlyInventory);
     for (const r of this.delivery) { r.dealIx = deals.code(r.dealId); r.typeIx = types.code(r.displayTypeId); r.advIx = advs.code(r.advertiserId); }
     for (const r of this.inventory) r.typeIx = types.code(r.displayTypeId);
+    for (const r of this.hourlyInventory) r.typeIx = types.code(r.displayTypeId);
     // The first and last played day: days with inventory or earned delivery. Reservations (estimated rows booked ahead) are not played days.
     let first = null; let last = null;
     const played = (date) => { if (first === null || date < first) first = date; if (last === null || date > last) last = date; };
@@ -137,6 +139,10 @@ class AggregateStore {
       this.inventoryRollup = rollup(this.inventory, (r) => r.typeIx,
         (r) => ({ date: r.date, displayTypeId: r.displayTypeId, storeId: null, dayIx: r.dayIx, typeIx: r.typeIx, sold: 0, unsold: 0, offline: 0, outsideHours: 0, unsoldViews: 0, lostRevenue: 0 }),
         INVENTORY_MEASURES);
+      this.hourlyRollup = rollup(this.hourlyInventory, (r) => r.typeIx * 24 + r.hour,
+        (r) => ({ date: r.date, displayTypeId: r.displayTypeId, storeId: null, hour: r.hour, dayIx: r.dayIx, typeIx: r.typeIx, sold: 0, unsold: 0, offline: 0 }),
+        ['sold', 'unsold', 'offline']);
+      this.hourlyByStore = partition(this.hourlyInventory, 'storeId');
       this.deliveryCells = buildCells(this.deliveryRollup, deals.ids.length);
       this.deliveryByStore = partition(this.delivery, 'storeId');
       this.inventoryByStore = partition(this.inventory, 'storeId');
@@ -231,6 +237,9 @@ class AggregateStore {
       fn(c);
     }
   }
+
+  /** Slot records per date x display type x hour (x store when filtered), inside operating hours only. Ignores the advertiser filter. */
+  scanHourlyInventory(filters, fn) { this.#scan(this.hourlyInventory, this.hourlyRollup, this.hourlyByStore, filters, fn, false); }
 
   /** Unsold inventory ignores the advertiser filter: slot records belong to no advertiser (README open question 1 default). */
   scanInventory(filters, fn) { this.#scan(this.inventory, this.inventoryRollup, this.inventoryByStore, filters, fn, false); }

@@ -169,6 +169,21 @@ function roundParts(parts) {
   return { parts: rounded, total: sum(rounded) };
 }
 
+/**
+ * Round each value to `decimals` places so the rounded values add to the rounded sum (largest remainder).
+ * Used where parts are shown beside a total that is a figure of its own (hourly revenue against the Revenue chart).
+ */
+function roundToTotal(values, decimals = 0) {
+  const scale = 10 ** decimals;
+  const total = Math.round(sum(values) * scale);
+  const raw = values.map((v) => v * scale);
+  const out = raw.map(Math.floor);
+  let left = total - sum(out);
+  const order = raw.map((r, i) => [r - out[i], i]).sort((a, b) => b[0] - a[0] || a[1] - b[1]);
+  for (let k = 0; left > 0 && k < order.length; k += 1, left -= 1) out[order[k][1]] += 1;
+  return out.map((v) => v / scale);
+}
+
 /** Whole-number percentages that add to 100 (largest remainder). */
 function percentSplit(values) {
   const total = sum(values);
@@ -202,6 +217,6 @@ module.exports = {
   operatingWindow, runsAllDay, insideOperatingHours, classifySlot, fillPercent,
   unsoldValueAtFloor, missedRevenue,
   guaranteedVolume, pgPacing, maturityLevel, sharedVariables, campaignLevel,
-  wholePercent, roundParts, percentSplit, formatUsd,
+  wholePercent, roundParts, roundToTotal, percentSplit, formatUsd,
   compareDealTypes, compareDsps, compareZones,
 };

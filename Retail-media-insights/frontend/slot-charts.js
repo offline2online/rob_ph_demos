@@ -33,6 +33,10 @@
       'Only slots inside each display’s operating hours count (outside screens run 24 hours; in-store screens follow store opening hours); slots outside them play house content. ' +
       'Amber = unsold slots valued at floor CPM × their assumed views ÷ 1,000 (a minimum estimate). ' +
       'Red = revenue lost while displays were offline. The number in brackets is connected displays (PH Core). ' + VAC_TEXT,
+    hourly: 'Fill = advertiser slots sold ÷ all advertiser slots in the hour, across all deal types (booking schedule and unsold real-time slot records). ' +
+      'Effective CPM = revenue ÷ (assumed views (VAC-d) ÷ 1,000). Only hours inside each display type’s operating hours are inventory and shown: outside screens and windows run 24 hours, in-store screens follow store opening hours. ' +
+      'Until the hourly impression multiplier ships, assumed views per hour = the day’s assumed views spread by each hour’s share of the day’s slots played, and revenue is spread the same way. ' +
+      'The number in brackets is connected displays (PH Core).',
     yield: 'Effective CPM for each connected DSP: cleared revenue per 1,000 assumed views (VAC-d), from billing line items and reservations. ' + VAC_TEXT
   };
   // Column definitions for the Slot allocation table (an ⓘ beside each heading).
@@ -245,6 +249,41 @@
     return cardPlus(dt, meta, [sec], { omitConnected: true });
   }
 
+  function hourLabel(h) { return (h < 10 ? '0' : '') + h + ':00'; }
+  function hourRange(h) { return hourLabel(h) + '–' + hourLabel((h + 1) % 24); }
+
+  // Cell shade: the primary colour at an opacity of the cell's value against the largest value in the grid.
+  function hourlyShade(value, max) {
+    if (!has(value) || !(max > 0)) return { bg: 'transparent', dark: false };
+    var a = Math.max(0.08, Math.min(1, value / max));
+    return { bg: 'rgba(22,155,194,' + a.toFixed(2) + ')', dark: a > 0.55 };
+  }
+  function hourlyCellText(cell, mode) {
+    if (mode === 'fill') return pct(cell.fillPercent);
+    return has(cell.effectiveCpm) ? fmtMoney(cell.effectiveCpm, 2) : '–';
+  }
+  function hourlyMax(rows, mode) {
+    var max = 0;
+    rows.forEach(function (r) { r.hours.forEach(function (c) { var v = mode === 'fill' ? c.fillPercent : c.effectiveCpm; if (has(v) && v > max) max = v; }); });
+    return max;
+  }
+
+  // row is a /hourly row, cell one of its hours; dt is the display type's card. Facts only.
+  function hourlyHover(row, cell, dt, meta) {
+    var range = dateRange(meta);
+    var cd = row.connectedDisplays || {};
+    var rows = [
+      ['Hour', hourRange(cell.hour)],
+      ['Fill', pct(cell.fillPercent) + ' (total ' + fmtInt(cell.slotsSold) + ' of ' + fmtInt(cell.slotsTotal) + ' advertiser slots sold; ' + fmtInt(cell.slotsUnsold) + ' unsold, ' + fmtInt(cell.slotsOffline) + ' offline)'],
+      ['Effective CPM', has(cell.effectiveCpm)
+        ? fmtMoney(cell.effectiveCpm, 2) + ' (total revenue ' + fmtMoney(cell.revenue, 2) + ' over ' + fmtInt(cell.views) + ' assumed views)'
+        : 'No delivery']
+    ];
+    var note = 'Totals across all ' + fmtInt(cd.displays) + ' connected ' + (dt ? dt.name + ' ' : '') + 'displays' +
+      (has(cd.stores) ? ' in ' + plural(cd.stores, 'store') : '') + (range ? ', ' + range : '') + '.';
+    return cardPlus(dt, meta, [{ rows: rows, note: note }], { omitConnected: true });
+  }
+
   // Only DSPs with delivery, highest effective CPM first (ties keep the DSP order).
   function yieldRows(rows) {
     return dspOrder(rows.filter(function (r) { return r.effectiveCpm !== null && r.effectiveCpm !== undefined; }))
@@ -269,7 +308,8 @@
     journeyOrder: journeyOrder, metricOrder: metricOrder, followOrder: followOrder, dspOrder: dspOrder, yieldRows: yieldRows, missedOrder: missedOrder, missedShares: missedShares, missedAria: missedAria,
     DSP_COLOURS: DSP_COLOURS, ALL_DEAL_TYPES: ALL_DEAL_TYPES, typesById: typesById, missedParts: missedParts,
     displayTypeCard: displayTypeCard, slotValueHover: slotValueHover, allocationHover: allocationHover,
-    missedHover: missedHover, yieldHover: yieldHover
+    missedHover: missedHover, yieldHover: yieldHover,
+    hourlyHover: hourlyHover, hourlyShade: hourlyShade, hourlyCellText: hourlyCellText, hourlyMax: hourlyMax, hourRange: hourRange
   };
 
   // ---------- DOM ----------
@@ -277,7 +317,7 @@
     if (typeof document === 'undefined') throw new Error('SlotCharts.mount needs a DOM');
     var fetchJson = opts.fetchJson;
     var filters = opts.filters || {};
-    var state = { mode: 'cpm', dealType: '' };
+    var state = { mode: 'cpm', dealType: '', hourly: 'fill' };
     var gen = { all: 0, yield: 0 };
     var cache = { types: null, typeMap: {} };
     var alive = true;
@@ -389,7 +429,24 @@
     sel.addEventListener('change', function () { state.dealType = sel.value; loadYield(); });
     var pY = panel('Yield', TIPS.yield, h('label', { class: 'sc-field' }, [h('span', { text: 'Deal type' }), sel]), null);
 
-    container.appendChild(h('div', { class: 'sc-grid' }, [pSV.el, pSA.el, pMR.el, pY.el]));
+    // Fill and effective CPM by hour: full width under Missed revenue & fill and Yield.
+    var hSegBtns = {};
+    var hSeg = h('div', { class: 'sc-seg', role: 'radiogroup', 'aria-label': 'Hourly metric' });
+    [['fill', 'Fill'], ['cpm', 'Effective CPM']].forEach(function (o) {
+      var b = h('button', { type: 'button', class: 'sc-seg-btn', role: 'radio', 'data-mode': o[0], text: o[1] });
+      b.addEventListener('click', function () { state.hourly = o[0]; syncHSeg(); if (hData) drawHourly(hData); });
+      hSegBtns[o[0]] = b; hSeg.appendChild(b);
+    });
+    function syncHSeg() {
+      Object.keys(hSegBtns).forEach(function (k) {
+        hSegBtns[k].setAttribute('aria-checked', String(state.hourly === k));
+        hSegBtns[k].classList.toggle('on', state.hourly === k);
+      });
+    }
+    var pH = panel('Fill and effective CPM by hour', TIPS.hourly, hSeg, null);
+    pH.el.classList.add('sc-wide');
+
+    container.appendChild(h('div', { class: 'sc-grid' }, [pSV.el, pSA.el, pMR.el, pY.el, pH.el]));
     container.appendChild(tip);
 
     function setState(p, kind, retry) {
@@ -520,6 +577,35 @@
       pY.body.appendChild(list);
     }
 
+    // ----- fill and effective CPM by hour -----
+    var hData = null;
+    function drawHourly(d) {
+      var rows = journeyOrder(d.rows, function (r) { return cache.typeMap[r.id]; });
+      var max = hourlyMax(rows, state.hourly);
+      var grid = h('div', { class: 'sc-heat', role: 'table', 'aria-label': 'Fill and effective CPM by hour' });
+      var head = h('div', { class: 'sc-heat-row', role: 'row' }, [h('div', { class: 'sc-heat-label', role: 'columnheader', text: 'Display type' })]);
+      for (var hr = 0; hr < 24; hr++) head.appendChild(h('div', { class: 'sc-heat-hour', role: 'columnheader', text: (hr < 10 ? '0' : '') + hr }));
+      grid.appendChild(head);
+      rows.forEach(function (r) {
+        var dt = cache.typeMap[r.id];
+        var byHour = {};
+        r.hours.forEach(function (c) { byHour[c.hour] = c; });
+        var line = h('div', { class: 'sc-heat-row', role: 'row' }, [h('div', { class: 'sc-heat-label', role: 'rowheader', text: bracketed(r.name, displaysOf(r)) })]);
+        for (var i = 0; i < 24; i++) {
+          var c = byHour[i];
+          if (!c) { line.appendChild(h('div', { class: 'sc-heat-cell sc-heat-none', role: 'cell', 'aria-label': r.name + ' ' + hourRange(i) + ': not inventory' })); continue; }
+          var v = state.hourly === 'fill' ? c.fillPercent : c.effectiveCpm;
+          var shade = hourlyShade(v, max);
+          var cell = h('div', { class: 'sc-heat-cell' + (shade.dark ? ' sc-heat-dark' : ''), role: 'cell', style: 'background:' + shade.bg, 'data-hour': String(i), 'data-value': hourlyCellText(c, state.hourly), text: hourlyCellText(c, state.hourly) });
+          (function (cc) { hoverable(cell, function () { return hourlyHover(r, cc, dt, filters); }); })(c);
+          line.appendChild(cell);
+        }
+        grid.appendChild(line);
+      });
+      pH.body.innerHTML = ''; pH.body.setAttribute('aria-busy', 'false');
+      pH.body.appendChild(h('div', { class: 'sc-heat-scroll' }, [grid]));
+    }
+
     // ----- loading -----
     function loadYield() {
       var g = ++gen.yield;
@@ -532,8 +618,8 @@
     }
     function loadAll() {
       var g = ++gen.all;
-      [pSV, pSA, pMR].forEach(function (p) { setState(p, 'loading'); });
-      svData = null; saData = null;
+      [pSV, pSA, pMR, pH].forEach(function (p) { setState(p, 'loading'); });
+      svData = null; saData = null; hData = null;
       var current = function () { return alive && g === gen.all; };
       var typesP = fetchJson('display-types', filters).then(function (t) {
         cache.types = t; cache.typeMap = typesById(t); return t;
@@ -550,10 +636,11 @@
       run(pSV, 'slot-value', function () { drawSlotValue(); if (saData) drawAllocation(saData); }, function (d) { svData = d; });
       run(pSA, 'slot-allocation', drawAllocation);
       run(pMR, 'missed-revenue', drawMissed);
+      run(pH, 'hourly', drawHourly, function (d) { hData = d; });
       loadYield();
     }
 
-    syncSeg();
+    syncSeg(); syncHSeg();
     loadAll();
     return {
       setFilters: function (f) { filters = f || {}; hideTip(); loadAll(); },

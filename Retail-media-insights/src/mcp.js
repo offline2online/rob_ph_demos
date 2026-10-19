@@ -33,6 +33,7 @@ const TOOLS = {
   'slot-value': ['retail_media_slot_value', 'Floor and effective CPM and revenue per available slot, by display type.', {}],
   'slot-allocation': ['retail_media_slot_allocation', 'Advertiser and own-content slots per loop, by display type.', {}],
   'missed-revenue': ['retail_media_missed_revenue', 'Fill, unsold value at floor and downtime lost revenue, by display type.', {}],
+  hourly: ['retail_media_hourly', 'Fill and effective CPM by hour of day, per display type (inside operating hours only).', {}],
   deals: ['retail_media_deals', 'Named deals with fill, pacing (Programmatic guaranteed), revenue, CPM and advertisers.', { dealType: str('One deal type.') }],
   advertisers: ['retail_media_advertisers', 'Advertisers by revenue, share, deals and effective CPM.', {}],
   maturity: ['retail_media_maturity', 'Targeting and scheduling maturity: ladder, scheduling, variables in use and the advertiser table.',
