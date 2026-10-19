@@ -5502,6 +5502,11 @@ docsReleaseSelect.addEventListener("change", () => {
   if (!docsProjectId) return;
   setProjectRelease(docsProjectId, docsReleaseSelect.value);
 });
+document.getElementById("docs-origin-concept-link").addEventListener("click", (e) => {
+  e.preventDefault();
+  const origin = concepts.find((c) => c.status === "promoted" && c.promotedProjectId === docsProjectId);
+  if (origin) openConceptDetailPage(origin.id);
+});
 document.getElementById("docs-open-releases-btn").addEventListener("click", () => openReleasesPage());
 
 function openDocsPage(pid) {
@@ -5551,6 +5556,10 @@ function renderDocsPage() {
   if (!docsProjectId) return;
   const project = projects.find((p) => p.id === docsProjectId);
   document.getElementById("docs-page-project-name").textContent = project ? project.name : projectName(docsProjectId);
+  const originBlock = document.getElementById("docs-origin-concept");
+  const origin = concepts.find((c) => c.status === "promoted" && c.promotedProjectId === docsProjectId);
+  originBlock.hidden = !origin;
+  if (origin) document.getElementById("docs-origin-concept-link").textContent = origin.name || "Origin concept";
   if (document.activeElement !== docsProgramSelect) {
     populateProgramSelect(docsProgramSelect, project ? project.programId || "" : "");
   }
@@ -6230,7 +6239,9 @@ function renderConceptIncubatorPage() {
   // Earliest release first; concepts with no release come after, keeping the
   // query's updatedAt-desc order within each group (Array.sort is stable).
   const orderOf = (c) => { const r = conceptRelease(c.id); return r ? Number(r.order) || 0 : Infinity; };
-  const sorted = concepts.slice().sort((a, b) => {
+  // Promoted concepts are kept (reachable from the project's "Origin concept"
+  // link) but no longer shown as tiles, so a promoted idea isn't listed twice.
+  const sorted = concepts.filter((c) => c.status !== "promoted").sort((a, b) => {
     const oa = orderOf(a), ob = orderOf(b);
     return oa === ob ? 0 : oa < ob ? -1 : 1;
   });
