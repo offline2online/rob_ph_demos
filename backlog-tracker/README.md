@@ -256,7 +256,7 @@ What the train changes:
   `<title>` + a `Backlog item: <id>` line (the same marker PR bodies
   carried, so exact-id lookups still work, now via `git log --grep`).
   Tickets stack on each other, so they are tested in the combination they
-  will ship in; the card's test link points at the branch. A re-patch is
+  will ship in; the card's test link is pinned to the ticket's own commit (never the branch, which githack caches). When that link opens a checked-in build (the DSP prototype), the card shows "Rebuilding test link…" and holds Failed testing until the bundle's `build-info.json` includes the ticket (`refreshPreviewBuildStates`). A re-patch is
   just another commit — `deployCommits[]` grows, history is never
   rewritten. If the push is rejected because another ticket landed in
   between, the patch is re-applied on the new head and retried once.

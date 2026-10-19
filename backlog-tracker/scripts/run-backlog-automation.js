@@ -781,7 +781,7 @@ function carryingCommitOnTrain(deployBranch, paths) {
 //   already-on-main  — nothing on the train changes these paths, so the
 //                      content is live already: genuinely nothing to deploy,
 //                      and the one case noDeploymentRequired is honest for.
-function noDiffPatchFields(item, carrying, { deployBranch, testVersion, previewUrl, mainPreviewUrl } = {}) {
+function noDiffPatchFields(item, carrying, { deployBranch, testVersion, previewUrl, mainPreviewUrl, previewFields, mainPreviewFields } = {}) {
   const base = {
     status: "ready-for-testing",
     patchReady: false,
@@ -799,7 +799,7 @@ function noDiffPatchFields(item, carrying, { deployBranch, testVersion, previewU
         ...base, deployBranch,
         deployCommit: carrying.sha, deployCommits: [carrying.sha],
         carriedByCommit: null, carriedByItem: null,
-        ...(previewUrl ? { previewUrl } : {}),
+        ...(previewUrl ? { previewUrl, ...(previewFields || {}) } : {}),
       },
     };
   }
@@ -815,13 +815,13 @@ function noDiffPatchFields(item, carrying, { deployBranch, testVersion, previewU
         // real-commit path below.
         revertRequested: false,
         revertBlockedBy: [],
-        ...(previewUrl ? { previewUrl } : {}),
+        ...(previewUrl ? { previewUrl, ...(previewFields || {}) } : {}),
       },
     };
   }
   return {
     kind: "already-on-main",
-    fields: { ...base, noDeploymentRequired: true, deployBranch, ...(mainPreviewUrl ? { previewUrl: mainPreviewUrl } : {}) },
+    fields: { ...base, noDeploymentRequired: true, deployBranch, ...(mainPreviewUrl ? { previewUrl: mainPreviewUrl, ...(mainPreviewFields || {}) } : {}) },
   };
 }
 
@@ -1266,8 +1266,18 @@ const GENERATED_BUILDS = [
     workflow: "dsp-prototype.yml",
     sources: ["dsp-integration/apps/", "dsp-integration/packages/", "dsp-integration/package.json", "dsp-integration/package-lock.json"],
     outputs: ["dsp-integration/prototype/", "dsp-integration/apps/admin/public/demo/"],
+    // Stamped by the build: its "commit" is the source commit the bundle was
+    // built from (rebuild-prototype.sh). The board reads it to know whether
+    // a card's test link shows the ticket yet (refreshPreviewBuildStates).
+    buildInfo: "dsp-integration/prototype/build-info.json",
   },
 ];
+
+// A card whose link is still "rebuilding" after this long is shown as "stale":
+// the link comes back with a warning rather than staying hidden for good when
+// a rebuild never lands. public/js/app.js carries the same number (a test
+// asserts they match).
+const PREVIEW_REBUILD_STALE_MS = 20 * 60 * 1000;
 
 // HOSTED_DEPLOYS: a service deployed by its own workflow whose `on: push`
 // paths never fire for a merge this script makes (GITHUB_TOKEN's
@@ -1323,6 +1333,45 @@ function isGeneratedOutput(p) {
 function rebuildWorkflowsFor(paths) {
   const changed = (paths || []).filter((p) => p && !isGeneratedOutput(p));
   return GENERATED_BUILDS.filter((b) => changed.some((p) => underAny(p, b.sources))).map((b) => b.workflow);
+}
+
+// The ref and in-repo path of a githack link this pipeline generated, or
+// null for anything else (a person's own link, a GitHub tree link).
+function parseGithackLink(url) {
+  const s = String(url || "");
+  if (!s.startsWith(`https://rawcdn.githack.com/${REPO}/`)) return null;
+  const rest = s.slice(`https://rawcdn.githack.com/${REPO}/`.length);
+  const slash = rest.indexOf("/");
+  if (slash <= 0) return null;
+  return { ref: rest.slice(0, slash), path: rest.slice(slash + 1).split(/[?#]/)[0] };
+}
+
+// The generated build a pipeline link serves, or null (no generated build,
+// or a link that is not under one's output).
+function generatedBuildForLink(url) {
+  const link = parseGithackLink(url);
+  if (!link) return null;
+  return GENERATED_BUILDS.find((b) => underAny(link.path, b.outputs)) || null;
+}
+
+// The preview* fields to write alongside a pipeline-generated link.
+// "rebuilding" exactly when this change leaves a build stale AND the link
+// opens that build's output; otherwise the state fields are nulled so
+// nothing from an earlier ticket round carries over. `ref` is the commit the
+// link is pinned to.
+function previewLinkFields(paths, previewUrl, ref, nowIso = new Date().toISOString()) {
+  const link = parseGithackLink(previewUrl);
+  const stale = new Set(rebuildWorkflowsFor(paths));
+  const build = link ? generatedBuildForLink(previewUrl) : null;
+  const rebuilding = !!(build && stale.has(build.workflow));
+  return {
+    previewSha: link ? (ref || link.ref) : null,
+    previewUpdatedAt: nowIso,
+    previewState: rebuilding ? "rebuilding" : null,
+    previewStateAt: rebuilding ? nowIso : null,
+    previewBuildWorkflow: rebuilding ? build.workflow : null,
+    previewBuiltFrom: null,
+  };
 }
 
 // Dispatches each stale build's workflow for `branch`. Never throws: a
@@ -1834,11 +1883,12 @@ async function reportTrainTestResults() {
 // What a rebuild means for whoever reads the card next: the link exists,
 // but for a few minutes it still shows the build from before this commit.
 // When the rebuild lands, dsp-prototype.yml re-points the card's test link
-// at that commit (githack caches a branch URL; a commit URL is immutable),
-// so the tester's cue is the link itself changing from a branch to a sha.
+// at that commit (githack caches a branch URL; a commit URL is immutable).
+// The card says so itself (previewState, refreshPreviewBuildStates), so the
+// note only points at that line instead of promising a later note.
 function rebuildNote(dispatched, sha) {
   if (!dispatched.length) return "";
-  return ` The test link serves a built bundle, which is being rebuilt from ${sha.slice(0, 7)} now (${dispatched.join(", ")}). Allow a few minutes: when the rebuild lands, this card's test link is switched to that build's own commit URL and a note here says so. Until then the link still shows the previous build — don't fail testing on it.`;
+  return ` The test link serves a built bundle, which is being rebuilt from ${sha.slice(0, 7)} now (${dispatched.join(", ")}). The card shows "Rebuilding test link\u2026" until the bundle includes this commit (usually 1-2 minutes), then "Includes this ticket" — don't fail testing before then.`;
 }
 
 function changedPathsBetween(fromRef, toRef) {
@@ -2245,12 +2295,127 @@ async function repointTrainPreviewUrls(projectId, deployBranch, newSha, excludeI
     const repointed = repointPreviewUrlRef(sib.previewUrl, newSha);
     if (repointed === sib.previewUrl) continue;
     try {
-      await patchItem(sib.id, { previewUrl: repointed, updatedAt: new Date().toISOString() });
+      const nowIso = new Date().toISOString();
+      await patchItem(sib.id, { previewUrl: repointed, previewSha: newSha, previewUpdatedAt: nowIso, updatedAt: nowIso });
       console.log(`[apply-patch] re-pointed ${sib.id}'s preview link to ${newSha.slice(0, 7)} (another ticket landed on ${deployBranch})`);
     } catch (err) {
       console.log(`[apply-patch] couldn't re-point ${sib.id}'s preview link to ${newSha.slice(0, 7)} (${err.message})`);
     }
   }
+}
+
+// ── "Rebuilding test link…": does the checked-in bundle show the ticket yet? ──
+// A card whose link opens a generated build (GENERATED_BUILDS) is pinned to
+// the ticket's own commit, which still holds the PREVIOUS bundle until the
+// build workflow rebuilds and re-points it. build-info.json beside the bundle
+// names the source commit it was built from, so the card is current exactly
+// when the ticket's commit is an ancestor of that. This sweep keeps
+// previewState honest: rebuilding -> ready (or stale after
+// PREVIEW_REBUILD_STALE_MS), ready -> rebuilding when the link moves to a
+// bundle without it, null when the card leaves testing or its link stops
+// opening a build. Written only on change.
+const PREVIEW_STATE_ITEM_FIELDS = [
+  "status", "previewUrl", "previewState", "previewStateAt", "previewSha", "previewUpdatedAt",
+  "previewBuildWorkflow", "deployBranch", "deployCommit", "carriedByCommit",
+];
+
+// git's answer to "is `ancestor` reachable from `descendant`": true, false, or
+// null when git could not tell (an unknown commit).
+function isAncestorCommit(ancestor, descendant) {
+  try {
+    run("git", ["merge-base", "--is-ancestor", ancestor, descendant]);
+    return true;
+  } catch (err) {
+    return err && err.status === 1 ? false : null;
+  }
+}
+
+async function refreshPreviewBuildStates(now = Date.now()) {
+  const tracked = await runQuery({
+    from: [{ collectionId: "backlogItems" }],
+    select: selectFields(PREVIEW_STATE_ITEM_FIELDS),
+    where: { fieldFilter: { field: { fieldPath: "previewState" }, op: "IN", value: { arrayValue: { values: ["rebuilding", "stale", "ready"].map((v) => ({ stringValue: v })) } } } },
+  });
+  const nowIso = new Date(now).toISOString();
+  const fetched = new Map(); // branch -> whether it could be fetched
+  const fetchBranch = (branch) => {
+    if (!fetched.has(branch)) {
+      try { run("git", ["fetch", "--quiet", "origin", branch]); fetched.set(branch, true); }
+      catch (err) { console.log(`[preview-build] couldn't fetch ${branch} (${scrubSecrets(err.message)}) — its cards keep their state`); fetched.set(branch, false); }
+    }
+    return fetched.get(branch);
+  };
+  let anyRebuilding = false;
+
+  for (const item of tracked) {
+    try {
+      const inTesting = item.status === "ready-for-testing" || item.status === "ready-to-publish";
+      const link = parseGithackLink(item.previewUrl);
+      const build = link ? generatedBuildForLink(item.previewUrl) : null;
+      const clear = { previewState: null, previewStateAt: null, previewBuildWorkflow: null, previewBuiltFrom: null };
+      if (!inTesting || !build) {
+        await patchItem(item.id, { ...clear, updatedAt: nowIso });
+        console.log(`[preview-build] ${item.id}: no longer showing a generated build — state cleared`);
+        continue;
+      }
+      if (item.previewState === "ready" && link.ref === item.previewSha &&
+          !(Date.parse(item.previewUpdatedAt) > Date.parse(item.previewStateAt))) continue;
+
+      const commit = item.deployCommit || item.carriedByCommit;
+      if (!commit || !item.deployBranch || !fetchBranch(item.deployBranch)) {
+        if (!commit) console.log(`[preview-build] ${item.id}: no train commit recorded — no change`);
+        if (item.previewState === "rebuilding") anyRebuilding = true;
+        continue;
+      }
+      let builtFrom = null;
+      try { builtFrom = String(JSON.parse(run("git", ["show", `${link.ref}:${build.buildInfo}`])).commit || "").trim() || null; }
+      catch (err) { console.log(`[preview-build] ${item.id}: can't read ${build.buildInfo} at ${link.ref.slice(0, 7)} (${scrubSecrets(err.message).split("\n")[0]}) — no change`); }
+      if (!builtFrom) { if (item.previewState === "rebuilding") anyRebuilding = true; continue; }
+      // The ticket's own commit is on the fetched branch; if it isn't here
+      // there is no verdict. A bundle built from a commit this repo doesn't
+      // have (a branch that was reset) can't contain the ticket.
+      let known = true;
+      try { run("git", ["cat-file", "-e", `${commit}^{commit}`]); } catch { known = false; }
+      if (!known) {
+        console.log(`[preview-build] ${item.id}: ${commit.slice(0, 7)} is unknown here — no change`);
+        if (item.previewState === "rebuilding") anyRebuilding = true;
+        continue;
+      }
+      const included = isAncestorCommit(commit, builtFrom) === true;
+
+      if (included) {
+        await patchItem(item.id, {
+          previewState: "ready", previewStateAt: nowIso, previewBuildWorkflow: build.workflow,
+          previewBuiltFrom: builtFrom, previewSha: link.ref, updatedAt: nowIso,
+        });
+        console.log(`[preview-build] ${item.id}: bundle at ${link.ref.slice(0, 7)} was built from ${builtFrom.slice(0, 7)} and includes ${commit.slice(0, 7)} — ready`);
+      } else if (item.previewState === "ready") {
+        await patchItem(item.id, {
+          previewState: "rebuilding", previewStateAt: nowIso, previewBuildWorkflow: build.workflow,
+          previewBuiltFrom: null, updatedAt: nowIso,
+        });
+        anyRebuilding = true;
+        console.log(`[preview-build] ${item.id}: link moved to a bundle built from ${builtFrom.slice(0, 7)}, which lacks ${commit.slice(0, 7)} — rebuilding`);
+      } else if (item.previewState === "rebuilding" && now - Date.parse(item.previewStateAt) > PREVIEW_REBUILD_STALE_MS) {
+        const workflow = item.previewBuildWorkflow || build.workflow;
+        const notes = await appendNote(item,
+          `The test link has been rebuilding for over ${Math.round(PREVIEW_REBUILD_STALE_MS / 60000)} minutes and the bundle still doesn't include this ticket ` +
+          `(it was built from ${builtFrom.slice(0, 7)}). The link may show the previous build — check the rebuild: ` +
+          `https://github.com/${REPO}/actions/workflows/${workflow}`);
+        await patchItem(item.id, { previewState: "stale", previewStateAt: nowIso, updatedAt: nowIso, notes });
+        console.log(`[preview-build] ${item.id}: still rebuilding after ${PREVIEW_REBUILD_STALE_MS / 60000} minutes — marked stale`);
+      } else if (item.previewState === "rebuilding") {
+        anyRebuilding = true;
+      }
+    } catch (err) {
+      console.log(`[preview-build] ${item.id}: ${scrubSecrets(err.message)} — no change`);
+      if (item.previewState === "rebuilding") anyRebuilding = true;
+    }
+  }
+  // The next run starts at once, not on the throttled schedule; bounded by
+  // PREVIEW_REBUILD_STALE_MS, after which the card is no longer "rebuilding".
+  if (anyRebuilding) followUpReasons.push("a test link is waiting on its rebuild");
+  return { checked: tracked.length, anyRebuilding };
 }
 
 // Finds a PR by exact head branch, in ANY state. Reconciliation-specific:
@@ -2616,12 +2781,23 @@ async function processApplyPatch(item) {
       const pinnedTo = (ref, fallback) => ownLink || guessPreviewUrl(patchedFiles, ref, fallback);
       let mainRef = "main";
       try { mainRef = run("git", ["rev-parse", "origin/main"]); } catch { /* fall back to the branch name */ }
+      const carriedUrl = carrying && carrying.sha ? pinnedTo(carrying.sha, trainTreeUrl(deployBranch)) : null;
+      // Content that is already on main is tested against main.
+      const mainUrl = pinnedTo(mainRef, trainTreeUrl("main"));
+      const patchedPaths = patchedFiles.map((f) => f && f.path).filter(Boolean);
       const outcome = noDiffPatchFields(item, carrying, {
         deployBranch, testVersion,
-        previewUrl: carrying && carrying.sha ? pinnedTo(carrying.sha, trainTreeUrl(deployBranch)) : null,
-        // Content that is already on main is tested against main.
-        mainPreviewUrl: pinnedTo(mainRef, trainTreeUrl("main")),
+        previewUrl: carriedUrl,
+        mainPreviewUrl: mainUrl,
+        // The carrying commit may sit ahead of the checked-in build; the
+        // sweep settles it from build-info.json (refreshPreviewBuildStates).
+        previewFields: carriedUrl ? previewLinkFields(patchedPaths, carriedUrl, carrying.sha) : null,
+        // Main's own build is not rebuilt for this ticket: never "rebuilding".
+        mainPreviewFields: mainUrl ? { ...previewLinkFields([], mainUrl, mainRef), previewState: null } : null,
       });
+      if (outcome.fields.previewState === "rebuilding") {
+        followUpReasons.push(`${item.id}: test link waiting on ${outcome.fields.previewBuildWorkflow}`);
+      }
       let text;
       if (outcome.kind === "already-on-train") {
         text = outcome.adopted
@@ -2716,6 +2892,11 @@ async function processApplyPatch(item) {
     carriedByCommit: null,
     carriedByItem: null,
     previewUrl,
+    // "Rebuilding test link…" until the checked-in bundle includes this
+    // commit (see refreshPreviewBuildStates); null for any link that does
+    // not open a generated build, so a state from an earlier round can't
+    // linger.
+    ...previewLinkFields(changedPaths, previewUrl, sha),
     // A re-patch answers whatever Failed testing said, so a revert request
     // (and any block it was stuck behind) from that round is spent.
     revertRequested: false,
@@ -2725,6 +2906,9 @@ async function processApplyPatch(item) {
   });
   console.log(`[apply-patch] ${item.id}: committed ${sha.slice(0, 7)} on ${deployBranch}, moved to ready-for-testing${testVersion ? ` (testVersion ${testVersion})` : ""}`);
   noteReadyForTesting(project, item.id);
+  if (rebuilds.length && generatedBuildForLink(previewUrl) && rebuilds.includes(generatedBuildForLink(previewUrl).workflow)) {
+    followUpReasons.push(`${item.id}: test link waiting on ${generatedBuildForLink(previewUrl).workflow}`);
+  }
 
   // This item's own card now shows the branch's new head; every OTHER
   // Ready for Testing card already on the same train still shows whatever
@@ -4481,6 +4665,12 @@ async function main() {
     // Reporting only — never fail the run over it.
     console.log(`[train-tests] failed: ${err.message}`);
   }
+  try {
+    await refreshPreviewBuildStates();
+  } catch (err) {
+    // Reporting only — never fail the run over it.
+    console.log(`[preview-build] failed: ${err.message}`);
+  }
   // A train left waiting on CI starts the next run itself (see followUpDue).
   dispatchFollowUpRun();
 
@@ -4539,7 +4729,9 @@ module.exports = {
   // test/parallel-builds.test.js — patches built in parallel
   patchBaseFor, dependenciesLanded, buildRequestFields, migrationNumberClashes,
   // test/train-follow-up.test.js — a train waiting on CI starts its own next run
-  followUpDue, FOLLOW_UP_MAX_WAIT_MS,
+  followUpDue, FOLLOW_UP_MAX_WAIT_MS, dispatchFollowUpRun, followUpReasons,
+  // test/preview-build-state.test.js — "Rebuilding test link…" until the bundle includes the ticket
+  GENERATED_BUILDS, PREVIEW_REBUILD_STALE_MS, previewLinkFields, refreshPreviewBuildStates, rebuildNote, repointTrainPreviewUrls,
   // test/deploy-heal.test.js — a transient deploy failure heals itself
   healFailedDeploy,
 };

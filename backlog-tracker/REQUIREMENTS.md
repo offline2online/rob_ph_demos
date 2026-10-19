@@ -155,6 +155,12 @@ deleted by hand).
   notes?: [{ author: "claude" | "viewer", text: string, at: timestamp }], // append-only: every writer adds entries (arrayUnion / appendMissingElements), none resends the array
   attachments?: [{ type: "image" | "video", url: string, path: string, name: string, size: number, uploadedAt: timestamp }], // see "Attachments" below
   previewUrl?: string,          // a Ready for Testing card's own "Test this" link
+  previewState?: "rebuilding" | "ready" | "stale" | null, // lmdwsP5ElY5Oh12N9Fex — whether a link that opens a checked-in build (GENERATED_BUILDS) already shows this ticket; null = no generated build, the card behaves as before. Written by run-backlog-automation.js only — see "Test/preview link"
+  previewStateAt?: string,      // ISO — when previewState last changed ("rebuilding" is aged from here)
+  previewBuildWorkflow?: string | null, // e.g. "dsp-prototype.yml" — the workflow that rebuilds the bundle
+  previewBuiltFrom?: string | null,     // build-info.json "commit" once ready: the source commit the bundle was built from
+  previewSha?: string | null,   // the commit the pipeline's link is pinned to
+  previewUpdatedAt?: string,    // ISO — when the pipeline last changed the link
   testSummary?: string,         // Ready for Testing card's primary text — see below
   noDeploymentRequired?: boolean, // set from the Edit item modal, or by the no-diff path when the content is already on main — see "No manual way to reach published-live exists" below for the one exception it carves out. The train wins over the flag: a card with a deployCommit is a train card whatever this says (isNoDeployCard() in app.js)
   testPassed?: boolean,         // DEPRECATED — the old per-card "Confirm tested" flag. Approval is the checkbox now (see "Approving out of Ready for Testing"); read-only leftover on old cards, never written
@@ -1562,6 +1568,38 @@ REST API is reachable with a plain `curl`, no service account needed.
   human set by hand through "Set test link" (anything that isn't one of
   this pipeline's own two auto-generated shapes) is left untouched rather
   than overwritten.
+
+  **"Rebuilding test link…" — a link into a checked-in build says whether
+  the build includes the ticket (`lmdwsP5ElY5Oh12N9Fex`).** When a link
+  opens a generated build (`GENERATED_BUILDS`, today the DSP prototype),
+  it is live the moment the ticket lands but pinned to the ticket's own
+  commit, which still holds the PREVIOUS bundle until `dsp-prototype.yml`
+  rebuilds and re-points it. Testers failed tickets on that old bundle
+  (`k1ZIa7lksk9gQjTVrLgN`, `OtNAsifjp3ZUtDEsdzu0`), each costing a revert,
+  re-patch and rebuild. So `processApplyPatch` (and the no-diff carried
+  path) sets `previewState: "rebuilding"` exactly when the patch leaves a
+  build stale AND the pipeline's link opens that build's output; any other
+  link gets `null`. `refreshPreviewBuildStates()` then runs every pass,
+  reads `build-info.json` at the link's commit and tests
+  `git merge-base --is-ancestor <ticket commit> <build-info commit>`:
+  included → `"ready"` (+ `previewBuiltFrom`); not included → `"rebuilding"`,
+  or `"stale"` plus ONE note linking the workflow's Actions page after
+  `PREVIEW_REBUILD_STALE_MS` (20 minutes). A stale card turns `"ready"` when
+  a later build includes it; a card that leaves testing or whose link stops
+  opening a build goes back to `null`; an unreadable build-info or unknown
+  ref changes nothing. While any card is rebuilding the run asks for the
+  next one at once rather than waiting on the throttled schedule.
+  The card (`testLinkRowHTML`, driven by `previewBuildStatus`): rebuilding
+  hides "Test this →" behind a status line ("Rebuilding test link… usually
+  1-2 minutes") and **disables Failed testing** (`failTestingButtonHTML`);
+  stale brings the link back with a warning and the workflow link, re-enables
+  Failed testing and adds a sentence to its dialog; ready shows "Includes this
+  ticket · built from <sha7> · updated …". The client ages "rebuilding" itself
+  (`PREVIEW_REBUILD_STALE_MS` matches the automation's), so a stopped
+  automation never hides a link for good. A person's "Set test link" writes
+  `previewState: null`. `repointTrainPreviewUrls` also writes `previewSha`
+  and `previewUpdatedAt` (still no note). Tests:
+  `test/preview-build-state.test.js`, `test/preview-build-card.test.mjs`.
 
   **`guessPreviewUrl` picks the page, not just a changed file.** A ticket
   that changes an `.html` file links to that page. A ticket that changes
