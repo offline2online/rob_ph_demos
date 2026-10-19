@@ -182,6 +182,15 @@ link. No AI is involved in this step at all, and no long-lived GitHub
 secret exists anywhere in this pipeline — the runner's `GITHUB_TOKEN` is
 minted and revoked by GitHub itself, per run.
 
+**Notes are only ever appended.** A card's `notes` are its audit trail, so
+neither this job nor a Routine session ever resends the array: `appendNote`
+adds the entry in memory and marks it unwritten, and `patchItem` sends just
+those entries in one `documents:commit` (an `appendMissingElements`
+transform plus `currentDocument.exists: true`), alongside any other fields.
+Routine sessions do the same (`ROUTINE_INSTRUCTIONS.md` → Setup → "Append a
+note"). This replaced whole-array writes that erased the notes on seven
+cards (4–15 Oct 2026). See `test/notes-append.test.js`.
+
 ### Ready for Dev starts one session per ticket (4 Oct 2026)
 
 A Ready for Dev click (or `--notify` from a runner) starts **one Routine

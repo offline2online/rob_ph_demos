@@ -149,7 +149,7 @@ deleted by hand).
   updatedAt: timestamp,
   archivedAt?: timestamp,
   claudeNote?: string,          // short one-line status, shown nowhere but kept for history
-  notes?: [{ author: "claude" | "viewer", text: string, at: timestamp }],
+  notes?: [{ author: "claude" | "viewer", text: string, at: timestamp }], // append-only: every writer adds entries (arrayUnion / appendMissingElements), none resends the array
   attachments?: [{ type: "image" | "video", url: string, path: string, name: string, size: number, uploadedAt: timestamp }], // see "Attachments" below
   previewUrl?: string,          // a Ready for Testing card's own "Test this" link
   testSummary?: string,         // Ready for Testing card's primary text — see below
@@ -1497,6 +1497,15 @@ REST API is reachable with a plain `curl`, no service account needed.
   is `{author: "viewer", text, at}` appended via `arrayUnion` — `at` is a
   plain client `Date`, not `serverTimestamp()`, since Firestore rejects a
   server-timestamp sentinel inside an array element.
+  **Notes are append-only everywhere and never rewritten whole** (19 Oct
+  2026): `notes` is the card's audit trail, and whole-array writes by the
+  automation and Routine sessions erased it on seven cards. The console and
+  MCP `add_item_comment` use `arrayUnion`; `run-backlog-automation.js`'s
+  `appendNote`/`patchItem` and the Routine (`ROUTINE_INSTRUCTIONS.md` →
+  Setup → "Append a note") send only the new entries in one
+  `documents:commit` with an `appendMissingElements` transform and
+  `currentDocument.exists: true`. Tests: `notes-append.test.js`,
+  `notes-append-emulator.test.js`.
 - **Test/preview link**: a Ready for Testing card gets a "Set test link"
   button; once set (via `showPromptDialog()` — see "In-app dialogs replace
   window.confirm/prompt/alert" below — prefilled with an editable template

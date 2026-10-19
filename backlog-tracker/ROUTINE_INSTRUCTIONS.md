@@ -162,7 +162,7 @@ move on, don't block the run waiting for it.
   cybersecurity-review or scalability-review skill — against the same
   combined train diff (`git diff main...origin/<deployBranch>`) step 3b
   already reads, and report real, verified findings, not a rubber-stamp
-  pass, as a `notes` entry on the items on the train. This review does not
+  pass, as a `notes` entry on the items on the train (Setup → "Append a note"). This review does not
   gate `trainReady` the same hard way steps 1-2 do — but if a finding is
   severe enough that shipping it would be a mistake, say so plainly in your
   final report and leave `trainReady` unset rather than setting it anyway,
@@ -185,13 +185,12 @@ move on, don't block the run waiting for it.
   even when this Routine has the PH Agent Console connector attached (see
   "Board tools over MCP" below), those tools are for the two presentation
   calls named there and nothing else in this file — this is the same
-  "fetch the doc first, this overwrites the whole field" append convention
-  as a `notes` entry elsewhere in this file, since the REST API has no
-  native array-append:
+  atomic append as a `notes` entry elsewhere in this file (Setup → "Append a
+  note"): a `documents:commit` with an `appendMissingElements` transform, so
+  a miss another session reported meanwhile is never overwritten:
   ```bash
-  curl -sS -X PATCH -H "$AUTH" "$BOARD/skills/<SKILL_ID>?updateMask.fieldPaths=misses&updateMask.fieldPaths=lastMissAt" \
-    -H "Content-Type: application/json" \
-    -d '{"fields":{"misses":{"arrayValue":{"values":[<existing misses, unchanged>, {"mapValue":{"fields":{"text":{"stringValue":"<what specifically went wrong>"},"source":{"stringValue":"build"},"phase":{"stringValue":"build"},"ticketId":{"stringValue":"<ITEM_ID or null>"},"prNumber":{"nullValue":null},"projectId":{"stringValue":"<projectId>"},"reportedByEmail":{"nullValue":null},"reportedVia":{"stringValue":"routine"},"at":{"timestampValue":"<ISO8601 now>"}}}}]}},"lastMissAt":{"timestampValue":"<ISO8601 now>"}}}'
+  curl -sS -X POST -H "$AUTH" "$BOARD:commit" -H "Content-Type: application/json" \
+    -d '{"writes":[{"update":{"name":"projects/backlog-tracker-e4ed2/databases/(default)/documents/skills/<SKILL_ID>","fields":{"lastMissAt":{"timestampValue":"<ISO8601 now>"}}},"updateMask":{"fieldPaths":["lastMissAt"]},"updateTransforms":[{"fieldPath":"misses","appendMissingElements":{"values":[{"mapValue":{"fields":{"text":{"stringValue":"<what specifically went wrong>"},"source":{"stringValue":"build"},"phase":{"stringValue":"build"},"ticketId":{"stringValue":"<ITEM_ID or null>"},"prNumber":{"nullValue":null},"projectId":{"stringValue":"<projectId>"},"reportedByEmail":{"nullValue":null},"reportedVia":{"stringValue":"routine"},"at":{"timestampValue":"<ISO8601 now>"}}}}]}}],"currentDocument":{"exists":true}}]}'
   ```
   Find the skill's id/current `misses` via the same `skills` runQuery
   pattern used to fetch a bound skill's `files` above, filtered by `slug`.
@@ -243,6 +242,23 @@ no block is prepended that run, same as today.
      `curl -sS -H "$AUTH" "$BOARD/projects"`
    - Query a specific project's current Backlog items:
      `curl -sS -X POST -H "$AUTH" "$BOARD:runQuery" -H "Content-Type: application/json" -d '{"structuredQuery":{"from":[{"collectionId":"backlogItems"}],"where":{"compositeFilter":{"op":"AND","filters":[{"fieldFilter":{"field":{"fieldPath":"projectId"},"op":"EQUAL","value":{"stringValue":"<projectId>"}}},{"fieldFilter":{"field":{"fieldPath":"status"},"op":"EQUAL","value":{"stringValue":"backlog"}}}]}}}}'`
+   **Append a note (the only way to write `notes`).** A card's `notes` are
+   its audit trail, so you only ever APPEND to them, with one `:commit` whose
+   write carries an `appendMissingElements` transform — never a PATCH or
+   `updateMask` naming `notes`, and never an array you read earlier plus one
+   more. Whatever is on the card, including notes another writer added while
+   you worked, is left untouched:
+   ```bash
+   curl -sS -X POST -H "$AUTH" "$BOARD:commit" -H "Content-Type: application/json" \
+     -d '{"writes":[{"transform":{"document":"projects/backlog-tracker-e4ed2/databases/(default)/documents/backlogItems/<ITEM_ID>","fieldTransforms":[{"fieldPath":"notes","appendMissingElements":{"values":[{"mapValue":{"fields":{"author":{"stringValue":"claude"},"text":{"stringValue":"<your summary>"},"at":{"timestampValue":"<ISO8601 now>"}}}}]}}]},"currentDocument":{"exists":true}}]}'
+   ```
+   `exists: true` stops a note recreating a card that was deleted. It works
+   with the ID token and through the `boardApi` fallback (which allows
+   `:commit`); through `boardApi`, a note's text must not contain a literal
+   `documents/<collection>/` path outside the board's own collections. Do
+   not use MCP `add_item_comment` for this — see "Board tools over MCP".
+   Do it for any note on any card or doc in this file; wherever a later step
+   says "append a `notes` entry", this is the call.
 3. Before implementing anything, get full context on this specific
    project — don't rely on the fire payload or the repo's general docs
    alone:
@@ -463,13 +479,15 @@ ticket once automatically.
    deployment, however many tickets it carries. Every ticket bumping the
    same line was precisely what made any two open PRs conflict on that file
    alone. If `version.js` appears in your `patchFiles`, that is a bug.
-4. Update the item's Firestore doc in one PATCH: set the corrected `title`
-   (step 1), correct `category` if it's wrong (see `CATEGORIES` in
-   `backlog-tracker/public/js/app.js` for the fixed list), bump
-   `updatedAt`, APPEND (don't overwrite — fetch the doc first to get its
-   existing `notes` array) a new entry to `notes` with `author: "claude"`
-   and a detailed `text` describing what you investigated and fixed, and —
-   this is the part that replaces "push + open a PR" — set:
+4. First APPEND a note with `author: "claude"` and a detailed `text`
+   describing what you investigated and fixed — the "Append a note" call in
+   Setup → Board access. Never put `notes` in the PATCH below, and don't
+   fetch the doc to copy its notes: you only ever append. Then update the
+   item's Firestore doc in one PATCH (so `patchReady` is still the last
+   write): set the corrected `title` (step 1), correct `category` if it's
+   wrong (see `CATEGORIES` in `backlog-tracker/public/js/app.js` for the
+   fixed list), bump `updatedAt`, and — this is the part that replaces
+   "push + open a PR" — set:
    - `patchFiles`: an array of `{path, content}` objects (write it on the
      card as shown; within seconds a Cloud Function moves it to
      `backlogItems/<ITEM_ID>/pipeline/patch` to keep it out of every open
@@ -592,12 +610,12 @@ ticket once automatically.
      request is still one click away via a "Show original request" toggle,
      not discarded. Write this from scratch; don't just copy `desc` into it.
 
-   Example PATCH shape (add more `updateMask.fieldPaths` entries and
+   Example PATCH shape, sent after the note (add more `updateMask.fieldPaths` entries and
    fields as needed):
    ```
-   curl -sS -X PATCH "$BOARD/backlogItems/<ITEM_ID>?updateMask.fieldPaths=title&updateMask.fieldPaths=category&updateMask.fieldPaths=updatedAt&updateMask.fieldPaths=notes&updateMask.fieldPaths=patchFiles&updateMask.fieldPaths=patchCommitMessage&updateMask.fieldPaths=patchPrTitle&updateMask.fieldPaths=patchPrBody&updateMask.fieldPaths=patchBaseSha&updateMask.fieldPaths=patchPartCount&updateMask.fieldPaths=patchReady" \
+   curl -sS -X PATCH "$BOARD/backlogItems/<ITEM_ID>?updateMask.fieldPaths=title&updateMask.fieldPaths=category&updateMask.fieldPaths=updatedAt&updateMask.fieldPaths=patchFiles&updateMask.fieldPaths=patchCommitMessage&updateMask.fieldPaths=patchPrTitle&updateMask.fieldPaths=patchPrBody&updateMask.fieldPaths=patchBaseSha&updateMask.fieldPaths=patchPartCount&updateMask.fieldPaths=patchReady" \
      -H "Content-Type: application/json" \
-     -d '{"fields":{"title":{"stringValue":"<short clear subject>"},"category":{"stringValue":"<corrected category>"},"updatedAt":{"timestampValue":"<ISO8601 now>"},"notes":{"arrayValue":{"values":[<existing notes, unchanged>, {"mapValue":{"fields":{"author":{"stringValue":"claude"},"text":{"stringValue":"<your summary>"},"at":{"timestampValue":"<ISO8601 now>"}}}}]}},"patchFiles":{"arrayValue":{"values":[{"mapValue":{"fields":{"path":{"stringValue":"<relative/path>"},"content":{"stringValue":"<full new file content>"}}}}]}},"patchCommitMessage":{"stringValue":"<message>"},"patchPrTitle":{"stringValue":"<title>"},"patchPrBody":{"stringValue":"<body>"},"patchBaseSha":{"stringValue":"<40-char sha you read the files from>"},"patchPartCount":{"integerValue":"0"},"patchReady":{"booleanValue":true}}}'
+     -d '{"fields":{"title":{"stringValue":"<short clear subject>"},"category":{"stringValue":"<corrected category>"},"updatedAt":{"timestampValue":"<ISO8601 now>"},"patchFiles":{"arrayValue":{"values":[{"mapValue":{"fields":{"path":{"stringValue":"<relative/path>"},"content":{"stringValue":"<full new file content>"}}}}]}},"patchCommitMessage":{"stringValue":"<message>"},"patchPrTitle":{"stringValue":"<title>"},"patchPrBody":{"stringValue":"<body>"},"patchBaseSha":{"stringValue":"<40-char sha you read the files from>"},"patchPartCount":{"integerValue":"0"},"patchReady":{"booleanValue":true}}}'
    ```
 
 **Fixes that edit a file under `.github/workflows/`** can be packaged like
@@ -713,7 +731,7 @@ yourself, every run, before you set `patchReady` on anything:
    - Implement and package the surviving ticket once, normally (steps 1-4
      under "For each Backlog item found" above).
    - Close every folded-in duplicate: PATCH its `status` to `"archived"`,
-     `archivedAt` to now, and append a `notes` entry naming the surviving
+     `archivedAt` to now, and append (Setup → "Append a note") a `notes` entry naming the surviving
      item's id and explaining it was consolidated rather than built
      separately. Do **not** leave a folded-in duplicate sitting in
      `backlog` — an un-updated card there is exactly what let this happen
@@ -1222,8 +1240,8 @@ is the exception.
 
 ### 5. Tell the ticket
 
-Append a `notes` entry (`author: "claude"`, same fetch-then-append rule as
-everywhere else in this file) to each backlog item naming every article
+Append a `notes` entry (`author: "claude"`, appended with the "Append a
+note" call in Setup, as everywhere else in this file) to each backlog item naming every article
 you proposed a revision for (title + `faqArticles` id) and, in one line
 each, why — or stating plainly that you reviewed N in-scope articles for
 program "<name>" and none needed a change. This note is how the person
@@ -1281,7 +1299,7 @@ and no `reviewStatus`, or a `reviewedCommit` that differs from `deployCommit`).
    most important reason, shown as the hover text), `reviewedAt` (timestamp),
    `reviewedCommit` (the ticket's current `deployCommit`, so the flag is
    discarded if it is rebuilt), plus `updatedAt`. Append the **full review
-   log** to `notes` (`author: "claude"`, text starting `[ph-reviewer]`).
+   log** to `notes` (the Setup "Append a note" call, `author: "claude"`, text starting `[ph-reviewer]`).
    **Never write `status`**: a kicked-back or blocked ticket stays where it
    is and a human decides; the flag says why.
 6. Finish by PATCHing `projects/<id>` with `reviewRoutine.status` =

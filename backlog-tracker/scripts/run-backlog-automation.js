@@ -144,7 +144,48 @@ async function runQuery(structuredQuery) {
     .map((r) => ({ id: r.document.name.split("/").pop(), ...fdoc(r.document.fields) }));
 }
 
+// A card's `notes` are its audit trail, so the automation only ever APPENDS to
+// them. Resending the whole array (the old PATCH with updateMask=notes) let a
+// stale read or another writer's empty array erase every note on the card.
+// appendNote marks each entry it makes as unwritten; patchItem sends only
+// those, as a Firestore appendMissingElements transform in one :commit, so
+// whatever else is on the card — including notes another writer added since
+// this run read it — is never touched. `at` is unique per entry, so nothing
+// real is deduplicated and a retry cannot duplicate.
+const unwrittenNotes = new WeakSet();
+
+// The one Write for `documents:commit`. With other fields: an update whose
+// mask omits `notes` plus a notes transform. Notes only: a bare transform
+// (a Write is one of update/delete/transform, and an update with an empty
+// mask would replace the whole document). exists:true stops a note from
+// recreating a card that was deleted.
+function notesCommitWrite(docName, newNotes, otherFields = {}) {
+  if (!Array.isArray(newNotes) || !newNotes.length) throw new Error("notesCommitWrite: no new notes to append");
+  const transform = { fieldPath: "notes", appendMissingElements: { values: newNotes.map(tv) } };
+  const names = Object.keys(otherFields);
+  if (!names.length) return { transform: { document: docName, fieldTransforms: [transform] }, currentDocument: { exists: true } };
+  return {
+    update: { name: docName, fields: Object.fromEntries(names.map((k) => [k, tv(otherFields[k])])) },
+    updateMask: { fieldPaths: names },
+    updateTransforms: [transform],
+    currentDocument: { exists: true },
+  };
+}
+
 async function patchItem(itemId, fields) {
+  if ("notes" in fields) {
+    const { notes, ...others } = fields;
+    const fresh = Array.isArray(notes) ? notes.filter((n) => n && typeof n === "object" && unwrittenNotes.has(n)) : [];
+    if (!fresh.length) throw new Error(`patchItem ${itemId}: notes must come from appendNote (nothing new to append)`);
+    const docName = `projects/${PROJECT_ID}/databases/(default)/documents/backlogItems/${itemId}`;
+    const res = await fetch(`${FIRESTORE_BASE}:commit`, {
+      method: "POST",
+      headers: await firestoreHeaders(),
+      body: JSON.stringify({ writes: [notesCommitWrite(docName, fresh, others)] }),
+    });
+    if (!res.ok) throw new Error(`PATCH ${itemId} failed: ${res.status} ${await res.text()}`);
+    return;
+  }
   const fieldPaths = Object.keys(fields).map((k) => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
   const res = await fetch(`${FIRESTORE_BASE}/backlogItems/${itemId}?${fieldPaths}`, {
     method: "PATCH",
@@ -297,9 +338,11 @@ async function sweepShippedPatchFiles() {
 }
 
 async function appendNote(item, text) {
-  const notes = Array.isArray(item.notes) ? item.notes : [];
-  notes.push({ author: "backlog-automation", text, at: new Date().toISOString() });
-  return notes;
+  if (!Array.isArray(item.notes)) item.notes = [];
+  const entry = { author: "backlog-automation", text, at: new Date().toISOString() };
+  unwrittenNotes.add(entry);
+  item.notes.push(entry);
+  return item.notes;
 }
 
 // ── The deployment train ─────────────────────────────────────────────────
@@ -4306,6 +4349,8 @@ if (require.main === module) {
 // run (main(), above, has real Firestore/GitHub side effects the moment
 // this module loads if not guarded — see the require.main check).
 module.exports = {
+  // test/notes-append.test.js — notes are only ever appended, atomically
+  notesCommitWrite, appendNote, patchItem,
   conflictedPaths, tryAutoResolveFaqIndexConflict, archiveAndResetOrphanedBranch, dateStamp, nearestPageFor, isBundlerTemplate,
   // test/train-carried.test.js — a card whose content a sibling's commit
   // delivered follows that train instead of being marked live on approval
