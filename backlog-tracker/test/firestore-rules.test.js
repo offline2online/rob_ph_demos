@@ -8,7 +8,7 @@
 const fs = require("fs");
 const path = require("path");
 const { initializeTestEnvironment, assertSucceeds, assertFails } = require("@firebase/rules-unit-testing");
-const { doc, getDoc, getDocs, collection, setDoc, deleteDoc, serverTimestamp } = require("firebase/firestore");
+const { doc, getDoc, getDocs, collection, setDoc, deleteDoc, serverTimestamp, writeBatch, arrayUnion } = require("firebase/firestore");
 
 const RULES = fs.readFileSync(path.join(__dirname, "..", "firestore.rules"), "utf8");
 
@@ -376,6 +376,14 @@ async function main() {
     setDoc(doc(as(MEMBER), "backlogItems/iLive"), { title: "Renamed", category: "HQ Admin" }, { merge: true }));
   await check("A human editor can still fail testing (revertRequested + status)", "allow", () =>
     setDoc(doc(as(MEMBER), "backlogItems/i1"), { status: "backlog", revertRequested: true, lastFailureReason: { category: "bug" } }, { merge: true }));
+  await check("A human editor can file a follow-up", "allow", async () => {
+    const db = as(MEMBER);
+    const note = { author: "sam@personalisationhub.com", text: "Follow-up", at: new Date() };
+    const batch = writeBatch(db);
+    batch.set(doc(db, "backlogItems/iFollow"), Object.assign({}, ITEM, { status: "backlog", followUpOf: "i1", notes: [note] }));
+    batch.update(doc(db, "backlogItems/i1"), { notes: arrayUnion(note) });
+    await batch.commit();
+  });
   await check("The Routine (automation user) can still write patchFiles/patchReady", "allow", () =>
     setDoc(doc(as(BOT), "backlogItems/i1"), { patchReady: true, patchFiles: [{ path: "a", content: "b" }] }, { merge: true }));
   // Large patches (16 Oct 2026): the overflow lives in patchParts/{n}.

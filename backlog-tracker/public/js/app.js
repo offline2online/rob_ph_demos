@@ -25,6 +25,7 @@ import { firebaseConfig } from "./firebase-config.js";
 import { APP_VERSION } from "./version.js";
 import { clearFirestoreLocalCache } from "./local-cache.js";
 import { INTAKE_SECTIONS, missingSections, applyAnswers } from "./ticket-intake.js";
+import { FAILED_TESTING_CHOICES, DEFAULT_FAILED_TESTING_CHOICE, sendBackFields, followUpWrites } from "./follow-up.js";
 import { trainTestChipHTML, approvalWarningLines, APPROVAL_WARNING_TITLE, APPROVAL_WARNING_FOOTER, approvalFields, approvedByLine } from "./card-test-status.js";
 import { isMirror, orderProjectDocs, mirrorEditRefusal, mirrorDeleteWarning, mirrorChipHTML, openInGithubHTML, startHereChipHTML, projectDocRowHTML, interfaceActionsHTML } from "./docs-view.js";
 import { clusterBacklogItems, estimateEffort, estimatePriority, splitRequirementsText } from "./build-batches.js";
@@ -2949,10 +2950,15 @@ async function failTestingNow(id, item) {
   // the machine-readable one a re-fired investigation reads directly.
   const result = await showFieldDialog({
     title: "Failed testing",
-    message: "What's wrong with this? Sent back to Backlog so it can be picked up again — the existing PR/branch stay linked, so a fresh Ready for Dev sweep re-patches it rather than starting over." +
+    message: "Something's wrong — send it back: the ticket goes to Backlog and its commit comes off the train, so a fresh Ready for Dev re-patches it. " +
+      "It works, but I want something more: the ticket stays in Ready for Testing on the train (you can still approve it) and your Details become a new Backlog ticket." +
       (failTestingStaleWarning(item) ? ` ${failTestingStaleWarning(item)}` : ""),
     fields: [
-      { id: "category", label: "What kind of miss was this?", type: "select", options: FAILURE_REASON_CATEGORIES },
+      { id: "choice", label: "What happened?", type: "select", value: DEFAULT_FAILED_TESTING_CHOICE, options: [
+        { value: FAILED_TESTING_CHOICES.SEND_BACK, label: "Something's wrong — send it back" },
+        { value: FAILED_TESTING_CHOICES.FOLLOW_UP, label: "It works, but I want something more" },
+      ] },
+      { id: "category", label: "What kind of miss was this? (send it back only)", type: "select", options: FAILURE_REASON_CATEGORIES },
       { id: "text", label: "Details", multiline: true, rows: 4 },
     ],
     okLabel: "Failed testing",
@@ -2960,23 +2966,52 @@ async function failTestingNow(id, item) {
   if (result === null) return;
   const trimmed = (result.text || "").trim();
   if (!trimmed) return;
+  if (result.choice === FAILED_TESTING_CHOICES.FOLLOW_UP) return fileFollowUp(item, trimmed);
   const category = result.category || FAILURE_REASON_CATEGORIES[FAILURE_REASON_CATEGORIES.length - 1];
+  const at = new Date();
+  const send = sendBackFields({ category, text: trimmed, at });
   await updateDoc(doc(db, "backlogItems", id), {
-    status: "backlog",
-    // The rule this enforces: nothing leaves Ready for Testing rejected
-    // without coming off the branch. Every ticket builds onto its project's
-    // shared integration branch, so a card that just moved back to Backlog
-    // would otherwise still ship in the next train — a "rejected" ticket
-    // going live. run-backlog-automation.js's processRevertFromTrain picks
-    // this flag up and reverts the card's commits off the branch (and, if a
-    // later ticket built on top of it, records revertBlockedBy instead of
-    // force-pushing anything). A card in Backlog must never have live
-    // commits on a train.
-    revertRequested: true,
-    lastFailureReason: { category, text: trimmed, action: "failed-testing", at: new Date() },
-    notes: arrayUnion({ author: "viewer", text: `Failed testing [${category}]: ${trimmed}`, at: new Date() }),
+    status: send.status,
+    revertRequested: send.revertRequested,
+    lastFailureReason: send.lastFailureReason,
+    notes: arrayUnion(send.note),
     updatedAt: serverTimestamp(),
   });
+}
+
+// "It works, but I want something more": one batch, so the new Backlog
+// ticket and the note on the original land together or not at all. The
+// original keeps its status and commit; nothing pipeline-shaped is written.
+async function fileFollowUp(item, text) {
+  const newRef = doc(itemsRef);
+  const proj = projects.find((p) => p.id === item.projectId);
+  const plan = followUpWrites({
+    original: { ...item, deployBranch: item.deployBranch || (proj && proj.deployBranch) || "" },
+    text,
+    title: generateTitle(text),
+    author: (auth.currentUser && auth.currentUser.email) || "viewer",
+    at: new Date(),
+    newId: newRef.id,
+  });
+  if (plan.error) { await showAlert(plan.error); return; }
+  try {
+    const batch = writeBatch(db);
+    batch.set(newRef, {
+      ...plan.newItem,
+      notes: plan.newItem.notes,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    batch.update(doc(db, "backlogItems", item.id), {
+      notes: arrayUnion(plan.originalNote),
+      updatedAt: serverTimestamp(),
+    });
+    await batch.commit();
+  } catch (err) {
+    await showAlert(describeSaveError(err, [{ label: "Description", value: plan.newItem.desc, max: 10000 }]));
+    return;
+  }
+  await showAlert(`Filed "${plan.newItem.title}" in Backlog. This ticket stays in Ready for Testing: tick it to approve when it's right.`);
 }
 
 // The eject half of "pull a stuck ticket off the train from Approved for

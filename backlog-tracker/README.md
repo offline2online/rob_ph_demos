@@ -325,7 +325,10 @@ What the train changes:
   longer sent back for the ejected change's failure; it waits for the fresh
   run, and so does its "Tests" chip.
   Tests: `test/train-tests.test.js`, `test/train-eject-after-revert.test.js`.
-- **Reject** (`processRevertFromTrain`) — Failed testing on a card writes
+- **Reject** (`processRevertFromTrain`) — only the Failed testing choice
+  "Something's wrong — send it back" reverts; "It works, but I want something
+  more" keeps the card and its commit on the train and files a linked
+  follow-up ticket in Backlog (`public/js/follow-up.js`). Sending it back on a card writes
   `revertRequested`, and the automation reverts that card's commits back
   off the branch. **A card in Backlog must never have live commits on a
   train**, or a "rejected" ticket would still ship in the next deploy. If

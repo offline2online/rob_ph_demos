@@ -173,6 +173,7 @@ deleted by hand).
   effort?: "small" | "medium" | "large" | null,     // cwehxSMZv8noJQv5kB22 — real value from the Edit item modal; null/unset falls back to build-batches.js's estimateEffort() guess. See "Feed in requirements → suggested build batches" below
   priority?: "low" | "medium" | "high" | null,      // same ticket — real value from the Edit item modal; null/unset falls back to estimatePriority()
   lastFailureReason?: { category: string, text: string, action: "failed-testing" | "ejected-from-train", at: timestamp }, // XJoASicLGefL5c9fronl — structured reason from the most recent Failed testing/Eject from train; see "The deployment train" below. Never cleared automatically — only meaningful while status is "backlog"
+  followUpOf?: string,          // id of the Ready for Testing ticket whose tester asked for "something more" (Failed testing → "It works, but I want something more"); the original stays on its train, this new ticket waits in Backlog. Not a pipeline field
   ejectedFromTrain?: boolean,   // FVrOIVAAp46NdcgGovMW — set by ejectFromTrain(), distinguishing an explicit release-unblocking eject from an ordinary Failed testing reject in the card's history; see "The deployment train" below
 
   // Notify Claude automation hand-off — see README.md "Notify Claude can't
@@ -545,6 +546,16 @@ changed is which control approves.
 - Nothing ticked → the button is hidden, per the same
   hidden-when-nothing-to-do rule every CTA on this header follows (and
   exactly what it did before when nothing was `testPassed`).
+- **Failed testing has two outcomes** (dialog select "What happened?",
+  `public/js/follow-up.js`). **"Something's wrong — send it back"** (the
+  default) behaves as it always has: Backlog, `revertRequested`,
+  `lastFailureReason` and the "Failed testing [category]" note; the reason
+  category applies to this choice only. **"It works, but I want something
+  more"** leaves the card in Ready for Testing with its commit on the train
+  (it can still be approved) and, in one `writeBatch`, files a new Backlog
+  ticket (same project and category, `type: "feature"`, `followUpOf` = the
+  original's id, Dependencies and Spec reference naming the original) plus a
+  note on each card. Nothing else is written on the original.
 - **Failed testing is always offered** on a Ready for Testing card (it used
   to hide once "Confirm tested" had been clicked; there is no such click
   now), and additionally writes `revertRequested` — see "The deployment

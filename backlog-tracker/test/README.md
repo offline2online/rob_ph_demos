@@ -71,7 +71,7 @@ one of the scripts below, or list it in `EXCLUDED` with a reason.
 | Run MCP server tests | `test:mcp` | mcp-server, intake |
 | Run MCP client integration test | `test:client` | mcp-client |
 | Run MCP App view test | `test:mcp-app` | mcp-app-view, faq-editor-load (`test:editor`) |
-| Run console start-up smoke test | `test:app-boots` | app-boots, header-phase, build-batches, ticket-intake (`test:build-batches`) |
+| Run console start-up smoke test | `test:app-boots` | app-boots, header-phase, build-batches, ticket-intake (`test:build-batches`), follow-up (Failed testing's two outcomes) |
 | Run sign-in wall tests | `test:auth-gate` | auth-gate |
 | Run Routine binding tests | `test:routine-binding` | routine-binding-trigger, skill-history-trigger (`test:skill-history`) |
 | Run Ready for Testing hand-off tests | `test:ready-for-testing` | ready-for-testing-trigger, notify-fanout |
