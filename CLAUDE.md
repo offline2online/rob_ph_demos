@@ -224,6 +224,8 @@ git push origin main
 
 ## Prototype Backlog
 
+New to the console? [`backlog-tracker/START-HERE.md`](./backlog-tracker/START-HERE.md) is the reading order, the ticket flow (file and function per step) and the deploy map for every folder.
+
 **The backlog now lives on a real, Firestore-backed web app — `backlog-tracker/` —
 not the Claude Artifact this used to be.** Live board:
 https://backlog-tracker-e4ed2.web.app/

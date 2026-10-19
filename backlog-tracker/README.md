@@ -8,6 +8,14 @@ built the way it is. Keep both in sync with the live copy on this
 project's own Docs page (`requirementsMd`) — treat a divergence between
 any of the three as a bug in whichever is stale.
 
+**New here? Read [`START-HERE.md`](./START-HERE.md) first**: the reading order
+by role, the ticket flow with the file and function that owns each step, and
+a deploy map of every folder in the repo. The repo files it lists are copied
+onto this project's Docs page; which files, and how each is cut to the
+board's 20,000-character limit, is declared in
+[`board-docs.json`](./board-docs.json) and checked by
+`test/bt-handover-docs.test.js`.
+
 ## Deployment — the one correct way to ship a change (read this first)
 
 There is exactly **one** thing that makes a code change live: a push to

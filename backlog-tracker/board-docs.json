@@ -1,8 +1,155 @@
 {
   "projectId": "oTcLAbnhUUO2S7NkbsuV",
-  "startHere": "readme",
+  "startHere": "start-here",
   "mirrors": [
-    { "key": "faq-readme", "path": "faq/README.md", "name": "Help Centre (faq/) — how it works and how it is edited" }
+    {
+      "key": "start-here",
+      "path": "backlog-tracker/START-HERE.md",
+      "name": "0 — Start here: reading order, ticket flow and deploy map",
+      "prefix": "> Copy of `backlog-tracker/START-HERE.md` from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n"
+    },
+    {
+      "key": "claude-md-1",
+      "path": "CLAUDE.md",
+      "name": "1 — Project rules, CLAUDE.md (1/5): site, WordPress MCP, deploys, help centre",
+      "prefix": "> Copy of `CLAUDE.md` (part 1 of 5) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
+      "slices": [
+        {
+          "end": "## Live Visitor Profile and Display Types & DSP Integration — two separate projects, one repo"
+        }
+      ]
+    },
+    {
+      "key": "claude-md-2",
+      "path": "CLAUDE.md",
+      "name": "1 — Project rules, CLAUDE.md (2/5): two projects, one repo; board basics",
+      "prefix": "> Copy of `CLAUDE.md` (part 2 of 5) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
+      "slices": [
+        {
+          "start": "## Live Visitor Profile and Display Types & DSP Integration — two separate projects, one repo",
+          "end": "### Linking a new project to GitHub — do it when the project is created"
+        }
+      ]
+    },
+    {
+      "key": "claude-md-3",
+      "path": "CLAUDE.md",
+      "name": "1 — Project rules, CLAUDE.md (3/5): linking projects, the train, board access",
+      "prefix": "> Copy of `CLAUDE.md` (part 3 of 5) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
+      "slices": [
+        {
+          "start": "### Linking a new project to GitHub — do it when the project is created",
+          "end": "### The PH Agent Console is also an MCP server"
+        }
+      ]
+    },
+    {
+      "key": "claude-md-4",
+      "path": "CLAUDE.md",
+      "name": "1 — Project rules, CLAUDE.md (4/5): MCP server, project header, Docs page, archive",
+      "prefix": "> Copy of `CLAUDE.md` (part 4 of 5) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
+      "slices": [
+        {
+          "start": "### The PH Agent Console is also an MCP server",
+          "end": "## These prototypes run iframed inside the real Personalisation Hub platform"
+        }
+      ]
+    },
+    {
+      "key": "claude-md-5",
+      "path": "CLAUDE.md",
+      "name": "1 — Project rules, CLAUDE.md (5/5): iframed prototypes, ph-designer, docs in step, secrets",
+      "prefix": "> Copy of `CLAUDE.md` (part 5 of 5) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
+      "slices": [
+        {
+          "start": "## These prototypes run iframed inside the real Personalisation Hub platform"
+        }
+      ]
+    },
+    {
+      "key": "mcp-md-1",
+      "path": "backlog-tracker/MCP.md",
+      "name": "2 — Console MCP guide (1/3): connect an agent, add a member",
+      "prefix": "> Copy of `backlog-tracker/MCP.md` (part 1 of 3) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
+      "slices": [
+        {
+          "end": "## What the agent can and can't do"
+        }
+      ]
+    },
+    {
+      "key": "mcp-md-2",
+      "path": "backlog-tracker/MCP.md",
+      "name": "2 — Console MCP guide (2/3): what the agent can and can't do",
+      "prefix": "> Copy of `backlog-tracker/MCP.md` (part 2 of 3) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
+      "slices": [
+        {
+          "start": "## What the agent can and can't do",
+          "end": "## How it appears in a client"
+        }
+      ]
+    },
+    {
+      "key": "mcp-md-3",
+      "path": "backlog-tracker/MCP.md",
+      "name": "2 — Console MCP guide (3/3): client view, authentication, files, deploy, tests",
+      "prefix": "> Copy of `backlog-tracker/MCP.md` (part 3 of 3) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
+      "slices": [
+        {
+          "start": "## How it appears in a client"
+        }
+      ]
+    },
+    {
+      "key": "faq-readme",
+      "path": "faq/README.md",
+      "name": "3 — Help Centre (faq/): how it works and how it is edited",
+      "prefix": "> Copy of `faq/README.md` from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n"
+    },
+    {
+      "key": "contributing-docs-1",
+      "path": "docs/CONTRIBUTING-docs.md",
+      "name": "4 — Documentation standard (1/2): principles, types, repository rules, FAQ standard",
+      "prefix": "> Copy of `docs/CONTRIBUTING-docs.md` (part 1 of 2) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
+      "slices": [
+        {
+          "end": "## 5. User guide standard"
+        }
+      ]
+    },
+    {
+      "key": "contributing-docs-2",
+      "path": "docs/CONTRIBUTING-docs.md",
+      "name": "4 — Documentation standard (2/2): user guides, accessibility, templates, checklist",
+      "prefix": "> Copy of `docs/CONTRIBUTING-docs.md` (part 2 of 2) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
+      "slices": [
+        {
+          "start": "## 5. User guide standard"
+        }
+      ]
+    },
+    {
+      "key": "security-performance-1",
+      "path": "backlog-tracker/SECURITY-PERFORMANCE.md",
+      "name": "5 — Console security and performance review (1/2): sign-in and what changed",
+      "prefix": "> Copy of `backlog-tracker/SECURITY-PERFORMANCE.md` (part 1 of 2) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
+      "slices": [
+        {
+          "end": "## 3. Reviewed and deliberately not changed here"
+        }
+      ]
+    },
+    {
+      "key": "security-performance-2",
+      "path": "backlog-tracker/SECURITY-PERFORMANCE.md",
+      "name": "5 — Console security and performance review (2/2): not changed here, the 100-user envelope, how to verify",
+      "prefix": "> Copy of `backlog-tracker/SECURITY-PERFORMANCE.md` (part 2 of 2) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
+      "slices": [
+        {
+          "start": "## 3. Reviewed and deliberately not changed here"
+        }
+      ]
+    }
   ],
   "boardDocs": []
 }
