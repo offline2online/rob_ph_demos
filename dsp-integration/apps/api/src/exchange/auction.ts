@@ -351,7 +351,7 @@ async function recordDspBid(ctx: Context, p: PositionRef, dsp: PartnerRecord, st
   const base: ReservationRecord = {
     id: `res_${randomUUID().slice(0, 12)}`, partnerId: dsp.id, advertiserId: null, campaignId: null, positionId: p.positionId, windowStart: start,
     type: 'bid', channel: 'openrtb', bidCpm: typeof bid.price === 'number' ? bid.price : null, currency: TRANSACTING_CURRENCY, status: 'pending', clearingCpm: null, reason: null,
-    testMode: dsp.mode !== 'live', pricingType: null, handedOffAt: null,
+    testMode: dsp.mode !== 'live', pricingType: null, handedOffAt: null, seatId: seatId ?? null,
   }
   const v = await vetBid(ctx, p, dsp, start, res, seatId, bid, budget)
   if (!v.ok) return ctx.reservations.insert({ ...base, advertiserId: v.advertiserId ?? null, campaignId: v.campaignId ?? null, status: 'rejected', reason: v.reason })

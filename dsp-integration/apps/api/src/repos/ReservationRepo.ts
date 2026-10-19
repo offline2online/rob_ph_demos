@@ -27,6 +27,9 @@ export interface ReservationRecord {
   /* When the row was written (read only; insert stamps it). The auction
      breaks a tie on it: the earlier bid wins. */
   createdAt?: string
+  /* The DSP seat that placed the bid (seatbid.seat of the bid response, validated against the DSP's
+     seat IDs); null on a Partner API booking. Kept as written: a seat a later DSP re-sync drops keeps its history. */
+  seatId?: string | null
 }
 
 interface Row {
@@ -34,12 +37,13 @@ interface Row {
   type: 'reserve' | 'bid'; channel: 'api' | 'openrtb'; bid_cpm: number | null; currency: string; status: ReservationStatus
   clearing_cpm: number | null; reason: string | null; test_mode: number; pricing_type: string | null; handed_off_at: string | null
   created_at: string; deal_type: 'preferred' | 'guaranteed'; forecast_impressions: number | null; guaranteed_impressions: number | null
+  seat_id: string | null
 }
 const toRecord = (r: Row): ReservationRecord => ({
   id: r.id, partnerId: r.partner_id, advertiserId: r.advertiser_id, campaignId: r.campaign_id, positionId: r.position_id, windowStart: r.window_start,
   type: r.type, channel: r.channel, bidCpm: r.bid_cpm, currency: r.currency, status: r.status, clearingCpm: r.clearing_cpm, reason: r.reason,
   testMode: !!r.test_mode, pricingType: r.pricing_type, handedOffAt: r.handed_off_at, createdAt: r.created_at,
-  dealType: r.deal_type ?? 'preferred', forecastImpressions: r.forecast_impressions ?? null, guaranteedImpressions: r.guaranteed_impressions ?? null,
+  dealType: r.deal_type ?? 'preferred', forecastImpressions: r.forecast_impressions ?? null, guaranteedImpressions: r.guaranteed_impressions ?? null, seatId: r.seat_id ?? null,
 })
 
 /* A window is taken once something has won or reserved it. */
@@ -89,10 +93,10 @@ export function sqliteReservationRepo(db: Db): ReservationRepo {
       const now = new Date().toISOString()
       prepared(db,
         `INSERT INTO reservations (id, partner_id, advertiser_id, campaign_id, position_id, window_start, type, channel, bid_cpm, currency,
-           status, clearing_cpm, reason, test_mode, pricing_type, handed_off_at, created_at, updated_at, deal_type, forecast_impressions, guaranteed_impressions)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           status, clearing_cpm, reason, test_mode, pricing_type, handed_off_at, created_at, updated_at, deal_type, forecast_impressions, guaranteed_impressions, seat_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(r.id, r.partnerId, r.advertiserId, r.campaignId, r.positionId, r.windowStart, r.type, r.channel, r.bidCpm, r.currency,
-        r.status, r.clearingCpm, r.reason, r.testMode ? 1 : 0, r.pricingType, r.handedOffAt, now, now, r.dealType ?? 'preferred', r.forecastImpressions ?? null, r.guaranteedImpressions ?? null)
+        r.status, r.clearingCpm, r.reason, r.testMode ? 1 : 0, r.pricingType, r.handedOffAt, now, now, r.dealType ?? 'preferred', r.forecastImpressions ?? null, r.guaranteedImpressions ?? null, r.seatId ?? null)
       return get(r.id) as ReservationRecord
     },
     update(id, patch) {
