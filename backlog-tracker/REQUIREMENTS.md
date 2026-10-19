@@ -161,6 +161,8 @@ deleted by hand).
   attachments?: [{ type: "image" | "video", url: string, path: string, name: string, size: number, uploadedAt: timestamp }], // see "Attachments" below
   previewUrl?: string,          // a Ready for Testing card's own "Test this" link
   previewState?: "rebuilding" | "ready" | "stale" | null, // lmdwsP5ElY5Oh12N9Fex — whether a link that opens a checked-in build (GENERATED_BUILDS) already shows this ticket; null = no generated build, the card behaves as before. Written by run-backlog-automation.js only — see "Test/preview link"
+  rebuildRequestedAt?: timestamp | null, // 19 Oct 2026 — when the automation last requested an automatic rebuild of this card; cleared once the request is answered (session started, card moved on) or reported as never started. Automation only
+  lastFire?: { status: "started" | "retrying" | "failed", at: timestamp, requestedAt, sessionId?, sessionUrl?, error?, attempts: number, deferrals: number, nextAttemptAt?: timestamp | null }, // 19 Oct 2026 — outcome of the latest Routine fire for this card, written by notifyOnProjectReadyForReview. Automation/function only
   previewStateAt?: string,      // ISO — when previewState last changed ("rebuilding" is aged from here)
   previewBuildWorkflow?: string | null, // e.g. "dsp-prototype.yml" — the workflow that rebuilds the bundle
   previewBuiltFrom?: string | null,     // build-info.json "commit" once ready: the source commit the bundle was built from
@@ -213,7 +215,7 @@ deleted by hand).
   // one for another sha is backfilled from its commit's files). Shown as a
   // chip on Ready for Testing / Approved for Deployment cards only while
   // trainTest.sha == deployCommit (public/js/card-test-status.js).
-  trainTestReruns?: string[], // automation-written: `<workflow>@<sha>:rerun|flaky`, last 20; dedupe only
+  trainTestReruns?: string[], // automation-written, last 20; dedupe and hand-off only. Per run: `<workflow>@<sha>:rerun:<runId>` / `:flaky:<runId>`, <sha> being the run's headSha (the card's commit, or a generated-only commit after it); the older bare `<workflow>@<sha>:rerun|flaky` is still read
   trainTest?: { sha, state, workflows: [{ workflow, label, state, runUrl, since }], since, updatedAt },
   // Who approved (19 Oct 2026): written in the batch that moves the card to
   // ready-to-publish — approvedByEmail lowercased, approvedAt a server
@@ -404,7 +406,12 @@ head (`afterRevertDispatches`). A card's test verdict, for the auto-eject
 the card's own commit and the reverts / generated-only commits directly after
 it. A run is stale when a commit at or before it was reverted by a later
 commit, so a ticket is never blamed for an ejected ticket's failure.
-`pickRedCulprit`'s rules are unchanged.
+`pickRedCulprit` skips (does not stop at) a card whose every candidate is
+stale (`onlyStaleEvidence`: `revert(S)` on a train B, S, L, M leaves L with
+only runs that held S), so a later ticket N that goes red on its own commit is
+still named. That card's chip borrows the nearest later non-stale run on the
+branch (`borrowableShas`) for display only; a borrowed failure is never
+used to blame the card.
 
 **A failed train test is re-run once (19 Oct 2026).** `trainRunVerdict(run)`
 returns `running`, `passed`, `rerun` (failure / timed_out / startup_failure
@@ -416,9 +423,21 @@ if the re-run cannot start, saying so). A pass on attempt 2+ after the
 automation's re-run puts a "Passed on re-run" note on the card. In
 `reportTrainTestResults` a `rerun` head run counts as still running;
 `trainFailureNotes` decides the notes from who owns the tested commit.
-`backlogItems.trainTestReruns` (automation-written array of
-`<workflow>@<sha>:rerun` / `:flaky`, last 20) only stops duplicate notes; it
-is not a pipeline field and `firestore.rules` is unchanged.
+`backlogItems.trainTestReruns` (automation-written, last 20) records the
+re-run **per run**: `<workflow>@<sha>:rerun:<runId>` when the automation
+re-runs a run and `<workflow>@<sha>:flaky:<runId>` when it then passes, with
+`<sha>` the run's `headSha`. That is the card's own commit or, for a DSP
+ticket, the generated-only prototype rebuild after it, so
+`reportTrainTestResults` stamps the key on the card that `trainRunOwner`
+attributes the run to, not only on the card whose `deployCommit` equals the
+sha. Keys written before this are the bare `<workflow>@<sha>:rerun` /
+`:flaky` and still count. A run on a stale commit (one a later revert made
+stale, see above) is not re-run: the card is judged on the newer run. The
+keys only stop duplicate notes and tell the hand-off a re-run is pending;
+they are not a pipeline field and `firestore.rules` is unchanged.
+`rerunPending(card, shas)` matches a key on any commit attributed to the card
+(`deployCommit`, the non-stale `evidenceCandidates`, its newest
+`deployCommits` entry), supplied by `attributedShasFor` for the hand-off.
 
 **The train is brought up to date with main before any ticket lands (1 Oct
 2026).** `processApplyPatch` now calls `syncTrainWithMain` first: a train
@@ -437,6 +456,27 @@ sat four commits behind main, the ticket's full-file patch landed on the
 stale base, and Deploy to Main stopped on a conflict in
 `backlog-tracker/MCP.md` that a person had to merge by hand. Tests:
 `test/train-sync.test.js`.
+
+**Automatic rebuilds after a refused patch are requested, not started**
+(19 Oct 2026, ticket mLCZgemj4wQEW6PTQru1; evidence: OanRebXyEryAXBQrBsVe,
+whose rebuild after a migration-number clash never ran because the Routine
+fire endpoint answered 429, and `autoRebuilds` of 1 meant nothing retried).
+A refusal that rebuilds (migration clash, same-lines conflict, unfilled
+intake section, unmet docsImpact; also a released dependant) writes a note
+saying the rebuild was *requested*, and `flushBuildRequests` stamps
+`rebuildRequestedAt` on the card before the project write. The function
+records each fire's result on the card as `lastFire` (surviving the next
+request overwriting `projects/{id}.notifyRoutine`). A 429, a 5xx or no
+answer is `retrying`: the sweep (`sweepRebuildRequests`) re-requests it once
+`nextAttemptAt` passes — 3 attempts, 5 then 10 minutes apart; other 4xx are
+`failed` immediately. Fires are spaced 1.5 s apart and, after a 429, the rest
+of the batch is deferred (up to 6 deferrals) rather than fired into it. Each
+sweep, a Backlog card whose `rebuildRequestedAt` is over 30 minutes old with
+no session started since and no patch handed over gets one note — "The
+automatic rebuild requested at <time> never started (<error>). Click Ready
+for Dev to build it again." — and `rebuildRequestedAt` is cleared, so it is
+posted once. Tests: `test/rebuild-requests.test.js` (which cards are
+noted, the wording), `test/notify-fanout.test.js` (retry policy, `lastFire`).
 
 **Every ticket a project builds is one commit on that project's single
 long-lived integration branch, `deploy/<project-slug>`** (on the project
@@ -573,8 +613,10 @@ changed is which control approves.
   note on each card. Nothing else is written on the original.
 - **Failed testing is always offered** on a Ready for Testing card (it used
   to hide once "Confirm tested" had been clicked; there is no such click
-  now), and additionally writes `revertRequested` — see "The deployment
-  train" above. It now also asks for a structured reason category
+  now). Its **send it back** choice writes `revertRequested` (see "The
+  deployment train" above); **It works, but I want something more** does not:
+  the card keeps its status and commit and the details become a new
+  Backlog ticket. It now also asks for a structured reason category
   alongside the free-text explanation (`lastFailureReason`,
   XJoASicLGefL5c9fronl — see "Structured Failed testing / Eject from train
   reason" below).
@@ -2492,7 +2534,10 @@ and serves through `resources/list` / `resources/read` — declared under
 only; no `connectDomains`, the view fetches nothing itself). Each tool's
 result carries the column as `structuredContent` (`kind`, `projectId`,
 `projectLabel`, `count`, `items[]` with `id`, `project`, `title`, `type`,
-`category`, `testSummary`, `desc`, `previewUrl`, `testVersion`, `board`,
+`category`, `testSummary`, `desc`, `previewUrl`, `previewState`/`previewSha`/
+`previewUpdatedAt` (the test link's rebuild state), `trainTest` (the card's own
+test run while it describes the commit now on the train: `state` and
+`workflows[]` of `name`/`conclusion`/`runUrl`), `testVersion`, `board`,
 and for Approved for Deployment `onTrain`/`deployCommit`/`prNumber`/
 `deployBranch` plus top-level `readyToDeploy`/`readyLine`) and the same
 JSON as a text block for the model. A host that supports MCP Apps
@@ -2538,7 +2583,9 @@ pure `nextHandOff`: it drops parked cards no longer in Ready for Testing
 (clearing the hold unstamped if none remain), keeps the `batchStillBuilding`
 hold, and otherwise holds while any card is waiting (`handOffWaitingOn`:
 tests missing, for an older commit, running or starting, or `not-run` less
-than 10 minutes old; link `rebuilding`), recording `readyForTestingWaitingOn`
+than 10 minutes old; a failed run whose automatic re-run is pending, i.e. a
+`:rerun` key on any commit attributed to the card and the recorded run still
+attempt 1; link `rebuilding`), recording `readyForTestingWaitingOn`
 and asking for a follow-up run. When nothing is waiting, or the parked ids
 are 40 minutes old, it stamps
 `projects/{id}.readyForTestingNotifyRequestedAt` (a real timestamp) with

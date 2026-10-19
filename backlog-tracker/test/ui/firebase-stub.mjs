@@ -13,12 +13,12 @@
 // { $ts: <millis> } becomes a Timestamp. Every write is recorded in
 // window.__fbStub.writes for the scenarios to assert on.
 
-class Timestamp {
+const Timestamp = globalThis.__fbStubTimestamp ||= class Timestamp {
   constructor(ms) { this.ms = ms; }
   toMillis() { return this.ms; }
   toDate() { return new Date(this.ms); }
   valueOf() { return this.ms; }
-}
+};
 const SERVER_TS = { $sentinel: "serverTimestamp" };
 const DELETE = { $sentinel: "deleteField" };
 

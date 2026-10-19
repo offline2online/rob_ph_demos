@@ -43,7 +43,7 @@ assert.deepEqual(missing, ["test"]);
 // Nothing pipeline-shaped, nothing that reverts.
 const pipeline = ["patchFiles", "patchBranch", "patchReady", "mergeReady", "deployCommit", "deployCommits", "carriedByCommit", "carriedByItem",
   "mergeCommit", "mergedAt", "prNumber", "prUrl", "deployBranch", "testVersion", "reviewStatus", "reviewReason", "reviewedAt", "reviewedCommit",
-  "patchBaseSha", "autoRebuilds", "patchPartCount", "revertRequested", "lastFailureReason", "previewUrl"];
+  "patchBaseSha", "autoRebuilds", "rebuildRequestedAt", "lastFire", "patchPartCount", "revertRequested", "lastFailureReason", "previewUrl"];
 for (const k of pipeline) assert.ok(!(k in n), `new item must not carry ${k}`);
 assert.equal(n.notes.length, 1);
 assert.equal(n.notes[0].author, "a@b.com");

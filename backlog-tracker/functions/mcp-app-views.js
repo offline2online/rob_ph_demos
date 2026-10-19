@@ -60,7 +60,7 @@
 
 const MCP_APP_MIME = "text/html;profile=mcp-app";
 const MCP_APPS_PROTOCOL_VERSION = "2026-01-26";
-const VIEW_VERSION = "1.4.0";
+const VIEW_VERSION = "1.4.1";
 
 // Sandbox settings the host reads from the resource's _meta.ui (on the
 // resources/read content item, resources/list entry as fallback).

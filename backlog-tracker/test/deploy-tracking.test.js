@@ -53,7 +53,8 @@ async function test(name, fn) { await fn(); passed++; console.log(`  ok  ${name}
 
   // ── resolving, with a stubbed gh ────────────────────────────────────────
   const entry = (workflow, extra = {}) => ({ workflow, dispatchedAt: AT, runUrl: null, conclusion: "pending", ...extra });
-  const ctxFor = (gh) => ({ runs: new Map(), heal: new Map(), gh, prototypeCurrent: () => false });
+  const NOW = Date.parse(AT) + 10 * 60 * 1000;
+  const ctxFor = (gh, now = NOW) => ({ runs: new Map(), heal: new Map(), gh, now, prototypeCurrent: () => false });
   const listing = (rows) => (args) => {
     if (args[0] === "run" && args[1] === "list") return JSON.stringify(rows);
     throw new Error(`unexpected gh ${args.join(" ")}`);
@@ -106,6 +107,36 @@ async function test(name, fn) { await fn(); passed++; console.log(`  ok  ${name}
     assert.strictEqual(lists, 1);
   });
 
+  await test("a not-dispatched entry is adopted when a successful run after the merge appears", () => {
+    const nd = entry("dsp-api-deploy.yml", { conclusion: "not-dispatched" });
+    const rows = (r) => () => JSON.stringify(r);
+    const ok = { databaseId: 8, url: "u/8", createdAt: "2026-10-19T05:20:00Z", status: "completed", conclusion: "success", headSha: "aaa1111" };
+    assert.strictEqual(resolveDeployRun(nd, ctxFor(rows([])), "bbb2222").conclusion, "not-dispatched", "nothing yet: still not dispatched");
+    const adopted = resolveDeployRun(nd, ctxFor(rows([ok])), "bbb2222");
+    assert.deepStrictEqual([adopted.conclusion, adopted.runUrl], ["success", "u/8"], "a deploy of all of main carries the merge");
+    const before = { ...ok, createdAt: "2026-10-19T04:00:00Z" };
+    assert.strictEqual(resolveDeployRun(nd, ctxFor(rows([before])), "bbb2222").conclusion, "not-dispatched", "a run before the merge is not adopted");
+    const other = entry("faq-content.yml", { conclusion: "not-dispatched" });
+    assert.strictEqual(resolveDeployRun(other, ctxFor(rows([ok])), "bbb2222").conclusion, "not-dispatched", "a non-healable workflow must have run on the merge commit");
+    assert.strictEqual(resolveDeployRun(other, ctxFor(rows([{ ...ok, headSha: "bbb2222" }])), "bbb2222").conclusion, "success");
+  });
+  await test("a pending entry older than two hours becomes unknown, with a note that says what to do", () => {
+    const gh = () => JSON.stringify([{ databaseId: 5, url: "u/5", createdAt: "2026-10-19T05:00:05Z", status: "in_progress", conclusion: "", event: "workflow_dispatch" }]);
+    const late = Date.parse(AT) + 2 * 60 * 60 * 1000 + 1000;
+    const out = resolveDeployRun(entry("dsp-api-deploy.yml"), ctxFor(gh, late));
+    assert.strictEqual(out.conclusion, "unknown");
+    assert.strictEqual(rollUpDeployRuns([out]).deployConclusion, "failure");
+    assert.match(auto.deployFailureNote([out]), /no result after 2 hours/);
+    assert.strictEqual(resolveDeployRun(entry("dsp-api-deploy.yml"), ctxFor(gh)).conclusion, "pending", "inside the cap it stays pending");
+  });
+  await test("the failure note names what clears each case", () => {
+    const r = (workflow, conclusion) => ({ workflow, conclusion, runUrl: null });
+    const note = auto.deployFailureNote([r("dsp-api-deploy.yml", "not-dispatched"), r("faq-content.yml", "failure")]);
+    assert.match(note, /dsp-api-deploy\.yml: dispatch it on main/);
+    assert.match(note, /faq-content\.yml: use Re-run jobs on that same run/);
+    assert.doesNotMatch(note, /re-run that workflow on main/);
+  });
+
   // ── the prototype check, in a disposable repo with the real script ─────
   await test("the prototype entry follows build-info.json's sourceStamp against origin/main", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "deploy-tracking-"));
@@ -139,7 +170,7 @@ async function test(name, fn) { await fn(); passed++; console.log(`  ok  ${name}
     commit("source change, no rebuild");
     assert.strictEqual(prototypeBuildCurrent({ git: g }), false);
     assert.strictEqual(script(), 1, "the script says stale too");
-    const ctx = { runs: new Map(), heal: new Map(), prototypeCurrent: () => prototypeBuildCurrent({ git: g }) };
+    const ctx = { runs: new Map(), heal: new Map(), now: NOW, prototypeCurrent: () => prototypeBuildCurrent({ git: g }) };
     assert.strictEqual(resolveDeployRun(entry("dsp-prototype.yml"), ctx).conclusion, "pending");
     fs.rmSync(root, { recursive: true, force: true });
   });
