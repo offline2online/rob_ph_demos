@@ -316,6 +316,19 @@ What the train changes:
   of the approved train ships with no second click (18 Oct 2026, PR #412).
   It is only ejected with a green commit before it, so a check that is red
   on main itself never sends the train's first ticket back.
+  **A failed train test is re-run once before anyone acts on it** (19 Oct
+  2026): `trainRunVerdict` reads GitHub's attempt number — red on attempt 1
+  is `rerun`, red on attempt 2 is `failed` — so a flaky test no longer sends
+  a ticket back (`culpritAction`, `rerunTrainRun`). The culprit gets one note
+  ("Re-running it once…"); the send-back note says it failed again when
+  re-run, or that the re-run could not start. A pass on re-run is shown on
+  the card ("Passed on re-run…", it may have made the test flaky) and
+  nothing is sent back. `reportTrainTestResults` treats a re-running head run
+  as still running, and `trainFailureNotes` says whose commit failed: the
+  owner is told it is theirs, every other card that the train is red from
+  another ticket's commit, a ticket already sent back gets nothing, and a
+  merge or revert is named as such. `trainTestReruns` on the card only stops
+  those notes repeating.
   **A revert re-tests the train, and a ticket is judged only on a run that
   did not contain a reverted ticket** (19 Oct 2026): `processRevertFromTrain`
   starts the train tests on the new head (`afterRevertDispatches`), and

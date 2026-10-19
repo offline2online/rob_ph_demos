@@ -1720,7 +1720,7 @@ function memoByKey(fetcher) {
 // Runs of one workflow on one commit, newest first. Throws on a gh failure.
 function fetchWorkflowRunsOnSha(workflow, sha) {
   return JSON.parse(run("gh", ["api", `repos/${REPO}/actions/workflows/${workflow}/runs?head_sha=${sha}&per_page=10`,
-    "-q", "[.workflow_runs[] | {headSha: .head_sha, status, conclusion, url: .html_url}]"]) || "[]");
+    "-q", "[.workflow_runs[] | {id, attempt: .run_attempt, headSha: .head_sha, status, conclusion, url: .html_url}]"]) || "[]");
 }
 function fetchCommitFiles(sha) {
   return JSON.parse(run("gh", ["api", `repos/${REPO}/commits/${sha}`, "-q", "[.files[].filename]"]) || "[]");
@@ -2021,10 +2021,100 @@ function pickRedCulprit(order, cards, runs, opts = {}) {
   return null;
 }
 
-async function ejectRedCulprits(runsFor = memoByKey(fetchWorkflowRunsOnSha), filesFor = memoByKey(fetchCommitFiles)) {
+// ── A failed train test is re-run once before anyone acts on it ─────────────
+// One red run used to be final: on 9 Oct 2026 an HTML-only mock-up change was
+// sent back for a timestamp race in ssp-audit-log.test.ts. GitHub counts a
+// run's attempts, so "once" needs no field on the card: attempt 1 red is
+// re-run, attempt 2 red is real.
+//   running: not finished   passed: success
+//   rerun:   red on attempt 1   failed: red on attempt 2 or later
+//   none:    cancelled, skipped, anything else (no verdict)
+// Pure, for test/train-rerun.test.js.
+function trainRunVerdict(r) {
+  if (!r) return "none";
+  if (String(r.status).toLowerCase() !== "completed") return "running";
+  const concl = String(r.conclusion).toLowerCase();
+  if (concl === "success") return "passed";
+  if (!["failure", "timed_out", "startup_failure"].includes(concl)) return "none";
+  return Number(r.attempt || r.run_attempt || 1) >= 2 ? "failed" : "rerun";
+}
+
+// What to do about the run that judges a card: rerun, eject or wait.
+function culpritAction(r) {
+  const v = trainRunVerdict(r);
+  return v === "rerun" ? "rerun" : v === "failed" ? "eject" : "wait";
+}
+
+// Re-runs the failed jobs of one run. Never throws; true when the run is
+// re-running (now, or already this sweep), false when gh refused. A run id is
+// never re-run twice in one sweep: the culprit and the head run are often the
+// same run, and the lookups still show attempt 1 until GitHub catches up.
+const trainRunsRerunThisSweep = new Set();
+function rerunTrainRun(runId, gh = (args) => run("gh", args)) {
+  const id = String(runId);
+  if (trainRunsRerunThisSweep.has(id)) return true;
+  try {
+    gh(["run", "rerun", id, "--repo", REPO, "--failed"]);
+    trainRunsRerunThisSweep.add(id);
+    return true;
+  } catch (err) {
+    console.log(`[train-rerun] couldn't re-run ${id} (${scrubSecrets(err.message)})`);
+    return false;
+  }
+}
+
+const rerunKey = (workflow, sha, kind) => `${workflow}@${sha}:${kind}`;
+const withKey = (keys, key) => (keys || []).filter((k) => k !== key).concat([key]).slice(-20);
+
+// The card's own run passed on a later attempt after the automation re-ran
+// it (its `:rerun` key is on the card): returns the key to write, or null.
+// A person's re-run leaves no `:rerun` key, so it gets no note. Pure.
+function flakyPassKey(card, workflow, r) {
+  if (trainRunVerdict(r) !== "passed" || Number(r.attempt || 1) < 2 || !r.headSha) return null;
+  const keys = card.trainTestReruns || [];
+  if (!keys.includes(rerunKey(workflow, r.headSha, "rerun")) || keys.includes(rerunKey(workflow, r.headSha, "flaky"))) return null;
+  return rerunKey(workflow, r.headSha, "flaky");
+}
+
+const flakyNote = (label, sha, url) =>
+  `Passed on re-run: ${label} failed on this ticket's commit ${sha.slice(0, 7)}, then passed when re-run (${url || "no link"}; attempt 1's log has the failure). ` +
+  `Treated as a flaky test, so nothing was sent back. If this ticket touches the failing area it may have made the test flaky; check attempt 1 before approving.`;
+
+const toldAbout = (card, workflow, sha) => (card.testsFailedShas || []).includes(`${workflow}@${sha}`)
+  || (workflow === CONSOLE_TEST_WORKFLOW && card.testsFailedSha === sha);
+
+// The notes for a train test that failed (twice) on `sha`, from who owns that
+// commit. Pure, for test/train-rerun.test.js.
+//   cards:   the train's cards { id, title, deployCommit, deployCommits, testsFailedShas }
+//   ownerId: the `Backlog item:` trailer of the commit, for when no card on
+//            the train holds it (null for a merge of main or a revert)
+//   afterRerun: the run was re-run and failed again
+// Returns [{ id, text }]. An owner that has left the train gets no notes: its
+// own card already says why.
+function trainFailureNotes({ workflow, label, sha, url, cards, ownerId = null, afterRerun = false }) {
+  const owns = (c) => c.deployCommit === sha || (c.deployCommits || []).includes(sha);
+  const owner = (cards || []).find(owns) || (ownerId ? (cards || []).find((c) => c.id === ownerId) : null);
+  if (!owner && ownerId) return [];
+  const s7 = sha.slice(0, 7);
+  const again = afterRerun ? " (it failed again when re-run)" : "";
+  const targets = (cards || []).filter((c) => !toldAbout(c, workflow, sha));
+  return targets.map((c) => {
+    let text;
+    if (owner && c.id === owner.id) {
+      text = `The ${label} FAILED on this ticket's own commit ${s7}${again}: ${url}. Deploy to Main is withheld until it is green. If this ticket's change caused it, use Failed testing.`;
+    } else if (owner) {
+      text = `The train is red: ${label} failed at ${s7}, ${owner.title || "a ticket"} (${owner.id})'s commit, not this ticket's change. Deploy to Main is withheld until it is green. Nothing to do on this ticket.`;
+    } else {
+      text = `The train is red: ${label} failed at ${s7}, which is not any ticket's own commit (a merge of main or a revert). Deploy to Main is withheld until it is green. Nothing to do on this ticket.`;
+    }
+    return { id: c.id, text };
+  });
+}
+
+async function ejectRedCulprits(runsFor = memoByKey(fetchWorkflowRunsOnSha), filesFor = memoByKey(fetchCommitFiles), gh = (args) => run("gh", args)) {
   const cards = await runQuery({
     from: [{ collectionId: "backlogItems" }],
-    select: { fields: ["projectId", "title", "status", "deployBranch", "deployCommit", "autoRebuilds", "notes", "revertRequested"].map((fieldPath) => ({ fieldPath })) },
+    select: { fields: ["projectId", "title", "status", "deployBranch", "deployCommit", "autoRebuilds", "notes", "revertRequested", "trainTestReruns"].map((fieldPath) => ({ fieldPath })) },
     where: { fieldFilter: { field: { fieldPath: "status" }, op: "IN", value: { arrayValue: { values: [{ stringValue: "ready-for-testing" }, { stringValue: "ready-to-publish" }] } } } },
   });
   const byBranch = new Map();
@@ -2046,13 +2136,45 @@ async function ejectRedCulprits(runsFor = memoByKey(fetchWorkflowRunsOnSha), fil
         const projectId = (trainCards.find((c) => c.projectId) || {}).projectId || null;
         const trainProject = projectId ? await getProject(projectId).catch(() => null) : null;
         const deployParkedRed = !!trainProject && trainProject.trainStatus === "conflict" && !!Number(trainProject.trainCiRedPr);
+        // A card's own run that failed, was re-run by this automation and now
+        // passes is shown on the card, not swallowed (it may be the ticket
+        // that made the test flaky). Nothing is ejected.
+        for (const c of trainCards) {
+          const key = flakyPassKey(c, t.workflow, runs[c.deployCommit]);
+          if (!key) continue;
+          const notes = await appendNote(c, flakyNote(t.label, c.deployCommit, runs[c.deployCommit].url));
+          c.notes = notes;
+          c.trainTestReruns = withKey(c.trainTestReruns, key);
+          await patchItem(c.id, { notes, trainTestReruns: c.trainTestReruns, updatedAt: new Date().toISOString() });
+          console.log(`[train-rerun] ${branch}: ${t.workflow} passed on re-run at ${c.deployCommit.slice(0, 7)} (${c.id}) — flaky, nothing sent back`);
+        }
         const culprit = pickRedCulprit(order, trainCards, runs, { deployParkedRed });
         if (!culprit) continue;
         const r = runs[culprit.deployCommit];
+        const action = culpritAction(r);
+        const reKey = rerunKey(t.workflow, r.headSha || culprit.deployCommit, "rerun");
+        let rerunCouldNotStart = false;
+        if (action === "rerun") {
+          if ((culprit.trainTestReruns || []).includes(reKey)) break; // already re-run; GitHub still shows attempt 1 — wait
+          if (rerunTrainRun(r.id, gh)) {
+            const notes = await appendNote(culprit,
+              `The ${t.label} failed on this ticket's own commit ${culprit.deployCommit.slice(0, 7)} (${r.url || "no link"}). ` +
+              `Re-running it once to rule out a flaky test before anything is sent back. Nothing to do yet.`);
+            culprit.notes = notes;
+            culprit.trainTestReruns = withKey(culprit.trainTestReruns, reKey);
+            await patchItem(culprit.id, { notes, trainTestReruns: culprit.trainTestReruns, updatedAt: new Date().toISOString() });
+            console.log(`[train-rerun] ${branch}: ${t.workflow} red at ${culprit.deployCommit.slice(0, 7)} (${culprit.id}) — re-running once before acting`);
+            break; // this branch waits for the re-run
+          }
+          rerunCouldNotStart = true; // fall through: send it back as before
+        } else if (action === "wait") {
+          continue;
+        }
         const wasApproved = culprit.status === "ready-to-publish";
         const project = culprit.projectId === projectId ? trainProject : await getProject(culprit.projectId).catch(() => null);
         const autoRebuild = !!project && (Number(culprit.autoRebuilds) || 0) < 1;
-        const text = `${t.label} (${t.workflow}) failed on this ticket's own commit ${culprit.deployCommit.slice(0, 7)} while everything before it on ${branch} passed: ${r.url || ""}`;
+        const text = `${t.label} (${t.workflow}) failed on this ticket's own commit ${culprit.deployCommit.slice(0, 7)} while everything before it on ${branch} passed: ${r.url || ""}${
+          rerunCouldNotStart ? " (the re-run could not start, so this is the first run's result)" : " (it failed again when re-run)"}`;
         const notes = await appendNote(culprit,
           `Sent back automatically (Failed testing [tests]): ${text}. ` +
           (wasApproved ? `It had been approved, but the approved Deploy to Main was parked red on it, so it is taken off rather than holding the release. ` : "") +
@@ -2081,7 +2203,7 @@ async function ejectRedCulprits(runsFor = memoByKey(fetchWorkflowRunsOnSha), fil
 async function reportTrainTestResults() {
   const cards = await runQuery({
     from: [{ collectionId: "backlogItems" }],
-    select: { fields: ["projectId", "deployBranch", "deployCommit", "testsFailedSha", "testsFailedShas", "notes"].map((fieldPath) => ({ fieldPath })) },
+    select: { fields: ["projectId", "title", "status", "deployBranch", "deployCommit", "deployCommits", "testsFailedSha", "testsFailedShas", "notes"].map((fieldPath) => ({ fieldPath })) },
     where: { fieldFilter: { field: { fieldPath: "status" }, op: "IN", value: { arrayValue: { values: [{ stringValue: "ready-for-testing" }, { stringValue: "ready-to-publish" }] } } } },
   });
   const byBranch = new Map();
@@ -2109,8 +2231,17 @@ async function reportTrainTestResults() {
     for (const t of TRAIN_TEST_WORKFLOWS) {
       try {
         const testRun = newestRealRun(JSON.parse(run("gh", ["run", "list", "--repo", REPO, "--workflow", t.workflow, "--branch", branch,
-          "--limit", "10", "--json", "headSha,status,conclusion,url"]) || "[]"));
+          "--limit", "10", "--json", "databaseId,attempt,headSha,status,conclusion,url"]) || "[]")
+          .map((r) => ({ ...r, id: r.databaseId })));
         if (!testRun) continue;
+        // A first failure is re-run once and treated as still running: no
+        // notes, trainTestsRed unchanged (the deploy gate already holds on a
+        // pending run). If the re-run cannot start, it is judged as before.
+        const afterRerun = trainRunVerdict(testRun) === "failed";
+        if (trainRunVerdict(testRun) === "rerun" && rerunTrainRun(testRun.id)) {
+          console.log(`[train-tests] ${branch}: ${t.workflow} red on ${String(testRun.headSha).slice(0, 7)} — re-running once before reporting`);
+          continue;
+        }
         let changedSince = null;
         if (testRun.headSha && testRun.headSha !== head) {
           const cmp = JSON.parse(run("gh", ["api", `repos/${REPO}/compare/${testRun.headSha}...${head}`,
@@ -2123,17 +2254,27 @@ async function reportTrainTestResults() {
           if (next !== undefined) { red = next; redChanged = true; }
         }
         const targets = trainTestFailureTargets(testRun, tested, trainCards, t.workflow);
-        for (const card of targets) {
-          const notes = await appendNote(card,
-            `The ${t.label} (${t.workflow}) FAILED on this train at ${tested.slice(0, 7)}: ${testRun.url} — ` +
-            `the same check Deploy to Main waits on, so Deploy to Main is withheld until it is green. ` +
-            `If this ticket caused it, use Failed testing; otherwise look at the other tickets on ${branch}.`);
+        let notes_ = [];
+        if (targets.length) {
+          // Who owns the tested commit decides what each card is told.
+          const owns = (c) => c.deployCommit === tested || (c.deployCommits || []).includes(tested);
+          let ownerId = null;
+          if (!trainCards.some(owns)) {
+            try { ownerId = backlogItemIdFromMessage(run("gh", ["api", `repos/${REPO}/commits/${tested}`, "-q", ".commit.message"])); }
+            catch (err) { console.log(`[train-tests] ${branch}: couldn't read the owner of ${tested.slice(0, 7)} (${scrubSecrets(err.message)})`); }
+          }
+          notes_ = trainFailureNotes({ workflow: t.workflow, label: t.label, sha: tested, url: testRun.url, cards: trainCards, ownerId, afterRerun });
+        }
+        for (const n of notes_) {
+          const card = trainCards.find((c) => c.id === n.id);
+          const notes = await appendNote(card, n.text);
           card.notes = notes;
           const testsFailedShas = (card.testsFailedShas || []).concat([`${t.workflow}@${tested}`]).slice(-20);
           card.testsFailedShas = testsFailedShas;
           await patchItem(card.id, { notes, testsFailedShas, updatedAt: new Date().toISOString() });
         }
-        if (targets.length) console.log(`[train-tests] ${branch}: ${t.workflow} red on ${tested.slice(0, 7)} — noted on ${targets.length} card(s)`);
+        const targetsCount = notes_.length;
+        if (targetsCount) console.log(`[train-tests] ${branch}: ${t.workflow} red on ${tested.slice(0, 7)} — noted on ${targetsCount} card(s)`);
       } catch (err) {
         console.log(`[train-tests] ${branch}: couldn't read the ${t.workflow} result (${scrubSecrets(err.message)})`);
       }
@@ -5157,7 +5298,10 @@ module.exports = {
   // test/train-resume.test.js — GitHub-side cancellations re-run; red trains resume when green
   isInfraCheck, rerunInfraChecks, resumeRedTrains, TRAIN_CI_INFRA_RERUNS,
   // test/train-tests.test.js — console tests run on each train push
-  TRAIN_TEST_WORKFLOWS, trainTestFailureTargets, touchesConsoleTests, trainTestsFor, testedHeadOf, nextTrainTestsRed, trainTestGate, newestRealRun, pickRedCulprit,
+  TRAIN_TEST_WORKFLOWS, trainTestFailureTargets, touchesConsoleTests,
+  // test/train-rerun.test.js — a failed train test is re-run once before anyone acts on it
+  trainRunVerdict, culpritAction, rerunTrainRun, trainFailureNotes, flakyPassKey, flakyNote, ejectRedCulprits,
+  trainTestsFor, testedHeadOf, nextTrainTestsRed, trainTestGate, newestRealRun, pickRedCulprit,
   // test/train-eject-after-revert.test.js — a ticket is judged on a run that did not contain a reverted ticket
   afterRevertDispatches, cardEvidenceRun, evidenceCandidates,
   // test/card-test-status.test.js — each train card's own test result

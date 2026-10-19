@@ -213,6 +213,7 @@ deleted by hand).
   // one for another sha is backfilled from its commit's files). Shown as a
   // chip on Ready for Testing / Approved for Deployment cards only while
   // trainTest.sha == deployCommit (public/js/card-test-status.js).
+  trainTestReruns?: string[], // automation-written: `<workflow>@<sha>:rerun|flaky`, last 20; dedupe only
   trainTest?: { sha, state, workflows: [{ workflow, label, state, runUrl, since }], since, updatedAt },
   // Who approved (19 Oct 2026): written in the batch that moves the card to
   // ready-to-publish — approvedByEmail lowercased, approvedAt a server
@@ -404,6 +405,20 @@ the card's own commit and the reverts / generated-only commits directly after
 it. A run is stale when a commit at or before it was reverted by a later
 commit, so a ticket is never blamed for an ejected ticket's failure.
 `pickRedCulprit`'s rules are unchanged.
+
+**A failed train test is re-run once (19 Oct 2026).** `trainRunVerdict(run)`
+returns `running`, `passed`, `rerun` (failure / timed_out / startup_failure
+on attempt 1), `failed` (the same on attempt 2+) or `none`; "once" is
+GitHub's `run_attempt`, no card field. `ejectRedCulprits` re-runs the
+culprit's deciding run (`rerunTrainRun`, `gh run rerun <id> --failed`, never
+twice per sweep) and notes the card, and sends it back only on `failed` (or
+if the re-run cannot start, saying so). A pass on attempt 2+ after the
+automation's re-run puts a "Passed on re-run" note on the card. In
+`reportTrainTestResults` a `rerun` head run counts as still running;
+`trainFailureNotes` decides the notes from who owns the tested commit.
+`backlogItems.trainTestReruns` (automation-written array of
+`<workflow>@<sha>:rerun` / `:flaky`, last 20) only stops duplicate notes; it
+is not a pipeline field and `firestore.rules` is unchanged.
 
 **The train is brought up to date with main before any ticket lands (1 Oct
 2026).** `processApplyPatch` now calls `syncTrainWithMain` first: a train
