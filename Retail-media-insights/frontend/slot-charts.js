@@ -482,10 +482,8 @@
         var amber = sold >= AMBER_AT;
         var nameTd = h('td', { class: 'sc-name', text: r.name });
         if (dt) hoverable(nameTd, function () { return displayTypeCard(dt, filters); });
-        // The count, with the time it covers in brackets: the whole loop for slots per loop, the slots' total duration otherwise.
         function numTd(v, kind) {
-          var secs = kind === 'loop' ? r.loopSeconds : kind === 'advertiser' ? r.advertiserSlots.totalSeconds : r.ownContentSlots.totalSeconds;
-          var td = h('td', { class: 'sc-num', text: String(v) + ' (' + secs + 's)' });
+          var td = h('td', { class: 'sc-num', text: String(v) });
           return hoverable(td, function () { return allocationHover(r, kind); });
         }
         var soldTd = h('td', { class: 'sc-sold' }, [
