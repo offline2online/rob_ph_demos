@@ -32,7 +32,7 @@ on:
         options: [sync, check, skip]
         default: sync
       deploy_branch:
-        description: "Set the project's deployBranch (e.g. deploy/dsp-integration). Blank = leave it."
+        description: "Set the project's deployBranch (e.g. deploy/dsp-integration) — the project given in 'project', else Display Types. Blank = leave it."
         type: string
         default: ''
       tickets:
@@ -102,7 +102,9 @@ jobs:
         working-directory: dsp-integration
         env:
           BOARD_API_KEY: ${{ secrets.BOARD_API_KEY }}
-        run: node scripts/board-tickets.mjs --deploy-branch "${{ inputs.deploy_branch }}" --yes
+        # --project as in every other step: without it board-tickets.mjs defaults
+        # to Display Types & DSP Integration and would overwrite that project's branch.
+        run: node scripts/board-tickets.mjs ${{ inputs.project != '' && format('--project "{0}"', inputs.project) || '' }} --deploy-branch "${{ inputs.deploy_branch }}" --yes
 
       - name: Move a ticket
         if: inputs.ticket != ''
