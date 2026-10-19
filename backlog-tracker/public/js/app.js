@@ -1282,10 +1282,7 @@ function optionsMenuHTML(project) {
 // longest seen in practice was ~14 minutes) — so a session running an
 // older Routine prompt without that instruction, or one that crashes
 // mid-run, can never wedge the button in a permanent spinning state.
-const NOTIFY_ROUTINE_STALE_MS = 25 * 60 * 1000; // matches STALL_MS in functions/notify-routine.js, which closes the record
-// After this long with no report the tooltip says the ticket is "still
-// building" and points at its session.
-const NOTIFY_STILL_BUILDING_MS = 15 * 60 * 1000;
+const NOTIFY_ROUTINE_STALE_MS = 20 * 60 * 1000;
 
 // Parallel builds (4 Oct 2026): a click now starts one Routine session per
 // ticket (notifyRoutine.mode "per-item"), and each session reports on its
@@ -1301,40 +1298,7 @@ function anyMillis(v) {
 function perItemBuildFinished(item, routine) {
   if (!item || item.status !== "backlog" || item.patchReady) return true;
   const bs = item.buildSession;
-  if (!bs || (bs.status !== "done" && bs.status !== "error")) return false;
-  // reportedAt is the server's clock (functions/notify-routine.js); finishedAt
-  // is the session's own guess and has been hours wrong, so it is only the
-  // fallback for a report the trigger hasn't stamped yet.
-  const at = anyMillis(bs.reportedAt) || anyMillis(bs.finishedAt);
-  return at >= tsMillis(routine.firedAt);
-}
-// The sent tickets whose session never reported, for a record the server has
-// stalled (or one that is past the stall window and not yet swept).
-function stalledSentIds(routine) {
-  if (!routine) return [];
-  if (routine.status === "stalled" || (routine.status === "done" && (routine.stalledItemIds || []).length)) {
-    return (routine.stalledItemIds || routine.sentItemIds || []).filter((id) => {
-      const it = allItems.find((i) => i.id === id);
-      return it && it.status === "backlog" && !it.patchReady && !(it.buildSession && perItemBuildFinished(it, { firedAt: routine.firedAt }));
-    });
-  }
-  if (routine.status === "in-progress" && routine.firedAt && Date.now() - tsMillis(routine.firedAt) > NOTIFY_ROUTINE_STALE_MS) {
-    return (routine.sentItemIds || []).filter((id) => !perItemBuildFinished(allItems.find((i) => i.id === id), routine));
-  }
-  return [];
-}
-// One line per sent ticket for the Deving… tooltip.
-function sentTicketStateLines(routine) {
-  const elapsed = Date.now() - tsMillis(routine.firedAt);
-  return (routine.sentItemIds || []).map((id) => {
-    const it = allItems.find((i) => i.id === id);
-    if (!it) return `${id} — removed`;
-    let state;
-    if (it.status !== "backlog" || it.patchReady) state = "landed";
-    else if (perItemBuildFinished(it, routine)) state = "reported";
-    else state = elapsed > NOTIFY_STILL_BUILDING_MS ? "still building — open session" : "building";
-    return `${it.title || id} — ${state}`;
-  });
+  return !!(bs && (bs.status === "done" || bs.status === "error") && anyMillis(bs.finishedAt) >= tsMillis(routine.firedAt));
 }
 // A per-item click is over once every card it sent has finished — not when
 // the first session does, which would unlock the cards still being built.
@@ -1456,25 +1420,7 @@ function docsBehindChipHTML(project) {
   </button>`;
 }
 
-// A session that never reported: say so, instead of the spinner ending and the
-// button silently turning back into "Ready for Dev". Links to the first such
-// card, whose notes say which session to open.
-function notifyStalledChipHTML(project) {
-  if (projectInDeployPhase(project)) return "";
-  const ids = stalledSentIds(project.notifyRoutine);
-  if (!ids.length) return "";
-  return `<a href="#item-${escapeHTML(ids[0])}" class="notify-claude-btn notify-claude-btn-working notify-claude-btn-clickable notify-claude-stalled" title="${ids.length} ticket(s) sent to Claude never reported back — open the card's notes">
-    <span class="material-symbols-outlined notify-claude-icon">warning</span>
-    <span class="notify-claude-label">Build didn&rsquo;t report back</span>
-    <span class="notify-claude-count-pill">${ids.length}</span>
-  </a>`;
-}
-
 function notifyClaudeButtonHTML(project) {
-  return notifyStalledChipHTML(project) + notifyClaudeButtonCore(project);
-}
-
-function notifyClaudeButtonCore(project) {
   const pid = project.id;
   const routine = project.notifyRoutine;
   const firedMs = routine ? tsMillis(routine.firedAt) : 0;
@@ -1544,15 +1490,12 @@ function notifyClaudeButtonCore(project) {
     ? `${[...sentIds].filter((id) => perItemBuildFinished(allItems.find((i) => i.id === id), routine)).length}/${sentIds.size}`
     : (routine.itemCount || sentIds.size);
   const confirmed = !!routine.sessionUrl;
-  const elapsedMin = firedMs ? Math.max(0, Math.floor((Date.now() - firedMs) / 60000)) : null;
-  const elapsedLabel = perItem && elapsedMin !== null ? ` &middot; ${elapsedMin} min` : "";
-  const tooltipLines = perItem ? sentTicketStateLines(routine).join("\n") : "";
   const mainBtnInner = `
     <span class="notify-claude-spinner"></span>
-    <span class="notify-claude-label">${confirmed ? "Deving&hellip;" : "Working&hellip;"}${elapsedLabel}</span>
+    <span class="notify-claude-label">${confirmed ? "Deving&hellip;" : "Working&hellip;"}</span>
     <span class="notify-claude-count-pill">${itemCountLabel}</span>`;
   const mainBtn = confirmed
-    ? `<a href="${escapeHTML(safeHttpUrl(routine.sessionUrl))}" target="_blank" rel="noopener" class="notify-claude-btn notify-claude-btn-working notify-claude-btn-clickable" title="${perItem ? escapeHTML(`${itemCountLabel} finished — this opens the first session\n${tooltipLines}`) : `View the Claude Code session working through the ${itemCountLabel} item(s) sent`}">${mainBtnInner}</a>`
+    ? `<a href="${escapeHTML(safeHttpUrl(routine.sessionUrl))}" target="_blank" rel="noopener" class="notify-claude-btn notify-claude-btn-working notify-claude-btn-clickable" title="${perItem ? `One Claude Code session per ticket, ${itemCountLabel} finished — this opens the first` : `View the Claude Code session working through the ${itemCountLabel} item(s) sent`}">${mainBtnInner}</a>`
     : `<button type="button" class="notify-claude-btn notify-claude-btn-working" disabled title="A Claude Code session is working through the ${itemCountLabel} item(s) sent">${mainBtnInner}</button>`;
 
   const newBtn = newCount

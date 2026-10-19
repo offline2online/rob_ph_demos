@@ -373,9 +373,7 @@ on the card. So, in a default build fire:
   code dependency; a ticket that merely touches the same area builds now.
 - **Report on the card, not the project.** When you finish, PATCH
   `backlogItems/<id>` with `buildSession: {status: "done" | "error",
-  finishedAt, errorMessage?}`, taking `finishedAt` (and any timestamp you
-  write) from `date -u +%Y-%m-%dT%H:%M:%SZ`, never a guessed time — the
-  board stamps its own trusted `buildSession.reportedAt` as a backstop. Do not write `projects/<id>.notifyRoutine` —
+  finishedAt, errorMessage?}`. Do not write `projects/<id>.notifyRoutine` —
   the board waits for every session in the click, and the first one to
   finish would otherwise unlock cards still being built.
 

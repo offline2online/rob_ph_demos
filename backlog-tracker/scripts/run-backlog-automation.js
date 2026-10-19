@@ -57,7 +57,6 @@ const { trainLockShouldClear, trainHandoverReason } = require("../functions/trai
 const { syncProjectDocs, syncAllProjectDocs, resolveRepoFolder } = require("./docs-sync-lib");
 const { syncMirroredInterfaces } = require("./interface-mirror-lib");
 const { hasIntakePlaceholder } = require("../functions/intake");
-const { notifyRoutineOutcome, stalledNoteText } = require("../functions/notify-routine");
 const { loadDocsImpactRules, docsImpactCheck, refusalNote: docsImpactRefusalNote, waiverNote: docsImpactWaiverNote } = require("./docs-impact");
 
 const PROJECT_ID = "backlog-tracker-e4ed2";
@@ -5485,58 +5484,6 @@ async function resumeRedTrains() {
   }
 }
 
-// Writes only the named notifyRoutine sub-fields (mask paths), so a record the
-// Cloud Function rewrites meanwhile is not clobbered. A path in `remove` that
-// has no value in the body is deleted by Firestore.
-async function patchNotifyRoutine(projectId, fields, remove = []) {
-  const paths = [...Object.keys(fields), ...remove].map((k) => `updateMask.fieldPaths=${encodeURIComponent(`notifyRoutine.${k}`)}`).join("&");
-  const res = await fetch(`${FIRESTORE_BASE}/projects/${projectId}?${paths}`, {
-    method: "PATCH",
-    headers: await firestoreHeaders(),
-    body: JSON.stringify({ fields: { notifyRoutine: { mapValue: { fields: Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, tv(v)])) } } } }),
-  });
-  if (!res.ok) throw new Error(`PATCH projects/${projectId} notifyRoutine failed: ${res.status} ${await res.text()}`);
-}
-
-// Nothing used to close a per-item notifyRoutine: the board inferred "done"
-// from clocks, so every reader (agents over MCP, board-tickets --inspect) saw
-// a build in progress hours after it ended (19 Oct 2026). Each sweep closes
-// the records whose sent cards have all settled, and gives a record whose
-// session never reported back (25 minutes) a note on each such card, once.
-async function closeNotifyRoutines(now = Date.now()) {
-  const projects = await runQuery({
-    from: [{ collectionId: "projects" }],
-    where: { fieldFilter: { field: { fieldPath: "notifyRoutine.status" }, op: "EQUAL", value: { stringValue: "in-progress" } } },
-  });
-  for (const project of projects) {
-    try {
-      const routine = project.notifyRoutine;
-      const cards = await runQuery({
-        from: [{ collectionId: "backlogItems" }],
-        where: { fieldFilter: { field: { fieldPath: "projectId" }, op: "EQUAL", value: { stringValue: project.id } } },
-      });
-      const { outcome, noteCardIds } = notifyRoutineOutcome(routine, cards, now);
-      if (outcome === "open" || outcome === "closed") continue;
-      if (outcome === "stalled") {
-        await patchNotifyRoutine(project.id, { status: "stalled" });
-        for (const id of noteCardIds) {
-          const card = cards.find((c) => c.id === id);
-          if (!card) continue;
-          const notes = await appendNote(card, stalledNoteText(card, routine));
-          await patchItem(id, { notes });
-        }
-      }
-      await patchNotifyRoutine(project.id, {
-        status: "done", closedAt: new Date(now),
-        ...(outcome === "stalled" ? { stalledItemIds: noteCardIds } : {}),
-      }, ["finishedAt"]);
-      console.log(`[notify-routine] ${project.id}: ${outcome === "stalled" ? `stalled (${noteCardIds.length} card(s) noted), closed` : "done, closed"}`);
-    } catch (err) {
-      console.error(`[notify-routine] ${project.id} failed: ${err.message}`);
-    }
-  }
-}
-
 async function main() {
   await reconcileDeployStatuses();
   await resumeRedTrains();
@@ -5608,11 +5555,6 @@ async function main() {
   }
   await flushBuildRequests();
   await requestReadyForTestingNotify();
-  try {
-    await closeNotifyRoutines();
-  } catch (err) {
-    console.error(`[notify-routine] sweep failed: ${err.message}`);
-  }
   for (const item of mergeReadyItems) {
     try {
       await processMergePr(item);
@@ -5752,7 +5694,6 @@ if (require.main === module) {
 // run (main(), above, has real Firestore/GitHub side effects the moment
 // this module loads if not guarded — see the require.main check).
 module.exports = {
-  closeNotifyRoutines,
   // test/notes-append.test.js — notes are only ever appended, atomically
   notesCommitWrite, appendNote, patchItem,
   // test/train-lock-branch-archive.test.js — the sweep adopts hand-pushed trailer commits

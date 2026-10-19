@@ -90,15 +90,13 @@ Cloud Functions, own Hosting site, own IAM/billing; see
   artifactUrl?: string,           // published Artifact link for this project — ⋮ → "View Artifact". Written directly (not via patchFiles/patchReady) by the Notify Claude Routine — see ROUTINE_INSTRUCTIONS.md → "Project Artifact"
   artifactUpdatedAt?: timestamp,  // set alongside artifactUrl, shown as "updated <date>" under the menu link
   notifyRoutine?: {                // set by notifyOnProjectReadyForReview on each fire
-    status: "in-progress" | "done" | "error" | "stalled", // "stalled" is transient: the sweep notes the cards, then writes "done" (closedAt, stalledItemIds)
+    status: "in-progress" | "done" | "error",
     firedAt: timestamp,
-    closedAt?: timestamp,          // set by the automation sweep (closeNotifyRoutines) when it closes a per-item record
-    stalledItemIds?: string[],     // sent cards whose session never reported within 25 minutes
     sessionId?: string,
     sessionUrl?: string,
     itemCount: number,
     sentItemIds: string[],
-    finishedAt?: timestamp,        // set by the fired session itself, if it follows the hint; cleared on each new click
+    finishedAt?: timestamp,        // set by the fired session itself, if it follows the hint
     errorMessage?: string,
     firedVia?: "member" | "shared", // which Routine credentials fired this — see notifyOnProjectReadyForReview / resolveRoutineCredentials below (VNE6dxMu3h6jO3g6FNNB)
   },
@@ -1604,28 +1602,10 @@ REST API is reachable with a plain `curl`, no service account needed.
   worked" with "brand new." A fired session is
   asked (in the fire request's own `text`) to flip `notifyRoutine.status`
   to `"done"`/`"error"` itself when it finishes; the client additionally
-  treats any `"in-progress"` older than 25 minutes as over on its own
-  initiative, so a session that crashes can never wedge the button in a
+  treats any `"in-progress"` older than 20 minutes as done on its own
+  initiative, so a session running an older Routine prompt without that
+  instruction — or one that crashes — can never wedge the button in a
   permanent spinning state.
-  **Per-item builds (one session per ticket) report on the card, and the
-  server keeps the time** (19 Oct 2026): a session sets
-  `backlogItems.buildSession.status` to `done`/`error`, and
-  `onBacklogItemBuildReported` (functions/index.js) stamps
-  `buildSession.reportedAt` with the server clock. The board counts a
-  session as finished when `reportedAt` (else the session's own
-  `finishedAt`, display only) is at or after `notifyRoutine.firedAt`;
-  sessions take `finishedAt` from `date -u`, but a wrong guess no longer
-  keeps "Deving…" spinning. Each automation sweep (`closeNotifyRoutines`
-  in run-backlog-automation.js, rules in `functions/notify-routine.js`)
-  closes every `in-progress` record: `status: "done"` + `closedAt` once
-  every sent card has left Backlog, has `patchReady` or has a report after
-  the fire; after 25 minutes with a card that did none of those it notes
-  that card ("The build session started at … never reported back…"),
-  records `stalledItemIds` and closes the record. While building, the
-  button reads "Deving… · N min" with the finished count, its tooltip lists
-  each sent ticket as building / reported / landed (after 15 minutes
-  "still building — open session"), and a stalled record shows a
-  non-spinning **"Build didn't report back"** chip linking to the card.
 - **Docs page** (per project, via ⋮) is the single-page home for
   everything documenting that project, in this order: a **Program /
   Product** picker (`programId`, see "Program/Product grouping" above),

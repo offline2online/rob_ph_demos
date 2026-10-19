@@ -16,7 +16,6 @@ const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { applyIntake, isIntakeFlag, INTAKE_SETTER } = require("./intake");
 const { isTrainRelevantItem, trainLockShouldClear, trainHandoverReason } = require("./train-lock");
-const { shouldStampReportedAt } = require("./notify-routine");
 const { offloadPatchFiles, hasPatchFiles } = require("./patch-offload");
 
 initializeApp();
@@ -208,7 +207,7 @@ function itemNotesBlock(item, { max = 12, maxChars = 1500 } = {}) {
 }
 
 function perItemSelfReportHint(projectId, itemId) {
-  return `\n\nWhen you finish this run (whether you set patchReady or stopped on a blocker), PATCH backlogItems/${itemId} with buildSession.status set to "done" (or "error" with buildSession.errorMessage, if you stopped early) and buildSession.finishedAt set to the real time from \`date -u +%Y-%m-%dT%H:%M:%SZ\` — never a guessed time, and take any other timestamp you write from that command too (the board also stamps its own buildSession.reportedAt when you report). Do NOT write projects/${projectId}.notifyRoutine — other tickets from the same click are still being built by their own sessions, and the board waits for every one of them.`;
+  return `\n\nWhen you finish this run (whether you set patchReady or stopped on a blocker), PATCH backlogItems/${itemId} with buildSession.status set to "done" (or "error" with buildSession.errorMessage, if you stopped early) and buildSession.finishedAt set to now. Do NOT write projects/${projectId}.notifyRoutine — other tickets from the same click are still being built by their own sessions, and the board waits for every one of them.`;
 }
 
 function perItemFireText({ item, siblings, projectId, projectName, prefix = "", suffix = "" }) {
@@ -457,11 +456,6 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
           sentItemIds,
           errorMessage: fireError || (failed.length ? `${failed.length} of ${fired.length} sessions failed to start: ${failed[0].error}${fired.some((f) => !f.sessionId && fireRetryPlan({ status: f.status ?? null, attempts: 1, deferred: !!f.deferred }).retry) ? " (will retry automatically)" : ""}` : null),
           firedVia: routineCredVia,
-          // merge:true merges maps deeply, so a previous click's outcome would
-          // otherwise survive into this one (finishedAt from 3 Oct did).
-          finishedAt: FieldValue.delete(),
-          closedAt: FieldValue.delete(),
-          stalledItemIds: FieldValue.delete(),
         },
       }, { merge: true });
     } else {
@@ -1799,18 +1793,6 @@ async function runTicketIntake(event) {
 }
 exports.onBacklogItemIntake = onDocumentWritten("backlogItems/{itemId}", runTicketIntake);
 
-// A build session's own buildSession.finishedAt is its guess at "now" and has
-// been hours wrong (19 Oct 2026), so the moment it reports done/error the
-// server stamps buildSession.reportedAt with its own clock; the board and the
-// sweep that closes projects/{id}.notifyRoutine trust that one.
-async function stampBuildReportedAt(event) {
-  const before = event.data?.before?.data();
-  const after = event.data?.after?.data();
-  if (!shouldStampReportedAt(before, after)) return;
-  await event.data.after.ref.update({ "buildSession.reportedAt": FieldValue.serverTimestamp() });
-}
-exports.onBacklogItemBuildReported = onDocumentUpdated("backlogItems/{itemId}", stampBuildReportedAt);
-
 // patchFiles (up to ~180 KB of file contents) moves off the card into
 // backlogItems/{id}/pipeline/patch the moment it is written, so the board's
 // live listener stops downloading it into every open tab — see
@@ -2261,4 +2243,4 @@ exports.syncConsoleUserClaims = mcp.syncConsoleUserClaims;
 // test/routine-binding-trigger.test.js exercise resolveRoutineCredentials
 // directly instead of standing up a full onDocumentUpdated + fetch-mocking
 // harness for something that's pure db-read-then-fallback logic.
-exports.__test = { buildDeployFireText, runTicketIntake, resolveRoutineCredentials, stampMs, itemNotesBlock, perItemFireText, fireBuildSessionsPerItem, fireRetryPlan, lastFireRecord, stampBuildReportedAt };
+exports.__test = { buildDeployFireText, runTicketIntake, resolveRoutineCredentials, stampMs, itemNotesBlock, perItemFireText, fireBuildSessionsPerItem, fireRetryPlan, lastFireRecord };
