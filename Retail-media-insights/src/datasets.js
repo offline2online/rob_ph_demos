@@ -34,7 +34,7 @@ const DATASETS = [
     rows: rowsOf('rows') },
   { name: 'display-types', route: 'display-types', grain: 'display type', description: 'Display type facts and VAC-d averages.',
     rows: rowsOf('rows') },
-  { name: 'slot-value', route: 'slot-value', grain: 'display type', description: 'Floor and effective CPM, value per slot per day and totals.',
+  { name: 'slot-value', route: 'slot-value', grain: 'display type', description: 'Floor and effective CPM, revenue per available slot and totals.',
     rows: rowsOf('rows') },
   { name: 'slot-allocation', route: 'slot-allocation', grain: 'display type', description: 'Advertiser and own-content slots per loop.',
     rows: rowsOf('rows') },

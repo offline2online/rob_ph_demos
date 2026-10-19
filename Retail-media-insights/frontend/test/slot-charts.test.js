@@ -42,12 +42,13 @@ test('slot value: the hover shows the back end’s link, CPM × average views ÷
   assert.strictEqual(m.title, 'Window Portrait');
   assert.strictEqual(val(m, 'Effective CPM'), `$${w.effectiveCpm.toFixed(2)} (total $${w.totals.earnedRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })} earned on ${SC.fmtCompact(w.totals.assumedViews)} assumed views, 12 Sep – 11 Oct)`);
   assert.strictEqual(val(m, 'Floor CPM'), '$7.50');
-  assert.match(val(m, 'Per slot per day'), /^\$\d+\.\d\d \(total \$\d+ per day across 80 advertiser slots on 10 displays\)$/);
+  assert.match(val(m, 'Revenue per available slot'), /^\$\d+\.\d\d \(total \$\d+ per day across 80 advertiser slots on 10 displays\)$/);
   const line = /^\$(\d+\.\d\d) CPM × ([\d,.]+) average assumed views ÷ 1,000 × (\d+)% of advertiser slot capacity earned \(settled billing\) = \$(\d+\.\d\d)$/.exec(val(m, 'How it adds up'));
   assert.ok(line, val(m, 'How it adds up'));
   // The line adds up as displayed: the result is computed from the displayed factors.
   assert.strictEqual(line[4], (+line[1] * +line[2].replace(/,/g, '') / 1000 * (+line[3] / 100)).toFixed(2));
-  assert.match(text(m), /× the share of advertiser slot capacity earned \(settled billing\)/);
+  assert.match(val(m, 'Fill'), /^\d+% of advertiser slot capacity earned/);
+  assert.match(text(m), /Revenue per available slot = effective CPM × average assumed views per slot per day ÷ 1,000 × fill/);
 });
 
 test('CPM labels are always to the cent', () => {

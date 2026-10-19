@@ -21,8 +21,9 @@
   var ORIENTATIONS = ['Not set', '90°', '180°', '270°'];
 
   var VAC_TEXT = 'Assumed views is the VAC-d (Visibility Adjusted Contacts, digital) score from the OMA MOVE standard; CPM is cost per thousand assumed views. ' +
-    'Per slot per day = footfall past a display × visibility adjustment × the slot’s share of the loop, averaged across connected displays. ' +
-    'Example: 4,000 footfall × 0.5 visibility × 1/10 of the loop = 200 average assumed views; at a $20 CPM that slot earns $4 per day.';
+    'Average assumed views per slot per day = footfall past a display × visibility adjustment × the slot’s share of the loop, averaged across connected displays. ' +
+    'Revenue per available slot counts every advertiser slot, sold or unsold: effective CPM × average assumed views ÷ 1,000 × fill. ' +
+    'Example: 4,000 footfall × 0.5 visibility × 1/10 of the loop = 200 average assumed views; at a $20 CPM a sold slot earns $4 per day, and at 80% fill the revenue per available slot is $3.20 per day.';
 
   var TIPS = {
     slotValue: VAC_TEXT + ' The number in brackets is the display type’s connected displays across the selected stores (PH Core).',
@@ -158,7 +159,7 @@
     var range = dateRange(meta);
     var rows = [['Effective CPM', fmtMoney(row.effectiveCpm, 2) + ' (total ' + fmtMoney(t.earnedRevenue, 2) + ' earned on ' + fmtCompact(t.assumedViews) + ' assumed views' + (range ? ', ' + range : '') + ')']];
     if (has(row.floorCpm)) rows.push(['Floor CPM', fmtMoney(row.floorCpm, 2)]);
-    rows.push(['Per slot per day', fmtMoney(row.perSlotPerDay, 2) + ' (total ' + fmtMoney(t.perDay, 0) + ' per day across ' + plural(t.advertiserSlots, 'advertiser slot') + ' on ' + plural(displaysOf(row), 'display') + ')']);
+    rows.push(['Revenue per available slot', fmtMoney(row.perSlotPerDay, 2) + ' (total ' + fmtMoney(t.perDay, 0) + ' per day across ' + plural(t.advertiserSlots, 'advertiser slot') + ' on ' + plural(displaysOf(row), 'display') + ')']);
     if (has(row.averageAssumedViewsPerSlotPerDay) && has(row.advertiserSlotsSoldShare)) {
       // The share is the settled (earned) VAC-d over the range as a share of slot capacity, not the Slot allocation "sold" figure
       // (booked-ahead days are not settled), so it is labelled as what it is. Whole-number percentage, and the result is
@@ -169,7 +170,8 @@
       rows.push(['How it adds up', fmtMoney(cpm, 2) + ' CPM × ' + fmtNum(views) + ' average assumed views ÷ 1,000 × ' +
         share + '% of advertiser slot capacity earned (settled billing) = ' + fmtMoney(cpm * views / 1000 * share / 100, 2)]);
     }
-    var sec = { rows: rows, note: 'Per slot per day = Effective CPM × average assumed views per slot per day ÷ 1,000 × the share of advertiser slot capacity earned (settled billing).' };
+    if (has(row.advertiserSlotsSoldShare)) rows.push(['Fill', Math.round(row.advertiserSlotsSoldShare * 100) + '% of advertiser slot capacity earned (settled billing)']);
+    var sec = { rows: rows, note: 'Revenue per available slot = effective CPM × average assumed views per slot per day ÷ 1,000 × fill.' };
     return cardPlus(row, meta, [sec], { omitConnected: false });
   }
 
@@ -363,7 +365,7 @@
     // slot value control: segmented toggle
     var segBtns = {};
     var seg = h('div', { class: 'sc-seg', role: 'radiogroup', 'aria-label': 'Slot value metric' });
-    [['cpm', 'Effective CPM'], ['per', 'Per slot per day']].forEach(function (o) {
+    [['cpm', 'Effective CPM'], ['per', 'Revenue per available slot']].forEach(function (o) {
       var b = h('button', { type: 'button', class: 'sc-seg-btn', role: 'radio', 'data-mode': o[0], text: o[1] });
       b.addEventListener('click', function () { state.mode = o[0]; syncSeg(); if (svData) drawSlotValue(); if (saData) drawAllocation(saData); });
       segBtns[o[0]] = b; seg.appendChild(b);
@@ -425,7 +427,7 @@
         var row = h('div', { class: 'sc-row', role: 'listitem' }, [
           h('div', { class: 'sc-label', text: bracketed(r.name, displaysOf(r)) }),
           h('div', { class: 'sc-track' }, [track]),
-          h('div', { class: 'sc-value' }, [h('strong', { text: fmtLabelMoney(vals[i]) }), cpm ? ' CPM' : ' per slot per day'])
+          h('div', { class: 'sc-value' }, [h('strong', { text: fmtLabelMoney(vals[i]) }), cpm ? ' CPM' : ' per available slot per day'])
         ]);
         hoverable(row, function () { return slotValueHover(r, filters); });
         list.appendChild(row);

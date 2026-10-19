@@ -30,7 +30,7 @@ const TOOLS = {
   revenue: ['retail_media_revenue', 'Revenue per period x DSP x deal type, earned and estimated.', { granularity: GRANULARITY, aheadDays: str('Booked-ahead days after the last played day to add, a whole number from 0 to 120. Default 0.'), ...CHART }],
   yield: ['retail_media_yield', 'Effective CPM, earned revenue and assumed views (VAC-d) per DSP.', { dealType: str('One deal type.') }],
   'display-types': ['retail_media_display_types', 'Display types with their facts and VAC-d averages.', {}],
-  'slot-value': ['retail_media_slot_value', 'Floor and effective CPM and value per slot per day, by display type.', {}],
+  'slot-value': ['retail_media_slot_value', 'Floor and effective CPM and revenue per available slot, by display type.', {}],
   'slot-allocation': ['retail_media_slot_allocation', 'Advertiser and own-content slots per loop, by display type.', {}],
   'missed-revenue': ['retail_media_missed_revenue', 'Fill, unsold value at floor and downtime lost revenue, by display type.', {}],
   deals: ['retail_media_deals', 'Named deals with fill, pacing (Programmatic guaranteed), revenue, CPM and advertisers.', { dealType: str('One deal type.') }],

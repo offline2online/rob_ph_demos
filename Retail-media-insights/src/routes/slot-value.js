@@ -2,7 +2,7 @@
 const calc = require('../calc');
 const { displayTypeFacts, hoverCard, days, round } = require('../display-types');
 
-// Slot value per display type: effective CPM, floor CPM, per slot per day and the network totals behind them.
+// Slot value per display type: effective CPM, floor CPM, revenue per available slot and the network totals behind them.
 // All revenue is earned revenue, to the cent. The hover's identity holds on real numbers, with fill applied:
 //   perSlotPerDay = effectiveCpm x averageAssumedViewsPerSlotPerDay / 1,000 x advertiserSlotsSoldShare
 // where the sold share is the settled (earned) assumed views delivered as a share of what every advertiser slot

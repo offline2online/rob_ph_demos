@@ -139,12 +139,12 @@ Purpose: show the **value of each screen along the shopper journey**, and help t
 
 **3a. Slot value — horizontal bar chart, one row per display type, with a metric toggle (left).** Rows (not vertical columns) so it scales to many display types without taking over the page. Each row: **display type name with its number of connected displays in brackets** (e.g. "Window Portrait (10)" — connected displays of that type across the selected stores, from PH Core; zone in the hover), a horizontal bar, and the value; in shopper-journey order, in USD. Chart control toggles the metric:
 - **Effective CPM (default)** — earned revenue ÷ (assumed views (VAC-d) ÷ 1,000) for that display type; matches how advertisers are charged. Labelled e.g. "$18 CPM". The display type's **floor CPM** shown as a dashed vertical marker on each row's bar.
-- **Per slot per day** — earned revenue ÷ (advertiser slots × connected displays × days), i.e. the average per advertiser slot on one display. Labelled e.g. "$42 per slot per day".
+- **Revenue per available slot** (per day) — earned revenue ÷ (advertiser slots × connected displays × days), counting only slots inside operating hours. Every advertiser slot counts, sold or unsold, so it is one number for price × sell-through (like RevPAR in hotels). Labelled e.g. "$42 per available slot per day".
 - **Row hover** shows the display type hover card (connected displays, IAB store zone, averages) plus:
   - **Effective CPM** with the **network total in brackets** — total earned revenue and total assumed views across all the type's connected displays for the date range, e.g. "$9.01 (total $7,321 earned on 812.6k assumed views, 12 Sep – 11 Oct)".
   - **Floor CPM**.
-  - **Per slot per day** with the **network total in brackets** — per slot per day × advertiser slots × connected displays, e.g. "$3.05 (total $244 per day across 80 advertiser slots on 10 displays)".
-  - The link: per slot per day = CPM × **average** assumed views per slot per day ÷ 1,000.
+  - **Revenue per available slot** with the **network total in brackets** — revenue per available slot × advertiser slots × connected displays, e.g. "$3.05 (total $244 per day across 80 advertiser slots on 10 displays)".
+  - **Fill** %, and the formula: revenue per available slot = effective CPM × **average** assumed views per slot per day ÷ 1,000 × fill.
 - Title ⓘ tooltip carries the VAC-d explanation and worked example from "Assumed views and VAC-d" (averages), and says the number in brackets is the display type's connected displays across the selected stores (PH Core).
 - Future (not shown yet): an **own-content value** bar beside it.
 

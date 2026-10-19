@@ -109,7 +109,7 @@ test('Slot allocation hover headings and the 90px sold bar; Slot value legend an
     assert.equal(await sv.locator('.sc-floor-mark').first().evaluate((e) => getComputedStyle(e).borderLeftColor), 'rgb(237, 161, 0)');
     await sv.locator('.sc-seg-btn[data-mode="per"]').click();
     assert.deepEqual(await sv.locator('.sc-legend-item').allTextContents(), ['Earned revenue per advertiser slot per day']);
-    assert.match(await sv.locator('.sc-value').first().textContent(), /^\$\d+\.\d\d per slot per day$/);
+    assert.match(await sv.locator('.sc-value').first().textContent(), /^\$\d+\.\d\d per available slot per day$/);
   } finally { await context.close(); }
 });
 

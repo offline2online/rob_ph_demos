@@ -17,7 +17,7 @@
   // The shared VAC-d explanation and worked example, appended to every ⓘ that mentions assumed views.
   var VACD = [
     'Assumed views is the VAC-d (Visibility Adjusted Contacts, digital) score from the OMA MOVE standard; CPM is cost per thousand assumed views. ' +
-    'Per slot per day = footfall past a display × visibility adjustment × the slot’s share of the loop, averaged across connected displays. ' +
+    'Average assumed views per slot per day = footfall past a display × visibility adjustment × the slot’s share of the loop, averaged across connected displays. ' +
     'Example: 4,000 footfall × 0.5 visibility × 1/10 of the loop = 200 average assumed views; at a $20 CPM that slot earns $4 per day.'
   ];
   var TIPS = {

@@ -51,7 +51,7 @@ test('display-types: a field that is not stored is omitted; store and type filte
   assert.equal(body.rows[0].averages.averageFootfallPerDay, 8944);
 });
 
-test('slot-value: per slot per day and network totals reconcile', async () => {
+test('slot-value: revenue per available slot and network totals reconcile', async () => {
   const { body } = await get(`/slot-value?${Q}`);
   assert.equal(body.rows.length, 4);
   for (const r of body.rows) {
