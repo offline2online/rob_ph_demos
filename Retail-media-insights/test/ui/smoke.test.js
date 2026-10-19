@@ -100,7 +100,7 @@ for (const width of [1163, 390]) {
       assert.deepEqual(amber.slice().sort(), ['Queue Screen', 'Window Portrait'], `amber rows: ${amber}`);
 
       // hovers stay on screen
-      for (const sel of ['.sc-row[data-fill]', '.sc-info', '.dc-adv td[tabindex]', '.pg-info']) {
+      for (const sel of ['.sc-row[data-fill]:not(.sc-total) .sc-label', '.sc-row[data-fill] .sc-value', '.sc-heat-label[role=rowheader]', '.sc-heat-cell[data-hour]', '.sc-info', '.dc-adv td[tabindex]', '.pg-info']) {
         const el = (await page.$$(sel))[0];
         if (!el) continue;
         await el.scrollIntoViewIfNeeded();
