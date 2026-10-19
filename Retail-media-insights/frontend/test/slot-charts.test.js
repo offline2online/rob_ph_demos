@@ -115,10 +115,12 @@ test('missed hover shows every value as the back end returned it, with the store
   assert.strictEqual(m.sections.flatMap((s) => s.rows).filter((r) => r[0] === 'Connected displays').length, 0, 'not shown in the missed revenue hover');
 });
 
-test('missed revenue & fill: rows sort by unsold value, highest first; the stack is the back end’s counts and adds to 100%', async () => {
+test('missed revenue & fill: rows follow the Slot value order; the stack is the back end’s counts and adds to 100%', async () => {
   const d = await get('/missed-revenue');
-  const totals = SC.missedOrder(d.rows.slice().reverse()).map((r) => r.unsoldValueAtFloor);
-  assert.deepStrictEqual(totals, totals.slice().sort((a, b) => b - a));
+  const sv = await get('/slot-value');
+  const leaders = SC.metricOrder(sv.rows, 'cpm');
+  const ids = SC.missedOrder(d.rows.slice().reverse(), leaders, () => null).map((r) => r.id);
+  assert.deepStrictEqual(ids, leaders.map((r) => r.id).filter((id) => ids.includes(id)));
   d.rows.concat([d.total]).forEach((r) => {
     const s = SC.missedShares(r);
     assert.ok(Math.abs(s.filled + s.unsold + s.down - 100) < 1e-9, r.name || 'total');
@@ -212,4 +214,15 @@ test('hourly: cell text, shading and hover facts', async () => {
   assert.equal(val(m, 'Hour'), '09:00–10:00');
   assert.match(val(m, 'Fill'), /advertiser slots sold; .* unsold, .* offline\)$/);
   assert.match(text(m), /Totals across all/);
+});
+
+test('value hovers carry the figures only; the description and averages sit on the display type name', async () => {
+  const types = await typesP;
+  const w = (await get('/slot-value')).rows.find((r) => r.id === 'window');
+  const m = SC.slotValueHover(w, RANGE);
+  assert.strictEqual(m.desc, null);
+  assert.ok(!/Average assumed views \(VAC-d\)/.test(text(m)));
+  assert.match(text(SC.displayTypeCard(types.window, RANGE)), /Average assumed views \(VAC-d\) per slot per day/);
+  const row = (await get('/missed-revenue')).rows.find((r) => r.id === 'dispensary');
+  assert.strictEqual(SC.missedHover(row, types.dispensary, RANGE, false).desc, null);
 });
