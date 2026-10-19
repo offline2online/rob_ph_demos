@@ -51,32 +51,22 @@ export const SYSTEM_MAP_CONCEPTS = [
     sub: "PH-optimised open-weights models + edge model shop (vision, lift & learn, plates)", x: 1060, y: 570 },
   { key: "identity", match: /digital identity/i, name: "Digital Identity & Resolution", full: "Digital Identity Management & Resolution",
     sub: "Identity vault + resolution service + identity graph", x: 440, y: 940 },
-  { key: "offsite", match: /offsite retail media/i, name: "Offsite Retail Media & Social", full: "Offsite Retail Media & Social Activation",
-    sub: "Hashed audiences to Meta, TikTok, Google, YouTube", x: 1060, y: 330 },
-  { key: "federation", match: /federated retail media/i, name: "Federated Retail Media (PH-to-PH)", full: "Federated Retail Media (PH-to-PH)",
-    sub: "Peer-to-peer partnerships, no central hub", x: 1365, y: 600 },
+  { key: "offsite", match: /offsite retail media/i, name: "Offsite (Meta, YouTube)", full: "Offsite (Meta, YouTube)",
+    sub: "Hashed audiences to offsite platforms", x: 1060, y: 330 },
+  { key: "federation", match: /federated retail media|federated ph/i, name: "Federated PH Instance", full: "Federated PH Instance",
+    sub: "Another PH instance, peer to peer", x: 100, y: 190 },
 ];
 
 // External systems and actors (C4 external style).
 export const SYSTEM_MAP_EXTERNALS = [
   { key: "salesforce", name: "Salesforce CRM", sub: "PII side — consent checked here", x: 130, y: 922 },
   { key: "amazon", name: "Amazon Connect", sub: "Customer Profiles — PII side, consent checked here", x: 130, y: 982 },
-  { key: "meta", name: "Meta", sub: "Offsite platform", x: 1260, y: 190 },
-  { key: "tiktok", name: "TikTok", sub: "Offsite platform", x: 1470, y: 190 },
-  { key: "gdisplay", name: "Google Display", sub: "Offsite platform", x: 1260, y: 260 },
-  { key: "youtube", name: "YouTube", sub: "Offsite platform", x: 1470, y: 260 },
-  { key: "retailerph", name: "Retailer PH instance", sub: "This retailer's Personalisation Hub", x: 1160, y: 700 },
-  { key: "otherph", name: "Partner retailer PH instance", sub: "Another retailer's Personalisation Hub", x: 1470, y: 700 },
-  { key: "advph", name: "Advertiser PH instance", sub: "Phase 3: advertiser runs their own PH", x: 1160, y: 800 },
-  { key: "advertiser", name: "Advertiser", sub: "Phase 2: logs into the retailer's PH", x: 1470, y: 800 },
-  { key: "cleanroom", name: "Data Clean Room", sub: "AWS Clean Rooms (primary); alternatives: Snowflake, LiveRamp, Google Ads Data Hub", x: 1315, y: 860 },
+  { key: "advertiser", name: "Advertiser", sub: "External actor", x: 100, y: 110 },
 ];
 
 // Lines for the nodes above. Ends are a core key, a SYSTEM_MAP_CONCEPTS /
 // SYSTEM_MAP_EXTERNALS key, or { name: regex } for a board node (skipped
 // when no such node exists). `both` draws arrows at each end; `bow` curves it.
-const AUTH = "authenticated partnership (mTLS + scoped OAuth)";
-const CLEAN = "audience matching & measurement (aggregated, no raw data)";
 const EXTRA_LINKS = [
   { from: "custom", to: "identity", label: "HMAC-hashed edge identifiers (e.g. plates)", bow: 0.12 },
   { from: "devices", to: "custom", label: "edge model deployment" },
@@ -90,25 +80,9 @@ const EXTRA_LINKS = [
   { from: { name: /experience templates/i }, to: "offsite", label: "offsite creative", bow: 0.12 },
   { from: { name: /display types|dsp integration/i }, to: "offsite", label: "advertiser offsite buys", bow: -0.12 },
   { from: "identity", to: "offsite", label: "hashed audiences (SHA-256 email)", short: "hashed audiences" },
-  { from: "identity", to: "cleanroom", label: "pseudonymous IDs for clean-room matching", short: "pseudonymous IDs", bow: -0.08 },
-  { from: "retailerph", to: "cleanroom", label: CLEAN, short: "audience matching (aggregated)", both: true },
-  { from: "cleanroom", to: "advph", label: CLEAN, short: "audience matching (aggregated)", both: true },
-  { from: "offsite", to: "meta", label: "hashed audiences (SHA-256 email)", short: "hashed audiences" },
-  { from: "offsite", to: "tiktok", label: "hashed audiences (SHA-256 email)", short: "" },
-  { from: "offsite", to: "gdisplay", label: "hashed audiences (SHA-256 email)", short: "" },
-  { from: "offsite", to: "youtube", label: "hashed audiences (SHA-256 email)", short: "" },
-  { from: "meta", to: "vector", label: "offsite exposure for closed-loop measurement", bow: 0.1 },
-  { from: "tiktok", to: "vector", label: "", bow: 0.1 },
-  { from: "gdisplay", to: "vector", label: "", bow: 0.1 },
-  { from: "youtube", to: "vector", label: "", bow: 0.1 },
-  { from: "federation", to: "retailerph", label: "extends", dotted: true },
-  { from: "retailerph", to: "otherph", label: AUTH, short: "authenticated partnership", both: true },
-  { from: "advph", to: "retailerph", label: AUTH, both: true, bow: -0.1 },
-  { from: "retailerph", to: "advph", label: "campaign & data export (advertiser-tagged)", bow: 0.2 },
-  { from: "retailerph", to: "advph", label: "advertiser results (closed loop, retailer can switch off per advertiser)", bow: -0.25 },
-  { from: "advertiser", to: "retailerph", label: "Phase 2: logs into the retailer's PH" },
-  { from: "advertiser", to: "advph", label: "Phase 3: runs own PH" },
-  { from: { name: /mcp release/i }, to: "advertiser", label: "Phase 2 advertiser access", bow: 0.2 },
+  { from: "offsite", to: "vector", label: "offsite exposure for closed-loop measurement", bow: 0.1 },
+  { from: "advertiser", to: { name: /mcp release/i }, label: "advertiser access" },
+  { from: "federation", to: { name: /mcp release/i }, label: "federated PH access" },
   { from: "brand", to: "harness", label: "brand rules for asset creation (jointly branded assets for the retailer's network)" },
   { from: "brand", to: { name: /experience templates/i }, label: "brand rules for asset creation", bow: 0.2 },
 ];
@@ -158,6 +132,31 @@ const NODE_W = 190;
 const NODE_H = 52;
 export const SYSTEM_MAP_SIZE = { w: W, h: H };
 
+// The one- or two-sentence description a hover tooltip shows. A project
+// uses its board description; a concept uses its description, else the first
+// prose lines of its README (headings, rules, code and list markers dropped).
+export const DESC_MAX = 220;
+export function shortDescription(description, readmeMd = "") {
+  let t = String(description || "").trim();
+  if (!t) {
+    const lines = [];
+    let fenced = false;
+    for (const raw of String(readmeMd || "").split("\n")) {
+      const l = raw.trim();
+      if (/^(```|~~~)/.test(l)) { fenced = !fenced; continue; }
+      if (fenced || !l) { if (lines.length && !l) break; continue; }
+      if (/^(#|>|\||-{3,}|={3,}|<)/.test(l)) continue;
+      lines.push(l.replace(/^([-*+]|\d+\.)\s+/, ""));
+      if (lines.join(" ").length >= DESC_MAX) break;
+    }
+    t = lines.join(" ");
+  }
+  t = t.replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[*_`]/g, "").replace(/\s+/g, " ").trim();
+  if (t.length <= DESC_MAX) return t;
+  const cut = t.slice(0, DESC_MAX - 1);
+  return cut.slice(0, Math.max(cut.lastIndexOf(" "), DESC_MAX / 2)).replace(/[\s,;:.-]+$/, "") + "…";
+}
+
 export function releaseLabel(r) {
   if (!r) return "";
   return `Release ${r.version || r.name}`;
@@ -180,10 +179,11 @@ export function buildSystemMap({ projects = [], concepts = [], interfaces = [], 
       status: rel && rel.status === "live" ? "Live" : "Project",
       releaseId: rel ? rel.id : null, release: rel ? releaseLabel(rel) : "",
       href: p.artifactUrl || "",
+      desc: shortDescription(p.description),
     });
   });
   concepts.filter((c) => c.status !== "promoted" && !INTERNAL_RE.test(c.name || "")).forEach((c) => {
-    add({ id: c.id, kind: "concept", name: c.name || c.id, status: "Concept", href: c.artifactUrl || "" });
+    add({ id: c.id, kind: "concept", name: c.name || c.id, status: "Concept", href: c.artifactUrl || "", desc: shortDescription(c.description, c.readmeMd) });
   });
   // Live Visitor Profile: one node, a concept, in the PH Core slot.
   const placed = []; // [node, x, y] board nodes pinned to a fixed position
@@ -393,7 +393,9 @@ export function systemMapHTML(model, { release = "", viewBox = null } = {}) {
     const cls = `sysmap-node ${n.kind} s-${String(n.status).toLowerCase()}${clickable ? " clickable" : ""}${nodeDim(n)}`;
     const attrs = clickable ? ` data-node-id="${esc(n.id)}" data-node-kind="${n.kind}" tabindex="0" role="link"` : "";
     const sub = shortLines(n.sub, 29, 2);
-    svg += `<g class="${cls}"${attrs}><title>${esc(n.full || n.name)} — ${esc(n.status)}${n.release ? ` — ${esc(n.release)}` : ""}${n.sub ? `\n${esc(n.sub)}` : ""}</title>
+    // Board nodes with no description say so, which is how the gap gets noticed.
+    const desc = n.desc || (clickable && n.sub == null ? "No description yet — add one on the Docs page." : "");
+    svg += `<g class="${cls}"${attrs}><title>${esc(n.full || n.name)} — ${esc(n.status)}${n.release ? ` — ${esc(n.release)}` : ""}${desc ? `\n${esc(desc)}` : ""}${n.sub ? `\n${esc(n.sub)}` : ""}</title>
       <rect x="${x}" y="${y}" width="${NODE_W}" height="${NODE_H}" rx="8"/>
       <text class="sysmap-node-name" x="${n.x}" y="${y + 19}" text-anchor="middle">${esc(n.name.length > 25 ? n.name.slice(0, 24) + "…" : n.name)}</text>
       ${sub.map((t, k) => `<text class="sysmap-node-sub" x="${n.x}" y="${y + 32 + k * 11}" text-anchor="middle">${esc(t)}</text>`).join("")}
