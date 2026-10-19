@@ -76,22 +76,32 @@ for (const width of [1163, 390]) {
     try {
       const rows = await page.$$eval('.rd-table tbody tr', (r) => r.map((x) => [...x.children].map((c) => c.innerText.replace(/\s+/g, ' ').trim())));
       assert.equal(rows.length, 9);
-      assert.match(rows[0][3], /^\d+ advertisers?$/);
-      assert.match(rows[0][4], /^\d+%$/);
-      assert.match(rows[0][5], /^\d+% of guaranteed$/);
-      assert.equal(rows[2][5], '', 'pacing only on Programmatic guaranteed');
-      assert.match(rows[0][7], /fixed$/);
-      assert.match(rows[4][7], /floor$/);
-      assert.match(rows[0][2], /^2 slots$/);
+      // Rows are sorted by Revenue, highest first, by default; look rows up by deal name so a sort change
+      // doesn't silently re-point every assertion at a different deal.
+      const money = (s) => Number(s.replace(/[^0-9.]/g, ''));
+      const revenue = rows.map((r) => money(r[6]));
+      assert.deepEqual(revenue, [...revenue].sort((a, b) => b - a), 'default order is Revenue, highest first');
+      assert.equal(await page.getAttribute('.rd-table thead th[aria-sort="descending"] .rd-sort', 'aria-label'), 'Sort by Revenue, currently highest first');
+      const idx = (name) => { const i = rows.findIndex((r) => r[0] === name); assert.ok(i >= 0, `deal ${name} listed`); return i; };
+      const pg = rows[idx('Immune — winter launch')];
+      const pd = rows[idx('Dispensary first look')];
+      const pa = rows[idx('Beauty endcaps')];
+      assert.match(pg[3], /^\d+ advertisers?$/);
+      assert.match(pg[4], /^\d+%$/);
+      assert.match(pg[5], /^\d+% of guaranteed$/);
+      assert.equal(pd[5], '', 'pacing only on Programmatic guaranteed');
+      assert.match(pg[7], /fixed$/);
+      assert.match(pa[7], /floor$/);
+      assert.match(pg[2], /^2 slots$/);
       const bar = await page.$eval('.rd-fill-bar', (e) => { const r = e.getBoundingClientRect(); return [e.offsetWidth, r.height, getComputedStyle(e).backgroundColor]; });
       assert.equal(bar[0], width === 390 ? 56 : 90);
       assert.equal(bar[1], 6);
       assert.equal(bar[2], 'rgb(240, 240, 240)');
 
-      const adv = (await page.$$('.rd-table tbody tr'))[4];
+      const adv = (await page.$$('.rd-table tbody tr'))[idx('Beauty endcaps')];
       await (await adv.$('td:nth-child(4) .rd-hov')).hover();
       assert.match(await page.textContent('.rd-tip'), /Kenvue \(DV360\)/);
-      await (await (await page.$$('.rd-table tbody tr'))[0].$('td:nth-child(3) .rd-hov')).hover();
+      await (await (await page.$$('.rd-table tbody tr'))[idx('Immune — winter launch')].$('td:nth-child(3) .rd-hov')).hover();
       assert.match(await page.textContent('.rd-tip'), /Window Portrait \(Portrait screen in the store window at the entrance\)/);
       assert.match(await page.textContent('.rd-tip'), /slot 1 of \d+\)/);
       await page.hover('.rd-name');

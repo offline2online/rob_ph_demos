@@ -52,7 +52,7 @@ test('Demand health: section header, names only, "n deals" hover, Show all N adv
     await head.locator('.dc-info').hover();
     assert.match(await page.textContent('.dc-tip'), /^Which advertisers are on which deals/);
 
-    assert.deepEqual(await texts(page, '.dc-adv thead th'), ['Advertiser', 'Revenue', 'Share of total revenue', 'Deals on', 'Slots covered', 'Slots won', 'Effective CPM']);
+    assert.deepEqual(await texts(page, '.dc-adv thead th .dc-sort > span:first-child'), ['Advertiser', 'Revenue', 'Share of total revenue', 'Deals on', 'Slots covered', 'Slots won', 'Effective CPM']);
     const names = await texts(page, '.dc-adv tbody th');
     assert.equal(names.length, 10);
     assert.ok(names.every((n) => !/\(/.test(n)), `no DSP in the cell: ${names}`);
