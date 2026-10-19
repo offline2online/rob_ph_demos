@@ -246,11 +246,13 @@ no block is prepended that run, same as today.
 3. Before implementing anything, get full context on this specific
    project — don't rely on the fire payload or the repo's general docs
    alone:
-   - Read the project's own doc (from the "list all projects" call above)
-     for its `requirementsMd` field — this is that project's own
-     maintained requirements, written in full and potentially quite
-     detailed. If it exists, read it end to end before touching any code
-     for this project.
+   - Read the project's Requirements — its own maintained requirements,
+     written in full and potentially quite detailed — with
+     `get_project_docs` (`include: ["requirements"]`), or
+     `GET $BOARD/projects/<id>/docs/requirements` (field `contentMd`). Fall
+     back to the legacy `requirementsMd` field on the project doc only when
+     that document is missing. If it exists, read it end to end before
+     touching any code for this project.
    - The same project doc may also carry a `routinePromptMd` field — if
      the fire request's `text` didn't already include it as a
      PROJECT-SPECIFIC INSTRUCTIONS block (see above), fetch it directly
@@ -264,8 +266,8 @@ no block is prepended that run, same as today.
    - If the project also has a real requirements file in the repo (e.g.
      `visitor-profile/REQUIREMENTS.md`,
      `dsp-integration/docs/dsp-integration/REQUIREMENTS.md`,
-     or a project-specific README), read that too — the Firestore
-     `requirementsMd` and the repo file are meant to be kept in sync, but
+     or a project-specific README), read that too — the board's
+     Requirements copy and the repo file are meant to be kept in sync, but
      check both in case one is stale.
    - **If your work changes what those documents say, update both before
      you finish** (Rob, 21 Sep 2026) — the repo file first, since it is the
@@ -1508,6 +1510,11 @@ and without any credential, whether it already produced one:
 in your summary is what makes a fix possible; a silent "I think I might
 have caused that" that never gets said out loud is how #61 sat open for
 hours.
+
+A `backlog-tracker/` change is live when its train merges and
+`deploy-backlog-tracker.yml` succeeds; only `menu-board-demo/functions`
+needs a manual deploy, so never write "not live on merge" for
+`backlog-tracker/`.
 
 **Never attempt to `git push`, call any GitHub write API, or otherwise get
 code onto GitHub yourself in this or any other run of this Routine — you

@@ -139,7 +139,7 @@ as text until Anthropic switches on its MCP Apps host.
 | `add_item_comment` | `set_project_artifact`, `set_project_description` | `comment_on_faq_revision` | `delete_skill` | | |
 | | `create_project_document` / `update_project_document` / `delete_project_document` | | `report_skill_miss` (tags a real gap, never edits the skill's own content) | | |
 | | `create_interface` / `update_interface` / `delete_interface` (an interface joins any two projects or concepts: pass `endpoints` `[{type, id}, {type, id}]`, or `projectIds` for two projects; `update_interface` can re-point with `endpoints`) | | | | |
-| | `demote_project` (project → new concept carrying its docs; re-points its interfaces; archives the project; refused with open tickets unless `acknowledgeOpenTickets`) | | | | |
+| | `demote_project` (project → new concept carrying its docs; re-points its interfaces; archives the project; refused with open tickets unless `acknowledgeOpenTickets`) | | `mark_skill_reviewed` (clears the review nudge and restarts the clock) | | |
 | | `create_concept` / `add_concept_comment` / `set_concept_readme` / `set_concept_requirements` / `set_concept_artifact` (Concept Incubator; the last three refused once a concept is promoted, except comments) | | | | |
 
 **Setting up your own personal Notify Claude Routine** (so board clicks you
@@ -187,7 +187,11 @@ front-end skill) that any team member's agent can pull in, listed in the
 console under **Skills**. Unlike documentation above, `list_skills` and
 `get_skill` need only `board.read`, so even a viewer's agent can read every
 skill; only `upload_skill`/`update_skill`/`delete_skill` need
-`board.write`. `update_skill`/`delete_skill` record the file set they
+`board.write`, as does `mark_skill_reviewed` — it records that the owning
+team has just revisited a skill, clearing its `reviewDue` nudge on
+`list_skills`/`get_skill` and restarting its review clock (optionally
+overriding `reviewCadenceDays` / `reviewDeployThreshold`).
+`update_skill`/`delete_skill` record the file set they
 replace to `docRevisions` first (`target: "skill"` / `"skill.deleted"`),
 recoverable the same way as a documentation write — `list_doc_revisions`
 takes an optional `skillId` filter alongside `projectId`/`docId`/
@@ -245,8 +249,9 @@ Three things worth knowing before pointing an agent at them:
   `destructiveHint`, so a client that asks before destructive actions will
   ask before those and not before an ordinary update.
 - **Size ceilings differ, on purpose.** Requirements and README allow 800k
-  characters (they live on the project doc, which shares Firestore's 1 MiB
-  limit). Project documents and interfaces allow 20k — the same ceiling
+  characters each. They live in `projects/{id}/docs/{kind}` (one document
+  per kind, so each has Firestore's 1 MiB to itself); the project doc
+  carries only a pointer (`docs.<kind>`: size, hash, source commit). Project documents and interfaces allow 20k — the same ceiling
   `firestore.rules` gives the board's own editor, because a longer document
   would be one a person could never save an edit to from the Docs page.
 

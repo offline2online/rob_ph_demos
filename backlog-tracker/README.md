@@ -1802,8 +1802,9 @@ default.
   `onFaqArticleRevisionApproved`, whichever fires last — keeping the
   replaced text as `previousRevision` for a **Revert last auto-update**
   row action. Full spec: `REQUIREMENTS.md` → "FAQ revision review".
-  **A `functions/` change needs its own `firebase deploy --only
-  functions`** — the promotion never happens until it's deployed.
+  The function deploys with the console on merge
+  (`deploy-backlog-tracker.yml`), so the promotion works once the train
+  that carries it has merged and that run has succeeded.
 - **Releases — bundling FAQ updates with a product release.** The menu's
   **Releases** page lists every `releases` doc (newest first) with
   **+ New release** (name, optional version) and a one-way **Mark live**

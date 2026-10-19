@@ -57,8 +57,19 @@ Cloud Functions, own Hosting site, own IAM/billing; see
 {
   name: string,
   createdAt: timestamp,
-  readmeMd?: string,              // this project's primary tracking doc, shown atop its Docs page
-  requirementsMd?: string,        // this file's own live counterpart
+  readmeMd?: string,              // LEGACY: README text from before docs/{kind}; read only when projects/{id}/docs/readme is missing
+  requirementsMd?: string,        // LEGACY: Requirements text, same rule against docs/requirements
+  docs?: { [kind: "readme" | "requirements"]: { chars: number, sha256: string, sourceCommit: string | null, updatedAt: timestamp } }, // pointers only; the text is in projects/{projectId}/docs/{kind} below. Writable over MCP (PROJECT_WRITABLE_FIELDS)
+  description?: string,           // one or two sentences (max 300 chars) on what the project covers, surfaced by list_projects (set_project_description)
+  repoFolder?: string,            // repo-root-relative folder the project owns, no trailing slash — the join to GitHub that patchFiles paths resolve against
+  repoFolderNotApplicable?: boolean, // true = deliberately no single folder (e.g. Backlog Tracker & FAQs)
+  deployBranch?: string,          // the project's one integration branch, deploy/<folder> (the deployment train)
+  docsSync?: {                    // outcome of the post-merge sync of README/REQUIREMENTS into docs/{kind} (docs-sync-lib.js); error is null on success, or { skipped, at, mergeCommit } when the sync was refused
+    mergeCommit?: string, syncedAt?: timestamp, error?: string | null, errorAt?: timestamp, attemptedCommit?: string,
+    mirroredDocs?: string[],      // projectDocs ids refreshed from their sourcePath
+  },
+  lastMergeCommit?: string,       // main commit of the project's latest train merge
+  lastMergeAt?: timestamp,        // when that merge was processed
   notifyRequestedAt?: timestamp,  // bumped by the "Notify Claude" button
   notifyRequestedByEmail?: string | null, // the signed-in member who clicked — per-member routine binding lookup, see notifyOnProjectReadyForReview below (VNE6dxMu3h6jO3g6FNNB)
   notifyItemIds?: string[] | null, // optional subset picked via the Backlog column's own checkboxes — see below
@@ -879,6 +890,13 @@ stale.
   contentMd: string,
   createdAt: timestamp,
   updatedAt: timestamp,
+  updatedByEmail?: string,         // who last wrote it (a member's email, or "backlog-automation" for a mirror)
+  // Mirror fields, set when the document is kept in step with a repo file
+  // by the post-merge docs sync (docs-sync-lib.js); absent on a hand-written document:
+  sourcePath?: string,             // repo-root-relative file this document mirrors
+  sourceSlices?: { start: string, end?: string }[], // only these line ranges of the file are mirrored
+  sourcePrefix?: string,           // prepended verbatim to the mirrored text
+  sourceCommit?: string,           // last commit that touched sourcePath
 }
 ```
 A generic, named document belonging to exactly one project — an API spec,
@@ -889,6 +907,26 @@ inline via a modal, same UI pattern as Interfaces but anchored to a single
 project rather than shared between two. Exists so a project's *complete*
 documentation lives on one page instead of scattered across the repo,
 per-project Firestore fields, and this collection.
+
+### `projects/{projectId}/docs/{kind}`
+```
+{
+  contentMd: string,               // the whole document, up to 800,000 chars
+  sourcePath?: string,             // repo file it was synced from, e.g. "backlog-tracker/README.md"
+  sourceCommit?: string | null,    // commit the text came from
+  chars: number,                   // contentMd.length
+  sha256: string,                  // hex of the UTF-8 text, so a copy can be checked without reading it
+  updatedAt: timestamp,
+  updatedByEmail: string,          // the member, "sync-board-docs" or "backlog-automation"
+}
+```
+`kind` is `readme` or `requirements`. One document per kind under the
+project, so each has Firestore's 1 MiB to itself; the project doc keeps
+only the `docs` pointers above. Written by `scripts/sync-board-docs.js`,
+the post-merge docs sync and the `set_project_readme` /
+`set_project_requirements` MCP tools. Readers use this document and fall
+back to the project's legacy `readmeMd` / `requirementsMd` only when it is
+missing.
 
 ### `skills/{skillId}`
 ```

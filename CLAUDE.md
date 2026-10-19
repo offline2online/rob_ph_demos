@@ -43,17 +43,28 @@ password removed). **Never commit that value — this repo is public.**
 - Rotate or revoke the application password from the WordPress user's
   profile → Application Passwords; the file needs no change.
 
-## Cloud Functions need a separate manual deploy
+## Only `menu-board-demo/functions` needs a separate manual deploy
 
-`menu-board-demo/functions/` (Cloud Functions for Firebase — the scheduled offer-expiry sweep, the AI provider calls) is **not** part of the static site. Pushing a change there to `main` does **not** make it live — GitHub Pages only serves the static HTML/JS/CSS, and this sandbox has no `firebase` CLI or deploy credentials, so **Claude cannot deploy a functions change itself**. Whoever owns Firebase deploy access needs to separately run `firebase deploy --only functions` (or `npm run deploy` inside `menu-board-demo/functions`) before a functions fix actually takes effect. Always say this explicitly when committing a functions/ change — don't imply "pushed to main" means "live" the way it does for everything else in this repo.
+`backlog-tracker/` does **not**: on every push to `main` that touches
+`backlog-tracker/**` or `faq/**`, `.github/workflows/deploy-backlog-tracker.yml`
+deploys Hosting, Cloud Functions, and the Firestore and Storage rules, and
+the deployment train's `finishTrain` dispatches it after a train that touched
+`backlog-tracker/`. A `backlog-tracker/` change (including its `functions/`)
+is live when its train merges and that run succeeds. To check one is live,
+look at that workflow run or the board's pipeline health strip, not the
+card — and never write "not live on merge" for `backlog-tracker/`.
+
+`menu-board-demo/functions/` (Cloud Functions for Firebase — the scheduled offer-expiry sweep, the AI provider calls) is **not** part of the static site. Pushing a change there to `main` does **not** make it live — GitHub Pages only serves the static HTML/JS/CSS, and this sandbox has no `firebase` CLI or deploy credentials, so **Claude cannot deploy a functions change itself**. Whoever owns Firebase deploy access needs to separately run `firebase deploy --only functions` (or `npm run deploy` inside `menu-board-demo/functions`) before a functions fix actually takes effect. Always say this explicitly when committing a `menu-board-demo/functions/` change — don't imply "pushed to main" means "live" the way it does for everything else in this repo.
 
 ## FAQ / Help Center (`faq/`) — public site, edited from backlog-tracker
 
 `faq/` at the repo root is the consumer-facing Help Centre (front page +
 search, category pages with folders, article pages). It replaces
 help.personalisationhub.com (Freshdesk) and is also iframed into the
-support centre on personalisationhub.com. Plain static site on GitHub
-Pages — **the site renders a static snapshot committed in `faq/data/`**
+support centre on personalisationhub.com. Plain static site, served from
+GitHub Pages and also at help.personalisationhub.com from the Firebase
+Hosting site `ph-help-centre` (deployed by `deploy-backlog-tracker.yml`
+with the console; see `faq/README.md`) — **the site renders a static snapshot committed in `faq/data/`**
 (`index.json` + `articles/<id>.json`), not the Firebase SDK. Content is
 still EDITED from backlog-tracker's **FAQ Management** page (Firestore
 `faqCategories`/`faqArticles` in `backlog-tracker-e4ed2`); the
@@ -238,8 +249,17 @@ recovery export is the `board-export` artifact on run 35789258396 of
 `~/Documents/PH-board-backups/deleted-projects-2026-09-22T21-53-33Z.json`
 (deliberately outside this repo, which is public). "Live Visitor Profile &
 Personas" was kept despite being empty: it is one side of the maintained
-interface contract with Display Types. What's left on the board is that,
-Display Types & DSP Integration, and Backlog Tracker & FAQs.
+interface contract with Display Types.
+
+**What the board holds now** (`list_projects` on 19 Oct 2026; call it for
+the live list, this one goes stale): Live Visitor Profile & Personas
+(`BDMjDsVv0aFCKydkg2nh`), Display Types & DSP Integration
+(`mIPdOCAWevhrgD8g2tCZ`), Backlog Tracker & FAQs (`oTcLAbnhUUO2S7NkbsuV`),
+Retail Media Insights & Analytics Dashboards (`EywksAFxCSfDRdsRvofM`) and
+Products and Pricing Prototype (`products-and-pricing`, with 30 archived
+tickets). The last is on the board again despite the paragraph above
+listing its predecessor as deleted; this file does not record how it came
+back.
 
 - **Adding a project**: the page's "New project" button, or write a doc
   directly into `projects` (`{name, createdAt: serverTimestamp()}}`) —
@@ -438,17 +458,16 @@ instant, so there's no excuse for the board drifting from reality.
 
 **Known gaps vs. the old Artifact board — don't assume feature parity:**
 
-- **No automatic "Notify Claude" wake-up exists yet either, but for a
-  different reason than before.** A Cloud Function
-  (`functions/notifyOnBacklogItemCreated`) fires automatically the instant a
-  new `backlogItems` doc is created with `status: "backlog"` — no button to
-  click. But *what* it notifies depends entirely on the `NOTIFY_WEBHOOK_URL`
-  secret someone wires up (see `backlog-tracker/README.md`): a Slack webhook
-  still needs a human to relay the message into chat; only a live session's
-  own `watch_url`, or a custom relay/Routine, would wake Claude with no
-  human in the loop, and neither is set up by default. **Until you're told
-  otherwise, treat this exactly like the old board: the user tells Claude in
-  chat when to go check it.**
+- **Notify Claude starts a Routine session.** The board's buttons
+  (Notify Claude, Notify Claude — Deploy, Groom Backlog) fire the Routine
+  from Cloud Functions in `functions/index.js`
+  (`notifyOnProjectReadyForReview` and its siblings), one session per
+  ticket for a build. The Ready for Testing hand-off also starts a session
+  by itself when a build lands (`notifyOnItemsReadyForTesting`). A member
+  can bind their own Routine with the `set_my_routine_binding` MCP tool, so
+  their clicks fire that one. A new `backlogItems` doc fires nothing on
+  its own — someone clicks a button. See `backlog-tracker/README.md` and
+  `backlog-tracker/ROUTINE_INSTRUCTIONS.md`.
 - ~~No `testUrl` field or quick-launch icon on cards.~~ **Fixed**: a Ready
   for Testing card now has its own "Set test link" → "Test this →" button
   (`backlogItems.previewUrl`), using the
@@ -482,19 +501,18 @@ instant, so there's no excuse for the board drifting from reality.
   cite this file's old "always-uncached" or "branch URL is usually fine"
   claims, both now measured false. `guessPreviewUrl` links to a changed
   `.html` page, or, for a ticket that changes only CSS/JS, to the nearest
-  `index.html` above those assets (the page that renders them); only a
-  change with no page above it at all — `scripts/`, `functions/` — falls
-  back to a link to the branch itself, since there is no single commit to
-  pin a no-page change to. Note that a githack preview is a different
+  `index.html` above those assets (the page that renders them); a change
+  with no page above it at all — `scripts/`, `functions/` — gets no test
+  link (`guessPreviewUrl` returns null), since a branch link is never safe
+  and there is no single commit to pin a no-page change to. Note that a githack preview is a different
   origin from the deployed app, so for backlog-tracker's own UI, Firebase
   Auth sign-in may be refused there: what renders before the sign-in wall
   is testable, the rest needs the deployed board.
-- **No per-card notes/`claudeNote` field, and no GitHub commit badge.** The
-  schema is just `{projectId, title, desc, type, category, status,
-  createdAt, updatedAt, archivedAt}` — there's nowhere on a card to record
-  "pushed as commit `<sha>`" the way the old board's `claudeNote` did.
-  Report that kind of progress in chat instead of trying to write it
-  somewhere the UI won't show it.
+- **Cards carry notes and train fields.** A card has a `notes` array
+  (comments, written by people and by the `add_item_comment` MCP tool) and
+  the train fields the automation stamps: `deployCommit`, `prNumber`,
+  `mergeCommit`. Progress such as "landed as commit `<sha>`" is recorded
+  there, so say it on the card rather than only in chat.
 - New items no longer take a title or category up front — just a
   description (typed or dictated); a short title is auto-generated and the
   category best-guessed (`suggestCategory()`), same spirit as before.
