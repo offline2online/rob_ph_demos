@@ -208,7 +208,7 @@ function itemNotesBlock(item, { max = 12, maxChars = 1500 } = {}) {
 }
 
 function perItemSelfReportHint(projectId, itemId) {
-  return `\n\nWhen you finish this run (whether you set patchReady or stopped on a blocker), PATCH backlogItems/${itemId} with buildSession.status set to "done" (or "error" with buildSession.errorMessage, if you stopped early) and buildSession.finishedAt set to the real time from \`date -u +%Y-%m-%dT%H:%M:%SZ\` — never a guessed time, and take any other timestamp you write from that command too (the board also stamps its own buildSession.reportedAt when you report). Do NOT write projects/${projectId}.notifyRoutine — other tickets from the same click are still being built by their own sessions, and the board waits for every one of them.`;
+  return `\n\nWhen you finish this run (whether you set patchReady or stopped on a blocker), PATCH backlogItems/${itemId} with buildSession.status set to "done" (or "error" with buildSession.errorMessage, if you stopped early) and buildSession.finishedAt set to the real time from \`date -u +%Y-%m-%dT%H:%M:%SZ\` — never a guessed time, and take any other timestamp you write from that command too (the board also stamps its own buildSession.reportedAt when you report). Do NOT write projects/${projectId}.notifyRoutine — other tickets from the same click are still being built by their own sessions, and the board waits for every one of them. If you block this ticket on a question (blocked.reason "waiting-on-input"), end the blocked.note with "Answer on the card (Answer button)" — the Answer button saves the reply and rebuilds the ticket; never tell the person to reply and click Ready for Dev.`;
 }
 
 function perItemFireText({ item, siblings, projectId, projectName, prefix = "", suffix = "" }) {
@@ -349,7 +349,9 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
       .get();
     // Blocked tickets (needs Rob's decision / waiting on input) are not
     // buildable: skip them so they aren't re-picked every run.
-    let items = itemsSnap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((i) => !(i.blocked && i.blocked.reason));
+    const allBacklog = itemsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const isBlocked = (i) => !!(i.blocked && i.blocked.reason);
+    let items = allBacklog.filter((i) => !isBlocked(i));
 
     // The board's own Backlog checkboxes (see public/js/app.js
     // requestNotify) can narrow a click to a hand-picked subset instead of
@@ -365,6 +367,18 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
     }
 
     if (items.length === 0) {
+      // Say why on the board rather than looking like the click did nothing.
+      const wanted = Array.isArray(after.notifyItemIds) && after.notifyItemIds.length > 0 ? new Set(after.notifyItemIds) : null;
+      const blockedInScope = allBacklog.filter((i) => isBlocked(i) && (!wanted || wanted.has(i.id)));
+      if (blockedInScope.length > 0) {
+        await db.collection("projects").doc(event.params.projectId).set({
+          notifyRoutine: {
+            status: "error",
+            errorMessage: "Every selected ticket is waiting on your answer — answer it on the card",
+            firedAt: new Date(),
+          },
+        }, { merge: true });
+      }
       logger.info("Notify requested but Backlog is empty — nothing to notify or fire the Routine for", {
         projectId: event.params.projectId,
       });

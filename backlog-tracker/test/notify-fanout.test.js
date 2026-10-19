@@ -184,6 +184,18 @@ async function click(db, mod, extra = {}) {
     assert.ok(!stub.calls[0].includes("sent together"), "a lone ticket has no sibling block");
   });
 
+  await test("a click whose tickets are all blocked writes a visible error and fires nothing", async () => {
+    const db = makeFakeDb(seed());
+    const mod = loadIndex(db, secrets);
+    const realFetch = global.fetch; const stub = fireStub(); global.fetch = stub;
+    try { await click(db, mod, { notifyItemIds: ["blocked"] }); } finally { global.fetch = realFetch; }
+    assert.strictEqual(stub.calls.length, 0, "nothing fired");
+    const r = db.__state.projects[PID].notifyRoutine;
+    assert.strictEqual(r.status, "error");
+    assert.strictEqual(r.errorMessage, "Every selected ticket is waiting on your answer — answer it on the card");
+    assert.ok(r.firedAt);
+  });
+
   await test("sessions start a few at a time, not all at once", async () => {
     const s = seed();
     for (let i = 0; i < 9; i++) s.backlogItems[`x${i}`] = { projectId: PID, status: "backlog", type: "feature", title: `X${i}`, desc: "d" };

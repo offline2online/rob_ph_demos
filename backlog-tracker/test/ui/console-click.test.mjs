@@ -276,6 +276,61 @@ const scenarios = [
       assert.strictEqual(await c.page.locator(".notify-claude-spinner").count(), 0, "a stalled record must not spin");
     },
   },
+  {
+    name: "Blocked: a card waiting on an answer shows the chip, not Ready for Dev",
+    seed: () => { const s = only("b1"); s.docs.backlogItems.b1.blocked = { reason: "waiting-on-input", note: "Pick A, B or C" }; return s; },
+    async run(c) {
+      await c.boardReady();
+      await c.waitText(".waiting-answer-chip", "1 waiting on your answer", "the waiting chip");
+      assert.strictEqual(await c.page.locator(".project-notify-btn").count(), 0, "no Ready for Dev button");
+    },
+  },
+  {
+    name: "Blocked: Answer shows the question, then saves the answer, unblocks and requests one build",
+    seed: () => { const s = only("b1"); s.docs.backlogItems.b1.blocked = { reason: "waiting-on-input", note: "Pick A, B or C" }; return s; },
+    async run(c) {
+      await c.boardReady();
+      await c.click(".blocked-answer-btn", "Answer");
+      await c.visible("#rs-backdrop");
+      await c.waitText("#rs-chat", "Pick A, B or C", "the modal shows the build's question");
+      await c.page.fill("#rs-input", "A");
+      await c.click("#rs-send", "Send");
+      const writes = await c.waitWrites(2);
+      c.at("the answer writes");
+      const card = writes.filter((x) => x.path === "backlogItems/b1");
+      assert.strictEqual(card.length, 1, `one card update, got ${JSON.stringify(writes)}`);
+      assert.strictEqual(card[0].data.blocked, null);
+      assert.ok(JSON.stringify(card[0].data.notes).includes("Answer to the build's question: A"));
+      const proj = writes.filter((x) => x.path === `projects/${PID}`);
+      assert.strictEqual(proj.length, 1);
+      assert.deepStrictEqual(proj[0].data.notifyItemIds, ["b1"]);
+    },
+  },
+  {
+    name: "Blocked: on a locked train the answer unblocks but requests no build",
+    seed: () => { const s = only("b1"); s.docs.backlogItems.b1.blocked = { reason: "waiting-on-input", note: "Pick A, B or C" }; s.docs.projects[PID].trainLocked = true; return s; },
+    async run(c) {
+      await c.boardReady();
+      await c.click(".blocked-answer-btn", "Answer");
+      await c.visible("#rs-backdrop");
+      await c.page.fill("#rs-input", "A");
+      await c.click("#rs-send", "Send");
+      await c.waitWrites(1);
+      await c.waitText("#rs-chat", "Saved and unblocked", "saved");
+      const writes = await c.writes();
+      c.at("no project write");
+      assert.strictEqual(writes.filter((x) => x.path === `projects/${PID}`).length, 0, JSON.stringify(writes));
+      assert.strictEqual(writes.find((x) => x.path === "backlogItems/b1").data.blocked, null);
+    },
+  },
+  {
+    name: "Blocked: a card with complete sections still shows Answer",
+    seed: () => { const s = only("b1"); s.docs.backlogItems.b1.desc = "## Outcome\nx\n\n## Test steps\n1. y\n\n## Dependencies\nNone\n\n## Spec reference\nNone yet"; s.docs.backlogItems.b1.blocked = { reason: "waiting-on-input", note: "Pick A, B or C" }; return s; },
+    async run(c) {
+      await c.boardReady();
+      await c.visible(".blocked-answer-btn", "Answer is shown");
+    },
+  },
 ];
 
 // ── Self-checks ────────────────────────────────────────────────────────────

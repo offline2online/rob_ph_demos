@@ -227,6 +227,14 @@ safe and moving:
 - **`dependsOnItemIds` + `blocked`** — a ticket that needs another's code
   waits flagged, and `releaseDependents` clears the flag and starts its
   build when everything it waits for reaches Ready for Testing.
+- **Answering a blocked ticket** — a Backlog card with `blocked.reason` and a
+  `blocked.note` has an **Answer** button (`forum`). It opens the Resolve modal
+  on the note's question; Send appends "Answer to the build's question: …" as
+  a comment, clears `blocked` and, unless the train is locked, requests a build
+  of that card alone (`notifyItemIds: [id]`). Ready for Dev counts only
+  buildable cards (not blocked, not `patchReady`); when only blocked cards
+  remain the header shows "N waiting on your answer". A click that finds only
+  blocked cards writes `notifyRoutine` status "error" with the reason.
 - **`buildSession`** — each session reports on its own card; the button
   shows "Deving… N/M" and each card unlocks when its own session reports.
 

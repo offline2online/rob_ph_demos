@@ -915,7 +915,7 @@ function cardHTML(item) {
   // note is the hover, full detail lives in comments. Cleared by the
   // button here or by a newer comment from anyone other than whoever set it.
   const blockedFlag = (isBacklog && item.blocked && item.blocked.reason)
-    ? `<span class="blocked-flag blocked-flag-${escapeHTML(item.blocked.reason)}" title="${escapeHTML(item.blocked.note || "")}"><span class="material-symbols-outlined">${item.blocked.reason === "needs-decision" ? "gavel" : "hourglass_top"}</span>${item.blocked.reason === "needs-decision" ? "Needs your decision" : "Waiting on input"}${missingSections(item.desc).length ? `<button type="button" class="blocked-resolve-btn" data-id="${item.id}" title="Answer a few questions to fill in what this ticket is missing"><span class="material-symbols-outlined">forum</span>Resolve</button>` : ""}<button type="button" class="blocked-clear-btn" data-id="${item.id}" title="Clear the flag — puts this ticket back in the build queue">&times;</button></span>`
+    ? `<span class="blocked-flag blocked-flag-${escapeHTML(item.blocked.reason)}" title="${escapeHTML(item.blocked.note || "")}"><span class="material-symbols-outlined">${item.blocked.reason === "needs-decision" ? "gavel" : "hourglass_top"}</span>${item.blocked.reason === "needs-decision" ? "Needs your decision" : "Waiting on input"}${item.blocked.note ? `<button type="button" class="blocked-resolve-btn blocked-answer-btn" data-id="${item.id}" data-answer="1" title="Answer the build's question — this rebuilds the ticket"><span class="material-symbols-outlined">forum</span>Answer</button>` : ""}${missingSections(item.desc).length ? `<button type="button" class="blocked-resolve-btn" data-id="${item.id}" title="Answer a few questions to fill in what this ticket is missing"><span class="material-symbols-outlined">forum</span>Resolve</button>` : ""}<button type="button" class="blocked-clear-btn" data-id="${item.id}" title="Clear the flag — puts this ticket back in the build queue">&times;</button></span>`
     : "";
   const testVersionBadge = item.testVersion
     ? `<span class="test-version-badge" title="backlog-tracker's own version when this was marked Ready for Testing — check the live footer shows at least this version">Test version: v${escapeHTML(item.testVersion)}</span>`
@@ -1065,8 +1065,25 @@ async function clearBlocked(id) {
   await updateDoc(doc(db, "backlogItems", id), { blocked: null, updatedAt: serverTimestamp() });
 }
 
+// Cards a Ready for Dev click can actually build: not blocked on a question
+// and not already packaged (patchReady).
+function isBuildableBacklogItem(i) {
+  return !!i && i.status === "backlog" && !isBlockedItem(i) && !i.patchReady;
+}
+
 function backlogCountForProject(pid) {
-  return items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "backlog").length;
+  return items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && isBuildableBacklogItem(i)).length;
+}
+
+function waitingOnAnswerCountForProject(pid) {
+  return items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "backlog" && isBlockedItem(i) && i.blocked.reason === "waiting-on-input").length;
+}
+
+// Shown in place of Ready for Dev when the only Backlog cards left are blocked
+// on a build's question — not clickable, the answer goes on the card.
+function waitingOnAnswerChipHTML(pid) {
+  const n = waitingOnAnswerCountForProject(pid);
+  return n ? `<span class="blocked-flag blocked-flag-waiting-on-input waiting-answer-chip" title="Answer these on their cards (Answer button) to rebuild them"><span class="material-symbols-outlined">hourglass_top</span>${n} waiting on your answer</span>` : "";
 }
 
 // Backlog items actually available to groom — excludes any already locked
@@ -1497,12 +1514,12 @@ function notifyClaudeButtonCore(project) {
     // empty-Backlog case right below it.
     if (isTrainLocked(project)) return "";
     const backlogCount = backlogCountForProject(pid);
-    if (!backlogCount) return "";
+    if (!backlogCount) return waitingOnAnswerChipHTML(pid);
     // A non-empty selection (see the Backlog column's own checkboxes)
     // narrows this click to just those items instead of the whole column —
     // reflected here so it's clear before clicking what's about to be sent.
     const selectedCount = items.filter((i) =>
-      (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "backlog" && getSelectedSet(pid).has(i.id)
+      (i.projectId || GENERAL_PROJECT_ID) === pid && isBuildableBacklogItem(i) && getSelectedSet(pid).has(i.id)
     ).length;
     const label = selectedCount ? `Ready for Dev — ${selectedCount} selected` : "Ready for Dev";
     return `<button type="button" class="notify-claude-btn project-notify-btn" data-project-id="${escapeHTML(pid)}">
@@ -1530,7 +1547,7 @@ function notifyClaudeButtonCore(project) {
   // "brand new."
   const sentIds = new Set(routine.sentItemIds || []);
   const newCount = items.filter((i) =>
-    (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "backlog" && !sentIds.has(i.id)
+    (i.projectId || GENERAL_PROJECT_ID) === pid && isBuildableBacklogItem(i) && !sentIds.has(i.id)
   ).length;
 
   // "Confirmation from Claude" = the Routine fire actually resolved with a
@@ -3433,15 +3450,26 @@ async function requestNotify(pid) {
   // (not just left unset) so a stale array from an earlier partial send
   // can never silently narrow a later full sweep.
   const backlogIds = new Set(
-    items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "backlog" && !isBlockedItem(i)).map((i) => i.id)
+    items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && isBuildableBacklogItem(i)).map((i) => i.id)
   );
   const selected = [...getSelectedSet(pid)].filter((id) => backlogIds.has(id));
+  // A selection of only blocked cards must not widen into "send everything".
+  if (getSelectedSet(pid).size && !selected.length) {
+    getSelectedSet(pid).clear();
+    render();
+    return;
+  }
 
   // Show the spinning state immediately, without waiting on the
   // notifyOnProjectReadyForReview round-trip — see notifyOptimisticClicks.
   notifyOptimisticClicks[pid] = Date.now();
   render();
 
+  await writeNotifyRequest(pid, selected);
+  getSelectedSet(pid).clear();
+}
+
+async function writeNotifyRequest(pid, selected) {
   await setDoc(doc(db, "projects", pid), {
     notifyRequestedAt: serverTimestamp(),
     notifyItemIds: selected.length ? selected : null,
@@ -3452,8 +3480,6 @@ async function requestNotify(pid) {
     // token when they have.
     notifyRequestedByEmail: (auth.currentUser && auth.currentUser.email) || null,
   }, { merge: true });
-
-  getSelectedSet(pid).clear();
 }
 
 // The middle stage: batch-advances every TICKED Ready for Testing item
@@ -4041,7 +4067,7 @@ projectsRoot.addEventListener("click", async (e) => {
   const confirmNoDeployBtn = e.target.closest(".confirm-no-deploy-btn");
   if (confirmNoDeployBtn) { confirmTestedNoDeploy(confirmNoDeployBtn.dataset.id); return; }
   const blockedResolveBtn = e.target.closest(".blocked-resolve-btn");
-  if (blockedResolveBtn) { openResolveModal(blockedResolveBtn.dataset.id); return; }
+  if (blockedResolveBtn) { openResolveModal(blockedResolveBtn.dataset.id, { answer: blockedResolveBtn.dataset.answer === "1" }); return; }
   const blockedClearBtn = e.target.closest(".blocked-clear-btn");
   if (blockedClearBtn) { clearBlocked(blockedClearBtn.dataset.id); return; }
   const delBtn = e.target.closest(".delete-btn");
@@ -4590,15 +4616,23 @@ function rsAsk() {
   rsSay("agent", s.question);
   rsInput.focus();
 }
-function openResolveModal(id) {
+const ANSWER_STEP_KEY = "__build-answer";
+function openResolveModal(id, opts = {}) {
   const item = allItems.find((i) => i.id === id);
   if (!item) return;
   resolveItemId = id;
   rsChat.innerHTML = "";
   rsInput.value = "";
   resolveQueue = missingSections(item.desc);
-  document.getElementById("rs-title").textContent = `Resolve: ${item.title || "ticket"}`;
+  document.getElementById("rs-title").textContent = `${opts.answer ? "Answer" : "Resolve"}: ${item.title || "ticket"}`;
   rsBackdrop.hidden = false;
+  if (opts.answer && isBlockedItem(item) && item.blocked.note) {
+    resolveQueue = [{ key: ANSWER_STEP_KEY, heading: "Answer", question: "Your answer is saved on the ticket and the build restarts." }, ...resolveQueue];
+    rsComposer.hidden = false; rsSend.hidden = false;
+    rsSay("agent", `The build asked:\n${item.blocked.note}`);
+    rsAsk();
+    return;
+  }
   if (!resolveQueue.length) {
     rsComposer.hidden = true; rsSend.hidden = true;
     rsSay("agent", "This ticket already has all four sections. Nothing to resolve.");
@@ -4624,6 +4658,34 @@ async function submitResolveAnswer() {
   resolveBusy = true;
   const section = resolveQueue[0];
   try {
+    if (section.key === ANSWER_STEP_KEY) {
+      const me = (auth.currentUser && auth.currentUser.email) || "viewer";
+      await updateDoc(doc(db, "backlogItems", resolveItemId), {
+        notes: arrayUnion({ author: me, text: `Answer to the build's question: ${text}`, at: new Date() }),
+        blocked: null,
+        updatedAt: serverTimestamp(),
+      });
+      const pid = item.projectId || GENERAL_PROJECT_ID;
+      const project = projects.find((p) => p.id === pid);
+      const locked = isTrainLocked(project);
+      if (project && !locked) {
+        notifyOptimisticClicks[pid] = Date.now();
+        render();
+        await writeNotifyRequest(pid, [resolveItemId]);
+      }
+      rsSay("user", text);
+      rsInput.value = "";
+      rsInput.dispatchEvent(new Event("input"));
+      resolveQueue = resolveQueue.slice(1);
+      rsSay("agent", locked ? "Saved and unblocked. This release is already closing, so the ticket will be built once the train merges." : "Saved — the build for this ticket is starting again.");
+      if (resolveQueue.length) {
+        rsSay("agent", `This ticket is also missing: ${resolveQueue.map((s) => s.heading).join(", ")}.`);
+        rsAsk();
+      } else {
+        rsComposer.hidden = true; rsSend.hidden = true;
+      }
+      return;
+    }
     const desc = applyAnswers(item.desc, { [section.key]: text });
     const stillMissing = missingSections(desc);
     if (stillMissing.some((s) => s.key === section.key)) {
