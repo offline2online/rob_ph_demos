@@ -18,6 +18,22 @@ const isOpenAuction = (r) => r.dealType === 'Open auction';
 // Rounded to the cent after settling float noise (1e-6), so the order a sum was added in never decides a half cent.
 const cents = (n) => Math.round(Math.round(n * 1e6) / 1e4) / 100;
 
+/** The p-th percentile (0..1) of an ascending list, linearly interpolated between neighbours. */
+function percentile(sorted, p) {
+  const at = (sorted.length - 1) * p; const lo = Math.floor(at); const hi = Math.ceil(at);
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (at - lo);
+}
+
+/**
+ * The winning CPM range of a set of cleared CPMs (one per billing line): p25, median and p75, to the cent. Only these aggregates
+ * leave the service; the caller has already checked that enough other buyers won (MIN_OTHER_BUYERS_FOR_WINNING_CPM).
+ */
+function winningRange(cpms) {
+  if (!cpms.length) return null;
+  const sorted = Float64Array.from(cpms).sort();
+  return { p25: cents(percentile(sorted, 0.25)), median: cents(percentile(sorted, 0.5)), p75: cents(percentile(sorted, 0.75)) };
+}
+
 /** Deals (not the open auction) the advertiser buys, or has delivery on (`delivered`: a Set of deal ids). Catalog objects, never serialised as is. */
 function dealsDelivered(store, advertiserId, delivered) {
   return dealsOf(store).filter((d) => d.dealType !== 'Open auction'
@@ -31,4 +47,4 @@ function dealsInScope(store, advertiserId, ownRows) {
   return dealsDelivered(store, advertiserId, delivered);
 }
 
-module.exports = { OPEN_AUCTION, ownAdvertiser, isOpenAuction, dealsInScope, dealsDelivered, cents };
+module.exports = { OPEN_AUCTION, ownAdvertiser, isOpenAuction, dealsInScope, dealsDelivered, cents, winningRange };

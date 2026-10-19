@@ -153,7 +153,7 @@ test('3: for every advertiser, no delivery block or deal row lets you subtract o
     const groups = ask(me, `/deals-by-display-type?${Q}`).body.groups;
     const allRows = [];
     store.scanDelivery({ dateFrom: '2026-09-12', dateTo: '2026-10-11', storeIds: null, displayTypeIds: null, advertiserIds: null }, (r) => allRows.push(r));
-    for (const g of groups) for (const deal of g.deals) {
+    for (const g of groups) for (const deal of g.deals.filter((x) => x.dealType !== 'Open auction')) {
       const winners = new Set(allRows.filter((r) => r.dealId === deal.id && r.displayTypeId === g.displayType.id && r.advertiserId !== me && r.earnedSlots > 0).map((r) => r.advertiserId));
       if (winners.size >= 1 && winners.size < MIN_OTHER_BUYERS_FOR_WINNING_CPM) assert.ok(!('allPlays' in deal.share) && !('percent' in deal.share), `${me} ${deal.id}`);
       else if (winners.size === 0) assert.equal(deal.share.percent, 100);

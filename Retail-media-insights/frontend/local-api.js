@@ -231,6 +231,21 @@ function roundParts(parts) {
   return { parts: rounded, total: sum(rounded) };
 }
 
+/**
+ * Round each value to `decimals` places so the rounded values add to the rounded sum (largest remainder).
+ * Used where parts are shown beside a total that is a figure of its own (hourly revenue against the Revenue chart).
+ */
+function roundToTotal(values, decimals = 0) {
+  const scale = 10 ** decimals;
+  const total = Math.round(sum(values) * scale);
+  const raw = values.map((v) => v * scale);
+  const out = raw.map(Math.floor);
+  let left = total - sum(out);
+  const order = raw.map((r, i) => [r - out[i], i]).sort((a, b) => b[0] - a[0] || a[1] - b[1]);
+  for (let k = 0; left > 0 && k < order.length; k += 1, left -= 1) out[order[k][1]] += 1;
+  return out.map((v) => v / scale);
+}
+
 /** Whole-number percentages that add to 100 (largest remainder). */
 function percentSplit(values) {
   const total = sum(values);
@@ -264,7 +279,7 @@ module.exports = {
   operatingWindow, runsAllDay, insideOperatingHours, classifySlot, fillPercent,
   unsoldValueAtFloor, missedRevenue,
   guaranteedVolume, pgPacing, maturityLevel, sharedVariables, campaignLevel,
-  wholePercent, roundParts, percentSplit, formatUsd,
+  wholePercent, roundParts, roundToTotal, percentSplit, formatUsd,
   compareDealTypes, compareDsps, compareZones,
 };
   },
@@ -624,12 +639,13 @@ const OPEN_AUCTION_DEAL_TYPE = 'Open auction';
 
 /**
  * The settled (earned) delivery of every advertiser together, per day x display type x deal (block `nDeals` is the open auction):
- * plays, revenue, views, the highest CPM of any row and which advertisers won plays. What advertiser Delivery shows about the
+ * plays, revenue, views, the cleared CPM of each winning buyer (the winning CPM range is read from them) and which advertisers won plays. What advertiser Delivery shows about the
  * other buyers on a deal ("all plays", the aggregate winning CPM, how many others won) is a function of these cells alone.
  * `rows` are date-ordered rows (the rollup or, for a store filter, fine rows); `cell.dealIx` is -1 for the open auction.
  */
 function buildCells(rows, nDeals, out = [], index = new Map()) {
   let day = null;
+  const acc = new Map(); // cell -> revenue and views per winning buyer, aligned with cell.advs; gone once the cells' cpms are set
   for (const r of rows) {
     if (r.date !== day) { day = r.date; index.clear(); }
     if (r.earnedSlots <= 0 && r.earned <= 0) continue;
@@ -637,29 +653,37 @@ function buildCells(rows, nDeals, out = [], index = new Map()) {
     const key = r.typeIx * (nDeals + 1) + (open ? nDeals : r.dealIx);
     let c = index.get(key);
     if (!c) {
-      c = { date: r.date, dayIx: r.dayIx, displayTypeId: r.displayTypeId, dealIx: open ? -1 : r.dealIx, all: 0, rev: 0, views: 0, high: 0, advs: [] };
-      index.set(key, c); out.push(c);
+      c = { date: r.date, dayIx: r.dayIx, displayTypeId: r.displayTypeId, dealIx: open ? -1 : r.dealIx, all: 0, rev: 0, views: 0, cpms: [], advs: [] };
+      index.set(key, c); out.push(c); acc.set(c, { rev: [], views: [] });
     }
     c.all += r.earnedSlots; c.rev += r.earned; c.views += r.earnedViews;
-    if (r.earnedViews > 0) { const cpm = r.maxCpm !== undefined ? r.maxCpm : effectiveCpm(r.earned, r.earnedViews); if (cpm > c.high) c.high = cpm; }
-    if (r.earnedSlots > 0 && !c.advs.includes(r.advIx)) c.advs.push(r.advIx);
+    if (r.earnedSlots > 0) {
+      const a = acc.get(c);
+      let at = c.advs.indexOf(r.advIx);
+      if (at < 0) { at = c.advs.length; c.advs.push(r.advIx); a.rev.push(0); a.views.push(0); }
+      a.rev[at] += r.earned; a.views[at] += r.earnedViews;
+    }
   }
+  // The cleared CPM of each winning buyer in the cell (revenue / views), which the winning CPM range is read from. Never keyed by buyer.
+  for (const [c, a] of acc) for (let i = 0; i < c.advs.length; i += 1) if (a.views[i] > 0) c.cpms.push(effectiveCpm(a.rev[i], a.views[i]));
   return out;
 }
 
 class AggregateStore {
-  constructor({ delivery, inventory, campaigns = [], advertisers = {}, catalog = { displayTypes: {}, displays: [] } }, { indexed = true } = {}) {
+  constructor({ delivery, inventory, hourlyInventory = [], campaigns = [], advertisers = {}, catalog = { displayTypes: {}, displays: [] } }, { indexed = true } = {}) {
     this.catalog = catalog;
     this.campaigns = campaigns;
     this.advertisers = advertisers;
     this.indexed = indexed;
     this.delivery = [...delivery].sort(byDate);
     this.inventory = [...inventory].sort(byDate);
+    this.hourlyInventory = [...hourlyInventory].sort(byDate);
 
     const deals = dictionary(); const types = dictionary(); const advs = dictionary();
-    stampDays(this.delivery); stampDays(this.inventory);
+    stampDays(this.delivery); stampDays(this.inventory); stampDays(this.hourlyInventory);
     for (const r of this.delivery) { r.dealIx = deals.code(r.dealId); r.typeIx = types.code(r.displayTypeId); r.advIx = advs.code(r.advertiserId); }
     for (const r of this.inventory) r.typeIx = types.code(r.displayTypeId);
+    for (const r of this.hourlyInventory) r.typeIx = types.code(r.displayTypeId);
     // The first and last played day: days with inventory or earned delivery. Reservations (estimated rows booked ahead) are not played days.
     let first = null; let last = null;
     const played = (date) => { if (first === null || date < first) first = date; if (last === null || date > last) last = date; };
@@ -677,13 +701,14 @@ class AggregateStore {
         (r) => (((r.dealIx * T + r.typeIx) * D + dsps.code(r.dsp)) * A + r.advIx) * K + dealTypes.code(r.dealType),
         (r) => ({ date: r.date, displayTypeId: r.displayTypeId, storeId: null, dealId: r.dealId, dealType: r.dealType, dsp: r.dsp, advertiserId: r.advertiserId,
           dayIx: r.dayIx, dealIx: r.dealIx, typeIx: r.typeIx, advIx: r.advIx, revenue: 0, earned: 0, estimated: 0, views: 0, earnedViews: 0, slots: 0, earnedSlots: 0 }),
-        DELIVERY_MEASURES,
-        // The one per-row (not additive) figure an endpoint reads: the highest effective CPM of any fine row (advertiser Delivery's
-        // "highest winning CPM"). A rollup row carries the highest of the rows it merged, so merging stores does not change it.
-        (g, r) => { if (r.earnedViews > 0) { const c = effectiveCpm(r.earned, r.earnedViews); if (g.maxCpm === undefined || c > g.maxCpm) g.maxCpm = c; } });
+        DELIVERY_MEASURES);
       this.inventoryRollup = rollup(this.inventory, (r) => r.typeIx,
         (r) => ({ date: r.date, displayTypeId: r.displayTypeId, storeId: null, dayIx: r.dayIx, typeIx: r.typeIx, sold: 0, unsold: 0, offline: 0, outsideHours: 0, unsoldViews: 0, lostRevenue: 0 }),
         INVENTORY_MEASURES);
+      this.hourlyRollup = rollup(this.hourlyInventory, (r) => r.typeIx * 24 + r.hour,
+        (r) => ({ date: r.date, displayTypeId: r.displayTypeId, storeId: null, hour: r.hour, dayIx: r.dayIx, typeIx: r.typeIx, sold: 0, unsold: 0, offline: 0 }),
+        ['sold', 'unsold', 'offline']);
+      this.hourlyByStore = partition(this.hourlyInventory, 'storeId');
       this.deliveryCells = buildCells(this.deliveryRollup, deals.ids.length);
       this.deliveryByStore = partition(this.delivery, 'storeId');
       this.inventoryByStore = partition(this.inventory, 'storeId');
@@ -779,6 +804,9 @@ class AggregateStore {
     }
   }
 
+  /** Slot records per date x display type x hour (x store when filtered), inside operating hours only. Ignores the advertiser filter. */
+  scanHourlyInventory(filters, fn) { this.#scan(this.hourlyInventory, this.hourlyRollup, this.hourlyByStore, filters, fn, false); }
+
   /** Unsold inventory ignores the advertiser filter: slot records belong to no advertiser (README open question 1 default). */
   scanInventory(filters, fn) { this.#scan(this.inventory, this.inventoryRollup, this.inventoryByStore, filters, fn, false); }
 }
@@ -789,6 +817,7 @@ module.exports = { AggregateStore };
 // Daily pre-aggregates built from raw billing line items and unsold-slot records.
 //   delivery:  date x displayType x store x deal x DSP x advertiser
 //   inventory: date x displayType x store   (slot records carry no advertiser)
+//   hourlyInventory: date x displayType x store x hour, only hours inside operating hours (the hourly chart's cells)
 
 const calc = require('./calc');
 
@@ -845,8 +874,27 @@ function buildAggregates(raw, ctx) {
     if (kind === 'offline') row.lostRevenue += r.lostRevenue || 0;
     if (kind === 'unsold') row.unsoldViews += r.count * (r.views || 0);
   }
+  // The same slot records per hour. Hours outside a display type's operating hours are not inventory, so they are left out.
+  const hourly = new Map();
+  for (const r of raw.slotRecords) {
+    const window = calc.operatingWindow(ctx.displayTypes[r.displayTypeId] || {}, ctx.stores[r.storeId]);
+    const kind = calc.classifySlot(r, window);
+    if (kind === 'outsideHours') continue;
+    const key = [r.date, r.displayTypeId, r.storeId, r.hour].join('|');
+    let row = hourly.get(key);
+    if (!row) {
+      row = { date: r.date, displayTypeId: r.displayTypeId, storeId: r.storeId, hour: r.hour, sold: 0, unsold: 0, offline: 0 };
+      hourly.set(key, row);
+    }
+    row[kind] += r.count;
+  }
   const campaigns = (raw.campaigns || []).map((c) => ({
     id: c.id,
+    name: c.name || null,
+    // The product whose sales are matched to the campaign: by SKU, or by product name where the campaign has no SKU.
+    product: c.product ? { name: c.product.name, ...(c.product.sku ? { sku: c.product.sku } : {}) } : null,
+    // Whether the campaign excludes the Control stores Fixed Store Segment (exclusion targeting).
+    controlStores: Boolean(c.controlStores),
     advertiserId: c.advertiserId,
     start: c.start,
     end: c.end || null,
@@ -859,12 +907,226 @@ function buildAggregates(raw, ctx) {
     targetedVersions: c.targetedVersions || 0,
   }));
   return {
-    delivery: [...delivery.values()], inventory: [...inventory.values()], campaigns, advertisers: ctx.advertisers || {},
-    catalog: { displayTypes: ctx.displayTypes, displays: ctx.displays || [], stores: ctx.stores || {}, deals: ctx.dealCatalog || {}, sharedVariables: ctx.sharedVariables || {}, connectedDsps: ctx.connectedDsps || Object.keys(ctx.sharedVariables || {}) },
+    delivery: [...delivery.values()], inventory: [...inventory.values()], hourlyInventory: [...hourly.values()], campaigns, advertisers: ctx.advertisers || {},
+    catalog: { displayTypes: ctx.displayTypes, displays: ctx.displays || [], stores: ctx.stores || {}, deals: ctx.dealCatalog || {}, sharedVariables: ctx.sharedVariables || {}, connectedDsps: ctx.connectedDsps || Object.keys(ctx.sharedVariables || {}),
+      controlStores: ctx.controlStores || { name: 'Control stores', storeIds: [] }, transactionApi: Boolean(ctx.transactionApi) },
   };
 }
 
 module.exports = { buildAggregates };
+  },
+  "src/sales-response.js": function (module, exports, require) {
+// Sales response after personalised plays: sales of a campaign's product in the minutes after a play, per 1,000 shoppers in
+// the store, after personalised plays, after localised plays, and in Control stores at the same clock time.
+//
+// Inputs, as the production data will arrive (README "Sales response after personalised plays"):
+//  - play timestamps, tier and display from campaign playback analytics (PH Core);
+//  - sale timestamps, store and SKU / product name from the Transaction API (a custom POS integration per retailer);
+//  - footfall by store and hour from PH Core store insights;
+//  - the Control stores Fixed Store Segment, used as exclusion targeting on the campaign.
+// The test retailer has none of these as rows, so `dayEvents` stands in for them: a deterministic day of plays and sales
+// per campaign and store, in which a personalised play lifts sales of the product for a few minutes (a localised play
+// less so). Everything after it (the counting rules, the rates, the controls) is the real calculation and reads only
+// {plays, sales, footfall}, so replacing `dayEvents` with the three feeds changes nothing downstream.
+
+const calc = require('./calc');
+
+const WINDOWS = [5, 10, 15, 30, 60];
+const DEFAULT_WINDOW = 10;
+const MAX_WINDOW = 120;
+const STEPS = [1, 5, 15];
+const VIEWS = ['step', 'running'];
+
+const BASE_CONVERSION = 0.01; // sales of the product per shopper-minute in the store with no recent play
+const LIFT = { personalised: 4, localised: 1.2 }; // extra multiples of the baseline right after a play
+const DECAY_MINUTES = 4;
+const REACH_MINUTES = 30; // a play no longer lifts sales after this
+const MAX_MULTIPLE = 8;
+
+function hashSeed(text) {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i += 1) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+function rng(seed) {
+  let s = seed >>> 0;
+  return () => {
+    s = (s + 0x6d2b79f5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function poisson(lambda, rand) {
+  const limit = Math.exp(-lambda);
+  let n = 0; let p = rand();
+  while (p > limit) { n += 1; p *= rand(); }
+  return n;
+}
+
+/** Share of a day's footfall in each hour: a lunchtime and an after-work peak. */
+const hourShape = (h) => 0.5 + 0.9 * Math.exp(-(((h + 0.5 - 12.5) / 3) ** 2)) + 0.6 * Math.exp(-(((h + 0.5 - 17.5) / 2.2) ** 2));
+
+/** Footfall in each hour of a store's opening hours: {hour: shoppers}. The store's daily footfall is its busiest display's. */
+function footfallByHour(store, storeId) {
+  const cache = store.__salesResponse.footfall;
+  if (cache.has(storeId)) return cache.get(storeId);
+  const hours = (store.catalog.stores || {})[storeId] || { open: 0, close: 0 };
+  const daily = Math.max(0, ...(store.catalog.displays || []).filter((d) => d.storeId === storeId).map((d) => d.footfall || 0));
+  const shapes = [];
+  for (let h = hours.open; h < hours.close; h += 1) shapes.push([h, hourShape(h)]);
+  const total = shapes.reduce((s, [, w]) => s + w, 0);
+  const out = new Map(shapes.map(([h, w]) => [h, total > 0 ? Math.round((daily * w) / total) : 0]));
+  cache.set(storeId, out);
+  return out;
+}
+
+/**
+ * One store-day of the campaign, in seconds from midnight: every play of the campaign (any tier, any display type) and every sale
+ * of its product. `control` days have no plays: Control stores don't run the campaign.
+ */
+function dayEvents(store, campaign, storeId, date, control) {
+  const cache = store.__salesResponse.days;
+  const key = `${campaign.id}|${storeId}|${date}|${control ? 1 : 0}`;
+  if (cache.has(key)) return cache.get(key);
+  if (cache.size > 4000) cache.clear();
+  const hours = store.catalog.stores[storeId];
+  const rand = rng(hashSeed(key));
+  const plays = [];
+  if (!control) {
+    const types = (campaign.displayTypeIds || Object.keys(store.catalog.displayTypes)).filter((t) => store.catalog.displayTypes[t]);
+    for (let hour = hours.open; hour < hours.close; hour += 1) {
+      for (const displayTypeId of types) {
+        if (!calc.insideOperatingHours(hour, calc.operatingWindow(store.catalog.displayTypes[displayTypeId], hours))) continue;
+        const tiers = [['localised', 1 + Math.floor(rand() * 2)]];
+        if (campaign.level === 'Personalised') tiers.push(['personalised', 1 + Math.floor(rand() * 2)]);
+        for (const [tier, n] of tiers) for (let k = 0; k < n; k += 1) plays.push({ t: hour * 3600 + Math.floor(rand() * 3600), tier, displayTypeId });
+      }
+    }
+    plays.sort((a, b) => a.t - b.t);
+  }
+  const footfall = footfallByHour(store, storeId);
+  const minutes = (hours.close - hours.open) * 60;
+  const extra = new Array(minutes).fill(0);
+  for (const p of plays) {
+    const from = Math.floor(p.t / 60) - hours.open * 60;
+    for (let m = Math.max(from, 0); m < Math.min(from + REACH_MINUTES, minutes); m += 1) extra[m] += LIFT[p.tier] * Math.exp(-(m - from) / DECAY_MINUTES);
+  }
+  const sales = [];
+  for (let m = 0; m < minutes; m += 1) {
+    const hour = hours.open + Math.floor(m / 60);
+    const lambda = ((footfall.get(hour) || 0) / 60) * BASE_CONVERSION * (1 + Math.min(extra[m], MAX_MULTIPLE - 1));
+    for (let n = poisson(lambda, rand); n > 0; n -= 1) sales.push((hours.open * 60 + m) * 60 + Math.floor(rand() * 60));
+  }
+  sales.sort((a, b) => a - b);
+  const out = { plays, sales };
+  cache.set(key, out);
+  return out;
+}
+
+const days = (from, to) => {
+  const out = [];
+  for (let at = Date.parse(`${from}T00:00:00Z`); at <= Date.parse(`${to}T00:00:00Z`); at += 86400000) out.push(new Date(at).toISOString().slice(0, 10));
+  return out;
+};
+const rate = (sales, shoppers) => (shoppers > 0 ? Math.round((sales / shoppers) * 100000) / 100 : 0); // per 1,000 shoppers, two decimals
+const labelOf = (from, to, step) => (step === 1 ? `Minute ${from} after play` : `Minutes ${from}–${to - 1} after play`);
+
+/** Campaigns with personalised variants in scope: the chart's drop-down. */
+function personalisedCampaigns(store, filters) {
+  const out = [];
+  store.scanCampaigns(filters, (c) => { if (c.level === 'Personalised') out.push(c); });
+  return out.sort((a, b) => {
+    const an = (store.advertisers[a.advertiserId] || {}).name || a.advertiserId; const bn = (store.advertisers[b.advertiserId] || {}).name || b.advertiserId;
+    return an.localeCompare(bn) || (a.start < b.start ? 1 : a.start > b.start ? -1 : 0);
+  });
+}
+
+/** The scope the chart reads: treated stores, Control stores and the display types whose plays count. */
+function scopeOf(store, campaign, filters) {
+  const all = Object.keys(store.catalog.stores || {});
+  const control = campaign.controlStores ? ((store.catalog.controlStores || {}).storeIds || []).filter((s) => all.includes(s)) : [];
+  const selected = filters.storeIds ? all.filter((s) => filters.storeIds.includes(s)) : all;
+  const campaignTypes = (campaign.displayTypeIds || Object.keys(store.catalog.displayTypes)).filter((t) => store.catalog.displayTypes[t]);
+  const types = filters.displayTypeIds ? campaignTypes.filter((t) => filters.displayTypeIds.includes(t)) : campaignTypes;
+  return { treated: selected.filter((s) => !control.includes(s)), control, types };
+}
+
+/** Hours (0-23) in which a purchase can follow a play: the store is open and one of the display types is operating. */
+function operatingHours(store, storeIds, types) {
+  const out = new Set();
+  for (const s of storeIds) {
+    const hours = store.catalog.stores[s];
+    for (let h = hours.open; h < hours.close; h += 1) {
+      if (types.some((t) => calc.insideOperatingHours(h, calc.operatingWindow(store.catalog.displayTypes[t], hours)))) out.add(h);
+    }
+  }
+  return [...out].sort((a, b) => a - b);
+}
+
+function salesResponse(store, campaign, filters, { window, step, view, hourFrom, hourTo, hoursError }) {
+  if (!store.__salesResponse) Object.defineProperty(store, '__salesResponse', { value: { days: new Map(), footfall: new Map() }, enumerable: false });
+  const scope = scopeOf(store, campaign, filters);
+  const hours = operatingHours(store, scope.treated.length ? scope.treated : scope.control, scope.types);
+  const band = hourFrom == null ? null : { from: hourFrom, to: hourTo };
+  if (band && !hours.some((h) => h >= band.from && h <= band.to)) throw hoursError('the hour band is outside the display types’ operating hours');
+  const inBand = (h) => !band || (h >= band.from && h <= band.to);
+
+  const from = [filters.dateFrom, campaign.start, store.firstPlayedDay].filter(Boolean).reduce((a, b) => (a > b ? a : b));
+  const lastDay = [filters.dateTo, campaign.end, store.lastPlayedDay].filter(Boolean).reduce((a, b) => (a < b ? a : b));
+  const dates = from <= lastDay ? days(from, lastDay) : [];
+  const typeSet = new Set(scope.types);
+  const n = Math.ceil(window / step);
+  const empty = (kind) => ({ plays: 0, shoppers: 0, sales: new Array(n).fill(0), kind });
+  const lines = { personalised: empty('personalised'), localised: empty('localised'), control: empty('control') };
+
+  for (const date of dates) {
+    for (const storeId of scope.treated) {
+      const { plays, sales } = dayEvents(store, campaign, storeId, date, false);
+      const counted = plays.filter((p) => typeSet.has(p.displayTypeId));
+      const footfall = footfallByHour(store, storeId);
+      let last = -1; // the nearest preceding play, by pointer: both lists are time-ordered
+      for (const sale of sales) {
+        while (last + 1 < counted.length && counted[last + 1].t <= sale) last += 1;
+        if (last < 0) continue;
+        const dt = sale - counted[last].t;
+        if (dt >= window * 60) continue;
+        const bucket = Math.floor(Math.floor(dt / 60) / step);
+        const p = counted[last];
+        if (inBand(Math.floor(p.t / 3600))) lines[p.tier].sales[bucket] += 1;
+      }
+      counted.forEach((p) => {
+        const hour = Math.floor(p.t / 3600);
+        if (!inBand(hour)) return;
+        lines[p.tier].plays += 1; lines[p.tier].shoppers += footfall.get(hour) || 0;
+      });
+      // Control stores, same clock time: each personalised play opens the same clock window in every Control store.
+      if (scope.control.length) {
+        const controlDays = scope.control.map((c) => ({ footfall: footfallByHour(store, c), sales: dayEvents(store, campaign, c, date, true).sales }));
+        for (const p of counted) {
+          if (p.tier !== 'personalised') continue;
+          const hour = Math.floor(p.t / 3600);
+          if (!inBand(hour)) continue;
+          lines.control.plays += 1;
+          for (const cd of controlDays) {
+            lines.control.shoppers += cd.footfall.get(hour) || 0;
+            for (const sale of cd.sales) {
+              if (sale < p.t) continue;
+              if (sale >= p.t + window * 60) break;
+              lines.control.sales[Math.floor(Math.floor((sale - p.t) / 60) / step)] += 1;
+            }
+          }
+        }
+      }
+    }
+  }
+  return { scope, hours, band, dates, lines, n };
+}
+
+module.exports = {
+  WINDOWS, DEFAULT_WINDOW, MAX_WINDOW, STEPS, VIEWS, salesResponse, personalisedCampaigns, scopeOf, operatingHours, labelOf, rate, footfallByHour, dayEvents,
+};
   },
   "src/testdata.js": function (module, exports, require) {
 // A deterministic 5-store test retailer, the approved artifact's example retailer (README "Store zones" sample data):
@@ -1046,6 +1308,25 @@ const CAMPAIGN_PLAN = {
   'adv-perrigo': { cadence: 14, anchorAgo: 11, final: 'Default only', types: ['window', 'endcap', 'queue', 'dispensary'] },
 };
 
+// What each advertiser's campaigns promote: sales are matched on the SKU, or on the product name where there is none (Kenvue).
+// Kenvue's campaigns do not exclude the Control stores segment, so the Sales response chart has no control line for them.
+const PRODUCTS = {
+  'adv-blackmores': { name: 'Fish Oil 1000mg', sku: 'BLK-FO-1000' },
+  'adv-haleon': { name: 'Sensodyne Repair & Protect', sku: 'HLN-SENS-RP' },
+  'adv-loreal-paris': { name: 'Revitalift Serum', sku: 'LOR-REV-SER' },
+  'adv-vitabiotics': { name: 'Wellwoman Original', sku: 'VIT-WW-ORIG' },
+  'adv-bayer-consumer-health': { name: 'Berocca Boost', sku: 'BAY-BER-BST' },
+  'adv-reckitt': { name: 'Nurofen Express', sku: 'REC-NUR-EXP' },
+  'adv-kenvue': { name: 'Neutrogena Hydro Boost' },
+  'adv-procter-gamble': { name: 'Oral-B iO Series', sku: 'PG-ORB-IO' },
+  'adv-unilever': { name: 'Dove Body Wash', sku: 'UNI-DOV-BW' },
+  'adv-nestle-health-science': { name: 'Boost Nutritional Drink', sku: 'NHS-BST-ND' },
+  'adv-perrigo': { name: 'Care Allergy Relief', sku: 'PER-CAR-AR' },
+};
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const NO_CONTROL_STORES = new Set(['adv-kenvue']);
+const CONTROL_STORE_IDS = ['store-5'];
+
 function buildCampaigns(endDate) {
   const dayOf = (ago) => new Date(Date.parse(`${endDate}T00:00:00Z`) - ago * 86400000).toISOString().slice(0, 10);
   const out = [];
@@ -1059,8 +1340,10 @@ function buildCampaigns(endDate) {
       if (personalised) variables.push(plan.pers[j % plan.pers.length], LOCALISED_VARIABLES[(j + 1) % LOCALISED_VARIABLES.length]);
       else if (localised) variables.push(LOCALISED_VARIABLES[j % LOCALISED_VARIABLES.length], ...(j % 2 ? [LOCALISED_VARIABLES[(j + 2) % LOCALISED_VARIABLES.length]] : []));
       const schedules = (plan.schedules || [])[j] || 0;
+      const product = PRODUCTS[advertiserId];
       out.push({
-        id: `c-${slug}-${j + 1}`, advertiserId, startAgo: ago, endAgo: ago - (CAMPAIGN_LIVE_DAYS - 1) > 0 ? ago - (CAMPAIGN_LIVE_DAYS - 1) : null,
+        id: `c-${slug}-${j + 1}`, advertiserId, product, controlStores: !NO_CONTROL_STORES.has(advertiserId),
+        name: `${product.name} · from ${Number(dayOf(ago).slice(8))} ${MONTHS[Number(dayOf(ago).slice(5, 7)) - 1]}`, startAgo: ago, endAgo: ago - (CAMPAIGN_LIVE_DAYS - 1) > 0 ? ago - (CAMPAIGN_LIVE_DAYS - 1) : null,
         displayTypeIds: plan.types, variables, scheduled: schedules > 0, schedules, targetedVersions: personalised ? 2 + (j % 2) : localised ? 1 : 0,
         start: dayOf(ago), end: ago - (CAMPAIGN_LIVE_DAYS - 1) > 0 ? dayOf(ago - (CAMPAIGN_LIVE_DAYS - 1)) : null,
       });
@@ -1079,6 +1362,9 @@ function generateTestRetailer({ days = HISTORY_DAYS, endDate = '2026-10-11', sto
     stores: Object.fromEntries(storeIds.map((id, i) => [id, { name: STORE_NAMES[i] || `Store ${i + 1}`, open: 8, close: 20 }])),
     deals: DEALS,
     dealCatalog,
+    // The Control stores Fixed Store Segment, and whether the retailer has the custom POS integration into the Transaction API.
+    controlStores: { name: 'Control stores', storeIds: CONTROL_STORE_IDS.filter((id) => storeIds.includes(id)) },
+    transactionApi: true,
     sharedVariables: SHARED_VARIABLES,
     connectedDsps: DSPS_ORDER,
     displays: storeIds.flatMap((storeId, i) => Object.entries(DISPLAY_TYPES).flatMap(([displayTypeId, type]) => (
@@ -1234,6 +1520,22 @@ const isOpenAuction = (r) => r.dealType === 'Open auction';
 // Rounded to the cent after settling float noise (1e-6), so the order a sum was added in never decides a half cent.
 const cents = (n) => Math.round(Math.round(n * 1e6) / 1e4) / 100;
 
+/** The p-th percentile (0..1) of an ascending list, linearly interpolated between neighbours. */
+function percentile(sorted, p) {
+  const at = (sorted.length - 1) * p; const lo = Math.floor(at); const hi = Math.ceil(at);
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (at - lo);
+}
+
+/**
+ * The winning CPM range of a set of cleared CPMs (one per billing line): p25, median and p75, to the cent. Only these aggregates
+ * leave the service; the caller has already checked that enough other buyers won (MIN_OTHER_BUYERS_FOR_WINNING_CPM).
+ */
+function winningRange(cpms) {
+  if (!cpms.length) return null;
+  const sorted = Float64Array.from(cpms).sort();
+  return { p25: cents(percentile(sorted, 0.25)), median: cents(percentile(sorted, 0.5)), p75: cents(percentile(sorted, 0.75)) };
+}
+
 /** Deals (not the open auction) the advertiser buys, or has delivery on (`delivered`: a Set of deal ids). Catalog objects, never serialised as is. */
 function dealsDelivered(store, advertiserId, delivered) {
   return dealsOf(store).filter((d) => d.dealType !== 'Open auction'
@@ -1247,7 +1549,153 @@ function dealsInScope(store, advertiserId, ownRows) {
   return dealsDelivered(store, advertiserId, delivered);
 }
 
-module.exports = { OPEN_AUCTION, ownAdvertiser, isOpenAuction, dealsInScope, dealsDelivered, cents };
+module.exports = { OPEN_AUCTION, ownAdvertiser, isOpenAuction, dealsInScope, dealsDelivered, cents, winningRange };
+  },
+  "src/uplift.js": function (module, exports, require) {
+// Sales uplift vs control stores: the sample campaign products, the stand-in for PH Core's Transaction API and the
+// uplift calculation. The route (routes/sales-uplift.js) is the only caller.
+//
+// Until the source adapter exists, what PH Core will hold is generated here, deterministically from the campaigns:
+//  - campaign -> product: each campaign carries a SKU, or only a product name (every fourth campaign);
+//  - campaign playback analytics: a campaign plays in every store except the Control stores segment when it excludes it
+//    (all but every fifth campaign), so its "campaign stores" are the stores it played in;
+//  - Transaction API: store x day x product sales in USD from a custom POS integration (one advertiser has none);
+//  - tier mix: the campaign's share of plays by targeting tier follows its maturity level.
+// Sales in the stores a campaign played in lift during its flight and fade after it, by maturity level; the control
+// stores never see that lift, so uplift is measurable.
+
+const { addDays, eachDay, dayDiff } = require('./dealing');
+
+const PRE_DAYS = 30;
+const POST_DAYS = 30;
+const CONTROL_SEGMENT = 'Control stores';
+const PRODUCT_NAMES = ['Daily Essentials 60 pack', 'Sensitive Care 30 pack', 'Family Value Bundle'];
+const LIFT = { 'Default only': 0.04, Localised: 0.08, Personalised: 0.12 };
+const TIER_MIX = {
+  'Default only': { default: 100 },
+  Localised: { default: 75, localised: 25 },
+  Personalised: { default: 70, localised: 25, personalised: 5 },
+};
+const WEEKDAY = [1.1, 0.9, 0.92, 0.95, 1.05, 1.3, 1.25]; // Sunday first
+const NO_POS_ADVERTISERS = new Set(['adv-perrigo']);
+
+const cents = (n) => Math.round(Math.round(n * 1e6) / 1e4) / 100;
+function hash(...parts) {
+  let h = 2166136261;
+  for (const ch of parts.join('|')) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); }
+  return ((h >>> 0) % 100000) / 100000;
+}
+
+/** The Control stores segment: the last 40% of the stores (at least one, never all of them). */
+function controlStoreIds(storeIds) {
+  const ids = [...storeIds].sort();
+  return ids.slice(ids.length - Math.min(Math.max(1, Math.round(ids.length * 0.4)), ids.length - 1));
+}
+
+/** One campaign with its product, store groups and tier mix. `lastDay` clips an ongoing flight. */
+function describeCampaign(c, store, lastDay) {
+  const n = Number(String(c.id).split('-').pop()) || 1;
+  const adv = (store.advertisers || {})[c.advertiserId] || {};
+  const slug = c.advertiserId.replace(/^adv-/, '');
+  const index = n - 1; // each campaign promotes its own product, so no other campaign's lift reaches its before window
+  const hasSku = n % 4 !== 0;
+  const allStores = Object.keys(store.catalog.stores || {}).sort();
+  const control = controlStoreIds(allStores);
+  const excludesControl = n % 5 !== 0;
+  const campaignStores = excludesControl ? allStores.filter((s) => !control.includes(s)) : allStores;
+  const flightEnd = c.end && c.end < lastDay ? c.end : lastDay;
+  return {
+    id: c.id, advertiserId: c.advertiserId, advertiserName: adv.name || c.advertiserId, level: c.level,
+    displayTypeIds: c.displayTypeIds, start: c.start, end: c.end, flightEnd, flightEnded: Boolean(c.end && c.end <= lastDay),
+    product: { name: `${adv.name || slug} ${PRODUCT_NAMES[index % PRODUCT_NAMES.length]}${index >= PRODUCT_NAMES.length ? ` (${Math.floor(index / PRODUCT_NAMES.length) + 1})` : ''}`, ...(hasSku ? { sku: `${slug.slice(0, 3).toUpperCase()}-${1001 + index}` } : {}), index },
+    matchedOn: hasSku ? 'sku' : 'product name',
+    hasPos: !NO_POS_ADVERTISERS.has(c.advertiserId),
+    excludesControl, campaignStores, controlStores: excludesControl ? control : [],
+  };
+}
+
+/**
+ * The Transaction API stand-in: USD sales of one product in one store on one day. A product's sales lift in a store on
+ * the days one of its campaigns played there, and fade for the 30 days after.
+ */
+function makeTransactions(store, lastDay) {
+  const storeIx = Object.fromEntries(Object.keys(store.catalog.stores || {}).sort().map((id, i) => [id, i]));
+  const byAdvProduct = new Map();
+  for (const c of store.campaigns) {
+    const d = describeCampaign(c, store, lastDay);
+    const key = `${d.advertiserId}|${d.product.index}`;
+    if (!byAdvProduct.has(key)) byAdvProduct.set(key, []);
+    byAdvProduct.get(key).push(d);
+  }
+  return function sales(d, storeId, date) {
+    if (!d.hasPos || date > lastDay) return 0;
+    const dow = new Date(`${date}T00:00:00Z`).getUTCDay();
+    let lift = 0;
+    for (const o of byAdvProduct.get(`${d.advertiserId}|${d.product.index}`) || []) {
+      if (!o.campaignStores.includes(storeId) || o.start > date) continue;
+      const end = o.end || lastDay;
+      if (date <= end) lift = Math.max(lift, LIFT[o.level] || 0);
+      else if (dayDiff(end, date) <= POST_DAYS) lift = Math.max(lift, (LIFT[o.level] || 0) * 0.4);
+    }
+    const base = (220 + (storeIx[storeId] || 0) * 45 + hash(d.advertiserId, d.product.index) * 90) * WEEKDAY[dow];
+    return Math.round(base * (1 + lift) * (0.93 + hash(storeId, d.advertiserId, d.product.index, date) * 0.14));
+  };
+}
+
+const memo = new WeakMap();
+const transactionsFor = (store) => {
+  if (!memo.has(store)) memo.set(store, makeTransactions(store, store.lastPlayedDay));
+  return memo.get(store);
+};
+
+/** Campaign spend from billing: the advertiser's earned revenue in the campaign's stores and display types during the flight, shared equally by its campaigns running that day. */
+function campaignSpend(store, d, all) {
+  const rivals = all.filter((o) => o.advertiserId === d.advertiserId);
+  const covers = (o, date, type) => o.start <= date && date <= o.flightEnd && (!o.displayTypeIds || o.displayTypeIds.includes(type));
+  let total = 0;
+  store.scanDelivery({ dateFrom: d.start, dateTo: d.flightEnd, storeIds: d.campaignStores, displayTypeIds: d.displayTypeIds, advertiserIds: [d.advertiserId] }, (r) => {
+    if (!covers(d, r.date, r.displayTypeId)) return;
+    total += r.earned / rivals.filter((o) => covers(o, r.date, r.displayTypeId)).length;
+  });
+  return cents(total);
+}
+
+function upliftFor(store, d, all) {
+  const sales = transactionsFor(store);
+  const dates = eachDay(addDays(d.start, -PRE_DAYS), (() => { const e = addDays(d.flightEnd, POST_DAYS); return e > store.lastPlayedDay ? store.lastPlayedDay : e; })());
+  const sum = (stores, date) => stores.reduce((n, s) => n + sales(d, s, date), 0);
+  const rows = dates.map((date) => ({
+    date, phase: date < d.start ? 'before' : date <= d.flightEnd ? 'during' : 'after',
+    campaignSales: sum(d.campaignStores, date), controlSales: sum(d.controlStores, date),
+  }));
+  if (!rows.some((r) => r.campaignSales > 0)) return { transactions: false };
+  const mean = (phase, key) => { const xs = rows.filter((r) => r.phase === phase); return xs.length ? xs.reduce((n, r) => n + r[key], 0) / xs.length : 0; };
+  const preC = mean('before', 'campaignSales'); const preX = mean('before', 'controlSales');
+  const nC = d.campaignStores.length; const nX = d.controlStores.length;
+  const series = rows.map((r) => ({
+    ...r,
+    campaignPerStore: cents(r.campaignSales / nC), controlPerStore: cents(r.controlSales / nX),
+    difference: cents(r.campaignSales / nC - r.controlSales / nX),
+    campaignIndex: preC ? Math.round((r.campaignSales / preC) * 1000) / 10 : null,
+    controlIndex: preX ? Math.round((r.controlSales / preX) * 1000) / 10 : null,
+  }));
+  const during = rows.filter((r) => r.phase === 'during');
+  const flightC = during.reduce((n, r) => n + r.campaignSales, 0);
+  const flightX = during.reduce((n, r) => n + r.controlSales, 0);
+  // What the campaign stores would have sold had they moved like the control stores from the 30 days before.
+  const expected = preC * during.length * (preX && during.length ? flightX / during.length / preX : 0);
+  const incremental = cents(flightC - expected);
+  const spend = campaignSpend(store, d, all);
+  return {
+    transactions: true, series,
+    uplift: expected > 0 ? Math.round((incremental / expected) * 100) : null,
+    incremental, spend, iroas: spend > 0 ? Math.round((incremental / spend) * 100) / 100 : null,
+  };
+}
+
+const tierMix = (level) => Object.entries(TIER_MIX[level] || TIER_MIX['Default only']).map(([tier, percent]) => ({ tier, percent }));
+
+module.exports = { describeCampaign, upliftFor, tierMix, transactionsFor, controlStoreIds, CONTROL_SEGMENT, PRE_DAYS, POST_DAYS };
   },
   "src/display-types.js": function (module, exports, require) {
 // Display type facts shared by the display-types, slot-value, slot-allocation and missed-revenue
@@ -1423,12 +1871,54 @@ module.exports = { dispatch, normalisePrincipal, BASE };
   "src/routes/advertisers.js": function (module, exports, require) {
 const calc = require('../calc');
 const { dealsOf, slotKey, rollUp, opportunities, slotsWonComplete, RETENTION_DAYS, cents } = require('../dealing');
+const { describeCampaign, upliftFor } = require('../uplift');
+
+// iROAS per advertiser: the Sales uplift calculation (src/uplift.js) rolled up over the advertiser's campaigns that ran in
+// the applied range (and on the filtered stores and display types). Only campaigns that excluded the Control stores segment
+// and have POS sales are measured; their spend, not the others', is the denominator. `value` is null when nothing was measured.
+function iroasOf(store, filters) {
+  const lastDay = store.lastPlayedDay;
+  const wantedTypes = filters.displayTypeIds ? new Set(filters.displayTypeIds) : null;
+  const wantedStores = filters.storeIds ? new Set(filters.storeIds) : null;
+  const all = store.campaigns.filter((c) => c.start <= lastDay).map((c) => describeCampaign(c, store, lastDay));
+  const inRange = all.filter((c) => c.start <= filters.dateTo && c.flightEnd >= filters.dateFrom
+    && (!wantedTypes || !c.displayTypeIds || c.displayTypeIds.some((t) => wantedTypes.has(t)))
+    && (!wantedStores || c.campaignStores.some((s) => wantedStores.has(s))));
+  const byAdv = new Map();
+  let anyPos = false;
+  for (const c of inRange) {
+    if (!byAdv.has(c.advertiserId)) byAdv.set(c.advertiserId, { incrementalSales: 0, measuredSpend: 0, measured: [], notMeasured: [], flagged: [], from: null, to: null, stores: new Set(), control: new Set() });
+    const a = byAdv.get(c.advertiserId);
+    const label = { campaignId: c.id, product: c.product.name };
+    if (!c.excludesControl) { a.notMeasured.push({ ...label, reason: 'No control stores set' }); continue; }
+    const r = upliftFor(store, c, all);
+    if (!r.transactions) { a.notMeasured.push({ ...label, reason: 'No sales data' }); continue; }
+    anyPos = true;
+    a.incrementalSales += r.incremental; a.measuredSpend += r.spend; a.measured.push(c.id);
+    if (c.matchedOn !== 'sku') a.flagged.push({ ...label, reason: 'Matched on product name' });
+    const from = c.start > filters.dateFrom ? c.start : filters.dateFrom; const to = c.flightEnd < filters.dateTo ? c.flightEnd : filters.dateTo;
+    if (!a.from || from < a.from) a.from = from; if (!a.to || to > a.to) a.to = to;
+    c.campaignStores.forEach((s) => a.stores.add(s)); c.controlStores.forEach((s) => a.control.add(s));
+  }
+  const out = new Map();
+  for (const [id, a] of byAdv) {
+    out.set(id, {
+      value: a.measured.length && a.measuredSpend > 0 ? Math.round((a.incrementalSales / a.measuredSpend) * 100) / 100 : null,
+      incrementalSales: cents(a.incrementalSales), measuredSpend: cents(a.measuredSpend),
+      measuredCampaigns: a.measured.length, totalCampaigns: a.measured.length + a.notMeasured.length,
+      notMeasured: a.notMeasured, flagged: a.flagged,
+      campaignStores: a.stores.size, controlStores: a.control.size, dateFrom: a.from, dateTo: a.to,
+    });
+  }
+  return { byAdv: out, anyPos };
+}
 
 // Demand health: earned revenue, share of total earned (whole numbers adding to 100), deals on, slots covered,
 // slots won %, effective CPM (settled billing only) and DSP. `top` is the ten highest by revenue, `all` is everyone.
 // Slots covered and Slots won count only the advertiser's deal positions on the filtered display types, and
 // Slots won only its own wins on those deals (not wins there from other deals or the open auction). With no
-// opportunity, Slots won is null. There is no cap: a figure above 100 would be a data error to fix, not hide.
+// opportunity, Slots won is null. `iroas` is the incremental return on ad spend (see iroasOf); `posData` is false when no
+// campaign in the range had any POS sales to measure. There is no cap: a figure above 100 would be a data error to fix, not hide.
 module.exports = {
   path: '/advertisers',
   handler({ store, filters }) {
@@ -1438,6 +1928,7 @@ module.exports = {
     const opp = opportunities(store, filters);
     const deals = dealsOf(store);
     const wantedTypes = filters.displayTypeIds ? new Set(filters.displayTypeIds) : null;
+    const iroas = iroasOf(store, filters);
     const ids = new Set(roll.byAdv.keys());
     for (const d of deals) for (const b of d.buyers || []) if (!scope || scope.has(b.advertiserId)) ids.add(b.advertiserId);
     const list = [...ids].map((id) => {
@@ -1460,11 +1951,12 @@ module.exports = {
         slotsWonPercent: opportunity > 0 ? calc.wholePercent(won, opportunity) : null,
         slotsWonCount: won, slotsOpportunity: Math.round(opportunity),
         effectiveCpm: a.earnedViews > 0 ? cents(calc.effectiveCpm(a.earned, a.earnedViews)) : null,
+        iroas: iroas.byAdv.get(id) || { value: null, incrementalSales: 0, measuredSpend: 0, measuredCampaigns: 0, totalCampaigns: 0, notMeasured: [], flagged: [], campaignStores: 0, controlStores: 0, dateFrom: null, dateTo: null },
       };
     }).sort((x, y) => y.revenueRaw - x.revenueRaw || x.name.localeCompare(y.name));
     const shares = calc.percentSplit(list.map((x) => x.revenueRaw));
     const all = list.map(({ revenueRaw, ...x }, i) => ({ ...x, share: shares[i] }));
-    return { slotsWon: { complete: slotsWonComplete(filters), retentionDays: RETENTION_DAYS }, top: all.slice(0, 10), all };
+    return { posData: iroas.anyPos, slotsWon: { complete: slotsWonComplete(filters), retentionDays: RETENTION_DAYS }, top: all.slice(0, 10), all };
   },
 };
   },
@@ -1491,10 +1983,13 @@ const calc = require('../calc');
 const { displayTypeFacts, hoverCard } = require('../display-types');
 const { dealIdsFor, slotKey, slotsWonComplete, RETENTION_DAYS } = require('../dealing');
 const { MIN_OTHER_BUYERS_FOR_WINNING_CPM } = require('../constants');
-const { ownAdvertiser, isOpenAuction, dealsInScope, cents } = require('../advertiser-view');
+const { OPEN_AUCTION, ownAdvertiser, isOpenAuction, dealsInScope, cents, winningRange } = require('../advertiser-view');
 
 // Advertiser "Your deals by display type": one group per display type the advertiser's deals are on (shopper-journey
-// order), one row per deal beneath it. Open auction plays are not on a deal and are not included. A deal row's Share is
+// order), one row per deal beneath it, then an Open auction row on each display type the advertiser's campaigns run on (or has won
+// open auction plays on). A row of an auction (private or open) also carries the winning CPM range (p25 / median / p75 of every
+// winning buyer's cleared CPM there, in aggregate only, and only with at least MIN_OTHER_BUYERS_FOR_WINNING_CPM other winners);
+// Programmatic guaranteed and Preferred deal rows are fixed price and carry none. A deal row's Share is
 // the advertiser's plays won of all plays on that deal there (other buyers only as a count, never named); a group's
 // Share is its share of the advertiser's deal spend (whole numbers adding to 100). Parts are rounded first. Settled (earned) rows only, like every retailer figure.
 module.exports = {
@@ -1509,10 +2004,24 @@ module.exports = {
     const mineSeen = new Uint8Array(nD * nT);
     const otherFlag = new Uint8Array(nD * nT * nA); const otherCount = new Int32Array(nD * nT); // distinct other advertisers with plays won
     const ownRows = [];
+    // Revenue and views per winning buyer (advertiser x deal x display type; the open auction's are per display type), from which each
+    // buyer's cleared CPM and so the winning CPM range is read, only for a range that is actually shown. Never keyed out of the service.
+    const buyerRev = new Float64Array(nD * nT * nA); const buyerViews = new Float64Array(nD * nT * nA);
+    const openRev = new Float64Array(nT * nA); const openViews = new Float64Array(nT * nA);
+    const openAll = new Float64Array(nT); const openMine = new Map(); const openOthers = Array.from({ length: nT }, () => new Set());
+    const cpmsAt = (rev, views, base) => { const out = []; for (let a = 0; a < nA; a += 1) if (views[base + a] > 0) out.push(calc.effectiveCpm(rev[base + a], views[base + a])); return out; };
     store.scanDelivery({ ...filters, advertiserIds: null }, (r) => {
-      if (isOpenAuction(r)) return;
+      if (isOpenAuction(r)) {
+        openAll[r.typeIx] += r.earnedSlots;
+        if (r.earnedSlots > 0 && r.earnedViews > 0) { openRev[r.typeIx * nA + r.advIx] += r.earned; openViews[r.typeIx * nA + r.advIx] += r.earnedViews; }
+        if (r.advIx !== meIx) { if (r.earnedSlots > 0) openOthers[r.typeIx].add(r.advIx); return; }
+        let m = openMine.get(r.typeIx); if (!m) { m = { plays: 0, views: 0, rev: 0 }; openMine.set(r.typeIx, m); }
+        m.plays += r.earnedSlots; m.views += r.earnedViews; m.rev += r.earned;
+        return;
+      }
       const k = r.dealIx * nT + r.typeIx;
       all[k] += r.earnedSlots;
+      if (r.earnedSlots > 0 && r.earnedViews > 0) { buyerRev[k * nA + r.advIx] += r.earned; buyerViews[k * nA + r.advIx] += r.earnedViews; }
       if (r.advIx !== meIx) {
         if (r.earnedSlots > 0) { const f = k * nA + r.advIx; if (!otherFlag[f]) { otherFlag[f] = 1; otherCount[k] += 1; } }
         return;
@@ -1527,6 +2036,11 @@ module.exports = {
     const typeIds = new Set();
     for (const d of deals) for (const s of d.slots || []) typeIds.add(s.displayTypeId);
     for (const r of ownRows) typeIds.add(r.displayTypeId);
+    // Open auction: the display types the advertiser's campaigns run on (within its scope), plus any it has won open plays on.
+    const openTypeIds = new Set();
+    store.scanCampaigns(filters, (c) => { for (const t of c.displayTypeIds || []) openTypeIds.add(t); });
+    for (const t of openMine.keys()) openTypeIds.add(store.typeIds[t]);
+    for (const t of [...openTypeIds]) if ((inScope && !inScope.has(t)) || !known[t]) openTypeIds.delete(t); else typeIds.add(t);
     for (const t of [...typeIds]) if ((inScope && !inScope.has(t)) || !known[t]) typeIds.delete(t);
 
     const facts = new Map(displayTypeFacts(store, { ...filters, displayTypeIds: [...typeIds] }).map((t) => [t.id, t]));
@@ -1566,7 +2080,35 @@ module.exports = {
         if (!hideShare) row.share.allPlays = allPlays;
         if (own.views > 0) row.effectiveCpm = cents(calc.effectiveCpm(own.rev, own.views));
         if (!hideShare && allPlays > 0) row.share.percent = calc.wholePercent(own.plays, allPlays);
+        // Fixed-price deals have no auction and so no range; an auction's range needs enough other winners (see the header).
+        if (deal.dealType === 'Private auction' && winners >= MIN_OTHER_BUYERS_FOR_WINNING_CPM) {
+          const range = winningRange(cpmsAt(buyerRev, buyerViews, k * nA));
+          if (range) row.winningCpm = range;
+        }
         rows.push(row);
+      }
+      // The open auction on this display type, listed last: no assigned slots, plays won of all open auction plays there. Like
+      // Delivery's open auction block it is kept out of the group's own totals (which stay the deals', so deals + open auction = Delivery).
+      let openRow = null;
+      const tIx = store.typeCode.get(typeId);
+      if (openTypeIds.has(typeId)) {
+        const m = (tIx !== undefined && openMine.get(tIx)) || { plays: 0, views: 0, rev: 0 };
+        const winners = tIx !== undefined ? openOthers[tIx].size : 0;
+        const hideShare = winners >= 1 && winners < MIN_OTHER_BUYERS_FOR_WINNING_CPM;
+        const row = {
+          id: OPEN_AUCTION, name: 'Open auction', description: 'Any buyer bids per slot against the display type\u2019s floor.', dealType: 'Open auction',
+          dealIds: [], slots: { count: 0, assigned: [] },
+          playsWon: m.plays, assumedViews: Math.round(m.views), spend: cents(m.rev),
+          share: { playsWon: m.plays },
+        };
+        if (!hideShare && tIx !== undefined) row.share.allPlays = openAll[tIx];
+        if (m.views > 0) row.effectiveCpm = cents(calc.effectiveCpm(m.rev, m.views));
+        if (!hideShare && tIx !== undefined && openAll[tIx] > 0) row.share.percent = calc.wholePercent(m.plays, openAll[tIx]);
+        if (tIx !== undefined && winners >= MIN_OTHER_BUYERS_FOR_WINNING_CPM) {
+          const range = winningRange(cpmsAt(openRev, openViews, tIx * nA));
+          if (range) row.winningCpm = range;
+        }
+        openRow = row;
       }
       rows.sort((a, b) => calc.compareDealTypes(a.dealType, b.dealType) || a.name.localeCompare(b.name));
       const spend = cents(rows.reduce((s, r) => s + r.spend, 0));
@@ -1575,9 +2117,29 @@ module.exports = {
       const group = {
         displayType: t ? hoverCard(t) : { id: typeId, name: known[typeId].name },
         dealCount: rows.length, slots: slotsHere.size,
-        playsWon: rows.reduce((s, r) => s + r.playsWon, 0), assumedViews: views, spend, deals: rows,
+        playsWon: rows.reduce((s, r) => s + r.playsWon, 0), assumedViews: views, spend, deals: openRow ? [...rows, openRow] : rows,
       };
       if (views > 0) group.effectiveCpm = cents(calc.effectiveCpm(spend, views));
+      // The display type's own range: every winning buyer's cleared CPM on its private auction deals and the open auction here,
+      // when at least MIN_OTHER_BUYERS_FOR_WINNING_CPM distinct other buyers won across them.
+      const pooled = []; const others = new Set();
+      const tIx2 = store.typeCode.get(typeId);
+      for (const deal of deals) {
+        if (deal.dealType !== 'Private auction' || !rows.some((r) => r.id === deal.id)) continue;
+        const k = cell(deal.id, typeId);
+        if (k < 0) continue;
+        for (let a = 0; a < nA; a += 1) if (a !== meIx && otherFlag[k * nA + a]) others.add(a);
+      }
+      if (tIx2 !== undefined && openTypeIds.has(typeId)) for (const a of openOthers[tIx2]) others.add(a);
+      if (others.size >= MIN_OTHER_BUYERS_FOR_WINNING_CPM) {
+        for (const deal of deals) {
+          if (deal.dealType !== 'Private auction' || !rows.some((r) => r.id === deal.id)) continue;
+          const k = cell(deal.id, typeId);
+          if (k >= 0) pooled.push(...cpmsAt(buyerRev, buyerViews, k * nA));
+        }
+        if (tIx2 !== undefined && openTypeIds.has(typeId)) pooled.push(...cpmsAt(openRev, openViews, tIx2 * nA));
+        const range = winningRange(pooled); if (range) group.winningCpm = range;
+      }
       return group;
     }).filter((g) => g.deals.length);
 
@@ -1671,7 +2233,7 @@ const calc = require('../calc');
 const { FilterError } = require('../filters');
 const { MIN_OTHER_BUYERS_FOR_WINNING_CPM } = require('../constants');
 const { addDays, eachDay, dayDiff, dayNumber, dealsOf } = require('../dealing');
-const { OPEN_AUCTION, ownAdvertiser, isOpenAuction, dealsDelivered, cents } = require('../advertiser-view');
+const { OPEN_AUCTION, ownAdvertiser, isOpenAuction, dealsDelivered, cents, winningRange } = require('../advertiser-view');
 
 const change = (now, before, round) => {
   const out = { change: round(now - before) };
@@ -1681,7 +2243,7 @@ const change = (now, before, round) => {
 const whole = (n) => n;
 
 // Advertiser Delivery: plays won and spend per day, a per-deal block explaining each day (plays won of all
-// plays, the advertiser's own CPM, the aggregate winning CPM, the floor), day-on-day change, and PG pacing.
+// plays, the advertiser's own CPM, the winning CPM range p25 / median / p75, the floor), day-on-day change, and PG pacing.
 // Other buyers appear only as aggregates: never their names, ids, per-buyer plays or per-buyer CPMs.
 // `dealId` narrows to one deal (or `open-auction`). Money is USD to the cent, rounded per day first.
 module.exports = {
@@ -1740,7 +2302,7 @@ module.exports = {
     const blocks = [...deals.map((d) => ({ key: d.id, deal: d })), ...(openTypes.size ? [{ key: OPEN_AUCTION, deal: null }] : [])]
       .filter((b) => wanted(b.key));
 
-    // (date x block) -> { all plays, winners' revenue/views/highest CPM, other buyers, own plays/revenue/views }, where a block is
+    // (date x block) -> { all plays, winners' revenue/views/cleared CPMs, other buyers, own plays/revenue/views }, where a block is
     // a deal the advertiser is on, or the open auction. A second pass over the same rows, now that the open-auction display types
     // are known and with every advertiser in (other buyers only feed these aggregates); rows of no block are skipped.
     const blockOf = new Int32Array(store.dealIds.length).fill(-1); let openBlock = -1;
@@ -1751,19 +2313,19 @@ module.exports = {
     const meIx = store.advCode.get(me);
     const cellAt = (dayIx, b) => {
       const at = (dayIx - firstDay) * nBlocks + b;
-      return cells[at] || (cells[at] = { all: 0, rev: 0, views: 0, high: 0, others: [], own: { plays: 0, rev: 0, views: 0 } });
+      return cells[at] || (cells[at] = { all: 0, rev: 0, views: 0, cpms: null, others: [], own: { plays: 0, rev: 0, views: 0 } });
     };
     const blockFor = (isOpen, dealIx, typeId) => {
       if (isOpen) return openBlock >= 0 && openTypes.has(typeId) ? openBlock : -1;
       return blockOf[dealIx];
     };
-    // Everyone's plays, revenue, views, highest CPM and the other buyers, from the store's precomputed day x type x deal cells.
+    // Everyone's plays, revenue, views, cleared CPMs and the other buyers, from the store's precomputed day x type x deal cells.
     store.scanDeliveryCells(scanFilters, (c) => {
       const b = blockFor(c.dealIx < 0, c.dealIx, c.displayTypeId);
       if (b < 0) return;
       const a = cellAt(c.dayIx, b);
       a.all += c.all; a.rev += c.rev; a.views += c.views;
-      if (c.high > a.high) a.high = c.high;
+      if (c.cpms.length) { if (!a.cpms) a.cpms = []; for (let i = 0; i < c.cpms.length; i += 1) a.cpms.push(c.cpms[i]); }
       for (const x of c.advs) if (x !== meIx && !a.others.includes(x)) a.others.push(x);
     });
     // The advertiser's own plays, from its own rows (already settled-only).
@@ -1794,7 +2356,8 @@ module.exports = {
       }
       if (own.plays > 0 && own.views > 0) out.yourCpm = cents(calc.effectiveCpm(own.rev, own.views));
       if (a && a.others.length >= MIN_OTHER_BUYERS_FOR_WINNING_CPM && a.views > 0) {
-        out.winningCpm = { average: cents(calc.effectiveCpm(a.rev, a.views)), highest: cents(a.high) };
+        const range = a.cpms && winningRange(a.cpms);
+        if (range) out.winningCpm = range;
       }
       const lo = key === OPEN_AUCTION ? Math.min(...floors) : deal.floorCpm;
       const hi = key === OPEN_AUCTION ? Math.max(...floors) : deal.floorCpm;
@@ -1908,6 +2471,82 @@ module.exports = {
 
 // The only unauthenticated route.
 module.exports = { path: '/health', public: true, handler: () => ({ status: 'ok' }) };
+  },
+  "src/routes/hourly.js": function (module, exports, require) {
+const calc = require('../calc');
+const { ForbiddenError } = require('../filters');
+const { displayTypeFacts } = require('../display-types');
+
+const HOURS = 24;
+
+// Fill and effective CPM by hour of day, per display type. Retailer view only. Only hours inside a display type's
+// operating hours are inventory, so only those hours have a cell (the API never says when a store opens).
+// Billing line items carry no play timestamp yet, so each day's earned revenue and assumed views are spread over its
+// hours by the share of that day's sold slots played in the hour (`viewsBasis`); the hourly impression multiplier
+// (DSP Integration) replaces this. Fill is the Missed revenue & fill rule: sold / (sold + unsold + offline).
+module.exports = {
+  path: '/hourly',
+  handler({ store, filters, principal }) {
+    if (principal.principalType === 'advertiser') throw new ForbiddenError('hourly fill is a retailer view'); // also denied by default in the server
+    const facts = displayTypeFacts(store, filters);
+    const slots = new Map(); // type -> hour -> {sold, unsold, offline}
+    const days = new Map(); // `${date}|${type}` -> { sold[24], total[24] }
+    store.scanHourlyInventory(filters, (r) => {
+      let hours = slots.get(r.displayTypeId);
+      if (!hours) { hours = Array.from({ length: HOURS }, () => ({ sold: 0, unsold: 0, offline: 0 })); slots.set(r.displayTypeId, hours); }
+      const c = hours[r.hour];
+      c.sold += r.sold; c.unsold += r.unsold; c.offline += r.offline;
+      const key = `${r.date}|${r.displayTypeId}`;
+      let d = days.get(key);
+      if (!d) { d = { sold: new Float64Array(HOURS), total: new Float64Array(HOURS) }; days.set(key, d); }
+      d.sold[r.hour] += r.sold; d.total[r.hour] += r.sold + r.unsold + r.offline;
+    });
+    // Earned revenue and views per day x display type, for the advertiser filter too (slot records belong to no advertiser).
+    const earned = new Map();
+    store.scanDelivery(filters, (r) => {
+      if (r.earned <= 0 && r.earnedViews <= 0) return;
+      const key = `${r.date}|${r.displayTypeId}`;
+      const e = earned.get(key) || { revenue: 0, views: 0 };
+      e.revenue += r.earned; e.views += r.earnedViews;
+      earned.set(key, e);
+    });
+    const spread = new Map(); // type -> { revenue[24], views[24] }
+    for (const [key, e] of earned) {
+      const d = days.get(key);
+      if (!d) continue;
+      const typeId = key.slice(key.indexOf('|') + 1);
+      let weights = d.sold; let sum = weights.reduce((a, b) => a + b, 0);
+      if (!(sum > 0)) { weights = d.total; sum = weights.reduce((a, b) => a + b, 0); }
+      if (!(sum > 0)) continue;
+      let acc = spread.get(typeId);
+      if (!acc) { acc = { revenue: new Float64Array(HOURS), views: new Float64Array(HOURS) }; spread.set(typeId, acc); }
+      for (let h = 0; h < HOURS; h += 1) { acc.revenue[h] += (e.revenue * weights[h]) / sum; acc.views[h] += (e.views * weights[h]) / sum; }
+    }
+    const rows = facts.map((t) => {
+      const hours = slots.get(t.id);
+      const acc = spread.get(t.id);
+      const live = []; // hours with inventory
+      for (let h = 0; h < HOURS; h += 1) if (hours && hours[h].sold + hours[h].unsold + hours[h].offline > 0) live.push(h);
+      // Parts add to the day-level totals: revenue to the cent, views to the whole number.
+      const revenue = acc ? calc.roundToTotal(live.map((h) => acc.revenue[h]), 2) : live.map(() => 0);
+      const views = acc ? calc.roundToTotal(live.map((h) => acc.views[h]), 0) : live.map(() => 0);
+      return {
+        id: t.id, name: t.def.name,
+        connectedDisplays: { displays: t.displays.length, stores: t.storeCount },
+        hours: live.map((h, i) => {
+          const c = hours[h];
+          return {
+            hour: h, fillPercent: calc.fillPercent(c.sold, c.unsold, c.offline),
+            slotsSold: c.sold, slotsUnsold: c.unsold, slotsOffline: c.offline, slotsTotal: c.sold + c.unsold + c.offline,
+            revenue: revenue[i], views: views[i],
+            effectiveCpm: views[i] > 0 ? Math.round(calc.effectiveCpm(revenue[i], views[i]) * 100) / 100 : null,
+          };
+        }),
+      };
+    });
+    return { viewsBasis: 'share-of-slots-sold', rows };
+  },
+};
   },
   "src/routes/maturity.js": function (module, exports, require) {
 const calc = require('../calc');
@@ -2314,6 +2953,135 @@ module.exports = {
   },
 };
   },
+  "src/routes/sales-response.js": function (module, exports, require) {
+const sr = require('../sales-response');
+const { FilterError } = require('../filters');
+
+const intParam = (params, name, { min, max }) => {
+  const raw = params.get(name);
+  if (raw === null || raw === '') return null;
+  if (!/^\d+$/.test(raw) || Number(raw) < min || Number(raw) > max) throw new FilterError(`${name} must be a whole number from ${min} to ${max}`);
+  return Number(raw);
+};
+
+const EMPTY_TEXT = {
+  'no-pos': 'Requires a POS integration into the Personalisation Hub Transaction API.',
+  'no-personalised-plays': 'No personalised plays for this campaign in the selected period.',
+  'no-campaigns': 'No campaigns with personalised variants in the selected period.',
+};
+const NO_CONTROL = 'Control stores — none set for this campaign.';
+
+// Sales response after personalised plays (Targeting & scheduling maturity; the advertiser's Your targeting & scheduling).
+// The page filters scope it (store, display type, date range, advertiser); an advertiser login is pinned to its own campaigns
+// by the filters themselves, so another advertiser's campaign id is simply not in the list and is refused as unknown.
+module.exports = {
+  path: '/sales-response',
+  advertiserAccess: true,
+  handler({ store, filters, params, principal }) {
+    const own = principal && principal.principalType === 'advertiser';
+    const window = intParam(params, 'window', { min: 1, max: sr.MAX_WINDOW }) || sr.DEFAULT_WINDOW;
+    const step = intParam(params, 'step', { min: 1, max: sr.MAX_WINDOW }) || 1;
+    if (!sr.STEPS.includes(step)) throw new FilterError(`step must be one of ${sr.STEPS.join(', ')}`);
+    if (step > window) throw new FilterError('step must not be larger than the window');
+    const view = params.get('view') || 'step';
+    if (!sr.VIEWS.includes(view)) throw new FilterError(`view must be one of ${sr.VIEWS.join(', ')}`);
+    const hourFrom = intParam(params, 'hourFrom', { min: 0, max: 23 });
+    const hourTo = intParam(params, 'hourTo', { min: 0, max: 23 });
+    if ((hourFrom === null) !== (hourTo === null)) throw new FilterError('hourFrom and hourTo go together');
+    if (hourFrom !== null && hourFrom > hourTo) throw new FilterError('hourFrom must not be after hourTo');
+
+    const list = sr.personalisedCampaigns(store, filters);
+    const campaigns = list.map((c) => {
+      const a = store.advertisers[c.advertiserId] || {};
+      const base = { id: c.id, name: c.name || c.id, product: c.product || null, start: c.start, end: c.end };
+      return own ? base : { ...base, advertiserId: c.advertiserId, advertiserName: a.name || c.advertiserId, dsp: a.dsp || null };
+    });
+    const out = { window, step, view, hourBand: hourFrom === null ? null : { from: hourFrom, to: hourTo }, campaigns, campaignId: null, hours: [], emptyReason: null, emptyText: null, lines: [], coverage: null };
+    const empty = (reason) => { out.emptyReason = reason; out.emptyText = EMPTY_TEXT[reason]; return out; };
+
+    const wanted = params.get('campaignId');
+    if (wanted && !list.some((c) => c.id === wanted)) throw new FilterError('campaignId is not one of the campaigns listed');
+    const campaign = list.find((c) => c.id === wanted) || list[0];
+    if (!campaign) return empty('no-campaigns');
+    out.campaignId = campaign.id;
+    out.matchedOnProductName = !(campaign.product && campaign.product.sku);
+    if (!store.catalog.transactionApi) return empty('no-pos');
+
+    const r = sr.salesResponse(store, campaign, filters, { window, step, view, hourFrom, hourTo, hoursError: (m) => new FilterError(m) });
+    out.hours = r.hours;
+    const personalised = r.lines.personalised;
+    const control = r.lines.control;
+    const stores = r.scope.treated.map((s) => store.catalog.stores[s].name || s).sort();
+    out.coverage = { stores: stores.length, storeNames: stores, controlStores: r.scope.control.length, dateFrom: r.dates[0] || null, dateTo: r.dates[r.dates.length - 1] || null };
+    if (!personalised.plays) return empty('no-personalised-plays');
+
+    const spec = [
+      ['personalised', 'After a personalised play', r.lines.personalised],
+      ['localised', 'After a localised play', r.lines.localised],
+      ['control', 'Control stores, same clock time', control],
+    ];
+    out.lines = spec.map(([key, label, line]) => {
+      if (key === 'control' && !r.scope.control.length) return { key, label, available: false, note: NO_CONTROL, points: [] };
+      let running = 0;
+      const points = line.sales.map((sales, i) => {
+        const from = i * step; const to = Math.min((i + 1) * step, window);
+        running += sales;
+        return {
+          from, to, label: sr.labelOf(from, to, step),
+          value: sr.rate(view === 'running' ? running : sales, line.shoppers),
+          sales: view === 'running' ? running : sales, plays: line.plays, shoppers: line.shoppers,
+        };
+      });
+      return { key, label, available: true, plays: line.plays, shoppers: line.shoppers, points };
+    });
+    return out;
+  },
+};
+  },
+  "src/routes/sales-uplift.js": function (module, exports, require) {
+const { FilterError } = require('../filters');
+const { describeCampaign, upliftFor, tierMix, CONTROL_SEGMENT, PRE_DAYS, POST_DAYS } = require('../uplift');
+const { addDays } = require('../dealing');
+
+// Sales uplift vs control stores: one outcome chart for one campaign. Sales of the campaign's product in the stores it
+// played in versus the Control stores segment, 30 days before, during its flight and 30 days after, with uplift %,
+// incremental sales and iROAS. Page filters other than Advertiser do not apply (the windows are the campaign's own).
+// `campaigns` is the drop-down: the campaigns of the advertiser(s) in scope, newest first. An advertiser login is pinned
+// to its own advertiser by scopeFilters, so a campaign of another advertiser is simply not found. `state` says why a chart
+// is empty: `no-pos` (no transactions for the product), `no-control` (no Control stores exclusion on the campaign).
+module.exports = {
+  path: '/sales-uplift',
+  advertiserAccess: true,
+  handler({ store, filters, params }) {
+    const lastDay = store.lastPlayedDay;
+    const advs = filters.advertiserIds ? new Set(filters.advertiserIds) : null;
+    const all = store.campaigns.filter((c) => c.start <= lastDay).map((c) => describeCampaign(c, store, lastDay));
+    const mine = all.filter((c) => !advs || advs.has(c.advertiserId)).sort((a, b) => b.start.localeCompare(a.start) || a.id.localeCompare(b.id));
+    const requested = params.get('campaignId');
+    if (requested && !mine.some((c) => c.id === requested)) throw new FilterError('unknown campaignId');
+    const pick = requested ? mine.find((c) => c.id === requested)
+      : mine.find((c) => c.hasPos && c.excludesControl && c.flightEnded) || mine[0] || null;
+    const names = (ids) => ids.map((id) => store.catalog.stores[id].name || id);
+    const out = {
+      campaigns: mine.map((c) => ({ id: c.id, advertiserId: c.advertiserId, advertiserName: c.advertiserName, productName: c.product.name, ...(c.product.sku ? { sku: c.product.sku } : {}), start: c.start, end: c.end })),
+      campaignId: pick ? pick.id : null, controlSegment: CONTROL_SEGMENT, state: pick ? 'ok' : 'no-campaign',
+    };
+    if (!pick) return out;
+    Object.assign(out, {
+      product: pick.product.sku ? { name: pick.product.name, sku: pick.product.sku } : { name: pick.product.name },
+      matchedOn: pick.matchedOn,
+      windows: { before: { from: addDays(pick.start, -PRE_DAYS), to: addDays(pick.start, -1) }, during: { from: pick.start, to: pick.flightEnd }, afterDays: POST_DAYS },
+      campaignStores: { count: pick.campaignStores.length, names: names(pick.campaignStores) },
+      controlStores: { count: pick.controlStores.length, names: names(pick.controlStores) },
+      tierMix: tierMix(pick.level),
+    });
+    const result = upliftFor(store, pick, all.filter((c) => c.advertiserId === pick.advertiserId));
+    if (!result.transactions) return { ...out, state: 'no-pos' };
+    if (!pick.excludesControl) return { ...out, state: 'no-control' };
+    return { ...out, tiles: { upliftPercent: result.uplift, incrementalSales: result.incremental, spend: result.spend, iroas: result.iroas }, series: result.series };
+  },
+};
+  },
   "src/routes/slot-allocation.js": function (module, exports, require) {
 const calc = require('../calc');
 const { displayTypeFacts } = require('../display-types');
@@ -2350,7 +3118,7 @@ module.exports = {
 const calc = require('../calc');
 const { displayTypeFacts, hoverCard, days, round } = require('../display-types');
 
-// Slot value per display type: effective CPM, floor CPM, per slot per day and the network totals behind them.
+// Slot value per display type: effective CPM, floor CPM, revenue per available slot and the network totals behind them.
 // All revenue is earned revenue, to the cent. The hover's identity holds on real numbers, with fill applied:
 //   perSlotPerDay = effectiveCpm x averageAssumedViewsPerSlotPerDay / 1,000 x advertiserSlotsSoldShare
 // where the sold share is the settled (earned) assumed views delivered as a share of what every advertiser slot
@@ -2533,7 +3301,7 @@ module.exports = {
     });
     return module.exports;
   }
-  var ROUTE_FILES = ["src/routes/advertisers.js","src/routes/audience.js","src/routes/deals-by-display-type.js","src/routes/deals.js","src/routes/delivery.js","src/routes/display-types.js","src/routes/filter-options.js","src/routes/health.js","src/routes/maturity.js","src/routes/missed-revenue.js","src/routes/my-summary.js","src/routes/my-targeting.js","src/routes/revenue.js","src/routes/slot-allocation.js","src/routes/slot-value.js","src/routes/summary.js","src/routes/yield.js"];
+  var ROUTE_FILES = ["src/routes/advertisers.js","src/routes/audience.js","src/routes/deals-by-display-type.js","src/routes/deals.js","src/routes/delivery.js","src/routes/display-types.js","src/routes/filter-options.js","src/routes/health.js","src/routes/hourly.js","src/routes/maturity.js","src/routes/missed-revenue.js","src/routes/my-summary.js","src/routes/my-targeting.js","src/routes/revenue.js","src/routes/sales-response.js","src/routes/sales-uplift.js","src/routes/slot-allocation.js","src/routes/slot-value.js","src/routes/summary.js","src/routes/yield.js"];
   var state = null;
   function init() {
     if (state) return state;

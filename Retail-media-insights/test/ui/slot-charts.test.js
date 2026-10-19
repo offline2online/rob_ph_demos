@@ -33,6 +33,7 @@ async function open(width) {
   await page.goto(base + '/index.html');
   await page.waitForSelector('.sc-row[data-fill]');
   await page.waitForSelector('.sc-table');
+  await page.waitForSelector('.sc-heat-cell[data-hour]');
   await page.waitForFunction(() => [...document.querySelectorAll('.sc-body')].every((b) => b.getAttribute('aria-busy') === 'false'));
   return { page, context };
 }
@@ -109,7 +110,7 @@ test('Slot allocation hover headings and the 90px sold bar; Slot value legend an
     assert.equal(await sv.locator('.sc-floor-mark').first().evaluate((e) => getComputedStyle(e).borderLeftColor), 'rgb(237, 161, 0)');
     await sv.locator('.sc-seg-btn[data-mode="per"]').click();
     assert.deepEqual(await sv.locator('.sc-legend-item').allTextContents(), ['Earned revenue per advertiser slot per day']);
-    assert.match(await sv.locator('.sc-value').first().textContent(), /^\$\d+\.\d\d per slot per day$/);
+    assert.match(await sv.locator('.sc-value').first().textContent(), /^\$\d+\.\d\d per available slot per day$/);
   } finally { await context.close(); }
 });
 
@@ -120,5 +121,30 @@ test('at 390px there is no sideways scroll and the missed-revenue label sits abo
     const row = panel(page, 'Missed revenue & fill').locator('.sc-row').first();
     const [l, t] = await Promise.all([row.locator('.sc-label').boundingBox(), row.locator('.sc-track').boundingBox()]);
     assert.ok(l.y + l.height <= t.y + 1, 'label above the bar');
+  } finally { await context.close(); }
+});
+
+test('Fill and effective CPM by hour: under Yield, full width, toggle, operating hours, hover facts', async () => {
+  const { page, context } = await open(1163);
+  try {
+    const p = panel(page, 'Fill and effective CPM by hour');
+    assert.equal(await p.locator('h2').textContent(), 'Fill and effective CPM by hour');
+    const [y, h] = await Promise.all([panel(page, 'Yield').boundingBox(), p.boundingBox()]);
+    assert.ok(h.y >= y.y + y.height - 1, 'directly under Yield');
+    const grid = await page.locator('.sc-grid').boundingBox();
+    assert.ok(h.width > grid.width * 0.95, 'full width');
+    assert.equal(await p.locator('.sc-seg-btn.on').textContent(), 'Fill');
+    const rowOf = (name) => p.locator('.sc-heat-row', { has: page.locator(`.sc-heat-label:has-text("${name}")`) });
+    assert.match(await rowOf('Window Portrait').locator('.sc-heat-cell[data-hour]').first().textContent(), /^\d+%$/);
+    assert.equal(await rowOf('Window Portrait').locator('.sc-heat-cell[data-hour]').count(), 24);
+    const queue = await rowOf('Queue Screen').locator('.sc-heat-cell[data-hour]').count();
+    assert.ok(queue > 0 && queue < 24);
+    await p.locator('.sc-seg-btn[data-mode="cpm"]').click();
+    assert.match(await rowOf('Window Portrait').locator('.sc-heat-cell[data-hour]').first().textContent(), /^\$\d+\.\d\d$|^–$/);
+    await rowOf('Window Portrait').locator('.sc-heat-cell[data-hour]').nth(10).hover();
+    const tip = await page.locator('.sc-tip').textContent();
+    assert.match(tip, /Hour/); assert.match(tip, /advertiser slots sold/); assert.match(tip, /assumed views/); assert.match(tip, /Totals across all/);
+    await p.locator('.sc-seg-btn[data-mode="fill"]').click();
+    assert.match(await rowOf('Window Portrait').locator('.sc-heat-cell[data-hour]').first().textContent(), /^\d+%$/);
   } finally { await context.close(); }
 });

@@ -3,7 +3,7 @@ const calc = require('../calc');
 const { FilterError } = require('../filters');
 const { MIN_OTHER_BUYERS_FOR_WINNING_CPM } = require('../constants');
 const { addDays, eachDay, dayDiff, dayNumber, dealsOf } = require('../dealing');
-const { OPEN_AUCTION, ownAdvertiser, isOpenAuction, dealsDelivered, cents } = require('../advertiser-view');
+const { OPEN_AUCTION, ownAdvertiser, isOpenAuction, dealsDelivered, cents, winningRange } = require('../advertiser-view');
 
 const change = (now, before, round) => {
   const out = { change: round(now - before) };
@@ -13,7 +13,7 @@ const change = (now, before, round) => {
 const whole = (n) => n;
 
 // Advertiser Delivery: plays won and spend per day, a per-deal block explaining each day (plays won of all
-// plays, the advertiser's own CPM, the aggregate winning CPM, the floor), day-on-day change, and PG pacing.
+// plays, the advertiser's own CPM, the winning CPM range p25 / median / p75, the floor), day-on-day change, and PG pacing.
 // Other buyers appear only as aggregates: never their names, ids, per-buyer plays or per-buyer CPMs.
 // `dealId` narrows to one deal (or `open-auction`). Money is USD to the cent, rounded per day first.
 module.exports = {
@@ -72,7 +72,7 @@ module.exports = {
     const blocks = [...deals.map((d) => ({ key: d.id, deal: d })), ...(openTypes.size ? [{ key: OPEN_AUCTION, deal: null }] : [])]
       .filter((b) => wanted(b.key));
 
-    // (date x block) -> { all plays, winners' revenue/views/highest CPM, other buyers, own plays/revenue/views }, where a block is
+    // (date x block) -> { all plays, winners' revenue/views/cleared CPMs, other buyers, own plays/revenue/views }, where a block is
     // a deal the advertiser is on, or the open auction. A second pass over the same rows, now that the open-auction display types
     // are known and with every advertiser in (other buyers only feed these aggregates); rows of no block are skipped.
     const blockOf = new Int32Array(store.dealIds.length).fill(-1); let openBlock = -1;
@@ -83,19 +83,19 @@ module.exports = {
     const meIx = store.advCode.get(me);
     const cellAt = (dayIx, b) => {
       const at = (dayIx - firstDay) * nBlocks + b;
-      return cells[at] || (cells[at] = { all: 0, rev: 0, views: 0, high: 0, others: [], own: { plays: 0, rev: 0, views: 0 } });
+      return cells[at] || (cells[at] = { all: 0, rev: 0, views: 0, cpms: null, others: [], own: { plays: 0, rev: 0, views: 0 } });
     };
     const blockFor = (isOpen, dealIx, typeId) => {
       if (isOpen) return openBlock >= 0 && openTypes.has(typeId) ? openBlock : -1;
       return blockOf[dealIx];
     };
-    // Everyone's plays, revenue, views, highest CPM and the other buyers, from the store's precomputed day x type x deal cells.
+    // Everyone's plays, revenue, views, cleared CPMs and the other buyers, from the store's precomputed day x type x deal cells.
     store.scanDeliveryCells(scanFilters, (c) => {
       const b = blockFor(c.dealIx < 0, c.dealIx, c.displayTypeId);
       if (b < 0) return;
       const a = cellAt(c.dayIx, b);
       a.all += c.all; a.rev += c.rev; a.views += c.views;
-      if (c.high > a.high) a.high = c.high;
+      if (c.cpms.length) { if (!a.cpms) a.cpms = []; for (let i = 0; i < c.cpms.length; i += 1) a.cpms.push(c.cpms[i]); }
       for (const x of c.advs) if (x !== meIx && !a.others.includes(x)) a.others.push(x);
     });
     // The advertiser's own plays, from its own rows (already settled-only).
@@ -126,7 +126,8 @@ module.exports = {
       }
       if (own.plays > 0 && own.views > 0) out.yourCpm = cents(calc.effectiveCpm(own.rev, own.views));
       if (a && a.others.length >= MIN_OTHER_BUYERS_FOR_WINNING_CPM && a.views > 0) {
-        out.winningCpm = { average: cents(calc.effectiveCpm(a.rev, a.views)), highest: cents(a.high) };
+        const range = a.cpms && winningRange(a.cpms);
+        if (range) out.winningCpm = range;
       }
       const lo = key === OPEN_AUCTION ? Math.min(...floors) : deal.floorCpm;
       const hi = key === OPEN_AUCTION ? Math.max(...floors) : deal.floorCpm;

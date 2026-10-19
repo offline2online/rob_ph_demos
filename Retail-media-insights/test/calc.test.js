@@ -24,7 +24,7 @@ test('effective CPM = revenue / (VAC-d / 1000)', () => {
   assert.equal(calc.effectiveCpm(4, 0), 0);
 });
 
-test('per slot per day divides by slots, displays and days', () => {
+test('revenue per available slot divides by slots, displays and days', () => {
   assert.equal(calc.perSlotPerDayPerDisplay(600, 5, 2, 3), 20);
   assert.equal(calc.perSlotPerDay(600, 5, 3), 40);
   assert.equal(calc.perSlotPerDayPerDisplay(600, 0, 2, 3), 0);

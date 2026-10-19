@@ -42,9 +42,9 @@ test('day hover: totals, a block per deal, then change vs previous day', async (
   assert.deepStrictEqual(none.rows.slice(-2), [['Plays won vs previous day', 'No plays the previous day'], ['Spend vs previous day', 'No spend the previous day']]);
 });
 
-test('auction block: plays of all plays with share, your CPM, winning CPM avg and high, floor', () => {
-  const rows = AV.dealBlockRows({ name: 'Pharmacy Auction', dealType: 'Private auction', playsWon: 32, allPlays: 114, sharePercent: 28, yourCpm: 9.4, winningCpm: { average: 9.18, highest: 10.11 }, floorCpm: { min: 9, max: 9 } });
-  assert.deepStrictEqual(rows.slice(1), [['Plays won', '32 of 114 (28%)'], ['Your CPM', '$9.40'], ['Winning CPM', '$9.18 avg · $10.11 high'], ['Floor CPM', '$9.00']]);
+test('auction block: plays of all plays with share, your CPM, winning CPM range, floor', () => {
+  const rows = AV.dealBlockRows({ name: 'Pharmacy Auction', dealType: 'Private auction', playsWon: 32, allPlays: 114, sharePercent: 28, yourCpm: 9.4, winningCpm: { p25: 8.4, median: 9.1, p75: 9.9 }, floorCpm: { min: 9, max: 9 } });
+  assert.deepStrictEqual(rows.slice(1), [['Plays won', '32 of 114 (28%)'], ['Your CPM', '$9.40'], ['Winning CPM', '$8.40 – $9.90 (middle $9.10)'], ['Floor CPM', '$9.00']]);
 });
 
 test('no plays won, no winning CPM, floor range for the open auction', () => {
@@ -78,7 +78,7 @@ test('deals table: display type row, then its deals; Share on each', async () =>
 
 test('deal hover: description and only the advertiser’s own DSP deal ID', async () => {
   const groups = (await mine('/deals-by-display-type')).groups;
-  groups.forEach((g) => g.deals.forEach((d) => assert.strictEqual(d.dealIds.length, 1)));
+  groups.forEach((g) => g.deals.filter((d) => d.dealType !== 'Open auction').forEach((d) => assert.strictEqual(d.dealIds.length, 1)));
   const t = AV.dealNameTooltip(groups[0].deals[0]);
   assert.strictEqual(t.rows.length, 2);
   assert.strictEqual(t.rows[0][2], 'para');

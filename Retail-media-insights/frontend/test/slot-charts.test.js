@@ -42,12 +42,13 @@ test('slot value: the hover shows the back end’s link, CPM × average views ÷
   assert.strictEqual(m.title, 'Window Portrait');
   assert.strictEqual(val(m, 'Effective CPM'), `$${w.effectiveCpm.toFixed(2)} (total $${w.totals.earnedRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })} earned on ${SC.fmtCompact(w.totals.assumedViews)} assumed views, 12 Sep – 11 Oct)`);
   assert.strictEqual(val(m, 'Floor CPM'), '$7.50');
-  assert.match(val(m, 'Per slot per day'), /^\$\d+\.\d\d \(total \$\d+ per day across 80 advertiser slots on 10 displays\)$/);
+  assert.match(val(m, 'Revenue per available slot'), /^\$\d+\.\d\d \(total \$\d+ per day across 80 advertiser slots on 10 displays\)$/);
   const line = /^\$(\d+\.\d\d) CPM × ([\d,.]+) average assumed views ÷ 1,000 × (\d+)% of advertiser slot capacity earned \(settled billing\) = \$(\d+\.\d\d)$/.exec(val(m, 'How it adds up'));
   assert.ok(line, val(m, 'How it adds up'));
   // The line adds up as displayed: the result is computed from the displayed factors.
   assert.strictEqual(line[4], (+line[1] * +line[2].replace(/,/g, '') / 1000 * (+line[3] / 100)).toFixed(2));
-  assert.match(text(m), /× the share of advertiser slot capacity earned \(settled billing\)/);
+  assert.match(val(m, 'Fill'), /^\d+% of advertiser slot capacity earned/);
+  assert.match(text(m), /Revenue per available slot = effective CPM × average assumed views per slot per day ÷ 1,000 × fill/);
 });
 
 test('CPM labels are always to the cent', () => {
@@ -201,4 +202,19 @@ test('slot value sorts by the selected metric and slot allocation follows it', a
     const types = await typesP;
     assert.deepStrictEqual(SC.followOrder(sa.slice().reverse(), order, (r) => types[r.id]).map((r) => r.id), order.map((r) => r.id).filter((id) => sa.some((a) => a.id === id)));
   }
+});
+
+test('hourly: cell text, shading and hover facts', async () => {
+  const body = await get('/hourly');
+  const row = body.rows.find((r) => r.name === 'Window Portrait');
+  assert.equal(row.hours.length, 24);
+  const cell = row.hours[9];
+  assert.match(SC.hourlyCellText(cell, 'fill'), /^\d+%$/);
+  assert.equal(SC.hourlyCellText({ fillPercent: 50, effectiveCpm: null }, 'cpm'), '–');
+  assert.equal(SC.hourlyShade(null, 10).bg, 'transparent');
+  assert.equal(SC.hourlyMax(body.rows, 'fill') >= cell.fillPercent, true);
+  const m = SC.hourlyHover(row, cell, (await typesP)[row.id], RANGE);
+  assert.equal(val(m, 'Hour'), '09:00–10:00');
+  assert.match(val(m, 'Fill'), /advertiser slots sold; .* unsold, .* offline\)$/);
+  assert.match(text(m), /Totals across all/);
 });

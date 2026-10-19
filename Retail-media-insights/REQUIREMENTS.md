@@ -18,30 +18,34 @@ Page filters on every endpoint: `dateFrom`, `dateTo`, `storeIds[]`, `displayType
 1. `summary` — earned revenue, estimated revenue, Inventory sold (% + slots sold + available + offline).
 2. `revenue` — per day/week/month × DSP × deal type, earned and estimated; params `dsps[]`, `dealTypes[]`, `granularity`.
 3. `deals` — name, description, type, per-DSP deal IDs, assigned slots (with slot detail), advertisers (with DSP), fill, pacing (PG only: flight, days elapsed/remaining, forecast, buffer), revenue, CPM; param `dealType`.
-4. `slot-value` — per display type: connected displays, effective CPM, floor CPM, per slot per day, network totals, VAC-d averages and inputs.
+4. `slot-value` — per display type: connected displays, effective CPM, floor CPM, revenue per available slot, network totals, VAC-d averages and inputs.
 5. `slot-allocation` — per display type: slots per loop, advertiser / own-content counts and average durations, loop length, advertiser slots sold %.
 6. `missed-revenue` — per display type + all-types total: connected displays, floor CPM (or range), fill, unsold slots and value at floor, downtime lost revenue and slots offline, total missed.
+6a. `hourly` — (endpoint 10a in the ticket) per display type: connected displays and, for each hour inside operating hours, fill, sold / unsold / offline slots, revenue, assumed views and effective CPM. Retailer only (403 for an advertiser). `viewsBasis` names the interim spreading rule.
 7. `yield` — effective CPM per DSP; param `dealType`.
 8. `advertisers` — revenue, share, deals on, slots covered, slots won %, effective CPM, DSP.
 9. `maturity` — ladder counts + advertiser lists, scheduling counts + lists, share by level over time, variables-in-use ranking, advertiser targeting & scheduling table.
 10. `display-types` — hover card data shared by every chart.
 11. Advertiser view: `delivery` (daily plays won, spend, per-deal win/loss block with aggregate winning CPM, PG pacing), `deals-by-display-type`, `audience` (VAC-d delivered + trend), `my-targeting` (level, variables used, scheduling, other variables available).
+12. `sales-uplift` — one campaign's outcome: campaign list for the drop-down (scoped to the Advertiser filter, or pinned to the advertiser login), tiles (uplift %, incremental sales, spend, iROAS), tier mix, campaign and control store groups with names, and daily series (before / during / after). Param `campaignId`; only the Advertiser page filter applies. Advertiser-callable; another advertiser's `campaignId` is 400.
 
 ### 3.2 Calculation rules (one shared, unit-tested library)
 - **CPM** = cost per thousand assumed views (VAC-d). Effective CPM = revenue ÷ (VAC-d ÷ 1,000).
 - **Average assumed views per slot per day** = average footfall × average visibility × share of loop time (slot duration ÷ loop length), averaged across all connected displays of the type in the filtered stores and dates; return the display and store counts with it. Billing uses realised VAC-d.
-- **Per slot per day** = revenue ÷ (advertiser slots × connected displays × days).
+- **Revenue per available slot** (per day) = revenue ÷ (advertiser slots × connected displays × days) = effective CPM × average assumed views per slot per day ÷ 1,000 × fill. Counts every advertiser slot, sold or unsold.
 - **Operating hours:** only slots inside each display type's operating hours are inventory (24 hours for Exterior and window screens visible from outside; store opening hours otherwise). Never return specific opening times.
 - **Fill / Inventory sold** = sold ÷ (sold + unsold + offline), i.e. all advertiser slots inside operating hours, using unsold real-time slot records.
+- **Hourly fill and effective CPM:** fill uses the rule above per hour; effective CPM = revenue ÷ (VAC-d ÷ 1,000) per hour. Until the hourly impression multiplier ships (DSP Integration), and while billing carries no play timestamp, a day's earned revenue and assumed views are spread over its hours by the share of that day's sold slots in each hour. Hourly parts add to the day totals (revenue to the cent, views to the whole number); an hour with no delivery has no CPM.
 - **Missed revenue** = unsold slots × floor CPM × VAC-d ÷ 1,000, plus downtime lost revenue.
 - **Pacing** (PG only) = delivered VAC-d ÷ guaranteed to date; guaranteed = forecast × (1 − buffer).
 - **Maturity level** = highest of Default only / Localised / Personalised across an advertiser's campaigns in range. Daypart is scheduling, never a variable.
+- **Uplift** = campaign-store sales over the flight vs the same stores' 30-day pre-period mean scaled by the control stores' change; incremental sales = actual − that expectation; iROAS = incremental ÷ campaign spend (billing line items in the campaign's stores and display types, shared equally by the advertiser's campaigns running that day).
 - Parts add to totals as returned (round parts first). Whole-number percentages. All money in USD.
 - Orderings: deal types PG → Preferred deal → Private auction → Open auction; DSPs DV360, The Trade Desk, Amazon DSP; display types by IAB zone along the shopper journey.
 
 ### 3.3 Security and isolation
 - Retailer users: all data. Advertiser logins: scoped server-side to their own advertiser principal (DSP Integration §9.5 isolation rule); never trust a client filter.
-- Advertiser responses never include other advertisers' names or per-buyer data, display downtime, lost revenue, offline displays, or other DSPs' deal IDs. Other buyers appear only as aggregates (plays, average and highest winning CPM).
+- Advertiser responses never include other advertisers' names or per-buyer data, display downtime, lost revenue, offline displays, or other DSPs' deal IDs. Other buyers appear only as aggregates (plays, and the winning CPM range: 25th percentile, median and 75th percentile).
 - Advertiser Display type filter options = display types from their deals' slot assignments plus those their campaigns target.
 
 ### 3.4 Performance
@@ -73,6 +77,7 @@ Page filters on every endpoint: `dateFrom`, `dateTo`, `storeIds[]`, `displayType
 | Campaign submissions: targeting rules, targeted versions, pricingType, scheduling (dayparts, schedules) | Targeting & scheduling maturity |
 | Advertiser principal, isolation rule (§9.5) and auth seams — **spec only today; blocks the advertiser view** | Advertiser self-service login |
 | Lost-revenue report (GET /admin/v1/reports/lost-revenue) | Display downtime, retailer only |
+| Billing line items carrying the campaign (today spend is shared between an advertiser's concurrent campaigns) and Fixed Store Segments usable as exclusion targeting, with a default "Control stores" segment | Sales uplift vs control stores: iROAS spend, control group |
 
 ## 6. Dependencies — PH Core
 | Needed | Used for |
@@ -83,6 +88,9 @@ Page filters on every endpoint: `dateFrom`, `dateTo`, `storeIds[]`, `displayType
 | Playback / analytics data (plays, per-play targeting tier) | Maturity progress, VAC-d aggregation |
 | Store and visitor insights (footfall, visibility; CV where cameras exist) | VAC-d inputs |
 | Stores and opening hours (to compute inventory only, never displayed) | Operating-hours inventory |
+| Campaign SKU (preferred) or product name as a required campaign field, carried into campaign playback analytics (store × display × campaign × SKU × tier × time); in-store displays only | Sales uplift vs control stores: product match, campaign stores, tier mix |
+| Transaction API receiving store-level transactions by SKU / product and date — needs a custom POS integration per retailer | Sales uplift vs control stores: sales lines |
+| Fixed Store Segments with a default "Control stores" segment, usable as an exclusion targeting criterion | Sales uplift vs control stores: control group |
 | Insights & Analytics app shell, auth and roles, design system, QuickSight and MCP plumbing | Front-end hosting and access |
 
 ## 7. Delivery order
