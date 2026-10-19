@@ -73,6 +73,13 @@ jobs:
           cache-dependency-path: dsp-integration/package-lock.json
       - if: steps.scope.outputs.run == 'true'
         run: npm ci --no-audit --no-fund --loglevel=error
+      # The handover documents mirrored to the PH Agent Console: every part
+      # under the board's 20,000-character cap, every marker heading present.
+      # Before this (18 Oct 2026) three mirrors went over after a merge and
+      # the board refused them in dsp-board's post-merge run instead.
+      - name: Board mirrors fit the board
+        if: steps.scope.outputs.run == 'true'
+        run: npm run board:sync -- --check-cut
       - if: steps.scope.outputs.run == 'true'
         run: npm run typecheck
       - name: Full suites (api, admin, campaign-approval, dsp-mocks; Runs 1–5 included)

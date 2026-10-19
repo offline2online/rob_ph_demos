@@ -51,12 +51,13 @@ tickets that were already decided or parked.
    and the repo wins. The board's **0 — Start here** document
    (`docs/dsp-integration/START-HERE.md`) lists them all, with the reading
    order:
-   - **Boundaries with PH Core** (1/3–3/3)
+   - **Boundaries with PH Core** (1/7–7/7)
    - the **Handover review & porting checklist**
    - the **Campaign approval integration guide**
    - the **API reference**
    - the **EKS deployment guide**
-   - the **Scale**, **Security** and **Admin API performance** reviews
+   - the **Scale**, **Security** and **Admin API performance** reviews (the
+     first two in two parts each)
    - the **AWS demo — test flow**
 
    Edit the file, never the board copy. Every merge to main rewrites them,
@@ -175,7 +176,16 @@ them, in the same session a file changes:
 ```bash
 npm run board:sync            # copy both files to the board, then verify
 npm run board:sync -- --check # report drift without writing (exit 1 if stale)
+npm run board:sync -- --check-cut # no key: cut every mirror, exit 1 if one is over the board's limit
 ```
+
+A board document holds at most 20,000 characters, so a longer handover
+file is mirrored in parts cut at its headings (`MIRRORS`). `e2e-quick` runs
+`--check-cut` on every pull request, so a part that has grown past the
+limit, or a marker heading that was renamed, fails before the merge rather
+than as a refused write afterwards (18 Oct 2026: three mirrors were refused
+that way). The fix is another cut at a heading: create the board document,
+add its id to `MIRRORS`.
 
 It reads the files off disk, PATCHes the board, reads them back and fails
 if they don't match byte for byte — so a spec never picks up errors from
@@ -268,7 +278,7 @@ nothing here can even read it without the key.
 | `apps/admin/public/demo/` | That snapshot and the creatives it points at, committed so the demo can be rebuilt without a running API |
 | `apps/api/src/domain/variables.ts`, `routes/admin/targetingVariables.ts`, `apps/admin/src/features/dsp-integration/SharedTargetingVariables.tsx` | Shared variable values (10 Oct 2026, migration 0068): the Values column defines each shared variable's matchable values (or ticks Free text); `GET/PUT /admin/v1/targeting-variables` carry `values`/`freeText`; buyers-list criteria select from the vocabulary. See REQUIREMENTS, Shared Targeting Variables |
 | `apps/api/src/domain/sspAudit.ts`, `repos/SspAuditRepo.ts`, `routes/admin/sspAuditLog.ts`, `apps/admin/src/features/dsp-integration/ChangeHistory.tsx` | The SSP settings change history (9 Oct 2026): a before/after snapshot of every in-scope setting around each admin write, diffed into `ssp_audit_log` (migration 0062) with human/agent actor, field, old → new value and time; read at `GET /admin/v1/ssp-audit-log` and on DSP Integration → Change history. See REQUIREMENTS §3a |
-| `scripts/sync-board-docs.mjs` | `npm run board:sync` — pushes `REQUIREMENTS.md` and `README.md` to the board's Docs page, and `api/PH-CORE-BOUNDARIES.md` to its three board parts (`MIRRORS`), and verifies them (see above) |
+| `scripts/sync-board-docs.mjs` | `npm run board:sync` — pushes `REQUIREMENTS.md` and `README.md` to the board's Docs page, and every handover document to its board copies (`MIRRORS`: 24 documents, longer files in parts), and verifies them; `--check-cut` proves every part fits, with no key (see above) |
 | `scripts/board-tickets.mjs` | `npm run board:tickets` — reports where this project's tickets are, and moves them between statuses when work reached `main` outside the board's own Deploy to Main (see above) |
 | `mockups/platform-users.html` | Mock-up (9 Oct 2026): Company Settings → **Users**, a standalone HTML page (no build, no API) for platform users — table of First name / Last name (optional) / Email / Role / Last login, **Add user** modal, role groups **Internal users** (Admin, Marketing, Help Desk) and **External users** (Advertiser, scoped to one brand chosen from one Advertiser drop-down of DSP-synced and direct advertisers, picked from the list that mirrors Advertisers / Inventory; the modal only points there to add one). The page description sits in an info tooltip beside the title. The modal footer carries a **Send Invitation Email** checkbox (ticked by default, reset on open); the confirmation says whether PH Core will send the invitation. **Live (10 Oct 2026, H6BcvdNZUvdP8Ebh5Tve): reads and saves through the admin API** (`/admin/v1/users`, `/admin/v1/advertisers`, `POST /advertisers/direct` from the modal's "Add new advertiser…"; `?api=<base>` points it at a local API, otherwise it finds the hosted one); internal users are stored but have no sign-in; not part of the hosted prototype build **Role column filter (17 Oct 2026, NViBJ6nE6eFZp8MIhW2p)**: a filter icon in the Role header opens a panel with role tick-boxes (Admin, Marketing, Help Desk, Advertiser) and an Advertiser search (type or pick; matches Advertiser users of that advertiser), combined, with a "N of M Users" count, Clear filters and a no-match row; client-side only. **Advertisers table removed (10 Oct 2026)**: the page is user management only; advertisers are added and deleted on Advertisers / Inventory (Add new Advertiser, top right). |
 | `routes/admin/buyersLists.ts` (`/share`), `repos/BuyersListRepo.ts` (`share`), migration `0071`, `apps/admin/.../FinaliseDealModal.tsx` | Deal lifecycle (12 Oct 2026, ticket QG40V1vVwqp9NtFmlC9H): the table is now "Deals and buyers lists" ("+ New deal and buyers list"); a deal is **Saved as draft** (shared with no DSP: hidden from `GET /v1/deals`, not quoted in bid requests, edits not versioned), **Finalise** (needs an assigned slot) opens a confirmation of slots, deal ID and terms, and **Share deal** (`POST .../share`) sends it to the invited buyers and starts re-acceptance on later term changes. `shareStatus` (`draft` \| `shared`) and `sharedAt` are on the BuyersList. |
