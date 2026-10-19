@@ -984,6 +984,49 @@ The exact signal shape follows PH Core's definition; the POC (venue as
 
 **Hand-off:** PH Core to define the guarantee and the missing-data contract.
 
+### Dependency on PH Core: retailer vertical from the Google Business category, mapped to IAB (19 Oct 2026, ticket pz2yabmI5SKcEZ1mvqsb)
+
+**Status: open, owned by PH Core. Nothing in this build changes yet.** A
+retailer's vertical is set **once**, in PH Core's Company Settings, by
+choosing their Google Business listing category (that field already exists
+there). PH Core maps it to the matching IAB category through a
+Google-category-to-IAB mapping table, and an admin can **override** the
+mapped value when the mapping is wrong. The retailer never defines a Google
+category and an IAB category separately. The same value tailors guidance,
+use cases and case studies in the Customer Support / Customer Success
+concept (delivered over MCP), so it is a platform attribute, not a DSP one.
+
+PH Core to provide:
+
+1. **The mapping table** (Google Business category → IAB Content Taxonomy 1.0
+   category, the taxonomy in `packages/types/src/iabTaxonomy.ts`), including
+   what is returned for a Google category with no IAB equivalent (an explicit
+   "unmapped" state, not a silent default).
+2. **The effective value**: the admin override when set, otherwise the mapped
+   value, exposed read-only to this build with a flag saying which of the two
+   it is.
+
+**Exchange side (consumes the contract).** The retailer's IAB category is read
+from that Company Settings value through the PH Core seam, read-only, and is
+never selected or stored separately in DSP integration; no second picker is
+added here. Where the exchange needs the retailer's own category (for example
+describing the publisher to a DSP), it uses the effective value, so an admin
+override in Company Settings is what DSP integration sees on the next read.
+The category whitelist and blacklist in Advertiser settings are a different
+thing (which *advertiser* categories may buy) and stay as they are.
+
+**POC stand-in:** none is built. Until PH Core exposes the seam, the exchange
+sends no retailer vertical. Adding a stand-in field here would create exactly
+the second selection this dependency exists to avoid.
+
+**Test (once PH Core ships it):** in Company Settings pick a Google Business
+category and confirm the mapped IAB category appears; override it as admin and
+confirm DSP integration uses the overridden value.
+
+**Hand-off:** PH Core to supply the mapping table and the effective-value
+read; then add the field to the `StoreSource`-style seam and read it in the
+exchange.
+
 ## Analytics event values billing consumes (decision 29 Sep 2026, Q53/Q54)
 
 Analytics — the event schema, its data partition and the consuming

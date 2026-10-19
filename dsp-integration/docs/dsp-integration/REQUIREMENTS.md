@@ -2914,6 +2914,12 @@ live. Until then no DSP is sent bid requests. The page title's tooltip
 is a platform default; the *Domain* tooltip says where `sellers.json` is
 published.
 
+**Not a field here: the retailer's vertical.** It is set once in PH Core's
+Company Settings (a Google Business category, mapped to IAB with an admin
+override) and read from there; DSP integration never asks for a second
+selection. This is an open PH Core dependency, see `api/PH-CORE-BOUNDARIES.md`
+→ "Dependency on PH Core: retailer vertical".
+
 Fixed as **platform defaults**, not retailer settings: seller type
 (Publisher), a non-confidential listing, the `sellers.json` and SupplyChain
 contents, the DOOH object, the OpenOOH venue taxonomy, the impression
