@@ -8,15 +8,21 @@ name: DSP integration — board docs and tickets
 # a card when work reached main outside the board's own Deploy to Main.
 #
 # Both are scripts in dsp-integration/scripts/. This runs them where the key
-# already is. The docs sync runs itself whenever either file lands on main;
-# the ticket moves are manual, because moving someone's card is not
+# already is. The docs sync runs itself whenever either file lands on main,
+# or any file it mirrors to the console's project documents (the handover
+# set, scripts/sync-board-docs.mjs → MIRRORS) or the script itself: until
+# 19 Oct 2026 only the first two triggered it, so a merge that changed just
+# API.md or a review left the board copy stale until the next README edit.
+# The ticket moves are manual, because moving someone's card is not
 # something a push should do on its own.
 on:
   push:
     branches: [main]
     paths:
-      - 'dsp-integration/docs/dsp-integration/REQUIREMENTS.md'
+      - 'dsp-integration/docs/dsp-integration/**/*.md'
       - 'dsp-integration/README.md'
+      - 'dsp-integration/deploy/kubernetes/README.md'
+      - 'dsp-integration/scripts/sync-board-docs.mjs'
       - '.github/workflows/dsp-board.yml'
   workflow_dispatch:
     inputs:
