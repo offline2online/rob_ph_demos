@@ -233,8 +233,8 @@ company pages are **Exchange settings**, **Advertiser settings** and
 campaign targeting object**, the same variables as a campaign's Targeting tab
 (§6), not a separate registry. This build consumes Live Visitor
 Profile-defined variables only through PH Core's targeting object.
-[`shared/interface-contract.md`](../../../shared/interface-contract.md) (**v3,
-adopted 1 Oct 2026**) is the maintained boundary with the Live Visitor
+[`shared/interface-contract.md`](../../../shared/interface-contract.md) (**v3.3,
+19 Oct 2026**) is the maintained boundary with the Live Visitor
 Profile project for anything else both projects depend on: the targeting
 vocabulary, the per-play version tier, audience scoring inputs and the
 shared-attributes control. It is also mirrored inside the live backlog

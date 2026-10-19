@@ -9,7 +9,8 @@
    number is compared with the threshold (bench/compare.ts): req/s must not
    fall below threshold × (1 − tolerance), a latency must not rise above
    threshold × (1 + tolerance). Thresholds are the committed numbers
-   (24 Sep 2026 review) unless bench/baseline.local.json exists, in which
+   (re-baselined 19 Oct 2026, ticket IqAdH5i8jWIGNElQR135; Available Inventory
+   for A/B keeps the 3 Oct numbers, see _about in thresholds.json) unless bench/baseline.local.json exists, in which
    case this machine's own calibration is the baseline — CI calibrates once
    per runner image. A shape whose load.ts exits non-zero is recorded as a
    `bench:<shape>:crash` failure and the next shape still runs.

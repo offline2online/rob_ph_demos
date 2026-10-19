@@ -223,6 +223,8 @@ Available Inventory, so it was re-measured after the fix:
 | `GET /admin/v1/available-inventory`, one request, cold / warm (direct timing, 3 rounds × 2 runs) | 1.47–1.71 s / 1.49–1.58 s | **1.49–1.64 s / 1.49–1.58 s** — unchanged, same 2,401 rows |
 | `GET /v1/inventory` (page of 50), booking schedule | — | unchanged, within run-to-run noise |
 
+The Available Inventory timings in that table predate the 19 Oct fix (they are from before it, when each row carried the full display-type list). After the fix a single request takes 120-175 ms warm (295-309 ms cold), 2.76 MB, 2,408 rows, measured on 19 Oct 2026.
+
 The 1.5 s in the Available Inventory row was the 14 Oct regression, not a
 property of the estate: ticket NPs6MBZQ6CfhFPHmBuGp copied each playlist's
 full list of display types onto every row, so shape A's response was 113.5 MB
@@ -230,16 +232,29 @@ full list of display types onto every row, so shape A's response was 113.5 MB
 19 Oct 2026 (ticket IqAdH5i8jWIGNElQR135): each playlist's list is sent once,
 at the top level of the response. After the fix the whole of shape A runs to
 the end on a 4 GB heap (`NODE_OPTIONS=--max-old-space-size=4096 npm run bench
--- --assert --shapes=A`), Available Inventory at 32 clients p50 2.5-2.6 s on
-the 4 vCPU sandbox (about 2x slower than the 3 Oct runner on unchanged reads;
-the 2.0 s measured by the ticket's author is the machine the threshold of
-1,836 ms + 25% was set on), against 80 s queueing before.
+-- --assert --shapes=A`) and completes with no crash. Available Inventory at 32
+clients: p50 6,029 ms and 4,491 ms in two runs on 19 Oct 2026 (a 4 vCPU / 15 GB
+Intel Xeon 2.8 GHz sandbox; the two runs differ by about 25%, so neither is the
+number). Both runs exited 1 with 16 breaches, throughput and latency alike: this
+machine ran every read path about 2-2.5x slower than the committed baseline. Available Inventory against the 1,836 ms threshold:
+breached in both runs; so were forecast, campaigns, advertisers and both
+billing figures. The review of ticket IqAdH5i8jWIGNElQR135 reported the same command on a
+different 4 vCPU / 15 GB sandbox exiting 0 with p50 2,096 ms and these metrics inside
+their limits, so whether the gate passes depends on the machine, not on the
+code. The 1,836 ms threshold was not set on the ticket author's machine: it
+dates from commit 81a1947d (3 Oct 2026, "Admin screens stop reading all of
+history per request; bench --admin"), seeded from the 24 Sep 2026 review, and
+5d4953cc carried it over unchanged. Before the fix the same read took 80 s
+queueing at 32 clients.
+
+Shape A, after the 19 Oct fix, `GET /admin/v1/available-inventory`: response
+2,762,522 bytes (about 2.76 MB; 2,408 items, 3 DSPs, one top-level
+`playlistDisplayTypes` map). A single request, no other load, measured in two
+runs of 4 requests each on the 19 Oct sandbox: 295-309 ms for the first
+(cold) request, then 120-175 ms warm.
 
 At this size the 92-day booking schedule takes about 23 s per request, both
-before and after (ADMIN-API-PERFORMANCE.md, "What is left"). On the 19 Oct
-sandbox run shape A's remaining breaches were forecast, campaigns and billing
-one window (machine speed), and Available Inventory, which this sandbox could
-not bring under its committed threshold.
+before and after (ADMIN-API-PERFORMANCE.md, "What is left").
 
 **Real-time impressions** (the Player API path, same estate, an in-process
 mock DSP; the bench has no Player API scenario yet):
