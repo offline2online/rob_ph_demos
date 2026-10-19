@@ -53,13 +53,14 @@ console.log("system-map: ok");
 {
   const mm = buildSystemMap(base);
   const byName = (n) => mm.nodes.find((x) => x.name === n);
-  ["Custom & Edge Models", "Digital Identity & Resolution", "Offsite Retail Media & Social", "Federated Retail Media (PH-to-PH)"].forEach((n) => assert.equal(byName(n).status, "Concept", n));
-  ["Salesforce CRM", "Amazon Connect", "Meta", "TikTok", "Google Display", "YouTube", "Advertiser", "Retailer PH instance", "Advertiser PH instance"].forEach((n) => assert.equal(byName(n).status, "External", n));
+  ["Custom & Edge Models", "Digital Identity & Resolution", "Offsite (Meta, YouTube)", "Federated Retail Media (PH-to-PH)"].forEach((n) => assert.equal(byName(n).status, "Concept", n));
+  ["Salesforce CRM", "Amazon Connect", "Advertiser", "Retailer PH instance", "Advertiser PH instance"].forEach((n) => assert.equal(byName(n).status, "External", n));
   const lab = (t) => mm.edges.filter((e) => e.label === t);
   ["HMAC-hashed edge identifiers (e.g. plates)", "edge model deployment", "stitching trigger", "pseudonymous IDs + attributes", "PH-optimised models",
     "retailer-owned data for model training/optimisation", "offsite creative", "advertiser offsite buys", "authenticated partnership (mTLS + scoped OAuth)"].forEach((t) => assert.ok(lab(t).length, t));
   assert.equal(lab("pseudonymised attributes in / insights written back").filter((e) => e.both).length, 2);
-  assert.equal(lab("hashed audiences (SHA-256 email)").length, 5);
+  assert.equal(lab("hashed audiences (SHA-256 email)").length, 1);
+  assert.equal(mm.nodes.filter((x) => /offsite|^(Meta|TikTok|Google Display|YouTube)$/i.test(x.name)).length, 1);
   const h = systemMapHTML(mm);
   assert.ok(h.includes("sysmap-pii") && h.includes("agents never cross it"));
   // a board concept of the same name replaces the built-in node

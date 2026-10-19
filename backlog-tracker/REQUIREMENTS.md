@@ -1982,11 +1982,10 @@ not one diagram per concept or project. It is rebuilt on every change to
   the Vector DB.
 - **Concepts and externals drawn by the map itself** (ticket
   M3SX6sWxRuNpr6jp5Pam): Concept nodes Custom & Edge Models, Digital
-  Identity & Resolution, Offsite Retail Media & Social, Federated Retail
+  Identity & Resolution, a single Offsite (Meta, YouTube) box, Federated Retail
   Media (PH-to-PH) (`SYSTEM_MAP_CONCEPTS`; a board project/concept of the
   same name replaces the built-in one), PH Core nodes Check-in and Brand
-  Guidelines, and External nodes Salesforce CRM, Amazon Connect, Meta,
-  TikTok, Google Display, YouTube, Advertiser and the retailer / partner /
+  Guidelines, and External nodes Salesforce CRM, Amazon Connect, Advertiser and the retailer / partner /
   advertiser PH instances (`SYSTEM_MAP_EXTERNALS`). Their labelled lines
   are `EXTRA_LINKS`. A red dashed **PII boundary** (`PII_ZONE`) encloses
   the identity vault, Salesforce and Amazon Connect; Live Visitor Profile,
