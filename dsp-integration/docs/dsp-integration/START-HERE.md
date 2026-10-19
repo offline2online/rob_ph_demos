@@ -12,6 +12,11 @@ post-merge sync). To change one, edit the file in
 `offline2online/rob_ph_demos`, never the board copy. Board-only documents
 have no repo file: they are edited on the board.
 
+The board holds at most 20,000 characters per document, so a longer file
+is mirrored in parts, cut at its headings. Each part's name says which
+part it is. A pull request that would push a part over the limit fails
+`e2e-quick` (`npm run board:sync -- --check-cut`), before it can merge.
+
 ## Porting this build into PH Core (engineering)
 
 Read in this order:
@@ -22,7 +27,7 @@ Read in this order:
    - What the 18 Oct 2026 review fixed and measured.
    - What is left for engineering.
    - The porting order.
-2. **Boundaries with PH Core** — *mirror, 3 parts* ·
+2. **Boundaries with PH Core** — *mirror, 7 parts* ·
    `dsp-integration/docs/dsp-integration/api/PH-CORE-BOUNDARIES.md`
    - Every seam and what it must guarantee.
    - Whose each table is.
@@ -40,9 +45,9 @@ Read in this order:
    - Security posture.
 6. **Reviews behind the limits and measurements** — *mirrors*:
    - **Security, scalability and performance review** (23 Sep 2026) ·
-     `api/SECURITY-PERFORMANCE.md`
+     *2 parts* · `api/SECURITY-PERFORMANCE.md`
    - **Scale review — 15,000 displays on EKS** (24 Sep 2026) ·
-     `api/SCALE-15000-EKS.md`
+     *2 parts* · `api/SCALE-15000-EKS.md`
    - **Admin API performance review** (3 Oct 2026) ·
      `api/ADMIN-API-PERFORMANCE.md`
 7. **Requirements** — the project's Requirements block ·

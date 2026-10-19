@@ -4,13 +4,14 @@
      npm run board:sync -- --check           # compare only; exit 1 if the board has drifted
      npm run board:sync -- --check-mcp FILE  # same comparison, from a saved MCP read (no key needed)
      npm run board:sync -- --check-mcp FILE --print-diff
+     npm run board:sync -- --check-cut       # cut every mirror offline; exit 1 if one would be refused (CI)
 
    A sync (and --check) also covers the project documents in MIRRORS below:
    every handover document — the "0 — Start here" index (START-HERE.md), the
    handover review, PH-CORE-BOUNDARIES.md, the approval integration guide,
    API.md, the EKS deployment guide, the three reviews and the AWS demo test
    flow (18 Oct 2026). A file over the 20k cap on project documents is split
-   into parts by heading.
+   into parts by heading, and `--check-cut` proves every part fits.
 
    The board is the second home of these documents (root CLAUDE.md: "treat a
    divergence as a bug in whichever is stale"), and the repo file is the
@@ -48,29 +49,37 @@ const DOCS = [
   { field: 'readmeMd', kind: 'readme', file: 'README.md', repoPath: 'dsp-integration/README.md' },
 ]
 
-/* Board documents that mirror part of a repo file (ticket
-   taUi7jWIwhCvfeDDUURl, Rob 2 Oct 2026): PH-CORE-BOUNDARIES.md is over the
-   20k cap on project documents, so the board carries it as three. The table
-   is the source of truth for which slice goes where; each sync writes it
-   onto the document (sourcePath / sourceSlices / sourcePrefix) together with
-   the text, so backlog-tracker's post-merge mirror (syncMirroredDocs in
-   backlog-tracker/scripts/docs-sync-lib.js) cuts the same slices on every
-   deploy. The cut keeps each part well under the cap as the file grows:
-   (1) the rule and the seams, (2) the tables and the outbound, inbound,
-   edge and multi-instance sections, (3) the AUTH seams and the reserved,
-   open, venue and analytics sections. Slice markers are whole heading lines: renaming one of these
-   headings fails the sync loudly instead of mirroring nothing. */
+/* Board documents that mirror a repo file, whole or in parts (ticket
+   taUi7jWIwhCvfeDDUURl, Rob 2 Oct 2026; the handover set, 18 Oct 2026). The
+   table is the source of truth for which file — and which slice of it — goes
+   where, and for each document's name: each sync writes name, text and
+   sourcePath / sourceSlices / sourcePrefix together, so backlog-tracker's
+   post-merge mirror (syncMirroredDocs in backlog-tracker/scripts/
+   docs-sync-lib.js) cuts the same slices on every deploy.
+
+   The board's rules refuse a project document over MIRROR_CAP characters,
+   even from the automation user. A file that would not fit is split into
+   parts at whole heading lines, and every part keeps headroom under the cap
+   so that ordinary edits don't push it over: on 18 Oct 2026 three mirrors
+   went over by a few hundred to thirteen thousand characters, the board
+   refused them after the merge, and nothing said so before it. `--check-cut`
+   (run by e2e-quick on every PR) now cuts every mirror offline and fails
+   when a marker heading is missing or a part is over the cap. Renaming a
+   marker heading fails it too, instead of mirroring nothing. Each board copy
+   opens with a line saying it is a mirror and which file wins. */
+const MIRROR_CAP = 20000
+const repoMirror = (file, part) => `> Mirror of \`dsp-integration/${file}\`${part ? ` (part ${part[0]} of ${part[1]})` : ''} — the repo wins. Rewritten from the repo file on every merge to main; edit the file, not this copy.\n\n`
 const BOUNDARIES = 'docs/dsp-integration/api/PH-CORE-BOUNDARIES.md'
+const H_GUARANTEE = '### What each seam must guarantee'
 const H_TABLES = '### Tables: whose they are'
 const H_OUTBOUND = '## Outbound boundaries — what this build calls'
 const H_AUTH = '## Authentication seams — partner identity, advertiser principal (spec only, REQUIREMENTS §9.5)'
-const mirrorPrefix = (n) => `> Mirror of \`dsp-integration/${BOUNDARIES}\` (part ${n} of 3) — the repo wins. Rewritten from the repo file on every merge to main; edit the file, not this copy.\n\n`
-/* The handover documents (pre-handover review, 18 Oct 2026): so every staff
-   member's agent on the PH Agent Console can read what engineering reads, and
-   so no board copy is ever retyped. Each new board copy opens with a line
-   saying it is a mirror and which file wins. Split where a file is over the
-   cap, at whole heading lines, like PH-CORE-BOUNDARIES.md above. */
-const repoMirror = (file, part) => `> Mirror of \`dsp-integration/${file}\`${part ? ` (part ${part[0]} of ${part[1]})` : ''} — the repo wins. Rewritten from the repo file on every merge to main; edit the file, not this copy.\n\n`
+const H_REALTIME = '## Real-time bidding — the player signals, the exchange fills (7 Oct 2026)'
+const H_RESERVED = '## Reserved for later releases (REQUIREMENTS §9, spec only)'
+const SCALE = 'docs/dsp-integration/api/SCALE-15000-EKS.md'
+const H_PROCESSES = '## Running several processes'
+const SECURITY = 'docs/dsp-integration/api/SECURITY-PERFORMANCE.md'
+const H_STABILITY = '## Stability under concurrency and at the edges — 24 Sep 2026'
 const START = 'docs/dsp-integration/START-HERE.md'
 const HANDOVER = 'docs/dsp-integration/api/HANDOVER-REVIEW.md'
 const H_MEASURED = '## 3. Measured'
@@ -85,28 +94,30 @@ const EKS = 'deploy/kubernetes/README.md'
 const AWS_DEMO = 'docs/dsp-integration/AWS-DEMO-TEST-FLOW.md'
 
 const MIRRORS = [
-  { id: 'mDJ50oQKTbgaKPvxeCUs', file: BOUNDARIES, sourceSlices: [{ end: H_TABLES }], sourcePrefix: mirrorPrefix(1) },
-  { id: 'W140rfmV19EdPYQnBeTJ', file: BOUNDARIES, sourceSlices: [{ start: H_TABLES, end: H_AUTH }], sourcePrefix: mirrorPrefix(2) },
-  { id: 'PnWgzNqVScsyfEehXKbl', file: BOUNDARIES, sourceSlices: [{ start: H_AUTH }], sourcePrefix: mirrorPrefix(3) },
-  /* Whole files: no slices, no prefix — the board copy is the file. */
-  { id: 'Vd6akDtwNOrUSKoiuZCg', file: 'docs/dsp-integration/api/ADMIN-API-PERFORMANCE.md', sourceSlices: [], sourcePrefix: '' },
-  /* Mirrored by backlog-tracker's post-merge sync since they were added; listed
-     here too, so a merge that isn't a train merge updates them as well. */
-  { id: 'xzYDhGNzY1iLTDoRtouA', file: 'docs/dsp-integration/api/SCALE-15000-EKS.md', sourceSlices: [], sourcePrefix: '' },
-  { id: 'qudg1TvEwov2PINmJD4p', file: 'docs/dsp-integration/api/SECURITY-PERFORMANCE.md', sourceSlices: [], sourcePrefix: '' },
-  /* The handover set (18 Oct 2026). */
-  { id: 'tiApBmLe5GDkqrqrcIjD', file: START, sourceSlices: [], sourcePrefix: repoMirror(START) },
-  { id: 'ezhL36100y402EButyl9', file: HANDOVER, sourceSlices: [{ end: H_MEASURED }], sourcePrefix: repoMirror(HANDOVER, [1, 2]) },
-  { id: 'Rd8j4S10FYbXTBFG4efN', file: HANDOVER, sourceSlices: [{ start: H_MEASURED }], sourcePrefix: repoMirror(HANDOVER, [2, 2]) },
-  { id: '6O7ZNvasbMcn3q9dycY7', file: APPROVAL, sourceSlices: [{ end: H_MIGRATION }], sourcePrefix: repoMirror(APPROVAL, [1, 2]) },
-  { id: 'tMoTHRAx74HWzyTs94B5', file: APPROVAL, sourceSlices: [{ start: H_MIGRATION }], sourcePrefix: repoMirror(APPROVAL, [2, 2]) },
-  { id: 'T6nK6QNidO4L30K7vsOo', file: EKS, sourceSlices: [], sourcePrefix: repoMirror(EKS) },
-  { id: 'pa2M9hncfxXsEYgSc33G', file: API, sourceSlices: [{ end: H_PARTNER }], sourcePrefix: repoMirror(API, [1, 5]) },
-  { id: 'FfBh1EnAh58FPPhK6RU6', file: API, sourceSlices: [{ start: H_PARTNER, end: H_ADMIN }], sourcePrefix: repoMirror(API, [2, 5]) },
-  { id: 'GpUGYxHvdGsQYZ9UNxSC', file: API, sourceSlices: [{ start: H_ADMIN, end: H_BUYERS }], sourcePrefix: repoMirror(API, [3, 5]) },
-  { id: 'ABIsJgZHbGv5iKiZb0fb', file: API, sourceSlices: [{ start: H_BUYERS, end: H_STANDINS }], sourcePrefix: repoMirror(API, [4, 5]) },
-  { id: 'tVxupKgza0snxjhLtUd4', file: API, sourceSlices: [{ start: H_STANDINS }], sourcePrefix: repoMirror(API, [5, 5]) },
-  { id: 'Stonlf6Pp1EaS34ZePzG', file: AWS_DEMO, sourceSlices: [], sourcePrefix: repoMirror(AWS_DEMO) },
+  { id: 'tiApBmLe5GDkqrqrcIjD', name: '0 — Start here: handover index and reading order', file: START, sourceSlices: [], sourcePrefix: repoMirror(START) },
+  { id: 'ezhL36100y402EButyl9', name: 'Handover review & porting checklist (1/2) — how it separates, what the review fixed', file: HANDOVER, sourceSlices: [{ end: H_MEASURED }], sourcePrefix: repoMirror(HANDOVER, [1, 2]) },
+  { id: 'Rd8j4S10FYbXTBFG4efN', name: 'Handover review & porting checklist (2/2) — measured, left for engineering, porting order', file: HANDOVER, sourceSlices: [{ start: H_MEASURED }], sourcePrefix: repoMirror(HANDOVER, [2, 2]) },
+  { id: 'mDJ50oQKTbgaKPvxeCUs', name: 'Boundaries with PH Core (1/7) — the rule and the seams PH Core must provide', file: BOUNDARIES, sourceSlices: [{ end: H_GUARANTEE }], sourcePrefix: repoMirror(BOUNDARIES, [1, 7]) },
+  { id: 'W140rfmV19EdPYQnBeTJ', name: 'Boundaries with PH Core (2/7) — what each seam must guarantee', file: BOUNDARIES, sourceSlices: [{ start: H_GUARANTEE, end: H_TABLES }], sourcePrefix: repoMirror(BOUNDARIES, [2, 7]) },
+  { id: 'PnWgzNqVScsyfEehXKbl', name: 'Boundaries with PH Core (3/7) — tables: whose they are', file: BOUNDARIES, sourceSlices: [{ start: H_TABLES, end: H_OUTBOUND }], sourcePrefix: repoMirror(BOUNDARIES, [3, 7]) },
+  { id: 'DxlzNnE7612X3LhJVWYo', name: 'Boundaries with PH Core (4/7) — outbound, inbound, edge, more than one instance', file: BOUNDARIES, sourceSlices: [{ start: H_OUTBOUND, end: H_AUTH }], sourcePrefix: repoMirror(BOUNDARIES, [4, 7]) },
+  { id: 'HFcBgw7dPEL9CQhcM6fY', name: 'Boundaries with PH Core (5/7) — authentication seams (AUTH)', file: BOUNDARIES, sourceSlices: [{ start: H_AUTH, end: H_REALTIME }], sourcePrefix: repoMirror(BOUNDARIES, [5, 7]) },
+  { id: 'M2NrMcycXZ4TVWF8wkBK', name: 'Boundaries with PH Core (6/7) — real-time bidding, pre-caching, bandwidth, web and app slots', file: BOUNDARIES, sourceSlices: [{ start: H_REALTIME, end: H_RESERVED }], sourcePrefix: repoMirror(BOUNDARIES, [6, 7]) },
+  { id: 'uXwdjH0eChupvSfSrukJ', name: 'Boundaries with PH Core (7/7) — reserved, open, venue, canvas and format, analytics', file: BOUNDARIES, sourceSlices: [{ start: H_RESERVED }], sourcePrefix: repoMirror(BOUNDARIES, [7, 7]) },
+  { id: '6O7ZNvasbMcn3q9dycY7', name: 'Campaign approval integration guide (1/2) — adapter, components, eligibility', file: APPROVAL, sourceSlices: [{ end: H_MIGRATION }], sourcePrefix: repoMirror(APPROVAL, [1, 2]) },
+  { id: 'tMoTHRAx74HWzyTs94B5', name: 'Campaign approval integration guide (2/2) — migrations, clean-up, contract tests, creative IDs', file: APPROVAL, sourceSlices: [{ start: H_MIGRATION }], sourcePrefix: repoMirror(APPROVAL, [2, 2]) },
+  { id: 'pa2M9hncfxXsEYgSc33G', name: 'API reference (1/5) — surfaces, conventions, pricing maths', file: API, sourceSlices: [{ end: H_PARTNER }], sourcePrefix: repoMirror(API, [1, 5]) },
+  { id: 'FfBh1EnAh58FPPhK6RU6', name: 'API reference (2/5) — Partner API /v1', file: API, sourceSlices: [{ start: H_PARTNER, end: H_ADMIN }], sourcePrefix: repoMirror(API, [2, 5]) },
+  { id: 'GpUGYxHvdGsQYZ9UNxSC', name: 'API reference (3/5) — Admin API: exchange, advertiser settings, variables, DSPs, advertisers', file: API, sourceSlices: [{ start: H_ADMIN, end: H_BUYERS }], sourcePrefix: repoMirror(API, [3, 5]) },
+  { id: 'ABIsJgZHbGv5iKiZb0fb', name: 'API reference (4/5) — Admin API: buyers lists, campaign approval, display types', file: API, sourceSlices: [{ start: H_BUYERS, end: H_STANDINS }], sourcePrefix: repoMirror(API, [4, 5]) },
+  { id: 'tVxupKgza0snxjhLtUd4', name: 'API reference (5/5) — stand-ins, jobs, operations, sellers.json, OpenRTB', file: API, sourceSlices: [{ start: H_STANDINS }], sourcePrefix: repoMirror(API, [5, 5]) },
+  { id: 'T6nK6QNidO4L30K7vsOo', name: "EKS deployment guide — the exchange in a client's VPC", file: EKS, sourceSlices: [], sourcePrefix: repoMirror(EKS) },
+  { id: 'qudg1TvEwov2PINmJD4p', name: 'Security, scalability and performance review — 23 Sep 2026 (1/2) — measurements, what changed, left', file: SECURITY, sourceSlices: [{ end: H_STABILITY }], sourcePrefix: repoMirror(SECURITY, [1, 2]) },
+  { id: '7GzQiBOdNo8vWHWNsNdq', name: 'Security, scalability and performance review — 23 Sep 2026 (2/2) — stability at the edges, addendum', file: SECURITY, sourceSlices: [{ start: H_STABILITY }], sourcePrefix: repoMirror(SECURITY, [2, 2]) },
+  { id: 'xzYDhGNzY1iLTDoRtouA', name: 'Scale review — 15,000 displays on EKS, 24 Sep 2026 (1/2) — the deciding fact, measurements, what changed', file: SCALE, sourceSlices: [{ end: H_PROCESSES }], sourcePrefix: repoMirror(SCALE, [1, 2]) },
+  { id: 'OYSF7AfeC4PCCPK7xdvf', name: 'Scale review — 15,000 displays on EKS, 24 Sep 2026 (2/2) — several processes, security, verified, addendum', file: SCALE, sourceSlices: [{ start: H_PROCESSES }], sourcePrefix: repoMirror(SCALE, [2, 2]) },
+  { id: 'Vd6akDtwNOrUSKoiuZCg', name: 'Admin API performance review — 3 Oct 2026', file: 'docs/dsp-integration/api/ADMIN-API-PERFORMANCE.md', sourceSlices: [], sourcePrefix: repoMirror('docs/dsp-integration/api/ADMIN-API-PERFORMANCE.md') },
+  { id: 'Stonlf6Pp1EaS34ZePzG', name: 'AWS demo — test flow (10 Dec 2026)', file: AWS_DEMO, sourceSlices: [], sourcePrefix: repoMirror(AWS_DEMO) },
 ]
 /* The same slicing the post-merge mirror uses — one implementation. */
 const { mirrorText } = createRequire(import.meta.url)('../../backlog-tracker/scripts/docs-sync-lib.js')
@@ -252,16 +263,17 @@ async function syncMirrors(token, { write }) {
   let behind = 0
   for (const m of MIRRORS) {
     let text
-    try { text = mirrorText(read(m.file), m) } catch (e) { console.error(`✗ projectDocs/${m.id}: ${e.message}`); behind++; continue }
+    try { text = cutMirror(m) } catch (e) { console.error(`✗ projectDocs/${m.id}: ${e.message}`); behind++; continue }
     const url = `${BOARD}/projectDocs/${m.id}`
     const cur = await fetch(url, { headers })
     if (!cur.ok) { console.error(`✗ projectDocs/${m.id}: read failed (${cur.status})`); behind++; continue }
     const f = (await cur.json()).fields ?? {}
     const sameConfig = f.sourcePath?.stringValue === `dsp-integration/${m.file}` && f.sourcePrefix?.stringValue === m.sourcePrefix
-      && JSON.stringify(fromFs(f.sourceSlices)) === JSON.stringify(m.sourceSlices)
+      && JSON.stringify(fromFs(f.sourceSlices)) === JSON.stringify(m.sourceSlices) && f.name?.stringValue === m.name
     if (f.contentMd?.stringValue === text && sameConfig) { console.log(`✓ projectDocs/${m.id} in step (${text.length} chars)`); continue }
     if (!write) { console.log(`✗ projectDocs/${m.id} behind the repo${sameConfig ? '' : ' (slice config too)'}`); behind++; continue }
     const fields = {
+      name: { stringValue: m.name },
       contentMd: { stringValue: text },
       sourcePath: { stringValue: `dsp-integration/${m.file}` },
       sourceSlices: { arrayValue: { values: m.sourceSlices.map((sl) => ({ mapValue: { fields: Object.fromEntries(Object.entries(sl).map(([k, v]) => [k, { stringValue: v }])) } })) } },
@@ -278,8 +290,39 @@ async function syncMirrors(token, { write }) {
   }
   return behind
 }
+/* One mirror's text, refused here — before any write — when it is over the
+   cap, with what to do about it. */
+function cutMirror(m) {
+  const text = mirrorText(read(m.file), m)
+  if (text.length > MIRROR_CAP) {
+    throw new Error(`${text.length} chars, over the ${MIRROR_CAP} the board allows a project document. ` +
+      `Split ${m.file} at another heading in MIRRORS (scripts/sync-board-docs.mjs) and create the new board document first.`)
+  }
+  return text
+}
 /* A Firestore array of string maps, as plain objects. */
 const fromFs = (v) => (v?.arrayValue?.values ?? []).map((x) => Object.fromEntries(Object.entries(x.mapValue?.fields ?? {}).map(([k, y]) => [k, y.stringValue])))
+
+/* ------------------------------- cut every mirror offline: no key, no network */
+
+if (flag('--check-cut')) {
+  let bad = 0
+  const ids = new Set()
+  for (const m of MIRRORS) {
+    if (ids.has(m.id)) { console.error(`✗ ${m.id} is listed twice in MIRRORS`); bad++; continue }
+    ids.add(m.id)
+    if (!m.name || m.name.length > 120) { console.error(`✗ ${m.id}: a board document's name must be 1–120 characters`); bad++; continue }
+    try {
+      const text = cutMirror(m)
+      console.log(`✓ ${m.id} ${String(text.length).padStart(6)} chars  ${m.name}`)
+    } catch (e) {
+      console.error(`✗ ${m.id} (${m.name}): ${e.message}`)
+      bad++
+    }
+  }
+  console.log(bad ? `\n${bad} of ${MIRRORS.length} mirrors would be refused by the board.` : `\nAll ${MIRRORS.length} mirrors cut, every one under ${MIRROR_CAP} characters.`)
+  process.exit(bad ? 1 : 0)
+}
 
 const token = await idToken()
 const pairs = await board(token)
