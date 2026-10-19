@@ -25,6 +25,7 @@ import { firebaseConfig } from "./firebase-config.js";
 import { APP_VERSION } from "./version.js";
 import { clearFirestoreLocalCache } from "./local-cache.js";
 import { INTAKE_SECTIONS, missingSections, applyAnswers } from "./ticket-intake.js";
+import { trainTestChipHTML, approvalWarningLines, APPROVAL_WARNING_TITLE, APPROVAL_WARNING_FOOTER, approvalFields, approvedByLine } from "./card-test-status.js";
 import { clusterBacklogItems, estimateEffort, estimatePriority, splitRequirementsText } from "./build-batches.js";
 
 // auth-gate.js has already initialised the app (and signed the user in)
@@ -531,6 +532,68 @@ document.getElementById("topbar-logo-btn").addEventListener("click", () => { clo
 // The footer logo is the same home link, repeated at the bottom of every page.
 document.getElementById("footer-logo-btn").addEventListener("click", () => { closeNavDrawer(); returnToBoard(); });
 
+// ── "Rebuilding test link…" (lmdwsP5ElY5Oh12N9Fex) ──────────────────────────
+// A card whose test link opens a checked-in build (today the DSP prototype)
+// is pinned to the ticket's own commit, which still holds the PREVIOUS bundle
+// until the build workflow rebuilds it. run-backlog-automation.js reads the
+// bundle's build-info.json and writes previewState ("rebuilding" | "ready" |
+// "stale" | null) on the card; this is how the board shows it. null = the link
+// does not open a generated build and the row behaves as it always has.
+// Keep in step with PREVIEW_REBUILD_STALE_MS in run-backlog-automation.js: a
+// "rebuilding" card older than this reads as "stale" HERE too, so a stopped
+// automation can never hide a link for good.
+const PREVIEW_REBUILD_STALE_MS = 20 * 60 * 1000;
+const PREVIEW_ACTIONS_URL = "https://github.com/offline2online/rob_ph_demos/actions/workflows/";
+const PREVIEW_FAIL_HOLD_TITLE = "Available once the test link includes this ticket (usually 1-2 minutes)";
+
+function previewBuildStatus(item, nowMs = Date.now()) {
+  const state = item && item.previewState;
+  if (state !== "rebuilding" && state !== "stale" && state !== "ready") return null;
+  const workflow = /^[\w.-]+\.ya?ml$/.test(item.previewBuildWorkflow || "") ? item.previewBuildWorkflow : "";
+  const base = { workflowUrl: workflow ? PREVIEW_ACTIONS_URL + workflow : "" };
+  if (state === "ready") {
+    return { ...base, state, builtFrom: String(item.previewBuiltFrom || "").slice(0, 7), updatedMs: anyMillis(item.previewUpdatedAt) || anyMillis(item.previewStateAt) };
+  }
+  const since = anyMillis(item.previewStateAt);
+  const stale = state === "stale" || !since || nowMs - since > PREVIEW_REBUILD_STALE_MS;
+  return { ...base, state: stale ? "stale" : "rebuilding", builtFrom: "", updatedMs: 0 };
+}
+
+// The "Test this →" row, or the state line that replaces / accompanies it.
+function testLinkRowHTML(item, nowMs = Date.now()) {
+  if (!item.previewUrl) return "";
+  const status = previewBuildStatus(item, nowMs);
+  const editBtn = `<button type="button" class="icon-btn test-link-edit-btn" data-id="${item.id}" title="Change test link">&#9998;</button>`;
+  const link = `<a href="${escapeHTML(safeHttpUrl(item.previewUrl))}" target="_blank" rel="noopener" class="test-link-btn">Test this &rarr;</a>`;
+  if (!status) return `<div class="test-link-row">${link}${editBtn}</div>`;
+  if (status.state === "rebuilding") {
+    return `<div class="test-link-row">
+        <div class="preview-state preview-state-rebuilding" role="status"><span class="material-symbols-outlined preview-state-spin" aria-hidden="true">progress_activity</span> Rebuilding test link&hellip; <span class="preview-state-sub">usually 1-2 minutes</span></div>
+        ${editBtn}
+      </div>`;
+  }
+  const actions = status.workflowUrl
+    ? ` Check <a href="${escapeHTML(status.workflowUrl)}" target="_blank" rel="noopener">the rebuild &#8599;</a>`
+    : "";
+  const line = status.state === "stale"
+    ? `<div class="preview-state preview-state-stale" role="status"><span class="material-symbols-outlined" aria-hidden="true">warning</span> <span>Still rebuilding after ${PREVIEW_REBUILD_STALE_MS / 60000} minutes. This link may show the previous build.${actions}</span></div>`
+    : `<div class="preview-state preview-state-ready" role="status"><span class="material-symbols-outlined" aria-hidden="true">check_circle</span> <span>Includes this ticket${status.builtFrom ? ` &middot; built from ${escapeHTML(status.builtFrom)}` : ""}${status.updatedMs ? ` &middot; updated ${describeAgo(status.updatedMs, nowMs)}` : ""}</span></div>`;
+  return `<div class="test-link-row">${link}${editBtn}</div>${line}`;
+}
+
+// Failed testing is held while the link can't show the change yet — the
+// tester would be failing the previous bundle (each round costs a revert,
+// re-patch and rebuild). Stale re-enables it, with a warning in its dialog.
+function failTestingButtonHTML(item, nowMs = Date.now()) {
+  const status = previewBuildStatus(item, nowMs);
+  const hold = status && status.state === "rebuilding";
+  return `<button type="button" class="approve-btn fail-testing-btn" data-id="${item.id}"${hold ? ` disabled title="${escapeHTML(PREVIEW_FAIL_HOLD_TITLE)}"` : ""}>Failed testing</button>`;
+}
+function failTestingStaleWarning(item, nowMs = Date.now()) {
+  const status = previewBuildStatus(item, nowMs);
+  return status && status.state === "stale" ? "The test link may still show the previous build, so check that before failing this." : "";
+}
+
 function cardHTML(item) {
   const idx = COL_KEYS.indexOf(item.status);
   // Moving back is a designed, documented flow from ready-to-publish (send
@@ -671,7 +734,7 @@ function cardHTML(item) {
   // sends the card back to Backlog, AND takes its commits back off the
   // project's integration branch.
   const failBtn = (isTesting && !noDeploy)
-    ? `<button type="button" class="approve-btn fail-testing-btn" data-id="${item.id}">Failed testing</button>`
+    ? failTestingButtonHTML(item)
     : "";
   // Deliberately not a button: there used to be a "Merge to main" button
   // here that just wrote status: "published-live" directly, with zero
@@ -803,6 +866,8 @@ function cardHTML(item) {
     "kicked-back": ["Review kicked back", "undo"],
     "blocked": ["Review blocked: red run", "block"],
   };
+  const approvedBy = item.status === "ready-to-publish" ? approvedByLine(item) : null;
+  const approvedByHTML = approvedBy ? `<span class="approved-by" title="${escapeHTML(approvedBy.title)}"><span class="material-symbols-outlined">how_to_reg</span>${escapeHTML(approvedBy.text)}</span>` : "";
   const reviewFlagDef = item.reviewStatus && REVIEW_FLAGS[item.reviewStatus];
   const reviewFlag = reviewFlagDef && (!item.deployCommit || item.reviewedCommit === item.deployCommit)
     ? `<span class="review-flag review-flag-${escapeHTML(item.reviewStatus)}" title="${escapeHTML(item.reviewReason || reviewFlagDef[0])}"><span class="material-symbols-outlined">${reviewFlagDef[1]}</span>${reviewFlagDef[0]}</span>`
@@ -862,11 +927,12 @@ function cardHTML(item) {
   // the latter proxies through jsDelivr's CDN cache (up to ~7 days), so a
   // link set right after one push can keep showing that first commit even
   // after later pushes update the file, with no visible error.
-  // rawcdn.githack.com is githack's own always-uncached host, meant
-  // specifically for testing an in-progress branch like this one. Set/
-  // changed via the generic showPromptDialog() (a single-field in-app
-  // dialog) rather than a bespoke modal — this is a one-off paste, not a
-  // form worth its own dedicated markup.
+  // rawcdn.githack.com caches too: a BRANCH url is cached indefinitely
+  // (measured 22 and 25 Sep 2026), which is why the pipeline pins every
+  // link to a commit sha — an immutable url. Set/changed via the generic
+  // showPromptDialog() (a single-field in-app dialog) rather than a bespoke
+  // modal — this is a one-off paste, not a form worth its own dedicated
+  // markup.
   // No CTA at all until there's an actual URL to click through to — a
   // "Set test link" ghost button on a card with nothing to test yet read as
   // an invitation whether or not one was ever coming. guessPreviewUrl
@@ -875,12 +941,7 @@ function cardHTML(item) {
   // none here is one that got there some other way; setting one for it is
   // a direct Firestore write, not an in-app action, now that the button is
   // gone.
-  const testLinkHTML = isTesting && item.previewUrl
-    ? `<div class="test-link-row">
-        <a href="${escapeHTML(safeHttpUrl(item.previewUrl))}" target="_blank" rel="noopener" class="test-link-btn">Test this &rarr;</a>
-        <button type="button" class="icon-btn test-link-edit-btn" data-id="${item.id}" title="Change test link">&#9998;</button>
-      </div>`
-    : "";
+  const testLinkHTML = isTesting && item.previewUrl ? testLinkRowHTML(item) : "";
 
   // Once a ticket reaches Ready for Testing, the raw typed/dictated
   // description that started it is no longer the most useful thing to
@@ -940,7 +1001,7 @@ function cardHTML(item) {
       </div>
       <h3 class="card-title">${escapeHTML(item.title)}</h3>
       ${descHTML}
-      ${noDeployBadge}${carriedBadge}${priorityBadge}${effortBadge}${lastFailureBadge}${blockedFlag}${reviewFlag}${testVersionBadge}${prBadge}${deployBadge}
+      ${noDeployBadge}${carriedBadge}${priorityBadge}${effortBadge}${lastFailureBadge}${blockedFlag}${reviewFlag}${trainTestChipHTML(item)}${approvedByHTML}${testVersionBadge}${prBadge}${deployBadge}
       <div class="card-footer">
         <div class="card-footer-left">
           <span class="card-cat">${escapeHTML(item.category || "Uncategorised")}</span>
@@ -1982,9 +2043,9 @@ function newestTestVersion() {
   }, archivedStats.newestVersion || "");
 }
 
-function describeAgo(ms) {
+function describeAgo(ms, nowMs = Date.now()) {
   if (!ms) return "never";
-  const diff = Date.now() - ms;
+  const diff = nowMs - ms;
   if (diff < 0) return "just now";
   const mins = Math.floor(diff / 60000);
   if (mins < 1) return "just now";
@@ -2483,6 +2544,9 @@ const BACKLOG_ITEM_RENDER_FIELDS = [
   // It's a short branch name, unlike the patch* fields below it.
   "patchBranch",
   "notes", "attachments",
+  // Each train card's own test result and who approved it (19 Oct 2026) —
+  // drawn on the card, so on the REST-primed first paint too.
+  "trainTest", "approvedByEmail", "approvedAt", "approvedVia",
   // Parallel builds (4 Oct 2026): the blocked flag, what a blocked ticket
   // waits for, and each ticket's own build-session report — the Ready for
   // Dev spinner reads the last one (perItemRoutineFinished).
@@ -2873,6 +2937,10 @@ async function failTesting(id) {
   return withWriteLock(id, () => failTestingNow(id, item));
 }
 async function failTestingNow(id, item) {
+  // The button is disabled while the link is rebuilding; this covers a
+  // stale tab that still shows it enabled.
+  const hold = previewBuildStatus(item);
+  if (hold && hold.state === "rebuilding") { await showAlert(PREVIEW_FAIL_HOLD_TITLE + "."); return; }
   // Structured reason (XJoASicLGefL5c9fronl): a fixed category alongside the
   // existing free-text explanation, both stored on the item as
   // lastFailureReason (see fields below) as well as folded into the note —
@@ -2880,7 +2948,8 @@ async function failTestingNow(id, item) {
   // the machine-readable one a re-fired investigation reads directly.
   const result = await showFieldDialog({
     title: "Failed testing",
-    message: "What's wrong with this? Sent back to Backlog so it can be picked up again — the existing PR/branch stay linked, so a fresh Ready for Dev sweep re-patches it rather than starting over.",
+    message: "What's wrong with this? Sent back to Backlog so it can be picked up again — the existing PR/branch stay linked, so a fresh Ready for Dev sweep re-patches it rather than starting over." +
+      (failTestingStaleWarning(item) ? ` ${failTestingStaleWarning(item)}` : ""),
     fields: [
       { id: "category", label: "What kind of miss was this?", type: "select", options: FAILURE_REASON_CATEGORIES },
       { id: "text", label: "Details", multiline: true, rows: 4 },
@@ -3060,7 +3129,13 @@ async function setItemPreviewUrl(id, url) {
     await showAlert("A test link has to be an http(s) URL.");
     return;
   }
-  await updateDoc(doc(db, "backlogItems", id), { previewUrl: trimmed || null, updatedAt: serverTimestamp() });
+  await updateDoc(doc(db, "backlogItems", id), {
+    previewUrl: trimmed || null,
+    // A person's own link shows at once: the pipeline's rebuild state was about
+    // the link it generated, not this one.
+    previewState: null,
+    updatedAt: serverTimestamp(),
+  });
 }
 
 // Attachments (screenshots & screen recordings) — see the Edit item
@@ -3284,6 +3359,17 @@ async function requestNotify(pid) {
 // notifyOnItemsDeployedToFeature is now dead code (harmless, just never
 // triggered) until a future cleanup removes it from functions/index.js too.
 async function deployToFeature(pid) {
+  // Approving a ticket whose tests haven't passed takes it out of the
+  // automatic send-back (pickRedCulprit only ejects an approved culprit once
+  // a deploy has parked red), so say so first — before the write lock is
+  // taken, so the dialog never holds it. Cancel writes nothing.
+  const selected = getDeploySelectedSet(pid);
+  const warnings = approvalWarningLines(items.filter((i) =>
+    (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-for-testing" && !isNoDeployCard(i) && selected.has(i.id)));
+  if (warnings.length) {
+    const go = await showConfirmDialog(`${warnings.join("\n")}\n\n${APPROVAL_WARNING_FOOTER}`, { title: APPROVAL_WARNING_TITLE, okLabel: "Approve anyway", cancelLabel: "Cancel" });
+    if (!go) return;
+  }
   return withWriteLock(`project:${pid}`, () => deployToFeatureNow(pid));
 }
 async function deployToFeatureNow(pid) {
@@ -3301,9 +3387,11 @@ async function deployToFeatureNow(pid) {
   if (idsToMove.length === 0) return;
 
   const batch = writeBatch(db);
+  const approver = approvalFields(auth.currentUser && auth.currentUser.email, serverTimestamp());
   idsToMove.forEach((id) => {
     batch.update(doc(db, "backlogItems", id), {
       status: "ready-to-publish",
+      ...approver,
       updatedAt: serverTimestamp(),
     });
   });

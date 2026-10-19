@@ -40,8 +40,11 @@ jobs:
           cache: npm
           cache-dependency-path: dsp-integration/package-lock.json
       - run: npm ci --no-audit --no-fund --loglevel=error
-      - run: npm run typecheck
+      - name: Typecheck
+        id: typecheck
+        run: npm run typecheck
       - name: Full suites
+        id: suites
         run: npm test
       - name: Runs 1–5 as JSON
         id: quick
@@ -64,11 +67,15 @@ jobs:
         run: npm run bench -- --assert
         continue-on-error: true
       - name: Results document on the board
+        id: report
         if: always()
+        continue-on-error: true
         run: |
           if [ -n "$BOARD_API_KEY" ]; then node scripts/report-e2e.mjs results/*.json; else node scripts/report-e2e.mjs results/*.json --out results/report.md; fi
       - name: File or update tickets from failures
+        id: file_bugs
         if: always() && (github.event_name == 'schedule' || inputs.file_bugs)
+        continue-on-error: true
         run: |
           if [ -n "$BOARD_API_KEY" ]; then node scripts/file-e2e-bugs.mjs results/*.json; else node scripts/file-e2e-bugs.mjs results/*.json --dry-run; fi
       - uses: actions/upload-artifact@v4
@@ -77,9 +84,34 @@ jobs:
           name: e2e-nightly-${{ github.run_id }}
           path: dsp-integration/results/
           if-no-files-found: ignore
+      # Says which step failed. Without always() this step was skipped whenever
+      # the report failed, and the run showed only the report's failure while
+      # the bench behind it was red every night.
       - name: Red night
-        if: steps.quick.outcome == 'failure' || steps.journey.outcome == 'failure' || steps.bench.outcome == 'failure'
+        if: always()
         run: |
-          echo "quick=${{ steps.quick.outcome }} journey=${{ steps.journey.outcome }} bench=${{ steps.bench.outcome }}"
-          echo "::error::E2E nightly is red — see the results document on the board and the tickets filed. GitHub emails the workflow's failure to the repository's notification recipients."
-          exit 1
+          {
+            echo "| Step | Outcome |"
+            echo "| --- | --- |"
+            echo "| typecheck | ${{ steps.typecheck.outcome }} |"
+            echo "| suites | ${{ steps.suites.outcome }} |"
+            echo "| quick | ${{ steps.quick.outcome }} |"
+            echo "| journey | ${{ steps.journey.outcome }} |"
+            echo "| bench | ${{ steps.bench.outcome }} |"
+            echo "| report | ${{ steps.report.outcome }} |"
+            echo "| file_bugs | ${{ steps.file_bugs.outcome }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          failed=""
+          for pair in typecheck=${{ steps.typecheck.outcome }} suites=${{ steps.suites.outcome }} quick=${{ steps.quick.outcome }} journey=${{ steps.journey.outcome }} bench=${{ steps.bench.outcome }}; do
+            [ "${pair#*=}" = "failure" ] && failed="$failed ${pair%%=*}"
+          done
+          if [ -n "$failed" ]; then
+            echo "::error::E2E nightly is red — failed:${failed}"
+            exit 1
+          fi
+          for pair in report=${{ steps.report.outcome }} file_bugs=${{ steps.file_bugs.outcome }}; do
+            if [ "${pair#*=}" = "failure" ]; then
+              echo "::error::The tests passed, but ${pair%%=*} failed — see that step's log"
+              exit 1
+            fi
+          done

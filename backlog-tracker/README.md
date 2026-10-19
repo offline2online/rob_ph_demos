@@ -8,6 +8,14 @@ built the way it is. Keep both in sync with the live copy on this
 project's own Docs page (`requirementsMd`) — treat a divergence between
 any of the three as a bug in whichever is stale.
 
+**New here? Read [`START-HERE.md`](./START-HERE.md) first**: the reading order
+by role, the ticket flow with the file and function that owns each step, and
+a deploy map of every folder in the repo. The repo files it lists are copied
+onto this project's Docs page; which files, and how each is cut to the
+board's 20,000-character limit, is declared in
+[`board-docs.json`](./board-docs.json) and checked by
+`test/bt-handover-docs.test.js`.
+
 ## Deployment — the one correct way to ship a change (read this first)
 
 There is exactly **one** thing that makes a code change live: a push to
@@ -182,6 +190,15 @@ link. No AI is involved in this step at all, and no long-lived GitHub
 secret exists anywhere in this pipeline — the runner's `GITHUB_TOKEN` is
 minted and revoked by GitHub itself, per run.
 
+**Notes are only ever appended.** A card's `notes` are its audit trail, so
+neither this job nor a Routine session ever resends the array: `appendNote`
+adds the entry in memory and marks it unwritten, and `patchItem` sends just
+those entries in one `documents:commit` (an `appendMissingElements`
+transform plus `currentDocument.exists: true`), alongside any other fields.
+Routine sessions do the same (`ROUTINE_INSTRUCTIONS.md` → Setup → "Append a
+note"). This replaced whole-array writes that erased the notes on seven
+cards (4–15 Oct 2026). See `test/notes-append.test.js`.
+
 ### Ready for Dev starts one session per ticket (4 Oct 2026)
 
 A Ready for Dev click (or `--notify` from a runner) starts **one Routine
@@ -247,7 +264,7 @@ What the train changes:
   `<title>` + a `Backlog item: <id>` line (the same marker PR bodies
   carried, so exact-id lookups still work, now via `git log --grep`).
   Tickets stack on each other, so they are tested in the combination they
-  will ship in; the card's test link points at the branch. A re-patch is
+  will ship in; the card's test link is pinned to the ticket's own commit (never the branch, which githack caches). When that link opens a checked-in build (the DSP prototype), the card shows "Rebuilding test link…" and holds Failed testing until the bundle's `build-info.json` includes the ticket (`refreshPreviewBuildStates`). A re-patch is
   just another commit — `deployCommits[]` grows, history is never
   rewritten. If the push is rejected because another ticket landed in
   between, the patch is re-applied on the new head and retried once.
@@ -279,7 +296,14 @@ What the train changes:
   holds with `trainHold: "tests-red"` ("Tests failing") and carries on by
   itself once a fix on the train passes, with no second click. e2e-quick
   runs dispatched per ticket no longer cancel each other, so a red run
-  names the ticket that broke it. **And the culprit is sent back by
+  names the ticket that broke it. **Each card shows its own run** (19 Oct
+  2026): `trainTest` on the card (starting / running / passed / failed /
+  not-run) renders as a chip, `recordCardTrainTests` keeps it current each
+  sweep, and approving a ticket that isn't green opens an "Approve before
+  tests pass?" dialog first; the approving batch also records
+  `approvedByEmail` / `approvedAt`, shown as "Approved by <email>". An
+  approved ticket that goes red is still not sent back automatically.
+  **And the culprit is sent back by
   itself** (`ejectRedCulprits`, 9 Oct 2026): the first ticket whose own run
   failed while everything before it passed, if it is still in Ready for
   Testing, gets exactly what a person's Failed testing click does — back to
@@ -614,6 +638,47 @@ Creating a project therefore means four things, not one:
 3. `projects/{id}.deployBranch` is `deploy/<folder>`.
 4. `requirementsMd` / `readmeMd` are filled from those two files in the
    same session.
+5. Handover files that should appear as documents on the console are
+   declared in the project's `board-docs.json` (below) — never create a
+   mirror document by hand.
+
+### `board-docs.json` — which repo files are documents on the console
+
+A per-project manifest, normally `<folder>/board-docs.json` (this project's
+is `backlog-tracker/board-docs.json`), found by the post-merge sync by
+scanning the merge commit's tree and matching `projectId` — so it works for
+a `repoFolderNotApplicable` project too. Shape:
+`{"projectId", "startHere": "readme" | "requirements" | "<mirror key>",
+"mirrors": [{"key", "path", "name", "id"?, "slices"?, "prefix"?, "status"?}],
+"boardDocs": [{"id", "status": "current" | "working" | "superseded", "note"}]}`.
+`reconcileManifest()` in `scripts/docs-sync-lib.js` runs at the start of
+every sync: it matches each mirror by `id`, else by a stored `mirrorKey`
+(never by `sourcePath` alone), creates a document for an unmatched entry,
+rewrites only what differs and reads the text back byte for byte; refuses
+any cut over 20,000 characters before writing (the automation's service
+account bypasses the rules' cap, so it could otherwise save a document no
+person can edit); writes declared `status`/`statusNote`; sets
+`projects/{id}.startHereDocId`; and records `docsSync.manifestPath` and
+`docsSync.unlisted` (documents the manifest doesn't classify). It never
+deletes, and a refusal shows in the "Docs behind main" chip. The repo wins
+for mirrors and declared status; board-only text is never touched.
+`test/board-docs-manifest.test.js` validates every manifest in the checkout,
+and a change to any `board-docs.json` starts the console tests.
+
+**Board docs sync.** The automation (`backlog-automation.yml`, every run)
+keeps every project's board documents in step with `main`, not only the
+project whose train just merged: `syncDocsWhenMainMoves()` in
+`scripts/run-backlog-automation.js` calls `syncAllProjectDocs()`
+(`scripts/docs-sync-lib.js`) whenever `main`'s head differs from
+`systemStatus/docsSync.lastSyncedMain`. It syncs each non-archived project
+that has something to sync (a repo folder with Requirements/README, a
+`sourcePath` on its Requirements/README document, a mirrored document, or a
+manifest), writes only what differs, reads it back byte for byte, and records
+`projects/{id}.docsSync`. `lastSyncedMain` advances only when every project
+succeeded; otherwise the same head is retried, at most 5 times. A mirror over
+20,000 characters is refused (`MIRROR_CAP`, matching `firestore.rules`):
+split it with `sourceSlices`. `dsp-integration/scripts/sync-board-docs.mjs`
+writes content only and no longer touches `docsSync`.
 
 **The New Project modal now asks for the repo folder alongside the name**
 (`np-repo-folder-input` in `public/index.html`, wired in `public/js/app.js`)
@@ -900,6 +965,10 @@ it is full read/write — a project's Requirements, README, additional
 documents, interface contracts and Artifact link — because keeping those
 current is part of doing the work. Every documentation write records what it
 replaced in `docRevisions`, so a bad write or a delete is recoverable.
+Where a document is copied from a repo file (a mirror, or a synced
+Requirements/README), the repo file wins and the copy is read-only over MCP;
+the `onProjectDocWritten` trigger (`functions/index.js`) keeps the text every
+change to a mirror replaces.
 
 **No tool merges, approves a ticket out of Ready for Testing, or moves a
 card's status — with one deliberate, narrowly-scoped exception.**
@@ -1708,7 +1777,7 @@ default.
   can represent before Quill sees it, loads it through Quill's own
   Delta path, and warns above the body if any characters didn't survive
   (`faqHtmlForQuill`/`faqSetEditorHtml` in `app.js`; regression test
-  `test/faq-editor-load.test.mjs`, opt-in `npm run test:editor`) — the
+  `test/faq-editor-load.test.mjs`, `npm run test:editor`, run in CI by `test:mcp-app`) — the
   two naive load paths before it each silently lost whole lists, see
   `REQUIREMENTS.md` → "Loading an article into Quill is a rewrite".
   See `REQUIREMENTS.md` → "Rich-text article body" for the
@@ -1802,8 +1871,9 @@ default.
   `onFaqArticleRevisionApproved`, whichever fires last — keeping the
   replaced text as `previousRevision` for a **Revert last auto-update**
   row action. Full spec: `REQUIREMENTS.md` → "FAQ revision review".
-  **A `functions/` change needs its own `firebase deploy --only
-  functions`** — the promotion never happens until it's deployed.
+  The function deploys with the console on merge
+  (`deploy-backlog-tracker.yml`), so the promotion works once the train
+  that carries it has merged and that run has succeeded.
 - **Releases — bundling FAQ updates with a product release.** The menu's
   **Releases** page lists every `releases` doc (newest first) with
   **+ New release** (name, optional version) and a one-way **Mark live**

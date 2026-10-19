@@ -67,7 +67,6 @@ const DOCS = [
    when a marker heading is missing or a part is over the cap. Renaming a
    marker heading fails it too, instead of mirroring nothing. Each board copy
    opens with a line saying it is a mirror and which file wins. */
-const MIRROR_CAP = 20000
 const repoMirror = (file, part) => `> Mirror of \`dsp-integration/${file}\`${part ? ` (part ${part[0]} of ${part[1]})` : ''} — the repo wins. Rewritten from the repo file on every merge to main; edit the file, not this copy.\n\n`
 const BOUNDARIES = 'docs/dsp-integration/api/PH-CORE-BOUNDARIES.md'
 const H_GUARANTEE = '### What each seam must guarantee'
@@ -120,7 +119,7 @@ const MIRRORS = [
   { id: 'Stonlf6Pp1EaS34ZePzG', name: 'AWS demo — test flow (10 Dec 2026)', file: AWS_DEMO, sourceSlices: [], sourcePrefix: repoMirror(AWS_DEMO) },
 ]
 /* The same slicing the post-merge mirror uses — one implementation. */
-const { mirrorText } = createRequire(import.meta.url)('../../backlog-tracker/scripts/docs-sync-lib.js')
+const { mirrorText, MIRROR_CAP } = createRequire(import.meta.url)('../../backlog-tracker/scripts/docs-sync-lib.js')
 
 const args = process.argv.slice(2)
 const flag = (name) => args.includes(name)
@@ -344,26 +343,13 @@ const sha = (args) => { try { return execFileSync('git', args, { cwd: ROOT, enco
 const head = process.env.GITHUB_SHA || sha(['rev-parse', 'HEAD'])
 const lastCommit = (file) => sha(['log', '-1', '--format=%H', '--', join(ROOT, file)]) || head
 
-/* Record the outcome on projects/{id}.docsSync so the board can show
-   "Docs behind main" instead of a silent failure. Best effort. */
-async function recordSync(fields) {
-  const mask = ['docsSync', 'lastMergeCommit', 'lastMergeAt'].map((f) => `updateMask.fieldPaths=${f}`).join('&')
-  const now = { timestampValue: new Date().toISOString() }
-  const str = (v) => (v ? { stringValue: v } : { nullValue: null })
-  const docsSync = { mapValue: { fields: { mergeCommit: str(head), syncedAt: now, ...fields } } }
-  try {
-    await fetch(`${BOARD}/projects/${PROJECT_ID}?${mask}`, {
-      method: 'PATCH',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fields: { docsSync, lastMergeCommit: str(head), lastMergeAt: now } }),
-    })
-  } catch { /* the exit code and message below still say what happened */ }
-}
-
+/* docsSync / lastMergeCommit / lastMergeAt are written by one writer only:
+   the backlog automation's sweep (backlog-tracker/scripts/docs-sync-lib.js,
+   syncAllProjectDocs), which runs whenever main moves. This script writes
+   content and exits non-zero on a failure; it records nothing about the sync. */
 const nowTs = { timestampValue: new Date().toISOString() }
 const failWrite = async (what, res) => {
   const answer = await res.text()
-  await recordSync({ error: { stringValue: `Docs sync failed (${res.status}): ${answer.slice(0, 500)}` } })
   throw new Error(`Writing ${what} failed (${res.status}): ${answer}`)
 }
 for (const d of writable) {
@@ -410,14 +396,8 @@ for (const d of writable) {
 const after = await board(token)
 const bad = after.filter((p) => writable.some((d) => d.field === p.field) && p.board !== read(p.file))
 if (bad.length) {
-  await recordSync({ error: { stringValue: `Wrote, but the board does not match: ${bad.map((d) => d.field).join(', ')}.` } })
   console.error(`\nWrote, but the board does not match: ${bad.map((d) => d.field).join(', ')}. Restore from the board's revision history.`)
   process.exit(1)
 }
-await recordSync({
-  error: { nullValue: null },
-  requirementsCommit: { stringValue: lastCommit(DOCS[0].file) },
-  readmeCommit: { stringValue: lastCommit(DOCS[1].file) },
-})
 console.log(`\nSynced ${writable.map((d) => d.field).join(' and ')} — verified byte for byte.`)
 if (mirrorsBehind) process.exit(1)

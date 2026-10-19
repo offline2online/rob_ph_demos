@@ -6,7 +6,9 @@
 // Run with:  node test/docs-sync.test.js
 "use strict";
 const assert = require("assert");
-const { syncProjectDocs, docCandidates, resolveRepoFolder } = require("../scripts/docs-sync-lib.js");
+const fs = require("fs");
+const path = require("path");
+const { syncProjectDocs, docCandidates, resolveRepoFolder, MIRROR_CAP, CORE_DOC_CAP } = require("../scripts/docs-sync-lib.js");
 
 let passed = 0;
 const failures = [];
@@ -115,25 +117,105 @@ function fakes(files, { refuse, drop } = {}) {
     assert.strictEqual(g.doc.docsSync.error, null);
   });
 
-  await test("a project marked repoFolderNotApplicable skips silently", async () => {
-    const f = fakes({});
-    await syncProjectDocs({ repoFolderNotApplicable: true, deployBranch: "deploy/x" }, "ccc3333", f.io);
-    assert.strictEqual(f.patches.length, 0);
+  await test("repoFolderNotApplicable: nothing to sync writes nothing; a README sourcePath plus a mirror both sync", async () => {
+    const none = fakes({});
+    await syncProjectDocs({ repoFolderNotApplicable: true, deployBranch: "deploy/x" }, "ccc3333", none.io);
+    assert.strictEqual(none.patches.length, 0, "nothing to sync: silent");
+
+    const f = fakes({ "backlog-tracker/README.md": "# bt", "faq/notes.md": "notes" });
+    f.docs.readme = { contentMd: "old", sourcePath: "backlog-tracker/README.md" };
+    const store = { m: { name: "Notes", sourcePath: "faq/notes.md", contentMd: "old" } };
+    f.io.listProjectDocs = async () => Object.entries(store).map(([id, v]) => ({ id, name: v.name, sourcePath: v.sourcePath }));
+    f.io.putProjectDocContent = async (id, fields) => { Object.assign(store[id], fields); };
+    f.io.getProjectDocContent = async (id) => store[id];
+    const r = await syncProjectDocs({ repoFolderNotApplicable: true }, "ccc4444", f.io);
+    assert.ok(r.ok, JSON.stringify(r));
+    assert.strictEqual(f.docs.readme.contentMd, "# bt");
+    assert.strictEqual(store.m.contentMd, "notes");
+    assert.strictEqual(store.m.updatedByEmail, "backlog-automation", "a mirror write names the automation, not the previous editor");
+    assert.deepStrictEqual(f.doc.docsSync.mirroredDocs, [{ docId: "m", name: "Notes", sourcePath: "faq/notes.md", sourceCommit: "last-notes.md", ok: true, error: null }]);
+    assert.strictEqual(f.doc.docsSync.readmeCommit, "last-README.md");
+    assert.strictEqual(f.doc.lastMergeCommit, "ccc4444");
   });
 
-  await test("projectDocs with a sourcePath are mirrored and verified; a refusal is reported", async () => {
+  await test("repoFolderNotApplicable: a sourcePath that is missing at the commit or leaves the repo is an error", async () => {
+    const f = fakes({});
+    f.docs.readme = { sourcePath: "gone/README.md" };
+    f.docs.requirements = { sourcePath: "../etc/passwd" };
+    const r = await syncProjectDocs({ repoFolderNotApplicable: true }, "ddd0000", f.io);
+    assert.strictEqual(r.ok, false);
+    assert.match(f.doc.docsSync.error, /README\.md: gone\/README\.md not found/);
+    assert.match(f.doc.docsSync.error, /must stay inside the repo/);
+  });
+
+  await test("a second sync with unchanged files writes no document and no pointer, but records the new mergeCommit", async () => {
+    const f = fakes({ "p/README.md": "same", "p/REQUIREMENTS.md": "req" });
+    const project = { repoFolder: "p" };
+    assert.ok((await syncProjectDocs(project, "aaaa111", f.io)).ok);
+    const pointerWrites = () => f.patches.filter((x) => "docs" in x).length;
+    assert.strictEqual(pointerWrites(), 1);
+    let puts = 0;
+    const put = f.io.putDoc;
+    f.io.putDoc = async (...a) => { puts += 1; return put(...a); };
+    const again = await syncProjectDocs({ ...project, docs: f.doc.docs, docsSync: f.doc.docsSync }, "bbbb222", f.io);
+    assert.ok(again.ok);
+    assert.strictEqual(puts, 0, "no document write");
+    assert.strictEqual(pointerWrites(), 1, "no pointer write");
+    assert.strictEqual(f.doc.docsSync.mergeCommit, "bbbb222");
+    assert.strictEqual(f.doc.lastMergeCommit, "bbbb222");
+    assert.strictEqual(f.doc.docsSync.readmeCommit, "last-README.md", "each file's own last commit, not head");
+  });
+
+  await test("a stale sourceCommit alone is rewritten once", async () => {
+    const f = fakes({ "p/README.md": "same" });
+    f.docs.readme = { contentMd: "same", sourcePath: "p/README.md", sourceCommit: "old-commit" };
+    let puts = 0;
+    const put = f.io.putDoc;
+    f.io.putDoc = async (...a) => { puts += 1; return put(...a); };
+    assert.ok((await syncProjectDocs({ repoFolder: "p" }, "eee1111", f.io)).ok);
+    assert.strictEqual(puts, 1);
+    assert.strictEqual(f.docs.readme.sourceCommit, "last-README.md");
+    assert.ok((await syncProjectDocs({ repoFolder: "p", docs: f.doc.docs }, "eee2222", f.io)).ok);
+    assert.strictEqual(puts, 1, "in step now: not rewritten again");
+  });
+
+  await test("a Requirements/README over the board's cap is refused before writing, naming the document", async () => {
+    const f = fakes({ "p/REQUIREMENTS.md": "R".repeat(CORE_DOC_CAP + 1), "p/README.md": "ok" });
+    const r = await syncProjectDocs({ repoFolder: "p" }, "fff1111", f.io);
+    assert.strictEqual(r.ok, false);
+    assert.ok(!("requirements" in f.docs), "never written");
+    assert.strictEqual(f.docs.readme.contentMd, "ok", "the rest still syncs");
+    assert.match(f.doc.docsSync.error, /REQUIREMENTS\.md: 800001 chars, over the 800000.*split it with sourceSlices/);
+  });
+
+  await test("the cap constants match firestore.rules", async () => {
+    const rules = fs.readFileSync(path.join(__dirname, "..", "firestore.rules"), "utf8");
+    const sizes = [...rules.matchAll(/contentMd\.size\(\) <= (\d+)/g)].map((m) => Number(m[1]));
+    assert.ok(sizes.includes(MIRROR_CAP), `rules have no ${MIRROR_CAP} cap: ${sizes}`);
+    assert.ok(sizes.includes(CORE_DOC_CAP), `rules have no ${CORE_DOC_CAP} cap: ${sizes}`);
+    assert.strictEqual(Math.max(...sizes), CORE_DOC_CAP);
+  });
+
+  await test("projectDocs with a sourcePath are mirrored and verified; an over-cap one is never written", async () => {
     const files = { "p/README.md": "# r", "p/api/A.md": "AAA", "p/api/B.md": "B".repeat(30000) };
     const f = fakes(files);
     const store = { a: { name: "A", sourcePath: "p/api/A.md", contentMd: "old" }, b: { name: "B", sourcePath: "p/api/B.md", contentMd: "old" }, c: { name: "C", contentMd: "keep" } };
+    const writes = [];
     f.io.listProjectDocs = async () => Object.entries(store).map(([id, v]) => ({ id, name: v.name, sourcePath: v.sourcePath }));
-    f.io.putProjectDocContent = async (id, fields) => { if (fields.contentMd.length > 20000) throw new Error("PERMISSION_DENIED over cap"); store[id].contentMd = fields.contentMd; };
+    // A writer that accepts anything, like the service account does.
+    f.io.putProjectDocContent = async (id, fields) => { writes.push(id); Object.assign(store[id], fields); };
     f.io.getProjectDocContent = async (id) => store[id];
     const r = await syncProjectDocs({ repoFolder: "p" }, "ddd4444", f.io);
     assert.strictEqual(store.a.contentMd, "AAA");
     assert.strictEqual(store.b.contentMd, "old");
+    assert.deepStrictEqual(writes, ["a"], "the 30,000-char mirror is never written");
     assert.strictEqual(store.c.contentMd, "keep", "no sourcePath: untouched");
     assert.strictEqual(r.ok, false);
-    assert.match(f.doc.docsSync.error, /"B" ← p\/api\/B\.md.*over cap/);
+    const by = Object.fromEntries(f.doc.docsSync.mirroredDocs.map((m) => [m.docId, m]));
+    assert.strictEqual(by.a.ok, true);
+    assert.strictEqual(by.b.ok, false);
+    assert.match(by.b.error, /30000 chars, over the 20000.*split it with sourceSlices/);
+    assert.match(f.doc.docsSync.error, /"B" ← p\/api\/B\.md/);
     assert.strictEqual(f.docs.readme.contentMd, "# r", "readme still synced");
   });
 

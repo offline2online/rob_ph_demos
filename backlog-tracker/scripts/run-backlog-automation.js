@@ -54,7 +54,7 @@ const { buildIndexFromArticleFiles, validateIndexAgainstArticleFiles, serializeI
 // runs main() for real the moment it's required (see the bottom of this
 // file).
 const { trainLockShouldClear, trainHandoverReason } = require("../functions/train-lock");
-const { syncProjectDocs, resolveRepoFolder } = require("./docs-sync-lib");
+const { syncProjectDocs, syncAllProjectDocs, resolveRepoFolder } = require("./docs-sync-lib");
 const { hasIntakePlaceholder } = require("../functions/intake");
 
 const PROJECT_ID = "backlog-tracker-e4ed2";
@@ -144,7 +144,48 @@ async function runQuery(structuredQuery) {
     .map((r) => ({ id: r.document.name.split("/").pop(), ...fdoc(r.document.fields) }));
 }
 
+// A card's `notes` are its audit trail, so the automation only ever APPENDS to
+// them. Resending the whole array (the old PATCH with updateMask=notes) let a
+// stale read or another writer's empty array erase every note on the card.
+// appendNote marks each entry it makes as unwritten; patchItem sends only
+// those, as a Firestore appendMissingElements transform in one :commit, so
+// whatever else is on the card — including notes another writer added since
+// this run read it — is never touched. `at` is unique per entry, so nothing
+// real is deduplicated and a retry cannot duplicate.
+const unwrittenNotes = new WeakSet();
+
+// The one Write for `documents:commit`. With other fields: an update whose
+// mask omits `notes` plus a notes transform. Notes only: a bare transform
+// (a Write is one of update/delete/transform, and an update with an empty
+// mask would replace the whole document). exists:true stops a note from
+// recreating a card that was deleted.
+function notesCommitWrite(docName, newNotes, otherFields = {}) {
+  if (!Array.isArray(newNotes) || !newNotes.length) throw new Error("notesCommitWrite: no new notes to append");
+  const transform = { fieldPath: "notes", appendMissingElements: { values: newNotes.map(tv) } };
+  const names = Object.keys(otherFields);
+  if (!names.length) return { transform: { document: docName, fieldTransforms: [transform] }, currentDocument: { exists: true } };
+  return {
+    update: { name: docName, fields: Object.fromEntries(names.map((k) => [k, tv(otherFields[k])])) },
+    updateMask: { fieldPaths: names },
+    updateTransforms: [transform],
+    currentDocument: { exists: true },
+  };
+}
+
 async function patchItem(itemId, fields) {
+  if ("notes" in fields) {
+    const { notes, ...others } = fields;
+    const fresh = Array.isArray(notes) ? notes.filter((n) => n && typeof n === "object" && unwrittenNotes.has(n)) : [];
+    if (!fresh.length) throw new Error(`patchItem ${itemId}: notes must come from appendNote (nothing new to append)`);
+    const docName = `projects/${PROJECT_ID}/databases/(default)/documents/backlogItems/${itemId}`;
+    const res = await fetch(`${FIRESTORE_BASE}:commit`, {
+      method: "POST",
+      headers: await firestoreHeaders(),
+      body: JSON.stringify({ writes: [notesCommitWrite(docName, fresh, others)] }),
+    });
+    if (!res.ok) throw new Error(`PATCH ${itemId} failed: ${res.status} ${await res.text()}`);
+    return;
+  }
   const fieldPaths = Object.keys(fields).map((k) => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
   const res = await fetch(`${FIRESTORE_BASE}/backlogItems/${itemId}?${fieldPaths}`, {
     method: "PATCH",
@@ -297,9 +338,11 @@ async function sweepShippedPatchFiles() {
 }
 
 async function appendNote(item, text) {
-  const notes = Array.isArray(item.notes) ? item.notes : [];
-  notes.push({ author: "backlog-automation", text, at: new Date().toISOString() });
-  return notes;
+  if (!Array.isArray(item.notes)) item.notes = [];
+  const entry = { author: "backlog-automation", text, at: new Date().toISOString() };
+  unwrittenNotes.add(entry);
+  item.notes.push(entry);
+  return item.notes;
 }
 
 // ── The deployment train ─────────────────────────────────────────────────
@@ -369,13 +412,35 @@ async function listProjectDocsFor(projectId) {
     from: [{ collectionId: "projectDocs" }],
     where: { fieldFilter: { field: { fieldPath: "projectId" }, op: "EQUAL", value: { stringValue: projectId } } },
   });
-  return rows.map((r) => ({ id: r.id, name: r.name, sourcePath: r.sourcePath, sourceSlices: r.sourceSlices, sourcePrefix: r.sourcePrefix }));
+  return rows.map((r) => ({ id: r.id, name: r.name, sourcePath: r.sourcePath, sourceSlices: r.sourceSlices, sourcePrefix: r.sourcePrefix, mirrorKey: r.mirrorKey, manifestPath: r.manifestPath, status: r.status, statusNote: r.statusNote, kind: r.kind }));
 }
 
 async function getProjectDocById(docId) {
   const res = await fetch(`${FIRESTORE_BASE}/projectDocs/${docId}`, { headers: await firestoreHeaders() });
   if (!res.ok) throw new Error(`GET projectDocs/${docId} failed: ${res.status} ${await res.text()}`);
   return fdoc((await res.json()).fields);
+}
+
+// null when the document does not exist (reconcileManifest checks whether an
+// id named in a manifest belongs to another project).
+async function getProjectDocOrNull(docId) {
+  const res = await fetch(`${FIRESTORE_BASE}/projectDocs/${docId}`, { headers: await firestoreHeaders() });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`GET projectDocs/${docId} failed: ${res.status} ${await res.text()}`);
+  const body = await res.json();
+  return { id: docId, ...fdoc(body.fields) };
+}
+
+// patchProjectDocFields needs an existing document; a manifest mirror with no
+// match gets a new one. Returns its id.
+async function createProjectDocFields(fields) {
+  const res = await fetch(`${FIRESTORE_BASE}/projectDocs`, {
+    method: "POST",
+    headers: await firestoreHeaders(),
+    body: JSON.stringify({ fields: Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, tv(v)])) }),
+  });
+  if (!res.ok) throw new Error(`POST projectDocs failed: ${res.status} ${await res.text()}`);
+  return String((await res.json()).name || "").split("/").pop();
 }
 
 async function patchProjectDocFields(docId, fields) {
@@ -716,7 +781,7 @@ function carryingCommitOnTrain(deployBranch, paths) {
 //   already-on-main  — nothing on the train changes these paths, so the
 //                      content is live already: genuinely nothing to deploy,
 //                      and the one case noDeploymentRequired is honest for.
-function noDiffPatchFields(item, carrying, { deployBranch, testVersion, previewUrl, mainPreviewUrl } = {}) {
+function noDiffPatchFields(item, carrying, { deployBranch, testVersion, previewUrl, mainPreviewUrl, previewFields, mainPreviewFields } = {}) {
   const base = {
     status: "ready-for-testing",
     patchReady: false,
@@ -734,7 +799,7 @@ function noDiffPatchFields(item, carrying, { deployBranch, testVersion, previewU
         ...base, deployBranch,
         deployCommit: carrying.sha, deployCommits: [carrying.sha],
         carriedByCommit: null, carriedByItem: null,
-        ...(previewUrl ? { previewUrl } : {}),
+        ...(previewUrl ? { previewUrl, ...(previewFields || {}) } : {}),
       },
     };
   }
@@ -750,13 +815,13 @@ function noDiffPatchFields(item, carrying, { deployBranch, testVersion, previewU
         // real-commit path below.
         revertRequested: false,
         revertBlockedBy: [],
-        ...(previewUrl ? { previewUrl } : {}),
+        ...(previewUrl ? { previewUrl, ...(previewFields || {}) } : {}),
       },
     };
   }
   return {
     kind: "already-on-main",
-    fields: { ...base, noDeploymentRequired: true, deployBranch, ...(mainPreviewUrl ? { previewUrl: mainPreviewUrl } : {}) },
+    fields: { ...base, noDeploymentRequired: true, deployBranch, ...(mainPreviewUrl ? { previewUrl: mainPreviewUrl, ...(mainPreviewFields || {}) } : {}) },
   };
 }
 
@@ -1201,8 +1266,18 @@ const GENERATED_BUILDS = [
     workflow: "dsp-prototype.yml",
     sources: ["dsp-integration/apps/", "dsp-integration/packages/", "dsp-integration/package.json", "dsp-integration/package-lock.json"],
     outputs: ["dsp-integration/prototype/", "dsp-integration/apps/admin/public/demo/"],
+    // Stamped by the build: its "commit" is the source commit the bundle was
+    // built from (rebuild-prototype.sh). The board reads it to know whether
+    // a card's test link shows the ticket yet (refreshPreviewBuildStates).
+    buildInfo: "dsp-integration/prototype/build-info.json",
   },
 ];
+
+// A card whose link is still "rebuilding" after this long is shown as "stale":
+// the link comes back with a warning rather than staying hidden for good when
+// a rebuild never lands. public/js/app.js carries the same number (a test
+// asserts they match).
+const PREVIEW_REBUILD_STALE_MS = 20 * 60 * 1000;
 
 // HOSTED_DEPLOYS: a service deployed by its own workflow whose `on: push`
 // paths never fire for a merge this script makes (GITHUB_TOKEN's
@@ -1260,6 +1335,45 @@ function rebuildWorkflowsFor(paths) {
   return GENERATED_BUILDS.filter((b) => changed.some((p) => underAny(p, b.sources))).map((b) => b.workflow);
 }
 
+// The ref and in-repo path of a githack link this pipeline generated, or
+// null for anything else (a person's own link, a GitHub tree link).
+function parseGithackLink(url) {
+  const s = String(url || "");
+  if (!s.startsWith(`https://rawcdn.githack.com/${REPO}/`)) return null;
+  const rest = s.slice(`https://rawcdn.githack.com/${REPO}/`.length);
+  const slash = rest.indexOf("/");
+  if (slash <= 0) return null;
+  return { ref: rest.slice(0, slash), path: rest.slice(slash + 1).split(/[?#]/)[0] };
+}
+
+// The generated build a pipeline link serves, or null (no generated build,
+// or a link that is not under one's output).
+function generatedBuildForLink(url) {
+  const link = parseGithackLink(url);
+  if (!link) return null;
+  return GENERATED_BUILDS.find((b) => underAny(link.path, b.outputs)) || null;
+}
+
+// The preview* fields to write alongside a pipeline-generated link.
+// "rebuilding" exactly when this change leaves a build stale AND the link
+// opens that build's output; otherwise the state fields are nulled so
+// nothing from an earlier ticket round carries over. `ref` is the commit the
+// link is pinned to.
+function previewLinkFields(paths, previewUrl, ref, nowIso = new Date().toISOString()) {
+  const link = parseGithackLink(previewUrl);
+  const stale = new Set(rebuildWorkflowsFor(paths));
+  const build = link ? generatedBuildForLink(previewUrl) : null;
+  const rebuilding = !!(build && stale.has(build.workflow));
+  return {
+    previewSha: link ? (ref || link.ref) : null,
+    previewUpdatedAt: nowIso,
+    previewState: rebuilding ? "rebuilding" : null,
+    previewStateAt: rebuilding ? nowIso : null,
+    previewBuildWorkflow: rebuilding ? build.workflow : null,
+    previewBuiltFrom: null,
+  };
+}
+
 // Dispatches each stale build's workflow for `branch`. Never throws: a
 // failed dispatch is logged and the workflow's own schedule catches up.
 // Returns the workflows dispatched, so the caller's note can say so.
@@ -1312,7 +1426,10 @@ const CONSOLE_TEST_WORKFLOW = TRAIN_TEST_WORKFLOWS[0].workflow;
 // output alone (a prototype rebuild) starts nothing: its source already did.
 function trainTestsFor(paths) {
   const changed = (paths || []).filter((p) => typeof p === "string" && !isGeneratedOutput(p));
-  return TRAIN_TEST_WORKFLOWS.filter((t) => changed.some((p) => p.startsWith(t.prefix)));
+  // A board-docs.json (any project's) is checked by the console tests: its
+  // validator lives in test:train-lock, and a bad manifest must not reach main.
+  const manifestChanged = changed.some((p) => p.split("/").pop() === "board-docs.json");
+  return TRAIN_TEST_WORKFLOWS.filter((t) => (manifestChanged && t.workflow === CONSOLE_TEST_WORKFLOW) || changed.some((p) => p.startsWith(t.prefix)));
 }
 const touchesConsoleTests = (paths) => trainTestsFor(paths).some((t) => t.workflow === CONSOLE_TEST_WORKFLOW);
 
@@ -1330,6 +1447,128 @@ function dispatchTrainTests(branch, paths, label) {
     }
   }
   return started;
+}
+
+// ── Each train card carries its own test result (trainTest) ────────────────
+// A tester approving a Ready for Testing card could not see whether that
+// ticket's own train test run was still going, had passed or had failed:
+// reportTrainTestResults wrote to the card only on a failure, so "running"
+// and "passed" both looked like silence. `trainTest` is the card's own
+// record, written ONLY by this automation (firestore.rules → itemPipelineFields):
+//   { sha, state, workflows: [{ workflow, label, state, runUrl, since }], since, updatedAt }
+// state is starting, running, passed, failed, not-run or not-applicable; the
+// card takes its worst workflow's state, in TRAIN_TEST_WORST_FIRST order.
+// All of it is pure, for test/card-test-status.test.js.
+const TRAIN_TEST_WORST_FIRST = ["failed", "not-run", "running", "starting", "passed"];
+const TRAIN_TEST_START_GRACE_MS = 10 * 60 * 1000;
+
+function worstTrainTestState(states) {
+  const list = (states || []).filter((s) => TRAIN_TEST_WORST_FIRST.includes(s));
+  if (!list.length) return "not-applicable";
+  return TRAIN_TEST_WORST_FIRST.find((s) => list.includes(s));
+}
+
+// One workflow's state from its runs on the card's own commit (newest first),
+// or null when there is no real run yet (none, or all held as action_required).
+function trainTestRunState(runs) {
+  const r = newestRealRun(runs);
+  if (!r) return null;
+  const status = String(r.status || "").toLowerCase();
+  if (status === "queued" || status === "in_progress") return { state: "running", runUrl: r.url || "" };
+  const concl = String(r.conclusion || "").toLowerCase();
+  if (concl === "success") return { state: "passed", runUrl: r.url || "" };
+  if (["failure", "timed_out", "startup_failure"].includes(concl)) return { state: "failed", runUrl: r.url || "" };
+  return { state: "not-run", runUrl: r.url || "" };
+}
+
+function trainTestEntry(t, state, runUrl, sinceIso) {
+  return { workflow: t.workflow, label: t.label, state, runUrl: runUrl || "", since: sinceIso };
+}
+
+// The record written when a ticket lands: one entry per workflow its changed
+// paths need. `started` is what dispatchTrainTests managed to start; one that
+// didn't start is not-run. No workflows at all is not-applicable.
+function landingTrainTest(sha, changedPaths, started, nowIso) {
+  const startedSet = new Set((started || []).map((t) => t.workflow));
+  const workflows = trainTestsFor(changedPaths).map((t) => trainTestEntry(t, startedSet.has(t.workflow) ? "starting" : "not-run", "", nowIso));
+  return { sha, state: worstTrainTestState(workflows.map((w) => w.state)), workflows, since: nowIso, updatedAt: nowIso };
+}
+
+// The workflows a card's record covers: its own when it is for the card's
+// commit, else (carried cards, cards from before this shipped) `backfill`.
+function trainTestWorkflowsFor(card, backfillPaths) {
+  const rec = card && card.trainTest;
+  if (rec && rec.sha === card.deployCommit && Array.isArray(rec.workflows)) {
+    return rec.workflows.map((w) => TRAIN_TEST_WORKFLOWS.find((t) => t.workflow === w.workflow) || { workflow: w.workflow, label: w.label });
+  }
+  return trainTestsFor(backfillPaths || []);
+}
+
+// Returns the card's new trainTest, or undefined for no change (so no write).
+// `runsByWorkflow`: { [workflow]: runs on the card's deployCommit, newest
+// first } for every workflow trainTestWorkflowsFor named.
+function nextCardTrainTest(card, runsByWorkflow, nowMs, backfillPaths) {
+  if (!card || !card.deployCommit) return undefined;
+  const nowIso = new Date(nowMs).toISOString();
+  const rec = card.trainTest && card.trainTest.sha === card.deployCommit ? card.trainTest : null;
+  const old = new Map(((rec && rec.workflows) || []).map((w) => [w.workflow, w]));
+  const recSince = rec && rec.since ? rec.since : nowIso;
+  const sinceMs = Date.parse(recSince);
+  const workflows = trainTestWorkflowsFor(card, backfillPaths).map((t) => {
+    const found = trainTestRunState((runsByWorkflow || {})[t.workflow]);
+    const state = found ? found.state : (Number.isFinite(sinceMs) && nowMs - sinceMs >= TRAIN_TEST_START_GRACE_MS ? "not-run" : "starting");
+    const prev = old.get(t.workflow);
+    const runUrl = found ? found.runUrl : "";
+    const same = prev && prev.state === state && (prev.runUrl || "") === runUrl;
+    return trainTestEntry(t, state, runUrl, same && prev.since ? prev.since : nowIso);
+  });
+  const state = worstTrainTestState(workflows.map((w) => w.state));
+  if (rec && rec.state === state && rec.workflows.length === workflows.length
+    && workflows.every((w) => { const p = old.get(w.workflow); return p && p.state === w.state && (p.runUrl || "") === w.runUrl; })) return undefined;
+  return { sha: card.deployCommit, state, workflows, since: recSince, updatedAt: nowIso };
+}
+
+// Fetches each key once per sweep, however many cards and callers ask.
+function memoByKey(fetcher) {
+  const cache = new Map();
+  return (...args) => {
+    const key = args.join("@");
+    if (!cache.has(key)) cache.set(key, fetcher(...args));
+    return cache.get(key);
+  };
+}
+
+// Runs of one workflow on one commit, newest first. Throws on a gh failure.
+function fetchWorkflowRunsOnSha(workflow, sha) {
+  return JSON.parse(run("gh", ["api", `repos/${REPO}/actions/workflows/${workflow}/runs?head_sha=${sha}&per_page=10`,
+    "-q", "[.workflow_runs[] | {headSha: .head_sha, status, conclusion, url: .html_url}]"]) || "[]");
+}
+function fetchCommitFiles(sha) {
+  return JSON.parse(run("gh", ["api", `repos/${REPO}/commits/${sha}`, "-q", "[.files[].filename]"]) || "[]");
+}
+
+// Once per sweep, just before ejectRedCulprits: keep every train card's
+// trainTest current, writing only when something changed.
+async function recordCardTrainTests(runsFor = memoByKey(fetchWorkflowRunsOnSha), filesFor = memoByKey(fetchCommitFiles)) {
+  const cards = await runQuery({
+    from: [{ collectionId: "backlogItems" }],
+    select: { fields: ["deployCommit", "trainTest", "revertRequested"].map((fieldPath) => ({ fieldPath })) },
+    where: { fieldFilter: { field: { fieldPath: "status" }, op: "IN", value: { arrayValue: { values: [{ stringValue: "ready-for-testing" }, { stringValue: "ready-to-publish" }] } } } },
+  });
+  for (const card of cards) {
+    if (!card.deployCommit || card.revertRequested) continue;
+    try {
+      const rec = card.trainTest && card.trainTest.sha === card.deployCommit ? card.trainTest : null;
+      if (rec && (rec.state === "passed" || rec.state === "not-applicable")) continue; // settled
+      const files = rec ? null : await filesFor(card.deployCommit);
+      const runsByWorkflow = {};
+      for (const t of trainTestWorkflowsFor(card, files)) runsByWorkflow[t.workflow] = await runsFor(t.workflow, card.deployCommit);
+      const next = nextCardTrainTest(card, runsByWorkflow, Date.now(), files);
+      if (next) await patchItem(card.id, { trainTest: next });
+    } catch (err) {
+      console.log(`[card-tests] ${card.id}: couldn't record its test state (${scrubSecrets(err.message)})`);
+    }
+  }
 }
 
 // Which of a train's Ready for Testing cards to tell about a failed run.
@@ -1517,7 +1756,7 @@ function pickRedCulprit(order, cards, runs, opts = {}) {
   return null;
 }
 
-async function ejectRedCulprits() {
+async function ejectRedCulprits(runsFor = memoByKey(fetchWorkflowRunsOnSha)) {
   const cards = await runQuery({
     from: [{ collectionId: "backlogItems" }],
     select: { fields: ["projectId", "title", "status", "deployBranch", "deployCommit", "autoRebuilds", "notes", "revertRequested"].map((fieldPath) => ({ fieldPath })) },
@@ -1535,8 +1774,7 @@ async function ejectRedCulprits() {
       for (const t of TRAIN_TEST_WORKFLOWS) {
         const runs = {};
         for (const c of trainCards) {
-          const list = JSON.parse(run("gh", ["api", `repos/${REPO}/actions/workflows/${t.workflow}/runs?head_sha=${c.deployCommit}&per_page=10`,
-            "-q", "[.workflow_runs[] | {headSha: .head_sha, status, conclusion, url: .html_url}]"]) || "[]");
+          const list = await runsFor(t.workflow, c.deployCommit);
           const real = newestRealRun(list);
           if (real) runs[c.deployCommit] = real;
         }
@@ -1645,11 +1883,12 @@ async function reportTrainTestResults() {
 // What a rebuild means for whoever reads the card next: the link exists,
 // but for a few minutes it still shows the build from before this commit.
 // When the rebuild lands, dsp-prototype.yml re-points the card's test link
-// at that commit (githack caches a branch URL; a commit URL is immutable),
-// so the tester's cue is the link itself changing from a branch to a sha.
+// at that commit (githack caches a branch URL; a commit URL is immutable).
+// The card says so itself (previewState, refreshPreviewBuildStates), so the
+// note only points at that line instead of promising a later note.
 function rebuildNote(dispatched, sha) {
   if (!dispatched.length) return "";
-  return ` The test link serves a built bundle, which is being rebuilt from ${sha.slice(0, 7)} now (${dispatched.join(", ")}). Allow a few minutes: when the rebuild lands, this card's test link is switched to that build's own commit URL and a note here says so. Until then the link still shows the previous build — don't fail testing on it.`;
+  return ` The test link serves a built bundle, which is being rebuilt from ${sha.slice(0, 7)} now (${dispatched.join(", ")}). The card shows "Rebuilding test link\u2026" until the bundle includes this commit (usually 1-2 minutes), then "Includes this ticket" — don't fail testing before then.`;
 }
 
 function changedPathsBetween(fromRef, toRef) {
@@ -2056,12 +2295,127 @@ async function repointTrainPreviewUrls(projectId, deployBranch, newSha, excludeI
     const repointed = repointPreviewUrlRef(sib.previewUrl, newSha);
     if (repointed === sib.previewUrl) continue;
     try {
-      await patchItem(sib.id, { previewUrl: repointed, updatedAt: new Date().toISOString() });
+      const nowIso = new Date().toISOString();
+      await patchItem(sib.id, { previewUrl: repointed, previewSha: newSha, previewUpdatedAt: nowIso, updatedAt: nowIso });
       console.log(`[apply-patch] re-pointed ${sib.id}'s preview link to ${newSha.slice(0, 7)} (another ticket landed on ${deployBranch})`);
     } catch (err) {
       console.log(`[apply-patch] couldn't re-point ${sib.id}'s preview link to ${newSha.slice(0, 7)} (${err.message})`);
     }
   }
+}
+
+// ── "Rebuilding test link…": does the checked-in bundle show the ticket yet? ──
+// A card whose link opens a generated build (GENERATED_BUILDS) is pinned to
+// the ticket's own commit, which still holds the PREVIOUS bundle until the
+// build workflow rebuilds and re-points it. build-info.json beside the bundle
+// names the source commit it was built from, so the card is current exactly
+// when the ticket's commit is an ancestor of that. This sweep keeps
+// previewState honest: rebuilding -> ready (or stale after
+// PREVIEW_REBUILD_STALE_MS), ready -> rebuilding when the link moves to a
+// bundle without it, null when the card leaves testing or its link stops
+// opening a build. Written only on change.
+const PREVIEW_STATE_ITEM_FIELDS = [
+  "status", "previewUrl", "previewState", "previewStateAt", "previewSha", "previewUpdatedAt",
+  "previewBuildWorkflow", "deployBranch", "deployCommit", "carriedByCommit",
+];
+
+// git's answer to "is `ancestor` reachable from `descendant`": true, false, or
+// null when git could not tell (an unknown commit).
+function isAncestorCommit(ancestor, descendant) {
+  try {
+    run("git", ["merge-base", "--is-ancestor", ancestor, descendant]);
+    return true;
+  } catch (err) {
+    return err && err.status === 1 ? false : null;
+  }
+}
+
+async function refreshPreviewBuildStates(now = Date.now()) {
+  const tracked = await runQuery({
+    from: [{ collectionId: "backlogItems" }],
+    select: selectFields(PREVIEW_STATE_ITEM_FIELDS),
+    where: { fieldFilter: { field: { fieldPath: "previewState" }, op: "IN", value: { arrayValue: { values: ["rebuilding", "stale", "ready"].map((v) => ({ stringValue: v })) } } } },
+  });
+  const nowIso = new Date(now).toISOString();
+  const fetched = new Map(); // branch -> whether it could be fetched
+  const fetchBranch = (branch) => {
+    if (!fetched.has(branch)) {
+      try { run("git", ["fetch", "--quiet", "origin", branch]); fetched.set(branch, true); }
+      catch (err) { console.log(`[preview-build] couldn't fetch ${branch} (${scrubSecrets(err.message)}) — its cards keep their state`); fetched.set(branch, false); }
+    }
+    return fetched.get(branch);
+  };
+  let anyRebuilding = false;
+
+  for (const item of tracked) {
+    try {
+      const inTesting = item.status === "ready-for-testing" || item.status === "ready-to-publish";
+      const link = parseGithackLink(item.previewUrl);
+      const build = link ? generatedBuildForLink(item.previewUrl) : null;
+      const clear = { previewState: null, previewStateAt: null, previewBuildWorkflow: null, previewBuiltFrom: null };
+      if (!inTesting || !build) {
+        await patchItem(item.id, { ...clear, updatedAt: nowIso });
+        console.log(`[preview-build] ${item.id}: no longer showing a generated build — state cleared`);
+        continue;
+      }
+      if (item.previewState === "ready" && link.ref === item.previewSha &&
+          !(Date.parse(item.previewUpdatedAt) > Date.parse(item.previewStateAt))) continue;
+
+      const commit = item.deployCommit || item.carriedByCommit;
+      if (!commit || !item.deployBranch || !fetchBranch(item.deployBranch)) {
+        if (!commit) console.log(`[preview-build] ${item.id}: no train commit recorded — no change`);
+        if (item.previewState === "rebuilding") anyRebuilding = true;
+        continue;
+      }
+      let builtFrom = null;
+      try { builtFrom = String(JSON.parse(run("git", ["show", `${link.ref}:${build.buildInfo}`])).commit || "").trim() || null; }
+      catch (err) { console.log(`[preview-build] ${item.id}: can't read ${build.buildInfo} at ${link.ref.slice(0, 7)} (${scrubSecrets(err.message).split("\n")[0]}) — no change`); }
+      if (!builtFrom) { if (item.previewState === "rebuilding") anyRebuilding = true; continue; }
+      // The ticket's own commit is on the fetched branch; if it isn't here
+      // there is no verdict. A bundle built from a commit this repo doesn't
+      // have (a branch that was reset) can't contain the ticket.
+      let known = true;
+      try { run("git", ["cat-file", "-e", `${commit}^{commit}`]); } catch { known = false; }
+      if (!known) {
+        console.log(`[preview-build] ${item.id}: ${commit.slice(0, 7)} is unknown here — no change`);
+        if (item.previewState === "rebuilding") anyRebuilding = true;
+        continue;
+      }
+      const included = isAncestorCommit(commit, builtFrom) === true;
+
+      if (included) {
+        await patchItem(item.id, {
+          previewState: "ready", previewStateAt: nowIso, previewBuildWorkflow: build.workflow,
+          previewBuiltFrom: builtFrom, previewSha: link.ref, updatedAt: nowIso,
+        });
+        console.log(`[preview-build] ${item.id}: bundle at ${link.ref.slice(0, 7)} was built from ${builtFrom.slice(0, 7)} and includes ${commit.slice(0, 7)} — ready`);
+      } else if (item.previewState === "ready") {
+        await patchItem(item.id, {
+          previewState: "rebuilding", previewStateAt: nowIso, previewBuildWorkflow: build.workflow,
+          previewBuiltFrom: null, updatedAt: nowIso,
+        });
+        anyRebuilding = true;
+        console.log(`[preview-build] ${item.id}: link moved to a bundle built from ${builtFrom.slice(0, 7)}, which lacks ${commit.slice(0, 7)} — rebuilding`);
+      } else if (item.previewState === "rebuilding" && now - Date.parse(item.previewStateAt) > PREVIEW_REBUILD_STALE_MS) {
+        const workflow = item.previewBuildWorkflow || build.workflow;
+        const notes = await appendNote(item,
+          `The test link has been rebuilding for over ${Math.round(PREVIEW_REBUILD_STALE_MS / 60000)} minutes and the bundle still doesn't include this ticket ` +
+          `(it was built from ${builtFrom.slice(0, 7)}). The link may show the previous build — check the rebuild: ` +
+          `https://github.com/${REPO}/actions/workflows/${workflow}`);
+        await patchItem(item.id, { previewState: "stale", previewStateAt: nowIso, updatedAt: nowIso, notes });
+        console.log(`[preview-build] ${item.id}: still rebuilding after ${PREVIEW_REBUILD_STALE_MS / 60000} minutes — marked stale`);
+      } else if (item.previewState === "rebuilding") {
+        anyRebuilding = true;
+      }
+    } catch (err) {
+      console.log(`[preview-build] ${item.id}: ${scrubSecrets(err.message)} — no change`);
+      if (item.previewState === "rebuilding") anyRebuilding = true;
+    }
+  }
+  // The next run starts at once, not on the throttled schedule; bounded by
+  // PREVIEW_REBUILD_STALE_MS, after which the card is no longer "rebuilding".
+  if (anyRebuilding) followUpReasons.push("a test link is waiting on its rebuild");
+  return { checked: tracked.length, anyRebuilding };
 }
 
 // Finds a PR by exact head branch, in ANY state. Reconciliation-specific:
@@ -2427,12 +2781,23 @@ async function processApplyPatch(item) {
       const pinnedTo = (ref, fallback) => ownLink || guessPreviewUrl(patchedFiles, ref, fallback);
       let mainRef = "main";
       try { mainRef = run("git", ["rev-parse", "origin/main"]); } catch { /* fall back to the branch name */ }
+      const carriedUrl = carrying && carrying.sha ? pinnedTo(carrying.sha, trainTreeUrl(deployBranch)) : null;
+      // Content that is already on main is tested against main.
+      const mainUrl = pinnedTo(mainRef, trainTreeUrl("main"));
+      const patchedPaths = patchedFiles.map((f) => f && f.path).filter(Boolean);
       const outcome = noDiffPatchFields(item, carrying, {
         deployBranch, testVersion,
-        previewUrl: carrying && carrying.sha ? pinnedTo(carrying.sha, trainTreeUrl(deployBranch)) : null,
-        // Content that is already on main is tested against main.
-        mainPreviewUrl: pinnedTo(mainRef, trainTreeUrl("main")),
+        previewUrl: carriedUrl,
+        mainPreviewUrl: mainUrl,
+        // The carrying commit may sit ahead of the checked-in build; the
+        // sweep settles it from build-info.json (refreshPreviewBuildStates).
+        previewFields: carriedUrl ? previewLinkFields(patchedPaths, carriedUrl, carrying.sha) : null,
+        // Main's own build is not rebuilt for this ticket: never "rebuilding".
+        mainPreviewFields: mainUrl ? { ...previewLinkFields([], mainUrl, mainRef), previewState: null } : null,
       });
+      if (outcome.fields.previewState === "rebuilding") {
+        followUpReasons.push(`${item.id}: test link waiting on ${outcome.fields.previewBuildWorkflow}`);
+      }
       let text;
       if (outcome.kind === "already-on-train") {
         text = outcome.adopted
@@ -2520,11 +2885,18 @@ async function processApplyPatch(item) {
     deployBranch,
     deployCommit: sha,
     deployCommits,
+    // A newer deployCommit replaces the record (cards' test state, see trainTest).
+    trainTest: landingTrainTest(sha, changedPaths, testsStarted, new Date().toISOString()),
     // Its own commit now — no longer riding on a sibling's (see
     // carryingCommitOnTrain), if it ever was.
     carriedByCommit: null,
     carriedByItem: null,
     previewUrl,
+    // "Rebuilding test link…" until the checked-in bundle includes this
+    // commit (see refreshPreviewBuildStates); null for any link that does
+    // not open a generated build, so a state from an earlier round can't
+    // linger.
+    ...previewLinkFields(changedPaths, previewUrl, sha),
     // A re-patch answers whatever Failed testing said, so a revert request
     // (and any block it was stuck behind) from that round is spent.
     revertRequested: false,
@@ -2534,6 +2906,9 @@ async function processApplyPatch(item) {
   });
   console.log(`[apply-patch] ${item.id}: committed ${sha.slice(0, 7)} on ${deployBranch}, moved to ready-for-testing${testVersion ? ` (testVersion ${testVersion})` : ""}`);
   noteReadyForTesting(project, item.id);
+  if (rebuilds.length && generatedBuildForLink(previewUrl) && rebuilds.includes(generatedBuildForLink(previewUrl).workflow)) {
+    followUpReasons.push(`${item.id}: test link waiting on ${generatedBuildForLink(previewUrl).workflow}`);
+  }
 
   // This item's own card now shows the branch's new head; every OTHER
   // Ready for Testing card already on the same train still shows whatever
@@ -3083,28 +3458,89 @@ function viewTrainPr(prNumber) {
 // projects/{id}.repoFolder, and records the outcome on projects/{id}.docsSync
 // (see docs-sync-lib.js) so a refusal shows on the board. Never throws: the
 // merge has already happened and must still finish bookkeeping.
+// The git half of the docs sync's io, shared by the post-merge sync and the
+// main-moved sweep: file text and a file's own last commit, both at `ref`.
+// `cwd` is only for tests that run it against a disposable repo.
+function gitDocsIo(ref, cwd) {
+  const opts = { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"], ...(cwd ? { cwd } : {}) };
+  return {
+    readFile: (p) => { try { return execFileSync("git", ["show", `${ref}:${p}`], opts); } catch { return null; } },
+    lastCommitFor: (p) => { try { return execFileSync("git", ["log", "-1", "--format=%H", ref, "--", p], opts).trim() || null; } catch { return null; } },
+    listFiles: () => execFileSync("git", ["ls-tree", "-r", "--name-only", ref], opts).split("\n").filter((p) => p.endsWith("board-docs.json")),
+  };
+}
+
+// The Firestore half, for one project.
+function projectDocsIo(project) {
+  return {
+    getProject: () => getProject(project.id),
+    patchProject: (fields) => patchProject(project.id, fields),
+    putDoc: (kind, fields) => putProjectDoc(project.id, kind, fields),
+    getDoc: (kind) => getProjectDoc(project.id, kind),
+    listProjectDocs: () => listProjectDocsFor(project.id),
+    putProjectDocContent: (docId, fields) => patchProjectDocFields(docId, fields),
+    getProjectDocContent: (docId) => getProjectDocById(docId),
+    getProjectDoc: (docId) => getProjectDocOrNull(docId),
+    createProjectDoc: (fields) => createProjectDocFields(fields),
+    now: () => new Date(),
+  };
+}
+
 async function syncDocsAfterMerge(project, mergeCommit) {
   try {
     let ref = mergeCommit;
     try { run("git", ["fetch", "origin", "main", "--quiet"]); } catch { /* use what we have */ }
     if (!ref) ref = run("git", ["rev-parse", "origin/main"]);
-    const result = await syncProjectDocs(project, ref, {
-      readFile: (p) => { try { return execFileSync("git", ["show", `${ref}:${p}`], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] }); } catch { return null; } },
-      lastCommitFor: (p) => { try { return run("git", ["log", "-1", "--format=%H", ref, "--", p]) || null; } catch { return null; } },
-      getProject: () => getProject(project.id),
-      patchProject: (fields) => patchProject(project.id, fields),
-      putDoc: (kind, fields) => putProjectDoc(project.id, kind, fields),
-      getDoc: (kind) => getProjectDoc(project.id, kind),
-      listProjectDocs: () => listProjectDocsFor(project.id),
-      putProjectDocContent: (docId, fields) => patchProjectDocFields(docId, fields),
-      getProjectDocContent: (docId) => getProjectDocById(docId),
-      now: () => new Date(),
-    });
+    const result = await syncProjectDocs(project, ref, { ...gitDocsIo(ref), ...projectDocsIo(project) });
     if (result.skipped) console.log(`[docs-sync] ${project.id}: skipped — ${result.skipped}`);
     else if (result.ok) console.log(`[docs-sync] ${project.id}: Requirements/README synced at ${ref.slice(0, 7)}, verified byte for byte`);
     else console.log(`[docs-sync] ${project.id}: ${scrubSecrets(result.error)} — recorded on the project as docsSync.error`);
   } catch (err) {
     console.log(`[docs-sync] ${project.id}: unexpected failure (${scrubSecrets(err.message)})`);
+  }
+}
+
+// Every run, last: if main has moved since the last complete pass, sync every
+// project's board docs at its head (docs-sync-lib.js, syncAllProjectDocs). A
+// train merge is covered by finishTrain; this covers everything else — a hand
+// merge, a hotfix, another project's PR. State: systemStatus/docsSync. Never
+// fails the run.
+async function syncDocsWhenMainMoves() {
+  try {
+    try { run("git", ["fetch", "origin", "main", "--quiet"]); } catch { /* use what we have */ }
+    const head = run("git", ["rev-parse", "origin/main"]);
+    const git = gitDocsIo(head);
+    const result = await syncAllProjectDocs({
+      head,
+      io: {
+        getState: async () => {
+          const res = await fetch(`${FIRESTORE_BASE}/systemStatus/docsSync`, { headers: await firestoreHeaders() });
+          if (res.status === 404) return null;
+          if (!res.ok) throw new Error(`GET systemStatus/docsSync failed: ${res.status} ${await res.text()}`);
+          return fdoc((await res.json()).fields || {});
+        },
+        putState: async (fields) => {
+          const fieldPaths = Object.keys(fields).map((k) => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
+          const res = await fetch(`${FIRESTORE_BASE}/systemStatus/docsSync?${fieldPaths}`, {
+            method: "PATCH",
+            headers: await firestoreHeaders(),
+            body: JSON.stringify({ fields: Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, tv(v)])) }),
+          });
+          if (!res.ok) throw new Error(`PATCH systemStatus/docsSync failed: ${res.status} ${await res.text()}`);
+        },
+        // Pointers and status only: a project's legacy markdown can be 200k chars.
+        listProjects: () => runQuery({
+          from: [{ collectionId: "projects" }],
+          select: { fields: ["archived", "name", "repoFolder", "repoFolderNotApplicable", "deployBranch", "docs", "docsSync"].map((fieldPath) => ({ fieldPath })) },
+        }),
+        forProject: (project) => ({ ...git, ...projectDocsIo(project) }),
+        now: () => new Date(),
+      },
+    });
+    if (result.skipped) console.log(`[docs-sync] main moved? no — ${result.skipped}`);
+    else console.log(`[docs-sync] main at ${head.slice(0, 7)}: synced ${result.synced.length} project(s)${result.failed.length ? `, ${result.failed.length} failed (${result.failed.join(", ")}) — attempt ${result.attempts}` : ""}`);
+  } catch (err) {
+    console.log(`[docs-sync] sweep failed (${scrubSecrets(err.message)})`);
   }
 }
 
@@ -4266,8 +4702,15 @@ async function main() {
   // distinction is exactly what the health strip's "automation" segment is
   // for. See the top-level catch below for the "run itself died" case.
   await sweepShippedPatchFiles();
+  // One fetch per (workflow, commit) per sweep, shared by both steps.
+  const runsFor = memoByKey(fetchWorkflowRunsOnSha);
   try {
-    await ejectRedCulprits();
+    await recordCardTrainTests(runsFor);
+  } catch (err) {
+    console.log(`[card-tests] failed: ${err.message}`);
+  }
+  try {
+    await ejectRedCulprits(runsFor);
   } catch (err) {
     console.log(`[train-eject] failed: ${err.message}`);
   }
@@ -4280,8 +4723,16 @@ async function main() {
     // Reporting only — never fail the run over it.
     console.log(`[train-tests] failed: ${err.message}`);
   }
+  try {
+    await refreshPreviewBuildStates();
+  } catch (err) {
+    // Reporting only — never fail the run over it.
+    console.log(`[preview-build] failed: ${err.message}`);
+  }
   // A train left waiting on CI starts the next run itself (see followUpDue).
   dispatchFollowUpRun();
+
+  await syncDocsWhenMainMoves();
 
   await recordPipelineHealth("success");
 }
@@ -4306,6 +4757,8 @@ if (require.main === module) {
 // run (main(), above, has real Firestore/GitHub side effects the moment
 // this module loads if not guarded — see the require.main check).
 module.exports = {
+  // test/notes-append.test.js — notes are only ever appended, atomically
+  notesCommitWrite, appendNote, patchItem,
   conflictedPaths, tryAutoResolveFaqIndexConflict, archiveAndResetOrphanedBranch, dateStamp, nearestPageFor, isBundlerTemplate,
   // test/train-carried.test.js — a card whose content a sibling's commit
   // delivered follows that train instead of being marked live on approval
@@ -4323,18 +4776,22 @@ module.exports = {
   // test/train-sync.test.js — the train is brought up to date with main
   // before a ticket lands, and the patch's edits are carried across
   syncTrainWithMain, rebasePatchFilesOnto,
-  // test/docs-sync.test.js
-  syncDocsAfterMerge,
+  // test/docs-sync.test.js, test/docs-sync-all.test.js
+  syncDocsAfterMerge, gitDocsIo, syncDocsWhenMainMoves,
   // test/train-checks.test.js — a train merges only once e2e-quick passed
   trainChecksState, rollupState, REQUIRED_TRAIN_CHECKS, approveHeldRuns,
   // test/train-resume.test.js — GitHub-side cancellations re-run; red trains resume when green
   isInfraCheck, rerunInfraChecks, resumeRedTrains, TRAIN_CI_INFRA_RERUNS,
   // test/train-tests.test.js — console tests run on each train push
   TRAIN_TEST_WORKFLOWS, trainTestFailureTargets, touchesConsoleTests, trainTestsFor, testedHeadOf, nextTrainTestsRed, trainTestGate, newestRealRun, pickRedCulprit,
+  // test/card-test-status.test.js — each train card's own test result
+  TRAIN_TEST_START_GRACE_MS, worstTrainTestState, trainTestRunState, landingTrainTest, nextCardTrainTest, memoByKey, recordCardTrainTests,
   // test/parallel-builds.test.js — patches built in parallel
   patchBaseFor, dependenciesLanded, buildRequestFields, migrationNumberClashes,
   // test/train-follow-up.test.js — a train waiting on CI starts its own next run
-  followUpDue, FOLLOW_UP_MAX_WAIT_MS,
+  followUpDue, FOLLOW_UP_MAX_WAIT_MS, dispatchFollowUpRun, followUpReasons,
+  // test/preview-build-state.test.js — "Rebuilding test link…" until the bundle includes the ticket
+  GENERATED_BUILDS, PREVIEW_REBUILD_STALE_MS, previewLinkFields, refreshPreviewBuildStates, rebuildNote, repointTrainPreviewUrls,
   // test/deploy-heal.test.js — a transient deploy failure heals itself
   healFailedDeploy,
 };

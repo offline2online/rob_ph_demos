@@ -162,7 +162,7 @@ move on, don't block the run waiting for it.
   cybersecurity-review or scalability-review skill — against the same
   combined train diff (`git diff main...origin/<deployBranch>`) step 3b
   already reads, and report real, verified findings, not a rubber-stamp
-  pass, as a `notes` entry on the items on the train. This review does not
+  pass, as a `notes` entry on the items on the train (Setup → "Append a note"). This review does not
   gate `trainReady` the same hard way steps 1-2 do — but if a finding is
   severe enough that shipping it would be a mistake, say so plainly in your
   final report and leave `trainReady` unset rather than setting it anyway,
@@ -185,13 +185,12 @@ move on, don't block the run waiting for it.
   even when this Routine has the PH Agent Console connector attached (see
   "Board tools over MCP" below), those tools are for the two presentation
   calls named there and nothing else in this file — this is the same
-  "fetch the doc first, this overwrites the whole field" append convention
-  as a `notes` entry elsewhere in this file, since the REST API has no
-  native array-append:
+  atomic append as a `notes` entry elsewhere in this file (Setup → "Append a
+  note"): a `documents:commit` with an `appendMissingElements` transform, so
+  a miss another session reported meanwhile is never overwritten:
   ```bash
-  curl -sS -X PATCH -H "$AUTH" "$BOARD/skills/<SKILL_ID>?updateMask.fieldPaths=misses&updateMask.fieldPaths=lastMissAt" \
-    -H "Content-Type: application/json" \
-    -d '{"fields":{"misses":{"arrayValue":{"values":[<existing misses, unchanged>, {"mapValue":{"fields":{"text":{"stringValue":"<what specifically went wrong>"},"source":{"stringValue":"build"},"phase":{"stringValue":"build"},"ticketId":{"stringValue":"<ITEM_ID or null>"},"prNumber":{"nullValue":null},"projectId":{"stringValue":"<projectId>"},"reportedByEmail":{"nullValue":null},"reportedVia":{"stringValue":"routine"},"at":{"timestampValue":"<ISO8601 now>"}}}}]}},"lastMissAt":{"timestampValue":"<ISO8601 now>"}}}'
+  curl -sS -X POST -H "$AUTH" "$BOARD:commit" -H "Content-Type: application/json" \
+    -d '{"writes":[{"update":{"name":"projects/backlog-tracker-e4ed2/databases/(default)/documents/skills/<SKILL_ID>","fields":{"lastMissAt":{"timestampValue":"<ISO8601 now>"}}},"updateMask":{"fieldPaths":["lastMissAt"]},"updateTransforms":[{"fieldPath":"misses","appendMissingElements":{"values":[{"mapValue":{"fields":{"text":{"stringValue":"<what specifically went wrong>"},"source":{"stringValue":"build"},"phase":{"stringValue":"build"},"ticketId":{"stringValue":"<ITEM_ID or null>"},"prNumber":{"nullValue":null},"projectId":{"stringValue":"<projectId>"},"reportedByEmail":{"nullValue":null},"reportedVia":{"stringValue":"routine"},"at":{"timestampValue":"<ISO8601 now>"}}}}]}}],"currentDocument":{"exists":true}}]}'
   ```
   Find the skill's id/current `misses` via the same `skills` runQuery
   pattern used to fetch a bound skill's `files` above, filtered by `slug`.
@@ -243,14 +242,33 @@ no block is prepended that run, same as today.
      `curl -sS -H "$AUTH" "$BOARD/projects"`
    - Query a specific project's current Backlog items:
      `curl -sS -X POST -H "$AUTH" "$BOARD:runQuery" -H "Content-Type: application/json" -d '{"structuredQuery":{"from":[{"collectionId":"backlogItems"}],"where":{"compositeFilter":{"op":"AND","filters":[{"fieldFilter":{"field":{"fieldPath":"projectId"},"op":"EQUAL","value":{"stringValue":"<projectId>"}}},{"fieldFilter":{"field":{"fieldPath":"status"},"op":"EQUAL","value":{"stringValue":"backlog"}}}]}}}}'`
+   **Append a note (the only way to write `notes`).** A card's `notes` are
+   its audit trail, so you only ever APPEND to them, with one `:commit` whose
+   write carries an `appendMissingElements` transform — never a PATCH or
+   `updateMask` naming `notes`, and never an array you read earlier plus one
+   more. Whatever is on the card, including notes another writer added while
+   you worked, is left untouched:
+   ```bash
+   curl -sS -X POST -H "$AUTH" "$BOARD:commit" -H "Content-Type: application/json" \
+     -d '{"writes":[{"transform":{"document":"projects/backlog-tracker-e4ed2/databases/(default)/documents/backlogItems/<ITEM_ID>","fieldTransforms":[{"fieldPath":"notes","appendMissingElements":{"values":[{"mapValue":{"fields":{"author":{"stringValue":"claude"},"text":{"stringValue":"<your summary>"},"at":{"timestampValue":"<ISO8601 now>"}}}}]}}]},"currentDocument":{"exists":true}}]}'
+   ```
+   `exists: true` stops a note recreating a card that was deleted. It works
+   with the ID token and through the `boardApi` fallback (which allows
+   `:commit`); through `boardApi`, a note's text must not contain a literal
+   `documents/<collection>/` path outside the board's own collections. Do
+   not use MCP `add_item_comment` for this — see "Board tools over MCP".
+   Do it for any note on any card or doc in this file; wherever a later step
+   says "append a `notes` entry", this is the call.
 3. Before implementing anything, get full context on this specific
    project — don't rely on the fire payload or the repo's general docs
    alone:
-   - Read the project's own doc (from the "list all projects" call above)
-     for its `requirementsMd` field — this is that project's own
-     maintained requirements, written in full and potentially quite
-     detailed. If it exists, read it end to end before touching any code
-     for this project.
+   - Read the project's Requirements — its own maintained requirements,
+     written in full and potentially quite detailed — with
+     `get_project_docs` (`include: ["requirements"]`), or
+     `GET $BOARD/projects/<id>/docs/requirements` (field `contentMd`). Fall
+     back to the legacy `requirementsMd` field on the project doc only when
+     that document is missing. If it exists, read it end to end before
+     touching any code for this project.
    - The same project doc may also carry a `routinePromptMd` field — if
      the fire request's `text` didn't already include it as a
      PROJECT-SPECIFIC INSTRUCTIONS block (see above), fetch it directly
@@ -264,22 +282,23 @@ no block is prepended that run, same as today.
    - If the project also has a real requirements file in the repo (e.g.
      `visitor-profile/REQUIREMENTS.md`,
      `dsp-integration/docs/dsp-integration/REQUIREMENTS.md`,
-     or a project-specific README), read that too — the Firestore
-     `requirementsMd` and the repo file are meant to be kept in sync, but
+     or a project-specific README), read that too — the board's
+     Requirements copy and the repo file are meant to be kept in sync, but
      check both in case one is stale.
-   - **If your work changes what those documents say, update both before
-     you finish** (Rob, 21 Sep 2026) — the repo file first, since it is the
-     source of truth, then the board field so the two agree. Where the
-     project has a sync script (`npm run board:sync` in `dsp-integration/`)
-     run it: it copies the files byte for byte and verifies the result.
-     Otherwise use the board MCP tools (`set_project_requirements`,
-     `set_project_readme`), and only where the document is short enough to
-     reproduce exactly — never retype a long specification by hand. If you
-     can't complete the sync, say so in the ticket comment rather than
-     leaving the board quietly stale: read the docs with `get_project_docs`
-     and run `npm run board:sync -- --check-mcp <saved result>`, which
-     compares them locally without any credential and exits 1 if the board
-     is behind, so the comment can say exactly what is out of date.
+   - **If your work changes what those documents say, change the repo
+     file and nothing else.** Where a document is copied from a repo file
+     (a mirror, or a synced Requirements/README), the repo file wins: edit
+     it on the branch and the board copy follows on merge. Those copies are
+     read-only over MCP (`set_project_requirements`, `set_project_readme`
+     and `update_project_document` refuse them), so never write the board
+     copy from a train branch. Only a project with no synced copy (no repo
+     folder) keeps its Requirements/README on the board alone, and there
+     the MCP tools still work — only where the document is short enough to
+     reproduce exactly; never retype a long specification by hand. To see
+     whether the board is behind its files, read the docs with
+     `get_project_docs` and run `npm run board:sync -- --check-mcp <saved
+     result>`, which compares them locally without any credential and
+     exits 1 if the board is behind.
    - **A commit you put on a train by hand must be stamped onto its
      card**: `backlogItems.deployCommit` is the only thing that tells the
      board the card is on the train (`functions/train-lock.js`). Without
@@ -461,13 +480,15 @@ ticket once automatically.
    deployment, however many tickets it carries. Every ticket bumping the
    same line was precisely what made any two open PRs conflict on that file
    alone. If `version.js` appears in your `patchFiles`, that is a bug.
-4. Update the item's Firestore doc in one PATCH: set the corrected `title`
-   (step 1), correct `category` if it's wrong (see `CATEGORIES` in
-   `backlog-tracker/public/js/app.js` for the fixed list), bump
-   `updatedAt`, APPEND (don't overwrite — fetch the doc first to get its
-   existing `notes` array) a new entry to `notes` with `author: "claude"`
-   and a detailed `text` describing what you investigated and fixed, and —
-   this is the part that replaces "push + open a PR" — set:
+4. First APPEND a note with `author: "claude"` and a detailed `text`
+   describing what you investigated and fixed — the "Append a note" call in
+   Setup → Board access. Never put `notes` in the PATCH below, and don't
+   fetch the doc to copy its notes: you only ever append. Then update the
+   item's Firestore doc in one PATCH (so `patchReady` is still the last
+   write): set the corrected `title` (step 1), correct `category` if it's
+   wrong (see `CATEGORIES` in `backlog-tracker/public/js/app.js` for the
+   fixed list), bump `updatedAt`, and — this is the part that replaces
+   "push + open a PR" — set:
    - `patchFiles`: an array of `{path, content}` objects (write it on the
      card as shown; within seconds a Cloud Function moves it to
      `backlogItems/<ITEM_ID>/pipeline/patch` to keep it out of every open
@@ -523,8 +544,9 @@ ticket once automatically.
    - **Before setting `patchReady`, run the DSP tests** if the patch
      touches `dsp-integration/` — the same steps as the train PR's required
      `e2e-quick` check: `cd dsp-integration && npm ci && export CI=1 &&
-     npm run typecheck && npm test && npm run test:layout && npm run
-     e2e:quick` (set `PH_SECRETS_KEY` to any 32-byte base64 value, e.g. 44
+     npm run board:sync -- --check-cut && npm run typecheck && npm test &&
+     npm run test:layout && npm run e2e:quick && npm run e2e:journey &&
+     npm run e2e:lint` (set `PH_SECRETS_KEY` to any 32-byte base64 value, e.g. 44
      `A`s ending `=`). **`CI=1` is not optional in a cloud session**: the
      admin suite uses tight laptop timeouts unless `CI` is set, a cloud
      sandbox renders jsdom + Ant Design as slowly as a CI runner, and
@@ -589,12 +611,12 @@ ticket once automatically.
      request is still one click away via a "Show original request" toggle,
      not discarded. Write this from scratch; don't just copy `desc` into it.
 
-   Example PATCH shape (add more `updateMask.fieldPaths` entries and
+   Example PATCH shape, sent after the note (add more `updateMask.fieldPaths` entries and
    fields as needed):
    ```
-   curl -sS -X PATCH "$BOARD/backlogItems/<ITEM_ID>?updateMask.fieldPaths=title&updateMask.fieldPaths=category&updateMask.fieldPaths=updatedAt&updateMask.fieldPaths=notes&updateMask.fieldPaths=patchFiles&updateMask.fieldPaths=patchCommitMessage&updateMask.fieldPaths=patchPrTitle&updateMask.fieldPaths=patchPrBody&updateMask.fieldPaths=patchBaseSha&updateMask.fieldPaths=patchPartCount&updateMask.fieldPaths=patchReady" \
+   curl -sS -X PATCH "$BOARD/backlogItems/<ITEM_ID>?updateMask.fieldPaths=title&updateMask.fieldPaths=category&updateMask.fieldPaths=updatedAt&updateMask.fieldPaths=patchFiles&updateMask.fieldPaths=patchCommitMessage&updateMask.fieldPaths=patchPrTitle&updateMask.fieldPaths=patchPrBody&updateMask.fieldPaths=patchBaseSha&updateMask.fieldPaths=patchPartCount&updateMask.fieldPaths=patchReady" \
      -H "Content-Type: application/json" \
-     -d '{"fields":{"title":{"stringValue":"<short clear subject>"},"category":{"stringValue":"<corrected category>"},"updatedAt":{"timestampValue":"<ISO8601 now>"},"notes":{"arrayValue":{"values":[<existing notes, unchanged>, {"mapValue":{"fields":{"author":{"stringValue":"claude"},"text":{"stringValue":"<your summary>"},"at":{"timestampValue":"<ISO8601 now>"}}}}]}},"patchFiles":{"arrayValue":{"values":[{"mapValue":{"fields":{"path":{"stringValue":"<relative/path>"},"content":{"stringValue":"<full new file content>"}}}}]}},"patchCommitMessage":{"stringValue":"<message>"},"patchPrTitle":{"stringValue":"<title>"},"patchPrBody":{"stringValue":"<body>"},"patchBaseSha":{"stringValue":"<40-char sha you read the files from>"},"patchPartCount":{"integerValue":"0"},"patchReady":{"booleanValue":true}}}'
+     -d '{"fields":{"title":{"stringValue":"<short clear subject>"},"category":{"stringValue":"<corrected category>"},"updatedAt":{"timestampValue":"<ISO8601 now>"},"patchFiles":{"arrayValue":{"values":[{"mapValue":{"fields":{"path":{"stringValue":"<relative/path>"},"content":{"stringValue":"<full new file content>"}}}}]}},"patchCommitMessage":{"stringValue":"<message>"},"patchPrTitle":{"stringValue":"<title>"},"patchPrBody":{"stringValue":"<body>"},"patchBaseSha":{"stringValue":"<40-char sha you read the files from>"},"patchPartCount":{"integerValue":"0"},"patchReady":{"booleanValue":true}}}'
    ```
 
 **Fixes that edit a file under `.github/workflows/`** can be packaged like
@@ -710,7 +732,7 @@ yourself, every run, before you set `patchReady` on anything:
    - Implement and package the surviving ticket once, normally (steps 1-4
      under "For each Backlog item found" above).
    - Close every folded-in duplicate: PATCH its `status` to `"archived"`,
-     `archivedAt` to now, and append a `notes` entry naming the surviving
+     `archivedAt` to now, and append (Setup → "Append a note") a `notes` entry naming the surviving
      item's id and explaining it was consolidated rather than built
      separately. Do **not** leave a folded-in duplicate sitting in
      `backlog` — an un-updated card there is exactly what let this happen
@@ -971,25 +993,39 @@ own `readyToDeploy` is information, not permission.
    `trainReady` and which tickets were on the train in your final report
    (see "When done" below), not what you watched happen.
 
-**Docs sync — check it before you call a project live (1 Oct 2026).** A
-project with a `repoFolder` has its `REQUIREMENTS.md` / `README.md` copied
-onto the board by the automation right after a train merges
-(`syncDocsAfterMerge`, `scripts/docs-sync-lib.js`), and the outcome is
-recorded as `projects/{id}.docsSync` = `{mergeCommit, requirementsCommit,
-readmeCommit, syncedAt, error}` (plus `lastMergeCommit` / `lastMergeAt`,
-stamped in the same write). It is returned by `get_project_docs`, and the
-board shows an amber **Docs behind main** chip when `error` is set or a
-merge is newer than the last sync. Because the merge happens after your
-session ends, you can't see it in the run that sets `trainReady`; but any
-later run that reports a project as live (a follow-up fire, a Ready for
+**Docs sync — check it before you call a project live (1 Oct 2026, reworked
+19 Oct 2026).** The automation copies a project's repo files onto the board
+(`scripts/docs-sync-lib.js`) in two places: right after that project's train
+merges (`syncDocsAfterMerge`), and at the end of every run whenever `main`
+has moved since the last complete pass (`syncDocsWhenMainMoves`), so a hand
+merge or another project's PR is covered too. The sweep's state is
+`systemStatus/docsSync` = `{lastSyncedMain, attemptedMain, attempts,
+failedProjects, checkedAt}`; a failed pass is retried on the same head, at
+most 5 times. The outcome is recorded as `projects/{id}.docsSync` =
+`{mergeCommit, requirementsCommit, readmeCommit, syncedAt, error, errorAt,
+attemptedCommit, mirroredDocs: [{docId, name, sourcePath, sourceCommit, ok,
+error}]}`, with `lastMergeCommit` / `lastMergeAt` stamped in the same write.
+`lastMergeCommit` now means **main's head at the last sync**, not the
+project's own last train merge; `requirementsCommit` / `readmeCommit` are
+each file's own last commit. A document already in step is not rewritten, a
+mirror over 20,000 characters (Requirements/README over 800,000) is refused
+before writing, and one bad mirror does not stop the rest. It is returned by
+`get_project_docs` (with `mirroredDocs`, `skipped`, `attemptedCommit`), and
+the board shows an amber **Docs behind main** chip when `error` is set.
+Any run that reports a project as live (a follow-up fire, a Ready for
 Testing presentation after a merge) must read `docsSync` first. If `error`
-is set, or `lastMergeCommit` differs from `docsSync.mergeCommit` with an
-older `syncedAt`, say so plainly: the project is merged but its board docs
-are behind, with the error text. Never answer it by retyping a long spec
-through `set_project_requirements`; the fix is the project's sync script
-(`npm run board:sync` in `dsp-integration/`, or `dsp-board.yml docs=sync`).
-A project with no folder (`repoFolderNotApplicable`) has no `docsSync`;
-that is normal, not a failure.
+is set, say so plainly: the project is merged but its board docs are
+behind, with the error text. Never answer it by retyping a long spec
+through `set_project_requirements`; the fix is to correct the cause (split
+an over-cap file with `sourceSlices`) and let the next run retry, or run the
+project's sync script (`npm run board:sync` in `dsp-integration/`, or
+`dsp-board.yml docs=sync`) — which writes content only, never `docsSync`.
+A project with no folder (`repoFolderNotApplicable`) gets a `docsSync` once
+it has something to sync: a mirrored document (`sourcePath`), a manifest,
+or a `sourcePath` on its `docs/requirements` or `docs/readme` document
+(that is where its Requirements/README are read from). Until then it has
+none; that is normal, not a failure. A project with nothing to sync is
+never touched, so it gets no chip.
 
 **Outcomes that are not a merge**, all recorded on the project itself as
 `trainStatus` + `trainNote`, visible without re-running anything:
@@ -1219,8 +1255,8 @@ is the exception.
 
 ### 5. Tell the ticket
 
-Append a `notes` entry (`author: "claude"`, same fetch-then-append rule as
-everywhere else in this file) to each backlog item naming every article
+Append a `notes` entry (`author: "claude"`, appended with the "Append a
+note" call in Setup, as everywhere else in this file) to each backlog item naming every article
 you proposed a revision for (title + `faqArticles` id) and, in one line
 each, why — or stating plainly that you reviewed N in-scope articles for
 program "<name>" and none needed a change. This note is how the person
@@ -1278,7 +1314,7 @@ and no `reviewStatus`, or a `reviewedCommit` that differs from `deployCommit`).
    most important reason, shown as the hover text), `reviewedAt` (timestamp),
    `reviewedCommit` (the ticket's current `deployCommit`, so the flag is
    discarded if it is rebuilt), plus `updatedAt`. Append the **full review
-   log** to `notes` (`author: "claude"`, text starting `[ph-reviewer]`).
+   log** to `notes` (the Setup "Append a note" call, `author: "claude"`, text starting `[ph-reviewer]`).
    **Never write `status`**: a kicked-back or blocked ticket stays where it
    is and a human decides; the flag says why.
 6. Finish by PATCHing `projects/<id>` with `reviewRoutine.status` =
@@ -1508,6 +1544,11 @@ and without any credential, whether it already produced one:
 in your summary is what makes a fix possible; a silent "I think I might
 have caused that" that never gets said out loud is how #61 sat open for
 hours.
+
+A `backlog-tracker/` change is live when its train merges and
+`deploy-backlog-tracker.yml` succeeds; only `menu-board-demo/functions`
+needs a manual deploy, so never write "not live on merge" for
+`backlog-tracker/`.
 
 **Never attempt to `git push`, call any GitHub write API, or otherwise get
 code onto GitHub yourself in this or any other run of this Routine — you

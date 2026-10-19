@@ -47,14 +47,36 @@ registered after it never ran, and the menu was dead on every device while
 the board still rendered — nothing in the pipeline had ever executed
 `app.js`. It needs only `node` and the `jsdom` dev dependency.
 
-Also here, opt-in because it needs a Chromium on the machine:
+Also here, needing a Chromium on the machine:
 `npm run test:editor` (`faq-editor-load.test.mjs`) opens every article in
 `faq/data/articles/` in the console's real FAQ editor code against the
 real quill@1.3.7 build and fails if a word, list item, table, callout,
 code block or heading doesn't survive the load or the first keystroke —
 the class of bug that emptied seven articles' Steps lists on 2026-09-17.
-Set `PLAYWRIGHT_CHROMIUM=/path/to/chrome` if playwright-core can't find
-a browser itself.
+It runs in CI inside `test:mcp-app`, which already launches Chrome. Set
+`PLAYWRIGHT_CHROMIUM=/path/to/chrome` if playwright-core can't find a
+browser itself. If an exported article stops surviving a load, the log
+line `FAIL <id> — <title>` names it: fix the article or the editor.
+
+## Which CI step runs each test
+
+`.github/workflows/firestore-rules-test.yml` runs nine npm scripts, and
+`npm test` runs the same nine in the same order. `ci-coverage.test.js`
+(inside `test:train-lock`) fails if any `*.test.js` / `*.test.mjs` here is
+not reached from them, naming the file; fix it by adding `node <file>` to
+one of the scripts below, or list it in `EXCLUDED` with a reason.
+
+| CI step | Script | Test files |
+| --- | --- | --- |
+| Run MCP server tests | `test:mcp` | mcp-server, intake |
+| Run MCP client integration test | `test:client` | mcp-client |
+| Run MCP App view test | `test:mcp-app` | mcp-app-view, faq-editor-load (`test:editor`) |
+| Run console start-up smoke test | `test:app-boots` | app-boots, header-phase, build-batches, ticket-intake (`test:build-batches`) |
+| Run sign-in wall tests | `test:auth-gate` | auth-gate |
+| Run Routine binding tests | `test:routine-binding` | routine-binding-trigger, skill-history-trigger (`test:skill-history`) |
+| Run Ready for Testing hand-off tests | `test:ready-for-testing` | ready-for-testing-trigger, notify-fanout |
+| Run deployment train tests | `test:train-lock` | notes-append (notes only ever appended via `:commit`), train-lock, train-lock-trigger, train-lock-branch-archive, train-carried, train-sync, docs-sync, migrate-project-docs, train-checks, train-tests, parallel-builds, train-follow-up, patch-offload, train-resume, deploy-heal, generated-builds, patch-paths, preview-url-page, preview-url-pin, faq-index, e2e-run, ci-coverage |
+| Run rules tests against the emulator | `test:rules` | firestore-rules, notes-append-emulator (`notesCommitWrite` against real Firestore) |
 
 ## Why this exists
 
