@@ -11,6 +11,8 @@
 //                  "cases": "optional path to a JSON array of {id,status,...}" } ],
 //     "report": "npm run report-e2e", "fileBugs": "npm run file-e2e-bugs" }
 // A step with no `cases` file counts as one case: exit 0 = pass, else fail.
+// A step with cases is failed by any failing case, and also by a non-zero exit
+// when no case failed: a crash after some passes adds one "<id>:exit" fail case.
 // A step whose script does not exist yet is "skipped" (not-configured), never a pass.
 // Case status is "pass" | "fail" | "known-gap". Known gaps are recorded, never filed.
 //
@@ -56,6 +58,9 @@ for (const s of cfg.steps || []) {
     try { cases = JSON.parse(readFileSync(join(dir, s.cases), "utf8")); } catch { /* fall through to exit code */ }
   }
   if (!cases.length) cases = [{ id: s.id, status: r.code === 0 ? "pass" : "fail", actual: r.code === 0 ? "" : r.out.slice(-1500), repro: `cd ${folder} && ${s.cmd}` }];
+  if (r.code !== 0 && cases.length && !cases.some((c) => c.status === "fail")) {
+    cases.push({ id: `${s.id}:exit`, caseId: `${s.id}:exit`, status: "fail", title: `${s.label} exited ${r.code} without recording a failure`, expected: "exit 0", actual: r.out.slice(-1500), repro: `cd ${folder} && ${s.cmd}` });
+  }
   steps.push({ id: s.id, label: s.label, status: cases.some((c) => c.status === "fail") ? "fail" : "pass", ms: Date.now() - t0, cases });
 }
 

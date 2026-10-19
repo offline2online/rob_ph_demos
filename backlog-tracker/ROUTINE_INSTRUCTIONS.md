@@ -1359,7 +1359,9 @@ its steps by hand.
    It runs the config's steps for that mode, writes `<folder>/results/<ts>.json`,
    then runs the project's `report-e2e` (results document) and `file-e2e-bugs`
    (one ticket per failing case, a comment on an existing open one; known gaps
-   are recorded, never filed) when those npm scripts exist. A step whose script
+   are recorded, never filed) when those npm scripts exist. A step is red if
+   any of its cases failed **or its command exited non-zero** — a crash after
+   some passing cases adds a `<step id>:exit` fail case rather than reading green. A step whose script
    is not there yet is reported as **skipped / not configured** — never as a pass.
 3. Do not edit code, set `patchReady`, or change any ticket's status. If the
    project's `report-e2e` / `file-e2e-bugs` are not implemented yet, file nothing
