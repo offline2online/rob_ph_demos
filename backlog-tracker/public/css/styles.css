@@ -1656,3 +1656,12 @@ textarea.mirror-readonly, textarea[readonly] { background: var(--surface-2); col
 .sysmap-edge-label { font-size: 11.5px; fill: var(--text); }
 .sysmap-node.dim, .sysmap-edge.dim { opacity: .18; }
 @media (max-width: 640px) { .sysmap-legend { margin-left: 0; } }
+
+/* Release editor checklists, and the release number on Concept Incubator tiles */
+.release-check-list { max-height: 180px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; background: var(--surface); }
+.release-check { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 13px; cursor: pointer; }
+.release-edit-link { color: var(--primary); font-weight: 600; text-decoration: none; }
+.release-edit-link:hover { text-decoration: underline; }
+.concept-card .skill-card-top { flex-wrap: nowrap; align-items: center; }
+.concept-card-main { flex: 1; min-width: 0; }
+.concept-release-num { font-size: 34px; font-weight: 700; line-height: 1; color: var(--primary); min-width: 52px; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: -.02em; }
