@@ -560,7 +560,7 @@ the ticket and in `mcpAuditLog`.
   — the CLI already validates and forwards the binding). The first cut
   (PR #208, 24 Sep 2026) put a plain `text/html` resource block in the
   tool result, which no host renders — that is why it "never worked".
-  **The column is presented automatically when a build lands**:
+  **The column is presented automatically when a build lands and its tests and test link have finished (40-minute limit)**:
   `run-backlog-automation.js` stamps `projects/{id}
   .readyForTestingNotifyRequestedAt` after landing tickets, and
   `functions/notifyOnItemsReadyForTesting` fires a Routine session that

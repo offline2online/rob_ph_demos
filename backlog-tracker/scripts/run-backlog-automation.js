@@ -582,32 +582,112 @@ function batchStillBuilding(project, itemsById, now = Date.now()) {
     return true;
   });
 }
-async function requestReadyForTestingNotify() {
+// The hand-off waits for each landed ticket's own tests and test-link rebuild
+// (19 Oct 2026): the person was told "ready" while the console tests, DSP
+// e2e-quick and the prototype rebuild were still running, and two tickets
+// were failed within a minute of landing for a link that had not been
+// rebuilt yet. requestReadyForTestingNotify only parks the landed ids on the
+// project; processReadyForTestingHandOffs (every run, after the test and
+// link sweeps) writes the stamp once nothing is waiting, or after
+// HAND_OFF_MAX_WAIT_MS.
+const HAND_OFF_MAX_WAIT_MS = 40 * 60 * 1000;
+const HAND_OFF_NOT_RUN_SETTLED_MS = 10 * 60 * 1000;
+
+// Pure: what a landed card is still waiting on — [], ["tests"], ["link"] or both.
+// Tests wait while trainTest is missing, describes an older commit than the
+// card's deployCommit, or is running/starting. A card with no deployCommit has
+// no commit to test. "not-run" settles after 10 minutes (a run dispatched
+// seconds ago may not be listed yet).
+function handOffWaitingOn(card, nowMs = Date.now()) {
+  const waiting = [];
+  if (card && card.deployCommit) {
+    const tt = card.trainTest;
+    let testsWaiting = !tt || tt.sha !== card.deployCommit;
+    if (!testsWaiting) {
+      if (tt.state === "running" || tt.state === "starting") testsWaiting = true;
+      else if (tt.state === "not-run") {
+        const sinceMs = Date.parse(String(tt.since || tt.updatedAt || ""));
+        testsWaiting = !Number.isFinite(sinceMs) || nowMs - sinceMs < HAND_OFF_NOT_RUN_SETTLED_MS;
+      }
+    }
+    if (testsWaiting) waiting.push("tests");
+  }
+  if (card && card.previewState === "rebuilding") waiting.push("link");
+  return waiting;
+}
+
+// Pure: what to do with a project's parked hand-off. Returns
+// { action: "hold" | "stamp" | "clear", ids, waitingOn: [{id, waitingOn}], followUp, setSince }.
+// ids are the parked cards still in Ready for Testing. A batch of a click
+// still building always holds (batchStillBuilding); otherwise it holds while a
+// card is waiting, until the parked ids are HAND_OFF_MAX_WAIT_MS old.
+function nextHandOff(project, cardsById, nowMs = Date.now()) {
+  const parked = Array.isArray(project && project.readyForTestingPendingItemIds) ? project.readyForTestingPendingItemIds : [];
+  const ids = parked.filter((id) => cardsById[id] && cardsById[id].status === "ready-for-testing");
+  if (!ids.length) return { action: "clear", ids: [], waitingOn: [], followUp: false, setSince: false };
+  const sinceMs = project.readyForTestingPendingSince ? Date.parse(String(project.readyForTestingPendingSince)) : NaN;
+  const setSince = !Number.isFinite(sinceMs);
+  const ageMs = setSince ? 0 : nowMs - sinceMs;
+  const young = ageMs < HAND_OFF_MAX_WAIT_MS;
+  if (batchStillBuilding(project, cardsById, nowMs).length) return { action: "hold", ids, waitingOn: [], followUp: young, setSince };
+  const waitingOn = ids.map((id) => ({ id, waitingOn: handOffWaitingOn(cardsById[id], nowMs) })).filter((w) => w.waitingOn.length);
+  if (!waitingOn.length || !young) return { action: "stamp", ids, waitingOn, followUp: false, setSince };
+  return { action: "hold", ids, waitingOn, followUp: true, setSince };
+}
+
+async function requestReadyForTestingNotify(nowMs = Date.now()) {
   for (const [projectId, { ids, project }] of readyForTestingLanded) {
     try {
-      // Ids held back by an earlier run of the same click join this one.
+      // Ids parked by an earlier run join this one; the clock restarts with this landing.
       const held = Array.isArray(project.readyForTestingPendingItemIds) ? project.readyForTestingPendingItemIds : [];
       const allIds = [...new Set([...held, ...ids])];
-      const sent = project.notifyRoutine && Array.isArray(project.notifyRoutine.sentItemIds) ? project.notifyRoutine.sentItemIds : [];
-      const itemsById = {};
-      for (const id of sent) {
-        if (!allIds.includes(id)) itemsById[id] = await getItem(id).catch(() => null);
-      }
-      const building = batchStillBuilding(project, itemsById);
-      if (building.length) {
-        await patchProject(projectId, { readyForTestingPendingItemIds: allIds });
-        console.log(`[ready-for-testing] ${projectId}: holding the notification — ${building.length} ticket(s) of this click still building (${allIds.length} landed so far)`);
-        continue;
-      }
-      await patchProject(projectId, { ...readyForTestingNotifyFields(project, allIds), readyForTestingPendingItemIds: [] });
-      console.log(`[ready-for-testing] ${projectId}: asked for the column to be presented (${allIds.length} ticket(s): ${allIds.join(", ")})`);
+      await patchProject(projectId, { readyForTestingPendingItemIds: allIds, readyForTestingPendingSince: new Date(nowMs) });
+      console.log(`[ready-for-testing] ${projectId}: ${allIds.length} ticket(s) parked until their tests and test links have finished`);
     } catch (err) {
       // The cards are already in Ready for Testing; a missed presentation is
       // a nuisance, not a reason to fail the run.
-      console.error(`[ready-for-testing] ${projectId}: couldn't request the presentation: ${err.message}`);
+      console.error(`[ready-for-testing] ${projectId}: couldn't park the hand-off: ${err.message}`);
     }
   }
   readyForTestingLanded.clear();
+}
+
+const HAND_OFF_CARD_FIELDS = ["status", "deployCommit", "trainTest", "previewState", "blocked", "buildSession"];
+const HAND_OFF_PROJECT_FIELDS = ["readyForTestingPendingItemIds", "readyForTestingPendingSince", "readyForTestingWaitingOn", "notifyRoutine", "notifyRequestedByEmail"];
+
+// Runs every run, even when nothing landed: stamps (or keeps holding) each
+// project's parked hand-off. Must run after the sweeps that write trainTest
+// and previewState.
+async function processReadyForTestingHandOffs(nowMs = Date.now()) {
+  const projects = await runQuery({ from: [{ collectionId: "projects" }], select: selectFields(HAND_OFF_PROJECT_FIELDS) });
+  for (const project of projects) {
+    if (!Array.isArray(project.readyForTestingPendingItemIds) || !project.readyForTestingPendingItemIds.length) continue;
+    try {
+      const cards = await itemsForProject(project.id, HAND_OFF_CARD_FIELDS);
+      const cardsById = Object.fromEntries(cards.map((c) => [c.id, c]));
+      const next = nextHandOff(project, cardsById, nowMs);
+      const pendingClear = { readyForTestingPendingItemIds: [], readyForTestingPendingSince: null, readyForTestingWaitingOn: [] };
+      if (next.action === "clear") {
+        await patchProject(project.id, pendingClear);
+        console.log(`[ready-for-testing] ${project.id}: nothing parked is still in Ready for Testing — hold cleared`);
+      } else if (next.action === "stamp") {
+        await patchProject(project.id, { ...readyForTestingNotifyFields(project, next.ids), ...pendingClear });
+        const late = next.waitingOn.length ? ` (gave up waiting on ${next.waitingOn.map((w) => `${w.id}: ${w.waitingOn.join("+")}`).join(", ")})` : "";
+        console.log(`[ready-for-testing] ${project.id}: asked for the column to be presented (${next.ids.length} ticket(s): ${next.ids.join(", ")})${late}`);
+      } else {
+        await patchProject(project.id, {
+          readyForTestingWaitingOn: next.waitingOn,
+          readyForTestingPendingItemIds: next.ids,
+          ...(next.setSince ? { readyForTestingPendingSince: new Date(nowMs) } : {}),
+        });
+        const why = next.waitingOn.length ? next.waitingOn.map((w) => `${w.id}: ${w.waitingOn.join("+")}`).join(", ") : "the click is still building";
+        console.log(`[ready-for-testing] ${project.id}: holding the hand-off — waiting on ${why}`);
+        if (next.followUp) followUpReasons.push(`${project.id}: Ready for Testing hand-off waiting on tests/test link`);
+      }
+    } catch (err) {
+      console.error(`[ready-for-testing] ${project.id}: hand-off check failed: ${err.message}`);
+    }
+  }
 }
 
 // ── Parallel builds (4 Oct 2026) ────────────────────────────────────────────
@@ -5015,6 +5095,12 @@ async function main() {
     // Reporting only — never fail the run over it.
     console.log(`[preview-build] failed: ${err.message}`);
   }
+  // After the sweeps that write trainTest and previewState, before the follow-up dispatch.
+  try {
+    await processReadyForTestingHandOffs();
+  } catch (err) {
+    console.log(`[ready-for-testing] hand-off sweep failed: ${err.message}`);
+  }
   // A train left waiting on CI starts the next run itself (see followUpDue).
   dispatchFollowUpRun();
 
@@ -5060,7 +5146,7 @@ module.exports = {
   // test/preview-url-pin.test.js
   guessPreviewUrl, isAutoGeneratedPreviewUrl, repointPreviewUrlRef,
   // test/ready-for-testing-trigger.test.js
-  readyForTestingNotifyFields, batchStillBuilding, tv,
+  readyForTestingNotifyFields, batchStillBuilding, handOffWaitingOn, nextHandOff, tv,
   // test/train-sync.test.js — the train is brought up to date with main
   // before a ticket lands, and the patch's edits are carried across
   syncTrainWithMain, rebasePatchFilesOnto,

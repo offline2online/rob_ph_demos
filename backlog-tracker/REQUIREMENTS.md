@@ -116,6 +116,9 @@ Cloud Functions, own Hosting site, own IAM/billing; see
   readyForTestingNotifyRequestedAt?: timestamp, // stamped by run-backlog-automation.js once per run per project, after it lands ticket(s) in Ready for Testing — see "The Ready for Testing hand-off" below
   readyForTestingNotifyItemIds?: string[],      // the ids that landed in that run
   readyForTestingNotifyRequestedByEmail?: string | null, // the member whose Notify Claude click started the build (per-member routine binding lookup, as above)
+  readyForTestingPendingItemIds?: string[],     // landed ids parked until their tests and test links have finished (automation only)
+  readyForTestingPendingSince?: timestamp,      // when the newest of them landed; the 40-minute limit counts from here
+  readyForTestingWaitingOn?: { id: string, waitingOn: ("tests" | "link")[] }[], // why the hand-off is held, for whoever looks
   readyForTestingRoutine?: {       // same shape as notifyRoutine (including firedVia), set by notifyOnItemsReadyForTesting
     status: "in-progress" | "done" | "error",
     firedAt: timestamp,
@@ -2487,7 +2490,18 @@ asked for (30 Sep 2026).** The view alone is not what the composable UI
 tickets asked for; they asked for it to appear when a build lands. So:
 `run-backlog-automation.js` collects every card it moves into Ready for
 Testing in a run (its own commit, or carried by a sibling's) and, once per
-project at the end of its apply-patch loop, stamps
+project at the end of its apply-patch loop, parks their ids in
+`readyForTestingPendingItemIds` (with `readyForTestingPendingSince` = now).
+**The hand-off waits for the build to be checked (19 Oct 2026):** a step in
+`main()` that runs every run, after the sweeps that write `trainTest`
+(card-test-status) and `previewState` (test-link-rebuild-state), applies the
+pure `nextHandOff`: it drops parked cards no longer in Ready for Testing
+(clearing the hold unstamped if none remain), keeps the `batchStillBuilding`
+hold, and otherwise holds while any card is waiting (`handOffWaitingOn`:
+tests missing, for an older commit, running or starting, or `not-run` less
+than 10 minutes old; link `rebuilding`), recording `readyForTestingWaitingOn`
+and asking for a follow-up run. When nothing is waiting, or the parked ids
+are 40 minutes old, it stamps
 `projects/{id}.readyForTestingNotifyRequestedAt` (a real timestamp) with
 `readyForTestingNotifyItemIds` and `readyForTestingNotifyRequestedByEmail`
 (the member whose Notify Claude click started the build).
@@ -2498,7 +2512,10 @@ other notify functions (`resolveRoutineCredentials` — the requester's own
 binding first, the shared secrets otherwise), fires the Routine with a
 data-only `=== READY FOR TESTING for "<project>" (projectId: <id>) ===`
 text (per ticket: id, type, title, test link, test version, ticket link,
-summary), records `projects/{id}.readyForTestingRoutine` (same shape as
+summary, and two state lines: `Tests: passed | failed — <run url> | not run |
+still running | none needed for these files` and `Test link: ready (build of
+<sha7>) | still rebuilding — don't test it yet`; Slack gets the same short
+state), records `projects/{id}.readyForTestingRoutine` (same shape as
 `notifyRoutine`), and posts the same to `NOTIFY_WEBHOOK_URL` when set. The
 fired session follows `ROUTINE_INSTRUCTIONS.md` → "The 'Ready for Testing'
 flow": it calls `get_ready_for_testing_board` (when the Routine has the PH

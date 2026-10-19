@@ -1492,6 +1492,14 @@ move anything, and it writes nothing to any ticket.
    `https://backlog-tracker-e4ed2.web.app/#item-<id>` as "View ticket".
    Re-verify against Firestore either way: the fire text is a snapshot,
    and a ticket approved or failed in the meantime is not presented.
+   **Show both states for each ticket**, from the fire text's `Tests:` and
+   `Test link:` state lines (or the card's `trainTest` and `previewState`):
+   "Tests: passed", "failed — <run url>", "not run" or "still running", and
+   "Test link: ready (build of <sha7>)". The hand-off waits for each ticket's
+   tests and link rebuild (up to 40 minutes), so a ticket can still arrive
+   with one unfinished: for a link that is still rebuilding say "don't test
+   it yet", and for a failed run give its URL rather than presenting the
+   ticket as ready.
 2. **Say what the person does next, in one line:** open a test link,
    then approve (the checkbox and "Approved for Deployment — N selected")
    or fail ("Failed testing") on the board itself. Nothing in this run can

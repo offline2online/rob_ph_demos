@@ -1026,7 +1026,7 @@ Desktop; not Claude Code yet — renders inline as ticket cards, fed by the
 tool result's `structuredContent`; every host also gets the same data as
 plain text — reviewing there changes nothing either. **The Ready for
 Testing column is also presented without being asked for**: when the
-pipeline lands a build, `run-backlog-automation.js` stamps the project and
+pipeline lands a build and its tests and test link have finished (40-minute limit), `run-backlog-automation.js` stamps the project and
 `functions/notifyOnItemsReadyForTesting` fires a Routine session whose only
 job is to show that column (`ROUTINE_INSTRUCTIONS.md` → "The 'Ready for
 Testing' flow"), via the MCP App where the Routine has the PH Agent Console
