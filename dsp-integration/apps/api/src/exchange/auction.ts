@@ -59,7 +59,7 @@ import { advertiserSlug, assignedOf, type BuyersList } from '@ph-dsp/types'
 import { isUniqueViolation, tx } from '../db/db'
 import { queueCreative, verifiedCampaign } from './creatives'
 import { vetAtBidCreative } from './atBid'
-import { checkAdvertiser, checkCampaign, checkCampaignAtBid, checkCategories, checkFloor, checkTargeting, checkVersionCount, firstRefusal } from './enforcement'
+import { checkAdvertiser, checkAudiences, checkCampaign, checkCampaignAtBid, checkCategories, checkFloor, checkTargeting, checkVersionCount, firstRefusal } from './enforcement'
 import { handOff } from './handoff'
 import { settlePending } from './pending'
 import { bidderTuning } from '../domain/partnerInput'
@@ -295,6 +295,7 @@ async function auctionTier(ctx: Context, p: PositionRef, start: string, bidders:
         () => checkCampaign(ctx, r.campaignId as string),
         () => checkAdvertiser(ctx, p, partner, seat.name, seat.domain ? [seat.domain] : [], seat.id, start),
         () => checkTargeting(p, r.pricingType),
+        () => checkAudiences(ctx, r.campaignId as string, { partnerId: partner.id, seatId: seat.id }),
         () => checkVersionCount(ctx, p, r.campaignId as string),
         () => checkFloor(ctx, r.bidCpm as number, r.advertiserId, { partner, position: p }),
       )
@@ -417,6 +418,7 @@ export async function vetBid(ctx: Context, p: PositionRef, dsp: PartnerRecord, s
   const late = await firstRefusal(
     () => (opts.atBid ? checkCampaignAtBid(ctx, campaignId) : checkCampaign(ctx, campaignId)),
     () => checkTargeting(p, campaign.pricingType),
+    () => checkAudiences(ctx, campaignId, { partnerId: dsp.id, seatId: seat.id }),
     () => checkVersionCount(ctx, p, campaignId),
     () => checkFloor(ctx, price, advertiserId, { partner: dsp, position: p }),
   )

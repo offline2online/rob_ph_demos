@@ -8,6 +8,7 @@ import { INTERACTIVE_ENABLED, assignedOf, displayTypeFloorCpmOf, maxCampaignsOf,
 import { type PositionRef, assignmentOf } from '../domain/positions'
 import { isInvitedBuyer } from '../domain/buyersLists'
 import { isActiveAt } from '../billing/term'
+import { audienceRefusal, segmentValuesInTargeting } from '../domain/audiences'
 import { effectiveCategoryLists, effectiveLists, isBlocked, isOn } from '../domain/lists'
 import { effectiveFloorCpm, resolveBaseFloor } from '../domain/pricing'
 import type { PartnerRecord } from '../repos/PartnerRepo'
@@ -99,6 +100,16 @@ export function checkTargeting(p: PositionRef, pricingType: string | null | unde
      window, so an open or whitelist-only position still refuses it. */
   if (wanted === 'personalised' && !reserve && assignmentOf(p.def) !== 'deal') return { code: 'targeting_not_supported', reason: 'Personalised campaigns are sold only through a reserve booking or a deal (private auction, preferred or guaranteed); the open real-time auction clears default and localised only.' }
   return null
+}
+
+/* Audiences shared with one advertiser only (ticket OanRebXyEryAXBQrBsVe): a campaign whose targeted versions match a
+   private Visitor Segments value must belong to an advertiser that holds it, and, through a DSP, come from a seat mapped to
+   that advertiser. Refused targeting_not_supported, naming the segment. */
+export async function checkAudiences(ctx: Context, campaignId: string, via?: { partnerId: string; seatId?: string | null }): Promise<Refusal | null> {
+  const c = await ctx.campaigns.getCampaign(campaignId)
+  if (!c) return null
+  const reason = await audienceRefusal(ctx, c.advertiserId, segmentValuesInTargeting(c.targeting), via)
+  return reason ? { code: 'targeting_not_supported', reason } : null
 }
 
 /* The slot's Max campaigns (slot override, else the display type's default,

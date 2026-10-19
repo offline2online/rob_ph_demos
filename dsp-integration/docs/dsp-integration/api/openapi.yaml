@@ -182,7 +182,13 @@ paths:
       tags: [Partner — Targeting]
       operationId: listTargetingAttributes
       summary: The shared targeting variables this partner may use
-      description: Only variables enabled for the calling DSP. Values are never returned.
+      description: |
+        Only variables enabled for the calling DSP. Values are never returned, except for audiences shared with one advertiser only:
+        with `seatId`, Visitor Segments lists as `audiences` the values shared with the advertiser that seat is mapped to. Another
+        seat's response omits them, and a campaign, reservation or deal from a seat that is not mapped to the advertiser using one is
+        refused `targeting_not_supported`, naming the segment.
+      parameters:
+        - {name: seatId, in: query, required: false, schema: {type: string}, description: 'One of the calling DSP''s synced seats (400 otherwise).'}
       responses:
         '200':
           description: Variables
@@ -1485,6 +1491,45 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
 
+  /admin/v1/advertisers/{advertiserId}/audiences:
+    put:
+      tags: [Admin — Advertisers]
+      operationId: saveAdvertiserAudiences
+      summary: Share Visitor Segments values with this advertiser only (replaces its audiences)
+      description: |
+        Audiences (ticket OanRebXyEryAXBQrBsVe): Visitor Segments values the retailer shares with one advertiser only,
+        such as "Blackmores · new to brand". The retailer's own systems decide who is in each audience and publish it as a
+        visitor segment; PH never receives purchase history. A value is private once any advertiser holds it: it leaves the
+        general Visitor Segments vocabulary, and only the advertisers that hold it can target it (a value can be held by more
+        than one advertiser only if the retailer adds it to each). Works the same for a DSP and a direct advertiser. Each value
+        must be defined for Visitor Segments in Shared Targeting Variables (or already private to another advertiser), unless
+        that variable takes free text. Removing a value is refused `has_dependents` while a live (shared) deal inviting a seat
+        of the advertiser, or an approved campaign of the advertiser, targets it; the details name each. Admin only; a
+        Marketing user reads `audiences` on `GET /admin/v1/advertisers`.
+      security: [{adminSession: [admin]}]
+      parameters:
+        - {name: advertiserId, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [audiences]
+              properties:
+                audiences: {type: array, maxItems: 100, items: {type: string, minLength: 1, maxLength: 200}}
+      responses:
+        '200':
+          description: The advertiser with its audiences
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Advertiser'}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/HasDependents'}
+
   /admin/v1/advertisers/{advertiserId}/deals:
     get:
       tags: [Admin — Advertisers]
@@ -1544,6 +1589,7 @@ paths:
               required: [name]
               properties:
                 name: {type: string, minLength: 1, maxLength: 80}
+                audiences: {type: array, maxItems: 100, items: {type: string, minLength: 1, maxLength: 200}, description: 'Visitor Segments values shared with this advertiser only; see PUT /admin/v1/advertisers/{advertiserId}/audiences.'}
       responses:
         '201':
           description: Added
@@ -1551,10 +1597,11 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [advertiserId, name]
+                required: [advertiserId, name, audiences]
                 properties:
                   advertiserId: {type: string}
                   name: {type: string}
+                  audiences: {type: array, items: {type: string}}
         '400': {$ref: '#/components/responses/ValidationFailed'}
         '401': {$ref: '#/components/responses/Unauthorised'}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -2576,6 +2623,7 @@ components:
         label: {type: string}
         group: {type: string, enum: [localisation, personalisation]}
         operators: {type: array, items: {type: string}}
+        audiences: {type: array, items: {type: string}, description: 'Visitor Segments only, and only when the request names a `seatId`: the audiences shared with the advertiser that seat is mapped to.'}
     Condition:
       type: object
       required: [source, variable, op, values]
@@ -3881,6 +3929,7 @@ components:
           description: The values a targeting condition may match, defined centrally. Empty unless the variable is shared with a DSP.
         freeText: {type: boolean, description: Any value may be entered at selection time instead of choosing from the defined list.}
         fixed: {type: boolean, description: 'The platform fixes the values (age: the IAB brackets 18–24 … 65+); they are not editable and never free text.'}
+        privateValues: {type: array, items: {type: string}, description: 'Visitor Segments only: the values shared with one advertiser only. They are left out of `values` (the vocabulary offered to everyone else) and listed here for the advertiser form.'}
 
     Provider: {type: string, enum: [google_dv360, amazon_dsp, the_trade_desk]}
     Partner:
@@ -3983,7 +4032,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/AdvertiserSetting'
         - type: object
-          required: [advertiserId, name, via, campaigns, bookings, dspSeats]
+          required: [advertiserId, name, via, campaigns, bookings, dspSeats, audiences]
           properties:
             advertiserId: {type: string}
             name: {type: string}
@@ -4007,6 +4056,10 @@ components:
                   partnerName: {type: string}
                   seatName: {type: string, nullable: true}
                   synced: {type: boolean}
+            audiences:
+              type: array
+              items: {type: string}
+              description: Visitor Segments values shared with this advertiser only (private audiences). Empty for an advertiser with none.
             bookings:
               type: integer
               description: |

@@ -75,6 +75,7 @@ export async function takeSnapshot(ctx: Context): Promise<Snapshot> {
   add('exchange', 'exchange', 'Exchange settings', await ctx.exchange.get())
   add('pricing_settings', 'company', 'Advertiser settings (pricing, floors and auction)', await ctx.company.get())
   for (const [id, v] of Object.entries(await ctx.company.advertiserSettings())) add('advertiser_setting', id, `Advertiser ${id}`, v)
+  for (const [id, values] of Object.entries(await ctx.company.advertiserAudiences())) add('advertiser_audiences', id, `Advertiser ${id}: audiences`, { audiences: values })
   const access = await ctx.company.variableAccess()
   add('targeting_variable_access', 'access', 'Shared targeting variables: which DSPs may target each', Object.fromEntries(Object.entries(access).map(([k, v]) => [k, v])))
   for (const l of await ctx.buyersLists.list()) add('buyers_list', l.id, l.name, l)

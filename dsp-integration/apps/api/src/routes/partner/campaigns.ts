@@ -6,6 +6,7 @@
      GET  /v1/campaigns/{id}/status     approval status
    A partner only ever sees its own campaigns; anyone else's is not found. */
 import { assertInvitedDeals } from '../../domain/advertiserDeals'
+import { audienceRefusal, segmentValuesInTargeting } from '../../domain/audiences'
 import { createHash, randomUUID } from 'node:crypto'
 import { type Approval, ApprovalError } from '@ph-dsp/campaign-approval/server'
 import { INTERACTIVE_ENABLED, advertiserSlug, maxCampaignsOf } from '@ph-dsp/types'
@@ -164,6 +165,9 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
       })
     }
     throwIfRejected({ invalid: ruleErrors, notPermitted: [...notPermitted.values()] }, invalid)
+    /* An audience shared with one advertiser only (ticket OanRebXyEryAXBQrBsVe): only that advertiser, through its mapped seat, may target it. */
+    const privateUse = await audienceRefusal(ctx, b.advertiserId as string, segmentValuesInTargeting({ targeted }), { partnerId: req.partner.id, seatId: partnerAdvertiser(req.partner, b.advertiserId as string)?.id })
+    if (privateUse) throw new HttpError(422, 'targeting_not_supported', privateUse)
 
     const targeting: StoredTargeting = {
       default: { pricingType: b.default!.pricingType as PricingType },
@@ -292,6 +296,10 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
     const current = await ctx.approvals.view(c.campaignId)
     if (current.status === 'awaiting_approval' || current.status === 'approved') throw conflict(`The campaign is already ${current.status === 'approved' ? 'approved' : 'awaiting approval'}.`)
     if (current.status === 'rejected') throw conflict('The campaign was rejected. Upload a new version before submitting again.')
+
+    /* An audience can be shared with another advertiser after the campaign was authored. */
+    const privateUse = await audienceRefusal(ctx, c.advertiserId, segmentValuesInTargeting(c.targeting), { partnerId: req.partner.id, seatId: partnerAdvertiser(req.partner, c.advertiserId as string)?.id })
+    if (privateUse) throw new HttpError(422, 'targeting_not_supported', privateUse)
 
     const targeting = targetingOf(c.targeting)
     const assets = await ctx.campaigns.latestAssets(c.campaignId)

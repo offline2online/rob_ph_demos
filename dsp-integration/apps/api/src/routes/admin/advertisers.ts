@@ -5,7 +5,8 @@ import { advertiserSlug, type Advertiser } from '@ph-dsp/types'
 import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import type { Guards } from '../../http/app'
-import { conflict, notFound, validationFailed } from '../../http/errors'
+import { conflict, hasDependents, notFound, validationFailed } from '../../http/errors'
+import { segmentValuesInTargeting, validateAudiences } from '../../domain/audiences'
 import { allPositions, findPosition, nextWindow, windowMs } from '../../domain/positions'
 import { TAKEN } from '../../repos/ReservationRepo'
 import { invitedDealIds } from '../../domain/advertiserDeals'
@@ -64,6 +65,7 @@ export async function listAdvertisers(ctx: Context): Promise<Advertiser[]> {
   }
   /* Mapped DSP seats (ticket T0gLfo2zDrRXPVGcvEoL), checked against what each DSP has synced now. */
   const mapped = await ctx.company.advertiserSeats()
+  const audiences = await ctx.company.advertiserAudiences()
   const partners = new Map((await ctx.partners.list()).map((p) => [p.id, p]))
   const out: Advertiser[] = []
   for (const [advertiserId, a] of [...byId.entries()].sort((x, y) => x[1].name.localeCompare(y[1].name))) {
@@ -71,6 +73,7 @@ export async function listAdvertisers(ctx: Context): Promise<Advertiser[]> {
     out.push({
       advertiserId, name: a.name, via: a.via, direct: direct.has(advertiserId), ...s,
       bookings: bookings.get(advertiserId) ?? 0,
+      audiences: audiences[advertiserId] ?? [],
       dspSeats: direct.has(advertiserId) ? [] : (mapped[advertiserId] ?? []).map((m) => {
         const p = partners.get(m.partnerId)
         const seat = p?.status === 'connected' ? p.seats.find((x) => x.id === m.seatId) : undefined
@@ -91,7 +94,7 @@ export const advertiserRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
   })
 
   /* Add an advertiser with a direct relationship with the retailer (no DSP). */
-  app.post<{ Body: { name?: unknown } }>('/advertisers/direct', async (req, reply) => {
+  app.post<{ Body: { name?: unknown; audiences?: unknown } }>('/advertisers/direct', async (req, reply) => {
     guards.flagged()
     guards.requireScope(req, 'admin')
     const name = typeof req.body?.name === 'string' ? req.body.name.trim().replace(/\s+/g, ' ') : ''
@@ -99,8 +102,10 @@ export const advertiserRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     const advertiserId = advertiserSlug(name)
     if (!advertiserId) throw validationFailed([{ field: 'name', reason: 'The name needs at least one letter or digit.' }])
     if ((await listAdvertisers(ctx)).some((a) => a.advertiserId === advertiserId)) throw conflict(`${name} is already an advertiser.`)
+    const audiences = req.body?.audiences === undefined ? [] : await validateAudiences(ctx, req.body.audiences)
     await ctx.company.addDirectAdvertiser(advertiserId, name)
-    return reply.status(201).send({ advertiserId, name })
+    if (audiences.length) await ctx.company.saveAdvertiserAudiences(advertiserId, audiences, req.session.userId)
+    return reply.status(201).send({ advertiserId, name, audiences })
   })
 
   /* Remove a direct advertiser. Refused while it has campaigns or bookings, has users, or is held on a slot. */
@@ -151,6 +156,35 @@ export const advertiserRoutes = (ctx: Context, guards: Guards): FastifyPluginAsy
     })
     if (errors.length) throw validationFailed(errors)
     await ctx.company.saveAdvertiserSeats(a.advertiserId, seats)
+    return (await listAdvertisers(ctx)).find((x) => x.advertiserId === a.advertiserId)
+  })
+
+  /* Audiences: the Visitor Segments values shared with this advertiser only (ticket OanRebXyEryAXBQrBsVe).
+     Replaces the advertiser's whole list. Removing one is refused while a live deal or an approved campaign of
+     the advertiser targets it, naming each. Admin only; a Marketing user reads them on GET /advertisers. */
+  app.put<{ Params: { advertiserId: string }; Body: { audiences?: unknown } }>('/advertisers/:advertiserId/audiences', async (req) => {
+    guards.flagged()
+    guards.requireScope(req, 'admin')
+    const a = (await listAdvertisers(ctx)).find((x) => x.advertiserId === req.params.advertiserId)
+    if (!a) throw notFound('Not an advertiser.')
+    const wanted = await validateAudiences(ctx, req.body?.audiences)
+    const removed = a.audiences.filter((v) => !wanted.includes(v))
+    if (removed.length) {
+      const dependents: { field: string; reason: string }[] = []
+      const seats = (await ctx.company.advertiserSeats())[a.advertiserId] ?? []
+      for (const l of await ctx.buyersLists.list()) {
+        if (l.status !== 'shared') continue
+        const used = removed.filter((v) => l.targeting.some((c) => c.variable === 'visitor.visitor_segments' && c.values.includes(v)))
+        if (used.length && l.invitedBuyers.some((b) => seats.some((m) => m.partnerId === b.partnerId && m.seatId === b.seatId))) dependents.push({ field: `deal:${l.id}`, reason: `${used.join(', ')} is targeted by the live deal ${l.name}.` })
+      }
+      for (const c of await ctx.campaigns.listCampaigns()) {
+        if (c.source === 'hq' || c.advertiserId !== a.advertiserId) continue
+        const used = removed.filter((v) => segmentValuesInTargeting(c.targeting).includes(v))
+        if (used.length && (await ctx.approvals.statusOf(c.campaignId)) === 'approved') dependents.push({ field: `campaign:${c.campaignId}`, reason: `${used.join(', ')} is targeted by the approved campaign ${c.name}.` })
+      }
+      if (dependents.length) throw hasDependents(`${a.name} can't lose ${removed.join(', ')}: ${dependents.map((d) => d.reason).join(' ')}`, dependents)
+    }
+    await ctx.company.saveAdvertiserAudiences(a.advertiserId, wanted, req.session.userId)
     return (await listAdvertisers(ctx)).find((x) => x.advertiserId === a.advertiserId)
   })
 
