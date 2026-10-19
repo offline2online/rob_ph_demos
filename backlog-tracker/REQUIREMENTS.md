@@ -2342,6 +2342,32 @@ with the credentials they already have — Google, or an email and password —
 with no key to mint, paste, share or rotate, and with everything their agent
 does attributed to them.
 
+**Reading ticket history.** `list_backlog_items` (scope `board.read`, so
+viewers too) must let an agent read every ticket and find why one failed:
+
+- *Paging.* Input `cursor` (opaque string); every response returns
+  `nextCursor` (string, or `null` on the last page). Order is fixed: updatedAt
+  newest first, then ticket id A–Z. `limit` defaults to 25, maximum 100.
+  `matched` is the total across pages; a full walk returns each match once
+  (a ticket updated mid-walk can move). An undecodable cursor is a tool error,
+  "cursor is not valid — start again without one".
+- *Timestamps.* `updatedAt` may be a Timestamp, Date or ISO-8601 string
+  (`run-backlog-automation.js` writes strings); the sort key falls back to
+  `createdAt`, then 0, and summaries show the real value.
+- *Archived.* `includeArchived` defaults to true with `search`, false
+  without; `status` decides when given. Archived tickets left out that matched
+  every other filter are counted in `archivedHidden`.
+- *Comments.* `searchIn` is an array of `title`, `desc`, `notes` (default
+  `["title","desc"]`); an unknown value is a tool error. With `search`, each
+  item carries `matchedIn` and a `snippet` of up to 200 characters. All new
+  inputs are validated in code.
+- *Read limit.* If the read reaches `MAX_READ_DOCS` (1,500) the response has
+  `truncated: true`; pass `projectId`.
+- `get_backlog_item` returns `lastFailureReason` `{category, text, action, at}`
+  (ISO `at`), or `null`.
+
+No new tool and no write path. Tests: `test/mcp-server.test.js`.
+
 **Membership.** `Settings → Team & agent access` (admin-only) writes
 `consoleUsers` docs; that one row grants browser access and agent access
 together. Roles as in "Data model" above. A member with no Google account is

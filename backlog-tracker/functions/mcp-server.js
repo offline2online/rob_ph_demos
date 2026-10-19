@@ -145,7 +145,19 @@ function tsToISO(v) {
   if (!v) return null;
   if (typeof v.toDate === "function") return v.toDate().toISOString();
   if (v instanceof Date) return v.toISOString();
+  // run-backlog-automation.js writes updatedAt as an ISO-8601 string.
+  if (typeof v === "string") {
+    const ms = Date.parse(v);
+    return Number.isNaN(ms) ? null : new Date(ms).toISOString();
+  }
   return null;
+}
+// Sort key in epoch ms for a Timestamp, Date or ISO string; 0 when unusable.
+function tsToMillis(v) {
+  if (!v) return 0;
+  if (typeof v.toMillis === "function") return v.toMillis() || 0;
+  const iso = tsToISO(v);
+  return iso ? Date.parse(iso) : 0;
 }
 
 function cors(req, res) {
@@ -1466,6 +1478,43 @@ async function loadProjectsById() {
   return byId;
 }
 
+// list_backlog_items paging and search.
+const LIST_PAGE_MAX = 100;
+const SEARCH_FIELDS = ["title", "desc", "notes"];
+const CURSOR_INVALID = "cursor is not valid — start again without one";
+function encodeListCursor(m, i) {
+  return Buffer.from(JSON.stringify({ m, i }), "utf8").toString("base64url");
+}
+function decodeListCursor(c) {
+  try {
+    const v = JSON.parse(Buffer.from(String(c), "base64url").toString("utf8"));
+    if (v && typeof v === "object" && Number.isFinite(v.m) && typeof v.i === "string") return { m: v.m, i: v.i };
+  } catch (e) { /* fall through */ }
+  return null;
+}
+// Which of `fields` contain `needle` (already lower-cased), plus up to 200
+// characters around the first match.
+function matchTicketText(d, needle, fields) {
+  const matchedIn = [];
+  let snippet = null;
+  const note = (text) => {
+    if (snippet !== null) return;
+    const at = text.toLowerCase().indexOf(needle);
+    const start = Math.max(0, Math.min(at - Math.floor((200 - needle.length) / 2), text.length - 200));
+    snippet = text.slice(start, start + 200);
+  };
+  for (const f of fields) {
+    let texts;
+    if (f === "notes") texts = (Array.isArray(d.notes) ? d.notes : []).map((n) => (n && typeof n.text === "string" ? n.text : ""));
+    else texts = [typeof d[f] === "string" ? d[f] : ""];
+    const hitText = texts.find((t) => t.toLowerCase().includes(needle));
+    if (hitText === undefined) continue;
+    matchedIn.push(f);
+    note(hitText);
+  }
+  return matchedIn.length ? { matchedIn, snippet } : null;
+}
+
 function itemSummary(id, d, projects) {
   const project = projects && projects.get(d.projectId);
   return {
@@ -1477,7 +1526,7 @@ function itemSummary(id, d, projects) {
     category: d.category || "Uncategorised",
     status: d.status || "backlog",
     statusLabel: STATUS_LABELS[d.status] || d.status || "",
-    updatedAt: tsToISO(d.updatedAt),
+    updatedAt: tsToISO(d.updatedAt) || tsToISO(d.createdAt),
     createdAt: tsToISO(d.createdAt),
     comments: Array.isArray(d.notes) ? d.notes.length : 0,
     blocked: d.blocked && d.blocked.reason
@@ -1494,6 +1543,15 @@ function itemDetail(id, d, projects) {
     testVersion: d.testVersion || null,
     archivedAt: tsToISO(d.archivedAt),
     noDeploymentRequired: d.noDeploymentRequired === true,
+    // Why the last Failed testing / Eject from train happened; never cleared.
+    lastFailureReason: d.lastFailureReason && typeof d.lastFailureReason === "object"
+      ? {
+          category: d.lastFailureReason.category || null,
+          text: d.lastFailureReason.text || "",
+          action: d.lastFailureReason.action || null,
+          at: tsToISO(d.lastFailureReason.at),
+        }
+      : null,
     // Read-only window onto the deployment train. An agent can see where a
     // ticket is in the pipeline; nothing here is writable through MCP.
     train: {
@@ -1881,7 +1939,7 @@ const TOOLS = [
   },
   {
     name: "list_backlog_items",
-    description: "List tickets, newest-updated first. Filter by project, pipeline column, type, area or free text. Returns summaries — call get_backlog_item for the full description and comments.",
+    description: "List tickets, newest-updated first (then by id), " + LIST_PAGE_MAX + " per page at most. Page through every match by passing the response's nextCursor back as cursor until it is null; a ticket updated during the walk can move. Filter by project, pipeline column, type, area or free text. A search also covers archived tickets (includeArchived) and, with searchIn [\"notes\"], comments — each hit then carries matchedIn and snippet. Returns summaries — call get_backlog_item for the full description, comments and lastFailureReason. If truncated is true, pass projectId.",
     scope: "board.read",
     inputSchema: {
       type: "object",
@@ -1890,46 +1948,87 @@ const TOOLS = [
         status: { type: "string", enum: STATUSES, description: "Pipeline column key." },
         type: { type: "string", enum: ["feature", "bug"] },
         category: { type: "string", enum: CATEGORIES, description: "Area impacted." },
-        search: { type: "string", description: "Case-insensitive match against title and description." },
-        limit: { type: "integer", minimum: 1, maximum: 100, description: "Default 25." },
+        search: { type: "string", description: "Case-insensitive match against the fields in searchIn." },
+        searchIn: { type: "array", items: { type: "string", enum: SEARCH_FIELDS }, description: "Which fields search looks at: title, desc, notes (comments). Default [\"title\",\"desc\"]." },
+        includeArchived: { type: "boolean", description: "Include archived tickets. Default true when search is given, false otherwise; status, when given, decides instead." },
+        cursor: { type: "string", description: "nextCursor from the previous page." },
+        limit: { type: "integer", minimum: 1, maximum: LIST_PAGE_MAX, description: "Page size. Default 25." },
       },
       additionalProperties: false,
     },
     async run(args) {
       const a = args || {};
+      if (a.cursor !== undefined && typeof a.cursor !== "string") return toolError(CURSOR_INVALID);
+      if (a.includeArchived !== undefined && typeof a.includeArchived !== "boolean") return toolError("includeArchived must be true or false.");
+      if (a.search !== undefined && typeof a.search !== "string") return toolError("search must be a string.");
+      let searchIn = ["title", "desc"];
+      if (a.searchIn !== undefined) {
+        if (!Array.isArray(a.searchIn) || !a.searchIn.length || a.searchIn.some((f) => !SEARCH_FIELDS.includes(f))) {
+          return toolError(`searchIn must be a non-empty array of: ${SEARCH_FIELDS.join(", ")}.`);
+        }
+        searchIn = SEARCH_FIELDS.filter((f) => a.searchIn.includes(f));
+      }
+      let after = null;
+      if (a.cursor) {
+        after = decodeListCursor(a.cursor);
+        if (!after) return toolError(CURSOR_INVALID);
+      }
+      const needle = String(a.search || "").trim().toLowerCase();
+      const includeArchived = a.status ? true : (typeof a.includeArchived === "boolean" ? a.includeArchived : !!needle);
       const projects = await loadProjectsById();
       let q = db().collection("backlogItems");
       if (a.projectId) q = q.where("projectId", "==", a.projectId);
       const snap = await q.limit(MAX_READ_DOCS).get();
-      const needle = String(a.search || "").trim().toLowerCase();
+      let read = 0;
+      let archivedHidden = 0;
       const rows = [];
       snap.forEach((doc) => {
+        read += 1;
         const d = doc.data() || {};
-        if (a.status && (d.status || "backlog") !== a.status) return;
-        // Archived tickets are off the board; only return them when asked
-        // for by name, so an unfiltered list reads like the board does.
-        if (!a.status && (d.status || "backlog") === "archived") return;
+        const status = d.status || "backlog";
+        if (a.status && status !== a.status) return;
         if (a.type && d.type !== a.type) return;
         if (a.category && (d.category || "Uncategorised") !== a.category) return;
-        if (needle && !`${d.title || ""}\n${d.desc || ""}`.toLowerCase().includes(needle)) return;
-        rows.push({ doc, d });
+        let hit = null;
+        if (needle) {
+          hit = matchTicketText(d, needle, searchIn);
+          if (!hit) return;
+        }
+        // Archived tickets are off the board; an unfiltered list leaves them
+        // out, a search reaches them.
+        if (!a.status && status === "archived" && !includeArchived) { archivedHidden += 1; return; }
+        rows.push({ id: doc.id, d, hit, key: tsToMillis(d.updatedAt) || tsToMillis(d.createdAt) });
       });
-      rows.sort((x, y) => {
-        const xa = x.d.updatedAt && x.d.updatedAt.toMillis ? x.d.updatedAt.toMillis() : 0;
-        const ya = y.d.updatedAt && y.d.updatedAt.toMillis ? y.d.updatedAt.toMillis() : 0;
-        return ya - xa;
-      });
-      const limit = Math.min(Math.max(parseInt(a.limit, 10) || 25, 1), 100);
-      return textResult({
+      rows.sort((x, y) => (y.key - x.key) || (x.id < y.id ? -1 : x.id > y.id ? 1 : 0));
+      const limit = Math.min(Math.max(parseInt(a.limit, 10) || 25, 1), LIST_PAGE_MAX);
+      let from = 0;
+      if (after) {
+        from = rows.findIndex((r) => r.key < after.m || (r.key === after.m && r.id > after.i));
+        if (from < 0) from = rows.length;
+      }
+      const page = rows.slice(from, from + limit);
+      const last = page[page.length - 1];
+      const out = {
         matched: rows.length,
-        returned: Math.min(limit, rows.length),
-        items: rows.slice(0, limit).map((r) => itemSummary(r.doc.id, r.d, projects)),
-      });
+        returned: page.length,
+        nextCursor: from + limit < rows.length && last ? encodeListCursor(last.key, last.id) : null,
+        items: page.map((r) => {
+          const item = itemSummary(r.id, r.d, projects);
+          if (r.hit) { item.matchedIn = r.hit.matchedIn; item.snippet = r.hit.snippet; }
+          return item;
+        }),
+      };
+      if (archivedHidden) out.archivedHidden = archivedHidden;
+      if (read >= MAX_READ_DOCS) {
+        out.truncated = true;
+        out.note = `Only the first ${MAX_READ_DOCS} tickets were read, so results may be incomplete. Pass projectId to narrow the read.`;
+      }
+      return textResult(out);
     },
   },
   {
     name: "get_backlog_item",
-    description: "One ticket in full — description, area, pipeline column, preview link, attachments and every comment on it.",
+    description: "One ticket in full — description, area, pipeline column, preview link, attachments, every comment on it, and lastFailureReason (why it last failed testing or was ejected from the train, or null).",
     scope: "board.read",
     inputSchema: {
       type: "object",

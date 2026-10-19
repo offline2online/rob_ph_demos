@@ -1981,6 +1981,159 @@ async function rpc(token, method, params, id = 1) {
     assert.match(res.body.result.content[0].text, /read-only/);
   });
 
+  // ── list_backlog_items paging / search, get_backlog_item.lastFailureReason ─
+  async function accessTokenFor(email, role) {
+    const idToken = signIn(email);
+    addConsoleUser(email, { role });
+    const v = b64url(crypto.randomBytes(32));
+    const ch = b64url(crypto.createHash("sha256").update(v).digest());
+    const auth = await call({
+      method: "POST", path: "/mcp/authorize/complete",
+      body: { idToken, clientId, redirectUri: REDIRECT, codeChallenge: ch, codeChallengeMethod: "S256", scope: "board.read board.write" },
+    });
+    const c = new URL(auth.body.redirect).searchParams.get("code");
+    const tok = await call({
+      method: "POST", path: "/mcp/token",
+      body: { grant_type: "authorization_code", code: c, code_verifier: v, client_id: clientId, redirect_uri: REDIRECT },
+    });
+    return tok.body.access_token;
+  }
+  const stubTs = (ms) => ({ _ts: true, toMillis: () => ms, toDate: () => new Date(ms) });
+  async function listItems(token, args) {
+    const res = await rpc(token, "tools/call", { name: "list_backlog_items", arguments: args });
+    const r = res.body.result;
+    return r.isError ? r : Object.assign({ isError: false }, JSON.parse(r.content[0].text));
+  }
+
+  await test("list_backlog_items pages through every ticket once, in a fixed order, with ISO and missing timestamps", async () => {
+    const token = await accessTokenFor("pager@personalisationhub.com", "editor");
+    const base = Date.parse("2026-01-01T00:00:00Z");
+    for (let i = 0; i < 250; i += 1) {
+      const id = `pg${String(i).padStart(3, "0")}`;
+      const d = { projectId: "pgproj", title: `T${i}`, desc: "", type: "feature", category: "HQ Admin", status: "backlog" };
+      const ms = base + (i < 5 ? 0 : i) * 60000; // five share one updatedAt
+      if (i % 3 === 0) d.updatedAt = stubTs(ms);
+      else if (i % 3 === 1) d.updatedAt = new Date(ms).toISOString();
+      else d.createdAt = stubTs(ms); // no updatedAt at all
+      env.store.col("backlogItems").set(id, d);
+    }
+    const seen = [];
+    const sizes = [];
+    let cursor;
+    let matched = null;
+    for (let guard = 0; guard < 10; guard += 1) {
+      const page = await listItems(token, Object.assign({ projectId: "pgproj", limit: 100 }, cursor ? { cursor } : {}));
+      assert.strictEqual(page.isError, false);
+      matched = page.matched;
+      sizes.push(page.items.length);
+      page.items.forEach((it) => { assert.ok(it.updatedAt, `${it.id} shows a real updatedAt`); seen.push(it); });
+      if (page.nextCursor === null) break;
+      cursor = page.nextCursor;
+    }
+    assert.deepStrictEqual(sizes, [100, 100, 50]);
+    assert.strictEqual(matched, 250);
+    assert.strictEqual(new Set(seen.map((i) => i.id)).size, 250, "every id exactly once");
+    for (let i = 1; i < seen.length; i += 1) {
+      const a = Date.parse(seen[i - 1].updatedAt);
+      const b = Date.parse(seen[i].updatedAt);
+      assert.ok(a > b || (a === b && seen[i - 1].id < seen[i].id), `order at ${i}`);
+    }
+    const iso = seen.find((i) => i.id === "pg010"); // i % 3 === 1 → ISO string
+    assert.strictEqual(iso.updatedAt, new Date(base + 10 * 60000).toISOString());
+  });
+
+  await test("a cursor that can't be decoded is a tool error", async () => {
+    const token = await accessTokenFor("pager2@personalisationhub.com", "editor");
+    for (const bad of ["nope", Buffer.from("{}").toString("base64url")]) {
+      const res = await listItems(token, { cursor: bad });
+      assert.strictEqual(res.isError, true);
+      assert.match(res.content[0].text, /not valid/);
+    }
+  });
+
+  await test("search reaches archived tickets; includeArchived and status behave as documented", async () => {
+    const token = await accessTokenFor("pager3@personalisationhub.com", "editor");
+    env.store.col("backlogItems").set("arch1", { projectId: "arproj", title: "A stale thing", desc: "", type: "bug", category: "HQ Admin", status: "archived", updatedAt: stubTs(1000) });
+    env.store.col("backlogItems").set("live1", { projectId: "arproj", title: "Fresh", desc: "", type: "bug", category: "HQ Admin", status: "backlog", updatedAt: stubTs(2000) });
+    let r = await listItems(token, { projectId: "arproj", search: "stale" });
+    assert.deepStrictEqual(r.items.map((i) => i.id), ["arch1"]);
+    assert.strictEqual(r.archivedHidden, undefined);
+    r = await listItems(token, { projectId: "arproj", search: "stale", includeArchived: false });
+    assert.strictEqual(r.items.length, 0);
+    assert.strictEqual(r.archivedHidden, 1);
+    r = await listItems(token, { projectId: "arproj" });
+    assert.deepStrictEqual(r.items.map((i) => i.id), ["live1"]);
+    assert.strictEqual(r.archivedHidden, 1);
+    r = await listItems(token, { projectId: "arproj", status: "archived" });
+    assert.deepStrictEqual(r.items.map((i) => i.id), ["arch1"]);
+    r = await listItems(token, { projectId: "arproj", includeArchived: "yes" });
+    assert.strictEqual(r.isError, true);
+  });
+
+  await test("searchIn notes finds a comment, with matchedIn and a snippet; bad values are errors", async () => {
+    const token = await accessTokenFor("pager4@personalisationhub.com", "editor");
+    const long = `${"x".repeat(300)} Failed testing [Visual or layout issue]: header overlaps ${"y".repeat(300)}`;
+    env.store.col("backlogItems").set("note1", {
+      projectId: "nproj", title: "Header", desc: "d", type: "bug", category: "HQ Admin", status: "ready-for-testing", updatedAt: stubTs(5),
+      notes: [{ author: "viewer", text: "Failed testing [Visual or layout issue]: header overlaps", at: stubTs(5) }],
+    });
+    env.store.col("backlogItems").set("note2", {
+      projectId: "nproj", title: "Long", desc: "d", type: "bug", category: "HQ Admin", status: "backlog", updatedAt: stubTs(4),
+      notes: [{ author: "viewer", text: long, at: stubTs(4) }],
+    });
+    let r = await listItems(token, { projectId: "nproj", search: "overlaps", searchIn: ["notes"] });
+    assert.deepStrictEqual(r.items.map((i) => i.id), ["note1", "note2"]);
+    assert.deepStrictEqual(r.items[0].matchedIn, ["notes"]);
+    for (const it of r.items) {
+      assert.ok(it.snippet.length <= 200 && it.snippet.includes("overlaps"), `snippet for ${it.id}`);
+    }
+    r = await listItems(token, { projectId: "nproj", search: "overlaps" });
+    assert.strictEqual(r.items.length, 0, "default searchIn does not read comments");
+    r = await listItems(token, { projectId: "nproj", search: "header", searchIn: ["title", "notes"] });
+    assert.deepStrictEqual(r.items.find((i) => i.id === "note1").matchedIn, ["title", "notes"]);
+    r = await listItems(token, { projectId: "nproj", search: "x", searchIn: ["comments"] });
+    assert.strictEqual(r.isError, true);
+  });
+
+  await test("get_backlog_item returns lastFailureReason with an ISO at, or null", async () => {
+    const token = await accessTokenFor("pager5@personalisationhub.com", "editor");
+    env.store.col("backlogItems").set("lf1", {
+      projectId: "lfproj", title: "T", desc: "d", type: "bug", category: "HQ Admin", status: "backlog", updatedAt: stubTs(1),
+      lastFailureReason: { category: "Visual or layout issue", text: "header overlaps", action: "failed-testing", at: stubTs(Date.parse("2026-10-01T10:00:00Z")) },
+    });
+    env.store.col("backlogItems").set("lf2", { projectId: "lfproj", title: "T", desc: "d", type: "bug", category: "HQ Admin", status: "backlog", updatedAt: stubTs(1) });
+    const get = async (id) => JSON.parse((await rpc(token, "tools/call", { name: "get_backlog_item", arguments: { itemId: id } })).body.result.content[0].text);
+    assert.deepStrictEqual((await get("lf1")).lastFailureReason, { category: "Visual or layout issue", text: "header overlaps", action: "failed-testing", at: "2026-10-01T10:00:00.000Z" });
+    assert.strictEqual((await get("lf2")).lastFailureReason, null);
+  });
+
+  await test("a viewer can page with a cursor", async () => {
+    const token = await accessTokenFor("pagerview@personalisationhub.com", "viewer");
+    const first = await listItems(token, { projectId: "pgproj", limit: 100 });
+    assert.ok(first.nextCursor);
+    const second = await listItems(token, { projectId: "pgproj", limit: 100, cursor: first.nextCursor });
+    assert.strictEqual(second.isError, false);
+    assert.strictEqual(second.items.length, 100);
+  });
+
+  await test("reading 1,500 tickets without projectId reports truncated", async () => {
+    const token = await accessTokenFor("pager6@personalisationhub.com", "editor");
+    const ids = [];
+    for (let i = 0; i < 1501; i += 1) {
+      const id = `trunc${i}`;
+      ids.push(id);
+      env.store.col("backlogItems").set(id, { projectId: "truncproj", title: "t", desc: "", type: "bug", category: "HQ Admin", status: "backlog", updatedAt: stubTs(i) });
+    }
+    try {
+      const r = await listItems(token, {});
+      assert.strictEqual(r.truncated, true);
+      const scoped = await listItems(token, { projectId: "pgproj" });
+      assert.strictEqual(scoped.truncated, undefined);
+    } finally {
+      ids.forEach((id) => env.store.col("backlogItems").delete(id));
+    }
+  });
+
   await test("rotates the refresh token and kills the old one", async () => {
     const first = await call({ method: "POST", path: "/mcp/token", body: { grant_type: "refresh_token", refresh_token: tokens.refresh_token, client_id: clientId } });
     assert.strictEqual(first.statusCode, 200);

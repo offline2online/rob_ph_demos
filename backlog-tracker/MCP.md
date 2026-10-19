@@ -91,6 +91,18 @@ empty or mis-edited collection can never lock everyone out.
 `get_skill`, `list_skill_misses`, `get_routine_setup_instructions`,
 `list_concepts`, `get_concept`.
 
+**Reading ticket history.** `list_backlog_items` pages: it returns at most
+100 tickets per call (default 25), newest-updated first and then by id, plus
+`matched` (the total) and `nextCursor` — pass that back as `cursor` until it
+is `null`. A ticket updated during the walk can move. A `search` also covers
+archived tickets (`includeArchived`, default true when searching, false
+otherwise; `status` still decides when given, and `archivedHidden` says how
+many were left out) and, with `searchIn: ["notes"]`, comments; each hit then
+carries `matchedIn` and a `snippet`. `truncated: true` means the 1,500-ticket
+read limit was hit, so pass `projectId`. `get_backlog_item` includes
+`lastFailureReason` (why it last failed testing or was ejected). Example:
+`list_backlog_items({projectId: "mIPdOCAWevhrgD8g2tCZ", search: "Failed testing", searchIn: ["notes"]})`.
+
 **What the agent is told on connect.** The server instructions (`SERVER_INSTRUCTIONS`
 in `functions/mcp-server.js`) are the first text a connected agent reads. They
 say what each role can do, name every `board.write` and admin tool, tell the
