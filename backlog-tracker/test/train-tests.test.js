@@ -22,6 +22,9 @@ const cases = [
   ["a dsp-integration source change starts e2e-quick", trainTestsFor(["dsp-integration/apps/api/src/exchange/openrtb.ts"]).map((t) => t.workflow), ["e2e-quick.yml"]],
   ["a prototype rebuild alone starts nothing", trainTestsFor(["dsp-integration/prototype/assets/index.js", "dsp-integration/prototype/build-info.json"]), []],
   ["a change to both projects starts both", trainTestsFor(["backlog-tracker/x.js", "dsp-integration/y.ts"]).map((t) => t.workflow), ["firestore-rules-test.yml", "e2e-quick.yml"]],
+  // board-docs.json (any project) is validated by the console tests
+  ["a dsp-integration board-docs.json starts the console tests and e2e-quick", trainTestsFor(["dsp-integration/board-docs.json"]).map((t) => t.workflow), ["firestore-rules-test.yml", "e2e-quick.yml"]],
+  ["a Retail-media-insights board-docs.json starts the console and RMI suites", trainTestsFor(["Retail-media-insights/board-docs.json"]).map((t) => t.workflow), ["firestore-rules-test.yml", "retail-media-insights-tests.yml"]],
   ["e2e-quick red: told once per workflow and head", trainTestFailureTargets(failed, HEAD, [{ id: "d1" }, { id: "d2", testsFailedShas: [`e2e-quick.yml@${HEAD}`] }, { id: "d3", testsFailedSha: HEAD }], "e2e-quick.yml").map((c) => c.id), ["d1", "d3"]],
   ["run on the head itself: the head", testedHeadOf(HEAD, HEAD, null), HEAD],
   ["only a prototype rebuild since the run: the run still speaks for the head", testedHeadOf("tick", HEAD, ["dsp-integration/prototype/index.html", "dsp-integration/apps/admin/public/demo/api-snapshot.json"]), "tick"],

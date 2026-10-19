@@ -623,6 +623,32 @@ Creating a project therefore means four things, not one:
 3. `projects/{id}.deployBranch` is `deploy/<folder>`.
 4. `requirementsMd` / `readmeMd` are filled from those two files in the
    same session.
+5. Handover files that should appear as documents on the console are
+   declared in the project's `board-docs.json` (below) — never create a
+   mirror document by hand.
+
+### `board-docs.json` — which repo files are documents on the console
+
+A per-project manifest, normally `<folder>/board-docs.json` (this project's
+is `backlog-tracker/board-docs.json`), found by the post-merge sync by
+scanning the merge commit's tree and matching `projectId` — so it works for
+a `repoFolderNotApplicable` project too. Shape:
+`{"projectId", "startHere": "readme" | "requirements" | "<mirror key>",
+"mirrors": [{"key", "path", "name", "id"?, "slices"?, "prefix"?, "status"?}],
+"boardDocs": [{"id", "status": "current" | "working" | "superseded", "note"}]}`.
+`reconcileManifest()` in `scripts/docs-sync-lib.js` runs at the start of
+every sync: it matches each mirror by `id`, else by a stored `mirrorKey`
+(never by `sourcePath` alone), creates a document for an unmatched entry,
+rewrites only what differs and reads the text back byte for byte; refuses
+any cut over 20,000 characters before writing (the automation's service
+account bypasses the rules' cap, so it could otherwise save a document no
+person can edit); writes declared `status`/`statusNote`; sets
+`projects/{id}.startHereDocId`; and records `docsSync.manifestPath` and
+`docsSync.unlisted` (documents the manifest doesn't classify). It never
+deletes, and a refusal shows in the "Docs behind main" chip. The repo wins
+for mirrors and declared status; board-only text is never touched.
+`test/board-docs-manifest.test.js` validates every manifest in the checkout,
+and a change to any `board-docs.json` starts the console tests.
 
 **The New Project modal now asks for the repo folder alongside the name**
 (`np-repo-folder-input` in `public/index.html`, wired in `public/js/app.js`)

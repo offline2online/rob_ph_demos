@@ -1821,6 +1821,8 @@ const TOOLS = [
           trainStatus: p.trainStatus || null,
           trainLocked: p.trainLocked === true,
           artifactUrl: p.artifactUrl || null,
+          // The document to read first: "readme", "requirements" or a projectDocs id. Declared in the repo's board-docs.json and written by the post-merge sync, never over MCP.
+          startHereDocId: p.startHereDocId || null,
           counts: counts.get(p.id) || {},
         });
       });
@@ -2325,6 +2327,8 @@ const TOOLS = [
             syncedAt: tsToISO(ds.syncedAt),
             error: ds.error || null,
             errorAt: tsToISO(ds.errorAt),
+            manifestPath: ds.manifestPath || null,
+            unlisted: Array.isArray(ds.unlisted) ? ds.unlisted.map((u) => ({ id: u && u.id || null, name: u && u.name || "" })) : [],
             lastMergeCommit: p.lastMergeCommit || null,
             lastMergeAt: tsToISO(p.lastMergeAt),
           }

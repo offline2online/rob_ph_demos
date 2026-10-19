@@ -1,0 +1,8 @@
+{
+  "projectId": "oTcLAbnhUUO2S7NkbsuV",
+  "startHere": "readme",
+  "mirrors": [
+    { "key": "faq-readme", "path": "faq/README.md", "name": "Help Centre (faq/) — how it works and how it is edited" }
+  ],
+  "boardDocs": []
+}

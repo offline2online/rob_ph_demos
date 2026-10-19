@@ -67,7 +67,10 @@ Cloud Functions, own Hosting site, own IAM/billing; see
   docsSync?: {                    // outcome of the post-merge sync of README/REQUIREMENTS into docs/{kind} (docs-sync-lib.js); error is null on success, or { skipped, at, mergeCommit } when the sync was refused
     mergeCommit?: string, syncedAt?: timestamp, error?: string | null, errorAt?: timestamp, attemptedCommit?: string,
     mirroredDocs?: string[],      // projectDocs ids refreshed from their sourcePath
+    manifestPath?: string,        // the board-docs.json this sync reconciled (docs-sync-lib.js reconcileManifest); absent when the project has none
+    unlisted?: { id: string, name: string }[], // up to 50 documents the manifest neither mirrors nor classifies (kind "generated" skipped)
   },
+  startHereDocId?: string,        // "readme" | "requirements" | a projectDocs id — the manifest's startHere; written only by the sync, returned by list_projects, not in PROJECT_WRITABLE_FIELDS
   lastMergeCommit?: string,       // main commit of the project's latest train merge
   lastMergeAt?: timestamp,        // when that merge was processed
   notifyRequestedAt?: timestamp,  // bumped by the "Notify Claude" button
@@ -897,6 +900,11 @@ stale.
   sourceSlices?: { start: string, end?: string }[], // only these line ranges of the file are mirrored
   sourcePrefix?: string,           // prepended verbatim to the mirrored text
   sourceCommit?: string,           // last commit that touched sourcePath
+  // Set by the board-docs.json reconcile (the repo wins for these):
+  mirrorKey?: string,              // the manifest entry's key; how a mirror is found again (never by sourcePath alone)
+  manifestPath?: string,           // the board-docs.json that declares it (mirrors and boardDocs entries)
+  status?: "current" | "working" | "superseded", // declared status
+  statusNote?: string,             // boardDocs entry's note
 }
 ```
 A generic, named document belonging to exactly one project — an API spec,

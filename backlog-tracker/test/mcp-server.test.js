@@ -368,6 +368,11 @@ async function rpc(token, method, params, id = 1) {
     assert.deepStrictEqual(payload.projects.map((p) => p.name), ["Experience Templates", "Live Visitor Profile"]);
     const lvp = payload.projects.find((p) => p.id === "proj1");
     assert.strictEqual(lvp.counts["ready-for-testing"], 1);
+    assert.strictEqual(lvp.startHereDocId, null, "unset reads as null");
+    env.store.col("projects").get("proj1").startHereDocId = "readme";
+    const again = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "list_projects", arguments: {} })).body.result.content[0].text);
+    assert.strictEqual(again.projects.find((p) => p.id === "proj1").startHereDocId, "readme");
+    delete env.store.col("projects").get("proj1").startHereDocId;
   });
 
   await test("files a ticket into Backlog, attributed to the person", async () => {
@@ -492,13 +497,15 @@ async function rpc(token, method, params, id = 1) {
     try {
       let out = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "get_project_docs", arguments: { projectId: "proj1", include: ["readme"] } })).body.result.content[0].text);
       assert.strictEqual(out.docsSync, null, "a project the sync has never touched reports null");
-      proj.docsSync = { mergeCommit: "abc1234", requirementsCommit: "r1", readmeCommit: "m1", syncedAt: new Date("2026-10-01T05:30:00Z"), error: "over the board's limit" };
+      proj.docsSync = { mergeCommit: "abc1234", requirementsCommit: "r1", readmeCommit: "m1", syncedAt: new Date("2026-10-01T05:30:00Z"), error: "over the board's limit", manifestPath: "x/board-docs.json", unlisted: [{ id: "d9", name: "Old note" }] };
       proj.lastMergeCommit = "abc1234";
       out = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "get_project_docs", arguments: { projectId: "proj1", include: ["readme"] } })).body.result.content[0].text);
       assert.strictEqual(out.docsSync.error, "over the board's limit");
       assert.strictEqual(out.docsSync.mergeCommit, "abc1234");
       assert.strictEqual(out.docsSync.syncedAt, "2026-10-01T05:30:00.000Z");
       assert.strictEqual(out.docsSync.lastMergeCommit, "abc1234");
+      assert.strictEqual(out.docsSync.manifestPath, "x/board-docs.json");
+      assert.deepStrictEqual(out.docsSync.unlisted, [{ id: "d9", name: "Old note" }]);
     } finally {
       proj.docsSync = before.docsSync; proj.lastMergeCommit = before.lastMergeCommit;
       if (proj.docsSync === undefined) delete proj.docsSync;

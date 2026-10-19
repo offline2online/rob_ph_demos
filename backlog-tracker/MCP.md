@@ -91,6 +91,14 @@ empty or mis-edited collection can never lock everyone out.
 `get_skill`, `list_skill_misses`, `get_routine_setup_instructions`,
 `list_concepts`, `get_concept`.
 
+**Start document and manifest fields.** `list_projects` returns
+`startHereDocId` per project (`"readme"`, `"requirements"`, a document id, or
+`null` when unset) and `get_project_docs`' `docsSync` returns `manifestPath`
+(the repo's `board-docs.json` that declares the project's mirrored documents)
+and `unlisted` (`{id, name}` of documents the manifest doesn't classify).
+All are written by the post-merge sync from the repo manifest; none is
+writable over MCP.
+
 **Reading a project's documents without loading them all.**
 `get_project_docs` returns the full text of every document (600 KB for a
 project with 47), which a host cannot show. For anything large use the two

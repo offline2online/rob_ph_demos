@@ -325,6 +325,11 @@ is worked:
 4. **The board's doc copies** (`requirementsMd` / `readmeMd`) are filled
    from those two files in the same session, per "Keep the board's copies
    in step as you go".
+5. **Handover files are declared in `board-docs.json`** (normally
+   `<folder>/board-docs.json`; see `backlog-tracker/README.md` → "Adding a
+   project"), never created as a board document by hand. The post-merge
+   sync creates and refreshes the mirrors, sets the project's start
+   document and records unclassified documents.
 
 A project with no folder of its own is legitimate but is the exception,
 not the default — "Backlog Tracker & FAQs" owns both `backlog-tracker/`

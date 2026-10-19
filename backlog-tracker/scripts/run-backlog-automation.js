@@ -412,13 +412,35 @@ async function listProjectDocsFor(projectId) {
     from: [{ collectionId: "projectDocs" }],
     where: { fieldFilter: { field: { fieldPath: "projectId" }, op: "EQUAL", value: { stringValue: projectId } } },
   });
-  return rows.map((r) => ({ id: r.id, name: r.name, sourcePath: r.sourcePath, sourceSlices: r.sourceSlices, sourcePrefix: r.sourcePrefix }));
+  return rows.map((r) => ({ id: r.id, name: r.name, sourcePath: r.sourcePath, sourceSlices: r.sourceSlices, sourcePrefix: r.sourcePrefix, mirrorKey: r.mirrorKey, manifestPath: r.manifestPath, status: r.status, statusNote: r.statusNote, kind: r.kind }));
 }
 
 async function getProjectDocById(docId) {
   const res = await fetch(`${FIRESTORE_BASE}/projectDocs/${docId}`, { headers: await firestoreHeaders() });
   if (!res.ok) throw new Error(`GET projectDocs/${docId} failed: ${res.status} ${await res.text()}`);
   return fdoc((await res.json()).fields);
+}
+
+// null when the document does not exist (reconcileManifest checks whether an
+// id named in a manifest belongs to another project).
+async function getProjectDocOrNull(docId) {
+  const res = await fetch(`${FIRESTORE_BASE}/projectDocs/${docId}`, { headers: await firestoreHeaders() });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`GET projectDocs/${docId} failed: ${res.status} ${await res.text()}`);
+  const body = await res.json();
+  return { id: docId, ...fdoc(body.fields) };
+}
+
+// patchProjectDocFields needs an existing document; a manifest mirror with no
+// match gets a new one. Returns its id.
+async function createProjectDocFields(fields) {
+  const res = await fetch(`${FIRESTORE_BASE}/projectDocs`, {
+    method: "POST",
+    headers: await firestoreHeaders(),
+    body: JSON.stringify({ fields: Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, tv(v)])) }),
+  });
+  if (!res.ok) throw new Error(`POST projectDocs failed: ${res.status} ${await res.text()}`);
+  return String((await res.json()).name || "").split("/").pop();
 }
 
 async function patchProjectDocFields(docId, fields) {
@@ -1355,7 +1377,10 @@ const CONSOLE_TEST_WORKFLOW = TRAIN_TEST_WORKFLOWS[0].workflow;
 // output alone (a prototype rebuild) starts nothing: its source already did.
 function trainTestsFor(paths) {
   const changed = (paths || []).filter((p) => typeof p === "string" && !isGeneratedOutput(p));
-  return TRAIN_TEST_WORKFLOWS.filter((t) => changed.some((p) => p.startsWith(t.prefix)));
+  // A board-docs.json (any project's) is checked by the console tests: its
+  // validator lives in test:train-lock, and a bad manifest must not reach main.
+  const manifestChanged = changed.some((p) => p.split("/").pop() === "board-docs.json");
+  return TRAIN_TEST_WORKFLOWS.filter((t) => (manifestChanged && t.workflow === CONSOLE_TEST_WORKFLOW) || changed.some((p) => p.startsWith(t.prefix)));
 }
 const touchesConsoleTests = (paths) => trainTestsFor(paths).some((t) => t.workflow === CONSOLE_TEST_WORKFLOW);
 
@@ -3141,6 +3166,9 @@ async function syncDocsAfterMerge(project, mergeCommit) {
       listProjectDocs: () => listProjectDocsFor(project.id),
       putProjectDocContent: (docId, fields) => patchProjectDocFields(docId, fields),
       getProjectDocContent: (docId) => getProjectDocById(docId),
+      getProjectDoc: (docId) => getProjectDocOrNull(docId),
+      createProjectDoc: (fields) => createProjectDocFields(fields),
+      listFiles: () => run("git", ["ls-tree", "-r", "--name-only", ref], { maxBuffer: 64 * 1024 * 1024 }).split("\n").filter((p) => p.endsWith("board-docs.json")),
       now: () => new Date(),
     });
     if (result.skipped) console.log(`[docs-sync] ${project.id}: skipped — ${result.skipped}`);
