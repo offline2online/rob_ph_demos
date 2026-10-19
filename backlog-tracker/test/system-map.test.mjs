@@ -26,7 +26,7 @@ assert.equal(m.byId.c1.status, "Concept");
 assert.ok(!m.byId.gone && !m.byId.c2, "archived projects and promoted concepts are not drawn twice");
 
 // DSP: two labelled lines, demand and supply
-const dsp = m.edges.filter((e) => e.from === "dsp" || e.to === "dsp");
+const dsp = m.edges.filter((e) => (e.from === "dsp" || e.to === "dsp") && e.kind);
 assert.deepEqual(dsp.map((e) => e.kind).sort(), ["demand", "supply"]);
 // the insights loop is closed
 const loop = m.edges.filter((e) => e.loop).map((e) => `${e.from}>${e.to}`);
@@ -48,3 +48,23 @@ assert.ok(hi.nodes.has("dsp") && hi.nodes.has("core:campaigns") && !hi.nodes.has
 assert.ok((systemMapHTML(m, { release: "r5" }).match(/ dim"/g) || []).length > 0);
 assert.ok(!/ dim"/.test(systemMapHTML(m)));
 console.log("system-map: ok");
+
+// Custom & Edge Models, Digital Identity, Offsite, Federation + externals, PII wall
+{
+  const mm = buildSystemMap(base);
+  const byName = (n) => mm.nodes.find((x) => x.name === n);
+  ["Custom & Edge Models", "Digital Identity & Resolution", "Offsite Retail Media & Social", "Federated Retail Media (PH-to-PH)"].forEach((n) => assert.equal(byName(n).status, "Concept", n));
+  ["Salesforce CRM", "Amazon Connect", "Meta", "TikTok", "Google Display", "YouTube", "Advertiser", "Retailer PH instance", "Advertiser PH instance"].forEach((n) => assert.equal(byName(n).status, "External", n));
+  const lab = (t) => mm.edges.filter((e) => e.label === t);
+  ["HMAC-hashed edge identifiers (e.g. plates)", "edge model deployment", "stitching trigger", "pseudonymous IDs + attributes", "PH-optimised models",
+    "retailer-owned data for model training/optimisation", "offsite creative", "advertiser offsite buys", "authenticated partnership (mTLS + scoped OAuth)"].forEach((t) => assert.ok(lab(t).length, t));
+  assert.equal(lab("pseudonymised attributes in / insights written back").filter((e) => e.both).length, 2);
+  assert.equal(lab("hashed audiences (SHA-256 email)").length, 5);
+  const h = systemMapHTML(mm);
+  assert.ok(h.includes("sysmap-pii") && h.includes("agents never cross it"));
+  // a board concept of the same name replaces the built-in node
+  const mc = buildSystemMap({ ...base, concepts: [...concepts, { id: "c9", name: "Digital Identity", status: "active" }] });
+  assert.ok(mc.byId.c9 && !mc.nodes.some((x) => x.id === "ext:identity"));
+  assert.ok(mc.edges.some((e) => e.from === "c9" && e.to === "core:profile"));
+}
+console.log("system-map (new concepts): ok");

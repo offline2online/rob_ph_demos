@@ -28,6 +28,77 @@ export const SYSTEM_MAP_CORE = [
   { key: "devices", name: "Devices & Touchpoints", sub: "Displays, mobile, kiosks", x: 1080, y: 480 },
   { key: "profile", name: "Live Visitor Profile", sub: "Personalised campaigns", x: 470, y: 400 },
   { key: "store", name: "Store Data", sub: "Localised campaigns", x: 470, y: 560 },
+  { key: "checkin", name: "Check-in", sub: "PH Core", x: 1080, y: 640 },
+  { key: "brand", name: "Brand Guidelines", sub: "PH Core — retailer, advertiser & partnership rules", x: 1080, y: 160 },
+];
+
+// Where the Chinese wall sits: everything inside this box is on the PII
+// side; everything else on the map is non-PII. Agents never cross it.
+export const PII_ZONE = { x: 20, y: 960, w: 980, h: 380 };
+
+// Concepts that are part of the picture whether or not anyone has filed a
+// Concept Incubator entry for them. If a board project/concept whose name
+// matches `match` exists, that one is drawn (at this position) instead.
+export const SYSTEM_MAP_CONCEPTS = [
+  { key: "custom", match: /custom.*edge models?/i, name: "Custom & Edge Models", full: "Custom & Edge Models",
+    sub: "PH-optimised open-weights models + edge model shop (vision, lift & learn, plates)", x: 1340, y: 600 },
+  { key: "identity", match: /digital identity/i, name: "Digital Identity & Resolution", full: "Digital Identity Management & Resolution",
+    sub: "Identity vault + resolution service + identity graph", x: 600, y: 1160 },
+  { key: "offsite", match: /offsite retail media/i, name: "Offsite Retail Media & Social", full: "Offsite Retail Media & Social Activation",
+    sub: "Hashed audiences to Meta, TikTok, Google, YouTube", x: 1000, y: 1160 },
+  { key: "federation", match: /federated retail media/i, name: "Federated Retail Media (PH-to-PH)", full: "Federated Retail Media (PH-to-PH)",
+    sub: "Peer-to-peer partnerships, no central hub", x: 1800, y: 120 },
+];
+
+// External systems and actors (C4 external style).
+export const SYSTEM_MAP_EXTERNALS = [
+  { key: "salesforce", name: "Salesforce CRM", sub: "PII side — consent checked here", x: 190, y: 1090 },
+  { key: "amazon", name: "Amazon Connect", sub: "Customer Profiles — PII side, consent checked here", x: 190, y: 1230 },
+  { key: "meta", name: "Meta", sub: "Offsite platform", x: 1490, y: 1000 },
+  { key: "tiktok", name: "TikTok", sub: "Offsite platform", x: 1490, y: 1090 },
+  { key: "gdisplay", name: "Google Display", sub: "Offsite platform", x: 1490, y: 1180 },
+  { key: "youtube", name: "YouTube", sub: "Offsite platform", x: 1490, y: 1270 },
+  { key: "retailerph", name: "Retailer PH instance", sub: "This retailer's Personalisation Hub", x: 1800, y: 320 },
+  { key: "otherph", name: "Partner retailer PH instance", sub: "Another retailer's Personalisation Hub", x: 2150, y: 320 },
+  { key: "advph", name: "Advertiser PH instance", sub: "Phase 3: advertiser runs their own PH", x: 1800, y: 520 },
+  { key: "advertiser", name: "Advertiser", sub: "Phase 2: logs into the retailer's PH", x: 2150, y: 520 },
+];
+
+// Lines for the nodes above. Ends are a core key, a SYSTEM_MAP_CONCEPTS /
+// SYSTEM_MAP_EXTERNALS key, or { name: regex } for a board node (skipped
+// when no such node exists). `both` draws arrows at each end; `bow` curves it.
+const AUTH = "authenticated partnership (mTLS + scoped OAuth)";
+const EXTRA_LINKS = [
+  { from: "custom", to: "identity", label: "HMAC-hashed edge identifiers (e.g. plates)", bow: 0.12 },
+  { from: "devices", to: "custom", label: "edge model deployment" },
+  { from: "checkin", to: "identity", label: "stitching trigger", bow: 0.1 },
+  { from: "salesforce", to: "identity", label: "pseudonymised attributes in / insights written back", both: true },
+  { from: "amazon", to: "identity", label: "pseudonymised attributes in / insights written back", both: true },
+  { from: "identity", to: "profile", label: "pseudonymous IDs + attributes", bow: -0.35 },
+  { from: "vector", to: "custom", label: "retailer-owned data for model training/optimisation" },
+  { from: "custom", to: "harness", label: "PH-optimised models", bow: 0.35 },
+  { from: "campaigns", to: "offsite", label: "offsite experiences (retailer and advertiser)", bow: 0.1 },
+  { from: { name: /experience templates/i }, to: "offsite", label: "offsite creative", bow: 0.12 },
+  { from: { name: /display types|dsp integration/i }, to: "offsite", label: "advertiser offsite buys", bow: -0.12 },
+  { from: "identity", to: "offsite", label: "hashed audiences (SHA-256 email)" },
+  { from: "offsite", to: "meta", label: "hashed audiences (SHA-256 email)" },
+  { from: "offsite", to: "tiktok", label: "hashed audiences (SHA-256 email)" },
+  { from: "offsite", to: "gdisplay", label: "hashed audiences (SHA-256 email)" },
+  { from: "offsite", to: "youtube", label: "hashed audiences (SHA-256 email)" },
+  { from: "meta", to: "vector", label: "offsite exposure for closed-loop measurement", bow: 0.1 },
+  { from: "tiktok", to: "vector", label: "", bow: 0.1 },
+  { from: "gdisplay", to: "vector", label: "", bow: 0.1 },
+  { from: "youtube", to: "vector", label: "", bow: 0.1 },
+  { from: "federation", to: "retailerph", label: "extends", dotted: true },
+  { from: "retailerph", to: "otherph", label: AUTH, both: true },
+  { from: "advph", to: "retailerph", label: AUTH, both: true, bow: -0.1 },
+  { from: "retailerph", to: "advph", label: "campaign & data export (advertiser-tagged)", bow: 0.2 },
+  { from: "retailerph", to: "advph", label: "advertiser results (closed loop, retailer can switch off per advertiser)", bow: -0.25 },
+  { from: "advertiser", to: "retailerph", label: "Phase 2: logs into the retailer's PH" },
+  { from: "advertiser", to: "advph", label: "Phase 3: runs own PH" },
+  { from: { name: /mcp release/i }, to: "advertiser", label: "Phase 2 advertiser access", bow: 0.2 },
+  { from: "brand", to: "harness", label: "brand rules for asset creation (jointly branded assets for the retailer's network)" },
+  { from: "brand", to: { name: /experience templates/i }, label: "brand rules for asset creation", bow: 0.2 },
 ];
 
 // Lines with a core end and nothing else. `loop` marks the closed
@@ -80,8 +151,8 @@ const TEAM_NODE = {
   x: 1490, y: 690, status: "External",
 };
 
-const W = 1620;
-const H = 900;
+const W = 2300;
+const H = 1380;
 const NODE_W = 220;
 const NODE_H = 56;
 
@@ -112,6 +183,17 @@ export function buildSystemMap({ projects = [], concepts = [], interfaces = [], 
   });
   concepts.filter((c) => c.status !== "promoted").forEach((c) => {
     add({ id: c.id, kind: "concept", name: c.name || c.id, status: "Concept", href: c.artifactUrl || "" });
+  });
+  // Fixed concepts and external systems. A board entry of the same name wins.
+  const keyed = {}; // extra key -> node
+  const placed = []; // [node, x, y] board nodes pinned to a fixed position
+  SYSTEM_MAP_CONCEPTS.forEach((c) => {
+    const hit = nodes.find((n) => (n.kind === "concept" || n.kind === "project") && c.match.test(n.name));
+    if (hit) { keyed[c.key] = hit; placed.push([hit, c.x, c.y]); return; }
+    keyed[c.key] = add({ id: `ext:${c.key}`, kind: "concept", name: c.name, full: c.full, sub: c.sub, status: "Concept", x: c.x, y: c.y, fixed: true });
+  });
+  SYSTEM_MAP_EXTERNALS.forEach((x) => {
+    keyed[x.key] = add({ id: `ext:${x.key}`, kind: "external", name: x.name, sub: x.sub, status: "External", x: x.x, y: x.y });
   });
   // Contracts name a promoted concept by its old id; point them at the project.
   const alias = {};
@@ -149,6 +231,17 @@ export function buildSystemMap({ projects = [], concepts = [], interfaces = [], 
   });
 
   layoutSatellites(nodes, anchors);
+  placed.forEach(([n, x, y]) => { n.x = x; n.y = y; });
+
+  const endOf = (ref) => {
+    if (typeof ref === "string") return keyed[ref] || byId[coreId(ref)] || null;
+    return nodes.find((n) => (n.kind === "project" || n.kind === "concept") && ref.name.test(n.name)) || null;
+  };
+  EXTRA_LINKS.forEach((l) => {
+    const a = endOf(l.from);
+    const b = endOf(l.to);
+    if (a && b && a !== b) edges.push({ from: a.id, to: b.id, label: l.label, dotted: l.dotted, both: l.both, bow: l.bow, source: "platform" });
+  });
   return { nodes, edges, byId };
 }
 
@@ -168,7 +261,7 @@ function layoutSatellites(nodes, anchors) {
   const used = {};
   const loose = [];
   nodes.forEach((n) => {
-    if (n.kind !== "project" && n.kind !== "concept") return;
+    if ((n.kind !== "project" && n.kind !== "concept") || n.fixed) return;
     const a = anchors[n.id];
     if (!a) { loose.push(n); return; }
     const slots = SLOTS[a];
@@ -225,7 +318,10 @@ export function systemMapHTML(model, { release = "" } = {}) {
       <marker id="sm-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="context-stroke"/></marker>
     </defs>
     <rect class="sysmap-boundary" x="320" y="70" width="880" height="770" rx="8"/>
-    <text class="sysmap-boundary-label" x="336" y="94">Personalisation Hub platform</text>`;
+    <text class="sysmap-boundary-label" x="336" y="94">Personalisation Hub platform</text>
+    <rect class="sysmap-pii" x="${PII_ZONE.x}" y="${PII_ZONE.y}" width="${PII_ZONE.w}" height="${PII_ZONE.h}" rx="8"/>
+    <text class="sysmap-pii-label" x="${PII_ZONE.x + 14}" y="${PII_ZONE.y + 24}">PII side — identity vault, Salesforce, Amazon Connect</text>
+    <text class="sysmap-pii-wall" x="${PII_ZONE.x + PII_ZONE.w / 2}" y="${PII_ZONE.y - 8}" text-anchor="middle">▲ Non-PII: Live Visitor Profile, Agent Harness, agents, Campaigns &amp; Experiences — PII boundary (Chinese wall): agents never cross it ▲</text>`;
 
   model.edges.forEach((e, i) => {
     const a = byId[e.from];
@@ -236,10 +332,10 @@ export function systemMapHTML(model, { release = "" } = {}) {
     const cls = ["sysmap-edge", e.kind || "", e.loop ? "loop" : "", e.dotted ? "dotted" : "", e.interfaceId ? "clickable" : "", edgeDim(i)].filter(Boolean).join(" ");
     const mx = (p.x + q.x) / 2;
     const my = (p.y + q.y) / 2;
-    const lines = wrap(e.label, 22);
+    const lines = e.label ? wrap(e.label, 22) : [];
     const attrs = e.interfaceId ? ` data-interface-id="${esc(e.interfaceId)}" data-anchor-id="${esc(e.anchorId)}" tabindex="0" role="button"` : "";
     // Contract lines bow sideways so they don't run straight through other boxes.
-    const bow = e.interfaceId ? 0.18 : e.kind ? 0.14 : 0;
+    const bow = e.bow != null ? e.bow : e.interfaceId ? 0.18 : e.kind ? 0.14 : 0;
     const cxp = mx - (q.y - p.y) * bow;
     const cyp = my + (q.x - p.x) * bow;
     const curved = bow !== 0;
@@ -247,21 +343,21 @@ export function systemMapHTML(model, { release = "" } = {}) {
     const ly = curved ? (p.y + 2 * cyp + q.y) / 4 : my;
     const d = `M${p.x} ${p.y} Q${cxp} ${cyp} ${q.x} ${q.y}`;
     const lbl = lines.map((t, k) => `<text class="sysmap-edge-label" x="${lx}" y="${ly + (k - (lines.length - 1) / 2) * 12 + 4}" text-anchor="middle">${esc(t)}</text>`).join("");
-    const w = Math.max(...lines.map((t) => t.length)) * 5.6 + 10;
+    const w = Math.max(0, ...lines.map((t) => t.length)) * 5.6 + 10;
     svg += `<g class="${cls}"${attrs}><title>${esc(e.label)}${e.interfaceId ? " — open interface contract" : ""}</title>
       <path class="sysmap-hit" d="${d}"/>
-      <path class="sysmap-line" d="${d}" marker-end="url(#sm-arrow)"/>
-      <rect class="sysmap-edge-bg" x="${lx - w / 2}" y="${ly - lines.length * 6 - 2}" width="${w}" height="${lines.length * 12 + 4}" rx="3"/>${lbl}</g>`;
+      <path class="sysmap-line" d="${d}" marker-end="url(#sm-arrow)"${e.both ? ' marker-start="url(#sm-arrow)"' : ""}/>
+      ${lines.length ? `<rect class="sysmap-edge-bg" x="${lx - w / 2}" y="${ly - lines.length * 6 - 2}" width="${w}" height="${lines.length * 12 + 4}" rx="3"/>${lbl}` : ""}</g>`;
   });
 
   model.nodes.forEach((n) => {
     const x = n.x - NODE_W / 2;
     const y = n.y - NODE_H / 2;
-    const clickable = n.kind === "project" || n.kind === "concept";
+    const clickable = (n.kind === "project" || n.kind === "concept") && !n.fixed;
     const cls = `sysmap-node ${n.kind} s-${String(n.status).toLowerCase()}${clickable ? " clickable" : ""}${nodeDim(n)}`;
     const attrs = clickable ? ` data-node-id="${esc(n.id)}" data-node-kind="${n.kind}" tabindex="0" role="link"` : "";
     const sub = wrap(n.sub || "", 30).slice(0, 2);
-    svg += `<g class="${cls}"${attrs}><title>${esc(n.name)} — ${esc(n.status)}${n.release ? ` — ${esc(n.release)}` : ""}</title>
+    svg += `<g class="${cls}"${attrs}><title>${esc(n.full || n.name)} — ${esc(n.status)}${n.release ? ` — ${esc(n.release)}` : ""}</title>
       <rect x="${x}" y="${y}" width="${NODE_W}" height="${NODE_H}" rx="8"/>
       <text class="sysmap-node-name" x="${n.x}" y="${y + 20}" text-anchor="middle">${esc(n.name.length > 34 ? n.name.slice(0, 33) + "…" : n.name)}</text>
       ${sub.map((t, k) => `<text class="sysmap-node-sub" x="${n.x}" y="${y + 34 + k * 11}" text-anchor="middle">${esc(t)}</text>`).join("")}
@@ -272,6 +368,6 @@ export function systemMapHTML(model, { release = "" } = {}) {
 }
 
 export function systemMapLegendHTML() {
-  return `<span class="sysmap-key s-live">Live</span><span class="sysmap-key s-project">Project</span><span class="sysmap-key s-concept">Concept</span><span class="sysmap-key s-external">External</span>
+  return `<span class="sysmap-key s-live">Live</span><span class="sysmap-key s-project">Project</span><span class="sysmap-key s-concept">Concept</span><span class="sysmap-key s-external">External</span><span class="sysmap-key s-pii">PII boundary</span>
     <span class="sysmap-key line-demand">Demand (advertiser)</span><span class="sysmap-key line-supply">Supply (SSP)</span><span class="sysmap-key line-loop">Insights loop</span>`;
 }
