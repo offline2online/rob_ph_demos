@@ -1761,6 +1761,73 @@ async function rpc(token, method, params, id = 1) {
     env.store.col("backlogItems").delete("rft2");
   });
 
+  await test("the board tools and get_backlog_item carry the test link's rebuild state, the card's test run and the approver", async () => {
+    env.store.col("projects").set("ftproj", { name: "Flow Test", deployBranch: "deploy/ftproj" });
+    env.store.col("backlogItems").set("ft1", {
+      projectId: "ftproj", title: "Rebuilding one", desc: "x", type: "feature", category: "HQ Admin", status: "ready-for-testing",
+      previewUrl: "https://rawcdn.githack.com/o/r/abc/index.html", deployCommit: "sha1", previewState: "rebuilding", previewSha: "9999999aaaa", previewUpdatedAt: "2026-10-19T01:00:00.000Z",
+      trainTest: { sha: "sha1", state: "running", workflows: [
+        { workflow: "dsp.yml", label: "DSP e2e", state: "running", runUrl: "javascript:alert(1)" },
+        { workflow: "rules.yml", label: "Rules", state: "passed", runUrl: "https://github.com/o/r/actions/runs/1" },
+      ] },
+    });
+    env.store.col("backlogItems").set("ft2", {
+      projectId: "ftproj", title: "Stale test record", desc: "x", type: "bug", category: "HQ Admin", status: "ready-to-publish",
+      previewUrl: null, deployCommit: "sha2", previewState: "ready", previewSha: "abc1234ffff",
+      trainTest: { sha: "OLD", state: "failed", workflows: [] }, approvedByEmail: "rob@offline2online.com", approvedAt: "2026-10-19T02:00:00.000Z",
+    });
+    const rft = (await rpc(tokens.access_token, "tools/call", { name: "get_ready_for_testing_board", arguments: { projectId: "ftproj" } })).body.result;
+    assert.match(rft.content[0].text, /1 ticket\(s\) waiting on review; 1 link rebuilding, 1 with tests running\./);
+    const [a] = rft.structuredContent.items;
+    assert.strictEqual(a.deployCommit, "sha1");
+    assert.strictEqual(a.previewState, "rebuilding");
+    assert.strictEqual(a.previewSha, "9999999aaaa");
+    assert.strictEqual(a.previewUpdatedAt, "2026-10-19T01:00:00.000Z");
+    assert.deepStrictEqual(a.trainTest, { state: "running", workflows: [
+      { name: "DSP e2e", conclusion: "running", runUrl: null },
+      { name: "Rules", conclusion: "passed", runUrl: "https://github.com/o/r/actions/runs/1" },
+    ] });
+    const dep = (await rpc(tokens.access_token, "tools/call", { name: "get_approved_for_deployment_board", arguments: { projectId: "ftproj" } })).body.result;
+    const [b] = dep.structuredContent.items;
+    assert.strictEqual(b.previewState, "ready");
+    assert.strictEqual(b.trainTest, null, "a run recorded for another commit is not this card's");
+    assert.strictEqual(b.approvedByEmail, "rob@offline2online.com");
+    assert.strictEqual(b.approvedAt, "2026-10-19T02:00:00.000Z");
+    assert.doesNotMatch(dep.content[0].text, /rebuilding|tests running/);
+    const detail = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "get_backlog_item", arguments: { itemId: "ft1" } })).body.result.content[0].text);
+    const train = (detail.item || detail).train;
+    assert.strictEqual(train.previewState, "rebuilding");
+    assert.strictEqual(train.previewSha, "9999999aaaa");
+    assert.strictEqual(train.previewUpdatedAt, "2026-10-19T01:00:00.000Z");
+    env.store.col("backlogItems").delete("ft1");
+    env.store.col("backlogItems").delete("ft2");
+  });
+
+  await test("list_projects returns trainTestsRed, trainHold, trainNote, e2eStatus without its breakdown, and handOff", async () => {
+    env.store.col("projects").set("ftproj", {
+      name: "Flow Test", deployBranch: "deploy/ftproj", trainHold: "tests-red", trainNote: "Deploy held, nothing merged: Rules failed.",
+      trainTestsRed: { "rules.yml": { sha: "sha1", url: "javascript:alert(1)", at: "2026-10-19T03:00:00.000Z" } },
+      e2eStatus: { runAt: "2026-10-19T04:00:00.000Z", mode: "quick", commit: "abc1234", pass: 5, fail: 1, gap: 2, resultsUrl: "javascript:alert(2)", breakdown: [{ id: "x", pass: 1 }] },
+      readyForTestingPendingItemIds: ["ft1"], readyForTestingPendingSince: "2026-10-19T03:30:00.000Z", readyForTestingWaitingOn: "link rebuild",
+    });
+    env.store.col("projects").set("ftquiet", { name: "Flow Quiet" });
+    const out = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "list_projects", arguments: {} })).body.result.content[0].text);
+    const p = out.projects.find((x) => x.id === "ftproj");
+    assert.strictEqual(p.trainHold, "tests-red");
+    assert.match(p.trainNote, /^Deploy held/);
+    assert.deepStrictEqual(p.trainTestsRed, { "rules.yml": { sha: "sha1", url: null, at: "2026-10-19T03:00:00.000Z" } });
+    assert.deepStrictEqual(p.e2eStatus, { runAt: "2026-10-19T04:00:00.000Z", mode: "quick", commit: "abc1234", pass: 5, fail: 1, gap: 2, resultsUrl: null });
+    assert.deepStrictEqual(p.handOff, { heldItemIds: ["ft1"], since: "2026-10-19T03:30:00.000Z", waitingOn: "link rebuild" });
+    const q = out.projects.find((x) => x.id === "ftquiet");
+    assert.strictEqual(q.trainTestsRed, null);
+    assert.strictEqual(q.trainHold, null);
+    assert.strictEqual(q.trainNote, null);
+    assert.strictEqual(q.e2eStatus, null);
+    assert.strictEqual(q.handOff, null);
+    env.store.col("projects").delete("ftproj");
+    env.store.col("projects").delete("ftquiet");
+  });
+
   await test("get_ready_for_testing_board refuses an unknown project", async () => {
     const res = await rpc(tokens.access_token, "tools/call", { name: "get_ready_for_testing_board", arguments: { projectId: "nope" } });
     assert.strictEqual(res.body.result.isError, true);

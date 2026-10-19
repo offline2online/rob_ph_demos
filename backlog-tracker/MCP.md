@@ -118,6 +118,28 @@ tool list: every name in them is a registered tool, every write and admin tool
 is named, and the instructions stay within 3,400 characters (what Claude Code
 delivers whole).
 
+**Test and link state (server 1.5.0).** All read-only; every URL goes through
+`safeHref` (https only, else `null`).
+
+- `get_ready_for_testing_board` and `get_approved_for_deployment_board` return,
+  per card, `deployCommit`, `previewState` (`"rebuilding"`, `"ready"`,
+  `"stale"` or `null`), `previewSha`, `previewUpdatedAt`, `trainTest`
+  (`{state, workflows:[{name, conclusion, runUrl}]}`, `null` unless it describes
+  the card's current `deployCommit`), `approvedByEmail` and `approvedAt`. Their
+  first text line adds counts, e.g. "3 ticket(s) waiting on review; 1 link
+  rebuilding, 1 with tests running." The MCP App card shows a link pill ("Test
+  link rebuilding — don't test yet", "Test link ready · build abc1234", "Test
+  link may be out of date") and "Test this (previous build)" while rebuilding.
+- `get_backlog_item`'s `train` block adds `previewState`, `previewSha`,
+  `previewUpdatedAt`.
+- `list_projects` adds per project `trainTestsRed` (workflow → `{sha, url, at}`
+  or `null`; hides Deploy to Main), `trainHold` (`"tests-running"`,
+  `"tests-red"` or `null`) and `trainNote`, `e2eStatus`
+  (`{runAt, mode, commit, pass, fail, gap, resultsUrl}` or `null`, no
+  breakdown) and `handOff` (`{heldItemIds, since, waitingOn}` from the
+  `readyForTestingPending*` / `readyForTestingWaitingOn` project fields, or
+  `null` when nothing is held).
+
 **Start document and manifest fields.** `list_projects` returns
 `startHereDocId` per project (`"readme"`, `"requirements"`, a document id, or
 `null` when unset) and `get_project_docs`' `docsSync` returns `manifestPath`

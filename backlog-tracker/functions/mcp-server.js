@@ -1535,6 +1535,60 @@ function itemSummary(id, d, projects) {
   };
 }
 
+// The test link's rebuild state (previewState, written by the automation
+// only) and the card's own test run (trainTest). The run is returned only
+// while it describes the commit now on the train, like the board's chip.
+function previewStateFields(d) {
+  return {
+    previewState: d.previewState || null,
+    previewSha: d.previewSha || null,
+    previewUpdatedAt: tsToISO(d.previewUpdatedAt) || (typeof d.previewUpdatedAt === "string" ? d.previewUpdatedAt : null),
+  };
+}
+function trainTestOut(d) {
+  const t = d.trainTest;
+  if (!t || typeof t !== "object" || !d.deployCommit || t.sha !== d.deployCommit) return null;
+  return {
+    state: t.state || null,
+    workflows: (Array.isArray(t.workflows) ? t.workflows : []).map((w) => ({
+      name: (w && (w.label || w.workflow)) || null,
+      conclusion: (w && w.state) || null,
+      runUrl: safeHref(w && w.runUrl),
+    })),
+  };
+}
+function approverOut(d) {
+  return {
+    approvedByEmail: d.approvedByEmail || null,
+    approvedAt: tsToISO(d.approvedAt) || (typeof d.approvedAt === "string" ? d.approvedAt : null),
+  };
+}
+
+function isoOf(v) { return tsToISO(v) || (typeof v === "string" ? v : null); }
+function trainTestsRedOut(red) {
+  if (!red || typeof red !== "object" || Array.isArray(red)) return null;
+  const out = {};
+  Object.keys(red).forEach((k) => {
+    const r = red[k] || {};
+    out[k] = { sha: r.sha || null, url: safeHref(r.url), at: isoOf(r.at) };
+  });
+  return Object.keys(out).length ? out : null;
+}
+function e2eStatusOut(st) {
+  if (!st || typeof st !== "object" || !st.runAt) return null;
+  return {
+    runAt: isoOf(st.runAt), mode: st.mode || null, commit: st.commit || null,
+    pass: st.pass || 0, fail: st.fail || 0, gap: st.gap || 0, resultsUrl: safeHref(st.resultsUrl),
+  };
+}
+// The Ready for Testing hand-off is held while a landed ticket's tests or
+// test-link rebuild are still going (readyForTestingPending* on the project).
+function handOffOut(p) {
+  const ids = Array.isArray(p.readyForTestingPendingItemIds) ? p.readyForTestingPendingItemIds : [];
+  if (!ids.length) return null;
+  return { heldItemIds: ids, since: isoOf(p.readyForTestingPendingSince), waitingOn: p.readyForTestingWaitingOn || null };
+}
+
 function itemDetail(id, d, projects) {
   const base = itemSummary(id, d, projects);
   return Object.assign(base, {
@@ -1568,6 +1622,7 @@ function itemDetail(id, d, projects) {
       revertBlockedBy: d.revertBlockedBy || null,
       mergeCommit: d.mergeCommit || null,
       prNumber: d.prNumber || null,
+      ...previewStateFields(d),
     },
     attachments: (Array.isArray(d.attachments) ? d.attachments : []).map((a) => ({
       name: a && a.name ? a.name : null, url: a && a.url ? a.url : null, contentType: a && a.contentType ? a.contentType : null,
@@ -1927,6 +1982,13 @@ const TOOLS = [
           deployBranch: p.deployBranch || null,
           trainStatus: p.trainStatus || null,
           trainLocked: p.trainLocked === true,
+          // trainTestsRed hides Deploy to Main on the board; trainHold/trainNote say
+          // why a deploy is waiting on tests; e2eStatus is the Run E2E chip (no breakdown).
+          trainTestsRed: trainTestsRedOut(p.trainTestsRed),
+          trainHold: p.trainHold === "tests-running" || p.trainHold === "tests-red" ? p.trainHold : null,
+          trainNote: p.trainNote || null,
+          e2eStatus: e2eStatusOut(p.e2eStatus),
+          handOff: handOffOut(p),
           artifactUrl: p.artifactUrl || null,
           // The document to read first: "readme", "requirements" or a projectDocs id. Declared in the repo's board-docs.json and written by the post-merge sync, never over MCP.
           startHereDocId: p.startHereDocId || null,
@@ -2304,15 +2366,22 @@ const TOOLS = [
           desc: d.desc || "",
           previewUrl: safeHref(d.previewUrl),
           testVersion: d.testVersion || null,
+          deployCommit: d.deployCommit || null,
+          ...previewStateFields(d),
+          trainTest: trainTestOut(d),
+          ...approverOut(d),
           board: `${PUBLIC_ORIGIN}/#item-${doc.id}`,
         };
       });
 
       const projectLabel = a.projectId ? ((projects.get(String(a.projectId)) || {}).name || a.projectId) : "every project";
       const headline = `Ready for Testing — ${projectLabel}`;
+      const rebuilding = cards.filter((c) => c.previewState === "rebuilding").length;
+      const running = cards.filter((c) => c.trainTest && (c.trainTest.state === "running" || c.trainTest.state === "starting")).length;
+      const counts = [rebuilding ? `${rebuilding} link${rebuilding === 1 ? "" : "s"} rebuilding` : "", running ? `${running} with tests running` : ""].filter(Boolean).join(", ");
       const payload = { kind: "ready-for-testing", projectId: a.projectId || null, projectLabel, count: cards.length, items: cards };
       return boardToolResult(
-        `${headline}: ${cards.length} ticket(s) waiting on review. Read-only — this view can't change status.`,
+        `${headline}: ${cards.length} ticket(s) waiting on review${counts ? `; ${counts}` : ""}. Read-only — this view can't change status.`,
         payload,
       );
     },
@@ -2363,6 +2432,9 @@ const TOOLS = [
           deployCommit: d.deployCommit || null,
           prNumber: d.prNumber || null,
           deployBranch: (project && project.deployBranch) || null,
+          ...previewStateFields(d),
+          trainTest: trainTestOut(d),
+          ...approverOut(d),
           board: `${PUBLIC_ORIGIN}/#item-${doc.id}`,
         };
       });
@@ -2372,12 +2444,15 @@ const TOOLS = [
         ? "This project's whole train is Approved for Deployment — ask your agent to call approve_deploy_to_main to fire Deploy to Main."
         : guard.reason) : null;
       const headline = `Approved for Deployment — ${projectLabel}`;
+      const rebuilding = cards.filter((c) => c.previewState === "rebuilding").length;
+      const running = cards.filter((c) => c.trainTest && (c.trainTest.state === "running" || c.trainTest.state === "starting")).length;
+      const counts = [rebuilding ? `${rebuilding} link${rebuilding === 1 ? "" : "s"} rebuilding` : "", running ? `${running} with tests running` : ""].filter(Boolean).join(", ");
       const payload = {
         kind: "approved-for-deployment", projectId: a.projectId || null, projectLabel, count: cards.length,
         readyToDeploy: guard ? guard.ok : null, readyLine, items: cards,
       };
       return boardToolResult(
-        `${headline}: ${cards.length} ticket(s) waiting to ship.${readyLine ? ` ${readyLine}` : ""}`,
+        `${headline}: ${cards.length} ticket(s) waiting to ship${counts ? `; ${counts}` : ""}.${readyLine ? ` ${readyLine}` : ""}`,
         payload,
       );
     },
@@ -4267,7 +4342,7 @@ async function dispatchRpc(msg, session, ctx) {
         serverInfo: {
           name: "ph-agent-console",
           title: "PH Agent Console",
-          version: "1.4.0",
+          version: "1.5.0",
           websiteUrl: PUBLIC_ORIGIN,
           description: "The Personalisation Hub prototype backlog board and help centre.",
           icons: SERVER_ICONS,

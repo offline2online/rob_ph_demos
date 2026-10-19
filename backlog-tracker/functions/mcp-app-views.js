@@ -231,6 +231,8 @@ function boardViewHTML(kind) {
   .pill.accent { background: var(--ph-primary-tint); color: var(--ph-primary); }
   .pill.primary { background: var(--ph-primary); color: #ffffff; }
   .pill.neutral { border-color: var(--border); color: var(--text-2); }
+  .pill.warn { background: var(--wait-bg); border-color: var(--wait-border); color: var(--wait-text); }
+  .pill.ok { background: var(--ok-bg); border-color: var(--ok-border); color: var(--ok-text); }
   .actions { display: flex; flex-wrap: wrap; gap: 0 14px; align-items: center; }
   .actions a {
     display: inline-flex; align-items: center; gap: 4px; min-height: 32px;
@@ -418,10 +420,18 @@ function boardViewHTML(kind) {
       if (item.onTrain) pills.appendChild(pill("On train: " + (item.deployBranch || "?"), "primary"));
       else if (item.prNumber) pills.appendChild(pill("PR #" + item.prNumber, "neutral"));
     }
+    // The test link's rebuild state (previewState): "rebuilding" means the
+    // generated build does not include this ticket yet.
+    var rebuilding = item.previewState === "rebuilding";
+    if (rebuilding) pills.appendChild(pill("Test link rebuilding \u2014 don't test yet", "warn"));
+    else if (item.previewState === "ready") {
+      var built = item.previewSha ? " \u00b7 build " + String(item.previewSha).slice(0, 7) : "";
+      pills.appendChild(pill("Test link ready" + built, "ok"));
+    } else if (item.previewState === "stale") pills.appendChild(pill("Test link may be out of date", "warn"));
     if (pills.childNodes.length) c.appendChild(pills);
     var actions = el("div", "actions");
     var testHref = safeHref(item.previewUrl);
-    if (testHref) actions.appendChild(link(testHref, "Test this", "primary", CONFIG.icons.open));
+    if (testHref) actions.appendChild(link(testHref, rebuilding ? "Test this (previous build)" : "Test this", "primary", CONFIG.icons.open));
     var boardHref = safeHref(item.board);
     if (boardHref) actions.appendChild(link(boardHref, "View ticket", "quiet", CONFIG.icons.arrow));
     if (actions.childNodes.length) c.appendChild(actions);
