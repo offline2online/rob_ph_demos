@@ -593,6 +593,17 @@ function batchStillBuilding(project, itemsById, now = Date.now()) {
 const HAND_OFF_MAX_WAIT_MS = 40 * 60 * 1000;
 const HAND_OFF_NOT_RUN_SETTLED_MS = 10 * 60 * 1000;
 
+// Pure: a failed workflow on the card's commit that has a re-run key (per-run
+// `<workflow>@<sha>:rerun:<runId>` or the older `<workflow>@<sha>:rerun`) and
+// whose recorded run is still attempt 1.
+function rerunPending(card) {
+  const keys = (card && card.trainTestReruns) || [];
+  const tt = card && card.trainTest;
+  if (!keys.length || !tt || !Array.isArray(tt.workflows)) return false;
+  return tt.workflows.some((w) => w.state === "failed" && Number(w.attempt || 1) < 2
+    && keys.some((k) => k === `${w.workflow}@${card.deployCommit}:rerun` || k.startsWith(`${w.workflow}@${card.deployCommit}:rerun:`)));
+}
+
 // Pure: what a landed card is still waiting on — [], ["tests"], ["link"] or both.
 // Tests wait while trainTest is missing, describes an older commit than the
 // card's deployCommit, or is running/starting. A card with no deployCommit has
@@ -610,6 +621,10 @@ function handOffWaitingOn(card, nowMs = Date.now()) {
         testsWaiting = !Number.isFinite(sinceMs) || nowMs - sinceMs < HAND_OFF_NOT_RUN_SETTLED_MS;
       }
     }
+    // A failure the automation is still re-running once (trainTestReruns holds
+    // its key for this commit) is not a result yet. It is settled once the
+    // run's attempt 2 has reported, or the re-run passed (state no longer failed).
+    if (!testsWaiting && tt.state === "failed" && rerunPending(card)) testsWaiting = true;
     if (testsWaiting) waiting.push("tests");
   }
   if (card && card.previewState === "rebuilding") waiting.push("link");
@@ -652,7 +667,7 @@ async function requestReadyForTestingNotify(nowMs = Date.now()) {
   readyForTestingLanded.clear();
 }
 
-const HAND_OFF_CARD_FIELDS = ["status", "deployCommit", "trainTest", "previewState", "blocked", "buildSession"];
+const HAND_OFF_CARD_FIELDS = ["status", "deployCommit", "trainTest", "trainTestReruns", "previewState", "blocked", "buildSession"];
 const HAND_OFF_PROJECT_FIELDS = ["readyForTestingPendingItemIds", "readyForTestingPendingSince", "readyForTestingWaitingOn", "notifyRoutine", "notifyRequestedByEmail"];
 
 // Runs every run, even when nothing landed: stamps (or keeps holding) each
@@ -1653,15 +1668,20 @@ function trainTestRunState(runs) {
   const r = newestRealRun(runs);
   if (!r) return null;
   const status = String(r.status || "").toLowerCase();
-  if (status === "queued" || status === "in_progress") return { state: "running", runUrl: r.url || "" };
+  const attempt = Number(r.attempt || r.run_attempt || 1);
+  if (status === "queued" || status === "in_progress") return { state: "running", runUrl: r.url || "", attempt };
   const concl = String(r.conclusion || "").toLowerCase();
-  if (concl === "success") return { state: "passed", runUrl: r.url || "" };
-  if (["failure", "timed_out", "startup_failure"].includes(concl)) return { state: "failed", runUrl: r.url || "" };
-  return { state: "not-run", runUrl: r.url || "" };
+  if (concl === "success") return { state: "passed", runUrl: r.url || "", attempt };
+  if (["failure", "timed_out", "startup_failure"].includes(concl)) return { state: "failed", runUrl: r.url || "", attempt };
+  return { state: "not-run", runUrl: r.url || "", attempt };
 }
 
-function trainTestEntry(t, state, runUrl, sinceIso) {
-  return { workflow: t.workflow, label: t.label, state, runUrl: runUrl || "", since: sinceIso };
+// `attempt` is the run attempt the state describes: a "failed" at attempt 1
+// may still be re-run by the automation (handOffWaitingOn).
+function trainTestEntry(t, state, runUrl, sinceIso, attempt) {
+  const e = { workflow: t.workflow, label: t.label, state, runUrl: runUrl || "", since: sinceIso };
+  if (attempt) e.attempt = attempt;
+  return e;
 }
 
 // The record written when a ticket lands: one entry per workflow its changed
@@ -1698,12 +1718,13 @@ function nextCardTrainTest(card, runsByWorkflow, nowMs, backfillPaths) {
     const state = found ? found.state : (Number.isFinite(sinceMs) && nowMs - sinceMs >= TRAIN_TEST_START_GRACE_MS ? "not-run" : "starting");
     const prev = old.get(t.workflow);
     const runUrl = found ? found.runUrl : "";
-    const same = prev && prev.state === state && (prev.runUrl || "") === runUrl;
-    return trainTestEntry(t, state, runUrl, same && prev.since ? prev.since : nowIso);
+    const attempt = found ? found.attempt : 0;
+    const same = prev && prev.state === state && (prev.runUrl || "") === runUrl && (prev.attempt || 0) === attempt;
+    return trainTestEntry(t, state, runUrl, same && prev.since ? prev.since : nowIso, attempt);
   });
   const state = worstTrainTestState(workflows.map((w) => w.state));
   if (rec && rec.state === state && rec.workflows.length === workflows.length
-    && workflows.every((w) => { const p = old.get(w.workflow); return p && p.state === w.state && (p.runUrl || "") === w.runUrl; })) return undefined;
+    && workflows.every((w) => { const p = old.get(w.workflow); return p && p.state === w.state && (p.runUrl || "") === w.runUrl && (p.attempt || 0) === (w.attempt || 0); })) return undefined;
   return { sha: card.deployCommit, state, workflows, since: recSince, updatedAt: nowIso };
 }
 
@@ -5492,7 +5513,7 @@ module.exports = {
   // test/preview-url-pin.test.js
   guessPreviewUrl, isAutoGeneratedPreviewUrl, repointPreviewUrlRef,
   // test/ready-for-testing-trigger.test.js
-  readyForTestingNotifyFields, batchStillBuilding, handOffWaitingOn, nextHandOff, tv,
+  readyForTestingNotifyFields, batchStillBuilding, handOffWaitingOn, rerunPending, nextHandOff, tv,
   // test/train-sync.test.js — the train is brought up to date with main
   // before a ticket lands, and the patch's edits are carried across
   syncTrainWithMain, rebasePatchFilesOnto,

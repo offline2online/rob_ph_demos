@@ -292,6 +292,25 @@ const ITEMS = {
   for (const s of ["ready", "stale", undefined]) assert.deepStrictEqual(handOffWaitingOn(card("passed", { previewState: s }), now), [], String(s));
   console.log("ok - handOffWaitingOn names what a landed card is waiting on");
 
+  // A failure the automation is still re-running is not a result yet.
+  {
+    const wf = (state, attempt) => ({ sha: "abc", state, since: ago(2), workflows: [{ workflow: "firestore-rules-test.yml", label: "Console tests", state, attempt }] });
+    const failedCard = (attempt, keys) => ({ status: "ready-for-testing", deployCommit: "abc", trainTest: wf("failed", attempt), trainTestReruns: keys });
+    const perRun = ["firestore-rules-test.yml@abc:rerun:123"];
+    assert.deepStrictEqual(handOffWaitingOn(failedCard(1, perRun), now), ["tests"], "(a) pending re-run");
+    assert.deepStrictEqual(handOffWaitingOn(failedCard(1, ["firestore-rules-test.yml@abc:rerun"]), now), ["tests"], "(a) old key form");
+    assert.deepStrictEqual(handOffWaitingOn(failedCard(1, undefined), now), [], "no re-run key: failed is settled");
+    assert.deepStrictEqual(handOffWaitingOn(failedCard(1, ["firestore-rules-test.yml@old:rerun:9"]), now), [], "key for another commit");
+    const passed = { ...failedCard(2, [...perRun, "firestore-rules-test.yml@abc:flaky:123"]), trainTest: wf("passed", 2) };
+    assert.deepStrictEqual(handOffWaitingOn(passed, now), [], "(b) passed on re-run is settled");
+    assert.deepStrictEqual(handOffWaitingOn(failedCard(2, perRun), now), [], "(c) failed again on attempt 2 is settled");
+    const r2 = nextHandOff({ readyForTestingPendingItemIds: ["a"], readyForTestingPendingSince: ago(5) }, { a: failedCard(1, perRun) }, now);
+    assert.strictEqual(r2.action, "hold");
+    const r3 = nextHandOff({ readyForTestingPendingItemIds: ["a"], readyForTestingPendingSince: ago(45) }, { a: failedCard(1, perRun) }, now);
+    assert.strictEqual(r3.action, "stamp", "the 40 minute cap still applies");
+    console.log("ok - handOffWaitingOn waits for a pending automatic re-run");
+  }
+
   const proj = (ageMin, ids = ["a", "b"], extra = {}) => ({ readyForTestingPendingItemIds: ids, readyForTestingPendingSince: ago(ageMin), ...extra });
   let r = nextHandOff(proj(5), { a: card("running"), b: card("passed") }, now);
   assert.strictEqual(r.action, "hold");
