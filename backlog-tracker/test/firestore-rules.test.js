@@ -75,6 +75,8 @@ async function reset() {
     await setDoc(doc(db, "faqCategories/c1"), { name: "Getting started", icon: "help", order: 1 });
     await setDoc(doc(db, "backlogItems/iBacklog"), Object.assign({}, ITEM, { status: "backlog" }));
     await setDoc(doc(db, "backlogItems/iLive"), Object.assign({}, ITEM, { status: "published-live", mergeCommit: "abc1234", deployCommit: "abc1234" }));
+    // Approval-record cases (19 Oct 2026): each approval is a one-time move.
+    for (const n of ["iApp1", "iApp2", "iApp3", "iApp4", "iApp5"]) await setDoc(doc(db, "backlogItems/" + n), ITEM);
     await setDoc(doc(db, "routineBindings/sam@personalisationhub.com"), { fireUrl: "https://api.anthropic.com/fire", token: "sk-ant-secret" });
     await setDoc(doc(db, "settings/faqSite"), { analyticsTag: null });
     // A project doc as it really looks after a few weeks: every optional
@@ -385,6 +387,28 @@ async function main() {
     setDoc(doc(as(MEMBER), "backlogItems/i1/patchParts/2"), { patchFiles: [{ path: "x.js", content: "evil" }] }));
   await check("A human editor CANNOT change patchPartCount", "deny", () =>
     setDoc(doc(as(MEMBER), "backlogItems/i1"), { patchPartCount: 2 }, { merge: true }));
+  // trainTest (19 Oct 2026): the automation records a card's own test result.
+  await check("A human editor CANNOT write trainTest", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { trainTest: { sha: "a", state: "passed", workflows: [] } }, { merge: true }));
+  await check("The Routine (automation user) can write trainTest", "allow", () =>
+    setDoc(doc(as(BOT), "backlogItems/i1"), { trainTest: { sha: "a", state: "running", workflows: [] } }, { merge: true }));
+  // Who approved (19 Oct 2026).
+  await check("An editor's own-email approval with request.time is allowed", "allow", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/iApp1"), { status: "ready-to-publish", approvedByEmail: "sam@personalisationhub.com", approvedAt: serverTimestamp() }, { merge: true }));
+  await check("Another person's email on an approval is denied", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/iApp2"), { status: "ready-to-publish", approvedByEmail: "ada@personalisationhub.com", approvedAt: serverTimestamp() }, { merge: true }));
+  await check("An approval stamped with a made-up time is denied", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/iApp2"), { status: "ready-to-publish", approvedByEmail: "sam@personalisationhub.com", approvedAt: new Date("2020-01-01") }, { merge: true }));
+  await check("approvedByEmail without the status move is denied", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/iApp3"), { approvedByEmail: "sam@personalisationhub.com", approvedAt: serverTimestamp() }, { merge: true }));
+  await check("approvedVia from a browser is denied", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/iApp3"), { status: "ready-to-publish", approvedVia: "dsp-board" }, { merge: true }));
+  await check("An approval without the fields (an old open tab) is allowed", "allow", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/iApp4"), { status: "ready-to-publish" }, { merge: true }));
+  await check("A create carrying approvedByEmail is denied", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/iApp9"), Object.assign({}, ITEM, { status: "backlog", approvedByEmail: "sam@personalisationhub.com" })));
+  await check("The Routine can set approvedVia", "allow", () =>
+    setDoc(doc(as(BOT), "backlogItems/iApp5"), { approvedVia: "dsp-board" }, { merge: true }));
   await check("The Routine can still stamp deployCommit", "allow", () =>
     setDoc(doc(as(BOT), "backlogItems/i1"), { deployCommit: "abc" }, { merge: true }));
   await check("A human editor can set an https test link", "allow", () =>

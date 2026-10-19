@@ -25,6 +25,7 @@ import { firebaseConfig } from "./firebase-config.js";
 import { APP_VERSION } from "./version.js";
 import { clearFirestoreLocalCache } from "./local-cache.js";
 import { INTAKE_SECTIONS, missingSections, applyAnswers } from "./ticket-intake.js";
+import { trainTestChipHTML, approvalWarningLines, APPROVAL_WARNING_TITLE, APPROVAL_WARNING_FOOTER, approvalFields, approvedByLine } from "./card-test-status.js";
 import { clusterBacklogItems, estimateEffort, estimatePriority, splitRequirementsText } from "./build-batches.js";
 
 // auth-gate.js has already initialised the app (and signed the user in)
@@ -803,6 +804,8 @@ function cardHTML(item) {
     "kicked-back": ["Review kicked back", "undo"],
     "blocked": ["Review blocked: red run", "block"],
   };
+  const approvedBy = item.status === "ready-to-publish" ? approvedByLine(item) : null;
+  const approvedByHTML = approvedBy ? `<span class="approved-by" title="${escapeHTML(approvedBy.title)}"><span class="material-symbols-outlined">how_to_reg</span>${escapeHTML(approvedBy.text)}</span>` : "";
   const reviewFlagDef = item.reviewStatus && REVIEW_FLAGS[item.reviewStatus];
   const reviewFlag = reviewFlagDef && (!item.deployCommit || item.reviewedCommit === item.deployCommit)
     ? `<span class="review-flag review-flag-${escapeHTML(item.reviewStatus)}" title="${escapeHTML(item.reviewReason || reviewFlagDef[0])}"><span class="material-symbols-outlined">${reviewFlagDef[1]}</span>${reviewFlagDef[0]}</span>`
@@ -940,7 +943,7 @@ function cardHTML(item) {
       </div>
       <h3 class="card-title">${escapeHTML(item.title)}</h3>
       ${descHTML}
-      ${noDeployBadge}${carriedBadge}${priorityBadge}${effortBadge}${lastFailureBadge}${blockedFlag}${reviewFlag}${testVersionBadge}${prBadge}${deployBadge}
+      ${noDeployBadge}${carriedBadge}${priorityBadge}${effortBadge}${lastFailureBadge}${blockedFlag}${reviewFlag}${trainTestChipHTML(item)}${approvedByHTML}${testVersionBadge}${prBadge}${deployBadge}
       <div class="card-footer">
         <div class="card-footer-left">
           <span class="card-cat">${escapeHTML(item.category || "Uncategorised")}</span>
@@ -2483,6 +2486,9 @@ const BACKLOG_ITEM_RENDER_FIELDS = [
   // It's a short branch name, unlike the patch* fields below it.
   "patchBranch",
   "notes", "attachments",
+  // Each train card's own test result and who approved it (19 Oct 2026) —
+  // drawn on the card, so on the REST-primed first paint too.
+  "trainTest", "approvedByEmail", "approvedAt", "approvedVia",
   // Parallel builds (4 Oct 2026): the blocked flag, what a blocked ticket
   // waits for, and each ticket's own build-session report — the Ready for
   // Dev spinner reads the last one (perItemRoutineFinished).
@@ -3284,6 +3290,17 @@ async function requestNotify(pid) {
 // notifyOnItemsDeployedToFeature is now dead code (harmless, just never
 // triggered) until a future cleanup removes it from functions/index.js too.
 async function deployToFeature(pid) {
+  // Approving a ticket whose tests haven't passed takes it out of the
+  // automatic send-back (pickRedCulprit only ejects an approved culprit once
+  // a deploy has parked red), so say so first — before the write lock is
+  // taken, so the dialog never holds it. Cancel writes nothing.
+  const selected = getDeploySelectedSet(pid);
+  const warnings = approvalWarningLines(items.filter((i) =>
+    (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-for-testing" && !isNoDeployCard(i) && selected.has(i.id)));
+  if (warnings.length) {
+    const go = await showConfirmDialog(`${warnings.join("\n")}\n\n${APPROVAL_WARNING_FOOTER}`, { title: APPROVAL_WARNING_TITLE, okLabel: "Approve anyway", cancelLabel: "Cancel" });
+    if (!go) return;
+  }
   return withWriteLock(`project:${pid}`, () => deployToFeatureNow(pid));
 }
 async function deployToFeatureNow(pid) {
@@ -3301,9 +3318,11 @@ async function deployToFeatureNow(pid) {
   if (idsToMove.length === 0) return;
 
   const batch = writeBatch(db);
+  const approver = approvalFields(auth.currentUser && auth.currentUser.email, serverTimestamp());
   idsToMove.forEach((id) => {
     batch.update(doc(db, "backlogItems", id), {
       status: "ready-to-publish",
+      ...approver,
       updatedAt: serverTimestamp(),
     });
   });

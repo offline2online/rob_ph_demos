@@ -304,13 +304,33 @@ service cloud.firestore {
         "patchBaseSha", "autoRebuilds",
         // Large patches (16 Oct 2026): how many patchParts/{n} documents
         // carry the rest of patchFiles — see the match block below.
-        "patchPartCount"];
+        "patchPartCount",
+        // Each train card's own test result (19 Oct 2026): only
+        // run-backlog-automation.js records it, from the card's own runs.
+        "trainTest"];
     }
     function itemPipelineFieldsUnchanged() {
       return !incoming().diff(resource.data).affectedKeys().hasAny(itemPipelineFields());
     }
     function itemPipelineFieldsAbsent() {
       return !incoming().keys().hasAny(itemPipelineFields());
+    }
+    // Who approved a ticket (19 Oct 2026). A browser may set approvedByEmail
+    // and approvedAt only in the write that moves a card from Ready for
+    // Testing to Approved for Deployment, as itself and at request.time;
+    // approvedVia (how a non-browser route approved) is never a browser's.
+    // An approval without them — an old open tab — is still allowed.
+    function approvalFieldsOk() {
+      let changed = incoming().diff(resource.data).affectedKeys();
+      return !changed.hasAny(["approvedVia"])
+        && (!changed.hasAny(["approvedByEmail", "approvedAt"])
+          || (resource.data.status == "ready-for-testing"
+            && incoming().status == "ready-to-publish"
+            && incoming().approvedByEmail == callerEmail()
+            && incoming().approvedAt == request.time));
+    }
+    function approvalFieldsAbsent() {
+      return !incoming().keys().hasAny(["approvedByEmail", "approvedAt", "approvedVia"]);
     }
     function isValidItemCommon() {
       return isNonEmptyBoundedString(incoming().projectId, 100) &&
@@ -327,9 +347,9 @@ service cloud.firestore {
       allow read: if isBoardReader();
 
       allow create: if isEditor() && isValidItemCommon()
-        && (isBoardAutomation() || itemPipelineFieldsAbsent());
+        && (isBoardAutomation() || (itemPipelineFieldsAbsent() && approvalFieldsAbsent()));
       allow update: if isEditor() && isValidItemCommon()
-        && (isBoardAutomation() || itemPipelineFieldsUnchanged());
+        && (isBoardAutomation() || (itemPipelineFieldsUnchanged() && approvalFieldsOk()));
 
       // The trash icon exists on Backlog cards only (root CLAUDE.md); a card
       // that reached a train or shipped is the audit trail and is archived,

@@ -191,6 +191,22 @@ deleted by hand).
   deployCommits?: [string],     // every commit it has on the branch (a re-patch appends rather than rewriting)
   revertRequested?: boolean,    // Failed testing wrote it: take this rejected ticket's commits back off the branch
   revertBlockedBy?: [string],   // item ids whose later commits made that revert conflict; a human resolves, nothing is force-pushed
+  // Each train card's own test result (19 Oct 2026) — written ONLY by
+  // run-backlog-automation.js (itemPipelineFields in firestore.rules). The
+  // card takes its worst workflow's state: failed, not-run, running,
+  // starting, passed (not-applicable when its paths need no workflow). Set at
+  // landing (processApplyPatch), kept current each sweep by
+  // recordCardTrainTests (writes only on a change; a card with no record or
+  // one for another sha is backfilled from its commit's files). Shown as a
+  // chip on Ready for Testing / Approved for Deployment cards only while
+  // trainTest.sha == deployCommit (public/js/card-test-status.js).
+  trainTest?: { sha, state, workflows: [{ workflow, label, state, runUrl, since }], since, updatedAt },
+  // Who approved (19 Oct 2026): written in the batch that moves the card to
+  // ready-to-publish — approvedByEmail lowercased, approvedAt a server
+  // timestamp; rules require the caller's own email and request.time, and
+  // only on that move. approvedVia (a non-browser route, e.g. dsp-board) is
+  // never a browser's to write. Approved cards show "Approved by <email>".
+  approvedByEmail?: string, approvedAt?: timestamp, approvedVia?: string,
   revertedCommits?: [string],   // the revert commits that took it off
   carriedByCommit?: string,     // this card has NO commit of its own: a sibling's commit on the branch already carried its change (a shared-file batch). deployCommit is that same sha, so the card is on the train like any other and goes live only when the train merges — see "A card carried by a sibling's commit follows that train" under "The deployment train"
   carriedByItem?: string | null, // the sibling's id from that commit's `Backlog item:` trailer (null for a commit with no trailer)

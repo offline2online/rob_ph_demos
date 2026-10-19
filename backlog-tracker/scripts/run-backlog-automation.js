@@ -1400,6 +1400,128 @@ function dispatchTrainTests(branch, paths, label) {
   return started;
 }
 
+// ── Each train card carries its own test result (trainTest) ────────────────
+// A tester approving a Ready for Testing card could not see whether that
+// ticket's own train test run was still going, had passed or had failed:
+// reportTrainTestResults wrote to the card only on a failure, so "running"
+// and "passed" both looked like silence. `trainTest` is the card's own
+// record, written ONLY by this automation (firestore.rules → itemPipelineFields):
+//   { sha, state, workflows: [{ workflow, label, state, runUrl, since }], since, updatedAt }
+// state is starting, running, passed, failed, not-run or not-applicable; the
+// card takes its worst workflow's state, in TRAIN_TEST_WORST_FIRST order.
+// All of it is pure, for test/card-test-status.test.js.
+const TRAIN_TEST_WORST_FIRST = ["failed", "not-run", "running", "starting", "passed"];
+const TRAIN_TEST_START_GRACE_MS = 10 * 60 * 1000;
+
+function worstTrainTestState(states) {
+  const list = (states || []).filter((s) => TRAIN_TEST_WORST_FIRST.includes(s));
+  if (!list.length) return "not-applicable";
+  return TRAIN_TEST_WORST_FIRST.find((s) => list.includes(s));
+}
+
+// One workflow's state from its runs on the card's own commit (newest first),
+// or null when there is no real run yet (none, or all held as action_required).
+function trainTestRunState(runs) {
+  const r = newestRealRun(runs);
+  if (!r) return null;
+  const status = String(r.status || "").toLowerCase();
+  if (status === "queued" || status === "in_progress") return { state: "running", runUrl: r.url || "" };
+  const concl = String(r.conclusion || "").toLowerCase();
+  if (concl === "success") return { state: "passed", runUrl: r.url || "" };
+  if (["failure", "timed_out", "startup_failure"].includes(concl)) return { state: "failed", runUrl: r.url || "" };
+  return { state: "not-run", runUrl: r.url || "" };
+}
+
+function trainTestEntry(t, state, runUrl, sinceIso) {
+  return { workflow: t.workflow, label: t.label, state, runUrl: runUrl || "", since: sinceIso };
+}
+
+// The record written when a ticket lands: one entry per workflow its changed
+// paths need. `started` is what dispatchTrainTests managed to start; one that
+// didn't start is not-run. No workflows at all is not-applicable.
+function landingTrainTest(sha, changedPaths, started, nowIso) {
+  const startedSet = new Set((started || []).map((t) => t.workflow));
+  const workflows = trainTestsFor(changedPaths).map((t) => trainTestEntry(t, startedSet.has(t.workflow) ? "starting" : "not-run", "", nowIso));
+  return { sha, state: worstTrainTestState(workflows.map((w) => w.state)), workflows, since: nowIso, updatedAt: nowIso };
+}
+
+// The workflows a card's record covers: its own when it is for the card's
+// commit, else (carried cards, cards from before this shipped) `backfill`.
+function trainTestWorkflowsFor(card, backfillPaths) {
+  const rec = card && card.trainTest;
+  if (rec && rec.sha === card.deployCommit && Array.isArray(rec.workflows)) {
+    return rec.workflows.map((w) => TRAIN_TEST_WORKFLOWS.find((t) => t.workflow === w.workflow) || { workflow: w.workflow, label: w.label });
+  }
+  return trainTestsFor(backfillPaths || []);
+}
+
+// Returns the card's new trainTest, or undefined for no change (so no write).
+// `runsByWorkflow`: { [workflow]: runs on the card's deployCommit, newest
+// first } for every workflow trainTestWorkflowsFor named.
+function nextCardTrainTest(card, runsByWorkflow, nowMs, backfillPaths) {
+  if (!card || !card.deployCommit) return undefined;
+  const nowIso = new Date(nowMs).toISOString();
+  const rec = card.trainTest && card.trainTest.sha === card.deployCommit ? card.trainTest : null;
+  const old = new Map(((rec && rec.workflows) || []).map((w) => [w.workflow, w]));
+  const recSince = rec && rec.since ? rec.since : nowIso;
+  const sinceMs = Date.parse(recSince);
+  const workflows = trainTestWorkflowsFor(card, backfillPaths).map((t) => {
+    const found = trainTestRunState((runsByWorkflow || {})[t.workflow]);
+    const state = found ? found.state : (Number.isFinite(sinceMs) && nowMs - sinceMs >= TRAIN_TEST_START_GRACE_MS ? "not-run" : "starting");
+    const prev = old.get(t.workflow);
+    const runUrl = found ? found.runUrl : "";
+    const same = prev && prev.state === state && (prev.runUrl || "") === runUrl;
+    return trainTestEntry(t, state, runUrl, same && prev.since ? prev.since : nowIso);
+  });
+  const state = worstTrainTestState(workflows.map((w) => w.state));
+  if (rec && rec.state === state && rec.workflows.length === workflows.length
+    && workflows.every((w) => { const p = old.get(w.workflow); return p && p.state === w.state && (p.runUrl || "") === w.runUrl; })) return undefined;
+  return { sha: card.deployCommit, state, workflows, since: recSince, updatedAt: nowIso };
+}
+
+// Fetches each key once per sweep, however many cards and callers ask.
+function memoByKey(fetcher) {
+  const cache = new Map();
+  return (...args) => {
+    const key = args.join("@");
+    if (!cache.has(key)) cache.set(key, fetcher(...args));
+    return cache.get(key);
+  };
+}
+
+// Runs of one workflow on one commit, newest first. Throws on a gh failure.
+function fetchWorkflowRunsOnSha(workflow, sha) {
+  return JSON.parse(run("gh", ["api", `repos/${REPO}/actions/workflows/${workflow}/runs?head_sha=${sha}&per_page=10`,
+    "-q", "[.workflow_runs[] | {headSha: .head_sha, status, conclusion, url: .html_url}]"]) || "[]");
+}
+function fetchCommitFiles(sha) {
+  return JSON.parse(run("gh", ["api", `repos/${REPO}/commits/${sha}`, "-q", "[.files[].filename]"]) || "[]");
+}
+
+// Once per sweep, just before ejectRedCulprits: keep every train card's
+// trainTest current, writing only when something changed.
+async function recordCardTrainTests(runsFor = memoByKey(fetchWorkflowRunsOnSha), filesFor = memoByKey(fetchCommitFiles)) {
+  const cards = await runQuery({
+    from: [{ collectionId: "backlogItems" }],
+    select: { fields: ["deployCommit", "trainTest", "revertRequested"].map((fieldPath) => ({ fieldPath })) },
+    where: { fieldFilter: { field: { fieldPath: "status" }, op: "IN", value: { arrayValue: { values: [{ stringValue: "ready-for-testing" }, { stringValue: "ready-to-publish" }] } } } },
+  });
+  for (const card of cards) {
+    if (!card.deployCommit || card.revertRequested) continue;
+    try {
+      const rec = card.trainTest && card.trainTest.sha === card.deployCommit ? card.trainTest : null;
+      if (rec && (rec.state === "passed" || rec.state === "not-applicable")) continue; // settled
+      const files = rec ? null : await filesFor(card.deployCommit);
+      const runsByWorkflow = {};
+      for (const t of trainTestWorkflowsFor(card, files)) runsByWorkflow[t.workflow] = await runsFor(t.workflow, card.deployCommit);
+      const next = nextCardTrainTest(card, runsByWorkflow, Date.now(), files);
+      if (next) await patchItem(card.id, { trainTest: next });
+    } catch (err) {
+      console.log(`[card-tests] ${card.id}: couldn't record its test state (${scrubSecrets(err.message)})`);
+    }
+  }
+}
+
 // Which of a train's Ready for Testing cards to tell about a failed run.
 // Pure, for test/train-tests.test.js.
 //   testRun: newest run on the branch, { headSha, status, conclusion, url } or null
@@ -1585,7 +1707,7 @@ function pickRedCulprit(order, cards, runs, opts = {}) {
   return null;
 }
 
-async function ejectRedCulprits() {
+async function ejectRedCulprits(runsFor = memoByKey(fetchWorkflowRunsOnSha)) {
   const cards = await runQuery({
     from: [{ collectionId: "backlogItems" }],
     select: { fields: ["projectId", "title", "status", "deployBranch", "deployCommit", "autoRebuilds", "notes", "revertRequested"].map((fieldPath) => ({ fieldPath })) },
@@ -1603,8 +1725,7 @@ async function ejectRedCulprits() {
       for (const t of TRAIN_TEST_WORKFLOWS) {
         const runs = {};
         for (const c of trainCards) {
-          const list = JSON.parse(run("gh", ["api", `repos/${REPO}/actions/workflows/${t.workflow}/runs?head_sha=${c.deployCommit}&per_page=10`,
-            "-q", "[.workflow_runs[] | {headSha: .head_sha, status, conclusion, url: .html_url}]"]) || "[]");
+          const list = await runsFor(t.workflow, c.deployCommit);
           const real = newestRealRun(list);
           if (real) runs[c.deployCommit] = real;
         }
@@ -2588,6 +2709,8 @@ async function processApplyPatch(item) {
     deployBranch,
     deployCommit: sha,
     deployCommits,
+    // A newer deployCommit replaces the record (cards' test state, see trainTest).
+    trainTest: landingTrainTest(sha, changedPaths, testsStarted, new Date().toISOString()),
     // Its own commit now — no longer riding on a sibling's (see
     // carryingCommitOnTrain), if it ever was.
     carriedByCommit: null,
@@ -4337,8 +4460,15 @@ async function main() {
   // distinction is exactly what the health strip's "automation" segment is
   // for. See the top-level catch below for the "run itself died" case.
   await sweepShippedPatchFiles();
+  // One fetch per (workflow, commit) per sweep, shared by both steps.
+  const runsFor = memoByKey(fetchWorkflowRunsOnSha);
   try {
-    await ejectRedCulprits();
+    await recordCardTrainTests(runsFor);
+  } catch (err) {
+    console.log(`[card-tests] failed: ${err.message}`);
+  }
+  try {
+    await ejectRedCulprits(runsFor);
   } catch (err) {
     console.log(`[train-eject] failed: ${err.message}`);
   }
@@ -4404,6 +4534,8 @@ module.exports = {
   isInfraCheck, rerunInfraChecks, resumeRedTrains, TRAIN_CI_INFRA_RERUNS,
   // test/train-tests.test.js — console tests run on each train push
   TRAIN_TEST_WORKFLOWS, trainTestFailureTargets, touchesConsoleTests, trainTestsFor, testedHeadOf, nextTrainTestsRed, trainTestGate, newestRealRun, pickRedCulprit,
+  // test/card-test-status.test.js — each train card's own test result
+  TRAIN_TEST_START_GRACE_MS, worstTrainTestState, trainTestRunState, landingTrainTest, nextCardTrainTest, memoByKey, recordCardTrainTests,
   // test/parallel-builds.test.js — patches built in parallel
   patchBaseFor, dependenciesLanded, buildRequestFields, migrationNumberClashes,
   // test/train-follow-up.test.js — a train waiting on CI starts its own next run

@@ -288,7 +288,14 @@ What the train changes:
   holds with `trainHold: "tests-red"` ("Tests failing") and carries on by
   itself once a fix on the train passes, with no second click. e2e-quick
   runs dispatched per ticket no longer cancel each other, so a red run
-  names the ticket that broke it. **And the culprit is sent back by
+  names the ticket that broke it. **Each card shows its own run** (19 Oct
+  2026): `trainTest` on the card (starting / running / passed / failed /
+  not-run) renders as a chip, `recordCardTrainTests` keeps it current each
+  sweep, and approving a ticket that isn't green opens an "Approve before
+  tests pass?" dialog first; the approving batch also records
+  `approvedByEmail` / `approvedAt`, shown as "Approved by <email>". An
+  approved ticket that goes red is still not sent back automatically.
+  **And the culprit is sent back by
   itself** (`ejectRedCulprits`, 9 Oct 2026): the first ticket whose own run
   failed while everything before it passed, if it is still in Ready for
   Testing, gets exactly what a person's Failed testing click does — back to
