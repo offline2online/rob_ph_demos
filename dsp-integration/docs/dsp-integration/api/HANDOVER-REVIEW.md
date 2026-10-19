@@ -25,6 +25,12 @@ It builds on the earlier reviews, whose findings all still stand:
 
 The seams are described in [PH-CORE-BOUNDARIES.md](./PH-CORE-BOUNDARIES.md).
 
+**On the PH Agent Console** this document and every other handover document
+are mirrored into the project's documents, rewritten from the repo on every
+merge to `main`. "0 — Start here" ([START-HERE.md](../START-HERE.md)) is the
+index and the reading order. Any staff member's agent can therefore read the
+same set as the engineers do.
+
 **Nothing visible to a legitimate user, partner or player changed.** No
 screen, copy, endpoint or response shape changed. The exceptions:
 
@@ -203,6 +209,23 @@ interleaved. Compare rows with each other, not with other reviews.
 | `GET /admin/v1/available-inventory` | 48 / 48 (p50 0.85 s) | **352 / 320** (p50 87 ms) |
 | Auction, 61 positions | 553 / 556 ms | **262 / 294 ms** |
 | `GET /v1/inventory` (page of 50), availability, targeting attributes, booking schedule, campaigns, approvals, advertisers, display types | — | unchanged, within run-to-run noise |
+
+**The same, 600 display types** (shape A: 600 × 25 displays, 1,000 stores; the
+same bench arguments with `--scale=600 --displays-per-type=25`). This is where
+the pre-merge review found the first cut of the hour-groups cache slowing
+Available Inventory, so it was re-measured after the fix:
+
+| Request (req/s at 32 clients; p50) | Before (two runs) | After (two runs) |
+|---|---|---|
+| `GET /v1/inventory?status=available` (1 year) | 16 / 16 (p50 3.0–3.2 s) | **144 / 128** (p50 0.22 s) |
+| `POST /v1/inventory/forecast` (30 days) | 448 / 432 | **2,624 / 2,497** |
+| `GET /v1/inventory/{id}` | 2,614 / 2,704 | **3,410 / 4,544** |
+| `GET /admin/v1/available-inventory`, one request, cold / warm (direct timing, 3 rounds × 2 runs) | 1.47–1.71 s / 1.49–1.58 s | **1.49–1.64 s / 1.49–1.58 s** — unchanged, same 2,401 rows |
+| `GET /v1/inventory` (page of 50), booking schedule | — | unchanged, within run-to-run noise |
+
+At this size the 92-day booking schedule takes about 23 s per request, both
+before and after (ADMIN-API-PERFORMANCE.md, "What is left"). The bench's
+other admin rows were not reached in the time allowed.
 
 **Real-time impressions** (the Player API path, same estate, an in-process
 mock DSP; the bench has no Player API scenario yet):

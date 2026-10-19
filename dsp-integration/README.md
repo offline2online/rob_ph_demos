@@ -27,6 +27,7 @@ folder's history is on the tag `archive/display-types-dsp-integration`.
   optimised, billing at a real play volume, and what the cluster provides
   (`deploy/kubernetes/`)
 - **Admin API performance (3 Oct 2026):** [ADMIN-API-PERFORMANCE.md](docs/dsp-integration/api/ADMIN-API-PERFORMANCE.md) — the HQ Admin screens' endpoints at 15,000 displays and 100,000 billed windows
+- **Start here — every handover document and the reading order:** [START-HERE.md](docs/dsp-integration/START-HERE.md) (on the board: "0 — Start here")
 - **Pre-handover review and porting checklist (18 Oct 2026):** [HANDOVER-REVIEW.md](docs/dsp-integration/api/HANDOVER-REVIEW.md)
   — **start here if you are porting this build into PH Core**: how the
   components separate, what was fixed before handover (security,
@@ -46,12 +47,21 @@ tickets that were already decided or parked.
    **End-to-End Test Spec — DSP Demand Paths (v2)**, the **Run 6 Runbook —
    agent instructions**, every **E2E Test Results** document, the data
    model and the review documents are board project documents.
-   **Boundaries with PH Core (1/3, 2/3, 3/3)**, the **Scale review** and the
-   **Security review** are different: they are mirrored from
-   `docs/dsp-integration/api/*.md`, and the repo wins. Edit the file, never
-   the board copy; every merge to main rewrites them (and
-   `npm run board:sync` does it on demand, with the slice map in
-   `scripts/sync-board-docs.mjs` → `MIRRORS`).
+   The handover documents are different: they are mirrored from the repo,
+   and the repo wins. The board's **0 — Start here** document
+   (`docs/dsp-integration/START-HERE.md`) lists them all, with the reading
+   order:
+   - **Boundaries with PH Core** (1/3–3/3)
+   - the **Handover review & porting checklist**
+   - the **Campaign approval integration guide**
+   - the **API reference**
+   - the **EKS deployment guide**
+   - the **Scale**, **Security** and **Admin API performance** reviews
+   - the **AWS demo — test flow**
+
+   Edit the file, never the board copy. Every merge to main rewrites them,
+   and `npm run board:sync` does it on demand, with the slice map in
+   `scripts/sync-board-docs.mjs` → `MIRRORS`.
    - Read them with the PH Agent Console MCP: `get_project_docs`, projectId
      `mIPdOCAWevhrgD8g2tCZ`, `include: ["docs"]`.
    - Change them with `update_project_document`. It overwrites the whole
