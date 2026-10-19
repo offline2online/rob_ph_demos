@@ -390,6 +390,16 @@ admin-readable and append-only from the server.
 
 ## The deployment train
 
+**Revert re-tests the train; evidence excludes reverted work (19 Oct 2026).**
+After a successful revert the automation starts the train tests on the new
+head (`afterRevertDispatches`). A card's test verdict, for the auto-eject
+(`ejectRedCulprits`) and the card's chip (`recordCardTrainTests`), comes from
+`cardEvidenceRun`: the newest real run on the newest non-stale commit among
+the card's own commit and the reverts / generated-only commits directly after
+it. A run is stale when a commit at or before it was reverted by a later
+commit, so a ticket is never blamed for an ejected ticket's failure.
+`pickRedCulprit`'s rules are unchanged.
+
 **The train is brought up to date with main before any ticket lands (1 Oct
 2026).** `processApplyPatch` now calls `syncTrainWithMain` first: a train
 with no ticket of its own is fast-forwarded to main; a train carrying

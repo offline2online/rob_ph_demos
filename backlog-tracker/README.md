@@ -316,7 +316,15 @@ What the train changes:
   of the approved train ships with no second click (18 Oct 2026, PR #412).
   It is only ejected with a green commit before it, so a check that is red
   on main itself never sends the train's first ticket back.
-  Tests: `test/train-tests.test.js`.
+  **A revert re-tests the train, and a ticket is judged only on a run that
+  did not contain a reverted ticket** (19 Oct 2026): `processRevertFromTrain`
+  starts the train tests on the new head (`afterRevertDispatches`), and
+  `cardEvidenceRun` judges each card on its own commit plus the reverts and
+  generated-only commits right after it, skipping a run that predates a
+  revert of something at or before it. The ticket above an ejected one is no
+  longer sent back for the ejected change's failure; it waits for the fresh
+  run, and so does its "Tests" chip.
+  Tests: `test/train-tests.test.js`, `test/train-eject-after-revert.test.js`.
 - **Reject** (`processRevertFromTrain`) — Failed testing on a card writes
   `revertRequested`, and the automation reverts that card's commits back
   off the branch. **A card in Backlog must never have live commits on a

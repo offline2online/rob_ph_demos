@@ -1476,6 +1476,14 @@ function dispatchTrainTests(branch, paths, label) {
   return started;
 }
 
+// What a revert of a train commit leaves stale: the bundle built from the old
+// source, and the tests of the train as it now stands (a revert starts no
+// run of its own, so trainTestsRed would stay set until another ticket
+// landed). Pure, for test/train-eject-after-revert.test.js.
+function afterRevertDispatches(changedPaths) {
+  return { rebuilds: rebuildWorkflowsFor(changedPaths), tests: trainTestsFor(changedPaths) };
+}
+
 // ── Each train card carries its own test result (trainTest) ────────────────
 // A tester approving a Ready for Testing card could not see whether that
 // ticket's own train test run was still going, had passed or had failed:
@@ -1574,22 +1582,62 @@ function fetchCommitFiles(sha) {
   return JSON.parse(run("gh", ["api", `repos/${REPO}/commits/${sha}`, "-q", "[.files[].filename]"]) || "[]");
 }
 
+// The train's commits, oldest first, as cardEvidenceRun wants them. Files are
+// read only for a commit that could extend a card's segment (not a revert, not
+// a card's own commit) and that follows a card or such a commit directly.
+async function trainCommitsFor(branch, cardShas, filesFor = memoByKey(fetchCommitFiles)) {
+  const raw = JSON.parse(run("gh", ["api", `repos/${REPO}/compare/main...${encodeURIComponent(branch)}`,
+    "-q", "[.commits[] | {sha, message: .commit.message}]"]) || "[]");
+  const cards = new Set(cardShas);
+  const commits = [];
+  let chained = false;
+  for (const c of raw) {
+    let generatedOnly = false;
+    if (cards.has(c.sha) || isRevertCommit(c)) chained = true;
+    else if (chained) {
+      const files = await filesFor(c.sha);
+      generatedOnly = files.length > 0 && files.every((f) => isGeneratedOutput(f));
+      chained = generatedOnly;
+    }
+    commits.push({ sha: c.sha, message: c.message, generatedOnly });
+  }
+  return commits;
+}
+
+// The run that judges `card` for one workflow, from cardEvidenceRun; wrapped
+// as a list for trainTestRunState. Falls back to the card's own commit's runs
+// when the train's commits can't be matched to it.
+async function evidenceRunsFor(workflow, card, commits, runsFor) {
+  const candidates = evidenceCandidates(commits, card.deployCommit);
+  if (!candidates.length) return runsFor(workflow, card.deployCommit);
+  const runsBySha = {};
+  for (const c of candidates) if (!c.stale) runsBySha[c.sha] = await runsFor(workflow, c.sha);
+  const run_ = cardEvidenceRun(commits, card.deployCommit, runsBySha);
+  return run_ ? [run_] : [];
+}
+
 // Once per sweep, just before ejectRedCulprits: keep every train card's
 // trainTest current, writing only when something changed.
 async function recordCardTrainTests(runsFor = memoByKey(fetchWorkflowRunsOnSha), filesFor = memoByKey(fetchCommitFiles)) {
   const cards = await runQuery({
     from: [{ collectionId: "backlogItems" }],
-    select: { fields: ["deployCommit", "trainTest", "revertRequested"].map((fieldPath) => ({ fieldPath })) },
+    select: { fields: ["deployBranch", "deployCommit", "trainTest", "revertRequested"].map((fieldPath) => ({ fieldPath })) },
     where: { fieldFilter: { field: { fieldPath: "status" }, op: "IN", value: { arrayValue: { values: [{ stringValue: "ready-for-testing" }, { stringValue: "ready-to-publish" }] } } } },
   });
+  const trainCards = (branch) => cards.filter((c) => c.deployBranch === branch && c.deployCommit && !c.revertRequested).map((c) => c.deployCommit);
+  const commitsByBranch = new Map();
   for (const card of cards) {
     if (!card.deployCommit || card.revertRequested) continue;
     try {
+      if (card.deployBranch && !commitsByBranch.has(card.deployBranch)) {
+        commitsByBranch.set(card.deployBranch, await trainCommitsFor(card.deployBranch, trainCards(card.deployBranch), filesFor).catch(() => null));
+      }
+      const commits = card.deployBranch ? commitsByBranch.get(card.deployBranch) : null;
       const rec = card.trainTest && card.trainTest.sha === card.deployCommit ? card.trainTest : null;
       if (rec && (rec.state === "passed" || rec.state === "not-applicable")) continue; // settled
       const files = rec ? null : await filesFor(card.deployCommit);
       const runsByWorkflow = {};
-      for (const t of trainTestWorkflowsFor(card, files)) runsByWorkflow[t.workflow] = await runsFor(t.workflow, card.deployCommit);
+      for (const t of trainTestWorkflowsFor(card, files)) runsByWorkflow[t.workflow] = commits ? await evidenceRunsFor(t.workflow, card, commits, runsFor) : await runsFor(t.workflow, card.deployCommit);
       const next = nextCardTrainTest(card, runsByWorkflow, Date.now(), files);
       if (next) await patchItem(card.id, { trainTest: next });
     } catch (err) {
@@ -1668,6 +1716,52 @@ function nextTrainTestsRed(current, workflow, testRun, tested, nowIso) {
 function newestRealRun(runs) {
   return (runs || []).find((r) => r && String(r.conclusion || "").toLowerCase() !== "action_required"
     && !["waiting", "requested", "pending"].includes(String(r.status || "").toLowerCase())) || null;
+}
+
+// ── Each ticket is judged on a run that did not contain a reverted ticket ───
+// ejectRedCulprits sends a ticket back and processRevertFromTrain reverts it
+// in the same sweep. The ticket above it on the train had its own test run on
+// a commit that still contained the ejected change, so that stale red run was
+// the newest evidence and the second ticket was blamed too (9 Oct 2026:
+// vzp9BRuK sent back for a run on b7a0d2a, which contained the reverted
+// 437e65e; 15 Oct: l4sSqLbA behind sAYCqT0m). A card is therefore judged on
+// its own commit plus the commits right after it that are reverts or only
+// generated output, minus any run that predates a revert of something at or
+// before it.
+const revertedShasOf = (message) => [...String(message || "").matchAll(/This reverts commit ([0-9a-f]{7,40})/g)].map((m) => m[1]);
+const sameSha = (a, b) => !!a && !!b && (a.startsWith(b) || b.startsWith(a));
+const isRevertCommit = (c) => revertedShasOf(c && c.message).length > 0;
+
+// The commits whose run can speak for the card, oldest first, each
+// { sha, stale }. `commits`: the train's commits, oldest first,
+// { sha, message, generatedOnly }. Pure, for test/train-eject-after-revert.test.js.
+function evidenceCandidates(commits, cardSha) {
+  const list = commits || [];
+  const start = list.findIndex((c) => c && c.sha === cardSha);
+  if (start < 0) return [];
+  let end = start;
+  while (end + 1 < list.length && (isRevertCommit(list[end + 1]) || list[end + 1].generatedOnly)) end++;
+  const out = [];
+  for (let i = start; i <= end; i++) {
+    let stale = false;
+    for (let j = i + 1; j < list.length && !stale; j++) {
+      const reverted = revertedShasOf(list[j].message);
+      if (reverted.length && list.slice(0, i + 1).some((c) => reverted.some((r) => sameSha(c.sha, r)))) stale = true;
+    }
+    out.push({ sha: list[i].sha, stale });
+  }
+  return out;
+}
+
+// The run that judges a card: the newest real run on the newest non-stale
+// candidate that has one, or null. `runsBySha`: { [sha]: runs, newest first }.
+function cardEvidenceRun(commits, cardSha, runsBySha) {
+  const candidates = evidenceCandidates(commits, cardSha).filter((c) => !c.stale);
+  for (let i = candidates.length - 1; i >= 0; i--) {
+    const real = newestRealRun((runsBySha || {})[candidates[i].sha]);
+    if (real) return real;
+  }
+  return null;
 }
 
 // ── Deploy to Main waits for the train's own tests ─────────────────────────
@@ -1783,7 +1877,7 @@ function pickRedCulprit(order, cards, runs, opts = {}) {
   return null;
 }
 
-async function ejectRedCulprits(runsFor = memoByKey(fetchWorkflowRunsOnSha)) {
+async function ejectRedCulprits(runsFor = memoByKey(fetchWorkflowRunsOnSha), filesFor = memoByKey(fetchCommitFiles)) {
   const cards = await runQuery({
     from: [{ collectionId: "backlogItems" }],
     select: { fields: ["projectId", "title", "status", "deployBranch", "deployCommit", "autoRebuilds", "notes", "revertRequested"].map((fieldPath) => ({ fieldPath })) },
@@ -1797,12 +1891,12 @@ async function ejectRedCulprits(runsFor = memoByKey(fetchWorkflowRunsOnSha)) {
   }
   for (const [branch, trainCards] of byBranch) {
     try {
-      const order = JSON.parse(run("gh", ["api", `repos/${REPO}/compare/main...${encodeURIComponent(branch)}`, "-q", "[.commits[].sha]"]) || "[]");
+      const commits = await trainCommitsFor(branch, trainCards.map((c) => c.deployCommit), filesFor);
+      const order = commits.map((c) => c.sha);
       for (const t of TRAIN_TEST_WORKFLOWS) {
         const runs = {};
         for (const c of trainCards) {
-          const list = await runsFor(t.workflow, c.deployCommit);
-          const real = newestRealRun(list);
+          const real = newestRealRun(await evidenceRunsFor(t.workflow, c, commits, runsFor));
           if (real) runs[c.deployCommit] = real;
         }
         const projectId = (trainCards.find((c) => c.projectId) || {}).projectId || null;
@@ -3077,7 +3171,11 @@ async function processRevertFromTrain(item) {
   pushTrain(deployBranch);
   // The revert changed the train's source, so any bundle built from it is
   // stale in the other direction: it would keep showing the reverted change.
-  dispatchRebuilds(deployBranch, changedPathsBetween(tipBeforeRevert, "HEAD"), "train-revert");
+  const revertedPaths = changedPathsBetween(tipBeforeRevert, "HEAD");
+  const after = afterRevertDispatches(revertedPaths);
+  dispatchRebuilds(deployBranch, revertedPaths, "train-revert");
+  // ...and the train now ends on a different commit that nothing has tested.
+  const testsStarted = after.tests.length ? dispatchTrainTests(deployBranch, revertedPaths, "train-revert") : [];
   // Anything riding on the commits just reverted lost its content with them.
   await detachCarriedCards(item, revertedOriginals, deployBranch);
 
@@ -3085,7 +3183,8 @@ async function processRevertFromTrain(item) {
     item,
     `Taken off the train: reverted ${commits.length === 1 ? "its commit" : `its ${commits.length} commits`} (${commits.map((s) => s.slice(0, 7)).join(", ")}) off \`${deployBranch}\` ` +
     `as ${reverted.map((s) => s.slice(0, 7)).join(", ")}. This card's change is no longer on the branch, so the next Deploy to Main will not carry it — ` +
-    `it's a plain Backlog ticket again, and a fresh Ready for Dev sweep will rebuild it on top of whatever the branch looks like then.`
+    `it's a plain Backlog ticket again, and a fresh Ready for Dev sweep will rebuild it on top of whatever the branch looks like then.` +
+    (testsStarted.length ? ` The train tests were started again on the new head (${testsStarted.map((t) => t.workflow).join(", ")}).` : "")
   );
   await patchItem(item.id, {
     revertRequested: false,
@@ -4812,6 +4911,8 @@ module.exports = {
   isInfraCheck, rerunInfraChecks, resumeRedTrains, TRAIN_CI_INFRA_RERUNS,
   // test/train-tests.test.js — console tests run on each train push
   TRAIN_TEST_WORKFLOWS, trainTestFailureTargets, touchesConsoleTests, trainTestsFor, testedHeadOf, nextTrainTestsRed, trainTestGate, newestRealRun, pickRedCulprit,
+  // test/train-eject-after-revert.test.js — a ticket is judged on a run that did not contain a reverted ticket
+  afterRevertDispatches, cardEvidenceRun, evidenceCandidates,
   // test/card-test-status.test.js — each train card's own test result
   TRAIN_TEST_START_GRACE_MS, worstTrainTestState, trainTestRunState, landingTrainTest, nextCardTrainTest, memoByKey, recordCardTrainTests,
   // test/parallel-builds.test.js — patches built in parallel
