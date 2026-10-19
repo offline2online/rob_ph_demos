@@ -98,6 +98,37 @@ const cases = [
     }
     return out;
   })(),
+  // Run 6 on every train push, and a nightly that says what failed (19 Oct 2026):
+  // the journey only ran after a train merged, so four breaking changes shipped.
+  ...(() => {
+    const repo = path.join(__dirname, "..", "..");
+    const read = (...p) => fs.readFileSync(path.join(repo, ...p), "utf8");
+    const quick = read(".github", "workflows", "e2e-quick.yml");
+    const nightly = read(".github", "workflows", "e2e-nightly.yml");
+    const scripts = JSON.parse(read("dsp-integration", "package.json")).scripts;
+    const ri = read("backlog-tracker", "ROUTINE_INSTRUCTIONS.md").replace(/\s+/g, " ");
+    const para = (ri.match(/run the DSP tests\*\*.*?\(set `PH_SECRETS_KEY`/) || [""])[0];
+    const stepOf = (text, re) => text.split(/^ {6}- /m).find((s) => re.test(s)) || "";
+    const used = (text) => [...new Set([...text.matchAll(/npm run ([\w:-]+)/g)].map((m) => m[1]))];
+    const journey = stepOf(quick, /npm run e2e:journey/);
+    const out = [
+      ["e2e-quick runs the journey, guarded by the scope check", journey.includes("steps.scope.outputs.run == 'true'"), true],
+      ["e2e-quick runs the journey after e2e:quick", quick.indexOf("npm run e2e:journey") > quick.indexOf("npm run e2e:quick"), true],
+      ["e2e-quick does not run the bench", /npm run bench/.test(quick), false],
+      ["the 'run the DSP tests' paragraph was found", para.length > 0, true],
+    ];
+    for (const [file, text] of [["e2e-quick.yml", quick], ["e2e-nightly.yml", nightly]])
+      for (const s of used(text)) out.push([`${file}: npm run ${s} is a dsp-integration script`, s in scripts, true]);
+    for (const s of used(quick)) out.push([`ROUTINE_INSTRUCTIONS lists e2e-quick's npm run ${s}`, para.includes(`npm run ${s}`), true]);
+    const report = stepOf(nightly, /id: report\b/), bugs = stepOf(nightly, /id: file_bugs\b/), red = stepOf(nightly, /name: Red night/);
+    out.push(
+      ["e2e-nightly: report step has an id and continue-on-error", /continue-on-error: true/.test(report), true],
+      ["e2e-nightly: file_bugs step has an id and continue-on-error", /continue-on-error: true/.test(bugs), true],
+      ["e2e-nightly: Red night runs with always()", /^\s+if: always\(\)\s*$/m.test(red), true],
+      ["e2e-nightly: Red night reads quick, journey, bench and report", ["quick", "journey", "bench", "report"].every((id) => red.includes(`steps.${id}.outcome`)), true],
+    );
+    return out;
+  })(),
 ];
 let failedCount = 0;
 for (const [label, got, want] of cases) {

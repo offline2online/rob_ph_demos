@@ -525,8 +525,9 @@ ticket once automatically.
    - **Before setting `patchReady`, run the DSP tests** if the patch
      touches `dsp-integration/` — the same steps as the train PR's required
      `e2e-quick` check: `cd dsp-integration && npm ci && export CI=1 &&
-     npm run typecheck && npm test && npm run test:layout && npm run
-     e2e:quick` (set `PH_SECRETS_KEY` to any 32-byte base64 value, e.g. 44
+     npm run board:sync -- --check-cut && npm run typecheck && npm test &&
+     npm run test:layout && npm run e2e:quick && npm run e2e:journey &&
+     npm run e2e:lint` (set `PH_SECRETS_KEY` to any 32-byte base64 value, e.g. 44
      `A`s ending `=`). **`CI=1` is not optional in a cloud session**: the
      admin suite uses tight laptop timeouts unless `CI` is set, a cloud
      sandbox renders jsdom + Ant Design as slowly as a CI runner, and
