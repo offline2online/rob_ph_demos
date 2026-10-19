@@ -183,8 +183,11 @@
     return { title: title, desc: null, sections: [{ rows: rows }] };
   }
 
-  // Missed revenue & fill follows the Slot value order (like Slot allocation) so the charts compare row for row.
-  function missedOrder(rows, leaders, typeOf) { return followOrder(rows, leaders, typeOf); }
+  // Display type rows by unsold value (unsold slots at floor CPM), highest first; ties by total missed, then input order.
+  function missedOrder(rows) {
+    return rows.map(function (r, i) { return { r: r, i: i }; })
+      .sort(function (a, b) { var pa = missedParts(a.r), pb = missedParts(b.r); return pb.unsold - pa.unsold || pb.total - pa.total || a.i - b.i; }).map(function (x) { return x.r; });
+  }
   // One 100%-wide stack: sold, unsold and offline shares of all advertiser slots, from the back end's counts.
   function missedShares(r) {
     var t = r.slotsTotal || 0;
@@ -502,10 +505,8 @@
     }
 
     // ----- missed revenue / fill -----
-    var mrData = null;
     function drawMissed(d) {
-      mrData = d;
-      var rows = missedOrder(d.rows, svData && metricOrder(svData.rows, state.mode), function (r) { return cache.typeMap[r.id]; });
+      var rows = missedOrder(d.rows);
       var all = rows.concat(rows.length > 1 && d.total ? [d.total] : []);
       var list = h('div', { class: 'sc-rows', role: 'list' });
       all.forEach(function (r) {
@@ -615,7 +616,7 @@
           draw(d);
         }, function () { if (current()) setState(p, 'error', loadAll); });
       }
-      run(pSV, 'slot-value', function () { drawSlotValue(); if (saData) drawAllocation(saData); if (mrData) drawMissed(mrData); }, function (d) { svData = d; });
+      run(pSV, 'slot-value', function () { drawSlotValue(); if (saData) drawAllocation(saData); }, function (d) { svData = d; });
       run(pSA, 'slot-allocation', drawAllocation);
       run(pMR, 'missed-revenue', drawMissed);
       run(pH, 'hourly', drawHourly, function (d) { hData = d; });

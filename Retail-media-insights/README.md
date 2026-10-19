@@ -166,7 +166,7 @@ Purpose: show the **value of each screen along the shopper journey**, and help t
 
 ### 4. Missed revenue & fill — stacked bar chart (left, beside Yield)
 - **One 100%-wide stacked bar per display type** of all advertiser slots inside operating hours (all deal types): **filled** (teal) = sold ÷ all, **unsold** (amber) = unsold ÷ all, **display downtime** (red) = offline ÷ all, using the back end's counts; the three widths add to 100%. Legend under the title: Filled, Unsold slots (at floor CPM), Display downtime. A final **All display types** total row (bold, below a divider) when more than one display type is shown. **No group-by-store switch** — to see one store, use the page's Store filter.
-- **Sort order:** display type rows in the same order as Slot value and Slot allocation; All display types last.
+- **Sort order:** display type rows by total missed revenue, highest first; All display types last.
 - **Each row shows the display type name with its number of connected displays in brackets** (e.g. "Window Portrait (10)", "All display types (50)"), and on the right "**89%** filled · $633 + $159 missed" ($633 unsold in #ad6800, $159 downtime in #cf1322 — the back end's rounded parts).
 - **Missed revenue in USD:**
   - **Unsold slots** — advertiser slots inside operating hours that went unsold, valued at the display type's **floor CPM** × their assumed views (VAC-d) ÷ 1,000.
