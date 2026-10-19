@@ -681,6 +681,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/reports/unsold": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Unsold real-time slots — missed revenue and empty slots, by store, display, display type, hour or day
+         * @description Every real-time impression opportunity that played house content
+         *     instead of a sale (no bids, every bid below the floor, an uncached
+         *     creative in the restricted window, no creative, or another refusal),
+         *     kept as an hourly aggregate (migration 0073) and valued at the
+         *     resolved floor CPM × assumed views: indicative only, never billed and
+         *     never shown to an advertiser. Hours are UTC. Per currency, never
+         *     summed across currencies. Mirrors the lost-revenue report.
+         */
+        get: operations["getUnsoldReport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/booking-schedule": {
         parameters: {
             query?: never;
@@ -985,8 +1011,7 @@ export interface paths {
         get: operations["listAdvertisers"];
         /** Save changes — approval required and floor multiplier per advertiser */
         put: operations["saveAdvertisers"];
-        /** Add an advertiser with a direct relationship with the retailer (no DSP) */
-        post: operations["addDirectAdvertiser"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1026,6 +1051,26 @@ export interface paths {
         get: operations["listAdvertiserDeals"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/advertisers/direct": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add an advertiser with a direct relationship with the retailer (no DSP)
+         * @description Was documented as POST /admin/v1/advertisers until 18 Oct 2026; the API, the admin UI and REQUIREMENTS have always used this path.
+         */
+        post: operations["addDirectAdvertiser"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1644,6 +1689,14 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description Unsold impressions by reason; a reason with none is absent. */
+        UnsoldReasonCounts: {
+            no_bids?: number;
+            below_floor?: number;
+            uncached?: number;
+            no_creative?: number;
+            other?: number;
+        };
         Error: {
             error: {
                 /** @enum {string} */
@@ -4607,6 +4660,60 @@ export interface operations {
             401: components["responses"]["Unauthorised"];
         };
     };
+    getUnsoldReport: {
+        parameters: {
+            query: {
+                from: string;
+                /** @description Inclusive; at most 366 days after from. */
+                to: string;
+                by?: "store" | "display" | "display_type" | "hour" | "day";
+                storeId?: string;
+                displayId?: string;
+                displayTypeId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Unsold opportunities, per currency (never summed across currencies) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: date */
+                        from: string;
+                        /** Format: date */
+                        to: string;
+                        /** @enum {string} */
+                        by: "store" | "display" | "display_type" | "hour" | "day";
+                        totals: {
+                            currency: string;
+                            impressions: number;
+                            missedViews: number;
+                            missedAmount: number;
+                            reasons: components["schemas"]["UnsoldReasonCounts"];
+                        }[];
+                        rows: {
+                            key: string;
+                            label: string;
+                            currency: string;
+                            impressions: number;
+                            floorCpmAvg: number;
+                            missedViews: number;
+                            missedAmount: number;
+                            reasons: components["schemas"]["UnsoldReasonCounts"];
+                        }[];
+                    };
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorised"];
+        };
+    };
     getBookingSchedule: {
         parameters: {
             query?: {
@@ -5303,39 +5410,6 @@ export interface operations {
             403: components["responses"]["Forbidden"];
         };
     };
-    addDirectAdvertiser: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    name: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Added */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        advertiserId: string;
-                        name: string;
-                    };
-                };
-            };
-            400: components["responses"]["ValidationFailed"];
-            401: components["responses"]["Unauthorised"];
-            403: components["responses"]["Forbidden"];
-            409: components["responses"]["Conflict"];
-        };
-    };
     saveAdvertiserSeats: {
         parameters: {
             query?: never;
@@ -5411,6 +5485,39 @@ export interface operations {
             401: components["responses"]["Unauthorised"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    addDirectAdvertiser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Added */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        advertiserId: string;
+                        name: string;
+                    };
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorised"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
         };
     };
     removeDirectAdvertiser: {

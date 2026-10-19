@@ -106,6 +106,14 @@ export function createApprovalService(o: ApprovalServiceOptions) {
     }
   }
 
+  /* Every decision goes through here: the state machine (stateMachine.ts)
+     says whether the event is legal from the version's current status and
+     what it becomes — an illegal reject of an awaiting version is the
+     caller's mistake (400), any other illegal move a conflict (409); the
+     version's row is written with who decided and when (null for an
+     automatic decision); and each audit action the transition names is
+     appended to the trail, which is never edited. Runs inside the host's
+     transaction (options.transaction) where the caller opened one. */
   const apply = async (c: CampaignRef, e: ApprovalEvent, actor: string | null, patch: Partial<ApprovalRow> = {}) => {
     const from = await statusOf(c)
     let t

@@ -270,12 +270,15 @@ retrieved again with identical bytes is not re-audited.
 
 ## 4. Run the approval migration, or move the fields onto the campaign
 
-- **Beside the campaign (default).** Run
-  `migrations/0100_campaign_approvals.up.sql` and
-  `migrations/0101_asset_level_rejection.up.sql` (asset-level rejection
-  detail + the safe-reuse clearance table, ticket 22 Sep) and
-  `migrations/0103_creative_ids.up.sql` (creative IDs, 10 Oct 2026 — see
-  "Creative IDs" below) with your migrator, in that order; each `.down.sql` reverts its own migration.
+- **Beside the campaign (default).** Run every migration in `migrations/`
+  with your migrator, in number order — `0100_campaign_approvals`,
+  `0101_asset_level_rejection` (asset-level rejection detail + the
+  safe-reuse clearance table, ticket 22 Sep), `0102_arrival_seq` (an
+  explicit arrival order, so nothing relies on SQLite's `rowid`; its
+  insert triggers are SQLite's — on Postgres make `seq` an identity
+  column), `0103_creative_ids` (creative IDs, 10 Oct 2026 — see
+  "Creative IDs" below) and `0104_campaign_deals` (a campaign's deals as a
+  set); each `.down.sql` reverts its own migration.
   Nothing in the campaign table changes.
 - **On the campaign record (spec §8's target shape).** Add `status` and
   `approval` (JSON: `mode`, `assetVersion`, `submittedAt`, `reviewedBy`,
@@ -283,13 +286,19 @@ retrieved again with identical bytes is not re-audited.
   `src/server/approvalStore.ts` with an implementation that reads and writes
   them. The store's interface (`get`, `latest`, `liveVersion`, `rows`,
   `upsert`, `remove`, `audit`, `auditTrail`, `recordHumanClearance`,
-  `isHumanCleared`) stays the same, so the service, routes and UI
-  don't change. Keep `campaign_approval_audit` append-only either way.
+  `isHumanCleared`, and since 10 Oct 2026 the creative-ID and deal methods
+  — `creativeIdOf`, `creativeId`, `creativeIds`, `assignments`,
+  `createCreativeId`, `assignCreativeId`, `addedDeals`, `allAddedDeals`,
+  `addDeal`, `removeDeal`; `approvalStore.ts` is the full list) stays the
+  same, so the service, routes and UI don't change. Keep `campaign_approval_audit` append-only either way.
 
 ## 5. Delete the stand-in POC table
 
 Delete `apps/admin/src/features/campaign-status/`, and its nav item and route in
-`apps/admin/src/App.tsx` (marked *STAND-IN*). Nothing else imports from it.
+`apps/admin/src/App.tsx` (marked *STAND-IN*). One other file imports from it:
+`apps/admin/src/features/booking-schedule/CampaignSchedulePage.tsx`, the
+Campaign Approval page that hosts the table — delete or replace it with the
+same change.
 The stand-in's nav item and route are shown only while the retailer has DSP
 integration switched on (`selling` in `navFor`, `WhileDspOn` on the route;
 24 Sep 2026). Both go with it: the platform's own Campaigns section is not

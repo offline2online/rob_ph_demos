@@ -110,12 +110,29 @@ const DEFAULT_PARTNER_TOKENS = { 'poc-token-google-dv360': 'p_google', 'poc-toke
    never be live on a real deployment: with NODE_ENV=production the API
    refuses to start unless PARTNER_TOKENS is set (and doesn't reuse them). */
 function partnerTokensFrom(env: NodeJS.ProcessEnv): Record<string, string> {
-  const tokens = env.PARTNER_TOKENS ? (JSON.parse(env.PARTNER_TOKENS) as Record<string, string>) : null
+  const tokens = env.PARTNER_TOKENS ? (JSON.parse(env.PARTNER_TOKENS) as unknown) : null
+  /* A JSON object of token → partner id, both non-empty strings. Anything else
+     (an array, a bare string, a number for a partner id) used to load and then
+     match nothing, or the wrong thing; it now stops the process at start with
+     a message that names the variable and never echoes a token (pre-handover
+     review, 18 Oct 2026). */
+  if (tokens !== null && (typeof tokens !== 'object' || Array.isArray(tokens) || Object.entries(tokens).some(([k, v]) => !k.trim() || typeof v !== 'string' || !v.trim()))) {
+    throw new Error('PARTNER_TOKENS must be a JSON object of bearer token → partner id, both non-empty strings.')
+  }
   if (env.NODE_ENV === 'production') {
     if (!tokens) throw new Error('PARTNER_TOKENS must be set in production: the default POC tokens are public.')
     if (Object.keys(tokens).some((t) => t in DEFAULT_PARTNER_TOKENS)) throw new Error('PARTNER_TOKENS must not reuse the public POC tokens in production.')
   }
-  return tokens ?? DEFAULT_PARTNER_TOKENS
+  return (tokens as Record<string, string> | null) ?? DEFAULT_PARTNER_TOKENS
+}
+
+/* A positive, finite number from the environment, else the default. Used where
+   a typo would otherwise switch a limit off: PARTNER_RATE_PER_SECOND=fifty was
+   NaN, and a NaN bucket let every request through (pre-handover review, 18 Oct
+   2026); 0 answered Retry-After: Infinity. */
+const positiveOr = (raw: string | undefined, fallback: number) => {
+  const n = Number(raw)
+  return raw !== undefined && raw.trim() !== '' && Number.isFinite(n) && n > 0 ? n : fallback
 }
 
 /* Relative paths are resolved from the POC root, whatever the working directory. */
@@ -153,10 +170,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       })) as DspEndpoints['amazon'],
       ttdApiBaseUrl: env.TTD_BASE_URL ?? `${mocks}/ttd`,
     },
+    /* The creative bases were the mock service's only, so against real DSPs no
+       creative could ever be retrieved for review; *_CREATIVE_BASE sets each
+       DSP's real creative host and path (pre-handover review, 18 Oct 2026).
+       Unset, they stay the mock service's, as before. */
     bidders: {
-      google_dv360: { bidUrl: env.DV360_BIDDER_URL ?? `${mocks}/dv360/openrtb2/bid`, creativeBase: `${mocks}/dv360/creatives/` },
-      amazon_dsp: { bidUrl: env.AMAZON_BIDDER_URL ?? `${mocks}/amazon/openrtb2/bid`, creativeBase: `${mocks}/amazon/creatives/` },
-      the_trade_desk: { bidUrl: env.TTD_BIDDER_URL ?? `${mocks}/ttd/openrtb2/bid`, creativeBase: `${mocks}/ttd/creatives/` },
+      google_dv360: { bidUrl: env.DV360_BIDDER_URL ?? `${mocks}/dv360/openrtb2/bid`, creativeBase: env.DV360_CREATIVE_BASE ?? `${mocks}/dv360/creatives/` },
+      amazon_dsp: { bidUrl: env.AMAZON_BIDDER_URL ?? `${mocks}/amazon/openrtb2/bid`, creativeBase: env.AMAZON_CREATIVE_BASE ?? `${mocks}/amazon/creatives/` },
+      the_trade_desk: { bidUrl: env.TTD_BIDDER_URL ?? `${mocks}/ttd/openrtb2/bid`, creativeBase: env.TTD_CREATIVE_BASE ?? `${mocks}/ttd/creatives/` },
     },
     bidEndpointSource: env.BID_ENDPOINT_SOURCE === 'partner' ? 'partner' : 'mock',
     partnerTokens: partnerTokensFrom(env),
@@ -166,7 +187,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     maxBidCpm: 10_000,
     maxBidResponseBytes: 64 * 1024,
     creativeReverifyMs: 60 * 60 * 1000,
-    partnerRateLimit: { perSecond: Number(env.PARTNER_RATE_PER_SECOND ?? 50), burst: Number(env.PARTNER_RATE_BURST ?? 100) },
+    partnerRateLimit: { perSecond: positiveOr(env.PARTNER_RATE_PER_SECOND, 50), burst: positiveOr(env.PARTNER_RATE_BURST, 100) },
     maxConcurrentUploadsPerPartner: 2,
     maxForecastPositions: 200,
     campaignLimits: { nameLength: 200, targetedVersions: 20, groupsPerRules: 10, conditionsPerGroup: 20, valueLength: 200 },

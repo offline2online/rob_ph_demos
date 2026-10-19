@@ -106,3 +106,34 @@ export function readMedia(b: Buffer): MediaInfo | null {
   if (kind === 'jpeg') return { kind, mimeType: MIME.jpeg, durationSec: null, ...jpeg(b) }
   return { kind, mimeType: MIME.mp4, ...mp4(b) }
 }
+
+/* What readMedia found in a STORED asset, and its size, read once per file
+   (pre-handover review, 18 Oct 2026). Every real-time fill and every hand-off
+   re-runs the automated checks on the creative it is about to play, and that
+   used to mean reading the whole file — a video up to 200 MB — on every
+   impression. A stored asset never changes: AssetStore.put names each file
+   afresh and nothing rewrites one, so its media facts are known once and for
+   all, and the checks (fileChecks, cheap) still run every time against the
+   display type and limits as they are now. The least recently used entries
+   beyond STORED_MEDIA_MAX are dropped, so memory stays bounded however many
+   creatives an estate has. Keyed on the store, so each context has its own. */
+export interface StoredMedia { media: MediaInfo | null; sizeBytes: number }
+const STORED_MEDIA_MAX = 2_000
+const storedMedia = new WeakMap<object, Map<string, StoredMedia>>()
+export async function storedMediaOf(store: { read(file: string): Buffer | null | Promise<Buffer | null> }, file: string): Promise<StoredMedia | null> {
+  let byFile = storedMedia.get(store)
+  if (!byFile) storedMedia.set(store, (byFile = new Map()))
+  const hit = byFile.get(file)
+  if (hit) {
+    byFile.delete(file)
+    byFile.set(file, hit)
+    return hit
+  }
+  const bytes = await store.read(file)
+  if (!bytes) return null
+  const media = readMedia(bytes)
+  const out: StoredMedia = Object.freeze({ media: media && Object.freeze(media), sizeBytes: bytes.length })
+  byFile.set(file, out)
+  if (byFile.size > STORED_MEDIA_MAX) byFile.delete(byFile.keys().next().value as string)
+  return out
+}

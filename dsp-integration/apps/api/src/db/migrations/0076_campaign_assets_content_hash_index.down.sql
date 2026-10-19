@@ -1,0 +1,1 @@
+DROP INDEX campaign_assets_content_hash;

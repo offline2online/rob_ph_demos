@@ -37,7 +37,7 @@
 import { randomUUID } from 'node:crypto'
 import type { Context } from '../context'
 import { failed, fileChecks } from '../domain/assetChecks'
-import { readMedia } from '../domain/media'
+import { storedMediaOf } from '../domain/media'
 import { bidderTuning } from '../domain/partnerInput'
 import { isLive } from '../domain/exchange'
 import { type PositionRef, assignmentOf, effectivePartnerIds, fallsThroughToOpen, findPosition, isRealtime, openTierOf, isSellable, positionIdOf, positionView, maxPlayLengthSecFor, windowMsFor, windowStartOf } from '../domain/positions'
@@ -132,7 +132,7 @@ export async function signalImpression(ctx: Context, input: { displayId: string;
     req.imp[0].ext.ph.mode = 'realtime'
     /* The transport aborts at tmax; the race is the backstop if a bidder is slow to be asked (its own QPS spacing). */
     const deadline = new Promise<null>((resolve) => timers.push(setTimeout(resolve, Math.max(0, started + tmax - Date.now())) as unknown as ReturnType<typeof setTimeout>))
-    sent.push({ dsp, reqId, res: Promise.race([ctx.bidder.send(url, req, { qps: tuning.qps, timeoutMs: tmax }), deadline]) })
+    sent.push({ dsp, reqId, res: Promise.race([ctx.bidder.send(url, req, { qps: tuning.qps, timeoutMs: tmax, deadline: started + tmax }), deadline]) })
   }
   base.bidRequests = sent.length
   const answers = await Promise.all(sent.map((x) => x.res))
@@ -191,9 +191,9 @@ export async function signalImpression(ctx: Context, input: { displayId: string;
     const approved = await ctx.approvals.liveAssetVersion(c.vetted.campaignId)
     const assets = await ctx.campaigns.latestAssets(c.vetted.campaignId, approved ?? undefined)
     const asset = assets.find((a) => a.role === 'default') ?? assets[0]
-    const bytes = asset ? await ctx.assets.read(asset.file) : null
-    if (!asset || !bytes) { lastWhy = `${c.crid} has no creative`; continue }
-    const bad = failed(fileChecks(readMedia(bytes), bytes.length, p.displayType, ctx.config.assetLimits, undefined, maxPlayLengthSecFor(company.maxPlayLengthSec, p)))
+    const stored = asset ? await storedMediaOf(ctx.assets, asset.file) : null
+    if (!asset || !stored) { lastWhy = `${c.crid} has no creative`; continue }
+    const bad = failed(fileChecks(stored.media, stored.sizeBytes, p.displayType, ctx.config.assetLimits, undefined, maxPlayLengthSecFor(company.maxPlayLengthSec, p)))
     if (bad.length) { lastWhy = `${c.crid} doesn’t fit ${p.displayType.name}: ${bad.map((x) => x.detail ?? x.name).join(' ')}`; continue }
     const assetVersion = approved ?? `v${Math.max(...assets.map((a) => a.version))}`
     const url = `${ctx.config.publicUrl}/assets/${asset.file}`

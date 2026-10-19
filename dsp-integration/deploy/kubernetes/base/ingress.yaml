@@ -67,6 +67,10 @@ metadata:
     kubernetes.io/ingress.class: alb
     alb.ingress.kubernetes.io/scheme: internal
     alb.ingress.kubernetes.io/target-type: ip
+    # Internal is reachable from the whole VPC and anything peered or on a
+    # VPN into it. Narrow to the subnets HQ Admin calls from (pre-handover
+    # review, 18 Oct 2026); this default matches networkpolicy.yaml.
+    alb.ingress.kubernetes.io/inbound-cidrs: 10.0.0.0/8
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
     alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:REGION:ACCOUNT:certificate/REPLACE_ME
     alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS13-1-2-2021-06

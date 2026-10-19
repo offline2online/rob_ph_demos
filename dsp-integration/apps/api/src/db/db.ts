@@ -151,8 +151,16 @@ export function onRollback(db: Db, fn: () => void): () => void {
   set.add(fn)
   return () => set.delete(fn)
 }
+/* Ends a failed transaction. SQLite rolls some failures back by itself (a
+   full disk, an I/O error), and then ROLLBACK throws "no transaction is
+   active" — which used to replace the real error with that one. The
+   listeners run either way: whatever the transaction wrote is gone. */
 const rollback = (db: Db) => {
-  db.exec('ROLLBACK')
+  try {
+    db.exec('ROLLBACK')
+  } catch {
+    /* Already rolled back by SQLite. */
+  }
   for (const fn of rollbackListeners.get(db) ?? []) fn()
 }
 
@@ -251,7 +259,17 @@ export async function tx<T>(db: Db, fn: () => Awaitable<T>, mode: 'DEFERRED' | '
       rollback(db)
       throw e
     }
-    db.exec('COMMIT')
+    /* A COMMIT can fail too (SQLITE_FULL when the volume fills, an I/O
+       error). Left alone, the connection stays inside the transaction: every
+       later tx() throws "cannot start a transaction within a transaction"
+       and every autocommit write silently joins one that is never committed
+       (pre-handover review, 18 Oct 2026). Roll it back and report the error. */
+    try {
+      db.exec('COMMIT')
+    } catch (e) {
+      rollback(db)
+      throw e
+    }
     return out
   } finally {
     l.open = null

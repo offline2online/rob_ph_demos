@@ -14,11 +14,26 @@ export interface RateLimiter {
   take(key: string): number
 }
 
+/* How often (in takes) the buckets that have refilled are dropped. A full
+   bucket behaves exactly like one never created, so dropping it changes no
+   answer; it only stops the map growing with every key ever seen — the
+   Player API keys on the display id, so over weeks that is every display,
+   and before the display is known to exist, any string a caller sends
+   (pre-handover review, 18 Oct 2026). */
+const SWEEP_EVERY = 1024
+
 export function tokenBucket(opts: { perSecond: number; burst: number }, now: () => number = Date.now): RateLimiter {
   const buckets = new Map<string, { tokens: number; at: number }>()
+  let takes = 0
+  const sweep = (t: number) => {
+    for (const [key, b] of buckets) {
+      if (b.tokens + ((t - b.at) / 1000) * opts.perSecond >= opts.burst) buckets.delete(key)
+    }
+  }
   return {
     take(key) {
       const t = now()
+      if (++takes % SWEEP_EVERY === 0) sweep(t)
       const b = buckets.get(key) ?? { tokens: opts.burst, at: t }
       /* Refill for the time since this key was last seen, up to the burst. */
       b.tokens = Math.min(opts.burst, b.tokens + ((t - b.at) / 1000) * opts.perSecond)

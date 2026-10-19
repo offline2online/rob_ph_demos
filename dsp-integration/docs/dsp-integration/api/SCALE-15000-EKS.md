@@ -157,7 +157,10 @@ are ready on this side:
   caller awaits it. The measured scope was not "one file per seam": it was
   63 source files, about 550 awaited calls, and the functions above them
   that had to become async in turn. Routes and the exchange no longer
-  change for an adapter.
+  change for an adapter's own methods — though they still hand the SQLite
+  handle (`ctx.db`) to the transaction lock, so a Postgres adapter first
+  turns that handle into a transaction port (pre-handover review, 18 Oct
+  2026: HANDOVER-REVIEW.md → *Porting checklist*).
 - **Done since** (v2iKDJQA0wmisXhp7ebV, 2 Oct 2026): `SecretsStore` and
   the approval `SqlDb` are awaitable, and no raw SQL remains outside
   `platform/`, `repos/` and `db/` (new `AuctionRunRepo`, `BillingRepo`,

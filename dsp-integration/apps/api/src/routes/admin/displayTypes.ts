@@ -83,6 +83,13 @@ export const displayTypeRoutes = (ctx: Context, guards: Guards): FastifyPluginAs
     })
   })
 
+  /* Saves a display type's SSP extensions — chiefly its slots (owner, label,
+     floor CPM, billing unit, max campaigns, assignment) — in one transaction:
+     validates them, refuses a new Advertiser slot while DSP integration is
+     switched off, refuses to change the owner of a slot that is reserved or
+     sold for a current or future window, keeps what the editor does not set
+     (assignment, locks, deals) from the saved record, and records whether
+     each default was set by hand. */
   app.put<{ Params: { id: string }; Body: DisplayTypeExtensions }>('/display-types/:id/extensions', async (req) => {
     guards.flagged()
     /* Read, check and save as one transaction. */

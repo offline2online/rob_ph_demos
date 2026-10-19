@@ -1,0 +1,11 @@
+-- Content-hash lookups (pre-handover review, 18 Oct 2026). A reviewer's
+-- rejection blocks a creative's exact bytes for every crid, DSP and
+-- advertiser (DspCreativeRepo.blockedBy, Rob 7 Oct 2026), and that check runs
+-- on every unknown or re-verified DSP creative — on the real-time path, per
+-- bid. Without an index it read every row of campaign_assets: 1.9 ms per bid
+-- at 50,000 assets, growing with every creative ever uploaded. Answers are
+-- unchanged; only the plan is.
+--
+-- campaign_assets is a stand-in for the platform's campaign store; on
+-- integration the Campaigns service answers this lookup from its own index.
+CREATE INDEX campaign_assets_content_hash ON campaign_assets (content_hash);

@@ -33,6 +33,7 @@
     "e2e:lint": "node scripts/lint-it-fails.mjs"
   },
   "devDependencies": {
+    "esbuild": "~0.28.2",
     "typescript": "~5.9.3"
   },
   "overrides": {

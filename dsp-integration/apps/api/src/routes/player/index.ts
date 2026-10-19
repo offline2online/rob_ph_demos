@@ -14,6 +14,8 @@ import { tokenBucket } from '../../http/rateLimit'
 import type { ImpressionRecord } from '../../repos/RealtimeImpressionRepo'
 
 const digest = (t: string) => createHash('sha256').update(t, 'utf8').digest()
+/* No display id is anywhere near this; a longer one cannot name a display. */
+const MAX_DISPLAY_ID_LENGTH = 200
 
 const body = (r: ImpressionRecord, creative?: unknown) => ({
   impressionId: r.id, status: r.status, ...(r.reason ? { reason: r.reason } : {}),
@@ -36,7 +38,9 @@ export const playerRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync =
   app.post<{ Body: { displayId?: unknown; slot?: unknown; cachedCrids?: unknown; storeOpen?: unknown; localTime?: unknown; slotStartsAt?: unknown } }>('/impressions', async (req, reply) => {
     const b = req.body ?? {}
     const invalid = []
+    /* Capped like every other identifier a caller sends (pre-handover review, 18 Oct 2026): the rate limiter below is keyed on it before the display is looked up. */
     if (typeof b.displayId !== 'string' || !b.displayId) invalid.push({ field: 'displayId', reason: 'Required.' })
+    else if (b.displayId.length > MAX_DISPLAY_ID_LENGTH) invalid.push({ field: 'displayId', reason: `${MAX_DISPLAY_ID_LENGTH} characters at most.` })
     if (!(typeof b.slot === 'number' && Number.isInteger(b.slot) && b.slot >= 1)) invalid.push({ field: 'slot', reason: 'A slot number, 1 or more.' })
     if (b.cachedCrids !== undefined && !(Array.isArray(b.cachedCrids) && b.cachedCrids.length <= 500 && b.cachedCrids.every((c) => typeof c === 'string'))) invalid.push({ field: 'cachedCrids', reason: 'A list of creative ids, 500 at most.' })
     if (b.storeOpen !== undefined && typeof b.storeOpen !== 'boolean') invalid.push({ field: 'storeOpen', reason: 'true or false.' })

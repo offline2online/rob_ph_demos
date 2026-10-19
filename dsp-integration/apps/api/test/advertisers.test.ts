@@ -39,7 +39,7 @@ describe('Advertisers (admin only, spec §3)', () => {
     const app = buildApp(await testContext())
     const add = await app.inject({ method: 'POST', url: '/api/admin/v1/advertisers/direct', payload: { name: '  Acme   Foods ' } })
     expect(add.statusCode).toBe(201)
-    expectMatchesContract('POST', '/admin/v1/advertisers', 201, add.json())
+    expectMatchesContract('POST', '/admin/v1/advertisers/direct', 201, add.json())
     expect(add.json()).toEqual({ advertiserId: 'acme-foods', name: 'Acme Foods' })
     const list = await app.inject({ method: 'GET', url: '/api/admin/v1/advertisers' })
     expectMatchesContract('GET', '/admin/v1/advertisers', 200, list.json())

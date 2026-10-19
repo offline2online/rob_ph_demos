@@ -9,6 +9,15 @@
 #
 # A DNS-aware policy (Cilium FQDN rules, Calico DNS policy) can narrow
 # "the internet" to the DSPs' hostnames; plain NetworkPolicy cannot.
+#
+# A NetworkPolicy is only enforced if the cluster runs an enforcing network
+# plugin: on EKS, the VPC CNI's network policy agent (enableNetworkPolicy)
+# or Calico/Cilium. Without one this file is accepted and does nothing —
+# check before relying on it as the second lock (pre-handover review).
+#
+# Ingress below admits the whole 10.0.0.0/8: any pod or host in that space
+# could reach the Admin API on :4000 directly, without the internal ALB.
+# Narrow it to the ALB subnets' CIDRs before real data is loaded.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -47,6 +56,10 @@ spec:
               - 10.0.0.0/8
               - 172.16.0.0/12
               - 192.168.0.0/16
+              # Carrier-grade NAT space: EKS custom networking commonly puts
+              # the pods' secondary CIDR here (pre-handover review, 18 Oct
+              # 2026). The API's own guard already refuses it.
+              - 100.64.0.0/10
               - 169.254.0.0/16
               - 127.0.0.0/8
       ports:

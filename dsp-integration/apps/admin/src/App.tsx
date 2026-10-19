@@ -1,3 +1,8 @@
+/* The admin UI's shell: the routes (one per section, each behind its flag
+   and the session's scope), the section nav, the providers (Ant Design theme,
+   React Query) and the prefetch of the sections a user is likely to open
+   next. It renders the content frame only — HQ Admin's own header, sidebar
+   and breadcrumb surround it in the iframe (ph-designer, prototyping.md). */
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query'
 import { App as AntApp, ConfigProvider } from 'antd'
 import { useEffect, useState, type ReactNode } from 'react'
@@ -21,6 +26,7 @@ import { ChangeHistory } from './features/dsp-integration/ChangeHistory'
 import { SharedTargetingVariables } from './features/dsp-integration/SharedTargetingVariables'
 import { AppShell, type NavItem } from './shared/AppShell'
 import { Icon } from './shared/Icon'
+import { RouteError } from './shared/RouteError'
 import { WithTip } from './shared/InfoTip'
 import { UnsavedChangesProvider } from './shared/UnsavedChanges'
 import { T, phTheme } from './theme/phTheme'
@@ -183,8 +189,14 @@ function Home({ flags }: { flags: Flags }) {
   )
 }
 
+/* A page that throws while rendering is replaced by RouteError inside the
+   shell (each child below), and a failing shell by the same message in a
+   plain frame (the root) — never by React Router's default stack-trace page. */
 export const appRoutes = (flags: Flags): RouteObject[] => [
-  { path: '/', element: <Root flags={flags} />, children: [{ index: true, element: <Home flags={flags} /> }, ...featureRoutes(flags)] },
+  {
+    path: '/', element: <Root flags={flags} />, errorElement: <RouteError frame />,
+    children: ([{ index: true, element: <Home flags={flags} /> }, ...featureRoutes(flags)] as RouteObject[]).map((r) => ({ ...r, errorElement: r.errorElement ?? <RouteError /> }) as RouteObject),
+  },
 ]
 
 export function Providers({ children }: { children: ReactNode }) {

@@ -67,7 +67,11 @@ export function sqliteSspAuditRepo(db: Db): SspAuditRepo {
       const desc = q.order !== 'asc'
       if (q.before !== undefined) { where.push(desc ? 'seq < ?' : 'seq > ?'); args.push(q.before) }
       const limit = Math.min(Math.max(q.limit ?? DEFAULT_PAGE, 1), MAX_PAGE)
-      const rows = prepared(db, `SELECT * FROM ssp_audit_log${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY seq ${desc ? 'DESC' : 'ASC'} LIMIT ${limit + 1}`).all(...args) as unknown as Row[]
+      /* LIMIT is bound, not written into the SQL: prepared() keeps one statement
+         per distinct SQL text for the life of the process, so every page size
+         used to be another cached statement (pre-handover review, 18 Oct 2026). */
+      args.push(limit + 1)
+      const rows = prepared(db, `SELECT * FROM ssp_audit_log${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY seq ${desc ? 'DESC' : 'ASC'} LIMIT ?`).all(...args) as unknown as Row[]
       const page = rows.slice(0, limit)
       return { items: page.map(toEntry), next: rows.length > limit ? String(page[page.length - 1].seq) : null }
     },

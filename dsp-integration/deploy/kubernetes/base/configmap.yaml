@@ -29,3 +29,22 @@ data:
   # AMAZON_BIDDER_URL: https://…/openrtb2/bid
   # TTD_BIDDER_URL: https://…/openrtb2/bid
   # DV360_API_BASE_URL / DV360_TOKEN_URL / AMAZON_ADS_BASE_URL / TTD_BASE_URL: see apps/api/src/config.ts
+  # Each DSP's creative host and path: the only place a creative URL in a bid
+  # may be fetched from for review. Unset, they are the mock service's.
+  # DV360_CREATIVE_BASE: https://…/creatives/
+  # AMAZON_CREATIVE_BASE: https://…/creatives/
+  # TTD_CREATIVE_BASE: https://…/creatives/
+  # BID_ENDPOINT_SOURCE: partner   # send bid requests to each DSP's saved endpoint (mock: the URLs above)
+  #
+  # Real-time bidding (the Player API): the budget to clear one impression,
+  # and how long after a fill its proof of play is accepted.
+  # PH_REALTIME_TMAX_MS: "200"
+  # PH_REALTIME_FILL_TTL_SEC: "120"
+  # Retention: lost/rejected bids, and the hourly unsold-slot aggregates.
+  # PH_RESERVATION_RETENTION_DAYS: "90"
+  # PH_UNSOLD_RETENTION_DAYS: "400"
+  #
+  # A fresh database starts EMPTY and switched off in production. Set this
+  # only on a demo cluster that should start with the prototype's sample
+  # retailer, DSPs, campaigns and bookings (and DSP integration switched on).
+  # PH_SEED_DEMO: "true"
