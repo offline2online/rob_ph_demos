@@ -75,7 +75,7 @@ one of the scripts below, or list it in `EXCLUDED` with a reason.
 | Run sign-in wall tests | `test:auth-gate` | auth-gate |
 | Run Routine binding tests | `test:routine-binding` | routine-binding-trigger, skill-history-trigger (`test:skill-history`) |
 | Run Ready for Testing hand-off tests | `test:ready-for-testing` | ready-for-testing-trigger, notify-fanout |
-| Run deployment train tests | `test:train-lock` | notes-append (notes only ever appended via `:commit`), train-lock, train-lock-trigger, train-lock-branch-archive, train-carried, train-sync, docs-sync, migrate-project-docs, train-checks, train-tests, parallel-builds, train-follow-up, patch-offload, train-resume, deploy-heal, generated-builds, patch-paths, preview-url-page, preview-url-pin, faq-index, e2e-run, ci-coverage |
+| Run deployment train tests | `test:train-lock` | notes-append (notes only ever appended via `:commit`), train-lock, train-lock-trigger, train-lock-branch-archive, train-carried, train-sync, docs-sync, migrate-project-docs, train-checks, train-tests, parallel-builds, train-follow-up, patch-offload, train-resume, deploy-heal, generated-builds, patch-paths, preview-url-page, preview-url-pin, faq-index, e2e-run, ci-coverage, push-workflow-guard |
 | Run rules tests against the emulator | `test:rules` | firestore-rules, notes-append-emulator (`notesCommitWrite` against real Firestore) |
 
 ## Why this exists

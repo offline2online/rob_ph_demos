@@ -539,7 +539,18 @@ one whose source the merged train changed, saying so on the cards. Added
 never reached the hosted API while the GitHub Pages client was rebuilt
 from every one of them — saves were rejected by a server two days behind
 the client, and deploying the API by hand then ran a migration against
-live data. If a future edit to this script or workflow ever
+live data. `finishTrain`'s own two dispatches
+(`deploy-backlog-tracker.yml`, `faq-content.yml`) come from one list,
+`TRAIN_MERGE_DISPATCHES`, so the deploy runs for a train touching only
+`faq/` too. A push-triggered workflow deliberately left undispatched is
+named in `NOT_DISPATCHED_AFTER_TRAIN` with a one-line reason.
+`test/push-workflow-guard.test.js` reads every `.github/workflows/*.yml`
+and fails when a push trigger is not covered by `HOSTED_DEPLOYS`,
+`GENERATED_BUILDS`, `TRAIN_MERGE_DISPATCHES`, `TRAIN_TEST_WORKFLOWS` (the
+suite ran on the train), a `.github/workflows/` path (a person merges
+those), or an excuse, or when an excuse no longer matches a workflow. When
+it fails, add a dispatch entry in `run-backlog-automation.js`, or add an
+excuse with a reason. If a future edit to this script or workflow ever
 looks like it doesn't need that explicit trigger, it's wrong — this is
 the whole reason it exists.
 

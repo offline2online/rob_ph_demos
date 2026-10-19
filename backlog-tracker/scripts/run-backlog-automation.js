@@ -1298,9 +1298,36 @@ const HOSTED_DEPLOYS = [
   },
 ];
 
+// TRAIN_MERGE_DISPATCHES: the workflows finishTrain dispatches by hand after a
+// train merge, with the paths that make each one stale. GitHub never fires a
+// workflow's `on: push` for a merge made with this script's GITHUB_TOKEN, so
+// every push-triggered workflow is either listed here, in HOSTED_DEPLOYS /
+// GENERATED_BUILDS / TRAIN_TEST_WORKFLOWS, or excused below —
+// test/push-workflow-guard.test.js fails on one that is none of those.
+const TRAIN_MERGE_DISPATCHES = [
+  { workflow: "deploy-backlog-tracker.yml", sources: ["backlog-tracker/", "faq/"] },
+  { workflow: "faq-content.yml", sources: ["faq/data/"] },
+];
+
+// Push-triggered workflows deliberately not dispatched after a train merge.
+// A key is a workflow file name (the whole workflow) or "<file> <path
+// pattern as written in the YAML>". The reason says why that is safe.
+const NOT_DISPATCHED_AFTER_TRAIN = {
+  "dsp-board.yml": "finishTrain's syncDocsAfterMerge re-syncs README/REQUIREMENTS and every board document with a sourcePath at the merge commit. A brand-new mirror still needs a dsp-board run.",
+  "dsp-prototype.yml dsp-integration/scripts/rebuild-prototype.sh": "the build script is not part of the source stamp (rebuild-prototype.sh), so even a push run rebuilds nothing.",
+};
+
 const underAny = (p, prefixes) => prefixes.some((s) => (s.endsWith("/") ? p.startsWith(s) : p === s));
 
 // The hosted services a merge of these paths leaves stale.
+// Does a train touching these paths make `workflow` (a TRAIN_MERGE_DISPATCHES
+// entry) stale? An unreadable file list (null) says yes, to be safe.
+function trainMergeNeeds(workflow, paths) {
+  if (!Array.isArray(paths)) return true;
+  const entry = TRAIN_MERGE_DISPATCHES.find((d) => d.workflow === workflow);
+  return paths.some((p) => underAny(p, entry.sources));
+}
+
 function deployWorkflowsFor(paths) {
   const changed = (paths || []).filter(Boolean);
   return HOSTED_DEPLOYS.filter((d) => changed.some((p) => underAny(p, d.sources))).map((d) => d.workflow);
@@ -3601,7 +3628,7 @@ async function finishTrain(project, deployBranch, prNumber, trainItems, { touche
   // never recreates an id the console has deleted (faqDeletedArticles
   // tombstones), so this is safe to fire on every such merge.
   let faqSynced = false;
-  if (prFiles.some((p) => p.startsWith("faq/data/"))) {
+  if (trainMergeNeeds("faq-content.yml", prFiles)) {
     try {
       run("gh", ["workflow", "run", "faq-content.yml", "--repo", REPO, "--ref", "main", "-f", "direction=sync"]);
       faqSynced = true;
@@ -3959,9 +3986,10 @@ async function processDeployTrain(project) {
     return;
   }
 
+  // couldn't read the file list — dispatch the deploy anyway, to be safe
   const touchesBacklogTracker = !pr || !Array.isArray(pr.files)
-    ? true // couldn't read the file list — dispatch the deploy anyway, to be safe
-    : pr.files.some((f) => f.path.startsWith("backlog-tracker/"));
+    ? true
+    : trainMergeNeeds("deploy-backlog-tracker.yml", pr.files.map((f) => f.path));
 
   if (pr && pr.state !== "MERGED") {
     if (project.needsHumanMerge || (Array.isArray(pr.files) && pr.files.some((f) => f.path.startsWith(WORKFLOW_PATH_PREFIX)))) {
@@ -4023,7 +4051,7 @@ async function reconcileMergedTrains() {
       continue;
     }
     console.log(`[deploy-train] ${project.id}: PR #${prNumber} was merged outside the pipeline — recording ${onTrain.length} ticket(s) as live`);
-    const touchesBacklogTracker = !Array.isArray(pr.files) || pr.files.some((f) => f.path.startsWith("backlog-tracker/"));
+    const touchesBacklogTracker = !Array.isArray(pr.files) || trainMergeNeeds("deploy-backlog-tracker.yml", pr.files.map((f) => f.path));
     await finishTrain(project, deployBranch, prNumber, onTrain, { touchesBacklogTracker });
   }
 }
@@ -4791,6 +4819,7 @@ module.exports = {
   // test/train-follow-up.test.js — a train waiting on CI starts its own next run
   followUpDue, FOLLOW_UP_MAX_WAIT_MS, dispatchFollowUpRun, followUpReasons,
   // test/preview-build-state.test.js — "Rebuilding test link…" until the bundle includes the ticket
+  TRAIN_MERGE_DISPATCHES, NOT_DISPATCHED_AFTER_TRAIN, HOSTED_DEPLOYS, trainMergeNeeds,
   GENERATED_BUILDS, PREVIEW_REBUILD_STALE_MS, previewLinkFields, refreshPreviewBuildStates, rebuildNote, repointTrainPreviewUrls,
   // test/deploy-heal.test.js — a transient deploy failure heals itself
   healFailedDeploy,
