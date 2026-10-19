@@ -229,6 +229,53 @@ const scenarios = [
       assert.ok(note.data.notes && /purple/.test(JSON.stringify(note.data.notes)), "the note carries the new description");
     },
   },
+  {
+    // 19 Oct 2026: a session wrote finishedAt "2026-10-19T14:00:00.000Z" for work that landed at 20:22, so the
+    // header said "Deving… 0/1" and the card stayed "Sent to Claude — locked". The server's reportedAt wins.
+    name: "Ready for Dev: a session reported with a wrong finishedAt but a server reportedAt — header not Deving, card not locked",
+    seed: () => {
+      const s = only("b1");
+      s.docs.projects[PID].notifyRoutine = { status: "in-progress", mode: "per-item", firedAt: t(Date.now() - 9 * 60_000), sentItemIds: ["b1"], itemCount: 1, sessionUrl: "https://claude.ai/code/cse_x" };
+      s.docs.backlogItems.b1.buildSession = { status: "done", finishedAt: "2026-10-19T14:00:00.000Z", reportedAt: t(Date.now() - 60_000) };
+      s.docs.backlogItems.b1.blocked = { reason: "waiting-on-input", note: "Waits for another ticket" };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      c.at("no Deving spinner and no locked card");
+      await until(async () => (await c.page.locator(".notify-claude-spinner").count()) === 0, "the Deving spinner to be gone");
+      const header = await c.page.locator(".project-header, .project-section").first().innerText();
+      assert.ok(!/Deving/.test(header), `header should not say Deving, got ${JSON.stringify(header)}`);
+      assert.strictEqual(await c.page.locator(".in-development-hint").count(), 0, "the card must not be locked as Sent to Claude");
+    },
+  },
+  {
+    name: "Ready for Dev: Deving shows the elapsed minutes and a per-ticket tooltip",
+    seed: () => {
+      const s = only("b1");
+      s.docs.projects[PID].notifyRoutine = { status: "in-progress", mode: "per-item", firedAt: t(Date.now() - 8 * 60_000 - 5_000), sentItemIds: ["b1"], itemCount: 1, sessionUrl: "https://claude.ai/code/cse_x" };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.waitText(".notify-claude-btn-working .notify-claude-label", "8 min", "the Deving label includes the elapsed time");
+      const title = await c.page.locator(".notify-claude-btn-working").first().getAttribute("title");
+      assert.ok(/Purple widget — building/.test(title), `tooltip should list the ticket and its state, got ${JSON.stringify(title)}`);
+    },
+  },
+  {
+    name: "Ready for Dev: a stalled record shows the Build didn't report back chip, not a spinner",
+    seed: () => {
+      const s = only("b1");
+      s.docs.projects[PID].notifyRoutine = { status: "stalled", mode: "per-item", firedAt: t(Date.now() - 30 * 60_000), sentItemIds: ["b1"], itemCount: 1 };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.waitText(".notify-claude-stalled", "report back", "the stalled chip is shown");
+      assert.strictEqual(await c.page.locator(".notify-claude-spinner").count(), 0, "a stalled record must not spin");
+    },
+  },
 ];
 
 // ── Self-checks ────────────────────────────────────────────────────────────

@@ -35,11 +35,11 @@ function constant(name) {
 }
 
 const code = [
-  "NOTIFY_ROUTINE_STALE_MS", "DEPLOY_ROUTINE_STALE_MS", "DEPLOY_HANDOVER_STALE_MS",
+  "NOTIFY_ROUTINE_STALE_MS", "NOTIFY_STILL_BUILDING_MS", "DEPLOY_ROUTINE_STALE_MS", "DEPLOY_HANDOVER_STALE_MS",
   "NOTIFY_OPTIMISTIC_STALE_MS", "DEPLOY_OPTIMISTIC_STALE_MS",
 ].map(constant).join("\n") + "\n" + [
   "tsMillis", "anyMillis", "perItemBuildFinished", "perItemRoutineFinished", "isTrainLocked",
-  "projectInDeployPhase", "deployHandedOver", "notifyClaudeButtonHTML",
+  "projectInDeployPhase", "deployHandedOver", "stalledSentIds", "sentTicketStateLines", "notifyStalledChipHTML", "notifyClaudeButtonCore", "notifyClaudeButtonHTML",
 ].map(extract).join("\n") + "\nlet timedSpinnerShown = false;";
 
 function board(project, cards) {

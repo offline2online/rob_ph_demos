@@ -28,7 +28,9 @@ function makeFakeDb(seed) {
       async set(data, opts) {
         writes.push({ collection, id, data, opts });
         state[collection] = state[collection] || {};
-        state[collection][id] = opts && opts.merge ? { ...(state[collection][id] || {}), ...data } : data;
+        if (opts && opts.merge) {
+          state[collection][id] = deepMerge(state[collection][id] || {}, data);
+        } else state[collection][id] = data;
       },
     };
   }
@@ -49,6 +51,20 @@ function makeFakeDb(seed) {
   };
 }
 
+const DELETE = { __delete: true };
+
+// Firestore's set(..., {merge: true}) merges maps deeply and removes a key
+// whose value is FieldValue.delete().
+function deepMerge(base, patch) {
+  const out = { ...base };
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === DELETE) delete out[k];
+    else if (v && typeof v === "object" && v.constructor === Object && out[k] && typeof out[k] === "object" && out[k].constructor === Object) out[k] = deepMerge(out[k], v);
+    else out[k] = v;
+  }
+  return out;
+}
+
 function loadIndex(db, secrets) {
   const stubs = {
     "firebase-functions/v2/firestore": { onDocumentUpdated: (o, h) => h, onDocumentWritten: (o, h) => h },
@@ -57,7 +73,7 @@ function loadIndex(db, secrets) {
     "firebase-admin/app": { initializeApp: () => ({}) },
     "firebase-admin/firestore": {
       getFirestore: () => db,
-      FieldValue: { serverTimestamp: () => ({}), arrayUnion: (...items) => ({ items }) },
+      FieldValue: { serverTimestamp: () => ({}), arrayUnion: (...items) => ({ items }), delete: () => DELETE },
     },
     "firebase-admin/auth": { getAuth: () => ({}) },
     "firebase-functions/v2/https": { onRequest: (o, h) => h },
@@ -144,6 +160,18 @@ async function click(db, mod, extra = {}) {
     assert.deepStrictEqual(r.sentItemIds.sort(), ["a", "b", "c"]);
     assert.strictEqual(r.sessions.length, 3);
     assert.ok(r.sessions.every((s) => s.sessionId && !s.error));
+  });
+
+  await test("a click clears the previous record's finishedAt, closedAt and stalledItemIds", async () => {
+    const sd = seed();
+    sd.projects[PID].notifyRoutine = { status: "stalled", finishedAt: "2026-10-03T10:00:00Z", closedAt: "2026-10-03T11:00:00Z", stalledItemIds: ["a"], mode: "per-item" };
+    const db = makeFakeDb(sd);
+    const mod = loadIndex(db, secrets);
+    const realFetch = global.fetch; const stub = fireStub(); global.fetch = stub;
+    try { await click(db, mod); } finally { global.fetch = realFetch; }
+    const r = db.__state.projects[PID].notifyRoutine;
+    assert.strictEqual(r.status, "in-progress");
+    for (const k of ["finishedAt", "closedAt", "stalledItemIds"]) assert.ok(!(k in r), `${k} cleared`);
   });
 
   await test("the ticket's comments ride along, so a recorded decision reaches its session", async () => {
