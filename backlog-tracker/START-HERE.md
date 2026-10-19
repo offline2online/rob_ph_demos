@@ -22,7 +22,7 @@ The documents on the console, in the order they list:
 
 - **0 — Start here: reading order, ticket flow and deploy map** — this file.
 - **1 — Project rules, CLAUDE.md** — *copy, 5 parts* · `CLAUDE.md`
-- **2 — Console MCP guide** — *copy, 3 parts* · `backlog-tracker/MCP.md`
+- **2 — Console MCP guide** — *copy, 4 parts* · `backlog-tracker/MCP.md`
 - **3 — Help Centre (faq/): how it works and how it is edited** — *copy* ·
   `faq/README.md`
 - **4 — Documentation standard** — *copy, 2 parts* · `docs/CONTRIBUTING-docs.md`
@@ -39,9 +39,10 @@ Every copy, by the exact name the console lists it under:
 - 1 — Project rules, CLAUDE.md (3/5): linking projects, the train, board access · `CLAUDE.md`
 - 1 — Project rules, CLAUDE.md (4/5): MCP server, project header, Docs page, archive · `CLAUDE.md`
 - 1 — Project rules, CLAUDE.md (5/5): iframed prototypes, ph-designer, docs in step, secrets · `CLAUDE.md`
-- 2 — Console MCP guide (1/3): connect an agent, add a member · `backlog-tracker/MCP.md`
-- 2 — Console MCP guide (2/3): what the agent can and can't do · `backlog-tracker/MCP.md`
-- 2 — Console MCP guide (3/3): client view, authentication, files, deploy, tests · `backlog-tracker/MCP.md`
+- 2 — Console MCP guide (1/4): connect an agent, add a member · `backlog-tracker/MCP.md`
+- 2 — Console MCP guide (2/4): what the agent can and can't do (read tools) · `backlog-tracker/MCP.md`
+- 2 — Console MCP guide (3/4): write tools and what the agent can't do · `backlog-tracker/MCP.md`
+- 2 — Console MCP guide (4/4): client view, authentication, files, deploy, tests · `backlog-tracker/MCP.md`
 - 3 — Help Centre (faq/): how it works and how it is edited · `faq/README.md`
 - 4 — Documentation standard (1/2): principles, types, repository rules, FAQ standard · `docs/CONTRIBUTING-docs.md`
 - 4 — Documentation standard (2/2): user guides, accessibility, templates, checklist · `docs/CONTRIBUTING-docs.md`
@@ -52,13 +53,13 @@ Where to begin, by role:
 
 - **Anyone new**: this file, then the Requirements block for what the
   console is for, then the README's "Deployment" section.
-- **Connecting an agent over MCP**: "2 — Console MCP guide (1/3)" to connect,
-  then "(2/3)" for what the agent can and can't do.
+- **Connecting an agent over MCP**: "2 — Console MCP guide (1/4)" to connect,
+  then "(2/4)" and "(3/4)" for what the agent can and can't do.
 - **Writing or editing help-centre articles**: "3 — Help Centre (faq/)",
   then "4 — Documentation standard (1/2)" before writing a word. Classify
   every article's `docType` as that standard says.
 - **Changing sign-in, rules or the MCP server**: "5 — Console security and
-  performance review (1/2)" and "(2/2)", then "2 — Console MCP guide (3/3)"
+  performance review (1/2)" and "(2/2)", then "2 — Console MCP guide (4/4)"
   for how authentication works. Read them before touching
   `backlog-tracker/public/js/auth-gate.js`, `backlog-tracker/firestore.rules`
   or `backlog-tracker/functions/mcp-server.js`.
@@ -117,7 +118,7 @@ Also in the flow: `.github/workflows/e2e-quick.yml` (a required check on every
 pull request to main, a passing no-op unless the change is for the Display
 Types project), `.github/workflows/e2e-nightly.yml` (02:00 Sydney on main,
 files tickets for failures) and the MCP tool `demote_project`, which turns a
-project back into a concept (see "2 — Console MCP guide (2/3)").
+project back into a concept (see "2 — Console MCP guide (2/4)").
 
 ### When a copy refreshes
 

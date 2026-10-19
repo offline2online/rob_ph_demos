@@ -184,6 +184,8 @@ inline as ticket cards — title, summary, type/area, test link, test
 version and a link back to the ticket. In Claude Code the same tool answers
 as text until Anthropic switches on its MCP Apps host.
 
+### Write tools
+
 **Can — write (editor and admin only):**
 
 | Tickets | Documentation | Help centre | Skills library | Deploy (one exception) | Your own routine binding |
