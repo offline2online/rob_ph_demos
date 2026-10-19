@@ -1962,9 +1962,11 @@ not one diagram per concept or project. It is rebuilt on every change to
 - **Nodes**: the PH core backbone (Campaigns & Experiences, Agent Harness
   (LangChain), MCP Access, Vector Database, Devices & Touchpoints, Store
   Data, Live Visitor Profile — fixed in `SYSTEM_MAP_CORE`, not board
-  entries), the external **PH Team** box (Help/FAQ, support, feature
-  requests, Customer Success), every non-archived project and every
-  un-promoted concept. Status styling: **Live** (core, or a project whose
+  entries), every non-archived PH product project and every un-promoted
+  product concept. Internal items are left out (`INTERNAL_RE`: the
+  Backlog Tracker & FAQs project / PH Agent Console, PH Brand, Customer
+  Support, Customer Success, PH Team — ticket bqSmBpSKbJgnsRQ6HG0d), and
+  Live Visitor Profile is drawn once, as a concept, in the PH Core slot. Status styling: **Live** (core, or a project whose
   release is live), **Project**, **Concept**, **External**. A project shows
   its release ("Release 5.0") beside its name.
 - **Lines**: one per interface contract (`interfaces`), labelled with the
@@ -1977,7 +1979,7 @@ not one diagram per concept or project. It is rebuilt on every change to
   Harness (the closed insights loop, drawn heavy), DSP demand (Campaigns,
   orange) and supply (Devices → DSP, green), Experience Templates fed by
   Profile, Store Data and Products & Pricing, Retail Media Insights reading
-  the Vector DB, Customer Support → PH Team.
+  the Vector DB.
 - **Concepts and externals drawn by the map itself** (ticket
   M3SX6sWxRuNpr6jp5Pam): Concept nodes Custom & Edge Models, Digital
   Identity & Resolution, Offsite Retail Media & Social, Federated Retail
@@ -1994,6 +1996,17 @@ not one diagram per concept or project. It is rebuilt on every change to
   projects, the lines touching them and their other ends.
 - **Clicking a node** opens its landing page (`artifactUrl`), else the
   project's Docs page / the concept's detail page.
+
+- **Data Clean Room and fit to page** (ticket bqSmBpSKbJgnsRQ6HG0d): an
+  external **Data Clean Room** node (AWS Clean Rooms primary; Snowflake,
+  LiveRamp, Google Ads Data Hub as alternatives) sits on the PII boundary,
+  fed by Digital Identity's pseudonymous IDs, with Retailer PH ⇄ Clean Room
+  ⇄ Advertiser PH lines labelled "audience matching & measurement
+  (aggregated, no raw data)". The map never scrolls sideways: the SVG's
+  viewBox scales the whole map to the container width on load and resize
+  and the hero grows taller instead; labels are cut to short forms with
+  the full text in the tooltip; zoom (+/−, Ctrl+scroll), drag-to-pan and
+  Fit are available, and the default view is the whole map.
 
 ### Concept Incubator page
 

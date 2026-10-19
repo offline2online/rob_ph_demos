@@ -1163,6 +1163,11 @@
         <div class="sysmap-toolbar">
           <label class="field-label" for="system-map-release">Release</label>
           <select id="system-map-release"><option value="">All releases</option></select>
+          <span class="sysmap-zoom" role="group" aria-label="Zoom the map">
+            <button type="button" class="icon-btn" id="system-map-zoom-out" title="Zoom out" aria-label="Zoom out"><span class="material-symbols-outlined">remove</span></button>
+            <button type="button" class="icon-btn" id="system-map-zoom-in" title="Zoom in (Ctrl + scroll also zooms, drag pans)" aria-label="Zoom in"><span class="material-symbols-outlined">add</span></button>
+            <button type="button" class="icon-btn" id="system-map-fit" title="Fit the whole map" aria-label="Fit the whole map"><span class="material-symbols-outlined">fit_screen</span></button>
+          </span>
           <div class="sysmap-legend" id="system-map-legend"></div>
         </div>
         <div class="sysmap-scroll" id="system-map-canvas"></div>

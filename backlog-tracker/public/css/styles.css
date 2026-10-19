@@ -1621,23 +1621,24 @@ textarea.mirror-readonly, textarea[readonly] { background: var(--surface-2); col
 .sysmap-key.line-demand::before { border-color: #e07b00; }
 .sysmap-key.line-supply::before { border-color: #2e7d32; }
 .sysmap-key.line-loop::before { border-color: var(--primary); border-width: 4px 0 0; }
-.sysmap-scroll { overflow-x: auto; }
-.sysmap-svg { display: block; width: 100%; min-width: 1500px; height: auto; font-family: Roboto, "Helvetica Neue", Arial, sans-serif; }
+.sysmap-scroll { overflow: hidden; }
+.sysmap-zoom { display: inline-flex; gap: 2px; }
+.sysmap-svg { display: block; width: 100%; height: auto; touch-action: pan-y; cursor: grab; font-family: Roboto, "Helvetica Neue", Arial, sans-serif; }
 .sysmap-pii { fill: rgba(211, 47, 47, .06); stroke: #d32f2f; stroke-width: 2.5; stroke-dasharray: 10 6; }
-.sysmap-pii-label { font-size: 12px; font-weight: 700; fill: #b71c1c; text-transform: uppercase; letter-spacing: .05em; }
-.sysmap-pii-wall { font-size: 11px; font-weight: 700; fill: #b71c1c; }
+.sysmap-pii-label { font-size: 13px; font-weight: 700; fill: #b71c1c; text-transform: uppercase; letter-spacing: .05em; }
+.sysmap-pii-wall { font-size: 13px; font-weight: 700; fill: #b71c1c; }
 .sysmap-key.s-pii::before { background: rgba(211, 47, 47, .08); border-color: #d32f2f; border-style: dashed; }
 .sysmap-boundary { fill: none; stroke: #9aa0a6; stroke-dasharray: 6 5; }
-.sysmap-boundary-label { font-size: 12px; fill: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; }
+.sysmap-boundary-label { font-size: 13px; fill: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; }
 .sysmap-node rect { fill: #fff; stroke: var(--border); stroke-width: 1.5; }
 .sysmap-node.s-live rect { fill: #e8f6fa; stroke: var(--primary); }
 .sysmap-node.s-project rect { fill: #f3ebff; stroke: var(--violet); }
 .sysmap-node.s-concept rect { fill: #fff; stroke: var(--accent-backlog); stroke-dasharray: 5 4; }
 .sysmap-node.s-external rect { fill: #333; stroke: #333; }
 .sysmap-node.s-external text { fill: #fff; }
-.sysmap-node-name { font-size: 12.5px; font-weight: 700; fill: var(--text); }
-.sysmap-node-sub { font-size: 9.5px; fill: var(--text-muted); }
-.sysmap-node-status { font-size: 10px; font-weight: 700; fill: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
+.sysmap-node-name { font-size: 14px; font-weight: 700; fill: var(--text); }
+.sysmap-node-sub { font-size: 10.5px; fill: var(--text-muted); }
+.sysmap-node-status { font-size: 11px; font-weight: 700; fill: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
 .sysmap-node.s-live .sysmap-node-status { fill: var(--primary); }
 .sysmap-node.s-project .sysmap-node-status { fill: var(--violet); }
 .sysmap-node-release { font-size: 11px; font-weight: 700; fill: #fff; paint-order: stroke; }
@@ -1652,6 +1653,6 @@ textarea.mirror-readonly, textarea[readonly] { background: var(--surface-2); col
 .sysmap-edge.clickable:hover .sysmap-line, .sysmap-edge.clickable:focus .sysmap-line { stroke-width: 4; outline: none; }
 .sysmap-hit { fill: none; stroke: transparent; stroke-width: 14; }
 .sysmap-edge-bg { fill: rgba(255, 255, 255, .92); }
-.sysmap-edge-label { font-size: 10px; fill: var(--text); }
+.sysmap-edge-label { font-size: 11.5px; fill: var(--text); }
 .sysmap-node.dim, .sysmap-edge.dim { opacity: .18; }
 @media (max-width: 640px) { .sysmap-legend { margin-left: 0; } }

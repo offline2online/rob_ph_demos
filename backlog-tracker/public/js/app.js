@@ -28,7 +28,7 @@ import { INTAKE_SECTIONS, missingSections, applyAnswers } from "./ticket-intake.
 import { FAILED_TESTING_CHOICES, DEFAULT_FAILED_TESTING_CHOICE, sendBackFields, followUpWrites } from "./follow-up.js";
 import { trainTestChipHTML, approvalWarningLines, APPROVAL_WARNING_TITLE, APPROVAL_WARNING_FOOTER, approvalFields, approvedByLine } from "./card-test-status.js";
 import { isMirror, orderProjectDocs, mirrorEditRefusal, mirrorDeleteWarning, mirrorChipHTML, openInGithubHTML, startHereChipHTML, projectDocRowHTML, interfaceActionsHTML } from "./docs-view.js";
-import { buildSystemMap, systemMapHTML, systemMapLegendHTML } from "./system-map.js";
+import { buildSystemMap, systemMapHTML, systemMapLegendHTML, zoomViewBox, clampViewBox, FIT_VIEWBOX } from "./system-map.js";
 import { clusterBacklogItems, estimateEffort, estimatePriority, splitRequirementsText } from "./build-batches.js";
 
 // auth-gate.js has already initialised the app (and signed the user in)
@@ -6141,6 +6141,15 @@ function conceptCardHTML(c) {
 // The hero system map: rebuilt whenever projects, concepts, interfaces or
 // releases change, so a new interface contract adds a line with no code change.
 let systemMapModel = null;
+// The visible window of the map. Default is the whole map, which the SVG's
+// viewBox scales to the container width on load and on every resize, so the
+// page never scrolls sideways; zoom and pan only move this window.
+let systemMapView = { ...FIT_VIEWBOX };
+function setSystemMapView(vb) {
+  systemMapView = vb;
+  const svg = document.querySelector("#system-map-canvas svg");
+  if (svg) svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+}
 function renderSystemMap() {
   const canvas = document.getElementById("system-map-canvas");
   const page = document.getElementById("concept-incubator-page");
@@ -6153,10 +6162,50 @@ function renderSystemMap() {
   if (sel.dataset.sig !== html) { sel.innerHTML = html; sel.dataset.sig = html; sel.value = chosen; }
   document.getElementById("system-map-legend").innerHTML = systemMapLegendHTML();
   systemMapModel = buildSystemMap({ projects, concepts, interfaces, releases });
-  canvas.innerHTML = systemMapHTML(systemMapModel, { release: sel.value });
+  canvas.innerHTML = systemMapHTML(systemMapModel, { release: sel.value, viewBox: systemMapView });
 }
 document.getElementById("system-map-release").addEventListener("change", renderSystemMap);
+function zoomSystemMap(factor, fx = 0.5, fy = 0.5) {
+  const v = systemMapView;
+  setSystemMapView(zoomViewBox(v, factor, v.x + v.w * fx, v.y + v.h * fy));
+}
+document.getElementById("system-map-zoom-in").addEventListener("click", () => zoomSystemMap(1.4));
+document.getElementById("system-map-zoom-out").addEventListener("click", () => zoomSystemMap(1 / 1.4));
+document.getElementById("system-map-fit").addEventListener("click", () => setSystemMapView({ ...FIT_VIEWBOX }));
+document.getElementById("system-map-canvas").addEventListener("wheel", (e) => {
+  if (!e.ctrlKey && !e.metaKey) return; // plain scrolling still scrolls the page
+  const svg = e.target.closest("svg");
+  if (!svg) return;
+  e.preventDefault();
+  const r = svg.getBoundingClientRect();
+  zoomSystemMap(e.deltaY < 0 ? 1.2 : 1 / 1.2, (e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
+}, { passive: false });
+// Drag to pan (only moves anything once zoomed in).
+{
+  let drag = null;
+  const canvasEl = document.getElementById("system-map-canvas");
+  canvasEl.addEventListener("pointerdown", (e) => {
+    const svg = e.target.closest("svg");
+    if (!svg || e.button !== 0) return;
+    drag = { sx: e.clientX, sy: e.clientY, view: systemMapView, w: svg.getBoundingClientRect().width, moved: false };
+  });
+  window.addEventListener("pointermove", (e) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.sx;
+    const dy = e.clientY - drag.sy;
+    if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
+    if (!drag.moved) return;
+    const k = drag.view.w / drag.w;
+    setSystemMapView(clampViewBox({ ...drag.view, x: drag.view.x - dx * k, y: drag.view.y - dy * k }));
+  });
+  window.addEventListener("pointerup", () => {
+    if (drag && drag.moved) canvasEl.dataset.justPanned = "1";
+    drag = null;
+  });
+}
 function systemMapActivate(target) {
+  const canvasEl = document.getElementById("system-map-canvas");
+  if (canvasEl.dataset.justPanned) { delete canvasEl.dataset.justPanned; return; }
   const edge = target.closest("[data-interface-id]");
   if (edge) { openInterfaceModal(edge.dataset.interfaceId, edge.dataset.anchorId); return; }
   const node = target.closest("[data-node-id]");
@@ -6165,7 +6214,7 @@ function systemMapActivate(target) {
   if (!n) return;
   const href = n.href ? safeHttpUrl(n.href) : "";
   if (href) window.open(href, "_blank", "noopener");
-  else if (n.kind === "concept") openConceptDetailPage(n.id);
+  else if (n.kind === "concept" && !n.isProject) openConceptDetailPage(n.id);
   else openDocsPage(n.id);
 }
 document.getElementById("system-map-canvas").addEventListener("click", (e) => systemMapActivate(e.target));
