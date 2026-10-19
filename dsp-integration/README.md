@@ -95,6 +95,18 @@ tickets that were already decided or parked.
 6. **Needs a product decision.** Comment once with the specific questions
    and a recommended default for each, then stop. Don't repeat the review
    on the next run.
+7. **A schema or API change carries its spec.** `docsImpact` in
+   `dsp-integration/board-docs.json` has two rules. A migration
+   (`apps/api/src/db/migrations/**`, `packages/*/migrations/**`) needs
+   `REQUIREMENTS.md` (§8 Data model) in the same patch. A change to
+   `openapi.yaml` or `packages/types/src/openapi.d.ts` needs `REQUIREMENTS.md`
+   or `api/API.md`. Route files have no rule: the response contract test
+   (`apps/api/test/contract.ts`) already catches a route that drifts from
+   `openapi.yaml`. Before handing back, run
+   `node backlog-tracker/scripts/docs-impact.js --base <patchBaseSha>`. A
+   patch that trips a rule is refused and rebuilt once. When the change
+   genuinely doesn't alter the spec, hand back `patchDocsImpact` with one
+   sentence saying why; it lands with a "Spec not updated" note.
 
 ## The hosted prototype
 

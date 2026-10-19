@@ -4,8 +4,11 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { MIRROR_CAP, REPO, ROOT, cutEntry, loadManifest, matchEntries, specOf } from '../lib/board-docs.mjs'
+
+const { validateDocsImpact, docsImpactCheck } = createRequire(import.meta.url)('../../../backlog-tracker/scripts/docs-impact.js')
 
 const manifest = loadManifest()
 const read = (p) => readFileSync(join(REPO, p), 'utf8')
@@ -92,4 +95,37 @@ test('--check-cut exits 0 and lists 28 mirrors; the script holds no mirror list 
 test('START-HERE.md names every mirror path and every superseded board document', () => {
   for (const p of new Set(manifest.mirrors.map((m) => m.path))) assert.ok(START.includes(p), `${p} is not in START-HERE.md`)
   for (const b of manifest.boardDocs) assert.ok(START.includes(b.id), `${b.id} is not in START-HERE.md`)
+})
+
+/* docsImpact: the Display Types rules for the docs-impact gate. */
+const DOC = 'dsp-integration/docs/dsp-integration'
+const REQ = `${DOC}/REQUIREMENTS.md`
+const rules = (manifest.docsImpact ?? []).map((r, index) => ({ ...r, manifest: 'dsp-integration/board-docs.json', index }))
+const unmet = (paths) => docsImpactCheck(paths, rules).map((u) => u.rule.index)
+// fe3931b6 (DLhjuhbTqJS2uAvhh0I8, 10 Oct 2026): migration 0065 and both OpenAPI files, no spec change
+const FE39 = [
+  'dsp-integration/apps/api/src/db/migrations/0065_x.up.sql',
+  'dsp-integration/apps/api/src/db/migrations/0065_x.down.sql',
+  `${DOC}/api/openapi.yaml`,
+  'dsp-integration/packages/types/src/openapi.d.ts',
+]
+
+test('docsImpact: exactly the two rules, every glob matches a tracked file, every required file exists', () => {
+  assert.equal(rules.length, 2)
+  assert.deepEqual(rules[0].require, [REQ])
+  assert.deepEqual(rules[1].require, [REQ, `${DOC}/api/API.md`])
+  const tracked = execFileSync('git', ['ls-files'], { cwd: REPO, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).split('\n').filter(Boolean)
+  assert.deepEqual(validateDocsImpact(rules, { exists: (p) => tracked.includes(p), trackedPaths: tracked }), [])
+})
+
+test('docsImpact replay: fe3931b6 fires both rules; the spec change or an API.md-only change clears them', () => {
+  assert.deepEqual(unmet(FE39), [0, 1])
+  assert.deepEqual(unmet([...FE39, REQ]), [])
+  assert.deepEqual(unmet([`${DOC}/api/openapi.yaml`, `${DOC}/api/API.md`]), [])
+})
+
+test('docsImpact replay: a campaign-approval migration fires rule 1; route-only and docs-only changes fire nothing', () => {
+  assert.deepEqual(unmet(['dsp-integration/packages/campaign-approval/migrations/0101_x.up.sql']), [0])
+  assert.deepEqual(unmet(['dsp-integration/apps/api/src/routes/admin/campaigns.ts']), [])
+  assert.deepEqual(unmet([REQ, `${DOC}/api/API.md`]), [])
 })

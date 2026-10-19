@@ -328,5 +328,28 @@
       "status": "superseded",
       "note": "Applied by nSrDVrcILDQbXZNafhjX in d0bb03d (PR #306). Read instead: REQUIREMENTS.md since d0bb03d."
     }
+  ],
+  "docsImpact": [
+    {
+      "when": [
+        "dsp-integration/apps/api/src/db/migrations/**",
+        "dsp-integration/packages/*/migrations/**"
+      ],
+      "require": [
+        "dsp-integration/docs/dsp-integration/REQUIREMENTS.md"
+      ],
+      "why": "A migration changes the data model: update REQUIREMENTS.md §8 Data model."
+    },
+    {
+      "when": [
+        "dsp-integration/docs/dsp-integration/api/openapi.yaml",
+        "dsp-integration/packages/types/src/openapi.d.ts"
+      ],
+      "require": [
+        "dsp-integration/docs/dsp-integration/REQUIREMENTS.md",
+        "dsp-integration/docs/dsp-integration/api/API.md"
+      ],
+      "why": "The API contract changed: say what changed in API.md or REQUIREMENTS.md."
+    }
   ]
 }
