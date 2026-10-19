@@ -53,26 +53,20 @@ export const SYSTEM_MAP_CONCEPTS = [
     sub: "Identity vault + resolution service + identity graph", x: 440, y: 940 },
   { key: "offsite", match: /offsite retail media/i, name: "Offsite (Meta, YouTube)", full: "Offsite (Meta, YouTube)",
     sub: "Hashed audiences to offsite platforms", x: 1060, y: 330 },
-  { key: "federation", match: /federated retail media/i, name: "Federated Retail Media (PH-to-PH)", full: "Federated Retail Media (PH-to-PH)",
-    sub: "Peer-to-peer partnerships, no central hub", x: 1365, y: 600 },
+  { key: "federation", match: /federated retail media|federated ph/i, name: "Federated PH Instance", full: "Federated PH Instance",
+    sub: "Another PH instance, peer to peer", x: 100, y: 190 },
 ];
 
 // External systems and actors (C4 external style).
 export const SYSTEM_MAP_EXTERNALS = [
   { key: "salesforce", name: "Salesforce CRM", sub: "PII side — consent checked here", x: 130, y: 922 },
   { key: "amazon", name: "Amazon Connect", sub: "Customer Profiles — PII side, consent checked here", x: 130, y: 982 },
-  { key: "retailerph", name: "Retailer PH instance", sub: "This retailer's Personalisation Hub", x: 1160, y: 700 },
-  { key: "otherph", name: "Partner retailer PH instance", sub: "Another retailer's Personalisation Hub", x: 1470, y: 700 },
-  { key: "advph", name: "Advertiser PH instance", sub: "Phase 3: advertiser runs their own PH", x: 1160, y: 800 },
-  { key: "advertiser", name: "Advertiser", sub: "Phase 2: logs into the retailer's PH", x: 1470, y: 800 },
-  { key: "cleanroom", name: "Data Clean Room", sub: "AWS Clean Rooms (primary); alternatives: Snowflake, LiveRamp, Google Ads Data Hub", x: 1315, y: 860 },
+  { key: "advertiser", name: "Advertiser", sub: "External actor", x: 100, y: 110 },
 ];
 
 // Lines for the nodes above. Ends are a core key, a SYSTEM_MAP_CONCEPTS /
 // SYSTEM_MAP_EXTERNALS key, or { name: regex } for a board node (skipped
 // when no such node exists). `both` draws arrows at each end; `bow` curves it.
-const AUTH = "authenticated partnership (mTLS + scoped OAuth)";
-const CLEAN = "audience matching & measurement (aggregated, no raw data)";
 const EXTRA_LINKS = [
   { from: "custom", to: "identity", label: "HMAC-hashed edge identifiers (e.g. plates)", bow: 0.12 },
   { from: "devices", to: "custom", label: "edge model deployment" },
@@ -86,18 +80,9 @@ const EXTRA_LINKS = [
   { from: { name: /experience templates/i }, to: "offsite", label: "offsite creative", bow: 0.12 },
   { from: { name: /display types|dsp integration/i }, to: "offsite", label: "advertiser offsite buys", bow: -0.12 },
   { from: "identity", to: "offsite", label: "hashed audiences (SHA-256 email)", short: "hashed audiences" },
-  { from: "identity", to: "cleanroom", label: "pseudonymous IDs for clean-room matching", short: "pseudonymous IDs", bow: -0.08 },
-  { from: "retailerph", to: "cleanroom", label: CLEAN, short: "audience matching (aggregated)", both: true },
-  { from: "cleanroom", to: "advph", label: CLEAN, short: "audience matching (aggregated)", both: true },
   { from: "offsite", to: "vector", label: "offsite exposure for closed-loop measurement", bow: 0.1 },
-  { from: "federation", to: "retailerph", label: "extends", dotted: true },
-  { from: "retailerph", to: "otherph", label: AUTH, short: "authenticated partnership", both: true },
-  { from: "advph", to: "retailerph", label: AUTH, both: true, bow: -0.1 },
-  { from: "retailerph", to: "advph", label: "campaign & data export (advertiser-tagged)", bow: 0.2 },
-  { from: "retailerph", to: "advph", label: "advertiser results (closed loop, retailer can switch off per advertiser)", bow: -0.25 },
-  { from: "advertiser", to: "retailerph", label: "Phase 2: logs into the retailer's PH" },
-  { from: "advertiser", to: "advph", label: "Phase 3: runs own PH" },
-  { from: { name: /mcp release/i }, to: "advertiser", label: "Phase 2 advertiser access", bow: 0.2 },
+  { from: "advertiser", to: { name: /mcp release/i }, label: "advertiser access" },
+  { from: "federation", to: { name: /mcp release/i }, label: "federated PH access" },
   { from: "brand", to: "harness", label: "brand rules for asset creation (jointly branded assets for the retailer's network)" },
   { from: "brand", to: { name: /experience templates/i }, label: "brand rules for asset creation", bow: 0.2 },
 ];

@@ -53,11 +53,11 @@ console.log("system-map: ok");
 {
   const mm = buildSystemMap(base);
   const byName = (n) => mm.nodes.find((x) => x.name === n);
-  ["Custom & Edge Models", "Digital Identity & Resolution", "Offsite (Meta, YouTube)", "Federated Retail Media (PH-to-PH)"].forEach((n) => assert.equal(byName(n).status, "Concept", n));
-  ["Salesforce CRM", "Amazon Connect", "Advertiser", "Retailer PH instance", "Advertiser PH instance"].forEach((n) => assert.equal(byName(n).status, "External", n));
+  ["Custom & Edge Models", "Digital Identity & Resolution", "Offsite (Meta, YouTube)", "Federated PH Instance"].forEach((n) => assert.equal(byName(n).status, "Concept", n));
+  ["Salesforce CRM", "Amazon Connect", "Advertiser"].forEach((n) => assert.equal(byName(n).status, "External", n));
   const lab = (t) => mm.edges.filter((e) => e.label === t);
   ["HMAC-hashed edge identifiers (e.g. plates)", "edge model deployment", "stitching trigger", "pseudonymous IDs + attributes", "PH-optimised models",
-    "retailer-owned data for model training/optimisation", "offsite creative", "advertiser offsite buys", "authenticated partnership (mTLS + scoped OAuth)"].forEach((t) => assert.ok(lab(t).length, t));
+    "retailer-owned data for model training/optimisation", "offsite creative", "advertiser offsite buys"].forEach((t) => assert.ok(lab(t).length, t));
   assert.equal(lab("pseudonymised attributes in / insights written back").filter((e) => e.both).length, 2);
   assert.equal(lab("hashed audiences (SHA-256 email)").length, 1);
   assert.equal(mm.nodes.filter((x) => /offsite|^(Meta|TikTok|Google Display|YouTube)$/i.test(x.name)).length, 1);
@@ -70,7 +70,7 @@ console.log("system-map: ok");
 }
 console.log("system-map (new concepts): ok");
 
-// Clean-up: internal items out, Live Visitor Profile once, clean room in, fits the page
+// Clean-up: internal items out, Live Visitor Profile once, fits the page
 {
   const { zoomViewBox, FIT_VIEWBOX } = await import("../public/js/system-map.js");
   const mm = buildSystemMap({
@@ -85,15 +85,12 @@ console.log("system-map (new concepts): ok");
   assert.equal(vp[0].kind, "concept");
   assert.equal(vp[0].status, "Concept");
   assert.ok(mm.edges.some((e) => e.from === "core:profile" && mm.byId[e.from] === vp[0]), "platform lines still reach it");
-  const cr = mm.nodes.find((n) => n.name === "Data Clean Room");
-  assert.equal(cr.status, "External");
-  assert.match(cr.sub, /AWS Clean Rooms.*Snowflake.*LiveRamp.*Google Ads Data Hub/);
-  const crEdges = mm.edges.filter((e) => e.from === cr.id || e.to === cr.id);
-  assert.ok(crEdges.some((e) => e.both && e.to === cr.id && mm.byId[e.from].name === "Retailer PH instance"));
-  assert.ok(crEdges.some((e) => e.both && e.from === cr.id && mm.byId[e.to].name === "Advertiser PH instance"));
-  assert.ok(crEdges.some((e) => e.from === "ext:identity" && /pseudonymous/.test(e.label)), "fed by Digital Identity");
-  assert.ok(crEdges.filter((e) => e.both).every((e) => /aggregated, no raw data/.test(e.label)));
-  assert.ok(cr.y === 860, "sits on the PII boundary line");
+  ["Retailer PH instance", "Partner retailer PH instance", "Advertiser PH instance", "Data Clean Room"].forEach((n) => assert.ok(!mm.nodes.some((x) => x.name === n), `${n} is gone`));
+  assert.ok(!mm.edges.some((e) => /authenticated partnership|campaign & data export|advertiser results|clean-room/.test(e.label)), "no federation links");
+  const adv = mm.nodes.find((n) => n.name === "Advertiser" && n.kind === "external");
+  const fed = mm.nodes.find((n) => n.name === "Federated PH Instance");
+  assert.equal(fed.status, "Concept");
+  assert.ok(adv.x < 230 && fed.x < 230 && adv.y < 300 && fed.y < 300, "top-left, outside the platform box");
   const h = systemMapHTML(mm);
   assert.ok(!/min-width/.test(h) && h.includes('viewBox="0 0 1600 1040"'));
   // every node inside the drawing area
@@ -103,3 +100,14 @@ console.log("system-map (new concepts): ok");
   assert.deepEqual(zoomViewBox(FIT_VIEWBOX, 0.5, 800, 520), FIT_VIEWBOX, "cannot zoom out past fit");
 }
 console.log("system-map (clean-up): ok");
+
+// Federation: Advertiser and Federated PH Instance each have one line to MCP Release
+{
+  const mm = buildSystemMap({ ...base, projects: [...projects, { id: "mcpr", name: "MCP Release" }] });
+  const mcp = mm.byId.mcpr;
+  const adv = mm.nodes.find((n) => n.name === "Advertiser" && n.kind === "external");
+  const fed = mm.nodes.find((n) => n.name === "Federated PH Instance");
+  [adv, fed].forEach((n) => assert.equal(mm.edges.filter((e) => (e.from === n.id && e.to === mcp.id) || (e.to === n.id && e.from === mcp.id)).length, 1, `${n.name} has one line to MCP Release`));
+  assert.equal(mm.edges.filter((e) => e.from === adv.id || e.to === adv.id || e.from === fed.id || e.to === fed.id).length, 2, "no other federation lines");
+}
+console.log("system-map (federation): ok");

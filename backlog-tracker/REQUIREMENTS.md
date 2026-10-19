@@ -1982,26 +1982,24 @@ not one diagram per concept or project. It is rebuilt on every change to
   the Vector DB.
 - **Concepts and externals drawn by the map itself** (ticket
   M3SX6sWxRuNpr6jp5Pam): Concept nodes Custom & Edge Models, Digital
-  Identity & Resolution, a single Offsite (Meta, YouTube) box, Federated Retail
-  Media (PH-to-PH) (`SYSTEM_MAP_CONCEPTS`; a board project/concept of the
+  Identity & Resolution, a single Offsite (Meta, YouTube) box, Federated PH
+  Instance (`SYSTEM_MAP_CONCEPTS`; a board project/concept of the
   same name replaces the built-in one), PH Core nodes Check-in and Brand
-  Guidelines, and External nodes Salesforce CRM, Amazon Connect, Advertiser and the retailer / partner /
-  advertiser PH instances (`SYSTEM_MAP_EXTERNALS`). Their labelled lines
+  Guidelines, and External nodes Salesforce CRM, Amazon Connect and Advertiser (`SYSTEM_MAP_EXTERNALS`). Their labelled lines
   are `EXTRA_LINKS`. A red dashed **PII boundary** (`PII_ZONE`) encloses
   the identity vault, Salesforce and Amazon Connect; Live Visitor Profile,
   Agent Harness, agents and Campaigns stay outside it — agents never
-  cross it. Federation lines are peer-to-peer, no central hub.
+  cross it. Federation is shown only as two lines to MCP Release, top-left
+  outside the platform box: Advertiser (external) and Federated PH Instance
+  (concept). The earlier retailer / partner / advertiser PH instance boxes
+  and the Data Clean Room were removed (ticket 6auvMEuRHAhgl8r8HC1x).
 - **Release filter**: picking a release dims everything except its
   projects, the lines touching them and their other ends.
 - **Clicking a node** opens its landing page (`artifactUrl`), else the
   project's Docs page / the concept's detail page.
 
-- **Data Clean Room and fit to page** (ticket bqSmBpSKbJgnsRQ6HG0d): an
-  external **Data Clean Room** node (AWS Clean Rooms primary; Snowflake,
-  LiveRamp, Google Ads Data Hub as alternatives) sits on the PII boundary,
-  fed by Digital Identity's pseudonymous IDs, with Retailer PH ⇄ Clean Room
-  ⇄ Advertiser PH lines labelled "audience matching & measurement
-  (aggregated, no raw data)". The map never scrolls sideways: the SVG's
+- **Fit to page** (ticket bqSmBpSKbJgnsRQ6HG0d; its Data Clean Room node was
+  superseded and removed): The map never scrolls sideways: the SVG's
   viewBox scales the whole map to the container width on load and resize
   and the hero grows taller instead; labels are cut to short forms with
   the full text in the tooltip; zoom (+/−, Ctrl+scroll), drag-to-pan and
