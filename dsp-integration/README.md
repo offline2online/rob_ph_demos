@@ -342,10 +342,22 @@ npm test
   it starts itself (fresh database, ephemeral ports, `PH_TEST_CLOCK`), no
   browser and no settings changes, and its Phase 5 (cases M1–M8) adds the
   preferred and programmatic guaranteed deals over the Admin and Partner APIs; `npm run bench -- --assert` is the
-  performance gate (`--calibrate` first on a new machine). `npm run
+  performance gate (`--calibrate` first on a new machine). It writes
+  `results/bench.json` and `results/cases/bench.json` (one case per metric,
+  run "Bench"), keeps going when a shape's `load.ts` crashes (a
+  `bench:<shape>:crash` failure, e.g. exit 134 out of memory), and exits 1 on
+  any breach or crash. `npm run
   e2e:report` and `npm run e2e:file-bugs` turn `results/*.json` into the
   board's results document and tickets (`BOARD_API_KEY`; `--dry-run`
-  without). `e2e:report` keeps ONE project document, "E2E results — latest",
+  without); given no file arguments they read `E2E_RESULTS_FILE`, which is how
+  the board's **Run E2E** button (`backlog-tracker/scripts/e2e-run.mjs`,
+  steps listed in `e2e.config.json`) produces the document and tickets.
+  Bench breaches become ONE ticket per shape ("Perf: T — 3 breaches; worst:
+  …", or "Perf: A bench crashed — …"; an open "Perf: <shape> …" ticket is
+  commented instead), and `file-e2e-bugs` ends by printing `TICKETS_FILED=<n>`.
+  The journey also writes `results/cases/journey.json` for e2e-run; the
+  `cases/` subfolder keeps the nightly's `results/*.json` glob from reading it
+  twice. `e2e:report` keeps ONE project document, "E2E results — latest",
   updated in place and always under 19,000 chars (the board refuses 20,000):
   header, per-run table, failing cases in full, known gaps and skipped one
   line each, a Bench block, and the last 14 runs; passing cases are only

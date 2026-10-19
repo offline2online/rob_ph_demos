@@ -3,7 +3,14 @@
      start of the test title ("E4 — an asset over…"); a title containing
      "known gap" is a known-gap, never a fail; `it.fails` tests report as
      passed by vitest while the bug reproduces, which is what we want.
-   - the journey runner's own results (Run 6): already in this shape.
+   - the journey runner's own results (Run 6), the bench gate's (run
+     "Bench"): {run, command, commit, startedAt, cases}, each case carrying
+     its own run and repro when it has them (the journey's defaults are
+     "Run 6" and `npm run e2e:journey`);
+   - a bare array of such cases (results/cases/*.json);
+   - e2e-run.mjs's record ({steps: [{id, label, status, cases}]}): a case's
+     run is its own or else the step label, its id is caseId or else id, and
+     a skipped step is one "skipped" case, "not configured".
    Several files can be merged into one run. */
 import { readFileSync } from 'node:fs'
 
@@ -16,11 +23,28 @@ const RUN_OF = (ancestors, file) => {
   return 'Run ?'
 }
 
+const JOURNEY_REPRO = 'npm run e2e:journey'
+const toCase = (c, dflt = {}) => ({
+  run: c.run ?? dflt.run ?? 'Run 6',
+  caseId: c.caseId ?? c.id ?? dflt.caseId,
+  title: c.title ?? c.caseId ?? c.id ?? dflt.title ?? '',
+  status: c.status,
+  expected: c.expected ?? 'as specified',
+  actual: String(c.actual ?? ''),
+  repro: c.repro ?? dflt.repro ?? JOURNEY_REPRO,
+})
+
 export function load(file) {
   const j = JSON.parse(readFileSync(file, 'utf8'))
+  if (Array.isArray(j)) return { run: 'Cases', command: JOURNEY_REPRO, commit: null, startedAt: undefined, stopped: null, cases: j.map((c) => toCase(c)) }
+  if (Array.isArray(j.steps)) {
+    const cases = j.steps.flatMap((s) => (s.status === 'skipped' && !s.cases?.length
+      ? [{ run: s.label ?? s.id, caseId: s.id, title: s.label ?? s.id, status: 'skipped', expected: 'as specified', actual: s.reason ?? 'not configured', repro: `npm run e2e` }]
+      : (s.cases ?? []).map((c) => toCase(c, { run: s.label ?? s.id, caseId: s.id, title: s.label ?? s.id, repro: j.mode ? `npm run e2e -- ${j.mode}` : 'npm run e2e' }))))
+    return { run: 'E2E run', command: 'e2e-run', commit: j.commit ?? null, startedAt: j.runAt, stopped: null, cases }
+  }
   if (Array.isArray(j.cases)) {
-    return { run: j.run ?? 'Run 6', command: j.command ?? 'npm run e2e:journey', commit: j.commit ?? null, startedAt: j.startedAt, stopped: j.stopped ?? null,
-      cases: j.cases.map((c) => ({ run: 'Run 6', caseId: c.caseId, title: c.title, status: c.status, expected: c.expected, actual: c.actual, repro: 'npm run e2e:journey' })) }
+    return { run: j.run ?? 'Run 6', command: j.command ?? JOURNEY_REPRO, commit: j.commit ?? null, startedAt: j.startedAt, stopped: j.stopped ?? null, cases: j.cases.map((c) => toCase(c)) }
   }
   if (Array.isArray(j.testResults)) {
     const cases = []
@@ -34,7 +58,7 @@ export function load(file) {
     }
     return { run: 'Runs 1–5', command: 'cd dsp-integration/apps/api && npx vitest run test/e2e', commit: null, startedAt: new Date(j.startTime).toISOString(), stopped: null, cases }
   }
-  throw new Error(`${file}: not a vitest JSON report or a journey results file.`)
+  throw new Error(`${file}: not a vitest JSON report, a cases file or an e2e-run record.`)
 }
 
 export function merge(files) {

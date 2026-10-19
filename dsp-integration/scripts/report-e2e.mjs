@@ -26,8 +26,9 @@ import { publishE2eStatus, publishLatest, renderLatest, resultsUrl } from './lib
 const args = process.argv.slice(2)
 const flag = (n) => args.includes(n)
 const value = (n) => (args.includes(n) ? args[args.indexOf(n) + 1] : undefined)
-const files = args.filter((a) => !a.startsWith('--') && a !== value('--out'))
-if (!files.length) { console.error('usage: node scripts/report-e2e.mjs <results.json...> [--dry-run] [--out file.md]'); process.exit(2) }
+const argFiles = args.filter((a) => !a.startsWith('--') && a !== value('--out'))
+const files = argFiles.length ? argFiles : process.env.E2E_RESULTS_FILE ? [process.env.E2E_RESULTS_FILE] : []
+if (!files.length) { console.error('usage: node scripts/report-e2e.mjs <results.json...> [--dry-run] [--out file.md]  (or set E2E_RESULTS_FILE)'); process.exit(2) }
 
 const r = merge(files)
 const runUrl = resultsUrl()

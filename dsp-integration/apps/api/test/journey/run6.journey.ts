@@ -26,10 +26,10 @@
    same reason: the Partner API deliberately exposes neither. */
 import { type ChildProcess, spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { fileURLToPath } from 'node:url'
 import { multipart } from '../media'
@@ -400,6 +400,9 @@ async function main() {
 }
 
 /* ---- entry -------------------------------------------------------------- */
+/* results/cases/journey.json is what e2e-run.mjs reads; removed first so a crashed run can't leave a stale pass. */
+const casesFile = join(ROOT, 'results', 'cases', 'journey.json')
+rmSync(casesFile, { force: true })
 const startedAt = new Date()
 let fatal: unknown = null
 try {
@@ -417,5 +420,7 @@ const resultsDir = join(ROOT, 'results')
 mkdirSync(resultsDir, { recursive: true })
 const file = join(resultsDir, `journey-${startedAt.toISOString().replace(/[:.]/g, '-')}.json`)
 writeFileSync(file, JSON.stringify(out, null, 2) + '\n')
+mkdirSync(dirname(casesFile), { recursive: true })
+writeFileSync(casesFile, JSON.stringify(results.map((r) => ({ id: r.caseId, caseId: r.caseId, run: 'Run 6', title: r.title, status: r.status, expected: r.expected, actual: r.actual, repro: 'npm run e2e:journey' })), null, 2) + '\n')
 console.log(`\n${counts.pass} pass · ${counts.fail} fail · ${counts['known-gap']} known gap · ${counts.skipped} skipped${fatal ? ` · stopped: ${(fatal as Error).message}` : ''}\nResults: ${file}`)
 process.exit(counts.fail > 0 || (fatal && !(fatal instanceof StopRun)) ? 1 : 0)

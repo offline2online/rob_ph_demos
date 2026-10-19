@@ -1,27 +1,34 @@
 /* The bench as a regression gate (E2E Testing Strategy §3.7).
 
-     npm run bench -- --assert              # every shape in thresholds.json; exit 1 on a breach
+     npm run bench -- --assert              # every shape in thresholds.json; exit 1 on a breach or a crash
      npm run bench -- --assert --shapes=A,T # some shapes
      npm run bench -- --calibrate           # measure this machine, write bench/baseline.local.json
      npm run bench -- --assert --seconds=1  # quicker, less precise (any load.ts arg passes through)
 
    Each shape runs bench/load.ts in its own process with --json, then every
-   number is compared with the threshold: req/s must not fall below
-   threshold × (1 − tolerance), a latency must not rise above threshold ×
-   (1 + tolerance). Thresholds are the committed numbers (24 Sep 2026 review)
-   unless bench/baseline.local.json exists, in which case this machine's own
-   calibration is the baseline — CI calibrates once per runner image. A
-   breach names the shape and the endpoint, which is what file-e2e-bugs
-   files as "Perf: <shape> <endpoint> — <before> → <after>". */
+   number is compared with the threshold (bench/compare.ts): req/s must not
+   fall below threshold × (1 − tolerance), a latency must not rise above
+   threshold × (1 + tolerance). Thresholds are the committed numbers
+   (24 Sep 2026 review) unless bench/baseline.local.json exists, in which
+   case this machine's own calibration is the baseline — CI calibrates once
+   per runner image. A shape whose load.ts exits non-zero is recorded as a
+   `bench:<shape>:crash` failure and the next shape still runs.
+
+   --assert writes results/bench.json ({run: "Bench", command, commit,
+   startedAt, cases}) and results/cases/bench.json (the same cases as a bare
+   array, for e2e-run.mjs), deleting both first so a crashed gate can't leave
+   a stale pass. file-e2e-bugs files the failures as one ticket per shape:
+   "Perf: <shape> — <n> breaches; worst: <title>" or "Perf: <shape> bench
+   crashed — <actual>". */
 import { spawn } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { compare, reproFor, type BenchCase, type Shape } from './compare'
 
 const DIR = fileURLToPath(new URL('.', import.meta.url))
 const ROOT = join(DIR, '../../..')
-interface Shape { args: string; note: string; rps: Record<string, number>; p50: Record<string, number>; ms: Record<string, number> }
 interface Thresholds { tolerance: number; args: string; shapes: Record<string, Shape> }
 const thresholds = JSON.parse(readFileSync(join(DIR, 'thresholds.json'), 'utf8')) as Thresholds
 const BASELINE = join(DIR, 'baseline.local.json')
@@ -38,45 +45,52 @@ const run = (args: string[]) => new Promise<Record<string, number>>((res, rej) =
   const out = mkdtempSync(join(tmpdir(), 'ph-gate-')) + '/bench.json'
   const p = spawn(process.execPath, [join(ROOT, 'node_modules/tsx/dist/cli.mjs'), join(DIR, 'load.ts'), ...args, `--json=${out}`], { cwd: DIR, stdio: ['ignore', 'pipe', 'inherit'] })
   p.stdout.on('data', (d) => process.stdout.write(`    ${String(d).replace(/\n(?!$)/g, '\n    ')}`))
-  p.on('exit', (code) => (code === 0 ? res(JSON.parse(readFileSync(out, 'utf8')).metrics) : rej(new Error(`load.ts exited ${code}`))))
+  p.on('error', rej)
+  p.on('exit', (code, signal) => {
+    if (code !== 0) return rej(new Error(code === 134 ? 'load.ts exited 134 — out of memory' : `load.ts exited ${code ?? `by ${signal}`}`))
+    try { res(JSON.parse(readFileSync(out, 'utf8')).metrics) } catch (e) { rej(new Error(`load.ts wrote no results: ${(e as Error).message}`)) }
+  })
 })
-/* Metric keys are the bench's labels; the reservations label carries counts, so match it by prefix. */
-const metric = (m: Record<string, number>, label: string, kind: string) => {
-  const key = Object.keys(m).find((k) => k.endsWith(`|${kind}`) && (k.startsWith(`${label}|`) || k.startsWith(label)))
-  return key === undefined ? undefined : m[key]
-}
+
+const RESULTS = join(ROOT, 'results')
+const OUT_FILES = [join(RESULTS, 'bench.json'), join(RESULTS, 'cases', 'bench.json')]
+if (!calibrate) for (const f of OUT_FILES) rmSync(f, { force: true })
+const startedAt = new Date().toISOString()
 
 const measured: Record<string, Shape> = {}
-const breaches: string[] = []
+const cases: BenchCase[] = []
 const tol = thresholds.tolerance
 for (const name of names) {
   const shape = thresholds.shapes[name]
   const base = baseline.shapes[name] ?? shape
   console.log(`\nShape ${name} — ${shape.note}\n  ${shape.args} ${thresholds.args} ${passthrough.join(' ')}`)
-  const m = await run([...shape.args.split(' '), ...thresholds.args.split(' '), ...passthrough])
-  const got: Shape = { args: shape.args, note: shape.note, rps: {}, p50: {}, ms: {} }
-  for (const label of Object.keys(shape.rps)) {
-    const v = metric(m, label, 'rps'); if (v === undefined) { breaches.push(`${name}: ${label} rps not measured`); continue }
-    got.rps[label] = v
-    if (v < base.rps[label] * (1 - tol)) breaches.push(`Perf: ${name} ${label} — ${base.rps[label]} → ${v} req/s`)
+  let m: Record<string, number>
+  try {
+    m = await run([...shape.args.split(' '), ...thresholds.args.split(' '), ...passthrough])
+  } catch (e) {
+    const actual = (e as Error).message
+    console.log(`  ${name} crashed: ${actual}`)
+    const caseId = `bench:${name}:crash`
+    cases.push({ caseId, id: caseId, run: 'Bench', shape: name, label: 'crash', kind: 'ms', title: `Perf: ${name} bench crashed — ${actual}`, status: 'fail', expected: 'load.ts exits 0 and writes its metrics', actual, repro: reproFor(name) })
+    continue
   }
-  for (const label of Object.keys(shape.p50)) {
-    const v = metric(m, label, 'p50'); if (v === undefined) continue
-    got.p50[label] = v
-    if (v > base.p50[label] * (1 + tol)) breaches.push(`Perf: ${name} ${label} — p50 ${base.p50[label]} → ${v} ms`)
-  }
-  for (const label of Object.keys(shape.ms)) {
-    const v = metric(m, label, 'ms'); if (v === undefined) { breaches.push(`${name}: ${label} not measured`); continue }
-    got.ms[label] = v
-    if (v > base.ms[label] * (1 + tol)) breaches.push(`Perf: ${name} ${label} — ${base.ms[label]} → ${v} ms`)
-  }
-  measured[name] = got
+  const r = compare(name, shape, base, m, tol)
+  cases.push(...r.cases)
+  measured[name] = r.measured
 }
+const breaches = cases.filter((c) => c.status === 'fail').map((c) => (c.label === 'crash' ? `${c.shape}: ${c.actual}` : c.actual === 'not measured' ? `${c.shape}: ${c.label} ${c.kind} not measured` : c.title))
 
 if (calibrate) {
+  if (cases.some((c) => c.label === 'crash')) { console.error('\nA shape crashed: not writing a partial baseline.'); process.exit(1) }
   writeFileSync(BASELINE, JSON.stringify({ _about: `Calibrated ${new Date().toISOString()} on this machine by npm run bench -- --calibrate; --assert compares against this instead of thresholds.json. Not committed.`, tolerance: tol, args: thresholds.args, shapes: measured }, null, 2) + '\n')
   console.log(`\nWrote ${BASELINE}.`)
   process.exit(0)
+}
+if (!calibrate) {
+  mkdirSync(join(RESULTS, 'cases'), { recursive: true })
+  const commit = process.env.GITHUB_SHA ?? null
+  writeFileSync(OUT_FILES[0], JSON.stringify({ run: 'Bench', command: `npm run bench -- --assert${shapesArg ? ` --shapes=${shapesArg}` : ''}`, commit, startedAt, cases }, null, 2) + '\n')
+  writeFileSync(OUT_FILES[1], JSON.stringify(cases, null, 2) + '\n')
 }
 console.log(breaches.length ? `\n${breaches.length} breach${breaches.length === 1 ? '' : 'es'}:\n  ${breaches.join('\n  ')}` : `\nAll ${names.length} shape${names.length === 1 ? '' : 's'} inside ±${tol * 100}% of the baseline.`)
 process.exit(breaches.length ? 1 : 0)
