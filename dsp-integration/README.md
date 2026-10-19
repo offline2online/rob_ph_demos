@@ -222,13 +222,32 @@ them. That is what this is for:
 ```bash
 npm run board:tickets                                          # what is where; writes nothing
 npm run board:tickets -- --inspect                             # + why a Backlog card isn't building (last Ready for Dev click, build state; dsp-board.yml prints this on every run)
-npm run board:tickets -- --from backlog --to published-live    # dry run: names what would move
-npm run board:tickets -- --from backlog --to published-live --yes
+npm run board:tickets -- --ticket <id> --to ready-to-publish --yes   # approve a Ready for Testing card
+npm run board:tickets -- --ticket <id> --deploy-commit <sha on main> --to published-live --yes   # work that reached main another way
 npm run board:tickets -- --deploy-branch deploy/dsp-integration --yes
 npm run board:tickets -- --project <id> --notify <ticket id|all> --yes   # start a build: the Notify Claude click, from a runner
 ```
 
-Writes need `--yes`, and every move is read back afterwards. Statuses are
+Writes need `--yes`, and every move is read back afterwards. Moves follow
+the board's own rules (`scripts/lib/board-rules.mjs`, tested in
+`apps/api/test/board-tickets-guards.test.ts`); every card is checked first and
+one refusal writes nothing (exit 1 naming each; exit 2 if git can't answer):
+
+- `--deploy-commit` and a `@sha` in `--tickets` are resolved to 40 characters
+  and must be an ancestor of `origin/<the card's deployBranch, else the
+  project's>`; the script fetches that branch itself. It writes
+  `deployBranch`, `deployCommit` and a `deployCommits` append, as the
+  automation does.
+- `--to published-live` needs proof on `main`: the `deployCommit` is an
+  ancestor of `origin/main`, or a commit there carries `Backlog item: <id>`.
+- `--to ready-to-publish` works from Ready for Testing only; it records
+  `approvedAt`/`approvedVia` and a note, and locks the train.
+- `--to backlog` from a train card also writes `revertRequested` (Failed
+  testing); `--to archived` is refused for a train card.
+- `--notify` refuses a blocked ticket and a locked train ("Click Ready for Dev
+  once the train has merged"); `--force` overrides the lock only.
+- Notes are appended with one atomic `:commit` write, never read and rewritten.
+ Statuses are
 `backlog`, `ready-for-testing`, `ready-to-publish`, `published-live`,
 `archived`. It needs `BOARD_API_KEY` too — the board is behind sign-in, so
 nothing here can even read it without the key.

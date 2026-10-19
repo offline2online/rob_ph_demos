@@ -7,6 +7,7 @@
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { noteWithFieldsWrite } from './board-rules.mjs'
 
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 export const PROJECT_ID = 'mIPdOCAWevhrgD8g2tCZ'
@@ -59,12 +60,12 @@ export async function connect() {
       return (await page('backlogItems')).filter((d) => field(d, 'projectId') === projectId)
         .map((d) => ({ id: d.name.split('/').pop(), title: field(d, 'title') ?? '', status: field(d, 'status') ?? 'backlog', type: field(d, 'type') ?? 'feature', desc: field(d, 'desc') ?? '' }))
     },
+    /* One atomic append (documents:commit): a note written in between by
+       anyone else is kept, where read-push-PATCH rewrote the whole array. */
     async addComment(id, text) {
-      const r = await fetch(`${BOARD}/backlogItems/${id}`, { headers: auth })
-      if (!r.ok) throw new Error(`Reading ${id} failed (${r.status}): ${await r.text()}`)
-      const notes = (await r.json()).fields?.notes?.arrayValue?.values ?? []
-      notes.push({ mapValue: { fields: { author: str(AUTHOR), text: str(text), at: str(new Date().toISOString()) } } })
-      const p = await fetch(`${BOARD}/backlogItems/${id}?updateMask.fieldPaths=notes&updateMask.fieldPaths=updatedAt`, { method: 'PATCH', headers: json, body: JSON.stringify({ fields: { notes: { arrayValue: { values: notes } }, updatedAt: now() } }) })
+      const name = `projects/backlog-tracker-e4ed2/databases/(default)/documents/backlogItems/${id}`
+      const body = noteWithFieldsWrite(name, { updatedAt: now() }, text)
+      const p = await fetch(`${BOARD}:commit`, { method: 'POST', headers: json, body: JSON.stringify(body) })
       if (!p.ok) throw new Error(`Commenting on ${id} failed (${p.status}): ${await p.text()}`)
     },
     /* Same shape as the MCP's create_backlog_item: Backlog, attributed to the automation. */
