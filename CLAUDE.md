@@ -663,19 +663,8 @@ with no interface yet shows a greyed-out "No interface contract yet" line in
 the menu — click it to create one, same flow as the Docs page's own
 "+ New interface" button.
 
-Verifying this kind of change in this sandbox needs a workaround: the egress
-policy here blocks `gstatic.com` (confirmed via
-`$HTTPS_PROXY/__agentproxy/status` — "gateway answered 403 to CONNECT"),
-which is where the real app loads the Firebase SDK from, so `app.js` never
-executes against a plain `curl`/static check. To actually see it render,
-stand up a local static server over `backlog-tracker/public/`, and use
-Playwright's `page.route()` to intercept just the two `gstatic.com` script
-URLs and fulfill them with a small in-memory Firestore stub (mirroring the
-real collections' shapes) — the real, unmodified `app.js`/`index.html`/
-`styles.css` then render exactly as they would in production, screenshot-able
-at any viewport including mobile, with zero changes to any real file. Only
-do this against a local stub, never point it at the real
-`backlog-tracker-e4ed2` project from an automated test.
+Verify this kind of change with `cd backlog-tracker/test && npm run test:ui`: it loads the real, unchanged `backlog-tracker/public/` files in Chromium with the Firebase SDK stubbed (this sandbox's egress blocks `gstatic.com`), at 1280 px and 390 px.
+The harness and how to add a scenario are in `backlog-tracker/test/ui/` and `backlog-tracker/test/README.md`; never point it at the real `backlog-tracker-e4ed2` project.
 
 ### Docs page: per-project requirements + interfaces between projects
 

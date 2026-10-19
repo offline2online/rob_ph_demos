@@ -552,6 +552,10 @@ ticket once automatically.
      train (PR #301, 3 Oct 2026). The automation also starts that check on
      the train when your ticket lands and notes a failure on the card, but
      catching it here costs nobody a testing round.
+     `test:app-boots` now ends with the Chromium click-through suite
+     (`npm run test:ui`), so it needs a Chromium: a cloud session has one
+     (`/opt/pw-browsers`). A ticket that changes console UI adds or updates
+     a scenario in `backlog-tracker/test/ui/console-click.test.mjs`.
    - **Before setting `patchReady`, run the DSP tests** if the patch
      touches `dsp-integration/` — the same steps as the train PR's required
      `e2e-quick` check: `cd dsp-integration && npm ci && export CI=1 &&

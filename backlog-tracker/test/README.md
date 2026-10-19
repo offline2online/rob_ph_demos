@@ -36,6 +36,48 @@ rewrite that stopped sign-in waiting on a Cloud Function cold start (see
 (`npm run test:routine-binding`) covers the server-only `routineBindings`
 lookup in `functions/index.js` from the same day.
 
+`ui/console-click.test.mjs` (`npm run test:ui`, also the last step of
+`test:app-boots`, so it runs on every PR touching `backlog-tracker/public/**`
+or `backlog-tracker/test/**` and on every backlog-tracker train push) is the
+console **clicked through in Chromium**. jsdom does no layout or hit-testing,
+so a button hidden under a modal backdrop still "clicks" there (the FAQ Save
+that did nothing until the second click, `YMgx4isCGjfPyj1RaYCq`); Playwright's
+click only succeeds when the element is visible and really receives the event.
+It needs a Chromium: a cloud session has one (`/opt/pw-browsers`), or set
+`PLAYWRIGHT_CHROMIUM`. No credentials, no network.
+
+- `ui/harness.mjs` serves the real, unchanged `public/` over a local static
+  server and launches Chromium. `page.route()` answers the four
+  `www.gstatic.com/firebasejs/10.13.2/` modules from the stub, Quill 1.3.7 from
+  the `quill` dev dependency, Google Fonts with empty CSS and `/mcp/*`
+  locally; `firestore.googleapis.com` is refused, so `app.js`'s REST prime
+  falls back to the listeners. **A run fails** on a page error, a console error
+  (other than that refused prime) or a request to any host that is neither
+  local nor routed — the message names the URL or error.
+- `ui/firebase-stub.mjs` is one module served at all four SDK URLs: an
+  in-memory Firestore (collections, docs, `query`/`where` (`==`, `!=`)/`orderBy`,
+  `onSnapshot`, `getDoc(s)`, `addDoc`, `setDoc` with merge, `updateDoc`,
+  `deleteDoc`, `writeBatch`, `serverTimestamp`, `arrayUnion`, `deleteField`) and
+  an Auth that signs in the seeded user with a `consoleRole` claim. It records
+  every write in `window.__fbStub.writes`. Anything it does not implement
+  throws `firebase-stub: <name> not implemented` — never a silent no-op.
+- `ui/console-click.test.mjs` runs the self-checks first (the stub exports
+  every name `app.js` and `auth-gate.js` import from gstatic, parsed from their
+  import lists; an unrouted host fails the run; an unimplemented stub function
+  throws its name), then every scenario at 1280 px and 390 px, one `PASS` or
+  `FAIL` line each. A failure prints the scenario, width, step and selector,
+  any page errors and the recorded writes, and saves a screenshot to
+  `ui/out/` (gitignored).
+
+**Adding a scenario**: add an object to `scenarios` in
+`ui/console-click.test.mjs` — a `name`, a `seed()` (the collections the page
+starts with, in their real shapes; `only("r1")` keeps just the cards you name)
+and an async `run(c)` that drives the page with `c.click`, `c.visible`,
+`c.waitText`, `c.waitWrites` and asserts on `c.writes()`. Every wait is a
+condition with a timeout; never add a fixed sleep. **A ticket that changes
+console UI adds or updates a scenario here** — if it adds a Firebase SDK call
+the stub lacks, implement it in `firebase-stub.mjs`.
+
 `app-boots.test.mjs` (`npm run test:app-boots`, also on every PR touching
 `backlog-tracker/public/**`) is the console's start-up as a test: it
 imports the real `public/js/app.js` under jsdom with the Firebase SDK
@@ -71,7 +113,7 @@ one of the scripts below, or list it in `EXCLUDED` with a reason.
 | Run MCP server tests | `test:mcp` | mcp-server, intake |
 | Run MCP client integration test | `test:client` | mcp-client |
 | Run MCP App view test | `test:mcp-app` | mcp-app-view, faq-editor-load (`test:editor`) |
-| Run console start-up smoke test | `test:app-boots` | app-boots, header-phase, build-batches, ticket-intake (`test:build-batches`), follow-up (Failed testing's two outcomes) |
+| Run console start-up smoke test | `test:app-boots` | app-boots, header-phase, build-batches, ticket-intake (`test:build-batches`), follow-up (Failed testing's two outcomes), then the Chromium click-through suite (`test:ui`) |
 | Run sign-in wall tests | `test:auth-gate` | auth-gate |
 | Run Routine binding tests | `test:routine-binding` | routine-binding-trigger, skill-history-trigger (`test:skill-history`) |
 | Run Ready for Testing hand-off tests | `test:ready-for-testing` | ready-for-testing-trigger, notify-fanout |
