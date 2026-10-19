@@ -73,7 +73,7 @@ tickets that were already decided or parked.
      `backlog-tracker/board-docs.json` and `dsp-integration/board-docs.json`).
      A board edit is refused over MCP (`update_project_document` refuses
      mirrors) and is overwritten by the next sync. Superseded board
-     documents are listed in `backlog-tracker/START-HERE.md` with what to
+     documents are listed in `docs/dsp-integration/START-HERE.md` with what to
      read instead.
 2. **A ticket that only changes a board document needs no patch.** Edit
    the document, comment exactly what changed, and say it needs no
