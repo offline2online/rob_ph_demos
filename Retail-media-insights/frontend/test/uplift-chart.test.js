@@ -48,3 +48,33 @@ test('an advertiser login gets only its own campaigns; empty states carry the ex
   assert.strictEqual(UP.MESSAGES['no-control'], 'No control stores set for this campaign.');
   assert.match(UP.TITLE_TIP, /^Compares sales of this campaign’s products in stores where it played with sales in your Control stores segment\./);
 });
+
+test('the tier-mix hover lists each variation under its tier with its share', () => {
+  const mix = [
+    { tier: 'default', percent: 70, variations: [{ id: 'd', name: 'Default', percent: 70, rules: [] }] },
+    { tier: 'localised', percent: 25, variations: [{ id: 'l', name: 'Local stores', percent: 25, rules: ['Fixed store segments includes: Metro'] }] },
+    { tier: 'personalised', percent: 5, variations: [
+      { id: 'a', name: 'New to brand', percent: 3, rules: ['Visitor segments is one of: Blackmores · new to brand'], audienceNote: 'Audience shared only with this advertiser' },
+      { id: 'b', name: 'Existing buyer', percent: 2, rules: [] }] },
+  ];
+  const lines = UP.variationLines(mix);
+  assert.ok(lines.includes('Personalised 5% → New to brand 3% · Existing buyer 2%'));
+  assert.ok(lines.includes('New to brand: Visitor segments is one of: Blackmores · new to brand; Audience shared only with this advertiser'));
+  assert.deepStrictEqual(UP.variationLines([{ tier: 'default', percent: 100 }]), []);
+});
+
+test('By product: sorted rows, top ten with "+ n more", thin SKUs say too few sales, product-name-only rows are flagged', () => {
+  const sale = { before: { campaign: 900, control: 800 }, during: { campaign: 1500, control: 900 } };
+  const rows = Array.from({ length: 12 }, (_, i) => ({ name: 'P' + i, sku: 'S' + i, measurable: true, incrementalSales: 100 - i, sharePercent: 8.3, upliftPercent: 12, transactions: 90, sales: sale }));
+  rows.push({ name: 'Thin', measurable: false, transactions: 4, sales: sale });
+  const m = UP.bySkuModel({ bySku: rows }, false);
+  assert.strictEqual(m.rows.length, 10);
+  assert.strictEqual(m.more, 3);
+  assert.strictEqual(m.rows[0].figures, '$100 · 8.3% · 12%');
+  assert.strictEqual(UP.bySkuModel({ bySku: rows }, true).rows.length, 13);
+  const last = UP.bySkuModel({ bySku: rows }, true).rows[12];
+  assert.strictEqual(last.figures, 'Too few sales to measure');
+  assert.strictEqual(last.id, 'Matched on product name');
+  const neg = UP.bySkuModel({ bySku: [{ name: 'N', sku: 'N1', measurable: true, incrementalSales: -250, sharePercent: null, upliftPercent: -4, transactions: 80, sales: sale }] }, false);
+  assert.strictEqual(neg.rows[0].figures, '-$250 · no share · -4%');
+});

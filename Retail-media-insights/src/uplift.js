@@ -12,6 +12,7 @@
 // stores never see that lift, so uplift is measurable.
 
 const { addDays, eachDay, dayDiff } = require('./dealing');
+const { rulesText, splitTotal, PRIVATE_AUDIENCE } = require('./variations');
 
 const PRE_DAYS = 30;
 const POST_DAYS = 30;
@@ -24,6 +25,14 @@ const TIER_MIX = {
   Personalised: { default: 70, localised: 25, personalised: 5 },
 };
 const WEEKDAY = [1.1, 0.9, 0.92, 0.95, 1.05, 1.3, 1.25]; // Sunday first
+// Extra SKUs on a campaign that promotes several (every third campaign with a SKU; every sixth also has a tiny one):
+// each sells a share of the main product's volume and moves with the campaign by its own weight (one is cannibalised).
+const EXTRA_SKUS = [
+  { variant: 'Travel size', volume: 0.6, liftWeight: 0.5 },
+  { variant: 'Refill pack', volume: 0.35, liftWeight: -0.6 },
+  { variant: 'Sample sachet', volume: 0.002, liftWeight: 1 },
+];
+const MIN_SKU_TRANSACTIONS = 30; // below this in any of the four cells a SKU is "Too few sales to measure"
 const NO_POS_ADVERTISERS = new Set(['adv-perrigo']);
 
 const cents = (n) => Math.round(Math.round(n * 1e6) / 1e4) / 100;
@@ -51,10 +60,17 @@ function describeCampaign(c, store, lastDay) {
   const excludesControl = n % 5 !== 0;
   const campaignStores = excludesControl ? allStores.filter((s) => !control.includes(s)) : allStores;
   const flightEnd = c.end && c.end < lastDay ? c.end : lastDay;
+  const mainName = `${adv.name || slug} ${PRODUCT_NAMES[index % PRODUCT_NAMES.length]}${index >= PRODUCT_NAMES.length ? ` (${Math.floor(index / PRODUCT_NAMES.length) + 1})` : ''}`;
+  const main = { name: mainName, ...(hasSku ? { sku: `${slug.slice(0, 3).toUpperCase()}-${1001 + index}` } : {}), index, key: String(index), volume: 1, liftWeight: 1, price: Math.round((8 + hash(slug, index, 'price') * 20) * 100) / 100 };
+  const extras = hasSku && n % 3 === 0 ? EXTRA_SKUS.slice(0, n % 6 === 0 ? 3 : 2) : [];
+  const products = [main, ...extras.map((e, k) => ({
+    name: `${mainName} – ${e.variant}`, sku: `${slug.slice(0, 3).toUpperCase()}-${2001 + index * 10 + k}`, index, key: `${index}.${k + 1}`,
+    volume: e.volume, liftWeight: e.liftWeight, price: Math.round((8 + hash(slug, index, k, 'price') * 20) * 100) / 100,
+  }))];
   return {
     id: c.id, advertiserId: c.advertiserId, advertiserName: adv.name || c.advertiserId, level: c.level,
     displayTypeIds: c.displayTypeIds, start: c.start, end: c.end, flightEnd, flightEnded: Boolean(c.end && c.end <= lastDay),
-    product: { name: `${adv.name || slug} ${PRODUCT_NAMES[index % PRODUCT_NAMES.length]}${index >= PRODUCT_NAMES.length ? ` (${Math.floor(index / PRODUCT_NAMES.length) + 1})` : ''}`, ...(hasSku ? { sku: `${slug.slice(0, 3).toUpperCase()}-${1001 + index}` } : {}), index },
+    product: { name: main.name, ...(main.sku ? { sku: main.sku } : {}), index }, products,
     matchedOn: hasSku ? 'sku' : 'product name',
     hasPos: !NO_POS_ADVERTISERS.has(c.advertiserId),
     excludesControl, campaignStores, controlStores: excludesControl ? control : [],
@@ -70,22 +86,26 @@ function makeTransactions(store, lastDay) {
   const byAdvProduct = new Map();
   for (const c of store.campaigns) {
     const d = describeCampaign(c, store, lastDay);
-    const key = `${d.advertiserId}|${d.product.index}`;
-    if (!byAdvProduct.has(key)) byAdvProduct.set(key, []);
-    byAdvProduct.get(key).push(d);
+    for (const p of d.products) {
+      const key = `${d.advertiserId}|${p.key}`;
+      if (!byAdvProduct.has(key)) byAdvProduct.set(key, []);
+      byAdvProduct.get(key).push(d);
+    }
   }
-  return function sales(d, storeId, date) {
+  // One SKU's sales, or (no `product`) all the campaign's SKUs together.
+  return function sales(d, storeId, date, product) {
+    if (!product) return d.products.reduce((n, p) => n + sales(d, storeId, date, p), 0);
     if (!d.hasPos || date > lastDay) return 0;
     const dow = new Date(`${date}T00:00:00Z`).getUTCDay();
     let lift = 0;
-    for (const o of byAdvProduct.get(`${d.advertiserId}|${d.product.index}`) || []) {
+    for (const o of byAdvProduct.get(`${d.advertiserId}|${product.key}`) || []) {
       if (!o.campaignStores.includes(storeId) || o.start > date) continue;
       const end = o.end || lastDay;
       if (date <= end) lift = Math.max(lift, LIFT[o.level] || 0);
       else if (dayDiff(end, date) <= POST_DAYS) lift = Math.max(lift, (LIFT[o.level] || 0) * 0.4);
     }
-    const base = (220 + (storeIx[storeId] || 0) * 45 + hash(d.advertiserId, d.product.index) * 90) * WEEKDAY[dow];
-    return Math.round(base * (1 + lift) * (0.93 + hash(storeId, d.advertiserId, d.product.index, date) * 0.14));
+    const base = (220 + (storeIx[storeId] || 0) * 45 + hash(d.advertiserId, product.key) * 90) * WEEKDAY[dow] * product.volume;
+    return Math.round(base * (1 + lift * product.liftWeight) * (0.93 + hash(storeId, d.advertiserId, product.key, date) * 0.14));
   };
 }
 
@@ -107,6 +127,23 @@ function campaignSpend(store, d, all) {
   return cents(total);
 }
 
+/** One SKU's sales and uplift against the control stores, by the same method as the chart: indexed to the 30-day pre-period. */
+function skuUplift(sales, d, product, dates) {
+  const day = (stores, date) => stores.reduce((n, st) => n + sales(d, st, date, product), 0);
+  const rows = dates.map((date) => ({ phase: date < d.start ? 'before' : date <= d.flightEnd ? 'during' : 'after', c: day(d.campaignStores, date), x: day(d.controlStores, date) }));
+  const total = (phase, k) => rows.filter((r) => r.phase === phase).reduce((n, r) => n + r[k], 0);
+  const days = (phase) => rows.filter((r) => r.phase === phase).length;
+  const preC = days('before') ? total('before', 'c') / days('before') : 0; const preX = days('before') ? total('before', 'x') / days('before') : 0;
+  const nDuring = days('during');
+  const flightC = total('during', 'c'); const flightX = total('during', 'x');
+  const expected = preC * nDuring * (preX && nDuring ? flightX / nDuring / preX : 0);
+  const sold = { before: { campaign: total('before', 'c'), control: total('before', 'x') }, during: { campaign: flightC, control: flightX } };
+  const transactions = Math.round(Object.values(sold).reduce((n, w) => n + w.campaign + w.control, 0) / product.price);
+  const cell = (v) => Math.round(v / product.price);
+  const measurable = [sold.before.campaign, sold.before.control, sold.during.campaign, sold.during.control].every((v) => cell(v) >= MIN_SKU_TRANSACTIONS);
+  return { product, sold, transactions, measurable, expected, incremental: cents(flightC - expected) };
+}
+
 function upliftFor(store, d, all) {
   const sales = transactionsFor(store);
   const dates = eachDay(addDays(d.start, -PRE_DAYS), (() => { const e = addDays(d.flightEnd, POST_DAYS); return e > store.lastPlayedDay ? store.lastPlayedDay : e; })());
@@ -126,20 +163,50 @@ function upliftFor(store, d, all) {
     campaignIndex: preC ? Math.round((r.campaignSales / preC) * 1000) / 10 : null,
     controlIndex: preX ? Math.round((r.controlSales / preX) * 1000) / 10 : null,
   }));
-  const during = rows.filter((r) => r.phase === 'during');
-  const flightC = during.reduce((n, r) => n + r.campaignSales, 0);
-  const flightX = during.reduce((n, r) => n + r.controlSales, 0);
-  // What the campaign stores would have sold had they moved like the control stores from the 30 days before.
-  const expected = preC * during.length * (preX && during.length ? flightX / during.length / preX : 0);
-  const incremental = cents(flightC - expected);
+  // The headline is the sum of the SKUs that can be measured, so the "By product" rows add up to the tile.
+  const skus = d.products.map((p) => skuUplift(sales, d, p, dates));
+  const measured = skus.filter((k) => k.measurable);
+  const incremental = cents(measured.reduce((n, k) => n + k.incremental, 0));
+  const expected = measured.reduce((n, k) => n + k.expected, 0);
   const spend = campaignSpend(store, d, all);
   return {
     transactions: true, series,
     uplift: expected > 0 ? Math.round((incremental / expected) * 100) : null,
     incremental, spend, iroas: spend > 0 ? Math.round((incremental / spend) * 100) / 100 : null,
+    bySku: bySkuRows(skus, incremental),
   };
+}
+
+/** The "By product" list: highest incremental sales first; shares of positive contribution only, summing to exactly 100. */
+function bySkuRows(skus, total) {
+  const positive = skus.filter((k) => k.measurable && k.incremental > 0);
+  const pos = positive.reduce((n, k) => n + k.incremental, 0);
+  const shares = new Map(positive.map((k) => [k, Math.round((k.incremental / pos) * 1000) / 10]));
+  if (positive.length) { // put the rounding remainder on the largest share
+    const big = positive.reduce((a, b) => (b.incremental > a.incremental ? b : a));
+    shares.set(big, Math.round((100 - [...shares].filter(([k]) => k !== big).reduce((n, [, v]) => n + v, 0)) * 10) / 10);
+  }
+  const rows = skus.map((k) => ({
+    name: k.product.name, ...(k.product.sku ? { sku: k.product.sku } : {}), matchedOn: k.product.sku ? 'sku' : 'product name',
+    measurable: k.measurable, transactions: k.transactions,
+    ...(k.measurable ? {
+      incrementalSales: k.incremental, sharePercent: shares.has(k) ? shares.get(k) : null,
+      upliftPercent: k.expected > 0 ? Math.round((k.incremental / k.expected) * 100) : null,
+    } : {}),
+    sales: { before: { campaign: cents(k.sold.before.campaign), control: cents(k.sold.before.control) }, during: { campaign: cents(k.sold.during.campaign), control: cents(k.sold.during.control) } },
+  }));
+  return rows.sort((a, b) => (b.measurable - a.measurable) || ((b.incrementalSales || 0) - (a.incrementalSales || 0)) || a.name.localeCompare(b.name));
 }
 
 const tierMix = (level) => Object.entries(TIER_MIX[level] || TIER_MIX['Default only']).map(([tier, percent]) => ({ tier, percent }));
 
-module.exports = { describeCampaign, upliftFor, tierMix, transactionsFor, controlStoreIds, CONTROL_SEGMENT, PRE_DAYS, POST_DAYS };
+/** The tier mix with each tier's share split across the campaign's variations (shares are whole numbers adding up to 100). */
+function variationMix(level, variations) {
+  return tierMix(level).map(({ tier, percent }) => {
+    const of = variations.filter((v) => v.tier === tier);
+    const shares = splitTotal(percent, of.map((v) => v.weight));
+    return { tier, percent, variations: of.map((v, i) => ({ id: v.id, name: v.name, percent: shares[i], rules: rulesText(v.rules), ...(v.private ? { audienceNote: PRIVATE_AUDIENCE } : {}) })) };
+  });
+}
+
+module.exports = { describeCampaign, upliftFor, tierMix, variationMix, transactionsFor, controlStoreIds, CONTROL_SEGMENT, PRE_DAYS, POST_DAYS };

@@ -15,22 +15,54 @@
   var DEFAULT_WINDOW = 10;
   var NO_CONTROL = 'Control stores — none set for this campaign.';
   var COLOURS = { personalised: '#174a8c', localised: '#6aa7e0', control: '#8c8c8c' };
+  // One colour per personalised variation, in the order the server lists them.
+  var VARIATION_COLOURS = ['#174a8c', '#5b3fa0', '#0b7a75'];
 
   var TIPS = {
     title: 'Shows sales of this campaign’s product in the minutes after it played on your in-store displays. Each personalised play is a moment one identified shopper saw a personalised variant. ' +
       'We count sales of the campaign’s products in the same store in each minute after that play, and compare them with the minutes after localised plays and with control stores at the same clock time. ' +
-      'Sales are shown per 1,000 shoppers in the store, so larger stores don’t look better just because they’re bigger. Each sale counts once, against the nearest play before it. ' +
+      'Sales are shown per 1,000 transactions in the same store in the same minutes — the share of all baskets that included this product. This means larger stores and busy times of day don’t look better just because more people are buying. Each sale counts once, against the nearest play before it. ' +
       'Products come from the SKU or product name on the campaign; play times come from campaign playback analytics; sale times come from your POS through the Personalisation Hub Transaction API, which needs a custom POS integration. ' +
       'A gap between the personalised line and the other two lines in the first few minutes is the personalised effect.',
-    personalised: 'Sales of this product per 1,000 shoppers in the minutes after a personalised variant played to an identified shopper in that store.',
+    personalised: 'Sales of this product per 1,000 transactions in the minutes after a personalised variant played to an identified shopper in that store.',
     localised: 'The same measure after a localised variant of this campaign played, at similar times of day. Localised variants play to everyone in front of the display when a store-level condition is met.',
-    control: 'Sales of this product per 1,000 shoppers in your Control stores segment, in the same clock minutes as each personalised play. Control stores don’t run this campaign, so this line shows normal sales at that time of day.',
+    control: 'Sales of this product per 1,000 transactions in your Control stores segment, in the same clock minutes as each personalised play. Control stores don’t run this campaign, so this line shows normal sales at that time of day.',
+    axis: 'Out of every 1,000 transactions at the till, how many included this campaign’s product. Total transactions and product sales both come from your POS through the Personalisation Hub Transaction API.',
     window: 'How long after each play to look for sales. Short windows suit impulse products; longer windows suit considered purchases.',
     step: 'The width of each point on the chart.',
     view: 'Per step shows when sales happen after a play. Running total adds them up across the window.',
+    variation: 'Sales of this product per 1,000 transactions in the minutes after this variation of the campaign played to an identified shopper.',
     hour: 'Limit the plays shown to a band of hours, to see whether the response differs by time of day.'
   };
   var LINE_LABELS = { personalised: 'After a personalised play', localised: 'After a localised play', control: 'Control stores, same clock time' };
+
+  var TIER_NAMES = { default: 'Default', localised: 'Localised', personalised: 'Personalised' };
+  function isVariation(l) { return l.key.indexOf('personalised:') === 0; }
+  function lineLabel(l) { return isVariation(l) ? l.label : LINE_LABELS[l.key]; }
+  function colourOf(data, l) {
+    if (!isVariation(l)) return COLOURS[l.key];
+    var i = data.lines.filter(isVariation).indexOf(l);
+    return VARIATION_COLOURS[i % VARIATION_COLOURS.length];
+  }
+  // Hover on a variation (legend item): its name, tier, targeting rules, plays and the stores it played in.
+  function variationHover(l) {
+    var rows = [['Tier', TIER_NAMES[l.tier] || l.tier]];
+    (l.rules || []).forEach(function (r, i) { rows.push([i ? '' : 'Targeting', r]); });
+    if (!(l.rules || []).length) rows.push(['Targeting', 'No targeting rules']);
+    rows.push(['Plays', fmtInt(l.plays || 0)]);
+    var stores = l.stores || { count: 0, names: [] };
+    rows.push(['Stores played in', fmtInt(stores.count)]);
+    if (stores.names.length) rows.push(['Store names', stores.names.join(', ')]);
+    if (l.audienceNote) rows.push(['Audience', l.audienceNote]);
+    return { title: l.label, rows: rows };
+  }
+  // Keep the legend toggles across loads: new lines start on, lines that are gone drop out, and at least one stays on.
+  function syncOn(on, seen, lines) {
+    var keys = lines.filter(function (l) { return l.available; }).map(function (l) { return l.key; });
+    var next = keys.filter(function (k) { return seen.indexOf(k) < 0 || on.indexOf(k) >= 0; });
+    keys.forEach(function (k) { if (seen.indexOf(k) < 0) seen.push(k); });
+    return next.length ? next : keys;
+  }
 
   function has(v) { return v !== undefined && v !== null && v !== ''; }
   function fmtInt(n) { return Math.round(n).toLocaleString('en-US'); }
@@ -58,7 +90,7 @@
     return next.length ? next : on;
   }
 
-  // Point hover: the minute, each visible line's value, plays, sales, shoppers, and the stores and dates covered.
+  // Point hover: the minute, each visible line's value, plays, sales, transactions, and the stores and dates covered.
   function pointHover(data, index, visible) {
     var rows = [];
     var sections = [];
@@ -66,11 +98,11 @@
       if (!l.available || visible.indexOf(l.key) < 0) return;
       var p = l.points[index];
       if (!p) return;
-      sections.push({ head: LINE_LABELS[l.key], rows: [
-        ['Sales per 1,000 shoppers', fmtRate(p.value)],
+      sections.push({ head: lineLabel(l), rows: [
+        ['Sales per 1,000 transactions', fmtRate(p.value)],
         ['Plays', fmtInt(p.plays)],
         ['Sales counted', fmtInt(p.sales)],
-        ['Shoppers (footfall)', fmtInt(p.shoppers)]
+        ['Transactions (all baskets) behind the rate', fmtInt(p.transactions)]
       ] });
     });
     var c = data.coverage || {};
@@ -82,14 +114,14 @@
 
   var pure = {
     TIPS: TIPS, WINDOWS: WINDOWS, STEPS: STEPS, MAX_WINDOW: MAX_WINDOW, NO_CONTROL: NO_CONTROL, LINE_LABELS: LINE_LABELS, COLOURS: COLOURS,
-    stepOptions: stepOptions, parseCustomWindow: parseCustomWindow, campaignLabel: campaignLabel, toggleLine: toggleLine, pointHover: pointHover, fmtRate: fmtRate, hourText: hourText
+    stepOptions: stepOptions, parseCustomWindow: parseCustomWindow, campaignLabel: campaignLabel, toggleLine: toggleLine, syncOn: syncOn, variationHover: variationHover, isVariation: isVariation, colourOf: colourOf, lineLabel: lineLabel, pointHover: pointHover, fmtRate: fmtRate, hourText: hourText
   };
 
   function mount(container, opts) {
     if (typeof document === 'undefined') throw new Error('SalesResponse.mount needs a DOM');
     var fetchJson = opts.fetchJson;
     var filters = opts.filters || {};
-    var state = { campaignId: '', window: DEFAULT_WINDOW, custom: false, step: 1, view: 'step', hourFrom: '', hourTo: '', on: ['personalised', 'localised', 'control'] };
+    var state = { campaignId: '', window: DEFAULT_WINDOW, custom: false, step: 1, view: 'step', hourFrom: '', hourTo: '', on: ['personalised', 'localised', 'control'], seen: [] };
     var data = null, gen = 0, alive = true, resizeTimer = null;
     var NS = 'http://www.w3.org/2000/svg';
 
@@ -233,7 +265,8 @@
 
     function drawControls(d) {
       var camps = d.campaigns || [];
-      fill(campaignSel, camps.length ? camps.map(function (c) { return [c.id, campaignLabel(c)]; }) : [['', 'No campaigns']], d.campaignId || '');
+      // With no campaign selected the chart stays at tier level; choosing one splits the personalised line by variation.
+      fill(campaignSel, camps.length ? [['', 'No campaign selected']].concat(camps.map(function (c) { return [c.id, campaignLabel(c)]; })) : [['', 'No campaigns']], state.campaignId || '');
       campaignSel.disabled = !camps.length;
       var opts = WINDOWS.map(function (w) { return [w, w + ' minutes']; }).concat([['custom', 'Custom']]);
       fill(windowSel, opts, state.custom || WINDOWS.indexOf(state.window) < 0 ? 'custom' : state.window);
@@ -255,22 +288,32 @@
     function drawLegend(d) {
       legend.innerHTML = '';
       d.lines.forEach(function (l) {
+        var swatch = function (dash) {
+          var i = h('i', { class: 'sr-swatch ' + (isVariation(l) ? '' : 'sr-c-' + l.key) + (dash ? ' sr-dash' : '') });
+          if (isVariation(l)) i.style.backgroundColor = colourOf(d, l);
+          return i;
+        };
         if (!l.available) {
-          legend.appendChild(h('span', { class: 'sr-legend-item sr-off' }, [h('i', { class: 'sr-swatch sr-c-' + l.key }), h('span', { text: l.note })]));
+          var offText = isVariation(l) ? l.label + ' — ' + l.note : l.note;
+          var off = h('span', { class: 'sr-legend-item sr-off' }, [swatch(false), h('span', { text: offText })]);
+          legend.appendChild(isVariation(l) ? hoverable(off, function () { return variationHover(l); }) : off);
           return;
         }
         var on = state.on.indexOf(l.key) >= 0;
         var b = h('button', { type: 'button', class: 'sr-legend-btn' + (on ? ' on' : ''), 'aria-pressed': String(on) }, [
-          h('i', { class: 'sr-swatch sr-c-' + l.key + (l.key === 'control' ? ' sr-dash' : '') }), h('span', { text: LINE_LABELS[l.key] })
+          swatch(l.key === 'control'), h('span', { text: lineLabel(l) })
         ]);
         b.addEventListener('click', function () { state.on = toggleLine(state.on, l.key); draw(); });
-        legend.appendChild(h('span', { class: 'sr-legend-item' }, [b, info(TIPS[l.key], 'About ' + LINE_LABELS[l.key])]));
+        var item = h('span', { class: 'sr-legend-item' }, [b, info(isVariation(l) ? TIPS.variation : TIPS[l.key], 'About ' + lineLabel(l))]);
+        if (isVariation(l)) hoverable(b, function () { return variationHover(l); });
+        legend.appendChild(item);
       });
     }
 
     function drawChart(d) {
       var lines = d.lines.filter(function (l) { return l.available && state.on.indexOf(l.key) >= 0; });
       var n = (lines[0] && lines[0].points.length) || 0;
+      if (!lines.length) { body.removeAttribute('aria-busy'); body.innerHTML = ''; return; }
       var max = 0;
       lines.forEach(function (l) { l.points.forEach(function (p) { if (p.value > max) max = p.value; }); });
       var top = niceMax(max);
@@ -278,7 +321,7 @@
       var iw = W - L - R, ih = H - T - B;
       var x = function (i) { return L + (n === 1 ? iw / 2 : iw * i / (n - 1)); };
       var y = function (v) { return T + ih * (1 - v / top); };
-      var svg = s('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'sr-svg', role: 'img', 'aria-label': 'Sales of the campaign’s product per 1,000 shoppers by minutes after a play', preserveAspectRatio: 'none' });
+      var svg = s('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'sr-svg', role: 'img', 'aria-label': 'Sales of the campaign’s product per 1,000 transactions by minutes after a play', preserveAspectRatio: 'none' });
       svg.style.aspectRatio = W + ' / ' + H;
       for (var g = 0; g <= 4; g++) {
         var v = top * g / 4;
@@ -293,8 +336,8 @@
       var ax = s('text', { x: L + iw / 2, y: H - 6, class: 'sr-axis sr-axis-title', 'text-anchor': 'middle' }); ax.textContent = 'Minutes after a play'; svg.appendChild(ax);
       lines.forEach(function (l) {
         var pts = l.points.map(function (p, i) { return x(i) + ',' + y(p.value); }).join(' ');
-        svg.appendChild(s('polyline', { points: pts, class: 'sr-line', fill: 'none', stroke: COLOURS[l.key], 'stroke-width': '2', 'stroke-linejoin': 'round', 'stroke-dasharray': l.key === 'control' ? '5 4' : 'none' }));
-        l.points.forEach(function (p, i) { svg.appendChild(s('circle', { cx: x(i), cy: y(p.value), r: '3', fill: COLOURS[l.key] })); });
+        svg.appendChild(s('polyline', { points: pts, class: 'sr-line', fill: 'none', stroke: colourOf(d, l), 'stroke-width': '2', 'stroke-linejoin': 'round', 'stroke-dasharray': l.key === 'control' ? '5 4' : 'none' }));
+        l.points.forEach(function (p, i) { svg.appendChild(s('circle', { cx: x(i), cy: y(p.value), r: '3', fill: colourOf(d, l) })); });
       });
       var hits = h('div', { class: 'sr-hits' });
       for (var i = 0; i < n; i++) (function (i) {
@@ -306,7 +349,7 @@
         hits.appendChild(hit);
       })(i);
       body.removeAttribute('aria-busy'); body.innerHTML = '';
-      body.appendChild(h('div', { class: 'sr-unit', text: (state.view === 'running' ? 'Running total of sales' : 'Sales') + ' of the campaign’s product per 1,000 shoppers' }));
+      body.appendChild(h('div', { class: 'sr-unit' }, [h('span', { text: (state.view === 'running' ? 'Running total: sales' : 'Sales') + ' per 1,000 transactions' }), info(TIPS.axis, 'About the Y axis')]));
       body.appendChild(h('div', { class: 'sr-chart' }, [svg, hits]));
       if (d.matchedOnProductName) body.appendChild(h('div', { class: 'sr-flag', text: 'Matched on product name' }));
     }
@@ -341,7 +384,7 @@
       if (full || !data) stateBox('loading');
       fetchJson('sales-response', params()).then(function (d) {
         if (!alive || g !== gen) return;
-        data = d; if (d.campaignId) state.campaignId = d.campaignId;
+        data = d; state.on = syncOn(state.on, state.seen, d.lines || []);
         draw();
       }, function () {
         if (!alive || g !== gen) return;
@@ -357,7 +400,7 @@
     window.addEventListener('resize', onResize);
     load(true);
     return {
-      setFilters: function (f) { filters = f || {}; state.campaignId = ''; state.hourFrom = ''; state.hourTo = ''; load(true); },
+      setFilters: function (f) { filters = f || {}; state.campaignId = ''; state.seen = []; state.hourFrom = ''; state.hourTo = ''; load(true); },
       destroy: function () { alive = false; clearTimeout(resizeTimer); window.removeEventListener('resize', onResize); container.innerHTML = ''; container.classList.remove('sr-root'); }
     };
   }

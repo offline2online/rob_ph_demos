@@ -15,18 +15,14 @@ test('display types read in shopper-journey order from the back end’s iabZone'
   assert.deepStrictEqual(SC.journeyOrder([{ id: 'x' }, { id: 'window' }], (r) => ({ x: { iabZone: undefined }, window: types.window })[r.id]).map((r) => r.id), ['window', 'x']);
 });
 
-test('display type card shows stored fields only, never opening times; canvas and orientation are labelled and constrained', async () => {
+test('display type card shows the description and labelled averages only; facts about the display type are not repeated in the hover', async () => {
   const types = await typesP;
   const full = SC.displayTypeCard(types.window, RANGE);
-  assert.strictEqual(val(full, 'Operating hours'), '24 hours');
-  assert.strictEqual(val(full, 'Display canvas size (resolution)'), '1080 × 1920 px');
-  assert.strictEqual(val(full, 'Display orientation'), '90°');
+  ['Connected displays', 'IAB store zone', 'Operating hours', 'Touch Point', 'Display canvas size (resolution)', 'Display orientation', 'Creative formats'].forEach((k) => assert.strictEqual(val(full, k), undefined, k));
   assert.strictEqual(val(full, 'Share of loop time'), '6s advertiser slot ÷ 60s loop = 10%');
-  assert.strictEqual(val(full, 'Connected displays'), '10 across 5 stores');
   assert.match(text(full), /Averages across all 10 connected Window Portrait displays in 5 stores, 12 Sep – 11 Oct\./);
   const sparse = SC.displayTypeCard({ id: 's', name: 'Sparse', iabZone: 'Checkout', operatingHours: '08:00-22:00' }, RANGE);
-  assert.deepStrictEqual(sparse.sections[0].rows, [['IAB store zone', 'Checkout']]);
-  assert.ok(!/08:00/.test(text(sparse)));
+  assert.deepStrictEqual(sparse.sections, []);
   ['Not set', '90°', '180°', '270°'].forEach((o) => assert.strictEqual(SC.orientationText(o), o));
   assert.strictEqual(SC.orientationText('45°'), 'Not set');
 });
@@ -116,7 +112,7 @@ test('missed hover shows every value as the back end returned it, with the store
   assert.match(val(SC.missedHover(row, types.dispensary, RANGE, false), 'Floor CPM'), /^\$\d+\.\d\d per 1,000 assumed views \(VAC-d\)$/);
   const m = SC.missedHover(row, types.dispensary, RANGE, false);
   assert.match(text(m), /Totals across all 1 connected Dispensary Screen displays in 1 store/);
-  assert.strictEqual(m.sections.flatMap((s) => s.rows).filter((r) => r[0] === 'Connected displays').length, 1, 'shown once, not repeated under the card');
+  assert.strictEqual(m.sections.flatMap((s) => s.rows).filter((r) => r[0] === 'Connected displays').length, 0, 'not shown in the missed revenue hover');
 });
 
 test('missed revenue & fill: rows sort by unsold value, highest first; the stack is the back end’s counts and adds to 100%', async () => {
@@ -184,7 +180,6 @@ test('no hover names a specific opening time', async () => {
     ...Object.values(types).map((t) => SC.displayTypeCard(t, RANGE)),
   ].map(text).join('');
   assert.ok(!/\b\d{1,2}:\d{2}\b|\b(am|pm)\b/i.test(all));
-  assert.ok(/24 hours/.test(all) && /Store opening hours/.test(all));
 });
 
 test('formatting helpers', () => {

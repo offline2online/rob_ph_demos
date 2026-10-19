@@ -1,6 +1,7 @@
 'use strict';
 const { FilterError } = require('../filters');
-const { describeCampaign, upliftFor, tierMix, CONTROL_SEGMENT, PRE_DAYS, POST_DAYS } = require('../uplift');
+const { describeCampaign, upliftFor, variationMix, CONTROL_SEGMENT, PRE_DAYS, POST_DAYS } = require('../uplift');
+const { variationsOf } = require('../variations');
 const { addDays } = require('../dealing');
 
 // Sales uplift vs control stores: one outcome chart for one campaign. Sales of the campaign's product in the stores it
@@ -8,7 +9,7 @@ const { addDays } = require('../dealing');
 // incremental sales and iROAS. Page filters other than Advertiser do not apply (the windows are the campaign's own).
 // `campaigns` is the drop-down: the campaigns of the advertiser(s) in scope, newest first. An advertiser login is pinned
 // to its own advertiser by scopeFilters, so a campaign of another advertiser is simply not found. `state` says why a chart
-// is empty: `no-pos` (no transactions for the product), `no-control` (no Control stores exclusion on the campaign).
+// is empty (`bySku` lists each campaign SKU's contribution to the incremental sales tile): `no-pos` (no transactions for the product), `no-control` (no Control stores exclusion on the campaign).
 module.exports = {
   path: '/sales-uplift',
   advertiserAccess: true,
@@ -33,11 +34,11 @@ module.exports = {
       windows: { before: { from: addDays(pick.start, -PRE_DAYS), to: addDays(pick.start, -1) }, during: { from: pick.start, to: pick.flightEnd }, afterDays: POST_DAYS },
       campaignStores: { count: pick.campaignStores.length, names: names(pick.campaignStores) },
       controlStores: { count: pick.controlStores.length, names: names(pick.controlStores) },
-      tierMix: tierMix(pick.level),
+      tierMix: variationMix(pick.level, variationsOf(store.campaigns.find((c) => c.id === pick.id), store)),
     });
     const result = upliftFor(store, pick, all.filter((c) => c.advertiserId === pick.advertiserId));
     if (!result.transactions) return { ...out, state: 'no-pos' };
     if (!pick.excludesControl) return { ...out, state: 'no-control' };
-    return { ...out, tiles: { upliftPercent: result.uplift, incrementalSales: result.incremental, spend: result.spend, iroas: result.iroas }, series: result.series };
+    return { ...out, tiles: { upliftPercent: result.uplift, incrementalSales: result.incremental, spend: result.spend, iroas: result.iroas }, series: result.series, bySku: result.bySku };
   },
 };

@@ -113,30 +113,10 @@
   function bracketed(name, n) { return has(n) ? name + ' (' + fmtInt(n) + ')' : name; }
 
   // ---------- hover models: { title, desc, sections: [{ rows: [[label, value]], note }], text } ----------
-  function hoursText(v) {
-    if (/^\s*24 hours\s*$/i.test(v || '')) return '24 hours';
-    if (/^\s*store opening hours\s*$/i.test(v || '')) return 'Store opening hours';
-    return null; // anything else could be a specific time — never shown
-  }
-
-  // The shared display type card (the back end's hover card): facts only, and only fields that are stored.
+  // The shared display type card (the back end's hover card): the description and the labelled averages. Connected displays, IAB zone,
+  // operating hours, Touch Point, canvas size, orientation and creative formats are deliberately not shown in these hovers.
   function displayTypeCard(dt, meta, opts) {
     opts = opts || {};
-    var rows = [];
-    var cd = dt.connectedDisplays;
-    if (!opts.omitConnected && cd && has(cd.displays)) {
-      rows.push(['Connected displays', fmtInt(cd.displays) + (has(cd.stores) ? ' across ' + plural(cd.stores, 'store') : '')]);
-    }
-    if (has(dt.iabZone)) rows.push(['IAB store zone', dt.iabZone]);
-    var hrs = hoursText(dt.operatingHours);
-    if (hrs) rows.push(['Operating hours', hrs]);
-    if (has(dt.touchPoint)) rows.push(['Touch Point', dt.touchPoint]);
-    if (dt.canvas && has(dt.canvas.width) && has(dt.canvas.height)) {
-      rows.push(['Display canvas size (resolution)', dt.canvas.width + ' × ' + dt.canvas.height + ' px']);
-    }
-    if (has(dt.displayOrientation)) rows.push(['Display orientation', orientationText(dt.displayOrientation)]);
-    var cf = Array.isArray(dt.creativeFormats) ? dt.creativeFormats.filter(has).join('; ') : dt.creativeFormats;
-    if (has(cf)) rows.push(['Creative formats', cf]);
     var vac = [];
     var a = dt.averages || {};
     if (has(a.averageAssumedViewsPerSlotPerDay)) vac.push(['Average assumed views (VAC-d) per slot per day', fmtInt(a.averageAssumedViewsPerSlotPerDay)]);
@@ -146,7 +126,7 @@
     if (s && has(s.advertiserSlotSeconds) && has(s.loopSeconds) && has(s.percent)) {
       vac.push(['Share of loop time', s.advertiserSlotSeconds + 's advertiser slot ÷ ' + s.loopSeconds + 's loop = ' + pct(s.percent)]);
     }
-    var sections = [{ rows: rows }];
+    var sections = [];
     if (vac.length) sections.push({ rows: vac, note: a.averagesCover && a.averagesCover.label ? a.averagesCover.label : null });
     return { title: dt.name, desc: has(dt.description) ? dt.description : null, sections: sections.filter(function (x) { return x.rows.length; }) };
   }
@@ -235,7 +215,6 @@
     var p = missedParts(row);
     var cd = row.connectedDisplays || {};
     var rows = [];
-    rows.push(['Connected displays', fmtInt(cd.displays) + (has(cd.stores) ? ' across ' + plural(cd.stores, 'store') : '')]);
     var floor = isTotal ? floorText(row.floorCpm) : (has(row.floorCpm) ? fmtMoney(row.floorCpm, 2) + ' per 1,000 assumed views (VAC-d)' : null);
     if (floor) rows.push(['Floor CPM', floor]);
     rows.push(['Fill', pct(row.fillPercent) + ' (total ' + fmtInt(row.slotsSold) + ' of ' + fmtInt(row.slotsTotal) + ' advertiser slots sold)']);

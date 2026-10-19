@@ -13,6 +13,7 @@ const calc = require('./calc');
  * raw.campaigns:    {id, advertiserId, start, end|null, displayTypeIds[]|null, variables[], scheduled, schedules, targetedVersions}
  *                  (campaign submissions: targeting rules, scheduling) - optional
  * ctx.advertisers: {[id]: {name, dsp}} - optional
+ * raw.billing[].seatId: the DSP seat that won the line (null = a direct buyer); ctx.seats: {[seatId]: {name, dsp, synced}}; ctx.advertiserSeats: {[advertiserId]: [seatId]}
  * raw.slotRecords[].lostRevenue: lost-revenue report value for an offline record (optional)
  * ctx.dealCatalog: {[dealId]: {name, description, dealType, phId, buyers[{advertiserId, dsp}], slots[{displayTypeId, playlist, zone, position,
  *   loopSlot, playsPerWindow}], cpm|floorCpm, flight{start,end}, forecast, buffer (PG)}} - optional
@@ -24,13 +25,13 @@ const calc = require('./calc');
 function buildAggregates(raw, ctx) {
   const delivery = new Map();
   for (const b of raw.billing) {
-    const key = [b.date, b.displayTypeId, b.storeId, b.dealId, b.dsp, b.advertiserId].join('|');
+    const key = [b.date, b.displayTypeId, b.storeId, b.dealId, b.dsp, b.advertiserId, b.seatId || ''].join('|');
     let row = delivery.get(key);
     if (!row) {
       row = {
         date: b.date, displayTypeId: b.displayTypeId, storeId: b.storeId, dealId: b.dealId,
         dealType: (ctx.deals[b.dealId] || {}).dealType || 'Open auction',
-        dsp: b.dsp, advertiserId: b.advertiserId, revenue: 0, earned: 0, estimated: 0, views: 0, earnedViews: 0, slots: 0, earnedSlots: 0,
+        dsp: b.dsp, advertiserId: b.advertiserId, seatId: b.seatId || null, revenue: 0, earned: 0, estimated: 0, views: 0, earnedViews: 0, slots: 0, earnedSlots: 0,
       };
       delivery.set(key, row);
     }
@@ -93,7 +94,7 @@ function buildAggregates(raw, ctx) {
   }));
   return {
     delivery: [...delivery.values()], inventory: [...inventory.values()], hourlyInventory: [...hourly.values()], campaigns, advertisers: ctx.advertisers || {},
-    catalog: { displayTypes: ctx.displayTypes, displays: ctx.displays || [], stores: ctx.stores || {}, deals: ctx.dealCatalog || {}, sharedVariables: ctx.sharedVariables || {}, connectedDsps: ctx.connectedDsps || Object.keys(ctx.sharedVariables || {}),
+    catalog: { displayTypes: ctx.displayTypes, displays: ctx.displays || [], stores: ctx.stores || {}, deals: ctx.dealCatalog || {}, seats: ctx.seats || {}, advertiserSeats: ctx.advertiserSeats || {}, sharedVariables: ctx.sharedVariables || {}, connectedDsps: ctx.connectedDsps || Object.keys(ctx.sharedVariables || {}),
       controlStores: ctx.controlStores || { name: 'Control stores', storeIds: [] }, transactionApi: Boolean(ctx.transactionApi) },
   };
 }

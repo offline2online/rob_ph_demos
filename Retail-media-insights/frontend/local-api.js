@@ -679,9 +679,9 @@ class AggregateStore {
     this.inventory = [...inventory].sort(byDate);
     this.hourlyInventory = [...hourlyInventory].sort(byDate);
 
-    const deals = dictionary(); const types = dictionary(); const advs = dictionary();
+    const deals = dictionary(); const types = dictionary(); const advs = dictionary(); const seats = dictionary();
     stampDays(this.delivery); stampDays(this.inventory); stampDays(this.hourlyInventory);
-    for (const r of this.delivery) { r.dealIx = deals.code(r.dealId); r.typeIx = types.code(r.displayTypeId); r.advIx = advs.code(r.advertiserId); }
+    for (const r of this.delivery) { r.dealIx = deals.code(r.dealId); r.typeIx = types.code(r.displayTypeId); r.advIx = advs.code(r.advertiserId); r.seatIx = seats.code(r.seatId || null); }
     for (const r of this.inventory) r.typeIx = types.code(r.displayTypeId);
     for (const r of this.hourlyInventory) r.typeIx = types.code(r.displayTypeId);
     // The first and last played day: days with inventory or earned delivery. Reservations (estimated rows booked ahead) are not played days.
@@ -690,17 +690,17 @@ class AggregateStore {
     for (const r of this.inventory) played(r.date);
     for (const r of this.delivery) if (r.earnedSlots > 0 || r.earned > 0) played(r.date);
     this.firstPlayedDay = first; this.lastPlayedDay = last;
-    this.dealIds = deals.ids; this.typeIds = types.ids; this.advIds = advs.ids;
+    this.seatIds = seats.ids; this.dealIds = deals.ids; this.typeIds = types.ids; this.advIds = advs.ids;
     this.dealCode = new Map(deals.ids.map((v, i) => [v, i])); this.typeCode = new Map(types.ids.map((v, i) => [v, i])); this.advCode = new Map(advs.ids.map((v, i) => [v, i]));
 
     if (indexed) {
       const dsps = dictionary(); const dealTypes = dictionary();
       for (const r of this.delivery) { dsps.code(r.dsp); dealTypes.code(r.dealType); }
-      const T = types.ids.length; const A = advs.ids.length; const D = dsps.ids.length; const K = dealTypes.ids.length;
+      const T = types.ids.length; const A = advs.ids.length; const S = seats.ids.length; const D = dsps.ids.length; const K = dealTypes.ids.length;
       this.deliveryRollup = rollup(this.delivery,
-        (r) => (((r.dealIx * T + r.typeIx) * D + dsps.code(r.dsp)) * A + r.advIx) * K + dealTypes.code(r.dealType),
-        (r) => ({ date: r.date, displayTypeId: r.displayTypeId, storeId: null, dealId: r.dealId, dealType: r.dealType, dsp: r.dsp, advertiserId: r.advertiserId,
-          dayIx: r.dayIx, dealIx: r.dealIx, typeIx: r.typeIx, advIx: r.advIx, revenue: 0, earned: 0, estimated: 0, views: 0, earnedViews: 0, slots: 0, earnedSlots: 0 }),
+        (r) => ((((r.dealIx * T + r.typeIx) * D + dsps.code(r.dsp)) * A + r.advIx) * K + dealTypes.code(r.dealType)) * S + r.seatIx,
+        (r) => ({ date: r.date, displayTypeId: r.displayTypeId, storeId: null, dealId: r.dealId, dealType: r.dealType, dsp: r.dsp, advertiserId: r.advertiserId, seatId: r.seatId || null,
+          dayIx: r.dayIx, dealIx: r.dealIx, typeIx: r.typeIx, advIx: r.advIx, seatIx: r.seatIx, revenue: 0, earned: 0, estimated: 0, views: 0, earnedViews: 0, slots: 0, earnedSlots: 0 }),
         DELIVERY_MEASURES);
       this.inventoryRollup = rollup(this.inventory, (r) => r.typeIx,
         (r) => ({ date: r.date, displayTypeId: r.displayTypeId, storeId: null, dayIx: r.dayIx, typeIx: r.typeIx, sold: 0, unsold: 0, offline: 0, outsideHours: 0, unsoldViews: 0, lostRevenue: 0 }),
@@ -828,6 +828,7 @@ const calc = require('./calc');
  * raw.campaigns:    {id, advertiserId, start, end|null, displayTypeIds[]|null, variables[], scheduled, schedules, targetedVersions}
  *                  (campaign submissions: targeting rules, scheduling) - optional
  * ctx.advertisers: {[id]: {name, dsp}} - optional
+ * raw.billing[].seatId: the DSP seat that won the line (null = a direct buyer); ctx.seats: {[seatId]: {name, dsp, synced}}; ctx.advertiserSeats: {[advertiserId]: [seatId]}
  * raw.slotRecords[].lostRevenue: lost-revenue report value for an offline record (optional)
  * ctx.dealCatalog: {[dealId]: {name, description, dealType, phId, buyers[{advertiserId, dsp}], slots[{displayTypeId, playlist, zone, position,
  *   loopSlot, playsPerWindow}], cpm|floorCpm, flight{start,end}, forecast, buffer (PG)}} - optional
@@ -839,13 +840,13 @@ const calc = require('./calc');
 function buildAggregates(raw, ctx) {
   const delivery = new Map();
   for (const b of raw.billing) {
-    const key = [b.date, b.displayTypeId, b.storeId, b.dealId, b.dsp, b.advertiserId].join('|');
+    const key = [b.date, b.displayTypeId, b.storeId, b.dealId, b.dsp, b.advertiserId, b.seatId || ''].join('|');
     let row = delivery.get(key);
     if (!row) {
       row = {
         date: b.date, displayTypeId: b.displayTypeId, storeId: b.storeId, dealId: b.dealId,
         dealType: (ctx.deals[b.dealId] || {}).dealType || 'Open auction',
-        dsp: b.dsp, advertiserId: b.advertiserId, revenue: 0, earned: 0, estimated: 0, views: 0, earnedViews: 0, slots: 0, earnedSlots: 0,
+        dsp: b.dsp, advertiserId: b.advertiserId, seatId: b.seatId || null, revenue: 0, earned: 0, estimated: 0, views: 0, earnedViews: 0, slots: 0, earnedSlots: 0,
       };
       delivery.set(key, row);
     }
@@ -908,28 +909,105 @@ function buildAggregates(raw, ctx) {
   }));
   return {
     delivery: [...delivery.values()], inventory: [...inventory.values()], hourlyInventory: [...hourly.values()], campaigns, advertisers: ctx.advertisers || {},
-    catalog: { displayTypes: ctx.displayTypes, displays: ctx.displays || [], stores: ctx.stores || {}, deals: ctx.dealCatalog || {}, sharedVariables: ctx.sharedVariables || {}, connectedDsps: ctx.connectedDsps || Object.keys(ctx.sharedVariables || {}),
+    catalog: { displayTypes: ctx.displayTypes, displays: ctx.displays || [], stores: ctx.stores || {}, deals: ctx.dealCatalog || {}, seats: ctx.seats || {}, advertiserSeats: ctx.advertiserSeats || {}, sharedVariables: ctx.sharedVariables || {}, connectedDsps: ctx.connectedDsps || Object.keys(ctx.sharedVariables || {}),
       controlStores: ctx.controlStores || { name: 'Control stores', storeIds: [] }, transactionApi: Boolean(ctx.transactionApi) },
   };
 }
 
 module.exports = { buildAggregates };
   },
+  "src/variations.js": function (module, exports, require) {
+// Campaign variations (the targeted versions of a campaign) for the outcome charts: the name as authored, the tier it plays in,
+// its targeting rules in plain language, and the audience label for an advertiser-private audience.
+//
+// Inputs, as production will hold them: the targeted versions and their rules from the stored campaign (GET /v1/campaigns/{id})
+// and the version id recorded on each play in campaign playback analytics. The test retailer has neither as rows, so they are
+// derived deterministically from the campaign here; the charts read only {id, name, tier, rules, private} and a play's version id.
+
+const PRIVATE_AUDIENCE = 'Audience shared only with this advertiser';
+// Advertisers with an advertiser-private audience in the test retailer (DSP Integration: "Advertiser audiences").
+const PRIVATE_AUDIENCE_ADVERTISERS = new Set(['adv-blackmores', 'adv-haleon']);
+const PERSONALISED_VERSIONS = [
+  { name: 'New to brand', segment: 'new to brand', weight: 3 },
+  { name: 'Existing buyer', segment: 'existing buyer', weight: 2 },
+  { name: 'Lapsed buyer', segment: 'lapsed buyer', weight: 1 },
+];
+const LOCALISED_RULES = {
+  'Store Open / Closed': { operator: 'is', values: ['Open'] },
+  'Fixed Store Segments': { operator: 'includes', values: ['Metro'] },
+  'Variable Store Segments': { operator: 'includes', values: ['Busy'] },
+  'Display Tag(s)': { operator: 'includes', values: ['Window'] },
+};
+const TIERS = ['default', 'localised', 'personalised'];
+
+const sentence = (text) => text.charAt(0).toUpperCase() + text.slice(1).toLowerCase().replace(/\bcomputer vision\b/, 'Computer Vision');
+
+/** One campaign's variations, default first: [{id, name, tier, rules: [{variable, operator, values}], private, weight}]. */
+function variationsOf(campaign, store) {
+  const brand = ((store.advertisers || {})[campaign.advertiserId] || {}).name || campaign.advertiserId;
+  const out = [{ id: `${campaign.id}-default`, name: 'Default', tier: 'default', rules: [], private: false, weight: 1 }];
+  if (campaign.level === 'Default only') return out;
+  const localVariable = (campaign.variables || []).find((v) => LOCALISED_RULES[v]) || 'Fixed Store Segments';
+  out.push({ id: `${campaign.id}-localised`, name: 'Local stores', tier: 'localised', rules: [{ variable: localVariable, ...LOCALISED_RULES[localVariable] }], private: false, weight: 1 });
+  if (campaign.level !== 'Personalised') return out;
+  const n = Math.min(campaign.targetedVersions || 2, PERSONALISED_VERSIONS.length);
+  PERSONALISED_VERSIONS.slice(0, n).forEach((v, i) => out.push({
+    id: `${campaign.id}-p${i + 1}`, name: v.name, tier: 'personalised',
+    rules: [{ variable: 'Visitor Segments', operator: 'is one of', values: [`${brand} · ${v.segment}`] }],
+    private: i === 0 && PRIVATE_AUDIENCE_ADVERTISERS.has(campaign.advertiserId), weight: v.weight,
+  }));
+  return out;
+}
+
+/** Targeting rules in plain language, one line per variable and operator: "Visitor segments is one of: Blackmores · new to brand". */
+function rulesText(rules) {
+  const merged = new Map();
+  for (const r of rules) {
+    const key = `${r.variable}|${r.operator}`;
+    if (!merged.has(key)) merged.set(key, { ...r, values: [] });
+    for (const v of r.values) if (!merged.get(key).values.includes(v)) merged.get(key).values.push(v);
+  }
+  return [...merged.values()].map((r) => `${sentence(r.variable)} ${r.operator}: ${r.values.join(' · ')}`);
+}
+
+/** Split a whole-number total across weights so the parts add up to it (largest remainder). */
+function splitTotal(total, weights) {
+  const sum = weights.reduce((a, b) => a + b, 0);
+  const raw = weights.map((w) => (total * w) / sum);
+  const parts = raw.map(Math.floor);
+  let left = total - parts.reduce((a, b) => a + b, 0);
+  raw.map((x, i) => [x - Math.floor(x), i]).sort((a, b) => b[0] - a[0] || a[1] - b[1]).forEach(([, i]) => { if (left > 0) { parts[i] += 1; left -= 1; } });
+  return parts;
+}
+
+/** The version a play ran, picked among its tier's variations by `unit` (0 to under 1) in proportion to their weights. */
+function pickVersion(variations, tier, unit) {
+  const of = variations.filter((v) => v.tier === tier);
+  const total = of.reduce((n, v) => n + v.weight, 0);
+  let at = unit * total;
+  for (const v of of) { at -= v.weight; if (at < 0) return v; }
+  return of[of.length - 1];
+}
+
+module.exports = { variationsOf, rulesText, splitTotal, pickVersion, PRIVATE_AUDIENCE, TIERS };
+  },
   "src/sales-response.js": function (module, exports, require) {
-// Sales response after personalised plays: sales of a campaign's product in the minutes after a play, per 1,000 shoppers in
-// the store, after personalised plays, after localised plays, and in Control stores at the same clock time.
+// Sales response after personalised plays: sales of a campaign's product in the minutes after a play, per 1,000 transactions
+// in the same store and minutes (basket penetration), after personalised plays, after localised plays, and in Control stores
+// at the same clock time.
 //
 // Inputs, as the production data will arrive (README "Sales response after personalised plays"):
 //  - play timestamps, tier and display from campaign playback analytics (PH Core);
 //  - sale timestamps, store and SKU / product name from the Transaction API (a custom POS integration per retailer);
-//  - footfall by store and hour from PH Core store insights;
+//  - total transactions by store and minute from the Transaction API (every basket, not only the campaign's product);
 //  - the Control stores Fixed Store Segment, used as exclusion targeting on the campaign.
 // The test retailer has none of these as rows, so `dayEvents` stands in for them: a deterministic day of plays and sales
 // per campaign and store, in which a personalised play lifts sales of the product for a few minutes (a localised play
 // less so). Everything after it (the counting rules, the rates, the controls) is the real calculation and reads only
-// {plays, sales, footfall}, so replacing `dayEvents` with the three feeds changes nothing downstream.
+// {plays, sales, transactions}, so replacing `dayEvents` with the three feeds changes nothing downstream.
 
 const calc = require('./calc');
+const { variationsOf, pickVersion } = require('./variations');
 
 const WINDOWS = [5, 10, 15, 30, 60];
 const DEFAULT_WINDOW = 10;
@@ -937,11 +1015,13 @@ const MAX_WINDOW = 120;
 const STEPS = [1, 5, 15];
 const VIEWS = ['step', 'running'];
 
-const BASE_CONVERSION = 0.01; // sales of the product per shopper-minute in the store with no recent play
+const BASE_SHARE = 0.03; // share of all transactions that include the product with no recent play
+const DAILY_TRANSACTIONS = 1800; // a store's transactions in a day before its size factor
 const LIFT = { personalised: 4, localised: 1.2 }; // extra multiples of the baseline right after a play
 const DECAY_MINUTES = 4;
 const REACH_MINUTES = 30; // a play no longer lifts sales after this
 const MAX_MULTIPLE = 8;
+const MIN_PLAYS = 30; // a variation with fewer plays than this shows no rate
 
 function hashSeed(text) {
   let h = 2166136261;
@@ -965,27 +1045,38 @@ function poisson(lambda, rand) {
   return n;
 }
 
-/** Share of a day's footfall in each hour: a lunchtime and an after-work peak. */
+/** Share of a day's transactions in each hour: a lunchtime and an after-work peak. */
 const hourShape = (h) => 0.5 + 0.9 * Math.exp(-(((h + 0.5 - 12.5) / 3) ** 2)) + 0.6 * Math.exp(-(((h + 0.5 - 17.5) / 2.2) ** 2));
 
-/** Footfall in each hour of a store's opening hours: {hour: shoppers}. The store's daily footfall is its busiest display's. */
-function footfallByHour(store, storeId) {
-  const cache = store.__salesResponse.footfall;
+/** Total transactions (all baskets) in each minute of each hour of a store's opening hours: {hour: transactions per minute}, whole numbers. */
+function transactionsByHour(store, storeId) {
+  const cache = store.__salesResponse.transactions;
   if (cache.has(storeId)) return cache.get(storeId);
   const hours = (store.catalog.stores || {})[storeId] || { open: 0, close: 0 };
-  const daily = Math.max(0, ...(store.catalog.displays || []).filter((d) => d.storeId === storeId).map((d) => d.footfall || 0));
+  const daily = DAILY_TRANSACTIONS * (0.7 + 0.6 * (hashSeed(`size|${storeId}`) / 4294967296));
   const shapes = [];
   for (let h = hours.open; h < hours.close; h += 1) shapes.push([h, hourShape(h)]);
-  const total = shapes.reduce((s, [, w]) => s + w, 0);
-  const out = new Map(shapes.map(([h, w]) => [h, total > 0 ? Math.round((daily * w) / total) : 0]));
+  const total = shapes.reduce((acc, [, w]) => acc + w, 0);
+  const out = new Map(shapes.map(([h, w]) => [h, total > 0 ? Math.max(1, Math.round((daily * w) / total / 60)) : 0]));
   cache.set(storeId, out);
   return out;
+}
+
+/** Transactions in the `window` minutes starting at second `t`, in `step`-minute buckets (each bucket a whole number; none outside opening hours). */
+function addTransactions(target, byHour, t, window, step) {
+  for (let o = 0; o < window; o += 1) target[Math.floor(o / step)] += byHour.get(Math.floor((t + o * 60) / 3600)) || 0;
 }
 
 /**
  * One store-day of the campaign, in seconds from midnight: every play of the campaign (any tier, any display type) and every sale
  * of its product. `control` days have no plays: Control stores don't run the campaign.
  */
+function variationsFor(store, campaign) {
+  const cache = store.__salesResponse.variations;
+  if (!cache.has(campaign.id)) cache.set(campaign.id, variationsOf(campaign, store));
+  return cache.get(campaign.id);
+}
+
 function dayEvents(store, campaign, storeId, date, control) {
   const cache = store.__salesResponse.days;
   const key = `${campaign.id}|${storeId}|${date}|${control ? 1 : 0}`;
@@ -994,6 +1085,7 @@ function dayEvents(store, campaign, storeId, date, control) {
   const hours = store.catalog.stores[storeId];
   const rand = rng(hashSeed(key));
   const plays = [];
+  const variations = variationsFor(store, campaign);
   if (!control) {
     const types = (campaign.displayTypeIds || Object.keys(store.catalog.displayTypes)).filter((t) => store.catalog.displayTypes[t]);
     for (let hour = hours.open; hour < hours.close; hour += 1) {
@@ -1001,12 +1093,19 @@ function dayEvents(store, campaign, storeId, date, control) {
         if (!calc.insideOperatingHours(hour, calc.operatingWindow(store.catalog.displayTypes[displayTypeId], hours))) continue;
         const tiers = [['localised', 1 + Math.floor(rand() * 2)]];
         if (campaign.level === 'Personalised') tiers.push(['personalised', 1 + Math.floor(rand() * 2)]);
-        for (const [tier, n] of tiers) for (let k = 0; k < n; k += 1) plays.push({ t: hour * 3600 + Math.floor(rand() * 3600), tier, displayTypeId });
+        for (const [tier, n] of tiers) {
+          for (let k = 0; k < n; k += 1) {
+            const t = hour * 3600 + Math.floor(rand() * 3600);
+            // The version id recorded on the play; picked by a hash of the play so the stream of random numbers above is unchanged.
+            const versionId = pickVersion(variations, tier, hashSeed(`${key}|${t}|${displayTypeId}|v`) / 4294967296).id;
+            plays.push({ t, tier, displayTypeId, versionId });
+          }
+        }
       }
     }
     plays.sort((a, b) => a.t - b.t);
   }
-  const footfall = footfallByHour(store, storeId);
+  const txns = transactionsByHour(store, storeId);
   const minutes = (hours.close - hours.open) * 60;
   const extra = new Array(minutes).fill(0);
   for (const p of plays) {
@@ -1016,7 +1115,7 @@ function dayEvents(store, campaign, storeId, date, control) {
   const sales = [];
   for (let m = 0; m < minutes; m += 1) {
     const hour = hours.open + Math.floor(m / 60);
-    const lambda = ((footfall.get(hour) || 0) / 60) * BASE_CONVERSION * (1 + Math.min(extra[m], MAX_MULTIPLE - 1));
+    const lambda = (txns.get(hour) || 0) * BASE_SHARE * (1 + Math.min(extra[m], MAX_MULTIPLE - 1));
     for (let n = poisson(lambda, rand); n > 0; n -= 1) sales.push((hours.open * 60 + m) * 60 + Math.floor(rand() * 60));
   }
   sales.sort((a, b) => a - b);
@@ -1030,7 +1129,7 @@ const days = (from, to) => {
   for (let at = Date.parse(`${from}T00:00:00Z`); at <= Date.parse(`${to}T00:00:00Z`); at += 86400000) out.push(new Date(at).toISOString().slice(0, 10));
   return out;
 };
-const rate = (sales, shoppers) => (shoppers > 0 ? Math.round((sales / shoppers) * 100000) / 100 : 0); // per 1,000 shoppers, two decimals
+const rate = (sales, transactions) => (transactions > 0 ? Math.round((sales / transactions) * 100000) / 100 : 0); // per 1,000 transactions, two decimals
 const labelOf = (from, to, step) => (step === 1 ? `Minute ${from} after play` : `Minutes ${from}–${to - 1} after play`);
 
 /** Campaigns with personalised variants in scope: the chart's drop-down. */
@@ -1066,7 +1165,7 @@ function operatingHours(store, storeIds, types) {
 }
 
 function salesResponse(store, campaign, filters, { window, step, view, hourFrom, hourTo, hoursError }) {
-  if (!store.__salesResponse) Object.defineProperty(store, '__salesResponse', { value: { days: new Map(), footfall: new Map() }, enumerable: false });
+  if (!store.__salesResponse) Object.defineProperty(store, '__salesResponse', { value: { days: new Map(), transactions: new Map(), variations: new Map() }, enumerable: false });
   const scope = scopeOf(store, campaign, filters);
   const hours = operatingHours(store, scope.treated.length ? scope.treated : scope.control, scope.types);
   const band = hourFrom == null ? null : { from: hourFrom, to: hourTo };
@@ -1078,14 +1177,17 @@ function salesResponse(store, campaign, filters, { window, step, view, hourFrom,
   const dates = from <= lastDay ? days(from, lastDay) : [];
   const typeSet = new Set(scope.types);
   const n = Math.ceil(window / step);
-  const empty = (kind) => ({ plays: 0, shoppers: 0, sales: new Array(n).fill(0), kind });
+  const empty = (kind) => ({ plays: 0, sales: new Array(n).fill(0), transactions: new Array(n).fill(0), kind });
   const lines = { personalised: empty('personalised'), localised: empty('localised'), control: empty('control') };
+  // Personalised plays by the version they ran: the same counting as the personalised line, kept apart per variation.
+  const byVersion = {};
+  for (const v of variationsFor(store, campaign)) if (v.tier === 'personalised') byVersion[v.id] = { ...empty('personalised'), stores: new Set() };
 
   for (const date of dates) {
     for (const storeId of scope.treated) {
       const { plays, sales } = dayEvents(store, campaign, storeId, date, false);
       const counted = plays.filter((p) => typeSet.has(p.displayTypeId));
-      const footfall = footfallByHour(store, storeId);
+      const txns = transactionsByHour(store, storeId);
       let last = -1; // the nearest preceding play, by pointer: both lists are time-ordered
       for (const sale of sales) {
         while (last + 1 < counted.length && counted[last + 1].t <= sale) last += 1;
@@ -1094,23 +1196,30 @@ function salesResponse(store, campaign, filters, { window, step, view, hourFrom,
         if (dt >= window * 60) continue;
         const bucket = Math.floor(Math.floor(dt / 60) / step);
         const p = counted[last];
-        if (inBand(Math.floor(p.t / 3600))) lines[p.tier].sales[bucket] += 1;
+        if (inBand(Math.floor(p.t / 3600))) {
+          lines[p.tier].sales[bucket] += 1;
+          if (p.tier === 'personalised' && byVersion[p.versionId]) byVersion[p.versionId].sales[bucket] += 1;
+        }
       }
       counted.forEach((p) => {
         const hour = Math.floor(p.t / 3600);
         if (!inBand(hour)) return;
-        lines[p.tier].plays += 1; lines[p.tier].shoppers += footfall.get(hour) || 0;
+        lines[p.tier].plays += 1; addTransactions(lines[p.tier].transactions, txns, p.t, window, step);
+        const v = p.tier === 'personalised' ? byVersion[p.versionId] : null;
+        if (v) {
+          v.plays += 1; v.stores.add(storeId); addTransactions(v.transactions, txns, p.t, window, step);
+        }
       });
       // Control stores, same clock time: each personalised play opens the same clock window in every Control store.
       if (scope.control.length) {
-        const controlDays = scope.control.map((c) => ({ footfall: footfallByHour(store, c), sales: dayEvents(store, campaign, c, date, true).sales }));
+        const controlDays = scope.control.map((c) => ({ txns: transactionsByHour(store, c), sales: dayEvents(store, campaign, c, date, true).sales }));
         for (const p of counted) {
           if (p.tier !== 'personalised') continue;
           const hour = Math.floor(p.t / 3600);
           if (!inBand(hour)) continue;
           lines.control.plays += 1;
           for (const cd of controlDays) {
-            lines.control.shoppers += cd.footfall.get(hour) || 0;
+            addTransactions(lines.control.transactions, cd.txns, p.t, window, step);
             for (const sale of cd.sales) {
               if (sale < p.t) continue;
               if (sale >= p.t + window * 60) break;
@@ -1121,11 +1230,11 @@ function salesResponse(store, campaign, filters, { window, step, view, hourFrom,
       }
     }
   }
-  return { scope, hours, band, dates, lines, n };
+  return { scope, hours, band, dates, lines, n, byVersion };
 }
 
 module.exports = {
-  WINDOWS, DEFAULT_WINDOW, MAX_WINDOW, STEPS, VIEWS, salesResponse, personalisedCampaigns, scopeOf, operatingHours, labelOf, rate, footfallByHour, dayEvents,
+  WINDOWS, DEFAULT_WINDOW, MAX_WINDOW, STEPS, VIEWS, MIN_PLAYS, variationsFor, salesResponse, personalisedCampaigns, scopeOf, operatingHours, labelOf, rate, transactionsByHour, dayEvents,
 };
   },
   "src/testdata.js": function (module, exports, require) {
@@ -1220,6 +1329,45 @@ const ADVERTISERS = ADVERTISER_PROFILES.map((a) => a.id);
 const ADVERTISER_META = Object.fromEntries(ADVERTISER_PROFILES.map((a) => [a.id, { name: a.name, dsp: a.dsp }]));
 const PROFILE = Object.fromEntries(ADVERTISER_PROFILES.map((a) => [a.id, a]));
 const OPEN_AUCTION_DEAL = 'd10';
+
+// DSP seats (the buying account inside a DSP, usually held by an agency or trading desk), as DSP Integration will sync them
+// (partners.seats) with the advertiser <-> seat mapping (advertiser_seats). `synced: false` = no longer in the DSP's account list.
+// An advertiser with no plan buys direct (no seat). `minAge` / `maxAge` limit an entry to billing days at least / fewer than N days
+// before the last day, so a seat can be replaced part-way through the history.
+const SEAT_CATALOG = {
+  'ttd-groupm-au': { name: 'GroupM AU', dsp: 'The Trade Desk', synced: true },
+  'ttd-haleon-inhouse': { name: 'Haleon In-house', dsp: 'The Trade Desk', synced: true },
+  'ttd-wavemaker-au': { name: 'Wavemaker AU', dsp: 'The Trade Desk', synced: true },
+  'dv-omd-au': { name: 'OMD AU', dsp: 'DV360', synced: true },
+  'dv-publicis-au': { name: 'Publicis Media AU', dsp: 'DV360', synced: true },
+  'dv-mindshare-au': { name: 'Mindshare AU', dsp: 'DV360', synced: false },
+  'amz-dentsu-au': { name: 'Dentsu AU', dsp: 'Amazon DSP', synced: true },
+  'amz-reckitt-desk': { name: 'Reckitt Trading Desk', dsp: 'Amazon DSP', synced: true },
+};
+const SEAT_PLAN = {
+  'adv-blackmores': [{ seatId: 'dv-omd-au', weight: 1 }],
+  'adv-haleon': [{ seatId: 'ttd-groupm-au', weight: 0.6 }, { seatId: 'ttd-haleon-inhouse', weight: 0.4 }],
+  'adv-loreal-paris': [{ seatId: 'dv-publicis-au', weight: 0.7 }, { seatId: 'dv-omd-au', weight: 0.3 }],
+  'adv-vitabiotics': [{ seatId: 'ttd-groupm-au', weight: 1 }],
+  'adv-bayer-consumer-health': [{ seatId: 'amz-dentsu-au', weight: 1 }],
+  'adv-reckitt': [{ seatId: 'amz-dentsu-au', weight: 0.5 }, { seatId: 'amz-reckitt-desk', weight: 0.5 }],
+  'adv-kenvue': [{ seatId: 'dv-mindshare-au', weight: 1, minAge: 45 }, { seatId: 'dv-publicis-au', weight: 1, maxAge: 45 }],
+  'adv-procter-gamble': [{ seatId: 'ttd-groupm-au', weight: 0.5 }, { seatId: 'ttd-wavemaker-au', weight: 0.5 }],
+  'adv-unilever': [{ seatId: 'amz-dentsu-au', weight: 1 }],
+  'adv-nestle-health-science': [{ seatId: 'dv-omd-au', weight: 1 }],
+  // adv-perrigo buys direct: no seat.
+};
+const ADVERTISER_SEATS = Object.fromEntries(Object.entries(SEAT_PLAN).map(([id, plan]) => [id, [...new Set(plan.map((e) => e.seatId))]]));
+// The seat that won a billing row: a deterministic hash of the row's keys (no random draw, so every other figure is unchanged).
+function seatFor(advertiserId, ageDays, key) {
+  const plan = (SEAT_PLAN[advertiserId] || []).filter((e) => (e.minAge === undefined || ageDays >= e.minAge) && (e.maxAge === undefined || ageDays < e.maxAge));
+  if (!plan.length) return null;
+  let h = 2166136261;
+  for (let i = 0; i < key.length; i += 1) { h ^= key.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  let pick = (h / 4294967296) * plan.reduce((n, e) => n + e.weight, 0);
+  for (const e of plan) { pick -= e.weight; if (pick < 0) return e.seatId; }
+  return plan[plan.length - 1].seatId;
+}
 
 const PLAYLISTS = { window: ['Window loop', 'Store front'], endcap: ['Endcap loop', 'Aisle ends'], queue: ['Checkout loop', 'Tills'], dispensary: ['Pharmacy loop', 'Dispensary'] };
 const slotsOf = (typeId, positions) => positions.map((position) => ({
@@ -1452,6 +1600,7 @@ function generateTestRetailer({ days = HISTORY_DAYS, endDate = '2026-10-11', sto
           const views = Math.round(slots * viewsPerPlay); // VAC-d views are whole numbers
           billing.push({
             date, storeId, displayTypeId: typeId, dealId, dsp: buyer.dsp, advertiserId,
+            seatId: seatFor(advertiserId, d, `${date}|${storeId}|${typeId}|${dealId}|${advertiserId}`),
             revenue: calc.revenueAtCpm(clearedCpm(dealId, type), views), views, slots, settled: true,
           });
         }
@@ -1487,6 +1636,7 @@ function generateTestRetailer({ days = HISTORY_DAYS, endDate = '2026-10-11', sto
             const views = plays * viewsPerPlayOf(type, storeIndex, window);
             billing.push({
               date, storeId, displayTypeId: typeId, dealId, dsp: buyer.dsp, advertiserId: buyer.advertiserId,
+              seatId: seatFor(buyer.advertiserId, 0, `${date}|${storeId}|${typeId}|${dealId}`),
               revenue: calc.revenueAtCpm(deal.cpm, views), views: 0, slots: 0, settled: false, reservation: true,
             });
           }
@@ -1495,10 +1645,12 @@ function generateTestRetailer({ days = HISTORY_DAYS, endDate = '2026-10-11', sto
     }
   }
   ctx.advertisers = ADVERTISER_META;
+  ctx.seats = SEAT_CATALOG;
+  ctx.advertiserSeats = ADVERTISER_SEATS;
   return { raw: { billing, slotRecords, campaigns: campaignList }, ctx };
 }
 
-module.exports = { generateTestRetailer, rng, DISPLAY_TYPES, DEALS, DEAL_CATALOG, ADVERTISERS, ADVERTISER_META, ADVERTISER_PROFILES, CAMPAIGN_PLAN, OPEN_AUCTION_DEAL, STORE_NAMES, HISTORY_DAYS };
+module.exports = { SEAT_CATALOG, SEAT_PLAN, generateTestRetailer, rng, DISPLAY_TYPES, DEALS, DEAL_CATALOG, ADVERTISERS, ADVERTISER_META, ADVERTISER_PROFILES, CAMPAIGN_PLAN, OPEN_AUCTION_DEAL, STORE_NAMES, HISTORY_DAYS };
   },
   "src/advertiser-view.js": function (module, exports, require) {
 // Shared by the advertiser view endpoints (delivery, deals-by-display-type, audience, my-targeting).
@@ -1565,6 +1717,7 @@ module.exports = { OPEN_AUCTION, ownAdvertiser, isOpenAuction, dealsInScope, dea
 // stores never see that lift, so uplift is measurable.
 
 const { addDays, eachDay, dayDiff } = require('./dealing');
+const { rulesText, splitTotal, PRIVATE_AUDIENCE } = require('./variations');
 
 const PRE_DAYS = 30;
 const POST_DAYS = 30;
@@ -1577,6 +1730,14 @@ const TIER_MIX = {
   Personalised: { default: 70, localised: 25, personalised: 5 },
 };
 const WEEKDAY = [1.1, 0.9, 0.92, 0.95, 1.05, 1.3, 1.25]; // Sunday first
+// Extra SKUs on a campaign that promotes several (every third campaign with a SKU; every sixth also has a tiny one):
+// each sells a share of the main product's volume and moves with the campaign by its own weight (one is cannibalised).
+const EXTRA_SKUS = [
+  { variant: 'Travel size', volume: 0.6, liftWeight: 0.5 },
+  { variant: 'Refill pack', volume: 0.35, liftWeight: -0.6 },
+  { variant: 'Sample sachet', volume: 0.002, liftWeight: 1 },
+];
+const MIN_SKU_TRANSACTIONS = 30; // below this in any of the four cells a SKU is "Too few sales to measure"
 const NO_POS_ADVERTISERS = new Set(['adv-perrigo']);
 
 const cents = (n) => Math.round(Math.round(n * 1e6) / 1e4) / 100;
@@ -1604,10 +1765,17 @@ function describeCampaign(c, store, lastDay) {
   const excludesControl = n % 5 !== 0;
   const campaignStores = excludesControl ? allStores.filter((s) => !control.includes(s)) : allStores;
   const flightEnd = c.end && c.end < lastDay ? c.end : lastDay;
+  const mainName = `${adv.name || slug} ${PRODUCT_NAMES[index % PRODUCT_NAMES.length]}${index >= PRODUCT_NAMES.length ? ` (${Math.floor(index / PRODUCT_NAMES.length) + 1})` : ''}`;
+  const main = { name: mainName, ...(hasSku ? { sku: `${slug.slice(0, 3).toUpperCase()}-${1001 + index}` } : {}), index, key: String(index), volume: 1, liftWeight: 1, price: Math.round((8 + hash(slug, index, 'price') * 20) * 100) / 100 };
+  const extras = hasSku && n % 3 === 0 ? EXTRA_SKUS.slice(0, n % 6 === 0 ? 3 : 2) : [];
+  const products = [main, ...extras.map((e, k) => ({
+    name: `${mainName} – ${e.variant}`, sku: `${slug.slice(0, 3).toUpperCase()}-${2001 + index * 10 + k}`, index, key: `${index}.${k + 1}`,
+    volume: e.volume, liftWeight: e.liftWeight, price: Math.round((8 + hash(slug, index, k, 'price') * 20) * 100) / 100,
+  }))];
   return {
     id: c.id, advertiserId: c.advertiserId, advertiserName: adv.name || c.advertiserId, level: c.level,
     displayTypeIds: c.displayTypeIds, start: c.start, end: c.end, flightEnd, flightEnded: Boolean(c.end && c.end <= lastDay),
-    product: { name: `${adv.name || slug} ${PRODUCT_NAMES[index % PRODUCT_NAMES.length]}${index >= PRODUCT_NAMES.length ? ` (${Math.floor(index / PRODUCT_NAMES.length) + 1})` : ''}`, ...(hasSku ? { sku: `${slug.slice(0, 3).toUpperCase()}-${1001 + index}` } : {}), index },
+    product: { name: main.name, ...(main.sku ? { sku: main.sku } : {}), index }, products,
     matchedOn: hasSku ? 'sku' : 'product name',
     hasPos: !NO_POS_ADVERTISERS.has(c.advertiserId),
     excludesControl, campaignStores, controlStores: excludesControl ? control : [],
@@ -1623,22 +1791,26 @@ function makeTransactions(store, lastDay) {
   const byAdvProduct = new Map();
   for (const c of store.campaigns) {
     const d = describeCampaign(c, store, lastDay);
-    const key = `${d.advertiserId}|${d.product.index}`;
-    if (!byAdvProduct.has(key)) byAdvProduct.set(key, []);
-    byAdvProduct.get(key).push(d);
+    for (const p of d.products) {
+      const key = `${d.advertiserId}|${p.key}`;
+      if (!byAdvProduct.has(key)) byAdvProduct.set(key, []);
+      byAdvProduct.get(key).push(d);
+    }
   }
-  return function sales(d, storeId, date) {
+  // One SKU's sales, or (no `product`) all the campaign's SKUs together.
+  return function sales(d, storeId, date, product) {
+    if (!product) return d.products.reduce((n, p) => n + sales(d, storeId, date, p), 0);
     if (!d.hasPos || date > lastDay) return 0;
     const dow = new Date(`${date}T00:00:00Z`).getUTCDay();
     let lift = 0;
-    for (const o of byAdvProduct.get(`${d.advertiserId}|${d.product.index}`) || []) {
+    for (const o of byAdvProduct.get(`${d.advertiserId}|${product.key}`) || []) {
       if (!o.campaignStores.includes(storeId) || o.start > date) continue;
       const end = o.end || lastDay;
       if (date <= end) lift = Math.max(lift, LIFT[o.level] || 0);
       else if (dayDiff(end, date) <= POST_DAYS) lift = Math.max(lift, (LIFT[o.level] || 0) * 0.4);
     }
-    const base = (220 + (storeIx[storeId] || 0) * 45 + hash(d.advertiserId, d.product.index) * 90) * WEEKDAY[dow];
-    return Math.round(base * (1 + lift) * (0.93 + hash(storeId, d.advertiserId, d.product.index, date) * 0.14));
+    const base = (220 + (storeIx[storeId] || 0) * 45 + hash(d.advertiserId, product.key) * 90) * WEEKDAY[dow] * product.volume;
+    return Math.round(base * (1 + lift * product.liftWeight) * (0.93 + hash(storeId, d.advertiserId, product.key, date) * 0.14));
   };
 }
 
@@ -1660,6 +1832,23 @@ function campaignSpend(store, d, all) {
   return cents(total);
 }
 
+/** One SKU's sales and uplift against the control stores, by the same method as the chart: indexed to the 30-day pre-period. */
+function skuUplift(sales, d, product, dates) {
+  const day = (stores, date) => stores.reduce((n, st) => n + sales(d, st, date, product), 0);
+  const rows = dates.map((date) => ({ phase: date < d.start ? 'before' : date <= d.flightEnd ? 'during' : 'after', c: day(d.campaignStores, date), x: day(d.controlStores, date) }));
+  const total = (phase, k) => rows.filter((r) => r.phase === phase).reduce((n, r) => n + r[k], 0);
+  const days = (phase) => rows.filter((r) => r.phase === phase).length;
+  const preC = days('before') ? total('before', 'c') / days('before') : 0; const preX = days('before') ? total('before', 'x') / days('before') : 0;
+  const nDuring = days('during');
+  const flightC = total('during', 'c'); const flightX = total('during', 'x');
+  const expected = preC * nDuring * (preX && nDuring ? flightX / nDuring / preX : 0);
+  const sold = { before: { campaign: total('before', 'c'), control: total('before', 'x') }, during: { campaign: flightC, control: flightX } };
+  const transactions = Math.round(Object.values(sold).reduce((n, w) => n + w.campaign + w.control, 0) / product.price);
+  const cell = (v) => Math.round(v / product.price);
+  const measurable = [sold.before.campaign, sold.before.control, sold.during.campaign, sold.during.control].every((v) => cell(v) >= MIN_SKU_TRANSACTIONS);
+  return { product, sold, transactions, measurable, expected, incremental: cents(flightC - expected) };
+}
+
 function upliftFor(store, d, all) {
   const sales = transactionsFor(store);
   const dates = eachDay(addDays(d.start, -PRE_DAYS), (() => { const e = addDays(d.flightEnd, POST_DAYS); return e > store.lastPlayedDay ? store.lastPlayedDay : e; })());
@@ -1679,23 +1868,53 @@ function upliftFor(store, d, all) {
     campaignIndex: preC ? Math.round((r.campaignSales / preC) * 1000) / 10 : null,
     controlIndex: preX ? Math.round((r.controlSales / preX) * 1000) / 10 : null,
   }));
-  const during = rows.filter((r) => r.phase === 'during');
-  const flightC = during.reduce((n, r) => n + r.campaignSales, 0);
-  const flightX = during.reduce((n, r) => n + r.controlSales, 0);
-  // What the campaign stores would have sold had they moved like the control stores from the 30 days before.
-  const expected = preC * during.length * (preX && during.length ? flightX / during.length / preX : 0);
-  const incremental = cents(flightC - expected);
+  // The headline is the sum of the SKUs that can be measured, so the "By product" rows add up to the tile.
+  const skus = d.products.map((p) => skuUplift(sales, d, p, dates));
+  const measured = skus.filter((k) => k.measurable);
+  const incremental = cents(measured.reduce((n, k) => n + k.incremental, 0));
+  const expected = measured.reduce((n, k) => n + k.expected, 0);
   const spend = campaignSpend(store, d, all);
   return {
     transactions: true, series,
     uplift: expected > 0 ? Math.round((incremental / expected) * 100) : null,
     incremental, spend, iroas: spend > 0 ? Math.round((incremental / spend) * 100) / 100 : null,
+    bySku: bySkuRows(skus, incremental),
   };
+}
+
+/** The "By product" list: highest incremental sales first; shares of positive contribution only, summing to exactly 100. */
+function bySkuRows(skus, total) {
+  const positive = skus.filter((k) => k.measurable && k.incremental > 0);
+  const pos = positive.reduce((n, k) => n + k.incremental, 0);
+  const shares = new Map(positive.map((k) => [k, Math.round((k.incremental / pos) * 1000) / 10]));
+  if (positive.length) { // put the rounding remainder on the largest share
+    const big = positive.reduce((a, b) => (b.incremental > a.incremental ? b : a));
+    shares.set(big, Math.round((100 - [...shares].filter(([k]) => k !== big).reduce((n, [, v]) => n + v, 0)) * 10) / 10);
+  }
+  const rows = skus.map((k) => ({
+    name: k.product.name, ...(k.product.sku ? { sku: k.product.sku } : {}), matchedOn: k.product.sku ? 'sku' : 'product name',
+    measurable: k.measurable, transactions: k.transactions,
+    ...(k.measurable ? {
+      incrementalSales: k.incremental, sharePercent: shares.has(k) ? shares.get(k) : null,
+      upliftPercent: k.expected > 0 ? Math.round((k.incremental / k.expected) * 100) : null,
+    } : {}),
+    sales: { before: { campaign: cents(k.sold.before.campaign), control: cents(k.sold.before.control) }, during: { campaign: cents(k.sold.during.campaign), control: cents(k.sold.during.control) } },
+  }));
+  return rows.sort((a, b) => (b.measurable - a.measurable) || ((b.incrementalSales || 0) - (a.incrementalSales || 0)) || a.name.localeCompare(b.name));
 }
 
 const tierMix = (level) => Object.entries(TIER_MIX[level] || TIER_MIX['Default only']).map(([tier, percent]) => ({ tier, percent }));
 
-module.exports = { describeCampaign, upliftFor, tierMix, transactionsFor, controlStoreIds, CONTROL_SEGMENT, PRE_DAYS, POST_DAYS };
+/** The tier mix with each tier's share split across the campaign's variations (shares are whole numbers adding up to 100). */
+function variationMix(level, variations) {
+  return tierMix(level).map(({ tier, percent }) => {
+    const of = variations.filter((v) => v.tier === tier);
+    const shares = splitTotal(percent, of.map((v) => v.weight));
+    return { tier, percent, variations: of.map((v, i) => ({ id: v.id, name: v.name, percent: shares[i], rules: rulesText(v.rules), ...(v.private ? { audienceNote: PRIVATE_AUDIENCE } : {}) })) };
+  });
+}
+
+module.exports = { describeCampaign, upliftFor, tierMix, variationMix, transactionsFor, controlStoreIds, CONTROL_SEGMENT, PRE_DAYS, POST_DAYS };
   },
   "src/display-types.js": function (module, exports, require) {
 // Display type facts shared by the display-types, slot-value, slot-allocation and missed-revenue
@@ -1913,6 +2132,47 @@ function iroasOf(store, filters) {
   return { byAdv: out, anyPos };
 }
 
+// Demand by DSP seat, one level below advertiser and DSP: the seat that won each play (the buying account inside a DSP, usually held by
+// the advertiser's agency or trading desk), read from the seat on every settled billing row. Spend, plays and CPM are exact; the
+// seats of an advertiser add up to its row (the cent left by rounding goes to its largest seat). A seat missing from the DSP's latest
+// sync keeps its history (`synced: false`). Direct advertisers have no seat. Retailer view only: advertiser logins never reach this route.
+function seatsOf(store, filters, scope) {
+  const catalog = (store.catalog && store.catalog.seats) || {};
+  const names = store.advertisers || {};
+  const deals = (store.catalog && store.catalog.deals) || {};
+  const bySeat = new Map(); // seatId -> { advertiserId -> { earned, views, plays, dealIds, first, last } }
+  const advertisersOnSeat = new Map();
+  store.scanDelivery({ ...filters, advertiserIds: null }, (r) => {
+    if (!r.seatId || (r.earned <= 0 && r.earnedSlots <= 0)) return;
+    if (!advertisersOnSeat.has(r.seatId)) advertisersOnSeat.set(r.seatId, new Set());
+    advertisersOnSeat.get(r.seatId).add(r.advertiserId);
+    if (scope && !scope.has(r.advertiserId)) return;
+    if (!bySeat.has(r.seatId)) bySeat.set(r.seatId, new Map());
+    const m = bySeat.get(r.seatId);
+    let a = m.get(r.advertiserId);
+    if (!a) { a = { earned: 0, earnedViews: 0, plays: 0, dealIds: new Set(), first: r.date, last: r.date }; m.set(r.advertiserId, a); }
+    a.earned += r.earned; a.earnedViews += r.earnedViews; a.plays += r.slots;
+    if (r.dealType !== 'Open auction') a.dealIds.add(r.dealId);
+    if (r.date < a.first) a.first = r.date; if (r.date > a.last) a.last = r.date;
+  });
+  const byAdv = new Map();
+  for (const [seatId, m] of bySeat) {
+    const seat = catalog[seatId] || {};
+    const seatAdvertisers = [...(advertisersOnSeat.get(seatId) || [])].map((id) => (names[id] || {}).name || id).sort((x, y) => x.localeCompare(y));
+    for (const [advertiserId, a] of m) {
+      if (!byAdv.has(advertiserId)) byAdv.set(advertiserId, []);
+      byAdv.get(advertiserId).push({
+        seatId, name: seat.name || seatId, dsp: seat.dsp || null, synced: seat.synced !== false,
+        revenue: cents(a.earned), revenueRaw: a.earned, plays: Math.round(a.plays),
+        dealsOn: [...a.dealIds].map((id) => ({ id, name: (deals[id] || {}).name || id, dealType: (deals[id] || {}).dealType || null })),
+        effectiveCpm: a.earnedViews > 0 ? cents(calc.effectiveCpm(a.earned, a.earnedViews)) : null,
+        firstWin: a.first, lastWin: a.last, advertisersBought: seatAdvertisers.length, advertiserNames: seatAdvertisers,
+      });
+    }
+  }
+  return byAdv;
+}
+
 // Demand health: earned revenue, share of total earned (whole numbers adding to 100), deals on, slots covered,
 // slots won %, effective CPM (settled billing only) and DSP. `top` is the ten highest by revenue, `all` is everyone.
 // Slots covered and Slots won count only the advertiser's deal positions on the filtered display types, and
@@ -1921,7 +2181,7 @@ function iroasOf(store, filters) {
 // campaign in the range had any POS sales to measure. There is no cap: a figure above 100 would be a data error to fix, not hide.
 module.exports = {
   path: '/advertisers',
-  handler({ store, filters }) {
+  handler({ store, filters, principal }) {
     const scope = filters.advertiserIds ? new Set(filters.advertiserIds) : null;
     const meta = store.advertisers || {};
     const roll = rollUp(store, filters);
@@ -1929,6 +2189,9 @@ module.exports = {
     const deals = dealsOf(store);
     const wantedTypes = filters.displayTypeIds ? new Set(filters.displayTypeIds) : null;
     const iroas = iroasOf(store, filters);
+    const retailer = !principal || principal.principalType !== 'advertiser'; // seat data names other advertisers: never in an advertiser's response
+    const seatRows = retailer ? seatsOf(store, filters, scope) : new Map();
+    const advertiserSeats = (store.catalog && store.catalog.advertiserSeats) || {};
     const ids = new Set(roll.byAdv.keys());
     for (const d of deals) for (const b of d.buyers || []) if (!scope || scope.has(b.advertiserId)) ids.add(b.advertiserId);
     const list = [...ids].map((id) => {
@@ -1943,9 +2206,16 @@ module.exports = {
       let opportunity = 0; for (const k of slots.keys()) opportunity += opp.perPosition(slots.get(k));
       const a = roll.byAdv.get(id) || { revenue: 0, earned: 0, earnedViews: 0 };
       const buyer = mine.flatMap((d) => d.buyers).find((b) => b.advertiserId === id);
+      const seats = (seatRows.get(id) || []).sort((x, y) => y.revenueRaw - x.revenueRaw || x.name.localeCompare(y.name));
+      // The seats add up to the advertiser's row: a rounding cent goes to the largest seat; each seat's share of the advertiser's spend is a whole percent.
+      if (seats.length) seats[0].revenue = cents(seats[0].revenue + (cents(a.earned) - seats.reduce((n, x) => n + x.revenue, 0)));
+      const seatShares = calc.percentSplit(seats.map((x) => x.revenueRaw));
       return {
         advertiserId: id, name: (meta[id] || {}).name || id, dsp: (meta[id] || {}).dsp || (buyer && buyer.dsp) || null,
         revenue: cents(a.earned), revenueRaw: a.earned,
+        direct: retailer && !(advertiserSeats[id] || []).length && !seats.length,
+        seatCount: seats.length,
+        seats: seats.map(({ revenueRaw, ...x }, i) => ({ ...x, share: seatShares[i] })),
         dealsOn: mine.map((d) => ({ id: d.id, name: d.name, dealType: d.dealType })).sort((x, y) => calc.compareDealTypes(x.dealType, y.dealType)),
         slotsCovered: slots.size,
         slotsWonPercent: opportunity > 0 ? calc.wholePercent(won, opportunity) : null,
@@ -2956,6 +3226,7 @@ module.exports = {
   "src/routes/sales-response.js": function (module, exports, require) {
 const sr = require('../sales-response');
 const { FilterError } = require('../filters');
+const { rulesText, PRIVATE_AUDIENCE } = require('../variations');
 
 const intParam = (params, name, { min, max }) => {
   const raw = params.get(name);
@@ -2970,6 +3241,7 @@ const EMPTY_TEXT = {
   'no-campaigns': 'No campaigns with personalised variants in the selected period.',
 };
 const NO_CONTROL = 'Control stores — none set for this campaign.';
+const TOO_FEW = 'Too few plays to show a rate';
 
 // Sales response after personalised plays (Targeting & scheduling maturity; the advertiser's Your targeting & scheduling).
 // The page filters scope it (store, display type, date range, advertiser); an advertiser login is pinned to its own campaigns
@@ -2996,7 +3268,8 @@ module.exports = {
       const base = { id: c.id, name: c.name || c.id, product: c.product || null, start: c.start, end: c.end };
       return own ? base : { ...base, advertiserId: c.advertiserId, advertiserName: a.name || c.advertiserId, dsp: a.dsp || null };
     });
-    const out = { window, step, view, hourBand: hourFrom === null ? null : { from: hourFrom, to: hourTo }, campaigns, campaignId: null, hours: [], emptyReason: null, emptyText: null, lines: [], coverage: null };
+    const explicit = Boolean(params.get('campaignId'));
+    const out = { variationsShown: false, window, step, view, hourBand: hourFrom === null ? null : { from: hourFrom, to: hourTo }, campaigns, campaignId: null, hours: [], emptyReason: null, emptyText: null, lines: [], coverage: null };
     const empty = (reason) => { out.emptyReason = reason; out.emptyText = EMPTY_TEXT[reason]; return out; };
 
     const wanted = params.get('campaignId');
@@ -3015,24 +3288,43 @@ module.exports = {
     out.coverage = { stores: stores.length, storeNames: stores, controlStores: r.scope.control.length, dateFrom: r.dates[0] || null, dateTo: r.dates[r.dates.length - 1] || null };
     if (!personalised.plays) return empty('no-personalised-plays');
 
+    const variations = sr.variationsFor(store, campaign);
     const spec = [
       ['personalised', 'After a personalised play', r.lines.personalised],
       ['localised', 'After a localised play', r.lines.localised],
       ['control', 'Control stores, same clock time', control],
     ];
-    out.lines = spec.map(([key, label, line]) => {
-      if (key === 'control' && !r.scope.control.length) return { key, label, available: false, note: NO_CONTROL, points: [] };
-      let running = 0;
-      const points = line.sales.map((sales, i) => {
+    const pointsOf = (line) => {
+      let running = 0; const windowTransactions = line.transactions.reduce((a, b) => a + b, 0); // running view: the whole window's transactions, so the total builds up
+      return line.sales.map((sales, i) => {
         const from = i * step; const to = Math.min((i + 1) * step, window);
         running += sales;
+        const transactions = view === 'running' ? windowTransactions : line.transactions[i];
         return {
           from, to, label: sr.labelOf(from, to, step),
-          value: sr.rate(view === 'running' ? running : sales, line.shoppers),
-          sales: view === 'running' ? running : sales, plays: line.plays, shoppers: line.shoppers,
+          value: sr.rate(view === 'running' ? running : sales, transactions),
+          sales: view === 'running' ? running : sales, plays: line.plays, transactions,
         };
       });
-      return { key, label, available: true, plays: line.plays, shoppers: line.shoppers, points };
+    };
+    out.lines = spec.flatMap(([key, label, line]) => {
+      if (key === 'control' && !r.scope.control.length) return [{ key, label, available: false, note: NO_CONTROL, points: [] }];
+      // With a campaign chosen, the personalised line splits into one line per personalised variation.
+      if (key === 'personalised' && explicit) {
+        out.variationsShown = true;
+        return variations.filter((v) => v.tier === 'personalised').map((v) => {
+          const vl = r.byVersion[v.id];
+          const storeNames = [...vl.stores].map((s) => store.catalog.stores[s].name || s).sort();
+          const detail = {
+            variationId: v.id, tier: v.tier, rules: rulesText(v.rules), plays: vl.plays, stores: { count: storeNames.length, names: storeNames },
+            ...(v.private ? { audienceNote: PRIVATE_AUDIENCE } : {}),
+          };
+          const k = `personalised:${v.id}`;
+          if (vl.plays < sr.MIN_PLAYS) return { key: k, label: v.name, ...detail, available: false, note: TOO_FEW, points: [] };
+          return { key: k, label: v.name, ...detail, available: true, points: pointsOf(vl) };
+        });
+      }
+      return [{ key, label, available: true, plays: line.plays, points: pointsOf(line) }];
     });
     return out;
   },
@@ -3040,7 +3332,8 @@ module.exports = {
   },
   "src/routes/sales-uplift.js": function (module, exports, require) {
 const { FilterError } = require('../filters');
-const { describeCampaign, upliftFor, tierMix, CONTROL_SEGMENT, PRE_DAYS, POST_DAYS } = require('../uplift');
+const { describeCampaign, upliftFor, variationMix, CONTROL_SEGMENT, PRE_DAYS, POST_DAYS } = require('../uplift');
+const { variationsOf } = require('../variations');
 const { addDays } = require('../dealing');
 
 // Sales uplift vs control stores: one outcome chart for one campaign. Sales of the campaign's product in the stores it
@@ -3048,7 +3341,7 @@ const { addDays } = require('../dealing');
 // incremental sales and iROAS. Page filters other than Advertiser do not apply (the windows are the campaign's own).
 // `campaigns` is the drop-down: the campaigns of the advertiser(s) in scope, newest first. An advertiser login is pinned
 // to its own advertiser by scopeFilters, so a campaign of another advertiser is simply not found. `state` says why a chart
-// is empty: `no-pos` (no transactions for the product), `no-control` (no Control stores exclusion on the campaign).
+// is empty (`bySku` lists each campaign SKU's contribution to the incremental sales tile): `no-pos` (no transactions for the product), `no-control` (no Control stores exclusion on the campaign).
 module.exports = {
   path: '/sales-uplift',
   advertiserAccess: true,
@@ -3073,12 +3366,12 @@ module.exports = {
       windows: { before: { from: addDays(pick.start, -PRE_DAYS), to: addDays(pick.start, -1) }, during: { from: pick.start, to: pick.flightEnd }, afterDays: POST_DAYS },
       campaignStores: { count: pick.campaignStores.length, names: names(pick.campaignStores) },
       controlStores: { count: pick.controlStores.length, names: names(pick.controlStores) },
-      tierMix: tierMix(pick.level),
+      tierMix: variationMix(pick.level, variationsOf(store.campaigns.find((c) => c.id === pick.id), store)),
     });
     const result = upliftFor(store, pick, all.filter((c) => c.advertiserId === pick.advertiserId));
     if (!result.transactions) return { ...out, state: 'no-pos' };
     if (!pick.excludesControl) return { ...out, state: 'no-control' };
-    return { ...out, tiles: { upliftPercent: result.uplift, incrementalSales: result.incremental, spend: result.spend, iroas: result.iroas }, series: result.series };
+    return { ...out, tiles: { upliftPercent: result.uplift, incrementalSales: result.incremental, spend: result.spend, iroas: result.iroas }, series: result.series, bySku: result.bySku };
   },
 };
   },

@@ -18,16 +18,32 @@ test('legend toggles keep at least one line on', () => {
   assert.deepEqual(SR.toggleLine(['b'], 'a'), ['b', 'a']);
 });
 
-test('point hover shows minute, each visible line, plays, sales, shoppers, stores and dates, from the real endpoint', async () => {
+test('point hover shows minute, each visible line, plays, sales, transactions, stores and dates, from the real endpoint', async () => {
   const d = await get('/sales-response', { advertiserIds: 'adv-blackmores' });
   const m = SR.pointHover(d, 3, ['personalised', 'control']);
   assert.equal(m.title, 'Minute 3 after play');
   assert.deepEqual(m.sections.map((s) => s.head), ['After a personalised play', 'Control stores, same clock time']);
-  assert.deepEqual(m.sections[0].rows.map((r) => r[0]), ['Sales per 1,000 shoppers', 'Plays', 'Sales counted', 'Shoppers (footfall)']);
+  assert.deepEqual(m.sections[0].rows.map((r) => r[0]), ['Sales per 1,000 transactions', 'Plays', 'Sales counted', 'Transactions (all baskets) behind the rate']);
   assert.deepEqual(m.rows.map((r) => r[0]), ['Stores', 'Dates']);
 });
 
 test('advertiser drop-down labels carry no other advertiser', async () => {
   const d = await get('/sales-response', {}, ADVERTISER);
   for (const c of d.campaigns) assert.ok(!SR.campaignLabel(c).includes('—'));
+});
+
+test('legend toggles follow the lines: new variation lines start on, vanished ones drop out, one always stays on', () => {
+  const seen = [];
+  let on = SR.syncOn([], seen, [{ key: 'personalised', available: true }, { key: 'localised', available: true }]);
+  assert.deepEqual(on, ['personalised', 'localised']);
+  on = SR.toggleLine(on, 'localised');
+  on = SR.syncOn(on, seen, [{ key: 'personalised:a', available: true }, { key: 'personalised:b', available: false }, { key: 'localised', available: true }]);
+  assert.deepEqual(on, ['personalised:a']);
+});
+
+test('a variation’s hover names its tier, rules, plays, stores and private audience', () => {
+  const m = SR.variationHover({ label: 'New to brand', tier: 'personalised', rules: ['Visitor segments is one of: Blackmores · new to brand'], plays: 120, stores: { count: 2, names: ['A', 'B'] }, audienceNote: 'Audience shared only with this advertiser' });
+  assert.equal(m.title, 'New to brand');
+  const text = JSON.stringify(m.rows);
+  for (const want of ['Personalised', 'Visitor segments is one of', '"120"', '"2"', 'A, B', 'Audience shared only with this advertiser']) assert.ok(text.includes(want), want);
 });

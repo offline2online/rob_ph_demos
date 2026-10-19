@@ -25,6 +25,9 @@
     incremental: 'Campaign-store sales during the flight minus what they would have been had they followed the control stores’ trend from the 30 days before.',
     iroas: 'Incremental sales ÷ campaign spend. Spend comes from billing line items in the campaign’s stores and display types, shared equally between the advertiser’s campaigns running on the same day.'
   };
+  var BY_PRODUCT_TIP = 'How much each product in this campaign added to incremental sales. Each product’s sales in campaign stores are compared with control stores, ' +
+    'against the 30 days before the campaign. Sales come from your POS through the Personalisation Hub Transaction API.';
+  var TOP_N = 10;
   var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
   // ---------- formatting (pure) ----------
@@ -47,6 +50,21 @@
     var parts = (mix || []).filter(function (t) { return t.percent > 0; }).map(function (t) { return Math.round(t.percent) + '% ' + (TIER_LABELS[t.tier] || t.tier); });
     return parts.length ? 'Plays: ' + parts.join(' · ') : '';
   }
+  /** One line per tier that has named variations: "Personalised 5% → New to brand 3% · Existing buyer 2%", then each variation's targeting. */
+  function variationLines(mix) {
+    var out = [];
+    (mix || []).forEach(function (t) {
+      var vs = (t.variations || []).filter(function (v) { return v.percent > 0; });
+      if (!vs.length || t.percent <= 0) return;
+      var head = (TIER_LABELS[t.tier] || t.tier); head = head.charAt(0).toUpperCase() + head.slice(1);
+      out.push(head + ' ' + Math.round(t.percent) + '% → ' + vs.map(function (v) { return v.name + ' ' + Math.round(v.percent) + '%'; }).join(' · '));
+      vs.forEach(function (v) {
+        var detail = (v.rules || []).concat(v.audienceNote ? [v.audienceNote] : []);
+        if (detail.length) out.push(v.name + ': ' + detail.join('; '));
+      });
+    });
+    return out;
+  }
   function campaignLabel(c, showAdvertiser) {
     return (showAdvertiser ? c.advertiserName + ' · ' : '') + c.productName + ' · ' + fmtDay(c.start) + (c.end ? ' – ' + fmtDay(c.end) : ' –');
   }
@@ -54,10 +72,33 @@
   function tiles(data) {
     var t = data && data.tiles; if (!t) return [];
     return [
-      { key: 'uplift', label: 'Uplift', value: t.upliftPercent == null ? '–' : Math.round(t.upliftPercent) + '%', tip: TIPS.uplift, hover: tierMixText(data.tierMix) },
+      { key: 'uplift', label: 'Uplift', value: t.upliftPercent == null ? '–' : Math.round(t.upliftPercent) + '%', tip: TIPS.uplift, hover: tierMixText(data.tierMix), more: variationLines(data.tierMix) },
       { key: 'incremental', label: 'Incremental sales (USD)', value: fmtMoney(t.incrementalSales), tip: TIPS.incremental },
       { key: 'iroas', label: 'iROAS', value: t.iroas == null ? '–' : (Math.round(t.iroas * 100) / 100).toFixed(2) + 'x', tip: TIPS.iroas }
     ];
+  }
+  function signedMoney(n) { return (n < 0 ? '-' : '') + fmtMoney(Math.abs(n)); }
+  /** "By product" rows for the Incremental sales tile: highest first, the top ten unless expanded. */
+  function bySkuModel(data, expanded) {
+    var rows = (data && data.bySku) || [];
+    var shown = expanded ? rows : rows.slice(0, TOP_N);
+    return {
+      total: rows.length, more: Math.max(rows.length - shown.length, 0),
+      rows: shown.map(function (r) {
+        var id = (r.sku ? r.sku : 'Matched on product name');
+        var figures = r.measurable
+          ? signedMoney(r.incrementalSales) + ' · ' + (r.sharePercent == null ? 'no share' : r.sharePercent.toFixed(1) + '%') + ' · ' + (r.upliftPercent == null ? '–' : Math.round(r.upliftPercent) + '%')
+          : 'Too few sales to measure';
+        return {
+          name: r.name, id: id, figures: figures, measurable: r.measurable, incremental: r.incrementalSales, share: r.sharePercent, uplift: r.upliftPercent,
+          hover: r.measurable
+            ? [[ 'Before, campaign stores', fmtMoney(r.sales.before.campaign) ], [ 'Before, control stores', fmtMoney(r.sales.before.control) ],
+               [ 'Campaign, campaign stores', fmtMoney(r.sales.during.campaign) ], [ 'Campaign, control stores', fmtMoney(r.sales.during.control) ],
+               [ 'Transactions', fmtInt(r.transactions) ]]
+            : [[ 'Transactions', fmtInt(r.transactions) ]]
+        };
+      })
+    };
   }
   /** Legend labels with store counts; hovering one lists the stores. */
   function legend(data) {
@@ -198,6 +239,29 @@
       return plot;
     }
 
+    // The "By product" list opens under the Incremental sales tile on hover or focus. Unlike the floating tip it can be
+    // entered, so a row can be hovered for its figures and "+ n more" clicked.
+    var expanded = false;
+    function byProduct(data) {
+      var pop = h('div', { class: 'up-pop', role: 'group', 'aria-label': 'By product' });
+      var m = bySkuModel(data, expanded);
+      pop.appendChild(h('div', { class: 'up-pop-head' }, [h('span', {}, ['By product']), info(BY_PRODUCT_TIP)]));
+      m.rows.forEach(function (r) {
+        var row = h('div', { class: 'up-pop-row' + (r.measurable ? '' : ' up-pop-thin'), tabindex: '0' }, [
+          h('span', { class: 'up-pop-name' }, [r.name, h('span', { class: 'up-pop-id' }, [r.id])]),
+          h('span', { class: 'up-pop-fig' }, [r.figures])
+        ]);
+        withTip(row, [{ title: r.name }].concat(r.hover));
+        pop.appendChild(row);
+      });
+      if (m.more) {
+        var more = h('button', { type: 'button', class: 'up-pop-more' }, ['+ ' + m.more + ' more']);
+        more.addEventListener('click', function () { expanded = true; render(last); });
+        pop.appendChild(more);
+      }
+      return pop;
+    }
+
     function render(data) {
       if (!alive) return;
       last = data; lastWidth = Math.round(body.clientWidth);
@@ -214,8 +278,9 @@
           h('div', { class: 'up-tile-top' }, [h('span', { class: 'up-tile-lbl' }, [t.label]), info(t.tip)]),
           h('div', { class: 'up-tile-val' }, [t.value])
         ]);
-        var lines = [t.hover].concat(t.key === 'uplift' && data.matchedOn === 'product name' ? ['Matched on product name'] : []).filter(Boolean);
-        if (lines.length) withTip(tile, lines);
+        var lines = [t.hover].concat(t.more || []).concat(t.key === 'uplift' && data.matchedOn === 'product name' ? ['Matched on product name'] : []).filter(Boolean);
+        if (t.key === 'incremental' && data.bySku && data.bySku.length) tile.appendChild(byProduct(data));
+        else if (lines.length) withTip(tile, lines);
         row.appendChild(tile);
       });
       body.appendChild(row);
@@ -237,6 +302,7 @@
       body.innerHTML = ''; body.appendChild(h('div', { class: 'up-empty' }, ['Loading…']));
       fetchJson('sales-uplift', params).then(function (data) {
         if (my !== seq) return;
+        if (data.campaignId !== campaignId) expanded = false;
         campaignId = data.campaignId;
         render(data);
       }, function () {
@@ -265,5 +331,5 @@
     };
   }
 
-  return { mount: mount, tiles: tiles, tierMixText: tierMixText, legend: legend, dayRows: dayRows, geometry: geometry, campaignLabel: campaignLabel, fmtMoney: fmtMoney, MESSAGES: MESSAGES, TITLE_TIP: TITLE_TIP };
+  return { mount: mount, tiles: tiles, bySkuModel: bySkuModel, BY_PRODUCT_TIP: BY_PRODUCT_TIP, tierMixText: tierMixText, variationLines: variationLines, legend: legend, dayRows: dayRows, geometry: geometry, campaignLabel: campaignLabel, fmtMoney: fmtMoney, MESSAGES: MESSAGES, TITLE_TIP: TITLE_TIP };
 });

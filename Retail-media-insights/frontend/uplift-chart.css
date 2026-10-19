@@ -18,6 +18,17 @@
 .up-tile-top { display: flex; align-items: center; gap: 4px; }
 .up-tile-lbl { color: var(--up-muted); }
 .up-tile-val { font-size: 24px; font-weight: 600; line-height: 1.3; }
+.up-tile { position: relative; }
+.up-pop { display: none; position: absolute; left: 0; top: 100%; z-index: 9; width: max-content; min-width: 280px; max-width: min(420px, calc(100vw - 48px)); padding: 8px 12px;
+  background: #fff; border: 1px solid #d9d9d9; border-radius: 8px; box-shadow: 0 6px 16px rgba(0,0,0,0.12); font-size: 13px; }
+.up-tile:hover > .up-pop, .up-tile:focus-within > .up-pop { display: block; }
+.up-pop-head { display: flex; align-items: center; gap: 4px; font-weight: 500; margin-bottom: 4px; }
+.up-pop-row { display: flex; justify-content: space-between; gap: 16px; padding: 3px 0; border-top: 1px solid var(--up-border); }
+.up-pop-name { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
+.up-pop-id { color: var(--up-muted); font-size: 12px; }
+.up-pop-fig { text-align: right; font-weight: 500; white-space: nowrap; }
+.up-pop-thin .up-pop-fig { color: var(--up-muted); font-weight: 400; white-space: normal; }
+.up-pop-more { margin-top: 4px; padding: 0; border: 0; background: none; color: var(--up-primary); font: inherit; cursor: pointer; }
 .up-plot { position: relative; }
 .up-svg { width: 100%; height: 260px; display: block; }
 .up-grid { stroke: #f0f0f0; stroke-width: 1; }
