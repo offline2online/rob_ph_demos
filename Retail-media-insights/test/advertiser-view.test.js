@@ -140,7 +140,7 @@ test('delivery: open auction in the test data never clears below its floor; a so
   let seen = 0;
   for (const d of body.days) for (const b of d.deals.filter((x) => x.dealType === 'Open auction' || x.dealType === 'Private auction')) {
     if (b.yourCpm != null) { seen += 1; assert.ok(b.yourCpm >= b.floorCpm.min, `${d.date} ${b.dealId}`); }
-    if (b.winningCpm) assert.ok(b.winningCpm.average >= b.floorCpm.min && b.winningCpm.highest >= b.winningCpm.average);
+    if (b.winningCpm) assert.ok(b.winningCpm.p25 >= b.floorCpm.min && b.winningCpm.median >= b.winningCpm.p25 && b.winningCpm.p75 >= b.winningCpm.median);
   }
   assert.ok(seen > 0);
   const st = fixture([{ adv: 'adv-unilever', cpm: 5 }, { adv: 'adv-haleon', cpm: 6 }, { adv: 'adv-blackmores', cpm: 7 }]);
@@ -170,11 +170,11 @@ test('winning CPM: shown only when at least MIN_OTHER_BUYERS_FOR_WINNING_CPM oth
   assert.equal(one.playsWon, 10);
   assert.ok(!('allPlays' in one) && !('sharePercent' in one), 'all plays minus own plays would be that buyer\'s plays');
   const two = await day([{ adv: 'adv-unilever', cpm: 20 }, { adv: 'adv-haleon', cpm: 30 }, { adv: 'adv-blackmores', cpm: 40 }]);
-  assert.deepEqual(two.winningCpm, { average: 30, highest: 40 });
+  assert.deepEqual(two.winningCpm, { p25: 25, median: 30, p75: 35 });
   assert.equal(two.allPlays, 30); assert.equal(two.yourCpm, 20);
   const onlyOthers = await day([{ adv: 'adv-haleon', cpm: 30 }, { adv: 'adv-blackmores', cpm: 40 }]);
   assert.equal(onlyOthers.playsWon, 0); assert.ok(!('yourCpm' in onlyOthers));
-  assert.deepEqual(onlyOthers.winningCpm, { average: 35, highest: 40 });
+  assert.deepEqual(onlyOthers.winningCpm, { p25: 32.5, median: 35, p75: 37.5 });
   assert.ok(!JSON.stringify(two).match(/haleon|blackmores/i));
   const bare = Object.keys(two).sort();
   assert.deepEqual(bare, ['allPlays', 'dealId', 'dealType', 'floorCpm', 'name', 'playsWon', 'sharePercent', 'winningCpm', 'yourCpm']);
@@ -209,15 +209,17 @@ test('deals-by-display-type: groups in shopper-journey order, rows reconcile to 
     const zones = body.groups.map((g) => ['Exterior', 'Entrance & out of category', 'In aisles', 'Checkout', 'Other & connected store'].indexOf(g.displayType.iabZone));
     assert.deepEqual(zones, [...zones].sort((a, b) => a - b));
     for (const g of body.groups) {
-      assert.equal(g.spend, cents(sum(g.deals.map((d) => d.spend))));
-      assert.equal(g.playsWon, sum(g.deals.map((d) => d.playsWon)));
-      assert.equal(g.assumedViews, sum(g.deals.map((d) => d.assumedViews)));
-      assert.equal(g.dealCount, g.deals.length);
-      for (const d of g.deals) {
+      // The Open auction row (last, one per display type the advertiser runs on) is kept out of the group's own totals.
+      const dealRows = g.deals.filter((d) => d.dealType !== 'Open auction');
+      assert.equal(g.spend, cents(sum(dealRows.map((d) => d.spend))));
+      assert.equal(g.playsWon, sum(dealRows.map((d) => d.playsWon)));
+      assert.equal(g.assumedViews, sum(dealRows.map((d) => d.assumedViews)));
+      assert.equal(g.dealCount, dealRows.length);
+      assert.ok(g.deals.filter((d) => d.dealType === 'Open auction').length <= 1);
+      for (const d of dealRows) {
         if ('allPlays' in d.share) assert.ok(d.share.playsWon <= d.share.allPlays); else assert.ok(!('percent' in d.share));
         if (d.share.allPlays > 0) assert.equal(d.share.percent, calc.wholePercent(d.share.playsWon, d.share.allPlays));
         assert.ok(d.share.advertisersOnDeal >= 1);
-        assert.ok(d.dealType !== 'Open auction');
         for (const id of d.dealIds) assert.equal(id.dsp, ctx.advertisers[me].dsp, 'only the advertiser\'s own DSP deal ID');
         if (d.assumedViews > 0) assert.ok(Math.abs(d.effectiveCpm - calc.effectiveCpm(d.spend, d.assumedViews)) < 0.01 + 5 / d.assumedViews, 'within the rounding of spend (cents) and views');
       }
@@ -228,7 +230,7 @@ test('deals-by-display-type: groups in shopper-journey order, rows reconcile to 
 test('deals-by-display-type: a deal\'s share is the advertiser\'s plays of all plays on that deal and display type', async () => {
   const { body } = await as('adv-unilever', `/deals-by-display-type?${Q}`);
   const all = []; store.scanDelivery({ dateFrom: '2026-10-05', dateTo: '2026-10-11', storeIds: null, displayTypeIds: null, advertiserIds: null }, (r) => all.push({ ...r, slots: r.earnedSlots }));
-  for (const g of body.groups) for (const d of g.deals) {
+  for (const g of body.groups) for (const d of g.deals.filter((x) => x.dealType !== 'Open auction')) {
     if (!('allPlays' in d.share)) continue; // omitted when exactly one other buyer won there
     assert.equal(d.share.allPlays, sum(all.filter((r) => r.dealId === d.id && r.displayTypeId === g.displayType.id).map((r) => r.slots)), `${d.id} ${g.displayType.id}`);
   }
@@ -274,4 +276,34 @@ test('my-targeting: no campaigns omits the level; a DSP with nothing configured 
   const done = (await as('adv-unilever', '/my-targeting?dateFrom=2026-10-10&dateTo=2026-10-10', all)).body;
   assert.equal(done.usesEverySharedVariable, true);
   assert.deepEqual(done.otherVariablesAvailable, { Localised: [], Personalised: [] });
+});
+
+test('deals-by-display-type: winning CPM range on auction rows only, an Open auction row per display type, floors respected', async () => {
+  let ranges = 0; let openRows = 0;
+  for (const me of ADVERTISERS) {
+    const { body } = await as(me, `/deals-by-display-type?${Q}`);
+    for (const g of body.groups) {
+      const open = g.deals.filter((d) => d.id === 'open-auction');
+      assert.ok(open.length <= 1); openRows += open.length;
+      if (open.length) assert.equal(g.deals[g.deals.length - 1], open[0], 'Open auction is listed last');
+      const floor = g.displayType.floorCpm;
+      for (const d of g.deals) {
+        if (d.dealType === 'Programmatic guaranteed' || d.dealType === 'Preferred deal') { assert.ok(!('winningCpm' in d), `${me} ${d.id}: fixed CPM only`); continue; }
+        if (!d.winningCpm) continue;
+        ranges += 1;
+        assert.ok(d.winningCpm.p25 <= d.winningCpm.median && d.winningCpm.median <= d.winningCpm.p75);
+        if (d.id === 'open-auction' && floor != null) assert.ok(d.winningCpm.p25 >= floor, `${me} ${g.displayType.id}: open auction range at or above the floor`);
+        assert.deepEqual(Object.keys(d.winningCpm).sort(), ['median', 'p25', 'p75'], 'aggregates only');
+      }
+    }
+  }
+  assert.ok(openRows > 0 && ranges > 0);
+});
+
+test('deals-by-display-type: the range needs at least MIN_OTHER_BUYERS_FOR_WINNING_CPM other winners, on the open auction row too', async () => {
+  const day = async (winners) => (await as('adv-unilever', '/deals-by-display-type?dateFrom=2026-10-10&dateTo=2026-10-10', fixture(winners))).body.groups[0].deals.find((d) => d.id === 'open-auction');
+  assert.ok(!('winningCpm' in await day([{ adv: 'adv-unilever', cpm: 20 }, { adv: 'adv-haleon', cpm: 30 }])));
+  const row = await day([{ adv: 'adv-unilever', cpm: 20 }, { adv: 'adv-haleon', cpm: 30 }, { adv: 'adv-blackmores', cpm: 40 }]);
+  assert.deepEqual(row.winningCpm, { p25: 25, median: 30, p75: 35 });
+  assert.ok(!JSON.stringify(row).match(/haleon|blackmores/i));
 });

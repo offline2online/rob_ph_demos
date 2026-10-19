@@ -73,12 +73,13 @@ const OPEN_AUCTION_DEAL_TYPE = 'Open auction';
 
 /**
  * The settled (earned) delivery of every advertiser together, per day x display type x deal (block `nDeals` is the open auction):
- * plays, revenue, views, the highest CPM of any row and which advertisers won plays. What advertiser Delivery shows about the
+ * plays, revenue, views, the cleared CPM of each winning buyer (the winning CPM range is read from them) and which advertisers won plays. What advertiser Delivery shows about the
  * other buyers on a deal ("all plays", the aggregate winning CPM, how many others won) is a function of these cells alone.
  * `rows` are date-ordered rows (the rollup or, for a store filter, fine rows); `cell.dealIx` is -1 for the open auction.
  */
 function buildCells(rows, nDeals, out = [], index = new Map()) {
   let day = null;
+  const acc = new Map(); // cell -> revenue and views per winning buyer, aligned with cell.advs; gone once the cells' cpms are set
   for (const r of rows) {
     if (r.date !== day) { day = r.date; index.clear(); }
     if (r.earnedSlots <= 0 && r.earned <= 0) continue;
@@ -86,13 +87,19 @@ function buildCells(rows, nDeals, out = [], index = new Map()) {
     const key = r.typeIx * (nDeals + 1) + (open ? nDeals : r.dealIx);
     let c = index.get(key);
     if (!c) {
-      c = { date: r.date, dayIx: r.dayIx, displayTypeId: r.displayTypeId, dealIx: open ? -1 : r.dealIx, all: 0, rev: 0, views: 0, high: 0, advs: [] };
-      index.set(key, c); out.push(c);
+      c = { date: r.date, dayIx: r.dayIx, displayTypeId: r.displayTypeId, dealIx: open ? -1 : r.dealIx, all: 0, rev: 0, views: 0, cpms: [], advs: [] };
+      index.set(key, c); out.push(c); acc.set(c, { rev: [], views: [] });
     }
     c.all += r.earnedSlots; c.rev += r.earned; c.views += r.earnedViews;
-    if (r.earnedViews > 0) { const cpm = r.maxCpm !== undefined ? r.maxCpm : effectiveCpm(r.earned, r.earnedViews); if (cpm > c.high) c.high = cpm; }
-    if (r.earnedSlots > 0 && !c.advs.includes(r.advIx)) c.advs.push(r.advIx);
+    if (r.earnedSlots > 0) {
+      const a = acc.get(c);
+      let at = c.advs.indexOf(r.advIx);
+      if (at < 0) { at = c.advs.length; c.advs.push(r.advIx); a.rev.push(0); a.views.push(0); }
+      a.rev[at] += r.earned; a.views[at] += r.earnedViews;
+    }
   }
+  // The cleared CPM of each winning buyer in the cell (revenue / views), which the winning CPM range is read from. Never keyed by buyer.
+  for (const [c, a] of acc) for (let i = 0; i < c.advs.length; i += 1) if (a.views[i] > 0) c.cpms.push(effectiveCpm(a.rev[i], a.views[i]));
   return out;
 }
 
@@ -126,10 +133,7 @@ class AggregateStore {
         (r) => (((r.dealIx * T + r.typeIx) * D + dsps.code(r.dsp)) * A + r.advIx) * K + dealTypes.code(r.dealType),
         (r) => ({ date: r.date, displayTypeId: r.displayTypeId, storeId: null, dealId: r.dealId, dealType: r.dealType, dsp: r.dsp, advertiserId: r.advertiserId,
           dayIx: r.dayIx, dealIx: r.dealIx, typeIx: r.typeIx, advIx: r.advIx, revenue: 0, earned: 0, estimated: 0, views: 0, earnedViews: 0, slots: 0, earnedSlots: 0 }),
-        DELIVERY_MEASURES,
-        // The one per-row (not additive) figure an endpoint reads: the highest effective CPM of any fine row (advertiser Delivery's
-        // "highest winning CPM"). A rollup row carries the highest of the rows it merged, so merging stores does not change it.
-        (g, r) => { if (r.earnedViews > 0) { const c = effectiveCpm(r.earned, r.earnedViews); if (g.maxCpm === undefined || c > g.maxCpm) g.maxCpm = c; } });
+        DELIVERY_MEASURES);
       this.inventoryRollup = rollup(this.inventory, (r) => r.typeIx,
         (r) => ({ date: r.date, displayTypeId: r.displayTypeId, storeId: null, dayIx: r.dayIx, typeIx: r.typeIx, sold: 0, unsold: 0, offline: 0, outsideHours: 0, unsoldViews: 0, lostRevenue: 0 }),
         INVENTORY_MEASURES);

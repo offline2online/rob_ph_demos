@@ -624,12 +624,13 @@ const OPEN_AUCTION_DEAL_TYPE = 'Open auction';
 
 /**
  * The settled (earned) delivery of every advertiser together, per day x display type x deal (block `nDeals` is the open auction):
- * plays, revenue, views, the highest CPM of any row and which advertisers won plays. What advertiser Delivery shows about the
+ * plays, revenue, views, the cleared CPM of each winning buyer (the winning CPM range is read from them) and which advertisers won plays. What advertiser Delivery shows about the
  * other buyers on a deal ("all plays", the aggregate winning CPM, how many others won) is a function of these cells alone.
  * `rows` are date-ordered rows (the rollup or, for a store filter, fine rows); `cell.dealIx` is -1 for the open auction.
  */
 function buildCells(rows, nDeals, out = [], index = new Map()) {
   let day = null;
+  const acc = new Map(); // cell -> revenue and views per winning buyer, aligned with cell.advs; gone once the cells' cpms are set
   for (const r of rows) {
     if (r.date !== day) { day = r.date; index.clear(); }
     if (r.earnedSlots <= 0 && r.earned <= 0) continue;
@@ -637,13 +638,19 @@ function buildCells(rows, nDeals, out = [], index = new Map()) {
     const key = r.typeIx * (nDeals + 1) + (open ? nDeals : r.dealIx);
     let c = index.get(key);
     if (!c) {
-      c = { date: r.date, dayIx: r.dayIx, displayTypeId: r.displayTypeId, dealIx: open ? -1 : r.dealIx, all: 0, rev: 0, views: 0, high: 0, advs: [] };
-      index.set(key, c); out.push(c);
+      c = { date: r.date, dayIx: r.dayIx, displayTypeId: r.displayTypeId, dealIx: open ? -1 : r.dealIx, all: 0, rev: 0, views: 0, cpms: [], advs: [] };
+      index.set(key, c); out.push(c); acc.set(c, { rev: [], views: [] });
     }
     c.all += r.earnedSlots; c.rev += r.earned; c.views += r.earnedViews;
-    if (r.earnedViews > 0) { const cpm = r.maxCpm !== undefined ? r.maxCpm : effectiveCpm(r.earned, r.earnedViews); if (cpm > c.high) c.high = cpm; }
-    if (r.earnedSlots > 0 && !c.advs.includes(r.advIx)) c.advs.push(r.advIx);
+    if (r.earnedSlots > 0) {
+      const a = acc.get(c);
+      let at = c.advs.indexOf(r.advIx);
+      if (at < 0) { at = c.advs.length; c.advs.push(r.advIx); a.rev.push(0); a.views.push(0); }
+      a.rev[at] += r.earned; a.views[at] += r.earnedViews;
+    }
   }
+  // The cleared CPM of each winning buyer in the cell (revenue / views), which the winning CPM range is read from. Never keyed by buyer.
+  for (const [c, a] of acc) for (let i = 0; i < c.advs.length; i += 1) if (a.views[i] > 0) c.cpms.push(effectiveCpm(a.rev[i], a.views[i]));
   return out;
 }
 
@@ -677,10 +684,7 @@ class AggregateStore {
         (r) => (((r.dealIx * T + r.typeIx) * D + dsps.code(r.dsp)) * A + r.advIx) * K + dealTypes.code(r.dealType),
         (r) => ({ date: r.date, displayTypeId: r.displayTypeId, storeId: null, dealId: r.dealId, dealType: r.dealType, dsp: r.dsp, advertiserId: r.advertiserId,
           dayIx: r.dayIx, dealIx: r.dealIx, typeIx: r.typeIx, advIx: r.advIx, revenue: 0, earned: 0, estimated: 0, views: 0, earnedViews: 0, slots: 0, earnedSlots: 0 }),
-        DELIVERY_MEASURES,
-        // The one per-row (not additive) figure an endpoint reads: the highest effective CPM of any fine row (advertiser Delivery's
-        // "highest winning CPM"). A rollup row carries the highest of the rows it merged, so merging stores does not change it.
-        (g, r) => { if (r.earnedViews > 0) { const c = effectiveCpm(r.earned, r.earnedViews); if (g.maxCpm === undefined || c > g.maxCpm) g.maxCpm = c; } });
+        DELIVERY_MEASURES);
       this.inventoryRollup = rollup(this.inventory, (r) => r.typeIx,
         (r) => ({ date: r.date, displayTypeId: r.displayTypeId, storeId: null, dayIx: r.dayIx, typeIx: r.typeIx, sold: 0, unsold: 0, offline: 0, outsideHours: 0, unsoldViews: 0, lostRevenue: 0 }),
         INVENTORY_MEASURES);
@@ -1477,6 +1481,22 @@ const isOpenAuction = (r) => r.dealType === 'Open auction';
 // Rounded to the cent after settling float noise (1e-6), so the order a sum was added in never decides a half cent.
 const cents = (n) => Math.round(Math.round(n * 1e6) / 1e4) / 100;
 
+/** The p-th percentile (0..1) of an ascending list, linearly interpolated between neighbours. */
+function percentile(sorted, p) {
+  const at = (sorted.length - 1) * p; const lo = Math.floor(at); const hi = Math.ceil(at);
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (at - lo);
+}
+
+/**
+ * The winning CPM range of a set of cleared CPMs (one per billing line): p25, median and p75, to the cent. Only these aggregates
+ * leave the service; the caller has already checked that enough other buyers won (MIN_OTHER_BUYERS_FOR_WINNING_CPM).
+ */
+function winningRange(cpms) {
+  if (!cpms.length) return null;
+  const sorted = Float64Array.from(cpms).sort();
+  return { p25: cents(percentile(sorted, 0.25)), median: cents(percentile(sorted, 0.5)), p75: cents(percentile(sorted, 0.75)) };
+}
+
 /** Deals (not the open auction) the advertiser buys, or has delivery on (`delivered`: a Set of deal ids). Catalog objects, never serialised as is. */
 function dealsDelivered(store, advertiserId, delivered) {
   return dealsOf(store).filter((d) => d.dealType !== 'Open auction'
@@ -1490,7 +1510,7 @@ function dealsInScope(store, advertiserId, ownRows) {
   return dealsDelivered(store, advertiserId, delivered);
 }
 
-module.exports = { OPEN_AUCTION, ownAdvertiser, isOpenAuction, dealsInScope, dealsDelivered, cents };
+module.exports = { OPEN_AUCTION, ownAdvertiser, isOpenAuction, dealsInScope, dealsDelivered, cents, winningRange };
   },
   "src/uplift.js": function (module, exports, require) {
 // Sales uplift vs control stores: the sample campaign products, the stand-in for PH Core's Transaction API and the
@@ -1924,10 +1944,13 @@ const calc = require('../calc');
 const { displayTypeFacts, hoverCard } = require('../display-types');
 const { dealIdsFor, slotKey, slotsWonComplete, RETENTION_DAYS } = require('../dealing');
 const { MIN_OTHER_BUYERS_FOR_WINNING_CPM } = require('../constants');
-const { ownAdvertiser, isOpenAuction, dealsInScope, cents } = require('../advertiser-view');
+const { OPEN_AUCTION, ownAdvertiser, isOpenAuction, dealsInScope, cents, winningRange } = require('../advertiser-view');
 
 // Advertiser "Your deals by display type": one group per display type the advertiser's deals are on (shopper-journey
-// order), one row per deal beneath it. Open auction plays are not on a deal and are not included. A deal row's Share is
+// order), one row per deal beneath it, then an Open auction row on each display type the advertiser's campaigns run on (or has won
+// open auction plays on). A row of an auction (private or open) also carries the winning CPM range (p25 / median / p75 of every
+// winning buyer's cleared CPM there, in aggregate only, and only with at least MIN_OTHER_BUYERS_FOR_WINNING_CPM other winners);
+// Programmatic guaranteed and Preferred deal rows are fixed price and carry none. A deal row's Share is
 // the advertiser's plays won of all plays on that deal there (other buyers only as a count, never named); a group's
 // Share is its share of the advertiser's deal spend (whole numbers adding to 100). Parts are rounded first. Settled (earned) rows only, like every retailer figure.
 module.exports = {
@@ -1942,10 +1965,24 @@ module.exports = {
     const mineSeen = new Uint8Array(nD * nT);
     const otherFlag = new Uint8Array(nD * nT * nA); const otherCount = new Int32Array(nD * nT); // distinct other advertisers with plays won
     const ownRows = [];
+    // Revenue and views per winning buyer (advertiser x deal x display type; the open auction's are per display type), from which each
+    // buyer's cleared CPM and so the winning CPM range is read, only for a range that is actually shown. Never keyed out of the service.
+    const buyerRev = new Float64Array(nD * nT * nA); const buyerViews = new Float64Array(nD * nT * nA);
+    const openRev = new Float64Array(nT * nA); const openViews = new Float64Array(nT * nA);
+    const openAll = new Float64Array(nT); const openMine = new Map(); const openOthers = Array.from({ length: nT }, () => new Set());
+    const cpmsAt = (rev, views, base) => { const out = []; for (let a = 0; a < nA; a += 1) if (views[base + a] > 0) out.push(calc.effectiveCpm(rev[base + a], views[base + a])); return out; };
     store.scanDelivery({ ...filters, advertiserIds: null }, (r) => {
-      if (isOpenAuction(r)) return;
+      if (isOpenAuction(r)) {
+        openAll[r.typeIx] += r.earnedSlots;
+        if (r.earnedSlots > 0 && r.earnedViews > 0) { openRev[r.typeIx * nA + r.advIx] += r.earned; openViews[r.typeIx * nA + r.advIx] += r.earnedViews; }
+        if (r.advIx !== meIx) { if (r.earnedSlots > 0) openOthers[r.typeIx].add(r.advIx); return; }
+        let m = openMine.get(r.typeIx); if (!m) { m = { plays: 0, views: 0, rev: 0 }; openMine.set(r.typeIx, m); }
+        m.plays += r.earnedSlots; m.views += r.earnedViews; m.rev += r.earned;
+        return;
+      }
       const k = r.dealIx * nT + r.typeIx;
       all[k] += r.earnedSlots;
+      if (r.earnedSlots > 0 && r.earnedViews > 0) { buyerRev[k * nA + r.advIx] += r.earned; buyerViews[k * nA + r.advIx] += r.earnedViews; }
       if (r.advIx !== meIx) {
         if (r.earnedSlots > 0) { const f = k * nA + r.advIx; if (!otherFlag[f]) { otherFlag[f] = 1; otherCount[k] += 1; } }
         return;
@@ -1960,6 +1997,11 @@ module.exports = {
     const typeIds = new Set();
     for (const d of deals) for (const s of d.slots || []) typeIds.add(s.displayTypeId);
     for (const r of ownRows) typeIds.add(r.displayTypeId);
+    // Open auction: the display types the advertiser's campaigns run on (within its scope), plus any it has won open plays on.
+    const openTypeIds = new Set();
+    store.scanCampaigns(filters, (c) => { for (const t of c.displayTypeIds || []) openTypeIds.add(t); });
+    for (const t of openMine.keys()) openTypeIds.add(store.typeIds[t]);
+    for (const t of [...openTypeIds]) if ((inScope && !inScope.has(t)) || !known[t]) openTypeIds.delete(t); else typeIds.add(t);
     for (const t of [...typeIds]) if ((inScope && !inScope.has(t)) || !known[t]) typeIds.delete(t);
 
     const facts = new Map(displayTypeFacts(store, { ...filters, displayTypeIds: [...typeIds] }).map((t) => [t.id, t]));
@@ -1999,7 +2041,35 @@ module.exports = {
         if (!hideShare) row.share.allPlays = allPlays;
         if (own.views > 0) row.effectiveCpm = cents(calc.effectiveCpm(own.rev, own.views));
         if (!hideShare && allPlays > 0) row.share.percent = calc.wholePercent(own.plays, allPlays);
+        // Fixed-price deals have no auction and so no range; an auction's range needs enough other winners (see the header).
+        if (deal.dealType === 'Private auction' && winners >= MIN_OTHER_BUYERS_FOR_WINNING_CPM) {
+          const range = winningRange(cpmsAt(buyerRev, buyerViews, k * nA));
+          if (range) row.winningCpm = range;
+        }
         rows.push(row);
+      }
+      // The open auction on this display type, listed last: no assigned slots, plays won of all open auction plays there. Like
+      // Delivery's open auction block it is kept out of the group's own totals (which stay the deals', so deals + open auction = Delivery).
+      let openRow = null;
+      const tIx = store.typeCode.get(typeId);
+      if (openTypeIds.has(typeId)) {
+        const m = (tIx !== undefined && openMine.get(tIx)) || { plays: 0, views: 0, rev: 0 };
+        const winners = tIx !== undefined ? openOthers[tIx].size : 0;
+        const hideShare = winners >= 1 && winners < MIN_OTHER_BUYERS_FOR_WINNING_CPM;
+        const row = {
+          id: OPEN_AUCTION, name: 'Open auction', description: 'Any buyer bids per slot against the display type\u2019s floor.', dealType: 'Open auction',
+          dealIds: [], slots: { count: 0, assigned: [] },
+          playsWon: m.plays, assumedViews: Math.round(m.views), spend: cents(m.rev),
+          share: { playsWon: m.plays },
+        };
+        if (!hideShare && tIx !== undefined) row.share.allPlays = openAll[tIx];
+        if (m.views > 0) row.effectiveCpm = cents(calc.effectiveCpm(m.rev, m.views));
+        if (!hideShare && tIx !== undefined && openAll[tIx] > 0) row.share.percent = calc.wholePercent(m.plays, openAll[tIx]);
+        if (tIx !== undefined && winners >= MIN_OTHER_BUYERS_FOR_WINNING_CPM) {
+          const range = winningRange(cpmsAt(openRev, openViews, tIx * nA));
+          if (range) row.winningCpm = range;
+        }
+        openRow = row;
       }
       rows.sort((a, b) => calc.compareDealTypes(a.dealType, b.dealType) || a.name.localeCompare(b.name));
       const spend = cents(rows.reduce((s, r) => s + r.spend, 0));
@@ -2008,9 +2078,29 @@ module.exports = {
       const group = {
         displayType: t ? hoverCard(t) : { id: typeId, name: known[typeId].name },
         dealCount: rows.length, slots: slotsHere.size,
-        playsWon: rows.reduce((s, r) => s + r.playsWon, 0), assumedViews: views, spend, deals: rows,
+        playsWon: rows.reduce((s, r) => s + r.playsWon, 0), assumedViews: views, spend, deals: openRow ? [...rows, openRow] : rows,
       };
       if (views > 0) group.effectiveCpm = cents(calc.effectiveCpm(spend, views));
+      // The display type's own range: every winning buyer's cleared CPM on its private auction deals and the open auction here,
+      // when at least MIN_OTHER_BUYERS_FOR_WINNING_CPM distinct other buyers won across them.
+      const pooled = []; const others = new Set();
+      const tIx2 = store.typeCode.get(typeId);
+      for (const deal of deals) {
+        if (deal.dealType !== 'Private auction' || !rows.some((r) => r.id === deal.id)) continue;
+        const k = cell(deal.id, typeId);
+        if (k < 0) continue;
+        for (let a = 0; a < nA; a += 1) if (a !== meIx && otherFlag[k * nA + a]) others.add(a);
+      }
+      if (tIx2 !== undefined && openTypeIds.has(typeId)) for (const a of openOthers[tIx2]) others.add(a);
+      if (others.size >= MIN_OTHER_BUYERS_FOR_WINNING_CPM) {
+        for (const deal of deals) {
+          if (deal.dealType !== 'Private auction' || !rows.some((r) => r.id === deal.id)) continue;
+          const k = cell(deal.id, typeId);
+          if (k >= 0) pooled.push(...cpmsAt(buyerRev, buyerViews, k * nA));
+        }
+        if (tIx2 !== undefined && openTypeIds.has(typeId)) pooled.push(...cpmsAt(openRev, openViews, tIx2 * nA));
+        const range = winningRange(pooled); if (range) group.winningCpm = range;
+      }
       return group;
     }).filter((g) => g.deals.length);
 
@@ -2104,7 +2194,7 @@ const calc = require('../calc');
 const { FilterError } = require('../filters');
 const { MIN_OTHER_BUYERS_FOR_WINNING_CPM } = require('../constants');
 const { addDays, eachDay, dayDiff, dayNumber, dealsOf } = require('../dealing');
-const { OPEN_AUCTION, ownAdvertiser, isOpenAuction, dealsDelivered, cents } = require('../advertiser-view');
+const { OPEN_AUCTION, ownAdvertiser, isOpenAuction, dealsDelivered, cents, winningRange } = require('../advertiser-view');
 
 const change = (now, before, round) => {
   const out = { change: round(now - before) };
@@ -2114,7 +2204,7 @@ const change = (now, before, round) => {
 const whole = (n) => n;
 
 // Advertiser Delivery: plays won and spend per day, a per-deal block explaining each day (plays won of all
-// plays, the advertiser's own CPM, the aggregate winning CPM, the floor), day-on-day change, and PG pacing.
+// plays, the advertiser's own CPM, the winning CPM range p25 / median / p75, the floor), day-on-day change, and PG pacing.
 // Other buyers appear only as aggregates: never their names, ids, per-buyer plays or per-buyer CPMs.
 // `dealId` narrows to one deal (or `open-auction`). Money is USD to the cent, rounded per day first.
 module.exports = {
@@ -2173,7 +2263,7 @@ module.exports = {
     const blocks = [...deals.map((d) => ({ key: d.id, deal: d })), ...(openTypes.size ? [{ key: OPEN_AUCTION, deal: null }] : [])]
       .filter((b) => wanted(b.key));
 
-    // (date x block) -> { all plays, winners' revenue/views/highest CPM, other buyers, own plays/revenue/views }, where a block is
+    // (date x block) -> { all plays, winners' revenue/views/cleared CPMs, other buyers, own plays/revenue/views }, where a block is
     // a deal the advertiser is on, or the open auction. A second pass over the same rows, now that the open-auction display types
     // are known and with every advertiser in (other buyers only feed these aggregates); rows of no block are skipped.
     const blockOf = new Int32Array(store.dealIds.length).fill(-1); let openBlock = -1;
@@ -2184,19 +2274,19 @@ module.exports = {
     const meIx = store.advCode.get(me);
     const cellAt = (dayIx, b) => {
       const at = (dayIx - firstDay) * nBlocks + b;
-      return cells[at] || (cells[at] = { all: 0, rev: 0, views: 0, high: 0, others: [], own: { plays: 0, rev: 0, views: 0 } });
+      return cells[at] || (cells[at] = { all: 0, rev: 0, views: 0, cpms: null, others: [], own: { plays: 0, rev: 0, views: 0 } });
     };
     const blockFor = (isOpen, dealIx, typeId) => {
       if (isOpen) return openBlock >= 0 && openTypes.has(typeId) ? openBlock : -1;
       return blockOf[dealIx];
     };
-    // Everyone's plays, revenue, views, highest CPM and the other buyers, from the store's precomputed day x type x deal cells.
+    // Everyone's plays, revenue, views, cleared CPMs and the other buyers, from the store's precomputed day x type x deal cells.
     store.scanDeliveryCells(scanFilters, (c) => {
       const b = blockFor(c.dealIx < 0, c.dealIx, c.displayTypeId);
       if (b < 0) return;
       const a = cellAt(c.dayIx, b);
       a.all += c.all; a.rev += c.rev; a.views += c.views;
-      if (c.high > a.high) a.high = c.high;
+      if (c.cpms.length) { if (!a.cpms) a.cpms = []; for (let i = 0; i < c.cpms.length; i += 1) a.cpms.push(c.cpms[i]); }
       for (const x of c.advs) if (x !== meIx && !a.others.includes(x)) a.others.push(x);
     });
     // The advertiser's own plays, from its own rows (already settled-only).
@@ -2227,7 +2317,8 @@ module.exports = {
       }
       if (own.plays > 0 && own.views > 0) out.yourCpm = cents(calc.effectiveCpm(own.rev, own.views));
       if (a && a.others.length >= MIN_OTHER_BUYERS_FOR_WINNING_CPM && a.views > 0) {
-        out.winningCpm = { average: cents(calc.effectiveCpm(a.rev, a.views)), highest: cents(a.high) };
+        const range = a.cpms && winningRange(a.cpms);
+        if (range) out.winningCpm = range;
       }
       const lo = key === OPEN_AUCTION ? Math.min(...floors) : deal.floorCpm;
       const hi = key === OPEN_AUCTION ? Math.max(...floors) : deal.floorCpm;

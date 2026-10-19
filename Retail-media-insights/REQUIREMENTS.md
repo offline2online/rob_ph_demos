@@ -43,7 +43,7 @@ Page filters on every endpoint: `dateFrom`, `dateTo`, `storeIds[]`, `displayType
 
 ### 3.3 Security and isolation
 - Retailer users: all data. Advertiser logins: scoped server-side to their own advertiser principal (DSP Integration §9.5 isolation rule); never trust a client filter.
-- Advertiser responses never include other advertisers' names or per-buyer data, display downtime, lost revenue, offline displays, or other DSPs' deal IDs. Other buyers appear only as aggregates (plays, average and highest winning CPM).
+- Advertiser responses never include other advertisers' names or per-buyer data, display downtime, lost revenue, offline displays, or other DSPs' deal IDs. Other buyers appear only as aggregates (plays, and the winning CPM range: 25th percentile, median and 75th percentile).
 - Advertiser Display type filter options = display types from their deals' slot assignments plus those their campaigns target.
 
 ### 3.4 Performance

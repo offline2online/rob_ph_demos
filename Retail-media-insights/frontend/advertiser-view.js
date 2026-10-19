@@ -21,9 +21,9 @@
     'Example: 4,000 footfall × 0.5 visibility × 1/10 of the loop = 200 average assumed views; at a $20 CPM that slot earns $4 per day.'
   ];
   var TIPS = {
-    delivery: ['Plays you won (left axis) and what you spent (right axis) per day. Click the Plays won or Spend total to turn its line off or on. Hover a day to see, per deal, your plays won, your CPM against the winning and floor CPM (never naming other buyers), and the change on the previous day. For a programmatic guaranteed deal, Pacing shows assumed views (VAC-d) delivered against the guaranteed line over the flight; other deal types have no guaranteed line.'],
+    delivery: ['Plays you won (left axis) and what you spent (right axis) per day. Click the Plays won or Spend total to turn its line off or on. Hover a day to see, per deal, your plays won, your CPM against the winning CPM range and the floor CPM (never naming other buyers). The winning CPM range is the 25th percentile, the middle (median) and the 75th percentile of the CPMs all winning buyers cleared at that day, shown only when at least 2 other buyers won plays there, and the change on the previous day. For a programmatic guaranteed deal, Pacing shows assumed views (VAC-d) delivered against the guaranteed line over the flight; other deal types have no guaranteed line.'],
     deals: function (range) {
-      return ['Every display type your deals are active on, in shopper-journey order, with each deal’s performance in ' + (range || 'the selected range') + ' (open auction plays excluded). Hover a display type for its details, a deal for its description and deal ID, and Slots for its assigned slots. Share: on a display type row, its share of your deal spend; on a deal row, the share of the deal’s plays there that you won.'];
+      return ['Every display type your deals are active on, in shopper-journey order, with each deal’s performance in ' + (range || 'the selected range') + ' (the open auction is listed last under each display type and is not in its totals). Winning CPM range: the 25th percentile to the 75th percentile of the CPMs all winning buyers cleared on auctions there, with the middle (median) in brackets; shown only when at least 2 other buyers won plays, and never for programmatic guaranteed or preferred deals, which have a fixed CPM. Hover a display type for its details, a deal for its description and deal ID, and Slots for its assigned slots. Share: on a display type row, its share of your deal spend; on a deal row, the share of the deal’s plays there that you won.'];
     },
     targeting: ['Your highest targeting level across your campaigns in the date range: Default only, Localised or Personalised. Scheduling = campaigns you schedule (dayparting and multiple schedules) from the campaign’s Scheduling tab, separately from targeting. Other variables available to use = the Shared Targeting Variables the retailer has made available to your DSP seat that your campaigns don’t use yet.']
   };
@@ -105,6 +105,11 @@
     if (c.percent === 0) return '0%';
     return (c.percent > 0 ? '▲ ' : '▼ ') + Math.abs(c.percent) + '%';
   }
+  // "$8.40 – $9.90 (middle $9.10)": the 25th to the 75th percentile of cleared CPMs, the median in brackets.
+  function winningRangeText(w) {
+    if (!w || w.p25 == null || w.p75 == null) return '';
+    return fmtMoney(w.p25, 2) + ' – ' + fmtMoney(w.p75, 2) + (w.median != null ? ' (middle ' + fmtMoney(w.median, 2) + ')' : '');
+  }
   // One block per deal in scope; facts only. Other buyers appear only as aggregates (winning CPM), never by name.
   function dealBlockRows(b) {
     var rows = [[b.name + ' · ' + typeName(b.dealType), '', 'head']];
@@ -113,7 +118,7 @@
       var plays = b.allPlays != null ? fmtInt(b.playsWon) + ' of ' + fmtInt(b.allPlays) + (b.sharePercent != null ? ' (' + b.sharePercent + '%)' : '') : fmtInt(b.playsWon);
       rows.push(['Plays won', plays]);
       rows.push(['Your CPM', b.yourCpm != null ? fmtMoney(b.yourCpm, 2) : 'No plays won']);
-      if (b.winningCpm) rows.push(['Winning CPM', fmtMoney(b.winningCpm.average, 2) + ' avg · ' + fmtMoney(b.winningCpm.highest, 2) + ' high']);
+      if (b.winningCpm) rows.push(['Winning CPM', winningRangeText(b.winningCpm)]);
       var floor = cpmRange(b.floorCpm);
       if (floor) rows.push(['Floor CPM', floor]);
     } else {
@@ -220,9 +225,9 @@
   function tableRows(data) {
     var out = [];
     ((data && data.groups) || []).forEach(function (g) {
-      out.push({ kind: 'type', name: g.displayType.name, deals: g.dealCount, slots: g.slots, playsWon: g.playsWon, views: g.assumedViews, spend: g.spend, cpm: g.effectiveCpm, share: g.sharePercent, tip: displayTypeTooltip(g.displayType) });
+      out.push({ kind: 'type', name: g.displayType.name, deals: g.dealCount, slots: g.slots, playsWon: g.playsWon, views: g.assumedViews, spend: g.spend, cpm: g.effectiveCpm, range: winningRangeText(g.winningCpm), share: g.sharePercent, tip: displayTypeTooltip(g.displayType) });
       g.deals.forEach(function (d) {
-        out.push({ kind: 'deal', name: d.name, dealType: typeName(d.dealType), slotsText: slotsLabel(d), playsWon: d.playsWon, views: d.assumedViews, spend: d.spend, cpm: d.effectiveCpm,
+        out.push({ kind: 'deal', name: d.name, dealType: typeName(d.dealType), slotsText: d.id === OPEN_AUCTION ? '' : slotsLabel(d), playsWon: d.playsWon, views: d.assumedViews, spend: d.spend, cpm: d.effectiveCpm, range: winningRangeText(d.winningCpm),
           share: d.share && d.share.percent, nameTip: dealNameTooltip(d), slotsTip: slotsTooltip(d, g.displayType), shareTip: shareTooltip(d, g.displayType.name) });
       });
     });
@@ -497,7 +502,7 @@
 
     // ----- Your deals by display type -----
     var dl = panel('Your deals by display type', function () { return TIPS.deals(rangeText(filters.dateFrom, filters.dateTo)); }, null);
-    var COLS = [['Display type / deal', ''], ['Deal type', ''], ['Slots', 'num'], ['Plays won', 'num'], ['Assumed views (VAC-d)', 'num'], ['Spend', 'num'], ['Effective CPM', 'num'], ['Share', 'num']];
+    var COLS = [['Display type / deal', ''], ['Deal type', ''], ['Slots', 'num'], ['Plays won', 'num'], ['Assumed views (VAC-d)', 'num'], ['Spend', 'num'], ['Effective CPM', 'num'], ['Winning CPM range', 'num'], ['Share', 'num']];
     function td(text, cls) { return h('td', { class: cls || '', text: text == null ? '' : text }); }
     function drawDeals(data) {
       var tbl = h('table', { class: 'av-table' });
@@ -517,6 +522,7 @@
         }
         tr.appendChild(td(fmtInt(r.playsWon), 'num')); tr.appendChild(td(fmtInt(r.views), 'num')); tr.appendChild(td(fmtMoney(r.spend, 2), 'num'));
         tr.appendChild(td(r.cpm != null ? fmtMoney(r.cpm, 2) : '', 'num'));
+        tr.appendChild(td(r.range, 'num'));
         var sh = h('td', { class: 'num' });
         if (r.share != null) {
           sh.appendChild(h('span', { class: 'av-share-bar' }, [h('i', { style: 'width:' + Math.min(100, r.share) + '%' })]));
@@ -601,7 +607,7 @@
     mount: mount, OPEN_AUCTION: OPEN_AUCTION,
     initialMetrics: initialMetrics, toggleMetric: toggleMetric, dealOptions: dealOptions, pacingFor: pacingFor, showPacingSwitch: showPacingSwitch,
     dayTooltip: dayTooltip, dealBlockRows: dealBlockRows, pacingTooltip: pacingTooltip, cpmRange: cpmRange, changeText: changeText,
-    displayTypeTooltip: displayTypeTooltip, pacingKpis: pacingKpis, ladderRungs: ladderRungs, audienceModel: audienceModel, sparkArea: sparkArea, fmtCompact: fmtCompact, fmtBig: fmtBig, peakOf: peakOf, NO_SCHEDULING: NO_SCHEDULING, dealNameTooltip: dealNameTooltip, slotsLabel: slotsLabel, slotsTooltip: slotsTooltip, shareTooltip: shareTooltip,
+    displayTypeTooltip: displayTypeTooltip, pacingKpis: pacingKpis, ladderRungs: ladderRungs, audienceModel: audienceModel, sparkArea: sparkArea, fmtCompact: fmtCompact, fmtBig: fmtBig, peakOf: peakOf, NO_SCHEDULING: NO_SCHEDULING, dealNameTooltip: dealNameTooltip, slotsLabel: slotsLabel, winningRangeText: winningRangeText, slotsTooltip: slotsTooltip, shareTooltip: shareTooltip,
     tableRows: tableRows, sparkline: sparkline, variableLabel: variableLabel, schedulingText: schedulingText, seriesPoints: seriesPoints, fmtMoney: fmtMoney, fmtInt: fmtInt, niceMax: niceMax
   };
 });
