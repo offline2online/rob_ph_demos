@@ -68,17 +68,19 @@ tickets that were already decided or parked.
    entry there and it is created on the next merge.
    - Read them with the PH Agent Console MCP: `get_project_docs`, projectId
      `mIPdOCAWevhrgD8g2tCZ`, `include: ["docs"]`.
-   - Change them with `update_project_document`. It overwrites the whole
-     document: copy the current text and change only what the ticket asks.
-     The previous version is kept in the revision history.
-   - A repo search that finds nothing is **not** evidence that a document
-     is missing. Check the board first.
+   - The board copies are read-only mirrors. Edit the repo file; the docs
+     sync copies it to the board whenever `main` moves (see
+     `backlog-tracker/board-docs.json` and `dsp-integration/board-docs.json`).
+     A board edit is refused over MCP (`update_project_document` refuses
+     mirrors) and is overwritten by the next sync. Superseded board
+     documents are listed in `backlog-tracker/START-HERE.md` with what to
+     read instead.
 2. **A ticket that only changes a board document needs no patch.** Edit
    the document, comment exactly what changed, and say it needs no
    deployment. Don't set `patchReady`.
 3. **Keep repo and board copies together.** Where a repo doc has a board
    counterpart (`PH-CORE-BOUNDARIES.md` ↔ **Boundaries with PH Core**),
-   change both in the same ticket.
+   change the repo file; the sync updates the board copy.
 4. **Read every comment before starting.** The newest comment from Rob
    wins over the description and over earlier agent comments.
    - A description or comment starting **DECIDED** is Rob's decision:
@@ -268,7 +270,7 @@ nothing here can even read it without the key.
 | `apps/api/src/domain/dealCreative.ts`, `routes/partner/deals.ts` | A deal's derived creative requirements (10 Oct 2026, ticket lksouRswtc6CLFevvE4J): the set of distinct canvas + max play length + creative types across the positions a buyers list is attached to (nothing stored on the deal; canvas/format read from PH Core, see PH-CORE-BOUNDARIES.md "Canvas and format per display type"). Served to a DSP at `GET /v1/deals` with the deal's terms and to HQ at `GET /admin/v1/buyers-lists/{id}/deal`; `creativeMisfit()` is the check authoring applies. Test: `test/deal-creative.test.ts` |
 | `apps/api/src/http/rateLimit.ts` | The Partner API's per-partner token bucket (429 `rate_limited`) |
 | `docs/dsp-integration/AWS-DEMO-TEST-FLOW.md` | The person-run test flow for the 10 Dec 2026 AWS demo: the table, the direct advertiser flow and the DSP flow through per-campaign approval into creative IDs, each step mapped to its automated case (E2E Run 8) |
-| `apps/api/test/e2e/` | The end-to-end suite for the DSP demand paths, following the board doc *End-to-End Test Spec — DSP Demand Paths (v2)*: Run 1 open auction (`open-auction.test.ts`), Run 2 hardening, Run 3 private auction, Run 4 a deal locked under the retired two-period model, Run 5 reserved (`run2`–`run5-*.test.ts`). `harness.ts` stubs every PH Core seam: the DSP bidder (over `apps/dsp-mocks`, plus scripted, slow and abortable responses), DSP auth, playback (can be made to throw), an asset store keyed by content hash, a campaign source that records hand-offs, one token per partner, and a controllable clock. Nothing reaches the network. It runs with the rest of the API suite (`npm test`), or alone with `npx vitest run test/e2e` in `apps/api`. Every case passes; a case whose bug was fixed stays as its regression, naming the backlog id. It is the before/after gate for structural refactors. Results are board docs titled *E2E Test Results — …* |
+| `apps/api/test/e2e/` | The end-to-end suite for the DSP demand paths, following the spec in `docs/dsp-integration/E2E-TEST-SPEC.md`: Run 1 open auction (`open-auction.test.ts`), Run 2 hardening, Run 3 private auction, Run 4 a deal locked under the retired two-period model, Run 5 reserved (`run2`–`run5-*.test.ts`). `harness.ts` stubs every PH Core seam: the DSP bidder (over `apps/dsp-mocks`, plus scripted, slow and abortable responses), DSP auth, playback (can be made to throw), an asset store keyed by content hash, a campaign source that records hand-offs, one token per partner, and a controllable clock. Nothing reaches the network. It runs with the rest of the API suite (`npm test`), or alone with `npx vitest run test/e2e` in `apps/api`. Every case passes; a case whose bug was fixed stays as its regression, naming the backlog id. It is the before/after gate for structural refactors. Results are board docs titled *E2E Test Results — …* |
 | `apps/api/bench/load.ts` | `npm run bench` — load benchmark for the Partner API, the auction and (with `--admin`) the admin API, at demo scale or a synthetic large estate (see SECURITY-PERFORMANCE.md, ADMIN-API-PERFORMANCE.md) |
 | `apps/api/src/platform/` | Stand-ins for the existing platform: `DisplayTypeSource`, `PlaylistSource`, `DisplaySource`, `StoreSource`, `CampaignSource` (including slot bookings for the hand-off), `PlaybackSource`, `AssetStore`, `AudienceSource` |
 | `apps/api/src/domain/dealSheet.ts`, `dealSheetScope.ts`, `routes/admin/buyersLists.ts`, `apps/admin/.../DealSheetModal.tsx` | The deal sheet (11 Oct 2026, ticket DbiT9qrFwL4O5ibgSowF): what the retail media team shares so a buyer can key a deal into their own DSP by hand (how DV360 and TTD set deals up today). Per invited DSP its own deal ID and invited seats, plus deal type, rate, delivery term and the derived creative requirements. **15 Oct 2026 (ticket DbSVEGXNIWlYW68UQnY3): aligned to the DV360 Seller API deal model** — Order / Product / InventorySource keys, targeting grouped by DV360 targeting type with a plain-language line (unmapped criteria flagged seller-side only), inventory scope (venue, geography, stores, displays, narrowed by localisation criteria only), an estimated volume (and guaranteed impressions for Programmatic guaranteed), Buyer / Seller status and a pasteable description; the Deals and buyers lists labels now read Rate / Rate type, Flight dates, Buyers, Guaranteed impressions. `dealSheetScope.ts` derives the targeting, scope and volume. `GET /admin/v1/buyers-lists/{id}/deal-sheet` (JSON, or `?format=csv`); the Buyers and targeting table's **Deal sheet** action shows it with Copy and Download CSV. The seller-initiated API push is a later phase, gated on DSP supply-source certification (REQUIREMENTS.md §5 "Sharing a deal with the buyer"). Tests: `apps/api/test/deal-sheet.test.ts`, `apps/admin/test/deal-sheet.test.ts` |
