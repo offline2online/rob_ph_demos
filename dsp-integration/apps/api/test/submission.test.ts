@@ -286,7 +286,7 @@ describe('POST /v1/campaigns/{id}/submit and GET …/status', () => {
     const id = (await create(app, SWISSE)).json().campaignId
     await upload(app, id, 'default', png(1920, 1080))
     await submit(app, id)
-    await app.inject({ method: 'POST', url: `/api/admin/v1/campaigns/${id}/reject`, payload: { assetVersion: 'v1', reason: 'Price in the artwork.' } })
+    await app.inject({ method: 'POST', url: `/api/admin/v1/campaigns/${id}/reject`, payload: { assetVersion: 'v1', reason: 'Price in the artwork.', reasonCode: 'price_or_offer_in_artwork' } })
     expect((await status(app, id)).json()).toMatchObject({ status: 'rejected', reason: 'Price in the artwork.' })
     expect((await submit(app, id)).statusCode).toBe(409)
     await upload(app, id, 'default', png(1920, 1080))

@@ -1705,6 +1705,31 @@ paths:
                   items: {type: array, items: {$ref: '#/components/schemas/Approval'}}
                   nextCursor: {type: [string, 'null']}
         '401': {$ref: '#/components/responses/Unauthorised'}
+  /admin/v1/approvals/summary:
+    get:
+      tags: [Admin — Campaign approval]
+      operationId: getApprovalSummary
+      summary: How the approval queue is doing — turnaround, oldest waiting, rejection rate, top rejection reasons
+      description: |
+        Shown above the Campaign Approval table. Turnaround and the rejection
+        rate count the decisions a person made in the window (approved or
+        rejected); a campaign approved automatically is in neither. Reasons
+        are read from the audit log, so a rejected edit that was then
+        discarded still counts, and a rejection recorded before the coded
+        pick-list counts as `other`. Any role that can open Campaign Status
+        may read it; Help desk has no access to the admin API.
+      security: [{adminSession: []}]
+      parameters:
+        - {name: days, in: query, schema: {type: integer, minimum: 1, maximum: 365, default: 30}}
+      responses:
+        '200':
+          description: Summary
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApprovalSummary'}
+        '400': {$ref: '#/components/responses/ValidationFailed'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
   /admin/v1/approvals/approve-assign:
     post:
       tags: [Admin — Campaign approval]
@@ -1906,10 +1931,11 @@ paths:
           application/json:
             schema:
               type: object
-              required: [assetVersion, reason]
+              required: [assetVersion, reason, reasonCode]
               properties:
                 assetVersion: {type: string}
                 reason: {type: string, minLength: 1}
+                reasonCode: {$ref: '#/components/schemas/RejectionCode'}
                 assetReasons: {type: array, items: {$ref: '#/components/schemas/AssetRejection'}, description: 'Optional — names specific assets the overall reason covers (spec §3, "asset-level rejection").'}
       responses:
         '200': {description: Rejected, content: {application/json: {schema: {$ref: '#/components/schemas/Approval'}}}}
@@ -2647,6 +2673,42 @@ components:
                   pricingType: {$ref: '#/components/schemas/PricingType'}
                   rules: {$ref: '#/components/schemas/TargetingRules'}
     ApprovalStatus: {type: string, enum: [draft, awaiting_approval, approved, rejected]}
+    RejectionCode:
+      type: string
+      enum: [price_or_offer_in_artwork, wrong_size_or_ratio, duration_too_long, brand_or_category_not_allowed, poor_quality, other]
+      description: |
+        The fixed pick-list a rejection is coded with, so reasons can be
+        counted (free text alone can't be): Price or offer in artwork; Wrong
+        size or ratio; Duration too long; Brand or category not allowed; Poor
+        quality; Other. A rejection also keeps its required free-text reason.
+        One recorded before the pick-list reads `other`.
+    ApprovalSummary:
+      type: object
+      required: [days, decided, rejected, medianSecondsToDecision, rejectionRate, oldestWaiting, topRejectionReasons]
+      properties:
+        days: {type: integer}
+        decided: {type: integer, description: Decisions a person made in the window (approved + rejected).}
+        rejected: {type: integer}
+        medianSecondsToDecision: {type: [integer, 'null'], description: 'Median seconds from submission to a person''s decision; null with none in the window.'}
+        rejectionRate: {type: [number, 'null'], minimum: 0, maximum: 1, description: rejected ÷ decided; null with none in the window.}
+        oldestWaiting:
+          type: [object, 'null']
+          required: [campaignId, submittedAt, ageSeconds]
+          properties:
+            campaignId: {type: string}
+            campaignName: {type: string}
+            submittedAt: {type: string, format: date-time}
+            ageSeconds: {type: integer}
+        topRejectionReasons:
+          type: array
+          maxItems: 3
+          items:
+            type: object
+            required: [code, label, count]
+            properties:
+              code: {$ref: '#/components/schemas/RejectionCode'}
+              label: {type: string}
+              count: {type: integer}
     Check:
       type: object
       required: [name, passed]
@@ -2671,6 +2733,7 @@ components:
       properties:
         assetId: {type: string}
         reason: {type: string, minLength: 1}
+        code: {$ref: '#/components/schemas/RejectionCode'}
     CampaignStatus:
       type: object
       required: [campaignId, status, liveAssetVersion, pendingEdit]
@@ -3960,6 +4023,7 @@ components:
         reviewedBy: {type: [string, 'null']}
         reviewedAt: {type: [string, 'null'], format: date-time}
         reason: {type: [string, 'null']}
+        reasonCode: {oneOf: [{$ref: '#/components/schemas/RejectionCode'}, {type: 'null'}], description: The coded reason of the current rejection (`other` for one recorded before the pick-list); absent unless the campaign is rejected.}
         assetReasons:
           type: array
           description: The current rejection's per-asset breakdown, when the reviewer named specific assets (spec §3, "asset-level rejection").
@@ -4032,6 +4096,7 @@ components:
               action: {type: string, enum: [submitted, auto_approved, approved, rejected, returned_for_review, unrejected, edit_discarded, reused_clearance]}
               by: {type: [string, 'null']}
               reason: {type: [string, 'null']}
+              reasonCode: {$ref: '#/components/schemas/RejectionCode'}
               assetVersion: {type: string}
               assetReasons: {type: array, items: {$ref: '#/components/schemas/AssetRejection'}}
 

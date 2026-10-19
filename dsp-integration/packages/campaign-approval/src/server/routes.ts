@@ -2,7 +2,7 @@
    host's admin prefix; the host supplies auth (approver scope), the feature
    flag and the reviewer's identity. */
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify'
-import { STATUSES, type ApprovalStatus, type AssetRejection } from '../types'
+import { REJECTION_CODES, STATUSES, isRejectionCode, type ApprovalStatus, type AssetRejection, type RejectionCode } from '../types'
 import { ApprovalError, type ApprovalService } from './service'
 
 export interface ApprovalRouteHooks {
@@ -25,6 +25,15 @@ export const approvalRoutes = (service: ApprovalService, hooks: ApprovalRouteHoo
     if (status && !STATUSES.includes(status as ApprovalStatus)) return reply.status(400).send({ error: { code: 'validation_failed', message: 'Unknown status.', details: [{ field: 'status', reason: `Must be one of: ${STATUSES.join(', ')}.` }] } })
     if (limit !== undefined && !(Number(limit) >= 1 && Number(limit) <= 200)) return reply.status(400).send({ error: { code: 'validation_failed', message: 'limit must be 1–200.' } })
     return service.list({ status: status as ApprovalStatus | undefined, cursor, limit: limit ? Number(limit) : undefined })
+  })
+
+  /* The queue's health for the approver's page: median time to decide, the
+     oldest campaign waiting, the rejection rate and the top rejection reasons. */
+  app.get<{ Querystring: { days?: string } }>('/approvals/summary', async (req, reply) => {
+    hooks.guard(req)
+    const { days } = req.query
+    if (days !== undefined && !(Number.isInteger(Number(days)) && Number(days) >= 1 && Number(days) <= 365)) return reply.status(400).send({ error: { code: 'validation_failed', message: 'days must be a whole number of 1–365.', details: [{ field: 'days', reason: 'Must be 1–365.' }] } })
+    return service.summary(days === undefined ? 30 : Number(days))
   })
 
   app.get<{ Params: { id: string } }>('/campaigns/:id/approval', async (req, reply) => {
@@ -65,11 +74,16 @@ export const approvalRoutes = (service: ApprovalService, hooks: ApprovalRouteHoo
     try { return await service.assignCreativeId(ids, req.body.creativeId ?? null, hooks.reviewer(req)) } catch (e) { return send(reply, e) }
   })
 
-  app.post<{ Params: { id: string }; Body: { assetVersion?: string; reason?: string; assetReasons?: AssetRejection[] } }>('/campaigns/:id/reject', async (req, reply) => {
+  app.post<{ Params: { id: string }; Body: { assetVersion?: string; reason?: string; reasonCode?: string; assetReasons?: AssetRejection[] } }>('/campaigns/:id/reject', async (req, reply) => {
     hooks.guard(req)
     hooks.requireApprover(req)
     if (!req.body?.reason?.trim()) return reply.status(400).send({ error: { code: 'validation_failed', message: 'A reason is required.', details: [{ field: 'reason', reason: 'Required.' }] } })
-    try { return await service.reject(req.params.id, req.body?.assetVersion ?? '', hooks.reviewer(req), req.body.reason, req.body.assetReasons) } catch (e) { return send(reply, e) }
+    /* A rejection is coded from the fixed pick-list as well as explained: free text alone can't be counted. */
+    const codes = REJECTION_CODES.map((r) => r.code).join(', ')
+    if (!isRejectionCode(req.body.reasonCode)) return reply.status(400).send({ error: { code: 'validation_failed', message: 'Choose a rejection reason.', details: [{ field: 'reasonCode', reason: `Must be one of: ${codes}.` }] } })
+    const badAsset = req.body.assetReasons?.findIndex((a) => a.code !== undefined && !isRejectionCode(a.code)) ?? -1
+    if (badAsset >= 0) return reply.status(400).send({ error: { code: 'validation_failed', message: 'Unknown rejection reason.', details: [{ field: `assetReasons/${badAsset}/code`, reason: `Must be one of: ${codes}.` }] } })
+    try { return await service.reject(req.params.id, req.body?.assetVersion ?? '', hooks.reviewer(req), req.body.reason, req.body.assetReasons, req.body.reasonCode as RejectionCode) } catch (e) { return send(reply, e) }
   })
 
   /* Undo a mistaken rejection: Rejected → Awaiting approval. Same permission

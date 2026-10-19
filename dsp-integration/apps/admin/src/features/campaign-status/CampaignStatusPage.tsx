@@ -50,7 +50,8 @@ import { useQuery } from '@tanstack/react-query'
 import { Button, Checkbox, Dropdown, Input, Modal, Radio, Spin, Switch, Tag } from 'antd'
 import { Tip } from '../../shared/Tip'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
-import { ApprovalStatusBadge, STATUS_LABELS, type Approval, type ApprovalStatus } from '@ph-dsp/campaign-approval/ui'
+import { ApprovalStatusBadge, RejectionCodeSelect, STATUS_LABELS, isRejectionCode, rejectionLabel, type Approval, type ApprovalStatus, type RejectionCode } from '@ph-dsp/campaign-approval/ui'
+import { ApprovalSummaryStrip } from './ApprovalSummaryStrip'
 import type { Campaign } from '@ph-dsp/types'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -237,6 +238,10 @@ export function CampaignStatusPage() {
      a page-owned filter. */
   const advertiserId = params.get('advertiserId')
   const statusFilter = useMemo(() => (params.get('status') ?? '').split(',').filter(isFilterable), [params])
+  /* From the approval summary: one campaign (the oldest waiting), or the campaigns rejected for one coded reason. */
+  const campaignFilter = params.get('campaignId')
+  const reasonParam = params.get('reason')
+  const reasonFilter = isRejectionCode(reasonParam) ? reasonParam : null
   const campaigns = useQuery(Q.campaigns)
   const displayTypes = useQuery(Q.displayTypes)
   const displayTypeNames = useMemo(() => new Map((displayTypes.data ?? []).map((d) => [d.id, d.name] as const)), [displayTypes.data])
@@ -250,9 +255,12 @@ export function CampaignStatusPage() {
   const [now] = useState(() => Date.now())
   const campaignRows = useMemo(() => byAdvertiserDeal(triageOrder(all.filter((c) => {
     if (advertiserId && c.advertiserId !== advertiserId) return false
-    const s = approvals[c.campaignId]?.status
+    if (campaignFilter && c.campaignId !== campaignFilter) return false
+    const a = approvals[c.campaignId]
+    if (reasonFilter && !(a?.status === 'rejected' && (a.reasonCode ?? 'other') === reasonFilter)) return false
+    const s = a?.status
     return !statusFilter.length || (!!s && (statusFilter as string[]).includes(s))
-  }), approvals)), [all, advertiserId, statusFilter, approvals])
+  }), approvals)), [all, advertiserId, statusFilter, approvals, campaignFilter, reasonFilter])
   /* A group row above each advertiser's campaigns. Its filterable values are its campaigns' joined, so a column filter keeps it while any campaign beneath still matches. */
   const rows = useMemo<Row[]>(() => {
     const out: Row[] = []
@@ -330,6 +338,7 @@ export function CampaignStatusPage() {
   const [choice, setChoice] = useState<string | null>(null)
   const [rejecting, setRejecting] = useState(false)
   const [reason, setReason] = useState('')
+  const [reasonCode, setReasonCode] = useState<RejectionCode>()
   const done = async (ok: Promise<boolean>) => {
     if (await ok) setTicked(new Set())
     return ok
@@ -371,6 +380,14 @@ export function CampaignStatusPage() {
     const next = new URLSearchParams(params)
     if (keys.length) next.set('status', keys.join(','))
     else next.delete('status')
+    setParams(next, { replace: true })
+  }
+  /* The summary's links: the oldest waiting campaign, or the campaigns rejected for a reason. Each replaces the other and the status/advertiser filters. */
+  const focusOldest = (campaignId: string) => setParams({ campaignId, status: 'awaiting_approval' }, { replace: true })
+  const focusReason = (code: RejectionCode) => setParams(reasonFilter === code ? {} : { reason: code, status: 'rejected' }, { replace: true })
+  const clearFocus = () => {
+    const next = new URLSearchParams(params)
+    next.delete('campaignId'); next.delete('reason')
     setParams(next, { replace: true })
   }
   /* Memoised: it is a column-definition dependency, and a new array on every render rebuilt the
@@ -426,8 +443,16 @@ export function CampaignStatusPage() {
   if (!campaigns.data) return <Spin />
   return (
     <div>
+      <ApprovalSummaryStrip activeReason={reasonFilter} onOldest={focusOldest} onReason={focusReason} />
       <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2" style={{ fontSize: 13 }}>
-        <span style={{ fontWeight: 700 }}>{all.length} campaign{all.length === 1 ? '' : 's'}</span>
+        <span style={{ fontWeight: 700 }}>
+          {all.length} campaign{all.length === 1 ? '' : 's'}
+          {(campaignFilter || reasonFilter) && (
+            <Tag closable className="ml-2" onClose={clearFocus}>
+              {reasonFilter ? `Rejected for: ${rejectionLabel(reasonFilter)}` : `Campaign: ${all.find((c) => c.campaignId === campaignFilter)?.name ?? campaignFilter}`}
+            </Tag>
+          )}
+        </span>
         {selectedRows.length > 0 && (
           <section aria-label="Selected campaigns" className="flex flex-wrap items-center justify-end gap-2">
             <b>{selectedRows.length} selected</b>
@@ -448,12 +473,12 @@ export function CampaignStatusPage() {
               <>
                 <Button type="primary" size="small" loading={busy === 'batch'} onClick={() => void done(approveAssign(selectedApprovals))}>Approve Selected</Button>
                 {hasOtherCampaigns && <Button type="primary" size="small" ghost disabled={busy === 'batch'} onClick={openPicker}>Approve and add to existing creative ID</Button>}
-                <Button size="small" danger onClick={() => { setReason(''); setRejecting(true) }}>Reject Selected</Button>
+                <Button size="small" danger onClick={() => { setReason(''); setReasonCode(undefined); setRejecting(true) }}>Reject Selected</Button>
               </>
             ) : (
               <>
                 <span style={{ color: T.muted }}>Choose one advertiser’s campaigns to approve them into a creative ID.</span>
-                <Button size="small" danger onClick={() => { setReason(''); setRejecting(true) }}>Reject Selected</Button>
+                <Button size="small" danger onClick={() => { setReason(''); setReasonCode(undefined); setRejecting(true) }}>Reject Selected</Button>
               </>
             )}
             <Button size="small" type="link" onClick={() => setTicked(new Set())}>Clear</Button>
@@ -512,14 +537,15 @@ export function CampaignStatusPage() {
         open={rejecting}
         title={selectedRows.length === 1 ? `Reject ${selectedRows[0].name}?` : `Reject ${selectedRows.length} campaigns?`}
         okText="Reject"
-        okButtonProps={{ danger: true, disabled: !reason.trim() }}
+        okButtonProps={{ danger: true, disabled: !reason.trim() || !reasonCode }}
         confirmLoading={busy === 'batch'}
         onCancel={() => setRejecting(false)}
         onOk={async () => {
-          const ok = await done(rejectMany(selectedApprovals, reason.trim()))
+          const ok = await done(rejectMany(selectedApprovals, reason.trim(), reasonCode!))
           if (ok) setRejecting(false)
         }}
       >
+        <RejectionCodeSelect value={reasonCode} onChange={setReasonCode} />
         <Input.TextArea aria-label="Reason" rows={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why is it rejected? The advertiser sees this and fixes it before resubmitting." />
       </Modal>
     </div>

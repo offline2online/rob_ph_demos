@@ -30,15 +30,33 @@ export interface Creative {
   contentHash?: string
 }
 export interface Canvas { width: number; height: number }
+/* The fixed pick-list a rejection is coded with (19 Oct 2026), so reasons can
+   be counted: free text alone can't be. A rejection also keeps its required
+   free-text reason. A rejection recorded before the pick-list reads 'other'. */
+export type RejectionCode = 'price_or_offer_in_artwork' | 'wrong_size_or_ratio' | 'duration_too_long' | 'brand_or_category_not_allowed' | 'poor_quality' | 'other'
+export const REJECTION_CODES: { code: RejectionCode; label: string }[] = [
+  { code: 'price_or_offer_in_artwork', label: 'Price or offer in artwork' },
+  { code: 'wrong_size_or_ratio', label: 'Wrong size or ratio' },
+  { code: 'duration_too_long', label: 'Duration too long' },
+  { code: 'brand_or_category_not_allowed', label: 'Brand or category not allowed' },
+  { code: 'poor_quality', label: 'Poor quality' },
+  { code: 'other', label: 'Other' },
+]
+export const isRejectionCode = (v: unknown): v is RejectionCode => REJECTION_CODES.some((r) => r.code === v)
+export const rejectionLabel = (code: RejectionCode | null | undefined) => REJECTION_CODES.find((r) => r.code === (code ?? 'other'))?.label ?? 'Other'
+
 /* A rejection reason attached to one specific asset, not the whole
    campaign (spec §3, ticket 22 Sep) — a rejection can name reasons against
-   one or more assets. */
-export interface AssetRejection { assetId: string; reason: string }
+   one or more assets. `code` is the asset's coded reason; unset on one
+   recorded before the pick-list. */
+export interface AssetRejection { assetId: string; reason: string; code?: RejectionCode }
 export interface AuditEntry {
   at: string
   action: AuditAction
   by: string | null
   reason: string | null
+  /* The coded reason of a 'rejected' entry; unset on one recorded before the pick-list (counts as 'other'). */
+  reasonCode?: RejectionCode
   assetVersion: string
   /* Present on a 'rejected' entry when the reviewer named specific assets, in addition to (or instead of) the overall `reason`. */
   assetReasons?: AssetRejection[]
@@ -56,6 +74,8 @@ export interface Approval {
   reviewedBy: string | null
   reviewedAt: string | null
   reason: string | null
+  /* The coded reason of the current rejection; null when the campaign isn't rejected or was rejected before the pick-list. */
+  reasonCode?: RejectionCode | null
   /* The current rejection's per-asset breakdown, when the reviewer gave one — see AssetRejection. */
   assetReasons?: AssetRejection[]
   checks: Check[]
@@ -110,3 +130,21 @@ export const STATUS_LABELS: Record<ApprovalStatus, string> = {
   rejected: 'Rejected',
 }
 export const STATUSES: ApprovalStatus[] = ['draft', 'awaiting_approval', 'approved', 'rejected']
+
+/* The queue's health over the last `days` days (GET /approvals/summary).
+   Turnaround and the rejection rate count decisions a person made; a
+   campaign approved automatically is in neither. */
+export interface ApprovalSummary {
+  days: number
+  /* Decisions a person made in the window (approved + rejected). */
+  decided: number
+  rejected: number
+  /* Median seconds from submission to decision; null with no decision in the window. */
+  medianSecondsToDecision: number | null
+  /* rejected ÷ decided, 0–1; null with no decision in the window. */
+  rejectionRate: number | null
+  /* The campaign that has waited longest for a decision; null when none is waiting. */
+  oldestWaiting: { campaignId: string; campaignName?: string; submittedAt: string; ageSeconds: number } | null
+  /* The three most frequent coded reasons in the window. */
+  topRejectionReasons: { code: RejectionCode; label: string; count: number }[]
+}

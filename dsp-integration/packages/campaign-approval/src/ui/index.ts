@@ -3,7 +3,7 @@
    Ant Design theme and talk to the API through the ApprovalClient the host
    passes in, so they carry no URL or fetch of their own. */
 export { ApprovalStatusBadge } from './ApprovalStatusBadge'
-export { ApprovalActions } from './ApprovalActions'
+export { ApprovalActions, RejectionCodeSelect } from './ApprovalActions'
 export { ApprovalStatusFilter, RETAILER_VISIBLE_STATUSES } from './ApprovalStatusFilter'
 export { ApprovalReviewPanel } from './ApprovalReviewPanel'
 export { useCampaignApprovals, type ApprovalClient } from './useCampaignApprovals'

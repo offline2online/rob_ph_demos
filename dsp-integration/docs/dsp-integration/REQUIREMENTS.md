@@ -1372,6 +1372,34 @@ a human rejection now works the same way:
   so a later reviewer (or an un-reject, §3 above) can see exactly which
   assets were called out, not just that *something* was rejected.
 
+### Approval queue health, and coded rejection reasons (Rob, 19 Oct 2026)
+
+The person approving campaigns sees how the queue is doing where they work —
+above the Campaign Approval table, not on the retail media dashboard.
+Broadsign and Vistar report approval status, turnaround and rejection
+reasons to the seller; DSP/SSP creative audits use coded reasons.
+
+- **Four figures over the last 30 days**, each with a ⓘ tooltip:
+  *Median time to approve* (submission → decision, approved or rejected by a
+  person; automatic approvals are excluded); *Oldest waiting* (age of the
+  oldest campaign Awaiting approval, linking to it — the table filters to
+  that campaign); *Rejection rate* (rejected ÷ decisions a person made);
+  *Top rejection reasons* (the three most frequent, with counts; selecting
+  one filters the table to campaigns currently rejected for it).
+- **Rejections are coded.** The Reject dialog asks for a reason from a fixed
+  pick-list — Price or offer in artwork; Wrong size or ratio; Duration too
+  long; Brand or category not allowed; Poor quality; Other — **and** the
+  existing required free text. Neither alone saves. The code is stored on the
+  rejection (`reasonCode`), on each `assetReasons` entry (`code`) and on the
+  `rejected` audit entry. A rejection recorded before the pick-list counts as
+  `other`.
+- **Source and access.** Computed from the approval audit
+  (`GET /admin/v1/approvals/summary?days=30`), so a rejected edit that was
+  then discarded still counts, and the reason counts are rejections in the
+  window (the filter shows campaigns *currently* rejected for that reason).
+  Marketing (read-only) sees it; Help desk has no access to the admin API.
+  Draft handling, approval flows A/B and creative IDs are unchanged.
+
 ### Safe reuse of previously approved assets (ticket, 22 Sep)
 
 Narrower than Amazon DSP's asset-level moderation (which lets any passed
@@ -3213,8 +3241,8 @@ campaign: { …existing fields,
             status: draft | awaiting_approval | approved | rejected,   // shown as Draft / Awaiting approval / Approved / Rejected
             approval: { mode: manual | auto,
                         assetVersion, submittedAt,
-                        reviewedBy, reviewedAt, reason,
-                        assetReasons: [{ assetId, reason }],           // optional — which asset(s) a rejection named (ticket, 22 Sep)
+                        reviewedBy, reviewedAt, reason, reasonCode,    // reasonCode: the rejection's pick-list code (19 Oct 2026)
+                        assetReasons: [{ assetId, reason, code }],           // optional — which asset(s) a rejection named (ticket, 22 Sep)
                         checks: [{ name, passed, detail, assetId }] }, // assetId optional — set for a per-file check, unset for a campaign-level one
             activation: { enabled } }         // only settable once status = approved
 

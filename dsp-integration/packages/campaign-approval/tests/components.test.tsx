@@ -61,7 +61,7 @@ describe('ApprovalActions', () => {
     const { container } = render(<ApprovalActions status={status} onApprove={() => {}} onReject={() => {}}>{toggle}</ApprovalActions>)
     expect(container).toBeEmptyDOMElement()
   })
-  it('Reject requires a reason', async () => {
+  it('Reject requires a coded reason and a reason', async () => {
     const onReject = vi.fn()
     render(<ApprovalActions status="awaiting_approval" onApprove={() => {}} onReject={onReject}>{toggle}</ApprovalActions>)
     fireEvent.click(screen.getByRole('button', { name: 'Reject' }))
@@ -69,8 +69,11 @@ describe('ApprovalActions', () => {
     const confirm = screen.getAllByRole('button', { name: 'Reject' }).pop()!
     expect(confirm).toBeDisabled()
     fireEvent.change(box, { target: { value: 'Price in artwork' } })
+    expect(confirm).toBeDisabled()
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Rejection reason' }))
+    fireEvent.click(await screen.findByText('Price or offer in artwork'))
     await act(async () => fireEvent.click(confirm))
-    expect(onReject).toHaveBeenCalledWith('Price in artwork')
+    expect(onReject).toHaveBeenCalledWith('Price in artwork', 'price_or_offer_in_artwork')
   })
   it('a non-approver sees the actions disabled', () => {
     render(<ApprovalActions status="awaiting_approval" canApprove={false} onApprove={() => {}} onReject={() => {}}>{toggle}</ApprovalActions>)

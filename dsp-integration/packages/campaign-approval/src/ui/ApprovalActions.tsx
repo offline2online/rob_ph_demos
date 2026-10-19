@@ -2,22 +2,32 @@
    segmented Approve/Reject control (below); Approved shows `children` (the
    host's existing activation toggle, passed through untouched). Draft and
    Rejected campaigns can't be activated, so nothing is shown. */
-import { Button, Input, Popover, Tooltip } from 'antd'
+import { Button, Input, Popover, Select, Tooltip } from 'antd'
 import { useState, type CSSProperties, type ReactNode } from 'react'
-import type { ApprovalStatus } from '../types'
+import { REJECTION_CODES, type ApprovalStatus, type RejectionCode } from '../types'
 import { Icon } from './Icon'
 import { C } from './tokens'
 
-export function RejectWithReason({ onReject, busy, children }: { onReject: (reason: string) => void | Promise<unknown>; busy?: boolean; children: (open: () => void) => ReactNode }) {
+/* The coded reason a rejection is counted under (a fixed pick-list), beside the free-text explanation the advertiser reads. */
+export function RejectionCodeSelect({ value, onChange, autoFocus }: { value: RejectionCode | undefined; onChange: (v: RejectionCode) => void; autoFocus?: boolean }) {
+  return (
+    <Select<RejectionCode> aria-label="Rejection reason" autoFocus={autoFocus} placeholder="Choose a reason" style={{ width: '100%', marginBottom: 8 }}
+      value={value} onChange={onChange} options={REJECTION_CODES.map((r) => ({ value: r.code, label: r.label }))} />
+  )
+}
+
+export function RejectWithReason({ onReject, busy, children }: { onReject: (reason: string, reasonCode: RejectionCode) => void | Promise<unknown>; busy?: boolean; children: (open: () => void) => ReactNode }) {
   const [open, setOpen] = useState(false)
   const [reason, setReason] = useState('')
+  const [code, setCode] = useState<RejectionCode>()
   const content = (
     <div style={{ width: 280 }}>
-      <Input.TextArea aria-label="Reason for rejection" autoFocus rows={3} value={reason} onChange={(e) => setReason(e.target.value)} />
+      <RejectionCodeSelect autoFocus value={code} onChange={setCode} />
+      <Input.TextArea aria-label="Reason for rejection" rows={3} value={reason} onChange={(e) => setReason(e.target.value)} />
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
         <Button size="small" onClick={() => setOpen(false)}>Cancel</Button>
-        <Button size="small" type="primary" danger disabled={!reason.trim()} loading={busy}
-          onClick={async () => { await onReject(reason.trim()); setOpen(false); setReason('') }}>Reject</Button>
+        <Button size="small" type="primary" danger disabled={!reason.trim() || !code} loading={busy}
+          onClick={async () => { await onReject(reason.trim(), code!); setOpen(false); setReason(''); setCode(undefined) }}>Reject</Button>
       </div>
     </div>
   )
@@ -76,7 +86,7 @@ function ApprovalSegmentedControl({ canApprove, busy, onApprove, onReject }: {
   canApprove: boolean
   busy?: boolean
   onApprove: () => void | Promise<unknown>
-  onReject: (reason: string) => void | Promise<unknown>
+  onReject: (reason: string, reasonCode: RejectionCode) => void | Promise<unknown>
 }) {
   const deniedReason = 'Only HQ Admin can approve'
   return (
@@ -95,7 +105,7 @@ export function ApprovalActions({ status, canApprove = true, busy, onApprove, on
   canApprove?: boolean
   busy?: boolean
   onApprove: () => void | Promise<unknown>
-  onReject: (reason: string) => void | Promise<unknown>
+  onReject: (reason: string, reasonCode: RejectionCode) => void | Promise<unknown>
   /* The host's existing activation toggle. */
   children: ReactNode
   /* Rendered beside the segmented control only while Awaiting approval —

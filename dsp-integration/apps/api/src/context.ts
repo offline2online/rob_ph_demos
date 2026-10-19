@@ -137,7 +137,7 @@ export function createContext(opts: { config?: Config; db?: Db; flags?: Flags; s
     plays: g(sqlitePlayRepo(db)),
     impressions: g(sqliteImpressionRepo(db)),
     clock,
-    ...approvalParts(db, config, { displayTypes, company, partners, campaignChanges }),
+    ...approvalParts(db, config, { displayTypes, company, partners, campaignChanges, clock }),
   }
 }
 
@@ -145,8 +145,8 @@ export function createContext(opts: { config?: Config; db?: Db; flags?: Flags; s
    It reuses the context's own display types, company settings and partners:
    a second DisplayTypeSource would carry its own 1-second snapshot and weaken
    "a save is visible to this process immediately". */
-function approvalParts(db: Db, config: Config, own: { displayTypes: DisplayTypeSource; company: CompanySettingsRepo; partners: PartnerRepo; campaignChanges: Set<(id: string) => void> }) {
-  const { displayTypes, company, partners, campaignChanges } = own
+function approvalParts(db: Db, config: Config, own: { displayTypes: DisplayTypeSource; company: CompanySettingsRepo; partners: PartnerRepo; campaignChanges: Set<(id: string) => void>; clock: () => Date }) {
+  const { displayTypes, company, partners, campaignChanges, clock } = own
   /* Files, not the database: no gate needed. */
   const assets = localAssetStore(config.assetsDir, config.publicUrl)
   /* Advertiser names come from the DSP seats (seats are not secret). */
@@ -162,6 +162,8 @@ function approvalParts(db: Db, config: Config, own: { displayTypes: DisplayTypeS
   const approvals = createApprovalService({
     db,
     campaigns: approvalCampaigns,
+    /* Decisions are stamped by the context's clock, so the summary's 30 days follow it (and a test can move it). */
+    now: clock,
     requiresApproval: async (advertiserId) => (advertiserId ? (await company.advertiserSetting(advertiserId)).approvalRequired : true),
     /* The module's own statements wait for the connection like every seam's,
        and each decision is one transaction (db.ts). */
