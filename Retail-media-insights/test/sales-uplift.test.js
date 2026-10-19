@@ -80,3 +80,24 @@ test('the Advertiser filter narrows the drop-down; an advertiser login sees only
   const text = JSON.stringify(mine.body);
   for (const other of Object.values(ctx.advertisers).filter((a) => a.name !== ctx.advertisers['adv-haleon'].name)) assert.ok(!text.includes(other.name), other.name);
 });
+
+test('Advertisers iROAS rolls up measured campaigns only and reconciles with the chart; advertisers cannot call it', async () => {
+  const f = '?dateFrom=2026-09-12&dateTo=2026-10-11';
+  const { body } = await get(`/advertisers${f}`);
+  assert.equal(body.posData, true);
+  const all = store.campaigns.filter((c) => c.start <= store.lastPlayedDay).map((c) => describeCampaign(c, store, store.lastPlayedDay));
+  for (const a of body.all) {
+    const mine = all.filter((c) => c.advertiserId === a.advertiserId && c.start <= '2026-10-11' && c.flightEnd >= '2026-09-12');
+    assert.equal(a.iroas.totalCampaigns, mine.length);
+    if (!a.iroas.measuredCampaigns) { assert.equal(a.iroas.value, null); continue; }
+    let inc = 0; let spend = 0;
+    for (const c of mine) {
+      const t = (await get(`/sales-uplift?campaignId=${c.id}&advertiserIds=${c.advertiserId}`)).body;
+      if (t.state === 'ok') { inc += t.tiles.incrementalSales; spend += t.tiles.spend; }
+    }
+    assert.ok(Math.abs(a.iroas.incrementalSales - inc) < 0.05 * a.iroas.measuredCampaigns);
+    assert.ok(Math.abs(a.iroas.value - inc / spend) < 0.01);
+  }
+  assert.equal(body.all.find((a) => a.name === 'Perrigo').iroas.value, null);
+  assert.notEqual((await get(`/advertisers${f}`, advertiser('adv-blackmores'))).status, 200);
+});

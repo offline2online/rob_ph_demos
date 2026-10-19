@@ -21,6 +21,11 @@
       'Better targeting and scheduling mean better campaigns, more spend and more inventory sold.',
     advertisers: 'Top 10 by revenue. Deals on = deals the advertiser is on (buyers lists), any deal type; hover to list them. Slots covered = slots across those deals. ' +
       'Slots won = share of covered slot opportunities the advertiser won. Effective CPM is per 1,000 assumed views (VAC-d).',
+    iroas: 'Incremental return on ad spend. For each advertiser, the extra sales of their campaigns\u2019 products in stores where the campaigns played, compared with your Control stores segment, divided by what they spent on those campaigns. 2.5 means every $1 of spend drove $2.50 of extra sales. ' +
+      'Only campaigns that excluded the Control stores segment are measured; others are left out of both sales and spend. Products come from the SKU or product name on each campaign, via campaign playback analytics. ' +
+      'Sales come from your POS through the Personalisation Hub Transaction API, which needs a custom POS integration. Same calculation as the Sales uplift chart.',
+    iroasNoPos: ' No POS data received for this period.',
+    iroasEmpty: 'No campaigns measured in this period \u2014 needs the Control stores exclusion on a campaign and a POS integration into the Personalisation Hub Transaction API.',
     ladder: 'Advertisers at each level. An advertiser’s level is the highest level used by any of its campaigns in the date range. Hover a bar to see every advertiser at that level; click it to filter the Advertiser targeting & scheduling table.',
     scheduling: 'Advertisers whose campaigns in the date range use scheduling (dayparting or schedules from the Scheduling tab) compared with those that do not. Hover a bar to see who; click it to filter the table.',
     progress: 'Share of campaigns at each level, by when they were running. Shows the whole history, so the date filter doesn’t apply.',
@@ -91,6 +96,7 @@
         slotsCovered: has(a.slotsCovered) ? fmtInt(a.slotsCovered) : '–',
         slotsWon: has(a.slotsWonPercent) ? pct(a.slotsWonPercent) : '–',
         effectiveCpm: has(a.effectiveCpm) ? fmtMoney(a.effectiveCpm, 2) : '–',
+        iroas: a.iroas && has(a.iroas.value) ? a.iroas.value.toFixed(1) : '\u2014',
         src: a
       };
     });
@@ -104,7 +110,8 @@
     { key: 'dealsOn', label: 'Deals on', first: 'desc', value: function (r) { return r.dealsOn; } },
     { key: 'slotsCovered', label: 'Slots covered', first: 'desc', value: function (r) { return r.src.slotsCovered; } },
     { key: 'slotsWon', label: 'Slots won', first: 'desc', value: function (r) { return r.src.slotsWonPercent; } },
-    { key: 'effectiveCpm', label: 'Effective CPM', first: 'desc', value: function (r) { return r.src.effectiveCpm; } }
+    { key: 'effectiveCpm', label: 'Effective CPM', first: 'desc', value: function (r) { return r.src.effectiveCpm; } },
+    { key: 'iroas', label: 'iROAS', first: 'desc', info: 'iroas', value: function (r) { return r.src.iroas ? r.src.iroas.value : null; } }
   ];
   // Rows ordered by one column ('asc' = A–Z / lowest first); no key keeps the back end's order. Blank values always sit last.
   function sortAdvertiserRows(rows, key, dir, cols) {
@@ -123,6 +130,22 @@
   function dealsOnHover(a) {
     var deals = (a.dealsOn || []).slice().sort(function (x, y) { return dealRank(x.dealType) - dealRank(y.dealType) || x.name.localeCompare(y.name); });
     return { title: advName(a) + ': deals on', sections: [{ rows: deals.map(function (d) { return [d.name, d.dealType]; }) }] };
+  }
+  // Hover on an iROAS cell: the division, how many campaigns were measured and why the rest were not.
+  function iroasHover(a) {
+    var m = a.iroas || {};
+    if (!has(m.value)) return { text: TIPS.iroasEmpty };
+    var rows = [
+      ['iROAS', fmtMoney(m.incrementalSales) + ' \u00f7 ' + fmtMoney(m.measuredSpend) + ' = ' + m.value.toFixed(1)],
+      ['Incremental sales', fmtMoney(m.incrementalSales)], ['Spend (measured campaigns)', fmtMoney(m.measuredSpend)],
+      ['Campaigns measured', m.measuredCampaigns + ' of ' + m.totalCampaigns + ' campaigns measured'],
+      ['Campaign stores', fmtInt(m.campaignStores)], ['Control stores', fmtInt(m.controlStores)]
+    ];
+    if (m.dateFrom) rows.push(['Date range covered', m.dateFrom + ' to ' + m.dateTo]);
+    var sections = [{ rows: rows }];
+    var left = (m.notMeasured || []).concat(m.flagged || []).map(function (c) { return [c.product, c.reason]; });
+    if (left.length) sections.push({ rows: left, note: 'Not measured, or matched on product name.' });
+    return { title: advName(a) + ': iROAS', sections: sections };
   }
   function slotsWonHover(a, slotsWon) {
     var rows = [['Slots covered', has(a.slotsCovered) ? fmtInt(a.slotsCovered) : '–'], ['Slots won', has(a.slotsWonPercent) ? pct(a.slotsWonPercent) : '–']];
@@ -208,7 +231,7 @@
 
   var pure = {
     LEVELS: LEVELS, TOP_N: TOP_N, TIPS: TIPS, advName: advName, isDaypart: isDaypart, targetingVars: targetingVars,
-    advertiserRows: advertiserRows, dealsOnHover: dealsOnHover, slotsWonHover: slotsWonHover, ladderHover: ladderHover,
+    advertiserRows: advertiserRows, dealsOnHover: dealsOnHover, iroasHover: iroasHover, slotsWonHover: slotsWonHover, ladderHover: ladderHover,
     schedulingHover: schedulingHover, variableHover: variableHover, progressHover: progressHover, progressPeriodText: progressPeriodText, chipText: chipText,
     schedulingText: schedulingText, tableRows: tableRows, variableOptions: variableOptions, variableBars: variableBars,
     activeFilters: activeFilters, ADV_COLS: ADV_COLS, MAT_COLS: MAT_COLS, sortAdvertiserRows: sortAdvertiserRows, revenueTotal: revenueTotal, periodLabel: periodLabel, fmtMoney: fmtMoney, pct: pct
@@ -400,7 +423,7 @@
       return h('tr', { class: 'dc-total', 'data-total': String(total) }, [
         h('th', { scope: 'row', class: 'dc-name', text: partial ? 'Total (top ' + TOP_N + ')' : 'Total' }),
         h('td', { class: 'dc-num', text: fmtMoney(total) }),
-        h('td', { class: 'dc-num', text: partial ? '' : '100%' }), h('td'), h('td'), h('td'), h('td')
+        h('td', { class: 'dc-num', text: partial ? '' : '100%' }), h('td'), h('td'), h('td'), h('td'), h('td')
       ]);
     }
     function drawAdvertisers() {
@@ -415,11 +438,12 @@
         var btn = h('button', { type: 'button', class: 'dc-sort' + (on ? ' on' : ''), title: 'Sort by ' + c.label }, [
           h('span', { text: c.label }), icon(on ? (dir === 'asc' ? 'arrow_upward' : 'arrow_downward') : 'unfold_more')
         ]);
+        var tipEl = c.info ? info(TIPS[c.info] + (d.posData === false ? TIPS.iroasNoPos : '')) : null;
         btn.addEventListener('click', function () {
           state.advSort = on ? { key: c.key, dir: dir === 'asc' ? 'desc' : 'asc' } : { key: c.key, dir: c.first };
           drawAdvertisers();
         });
-        return h('th', { scope: 'col', 'aria-sort': on ? (dir === 'asc' ? 'ascending' : 'descending') : 'none' }, [btn]);
+        return h('th', { scope: 'col', 'aria-sort': on ? (dir === 'asc' ? 'ascending' : 'descending') : 'none' }, tipEl ? [btn, tipEl] : [btn]);
       }
       var table = h('table', { class: 'dc-table dc-adv' }, [
         h('thead', {}, [h('tr', {}, ADV_COLS.map(sortHead))]),
@@ -429,10 +453,12 @@
           if (r.dealsOn) { dealsTd.classList.add('dc-dotted'); hoverable(dealsTd, function () { return dealsOnHover(a); }); }
           var wonTd = h('td', { class: 'dc-num', text: r.slotsWon });
           if (d.slotsWon && d.slotsWon.complete === false) hoverable(wonTd, function () { return slotsWonHover(a, d.slotsWon); });
+          var iroasTd = h('td', { class: 'dc-num dc-dotted', text: r.iroas });
+          hoverable(iroasTd, function () { return iroasHover(a); });
           return h('tr', {}, [
             h('th', { scope: 'row', class: 'dc-name', text: r.label }),
             h('td', { class: 'dc-num', text: r.revenue }), h('td', { class: 'dc-num', text: r.share }),
-            dealsTd, h('td', { class: 'dc-num', text: r.slotsCovered }), wonTd, h('td', { class: 'dc-num', text: r.effectiveCpm })
+            dealsTd, h('td', { class: 'dc-num', text: r.slotsCovered }), wonTd, h('td', { class: 'dc-num', text: r.effectiveCpm }), iroasTd
           ]);
         })),
         h('tfoot', {}, [totalRow(d, rows)])
@@ -559,11 +585,12 @@
         var btn = h('button', { type: 'button', class: 'dc-sort' + (on ? ' on' : ''), title: 'Sort by ' + c.label }, [
           h('span', { text: c.label }), icon(on ? (dir === 'asc' ? 'arrow_upward' : 'arrow_downward') : 'unfold_more')
         ]);
+        var tipEl = c.info ? info(TIPS[c.info] + (d.posData === false ? TIPS.iroasNoPos : '')) : null;
         btn.addEventListener('click', function () {
           state.matSort = on ? { key: c.key, dir: dir === 'asc' ? 'desc' : 'asc' } : { key: c.key, dir: c.first };
           drawTable(d);
         });
-        return h('th', { scope: 'col', 'aria-sort': on ? (dir === 'asc' ? 'ascending' : 'descending') : 'none' }, [btn]);
+        return h('th', { scope: 'col', 'aria-sort': on ? (dir === 'asc' ? 'ascending' : 'descending') : 'none' }, tipEl ? [btn, tipEl] : [btn]);
       }
       var table = h('table', { class: 'dc-table dc-mat' }, [
         h('thead', {}, [h('tr', {}, MAT_COLS.map(sortHead))]),
