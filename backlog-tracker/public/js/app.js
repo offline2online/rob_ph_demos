@@ -2070,7 +2070,7 @@ function projectSectionHTML(project) {
     ? `<div class="project-name-row"><input type="text" class="project-name-input" id="pname-input-${escapeHTML(project.id)}" data-project-id="${escapeHTML(project.id)}" value="${escapeHTML(project.name)}" maxlength="80"></div>`
     : `<div class="project-name-row"><button type="button" class="project-star-btn${isProjectStarred(project.id) ? " starred" : ""}" data-project-id="${escapeHTML(project.id)}" aria-pressed="${isProjectStarred(project.id)}" title="${isProjectStarred(project.id) ? "Unstar project (unpin from top)" : "Star project (pin to top)"}">${isProjectStarred(project.id) ? "&#9733;" : "&#9734;"}</button><h2 class="project-name">${escapeHTML(project.name)} <span class="project-item-count">(${total})</span></h2>
          <button type="button" class="project-rename-btn" data-project-id="${escapeHTML(project.id)}" title="Rename project">&#9998;</button>
-         <span class="project-version-badge" title="backlog-tracker release currently running">v${escapeHTML(APP_VERSION)}</span>
+         ${projectReleaseBadgeHTML(project)}
        </div>`;
 
   return `
@@ -3816,6 +3816,15 @@ function populateProgramSelect(selectEl, selectedId) {
   selectEl.innerHTML = '<option value="">No program</option>' +
     opts.map((p) => `<option value="${escapeHTML(p.id)}"${p.id === selectedId ? " selected" : ""}>${escapeHTML(p.name)}</option>`).join("") +
     '<option value="__new__">+ New program…</option>';
+}
+
+// The header badge: the release this project is assigned to on the
+// Releases page (projects/{id}.releaseId) — nothing when it has none, or
+// when the release is no longer in the list.
+function projectReleaseBadgeHTML(project) {
+  const rel = project.releaseId ? releases.find((r) => r.id === project.releaseId) : null;
+  if (!rel) return "";
+  return `<span class="project-version-badge" title="Release this project is assigned to">${escapeHTML(releaseLabel(rel))}</span>`;
 }
 
 // ── Releases — a named, ordered product release (see releasesRef above).
@@ -6453,6 +6462,7 @@ function renderReleasesPage() {
 // picker, and the article editor's two binding pickers (re-populated with
 // their CURRENT value, so an unsaved choice survives a live update).
 function onReleasesChanged() {
+  render();
   if (releasesPage && !releasesPage.hidden) renderReleasesPage();
   if (docsProjectId) renderDocsPage();
   if (faqArticleEditorPage && !faqArticleEditorPage.hidden) {
