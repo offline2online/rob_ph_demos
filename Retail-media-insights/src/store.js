@@ -113,9 +113,9 @@ class AggregateStore {
     this.inventory = [...inventory].sort(byDate);
     this.hourlyInventory = [...hourlyInventory].sort(byDate);
 
-    const deals = dictionary(); const types = dictionary(); const advs = dictionary();
+    const deals = dictionary(); const types = dictionary(); const advs = dictionary(); const seats = dictionary();
     stampDays(this.delivery); stampDays(this.inventory); stampDays(this.hourlyInventory);
-    for (const r of this.delivery) { r.dealIx = deals.code(r.dealId); r.typeIx = types.code(r.displayTypeId); r.advIx = advs.code(r.advertiserId); }
+    for (const r of this.delivery) { r.dealIx = deals.code(r.dealId); r.typeIx = types.code(r.displayTypeId); r.advIx = advs.code(r.advertiserId); r.seatIx = seats.code(r.seatId || null); }
     for (const r of this.inventory) r.typeIx = types.code(r.displayTypeId);
     for (const r of this.hourlyInventory) r.typeIx = types.code(r.displayTypeId);
     // The first and last played day: days with inventory or earned delivery. Reservations (estimated rows booked ahead) are not played days.
@@ -124,17 +124,17 @@ class AggregateStore {
     for (const r of this.inventory) played(r.date);
     for (const r of this.delivery) if (r.earnedSlots > 0 || r.earned > 0) played(r.date);
     this.firstPlayedDay = first; this.lastPlayedDay = last;
-    this.dealIds = deals.ids; this.typeIds = types.ids; this.advIds = advs.ids;
+    this.seatIds = seats.ids; this.dealIds = deals.ids; this.typeIds = types.ids; this.advIds = advs.ids;
     this.dealCode = new Map(deals.ids.map((v, i) => [v, i])); this.typeCode = new Map(types.ids.map((v, i) => [v, i])); this.advCode = new Map(advs.ids.map((v, i) => [v, i]));
 
     if (indexed) {
       const dsps = dictionary(); const dealTypes = dictionary();
       for (const r of this.delivery) { dsps.code(r.dsp); dealTypes.code(r.dealType); }
-      const T = types.ids.length; const A = advs.ids.length; const D = dsps.ids.length; const K = dealTypes.ids.length;
+      const T = types.ids.length; const A = advs.ids.length; const S = seats.ids.length; const D = dsps.ids.length; const K = dealTypes.ids.length;
       this.deliveryRollup = rollup(this.delivery,
-        (r) => (((r.dealIx * T + r.typeIx) * D + dsps.code(r.dsp)) * A + r.advIx) * K + dealTypes.code(r.dealType),
-        (r) => ({ date: r.date, displayTypeId: r.displayTypeId, storeId: null, dealId: r.dealId, dealType: r.dealType, dsp: r.dsp, advertiserId: r.advertiserId,
-          dayIx: r.dayIx, dealIx: r.dealIx, typeIx: r.typeIx, advIx: r.advIx, revenue: 0, earned: 0, estimated: 0, views: 0, earnedViews: 0, slots: 0, earnedSlots: 0 }),
+        (r) => ((((r.dealIx * T + r.typeIx) * D + dsps.code(r.dsp)) * A + r.advIx) * K + dealTypes.code(r.dealType)) * S + r.seatIx,
+        (r) => ({ date: r.date, displayTypeId: r.displayTypeId, storeId: null, dealId: r.dealId, dealType: r.dealType, dsp: r.dsp, advertiserId: r.advertiserId, seatId: r.seatId || null,
+          dayIx: r.dayIx, dealIx: r.dealIx, typeIx: r.typeIx, advIx: r.advIx, seatIx: r.seatIx, revenue: 0, earned: 0, estimated: 0, views: 0, earnedViews: 0, slots: 0, earnedSlots: 0 }),
         DELIVERY_MEASURES);
       this.inventoryRollup = rollup(this.inventory, (r) => r.typeIx,
         (r) => ({ date: r.date, displayTypeId: r.displayTypeId, storeId: null, dayIx: r.dayIx, typeIx: r.typeIx, sold: 0, unsold: 0, offline: 0, outsideHours: 0, unsoldViews: 0, lostRevenue: 0 }),

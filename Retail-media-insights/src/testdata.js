@@ -91,6 +91,45 @@ const ADVERTISER_META = Object.fromEntries(ADVERTISER_PROFILES.map((a) => [a.id,
 const PROFILE = Object.fromEntries(ADVERTISER_PROFILES.map((a) => [a.id, a]));
 const OPEN_AUCTION_DEAL = 'd10';
 
+// DSP seats (the buying account inside a DSP, usually held by an agency or trading desk), as DSP Integration will sync them
+// (partners.seats) with the advertiser <-> seat mapping (advertiser_seats). `synced: false` = no longer in the DSP's account list.
+// An advertiser with no plan buys direct (no seat). `minAge` / `maxAge` limit an entry to billing days at least / fewer than N days
+// before the last day, so a seat can be replaced part-way through the history.
+const SEAT_CATALOG = {
+  'ttd-groupm-au': { name: 'GroupM AU', dsp: 'The Trade Desk', synced: true },
+  'ttd-haleon-inhouse': { name: 'Haleon In-house', dsp: 'The Trade Desk', synced: true },
+  'ttd-wavemaker-au': { name: 'Wavemaker AU', dsp: 'The Trade Desk', synced: true },
+  'dv-omd-au': { name: 'OMD AU', dsp: 'DV360', synced: true },
+  'dv-publicis-au': { name: 'Publicis Media AU', dsp: 'DV360', synced: true },
+  'dv-mindshare-au': { name: 'Mindshare AU', dsp: 'DV360', synced: false },
+  'amz-dentsu-au': { name: 'Dentsu AU', dsp: 'Amazon DSP', synced: true },
+  'amz-reckitt-desk': { name: 'Reckitt Trading Desk', dsp: 'Amazon DSP', synced: true },
+};
+const SEAT_PLAN = {
+  'adv-blackmores': [{ seatId: 'dv-omd-au', weight: 1 }],
+  'adv-haleon': [{ seatId: 'ttd-groupm-au', weight: 0.6 }, { seatId: 'ttd-haleon-inhouse', weight: 0.4 }],
+  'adv-loreal-paris': [{ seatId: 'dv-publicis-au', weight: 0.7 }, { seatId: 'dv-omd-au', weight: 0.3 }],
+  'adv-vitabiotics': [{ seatId: 'ttd-groupm-au', weight: 1 }],
+  'adv-bayer-consumer-health': [{ seatId: 'amz-dentsu-au', weight: 1 }],
+  'adv-reckitt': [{ seatId: 'amz-dentsu-au', weight: 0.5 }, { seatId: 'amz-reckitt-desk', weight: 0.5 }],
+  'adv-kenvue': [{ seatId: 'dv-mindshare-au', weight: 1, minAge: 45 }, { seatId: 'dv-publicis-au', weight: 1, maxAge: 45 }],
+  'adv-procter-gamble': [{ seatId: 'ttd-groupm-au', weight: 0.5 }, { seatId: 'ttd-wavemaker-au', weight: 0.5 }],
+  'adv-unilever': [{ seatId: 'amz-dentsu-au', weight: 1 }],
+  'adv-nestle-health-science': [{ seatId: 'dv-omd-au', weight: 1 }],
+  // adv-perrigo buys direct: no seat.
+};
+const ADVERTISER_SEATS = Object.fromEntries(Object.entries(SEAT_PLAN).map(([id, plan]) => [id, [...new Set(plan.map((e) => e.seatId))]]));
+// The seat that won a billing row: a deterministic hash of the row's keys (no random draw, so every other figure is unchanged).
+function seatFor(advertiserId, ageDays, key) {
+  const plan = (SEAT_PLAN[advertiserId] || []).filter((e) => (e.minAge === undefined || ageDays >= e.minAge) && (e.maxAge === undefined || ageDays < e.maxAge));
+  if (!plan.length) return null;
+  let h = 2166136261;
+  for (let i = 0; i < key.length; i += 1) { h ^= key.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  let pick = (h / 4294967296) * plan.reduce((n, e) => n + e.weight, 0);
+  for (const e of plan) { pick -= e.weight; if (pick < 0) return e.seatId; }
+  return plan[plan.length - 1].seatId;
+}
+
 const PLAYLISTS = { window: ['Window loop', 'Store front'], endcap: ['Endcap loop', 'Aisle ends'], queue: ['Checkout loop', 'Tills'], dispensary: ['Pharmacy loop', 'Dispensary'] };
 const slotsOf = (typeId, positions) => positions.map((position) => ({
   displayTypeId: typeId, playlist: PLAYLISTS[typeId][0], zone: PLAYLISTS[typeId][1], position, loopSlot: position, playsPerWindow: loopsPerHourOf(DISPLAY_TYPES[typeId]),
@@ -322,6 +361,7 @@ function generateTestRetailer({ days = HISTORY_DAYS, endDate = '2026-10-11', sto
           const views = Math.round(slots * viewsPerPlay); // VAC-d views are whole numbers
           billing.push({
             date, storeId, displayTypeId: typeId, dealId, dsp: buyer.dsp, advertiserId,
+            seatId: seatFor(advertiserId, d, `${date}|${storeId}|${typeId}|${dealId}|${advertiserId}`),
             revenue: calc.revenueAtCpm(clearedCpm(dealId, type), views), views, slots, settled: true,
           });
         }
@@ -357,6 +397,7 @@ function generateTestRetailer({ days = HISTORY_DAYS, endDate = '2026-10-11', sto
             const views = plays * viewsPerPlayOf(type, storeIndex, window);
             billing.push({
               date, storeId, displayTypeId: typeId, dealId, dsp: buyer.dsp, advertiserId: buyer.advertiserId,
+              seatId: seatFor(buyer.advertiserId, 0, `${date}|${storeId}|${typeId}|${dealId}`),
               revenue: calc.revenueAtCpm(deal.cpm, views), views: 0, slots: 0, settled: false, reservation: true,
             });
           }
@@ -365,7 +406,9 @@ function generateTestRetailer({ days = HISTORY_DAYS, endDate = '2026-10-11', sto
     }
   }
   ctx.advertisers = ADVERTISER_META;
+  ctx.seats = SEAT_CATALOG;
+  ctx.advertiserSeats = ADVERTISER_SEATS;
   return { raw: { billing, slotRecords, campaigns: campaignList }, ctx };
 }
 
-module.exports = { generateTestRetailer, rng, DISPLAY_TYPES, DEALS, DEAL_CATALOG, ADVERTISERS, ADVERTISER_META, ADVERTISER_PROFILES, CAMPAIGN_PLAN, OPEN_AUCTION_DEAL, STORE_NAMES, HISTORY_DAYS };
+module.exports = { SEAT_CATALOG, SEAT_PLAN, generateTestRetailer, rng, DISPLAY_TYPES, DEALS, DEAL_CATALOG, ADVERTISERS, ADVERTISER_META, ADVERTISER_PROFILES, CAMPAIGN_PLAN, OPEN_AUCTION_DEAL, STORE_NAMES, HISTORY_DAYS };

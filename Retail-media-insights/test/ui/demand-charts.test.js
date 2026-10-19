@@ -52,24 +52,48 @@ test('Demand health: section header, names only, "n deals" hover, Show all N adv
     await head.locator('.dc-info').hover();
     assert.match(await page.textContent('.dc-tip'), /^Which advertisers are on which deals/);
 
-    assert.deepEqual(await texts(page, '.dc-adv thead th .dc-sort > span:first-child'), ['Advertiser', 'Revenue', 'Share of total revenue', 'Deals on', 'Slots covered', 'Slots won', 'Effective CPM', 'iROAS']);
+    assert.deepEqual(await texts(page, '.dc-adv thead th .dc-sort > span:first-child'), ['Advertiser', 'Seats', 'Revenue', 'Share of total revenue', 'Deals on', 'Slots covered', 'Slots won', 'Effective CPM', 'iROAS']);
     const names = await texts(page, '.dc-adv tbody th');
     assert.equal(names.length, 10);
     assert.ok(names.every((n) => !/\(/.test(n)), `no DSP in the cell: ${names}`);
-    const deals = await texts(page, '.dc-adv tbody td:nth-child(4)');
+    const deals = await texts(page, '.dc-adv tbody td:nth-child(5)');
     assert.ok(deals.every((d) => /^\d+ deals?$/.test(d)), deals.join());
     const i = deals.findIndex((d) => d === '3 deals');
     assert.ok(i >= 0);
-    const cell = page.locator('.dc-adv tbody tr').nth(i).locator('td').nth(2);
+    const cell = page.locator('.dc-adv tbody tr').nth(i).locator('td').nth(3);
     await cell.hover();
     assert.match(await page.textContent('.dc-tip-title'), / \([^)]+\): deals on$/);
-    assert.equal(await page.locator('.dc-adv tbody tr').nth(i).locator('td').nth(2).evaluate((e) => getComputedStyle(e).textDecorationStyle), 'dotted');
+    assert.equal(await page.locator('.dc-adv tbody tr').nth(i).locator('td').nth(3).evaluate((e) => getComputedStyle(e).textDecorationStyle), 'dotted');
 
     const btn = page.locator('.dc-btn.dc-link');
     assert.equal(await btn.textContent(), 'Show all 11 advertisers');
     await btn.click();
     assert.equal((await texts(page, '.dc-adv tbody th')).length, 11);
     assert.equal(await btn.textContent(), 'Show top 10');
+    assert.deepEqual(problems, []);
+  } finally { await context.close(); }
+});
+
+test('Demand by DSP seat: Seats column, expand chevron, sub-rows add up, Direct has no chevron', async () => {
+  const { page, context, problems } = await open(1163);
+  try {
+    await page.locator('.dc-btn.dc-link').click(); // all 11 advertisers
+    const money = (t) => Math.round(parseFloat(t.replace(/[$,]/g, '')) * 100);
+    const row = (id) => page.locator(`.dc-adv tbody tr[data-advertiser="${id}"]`);
+    assert.equal(await row('adv-perrigo').locator('td').first().textContent(), 'Direct');
+    assert.equal(await row('adv-perrigo').locator('.dc-expand').count(), 0);
+    assert.equal(await row('adv-haleon').locator('td').first().textContent(), '2');
+    await row('adv-haleon').locator('.dc-expand').hover();
+    assert.equal(await page.textContent('.dc-tip'), 'Show spend by DSP seat.');
+    await row('adv-haleon').locator('.dc-expand').click();
+    const subs = page.locator('.dc-adv tbody tr.dc-seat');
+    assert.equal(await subs.count(), 2);
+    assert.match(await subs.first().locator('th').textContent(), /^(GroupM AU|Haleon In-house) \u00b7 The Trade Desk$/);
+    let sum = 0;
+    for (let i = 0; i < 2; i += 1) sum += money(await subs.nth(i).locator('td').nth(1).textContent());
+    assert.equal(sum, money(await row('adv-haleon').locator('td').nth(1).textContent()));
+    await subs.first().locator('th').hover();
+    assert.match(await page.textContent('.dc-tip'), /Seat ID/);
     assert.deepEqual(problems, []);
   } finally { await context.close(); }
 });

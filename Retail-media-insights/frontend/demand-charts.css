@@ -119,3 +119,8 @@ button.dc-clear { cursor: pointer; background: rgba(22,155,194,0.1); border-colo
 .dc-sort .dc-icon { font-size: 16px; opacity: .45; }
 .dc-sort.on, .dc-sort.on .dc-icon { color: var(--dc-text); opacity: 1; }
 .dc-sort:focus-visible { outline: 2px solid #1677ff; outline-offset: 2px; }
+
+.dc-expand { border: 0; background: none; padding: 0 4px 0 0; cursor: pointer; vertical-align: middle; color: var(--dc-muted); }
+.dc-table tr.dc-seat th.dc-name { font-size: 13px; font-weight: 400; padding-left: 28px; }
+.dc-table tr.dc-seat td { font-size: 13px; color: var(--dc-muted); }
+.dc-seat-gone { color: var(--dc-muted); font-style: italic; cursor: help; }

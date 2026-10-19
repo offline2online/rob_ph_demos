@@ -679,9 +679,9 @@ class AggregateStore {
     this.inventory = [...inventory].sort(byDate);
     this.hourlyInventory = [...hourlyInventory].sort(byDate);
 
-    const deals = dictionary(); const types = dictionary(); const advs = dictionary();
+    const deals = dictionary(); const types = dictionary(); const advs = dictionary(); const seats = dictionary();
     stampDays(this.delivery); stampDays(this.inventory); stampDays(this.hourlyInventory);
-    for (const r of this.delivery) { r.dealIx = deals.code(r.dealId); r.typeIx = types.code(r.displayTypeId); r.advIx = advs.code(r.advertiserId); }
+    for (const r of this.delivery) { r.dealIx = deals.code(r.dealId); r.typeIx = types.code(r.displayTypeId); r.advIx = advs.code(r.advertiserId); r.seatIx = seats.code(r.seatId || null); }
     for (const r of this.inventory) r.typeIx = types.code(r.displayTypeId);
     for (const r of this.hourlyInventory) r.typeIx = types.code(r.displayTypeId);
     // The first and last played day: days with inventory or earned delivery. Reservations (estimated rows booked ahead) are not played days.
@@ -690,17 +690,17 @@ class AggregateStore {
     for (const r of this.inventory) played(r.date);
     for (const r of this.delivery) if (r.earnedSlots > 0 || r.earned > 0) played(r.date);
     this.firstPlayedDay = first; this.lastPlayedDay = last;
-    this.dealIds = deals.ids; this.typeIds = types.ids; this.advIds = advs.ids;
+    this.seatIds = seats.ids; this.dealIds = deals.ids; this.typeIds = types.ids; this.advIds = advs.ids;
     this.dealCode = new Map(deals.ids.map((v, i) => [v, i])); this.typeCode = new Map(types.ids.map((v, i) => [v, i])); this.advCode = new Map(advs.ids.map((v, i) => [v, i]));
 
     if (indexed) {
       const dsps = dictionary(); const dealTypes = dictionary();
       for (const r of this.delivery) { dsps.code(r.dsp); dealTypes.code(r.dealType); }
-      const T = types.ids.length; const A = advs.ids.length; const D = dsps.ids.length; const K = dealTypes.ids.length;
+      const T = types.ids.length; const A = advs.ids.length; const S = seats.ids.length; const D = dsps.ids.length; const K = dealTypes.ids.length;
       this.deliveryRollup = rollup(this.delivery,
-        (r) => (((r.dealIx * T + r.typeIx) * D + dsps.code(r.dsp)) * A + r.advIx) * K + dealTypes.code(r.dealType),
-        (r) => ({ date: r.date, displayTypeId: r.displayTypeId, storeId: null, dealId: r.dealId, dealType: r.dealType, dsp: r.dsp, advertiserId: r.advertiserId,
-          dayIx: r.dayIx, dealIx: r.dealIx, typeIx: r.typeIx, advIx: r.advIx, revenue: 0, earned: 0, estimated: 0, views: 0, earnedViews: 0, slots: 0, earnedSlots: 0 }),
+        (r) => ((((r.dealIx * T + r.typeIx) * D + dsps.code(r.dsp)) * A + r.advIx) * K + dealTypes.code(r.dealType)) * S + r.seatIx,
+        (r) => ({ date: r.date, displayTypeId: r.displayTypeId, storeId: null, dealId: r.dealId, dealType: r.dealType, dsp: r.dsp, advertiserId: r.advertiserId, seatId: r.seatId || null,
+          dayIx: r.dayIx, dealIx: r.dealIx, typeIx: r.typeIx, advIx: r.advIx, seatIx: r.seatIx, revenue: 0, earned: 0, estimated: 0, views: 0, earnedViews: 0, slots: 0, earnedSlots: 0 }),
         DELIVERY_MEASURES);
       this.inventoryRollup = rollup(this.inventory, (r) => r.typeIx,
         (r) => ({ date: r.date, displayTypeId: r.displayTypeId, storeId: null, dayIx: r.dayIx, typeIx: r.typeIx, sold: 0, unsold: 0, offline: 0, outsideHours: 0, unsoldViews: 0, lostRevenue: 0 }),
@@ -828,6 +828,7 @@ const calc = require('./calc');
  * raw.campaigns:    {id, advertiserId, start, end|null, displayTypeIds[]|null, variables[], scheduled, schedules, targetedVersions}
  *                  (campaign submissions: targeting rules, scheduling) - optional
  * ctx.advertisers: {[id]: {name, dsp}} - optional
+ * raw.billing[].seatId: the DSP seat that won the line (null = a direct buyer); ctx.seats: {[seatId]: {name, dsp, synced}}; ctx.advertiserSeats: {[advertiserId]: [seatId]}
  * raw.slotRecords[].lostRevenue: lost-revenue report value for an offline record (optional)
  * ctx.dealCatalog: {[dealId]: {name, description, dealType, phId, buyers[{advertiserId, dsp}], slots[{displayTypeId, playlist, zone, position,
  *   loopSlot, playsPerWindow}], cpm|floorCpm, flight{start,end}, forecast, buffer (PG)}} - optional
@@ -839,13 +840,13 @@ const calc = require('./calc');
 function buildAggregates(raw, ctx) {
   const delivery = new Map();
   for (const b of raw.billing) {
-    const key = [b.date, b.displayTypeId, b.storeId, b.dealId, b.dsp, b.advertiserId].join('|');
+    const key = [b.date, b.displayTypeId, b.storeId, b.dealId, b.dsp, b.advertiserId, b.seatId || ''].join('|');
     let row = delivery.get(key);
     if (!row) {
       row = {
         date: b.date, displayTypeId: b.displayTypeId, storeId: b.storeId, dealId: b.dealId,
         dealType: (ctx.deals[b.dealId] || {}).dealType || 'Open auction',
-        dsp: b.dsp, advertiserId: b.advertiserId, revenue: 0, earned: 0, estimated: 0, views: 0, earnedViews: 0, slots: 0, earnedSlots: 0,
+        dsp: b.dsp, advertiserId: b.advertiserId, seatId: b.seatId || null, revenue: 0, earned: 0, estimated: 0, views: 0, earnedViews: 0, slots: 0, earnedSlots: 0,
       };
       delivery.set(key, row);
     }
@@ -908,7 +909,7 @@ function buildAggregates(raw, ctx) {
   }));
   return {
     delivery: [...delivery.values()], inventory: [...inventory.values()], hourlyInventory: [...hourly.values()], campaigns, advertisers: ctx.advertisers || {},
-    catalog: { displayTypes: ctx.displayTypes, displays: ctx.displays || [], stores: ctx.stores || {}, deals: ctx.dealCatalog || {}, sharedVariables: ctx.sharedVariables || {}, connectedDsps: ctx.connectedDsps || Object.keys(ctx.sharedVariables || {}),
+    catalog: { displayTypes: ctx.displayTypes, displays: ctx.displays || [], stores: ctx.stores || {}, deals: ctx.dealCatalog || {}, seats: ctx.seats || {}, advertiserSeats: ctx.advertiserSeats || {}, sharedVariables: ctx.sharedVariables || {}, connectedDsps: ctx.connectedDsps || Object.keys(ctx.sharedVariables || {}),
       controlStores: ctx.controlStores || { name: 'Control stores', storeIds: [] }, transactionApi: Boolean(ctx.transactionApi) },
   };
 }
@@ -1228,6 +1229,45 @@ const ADVERTISER_META = Object.fromEntries(ADVERTISER_PROFILES.map((a) => [a.id,
 const PROFILE = Object.fromEntries(ADVERTISER_PROFILES.map((a) => [a.id, a]));
 const OPEN_AUCTION_DEAL = 'd10';
 
+// DSP seats (the buying account inside a DSP, usually held by an agency or trading desk), as DSP Integration will sync them
+// (partners.seats) with the advertiser <-> seat mapping (advertiser_seats). `synced: false` = no longer in the DSP's account list.
+// An advertiser with no plan buys direct (no seat). `minAge` / `maxAge` limit an entry to billing days at least / fewer than N days
+// before the last day, so a seat can be replaced part-way through the history.
+const SEAT_CATALOG = {
+  'ttd-groupm-au': { name: 'GroupM AU', dsp: 'The Trade Desk', synced: true },
+  'ttd-haleon-inhouse': { name: 'Haleon In-house', dsp: 'The Trade Desk', synced: true },
+  'ttd-wavemaker-au': { name: 'Wavemaker AU', dsp: 'The Trade Desk', synced: true },
+  'dv-omd-au': { name: 'OMD AU', dsp: 'DV360', synced: true },
+  'dv-publicis-au': { name: 'Publicis Media AU', dsp: 'DV360', synced: true },
+  'dv-mindshare-au': { name: 'Mindshare AU', dsp: 'DV360', synced: false },
+  'amz-dentsu-au': { name: 'Dentsu AU', dsp: 'Amazon DSP', synced: true },
+  'amz-reckitt-desk': { name: 'Reckitt Trading Desk', dsp: 'Amazon DSP', synced: true },
+};
+const SEAT_PLAN = {
+  'adv-blackmores': [{ seatId: 'dv-omd-au', weight: 1 }],
+  'adv-haleon': [{ seatId: 'ttd-groupm-au', weight: 0.6 }, { seatId: 'ttd-haleon-inhouse', weight: 0.4 }],
+  'adv-loreal-paris': [{ seatId: 'dv-publicis-au', weight: 0.7 }, { seatId: 'dv-omd-au', weight: 0.3 }],
+  'adv-vitabiotics': [{ seatId: 'ttd-groupm-au', weight: 1 }],
+  'adv-bayer-consumer-health': [{ seatId: 'amz-dentsu-au', weight: 1 }],
+  'adv-reckitt': [{ seatId: 'amz-dentsu-au', weight: 0.5 }, { seatId: 'amz-reckitt-desk', weight: 0.5 }],
+  'adv-kenvue': [{ seatId: 'dv-mindshare-au', weight: 1, minAge: 45 }, { seatId: 'dv-publicis-au', weight: 1, maxAge: 45 }],
+  'adv-procter-gamble': [{ seatId: 'ttd-groupm-au', weight: 0.5 }, { seatId: 'ttd-wavemaker-au', weight: 0.5 }],
+  'adv-unilever': [{ seatId: 'amz-dentsu-au', weight: 1 }],
+  'adv-nestle-health-science': [{ seatId: 'dv-omd-au', weight: 1 }],
+  // adv-perrigo buys direct: no seat.
+};
+const ADVERTISER_SEATS = Object.fromEntries(Object.entries(SEAT_PLAN).map(([id, plan]) => [id, [...new Set(plan.map((e) => e.seatId))]]));
+// The seat that won a billing row: a deterministic hash of the row's keys (no random draw, so every other figure is unchanged).
+function seatFor(advertiserId, ageDays, key) {
+  const plan = (SEAT_PLAN[advertiserId] || []).filter((e) => (e.minAge === undefined || ageDays >= e.minAge) && (e.maxAge === undefined || ageDays < e.maxAge));
+  if (!plan.length) return null;
+  let h = 2166136261;
+  for (let i = 0; i < key.length; i += 1) { h ^= key.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  let pick = (h / 4294967296) * plan.reduce((n, e) => n + e.weight, 0);
+  for (const e of plan) { pick -= e.weight; if (pick < 0) return e.seatId; }
+  return plan[plan.length - 1].seatId;
+}
+
 const PLAYLISTS = { window: ['Window loop', 'Store front'], endcap: ['Endcap loop', 'Aisle ends'], queue: ['Checkout loop', 'Tills'], dispensary: ['Pharmacy loop', 'Dispensary'] };
 const slotsOf = (typeId, positions) => positions.map((position) => ({
   displayTypeId: typeId, playlist: PLAYLISTS[typeId][0], zone: PLAYLISTS[typeId][1], position, loopSlot: position, playsPerWindow: loopsPerHourOf(DISPLAY_TYPES[typeId]),
@@ -1459,6 +1499,7 @@ function generateTestRetailer({ days = HISTORY_DAYS, endDate = '2026-10-11', sto
           const views = Math.round(slots * viewsPerPlay); // VAC-d views are whole numbers
           billing.push({
             date, storeId, displayTypeId: typeId, dealId, dsp: buyer.dsp, advertiserId,
+            seatId: seatFor(advertiserId, d, `${date}|${storeId}|${typeId}|${dealId}|${advertiserId}`),
             revenue: calc.revenueAtCpm(clearedCpm(dealId, type), views), views, slots, settled: true,
           });
         }
@@ -1494,6 +1535,7 @@ function generateTestRetailer({ days = HISTORY_DAYS, endDate = '2026-10-11', sto
             const views = plays * viewsPerPlayOf(type, storeIndex, window);
             billing.push({
               date, storeId, displayTypeId: typeId, dealId, dsp: buyer.dsp, advertiserId: buyer.advertiserId,
+              seatId: seatFor(buyer.advertiserId, 0, `${date}|${storeId}|${typeId}|${dealId}`),
               revenue: calc.revenueAtCpm(deal.cpm, views), views: 0, slots: 0, settled: false, reservation: true,
             });
           }
@@ -1502,10 +1544,12 @@ function generateTestRetailer({ days = HISTORY_DAYS, endDate = '2026-10-11', sto
     }
   }
   ctx.advertisers = ADVERTISER_META;
+  ctx.seats = SEAT_CATALOG;
+  ctx.advertiserSeats = ADVERTISER_SEATS;
   return { raw: { billing, slotRecords, campaigns: campaignList }, ctx };
 }
 
-module.exports = { generateTestRetailer, rng, DISPLAY_TYPES, DEALS, DEAL_CATALOG, ADVERTISERS, ADVERTISER_META, ADVERTISER_PROFILES, CAMPAIGN_PLAN, OPEN_AUCTION_DEAL, STORE_NAMES, HISTORY_DAYS };
+module.exports = { SEAT_CATALOG, SEAT_PLAN, generateTestRetailer, rng, DISPLAY_TYPES, DEALS, DEAL_CATALOG, ADVERTISERS, ADVERTISER_META, ADVERTISER_PROFILES, CAMPAIGN_PLAN, OPEN_AUCTION_DEAL, STORE_NAMES, HISTORY_DAYS };
   },
   "src/advertiser-view.js": function (module, exports, require) {
 // Shared by the advertiser view endpoints (delivery, deals-by-display-type, audience, my-targeting).
@@ -1920,6 +1964,47 @@ function iroasOf(store, filters) {
   return { byAdv: out, anyPos };
 }
 
+// Demand by DSP seat, one level below advertiser and DSP: the seat that won each play (the buying account inside a DSP, usually held by
+// the advertiser's agency or trading desk), read from the seat on every settled billing row. Spend, plays and CPM are exact; the
+// seats of an advertiser add up to its row (the cent left by rounding goes to its largest seat). A seat missing from the DSP's latest
+// sync keeps its history (`synced: false`). Direct advertisers have no seat. Retailer view only: advertiser logins never reach this route.
+function seatsOf(store, filters, scope) {
+  const catalog = (store.catalog && store.catalog.seats) || {};
+  const names = store.advertisers || {};
+  const deals = (store.catalog && store.catalog.deals) || {};
+  const bySeat = new Map(); // seatId -> { advertiserId -> { earned, views, plays, dealIds, first, last } }
+  const advertisersOnSeat = new Map();
+  store.scanDelivery({ ...filters, advertiserIds: null }, (r) => {
+    if (!r.seatId || (r.earned <= 0 && r.earnedSlots <= 0)) return;
+    if (!advertisersOnSeat.has(r.seatId)) advertisersOnSeat.set(r.seatId, new Set());
+    advertisersOnSeat.get(r.seatId).add(r.advertiserId);
+    if (scope && !scope.has(r.advertiserId)) return;
+    if (!bySeat.has(r.seatId)) bySeat.set(r.seatId, new Map());
+    const m = bySeat.get(r.seatId);
+    let a = m.get(r.advertiserId);
+    if (!a) { a = { earned: 0, earnedViews: 0, plays: 0, dealIds: new Set(), first: r.date, last: r.date }; m.set(r.advertiserId, a); }
+    a.earned += r.earned; a.earnedViews += r.earnedViews; a.plays += r.slots;
+    if (r.dealType !== 'Open auction') a.dealIds.add(r.dealId);
+    if (r.date < a.first) a.first = r.date; if (r.date > a.last) a.last = r.date;
+  });
+  const byAdv = new Map();
+  for (const [seatId, m] of bySeat) {
+    const seat = catalog[seatId] || {};
+    const seatAdvertisers = [...(advertisersOnSeat.get(seatId) || [])].map((id) => (names[id] || {}).name || id).sort((x, y) => x.localeCompare(y));
+    for (const [advertiserId, a] of m) {
+      if (!byAdv.has(advertiserId)) byAdv.set(advertiserId, []);
+      byAdv.get(advertiserId).push({
+        seatId, name: seat.name || seatId, dsp: seat.dsp || null, synced: seat.synced !== false,
+        revenue: cents(a.earned), revenueRaw: a.earned, plays: Math.round(a.plays),
+        dealsOn: [...a.dealIds].map((id) => ({ id, name: (deals[id] || {}).name || id, dealType: (deals[id] || {}).dealType || null })),
+        effectiveCpm: a.earnedViews > 0 ? cents(calc.effectiveCpm(a.earned, a.earnedViews)) : null,
+        firstWin: a.first, lastWin: a.last, advertisersBought: seatAdvertisers.length, advertiserNames: seatAdvertisers,
+      });
+    }
+  }
+  return byAdv;
+}
+
 // Demand health: earned revenue, share of total earned (whole numbers adding to 100), deals on, slots covered,
 // slots won %, effective CPM (settled billing only) and DSP. `top` is the ten highest by revenue, `all` is everyone.
 // Slots covered and Slots won count only the advertiser's deal positions on the filtered display types, and
@@ -1928,7 +2013,7 @@ function iroasOf(store, filters) {
 // campaign in the range had any POS sales to measure. There is no cap: a figure above 100 would be a data error to fix, not hide.
 module.exports = {
   path: '/advertisers',
-  handler({ store, filters }) {
+  handler({ store, filters, principal }) {
     const scope = filters.advertiserIds ? new Set(filters.advertiserIds) : null;
     const meta = store.advertisers || {};
     const roll = rollUp(store, filters);
@@ -1936,6 +2021,9 @@ module.exports = {
     const deals = dealsOf(store);
     const wantedTypes = filters.displayTypeIds ? new Set(filters.displayTypeIds) : null;
     const iroas = iroasOf(store, filters);
+    const retailer = !principal || principal.principalType !== 'advertiser'; // seat data names other advertisers: never in an advertiser's response
+    const seatRows = retailer ? seatsOf(store, filters, scope) : new Map();
+    const advertiserSeats = (store.catalog && store.catalog.advertiserSeats) || {};
     const ids = new Set(roll.byAdv.keys());
     for (const d of deals) for (const b of d.buyers || []) if (!scope || scope.has(b.advertiserId)) ids.add(b.advertiserId);
     const list = [...ids].map((id) => {
@@ -1950,9 +2038,16 @@ module.exports = {
       let opportunity = 0; for (const k of slots.keys()) opportunity += opp.perPosition(slots.get(k));
       const a = roll.byAdv.get(id) || { revenue: 0, earned: 0, earnedViews: 0 };
       const buyer = mine.flatMap((d) => d.buyers).find((b) => b.advertiserId === id);
+      const seats = (seatRows.get(id) || []).sort((x, y) => y.revenueRaw - x.revenueRaw || x.name.localeCompare(y.name));
+      // The seats add up to the advertiser's row: a rounding cent goes to the largest seat; each seat's share of the advertiser's spend is a whole percent.
+      if (seats.length) seats[0].revenue = cents(seats[0].revenue + (cents(a.earned) - seats.reduce((n, x) => n + x.revenue, 0)));
+      const seatShares = calc.percentSplit(seats.map((x) => x.revenueRaw));
       return {
         advertiserId: id, name: (meta[id] || {}).name || id, dsp: (meta[id] || {}).dsp || (buyer && buyer.dsp) || null,
         revenue: cents(a.earned), revenueRaw: a.earned,
+        direct: retailer && !(advertiserSeats[id] || []).length && !seats.length,
+        seatCount: seats.length,
+        seats: seats.map(({ revenueRaw, ...x }, i) => ({ ...x, share: seatShares[i] })),
         dealsOn: mine.map((d) => ({ id: d.id, name: d.name, dealType: d.dealType })).sort((x, y) => calc.compareDealTypes(x.dealType, y.dealType)),
         slotsCovered: slots.size,
         slotsWonPercent: opportunity > 0 ? calc.wholePercent(won, opportunity) : null,
