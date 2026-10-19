@@ -2065,13 +2065,43 @@ function rerunTrainRun(runId, gh = (args) => run("gh", args)) {
 
 const rerunKey = (workflow, sha, kind) => `${workflow}@${sha}:${kind}`;
 const withKey = (keys, key) => (keys || []).filter((k) => k !== key).concat([key]).slice(-20);
+// "Once" is per run: `<workflow>@<sha>:<kind>:<runId>`. Cards stamped before
+// that carry the bare `<workflow>@<sha>:<kind>`, which is still read.
+const rerunRunKey = (workflow, sha, kind, runId) => `${rerunKey(workflow, sha, kind)}:${runId}`;
+
+// The automation has already re-run this run (new per-run key), or re-ran
+// some run on this commit before keys named the run (old key). Pure.
+const alreadyRerun = (card, workflow, sha, runId) => {
+  const keys = (card && card.trainTestReruns) || [];
+  return keys.includes(rerunRunKey(workflow, sha, "rerun", runId)) || keys.includes(rerunKey(workflow, sha, "rerun"));
+};
+
+const rerunNote = (label, sha, url) =>
+  `The ${label} failed on this ticket's own commit ${sha.slice(0, 7)} (${url || "no link"}). ` +
+  `Re-running it once to rule out a flaky test before anything is sent back. Nothing to do yet.`;
+
+// The card that owns a run's head commit: its deployCommit, its newest
+// deployCommits entry, or (as recordCardTrainTests judges it) a later
+// generated-only commit that still counts as that card. Pure.
+function trainRunOwner(cards, commits, sha) {
+  if (!sha) return null;
+  const list = cards || [];
+  const direct = list.find((c) => c.deployCommit === sha) || list.find((c) => (c.deployCommits || []).slice(-1)[0] === sha);
+  if (direct) return direct;
+  return list.find((c) => evidenceCandidates(commits, c.deployCommit).some((e) => !e.stale && e.sha === sha)) || null;
+}
 
 // The card's own run passed on a later attempt after the automation re-ran
-// it (its `:rerun` key is on the card): returns the key to write, or null.
-// A person's re-run leaves no `:rerun` key, so it gets no note. Pure.
+// it (its rerun key is on the card): returns the key to write, or null.
+// A person's re-run leaves no key, so it gets no note. Pure.
 function flakyPassKey(card, workflow, r) {
   if (trainRunVerdict(r) !== "passed" || Number(r.attempt || 1) < 2 || !r.headSha) return null;
   const keys = card.trainTestReruns || [];
+  const perRun = rerunRunKey(workflow, r.headSha, "rerun", r.id);
+  if (keys.includes(perRun)) {
+    const flaky = rerunRunKey(workflow, r.headSha, "flaky", r.id);
+    return keys.includes(flaky) ? null : flaky;
+  }
   if (!keys.includes(rerunKey(workflow, r.headSha, "rerun")) || keys.includes(rerunKey(workflow, r.headSha, "flaky"))) return null;
   return rerunKey(workflow, r.headSha, "flaky");
 }
@@ -2152,14 +2182,13 @@ async function ejectRedCulprits(runsFor = memoByKey(fetchWorkflowRunsOnSha), fil
         if (!culprit) continue;
         const r = runs[culprit.deployCommit];
         const action = culpritAction(r);
-        const reKey = rerunKey(t.workflow, r.headSha || culprit.deployCommit, "rerun");
+        const reSha = r.headSha || culprit.deployCommit;
+        const reKey = rerunRunKey(t.workflow, reSha, "rerun", r.id);
         let rerunCouldNotStart = false;
         if (action === "rerun") {
-          if ((culprit.trainTestReruns || []).includes(reKey)) break; // already re-run; GitHub still shows attempt 1 — wait
+          if (alreadyRerun(culprit, t.workflow, reSha, r.id)) break; // already re-run; GitHub still shows attempt 1 — wait
           if (rerunTrainRun(r.id, gh)) {
-            const notes = await appendNote(culprit,
-              `The ${t.label} failed on this ticket's own commit ${culprit.deployCommit.slice(0, 7)} (${r.url || "no link"}). ` +
-              `Re-running it once to rule out a flaky test before anything is sent back. Nothing to do yet.`);
+            const notes = await appendNote(culprit, rerunNote(t.label, culprit.deployCommit, r.url));
             culprit.notes = notes;
             culprit.trainTestReruns = withKey(culprit.trainTestReruns, reKey);
             await patchItem(culprit.id, { notes, trainTestReruns: culprit.trainTestReruns, updatedAt: new Date().toISOString() });
@@ -2201,9 +2230,10 @@ async function ejectRedCulprits(runsFor = memoByKey(fetchWorkflowRunsOnSha), fil
 }
 
 async function reportTrainTestResults() {
+  const commitsOf = new Map();
   const cards = await runQuery({
     from: [{ collectionId: "backlogItems" }],
-    select: { fields: ["projectId", "title", "status", "deployBranch", "deployCommit", "deployCommits", "testsFailedSha", "testsFailedShas", "notes"].map((fieldPath) => ({ fieldPath })) },
+    select: { fields: ["projectId", "title", "status", "deployBranch", "deployCommit", "deployCommits", "testsFailedSha", "testsFailedShas", "trainTestReruns", "notes"].map((fieldPath) => ({ fieldPath })) },
     where: { fieldFilter: { field: { fieldPath: "status" }, op: "IN", value: { arrayValue: { values: [{ stringValue: "ready-for-testing" }, { stringValue: "ready-to-publish" }] } } } },
   });
   const byBranch = new Map();
@@ -2228,20 +2258,24 @@ async function reportTrainTestResults() {
     }
     let red = project ? (project.trainTestsRed || {}) : null;
     let redChanged = false;
+    // The card a run's head commit belongs to, judged as recordCardTrainTests
+    // does. Reads the train's commits once per branch; if it can't, only a
+    // card's own commit matches.
+    const ownerOfTestedRun = async (br, cardsOnBranch, sha) => {
+      if (!commitsOf.has(br)) commitsOf.set(br, await trainCommitsFor(br, cardsOnBranch.map((c) => c.deployCommit)).catch(() => []));
+      return trainRunOwner(cardsOnBranch, commitsOf.get(br), sha);
+    };
     for (const t of TRAIN_TEST_WORKFLOWS) {
       try {
         const testRun = newestRealRun(JSON.parse(run("gh", ["run", "list", "--repo", REPO, "--workflow", t.workflow, "--branch", branch,
           "--limit", "10", "--json", "databaseId,attempt,headSha,status,conclusion,url"]) || "[]")
           .map((r) => ({ ...r, id: r.databaseId })));
         if (!testRun) continue;
-        // A first failure is re-run once and treated as still running: no
-        // notes, trainTestsRed unchanged (the deploy gate already holds on a
-        // pending run). If the re-run cannot start, it is judged as before.
+        // A first failure on a run that still speaks for the head is re-run
+        // once (below, after the staleness check) and treated as still
+        // running: trainTestsRed unchanged (the deploy gate already holds on
+        // a pending run). If the re-run cannot start, it is judged as before.
         const afterRerun = trainRunVerdict(testRun) === "failed";
-        if (trainRunVerdict(testRun) === "rerun" && rerunTrainRun(testRun.id)) {
-          console.log(`[train-tests] ${branch}: ${t.workflow} red on ${String(testRun.headSha).slice(0, 7)} — re-running once before reporting`);
-          continue;
-        }
         let changedSince = null;
         if (testRun.headSha && testRun.headSha !== head) {
           const cmp = JSON.parse(run("gh", ["api", `repos/${REPO}/compare/${testRun.headSha}...${head}`,
@@ -2249,6 +2283,22 @@ async function reportTrainTestResults() {
           if (cmp.status === "ahead") changedSince = cmp.files || [];
         }
         const tested = testedHeadOf(testRun.headSha, head, changedSince);
+        if (trainRunVerdict(testRun) === "rerun" && tested === testRun.headSha) {
+          const owner = await ownerOfTestedRun(branch, trainCards, testRun.headSha);
+          if (owner && alreadyRerun(owner, t.workflow, testRun.headSha, testRun.id)) continue; // re-run already started; GitHub still shows attempt 1
+          if (rerunTrainRun(testRun.id)) {
+            console.log(`[train-tests] ${branch}: ${t.workflow} red on ${String(testRun.headSha).slice(0, 7)} — re-running once before reporting`);
+            if (!owner) {
+              console.log(`[train-tests] ${branch}: no train card owns ${String(testRun.headSha).slice(0, 7)}, so the re-run of ${t.workflow} is on no card`);
+            } else {
+              const key = rerunRunKey(t.workflow, testRun.headSha, "rerun", testRun.id);
+              owner.trainTestReruns = withKey(owner.trainTestReruns, key);
+              owner.notes = await appendNote(owner, rerunNote(t.label, testRun.headSha, testRun.url));
+              await patchItem(owner.id, { notes: owner.notes, trainTestReruns: owner.trainTestReruns, updatedAt: new Date().toISOString() });
+            }
+            continue;
+          }
+        }
         if (red) {
           const next = nextTrainTestsRed(red, t.workflow, testRun, tested, new Date().toISOString());
           if (next !== undefined) { red = next; redChanged = true; }
@@ -5456,6 +5506,7 @@ module.exports = {
   TRAIN_TEST_WORKFLOWS, trainTestFailureTargets, touchesConsoleTests,
   // test/train-rerun.test.js — a failed train test is re-run once before anyone acts on it
   trainRunVerdict, culpritAction, rerunTrainRun, trainFailureNotes, flakyPassKey, flakyNote, ejectRedCulprits,
+  reportTrainTestResults, trainRunOwner, alreadyRerun, rerunRunKey, fdoc,
   trainTestsFor, testedHeadOf, nextTrainTestsRed, trainTestGate, newestRealRun, pickRedCulprit,
   // test/train-eject-after-revert.test.js — a ticket is judged on a run that did not contain a reverted ticket
   afterRevertDispatches, cardEvidenceRun, evidenceCandidates,
