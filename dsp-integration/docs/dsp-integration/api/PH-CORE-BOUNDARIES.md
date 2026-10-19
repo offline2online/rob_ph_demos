@@ -201,8 +201,8 @@ provide one breaks something specific, named here.
   - **PH Core may write the default from computer vision** (ticket
     MuZ4KUSLJI2BIGbEV2pq, Rob, 4 Oct 2026): `PUT /admin/v1/display-types/{id}/default-vacd`
     `{defaultVacd}`. This **revises v3.1 row 4**, which said the default is
-    only the exchange's own setting (the contract text is updated
-    alongside this ticket). Precedence: **the automated score wins** — it
+    only the exchange's own setting (recorded in interface
+    contract v3.3, row 4). Precedence: **the automated score wins** — it
     replaces a manually set value and is stored with
     `phExtensions.defaultVacdSource = computer_vision`, so slots scored from
     it are `counted` (`qty.sourcetype` 1); a manual edit (Display Type
