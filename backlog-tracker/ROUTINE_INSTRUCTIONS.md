@@ -992,25 +992,39 @@ own `readyToDeploy` is information, not permission.
    `trainReady` and which tickets were on the train in your final report
    (see "When done" below), not what you watched happen.
 
-**Docs sync — check it before you call a project live (1 Oct 2026).** A
-project with a `repoFolder` has its `REQUIREMENTS.md` / `README.md` copied
-onto the board by the automation right after a train merges
-(`syncDocsAfterMerge`, `scripts/docs-sync-lib.js`), and the outcome is
-recorded as `projects/{id}.docsSync` = `{mergeCommit, requirementsCommit,
-readmeCommit, syncedAt, error}` (plus `lastMergeCommit` / `lastMergeAt`,
-stamped in the same write). It is returned by `get_project_docs`, and the
-board shows an amber **Docs behind main** chip when `error` is set or a
-merge is newer than the last sync. Because the merge happens after your
-session ends, you can't see it in the run that sets `trainReady`; but any
-later run that reports a project as live (a follow-up fire, a Ready for
+**Docs sync — check it before you call a project live (1 Oct 2026, reworked
+19 Oct 2026).** The automation copies a project's repo files onto the board
+(`scripts/docs-sync-lib.js`) in two places: right after that project's train
+merges (`syncDocsAfterMerge`), and at the end of every run whenever `main`
+has moved since the last complete pass (`syncDocsWhenMainMoves`), so a hand
+merge or another project's PR is covered too. The sweep's state is
+`systemStatus/docsSync` = `{lastSyncedMain, attemptedMain, attempts,
+failedProjects, checkedAt}`; a failed pass is retried on the same head, at
+most 5 times. The outcome is recorded as `projects/{id}.docsSync` =
+`{mergeCommit, requirementsCommit, readmeCommit, syncedAt, error, errorAt,
+attemptedCommit, mirroredDocs: [{docId, name, sourcePath, sourceCommit, ok,
+error}]}`, with `lastMergeCommit` / `lastMergeAt` stamped in the same write.
+`lastMergeCommit` now means **main's head at the last sync**, not the
+project's own last train merge; `requirementsCommit` / `readmeCommit` are
+each file's own last commit. A document already in step is not rewritten, a
+mirror over 20,000 characters (Requirements/README over 800,000) is refused
+before writing, and one bad mirror does not stop the rest. It is returned by
+`get_project_docs` (with `mirroredDocs`, `skipped`, `attemptedCommit`), and
+the board shows an amber **Docs behind main** chip when `error` is set.
+Any run that reports a project as live (a follow-up fire, a Ready for
 Testing presentation after a merge) must read `docsSync` first. If `error`
-is set, or `lastMergeCommit` differs from `docsSync.mergeCommit` with an
-older `syncedAt`, say so plainly: the project is merged but its board docs
-are behind, with the error text. Never answer it by retyping a long spec
-through `set_project_requirements`; the fix is the project's sync script
-(`npm run board:sync` in `dsp-integration/`, or `dsp-board.yml docs=sync`).
-A project with no folder (`repoFolderNotApplicable`) has no `docsSync`;
-that is normal, not a failure.
+is set, say so plainly: the project is merged but its board docs are
+behind, with the error text. Never answer it by retyping a long spec
+through `set_project_requirements`; the fix is to correct the cause (split
+an over-cap file with `sourceSlices`) and let the next run retry, or run the
+project's sync script (`npm run board:sync` in `dsp-integration/`, or
+`dsp-board.yml docs=sync`) — which writes content only, never `docsSync`.
+A project with no folder (`repoFolderNotApplicable`) gets a `docsSync` once
+it has something to sync: a mirrored document (`sourcePath`), a manifest,
+or a `sourcePath` on its `docs/requirements` or `docs/readme` document
+(that is where its Requirements/README are read from). Until then it has
+none; that is normal, not a failure. A project with nothing to sync is
+never touched, so it gets no chip.
 
 **Outcomes that are not a merge**, all recorded on the project itself as
 `trainStatus` + `trainNote`, visible without re-running anything:

@@ -242,7 +242,7 @@ const man = (o) => ({ manifest: { projectId: "p1", startHere: "readme", mirrors:
     assert.ok(r.ok, JSON.stringify(r));
     assert.strictEqual(b.calls.put.length, 0, "created, so never put, and the mirror pass skipped it");
     assert.strictEqual(b.projects.docsSync.manifestPath, "pf/board-docs.json");
-    assert.strictEqual(b.projects.docsSync.mirroredDocs, undefined);
+    assert.deepStrictEqual(b.projects.docsSync.mirroredDocs.map((m) => [m.docId, m.ok]), [["new1", true]], "listed once, from the reconcile, not again from the mirror pass");
   });
 
   await test("a refusal reaches docsSync.error so the Docs behind main chip shows it", async () => {

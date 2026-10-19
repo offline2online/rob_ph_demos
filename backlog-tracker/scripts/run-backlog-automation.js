@@ -54,7 +54,7 @@ const { buildIndexFromArticleFiles, validateIndexAgainstArticleFiles, serializeI
 // runs main() for real the moment it's required (see the bottom of this
 // file).
 const { trainLockShouldClear, trainHandoverReason } = require("../functions/train-lock");
-const { syncProjectDocs, resolveRepoFolder } = require("./docs-sync-lib");
+const { syncProjectDocs, syncAllProjectDocs, resolveRepoFolder } = require("./docs-sync-lib");
 const { hasIntakePlaceholder } = require("../functions/intake");
 
 const PROJECT_ID = "backlog-tracker-e4ed2";
@@ -3458,31 +3458,89 @@ function viewTrainPr(prNumber) {
 // projects/{id}.repoFolder, and records the outcome on projects/{id}.docsSync
 // (see docs-sync-lib.js) so a refusal shows on the board. Never throws: the
 // merge has already happened and must still finish bookkeeping.
+// The git half of the docs sync's io, shared by the post-merge sync and the
+// main-moved sweep: file text and a file's own last commit, both at `ref`.
+// `cwd` is only for tests that run it against a disposable repo.
+function gitDocsIo(ref, cwd) {
+  const opts = { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"], ...(cwd ? { cwd } : {}) };
+  return {
+    readFile: (p) => { try { return execFileSync("git", ["show", `${ref}:${p}`], opts); } catch { return null; } },
+    lastCommitFor: (p) => { try { return execFileSync("git", ["log", "-1", "--format=%H", ref, "--", p], opts).trim() || null; } catch { return null; } },
+    listFiles: () => execFileSync("git", ["ls-tree", "-r", "--name-only", ref], opts).split("\n").filter((p) => p.endsWith("board-docs.json")),
+  };
+}
+
+// The Firestore half, for one project.
+function projectDocsIo(project) {
+  return {
+    getProject: () => getProject(project.id),
+    patchProject: (fields) => patchProject(project.id, fields),
+    putDoc: (kind, fields) => putProjectDoc(project.id, kind, fields),
+    getDoc: (kind) => getProjectDoc(project.id, kind),
+    listProjectDocs: () => listProjectDocsFor(project.id),
+    putProjectDocContent: (docId, fields) => patchProjectDocFields(docId, fields),
+    getProjectDocContent: (docId) => getProjectDocById(docId),
+    getProjectDoc: (docId) => getProjectDocOrNull(docId),
+    createProjectDoc: (fields) => createProjectDocFields(fields),
+    now: () => new Date(),
+  };
+}
+
 async function syncDocsAfterMerge(project, mergeCommit) {
   try {
     let ref = mergeCommit;
     try { run("git", ["fetch", "origin", "main", "--quiet"]); } catch { /* use what we have */ }
     if (!ref) ref = run("git", ["rev-parse", "origin/main"]);
-    const result = await syncProjectDocs(project, ref, {
-      readFile: (p) => { try { return execFileSync("git", ["show", `${ref}:${p}`], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] }); } catch { return null; } },
-      lastCommitFor: (p) => { try { return run("git", ["log", "-1", "--format=%H", ref, "--", p]) || null; } catch { return null; } },
-      getProject: () => getProject(project.id),
-      patchProject: (fields) => patchProject(project.id, fields),
-      putDoc: (kind, fields) => putProjectDoc(project.id, kind, fields),
-      getDoc: (kind) => getProjectDoc(project.id, kind),
-      listProjectDocs: () => listProjectDocsFor(project.id),
-      putProjectDocContent: (docId, fields) => patchProjectDocFields(docId, fields),
-      getProjectDocContent: (docId) => getProjectDocById(docId),
-      getProjectDoc: (docId) => getProjectDocOrNull(docId),
-      createProjectDoc: (fields) => createProjectDocFields(fields),
-      listFiles: () => run("git", ["ls-tree", "-r", "--name-only", ref], { maxBuffer: 64 * 1024 * 1024 }).split("\n").filter((p) => p.endsWith("board-docs.json")),
-      now: () => new Date(),
-    });
+    const result = await syncProjectDocs(project, ref, { ...gitDocsIo(ref), ...projectDocsIo(project) });
     if (result.skipped) console.log(`[docs-sync] ${project.id}: skipped — ${result.skipped}`);
     else if (result.ok) console.log(`[docs-sync] ${project.id}: Requirements/README synced at ${ref.slice(0, 7)}, verified byte for byte`);
     else console.log(`[docs-sync] ${project.id}: ${scrubSecrets(result.error)} — recorded on the project as docsSync.error`);
   } catch (err) {
     console.log(`[docs-sync] ${project.id}: unexpected failure (${scrubSecrets(err.message)})`);
+  }
+}
+
+// Every run, last: if main has moved since the last complete pass, sync every
+// project's board docs at its head (docs-sync-lib.js, syncAllProjectDocs). A
+// train merge is covered by finishTrain; this covers everything else — a hand
+// merge, a hotfix, another project's PR. State: systemStatus/docsSync. Never
+// fails the run.
+async function syncDocsWhenMainMoves() {
+  try {
+    try { run("git", ["fetch", "origin", "main", "--quiet"]); } catch { /* use what we have */ }
+    const head = run("git", ["rev-parse", "origin/main"]);
+    const git = gitDocsIo(head);
+    const result = await syncAllProjectDocs({
+      head,
+      io: {
+        getState: async () => {
+          const res = await fetch(`${FIRESTORE_BASE}/systemStatus/docsSync`, { headers: await firestoreHeaders() });
+          if (res.status === 404) return null;
+          if (!res.ok) throw new Error(`GET systemStatus/docsSync failed: ${res.status} ${await res.text()}`);
+          return fdoc((await res.json()).fields || {});
+        },
+        putState: async (fields) => {
+          const fieldPaths = Object.keys(fields).map((k) => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
+          const res = await fetch(`${FIRESTORE_BASE}/systemStatus/docsSync?${fieldPaths}`, {
+            method: "PATCH",
+            headers: await firestoreHeaders(),
+            body: JSON.stringify({ fields: Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, tv(v)])) }),
+          });
+          if (!res.ok) throw new Error(`PATCH systemStatus/docsSync failed: ${res.status} ${await res.text()}`);
+        },
+        // Pointers and status only: a project's legacy markdown can be 200k chars.
+        listProjects: () => runQuery({
+          from: [{ collectionId: "projects" }],
+          select: { fields: ["archived", "name", "repoFolder", "repoFolderNotApplicable", "deployBranch", "docs", "docsSync"].map((fieldPath) => ({ fieldPath })) },
+        }),
+        forProject: (project) => ({ ...git, ...projectDocsIo(project) }),
+        now: () => new Date(),
+      },
+    });
+    if (result.skipped) console.log(`[docs-sync] main moved? no — ${result.skipped}`);
+    else console.log(`[docs-sync] main at ${head.slice(0, 7)}: synced ${result.synced.length} project(s)${result.failed.length ? `, ${result.failed.length} failed (${result.failed.join(", ")}) — attempt ${result.attempts}` : ""}`);
+  } catch (err) {
+    console.log(`[docs-sync] sweep failed (${scrubSecrets(err.message)})`);
   }
 }
 
@@ -4674,6 +4732,8 @@ async function main() {
   // A train left waiting on CI starts the next run itself (see followUpDue).
   dispatchFollowUpRun();
 
+  await syncDocsWhenMainMoves();
+
   await recordPipelineHealth("success");
 }
 
@@ -4716,8 +4776,8 @@ module.exports = {
   // test/train-sync.test.js — the train is brought up to date with main
   // before a ticket lands, and the patch's edits are carried across
   syncTrainWithMain, rebasePatchFilesOnto,
-  // test/docs-sync.test.js
-  syncDocsAfterMerge,
+  // test/docs-sync.test.js, test/docs-sync-all.test.js
+  syncDocsAfterMerge, gitDocsIo, syncDocsWhenMainMoves,
   // test/train-checks.test.js — a train merges only once e2e-quick passed
   trainChecksState, rollupState, REQUIRED_TRAIN_CHECKS, approveHeldRuns,
   // test/train-resume.test.js — GitHub-side cancellations re-run; red trains resume when green

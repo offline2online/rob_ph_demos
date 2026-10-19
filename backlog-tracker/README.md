@@ -665,6 +665,21 @@ for mirrors and declared status; board-only text is never touched.
 `test/board-docs-manifest.test.js` validates every manifest in the checkout,
 and a change to any `board-docs.json` starts the console tests.
 
+**Board docs sync.** The automation (`backlog-automation.yml`, every run)
+keeps every project's board documents in step with `main`, not only the
+project whose train just merged: `syncDocsWhenMainMoves()` in
+`scripts/run-backlog-automation.js` calls `syncAllProjectDocs()`
+(`scripts/docs-sync-lib.js`) whenever `main`'s head differs from
+`systemStatus/docsSync.lastSyncedMain`. It syncs each non-archived project
+that has something to sync (a repo folder with Requirements/README, a
+`sourcePath` on its Requirements/README document, a mirrored document, or a
+manifest), writes only what differs, reads it back byte for byte, and records
+`projects/{id}.docsSync`. `lastSyncedMain` advances only when every project
+succeeded; otherwise the same head is retried, at most 5 times. A mirror over
+20,000 characters is refused (`MIRROR_CAP`, matching `firestore.rules`):
+split it with `sourceSlices`. `dsp-integration/scripts/sync-board-docs.mjs`
+writes content only and no longer touches `docsSync`.
+
 **The New Project modal now asks for the repo folder alongside the name**
 (`np-repo-folder-input` in `public/index.html`, wired in `public/js/app.js`)
 — required by default, with an explicit "this project has no single

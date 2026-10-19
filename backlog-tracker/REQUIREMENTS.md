@@ -64,15 +64,17 @@ Cloud Functions, own Hosting site, own IAM/billing; see
   repoFolder?: string,            // repo-root-relative folder the project owns, no trailing slash — the join to GitHub that patchFiles paths resolve against
   repoFolderNotApplicable?: boolean, // true = deliberately no single folder (e.g. Backlog Tracker & FAQs)
   deployBranch?: string,          // the project's one integration branch, deploy/<folder> (the deployment train)
-  docsSync?: {                    // outcome of the post-merge sync of README/REQUIREMENTS into docs/{kind} (docs-sync-lib.js); error is null on success, or { skipped, at, mergeCommit } when the sync was refused
-    mergeCommit?: string, syncedAt?: timestamp, error?: string | null, errorAt?: timestamp, attemptedCommit?: string,
-    mirroredDocs?: string[],      // projectDocs ids refreshed from their sourcePath
+  docsSync?: {                    // outcome of the board docs sync (docs-sync-lib.js), after that project's train merge and whenever main moves; error is null on success, or { skipped, at, mergeCommit } when nothing could be synced
+    mergeCommit?: string,         // main's head when the sync last ran
+    requirementsCommit?: string | null, readmeCommit?: string | null, // each file's own last commit
+    syncedAt?: timestamp, error?: string | null, errorAt?: timestamp | null, attemptedCommit?: string,
+    mirroredDocs?: { docId: string, name: string, sourcePath: string, sourceCommit: string | null, ok: boolean, error: string | null }[], // one per mirror; a failed one does not stop the rest
     manifestPath?: string,        // the board-docs.json this sync reconciled (docs-sync-lib.js reconcileManifest); absent when the project has none
     unlisted?: { id: string, name: string }[], // up to 50 documents the manifest neither mirrors nor classifies (kind "generated" skipped)
   },
   startHereDocId?: string,        // "readme" | "requirements" | a projectDocs id — the manifest's startHere; written only by the sync, returned by list_projects, not in PROJECT_WRITABLE_FIELDS
-  lastMergeCommit?: string,       // main commit of the project's latest train merge
-  lastMergeAt?: timestamp,        // when that merge was processed
+  lastMergeCommit?: string,       // main's head at the project's last docs sync (written with docsSync)
+  lastMergeAt?: timestamp,        // when that sync ran
   notifyRequestedAt?: timestamp,  // bumped by the "Notify Claude" button
   notifyRequestedByEmail?: string | null, // the signed-in member who clicked — per-member routine binding lookup, see notifyOnProjectReadyForReview below (VNE6dxMu3h6jO3g6FNNB)
   notifyItemIds?: string[] | null, // optional subset picked via the Backlog column's own checkboxes — see below
@@ -273,6 +275,15 @@ root the way PR #185 did.
 `CATEGORIES` (fixed set, `backlog-tracker/public/js/app.js`): `Pricing &
 Offers`, `Product Assets`, `HQ Admin`, `Retail Admin`, `Menu Board`,
 `Backend / Infrastructure`, `Uncategorised`.
+
+`systemStatus/docsSync` — state of the board docs sweep that syncs every
+project's repo documents whenever `main` moves (members can read it; only
+the automation writes it): `{ lastSyncedMain: string | null, attemptedMain:
+string, attempts: number, failedProjects: string[], checkedAt: timestamp }`.
+`lastSyncedMain` advances to `attemptedMain` only when every project
+succeeded; otherwise the same head is retried, at most 5 attempts, and a new
+head resets `attempts`. Per-project outcomes are `projects/{id}.docsSync`
+above.
 
 Status pipeline and what each transition means:
 

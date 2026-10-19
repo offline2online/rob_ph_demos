@@ -497,7 +497,7 @@ async function rpc(token, method, params, id = 1) {
     try {
       let out = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "get_project_docs", arguments: { projectId: "proj1", include: ["readme"] } })).body.result.content[0].text);
       assert.strictEqual(out.docsSync, null, "a project the sync has never touched reports null");
-      proj.docsSync = { mergeCommit: "abc1234", requirementsCommit: "r1", readmeCommit: "m1", syncedAt: new Date("2026-10-01T05:30:00Z"), error: "over the board's limit", manifestPath: "x/board-docs.json", unlisted: [{ id: "d9", name: "Old note" }] };
+      proj.docsSync = { mergeCommit: "abc1234", requirementsCommit: "r1", readmeCommit: "m1", syncedAt: new Date("2026-10-01T05:30:00Z"), error: "over the board's limit", manifestPath: "x/board-docs.json", unlisted: [{ id: "d9", name: "Old note" }], attemptedCommit: "abc1234", skipped: "no repo folder", mirroredDocs: [{ docId: "m1", name: "Spec", sourcePath: "x/spec.md", sourceCommit: "s1", ok: false, error: "over the cap" }, { docId: "m2", name: "Ok", sourcePath: "x/ok.md", sourceCommit: "s2", ok: true, error: null }] };
       proj.lastMergeCommit = "abc1234";
       out = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "get_project_docs", arguments: { projectId: "proj1", include: ["readme"] } })).body.result.content[0].text);
       assert.strictEqual(out.docsSync.error, "over the board's limit");
@@ -506,6 +506,15 @@ async function rpc(token, method, params, id = 1) {
       assert.strictEqual(out.docsSync.lastMergeCommit, "abc1234");
       assert.strictEqual(out.docsSync.manifestPath, "x/board-docs.json");
       assert.deepStrictEqual(out.docsSync.unlisted, [{ id: "d9", name: "Old note" }]);
+      assert.strictEqual(out.docsSync.attemptedCommit, "abc1234");
+      assert.strictEqual(out.docsSync.skipped, "no repo folder");
+      assert.deepStrictEqual(out.docsSync.mirroredDocs, [
+        { docId: "m1", name: "Spec", sourcePath: "x/spec.md", sourceCommit: "s1", ok: false, error: "over the cap" },
+        { docId: "m2", name: "Ok", sourcePath: "x/ok.md", sourceCommit: "s2", ok: true, error: null },
+      ]);
+      delete proj.docsSync.mirroredDocs;
+      out = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "get_project_docs", arguments: { projectId: "proj1", include: ["readme"] } })).body.result.content[0].text);
+      assert.deepStrictEqual(out.docsSync.mirroredDocs, [], "a sync from before this field reports an empty list");
     } finally {
       proj.docsSync = before.docsSync; proj.lastMergeCommit = before.lastMergeCommit;
       if (proj.docsSync === undefined) delete proj.docsSync;

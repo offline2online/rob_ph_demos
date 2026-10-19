@@ -1,19 +1,32 @@
 "use strict";
-// Post-merge docs sync: after a deployment train lands on main, copy the
-// project's REQUIREMENTS.md and README.md at the merge commit onto the
-// board's projects/{id}/docs/{requirements|readme} documents (the project doc
-// itself keeps only a `docs` pointer), read them back, compare byte for byte,
-// and record the outcome on projects/{id}.docsSync so a refused or failed sync
-// is visible on the board instead of silent.
+// Board docs sync: copy a project's repo files onto the board and record the
+// outcome on projects/{id}.docsSync, so a refused or failed sync is visible
+// instead of silent. For one project: REQUIREMENTS.md and README.md go to
+// projects/{id}/docs/{requirements|readme} (the project doc keeps only a
+// `docs` pointer), each projectDocs document with a `sourcePath` is rewritten
+// from its repo file, and a board-docs.json manifest is reconciled. Every
+// write is read back and compared byte for byte; a document already in step
+// is not written at all.
+//
+// It runs from two places, both in run-backlog-automation.js:
+//   - syncProjectDocs, after a train merges (finishTrain), for that project;
+//   - syncAllProjectDocs, at the end of every run, whenever main's head has
+//     moved since the last complete pass. That covers every merge that did not
+//     come through a train (a hand merge, a hotfix, another project's PR).
+//     State lives in systemStatus/docsSync.
+// A project with a repo folder reads Requirements/README from that folder; one
+// without (repoFolderNotApplicable) reads them from the `sourcePath` already on
+// its docs/{requirements|readme} document.
 //
 // Why this exists: the only automatic sync was a `push` trigger, and a merge
 // made with the workflow's own GITHUB_TOKEN never fires one — PR #284
 // (1 Oct 2026) changed both files of the DSP project and nothing ran, while
 // the same project's board Requirements had been a 59-char placeholder since
-// 29 Sep after a refused write nobody saw.
+// 29 Sep after a refused write nobody saw. PR #403 (17 Oct) was hand-merged
+// and the board stayed old until that project's next train.
 //
-// Pure of I/O: every read/write is injected, so test/docs-sync.test.js drives
-// it with fakes. run-backlog-automation.js wires the real git and Firestore.
+// Pure of I/O: every read/write is injected, so test/docs-sync.test.js and
+// test/docs-sync-all.test.js drive it with fakes.
 
 const crypto = require("crypto");
 
@@ -26,6 +39,14 @@ const DOCS = [
 // Where a project keeps each file, relative to the repo root. The first that
 // exists at the commit wins. `<folder>/docs/<folder>/` is how the DSP project
 // lays out its requirements (dsp-integration/docs/dsp-integration/).
+// The caps firestore.rules enforces on a person's write (the automation's
+// service account bypasses them, so they are checked here): a projectDocs
+// contentMd (`contentMd.size() <= 20000`) and a docs/{requirements|readme}
+// contentMd (`<= 800000`). test/docs-sync.test.js compares both with the rules.
+const MIRROR_CAP = 20000;
+const CORE_DOC_CAP = 800000;
+const MAX_SYNC_ATTEMPTS = 5;
+
 function docCandidates(folder, name) {
   return [`${folder}/${name}`, `${folder}/docs/${folder}/${name}`, `${folder}/docs/${name}`];
 }
@@ -52,8 +73,11 @@ function cleanFolder(project) {
 
 // A skip used to be a log line only, so the board's "Docs behind main" chip
 // could not show it. Record it on the project; the next successful sync
-// replaces docsSync wholesale, which clears it. A project deliberately marked
-// repoFolderNotApplicable is not a problem to surface, so it stays silent.
+// replaces docsSync wholesale, which clears it. A project marked
+// repoFolderNotApplicable that has nothing to sync (no Requirements/README
+// sourcePath, no mirrored document, no manifest) is deliberately silent: there
+// is no problem to surface. Once it has any of those it is synced like any
+// other project and never reaches here.
 async function skip(project, mergeCommit, io, reason) {
   const result = { skipped: reason };
   if (project && project.repoFolderNotApplicable) return result;
@@ -98,32 +122,48 @@ function mirrorText(content, d) {
   return (d.sourcePrefix ? String(d.sourcePrefix) : "") + body;
 }
 
-async function syncMirroredDocs(project, mergeCommit, io, now, skipIds) {
-  const out = { synced: [], errors: [] };
-  if (typeof io.listProjectDocs !== "function") return out;
-  let docs;
-  try { docs = await io.listProjectDocs(); } catch (err) { out.errors.push(`could not list project documents (${String(err && err.message || err).slice(0, 200)})`); return out; }
-  for (const d of docs || []) {
-    if (skipIds && skipIds.has(d.id)) continue; // reconcileManifest owns it (cap-checked, cut by the manifest's own slices)
+// The projectDocs of a project that carry a sourcePath (the manifest-handled
+// ids excluded). -> { docs, error }
+async function listMirrors(io, skipIds) {
+  if (typeof io.listProjectDocs !== "function") return { docs: [] };
+  try {
+    const all = (await io.listProjectDocs()) || [];
+    return { docs: all.filter((d) => String(d.sourcePath || "").trim() && !(skipIds && skipIds.has(d.id))) };
+  } catch (err) {
+    return { docs: [], error: `could not list project documents (${String(err && err.message || err).slice(0, 200)})` };
+  }
+}
+
+// -> { results: [{ docId, name, sourcePath, sourceCommit, ok, error }], errors }
+// A document already holding the file's text, path and last commit is not
+// written. One bad mirror never stops the rest.
+async function syncMirroredDocs(project, mergeCommit, io, now, listed) {
+  const out = { results: [], errors: [] };
+  if (listed.error) out.errors.push(listed.error);
+  for (const d of listed.docs) {
     const sp = String(d.sourcePath || "").trim().replace(/^\/+/, "");
-    if (!sp) continue;
     const label = `"${d.name || d.id}" ← ${sp}`;
-    if (sp.includes("..")) { out.errors.push(`${label}: sourcePath must stay inside the repo`); continue; }
+    const res = { docId: d.id, name: d.name || "", sourcePath: sp, sourceCommit: null, ok: false, error: null };
+    out.results.push(res);
+    const fail = (msg) => { res.error = String(msg).slice(0, 200); out.errors.push(`${label}: ${res.error}`); };
+    if (sp.includes("..")) { fail("sourcePath must stay inside the repo"); continue; }
     let content = null;
     try { content = io.readFile(sp); } catch { content = null; }
-    if (typeof content !== "string") { out.errors.push(`${label}: file not found at ${String(mergeCommit).slice(0, 7)}`); continue; }
-    try {
-      content = mirrorText(content, d);
-    } catch (err) { out.errors.push(`${label}: ${String(err && err.message || err).slice(0, 200)}`); continue; }
+    if (typeof content !== "string") { fail(`file not found at ${String(mergeCommit).slice(0, 7)}`); continue; }
+    try { content = mirrorText(content, d); } catch (err) { fail(err && err.message || err); continue; }
+    if (content.length > MIRROR_CAP) { fail(`${content.length} chars, over the ${MIRROR_CAP} the board allows a project document — split it with sourceSlices`); continue; }
     try {
       const sourceCommit = io.lastCommitFor(sp) || mergeCommit;
-      await io.putProjectDocContent(d.id, { contentMd: content, updatedAt: now, sourceCommit });
-      const after = await io.getProjectDocContent(d.id);
-      if (!after || (after.contentMd || "") !== content) throw new Error("wrote, but the board's copy does not match byte for byte");
-      out.synced.push(`${d.id}@${String(sourceCommit).slice(0, 7)}`);
-    } catch (err) {
-      out.errors.push(`${label}: ${String(err && err.message || err).slice(0, 200)}`);
-    }
+      res.sourceCommit = sourceCommit;
+      const have = await io.getProjectDocContent(d.id);
+      const inStep = have && have.contentMd === content && have.sourcePath === sp && have.sourceCommit === sourceCommit;
+      if (!inStep) {
+        await io.putProjectDocContent(d.id, { contentMd: content, sourcePath: sp, updatedAt: now, sourceCommit });
+        const after = await io.getProjectDocContent(d.id);
+        if (!after || (after.contentMd || "") !== content) throw new Error("wrote, but the board's copy does not match byte for byte");
+      }
+      res.ok = true;
+    } catch (err) { fail(err && err.message || err); }
   }
   return out;
 }
@@ -135,7 +175,7 @@ async function syncMirroredDocs(project, mergeCommit, io, now, skipIds) {
 // by hand and copying its id into a script. reconcileManifest() runs at the
 // start of every post-merge sync, folder or not. Never deletes anything.
 const MANIFEST_NAME = "board-docs.json";
-const BOARD_DOC_CAP = 20000; // firestore.rules: projectDocs.contentMd; the service account bypasses it, so check here
+const BOARD_DOC_CAP = MIRROR_CAP; // firestore.rules: projectDocs.contentMd; the service account bypasses it, so check here
 const KEY_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const STATUSES = ["current", "working", "superseded"];
 const MAX_UNLISTED = 50;
@@ -237,7 +277,7 @@ const same = (a, b) => JSON.stringify(a === undefined ? null : a) === JSON.strin
 // Returns { errors, handled:Set<docId>, startHereDocId, unlisted, written, created }. Never throws.
 async function reconcileManifest(project, mergeCommit, found, io, now) {
   const { manifest, path: manifestPath } = found;
-  const out = { errors: [], handled: new Set(), startHereDocId: null, unlisted: [], written: [], created: [], manifestPath };
+  const out = { errors: [], handled: new Set(), startHereDocId: null, unlisted: [], written: [], created: [], results: [], manifestPath };
   const bad = validateManifest(manifest);
   if (bad.length) { out.errors.push(`${manifestPath}: ${bad.join("; ")}`.slice(0, 600)); return out; }
   let docs;
@@ -299,7 +339,11 @@ async function reconcileManifest(project, mergeCommit, found, io, now) {
         const after = await io.getProjectDoc(id);
         if (!after || (after.contentMd || "") !== text) throw new Error("wrote, but the board's copy does not match byte for byte");
       }
-    } catch (err) { fail(label, err); }
+      out.results.push({ docId: id, name: entry.name, sourcePath: entry.path, sourceCommit, ok: true, error: null });
+    } catch (err) {
+      fail(label, err);
+      out.results.push({ docId: entry.id || null, name: entry.name, sourcePath: entry.path, sourceCommit: null, ok: false, error: String(err && err.message || err).slice(0, 200) });
+    }
   }
 
   for (const b of manifest.boardDocs || []) {
@@ -333,89 +377,102 @@ async function reconcileManifest(project, mergeCommit, found, io, now) {
   return out;
 }
 
+// Where Requirements/README come from. A project with a repo folder reads them
+// from it (docCandidates). One without reads the `sourcePath` already on its
+// docs/{kind} document — repo-root-relative, no "..", and the file must exist
+// at the commit. -> { found: [{kind,name,commitKey,path,content}], errors }
+async function coreSources(project, folder, io, mergeCommit) {
+  const out = { found: [], errors: [] };
+  for (const doc of DOCS) {
+    if (folder) {
+      for (const p of docCandidates(folder, doc.name)) {
+        let content = null;
+        try { content = io.readFile(p); } catch { content = null; }
+        if (typeof content === "string") { out.found.push({ ...doc, path: p, content }); break; }
+      }
+      continue;
+    }
+    let sp = "";
+    try { const cur = await io.getDoc(doc.kind); sp = String(cur && cur.sourcePath || "").trim().replace(/^\/+/, ""); } catch { sp = ""; }
+    if (!sp) continue;
+    if (sp.includes("..")) { out.errors.push(`${doc.name}: sourcePath ${sp} must stay inside the repo`); continue; }
+    let content = null;
+    try { content = io.readFile(sp); } catch { content = null; }
+    if (typeof content !== "string") { out.errors.push(`${doc.name}: ${sp} not found at ${String(mergeCommit).slice(0, 7)}`); continue; }
+    out.found.push({ ...doc, path: sp, content });
+  }
+  return out;
+}
+
 // io: { readFile(path) -> string|null, lastCommitFor(path) -> sha|null,
 //       getProject() -> project doc, patchProject(fields) -> Promise,
 //       putDoc(kind, fields) -> Promise  (writes projects/{id}/docs/{kind}),
-//       getDoc(kind) -> {contentMd,...}|null, now() -> Date }
+//       getDoc(kind) -> {contentMd,sourcePath,sourceCommit,...}|null, now() -> Date,
+//       listProjectDocs / putProjectDocContent / getProjectDocContent (mirrors),
+//       getProjectDoc / createProjectDoc / listFiles (manifest) }
 // Returns { skipped } | { ok: true, docsSync } | { ok: false, error }. Never throws.
 async function syncProjectDocs(project, mergeCommit, io) {
+  const short = String(mergeCommit).slice(0, 7);
   // The manifest runs first, folder or not (no manifest = today's behaviour).
   let manifestRun = null;
   const found0 = findManifest(project, io);
-  if (found0.error) manifestRun = { errors: [found0.error], handled: new Set(), unlisted: [], manifestPath: null, startHereDocId: null };
+  if (found0.error) manifestRun = { errors: [found0.error], handled: new Set(), unlisted: [], results: [], manifestPath: null, startHereDocId: null };
   else if (!found0.none) manifestRun = await reconcileManifest(project, mergeCommit, found0, io, io.now());
   const folder = cleanFolder(project);
-  const manifestOnly = async () => {
-    const now = io.now();
-    const docsSync = { mergeCommit, syncedAt: now, error: null, manifestPath: manifestRun.manifestPath, unlisted: manifestRun.unlisted };
-    if (manifestRun.errors.length) Object.assign(docsSync, { error: `Docs sync at ${String(mergeCommit).slice(0, 7)}: ${manifestRun.errors.join("; ")}`.slice(0, 900), errorAt: now, attemptedCommit: mergeCommit });
-    const fields = { docsSync, lastMergeCommit: mergeCommit, lastMergeAt: now };
-    if (manifestRun.startHereDocId) fields.startHereDocId = manifestRun.startHereDocId;
-    try { await io.patchProject(fields); } catch (err) { return { ok: false, error: `Docs sync at ${String(mergeCommit).slice(0, 7)} failed: ${String(err && err.message || err).slice(0, 300)}` }; }
-    return docsSync.error ? { ok: false, error: docsSync.error } : { ok: true, docsSync };
-  };
-  if (!folder) return manifestRun ? manifestOnly() : skip(project, mergeCommit, io, "no repo folder");
-  const found = [];
-  for (const doc of DOCS) {
-    for (const p of docCandidates(folder, doc.name)) {
-      let content = null;
-      try { content = io.readFile(p); } catch { content = null; }
-      if (typeof content === "string") { found.push({ ...doc, path: p, content }); break; }
-    }
+  const core = await coreSources(project, folder, io, mergeCommit);
+  const listed = await listMirrors(io, manifestRun && manifestRun.handled);
+  if (!manifestRun && !core.found.length && !core.errors.length && !listed.docs.length && !listed.error) {
+    if (!folder) return skip(project, mergeCommit, io, "no repo folder");
+    return skip(project, mergeCommit, io, `no REQUIREMENTS.md or README.md under ${folder}/`);
   }
-  if (!found.length) return manifestRun ? manifestOnly() : skip(project, mergeCommit, io, `no REQUIREMENTS.md or README.md under ${folder}/`);
 
   const now = io.now();
   const prev = project.docsSync && typeof project.docsSync === "object" ? project.docsSync : {};
+  const errors = [...core.errors];
+  const pointers = Object.assign({}, project.docs && typeof project.docs === "object" ? project.docs : {});
+  const commits = {};
+  let wrote = false;
   try {
-    const pointers = Object.assign({}, project.docs && typeof project.docs === "object" ? project.docs : {});
-    for (const d of found) {
-      const sourceCommit = io.lastCommitFor(d.path) || mergeCommit;
-      const sha256 = crypto.createHash("sha256").update(d.content, "utf8").digest("hex");
-      await io.putDoc(d.kind, {
-        contentMd: d.content,
-        updatedAt: now,
-        updatedByEmail: "backlog-automation",
-        sourceCommit,
-        sourcePath: d.path,
-        chars: d.content.length,
-        sha256,
-      });
-      d.sourceCommit = sourceCommit;
-      pointers[d.kind] = { chars: d.content.length, sha256, sourceCommit, updatedAt: now };
+    for (const d of core.found) {
+      try {
+        if (d.content.length > CORE_DOC_CAP) throw new Error(`${d.content.length} chars, over the ${CORE_DOC_CAP} the board allows — split it with sourceSlices`);
+        const sourceCommit = io.lastCommitFor(d.path) || mergeCommit;
+        const have = await io.getDoc(d.kind);
+        const inStep = have && have.contentMd === d.content && have.sourcePath === d.path && have.sourceCommit === sourceCommit;
+        if (!inStep) {
+          const sha256 = crypto.createHash("sha256").update(d.content, "utf8").digest("hex");
+          await io.putDoc(d.kind, { contentMd: d.content, updatedAt: now, updatedByEmail: "backlog-automation", sourceCommit, sourcePath: d.path, chars: d.content.length, sha256 });
+          // Read it back: a sync that reports success without checking is
+          // worse than none.
+          const after = await io.getDoc(d.kind);
+          if (!after || (after.contentMd || "") !== d.content) throw new Error(`wrote, but the board's ${d.kind} does not match ${d.path} byte for byte`);
+          pointers[d.kind] = { chars: d.content.length, sha256, sourceCommit, updatedAt: now };
+          wrote = true;
+        }
+        commits[d.commitKey] = sourceCommit;
+      } catch (err) { errors.push(`${d.name}: ${String(err && err.message || err).slice(0, 300)}`); }
     }
-    await io.patchProject({ docs: pointers, updatedAt: now });
-    // Read it back: a sync that reports success without checking is worse
-    // than none.
-    const bad = [];
-    for (const d of found) {
-      const after = await io.getDoc(d.kind);
-      if (!after || (after.contentMd || "") !== d.content) bad.push(d);
-    }
-    if (bad.length) throw new Error(`wrote, but the board's ${bad.map((d) => d.kind).join(" and ")} does not match ${bad.map((d) => d.path).join(" / ")} byte for byte`);
-    const docsSync = { mergeCommit, syncedAt: now, error: null };
-    for (const d of DOCS) {
-      const hit = found.find((f) => f.kind === d.kind);
-      docsSync[d.commitKey] = hit ? hit.sourceCommit : (prev[d.commitKey] || null);
-    }
-    const mirrors = await syncMirroredDocs(project, mergeCommit, io, now, manifestRun && manifestRun.handled);
+    if (wrote) await io.patchProject({ docs: pointers, updatedAt: now });
+    const docsSync = { mergeCommit, syncedAt: now, error: null, errorAt: null, attemptedCommit: mergeCommit };
+    for (const d of DOCS) docsSync[d.commitKey] = commits[d.commitKey] || prev[d.commitKey] || null;
+    const mirrors = await syncMirroredDocs(project, mergeCommit, io, now, listed);
+    docsSync.mirroredDocs = [...(manifestRun ? manifestRun.results : []), ...mirrors.results];
+    errors.push(...mirrors.errors);
     if (manifestRun) {
       docsSync.manifestPath = manifestRun.manifestPath;
       docsSync.unlisted = manifestRun.unlisted;
-      mirrors.errors.push(...manifestRun.errors);
+      errors.push(...manifestRun.errors);
     }
-    if (mirrors.errors.length) {
-      const error = `Docs sync at ${String(mergeCommit).slice(0, 7)}: ${mirrors.errors.join("; ")}`.slice(0, 900);
-      Object.assign(docsSync, { error, errorAt: now, attemptedCommit: mergeCommit });
+    if (errors.length) {
+      docsSync.error = `Docs sync at ${short}: ${errors.join("; ")}`.slice(0, 900);
+      docsSync.errorAt = now;
     }
-    if (mirrors.synced.length) docsSync.mirroredDocs = mirrors.synced;
     const finalFields = { docsSync, lastMergeCommit: mergeCommit, lastMergeAt: now };
     if (manifestRun && manifestRun.startHereDocId) finalFields.startHereDocId = manifestRun.startHereDocId;
     await io.patchProject(finalFields);
-    if (mirrors.errors.length) return { ok: false, error: docsSync.error };
-    return { ok: true, docsSync };
+    return docsSync.error ? { ok: false, error: docsSync.error } : { ok: true, docsSync };
   } catch (err) {
-    const error = `Docs sync at ${String(mergeCommit).slice(0, 7)} failed: ${String(err && err.message || err).slice(0, 600)}`;
+    const error = `Docs sync at ${short} failed: ${String(err && err.message || err).slice(0, 600)}`;
     try {
       await io.patchProject({
         docsSync: { ...prev, error, errorAt: now, attemptedCommit: mergeCommit },
@@ -426,4 +483,73 @@ async function syncProjectDocs(project, mergeCommit, io) {
   }
 }
 
-module.exports = { syncProjectDocs, reconcileManifest, validateManifest, findManifest, mirrorSpec, isManifestPath, MANIFEST_NAME, BOARD_DOC_CAP, mirrorText, docCandidates, cleanFolder, resolveRepoFolder, DOCS };
+// Does the project have anything for the sweep to sync at this commit? A
+// folder only counts when one of its Requirements/README candidates exists
+// there, so a project that never had repo docs is not touched (and gets no
+// "skipped" chip).
+async function hasSomethingToSync(project, io) {
+  const folder = cleanFolder(project);
+  if (folder) {
+    for (const doc of DOCS) {
+      for (const p of docCandidates(folder, doc.name)) {
+        let c = null;
+        try { c = io.readFile(p); } catch { c = null; }
+        if (typeof c === "string") return true;
+      }
+    }
+  } else {
+    for (const doc of DOCS) {
+      try { const cur = await io.getDoc(doc.kind); if (cur && String(cur.sourcePath || "").trim()) return true; } catch { /* next */ }
+    }
+  }
+  const found = findManifest(project, io);
+  if (!found.none) return true;
+  const listed = await listMirrors(io);
+  return listed.docs.length > 0 || !!listed.error;
+}
+
+// The sweep: when main's head has moved since the last pass that fully
+// succeeded, sync every non-archived project that has something to sync.
+// State is systemStatus/docsSync: { lastSyncedMain, attemptedMain, attempts,
+// failedProjects, checkedAt }. lastSyncedMain advances only when every project
+// succeeded; otherwise the same head is retried on the next run, at most
+// MAX_SYNC_ATTEMPTS times (the failure itself stays on each project's
+// docsSync.error). A new head resets the count.
+// io: { getState(), putState(fields), listProjects() -> [project],
+//       forProject(project) -> the per-project io syncProjectDocs takes, now() }
+// Never throws on a project; a state or listing failure rejects.
+async function syncAllProjectDocs({ head, io }) {
+  if (!head) return { skipped: "no head" };
+  const state = (await io.getState()) || {};
+  if (state.lastSyncedMain === head) return { skipped: "main unchanged" };
+  const attempts = state.attemptedMain === head ? Number(state.attempts) || 0 : 0;
+  if (attempts >= MAX_SYNC_ATTEMPTS) return { skipped: `gave up after ${attempts} attempts at ${String(head).slice(0, 7)}` };
+  const projects = ((await io.listProjects()) || []).filter((p) => p && !p.archived);
+  const failed = [];
+  const synced = [];
+  for (const project of projects) {
+    try {
+      const pio = io.forProject(project);
+      // Already complete at this head (finishTrain got there first, or an
+      // earlier attempt of this sweep did): nothing to redo.
+      if (project.docsSync && project.docsSync.mergeCommit === head && !project.docsSync.error && !project.docsSync.skipped) continue;
+      if (!(await hasSomethingToSync(project, pio))) continue;
+      const r = await syncProjectDocs(project, head, pio);
+      if (r.ok === false) failed.push(project.id);
+      else if (r.ok) synced.push(project.id);
+    } catch (err) {
+      failed.push(project.id);
+    }
+  }
+  const ok = failed.length === 0;
+  await io.putState({
+    lastSyncedMain: ok ? head : (state.lastSyncedMain || null),
+    attemptedMain: head,
+    attempts: attempts + 1,
+    failedProjects: failed,
+    checkedAt: io.now(),
+  });
+  return { ok, head, synced, failed, attempts: attempts + 1 };
+}
+
+module.exports = { syncProjectDocs, syncAllProjectDocs, MIRROR_CAP, CORE_DOC_CAP, MAX_SYNC_ATTEMPTS, reconcileManifest, validateManifest, findManifest, mirrorSpec, isManifestPath, MANIFEST_NAME, BOARD_DOC_CAP, mirrorText, docCandidates, cleanFolder, resolveRepoFolder, DOCS };

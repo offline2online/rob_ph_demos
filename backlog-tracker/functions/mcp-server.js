@@ -2301,7 +2301,7 @@ const TOOLS = [
   },
   {
     name: "get_project_docs",
-    description: "A project's Requirements and README markdown, its additional documents, and every interface contract it shares with another project. Also docsSync: whether the board copy of Requirements/README is in step with main after the last deploy (error is why a sync was refused). Returns every document's FULL text, which for a project with many or large documents is hundreds of thousands of characters — for those, use list_project_documents (no text, with search) and get_project_document (one document, paged or by section) instead.",
+    description: "A project's Requirements and README markdown, its additional documents, and every interface contract it shares with another project. Also docsSync: whether the board copies of Requirements/README and every mirrored document are in step with main. It refreshes whenever main moves (not only after that project's own deploy); mergeCommit is the head last checked, error is why a sync was refused, attemptedCommit the commit that failed, skipped why nothing was synced, and mirroredDocs one {docId, name, sourcePath, sourceCommit, ok, error} per mirror. Returns every document's FULL text, which for a project with many or large documents is hundreds of thousands of characters — for those, use list_project_documents (no text, with search) and get_project_document (one document, paged or by section) instead.",
     scope: "board.read",
     inputSchema: {
       type: "object",
@@ -2339,6 +2339,11 @@ const TOOLS = [
             error: ds.error || null,
             errorAt: tsToISO(ds.errorAt),
             manifestPath: ds.manifestPath || null,
+            attemptedCommit: ds.attemptedCommit || null,
+            skipped: ds.skipped || null,
+            mirroredDocs: Array.isArray(ds.mirroredDocs)
+              ? ds.mirroredDocs.filter((m) => m && typeof m === "object").map((m) => ({ docId: m.docId || null, name: m.name || "", sourcePath: m.sourcePath || null, sourceCommit: m.sourceCommit || null, ok: m.ok === true, error: m.error || null }))
+              : [],
             unlisted: Array.isArray(ds.unlisted) ? ds.unlisted.map((u) => ({ id: u && u.id || null, name: u && u.name || "" })) : [],
             lastMergeCommit: p.lastMergeCommit || null,
             lastMergeAt: tsToISO(p.lastMergeAt),
