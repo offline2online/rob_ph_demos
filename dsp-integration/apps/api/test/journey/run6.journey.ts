@@ -34,6 +34,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { fileURLToPath } from 'node:url'
 import { multipart } from '../media'
 import { BAD, CANVAS, campaignBody, versions, writePackage } from './fixtures'
+import { type CaseResult, crashCase, journeyCasesFile, StopRun, type Status } from './journey-cases'
 
 const API_DIR = fileURLToPath(new URL('../../', import.meta.url))
 const MOCKS_DIR = resolve(API_DIR, '../dsp-mocks')
@@ -49,15 +50,12 @@ const ADVERTISER_NAME = 'Mondelez International'
 const START = new Date('2026-10-01T10:00:00.000Z')
 
 /* ---- results ---------------------------------------------------------- */
-type Status = 'pass' | 'fail' | 'known-gap' | 'skipped'
-interface CaseResult { caseId: string; title: string; status: Status; expected: string; actual: string; phase: number }
 const results: CaseResult[] = []
 let currentPhase = 0
 const record = (caseId: string, title: string, ok: boolean, expected: string, actual: string, status: Status = ok ? 'pass' : 'fail') => {
   results.push({ caseId, title, status, expected, actual, phase: currentPhase })
   console.log(`  ${status === 'pass' ? 'PASS' : status === 'fail' ? 'FAIL' : status.toUpperCase()}  ${caseId} — ${title}${ok ? '' : `\n        expected: ${expected}\n        actual:   ${actual}`}`)
 }
-class StopRun extends Error {}
 const must = (caseId: string, title: string, ok: boolean, expected: string, actual: string) => {
   record(caseId, title, ok, expected, actual)
   if (!ok) throw new StopRun(`${caseId} failed; the later phases depend on it.`)
@@ -413,14 +411,16 @@ try {
 } finally {
   stopAll()
 }
+const crash = crashCase(fatal)
+const cases = journeyCasesFile(results, fatal)
 const counts = { pass: 0, fail: 0, 'known-gap': 0, skipped: 0 }
-for (const r of results) counts[r.status]++
-const out = { run: 'Run 6 — full user journey', startedAt: startedAt.toISOString(), finishedAt: new Date().toISOString(), commit: process.env.GITHUB_SHA ?? null, command: 'npm run e2e:journey', counts, stopped: fatal ? String((fatal as Error).message) : null, cases: results }
+for (const r of cases) counts[r.status]++
+const out = { run: 'Run 6 — full user journey', startedAt: startedAt.toISOString(), finishedAt: new Date().toISOString(), commit: process.env.GITHUB_SHA ?? null, command: 'npm run e2e:journey', counts, stopped: fatal ? String((fatal as Error).message) : null, cases: crash ? [...results, { caseId: crash.caseId, title: crash.title, status: crash.status, expected: crash.expected, actual: crash.actual, phase: currentPhase }] : results }
 const resultsDir = join(ROOT, 'results')
 mkdirSync(resultsDir, { recursive: true })
 const file = join(resultsDir, `journey-${startedAt.toISOString().replace(/[:.]/g, '-')}.json`)
 writeFileSync(file, JSON.stringify(out, null, 2) + '\n')
 mkdirSync(dirname(casesFile), { recursive: true })
-writeFileSync(casesFile, JSON.stringify(results.map((r) => ({ id: r.caseId, caseId: r.caseId, run: 'Run 6', title: r.title, status: r.status, expected: r.expected, actual: r.actual, repro: 'npm run e2e:journey' })), null, 2) + '\n')
+writeFileSync(casesFile, JSON.stringify(cases, null, 2) + '\n')
 console.log(`\n${counts.pass} pass · ${counts.fail} fail · ${counts['known-gap']} known gap · ${counts.skipped} skipped${fatal ? ` · stopped: ${(fatal as Error).message}` : ''}\nResults: ${file}`)
 process.exit(counts.fail > 0 || (fatal && !(fatal instanceof StopRun)) ? 1 : 0)

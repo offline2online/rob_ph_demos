@@ -1,7 +1,7 @@
 /* The bench gate's comparison, pure so it can be tested (gate.ts runs the
    shapes and writes the results). One case per metric: the case ids are
-   `bench:<shape>:<label>:<rps|p50|ms>` and the titles are what file-e2e-bugs
-   files as "Perf: <shape> <endpoint> — <before> → <after>". */
+   `bench:<shape>:<label>:<rps|p50|ms>`; file-e2e-bugs files one ticket per
+   shape, not per metric (see gate.ts and bug-plan.mjs). */
 export interface Shape { args: string; note: string; rps: Record<string, number>; p50: Record<string, number>; ms: Record<string, number> }
 export type Kind = 'rps' | 'p50' | 'ms'
 export interface BenchCase { caseId: string; id: string; run: 'Bench'; title: string; status: 'pass' | 'fail'; expected: string; actual: string; repro: string; shape: string; label: string; kind: Kind; baseline?: number; value?: number }
