@@ -1823,7 +1823,7 @@ const TOOLS = [
   },
   {
     name: "list_projects",
-    description: "Every project/program on the board, with a short description of what it covers and how many tickets sit in each pipeline column. Use this to find the projectId other tools need, and to map a loose reference (\"the FAQ backlog\", \"the DSP project\") to the right project.",
+    description: "Every project/program on the board, with a short description of what it covers and how many tickets sit in each pipeline column. Use this to find the projectId other tools need, and to map a loose reference (\"the FAQ backlog\", \"the DSP project\") to the right project. startHereDocId is the document to read first when taking a project over (read it with get_project_document); null when the project declares none.",
     scope: "board.read",
     inputSchema: {
       type: "object",
@@ -4018,9 +4018,102 @@ const TOOLS_BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));
 // SSE connection is billed wall-clock and dies at the instance's timeout
 // anyway.
 
+// ── Prompts ──────────────────────────────────────────────────────────────
+// A person starts one (a slash command in Claude Code, a prompt to attach in
+// Claude Desktop / claude.ai); an agent never calls prompts/get on its own,
+// which is why SERVER_INSTRUCTIONS says the same thing in a sentence.
+// Read-only for every role, and nothing is written, not even mcpAuditLog.
+const HANDOVER_MAX = 20000;
+const HANDOVER_OUTLINE_MAX = 60;
+const HANDOVER_AMBIGUOUS_LISTED = 20;
+
+async function buildProjectHandover(args) {
+  const ask = args && typeof args.project === "string" ? args.project.trim() : "";
+  if (!ask) return { error: "Missing required argument: project (a project id or name)." };
+  const projects = [...(await loadProjectsById()).values()];
+  const want = ask.toLowerCase();
+  let hits = projects.filter((p) => p.id === ask);
+  if (!hits.length) hits = projects.filter((p) => String(p.name || "").toLowerCase() === want);
+  if (!hits.length) hits = projects.filter((p) => String(p.name || "").toLowerCase().startsWith(want));
+  if (!hits.length) return { error: `No project matches "${ask}". Call list_projects for the names.` };
+  if (hits.length > 1) {
+    const names = hits.slice(0, HANDOVER_AMBIGUOUS_LISTED).map((p) => p.name || p.id);
+    return { error: `"${ask}" matches ${hits.length} projects: ${names.join(", ")}${hits.length > names.length ? ", …" : ""}. Use a longer name or the project id.` };
+  }
+  const p = hits[0];
+
+  const counts = {};
+  (await db().collection("backlogItems").where("projectId", "==", p.id).get()).forEach((d) => {
+    const st = (d.data() || {}).status || "backlog";
+    if (st !== "archived") counts[st] = (counts[st] || 0) + 1;
+  });
+  const docs = [];
+  (await db().collection("projectDocs").where("projectId", "==", p.id).get()).forEach((d) => {
+    const v = d.data() || {};
+    docs.push({ id: d.id, name: v.name || d.id, sourcePath: v.sourcePath || null });
+  });
+  docs.sort((a, b) => a.name.localeCompare(b.name));
+  const startId = p.startHereDocId || null;
+  const startDoc = startId ? docs.find((d) => d.id === startId) : null;
+  if (startDoc) docs.splice(docs.indexOf(startDoc), 1);
+  const ifaces = [];
+  (await db().collection("interfaces").where("projectIds", "array-contains", p.id).get()).forEach((d) => ifaces.push((d.data() || {}).name || d.id));
+  ifaces.sort((a, b) => a.localeCompare(b));
+  const req = await loadDocumentForRead(p.id, p, "requirements");
+  const outline = req.error ? [] : outlineOf(req.text).filter((h) => h.level <= 2).slice(0, HANDOVER_OUTLINE_MAX);
+
+  const line = (d) => `- ${d.name} (id ${d.id})${d.sourcePath ? ` — mirror of ${d.sourcePath}` : ""}`;
+  const head = [`# Project handover: ${p.name || p.id}`, ""];
+  if (p.description) head.push(String(p.description), "");
+  head.push(`Project id: ${p.id}`, `Deploy branch: ${p.deployBranch || "none"}`);
+  const columns = STATUSES.filter((k) => k !== "archived" && counts[k]).map((k) => `${STATUS_LABELS[k] || k}: ${counts[k]}`);
+  head.push(`Tickets (archived left out): ${columns.length ? columns.join(", ") : "none"}`, "", "## Read first");
+  if (startId && (startDoc || startId === "readme" || startId === "requirements")) {
+    const nm = startDoc ? startDoc.name : (startId === "readme" ? "README" : "Requirements");
+    head.push(`${nm} (id ${startId}) — read it with get_project_document {"projectId": "${p.id}", "docId": "${startId}"}.`);
+  } else {
+    head.push("This project declares no start-here document. Read its README first: get_project_document " + `{"projectId": "${p.id}", "docId": "readme"}.`);
+  }
+  head.push("", "## Documents");
+  const tail = ["", "## Requirements outline"];
+  if (outline.length) for (const h of outline) tail.push(`${"  ".repeat(h.level - 1)}- ${h.heading}`);
+  else tail.push("(no headings)");
+  tail.push("", "## What to do", "Read the start-here document in full, then the documents it lists, in its order. Then summarise what the project is, how its work ships, what is open and what is still unclear.");
+
+  const entries = [];
+  if (startDoc) entries.push(line(startDoc));
+  for (const d of docs) entries.push(line(d));
+  for (const n of ifaces) entries.push(`- Interface: ${n}`);
+  if (!entries.length) entries.push("(no additional documents)");
+
+  const fixed = head.join("\n").length + tail.join("\n").length + 2;
+  const room = HANDOVER_MAX - fixed - 80;
+  const kept = [];
+  let used = 0;
+  for (const e of entries) {
+    if (used + e.length + 1 > room) break;
+    kept.push(e);
+    used += e.length + 1;
+  }
+  if (kept.length < entries.length) kept.push(`… and ${entries.length - kept.length} more (list_project_documents)`);
+  const text = clip(head.concat(kept, tail).join("\n"), HANDOVER_MAX);
+  return { description: `Reading plan for ${p.name || p.id}`, messages: [{ role: "user", content: { type: "text", text } }] };
+}
+
+const PROMPTS = [
+  {
+    name: "project_handover",
+    title: "Project handover",
+    description: "A reading plan for taking over or catching up on a project: its start-here document first, then its other documents.",
+    arguments: [{ name: "project", description: "A project id or name (case-insensitive; a unique prefix is enough).", required: true }],
+    get: buildProjectHandover,
+  },
+];
+
 const SERVER_INSTRUCTIONS = [
   "This is the PH Agent Console: the Personalisation Hub prototype backlog board and help centre. You act as the signed-in team member; what you file or write is attributed to their email. A viewer reads only, an editor reads and writes, an admin also has approve_deploy_to_main and set_phase_skill_bindings.",
   "Tickets: list_projects gives a projectId, then list_backlog_items / get_backlog_item. create_backlog_item files into Backlog; update_backlog_item, add_item_comment, set_blocked and clear_blocked work on a ticket. To show what waits on a person call get_ready_for_testing_board or get_approved_for_deployment_board (MCP Apps: cards inline where the host supports them).",
+  "To take over or catch up on a project, read its start-here document first (list_projects gives startHereDocId; get_project_document reads it), then the documents it lists, in its order. A person can start the same plan with the project_handover prompt.",
   "Reading docs: list_project_documents (no text, searchable) and get_project_document read one document or section at a time. get_project_docs returns every document in full, possibly hundreds of thousands of characters, so call it only with include set to the one block you need.",
   "Writing docs: set_project_requirements, set_project_readme, set_project_artifact, set_project_description, create_project_document, update_project_document, delete_project_document, create_interface, update_interface, delete_interface. A write replaces the whole document, so read it first and send the complete text; a project document or interface holds at most 20,000 characters. list_doc_revisions / get_doc_revision recover a replaced version.",
   REPO_WINS + " Board-only documents, including every document of a project with no repo folder, are edited on the board.",
@@ -4056,7 +4149,7 @@ async function dispatchRpc(msg, session, ctx) {
         // resources: the two MCP App views (ui://backlog-tracker/…) — a host
         // that renders MCP Apps fetches them with resources/read. Static, so
         // neither subscriptions nor list-changed notifications.
-        capabilities: { tools: { listChanged: false }, resources: { subscribe: false, listChanged: false } },
+        capabilities: { tools: { listChanged: false }, resources: { subscribe: false, listChanged: false }, prompts: { listChanged: false } },
         serverInfo: {
           name: "ph-agent-console",
           title: "PH Agent Console",
@@ -4139,7 +4232,18 @@ async function dispatchRpc(msg, session, ctx) {
     case "resources/templates/list":
       return rpcResult(msg.id, { resourceTemplates: [] });
     case "prompts/list":
-      return rpcResult(msg.id, { prompts: [] });
+      return rpcResult(msg.id, { prompts: PROMPTS.map(({ name, title, description, arguments: args }) => ({ name, title, description, arguments: args })) });
+    case "prompts/get": {
+      const prompt = PROMPTS.find((x) => x.name === String(params.name || ""));
+      if (!prompt) return rpcError(msg.id, -32602, `Unknown prompt: ${params.name}`);
+      try {
+        const out = await prompt.get(params.arguments || {});
+        return out.error ? rpcError(msg.id, -32602, out.error) : rpcResult(msg.id, out);
+      } catch (err) {
+        logger.error("mcp prompt failed", { prompt: prompt.name, email: session.email, error: String(err && err.stack ? err.stack : err) });
+        return rpcError(msg.id, -32603, `${prompt.name} failed: ${err && err.message ? err.message : err}`);
+      }
+    }
     default:
       return isNotification ? null : rpcError(msg.id, -32601, `Method not found: ${msg.method}`);
   }
@@ -4378,7 +4482,7 @@ exports.mcpServer = onRequest({ cors: false, timeoutSeconds: 120, memory: "512Mi
 exports.__test = {
   routePath, redirectUriAllowed, routineFireHostAllowed, redirectHostLabel, generateTitle, suggestCategory, atLeast,
   sha256b64url, authorizationServerMetadata, protectedResourceMetadata,
-  TOOLS, CATEGORIES, STATUS_LABELS, SUPPORTED_PROTOCOL_VERSIONS, SERVER_ICONS,
+  TOOLS, PROMPTS, CATEGORIES, STATUS_LABELS, SUPPORTED_PROTOCOL_VERSIONS, SERVER_ICONS,
   MCP_APP_MIME, UI_META, BOARD_VIEWS, safeHref,
   PROJECT_WRITABLE_FIELDS, PROJECT_MD_MAX, DOC_MD_MAX, CONCEPT_MD_MAX, updateProjectFields,
   FAQ_TITLE_MAX, FAQ_SUMMARY_MAX, FAQ_BODY_MAX, FAQ_KEYWORDS_MAX, FAQ_REASON_MAX, FAQ_DOC_TYPES,

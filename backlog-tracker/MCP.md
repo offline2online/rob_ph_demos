@@ -367,6 +367,28 @@ Every write records the person's email on the document (`createdByEmail`,
 
 ---
 
+## The `project_handover` prompt
+
+`prompts/list` offers one prompt, **Project handover**, with one required
+argument, `project` (a project id or name; case-insensitive; a unique prefix
+is enough). `prompts/get` returns one user message: a reading plan built on
+the server, at most 20,000 characters — the project's name, description,
+deploy branch and ticket counts (archived left out); the start-here document
+to read first (`startHereDocId`, or the README when the project declares
+none); every project document by name and id, start-here first, with
+"mirror of <sourcePath>" on mirrors; its interfaces; the Requirements outline
+(level 1–2 headings, at most 60); and a closing instruction to read the
+start-here document, then the documents it lists, then summarise the project.
+Errors are JSON-RPC `-32602`: unknown prompt, missing `project`, no match, or
+more than one (the message lists up to 20 names).
+
+**A person starts it, not the agent.** In Claude Code it is the slash command
+`/mcp__<connection name>__project_handover`; Claude Desktop and claude.ai
+list it as a prompt to attach. An agent never calls `prompts/get` by itself,
+which is why the server instructions also say to read a project's start-here
+document first. Prompts are read-only and work for every role, viewer
+included; nothing is written, not even to `mcpAuditLog`.
+
 ## How it appears in a client
 
 `initialize` answers with the server's identity, so a client shows the

@@ -660,13 +660,101 @@ async function rpc(token, method, params, id = 1) {
     const tools = mcp.__test.TOOLS;
     const names = new Set(tools.map((t) => t.name));
     for (const [label, src] of [["instructions", text], ["whoami note", who]]) {
-      for (const w of src.match(/\b[a-z]+(?:_[a-z]+)+\b/g) || []) assert.ok(names.has(w), `${label} names ${w}, which is not a registered tool`);
+      for (const w of src.match(/\b[a-z]+(?:_[a-z]+)+\b/g) || []) assert.ok(names.has(w) || mcp.__test.PROMPTS.some((x) => x.name === w) || w === "startHereDocId", `${label} names ${w}, which is not a registered tool or prompt`);
       assert.ok(!/whichever is stale|merges a train/.test(src), `${label} has stale wording`);
     }
     for (const t of tools.filter((x) => x.scope === "board.write" || x.role)) assert.ok(text.includes(t.name), `instructions never name ${t.name}`);
     for (const t of tools.filter((x) => x.scope === "board.write" && /deploy|merge/.test(x.name))) assert.ok(who.includes(t.name), `whoami note never names ${t.name}`);
     assert.ok(text.length <= 3400, `instructions are ${text.length} characters`);
     assert.match(text, /get_ready_for_testing_board/);
+    assert.match(text, /startHereDocId/);
+    assert.match(text, /project_handover/);
+  });
+
+  // ── project_handover prompt ─────────────────────────────────────────────
+  const getPrompt = (token, name, args) => rpc(token, "prompts/get", { name, arguments: args });
+  const clearHandover = () => {
+    for (const id of [...env.store.col("projectDocs").keys()]) if (id.startsWith("ho-")) env.store.col("projectDocs").delete(id);
+    for (const id of [...env.store.col("backlogItems").keys()]) if (id.startsWith("ho-")) env.store.col("backlogItems").delete(id);
+    for (const id of ["hoproj", "hoplain", "hoplan2"]) { env.store.col("projects").delete(id); env.store.col("projects/" + id + "/docs").delete("requirements"); }
+  };
+
+  await test("initialize advertises prompts and prompts/list returns project_handover", async () => {
+    const init = await rpc(tokens.access_token, "initialize", { protocolVersion: "2025-06-18", capabilities: {} });
+    assert.deepStrictEqual(init.body.result.capabilities.prompts, { listChanged: false });
+    const list = await rpc(tokens.access_token, "prompts/list", {});
+    const prompts = list.body.result.prompts;
+    assert.deepStrictEqual(prompts.map((x) => x.name), ["project_handover"]);
+    assert.strictEqual(prompts[0].title, "Project handover");
+    assert.strictEqual(prompts[0].arguments.length, 1);
+    assert.strictEqual(prompts[0].arguments[0].name, "project");
+    assert.strictEqual(prompts[0].arguments[0].required, true);
+  });
+
+  await test("project_handover builds a reading plan, resolving by id, name and prefix", async () => {
+    clearHandover();
+    try {
+      env.store.col("projects").set("hoproj", { name: "Handover Zeta", description: "The zeta project", deployBranch: "deploy/zeta", startHereDocId: "ho-start" });
+      env.store.col("projects/hoproj/docs").set("requirements", { contentMd: "# A\n## B\n### C\ntext" });
+      env.store.col("projectDocs").set("ho-other", { projectId: "hoproj", name: "Alpha notes", contentMd: "x" });
+      env.store.col("projectDocs").set("ho-start", { projectId: "hoproj", name: "0 — Start here", contentMd: "x", sourcePath: "zeta/START-HERE.md" });
+      env.store.col("backlogItems").set("ho-t1", { projectId: "hoproj", title: "t1", status: "backlog" });
+      env.store.col("backlogItems").set("ho-t2", { projectId: "hoproj", title: "t2", status: "ready-for-testing" });
+      env.store.col("backlogItems").set("ho-t3", { projectId: "hoproj", title: "t3", status: "archived" });
+      const res = await getPrompt(tokens.access_token, "project_handover", { project: "hoproj" });
+      const r = res.body.result;
+      assert.strictEqual(r.messages.length, 1);
+      assert.strictEqual(r.messages[0].role, "user");
+      assert.strictEqual(r.messages[0].content.type, "text");
+      const text = r.messages[0].content.text;
+      assert.ok(text.length <= 20000);
+      assert.ok(text.indexOf("0 — Start here (id ho-start)") !== -1 && text.indexOf("0 — Start here") < text.indexOf("Alpha notes"), "start-here comes before any other document");
+      assert.match(text, /mirror of zeta\/START-HERE\.md/);
+      assert.match(text, /- A\n/); assert.match(text, /- B\n/); assert.ok(!/- C\n/.test(text), "level 3 headings left out");
+      assert.match(text, /Backlog: 1/); assert.match(text, /Ready for Testing: 1/);
+      assert.ok(!/Archived: \d/i.test(text), "archived left out of counts");
+      for (const ask of ["HANDOVER ZETA", "handover z", "Handover Zeta"]) {
+        const again = await getPrompt(tokens.access_token, "project_handover", { project: ask });
+        assert.ok(again.body.result, `resolves ${ask}`);
+      }
+    } finally { clearHandover(); }
+  });
+
+  await test("project_handover without a start-here document points at the README", async () => {
+    clearHandover();
+    try {
+      env.store.col("projects").set("hoplain", { name: "Plain handover" });
+      const res = await getPrompt(tokens.access_token, "project_handover", { project: "hoplain" });
+      const text = res.body.result.messages[0].content.text;
+      assert.match(text, /no start-here document/);
+      assert.match(text, /"docId": "readme"/);
+    } finally { clearHandover(); }
+  });
+
+  await test("project_handover errors are -32602", async () => {
+    clearHandover();
+    try {
+      env.store.col("projects").set("hoproj", { name: "Handover One" });
+      env.store.col("projects").set("hoplan2", { name: "Handover Two" });
+      for (const [name, args] of [["project_handover", { project: "no such project" }], ["project_handover", { project: "handover" }], ["project_handover", {}], ["nope", { project: "x" }]]) {
+        const res = await getPrompt(tokens.access_token, name, args);
+        assert.strictEqual(res.body.error && res.body.error.code, -32602, `${name} ${JSON.stringify(args)}`);
+      }
+      const amb = await getPrompt(tokens.access_token, "project_handover", { project: "handover" });
+      assert.match(amb.body.error.message, /Handover One/);
+      assert.match(amb.body.error.message, /Handover Two/);
+    } finally { clearHandover(); }
+  });
+
+  await test("project_handover stays within 20,000 characters with 300 documents", async () => {
+    clearHandover();
+    try {
+      env.store.col("projects").set("hoproj", { name: "Handover Big" });
+      for (let i = 0; i < 300; i += 1) env.store.col("projectDocs").set("ho-" + i, { projectId: "hoproj", name: "Document number " + i + " with a reasonably long descriptive title", contentMd: "x", sourcePath: "big/docs/document-" + i + ".md" });
+      const text = (await getPrompt(tokens.access_token, "project_handover", { project: "hoproj" })).body.result.messages[0].content.text;
+      assert.ok(text.length <= 20000, `${text.length} characters`);
+      assert.match(text, /… and \d+ more \(list_project_documents\)/);
+    } finally { clearHandover(); }
   });
 
   await test("refuses a Requirements document past the size ceiling", async () => {

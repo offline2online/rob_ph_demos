@@ -150,6 +150,21 @@ await test("every advertised icon is actually served, not just named", async () 
   }
 });
 
+await test("prompts: project_handover is listed and getPrompt returns one user text message", async () => {
+  const { prompts } = await client.listPrompts();
+  assert.ok(prompts.some((x) => x.name === "project_handover"));
+  const got = await client.getPrompt({ name: "project_handover", arguments: { project: "a" } }).catch((err) => err);
+  // The SDK validates the shape of a successful result; an unmatched project
+  // is a -32602 error, which is also a correct answer from the wire.
+  if (got && got.messages) {
+    assert.strictEqual(got.messages.length, 1);
+    assert.strictEqual(got.messages[0].role, "user");
+    assert.strictEqual(got.messages[0].content.type, "text");
+  } else {
+    assert.match(String(got && got.message), /project/i);
+  }
+});
+
 await test("tools/list returns the whole surface", async () => {
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name).sort();
