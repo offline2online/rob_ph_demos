@@ -482,6 +482,20 @@ async function rpc(token, method, params, id = 1) {
     assert.strictEqual(payload.interfaces[0].name, "LVP <-> Templates");
   });
 
+  await test("get_project_docs tells an agent which interfaces are repo copies", async () => {
+    env.store.col("projects").set("projM", { name: "M" });
+    env.store.col("interfaces").set("ifMir", { name: "Mirrored", projectIds: ["projM", "projN"], contentMd: "t", sourcePath: "shared/interface-contract.md", sourceCommit: "abc123", syncError: null, overwroteEdit: { byEmail: "a@b.c", revisionId: "rev1" } });
+    env.store.col("interfaces").set("ifPlain", { name: "Plain", projectIds: ["projM", "projN"], contentMd: "t" });
+    const res = await rpc(tokens.access_token, "tools/call", { name: "get_project_docs", arguments: { projectId: "projM", include: ["interfaces"] } });
+    const payload = JSON.parse(res.body.result.content[0].text);
+    const byId = Object.fromEntries(payload.interfaces.map((i) => [i.id, i]));
+    assert.strictEqual(byId.ifMir.mirror.sourcePath, "shared/interface-contract.md");
+    assert.strictEqual(byId.ifMir.mirror.sourceCommit, "abc123");
+    assert.strictEqual(byId.ifMir.mirror.error, null);
+    assert.strictEqual(byId.ifMir.mirror.overwroteEdit.revisionId, "rev1");
+    assert.strictEqual(byId.ifPlain.mirror, null);
+  });
+
   await test("get_project_docs falls back to the legacy project fields before the migration has run", async () => {
     env.store.col("projects").set("projLegacy", { name: "Legacy", requirementsMd: "# Old req", readmeMd: "# Old readme" });
     const res = await rpc(tokens.access_token, "tools/call", { name: "get_project_docs", arguments: { projectId: "projLegacy" } });

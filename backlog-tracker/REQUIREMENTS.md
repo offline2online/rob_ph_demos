@@ -912,9 +912,19 @@ with `status == "live"`.
   contentMd: string,
   createdAt: timestamp,
   updatedAt: timestamp,
+  // Set only on an interface copied from a repo file (interface-mirror-lib.js):
+  sourcePath: string,             // repo-root path of the file this record copies
+  sourceCommit: string,           // last commit that touched that file when copied
+  syncedAt: timestamp,
+  syncError: string | null,       // why the last sync was refused, with the commit
+  overwroteEdit: {byEmail, at, revisionId} | null,  // a board edit the sync replaced; its text is in docRevisions
 }
 ```
-A maintained contract document between exactly two endpoints, each a project
+`shared/board-interfaces.json` (`{"interfaces":[{"id","path"}]}`) lists the
+interfaces that mirror a repo file; whenever main moves, the docs sync copies
+each from its file, keeps the replaced text as a `docRevisions` entry
+(`via: "docs-sync"`), reads it back byte for byte, and clears `sourcePath` on
+one no longer listed. A maintained contract document between exactly two endpoints, each a project
 or a Concept Incubator concept, visible and editable from either end's page
 (a project's Docs page, a concept's detail page). **Dependencies follow the
 item through its life** (ticket 30aL4C1YLrRKYuxPyl8d): promoting a concept

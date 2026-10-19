@@ -1199,7 +1199,22 @@ async function resolveEndpoints(args) {
 
 function describeInterface(id, i) {
   const v = i || {};
-  return { id, name: v.name || "", endpoints: endpointsOf(v), projectIds: v.projectIds || [], contentMd: v.contentMd || "", history: (Array.isArray(v.history) ? v.history : []).map((h) => ({ at: tsToISO(h.at), reason: h.reason || "", from: h.from || null, to: h.to || null })), updatedAt: tsToISO(v.updatedAt), updatedByEmail: v.updatedByEmail || null };
+  return { id, name: v.name || "", endpoints: endpointsOf(v), projectIds: v.projectIds || [], contentMd: v.contentMd || "", history: (Array.isArray(v.history) ? v.history : []).map((h) => ({ at: tsToISO(h.at), reason: h.reason || "", from: h.from || null, to: h.to || null })), updatedAt: tsToISO(v.updatedAt), updatedByEmail: v.updatedByEmail || null, mirror: interfaceMirror(v) };
+}
+
+// null for a board-only interface; for one copied from a repo file, where the
+// text comes from, so an agent edits the file and not this record.
+function interfaceMirror(v) {
+  const sourcePath = typeof v.sourcePath === "string" ? v.sourcePath.trim() : "";
+  if (!sourcePath) return null;
+  const oe = v.overwroteEdit && typeof v.overwroteEdit === "object" ? v.overwroteEdit : null;
+  return {
+    sourcePath,
+    sourceCommit: v.sourceCommit || null,
+    syncedAt: tsToISO(v.syncedAt),
+    error: v.syncError || null,
+    overwroteEdit: oe ? { byEmail: oe.byEmail || null, at: tsToISO(oe.at), revisionId: oe.revisionId || null } : null,
+  };
 }
 
 // Moves every interface that touches `from` onto `to`, keeping the other

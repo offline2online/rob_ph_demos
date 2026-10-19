@@ -131,8 +131,10 @@ tied to the other project's release cadence.
   editable from its Docs page), and the interface contract is additionally
   maintained as a live `interfaces` collection record spanning both
   projects — editable from either project's Docs page, not just as a repo
-  file. Keep the repo file and the live record in sync; treat a divergence
-  as a bug in whichever is stale.
+  file. The repo file is the source: an interface listed in
+  `shared/board-interfaces.json` is copied to the board automatically
+  when main moves. Edit the file, not the board record — a board edit is
+  overwritten and kept as a revision.
 
 **Where the POC meets the real platform, and its limits:**
 `dsp-integration/docs/dsp-integration/api/PH-CORE-BOUNDARIES.md` lists every
@@ -696,9 +698,10 @@ see above). It opens a page with two blocks:
   an interface with an existing project" option; it only ever creates a
   plain project, keeping that one modal to a single quick step.
 
-When a project's `shared/interface-contract.md`-style repo file changes,
-mirror the change into its `interfaces` doc here (via the Docs page or a
-direct Firestore write), and vice versa — don't let the two drift.
+The repo file is the source: an interface listed in
+`shared/board-interfaces.json` is copied to the board automatically when
+main moves. Edit the file, not the board record — a board edit is
+overwritten and kept as a revision.
 
 ### Archiving Merged to Main (Live) cards
 

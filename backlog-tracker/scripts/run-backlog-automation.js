@@ -55,6 +55,7 @@ const { buildIndexFromArticleFiles, validateIndexAgainstArticleFiles, serializeI
 // file).
 const { trainLockShouldClear, trainHandoverReason } = require("../functions/train-lock");
 const { syncProjectDocs, syncAllProjectDocs, resolveRepoFolder } = require("./docs-sync-lib");
+const { syncMirroredInterfaces } = require("./interface-mirror-lib");
 const { hasIntakePlaceholder } = require("../functions/intake");
 const { loadDocsImpactRules, docsImpactCheck, refusalNote: docsImpactRefusalNote, waiverNote: docsImpactWaiverNote } = require("./docs-impact");
 
@@ -452,6 +453,63 @@ async function patchProjectDocFields(docId, fields) {
     body: JSON.stringify({ fields: Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, tv(v)])) }),
   });
   if (!res.ok) throw new Error(`PATCH projectDocs/${docId} failed: ${res.status} ${await res.text()}`);
+}
+
+// interfaces/{id}: a contract between two projects. One listed in
+// shared/board-interfaces.json mirrors a repo file (interface-mirror-lib.js).
+// Fields only, no project data: never touches either project's docsSync.
+async function getInterfaceById(id) {
+  const res = await fetch(`${FIRESTORE_BASE}/interfaces/${encodeURIComponent(id)}`, { headers: await firestoreHeaders() });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`GET interfaces/${id} failed: ${res.status} ${await res.text()}`);
+  return { id, ...fdoc((await res.json()).fields) };
+}
+
+async function patchInterfaceFields(id, fields) {
+  const fieldPaths = Object.keys(fields).map((k) => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
+  const res = await fetch(`${FIRESTORE_BASE}/interfaces/${encodeURIComponent(id)}?${fieldPaths}&currentDocument.exists=true`, {
+    method: "PATCH",
+    headers: await firestoreHeaders(),
+    body: JSON.stringify({ fields: Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, tv(v)])) }),
+  });
+  if (!res.ok) throw new Error(`PATCH interfaces/${id} failed: ${res.status} ${await res.text()}`);
+}
+
+async function addDocRevision(fields) {
+  const res = await fetch(`${FIRESTORE_BASE}/docRevisions`, {
+    method: "POST",
+    headers: await firestoreHeaders(),
+    body: JSON.stringify({ fields: Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, tv(v)])) }),
+  });
+  if (!res.ok) throw new Error(`POST docRevisions failed: ${res.status} ${await res.text()}`);
+  return String((await res.json()).name || "").split("/").pop();
+}
+
+// The Firestore half of the interface mirror; the git half is gitDocsIo.
+function interfaceMirrorIo(git) {
+  return {
+    ...git,
+    listInterfaces: () => runQuery({
+      from: [{ collectionId: "interfaces" }],
+      select: { fields: ["sourcePath"].map((fieldPath) => ({ fieldPath })) },
+    }),
+    getInterface: (id) => getInterfaceById(id),
+    patchInterface: (id, fields) => patchInterfaceFields(id, fields),
+    addRevision: (fields) => addDocRevision(fields),
+    now: () => new Date(),
+  };
+}
+
+// Once per sweep, not per project: an interface joins two projects.
+async function syncInterfacesAt(head, git) {
+  try {
+    const r = await syncMirroredInterfaces(head, interfaceMirrorIo(git));
+    if (r.synced.length || r.skipped.length || r.errors.length) {
+      console.log(`[docs-sync] interfaces: ${r.synced.length} synced, ${r.skipped.length} unchanged, ${r.errors.length} errors${r.errors.length ? ` (${r.errors.map((e) => scrubSecrets(e)).join("; ")})` : ""}`);
+    }
+  } catch (err) {
+    console.log(`[docs-sync] interfaces: unexpected failure (${scrubSecrets(err.message)})`);
+  }
 }
 
 async function itemsForProject(projectId, fields) {
@@ -3699,7 +3757,10 @@ async function syncDocsWhenMainMoves() {
       },
     });
     if (result.skipped) console.log(`[docs-sync] main moved? no — ${result.skipped}`);
-    else console.log(`[docs-sync] main at ${head.slice(0, 7)}: synced ${result.synced.length} project(s)${result.failed.length ? `, ${result.failed.length} failed (${result.failed.join(", ")}) — attempt ${result.attempts}` : ""}`);
+    else {
+      await syncInterfacesAt(head, git);
+      console.log(`[docs-sync] main at ${head.slice(0, 7)}: synced ${result.synced.length} project(s)${result.failed.length ? `, ${result.failed.length} failed (${result.failed.join(", ")}) — attempt ${result.attempts}` : ""}`);
+    }
   } catch (err) {
     console.log(`[docs-sync] sweep failed (${scrubSecrets(err.message)})`);
   }
