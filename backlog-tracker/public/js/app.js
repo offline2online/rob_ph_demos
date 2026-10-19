@@ -596,6 +596,42 @@ function failTestingStaleWarning(item, nowMs = Date.now()) {
   return status && status.state === "stale" ? "The test link may still show the previous build, so check that before failing this." : "";
 }
 
+// The Merged to Main (Live) card's deploy badge. A card with `deployRuns`
+// follows every deploy its merge started (run-backlog-automation.js's
+// finishTrain), not just the console's own: amber "Deploying… (1 of 2 done)",
+// green "Live", red "Deploy failed: <workflow> ↗", or a neutral "Merged · no
+// deploy tracked" when the merge needed none. A card shipped before
+// deployRuns existed keeps the single-run badge it always had.
+function deployBadgeHTML(item) {
+  if (item.status !== "published-live" || !(item.deployRunUrl || item.mergeCommit || Array.isArray(item.deployRuns))) return "";
+  const commit = item.mergeCommit ? '<span class="deploy-badge-commit" title="Merge commit">' + escapeHTML(String(item.mergeCommit).slice(0, 7)) + '</span>' : "";
+  if (!Array.isArray(item.deployRuns)) {
+    return '<div class="deploy-badge deploy-badge-' + escapeHTML(item.deployConclusion || "unknown") + '">' + commit +
+      (item.deployRunUrl
+        ? '<a href="' + escapeHTML(safeHttpUrl(item.deployRunUrl)) + '" target="_blank" rel="noopener">' +
+          (item.deployConclusion === "success" ? "Deploy succeeded"
+            : item.deployConclusion === "pending" || !item.deployConclusion ? "Deploy running&hellip;"
+            : "Deploy " + escapeHTML(item.deployConclusion)) + '</a>'
+        : '<span>Deploy status unknown</span>') +
+      '</div>';
+  }
+  const runs = item.deployRuns;
+  const isFailed = (r) => r.conclusion !== "pending" && r.conclusion !== "success";
+  const stateText = (r) => r.conclusion === "success" ? "succeeded" : r.conclusion === "pending" ? "running" : r.conclusion === "not-dispatched" ? "was never dispatched" : "failed (" + r.conclusion + ")";
+  const tip = escapeHTML(runs.length ? runs.map((r) => r.workflow + " " + stateText(r)).join("\n") : "This merge changed nothing a deploy follows");
+  const failed = runs.find(isFailed);
+  const done = runs.filter((r) => r.conclusion === "success").length;
+  let cls, label;
+  if (!runs.length) { cls = "none"; label = "Merged &middot; no deploy tracked"; }
+  else if (runs.some((r) => r.conclusion === "pending")) { cls = "pending"; label = "Deploying&hellip; (" + done + " of " + runs.length + " done)"; }
+  else if (failed) {
+    cls = "failure";
+    const href = failed.runUrl || "https://github.com/offline2online/rob_ph_demos/actions/workflows/" + encodeURIComponent(failed.workflow);
+    label = '<a href="' + escapeHTML(safeHttpUrl(href)) + '" target="_blank" rel="noopener">Deploy failed: ' + escapeHTML(failed.workflow) + ' &#8599;</a>';
+  } else { cls = "success"; label = "Live"; }
+  return '<div class="deploy-badge deploy-badge-' + cls + '" title="' + tip + '">' + commit + '<span>' + label + '</span></div>';
+}
+
 function cardHTML(item) {
   const idx = COL_KEYS.indexOf(item.status);
   // Moving back is a designed, documented flow from ready-to-publish (send
@@ -907,17 +943,7 @@ function cardHTML(item) {
   // strip: that shows the pipeline in aggregate, this shows it per ticket,
   // closing the gap where confirming 13 cards were genuinely live meant
   // fetching the deployed app.js and hashing it by hand.
-  const deployBadge = (item.status === "published-live" && (item.deployRunUrl || item.mergeCommit))
-    ? '<div class="deploy-badge deploy-badge-' + escapeHTML(item.deployConclusion || "unknown") + '">' +
-      (item.mergeCommit ? '<span class="deploy-badge-commit" title="Merge commit">' + escapeHTML(String(item.mergeCommit).slice(0, 7)) + '</span>' : "") +
-      (item.deployRunUrl
-        ? '<a href="' + escapeHTML(safeHttpUrl(item.deployRunUrl)) + '" target="_blank" rel="noopener">' +
-          (item.deployConclusion === "success" ? "Deploy succeeded"
-            : item.deployConclusion === "pending" || !item.deployConclusion ? "Deploy running&hellip;"
-            : "Deploy " + escapeHTML(item.deployConclusion)) + '</a>'
-        : '<span>Deploy status unknown</span>') +
-      '</div>'
-    : "";
+  const deployBadge = deployBadgeHTML(item);
   const commentCount = (item.notes || []).length;
   const editBtn = isLocked
     ? ""
@@ -2539,7 +2565,7 @@ const BACKLOG_ITEM_RENDER_FIELDS = [
   // succeeded (see run-backlog-automation.js's processMergePr). Drawn as
   // deployBadge on a Merged to Main (Live) card, same "on the REST-primed
   // first paint, not a second later" reasoning as prUrl/prNumber above.
-  "mergeCommit", "deployRunUrl", "deployConclusion",
+  "mergeCommit", "deployRunUrl", "deployConclusion", "deployRuns",
   // Not drawn on a card itself, but read by deploymentGroupKey() — without
   // it the same-deployment brackets wouldn't be there on the REST-primed
   // first paint and would pop in a second later when the listener landed.

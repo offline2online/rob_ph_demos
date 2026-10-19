@@ -1803,6 +1803,24 @@ async function rpc(token, method, params, id = 1) {
     env.store.col("backlogItems").delete("ft2");
   });
 
+  await test("get_backlog_item returns train.deployConclusion and train.deployRuns", async () => {
+    env.store.col("backlogItems").set("dr1", {
+      projectId: "ftproj", title: "Shipped", desc: "x", type: "bug", category: "HQ Admin", status: "published-live",
+      mergeCommit: "abc1234", deployConclusion: "failure",
+      deployRuns: [{ workflow: "dsp-api-deploy.yml", dispatchedAt: "2026-10-19T05:00:00.000Z", runUrl: "https://github.com/o/r/actions/runs/9", conclusion: "cancelled" }],
+    });
+    env.store.col("backlogItems").set("dr2", { projectId: "ftproj", title: "Old", desc: "x", type: "bug", category: "HQ Admin", status: "published-live" });
+    const get = async (id) => { const d = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "get_backlog_item", arguments: { itemId: id } })).body.result.content[0].text); return (d.item || d).train; };
+    const t1 = await get("dr1");
+    assert.strictEqual(t1.deployConclusion, "failure");
+    assert.deepStrictEqual(t1.deployRuns, [{ workflow: "dsp-api-deploy.yml", dispatchedAt: "2026-10-19T05:00:00.000Z", runUrl: "https://github.com/o/r/actions/runs/9", conclusion: "cancelled" }]);
+    const t2 = await get("dr2");
+    assert.strictEqual(t2.deployConclusion, null);
+    assert.strictEqual(t2.deployRuns, null);
+    env.store.col("backlogItems").delete("dr1");
+    env.store.col("backlogItems").delete("dr2");
+  });
+
   await test("list_projects returns trainTestsRed, trainHold, trainNote, e2eStatus without its breakdown, and handOff", async () => {
     env.store.col("projects").set("ftproj", {
       name: "Flow Test", deployBranch: "deploy/ftproj", trainHold: "tests-red", trainNote: "Deploy held, nothing merged: Rules failed.",

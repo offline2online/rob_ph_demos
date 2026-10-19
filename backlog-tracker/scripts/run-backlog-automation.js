@@ -3570,23 +3570,145 @@ function sleepSync(ms) {
 // would trigger a push-triggered run instead) and createdAt >= the moment
 // we dispatched, so a concurrent unrelated dispatch can't be mismatched
 // onto this item.
-function findDispatchedDeployRun(dispatchedAtISO) {
-  for (let attempt = 0; attempt < 5; attempt++) {
+function findDispatchedDeployRun(dispatchedAtISO, workflow = "deploy-backlog-tracker.yml", { attempts = 5, gh = (args) => run("gh", args) } = {}) {
+  for (let attempt = 0; attempt < attempts; attempt++) {
     try {
-      const json = run("gh", [
-        "run", "list", "--repo", REPO, "--workflow", "deploy-backlog-tracker.yml",
+      const json = gh([
+        "run", "list", "--repo", REPO, "--workflow", workflow,
         "--branch", "main", "--limit", "5",
         "--json", "databaseId,url,createdAt,status,conclusion,event",
       ]);
       const match = JSON.parse(json).find((r) => r.event === "workflow_dispatch" && r.createdAt >= dispatchedAtISO);
       if (match) return match;
     } catch (err) {
-      console.log(`[merge-pr] couldn't list deploy-backlog-tracker.yml runs (${err.message})`);
+      console.log(`[merge-pr] couldn't list ${workflow} runs (${err.message})`);
       return null;
     }
-    sleepSync(3000);
+    if (attempt < attempts - 1) sleepSync(3000);
   }
   return null;
+}
+
+// ── Tracking every deploy a train merge starts (deployRuns) ────────────────
+// finishTrain starts up to four follow-ups on main, and a card used to follow
+// only the first (deployRunUrl/deployConclusion). Because every train bumps
+// version.js, the console's own deploy was "the" deploy of every project's
+// cards, so a Display Types card turned green while dsp-api-deploy.yml had
+// failed or the prototype had never been rebuilt. Now each card carries
+// `deployRuns`: one {workflow, dispatchedAt, runUrl, conclusion} per
+// follow-up this merge actually needs, and deployConclusion/deployRunUrl are
+// the roll-up of them (rollUpDeployRuns).
+const VERSION_JS = "backlog-tracker/public/js/version.js";
+const PROTOTYPE_WORKFLOW = "dsp-prototype.yml";
+const FAQ_SYNC_WORKFLOW = "faq-content.yml";
+const CONSOLE_DEPLOY_WORKFLOW = "deploy-backlog-tracker.yml";
+// Workflows that deploy all of main, so a newer success carries this merge.
+const HEALABLE_DEPLOYS = new Set([CONSOLE_DEPLOY_WORKFLOW, "dsp-api-deploy.yml"]);
+
+// Does this merge change what deploy-backlog-tracker.yml deploys (the console
+// and faq/), other than the version bump every train makes?
+function consoleDeployNeeded(paths) {
+  const entry = TRAIN_MERGE_DISPATCHES.find((d) => d.workflow === CONSOLE_DEPLOY_WORKFLOW);
+  return (paths || []).some((p) => p && p !== VERSION_JS && underAny(p, entry.sources));
+}
+
+// The deployRuns a merge of `paths` starts. `outcome` says what finishTrain
+// managed to dispatch: { console: bool, hosted: [workflow], faq: bool }.
+// A dispatch that threw is "not-dispatched"; the prototype is a build-info
+// check rather than a run (the 10-minute scheduled run in its concurrency
+// group can supersede the dispatched one), so it stays pending either way.
+function planDeployRuns(paths, outcome, dispatchedAt) {
+  const entry = (workflow, conclusion = "pending") => ({ workflow, dispatchedAt, runUrl: null, conclusion });
+  const out = [];
+  if (consoleDeployNeeded(paths)) out.push(entry(CONSOLE_DEPLOY_WORKFLOW, outcome.console ? "pending" : "not-dispatched"));
+  if (rebuildWorkflowsFor(paths).includes(PROTOTYPE_WORKFLOW)) out.push(entry(PROTOTYPE_WORKFLOW));
+  for (const w of deployWorkflowsFor(paths)) out.push(entry(w, (outcome.hosted || []).includes(w) ? "pending" : "not-dispatched"));
+  if (outcome.faq) out.push(entry(FAQ_SYNC_WORKFLOW));
+  return out;
+}
+
+// The card's roll-up. "pending" while any entry is, else "failure" if any
+// entry is anything but a success, "success" when all are, and
+// "not-applicable" for an empty list. runUrl: the failing run, else the
+// first pending one.
+function rollUpDeployRuns(runs) {
+  if (!Array.isArray(runs) || !runs.length) return { deployConclusion: "not-applicable", deployRunUrl: null };
+  const failed = runs.find((r) => r.conclusion !== "pending" && r.conclusion !== "success");
+  const pending = runs.find((r) => r.conclusion === "pending");
+  const firstWithUrl = (list) => (list.find((r) => r.runUrl) || {}).runUrl || null;
+  if (pending) return { deployConclusion: "pending", deployRunUrl: failed && failed.runUrl ? failed.runUrl : firstWithUrl([pending, ...runs.filter((r) => r.conclusion === "pending")]) };
+  if (failed) return { deployConclusion: "failure", deployRunUrl: failed.runUrl || null };
+  return { deployConclusion: "success", deployRunUrl: firstWithUrl(runs) };
+}
+
+// The hash source_stamp() in dsp-integration/scripts/rebuild-prototype.sh
+// computes for `ref`, so build-info.json's sourceStamp can be compared with
+// origin/main without a checkout of it.
+function prototypeSourceStamp(ref, { git = (args, opts) => run("git", args, opts) } = {}) {
+  const listing = git(["-C", "dsp-integration", "ls-tree", "-r", ref, "--", "apps", "packages", "package.json", "package-lock.json", "scripts/rebuild-prototype.sh"]);
+  const lines = listing.split("\n").filter((l) => l && !l.includes("apps/admin/public/demo/"));
+  // `git hash-object --stdin` of the lines, each newline-terminated, as the
+  // script's pipeline feeds it.
+  return git(["hash-object", "--stdin"], { input: lines.length ? lines.join("\n") + "\n" : "", stdio: ["pipe", "pipe", "pipe"] });
+}
+
+// Is the checked-in prototype bundle on origin/main built from main's source?
+function prototypeBuildCurrent({ git = (args, opts) => run("git", args, opts) } = {}) {
+  git(["fetch", "origin", "main", "--quiet"]);
+  const info = JSON.parse(git(["show", "origin/main:dsp-integration/prototype/build-info.json"]));
+  return Boolean(info.sourceStamp) && info.sourceStamp === prototypeSourceStamp("origin/main", { git });
+}
+
+// Resolves one pending deployRuns entry. `ctx` holds the per-tick caches that
+// let a train's cards share one lookup per run: { runs: Map, heal: Map,
+// proto: {value}, gh }. Returns the entry unchanged while it is still going.
+function resolveDeployRun(entry, ctx) {
+  const gh = ctx.gh || ((args) => run("gh", args));
+  // Settled for good: a success, or a dispatch that never happened. A failed
+  // run is looked at again (its re-run may have passed), like a card's
+  // failure was before deployRuns.
+  if (entry.conclusion === "success" || entry.conclusion === "not-dispatched") return entry;
+  if (entry.workflow === PROTOTYPE_WORKFLOW) {
+    if (!ctx.proto) {
+      try { ctx.proto = { value: (ctx.prototypeCurrent || prototypeBuildCurrent)() }; }
+      catch (err) { console.log(`[deploy-status] couldn't check the prototype build (${scrubSecrets(err.message)}) — will retry`); ctx.proto = { value: false }; }
+    }
+    return ctx.proto.value ? { ...entry, conclusion: "success" } : entry;
+  }
+  const key = `${entry.workflow}|${entry.runUrl || entry.dispatchedAt}`;
+  if (!ctx.runs.has(key)) {
+    let match = null;
+    const runId = entry.runUrl ? (String(entry.runUrl).match(/\/runs\/(\d+)/) || [])[1] : null;
+    try {
+      if (runId) match = JSON.parse(gh(["run", "view", runId, "--repo", REPO, "--json", "status,conclusion,url"]));
+      else match = findDispatchedDeployRun(entry.dispatchedAt, entry.workflow, { attempts: 1, gh });
+    } catch (err) {
+      console.log(`[deploy-status] couldn't read ${entry.workflow} run (${scrubSecrets(err.message)}) — will retry`);
+    }
+    ctx.runs.set(key, match);
+  }
+  const match = ctx.runs.get(key);
+  if (!match) return entry;
+  const url = match.url || entry.runUrl || null;
+  if (match.status !== "completed") return { ...entry, runUrl: url, conclusion: "pending" };
+  let conclusion = match.conclusion || "unknown";
+  let finalUrl = url;
+  if (conclusion !== "success" && HEALABLE_DEPLOYS.has(entry.workflow)) {
+    const runId = (String(url || "").match(/\/runs\/(\d+)/) || [])[1];
+    if (runId && conclusion !== "skipped") {
+      const verdict = healFailedDeploy(runId, ctx.heal, gh, entry.workflow);
+      if (verdict.action === "rerun" || verdict.action === "wait") return { ...entry, runUrl: url, conclusion: "pending" };
+      if (verdict.action === "adopt") { conclusion = "success"; finalUrl = verdict.run.url; }
+    }
+  }
+  return { ...entry, runUrl: finalUrl, conclusion };
+}
+
+// The note a card gets the first time its roll-up turns to failure.
+function deployFailureNote(runs) {
+  const bad = (runs || []).filter((r) => r.conclusion !== "pending" && r.conclusion !== "success");
+  const named = bad.map((r) => `${r.workflow} (${r.conclusion === "not-dispatched" ? "never dispatched" : r.conclusion}${r.runUrl ? `: ${r.runUrl}` : ""})`).join(", ");
+  return `The merge is on main, but ${named} did not succeed, so the service it deploys is not live. The card stays in Merged to Main; re-run that workflow on main (Actions → Run workflow) and the card follows.`;
 }
 
 async function processMergePr(item) {
@@ -4006,19 +4128,16 @@ async function finishTrain(project, deployBranch, prNumber, trainItems, { touche
   // Firebase deploy would silently never run. `gh workflow run` is an
   // explicit API dispatch and is exempt — same mechanism processMergePr has
   // always used for a per-ticket PR.
-  let deployRunUrl = null;
-  let deployConclusion = "not-applicable";
+  const dispatchedAt = new Date().toISOString();
+  let consoleDispatched = false;
   if (touchesBacklogTracker) {
-    const dispatchedAt = new Date().toISOString();
     try {
-      run("gh", ["workflow", "run", "deploy-backlog-tracker.yml", "--repo", REPO, "--ref", "main"]);
+      run("gh", ["workflow", "run", CONSOLE_DEPLOY_WORKFLOW, "--repo", REPO, "--ref", "main"]);
+      consoleDispatched = true;
       console.log(`[deploy-train] triggered deploy-backlog-tracker.yml for PR #${prNumber}`);
     } catch (err) {
       console.log(`[deploy-train] failed to trigger deploy-backlog-tracker.yml (${err.message}) — the merge still succeeded, but the live site may be stale until the next deploy`);
     }
-    const deployRun = findDispatchedDeployRun(dispatchedAt);
-    deployRunUrl = deployRun ? deployRun.url : null;
-    deployConclusion = "pending";
   }
 
   // Same rule for a checked-in build (see GENERATED_BUILDS): the train's
@@ -4054,6 +4173,17 @@ async function finishTrain(project, deployBranch, prNumber, trainItems, { touche
     }
   }
 
+  // What the cards follow: one entry per follow-up this merge needs (see
+  // planDeployRuns), rolled up into deployConclusion / deployRunUrl.
+  const deployRuns = planDeployRuns(prFiles, { console: consoleDispatched, hosted: hostedDeploys, faq: faqSynced }, dispatchedAt);
+  for (const entry of deployRuns) {
+    if (entry.conclusion !== "pending" || entry.workflow === PROTOTYPE_WORKFLOW) continue;
+    const found = findDispatchedDeployRun(dispatchedAt, entry.workflow, { attempts: entry.workflow === CONSOLE_DEPLOY_WORKFLOW ? 5 : 2 });
+    if (found) entry.runUrl = found.url;
+  }
+  const { deployConclusion, deployRunUrl } = rollUpDeployRuns(deployRuns);
+  const followed = deployRuns.map((r) => r.workflow);
+
   const mergedAt = new Date().toISOString();
   for (const item of trainItems) {
     const notes = await appendNote(
@@ -4064,12 +4194,10 @@ async function finishTrain(project, deployBranch, prNumber, trainItems, { touche
           : "") +
         (mergeNote ? ` Note: merging main into ${deployBranch} for this deploy ${mergeNote}.` : "") +
         (faqSynced ? ` This train changed help-centre content under faq/data/; the repo → Firestore sync (faq-content.yml) was dispatched so the console shows it before the next hourly export.` : "") +
-        (rebuilds.length
-          ? ` The hosted prototype on GitHub Pages is a built bundle, being rebuilt from main now (${rebuilds.join(", ")}) — allow a few minutes before checking the live site, and confirm with its build-info.json: "commit" is the source commit the bundle was built from, so it should be this train's own last commit (${trainItems.map((i) => (i.deployCommit ? i.deployCommit.slice(0, 7) : null)).filter(Boolean).join(", ") || "one of this train's commits"}) or later — not the merge commit itself, which comes after.`
-          : "") +
-        (hostedDeploys.length
-          ? ` This train changed a hosted service's source, so its deploy was dispatched too (${hostedDeploys.join(", ")}) — the hosted API the prototype talks to is only live once that run is green (Actions tab); until then the client and the API can disagree.`
-          : "") +
+        (deployRuns.length
+          ? ` The card follows ${followed.join(", ")} and reads "Live" once every one has succeeded.` +
+            (followed.includes(PROTOTYPE_WORKFLOW) ? ` The hosted prototype is a built bundle being rebuilt from main now; it counts as live when its build-info.json sourceStamp matches main's source.` : "")
+          : " This merge changed nothing a deploy follows, so there is no deploy to wait for.") +
         (hostedDeploysMissed.length
           ? ` WARNING: this train changed a hosted service's source but its deploy could NOT be dispatched (${hostedDeploysMissed.join(", ")}) — run that workflow by hand on main (Actions → Run workflow) before testing the live site, or the client will be ahead of the API it talks to.`
           : "")
@@ -4084,6 +4212,7 @@ async function finishTrain(project, deployBranch, prNumber, trainItems, { touche
       ...(mergeCommit ? { mergeCommit } : {}),
       ...(deployRunUrl ? { deployRunUrl } : {}),
       deployConclusion,
+      deployRuns,
     });
     await dropPatchFiles(item.id);
   }
@@ -4830,13 +4959,13 @@ const DEPLOY_FAILURE_RECHECK_MS = 7 * 24 * 60 * 60 * 1000;
 // older code live. Its second failure is reported as a real one. `cache`
 // (runId -> verdict) keeps the cards of one train, which share a run, from
 // re-running it once each. `gh` is injectable for the tests.
-function healFailedDeploy(runId, cache, gh = (args) => run("gh", args)) {
+function healFailedDeploy(runId, cache, gh = (args) => run("gh", args), workflow = CONSOLE_DEPLOY_WORKFLOW) {
   if (cache.has(runId)) return cache.get(runId);
   let verdict = { action: "report" };
   try {
     const failed = JSON.parse(gh(["run", "view", runId, "--repo", REPO, "--json", "createdAt,attempt"]));
     const runs = JSON.parse(gh([
-      "run", "list", "--repo", REPO, "--workflow", "deploy-backlog-tracker.yml",
+      "run", "list", "--repo", REPO, "--workflow", workflow,
       "--branch", "main", "--limit", "20", "--json", "databaseId,url,createdAt,status,conclusion",
     ]));
     const newer = runs.filter((r) => String(r.databaseId) !== String(runId) && r.createdAt > failed.createdAt);
@@ -4854,22 +4983,48 @@ function healFailedDeploy(runId, cache, gh = (args) => run("gh", args)) {
   return verdict;
 }
 
+// A card carrying deployRuns: resolve each unsettled entry (one lookup per run
+// per tick, shared through ctx by the cards of a train), roll them up, and
+// write only what changed. The first time the roll-up turns to failure the
+// card gets one note naming the workflow and run.
+async function reconcileDeployRuns(item, ctx) {
+  const before = item.deployRuns;
+  const after = before.map((entry) => resolveDeployRun(entry, ctx));
+  const roll = rollUpDeployRuns(after);
+  const changed = JSON.stringify(after) !== JSON.stringify(before) || roll.deployConclusion !== item.deployConclusion
+    || (roll.deployRunUrl && roll.deployRunUrl !== item.deployRunUrl);
+  if (!changed) return;
+  const fields = {
+    deployRuns: after,
+    deployConclusion: roll.deployConclusion,
+    ...(roll.deployRunUrl ? { deployRunUrl: roll.deployRunUrl } : {}),
+    updatedAt: new Date().toISOString(),
+  };
+  if (roll.deployConclusion === "failure" && item.deployConclusion !== "failure") {
+    fields.notes = await appendNote(item, deployFailureNote(after));
+  }
+  await patchItem(item.id, fields);
+  console.log(`[deploy-status] ${item.id}: deploy follow-ups ${roll.deployConclusion} (${after.map((r) => `${r.workflow}=${r.conclusion}`).join(", ")})`);
+}
+
 async function reconcileDeployStatuses() {
   const byConclusion = (value) => runQuery({
     from: [{ collectionId: "backlogItems" }],
-    select: selectFields(["deployRunUrl", "deployConclusion", "mergedAt", "updatedAt"]),
+    select: selectFields(["deployRunUrl", "deployConclusion", "deployRuns", "mergedAt", "updatedAt"]),
     where: { fieldFilter: { field: { fieldPath: "deployConclusion" }, op: "EQUAL", value: { stringValue: value } } },
   });
   const failedSince = Date.now() - DEPLOY_FAILURE_RECHECK_MS;
   const pending = [
     ...(await byConclusion("pending")),
-    ...(await byConclusion("failure")).filter((i) => i.deployRunUrl && Date.parse(i.mergedAt || i.updatedAt || 0) >= failedSince),
+    ...(await byConclusion("failure")).filter((i) => (i.deployRunUrl || Array.isArray(i.deployRuns)) && Date.parse(i.mergedAt || i.updatedAt || 0) >= failedSince),
   ];
   if (!pending.length) return;
   console.log(`[deploy-status] ${pending.length} item(s) with a pending or failed deploy to check`);
   const healCache = new Map();
+  const runCtx = { runs: new Map(), heal: healCache };
   for (const item of pending) {
     try {
+      if (Array.isArray(item.deployRuns)) { await reconcileDeployRuns(item, runCtx); continue; }
       let match = null;
       const runId = item.deployRunUrl ? (String(item.deployRunUrl).match(/\/runs\/(\d+)/) || [])[1] : null;
       if (runId) {
@@ -5315,4 +5470,6 @@ module.exports = {
   GENERATED_BUILDS, PREVIEW_REBUILD_STALE_MS, previewLinkFields, refreshPreviewBuildStates, rebuildNote, repointTrainPreviewUrls,
   // test/deploy-heal.test.js — a transient deploy failure heals itself
   healFailedDeploy,
+  // test/deploy-tracking.test.js
+  planDeployRuns, rollUpDeployRuns, resolveDeployRun, consoleDeployNeeded, prototypeSourceStamp, prototypeBuildCurrent, deployFailureNote, findDispatchedDeployRun,
 };

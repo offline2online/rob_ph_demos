@@ -1305,6 +1305,43 @@ deploy run colored by its outcome. Before this, confirming a batch of cards
 were genuinely live meant fetching the deployed `app.js` and comparing its
 hash against `main` by hand.
 
+**Every deploy a train merge starts is tracked (`deployRuns`, 19 Oct 2026).**
+`finishTrain` starts up to four follow-ups on `main`: the console deploy
+(`deploy-backlog-tracker.yml`), the prototype rebuild (`dsp-prototype.yml`),
+the hosted DSP API (`dsp-api-deploy.yml`) and the help-centre sync
+(`faq-content.yml`). A card used to follow only the first, and because every
+train bumps `backlog-tracker/public/js/version.js`, a Display Types card
+turned green on the console's deploy while the API deploy had failed (it was
+cancelled by `cancel-in-progress`) or the prototype was never rebuilt. Now
+each card it ships carries `deployRuns`, one `{workflow, dispatchedAt, runUrl,
+conclusion}` per follow-up *this merge needs*:
+
+- `deploy-backlog-tracker.yml` only when the merge changed `backlog-tracker/`
+  or `faq/` beyond `version.js` (it is still dispatched every time);
+- `dsp-prototype.yml` when `rebuildWorkflowsFor` names it, checked as a
+  build, not a run: it succeeds when `sourceStamp` in
+  `dsp-integration/prototype/build-info.json` on `origin/main` equals
+  `origin/main`'s own source stamp (`source_stamp()` in
+  `rebuild-prototype.sh`, reproduced by `prototypeSourceStamp()`);
+- `dsp-api-deploy.yml` when `deployWorkflowsFor` names it; `faq-content.yml`
+  when the `faq/data` sync was dispatched (never adopted from a newer run:
+  scheduled runs are exports, not syncs).
+
+`deployConclusion` is the roll-up (`rollUpDeployRuns`): `pending` while any
+entry is, `failure` if any failed or was never dispatched, `success` when all
+succeeded, `not-applicable` for an empty list; `deployRunUrl` is the failing
+run, else the first pending one. The status stays Merged to Main — the merge
+happened. `reconcileDeployStatuses()` resolves entries each tick (one lookup
+per run, shared by a train's cards; a failed `deploy-backlog-tracker.yml` or
+`dsp-api-deploy.yml` goes through `healFailedDeploy(runId, cache, gh,
+workflow)`), re-checks failures for 7 days, and adds one note naming the
+workflow and run the first time a card turns to failure. The card's badge
+(`deployBadgeHTML`) reads "Deploying… (1 of 2 done)", "Live", "Deploy failed:
+<workflow> ↗" or "Merged · no deploy tracked"; `get_backlog_item`'s `train`
+block returns `deployConclusion` and `deployRuns`. Cards shipped before this
+have no `deployRuns` and keep the single-run badge. Tests:
+`test/deploy-tracking.test.js`, `test/deploy-badge.test.mjs`.
+
 **A transient deploy failure heals itself (10 Oct 2026).** PR #359's
 deploy (run 38087481082) failed on a one-off "Failed to make request to
 https://firestore.googleapis.com" and both of its cards sat at "Deploy

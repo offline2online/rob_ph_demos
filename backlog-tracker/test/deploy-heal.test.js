@@ -71,4 +71,13 @@ test("a gh error reports the failure rather than guessing", () => {
   assert.strictEqual(healFailedDeploy("100", new Map(), gh).action, "report");
 });
 
+test("it lists the workflow it is given (dsp-api-deploy.yml), the console's by default", () => {
+  const f = fakeGh({ runs: [self] });
+  healFailedDeploy("100", new Map(), f.gh, "dsp-api-deploy.yml");
+  assert.ok(f.calls.some((c) => c.startsWith("run list") && c.includes("--workflow dsp-api-deploy.yml")));
+  const g = fakeGh({ runs: [self] });
+  healFailedDeploy("100", new Map(), g.gh);
+  assert.ok(g.calls.some((c) => c.includes("--workflow deploy-backlog-tracker.yml")));
+});
+
 console.log(`\n${passed} passed, 0 failed`);

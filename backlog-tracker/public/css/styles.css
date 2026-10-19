@@ -843,6 +843,7 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 }
 .deploy-badge-pending, .deploy-badge-unknown { color: var(--warning); background: rgba(201, 138, 10, .12); }
 .deploy-badge-success { color: var(--success); background: rgba(82, 196, 26, .12); }
+.deploy-badge-none { color: var(--text-muted); background: var(--surface-2); }
 .deploy-badge-failure, .deploy-badge-cancelled, .deploy-badge-timed_out, .deploy-badge-startup_failure {
   color: var(--danger); background: var(--danger-tint);
 }

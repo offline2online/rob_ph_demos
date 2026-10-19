@@ -1622,6 +1622,18 @@ function itemDetail(id, d, projects) {
       revertBlockedBy: d.revertBlockedBy || null,
       mergeCommit: d.mergeCommit || null,
       prNumber: d.prNumber || null,
+      // Merged is not live: deployConclusion rolls up deployRuns, one entry
+      // per deploy the merge started (null on a card shipped before they
+      // were recorded).
+      deployConclusion: d.deployConclusion || null,
+      deployRuns: Array.isArray(d.deployRuns)
+        ? d.deployRuns.map((r) => ({
+            workflow: r && r.workflow ? r.workflow : null,
+            dispatchedAt: tsToISO(r && r.dispatchedAt) || (r && typeof r.dispatchedAt === "string" ? r.dispatchedAt : null),
+            runUrl: r && r.runUrl ? r.runUrl : null,
+            conclusion: r && r.conclusion ? r.conclusion : null,
+          }))
+        : null,
       ...previewStateFields(d),
     },
     attachments: (Array.isArray(d.attachments) ? d.attachments : []).map((a) => ({
