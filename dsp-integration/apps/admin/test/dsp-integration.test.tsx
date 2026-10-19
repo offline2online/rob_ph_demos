@@ -855,13 +855,24 @@ describe('Advertisers / Inventory', () => {
       { id: 'menu_board', name: 'Menu Board — Long Format', description: 'Portrait menu screens above the counter' },
       { id: 'portrait', name: 'Portrait', description: null },
     ]
-    vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...ADVERTISER_PAGE, '/api/admin/v1/available-inventory': { ...inv, items: [{ ...inv.items[0], playlistDisplayTypes }] } })))
+    /* 19 Oct 2026: the list is sent once at the top level, keyed by playlist id, not on every row. */
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...ADVERTISER_PAGE, '/api/admin/v1/available-inventory': { ...inv, playlistDisplayTypes: { [inv.items[0].playlistId]: playlistDisplayTypes } } })))
     renderAt('/advertisers')
     const inventory = await screen.findByLabelText('Available Inventory')
     fireEvent.mouseOver(await within(inventory).findByLabelText('Playlist: Menu Board Playlist'))
     expect(await screen.findByText('Assigned display types:')).toBeInTheDocument()
     expect(screen.getByText(/Portrait menu screens above the counter/)).toBeInTheDocument()
     expect(screen.getByText(/\(no description\)/)).toBeInTheDocument()
+  }, slow(45000))
+
+  it('shows only the playlist name on hover when the list has no entry for the playlist', async () => {
+    const inv = ADVERTISER_PAGE['/api/admin/v1/available-inventory']
+    vi.stubGlobal('fetch', vi.fn(fakeFetch({ ...ADVERTISER_PAGE, '/api/admin/v1/available-inventory': { ...inv, playlistDisplayTypes: { some_other_playlist: [{ id: 'x', name: 'X', description: null }] } } })))
+    renderAt('/advertisers')
+    const inventory = await screen.findByLabelText('Available Inventory')
+    fireEvent.mouseOver(await within(inventory).findByLabelText('Playlist: Menu Board Playlist'))
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Menu Board Playlist')
+    expect(screen.queryByText('Assigned display types:')).not.toBeInTheDocument()
   }, slow(45000))
 
   /* Ticket ZglKshE5dUVasljNcIPH (8 Oct 2026): a buyers list shows the sum of the fleet plays per window of every position it is assigned to. */

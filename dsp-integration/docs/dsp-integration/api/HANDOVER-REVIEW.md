@@ -223,9 +223,23 @@ Available Inventory, so it was re-measured after the fix:
 | `GET /admin/v1/available-inventory`, one request, cold / warm (direct timing, 3 rounds × 2 runs) | 1.47–1.71 s / 1.49–1.58 s | **1.49–1.64 s / 1.49–1.58 s** — unchanged, same 2,401 rows |
 | `GET /v1/inventory` (page of 50), booking schedule | — | unchanged, within run-to-run noise |
 
+The 1.5 s in the Available Inventory row was the 14 Oct regression, not a
+property of the estate: ticket NPs6MBZQ6CfhFPHmBuGp copied each playlist's
+full list of display types onto every row, so shape A's response was 113.5 MB
+(2.7 MB on 13 Oct) and the bench ran out of memory at 32 clients. Fixed on
+19 Oct 2026 (ticket IqAdH5i8jWIGNElQR135): each playlist's list is sent once,
+at the top level of the response. After the fix the whole of shape A runs to
+the end on a 4 GB heap (`NODE_OPTIONS=--max-old-space-size=4096 npm run bench
+-- --assert --shapes=A`), Available Inventory at 32 clients p50 2.5-2.6 s on
+the 4 vCPU sandbox (about 2x slower than the 3 Oct runner on unchanged reads;
+the 2.0 s measured by the ticket's author is the machine the threshold of
+1,836 ms + 25% was set on), against 80 s queueing before.
+
 At this size the 92-day booking schedule takes about 23 s per request, both
-before and after (ADMIN-API-PERFORMANCE.md, "What is left"). The bench's
-other admin rows were not reached in the time allowed.
+before and after (ADMIN-API-PERFORMANCE.md, "What is left"). On the 19 Oct
+sandbox run shape A's remaining breaches were forecast, campaigns and billing
+one window (machine speed), and Available Inventory, which this sandbox could
+not bring under its committed threshold.
 
 **Real-time impressions** (the Player API path, same estate, an in-process
 mock DSP; the bench has no Player API scenario yet):

@@ -71,12 +71,23 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
     const company = await ctx.company.get()
     const nowMs = ctx.clock().getTime()
     const allTypes = await ctx.displayTypes.list()
-    /* Every display type a playlist is assigned to (as a default playlist or a zone's), so the
-       playlist's hover can name them with their descriptions (ticket NPs6MBZQ6CfhFPHmBuGp, 14 Oct 2026). */
-    const typesOfPlaylist = (playlistId: string | null) => (playlistId
-      ? allTypes.filter((d) => d.defaultPlaylistId === playlistId || zonesOf(d).some((z) => z.playlistId === playlistId))
-        .map((d) => ({ id: d.id, name: d.name, description: d.description ?? null, storeZone: d.phExtensions?.storeZone ?? null }))
-      : [])
+    /* Every display type a playlist is assigned to (as a default playlist or a zone's), listed once per
+       playlist for the response's top level so the playlist's hover can name them with their descriptions.
+       Sent per row (ticket NPs6MBZQ6CfhFPHmBuGp, 14 Oct 2026) it grew with rows x types: 113.5 MB when 600
+       display types shared one playlist. Only playlists some row names are kept. */
+    const typesByPlaylist = new Map<string, { id: string; name: string; description: string | null; storeZone: string | null }[]>()
+    for (const d of allTypes) {
+      const entry = { id: d.id, name: d.name, description: d.description ?? null, storeZone: d.phExtensions?.storeZone ?? null }
+      const playlistIds = new Set<string>()
+      if (d.defaultPlaylistId) playlistIds.add(d.defaultPlaylistId)
+      for (const z of zonesOf(d)) if (z.playlistId) playlistIds.add(z.playlistId)
+      for (const id of playlistIds) {
+        const list = typesByPlaylist.get(id)
+        if (list) list.push(entry)
+        else typesByPlaylist.set(id, [entry])
+      }
+    }
+    const playlistDisplayTypes: Record<string, { id: string; name: string; description: string | null; storeZone: string | null }[]> = {}
     for (const t of allTypes) {
       const zones = zonesOf(t)
       /* A position's playlist, per slot: the zone playlist it's tagged to
@@ -132,11 +143,12 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
         const a = assignedOf(s)
         const playlistId = playlistIdOf(s)
         const playlistName = (playlistId && (await ctx.playlists.get(playlistId))?.name) || '—'
+        if (playlistId && !playlistDisplayTypes[playlistId]) playlistDisplayTypes[playlistId] = typesByPlaylist.get(playlistId) ?? []
         const audience = await audienceOf(ctx.audience, t, i + 1)
         /* An unlimited rotation has no countable loop: treat it as one slot. */
         const slotCount = Math.max(1, rotationSizeOf(t, i + 1))
         items.push({
-          displayTypeId: t.id, displayTypeName: t.name, displayTypeDescription: t.description ?? null, displayTypeStoreZone: t.phExtensions?.storeZone ?? null, zoneName: zoneOfSlot(s)?.name ?? null, touchPoint: t.touchPoint, playlistName, playlistId, playlistDisplayTypes: typesOfPlaylist(playlistId), unassigned, scored: audience.scored, unsellableReason: await unsellableReason(ctx, { positionId: positionIdOf(t.id, i + 1), displayType: t, slot: i + 1, def: s }, audience), salesLocked: s.salesLocked === true, inGlobalDeal: slotInGlobalDeal(s), globalDealSuppressedBy: globalDealSuppressedBy(s), salesLockedUntil: s.salesLocked ? await slotBookedUntil(ctx, t.id, i + 1) : null, slot: i + 1, zoneSlot, position: s.label,
+          displayTypeId: t.id, displayTypeName: t.name, displayTypeDescription: t.description ?? null, displayTypeStoreZone: t.phExtensions?.storeZone ?? null, zoneName: zoneOfSlot(s)?.name ?? null, touchPoint: t.touchPoint, playlistName, playlistId, unassigned, scored: audience.scored, unsellableReason: await unsellableReason(ctx, { positionId: positionIdOf(t.id, i + 1), displayType: t, slot: i + 1, def: s }, audience), salesLocked: s.salesLocked === true, inGlobalDeal: slotInGlobalDeal(s), globalDealSuppressedBy: globalDealSuppressedBy(s), salesLockedUntil: s.salesLocked ? await slotBookedUntil(ctx, t.id, i + 1) : null, slot: i + 1, zoneSlot, position: s.label,
           assignedTo: {
             ...a,
             partnerNames: a.partnerIds.map((id) => partners.find((p) => p.id === id)?.name ?? id),
@@ -170,7 +182,7 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
       }
     }
     const dsps: DspAdvertisers[] = partners.map((p) => ({ partnerId: p.id, name: p.name, advertisers: p.seats.map((s) => ({ advertiserId: advertiserSlug(s.name), name: s.name })) }))
-    return { items, dsps }
+    return { items, dsps, playlistDisplayTypes }
   }
 
   app.get('/available-inventory', async (req) => {

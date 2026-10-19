@@ -2752,6 +2752,16 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         };
+        PlaylistDisplayType: {
+            id: string;
+            name: string;
+            description: string | null;
+            /**
+             * @description That display type's IAB store zone; null when not defined. Absent from a demo snapshot taken before 15 Oct 2026.
+             * @enum {string|null}
+             */
+            storeZone?: "exterior" | "entrance" | "checkout" | "aisles" | "other" | null;
+        };
         AvailableInventoryRow: {
             displayTypeId: string;
             displayTypeName: string;
@@ -2765,17 +2775,6 @@ export interface components {
              * @enum {string|null}
              */
             displayTypeStoreZone?: "exterior" | "entrance" | "checkout" | "aisles" | "other" | null;
-            /** @description Every display type this row's playlist is assigned to (as its default playlist or a zone's), with each one's description. Available Inventory lists them when the playlist name is hovered. Read-only; absent from a demo snapshot taken before 14 Oct 2026. */
-            playlistDisplayTypes?: {
-                id: string;
-                name: string;
-                description: string | null;
-                /**
-                 * @description That display type's IAB store zone; null when not defined. Absent from a demo snapshot taken before 15 Oct 2026.
-                 * @enum {string|null}
-                 */
-                storeZone?: "exterior" | "entrance" | "checkout" | "aisles" | "other" | null;
-            }[];
             /**
              * @description Whether the slot has an audience score (an audience_vacd row).
              *     An unscored slot reports 0 assumed views, so it is never
@@ -4569,6 +4568,10 @@ export interface operations {
                     "application/json": {
                         items: components["schemas"]["AvailableInventoryRow"][];
                         dsps: components["schemas"]["DspAdvertisers"][];
+                        /** @description Every display type each playlist is assigned to (as its default playlist or a zone's), keyed by playlist id and listed once, in display-type order. Only playlists some row names are present. Available Inventory lists them when a playlist name is hovered. Read-only; absent from a demo snapshot taken before 19 Oct 2026. */
+                        playlistDisplayTypes?: {
+                            [key: string]: components["schemas"]["PlaylistDisplayType"][];
+                        };
                     };
                 };
             };
@@ -4623,6 +4626,10 @@ export interface operations {
                     "application/json": {
                         items: components["schemas"]["AvailableInventoryRow"][];
                         dsps: components["schemas"]["DspAdvertisers"][];
+                        /** @description As on GET /admin/v1/available-inventory. */
+                        playlistDisplayTypes?: {
+                            [key: string]: components["schemas"]["PlaylistDisplayType"][];
+                        };
                     };
                 };
             };
@@ -4658,6 +4665,10 @@ export interface operations {
                     "application/json": {
                         items: components["schemas"]["AvailableInventoryRow"][];
                         dsps: components["schemas"]["DspAdvertisers"][];
+                        /** @description As on GET /admin/v1/available-inventory. */
+                        playlistDisplayTypes?: {
+                            [key: string]: components["schemas"]["PlaylistDisplayType"][];
+                        };
                     };
                 };
             };

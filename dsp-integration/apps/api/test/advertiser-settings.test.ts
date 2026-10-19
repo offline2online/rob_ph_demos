@@ -117,13 +117,15 @@ describe('Advertiser settings (spec §4, §6)', () => {
     const res = await buildApp(await testContext()).inject({ method: 'GET', url: '/api/admin/v1/available-inventory' })
     expectMatchesContract('GET', '/admin/v1/available-inventory', 200, res.json())
     expect(res.json().items).toEqual([{
-      displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', displayTypeDescription: null, displayTypeStoreZone: null, zoneName: 'Zone 1', touchPoint: 'Digital Signage', playlistName: 'Menu Board — Long Format / Zone 1', playlistId: 'pl_zone_menu_board_1', playlistDisplayTypes: [{ id: 'menu_board', name: 'Menu Board — Long Format', description: null, storeZone: null }], unassigned: false, scored: true, unsellableReason: null, salesLocked: false, inGlobalDeal: true, globalDealSuppressedBy: null, salesLockedUntil: null, slot: 2, zoneSlot: 2, position: 'Supplier slot',
+      displayTypeId: 'menu_board', displayTypeName: 'Menu Board — Long Format', displayTypeDescription: null, displayTypeStoreZone: null, zoneName: 'Zone 1', touchPoint: 'Digital Signage', playlistName: 'Menu Board — Long Format / Zone 1', playlistId: 'pl_zone_menu_board_1', unassigned: false, scored: true, unsellableReason: null, salesLocked: false, inGlobalDeal: true, globalDealSuppressedBy: null, salesLockedUntil: null, slot: 2, zoneSlot: 2, position: 'Supplier slot',
       assignedTo: { partnerIds: ['p_google'], partnerNames: ['Google DSP'], advertisers: [], whitelistOnly: false, buyersListId: null, buyersListName: null, buyersListIds: [], buyersListNames: [], openAuction: false }, qrControl: true, visionAi: true,
       floorCpm: 100, floorCpmOverride: null, platformFloorCpm: 100,
       billingUnitHours: 24, billingUnitHoursOverride: null, billingUnitPending: null, displayTypeBillingUnitHours: null,
       maxCampaigns: 10, maxCampaignsOverride: null, displayTypeMaxCampaigns: null,
       maxPlayLengthSec: 15, maxPlayLengthSecOverride: null, displayTypeMaxPlayLengthSec: null, companyMaxPlayLengthSec: 15, slotCount: 3, displayCount: 3, openHoursPerDay: 24, playsPerWindow: 1920,
     }])
+    /* Each playlist's display types are listed once at the top level, not on every row (19 Oct 2026). */
+    expect(res.json().playlistDisplayTypes).toEqual({ pl_zone_menu_board_1: [{ id: 'menu_board', name: 'Menu Board — Long Format', description: null, storeZone: null }] })
     /* The picker behind Assigned to: every DSP and the advertisers it brings. */
     expect(res.json().dsps[0]).toMatchObject({ partnerId: 'p_google', name: 'Google DSP', advertisers: [{ advertiserId: 'nestle', name: 'Nestlé' }, { advertiserId: 'swisse', name: 'Swisse' }] })
   })
