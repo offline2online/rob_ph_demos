@@ -176,18 +176,27 @@ export function startAuctionScheduler(ctx: Context, log: (msg: string) => void, 
   /* A large estate's auction can outlast the interval; never start a second
      tick while one is running. (Across processes, auction_runs is what
      stops two of them clearing the same window.) */
-  let running = false
+  let running: Promise<unknown> | null = null
   const tick = async () => {
     if (running) return
-    running = true
+    const run = schedulerTick(ctx, log)
+    running = run
     try {
-      await schedulerTick(ctx, log)
+      await run
     } finally {
-      running = false
+      running = null
     }
   }
   const timer = setInterval(() => void tick().catch((e) => log(`Auction failed: ${e instanceof Error ? e.message : String(e)}`)), everyMs)
-  return () => clearInterval(timer)
+  /* Stops the timer. The promise settles once a tick that is already running
+     has finished, so a shutdown can let an auction or a billing run end
+     before the database closes (index.ts) instead of cutting it off mid-way
+     (pre-handover review, 18 Oct 2026). It never rejects: the tick's own
+     failure is logged by the timer above. */
+  return (): Promise<void> => {
+    clearInterval(timer)
+    return (running ?? Promise.resolve()).then(() => undefined, () => undefined)
+  }
 }
 
 /* Spec §3 "Enforcement and audit": auto-delete a Rejected campaign (and its

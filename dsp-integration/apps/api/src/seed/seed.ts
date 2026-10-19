@@ -119,6 +119,14 @@ const serviceAccountKeyFile = (clientEmail: string) =>
     private_key: generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
   })
 
+/* Whether the API fills an empty database with this sample data when it
+   starts (index.ts). Always outside production — a laptop, the E2E runs.
+   With NODE_ENV=production only when PH_SEED_DEMO=true asks for it: the
+   sample data is a demo retailer with DSP integration switched ON, so on a
+   client's real instance it published a false sellers.json (pre-handover
+   review, 18 Oct 2026). The hosted demo seeds through its own host. */
+export const seedsOnStart = (env: NodeJS.ProcessEnv): boolean => env.NODE_ENV !== 'production' || env.PH_SEED_DEMO === 'true'
+
 /* `bookings`: the sample bookings (a fresh database gets them, so the
    schedule isn't empty; tests seed a clean forward schedule instead).
    `demo`: the demo estate on top (demo.ts); off in the tests. */

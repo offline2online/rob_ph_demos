@@ -26,27 +26,59 @@ function privateIpv4(ip: string): boolean {
    config.bidders), so it must never be able to point the exchange at the
    VPC itself: the instance metadata service, a node, a pod, an internal
    service. Refused here: IP literals in private ranges, IPv6 loopback,
-   unique-local and link-local, names that are plainly local (localhost,
+   unique-local, link-local, multicast and any IPv6 form wrapping a private
+   IPv4 address (privateIpv6), names that are plainly local (localhost,
    .local, .internal, .svc, .home.arpa) and single-label names (a cluster
    Service name). A public name that resolves to a private address is
    stopped by the cluster's egress policy (deploy/kubernetes/base/
    networkpolicy.yaml) — the second lock; this is the first. */
+/* An IPv6 literal as its eight 16-bit groups (a trailing dotted IPv4 is two
+   of them), or null if it isn't one. */
+function ipv6Groups(v6: string): number[] | null {
+  let text = v6
+  const tail = /^(.*:)(\d+\.\d+\.\d+\.\d+)$/.exec(text)
+  if (tail) {
+    const o = tail[2].split('.').map(Number)
+    if (o.some((n) => n > 255)) return null
+    text = `${tail[1]}${((o[0] << 8) | o[1]).toString(16)}:${((o[2] << 8) | o[3]).toString(16)}`
+  }
+  const halves = text.split('::')
+  if (halves.length > 2) return null
+  const part = (x: string) => (x ? x.split(':') : [])
+  const [head, rest] = [part(halves[0]), halves.length === 2 ? part(halves[1]) : []]
+  const fill = halves.length === 2 ? 8 - head.length - rest.length : 0
+  const all = [...head, ...Array<string>(Math.max(0, fill)).fill('0'), ...rest]
+  if (all.length !== 8 || all.some((g) => !/^[0-9a-f]{1,4}$/.test(g))) return null
+  return all.map((g) => parseInt(g, 16))
+}
+/* An IPv6 address that can only mean the machine, the cluster or the VPC:
+   unspecified and loopback, unique-local (fc00::/7), link-local (fe80::/10),
+   multicast, and every form that carries an IPv4 address inside it — mapped
+   (::ffff:a.b.c.d), translated (::ffff:0:a.b.c.d), compatible (::a.b.c.d),
+   NAT64 (64:ff9b::/96, and the local-use 64:ff9b:1::/48) and 6to4
+   (2002:aabb:ccdd::/48) — when that IPv4 address is private, plus Teredo
+   (2001::/32) outright, whose client address is obfuscated and which no
+   bidder uses (pre-handover review, 18 Oct 2026: the NAT64 and translated
+   forms reached 10.0.0.0/8). */
+function privateIpv6(v6: string): boolean {
+  const g = ipv6Groups(v6)
+  if (!g) return true
+  const ipv4 = (hi: number, lo: number) => `${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`
+  const zeros = (from: number, to: number) => g.slice(from, to).every((x) => x === 0)
+  if (zeros(0, 7) && g[7] <= 1) return true
+  if ((g[0] & 0xfe00) === 0xfc00 || (g[0] & 0xffc0) === 0xfe80 || (g[0] & 0xff00) === 0xff00) return true
+  if (g[0] === 0x64 && g[1] === 0xff9b && g[2] === 1) return true
+  if (g[0] === 0x2001 && g[1] === 0) return true
+  if (g[0] === 0x2002) return privateIpv4(ipv4(g[1], g[2]))
+  if (zeros(0, 5) && g[5] === 0xffff) return privateIpv4(ipv4(g[6], g[7]))
+  if (zeros(0, 4) && g[4] === 0xffff && g[5] === 0) return privateIpv4(ipv4(g[6], g[7]))
+  if (zeros(0, 6)) return privateIpv4(ipv4(g[6], g[7]))
+  if (g[0] === 0x64 && g[1] === 0xff9b && zeros(2, 6)) return privateIpv4(ipv4(g[6], g[7]))
+  return false
+}
 export function isPrivateHost(hostname: string): boolean {
   const h = hostname.toLowerCase().replace(/\.$/, '')
-  if (h.startsWith('[') && h.endsWith(']')) {
-    const v6 = h.slice(1, -1)
-    if (v6 === '::1' || v6 === '::' || /^f[cd]/.test(v6) || /^fe[89ab]/.test(v6)) return true
-    /* An IPv4-mapped address, dotted (::ffff:10.0.0.1) or as the URL parser
-       rewrites it, in hex (::ffff:a00:1). */
-    const dotted = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(v6)
-    if (dotted) return privateIpv4(dotted[1])
-    const hex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(v6)
-    if (hex) {
-      const [hi, lo] = [parseInt(hex[1], 16), parseInt(hex[2], 16)]
-      return privateIpv4(`${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`)
-    }
-    return false
-  }
+  if (h.startsWith('[') && h.endsWith(']')) return privateIpv6(h.slice(1, -1))
   if (privateIpv4(h)) return true
   if (h === 'localhost' || !h.includes('.')) return true
   return /\.(localhost|local|internal|svc|localdomain|home\.arpa)$/.test(h)
@@ -68,6 +100,14 @@ export const bidderTuning = (b: PartnerRecord['bidder'], config: { bidderQps: nu
 
 export const bidderComplete = (b: PartnerRecord['bidder']) => !!b.bidderEndpoint?.trim() && !!b.seatIds?.length
 
+/* What saving a DSP page would change, worked out without changing anything:
+   credentials (only this provider's fields; secrets write-only, a field the
+   DSP fixes once connected refused), the bidder integration (endpoint — a
+   public https URL, never a private address — seat IDs, QPS and timeout
+   overrides, floor, committed plays), the DSP's own advertiser and category
+   lists (only seats it synced; nothing on both lists), and the mode (Live
+   only once connected and complete). Returns field errors, or a conflict for
+   a mode it can't take yet, or the patch and the secrets to store. */
 export function applyPartnerInput(p: PartnerRecord, currentSecrets: Record<string, string>, body: PartnerInput, company: CompanySettings, sandboxEndpoint?: string): { change?: PartnerChange; errors: Detail[]; conflict?: string } {
   const errors: Detail[] = []
   const def = providerDef(p.provider)

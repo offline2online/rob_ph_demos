@@ -1,3 +1,6 @@
+/* The admin UI's entry point. The hosted prototype (VITE_DEMO=1) first
+   installs the static API (src/demo/), which answers from the hosted API or
+   a read-only snapshot; a normal build renders straight away. */
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'

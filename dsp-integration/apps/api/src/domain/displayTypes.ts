@@ -1,4 +1,10 @@
-/* Stand-in rules for the existing display type record (POC only). */
+/* Rules over the display type record. Two kinds, which part on integration:
+   - the reads this build depends on everywhere — zonesOf, defaultVacdOf,
+     audienceOf, zonePlaceOf: what a position's zone and audience come from.
+     These stay.
+   - validation of the PH Core fields the POC's stand-in editor saves
+     (validateRecord, validatePlaylistSettings): POC only, since PH Core owns
+     that record and its editor; they go with the stand-in. */
 import { TOUCH_POINTS, type DisplayType, type Playlist, type StoreZone } from '@ph-dsp/types'
 import type { AudienceSource } from '../platform/AudienceSource'
 import type { PlaylistRecord, PlaylistSource } from '../platform/PlaylistSource'

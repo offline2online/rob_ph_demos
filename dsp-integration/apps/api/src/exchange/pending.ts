@@ -1,3 +1,8 @@
+/* Settling the API bids (POST /v1/reservations) a window's auction did not
+   decide: they are marked lost, with the reason, so no bid is ever left
+   pending for ever (stability review, 24 Sep 2026). Called by the auction
+   when a position clears or fails, and by the scheduler's sweep for windows
+   that started with no auction. */
 import type { Context } from '../context'
 import { tx } from '../db/db'
 

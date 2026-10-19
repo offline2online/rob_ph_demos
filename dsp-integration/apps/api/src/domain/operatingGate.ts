@@ -67,16 +67,71 @@ export function operatingHoursExt(zone: string | null | undefined, groups: reado
   }
 }
 
+/* The hour groups, per display type and zone, kept for HOUR_GROUPS_TTL_MS
+   (pre-handover review, 18 Oct 2026). Building them reads every display of
+   the type and every store, and since the operating-hours gate (16 Oct 2026)
+   they are asked for on every availability check, bid request, bid placed,
+   auction position and real-time impression: on a 15,000-display estate that
+   read was most of the request (bids 928 → 288 req/s, a real-time impression
+   2.1 → 10.2 ms, 13% of impressions missing tmax). Displays and stores change
+   only through the platform, never through this API, so the same one-second
+   snapshot the display counts use (platform/DisplaySource.ts) answers exactly
+   what a fresh read would, a second later at most. The zone is part of the
+   key, so a display type saved with a new zone is seen at once. Keyed on the
+   context's DisplaySource, so each context (and each test) has its own. On
+   integration the platform's Displays & Devices and Stores services can
+   answer the grouped hours themselves and this becomes their cache.
+
+   The stores are read once per snapshot, shared by every display type, and
+   each type's groups expire on their own clock: a request that walks every
+   type (Available Inventory, 600 types on a large estate) used to re-read
+   all the stores per type and outlive its own one-second cache, which made
+   it slower than reading everything afresh (pre-merge review, 19 Oct 2026). */
+export const HOUR_GROUPS_TTL_MS = 1_000
+interface HourGroupsCache {
+  byKey: Map<string, { at: number; groups: Awaitable<ScreenGroup[]> }>
+  stores: { at: number; byId: Awaitable<ReadonlyMap<string, StoreRecord>> } | null
+}
+const hourGroupsCache = new WeakMap<object, HourGroupsCache>()
+
+/* Every store by id, from the cache's one-second snapshot. */
+function storesById(ctx: Context, cache: HourGroupsCache, now: number): Awaitable<ReadonlyMap<string, StoreRecord>> {
+  if (cache.stores && now - cache.stores.at <= HOUR_GROUPS_TTL_MS) return cache.stores.byId
+  /* A new snapshot: drop the groups that have expired since the last one, so
+     the map holds no more than the display types asked for in the last second. */
+  for (const [key, e] of cache.byKey) if (now - e.at > HOUR_GROUPS_TTL_MS) cache.byKey.delete(key)
+  const list = ctx.stores.list()
+  const toMap = (l: StoreRecord[]): ReadonlyMap<string, StoreRecord> => new Map(l.map((s) => [s.id, s]))
+  const byId = list instanceof Promise ? list.then(toMap) : toMap(list)
+  const snapshot = { at: now, byId }
+  cache.stores = snapshot
+  /* A failed read is never served from the cache: the next call reads again. */
+  if (byId instanceof Promise) byId.catch(() => { if (cache.stores === snapshot) cache.stores = null })
+  return byId
+}
+
 /* A position's displays grouped by resolved hours. Sync-first like the other per-position reads. */
 export function positionHourGroups(ctx: Context, p: { displayType: { id: string; phExtensions?: { storeZone?: string | null } | null } }): Awaitable<ScreenGroup[]> {
   const zone = p.displayType.phExtensions?.storeZone
+  let cache = hourGroupsCache.get(ctx.displays)
+  if (!cache) hourGroupsCache.set(ctx.displays, (cache = { byKey: new Map(), stores: null }))
+  const c = cache
+  const now = Date.now()
+  const key = `${p.displayType.id}\u0000${zone ?? ''}`
+  const hit = c.byKey.get(key)
+  if (hit && now - hit.at <= HOUR_GROUPS_TTL_MS) return hit.groups
   const displays = ctx.displays.listByDisplayType(p.displayType.id)
   const build = (ds: DisplayRecord[]) => {
     if (isExternalZone(zone)) return hourGroups(zone, ds, new Map())
-    const stores = ctx.stores.list()
-    return stores instanceof Promise ? stores.then((l) => hourGroups(zone, ds, new Map(l.map((s) => [s.id, s])))) : hourGroups(zone, ds, new Map(stores.map((s) => [s.id, s])))
+    const stores = storesById(ctx, c, now)
+    return stores instanceof Promise ? stores.then((byId) => hourGroups(zone, ds, byId)) : hourGroups(zone, ds, stores)
   }
-  return displays instanceof Promise ? displays.then(build) : build(displays)
+  const groups = displays instanceof Promise ? displays.then(build) : build(displays)
+  const entry = { at: now, groups }
+  c.byKey.set(key, entry)
+  /* A failed read is never served from the cache: the next call reads again. */
+  if (groups instanceof Promise) groups.catch(() => { if (c.byKey.get(key) === entry) c.byKey.delete(key) })
+  return groups
 }
 
 /* May this display receive offers at this instant? A display with no store record follows the zone's default (open all day). */

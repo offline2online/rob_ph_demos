@@ -153,6 +153,19 @@ export async function runAuction(ctx: Context, at?: Date, opts: AuctionOptions =
   return { windowStart: start, positions: outcomes }
 }
 
+/* One position's window auction, in this order:
+   1. skip what isn't sold by window auction or can't be sold now — real-time
+      positions, ones held by reservation, no displays, outside every
+      display's operating hours, a window already taken;
+   2. build the waterfall of tiers from its buyers lists (one tier per list,
+      ranked PG → preferred → private auction);
+   3. a tier under a locked term books the window outright at its rate;
+   4. a position locked against new sales sells nothing new;
+   5. otherwise auction tier by tier until one yields a winner at its floor;
+   6. settle any API bid still pending, so none outlives its window;
+   7. hand the winner off to the campaign store (exchange/handoff.ts).
+   Returns what happened (skipped and why, requests, bids, the winner) for
+   the auction's result and its log. */
 async function clearPosition(ctx: Context, p: PositionRef, start: string, bidders: PartnerRecord[]): Promise<PositionOutcome> {
   const out: PositionOutcome = { positionId: p.positionId, bidRequests: 0, bids: 0, winner: null }
   if (isRealtime(p)) return { ...out, skipped: 'Sold in real time, per impression: no window auction.' }
@@ -345,6 +358,17 @@ async function recordDspBid(ctx: Context, p: PositionRef, dsp: PartnerRecord, st
   return ctx.reservations.insert({ ...base, advertiserId: v.advertiserId, campaignId: v.campaignId, pricingType: v.pricingType })
 }
 
+/* Every pre-auction check on one DSP bid, cheapest and most basic first, and
+   the first refusal wins (its reason is what the reservation or impression
+   records): the response's currency, the price (present, finite, under the
+   ceiling), the impression id, the seat, the deal ID a deal position
+   requires (or the global deal's eligibility), the advertiser (from adomain
+   against the DSP's synced seats), the retailer's advertiser and category
+   lists, the creative (crid → a fetched-and-hashed creative PH has approved;
+   unknown ones are queued for review, or on the real-time path may fill and
+   be reviewed after the play), then the campaign's approval, its pricing
+   type against the position, the version count and the floor. A pass is a
+   candidate; the auction then ranks candidates by price. */
 export async function vetBid(ctx: Context, p: PositionRef, dsp: PartnerRecord, start: string, res: BidResponse, seatId: string | undefined, bid: Bid, budget: { creativeFetches: number }, opts: VetOptions = {}): Promise<VettedBid> {
   const currency = TRANSACTING_CURRENCY
   const reject = async (reason: string, extra: { advertiserId?: string; campaignId?: string; code?: string } = {}): Promise<VettedBid> => ({ ok: false, reason, ...extra })

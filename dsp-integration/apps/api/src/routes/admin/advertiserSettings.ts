@@ -10,7 +10,7 @@ import { resolveBaseFloor } from '../../domain/pricing'
 import { billingChangeApplied, changePending, globalDealSuppressedBy, nextWindowFor, positionIdOf, slotInGlobalDeal, slotWindowCommitments, unsellableReason } from '../../domain/positions'
 import { audienceOf, zonesOf } from '../../domain/displayTypes'
 import { playsPerWindowOpenOf } from '../../domain/plays'
-import { hourGroups, openHoursPerDayOf } from '../../domain/operatingGate'
+import { openHoursPerDayOf, positionHourGroups } from '../../domain/operatingGate'
 import { assignedToSlot, rotationSizeOf, validateAssigned } from '../../domain/slots'
 import type { Guards } from '../../http/app'
 import { conflict, hasDependents, notFound, validationFailed } from '../../http/errors'
@@ -66,7 +66,6 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
     /* A lock whose bookings have all played is released before it is shown. */
     await releaseSettledSlotLocks(ctx)
     const partners = await ctx.partners.list()
-    const stores = new Map((await ctx.stores.list()).map((s) => [s.id, s]))
     const buyersLists = await ctx.buyersLists.list()
     const items: AvailableInventoryRow[] = []
     const company = await ctx.company.get()
@@ -107,8 +106,9 @@ export const advertiserSettingsRoutes = (ctx: Context, guards: Guards): FastifyP
          — this build has no such concept). Per display type, since a
          multi-zone display type's zones all share the one physical screen. */
       const displayCount = (await ctx.displays.summaryByDisplayType(t.id)).displays
-      /* Zone-based operating hours (17 Oct 2026): external zones count 24 hours, internal ones the average trading hours of the stores with displays on this display type. */
-      const openHoursPerDay = openHoursPerDayOf(hourGroups(t.phExtensions?.storeZone, await ctx.displays.listByDisplayType(t.id), stores))
+      /* Zone-based operating hours (17 Oct 2026): external zones count 24 hours, internal ones the average trading hours of the stores with displays on this display type.
+         Read through positionHourGroups' one-second cache, the same groups the bid path uses, not by listing the type's displays here (review, 18 Oct 2026). */
+      const openHoursPerDay = openHoursPerDayOf(await positionHourGroups(ctx, { displayType: t }))
       const unassigned = displayCount === 0
       /* zoneSlot: this slot's 1-based position within its own zone's segment
          of the list, rather than `slot`'s flat position across every zone

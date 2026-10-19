@@ -56,9 +56,12 @@ tooling before relying on either.
 
 ## Configure
 
-Everything the API reads is an environment variable
-(`apps/api/src/config.ts`); `base/configmap.yaml` holds the plain ones and
-`base/secret.example.yaml` shows the two secrets.
+Everything the API reads is an environment variable (`apps/api/src/config.ts`,
+plus `PH_SECRETS_KEY` in `context.ts`, `POC_ROLE` in `auth/session.ts`,
+`DSP_INTEGRATION_ENABLED` in `flags/Flags.ts`, `PH_MIGRATIONS_DIRS` in
+`db/migrate.ts` and `PH_SEED_DEMO` in `index.ts`; `.env.example` lists every
+one); `base/configmap.yaml` holds the plain ones and
+`base/secret.example.yaml` shows the three secrets.
 
 | Variable | Set to |
 |---|---|
@@ -70,12 +73,16 @@ Everything the API reads is an environment variable
 | `PH_MIGRATIONS_DIRS` | Set by the image: the bundle finds its migrations there. |
 | `PH_SECRETS_KEY` | Secret. 32 random bytes, base64: AES-256-GCM for DSP credentials at rest. Rotating it means re-entering every DSP's credentials. |
 | `PARTNER_TOKENS` | Secret. JSON, token → partner id, one long random token per DSP. With `NODE_ENV=production` the API refuses to start with the public POC tokens. On integration the platform's own token issuance replaces this (PH-CORE-BOUNDARIES.md, *Partner identity*). |
-| `PARTNER_RATE_PER_SECOND`, `PARTNER_RATE_BURST` | Per partner token, per pod: 50 and 100 by default. |
+| `PH_PLAYER_TOKEN` | Secret. The bearer PH Core's player presents to the Player API (`/api/player/v1`, real-time bidding). Unset in production, every Player API call is 401 — nothing sells in real time. The Player API has no route on either ingress yet: see *Security posture*. |
+| `PH_SEED_DEMO` | Unset on a real instance: a fresh database starts empty and switched off. `true` only on a demo cluster (see *Operations*, Start-up). |
+| `PARTNER_RATE_PER_SECOND`, `PARTNER_RATE_BURST` | Per partner token, per pod: 50 and 100 by default. A value that isn't a positive number falls back to the default. |
 | `PH_MAX_UPLOADS_IN_FLIGHT` | Asset uploads held in memory at once across all partners (default 4). Memory sizing below depends on it. |
 | `PH_AUCTION_CONCURRENCY` | Positions the auction clears at once (default 16). |
 | `PH_RESERVATION_RETENTION_DAYS` | Rejected, lost and never-cleared bids are deleted this long after their window (default 90). Won and reserved windows are kept. |
 | `BID_ENDPOINT_SOURCE` | `mock` (default): bid requests go to the `*_BIDDER_URL` below. `partner`: they go to the endpoint saved on each DSP's page, which is what a live exchange uses. Seeded sample endpoints are the sandbox (`*_BIDDER_URL`) values, so the round trip works in both modes. |
 | `DV360_BIDDER_URL`, `AMAZON_BIDDER_URL`, `TTD_BIDDER_URL`, the DSP API base URLs | The real DSP endpoints. They default to the mock DSP service, which is **not** deployed by these manifests; for a test cluster, deploy `apps/dsp-mocks` as a Service and point these at it. |
+| `DV360_CREATIVE_BASE`, `AMAZON_CREATIVE_BASE`, `TTD_CREATIVE_BASE` | Each DSP's creative host and path — the only place a creative URL in a bid may be fetched from for review (and a redirect is followed only while it stays there). Default: the mock service's. |
+| `PH_REALTIME_TMAX_MS`, `PH_REALTIME_FILL_TTL_SEC`, `PH_UNSOLD_RETENTION_DAYS` | Real-time clearing budget (200 ms), how long a fill's proof of play is accepted (120 s), and how long the hourly unsold aggregates are kept (400 days). |
 | `POC_ROLE` | `hq_admin`. POC stand-in for the HQ Admin session: every Admin API caller is this role until `SessionSource` is the platform's. This is why the Admin API only ever has an internal ingress. |
 
 **Secrets never come from git.** Produce the `dsp-exchange-api` Secret with
@@ -86,9 +93,11 @@ kustomization.
 ## Deploy
 
 1. Replace in `base/`: the image (`deployment.yaml`), the certificate and
-   WAF ARNs and the hostnames (`ingress.yaml`), the storage class
-   (`pvc.yaml`), the VPC CIDR the ALBs sit in (`networkpolicy.yaml`), and
-   the DSP endpoints (`configmap.yaml`).
+   WAF ARNs and the hostnames (`ingress.yaml`), the internal ALB's
+   `inbound-cidrs` — the ranges HQ Admin's callers come from, VPC and any
+   VPN or office CIDRs; commented out until set (`ingress.yaml`), the
+   storage class (`pvc.yaml`), the VPC CIDR the ALBs sit in
+   (`networkpolicy.yaml`), and the DSP endpoints (`configmap.yaml`).
 2. Create the Secret (above).
 3. `kubectl apply -k deploy/kubernetes/base`.
 4. Wait for `/readyz`: the pod runs every migration on start and answers
@@ -148,15 +157,20 @@ safe across instances; one live winner per window and one auction per
 window are enforced in the database — migrations 0021 and 0024), so the
 path to N replicas is one change: **the database.**
 
-- **Postgres (RDS)** — the SQL in every migration and repository is plain
-  and Postgres-compatible, but the driver is `node:sqlite`, which is
-  synchronous; the repositories, the domain code and the routes call it
-  without awaiting. A Postgres adapter therefore means making the
-  repository layer asynchronous (a contained change: every seam and
-  repository is one file, and `apps/api/src/context.ts` is the only wiring
-  point), and the unique indexes of 0021 and the `auction_runs` claim of
-  0024 carry over unchanged. This is engineering's integration work, not a
-  flag.
+- **Postgres (RDS)** — the repository layer is already awaitable (every
+  seam and repository returns `T | Promise<T>` and every caller awaits it,
+  since 1–2 Oct 2026), raw SQL lives only in `platform/`, `repos/` and
+  `db/`, and the unique indexes of 0021 and the `auction_runs` claim of
+  0024 carry over unchanged. What a Postgres adapter still has to do
+  (pre-handover review, 18 Oct 2026 — `docs/dsp-integration/api/HANDOVER-REVIEW.md`,
+  *Porting checklist*): `?` placeholders and `.changes` in the
+  repositories; `rowid` in migrations 0021, 0026, 0029 and 0037 (and the
+  approval module's 0102); SQLite triggers in 0037, 0067, 0069 and 0070
+  (and 0102); and the transaction lock — `tx`/`gate`/`onFree` in
+  `db/db.ts` take the SQLite handle, and `ctx.db` is passed to them
+  directly from about two dozen call sites in routes, the exchange and the
+  domain, so that handle becomes a transaction port first. This is
+  engineering's integration work, not a flag.
 - **Creatives to S3** — `AssetStore` (`platform/AssetStore.ts`) is the one
   seam; the local folder is its stand-in. Until then the volume holds them.
 - Then: `replicas: 2+`, `PH_SCHEDULER=off` on the API pods,
@@ -191,17 +205,26 @@ What the review of 24 Sep 2026 checked, and where each control lives.
 | Two processes auctioning one window (duplicate bid requests to DSPs). | `auction_runs` (migration 0024): one claim per window, taken over only if left unfinished for 15 minutes. |
 | Data growth from bids. | Rejected, lost and never-cleared bids deleted after `PH_RESERVATION_RETENTION_DAYS`. |
 | Backups. | The database is one file on EBS: snapshot the volume. Restoring it restores the exchange, including bids and bookings. |
+| The Player API (`/api/player/v1`, real-time bidding, added 7 Oct 2026). | **Not routed by either ingress**, so as shipped no player can reach it; and it authenticates every player with one shared token (`PH_PLAYER_TOKEN`). Before routing it: give it its own ALB (or listener) restricted with `inbound-cidrs` to the store networks' egress addresses, and plan per-device credentials tied to `displayId` — a token lifted from one store device can otherwise signal impressions for any display. See `docs/dsp-integration/api/HANDOVER-REVIEW.md`. |
+| NetworkPolicy enforcement. | `networkpolicy.yaml` does nothing unless the cluster runs an enforcing plugin (the VPC CNI network policy agent, or Calico/Cilium). Check before relying on it; its ingress rule should also be narrowed from `10.0.0.0/8` to the ALB subnets. |
+| Requests decided by path. | The admin session check, the SSP audit log and `no-store` decide on the route the router matched, so a percent-encoded spelling of a path (`/api/%61dmin/…`) gets the same treatment (fixed 18 Oct 2026). |
 
 ## Operations
 
 - **Logs** go to stdout as JSON (Fastify's logger); the authorization
   header and credential fields are redacted.
-- **Start-up** runs every pending migration, then seeds an empty database
-  with the sample data (a real instance is switched off until an admin
-  enables DSP integration).
-- **Shutdown** on SIGTERM: stop accepting, finish in-flight requests, stop
-  the schedulers, checkpoint and close the database (`index.ts`);
-  `terminationGracePeriodSeconds` is 30.
+- **Start-up** runs every pending migration. With `NODE_ENV=production`
+  (the image's default) an empty database then stays **empty and switched
+  off** until an admin enables DSP integration (migration 0023): nothing is
+  seeded. A demo cluster that should start with the prototype's sample
+  retailer, DSPs, campaigns and bookings — with DSP integration switched
+  ON, so `sellers.json` publishes the demo seller — sets
+  `PH_SEED_DEMO=true`. Before 18 Oct 2026 every fresh production volume was
+  seeded that way; never point a real instance at a database that was.
+- **Shutdown** on SIGTERM: stop the schedulers, stop accepting, finish
+  in-flight requests, let a scheduler tick that is already running (an
+  auction, billing) finish for up to 20 s, then checkpoint and close the
+  database (`index.ts`); `terminationGracePeriodSeconds` is 30.
 - **Probes:** `/healthz` (liveness) and `/readyz` (readiness and start-up).
 - **Scheduled work:** every minute, in-process or as the CronJob — billing
   the windows that have ended, the deal auction for any window that is due (a deal's

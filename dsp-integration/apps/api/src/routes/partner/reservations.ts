@@ -45,6 +45,22 @@ export const reservationView = (r: ReservationRecord, provider?: string) => ({
 })
 
 export const reservationRoutes = (ctx: Context): FastifyPluginAsync => async (app) => {
+  /* A bid or a reservation for one play window, in this order:
+     1. the caller may write (connected) and the body is valid: one of its own
+        advertisers and campaigns, the type and deal type, a price under the
+        ceiling, a position it can see, the start of one of its windows;
+     2. the window can be sold this way now: not a real-time position, not
+        started or already auctioned, scored, with displays open in it, not
+        locked against sales, inside the deal's delivery term, reserve versus
+        bid matching the position's assignment, not taken, and not this
+        advertiser's second open bid on it;
+     3. pre-auction enforcement, as a DSP's bid would meet it (advertiser and
+        category lists, the campaign's approval, targeting, the floor);
+     4. one transaction writes it — a reservation is booked at once and the
+        window's other pending bids are settled; a bid waits for the auction —
+        and the database's unique indexes turn a race with another process
+        into a 409 (migrations 0021, 0026);
+     5. a reservation is handed off to the campaign store straight away. */
   app.post<{ Body: Body }>('/reservations', async (req, reply) => {
     const b = req.body ?? {}
     const partner = req.partner

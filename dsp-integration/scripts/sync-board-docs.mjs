@@ -6,8 +6,11 @@
      npm run board:sync -- --check-mcp FILE --print-diff
 
    A sync (and --check) also covers the project documents in MIRRORS below:
-   the three board parts of api/PH-CORE-BOUNDARIES.md and the admin API
-   performance review.
+   every handover document — the "0 — Start here" index (START-HERE.md), the
+   handover review, PH-CORE-BOUNDARIES.md, the approval integration guide,
+   API.md, the EKS deployment guide, the three reviews and the AWS demo test
+   flow (18 Oct 2026). A file over the 20k cap on project documents is split
+   into parts by heading.
 
    The board is the second home of these documents (root CLAUDE.md: "treat a
    divergence as a bug in whichever is stale"), and the repo file is the
@@ -62,12 +65,48 @@ const H_TABLES = '### Tables: whose they are'
 const H_OUTBOUND = '## Outbound boundaries — what this build calls'
 const H_AUTH = '## Authentication seams — partner identity, advertiser principal (spec only, REQUIREMENTS §9.5)'
 const mirrorPrefix = (n) => `> Mirror of \`dsp-integration/${BOUNDARIES}\` (part ${n} of 3) — the repo wins. Rewritten from the repo file on every merge to main; edit the file, not this copy.\n\n`
+/* The handover documents (pre-handover review, 18 Oct 2026): so every staff
+   member's agent on the PH Agent Console can read what engineering reads, and
+   so no board copy is ever retyped. Each new board copy opens with a line
+   saying it is a mirror and which file wins. Split where a file is over the
+   cap, at whole heading lines, like PH-CORE-BOUNDARIES.md above. */
+const repoMirror = (file, part) => `> Mirror of \`dsp-integration/${file}\`${part ? ` (part ${part[0]} of ${part[1]})` : ''} — the repo wins. Rewritten from the repo file on every merge to main; edit the file, not this copy.\n\n`
+const START = 'docs/dsp-integration/START-HERE.md'
+const HANDOVER = 'docs/dsp-integration/api/HANDOVER-REVIEW.md'
+const H_MEASURED = '## 3. Measured'
+const APPROVAL = 'docs/dsp-integration/CAMPAIGN-APPROVAL-INTEGRATION.md'
+const H_MIGRATION = '## 4. Run the approval migration, or move the fields onto the campaign'
+const API = 'docs/dsp-integration/api/API.md'
+const H_PARTNER = '## Partner API — `/v1`'
+const H_ADMIN = '## Admin API — `/admin/v1`'
+const H_BUYERS = '### Buyers lists (private auctions; admin only)'
+const H_STANDINS = '## POC stand-ins for the existing platform'
+const EKS = 'deploy/kubernetes/README.md'
+const AWS_DEMO = 'docs/dsp-integration/AWS-DEMO-TEST-FLOW.md'
+
 const MIRRORS = [
   { id: 'mDJ50oQKTbgaKPvxeCUs', file: BOUNDARIES, sourceSlices: [{ end: H_TABLES }], sourcePrefix: mirrorPrefix(1) },
   { id: 'W140rfmV19EdPYQnBeTJ', file: BOUNDARIES, sourceSlices: [{ start: H_TABLES, end: H_AUTH }], sourcePrefix: mirrorPrefix(2) },
   { id: 'PnWgzNqVScsyfEehXKbl', file: BOUNDARIES, sourceSlices: [{ start: H_AUTH }], sourcePrefix: mirrorPrefix(3) },
   /* Whole files: no slices, no prefix — the board copy is the file. */
   { id: 'Vd6akDtwNOrUSKoiuZCg', file: 'docs/dsp-integration/api/ADMIN-API-PERFORMANCE.md', sourceSlices: [], sourcePrefix: '' },
+  /* Mirrored by backlog-tracker's post-merge sync since they were added; listed
+     here too, so a merge that isn't a train merge updates them as well. */
+  { id: 'xzYDhGNzY1iLTDoRtouA', file: 'docs/dsp-integration/api/SCALE-15000-EKS.md', sourceSlices: [], sourcePrefix: '' },
+  { id: 'qudg1TvEwov2PINmJD4p', file: 'docs/dsp-integration/api/SECURITY-PERFORMANCE.md', sourceSlices: [], sourcePrefix: '' },
+  /* The handover set (18 Oct 2026). */
+  { id: 'tiApBmLe5GDkqrqrcIjD', file: START, sourceSlices: [], sourcePrefix: repoMirror(START) },
+  { id: 'ezhL36100y402EButyl9', file: HANDOVER, sourceSlices: [{ end: H_MEASURED }], sourcePrefix: repoMirror(HANDOVER, [1, 2]) },
+  { id: 'Rd8j4S10FYbXTBFG4efN', file: HANDOVER, sourceSlices: [{ start: H_MEASURED }], sourcePrefix: repoMirror(HANDOVER, [2, 2]) },
+  { id: '6O7ZNvasbMcn3q9dycY7', file: APPROVAL, sourceSlices: [{ end: H_MIGRATION }], sourcePrefix: repoMirror(APPROVAL, [1, 2]) },
+  { id: 'tMoTHRAx74HWzyTs94B5', file: APPROVAL, sourceSlices: [{ start: H_MIGRATION }], sourcePrefix: repoMirror(APPROVAL, [2, 2]) },
+  { id: 'T6nK6QNidO4L30K7vsOo', file: EKS, sourceSlices: [], sourcePrefix: repoMirror(EKS) },
+  { id: 'pa2M9hncfxXsEYgSc33G', file: API, sourceSlices: [{ end: H_PARTNER }], sourcePrefix: repoMirror(API, [1, 5]) },
+  { id: 'FfBh1EnAh58FPPhK6RU6', file: API, sourceSlices: [{ start: H_PARTNER, end: H_ADMIN }], sourcePrefix: repoMirror(API, [2, 5]) },
+  { id: 'GpUGYxHvdGsQYZ9UNxSC', file: API, sourceSlices: [{ start: H_ADMIN, end: H_BUYERS }], sourcePrefix: repoMirror(API, [3, 5]) },
+  { id: 'ABIsJgZHbGv5iKiZb0fb', file: API, sourceSlices: [{ start: H_BUYERS, end: H_STANDINS }], sourcePrefix: repoMirror(API, [4, 5]) },
+  { id: 'tVxupKgza0snxjhLtUd4', file: API, sourceSlices: [{ start: H_STANDINS }], sourcePrefix: repoMirror(API, [5, 5]) },
+  { id: 'Stonlf6Pp1EaS34ZePzG', file: AWS_DEMO, sourceSlices: [], sourcePrefix: repoMirror(AWS_DEMO) },
 ]
 /* The same slicing the post-merge mirror uses — one implementation. */
 const { mirrorText } = createRequire(import.meta.url)('../../backlog-tracker/scripts/docs-sync-lib.js')

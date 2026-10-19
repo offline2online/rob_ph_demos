@@ -29,19 +29,48 @@ export interface Guards {
   requireScope: (req: FastifyRequest, scope: Scope) => void
 }
 
+/* The path a request is decided on: the route the router matched (pre-handover
+   review, 18 Oct 2026). The router decodes percent-escapes before it matches,
+   so the raw URL is the wrong thing to test — `/api/%61dmin/v1/display-types`
+   reaches the admin route while `req.url.startsWith('/api/admin/')` is false,
+   which skipped the session and scope check and the SSP audit log. The matched
+   pattern (`/api/admin/v1/display-types/:id`) cannot be spelled two ways. A
+   request no route matched is a 404 whatever it says; its path is decoded so
+   the hooks still see what it was aimed at. */
+export function routePathOf(req: Pick<FastifyRequest, 'url' | 'routeOptions'>): string {
+  const matched = req.routeOptions?.url
+  if (matched) return matched
+  const raw = req.url.split('?')[0]
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    return raw
+  }
+}
+
+const REQUEST_TIMEOUT_MS = 15 * 60_000
+
 export function buildApp(ctx: Context, opts: { logger?: boolean } = {}): FastifyInstance {
   const app = Fastify({
     logger: opts.logger ? { redact: ['req.headers.authorization', 'req.body.credentials'] } : false,
+    /* How long a client may take to send a whole request. Fastify's default is
+       no limit, so a partner trickling an upload body a byte at a time held one
+       of the process's few upload slots (PH_MAX_UPLOADS_IN_FLIGHT) for ever —
+       the ALB's idle timer restarts on every byte (pre-handover review, 18 Oct
+       2026). Fifteen minutes is a 200 MB creative at under 2 Mbit/s. Sending a
+       response is not limited by it. */
+    requestTimeout: REQUEST_TIMEOUT_MS,
     ajv: { customOptions: { removeAdditional: false, coerceTypes: false } },
   })
   app.decorateRequest('session', null as unknown as Session)
   app.addHook('onRequest', async (req) => {
     /* Stand-in HQ Admin session for every admin request (POC_ROLE). Help
        desk users see none of this build (spec, "Who sees each section"). */
-    if (req.url.startsWith('/api/admin/')) {
+    const path = routePathOf(req)
+    if (path.startsWith('/api/admin/')) {
       req.session = await ctx.session.current()
       /* Everything but the session itself, which tells the UI who is asking. */
-      if (!req.url.startsWith('/api/admin/v1/session') && !hasScope(req.session, 'sections')) throw forbidden()
+      if (!path.startsWith('/api/admin/v1/session') && !hasScope(req.session, 'sections')) throw forbidden()
     }
   })
 
@@ -72,7 +101,7 @@ export function buildApp(ctx: Context, opts: { logger?: boolean } = {}): Fastify
     reply.header('Referrer-Policy', 'no-referrer')
     reply.header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'")
     reply.header('Cross-Origin-Resource-Policy', req.url.startsWith('/assets/') ? 'cross-origin' : 'same-origin')
-    if (req.url.startsWith('/api/')) reply.header('Cache-Control', 'no-store')
+    if (routePathOf(req).startsWith('/api/')) reply.header('Cache-Control', 'no-store')
     return payload
   })
 
@@ -84,7 +113,7 @@ export function buildApp(ctx: Context, opts: { logger?: boolean } = {}): Fastify
   let auditTail: Promise<void> = Promise.resolve()
   app.decorateRequest('sspAudit', undefined)
   app.addHook('preHandler', async (req) => {
-    if (!isAuditedWrite(req)) return
+    if (!isAuditedWrite(req.method, routePathOf(req))) return
     const { actor, reason } = auditActorOf(req)
     let release!: () => void
     const turn = auditTail
@@ -162,6 +191,11 @@ export function buildApp(ctx: Context, opts: { logger?: boolean } = {}): Fastify
   app.register(sellersJsonRoutes(ctx))
   /* AssetStore files (stand-in for the platform's asset hosting). */
   app.get<{ Params: { file: string } }>('/assets/:file', async (req, reply) => {
+    /* Streamed from the store when it can, so a download never holds the
+       whole file in memory (AssetStore.open). */
+    const opened = ctx.assets.open ? await ctx.assets.open(req.params.file) : undefined
+    if (opened) return reply.type(mimeOf(req.params.file)).header('Content-Length', opened.sizeBytes).send(opened.stream)
+    if (opened === null) return reply.status(404).send(notFound().body())
     const bytes = await ctx.assets.read(req.params.file)
     if (!bytes) return reply.status(404).send(notFound().body())
     return reply.type(mimeOf(req.params.file)).send(bytes)

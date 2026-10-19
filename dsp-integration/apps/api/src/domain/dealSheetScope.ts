@@ -118,6 +118,16 @@ export interface DealSheetVolume {
 }
 export interface ScopeAndVolume { inventoryScope: DealSheetInventoryScope; estimatedVolume: DealSheetVolume }
 
+/* The deal sheet's inventory scope and estimated volume for a buyers list
+   over the positions assigned to it. Per position: the displays its
+   localised targeting keeps (each store tested against every condition; a
+   condition the store record can't answer keeps it), the stores, regions,
+   venue types and formats they reach, and the plays and assumed views they
+   give in their open hours, scaled by the share the personalised targeting
+   reaches. Then rolled up over the list's delivery term, with the guarantee
+   (forecast less the retailer's buffer) for a programmatic guaranteed deal.
+   Reads each type's displays itself (not the cached hour groups) because it
+   filters them store by store. */
 export async function scopeAndVolumeOf(ctx: Context, list: BuyersList, positions: PositionRef[]): Promise<ScopeAndVolume> {
   const localised = list.targeting.filter((c) => (variableOf(c.variable)?.group ?? 'localisation') !== 'personalisation')
   const personalised: Rules = list.targeting.filter((c) => variableOf(c.variable)?.group === 'personalisation').map((c) => [c])

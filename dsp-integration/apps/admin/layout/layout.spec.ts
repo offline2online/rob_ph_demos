@@ -55,6 +55,9 @@ for (const p of PAGES) {
     const viewport = info.project.name
     await open(page, p.route)
     await expect(page.locator('main')).not.toBeEmpty()
+    /* A page that crashed shows the route error element inside the shell, which
+       is not empty and breaks no layout rule — so check for it explicitly. */
+    await expect(page.locator('[data-route-error]'), `${p.id} rendered the route error element`).toHaveCount(0)
 
     const found: Violation[] = await page.evaluate(collectViolations)
     const isKnown = (v: Violation) => known.some((k) => k.page === p.id && (!k.viewport || k.viewport === viewport) && k.rule === v.rule && v.where.startsWith(k.where))

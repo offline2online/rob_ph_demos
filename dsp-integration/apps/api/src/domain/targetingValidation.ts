@@ -28,6 +28,12 @@ const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === 
    only the tests of the Targeting-tab shape itself rely on. */
 export interface RuleLimits { groupsPerRules: number; conditionsPerGroup: number; valueLength: number }
 
+/* Checks a campaign's targeting — AND groups of OR conditions — field by
+   field: the shape and its size limits, each condition's source, variable
+   and operator, and its values (count, length, and membership of the
+   variable's defined list). A variable this partner may not use is reported
+   apart, as not permitted, so the API can answer 422 for that and 400 for a
+   malformed rule. `at` is the field path errors are reported under. */
 export function validateRules(rules: unknown, at: string, partner: PartnerRecord, access: Record<string, Access>, maxValues: number, limits?: RuleLimits): TargetingResult {
   const invalid: Detail[] = []
   const notPermitted = new Map<string, Detail>()

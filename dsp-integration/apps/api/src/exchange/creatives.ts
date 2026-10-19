@@ -49,6 +49,30 @@ export async function verifiedCampaign(ctx: Context, partnerId: string, crid: st
    on this normalised comparison. */
 export { underBase } from '../dsp/DspProvider'
 
+/* Fetches a creative from a URL the DSP owns, following a redirect only while
+   it stays under that DSP's own creative host (pre-handover review, 18 Oct
+   2026). fetch() follows redirects by default, so a creative URL that passed
+   ownsCreativeUrl could still have sent the exchange anywhere — another host,
+   or an address inside the VPC — with one 302. Each hop is checked with the
+   same rule as the first, at most MAX_CREATIVE_REDIRECTS of them, and one
+   10-second budget covers the whole retrieval, body included. */
+const MAX_CREATIVE_REDIRECTS = 3
+export async function fetchOwnedCreative(ctx: Context, url: string, owns: (url: string) => boolean): Promise<Response> {
+  const signal = AbortSignal.timeout(10_000)
+  let target = url
+  for (let hop = 0; ; hop++) {
+    const res = await ctx.fetch(target, { signal, redirect: 'manual' })
+    if (res.status < 300 || res.status > 399) return res
+    const location = res.headers.get('location')
+    await res.body?.cancel().catch(() => {})
+    if (!location) throw new Error(`HTTP ${res.status} with no Location`)
+    if (hop >= MAX_CREATIVE_REDIRECTS) throw new Error('too many redirects')
+    const next = new URL(location, target).toString()
+    if (!owns(next)) throw new Error('redirected outside the DSP’s creative host')
+    target = next
+  }
+}
+
 /* Returns why the bid was discarded. */
 export async function queueCreative(ctx: Context, partner: PartnerRecord, bid: { crid: string; iurl?: string; ext?: { creativeAudit?: unknown } }, advertiser: { id: string; name: string }, p: PositionRef, budget?: { creativeFetches: number }): Promise<string> {
   const dsp = providerOf(ctx.dsp, partner.provider)
@@ -76,7 +100,7 @@ export async function queueCreative(ctx: Context, partner: PartnerRecord, bid: {
   const maxBytes = Math.max(ctx.config.assetLimits.maxImageBytes, ctx.config.assetLimits.maxVideoBytes)
   let bytes: Buffer | null
   try {
-    const res = await ctx.fetch(bid.iurl, { signal: AbortSignal.timeout(10_000) })
+    const res = await fetchOwnedCreative(ctx, bid.iurl, (u) => dsp.ownsCreativeUrl(u))
     if (!res.ok) return release(`Unknown creative ${bid.crid}; retrieving it failed (HTTP ${res.status}).`)
     bytes = await readCapped(res, maxBytes)
   } catch (e) {

@@ -57,6 +57,16 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
   }
   const targetingOf = (targeting: unknown) => (targeting ?? { default: { pricingType: 'default' } }) as StoredTargeting
 
+  /* A content package from a DSP, checked field by field so every mistake is
+     reported at once, in this order: the caller is connected; interactive is
+     refused (not in this release); the advertiser is one of the caller's own
+     seats; name and dealId (a deal it is an invited buyer on, checked only for
+     its own advertiser); the display type and slot, whose Max campaigns caps
+     the versions; the mandatory default version and the brief; each targeted
+     version (id, priority, pricing type) and its targeting rules — size limits,
+     then variables this DSP may use (422 when one isn't, 400 when malformed).
+     Then the campaign is created in Draft and the approval module's view of it
+     is returned; creative is uploaded and the campaign submitted separately. */
   app.post<{ Body: CreateBody }>('/campaigns', async (req, reply) => {
     requireConnected(req.partner)
     const b = req.body ?? {}
@@ -76,8 +86,12 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
     const dealId = typeof b.dealId === 'string' ? b.dealId.trim() : b.dealId
     if (b.dealId !== undefined && (typeof dealId !== 'string' || !dealId)) invalid.push({ field: 'dealId', reason: 'A non-empty deal ID.' })
     else if (typeof dealId === 'string' && dealId.length > lim.nameLength) invalid.push({ field: 'dealId', reason: `At most ${lim.nameLength} characters.` })
-    /* Only a deal the advertiser is an invited buyer on (ticket IQndewUPKJHbHRR2hAgG). */
-    if (typeof dealId === 'string' && dealId && typeof b.advertiserId === 'string' && !invalid.some((d) => d.field === 'dealId')) {
+    /* Only a deal the advertiser is an invited buyer on (ticket IQndewUPKJHbHRR2hAgG).
+       Checked only for one of the caller's own advertisers: for anyone else's,
+       the two answers ("has no private-auction deals" / "not invited") told one
+       partner whether another partner's advertiser has deals (pre-handover
+       review, 18 Oct 2026). That advertiserId is already refused above. */
+    if (typeof dealId === 'string' && dealId && typeof b.advertiserId === 'string' && !invalid.some((d) => d.field === 'dealId' || d.field === 'advertiserId')) {
       try { await assertInvitedDeals(ctx, b.advertiserId, 'dealId', [dealId], [], ctx.clock().toISOString()) } catch (e) {
         const d = (e as { details?: Detail[] }).details
         if (!d) throw e
@@ -219,7 +233,9 @@ export const campaignRoutes = (ctx: Context): FastifyPluginAsync => async (app) 
     let bytes: Buffer | undefined
     let truncated = false
     try {
-      for await (const part of req.parts({ limits: { fileSize: limit + 1, files: 1 } })) {
+      /* One file and its version field; a handful of parts at most, so a body of
+         thousands of tiny fields can't keep an upload slot busy (review, 18 Oct 2026). */
+      for await (const part of req.parts({ limits: { fileSize: limit + 1, files: 1, fields: 10, parts: 12 } })) {
         if (part.type === 'file') {
           bytes = await part.toBuffer().catch(() => {
             truncated = true

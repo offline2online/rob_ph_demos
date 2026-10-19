@@ -1,3 +1,6 @@
+/* Global styles: Tailwind, AG Grid's Alpine theme (HQ Admin's only data
+   grid), and the ph-designer tokens as Tailwind theme variables. Component
+   colours come from phTheme.ts through Ant Design's ConfigProvider. */
 @import "tailwindcss";
 @import "ag-grid-community/styles/ag-grid.css";
 @import "ag-grid-community/styles/ag-theme-alpine.css";

@@ -72,6 +72,13 @@ const deliveredOf = async (ctx: Context, l: BuyersList): Promise<number> =>
 export const buyersListRoutes = (ctx: Context, guards: Guards): FastifyPluginAsync => async (app) => {
   /* An invited buyer must be a seat a connected DSP actually synced. */
   const partnersById = async () => new Map((await ctx.partners.list()).filter((p) => p.status === 'connected').map((p) => [p.id, p]))
+  /* A buyers list (deal) from the request body, checked field by field into
+     `errors` rather than stopping at the first, so the editor can mark every
+     field at once: name; the deal type, which decides which of the fields
+     below it may carry; invited buyers (seats a connected DSP synced) and
+     categories; targeting (only variables shared with every invited DSP,
+     values from each variable's defined list); the delivery term; committed
+     plays (guaranteed only); and the floor, never below the platform's. */
   const parse = (b: Body, partnerById: Map<string, PartnerRecord>, access: Record<string, Access>, defined: Record<string, VariableValues>, platformFloor: number, errors: { field: string; reason: string }[], legacyAuctionCloses: string | null = null): { name: string; description: string; dealType: BuyersListDealType; invitedBuyers: InvitedBuyer[]; invitedCategories: string[]; targeting: Condition[]; activeFrom: string | null; activeTo: string | null; auctionCloses: string | null; committedPlays: number | null; floorCpm: number | null } => {
     const name = typeof b.name === 'string' ? b.name.trim() : ''
     if (!name) errors.push({ field: 'name', reason: 'A name is required.' })

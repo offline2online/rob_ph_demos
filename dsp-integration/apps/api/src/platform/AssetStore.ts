@@ -3,13 +3,21 @@
    POC API so the review panel can render them. */
 import type { Awaitable } from '../db/db'
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { createReadStream, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { extname, join } from 'node:path'
+import type { Readable } from 'node:stream'
 
 export interface AssetStore {
   put(bytes: Buffer, ext: string): Awaitable<string>
   read(file: string): Awaitable<Buffer | null>
   url(file: string): Awaitable<string>
+  /* A file to serve, as a stream and its size, or null if there is none.
+     Optional: GET /assets/:file uses it when present and read() otherwise.
+     Serving through read() held each download's whole file in memory — 8
+     slow clients on a 150 MB creative added 1.1 GB to a pod limited to 2 GiB,
+     on a public route (pre-handover review, 18 Oct 2026). A store whose files
+     are served by a CDN (S3, on integration) needs neither. */
+  open?(file: string): Awaitable<{ sizeBytes: number; stream: Readable } | null>
 }
 
 /* publicBase: the API's own origin, when the admin UI is served from a
@@ -27,6 +35,16 @@ export function localAssetStore(dir: string, publicBase = ''): AssetStore {
     read(file) {
       const p = join(dir, file)
       return safe(file) && existsSync(p) ? readFileSync(p) : null
+    },
+    open(file) {
+      if (!safe(file)) return null
+      const p = join(dir, file)
+      try {
+        const st = statSync(p)
+        return st.isFile() ? { sizeBytes: st.size, stream: createReadStream(p) } : null
+      } catch {
+        return null
+      }
     },
     url: (file) => `${publicBase}/assets/${file}`,
   }
