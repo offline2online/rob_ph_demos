@@ -22,6 +22,13 @@ const MANIFEST_PATH = "shared/board-interfaces.json";
 const INTERFACE_CAP = 20000; // firestore.rules `interfaces` contentMd cap; the service account bypasses the rules
 const SYNC_EMAIL = "docs-sync@automation";
 
+const millis = (v) => {
+  if (v && typeof v.toMillis === "function") return v.toMillis();
+  const t = v instanceof Date ? v.getTime() : Date.parse(String(v || ""));
+  return Number.isFinite(t) ? t : NaN;
+};
+const laterThan = (a, b) => millis(a) > millis(b);
+
 const short = (s) => String(s || "").slice(0, 7);
 const msg = (err) => String((err && err.message) || err).slice(0, 200);
 
@@ -81,7 +88,8 @@ async function syncMirroredInterfaces(ref, io) {
           continue;
         }
 
-        const fields = { sourcePath: sp, sourceCommit, syncedAt: now(), syncError: null };
+        const at = now(); // one instant for syncedAt and updatedAt, so the next sync can tell a later edit from this write
+        const fields = { sourcePath: sp, sourceCommit, syncedAt: at, syncError: null };
         if (current !== content) {
           let revisionId = null;
           if (current !== "") {
@@ -97,9 +105,12 @@ async function syncMirroredInterfaces(ref, io) {
               via: "docs-sync",
             });
           }
-          Object.assign(fields, { contentMd: content, updatedAt: now(), updatedByEmail: SYNC_EMAIL });
+          Object.assign(fields, { contentMd: content, updatedAt: at, updatedByEmail: SYNC_EMAIL });
           const by = existing.updatedByEmail || null;
-          fields.overwroteEdit = revisionId && by !== SYNC_EMAIL ? { byEmail: by, at: existing.updatedAt ? new Date(existing.updatedAt) : null, revisionId } : null;
+          // The Docs page's save never sets updatedByEmail, so an edit made after
+          // a sync still reads as ours by email; it shows as updatedAt moving past syncedAt.
+          const editedAfterSync = laterThan(existing.updatedAt, existing.syncedAt);
+          fields.overwroteEdit = revisionId && (by !== SYNC_EMAIL || editedAfterSync) ? { byEmail: by, at: existing.updatedAt ? new Date(existing.updatedAt) : null, revisionId } : null;
         }
         await io.patchInterface(id, fields);
 

@@ -93,7 +93,8 @@ Functions) unless a file is named.
    patch onto the synced files by a three-way merge.
 6. **Train tests**: `trainTestsFor()` picks the workflows for the paths the
    train changed. When one is red, `trainTestsRed()` reads it and
-   `ejectRedCulprits()` sends the ticket that broke it back to Backlog.
+   `ejectRedCulprits()` re-runs the failed run once and, only if it fails
+   again, sends the ticket that broke it back to Backlog.
 7. **Ready for Testing**: `notifyOnItemsReadyForTesting()` presents the
    column for testing, with test links pinned to the landing commit.
 8. **Approve, or Failed testing**: ticking the cards and approving is the
@@ -174,7 +175,7 @@ how to confirm it is live. A merge alone is never proof: look at the run.
 
 | Folder | Deployed by | When | Confirm it is live |
 |---|---|---|---|
-| `backlog-tracker/` | `.github/workflows/deploy-backlog-tracker.yml`: hosting, functions, Firestore and storage rules | On push to main for `backlog-tracker/**` or `faq/**`, or dispatched by `finishTrain()` after a train that touched `backlog-tracker/` | That run is green; the board's health strip |
+| `backlog-tracker/` | `.github/workflows/deploy-backlog-tracker.yml`: hosting, functions, Firestore and storage rules | On push to main for `backlog-tracker/**` or `faq/**`, or dispatched by `finishTrain()` after a train that touched `backlog-tracker/` or `faq/` | That run is green; the board's health strip |
 | `faq/` | GitHub Pages on merge, and Hosting site `ph-help-centre` (help.personalisationhub.com) with the console deploy; `.github/workflows/faq-content.yml` syncs Firestore and `faq/data` | On merge to main; content hourly or on demand | The page itself; the deploy run for the Hosting site |
 | `dsp-integration/` | `.github/workflows/dsp-api-deploy.yml` (hosted API), `.github/workflows/dsp-prototype.yml` (rebuilds the checked-in prototype), `.github/workflows/dsp-board.yml` (board writes) | Source push, ticket landing, merge and every ten minutes | `dsp-integration/prototype/build-info.json` names the commit the bundle came from |
 | `menu-board-demo/` | GitHub Pages for the pages; `menu-board-demo/functions` is **manual only**: `firebase deploy --only functions` | Pages on merge; functions never by merge | Pages: the URL. Functions: whoever holds Firebase access must deploy; ask |

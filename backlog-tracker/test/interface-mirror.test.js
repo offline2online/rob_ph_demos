@@ -112,6 +112,15 @@ const M = (...entries) => ({ [MANIFEST_PATH]: manifest(entries) });
     assert.ok(oe.at);
   });
 
+  await test("(f2) a Docs-page edit after a sync (updatedByEmail still ours) sets overwroteEdit", async () => {
+    const f = fakes({ i1: { ...base, syncedAt: "2026-10-03T00:00:00Z", updatedAt: "2026-10-03T09:00:00Z" } }, { ...M({ id: "i1", path: "c.md" }), "c.md": "from repo" });
+    await syncMirroredInterfaces("abc", f.io);
+    assert.ok(f.store.i1.overwroteEdit && f.store.i1.overwroteEdit.revisionId, "later updatedAt is a hand edit");
+    const g = fakes({ i1: { ...base, syncedAt: "2026-10-03T00:00:00Z", updatedAt: "2026-10-03T00:00:00Z" } }, { ...M({ id: "i1", path: "c.md" }), "c.md": "from repo" });
+    await syncMirroredInterfaces("abc", g.io);
+    assert.strictEqual(g.store.i1.overwroteEdit, null, "updatedAt equal to syncedAt is the sync's own write");
+  });
+
   await test("(g) a no-longer-listed mirror loses sourcePath and keeps its text", async () => {
     const f = fakes({ old: { ...base, contentMd: "keep", sourcePath: "gone.md", sourceCommit: "c" }, i1: { ...base } }, { ...M({ id: "i1", path: "c.md" }), "c.md": "N" });
     await syncMirroredInterfaces("abc", f.io);

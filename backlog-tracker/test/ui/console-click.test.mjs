@@ -104,6 +104,18 @@ const scenarios = [
     },
   },
   {
+    name: "⋮ menu: an archived card's date renders (stub timestamps keep toMillis/toDate)",
+    seed: () => seed(),
+    async run(c) {
+      await c.boardReady();
+      await c.openMenu();
+      await c.click(".project-archive-btn", "Archived tickets");
+      await c.waitText("#archive-table-body", "Archived thing", "archive page lists the seeded archived card");
+      const row = await c.page.evaluate((ms) => ({ text: document.querySelector("#archive-table-body tr").innerText, want: new Date(ms).toLocaleDateString() }), T0 + 6);
+      assert.ok(row.text.includes(row.want), `the Archived row should show ${row.want}, got ${JSON.stringify(row.text)}`);
+    },
+  },
+  {
     name: "⋮ menu: Docs opens Project Settings and lists a document",
     seed: () => seed(),
     async run(c) {

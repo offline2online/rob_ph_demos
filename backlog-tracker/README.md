@@ -41,7 +41,7 @@ workflow's own `GITHUB_TOKEN` (anti-recursion protection) — a PR merged
 this way does **not** auto-fire the deploy the way a human's merge does.
 `finishTrain` in `run-backlog-automation.js` already knows this and
 explicitly runs `gh workflow run deploy-backlog-tracker.yml` right after
-every merge that touches `backlog-tracker/` (needs `actions: write` in
+every merge that touches `backlog-tracker/` or `faq/` (needs `actions: write` in
 that workflow's own `permissions:` block — already set). **If you ever
 touch `finishTrain`/`processMergePr`, or write any other code path that
 merges a PR with `GITHUB_TOKEN`, you must keep or add that explicit
@@ -843,7 +843,7 @@ nothing in the pipeline had executed `app.js` to notice. Every dictation
 controller is now created after that declaration, and this test is the
 guard.
 
-`test/` holds two suites:
+`test/` holds these suites:
 
 - **`firestore-rules.test.js`** runs `firestore.rules` — the real file —
   inside the Firestore emulator and asserts what each principal may and may
@@ -854,6 +854,12 @@ guard.
   `tools/call`, and every refusal that matters. It stubs the Firebase SDKs
   (`mcp-stubs.js`), so it needs no emulator, no Java, no credentials and no
   network.
+- **`ui/console-click.test.mjs`** (`npm run test:ui`, the last step of
+  `test:app-boots`) loads the real `public/` files in Chromium with the
+  Firebase SDK stubbed (`ui/firebase-stub.mjs`) at 1280 px and 390 px and
+  clicks through the board, the ⋮ menu, Failed testing, Approve and New
+  backlog item. It needs a Chromium (`/opt/pw-browsers` in a cloud session).
+  A console UI change adds or updates a scenario there.
 - **`mcp-client.test.mjs`** points the real `@modelcontextprotocol/sdk`
   client at the real server over HTTP (`mcp-live-server.js`), letting the SDK
   do its own discovery, registration, PKCE and transport handling. That is
@@ -861,7 +867,7 @@ guard.
   never would.
 
 ```bash
-cd backlog-tracker/test && npm install && npm test   # all three
+cd backlog-tracker/test && npm install && npm test   # all of them
 npm run test:mcp     # MCP logic — runs anywhere, instantly
 npm run test:client  # MCP over HTTP with a real client
 npm run test:rules   # rules — needs the emulator
@@ -1344,7 +1350,14 @@ conclusion}` per follow-up *this merge needs*:
 `deployConclusion` is the roll-up (`rollUpDeployRuns`): `pending` while any
 entry is, `failure` if any failed or was never dispatched, `success` when all
 succeeded, `not-applicable` for an empty list; `deployRunUrl` is the failing
-run, else the first pending one. The status stays Merged to Main — the merge
+run, else the first pending one. A `not-dispatched` entry clears when a later
+successful run of that workflow on main appears (any run after the merge for
+the console and API deploys; on the merge commit for others), so the advice is
+to dispatch it. A `pending` entry older than two hours becomes `unknown`
+(counted as a failure, with a note) instead of reading Deploying… for ever.
+The failure note says what clears each case: dispatch a never-dispatched
+workflow, use Re-run jobs on the same run of a failed `faq-content.yml`
+(a new run started by hand is not looked at). The status stays Merged to Main — the merge
 happened. `reconcileDeployStatuses()` resolves entries each tick (one lookup
 per run, shared by a train's cards; a failed `deploy-backlog-tracker.yml` or
 `dsp-api-deploy.yml` goes through `healFailedDeploy(runId, cache, gh,

@@ -215,7 +215,7 @@ deleted by hand).
   // one for another sha is backfilled from its commit's files). Shown as a
   // chip on Ready for Testing / Approved for Deployment cards only while
   // trainTest.sha == deployCommit (public/js/card-test-status.js).
-  trainTestReruns?: string[], // automation-written: `<workflow>@<sha>:rerun|flaky`, last 20; dedupe only
+  trainTestReruns?: string[], // automation-written, last 20; dedupe and hand-off only. Per run: `<workflow>@<sha>:rerun:<runId>` / `:flaky:<runId>`, <sha> being the run's headSha (the card's commit, or a generated-only commit after it); the older bare `<workflow>@<sha>:rerun|flaky` is still read
   trainTest?: { sha, state, workflows: [{ workflow, label, state, runUrl, since }], since, updatedAt },
   // Who approved (19 Oct 2026): written in the batch that moves the card to
   // ready-to-publish — approvedByEmail lowercased, approvedAt a server
@@ -406,7 +406,12 @@ head (`afterRevertDispatches`). A card's test verdict, for the auto-eject
 the card's own commit and the reverts / generated-only commits directly after
 it. A run is stale when a commit at or before it was reverted by a later
 commit, so a ticket is never blamed for an ejected ticket's failure.
-`pickRedCulprit`'s rules are unchanged.
+`pickRedCulprit` skips (does not stop at) a card whose every candidate is
+stale (`onlyStaleEvidence`: `revert(S)` on a train B, S, L, M leaves L with
+only runs that held S), so a later ticket N that goes red on its own commit is
+still named. That card's chip borrows the nearest later non-stale run on the
+branch (`borrowableShas`) for display only; a borrowed failure is never
+used to blame the card.
 
 **A failed train test is re-run once (19 Oct 2026).** `trainRunVerdict(run)`
 returns `running`, `passed`, `rerun` (failure / timed_out / startup_failure
@@ -418,9 +423,21 @@ if the re-run cannot start, saying so). A pass on attempt 2+ after the
 automation's re-run puts a "Passed on re-run" note on the card. In
 `reportTrainTestResults` a `rerun` head run counts as still running;
 `trainFailureNotes` decides the notes from who owns the tested commit.
-`backlogItems.trainTestReruns` (automation-written array of
-`<workflow>@<sha>:rerun` / `:flaky`, last 20) only stops duplicate notes; it
-is not a pipeline field and `firestore.rules` is unchanged.
+`backlogItems.trainTestReruns` (automation-written, last 20) records the
+re-run **per run**: `<workflow>@<sha>:rerun:<runId>` when the automation
+re-runs a run and `<workflow>@<sha>:flaky:<runId>` when it then passes, with
+`<sha>` the run's `headSha`. That is the card's own commit or, for a DSP
+ticket, the generated-only prototype rebuild after it, so
+`reportTrainTestResults` stamps the key on the card that `trainRunOwner`
+attributes the run to, not only on the card whose `deployCommit` equals the
+sha. Keys written before this are the bare `<workflow>@<sha>:rerun` /
+`:flaky` and still count. A run on a stale commit (one a later revert made
+stale, see above) is not re-run: the card is judged on the newer run. The
+keys only stop duplicate notes and tell the hand-off a re-run is pending;
+they are not a pipeline field and `firestore.rules` is unchanged.
+`rerunPending(card, shas)` matches a key on any commit attributed to the card
+(`deployCommit`, the non-stale `evidenceCandidates`, its newest
+`deployCommits` entry), supplied by `attributedShasFor` for the hand-off.
 
 **The train is brought up to date with main before any ticket lands (1 Oct
 2026).** `processApplyPatch` now calls `syncTrainWithMain` first: a train
@@ -596,8 +613,10 @@ changed is which control approves.
   note on each card. Nothing else is written on the original.
 - **Failed testing is always offered** on a Ready for Testing card (it used
   to hide once "Confirm tested" had been clicked; there is no such click
-  now), and additionally writes `revertRequested` — see "The deployment
-  train" above. It now also asks for a structured reason category
+  now). Its **send it back** choice writes `revertRequested` (see "The
+  deployment train" above); **It works, but I want something more** does not:
+  the card keeps its status and commit and the details become a new
+  Backlog ticket. It now also asks for a structured reason category
   alongside the free-text explanation (`lastFailureReason`,
   XJoASicLGefL5c9fronl — see "Structured Failed testing / Eject from train
   reason" below).
@@ -2515,7 +2534,10 @@ and serves through `resources/list` / `resources/read` — declared under
 only; no `connectDomains`, the view fetches nothing itself). Each tool's
 result carries the column as `structuredContent` (`kind`, `projectId`,
 `projectLabel`, `count`, `items[]` with `id`, `project`, `title`, `type`,
-`category`, `testSummary`, `desc`, `previewUrl`, `testVersion`, `board`,
+`category`, `testSummary`, `desc`, `previewUrl`, `previewState`/`previewSha`/
+`previewUpdatedAt` (the test link's rebuild state), `trainTest` (the card's own
+test run while it describes the commit now on the train: `state` and
+`workflows[]` of `name`/`conclusion`/`runUrl`), `testVersion`, `board`,
 and for Approved for Deployment `onTrain`/`deployCommit`/`prNumber`/
 `deployBranch` plus top-level `readyToDeploy`/`readyLine`) and the same
 JSON as a text block for the model. A host that supports MCP Apps
@@ -2561,7 +2583,9 @@ pure `nextHandOff`: it drops parked cards no longer in Ready for Testing
 (clearing the hold unstamped if none remain), keeps the `batchStillBuilding`
 hold, and otherwise holds while any card is waiting (`handOffWaitingOn`:
 tests missing, for an older commit, running or starting, or `not-run` less
-than 10 minutes old; link `rebuilding`), recording `readyForTestingWaitingOn`
+than 10 minutes old; a failed run whose automatic re-run is pending, i.e. a
+`:rerun` key on any commit attributed to the card and the recorded run still
+attempt 1; link `rebuilding`), recording `readyForTestingWaitingOn`
 and asking for a follow-up run. When nothing is waiting, or the parked ids
 are 40 minutes old, it stamps
 `projects/{id}.readyForTestingNotifyRequestedAt` (a real timestamp) with

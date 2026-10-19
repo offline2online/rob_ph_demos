@@ -301,6 +301,13 @@ const ITEMS = {
     assert.deepStrictEqual(handOffWaitingOn(failedCard(1, ["firestore-rules-test.yml@abc:rerun"]), now), ["tests"], "(a) old key form");
     assert.deepStrictEqual(handOffWaitingOn(failedCard(1, undefined), now), [], "no re-run key: failed is settled");
     assert.deepStrictEqual(handOffWaitingOn(failedCard(1, ["firestore-rules-test.yml@old:rerun:9"]), now), [], "key for another commit");
+    // The key is stamped on the run's headSha: a generated-only commit after the card (a prototype rebuild).
+    const onG = failedCard(1, ["firestore-rules-test.yml@gen1:rerun:123"]);
+    assert.deepStrictEqual(handOffWaitingOn(onG, now), [], "deployCommit alone cannot see a key on G");
+    assert.deepStrictEqual(handOffWaitingOn(onG, now, ["abc", "gen1"]), ["tests"], "key on a commit attributed to the card is pending");
+    assert.deepStrictEqual(handOffWaitingOn(onG, now, ["abc", "other"]), [], "an unattributed sha does not count");
+    const rG = nextHandOff({ readyForTestingPendingItemIds: ["a"], readyForTestingPendingSince: ago(5) }, { a: onG }, now, { a: ["abc", "gen1"] });
+    assert.strictEqual(rG.action, "hold");
     const passed = { ...failedCard(2, [...perRun, "firestore-rules-test.yml@abc:flaky:123"]), trainTest: wf("passed", 2) };
     assert.deepStrictEqual(handOffWaitingOn(passed, now), [], "(b) passed on re-run is settled");
     assert.deepStrictEqual(handOffWaitingOn(failedCard(2, perRun), now), [], "(c) failed again on attempt 2 is settled");

@@ -2,7 +2,7 @@
 // not contain a reverted ticket (9 Oct and 15 Oct 2026: the ticket above an
 // auto-ejected one was sent back for the ejected change's failure).
 const assert = require("assert");
-const { afterRevertDispatches, cardEvidenceRun, pickRedCulprit } = require("../scripts/run-backlog-automation.js");
+const { afterRevertDispatches, cardEvidenceRun, pickRedCulprit, onlyStaleEvidence, borrowableShas } = require("../scripts/run-backlog-automation.js");
 
 const c = (sha, message = `Ticket ${sha}\n\nBacklog item: ${sha}`, generatedOnly = false) => ({ sha, message, generatedOnly });
 const revert = (sha, of) => c(sha, `Revert "x"\n\nThis reverts commit ${of}.`);
@@ -25,6 +25,19 @@ assert.strictEqual(verdict({ ...base, "28ac5f8": red, "4a01822": green }).culpri
 assert.strictEqual(verdict({ ...base, "28ac5f8": red, "4a01822": green }).runs["28ac5f8"].conclusion, "success");
 assert.strictEqual(verdict({ ...base, "28ac5f8": red, "4a01822": red }).culprit, "L", "red after the revert: culprit");
 assert.strictEqual(verdict({ ...base, "28ac5f8": red, "4a01822": going }).culprit, null, "running run: wait");
+
+
+// B, S, L, M, revert(S), N: L has only stale runs; a red N must still be named
+const tr = [c("b100001"), c("5100001"), c("1100001"), c("a100001"), revert("e100001", "5100001"), c("f100001")];
+const trOrder = tr.map((x) => x.sha);
+const trCards = ["b100001", "1100001", "a100001", "f100001"].map((sha) => ({ id: sha, status: "ready-for-testing", deployCommit: sha }));
+const trRuns = (by) => { const r = {}; for (const k of trCards) { const x = cardEvidenceRun(tr, k.deployCommit, by); if (x) r[k.deployCommit] = x; } return r; };
+const trSkip = new Set(trCards.filter((k) => onlyStaleEvidence(tr, k.deployCommit)).map((k) => k.deployCommit));
+assert.deepStrictEqual([...trSkip], ["1100001"], "only L has nothing but stale runs");
+const by = { b100001: green, 1100001: red, a100001: red, e100001: green, f100001: red };
+assert.strictEqual((pickRedCulprit(trOrder, trCards, trRuns(by), { skip: trSkip }) || {}).id, "f100001", "N is named past L");
+assert.strictEqual(pickRedCulprit(trOrder, trCards, trRuns(by)), null, "without the skip the train stalls at L");
+assert.deepStrictEqual(borrowableShas(tr, "1100001"), ["e100001", "f100001"]);
 
 // 9 Oct replay: vzp9 (b7a0d2a) sits above XkC4 (437e65e), which is then reverted
 const oct9 = [c("437e65e"), c("b7a0d2a"), revert("1c8a3ab", "437e65e")];

@@ -21,13 +21,47 @@ function listValues(block, key) {
   return [...blk[1].matchAll(/^ +-[ \t]*(.+?)[ \t]*$/gm)].map((m) => m[1].replace(/^['"]|['"]$/g, ""));
 }
 
-// The `on.push` trigger of a workflow: { branches, paths } or null.
-// paths is null when there is no filter (the whole repo).
-function parsePush(text) {
-  const on = (text.match(/^on:[ \t]*\n([\s\S]*?)(?=^\S|(?![\s\S]))/m) || [])[1] || "";
-  const push = on.match(/^ {2}push:[ \t]*\n((?: {4,}.*\n?|[ \t]*\n)*)/m);
-  if (!push) return null;
-  return { branches: listValues(push[1], "branches") || [], paths: listValues(push[1], "paths") };
+// The `on.push` trigger of a workflow: { branches, paths } or null (no push
+// trigger). paths is null when there is no filter (the whole repo). Fails
+// closed: a push trigger it cannot read throws an Error naming `file`, so the
+// guard can never pass silently on a shape it does not understand. Handles
+// `on: push`, `on: [push, …]`, `on: {push: …}`, a quoted "on":, any indent,
+// and comment lines at any column inside the block.
+function parsePush(text, file = "workflow") {
+  const lines = text.split("\n");
+  const idx = lines.findIndex((l) => /^(["']?)on\1[ \t]*:/.test(l));
+  if (idx < 0) throw new Error(`${file}: no top-level on: trigger found, so its push trigger cannot be checked`);
+  const head = lines[idx].replace(/^["']?on["']?[ \t]*:/, "").replace(/[ \t]+#.*$/, "").trim();
+  if (head) return head.replace(/[\[\]{},]/g, " ").split(/\s+/).includes("push") ? { branches: [], paths: null } : null;
+  const body = [];
+  for (let i = idx + 1; i < lines.length; i++) {
+    if (/^\S/.test(lines[i]) && !lines[i].startsWith("#")) break; // a column-0 comment does not end the block
+    body.push(lines[i].replace(/\r$/, ""));
+  }
+  const clean = body.filter((l) => l.trim() && !/^\s*#/.test(l));
+  if (!clean.length) return null;
+  const unreadable = () => new Error(`${file}: mentions push under on: but its trigger could not be parsed`);
+  if (/^ *-/.test(clean[0])) { // on:\n  - push
+    return clean.some((l) => /^ *-[ \t]*["']?push["']?[ \t]*(#.*)?$/.test(l)) ? { branches: [], paths: null } : null;
+  }
+  const indent = clean[0].match(/^ */)[0].length;
+  const at = clean.findIndex((l) => new RegExp(`^ {${indent}}["']?push["']?[ \\t]*:`).test(l));
+  if (at < 0) {
+    if (clean.some((l) => /\bpush\b/.test(l))) throw unreadable();
+    return null;
+  }
+  const inline = clean[at].replace(/^ *["']?push["']?[ \t]*:/, "").replace(/[ \t]+#.*$/, "").trim();
+  if (inline) { // push: {branches: [main]} — not worth a parser; the whole repo is reported
+    if (!/^[{\[]/.test(inline)) throw unreadable();
+    return { branches: [], paths: null };
+  }
+  const child = [];
+  for (const l of clean.slice(at + 1)) {
+    if (l.match(/^ */)[0].length <= indent) break;
+    child.push(l);
+  }
+  const block = child.join("\n") + "\n";
+  return { branches: listValues(block, "branches") || [], paths: listValues(block, "paths") };
 }
 
 // Trailing `**` or `**/*.md` becomes a folder prefix; a plain path stays exact.
@@ -37,7 +71,8 @@ const covers = (pattern, source) => (source.endsWith("/") ? pattern.startsWith(s
 // Problems for one workflow: [{ workflow, path, why }]. `lists` carries the
 // script's tables so fixtures can stand in for them.
 function problemsFor(file, text, lists) {
-  const push = parsePush(text);
+  let push;
+  try { push = parsePush(text, file); } catch (err) { return [{ workflow: file, path: "(unparsed)", why: err.message }]; }
   if (!push) return [];
   const out = [];
   const excusedWhole = lists.excuses[file] !== undefined;
@@ -71,7 +106,8 @@ function staleExcuses(files, excuses) {
     const [file, ...rest] = key.split(" ");
     const pattern = rest.join(" ");
     const text = files[file];
-    const push = text === undefined ? null : parsePush(text);
+    let push = null;
+    try { push = text === undefined ? null : parsePush(text, file); } catch { /* problemsFor reports the unreadable file */ }
     if (!reason || !String(reason).trim()) out.push(`${key}: empty reason`);
     else if (text === undefined) out.push(`${key}: no workflow ${file}`);
     else if (pattern && !(push && push.paths && push.paths.includes(pattern))) out.push(`${key}: ${file} has no push path ${pattern}`);
@@ -94,8 +130,8 @@ const cases = [
   ["real repo: every push path is dispatched, tested on the train or excused",
     Object.entries(real).flatMap(([f, t]) => problemsFor(f, t, realLists)).map((p) => p.why), []],
   ["real repo: no stale excuse", staleExcuses(real, NOT_DISPATCHED_AFTER_TRAIN), []],
-  ["HOSTED_DEPLOYS matches dsp-api-deploy.yml's push paths",
-    [...HOSTED_DEPLOYS[0].sources].sort(), parsePush(real["dsp-api-deploy.yml"]).paths.map(normalise).sort()],
+  ...HOSTED_DEPLOYS.map((d) => [`HOSTED_DEPLOYS matches ${d.workflow}'s push paths`,
+    [...d.sources].sort(), (parsePush(real[d.workflow], d.workflow) || { paths: [] }).paths.map(normalise).sort()]),
   ["real repo: every dispatch list workflow exists", [...TRAIN_MERGE_DISPATCHES, ...HOSTED_DEPLOYS].filter((d) => !real[d.workflow]).map((d) => d.workflow), []],
   ["fixture: unlisted deploy is reported with file and path", names(problemsFor("retail.yml", retail(), noLists)), ["retail.yml Retail-media-insights/**"]],
   ["fixture: the message names the file, the path and the fixes", /retail\.yml.*Retail-media-insights\/\*\*.*TRAIN_MERGE_DISPATCHES.*NOT_DISPATCHED_AFTER_TRAIN/.test(problemsFor("retail.yml", retail(), noLists)[0].why), true],
@@ -120,6 +156,18 @@ const cases = [
     parsePush("on:\n  push:\n    branches: [main]\n    paths:\n      - 'a/**'\n      - 'b.json'\n").paths],
   ["normalise: ** and **/*.md become prefixes, a file stays exact", ["a/**", "a/b/**/*.md", "a/c.json"].map(normalise), ["a/", "a/b/", "a/c.json"]],
   ["a workflow with no push trigger has no problems", problemsFor("d.yml", "on:\n  workflow_dispatch:\n", noLists), []],
+  // ── fail closed: every YAML shape a push trigger can take ─────────────────
+  ["shape: `on: push` is a whole-repo push", names(problemsFor("s.yml", "on: push\njobs: {}\n", noLists)), ["s.yml (no paths filter: whole repo)"]],
+  ["shape: `on: [push, workflow_dispatch]`", names(problemsFor("s.yml", "on: [push, workflow_dispatch]\n", noLists)), ["s.yml (no paths filter: whole repo)"]],
+  ["shape: a quoted \"on\":", names(problemsFor("s.yml", "\"on\":\n  push:\n    paths:\n      - 'x/**'\n", noLists)).slice(0, 1), ["s.yml x/**"]],
+  ["shape: four-space indentation", names(problemsFor("s.yml", "on:\n    push:\n        branches: [main]\n        paths:\n            - 'x/**'\n", noLists)), ["s.yml x/**"]],
+  ["shape: a column-0 comment inside on:", names(problemsFor("s.yml", "on:\n  workflow_dispatch:\n# note\n  push:\n    branches: [main]\n    paths: ['x/**']\n", noLists)), ["s.yml x/**"]],
+  ["shape: a comment between path items", names(problemsFor("s.yml", "on:\n  push:\n    branches: [main]\n    paths:\n      - 'x/**'\n# why\n      - 'y/**'\n", noLists)), ["s.yml x/**", "s.yml y/**"]],
+  ["shape: a list under on:", names(problemsFor("s.yml", "on:\n  - push\n  - workflow_dispatch\n", noLists)), ["s.yml (no paths filter: whole repo)"]],
+  ["shape: an inline map is reported, not skipped", names(problemsFor("s.yml", "on:\n  push: {branches: [main], paths: ['x/**']}\n", noLists)), ["s.yml (no paths filter: whole repo)"]],
+  ["fail closed: no on: block is an error naming the file", problemsFor("s.yml", "name: x\njobs: {}\n", noLists).map((p) => p.why), ["s.yml: no top-level on: trigger found, so its push trigger cannot be checked"]],
+  ["fail closed: push under on: that does not parse names the file", problemsFor("s.yml", "on:\n  workflow_dispatch:\n  pull_request:\n    # push to a fork\n  x: [push]\n", noLists).map((p) => p.why), ["s.yml: mentions push under on: but its trigger could not be parsed"]],
+  ["a workflow without push is not reported for shape", problemsFor("s.yml", "on:\n  workflow_dispatch:\n  schedule:\n    - cron: '*/10 * * * *'\n", noLists), []],
   ["deploy condition: faq/css/faq.css dispatches deploy-backlog-tracker.yml", trainMergeNeeds("deploy-backlog-tracker.yml", ["faq/css/faq.css"]), true],
   ["deploy condition: dsp-integration/x.ts alone does not", trainMergeNeeds("deploy-backlog-tracker.yml", ["dsp-integration/x.ts"]), false],
   ["deploy condition: backlog-tracker/x.js does", trainMergeNeeds("deploy-backlog-tracker.yml", ["backlog-tracker/x.js"]), true],

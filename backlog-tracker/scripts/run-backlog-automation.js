@@ -595,13 +595,17 @@ const HAND_OFF_NOT_RUN_SETTLED_MS = 10 * 60 * 1000;
 
 // Pure: a failed workflow on the card's commit that has a re-run key (per-run
 // `<workflow>@<sha>:rerun:<runId>` or the older `<workflow>@<sha>:rerun`) and
-// whose recorded run is still attempt 1.
-function rerunPending(card) {
+// whose recorded run is still attempt 1. The key is stamped on the run's
+// headSha, which can be a generated-only commit after the card (a DSP
+// prototype rebuild), so `shas` lists every commit attributed to the card
+// (deployCommit, then trainRunOwner's candidates); it defaults to deployCommit.
+function rerunPending(card, shas) {
   const keys = (card && card.trainTestReruns) || [];
   const tt = card && card.trainTest;
   if (!keys.length || !tt || !Array.isArray(tt.workflows)) return false;
+  const owned = [...new Set([card.deployCommit, ...(shas || [])].filter(Boolean))];
   return tt.workflows.some((w) => w.state === "failed" && Number(w.attempt || 1) < 2
-    && keys.some((k) => k === `${w.workflow}@${card.deployCommit}:rerun` || k.startsWith(`${w.workflow}@${card.deployCommit}:rerun:`)));
+    && owned.some((sha) => keys.some((k) => k === `${w.workflow}@${sha}:rerun` || k.startsWith(`${w.workflow}@${sha}:rerun:`))));
 }
 
 // Pure: what a landed card is still waiting on — [], ["tests"], ["link"] or both.
@@ -609,7 +613,7 @@ function rerunPending(card) {
 // card's deployCommit, or is running/starting. A card with no deployCommit has
 // no commit to test. "not-run" settles after 10 minutes (a run dispatched
 // seconds ago may not be listed yet).
-function handOffWaitingOn(card, nowMs = Date.now()) {
+function handOffWaitingOn(card, nowMs = Date.now(), shas) {
   const waiting = [];
   if (card && card.deployCommit) {
     const tt = card.trainTest;
@@ -624,7 +628,7 @@ function handOffWaitingOn(card, nowMs = Date.now()) {
     // A failure the automation is still re-running once (trainTestReruns holds
     // its key for this commit) is not a result yet. It is settled once the
     // run's attempt 2 has reported, or the re-run passed (state no longer failed).
-    if (!testsWaiting && tt.state === "failed" && rerunPending(card)) testsWaiting = true;
+    if (!testsWaiting && tt.state === "failed" && rerunPending(card, shas)) testsWaiting = true;
     if (testsWaiting) waiting.push("tests");
   }
   if (card && card.previewState === "rebuilding") waiting.push("link");
@@ -636,7 +640,7 @@ function handOffWaitingOn(card, nowMs = Date.now()) {
 // ids are the parked cards still in Ready for Testing. A batch of a click
 // still building always holds (batchStillBuilding); otherwise it holds while a
 // card is waiting, until the parked ids are HAND_OFF_MAX_WAIT_MS old.
-function nextHandOff(project, cardsById, nowMs = Date.now()) {
+function nextHandOff(project, cardsById, nowMs = Date.now(), shasById = {}) {
   const parked = Array.isArray(project && project.readyForTestingPendingItemIds) ? project.readyForTestingPendingItemIds : [];
   const ids = parked.filter((id) => cardsById[id] && cardsById[id].status === "ready-for-testing");
   if (!ids.length) return { action: "clear", ids: [], waitingOn: [], followUp: false, setSince: false };
@@ -645,7 +649,7 @@ function nextHandOff(project, cardsById, nowMs = Date.now()) {
   const ageMs = setSince ? 0 : nowMs - sinceMs;
   const young = ageMs < HAND_OFF_MAX_WAIT_MS;
   if (batchStillBuilding(project, cardsById, nowMs).length) return { action: "hold", ids, waitingOn: [], followUp: young, setSince };
-  const waitingOn = ids.map((id) => ({ id, waitingOn: handOffWaitingOn(cardsById[id], nowMs) })).filter((w) => w.waitingOn.length);
+  const waitingOn = ids.map((id) => ({ id, waitingOn: handOffWaitingOn(cardsById[id], nowMs, shasById[id]) })).filter((w) => w.waitingOn.length);
   if (!waitingOn.length || !young) return { action: "stamp", ids, waitingOn, followUp: false, setSince };
   return { action: "hold", ids, waitingOn, followUp: true, setSince };
 }
@@ -667,8 +671,32 @@ async function requestReadyForTestingNotify(nowMs = Date.now()) {
   readyForTestingLanded.clear();
 }
 
-const HAND_OFF_CARD_FIELDS = ["status", "deployCommit", "trainTest", "trainTestReruns", "previewState", "blocked", "buildSession"];
+const HAND_OFF_CARD_FIELDS = ["status", "deployBranch", "deployCommit", "deployCommits", "trainTest", "trainTestReruns", "previewState", "blocked", "buildSession"];
 const HAND_OFF_PROJECT_FIELDS = ["readyForTestingPendingItemIds", "readyForTestingPendingSince", "readyForTestingWaitingOn", "notifyRoutine", "notifyRequestedByEmail"];
+
+// For cards whose failed run may still be re-run: every commit the train
+// attributes to them ({ [cardId]: [sha] }), so a re-run key stamped on a later
+// generated-only commit is found. Cards without a re-run key cost nothing; a
+// train that can't be read leaves the card on its deployCommit alone.
+async function attributedShasFor(cards, filesFor = memoByKey(fetchCommitFiles)) {
+  const out = {};
+  const commitsByBranch = new Map();
+  for (const card of cards) {
+    const tt = card.trainTest;
+    if (card.status !== "ready-for-testing" || !card.deployBranch || !card.deployCommit || !(card.trainTestReruns || []).length
+      || !tt || tt.state !== "failed") continue;
+    try {
+      if (!commitsByBranch.has(card.deployBranch)) {
+        commitsByBranch.set(card.deployBranch, await trainCommitsFor(card.deployBranch, cards.filter((c) => c.deployBranch === card.deployBranch).map((c) => c.deployCommit).filter(Boolean), filesFor));
+      }
+      const commits = commitsByBranch.get(card.deployBranch);
+      out[card.id] = [...evidenceCandidates(commits, card.deployCommit).filter((e) => !e.stale).map((e) => e.sha), ...(card.deployCommits || []).slice(-1)];
+    } catch (err) {
+      console.log(`[ready-for-testing] ${card.id}: couldn't read the train's commits for its re-run check (${scrubSecrets(err.message)})`);
+    }
+  }
+  return out;
+}
 
 // Runs every run, even when nothing landed: stamps (or keeps holding) each
 // project's parked hand-off. Must run after the sweeps that write trainTest
@@ -680,7 +708,7 @@ async function processReadyForTestingHandOffs(nowMs = Date.now()) {
     try {
       const cards = await itemsForProject(project.id, HAND_OFF_CARD_FIELDS);
       const cardsById = Object.fromEntries(cards.map((c) => [c.id, c]));
-      const next = nextHandOff(project, cardsById, nowMs);
+      const next = nextHandOff(project, cardsById, nowMs, await attributedShasFor(cards));
       const pendingClear = { readyForTestingPendingItemIds: [], readyForTestingPendingSince: null, readyForTestingWaitingOn: [] };
       if (next.action === "clear") {
         await patchProject(project.id, pendingClear);
@@ -1556,7 +1584,7 @@ const TRAIN_MERGE_DISPATCHES = [
 // pattern as written in the YAML>". The reason says why that is safe.
 const NOT_DISPATCHED_AFTER_TRAIN = {
   "dsp-board.yml": "finishTrain's syncDocsAfterMerge re-syncs README/REQUIREMENTS and every board document with a sourcePath at the merge commit. A brand-new mirror still needs a dsp-board run.",
-  "dsp-prototype.yml dsp-integration/scripts/rebuild-prototype.sh": "the build script is not part of the source stamp (rebuild-prototype.sh), so even a push run rebuilds nothing.",
+  "dsp-prototype.yml dsp-integration/scripts/rebuild-prototype.sh": "the script is in the source stamp (SOURCE_PATHS in rebuild-prototype.sh), so a change to it does make the bundle stale; what keeps it safe is dsp-prototype.yml's */10 schedule, which rebuilds it within ten minutes.",
 };
 
 const underAny = (p, prefixes) => prefixes.some((s) => (s.endsWith("/") ? p.startsWith(s) : p === s));
@@ -1855,13 +1883,21 @@ async function trainCommitsFor(branch, cardShas, filesFor = memoByKey(fetchCommi
 // The run that judges `card` for one workflow, from cardEvidenceRun; wrapped
 // as a list for trainTestRunState. Falls back to the card's own commit's runs
 // when the train's commits can't be matched to it.
-async function evidenceRunsFor(workflow, card, commits, runsFor) {
+async function evidenceRunsFor(workflow, card, commits, runsFor, opts = {}) {
   const candidates = evidenceCandidates(commits, card.deployCommit);
   if (!candidates.length) return runsFor(workflow, card.deployCommit);
   const runsBySha = {};
   for (const c of candidates) if (!c.stale) runsBySha[c.sha] = await runsFor(workflow, c.sha);
   const run_ = cardEvidenceRun(commits, card.deployCommit, runsBySha);
-  return run_ ? [run_] : [];
+  if (run_ || !opts.borrow || !onlyStaleEvidence(commits, card.deployCommit)) return run_ ? [run_] : [];
+  // Display only (the chip): the nearest later run that held this card and no
+  // reverted change. Never the culprit's evidence — a failure up there is not
+  // this ticket's.
+  for (const sha of borrowableShas(commits, card.deployCommit)) {
+    const real = newestRealRun(await runsFor(workflow, sha));
+    if (real) return [real];
+  }
+  return [];
 }
 
 // Once per sweep, just before ejectRedCulprits: keep every train card's
@@ -1885,7 +1921,7 @@ async function recordCardTrainTests(runsFor = memoByKey(fetchWorkflowRunsOnSha),
       if (rec && (rec.state === "passed" || rec.state === "not-applicable")) continue; // settled
       const files = rec ? null : await filesFor(card.deployCommit);
       const runsByWorkflow = {};
-      for (const t of trainTestWorkflowsFor(card, files)) runsByWorkflow[t.workflow] = commits ? await evidenceRunsFor(t.workflow, card, commits, runsFor) : await runsFor(t.workflow, card.deployCommit);
+      for (const t of trainTestWorkflowsFor(card, files)) runsByWorkflow[t.workflow] = commits ? await evidenceRunsFor(t.workflow, card, commits, runsFor, { borrow: true }) : await runsFor(t.workflow, card.deployCommit);
       const next = nextCardTrainTest(card, runsByWorkflow, Date.now(), files);
       if (next) await patchItem(card.id, { trainTest: next });
     } catch (err) {
@@ -1990,14 +2026,37 @@ function evidenceCandidates(commits, cardSha) {
   let end = start;
   while (end + 1 < list.length && (isRevertCommit(list[end + 1]) || list[end + 1].generatedOnly)) end++;
   const out = [];
-  for (let i = start; i <= end; i++) {
-    let stale = false;
-    for (let j = i + 1; j < list.length && !stale; j++) {
-      const reverted = revertedShasOf(list[j].message);
-      if (reverted.length && list.slice(0, i + 1).some((c) => reverted.some((r) => sameSha(c.sha, r)))) stale = true;
-    }
-    out.push({ sha: list[i].sha, stale });
+  for (let i = start; i <= end; i++) out.push({ sha: list[i].sha, stale: staleAt(list, i) });
+  return out;
+}
+
+// True when a later commit reverts something at or before index i, so a run
+// on list[i] still contained the reverted change.
+function staleAt(list, i) {
+  for (let j = i + 1; j < list.length; j++) {
+    const reverted = revertedShasOf(list[j].message);
+    if (reverted.length && list.slice(0, i + 1).some((c) => reverted.some((r) => sameSha(c.sha, r)))) return true;
   }
+  return false;
+}
+
+// A card whose every candidate is stale (revert(S) on a train B, S, L, M: L
+// has only runs that held S) has no evidence of its own, and neither a verdict
+// nor a culprit can come from it. Pure.
+function onlyStaleEvidence(commits, cardSha) {
+  const candidates = evidenceCandidates(commits, cardSha);
+  return candidates.length > 0 && candidates.every((c) => c.stale);
+}
+
+// The commits after the card's candidates that no revert has made stale, nearest
+// first: their runs contained the card and not the reverted change. Pure.
+function borrowableShas(commits, cardSha) {
+  const list = commits || [];
+  const candidates = evidenceCandidates(list, cardSha);
+  if (!candidates.length) return [];
+  const from = list.findIndex((c) => c && c.sha === candidates[candidates.length - 1].sha) + 1;
+  const out = [];
+  for (let i = from; i < list.length; i++) if (!staleAt(list, i)) out.push(list[i].sha);
   return out;
 }
 
@@ -2106,6 +2165,7 @@ function readTrainTestGate(deployBranch) {
 //   cards: the train's cards ({ id, status, deployCommit })
 //   runs:  { [sha]: newest real run on that commit ({ status, conclusion }) }
 //   opts.deployParkedRed: the approved deploy is parked red (see above)
+//   opts.skip: Set of deployCommits whose only runs are stale (onlyStaleEvidence)
 // Returns the card to eject, or null (nothing red yet, the culprit is
 // approved and the deploy isn't parked, or the evidence is incomplete — a
 // run still going or missing).
@@ -2114,6 +2174,7 @@ function pickRedCulprit(order, cards, runs, opts = {}) {
   const onTrain = (cards || []).filter((c) => c && at.has(c.deployCommit)).sort((a, b) => at.get(a.deployCommit) - at.get(b.deployCommit));
   let greenBefore = false;
   for (const card of onTrain) {
+    if (opts.skip && opts.skip.has(card.deployCommit)) continue; // only stale runs: no verdict, and no reason to stop the scan
     const r = (runs || {})[card.deployCommit];
     if (!r || String(r.status).toLowerCase() !== "completed") return null;
     const concl = String(r.conclusion).toLowerCase();
@@ -2282,7 +2343,10 @@ async function ejectRedCulprits(runsFor = memoByKey(fetchWorkflowRunsOnSha), fil
           await patchItem(c.id, { notes, trainTestReruns: c.trainTestReruns, updatedAt: new Date().toISOString() });
           console.log(`[train-rerun] ${branch}: ${t.workflow} passed on re-run at ${c.deployCommit.slice(0, 7)} (${c.id}) — flaky, nothing sent back`);
         }
-        const culprit = pickRedCulprit(order, trainCards, runs, { deployParkedRed });
+        const culprit = pickRedCulprit(order, trainCards, runs, {
+          deployParkedRed,
+          skip: new Set(trainCards.filter((c) => onlyStaleEvidence(commits, c.deployCommit)).map((c) => c.deployCommit)),
+        });
         if (!culprit) continue;
         const r = runs[culprit.deployCommit];
         const action = culpritAction(r);
@@ -3816,12 +3880,47 @@ function prototypeBuildCurrent({ git = (args, opts) => run("git", args, opts) } 
 // Resolves one pending deployRuns entry. `ctx` holds the per-tick caches that
 // let a train's cards share one lookup per run: { runs: Map, heal: Map,
 // proto: {value}, gh }. Returns the entry unchanged while it is still going.
-function resolveDeployRun(entry, ctx) {
+function resolveDeployRun(entry, ctx, mergeCommit = null) {
+  const out = resolveDeployRunOnce(entry, ctx, mergeCommit);
+  // A run that never reports back must not read "Deploying…" for ever.
+  if (out.conclusion === "pending") {
+    const sinceMs = Date.parse(String(entry.dispatchedAt || ""));
+    const nowMs = ctx.now !== undefined ? ctx.now : Date.now();
+    if (Number.isFinite(sinceMs) && nowMs - sinceMs > DEPLOY_PENDING_MAX_MS) return { ...out, conclusion: "unknown" };
+  }
+  return out;
+}
+
+// A pending deploy entry older than this becomes "unknown" (a failure for the
+// roll-up, with a note), so a card never reads Deploying… indefinitely.
+const DEPLOY_PENDING_MAX_MS = 2 * 60 * 60 * 1000;
+
+function resolveDeployRunOnce(entry, ctx, mergeCommit) {
   const gh = ctx.gh || ((args) => run("gh", args));
-  // Settled for good: a success, or a dispatch that never happened. A failed
-  // run is looked at again (its re-run may have passed), like a card's
-  // failure was before deployRuns.
-  if (entry.conclusion === "success" || entry.conclusion === "not-dispatched") return entry;
+  // Settled for good: a success. A failed run is looked at again (its re-run
+  // may have passed), like a card's failure was before deployRuns.
+  if (entry.conclusion === "success") return entry;
+  // A dispatch that never happened: it clears when someone dispatches the
+  // workflow on main and it succeeds. Every deploy workflow takes all of main,
+  // so a success after the merge that carries this merge's commit counts.
+  if (entry.conclusion === "not-dispatched" && entry.workflow !== PROTOTYPE_WORKFLOW) {
+    const key = `${entry.workflow}|nd|${entry.dispatchedAt}`;
+    if (!ctx.runs.has(key)) {
+      let found = null;
+      try {
+        const rows = JSON.parse(gh(["run", "list", "--repo", REPO, "--workflow", entry.workflow, "--branch", "main", "--limit", "20",
+          "--json", "databaseId,url,createdAt,status,conclusion,headSha"]) || "[]");
+        found = rows.find((r) => r.status === "completed" && r.conclusion === "success" && String(r.createdAt) >= String(entry.dispatchedAt)
+          && (HEALABLE_DEPLOYS.has(entry.workflow) || !mergeCommit || sameSha(r.headSha, mergeCommit))) || null;
+      } catch (err) {
+        console.log(`[deploy-status] couldn't look for a later ${entry.workflow} run (${scrubSecrets(err.message)}) — will retry`);
+      }
+      ctx.runs.set(key, found);
+    }
+    const found = ctx.runs.get(key);
+    return found ? { ...entry, runUrl: found.url || entry.runUrl || null, conclusion: "success" } : entry;
+  }
+  if (entry.conclusion === "not-dispatched") return entry;
   if (entry.workflow === PROTOTYPE_WORKFLOW) {
     if (!ctx.proto) {
       try { ctx.proto = { value: (ctx.prototypeCurrent || prototypeBuildCurrent)() }; }
@@ -3858,11 +3957,22 @@ function resolveDeployRun(entry, ctx) {
   return { ...entry, runUrl: finalUrl, conclusion };
 }
 
-// The note a card gets the first time its roll-up turns to failure.
+// The note a card gets the first time its roll-up turns to failure. Each case
+// says what actually clears it: a never-dispatched workflow is dispatched (the
+// next sweep adopts a success after the merge); a timed-out entry is looked at;
+// a failed run is re-run with "Re-run jobs" on that same run, which is the run
+// the card follows (a fresh faq-content.yml run is never looked at).
 function deployFailureNote(runs) {
   const bad = (runs || []).filter((r) => r.conclusion !== "pending" && r.conclusion !== "success");
-  const named = bad.map((r) => `${r.workflow} (${r.conclusion === "not-dispatched" ? "never dispatched" : r.conclusion}${r.runUrl ? `: ${r.runUrl}` : ""})`).join(", ");
-  return `The merge is on main, but ${named} did not succeed, so the service it deploys is not live. The card stays in Merged to Main; re-run that workflow on main (Actions → Run workflow) and the card follows.`;
+  const label = (r) => r.conclusion === "not-dispatched" ? "never dispatched" : r.conclusion === "unknown" ? "no result after 2 hours" : r.conclusion;
+  const named = bad.map((r) => `${r.workflow} (${label(r)}${r.runUrl ? `: ${r.runUrl}` : ""})`).join(", ");
+  const fixes = bad.map((r) => {
+    if (r.conclusion === "not-dispatched") return `${r.workflow}: dispatch it on main (Actions → Run workflow); the next sweep adopts a successful run started after the merge`;
+    if (r.conclusion === "unknown") return `${r.workflow}: open its runs on main; a successful run after the merge is adopted, otherwise dispatch it`;
+    if (HEALABLE_DEPLOYS.has(r.workflow)) return `${r.workflow}: use Re-run jobs on that run, or start a new run on main (a newer success is adopted)`;
+    return `${r.workflow}: use Re-run jobs on that same run (a new run started by hand is not looked at)`;
+  }).join("; ");
+  return `The merge is on main, but ${named} did not succeed, so the service it deploys is not live. The card stays in Merged to Main. To clear it — ${fixes}.`;
 }
 
 async function processMergePr(item) {
@@ -5143,7 +5253,7 @@ function healFailedDeploy(runId, cache, gh = (args) => run("gh", args), workflow
 // card gets one note naming the workflow and run.
 async function reconcileDeployRuns(item, ctx) {
   const before = item.deployRuns;
-  const after = before.map((entry) => resolveDeployRun(entry, ctx));
+  const after = before.map((entry) => resolveDeployRun(entry, ctx, item.mergeCommit));
   const roll = rollUpDeployRuns(after);
   const changed = JSON.stringify(after) !== JSON.stringify(before) || roll.deployConclusion !== item.deployConclusion
     || (roll.deployRunUrl && roll.deployRunUrl !== item.deployRunUrl);
@@ -5164,7 +5274,7 @@ async function reconcileDeployRuns(item, ctx) {
 async function reconcileDeployStatuses() {
   const byConclusion = (value) => runQuery({
     from: [{ collectionId: "backlogItems" }],
-    select: selectFields(["deployRunUrl", "deployConclusion", "deployRuns", "mergedAt", "updatedAt"]),
+    select: selectFields(["deployRunUrl", "deployConclusion", "deployRuns", "mergedAt", "updatedAt", "mergeCommit"]),
     where: { fieldFilter: { field: { fieldPath: "deployConclusion" }, op: "EQUAL", value: { stringValue: value } } },
   });
   const failedSince = Date.now() - DEPLOY_FAILURE_RECHECK_MS;
@@ -5601,7 +5711,7 @@ module.exports = {
   // test/preview-url-pin.test.js
   guessPreviewUrl, isAutoGeneratedPreviewUrl, repointPreviewUrlRef,
   // test/ready-for-testing-trigger.test.js
-  readyForTestingNotifyFields, batchStillBuilding, handOffWaitingOn, rerunPending, nextHandOff, tv,
+  readyForTestingNotifyFields, batchStillBuilding, handOffWaitingOn, rerunPending, nextHandOff, attributedShasFor, tv,
   // test/train-sync.test.js — the train is brought up to date with main
   // before a ticket lands, and the patch's edits are carried across
   syncTrainWithMain, rebasePatchFilesOnto,
@@ -5618,7 +5728,7 @@ module.exports = {
   reportTrainTestResults, trainRunOwner, alreadyRerun, rerunRunKey, fdoc,
   trainTestsFor, testedHeadOf, nextTrainTestsRed, trainTestGate, newestRealRun, pickRedCulprit,
   // test/train-eject-after-revert.test.js — a ticket is judged on a run that did not contain a reverted ticket
-  afterRevertDispatches, cardEvidenceRun, evidenceCandidates,
+  afterRevertDispatches, cardEvidenceRun, evidenceCandidates, onlyStaleEvidence, borrowableShas,
   // test/card-test-status.test.js — each train card's own test result
   TRAIN_TEST_START_GRACE_MS, worstTrainTestState, trainTestRunState, landingTrainTest, nextCardTrainTest, memoByKey, recordCardTrainTests,
   // test/parallel-builds.test.js — patches built in parallel
