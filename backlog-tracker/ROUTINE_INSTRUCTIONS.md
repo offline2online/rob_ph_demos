@@ -285,19 +285,20 @@ no block is prepended that run, same as today.
      or a project-specific README), read that too — the board's
      Requirements copy and the repo file are meant to be kept in sync, but
      check both in case one is stale.
-   - **If your work changes what those documents say, update both before
-     you finish** (Rob, 21 Sep 2026) — the repo file first, since it is the
-     source of truth, then the board field so the two agree. Where the
-     project has a sync script (`npm run board:sync` in `dsp-integration/`)
-     run it: it copies the files byte for byte and verifies the result.
-     Otherwise use the board MCP tools (`set_project_requirements`,
-     `set_project_readme`), and only where the document is short enough to
-     reproduce exactly — never retype a long specification by hand. If you
-     can't complete the sync, say so in the ticket comment rather than
-     leaving the board quietly stale: read the docs with `get_project_docs`
-     and run `npm run board:sync -- --check-mcp <saved result>`, which
-     compares them locally without any credential and exits 1 if the board
-     is behind, so the comment can say exactly what is out of date.
+   - **If your work changes what those documents say, change the repo
+     file and nothing else.** Where a document is copied from a repo file
+     (a mirror, or a synced Requirements/README), the repo file wins: edit
+     it on the branch and the board copy follows on merge. Those copies are
+     read-only over MCP (`set_project_requirements`, `set_project_readme`
+     and `update_project_document` refuse them), so never write the board
+     copy from a train branch. Only a project with no synced copy (no repo
+     folder) keeps its Requirements/README on the board alone, and there
+     the MCP tools still work — only where the document is short enough to
+     reproduce exactly; never retype a long specification by hand. To see
+     whether the board is behind its files, read the docs with
+     `get_project_docs` and run `npm run board:sync -- --check-mcp <saved
+     result>`, which compares them locally without any credential and
+     exits 1 if the board is behind.
    - **A commit you put on a train by hand must be stamped onto its
      card**: `backlogItems.deployCommit` is the only thing that tells the
      board the card is on the train (`functions/train-lock.js`). Without

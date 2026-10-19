@@ -926,7 +926,7 @@ stale.
   contentMd: string,
   createdAt: timestamp,
   updatedAt: timestamp,
-  updatedByEmail?: string,         // who last wrote it (a member's email, or "backlog-automation" for a mirror)
+  updatedByEmail?: string,         // who last wrote it (a member's email, or "backlog-automation" for a mirror; the sync sets it on every mirror write)
   // Mirror fields, set when the document is kept in step with a repo file
   // by the post-merge docs sync (docs-sync-lib.js); absent on a hand-written document:
   sourcePath?: string,             // repo-root-relative file this document mirrors
@@ -940,6 +940,22 @@ stale.
   statusNote?: string,             // boardDocs entry's note
 }
 ```
+**A document with `sourcePath` is a mirror and is read-only over MCP**:
+`update_project_document` and `delete_project_document` (and
+`update_interface` / `delete_interface` for an interface record that
+carries `sourcePath`) refuse it — a rename included, since the sync treats
+a changed name as drift — write nothing and record no revision. The same
+holds for `set_project_requirements` / `set_project_readme` when
+`projects/{id}/docs/{kind}.sourcePath` or `projects/{id}.docsSync.
+requirementsCommit` / `readmeCommit` is set. Every change to a mirror is
+kept by the `onProjectDocWritten` trigger (`projectDocs/{docId}`): on an
+update where `contentMd` changed, or on a delete, it adds one `docRevisions`
+entry `{target: "projectDoc" | "projectDoc.deleted", docId, projectId, name,
+contentMd, chars, replacedAt, replacedByEmail, via: "trigger"}` holding the
+BEFORE text. Creations, empty previous text, unchanged text and non-mirror
+documents record nothing. Sync writes to Requirements/README stay
+unrecorded (800k characters may not fit through a trigger event).
+
 A generic, named document belonging to exactly one project — an API spec,
 an architecture decision record, any technical or architectural document
 that isn't the project's own `requirementsMd` or `readmeMd` fields. Listed

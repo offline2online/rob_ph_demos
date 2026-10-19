@@ -965,6 +965,10 @@ it is full read/write — a project's Requirements, README, additional
 documents, interface contracts and Artifact link — because keeping those
 current is part of doing the work. Every documentation write records what it
 replaced in `docRevisions`, so a bad write or a delete is recoverable.
+Where a document is copied from a repo file (a mirror, or a synced
+Requirements/README), the repo file wins and the copy is read-only over MCP;
+the `onProjectDocWritten` trigger (`functions/index.js`) keeps the text every
+change to a mirror replaces.
 
 **No tool merges, approves a ticket out of Ready for Testing, or moves a
 card's status — with one deliberate, narrowly-scoped exception.**

@@ -132,6 +132,7 @@ function fakes(files, { refuse, drop } = {}) {
     assert.ok(r.ok, JSON.stringify(r));
     assert.strictEqual(f.docs.readme.contentMd, "# bt");
     assert.strictEqual(store.m.contentMd, "notes");
+    assert.strictEqual(store.m.updatedByEmail, "backlog-automation", "a mirror write names the automation, not the previous editor");
     assert.deepStrictEqual(f.doc.docsSync.mirroredDocs, [{ docId: "m", name: "Notes", sourcePath: "faq/notes.md", sourceCommit: "last-notes.md", ok: true, error: null }]);
     assert.strictEqual(f.doc.docsSync.readmeCommit, "last-README.md");
     assert.strictEqual(f.doc.lastMergeCommit, "ccc4444");

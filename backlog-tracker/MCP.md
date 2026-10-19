@@ -309,10 +309,25 @@ Three things worth knowing before pointing an agent at them:
   `firestore.rules` gives the board's own editor, because a longer document
   would be one a person could never save an edit to from the Docs page.
 
-Where a project's documentation also exists as a repo file
-(`REQUIREMENTS.md`, `README.md`, `shared/interface-contract.md`), the two
-are meant to match. Update both; a divergence is a bug in whichever is
-stale.
+**Where a document is copied from a repo file, the repo file wins.** A
+mirror (a `projectDocs` row with `sourcePath`), a Requirements/README that
+the post-merge sync writes (its `docs/{kind}` block has a `sourcePath`, or
+the project's `docsSync` has a `requirementsCommit` / `readmeCommit`) and an
+interface record with a `sourcePath` are read-only over MCP:
+`update_project_document`, `delete_project_document`,
+`set_project_requirements`, `set_project_readme`, `update_interface` and
+`delete_interface` refuse them, write nothing and record no revision, and
+the error names the repo file. To change one, edit the file on a branch; the
+board copy follows when it merges. To retire a mirror, remove it from the
+repo's mirror list first. A project with no synced copy (Backlog Tracker &
+FAQs' Requirements and README today) is written as before.
+
+Every change to a mirror, by the sync or by a person on the Docs page, is
+kept: the `onProjectDocWritten` trigger records the text it replaced in
+`docRevisions` (`target` `projectDoc`, or `projectDoc.deleted`), so
+`list_doc_revisions` with the `docId` finds it. Sync writes to
+Requirements/README are not recorded — they reach 800k characters, which
+may not fit through a trigger event.
 
 **Cannot, deliberately, apart from the one exception above:** merge a
 train, approve a ticket out of Ready for Testing, move a card's status,

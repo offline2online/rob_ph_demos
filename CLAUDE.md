@@ -817,13 +817,17 @@ How to do it, in order of preference:
    loudly if they don't match byte for byte. `npm run board:sync -- --check`
    reports drift without writing, which is what to run if you only want to
    know. It needs `BOARD_API_KEY` in that project's `.env`.
-2. **The board MCP tools** — `set_project_requirements` and
-   `set_project_readme` — when you have them and the document is small
-   enough to reproduce exactly (a README, an interface contract). They
-   replace the whole document, so they mean retyping it.
-   **Don't hand-copy a long specification through a model**: an 80 KB file
-   retyped by an agent is a file that has quietly acquired errors. Use the
-   script, or say the sync is outstanding and why.
+2. **Edit the repo file, not the board copy.** Where a document is copied
+   from a repo file (a mirror, or a synced Requirements/README), the repo
+   file wins: edit it on a branch and the board copy follows on merge.
+   Those copies are read-only over MCP — `set_project_requirements`,
+   `set_project_readme`, `update_project_document` and
+   `delete_project_document` refuse them and name the file. Only a document
+   with no repo file behind it (a project with no folder) is written
+   through those tools, and then only if it is short enough to reproduce
+   exactly: **don't hand-copy a long specification through a model**.
+   Every change to a mirror is kept in `docRevisions`
+   (`list_doc_revisions` with its `docId`).
 
 Whichever route, **verify**: read the field back and compare it with the
 file. A sync that reports success without checking is worse than no sync,

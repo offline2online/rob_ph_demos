@@ -1928,6 +1928,54 @@ exports.onSkillWritten = onDocumentWritten(
   }
 );
 
+// Keeps the text a repo sync (or anyone else) replaces on a mirrored project
+// document. A projectDocs row with `sourcePath` is a copy of a repo file; the
+// sync writers (the automation user, the service account, a person on the
+// Docs page) cannot write docRevisions themselves (firestore.rules), so this
+// trigger records one entry per change. update_project_document and
+// delete_project_document refuse a mirror, so MCP never records the same
+// change twice. Only mirrors are recorded: a board-only document's MCP edits
+// already keep their own history. Creations, unchanged text and empty
+// previous text record nothing. Failures are logged and swallowed — a
+// thrown error would have Cloud Functions retry the event.
+exports.onProjectDocWritten = onDocumentWritten(
+  { document: "projectDocs/{docId}" },
+  async (event) => {
+    try {
+      const before = event.data?.before?.data();
+      const after = event.data?.after?.data();
+      if (!before) return; // creation — nothing to have replaced yet
+      const previous = typeof before.contentMd === "string" ? before.contentMd : "";
+      if (!previous) return;
+      let target;
+      if (after) {
+        if (!before.sourcePath && !after.sourcePath) return;
+        if (previous === after.contentMd) return;
+        target = "projectDoc";
+      } else {
+        if (!before.sourcePath) return;
+        target = "projectDoc.deleted";
+      }
+      await getFirestore().collection("docRevisions").add({
+        target,
+        docId: event.params.docId,
+        projectId: (after && after.projectId) || before.projectId || null,
+        name: before.name || (after && after.name) || "",
+        contentMd: previous,
+        chars: previous.length,
+        replacedAt: FieldValue.serverTimestamp(),
+        replacedByEmail: (after ? after.updatedByEmail : before.updatedByEmail) || null,
+        via: "trigger",
+      });
+    } catch (err) {
+      logger.error("Could not record a mirrored project document's previous text", {
+        docId: event.params && event.params.docId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+);
+
 // Fires backlog-automation.yml immediately via repository_dispatch. Shared
 // by both triggers above; the workflow's own 2-minute schedule stays as the
 // safety net for whenever the token is missing or this call fails, so a

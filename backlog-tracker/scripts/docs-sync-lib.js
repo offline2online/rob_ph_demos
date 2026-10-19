@@ -158,7 +158,7 @@ async function syncMirroredDocs(project, mergeCommit, io, now, listed) {
       const have = await io.getProjectDocContent(d.id);
       const inStep = have && have.contentMd === content && have.sourcePath === sp && have.sourceCommit === sourceCommit;
       if (!inStep) {
-        await io.putProjectDocContent(d.id, { contentMd: content, sourcePath: sp, updatedAt: now, sourceCommit });
+        await io.putProjectDocContent(d.id, { contentMd: content, sourcePath: sp, updatedAt: now, sourceCommit, updatedByEmail: "backlog-automation" });
         const after = await io.getProjectDocContent(d.id);
         if (!after || (after.contentMd || "") !== content) throw new Error("wrote, but the board's copy does not match byte for byte");
       }

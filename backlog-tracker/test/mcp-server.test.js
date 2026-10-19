@@ -583,22 +583,79 @@ async function rpc(token, method, params, id = 1) {
     assert.ok(env.store.col("projects").get("proj1").docs.requirements, "writing the README must not drop the requirements pointer");
   });
 
-  await test("tells the writer what will happen to a Requirements or README write, from the project's own fields", async () => {
+  await test("a Requirements or README write answers with the repo-wins sentence", async () => {
     env.store.col("projects").set("projNoFolder", { name: "Backlog Tracker & FAQs", deployBranch: "deploy/backlog-tracker-faqs", repoFolderNotApplicable: true });
     const call = async (name, projectId) => JSON.parse((await rpc(tokens.access_token, "tools/call", { name, arguments: { projectId, contentMd: "# Doc" } })).body.result.content[0].text);
-    for (const [name, file] of [["set_project_requirements", "REQUIREMENTS.md"], ["set_project_readme", "README.md"]]) {
-      const withFolder = await call(name, "proj1");
-      assert.match(withFolder.note, new RegExp(`${file} in live-visitor-profile/`));
-      assert.match(withFolder.note, /this edit is lost/);
-      const noFolder = await call(name, "projNoFolder");
-      assert.match(noFolder.note, /nothing syncs this copy/);
-      for (const note of [withFolder.note, noFolder.note]) assert.ok(!/whichever is stale|merges a train/.test(note));
+    for (const name of ["set_project_requirements", "set_project_readme"]) {
+      for (const projectId of ["proj1", "projNoFolder"]) {
+        const out = await call(name, projectId);
+        assert.match(out.note, /the repo file wins: edit it on a branch and the board copy follows on merge\. Those copies are read-only here\./);
+        assert.ok(!/whichever is stale|merges a train|update both|this edit is lost/.test(out.note));
+      }
     }
+  });
+
+  // ── Repo-mirrored documents are read-only here ──────────────────────────
+  const callText = async (name, args) => (await rpc(tokens.access_token, "tools/call", { name, arguments: args })).body.result;
+  const revisionCount = () => env.store.col("docRevisions").keys().length;
+
+  await test("a mirror cannot be updated or deleted, and nothing is written or recorded", async () => {
+    env.store.col("projectDocs").set("mir1", { projectId: "proj1", name: "Mirror A", contentMd: "from the repo", sourcePath: "p/docs/A.md" });
+    const revs = revisionCount();
+    const upd = await callText("update_project_document", { docId: "mir1", contentMd: "agent edit" });
+    assert.strictEqual(upd.isError, true);
+    assert.match(upd.content[0].text, /"Mirror A" mirrors p\/docs\/A\.md, so it is read-only here\./);
+    assert.match(upd.content[0].text, /Edit the file on a branch; the board copy follows when it merges\./);
+    assert.strictEqual(env.store.col("projectDocs").get("mir1").contentMd, "from the repo");
+    const ren = await callText("update_project_document", { docId: "mir1", name: "Renamed" });
+    assert.strictEqual(ren.isError, true, "a rename is drift the sync would put back");
+    assert.strictEqual(env.store.col("projectDocs").get("mir1").name, "Mirror A");
+    const del = await callText("delete_project_document", { docId: "mir1" });
+    assert.strictEqual(del.isError, true);
+    assert.match(del.content[0].text, /p\/docs\/A\.md/);
+    assert.match(del.content[0].text, /remove it from the repo's mirror list first/);
+    assert.ok(env.store.col("projectDocs").get("mir1"), "the mirror remains");
+    assert.strictEqual(revisionCount(), revs, "a refusal records no revision");
+  });
+
+  await test("a document without sourcePath still updates and deletes", async () => {
+    env.store.col("projectDocs").set("brd1", { projectId: "proj1", name: "Board only", contentMd: "v1" });
+    assert.notStrictEqual((await callText("update_project_document", { docId: "brd1", contentMd: "v2" })).isError, true);
+    assert.strictEqual(env.store.col("projectDocs").get("brd1").contentMd, "v2");
+    assert.notStrictEqual((await callText("delete_project_document", { docId: "brd1" })).isError, true);
+    assert.strictEqual(env.store.col("projectDocs").get("brd1"), undefined);
+  });
+
+  await test("an interface that carries a sourcePath cannot be updated or deleted", async () => {
+    env.store.col("interfaces").set("if-mir", { name: "Contract", projectIds: ["proj1", "projB"], contentMd: "text", sourcePath: "shared/interface-contract.md" });
+    const upd = await callText("update_interface", { interfaceId: "if-mir", contentMd: "edit" });
+    assert.strictEqual(upd.isError, true);
+    assert.match(upd.content[0].text, /shared\/interface-contract\.md/);
+    const del = await callText("delete_interface", { interfaceId: "if-mir" });
+    assert.strictEqual(del.isError, true);
+    assert.strictEqual(env.store.col("interfaces").get("if-mir").contentMd, "text");
+  });
+
+  await test("a synced Requirements or README is refused, naming its source; others still write", async () => {
+    env.store.col("projects").set("projSynced", { name: "Synced", deployBranch: "deploy/synced", repoFolder: "synced", docsSync: { readmeCommit: "abcdef1234567" } });
+    env.store.col("projects/projSynced/docs").set("requirements", { contentMd: "# R", sourcePath: "synced/docs/REQUIREMENTS.md" });
+    const req = await callText("set_project_requirements", { projectId: "projSynced", contentMd: "# new" });
+    assert.strictEqual(req.isError, true);
+    assert.match(req.content[0].text, /synced\/docs\/REQUIREMENTS\.md/);
+    assert.strictEqual(env.store.col("projects/projSynced/docs").get("requirements").contentMd, "# R");
+    // readmeCommit alone, no sourcePath on the block (a browser save cleared it)
+    const rd = await callText("set_project_readme", { projectId: "projSynced", contentMd: "# new" });
+    assert.strictEqual(rd.isError, true);
+    assert.match(rd.content[0].text, /README\.md in the repo/);
+    assert.match(rd.content[0].text, /abcdef1/);
+    assert.ok(!/abcdef12/.test(rd.content[0].text), "only the first 7 characters of the commit");
+    assert.notStrictEqual((await callText("set_project_readme", { projectId: "proj1", contentMd: "# fine" })).isError, true);
   });
 
   await test("the server instructions and whoami note match the tool list", async () => {
     const init = await rpc(tokens.access_token, "initialize", { protocolVersion: "2025-06-18", capabilities: {} });
     const text = init.body.result.instructions;
+    assert.ok(!/update both/.test(text) && /read-only/.test(text), "instructions say the repo wins and copies are read-only");
     const who = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "whoami", arguments: {} })).body.result.content[0].text).note;
     const tools = mcp.__test.TOOLS;
     const names = new Set(tools.map((t) => t.name));

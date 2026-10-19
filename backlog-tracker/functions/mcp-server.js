@@ -1677,13 +1677,36 @@ async function deployGuardForProject(pid) {
 // What happens to a Requirements/README write, from the project's own fields:
 // a project with a repo folder has the board copy rewritten from the repo file
 // after the next merge to main (docs-sync-lib.js), any other project is not synced.
-function docWriteNote(project, fileName) {
-  const p = project || {};
-  const slug = String(p.deployBranch || "").replace(/^deploy\//, "");
-  const folder = p.repoFolderNotApplicable === true ? "" : String(p.repoFolder || slug || "").trim().replace(/^\/+|\/+$/g, "");
-  if (folder) return `This copy is rewritten from the ${fileName} in ${folder}/ after the next merge to main; change the repo file, or this edit is lost.`;
-  return `This project has no repo folder, so nothing syncs this copy; if a repo file holds the same text, update it in the same session.`;
+// One sentence for every place an agent is told who wins when a document is
+// a copy of a repo file (SERVER_INSTRUCTIONS, the Requirements/README success
+// notes). Keep it identical in all of them.
+const REPO_WINS = "Where a document is copied from a repo file (a mirror, or a synced Requirements/README), the repo file wins: edit it on a branch and the board copy follows on merge. Those copies are read-only here.";
+
+function docWriteNote() {
+  return REPO_WINS;
 }
+
+// Requirements/README that the repo sync owns. Synced when the docs/{kind}
+// block carries a sourcePath (every sync writer sets it) or the project's
+// docsSync has a commit for it (survives a browser save clearing sourcePath).
+// -> an error message, or null when the block may be written.
+async function syncedDocRefusal(projectId, projectData, kind) {
+  const snap = await db().collection("projects").doc(projectId).collection("docs").doc(kind).get();
+  const v = snap.exists ? (snap.data() || {}) : {};
+  const ds = (projectData && projectData.docsSync && typeof projectData.docsSync === "object") ? projectData.docsSync : {};
+  const commit = String(ds[kind + "Commit"] || "");
+  const sourcePath = typeof v.sourcePath === "string" ? v.sourcePath.trim() : "";
+  if (!sourcePath && !commit) return null;
+  const file = kind === "readme" ? "README.md" : "REQUIREMENTS.md";
+  const what = sourcePath || `this project's ${file} in the repo`;
+  const at = commit ? ` (last synced at ${commit.slice(0, 7)})` : "";
+  return `${kind === "readme" ? "README" : "Requirements"} mirrors ${what}${at}, so it is read-only here. The next sync after a merge to main rewrites it from that file. Edit the file on a branch; the board copy follows when it merges.`;
+}
+
+const mirrorUpdateRefusal = (name, sourcePath) =>
+  `"${name}" mirrors ${sourcePath}, so it is read-only here. The next sync after a merge to main rewrites it from that file. Edit the file on a branch; the board copy follows when it merges.`;
+const mirrorDeleteRefusal = (name, sourcePath) =>
+  `${mirrorUpdateRefusal(name, sourcePath)} To retire it, remove it from the repo's mirror list first (dsp-integration/scripts/sync-board-docs.mjs MIRRORS today); a person can then delete it on the Docs page.`;
 
 const TOOLS = [
   {
@@ -2563,7 +2586,7 @@ const TOOLS = [
   // shipping — see PROJECT_WRITABLE_FIELDS above.
   {
     name: "set_project_requirements",
-    description: "Replace a project's Requirements markdown (the board-native home of its REQUIREMENTS.md). Send the COMPLETE new document — this overwrites, it does not append. The previous version is kept in the revision history, so a bad write is recoverable with list_doc_revisions.",
+    description: "Replace a project's Requirements markdown (the board-native home of its REQUIREMENTS.md). Send the COMPLETE new document — this overwrites, it does not append. The previous version is kept in the revision history, so a bad write is recoverable with list_doc_revisions. Refused when Requirements is synced from the repo file (the repo file wins: edit it on a branch and the board copy follows on merge).",
     scope: "board.write",
     inputSchema: {
       type: "object",
@@ -2579,16 +2602,18 @@ const TOOLS = [
       if (md.length > PROJECT_MD_MAX) return toolError(`Requirements are limited to ${PROJECT_MD_MAX} characters; that was ${md.length}.`);
       const snap = await db().collection("projects").doc(projectId).get();
       if (!snap.exists) return toolError(`No project with id ${projectId}. Call list_projects first.`);
+      const synced = await syncedDocRefusal(projectId, snap.data(), "requirements");
+      if (synced) return toolError(synced);
       const before = await readProjectDoc(projectId, "requirements", snap.data());
       const revisionId = await recordDocRevision(session, PROJECT_DOC_KINDS.requirements.revisionTarget, { projectId, name: (snap.data() || {}).name || "" }, before);
       await writeProjectDoc(projectId, "requirements", md, session);
       await audit(session, "set_project_requirements", { projectId, chars: md.length, replacedChars: before.length, revisionId });
-      return textResult({ updated: true, projectId, chars: md.length, replacedChars: before.length, revisionId, note: docWriteNote(snap.data(), "REQUIREMENTS.md") });
+      return textResult({ updated: true, projectId, chars: md.length, replacedChars: before.length, revisionId, note: docWriteNote() });
     },
   },
   {
     name: "set_project_readme",
-    description: "Replace a project's README markdown (the board-native counterpart of its README.md). Send the COMPLETE new document — this overwrites, it does not append. The previous version is kept in the revision history.",
+    description: "Replace a project's README markdown (the board-native counterpart of its README.md). Send the COMPLETE new document — this overwrites, it does not append. The previous version is kept in the revision history. Refused when the README is synced from the repo file (the repo file wins: edit it on a branch and the board copy follows on merge).",
     scope: "board.write",
     inputSchema: {
       type: "object",
@@ -2604,11 +2629,13 @@ const TOOLS = [
       if (md.length > PROJECT_MD_MAX) return toolError(`A README is limited to ${PROJECT_MD_MAX} characters; that was ${md.length}.`);
       const snap = await db().collection("projects").doc(projectId).get();
       if (!snap.exists) return toolError(`No project with id ${projectId}. Call list_projects first.`);
+      const synced = await syncedDocRefusal(projectId, snap.data(), "readme");
+      if (synced) return toolError(synced);
       const before = await readProjectDoc(projectId, "readme", snap.data());
       const revisionId = await recordDocRevision(session, PROJECT_DOC_KINDS.readme.revisionTarget, { projectId, name: (snap.data() || {}).name || "" }, before);
       await writeProjectDoc(projectId, "readme", md, session);
       await audit(session, "set_project_readme", { projectId, chars: md.length, replacedChars: before.length, revisionId });
-      return textResult({ updated: true, projectId, chars: md.length, replacedChars: before.length, revisionId, note: docWriteNote(snap.data(), "README.md") });
+      return textResult({ updated: true, projectId, chars: md.length, replacedChars: before.length, revisionId, note: docWriteNote() });
     },
   },
   {
@@ -2698,7 +2725,7 @@ const TOOLS = [
   },
   {
     name: "update_project_document",
-    description: "Rename a project document, replace its contents, or both. Sending contentMd overwrites the whole document; the previous version is kept in the revision history.",
+    description: "Rename a project document, replace its contents, or both. Sending contentMd overwrites the whole document; the previous version is kept in the revision history. Refused for a mirror (a document with a sourcePath, shown as kind \"mirror\"): a mirror is restored by editing its repo file on a branch, and the board copy follows on merge.",
     scope: "board.write",
     inputSchema: {
       type: "object",
@@ -2714,6 +2741,7 @@ const TOOLS = [
       const snap = await ref.get();
       if (!snap.exists) return toolError(`No project document with id ${args.docId}. Call get_project_docs to list them.`);
       const current = snap.data() || {};
+      if (current.sourcePath) return toolError(mirrorUpdateRefusal(current.name || snap.id, current.sourcePath));
       const fields = { updatedAt: FieldValue.serverTimestamp(), updatedByEmail: session.email };
       let revisionId = null;
       if (args.name != null) {
@@ -2736,7 +2764,7 @@ const TOOLS = [
   },
   {
     name: "delete_project_document",
-    description: "Remove a project document from the board. Its contents are written to the revision history first, so this is recoverable with list_doc_revisions and create_project_document.",
+    description: "Remove a project document from the board. Its contents are written to the revision history first, so this is recoverable with list_doc_revisions and create_project_document. Refused for a mirror (a document with a sourcePath): remove it from the repo's mirror list instead.",
     scope: "board.write",
     destructive: true,
     inputSchema: {
@@ -2749,6 +2777,7 @@ const TOOLS = [
       const snap = await ref.get();
       if (!snap.exists) return toolError(`No project document with id ${args.docId}.`);
       const current = snap.data() || {};
+      if (current.sourcePath) return toolError(mirrorDeleteRefusal(current.name || snap.id, current.sourcePath));
       const revisionId = await recordDocRevision(session, "projectDoc.deleted", { projectId: current.projectId || null, docId: snap.id, name: current.name || "" }, current.contentMd || "");
       await ref.delete();
       await audit(session, "delete_project_document", { docId: snap.id, projectId: current.projectId || null, name: current.name || "", revisionId });
@@ -2796,7 +2825,7 @@ const TOOLS = [
   },
   {
     name: "update_interface",
-    description: "Rename an interface contract, replace its contents, re-point it to different endpoints, or any of these. Sending contentMd overwrites the whole document; the previous version is kept in the revision history. A re-point (endpoints) is appended to the interface's own history. Changing a contract affects BOTH ends — say so in the change.",
+    description: "Rename an interface contract, replace its contents, re-point it to different endpoints, or any of these. Sending contentMd overwrites the whole document; the previous version is kept in the revision history. A re-point (endpoints) is appended to the interface's own history. Changing a contract affects BOTH ends — say so in the change. Refused for an interface that carries a sourcePath (copied from a repo file).",
     scope: "board.write",
     inputSchema: {
       type: "object",
@@ -2817,6 +2846,7 @@ const TOOLS = [
       const snap = await ref.get();
       if (!snap.exists) return toolError(`No interface with id ${args.interfaceId}.`);
       const current = snap.data() || {};
+      if (current.sourcePath) return toolError(mirrorUpdateRefusal(current.name || snap.id, current.sourcePath));
       const fields = { updatedAt: FieldValue.serverTimestamp(), updatedByEmail: session.email };
       let revisionId = null;
       if (args.name != null) {
@@ -2847,7 +2877,7 @@ const TOOLS = [
   },
   {
     name: "delete_interface",
-    description: "Remove an interface contract from the board. Its contents are written to the revision history first, so this is recoverable. It belongs to two projects — deleting it removes it from both.",
+    description: "Remove an interface contract from the board. Its contents are written to the revision history first, so this is recoverable. It belongs to two projects — deleting it removes it from both. Refused for an interface that carries a sourcePath (copied from a repo file).",
     scope: "board.write",
     destructive: true,
     inputSchema: {
@@ -2860,6 +2890,7 @@ const TOOLS = [
       const snap = await ref.get();
       if (!snap.exists) return toolError(`No interface with id ${args.interfaceId}.`);
       const current = snap.data() || {};
+      if (current.sourcePath) return toolError(mirrorDeleteRefusal(current.name || snap.id, current.sourcePath));
       const revisionId = await recordDocRevision(session, "interface.deleted", { interfaceId: snap.id, projectIds: current.projectIds || [], name: current.name || "" }, current.contentMd || "");
       await ref.delete();
       await audit(session, "delete_interface", { interfaceId: snap.id, projectIds: current.projectIds || [], name: current.name || "", revisionId });
@@ -2911,7 +2942,7 @@ const TOOLS = [
   },
   {
     name: "get_doc_revision",
-    description: "The full markdown of one replaced version, from list_doc_revisions. To restore it, pass this content back to whichever set_/update_ tool it came from.",
+    description: "The full markdown of one replaced version, from list_doc_revisions. To restore it, pass this content back to whichever set_/update_ tool it came from — except a mirror or a synced Requirements/README, which is restored by editing its repo file on a branch.",
     scope: "board.read",
     inputSchema: {
       type: "object",
@@ -3992,7 +4023,7 @@ const SERVER_INSTRUCTIONS = [
   "Tickets: list_projects gives a projectId, then list_backlog_items / get_backlog_item. create_backlog_item files into Backlog; update_backlog_item, add_item_comment, set_blocked and clear_blocked work on a ticket. To show what waits on a person call get_ready_for_testing_board or get_approved_for_deployment_board (MCP Apps: cards inline where the host supports them).",
   "Reading docs: list_project_documents (no text, searchable) and get_project_document read one document or section at a time. get_project_docs returns every document in full, possibly hundreds of thousands of characters, so call it only with include set to the one block you need.",
   "Writing docs: set_project_requirements, set_project_readme, set_project_artifact, set_project_description, create_project_document, update_project_document, delete_project_document, create_interface, update_interface, delete_interface. A write replaces the whole document, so read it first and send the complete text; a project document or interface holds at most 20,000 characters. list_doc_revisions / get_doc_revision recover a replaced version.",
-  "Where the repo wins: for a project with a repo folder, Requirements, README and every document marked as a mirror are rewritten from the repo file after a merge to main, so change the repo file; a board-only edit is lost. A project with no single folder (Backlog Tracker & FAQs) does not sync its Requirements or README: change the repo file and the board copy in the same session. Board-only documents are edited on the board.",
+  REPO_WINS + " Board-only documents, including every document of a project with no repo folder, are edited on the board.",
   "Concepts (pre-project ideas): list_concepts, get_concept, create_concept, add_concept_comment, set_concept_readme, set_concept_requirements, set_concept_artifact; demote_project turns a project back into a concept.",
   "Help centre: search_faq / get_faq_article answer product questions; create_faq_article and update_faq_article only propose drafts for a person to approve; list_pending_faq_revisions, get_faq_revision and comment_on_faq_revision follow a proposal.",
   "Skills library, shared by all projects: list_skills / get_skill read; upload_skill, update_skill, delete_skill, mark_skill_reviewed and report_skill_miss write.",
