@@ -474,7 +474,7 @@ function selectFields(fields) {
 }
 // What trainLockShouldClear / isTrainRelevantItem (functions/train-lock.js)
 // read on an item.
-const TRAIN_LOCK_ITEM_FIELDS = ["status", "deployCommit", "revertRequested"];
+const TRAIN_LOCK_ITEM_FIELDS = ["status", "deployCommit", "revertRequested", "noDeploymentRequired"];
 
 // ── "Ready for Testing" hand-off: tell a person the build landed ────────────
 // Every card this run moves into Ready for Testing is collected per project,
@@ -1038,7 +1038,7 @@ function stagedChangedPaths() {
 // Each `Revert "..."` commit names the sha it undoes ("This reverts commit
 // <sha>"), so those shas are struck out before the ids are collected — a
 // ticket counts as live only while it has at least one un-reverted commit.
-function itemIdsInRange(range) {
+function liveCommitsInRange(range) {
   let out = "";
   try { out = run("git", ["log", "--format=%H%x1f%B%x1e", range]); } catch { return []; }
   const commits = [];
@@ -1049,9 +1049,14 @@ function itemIdsInRange(range) {
     for (const m of String(body || "").matchAll(/This reverts commit ([0-9a-f]{7,40})/g)) revertedShas.add(m[1]);
     commits.push({ sha, body: String(body || "") });
   }
+  // git log is newest first; callers want oldest first (the order
+  // processApplyPatch appends deployCommits).
+  return commits.filter((c) => !revertedShas.has(c.sha)).reverse();
+}
+
+function itemIdsInRange(range) {
   const live = new Set();
-  for (const c of commits) {
-    if (revertedShas.has(c.sha)) continue;
+  for (const c of liveCommitsInRange(range)) {
     // A revert commit's own body carries no `Backlog item:` line, so it
     // contributes nothing here beyond the strike-out above.
     for (const m of c.body.matchAll(/Backlog item:\s*([A-Za-z0-9_-]+)/g)) live.add(m[1]);
@@ -4257,9 +4262,41 @@ function archiveAndResetOrphanedBranch(deployBranch) {
     // use — so whatever this run does next never inherits a checkout stuck
     // mid-reset on deployBranch.
     try { discardWorkingTree(); } catch { /* best-effort only */ }
-    return { ok: false, error: err.message, tag };
+    return { ok: false, error: err.message, tag, shas: ahead };
   }
-  return { ok: true, tag };
+  return { ok: true, tag, shas: ahead };
+}
+
+// The live commits on a train branch ahead of main, oldest first, each with
+// the id from its `Backlog item:` trailer (null when it has none — a merge of
+// main into the branch, say). A commit a later revert undoes is left out.
+function trainCommitsAheadOfMain(deployBranch) {
+  if (!remoteBranchExists(deployBranch)) return [];
+  run("git", ["fetch", "origin", "main", deployBranch, "--quiet"]);
+  return liveCommitsInRange(`origin/main..origin/${deployBranch}`)
+    .map((c) => ({ sha: c.sha, itemId: backlogItemIdFromMessage(c.body) }));
+}
+
+// What the sweep does with an "empty" train, as plain data. A card that is in
+// Ready for Testing / Approved for Deployment, has no deployCommit, and has a
+// live `Backlog item:` trailer commit on the branch was put there by hand: it
+// is adopted rather than reset. `tell` is who to notify if the branch is
+// archived instead — every such unstamped card, plus every card the archived
+// commits name. `items` are this project's cards only.
+function trainSweepPlan(items, liveCommits) {
+  const byId = new Map((items || []).map((i) => [i.id, i]));
+  const onTrainStatus = (i) => i.status === "ready-for-testing" || i.status === "ready-to-publish";
+  const adopt = [];
+  for (const item of byId.values()) {
+    if (!onTrainStatus(item) || item.deployCommit || item.revertRequested === true || item.noDeploymentRequired === true) continue;
+    const shas = (liveCommits || []).filter((c) => c.itemId === item.id).map((c) => c.sha);
+    if (shas.length) adopt.push({ itemId: item.id, deployCommit: shas[shas.length - 1], deployCommits: shas });
+  }
+  const adopted = new Set(adopt.map((a) => a.itemId));
+  const tell = new Set();
+  for (const item of byId.values()) if (onTrainStatus(item) && !item.deployCommit) tell.add(item.id);
+  for (const c of liveCommits || []) if (c.itemId && byId.has(c.itemId)) tell.add(c.itemId);
+  return { adopt, tell: [...tell].filter((id) => !adopted.has(id)) };
 }
 
 // The safety net for functions/index.js's onBacklogItemTrainLockRecompute
@@ -4289,6 +4326,25 @@ async function reconcileLockedTrains() {
     if (!trainLockShouldClear(project, items)) continue;
 
     const deployBranch = project.deployBranch || deployBranchForName(project.name);
+
+    // A hand-pushed commit with a card's `Backlog item:` trailer but no
+    // deployCommit on the card makes the train look empty. Adopt it instead
+    // of resetting the branch underneath an approved deploy.
+    let branchCommits = [];
+    try { branchCommits = trainCommitsAheadOfMain(deployBranch); }
+    catch (err) { console.log(`[deploy-train] ${project.id}: couldn't list ${deployBranch} commits (${scrubSecrets(err.message)}) — treating as none`); }
+    const plan = trainSweepPlan(items, branchCommits);
+    if (plan.adopt.length) {
+      for (const a of plan.adopt) {
+        const card = { id: a.itemId };
+        const notes = await appendNote(card,
+          `Adopted hand-pushed commit ${a.deployCommit.slice(0, 7)} on ${deployBranch}. It carries this card's \`Backlog item:\` trailer, but the card had no deploy commit, so the train looked empty. The card is on the train now and the branch was not reset.`);
+        await patchItem(a.itemId, { deployBranch, deployCommit: a.deployCommit, deployCommits: a.deployCommits, updatedAt: new Date().toISOString(), notes });
+      }
+      console.log(`[deploy-train] ${project.id}: adopted ${plan.adopt.length} hand-pushed card(s) on ${deployBranch} — train left as is`);
+      continue;
+    }
+
     let archiveResult;
     try {
       archiveResult = archiveAndResetOrphanedBranch(deployBranch);
@@ -4298,6 +4354,18 @@ async function reconcileLockedTrains() {
 
     console.log(`[deploy-train] ${project.id}: train emptied with nothing merged (every approved/testing ticket was deleted or reverted) — clearing trainLocked` +
       (archiveResult.tag ? `, archived orphaned work as ${archiveResult.tag}` : ""));
+    if (archiveResult.ok && archiveResult.tag) {
+      const shaList = (archiveResult.shas || []).map((x) => x.slice(0, 7)).join(", ");
+      for (const id of plan.tell) {
+        try {
+          const notes = await appendNote({ id },
+            `${deployBranch} was reset to main because no card claimed its commits. They are kept on tag ${archiveResult.tag} (${shaList}). To put the work back, see root CLAUDE.md, 'Putting a commit on a deployment train by hand'.`);
+          await patchItem(id, { notes });
+        } catch (err) {
+          console.log(`[deploy-train] ${project.id}: couldn't note ${id} about the archive (${scrubSecrets(err.message)})`);
+        }
+      }
+    }
     await patchProject(project.id, {
       trainLocked: false,
       trainReady: false,
@@ -4916,6 +4984,8 @@ if (require.main === module) {
 module.exports = {
   // test/notes-append.test.js — notes are only ever appended, atomically
   notesCommitWrite, appendNote, patchItem,
+  // test/train-lock-branch-archive.test.js — the sweep adopts hand-pushed trailer commits
+  trainSweepPlan, trainCommitsAheadOfMain, reconcileLockedTrains,
   conflictedPaths, tryAutoResolveFaqIndexConflict, archiveAndResetOrphanedBranch, dateStamp, nearestPageFor, isBundlerTemplate,
   // test/train-carried.test.js — a card whose content a sibling's commit
   // delivered follows that train instead of being marked live on approval

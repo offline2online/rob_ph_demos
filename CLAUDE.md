@@ -847,7 +847,7 @@ reads the train as empty, tags the branch tip as
 `archive/<branch>-<date>`, resets the branch to `main`, and logs
 *"train emptied with nothing merged"*. The work survives on the tag, but the
 deploy the human just approved silently ships nothing. It raced the Deploy
-Routine's own verification by 35 seconds.
+Routine's own verification by 35 seconds. As a safety net the sweep now adopts a hand-pushed commit that carries an unstamped card's `Backlog item:` trailer (stamping `deployCommit`) instead of resetting; otherwise it archives the branch and notes the affected cards.
 
 So, when you put a commit on a train yourself:
 

@@ -442,7 +442,7 @@ it's plain-`node`-testable, see `test/train-lock.test.js`):
   reverted — `archiveAndResetOrphanedBranch()` tags the branch's tip
   `archive/<branch>-<date>` and pushes the tag before resetting the branch
   to `main`, so nothing is silently lost even though no ticket on the
-  board points at it any more. Covers the "reverted-then-net-zero" case
+  board points at it any more. As a safety net the sweep now adopts a hand-pushed commit that carries an unstamped card's `Backlog item:` trailer (stamping `deployCommit`) instead of resetting; otherwise it archives the branch and notes the affected cards. Covers the "reverted-then-net-zero" case
   too (real history, kept, even though the diff is empty). See
   `test/train-lock-branch-archive.test.js`, which drives this against a
   disposable local git repo pair — never the real `origin`.

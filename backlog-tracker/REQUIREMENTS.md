@@ -673,7 +673,7 @@ hasn't finished/is blocked) — used from two places:
   `archive/<branch>-<date>` (pushed before resetting), covering both a
   card deleted outright with its commit still live on the branch, and
   revert-then-reverted history that nets to zero content but is still real
-  history worth keeping a pointer to.
+  history worth keeping a pointer to. As a safety net the sweep now adopts a hand-pushed commit that carries an unstamped card's `Backlog item:` trailer (stamping `deployCommit`) instead of resetting; otherwise it archives the branch and notes the affected cards.
 
 Either path also resets a stale `trainStatus`/`trainNote` (e.g. a
 `"conflict"` left over from before the tickets were removed) back to
