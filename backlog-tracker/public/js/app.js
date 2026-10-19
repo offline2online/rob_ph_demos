@@ -25,7 +25,9 @@ import { firebaseConfig } from "./firebase-config.js";
 import { APP_VERSION } from "./version.js";
 import { clearFirestoreLocalCache } from "./local-cache.js";
 import { INTAKE_SECTIONS, missingSections, applyAnswers } from "./ticket-intake.js";
+import { FAILED_TESTING_CHOICES, DEFAULT_FAILED_TESTING_CHOICE, sendBackFields, followUpWrites } from "./follow-up.js";
 import { trainTestChipHTML, approvalWarningLines, APPROVAL_WARNING_TITLE, APPROVAL_WARNING_FOOTER, approvalFields, approvedByLine } from "./card-test-status.js";
+import { isMirror, orderProjectDocs, mirrorEditRefusal, mirrorDeleteWarning, mirrorChipHTML, openInGithubHTML, startHereChipHTML, projectDocRowHTML, interfaceActionsHTML } from "./docs-view.js";
 import { clusterBacklogItems, estimateEffort, estimatePriority, splitRequirementsText } from "./build-batches.js";
 
 // auth-gate.js has already initialised the app (and signed the user in)
@@ -594,6 +596,42 @@ function failTestingStaleWarning(item, nowMs = Date.now()) {
   return status && status.state === "stale" ? "The test link may still show the previous build, so check that before failing this." : "";
 }
 
+// The Merged to Main (Live) card's deploy badge. A card with `deployRuns`
+// follows every deploy its merge started (run-backlog-automation.js's
+// finishTrain), not just the console's own: amber "Deploying… (1 of 2 done)",
+// green "Live", red "Deploy failed: <workflow> ↗", or a neutral "Merged · no
+// deploy tracked" when the merge needed none. A card shipped before
+// deployRuns existed keeps the single-run badge it always had.
+function deployBadgeHTML(item) {
+  if (item.status !== "published-live" || !(item.deployRunUrl || item.mergeCommit || Array.isArray(item.deployRuns))) return "";
+  const commit = item.mergeCommit ? '<span class="deploy-badge-commit" title="Merge commit">' + escapeHTML(String(item.mergeCommit).slice(0, 7)) + '</span>' : "";
+  if (!Array.isArray(item.deployRuns)) {
+    return '<div class="deploy-badge deploy-badge-' + escapeHTML(item.deployConclusion || "unknown") + '">' + commit +
+      (item.deployRunUrl
+        ? '<a href="' + escapeHTML(safeHttpUrl(item.deployRunUrl)) + '" target="_blank" rel="noopener">' +
+          (item.deployConclusion === "success" ? "Deploy succeeded"
+            : item.deployConclusion === "pending" || !item.deployConclusion ? "Deploy running&hellip;"
+            : "Deploy " + escapeHTML(item.deployConclusion)) + '</a>'
+        : '<span>Deploy status unknown</span>') +
+      '</div>';
+  }
+  const runs = item.deployRuns;
+  const isFailed = (r) => r.conclusion !== "pending" && r.conclusion !== "success";
+  const stateText = (r) => r.conclusion === "success" ? "succeeded" : r.conclusion === "pending" ? "running" : r.conclusion === "not-dispatched" ? "was never dispatched" : "failed (" + r.conclusion + ")";
+  const tip = escapeHTML(runs.length ? runs.map((r) => r.workflow + " " + stateText(r)).join("\n") : "This merge changed nothing a deploy follows");
+  const failed = runs.find(isFailed);
+  const done = runs.filter((r) => r.conclusion === "success").length;
+  let cls, label;
+  if (!runs.length) { cls = "none"; label = "Merged &middot; no deploy tracked"; }
+  else if (runs.some((r) => r.conclusion === "pending")) { cls = "pending"; label = "Deploying&hellip; (" + done + " of " + runs.length + " done)"; }
+  else if (failed) {
+    cls = "failure";
+    const href = failed.runUrl || "https://github.com/offline2online/rob_ph_demos/actions/workflows/" + encodeURIComponent(failed.workflow);
+    label = '<a href="' + escapeHTML(safeHttpUrl(href)) + '" target="_blank" rel="noopener">Deploy failed: ' + escapeHTML(failed.workflow) + ' &#8599;</a>';
+  } else { cls = "success"; label = "Live"; }
+  return '<div class="deploy-badge deploy-badge-' + cls + '" title="' + tip + '">' + commit + '<span>' + label + '</span></div>';
+}
+
 function cardHTML(item) {
   const idx = COL_KEYS.indexOf(item.status);
   // Moving back is a designed, documented flow from ready-to-publish (send
@@ -905,17 +943,7 @@ function cardHTML(item) {
   // strip: that shows the pipeline in aggregate, this shows it per ticket,
   // closing the gap where confirming 13 cards were genuinely live meant
   // fetching the deployed app.js and hashing it by hand.
-  const deployBadge = (item.status === "published-live" && (item.deployRunUrl || item.mergeCommit))
-    ? '<div class="deploy-badge deploy-badge-' + escapeHTML(item.deployConclusion || "unknown") + '">' +
-      (item.mergeCommit ? '<span class="deploy-badge-commit" title="Merge commit">' + escapeHTML(String(item.mergeCommit).slice(0, 7)) + '</span>' : "") +
-      (item.deployRunUrl
-        ? '<a href="' + escapeHTML(safeHttpUrl(item.deployRunUrl)) + '" target="_blank" rel="noopener">' +
-          (item.deployConclusion === "success" ? "Deploy succeeded"
-            : item.deployConclusion === "pending" || !item.deployConclusion ? "Deploy running&hellip;"
-            : "Deploy " + escapeHTML(item.deployConclusion)) + '</a>'
-        : '<span>Deploy status unknown</span>') +
-      '</div>'
-    : "";
+  const deployBadge = deployBadgeHTML(item);
   const commentCount = (item.notes || []).length;
   const editBtn = isLocked
     ? ""
@@ -2537,7 +2565,7 @@ const BACKLOG_ITEM_RENDER_FIELDS = [
   // succeeded (see run-backlog-automation.js's processMergePr). Drawn as
   // deployBadge on a Merged to Main (Live) card, same "on the REST-primed
   // first paint, not a second later" reasoning as prUrl/prNumber above.
-  "mergeCommit", "deployRunUrl", "deployConclusion",
+  "mergeCommit", "deployRunUrl", "deployConclusion", "deployRuns",
   // Not drawn on a card itself, but read by deploymentGroupKey() — without
   // it the same-deployment brackets wouldn't be there on the REST-primed
   // first paint and would pop in a second later when the listener landed.
@@ -2948,10 +2976,15 @@ async function failTestingNow(id, item) {
   // the machine-readable one a re-fired investigation reads directly.
   const result = await showFieldDialog({
     title: "Failed testing",
-    message: "What's wrong with this? Sent back to Backlog so it can be picked up again — the existing PR/branch stay linked, so a fresh Ready for Dev sweep re-patches it rather than starting over." +
+    message: "Something's wrong — send it back: the ticket goes to Backlog and its commit comes off the train, so a fresh Ready for Dev re-patches it. " +
+      "It works, but I want something more: the ticket stays in Ready for Testing on the train (you can still approve it) and your Details become a new Backlog ticket." +
       (failTestingStaleWarning(item) ? ` ${failTestingStaleWarning(item)}` : ""),
     fields: [
-      { id: "category", label: "What kind of miss was this?", type: "select", options: FAILURE_REASON_CATEGORIES },
+      { id: "choice", label: "What happened?", type: "select", value: DEFAULT_FAILED_TESTING_CHOICE, options: [
+        { value: FAILED_TESTING_CHOICES.SEND_BACK, label: "Something's wrong — send it back" },
+        { value: FAILED_TESTING_CHOICES.FOLLOW_UP, label: "It works, but I want something more" },
+      ] },
+      { id: "category", label: "What kind of miss was this? (send it back only)", type: "select", options: FAILURE_REASON_CATEGORIES },
       { id: "text", label: "Details", multiline: true, rows: 4 },
     ],
     okLabel: "Failed testing",
@@ -2959,23 +2992,52 @@ async function failTestingNow(id, item) {
   if (result === null) return;
   const trimmed = (result.text || "").trim();
   if (!trimmed) return;
+  if (result.choice === FAILED_TESTING_CHOICES.FOLLOW_UP) return fileFollowUp(item, trimmed);
   const category = result.category || FAILURE_REASON_CATEGORIES[FAILURE_REASON_CATEGORIES.length - 1];
+  const at = new Date();
+  const send = sendBackFields({ category, text: trimmed, at });
   await updateDoc(doc(db, "backlogItems", id), {
-    status: "backlog",
-    // The rule this enforces: nothing leaves Ready for Testing rejected
-    // without coming off the branch. Every ticket builds onto its project's
-    // shared integration branch, so a card that just moved back to Backlog
-    // would otherwise still ship in the next train — a "rejected" ticket
-    // going live. run-backlog-automation.js's processRevertFromTrain picks
-    // this flag up and reverts the card's commits off the branch (and, if a
-    // later ticket built on top of it, records revertBlockedBy instead of
-    // force-pushing anything). A card in Backlog must never have live
-    // commits on a train.
-    revertRequested: true,
-    lastFailureReason: { category, text: trimmed, action: "failed-testing", at: new Date() },
-    notes: arrayUnion({ author: "viewer", text: `Failed testing [${category}]: ${trimmed}`, at: new Date() }),
+    status: send.status,
+    revertRequested: send.revertRequested,
+    lastFailureReason: send.lastFailureReason,
+    notes: arrayUnion(send.note),
     updatedAt: serverTimestamp(),
   });
+}
+
+// "It works, but I want something more": one batch, so the new Backlog
+// ticket and the note on the original land together or not at all. The
+// original keeps its status and commit; nothing pipeline-shaped is written.
+async function fileFollowUp(item, text) {
+  const newRef = doc(itemsRef);
+  const proj = projects.find((p) => p.id === item.projectId);
+  const plan = followUpWrites({
+    original: { ...item, deployBranch: item.deployBranch || (proj && proj.deployBranch) || "" },
+    text,
+    title: generateTitle(text),
+    author: (auth.currentUser && auth.currentUser.email) || "viewer",
+    at: new Date(),
+    newId: newRef.id,
+  });
+  if (plan.error) { await showAlert(plan.error); return; }
+  try {
+    const batch = writeBatch(db);
+    batch.set(newRef, {
+      ...plan.newItem,
+      notes: plan.newItem.notes,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    batch.update(doc(db, "backlogItems", item.id), {
+      notes: arrayUnion(plan.originalNote),
+      updatedAt: serverTimestamp(),
+    });
+    await batch.commit();
+  } catch (err) {
+    await showAlert(describeSaveError(err, [{ label: "Description", value: plan.newItem.desc, max: 10000 }]));
+    return;
+  }
+  await showAlert(`Filed "${plan.newItem.title}" in Backlog. This ticket stays in Ready for Testing: tick it to approve when it's right.`);
 }
 
 // The eject half of "pull a stuck ticket off the train from Approved for
@@ -3556,6 +3618,9 @@ function projectHasDoc(project, kind) {
 // the real text).
 const projectDocText = new Map();
 const projectDocLoadError = new Map();
+// docs/{kind}.sourcePath per `${pid}/${kind}` — set when a docs sync writes
+// that box from a repo file, which makes the box a read-only mirror.
+const projectDocSource = new Map();
 
 async function loadProjectDocs(pid) {
   projectDocLoadError.delete(pid);
@@ -3564,7 +3629,9 @@ async function loadProjectDocs(pid) {
       const snap = await getDoc(doc(db, "projects", pid, "docs", kind));
       if (snap.exists()) {
         projectDocText.set(`${pid}/${kind}`, String((snap.data() || {}).contentMd || ""));
+        projectDocSource.set(`${pid}/${kind}`, (snap.data() || {}).sourcePath || null);
       } else {
+        projectDocSource.set(`${pid}/${kind}`, null);
         const project = projects.find((p) => p.id === pid);
         projectDocText.set(`${pid}/${kind}`, String((project && project[PROJECT_DOC_LEGACY_FIELD[kind]]) || ""));
       }
@@ -5337,34 +5404,17 @@ function interfaceRowHTML(f, anchorId) {
         <div>
           <div class="interface-row-title">${escapeHTML(f.name)}</div>
           <div class="interface-row-with">with <b>${escapeHTML(endpointName(other))}</b>${other && other.type === "concept" ? " (concept)" : ""}${moves ? ` &middot; re-pointed ${moves}&times;` : ""}</div>
+          ${isMirror(f) ? `<div class="docs-row-chips">${mirrorChipHTML(f)}</div>` : ""}
         </div>
-        <div class="interface-row-actions">
-          <button type="button" class="icon-btn interface-edit-btn" data-id="${f.id}" data-anchor-id="${escapeHTML(anchorId)}" title="Edit">&#9998;</button>
-          <button type="button" class="icon-btn interface-delete-btn" data-id="${f.id}" title="Remove">&times;</button>
-        </div>
+        <div class="interface-row-actions">${interfaceActionsHTML(f, anchorId)}</div>
       </div>
       ${contentPreview}
     </div>`;
 }
 
-function projectDocRowHTML(d) {
-  const contentPreview = d.contentMd
-    ? `<div class="interface-row-content">${escapeHTML(d.contentMd)}</div>`
-    : `<p class="interface-row-empty" style="margin:8px 0 0;">No content written yet.</p>`;
-  return `
-    <div class="interface-row" data-id="${d.id}">
-      <div class="interface-row-top">
-        <div>
-          <div class="interface-row-title">${escapeHTML(d.name)}</div>
-        </div>
-        <div class="interface-row-actions">
-          <button type="button" class="icon-btn doc-edit-btn" data-id="${d.id}" title="Edit">&#9998;</button>
-          <button type="button" class="icon-btn doc-delete-btn" data-id="${d.id}" title="Remove">&times;</button>
-        </div>
-      </div>
-      ${contentPreview}
-    </div>`;
-}
+// Whether the "Superseded (N)" fold is open; renderDocsPage rebuilds the
+// list on every snapshot, so the state lives here, not in the DOM.
+let docsSupersededOpen = false;
 
 function renderDocsPage() {
   if (!docsProjectId) return;
@@ -5385,6 +5435,21 @@ function renderDocsPage() {
   const docsLoaded = readmeText !== undefined && reqText !== undefined;
   for (const el of [docsReadmeInput, docsRequirementsInput]) el.disabled = !docsLoaded;
   for (const id of ["docs-readme-save", "docs-requirements-save"]) document.getElementById(id).disabled = !docsLoaded;
+  // A box a docs sync writes from a repo file is read-only: no Save, and
+  // the chip replaces the "keep in sync" hint. Unsynced boxes work as before.
+  const startHereId = project && project.startHereDocId;
+  for (const [kind, input, save] of [["readme", docsReadmeInput, "docs-readme-save"], ["requirements", docsRequirementsInput, "docs-requirements-save"]]) {
+    const sourcePath = projectDocSource.get(`${docsProjectId}/${kind}`) || null;
+    const mirrored = isMirror({ sourcePath });
+    input.readOnly = mirrored;
+    input.classList.toggle("mirror-readonly", mirrored);
+    document.getElementById(save).hidden = mirrored;
+    document.getElementById(`docs-${kind}-hint`).hidden = mirrored;
+    const chipEl = document.getElementById(`docs-${kind}-mirror`);
+    chipEl.hidden = !mirrored;
+    chipEl.innerHTML = mirrored ? mirrorChipHTML({ sourcePath }) + openInGithubHTML({ sourcePath }) : "";
+    document.getElementById(`docs-${kind}-start`).innerHTML = startHereId === kind ? startHereChipHTML() : "";
+  }
   if (document.activeElement !== docsReadmeInput) {
     docsReadmeInput.value = docsLoaded ? readmeText : (docLoadError ? `Couldn't load the README: ${docLoadError}` : "Loading…");
   }
@@ -5424,8 +5489,16 @@ function renderDocsPage() {
     ? rows.map((f) => interfaceRowHTML(f, docsProjectId)).join("")
     : '<p class="interface-row-empty">No interfaces defined with another project or concept yet.</p>';
   const docRows = docsForProject(docsProjectId);
+  const ordered = orderProjectDocs(docRows, project);
+  const folded = ordered.superseded.length
+    ? `<details class="docs-superseded" id="docs-superseded"${docsSupersededOpen ? " open" : ""}>
+        <summary>Superseded (${ordered.superseded.length})</summary>
+        ${ordered.superseded.map((d) => projectDocRowHTML(d, { showNote: true })).join("")}
+      </details>`
+    : "";
   document.getElementById("docs-extra-docs-list").innerHTML = docRows.length
-    ? docRows.map(projectDocRowHTML).join("")
+    ? (ordered.startHere ? projectDocRowHTML(ordered.startHere, { startHere: true, showNote: true }) : "") +
+      ordered.current.map((d) => projectDocRowHTML(d)).join("") + folded
     : '<p class="interface-row-empty">No additional documents yet.</p>';
 }
 
@@ -5472,12 +5545,28 @@ document.getElementById("docs-repo-folder-save").addEventListener("click", async
   }
 });
 
-document.getElementById("docs-readme-save").addEventListener("click", () => {
+// Re-reads docs/{kind}.sourcePath just before a save, so a box that became a
+// mirror while the page was open is refused too. Nothing is written then.
+async function refuseIfDocBoxMirrored(kind, label) {
+  const key = `${docsProjectId}/${kind}`;
+  try {
+    const snap = await getDoc(doc(db, "projects", docsProjectId, "docs", kind));
+    if (snap.exists()) projectDocSource.set(key, (snap.data() || {}).sourcePath || null);
+  } catch (_) { /* fall back to what the page already knows */ }
+  const refusal = mirrorEditRefusal({ name: label, sourcePath: projectDocSource.get(key) });
+  if (!refusal) return false;
+  renderDocsPage();
+  await showAlert(refusal);
+  return true;
+}
+document.getElementById("docs-readme-save").addEventListener("click", async () => {
   if (!docsProjectId) return;
+  if (await refuseIfDocBoxMirrored("readme", "README")) return;
   setProjectReadme(docsProjectId, docsReadmeInput.value);
 });
-document.getElementById("docs-requirements-save").addEventListener("click", () => {
+document.getElementById("docs-requirements-save").addEventListener("click", async () => {
   if (!docsProjectId) return;
+  if (await refuseIfDocBoxMirrored("requirements", "Requirements")) return;
   setProjectRequirements(docsProjectId, docsRequirementsInput.value);
 });
 document.getElementById("docs-routine-prompt-save").addEventListener("click", () => {
@@ -5498,8 +5587,16 @@ document.getElementById("docs-extra-docs-list").addEventListener("click", (e) =>
   const editBtn = e.target.closest(".doc-edit-btn");
   if (editBtn) { openDocModal(editBtn.dataset.id); return; }
   const delBtn = e.target.closest(".doc-delete-btn");
-  if (delBtn) { deleteProjectDoc(delBtn.dataset.id); return; }
+  if (delBtn) { confirmDeleteProjectDoc(delBtn.dataset.id); return; }
 });
+document.getElementById("docs-extra-docs-list").addEventListener("toggle", (e) => {
+  if (e.target && e.target.id === "docs-superseded") docsSupersededOpen = e.target.open;
+}, true);
+async function confirmDeleteProjectDoc(id) {
+  const d = projectDocs.find((x) => x.id === id);
+  if (d && isMirror(d) && !(await showConfirmDialog(mirrorDeleteWarning(d), { okLabel: "Delete", danger: true }))) return;
+  deleteProjectDoc(id);
+}
 
 // ── Additional document modal — shared "add" and "edit" flow, anchored to
 // whichever project's Docs page it was opened from (a project doc, unlike
@@ -5538,6 +5635,10 @@ document.getElementById("doc-submit").addEventListener("click", async () => {
   const name = docNameInput.value.trim();
   if (!name) { docNameInput.focus(); return; }
   const content = docContentInput.value;
+  if (editingDocId) {
+    const refusal = mirrorEditRefusal(projectDocs.find((x) => x.id === editingDocId));
+    if (refusal) { await showAlert(refusal); return; }
+  }
   try {
     if (editingDocId) {
       await updateProjectDoc(editingDocId, name, content);
@@ -5624,7 +5725,16 @@ function openInterfaceModal(interfaceId, anchorId) {
     ifContentInput.value = "";
   }
   updateIfContentCount();
-  ifNameInput.focus();
+  // A mirror (sourcePath set by a sync) opens read-only with a link to its file.
+  const mirrored = !!(editingInterfaceId && isMirror(interfaces.find((x) => x.id === editingInterfaceId)));
+  ifNameInput.readOnly = ifContentInput.readOnly = mirrored;
+  ifContentInput.classList.toggle("mirror-readonly", mirrored);
+  ifOtherProject.disabled = mirrored;
+  document.getElementById("if-submit").hidden = mirrored;
+  const mirrorEl = document.getElementById("if-mirror-note");
+  mirrorEl.hidden = !mirrored;
+  mirrorEl.innerHTML = mirrored ? (() => { const f = interfaces.find((x) => x.id === editingInterfaceId); return mirrorChipHTML(f) + openInGithubHTML(f); })() : "";
+  if (!mirrored) ifNameInput.focus();
 }
 function closeInterfaceModal() { ifBackdrop.hidden = true; editingInterfaceId = null; ifAnchorProjectId = null; }
 
@@ -5640,6 +5750,10 @@ document.getElementById("if-submit").addEventListener("click", async () => {
   const name = ifNameInput.value.trim();
   if (!name) { ifNameInput.focus(); return; }
   const content = ifContentInput.value;
+  if (editingInterfaceId) {
+    const refusal = mirrorEditRefusal(interfaces.find((x) => x.id === editingInterfaceId));
+    if (refusal) { await showAlert(refusal); return; }
+  }
   try {
     const other = parseEndpointValue(ifOtherProject.value);
     const anchorEp = ifAnchorProjectId ? endpointRef(ifAnchorProjectId) : null;

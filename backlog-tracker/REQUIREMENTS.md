@@ -116,6 +116,9 @@ Cloud Functions, own Hosting site, own IAM/billing; see
   readyForTestingNotifyRequestedAt?: timestamp, // stamped by run-backlog-automation.js once per run per project, after it lands ticket(s) in Ready for Testing — see "The Ready for Testing hand-off" below
   readyForTestingNotifyItemIds?: string[],      // the ids that landed in that run
   readyForTestingNotifyRequestedByEmail?: string | null, // the member whose Notify Claude click started the build (per-member routine binding lookup, as above)
+  readyForTestingPendingItemIds?: string[],     // landed ids parked until their tests and test links have finished (automation only)
+  readyForTestingPendingSince?: timestamp,      // when the newest of them landed; the 40-minute limit counts from here
+  readyForTestingWaitingOn?: { id: string, waitingOn: ("tests" | "link")[] }[], // why the hand-off is held, for whoever looks
   readyForTestingRoutine?: {       // same shape as notifyRoutine (including firedVia), set by notifyOnItemsReadyForTesting
     status: "in-progress" | "done" | "error",
     firedAt: timestamp,
@@ -170,6 +173,7 @@ deleted by hand).
   effort?: "small" | "medium" | "large" | null,     // cwehxSMZv8noJQv5kB22 — real value from the Edit item modal; null/unset falls back to build-batches.js's estimateEffort() guess. See "Feed in requirements → suggested build batches" below
   priority?: "low" | "medium" | "high" | null,      // same ticket — real value from the Edit item modal; null/unset falls back to estimatePriority()
   lastFailureReason?: { category: string, text: string, action: "failed-testing" | "ejected-from-train", at: timestamp }, // XJoASicLGefL5c9fronl — structured reason from the most recent Failed testing/Eject from train; see "The deployment train" below. Never cleared automatically — only meaningful while status is "backlog"
+  followUpOf?: string,          // id of the Ready for Testing ticket whose tester asked for "something more" (Failed testing → "It works, but I want something more"); the original stays on its train, this new ticket waits in Backlog. Not a pipeline field
   ejectedFromTrain?: boolean,   // FVrOIVAAp46NdcgGovMW — set by ejectFromTrain(), distinguishing an explicit release-unblocking eject from an ordinary Failed testing reject in the card's history; see "The deployment train" below
 
   // Notify Claude automation hand-off — see README.md "Notify Claude can't
@@ -182,6 +186,7 @@ deleted by hand).
   // no AI involved) does the actual push/PR/merge and clears these flags.
   patchFiles?: [{ path: string, content: string | null }],  // null content = delete that path
   patchCommitMessage?: string,
+  patchDocsImpact?: string,     // build's one-sentence reason a docsImpact rule (board-docs.json) does not apply; lands the patch with a "Spec not updated" note, then cleared (not in itemPipelineFields)
   patchReady?: boolean,         // set true once patchFiles etc. are ready; cleared to false once the commit lands on the train
   patchBranch?: string,         // DEPRECATED — there is one branch per project now, not one per ticket. Still accepted from the Routine, ignored
   patchPrTitle?: string,        // DEPRECATED — a ticket has no PR of its own; the train's PR title is generated
@@ -208,6 +213,7 @@ deleted by hand).
   // one for another sha is backfilled from its commit's files). Shown as a
   // chip on Ready for Testing / Approved for Deployment cards only while
   // trainTest.sha == deployCommit (public/js/card-test-status.js).
+  trainTestReruns?: string[], // automation-written: `<workflow>@<sha>:rerun|flaky`, last 20; dedupe only
   trainTest?: { sha, state, workflows: [{ workflow, label, state, runUrl, since }], since, updatedAt },
   // Who approved (19 Oct 2026): written in the batch that moves the card to
   // ready-to-publish — approvedByEmail lowercased, approvedAt a server
@@ -390,6 +396,30 @@ admin-readable and append-only from the server.
 
 ## The deployment train
 
+**Revert re-tests the train; evidence excludes reverted work (19 Oct 2026).**
+After a successful revert the automation starts the train tests on the new
+head (`afterRevertDispatches`). A card's test verdict, for the auto-eject
+(`ejectRedCulprits`) and the card's chip (`recordCardTrainTests`), comes from
+`cardEvidenceRun`: the newest real run on the newest non-stale commit among
+the card's own commit and the reverts / generated-only commits directly after
+it. A run is stale when a commit at or before it was reverted by a later
+commit, so a ticket is never blamed for an ejected ticket's failure.
+`pickRedCulprit`'s rules are unchanged.
+
+**A failed train test is re-run once (19 Oct 2026).** `trainRunVerdict(run)`
+returns `running`, `passed`, `rerun` (failure / timed_out / startup_failure
+on attempt 1), `failed` (the same on attempt 2+) or `none`; "once" is
+GitHub's `run_attempt`, no card field. `ejectRedCulprits` re-runs the
+culprit's deciding run (`rerunTrainRun`, `gh run rerun <id> --failed`, never
+twice per sweep) and notes the card, and sends it back only on `failed` (or
+if the re-run cannot start, saying so). A pass on attempt 2+ after the
+automation's re-run puts a "Passed on re-run" note on the card. In
+`reportTrainTestResults` a `rerun` head run counts as still running;
+`trainFailureNotes` decides the notes from who owns the tested commit.
+`backlogItems.trainTestReruns` (automation-written array of
+`<workflow>@<sha>:rerun` / `:flaky`, last 20) only stops duplicate notes; it
+is not a pipeline field and `firestore.rules` is unchanged.
+
 **The train is brought up to date with main before any ticket lands (1 Oct
 2026).** `processApplyPatch` now calls `syncTrainWithMain` first: a train
 with no ticket of its own is fast-forwarded to main; a train carrying
@@ -531,6 +561,16 @@ changed is which control approves.
 - Nothing ticked → the button is hidden, per the same
   hidden-when-nothing-to-do rule every CTA on this header follows (and
   exactly what it did before when nothing was `testPassed`).
+- **Failed testing has two outcomes** (dialog select "What happened?",
+  `public/js/follow-up.js`). **"Something's wrong — send it back"** (the
+  default) behaves as it always has: Backlog, `revertRequested`,
+  `lastFailureReason` and the "Failed testing [category]" note; the reason
+  category applies to this choice only. **"It works, but I want something
+  more"** leaves the card in Ready for Testing with its commit on the train
+  (it can still be approved) and, in one `writeBatch`, files a new Backlog
+  ticket (same project and category, `type: "feature"`, `followUpOf` = the
+  original's id, Dependencies and Spec reference naming the original) plus a
+  note on each card. Nothing else is written on the original.
 - **Failed testing is always offered** on a Ready for Testing card (it used
   to hide once "Confirm tested" had been clicked; there is no such click
   now), and additionally writes `revertRequested` — see "The deployment
@@ -662,7 +702,7 @@ hasn't finished/is blocked) — used from two places:
   `archive/<branch>-<date>` (pushed before resetting), covering both a
   card deleted outright with its commit still live on the branch, and
   revert-then-reverted history that nets to zero content but is still real
-  history worth keeping a pointer to.
+  history worth keeping a pointer to. As a safety net the sweep now adopts a hand-pushed commit that carries an unstamped card's `Backlog item:` trailer (stamping `deployCommit`) instead of resetting; otherwise it archives the branch and notes the affected cards.
 
 Either path also resets a stale `trainStatus`/`trainNote` (e.g. a
 `"conflict"` left over from before the tickets were removed) back to
@@ -901,9 +941,19 @@ with `status == "live"`.
   contentMd: string,
   createdAt: timestamp,
   updatedAt: timestamp,
+  // Set only on an interface copied from a repo file (interface-mirror-lib.js):
+  sourcePath: string,             // repo-root path of the file this record copies
+  sourceCommit: string,           // last commit that touched that file when copied
+  syncedAt: timestamp,
+  syncError: string | null,       // why the last sync was refused, with the commit
+  overwroteEdit: {byEmail, at, revisionId} | null,  // a board edit the sync replaced; its text is in docRevisions
 }
 ```
-A maintained contract document between exactly two endpoints, each a project
+`shared/board-interfaces.json` (`{"interfaces":[{"id","path"}]}`) lists the
+interfaces that mirror a repo file; whenever main moves, the docs sync copies
+each from its file, keeps the replaced text as a `docRevisions` entry
+(`via: "docs-sync"`), reads it back byte for byte, and clears `sourcePath` on
+one no longer listed. A maintained contract document between exactly two endpoints, each a project
 or a Concept Incubator concept, visible and editable from either end's page
 (a project's Docs page, a concept's detail page). **Dependencies follow the
 item through its life** (ticket 30aL4C1YLrRKYuxPyl8d): promoting a concept
@@ -955,6 +1005,19 @@ contentMd, chars, replacedAt, replacedByEmail, via: "trigger"}` holding the
 BEFORE text. Creations, empty previous text, unchanged text and non-mirror
 documents record nothing. Sync writes to Requirements/README stay
 unrecorded (800k characters may not fit through a trigger event).
+
+**The rules enforce the same thing in the database** (`firestore.rules` →
+`projectDocs`). On a document that has a `sourcePath`, no caller but the
+board automation user (`isAutomationAccount()`, which the docs sync signs in
+as) may change `contentMd`, `name`, `sourcePath`, `sourceSlices`,
+`sourcePrefix` or `sourceCommit` — the owner account included, the repo wins
+for everyone. Only the automation user may create a document that carries
+those source fields, or add them to one that lacks them: mirrors are declared
+in the repo. Creating, editing and deleting a document without `sourcePath`
+is unchanged, and any editor may still delete a mirror, so a person can
+retire one the repo's mirror list no longer names. The service account
+bypasses rules. Cases are in `test/firestore-rules.test.js`
+(`npm run test:rules`).
 
 A generic, named document belonging to exactly one project — an API spec,
 an architecture decision record, any technical or architectural document
@@ -1514,6 +1577,16 @@ REST API is reachable with a plain `curl`, no service account needed.
   by the `interfaces` collection). All of it lives here rather than
   scattered across repo files, so a project's complete documentation is one
   page away from its board.
+  **Repo mirrors are read-only here** (`public/js/docs-view.js`): a
+  document, interface, README or Requirements record with a `sourcePath` is
+  a copy a docs sync rewrites from that repo file after each merge to main,
+  so an edit saved on the page would be silently overwritten. It shows a
+  "Mirror of <path>" chip and an "Open in GitHub" link instead of Edit
+  (Remove asks first); the README/Requirements boxes go read-only with no
+  Save; an interface whose `syncError` is set shows the chip in red; and no
+  save handler writes a mirror (`mirrorEditRefusal`). Documents list the
+  project's `startHereDocId` first, the rest by name, and fold documents
+  with `status: "superseded"` into a collapsed "Superseded (N)" section.
 - **Project Artifact** (`artifactUrl`/`artifactUpdatedAt` on the project
   doc): an optional link to a Claude-published Artifact for this project —
   a live mockup, dashboard, or prototype the Notify Claude Routine builds
@@ -2311,6 +2384,32 @@ with the credentials they already have — Google, or an email and password —
 with no key to mint, paste, share or rotate, and with everything their agent
 does attributed to them.
 
+**Reading ticket history.** `list_backlog_items` (scope `board.read`, so
+viewers too) must let an agent read every ticket and find why one failed:
+
+- *Paging.* Input `cursor` (opaque string); every response returns
+  `nextCursor` (string, or `null` on the last page). Order is fixed: updatedAt
+  newest first, then ticket id A–Z. `limit` defaults to 25, maximum 100.
+  `matched` is the total across pages; a full walk returns each match once
+  (a ticket updated mid-walk can move). An undecodable cursor is a tool error,
+  "cursor is not valid — start again without one".
+- *Timestamps.* `updatedAt` may be a Timestamp, Date or ISO-8601 string
+  (`run-backlog-automation.js` writes strings); the sort key falls back to
+  `createdAt`, then 0, and summaries show the real value.
+- *Archived.* `includeArchived` defaults to true with `search`, false
+  without; `status` decides when given. Archived tickets left out that matched
+  every other filter are counted in `archivedHidden`.
+- *Comments.* `searchIn` is an array of `title`, `desc`, `notes` (default
+  `["title","desc"]`); an unknown value is a tool error. With `search`, each
+  item carries `matchedIn` and a `snippet` of up to 200 characters. All new
+  inputs are validated in code.
+- *Read limit.* If the read reaches `MAX_READ_DOCS` (1,500) the response has
+  `truncated: true`; pass `projectId`.
+- `get_backlog_item` returns `lastFailureReason` `{category, text, action, at}`
+  (ISO `at`), or `null`.
+
+No new tool and no write path. Tests: `test/mcp-server.test.js`.
+
 **Membership.** `Settings → Team & agent access` (admin-only) writes
 `consoleUsers` docs; that one row grants browser access and agent access
 together. Roles as in "Data model" above. A member with no Google account is
@@ -2430,7 +2529,18 @@ asked for (30 Sep 2026).** The view alone is not what the composable UI
 tickets asked for; they asked for it to appear when a build lands. So:
 `run-backlog-automation.js` collects every card it moves into Ready for
 Testing in a run (its own commit, or carried by a sibling's) and, once per
-project at the end of its apply-patch loop, stamps
+project at the end of its apply-patch loop, parks their ids in
+`readyForTestingPendingItemIds` (with `readyForTestingPendingSince` = now).
+**The hand-off waits for the build to be checked (19 Oct 2026):** a step in
+`main()` that runs every run, after the sweeps that write `trainTest`
+(card-test-status) and `previewState` (test-link-rebuild-state), applies the
+pure `nextHandOff`: it drops parked cards no longer in Ready for Testing
+(clearing the hold unstamped if none remain), keeps the `batchStillBuilding`
+hold, and otherwise holds while any card is waiting (`handOffWaitingOn`:
+tests missing, for an older commit, running or starting, or `not-run` less
+than 10 minutes old; link `rebuilding`), recording `readyForTestingWaitingOn`
+and asking for a follow-up run. When nothing is waiting, or the parked ids
+are 40 minutes old, it stamps
 `projects/{id}.readyForTestingNotifyRequestedAt` (a real timestamp) with
 `readyForTestingNotifyItemIds` and `readyForTestingNotifyRequestedByEmail`
 (the member whose Notify Claude click started the build).
@@ -2441,7 +2551,10 @@ other notify functions (`resolveRoutineCredentials` — the requester's own
 binding first, the shared secrets otherwise), fires the Routine with a
 data-only `=== READY FOR TESTING for "<project>" (projectId: <id>) ===`
 text (per ticket: id, type, title, test link, test version, ticket link,
-summary), records `projects/{id}.readyForTestingRoutine` (same shape as
+summary, and two state lines: `Tests: passed | failed — <run url> | not run |
+still running | none needed for these files` and `Test link: ready (build of
+<sha7>) | still rebuilding — don't test it yet`; Slack gets the same short
+state), records `projects/{id}.readyForTestingRoutine` (same shape as
 `notifyRoutine`), and posts the same to `NOTIFY_WEBHOOK_URL` when set. The
 fired session follows `ROUTINE_INSTRUCTIONS.md` → "The 'Ready for Testing'
 flow": it calls `get_ready_for_testing_board` (when the Routine has the PH

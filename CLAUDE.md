@@ -131,8 +131,10 @@ tied to the other project's release cadence.
   editable from its Docs page), and the interface contract is additionally
   maintained as a live `interfaces` collection record spanning both
   projects — editable from either project's Docs page, not just as a repo
-  file. Keep the repo file and the live record in sync; treat a divergence
-  as a bug in whichever is stale.
+  file. The repo file is the source: an interface listed in
+  `shared/board-interfaces.json` is copied to the board automatically
+  when main moves. Edit the file, not the board record — a board edit is
+  overwritten and kept as a revision.
 
 **Where the POC meets the real platform, and its limits:**
 `dsp-integration/docs/dsp-integration/api/PH-CORE-BOUNDARIES.md` lists every
@@ -558,7 +560,7 @@ the ticket and in `mcpAuditLog`.
   — the CLI already validates and forwards the binding). The first cut
   (PR #208, 24 Sep 2026) put a plain `text/html` resource block in the
   tool result, which no host renders — that is why it "never worked".
-  **The column is presented automatically when a build lands**:
+  **The column is presented automatically when a build lands and its tests and test link have finished (40-minute limit)**:
   `run-backlog-automation.js` stamps `projects/{id}
   .readyForTestingNotifyRequestedAt` after landing tickets, and
   `functions/notifyOnItemsReadyForTesting` fires a Routine session that
@@ -661,19 +663,8 @@ with no interface yet shows a greyed-out "No interface contract yet" line in
 the menu — click it to create one, same flow as the Docs page's own
 "+ New interface" button.
 
-Verifying this kind of change in this sandbox needs a workaround: the egress
-policy here blocks `gstatic.com` (confirmed via
-`$HTTPS_PROXY/__agentproxy/status` — "gateway answered 403 to CONNECT"),
-which is where the real app loads the Firebase SDK from, so `app.js` never
-executes against a plain `curl`/static check. To actually see it render,
-stand up a local static server over `backlog-tracker/public/`, and use
-Playwright's `page.route()` to intercept just the two `gstatic.com` script
-URLs and fulfill them with a small in-memory Firestore stub (mirroring the
-real collections' shapes) — the real, unmodified `app.js`/`index.html`/
-`styles.css` then render exactly as they would in production, screenshot-able
-at any viewport including mobile, with zero changes to any real file. Only
-do this against a local stub, never point it at the real
-`backlog-tracker-e4ed2` project from an automated test.
+Verify this kind of change with `cd backlog-tracker/test && npm run test:ui`: it loads the real, unchanged `backlog-tracker/public/` files in Chromium with the Firebase SDK stubbed (this sandbox's egress blocks `gstatic.com`), at 1280 px and 390 px.
+The harness and how to add a scenario are in `backlog-tracker/test/ui/` and `backlog-tracker/test/README.md`; never point it at the real `backlog-tracker-e4ed2` project.
 
 ### Docs page: per-project requirements + interfaces between projects
 
@@ -696,9 +687,10 @@ see above). It opens a page with two blocks:
   an interface with an existing project" option; it only ever creates a
   plain project, keeping that one modal to a single quick step.
 
-When a project's `shared/interface-contract.md`-style repo file changes,
-mirror the change into its `interfaces` doc here (via the Docs page or a
-direct Firestore write), and vice versa — don't let the two drift.
+The repo file is the source: an interface listed in
+`shared/board-interfaces.json` is copied to the board automatically when
+main moves. Edit the file, not the board record — a board edit is
+overwritten and kept as a revision.
 
 ### Archiving Merged to Main (Live) cards
 
@@ -847,7 +839,7 @@ reads the train as empty, tags the branch tip as
 `archive/<branch>-<date>`, resets the branch to `main`, and logs
 *"train emptied with nothing merged"*. The work survives on the tag, but the
 deploy the human just approved silently ships nothing. It raced the Deploy
-Routine's own verification by 35 seconds.
+Routine's own verification by 35 seconds. As a safety net the sweep now adopts a hand-pushed commit that carries an unstamped card's `Backlog item:` trailer (stamping `deployCommit`) instead of resetting; otherwise it archives the branch and notes the affected cards.
 
 So, when you put a commit on a train yourself:
 

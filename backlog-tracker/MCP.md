@@ -91,6 +91,18 @@ empty or mis-edited collection can never lock everyone out.
 `get_skill`, `list_skill_misses`, `get_routine_setup_instructions`,
 `list_concepts`, `get_concept`.
 
+**Reading ticket history.** `list_backlog_items` pages: it returns at most
+100 tickets per call (default 25), newest-updated first and then by id, plus
+`matched` (the total) and `nextCursor` — pass that back as `cursor` until it
+is `null`. A ticket updated during the walk can move. A `search` also covers
+archived tickets (`includeArchived`, default true when searching, false
+otherwise; `status` still decides when given, and `archivedHidden` says how
+many were left out) and, with `searchIn: ["notes"]`, comments; each hit then
+carries `matchedIn` and a `snippet`. `truncated: true` means the 1,500-ticket
+read limit was hit, so pass `projectId`. `get_backlog_item` includes
+`lastFailureReason` (why it last failed testing or was ejected). Example:
+`list_backlog_items({projectId: "mIPdOCAWevhrgD8g2tCZ", search: "Failed testing", searchIn: ["notes"]})`.
+
 **What the agent is told on connect.** The server instructions (`SERVER_INSTRUCTIONS`
 in `functions/mcp-server.js`) are the first text a connected agent reads. They
 say what each role can do, name every `board.write` and admin tool, tell the
@@ -105,6 +117,28 @@ project's own fields. `test/mcp-server.test.js` keeps them in step with the
 tool list: every name in them is a registered tool, every write and admin tool
 is named, and the instructions stay within 3,400 characters (what Claude Code
 delivers whole).
+
+**Test and link state (server 1.5.0).** All read-only; every URL goes through
+`safeHref` (https only, else `null`).
+
+- `get_ready_for_testing_board` and `get_approved_for_deployment_board` return,
+  per card, `deployCommit`, `previewState` (`"rebuilding"`, `"ready"`,
+  `"stale"` or `null`), `previewSha`, `previewUpdatedAt`, `trainTest`
+  (`{state, workflows:[{name, conclusion, runUrl}]}`, `null` unless it describes
+  the card's current `deployCommit`), `approvedByEmail` and `approvedAt`. Their
+  first text line adds counts, e.g. "3 ticket(s) waiting on review; 1 link
+  rebuilding, 1 with tests running." The MCP App card shows a link pill ("Test
+  link rebuilding — don't test yet", "Test link ready · build abc1234", "Test
+  link may be out of date") and "Test this (previous build)" while rebuilding.
+- `get_backlog_item`'s `train` block adds `previewState`, `previewSha`,
+  `previewUpdatedAt`.
+- `list_projects` adds per project `trainTestsRed` (workflow → `{sha, url, at}`
+  or `null`; hides Deploy to Main), `trainHold` (`"tests-running"`,
+  `"tests-red"` or `null`) and `trainNote`, `e2eStatus`
+  (`{runAt, mode, commit, pass, fail, gap, resultsUrl}` or `null`, no
+  breakdown) and `handOff` (`{heldItemIds, since, waitingOn}` from the
+  `readyForTestingPending*` / `readyForTestingWaitingOn` project fields, or
+  `null` when nothing is held).
 
 **Start document and manifest fields.** `list_projects` returns
 `startHereDocId` per project (`"readme"`, `"requirements"`, a document id, or
@@ -170,8 +204,8 @@ reviewing there is exactly as inert as reading the JSON.
 for it. The views live in `functions/mcp-app-views.js`; the first cut of
 this (PR #208, 24 Sep 2026) returned an embedded `text/html` block in the
 tool result instead, which no host renders — which is why it never showed.
-The column is also presented **without being asked for**: the moment the
-pipeline lands a build in Ready for Testing, `notifyOnItemsReadyForTesting`
+The column is also presented **without being asked for**: once the
+pipeline has landed a build in Ready for Testing and its tests and test link have finished (40-minute limit), `notifyOnItemsReadyForTesting`
 fires a Routine session that calls `get_ready_for_testing_board` (see
 `ROUTINE_INSTRUCTIONS.md` → "The 'Ready for Testing' flow"). For that
 session to have these tools, the Routine at claude.ai/code/routines needs
@@ -320,8 +354,8 @@ interface record with a `sourcePath` are read-only over MCP:
 `set_project_requirements`, `set_project_readme`, `update_interface` and
 `delete_interface` refuse them, write nothing and record no revision, and
 the error names the repo file. To change one, edit the file on a branch; the
-board copy follows when it merges. To retire a mirror, remove it from the
-repo's mirror list first. A project with no synced copy (Backlog Tracker &
+board copy follows when it merges. To retire a mirror, remove its entry from the
+project's `board-docs.json` first. A project with no synced copy (Backlog Tracker &
 FAQs' Requirements and README today) is written as before.
 
 Every change to a mirror, by the sync or by a person on the Docs page, is
