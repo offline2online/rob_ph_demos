@@ -2180,3 +2180,15 @@ never updates ones that already exist. Safe to delete
 `scripts/artifact-export.json` and this step once you're confident the
 migration has landed and won't need re-running (e.g. against a fresh
 Firebase project).
+
+## Docs page: repo mirrors are read-only
+
+A project document, interface, README or Requirements record with a
+`sourcePath` is a copy that a docs sync rewrites from that repo file after
+each merge to `main`, so the Docs page shows it read-only: a "Mirror of
+<path>" chip, an "Open in GitHub" link in place of Edit, and no Save on a
+synced README/Requirements box. Edit the repo file instead; an edit saved on
+the page would be overwritten by the next sync. Documents are listed with
+the project's `startHereDocId` first, the rest by name, and `superseded`
+documents folded into "Superseded (N)". The logic is the pure module
+`public/js/docs-view.js` (tests: `test/docs-view.test.mjs`).

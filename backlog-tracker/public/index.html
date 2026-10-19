@@ -47,6 +47,7 @@
   <link rel="modulepreload" href="js/auth-gate.js">
   <link rel="modulepreload" href="js/app.js">
   <link rel="modulepreload" href="js/build-batches.js">
+  <link rel="modulepreload" href="js/docs-view.js">
   <link rel="modulepreload" href="js/ticket-intake.js">
   <link rel="modulepreload" href="js/card-test-status.js">
   <link rel="modulepreload" href="js/firebase-config.js">
@@ -305,6 +306,7 @@
         <label class="field-label" for="if-content-input">Contract</label>
         <textarea id="if-content-input" rows="12" maxlength="20000" placeholder="What crosses this boundary, owned by which side, versioning rules..."></textarea>
         <span class="char-count" id="if-content-count"></span>
+        <div class="docs-row-chips" id="if-mirror-note" hidden></div>
         <p class="field-hint">Visible and editable from both projects' Docs pages — this is the shared, maintained contract between them.</p>
         <div class="form-row" style="justify-content:flex-end;">
           <div class="form-actions">
@@ -646,8 +648,9 @@
       </div>
 
       <div class="docs-block">
-        <h3>README</h3>
-        <p class="field-hint">Keep in sync with this project's README.md in the repo.</p>
+        <h3>README <span id="docs-readme-start"></span></h3>
+        <p class="field-hint" id="docs-readme-hint">Keep in sync with this project's README.md in the repo.</p>
+        <div class="docs-row-chips" id="docs-readme-mirror" hidden></div>
         <textarea id="docs-readme-input" rows="12" placeholder="No README written yet — paste or write it here."></textarea>
         <div class="form-row" style="justify-content:flex-end;">
           <button type="button" class="btn-primary" id="docs-readme-save">Save README</button>
@@ -655,8 +658,9 @@
       </div>
 
       <div class="docs-block">
-        <h3>Requirements</h3>
-        <p class="field-hint">Keep in sync with this project's REQUIREMENTS.md in the repo.</p>
+        <h3>Requirements <span id="docs-requirements-start"></span></h3>
+        <p class="field-hint" id="docs-requirements-hint">Keep in sync with this project's REQUIREMENTS.md in the repo.</p>
+        <div class="docs-row-chips" id="docs-requirements-mirror" hidden></div>
         <textarea id="docs-requirements-input" rows="16" placeholder="No requirements written yet — paste or write them here."></textarea>
         <div class="form-row" style="justify-content:flex-end;">
           <button type="button" class="btn-primary" id="docs-requirements-save">Save requirements</button>

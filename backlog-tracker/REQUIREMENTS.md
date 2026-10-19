@@ -1524,6 +1524,16 @@ REST API is reachable with a plain `curl`, no service account needed.
   by the `interfaces` collection). All of it lives here rather than
   scattered across repo files, so a project's complete documentation is one
   page away from its board.
+  **Repo mirrors are read-only here** (`public/js/docs-view.js`): a
+  document, interface, README or Requirements record with a `sourcePath` is
+  a copy a docs sync rewrites from that repo file after each merge to main,
+  so an edit saved on the page would be silently overwritten. It shows a
+  "Mirror of <path>" chip and an "Open in GitHub" link instead of Edit
+  (Remove asks first); the README/Requirements boxes go read-only with no
+  Save; an interface whose `syncError` is set shows the chip in red; and no
+  save handler writes a mirror (`mirrorEditRefusal`). Documents list the
+  project's `startHereDocId` first, the rest by name, and fold documents
+  with `status: "superseded"` into a collapsed "Superseded (N)" section.
 - **Project Artifact** (`artifactUrl`/`artifactUpdatedAt` on the project
   doc): an optional link to a Claude-published Artifact for this project —
   a live mockup, dashboard, or prototype the Notify Claude Routine builds
