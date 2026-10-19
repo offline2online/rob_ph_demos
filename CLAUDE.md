@@ -263,7 +263,10 @@ Retail Media Insights & Analytics Dashboards (`EywksAFxCSfDRdsRvofM`) and
 Products and Pricing Prototype (`products-and-pricing`, with 30 archived
 tickets). The last is on the board again despite the paragraph above
 listing its predecessor as deleted; this file does not record how it came
-back.
+back. Its folder is `menu-board-demo/` (19 Oct 2026: README, REQUIREMENTS,
+`REVIEW-2026-10.md` and `board-docs.json` added there; artifact link →
+`menu-board-demo/hq-admin.html` on GitHub Pages). `Brands-Suppliers-Assets/`
+is its April 2026 forerunner, kept for reference.
 
 - **Adding a project**: the page's "New project" button, or write a doc
   directly into `projects` (`{name, createdAt: serverTimestamp()}}`) —
@@ -747,7 +750,7 @@ viewport).
 - When debugging a visual report, check which case applies: platform chrome around our real content (debug here) vs. a platform-native screen that merely happens to show the same product data (out of scope here).
 - **It's a mix, confirmed directly (1 Sep 2026) — check per screen, don't assume either way for HQ/Retail Admin pricing:**
   - `hq-admin.html`'s own **Products & Pricing list/grid** (`offline2online.github.io/rob_ph_demos/menu-board-demo/hq-admin.html`) is confirmed genuinely this repo's own code, live and in real use — verified directly against a screenshot of that exact GitHub Pages URL showing the grid's real "Local offer"/"Targeted" pills, which only exist in this repo's code.
-  - But the **per-product detail editor** you reach by clicking into a product (tabs: Product Assets / Product Details / Pricing / Stockists) is the real Personalisation Hub platform's own native page, NOT this repo's `product-app`/React pricing tab — its copy ("Badge for External Displays" targeting, a concept that doesn't exist anywhere in this repo) and layout don't match. Don't assume clicking through from the grid stays in this repo's code.
+  - **Clicking a grid row on the GitHub Pages copy opens this repo's own per-product editor** — `hq-admin.html` navigates the same frame to `product/#/products/<id>/<tab>`, the checked-in build of `menu-board-demo/product-app/` (tabs: Product Assets / Product Details / Pricing / Stockists). But the platform also has a **native** per-product editor with the same tab names: the one screenshotted on 1 Sep 2026 carried copy ("Badge for External Displays" targeting) that exists nowhere in this repo. So a screenshot of a product editor can be either — grep its copy before deciding which.
   - The store-level "Menu Boards" list (branded PersonalisationHub chrome, card-style rows, RRP shown as a plain secondary line) has similarly been confirmed as platform-native, not this repo's `retail-admin.html`.
   - **hq-admin.html's grid deliberately shows only HQ's own RRP/offer in its Price column, never a store's override** — a "Local offer ×N" pill flags that a store-level price exists (click it to jump to the per-product pricing page) without picking one store's price to display in an aggregate, all-stores view. That's intentional design, not a bug — don't try to make this specific grid show the discounted local price inline.
   - Bottom line: verify per-screen against copy/markup you can `grep` in this repo before deciding whether a pricing bug is fixable here or belongs to the real platform.
