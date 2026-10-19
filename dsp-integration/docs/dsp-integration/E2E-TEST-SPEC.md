@@ -31,7 +31,7 @@ These are **three distinct things; never conflate them**:
 - **Run 6 is the exception** — it runs against a real running instance, part browser, part API. Execute it from **Run 6 Runbook — agent instructions**.
 - **Run command (1–5):** `cd dsp-integration/apps/api && npx vitest run test/e2e` (one run: add `-t "<run or case id>"`). Execute Run 2 → 5 in order (Runs 7–8 are in the same `e2e:quick`); Run 1 re-runs first as a regression baseline.
 - **On any failure, raise a backlog ticket** (see *Raising tickets on failure*). One ticket per distinct issue.
-- **Record results** in a new project document per session: `E2E Test Results — <date> (Runs <n–m>)` via `create_project_document` on projectId `mIPdOCAWevhrgD8g2tCZ`. Do not edit this spec to record results.
+- **Record results** with `npm run e2e:report -- <results files>`, which updates the one project document "E2E results — latest". Never create dated results documents, and do not edit this spec to record results.
 
 ## Run history
 

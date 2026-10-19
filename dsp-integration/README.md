@@ -326,7 +326,14 @@ npm test
   performance gate (`--calibrate` first on a new machine). `npm run
   e2e:report` and `npm run e2e:file-bugs` turn `results/*.json` into the
   board's results document and tickets (`BOARD_API_KEY`; `--dry-run`
-  without). CI: `.github/workflows/e2e-quick.yml` on every train push and
+  without). `e2e:report` keeps ONE project document, "E2E results — latest",
+  updated in place and always under 19,000 chars (the board refuses 20,000):
+  header, per-run table, failing cases in full, known gaps and skipped one
+  line each, a Bench block, and the last 14 runs; passing cases are only
+  counted. Older dated "E2E Test Results — …" documents are renamed
+  "Superseded — …". It prints `RESULTS_URL=<GitHub run page>` and, for a
+  project with `e2eEnabled` or an `e2eStatus`, writes the header chip's
+  `e2eStatus` (mode `nightly`) unless `e2e-run.mjs` started it. CI: `.github/workflows/e2e-quick.yml` on every train push and
   PR, `e2e-nightly.yml` on `main`.
 - **Visual layout check** (8 Oct 2026): `npm run test:layout` — every DSP
   integration admin page at tablet and desktop, alignment rules plus

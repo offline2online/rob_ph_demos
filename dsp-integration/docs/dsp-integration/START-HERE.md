@@ -66,7 +66,7 @@ Read in this order:
   - E2E Testing Strategy
   - Data model — JSON sample records
   - The Scope & Seam Reconciliation reviews
-  - The daily **E2E Test Results** documents
+  - **E2E results — latest** (generated nightly; older dated "E2E Test Results" documents are marked Superseded)
 
   A repo search that finds none of these is not evidence they don't exist.
 - **AWS demo — test flow** (10 Dec 2026) — *mirror* ·
