@@ -1969,6 +1969,12 @@ not one diagram per concept or project. It is rebuilt on every change to
   Live Visitor Profile is drawn once, as a concept, in the PH Core slot. Status styling: **Live** (core, or a project whose
   release is live), **Project**, **Concept**, **External**. A project shows
   its release ("Release 5.0") beside its name.
+- **Hover description**: hovering a project or concept node shows, besides
+  the full name, status and release, a one- or two-sentence description
+  (`shortDescription()`): a project's `description` (set on its Docs page);
+  a concept's `description`, else the first prose lines of its README. A
+  node with neither says "No description yet — add one on the Docs page."
+  so the gap is visible. Click-through to the landing page is unchanged.
 - **Lines**: one per interface contract (`interfaces`), labelled with the
   contract's optional `flowLabel`, else its name; clicking opens the
   contract. A new contract adds a line with no code change. The platform's

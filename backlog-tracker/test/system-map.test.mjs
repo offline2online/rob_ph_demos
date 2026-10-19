@@ -1,7 +1,7 @@
 // The Concept Incubator hero map: nodes, status, release badges, the filter,
 // and "a new interface contract adds a line with no code change".
 import assert from "node:assert/strict";
-import { buildSystemMap, systemMapHTML, highlightedIds } from "../public/js/system-map.js";
+import { buildSystemMap, systemMapHTML, highlightedIds, shortDescription } from "../public/js/system-map.js";
 
 const releases = [{ id: "r5", name: "DSP Integration", version: "5.0", status: "draft" }, { id: "r4", name: "Sep", version: "4.2", status: "live" }];
 const projects = [
@@ -111,3 +111,22 @@ console.log("system-map (clean-up): ok");
   assert.equal(mm.edges.filter((e) => e.from === adv.id || e.to === adv.id || e.from === fed.id || e.to === fed.id).length, 2, "no other federation lines");
 }
 console.log("system-map (federation): ok");
+
+// Hover descriptions: project description, concept description or README fallback, gap flagged
+{
+  const mm = buildSystemMap({
+    projects: [{ id: "p1", name: "Described", description: "Sells ad slots.  Two sentences." }, { id: "p2", name: "Bare" }],
+    concepts: [{ id: "k1", name: "From readme", readmeMd: "# Title\n\nFirst **line** of [prose](http://x).\nSecond line.\n\nLater para." }, { id: "k2", name: "Own", description: "Explicit.", readmeMd: "Ignored" }],
+    interfaces: [], releases: [],
+  });
+  assert.equal(mm.byId.p1.desc, "Sells ad slots. Two sentences.");
+  assert.equal(mm.byId.k1.desc, "First line of prose. Second line.");
+  assert.equal(mm.byId.k2.desc, "Explicit.");
+  const h = systemMapHTML(mm);
+  assert.ok(h.includes("Sells ad slots. Two sentences."));
+  assert.ok(/Bare[^<]*\nNo description yet/.test(h), "a project with no description is flagged");
+  assert.ok(h.includes('data-node-id="p1"'), "still click-through");
+  assert.ok(shortDescription("word ".repeat(100)).length <= 221 && shortDescription("word ".repeat(100)).endsWith("…"));
+  assert.equal(shortDescription("", "```\ncode\n```\n- item one"), "item one");
+}
+console.log("system-map descriptions: ok");

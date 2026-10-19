@@ -132,6 +132,31 @@ const NODE_W = 190;
 const NODE_H = 52;
 export const SYSTEM_MAP_SIZE = { w: W, h: H };
 
+// The one- or two-sentence description a hover tooltip shows. A project
+// uses its board description; a concept uses its description, else the first
+// prose lines of its README (headings, rules, code and list markers dropped).
+export const DESC_MAX = 220;
+export function shortDescription(description, readmeMd = "") {
+  let t = String(description || "").trim();
+  if (!t) {
+    const lines = [];
+    let fenced = false;
+    for (const raw of String(readmeMd || "").split("\n")) {
+      const l = raw.trim();
+      if (/^(```|~~~)/.test(l)) { fenced = !fenced; continue; }
+      if (fenced || !l) { if (lines.length && !l) break; continue; }
+      if (/^(#|>|\||-{3,}|={3,}|<)/.test(l)) continue;
+      lines.push(l.replace(/^([-*+]|\d+\.)\s+/, ""));
+      if (lines.join(" ").length >= DESC_MAX) break;
+    }
+    t = lines.join(" ");
+  }
+  t = t.replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[*_`]/g, "").replace(/\s+/g, " ").trim();
+  if (t.length <= DESC_MAX) return t;
+  const cut = t.slice(0, DESC_MAX - 1);
+  return cut.slice(0, Math.max(cut.lastIndexOf(" "), DESC_MAX / 2)).replace(/[\s,;:.-]+$/, "") + "…";
+}
+
 export function releaseLabel(r) {
   if (!r) return "";
   return `Release ${r.version || r.name}`;
@@ -154,10 +179,11 @@ export function buildSystemMap({ projects = [], concepts = [], interfaces = [], 
       status: rel && rel.status === "live" ? "Live" : "Project",
       releaseId: rel ? rel.id : null, release: rel ? releaseLabel(rel) : "",
       href: p.artifactUrl || "",
+      desc: shortDescription(p.description),
     });
   });
   concepts.filter((c) => c.status !== "promoted" && !INTERNAL_RE.test(c.name || "")).forEach((c) => {
-    add({ id: c.id, kind: "concept", name: c.name || c.id, status: "Concept", href: c.artifactUrl || "" });
+    add({ id: c.id, kind: "concept", name: c.name || c.id, status: "Concept", href: c.artifactUrl || "", desc: shortDescription(c.description, c.readmeMd) });
   });
   // Live Visitor Profile: one node, a concept, in the PH Core slot.
   const placed = []; // [node, x, y] board nodes pinned to a fixed position
@@ -367,7 +393,9 @@ export function systemMapHTML(model, { release = "", viewBox = null } = {}) {
     const cls = `sysmap-node ${n.kind} s-${String(n.status).toLowerCase()}${clickable ? " clickable" : ""}${nodeDim(n)}`;
     const attrs = clickable ? ` data-node-id="${esc(n.id)}" data-node-kind="${n.kind}" tabindex="0" role="link"` : "";
     const sub = shortLines(n.sub, 29, 2);
-    svg += `<g class="${cls}"${attrs}><title>${esc(n.full || n.name)} — ${esc(n.status)}${n.release ? ` — ${esc(n.release)}` : ""}${n.sub ? `\n${esc(n.sub)}` : ""}</title>
+    // Board nodes with no description say so, which is how the gap gets noticed.
+    const desc = n.desc || (clickable && n.sub == null ? "No description yet — add one on the Docs page." : "");
+    svg += `<g class="${cls}"${attrs}><title>${esc(n.full || n.name)} — ${esc(n.status)}${n.release ? ` — ${esc(n.release)}` : ""}${desc ? `\n${esc(desc)}` : ""}${n.sub ? `\n${esc(n.sub)}` : ""}</title>
       <rect x="${x}" y="${y}" width="${NODE_W}" height="${NODE_H}" rx="8"/>
       <text class="sysmap-node-name" x="${n.x}" y="${y + 19}" text-anchor="middle">${esc(n.name.length > 25 ? n.name.slice(0, 24) + "…" : n.name)}</text>
       ${sub.map((t, k) => `<text class="sysmap-node-sub" x="${n.x}" y="${y + 32 + k * 11}" text-anchor="middle">${esc(t)}</text>`).join("")}
