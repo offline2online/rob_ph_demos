@@ -18,12 +18,12 @@ test('legend toggles keep at least one line on', () => {
   assert.deepEqual(SR.toggleLine(['b'], 'a'), ['b', 'a']);
 });
 
-test('point hover shows minute, each visible line, plays, sales, shoppers, stores and dates, from the real endpoint', async () => {
+test('point hover shows minute, each visible line, plays, sales, transactions, stores and dates, from the real endpoint', async () => {
   const d = await get('/sales-response', { advertiserIds: 'adv-blackmores' });
   const m = SR.pointHover(d, 3, ['personalised', 'control']);
   assert.equal(m.title, 'Minute 3 after play');
   assert.deepEqual(m.sections.map((s) => s.head), ['After a personalised play', 'Control stores, same clock time']);
-  assert.deepEqual(m.sections[0].rows.map((r) => r[0]), ['Sales per 1,000 shoppers', 'Plays', 'Sales counted', 'Shoppers (footfall)']);
+  assert.deepEqual(m.sections[0].rows.map((r) => r[0]), ['Sales per 1,000 transactions', 'Plays', 'Sales counted', 'Transactions (all baskets) behind the rate']);
   assert.deepEqual(m.rows.map((r) => r[0]), ['Stores', 'Dates']);
 });
 

@@ -67,17 +67,18 @@ module.exports = {
     ];
     out.lines = spec.map(([key, label, line]) => {
       if (key === 'control' && !r.scope.control.length) return { key, label, available: false, note: NO_CONTROL, points: [] };
-      let running = 0;
+      let running = 0; const windowTransactions = line.transactions.reduce((a, b) => a + b, 0); // running view: the whole window's transactions, so the total builds up
       const points = line.sales.map((sales, i) => {
         const from = i * step; const to = Math.min((i + 1) * step, window);
         running += sales;
+        const transactions = view === 'running' ? windowTransactions : line.transactions[i];
         return {
           from, to, label: sr.labelOf(from, to, step),
-          value: sr.rate(view === 'running' ? running : sales, line.shoppers),
-          sales: view === 'running' ? running : sales, plays: line.plays, shoppers: line.shoppers,
+          value: sr.rate(view === 'running' ? running : sales, transactions),
+          sales: view === 'running' ? running : sales, plays: line.plays, transactions,
         };
       });
-      return { key, label, available: true, plays: line.plays, shoppers: line.shoppers, points };
+      return { key, label, available: true, plays: line.plays, points };
     });
     return out;
   },

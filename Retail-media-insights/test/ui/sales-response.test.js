@@ -60,7 +60,7 @@ test('retailer: the chart sits in Targeting & scheduling maturity with three lin
     await page.locator('.sr-hit').nth(2).hover();
     const tip = await page.textContent('.sr-tip');
     assert.match(tip, /Minute 2 after play/);
-    for (const k of ['Sales per 1,000 shoppers', 'Plays', 'Sales counted', 'Shoppers (footfall)', 'Stores', 'Dates']) assert.match(tip, new RegExp(k.replace(/[()]/g, '\\$&')));
+    for (const k of ['Sales per 1,000 transactions', 'Plays', 'Sales counted', 'Transactions (all baskets) behind the rate', 'Stores', 'Dates']) assert.match(tip, new RegExp(k.replace(/[()]/g, '\\$&')));
     assert.deepEqual(problems, []);
   } finally { await context.close(); }
 });

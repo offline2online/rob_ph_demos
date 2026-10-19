@@ -916,18 +916,19 @@ function buildAggregates(raw, ctx) {
 module.exports = { buildAggregates };
   },
   "src/sales-response.js": function (module, exports, require) {
-// Sales response after personalised plays: sales of a campaign's product in the minutes after a play, per 1,000 shoppers in
-// the store, after personalised plays, after localised plays, and in Control stores at the same clock time.
+// Sales response after personalised plays: sales of a campaign's product in the minutes after a play, per 1,000 transactions
+// in the same store and minutes (basket penetration), after personalised plays, after localised plays, and in Control stores
+// at the same clock time.
 //
 // Inputs, as the production data will arrive (README "Sales response after personalised plays"):
 //  - play timestamps, tier and display from campaign playback analytics (PH Core);
 //  - sale timestamps, store and SKU / product name from the Transaction API (a custom POS integration per retailer);
-//  - footfall by store and hour from PH Core store insights;
+//  - total transactions by store and minute from the Transaction API (every basket, not only the campaign's product);
 //  - the Control stores Fixed Store Segment, used as exclusion targeting on the campaign.
 // The test retailer has none of these as rows, so `dayEvents` stands in for them: a deterministic day of plays and sales
 // per campaign and store, in which a personalised play lifts sales of the product for a few minutes (a localised play
 // less so). Everything after it (the counting rules, the rates, the controls) is the real calculation and reads only
-// {plays, sales, footfall}, so replacing `dayEvents` with the three feeds changes nothing downstream.
+// {plays, sales, transactions}, so replacing `dayEvents` with the three feeds changes nothing downstream.
 
 const calc = require('./calc');
 
@@ -937,7 +938,8 @@ const MAX_WINDOW = 120;
 const STEPS = [1, 5, 15];
 const VIEWS = ['step', 'running'];
 
-const BASE_CONVERSION = 0.01; // sales of the product per shopper-minute in the store with no recent play
+const BASE_SHARE = 0.03; // share of all transactions that include the product with no recent play
+const DAILY_TRANSACTIONS = 1800; // a store's transactions in a day before its size factor
 const LIFT = { personalised: 4, localised: 1.2 }; // extra multiples of the baseline right after a play
 const DECAY_MINUTES = 4;
 const REACH_MINUTES = 30; // a play no longer lifts sales after this
@@ -965,21 +967,26 @@ function poisson(lambda, rand) {
   return n;
 }
 
-/** Share of a day's footfall in each hour: a lunchtime and an after-work peak. */
+/** Share of a day's transactions in each hour: a lunchtime and an after-work peak. */
 const hourShape = (h) => 0.5 + 0.9 * Math.exp(-(((h + 0.5 - 12.5) / 3) ** 2)) + 0.6 * Math.exp(-(((h + 0.5 - 17.5) / 2.2) ** 2));
 
-/** Footfall in each hour of a store's opening hours: {hour: shoppers}. The store's daily footfall is its busiest display's. */
-function footfallByHour(store, storeId) {
-  const cache = store.__salesResponse.footfall;
+/** Total transactions (all baskets) in each minute of each hour of a store's opening hours: {hour: transactions per minute}, whole numbers. */
+function transactionsByHour(store, storeId) {
+  const cache = store.__salesResponse.transactions;
   if (cache.has(storeId)) return cache.get(storeId);
   const hours = (store.catalog.stores || {})[storeId] || { open: 0, close: 0 };
-  const daily = Math.max(0, ...(store.catalog.displays || []).filter((d) => d.storeId === storeId).map((d) => d.footfall || 0));
+  const daily = DAILY_TRANSACTIONS * (0.7 + 0.6 * (hashSeed(`size|${storeId}`) / 4294967296));
   const shapes = [];
   for (let h = hours.open; h < hours.close; h += 1) shapes.push([h, hourShape(h)]);
-  const total = shapes.reduce((s, [, w]) => s + w, 0);
-  const out = new Map(shapes.map(([h, w]) => [h, total > 0 ? Math.round((daily * w) / total) : 0]));
+  const total = shapes.reduce((acc, [, w]) => acc + w, 0);
+  const out = new Map(shapes.map(([h, w]) => [h, total > 0 ? Math.max(1, Math.round((daily * w) / total / 60)) : 0]));
   cache.set(storeId, out);
   return out;
+}
+
+/** Transactions in the `window` minutes starting at second `t`, in `step`-minute buckets (each bucket a whole number; none outside opening hours). */
+function addTransactions(target, byHour, t, window, step) {
+  for (let o = 0; o < window; o += 1) target[Math.floor(o / step)] += byHour.get(Math.floor((t + o * 60) / 3600)) || 0;
 }
 
 /**
@@ -1006,7 +1013,7 @@ function dayEvents(store, campaign, storeId, date, control) {
     }
     plays.sort((a, b) => a.t - b.t);
   }
-  const footfall = footfallByHour(store, storeId);
+  const txns = transactionsByHour(store, storeId);
   const minutes = (hours.close - hours.open) * 60;
   const extra = new Array(minutes).fill(0);
   for (const p of plays) {
@@ -1016,7 +1023,7 @@ function dayEvents(store, campaign, storeId, date, control) {
   const sales = [];
   for (let m = 0; m < minutes; m += 1) {
     const hour = hours.open + Math.floor(m / 60);
-    const lambda = ((footfall.get(hour) || 0) / 60) * BASE_CONVERSION * (1 + Math.min(extra[m], MAX_MULTIPLE - 1));
+    const lambda = (txns.get(hour) || 0) * BASE_SHARE * (1 + Math.min(extra[m], MAX_MULTIPLE - 1));
     for (let n = poisson(lambda, rand); n > 0; n -= 1) sales.push((hours.open * 60 + m) * 60 + Math.floor(rand() * 60));
   }
   sales.sort((a, b) => a - b);
@@ -1030,7 +1037,7 @@ const days = (from, to) => {
   for (let at = Date.parse(`${from}T00:00:00Z`); at <= Date.parse(`${to}T00:00:00Z`); at += 86400000) out.push(new Date(at).toISOString().slice(0, 10));
   return out;
 };
-const rate = (sales, shoppers) => (shoppers > 0 ? Math.round((sales / shoppers) * 100000) / 100 : 0); // per 1,000 shoppers, two decimals
+const rate = (sales, transactions) => (transactions > 0 ? Math.round((sales / transactions) * 100000) / 100 : 0); // per 1,000 transactions, two decimals
 const labelOf = (from, to, step) => (step === 1 ? `Minute ${from} after play` : `Minutes ${from}–${to - 1} after play`);
 
 /** Campaigns with personalised variants in scope: the chart's drop-down. */
@@ -1066,7 +1073,7 @@ function operatingHours(store, storeIds, types) {
 }
 
 function salesResponse(store, campaign, filters, { window, step, view, hourFrom, hourTo, hoursError }) {
-  if (!store.__salesResponse) Object.defineProperty(store, '__salesResponse', { value: { days: new Map(), footfall: new Map() }, enumerable: false });
+  if (!store.__salesResponse) Object.defineProperty(store, '__salesResponse', { value: { days: new Map(), transactions: new Map() }, enumerable: false });
   const scope = scopeOf(store, campaign, filters);
   const hours = operatingHours(store, scope.treated.length ? scope.treated : scope.control, scope.types);
   const band = hourFrom == null ? null : { from: hourFrom, to: hourTo };
@@ -1078,14 +1085,14 @@ function salesResponse(store, campaign, filters, { window, step, view, hourFrom,
   const dates = from <= lastDay ? days(from, lastDay) : [];
   const typeSet = new Set(scope.types);
   const n = Math.ceil(window / step);
-  const empty = (kind) => ({ plays: 0, shoppers: 0, sales: new Array(n).fill(0), kind });
+  const empty = (kind) => ({ plays: 0, sales: new Array(n).fill(0), transactions: new Array(n).fill(0), kind });
   const lines = { personalised: empty('personalised'), localised: empty('localised'), control: empty('control') };
 
   for (const date of dates) {
     for (const storeId of scope.treated) {
       const { plays, sales } = dayEvents(store, campaign, storeId, date, false);
       const counted = plays.filter((p) => typeSet.has(p.displayTypeId));
-      const footfall = footfallByHour(store, storeId);
+      const txns = transactionsByHour(store, storeId);
       let last = -1; // the nearest preceding play, by pointer: both lists are time-ordered
       for (const sale of sales) {
         while (last + 1 < counted.length && counted[last + 1].t <= sale) last += 1;
@@ -1099,18 +1106,18 @@ function salesResponse(store, campaign, filters, { window, step, view, hourFrom,
       counted.forEach((p) => {
         const hour = Math.floor(p.t / 3600);
         if (!inBand(hour)) return;
-        lines[p.tier].plays += 1; lines[p.tier].shoppers += footfall.get(hour) || 0;
+        lines[p.tier].plays += 1; addTransactions(lines[p.tier].transactions, txns, p.t, window, step);
       });
       // Control stores, same clock time: each personalised play opens the same clock window in every Control store.
       if (scope.control.length) {
-        const controlDays = scope.control.map((c) => ({ footfall: footfallByHour(store, c), sales: dayEvents(store, campaign, c, date, true).sales }));
+        const controlDays = scope.control.map((c) => ({ txns: transactionsByHour(store, c), sales: dayEvents(store, campaign, c, date, true).sales }));
         for (const p of counted) {
           if (p.tier !== 'personalised') continue;
           const hour = Math.floor(p.t / 3600);
           if (!inBand(hour)) continue;
           lines.control.plays += 1;
           for (const cd of controlDays) {
-            lines.control.shoppers += cd.footfall.get(hour) || 0;
+            addTransactions(lines.control.transactions, cd.txns, p.t, window, step);
             for (const sale of cd.sales) {
               if (sale < p.t) continue;
               if (sale >= p.t + window * 60) break;
@@ -1125,7 +1132,7 @@ function salesResponse(store, campaign, filters, { window, step, view, hourFrom,
 }
 
 module.exports = {
-  WINDOWS, DEFAULT_WINDOW, MAX_WINDOW, STEPS, VIEWS, salesResponse, personalisedCampaigns, scopeOf, operatingHours, labelOf, rate, footfallByHour, dayEvents,
+  WINDOWS, DEFAULT_WINDOW, MAX_WINDOW, STEPS, VIEWS, salesResponse, personalisedCampaigns, scopeOf, operatingHours, labelOf, rate, transactionsByHour, dayEvents,
 };
   },
   "src/testdata.js": function (module, exports, require) {
@@ -3022,17 +3029,18 @@ module.exports = {
     ];
     out.lines = spec.map(([key, label, line]) => {
       if (key === 'control' && !r.scope.control.length) return { key, label, available: false, note: NO_CONTROL, points: [] };
-      let running = 0;
+      let running = 0; const windowTransactions = line.transactions.reduce((a, b) => a + b, 0); // running view: the whole window's transactions, so the total builds up
       const points = line.sales.map((sales, i) => {
         const from = i * step; const to = Math.min((i + 1) * step, window);
         running += sales;
+        const transactions = view === 'running' ? windowTransactions : line.transactions[i];
         return {
           from, to, label: sr.labelOf(from, to, step),
-          value: sr.rate(view === 'running' ? running : sales, line.shoppers),
-          sales: view === 'running' ? running : sales, plays: line.plays, shoppers: line.shoppers,
+          value: sr.rate(view === 'running' ? running : sales, transactions),
+          sales: view === 'running' ? running : sales, plays: line.plays, transactions,
         };
       });
-      return { key, label, available: true, plays: line.plays, shoppers: line.shoppers, points };
+      return { key, label, available: true, plays: line.plays, points };
     });
     return out;
   },

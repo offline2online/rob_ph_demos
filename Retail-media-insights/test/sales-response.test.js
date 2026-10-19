@@ -57,12 +57,19 @@ test('window, step, view and hour controls change the chart; the step cannot exc
   assert.deepEqual(lunch.hourBand, { from: 12, to: 13 });
 });
 
-test('rates reconcile: sales / shoppers x 1,000 per point', async () => {
+test('rates reconcile: sales / transactions x 1,000 per point', async () => {
   const { body } = await get(`/sales-response?${Q}&advertiserIds=adv-haleon&window=15&step=5`);
   for (const l of body.lines.filter((x) => x.available)) {
-    assert.ok(l.shoppers > 0 && l.plays > 0);
-    for (const pt of l.points) assert.equal(pt.value, Math.round((pt.sales / pt.shoppers) * 100000) / 100);
+    assert.ok(l.plays > 0);
+    for (const pt of l.points) { assert.ok(pt.transactions > 0); assert.equal(pt.value, Math.round((pt.sales / pt.transactions) * 100000) / 100); }
   }
+});
+
+test('no footfall or shoppers anywhere in the response; control transactions come from control stores at the same clock minutes', async () => {
+  const { body } = await get(`/sales-response?${Q}&advertiserIds=adv-haleon&window=10&step=5`);
+  assert.doesNotMatch(JSON.stringify(body), /footfall|shopper/i);
+  const [p, , c] = body.lines;
+  if (c.available) for (let i = 0; i < c.points.length; i += 1) assert.ok(c.points[i].transactions > 0 && c.points[i].plays === p.plays);
 });
 
 test('a sale inside two overlapping windows is counted once, against the nearest preceding play', async () => {

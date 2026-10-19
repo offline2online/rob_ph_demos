@@ -19,12 +19,13 @@
   var TIPS = {
     title: 'Shows sales of this campaign’s product in the minutes after it played on your in-store displays. Each personalised play is a moment one identified shopper saw a personalised variant. ' +
       'We count sales of the campaign’s products in the same store in each minute after that play, and compare them with the minutes after localised plays and with control stores at the same clock time. ' +
-      'Sales are shown per 1,000 shoppers in the store, so larger stores don’t look better just because they’re bigger. Each sale counts once, against the nearest play before it. ' +
+      'Sales are shown per 1,000 transactions in the same store in the same minutes — the share of all baskets that included this product. This means larger stores and busy times of day don’t look better just because more people are buying. Each sale counts once, against the nearest play before it. ' +
       'Products come from the SKU or product name on the campaign; play times come from campaign playback analytics; sale times come from your POS through the Personalisation Hub Transaction API, which needs a custom POS integration. ' +
       'A gap between the personalised line and the other two lines in the first few minutes is the personalised effect.',
-    personalised: 'Sales of this product per 1,000 shoppers in the minutes after a personalised variant played to an identified shopper in that store.',
+    personalised: 'Sales of this product per 1,000 transactions in the minutes after a personalised variant played to an identified shopper in that store.',
     localised: 'The same measure after a localised variant of this campaign played, at similar times of day. Localised variants play to everyone in front of the display when a store-level condition is met.',
-    control: 'Sales of this product per 1,000 shoppers in your Control stores segment, in the same clock minutes as each personalised play. Control stores don’t run this campaign, so this line shows normal sales at that time of day.',
+    control: 'Sales of this product per 1,000 transactions in your Control stores segment, in the same clock minutes as each personalised play. Control stores don’t run this campaign, so this line shows normal sales at that time of day.',
+    axis: 'Out of every 1,000 transactions at the till, how many included this campaign’s product. Total transactions and product sales both come from your POS through the Personalisation Hub Transaction API.',
     window: 'How long after each play to look for sales. Short windows suit impulse products; longer windows suit considered purchases.',
     step: 'The width of each point on the chart.',
     view: 'Per step shows when sales happen after a play. Running total adds them up across the window.',
@@ -58,7 +59,7 @@
     return next.length ? next : on;
   }
 
-  // Point hover: the minute, each visible line's value, plays, sales, shoppers, and the stores and dates covered.
+  // Point hover: the minute, each visible line's value, plays, sales, transactions, and the stores and dates covered.
   function pointHover(data, index, visible) {
     var rows = [];
     var sections = [];
@@ -67,10 +68,10 @@
       var p = l.points[index];
       if (!p) return;
       sections.push({ head: LINE_LABELS[l.key], rows: [
-        ['Sales per 1,000 shoppers', fmtRate(p.value)],
+        ['Sales per 1,000 transactions', fmtRate(p.value)],
         ['Plays', fmtInt(p.plays)],
         ['Sales counted', fmtInt(p.sales)],
-        ['Shoppers (footfall)', fmtInt(p.shoppers)]
+        ['Transactions (all baskets) behind the rate', fmtInt(p.transactions)]
       ] });
     });
     var c = data.coverage || {};
@@ -278,7 +279,7 @@
       var iw = W - L - R, ih = H - T - B;
       var x = function (i) { return L + (n === 1 ? iw / 2 : iw * i / (n - 1)); };
       var y = function (v) { return T + ih * (1 - v / top); };
-      var svg = s('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'sr-svg', role: 'img', 'aria-label': 'Sales of the campaign’s product per 1,000 shoppers by minutes after a play', preserveAspectRatio: 'none' });
+      var svg = s('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'sr-svg', role: 'img', 'aria-label': 'Sales of the campaign’s product per 1,000 transactions by minutes after a play', preserveAspectRatio: 'none' });
       svg.style.aspectRatio = W + ' / ' + H;
       for (var g = 0; g <= 4; g++) {
         var v = top * g / 4;
@@ -306,7 +307,7 @@
         hits.appendChild(hit);
       })(i);
       body.removeAttribute('aria-busy'); body.innerHTML = '';
-      body.appendChild(h('div', { class: 'sr-unit', text: (state.view === 'running' ? 'Running total of sales' : 'Sales') + ' of the campaign’s product per 1,000 shoppers' }));
+      body.appendChild(h('div', { class: 'sr-unit' }, [h('span', { text: (state.view === 'running' ? 'Running total: sales' : 'Sales') + ' per 1,000 transactions' }), info(TIPS.axis, 'About the Y axis')]));
       body.appendChild(h('div', { class: 'sr-chart' }, [svg, hits]));
       if (d.matchedOnProductName) body.appendChild(h('div', { class: 'sr-flag', text: 'Matched on product name' }));
     }
