@@ -3,7 +3,7 @@
    approve / reject / activate calls the table and the campaign page share. */
 import { useQueryClient } from '@tanstack/react-query'
 import { App } from 'antd'
-import { useCampaignApprovals, type Approval, type ApprovalClient } from '@ph-dsp/campaign-approval/ui'
+import { useCampaignApprovals, type Approval, type ApprovalClient, type RejectionCode } from '@ph-dsp/campaign-approval/ui'
 import type { Campaign, Session } from '@ph-dsp/types'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
@@ -37,6 +37,7 @@ export function useCampaignActions(campaignIds: string[]) {
     try {
       await fn()
       await qc.invalidateQueries({ queryKey: ['poc-campaigns'] })
+      await qc.invalidateQueries({ queryKey: ['approval-summary'] })
       await reload()
     } catch (e) {
       message.error(e instanceof ApiRequestError ? e.message : 'Something went wrong.')
@@ -58,6 +59,7 @@ export function useCampaignActions(campaignIds: string[]) {
     } finally {
       await qc.invalidateQueries({ queryKey: ['poc-campaigns'] })
       await qc.invalidateQueries({ queryKey: ['creative-ids'] })
+      await qc.invalidateQueries({ queryKey: ['approval-summary'] })
       await reload()
       setBusy(null)
     }
@@ -67,7 +69,7 @@ export function useCampaignActions(campaignIds: string[]) {
     canApprove: session.data?.role === 'hq_admin',
     busy,
     approve: (a: Approval) => act(a.campaignId, () => api('POST', `/admin/v1/campaigns/${a.campaignId}/approve`, { assetVersion: a.assetVersion })),
-    reject: (a: Approval, reason: string) => act(a.campaignId, () => api('POST', `/admin/v1/campaigns/${a.campaignId}/reject`, { assetVersion: a.assetVersion, reason })),
+    reject: (a: Approval, reason: string, reasonCode: RejectionCode) => act(a.campaignId, () => api('POST', `/admin/v1/campaigns/${a.campaignId}/reject`, { assetVersion: a.assetVersion, reason, reasonCode })),
     /* Approve the ticked campaigns of ONE advertiser and group them under a
        creative ID — a new one (creativeId omitted) or an existing one. All or nothing. */
     approveAssign: (as: Approval[], creativeId?: string) => batch(async () => {
@@ -83,10 +85,10 @@ export function useCampaignActions(campaignIds: string[]) {
       return `${as.length === 1 ? '1 campaign' : `${as.length} campaigns`} grouped under creative ID ${res.creativeId}.`
     }),
     /* Reject each ticked campaign with the same reason, which the advertiser sees. */
-    rejectMany: (as: Approval[], reason: string) => batch(async () => {
+    rejectMany: (as: Approval[], reason: string, reasonCode: RejectionCode) => batch(async () => {
       for (const a of as) {
         if (a.status === 'rejected') await api('POST', `/admin/v1/campaigns/${a.campaignId}/unreject`, { assetVersion: a.assetVersion })
-        await api('POST', `/admin/v1/campaigns/${a.campaignId}/reject`, { assetVersion: a.assetVersion, reason })
+        await api('POST', `/admin/v1/campaigns/${a.campaignId}/reject`, { assetVersion: a.assetVersion, reason, reasonCode })
       }
       return `${as.length === 1 ? '1 campaign' : `${as.length} campaigns`} rejected. The advertiser sees the reason.`
     }),

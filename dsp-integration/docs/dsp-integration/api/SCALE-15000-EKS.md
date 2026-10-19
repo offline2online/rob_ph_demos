@@ -36,7 +36,11 @@ endpoint that moved. Because they were measured on one sandbox, a
 different machine first runs `npm run bench -- --calibrate`, which writes
 `bench/baseline.local.json` (not committed); `--assert` then compares
 against that. A deliberate change updates `thresholds.json` in the same
-PR. Shape T is the 7-Eleven Thailand estate as an assumption (shape C's
+PR. The thresholds were re-baselined on 19 Oct 2026 for the 8 Oct workload
+(every synthetic slot one deal, bids to 3 windows; `thresholds.json`
+`_about` lists what moved and why), and CI recalibrates whenever
+`thresholds.json` changes, because the nightly's cache key is a hash of that
+file. Shape T is the 7-Eleven Thailand estate as an assumption (shape C's
 mix) until CP Group confirms its display-type formats.
 
 ## How it was measured

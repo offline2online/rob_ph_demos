@@ -1164,6 +1164,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/approvals/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * How the approval queue is doing — turnaround, oldest waiting, rejection rate, top rejection reasons
+         * @description Shown above the Campaign Approval table. Turnaround and the rejection
+         *     rate count the decisions a person made in the window (approved or
+         *     rejected); a campaign approved automatically is in neither. Reasons
+         *     are read from the audit log, so a rejected edit that was then
+         *     discarded still counts, and a rejection recorded before the coded
+         *     pick-list counts as `other`. Any role that can open Campaign Status
+         *     may read it; Help desk has no access to the admin API.
+         */
+        get: operations["getApprovalSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/approvals/approve-assign": {
         parameters: {
             query?: never;
@@ -1955,6 +1981,37 @@ export interface components {
         };
         /** @enum {string} */
         ApprovalStatus: "draft" | "awaiting_approval" | "approved" | "rejected";
+        /**
+         * @description The fixed pick-list a rejection is coded with, so reasons can be
+         *     counted (free text alone can't be): Price or offer in artwork; Wrong
+         *     size or ratio; Duration too long; Brand or category not allowed; Poor
+         *     quality; Other. A rejection also keeps its required free-text reason.
+         *     One recorded before the pick-list reads `other`.
+         * @enum {string}
+         */
+        RejectionCode: "price_or_offer_in_artwork" | "wrong_size_or_ratio" | "duration_too_long" | "brand_or_category_not_allowed" | "poor_quality" | "other";
+        ApprovalSummary: {
+            days: number;
+            /** @description Decisions a person made in the window (approved + rejected). */
+            decided: number;
+            rejected: number;
+            /** @description Median seconds from submission to a person's decision; null with none in the window. */
+            medianSecondsToDecision: number | null;
+            /** @description rejected ÷ decided; null with none in the window. */
+            rejectionRate: number | null;
+            oldestWaiting: {
+                campaignId: string;
+                campaignName?: string;
+                /** Format: date-time */
+                submittedAt: string;
+                ageSeconds: number;
+            } | null;
+            topRejectionReasons: {
+                code: components["schemas"]["RejectionCode"];
+                label: string;
+                count: number;
+            }[];
+        };
         Check: {
             /** @enum {string} */
             name: "file_type" | "file_size" | "bitrate" | "dimensions" | "aspect_ratio" | "duration" | "default_present" | "targeting_permitted" | "dsp_audit" | "previously_cleared";
@@ -1976,6 +2033,7 @@ export interface components {
         AssetRejection: {
             assetId: string;
             reason: string;
+            code?: components["schemas"]["RejectionCode"];
         };
         CampaignStatus: {
             campaignId: string;
@@ -2694,6 +2752,16 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         };
+        PlaylistDisplayType: {
+            id: string;
+            name: string;
+            description: string | null;
+            /**
+             * @description That display type's IAB store zone; null when not defined. Absent from a demo snapshot taken before 15 Oct 2026.
+             * @enum {string|null}
+             */
+            storeZone?: "exterior" | "entrance" | "checkout" | "aisles" | "other" | null;
+        };
         AvailableInventoryRow: {
             displayTypeId: string;
             displayTypeName: string;
@@ -2707,17 +2775,6 @@ export interface components {
              * @enum {string|null}
              */
             displayTypeStoreZone?: "exterior" | "entrance" | "checkout" | "aisles" | "other" | null;
-            /** @description Every display type this row's playlist is assigned to (as its default playlist or a zone's), with each one's description. Available Inventory lists them when the playlist name is hovered. Read-only; absent from a demo snapshot taken before 14 Oct 2026. */
-            playlistDisplayTypes?: {
-                id: string;
-                name: string;
-                description: string | null;
-                /**
-                 * @description That display type's IAB store zone; null when not defined. Absent from a demo snapshot taken before 15 Oct 2026.
-                 * @enum {string|null}
-                 */
-                storeZone?: "exterior" | "entrance" | "checkout" | "aisles" | "other" | null;
-            }[];
             /**
              * @description Whether the slot has an audience score (an audience_vacd row).
              *     An unscored slot reports 0 assumed views, so it is never
@@ -3273,6 +3330,8 @@ export interface components {
             /** Format: date-time */
             reviewedAt?: string | null;
             reason?: string | null;
+            /** @description The coded reason of the current rejection (`other` for one recorded before the pick-list); absent unless the campaign is rejected. */
+            reasonCode?: components["schemas"]["RejectionCode"] | null;
             /** @description The current rejection's per-asset breakdown, when the reviewer named specific assets (spec §3, "asset-level rejection"). */
             assetReasons?: components["schemas"]["AssetRejection"][];
             checks?: components["schemas"]["Check"][];
@@ -3335,6 +3394,7 @@ export interface components {
                 action: "submitted" | "auto_approved" | "approved" | "rejected" | "returned_for_review" | "unrejected" | "edit_discarded" | "reused_clearance";
                 by?: string | null;
                 reason?: string | null;
+                reasonCode?: components["schemas"]["RejectionCode"];
                 assetVersion?: string;
                 assetReasons?: components["schemas"]["AssetRejection"][];
             }[];
@@ -4508,6 +4568,10 @@ export interface operations {
                     "application/json": {
                         items: components["schemas"]["AvailableInventoryRow"][];
                         dsps: components["schemas"]["DspAdvertisers"][];
+                        /** @description Every display type each playlist is assigned to (as its default playlist or a zone's), keyed by playlist id and listed once, in display-type order. Only playlists some row names are present. Available Inventory lists them when a playlist name is hovered. Read-only; absent from a demo snapshot taken before 19 Oct 2026. */
+                        playlistDisplayTypes?: {
+                            [key: string]: components["schemas"]["PlaylistDisplayType"][];
+                        };
                     };
                 };
             };
@@ -4562,6 +4626,10 @@ export interface operations {
                     "application/json": {
                         items: components["schemas"]["AvailableInventoryRow"][];
                         dsps: components["schemas"]["DspAdvertisers"][];
+                        /** @description As on GET /admin/v1/available-inventory. */
+                        playlistDisplayTypes?: {
+                            [key: string]: components["schemas"]["PlaylistDisplayType"][];
+                        };
                     };
                 };
             };
@@ -4597,6 +4665,10 @@ export interface operations {
                     "application/json": {
                         items: components["schemas"]["AvailableInventoryRow"][];
                         dsps: components["schemas"]["DspAdvertisers"][];
+                        /** @description As on GET /admin/v1/available-inventory. */
+                        playlistDisplayTypes?: {
+                            [key: string]: components["schemas"]["PlaylistDisplayType"][];
+                        };
                     };
                 };
             };
@@ -5729,6 +5801,31 @@ export interface operations {
             401: components["responses"]["Unauthorised"];
         };
     };
+    getApprovalSummary: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Summary */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApprovalSummary"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorised"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
     approveAndAssignCreativeId: {
         parameters: {
             query?: never;
@@ -5926,6 +6023,7 @@ export interface operations {
                 "application/json": {
                     assetVersion: string;
                     reason: string;
+                    reasonCode: components["schemas"]["RejectionCode"];
                     /** @description Optional — names specific assets the overall reason covers (spec §3, "asset-level rejection"). */
                     assetReasons?: components["schemas"]["AssetRejection"][];
                 };

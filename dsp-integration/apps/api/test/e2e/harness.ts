@@ -256,8 +256,8 @@ export async function harness(opts: { dbFile?: string } = {}) {
     },
     disconnect: (id = 'p_google') => app.inject({ method: 'POST', url: `/api/admin/v1/partners/${id}/disconnect` }),
     connect: (id = 'p_google') => app.inject({ method: 'POST', url: `/api/admin/v1/partners/${id}/connect` }),
-    reject: (id: string, reason: string, assetReasons?: { assetId: string; reason: string }[], assetVersion = 'v1') =>
-      app.inject({ method: 'POST', url: `/api/admin/v1/campaigns/${id}/reject`, payload: { assetVersion, reason, ...(assetReasons ? { assetReasons } : {}) } }),
+    reject: (id: string, reason: string, assetReasons?: { assetId: string; reason: string }[], assetVersion = 'v1', reasonCode = 'other') =>
+      app.inject({ method: 'POST', url: `/api/admin/v1/campaigns/${id}/reject`, payload: { assetVersion, reason, reasonCode, ...(assetReasons ? { assetReasons } : {}) } }),
     unreject: (id: string, assetVersion = 'v1') => app.inject({ method: 'POST', url: `/api/admin/v1/campaigns/${id}/unreject`, payload: { assetVersion } }),
     exchange: async (enabled: boolean) => app.inject({ method: 'PUT', url: '/api/admin/v1/exchange', payload: { ...(await h0.exchange()), enabled } }),
     slot: async (patch: Record<string, unknown>, displayTypeId = DT) => {

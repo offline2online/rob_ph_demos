@@ -1,8 +1,7 @@
 /* Move this project's tickets on the Prototype Backlog board.
 
      npm run board:tickets                              # what is where (no writes)
-     npm run board:tickets -- --from backlog --to published-live
-     npm run board:tickets -- --from backlog --to published-live --yes
+     npm run board:tickets -- --from ready-for-testing --to ready-to-publish --yes
      npm run board:tickets -- --ticket <id> --preview <url> --to ready-for-testing --yes
      npm run board:tickets -- --ticket <id> --deploy-commit <sha> --yes
      npm run board:tickets -- --tickets "<id>:ready-for-testing@<sha>, <id>:ready-to-publish" --yes   # several at once
@@ -10,6 +9,7 @@
      npm run board:tickets -- --relink-prototype <sha> --branch deploy/dsp-integration --yes
      npm run board:tickets -- --project <id> --ticket <id> --to ready-to-publish --yes
      npm run board:tickets -- --project <id> --notify <ticket id|all> --yes   # start a build (Notify Claude)
+     npm run board:tickets -- --ticket <id> --deploy-commit <sha on main> --to published-live --yes
 
    Why this exists: the board's MCP connector deliberately refuses status
    writes ("moving a ticket through testing and deployment stays on the
@@ -35,14 +35,37 @@
    capture a day later — a fresh bundle over a day-old snapshot, which is
    what three "Failed testing" rounds were looking at. A commit URL is
    immutable, so caching it is correct. dsp-prototype.yml runs this after
-   it pushes a rebuild; --branch limits it to cards on that train.
+   it pushes a rebuild; --branch limits it to cards on that train. It writes
+   previewUrl, previewSha, previewUpdatedAt and updatedAt in one PATCH per
+   card and posts no note: the card shows the link's commit and update time
+   itself (relinkPlan in scripts/lib/board-rules.mjs chooses the cards).
+
+   Moves follow the board's own rules (scripts/lib/board-rules.mjs, tested in
+   apps/api/test/board-tickets-guards.test.ts). Every card is checked first;
+   one refusal writes nothing (exit 1, each named; exit 2 if git can't answer):
+     - --deploy-commit and \`@sha\` are resolved to 40 characters and must be
+       an ancestor of origin/<the card's deployBranch, else the project's>.
+       The script fetches that branch itself (shallow-since the card's
+       createdAt only in a shallow checkout) and writes deployBranch,
+       deployCommit and a deployCommits append, as the automation does.
+     - --to published-live needs proof on main: the deployCommit is an
+       ancestor of origin/main, or a commit there carries "Backlog item: <id>".
+     - --to ready-to-publish works from Ready for Testing only; it records
+       approvedAt / approvedVia and a note, and locks the train.
+     - --to backlog from a train card also writes revertRequested (Failed
+       testing); --to archived is refused for a train card.
+     - --notify refuses blocked tickets and a locked train ("Click Ready for
+       Dev once the train has merged"); --force overrides the lock only.
+   Notes are appended with one atomic :commit write, never read and rewritten.
 
    It will not pretend: --yes is required to write, every change is verified
    by reading the ticket back, and the default run changes nothing at all.
 
    Needs BOARD_API_KEY (the board automation user's password) in .env. */
 import { readFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { parseTicketBatch } from './lib/ticket-batch.mjs'
+import { cardWrite, checkMove, checkNotify, noteAppendWrite, relinkPlan, toFields } from './lib/board-rules.mjs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -113,27 +136,77 @@ async function tickets() {
   } while (pageToken)
   return out
     .filter((d) => field(d, 'projectId') === PROJECT_ID)
-    .map((d) => ({ id: d.name.split('/').pop(), name: d.name, title: field(d, 'title') ?? '(untitled)', status: field(d, 'status') ?? 'backlog', previewUrl: field(d, 'previewUrl'), deployCommit: field(d, 'deployCommit'), deployBranch: field(d, 'deployBranch') }))
+    .map((d) => ({
+      id: d.name.split('/').pop(), name: d.name, title: field(d, 'title') ?? '(untitled)', status: field(d, 'status') ?? 'backlog',
+      previewUrl: field(d, 'previewUrl'), previewSha: field(d, 'previewSha'), deployCommit: field(d, 'deployCommit'), deployBranch: field(d, 'deployBranch'),
+      createdAt: d.fields?.createdAt?.timestampValue ?? null,
+      blockedReason: d.fields?.blocked?.mapValue?.fields?.reason?.stringValue ?? null,
+      blockedNote: d.fields?.blocked?.mapValue?.fields?.note?.stringValue ?? null,
+    }))
+}
+
+/* One atomic write to <BOARD>:commit (a note append, optionally with fields). */
+async function commit(body, what) {
+  const res = await fetch(`${BOARD}:commit`, { method: 'POST', headers: { ...AUTH, 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  if (!res.ok) throw new Error(`${what} failed (${res.status}): ${await res.text()}`)
+}
+const docName = (id) => `projects/backlog-tracker-e4ed2/databases/(default)/documents/backlogItems/${id}`
+
+const projectRes = await fetch(`${BOARD}/projects/${PROJECT_ID}`, { headers: AUTH })
+const projectDoc = projectRes.ok ? await projectRes.json() : { fields: {} }
+const project = {
+  id: PROJECT_ID,
+  name: field(projectDoc, 'name') ?? PROJECT_ID,
+  deployBranch: field(projectDoc, 'deployBranch'),
+  trainLocked: projectDoc.fields?.trainLocked?.booleanValue === true,
+}
+
+/* git, for the sha checks. Never throws: { code, stdout }. */
+const git = (gitArgs) => {
+  try {
+    return { code: 0, stdout: execFileSync('git', gitArgs, { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }) }
+  } catch (e) {
+    return { code: typeof e.status === 'number' ? e.status : 2, stdout: String(e.stdout ?? '') }
+  }
+}
+const actor = process.env.GITHUB_ACTOR
+
+/* Check every card first; any refusal means nothing is written. Returns the
+   plans, or exits (1 for a refusal, 2 when git can't answer). */
+function planMoves(requests) {
+  const plans = []
+  const problems = []
+  let exitCode = 1
+  for (const r of requests) {
+    const res = checkMove({ card: r.card, to: r.to, deployCommit: r.deployCommit, git, project, actor })
+    if (!res.ok) { problems.push(res.message); if (res.exitCode === 2) exitCode = 2; continue }
+    plans.push({ ...r, plan: res })
+  }
+  if (problems.length) {
+    console.error(`\nNot written — ${project.name}:\n  ${problems.join('\n  ')}`)
+    process.exit(exitCode)
+  }
+  return plans
+}
+
+/* Write one planned move atomically, then lock the train if it approves. */
+async function writePlanned({ card, plan, preview }) {
+  const fields = { ...toFields(plan.fields), updatedAt: { timestampValue: new Date().toISOString() } }
+  if (preview) fields.previewUrl = { stringValue: preview }
+  await commit(cardWrite(docName(card.id), { fields, notes: plan.notes, appendCommit: plan.appendCommit }), `Writing ${card.id}`)
+  if (plan.lockTrain) await lockTrain()
 }
 
 /* Append a note to a ticket, in the shape the board's own comment thread
-   reads ({author, text, at}), without touching any other field. */
+   reads ({author, text, at}). One atomic append: a note written in between
+   by anyone else is kept. */
 async function appendNote(id, text) {
-  const res = await fetch(`${BOARD}/backlogItems/${id}`, { headers: AUTH })
-  if (!res.ok) throw new Error(`Reading ${id} failed (${res.status}): ${await res.text()}`)
-  const doc = await res.json()
-  const notes = doc.fields?.notes?.arrayValue?.values ?? []
-  notes.push({ mapValue: { fields: { author: { stringValue: 'backlog-automation' }, text: { stringValue: text }, at: { stringValue: new Date().toISOString() } } } })
-  const patch = await fetch(`${BOARD}/backlogItems/${id}?updateMask.fieldPaths=notes`, {
-    method: 'PATCH', headers: { ...AUTH, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fields: { notes: { arrayValue: { values: notes } } } }),
-  })
-  if (!patch.ok) throw new Error(`Writing a note on ${id} failed (${patch.status}): ${await patch.text()}`)
+  await commit(noteAppendWrite(docName(id), text), `Writing a note on ${id}`)
 }
 
 const all = await tickets()
 const counts = all.reduce((acc, t) => ({ ...acc, [t.status]: (acc[t.status] ?? 0) + 1 }), {})
-console.log(`${all.length} tickets on Display Types & DSP Integration:`)
+console.log(`${all.length} tickets on ${project.name}:`)
 for (const [s, label] of Object.entries(STATUSES)) if (counts[s]) console.log(`  ${String(counts[s]).padStart(3)}  ${label}`)
 
 /* --inspect: why a Backlog card isn't building. Prints the project's last
@@ -204,11 +277,14 @@ const notify = value('--notify')
 if (notify) {
   const wanted = notify === 'all' ? null : notify
   const inBacklog = all.filter((t) => t.status === 'backlog')
-  const targets = wanted ? inBacklog.filter((t) => t.id === wanted) : inBacklog
-  console.log(`\nNotify Claude → ${wanted ? `ticket ${wanted}` : 'everything in Backlog'}: ${targets.length} ticket(s)`)
+  /* The board's rules: no build on a locked train, none for a blocked ticket. */
+  const verdict = checkNotify({ wanted, backlog: inBacklog, project, force: flag('--force') })
+  const targets = verdict.targets
+  console.log(`\nNotify Claude (${project.name}) → ${wanted ? `ticket ${wanted}` : 'everything in Backlog'}: ${targets.length} ticket(s)`)
   for (const t of targets) console.log(`  ${t.id}  ${(t.title || '').slice(0, 70)}`)
-  if (!targets.length) {
-    console.error(wanted ? `  Refusing: ${wanted} is not in this project's Backlog.` : '  Refusing: nothing in Backlog to build.')
+  for (const m of verdict.messages) console.log(`  ${m}`)
+  if (!verdict.ok) {
+    console.error(`  Refusing: ${verdict.messages[verdict.messages.length - 1]}`)
     process.exit(1)
   }
   if (!flag('--yes')) console.log('  (dry run: pass --yes to write)')
@@ -279,7 +355,6 @@ if (flag('--train-ready')) {
 
 /* ------------------------------------------- test links → an immutable commit */
 
-const PROTOTYPE_LINK = /^https:\/\/(?:rawcdn|raw)\.githack\.com\/offline2online\/rob_ph_demos\/(.+?)\/dsp-integration\/prototype\/(.*)$/
 const relinkSha = value('--relink-prototype')
 if (relinkSha) {
   if (!/^[0-9a-f]{40}$/.test(relinkSha)) {
@@ -287,40 +362,26 @@ if (relinkSha) {
     process.exit(2)
   }
   const onBranch = value('--branch')
-  const candidates = all.filter((t) => ['ready-for-testing', 'ready-to-publish'].includes(t.status))
-  const changes = candidates.flatMap((t) => {
-    const m = t.previewUrl?.match(PROTOTYPE_LINK)
-    if (!m) return []
-    const [, ref, rest] = m
-    if (ref === relinkSha) return []
-    /* A card is on this train if the automation stamped it so, or if its
-       link already points at the branch (a hand-filed card has no
-       deployBranch — wVhGSCVDsMotrATnADZ8 was skipped for exactly that). */
-    if (onBranch && t.deployBranch !== onBranch && ref !== onBranch) return []
-    const next = `https://rawcdn.githack.com/offline2online/rob_ph_demos/${relinkSha}/dsp-integration/prototype/${rest || 'index.html'}`
-    return [{ t, ref, next }]
-  })
+  const changes = relinkPlan(all, relinkSha, onBranch)
   console.log(`\nTest links → ${relinkSha.slice(0, 7)}${onBranch ? ` (cards on ${onBranch})` : ''}: ${changes.length} to re-point`)
-  for (const { t, ref, next } of changes) console.log(`  ${t.title.slice(0, 60)}\n    ${ref} → ${next}`)
+  for (const { title, ref, next } of changes) console.log(`  ${title.slice(0, 60)}\n    ${ref} → ${next}`)
   if (changes.length && !flag('--yes')) console.log('  (dry run: pass --yes to write)')
   if (changes.length && flag('--yes')) {
-    for (const { t, ref, next } of changes) {
-      const res = await fetch(`${BOARD}/backlogItems/${t.id}?updateMask.fieldPaths=previewUrl&updateMask.fieldPaths=updatedAt`, {
+    for (const { id, fields } of changes) {
+      const names = Object.keys(fields)
+      const res = await fetch(`${BOARD}/backlogItems/${id}?${names.map((n) => `updateMask.fieldPaths=${n}`).join('&')}`, {
         method: 'PATCH', headers: { ...AUTH, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fields: { previewUrl: { stringValue: next }, updatedAt: { timestampValue: new Date().toISOString() } } }),
+        body: JSON.stringify({ fields: toFields(fields) }),
       })
-      if (!res.ok) throw new Error(`Re-pointing ${t.id} failed (${res.status}): ${await res.text()}`)
-      await appendNote(
-        t.id,
-        `Test link updated: the hosted prototype was rebuilt from ${relinkSha.slice(0, 7)} and the link now points at that commit — ${next} — ` +
-        `rather than at ${ref}. (A branch URL on githack is cached: its data snapshot can stay a day stale under a fresh-looking bundle. ` +
-        `A commit URL cannot change.) If you tested on the old link, please look again.`,
-      )
+      if (!res.ok) throw new Error(`Re-pointing ${id} failed (${res.status}): ${await res.text()}`)
     }
     const after = await tickets()
-    const wrong = changes.filter(({ t, next }) => after.find((a) => a.id === t.id)?.previewUrl !== next)
+    const wrong = changes.filter(({ id, fields }) => {
+      const a = after.find((x) => x.id === id)
+      return a?.previewUrl !== fields.previewUrl || a?.previewSha !== fields.previewSha
+    })
     if (wrong.length) {
-      console.error(`\nWrote, but ${wrong.length} link(s) did not land: ${wrong.map(({ t }) => t.id).join(', ')}`)
+      console.error(`\nWrote, but ${wrong.length} link(s) did not land: ${wrong.map(({ id }) => id).join(', ')}`)
       process.exit(1)
     }
     console.log(`\nRe-pointed ${changes.length} — verified.`)
@@ -345,33 +406,27 @@ if (batch !== undefined) {
     console.error(`\nNot written — fix these first:\n  ${errors.join('\n  ')}`)
     process.exit(2)
   }
-  for (const e of entries) {
-    const t = all.find((x) => x.id === e.id)
+  const requests = entries.map((e) => ({ card: all.find((x) => x.id === e.id), to: e.to, deployCommit: e.deployCommit, e }))
+  const plans = planMoves(requests)
+  for (const { card: t, e, plan } of plans) {
     console.log(`\n${t.title}`)
     if (e.to) console.log(`  status   ${STATUSES[t.status]} → ${STATUSES[e.to]}`)
-    if (e.deployCommit) console.log(`  commit   ${t.deployCommit ?? '(none)'} → ${e.deployCommit}`)
+    if (e.deployCommit) console.log(`  commit   ${t.deployCommit ?? '(none)'} → ${plan.fields.deployCommit}`)
   }
   if (!flag('--yes')) {
     console.log('\nDry run: nothing written. Add --yes.')
     process.exit(0)
   }
   const failed = []
-  for (const e of entries) {
-    const fields = { updatedAt: { timestampValue: new Date().toISOString() } }
-    const mask = ['updateMask.fieldPaths=updatedAt']
-    if (e.to) { fields.status = { stringValue: e.to }; mask.push('updateMask.fieldPaths=status') }
-    if (e.deployCommit) { fields.deployCommit = { stringValue: e.deployCommit }; mask.push('updateMask.fieldPaths=deployCommit') }
-    const res = await fetch(`${BOARD}/backlogItems/${e.id}?${mask.join('&')}`, {
-      method: 'PATCH', headers: { ...AUTH, 'Content-Type': 'application/json' }, body: JSON.stringify({ fields }),
-    })
-    if (!res.ok) { failed.push(`${e.id}: write refused (${res.status}) ${(await res.text()).slice(0, 200)}`); continue }
-    if (e.to === 'ready-to-publish') await lockTrain()
+  for (const p of plans) {
+    try { await writePlanned(p) } catch (err) { failed.push(`${p.card.id}: write refused — ${String(err.message).slice(0, 200)}`) }
   }
   const after = await tickets()
   for (const e of entries) {
     const a = after.find((x) => x.id === e.id)
     if (e.to && a?.status !== e.to) failed.push(`${e.id}: status did not land`)
-    if (e.deployCommit && a?.deployCommit !== e.deployCommit) failed.push(`${e.id}: deployCommit did not land`)
+    const want = plans.find((p) => p.e.id === e.id)?.plan.fields.deployCommit
+    if (want && a?.deployCommit !== want) failed.push(`${e.id}: deployCommit did not land`)
   }
   if (failed.length) {
     console.error(`\n${failed.length} problem(s):\n  ${[...new Set(failed)].join('\n  ')}`)
@@ -412,27 +467,19 @@ if (one && !from) {
     console.log('  nothing to change: pass --to <status>, --preview <url> and/or --deploy-commit <sha>')
     process.exit(0)
   }
+  const [planned] = planMoves([{ card: t, to, deployCommit }])
+  planned.preview = preview
+  if (planned.plan.fields.deployCommit) console.log(`  checked  ${planned.plan.fields.deployCommit} is on the right branch`)
   if (!flag('--yes')) {
     console.log('\nDry run: nothing written. Add --yes.')
     process.exit(0)
   }
-  const fields = {}
-  const mask = []
-  if (to) { fields.status = { stringValue: to }; mask.push('updateMask.fieldPaths=status') }
-  if (preview) { fields.previewUrl = { stringValue: preview }; mask.push('updateMask.fieldPaths=previewUrl') }
-  if (deployCommit) { fields.deployCommit = { stringValue: deployCommit }; mask.push('updateMask.fieldPaths=deployCommit') }
-  fields.updatedAt = { timestampValue: new Date().toISOString() }
-  mask.push('updateMask.fieldPaths=updatedAt')
-  const res = await fetch(`${BOARD}/backlogItems/${one}?${mask.join('&')}`, {
-    method: 'PATCH', headers: { ...AUTH, 'Content-Type': 'application/json' }, body: JSON.stringify({ fields }),
-  })
-  if (!res.ok) throw new Error(`Writing failed (${res.status}): ${await res.text()}`)
-  if (to === 'ready-to-publish') await lockTrain()
+  await writePlanned(planned)
   const after = (await tickets()).find((x) => x.id === one)
   const wrong = [
     to && after.status !== to && 'status',
     preview && after.previewUrl !== preview && 'previewUrl',
-    deployCommit && after.deployCommit !== deployCommit && 'deployCommit',
+    planned.plan.fields.deployCommit && after.deployCommit !== planned.plan.fields.deployCommit && 'deployCommit',
   ].filter(Boolean)
   if (wrong.length) {
     console.error(`\nWrote, but ${wrong.join(' and ')} did not land.`)
@@ -467,20 +514,17 @@ if (!flag('--yes')) {
   process.exit(0)
 }
 
-const now = new Date().toISOString()
+const plans = planMoves(moving.map((card) => ({ card, to })))
 let done = 0
-for (const t of moving) {
-  const res = await fetch(`${BOARD}/backlogItems/${t.id}?updateMask.fieldPaths=status&updateMask.fieldPaths=updatedAt`, {
-    method: 'PATCH', headers: { ...AUTH, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fields: { status: { stringValue: to }, updatedAt: { timestampValue: now } } }),
-  })
-  if (!res.ok) {
-    console.error(`  failed on ${t.id} (${res.status}): ${await res.text()}`)
+for (const p of plans) {
+  try {
+    await writePlanned(p)
+  } catch (err) {
+    console.error(`  failed on ${p.card.id}: ${err.message}`)
     process.exit(1)
   }
   done++
 }
-if (to === 'ready-to-publish') await lockTrain()
 
 /* Read them back: a move that reports success without checking is how a
    board ends up claiming work is live when it isn't. */

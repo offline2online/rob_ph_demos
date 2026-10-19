@@ -233,8 +233,8 @@ company pages are **Exchange settings**, **Advertiser settings** and
 campaign targeting object**, the same variables as a campaign's Targeting tab
 (§6), not a separate registry. This build consumes Live Visitor
 Profile-defined variables only through PH Core's targeting object.
-[`shared/interface-contract.md`](../../../shared/interface-contract.md) (**v3,
-adopted 1 Oct 2026**) is the maintained boundary with the Live Visitor
+[`shared/interface-contract.md`](../../../shared/interface-contract.md) (**v3.3,
+19 Oct 2026**) is the maintained boundary with the Live Visitor
 Profile project for anything else both projects depend on: the targeting
 vocabulary, the per-play version tier, audience scoring inputs and the
 shared-attributes control. It is also mirrored inside the live backlog
@@ -1371,6 +1371,34 @@ a human rejection now works the same way:
   audit entry carries `assetReasons` the same shape as the live rejection,
   so a later reviewer (or an un-reject, §3 above) can see exactly which
   assets were called out, not just that *something* was rejected.
+
+### Approval queue health, and coded rejection reasons (Rob, 19 Oct 2026)
+
+The person approving campaigns sees how the queue is doing where they work —
+above the Campaign Approval table, not on the retail media dashboard.
+Broadsign and Vistar report approval status, turnaround and rejection
+reasons to the seller; DSP/SSP creative audits use coded reasons.
+
+- **Four figures over the last 30 days**, each with a ⓘ tooltip:
+  *Median time to approve* (submission → decision, approved or rejected by a
+  person; automatic approvals are excluded); *Oldest waiting* (age of the
+  oldest campaign Awaiting approval, linking to it — the table filters to
+  that campaign); *Rejection rate* (rejected ÷ decisions a person made);
+  *Top rejection reasons* (the three most frequent, with counts; selecting
+  one filters the table to campaigns currently rejected for it).
+- **Rejections are coded.** The Reject dialog asks for a reason from a fixed
+  pick-list — Price or offer in artwork; Wrong size or ratio; Duration too
+  long; Brand or category not allowed; Poor quality; Other — **and** the
+  existing required free text. Neither alone saves. The code is stored on the
+  rejection (`reasonCode`), on each `assetReasons` entry (`code`) and on the
+  `rejected` audit entry. A rejection recorded before the pick-list counts as
+  `other`.
+- **Source and access.** Computed from the approval audit
+  (`GET /admin/v1/approvals/summary?days=30`), so a rejected edit that was
+  then discarded still counts, and the reason counts are rejections in the
+  window (the filter shows campaigns *currently* rejected for that reason).
+  Marketing (read-only) sees it; Help desk has no access to the admin API.
+  Draft handling, approval flows A/B and creative IDs are unchanged.
 
 ### Safe reuse of previously approved assets (ticket, 22 Sep)
 
@@ -2914,6 +2942,12 @@ live. Until then no DSP is sent bid requests. The page title's tooltip
 is a platform default; the *Domain* tooltip says where `sellers.json` is
 published.
 
+**Not a field here: the retailer's vertical.** It is set once in PH Core's
+Company Settings (a Google Business category, mapped to IAB with an admin
+override) and read from there; DSP integration never asks for a second
+selection. This is an open PH Core dependency, see `api/PH-CORE-BOUNDARIES.md`
+→ "Dependency on PH Core: retailer vertical".
+
 Fixed as **platform defaults**, not retailer settings: seller type
 (Publisher), a non-confidential listing, the `sellers.json` and SupplyChain
 contents, the DOOH object, the OpenOOH venue taxonomy, the impression
@@ -3207,8 +3241,8 @@ campaign: { …existing fields,
             status: draft | awaiting_approval | approved | rejected,   // shown as Draft / Awaiting approval / Approved / Rejected
             approval: { mode: manual | auto,
                         assetVersion, submittedAt,
-                        reviewedBy, reviewedAt, reason,
-                        assetReasons: [{ assetId, reason }],           // optional — which asset(s) a rejection named (ticket, 22 Sep)
+                        reviewedBy, reviewedAt, reason, reasonCode,    // reasonCode: the rejection's pick-list code (19 Oct 2026)
+                        assetReasons: [{ assetId, reason, code }],           // optional — which asset(s) a rejection named (ticket, 22 Sep)
                         checks: [{ name, passed, detail, assetId }] }, // assetId optional — set for a per-file check, unset for a campaign-level one
             activation: { enabled } }         // only settable once status = approved
 
@@ -4412,8 +4446,8 @@ playback analytics.**
   *(spec only)*
 - **Audience multiplier** per play, sensor-derived where Vision/AI or MIST is
   enabled. *(spec only)*
-- **Data view on every record** as JSON. *(spec only; the "Data model — JSON
-  sample records" document on the board's Docs page serves this purpose)*
+- **Data view on every record** as JSON. *(spec only; the data view is
+  `api/openapi.yaml`, not the superseded "Data model" board document)*
 
 ### Security, scale and the boundary with PH Core (review, 23 Sep 2026)
 
@@ -4948,9 +4982,9 @@ keeps the won creative renderable; the lookahead sets how early the per-impressi
 - The DSP-specific guaranteed-deal field names are the mapping in
   `src/dsp/dealTerms.ts`; the mocks prove it is carried, not that a DSP
   accepts it. **Still to confirm against each DSP sandbox** (DV360, Amazon
-  Ads). The board's *End-to-End Test Spec — DSP Demand Paths (v2)* doc
-  (`f34VQZCy2kkWJfBP6Iwp`) is not in the repo; add Run 7 and Phase 5 to it
-  with these case IDs.
+  Ads). The *End-to-End Test Spec — DSP Demand Paths (v2)* is
+  `docs/dsp-integration/E2E-TEST-SPEC.md` in the repo, mirrored to the board in
+  three parts; add Run 7 and Phase 5 to it with these case IDs.
 
 ## Default committed plays — the play config feeds the buyers list (Rob, 7 Oct 2026)
 

@@ -268,3 +268,41 @@ describe('cluster configuration', () => {
     expect(loadConfig({ PH_SCHEDULER: 'yes' }).scheduler).toBe('in-process')
   })
 })
+
+describe('Available Inventory with many display types on one playlist', () => {
+  /* 19 Oct 2026: a playlist's display types were copied onto every row, so the body grew with rows x types
+     (113.5 MB for the bench's 600 types on one playlist). They are now listed once per playlist. */
+  it('lists each playlist\'s display types once, and the body grows with the rows, not with rows x types', async () => {
+    const ctx = await testContext()
+    const app = buildApp(ctx)
+    const base = (await ctx.displayTypes.get('landscape'))!
+    const advSlot = (label: string) => ({ label, owner: 'advertiser', partnerIds: [], advertisers: [], listMode: 'open', buyersListId: null, buyersListIds: [], storeScope: null, quota: null })
+    const added: string[] = []
+    const addTypes = async (n: number) => {
+      for (let i = 0; i < n; i++) {
+        const id = `scale_dt_${added.length}`
+        await ctx.displayTypes.create({
+          ...base, id, name: `Scale ${added.length}`, description: `Type ${added.length}`, defaultPlaylistId: base.defaultPlaylistId,
+          phExtensions: { ...base.phExtensions, slots: Array.from({ length: 4 }, (_, s) => advSlot(`A${s + 1}`)) },
+        } as typeof base)
+        added.push(id)
+      }
+    }
+    const body = async () => {
+      const res = await app.inject({ method: 'GET', url: '/api/admin/v1/available-inventory' })
+      return { text: res.body, json: res.json() as { items: Record<string, unknown>[]; playlistDisplayTypes: Record<string, { id: string; name: string; description: string | null; storeZone: string | null }[]> } }
+    }
+    await addTypes(20)
+    const at20 = await body()
+    await addTypes(20)
+    const at40 = await body()
+    const playlistId = base.defaultPlaylistId!
+    for (const r of [at20, at40]) for (const item of r.json.items) expect(item).not.toHaveProperty('playlistDisplayTypes')
+    const listed = at40.json.playlistDisplayTypes[playlistId]
+    const expected = (await ctx.displayTypes.list()).filter((d) => d.defaultPlaylistId === playlistId)
+    expect(expected.length).toBeGreaterThanOrEqual(41)
+    expect(listed).toEqual(expected.map((d) => ({ id: d.id, name: d.name, description: d.description ?? null, storeZone: d.phExtensions?.storeZone ?? null })))
+    expect(listed.filter((d) => d.id.startsWith('scale_dt_')).map((d) => d.id)).toEqual(added)
+    expect(at40.text.length).toBeLessThan(at20.text.length * 2.5)
+  })
+})

@@ -2,6 +2,7 @@ import Ajv2020 from 'ajv/dist/2020'
 import type { Slot } from '@ph-dsp/types'
 import { describe, expect, it } from 'vitest'
 import { sweepRejectedCampaigns } from '../src/domain/campaignRetention'
+import { billReservation } from '../src/billing'
 import { findPosition } from '../src/domain/positions'
 import { runAuction } from '../src/exchange/auction'
 import { claimAuction } from '../src/exchange/scheduler'
@@ -110,6 +111,18 @@ describe('the auction', () => {
     const avail = await app.inject({ method: 'GET', url: '/api/v1/inventory/menu_board.s2/availability?from=2026-09-22&to=2026-09-22', headers: GOOGLE })
     expect(avail.json().windows[0].status).toBe('sold')
     expect((await runAuction(ctx, W2)).positions[0].skipped).toBe('Already sold.')
+  })
+
+  it('records the winning DSP seat on the reservation and carries it onto the billing line item', async () => {
+    const { ctx, rows } = await setup()
+    await runAuction(ctx, W1)
+    await runAuction(ctx, W2)
+    const won = (await rows(W2)).find((r) => r.status === 'won')!
+    expect(won).toMatchObject({ partnerId: 'p_google', seatId: '884512' })
+    const p = (await findPosition(ctx, 'menu_board.s2'))!
+    const item = await billReservation(ctx, { ...won, handedOffAt: W2.toISOString() }, p, { plays: 1, playedSec: 10, byVersion: [] })
+    expect(item).toMatchObject({ partnerId: 'p_google', seatId: '884512' })
+    expect((await ctx.billing.list())[0]).toMatchObject({ partnerId: 'p_google', seatId: '884512' })
   })
 
   it('keeps an unapproved creative out until the retailer approves it', async () => {

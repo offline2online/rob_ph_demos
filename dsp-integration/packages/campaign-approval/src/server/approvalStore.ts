@@ -4,7 +4,7 @@
    async adapter (callers await). */
 import { randomUUID } from 'node:crypto'
 import { type Awaitable, type SqlDb, type SqlStatement, andThen } from '../db'
-import type { ApprovalMode, ApprovalStatus, AssetRejection, AuditAction, AuditEntry, Check } from '../types'
+import type { ApprovalMode, ApprovalStatus, AssetRejection, AuditAction, AuditEntry, Check, RejectionCode } from '../types'
 
 export interface ApprovalRow {
   campaignId: string
@@ -15,14 +15,15 @@ export interface ApprovalRow {
   reviewedBy: string | null
   reviewedAt: string | null
   reason: string | null
+  reasonCode: RejectionCode | null
   assetReasons: AssetRejection[]
   checks: Check[]
 }
 
-interface Raw { campaign_id: string; asset_version: string; status: ApprovalStatus; mode: ApprovalMode | null; submitted_at: string | null; reviewed_by: string | null; reviewed_at: string | null; reason: string | null; asset_reasons: string | null; checks: string }
+interface Raw { campaign_id: string; asset_version: string; status: ApprovalStatus; mode: ApprovalMode | null; submitted_at: string | null; reviewed_by: string | null; reviewed_at: string | null; reason: string | null; reason_code: RejectionCode | null; asset_reasons: string | null; checks: string }
 const toRow = (r: Raw): ApprovalRow => ({
   campaignId: r.campaign_id, assetVersion: r.asset_version, status: r.status, mode: r.mode, submittedAt: r.submitted_at,
-  reviewedBy: r.reviewed_by, reviewedAt: r.reviewed_at, reason: r.reason, assetReasons: r.asset_reasons ? JSON.parse(r.asset_reasons) : [], checks: JSON.parse(r.checks),
+  reviewedBy: r.reviewed_by, reviewedAt: r.reviewed_at, reason: r.reason, reasonCode: r.reason_code, assetReasons: r.asset_reasons ? JSON.parse(r.asset_reasons) : [], checks: JSON.parse(r.checks),
 })
 
 export interface CreativeIdRow { creativeId: string; advertiserId: string; createdAt: string }
@@ -67,20 +68,38 @@ export function approvalStore(db: SqlDb) {
     },
     upsert(row: ApprovalRow, now: string): Awaitable<void> {
       return andThen(stmt(
-        `INSERT INTO campaign_approvals (campaign_id, asset_version, status, mode, submitted_at, reviewed_by, reviewed_at, reason, asset_reasons, checks, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO campaign_approvals (campaign_id, asset_version, status, mode, submitted_at, reviewed_by, reviewed_at, reason, reason_code, asset_reasons, checks, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (campaign_id, asset_version) DO UPDATE SET status = excluded.status, mode = excluded.mode, submitted_at = excluded.submitted_at,
-           reviewed_by = excluded.reviewed_by, reviewed_at = excluded.reviewed_at, reason = excluded.reason, asset_reasons = excluded.asset_reasons, checks = excluded.checks`,
-      ).run(row.campaignId, row.assetVersion, row.status, row.mode, row.submittedAt, row.reviewedBy, row.reviewedAt, row.reason, row.assetReasons.length ? JSON.stringify(row.assetReasons) : null, JSON.stringify(row.checks), now), () => undefined)
+           reviewed_by = excluded.reviewed_by, reviewed_at = excluded.reviewed_at, reason = excluded.reason, reason_code = excluded.reason_code, asset_reasons = excluded.asset_reasons, checks = excluded.checks`,
+      ).run(row.campaignId, row.assetVersion, row.status, row.mode, row.submittedAt, row.reviewedBy, row.reviewedAt, row.reason, row.reasonCode, row.assetReasons.length ? JSON.stringify(row.assetReasons) : null, JSON.stringify(row.checks), now), () => undefined)
     },
-    audit(campaignId: string, assetVersion: string, action: AuditAction, actor: string | null, reason: string | null, at: string, assetReasons?: AssetRejection[]): Awaitable<void> {
-      return andThen(stmt('INSERT INTO campaign_approval_audit (id, campaign_id, asset_version, action, actor, reason, asset_reasons, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-        .run(randomUUID(), campaignId, assetVersion, action, actor, reason, assetReasons?.length ? JSON.stringify(assetReasons) : null, at), () => undefined)
+    audit(campaignId: string, assetVersion: string, action: AuditAction, actor: string | null, reason: string | null, at: string, assetReasons?: AssetRejection[], reasonCode?: RejectionCode): Awaitable<void> {
+      return andThen(stmt('INSERT INTO campaign_approval_audit (id, campaign_id, asset_version, action, actor, reason, reason_code, asset_reasons, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(randomUUID(), campaignId, assetVersion, action, actor, reason, reasonCode ?? null, assetReasons?.length ? JSON.stringify(assetReasons) : null, at), () => undefined)
     },
     auditTrail(campaignId: string): Awaitable<AuditEntry[]> {
       return andThen(stmt('SELECT * FROM campaign_approval_audit WHERE campaign_id = ? ORDER BY at, seq').all(campaignId), (rs) =>
-        (rs as { at: string; action: AuditAction; actor: string | null; reason: string | null; asset_version: string; asset_reasons: string | null }[])
-          .map((a) => ({ at: a.at, action: a.action, by: a.actor, reason: a.reason, assetVersion: a.asset_version, ...(a.asset_reasons ? { assetReasons: JSON.parse(a.asset_reasons) } : {}) })))
+        (rs as { at: string; action: AuditAction; actor: string | null; reason: string | null; reason_code: RejectionCode | null; asset_version: string; asset_reasons: string | null }[])
+          .map((a) => ({ at: a.at, action: a.action, by: a.actor, reason: a.reason, ...(a.reason_code ? { reasonCode: a.reason_code } : {}), assetVersion: a.asset_version, ...(a.asset_reasons ? { assetReasons: JSON.parse(a.asset_reasons) } : {}) })))
+    },
+    /* The decisions made from `since` on (an ISO time), each with when its
+       version was last submitted for review — the start of its turnaround.
+       'approved' and 'rejected' are a person's decisions; the automatic ones
+       are 'auto_approved' and 'reused_clearance'. */
+    decisionsSince(since: string): Awaitable<{ campaignId: string; action: AuditAction; at: string; reasonCode: RejectionCode | null; submittedAt: string | null }[]> {
+      return andThen(stmt(
+        `SELECT d.campaign_id, d.action, d.at, d.reason_code,
+           (SELECT MAX(s.at) FROM campaign_approval_audit s
+             WHERE s.campaign_id = d.campaign_id AND s.asset_version = d.asset_version AND s.action IN ('submitted', 'returned_for_review') AND s.at <= d.at) AS submitted_at
+         FROM campaign_approval_audit d WHERE d.action IN ('approved', 'rejected') AND d.at >= ? ORDER BY d.at`,
+      ).all(since), (rs) => (rs as { campaign_id: string; action: AuditAction; at: string; reason_code: RejectionCode | null; submitted_at: string | null }[])
+        .map((r) => ({ campaignId: r.campaign_id, action: r.action, at: r.at, reasonCode: r.reason_code, submittedAt: r.submitted_at })))
+    },
+    /* Every version Awaiting approval, with when it was submitted. */
+    awaiting(): Awaitable<{ campaignId: string; submittedAt: string | null }[]> {
+      return andThen(stmt("SELECT campaign_id, submitted_at FROM campaign_approvals WHERE status = 'awaiting_approval'").all(),
+        (rs) => (rs as { campaign_id: string; submitted_at: string | null }[]).map((r) => ({ campaignId: r.campaign_id, submittedAt: r.submitted_at })))
     },
     /* Creative IDs: the grouping a DSP bids on, one advertiser's campaigns
        each. The assignment is keyed by campaign, so it survives a new asset

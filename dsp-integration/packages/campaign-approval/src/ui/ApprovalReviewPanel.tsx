@@ -2,7 +2,7 @@
    type's canvas, advertiser and DSP, a summary of the targeting rules and
    the automated check results, with Approve / Reject. */
 import { Button, Tooltip } from 'antd'
-import type { Approval } from '../types'
+import { rejectionLabel, type Approval, type RejectionCode } from '../types'
 import { ApprovalStatusBadge } from './ApprovalStatusBadge'
 import { RejectWithReason } from './ApprovalActions'
 import { Icon } from './Icon'
@@ -44,7 +44,7 @@ export function ApprovalReviewPanel({ approval, canApprove = true, busy, onAppro
   canApprove?: boolean
   busy?: boolean
   onApprove: () => void | Promise<unknown>
-  onReject: (reason: string) => void | Promise<unknown>
+  onReject: (reason: string, reasonCode: RejectionCode) => void | Promise<unknown>
   /* Undo a mistaken rejection back to Awaiting approval (spec §3). Omit to
      leave the "options/overflow menu" as the only place a host offers it. */
   onUnreject?: () => void | Promise<unknown>
@@ -103,7 +103,7 @@ export function ApprovalReviewPanel({ approval, canApprove = true, busy, onAppro
           </ul>
         )}
 
-        {rejected && approval.reason && (<><Label>Reason</Label><div style={{ fontSize: 13 }}>{approval.reason}</div></>)}
+        {rejected && approval.reason && (<><Label>Reason</Label><div style={{ fontSize: 13 }}>{approval.reasonCode && approval.reasonCode !== 'other' ? <b>{rejectionLabel(approval.reasonCode)}: </b> : null}{approval.reason}</div></>)}
         {rejected && !!approval.assetReasons?.length && (
           <>
             <Label>Which asset(s) failed</Label>

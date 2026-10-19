@@ -1,0 +1,258 @@
+[
+  {
+    "id": "tiApBmLe5GDkqrqrcIjD",
+    "name": "0 — Start here: handover index and reading order",
+    "sourcePath": "dsp-integration/docs/dsp-integration/START-HERE.md",
+    "sourceSlices": [],
+    "sourcePrefix": "> Mirror of `dsp-integration/docs/dsp-integration/START-HERE.md` — the repo wins. Rewritten from the repo file on every merge to main; edit the file, not this copy.\n\n"
+  },
+  {
+    "id": "ezhL36100y402EButyl9",
+    "name": "Handover review & porting checklist (1/2) — how it separates, what the review fixed",
+    "sourcePath": "dsp-integration/docs/dsp-integration/api/HANDOVER-REVIEW.md",
+    "sourceSlices": [
+      {
+        "end": "## 3. Measured"
+      }
+    ],
+    "sourcePrefix": "> Mirror of `dsp-integration/docs/dsp-integration/api/HANDOVER-REVIEW.md` (part 1 of 2) — the repo wins. Rewritten from the repo file on every merge to main; edit the file, not this copy.\n\n"
+  },
+  {
+    "id": "Rd8j4S10FYbXTBFG4efN",
+    "name": "Handover review & porting checklist (2/2) — measured, left for engineering, porting order",
+    "sourcePath": "dsp-integration/docs/dsp-integration/api/HANDOVER-REVIEW.md",
+    "sourceSlices": [
+      {
+        "start": "## 3. Measured"
+      }
+    ],
+    "sourcePrefix": "> Mirror of `dsp-integration/docs/dsp-integration/api/HANDOVER-REVIEW.md` (part 2 of 2) — the repo wins. Rewritten from the repo file on every merge to main; edit the file, not this copy.\n\n"
+  },
+  {
+    "id": "mDJ50oQKTbgaKPvxeCUs",
+    "name": "Boundaries with PH Core (1/7) — the rule and the seams PH Core must provide",
+    "sourcePath": "dsp-integration/docs/dsp-integration/api/PH-CORE-BOUNDARIES.md",
+    "sourceSlices": [
+      {
+        "end": "### What each seam must guarantee"
+      }
+    ],
+    "sourcePrefix": "> Mirror of `dsp-integration/docs/dsp-integration/api/PH-CORE-BOUNDARIES.md` (part 1 of 7) — the repo wins. Rewritten from the repo file on every merge to main; edit the file, not this copy.\n\n"
+  },
+  {
+    "id": "W140rfmV19EdPYQnBeTJ",
+    "name": "Boundaries with PH Core (2/7) — what each seam must guarantee",
+    "sourcePath": "dsp-integration/docs/dsp-integration/api/PH-CORE-BOUNDARIES.md",
+    "sourceSlices": [
+      {
+        "start": "### What each seam must guarantee",
+        "end": "### Tables: whose they are"
+      }
+    ],
+    "sourcePrefix": "> Mirror of `dsp-integration/docs/dsp-integration/api/PH-CORE-BOUNDARIES.md` (part 2 of 7) — the repo wins. Rewritten from the repo file on every merge to main; edit the file, not this copy.\n\n"
+  },
+  {
+    "id": "PnWgzNqVScsyfEehXKbl",
+    "name": "Boundaries with PH Core (3/7) — tables: whose they are",
+    "sourcePath": "dsp-integration/docs/dsp-integration/api/PH-CORE-BOUNDARIES.md",
+    "sourceSlices": [
+      {
+        "start": "### Tables: whose they are",
+        "end": "## Outbound boundaries — what this build calls"
+      }
+    ],
+    "sourcePrefix": "> Mirror of `dsp-integration/docs/dsp-integration/api/PH-CORE-BOUNDARIES.md` (part 3 of 7) — the repo wins. Rewritten from the repo file on every merge to main; edit the file, not this copy.\n\n"
+  },
+  {
+    "id": "DxlzNnE7612X3LhJVWYo",
+    "name": "Boundaries with PH Core (4/7) — outbound, inbound, edge, more than one instance",
+    "sourcePath": "dsp-integration/docs/dsp-integration/api/PH-CORE-BOUNDARIES.md",
+    "sourceSlices": [
+      {
+        "start": "## Outbound boundaries — what this build calls",
+        "end": "## Authentication seams — partner identity, advertiser principal (spec only, REQUIREMENTS §9.5)"
+      }
+    ],
+    "sourcePrefix": "> Mirror of `dsp-integration/docs/dsp-integration/api/PH-CORE-BOUNDARIES.md` (part 4 of 7) — the repo wins. Rewritten from the repo file on every merge to main; edit the file, not this copy.\n\n"
+  },
+  {
+    "id": "HFcBgw7dPEL9CQhcM6fY",
+    "name": "Boundaries with PH Core (5/7) — authentication seams (AUTH)",
+    "sourcePath": "dsp-integration/docs/dsp-integration/api/PH-CORE-BOUNDARIES.md",
+    "sourceSlices": [
+      {
+        "start": "## Authentication seams — partner identity, advertiser principal (spec only, REQUIREMENTS §9.5)",
+        "end": "## Real-time bidding — the player signals, the exchange fills (7 Oct 2026)"
+      }
+    ],
+    "sourcePrefix": "> Mirror of `dsp-integration/docs/dsp-integration/api/PH-CORE-BOUNDARIES.md` (part 5 of 7) — the repo wins. Rewritten from the repo file on every merge to main; edit the file, not this copy.\n\n"
+  },
+  {
+    "id": "M2NrMcycXZ4TVWF8wkBK",
+    "name": "Boundaries with PH Core (6/7) — real-time bidding, pre-caching, bandwidth, web and app slots",
+    "sourcePath": "dsp-integration/docs/dsp-integration/api/PH-CORE-BOUNDARIES.md",
+    "sourceSlices": [
+      {
+        "start": "## Real-time bidding — the player signals, the exchange fills (7 Oct 2026)",
+        "end": "## Reserved for later releases (REQUIREMENTS §9, spec only)"
+      }
+    ],
+    "sourcePrefix": "> Mirror of `dsp-integration/docs/dsp-integration/api/PH-CORE-BOUNDARIES.md` (part 6 of 7) — the repo wins. Rewritten from the repo file on every merge to main; edit the file, not this copy.\n\n"
+  },
+  {
+    "id": "uXwdjH0eChupvSfSrukJ",
+    "name": "Boundaries with PH Core (7/7) — reserved, open, venue, canvas and format, analytics",
+    "sourcePath": "dsp-integration/docs/dsp-integration/api/PH-CORE-BOUNDARIES.md",
+    "sourceSlices": [
+      {
+        "start": "## Reserved for later releases (REQUIREMENTS §9, spec only)"
+      }
+    ],
+    "sourcePrefix": "> Mirror of `dsp-integration/docs/dsp-integration/api/PH-CORE-BOUNDARIES.md` (part 7 of 7) — the repo wins. Rewritten from the repo file on every merge to main; edit the file, not this copy.\n\n"
+  },
+  {
+    "id": "6O7ZNvasbMcn3q9dycY7",
+    "name": "Campaign approval integration guide (1/2) — adapter, components, eligibility",
+    "sourcePath": "dsp-integration/docs/dsp-integration/CAMPAIGN-APPROVAL-INTEGRATION.md",
+    "sourceSlices": [
+      {
+        "end": "## 4. Run the approval migration, or move the fields onto the campaign"
+      }
+    ],
+    "sourcePrefix": "> Mirror of `dsp-integration/docs/dsp-integration/CAMPAIGN-APPROVAL-INTEGRATION.md` (part 1 of 2) — the repo wins. Rewritten from the repo file on every merge to main; edit the file, not this copy.\n\n"
+  },
+  {
+    "id": "tMoTHRAx74HWzyTs94B5",
+    "name": "Campaign approval integration guide (2/2) — migrations, clean-up, contract tests, creative IDs",
+    "sourcePath": "dsp-integration/docs/dsp-integration/CAMPAIGN-APPROVAL-INTEGRATION.md",
+    "sourceSlices": [
+      {
+        "start": "## 4. Run the approval migration, or move the fields onto the campaign"
+      }
+    ],
+    "sourcePrefix": "> Mirror of `dsp-integration/docs/dsp-integration/CAMPAIGN-APPROVAL-INTEGRATION.md` (part 2 of 2) — the repo wins. Rewritten from the repo file on every merge to main; edit the file, not this copy.\n\n"
+  },
+  {
+    "id": "pa2M9hncfxXsEYgSc33G",
+    "name": "API reference (1/5) — surfaces, conventions, pricing maths",
+    "sourcePath": "dsp-integration/docs/dsp-integration/api/API.md",
+    "sourceSlices": [
+      {
+        "end": "## Partner API — `/v1`"
+      }
+    ],
+    "sourcePrefix": "> Mirror of `dsp-integration/docs/dsp-integration/api/API.md` (part 1 of 5) — the repo wins. Rewritten from the repo file on every merge to main; edit the file, not this copy.\n\n"
+  },
+  {
+    "id": "FfBh1EnAh58FPPhK6RU6",
+    "name": "API reference (2/5) — Partner API /v1",
+    "sourcePath": "dsp-integration/docs/dsp-integration/api/API.md",
+    "sourceSlices": [
+      {
+        "start": "## Partner API — `/v1`",
+        "end": "## Admin API — `/admin/v1`"
+      }
+    ],
+    "sourcePrefix": "> Mirror of `dsp-integration/docs/dsp-integration/api/API.md` (part 2 of 5) — the repo wins. Rewritten from the repo file on every merge to main; edit the file, not this copy.\n\n"
+  },
+  {
+    "id": "GpUGYxHvdGsQYZ9UNxSC",
+    "name": "API reference (3/5) — Admin API: exchange, advertiser settings, variables, DSPs, advertisers",
+    "sourcePath": "dsp-integration/docs/dsp-integration/api/API.md",
+    "sourceSlices": [
+      {
+        "start": "## Admin API — `/admin/v1`",
+        "end": "### Buyers lists (private auctions; admin only)"
+      }
+    ],
+    "sourcePrefix": "> Mirror of `dsp-integration/docs/dsp-integration/api/API.md` (part 3 of 5) — the repo wins. Rewritten from the repo file on every merge to main; edit the file, not this copy.\n\n"
+  },
+  {
+    "id": "ABIsJgZHbGv5iKiZb0fb",
+    "name": "API reference (4/5) — Admin API: buyers lists, campaign approval, display types",
+    "sourcePath": "dsp-integration/docs/dsp-integration/api/API.md",
+    "sourceSlices": [
+      {
+        "start": "### Buyers lists (private auctions; admin only)",
+        "end": "## POC stand-ins for the existing platform"
+      }
+    ],
+    "sourcePrefix": "> Mirror of `dsp-integration/docs/dsp-integration/api/API.md` (part 4 of 5) — the repo wins. Rewritten from the repo file on every merge to main; edit the file, not this copy.\n\n"
+  },
+  {
+    "id": "tVxupKgza0snxjhLtUd4",
+    "name": "API reference (5/5) — stand-ins, jobs, operations, sellers.json, OpenRTB",
+    "sourcePath": "dsp-integration/docs/dsp-integration/api/API.md",
+    "sourceSlices": [
+      {
+        "start": "## POC stand-ins for the existing platform"
+      }
+    ],
+    "sourcePrefix": "> Mirror of `dsp-integration/docs/dsp-integration/api/API.md` (part 5 of 5) — the repo wins. Rewritten from the repo file on every merge to main; edit the file, not this copy.\n\n"
+  },
+  {
+    "id": "T6nK6QNidO4L30K7vsOo",
+    "name": "EKS deployment guide — the exchange in a client's VPC",
+    "sourcePath": "dsp-integration/deploy/kubernetes/README.md",
+    "sourceSlices": [],
+    "sourcePrefix": "> Mirror of `dsp-integration/deploy/kubernetes/README.md` — the repo wins. Rewritten from the repo file on every merge to main; edit the file, not this copy.\n\n"
+  },
+  {
+    "id": "qudg1TvEwov2PINmJD4p",
+    "name": "Security, scalability and performance review — 23 Sep 2026 (1/2) — measurements, what changed, left",
+    "sourcePath": "dsp-integration/docs/dsp-integration/api/SECURITY-PERFORMANCE.md",
+    "sourceSlices": [
+      {
+        "end": "## Stability under concurrency and at the edges — 24 Sep 2026"
+      }
+    ],
+    "sourcePrefix": "> Mirror of `dsp-integration/docs/dsp-integration/api/SECURITY-PERFORMANCE.md` (part 1 of 2) — the repo wins. Rewritten from the repo file on every merge to main; edit the file, not this copy.\n\n"
+  },
+  {
+    "id": "7GzQiBOdNo8vWHWNsNdq",
+    "name": "Security, scalability and performance review — 23 Sep 2026 (2/2) — stability at the edges, addendum",
+    "sourcePath": "dsp-integration/docs/dsp-integration/api/SECURITY-PERFORMANCE.md",
+    "sourceSlices": [
+      {
+        "start": "## Stability under concurrency and at the edges — 24 Sep 2026"
+      }
+    ],
+    "sourcePrefix": "> Mirror of `dsp-integration/docs/dsp-integration/api/SECURITY-PERFORMANCE.md` (part 2 of 2) — the repo wins. Rewritten from the repo file on every merge to main; edit the file, not this copy.\n\n"
+  },
+  {
+    "id": "xzYDhGNzY1iLTDoRtouA",
+    "name": "Scale review — 15,000 displays on EKS, 24 Sep 2026 (1/2) — the deciding fact, measurements, what changed",
+    "sourcePath": "dsp-integration/docs/dsp-integration/api/SCALE-15000-EKS.md",
+    "sourceSlices": [
+      {
+        "end": "## Running several processes"
+      }
+    ],
+    "sourcePrefix": "> Mirror of `dsp-integration/docs/dsp-integration/api/SCALE-15000-EKS.md` (part 1 of 2) — the repo wins. Rewritten from the repo file on every merge to main; edit the file, not this copy.\n\n"
+  },
+  {
+    "id": "OYSF7AfeC4PCCPK7xdvf",
+    "name": "Scale review — 15,000 displays on EKS, 24 Sep 2026 (2/2) — several processes, security, verified, addendum",
+    "sourcePath": "dsp-integration/docs/dsp-integration/api/SCALE-15000-EKS.md",
+    "sourceSlices": [
+      {
+        "start": "## Running several processes"
+      }
+    ],
+    "sourcePrefix": "> Mirror of `dsp-integration/docs/dsp-integration/api/SCALE-15000-EKS.md` (part 2 of 2) — the repo wins. Rewritten from the repo file on every merge to main; edit the file, not this copy.\n\n"
+  },
+  {
+    "id": "Vd6akDtwNOrUSKoiuZCg",
+    "name": "Admin API performance review — 3 Oct 2026",
+    "sourcePath": "dsp-integration/docs/dsp-integration/api/ADMIN-API-PERFORMANCE.md",
+    "sourceSlices": [],
+    "sourcePrefix": "> Mirror of `dsp-integration/docs/dsp-integration/api/ADMIN-API-PERFORMANCE.md` — the repo wins. Rewritten from the repo file on every merge to main; edit the file, not this copy.\n\n"
+  },
+  {
+    "id": "Stonlf6Pp1EaS34ZePzG",
+    "name": "AWS demo — test flow (10 Dec 2026)",
+    "sourcePath": "dsp-integration/docs/dsp-integration/AWS-DEMO-TEST-FLOW.md",
+    "sourceSlices": [],
+    "sourcePrefix": "> Mirror of `dsp-integration/docs/dsp-integration/AWS-DEMO-TEST-FLOW.md` — the repo wins. Rewritten from the repo file on every merge to main; edit the file, not this copy.\n\n"
+  }
+]

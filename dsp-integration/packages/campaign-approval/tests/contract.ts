@@ -94,7 +94,7 @@ export function runApprovalContract(name: string, make: () => { source: Campaign
       await service.submit(id, [], 'advertiser')
       const v = (await service.view(id)).assetVersion
       await expect(service.reject(id, v, 'hq', ' ')).rejects.toMatchObject({ code: 'validation_failed' })
-      expect(await service.reject(id, v, 'hq', 'Price in artwork')).toMatchObject({ status: 'rejected', reason: 'Price in artwork' })
+      expect(await service.reject(id, v, 'hq', 'Price in artwork', undefined, 'price_or_offer_in_artwork')).toMatchObject({ status: 'rejected', reason: 'Price in artwork', reasonCode: 'price_or_offer_in_artwork' })
       expect(await service.isCampaignEligible(id)).toBe(false)
     })
 

@@ -464,7 +464,8 @@ describe('Run 2 — G. Approval lifecycle (non-happy)', () => {
     expect(h.ctx.config.rejectedCampaignRetentionDays).toBe(30)
     const { id } = await h.submitApiCampaign('Swisse — G4')
     await h.admin.reject(id, 'Not suitable.')
-    const now = Date.now()
+    /* The rejection is stamped by the context's clock (approvals follow it), so measure from there. */
+    const now = h.ctx.clock().getTime()
     await sweepRejectedCampaigns(h.ctx, 30, () => new Date(now + 29 * 86_400_000))
     expect(await h.ctx.campaigns.getCampaign(id)).not.toBeNull()
     await sweepRejectedCampaigns(h.ctx, 30, () => new Date(now + 31 * 86_400_000))

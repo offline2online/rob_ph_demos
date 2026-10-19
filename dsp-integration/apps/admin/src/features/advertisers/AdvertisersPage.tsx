@@ -8,7 +8,7 @@ import { App, Button, Input, InputNumber, Modal, Select, Spin, Switch } from 'an
 import { Tip } from '../../shared/Tip'
 import { cpmKindHint, cpmSummary, sourceLabel } from './effectiveTerm'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
-import { INTERACTIVE_ENABLED, PLATFORM_DEFAULT_BILLING_UNIT_HOURS, DEFAULT_MAX_CAMPAIGNS, FLOOR_CPM_TIP, MAX_MAX_CAMPAIGNS, MAX_MAX_PLAY_LENGTH_SEC, MIN_MAX_CAMPAIGNS, MIN_MAX_PLAY_LENGTH_SEC, SLOT_OWNERS, ALL_DSPS_LABEL, assignedLabels, directLabel, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type Session, storeZoneLabel, type StoreZone } from '@ph-dsp/types'
+import { INTERACTIVE_ENABLED, PLATFORM_DEFAULT_BILLING_UNIT_HOURS, DEFAULT_MAX_CAMPAIGNS, FLOOR_CPM_TIP, MAX_MAX_CAMPAIGNS, MAX_MAX_PLAY_LENGTH_SEC, MIN_MAX_CAMPAIGNS, MIN_MAX_PLAY_LENGTH_SEC, SLOT_OWNERS, ALL_DSPS_LABEL, assignedLabels, directLabel, type Advertiser, type AdvertiserSetting, type AssignedTo, type AvailableInventoryRow, type BuyersList, type DspAdvertisers, type PlaylistDisplayType, type Session, storeZoneLabel, type StoreZone } from '@ph-dsp/types'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, ApiRequestError } from '../../api/client'
@@ -133,6 +133,8 @@ type InvCtx = { current: {
   maxCampaignsDefaults: Defaults
   maxPlayLengthDefaults: Defaults
   dsps: DspAdvertisers[]
+  /* Each playlist's display types, listed once for the whole response rather than on every row. */
+  playlistDisplayTypes: Record<string, PlaylistDisplayType[]>
   /* Names of the advertisers with a direct relationship with the retailer (no DSP). */
   direct: string[]
   buyersLists: BuyersList[]
@@ -157,19 +159,20 @@ type IP = ICellRendererParams<AvailableInventoryRow, unknown, InvCtx>
    hardware capability (Display Types → Enabled Features), carried over onto
    the playlist so they aren't lost with the column they used to live on;
    not any one booking's personalised targeting rules. */
-const PlaylistCell = ({ data }: ICellRendererParams<AvailableInventoryRow>) =>
-  data ? (
+const PlaylistCell = ({ data, context }: IP) => {
+  const types = (data?.playlistId && context.current.playlistDisplayTypes[data.playlistId]) || []
+  return data ? (
     <span className="inline-flex min-w-0 items-center gap-[5px]">
       {/* The name can be long and the column is hard to widen on a touch screen, so
           hovering or tapping it shows the full playlist name (ticket E2iOwJHM, 4 Oct 2026). */}
       {/* The hover also names the display types the playlist is assigned to, each with its description
-          (ticket NPs6MBZQ6CfhFPHmBuGp, 14 Oct 2026); a pre-14-Oct demo snapshot has none, so then just the name. */}
-      <Tip title={data.playlistDisplayTypes?.length ? (
+          (ticket NPs6MBZQ6CfhFPHmBuGp, 14 Oct 2026); a demo snapshot without the list shows just the name. */}
+      <Tip title={types.length ? (
         <div>
           <div style={{ fontWeight: 500 }}>{data.playlistName}</div>
-          <div style={{ marginTop: 4 }}>Assigned display type{data.playlistDisplayTypes.length === 1 ? '' : 's'}:</div>
+          <div style={{ marginTop: 4 }}>Assigned display type{types.length === 1 ? '' : 's'}:</div>
           <ul style={{ margin: '2px 0 0', paddingLeft: 16 }}>
-            {data.playlistDisplayTypes.map((d) => (
+            {types.map((d) => (
               <li key={d.id}>
                 <span style={{ fontWeight: 500 }}>{d.name}</span>{d.description ? `: ${d.description}` : ' (no description)'}
                 {/* The IAB store zone set on the display type, when there is one (ticket yZ8BvwUQV4Yc7a0IVwak, 15 Oct 2026). */}
@@ -214,6 +217,7 @@ const PlaylistCell = ({ data }: ICellRendererParams<AvailableInventoryRow>) =>
       )}
     </span>
   ) : null
+}
 /* The hover names the slot's number, its zone and the display type with its description (ticket c5S06G5mN6F3GJTI8bxD,
    14 Oct 2026); a pre-14-Oct demo snapshot has neither zone nor description, so then just the number and display type. */
 const SlotCell = ({ data }: ICellRendererParams<AvailableInventoryRow>) =>
@@ -726,7 +730,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
   const canEdit = session.data?.role === 'hq_admin'
   /* Same key and request as Q.advertisers (the background prefetch); typed here. */
   const q = useQuery({ queryKey: Q.advertisers.queryKey, queryFn: () => api<Data>('GET', '/admin/v1/advertisers'), retry: false })
-  const inventory = useQuery({ queryKey: ['available-inventory'], queryFn: () => api<{ items: AvailableInventoryRow[]; dsps: DspAdvertisers[] }>('GET', '/admin/v1/available-inventory') })
+  const inventory = useQuery({ queryKey: ['available-inventory'], queryFn: () => api<{ items: AvailableInventoryRow[]; dsps: DspAdvertisers[]; playlistDisplayTypes?: Record<string, PlaylistDisplayType[]> }>('GET', '/admin/v1/available-inventory') })
   /* retry: false, same as the advertisers query above — an admin list fetch
      should fail fast, not retry three times with real-timer backoff delays
      that outlive the component (Rob, 23 Sep: this queued-up retry storm
@@ -995,7 +999,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
        type): the page finds that display type's default playlist and opens
        its settings. */
     open: (id: string) => navigate(`/playlists?displayTypeId=${encodeURIComponent(id)}`),
-    canEdit, currency: data.currency, edits: inv.draft ?? {}, billingUnitDefaults: billingUnitDefaults.draft ?? {}, maxCampaignsDefaults: maxCampaignsDefaults.draft ?? {}, maxPlayLengthDefaults: maxPlayLengthDefaults.draft ?? {}, dsps: inventory.data?.dsps ?? [], direct: data.items.filter((a) => a.direct).map((a) => a.name),
+    canEdit, currency: data.currency, edits: inv.draft ?? {}, billingUnitDefaults: billingUnitDefaults.draft ?? {}, maxCampaignsDefaults: maxCampaignsDefaults.draft ?? {}, maxPlayLengthDefaults: maxPlayLengthDefaults.draft ?? {}, dsps: inventory.data?.dsps ?? [], playlistDisplayTypes: inventory.data?.playlistDisplayTypes ?? {}, direct: data.items.filter((a) => a.direct).map((a) => a.name),
     buyersLists: buyersLists.data?.items ?? [],
     set: (key: string, patch: Partial<SlotEdit>) => inv.setDraft((cur) => (cur ? { ...cur, [key]: { ...cur[key], ...patch } } : cur)),
     setBillingUnitDefault: (displayTypeId: string, v: number | null) => billingUnitDefaults.setDraft((cur) => (cur ? { ...cur, [displayTypeId]: v } : cur)),

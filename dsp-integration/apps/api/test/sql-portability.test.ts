@@ -88,7 +88,7 @@ describe('arrival order without rowid', () => {
     const db = fresh()
     const store = approvalStore(db)
     for (const v of ARRIVAL) {
-      await store.upsert({ campaignId: 'c1', assetVersion: v, status: 'approved', mode: null, submittedAt: null, reviewedBy: null, reviewedAt: null, reason: null, assetReasons: [], checks: [] }, SAME_MS)
+      await store.upsert({ campaignId: 'c1', assetVersion: v, status: 'approved', mode: null, submittedAt: null, reviewedBy: null, reviewedAt: null, reason: null, reasonCode: null, assetReasons: [], checks: [] }, SAME_MS)
       await store.audit('c1', v, 'submitted', null, null, SAME_MS)
     }
     expect((await store.rows('c1')).map((r) => r.assetVersion)).toEqual(ARRIVAL)
@@ -96,7 +96,7 @@ describe('arrival order without rowid', () => {
     expect(await store.liveVersion('c1')).toBe('a_third')
     expect((await store.auditTrail('c1')).map((a) => a.assetVersion)).toEqual(ARRIVAL)
     /* Re-saving a row (an upsert that updates) keeps its place. */
-    await store.upsert({ campaignId: 'c1', assetVersion: 'z_first', status: 'approved', mode: null, submittedAt: null, reviewedBy: null, reviewedAt: null, reason: 'again', assetReasons: [], checks: [] }, SAME_MS)
+    await store.upsert({ campaignId: 'c1', assetVersion: 'z_first', status: 'approved', mode: null, submittedAt: null, reviewedBy: null, reviewedAt: null, reason: 'again', reasonCode: null, assetReasons: [], checks: [] }, SAME_MS)
     expect((await store.rows('c1')).map((r) => r.assetVersion)).toEqual(ARRIVAL)
   })
 
@@ -113,7 +113,7 @@ describe('arrival order without rowid', () => {
     }
     const store = approvalStore(asyncDb)
     for (const v of ARRIVAL) {
-      await store.upsert({ campaignId: 'c1', assetVersion: v, status: 'approved', mode: null, submittedAt: null, reviewedBy: null, reviewedAt: null, reason: null, assetReasons: [], checks: [] }, SAME_MS)
+      await store.upsert({ campaignId: 'c1', assetVersion: v, status: 'approved', mode: null, submittedAt: null, reviewedBy: null, reviewedAt: null, reason: null, reasonCode: null, assetReasons: [], checks: [] }, SAME_MS)
       await store.audit('c1', v, 'submitted', null, null, SAME_MS)
     }
     expect((await store.rows('c1')).map((r) => r.assetVersion)).toEqual(ARRIVAL)

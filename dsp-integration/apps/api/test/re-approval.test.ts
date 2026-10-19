@@ -46,7 +46,7 @@ async function setup(dspFetch?: Fetch) {
     return res.json()
   }
   const approve = (id: string, assetVersion: string) => app.inject({ method: 'POST', url: `/api/admin/v1/campaigns/${id}/approve`, payload: { assetVersion } })
-  const reject = (id: string, assetVersion: string, reason: string) => app.inject({ method: 'POST', url: `/api/admin/v1/campaigns/${id}/reject`, payload: { assetVersion, reason } })
+  const reject = (id: string, assetVersion: string, reason: string) => app.inject({ method: 'POST', url: `/api/admin/v1/campaigns/${id}/reject`, payload: { assetVersion, reason, reasonCode: 'other' } })
   const activate = (id: string) => app.inject({ method: 'PUT', url: `/api/admin/v1/campaigns/${id}/activation`, payload: { enabled: true } })
   /* A Swisse (approval required) Menu Board campaign, approved at v1 with A and switched on. */
   const running = async () => {

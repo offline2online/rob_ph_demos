@@ -1,0 +1,355 @@
+{
+  "projectId": "mIPdOCAWevhrgD8g2tCZ",
+  "startHere": "start-here",
+  "mirrors": [
+    {
+      "key": "start-here",
+      "id": "tiApBmLe5GDkqrqrcIjD",
+      "path": "dsp-integration/docs/dsp-integration/START-HERE.md",
+      "name": "0 — Start here: handover index and reading order"
+    },
+    {
+      "key": "handover-review-1",
+      "id": "ezhL36100y402EButyl9",
+      "path": "dsp-integration/docs/dsp-integration/api/HANDOVER-REVIEW.md",
+      "name": "Handover review & porting checklist (1/2) — how it separates, what the review fixed",
+      "slices": [
+        {
+          "end": "## 3. Measured"
+        }
+      ]
+    },
+    {
+      "key": "handover-review-2",
+      "id": "Rd8j4S10FYbXTBFG4efN",
+      "path": "dsp-integration/docs/dsp-integration/api/HANDOVER-REVIEW.md",
+      "name": "Handover review & porting checklist (2/2) — measured, left for engineering, porting order",
+      "slices": [
+        {
+          "start": "## 3. Measured"
+        }
+      ]
+    },
+    {
+      "key": "ph-core-boundaries-1",
+      "id": "mDJ50oQKTbgaKPvxeCUs",
+      "path": "dsp-integration/docs/dsp-integration/api/PH-CORE-BOUNDARIES.md",
+      "name": "Boundaries with PH Core (1/7) — the rule and the seams PH Core must provide",
+      "slices": [
+        {
+          "end": "### What each seam must guarantee"
+        }
+      ]
+    },
+    {
+      "key": "ph-core-boundaries-2",
+      "id": "W140rfmV19EdPYQnBeTJ",
+      "path": "dsp-integration/docs/dsp-integration/api/PH-CORE-BOUNDARIES.md",
+      "name": "Boundaries with PH Core (2/7) — what each seam must guarantee",
+      "slices": [
+        {
+          "start": "### What each seam must guarantee",
+          "end": "### Tables: whose they are"
+        }
+      ]
+    },
+    {
+      "key": "ph-core-boundaries-3",
+      "id": "PnWgzNqVScsyfEehXKbl",
+      "path": "dsp-integration/docs/dsp-integration/api/PH-CORE-BOUNDARIES.md",
+      "name": "Boundaries with PH Core (3/7) — tables: whose they are",
+      "slices": [
+        {
+          "start": "### Tables: whose they are",
+          "end": "## Outbound boundaries — what this build calls"
+        }
+      ]
+    },
+    {
+      "key": "ph-core-boundaries-4",
+      "id": "DxlzNnE7612X3LhJVWYo",
+      "path": "dsp-integration/docs/dsp-integration/api/PH-CORE-BOUNDARIES.md",
+      "name": "Boundaries with PH Core (4/7) — outbound, inbound, edge, more than one instance",
+      "slices": [
+        {
+          "start": "## Outbound boundaries — what this build calls",
+          "end": "## Authentication seams — partner identity, advertiser principal (spec only, REQUIREMENTS §9.5)"
+        }
+      ]
+    },
+    {
+      "key": "ph-core-boundaries-5",
+      "id": "HFcBgw7dPEL9CQhcM6fY",
+      "path": "dsp-integration/docs/dsp-integration/api/PH-CORE-BOUNDARIES.md",
+      "name": "Boundaries with PH Core (5/7) — authentication seams (AUTH)",
+      "slices": [
+        {
+          "start": "## Authentication seams — partner identity, advertiser principal (spec only, REQUIREMENTS §9.5)",
+          "end": "## Real-time bidding — the player signals, the exchange fills (7 Oct 2026)"
+        }
+      ]
+    },
+    {
+      "key": "ph-core-boundaries-6",
+      "id": "M2NrMcycXZ4TVWF8wkBK",
+      "path": "dsp-integration/docs/dsp-integration/api/PH-CORE-BOUNDARIES.md",
+      "name": "Boundaries with PH Core (6/7) — real-time bidding, pre-caching, bandwidth, web and app slots",
+      "slices": [
+        {
+          "start": "## Real-time bidding — the player signals, the exchange fills (7 Oct 2026)",
+          "end": "## Reserved for later releases (REQUIREMENTS §9, spec only)"
+        }
+      ]
+    },
+    {
+      "key": "ph-core-boundaries-7",
+      "id": "uXwdjH0eChupvSfSrukJ",
+      "path": "dsp-integration/docs/dsp-integration/api/PH-CORE-BOUNDARIES.md",
+      "name": "Boundaries with PH Core (7/7) — reserved, open, venue, canvas and format, analytics",
+      "slices": [
+        {
+          "start": "## Reserved for later releases (REQUIREMENTS §9, spec only)"
+        }
+      ]
+    },
+    {
+      "key": "campaign-approval-1",
+      "id": "6O7ZNvasbMcn3q9dycY7",
+      "path": "dsp-integration/docs/dsp-integration/CAMPAIGN-APPROVAL-INTEGRATION.md",
+      "name": "Campaign approval integration guide (1/2) — adapter, components, eligibility",
+      "slices": [
+        {
+          "end": "## 4. Run the approval migration, or move the fields onto the campaign"
+        }
+      ]
+    },
+    {
+      "key": "campaign-approval-2",
+      "id": "tMoTHRAx74HWzyTs94B5",
+      "path": "dsp-integration/docs/dsp-integration/CAMPAIGN-APPROVAL-INTEGRATION.md",
+      "name": "Campaign approval integration guide (2/2) — migrations, clean-up, contract tests, creative IDs",
+      "slices": [
+        {
+          "start": "## 4. Run the approval migration, or move the fields onto the campaign"
+        }
+      ]
+    },
+    {
+      "key": "api-reference-1",
+      "id": "pa2M9hncfxXsEYgSc33G",
+      "path": "dsp-integration/docs/dsp-integration/api/API.md",
+      "name": "API reference (1/5) — surfaces, conventions, pricing maths",
+      "slices": [
+        {
+          "end": "## Partner API — `/v1`"
+        }
+      ]
+    },
+    {
+      "key": "api-reference-2",
+      "id": "FfBh1EnAh58FPPhK6RU6",
+      "path": "dsp-integration/docs/dsp-integration/api/API.md",
+      "name": "API reference (2/5) — Partner API /v1",
+      "slices": [
+        {
+          "start": "## Partner API — `/v1`",
+          "end": "## Admin API — `/admin/v1`"
+        }
+      ]
+    },
+    {
+      "key": "api-reference-3",
+      "id": "GpUGYxHvdGsQYZ9UNxSC",
+      "path": "dsp-integration/docs/dsp-integration/api/API.md",
+      "name": "API reference (3/5) — Admin API: exchange, advertiser settings, variables, DSPs, advertisers",
+      "slices": [
+        {
+          "start": "## Admin API — `/admin/v1`",
+          "end": "### Buyers lists (private auctions; admin only)"
+        }
+      ]
+    },
+    {
+      "key": "api-reference-4",
+      "id": "ABIsJgZHbGv5iKiZb0fb",
+      "path": "dsp-integration/docs/dsp-integration/api/API.md",
+      "name": "API reference (4/5) — Admin API: buyers lists, campaign approval, display types",
+      "slices": [
+        {
+          "start": "### Buyers lists (private auctions; admin only)",
+          "end": "## POC stand-ins for the existing platform"
+        }
+      ]
+    },
+    {
+      "key": "api-reference-5",
+      "id": "tVxupKgza0snxjhLtUd4",
+      "path": "dsp-integration/docs/dsp-integration/api/API.md",
+      "name": "API reference (5/5) — stand-ins, jobs, operations, sellers.json, OpenRTB",
+      "slices": [
+        {
+          "start": "## POC stand-ins for the existing platform"
+        }
+      ]
+    },
+    {
+      "key": "eks-deployment",
+      "id": "T6nK6QNidO4L30K7vsOo",
+      "path": "dsp-integration/deploy/kubernetes/README.md",
+      "name": "EKS deployment guide — the exchange in a client's VPC"
+    },
+    {
+      "key": "security-performance-1",
+      "id": "qudg1TvEwov2PINmJD4p",
+      "path": "dsp-integration/docs/dsp-integration/api/SECURITY-PERFORMANCE.md",
+      "name": "Security, scalability and performance review — 23 Sep 2026 (1/2) — measurements, what changed, left",
+      "slices": [
+        {
+          "end": "## Stability under concurrency and at the edges — 24 Sep 2026"
+        }
+      ]
+    },
+    {
+      "key": "security-performance-2",
+      "id": "7GzQiBOdNo8vWHWNsNdq",
+      "path": "dsp-integration/docs/dsp-integration/api/SECURITY-PERFORMANCE.md",
+      "name": "Security, scalability and performance review — 23 Sep 2026 (2/2) — stability at the edges, addendum",
+      "slices": [
+        {
+          "start": "## Stability under concurrency and at the edges — 24 Sep 2026"
+        }
+      ]
+    },
+    {
+      "key": "scale-15000-eks-1",
+      "id": "xzYDhGNzY1iLTDoRtouA",
+      "path": "dsp-integration/docs/dsp-integration/api/SCALE-15000-EKS.md",
+      "name": "Scale review — 15,000 displays on EKS, 24 Sep 2026 (1/2) — the deciding fact, measurements, what changed",
+      "slices": [
+        {
+          "end": "## Running several processes"
+        }
+      ]
+    },
+    {
+      "key": "scale-15000-eks-2",
+      "id": "OYSF7AfeC4PCCPK7xdvf",
+      "path": "dsp-integration/docs/dsp-integration/api/SCALE-15000-EKS.md",
+      "name": "Scale review — 15,000 displays on EKS, 24 Sep 2026 (2/2) — several processes, security, verified, addendum",
+      "slices": [
+        {
+          "start": "## Running several processes"
+        }
+      ]
+    },
+    {
+      "key": "admin-api-performance",
+      "id": "Vd6akDtwNOrUSKoiuZCg",
+      "path": "dsp-integration/docs/dsp-integration/api/ADMIN-API-PERFORMANCE.md",
+      "name": "Admin API performance review — 3 Oct 2026"
+    },
+    {
+      "key": "aws-demo-test-flow",
+      "id": "Stonlf6Pp1EaS34ZePzG",
+      "path": "dsp-integration/docs/dsp-integration/AWS-DEMO-TEST-FLOW.md",
+      "name": "AWS demo — test flow (10 Dec 2026)"
+    },
+    {
+      "key": "e2e-test-spec-1",
+      "id": "f34VQZCy2kkWJfBP6Iwp",
+      "path": "dsp-integration/docs/dsp-integration/E2E-TEST-SPEC.md",
+      "name": "End-to-End Test Spec — DSP Demand Paths (v2) (1/3) — demand paths, how to run, Run 1",
+      "slices": [
+        {
+          "end": "## Run 2 — Open auction, non-happy paths (hardening)"
+        }
+      ]
+    },
+    {
+      "key": "e2e-test-spec-2",
+      "path": "dsp-integration/docs/dsp-integration/E2E-TEST-SPEC.md",
+      "name": "End-to-End Test Spec — DSP Demand Paths (v2) (2/3) — Runs 2–8, hardening to AWS creative IDs",
+      "slices": [
+        {
+          "start": "## Run 2 — Open auction, non-happy paths (hardening)",
+          "end": "## Run 9 — Flow 0: retailer setup (AWS demo setup flow)"
+        }
+      ]
+    },
+    {
+      "key": "e2e-test-spec-3",
+      "path": "dsp-integration/docs/dsp-integration/E2E-TEST-SPEC.md",
+      "name": "End-to-End Test Spec — DSP Demand Paths (v2) (3/3) — Runs 9–11, Run 6 journey, gaps",
+      "slices": [
+        {
+          "start": "## Run 9 — Flow 0: retailer setup (AWS demo setup flow)"
+        }
+      ]
+    },
+    {
+      "key": "hosted-demo-api",
+      "path": "dsp-integration/deploy/firebase/README.md",
+      "name": "Hosted demo API — deploy, reset and limits"
+    }
+  ],
+  "boardDocs": [
+    {
+      "id": "Z8zTfPN9nWdFBHLIfstA",
+      "status": "superseded",
+      "note": "Read instead: dsp-integration/docs/dsp-integration/api/openapi.yaml and REQUIREMENTS.md §8. The 1 Oct samples carry fields removed since (reservePrice, personalisedMultiplier, companyPlayWindowHours)."
+    },
+    {
+      "id": "IxRaoB46J4EkWmvWcEp3",
+      "status": "superseded",
+      "note": "Read instead: E2E-TEST-SPEC.md Run 6 and `npm run e2e:journey`. This runbook bills personalised plays × a multiplier; the journey now asserts there is none."
+    },
+    {
+      "id": "fDH2mzNJwuGDOn3akYYq",
+      "status": "superseded",
+      "note": "Read instead: the e2e-quick and e2e-nightly workflows. Its own status line says it was built by 2 Oct 2026."
+    },
+    {
+      "id": "5OIhv92O0F3nVlxwTXYK",
+      "status": "superseded",
+      "note": "Point-in-time review (1–2 Oct 2026). Read instead: its archived Reconcile ticket on the board."
+    },
+    {
+      "id": "82JOKUbyawrjNgfTPpzL",
+      "status": "superseded",
+      "note": "Point-in-time review (1–2 Oct 2026). Read instead: shared/interface-contract.md."
+    },
+    {
+      "id": "EKE7BAnIXbe2Cb50PYes",
+      "status": "superseded",
+      "note": "Point-in-time review (1–2 Oct 2026). Read instead: its archived Reconcile ticket on the board."
+    },
+    {
+      "id": "UlqDtjZgaagbdPFWP2KW",
+      "status": "superseded",
+      "note": "Applied by nSrDVrcILDQbXZNafhjX in d0bb03d (PR #306). Read instead: REQUIREMENTS.md since d0bb03d."
+    }
+  ],
+  "docsImpact": [
+    {
+      "when": [
+        "dsp-integration/apps/api/src/db/migrations/**",
+        "dsp-integration/packages/*/migrations/**"
+      ],
+      "require": [
+        "dsp-integration/docs/dsp-integration/REQUIREMENTS.md"
+      ],
+      "why": "A migration changes the data model: update REQUIREMENTS.md §8 Data model."
+    },
+    {
+      "when": [
+        "dsp-integration/docs/dsp-integration/api/openapi.yaml",
+        "dsp-integration/packages/types/src/openapi.d.ts"
+      ],
+      "require": [
+        "dsp-integration/docs/dsp-integration/REQUIREMENTS.md",
+        "dsp-integration/docs/dsp-integration/api/API.md"
+      ],
+      "why": "The API contract changed: say what changed in API.md or REQUIREMENTS.md."
+    }
+  ]
+}

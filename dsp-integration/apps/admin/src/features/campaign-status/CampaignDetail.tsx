@@ -125,7 +125,7 @@ export function CampaignDetail() {
             canApprove={canApprove}
             busy={busy === id}
             onApprove={() => approve(approval)}
-            onReject={(r) => reject(approval, r)}
+            onReject={(r, code) => reject(approval, r, code)}
             /* While Awaiting approval, the status bar keeps showing the
                activation toggle — disabled, since it can't be activated yet
                — right next to the segmented control (ticket, 26 Sep). */
@@ -159,7 +159,7 @@ export function CampaignDetail() {
             key: 'creative',
             label: 'Creative',
             children: approval
-              ? <ApprovalReviewPanel approval={approval} canApprove={canApprove} busy={busy === id} onApprove={() => approve(approval)} onReject={(r) => reject(approval, r)} onUnreject={() => unreject(approval)} />
+              ? <ApprovalReviewPanel approval={approval} canApprove={canApprove} busy={busy === id} onApprove={() => approve(approval)} onReject={(r, code) => reject(approval, r, code)} onUnreject={() => unreject(approval)} />
               : <Spin />,
           },
         ]}

@@ -28,10 +28,10 @@ These are **three distinct things; never conflate them**:
 ## How to run this
 
 - **Runs 1–5: autonomous, outside the three-phase pipeline; everything mocked at the API layer** (see *Stubs required*). Never call a real DSP, playback store or PH Core service. Reuse `apps/api/test/e2e/harness.ts`, `apps/dsp-mocks`, and the `apps/api/src/context.ts` seam-swap pattern.
-- **Run 6 is the exception** — it runs against a real running instance, part browser, part API. Execute it from **Run 6 Runbook — agent instructions**.
+- **Run 6 is the exception** — it runs against a real running instance, part browser, part API. Run it with `npm run e2e:journey` and this spec's own Run 6 section below.
 - **Run command (1–5):** `cd dsp-integration/apps/api && npx vitest run test/e2e` (one run: add `-t "<run or case id>"`). Execute Run 2 → 5 in order (Runs 7–8 are in the same `e2e:quick`); Run 1 re-runs first as a regression baseline.
 - **On any failure, raise a backlog ticket** (see *Raising tickets on failure*). One ticket per distinct issue.
-- **Record results** in a new project document per session: `E2E Test Results — <date> (Runs <n–m>)` via `create_project_document` on projectId `mIPdOCAWevhrgD8g2tCZ`. Do not edit this spec to record results.
+- **Record results** with `npm run e2e:report -- <results files>`, which updates the one project document "E2E results — latest". Never create dated results documents, and do not edit this spec to record results.
 
 ## Run history
 
@@ -262,4 +262,4 @@ For each distinct failing case, `create_backlog_item` on projectId `mIPdOCAWevhr
 - **Title:** `E2E <run>: <case id> — <one-line symptom>`.
 - **Description:** case id and intent, expected vs actual, stub inputs (or browser/API steps for Run 6), repro command, and the REQUIREMENTS section (§3 approval, §4 pricing/billing, §5 inventory, §6 submission, §7 exchange).
 - **Area:** best fit (Backend / Infrastructure, Pricing & Offers, Product Assets).
-- Before filing, `list_backlog_items` with the case id to avoid re-filing a still-open ticket; if one exists, comment instead. If two cases share a root cause, file both and cross-reference. Keep case ids stable across runs.
+- Before filing, `list_backlog_items` with the case id (search covers archived tickets too; if the tool has `includeArchived`, pass `false`, otherwise read each match's `status`). Comment only on a match in Backlog, Ready for Testing or Approved for Deployment. A match that is archived or already Deployed means the bug came back: file a new ticket that names the old id. If two cases share a root cause, file both and cross-reference. Keep case ids stable across runs.

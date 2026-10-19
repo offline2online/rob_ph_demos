@@ -58,6 +58,7 @@ import { runAuction } from '../src/exchange/auction'
 import { runBilling } from '../src/exchange/billing'
 import { allPositions, nextWindow, windowMs, windowStartOf } from '../src/domain/positions'
 import { mockDsps } from '../test/helpers'
+import { ratePerSecond } from './rate'
 
 /* --assert / --calibrate: the regression gate (bench/gate.ts) runs this file
    per shape and compares; nothing below runs in that process. */
@@ -179,12 +180,14 @@ async function drive(label: string, req: () => Promise<Response | null>, ok: (st
   let errors = 0
   /* The first few unexpected answers, so an error count is never a mystery. */
   const samples: string[] = []
-  const until = performance.now() + SECONDS * 1000
+  const started = performance.now()
+  const until = started + SECONDS * 1000
+  let ranOut = false
   await Promise.all(Array.from({ length: CONCURRENCY }, async () => {
     while (performance.now() < until) {
       const t = performance.now()
       const r = await req()
-      if (!r) return
+      if (!r) { ranOut = true; return }
       const body = await r.text()
       lat.push(performance.now() - t)
       if (!ok(r.status)) {
@@ -194,12 +197,16 @@ async function drive(label: string, req: () => Promise<Response | null>, ok: (st
     }
   }))
   lat.sort((a, b) => a - b)
-  metrics[`${label}|rps`] = Math.round(lat.length / SECONDS)
+  /* A driver with a fixed amount of work (the bids) can finish before --seconds; its rate is over the time it took. */
+  const elapsedMs = performance.now() - started
+  const rps = ratePerSecond(lat.length, SECONDS, elapsedMs, ranOut)
+  metrics[`${label}|rps`] = rps
   metrics[`${label}|p50`] = Math.round(pct(lat, 50) * 10) / 10
   metrics[`${label}|errors`] = errors
   console.log(
-    `${label.padEnd(46)} ${String(Math.round(lat.length / SECONDS)).padStart(6)} req/s   p50 ${pct(lat, 50).toFixed(1).padStart(6)} ms   p95 ${pct(lat, 95).toFixed(1).padStart(6)} ms   p99 ${pct(lat, 99).toFixed(1).padStart(6)} ms   errors ${errors}`,
+    `${label.padEnd(46)} ${String(rps).padStart(6)} req/s   p50 ${pct(lat, 50).toFixed(1).padStart(6)} ms   p95 ${pct(lat, 95).toFixed(1).padStart(6)} ms   p99 ${pct(lat, 99).toFixed(1).padStart(6)} ms   errors ${errors}`,
   )
+  if (ranOut && elapsedMs < SECONDS * 1000) console.log(`${''.padEnd(46)}   ran out of bids after ${(elapsedMs / 1000).toFixed(1)} s`)
   for (const s of samples) console.log(`${''.padEnd(46)}   e.g. ${s}`)
 }
 

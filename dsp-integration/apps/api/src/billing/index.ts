@@ -54,6 +54,8 @@ export interface LineItem {
   reservationId: string
   partnerId: string
   advertiserId: string | null
+  /* The winning DSP seat, copied from the reservation (null on a Partner API booking): demand by DSP seat in Retail Media Insights. */
+  seatId?: string | null
   campaignId: string
   positionId: string
   windowStart: string
@@ -118,7 +120,7 @@ export async function computeLineItem(ctx: Context, r: ReservationRecord, p: Pos
   const realisedViews = Math.round(assumedViews * (expectedSec > 0 ? Math.min(1, played.playedSec / expectedSec) : 0))
   const cpm = r.clearingCpm as number
   return {
-    id: `bl_${randomUUID().slice(0, 12)}`, reservationId: r.id, partnerId: r.partnerId, advertiserId: r.advertiserId, campaignId: r.campaignId as string,
+    id: `bl_${randomUUID().slice(0, 12)}`, reservationId: r.id, partnerId: r.partnerId, advertiserId: r.advertiserId, seatId: r.seatId ?? null, campaignId: r.campaignId as string,
     positionId: r.positionId, windowStart: r.windowStart, windowEnd: new Date(end).toISOString(), plays: played.plays, playedSec: played.playedSec, expectedSec,
     assumedViews, realisedViews, cpm, currency: r.currency, amount: round2((realisedViews / 1000) * cpm),
     playsByVersion: played.byVersion ?? [],

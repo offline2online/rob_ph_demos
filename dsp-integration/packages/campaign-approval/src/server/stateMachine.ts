@@ -7,12 +7,12 @@
      auto-approve when the advertiser doesn't require approval
      approve without review when every asset was already human-cleared at
        the same content hash (safe reuse, spec §3, Q40). */
-import type { ApprovalMode, ApprovalStatus, AssetRejection, AuditAction } from '../types'
+import type { ApprovalMode, ApprovalStatus, AssetRejection, AuditAction, RejectionCode } from '../types'
 
 export type ApprovalEvent =
   | { type: 'submit'; requiresApproval: boolean; preCleared?: boolean }
   | { type: 'approve' }
-  | { type: 'reject'; reason: string; assetReasons?: AssetRejection[] }
+  | { type: 'reject'; reason: string; reasonCode?: RejectionCode; assetReasons?: AssetRejection[] }
   | { type: 'unreject'; reason?: string }
   | { type: 'change'; requiresApproval: boolean; preCleared?: boolean }
 

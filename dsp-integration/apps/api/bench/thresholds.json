@@ -1,23 +1,115 @@
 {
-  "_about": "Regression gate for npm run bench -- --assert (E2E Testing Strategy §3.7, ticket YDuDawBIoLKuPRK0uCMO). Seeded from the 'after' column of the 24 Sep 2026 scale review (Scale review — 15,000 displays on a client's EKS; one Node process, 4 vCPU). rps must stay above threshold × (1 − tolerance); ms must stay below threshold × (1 + tolerance). A deliberate change updates this file in the same PR. `--calibrate` writes bench/baseline.local.json (git-ignored) from this machine, which --assert then prefers.",
+  "_about": "Regression gate for npm run bench -- --assert (E2E Testing Strategy §3.7, ticket YDuDawBIoLKuPRK0uCMO). Re-baselined 19 Oct 2026 (ticket IqAdH5i8jWIGNElQR135) from `npm run bench -- --calibrate` at 86c73c42 plus that ticket's change, on a 4 vCPU / 16 GB cloud sandbox; before that, seeded from the 24 Sep 2026 scale review and last changed 3 Oct (81a1947d). rps must stay above threshold × (1 − tolerance); ms must stay below threshold × (1 + tolerance). A deliberate change updates this file in the same PR; changing it changes the nightly's cache key, so CI recalibrates on its next run. `--calibrate` writes bench/baseline.local.json (git-ignored) from the machine, which --assert then prefers. Since 8 Oct (f11bb1f7) every synthetic slot is one private-auction deal and bids go to 3 windows, so shapes C and T send only 1,020-1,206 bids and POST /v1/reservations is now measured over the time the bids took (bench/rate.ts), not --seconds. Moved by more than 25% against the 3 Oct file, with the reason: POST /v1/reservations in all four shapes (992-1,035 → 546-608 req/s): the 8 Oct workload, each bid now a deal bid over 3 windows; GET /v1/inventory page of 50 (35-51 → 99-126 ms p50, 582-850 → 231-255 req/s) and ?status=available (1 yr) (62-83 → 266-301 ms p50; B, C, T 384-502 → 97-107 req/s) and GET /admin/v1/booking-schedule, default and 92 d (A 4,374 → 9,450 and 26,378 → 38,820 ms; B 475 → 969; C 170 → 341 and 659 → 826; T 170 → 307 and 659 → 997 ms): the 8 Oct workload (every slot one deal) and the sandbox, which ran about 2× slower than the 3 Oct runner on the unchanged read paths; availability (7 d) and (1 yr) and GET /v1/inventory/{id} rose (2,187-2,347 → 3,480-4,128 req/s; 1 yr 672-704 → 2,740-3,446): the 8 Oct deal-only estate has fewer open windows to resolve, not a code change; C/T Available Inventory 59 → 96-105 ms (43 → 58 ms between 771cf9eb and f01c8ba1, cause not pinned); C auction 460 → 612 ms and B billing one window 370 → 189 ms, A billing tick 77 → 55 ms: run-to-run noise on a different machine. A's and B's Available Inventory thresholds (1836 and 213 ms) were deliberately NOT raised: after the one-list-per-playlist fix they must pass as committed.",
   "tolerance": 0.25,
   "args": "--stores=1000 --bidder-ms=80 --plays-per-display=1900 --history=100000 --seconds=3 --concurrency=32 --admin",
   "shapes": {
-    "A": { "args": "--scale=600 --displays-per-type=25", "note": "600 display types × 25 displays = 15,000 displays, 2,408 positions",
-      "rps": { "GET  /v1/inventory (page of 50)": 582, "GET  /v1/inventory?status=available (1 yr)": 96, "GET  /v1/inventory/{id}": 2377, "GET  /v1/inventory/{id}/availability (7 d)": 2240, "GET  /v1/inventory/{id}/availability (1 yr)": 672, "POST /v1/inventory/forecast (30 d)": 1323, "POST /v1/reservations": 1035 },
-      "p50": { "GET  /v1/inventory (page of 50)": 51, "GET  /v1/inventory?status=available (1 yr)": 320, "GET  /admin/v1/booking-schedule (default)": 4374, "GET  /admin/v1/booking-schedule (92 d)": 26378, "GET  /admin/v1/available-inventory": 1836, "GET  /admin/v1/campaigns": 1438, "GET  /admin/v1/advertisers": 175 },
-      "ms": { "auction": 12700, "billing tick": 77, "billing one window": 71 } },
-    "B": { "args": "--scale=60 --displays-per-type=250", "note": "60 × 250 = 15,000 displays, 248 positions",
-      "rps": { "GET  /v1/inventory (page of 50)": 782, "GET  /v1/inventory?status=available (1 yr)": 384, "GET  /v1/inventory/{id}": 2557, "GET  /v1/inventory/{id}/availability (7 d)": 2347, "GET  /v1/inventory/{id}/availability (1 yr)": 704, "POST /v1/inventory/forecast (30 d)": 1355, "POST /v1/reservations": 992 },
-      "p50": { "GET  /v1/inventory (page of 50)": 38, "GET  /v1/inventory?status=available (1 yr)": 83, "GET  /admin/v1/booking-schedule (default)": 475, "GET  /admin/v1/booking-schedule (92 d)": 2420, "GET  /admin/v1/available-inventory": 213, "GET  /admin/v1/campaigns": 1455, "GET  /admin/v1/advertisers": 157 },
-      "ms": { "auction": 1400, "billing tick": 84, "billing one window": 370 } },
-    "C": { "args": "--scale=15 --displays-per-type=1000", "note": "15 × 1,000 = 15,000 displays, 68 positions",
-      "rps": { "GET  /v1/inventory (page of 50)": 850, "GET  /v1/inventory?status=available (1 yr)": 502, "GET  /v1/inventory/{id}": 2588, "GET  /v1/inventory/{id}/availability (7 d)": 2187, "GET  /v1/inventory/{id}/availability (1 yr)": 704, "POST /v1/inventory/forecast (30 d)": 1387, "POST /v1/reservations": 992 },
-      "p50": { "GET  /v1/inventory (page of 50)": 35, "GET  /v1/inventory?status=available (1 yr)": 62, "GET  /admin/v1/booking-schedule (default)": 170, "GET  /admin/v1/booking-schedule (92 d)": 659, "GET  /admin/v1/available-inventory": 59, "GET  /admin/v1/campaigns": 1520, "GET  /admin/v1/advertisers": 152 },
-      "ms": { "auction": 460, "billing tick": 62, "billing one window": 650 } },
-    "T": { "args": "--scale=15 --displays-per-type=1000", "note": "ASSUMPTION (1 Oct 2026): the 7-Eleven Thailand estate as 15 display types × 1,000 displays × 4 slots = 15,000 displays, 60 positions — shape C's mix, pending CP Group confirming formats. Positions are what scale, not displays; replace this entry when the real display-type mix is known.",
-      "rps": { "GET  /v1/inventory (page of 50)": 850, "GET  /v1/inventory?status=available (1 yr)": 502, "GET  /v1/inventory/{id}": 2588, "GET  /v1/inventory/{id}/availability (7 d)": 2187, "GET  /v1/inventory/{id}/availability (1 yr)": 704, "POST /v1/inventory/forecast (30 d)": 1387, "POST /v1/reservations": 992 },
-      "p50": { "GET  /v1/inventory (page of 50)": 35, "GET  /v1/inventory?status=available (1 yr)": 62, "GET  /admin/v1/booking-schedule (default)": 170, "GET  /admin/v1/booking-schedule (92 d)": 659, "GET  /admin/v1/available-inventory": 59, "GET  /admin/v1/campaigns": 1520, "GET  /admin/v1/advertisers": 152 },
-      "ms": { "auction": 460, "billing tick": 62, "billing one window": 650 } }
+    "A": {
+      "args": "--scale=600 --displays-per-type=25",
+      "note": "600 display types × 25 displays = 15,000 displays, 2,408 positions",
+      "rps": {
+        "GET  /v1/inventory (page of 50)": 243,
+        "GET  /v1/inventory?status=available (1 yr)": 117,
+        "GET  /v1/inventory/{id}": 2709,
+        "GET  /v1/inventory/{id}/availability (7 d)": 3872,
+        "GET  /v1/inventory/{id}/availability (1 yr)": 2740,
+        "POST /v1/inventory/forecast (30 d)": 1347,
+        "POST /v1/reservations": 587
+      },
+      "p50": {
+        "GET  /v1/inventory (page of 50)": 116.7,
+        "GET  /v1/inventory?status=available (1 yr)": 264.8,
+        "GET  /admin/v1/booking-schedule (default)": 9450.3,
+        "GET  /admin/v1/booking-schedule (92 d)": 38820.3,
+        "GET  /admin/v1/available-inventory": 1836,
+        "GET  /admin/v1/campaigns": 1610.1,
+        "GET  /admin/v1/advertisers": 180.8
+      },
+      "ms": {
+        "auction": 13023,
+        "billing tick": 55,
+        "billing one window": 82
+      }
+    },
+    "B": {
+      "args": "--scale=60 --displays-per-type=250",
+      "note": "60 × 250 = 15,000 displays, 248 positions",
+      "rps": {
+        "GET  /v1/inventory (page of 50)": 248,
+        "GET  /v1/inventory?status=available (1 yr)": 107,
+        "GET  /v1/inventory/{id}": 3461,
+        "GET  /v1/inventory/{id}/availability (7 d)": 4128,
+        "GET  /v1/inventory/{id}/availability (1 yr)": 3446,
+        "POST /v1/inventory/forecast (30 d)": 1515,
+        "POST /v1/reservations": 608
+      },
+      "p50": {
+        "GET  /v1/inventory (page of 50)": 113.3,
+        "GET  /v1/inventory?status=available (1 yr)": 266.2,
+        "GET  /admin/v1/booking-schedule (default)": 969.2,
+        "GET  /admin/v1/booking-schedule (92 d)": 2774.9,
+        "GET  /admin/v1/available-inventory": 213,
+        "GET  /admin/v1/campaigns": 1477.9,
+        "GET  /admin/v1/advertisers": 163.7
+      },
+      "ms": {
+        "auction": 1483,
+        "billing tick": 76,
+        "billing one window": 189
+      }
+    },
+    "C": {
+      "args": "--scale=15 --displays-per-type=1000",
+      "note": "15 × 1,000 = 15,000 displays, 68 positions",
+      "rps": {
+        "GET  /v1/inventory (page of 50)": 231,
+        "GET  /v1/inventory?status=available (1 yr)": 107,
+        "GET  /v1/inventory/{id}": 2913,
+        "GET  /v1/inventory/{id}/availability (7 d)": 3573,
+        "GET  /v1/inventory/{id}/availability (1 yr)": 2998,
+        "POST /v1/inventory/forecast (30 d)": 1209,
+        "POST /v1/reservations": 546
+      },
+      "p50": {
+        "GET  /v1/inventory (page of 50)": 125.7,
+        "GET  /v1/inventory?status=available (1 yr)": 266.1,
+        "GET  /admin/v1/booking-schedule (default)": 340.8,
+        "GET  /admin/v1/booking-schedule (92 d)": 825.8,
+        "GET  /admin/v1/available-inventory": 95.7,
+        "GET  /admin/v1/campaigns": 1634.5,
+        "GET  /admin/v1/advertisers": 179.1
+      },
+      "ms": {
+        "auction": 612,
+        "billing tick": 70,
+        "billing one window": 708
+      }
+    },
+    "T": {
+      "args": "--scale=15 --displays-per-type=1000",
+      "note": "ASSUMPTION (1 Oct 2026): the 7-Eleven Thailand estate as 15 display types × 1,000 displays × 4 slots = 15,000 displays, 60 positions — shape C's mix, pending CP Group confirming formats. Positions are what scale, not displays; replace this entry when the real display-type mix is known.",
+      "rps": {
+        "GET  /v1/inventory (page of 50)": 255,
+        "GET  /v1/inventory?status=available (1 yr)": 97,
+        "GET  /v1/inventory/{id}": 2261,
+        "GET  /v1/inventory/{id}/availability (7 d)": 3480,
+        "GET  /v1/inventory/{id}/availability (1 yr)": 3371,
+        "POST /v1/inventory/forecast (30 d)": 1437,
+        "POST /v1/reservations": 571
+      },
+      "p50": {
+        "GET  /v1/inventory (page of 50)": 99.1,
+        "GET  /v1/inventory?status=available (1 yr)": 300.9,
+        "GET  /admin/v1/booking-schedule (default)": 306.6,
+        "GET  /admin/v1/booking-schedule (92 d)": 997.4,
+        "GET  /admin/v1/available-inventory": 104.8,
+        "GET  /admin/v1/campaigns": 1416.4,
+        "GET  /admin/v1/advertisers": 186
+      },
+      "ms": {
+        "auction": 461,
+        "billing tick": 69,
+        "billing one window": 649
+      }
+    }
   }
 }

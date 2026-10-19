@@ -25,7 +25,7 @@ collection record) — keep the repo files and those live records in sync.
 
 The board's `requirementsMd` for this project is in sync with
 `REQUIREMENTS.md` (spot-checked 1 Oct 2026), and the board's interface
-record (`EIIhnzWmieAnEyXffudb`) carries contract v3 — see
+record (`EIIhnzWmieAnEyXffudb`) carries contract v3.3 and mirrors
 [`../shared/interface-contract.md`](../shared/interface-contract.md).
 
 ## `prototype/` — clickable concept prototype

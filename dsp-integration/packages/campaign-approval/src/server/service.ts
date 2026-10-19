@@ -14,7 +14,7 @@
 import { createHash, randomBytes } from 'node:crypto'
 import type { CampaignRef, CampaignSource } from '../adapter/CampaignSource'
 import type { Awaitable, SqlDb } from '../db'
-import { STATUSES, type Approval, type ApprovalStatus, type AssetRejection, type Check, type CreativeIdView, type StatusCounts } from '../types'
+import { REJECTION_CODES, STATUSES, rejectionLabel, type Approval, type ApprovalStatus, type ApprovalSummary, type AssetRejection, type Check, type CreativeIdView, type RejectionCode, type StatusCounts } from '../types'
 import { type ApprovalRow, approvalStore } from './approvalStore'
 import { type ApprovalEvent, TransitionError, transition } from './stateMachine'
 
@@ -96,6 +96,7 @@ export function createApprovalService(o: ApprovalServiceOptions) {
       campaignId: c.campaignId, campaignName: c.name, ...(c.advertiserName ? { advertiserName: c.advertiserName } : {}), ...(c.partnerName ? { partnerName: c.partnerName } : {}),
       status: r?.status ?? 'draft', mode: r?.mode ?? null, assetVersion: c.assetVersion,
       submittedAt: r?.submittedAt ?? null, reviewedBy: r?.reviewedBy ?? null, reviewedAt: r?.reviewedAt ?? null, reason: r?.reason ?? null,
+      ...(r?.status === 'rejected' ? { reasonCode: r.reasonCode ?? 'other' } : {}),
       ...(r?.assetReasons?.length ? { assetReasons: r.assetReasons } : {}),
       checks: r?.checks ?? [],
       creativeId,
@@ -131,12 +132,13 @@ export function createApprovalService(o: ApprovalServiceOptions) {
       submittedAt: e.type === 'submit' || e.type === 'change' ? at : prev?.submittedAt ?? null,
       reviewedBy: reviewed ? (t.mode === 'auto' ? null : actor) : null, reviewedAt: reviewed ? at : null,
       reason: e.type === 'reject' ? e.reason.trim() : null,
+      reasonCode: e.type === 'reject' ? e.reasonCode ?? 'other' : null,
       assetReasons: e.type === 'reject' ? (e.assetReasons ?? []) : [],
       checks: patch.checks ?? prev?.checks ?? [],
     }, at)
     const auditReason = e.type === 'reject' ? e.reason.trim() : e.type === 'unreject' && e.reason?.trim() ? e.reason.trim() : null
     const auditAssetReasons = e.type === 'reject' ? e.assetReasons : undefined
-    for (const action of t.audit) await store.audit(c.campaignId, c.assetVersion, action, action === 'auto_approved' || action === 'reused_clearance' ? null : actor, auditReason, at, auditAssetReasons)
+    for (const action of t.audit) await store.audit(c.campaignId, c.assetVersion, action, action === 'auto_approved' || action === 'reused_clearance' ? null : actor, auditReason, at, auditAssetReasons, e.type === 'reject' ? e.reasonCode ?? 'other' : undefined)
     return t
   }
 
@@ -211,6 +213,38 @@ export function createApprovalService(o: ApprovalServiceOptions) {
       const limit = Math.min(Math.max(q.limit ?? 50, 1), 200)
       const items = filtered.slice(start, start + limit)
       return { counts, items, nextCursor: start + limit < filtered.length ? String(start + limit) : null }
+    },
+
+    /* The queue's health over the last `days` days, for the approver's page.
+       Turnaround and the rejection rate count the decisions a person made;
+       an automatic approval is in neither. Reasons come from the audit
+       log, so a rejected edit that was then discarded still counts, and a
+       rejection recorded before the pick-list reads 'other'. */
+    async summary(days = 30): Promise<ApprovalSummary> {
+      const nowMs = (o.now?.() ?? new Date()).getTime()
+      const decisions = await store.decisionsSince(new Date(nowMs - days * 86_400_000).toISOString())
+      const seconds = decisions.flatMap((d) => (d.submittedAt ? [Math.max(0, (Date.parse(d.at) - Date.parse(d.submittedAt)) / 1000)] : [])).sort((a, b) => a - b)
+      const mid = seconds.length >> 1
+      const median = seconds.length ? (seconds.length % 2 ? seconds[mid] : (seconds[mid - 1] + seconds[mid]) / 2) : null
+      const rejections = decisions.filter((d) => d.action === 'rejected')
+      const counts = new Map<RejectionCode, number>()
+      for (const r of rejections) counts.set(r.reasonCode ?? 'other', (counts.get(r.reasonCode ?? 'other') ?? 0) + 1)
+      const order = new Map(REJECTION_CODES.map((r, i) => [r.code, i] as const))
+      const top = [...counts].sort((a, b) => b[1] - a[1] || order.get(a[0])! - order.get(b[0])!).slice(0, 3).map(([code, count]) => ({ code, label: rejectionLabel(code), count }))
+      /* Only campaigns the table lists (an HQ campaign has no approval queue). */
+      const listed = new Map((await o.campaigns.listCampaigns({ sources: ['api', 'dsp'] })).map((c) => [c.campaignId, c] as const))
+      let oldest: ApprovalSummary['oldestWaiting'] = null
+      for (const w of await store.awaiting()) {
+        const c = listed.get(w.campaignId)
+        if (!c || !w.submittedAt || (oldest && w.submittedAt >= oldest.submittedAt)) continue
+        oldest = { campaignId: w.campaignId, campaignName: c.name, submittedAt: w.submittedAt, ageSeconds: Math.max(0, Math.round((nowMs - Date.parse(w.submittedAt)) / 1000)) }
+      }
+      return {
+        days, decided: decisions.length, rejected: rejections.length,
+        medianSecondsToDecision: median === null ? null : Math.round(median),
+        rejectionRate: decisions.length ? rejections.length / decisions.length : null,
+        oldestWaiting: oldest, topRejectionReasons: top,
+      }
     },
 
     /* Submission (package 12): Awaiting approval, or Approved automatically —
@@ -383,13 +417,13 @@ export function createApprovalService(o: ApprovalServiceOptions) {
       })
     },
 
-    async reject(id: string, assetVersion: string, reviewer: string, reason: string, assetReasons?: AssetRejection[]) {
+    async reject(id: string, assetVersion: string, reviewer: string, reason: string, assetReasons?: AssetRejection[], reasonCode?: RejectionCode) {
       if (!reason?.trim()) throw new ApprovalError(400, 'validation_failed', 'A reason is required.')
       return transaction(async () => {
       const c = await campaign(id)
       if (assetVersion !== c.assetVersion) throw new ApprovalError(409, 'conflict', 'The creative changed after you opened it. Review the new version.')
       const live = await store.liveVersion(id)
-      await apply(c, { type: 'reject', reason, assetReasons }, reviewer)
+      await apply(c, { type: 'reject', reason, assetReasons, reasonCode }, reviewer)
       if (!live || live === c.assetVersion) return toView(c, true)
       /* A rejected edit to a running campaign (Q38): discard it. The live
          version carries on untouched; the rejection and the discard stay
