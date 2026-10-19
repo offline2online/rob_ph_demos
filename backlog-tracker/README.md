@@ -254,8 +254,13 @@ What the train changes:
   **The train's required check runs as soon as a ticket lands, not first
   at Deploy to Main** (`TRAIN_TEST_WORKFLOWS`): the automation's pushes use
   `GITHUB_TOKEN`, which never fires another workflow's `push` trigger, so
-  it dispatches `firestore-rules-test.yml` for a `backlog-tracker/` change
-  and `e2e-quick.yml` for a `dsp-integration/` change itself, and
+  it dispatches `firestore-rules-test.yml` for a `backlog-tracker/` change,
+  `e2e-quick.yml` for a `dsp-integration/` change and
+  `retail-media-insights-tests.yml` for a `Retail-media-insights/` change
+  itself (the last added 18 Oct 2026 after PR #412 — the same gap, a third
+  time; `test/train-tests.test.js` now fails if a project folder with a
+  `test` script or a folder-scoped PR test workflow is missing from the
+  list), and
   `reportTrainTestResults` notes a red run on every Ready for Testing card
   on that train. A DSP prototype rebuild on top of the ticket doesn't hide
   it (`testedHeadOf`). The DSP half was added 6 Oct 2026 after PR #330 —
@@ -281,7 +286,12 @@ What the train changes:
   Backlog, `revertRequested`, its commits reverted off the branch — and is
   rebuilt once (`rebuildAfterRevert`, after the revert, so the rebuild starts
   from a clean train) with the failing run on its notes. An approved
-  culprit is never ejected; the deploy gate holds the train for a person.
+  culprit is held by the deploy gate until Deploy to Main has actually been
+  clicked and parked red on it (`trainStatus: "conflict"` with
+  `trainCiRedPr`); then it is ejected and rebuilt the same way, so the rest
+  of the approved train ships with no second click (18 Oct 2026, PR #412).
+  It is only ejected with a green commit before it, so a check that is red
+  on main itself never sends the train's first ticket back.
   Tests: `test/train-tests.test.js`.
 - **Reject** (`processRevertFromTrain`) — Failed testing on a card writes
   `revertRequested`, and the automation reverts that card's commits back

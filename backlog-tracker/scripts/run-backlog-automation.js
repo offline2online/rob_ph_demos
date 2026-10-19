@@ -1296,9 +1296,15 @@ function dispatchRebuilds(branch, paths, label) {
 // train branch whenever a ticket lands there, and reportTrainTestResults()
 // notes a failure on the train's cards while they are still in Ready for
 // Testing. One entry per project folder whose train has a required check.
+// On 18 Oct 2026 (PR #412) the Retail Media Insights train hit the same gap
+// a third time: its own suite was never listed here, so two sortable-table
+// tickets broke three UI smoke tests unseen and nine approved tickets parked
+// behind a red deploy. test/train-tests.test.js now fails if a workflow that
+// tests a project folder on its deploy branch is missing from this list.
 const TRAIN_TEST_WORKFLOWS = [
   { workflow: "firestore-rules-test.yml", prefix: "backlog-tracker/", label: "console tests" },
   { workflow: "e2e-quick.yml", prefix: "dsp-integration/", label: "DSP tests (e2e-quick)" },
+  { workflow: "retail-media-insights-tests.yml", prefix: "Retail-media-insights/", label: "Retail Media Insights tests" },
 ];
 const CONSOLE_TEST_WORKFLOW = TRAIN_TEST_WORKFLOWS[0].workflow;
 
@@ -1478,25 +1484,35 @@ function readTrainTestGate(deployBranch) {
 // person's "Failed testing" click does (back to Backlog + revertRequested,
 // so processRevertFromTrain takes its commits off the branch and the train
 // is green again) and rebuilds it once with the failing run on its notes.
-// An approved culprit is never ejected: that is a person's call, and the
-// deploy gate already holds the train for it.
+// An approved culprit is held by the deploy gate — until the deploy itself
+// has been clicked and parked red (trainStatus "conflict" with trainCiRedPr):
+// then the approval for the release has been given and the only thing
+// stopping it is that one ticket, so it is ejected and rebuilt the same way
+// and the rest of the train ships (PR #412, 18 Oct 2026: nine approved
+// tickets sat behind a red deploy overnight). An approved culprit is only
+// ejected with a green commit before it on the train, so a check that is
+// red on main itself never sends the train's first ticket back.
 //
 // Pure, for test/train-tests.test.js.
 //   order: the train's commits, oldest first
 //   cards: the train's cards ({ id, status, deployCommit })
 //   runs:  { [sha]: newest real run on that commit ({ status, conclusion }) }
+//   opts.deployParkedRed: the approved deploy is parked red (see above)
 // Returns the card to eject, or null (nothing red yet, the culprit is
-// approved, or the evidence is incomplete — a run still going or missing).
-function pickRedCulprit(order, cards, runs) {
+// approved and the deploy isn't parked, or the evidence is incomplete — a
+// run still going or missing).
+function pickRedCulprit(order, cards, runs, opts = {}) {
   const at = new Map((order || []).map((sha, i) => [sha, i]));
   const onTrain = (cards || []).filter((c) => c && at.has(c.deployCommit)).sort((a, b) => at.get(a.deployCommit) - at.get(b.deployCommit));
+  let greenBefore = false;
   for (const card of onTrain) {
     const r = (runs || {})[card.deployCommit];
     if (!r || String(r.status).toLowerCase() !== "completed") return null;
     const concl = String(r.conclusion).toLowerCase();
-    if (concl === "success") continue;
+    if (concl === "success") { greenBefore = true; continue; }
     if (!["failure", "timed_out"].includes(concl)) return null; // cancelled etc.: no verdict on this ticket
-    return card.status === "ready-for-testing" ? card : null;
+    if (card.status === "ready-for-testing") return card;
+    return opts.deployParkedRed && greenBefore ? card : null;
   }
   return null;
 }
@@ -1524,14 +1540,20 @@ async function ejectRedCulprits() {
           const real = newestRealRun(list);
           if (real) runs[c.deployCommit] = real;
         }
-        const culprit = pickRedCulprit(order, trainCards, runs);
+        const projectId = (trainCards.find((c) => c.projectId) || {}).projectId || null;
+        const trainProject = projectId ? await getProject(projectId).catch(() => null) : null;
+        const deployParkedRed = !!trainProject && trainProject.trainStatus === "conflict" && !!Number(trainProject.trainCiRedPr);
+        const culprit = pickRedCulprit(order, trainCards, runs, { deployParkedRed });
         if (!culprit) continue;
         const r = runs[culprit.deployCommit];
-        const project = await getProject(culprit.projectId).catch(() => null);
+        const wasApproved = culprit.status === "ready-to-publish";
+        const project = culprit.projectId === projectId ? trainProject : await getProject(culprit.projectId).catch(() => null);
         const autoRebuild = !!project && (Number(culprit.autoRebuilds) || 0) < 1;
         const text = `${t.label} (${t.workflow}) failed on this ticket's own commit ${culprit.deployCommit.slice(0, 7)} while everything before it on ${branch} passed: ${r.url || ""}`;
         const notes = await appendNote(culprit,
-          `Sent back automatically (Failed testing [tests]): ${text}. Its commits are being reverted off the train so the tickets around it can still ship. ` +
+          `Sent back automatically (Failed testing [tests]): ${text}. ` +
+          (wasApproved ? `It had been approved, but the approved Deploy to Main was parked red on it, so it is taken off rather than holding the release. ` : "") +
+          `Its commits are being reverted off the train so the tickets around it can still ship. ` +
           (autoRebuild ? `A rebuild was started with this failure on its notes — the build must make that check pass before handing the patch back.` : `It was already rebuilt once automatically; a person needs to look at it.`));
         await patchItem(culprit.id, {
           status: "backlog",
@@ -4308,7 +4330,7 @@ module.exports = {
   // test/train-resume.test.js — GitHub-side cancellations re-run; red trains resume when green
   isInfraCheck, rerunInfraChecks, resumeRedTrains, TRAIN_CI_INFRA_RERUNS,
   // test/train-tests.test.js — console tests run on each train push
-  trainTestFailureTargets, touchesConsoleTests, trainTestsFor, testedHeadOf, nextTrainTestsRed, trainTestGate, newestRealRun, pickRedCulprit,
+  TRAIN_TEST_WORKFLOWS, trainTestFailureTargets, touchesConsoleTests, trainTestsFor, testedHeadOf, nextTrainTestsRed, trainTestGate, newestRealRun, pickRedCulprit,
   // test/parallel-builds.test.js — patches built in parallel
   patchBaseFor, dependenciesLanded, buildRequestFields, migrationNumberClashes,
   // test/train-follow-up.test.js — a train waiting on CI starts its own next run

@@ -6,6 +6,10 @@ name: Retail Media Insights tests
 # CI covers this folder: e2e-quick is a passing no-op for any PR that doesn't
 # touch dsp-integration/.
 #
+# It also runs on the train branch each time a ticket lands there (dispatched
+# by run-backlog-automation.js), so a failure reaches the cards while they're
+# in Ready for Testing and the ticket that caused it is sent back by itself.
+#
 # On a pull request this is a status check, which processDeployTrain in
 # backlog-tracker/scripts/run-backlog-automation.js waits on before it merges a
 # train. A red suite therefore holds the Retail Media Insights deploy PR
@@ -25,8 +29,13 @@ on:
       - 'Retail-media-insights/**'
   workflow_dispatch:
 
+# run-backlog-automation.js dispatches this on the train branch once per
+# ticket that lands (TRAIN_TEST_WORKFLOWS), and a red train is pinned on the
+# first ticket whose own commit failed. A dispatch is therefore grouped by
+# commit, so landing the next ticket doesn't cancel the previous ticket's
+# verdict; push and PR runs still cancel their superseded predecessors.
 concurrency:
-  group: retail-media-insights-tests-${{ github.ref }}
+  group: retail-media-insights-tests-${{ github.event_name == 'workflow_dispatch' && github.sha || github.ref }}
   cancel-in-progress: true
 
 permissions:

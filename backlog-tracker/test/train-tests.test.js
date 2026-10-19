@@ -3,7 +3,9 @@
 // to Main (PR #301, 3 Oct 2026; for the DSP train's e2e-quick, PR #330,
 // 6 Oct 2026). Drives the pure decision functions.
 const assert = require("assert");
-const { trainTestFailureTargets, touchesConsoleTests, trainTestsFor, testedHeadOf, nextTrainTestsRed, trainTestGate, newestRealRun, pickRedCulprit } = require("../scripts/run-backlog-automation.js");
+const fs = require("fs");
+const path = require("path");
+const { TRAIN_TEST_WORKFLOWS, trainTestFailureTargets, touchesConsoleTests, trainTestsFor, testedHeadOf, nextTrainTestsRed, trainTestGate, newestRealRun, pickRedCulprit } = require("../scripts/run-backlog-automation.js");
 
 const HEAD = "aaaaaaa1111111";
 const cards = [{ id: "c1" }, { id: "c2", testsFailedSha: HEAD }, { id: "c3", testsFailedSha: "old" }];
@@ -55,6 +57,10 @@ const cases = [
       ["a run before it missing: wait", pickRedCulprit(order, [A, B, C], { b: red }), null],
       ["cancelled before it: no verdict", pickRedCulprit(order, [A, B, C], { a: { status: "completed", conclusion: "cancelled" }, b: red }), null],
       ["first ticket on the train red: it is the culprit", pickRedCulprit(order, [B, C], { b: red, c: red })?.id, "B"],
+      ["deploy parked red: approved culprit with a green commit before it is ejected", pickRedCulprit(order, [A, { ...B, status: "ready-to-publish" }, C], { a: ok, b: red, c: red }, { deployParkedRed: true })?.id, "B"],
+      ["deploy parked red: approved culprit first on the train (main may be red) is held", pickRedCulprit(order, [A, B, C], { a: red, b: red, c: red }, { deployParkedRed: true }), null],
+      ["deploy not parked: approved culprit is held", pickRedCulprit(order, [A, { ...B, status: "ready-to-publish" }, C], { a: ok, b: red }), null],
+      ["a Retail-media-insights change starts its own suite", trainTestsFor(["Retail-media-insights/frontend/revenue-deals.js"]).map((t) => t.workflow), ["retail-media-insights-tests.yml"]],
       ["a card whose commit left the train is ignored", pickRedCulprit(order, [{ id: "X", status: "ready-for-testing", deployCommit: "gone" }, A, C], { a: ok, c: red })?.id, "C"],
     ];
   })(),
@@ -63,6 +69,35 @@ const cases = [
   ["only held runs: none", newestRealRun([{ headSha: "a", status: "completed", conclusion: "action_required" }]), null],
   ["gate: no run at all → missing", trainTestGate([{ workflow: "e2e-quick.yml", label: "x", run: null, speaksForHead: false }]).state, "missing"],
   ["gate: worst wins (green + red → red)", trainTestGate([{ workflow: "a.yml", label: "a", run: { ...failed, conclusion: "success" }, speaksForHead: true }, { workflow: "e2e-quick.yml", label: "x", run: failed, speaksForHead: true }]).workflows.map((w) => w.workflow), ["e2e-quick.yml"]],
+  // Guard (PR #412, 18 Oct 2026): a project folder with its own test suite, or a
+  // PR test workflow scoped to a folder, must be in TRAIN_TEST_WORKFLOWS —
+  // otherwise its tickets are never tested on the train and the first anyone
+  // hears of a failure is a red, parked Deploy to Main.
+  ...(() => {
+    const repo = path.join(__dirname, "..", "..");
+    const wfDir = path.join(repo, ".github", "workflows");
+    const covered = (prefix) => TRAIN_TEST_WORKFLOWS.some((t) => t.prefix === prefix);
+    const out = [];
+    for (const dir of fs.readdirSync(repo)) {
+      const pkg = path.join(repo, dir, "package.json");
+      if (!fs.existsSync(pkg)) continue;
+      const scripts = (JSON.parse(fs.readFileSync(pkg, "utf8")).scripts) || {};
+      if (scripts.test) out.push([`${dir}/ has a test script, so a train test workflow`, covered(`${dir}/`), true]);
+    }
+    for (const file of fs.readdirSync(wfDir).filter((f) => /\.ya?ml$/.test(f))) {
+      const text = fs.readFileSync(path.join(wfDir, file), "utf8");
+      const on = (text.match(/^on:\n([\s\S]*?)^\S/m) || [])[1] || "";
+      const pr = (on.match(/^ {2}pull_request:\n((?: {4,}.*\n)*)/m) || [])[1] || "";
+      if (!pr || !/^ {2}workflow_dispatch:/m.test(on)) continue;
+      const folders = new Set([...pr.matchAll(/'([^'./][^'/]*)\/[^']*'/g)].map((m) => m[1]));
+      for (const f of folders) out.push([`${file} tests ${f}/ on PRs, so it runs on that train`, TRAIN_TEST_WORKFLOWS.some((t) => t.workflow === file && t.prefix === `${f}/`), true]);
+    }
+    for (const t of TRAIN_TEST_WORKFLOWS) {
+      const f = path.join(wfDir, t.workflow);
+      out.push([`${t.workflow} exists and accepts workflow_dispatch`, fs.existsSync(f) && /^ {2}workflow_dispatch:/m.test(fs.readFileSync(f, "utf8")), true]);
+    }
+    return out;
+  })(),
 ];
 let failedCount = 0;
 for (const [label, got, want] of cases) {

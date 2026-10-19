@@ -864,7 +864,8 @@ own `readyToDeploy` is information, not permission.
    naming the item, and say it must be approved or rejected first.
 2a. **Verify the train's tests are not red.** If `projects/{id}.trainTestsRed`
    is set, or the newest `e2e-quick.yml` (a `dsp-integration/` train) /
-   `firestore-rules-test.yml` (a `backlog-tracker/` train) run on the branch
+   `firestore-rules-test.yml` (a `backlog-tracker/` train) /
+   `retail-media-insights-tests.yml` (a `Retail-media-insights/` train) run on the branch
    — `gh run list --workflow <file> --branch <deployBranch> --limit 1` —
    failed on the head or on the last commit before a prototype rebuild,
    don't set `trainReady`: the deploy PR would only park on red CI (PR #335,
