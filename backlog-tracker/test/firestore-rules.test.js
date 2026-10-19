@@ -101,6 +101,8 @@ async function reset() {
     await setDoc(doc(db, "releases/rDraft"), { name: "October", version: "2.4.0", status: "draft", order: 1 });
     await setDoc(doc(db, "releases/rLive"), { name: "September", status: "live", order: 0 });
     await setDoc(doc(db, "concepts/cActive"), { name: "Store staff shift handover", status: "active", readmeMd: "", requirementsMd: "", comments: [] });
+    await setDoc(doc(db, "projectDocs/dMirror"), { projectId: "p1", name: "DSP README", contentMd: "from the repo", sourcePath: "dsp-integration/README.md", sourceSlices: [], sourcePrefix: "> Mirror" });
+    await setDoc(doc(db, "projectDocs/dPlain"), { projectId: "p1", name: "Notes", contentMd: "hand written" });
     await setDoc(doc(db, "concepts/cPromoted"), { name: "Already shipped idea", status: "promoted", promotedProjectId: "p1" });
   });
 }
@@ -487,6 +489,35 @@ async function main() {
     setDoc(doc(as(MEMBER), "settings/faqSite"), { analyticsTag: "GTM-EVIL" }, { merge: true }));
   await check("A team admin can set the help centre's analytics tag", "allow", () =>
     setDoc(doc(as(TEAM_ADMIN), "settings/faqSite"), { analyticsTag: "GTM-ABC123" }, { merge: true }));
+
+  // ── Repo-mirrored documents (19 Oct 2026) ───────────────────────────────
+  const syncPatch = { name: "DSP README", contentMd: "new from repo", sourcePath: "dsp-integration/README.md", sourceSlices: [], sourcePrefix: "> Mirror", updatedAt: serverTimestamp(), updatedByEmail: BOT.claims.email };
+  await check("An editor cannot change a mirror's text", "deny", () =>
+    setDoc(doc(as(MEMBER), "projectDocs/dMirror"), { contentMd: "hand edit" }, { merge: true }));
+  await check("The owner cannot change a mirror's text either (the repo wins)", "deny", () =>
+    setDoc(doc(as(HUMAN), "projectDocs/dMirror"), { contentMd: "hand edit" }, { merge: true }));
+  await check("An editor cannot rename a mirror", "deny", () =>
+    setDoc(doc(as(MEMBER), "projectDocs/dMirror"), { name: "Renamed" }, { merge: true }));
+  await check("An editor cannot repoint a mirror's sourcePath", "deny", () =>
+    setDoc(doc(as(MEMBER), "projectDocs/dMirror"), { sourcePath: "other.md" }, { merge: true }));
+  await check("An editor can still edit a plain document's text and name", "allow", () =>
+    setDoc(doc(as(MEMBER), "projectDocs/dPlain"), { contentMd: "changed", name: "Renamed" }, { merge: true }));
+  await check("An editor cannot turn a plain document into a mirror", "deny", () =>
+    setDoc(doc(as(MEMBER), "projectDocs/dPlain"), { sourcePath: "README.md" }, { merge: true }));
+  await check("An editor cannot create a document that declares a sourcePath", "deny", () =>
+    setDoc(doc(as(MEMBER), "projectDocs/dNew"), { projectId: "p1", name: "N", contentMd: "x", sourcePath: "README.md" }));
+  await check("An editor can create a plain document", "allow", () =>
+    setDoc(doc(as(MEMBER), "projectDocs/dNew"), { projectId: "p1", name: "N", contentMd: "x" }));
+  await check("The automation user can write a mirror exactly as sync-board-docs.mjs does", "allow", () =>
+    setDoc(doc(as(BOT), "projectDocs/dMirror"), syncPatch, { merge: true }));
+  await check("The automation user can create a mirror", "allow", () =>
+    setDoc(doc(as(BOT), "projectDocs/dNewMirror"), { projectId: "p1", name: "M", contentMd: "x", sourcePath: "README.md", sourceSlices: [], sourcePrefix: "" }));
+  await check("An editor can delete a mirror", "allow", () =>
+    deleteDoc(doc(as(MEMBER), "projectDocs/dMirror")));
+  await check("A viewer cannot write a mirror", "deny", () =>
+    setDoc(doc(as(VIEWER), "projectDocs/dMirror"), { contentMd: "x" }, { merge: true }));
+  await check("A viewer cannot write a plain document", "deny", () =>
+    setDoc(doc(as(VIEWER), "projectDocs/dPlain"), { contentMd: "x" }, { merge: true }));
 
   await env.cleanup();
 

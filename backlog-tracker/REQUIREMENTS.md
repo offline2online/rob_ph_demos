@@ -991,6 +991,19 @@ BEFORE text. Creations, empty previous text, unchanged text and non-mirror
 documents record nothing. Sync writes to Requirements/README stay
 unrecorded (800k characters may not fit through a trigger event).
 
+**The rules enforce the same thing in the database** (`firestore.rules` →
+`projectDocs`). On a document that has a `sourcePath`, no caller but the
+board automation user (`isAutomationAccount()`, which the docs sync signs in
+as) may change `contentMd`, `name`, `sourcePath`, `sourceSlices`,
+`sourcePrefix` or `sourceCommit` — the owner account included, the repo wins
+for everyone. Only the automation user may create a document that carries
+those source fields, or add them to one that lacks them: mirrors are declared
+in the repo. Creating, editing and deleting a document without `sourcePath`
+is unchanged, and any editor may still delete a mirror, so a person can
+retire one the repo's mirror list no longer names. The service account
+bypasses rules. Cases are in `test/firestore-rules.test.js`
+(`npm run test:rules`).
+
 A generic, named document belonging to exactly one project — an API spec,
 an architecture decision record, any technical or architectural document
 that isn't the project's own `requirementsMd` or `readmeMd` fields. Listed

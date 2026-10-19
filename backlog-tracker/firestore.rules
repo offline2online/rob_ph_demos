@@ -409,7 +409,38 @@ service cloud.firestore {
     match /projectDocs/{docId} {
       allow read: if isBoardReader();
 
-      allow create, update: if isEditor() &&
+      // A document that mirrors a repo file (it has a sourcePath) is written
+      // by the sync, as the board automation user, and by nobody else: the
+      // repo wins for everyone, the owner included, because the next sync
+      // would overwrite a hand edit anyway. Mirrors are declared in the repo,
+      // so a person cannot set or add the source fields either. Deleting stays
+      // open to any editor so a person can retire a mirror the repo dropped.
+      // Optional fields go through .get(key, default), never a bare property.
+      function mirrorSourceKeys() {
+        return ["sourcePath", "sourceSlices", "sourcePrefix", "sourceCommit"];
+      }
+      function mirrorTextKeys() {
+        return ["contentMd", "name"];
+      }
+      function mirrorCreateOk() {
+        return isAutomationAccount() || !incoming().keys().hasAny(mirrorSourceKeys());
+      }
+      function mirrorUpdateOk() {
+        return isAutomationAccount()
+          || (!incoming().diff(resource.data).affectedKeys().hasAny(mirrorSourceKeys())
+            && (resource.data.get("sourcePath", null) == null
+              || !incoming().diff(resource.data).affectedKeys().hasAny(mirrorTextKeys())));
+      }
+
+      allow create: if isEditor() &&
+        mirrorCreateOk() &&
+        isNonEmptyBoundedString(incoming().projectId, 100) &&
+        isNonEmptyBoundedString(incoming().name, 120) &&
+        incoming().contentMd is string &&
+        incoming().contentMd.size() <= 20000;
+
+      allow update: if isEditor() &&
+        mirrorUpdateOk() &&
         isNonEmptyBoundedString(incoming().projectId, 100) &&
         isNonEmptyBoundedString(incoming().name, 120) &&
         incoming().contentMd is string &&
