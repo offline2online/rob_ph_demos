@@ -574,6 +574,35 @@ async function rpc(token, method, params, id = 1) {
     assert.ok(env.store.col("projects").get("proj1").docs.requirements, "writing the README must not drop the requirements pointer");
   });
 
+  await test("tells the writer what will happen to a Requirements or README write, from the project's own fields", async () => {
+    env.store.col("projects").set("projNoFolder", { name: "Backlog Tracker & FAQs", deployBranch: "deploy/backlog-tracker-faqs", repoFolderNotApplicable: true });
+    const call = async (name, projectId) => JSON.parse((await rpc(tokens.access_token, "tools/call", { name, arguments: { projectId, contentMd: "# Doc" } })).body.result.content[0].text);
+    for (const [name, file] of [["set_project_requirements", "REQUIREMENTS.md"], ["set_project_readme", "README.md"]]) {
+      const withFolder = await call(name, "proj1");
+      assert.match(withFolder.note, new RegExp(`${file} in live-visitor-profile/`));
+      assert.match(withFolder.note, /this edit is lost/);
+      const noFolder = await call(name, "projNoFolder");
+      assert.match(noFolder.note, /nothing syncs this copy/);
+      for (const note of [withFolder.note, noFolder.note]) assert.ok(!/whichever is stale|merges a train/.test(note));
+    }
+  });
+
+  await test("the server instructions and whoami note match the tool list", async () => {
+    const init = await rpc(tokens.access_token, "initialize", { protocolVersion: "2025-06-18", capabilities: {} });
+    const text = init.body.result.instructions;
+    const who = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "whoami", arguments: {} })).body.result.content[0].text).note;
+    const tools = mcp.__test.TOOLS;
+    const names = new Set(tools.map((t) => t.name));
+    for (const [label, src] of [["instructions", text], ["whoami note", who]]) {
+      for (const w of src.match(/\b[a-z]+(?:_[a-z]+)+\b/g) || []) assert.ok(names.has(w), `${label} names ${w}, which is not a registered tool`);
+      assert.ok(!/whichever is stale|merges a train/.test(src), `${label} has stale wording`);
+    }
+    for (const t of tools.filter((x) => x.scope === "board.write" || x.role)) assert.ok(text.includes(t.name), `instructions never name ${t.name}`);
+    for (const t of tools.filter((x) => x.scope === "board.write" && /deploy|merge/.test(x.name))) assert.ok(who.includes(t.name), `whoami note never names ${t.name}`);
+    assert.ok(text.length <= 3400, `instructions are ${text.length} characters`);
+    assert.match(text, /get_ready_for_testing_board/);
+  });
+
   await test("refuses a Requirements document past the size ceiling", async () => {
     const res = await rpc(tokens.access_token, "tools/call", {
       name: "set_project_requirements", arguments: { projectId: "proj1", contentMd: "x".repeat(mcp.__test.PROJECT_MD_MAX + 1) },

@@ -117,6 +117,12 @@ await test("the client connects and the server identifies itself", async () => {
   assert.strictEqual(info.name, "ph-agent-console");
 });
 
+await test("the server instructions name the deploy tool and fit the length a host delivers whole", async () => {
+  const text = client.getInstructions();
+  assert.match(text, /approve_deploy_to_main/);
+  assert.ok(text.length <= 3400, `instructions are ${text.length} characters`);
+});
+
 await test("a real client sees the PH mark on serverInfo", async () => {
   const info = client.getServerVersion();
   assert.strictEqual(info.title, "PH Agent Console");

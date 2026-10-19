@@ -1674,6 +1674,17 @@ async function deployGuardForProject(pid) {
   return { ok: true, deployItems: legacyItems, reason: null };
 }
 
+// What happens to a Requirements/README write, from the project's own fields:
+// a project with a repo folder has the board copy rewritten from the repo file
+// after the next merge to main (docs-sync-lib.js), any other project is not synced.
+function docWriteNote(project, fileName) {
+  const p = project || {};
+  const slug = String(p.deployBranch || "").replace(/^deploy\//, "");
+  const folder = p.repoFolderNotApplicable === true ? "" : String(p.repoFolder || slug || "").trim().replace(/^\/+|\/+$/g, "");
+  if (folder) return `This copy is rewritten from the ${fileName} in ${folder}/ after the next merge to main; change the repo file, or this edit is lost.`;
+  return `This project has no repo folder, so nothing syncs this copy; if a repo file holds the same text, update it in the same session.`;
+}
+
 const TOOLS = [
   {
     name: "whoami",
@@ -1704,7 +1715,7 @@ const TOOLS = [
         routineBindingNudge: hasRoutineBinding
           ? null
           : "You have no personal Notify Claude Routine binding yet — every board click you make still fires under the shared project token. Call get_routine_setup_instructions to set up your own.",
-        note: "Deploys, merges, Notify Claude and campaign triggering are not available through MCP — they stay on the board's own buttons. Setting up your own personal Notify Claude Routine binding (see get_routine_setup_instructions/set_my_routine_binding) is the one exception: it changes which credentials a board click fires under, but the click itself still has to happen on the board.",
+        note: "Moving cards, approving out of Ready for Testing, Notify Claude clicks and campaign triggering stay on the board's own buttons. Two exceptions: approve_deploy_to_main (admins only) fires Deploy to Main once the project's whole train is approved, and set_my_routine_binding only chooses which Routine your own later board clicks fire; the click itself still happens on the board.",
       });
     },
   },
@@ -2567,7 +2578,7 @@ const TOOLS = [
       const revisionId = await recordDocRevision(session, PROJECT_DOC_KINDS.requirements.revisionTarget, { projectId, name: (snap.data() || {}).name || "" }, before);
       await writeProjectDoc(projectId, "requirements", md, session);
       await audit(session, "set_project_requirements", { projectId, chars: md.length, replacedChars: before.length, revisionId });
-      return textResult({ updated: true, projectId, chars: md.length, replacedChars: before.length, revisionId, note: "Keep the repo's REQUIREMENTS.md in sync — a divergence is a bug in whichever is stale." });
+      return textResult({ updated: true, projectId, chars: md.length, replacedChars: before.length, revisionId, note: docWriteNote(snap.data(), "REQUIREMENTS.md") });
     },
   },
   {
@@ -2592,7 +2603,7 @@ const TOOLS = [
       const revisionId = await recordDocRevision(session, PROJECT_DOC_KINDS.readme.revisionTarget, { projectId, name: (snap.data() || {}).name || "" }, before);
       await writeProjectDoc(projectId, "readme", md, session);
       await audit(session, "set_project_readme", { projectId, chars: md.length, replacedChars: before.length, revisionId });
-      return textResult({ updated: true, projectId, chars: md.length, replacedChars: before.length, revisionId, note: "Keep the repo's README.md in sync — a divergence is a bug in whichever is stale." });
+      return textResult({ updated: true, projectId, chars: md.length, replacedChars: before.length, revisionId, note: docWriteNote(snap.data(), "README.md") });
     },
   },
   {
@@ -3972,18 +3983,15 @@ const TOOLS_BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));
 // anyway.
 
 const SERVER_INSTRUCTIONS = [
-  "This is the PH Agent Console — the Personalisation Hub prototype backlog board and help centre.",
-  "You are connected as a specific team member; every ticket you file and comment you add is attributed to their email.",
-  "Start with list_projects to get a projectId, then list_backlog_items / get_backlog_item to read work, or create_backlog_item to file new work into a project's Backlog column.",
-  "You have full read/write access to project DOCUMENTATION and are expected to keep it current as you work: list_project_documents to see a project's Requirements, README, additional documents and interface contracts (no text; it also searches them) and get_project_document to read one a page or a section at a time (get_project_docs returns all of it in one result, too large for a big project), then set_project_requirements / set_project_readme / create_project_document / update_project_document / create_interface / update_interface to update them.",
-  "Documentation writes REPLACE the whole document, so read it first and send back the complete revised text — never a fragment. The version you replace is kept, and list_doc_revisions / get_doc_revision can recover it.",
-  "Where a project's documentation also exists as a file in the repo (REQUIREMENTS.md, README.md, shared/interface-contract.md), the two are meant to match: update both, and treat a divergence as a bug in whichever is stale.",
-  "The Concept Incubator holds pre-project ideas that haven't been promoted to a tracked project yet — create_concept makes a new one, list_concepts / get_concept read them, and add_concept_comment / set_concept_readme / set_concept_requirements / set_concept_artifact write to them, same read/write split as project documentation. demote_project turns a project back into a concept (carrying its docs, re-pointing its interfaces, archiving it). Interfaces (create_interface / update_interface) can join any two projects or concepts and follow them through promote and demote. A concept has no backlog of its own until it's promoted; once promoted, use list_projects/get_project_docs on the project it became instead.",
-  "To show what is waiting on a person in the release pipeline, call get_ready_for_testing_board (the Ready for Testing column) or get_approved_for_deployment_board (the Approved for Deployment column) rather than list_backlog_items: both are MCP Apps, so a host that supports them renders the tickets as cards inline in the conversation, and every host gets the same data as text.",
-  "Use search_faq / get_faq_article to answer Personalisation Hub product questions from the published help centre instead of guessing.",
-  "You can also write to the help centre: create_faq_article files a brand-new draft, and update_faq_article proposes a change to an existing one as a pendingRevision — never live. Either way a person still reviews and approves it in FAQ Management before anything publishes; list_pending_faq_revisions and get_faq_revision let you check on a proposal's status.",
-  "There is also a shared, organisation-wide skills library — NOT scoped to any one project. list_skills / get_skill read it (any signed-in member, including a viewer); upload_skill / update_skill / delete_skill write to it (editor role). Use this to publish or fetch a reusable piece of packaged instructions any team member's agent can pull in, e.g. this console's own ph-designer front-end skill.",
-  "Deployment is out of scope on purpose: nothing here moves a ticket through testing, merges a train, or triggers a campaign. Those stay on the board's own buttons and its triggered Routine.",
+  "This is the PH Agent Console: the Personalisation Hub prototype backlog board and help centre. You act as the signed-in team member; what you file or write is attributed to their email. A viewer reads only, an editor reads and writes, an admin also has approve_deploy_to_main and set_phase_skill_bindings.",
+  "Tickets: list_projects gives a projectId, then list_backlog_items / get_backlog_item. create_backlog_item files into Backlog; update_backlog_item, add_item_comment, set_blocked and clear_blocked work on a ticket. To show what waits on a person call get_ready_for_testing_board or get_approved_for_deployment_board (MCP Apps: cards inline where the host supports them).",
+  "Reading docs: list_project_documents (no text, searchable) and get_project_document read one document or section at a time. get_project_docs returns every document in full, possibly hundreds of thousands of characters, so call it only with include set to the one block you need.",
+  "Writing docs: set_project_requirements, set_project_readme, set_project_artifact, set_project_description, create_project_document, update_project_document, delete_project_document, create_interface, update_interface, delete_interface. A write replaces the whole document, so read it first and send the complete text; a project document or interface holds at most 20,000 characters. list_doc_revisions / get_doc_revision recover a replaced version.",
+  "Where the repo wins: for a project with a repo folder, Requirements, README and every document marked as a mirror are rewritten from the repo file after a merge to main, so change the repo file; a board-only edit is lost. A project with no single folder (Backlog Tracker & FAQs) does not sync its Requirements or README: change the repo file and the board copy in the same session. Board-only documents are edited on the board.",
+  "Concepts (pre-project ideas): list_concepts, get_concept, create_concept, add_concept_comment, set_concept_readme, set_concept_requirements, set_concept_artifact; demote_project turns a project back into a concept.",
+  "Help centre: search_faq / get_faq_article answer product questions; create_faq_article and update_faq_article only propose drafts for a person to approve; list_pending_faq_revisions, get_faq_revision and comment_on_faq_revision follow a proposal.",
+  "Skills library, shared by all projects: list_skills / get_skill read; upload_skill, update_skill, delete_skill, mark_skill_reviewed and report_skill_miss write.",
+  "Release: moving cards, approving out of Ready for Testing, Notify Claude clicks and campaigns stay on the board; set_my_routine_binding only chooses whose Routine your own board clicks fire. Admin only: approve_deploy_to_main fires the same Deploy to Main as the board button, and only when the project's whole train is approved; set_phase_skill_bindings sets the skills that build and deploy runs load.",
 ].join(" ");
 
 function rpcError(id, code, message, data) {

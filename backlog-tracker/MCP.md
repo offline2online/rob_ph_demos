@@ -91,6 +91,21 @@ empty or mis-edited collection can never lock everyone out.
 `get_skill`, `list_skill_misses`, `get_routine_setup_instructions`,
 `list_concepts`, `get_concept`.
 
+**What the agent is told on connect.** The server instructions (`SERVER_INSTRUCTIONS`
+in `functions/mcp-server.js`) are the first text a connected agent reads. They
+say what each role can do, name every `board.write` and admin tool, tell the
+agent to read documents with `list_project_documents` / `get_project_document`
+rather than `get_project_docs`, say which side wins for a repo-mirrored
+document (the repo file; a board-only edit is lost, except for a project with
+no single folder, whose Requirements and README are not synced), and say that
+release actions stay on the board apart from `approve_deploy_to_main` (admin)
+and `set_my_routine_binding`. `whoami`'s note and the notes returned by
+`set_project_requirements` / `set_project_readme` say the same from the
+project's own fields. `test/mcp-server.test.js` keeps them in step with the
+tool list: every name in them is a registered tool, every write and admin tool
+is named, and the instructions stay within 3,400 characters (what Claude Code
+delivers whole).
+
 **Start document and manifest fields.** `list_projects` returns
 `startHereDocId` per project (`"readme"`, `"requirements"`, a document id, or
 `null` when unset) and `get_project_docs`' `docsSync` returns `manifestPath`
