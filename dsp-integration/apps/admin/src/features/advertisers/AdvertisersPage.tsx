@@ -17,7 +17,7 @@ import { Callout } from '../../shared/Callout'
 import { DeleteDialog } from '../../shared/DeleteDialog'
 import { Grid } from '../../shared/Grid'
 import { Icon } from '../../shared/Icon'
-import { WithTip } from '../../shared/InfoTip'
+import { InfoTip, WithTip } from '../../shared/InfoTip'
 import { SectionLabel } from '../../shared/SectionLabel'
 import { StatusPill } from '../../shared/Pill'
 import { SaveBar } from '../../shared/SaveBar'
@@ -36,7 +36,7 @@ import { type Flags, envFlags } from '../../flags'
 const TRANSACTING_CURRENCY = 'USD'
 interface Data { currency: string; floorCpm: number; items: Advertiser[] }
 type Settings = Record<string, AdvertiserSetting>
-type Ctx = { current: { settings: Settings; data: Data; canEdit: boolean; set: (id: string, patch: Partial<AdvertiserSetting>) => void; onDelete: (a: Advertiser) => void } }
+type Ctx = { current: { settings: Settings; data: Data; canEdit: boolean; set: (id: string, patch: Partial<AdvertiserSetting>) => void; onDelete: (a: Advertiser) => void; onEdit: (a: Advertiser) => void } }
 type P = ICellRendererParams<Advertiser, unknown, Ctx>
 
 /* The grid can paint a row for a moment after it has left the list (a delete drops it from the cache first),
@@ -59,54 +59,75 @@ function ApprovalCell({ data, context }: P) {
     </span>
   )
 }
-/* Add an advertiser with a direct relationship with the retailer (no DSP), from
-   the "Add new Advertiser" pop-up. It is saved at once (not part of Save
-   changes) and listed as "Name (Direct)". */
-function AddAdvertiserModal({ open, onClose, onAdded }: { open: boolean; onClose: () => void; onAdded: () => void }) {
+/* Add an advertiser with a direct relationship with the retailer (no DSP), or edit any advertiser's audiences
+   (ticket OanRebXyEryAXBQrBsVe), from the same pop-up. It is saved at once (not part of Save changes). A new direct
+   advertiser is listed as "Name (Direct)". Audiences are Visitor Segments values shared with this advertiser only. */
+const AUDIENCES_TIP = 'Audiences shared only with this advertiser, such as people who are new to their brand. Your own systems decide who is in each audience and publish it to the visitor’s live profile when they are identified; Personalisation Hub never receives their purchase history. Only this advertiser can target these audiences, on deals and reserved slots, not the open auction.'
+const SEGMENT_TIP = 'Visitor segments published by your CRM, customer data platform or loyalty system.'
+function AdvertiserModal({ open, editing, onClose, onSaved }: { open: boolean; editing: Advertiser | null; onClose: () => void; onSaved: () => void }) {
   const { message } = App.useApp()
   const [name, setName] = useState('')
+  const [audiences, setAudiences] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const variables = useQuery({ ...Q.targetingVariables, enabled: open })
+  const segments = variables.data?.find((v) => v.key === 'visitor.visitor_segments')
+  const options = [...new Set([...(segments?.values ?? []), ...(segments?.privateValues ?? []), ...audiences])].map((v) => ({ value: v, label: v }))
   useEffect(() => {
-    if (open) { setName(''); setError(null) }
-  }, [open])
-  const add = async () => {
+    if (open) { setName(editing?.name ?? ''); setAudiences(editing?.audiences ?? []); setError(null) }
+  }, [open, editing])
+  const save = async () => {
     if (!name.trim() || busy) return
     setBusy(true)
     setError(null)
     try {
-      await api('POST', '/admin/v1/advertisers/direct', { name })
-      onAdded()
+      if (editing) await api('PUT', `/admin/v1/advertisers/${editing.advertiserId}/audiences`, { audiences })
+      else await api('POST', '/admin/v1/advertisers/direct', { name, audiences })
+      onSaved()
       onClose()
-      message.success('Advertiser added')
+      message.success(editing ? 'Advertiser saved' : 'Advertiser added')
     } catch (e) {
-      setError(e instanceof ApiRequestError ? e.message : 'Could not add the advertiser.')
+      setError(e instanceof ApiRequestError ? e.message : 'Could not save the advertiser.')
     } finally {
       setBusy(false)
     }
   }
   return (
     <Modal
-      open={open} width={460} destroyOnHidden confirmLoading={busy} onCancel={onClose} onOk={add}
-      okText="Add advertiser" okButtonProps={{ disabled: !name.trim() }}
+      open={open} width={500} destroyOnHidden confirmLoading={busy} onCancel={onClose} onOk={save}
+      okText={editing ? 'Save advertiser' : 'Add advertiser'} okButtonProps={{ disabled: !name.trim() }}
       title={
         <span className="inline-flex items-center gap-2">
           <Icon name="sell" size={20} style={{ color: T.primary }} />
-          Add new Advertiser
+          {editing ? `Edit advertiser: ${editing.name}` : 'Add new Advertiser'}
         </span>
       }
     >
       <label htmlFor="direct-advertiser-name" className="mb-1 block" style={{ fontSize: 13, fontWeight: 500 }}>Advertiser name</label>
-      <Input id="direct-advertiser-name" aria-label="Advertiser name" maxLength={80} autoFocus value={name} status={error ? 'error' : undefined} onChange={(e) => setName(e.target.value)} onPressEnter={add} />
+      <Input id="direct-advertiser-name" aria-label="Advertiser name" maxLength={80} autoFocus={!editing} disabled={!!editing} value={name} status={error ? 'error' : undefined} onChange={(e) => setName(e.target.value)} onPressEnter={save} />
+      <div className="mt-1.5" style={{ fontSize: 12, color: T.muted }}>
+        {editing ? (editing.direct ? 'A direct advertiser has its own relationship with you, with no DSP in between.' : `Comes through ${editing.via.join(', ')}.`) : 'A direct advertiser has its own relationship with you, with no DSP in between.'}
+      </div>
+      <div className="mt-4 mb-1" style={{ fontSize: 13, fontWeight: 500 }}><WithTip tip={AUDIENCES_TIP}><span id="advertiser-audiences-label">Audiences</span></WithTip></div>
+      <div className="mb-1 inline-flex items-center gap-[5px]" style={{ fontSize: 12, color: T.muted }}>Segments <InfoTip text={SEGMENT_TIP} /></div>
+      <Select
+        mode="multiple" allowClear showSearch className="w-full" aria-labelledby="advertiser-audiences-label" placeholder="Choose segments shared with this advertiser only"
+        loading={variables.isLoading} value={audiences} options={options} onChange={setAudiences}
+        notFoundContent={segments ? 'No Visitor Segments values defined in Shared Targeting Variables.' : 'Visitor Segments is not available.'}
+      />
       <div className="mt-1.5" style={{ fontSize: 12, color: error ? T.error : T.muted }}>
-        {error ?? 'A direct advertiser has its own relationship with you, with no DSP in between.'}
+        {error ?? 'Chosen segments are removed from the Visitor Segments offered to everyone else.'}
       </div>
     </Modal>
   )
 }
+const AudiencesCell = ({ data }: P) => (data ? <span title={(data.audiences ?? []).join(', ')}>{(data.audiences ?? []).length}</span> : null)
 const ActionsCell = ({ data, context }: P) =>
-  data?.direct && context.current.canEdit ? (
-    <Button type="text" size="small" danger aria-label={`Delete ${data.name}`} icon={<Icon name="delete" size={15} />} onClick={() => context.current.onDelete(data)} />
+  data && context.current.canEdit ? (
+    <span className="inline-flex items-center">
+      <Button type="text" size="small" aria-label={`Edit ${data.name}`} icon={<Icon name="edit" size={15} />} onClick={() => context.current.onEdit(data)} />
+      {data.direct && <Button type="text" size="small" danger aria-label={`Delete ${data.name}`} icon={<Icon name="delete" size={15} />} onClick={() => context.current.onDelete(data)} />}
+    </span>
   ) : null
 
 /* The inventory advertisers can buy: every Advertiser-owned slot on a
@@ -860,6 +881,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
   useReportDirty(dirty || inv.dirty || billingUnitDefaults.dirty || maxCampaignsDefaults.dirty || maxPlayLengthDefaults.dirty)
   const [saving, setSaving] = useState(false)
   const [addingAdvertiser, setAddingAdvertiser] = useState(false)
+  const [editingAdvertiser, setEditingAdvertiser] = useState<Advertiser | null>(null)
   const [deleting, setDeleting] = useState<Advertiser | null>(null)
   const [deleteError, setDeleteError] = useState<{ message: string } | null>(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
@@ -907,10 +929,15 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
       headerComponent: header('Rejected', 'Campaigns the retailer rejected.'),
       valueGetter: (p) => (p.data ? campaignCounts(p.data).rejected : 0),
     },
+    {
+      headerName: 'Audiences', width: 110, suppressSizeToFit: true, cellRenderer: AudiencesCell, ...COUNT_COLUMN,
+      headerComponent: header('Audiences', 'Visitor segments shared with this advertiser only, such as people who are new to their brand. Edit the advertiser to change them.'),
+      valueGetter: (p) => (p.data ? (p.data.audiences ?? []).length : 0),
+    },
     /* Campaigns and Bookings columns removed (Rob's ticket, 26 Sep 2026):
        already covered in Campaign Status and the booking schedule, their
        own operational sections. */
-    ...(canEdit ? [{ headerName: '', width: 70, suppressSizeToFit: true, cellRenderer: ActionsCell }] : []),
+    ...(canEdit ? [{ headerName: '', width: 90, suppressSizeToFit: true, cellRenderer: ActionsCell }] : []),
   ] : [], [data, canEdit, buyersLists.data])
 
   if (q.error) return <Callout tone="error" icon="block">{q.error instanceof ApiRequestError ? q.error.message : 'Could not load advertisers.'}</Callout>
@@ -1043,6 +1070,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
     settings: settingsFor, data, canEdit,
     /* An advertiser with history can't be removed: say so when the dialog opens, rather than letting
        Delete fail with an error (ticket HMCgINMMY0cvG0fmC3vR). Users and slots are still checked by the API. */
+    onEdit: (a: Advertiser) => setEditingAdvertiser(a),
     onDelete: (a: Advertiser) => {
       setDeleting(a)
       setDeleteError(a.bookings > 0 || Object.values(a.campaigns).some((n) => n > 0) ? { message: `${a.name} has campaigns or bookings, so it can't be removed.` } : null)
@@ -1122,7 +1150,7 @@ export function AdvertisersPage({ flags = envFlags() }: { flags?: Flags } = {}) 
 
       {/* Picked "+ Add new buyers list…" from a slot's Assigned to picker
           (Rob, 23 Sep): on save, assign the new list straight to that slot. */}
-      <AddAdvertiserModal open={addingAdvertiser} onClose={() => setAddingAdvertiser(false)} onAdded={() => qc.invalidateQueries({ queryKey: ['advertisers'] })} />
+      <AdvertiserModal open={addingAdvertiser || !!editingAdvertiser} editing={editingAdvertiser} onClose={() => { setAddingAdvertiser(false); setEditingAdvertiser(null) }} onSaved={() => qc.invalidateQueries({ queryKey: ['advertisers'] })} />
       {deleting && (
         <DeleteDialog
           open name={deleting.name} blockedReason={deleteError?.message} deleting={deleteBusy} onClose={() => setDeleting(null)}

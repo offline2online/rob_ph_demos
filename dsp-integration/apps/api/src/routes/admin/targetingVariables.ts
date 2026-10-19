@@ -3,6 +3,7 @@ import type { FastifyPluginAsync } from 'fastify'
 import type { Context } from '../../context'
 import { TARGETING_VARIABLES } from '@ph-dsp/types'
 import { isShared, sharedVariables, validateAccess, validateValues } from '../../domain/variables'
+import { SEGMENT_VARIABLE, privateValuesOf } from '../../domain/audiences'
 import type { Guards } from '../../http/app'
 import { validationFailed } from '../../http/errors'
 import type { Access, VariableValues } from '../../repos/CompanySettingsRepo'
@@ -11,7 +12,7 @@ export const targetingVariableRoutes = (ctx: Context, guards: Guards): FastifyPl
   app.get('/targeting-variables', async (req) => {
     guards.flagged()
     guards.requireScope(req, 'admin')
-    return { items: sharedVariables(await ctx.company.variableAccess(), await ctx.company.variableValues()) }
+    return { items: sharedVariables(await ctx.company.variableAccess(), await ctx.company.variableValues(), await privateValuesOf(ctx)) }
   })
 
   app.put<{ Body: { access?: unknown; values?: unknown } }>('/targeting-variables', async (req) => {
@@ -36,7 +37,13 @@ export const targetingVariableRoutes = (ctx: Context, guards: Guards): FastifyPl
     for (const k of Object.keys(access)) if (!isShared(effective[k])) values[k] = { values: [], freeText: false }
     /* A closed vocabulary (age brackets) is the platform's, not the retailer's to edit. */
     for (const v of TARGETING_VARIABLES) if (v.fixedValues) delete values[v.key]
+    /* The list the screen sent leaves out the audiences shared with one advertiser; they stay defined until that advertiser loses them. */
+    const seg = values[SEGMENT_VARIABLE]
+    if (seg && isShared(effective[SEGMENT_VARIABLE])) {
+      const priv = await privateValuesOf(ctx)
+      seg.values = [...seg.values, ...priv.filter((x) => !seg.values.includes(x))]
+    }
     await ctx.company.saveVariableAccess(access, values)
-    return { items: sharedVariables(await ctx.company.variableAccess(), await ctx.company.variableValues()) }
+    return { items: sharedVariables(await ctx.company.variableAccess(), await ctx.company.variableValues(), await privateValuesOf(ctx)) }
   })
 }

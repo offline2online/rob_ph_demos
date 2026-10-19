@@ -187,7 +187,7 @@ whitelisted for.
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/v1/targeting/attributes` | The shared targeting variables enabled for the calling DSP: key, source, label, group (`localisation` / `personalisation`), operators. Never values. |
+| GET | `/v1/targeting/attributes` | The shared targeting variables enabled for the calling DSP: key, source, label, group (`localisation` / `personalisation`), operators. Never values, except audiences shared with one advertiser only: with `?seatId=` (one of the DSP's synced seats; 400 otherwise), Visitor Segments lists `audiences`, the values shared with the advertiser that seat is mapped to (other seats get none). A campaign, reservation or deal from a seat not mapped to the advertiser using one is refused `targeting_not_supported`, naming the segment. Admin side: `PUT /admin/v1/advertisers/{advertiserId}/audiences` (`has_dependents` on removal while a live deal or approved campaign targets it). |
 
 ### Campaigns (content packages)
 
