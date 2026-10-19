@@ -4446,8 +4446,8 @@ playback analytics.**
   *(spec only)*
 - **Audience multiplier** per play, sensor-derived where Vision/AI or MIST is
   enabled. *(spec only)*
-- **Data view on every record** as JSON. *(spec only; the "Data model — JSON
-  sample records" document on the board's Docs page serves this purpose)*
+- **Data view on every record** as JSON. *(spec only; the data view is
+  `api/openapi.yaml`, not the superseded "Data model" board document)*
 
 ### Security, scale and the boundary with PH Core (review, 23 Sep 2026)
 
@@ -4982,9 +4982,9 @@ keeps the won creative renderable; the lookahead sets how early the per-impressi
 - The DSP-specific guaranteed-deal field names are the mapping in
   `src/dsp/dealTerms.ts`; the mocks prove it is carried, not that a DSP
   accepts it. **Still to confirm against each DSP sandbox** (DV360, Amazon
-  Ads). The board's *End-to-End Test Spec — DSP Demand Paths (v2)* doc
-  (`f34VQZCy2kkWJfBP6Iwp`) is not in the repo; add Run 7 and Phase 5 to it
-  with these case IDs.
+  Ads). The *End-to-End Test Spec — DSP Demand Paths (v2)* is
+  `docs/dsp-integration/E2E-TEST-SPEC.md` in the repo, mirrored to the board in
+  three parts; add Run 7 and Phase 5 to it with these case IDs.
 
 ## Default committed plays — the play config feeds the buyers list (Rob, 7 Oct 2026)
 
