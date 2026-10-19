@@ -577,7 +577,7 @@ function testLinkRowHTML(item, nowMs = Date.now()) {
     : "";
   const line = status.state === "stale"
     ? `<div class="preview-state preview-state-stale" role="status"><span class="material-symbols-outlined" aria-hidden="true">warning</span> <span>Still rebuilding after ${PREVIEW_REBUILD_STALE_MS / 60000} minutes. This link may show the previous build.${actions}</span></div>`
-    : `<div class="preview-state preview-state-ready" role="status"><span class="material-symbols-outlined" aria-hidden="true">check_circle</span> <span>Includes this ticket${status.builtFrom ? ` &middot; built from ${escapeHTML(status.builtFrom)}` : ""}${status.updatedMs ? ` &middot; updated ${describeAgo(status.updatedMs)}` : ""}</span></div>`;
+    : `<div class="preview-state preview-state-ready" role="status"><span class="material-symbols-outlined" aria-hidden="true">check_circle</span> <span>Includes this ticket${status.builtFrom ? ` &middot; built from ${escapeHTML(status.builtFrom)}` : ""}${status.updatedMs ? ` &middot; updated ${describeAgo(status.updatedMs, nowMs)}` : ""}</span></div>`;
   return `<div class="test-link-row">${link}${editBtn}</div>${line}`;
 }
 
@@ -2043,9 +2043,9 @@ function newestTestVersion() {
   }, archivedStats.newestVersion || "");
 }
 
-function describeAgo(ms) {
+function describeAgo(ms, nowMs = Date.now()) {
   if (!ms) return "never";
-  const diff = Date.now() - ms;
+  const diff = nowMs - ms;
   if (diff < 0) return "just now";
   const mins = Math.floor(diff / 60000);
   if (mins < 1) return "just now";

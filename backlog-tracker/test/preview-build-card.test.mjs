@@ -89,8 +89,15 @@ test("ready: Test this plus 'Includes this ticket · built from <sha7> · update
   assert.match(row, /Includes this ticket/);
   assert.match(row, /built from 0123456/);
   assert.doesNotMatch(row, /built from 01234567\b/);
-  assert.match(row, /updated \d+m ago|updated just now/);
+  assert.match(row, /updated 5m ago/);
   assert.doesNotMatch(ctx.failTestingButtonHTML(item, NOW), /\bdisabled\b/);
+});
+
+test("ready: the 'updated' text follows the nowMs it is given, not the real clock", () => {
+  for (const now of [NOW + 86400e3, NOW + 365 * 86400e3]) {
+    const item = card({ previewState: "ready", previewStateAt: iso(now - 60e3), previewBuiltFrom: "0123456789abcdef", previewUpdatedAt: iso(now - 5 * 60e3) });
+    assert.match(ctx.testLinkRowHTML(item, now), /updated 5m ago/);
+  }
 });
 
 test("null previewState is today's markup", () => {
