@@ -85,10 +85,64 @@ empty or mis-edited collection can never lock everyone out.
 **Can — read:** `whoami`, `list_projects`, `list_backlog_items`,
 `get_backlog_item`, `get_ready_for_testing_board`,
 `get_approved_for_deployment_board`, `get_project_docs`,
+`list_project_documents`, `get_project_document`,
 `list_doc_revisions`, `get_doc_revision`, `search_faq`, `get_faq_article`,
 `list_pending_faq_revisions`, `get_faq_revision`, `list_skills`,
 `get_skill`, `list_skill_misses`, `get_routine_setup_instructions`,
 `list_concepts`, `get_concept`.
+
+**What the agent is told on connect.** The server instructions (`SERVER_INSTRUCTIONS`
+in `functions/mcp-server.js`) are the first text a connected agent reads. They
+say what each role can do, name every `board.write` and admin tool, tell the
+agent to read documents with `list_project_documents` / `get_project_document`
+rather than `get_project_docs`, say which side wins for a repo-mirrored
+document (the repo file; a board-only edit is lost, except for a project with
+no single folder, whose Requirements and README are not synced), and say that
+release actions stay on the board apart from `approve_deploy_to_main` (admin)
+and `set_my_routine_binding`. `whoami`'s note and the notes returned by
+`set_project_requirements` / `set_project_readme` say the same from the
+project's own fields. `test/mcp-server.test.js` keeps them in step with the
+tool list: every name in them is a registered tool, every write and admin tool
+is named, and the instructions stay within 3,400 characters (what Claude Code
+delivers whole).
+
+**Start document and manifest fields.** `list_projects` returns
+`startHereDocId` per project (`"readme"`, `"requirements"`, a document id, or
+`null` when unset) and `get_project_docs`' `docsSync` returns `manifestPath`
+(the repo's `board-docs.json` that declares the project's mirrored documents)
+and `unlisted` (`{id, name}` of documents the manifest doesn't classify).
+All are written by the post-merge sync from the repo manifest; none is
+writable over MCP.
+
+**Reading a project's documents without loading them all.**
+`get_project_docs` returns the full text of every document (600 KB for a
+project with 47), which a host cannot show. For anything large use the two
+paging tools, scope `board.read` (viewers included), which write nothing to
+`mcpAuditLog`:
+
+- `list_project_documents({projectId, query?, offset?})` lists Requirements,
+  README, every additional document and the interfaces the project shares,
+  with `chars`, `updatedAt`, and for a document `sourcePath`, `sourceCommit`
+  and `kind` (`"mirror"` = the next repo sync overwrites it, `"board"` = lives
+  only on the board) — no text. Long lists page by `nextOffset` (a row index,
+  `null` on the last page). With `query` (2–200 characters) it searches names
+  and text of all of them, case-insensitively, and returns
+  `{matchedTotal, matches:[{docId, docName, heading, offset, snippet}]}` — at
+  most 5 per document and 50 in all.
+- `get_project_document({projectId, docId, section?, offset?, maxChars?, outline?})`
+  reads one: `docId` is `"requirements"`, `"readme"`, a document id or an
+  interface id. It returns `content` a page at a time (`maxChars` default
+  40,000, max 50,000, shortened so the whole result text stays under 60,000
+  characters including JSON escaping) with `nextOffset`, plus `metadata`
+  (`sourcePath`, `sourceSlices`, `sourcePrefix`, `sourceCommit`, `updatedAt`,
+  `updatedByEmail`). The first page, or `outline: true`, also lists the
+  headings with their offsets; `section` returns one heading's part (matched
+  case-insensitively, exact then prefix) up to the next heading of the same or
+  higher level, with `offset`/`nextOffset` relative to the section and
+  `sectionOffset` giving where it starts.
+
+Lengths and offsets are JavaScript string lengths (UTF-16 code units); pages
+never end inside a surrogate pair and joined in order equal the stored text.
 
 `get_ready_for_testing_board` and `get_approved_for_deployment_board` are
 **composable — they are MCP Apps** (SEP-1865, the MCP UI extension
@@ -130,6 +184,8 @@ inline as ticket cards — title, summary, type/area, test link, test
 version and a link back to the ticket. In Claude Code the same tool answers
 as text until Anthropic switches on its MCP Apps host.
 
+### Write tools
+
 **Can — write (editor and admin only):**
 
 | Tickets | Documentation | Help centre | Skills library | Deploy (one exception) | Your own routine binding |
@@ -139,7 +195,7 @@ as text until Anthropic switches on its MCP Apps host.
 | `add_item_comment` | `set_project_artifact`, `set_project_description` | `comment_on_faq_revision` | `delete_skill` | | |
 | | `create_project_document` / `update_project_document` / `delete_project_document` | | `report_skill_miss` (tags a real gap, never edits the skill's own content) | | |
 | | `create_interface` / `update_interface` / `delete_interface` (an interface joins any two projects or concepts: pass `endpoints` `[{type, id}, {type, id}]`, or `projectIds` for two projects; `update_interface` can re-point with `endpoints`) | | | | |
-| | `demote_project` (project → new concept carrying its docs; re-points its interfaces; archives the project; refused with open tickets unless `acknowledgeOpenTickets`) | | | | |
+| | `demote_project` (project → new concept carrying its docs; re-points its interfaces; archives the project; refused with open tickets unless `acknowledgeOpenTickets`) | | `mark_skill_reviewed` (clears the review nudge and restarts the clock) | | |
 | | `create_concept` / `add_concept_comment` / `set_concept_readme` / `set_concept_requirements` / `set_concept_artifact` (Concept Incubator; the last three refused once a concept is promoted, except comments) | | | | |
 
 **Setting up your own personal Notify Claude Routine** (so board clicks you
@@ -187,7 +243,11 @@ front-end skill) that any team member's agent can pull in, listed in the
 console under **Skills**. Unlike documentation above, `list_skills` and
 `get_skill` need only `board.read`, so even a viewer's agent can read every
 skill; only `upload_skill`/`update_skill`/`delete_skill` need
-`board.write`. `update_skill`/`delete_skill` record the file set they
+`board.write`, as does `mark_skill_reviewed` — it records that the owning
+team has just revisited a skill, clearing its `reviewDue` nudge on
+`list_skills`/`get_skill` and restarting its review clock (optionally
+overriding `reviewCadenceDays` / `reviewDeployThreshold`).
+`update_skill`/`delete_skill` record the file set they
 replace to `docRevisions` first (`target: "skill"` / `"skill.deleted"`),
 recoverable the same way as a documentation write — `list_doc_revisions`
 takes an optional `skillId` filter alongside `projectId`/`docId`/
@@ -235,7 +295,7 @@ for.
 Three things worth knowing before pointing an agent at them:
 
 - **Writes replace the whole document.** Read it first with
-  `get_project_docs`, revise, send the complete text back. An agent that
+  `get_project_document` (or `get_project_docs`), revise, send the complete text back. An agent that
   sends a fragment overwrites the document with that fragment.
 - **Nothing is lost when that happens.** Every write records what it
   replaced, and a delete records the whole document, in `docRevisions` —
@@ -245,15 +305,31 @@ Three things worth knowing before pointing an agent at them:
   `destructiveHint`, so a client that asks before destructive actions will
   ask before those and not before an ordinary update.
 - **Size ceilings differ, on purpose.** Requirements and README allow 800k
-  characters (they live on the project doc, which shares Firestore's 1 MiB
-  limit). Project documents and interfaces allow 20k — the same ceiling
+  characters each. They live in `projects/{id}/docs/{kind}` (one document
+  per kind, so each has Firestore's 1 MiB to itself); the project doc
+  carries only a pointer (`docs.<kind>`: size, hash, source commit). Project documents and interfaces allow 20k — the same ceiling
   `firestore.rules` gives the board's own editor, because a longer document
   would be one a person could never save an edit to from the Docs page.
 
-Where a project's documentation also exists as a repo file
-(`REQUIREMENTS.md`, `README.md`, `shared/interface-contract.md`), the two
-are meant to match. Update both; a divergence is a bug in whichever is
-stale.
+**Where a document is copied from a repo file, the repo file wins.** A
+mirror (a `projectDocs` row with `sourcePath`), a Requirements/README that
+the post-merge sync writes (its `docs/{kind}` block has a `sourcePath`, or
+the project's `docsSync` has a `requirementsCommit` / `readmeCommit`) and an
+interface record with a `sourcePath` are read-only over MCP:
+`update_project_document`, `delete_project_document`,
+`set_project_requirements`, `set_project_readme`, `update_interface` and
+`delete_interface` refuse them, write nothing and record no revision, and
+the error names the repo file. To change one, edit the file on a branch; the
+board copy follows when it merges. To retire a mirror, remove it from the
+repo's mirror list first. A project with no synced copy (Backlog Tracker &
+FAQs' Requirements and README today) is written as before.
+
+Every change to a mirror, by the sync or by a person on the Docs page, is
+kept: the `onProjectDocWritten` trigger records the text it replaced in
+`docRevisions` (`target` `projectDoc`, or `projectDoc.deleted`), so
+`list_doc_revisions` with the `docId` finds it. Sync writes to
+Requirements/README are not recorded — they reach 800k characters, which
+may not fit through a trigger event.
 
 **Cannot, deliberately, apart from the one exception above:** merge a
 train, approve a ticket out of Ready for Testing, move a card's status,
@@ -292,6 +368,28 @@ Every write records the person's email on the document (`createdByEmail`,
 `mcpAuditLog`, which admins can read.
 
 ---
+
+## The `project_handover` prompt
+
+`prompts/list` offers one prompt, **Project handover**, with one required
+argument, `project` (a project id or name; case-insensitive; a unique prefix
+is enough). `prompts/get` returns one user message: a reading plan built on
+the server, at most 20,000 characters — the project's name, description,
+deploy branch and ticket counts (archived left out); the start-here document
+to read first (`startHereDocId`, or the README when the project declares
+none); every project document by name and id, start-here first, with
+"mirror of <sourcePath>" on mirrors; its interfaces; the Requirements outline
+(level 1–2 headings, at most 60); and a closing instruction to read the
+start-here document, then the documents it lists, then summarise the project.
+Errors are JSON-RPC `-32602`: unknown prompt, missing `project`, no match, or
+more than one (the message lists up to 20 names).
+
+**A person starts it, not the agent.** In Claude Code it is the slash command
+`/mcp__<connection name>__project_handover`; Claude Desktop and claude.ai
+list it as a prompt to attach. An agent never calls `prompts/get` by itself,
+which is why the server instructions also say to read a project's start-here
+document first. Prompts are read-only and work for every role, viewer
+included; nothing is written, not even to `mcpAuditLog`.
 
 ## How it appears in a client
 

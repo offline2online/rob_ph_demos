@@ -57,8 +57,24 @@ Cloud Functions, own Hosting site, own IAM/billing; see
 {
   name: string,
   createdAt: timestamp,
-  readmeMd?: string,              // this project's primary tracking doc, shown atop its Docs page
-  requirementsMd?: string,        // this file's own live counterpart
+  readmeMd?: string,              // LEGACY: README text from before docs/{kind}; read only when projects/{id}/docs/readme is missing
+  requirementsMd?: string,        // LEGACY: Requirements text, same rule against docs/requirements
+  docs?: { [kind: "readme" | "requirements"]: { chars: number, sha256: string, sourceCommit: string | null, updatedAt: timestamp } }, // pointers only; the text is in projects/{projectId}/docs/{kind} below. Writable over MCP (PROJECT_WRITABLE_FIELDS)
+  description?: string,           // one or two sentences (max 300 chars) on what the project covers, surfaced by list_projects (set_project_description)
+  repoFolder?: string,            // repo-root-relative folder the project owns, no trailing slash — the join to GitHub that patchFiles paths resolve against
+  repoFolderNotApplicable?: boolean, // true = deliberately no single folder (e.g. Backlog Tracker & FAQs)
+  deployBranch?: string,          // the project's one integration branch, deploy/<folder> (the deployment train)
+  docsSync?: {                    // outcome of the board docs sync (docs-sync-lib.js), after that project's train merge and whenever main moves; error is null on success, or { skipped, at, mergeCommit } when nothing could be synced
+    mergeCommit?: string,         // main's head when the sync last ran
+    requirementsCommit?: string | null, readmeCommit?: string | null, // each file's own last commit
+    syncedAt?: timestamp, error?: string | null, errorAt?: timestamp | null, attemptedCommit?: string,
+    mirroredDocs?: { docId: string, name: string, sourcePath: string, sourceCommit: string | null, ok: boolean, error: string | null }[], // one per mirror; a failed one does not stop the rest
+    manifestPath?: string,        // the board-docs.json this sync reconciled (docs-sync-lib.js reconcileManifest); absent when the project has none
+    unlisted?: { id: string, name: string }[], // up to 50 documents the manifest neither mirrors nor classifies (kind "generated" skipped)
+  },
+  startHereDocId?: string,        // "readme" | "requirements" | a projectDocs id — the manifest's startHere; written only by the sync, returned by list_projects, not in PROJECT_WRITABLE_FIELDS
+  lastMergeCommit?: string,       // main's head at the project's last docs sync (written with docsSync)
+  lastMergeAt?: timestamp,        // when that sync ran
   notifyRequestedAt?: timestamp,  // bumped by the "Notify Claude" button
   notifyRequestedByEmail?: string | null, // the signed-in member who clicked — per-member routine binding lookup, see notifyOnProjectReadyForReview below (VNE6dxMu3h6jO3g6FNNB)
   notifyItemIds?: string[] | null, // optional subset picked via the Backlog column's own checkboxes — see below
@@ -138,9 +154,15 @@ deleted by hand).
   updatedAt: timestamp,
   archivedAt?: timestamp,
   claudeNote?: string,          // short one-line status, shown nowhere but kept for history
-  notes?: [{ author: "claude" | "viewer", text: string, at: timestamp }],
+  notes?: [{ author: "claude" | "viewer", text: string, at: timestamp }], // append-only: every writer adds entries (arrayUnion / appendMissingElements), none resends the array
   attachments?: [{ type: "image" | "video", url: string, path: string, name: string, size: number, uploadedAt: timestamp }], // see "Attachments" below
   previewUrl?: string,          // a Ready for Testing card's own "Test this" link
+  previewState?: "rebuilding" | "ready" | "stale" | null, // lmdwsP5ElY5Oh12N9Fex — whether a link that opens a checked-in build (GENERATED_BUILDS) already shows this ticket; null = no generated build, the card behaves as before. Written by run-backlog-automation.js only — see "Test/preview link"
+  previewStateAt?: string,      // ISO — when previewState last changed ("rebuilding" is aged from here)
+  previewBuildWorkflow?: string | null, // e.g. "dsp-prototype.yml" — the workflow that rebuilds the bundle
+  previewBuiltFrom?: string | null,     // build-info.json "commit" once ready: the source commit the bundle was built from
+  previewSha?: string | null,   // the commit the pipeline's link is pinned to
+  previewUpdatedAt?: string,    // ISO — when the pipeline last changed the link
   testSummary?: string,         // Ready for Testing card's primary text — see below
   noDeploymentRequired?: boolean, // set from the Edit item modal, or by the no-diff path when the content is already on main — see "No manual way to reach published-live exists" below for the one exception it carves out. The train wins over the flag: a card with a deployCommit is a train card whatever this says (isNoDeployCard() in app.js)
   testPassed?: boolean,         // DEPRECATED — the old per-card "Confirm tested" flag. Approval is the checkbox now (see "Approving out of Ready for Testing"); read-only leftover on old cards, never written
@@ -177,6 +199,22 @@ deleted by hand).
   deployCommits?: [string],     // every commit it has on the branch (a re-patch appends rather than rewriting)
   revertRequested?: boolean,    // Failed testing wrote it: take this rejected ticket's commits back off the branch
   revertBlockedBy?: [string],   // item ids whose later commits made that revert conflict; a human resolves, nothing is force-pushed
+  // Each train card's own test result (19 Oct 2026) — written ONLY by
+  // run-backlog-automation.js (itemPipelineFields in firestore.rules). The
+  // card takes its worst workflow's state: failed, not-run, running,
+  // starting, passed (not-applicable when its paths need no workflow). Set at
+  // landing (processApplyPatch), kept current each sweep by
+  // recordCardTrainTests (writes only on a change; a card with no record or
+  // one for another sha is backfilled from its commit's files). Shown as a
+  // chip on Ready for Testing / Approved for Deployment cards only while
+  // trainTest.sha == deployCommit (public/js/card-test-status.js).
+  trainTest?: { sha, state, workflows: [{ workflow, label, state, runUrl, since }], since, updatedAt },
+  // Who approved (19 Oct 2026): written in the batch that moves the card to
+  // ready-to-publish — approvedByEmail lowercased, approvedAt a server
+  // timestamp; rules require the caller's own email and request.time, and
+  // only on that move. approvedVia (a non-browser route, e.g. dsp-board) is
+  // never a browser's to write. Approved cards show "Approved by <email>".
+  approvedByEmail?: string, approvedAt?: timestamp, approvedVia?: string,
   revertedCommits?: [string],   // the revert commits that took it off
   carriedByCommit?: string,     // this card has NO commit of its own: a sibling's commit on the branch already carried its change (a shared-file batch). deployCommit is that same sha, so the card is on the train like any other and goes live only when the train merges — see "A card carried by a sibling's commit follows that train" under "The deployment train"
   carriedByItem?: string | null, // the sibling's id from that commit's `Backlog item:` trailer (null for a commit with no trailer)
@@ -237,6 +275,15 @@ root the way PR #185 did.
 `CATEGORIES` (fixed set, `backlog-tracker/public/js/app.js`): `Pricing &
 Offers`, `Product Assets`, `HQ Admin`, `Retail Admin`, `Menu Board`,
 `Backend / Infrastructure`, `Uncategorised`.
+
+`systemStatus/docsSync` — state of the board docs sweep that syncs every
+project's repo documents whenever `main` moves (members can read it; only
+the automation writes it): `{ lastSyncedMain: string | null, attemptedMain:
+string, attempts: number, failedProjects: string[], checkedAt: timestamp }`.
+`lastSyncedMain` advances to `attemptedMain` only when every project
+succeeded; otherwise the same head is retried, at most 5 attempts, and a new
+head resets `attempts`. Per-project outcomes are `projects/{id}.docsSync`
+above.
 
 Status pipeline and what each transition means:
 
@@ -879,8 +926,36 @@ stale.
   contentMd: string,
   createdAt: timestamp,
   updatedAt: timestamp,
+  updatedByEmail?: string,         // who last wrote it (a member's email, or "backlog-automation" for a mirror; the sync sets it on every mirror write)
+  // Mirror fields, set when the document is kept in step with a repo file
+  // by the post-merge docs sync (docs-sync-lib.js); absent on a hand-written document:
+  sourcePath?: string,             // repo-root-relative file this document mirrors
+  sourceSlices?: { start: string, end?: string }[], // only these line ranges of the file are mirrored
+  sourcePrefix?: string,           // prepended verbatim to the mirrored text
+  sourceCommit?: string,           // last commit that touched sourcePath
+  // Set by the board-docs.json reconcile (the repo wins for these):
+  mirrorKey?: string,              // the manifest entry's key; how a mirror is found again (never by sourcePath alone)
+  manifestPath?: string,           // the board-docs.json that declares it (mirrors and boardDocs entries)
+  status?: "current" | "working" | "superseded", // declared status
+  statusNote?: string,             // boardDocs entry's note
 }
 ```
+**A document with `sourcePath` is a mirror and is read-only over MCP**:
+`update_project_document` and `delete_project_document` (and
+`update_interface` / `delete_interface` for an interface record that
+carries `sourcePath`) refuse it — a rename included, since the sync treats
+a changed name as drift — write nothing and record no revision. The same
+holds for `set_project_requirements` / `set_project_readme` when
+`projects/{id}/docs/{kind}.sourcePath` or `projects/{id}.docsSync.
+requirementsCommit` / `readmeCommit` is set. Every change to a mirror is
+kept by the `onProjectDocWritten` trigger (`projectDocs/{docId}`): on an
+update where `contentMd` changed, or on a delete, it adds one `docRevisions`
+entry `{target: "projectDoc" | "projectDoc.deleted", docId, projectId, name,
+contentMd, chars, replacedAt, replacedByEmail, via: "trigger"}` holding the
+BEFORE text. Creations, empty previous text, unchanged text and non-mirror
+documents record nothing. Sync writes to Requirements/README stay
+unrecorded (800k characters may not fit through a trigger event).
+
 A generic, named document belonging to exactly one project — an API spec,
 an architecture decision record, any technical or architectural document
 that isn't the project's own `requirementsMd` or `readmeMd` fields. Listed
@@ -889,6 +964,26 @@ inline via a modal, same UI pattern as Interfaces but anchored to a single
 project rather than shared between two. Exists so a project's *complete*
 documentation lives on one page instead of scattered across the repo,
 per-project Firestore fields, and this collection.
+
+### `projects/{projectId}/docs/{kind}`
+```
+{
+  contentMd: string,               // the whole document, up to 800,000 chars
+  sourcePath?: string,             // repo file it was synced from, e.g. "backlog-tracker/README.md"
+  sourceCommit?: string | null,    // commit the text came from
+  chars: number,                   // contentMd.length
+  sha256: string,                  // hex of the UTF-8 text, so a copy can be checked without reading it
+  updatedAt: timestamp,
+  updatedByEmail: string,          // the member, "sync-board-docs" or "backlog-automation"
+}
+```
+`kind` is `readme` or `requirements`. One document per kind under the
+project, so each has Firestore's 1 MiB to itself; the project doc keeps
+only the `docs` pointers above. Written by `scripts/sync-board-docs.js`,
+the post-merge docs sync and the `set_project_readme` /
+`set_project_requirements` MCP tools. Readers use this document and fall
+back to the project's legacy `readmeMd` / `requirementsMd` only when it is
+missing.
 
 ### `skills/{skillId}`
 ```
@@ -1459,6 +1554,15 @@ REST API is reachable with a plain `curl`, no service account needed.
   is `{author: "viewer", text, at}` appended via `arrayUnion` — `at` is a
   plain client `Date`, not `serverTimestamp()`, since Firestore rejects a
   server-timestamp sentinel inside an array element.
+  **Notes are append-only everywhere and never rewritten whole** (19 Oct
+  2026): `notes` is the card's audit trail, and whole-array writes by the
+  automation and Routine sessions erased it on seven cards. The console and
+  MCP `add_item_comment` use `arrayUnion`; `run-backlog-automation.js`'s
+  `appendNote`/`patchItem` and the Routine (`ROUTINE_INSTRUCTIONS.md` →
+  Setup → "Append a note") send only the new entries in one
+  `documents:commit` with an `appendMissingElements` transform and
+  `currentDocument.exists: true`. Tests: `notes-append.test.js`,
+  `notes-append-emulator.test.js`.
 - **Test/preview link**: a Ready for Testing card gets a "Set test link"
   button; once set (via `showPromptDialog()` — see "In-app dialogs replace
   window.confirm/prompt/alert" below — prefilled with an editable template
@@ -1491,6 +1595,38 @@ REST API is reachable with a plain `curl`, no service account needed.
   human set by hand through "Set test link" (anything that isn't one of
   this pipeline's own two auto-generated shapes) is left untouched rather
   than overwritten.
+
+  **"Rebuilding test link…" — a link into a checked-in build says whether
+  the build includes the ticket (`lmdwsP5ElY5Oh12N9Fex`).** When a link
+  opens a generated build (`GENERATED_BUILDS`, today the DSP prototype),
+  it is live the moment the ticket lands but pinned to the ticket's own
+  commit, which still holds the PREVIOUS bundle until `dsp-prototype.yml`
+  rebuilds and re-points it. Testers failed tickets on that old bundle
+  (`k1ZIa7lksk9gQjTVrLgN`, `OtNAsifjp3ZUtDEsdzu0`), each costing a revert,
+  re-patch and rebuild. So `processApplyPatch` (and the no-diff carried
+  path) sets `previewState: "rebuilding"` exactly when the patch leaves a
+  build stale AND the pipeline's link opens that build's output; any other
+  link gets `null`. `refreshPreviewBuildStates()` then runs every pass,
+  reads `build-info.json` at the link's commit and tests
+  `git merge-base --is-ancestor <ticket commit> <build-info commit>`:
+  included → `"ready"` (+ `previewBuiltFrom`); not included → `"rebuilding"`,
+  or `"stale"` plus ONE note linking the workflow's Actions page after
+  `PREVIEW_REBUILD_STALE_MS` (20 minutes). A stale card turns `"ready"` when
+  a later build includes it; a card that leaves testing or whose link stops
+  opening a build goes back to `null`; an unreadable build-info or unknown
+  ref changes nothing. While any card is rebuilding the run asks for the
+  next one at once rather than waiting on the throttled schedule.
+  The card (`testLinkRowHTML`, driven by `previewBuildStatus`): rebuilding
+  hides "Test this →" behind a status line ("Rebuilding test link… usually
+  1-2 minutes") and **disables Failed testing** (`failTestingButtonHTML`);
+  stale brings the link back with a warning and the workflow link, re-enables
+  Failed testing and adds a sentence to its dialog; ready shows "Includes this
+  ticket · built from <sha7> · updated …". The client ages "rebuilding" itself
+  (`PREVIEW_REBUILD_STALE_MS` matches the automation's), so a stopped
+  automation never hides a link for good. A person's "Set test link" writes
+  `previewState: null`. `repointTrainPreviewUrls` also writes `previewSha`
+  and `previewUpdatedAt` (still no note). Tests:
+  `test/preview-build-state.test.js`, `test/preview-build-card.test.mjs`.
 
   **`guessPreviewUrl` picks the page, not just a changed file.** A ticket
   that changes an `.html` file links to that page. A ticket that changes
@@ -2213,6 +2349,8 @@ Required properties, each covered by `test/mcp-server.test.js`:
 **Tool surface — and its hard limit.** Read: `whoami`, `list_projects`,
 `list_backlog_items`, `get_backlog_item`, `get_ready_for_testing_board`,
 `get_approved_for_deployment_board`, `get_project_docs`,
+`list_project_documents`, `get_project_document` (documents listed without text,
+searched, and read a page or section at a time — see MCP.md),
 `list_doc_revisions`, `get_doc_revision`, `search_faq`, `get_faq_article`,
 `list_pending_faq_revisions`, `get_faq_revision`, `list_skills`, `get_skill`,
 `list_skill_misses`, `get_routine_setup_instructions`, `list_concepts`,

@@ -1,7 +1,7 @@
 # E2E quick — every push to the DSP train and every PR to main (E2E Testing
 # Strategy §3.6, ticket mY3f2jq9nml5yK3oLOjJ). Typecheck and the full suites,
-# Runs 1–5 included (apps/api/test/e2e). Results JSON is uploaded as an
-# artifact for report-e2e.
+# Runs 1–5 included (apps/api/test/e2e), then the Run 6 journey. Results JSON
+# is uploaded as an artifact for report-e2e.
 #
 # "e2e-quick" is a required check on main (repository ruleset, PRs only), so
 # it must report on EVERY pull request: a PR that doesn't touch
@@ -98,6 +98,11 @@ jobs:
       - name: Runs 1–5 as JSON (results/e2e-quick.json)
         if: steps.scope.outputs.run == 'true'
         run: npm run e2e:quick
+      # The journey used to run only in e2e-nightly, after a train had merged,
+      # so four breaking changes shipped and came back as test-only tickets.
+      - name: Run 6 — full journey (results/journey-*.json)
+        if: steps.scope.outputs.run == 'true'
+        run: npm run e2e:journey
       - name: it.fails markers reference a ticket
         if: steps.scope.outputs.run == 'true'
         run: npm run e2e:lint

@@ -15,7 +15,8 @@
 // Needs a Chromium: PLAYWRIGHT_CHROMIUM (a path) if playwright-core can't
 // find one itself, e.g. /opt/pw-browsers/chromium-*/chrome-linux/chrome in
 // the Claude Code sandbox, or the `chrome` channel on a GitHub runner.
-// Opt-in (not part of `npm test`) for exactly that reason.
+// Runs in CI inside test:mcp-app (the step that already launches Chrome) and
+// in `npm test`; ci-coverage.test.js fails if it stops being wired in.
 import { chromium } from "playwright-core";
 import fs from "node:fs";
 import http from "node:http";

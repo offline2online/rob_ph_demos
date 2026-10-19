@@ -1276,6 +1276,132 @@ async function writeProjectDoc(projectId, kind, md, session) {
   return { chars: md.length, sha256 };
 }
 
+// ── Reading documents without loading them whole ─────────────────────────
+// get_project_docs returns every document's full text (600 KB for a project
+// with 47 of them), which no agent host can show. list_project_documents
+// lists them with no text, and get_project_document reads one a page or a
+// section at a time. Lengths and offsets are JavaScript string lengths
+// (UTF-16 code units), the same unit the stored `chars` fields use.
+const DOC_RESULT_MAX = 60000;          // no result text from either tool is longer
+const DOC_PAGE_DEFAULT = 40000;
+const DOC_PAGE_MAX = 50000;
+const DOC_OUTLINE_BUDGET = 20000;      // outline stops growing here, flagged outlineTruncated
+const DOC_HEADING_MAX = 200;
+const DOC_QUERY_PER_DOC = 5;
+const DOC_QUERY_TOTAL = 50;
+const DOC_SNIPPET_MAX = 240;
+
+// Markdown headings with their offsets. Lines inside ``` fences are not
+// headings, and neither is a "#" with no text after it.
+function outlineOf(text) {
+  const out = [];
+  let fence = false;
+  let pos = 0;
+  while (pos <= text.length) {
+    let nl = text.indexOf("\n", pos);
+    if (nl === -1) nl = text.length;
+    const line = text.slice(pos, nl);
+    if (/^ {0,3}(```|~~~)/.test(line)) {
+      fence = !fence;
+    } else if (!fence) {
+      const m = /^ {0,3}(#{1,6})[ \t]+(.*?)[ \t]*$/.exec(line.replace(/\r$/, ""));
+      if (m) {
+        const heading = m[2].replace(/[ \t]+#+$/, "").trim();
+        if (heading) out.push({ level: m[1].length, heading, offset: pos });
+      }
+    }
+    pos = nl + 1;
+  }
+  return out;
+}
+
+function clip(s, n) { return s.length > n ? s.slice(0, n) : s; }
+
+// Never end a page between the halves of a surrogate pair.
+function safePageEnd(text, offset, end) {
+  if (end >= text.length) return text.length;
+  const last = text.charCodeAt(end - 1);
+  const next = text.charCodeAt(end);
+  if (last >= 0xD800 && last <= 0xDBFF && next >= 0xDC00 && next <= 0xDFFF) {
+    return end - 1 > offset ? end - 1 : Math.min(end + 1, text.length);
+  }
+  return end;
+}
+
+// One document (requirements, readme, a projectDocs row or an interface)
+// as {name, kind, text, meta}, or {error}. `kind` is "mirror" for a document
+// the next repo sync overwrites and "board" for one that lives only here.
+async function loadDocumentForRead(projectId, projectData, docId) {
+  const metaOf = (v) => ({
+    updatedAt: tsToISO(v.updatedAt),
+    updatedByEmail: v.updatedByEmail || null,
+    sourcePath: v.sourcePath || null,
+    sourceSlices: v.sourceSlices === undefined ? null : v.sourceSlices,
+    sourcePrefix: v.sourcePrefix === undefined ? null : v.sourcePrefix,
+    sourceCommit: v.sourceCommit || null,
+  });
+  if (docId === "requirements" || docId === "readme") {
+    const snap = await db().collection("projects").doc(projectId).collection("docs").doc(docId).get();
+    const v = snap.exists ? (snap.data() || {}) : {};
+    const text = snap.exists ? (typeof v.contentMd === "string" ? v.contentMd : "") : await readProjectDoc(projectId, docId, projectData);
+    const meta = metaOf(v);
+    return { name: docId === "readme" ? "README" : "Requirements", kind: meta.sourcePath || meta.sourceCommit ? "mirror" : "board", text, meta };
+  }
+  const pd = await db().collection("projectDocs").doc(docId).get();
+  if (pd.exists) {
+    const v = pd.data() || {};
+    if (v.projectId !== projectId) return { error: `Document ${docId} belongs to another project. Call list_project_documents with projectId ${projectId} to see this project's documents.` };
+    return { name: v.name || "", kind: v.sourcePath ? "mirror" : "board", text: typeof v.contentMd === "string" ? v.contentMd : "", meta: metaOf(v) };
+  }
+  const itf = await db().collection("interfaces").doc(docId).get();
+  if (itf.exists) {
+    const v = itf.data() || {};
+    if (!Array.isArray(v.projectIds) || !v.projectIds.includes(projectId)) return { error: `Interface ${docId} is not shared with project ${projectId}. Call list_project_documents to see the interfaces this project has.` };
+    return { name: v.name || "", kind: "interface", text: typeof v.contentMd === "string" ? v.contentMd : "", meta: metaOf(v) };
+  }
+  return { error: `No document with id ${docId} in project ${projectId}. Call list_project_documents to see the ids ("requirements", "readme", a document id or an interface id).` };
+}
+
+// The text of the section whose heading is `name`: the heading line up to
+// the next heading of the same or higher level. Exact match first (ignoring
+// case), then prefix.
+function findSection(text, outline, name) {
+  const want = String(name).trim().toLowerCase();
+  let i = outline.findIndex((h) => h.heading.toLowerCase() === want);
+  if (i === -1) i = outline.findIndex((h) => h.heading.toLowerCase().startsWith(want));
+  if (i === -1) return null;
+  let end = text.length;
+  for (let j = i + 1; j < outline.length; j += 1) {
+    if (outline[j].level <= outline[i].level) { end = outline[j].offset; break; }
+  }
+  return { heading: outline[i].heading, start: outline[i].offset, end };
+}
+
+// Hits for `query` in `text`, as {offset, heading, snippet}: all of them
+// counted, the first `cap` returned.
+function searchText(text, outline, rx, cap) {
+  const hits = [];
+  let total = 0;
+  rx.lastIndex = 0;
+  let m;
+  while ((m = rx.exec(text)) !== null) {
+    total += 1;
+    if (hits.length < cap) {
+      let h = null;
+      for (const o of outline) { if (o.offset <= m.index) h = o.heading; else break; }
+      const room = Math.max(0, DOC_SNIPPET_MAX - m[0].length);
+      let from = Math.max(0, m.index - Math.floor(room / 2));
+      let to = Math.min(text.length, from + DOC_SNIPPET_MAX);
+      from = Math.max(0, to - DOC_SNIPPET_MAX);
+      if (from > 0 && text.charCodeAt(from) >= 0xDC00 && text.charCodeAt(from) <= 0xDFFF) from += 1;
+      if (to < text.length && text.charCodeAt(to - 1) >= 0xD800 && text.charCodeAt(to - 1) <= 0xDBFF) to -= 1;
+      hits.push({ offset: m.index, heading: h === null ? null : clip(h, DOC_HEADING_MAX), snippet: text.slice(from, to) });
+    }
+    if (m[0].length === 0) rx.lastIndex += 1;
+  }
+  return { total, hits };
+}
+
 // Every documentation write records what it replaced, so an agent that
 // truncates a 95 KB requirements doc at 3am has not destroyed it. This is
 // the whole reason delete_* tools are safe to offer at all: a delete writes
@@ -1548,6 +1674,40 @@ async function deployGuardForProject(pid) {
   return { ok: true, deployItems: legacyItems, reason: null };
 }
 
+// What happens to a Requirements/README write, from the project's own fields:
+// a project with a repo folder has the board copy rewritten from the repo file
+// after the next merge to main (docs-sync-lib.js), any other project is not synced.
+// One sentence for every place an agent is told who wins when a document is
+// a copy of a repo file (SERVER_INSTRUCTIONS, the Requirements/README success
+// notes). Keep it identical in all of them.
+const REPO_WINS = "Where a document is copied from a repo file (a mirror, or a synced Requirements/README), the repo file wins: edit it on a branch and the board copy follows on merge. Those copies are read-only here.";
+
+function docWriteNote() {
+  return REPO_WINS;
+}
+
+// Requirements/README that the repo sync owns. Synced when the docs/{kind}
+// block carries a sourcePath (every sync writer sets it) or the project's
+// docsSync has a commit for it (survives a browser save clearing sourcePath).
+// -> an error message, or null when the block may be written.
+async function syncedDocRefusal(projectId, projectData, kind) {
+  const snap = await db().collection("projects").doc(projectId).collection("docs").doc(kind).get();
+  const v = snap.exists ? (snap.data() || {}) : {};
+  const ds = (projectData && projectData.docsSync && typeof projectData.docsSync === "object") ? projectData.docsSync : {};
+  const commit = String(ds[kind + "Commit"] || "");
+  const sourcePath = typeof v.sourcePath === "string" ? v.sourcePath.trim() : "";
+  if (!sourcePath && !commit) return null;
+  const file = kind === "readme" ? "README.md" : "REQUIREMENTS.md";
+  const what = sourcePath || `this project's ${file} in the repo`;
+  const at = commit ? ` (last synced at ${commit.slice(0, 7)})` : "";
+  return `${kind === "readme" ? "README" : "Requirements"} mirrors ${what}${at}, so it is read-only here. The next sync after a merge to main rewrites it from that file. Edit the file on a branch; the board copy follows when it merges.`;
+}
+
+const mirrorUpdateRefusal = (name, sourcePath) =>
+  `"${name}" mirrors ${sourcePath}, so it is read-only here. The next sync after a merge to main rewrites it from that file. Edit the file on a branch; the board copy follows when it merges.`;
+const mirrorDeleteRefusal = (name, sourcePath) =>
+  `${mirrorUpdateRefusal(name, sourcePath)} To retire it, remove it from the repo's mirror list first (dsp-integration/scripts/sync-board-docs.mjs MIRRORS today); a person can then delete it on the Docs page.`;
+
 const TOOLS = [
   {
     name: "whoami",
@@ -1578,7 +1738,7 @@ const TOOLS = [
         routineBindingNudge: hasRoutineBinding
           ? null
           : "You have no personal Notify Claude Routine binding yet — every board click you make still fires under the shared project token. Call get_routine_setup_instructions to set up your own.",
-        note: "Deploys, merges, Notify Claude and campaign triggering are not available through MCP — they stay on the board's own buttons. Setting up your own personal Notify Claude Routine binding (see get_routine_setup_instructions/set_my_routine_binding) is the one exception: it changes which credentials a board click fires under, but the click itself still has to happen on the board.",
+        note: "Moving cards, approving out of Ready for Testing, Notify Claude clicks and campaign triggering stay on the board's own buttons. Two exceptions: approve_deploy_to_main (admins only) fires Deploy to Main once the project's whole train is approved, and set_my_routine_binding only chooses which Routine your own later board clicks fire; the click itself still happens on the board.",
       });
     },
   },
@@ -1663,7 +1823,7 @@ const TOOLS = [
   },
   {
     name: "list_projects",
-    description: "Every project/program on the board, with a short description of what it covers and how many tickets sit in each pipeline column. Use this to find the projectId other tools need, and to map a loose reference (\"the FAQ backlog\", \"the DSP project\") to the right project.",
+    description: "Every project/program on the board, with a short description of what it covers and how many tickets sit in each pipeline column. Use this to find the projectId other tools need, and to map a loose reference (\"the FAQ backlog\", \"the DSP project\") to the right project. startHereDocId is the document to read first when taking a project over (read it with get_project_document); null when the project declares none.",
     scope: "board.read",
     inputSchema: {
       type: "object",
@@ -1695,6 +1855,8 @@ const TOOLS = [
           trainStatus: p.trainStatus || null,
           trainLocked: p.trainLocked === true,
           artifactUrl: p.artifactUrl || null,
+          // The document to read first: "readme", "requirements" or a projectDocs id. Declared in the repo's board-docs.json and written by the post-merge sync, never over MCP.
+          startHereDocId: p.startHereDocId || null,
           counts: counts.get(p.id) || {},
         });
       });
@@ -2162,7 +2324,7 @@ const TOOLS = [
   },
   {
     name: "get_project_docs",
-    description: "A project's Requirements and README markdown, its additional documents, and every interface contract it shares with another project. Also docsSync: whether the board copy of Requirements/README is in step with main after the last deploy (error is why a sync was refused).",
+    description: "A project's Requirements and README markdown, its additional documents, and every interface contract it shares with another project. Also docsSync: whether the board copies of Requirements/README and every mirrored document are in step with main. It refreshes whenever main moves (not only after that project's own deploy); mergeCommit is the head last checked, error is why a sync was refused, attemptedCommit the commit that failed, skipped why nothing was synced, and mirroredDocs one {docId, name, sourcePath, sourceCommit, ok, error} per mirror. Returns every document's FULL text, which for a project with many or large documents is hundreds of thousands of characters — for those, use list_project_documents (no text, with search) and get_project_document (one document, paged or by section) instead.",
     scope: "board.read",
     inputSchema: {
       type: "object",
@@ -2199,6 +2361,13 @@ const TOOLS = [
             syncedAt: tsToISO(ds.syncedAt),
             error: ds.error || null,
             errorAt: tsToISO(ds.errorAt),
+            manifestPath: ds.manifestPath || null,
+            attemptedCommit: ds.attemptedCommit || null,
+            skipped: ds.skipped || null,
+            mirroredDocs: Array.isArray(ds.mirroredDocs)
+              ? ds.mirroredDocs.filter((m) => m && typeof m === "object").map((m) => ({ docId: m.docId || null, name: m.name || "", sourcePath: m.sourcePath || null, sourceCommit: m.sourceCommit || null, ok: m.ok === true, error: m.error || null }))
+              : [],
+            unlisted: Array.isArray(ds.unlisted) ? ds.unlisted.map((u) => ({ id: u && u.id || null, name: u && u.name || "" })) : [],
             lastMergeCommit: p.lastMergeCommit || null,
             lastMergeAt: tsToISO(p.lastMergeAt),
           }
@@ -2208,7 +2377,7 @@ const TOOLS = [
         (await db().collection("projectDocs").where("projectId", "==", projectId).get())
           .forEach((d) => {
             const v = d.data() || {};
-            out.documents.push({ id: d.id, name: v.name || "", contentMd: v.contentMd || "", updatedAt: tsToISO(v.updatedAt), updatedByEmail: v.updatedByEmail || null });
+            out.documents.push({ id: d.id, name: v.name || "", contentMd: v.contentMd || "", updatedAt: tsToISO(v.updatedAt), updatedByEmail: v.updatedByEmail || null, sourcePath: v.sourcePath || null, kind: v.sourcePath ? "mirror" : "board" });
           });
         out.documents.sort((a, b) => a.name.localeCompare(b.name));
       }
@@ -2218,6 +2387,190 @@ const TOOLS = [
           .forEach((d) => { out.interfaces.push(describeInterface(d.id, d.data())); });
       }
       return textResult(out);
+    },
+  },
+  {
+    name: "list_project_documents",
+    description: "List a project's documents WITHOUT their text, or search them. Returns Requirements and README ({id, chars, sourceCommit, updatedAt}), every additional document ({id, name, chars, updatedAt, updatedByEmail, sourcePath, sourceCommit, kind} — kind \"mirror\" means the next repo sync overwrites it, \"board\" means it lives only here), and the interface contracts the project shares ({id, name, chars, updatedAt}). Long lists page: totalDocuments and nextOffset (pass it back as offset; null on the last page). With query (2-200 characters) it instead searches names and text of all of them, case-insensitively, and returns {matchedTotal, matches:[{docId, docName, heading, offset, snippet}]} — at most 5 per document and 50 in all; read a hit with get_project_document using its docId and offset (or its heading as section). Use this instead of get_project_docs for a project with many or large documents.",
+    scope: "board.read",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string" },
+        query: { type: "string", description: "Search names and text. 2-200 characters." },
+        offset: { type: "integer", minimum: 0, description: "Row index to continue a long document list from (the previous result's nextOffset)." },
+      },
+      required: ["projectId"], additionalProperties: false,
+    },
+    async run(args) {
+      const projectId = String(args.projectId);
+      const snap = await db().collection("projects").doc(projectId).get();
+      if (!snap.exists) return toolError(`No project with id ${projectId}.`);
+      const p = snap.data() || {};
+      const compact = (o) => textResult(JSON.stringify(o));
+      const hasQuery = args.query !== undefined && args.query !== null;
+      const query = hasQuery ? String(args.query).trim() : "";
+      if (hasQuery && (query.length < 2 || query.length > 200)) return toolError("query must be 2 to 200 characters.");
+      let offset = 0;
+      if (args.offset !== undefined && args.offset !== null) {
+        offset = Number(args.offset);
+        if (!Number.isInteger(offset) || offset < 0) return toolError("offset must be a non-negative integer.");
+      }
+
+      const docs = [];
+      (await db().collection("projectDocs").where("projectId", "==", projectId).get()).forEach((d) => {
+        const v = d.data() || {};
+        docs.push({
+          id: d.id, name: v.name || "", text: typeof v.contentMd === "string" ? v.contentMd : "",
+          updatedAt: tsToISO(v.updatedAt), updatedByEmail: v.updatedByEmail || null,
+          sourcePath: v.sourcePath || null, sourceCommit: v.sourceCommit || null,
+        });
+      });
+      docs.sort((a, b) => a.name.localeCompare(b.name));
+      const ifaces = [];
+      (await db().collection("interfaces").where("projectIds", "array-contains", projectId).get()).forEach((d) => {
+        const v = d.data() || {};
+        ifaces.push({ id: d.id, name: v.name || "", text: typeof v.contentMd === "string" ? v.contentMd : "", updatedAt: tsToISO(v.updatedAt) });
+      });
+      ifaces.sort((a, b) => a.name.localeCompare(b.name));
+
+      if (hasQuery) {
+        const rx = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+        const sources = [];
+        for (const kind of ["requirements", "readme"]) {
+          const loaded = await loadDocumentForRead(projectId, p, kind);
+          sources.push({ docId: kind, docName: loaded.name, text: loaded.text });
+        }
+        for (const d of docs) sources.push({ docId: d.id, docName: d.name, text: d.text });
+        for (const i of ifaces) sources.push({ docId: i.id, docName: i.name, text: i.text });
+        let matchedTotal = 0;
+        const matches = [];
+        for (const src of sources) {
+          const cap = Math.min(DOC_QUERY_PER_DOC, DOC_QUERY_TOTAL - matches.length);
+          const named = src.docName.toLowerCase().includes(query.toLowerCase());
+          const inText = searchText(src.text, outlineOf(src.text), rx, Math.max(0, cap - (named ? 1 : 0)));
+          matchedTotal += inText.total + (named ? 1 : 0);
+          if (cap <= 0) continue;
+          if (named) matches.push({ docId: src.docId, docName: src.docName, heading: null, offset: 0, snippet: clip(src.docName, DOC_SNIPPET_MAX), in: "name" });
+          for (const h of inText.hits) matches.push({ docId: src.docId, docName: src.docName, heading: h.heading, offset: h.offset, snippet: h.snippet });
+        }
+        return compact({ projectId, query, matchedTotal, matches });
+      }
+
+      const pointers = p.docs && typeof p.docs === "object" ? p.docs : {};
+      const top = {};
+      for (const kind of ["requirements", "readme"]) {
+        const ptr = pointers[kind];
+        if (ptr && typeof ptr === "object" && typeof ptr.chars === "number") {
+          top[kind] = { id: kind, chars: ptr.chars, sourceCommit: ptr.sourceCommit || null, updatedAt: tsToISO(ptr.updatedAt) };
+        } else {
+          const loaded = await loadDocumentForRead(projectId, p, kind);
+          top[kind] = { id: kind, chars: loaded.text.length, sourceCommit: loaded.meta.sourceCommit, updatedAt: loaded.meta.updatedAt };
+        }
+      }
+      const out = {
+        projectId, requirements: top.requirements, readme: top.readme,
+        interfaces: ifaces.map((i) => ({ id: i.id, name: i.name, chars: i.text.length, updatedAt: i.updatedAt })),
+        totalDocuments: docs.length, offset, documents: [], nextOffset: null,
+      };
+      if (offset > docs.length) return toolError(`offset ${offset} is past the end: this project has ${docs.length} documents.`);
+      // Rows go on this page until the next would push the text over the limit.
+      let size = JSON.stringify(Object.assign({}, out, { nextOffset: 999999 })).length;
+      let i = offset;
+      for (; i < docs.length; i += 1) {
+        const d = docs[i];
+        const row = { id: d.id, name: d.name, chars: d.text.length, updatedAt: d.updatedAt, updatedByEmail: d.updatedByEmail, sourcePath: d.sourcePath, sourceCommit: d.sourceCommit, kind: d.sourcePath ? "mirror" : "board" };
+        const len = JSON.stringify(row).length + 1;
+        if (out.documents.length && size + len > DOC_RESULT_MAX - 1000) break;
+        out.documents.push(row);
+        size += len;
+      }
+      out.nextOffset = i < docs.length ? i : null;
+      return compact(out);
+    },
+  },
+  {
+    name: "get_project_document",
+    description: "Read ONE document of a project, a page or a section at a time. docId is \"requirements\", \"readme\", a document id or an interface id (all from list_project_documents). Returns {projectId, docId, name, kind, metadata, totalChars, offset, content, nextOffset}; metadata is updatedAt, updatedByEmail and, for a repo mirror, sourcePath, sourceSlices, sourcePrefix, sourceCommit (null when not stored — a document with a sourcePath is overwritten by the next repo sync). Pages are maxChars long (default 40000, max 50000, shortened if the outline and JSON escaping would pass 60000 characters); nextOffset is the offset of the next page, null on the last. Joined in order the pages equal the stored text. The first page (offset 0, no section), or any call with outline:true, also returns outline [{level, heading, offset}] of the whole document (offsets into the full text; # lines inside ``` fences are not headings). section reads just one heading's part, matched case-insensitively (exact, then prefix), from its heading line to the next heading of the same or higher level; offset, totalChars and nextOffset are then relative to the section and sectionOffset says where it starts in the document. Lengths and offsets are JavaScript string lengths (UTF-16 code units).",
+    scope: "board.read",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string" },
+        docId: { type: "string", description: "\"requirements\", \"readme\", or an id from list_project_documents." },
+        section: { type: "string", description: "Heading text to read just that section." },
+        offset: { type: "integer", minimum: 0, description: "Where to start reading (the previous page's nextOffset)." },
+        maxChars: { type: "integer", minimum: 1, maximum: DOC_PAGE_MAX, description: `Page length. Default ${DOC_PAGE_DEFAULT}, max ${DOC_PAGE_MAX}.` },
+        outline: { type: "boolean", description: "Include the heading outline even when not on the first page." },
+      },
+      required: ["projectId", "docId"], additionalProperties: false,
+    },
+    async run(args) {
+      const projectId = String(args.projectId);
+      const docId = String(args.docId);
+      const snap = await db().collection("projects").doc(projectId).get();
+      if (!snap.exists) return toolError(`No project with id ${projectId}.`);
+      let offset = 0;
+      if (args.offset !== undefined && args.offset !== null) {
+        offset = Number(args.offset);
+        if (!Number.isInteger(offset) || offset < 0) return toolError("offset must be a non-negative integer.");
+      }
+      let maxChars = DOC_PAGE_DEFAULT;
+      if (args.maxChars !== undefined && args.maxChars !== null) {
+        maxChars = Number(args.maxChars);
+        if (!Number.isInteger(maxChars) || maxChars < 1) return toolError("maxChars must be a positive integer.");
+        maxChars = Math.min(maxChars, DOC_PAGE_MAX);
+      }
+      const loaded = await loadDocumentForRead(projectId, snap.data() || {}, docId);
+      if (loaded.error) return toolError(loaded.error);
+      const full = loaded.text;
+      const outline = outlineOf(full);
+
+      let text = full;
+      let sectionOffset = null;
+      let sectionName = null;
+      if (args.section !== undefined && args.section !== null && String(args.section).trim() !== "") {
+        const sec = findSection(full, outline, args.section);
+        if (!sec) {
+          const list = outline.slice(0, 200).map((h) => `${"#".repeat(h.level)} ${clip(h.heading, 120)}`).join("\n");
+          return toolError(`No section matching "${clip(String(args.section), 200)}" in ${loaded.name}. Headings:\n${list || "(none — the document has no headings)"}`);
+        }
+        text = full.slice(sec.start, sec.end);
+        sectionOffset = sec.start;
+        sectionName = sec.heading;
+      }
+      if (offset > text.length || (offset === text.length && text.length > 0)) {
+        return toolError(`offset ${offset} is past the end: ${sectionName ? "the section" : "the document"} has ${text.length} characters.`);
+      }
+
+      const out = { projectId, docId, name: loaded.name, kind: loaded.kind, metadata: loaded.meta };
+      if (sectionName !== null) { out.section = sectionName; out.sectionOffset = sectionOffset; }
+      out.totalChars = text.length;
+      out.offset = offset;
+      if ((offset === 0 && sectionName === null) || args.outline === true) {
+        out.outline = [];
+        let used = 0;
+        for (const h of outline) {
+          const entry = { level: h.level, heading: clip(h.heading, DOC_HEADING_MAX), offset: h.offset };
+          const len = JSON.stringify(entry).length + 1;
+          if (used + len > DOC_OUTLINE_BUDGET) { out.outlineTruncated = true; break; }
+          out.outline.push(entry);
+          used += len;
+        }
+      }
+      const build = (end) => Object.assign({}, out, { content: text.slice(offset, end), nextOffset: end < text.length ? end : null });
+      // The longest page that is within maxChars and whose JSON stays under the limit.
+      let hi = safePageEnd(text, offset, Math.min(text.length, offset + maxChars));
+      if (JSON.stringify(build(hi)).length > DOC_RESULT_MAX) {
+        let lo = offset;   // known to fit (an empty page), hi is known not to
+        while (hi - lo > 1) {
+          const mid = lo + Math.floor((hi - lo) / 2);
+          if (JSON.stringify(build(mid)).length <= DOC_RESULT_MAX) lo = mid; else hi = mid;
+        }
+        hi = safePageEnd(text, offset, lo);
+        if (hi <= offset) hi = Math.min(text.length, offset + 2);
+      }
+      return textResult(JSON.stringify(build(hi)));
     },
   },
   // ── Documentation: full read/write ──────────────────────────────────────
@@ -2233,7 +2586,7 @@ const TOOLS = [
   // shipping — see PROJECT_WRITABLE_FIELDS above.
   {
     name: "set_project_requirements",
-    description: "Replace a project's Requirements markdown (the board-native home of its REQUIREMENTS.md). Send the COMPLETE new document — this overwrites, it does not append. The previous version is kept in the revision history, so a bad write is recoverable with list_doc_revisions.",
+    description: "Replace a project's Requirements markdown (the board-native home of its REQUIREMENTS.md). Send the COMPLETE new document — this overwrites, it does not append. The previous version is kept in the revision history, so a bad write is recoverable with list_doc_revisions. Refused when Requirements is synced from the repo file (the repo file wins: edit it on a branch and the board copy follows on merge).",
     scope: "board.write",
     inputSchema: {
       type: "object",
@@ -2249,16 +2602,18 @@ const TOOLS = [
       if (md.length > PROJECT_MD_MAX) return toolError(`Requirements are limited to ${PROJECT_MD_MAX} characters; that was ${md.length}.`);
       const snap = await db().collection("projects").doc(projectId).get();
       if (!snap.exists) return toolError(`No project with id ${projectId}. Call list_projects first.`);
+      const synced = await syncedDocRefusal(projectId, snap.data(), "requirements");
+      if (synced) return toolError(synced);
       const before = await readProjectDoc(projectId, "requirements", snap.data());
       const revisionId = await recordDocRevision(session, PROJECT_DOC_KINDS.requirements.revisionTarget, { projectId, name: (snap.data() || {}).name || "" }, before);
       await writeProjectDoc(projectId, "requirements", md, session);
       await audit(session, "set_project_requirements", { projectId, chars: md.length, replacedChars: before.length, revisionId });
-      return textResult({ updated: true, projectId, chars: md.length, replacedChars: before.length, revisionId, note: "Keep the repo's REQUIREMENTS.md in sync — a divergence is a bug in whichever is stale." });
+      return textResult({ updated: true, projectId, chars: md.length, replacedChars: before.length, revisionId, note: docWriteNote() });
     },
   },
   {
     name: "set_project_readme",
-    description: "Replace a project's README markdown (the board-native counterpart of its README.md). Send the COMPLETE new document — this overwrites, it does not append. The previous version is kept in the revision history.",
+    description: "Replace a project's README markdown (the board-native counterpart of its README.md). Send the COMPLETE new document — this overwrites, it does not append. The previous version is kept in the revision history. Refused when the README is synced from the repo file (the repo file wins: edit it on a branch and the board copy follows on merge).",
     scope: "board.write",
     inputSchema: {
       type: "object",
@@ -2274,11 +2629,13 @@ const TOOLS = [
       if (md.length > PROJECT_MD_MAX) return toolError(`A README is limited to ${PROJECT_MD_MAX} characters; that was ${md.length}.`);
       const snap = await db().collection("projects").doc(projectId).get();
       if (!snap.exists) return toolError(`No project with id ${projectId}. Call list_projects first.`);
+      const synced = await syncedDocRefusal(projectId, snap.data(), "readme");
+      if (synced) return toolError(synced);
       const before = await readProjectDoc(projectId, "readme", snap.data());
       const revisionId = await recordDocRevision(session, PROJECT_DOC_KINDS.readme.revisionTarget, { projectId, name: (snap.data() || {}).name || "" }, before);
       await writeProjectDoc(projectId, "readme", md, session);
       await audit(session, "set_project_readme", { projectId, chars: md.length, replacedChars: before.length, revisionId });
-      return textResult({ updated: true, projectId, chars: md.length, replacedChars: before.length, revisionId, note: "Keep the repo's README.md in sync — a divergence is a bug in whichever is stale." });
+      return textResult({ updated: true, projectId, chars: md.length, replacedChars: before.length, revisionId, note: docWriteNote() });
     },
   },
   {
@@ -2368,12 +2725,12 @@ const TOOLS = [
   },
   {
     name: "update_project_document",
-    description: "Rename a project document, replace its contents, or both. Sending contentMd overwrites the whole document; the previous version is kept in the revision history.",
+    description: "Rename a project document, replace its contents, or both. Sending contentMd overwrites the whole document; the previous version is kept in the revision history. Refused for a mirror (a document with a sourcePath, shown as kind \"mirror\"): a mirror is restored by editing its repo file on a branch, and the board copy follows on merge.",
     scope: "board.write",
     inputSchema: {
       type: "object",
       properties: {
-        docId: { type: "string", description: "From get_project_docs." },
+        docId: { type: "string", description: "From list_project_documents (or get_project_docs)." },
         name: { type: "string" },
         contentMd: { type: "string", description: `The whole document. Up to ${DOC_MD_MAX} characters.` },
       },
@@ -2384,6 +2741,7 @@ const TOOLS = [
       const snap = await ref.get();
       if (!snap.exists) return toolError(`No project document with id ${args.docId}. Call get_project_docs to list them.`);
       const current = snap.data() || {};
+      if (current.sourcePath) return toolError(mirrorUpdateRefusal(current.name || snap.id, current.sourcePath));
       const fields = { updatedAt: FieldValue.serverTimestamp(), updatedByEmail: session.email };
       let revisionId = null;
       if (args.name != null) {
@@ -2406,7 +2764,7 @@ const TOOLS = [
   },
   {
     name: "delete_project_document",
-    description: "Remove a project document from the board. Its contents are written to the revision history first, so this is recoverable with list_doc_revisions and create_project_document.",
+    description: "Remove a project document from the board. Its contents are written to the revision history first, so this is recoverable with list_doc_revisions and create_project_document. Refused for a mirror (a document with a sourcePath): remove it from the repo's mirror list instead.",
     scope: "board.write",
     destructive: true,
     inputSchema: {
@@ -2419,6 +2777,7 @@ const TOOLS = [
       const snap = await ref.get();
       if (!snap.exists) return toolError(`No project document with id ${args.docId}.`);
       const current = snap.data() || {};
+      if (current.sourcePath) return toolError(mirrorDeleteRefusal(current.name || snap.id, current.sourcePath));
       const revisionId = await recordDocRevision(session, "projectDoc.deleted", { projectId: current.projectId || null, docId: snap.id, name: current.name || "" }, current.contentMd || "");
       await ref.delete();
       await audit(session, "delete_project_document", { docId: snap.id, projectId: current.projectId || null, name: current.name || "", revisionId });
@@ -2466,12 +2825,12 @@ const TOOLS = [
   },
   {
     name: "update_interface",
-    description: "Rename an interface contract, replace its contents, re-point it to different endpoints, or any of these. Sending contentMd overwrites the whole document; the previous version is kept in the revision history. A re-point (endpoints) is appended to the interface's own history. Changing a contract affects BOTH ends — say so in the change.",
+    description: "Rename an interface contract, replace its contents, re-point it to different endpoints, or any of these. Sending contentMd overwrites the whole document; the previous version is kept in the revision history. A re-point (endpoints) is appended to the interface's own history. Changing a contract affects BOTH ends — say so in the change. Refused for an interface that carries a sourcePath (copied from a repo file).",
     scope: "board.write",
     inputSchema: {
       type: "object",
       properties: {
-        interfaceId: { type: "string", description: "From get_project_docs or get_concept." },
+        interfaceId: { type: "string", description: "From list_project_documents, get_project_docs or get_concept." },
         name: { type: "string" },
         contentMd: { type: "string", description: `The whole document. Up to ${DOC_MD_MAX} characters.` },
         endpoints: {
@@ -2487,6 +2846,7 @@ const TOOLS = [
       const snap = await ref.get();
       if (!snap.exists) return toolError(`No interface with id ${args.interfaceId}.`);
       const current = snap.data() || {};
+      if (current.sourcePath) return toolError(mirrorUpdateRefusal(current.name || snap.id, current.sourcePath));
       const fields = { updatedAt: FieldValue.serverTimestamp(), updatedByEmail: session.email };
       let revisionId = null;
       if (args.name != null) {
@@ -2517,7 +2877,7 @@ const TOOLS = [
   },
   {
     name: "delete_interface",
-    description: "Remove an interface contract from the board. Its contents are written to the revision history first, so this is recoverable. It belongs to two projects — deleting it removes it from both.",
+    description: "Remove an interface contract from the board. Its contents are written to the revision history first, so this is recoverable. It belongs to two projects — deleting it removes it from both. Refused for an interface that carries a sourcePath (copied from a repo file).",
     scope: "board.write",
     destructive: true,
     inputSchema: {
@@ -2530,6 +2890,7 @@ const TOOLS = [
       const snap = await ref.get();
       if (!snap.exists) return toolError(`No interface with id ${args.interfaceId}.`);
       const current = snap.data() || {};
+      if (current.sourcePath) return toolError(mirrorDeleteRefusal(current.name || snap.id, current.sourcePath));
       const revisionId = await recordDocRevision(session, "interface.deleted", { interfaceId: snap.id, projectIds: current.projectIds || [], name: current.name || "" }, current.contentMd || "");
       await ref.delete();
       await audit(session, "delete_interface", { interfaceId: snap.id, projectIds: current.projectIds || [], name: current.name || "", revisionId });
@@ -2581,7 +2942,7 @@ const TOOLS = [
   },
   {
     name: "get_doc_revision",
-    description: "The full markdown of one replaced version, from list_doc_revisions. To restore it, pass this content back to whichever set_/update_ tool it came from.",
+    description: "The full markdown of one replaced version, from list_doc_revisions. To restore it, pass this content back to whichever set_/update_ tool it came from — except a mirror or a synced Requirements/README, which is restored by editing its repo file on a branch.",
     scope: "board.read",
     inputSchema: {
       type: "object",
@@ -3657,19 +4018,109 @@ const TOOLS_BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));
 // SSE connection is billed wall-clock and dies at the instance's timeout
 // anyway.
 
+// ── Prompts ──────────────────────────────────────────────────────────────
+// A person starts one (a slash command in Claude Code, a prompt to attach in
+// Claude Desktop / claude.ai); an agent never calls prompts/get on its own,
+// which is why SERVER_INSTRUCTIONS says the same thing in a sentence.
+// Read-only for every role, and nothing is written, not even mcpAuditLog.
+const HANDOVER_MAX = 20000;
+const HANDOVER_OUTLINE_MAX = 60;
+const HANDOVER_AMBIGUOUS_LISTED = 20;
+
+async function buildProjectHandover(args) {
+  const ask = args && typeof args.project === "string" ? args.project.trim() : "";
+  if (!ask) return { error: "Missing required argument: project (a project id or name)." };
+  const projects = [...(await loadProjectsById()).values()];
+  const want = ask.toLowerCase();
+  let hits = projects.filter((p) => p.id === ask);
+  if (!hits.length) hits = projects.filter((p) => String(p.name || "").toLowerCase() === want);
+  if (!hits.length) hits = projects.filter((p) => String(p.name || "").toLowerCase().startsWith(want));
+  if (!hits.length) return { error: `No project matches "${ask}". Call list_projects for the names.` };
+  if (hits.length > 1) {
+    const names = hits.slice(0, HANDOVER_AMBIGUOUS_LISTED).map((p) => p.name || p.id);
+    return { error: `"${ask}" matches ${hits.length} projects: ${names.join(", ")}${hits.length > names.length ? ", …" : ""}. Use a longer name or the project id.` };
+  }
+  const p = hits[0];
+
+  const counts = {};
+  (await db().collection("backlogItems").where("projectId", "==", p.id).get()).forEach((d) => {
+    const st = (d.data() || {}).status || "backlog";
+    if (st !== "archived") counts[st] = (counts[st] || 0) + 1;
+  });
+  const docs = [];
+  (await db().collection("projectDocs").where("projectId", "==", p.id).get()).forEach((d) => {
+    const v = d.data() || {};
+    docs.push({ id: d.id, name: v.name || d.id, sourcePath: v.sourcePath || null });
+  });
+  docs.sort((a, b) => a.name.localeCompare(b.name));
+  const startId = p.startHereDocId || null;
+  const startDoc = startId ? docs.find((d) => d.id === startId) : null;
+  if (startDoc) docs.splice(docs.indexOf(startDoc), 1);
+  const ifaces = [];
+  (await db().collection("interfaces").where("projectIds", "array-contains", p.id).get()).forEach((d) => ifaces.push((d.data() || {}).name || d.id));
+  ifaces.sort((a, b) => a.localeCompare(b));
+  const req = await loadDocumentForRead(p.id, p, "requirements");
+  const outline = req.error ? [] : outlineOf(req.text).filter((h) => h.level <= 2).slice(0, HANDOVER_OUTLINE_MAX);
+
+  const line = (d) => `- ${d.name} (id ${d.id})${d.sourcePath ? ` — mirror of ${d.sourcePath}` : ""}`;
+  const head = [`# Project handover: ${p.name || p.id}`, ""];
+  if (p.description) head.push(String(p.description), "");
+  head.push(`Project id: ${p.id}`, `Deploy branch: ${p.deployBranch || "none"}`);
+  const columns = STATUSES.filter((k) => k !== "archived" && counts[k]).map((k) => `${STATUS_LABELS[k] || k}: ${counts[k]}`);
+  head.push(`Tickets (archived left out): ${columns.length ? columns.join(", ") : "none"}`, "", "## Read first");
+  if (startId && (startDoc || startId === "readme" || startId === "requirements")) {
+    const nm = startDoc ? startDoc.name : (startId === "readme" ? "README" : "Requirements");
+    head.push(`${nm} (id ${startId}) — read it with get_project_document {"projectId": "${p.id}", "docId": "${startId}"}.`);
+  } else {
+    head.push("This project declares no start-here document. Read its README first: get_project_document " + `{"projectId": "${p.id}", "docId": "readme"}.`);
+  }
+  head.push("", "## Documents");
+  const tail = ["", "## Requirements outline"];
+  if (outline.length) for (const h of outline) tail.push(`${"  ".repeat(h.level - 1)}- ${h.heading}`);
+  else tail.push("(no headings)");
+  tail.push("", "## What to do", "Read the start-here document in full, then the documents it lists, in its order. Then summarise what the project is, how its work ships, what is open and what is still unclear.");
+
+  const entries = [];
+  if (startDoc) entries.push(line(startDoc));
+  for (const d of docs) entries.push(line(d));
+  for (const n of ifaces) entries.push(`- Interface: ${n}`);
+  if (!entries.length) entries.push("(no additional documents)");
+
+  const fixed = head.join("\n").length + tail.join("\n").length + 2;
+  const room = HANDOVER_MAX - fixed - 80;
+  const kept = [];
+  let used = 0;
+  for (const e of entries) {
+    if (used + e.length + 1 > room) break;
+    kept.push(e);
+    used += e.length + 1;
+  }
+  if (kept.length < entries.length) kept.push(`… and ${entries.length - kept.length} more (list_project_documents)`);
+  const text = clip(head.concat(kept, tail).join("\n"), HANDOVER_MAX);
+  return { description: `Reading plan for ${p.name || p.id}`, messages: [{ role: "user", content: { type: "text", text } }] };
+}
+
+const PROMPTS = [
+  {
+    name: "project_handover",
+    title: "Project handover",
+    description: "A reading plan for taking over or catching up on a project: its start-here document first, then its other documents.",
+    arguments: [{ name: "project", description: "A project id or name (case-insensitive; a unique prefix is enough).", required: true }],
+    get: buildProjectHandover,
+  },
+];
+
 const SERVER_INSTRUCTIONS = [
-  "This is the PH Agent Console — the Personalisation Hub prototype backlog board and help centre.",
-  "You are connected as a specific team member; every ticket you file and comment you add is attributed to their email.",
-  "Start with list_projects to get a projectId, then list_backlog_items / get_backlog_item to read work, or create_backlog_item to file new work into a project's Backlog column.",
-  "You have full read/write access to project DOCUMENTATION and are expected to keep it current as you work: get_project_docs to read a project's Requirements, README, additional documents and interface contracts, then set_project_requirements / set_project_readme / create_project_document / update_project_document / create_interface / update_interface to update them.",
-  "Documentation writes REPLACE the whole document, so read it first and send back the complete revised text — never a fragment. The version you replace is kept, and list_doc_revisions / get_doc_revision can recover it.",
-  "Where a project's documentation also exists as a file in the repo (REQUIREMENTS.md, README.md, shared/interface-contract.md), the two are meant to match: update both, and treat a divergence as a bug in whichever is stale.",
-  "The Concept Incubator holds pre-project ideas that haven't been promoted to a tracked project yet — create_concept makes a new one, list_concepts / get_concept read them, and add_concept_comment / set_concept_readme / set_concept_requirements / set_concept_artifact write to them, same read/write split as project documentation. demote_project turns a project back into a concept (carrying its docs, re-pointing its interfaces, archiving it). Interfaces (create_interface / update_interface) can join any two projects or concepts and follow them through promote and demote. A concept has no backlog of its own until it's promoted; once promoted, use list_projects/get_project_docs on the project it became instead.",
-  "To show what is waiting on a person in the release pipeline, call get_ready_for_testing_board (the Ready for Testing column) or get_approved_for_deployment_board (the Approved for Deployment column) rather than list_backlog_items: both are MCP Apps, so a host that supports them renders the tickets as cards inline in the conversation, and every host gets the same data as text.",
-  "Use search_faq / get_faq_article to answer Personalisation Hub product questions from the published help centre instead of guessing.",
-  "You can also write to the help centre: create_faq_article files a brand-new draft, and update_faq_article proposes a change to an existing one as a pendingRevision — never live. Either way a person still reviews and approves it in FAQ Management before anything publishes; list_pending_faq_revisions and get_faq_revision let you check on a proposal's status.",
-  "There is also a shared, organisation-wide skills library — NOT scoped to any one project. list_skills / get_skill read it (any signed-in member, including a viewer); upload_skill / update_skill / delete_skill write to it (editor role). Use this to publish or fetch a reusable piece of packaged instructions any team member's agent can pull in, e.g. this console's own ph-designer front-end skill.",
-  "Deployment is out of scope on purpose: nothing here moves a ticket through testing, merges a train, or triggers a campaign. Those stay on the board's own buttons and its triggered Routine.",
+  "This is the PH Agent Console: the Personalisation Hub prototype backlog board and help centre. You act as the signed-in team member; what you file or write is attributed to their email. A viewer reads only, an editor reads and writes, an admin also has approve_deploy_to_main and set_phase_skill_bindings.",
+  "Tickets: list_projects gives a projectId, then list_backlog_items / get_backlog_item. create_backlog_item files into Backlog; update_backlog_item, add_item_comment, set_blocked and clear_blocked work on a ticket. To show what waits on a person call get_ready_for_testing_board or get_approved_for_deployment_board (MCP Apps: cards inline where the host supports them).",
+  "To take over or catch up on a project, read its start-here document first (list_projects gives startHereDocId; get_project_document reads it), then the documents it lists, in its order. A person can start the same plan with the project_handover prompt.",
+  "Reading docs: list_project_documents (no text, searchable) and get_project_document read one document or section at a time. get_project_docs returns every document in full, possibly hundreds of thousands of characters, so call it only with include set to the one block you need.",
+  "Writing docs: set_project_requirements, set_project_readme, set_project_artifact, set_project_description, create_project_document, update_project_document, delete_project_document, create_interface, update_interface, delete_interface. A write replaces the whole document, so read it first and send the complete text; a project document or interface holds at most 20,000 characters. list_doc_revisions / get_doc_revision recover a replaced version.",
+  REPO_WINS + " Board-only documents, including every document of a project with no repo folder, are edited on the board.",
+  "Concepts (pre-project ideas): list_concepts, get_concept, create_concept, add_concept_comment, set_concept_readme, set_concept_requirements, set_concept_artifact; demote_project turns a project back into a concept.",
+  "Help centre: search_faq / get_faq_article answer product questions; create_faq_article and update_faq_article only propose drafts for a person to approve; list_pending_faq_revisions, get_faq_revision and comment_on_faq_revision follow a proposal.",
+  "Skills library, shared by all projects: list_skills / get_skill read; upload_skill, update_skill, delete_skill, mark_skill_reviewed and report_skill_miss write.",
+  "Release: moving cards, approving out of Ready for Testing, Notify Claude clicks and campaigns stay on the board; set_my_routine_binding only chooses whose Routine your own board clicks fire. Admin only: approve_deploy_to_main fires the same Deploy to Main as the board button, and only when the project's whole train is approved; set_phase_skill_bindings sets the skills that build and deploy runs load.",
 ].join(" ");
 
 function rpcError(id, code, message, data) {
@@ -3698,7 +4149,7 @@ async function dispatchRpc(msg, session, ctx) {
         // resources: the two MCP App views (ui://backlog-tracker/…) — a host
         // that renders MCP Apps fetches them with resources/read. Static, so
         // neither subscriptions nor list-changed notifications.
-        capabilities: { tools: { listChanged: false }, resources: { subscribe: false, listChanged: false } },
+        capabilities: { tools: { listChanged: false }, resources: { subscribe: false, listChanged: false }, prompts: { listChanged: false } },
         serverInfo: {
           name: "ph-agent-console",
           title: "PH Agent Console",
@@ -3781,7 +4232,18 @@ async function dispatchRpc(msg, session, ctx) {
     case "resources/templates/list":
       return rpcResult(msg.id, { resourceTemplates: [] });
     case "prompts/list":
-      return rpcResult(msg.id, { prompts: [] });
+      return rpcResult(msg.id, { prompts: PROMPTS.map(({ name, title, description, arguments: args }) => ({ name, title, description, arguments: args })) });
+    case "prompts/get": {
+      const prompt = PROMPTS.find((x) => x.name === String(params.name || ""));
+      if (!prompt) return rpcError(msg.id, -32602, `Unknown prompt: ${params.name}`);
+      try {
+        const out = await prompt.get(params.arguments || {});
+        return out.error ? rpcError(msg.id, -32602, out.error) : rpcResult(msg.id, out);
+      } catch (err) {
+        logger.error("mcp prompt failed", { prompt: prompt.name, email: session.email, error: String(err && err.stack ? err.stack : err) });
+        return rpcError(msg.id, -32603, `${prompt.name} failed: ${err && err.message ? err.message : err}`);
+      }
+    }
     default:
       return isNotification ? null : rpcError(msg.id, -32601, `Method not found: ${msg.method}`);
   }
@@ -4020,7 +4482,7 @@ exports.mcpServer = onRequest({ cors: false, timeoutSeconds: 120, memory: "512Mi
 exports.__test = {
   routePath, redirectUriAllowed, routineFireHostAllowed, redirectHostLabel, generateTitle, suggestCategory, atLeast,
   sha256b64url, authorizationServerMetadata, protectedResourceMetadata,
-  TOOLS, CATEGORIES, STATUS_LABELS, SUPPORTED_PROTOCOL_VERSIONS, SERVER_ICONS,
+  TOOLS, PROMPTS, CATEGORIES, STATUS_LABELS, SUPPORTED_PROTOCOL_VERSIONS, SERVER_ICONS,
   MCP_APP_MIME, UI_META, BOARD_VIEWS, safeHref,
   PROJECT_WRITABLE_FIELDS, PROJECT_MD_MAX, DOC_MD_MAX, CONCEPT_MD_MAX, updateProjectFields,
   FAQ_TITLE_MAX, FAQ_SUMMARY_MAX, FAQ_BODY_MAX, FAQ_KEYWORDS_MAX, FAQ_REASON_MAX, FAQ_DOC_TYPES,

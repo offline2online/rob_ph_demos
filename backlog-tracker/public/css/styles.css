@@ -376,6 +376,23 @@ body {
   border-radius: 6px; padding: 7px 10px; font-size: 12.5px; font-weight: 600;
 }
 .test-link-btn:hover { opacity: .85; }
+.approve-btn:disabled { opacity: .5; cursor: not-allowed; }
+/* State line for a link that opens a checked-in build (previewState). */
+.preview-state {
+  display: flex; align-items: flex-start; gap: 6px; font-size: 12px; line-height: 1.4; color: var(--text-muted);
+}
+.preview-state .material-symbols-outlined { font-size: 16px; flex: none; margin-top: 1px; }
+.preview-state a { color: var(--primary); }
+.preview-state-rebuilding { flex: 1; align-items: center; background: var(--surface-2); border-radius: 6px; padding: 7px 10px; color: var(--text); }
+.preview-state-rebuilding .material-symbols-outlined { color: var(--primary); margin-top: 0; }
+.preview-state-rebuilding .preview-state-sub { color: var(--text-muted); }
+.preview-state-spin { animation: preview-state-spin 1s linear infinite; }
+@keyframes preview-state-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .preview-state-spin { animation: none; } }
+.preview-state-stale { margin-top: 6px; color: var(--warning); }
+.preview-state-stale a { color: inherit; text-decoration: underline; }
+.preview-state-ready { margin-top: 6px; }
+.preview-state-ready .material-symbols-outlined { color: var(--success); }
 
 /* z-index: 25 — jWb1Ktqu2Iht9B5h7S0C: this used to sit at z-index: 10, below
    the sticky .topbar (16) and the nav drawer (backdrop 20 / drawer 21), so
@@ -1528,6 +1545,16 @@ html:not([data-console-role="admin"]) [data-admin-only] { display: none !importa
 .review-flag-remediating { color: #ad6800; background: #fffbe6; border-color: #ffe58f; }
 .review-flag-kicked-back { color: #ad6800; background: #fff7e6; border-color: #ffd591; }
 .review-flag-blocked { color: #cf1322; background: #fff1f0; border-color: #ffa39e; }
+
+/* A train card's own test result (trainTest) and who approved it. Reuses the review-flag chip. */
+a.review-flag { text-decoration: none; cursor: pointer; }
+.train-test-flag-running { color: #0958d9; background: #e6f4ff; border-color: #91caff; }
+.train-test-flag-passed { color: #389e0d; background: #f6ffed; border-color: #b7eb8f; }
+.train-test-flag-failed { color: #cf1322; background: #fff1f0; border-color: #ffa39e; }
+.train-test-flag-not-run { color: #ad6800; background: #fffbe6; border-color: #ffe58f; }
+.train-test-flag-none { color: var(--text-muted); background: transparent; border-color: var(--border, #d9d9d9); }
+.approved-by { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 500; color: var(--text-muted); cursor: help; }
+.approved-by .material-symbols-outlined { font-size: 14px; }
 
 .blocked-flag { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 500; padding: 1px 4px 1px 5px; border-radius: 9999px; border: 1px solid transparent; cursor: help; }
 .blocked-flag .material-symbols-outlined { font-size: 14px; }
